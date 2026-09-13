@@ -3,7 +3,7 @@ import { Anchor, CheckCircle2, ChevronLeft, ChevronRight, Compass, Loader2, Tria
 import { useLang } from "../i18n/LangContext.jsx";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
-const POLAR_EXPEDITION = "berry-mappemonde-2026";
+const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
 const POLAR_VMG_TWS_KEYS = ["8", "10", "12", "16", "20", "25"];
 const DEFAULT_POLAR_URL = "/Leopard46_Standard_Sails.csv";
 const DEFAULT_POLAR_NAME = "Leopard 46";

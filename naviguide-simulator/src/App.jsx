@@ -50,18 +50,20 @@ function setCachedPlan(lang, data) {
   try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data, ts: Date.now() })); } catch { /* quota */ }
 }
 
-function pointToSegmentNm(lat, lon, coords) {
+function pointToSegmentPx(map, lat, lon, coords) {
+  const p = map.latLngToLayerPoint([lat, lon]);
   let best = Infinity;
   for (let i = 0; i < coords.length - 1; i++) {
     const [lon1, lat1] = coords[i];
     const [lon2, lat2] = coords[i + 1];
-    const dx = lon2 - lon1;
-    const dy = lat2 - lat1;
-    const t = Math.max(0, Math.min(1, ((lon - lon1) * dx + (lat - lat1) * dy) / (dx * dx + dy * dy || 1)));
-    const dlat = lat - (lat1 + t * dy);
-    const dlon = lon - (lon1 + t * dx);
-    const nm = Math.hypot(dlat * 60, dlon * 60 * Math.cos((lat * Math.PI) / 180));
-    if (nm < best) best = nm;
+    const a = map.latLngToLayerPoint([lat1, lon1]);
+    const b = map.latLngToLayerPoint([lat2, lon2]);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq)) : 0;
+    const dist = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    if (dist < best) best = dist;
   }
   return best;
 }
@@ -495,7 +497,7 @@ export default function App() {
       const { lat, lng: lon } = e.latlng;
       if (drawingMode) { handleDrawingClick(lat, lon); return; }
       const active = customRoute ? featuresToSegments(customRoute) : segments;
-      const near = active.some((s) => s.coords?.length > 1 && pointToSegmentNm(lat, lon, s.coords) < 25);
+      const near = active.some((s) => s.coords?.length > 1 && pointToSegmentPx(map, lat, lon, s.coords) < 16);
       if (near) fetchSatellite(lat, lon);
     };
     const onCtx = (e) => {
@@ -615,7 +617,7 @@ export default function App() {
       />
 
       {loading && (
-        <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 pointer-events-none">
+        <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1500] pointer-events-none">
           <div className="w-10 h-10 border-4 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
           <div className="mt-4 text-white/90 text-sm font-medium">{t("calculatingRoutes")}</div>
         </div>
@@ -629,7 +631,7 @@ export default function App() {
       )}
 
       {drawingMode && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[2100] pointer-events-none">
           <div className="flex flex-col items-center gap-1">
             <div className="flex items-center gap-2 bg-slate-900/95 border border-green-500/50 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -670,7 +672,7 @@ export default function App() {
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-30 w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl">
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl">
           <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={() => setSelectedSatellite(null)}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
@@ -714,7 +716,7 @@ export default function App() {
         </div>
       )}
 
-      <p className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10 text-[9px] text-white/50 pointer-events-none">
+      <p className="absolute bottom-1 left-1/2 -translate-x-1/2 z-[1500] text-[9px] text-white/50 pointer-events-none">
         {t("notForNavigation")}
       </p>
     </div>

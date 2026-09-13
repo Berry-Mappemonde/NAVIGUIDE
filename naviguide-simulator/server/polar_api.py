@@ -106,6 +106,11 @@ async def upload_polar(
     }
 
 
+@router.api_route("/api/v1/polar/chat", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+def polar_chat_removed():
+    raise HTTPException(status_code=404, detail="Polar chat is not part of the simulator.")
+
+
 @router.get("/api/v1/polar/{expedition_id}")
 def get_polar(expedition_id: str):
     dest = _polar_path(expedition_id)
