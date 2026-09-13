@@ -1180,8 +1180,8 @@ Rappel du contrat global :
   draw (v2.0).
 - Arbitrage skipper du 13 septembre **soir** (celui-ci) : polar **sans
   chat**, UX **sans** 4 agents, **sans** import/export GeoJSON.
-- `docs/hackathon-nebius-nvidia.md` — un seul produit, dossier autonome
-  extractible.
+- `docs/hackathon-nebius-nvidia.md` — cahier unique (orientations +
+  plan pour gagner). Dossier autonome extractible.
 - `docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` — pas une couche monde à
   l’étape 1.
 - `docs/ARCHITECTURE.md` — `MapView.js` + un hook par couche.
