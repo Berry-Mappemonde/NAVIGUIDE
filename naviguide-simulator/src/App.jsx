@@ -1,0 +1,722 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Redo2, Undo2, X } from "lucide-react";
+import { Sidebar } from "./components/Sidebar.jsx";
+import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
+import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
+import { useCatamaranMarker } from "./components/CatamaranMarker.jsx";
+import { WindDirectionArrow } from "./components/map/WindDirectionArrow";
+import { getCardinalDirection } from "./utils/getCardinalDirection";
+import { useLang } from "./i18n/LangContext.jsx";
+import { ITINERARY_POINTS } from "./constants/itineraryPoints";
+import { useLegContext } from "./hooks/useLegContext.js";
+import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
+import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
+import { useRouteLayer } from "./layers/useRouteLayer.js";
+import { useToggleLayers } from "./layers/useToggleLayers.js";
+import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
+import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
+import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
+import {
+  activeSimulationSegments,
+  activeSimulationStops,
+  buildSimTargets,
+  simulationStartPos,
+} from "./utils/simulationRoute.js";
+import {
+  SEGMENT_BATCH_SIZE,
+  buildBerryLegs,
+  coordsFromRoutePayload,
+  isNonMaritimeLeg,
+  orientCoords,
+} from "./utils/berryLegs.js";
+import { routeFromOfficial } from "./utils/routeFromOfficial.js";
+import L from "leaflet";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "";
+const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
+const PLAN_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+function planCacheKey(lang) { return `naviguide_sim_plan_v1_${lang}`; }
+function getCachedPlan(lang) {
+  try {
+    const raw = localStorage.getItem(planCacheKey(lang));
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > PLAN_CACHE_TTL) { localStorage.removeItem(planCacheKey(lang)); return null; }
+    return data;
+  } catch { return null; }
+}
+function setCachedPlan(lang, data) {
+  try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data, ts: Date.now() })); } catch { /* quota */ }
+}
+
+function pointToSegmentNm(lat, lon, coords) {
+  let best = Infinity;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lon1, lat1] = coords[i];
+    const [lon2, lat2] = coords[i + 1];
+    const dx = lon2 - lon1;
+    const dy = lat2 - lat1;
+    const t = Math.max(0, Math.min(1, ((lon - lon1) * dx + (lat - lat1) * dy) / (dx * dx + dy * dy || 1)));
+    const dlat = lat - (lat1 + t * dy);
+    const dlon = lon - (lon1 + t * dx);
+    const nm = Math.hypot(dlat * 60, dlon * 60 * Math.cos((lat * Math.PI) / 180));
+    if (nm < best) best = nm;
+  }
+  return best;
+}
+
+export default function App() {
+  const { lang, t } = useLang();
+  const containerRef = useRef(null);
+  const [isLightMode, setIsLightMode] = useState(false);
+  const { mapRef, mapReady } = useSimulatorMap(containerRef, isLightMode);
+
+  const [segments, setSegments] = useState([]);
+  const [points, setPoints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [segProgress, setSegProgress] = useState({ done: 0, total: 0 });
+  const [officialFallback, setOfficialFallback] = useState(false);
+  const boundsApplied = useRef(false);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(true);
+  const [expeditionPlan, setExpeditionPlan] = useState(null);
+  const [polarData, setPolarData] = useState(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+
+  const [simulationMode, setSimulationMode] = useState(false);
+  const [catamaranPos, setCatamaranPos] = useState(null);
+  const [simulationStep, setSimulationStep] = useState(0);
+  const [customRoute, setCustomRoute] = useState(null);
+  const [routeKind, setRouteKind] = useState("berry");
+  const routeKindRef = useRef("berry");
+  const berryFetchIdRef = useRef(0);
+  const customFetchIdRef = useRef(0);
+  const pendingFlyTo = useRef(false);
+
+  const [drawingMode, setDrawingMode] = useState(false);
+  const [drawnPoints, setDrawnPoints] = useState([]);
+  const [drawnSegments, setDrawnSegments] = useState([]);
+  const [drawingLoading, setDrawingLoading] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const drawnPointsRef = useRef([]);
+  const drawnSegmentsRef = useRef([]);
+  const undonePointsRef = useRef([]);
+  const undoneSegmentsRef = useRef([]);
+  const fetchIdRef = useRef(0);
+
+  const [layerPopup, setLayerPopup] = useState(null);
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [clipboardToast, setClipboardToast] = useState(null);
+  const [selectedSatellite, setSelectedSatellite] = useState(null);
+  const [satelliteLoading, setSatelliteLoading] = useState(false);
+  const [satelliteTab, setSatelliteTab] = useState("wind");
+  const [pointInfoName, setPointInfoName] = useState("");
+  const [pointInfoFlags, setPointInfoFlags] = useState([null, null]);
+
+  const onFeature = useCallback((fiche) => {
+    setSelectedSatellite(null);
+    setLayerPopup(fiche);
+  }, []);
+  const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady);
+
+  const activeStops = useMemo(() => activeSimulationStops(customRoute, points.length ? points : ITINERARY_POINTS), [customRoute, points]);
+  const activeSegments = useMemo(() => activeSimulationSegments(customRoute, segments), [customRoute, segments]);
+  const simTargets = useMemo(() => buildSimTargets(activeSegments, activeStops), [activeSegments, activeStops]);
+  const routeStartPos = useMemo(() => simulationStartPos(simTargets), [simTargets]);
+  const activeCatamaranPos = catamaranPos ?? routeStartPos;
+
+  const flyToPos = useCallback((lat, lon) => {
+    mapRef.current?.flyTo([lat, lon], 8, { duration: 0.8 });
+  }, [mapRef]);
+
+  const handleSimNext = useCallback(() => {
+    const nextStep = simulationStep + 1;
+    if (nextStep >= simTargets.length) return;
+    setSimulationStep(nextStep);
+    setCatamaranPos(simTargets[nextStep]);
+    pendingFlyTo.current = true;
+  }, [simulationStep, simTargets]);
+
+  const handleSimPrev = useCallback(() => {
+    const prevStep = simulationStep - 1;
+    if (prevStep < 0) return;
+    setSimulationStep(prevStep);
+    setCatamaranPos(simTargets[prevStep]);
+    pendingFlyTo.current = true;
+  }, [simulationStep, simTargets]);
+
+  const handleCatamaranDrag = useCallback((pos) => {
+    setCatamaranPos(pos);
+    let bestIdx = simulationStep;
+    let bestDist = Infinity;
+    simTargets.forEach((tgt, i) => {
+      const d = Math.hypot(tgt.lat - pos.lat, tgt.lon - pos.lon);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    });
+    setSimulationStep(bestIdx);
+  }, [simulationStep, simTargets]);
+
+  const legContext = useLegContext(
+    simulationMode ? activeCatamaranPos.lat : null,
+    simulationMode ? activeCatamaranPos.lon : null,
+    activeSegments,
+    activeStops,
+    undefined,
+    simulationMode ? simulationStep : null,
+  );
+
+  useEffect(() => {
+    if (!pendingFlyTo.current || !legContext) return;
+    pendingFlyTo.current = false;
+    flyToPos(legContext.snappedPosition[1], legContext.snappedPosition[0]);
+  }, [legContext, flyToPos]);
+
+  useEffect(() => {
+    if (!simulationMode) return;
+    setSimulationStep(0);
+    setCatamaranPos(routeStartPos);
+    pendingFlyTo.current = true;
+  }, [customRoute]);
+
+  const snapped = legContext?.snappedPosition;
+  useCatamaranMarker(mapRef, {
+    visible: simulationMode && snapped,
+    lat: snapped?.[1],
+    lon: snapped?.[0],
+    bearing: legContext?.bearing || 0,
+    onDrag: handleCatamaranDrag,
+    mapReady,
+  });
+
+  const routeCoords = useMemo(
+    () => segments.filter((s) => !s.nonMaritime).flatMap((s) => s.coords || []),
+    [segments],
+  );
+  const markerOffsets = useMarkerOffsets(points, mapRef, routeCoords);
+
+  useRouteLayer(mapRef, { segments, customRoute, drawingMode, drawnSegments, mapReady });
+
+  const applyBerryBriefing = useCallback(() => {
+    setExpeditionPlan(getCachedPlan(lang) || { executive_briefing: t("berryLocalBriefing") });
+    setBriefingLoading(false);
+  }, [lang, t]);
+
+  const handleRouteSwitchToBerry = () => {
+    customFetchIdRef.current += 1;
+    routeKindRef.current = "berry";
+    setCustomRoute(null);
+    setRouteKind("berry");
+    applyBerryBriefing();
+  };
+
+  const fetchCustomPlan = useCallback((geojson) => {
+    const applyFallback = () => setExpeditionPlan(buildLocalCustomBriefing(geojson, lang));
+    setExpeditionPlan(null);
+    const wps = waypointsFromCollection(geojson);
+    const hasLine = (geojson?.features || []).some((f) => f?.geometry?.type === "LineString" && f.geometry.coordinates?.length >= 2);
+    if (wps.length < 2 && !hasLine) { setBriefingLoading(false); applyFallback(); return; }
+    const requestId = ++customFetchIdRef.current;
+    setBriefingLoading(true);
+    const finish = (plan) => {
+      if (customFetchIdRef.current !== requestId || routeKindRef.current !== "custom") return;
+      setExpeditionPlan(plan);
+      setBriefingLoading(false);
+    };
+    if (!ORCHESTRATOR_URL) { finish(buildLocalCustomBriefing(geojson, lang)); return; }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    fetch(`${ORCHESTRATOR_URL}/api/v1/expedition/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: lang, waypoints: wps }),
+      signal: ctrl.signal,
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`plan ${r.status}`))))
+      .then((data) => finish(data?.expedition_plan?.executive_briefing ? data.expedition_plan : buildLocalCustomBriefing(geojson, lang)))
+      .catch(() => finish(buildLocalCustomBriefing(geojson, lang)))
+      .finally(() => clearTimeout(timer));
+  }, [lang]);
+
+  const handleCustomRoute = (geojson) => {
+    berryFetchIdRef.current += 1;
+    routeKindRef.current = "custom";
+    setCustomRoute(geojson);
+    setRouteKind("custom");
+    setBriefingLoading(true);
+    fetchCustomPlan(geojson);
+  };
+
+  const _resetDrawState = () => {
+    setDrawnPoints([]);
+    setDrawnSegments([]);
+    setCanRedo(false);
+    drawnPointsRef.current = [];
+    drawnSegmentsRef.current = [];
+    undonePointsRef.current = [];
+    undoneSegmentsRef.current = [];
+    fetchIdRef.current = 0;
+  };
+
+  const handleDrawStart = () => {
+    setSimulationMode(false);
+    setCatamaranPos(null);
+    setSimulationStep(0);
+    setDrawingMode(true);
+    _resetDrawState();
+    berryFetchIdRef.current += 1;
+    setExpeditionPlan(null);
+    setBriefingLoading(false);
+  };
+
+  const handleDrawFinish = () => {
+    const lineFeatures = drawnSegmentsRef.current.filter((s) => s.coords?.length > 0).map((s) => ({
+      type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: s.coords },
+    }));
+    const pointFeatures = drawnPointsRef.current.map((p, i) => ({
+      type: "Feature",
+      properties: { name: p.name || `Point ${i + 1}`, flags: p.flags || [], naviguide_type: "drawn_waypoint" },
+      geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+    }));
+    setDrawingMode(false);
+    return { type: "FeatureCollection", features: [...lineFeatures, ...pointFeatures] };
+  };
+
+  const handleDrawContinue = () => {
+    setSimulationMode(false);
+    setCatamaranPos(null);
+    setSimulationStep(0);
+    setDrawingMode(true);
+    setExpeditionPlan(null);
+    setBriefingLoading(false);
+  };
+
+  const handleCustomDelete = () => {
+    customFetchIdRef.current += 1;
+    routeKindRef.current = "berry";
+    setCustomRoute(null);
+    setRouteKind("berry");
+    _resetDrawState();
+    applyBerryBriefing();
+  };
+
+  const fetchDrawnSegment = async (from, to) => {
+    const myFetchId = ++fetchIdRef.current;
+    setDrawingLoading(true);
+    try {
+      const params = new URLSearchParams({ start_lat: from.lat, start_lon: from.lon, end_lat: to.lat, end_lon: to.lon });
+      const res = await fetch(`${API_URL}/route?${params}`);
+      const data = await res.json();
+      let coords = coordsFromRoutePayload(data);
+      let failed = false;
+      if (!coords.length) {
+        coords = [[from.lon, from.lat], [to.lon, to.lat]];
+        failed = true;
+      }
+      if (fetchIdRef.current === myFetchId) {
+        const updated = [...drawnSegmentsRef.current, { coords, failed }];
+        drawnSegmentsRef.current = updated;
+        setDrawnSegments([...updated]);
+      }
+    } catch {
+      if (fetchIdRef.current === myFetchId) {
+        const updated = [...drawnSegmentsRef.current, { coords: [[from.lon, from.lat], [to.lon, to.lat]], failed: true }];
+        drawnSegmentsRef.current = updated;
+        setDrawnSegments([...updated]);
+      }
+    } finally {
+      if (fetchIdRef.current === myFetchId) setDrawingLoading(false);
+    }
+  };
+
+  const handleDrawingClick = (lat, lon) => {
+    const newPoint = { lat, lon };
+    const updated = [...drawnPointsRef.current, newPoint];
+    drawnPointsRef.current = updated;
+    undonePointsRef.current = [];
+    undoneSegmentsRef.current = [];
+    setCanRedo(false);
+    setDrawnPoints([...updated]);
+    if (updated.length >= 2) fetchDrawnSegment(updated[updated.length - 2], newPoint);
+  };
+
+  const handleDrawUndo = () => {
+    if (!drawnPointsRef.current.length) return;
+    fetchIdRef.current += 1;
+    undonePointsRef.current = [...undonePointsRef.current, drawnPointsRef.current.at(-1)];
+    drawnPointsRef.current = drawnPointsRef.current.slice(0, -1);
+    if (drawnSegmentsRef.current.length) {
+      undoneSegmentsRef.current = [...undoneSegmentsRef.current, drawnSegmentsRef.current.at(-1)];
+      drawnSegmentsRef.current = drawnSegmentsRef.current.slice(0, -1);
+    }
+    setDrawnPoints([...drawnPointsRef.current]);
+    setDrawnSegments([...drawnSegmentsRef.current]);
+    setDrawingLoading(false);
+    setCanRedo(true);
+  };
+
+  const handleDrawRedo = () => {
+    if (!undonePointsRef.current.length) return;
+    const restoredPoint = undonePointsRef.current.at(-1);
+    undonePointsRef.current = undonePointsRef.current.slice(0, -1);
+    drawnPointsRef.current = [...drawnPointsRef.current, restoredPoint];
+    if (undoneSegmentsRef.current.length) {
+      drawnSegmentsRef.current = [...drawnSegmentsRef.current, undoneSegmentsRef.current.at(-1)];
+      undoneSegmentsRef.current = undoneSegmentsRef.current.slice(0, -1);
+    }
+    setDrawnPoints([...drawnPointsRef.current]);
+    setDrawnSegments([...drawnSegmentsRef.current]);
+    setCanRedo(undonePointsRef.current.length > 0);
+  };
+
+  useEffect(() => {
+    if (routeKind !== "berry" || drawingMode) return;
+    setExpeditionPlan(getCachedPlan(lang) || { executive_briefing: t("berryLocalBriefing") });
+    if (!ORCHESTRATOR_URL) return;
+    const requestId = ++berryFetchIdRef.current;
+    fetch(`${ORCHESTRATOR_URL}/api/v1/expedition/plan/berry-mappemonde`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        language: lang,
+        waypoints: ITINERARY_POINTS.map((p) => ({
+          name: p.name, lat: p.lat, lon: p.lon, type: p.flag ? "escale_obligatoire" : "point_intermediaire",
+        })),
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (routeKindRef.current !== "berry" || berryFetchIdRef.current !== requestId) return;
+        if (data?.expedition_plan) {
+          setExpeditionPlan(data.expedition_plan);
+          setCachedPlan(lang, data.expedition_plan);
+        }
+      })
+      .catch(() => {});
+  }, [lang, routeKind, drawingMode, t]);
+
+  useEffect(() => {
+    if (routeKind !== "custom" || drawingMode || !customRoute) return;
+    fetchCustomPlan(customRoute);
+  }, [lang]);
+
+  useEffect(() => { setPoints(ITINERARY_POINTS); }, []);
+
+  useEffect(() => {
+    if (!points.length) return undefined;
+    const legs = buildBerryLegs(points);
+    let cancelled = false;
+    (async () => {
+      boundsApplied.current = false;
+      setLoading(true);
+      setOfficialFallback(false);
+      setSegProgress({ done: 0, total: legs.length });
+      const accumulated = [];
+      const fetchLeg = async (leg) => {
+        if (isNonMaritimeLeg(leg.from.name, leg.to.name)) {
+          return { ...leg, coords: [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]], nonMaritime: true };
+        }
+        try {
+          const params = new URLSearchParams({
+            start_lat: leg.from.lat, start_lon: leg.from.lon, end_lat: leg.to.lat, end_lon: leg.to.lon, check_wind: false,
+          });
+          const res = await fetch(`${API_URL}/route?${params}`);
+          if (!res.ok) return { ...leg, coords: [], error: `HTTP ${res.status}` };
+          const data = await res.json();
+          const coords = orientCoords(coordsFromRoutePayload(data), leg.from, leg.to);
+          if (!coords.length) return { ...leg, coords: [], error: "empty route" };
+          return { ...leg, coords, nonMaritime: false };
+        } catch (e) {
+          return { ...leg, coords: [], error: e.message };
+        }
+      };
+      for (let i = 0; i < legs.length && !cancelled; i += SEGMENT_BATCH_SIZE) {
+        const batch = await Promise.all(legs.slice(i, i + SEGMENT_BATCH_SIZE).map(fetchLeg));
+        const maritimeFailed = batch.filter((r) => !r.nonMaritime);
+        if (i === 0 && maritimeFailed.length && maritimeFailed.every((r) => !r.coords?.length || r.error)) {
+          try {
+            const fc = await fetch("/route.geojson").then((r) => r.json());
+            const official = routeFromOfficial(fc);
+            if (!cancelled) {
+              setSegments(official.segments);
+              setOfficialFallback(true);
+              setLoading(false);
+              setSegProgress({ done: official.segments.length, total: official.segments.length });
+            }
+            return;
+          } catch { /* keep going */ }
+        }
+        accumulated.push(...batch);
+        if (!cancelled) {
+          setSegments(accumulated.filter((r) => r.coords?.length));
+          setSegProgress({ done: Math.min(i + SEGMENT_BATCH_SIZE, legs.length), total: legs.length });
+          if (i === 0) setLoading(false);
+        }
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [points]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !segments.length || boundsApplied.current) return;
+    if (segProgress.done < segProgress.total && segProgress.total > 0) return;
+    boundsApplied.current = true;
+    const all = segments.flatMap((s) => s.coords || []);
+    if (all.length < 2) return;
+    const b = L.latLngBounds(all.map(([lon, lat]) => [lat, lon]));
+    map.fitBounds(b, { padding: [80, 80] });
+  }, [segments, segProgress, mapRef, mapReady]);
+
+  const fetchSatellite = async (lat, lon, extra = {}) => {
+    setSatelliteLoading(true);
+    setSatelliteTab("wind");
+    setSelectedSatellite({ lat, lon, ...extra });
+    try {
+      const [wind, wave, current] = await Promise.all([
+        fetch(`${API_URL}/wind`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ latitude: lat, longitude: lon }) }).then((r) => r.json()),
+        fetch(`${API_URL}/wave`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ latitude: lat, longitude: lon }) }).then((r) => r.json()),
+        fetch(`${API_URL}/current`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ latitude: lat, longitude: lon }) }).then((r) => r.json()),
+      ]);
+      setSelectedSatellite((prev) => ({ ...prev, wind, wave, current }));
+    } catch {
+      setSelectedSatellite((prev) => ({ ...prev, error: true }));
+    } finally {
+      setSatelliteLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return undefined;
+    const onClick = (e) => {
+      const { lat, lng: lon } = e.latlng;
+      if (drawingMode) { handleDrawingClick(lat, lon); return; }
+      const active = customRoute ? featuresToSegments(customRoute) : segments;
+      const near = active.some((s) => s.coords?.length > 1 && pointToSegmentNm(lat, lon, s.coords) < 25);
+      if (near) fetchSatellite(lat, lon);
+    };
+    const onCtx = (e) => {
+      L.DomEvent.preventDefault(e);
+      const text = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+      navigator.clipboard.writeText(text).then(() => {
+        setClipboardToast(text);
+        setTimeout(() => setClipboardToast(null), 2000);
+      });
+    };
+    map.on("click", onClick);
+    map.on("contextmenu", onCtx);
+    map.getContainer().style.cursor = drawingMode ? "crosshair" : "";
+    return () => {
+      map.off("click", onClick);
+      map.off("contextmenu", onCtx);
+    };
+  }, [mapRef, mapReady, drawingMode, segments, customRoute]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return undefined;
+    const group = L.layerGroup().addTo(map);
+    const src = drawingMode ? drawnPoints.map((p, i) => ({ ...p, name: p.name || `${i + 1}`, flag: "" })) : (customRoute ? [] : points);
+    src.forEach((p, i) => {
+      if (!p.flag && !drawingMode) return;
+      const off = markerOffsets[i] || [0, 0];
+      const html = p.flag
+        ? `<img src="${typeof p.flag === "string" ? p.flag : p.flag}" alt="" style="height:22px;transform:translate(${off[0]}px,${off[1]}px)" />`
+        : `<div style="width:10px;height:10px;border-radius:50%;background:${i === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
+      const m = L.marker([p.lat, p.lon], {
+        icon: L.divIcon({ className: "flag-divicon", html, iconSize: [24, 24], iconAnchor: [12, 12] }),
+        interactive: true,
+      }).addTo(group);
+      m.on("mouseover", () => setHoveredPoint(p));
+      m.on("mouseout", () => setHoveredPoint(null));
+      if (drawingMode) {
+        m.on("click", (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          setPointInfoName(p.name || "");
+          setSelectedSatellite({ lat: p.lat, lon: p.lon, drawPointIndex: i });
+        });
+      }
+    });
+    return () => group.remove();
+  }, [mapRef, mapReady, points, markerOffsets, drawingMode, drawnPoints, customRoute]);
+
+  const handleSaveDrawPointMeta = () => {
+    if (selectedSatellite?.drawPointIndex != null) {
+      const idx = selectedSatellite.drawPointIndex;
+      const updated = [...drawnPointsRef.current];
+      updated[idx] = { ...updated[idx], name: pointInfoName.trim() || undefined, flags: pointInfoFlags.filter(Boolean) };
+      drawnPointsRef.current = updated;
+      setDrawnPoints([...updated]);
+    }
+    setSelectedSatellite(null);
+  };
+
+  const drawingMessage = drawnPoints.length === 0 ? t("drawStart") : drawnPoints.length === 1 ? t("drawFirstStop") : t("drawNextStop");
+  const statsSegs = customRoute ? featuresToSegments(customRoute) : segments;
+  const stats = summarizeRoute(statsSegs);
+
+  return (
+    <div style={{ height: "100vh", width: "100vw", position: "relative" }} className={isLightMode ? "light-mode" : ""}>
+      <div ref={containerRef} id="simulator-map" style={{ height: "100%", width: "100%" }} />
+
+      <Sidebar
+        plan={expeditionPlan}
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen((o) => !o)}
+        onCustomRoute={handleCustomRoute}
+        onRouteSwitchToBerry={handleRouteSwitchToBerry}
+        isDrawing={drawingMode}
+        onDrawStart={handleDrawStart}
+        onDrawContinue={handleDrawContinue}
+        onDrawFinish={handleDrawFinish}
+        onCustomDelete={handleCustomDelete}
+        canContinueDraw={drawnPoints.length > 0}
+        canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
+        isCockpit={false}
+        polarData={polarData}
+        maritimeLayers={maritimeLayers}
+        briefingLoading={briefingLoading}
+        officialFallback={officialFallback}
+        simulationMode={simulationMode}
+        onSimulationToggle={() => {
+          const entering = !simulationMode;
+          setSimulationMode(entering);
+          if (entering) {
+            setCatamaranPos(routeStartPos);
+            setSimulationStep(0);
+            if (routeStartPos) flyToPos(routeStartPos.lat, routeStartPos.lon);
+          } else setCatamaranPos(null);
+        }}
+        onNext={handleSimNext}
+        canNext={simulationMode && simulationStep < simTargets.length - 1}
+        onPrev={handleSimPrev}
+        canPrev={simulationMode && simulationStep > 0}
+        legContext={legContext}
+      />
+
+      <ToolsSidebar
+        segments={statsSegs}
+        points={customRoute
+          ? (customRoute.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
+            name: f.properties?.name || "", lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], flag: "",
+          }))
+          : points}
+        open={toolsOpen}
+        onToggle={() => setToolsOpen((o) => !o)}
+        isLightMode={isLightMode}
+        onLightModeChange={setIsLightMode}
+        polarData={polarData}
+        onPolarDataLoaded={setPolarData}
+        routeDistanceNm={stats.nm}
+        routeSegmentCount={stats.segments}
+      />
+
+      {loading && (
+        <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 pointer-events-none">
+          <div className="w-10 h-10 border-4 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
+          <div className="mt-4 text-white/90 text-sm font-medium">{t("calculatingRoutes")}</div>
+        </div>
+      )}
+
+      {!loading && segProgress.done < segProgress.total && (
+        <div className="absolute bottom-20 right-5 z-20 flex items-center gap-2 bg-slate-900/90 text-white text-xs font-medium px-3 py-2 rounded-full shadow-lg pointer-events-none">
+          <div className="w-3.5 h-3.5 border-2 border-blue-400/40 border-t-blue-400 rounded-full animate-spin" />
+          <span>{t("routesProgress", { done: segProgress.done, total: segProgress.total })}</span>
+        </div>
+      )}
+
+      {drawingMode && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-2 bg-slate-900/95 border border-green-500/50 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span>{drawingMessage}</span>
+              {drawingLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              <div className="flex gap-1 ml-1 pointer-events-auto">
+                <button onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
+                <button onClick={handleDrawRedo} disabled={!canRedo} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("redo")}><Redo2 size={13} /></button>
+              </div>
+            </div>
+            {drawnSegments.some((s) => s.failed) && (
+              <div className="bg-orange-950/90 border border-orange-400/50 text-orange-100 text-[11px] font-medium px-3 py-1 rounded-full">
+                {t("searouteDrawFailed")}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {clipboardToast && (
+        <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full">
+          📋 {clipboardToast} {t("copied")}
+        </div>
+      )}
+
+      {hoveredPoint && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 bg-slate-900/90 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none">
+          {hoveredPoint.name}
+        </div>
+      )}
+
+      {maritimeLayers.showClimatology && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full">
+          {t("climatologyStub")}
+        </div>
+      )}
+
+      <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
+
+      {selectedSatellite && (
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-30 w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl">
+          <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={() => setSelectedSatellite(null)}><X size={14} /></button>
+          <div className="font-semibold mb-2">{t("satelliteData")}</div>
+          <div className="flex gap-1 mb-2">
+            {["wind", "waves", "currents"].map((tab) => (
+              <button key={tab} type="button" onClick={() => setSatelliteTab(tab)} className={`px-2 py-1 rounded ${satelliteTab === tab ? "bg-blue-600" : "bg-slate-800"}`}>
+                {tab === "wind" ? t("windTab") : tab === "waves" ? t("wavesTab") : t("currentsTab")}
+              </button>
+            ))}
+          </div>
+          {satelliteLoading && <p>{t("fetchingSatellite")}</p>}
+          {!satelliteLoading && satelliteTab === "wind" && (
+            selectedSatellite.wind
+              ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <WindDirectionArrow direction={selectedSatellite.wind.wind_direction} />
+                    <span>{t("windSpeed")} {selectedSatellite.wind.wind_speed_knots} kt</span>
+                  </div>
+                  <div>{t("windDirection")} {getCardinalDirection(selectedSatellite.wind.wind_direction)}</div>
+                </div>
+              )
+              : <p>{t("noWindData")}</p>
+          )}
+          {!satelliteLoading && satelliteTab === "waves" && (
+            selectedSatellite.wave
+              ? <div>{t("waveHeight")} {selectedSatellite.wave.significant_wave_height_m} m · {t("wavePeriod")} {selectedSatellite.wave.mean_wave_period} s</div>
+              : <p>{t("noWaveData")}</p>
+          )}
+          {!satelliteLoading && satelliteTab === "currents" && (
+            selectedSatellite.current
+              ? <div>{t("currentSurfaceSpeed")} {selectedSatellite.current.speed_knots} kt</div>
+              : <p>{t("noCurrentData")}</p>
+          )}
+          {selectedSatellite.drawPointIndex != null && (
+            <div className="mt-2 border-t border-white/10 pt-2">
+              <label className="block text-slate-400 mb-1">{t("waypointName")}</label>
+              <input value={pointInfoName} onChange={(e) => setPointInfoName(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1" placeholder={t("waypointNamePlaceholder")} />
+              <button type="button" onClick={handleSaveDrawPointMeta} className="mt-2 w-full bg-blue-600 rounded py-1">{t("saveClose")}</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10 text-[9px] text-white/50 pointer-events-none">
+        {t("notForNavigation")}
+      </p>
+    </div>
+  );
+}

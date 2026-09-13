@@ -1,18 +1,38 @@
 # NAVIGUIDE simulator
 
-Sous-dossier **hors production** : le cockpit de l’expédition Berry-Mappemonde
+Sous-dossier **hors production** : le cockpit de l’expédition Berry-Mappemonde <!-- pragma: allowlist secret -->
 (carte Leaflet, boutons de couches, bateau qui avance, searoute, polaires).
 
 `naviguide.fr` et `blueintelligence.online` ne sont **pas** concernés.
 
-L’application Vite n’est pas encore posée. L’étape 1 est décrite ici :
+Plan : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)
 
-→ [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)
+## Lancer (macOS, Terminal)
 
-**Dans l’étape 1 :** film NAVIGUIDE, Leaflet, searoute, draw your own route,
-polar engine (upload + VMG), simulation, pastilles de couches, stub `ici()`.
+Deux onglets. Depuis ce dossier :
 
-**Pas dans l’étape 1 :** 4 chats Ports / Sécurité / Météo / Cruisers, chat
-polar, import / export GeoJSON ou KML, Tavily, Nemotron.
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r server/requirements.txt
+uvicorn server.main:app --host 127.0.0.1 --port 8010 --reload
+```
 
-**Ne convient pas à la navigation.** Même avertissement que Blue Intelligence.
+Autre onglet :
+
+```bash
+cd naviguide-simulator
+npm install
+npm run dev
+```
+
+Ouvrir `http://localhost:5174`.
+
+| Ça marche | Ça n’existe pas encore |
+|---|---|
+| Film NAVIGUIDE (2 sidebars, Berry, simulation, briefing) | 4 chats Ports / Sécurité / Météo / Cruisers |
+| Searoute + draw your own route | Chat polar |
+| Polar upload + tableau VMG (Leopard 46) | Import / export GeoJSON ou KML |
+| Pastilles de couches (dont Science + Climat stub) | `ici()` rempli (ZEE, PoE Gold, Tavily) |
+| Clic route → vent / vague / courant | Nemotron / Token Factory |
+
+**Ne convient pas à la navigation.**
