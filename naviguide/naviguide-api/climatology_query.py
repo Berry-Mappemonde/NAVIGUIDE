@@ -67,7 +67,7 @@ def meta(month: int = 1) -> dict:
             "cyclone": s["CYCLONE_PERIOD"],
         },
         "provenance": s["PROVENANCE"],
-        "snapshot": s["snapshot_status"](),
+        "snapshot": s["snapshot_status"](month),
         "painted": False,
     }
 
@@ -100,7 +100,7 @@ def point(lat: float, lon: float, month: int, dest_lat=None, dest_lon=None, day=
             "longitude": lon,
             "cell_selection": "land" if land else "sea",
         },
-        "snapshot": s["snapshot_status"](),
+        "snapshot": s["snapshot_status"](month),
         "painted": False,
         **blocks,
     }
