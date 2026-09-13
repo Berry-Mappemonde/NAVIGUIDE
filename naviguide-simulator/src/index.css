@@ -3,7 +3,14 @@
 
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
-.leaflet-container { background: #0f172a; font: inherit; }
+.leaflet-container { background: #0f172a; font: inherit; z-index: 0; }
+
+.naviguide-sidebar-panel {
+  z-index: 2000 !important;
+}
+.naviguide-sidebar-toggle {
+  z-index: 2010 !important;
+}
 
 .catamaran-divicon, .flag-divicon { background: none !important; border: none !important; }
 

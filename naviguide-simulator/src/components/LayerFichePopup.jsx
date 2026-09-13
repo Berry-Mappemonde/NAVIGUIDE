@@ -77,7 +77,7 @@ export function LayerFichePopup({ popup, onClose }) {
   }
 
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-30 layer-fiche-popup shadow-2xl">
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[2100] layer-fiche-popup shadow-2xl">
       <button type="button" onClick={onClose} className="absolute top-2 right-2 text-slate-400 hover:text-white">
         <X size={14} />
       </button>
