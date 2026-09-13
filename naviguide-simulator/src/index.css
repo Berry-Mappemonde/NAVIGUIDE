@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+
+.leaflet-container { background: #0f172a; font: inherit; z-index: 0; }
+
+.naviguide-sidebar-panel {
+  z-index: 2000 !important;
+}
+.naviguide-sidebar-toggle {
+  z-index: 2010 !important;
+}
+
+.catamaran-divicon, .flag-divicon { background: none !important; border: none !important; }
+
+.light-mode .naviguide-sidebar-panel {
+  background-color: rgb(248 250 252 / 0.97) !important;
+  color: rgb(30 41 59);
+  border-color: rgb(203 213 225) !important;
+}
+.light-mode .naviguide-sidebar-toggle {
+  background-color: rgb(248 250 252 / 0.95) !important;
+  color: rgb(15 23 42) !important;
+  border-color: rgb(203 213 225) !important;
+}
+.light-mode .naviguide-sidebar-panel .text-white { color: rgb(15 23 42) !important; }
+.light-mode .naviguide-sidebar-panel .text-slate-200,
+.light-mode .naviguide-sidebar-panel .text-slate-300 { color: rgb(51 65 85) !important; }
+.light-mode .naviguide-sidebar-panel .text-slate-400 { color: rgb(71 85 105) !important; }
+
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
+
+.layer-fiche-popup {
+  min-width: 220px;
+  max-width: 300px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.layer-fiche-popup h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #fff; }
+.layer-fiche-popup a { color: #38bdf8; text-decoration: none; word-break: break-all; }
+.layer-fiche-popup .muted { color: #94a3b8; font-size: 11px; }

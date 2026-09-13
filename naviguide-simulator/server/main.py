@@ -1,0 +1,391 @@
+"""NAVIGUIDE simulator API — searoute, polar (sans chat), proxies, vent."""
+from __future__ import annotations
+
+import math
+import os
+import re
+import sys
+import time
+from pathlib import Path
+from typing import List, Optional, Union
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
+
+_DIR = Path(__file__).resolve().parent
+if str(_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIR))
+
+import httpx
+
+from mem_limits import (
+    ZEE_CACHE_MAX_BYTES,
+    ZEE_MAX_FEATURES_CAP,
+    ZEE_NO_BBOX_MAX_FEATURES,
+    ZEE_RESPONSE_MAX_BYTES,
+    lru_set,
+    too_large,
+)
+from polar_api import router as polar_router
+from route_engine import searoute_with_exact_end
+
+load_dotenv()
+
+COPERNICUS_USERNAME = os.getenv("COPERNICUS_USERNAME")
+COPERNICUS_PASSWORD = os.getenv("COPERNICUS_PASSWORD")
+
+try:
+    from copernicus.getWind import get_wind_data_at_position
+    from copernicus.getWave import get_wave_data_at_position
+    from copernicus.getCurrent import get_current_data_at_position
+except Exception:
+    get_wind_data_at_position = None
+    get_wave_data_at_position = None
+    get_current_data_at_position = None
+
+app = FastAPI(
+    title="NAVIGUIDE simulator",
+    description="Cockpit Berry-Mappemonde — hors production.",  # pragma: allowlist secret
+    version="0.1.0",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(polar_router)
+
+
+class PositionRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+
+@app.get("/")
+def health():
+    return {"service": "naviguide-simulator", "version": "0.1.0"}
+
+
+@app.get("/route")
+def get_route(
+    start_lat: float = Query(...),
+    start_lon: float = Query(...),
+    end_lat: float = Query(...),
+    end_lon: float = Query(...),
+    check_wind: bool = Query(False),
+):
+    start = (start_lon, start_lat)
+    end = (end_lon, end_lat)
+    try:
+        route = searoute_with_exact_end(start, end)
+        if route is None:
+            raise HTTPException(status_code=404, detail="Route non trouvée")
+        return route
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def _sim_wind(lat: float, lon: float) -> dict:
+    import datetime
+    import random
+
+    rng = random.Random(int(abs(lat * 100) + abs(lon * 100)))
+    speed_ms = rng.uniform(3, 18)
+    direction = round(rng.uniform(0, 360), 1)
+    u = round(-speed_ms * math.sin(math.radians(direction)), 3)
+    v = round(-speed_ms * math.cos(math.radians(direction)), 3)
+    return {
+        "latitude": lat,
+        "longitude": lon,
+        "u_component": u,
+        "v_component": v,
+        "wind_speed": round(speed_ms, 2),
+        "wind_speed_kmh": round(speed_ms * 3.6, 1),
+        "wind_speed_knots": round(speed_ms * 1.944, 1),
+        "wind_direction": direction,
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "simulation": True,
+        "source": "estimated (Copernicus unavailable)",
+    }
+
+
+def _sim_wave(lat: float, lon: float) -> dict:
+    import datetime
+    import random
+
+    rng = random.Random(int(abs(lat * 137) + abs(lon * 73)))
+    return {
+        "latitude": lat,
+        "longitude": lon,
+        "significant_wave_height_m": round(rng.uniform(0.3, 4.5), 2),
+        "mean_wave_period": round(rng.uniform(4, 14), 1),
+        "mean_wave_direction": round(rng.uniform(0, 360), 1),
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "simulation": True,
+        "source": "estimated (Copernicus unavailable)",
+    }
+
+
+def _sim_current(lat: float, lon: float) -> dict:
+    import datetime
+    import random
+
+    rng = random.Random(int(abs(lat * 211) + abs(lon * 157)))
+    speed_ms = rng.uniform(0.05, 1.2)
+    direction = round(rng.uniform(0, 360), 1)
+    return {
+        "latitude": lat,
+        "longitude": lon,
+        "u_component": round(speed_ms * math.sin(math.radians(direction)), 4),
+        "v_component": round(speed_ms * math.cos(math.radians(direction)), 4),
+        "speed_ms": round(speed_ms, 3),
+        "speed_knots": round(speed_ms * 1.944, 2),
+        "speed_kmh": round(speed_ms * 3.6, 2),
+        "direction_deg": direction,
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "simulation": True,
+        "source": "estimated (Copernicus unavailable)",
+    }
+
+
+@app.post("/wind")
+def get_wind(request: PositionRequest):
+    try:
+        if COPERNICUS_USERNAME and COPERNICUS_PASSWORD and get_wind_data_at_position:
+            wind_data = get_wind_data_at_position(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                username=COPERNICUS_USERNAME,
+                password=COPERNICUS_PASSWORD,
+            )
+            if wind_data is not None:
+                return wind_data
+    except Exception:
+        pass
+    return _sim_wind(request.latitude, request.longitude)
+
+
+@app.post("/wave")
+def get_wave(request: PositionRequest):
+    try:
+        if COPERNICUS_USERNAME and COPERNICUS_PASSWORD and get_wave_data_at_position:
+            wave_data = get_wave_data_at_position(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                username=COPERNICUS_USERNAME,
+                password=COPERNICUS_PASSWORD,
+            )
+            if wave_data is not None:
+                return wave_data
+    except Exception:
+        pass
+    return _sim_wave(request.latitude, request.longitude)
+
+
+@app.post("/current")
+def get_current(request: PositionRequest):
+    try:
+        if COPERNICUS_USERNAME and COPERNICUS_PASSWORD and get_current_data_at_position:
+            current_data = get_current_data_at_position(
+                latitude=request.latitude,
+                longitude=request.longitude,
+                username=COPERNICUS_USERNAME,
+                password=COPERNICUS_PASSWORD,
+            )
+            if current_data is not None:
+                return current_data
+    except Exception:
+        pass
+    return _sim_current(request.latitude, request.longitude)
+
+
+_wpi_cache: dict = {"data": None, "ts": 0.0}
+_WPI_CACHE_TTL = 86_400
+_zee_cache: dict = {"entries": {}}
+_ZEE_CACHE_TTL = 86_400
+_VLIZ_WMS = "https://geo.vliz.be/geoserver/MarineRegions/wms"
+
+_DMS_RE = re.compile(
+    r"""(\d+)\s*[°d]\s*(\d+)\s*[''′]\s*(\d+(?:\.\d+)?)\s*[""″]?\s*([NSEW]?)""",
+    re.IGNORECASE,
+)
+
+
+def _parse_coord(value: Optional[Union[str, float, int]]) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    m = _DMS_RE.search(s)
+    if m:
+        deg, mins, secs, hemi = m.groups()
+        decimal = float(deg) + float(mins) / 60.0 + float(secs) / 3600.0
+        if hemi.upper() in ("S", "W"):
+            decimal = -decimal
+        return decimal
+    return None
+
+
+@app.get("/proxy/zee/wms")
+async def proxy_zee_wms(request: Request):
+    params = dict(request.query_params)
+    bbox = params.get("bbox") or params.get("BBOX")
+    if not bbox:
+        raise HTTPException(status_code=400, detail="Missing bbox parameter")
+    params.setdefault("service", "WMS")
+    params.setdefault("version", "1.1.1")
+    params.setdefault("request", "GetMap")
+    params["layers"] = "eez_boundaries"
+    params.setdefault("format", "image/png")
+    params.setdefault("transparent", "true")
+    params.setdefault("srs", "EPSG:3857")
+    params.setdefault("width", "512")
+    params.setdefault("height", "512")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(_VLIZ_WMS, params=params)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail=f"VLIZ WMS HTTP {resp.status_code}")
+            return Response(content=resp.content, media_type="image/png")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"ZEE WMS error: {exc}") from exc
+
+
+@app.get("/proxy/zee")
+async def proxy_zee(
+    bbox: Optional[str] = Query(None),
+    maxFeatures: int = Query(80, ge=1, le=ZEE_MAX_FEATURES_CAP),
+):
+    if not bbox and maxFeatures > ZEE_NO_BBOX_MAX_FEATURES:
+        raise HTTPException(400, "bbox (minlon,minlat,maxlon,maxlat) requis pour les ZEE")
+    cache_key = bbox or f"nobbox:{maxFeatures}"
+    cached = _zee_cache.get("entries") or {}
+    hit = cached.get(cache_key)
+    if hit and (time.time() - hit["ts"] < _ZEE_CACHE_TTL):
+        return JSONResponse(content=hit["data"])
+    params: dict = {
+        "service": "WFS",
+        "version": "1.1.0",
+        "request": "GetFeature",
+        "typeName": "eez",
+        "outputFormat": "application/json",
+        "maxFeatures": maxFeatures,
+    }
+    if bbox:
+        params["bbox"] = bbox
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.get(
+                "https://geo.vliz.be/geoserver/MarineRegions/wfs",
+                params=params,
+            )
+            resp.raise_for_status()
+            raw = resp.content or b""
+            if too_large(len(raw), ZEE_RESPONSE_MAX_BYTES):
+                raise HTTPException(502, f"ZEE upstream trop volumineux ({len(raw)} octets)")
+            data = resp.json()
+            if bbox and not too_large(len(raw), ZEE_CACHE_MAX_BYTES):
+                lru_set(_zee_cache.setdefault("entries", {}), cache_key, {"data": data, "ts": time.time()}, max_items=4)
+            return JSONResponse(content=data)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"ZEE upstream error: {exc}") from exc
+
+
+@app.get("/proxy/ports")
+async def proxy_ports():
+    if _wpi_cache["data"] and (time.time() - _wpi_cache["ts"] < _WPI_CACHE_TTL):
+        return JSONResponse(content=_wpi_cache["data"])
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get(
+                "https://msi.nga.mil/api/publications/world-port-index",
+                params={"output": "json"},
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"WPI upstream error: {exc}") from exc
+
+    ports: List = raw if isinstance(raw, list) else raw.get("ports", [])
+    features = []
+    for p in ports:
+        lat = _parse_coord(p.get("latitude") or p.get("lat"))
+        lon = _parse_coord(p.get("longitude") or p.get("lon"))
+        if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
+            continue
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {
+                "name": p.get("portName") or p.get("name", ""),
+                "country": p.get("countryName") or p.get("country", ""),
+                "region": p.get("regionName") or p.get("region", ""),
+                "wpi_num": p.get("portNumber") or p.get("indexNo", ""),
+            },
+        })
+    geojson = {"type": "FeatureCollection", "features": features}
+    _wpi_cache["data"] = geojson
+    _wpi_cache["ts"] = time.time()
+    return JSONResponse(content=geojson)
+
+
+_OPENSEAMAP_HOSTS = ["tiles.openseamap.org", "t1.openseamap.org"]
+
+
+def _transparent_tile_256() -> bytes:
+    try:
+        import io
+        from PIL import Image
+
+        img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+    except ImportError:
+        return b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+
+
+_TRANSPARENT_TILE = None
+
+
+def _get_transparent_tile() -> bytes:
+    global _TRANSPARENT_TILE
+    if _TRANSPARENT_TILE is None:
+        _TRANSPARENT_TILE = _transparent_tile_256()
+    return _TRANSPARENT_TILE
+
+
+@app.get("/proxy/seamark/{z:int}/{x:int}/{y}.png")
+async def proxy_seamark(z: int, x: int, y: str):
+    try:
+        y_int = int(y)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tile y")
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        for host in _OPENSEAMAP_HOSTS:
+            url = f"https://{host}/seamark/{z}/{x}/{y_int}.png"
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return Response(content=resp.content, media_type="image/png")
+            except Exception:
+                continue
+    return Response(content=_get_transparent_tile(), media_type="image/png")
