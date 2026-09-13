@@ -34,3 +34,6 @@ credentials.json
 *.pem
 *.key
 .credentials
+# Accumulators roses / P90 en cours — ne pas committer
+backend/data/climatology/**/*.partial.npz
+backend/data/climatology/**/*.npz.tmp
