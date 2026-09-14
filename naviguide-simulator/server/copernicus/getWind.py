@@ -91,7 +91,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
             "wind_speed": round(wind_speed, 3),  # m/s
             "wind_speed_kmh": round(wind_speed * 3.6, 2),  # km/h
             "wind_speed_knots": round(wind_speed * 1.944, 2),  # nœuds
-            "wind_direction": round(wind_direction, 1),  # degrés (d'où vient le vent)
+            "wind_direction": round(wind_direction, 1),  # degrees (where the wind comes from)
             "timestamp": timestamp_str
         }
         
@@ -104,7 +104,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
     except Exception as e:
         print(f"❌ Erreur lors de la récupération: {e}")
         import traceback
-        traceback.print_exc()  # ✅ Ajouté pour debug
+        traceback.print_exc()  # debug
         return None
     
 def _climatological_wind_knots(latitude: float, longitude: float) -> float:
