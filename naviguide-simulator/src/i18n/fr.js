@@ -75,7 +75,7 @@ export default {
   gettingStartedText: "Cliquez sur un point de la route pour obtenir les données vent, vague et courant. Tracez votre propre route ou lancez la simulation.",
   searouteUnavailable: "Route officielle (searoute indisponible).",
   searouteDrawFailed: "searoute a échoué — corde temporaire.",
-  berryLocalBriefing: "Expédition Berry-Mappemonde : départ de Saint-Maur (Berry) vers La Rochelle, puis les escales outre-mer. Lancez la simulation pour avancer le catamaran. Le dossier cockpit (sac ici) se remplira à l’étape 2.", // pragma: allowlist secret
+  berryLocalBriefing: "Expédition Berry-Mappemonde : départ de Saint-Maur (Berry) vers La Rochelle, puis les escales outre-mer. Lancez la simulation pour lire la route comme un film (Play, quatre vitesses dont la vitesse réelle du bateau). Le dossier cockpit (sac ici) se remplira à l’étape 2.", // pragma: allowlist secret
   cockpitDossier: "Dossier cockpit",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
@@ -173,9 +173,29 @@ export default {
   // ── Simulation button (Sidebar) ────────────────────────────────────────────
   simulationModeLabel:   "Mode Simulation",
   exitSimulationShort:   "Quitter simulation",
-  simulationModeTooltip: "Mode Simulation — déplacer le catamaran sur la route",
+  simulationModeTooltip: "Mode Simulation — lire l’expédition comme un film (Play, vitesses, escales)",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
   previous: "Précédent",
   next:     "Suivant",
+  previousEscale: "Escale précédente",
+  nextEscale:     "Escale suivante",
+  play:  "Lecture",
+  pause: "Pause",
+
+  // ── Lecteur film ──────────────────────────────────────────────────────────
+  speedReal:        "réelle",
+  speedRead:        "lecture",
+  speedNormal:      "normale",
+  speedFast:        "accéléré",
+  speedRealTitle:   "Vitesse réelle du bateau (1 seconde à l’écran = 1 seconde en mer)",
+  speedReadTitle:   "Lent : on lit pendant la traversée de l’Atlantique (~4 min)",
+  speedNormalTitle: "Vitesse normale : Atlantique en ~70 s",
+  speedFastTitle:   "Accéléré : Atlantique en 20 s",
+  speedRealHint:    "1 s = 1 s en mer",
+  speedLivePolar:   "polaire live",
+  cinema:           "Cinéma",
+  cinemaTooltip:    "Masquer les panneaux pour voir la carte en grand",
+  filmArrived:      "Arrivée à {name}",
+  filmScrub:        "Avancer ou reculer sur la route",
 };
