@@ -31,6 +31,8 @@ backend/data/claude_usage.lock
 *.env
 !.env.example
 !**/.env.example
+# Images Sentinel téléchargées en local (SAFE / zip, hors git)
+scripts/satellite/data/
 credentials.json
 *.pem
 *.key
