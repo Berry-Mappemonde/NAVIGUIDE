@@ -5,121 +5,121 @@
 [![NVIDIA Nemotron](https://img.shields.io/badge/NVIDIA-Nemotron-76B900.svg)](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/)
 [![Nebius Token Factory](https://img.shields.io/badge/Nebius-Token%20Factory-0B1F3A.svg)](https://tokenfactory.nebius.com/)
 
-**Blue Intelligence** transforme le web vivant des données maritimes en une base géospatiale exploitable, présentée sur une carte mondiale interactive.
+**Blue Intelligence** turns the living web of maritime data into a usable geospatial database, shown on an interactive world map.
 
-Application publiée sur **[blueintelligence.online](https://blueintelligence.online)** — un projet [Berry-Mappemonde](https://berrymappemonde.org).
+Published at **[blueintelligence.online](https://blueintelligence.online)** — a [Berry-Mappemonde](https://berrymappemonde.org) project. <!-- pragma: allowlist secret -->
 
-Les complétions LLM passent par des API compatibles OpenAI : **NVIDIA NIM** et **[Nebius Token Factory](https://tokenfactory.nebius.com/)**, y compris la famille **[NVIDIA Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/)** (Nano, Super, Ultra, Lightning). Le code de ce dépôt est en **double licence MIT / Apache-2.0** (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE`).
+LLM completions go through OpenAI-compatible APIs: **NVIDIA NIM** and **[Nebius Token Factory](https://tokenfactory.nebius.com/)**, including the **[NVIDIA Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/)** family (Nano, Super, Ultra, Lightning). Code in this repository is **dual-licensed MIT / Apache-2.0** (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE`).
 
 > [!WARNING]
-> **Ne convient pas à la navigation**
+> **Not for navigation**
 >
-> Blue Intelligence agrège des données participatives (OpenStreetMap) et des
-> extractions automatiques de sources publiques. Aucune autorité hydrographique
-> ou douanière ne les vérifie : marinas, capitaineries, ports d'entrée, AMP et
-> fond « Carte marine » sont fournis à titre indicatif. Vérifiez toujours les
-> cartes marines officielles et les publications gouvernementales avant toute
-> décision en mer. L'atlas climatologique (7ᵉ mode) est une statistique
-> mensuelle sur une période écrite, **pas** le vent de demain.
+> Blue Intelligence aggregates participatory data (OpenStreetMap) and
+> automatic extractions from public sources. No hydrographic or customs
+> authority verifies them: marinas, harbour masters, ports of entry, MPAs
+> and the “Nautical chart” basemap are indicative only. Always check
+> official nautical charts and government publications before any decision
+> at sea. The climatology atlas (7th mode) is a monthly statistic over a
+> written period, **not** tomorrow’s wind.
 
-## Les sept modes
+## The seven modes
 
-| Mode | Couleur | Contenu |
-|------|---------|---------|
-| **Projets** | cyan | ~4 500 projets de conservation marine découverts et extraits automatiquement depuis les portails des grandes fondations (swarm d'agents web + LLM) |
-| **Marinas** | rouge | Annuaire mondial `leisure=marina` (OpenStreetMap), identité `osm_id`, lien Google Maps déterministe. Point plus gros si une fiche `/maps/place/` a été trouvée (TinyFish Search / tag OSM) — on n'en filtre aucune. Les mouillages restent sur le corridor de la route. Hors Formalités / PoE. |
-| **Capitaineries** | ciel | Bureaux `office=harbour_master` OSM (monde) + overlay SHOM CATSCF=6 (France). Téléphone et VHF lus dans les tags, puis les sites officiels. Pas de rattachement aux marinas. |
-| **Formalités** | ambre | Les ~285 Zones Économiques Exclusives mondiales (Marine Regions v12) et leurs **Ports d'Entrée officiels** pour la plaisance, extraits des sources gouvernementales |
-| **AMP** | vert | Polygones ProtectedSeas Navigator + **deux URL séparées** : site du gestionnaire (`manager_url`) et procédures de visite / d'entrée (`visit_url`). L'URL de visite n'est jamais une copie du Website ProtectedSeas. |
-| **Science** | violet | Jeux de données océanographiques localisés sur la carte avec lien direct vers leur fiche portail : catalogues **Sextant/SISMER** (Ifremer) et **ODATIS** (API JSON GeoNetwork), **EDMED** SeaDataNet (SPARQL), **flotteurs Argo** actifs (ERDDAP Coriolis) et **tracés de campagnes CSR** (SPARQL Ifremer). Couches WMS EMODnet (bathymétrie, nature des fonds, câbles). Profondeur d'approche EMODnet dans les popups marinas/mouillages. API structurées uniquement — pas de LLM, pas de scraping, upsert non destructif. |
-| **Climatologie** | teal `#2dd4bf` | Atlas mensuel sourcé (`kind: climatology`) : roses de vent, houle P50/P90, courant de surface, pistes IBTrACS. Snapshots précalculés hors VPS, servis ici. **Pas** une prévision GFS/IFS. NAVIGUIDE consomme les mêmes fichiers sans les peindre. Review / Gold non branchés (comme Science). |
+| Mode | Colour | Content |
+|------|--------|---------|
+| **Projects** | cyan | ~4,500 marine conservation projects discovered and extracted automatically from major foundation portals (web-agent swarm + LLM) |
+| **Marinas** | red | Worldwide `leisure=marina` directory (OpenStreetMap), `osm_id` identity, deterministic Google Maps link. Larger point if a `/maps/place/` sheet was found (TinyFish Search / OSM tag) — none are filtered out. Anchorages stay on the route corridor. Outside Formalities / PoE. |
+| **Harbour masters** | sky | Worldwide OSM `office=harbour_master` offices + SHOM CATSCF=6 overlay (France). Phone and VHF read from tags, then official sites. Not attached to marinas. |
+| **Formalities** | amber | The ~285 worldwide Exclusive Economic Zones (Marine Regions v12) and their official recreational **Ports of Entry**, extracted from government sources |
+| **MPA** | green | ProtectedSeas Navigator polygons + **two separate URLs**: manager site (`manager_url`) and visit / entry procedures (`visit_url`). The visit URL is never a copy of the ProtectedSeas Website. |
+| **Science** | violet | Oceanographic datasets placed on the map with a direct link to their portal sheet: **Sextant/SISMER** (Ifremer) and **ODATIS** catalogues (GeoNetwork JSON API), SeaDataNet **EDMED** (SPARQL), active **Argo** floats (Coriolis ERDDAP) and **CSR** campaign tracks (Ifremer SPARQL). EMODnet WMS layers (bathymetry, seabed, cables). EMODnet approach depth in marina/anchorage popups. Structured APIs only — no LLM, no scraping, non-destructive upsert. |
+| **Climatology** | teal `#2dd4bf` | Sourced monthly atlas (`kind: climatology`): wind roses, P50/P90 swell, surface current, IBTrACS tracks. Snapshots precomputed off the VPS, served here. **Not** a GFS/IFS forecast. NAVIGUIDE consumes the same files without painting them. Review / Gold not wired (same as Science). |
 
-S'y ajoute une **Console de supervision** (déclencheurs batch, télémétrie, KPIs), un onglet **Review** (relecture puis Gold — voir `docs/CAHIER_DES_CHARGES_REVIEW.md` et `docs/CONTRATS_REVIEW_PAR_MODE.md`) et des exports/imports GeoJSON contextuels.
+Plus an **operations console** (batch triggers, telemetry, KPIs), a **Review** tab (human review then Gold — see `docs/CAHIER_DES_CHARGES_REVIEW.md` and `docs/CONTRATS_REVIEW_PAR_MODE.md`) and contextual GeoJSON export/import.
 
-## Fonds de carte et inspirations seamap
+## Basemaps and seamap practices
 
-Trois fonds de carte se succèdent via le bouton du header : **sombre**,
-**clair** (raster Esri) et **Carte marine** — le style vectoriel
-[Open Waters: Seamap](https://github.com/openwatersio/seamap) (balisage IALA,
-feux, profondeurs Seascape), rendu par `maplibre-gl-leaflet` chargé à la
-demande. Un avertissement « Ne convient pas à la navigation » s'affiche sur ce
-fond. En production, `infra/vps/seamap/` auto-héberge l'archive PMTiles datée
-(~26 Go), le style et les sprites sur le VPS.
+Three basemaps cycle via the header button: **dark**,
+**light** (Esri raster) and **Nautical chart** — the
+[Open Waters: Seamap](https://github.com/openwatersio/seamap) vector style
+(IALA marks, lights, Seascape depths), rendered by `maplibre-gl-leaflet`
+loaded on demand. A “Not for navigation” warning is shown on this
+basemap. In production, `infra/vps/seamap/` self-hosts the dated PMTiles
+archive (~26 GB), style and sprites on the VPS.
 
-Les popups Marinas portent des **badges services** : la couleur répond à une
-question du plaisancier (Amarrage / Avitaillement / Technique / À terre),
-l'infobulle liste les tags OSM qui l'attestent — rien n'est inventé.
+Marina popups carry **service badges**: the colour answers a skipper
+question (Berthing / Provisions / Technical / Ashore); the tooltip lists
+the OSM tags that support it — nothing is invented.
 
-Le dépôt applique aussi les disciplines d'ingénierie de seamap :
+The repository also follows seamap engineering practices:
 
-- **Exports GeoJSON versionnés** — chaque export porte `metadata` (version
-  datée + empreinte sha256, comptage, licence, avertissement) ; snapshots
-  datés **immuables** via `POST /api/export/snapshot` (`backend/exports/`).
-- **Reconstruction hebdomadaire** — `.github/workflows/weekly-data-build.yml`
-  archive chaque lundi les 7 exports + un PMTiles overlay dans une release
-  `data-<AAAA-MM-JJ>`, immuable par construction.
-- **Catalogue des tags** — `docs/CATALOGUE_SEAMARK.md` +
-  `backend/data/seamark_catalog.json` ; audit par `scripts/audit_tags.py`
-  (rapports dans `docs/audits/`).
-- **Ordre des couches verrouillé** — `frontend/src/components/map/layerOrder.js`
-  est figé par test jest (`npm test`).
+- **Versioned GeoJSON exports** — each export carries `metadata` (dated
+  version + sha256 fingerprint, counts, licence, warning); dated
+  **immutable** snapshots via `POST /api/export/snapshot` (`backend/exports/`).
+- **Weekly rebuild** — `.github/workflows/weekly-data-build.yml`
+  archives every Monday the 7 exports + an overlay PMTiles in a
+  `data-<YYYY-MM-DD>` release, immutable by construction.
+- **Tag catalogue** — `docs/CATALOGUE_SEAMARK.md` +
+  `backend/data/seamark_catalog.json`; audit via `scripts/audit_tags.py`
+  (reports in `docs/audits/`).
+- **Locked layer order** — `frontend/src/components/map/layerOrder.js`
+  is frozen by a jest test (`npm test`).
 
-Le plan qui remet ces briques dans **quatre filières** (contrôle, carte,
-hydro officielle, satellite) et dit ce qui profite à Blue Intelligence
-vs au simulateur NAVIGUIDE : `docs/PLAN_IMPLEMENTATION_FILIERES_CARTO.md`.
+The plan that puts these pieces into **four tracks** (control, chart,
+official hydro, satellite) and says what benefits Blue Intelligence
+vs the NAVIGUIDE simulator: `docs/PLAN_IMPLEMENTATION_FILIERES_CARTO.md`.
 
 ## Architecture
 
 ```
 blue-intelligence/
-├── backend/            API FastAPI (Python 3.11+) + MongoDB
-│   ├── server.py       Point d'entrée, endpoints REST /api/*
-│   ├── llm_core.py     Adaptateur LLM — NIM (complétions) ou OpenRouter ; :online reste OpenRouter
-│   ├── pipeline.py     Swarm de découverte/extraction des projets marins
-│   ├── poe.py          Pipeline [ZEE → Ports d'Entrée] (poe_routes.py = endpoints)
-│   ├── marinas.py      Dump mondial OSM leisure=marina ; mouillages = corridor route
-│   ├── enrichment.py   Enrichissement marinas (OpenRouter → TinyFish → tags OSM)
-│   ├── geo.py / geo_core.py       Géocodage, snap côtier, validation spatiale
-│   ├── extract_core.py            Cascade de parsing N1 trafilatura → N2 Readability → N3 TinyFish
-│   ├── dedup_core.py / rag_core.py / ml_core.py   Dédup, RAG local, modèles ML locaux
-│   ├── zee.py          Traversées ZEE de la route officielle
-│   ├── data/           Référentiels embarqués (route, ZEE, marinas curatées)
-│   └── models/         Modèles ML locaux entraînés (gatekeeper, classifieur SERP, NER)
+├── backend/            FastAPI (Python 3.11+) + MongoDB
+│   ├── server.py       Entry point, REST /api/* endpoints
+│   ├── llm_core.py     LLM adapter — NIM (completions) or OpenRouter; :online stays OpenRouter
+│   ├── pipeline.py     Discovery/extraction swarm for marine projects
+│   ├── poe.py          [EEZ → Ports of Entry] pipeline (poe_routes.py = endpoints)
+│   ├── marinas.py      Worldwide OSM leisure=marina dump; anchorages = route corridor
+│   ├── enrichment.py   Marina enrichment (OpenRouter → TinyFish → OSM tags)
+│   ├── geo.py / geo_core.py       Geocoding, coastal snap, spatial validation
+│   ├── extract_core.py            Parse cascade N1 trafilatura → N2 Readability → N3 TinyFish
+│   ├── dedup_core.py / rag_core.py / ml_core.py   Dedup, local RAG, local ML models
+│   ├── zee.py          Official-route EEZ crossings
+│   ├── data/           Embedded references (route, EEZ, curated marinas)
+│   └── models/         Trained local ML models (gatekeeper, SERP classifier, NER)
 ├── frontend/           React (CRA) + Leaflet + Tailwind
-│   └── src/components/ MapView, BatchHub (audit), SettingsPanel, panneaux par mode
-├── docs/               PRD, CDC Projets, CDC Formalités (PoE), CDC Review, contrats Review par mode, règles/paramètres, architecture, audit LLM NVIDIA (`nvidia-llm-audit.md`), plan filières carto (`PLAN_IMPLEMENTATION_FILIERES_CARTO.md`)
-├── infra/              SearXNG auto-hébergé (`searxng/`) + déploiement production VPS OVH (`vps/`)
-├── scripts/            Outillage d'exploitation (restauration de sauvegardes)
-├── naviguide/          NAVIGUIDE — planificateur de route de l'expédition (application autonome, voir `naviguide/README.md`)
-└── naviguide-simulator/  Simulateur (hors prod, simulator.naviguide.fr) — `docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md` (EN : `.en.md`) ; horloge climo `PLAN_IMPLEMENTATION_SIMULATION_A.md` ; bateau virtuel `PLAN_IMPLEMENTATION_SIMULATION_B.md`
+│   └── src/components/ MapView, BatchHub (audit), SettingsPanel, per-mode panels
+├── docs/               PRD, Projects spec, Formalities (PoE) spec, Review spec, per-mode Review contracts, rules/parameters, architecture, NVIDIA LLM audit (`nvidia-llm-audit.md`), carto tracks plan (`PLAN_IMPLEMENTATION_FILIERES_CARTO.md`)
+├── infra/              Self-hosted SearXNG (`searxng/`) + OVH VPS production deploy (`vps/`)
+├── scripts/            Ops tooling (backup restore)
+├── naviguide/          NAVIGUIDE — expedition route planner (standalone app, see `naviguide/README.md`)
+└── naviguide-simulator/  Simulator (off-prod, simulator.naviguide.fr) — `docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md` (EN: `.en.md`); climo clock `PLAN_IMPLEMENTATION_SIMULATION_A.md`; virtual boat `PLAN_IMPLEMENTATION_SIMULATION_B.md`
 ```
 
-### Intelligence artificielle : NIM / Token Factory, Nemotron, OpenRouter pour le web
+### Artificial intelligence: NIM / Token Factory, Nemotron, OpenRouter for the web
 
-Les complétions JSON (gatekeeper, extraction, géocodage, juge PoE) passent par une API **compatible OpenAI** : **[NVIDIA NIM](https://build.nvidia.com)** si `NVIDIA_API_KEY` est présente, sinon par **[OpenRouter](https://openrouter.ai)**. Le même contrat HTTP sert aussi **[Nebius Token Factory](https://tokenfactory.nebius.com/)** (endpoint `https://api.tokenfactory.us-central1.nebius.com/v1/`) pour déployer les modèles **NVIDIA Nemotron** sans cluster GPU. La recherche web groundée (`:online`) reste OpenRouter :
+JSON completions (gatekeeper, extraction, geocoding, PoE judge) go through an **OpenAI-compatible** API: **[NVIDIA NIM](https://build.nvidia.com)** if `NVIDIA_API_KEY` is set, otherwise **[OpenRouter](https://openrouter.ai)**. The same HTTP contract also serves **[Nebius Token Factory](https://tokenfactory.nebius.com/)** (endpoint `https://api.tokenfactory.us-central1.nebius.com/v1/`) to run **NVIDIA Nemotron** models without a GPU cluster. Grounded web search (`:online`) stays on OpenRouter:
 
-- **Complétions** : `NVIDIA_API_KEY` (hosted NIM — chaînes par usage dans `nvidia.CHAINS`) si présente ; sinon OpenRouter ;
-- **Nemotron** : ids du catalogue `nvidia/nemotron-*` (Nano 30B, Super 120B, Ultra 550B, Lightning 30B, Omni) — épinglables via `NVIDIA_MODEL` / `NVIDIA_MODEL_CHAIN_*` ; l'étiquette persistée est `nvidia-nemotron` (`backend/app/core/nvidia.py`) ;
-- **Token Factory** : [Nebius Token Factory](https://tokenfactory.nebius.com/) sert les mêmes modèles Nemotron derrière l'API compatible OpenAI (`https://api.tokenfactory.us-central1.nebius.com/v1/`) ; l'adaptateur NIM parle déjà ce contrat ;
-- **Recherche web** : `OPENROUTER_API_KEY` uniquement (`:online`) — NIM / Token Factory n'ont pas de plugin web ;
-- **Modèle OpenRouter** : `OPENROUTER_MODEL` (défaut `openai/gpt-4o-mini`) ;
-- **Sans clé**, l'application reste fonctionnelle en mode dégradé : heuristiques par mots-clés + modèles ML locaux (TF-IDF, spaCy NER) sans aucun appel réseau IA.
+- **Completions**: `NVIDIA_API_KEY` (hosted NIM — per-usage chains in `nvidia.CHAINS`) if present; otherwise OpenRouter;
+- **Nemotron**: catalogue ids `nvidia/nemotron-*` (Nano 30B, Super 120B, Ultra 550B, Lightning 30B, Omni) — pinnable via `NVIDIA_MODEL` / `NVIDIA_MODEL_CHAIN_*`; the persisted label is `nvidia-nemotron` (`backend/app/core/nvidia.py`);
+- **Token Factory**: [Nebius Token Factory](https://tokenfactory.nebius.com/) serves the same Nemotron models behind the OpenAI-compatible API (`https://api.tokenfactory.us-central1.nebius.com/v1/`); the NIM adapter already speaks that contract;
+- **Web search**: `OPENROUTER_API_KEY` only (`:online`) — NIM / Token Factory have no web plugin;
+- **OpenRouter model**: `OPENROUTER_MODEL` (default `openai/gpt-4o-mini`);
+- **Without a key**, the app still works in degraded mode: keyword heuristics + local ML models (TF-IDF, spaCy NER) with no AI network calls.
 
-Le pipeline **n'invente jamais de contenu** : chaque champ non trouvé dans les sources reste `null`, chaque port d'entrée est géocodé puis validé spatialement dans son polygone de ZEE.
+The pipeline **never invents content**: every field not found in the sources stays `null`; every port of entry is geocoded then spatially validated inside its EEZ polygon.
 
 ## NAVIGUIDE (monorepo)
 
-Le dossier `naviguide/` héberge **NAVIGUIDE**, le planificateur de route de l'expédition Berry-Mappemonde (React Vite + MapLibre GL ; services FastAPI : routage avec évitement des terres, données Copernicus, orchestrateur multi-agents LangGraph, polaires). Le dépôt `naviguide-berry-mappemonde` a été fusionné ici avec son historique complet, nettoyé au passage (`naviguide-api/venv` retiré de tout l'historique).
+The `naviguide/` folder hosts **NAVIGUIDE**, the Berry-Mappemonde expedition route planner (React Vite + MapLibre GL; FastAPI services: land-avoiding routing, Copernicus data, LangGraph multi-agent orchestrator, polars). The `naviguide-berry-mappemonde` repository was merged here with its full history, cleaned along the way (`naviguide-api/venv` removed from the entire history).
 
-- **Application autonome** : démarrage, dépendances et déploiement séparés de Blue Intelligence — voir `naviguide/README.md` (`naviguide/naviguide_workspace/start_local.sh` pour tout lancer en local).
-- **Production** : [www.naviguide.fr](https://www.naviguide.fr), hébergé sur le même VPS OVH que blueintelligence.online — voir `infra/vps/README.md` et `infra/vps/naviguide/`.
-- **Couches Blue Intelligence** : la carte NAVIGUIDE affiche les 5 modes (Projets, Marinas, Capitaineries, Ports d'Entrée, AMP) via les exports GeoJSON `GET /api/export/*`, consommés en même-origine par le chemin `/bi/*` (proxy Vite en dev, nginx en production).
+- **Standalone app**: startup, dependencies and deploy are separate from Blue Intelligence — see `naviguide/README.md` (`naviguide/naviguide_workspace/start_local.sh` to run everything locally).
+- **Production**: [www.naviguide.fr](https://www.naviguide.fr), hosted on the same OVH VPS as blueintelligence.online — see `infra/vps/README.md` and `infra/vps/naviguide/`.
+- **Blue Intelligence layers**: the NAVIGUIDE map shows the 5 modes (Projects, Marinas, Harbour masters, Ports of Entry, MPA) via `GET /api/export/*` GeoJSON exports, consumed same-origin on the `/bi/*` path (Vite proxy in dev, nginx in production).
 
-## Démarrage local
+## Local startup
 
-### Prérequis
+### Prerequisites
 
-- Python 3.11+, Node.js 18+, MongoDB en local (ou MongoDB Atlas)
+- Python 3.11+, Node.js 18+, local MongoDB (or MongoDB Atlas)
 
 ### Backend
 
@@ -127,8 +127,8 @@ Le dossier `naviguide/` héberge **NAVIGUIDE**, le planificateur de route de l'e
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m playwright install chromium   # rendu local des pages JS (pipeline PoE)
-cp .env.example .env        # puis renseigner les variables (voir ci-dessous)
+python -m playwright install chromium   # local JS page rendering (PoE pipeline)
+cp .env.example .env        # then fill in the variables (see below)
 uvicorn server:app --host 0.0.0.0 --port 8001
 ```
 
@@ -137,123 +137,123 @@ uvicorn server:app --host 0.0.0.0 --port 8001
 ```bash
 cd frontend
 npm install
-cp .env.example .env        # laisser REACT_APP_BACKEND_URL vide (même-origine)
+cp .env.example .env        # leave REACT_APP_BACKEND_URL empty (same-origin)
 npm start                   # http://localhost:3000 (dev, hot reload)
 ```
 
-### Preview Cloud Agent / accès distant (un seul port)
+### Cloud Agent preview / remote access (single port)
 
-Pour visualiser l'application depuis l'interface Cursor (onglet **Ports** ou **Browser**) sans problème de `localhost` côté client :
+To view the app from the Cursor UI (**Ports** or **Browser** tab) without a client-side `localhost` problem:
 
 ```bash
-bash .cursor/preview.sh     # build + UI + API sur http://localhost:8001
+bash .cursor/preview.sh     # build + UI + API on http://localhost:8001
 ```
 
-Ouvrir le port **8001** (« Application UI + API ») dans l'onglet **Ports** de la page de l'agent Cursor, puis cliquer sur le lien **Open in Browser**. L'UI et l'API partagent la même origine — aucun appel réseau vers `localhost:8001` depuis le navigateur distant.
+Open port **8001** (“Application UI + API”) in the **Ports** tab of the Cursor agent page, then click **Open in Browser**. UI and API share the same origin — no network call to `localhost:8001` from the remote browser.
 
-Le serveur de dev CRA (port 3000) reste disponible pour le hot reload pendant le développement.
+The CRA dev server (port 3000) remains available for hot reload during development.
 
-## Variables d'environnement (secrets)
+## Environment variables (secrets)
 
 ### `backend/.env`
 
-| Variable | Obligatoire | Rôle |
-|----------|-------------|------|
-| `MONGO_URL` | ✅ | Chaîne de connexion MongoDB |
-| `DB_NAME` | ✅ | Nom de la base MongoDB |
-| `CORS_ORIGINS` | ✅ | Origines autorisées, séparées par des virgules (`https://blueintelligence.online` en prod) |
-| `NVIDIA_API_KEY` | recommandé | Clé NVIDIA NIM (`nvapi-…`) — chaînes par usage (`nvidia.CHAINS`), y compris un id [Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/) épinglé via `NVIDIA_MODEL` |
-| `LLM_PROVIDER` | optionnel | `auto` (défaut : NVIDIA si clé), `nvidia`, ou `openrouter` |
-| `NVIDIA_MODEL` | optionnel | Préfixe de chaîne (hors `legal`) ; défaut déjà en tête : Pro-0813. Pour Nemotron : `nvidia/nemotron-3-nano-30b-a3b` (ou Super / Ultra / Lightning) |
-| `NVIDIA_MODEL_SECONDARY` | optionnel | Remplace Muse **là où il apparaît** dans `CHAINS` (3ᵉ) |
-| `NVIDIA_MODEL_LEGAL` | optionnel | Tête de la chaîne `legal` (défaut `moonshotai/kimi-k3`) |
-| `NVIDIA_MODEL_CHAIN_JUDGE` | optionnel | Surcharge complète, ids séparés par des virgules (idem `_EXTRACT`, `_PAGE`, …) |
-| `OPENROUTER_API_KEY` | recommandé | Clé OpenRouter — recherche web `:online` et fallback si NIM absent |
-| `OPENROUTER_MODEL` | optionnel | Modèle OpenRouter (défaut `openai/gpt-4o-mini`) |
-| `ANTHROPIC_API_KEY` | optionnel | Claude Haiku 4.5 pour l'extraction PoE seulement — inerte si `CLAUDE_BUDGET_USD` (ou le plafond UI) est 0 |
-| `CLAUDE_BUDGET_USD` | optionnel | Plafond local Claude (USD). Stop à 90 %. Défaut 0 = Claude éteint |
-| `TINYFISH_API_KEY` | optionnel | Agent TinyFish (swarm projets & enrichissement marinas — le pipeline PoE utilise le rendu Playwright local) |
-| `GEONAMES_USERNAME` | optionnel | Compte GeoNames (géocodage parallèle Nominatim ∥ GeoNames). Sur [geonames.org/manageaccount](https://www.geonames.org/manageaccount) : **Click to enable** le webservice gratuit — sans ça l'API renvoie l'erreur 10 et le pipeline désactive GeoNames pour le process |
-| `SEARXNG_URL` | optionnel | Instance SearXNG auto-hébergée (voir `infra/searxng/`) — prioritaire sur les instances publiques pour la recherche PoE |
-| `RESEND_API_KEY` | optionnel | Envoi d'emails de signalement de projets (Resend) |
-| `SENDER_EMAIL` / `REPORT_RECIPIENT` | optionnel | Expéditeur / destinataire des signalements |
+| Variable | Required | Role |
+|----------|----------|------|
+| `MONGO_URL` | ✅ | MongoDB connection string |
+| `DB_NAME` | ✅ | MongoDB database name |
+| `CORS_ORIGINS` | ✅ | Allowed origins, comma-separated (`https://blueintelligence.online` in prod) |
+| `NVIDIA_API_KEY` | recommended | NVIDIA NIM key (`nvapi-…`) — per-usage chains (`nvidia.CHAINS`), including a [Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/) id pinned via `NVIDIA_MODEL` |
+| `LLM_PROVIDER` | optional | `auto` (default: NVIDIA if a key is set), `nvidia`, or `openrouter` |
+| `NVIDIA_MODEL` | optional | Chain prefix (except `legal`); default already first: Pro-0813. For Nemotron: `nvidia/nemotron-3-nano-30b-a3b` (or Super / Ultra / Lightning) |
+| `NVIDIA_MODEL_SECONDARY` | optional | Replaces Muse **wherever it appears** in `CHAINS` (3rd) |
+| `NVIDIA_MODEL_LEGAL` | optional | Head of the `legal` chain (default `moonshotai/kimi-k3`) |
+| `NVIDIA_MODEL_CHAIN_JUDGE` | optional | Full override, comma-separated ids (same for `_EXTRACT`, `_PAGE`, …) |
+| `OPENROUTER_API_KEY` | recommended | OpenRouter key — `:online` web search and fallback if NIM is absent |
+| `OPENROUTER_MODEL` | optional | OpenRouter model (default `openai/gpt-4o-mini`) |
+| `ANTHROPIC_API_KEY` | optional | Claude Haiku 4.5 for PoE extraction only — inert if `CLAUDE_BUDGET_USD` (or the UI cap) is 0 |
+| `CLAUDE_BUDGET_USD` | optional | Local Claude cap (USD). Stops at 90%. Default 0 = Claude off |
+| `TINYFISH_API_KEY` | optional | TinyFish agent (projects swarm & marina enrichment — the PoE pipeline uses local Playwright rendering) |
+| `GEONAMES_USERNAME` | optional | GeoNames account (parallel Nominatim ∥ GeoNames geocoding). On [geonames.org/manageaccount](https://www.geonames.org/manageaccount): **Click to enable** the free webservice — without that the API returns error 10 and the pipeline disables GeoNames for the process | <!-- pragma: allowlist secret -->
+| `SEARXNG_URL` | optional | Self-hosted SearXNG instance (see `infra/searxng/`) — preferred over public instances for PoE search |
+| `RESEND_API_KEY` | optional | Project-report emails (Resend) |
+| `SENDER_EMAIL` / `REPORT_RECIPIENT` | optional | Sender / recipient for reports |
 
 ### `frontend/.env`
 
-| Variable | Obligatoire | Rôle |
-|----------|-------------|------|
-| `REACT_APP_BACKEND_URL` | optionnel | URL publique du backend (sans slash final). **Laisser vide pour le mode même-origine** : en dev le proxy CRA route `/api` vers `localhost:8001`, en production le reverse proxy sert `/api/*`. Ne renseigner que si le backend vit sur un autre domaine |
+| Variable | Required | Role |
+|----------|----------|------|
+| `REACT_APP_BACKEND_URL` | optional | Public backend URL (no trailing slash). **Leave empty for same-origin mode**: in dev the CRA proxy routes `/api` to `localhost:8001`; in production the reverse proxy serves `/api/*`. Set only if the backend lives on another domain |
 
-## Déploiement sur blueintelligence.online
+## Deploy on blueintelligence.online
 
-Production auto-hébergée sur un VPS OVH (Ubuntu) derrière Cloudflare — procédure
-complète, scripts idempotents et runbook dans **`infra/vps/README.md`** :
+Self-hosted production on an OVH VPS (Ubuntu) behind Cloudflare — full
+procedure, idempotent scripts and runbook in **`infra/vps/README.md`**:
 
-1. **Application** : uvicorn (`SERVE_FRONTEND=1`, port local 8001) sert l'UI buildée **et** l'API, derrière le nginx du VPS (TLS Let's Encrypt). Service systemd `blue-intelligence`.
-2. **MongoDB** : MongoDB Community 8.0 auto-hébergé sur le VPS (`127.0.0.1` uniquement, authentification activée) — fin du throttling Atlas M0. Les index sont créés automatiquement au démarrage. Sauvegardes quotidiennes `mongodump` (rotation 14 j).
-   ⚠️ **Le VPS est la base vivante depuis la bascule DNS du 2026-09-10** : ne jamais relancer `infra/vps/sync-from-atlas.sh` (Atlas est figé à l'état d'avant-bascule ; le script est verrouillé). Restauration = sauvegardes locales uniquement.
-3. Un hébergement alternatif (build statique + reverse proxy `/api/*` + Atlas) reste possible : voir les variables d'environnement ci-dessus.
+1. **Application**: uvicorn (`SERVE_FRONTEND=1`, local port 8001) serves the built UI **and** the API, behind the VPS nginx (Let's Encrypt TLS). systemd service `blue-intelligence`.
+2. **MongoDB**: MongoDB Community 8.0 self-hosted on the VPS (`127.0.0.1` only, authentication on) — end of Atlas M0 throttling. Indexes are created automatically at startup. Daily `mongodump` backups (14-day rotation).
+   ⚠️ **The VPS is the live database since the 2026-09-10 DNS cutover**: never re-run `infra/vps/sync-from-atlas.sh` (Atlas is frozen at the pre-cutover state; the script is locked). Restore = local backups only.
+3. An alternate hosting (static build + `/api/*` reverse proxy + Atlas) remains possible: see the environment variables above.
 
-## API (aperçu)
+## API (overview)
 
-- `GET /api/` — santé du service · `GET /docs` — OpenAPI interactif
-- `GET /api/projects` · `GET /api/funders` · `GET /api/categories` — mode Projets
-- `POST /api/swarm/deploy` · `GET /api/swarm/status` — pipeline de découverte
-- `GET /api/marinas` · `POST /api/marinas/build` · `POST /api/marinas/enrich-batch` — mode Marinas
-- `GET /api/capitaineries` · `POST /api/capitaineries/build` · `POST /api/capitaineries/enrich-batch` — mode Capitaineries
-- `GET /api/poe/zones` · `GET /api/poe/ports` — mode Formalités (`POST …/generate` et `generate-batch` : 410)
-- `POST /api/poe/runs` · `GET /api/poe/runs/{id}/status` · `GET /api/poe/runs/{id}/diff` · `GET /api/poe/runs/{id}/report` — runs versionnés PoE
-- `GET /api/export/{geojson|marinas.geojson|anchorages.geojson|capitaineries.geojson|amp.geojson|poe.geojson|route.geojson}` — exports GeoJSON versionnés (bloc `metadata`)
-- `POST /api/export/snapshot` · `GET /api/export/snapshots[/{date}/{fichier}]` — snapshots datés immuables
+- `GET /api/` — service health · `GET /docs` — interactive OpenAPI
+- `GET /api/projects` · `GET /api/funders` · `GET /api/categories` — Projects mode
+- `POST /api/swarm/deploy` · `GET /api/swarm/status` — discovery pipeline
+- `GET /api/marinas` · `POST /api/marinas/build` · `POST /api/marinas/enrich-batch` — Marinas mode
+- `GET /api/capitaineries` · `POST /api/capitaineries/build` · `POST /api/capitaineries/enrich-batch` — Harbour masters mode
+- `GET /api/poe/zones` · `GET /api/poe/ports` — Formalities mode (`POST …/generate` and `generate-batch`: 410)
+- `POST /api/poe/runs` · `GET /api/poe/runs/{id}/status` · `GET /api/poe/runs/{id}/diff` · `GET /api/poe/runs/{id}/report` — versioned PoE runs
+- `GET /api/export/{geojson|marinas.geojson|anchorages.geojson|capitaineries.geojson|amp.geojson|poe.geojson|route.geojson}` — versioned GeoJSON exports (`metadata` block)
+- `POST /api/export/snapshot` · `GET /api/export/snapshots[/{date}/{file}]` — dated immutable snapshots
 
-## Données initiales (seed)
+## Initial data (seed)
 
-Le dossier `seed/` contient les exports GeoJSON de production :
+The `seed/` folder holds production GeoJSON exports:
 
 ```bash
-# Projets (4 463) — via l'API
+# Projects (4,463) — via the API
 curl -X POST http://localhost:8001/api/import/geojson \
   -H "Content-Type: application/json" --data-binary @seed/projects.geojson
-# Ports d'Entrée (1 169) + statuts des zones — via le script
+# Ports of Entry (1,169) + zone statuses — via the script
 python scripts/restore_data.py poe seed/ports_of_entry.geojson
 python scripts/restore_data.py zones
 ```
 
-Le référentiel des 285 ZEE se construit depuis la Console (mode Formalités → « Construire le référentiel ZEE »).
+The 285-EEZ referential is built from the Console (Formalities mode → “Build EEZ referential”).
 
 ## Tests
 
 ```bash
 cd backend && source .venv/bin/activate
-python -m pytest tests/ -x -q          # certains tests exigent le serveur lancé (REACT_APP_BACKEND_URL)
+python -m pytest tests/ -x -q          # some tests require the server running (REACT_APP_BACKEND_URL)
 ```
 
 ## Licence
 
-Le **code** de Blue Intelligence (ce dépôt) est sous **double licence MIT / Apache License 2.0**. Vous pouvez choisir l'une ou l'autre :
+Blue Intelligence **code** (this repository) is **dual-licensed MIT / Apache License 2.0**. You may choose either:
 
-- [MIT License](LICENSE-MIT) — aussi recopiée dans [`LICENSE`](LICENSE) (fichier que GitHub affiche)
+- [MIT License](LICENSE-MIT) — also copied into [`LICENSE`](LICENSE) (the file GitHub displays)
 - [Apache License 2.0](LICENSE-APACHE)
 
 `SPDX-License-Identifier: MIT OR Apache-2.0`
 
-Les **poids** des modèles [NVIDIA Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/) éventuellement invoqués via NIM ou [Token Factory](https://tokenfactory.nebius.com/) restent régis par la [NVIDIA Nemotron Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/) — distincte de la licence du code.
+**Weights** of [NVIDIA Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/) models invoked via NIM or [Token Factory](https://tokenfactory.nebius.com/) remain under the [NVIDIA Nemotron Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/) — distinct from the code licence.
 
-Les données cartographiques (OSM, Marine Regions, Seamap, etc.) conservent leurs licences d'origine, listées ci-dessous.
+Cartographic data (OSM, Marine Regions, Seamap, etc.) keep their original licences, listed below.
 
-## Données & attributions
+## Data & attributions
 
-- **ZEE** : Flanders Marine Institute — [Marine Regions](https://marineregions.org), Maritime Boundaries v12 (CC-BY 4.0)
-- **Marinas / géocodage** : © contributeurs [OpenStreetMap](https://openstreetmap.org) (ODbL), Nominatim, Overpass, GeoNames
-- **Route** : route officielle de l'expédition Berry-Mappemonde
-- **Fond « Carte marine »** : © [Open Waters: Seamap](https://openwaters.io/charts/seamap) (CC-BY 4.0) sur données © OpenStreetMap contributors (ODbL), bathymétrie [Seascape](https://github.com/openwatersio/seascape), fonds [VersaTiles](https://versatiles.org), relief © Mapterhorn
-- **AMP** : ProtectedSeas Navigator (centroïdes et métadonnées) · **Capitaineries France** : SHOM (Licence Ouverte Etalab) · **États-Unis** : NOAA ENC Direct to GIS
+- **EEZ**: Flanders Marine Institute — [Marine Regions](https://marineregions.org), Maritime Boundaries v12 (CC-BY 4.0)
+- **Marinas / geocoding**: © [OpenStreetMap](https://openstreetmap.org) contributors (ODbL), Nominatim, Overpass, GeoNames
+- **Route**: official Berry-Mappemonde expedition route
+- **“Nautical chart” basemap**: © [Open Waters: Seamap](https://openwaters.io/charts/seamap) (CC-BY 4.0) on data © OpenStreetMap contributors (ODbL), [Seascape](https://github.com/openwatersio/seascape) bathymetry, [VersaTiles](https://versatiles.org) basemaps, relief © Mapterhorn
+- **MPA**: ProtectedSeas Navigator (centroids and metadata) · **France harbour masters**: SHOM (Licence Ouverte Etalab) · **United States**: NOAA ENC Direct to GIS
 
-### Licences des bibliothèques carte
+### Map library licences
 
-Chaîne 100 % permissive, vérifiée : `leaflet` (BSD-2), `maplibre-gl` (BSD-3),
-`@maplibre/maplibre-gl-leaflet` (ISC), `pmtiles` (BSD-3). Le package npm
-`@openwaters/seamap` est **GPL-3.0 et n'est volontairement pas utilisé** : le
-frontend consomme le `style.json` servi (CC-BY 4.0), comme une donnée.
+100% permissive chain, verified: `leaflet` (BSD-2), `maplibre-gl` (BSD-3),
+`@maplibre/maplibre-gl-leaflet` (ISC), `pmtiles` (BSD-3). The npm package
+`@openwaters/seamap` is **GPL-3.0 and intentionally unused**: the
+frontend consumes the served `style.json` (CC-BY 4.0), as data.
 
-> ⚠️ Les informations du mode Formalités sont **indicatives** — vérifiez toujours auprès des autorités avant le départ. Le fond « Carte marine » **ne convient pas à la navigation** (voir l'avertissement en tête de ce document).
+> ⚠️ Formalities-mode information is **indicative** — always check with the authorities before departure. The “Nautical chart” basemap is **not for navigation** (see the warning at the top of this document).
