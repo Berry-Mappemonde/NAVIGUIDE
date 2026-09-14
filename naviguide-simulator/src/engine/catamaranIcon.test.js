@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { catamaranTransform } from "./catamaranIcon.js";
 
 describe("catamaranTransform", () => {
-  it("reste à l’endroit (pas de scaleY) quel que soit le cap", () => {
+  it("stays upright (no scaleY) regardless of heading", () => {
     for (const b of [0, 90, 180, 270, 45]) {
       const t = catamaranTransform(b);
       assert.equal(t.includes("scaleY"), false);
@@ -11,7 +11,7 @@ describe("catamaranTransform", () => {
     }
   });
 
-  it("oriente l’étrave vers l’est sans miroir", () => {
+  it("points the bow east without mirroring", () => {
     assert.equal(catamaranTransform(90), "rotate(0deg)");
   });
 });

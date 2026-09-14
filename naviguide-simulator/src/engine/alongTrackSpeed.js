@@ -1,6 +1,6 @@
 /**
  * Nœuds fond le long du trait : polaire brute × vent de mois.
- * kind: climatology. Pas de GRIB, pas de POST /wind.
+ * kind: climatology. No GRIB, no POST /wind.
  */
 
 import { trueWindAngle } from "./playSpeeds.js";

@@ -47,7 +47,7 @@ def blended_wind(
     if hours < FORECAST_FULL_HOURS:
         return fc
 
-    # Fondu linéaire des nœuds (et de la direction) entre J+7 et J+10.
+    # Linear fade of knots (and direction) between D+7 and D+10.
     w = (hours - FORECAST_FULL_HOURS) / float(FORECAST_BLEND_END_HOURS - FORECAST_FULL_HOURS)
     w = max(0.0, min(1.0, w))
     return {

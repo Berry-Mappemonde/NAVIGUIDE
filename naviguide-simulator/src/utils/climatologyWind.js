@@ -1,8 +1,8 @@
 /**
  * Vent climatologique pour l'ETA NAVIGUIDE.
  *
- * Repli zones (même logique que climatology.py) tant que l'atlas CMEMS
- * n'est pas chargé côté client. Ce n'est PAS une prévision.
+ * Zone fallback (same logic as climatology.py) until the CMEMS atlas
+ * is loaded on the client. This is NOT a forecast.
  * kind: climatology.
  */
 
@@ -87,8 +87,8 @@ export function zoneWindAt(lat, lon, month) {
 }
 
 /**
- * Polar catamaran très simple : ~0.45 × TWS au reaching, borné 4–11 kn.
- * Suffit pour qu'un ETA bouge avec le mois sans allumer une couche.
+ * Very simple catamaran polar: ~0.45 × TWS on a reach, bounded 4–11 kn.
+ * Enough for an ETA to move with the month without lighting a layer.
  */
 export function boatSpeedFromWind(windKnots) {
   const raw = Number(windKnots) * 0.45;

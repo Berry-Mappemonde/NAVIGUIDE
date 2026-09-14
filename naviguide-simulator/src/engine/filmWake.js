@@ -1,13 +1,13 @@
 /**
- * Sillage du film : trait déjà parcouru, coupé aux sauts aériens
- * et à l’antiméridien. Code original NAVIGUIDE — idée type « trail »,
+ * Film wake: already-sailed track, cut at air hops
+ * and at the antimeridian. Original NAVIGUIDE code — “trail”-style idea,
  * sans LeafletPlayback, TrackPlayBack ni deck.gl.
  */
 
 import { splitAntimeridianCoords } from "../utils/geo.js";
 
 /**
- * @returns {number[][][]} parties [lon, lat] jusqu’à sailNm
+ * @returns {number[][][]} [lon, lat] parts up to sailNm
  */
 export function wakeParts(flat, sailNm) {
   const pts = flat?.points || [];

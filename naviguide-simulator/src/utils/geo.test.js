@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { haversineNm, summarizeRoute, featuresToSegments, splitAntimeridianCoords, unwrapLon } from "./geo.js";
 
 describe("summarizeRoute", () => {
-  it("compte les segments et une distance > 0", () => {
+  it("counts segments and a distance > 0", () => {
     const { nm, segments } = summarizeRoute([
       { coords: [[-1.16, 46.15], [-16.15, 28.55]] },
       { coords: [[-16.15, 28.55], [-23.6, 15.1]] },
@@ -12,27 +12,27 @@ describe("summarizeRoute", () => {
     assert.ok(nm > 1000);
   });
 
-  it("ignore les LineString trop courtes", () => {
+  it("ignores LineStrings that are too short", () => {
     assert.deepEqual(summarizeRoute([{ coords: [[0, 0]] }]), { nm: 0, segments: 0 });
   });
 });
 
-describe("antiméridien geo", () => {
-  it("mesure le court chemin de part et d’autre du 180°", () => {
+describe("antimeridian geo", () => {
+  it("measures the short path on both sides of 180°", () => {
     const d = haversineNm(-15, 179.5, -15, -179.5);
     assert.ok(d < 80);
     assert.ok(d > 20);
     assert.equal(unwrapLon(179.5, -179.5), 180.5);
   });
 
-  it("coupe une polyligne au 180°", () => {
+  it("splits a polyline at 180°", () => {
     const parts = splitAntimeridianCoords([[179, 0], [179.9, 0], [-179.9, 0], [-179, 0]]);
     assert.equal(parts.length, 2);
   });
 });
 
 describe("featuresToSegments", () => {
-  it("extrait les LineString d'une FeatureCollection", () => {
+  it("extracts LineStrings from a FeatureCollection", () => {
     const segs = featuresToSegments({
       type: "FeatureCollection",
       features: [

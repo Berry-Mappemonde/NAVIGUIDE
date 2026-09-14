@@ -1,10 +1,15 @@
 ---
-description: Environnement de travail de l'utilisateur (machine locale macOS, niveau débutant, VPS OVH)
+description: User environment (local macOS machine, beginner level, OVH VPS)
 alwaysApply: true
 ---
 
-# Environnement utilisateur
+# User environment
 
-- La machine locale de l'utilisateur est un **Mac (macOS)** : toute commande ou instruction à exécuter côté utilisateur doit être donnée pour macOS (Terminal, `cat`, `pbcopy`, `ssh-copy-id`…), jamais pour Windows.
-- L'utilisateur est **débutant** : privilégier des instructions pas à pas, expliquer les commandes non triviales, éviter le jargon non défini.
-- Serveur de production : **VPS OVH Ubuntu** `vps-52ba6d62.vps.ovh.net` (135.125.226.16), 4 vCores / 8 Go RAM / 75 Go — nginx en frontal, domaine `blueintelligence.online` derrière Cloudflare.
+- The user's local machine is a **Mac (macOS)**: any command or instruction
+  the user must run must be given for macOS (Terminal, `cat`, `pbcopy`,
+  `ssh-copy-id`…), never for Windows.
+- The user is a **beginner**: prefer step-by-step instructions, explain
+  non-trivial commands, avoid undefined jargon.
+- Production server: **OVH Ubuntu VPS** `vps-52ba6d62.vps.ovh.net`
+  (135.125.226.16), 4 vCores / 8 GB RAM / 75 GB — nginx in front, domain
+  `blueintelligence.online` behind Cloudflare.

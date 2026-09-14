@@ -11,7 +11,7 @@ describe("routeWindProfile", () => {
     assert.equal(twaDeg(0, 350), 10);
   });
 
-  it("échantillonne départ, escales et milieux, saute l’avion", () => {
+  it("samples start, stopovers and midpoints, skips the plane", () => {
     const points = [];
     for (let i = 0; i <= 20; i++) {
       points.push({
@@ -32,7 +32,7 @@ describe("routeWindProfile", () => {
     assert.equal(samples[0].filmNm, 0);
   });
 
-  it("interpole une série", () => {
+  it("interpolates a series", () => {
     const samples = [
       { filmNm: 0, tws: 10 },
       { filmNm: 100, tws: 20 },
@@ -40,7 +40,7 @@ describe("routeWindProfile", () => {
     assert.equal(lerpSeries(samples, 50, "tws"), 15);
   });
 
-  it("mapPool respecte la concurrence", async () => {
+  it("mapPool respects concurrency", async () => {
     let live = 0;
     let peak = 0;
     const out = await mapPool([1, 2, 3, 4], 2, async (n) => {

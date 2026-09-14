@@ -1,278 +1,278 @@
-# Plan d’implémentation — Simulation A (horloge climatologique)
+# Implementation plan — Simulation A (climatological clock)
 
-Document de chantier pour **`naviguide-simulator/`** uniquement.
-Il fige **comment dater le film** : même trait searoute, vent typique du
-mois, barre en jours de mer. Ce n’est **pas** une prévision, **pas** un
-bateau live, **pas** un recalcul d’itinéraire.
+Workshop document for **`naviguide-simulator/`** only.
+It locks **how to date the film**: same searoute line, typical wind of
+the month, bar in days at sea. This is **not** a forecast, **not** a
+live boat, **not** a route recalculation.
 
-Version **1.0** — 14 septembre 2026.
+Version **1.0** — 14 September 2026.
 
-**Suite (interdit tant que A n’est pas recettable) :**
+**Sequel (forbidden until A is recipe-ready):**
 [PLAN_IMPLEMENTATION_SIMULATION_B.md](./PLAN_IMPLEMENTATION_SIMULATION_B.md)
-(bateau virtuel, mode Suivre, isochrone d’une jambe).
+(virtual boat, Follow mode, one-leg isochrone).
 
-**English :** pas encore. Le film étape 1 reste
+**English :** not yet. The stage 1 film remains
 [PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md](./PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md).
 
-**Cahier hackathon (FR) :** [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md)
+**Hackathon briefing (FR) :** [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md)
 
 ---
 
-## Ce que la 1.0 fige
+## What 1.0 locks
 
-Le mode Simulation a déjà un **lecteur** (Play, 4 vitesses d’écran,
-playhead en nm, stations 1,4 s, relais Halifax, cinéma). Il n’a pas
-d’horloge civile. On ne peut pas dire « on part le 15 juin ».
+Simulation mode already has a **player** (Play, 4 screen speeds,
+playhead in nm, 1.4 s stations, Halifax relay, cinema). It has no
+civil clock. We cannot say “we leave on 15 June”.
 
-A ajoute **seulement** ça :
+A adds **only** that:
 
-| On garde | On ajoute | On refuse |
+| We keep | We add | We refuse |
 |---|---|---|
-| Trait searoute (Berry ou crayon) | Date de départ `t0` | GRIB / GFS / IFS |
-| Play / Pause / scrub en nm | Table `vertex → date` | Isochrones, port 3010 |
-| Polaire moteur (sans chat) | Nœuds = polar × vent **du mois** | Poll Copernicus 25 s pour l’ETA |
-| Film air / relais (`filmCast`) | Jours à quai calendaires | « Arrivée mardi 14 h » |
-| Leaflet, prod intouchée | HUD daté + `kind: climatology` | Modifier `www` / BI |
+| Searoute line (Berry or drawn) | Departure date `t0` | GRIB / GFS / IFS |
+| Play / Pause / scrub in nm | `vertex → date` table | Isochrones, port 3010 |
+| Engine polar (no chat) | Knots = polar × wind **of the month** | Copernicus poll every 25 s for the ETA |
+| Air / relay film (`filmCast`) | Calendar days in port | “Arrival Tuesday 14:00” |
+| Leaflet, prod untouched | Dated HUD + `kind: climatology` | Modify `www` / BI |
 
 ---
 
-**Sommaire**
+**Contents**
 
-1. En une phrase
-2. Pourquoi cette étape existe
-3. Contrat skipper (dans / hors)
-4. Vocabulaire
-5. Décisions d’architecture (verrouillées)
-6. État du code (déjà là / à brancher / à écrire)
-7. Table d’horloge
-8. Polar : câbler le `raw`
+1. In one sentence
+2. Why this stage exists
+3. Skipper contract (in / out)
+4. Vocabulary
+5. Architecture decisions (locked)
+6. Code state (already there / to wire / to write)
+7. Clock table
+8. Polar: wire the `raw`
 9. UI / UX
-10. Arborescence
-11. Ordre de chantier (A0 → A6)
-12. Fichiers touchés / interdits
-13. Recette
-14. Risques
-15. Passage à la simulation B
-16. Documents dont ce plan hérite
+10. Tree
+11. Build order (A0 → A6)
+12. Files touched / forbidden
+13. Recipe
+14. Risks
+15. Handoff to simulation B
+16. Documents this plan inherits
 
 ---
 
-## 1. En une phrase
+## 1. In one sentence
 
-Donner au mode Simulation une **date de départ** et une **horloge en
-jours de mer** : le bateau reste sur le trait searoute, avance à la
-polaire × vent **typique du mois** à cet endroit, et l’ETA d’une jambe
-**change** si on part en mars plutôt qu’en juillet.
-
----
-
-## 2. Pourquoi cette étape existe
-
-Aujourd’hui Play est un **film** : milles, 4 vitesses d’écran, nœud de
-croisière (VMG moyen) ou vent d’hier toutes les 25 s. On ne peut pas
-dire « on part le 15 juin ».
-
-Berry-Mappemonde dure des mois (~39 390 nm). Un modèle de prévision
-(GFS, IFS) n’est honnête que **7 à 10 jours**. La seule simulation
-honnête de **toute** l’expédition, c’est la climatologie : « en juin,
-ici, on a plutôt tel régime ».
-
-Sans A, la simulation B n’a ni calendrier, ni table de temps, ni HUD
-daté. Brancher un GRIB avant cette horloge, c’est animer du vent sur
-un film qui ne sait pas quel jour on est.
+Give Simulation mode a **departure date** and a **clock in
+days at sea**: the boat stays on the searoute line, advances at
+polar × **typical wind of the month** at that place, and a leg’s ETA
+**changes** if we leave in March rather than in July.
 
 ---
 
-## 3. Contrat skipper (dans / hors)
+## 2. Why this stage exists
 
-### On livre
+Today Play is a **film**: miles, 4 screen speeds, cruise knot
+(mean VMG) or yesterday’s wind every 25 s. We cannot
+say “we leave on 15 June”.
 
-En local (`http://localhost:5174`), mode Simulation ON :
+Berry-Mappemonde lasts months (~39 390 nm). A forecast model
+(GFS, IFS) is honest only for **7 to 10 days**. The only honest
+simulation of the **whole** expedition is climatology: “in June,
+here, the regime is more like this”.
 
-1. Un champ **Date de départ** (jour + mois + heure UTC). Défaut :
-   **1er juin 08:00 UTC**, départ mer = **La Rochelle**.
-2. À **Play**, le bateau glisse toujours. La barre montre les **nm**,
-   les **jours de mer** et la **date civile**
-   (ex. `j18 · 3 juillet 14:00 UTC`).
-3. Le HUD affiche les nœuds **locaux** (polaire × vent du mois), le
-   TWA, et `kind: climatology`. L’ETA de la jambe **n’est plus**
+Without A, simulation B has no calendar, no time table, no dated
+HUD. Wiring a GRIB before this clock is animating wind on
+a film that does not know what day it is.
+
+---
+
+## 3. Skipper contract (in / out)
+
+### We deliver
+
+Locally (`http://localhost:5174`), Simulation mode ON:
+
+1. A **Departure date** field (day + month + UTC time). Default:
+   **1 June 08:00 UTC**, sea departure = **La Rochelle**.
+2. On **Play**, the boat still slides. The bar shows the **nm**,
+   the **days at sea** and the **civil date**
+   (e.g. `d18 · 3 July 14:00 UTC`).
+3. The HUD shows **local** knots (polar × wind of the month), the
+   TWA, and `kind: climatology`. The leg ETA **is no longer**
    `nm / 7`.
-4. Changer le départ de **15 mars** à **15 juillet** recalcule
-   l’horloge : Fort-de-France n’a plus la même date d’arrivée.
-5. Aux escales à drapeau : **jours à quai** (calendrier), plus
-   seulement la pause 1,4 s du film.
-6. Sillage + liste d’escales cliquable (composants déjà écrits, à
-   monter).
-7. Bandeau : *Vent typique du mois, pas la météo de demain.*
+4. Changing departure from **15 March** to **15 July** recomputes
+   the clock: Fort-de-France no longer has the same arrival date.
+5. At flagged stops: **days in port** (calendar), not
+   only the film’s 1.4 s pause.
+6. Wake + clickable stop list (components already written, to
+   mount).
+7. Banner: *Typical wind of the month, not tomorrow’s weather.*
 
-Si searoute est down : même horloge sur `public/route.geojson`.
+If searoute is down: same clock on `public/route.geojson`.
 
-### On ne livre pas
+### We do not deliver
 
-| Interdit en A | Pourquoi |
+| Forbidden in A | Why |
 |---|---|
-| Fichiers GRIB, GFS, IFS, Open-Meteo | C’est B |
-| Isochrones, port 3010, nouveau trait | C’est B « recalcul » |
-| Horloge murale = horloge mer (« je reviens mercredi ») | C’est B « Suivre » |
-| Chat polar, 4 agents, import GeoJSON | Déjà exclus du simulateur |
-| Grille polaire 181×61 dans le navigateur | Seulement le tableau brut |
-| Modifier `naviguide/`, `frontend/`, `www` | Prod intouchée |
-| Prétendre une arrivée « le mardi 14 h » | Interdit par le plan climatologie |
-| Courant / houle P90 dans l’intégrateur | A+ (après l’atlas BI), pas A.0 |
+| GRIB, GFS, IFS, Open-Meteo files | That is B |
+| Isochrones, port 3010, new line | That is B “recompute” |
+| Wall clock = sea clock (“I’ll be back Wednesday”) | That is B “Follow” |
+| Polar chat, 4 agents, GeoJSON import | Already excluded from the simulator |
+| 181×61 polar grid in the browser | Only the raw table |
+| Modify `naviguide/`, `frontend/`, `www` | Prod untouched |
+| Claim an arrival “on Tuesday at 14:00” | Forbidden by the climatology plan |
+| Current / swell P90 in the integrator | A+ (after the BI atlas), not A.0 |
 
-La prod (`www.naviguide.fr`, `blueintelligence.online`) ne change pas.
+Prod (`www.naviguide.fr`, `blueintelligence.online`) does not change.
 
 ---
 
-## 4. Vocabulaire
+## 4. Vocabulary
 
-| Mot | Sens ici |
+| Word | Meaning here |
 |---|---|
-| **Film** | Play / Pause / scrub déjà là (nm film, avions, relais Halifax) |
-| **Horloge civile** | Date et heure UTC du bateau virtuel |
-| **t0** | Instant de départ **mer** (La Rochelle par défaut) |
-| **Table d’horloge** | Chaque vertex : `filmNm`, `lat/lon`, `tHours` depuis t0, `datetime`, nœuds, vent, `kind` |
-| **Jours de mer** | Heures de route **hors** escales, hors avion |
-| **Jours à quai** | Pause calendaire à une escale à drapeau |
-| **Vent de mois** | Atlas / zones, `kind: climatology`. Pas Copernicus NRT |
-| **Intégrateur** | `dt = nm / nœuds_fond` le long du trait **fixe** |
-| **kind** | Étiquette obligatoire. En A : toujours `"climatology"` |
+| **Film** | Play / Pause / scrub already there (film nm, planes, Halifax relay) |
+| **Civil clock** | UTC date and time of the virtual boat |
+| **t0** | Instant of **sea** departure (La Rochelle by default) |
+| **Clock table** | Each vertex: `filmNm`, `lat/lon`, `tHours` since t0, `datetime`, knots, wind, `kind` |
+| **Days at sea** | Hours under way **excluding** stops, excluding plane |
+| **Days in port** | Calendar pause at a flagged stop |
+| **Month wind** | Atlas / zones, `kind: climatology`. Not Copernicus NRT |
+| **Integrator** | `dt = nm / ground_knots` along the **fixed** line |
+| **kind** | Mandatory label. In A: always `"climatology"` |
 
 ---
 
-## 5. Décisions d’architecture (verrouillées)
+## 5. Architecture decisions (locked)
 
-### 5.1 Même polyline
+### 5.1 Same polyline
 
-Le trait reste searoute (Berry ou « draw your own »). A **ne
-redessine pas** la route. Seule l’horloge bouge.
+The line stays searoute (Berry or “draw your own”). A **does
+not redraw** the route. Only the clock moves.
 
-### 5.2 Départ mer = La Rochelle
+### 5.2 Sea departure = La Rochelle
 
-Saint-Maur → La Rochelle : terre, hors intégrateur polaire.
+Saint-Maur → La Rochelle: land, outside the polar integrator.
 
-- Défaut : `t0` = première escale maritime (La Rochelle).
-- Option : « depuis Saint-Maur » → un `dt` fixe (ex. 4 h), **sans**
-  polaire.
+- Default: `t0` = first maritime stop (La Rochelle).
+- Option: “from Saint-Maur” → a fixed `dt` (e.g. 4 h), **without**
+  polar.
 
-Avion Cayenne ↔ Halifax : durée **calendaire** fixe
-(`AIR_CALENDAR_HOURS` = 8), pas la polaire.
+Cayenne ↔ Halifax plane: fixed **calendar** duration
+(`AIR_CALENDAR_HOURS` = 8), not the polar.
 
-Relais Halifax ↔ Saint-Pierre : même table, véhicule `side`, vent du
-mois sur **ce** trait.
+Halifax ↔ Saint-Pierre relay: same table, vehicle `side`, month
+wind on **this** line.
 
-### 5.3 Vent = climatologie, polaire = brute
+### 5.3 Wind = climatology, polar = raw
 
-- Vent : `zoneWindAt` dans
-  `naviguide-simulator/src/utils/climatologyWind.js` (copie de
-  `climatology.py`). Plus tard, même API atlas que Blue Intelligence
-  **si** elle répond ; sinon zones. Toujours `kind: climatology`.
-- Vitesse : `polarBoatSpeed` sur le tableau **brut** (~20×15). Pas
-  d’appel `POST /wind` toutes les 25 s pour l’horloge A.
-- Courant / houle P90 : **hors A.0**. Vitesse = polaire × vent
-  seulement.
+- Wind: `zoneWindAt` in
+  `naviguide-simulator/src/utils/climatologyWind.js` (copy of
+  `climatology.py`). Later, the same atlas API as Blue Intelligence
+  **if** it responds; else zones. Always `kind: climatology`.
+- Speed: `polarBoatSpeed` on the **raw** table (~20×15). No
+  `POST /wind` call every 25 s for clock A.
+- Current / swell P90: **outside A.0**. Speed = polar × wind
+  only.
 
-### 5.4 Une table, deux scrubbers
+### 5.4 One table, two scrubbers
 
-`playback.nm` reste la source du film (caméra, sillage, `ici()`,
-stations 1,4 s).
+`playback.nm` remains the film source (camera, wake, `ici()`,
+1.4 s stations).
 
-La table donne `filmNm → datetime`. Un clic sur la barre = seek en nm
-(comme aujourd’hui). La date affichée **suit**. Une graduation « jours »
-en plus des nm est optionnelle (A+, pas A.0).
+The table gives `filmNm → datetime`. A click on the bar = seek in nm
+(as today). The displayed date **follows**. A “days”
+graduation besides nm is optional (A+, not A.0).
 
-Les 4 profils Play (réelle / lecture / normale / rapide) restent des
-**vitesses d’écran**. Ils ne calculent pas l’horloge civile.
+The 4 Play profiles (real / reading / normal / fast) remain
+**screen speeds**. They do not compute the civil clock.
 
-En A, le profil « réelle » (1 s écran = 1 s mer) n’est **pas** le
-défaut : inutile sur 200 jours de mer. Il sert d’aperçu sur **une**
-jambe.
+In A, the “real” profile (1 s screen = 1 s sea) is **not** the
+default: useless over 200 days at sea. It serves as a preview on
+**one** leg.
 
-### 5.5 Jours à quai
+### 5.5 Days in port
 
-Table par défaut (pas un import fichier) :
+Default table (not a file import):
 
-| Escale | Jours à quai |
+| Stop | Days in port |
 |---|---|
 | La Rochelle | 3 |
-| Autres escales à drapeau | 2 |
-| Relais Halifax (hub) | 1 |
+| Other flagged stops | 2 |
+| Halifax relay (hub) | 1 |
 | Saint-Maur | 0 |
 
-Pendant un quai : `datetime` avance, `filmNm` ne bouge pas, HUD
-« à quai ». La pause film 1,4 s (`STATION_HOLD_MS`) **reste** pour le
-Play accéléré : ce n’est pas le même objet que les jours à quai.
+During a stay: `datetime` advances, `filmNm` does not move, HUD
+“in port”. The 1.4 s film pause (`STATION_HOLD_MS`) **stays** for
+accelerated Play: it is not the same object as days in port.
 
-### 5.6 Où ça tourne
+### 5.6 Where it runs
 
-Calcul de la table **côté client** (vent de zone + polaire brute =
-synchrone, ~1 246 points). Pas de nouvel uvicorn. Le serveur polar
-sert déjà `GET /api/v1/polar/{id}` avec `raw`.
+Table computation **on the client** (zone wind + raw polar =
+synchronous, ~1 246 points). No new uvicorn. The polar server
+already serves `GET /api/v1/polar/{id}` with `raw`.
 
-### 5.7 Deux `kind` qui ne se mélangent pas
+### 5.7 Two `kind`s that do not mix
 
-Le clic carte `POST /wind|/wave|/current` reste NRT / ANFC (vent
-d’hier). Il **n’alimente pas** l’horloge A. Le HUD du film dit
-climatologie. Le popup du clic dit observation récente. Deux phrases,
-deux `kind`.
+The map click `POST /wind|/wave|/current` stays NRT / ANFC (yesterday’s
+wind). It **does not feed** clock A. The film HUD says
+climatology. The click popup says recent observation. Two sentences,
+two `kind`s.
 
 ---
 
-## 6. État du code (déjà là / à brancher / à écrire)
+## 6. Code state (already there / to wire / to write)
 
-### Déjà dans le film (ne pas réécrire)
+### Already in the film (do not rewrite)
 
-| Pièce | Fichier |
+| Piece | File |
 |---|---|
 | Playhead nm + stations | `src/engine/routePlayhead.js`, `src/hooks/useRoutePlayback.js` |
-| 4 vitesses d’écran | `src/engine/playSpeeds.js` |
-| Acteurs Berry / avion / relais | `src/engine/filmCast.js` |
-| Barre + pastilles | `src/components/SimulationFilmBar.jsx` |
-| Rotation catamaran | `src/components/CatamaranMarker.jsx` |
-| Polaire serveur | `server/polar_engine.py`, `server/polar_api.py` |
-| Vent de zone | `src/utils/climatologyWind.js` |
-| Polar × vent au point | `src/engine/alongTrackSpeed.js`, `src/engine/polarSpeed.js` |
+| 4 screen speeds | `src/engine/playSpeeds.js` |
+| Berry / plane / relay actors | `src/engine/filmCast.js` |
+| Bar + pills | `src/components/SimulationFilmBar.jsx` |
+| Catamaran rotation | `src/components/CatamaranMarker.jsx` |
+| Server polar | `server/polar_engine.py`, `server/polar_api.py` |
+| Zone wind | `src/utils/climatologyWind.js` |
+| Polar × wind at the point | `src/engine/alongTrackSpeed.js`, `src/engine/polarSpeed.js` |
 
-### Écrit, pas monté (à brancher en A0 / A1)
+### Written, not mounted (to wire in A0 / A1)
 
-| Pièce | Fichier | Manque |
+| Piece | File | Missing |
 |---|---|---|
-| Sillage | `src/engine/filmWake.js`, `src/layers/useWakeLayer.js` | appel dans `App.jsx` |
-| Liste d’escales | `src/components/EscaleLegend.jsx` | montage dans `Sidebar.jsx` + clés i18n |
-| `alongTrackSpeed` | `src/engine/alongTrackSpeed.js` | personne ne l’appelle |
-| Polar `raw` | `GET /api/v1/polar/{id}` | `ToolsSidebar` ne garde que `vmg_summary` |
+| Wake | `src/engine/filmWake.js`, `src/layers/useWakeLayer.js` | call in `App.jsx` |
+| Stop list | `src/components/EscaleLegend.jsx` | mount in `Sidebar.jsx` + i18n keys |
+| `alongTrackSpeed` | `src/engine/alongTrackSpeed.js` | nobody calls it |
+| Polar `raw` | `GET /api/v1/polar/{id}` | `ToolsSidebar` keeps only `vmg_summary` |
 
-### À écrire
+### To write
 
-`voyageClock.js`, `useVoyageClock.js`, `DepartureField.jsx`, et la
-colle HUD / barre.
+`voyageClock.js`, `useVoyageClock.js`, `DepartureField.jsx`, and the
+HUD / bar glue.
 
 ---
 
-## 7. Table d’horloge
+## 7. Clock table
 
-### Entrée
+### Input
 
-- `flat` (`flattenRoute`) + `marks` (escales) ;
-- `t0` ISO UTC ;
-- `polarRaw` ou `null` (alors `boatSpeedFromWind`) ;
-- `portDays` ;
+- `flat` (`flattenRoute`) + `marks` (stops);
+- ISO UTC `t0`;
+- `polarRaw` or `null` (then `boatSpeedFromWind`);
+- `portDays`;
 - `startAt` = `"la-rochelle"` | `"saint-maur"`.
 
-### Intégrateur (arête mer)
+### Integrator (sea edge)
 
 ```
 month = monthOf(t0 + tHours)
 wind  = zoneWindAt(lat, lon, month)
 knots = alongTrackSpeed({ lat, lon, bearing, month, polarRaw }).speedKnots
-dt    = spanNm / max(knots, 0.5)     # heures ; plancher 0,5 kn
+dt    = spanNm / max(knots, 0.5)     # hours; floor 0.5 kn
 tHours += dt
 ```
 
-Arête air (`jump`) : `tHours += AIR_CALENDAR_HOURS` (8).  
-Quai : au franchissement d’un mark, `tHours += portDays * 24`.
+Air edge (`jump`): `tHours += AIR_CALENDAR_HOURS` (8).
+Port: on crossing a mark, `tHours += portDays * 24`.
 
-### Sortie (JSON interne, contrat B aussi)
+### Output (internal JSON, B contract too)
 
 ```js
 {
@@ -289,192 +289,192 @@ Quai : au franchissement d’un mark, `tHours += portDays * 24`.
 }
 ```
 
-Recalcul si : route, polar, t0, portDays ou startAt changent.
-**Une fois**, pas à chaque frame.
+Recompute if: route, polar, t0, portDays or startAt change.
+**Once**, not every frame.
 
-### Tests unitaires (sans navigateur)
+### Unit tests (no browser)
 
-- Mars vs juillet, même nm : `arrivalIso` Fort-de-France **différent**.
-- t0 = 15 juin 08:00, départ La Rochelle → date Fort-de-France > 15 juin.
-- Quai 2 j : trou de 48 h dans `iso` à `filmNm` constant.
-- Hop aérien : +8 h, `speedKnots` null.
-- Sans polar : source `climatology`, pas de crash.
-- Antiméridien : `tHours` monotone.
-- `startAt: "saint-maur"` : premier `dt` sans polaire.
+- March vs July, same nm: Fort-de-France `arrivalIso` **different**.
+- t0 = 15 June 08:00, La Rochelle departure → Fort-de-France date > 15 June.
+- 2 d in port: 48 h hole in `iso` at constant `filmNm`.
+- Air hop: +8 h, `speedKnots` null.
+- Without polar: source `climatology`, no crash.
+- Antimeridian: `tHours` monotonic.
+- `startAt: "saint-maur"`: first `dt` without polar.
 
 ---
 
-## 8. Polar : câbler le `raw`
+## 8. Polar: wire the `raw`
 
-Aujourd’hui `ToolsSidebar.jsx` ne garde que `vmg_summary`.
+Today `ToolsSidebar.jsx` keeps only `vmg_summary`.
 
-Après upload / chargement auto Leopard 46 :
+After upload / auto-load Leopard 46:
 
-1. `GET /api/v1/polar/{expedition_id}` ;
-2. garder `raw: { twa_rows, tws_cols, matrix }` ;
-3. **ne pas** garder `grid` (181×61).
+1. `GET /api/v1/polar/{expedition_id}`;
+2. keep `raw: { twa_rows, tws_cols, matrix }`;
+3. **do not** keep `grid` (181×61).
 
-`useExpeditionSpeed` (poll 25 s Copernicus + `GET …/speed`) : **couper**
-dès que la table d’horloge existe. Sinon deux nœuds à l’écran
-(croisière / NRT vs table).
+`useExpeditionSpeed` (25 s Copernicus poll + `GET …/speed`): **cut**
+as soon as the clock table exists. Else two knots on screen
+(cruise / NRT vs table).
 
-Le tableau VMG de la sidebar droite reste le **moteur bateau** (upload,
-résumé). Le film n’a besoin que d’un nombre de nœuds à **cette**
+The VMG table in the right sidebar remains the **boat engine** (upload,
+summary). The film only needs a knot number at **this**
 position.
 
 ---
 
 ## 9. UI / UX
 
-### Sidebar gauche (simulation ON)
+### Left sidebar (simulation ON)
 
-- `DepartureField` : date, heure UTC, sélecteur
-  « Départ mer : La Rochelle | Saint-Maur ».
-- Sous `SimulationPanel` : `EscaleLegend` (clic = `seek`).
-- HUD : nœuds locaux, date civile, `climatologie · juin` — plus
-  `@ 7 kt` tout seul.
+- `DepartureField`: date, UTC time, selector
+  “Sea departure: La Rochelle | Saint-Maur”.
+- Under `SimulationPanel`: `EscaleLegend` (click = `seek`).
+- HUD: local knots, civil date, `climatology · June` — no more
+  `@ 7 kt` alone.
 
-### Barre bas
+### Bottom bar
 
-Remplir déjà parcouru + pastilles d’escales (déjà là). Sous-titre :
+Fill already travelled + stop pills (already there). Subtitle:
 
-`4 210 nm · j18 · 3 juil. 14:00 UTC`
+`4 210 nm · d18 · 3 Jul. 14:00 UTC`
 
-Scrub = nm, comme aujourd’hui.
+Scrub = nm, as today.
 
-### Carte
+### Map
 
 `useWakeLayer(mapRef, { flat, sailNm: cast.sailNm, enabled: simulationMode })`.
-Pas de nouvelle couche « atlas » obligatoire (le plan climatologie :
-invisible dans NAVIGUIDE).
+No mandatory new “atlas” layer (the climatology plan:
+invisible in NAVIGUIDE).
 
 ### Disclaimer
 
-Visible dès que A est ON, une ligne, FR/EN.
+Visible as soon as A is ON, one line, FR/EN.
 
 ---
 
-## 10. Arborescence
+## 10. Tree
 
-Tout dans `naviguide-simulator/` :
+Everything in `naviguide-simulator/`:
 
 ```
-src/engine/voyageClock.js             # NOUVEAU — construit la table
+src/engine/voyageClock.js             # NEW — builds the table
 src/engine/voyageClock.test.js
-src/engine/alongTrackSpeed.js         # déjà là — brancher
-src/engine/polarSpeed.js              # déjà là
-src/utils/climatologyWind.js          # déjà là
-src/hooks/useVoyageClock.js           # NOUVEAU — t0, table, seek
-src/components/DepartureField.jsx     # NOUVEAU
-src/components/SimulationFilmBar.jsx  # dates + jours
-src/components/SimulationPanel.jsx    # nœuds locaux + kind
-src/components/EscaleLegend.jsx       # déjà là — monter
-src/layers/useWakeLayer.js            # déjà là — appeler
-src/components/ToolsSidebar.jsx       # garder polar.raw
-src/components/Sidebar.jsx            # DepartureField + légende
-src/App.jsx                           # colle
+src/engine/alongTrackSpeed.js         # already there — wire
+src/engine/polarSpeed.js              # already there
+src/utils/climatologyWind.js          # already there
+src/hooks/useVoyageClock.js           # NEW — t0, table, seek
+src/components/DepartureField.jsx     # NEW
+src/components/SimulationFilmBar.jsx  # dates + days
+src/components/SimulationPanel.jsx    # local knots + kind
+src/components/EscaleLegend.jsx       # already there — mount
+src/layers/useWakeLayer.js            # already there — call
+src/components/ToolsSidebar.jsx       # keep polar.raw
+src/components/Sidebar.jsx            # DepartureField + legend
+src/App.jsx                           # glue
 src/i18n/fr.js
 src/i18n/en.js
 ```
 
-**Pas** d’import runtime depuis `../../naviguide/` ni
-`../../frontend/`. On ne copie **pas** `isochrone.py` en A.
+**No** runtime import from `../../naviguide/` nor
+`../../frontend/`. We do **not** copy `isochrone.py` in A.
 
 ---
 
-## 11. Ordre de chantier (A0 → A6)
+## 11. Build order (A0 → A6)
 
-| # | Quoi | Critère de sortie |
+| # | What | Exit criterion |
 |---|---|---|
-| **A0** | Brancher sillage + liste d’escales + i18n | Visuel, zéro météo |
-| **A1** | `polar.raw` dans le state | `alongTrackSpeed` testable avec Leopard 46 |
-| **A2** | `voyageClock.js` + tests mars / juillet | Table sans UI |
-| **A3** | `useVoyageClock` + `DepartureField` | Changer t0 régénère la table |
-| **A4** | HUD + barre (date, jours, nœuds locaux, kind) | Plus de 7 kt magiques |
-| **A5** | Quais calendaires | Bannière « à quai N j » + date qui saute |
-| **A6** | Recette Atlantique + disclaimer | §13 au vert |
+| **A0** | Wire wake + stop list + i18n | Visual, zero weather |
+| **A1** | `polar.raw` in state | `alongTrackSpeed` testable with Leopard 46 |
+| **A2** | `voyageClock.js` + March / July tests | Table without UI |
+| **A3** | `useVoyageClock` + `DepartureField` | Changing t0 regenerates the table |
+| **A4** | HUD + bar (date, days, local knots, kind) | No more magic 7 kt |
+| **A5** | Calendar stays | “N d in port” banner + date that jumps |
+| **A6** | Atlantic recipe + disclaimer | §13 green |
 
-Ne pas commencer A3 si A2 n’a pas les tests mars ≠ juillet.  
-Ne pas commencer B tant que A4 n’est pas recettable.
+Do not start A3 if A2 does not have the March ≠ July tests.
+Do not start B until A4 is recipe-ready.
 
-A0 peut partir en parallèle d’A1 (pas de dépendance météo).
+A0 can start in parallel with A1 (no weather dependency).
 
 ---
 
-## 12. Fichiers touchés / interdits
+## 12. Files touched / forbidden
 
-**Oui :** `naviguide-simulator/src/**` (+ tests), clés i18n.
+**Yes:** `naviguide-simulator/src/**` (+ tests), i18n keys.
 
-**Non :**
+**No:**
 
-- `naviguide/` (y compris `naviguide_weather_routing/`)
+- `naviguide/` (including `naviguide_weather_routing/`)
 - `frontend/`, `backend/`
-- `infra/vps/` (sauf un renvoi doc, pas un deploy)
+- `infra/vps/` (except a doc pointer, not a deploy)
 - `server/copernicus/getWind.py` / `getWave.py` / `getCurrent.py`
-  (NRT clic, autre `kind`)
+  (NRT click, other `kind`)
 - port 3010
 
 ---
 
-## 13. Recette
+## 13. Recipe
 
-1. Polar Leopard 46 chargé. Mode Simulation. t0 = **15 juin 08:00 UTC**,
-   départ La Rochelle.
-2. Play : le bateau part ; la barre affiche une date ≥ 15 juin ;
-   `kind` climatologie.
-3. Même route, t0 = **15 mars** : date d’arrivée Fort-de-France
-   **différente** (plusieurs jours d’écart, visible).
-4. Clic « Fort-de-France » dans la liste : bateau **et** date
-   cohérents.
-5. À une escale : date +2 j (défaut) sans bouger le bateau, puis
-   reprise.
-6. Hop Cayenne → Halifax : avion, date +~8 h, pas de nœuds polaire.
-7. Quitter : le bateau disparaît (contrat étape 1b).
+1. Leopard 46 polar loaded. Simulation mode. t0 = **15 June 08:00 UTC**,
+   La Rochelle departure.
+2. Play: the boat leaves; the bar shows a date ≥ 15 June;
+   `kind` climatology.
+3. Same route, t0 = **15 March**: Fort-de-France arrival date
+   **different** (several days of gap, visible).
+4. Click “Fort-de-France” in the list: boat **and** date
+   consistent.
+5. At a stop: date +2 d (default) without moving the boat, then
+   resume.
+6. Cayenne → Halifax hop: plane, date +~8 h, no polar knots.
+7. Leave: the boat disappears (stage 1b contract).
 8. Disclaimer visible.
-9. Backend éteint : film + horloge A (zones + polar si déjà en
-   mémoire). Searoute down = fallback `public/route.geojson`.
+9. Backend off: film + clock A (zones + polar if already in
+   memory). Searoute down = fallback `public/route.geojson`.
 
 ---
 
-## 14. Risques
+## 14. Risks
 
-| Risque | Parade |
+| Risk | Mitigation |
 |---|---|
-| Deux nœuds à l’écran (poll 25 s vs table) | Couper `useExpeditionSpeed` dès A4 |
-| 1 246 points trop lents | Table **une** fois, pas à chaque frame |
-| `tHours` non monotone (sauts, antiméridien) | Tests ; hops = +8 h hors polaire |
-| « 15 juin » lu comme prévision | Disclaimer + `kind` obligatoire |
-| Départ Saint-Maur = polaire sur l’autoroute | t0 mer = La Rochelle par défaut |
-| Confondre pause 1,4 s et jours à quai | Deux constantes, deux HUD |
+| Two knots on screen (25 s poll vs table) | Cut `useExpeditionSpeed` from A4 |
+| 1 246 points too slow | Table **once**, not every frame |
+| Non-monotonic `tHours` (jumps, antimeridian) | Tests; hops = +8 h outside polar |
+| “15 June” read as a forecast | Disclaimer + mandatory `kind` |
+| Saint-Maur departure = polar on the motorway | Sea t0 = La Rochelle by default |
+| Confusing 1.4 s pause and days in port | Two constants, two HUDs |
 
 ---
 
-## 15. Passage à la simulation B
+## 15. Handoff to simulation B
 
-A est fini quand : table d’horloge + t0 + ETA qui dépend du mois + HUD
-daté + tests mars / juillet + recette §13.
+A is done when: clock table + t0 + ETA that depends on the month + dated
+HUD + March / July tests + §13 recipe.
 
-B remplace **seulement** la fonction `vent(lat, lon, t)` pour les
-10 premiers jours, ajoute l’horloge murale, puis un bouton qui
-**change le trait d’une jambe**. L’intégrateur et la barre ne se
-réécrivent pas.
+B replaces **only** the `wind(lat, lon, t)` function for the
+first 10 days, adds the wall clock, then a button that
+**changes one leg’s line**. The integrator and the bar are not
+rewritten.
 
-Le schéma JSON du §7 **est** le contrat d’entrée de B.
+The §7 JSON schema **is** B’s input contract.
 
-Détail : [PLAN_IMPLEMENTATION_SIMULATION_B.md](./PLAN_IMPLEMENTATION_SIMULATION_B.md).
+Detail: [PLAN_IMPLEMENTATION_SIMULATION_B.md](./PLAN_IMPLEMENTATION_SIMULATION_B.md).
 
 ---
 
-## 16. Documents dont ce plan hérite
+## 16. Documents this plan inherits
 
 - [PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md](./PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md)
-  — film, searoute, polar sans chat, Leaflet.
+  — film, searoute, polar without chat, Leaflet.
 - [PLAN_IMPLEMENTATION_CLIMATOLOGIE.md](./PLAN_IMPLEMENTATION_CLIMATOLOGIE.md)
-  — `kind: climatology`, pas GFS comme moteur d’une circumnavigation.
-- [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md) — le produit
-  est le simulateur, pas `www.naviguide.fr`.
+  — `kind: climatology`, not GFS as the engine of a circumnavigation.
+- [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md) — the product
+  is the simulator, not `www.naviguide.fr`.
 - [REGLES_PARAMETRES.md](./REGLES_PARAMETRES.md) §3.6 — `no_llm_for_numbers`,
-  `wave_nogo_m` (A+ seulement).
-- Code vivant A : `alongTrackSpeed.js`, `climatologyWind.js`,
+  `wave_nogo_m` (A+ only).
+- Live A code: `alongTrackSpeed.js`, `climatologyWind.js`,
   `polarSpeed.js`, `routePlayhead.js`, `filmCast.js`,
   `server/polar_api.py`.

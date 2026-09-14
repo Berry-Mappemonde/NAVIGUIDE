@@ -22,7 +22,7 @@ class ItineraryGate:
     note: str
 
 
-# Copie fidèle des « Point intermédiaire » + escales-clés de itineraryPoints.ts
+# Faithful copy of the "Intermediate point" + key stopovers from itineraryPoints.ts
 ITINERARY_GATES: tuple[ItineraryGate, ...] = (
     ItineraryGate("Avant Corse", 8.438, 41.181, "porte", "Contournement Corse"),
     ItineraryGate("Ajaccio", 8.7386, 41.9192, "escale", "Escale"),
@@ -42,7 +42,7 @@ ITINERARY_GATES: tuple[ItineraryGate, ...] = (
 )
 
 
-# Canaux / détroits où une porte manquerait si une jambe les traverse sans plot.
+# Canals / straits where a gate would be missing if a leg crosses them without a plot.
 CANAL_HINTS: tuple[tuple[str, tuple], ...] = (
     ("Panama", NO_OFFSET_BOXES[1]),
     ("Suez", NO_OFFSET_BOXES[2]),

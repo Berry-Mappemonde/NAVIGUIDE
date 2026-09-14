@@ -17,7 +17,7 @@ def _const_wind(speed=16.0, direc=90.0):
 
 
 def test_iberia_land_crossing_blocked():
-    # Ouest Portugal → intérieur péninsule
+    # West of Portugal → inland peninsula
     assert is_path_clear(38.0, -10.5, 38.0, -10.0)
     assert not is_path_clear(38.0, -10.5, 38.0, -6.0)
 

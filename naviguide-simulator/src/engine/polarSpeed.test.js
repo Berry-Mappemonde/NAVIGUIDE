@@ -17,7 +17,7 @@ describe("polarBoatSpeed", () => {
     assert.equal(polarBoatSpeed(null, 90, 12), null);
   });
 
-  it("interpole au milieu de la grille", () => {
+  it("interpolates in the middle of the grid", () => {
     const k = polarBoatSpeed(raw, 80, 12);
     assert.ok(k > 5 && k < 9);
   });
@@ -27,7 +27,7 @@ describe("polarBoatSpeed", () => {
     assert.equal(polarBoatSpeed(raw, 0, 12), 0);
   });
 
-  it("plafonne TWS au max de la grille", () => {
+  it("caps TWS at the grid max", () => {
     const atMax = polarBoatSpeed(raw, 120, 16);
     const above = polarBoatSpeed(raw, 120, 40);
     assert.equal(atMax, above);

@@ -35,9 +35,9 @@ GATES: tuple[SailingGate, ...] = (
     SailingGate(
         id="torres_gne_pow",
         vias=(
-            # Pas de via à 142.8°E : searoute le relie alors par la mer de Corail
-            # (même classe de bug que test_torres.py).
-            (142.135679, -10.543294),  # WP itinéraire, Great North East Channel
+            # No via at 142.8°E: searoute would then connect it via the Coral Sea
+            # (same class of bug as test_torres.py).
+            (142.135679, -10.543294),  # itinerary WP, Great North East Channel
             (141.90, -10.70),          # sortie Prince of Wales
         ),
         lon_min=141.0,
@@ -69,7 +69,7 @@ GATES: tuple[SailingGate, ...] = (
 
 def _in_gate_box(lon: float, lat: float, gate: SailingGate) -> bool:
     if gate.antimeridian:
-        # Boîte à cheval sur ±180° : lon > lon_min OU lon < lon_max (négatif).
+        # Box straddling ±180°: lon > lon_min OR lon < lon_max (negative).
         lon_ok = lon >= gate.lon_min or lon <= gate.lon_max
         return lon_ok and gate.lat_min <= lat <= gate.lat_max
     return gate.lon_min <= lon <= gate.lon_max and gate.lat_min <= lat <= gate.lat_max

@@ -24,14 +24,14 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
     """
     
     try:
-        # Dataset ID pour les vents globaux (satellite)
+        # Dataset ID for global winds (satellite)
         dataset_id = "cmems_obs-wind_glo_phy_nrt_l4_0.125deg_PT1H"
         
-        # Date : prendre il y a 2 jours (délai de traitement satellite)
+        # Date: take 2 days ago (satellite processing lag)
         end_date = datetime.now() - timedelta(days=2)
         start_date = end_date - timedelta(days=1)
         
-        # Créer une petite zone autour du point (±0.1 degré)
+        # Create a small box around the point (±0.1 degree)
         margin = 0.1
         
         print(f"🔍 Récupération des données de vent pour:")
@@ -39,7 +39,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
         print(f"   Longitude: {longitude}°")
         print(f"   Date: {end_date.strftime('%Y-%m-%d')}")
         
-        # Ouvrir le dataset avec les filtres
+        # Open the dataset with the filters
         dataset = copernicusmarine.open_dataset(
             dataset_id=dataset_id,
             username=username,
@@ -54,15 +54,15 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
             coordinates_selection_method="nearest"
         )
         
-        # Sélectionner le point le plus proche
+        # Select the nearest point
         point_data = dataset.sel(
             latitude=latitude,
             longitude=longitude,
             method="nearest"
         )
         
-        # ✅ Extraire les données directement (pas de try/except nécessaire)
-        # Pas de dimension 'depth' pour le vent atmosphérique
+        # ✅ Extract the data directly (no try/except needed)
+        # No 'depth' dimension for atmospheric wind
         u_wind = float(point_data['eastward_wind'].isel(time=-1).values)
         v_wind = float(point_data['northward_wind'].isel(time=-1).values)
         
@@ -70,11 +70,11 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
         import math
         wind_speed = math.sqrt(u_wind**2 + v_wind**2)
         
-        # ✅ Direction météorologique (d'où VIENT le vent)
+        # ✅ Meteorological direction (where the wind COMES FROM)
         # Convention : 0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest
         wind_direction = (math.atan2(-u_wind, -v_wind) * 180 / math.pi) % 360
 
-        # Récupérer le timestamp et le convertir en string ISO
+        # Fetch the timestamp and convert it to an ISO string
         timestamp_value = point_data.time.isel(time=-1).values
         
         # Convertir numpy.datetime64 en string ISO 8601
@@ -91,7 +91,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
             "wind_speed": round(wind_speed, 3),  # m/s
             "wind_speed_kmh": round(wind_speed * 3.6, 2),  # km/h
             "wind_speed_knots": round(wind_speed * 1.944, 2),  # nœuds
-            "wind_direction": round(wind_direction, 1),  # degrés (d'où vient le vent)
+            "wind_direction": round(wind_direction, 1),  # degrees (where the wind comes from)
             "timestamp": timestamp_str
         }
         
@@ -104,7 +104,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
     except Exception as e:
         print(f"❌ Erreur lors de la récupération: {e}")
         import traceback
-        traceback.print_exc()  # ✅ Ajouté pour debug
+        traceback.print_exc()  # debug
         return None
     
 def _climatological_wind_knots(latitude: float, longitude: float) -> float:

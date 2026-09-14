@@ -64,7 +64,7 @@ function fdfMark(clock) {
 }
 
 describe("voyageClock Atlantique", () => {
-  it("mars vs juillet, même nm : arrivalIso Fort-de-France différent", () => {
+  it("March vs July, same nm: Fort-de-France arrivalIso differs", () => {
     const mar = clockFor("2026-03-15T08:00:00.000Z").clock;
     const jul = clockFor("2026-07-15T08:00:00.000Z").clock;
     assert.equal(mar.kind, "climatology");
@@ -77,14 +77,14 @@ describe("voyageClock Atlantique", () => {
     assert.ok(gapH > 48, `écart Fort-de-France ${gapH} h`);
   });
 
-  it("t0 = 15 juin 08:00, départ La Rochelle → Fort-de-France > 15 juin", () => {
+  it("t0 = 15 June 08:00, La Rochelle → Fort-de-France departure > 15 June", () => {
     const { clock } = clockFor("2026-06-15T08:00:00.000Z");
     const fdf = fdfMark(clock);
     assert.ok(fdf);
     assert.ok(Date.parse(fdf.iso) > Date.parse("2026-06-15T08:00:00.000Z"));
   });
 
-  it("sans polar : source climatology, pas de crash", () => {
+  it("without polar: climatology source, no crash", () => {
     const { clock } = clockFor("2026-06-01T08:00:00.000Z");
     assert.equal(clock.kind, "climatology");
     assert.ok(clock.vertices.length > 3);
@@ -96,7 +96,7 @@ describe("voyageClock Atlantique", () => {
     assert.ok("leadHours" in sea);
   });
 
-  it("sampleClockAtTime : waiting si now < t0", () => {
+  it("sampleClockAtTime: waiting if now < t0", () => {
     const { clock } = clockFor("2026-06-15T08:00:00.000Z");
     const waiting = sampleClockAtTime(clock, "2026-06-14T08:00:00.000Z");
     assert.equal(waiting.status, "waiting");
@@ -108,7 +108,7 @@ describe("voyageClock Atlantique", () => {
 });
 
 describe("voyageClock quais et hops", () => {
-  it("quai 2 j : trou de 48 h dans iso à filmNm constant", () => {
+  it("2-day quay: 48 h gap in iso at constant filmNm", () => {
     const flat = flattenRoute([
       { coords: [[-1.2, 46.1], [-20, 20], [-40, 15]] },
     ]);
@@ -138,7 +138,7 @@ describe("voyageClock quais et hops", () => {
     assert.equal(arrival.filmNm, leave.filmNm);
   });
 
-  it("hop aérien : +8 h, speedKnots null", () => {
+  it("air hop: +8 h, speedKnots null", () => {
     const flat = flattenRoute([
       { coords: [[-52.36, 4.92], CAYENNE] },
       { coords: [HALIFAX, SPM] },
@@ -157,7 +157,7 @@ describe("voyageClock quais et hops", () => {
     assert.ok(Math.abs(plane.tHours - before.tHours - AIR_CALENDAR_HOURS) < 1e-6);
   });
 
-  it("startAt saint-maur : premier dt sans polaire", () => {
+  it("startAt saint-maur: first dt without a polar", () => {
     const { clock } = clockFor("2026-06-01T08:00:00.000Z", { startAt: "saint-maur" });
     const lr = clock.marks.find((m) => /La Rochelle/i.test(m.name));
     assert.ok(lr);
@@ -168,8 +168,8 @@ describe("voyageClock quais et hops", () => {
   });
 });
 
-describe("voyageClock antiméridien", () => {
-  it("tHours monotone à travers l’antiméridien", () => {
+describe("voyageClock antimeridian", () => {
+  it("tHours is monotonic across the antimeridian", () => {
     const flat = flattenRoute([
       { coords: [[179.2, -15], [179.8, -15], [-179.8, -15], [-179.2, -15]] },
     ]);
@@ -190,7 +190,7 @@ describe("voyageClock antiméridien", () => {
 });
 
 describe("voyageClock contrat B0", () => {
-  it("chaque vertex porte kind + seaHours (même schéma que le serveur)", () => {
+  it("each vertex carries kind + seaHours (same schema as the server)", () => {
     const { clock } = clockFor("2026-06-15T08:00:00.000Z");
     const keys = [
       "filmNm", "sailNm", "lat", "lon", "bearing", "tHours", "iso",

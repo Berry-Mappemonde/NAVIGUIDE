@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
 describe("waypointsFromCollection", () => {
-  it("extrait les points dans l'ordre", () => {
+  it("extracts points in order", () => {
     const wps = waypointsFromCollection({
       type: "FeatureCollection",
       features: [
@@ -19,7 +19,7 @@ describe("waypointsFromCollection", () => {
     assert.equal(wps[1].lat, 14.6);
   });
 
-  it("retombe sur les extrémités des LineString", () => {
+  it("falls back to LineString endpoints", () => {
     const wps = waypointsFromCollection({
       type: "FeatureCollection",
       features: [
@@ -34,7 +34,7 @@ describe("waypointsFromCollection", () => {
     assert.equal(wps[1].lon, -5);
   });
 
-  it("ignore les collections vides", () => {
+  it("ignores empty collections", () => {
     assert.deepEqual(waypointsFromCollection(null), []);
     assert.deepEqual(waypointsFromCollection({ features: [] }), []);
   });

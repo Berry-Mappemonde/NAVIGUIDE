@@ -48,7 +48,7 @@ describe("detectAirEpisodes", () => {
 });
 
 describe("interpolateCast Guyane", () => {
-  it("garde le bateau à Cayenne, avion puis bateau relais, puis retour", () => {
+  it("keeps the boat in Cayenne, plane then relay boat, then return", () => {
     const flat = guyaneFlat();
     const [ep] = flat.episodes;
     const airOutMid = (flat.points[ep.ja - 1].filmCum + flat.points[ep.ja].filmCum) / 2;
@@ -95,7 +95,7 @@ describe("interpolateCast Guyane", () => {
     assert.equal(before.plane.visible, false);
   });
 
-  it("convertit film ↔ voile sans compter l’avion dans les nm mer", () => {
+  it("converts film ↔ sail without counting the plane in sea nm", () => {
     const flat = guyaneFlat();
     const [ep] = flat.episodes;
     const airMid = (flat.points[ep.ja - 1].filmCum + flat.points[ep.ja].filmCum) / 2;
@@ -107,7 +107,7 @@ describe("interpolateCast Guyane", () => {
 });
 
 describe("mergeEpisodeMarks", () => {
-  it("réinscrit Cayenne après SPM pour le HUD vers Papeete", () => {
+  it("re-inserts Cayenne after SPM for the HUD toward Papeete", () => {
     const flat = guyaneFlat();
     const marks = mergeEpisodeMarks(mapEscalesOnRoute(STOPS, flat), flat, STOPS);
     const cayenneMarks = marks.filter((m) => /Cayenne/i.test(m.name));
@@ -126,7 +126,7 @@ describe("mergeEpisodeMarks", () => {
 });
 
 describe("route officielle Berry", () => {
-  it("un seul épisode aérien Guyane et le principal ne traverse pas l’Atlantique", () => {
+  it("one Guiana air episode and the main boat does not cross the Atlantic", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const raw = JSON.parse(readFileSync(join(here, "../../public/route.geojson"), "utf8"));
     const { segments, stops } = routeFromOfficial(raw);

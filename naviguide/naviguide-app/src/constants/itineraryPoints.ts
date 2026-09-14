@@ -106,7 +106,7 @@ export const ITINERARY_POINTS = [
     flag: guyane,
   },
   {
-    // snapped 0.79 km offshore — east into harbour (segment maritime découplé)
+    // snapped 0.79 km offshore — east into harbour (decoupled maritime segment)
     name: "Halifax (Nouvelle-Écosse)",
     lat: 44.6488,
     lon: -63.5652,
@@ -269,7 +269,7 @@ export const ITINERARY_POINTS = [
 //     flag: france,
 //   },
 //   {
-//     name: "Point intermédiaire Avant Corse",
+//     name: "Intermediate point Before Corsica",
 //     lat: 41.055680018451,
 //     lon: 7.571686294801026,
 //     flag: "",
@@ -281,7 +281,7 @@ export const ITINERARY_POINTS = [
 //     flag: corse,
 //   },
 //   {
-//     name: "Point intermédiaire Après Corse",
+//     name: "Intermediate point After Corsica",
 //     lat: 43.30582034342319,
 //     lon: 8.664023850795274,
 //     flag: "",

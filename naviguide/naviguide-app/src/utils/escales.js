@@ -1,5 +1,5 @@
 /**
- * Si `toIdx` pointe un point intermédiaire (pas de drapeau), avance jusqu'à
+ * If `toIdx` points at an intermediate (no flag), advance until
  * la prochaine escale obligatoire. Sinon laisse l'index tel quel.
  */
 export function nextEscaleIndex(stops, toIdx) {

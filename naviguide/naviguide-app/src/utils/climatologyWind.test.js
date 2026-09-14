@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { boatSpeedFromClimatology, zoneWindAt } from "./climatologyWind.js";
 
-test("alizés Atlantique : mars plus fort que juillet, ETA qui bouge", () => {
+test("Atlantic trades: March stronger than July, ETA moves", () => {
   const mar = boatSpeedFromClimatology(15, -25, 3);
   const jul = boatSpeedFromClimatology(15, -25, 7);
   assert.equal(mar.kind, "climatology");

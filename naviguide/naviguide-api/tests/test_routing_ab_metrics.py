@@ -21,9 +21,9 @@ from routing_ab.metrics import (
 
 
 def test_haversine_known_distance():
-    # La Rochelle → à peu près 0 nm
+    # La Rochelle → roughly 0 nm
     assert haversine_nm(-1.167, 46.1541, -1.167, 46.1541) == 0
-    # ~1 degré de latitude ≈ 60 nm
+    # ~1 degree of latitude ≈ 60 nm
     d = haversine_nm(0, 0, 0, 1)
     assert 59 < d < 61
 
@@ -36,7 +36,7 @@ def test_unwrap_lon_dateline():
 def test_path_length_unwraps_dateline():
     coords = [[179.5, -17.0], [-179.5, -17.0]]
     nm = path_length_nm(coords)
-    assert nm < 130  # ~120 nm, pas 12 000
+    assert nm < 130  # ~120 nm, not 12 000
 
 
 def test_coral_sea_heuristic():

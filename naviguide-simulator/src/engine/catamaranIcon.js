@@ -1,4 +1,4 @@
-/** Cap dans le sens de la route, bateau toujours à l’endroit (pas de flip sud). */
+/** Heading along the route, boat always upright (no southern flip). */
 export function catamaranTransform(bearing) {
   const deg = Number(bearing) || 0;
   const goingEast = Math.sin((deg * Math.PI) / 180) >= 0;

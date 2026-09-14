@@ -1,8 +1,8 @@
 /**
- * NAVIGUIDE — Traductions françaises
+ * NAVIGUIDE — French translations
  */
 export default {
-  // ── Mode dessin ────────────────────────────────────────────────────────────
+  // ── Drawing mode ────────────────────────────────────────────────────────────
   drawStart:      "Choisissez votre point de départ",
   drawFirstStop:  "Choisissez votre première escale",
   drawNextStop:   "Choisissez votre prochaine escale",
@@ -12,7 +12,7 @@ export default {
   calculatingRoutes: "Calcul des routes…",
   routesProgress: "Routes {done}/{total}",
 
-  // ── Marqueurs carte ────────────────────────────────────────────────────────
+  // ── Map markers ────────────────────────────────────────────────────────
   strongWindWave: "Vent fort + Vagues hautes",
   strongWind:     "Vent fort",
   highWaves:      "Vagues hautes",
@@ -109,7 +109,7 @@ export default {
   noAlerts:           "✅ Aucune alerte critique — la route semble sûre.",
   dominantRisk:       "Dominant",
 
-  // ── Mode Simulation ────────────────────────────────────────────────────────
+  // ── Simulation mode ────────────────────────────────────────────────────────
   simulationMarkerTitle: "Catamaran — cliquez pour les métriques",
   simulationDragPrompt:  "Faites glisser le catamaran sur la route…",
   exitSimulation:        "Quitter la simulation",
@@ -151,7 +151,7 @@ export default {
   polarUpwind:            "↑ Près",
   polarDownwind:          "↓ Portant",
 
-  // ── Couches maritimes (MaritimeLayersPanel) ─────────────────────────────────
+  // ── Maritime layers (MaritimeLayersPanel) ─────────────────────────────────
   layerZee:        "ZEE",
   layerZeeTitle:   "Zones Économiques Exclusives (VLIZ)",
   layerPorts:      "Ports WPI",
@@ -162,7 +162,7 @@ export default {
   layersApiHint:   "ZEE et Ports nécessitent naviguide-api (port 8000)",
   layersStartHint: "Lancer ./naviguide_workspace/start_local.sh",
 
-  // ── Couches Blue Intelligence (Sidebar) ─────────────────────────────────────
+  // ── Blue Intelligence layers (Sidebar) ─────────────────────────────────────
   biLayersLabel:             "Blue Intelligence",
   layerBiProjects:           "Projets",
   layerBiProjectsTitle:      "Projets de conservation marine",
@@ -188,7 +188,7 @@ export default {
   play:  "Lecture",
   pause: "Pause",
 
-  // ── Lecteur film ──────────────────────────────────────────────────────────
+  // ── Film player ──────────────────────────────────────────────────────────
   speedReal:        "réelle",
   speedRead:        "lecture",
   speedNormal:      "normale",

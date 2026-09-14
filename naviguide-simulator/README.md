@@ -1,20 +1,20 @@
 # NAVIGUIDE simulator
 
-Sous-dossier **hors production** : le cockpit de l’expédition Berry-Mappemonde <!-- pragma: allowlist secret -->
-(carte Leaflet, boutons de couches, bateau qui avance, searoute, polaires).
+**Off-production** subfolder: the Berry-Mappemonde expedition cockpit <!-- pragma: allowlist secret -->
+(Leaflet map, layer buttons, moving boat, searoute, polars).
 
-`www.naviguide.fr` et `blueintelligence.online` ne sont **pas** le même
-site. Publication prévue : **https://simulator.naviguide.fr** (sous-domaine
-gratuit, même VPS, nginx à part).
+`www.naviguide.fr` and `blueintelligence.online` are **not** the same
+site. Planned publication: **https://simulator.naviguide.fr** (free
+subdomain, same VPS, separate nginx).
 
-Plan FR : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)  
-Plan EN : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)  
-Simulation A (horloge climatologique) : [`docs/PLAN_IMPLEMENTATION_SIMULATION_A.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_A.md)  
-Simulation B (bateau virtuel, après A) : [`docs/PLAN_IMPLEMENTATION_SIMULATION_B.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_B.md)
+FR plan: [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)
+EN plan: [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)
+Simulation A (climatology clock): [`docs/PLAN_IMPLEMENTATION_SIMULATION_A.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_A.md)
+Simulation B (virtual boat, after A): [`docs/PLAN_IMPLEMENTATION_SIMULATION_B.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_B.md)
 
-## Lancer (macOS, Terminal)
+## Run (macOS, Terminal)
 
-Deux onglets. Depuis ce dossier :
+Two tabs. From this folder:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -22,7 +22,7 @@ pip install -r server/requirements.txt
 uvicorn server.main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
-Autre onglet :
+Other tab:
 
 ```bash
 cd naviguide-simulator
@@ -30,49 +30,49 @@ npm install
 npm run dev
 ```
 
-Ouvrir `http://localhost:5174`.
+Open `http://localhost:5174`.
 
-## Publier sur le VPS
+## Publish on the VPS
 
-Quand le DNS `simulator.naviguide.fr` pointe déjà vers `135.125.226.16`
-(depuis le Mac, ou toute machine avec Node + SSH) :
+When the `simulator.naviguide.fr` DNS already points at `135.125.226.16`
+(from the Mac, or any machine with Node + SSH):
 
 ```bash
-cd /chemin/vers/Blue-Intelligence-Map
+cd /path/to/Blue-Intelligence-Map
 bash infra/vps/naviguide/publish-simulator-from-mac.sh
 ```
 
-Ça construit le site sur le Mac, copie uniquement ce dossier et les
-fichiers infra simulateur, puis sur le VPS : venv Python, service `:8010`, nginx **séparé**,
-certificat Let's Encrypt étendu (gratuit). `www.naviguide.fr` n'est pas
-redéployé. Détail : `infra/vps/README.md` (section simulator).
+That builds the site on the Mac, copies only this folder and the
+simulator infra files, then on the VPS: Python venv, `:8010` service, **separate** nginx,
+extended Let's Encrypt certificate (free). `www.naviguide.fr` is not
+redeployed. Details: `infra/vps/README.md` (simulator section).
 
-| Ça marche | Ça n’existe pas encore |
+| It works | It does not exist yet |
 |---|---|
-| Film NAVIGUIDE (2 sidebars, Berry, simulation, briefing) | 4 chats Ports / Sécurité / Météo / Cruisers |
-| Horloge climatologique : date de départ, jours de mer, ETA selon le mois | GRIB / GFS / « arrivée mardi 14 h » (simulation B) |
-| Searoute + draw your own route | Chat polar |
-| Polar upload + tableau VMG (Leopard 46) | Import / export GeoJSON ou KML |
-| Horloge civile + bateau virtuel (Suivre, prévision 10 j nommée, recalcul **d’une** jambe) | GRIB globe, isochrone 39 000 nm, port 3010 |
-| Pastilles de couches (Sextant, Argo, ODATIS, EDMED, CSR, bathymétrie, fonds, câbles + Climat stub) | |
-| `ici()` : ZEE, PoE Gold, AMP / projets / ports dans 30 nm — le briefing raconte ce sac | Tavily / Nemotron / Token Factory (étapes 5–6) |
-| Clic route → vent / vague / courant | Dump de toute la carte dans le récit |
+| NAVIGUIDE film (2 sidebars, Berry, simulation, briefing) | 4 Ports / Safety / Weather / Cruisers chats |
+| Climatology clock: departure date, days at sea, ETA by month | GRIB / GFS / “arrival Tuesday 2 pm” (simulation B) |
+| Searoute + draw your own route | Polar chat |
+| Polar upload + VMG table (Leopard 46) | GeoJSON or KML import / export |
+| Civil clock + virtual boat (Follow, named 10-day forecast, recompute **one** leg) | Globe GRIB, 39 000 nm isochrone, port 3010 |
+| Layer chips (Sextant, Argo, ODATIS, EDMED, CSR, bathymetry, seabed, cables + Climatology stub) | |
+| `ici()`: EEZ, Gold PoE, MPA / projects / ports within 30 nm — the briefing tells this bag | Tavily / Nemotron / Token Factory (steps 5–6) |
+| Route click → wind / wave / current | Dump of the whole map into the story |
 
-**Ne convient pas à la navigation.**
+**Not for navigation.**
 
-## Licences et attributions
+## Licences and attributions
 
-Le dépôt est en **MIT / Apache-2.0**. Le simulateur n’embarque pas LeafletPlayback,
-TrackPlayBack, deck.gl ni signalk-polar-performance : ce sont des *idées*
-(horloge, sillage, TWA→nœuds). Le code film / polaire est original.
+The repository is **MIT / Apache-2.0**. The simulator does not ship LeafletPlayback,
+TrackPlayBack, deck.gl or signalk-polar-performance: those are *ideas*
+(clock, wake, TWA→knots). The film / polar code is original.
 
-À afficher (déjà dans le pied de page, la carte et la modale) :
+To display (already in the footer, the map and the modal):
 
-| Source | Licence / mention |
+| Source | Licence / credit |
 |---|---|
-| Leaflet | BSD-2-Clause — « Leaflet » dans le contrôle d’attribution |
-| Tuiles Esri Canvas | « Tiles © Esri » |
-| OpenSeaMap (balisage) | ODbL — « © OpenSeaMap contributors » |
-| EMODnet (bathy / fonds / câbles) | CC-BY — attribution WMS |
-| GEBCO (sondage au large dans le sac) | GEBCO Compilation Group — lookup point OpenTopoData (GEBCO 2020), `null` à moins de 20 M d’un port |
-| Polaire Leopard 46 | fichier ORC chargé par l’utilisateur / défaut local |
+| Leaflet | BSD-2-Clause — “Leaflet” in the attribution control |
+| Esri Canvas tiles | “Tiles © Esri” |
+| OpenSeaMap (marks) | ODbL — “© OpenSeaMap contributors” |
+| EMODnet (bathy / seabed / cables) | CC-BY — WMS attribution |
+| GEBCO (offshore sounding in the bag) | GEBCO Compilation Group — OpenTopoData point lookup (GEBCO 2020), `null` within 20 M of a port |
+| Leopard 46 polar | ORC file loaded by the user / local default |

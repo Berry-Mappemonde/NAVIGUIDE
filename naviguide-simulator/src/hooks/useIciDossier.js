@@ -14,8 +14,8 @@ const MOVE_NM = 3;
 const FETCH_MS = 40000;
 
 /**
- * Remplit le sac `ici()` autour du bateau et en fait un récit.
- * Un pas = un GET /ici. Pas de chat, pas de Tavily.
+ * Fill the `ici()` bag around the boat and turn it into a story.
+ * One step = one GET /ici. No chat, no Tavily.
  */
 export function useIciDossier({
   enabled,
