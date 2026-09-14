@@ -16,17 +16,23 @@ APP="$HOME/blue-intelligence-map"
 NAV="$APP/naviguide"
 CONF_DIR="$HOME/.config/naviguide"
 UV="$HOME/.local/bin/uv"
+SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
+SKIP_PIP="${SKIP_PIP:-0}"
 
 command -v "$UV" >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # ── Venv Python partagé des 3 services NAVIGUIDE ──────────────────────────────
 cd "$NAV"
 [ -d .venv ] || "$UV" venv --python 3.12 .venv
-# scipy : requis par polar_engine (interpolation des polaires), absent des requirements
-"$UV" pip install --python .venv/bin/python \
-  -r naviguide-api/requirements.txt \
-  -r naviguide_workspace/requirements.txt \
-  scipy
+if [ "$SKIP_PIP" = "1" ] && [ -x .venv/bin/python ]; then
+  echo "SKIP_PIP=1 — venv NAVIGUIDE inchangé"
+else
+  # scipy : requis par polar_engine (interpolation des polaires), absent des requirements
+  "$UV" pip install --python .venv/bin/python \
+    -r naviguide-api/requirements.txt \
+    -r naviguide_workspace/requirements.txt \
+    scipy
+fi
 
 # ── Secrets (EnvironmentFile des unités systemd) ──────────────────────────────
 mkdir -p "$CONF_DIR"
@@ -38,8 +44,16 @@ fi
 
 # ── Frontend : build production (VITE_* → https://www.naviguide.fr) ───────────
 cd "$NAV/naviguide-app"
-npm install --no-audit --no-fund
-npm run build
+if [ "$SKIP_FRONTEND_BUILD" = "1" ]; then
+  if [ ! -f dist/index.html ]; then
+    echo "SKIP_FRONTEND_BUILD=1 mais naviguide-app/dist/index.html est absent." >&2
+    exit 1
+  fi
+  echo "SKIP_FRONTEND_BUILD=1 — bundle GitHub réutilisé"
+else
+  npm install --no-audit --no-fund
+  npm run build
+fi
 
 # ── Services systemd ──────────────────────────────────────────────────────────
 sudo cp "$APP"/infra/vps/naviguide/naviguide-api.service \
