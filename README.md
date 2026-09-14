@@ -87,7 +87,7 @@ blue-intelligence/
 ├── infra/              SearXNG auto-hébergé (`searxng/`) + déploiement production VPS OVH (`vps/`)
 ├── scripts/            Outillage d'exploitation (restauration de sauvegardes)
 ├── naviguide/          NAVIGUIDE — planificateur de route de l'expédition (application autonome, voir `naviguide/README.md`)
-└── naviguide-simulator/  Simulateur (hors prod) — voir `docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`
+└── naviguide-simulator/  Simulateur (hors prod) — `docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md` (EN : `.en.md`)
 ```
 
 ### Intelligence artificielle : NIM / Token Factory, Nemotron, OpenRouter pour le web
