@@ -2,6 +2,9 @@ import { useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Play, Shield, Square, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
+import { EscaleLegend } from "./EscaleLegend.jsx";
+import { DepartureField } from "./DepartureField.jsx";
+import { FollowToggle } from "./FollowToggle.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
@@ -144,6 +147,12 @@ export function Sidebar({
   isCockpit, polarData, maritimeLayers, simulationMode, onSimulationToggle,
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
   dossier = null, iciBriefing = null,
+  escaleMarks = [], filmNm = 0, onSeekEscale,
+  departureT0, departureStartAt, onDepartureT0, onDepartureStartAt,
+  clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
+  virtualBoat = false, onVirtualBoat, follow = false, onFollow,
+  previewing = false, forecastStatus = null, forecastModel = null,
+  onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
 }) {
   const { t } = useLang();
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -239,6 +248,19 @@ export function Sidebar({
 
         <div className="flex-1 overflow-y-auto sidebar-scroll px-4 py-3 space-y-4">
           {simulationMode && (
+            <DepartureField
+              t0={departureT0}
+              startAt={departureStartAt}
+              onT0={onDepartureT0}
+              onStartAt={onDepartureStartAt}
+              virtualBoat={virtualBoat}
+              onVirtualBoat={onVirtualBoat}
+            />
+          )}
+          {simulationMode && (
+            <FollowToggle follow={follow} onFollow={onFollow} />
+          )}
+          {simulationMode && (
             <SimulationPanel
               legContext={legContext}
               onClose={onSimulationToggle}
@@ -246,7 +268,24 @@ export function Sidebar({
               canPrev={canPrev}
               onNext={onNext}
               canNext={canNext}
+              clockSample={clockSample}
+              civilDate={civilDate}
+              kindLabel={kindLabel}
+              atQuay={atQuay}
+              quayDays={quayDays}
+              follow={follow}
+              previewing={previewing}
+              forecastStatus={forecastStatus}
+              forecastModel={forecastModel}
+              onRecompute={onRecompute}
+              canRecompute={canRecompute}
+              recomputeBusy={recomputeBusy}
+              onGoLive={onGoLive}
+              virtualBoat={virtualBoat}
             />
+          )}
+          {simulationMode && (
+            <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
           )}
 
           {officialFallback && (

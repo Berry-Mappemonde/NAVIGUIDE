@@ -5,6 +5,9 @@ Document de chantier. Il fige **comment poser le dossier** dans ce dépôt, et
 
 Version **3.0** — 13 septembre 2026.
 
+**English :** [PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md](./PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)  
+**Cahier hackathon (FR) :** [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md)
+
 **Ce que la 3.0 change par rapport à la 2.0**
 
 Le skipper a tranché le cockpit : on garde le **moteur bateau** et le
@@ -209,7 +212,9 @@ Blue-Intelligence-Map/
 ├── backend/                  # prod API — interdite
 ├── naviguide/                # prod NAVIGUIDE — interdite
 ├── naviguide-simulator/      # NOUVEAU, extractible plus tard (hackathon)
-└── docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md
+└── docs/
+    ├── PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md  # ce fichier
+    └── hackathon-nebius-nvidia.md
 ```
 
 Plus tard : `git subtree split` (ou copie propre) vers le dépôt
@@ -1183,10 +1188,19 @@ Rappel du contrat global :
   draw (v2.0).
 - Arbitrage skipper du 13 septembre **soir** (celui-ci) : polar **sans
   chat**, UX **sans** 4 agents, **sans** import/export GeoJSON.
-- `docs/hackathon-nebius-nvidia.md` — un seul produit, dossier autonome
-  extractible.
+- [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md) — cahier
+  unique FR (orientations + plan). Le mode Simulation du simulateur
+  **est** le film (lecteur), pas les 4 chats de `www.naviguide.fr`.
 - `docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` — pas une couche monde à
   l’étape 1.
+- `docs/PLAN_IMPLEMENTATION_SIMULATION_A.md` — horloge climatologique
+  (t0, jours de mer, polar × vent du mois). **Après** le film
+  recettable. Pas de GRIB.
+- `docs/PLAN_IMPLEMENTATION_SIMULATION_B.md` — bateau virtuel live,
+  mode Suivre, recalcul d’**une** jambe. **Après A**. Pas le port 3010.
+- `docs/PLAN_IMPLEMENTATION_FILIERES_CARTO.md` — ce que le simulateur
+  consomme (exports, Gold, juge, EMODnet, 0 ou 1 objet satellite) vs
+  ce qui reste côté Blue Intelligence (Seamap, overlay PMTiles, isobathe).
 - `docs/ARCHITECTURE.md` — `MapView.js` + un hook par couche.
 - Code vivant :
   - film : `naviguide/naviguide-app/src/App.jsx` (searoute L.523–676,

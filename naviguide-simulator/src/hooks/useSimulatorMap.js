@@ -20,7 +20,7 @@ export function useSimulatorMap(containerRef, isLightMode) {
     });
     createPanes(map);
     const base = L.tileLayer(TILE_URLS.dark, {
-      attribution: "Tiles © Esri",
+      attribution: "Leaflet | Tiles © Esri",
     }).addTo(map);
     baseRef.current = base;
     mapRef.current = map;
@@ -41,7 +41,7 @@ export function useSimulatorMap(containerRef, isLightMode) {
     if (baseRef.current) {
       map.removeLayer(baseRef.current);
     }
-    baseRef.current = L.tileLayer(url, { attribution: "Tiles © Esri" }).addTo(map);
+    baseRef.current = L.tileLayer(url, { attribution: "Leaflet | Tiles © Esri" }).addTo(map);
     baseRef.current.bringToBack();
   }, [isLightMode, mapReady]);
 

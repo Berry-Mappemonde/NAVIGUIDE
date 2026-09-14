@@ -1,22 +1,63 @@
 import { useEffect, useRef, useState } from "react";
 import { expeditionBoatKnots, trueWindAngle } from "../engine/playSpeeds.js";
+import { lerpSeries } from "../engine/routeWindProfile.js";
+import { polarBoatSpeed } from "../engine/polarSpeed.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? import.meta.env.VITE_API_URL ?? "";
 
+function roundKt(k) {
+  const n = Number(k);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 10) / 10;
+}
+
 /**
- * Vitesse réelle du bateau : polaire de croisière, et en lecture « réelle »
- * raffinée par vent live × grille polaire si possible.
+ * Nœuds film : table d’horloge (climatologie) dès qu’elle existe.
+ * Le poll Copernicus 25 s (kind analyse) ne tourne plus dans ce cas.
  */
-export function useExpeditionSpeed({ polarData, sample, profile, playing, onLiveKnots }) {
+export function useExpeditionSpeed({
+  polarData,
+  sample,
+  profile,
+  playing,
+  onLiveKnots,
+  windSeries,
+  filmNm,
+  clockSample = null,
+  clockReady = false,
+}) {
   const cruise = expeditionBoatKnots(polarData);
-  const [liveKnots, setLiveKnots] = useState(null);
+  const [nrtKnots, setNrtKnots] = useState(null);
+  const [climoKnots, setClimoKnots] = useState(null);
   const sampleRef = useRef(sample);
   const onLiveRef = useRef(onLiveKnots);
+  const lastEmit = useRef(null);
   sampleRef.current = sample;
   onLiveRef.current = onLiveKnots;
 
   useEffect(() => {
+    if (clockReady) return;
+    const s = sample;
+    const tws = lerpSeries(windSeries, filmNm, "tws");
+    const from = lerpSeries(windSeries, filmNm, "windFrom");
+    const twa = trueWindAngle(s?.bearing, from);
+    let k = null;
+    if (tws != null && twa != null) {
+      k = polarBoatSpeed(polarData?.raw, twa, tws);
+    }
+    const rounded = roundKt(k);
+    setClimoKnots(rounded);
+    if (nrtKnots == null) {
+      if (rounded !== lastEmit.current) {
+        lastEmit.current = rounded;
+        onLiveRef.current?.(rounded);
+      }
+    }
+  }, [filmNm, sample?.bearing, windSeries, polarData?.raw, nrtKnots, clockReady]);
+
+  useEffect(() => {
+    if (clockReady) return undefined;
     if (profile !== "real" || !playing || !polarData?.expedition_id) return undefined;
     let cancelled = false;
     const tick = async () => {
@@ -33,18 +74,24 @@ export function useExpeditionSpeed({ polarData, sample, profile, playing, onLive
         const tws = Number(wind.wind_speed_knots);
         const twa = trueWindAngle(s.bearing, Number(wind.wind_direction));
         if (!Number.isFinite(tws) || twa == null) return;
-        const spd = await fetch(
-          `${POLAR_API_URL}/api/v1/polar/${encodeURIComponent(polarData.expedition_id)}/speed?twa=${twa}&tws=${tws}`,
-        );
-        if (!spd.ok) return;
-        const body = await spd.json();
-        const k = Number(body.speed);
-        if (!cancelled && Number.isFinite(k) && k > 0) {
-          setLiveKnots(k);
-          onLiveRef.current?.(k);
+        let k = polarBoatSpeed(polarData?.raw, twa, tws);
+        if (k == null && polarData.expedition_id) {
+          const spd = await fetch(
+            `${POLAR_API_URL}/api/v1/polar/${encodeURIComponent(polarData.expedition_id)}/speed?twa=${twa}&tws=${tws}`,
+          );
+          if (spd.ok) {
+            const body = await spd.json();
+            k = Number(body.speed);
+          }
+        }
+        const rounded = roundKt(k);
+        if (!cancelled && rounded != null) {
+          setNrtKnots(rounded);
+          lastEmit.current = rounded;
+          onLiveRef.current?.(rounded);
         }
       } catch {
-        /* on garde la croisière */
+        /* climatologie / croisière */
       }
     };
     tick();
@@ -53,15 +100,21 @@ export function useExpeditionSpeed({ polarData, sample, profile, playing, onLive
       cancelled = true;
       clearInterval(id);
     };
-  }, [profile, playing, polarData?.expedition_id]);
+  }, [profile, playing, polarData?.expedition_id, polarData?.raw, clockReady]);
 
   useEffect(() => {
     if (profile !== "real") {
-      setLiveKnots(null);
-      onLiveRef.current?.(null);
+      setNrtKnots(null);
     }
   }, [profile]);
 
-  const knots = liveKnots && liveKnots > 0 ? liveKnots : cruise;
-  return { knots, cruise, live: Boolean(liveKnots) };
+  const clockKnots = clockSample?.speedKnots;
+  if (clockReady) {
+    const knots = (Number(clockKnots) > 0 ? Number(clockKnots) : null) || cruise;
+    return { knots, cruise, live: false, kind: "climatology" };
+  }
+  const analyse = profile === "real" && nrtKnots != null;
+  const knots = (analyse ? nrtKnots : climoKnots) || cruise;
+  const kind = analyse ? "analyse" : (climoKnots != null ? "climatology" : null);
+  return { knots, cruise, live: analyse, kind };
 }
