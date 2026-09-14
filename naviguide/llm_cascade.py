@@ -62,11 +62,11 @@ def _ensure_log_handler() -> None:
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Chaîne NIM par défaut. Déviation délibérée de l'ordre Blue Intelligence
-# (deepseek-v4-pro en tête) : NAVIGUIDE est interactif (chat, SSE) et le
-# hosted trial de deepseek-v4-pro part régulièrement en queue (timeouts),
-# alors que gpt-oss-20b répond en quelques secondes à qualité équivalente
-# sur ces textes courts. deepseek-v4-pro reste en 2ᵉ position.
+# Default NIM chain. Deliberate deviation from Blue Intelligence order
+# (deepseek-v4-pro first): NAVIGUIDE is interactive (chat, SSE) and the
+# hosted trial of deepseek-v4-pro regularly queues (timeouts),
+# while gpt-oss-20b answers in a few seconds at equivalent quality
+# on these short texts. deepseek-v4-pro stays in 2nd position.
 NVIDIA_CHAIN = (
     "openai/gpt-oss-20b",
     "deepseek-ai/deepseek-v4-pro-0813",
@@ -75,8 +75,8 @@ NVIDIA_CHAIN = (
 OPENROUTER_DEFAULT = "openai/gpt-4o-mini"
 ANTHROPIC_DEFAULT = "claude-opus-4-5"
 
-# Timeouts courts (usage interactif) : un modèle en queue bascule vite au
-# suivant (NIM nominal répond en 1-8 s). En SSE, read = délai max avant le
+# Short timeouts (interactive use): a queued model fails over quickly to
+# the next one (nominal NIM answers in 1-8 s). In SSE, read = max wait before
 # premier jeton / entre chunks.
 _TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 _STREAM_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
@@ -177,7 +177,7 @@ def _with_system(system: str, msgs: List[Dict]) -> List[Dict]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Complétions synchrones (LangGraph nodes, endpoints via threadpool)
+# Synchronous completions (LangGraph nodes, endpoints via threadpool)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _nvidia_complete(oai_msgs: List[Dict], max_tokens: int) -> str:

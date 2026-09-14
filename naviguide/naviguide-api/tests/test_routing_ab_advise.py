@@ -12,7 +12,7 @@ from routing_ab.engines import available_engines
 
 
 def test_build_advice_lists_itinerary_torres():
-    # La partie catalogue n'a pas besoin de searoute
+    # The catalogue part does not need searoute
     from routing_ab.itinerary_gates import ITINERARY_GATES
 
     assert any("Torres" in g.name for g in ITINERARY_GATES)

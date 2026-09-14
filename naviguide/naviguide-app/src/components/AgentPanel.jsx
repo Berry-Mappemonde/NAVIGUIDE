@@ -1,16 +1,16 @@
 /**
- * AgentPanel — 4 onglets d'agents IA spécialisés
+ * AgentPanel — 4 tabs of specialized AI agents
  *
- * Agents :
- *   custom  — Intelligence portuaire (formalités, tarifs marina)
- *   guard   — Sécurité maritime (piraterie, GMDSS, trafic)
- *   meteo   — Météorologie (fenêtres de passage, cyclones, vents)
- *   pirate  — Intelligence communautaire (Noonsite, forums cruisers)
+ * Agents:
+ *   custom  — Harbour intelligence (formalities, marina fees)
+ *   guard   — Maritime safety (piracy, GMDSS, traffic)
+ *   meteo   — Meteorology (passage windows, cyclones, winds)
+ *   pirate  — Community intelligence (Noonsite, cruiser forums)
  *
- * Chaque agent :
- *   - POST /agents/{type} avec le contexte du tronçon (LegContext)
- *   - Réponse streamée via SSE → affichage progressif
- *   - Fallback gracieux si le LLM est indisponible
+ * Each agent:
+ *   - POST /agents/{type} with the leg context (LegContext)
+ *   - Response streamed via SSE → progressive display
+ *   - Graceful fallback if the LLM is unavailable
  */
 
 import { useState, useRef, useEffect } from "react";
@@ -19,7 +19,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-// ── Configuration des agents ─────────────────────────────────────────────────
+// ── Agent configuration ─────────────────────────────────────────────────
 
 const AGENTS = [
   {
@@ -60,7 +60,7 @@ const AGENTS = [
   },
 ];
 
-// ── Rendu markdown minimal (gras + listes) ───────────────────────────────────
+// ── Minimal markdown render (bold + lists) ───────────────────────────────────
 
 function renderMarkdown(text) {
   if (!text) return null;
@@ -95,10 +95,10 @@ function renderInline(text) {
   );
 }
 
-// ── Composant ────────────────────────────────────────────────────────────────
+// ── Component ────────────────────────────────────────────────────────────────
 
 /**
- * @param {object|null} legContext  — résultat de useLegContext
+ * @param {object|null} legContext  — result of useLegContext
  * @param {string}      language   — "fr" | "en"
  */
 export function AgentPanel({ legContext, language = "fr" }) {

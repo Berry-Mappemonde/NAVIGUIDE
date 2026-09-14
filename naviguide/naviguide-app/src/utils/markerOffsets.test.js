@@ -13,7 +13,7 @@ import {
 const identityProject = (lon, lat) => ({ x: lon, y: lat });
 
 describe("hasFlag / capOffset", () => {
-  it("traite une chaîne vide comme point intermédiaire", () => {
+  it("treats an empty string as an intermediate point", () => {
     assert.equal(hasFlag({ flag: "" }), false);
     assert.equal(hasFlag({ flag: "/flags/fr.png" }), true);
   });
@@ -27,7 +27,7 @@ describe("hasFlag / capOffset", () => {
 });
 
 describe("computeMarkerOffsets", () => {
-  it("laisse les points intermédiaires à [0, 0]", () => {
+  it("leaves intermediate points at [0, 0]", () => {
     const points = [
       { lon: 0, lat: 0, flag: "" },
       { lon: 10, lat: 10, flag: "" },
@@ -37,7 +37,7 @@ describe("computeMarkerOffsets", () => {
     assert.deepEqual(offsets[1], [0, 0]);
   });
 
-  it("ne laisse jamais un drapeau au-delà de MAX_OFFSET", () => {
+  it("never lets a flag go beyond MAX_OFFSET", () => {
     const points = [];
     for (let i = 0; i < 12; i++) {
       points.push({ lon: 100 + i * 2, lat: 100 + i * 2, flag: "x" });
@@ -48,7 +48,7 @@ describe("computeMarkerOffsets", () => {
     }
   });
 
-  it("écarte deux drapeaux trop proches", () => {
+  it("separates two flags that are too close", () => {
     const points = [
       { lon: 50, lat: 50, flag: "a" },
       { lon: 52, lat: 50, flag: "b" },
@@ -62,7 +62,7 @@ describe("computeMarkerOffsets", () => {
     assert.ok(dist >= 20, `drapeaux trop proches: ${dist}`);
   });
 
-  it("évite de poser le rectangle du drapeau sur la route", () => {
+  it("avoids placing the flag rectangle on the route", () => {
     const points = [{ lon: 0, lat: 0, flag: "a" }];
     // Route horizontale qui passe par l'ancre — un offset (0,0) recouperait
     const routeSegs = [{ ax: -80, ay: 0, bx: 80, by: 0 }];

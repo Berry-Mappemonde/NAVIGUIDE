@@ -138,7 +138,7 @@ function CatamaranIcon({ size = 56, bearing = 0, southernHemisphere = false }) {
   );
 }
 
-// ── Composant principal ──────────────────────────────────────────────────────
+// ── Main component ──────────────────────────────────────────────────────
 
 /**
  * @param {number}   latitude   — current latitude of the catamaran (snapped)

@@ -36,7 +36,7 @@ def test_itinerary_has_torres():
 
 
 def test_missing_panama_on_fake_path():
-    # Un point dans la boîte Panama, aucun plot d'itinéraire là
+    # A point in the Panama box, no itinerary plot there
     path = [[-80.0, 9.0], [-90.0, 5.0]]
     assert "Panama" in missing_canals_on_path(path)
 

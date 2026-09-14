@@ -30,7 +30,7 @@ SHIPPING_LANES: tuple[ShippingBox, ...] = (
     (141.0, -12.0, 144.0, -9.0, 0.40, "Torres commercial"),
 )
 
-# Détroits / canaux : on NE décale PAS ici (le bateau doit passer).
+# Straits / canals: we do NOT offset here (the boat must pass).
 NO_OFFSET_BOXES: tuple[ShippingBox, ...] = (
     (141.0, -12.5, 147.0, -9.0, 1.0, "Torres gate"),
     (-81.0, 8.5, -79.0, 9.7, 1.0, "Panama"),

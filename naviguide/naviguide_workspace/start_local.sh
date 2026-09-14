@@ -67,8 +67,8 @@ fi
 # ── Service 1: naviguide-api (port 8000) ──────────────────────────────────────
 info "Starting naviguide-api on :8000..."
 API_DIR="$PROJECT_ROOT/naviguide-api"
-# Créer le .env au premier lancement seulement — JAMAIS de secrets committés ici,
-# renseigner les valeurs dans naviguide-api/.env (gitignoré).
+# Create .env on first launch only — NEVER commit secrets here;
+# fill in values in naviguide-api/.env (gitignored).
 if [ ! -f "$API_DIR/.env" ]; then
 cat > "$API_DIR/.env" <<'ENVEOF'
 # ── Copernicus Marine (optionnel — sans identifiants : fallback climatologique) ─
@@ -76,18 +76,18 @@ COPERNICUS_USERNAME=
 COPERNICUS_PASSWORD=
 PORT=8000
 # ── Agents IA simulation — cascade LLM NIM → OpenRouter → Claude ──────────
-# Renseigner au moins une clé pour activer les 4 agents IA en mode simulation.
+# Set at least one key to enable the 4 AI agents in simulation mode.
 # Ordre de cascade : NVIDIA NIM, puis OpenRouter, puis Anthropic Claude.
-# Sans aucune clé, les agents affichent un contenu de fallback statique.
+# With no key, agents show static fallback content.
 NVIDIA_API_KEY=
 OPENROUTER_API_KEY=
 ANTHROPIC_API_KEY=
-# Modèles optionnels (défauts : deepseek-v4-pro / gpt-4o-mini / claude-opus-4-5)
+# Optional models (defaults: deepseek-v4-pro / gpt-4o-mini / claude-opus-4-5)
 #NVIDIA_MODEL=
 #OPENROUTER_MODEL=
 #ANTHROPIC_MODEL=
-# ── Agent météo — StormGlass (optionnel) ──────────────────────────────────
-# Données météo live. Sans clé, l'agent météo utilise la climatologie LLM.
+# ── Weather agent — StormGlass (optional) ──────────────────────────────────
+# Live weather data. Without a key, the weather agent uses LLM climatology.
 STORMGLASS_API_KEY=
 ENVEOF
 warn "naviguide-api/.env créé — renseigner COPERNICUS_USERNAME/PASSWORD et une clé LLM (NVIDIA_API_KEY…)"

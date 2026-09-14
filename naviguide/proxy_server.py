@@ -59,8 +59,8 @@ API_BACKEND             = "http://localhost:8001"
 ORCHESTRATOR_BACKEND    = "http://localhost:3008"
 WEATHER_ROUTING_BACKEND = "http://localhost:3010"
 POLAR_API_BACKEND       = "http://localhost:8004"
-# API Blue Intelligence (exports GeoJSON des 5 modes) — surchargeable si BI
-# tourne sur la même machine (ex. http://127.0.0.1:8001/api sur le VPS).
+# Blue Intelligence API (GeoJSON exports of the 5 modes) — overridable if BI
+# runs on the same machine (e.g. http://127.0.0.1:8001/api on the VPS).
 BI_API_BASE             = os.environ.get("BI_API_BASE", "https://blueintelligence.online/api")
 
 STATIC_DIR = Path(__file__).resolve().parent / "naviguide-app" / "dist"

@@ -88,7 +88,7 @@ def _is_land_hires(lat: float, lon: float) -> bool:
         return len(_NE_TREE.query(pt, predicate="intersects")) > 0
     return False
 
-# Charger les variables d'environnement
+# Load environment variables
 load_dotenv()
 
 COPERNICUS_USERNAME = os.getenv("COPERNICUS_USERNAME")
@@ -664,8 +664,8 @@ def searoute_with_exact_end(start, end):
 
 @asynccontextmanager
 async def lifespan(app):
-    # Ne pas précharger les ZEE mondiales en RAM : 500 polygones VLIZ
-    # haute résolution occupent ~3,5 Go sur le VPS 8 Go.
+    # Do not preload worldwide EEZs in RAM: 500 high-resolution VLIZ
+    # polygons occupy ~3.5 GB on the 8 GB VPS.
     yield
 
 
@@ -871,7 +871,7 @@ def get_current(request: PositionRequest):
 _wpi_cache: dict = {"data": None, "ts": 0.0}
 _WPI_CACHE_TTL = 86_400  # seconds
 
-# Cache ZEE par bbox seulement (jamais le monde entier — plusieurs Go).
+# EEZ cache by bbox only (never the whole world — several GB).
 _zee_cache: dict = {"entries": {}}
 _ZEE_CACHE_TTL = 86_400
 
@@ -909,7 +909,7 @@ def _parse_coord(value: Optional[Union[str, float, int]]) -> Optional[float]:
     return None
 
 
-# ── ZEE WMS : tuiles à la demande (instantané, pas de timeout) ─────────────────
+# ── EEZ WMS: tiles on demand (instant, no timeout) ─────────────────
 _VLIZ_WMS = "https://geo.vliz.be/geoserver/MarineRegions/wms"
 
 
@@ -930,7 +930,7 @@ async def proxy_zee_wms(request: Request):
     params.setdefault("format", "image/png")
     params.setdefault("transparent", "true")
     params.setdefault("srs", "EPSG:3857")
-    # 512×512 pour rendu plus fin au zoom minimal (client envoie WIDTH/HEIGHT)
+    # 512×512 for a sharper render at minimum zoom (client sends WIDTH/HEIGHT)
     params.setdefault("width", "512")
     params.setdefault("height", "512")
     try:
@@ -1062,7 +1062,7 @@ async def proxy_ports():
 
 _OPENSEAMAP_HOSTS = ["tiles.openseamap.org", "t1.openseamap.org"]
 
-# PNG transparent 256×256 (évite les coupures visibles aux frontières de tuiles)
+# Transparent 256×256 PNG (avoids visible cuts at tile boundaries)
 def _transparent_tile_256() -> bytes:
     try:
         from PIL import Image
@@ -1111,7 +1111,7 @@ async def proxy_seamark(z: int, x: int, y: str):
                 last_error = str(e)
                 continue
 
-    # Tous les serveurs ont échoué → tuile transparente 256×256
+    # Every server failed → transparent 256×256 tile
     return Response(content=_get_transparent_tile(), media_type="image/png")
 
 

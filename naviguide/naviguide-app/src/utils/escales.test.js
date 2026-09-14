@@ -10,17 +10,17 @@ const stops = [
 ];
 
 describe("nextEscaleIndex", () => {
-  it("garde une escale", () => {
+  it("keeps a stopover", () => {
     assert.equal(nextEscaleIndex(stops, 0), 0);
     assert.equal(nextEscaleIndex(stops, 2), 2);
   });
 
-  it("saute un point intermédiaire vers l'escale suivante", () => {
+  it("skips an intermediate point to the next stopover", () => {
     assert.equal(nextEscaleIndex(stops, 1), 2);
     assert.equal(nextEscaleStop(stops, 1).stop.name, "Ajaccio (Corse)");
   });
 
-  it("reste sur le dernier intermédiaire s'il n'y a plus d'escale", () => {
+  it("stays on the last intermediate if there is no further stopover", () => {
     assert.equal(nextEscaleIndex(stops, 3), 3);
   });
 });

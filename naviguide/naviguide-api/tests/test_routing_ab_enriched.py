@@ -40,7 +40,7 @@ def test_torres_vias_are_between_noumea_and_arafura():
 
 
 def test_ocean_leg_has_no_torres_via():
-    # Cap-Vert → Sainte-Lucie ne doit pas recevoir les vias Torres
+    # Cape Verde → Saint Lucia must not receive Torres vias
     vias = vias_for_leg((-24.531, 13.919), (-61.498, 13.499))
     assert vias == []
 
@@ -62,7 +62,7 @@ def test_stitch_inserts_vias_in_order():
 
 
 def test_offset_moves_long_busy_stretch():
-    # Fausse route dans le Pas-de-Calais, assez longue pour déclencher le décalage
+    # Fake route in the Strait of Dover, long enough to trigger the offset
     coords = [[-1.0 + i * 0.15, 51.0] for i in range(20)]
     out = offset_from_cargo(coords, offset_nm=30.0, min_run_nm=50.0)
     moved = sum(

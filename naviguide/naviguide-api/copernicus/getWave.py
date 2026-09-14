@@ -23,14 +23,14 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
         dict: Données de vague (hauteur significative, période, direction)
     """
     try:
-        # Dataset ID pour le modèle de vagues globales
+        # Dataset ID for the global wave model
         dataset_id = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
 
-        # Date : données récentes (délai de 1 jour)
+        # Date: recent data (1-day lag)
         end_date = datetime.now() - timedelta(days=1)
         start_date = end_date - timedelta(days=1)
 
-        # Zone autour du point (±0.2 degré)
+        # Box around the point (±0.2 degree)
         margin = 0.2
 
         print(f"🌊 Récupération des données de vague pour:")
@@ -38,7 +38,7 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
         print(f"   Longitude: {longitude}°")
         print(f"   Date: {end_date.strftime('%Y-%m-%d')}")
 
-        # Ouvrir le dataset avec les filtres
+        # Open the dataset with the filters
         dataset = copernicusmarine.open_dataset(
             dataset_id=dataset_id,
             username=username,
@@ -53,7 +53,7 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
             coordinates_selection_method="nearest"
         )
 
-        # Sélectionner le point le plus proche
+        # Select the nearest point
         point_data = dataset.sel(
             latitude=latitude,
             longitude=longitude,
@@ -72,7 +72,7 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
             "significant_wave_height_m": round(vhm0, 2),
         }
 
-        # Période moyenne (optionnel)
+        # Mean period (optional)
         try:
             vtm02 = float(point_data['VTM02'].isel(time=-1).values)
             if not math.isnan(vtm02):

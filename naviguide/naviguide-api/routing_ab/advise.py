@@ -80,7 +80,7 @@ def _stats(coords, is_land) -> dict:
     }
 
 
-# Fiches à juger automatiquement (une jambe + les vias de la porte).
+# Sheets to judge automatically (one leg + the gate vias).
 GATE_CASES = (
     {
         "id": "torres_gne_pow",
@@ -190,7 +190,7 @@ def build_advice() -> dict:
     gates = advise_gates(is_land)
     nxt = advise_next_gate(is_land)
     ocean = advise_ocean_offset(is_land)
-    # Ne pas sérialiser les polylignes énormes deux fois dans le JSON texte :
+    # Do not serialize huge polylines twice in the text JSON:
     ocean_slim = {k: v for k, v in ocean.items() if k not in {"cargo_coords", "shifted_coords"}}
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
