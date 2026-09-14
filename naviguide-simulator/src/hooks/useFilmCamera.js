@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { haversineNm, unwrapLon } from "../utils/geo.js";
+import { isAirPhase } from "../engine/filmCast.js";
 
 const TELEPORT_NM = 80;
 
@@ -11,18 +12,35 @@ function zoomForRemaining(nm) {
   return 7;
 }
 
-/** Suit le bateau sans traverser le globe à l’antiméridien ni à un saut aérien. */
-export function useFilmCamera({ mapRef, mapReady, enabled, lat, lon, remainingNm, playing, jumpToken }) {
+function unwrapPair(prev, lon) {
+  return unwrapLon(prev, lon);
+}
+
+/** Suit l’acteur actif, ou cadre le hop aérien pour voir Cayenne et Halifax. */
+export function useFilmCamera({
+  mapRef,
+  mapReady,
+  enabled,
+  lat,
+  lon,
+  remainingNm,
+  playing,
+  jumpToken,
+  phase,
+  hopFrom,
+  hopTo,
+}) {
   const lastFollow = useRef(0);
   const lastJump = useRef(0);
   const lastPos = useRef(null);
   const followLon = useRef(null);
+  const lastPhase = useRef(null);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !enabled || lat == null || lon == null) return;
 
-    const lonCam = unwrapLon(followLon.current, lon);
+    const lonCam = unwrapPair(followLon.current, lon);
     followLon.current = lonCam;
     const prev = lastPos.current;
     const movedNm = prev ? haversineNm(prev.lat, prev.lon, lat, lon) : 0;
@@ -30,10 +48,30 @@ export function useFilmCamera({ mapRef, mapReady, enabled, lat, lon, remainingNm
     const z = zoomForRemaining(remainingNm);
     const tokenJump = jumpToken && jumpToken !== lastJump.current;
     if (tokenJump) lastJump.current = jumpToken;
-    const teleport = tokenJump || movedNm >= TELEPORT_NM;
+    const phaseChanged = phase && phase !== lastPhase.current;
+    if (phase) lastPhase.current = phase;
 
+    if (isAirPhase(phase) && hopFrom && hopTo) {
+      if (phaseChanged || tokenJump) {
+        const lonA = unwrapPair(followLon.current, hopFrom.lon);
+        const lonB = unwrapPair(lonA, hopTo.lon);
+        followLon.current = lonB;
+        map.fitBounds(
+          [
+            [hopFrom.lat, lonA],
+            [hopTo.lat, lonB],
+          ],
+          { padding: [56, 56], maxZoom: 4.5, animate: true, duration: 0.9 },
+        );
+        lastFollow.current = Date.now();
+        lastPos.current = null;
+      }
+      return;
+    }
+
+    const teleport = tokenJump || phaseChanged || movedNm >= TELEPORT_NM;
     if (teleport) {
-      map.flyTo([lat, lonCam], z, { duration: movedNm >= TELEPORT_NM ? 0.55 : 1.05 });
+      map.flyTo([lat, lonCam], z, { duration: movedNm >= TELEPORT_NM || phaseChanged ? 0.7 : 1.05 });
       lastFollow.current = Date.now();
       return;
     }
@@ -45,5 +83,5 @@ export function useFilmCamera({ mapRef, mapReady, enabled, lat, lon, remainingNm
     const cur = map.getZoom();
     const zoom = Math.abs(cur - z) >= 1.25 ? z : cur;
     map.setView([lat, lonCam], zoom, { animate: true, duration: 0.55 });
-  }, [mapRef, mapReady, enabled, lat, lon, remainingNm, playing, jumpToken]);
+  }, [mapRef, mapReady, enabled, lat, lon, remainingNm, playing, jumpToken, phase, hopFrom?.lat, hopFrom?.lon, hopTo?.lat, hopTo?.lon]);
 }

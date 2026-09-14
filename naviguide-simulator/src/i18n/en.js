@@ -198,4 +198,8 @@ export default {
   cinemaTooltip:    "Hide the side panels to watch the map",
   filmArrived:      "Arrived at {name}",
   filmScrub:        "Scrub along the route",
+  filmPhaseAir:     "Air transfer — the boat stays in port",
+  filmPhaseAirReturn: "Return flight — the boat then resumes the route",
+  filmPhaseSide:    "Sail Halifax — Saint-Pierre-et-Miquelon",
+  filmAirVehicle:   "aircraft",
 };

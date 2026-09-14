@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import { useCatamaranMarker } from "./components/CatamaranMarker.jsx";
+import { usePlaneMarker } from "./components/PlaneMarker.jsx";
 import { WindDirectionArrow } from "./components/map/WindDirectionArrow";
 import { getCardinalDirection } from "./utils/getCardinalDirection";
 import { useLang } from "./i18n/LangContext.jsx";
@@ -14,6 +15,7 @@ import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
 import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
+import { useAirHopLine } from "./hooks/useAirHopLine.js";
 import { useRouteLayer } from "./layers/useRouteLayer.js";
 import { useToggleLayers } from "./layers/useToggleLayers.js";
 import {
@@ -25,6 +27,7 @@ import {
   prevEscaleNm,
   filmLegContext,
 } from "./engine/routePlayhead.js";
+import { interpolateCast, isAirPhase, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
@@ -151,29 +154,41 @@ export default function App() {
     enabled: simulationMode,
   });
 
-  const sample = useMemo(
-    () => interpolateAtNm(flatRoute, playback.nm),
-    [flatRoute, playback.nm],
+  const cast = useMemo(
+    () => interpolateCast(flatRoute, playback.nm, { stops: activeStops }),
+    [flatRoute, playback.nm, activeStops],
   );
+  const sample = useMemo(() => {
+    if (!cast) return interpolateAtNm(flatRoute, playback.nm);
+    const actor = cast.vehicle === "side" ? cast.side : cast.main;
+    return {
+      lat: actor.lat,
+      lon: actor.lon,
+      bearing: actor.bearing,
+      nm: cast.sailNm,
+      jump: isAirPhase(cast.phase),
+    };
+  }, [cast, flatRoute, playback.nm]);
 
   const expeditionSpeed = useExpeditionSpeed({
     polarData,
-    sample,
+    sample: cast?.vehicle === "plane" ? cast.main : sample,
     profile: playback.profile,
-    playing: playback.playing,
+    playing: playback.playing && cast?.vehicle !== "plane",
     onLiveKnots: setLiveKnots,
   });
 
   const legContext = useMemo(() => {
-    if (!simulationMode || !sample) return null;
+    if (!simulationMode || !cast) return null;
     return filmLegContext({
       marks: escaleMarks,
-      nm: playback.nm,
+      nm: cast.sailNm,
       sample,
-      totalNm: playback.totalNm,
+      totalNm: playback.sailTotalNm || flatRoute.totalNm,
       boatKnots: expeditionSpeed.knots,
+      cast,
     });
-  }, [simulationMode, sample, escaleMarks, playback.nm, playback.totalNm, expeditionSpeed.knots]);
+  }, [simulationMode, cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -190,7 +205,7 @@ export default function App() {
 
   const handleCatamaranDrag = useCallback((pos) => {
     playback.pause();
-    playback.seek(nearestNm(flatRoute, pos.lat, pos.lon));
+    playback.seek(sailNmToFilmNm(flatRoute, nearestNm(flatRoute, pos.lat, pos.lon)));
   }, [playback.pause, playback.seek, flatRoute]);
 
   const leaveCinema = useCallback(() => {
@@ -221,11 +236,12 @@ export default function App() {
     prevPlayheadRef.current = 0;
     playback.pause();
     playback.seek(0);
-    const start = interpolateAtNm(flatRoute, 0);
+    const start = interpolateCast(flatRoute, 0, { stops: activeStops })?.main
+      || interpolateAtNm(flatRoute, 0);
     if (start && mapRef.current) {
       mapRef.current.setView([start.lat, start.lon], 6.5, { animate: true, duration: 0.9 });
     }
-  }, [playback.pause, playback.seek, flatRoute, mapRef]);
+  }, [playback.pause, playback.seek, flatRoute, mapRef, activeStops]);
 
   const exitSimulation = useCallback(() => {
     playback.pause();
@@ -257,9 +273,12 @@ export default function App() {
     const prev = prevPlayheadRef.current;
     const cur = playback.nm;
     prevPlayheadRef.current = cur;
-    const hit = escaleMarks.find((m) => m.nm > 0.5 && prev < m.nm && cur >= m.nm);
+    const hit = escaleMarks.find((m) => {
+      const at = m.filmNm ?? m.nm;
+      return at > 0.5 && prev < at && cur >= at;
+    });
     if (!hit) return undefined;
-    const key = `${hit.name}-${Math.round(hit.nm)}`;
+    const key = `${hit.name}-${Math.round(hit.filmNm ?? hit.nm)}`;
     if (lastArrivalKeyRef.current === key) return undefined;
     lastArrivalKeyRef.current = key;
     setArrivalBanner(hit);
@@ -304,22 +323,51 @@ export default function App() {
   useFilmCamera({
     mapRef,
     mapReady,
-    enabled: simulationMode && Boolean(sample),
-    lat: sample?.lat,
-    lon: sample?.lon,
-    remainingNm: legContext?.remainingNm ?? playback.totalNm,
+    enabled: simulationMode && Boolean(cast?.follow),
+    lat: cast?.follow?.lat,
+    lon: cast?.follow?.lon,
+    remainingNm: legContext?.remainingNm ?? playback.sailTotalNm,
     playing: playback.playing,
     jumpToken: playback.jumpToken,
+    phase: cast?.phase,
+    hopFrom: cast?.hopFrom,
+    hopTo: cast?.hopTo,
   });
 
-  const snapped = legContext?.snappedPosition;
+  useAirHopLine(mapRef, {
+    mapReady,
+    visible: simulationMode && isAirPhase(cast?.phase),
+    from: cast?.hopFrom,
+    to: cast?.hopTo,
+  });
+
   useCatamaranMarker(mapRef, {
-    visible: simulationMode && snapped,
-    lat: snapped?.[1],
-    lon: snapped?.[0],
-    bearing: legContext?.bearing || 0,
+    visible: simulationMode && Boolean(cast?.main?.visible),
+    lat: cast?.main?.lat,
+    lon: cast?.main?.lon,
+    bearing: cast?.main?.bearing || 0,
     onDrag: handleCatamaranDrag,
     onDragStart: playback.pause,
+    mapReady,
+  });
+
+  useCatamaranMarker(mapRef, {
+    visible: simulationMode && Boolean(cast?.side?.visible),
+    lat: cast?.side?.lat,
+    lon: cast?.side?.lon,
+    bearing: cast?.side?.bearing || 0,
+    onDrag: undefined,
+    onDragStart: undefined,
+    mapReady,
+    draggable: false,
+    className: "catamaran-divicon catamaran-divicon--side",
+  });
+
+  usePlaneMarker(mapRef, {
+    visible: simulationMode && Boolean(cast?.plane?.visible),
+    lat: cast?.plane?.lat,
+    lon: cast?.plane?.lon,
+    bearing: cast?.plane?.bearing || 0,
     mapReady,
   });
 
@@ -718,9 +766,9 @@ export default function App() {
         simulationMode={simulationMode}
         onSimulationToggle={handleSimulationToggle}
         onNext={handleSimNext}
-        canNext={simulationMode && playback.nm < (escaleMarks.at(-1)?.nm ?? 0) - 1}
+        canNext={simulationMode && playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
         onPrev={handleSimPrev}
-        canPrev={simulationMode && playback.nm > (escaleMarks[0]?.nm ?? 0) + 1}
+        canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
         legContext={legContext}
       />
 
@@ -807,11 +855,15 @@ export default function App() {
           fromName={legContext?.fromStop}
           toName={legContext?.toStop}
           finished={Boolean(legContext?.finished)}
-          nm={playback.nm}
-          totalNm={playback.totalNm}
+          nm={cast?.sailNm ?? 0}
+          totalNm={playback.sailTotalNm || flatRoute.totalNm}
+          playhead={playback.nm}
+          playheadTotal={playback.totalNm}
           remainingNm={legContext?.remainingNm ?? 0}
           etaHours={legContext?.etaHours}
           boatKnots={expeditionSpeed.knots}
+          phase={cast?.phase}
+          vehicle={cast?.vehicle}
           profile={playback.profile}
           onProfile={playback.setProfile}
           playing={playback.playing}
@@ -820,8 +872,8 @@ export default function App() {
           onSeekNm={(nm) => { playback.pause(); playback.seek(nm); }}
           onPrev={handleSimPrev}
           onNext={handleSimNext}
-          canPrev={simulationMode && playback.nm > (escaleMarks[0]?.nm ?? 0) + 1}
-          canNext={simulationMode && playback.nm < (escaleMarks.at(-1)?.nm ?? 0) - 1}
+          canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
+          canNext={simulationMode && playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
           cinema={cinemaMode}
           onCinema={toggleCinema}
           liveSpeed={expeditionSpeed.live}

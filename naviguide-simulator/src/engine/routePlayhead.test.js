@@ -82,6 +82,8 @@ describe("saut aérien Guyane → SPM", () => {
     assert.ok(flat.totalNm < 700);
     assert.ok(flat.totalNm > 200);
     assert.ok(flat.points.some((p) => p.jump));
+    assert.ok(flat.totalFilmNm > flat.totalNm);
+    assert.equal(flat.episodes.length, 0);
     const cayenneEnd = flat.points.find((p) => p.jump);
     const here = interpolateAtNm(flat, cayenneEnd.cumNm);
     assert.ok(Math.abs(here.lat - 44.65) < 0.4);

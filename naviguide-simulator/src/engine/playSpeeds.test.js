@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   FALLBACK_EXPEDITION_KNOTS,
+  airHopSeconds,
   expeditionBoatKnots,
   nmPerSecond,
   trueWindAngle,
@@ -26,6 +27,14 @@ describe("nmPerSecond", () => {
     assert.equal(nmPerSecond("read", { boatKnots: 7, atlanticNm: 3600 }), 15);
     assert.ok(Math.abs(nmPerSecond("normal", { boatKnots: 7, atlanticNm: 3600 }) - 3600 / 70) < 1e-9);
     assert.ok(nmPerSecond("read", { boatKnots: 7, atlanticNm: 3600 }) < nmPerSecond("normal", { boatKnots: 7, atlanticNm: 3600 }));
+  });
+});
+
+describe("airHopSeconds", () => {
+  it("reste visible à chaque profil, plus long en réelle", () => {
+    assert.ok(airHopSeconds("real") > airHopSeconds("read"));
+    assert.ok(airHopSeconds("read") > airHopSeconds("fast"));
+    assert.ok(airHopSeconds("fast") >= 1.5);
   });
 });
 

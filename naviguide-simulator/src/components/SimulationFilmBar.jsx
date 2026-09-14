@@ -14,6 +14,8 @@ export function SimulationFilmBar({
   finished,
   nm,
   totalNm,
+  playhead,
+  playheadTotal,
   remainingNm,
   etaHours,
   boatKnots,
@@ -31,14 +33,25 @@ export function SimulationFilmBar({
   onCinema,
   liveSpeed,
   boatName,
+  phase,
+  vehicle,
 }) {
   const { t } = useLang();
-  const pct = totalNm > 0 ? Math.min(100, (nm / totalNm) * 100) : 0;
+  const barTotal = playheadTotal ?? totalNm;
+  const barNm = playhead ?? nm;
+  const pct = barTotal > 0 ? Math.min(100, (barNm / barTotal) * 100) : 0;
+  const phaseLabel = phase === "air-out" || phase === "air"
+    ? t("filmPhaseAir")
+    : phase === "air-return"
+      ? t("filmPhaseAirReturn")
+      : phase === "side-sail"
+        ? t("filmPhaseSide")
+        : "";
 
   const onBarClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    onSeekNm(t0 * totalNm);
+    onSeekNm(t0 * barTotal);
   };
 
   return (
@@ -57,14 +70,17 @@ export function SimulationFilmBar({
                   </>
                 )}
             </div>
+            {phaseLabel ? (
+              <div className="text-[10px] text-cyan-300/80 mt-0.5 truncate">{phaseLabel}</div>
+            ) : null}
             <div className="text-[10px] text-white/55 mt-0.5">
               {Math.round(nm).toLocaleString()} / {Math.round(totalNm).toLocaleString()} nm
-              {remainingNm > 0.5 && !finished ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm` : ""}
-              {etaHours != null && !finished ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
-              {` · ${boatKnots.toFixed(1)} kt`}
-              {boatName ? ` · ${boatName}` : ""}
-              {profile === "real" ? ` · ${t("speedRealHint")}` : ""}
-              {liveSpeed ? ` · ${t("speedLivePolar")}` : ""}
+              {remainingNm > 0.5 && !finished && vehicle !== "plane" ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm` : ""}
+              {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
+              {vehicle === "plane" ? ` · ${t("filmAirVehicle")}` : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
+              {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
+              {profile === "real" && vehicle !== "plane" ? ` · ${t("speedRealHint")}` : ""}
+              {liveSpeed && vehicle !== "plane" ? ` · ${t("speedLivePolar")}` : ""}
             </div>
           </div>
           <button
@@ -91,7 +107,7 @@ export function SimulationFilmBar({
             <span
               key={`${m.name}-${m.nm}`}
               className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white"
-              style={{ left: `${totalNm > 0 ? (m.nm / totalNm) * 100 : 0}%` }}
+              style={{ left: `${barTotal > 0 ? ((m.filmNm ?? m.nm) / barTotal) * 100 : 0}%` }}
               title={m.name}
             />
           ))}
