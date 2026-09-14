@@ -43,6 +43,12 @@ export function SimulationFilmBar({
   windSeries,
   windLoading,
   holding,
+  clockLine = "",
+  kindLabel = "",
+  atQuay = false,
+  quayDays = 0,
+  twa = null,
+  disclaimer = "",
 }) {
   const { t } = useLang();
   const barTotal = playheadTotal ?? totalNm;
@@ -96,17 +102,22 @@ export function SimulationFilmBar({
             {phaseLabel ? (
               <div className="text-[10px] text-cyan-300/80 mt-0.5 truncate">{phaseLabel}</div>
             ) : null}
+            {disclaimer ? (
+              <div className="text-[10px] text-amber-200/85 mt-0.5">{disclaimer}</div>
+            ) : null}
             <div className="text-[10px] text-white/55 mt-0.5">
-              {progressLabel}
+              {clockLine || progressLabel}
               {remainLabel}
               {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
-              {vehicle === "plane" ? ` · ${t("filmAirVehicle")}` : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
+              {vehicle === "plane"
+                ? ` · ${t("filmAirVehicle")}`
+                : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
+              {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
               {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
               {profile === "real" && vehicle !== "plane" ? ` · ${t("speedRealHint")}` : ""}
-              {liveSpeed && vehicle !== "plane" ? ` · ${t("speedLivePolar")}` : ""}
-              {windKind === "climatology" && vehicle !== "plane" ? ` · ${t("filmWindClimo")}` : ""}
+              {kindLabel && vehicle !== "plane" ? ` · ${kindLabel}` : ""}
               {windKind === "analyse" && vehicle !== "plane" ? ` · ${t("filmWindAnalyse")}` : ""}
-              {holding ? ` · ${t("filmArrivalHold")}` : ""}
+              {atQuay && quayDays > 0 ? ` · ${t("voyageAtQuay", { days: quayDays })}` : (holding ? ` · ${t("filmArrivalHold")}` : "")}
             </div>
           </div>
           <div className="flex flex-shrink-0 items-center gap-1">

@@ -50,6 +50,7 @@ redéployé. Détail : `infra/vps/README.md` (section simulator).
 | Ça marche | Ça n’existe pas encore |
 |---|---|
 | Film NAVIGUIDE (2 sidebars, Berry, simulation, briefing) | 4 chats Ports / Sécurité / Météo / Cruisers |
+| Horloge climatologique : date de départ, jours de mer, ETA selon le mois | GRIB / GFS / « arrivée mardi 14 h » (simulation B) |
 | Searoute + draw your own route | Chat polar |
 | Polar upload + tableau VMG (Leopard 46) | Import / export GeoJSON ou KML |
 | Pastilles de couches (Sextant, Argo, ODATIS, EDMED, CSR, bathymétrie, fonds, câbles + Climat stub) | |

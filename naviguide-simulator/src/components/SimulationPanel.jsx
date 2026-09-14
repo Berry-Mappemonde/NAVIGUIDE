@@ -72,7 +72,19 @@ function PrevNextButtons({ onPrev, canPrev, onNext, canNext }) {
 
 // ── Composant principal ──────────────────────────────────────────────────────
 
-export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, canNext }) {
+export function SimulationPanel({
+  legContext,
+  onClose,
+  onPrev,
+  canPrev,
+  onNext,
+  canNext,
+  clockSample = null,
+  civilDate = "",
+  kindLabel = "",
+  atQuay = false,
+  quayDays = 0,
+}) {
   const { t } = useLang();
 
   if (!legContext) {
@@ -149,7 +161,15 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
             </span>
           </div>
           <span className="text-sm font-bold text-white">{formatEta(etaHours)}</span>
-          <span className="text-[9px] text-slate-500">@ {speedKnots} kt</span>
+          <span className="text-[9px] text-slate-500">
+            {clockSample?.vehicle === "plane"
+              ? t("filmAirVehicle")
+              : clockSample?.speedKnots != null
+                ? t("voyageLocalKnots", { knots: Number(clockSample.speedKnots).toFixed(1) })
+                : speedKnots != null
+                  ? t("voyageLocalKnots", { knots: speedKnots })
+                  : "—"}
+          </span>
         </div>
 
         {/* NM parcourus */}
@@ -175,6 +195,23 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
         </div>
 
       </div>
+
+      {(civilDate || kindLabel || clockSample?.twa != null || atQuay) && (
+        <div className="px-3 py-1.5 text-[10px] text-sky-100/90 border-t border-white/5 space-y-0.5">
+          {civilDate ? <div>{civilDate}</div> : null}
+          <div className="flex flex-wrap gap-x-2 text-white/55">
+            {kindLabel ? <span>{kindLabel}</span> : null}
+            {clockSample?.twa != null && clockSample?.vehicle !== "plane" ? (
+              <span>{t("voyageTwa", { deg: Math.round(clockSample.twa) })}</span>
+            ) : null}
+          </div>
+          {atQuay && quayDays > 0 ? (
+            <div className="text-amber-200 font-semibold uppercase tracking-wide">
+              {t("voyageAtQuay", { days: quayDays })}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Boutons Précédent / Suivant */}
       <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />

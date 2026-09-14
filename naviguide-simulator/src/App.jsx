@@ -18,6 +18,7 @@ import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
 import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
+import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useWakeLayer } from "./hooks/useWakeLayer.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
@@ -37,6 +38,13 @@ import { interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import { formatSeaClock } from "./engine/seaTime.js";
 import { nextStationAfter } from "./engine/stationDwell.js";
+import {
+  etaHoursToFilmNm,
+  formatCivilDate,
+  formatFilmClockLine,
+  formatMonthName,
+  lookupVoyageClock,
+} from "./engine/voyageClock.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -168,6 +176,13 @@ export default function App() {
     [activeStops, flatRoute],
   );
   const cruiseKnots = useMemo(() => expeditionBoatKnots(polarData), [polarData]);
+  const voyage = useVoyageClock({
+    flat: flatRoute,
+    marks: escaleMarks,
+    polarRaw: polarData?.raw || null,
+    enabled: simulationMode,
+    stops: activeStops,
+  });
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   const playback = useRoutePlayback({
@@ -176,12 +191,17 @@ export default function App() {
     boatKnots,
     enabled: simulationMode,
   });
+  const clockSample = useMemo(
+    () => lookupVoyageClock(voyage.clock, playback.nm, { atQuay: playback.holding }),
+    [voyage.clock, playback.nm, playback.holding],
+  );
   const windProfile = useRouteWindProfile({
     flat: flatRoute,
     marks: escaleMarks,
     polarData,
     cruiseKnots,
     enabled: simulationMode,
+    clock: voyage.clock,
   });
 
   const cast = useMemo(
@@ -208,6 +228,8 @@ export default function App() {
     onLiveKnots: setLiveKnots,
     windSeries: windProfile.series,
     filmNm: playback.nm,
+    clockSample,
+    clockReady: Boolean(voyage.clock),
   });
   useWakeLayer(mapRef, {
     flat: flatRoute,
@@ -228,18 +250,77 @@ export default function App() {
     });
   }, [simulationMode, cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
 
-  const jambe = useMemo(() => {
+  const clockEtaHours = useMemo(() => {
+    if (!voyage.clock || !legContext || legContext.finished || (legContext.nmRemainingToStop ?? 0) < 0.5) {
+      return 0;
+    }
+    const destNm = legContext.chapter?.to?.filmNm ?? legContext.chapter?.to?.nm;
+    if (destNm == null) return legContext.etaHours;
+    return etaHoursToFilmNm(voyage.clock, playback.nm, destNm, { atQuay: playback.holding })
+      ?? legContext.etaHours;
+  }, [voyage.clock, legContext, playback.nm, playback.holding]);
+
+  const hudLeg = useMemo(() => {
     if (!legContext) return null;
+    const local = Number(clockSample?.speedKnots);
+    const sailing = clockSample
+      && (clockSample.vehicle === "main" || clockSample.vehicle === "side")
+      && Number.isFinite(local);
     return {
-      fromStop: legContext.fromStop,
-      toStop: legContext.toStop,
-      speedKnots: legContext.speedKnots,
-      etaHours: legContext.etaHours,
-      remainingNm: legContext.nmRemainingToStop ?? legContext.remainingNm,
-      phase: legContext.phase,
-      vehicle: legContext.vehicle,
+      ...legContext,
+      etaHours: voyage.clock ? clockEtaHours : legContext.etaHours,
+      speedKnots: sailing ? Math.round(local * 10) / 10 : (voyage.clock ? null : legContext.speedKnots),
+      kind: voyage.clock ? "climatology" : legContext.kind,
     };
-  }, [legContext]);
+  }, [legContext, clockSample, voyage.clock, clockEtaHours]);
+
+  const jambe = useMemo(() => {
+    if (!hudLeg) return null;
+    return {
+      fromStop: hudLeg.fromStop,
+      toStop: hudLeg.toStop,
+      speedKnots: hudLeg.speedKnots,
+      etaHours: hudLeg.etaHours,
+      remainingNm: hudLeg.nmRemainingToStop ?? hudLeg.remainingNm,
+      phase: hudLeg.phase,
+      vehicle: hudLeg.vehicle,
+    };
+  }, [hudLeg]);
+
+  const legendMarks = useMemo(() => {
+    const clockMarks = voyage.clock?.marks || [];
+    return escaleMarks.map((m) => {
+      const film = m.filmNm ?? m.nm;
+      const hit = clockMarks.find((c) => (
+        Math.abs((c.filmNm ?? c.nm) - film) < 0.6 && (!m.name || c.name === m.name)
+      )) || clockMarks.find((c) => c.name === m.name);
+      return hit ? { ...m, iso: hit.iso, holdHours: hit.holdHours } : m;
+    });
+  }, [escaleMarks, voyage.clock]);
+
+  const civilDate = formatCivilDate(clockSample?.iso, lang);
+  const monthLabel = clockSample?.month
+    ? formatMonthName(clockSample.month, lang)
+    : "";
+  const climatologyLabel = voyage.clock && monthLabel
+    ? t("voyageKindClimatology", { month: monthLabel })
+    : "";
+  const quayDays = clockSample?.holdHours > 0
+    ? Math.round(clockSample.holdHours / 24)
+    : 0;
+  const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
+  const clockLine = clockSample
+    ? formatFilmClockLine({
+      sailNm: cast?.sailNm ?? clockSample.sailNm,
+      seaHours: clockSample.seaHours,
+      iso: clockSample.iso,
+      lang,
+    })
+    : "";
+
+  useEffect(() => {
+    if (clockSample?.speedKnots > 0) setLiveKnots(clockSample.speedKnots);
+  }, [clockSample?.speedKnots]);
 
   const iciPack = useIciDossier({
     enabled: simulationMode,
@@ -878,9 +959,18 @@ export default function App() {
         canNext={simulationMode && playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
         onPrev={handleSimPrev}
         canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
-        legContext={legContext}
-        escaleMarks={escaleMarks}
+        legContext={hudLeg}
+        escaleMarks={legendMarks}
         filmNm={playback.nm}
+        departureT0={voyage.t0}
+        departureStartAt={voyage.startAt}
+        onDepartureT0={voyage.setT0}
+        onDepartureStartAt={voyage.setStartAt}
+        clockSample={clockSample}
+        civilDate={civilDate}
+        kindLabel={climatologyLabel}
+        atQuay={atQuay}
+        quayDays={quayDays}
         onSeekEscale={(nm) => {
           lastArrivalKeyRef.current = "";
           setArrivalBanner(null);
@@ -970,20 +1060,22 @@ export default function App() {
             escaleMarks,
           )?.name}
           holding={playback.holding}
+          civilDate={civilDate}
+          quayDays={quayDays}
         />
       )}
 
       {simulationMode && (
         <SimulationFilmBar
-          fromName={legContext?.fromStop}
-          toName={legContext?.toStop}
-          finished={Boolean(legContext?.finished)}
+          fromName={hudLeg?.fromStop}
+          toName={hudLeg?.toStop}
+          finished={Boolean(hudLeg?.finished)}
           nm={cast?.sailNm ?? 0}
           totalNm={playback.sailTotalNm || flatRoute.totalNm}
           playhead={playback.nm}
           playheadTotal={playback.totalNm}
-          remainingNm={legContext?.remainingNm ?? 0}
-          etaHours={legContext?.etaHours}
+          remainingNm={hudLeg?.remainingNm ?? 0}
+          etaHours={hudLeg?.etaHours}
           boatKnots={expeditionSpeed.knots}
           phase={cast?.phase}
           vehicle={cast?.vehicle}
@@ -1012,6 +1104,12 @@ export default function App() {
           windSeries={windProfile.series}
           windLoading={windProfile.loading}
           holding={playback.holding}
+          clockLine={clockLine}
+          kindLabel={climatologyLabel}
+          atQuay={atQuay}
+          quayDays={quayDays}
+          twa={clockSample?.twa}
+          disclaimer={t("voyageClockDisclaimer")}
         />
       )}
 
