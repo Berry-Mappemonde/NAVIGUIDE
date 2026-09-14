@@ -8,19 +8,30 @@ import { WindDirectionArrow } from "./components/map/WindDirectionArrow";
 import { getCardinalDirection } from "./utils/getCardinalDirection";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
-import { useLegContext } from "./hooks/useLegContext.js";
+import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
 import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
+import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
+import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
+import { useFilmCamera } from "./hooks/useFilmCamera.js";
 import { useRouteLayer } from "./layers/useRouteLayer.js";
 import { useToggleLayers } from "./layers/useToggleLayers.js";
+import {
+  flattenRoute,
+  interpolateAtNm,
+  nearestNm,
+  mapEscalesOnRoute,
+  nextEscaleNm,
+  prevEscaleNm,
+  filmLegContext,
+} from "./engine/routePlayhead.js";
+import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import {
   activeSimulationSegments,
   activeSimulationStops,
-  buildSimTargets,
-  simulationStartPos,
 } from "./utils/simulationRoute.js";
 import {
   SEGMENT_BATCH_SIZE,
@@ -88,14 +99,17 @@ export default function App() {
   const [briefingLoading, setBriefingLoading] = useState(false);
 
   const [simulationMode, setSimulationMode] = useState(false);
-  const [catamaranPos, setCatamaranPos] = useState(null);
-  const [simulationStep, setSimulationStep] = useState(0);
+  const [cinemaMode, setCinemaMode] = useState(false);
+  const [arrivalBanner, setArrivalBanner] = useState(null);
+  const [liveKnots, setLiveKnots] = useState(null);
+  const cinemaSavedRef = useRef({ sidebar: true, tools: true });
+  const prevPlayheadRef = useRef(0);
+  const lastArrivalKeyRef = useRef("");
   const [customRoute, setCustomRoute] = useState(null);
   const [routeKind, setRouteKind] = useState("berry");
   const routeKindRef = useRef("berry");
   const berryFetchIdRef = useRef(0);
   const customFetchIdRef = useRef(0);
-  const pendingFlyTo = useRef(false);
 
   const [drawingMode, setDrawingMode] = useState(false);
   const [drawnPoints, setDrawnPoints] = useState([]);
@@ -125,62 +139,178 @@ export default function App() {
 
   const activeStops = useMemo(() => activeSimulationStops(customRoute, points.length ? points : ITINERARY_POINTS), [customRoute, points]);
   const activeSegments = useMemo(() => activeSimulationSegments(customRoute, segments), [customRoute, segments]);
-  const simTargets = useMemo(() => buildSimTargets(activeSegments, activeStops), [activeSegments, activeStops]);
-  const routeStartPos = useMemo(() => simulationStartPos(simTargets), [simTargets]);
-  const activeCatamaranPos = catamaranPos ?? routeStartPos;
+  const flatRoute = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
+  const escaleMarks = useMemo(() => mapEscalesOnRoute(activeStops, flatRoute), [activeStops, flatRoute]);
+  const cruiseKnots = useMemo(() => expeditionBoatKnots(polarData), [polarData]);
+  const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
-  const flyToPos = useCallback((lat, lon) => {
-    mapRef.current?.flyTo([lat, lon], 8, { duration: 0.8 });
-  }, [mapRef]);
+  const playback = useRoutePlayback({
+    flat: flatRoute,
+    marks: escaleMarks,
+    boatKnots,
+    enabled: simulationMode,
+  });
 
-  const handleSimNext = useCallback(() => {
-    const nextStep = simulationStep + 1;
-    if (nextStep >= simTargets.length) return;
-    setSimulationStep(nextStep);
-    setCatamaranPos(simTargets[nextStep]);
-    pendingFlyTo.current = true;
-  }, [simulationStep, simTargets]);
-
-  const handleSimPrev = useCallback(() => {
-    const prevStep = simulationStep - 1;
-    if (prevStep < 0) return;
-    setSimulationStep(prevStep);
-    setCatamaranPos(simTargets[prevStep]);
-    pendingFlyTo.current = true;
-  }, [simulationStep, simTargets]);
-
-  const handleCatamaranDrag = useCallback((pos) => {
-    setCatamaranPos(pos);
-    let bestIdx = simulationStep;
-    let bestDist = Infinity;
-    simTargets.forEach((tgt, i) => {
-      const d = Math.hypot(tgt.lat - pos.lat, tgt.lon - pos.lon);
-      if (d < bestDist) { bestDist = d; bestIdx = i; }
-    });
-    setSimulationStep(bestIdx);
-  }, [simulationStep, simTargets]);
-
-  const legContext = useLegContext(
-    simulationMode ? activeCatamaranPos.lat : null,
-    simulationMode ? activeCatamaranPos.lon : null,
-    activeSegments,
-    activeStops,
-    undefined,
-    simulationMode ? simulationStep : null,
+  const sample = useMemo(
+    () => interpolateAtNm(flatRoute, playback.nm),
+    [flatRoute, playback.nm],
   );
 
-  useEffect(() => {
-    if (!pendingFlyTo.current || !legContext) return;
-    pendingFlyTo.current = false;
-    flyToPos(legContext.snappedPosition[1], legContext.snappedPosition[0]);
-  }, [legContext, flyToPos]);
+  const expeditionSpeed = useExpeditionSpeed({
+    polarData,
+    sample,
+    profile: playback.profile,
+    playing: playback.playing,
+    onLiveKnots: setLiveKnots,
+  });
+
+  const legContext = useMemo(() => {
+    if (!simulationMode || !sample) return null;
+    return filmLegContext({
+      marks: escaleMarks,
+      nm: playback.nm,
+      sample,
+      totalNm: playback.totalNm,
+      boatKnots: expeditionSpeed.knots,
+    });
+  }, [simulationMode, sample, escaleMarks, playback.nm, playback.totalNm, expeditionSpeed.knots]);
+
+  const playheadNmRef = useRef(0);
+  playheadNmRef.current = playback.nm;
+
+  const handleSimNext = useCallback(() => {
+    playback.pause();
+    playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
+  }, [playback.pause, playback.seek, escaleMarks]);
+
+  const handleSimPrev = useCallback(() => {
+    playback.pause();
+    playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
+  }, [playback.pause, playback.seek, escaleMarks]);
+
+  const handleCatamaranDrag = useCallback((pos) => {
+    playback.pause();
+    playback.seek(nearestNm(flatRoute, pos.lat, pos.lon));
+  }, [playback.pause, playback.seek, flatRoute]);
+
+  const leaveCinema = useCallback(() => {
+    setSidebarOpen(cinemaSavedRef.current.sidebar);
+    setToolsOpen(cinemaSavedRef.current.tools);
+    setCinemaMode(false);
+  }, []);
+
+  const toggleCinema = useCallback(() => {
+    setCinemaMode((on) => {
+      if (!on) {
+        cinemaSavedRef.current = { sidebar: sidebarOpen, tools: toolsOpen };
+        setSidebarOpen(false);
+        setToolsOpen(false);
+        return true;
+      }
+      setSidebarOpen(cinemaSavedRef.current.sidebar);
+      setToolsOpen(cinemaSavedRef.current.tools);
+      return false;
+    });
+  }, [sidebarOpen, toolsOpen]);
+
+  const enterSimulation = useCallback(() => {
+    setSimulationMode(true);
+    setCinemaMode(false);
+    setArrivalBanner(null);
+    lastArrivalKeyRef.current = "";
+    prevPlayheadRef.current = 0;
+    playback.pause();
+    playback.seek(0);
+    const start = interpolateAtNm(flatRoute, 0);
+    if (start && mapRef.current) {
+      mapRef.current.setView([start.lat, start.lon], 6.5, { animate: true, duration: 0.9 });
+    }
+  }, [playback.pause, playback.seek, flatRoute, mapRef]);
+
+  const exitSimulation = useCallback(() => {
+    playback.pause();
+    leaveCinema();
+    setSimulationMode(false);
+    setArrivalBanner(null);
+    lastArrivalKeyRef.current = "";
+  }, [playback.pause, leaveCinema]);
+
+  const handleSimulationToggle = useCallback(() => {
+    if (simulationMode) exitSimulation();
+    else enterSimulation();
+  }, [simulationMode, enterSimulation, exitSimulation]);
 
   useEffect(() => {
     if (!simulationMode) return;
-    setSimulationStep(0);
-    setCatamaranPos(routeStartPos);
-    pendingFlyTo.current = true;
+    playback.pause();
+    playback.seek(0);
+    prevPlayheadRef.current = 0;
+    lastArrivalKeyRef.current = "";
+    setArrivalBanner(null);
   }, [customRoute]);
+
+  useEffect(() => {
+    if (!simulationMode) {
+      prevPlayheadRef.current = playback.nm;
+      return undefined;
+    }
+    const prev = prevPlayheadRef.current;
+    const cur = playback.nm;
+    prevPlayheadRef.current = cur;
+    const hit = escaleMarks.find((m) => m.nm > 0.5 && prev < m.nm && cur >= m.nm);
+    if (!hit) return undefined;
+    const key = `${hit.name}-${Math.round(hit.nm)}`;
+    if (lastArrivalKeyRef.current === key) return undefined;
+    lastArrivalKeyRef.current = key;
+    setArrivalBanner(hit);
+    const timer = setTimeout(() => setArrivalBanner(null), 8000);
+    return () => clearTimeout(timer);
+  }, [playback.nm, simulationMode, escaleMarks]);
+
+  useEffect(() => {
+    if (!simulationMode) return undefined;
+    const onKey = (e) => {
+      if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+      if (e.target?.closest?.("button") && e.code === "Space") return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        playback.toggle();
+      } else if (e.code === "ArrowRight") {
+        e.preventDefault();
+        handleSimNext();
+      } else if (e.code === "ArrowLeft") {
+        e.preventDefault();
+        handleSimPrev();
+      } else if (e.code === "KeyC") {
+        e.preventDefault();
+        toggleCinema();
+      } else if (e.code === "Escape" && cinemaMode) {
+        e.preventDefault();
+        leaveCinema();
+      } else if (e.code === "Digit1") {
+        playback.setProfile("real");
+      } else if (e.code === "Digit2") {
+        playback.setProfile("read");
+      } else if (e.code === "Digit3") {
+        playback.setProfile("normal");
+      } else if (e.code === "Digit4") {
+        playback.setProfile("fast");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [simulationMode, cinemaMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema]);
+
+  useFilmCamera({
+    mapRef,
+    mapReady,
+    enabled: simulationMode && Boolean(sample),
+    lat: sample?.lat,
+    lon: sample?.lon,
+    remainingNm: legContext?.remainingNm ?? playback.totalNm,
+    playing: playback.playing,
+    jumpToken: playback.jumpToken,
+  });
 
   const snapped = legContext?.snappedPosition;
   useCatamaranMarker(mapRef, {
@@ -189,6 +319,7 @@ export default function App() {
     lon: snapped?.[0],
     bearing: legContext?.bearing || 0,
     onDrag: handleCatamaranDrag,
+    onDragStart: playback.pause,
     mapReady,
   });
 
@@ -262,9 +393,10 @@ export default function App() {
   };
 
   const handleDrawStart = () => {
+    playback.pause();
+    setCinemaMode(false);
     setSimulationMode(false);
-    setCatamaranPos(null);
-    setSimulationStep(0);
+    setArrivalBanner(null);
     setDrawingMode(true);
     _resetDrawState();
     berryFetchIdRef.current += 1;
@@ -286,9 +418,10 @@ export default function App() {
   };
 
   const handleDrawContinue = () => {
+    playback.pause();
+    setCinemaMode(false);
     setSimulationMode(false);
-    setCatamaranPos(null);
-    setSimulationStep(0);
+    setArrivalBanner(null);
     setDrawingMode(true);
     setExpeditionPlan(null);
     setBriefingLoading(false);
@@ -583,19 +716,11 @@ export default function App() {
         briefingLoading={briefingLoading}
         officialFallback={officialFallback}
         simulationMode={simulationMode}
-        onSimulationToggle={() => {
-          const entering = !simulationMode;
-          setSimulationMode(entering);
-          if (entering) {
-            setCatamaranPos(routeStartPos);
-            setSimulationStep(0);
-            if (routeStartPos) flyToPos(routeStartPos.lat, routeStartPos.lon);
-          } else setCatamaranPos(null);
-        }}
+        onSimulationToggle={handleSimulationToggle}
         onNext={handleSimNext}
-        canNext={simulationMode && simulationStep < simTargets.length - 1}
+        canNext={simulationMode && playback.nm < (escaleMarks.at(-1)?.nm ?? 0) - 1}
         onPrev={handleSimPrev}
-        canPrev={simulationMode && simulationStep > 0}
+        canPrev={simulationMode && playback.nm > (escaleMarks[0]?.nm ?? 0) + 1}
         legContext={legContext}
       />
 
@@ -664,15 +789,50 @@ export default function App() {
       )}
 
       {maritimeLayers.showClimatology && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full">
+        <div className={`absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full ${simulationMode ? "bottom-32" : "bottom-6"}`}>
           {t("climatologyStub")}
         </div>
+      )}
+
+      {simulationMode && arrivalBanner && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[2030] pointer-events-none">
+          <div className="bg-slate-950/92 border border-cyan-400/40 text-white px-5 py-3 rounded-2xl shadow-2xl text-center max-w-[min(420px,92vw)]">
+            <div className="text-base font-semibold leading-snug">{t("filmArrived", { name: arrivalBanner.name })}</div>
+          </div>
+        </div>
+      )}
+
+      {simulationMode && (
+        <SimulationFilmBar
+          fromName={legContext?.fromStop}
+          toName={legContext?.toStop}
+          finished={Boolean(legContext?.finished)}
+          nm={playback.nm}
+          totalNm={playback.totalNm}
+          remainingNm={legContext?.remainingNm ?? 0}
+          etaHours={legContext?.etaHours}
+          boatKnots={expeditionSpeed.knots}
+          profile={playback.profile}
+          onProfile={playback.setProfile}
+          playing={playback.playing}
+          onTogglePlay={playback.toggle}
+          marks={escaleMarks}
+          onSeekNm={(nm) => { playback.pause(); playback.seek(nm); }}
+          onPrev={handleSimPrev}
+          onNext={handleSimNext}
+          canPrev={simulationMode && playback.nm > (escaleMarks[0]?.nm ?? 0) + 1}
+          canNext={simulationMode && playback.nm < (escaleMarks.at(-1)?.nm ?? 0) - 1}
+          cinema={cinemaMode}
+          onCinema={toggleCinema}
+          liveSpeed={expeditionSpeed.live}
+          boatName={polarData?.boat_name}
+        />
       )}
 
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl">
+        <div className={`absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl ${simulationMode ? "bottom-36" : "bottom-8"}`}>
           <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={() => setSelectedSatellite(null)}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
