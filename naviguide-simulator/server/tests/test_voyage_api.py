@@ -64,6 +64,7 @@ def test_at_plus_48h_forecast_and_f5(client):
     assert a.status_code == 200
     assert a.json()["kind"] == "forecast"
     assert a.json()["model"]
+    assert a.json()["leadHours"] == 48.0
     assert abs(a.json()["lat"] - b.json()["lat"]) < 1e-6
     assert abs(a.json()["lon"] - b.json()["lon"]) < 1e-6
     # ± 1 nm de stabilité : même point
