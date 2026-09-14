@@ -5,5 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 server/polar_data/*.json
+server/voyage_data/
+server/forecast_cache/
 .env
 .DS_Store
