@@ -22,6 +22,7 @@ export default defineConfig({
       "/wave": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/current": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/api/v1": { target: "http://127.0.0.1:8010", changeOrigin: true },
+      "/voyage": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/bi": {
         target: "http://127.0.0.1:8001",
         changeOrigin: true,

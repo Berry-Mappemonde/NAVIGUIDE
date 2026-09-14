@@ -4,7 +4,9 @@ naviguide-api/node_modules/
 naviguide-api/__pycache__/
 naviguide-api/*.pyc
 naviguide-api/.venv/
+naviguide-api/.venv-ab-sr16/
 naviguide-api/venv/
+naviguide-api/routing_ab/out/
 venv/
 
 # Build outputs

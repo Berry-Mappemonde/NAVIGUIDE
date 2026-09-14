@@ -102,6 +102,7 @@ async def upload_polar(
         "raw_rows": len(polar.twa_rows),
         "raw_cols": len(polar.tws_cols),
         "vmg_summary": data["vmg_summary"],
+        "raw": data["raw"],
         "created_at": data["created_at"],
     }
 

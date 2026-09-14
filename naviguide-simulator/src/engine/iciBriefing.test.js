@@ -123,4 +123,23 @@ describe("narrateIci", () => {
     assert.match(text, /at the dock/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
+
+  it("cite GEBCO quand un sondage au large est dans le sac", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      poe: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      depthOffshore: -3200,
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /GEBCO/);
+    assert.match(text, /3200/);
+    const silent = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      depthOffshore: 0,
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.doesNotMatch(silent, /GEBCO/);
+  });
 });

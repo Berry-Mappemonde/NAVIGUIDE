@@ -1,3 +1,5 @@
+import { gebcoLookup } from "./gebco.js";
+
 export const ICI_RADIUS_NM = 30;
 
 export function emptyDossier(lat, lon) {
@@ -15,7 +17,8 @@ export function emptyDossier(lat, lon) {
     weather: null,
     polar: null,
     event: null,
-    sources: { zee: null, bi: null },
+    sources: { zee: null, bi: null, gebco: null },
+    depthOffshore: null,
   };
 }
 
@@ -65,6 +68,19 @@ export function mergeDossier(base, extras = {}) {
   if (d.polar && "grid" in d.polar) {
     const { grid: _grid, ...rest } = d.polar;
     d.polar = rest;
+  }
+  if (extras.depthOffshore !== undefined) {
+    d.depthOffshore = extras.depthOffshore;
+  } else if (extras.gebcoGrid !== undefined || extras.distToShoreNm != null) {
+    d.depthOffshore = gebcoLookup(lat, lon, {
+      grid: extras.gebcoGrid,
+      distToShoreNm: extras.distToShoreNm,
+    });
+  } else {
+    d.depthOffshore = base?.depthOffshore ?? gebcoLookup(lat, lon, {
+      grid: extras.gebcoGrid,
+      distToShoreNm: extras.distToShoreNm,
+    });
   }
   return d;
 }

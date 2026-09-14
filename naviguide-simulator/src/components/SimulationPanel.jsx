@@ -72,7 +72,28 @@ function PrevNextButtons({ onPrev, canPrev, onNext, canNext }) {
 
 // ── Composant principal ──────────────────────────────────────────────────────
 
-export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, canNext }) {
+export function SimulationPanel({
+  legContext,
+  onClose,
+  onPrev,
+  canPrev,
+  onNext,
+  canNext,
+  clockSample = null,
+  civilDate = "",
+  kindLabel = "",
+  atQuay = false,
+  quayDays = 0,
+  follow = false,
+  previewing = false,
+  forecastStatus = null,
+  forecastModel = null,
+  onRecompute,
+  canRecompute = false,
+  recomputeBusy = false,
+  onGoLive,
+  virtualBoat = false,
+}) {
   const { t } = useLang();
 
   if (!legContext) {
@@ -149,7 +170,15 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
             </span>
           </div>
           <span className="text-sm font-bold text-white">{formatEta(etaHours)}</span>
-          <span className="text-[9px] text-slate-500">@ {speedKnots} kt</span>
+          <span className="text-[9px] text-slate-500">
+            {clockSample?.vehicle === "plane"
+              ? t("filmAirVehicle")
+              : clockSample?.speedKnots != null
+                ? t("voyageLocalKnots", { knots: Number(clockSample.speedKnots).toFixed(1) })
+                : speedKnots != null
+                  ? t("voyageLocalKnots", { knots: speedKnots })
+                  : "—"}
+          </span>
         </div>
 
         {/* NM parcourus */}
@@ -175,6 +204,79 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
         </div>
 
       </div>
+
+      {(civilDate || kindLabel || clockSample?.twa != null || atQuay) && (
+        <div className="px-3 py-1.5 text-[10px] text-sky-100/90 border-t border-white/5 space-y-0.5">
+          {civilDate ? <div>{civilDate}</div> : null}
+          <div className="flex flex-wrap gap-x-2 text-white/55">
+            {kindLabel ? <span>{kindLabel}</span> : null}
+            {clockSample?.twa != null && clockSample?.vehicle !== "plane" ? (
+              <span>{t("voyageTwa", { deg: Math.round(clockSample.twa) })}</span>
+            ) : null}
+          </div>
+          {atQuay && quayDays > 0 ? (
+            <div className="text-amber-200 font-semibold uppercase tracking-wide">
+              {t("voyageAtQuay", { days: quayDays })}
+            </div>
+          ) : null}
+          {clockSample?.kind === "forecast" && (clockSample.model || forecastModel) ? (
+            <div className="text-cyan-200/80">
+              {clockSample.model || forecastModel}
+              {clockSample.leadHours != null ? ` · +${Math.round(clockSample.leadHours)} h` : ""}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {follow && (
+        <div className="px-3 py-1.5 border-t border-white/5 flex items-center justify-between gap-2">
+          <span className={`text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded ${
+            previewing ? "bg-slate-600/40 text-slate-300" : "bg-emerald-500/20 text-emerald-300"
+          }`}
+          >
+            {previewing ? t("previewBadge") : "LIVE"}
+          </span>
+          {clockSample?.status === "waiting" && clockSample.countdownHours != null ? (
+            <span className="text-[9px] text-amber-200/90">
+              {t("departsIn", { hours: formatEta(clockSample.countdownHours) })}
+            </span>
+          ) : null}
+          {previewing && onGoLive ? (
+            <button
+              type="button"
+              onClick={onGoLive}
+              className="text-[9px] font-semibold text-cyan-200 hover:text-cyan-100"
+              title="L"
+            >
+              {t("returnToLive")}
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {forecastStatus === "pending" && (
+        <div className="px-3 py-1.5 text-[9px] text-sky-200/80 bg-sky-950/40">{t("forecastPending")}</div>
+      )}
+      {forecastStatus === "unavailable" && (
+        <div className="px-3 py-1.5 text-[9px] text-amber-200/80 bg-amber-950/30">{t("forecastUnavailable")}</div>
+      )}
+
+      {canRecompute && (
+        <div className="px-2 pb-2">
+          <button
+            type="button"
+            disabled={recomputeBusy || forecastStatus === "pending"}
+            onClick={onRecompute}
+            className="w-full rounded-lg border border-cyan-500/40 bg-cyan-900/30 py-1.5 text-[10px] font-semibold text-cyan-100 hover:bg-cyan-800/40 disabled:opacity-40"
+          >
+            {recomputeBusy ? t("recomputeBusy") : t("recomputeButton")}
+          </button>
+        </div>
+      )}
+
+      {(virtualBoat || follow) && (
+        <p className="px-3 pb-2 text-[9px] text-white/40 leading-snug">{t("voyageForecastDisclaimer")}</p>
+      )}
 
       {/* Boutons Précédent / Suivant */}
       <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />

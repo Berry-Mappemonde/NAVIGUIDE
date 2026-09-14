@@ -144,7 +144,7 @@ function addScienceSourceLayer(map, fc, source, color, onFeature) {
   return group;
 }
 
-export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
+export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   const zee = useFetchLayer(null);
   const [showZee, setShowZee] = useState(true);
   const [loadingZee] = useState(false);
@@ -161,13 +161,27 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
   const [showOdatis, setShowOdatis] = useState(false);
   const [showEdmed, setShowEdmed] = useState(false);
   const [showCsr, setShowCsr] = useState(false);
-  const [showBathymetry, setShowBathymetry] = useState(false);
-  const [showFonds, setShowFonds] = useState(false);
-  const [showCables, setShowCables] = useState(false);
+  const [showBathymetry, setShowBathymetryRaw] = useState(false);
+  const [showFonds, setShowFondsRaw] = useState(false);
+  const [showCables, setShowCablesRaw] = useState(false);
   const scienceCatalogOn = showSextant || showArgo || showOdatis || showEdmed || showCsr;
   const scienceCatalog = useLazyJson(scienceCatalogOn, `${BI_BASE}/export/science.geojson`);
 
-  const [showBalisage, setShowBalisage] = useState(false);
+  const [showBalisage, setShowBalisageRaw] = useState(false);
+  const gatedSet = useCallback((setter, kind) => (fn) => {
+    setter((v) => {
+      const next = typeof fn === "function" ? fn(v) : !!fn;
+      if (next && gateRef && !gateRef.current?.allowed) {
+        gateRef.current?.onNeed?.(kind);
+        return v;
+      }
+      return next;
+    });
+  }, [gateRef]);
+  const setShowBalisage = gatedSet(setShowBalisageRaw, "balisage");
+  const setShowBathymetry = gatedSet(setShowBathymetryRaw, "bathymetry");
+  const setShowFonds = gatedSet(setShowFondsRaw, "fonds");
+  const setShowCables = gatedSet(setShowCablesRaw, "cables");
   const [showAmp, setShowAmp] = useState(false);
   const [loadingAmp, setLoadingAmp] = useState(false);
   const [errorAmp, setErrorAmp] = useState(null);
@@ -217,12 +231,14 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
       pane: "balisage",
       opacity: 0.85,
       errorTileUrl: "",
+      attribution: "© OpenSeaMap contributors",
     });
     tiles.on("tileerror", () => {
       if (!layersRef.current.balisageFallback) {
         layersRef.current.balisageFallback = L.tileLayer("/proxy/seamark/{z}/{x}/{y}.png", {
           pane: "balisage",
           opacity: 0.85,
+          attribution: "© OpenSeaMap contributors",
         }).addTo(map);
       }
     });

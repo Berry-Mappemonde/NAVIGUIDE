@@ -73,6 +73,26 @@ describe("ici sac", () => {
     assert.equal(side.lat, 46.78);
   });
 
+  it("ajoute un sondage GEBCO au large, null près des côtes", () => {
+    const far = mergeDossier(emptyDossier(0, 0), {
+      gebcoGrid: { sample: () => -3200 },
+      distToShoreNm: 80,
+    });
+    assert.equal(far.depthOffshore, -3200);
+    const near = mergeDossier(emptyDossier(46.15, -1.16), {
+      gebcoGrid: { sample: () => -12 },
+      distToShoreNm: 4,
+    });
+    assert.equal(near.depthOffshore, null);
+    const fromApi = mergeDossier({
+      ...emptyDossier(35, -40),
+      depthOffshore: -3888,
+      sources: { zee: "ok", bi: "ok", gebco: "ok" },
+    }, { polarMeta: { boat_name: "Leopard 46" } });
+    assert.equal(fromApi.depthOffshore, -3888);
+    assert.equal(fromApi.sources.gebco, "ok");
+  });
+
   it("signale l’entrée de ZEE seulement au changement de mrgid", () => {
     const zee = { name: "French Exclusive Economic Zone", mrgid: 5677 };
     assert.equal(zeeEnterEvent(undefined, zee), null);
