@@ -9,8 +9,10 @@ import {
   detectAirEpisodes,
   interpolateCast,
   filmNmToSailNm,
+  mergeEpisodeMarks,
   sailNmToFilmNm,
 } from "./filmCast.js";
+import { filmLegContext, mapEscalesOnRoute } from "./routePlayhead.js";
 import { routeFromOfficial } from "../utils/routeFromOfficial.js";
 
 const CAYENNE = [-52.3533, 4.9333];
@@ -101,6 +103,25 @@ describe("interpolateCast Guyane", () => {
     const cayenneSail = flat.points[ep.ja - 1].cumNm;
     const filmAtQuay = sailNmToFilmNm(flat, cayenneSail);
     assert.ok(Math.abs(filmAtQuay - flat.points[ep.ja - 1].filmCum) < 1e-6);
+  });
+});
+
+describe("mergeEpisodeMarks", () => {
+  it("réinscrit Cayenne après SPM pour le HUD vers Papeete", () => {
+    const flat = guyaneFlat();
+    const marks = mergeEpisodeMarks(mapEscalesOnRoute(STOPS, flat), flat, STOPS);
+    const cayenneMarks = marks.filter((m) => /Cayenne/i.test(m.name));
+    assert.ok(cayenneMarks.length >= 2);
+    const after = interpolateCast(flat, flat.totalFilmNm, { stops: STOPS });
+    const hud = filmLegContext({
+      marks,
+      nm: after.sailNm,
+      sample: after.main,
+      totalNm: flat.totalNm,
+      boatKnots: 8,
+      cast: after,
+    });
+    assert.match(hud.fromStop, /Cayenne/);
   });
 });
 

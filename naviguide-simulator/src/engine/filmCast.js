@@ -47,16 +47,16 @@ function nearestName(stops, pos, fallback) {
 }
 
 function farthestPoint(points, fromIdx, toIdx, origin) {
-  let best = points[fromIdx];
+  let bestIdx = fromIdx;
   let bestD = -1;
   for (let i = fromIdx; i <= toIdx; i++) {
     const d = haversineNm(origin.lat, origin.lon, points[i].lat, points[i].lon);
     if (d > bestD) {
       bestD = d;
-      best = points[i];
+      bestIdx = i;
     }
   }
-  return best;
+  return { point: points[bestIdx], index: bestIdx };
 }
 
 /**
@@ -83,17 +83,20 @@ export function detectAirEpisodes(points) {
       const hub = pts[ja];
       const viaFrom = Math.min(ja + 1, jb - 1);
       const viaTo = Math.max(ja, jb - 1);
-      const via = viaTo >= viaFrom ? farthestPoint(pts, viaFrom, viaTo, hub) : hub;
+      const viaHit = viaTo >= viaFrom ? farthestPoint(pts, viaFrom, viaTo, hub) : { point: hub, index: ja };
+      const via = viaHit.point;
       const parkBearing = ja >= 2
         ? initialBearing(pts[ja - 2].lat, pts[ja - 2].lon, origin.lat, origin.lon)
         : initialBearing(origin.lat, origin.lon, hub.lat, hub.lon);
       episodes.push({
         ja,
         jb,
+        viaIdx: viaHit.index,
         park: { lat: origin.lat, lon: origin.lon, bearing: parkBearing },
         hub: { lat: hub.lat, lon: hub.lon },
         via: { lat: via.lat, lon: via.lon },
         midSailNm: (hub.cumNm + pts[jb - 1].cumNm) / 2,
+        endSailNm: pts[jb - 1].cumNm,
       });
       used.add(ja);
       used.add(jb);
@@ -101,6 +104,47 @@ export function detectAirEpisodes(points) {
     }
   }
   return episodes;
+}
+
+/** Recale SPM et réinscrit Cayenne au retour, pour le HUD Cayenne → Papeete. */
+export function mergeEpisodeMarks(marks, flat, stops) {
+  const episodes = nameAirEpisodes(flat?.episodes || detectAirEpisodes(flat?.points || []), stops);
+  const out = [...(marks || [])];
+  for (const ep of episodes) {
+    const viaP = flat.points[ep.viaIdx];
+    const retP = flat.points[ep.jb];
+    if (viaP) {
+      const existing = out.find((m) => m.name === ep.viaName);
+      if (existing) {
+        existing.nm = viaP.cumNm;
+        existing.filmNm = viaP.filmCum ?? viaP.cumNm;
+        existing.lat = viaP.lat;
+        existing.lon = viaP.lon;
+        existing.index = ep.viaIdx;
+      } else {
+        out.push({
+          name: ep.viaName,
+          lat: viaP.lat,
+          lon: viaP.lon,
+          nm: viaP.cumNm,
+          filmNm: viaP.filmCum ?? viaP.cumNm,
+          index: ep.viaIdx,
+        });
+      }
+    }
+    if (retP) {
+      out.push({
+        name: ep.parkName,
+        lat: retP.lat,
+        lon: retP.lon,
+        nm: retP.cumNm,
+        filmNm: retP.filmCum ?? retP.cumNm,
+        index: ep.jb,
+      });
+    }
+  }
+  out.sort((a, b) => (a.filmNm ?? a.nm) - (b.filmNm ?? b.nm));
+  return out;
 }
 
 export function nameAirEpisodes(episodes, stops) {

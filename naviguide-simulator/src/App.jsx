@@ -27,7 +27,7 @@ import {
   prevEscaleNm,
   filmLegContext,
 } from "./engine/routePlayhead.js";
-import { interpolateCast, isAirPhase, sailNmToFilmNm } from "./engine/filmCast.js";
+import { interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
@@ -143,7 +143,10 @@ export default function App() {
   const activeStops = useMemo(() => activeSimulationStops(customRoute, points.length ? points : ITINERARY_POINTS), [customRoute, points]);
   const activeSegments = useMemo(() => activeSimulationSegments(customRoute, segments), [customRoute, segments]);
   const flatRoute = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
-  const escaleMarks = useMemo(() => mapEscalesOnRoute(activeStops, flatRoute), [activeStops, flatRoute]);
+  const escaleMarks = useMemo(
+    () => mergeEpisodeMarks(mapEscalesOnRoute(activeStops, flatRoute), flatRoute, activeStops),
+    [activeStops, flatRoute],
+  );
   const cruiseKnots = useMemo(() => expeditionBoatKnots(polarData), [polarData]);
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
@@ -273,6 +276,11 @@ export default function App() {
     const prev = prevPlayheadRef.current;
     const cur = playback.nm;
     prevPlayheadRef.current = cur;
+    if (cur + 2 < prev) {
+      lastArrivalKeyRef.current = "";
+      setArrivalBanner(null);
+      return undefined;
+    }
     const hit = escaleMarks.find((m) => {
       const at = m.filmNm ?? m.nm;
       return at > 0.5 && prev < at && cur >= at;
