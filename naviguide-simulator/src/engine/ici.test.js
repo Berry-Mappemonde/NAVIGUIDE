@@ -14,6 +14,26 @@ describe("ici stub", () => {
     assert.ok(d.nearby.marinas);
   });
 
+  it("prend 0 ou 1 science local, jamais un catalogue", () => {
+    const far = ici(46.15, -1.16, {
+      scienceFeatures: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [0, 0] },
+        properties: { id: "far", name: "loin", source: "sentinel-pilot" },
+      }],
+    });
+    assert.equal(far.science, null);
+    const near = ici(46.15, -1.16, {
+      scienceFeatures: [{
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [[-1.161, 46.151], [-1.159, 46.149]] },
+        properties: { id: "c1", name: "côte", source: "sentinel-pilot", error_m: 8 },
+      }],
+    });
+    assert.equal(near.science.id, "c1");
+    assert.equal(near.science.error_m, 8);
+  });
+
   it("n'avale pas une grille polar", () => {
     const d = ici(0, 0, {
       polarMeta: {
