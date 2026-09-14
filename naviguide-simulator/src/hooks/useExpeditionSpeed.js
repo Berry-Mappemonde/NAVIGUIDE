@@ -13,8 +13,8 @@ function roundKt(k) {
 }
 
 /**
- * Nœuds film : table d’horloge (climatologie) dès qu’elle existe.
- * Le poll Copernicus 25 s (kind analyse) ne tourne plus dans ce cas.
+ * Film knots: clock table (climatology) as soon as it exists.
+ * The 25 s Copernicus poll (kind analyse) no longer runs in that case.
  */
 export function useExpeditionSpeed({
   polarData,
@@ -91,7 +91,7 @@ export function useExpeditionSpeed({
           onLiveRef.current?.(rounded);
         }
       } catch {
-        /* climatologie / croisière */
+        /* climatology / cruise */
       }
     };
     tick();

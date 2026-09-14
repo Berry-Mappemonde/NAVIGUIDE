@@ -36,7 +36,7 @@ function polarFromMeta(polarMeta, jambe) {
   return Object.keys(polar).length ? polar : null;
 }
 
-/** Fusionne le sac serveur avec polar / jambe / événement — jamais la grille. */
+/** Merge the server bag with polar / leg / event — never the grid. */
 export function mergeDossier(base, extras = {}) {
   const lat = base?.at?.lat ?? extras.lat ?? 0;
   const lon = base?.at?.lon ?? extras.lon ?? 0;
@@ -89,7 +89,7 @@ export function ici(lat, lon, extras = {}) {
   return mergeDossier(emptyDossier(lat, lon), extras);
 }
 
-/** Position du bateau (pas de l’avion) pour remplir le sac. */
+/** Boat position (not the plane) to fill the bag. */
 export function boatPositionFromCast(cast, snappedPosition) {
   if (cast?.vehicle === "plane" && cast.main) {
     return { lat: cast.main.lat, lon: cast.main.lon };

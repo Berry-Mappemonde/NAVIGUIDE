@@ -47,7 +47,7 @@ def test_haversine_and_bbox():
     # ~30 nm nord
     north = haversine_nm(46.15, -1.16, 46.65, -1.16)
     assert 29 < north < 31
-    # antiméridien
+    # antimeridian
     wrap = haversine_nm(0, 179.5, 0, -179.5)
     assert wrap < 70
     minx, miny, maxx, maxy = radius_bbox(46.15, -1.16, 30)

@@ -1,37 +1,37 @@
 /**
- * useLegContext — Calcul géométrique du tronçon actif
+ * useLegContext — geometric calculation of the active leg
  *
- * Snap-to-route : projection haversine manuelle sur chaque segment de la polyligne.
- * Aucun appel API, aucune dépendance externe (pas de @turf).
+ * Snap-to-route: manual haversine projection onto each polyline segment.
+ * No API call, no external dependency (no @turf).
  *
- * Le paramètre simulationStep contraint le snap à la portion chronologiquement
- * correcte de la polyligne, évitant les ambiguïtés quand l'itinéraire passe
- * deux fois par la même zone géographique (ex: Cap Verde aller vs retour).
+ * The simulationStep parameter constrains the snap to the chronologically
+ * correct portion of the polyline, avoiding ambiguities when the itinerary
+ * passes twice through the same geographic area (e.g. Cape Verde outbound vs return).
  *
- * Le mapping stops→polyligne est monotone (index[i] ≥ index[i-1]) pour respecter
- * l'ordre chronologique même quand deux stops partagent les mêmes coordonnées.
+ * The stops→polyline mapping is monotonic (index[i] ≥ index[i-1]) so
+ * chronological order is kept even when two stops share the same coordinates.
  *
- * Returns LegContext :
- *   fromStopIndex     — index du point d'origine (escale ou intermédiaire)
- *   fromStop          — nom du point d'origine
- *   toStop            — nom du prochain point (escale ou intermédiaire)
- *   toStopIndex       — index du prochain point
- *   nmCovered         — miles nautiques parcourus depuis le départ (total route)
- *   nmRemainingToStop — miles nautiques restants jusqu'au prochain point
- *   etaHours          — ETA estimée (vitesse constante par défaut)
- *   bearing           — cap actuel en degrés (0–360)
- *   snappedPosition   — [lon, lat] — position projetée sur la route
+ * Returns LegContext:
+ *   fromStopIndex     — index of the origin point (stopover or intermediate)
+ *   fromStop          — name of the origin point
+ *   toStop            — name of the next point (stopover or intermediate)
+ *   toStopIndex       — index of the next point
+ *   nmCovered         — nautical miles covered since departure (full route)
+ *   nmRemainingToStop — nautical miles remaining to the next point
+ *   etaHours          — estimated ETA (default constant speed)
+ *   bearing           — current heading in degrees (0–360)
+ *   snappedPosition   — [lon, lat] — position projected onto the route
  */
 
 import { useMemo } from "react";
 import { nextEscaleStop } from "../utils/escales";
 
-// Vitesse par défaut du catamaran (nœuds)
+// Default catamaran speed (knots)
 const DEFAULT_SPEED_KNOTS = 7;
 
 // ── Haversine ────────────────────────────────────────────────────────────────
 
-const R_NM = 3440.065; // rayon terrestre en milles nautiques
+const R_NM = 3440.065; // Earth radius in nautical miles
 
 function toRad(deg) { return (deg * Math.PI) / 180; }
 
@@ -45,7 +45,7 @@ function haversineNm(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Cap initial (bearing) entre deux points géodésiques, en degrés (0–360).
+ * Initial bearing between two geodesic points, in degrees (0–360).
  */
 function initialBearing(lat1, lon1, lat2, lon2) {
   const φ1 = toRad(lat1);
@@ -57,10 +57,10 @@ function initialBearing(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Projette le point P (lat, lon) sur le segment AB.
- * Retourne { point: [lon, lat], t: 0..1, distNm } où t=0→A, t=1→B.
+ * Project point P (lat, lon) onto segment AB.
+ * Returns { point: [lon, lat], t: 0..1, distNm } where t=0→A, t=1→B.
  *
- * Approximation plane valide pour segments courts (< 500 nm).
+ * Planar approximation valid for short segments (< 500 nm).
  */
 function projectOnSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
   const dx = bLon - aLon;
@@ -79,15 +79,15 @@ function projectOnSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
 }
 
 /**
- * Construit un mapping stops→polyline MONOTONE (index[i] ≥ index[i-1]).
+ * Build a MONOTONIC stops→polyline mapping (index[i] ≥ index[i-1]).
  *
- * Contrairement à la recherche globale du plus proche voisin, cette approche
- * garantit que deux stops géographiquement identiques (ex: Cap Verde aller et
- * Cap Verde retour) sont mappés à des index polyligne différents et croissants,
- * respectant ainsi l'ordre chronologique de l'itinéraire.
+ * Unlike a global nearest-neighbour search, this approach guarantees that
+ * two geographically identical stops (e.g. Cape Verde outbound and
+ * Cape Verde return) map to different, increasing polyline indexes,
+ * so the itinerary chronological order is respected.
  *
- * @param {Array} stops    — liste ordonnée de { lat, lon, name, ... }
- * @param {Array} polyline — tableau [[lon, lat], ...]
+ * @param {Array} stops    — ordered list of { lat, lon, name, ... }
+ * @param {Array} polyline — array [[lon, lat], ...]
  * @returns {Array} — [{ stop, polyIdx }, ...]
  */
 function buildMonotonicStopIndices(stops, polyline) {
@@ -97,14 +97,14 @@ function buildMonotonicStopIndices(stops, polyline) {
   for (const stop of stops) {
     let best = searchStart;
     let bestD = Infinity;
-    // Recherche uniquement à partir de searchStart (garantit la monotonie)
+    // Search only from searchStart (guarantees monotonicity)
     for (let i = searchStart; i < polyline.length; i++) {
       const [pLon, pLat] = polyline[i];
       const d = haversineNm(stop.lat, stop.lon, pLat, pLon);
       if (d < bestD) { bestD = d; best = i; }
     }
     result.push({ stop, polyIdx: best });
-    searchStart = best; // le prochain stop doit être au-delà de ce point
+    searchStart = best; // the next stop must be beyond this point
   }
 
   return result;
@@ -113,18 +113,18 @@ function buildMonotonicStopIndices(stops, polyline) {
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
- * @param {number|null} catamaranLat    — latitude du catamaran (null si non activé)
- * @param {number|null} catamaranLon    — longitude du catamaran
- * @param {Array}       routeSegments   — segments calculés par App.jsx [ {coords: [[lon,lat],...], nonMaritime?} ]
- * @param {Array}       itineraryPoints — ITINERARY_POINTS (escales + points intermédiaires)
- * @param {number}      speedKnots      — vitesse en nœuds (optionnel)
- * @param {number|null} simulationStep  — index dans simTargets (contraint le snap à la bonne portion)
+ * @param {number|null} catamaranLat    — catamaran latitude (null if not enabled)
+ * @param {number|null} catamaranLon    — catamaran longitude
+ * @param {Array}       routeSegments   — segments computed by App.jsx [ {coords: [[lon,lat],...], nonMaritime?} ]
+ * @param {Array}       itineraryPoints — ITINERARY_POINTS (stopovers + intermediate points)
+ * @param {number}      speedKnots      — speed in knots (optional)
+ * @param {number|null} simulationStep  — index in simTargets (constrains snap to the right portion)
  *
- * Layout de simTargets (généré par App.jsx) :
- *   step 0            → départ = début du segment maritime 0
- *   step 2k+1, k ≥ 0 → milieu du segment maritime k
- *   step 2k+2, k ≥ 0 → fin    du segment maritime k
- * Donc : maritimeSegIdx = (step === 0) ? 0 : Math.floor((step - 1) / 2)
+ * simTargets layout (generated by App.jsx):
+ *   step 0            → start = beginning of maritime segment 0
+ *   step 2k+1, k ≥ 0 → midpoint of maritime segment k
+ *   step 2k+2, k ≥ 0 → end      of maritime segment k
+ * So: maritimeSegIdx = (step === 0) ? 0 : Math.floor((step - 1) / 2)
  */
 export function useLegContext(
   catamaranLat,
@@ -138,14 +138,14 @@ export function useLegContext(
     if (catamaranLat == null || catamaranLon == null) return null;
     if (!routeSegments || routeSegments.length === 0) return null;
 
-    // ── 1. Flatten route segments + mémoriser les index de début par segment ─
+    // ── 1. Flatten route segments + remember start indexes per segment ─
     const polyline = [];
-    // segPolyStart[i] = index dans polyline où commence routeSegments[i]
+    // segPolyStart[i] = index in polyline where routeSegments[i] starts
     const segPolyStart = [];
 
     for (let si = 0; si < routeSegments.length; si++) {
       const seg = routeSegments[si];
-      segPolyStart.push(polyline.length); // enregistré AVANT d'ajouter les coords
+      segPolyStart.push(polyline.length); // recorded BEFORE adding coords
       if (!seg.coords || seg.coords.length < 2) continue;
       if (polyline.length === 0) {
         polyline.push(...seg.coords);
@@ -156,39 +156,39 @@ export function useLegContext(
     }
     if (polyline.length < 2) return null;
 
-    // ── 2. Fenêtre de snap contrainte par simulationStep ─────────────────────
-    // Quand simulationStep est connu, on restreint la recherche du segment le
-    // plus proche à la portion de polyligne correspondant au tronçon maritime
-    // actuel (± 1 tronçon de tolérance). Ceci évite que le snap saute sur un
-    // tronçon géographiquement proche mais chronologiquement différent.
+    // ── 2. Snap window constrained by simulationStep ─────────────────────
+    // When simulationStep is known, nearest-segment search is restricted to
+    // the polyline portion of the current maritime leg (± 1 leg of tolerance).
+    // This stops the snap from jumping onto a geographically close but
+    // chronologically different leg.
     let snapWinStart = 0;
     let snapWinEnd   = polyline.length - 1;
 
     if (simulationStep !== null) {
-      // Index des segments maritimes valides dans routeSegments
+      // Indexes of valid maritime segments in routeSegments
       const maritimeSegIndices = routeSegments
         .map((seg, i) => ({ seg, i }))
         .filter(({ seg }) => !seg.nonMaritime && seg.coords?.length >= 2)
         .map(({ i }) => i);
 
       if (maritimeSegIndices.length > 0) {
-        // Segment maritime correspondant à simulationStep
+        // Maritime segment matching simulationStep
         const msi = Math.min(
           simulationStep === 0 ? 0 : Math.floor((simulationStep - 1) / 2),
           maritimeSegIndices.length - 1,
         );
 
-        // ±1 tronçon maritime de tolérance pour les transitions en douceur
+        // ±1 maritime-leg tolerance for smooth transitions
         const msiFrom = Math.max(0, msi - 1);
         const msiTo   = Math.min(maritimeSegIndices.length - 1, msi + 1);
 
         const segIdxFrom = maritimeSegIndices[msiFrom];
         const segIdxTo   = maritimeSegIndices[msiTo];
 
-        // Recule d'un point pour inclure le point de jonction entrant
+        // Step back one point to include the incoming junction
         snapWinStart = Math.max(0, segPolyStart[segIdxFrom] - 1);
 
-        // S'arrête au début du segment suivant (point de jonction sortant inclus)
+        // Stop at the start of the next segment (outgoing junction included)
         snapWinEnd = (segIdxTo + 1 < routeSegments.length)
           ? segPolyStart[segIdxTo + 1]
           : polyline.length - 1;
@@ -198,7 +198,7 @@ export function useLegContext(
       }
     }
 
-    // ── 3. Snap catamaran sur la fenêtre contrainte ───────────────────────────
+    // ── 3. Snap the catamaran onto the constrained window ───────────────────────────
     let bestDist   = Infinity;
     let bestSnap   = null;
     let bestSegIdx = snapWinStart;
@@ -219,22 +219,22 @@ export function useLegContext(
     if (!bestSnap) return null;
     const [snapLon, snapLat] = bestSnap;
 
-    // ── 4. Miles nautiques cumulés depuis le départ jusqu'au snap ────────────
+    // ── 4. Cumulative nautical miles from departure to the snap ────────────
     let nmCoveredTotal = 0;
     for (let i = 0; i < bestSegIdx; i++) {
       const [aLon, aLat] = polyline[i];
       const [bLon, bLat] = polyline[i + 1];
       nmCoveredTotal += haversineNm(aLat, aLon, bLat, bLon);
     }
-    // Partie partielle du segment actif
+    // Partial remainder of the active segment
     const [aLon, aLat] = polyline[bestSegIdx];
     const [bLon, bLat] = polyline[bestSegIdx + 1];
     nmCoveredTotal += bestT * haversineNm(aLat, aLon, bLat, bLon);
 
-    // ── 5. Identification du tronçon actif (from/to du segment) ───────────────
-    // Utiliser directement le segment contenant bestSegIdx : la route a des stops
-    // répétés (Halifax, Cayenne) donc buildMonotonicStopIndices donne des faux positifs
-    // (ex: SPM→Papeete au lieu de SPM→Halifax). Le segment actif donne le bon from/to.
+    // ── 5. Identify the active leg (segment from/to) ───────────────
+    // Use the segment that contains bestSegIdx directly: the route has repeated
+    // stops (Halifax, Cayenne) so buildMonotonicStopIndices yields false positives
+    // (e.g. SPM→Papeete instead of SPM→Halifax). The active segment has the right from/to.
     let fromStop = null;
     let toStop   = null;
     let fromIdx  = 0;
@@ -277,7 +277,7 @@ export function useLegContext(
       }
     }
 
-    // Destination briefing = prochaine escale, jamais un point intermédiaire
+    // Briefing destination = next stopover, never an intermediate point
     if (toStop && !toStop.flag) {
       const resolved = nextEscaleStop(stops, toIdx);
       if (resolved.stop) {
@@ -286,15 +286,15 @@ export function useLegContext(
       }
     }
 
-    // ── 6. Miles nautiques restants jusqu'au prochain stop ───────────────────
+    // ── 6. Nautical miles remaining to the next stop ───────────────────
     const toStopPolyIdx = useSegmentBased
       ? (segPolyStart[activeSegIdx + 1] ?? polyline.length) - 1
       : (stopIndices[toIdx]?.polyIdx ?? polyline.length - 1);
     let nmRemainingToStop = 0;
     if (toStopPolyIdx > bestSegIdx) {
-      // Portion restante du segment actif
+      // Remaining portion of the active segment
       nmRemainingToStop += (1 - bestT) * haversineNm(aLat, aLon, bLat, bLon);
-      // Segments complets jusqu'au stop cible
+      // Full segments through to the target stop
       for (let i = bestSegIdx + 1; i < toStopPolyIdx; i++) {
         const [cLon, cLat] = polyline[i];
         const [dLon, dLat] = polyline[i + 1];
@@ -302,11 +302,11 @@ export function useLegContext(
       }
     }
 
-    // ── 7. Bearing (cap) ─────────────────────────────────────────────────────
-    // Quand le snap est en fin de segment (t≈1, catamaran exactement sur une
-    // escale/jonction), avancer d'un segment pour afficher le cap de DÉPART
-    // plutôt que le cap d'ARRIVÉE. Exemple : catamaran AT Avant Corse doit
-    // montrer le cap vers Ajaccio (NNE), pas le cap d'approche depuis La Rochelle.
+    // ── 7. Bearing (heading) ─────────────────────────────────────────────────────
+    // When the snap is at the end of a segment (t≈1, catamaran exactly on a
+    // stopover/junction), advance one segment to show the DEPARTURE heading
+    // rather than the ARRIVAL heading. Example: catamaran AT Avant Corse must
+    // show the heading toward Ajaccio (NNE), not the approach from La Rochelle.
     let bearingSegIdx = bestSegIdx;
     if (bestT > 0.999 && bearingSegIdx + 1 < polyline.length - 1) {
       bearingSegIdx += 1;

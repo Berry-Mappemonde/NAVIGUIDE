@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildBerryLegs, isNonMaritimeLeg, orientCoords } from "./berryLegs.js";
 
 describe("berryLegs", () => {
-  it("saute Marigot / Halifax et insère Marigot→Cayenne", () => {
+  it("skips Marigot / Halifax and inserts Marigot→Cayenne", () => {
     const pts = [
       { name: "Gustavia (Saint-Barthélemy)", lat: 1, lon: 1 },
       { name: "Marigot (Saint-Martin)", lat: 2, lon: 2 },

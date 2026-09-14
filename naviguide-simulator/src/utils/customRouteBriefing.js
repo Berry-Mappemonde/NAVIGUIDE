@@ -2,8 +2,8 @@ import { featuresToSegments, haversineNm, summarizeRoute } from "./geo.js";
 import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
 /**
- * Briefing de secours quand l'orchestrateur est injoignable.
- * Décrit uniquement la GeoJSON affichée — jamais le trajet Berry.
+ * Fallback briefing when the orchestrator is unreachable.
+ * Describes only the displayed GeoJSON — never the Berry track.
  */
 export function buildLocalCustomBriefing(geojson, language = "fr") {
   const wps = waypointsFromCollection(geojson);

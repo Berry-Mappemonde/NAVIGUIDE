@@ -9,7 +9,7 @@ function addLine(group, coords, style) {
   }
 }
 
-/** Ancien searoute en pointillés, nouveau trait plein. Enveloppes off. */
+/** Old searoute dashed, new track solid. Envelopes off. */
 export function useAltRouteLayer(mapRef, { draft, showEnvelopes = false, mapReady }) {
   const groupRef = useRef(null);
 

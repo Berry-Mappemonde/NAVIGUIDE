@@ -13,7 +13,7 @@ export function wrapLon(lon) {
   return x;
 }
 
-/** Enchaîne les longitudes pour ne pas traverser la carte au 180°. */
+/** Unwrap longitudes so the track does not cross the map at 180°. */
 export function unwrapLon(prevLon, lon) {
   if (!Number.isFinite(lon)) return lon;
   if (!Number.isFinite(prevLon)) return lon;
@@ -35,7 +35,7 @@ export function haversineNm(lat1, lon1, lat2, lon2) {
   return 2 * R_NM * Math.asin(Math.sqrt(a));
 }
 
-/** Coupe une polyligne [lon,lat] au passage ±180° (Leaflet trace sinon tout le globe). */
+/** Split a [lon,lat] polyline at ±180° (otherwise Leaflet draws across the globe). */
 export function splitAntimeridianCoords(coords) {
   const parts = [[]];
   for (const c of coords || []) {

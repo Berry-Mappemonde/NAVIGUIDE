@@ -1,4 +1,4 @@
-/** WMS EMODnet — mêmes couches que le mode Science de Blue Intelligence. */
+/** EMODnet WMS — same layers as Blue Intelligence Science mode. */
 export const SCIENCE_WMS_LAYERS = [
   {
     id: "bathymetry",

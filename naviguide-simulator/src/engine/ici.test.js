@@ -10,7 +10,7 @@ import {
 } from "./ici.js";
 
 describe("ici sac", () => {
-  it("a les clés du sac", () => {
+  it("has the bag keys", () => {
     const d = emptyDossier(46.15, -1.16);
     assert.equal(d.version, 1);
     assert.equal(d.radiusNm, ICI_RADIUS_NM);
@@ -22,7 +22,7 @@ describe("ici sac", () => {
     assert.equal(d.sources.bi, null);
   });
 
-  it("n'avale pas une grille polar et ajoute la jambe", () => {
+  it("does not swallow a polar grid and adds the leg", () => {
     const d = ici(0, 0, {
       polarMeta: {
         boat_name: "Leopard 46",
@@ -39,7 +39,7 @@ describe("ici sac", () => {
     assert.equal(d.marks[0].to, "Fort-de-France");
   });
 
-  it("fusionne le sac serveur sans recoller toute la carte", () => {
+  it("merges the server bag without restitching the whole map", () => {
     const remote = {
       ...emptyDossier(46.15, -1.16),
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
@@ -56,7 +56,7 @@ describe("ici sac", () => {
     assert.equal(d.event.type, "zee-enter");
   });
 
-  it("prend le bateau à quai pendant l’avion, le relais en side-sail", () => {
+  it("keeps the boat at quay during the flight, the relay in side-sail", () => {
     const air = boatPositionFromCast({
       vehicle: "plane",
       main: { lat: 4.93, lon: -52.33 },
@@ -73,7 +73,7 @@ describe("ici sac", () => {
     assert.equal(side.lat, 46.78);
   });
 
-  it("ajoute un sondage GEBCO au large, null près des côtes", () => {
+  it("adds a GEBCO sounding offshore, null near the coast", () => {
     const far = mergeDossier(emptyDossier(0, 0), {
       gebcoGrid: { sample: () => -3200 },
       distToShoreNm: 80,
@@ -93,7 +93,7 @@ describe("ici sac", () => {
     assert.equal(fromApi.sources.gebco, "ok");
   });
 
-  it("signale l’entrée de ZEE seulement au changement de mrgid", () => {
+  it("signals EEZ entry only when mrgid changes", () => {
     const zee = { name: "French Exclusive Economic Zone", mrgid: 5677 };
     assert.equal(zeeEnterEvent(undefined, zee), null);
     assert.equal(zeeEnterEvent(5677, zee), null);

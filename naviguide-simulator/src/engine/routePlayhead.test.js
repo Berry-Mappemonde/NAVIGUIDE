@@ -19,7 +19,7 @@ const SEGMENTS = [
 ];
 
 describe("flattenRoute", () => {
-  it("commence au premier vertex et cumule les nm", () => {
+  it("starts at the first vertex and accumulates nm", () => {
     const flat = flattenRoute(SEGMENTS);
     assert.equal(flat.points[0].lat, 0);
     assert.equal(flat.points[0].lon, 0);
@@ -29,7 +29,7 @@ describe("flattenRoute", () => {
 });
 
 describe("interpolateAtNm / nearestNm", () => {
-  it("revient au départ à 0 et à l’arrivée au total", () => {
+  it("returns to the start at 0 and to the arrival at the total", () => {
     const flat = flattenRoute(SEGMENTS);
     const a = interpolateAtNm(flat, 0);
     const b = interpolateAtNm(flat, flat.totalNm);
@@ -42,7 +42,7 @@ describe("interpolateAtNm / nearestNm", () => {
 });
 
 describe("escales", () => {
-  it("ignore les points sans drapeau et avance dans l’ordre", () => {
+  it("ignores unflagged points and advances in order", () => {
     assert.equal(isNamedEscale({ flag: "" }), false);
     assert.equal(isNamedEscale({ flag: "/x.png" }), true);
     const flat = flattenRoute(SEGMENTS);
@@ -63,7 +63,7 @@ describe("escales", () => {
 });
 
 describe("atlanticSpanNm", () => {
-  it("prend La Rochelle → Fort-de-France", () => {
+  it("takes La Rochelle → Fort-de-France", () => {
     const span = atlanticSpanNm([
       { name: "La Rochelle", nm: 100 },
       { name: "Ajaccio (Corse)", nm: 2000 },
@@ -73,8 +73,8 @@ describe("atlanticSpanNm", () => {
   });
 });
 
-describe("saut aérien Guyane → SPM", () => {
-  it("ne compte pas l’avion Cayenne→Halifax dans les nm", () => {
+describe("Guiana → SPM air hop", () => {
+  it("does not count the Cayenne→Halifax plane in nm", () => {
     const flat = flattenRoute([
       { coords: [[-52.3533, 4.9333], [-52.35, 4.94]] },
       { coords: [[-63.5652, 44.6488], [-56.1628, 46.7761]] },
@@ -91,8 +91,8 @@ describe("saut aérien Guyane → SPM", () => {
   });
 });
 
-describe("antiméridien", () => {
-  it("n’envoie pas le bateau au méridien 0°", () => {
+describe("antimeridian", () => {
+  it("does not send the boat to meridian 0°", () => {
     const flat = flattenRoute([
       { coords: [[179.2, -15], [179.8, -15], [-179.8, -15], [-179.2, -15]] },
     ]);
@@ -104,7 +104,7 @@ describe("antiméridien", () => {
 });
 
 describe("filmLegContext", () => {
-  it("garde les noms complets et calcule l’ETA avec la vitesse du bateau", () => {
+  it("keeps full names and computes ETA with boat speed", () => {
     const marks = [
       { name: "Saint-Maur (Berry, Indre)", nm: 0 },
       { name: "La Rochelle", nm: 200 },

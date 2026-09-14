@@ -289,7 +289,7 @@ def get_at(voyage_id: str, t: Optional[str] = Query(None)):
     sample["forecastModel"] = voy.get("forecastModel")
     sample["t"] = to_iso(when)
     if sample.get("kind") == "forecast":
-        # Échéance = heures depuis t0 (pas le vent du début d’arête).
+        # Lead time = hours since t0 (not the wind at the start of the edge).
         sample["leadHours"] = round(max(0.0, hours), 1)
         if not sample.get("model"):
             sample["model"] = voy.get("forecastModel")

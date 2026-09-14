@@ -1,6 +1,6 @@
 /**
- * GEBCO au large uniquement. Pas de couche carte BI.
- * Sans grille précalculée : null honnête.
+ * GEBCO offshore only. No BI map layer.
+ * Without a precomputed grid: honest null.
  */
 export const COASTAL_CUTOFF_NM = 20;
 

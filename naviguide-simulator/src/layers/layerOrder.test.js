@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { LEAFLET_BUILTIN_PANES, PANES } from "./layerOrder.js";
 
 describe("panes", () => {
-  it("garde l'ordre verrouillé", () => {
+  it("keeps the locked order", () => {
     assert.deepEqual(PANES.map((p) => p.name), [
       "science-wms-bathy",
       "zee-wms",

@@ -1,6 +1,6 @@
 /**
  * Table d’horloge climatologique : vertex → date civile.
- * Le trait searoute ne bouge pas. kind: climatology. Pas de GRIB.
+ * The searoute track does not move. kind: climatology. No GRIB.
  */
 
 import { alongTrackSpeed } from "./alongTrackSpeed.js";
@@ -339,7 +339,7 @@ function sampleFromVertex(clock, v, extra = {}) {
 }
 
 /**
- * filmNm → date. À une escale, atQuay=true renvoie le départ (date qui saute).
+ * filmNm → date. At a stopover, atQuay=true returns departure (the date that jumps).
  */
 export function lookupVoyageClock(clock, filmNm, { atQuay = false } = {}) {
   if (!clock?.vertices?.length) return null;
