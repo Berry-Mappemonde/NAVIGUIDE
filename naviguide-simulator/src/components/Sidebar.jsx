@@ -4,6 +4,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
+import { FollowToggle } from "./FollowToggle.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
@@ -149,6 +150,9 @@ export function Sidebar({
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, departureStartAt, onDepartureT0, onDepartureStartAt,
   clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
+  virtualBoat = false, onVirtualBoat, follow = false, onFollow,
+  previewing = false, forecastStatus = null, forecastModel = null,
+  onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
 }) {
   const { t } = useLang();
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -249,7 +253,12 @@ export function Sidebar({
               startAt={departureStartAt}
               onT0={onDepartureT0}
               onStartAt={onDepartureStartAt}
+              virtualBoat={virtualBoat}
+              onVirtualBoat={onVirtualBoat}
             />
+          )}
+          {simulationMode && (
+            <FollowToggle follow={follow} onFollow={onFollow} />
           )}
           {simulationMode && (
             <SimulationPanel
@@ -264,6 +273,15 @@ export function Sidebar({
               kindLabel={kindLabel}
               atQuay={atQuay}
               quayDays={quayDays}
+              follow={follow}
+              previewing={previewing}
+              forecastStatus={forecastStatus}
+              forecastModel={forecastModel}
+              onRecompute={onRecompute}
+              canRecompute={canRecompute}
+              recomputeBusy={recomputeBusy}
+              onGoLive={onGoLive}
+              virtualBoat={virtualBoat}
             />
           )}
           {simulationMode && (

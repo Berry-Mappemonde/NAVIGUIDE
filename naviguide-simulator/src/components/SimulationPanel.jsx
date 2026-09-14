@@ -84,6 +84,15 @@ export function SimulationPanel({
   kindLabel = "",
   atQuay = false,
   quayDays = 0,
+  follow = false,
+  previewing = false,
+  forecastStatus = null,
+  forecastModel = null,
+  onRecompute,
+  canRecompute = false,
+  recomputeBusy = false,
+  onGoLive,
+  virtualBoat = false,
 }) {
   const { t } = useLang();
 
@@ -210,7 +219,63 @@ export function SimulationPanel({
               {t("voyageAtQuay", { days: quayDays })}
             </div>
           ) : null}
+          {clockSample?.kind === "forecast" && (clockSample.model || forecastModel) ? (
+            <div className="text-cyan-200/80">
+              {clockSample.model || forecastModel}
+              {clockSample.leadHours != null ? ` · +${Math.round(clockSample.leadHours)} h` : ""}
+            </div>
+          ) : null}
         </div>
+      )}
+
+      {follow && (
+        <div className="px-3 py-1.5 border-t border-white/5 flex items-center justify-between gap-2">
+          <span className={`text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded ${
+            previewing ? "bg-slate-600/40 text-slate-300" : "bg-emerald-500/20 text-emerald-300"
+          }`}
+          >
+            {previewing ? t("previewBadge") : "LIVE"}
+          </span>
+          {clockSample?.status === "waiting" && clockSample.countdownHours != null ? (
+            <span className="text-[9px] text-amber-200/90">
+              {t("departsIn", { hours: formatEta(clockSample.countdownHours) })}
+            </span>
+          ) : null}
+          {previewing && onGoLive ? (
+            <button
+              type="button"
+              onClick={onGoLive}
+              className="text-[9px] font-semibold text-cyan-200 hover:text-cyan-100"
+              title="L"
+            >
+              {t("returnToLive")}
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {forecastStatus === "pending" && (
+        <div className="px-3 py-1.5 text-[9px] text-sky-200/80 bg-sky-950/40">{t("forecastPending")}</div>
+      )}
+      {forecastStatus === "unavailable" && (
+        <div className="px-3 py-1.5 text-[9px] text-amber-200/80 bg-amber-950/30">{t("forecastUnavailable")}</div>
+      )}
+
+      {canRecompute && (
+        <div className="px-2 pb-2">
+          <button
+            type="button"
+            disabled={recomputeBusy || forecastStatus === "pending"}
+            onClick={onRecompute}
+            className="w-full rounded-lg border border-cyan-500/40 bg-cyan-900/30 py-1.5 text-[10px] font-semibold text-cyan-100 hover:bg-cyan-800/40 disabled:opacity-40"
+          >
+            {recomputeBusy ? t("recomputeBusy") : t("recomputeButton")}
+          </button>
+        </div>
+      )}
+
+      {(virtualBoat || follow) && (
+        <p className="px-3 pb-2 text-[9px] text-white/40 leading-snug">{t("voyageForecastDisclaimer")}</p>
       )}
 
       {/* Boutons Précédent / Suivant */}

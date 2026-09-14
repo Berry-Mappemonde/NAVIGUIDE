@@ -8,6 +8,7 @@ import {
   formatFilmClockLine,
   lookupVoyageClock,
   parseDepartureUtc,
+  sampleClockAtTime,
   splitDepartureUtc,
 } from "./voyageClock.js";
 
@@ -90,6 +91,19 @@ describe("voyageClock Atlantique", () => {
     assert.ok(clock.vertices.every((v) => Number.isFinite(v.tHours)));
     const sea = clock.vertices.find((v) => v.vehicle === "main" && v.speedKnots > 0);
     assert.ok(sea);
+    assert.equal(sea.kind, "climatology");
+    assert.ok("model" in sea);
+    assert.ok("leadHours" in sea);
+  });
+
+  it("sampleClockAtTime : waiting si now < t0", () => {
+    const { clock } = clockFor("2026-06-15T08:00:00.000Z");
+    const waiting = sampleClockAtTime(clock, "2026-06-14T08:00:00.000Z");
+    assert.equal(waiting.status, "waiting");
+    assert.ok(waiting.countdownHours > 23);
+    const live = sampleClockAtTime(clock, "2026-06-15T20:00:00.000Z");
+    assert.equal(live.status, "live");
+    assert.equal(live.kind, "climatology");
   });
 });
 
@@ -172,6 +186,21 @@ describe("voyageClock antiméridien", () => {
       prev = v.tHours;
     }
     assert.ok(clock.vertices.at(-1).tHours > 0);
+  });
+});
+
+describe("voyageClock contrat B0", () => {
+  it("chaque vertex porte kind + seaHours (même schéma que le serveur)", () => {
+    const { clock } = clockFor("2026-06-15T08:00:00.000Z");
+    const keys = [
+      "filmNm", "sailNm", "lat", "lon", "bearing", "tHours", "iso",
+      "speedKnots", "windKnots", "twa", "month", "vehicle", "kind", "seaHours",
+    ];
+    assert.ok(clock.vertices.length > 0);
+    for (const k of keys) {
+      assert.ok(k in clock.vertices[0], `manque ${k}`);
+    }
+    assert.ok(clock.vertices.every((v) => v.kind === "climatology"));
   });
 });
 
