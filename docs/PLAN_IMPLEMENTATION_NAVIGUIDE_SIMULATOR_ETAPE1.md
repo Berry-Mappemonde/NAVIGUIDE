@@ -1193,6 +1193,11 @@ Rappel du contrat global :
   **est** le film (lecteur), pas les 4 chats de `www.naviguide.fr`.
 - `docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` — pas une couche monde à
   l’étape 1.
+- `docs/PLAN_IMPLEMENTATION_SIMULATION_A.md` — horloge climatologique
+  (t0, jours de mer, polar × vent du mois). **Après** le film
+  recettable. Pas de GRIB.
+- `docs/PLAN_IMPLEMENTATION_SIMULATION_B.md` — bateau virtuel live,
+  mode Suivre, recalcul d’**une** jambe. **Après A**. Pas le port 3010.
 - `docs/PLAN_IMPLEMENTATION_FILIERES_CARTO.md` — ce que le simulateur
   consomme (exports, Gold, juge, EMODnet, 0 ou 1 objet satellite) vs
   ce qui reste côté Blue Intelligence (Seamap, overlay PMTiles, isobathe).
