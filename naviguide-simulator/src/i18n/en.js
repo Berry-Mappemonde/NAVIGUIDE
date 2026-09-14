@@ -75,7 +75,7 @@ export default {
   gettingStartedText: "Click any point on the route to get wind, wave and current data. Draw your own route or start the simulation.",
   searouteUnavailable: "Official route (searoute unavailable).",
   searouteDrawFailed: "searoute failed — temporary rhumb line.",
-  berryLocalBriefing: "Berry-Mappemonde expedition: from Saint-Maur (Berry) to La Rochelle, then the overseas stops. Start the simulation to move the catamaran. The cockpit dossier (ici pack) will fill in step 2.", // pragma: allowlist secret
+  berryLocalBriefing: "Berry-Mappemonde expedition: from Saint-Maur (Berry) to La Rochelle, then the overseas stops. Start the simulation to play the route as a film (Play, four speeds including real boat speed). The cockpit dossier (ici pack) will fill in step 2.", // pragma: allowlist secret
   cockpitDossier: "Cockpit dossier",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
@@ -173,9 +173,29 @@ export default {
   // ── Simulation button (Sidebar) ────────────────────────────────────────────
   simulationModeLabel:   "Simulation Mode",
   exitSimulationShort:   "Exit simulation",
-  simulationModeTooltip: "Simulation Mode — drag the catamaran along the route",
+  simulationModeTooltip: "Simulation Mode — play the expedition as a film (Play, speeds, stops)",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
   previous: "Previous",
   next:     "Next",
+  previousEscale: "Previous stop",
+  nextEscale:     "Next stop",
+  play:  "Play",
+  pause: "Pause",
+
+  // ── Film player ───────────────────────────────────────────────────────────
+  speedReal:        "real",
+  speedRead:        "read",
+  speedNormal:      "normal",
+  speedFast:        "fast",
+  speedRealTitle:   "Real boat speed (1 second on screen = 1 second at sea)",
+  speedReadTitle:   "Slow: time to read during the Atlantic crossing (~4 min)",
+  speedNormalTitle: "Normal: Atlantic in ~70 s",
+  speedFastTitle:   "Fast: Atlantic in 20 s",
+  speedRealHint:    "1 s = 1 s at sea",
+  speedLivePolar:   "live polar",
+  cinema:           "Cinema",
+  cinemaTooltip:    "Hide the side panels to watch the map",
+  filmArrived:      "Arrived at {name}",
+  filmScrub:        "Scrub along the route",
 };
