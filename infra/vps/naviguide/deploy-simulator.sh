@@ -27,12 +27,19 @@ if [ ! -f "$NGINX_SRC" ] || [ ! -f "$UNIT_SRC" ]; then
   exit 1
 fi
 
+SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
+SKIP_PIP="${SKIP_PIP:-0}"
+
 command -v "$UV" >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # ── Venv dédié (pas celui de naviguide/) ─────────────────────────────────────
 cd "$SIM"
 [ -d .venv ] || "$UV" venv --python 3.12 .venv
-"$UV" pip install --python .venv/bin/python -r server/requirements.txt
+if [ "$SKIP_PIP" = "1" ] && [ -x .venv/bin/python ]; then
+  echo "SKIP_PIP=1 — venv simulateur inchangé"
+else
+  "$UV" pip install --python .venv/bin/python -r server/requirements.txt
+fi
 
 mkdir -p "$CONF_DIR"
 if [ ! -f "$CONF_DIR/simulator.env" ]; then
@@ -47,8 +54,14 @@ if [ ! -f "$CONF_DIR/simulator.env" ]; then
 fi
 chmod 600 "$CONF_DIR/simulator.env"
 
-# ── Frontend : dist/ déjà buildé sur le Mac de préférence ────────────────────
-if [ ! -f "$SIM/dist/index.html" ]; then
+# ── Frontend : dist/ déjà buildé sur le Mac / GitHub de préférence ───────────
+if [ "$SKIP_FRONTEND_BUILD" = "1" ]; then
+  if [ ! -f "$SIM/dist/index.html" ]; then
+    echo "SKIP_FRONTEND_BUILD=1 mais $SIM/dist/index.html est absent." >&2
+    exit 1
+  fi
+  echo "SKIP_FRONTEND_BUILD=1 — bundle GitHub / Mac réutilisé"
+elif [ ! -f "$SIM/dist/index.html" ]; then
   echo "dist/ absent — npm run build sur le VPS (RAM : pas pendant un Complet)"
   cd "$SIM"
   npm install --no-audit --no-fund
