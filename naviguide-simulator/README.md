@@ -8,7 +8,9 @@ site. Publication prévue : **https://simulator.naviguide.fr** (sous-domaine
 gratuit, même VPS, nginx à part).
 
 Plan FR : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)  
-Plan EN : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)
+Plan EN : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)  
+Simulation A (horloge climatologique) : [`docs/PLAN_IMPLEMENTATION_SIMULATION_A.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_A.md)  
+Simulation B (bateau virtuel, après A) : [`docs/PLAN_IMPLEMENTATION_SIMULATION_B.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_B.md)
 
 ## Lancer (macOS, Terminal)
 
