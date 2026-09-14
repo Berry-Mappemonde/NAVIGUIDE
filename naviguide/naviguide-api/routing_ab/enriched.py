@@ -37,7 +37,7 @@ GATES: tuple[SailingGate, ...] = (
         vias=(
             # No via at 142.8°E: searoute would then connect it via the Coral Sea
             # (same class of bug as test_torres.py).
-            (142.135679, -10.543294),  # WP itinéraire, Great North East Channel
+            (142.135679, -10.543294),  # itinerary WP, Great North East Channel
             (141.90, -10.70),          # sortie Prince of Wales
         ),
         lon_min=141.0,
