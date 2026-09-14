@@ -5,7 +5,8 @@ Sous-dossier **hors production** : le cockpit de l’expédition Berry-Mappemond
 
 `naviguide.fr` et `blueintelligence.online` ne sont **pas** concernés.
 
-Plan : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)
+Plan FR : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)  
+Plan EN : [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)
 
 ## Lancer (macOS, Terminal)
 
