@@ -22,6 +22,8 @@ BUSY_EXIT = 10
 ERROR_EXIT = 1
 
 DEFAULT_BASE = "http://127.0.0.1:8001"
+# Cloudflare Bot Fight bloque le UA par défaut de urllib (« Python-urllib/3.x »).
+USER_AGENT = "BlueIntelligence-DeployProbe/1.0 (+https://blueintelligence.online)"
 
 # Files Console / enrichissement qui vivent en mémoire dans uvicorn.
 PROBE_PATHS = (
@@ -38,7 +40,6 @@ PROBE_PATHS = (
     "/api/poe/seeds/mine-sources/status",
     "/api/poe/referential/status",
     "/api/poe/auto-refresh/status",
-    "/api/poe/generate-batch/status",
     "/api/amp/discover-visit-urls/status",
     "/api/science/build/status",
 )
@@ -74,6 +75,13 @@ def payload_reasons(data: dict) -> list[str]:
     return reasons
 
 
+def is_http_gone(exc: BaseException) -> bool:
+    """404 / 410 : endpoint retiré, on n'en déduit pas un run."""
+    if isinstance(exc, urllib.error.HTTPError) and exc.code in (404, 410):
+        return True
+    return False
+
+
 def is_connection_refused(exc: BaseException) -> bool:
     if isinstance(exc, ConnectionRefusedError):
         return True
@@ -92,7 +100,10 @@ def is_connection_refused(exc: BaseException) -> bool:
 
 
 def fetch_json(url: str, timeout: float) -> dict:
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+    })
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8") or "{}"
         data = json.loads(raw)
@@ -116,6 +127,9 @@ def probe(base_url: str, timeout: float = 12.0) -> tuple[int, list[dict]]:
         except Exception as exc:
             if is_connection_refused(exc):
                 return 0, [{"path": path, "idle": True, "note": "connexion refusée (service arrêté)"}]
+            if is_http_gone(exc):
+                details.append({"path": path, "skipped": True, "note": str(exc)})
+                continue
             return ERROR_EXIT, [{"path": path, "error": f"{type(exc).__name__}: {exc}"}]
         reasons = payload_reasons(data)
         row["reasons"] = reasons

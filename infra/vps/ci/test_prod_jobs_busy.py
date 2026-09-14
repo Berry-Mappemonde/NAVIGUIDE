@@ -109,6 +109,50 @@ class ProbeLoopTests(unittest.TestCase):
         self.assertEqual(code, probe.ERROR_EXIT)
         self.assertIn("error", hits[0])
 
+    def test_gone_endpoint_is_skipped(self):
+        def fake_fetch(url, timeout):
+            if url.endswith("/generate-batch/status"):
+                raise urllib.error.HTTPError(
+                    url, 410, "Gone", hdrs=None, fp=None)
+            return {"running": False}
+
+        # Le chemin 410 n'est plus dans PROBE_PATHS : on simule via side_effect
+        # sur le premier chemin.
+        with mock.patch.object(
+            probe, "PROBE_PATHS",
+            ("/api/poe/generate-batch/status", "/api/swarm/status"),
+        ), mock.patch.object(probe, "fetch_json", side_effect=fake_fetch):
+            code, hits = probe.probe("http://127.0.0.1:8001")
+        self.assertEqual(code, 0)
+        self.assertTrue(hits[0].get("skipped"))
+        self.assertEqual(hits[1]["path"], "/api/swarm/status")
+
+
+class FetchHeaderTests(unittest.TestCase):
+    def test_user_agent_is_not_python_urllib(self):
+        captured = {}
+
+        class _Resp:
+            def read(self):
+                return b'{"running":false}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=0):
+            captured["ua"] = req.get_header("User-agent") or req.headers.get("User-Agent")
+            captured["accept"] = req.get_header("Accept")
+            return _Resp()
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            data = probe.fetch_json("http://127.0.0.1:8001/api/swarm/status", 2)
+        self.assertEqual(data, {"running": False})
+        self.assertIn("BlueIntelligence-DeployProbe", captured["ua"] or "")
+        self.assertNotIn("Python-urllib", captured["ua"] or "")
+
 
 class CliTests(unittest.TestCase):
     def test_json_busy_exit(self):
