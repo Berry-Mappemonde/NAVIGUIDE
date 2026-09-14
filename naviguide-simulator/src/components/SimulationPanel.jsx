@@ -72,7 +72,22 @@ function PrevNextButtons({ onPrev, canPrev, onNext, canNext }) {
 
 // ── Composant principal ──────────────────────────────────────────────────────
 
-export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, canNext }) {
+export function SimulationPanel({
+  legContext,
+  onClose,
+  onPrev,
+  canPrev,
+  onNext,
+  canNext,
+  hud,
+  follow,
+  previewing,
+  forecastStatus,
+  forecastModel,
+  onRecompute,
+  canRecompute,
+  recomputeBusy,
+}) {
   const { t } = useLang();
 
   if (!legContext) {
@@ -149,7 +164,10 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
             </span>
           </div>
           <span className="text-sm font-bold text-white">{formatEta(etaHours)}</span>
-          <span className="text-[9px] text-slate-500">@ {speedKnots} kt</span>
+          <span className="text-[9px] text-slate-500">
+            @ {hud?.speedKnots ?? speedKnots} kt
+            {hud?.kind ? ` · ${hud.kind}` : ""}
+          </span>
         </div>
 
         {/* NM parcourus */}
@@ -175,6 +193,56 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
         </div>
 
       </div>
+
+      {hud && (
+        <div className="px-2.5 py-2 border-t border-white/5 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className={`text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded ${
+              follow && !previewing
+                ? "bg-emerald-500/20 text-emerald-300"
+                : "bg-slate-600/40 text-slate-300"
+            }`}
+            >
+              {follow && !previewing ? "LIVE" : follow ? t("previewBadge") : t("filmBadge")}
+            </span>
+            <span className="text-[10px] text-white/70">{hud.civil || "—"}</span>
+          </div>
+          {hud.kind === "forecast" && (
+            <div className="text-[9px] text-cyan-200/80">
+              {hud.model || forecastModel || "GFS"}
+              {hud.leadHours != null ? ` · +${Math.round(hud.leadHours)} h` : ""}
+            </div>
+          )}
+          {hud.atQuay && <div className="text-[9px] text-amber-200/80">{t("atQuay")}</div>}
+          {follow && hud.status === "waiting" && (
+            <div className="text-[9px] text-amber-200/90">
+              {t("departsIn", { hours: formatEta(hud.countdownHours) })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {forecastStatus === "pending" && (
+        <div className="px-2.5 py-1.5 text-[9px] text-sky-200/80 bg-sky-950/40">{t("forecastPending")}</div>
+      )}
+      {forecastStatus === "unavailable" && (
+        <div className="px-2.5 py-1.5 text-[9px] text-amber-200/80 bg-amber-950/30">{t("forecastUnavailable")}</div>
+      )}
+
+      {canRecompute && (
+        <div className="px-2 pb-2">
+          <button
+            type="button"
+            disabled={recomputeBusy || forecastStatus === "pending"}
+            onClick={onRecompute}
+            className="w-full rounded-lg border border-cyan-500/40 bg-cyan-900/30 py-1.5 text-[10px] font-semibold text-cyan-100 hover:bg-cyan-800/40 disabled:opacity-40"
+          >
+            {recomputeBusy ? t("recomputeBusy") : t("recomputeButton")}
+          </button>
+        </div>
+      )}
+
+      <p className="px-2.5 pb-2 text-[9px] text-white/40 leading-snug">{t("simDisclaimer")}</p>
 
       {/* Boutons Précédent / Suivant */}
       <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />

@@ -43,6 +43,10 @@ export function SimulationFilmBar({
   windSeries,
   windLoading,
   holding,
+  civilLabel,
+  seaDay,
+  windModel,
+  liveBadge,
 }) {
   const { t } = useLang();
   const barTotal = playheadTotal ?? totalNm;
@@ -98,6 +102,8 @@ export function SimulationFilmBar({
             ) : null}
             <div className="text-[10px] text-white/55 mt-0.5">
               {progressLabel}
+              {seaDay != null ? ` · j${seaDay}` : ""}
+              {civilLabel ? ` · ${civilLabel}` : ""}
               {remainLabel}
               {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
               {vehicle === "plane" ? ` · ${t("filmAirVehicle")}` : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
@@ -105,8 +111,11 @@ export function SimulationFilmBar({
               {profile === "real" && vehicle !== "plane" ? ` · ${t("speedRealHint")}` : ""}
               {liveSpeed && vehicle !== "plane" ? ` · ${t("speedLivePolar")}` : ""}
               {windKind === "climatology" && vehicle !== "plane" ? ` · ${t("filmWindClimo")}` : ""}
+              {windKind === "forecast" && vehicle !== "plane" ? ` · ${t("filmWindForecast")}` : ""}
               {windKind === "analyse" && vehicle !== "plane" ? ` · ${t("filmWindAnalyse")}` : ""}
+              {windModel && windKind === "forecast" ? ` · ${windModel}` : ""}
               {holding ? ` · ${t("filmArrivalHold")}` : ""}
+              {liveBadge ? ` · ${liveBadge}` : ""}
             </div>
           </div>
           <div className="flex flex-shrink-0 items-center gap-1">
