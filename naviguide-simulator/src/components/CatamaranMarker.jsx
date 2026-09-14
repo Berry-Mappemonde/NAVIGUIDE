@@ -14,7 +14,7 @@ function buildIconHtml(bearing, southern, png) {
   return `<img src="${src}" alt="catamaran" style="width:56px;height:56px;object-fit:contain;transform:${parts.join(" ")};transition:transform 0.35s ease;" />`;
 }
 
-export function useCatamaranMarker(mapRef, { visible, lat, lon, bearing, onDrag, mapReady }) {
+export function useCatamaranMarker(mapRef, { visible, lat, lon, bearing, onDrag, onDragStart, mapReady }) {
   const markerRef = useRef(null);
 
   useEffect(() => {
@@ -34,6 +34,7 @@ export function useCatamaranMarker(mapRef, { visible, lat, lon, bearing, onDrag,
     });
     if (!markerRef.current) {
       const m = L.marker([lat, lon], { icon, draggable: true, pane: "boat" }).addTo(map);
+      m.on("dragstart", () => onDragStart?.());
       m.on("drag", (e) => {
         const ll = e.target.getLatLng();
         onDrag?.({ lat: ll.lat, lon: ll.lng });
@@ -44,7 +45,7 @@ export function useCatamaranMarker(mapRef, { visible, lat, lon, bearing, onDrag,
       markerRef.current.setIcon(icon);
     }
     return undefined;
-  }, [mapRef, mapReady, visible, lat, lon, bearing, onDrag]);
+  }, [mapRef, mapReady, visible, lat, lon, bearing, onDrag, onDragStart]);
 
   useEffect(() => () => {
     markerRef.current?.remove();
