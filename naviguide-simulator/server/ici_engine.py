@@ -288,6 +288,7 @@ async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple
             return zee_from_record(rec), "marineregions"
         if eez_records(here):
             return zee_from_record(None), "marineregions"
+        ashore = _ashore_from_records(here)
         step = 0.2
         probes = [
             (lat, lon - step), (lat, lon + step),
@@ -305,12 +306,31 @@ async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple
             rec = _first_plausible(item, lat, lon)
             if rec:
                 return zee_from_record(rec), "marineregions"
+        if ashore:
+            return ashore, "marineregions"
         return zee_from_record(None), "marineregions"
     except Exception:
         return None, "error"
 
 
-async def _get_json(client: httpx.AsyncClient, url: str, timeout: float = 8.0) -> Any:
+def _ashore_from_records(records: list) -> dict | None:
+    for rec in records or []:
+        if _place_type(rec) != "NATION":
+            continue
+        name = rec.get("preferredGazetteerName") or rec.get("name")
+        if not name:
+            continue
+        return {
+            "name": f"À terre ({name})",
+            "mrgid": None,
+            "territory": None,
+            "gold": False,
+            "ashore": True,
+        }
+    return None
+
+
+async def _get_json(client: httpx.AsyncClient, url: str, timeout: float = 4.0) -> Any:
     r = await client.get(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, timeout=timeout)
     r.raise_for_status()
     return r.json()
@@ -321,7 +341,7 @@ async def _cached_fc(client: httpx.AsyncClient, url: str) -> list:
     hit = _fc_cache.get(url)
     if hit and now - hit["ts"] < _FC_TTL:
         return hit["features"]
-    data = await _get_json(client, url, timeout=12.0)
+    data = await _get_json(client, url, timeout=6.0)
     features = data.get("features") if isinstance(data, dict) else []
     if not isinstance(features, list):
         features = []
@@ -416,11 +436,11 @@ async def fill_dossier(
     http = client or httpx.AsyncClient()
 
     async def poe_task(mrgid: int) -> list[dict]:
-        data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=8.0)
+        data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)
         return _poe_from_fc(data, lat, lon)
 
     async def amp_task() -> list[dict]:
-        data = await _get_json(http, f"{bi}/amp?bbox={bbox}", timeout=8.0)
+        data = await _get_json(http, f"{bi}/amp?bbox={bbox}", timeout=4.0)
         feats = data.get("features") if isinstance(data, dict) else []
         return nearest_places(feats or [], lat, lon, radius_nm, MAX_AMP)
 

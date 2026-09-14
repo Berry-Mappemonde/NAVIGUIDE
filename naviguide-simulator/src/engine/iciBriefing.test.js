@@ -43,6 +43,20 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, /4500|mappemonde entière|toute la carte/i);
   });
 
+  it("dit à terre hors ZEE sans inventer des ports d’entrée", () => {
+    const text = narrateIci({
+      zee: { name: "À terre (France)", mrgid: null, gold: false, ashore: true },
+      poe: [],
+      amp: [],
+      projects: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /à terre/i);
+    assert.match(text, /hors ZEE/);
+    assert.doesNotMatch(text, /ports d’entrée officiels les plus proches/);
+  });
+
   it("dit la haute mer sans inventer des ports d’entrée", () => {
     const text = narrateIci({
       zee: { name: "Haute mer", mrgid: null, gold: false },

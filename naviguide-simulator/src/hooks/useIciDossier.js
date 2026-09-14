@@ -11,7 +11,7 @@ import { narrateIci } from "../engine/iciBriefing.js";
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
 const MOVE_NM = 3;
-const FETCH_MS = 15000;
+const FETCH_MS = 25000;
 
 /**
  * Remplit le sac `ici()` autour du bateau et en fait un récit.

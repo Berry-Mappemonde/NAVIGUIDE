@@ -257,6 +257,28 @@ def test_lookup_zee_inland_port_uses_offshore_probe():
     assert hits["n"] >= 2
 
 
+def test_lookup_zee_inland_nation_is_ashore():
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[{
+            "placeType": "Nation",
+            "preferredGazetteerName": "France",
+            "MRGID": 17,
+        }])
+
+    async def run():
+        from ici_engine import lookup_zee
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await lookup_zee(client, 48.81, 2.48)
+
+    zee, src = asyncio.run(run())
+    assert src == "marineregions"
+    assert zee["ashore"] is True
+    assert "France" in zee["name"]
+    assert zee["mrgid"] is None
+
+
 def test_lookup_zee_rejects_distant_gazetteer_eez():
     reset_caches()
 
