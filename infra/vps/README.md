@@ -74,6 +74,46 @@ the code and `sudo systemctl restart blue-intelligence` (without `npm`/`uv` if
 dependencies have not changed). Do not run `deploy-app.sh` during a
 Full run — it restarts the service.
 
+## Automatic redeploy (GitHub Actions)
+
+A push to `main` that touches a site's code rebuilds that site on
+GitHub (no `npm` on the 8 GB VPS), copies the files over SSH, then
+restarts the service. NAVIGUIDE and the simulator can publish during
+a Blue Intelligence Full run. **blueintelligence.online waits**: a
+restart would kill the in-memory run.
+
+| Site | Paths that trigger |
+|------|--------------------|
+| `blueintelligence.online` | `frontend/`, `backend/`, `infra/vps/deploy-app.sh` and the BI systemd / nginx files |
+| `www.naviguide.fr` | `naviguide/`, `infra/vps/naviguide/` except `*simulator*` files |
+| `simulator.naviguide.fr` | `naviguide-simulator/`, `*simulator*` files under `infra/vps/naviguide/` |
+
+If an enrichment / Full run **or a Review “Propose” batch** is running,
+the code is still copied, but the Blue Intelligence restart is
+**deferred**. Every 20 minutes the “Catch-up” job retries
+(`~/.local/state/blue-intelligence-deploy/pending/`). The probe reads
+`ADMIN_KEY` from `backend/.env` on the VPS (Review status is not
+public).
+
+Repository secrets (Settings → Secrets and variables → Actions):
+
+- `VPS_SSH_KEY` — **private** key `~/.ssh/github-deploy-vps`
+- `VPS_HOST` — `ubuntu@135.125.226.16`
+
+On the Mac, once, copy the **public** key to the VPS:
+
+```bash
+ssh-copy-id -i ~/.ssh/github-deploy-vps.pub ubuntu@135.125.226.16
+```
+
+Manual deploy (Actions → VPS deploy → Run workflow).
+Tick “Force” only if you accept interrupting a Full run.
+
+Scripts: `infra/vps/ci/` (`prod_jobs_busy.py` probes the public API,
+without `ADMIN_KEY`). `SKIP_FRONTEND_BUILD=1` and `SKIP_PIP=1` skip
+`npm` / `uv pip` on the VPS when the bundle and `requirements.txt`
+have not changed.
+
 ## Resync data from Atlas — ⛔ NEVER DO THIS AGAIN
 
 **Since the DNS cutover of 2026-09-10, the VPS is the live database.** Atlas is
