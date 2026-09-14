@@ -20,4 +20,12 @@ python -m routing_ab.compare --out routing_ab/out
 
 Ouvrir `routing_ab/out/index.html`.
 
+Conseil automatique (portes déjà dans l’itinéraire, GARDER/JETER, prochaine porte, 20 nm) :
+
+```bash
+python -m routing_ab.advise --out routing_ab/out
+```
+
+Ouvrir `routing_ab/out/advise.html`.
+
 `searoute` 1.6 est installé à la demande dans `.venv-ab-sr16/` (gitignoré). Pour l’éviter : `--no-sr16`.
