@@ -143,6 +143,12 @@ function aroundSentence(dossier, lang) {
   if (capit) bits.push(en ? `harbour offices ${capit}` : `les capitaineries ${capit}`);
   const wpi = listPlaces(dossier?.nearby?.wpi, lang, 2);
   if (wpi) bits.push(en ? `WPI ports ${wpi}` : `les ports WPI ${wpi}`);
+  const scienceItems = (dossier?.science?.nearby || []).map((x) => ({
+    ...x,
+    name: x.source ? `${x.name} (${x.source})` : x.name,
+  }));
+  const science = listPlaces(scienceItems, lang, 3);
+  if (science) bits.push(en ? `science records ${science}` : `les fiches Science ${science}`);
   if (!bits.length) {
     return en
       ? "Nothing notable sits inside 30 nautical miles."

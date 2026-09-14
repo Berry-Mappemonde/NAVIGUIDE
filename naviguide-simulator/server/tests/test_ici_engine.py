@@ -14,6 +14,7 @@ from ici_engine import (
     pick_eez_record,
     radius_bbox,
     reset_caches,
+    slim_science,
     zee_from_record,
 )
 
@@ -94,6 +95,40 @@ def test_zee_from_record_and_pick():
     assert picked["MRGID"] == 5677
 
 
+def test_slim_science_infers_source_and_uses_props_latlon():
+    cruise = {
+        "type": "Feature",
+        "geometry": {"type": "LineString", "coordinates": [[-2.0, 45.0], [-1.0, 46.0]]},
+        "properties": {
+            "name": "Campagne THALASSA",
+            "kind": "cruise",
+            "lat": 46.15,
+            "lon": -1.16,
+            "provider": "Ifremer",
+        },
+    }
+    item = slim_science(cruise, 46.15, -1.16)
+    assert item["source"] == "csr"
+    assert item["kind"] == "cruise"
+    assert item["provider"] == "Ifremer"
+    assert item["nm"] < 1
+
+    argo = {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [-1.16, 46.15]},
+        "properties": {
+            "name": "Argo 6901234",
+            "kind": "argo_float",
+            "wmo": "6901234",
+            "lat": 46.15,
+            "lon": -1.16,
+        },
+    }
+    item = slim_science(argo, 46.15, -1.16)
+    assert item["source"] == "argo"
+    assert item["wmo"] == "6901234"
+
+
 def test_nearest_places_caps_and_prefers_props_latlon():
     here_lat, here_lon = LA_ROCHELLE
     far = _point("Loin", 50.0, -5.0)
@@ -117,6 +152,7 @@ def test_empty_dossier_contract():
     assert d["poe"] == []
     assert d["nearby"]["marinas"] == []
     assert d["polar"] is None
+    assert d["science"] is None
     assert d["sources"]["bi"] is None
 
 
@@ -129,7 +165,7 @@ def _handler(request: httpx.Request) -> httpx.Response:
             "type": "FeatureCollection",
             "features": [_point("La Rochelle", 46.15, -1.15, "https://douane.gouv.fr/la-rochelle")],
         })
-    if "/amp?" in url:
+    if "export/amp.geojson" in url:
         return httpx.Response(200, json={
             "type": "FeatureCollection",
             "features": [_point("Pertuis charentais", 46.16, -1.20)],
@@ -141,16 +177,24 @@ def _handler(request: httpx.Request) -> httpx.Response:
                 _point(f"Projet loin {i}", 10.0, 10.0) for i in range(20)
             ],
         })
-    if "marinas.geojson" in url:
+    if url.rstrip("/").endswith("/marinas"):
         return httpx.Response(200, json={
             "type": "FeatureCollection",
             "features": [_point("Port des Minimes", 46.14, -1.17)],
         })
-    if "capitaineries.geojson" in url:
+    if url.rstrip("/").endswith("/capitaineries"):
         return httpx.Response(200, json={
             "type": "FeatureCollection",
             "features": [_point("Capitainerie La Rochelle", 46.15, -1.16)],
         })
+    if "export/science.geojson" in url:
+        feat = _point("Pertuis bathymétrie", 46.16, -1.18, "https://sextant.ifremer.fr/x")
+        feat["properties"]["source"] = "sextant"
+        feat["properties"]["kind"] = "dataset"
+        far = _point("Argo loin", 10.0, 10.0)
+        far["properties"]["source"] = "argo"
+        far["properties"]["kind"] = "argo_float"
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": [feat, far]})
     if "world-port-index" in url:
         return httpx.Response(200, json={
             "ports": [{"portName": "LA ROCHELLE", "latitude": 46.15, "longitude": -1.15}],
@@ -160,13 +204,23 @@ def _handler(request: httpx.Request) -> httpx.Response:
 
 def test_fill_dossier_la_rochelle_mocked():
     reset_caches()
-    transport = httpx.MockTransport(_handler)
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
 
     async def run():
         async with httpx.AsyncClient(transport=transport) as client:
             return await fill_dossier(46.15, -1.16, client=client)
 
     d = asyncio.run(run())
+    assert not any("amp?bbox" in url or "/export/marinas" in url for url in seen)
+    assert any("export/amp.geojson" in url for url in seen)
+    assert any("export/science.geojson" in url for url in seen)
+    assert any(url.rstrip("/").endswith("/marinas") for url in seen)
     assert d["zee"]["mrgid"] == 5677
     assert d["zee"]["gold"] is True
     assert d["poe"][0]["name"] == "La Rochelle"
@@ -176,6 +230,9 @@ def test_fill_dossier_la_rochelle_mocked():
     assert len(d["projects"]) == 1
     assert d["nearby"]["marinas"][0]["name"] == "Port des Minimes"
     assert d["nearby"]["wpi"][0]["name"] == "LA ROCHELLE"
+    assert d["science"]["nearby"][0]["name"] == "Pertuis bathymétrie"
+    assert d["science"]["nearby"][0]["source"] == "sextant"
+    assert len(d["science"]["nearby"]) == 1
     assert d["sources"]["zee"] == "marineregions"
     assert d["sources"]["bi"] == "ok"
     assert "grid" not in (d.get("polar") or {})
@@ -201,6 +258,7 @@ def test_fill_dossier_bi_down_keeps_zee():
     assert d["zee"]["gold"] is False
     assert d["poe"] == []
     assert d["amp"] == []
+    assert d["science"] is None
     assert d["sources"]["bi"] == "unavailable"
 
 
@@ -321,4 +379,5 @@ def test_fill_dossier_haute_mer():
     assert d["zee"]["name"] == "Haute mer"
     assert d["zee"]["mrgid"] is None
     assert d["poe"] == []
+    assert d["science"] == {"nearby": []}
     assert d["zee"]["gold"] is False

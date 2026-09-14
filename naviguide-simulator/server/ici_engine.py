@@ -1,7 +1,9 @@
 """Sac `ici()` — ce qu’il y a autour du bateau, pas toute la carte.
 
 Étape 2 : ZEE (MarineRegions), PoE de cette ZEE, AMP / projets /
-marinas-capit-WPI dans 20–30 nm. Pas de Tavily, pas de LLM.
+marinas-capit-WPI / une poignée de fiches Science dans 20–30 nm.
+AMP = cache `/export/amp.geojson` (pas ProtectedSeas). Pas de Tavily,
+pas de LLM.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ MAX_POE = 4
 MAX_AMP = 5
 MAX_PROJECTS = 5
 MAX_NEARBY = 3
+MAX_SCIENCE = 5
 EEZ_ACCEPT_NM = 240
 R_NM = 3440.065
 
@@ -188,7 +191,7 @@ def feature_url(feat: dict) -> str | None:
     return None
 
 
-def slim_place(feat: dict, lat0: float, lon0: float) -> dict | None:
+def slim_place(feat: dict, lat0: float, lon0: float, extra_keys: tuple[str, ...] = ()) -> dict | None:
     ll = feature_latlon(feat)
     if not ll:
         return None
@@ -196,19 +199,47 @@ def slim_place(feat: dict, lat0: float, lon0: float) -> dict | None:
     name = feature_name(feat)
     if not name:
         return None
-    return {
+    item = {
         "name": name,
         "lat": round(lat, 5),
         "lon": round(lon, 5),
         "nm": round(haversine_nm(lat0, lon0, lat, lon), 1),
         "url": feature_url(feat),
     }
+    props = feat.get("properties") or {}
+    for key in extra_keys:
+        val = props.get(key)
+        if val not in (None, ""):
+            item[key] = val
+    return item
 
 
-def nearest_places(features: list, lat: float, lon: float, radius_nm: float, limit: int) -> list[dict]:
+def slim_science(feat: dict, lat0: float, lon0: float) -> dict | None:
+    item = slim_place(feat, lat0, lon0, extra_keys=("source", "kind", "wmo", "provider"))
+    if not item:
+        return None
+    props = feat.get("properties") or {}
+    if not item.get("source"):
+        if props.get("kind") == "argo_float":
+            item["source"] = "argo"
+        elif props.get("kind") == "cruise":
+            item["source"] = "csr"
+    return item
+
+
+def nearest_places(
+    features: list,
+    lat: float,
+    lon: float,
+    radius_nm: float,
+    limit: int,
+    extra_keys: tuple[str, ...] = (),
+    slim=None,
+) -> list[dict]:
+    slim_fn = slim or (lambda f, a, b: slim_place(f, a, b, extra_keys))
     found: list[dict] = []
     for feat in features or []:
-        item = slim_place(feat, lat, lon)
+        item = slim_fn(feat, lat, lon)
         if item and item["nm"] <= radius_nm + 0.05:
             found.append(item)
     found.sort(key=lambda x: x["nm"])
@@ -341,7 +372,7 @@ async def _cached_fc(client: httpx.AsyncClient, url: str) -> list:
     hit = _fc_cache.get(url)
     if hit and now - hit["ts"] < _FC_TTL:
         return hit["features"]
-    data = await _get_json(client, url, timeout=6.0)
+    data = await _get_json(client, url, timeout=20.0)
     features = data.get("features") if isinstance(data, dict) else []
     if not isinstance(features, list):
         features = []
@@ -418,6 +449,8 @@ def _assign_result(d: dict, key: str, value: Any) -> bool:
         d["nearby"]["capitaineries"] = value
     elif key == "wpi":
         d["nearby"]["wpi"] = value
+    elif key == "science":
+        d["science"] = {"nearby": value}
     return True
 
 
@@ -429,8 +462,6 @@ async def fill_dossier(
 ) -> dict:
     d = empty_dossier(lat, lon, radius_nm)
     bi = bi_base()
-    minx, miny, maxx, maxy = radius_bbox(lat, lon, radius_nm)
-    bbox = f"{minx:.4f},{miny:.4f},{maxx:.4f},{maxy:.4f}"
 
     own = client is None
     http = client or httpx.AsyncClient()
@@ -440,21 +471,26 @@ async def fill_dossier(
         return _poe_from_fc(data, lat, lon)
 
     async def amp_task() -> list[dict]:
-        data = await _get_json(http, f"{bi}/amp?bbox={bbox}", timeout=4.0)
-        feats = data.get("features") if isinstance(data, dict) else []
-        return nearest_places(feats or [], lat, lon, radius_nm, MAX_AMP)
+        # Cache Mongo (centroïdes). GET /amp?bbox= petit déclenche ProtectedSeas.
+        feats = await _cached_fc(http, f"{bi}/export/amp.geojson")
+        return nearest_places(feats, lat, lon, radius_nm, MAX_AMP)
 
     async def projects_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/geojson")
         return nearest_places(feats, lat, lon, radius_nm, MAX_PROJECTS)
 
     async def marinas_task() -> list[dict]:
-        feats = await _cached_fc(http, f"{bi}/export/marinas.geojson")
+        # /marinas = cache mémoire BI ; l'export reconstruit tout Mongo.
+        feats = await _cached_fc(http, f"{bi}/marinas")
         return nearest_places(feats, lat, lon, radius_nm, MAX_NEARBY)
 
     async def capit_task() -> list[dict]:
-        feats = await _cached_fc(http, f"{bi}/export/capitaineries.geojson")
+        feats = await _cached_fc(http, f"{bi}/capitaineries")
         return nearest_places(feats, lat, lon, radius_nm, MAX_NEARBY)
+
+    async def science_task() -> list[dict]:
+        feats = await _cached_fc(http, f"{bi}/export/science.geojson")
+        return nearest_places(feats, lat, lon, radius_nm, MAX_SCIENCE, slim=slim_science)
 
     async def wpi_task() -> list[dict]:
         feats = await fetch_wpi_features(http)
@@ -465,6 +501,7 @@ async def fill_dossier(
         proj_t = asyncio.create_task(projects_task())
         mar_t = asyncio.create_task(marinas_task())
         cap_t = asyncio.create_task(capit_task())
+        sci_t = asyncio.create_task(science_task())
         wpi_t = asyncio.create_task(wpi_task())
 
         zee, zee_src = await lookup_zee(http, lat, lon)
@@ -474,8 +511,8 @@ async def fill_dossier(
         mrgid = zee.get("mrgid") if zee else None
         poe_t = asyncio.create_task(poe_task(mrgid)) if mrgid else None
 
-        nearby = await asyncio.gather(amp_t, proj_t, mar_t, cap_t, wpi_t, return_exceptions=True)
-        keys = ("amp", "projects", "marinas", "capitaineries", "wpi")
+        nearby = await asyncio.gather(amp_t, proj_t, mar_t, cap_t, sci_t, wpi_t, return_exceptions=True)
+        keys = ("amp", "projects", "marinas", "capitaineries", "science", "wpi")
         bi_ok = 0
         bi_fail = 0
         for key, value in zip(keys, nearby):

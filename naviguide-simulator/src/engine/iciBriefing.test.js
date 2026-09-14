@@ -24,6 +24,12 @@ describe("narrateIci", () => {
         capitaineries: [{ name: "Capitainerie La Rochelle", nm: 1 }],
         wpi: [{ name: "LA ROCHELLE", nm: 1.1 }],
       },
+      science: {
+        nearby: [
+          { name: "Pertuis charentais bathymétrie", source: "sextant", nm: 6, url: "https://sextant.ifremer.fr/x" },
+          { name: "6901234", source: "argo", kind: "argo_float", wmo: "6901234", nm: 18 },
+        ],
+      },
       polar: { boat: "Leopard 46", speedKnots: 7.2, etaHours: 42 },
       marks: [{ kind: "leg", from: "La Rochelle", to: "Fort-de-France", vehicle: "main" }],
       event: { type: "zee-enter", name: "French Exclusive Economic Zone", mrgid: 5677 },
@@ -39,6 +45,9 @@ describe("narrateIci", () => {
     assert.match(text, /On vient d’entrer/);
     assert.match(text, /Fort-de-France/);
     assert.match(text, /7\.2 nœuds/);
+    assert.match(text, /fiches Science/);
+    assert.match(text, /sextant/);
+    assert.match(text, /argo/);
     assert.doesNotMatch(text, FORBIDDEN);
     assert.doesNotMatch(text, /4500|mappemonde entière|toute la carte/i);
   });
