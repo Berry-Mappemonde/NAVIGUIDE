@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sonde les files d'enrichissement / Complet de l'API Blue Intelligence.
+"""Sonde les files d'enrichissement / Complet / lot Review Proposer.
 
 Sortie :
   0  — aucun run en cours (redémarrer blue-intelligence est sûr)
@@ -7,16 +7,19 @@ Sortie :
   1  — l'API n'a pas répondu de façon exploitable (sauf connexion refusée :
        traité comme idle, le service est à l'arrêt)
 
-Sans secret : les GET de statut sont publics. À lancer contre
-http://127.0.0.1:8001 sur le VPS, ou https://blueintelligence.online.
+Les GET Console sont publics. Le lot Review Proposer
+(``/api/review/suggest/status``) exige ``X-Admin-Key`` en production :
+la sonde lit ``ADMIN_KEY`` (env ou ``backend/.env`` sur le VPS).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 BUSY_EXIT = 10
 ERROR_EXIT = 1
@@ -42,7 +45,11 @@ PROBE_PATHS = (
     "/api/poe/auto-refresh/status",
     "/api/amp/discover-visit-urls/status",
     "/api/science/build/status",
+    "/api/review/suggest/status",
 )
+
+# Lectures Review : garde admin (voir app.main._ADMIN_GET_PREFIXES).
+ADMIN_PROBE_PATHS = frozenset({"/api/review/suggest/status"})
 
 
 def _truthy_id(value) -> bool:
@@ -75,6 +82,35 @@ def payload_reasons(data: dict) -> list[str]:
     return reasons
 
 
+def needs_admin(path: str) -> bool:
+    return path in ADMIN_PROBE_PATHS
+
+
+def load_admin_key(explicit: str | None = None) -> str:
+    """ADMIN_KEY explicite, sinon l'environnement, sinon backend/.env du VPS."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    env = (os.environ.get("ADMIN_KEY") or "").strip()
+    if env:
+        return env
+    app = os.environ.get("APP") or str(Path.home() / "blue-intelligence-map")
+    env_file = Path(app) / "backend" / ".env"
+    if not env_file.is_file():
+        return ""
+    for raw in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if line.startswith("ADMIN_KEY="):
+            value = line.split("=", 1)[1].strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            return value.strip()
+    return ""
+
+
+def is_http_unauthorized(exc: BaseException) -> bool:
+    return isinstance(exc, urllib.error.HTTPError) and exc.code in (401, 403)
+
+
 def is_http_gone(exc: BaseException) -> bool:
     """404 / 410 : endpoint retiré, on n'en déduit pas un run."""
     if isinstance(exc, urllib.error.HTTPError) and exc.code in (404, 410):
@@ -99,11 +135,14 @@ def is_connection_refused(exc: BaseException) -> bool:
     return False
 
 
-def fetch_json(url: str, timeout: float) -> dict:
-    req = urllib.request.Request(url, headers={
+def fetch_json(url: str, timeout: float, admin_key: str = "") -> dict:
+    headers = {
         "Accept": "application/json",
         "User-Agent": USER_AGENT,
-    })
+    }
+    if admin_key:
+        headers["X-Admin-Key"] = admin_key
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8") or "{}"
         data = json.loads(raw)
@@ -112,7 +151,8 @@ def fetch_json(url: str, timeout: float) -> dict:
     return data
 
 
-def probe(base_url: str, timeout: float = 12.0) -> tuple[int, list[dict]]:
+def probe(base_url: str, timeout: float = 12.0,
+          admin_key: str = "") -> tuple[int, list[dict]]:
     """Retourne (code_sortie, détail par chemin)."""
     base = base_url.rstrip("/")
     details: list[dict] = []
@@ -120,8 +160,9 @@ def probe(base_url: str, timeout: float = 12.0) -> tuple[int, list[dict]]:
     for path in PROBE_PATHS:
         url = f"{base}{path}"
         row: dict = {"path": path}
+        key = admin_key if needs_admin(path) else ""
         try:
-            data = fetch_json(url, timeout)
+            data = fetch_json(url, timeout, admin_key=key)
         except json.JSONDecodeError as exc:
             return ERROR_EXIT, [{"path": path, "error": f"json: {exc}"}]
         except Exception as exc:
@@ -129,6 +170,14 @@ def probe(base_url: str, timeout: float = 12.0) -> tuple[int, list[dict]]:
                 return 0, [{"path": path, "idle": True, "note": "connexion refusée (service arrêté)"}]
             if is_http_gone(exc):
                 details.append({"path": path, "skipped": True, "note": str(exc)})
+                continue
+            if is_http_unauthorized(exc) and needs_admin(path):
+                if key:
+                    return ERROR_EXIT, [{"path": path, "error": f"{type(exc).__name__}: {exc}"}]
+                details.append({
+                    "path": path, "skipped": True,
+                    "note": "401 Review — ADMIN_KEY absente, lot Proposer invisible",
+                })
                 continue
             return ERROR_EXIT, [{"path": path, "error": f"{type(exc).__name__}: {exc}"}]
         reasons = payload_reasons(data)
@@ -154,15 +203,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--timeout", type=float, default=12.0)
     parser.add_argument("--json", action="store_true", help="Détail JSON sur stdout")
+    parser.add_argument(
+        "--admin-key",
+        default="",
+        help="Clé X-Admin-Key (sinon ADMIN_KEY ou backend/.env)",
+    )
     args = parser.parse_args(argv)
 
-    code, details = probe(args.base_url, timeout=args.timeout)
+    admin_key = load_admin_key(args.admin_key or None)
+    code, details = probe(args.base_url, timeout=args.timeout, admin_key=admin_key)
     if args.json:
         json.dump({"exit": code, "base": args.base_url.rstrip("/"), "hits": details},
                   sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
     elif code == BUSY_EXIT:
-        print("BUSY — run d'enrichissement / Complet en cours :")
+        print("BUSY — run d'enrichissement / Complet / lot Review Proposer en cours :")
         for row in details:
             extra = row.get("active_run_id") or row.get("active_run_ids") or ""
             print(f"  {row['path']}  {','.join(row.get('reasons') or [])}  {extra}".rstrip())
