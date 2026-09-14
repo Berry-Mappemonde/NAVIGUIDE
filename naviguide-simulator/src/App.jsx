@@ -270,7 +270,8 @@ export default function App() {
   useEffect(() => {
     if (!simulationMode) return undefined;
     const onKey = (e) => {
-      if (e.target?.closest?.("input, textarea, select, button, [contenteditable]")) return;
+      if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+      if (e.target?.closest?.("button") && e.code === "Space") return;
       if (e.code === "Space") {
         e.preventDefault();
         playback.toggle();
@@ -824,6 +825,7 @@ export default function App() {
           cinema={cinemaMode}
           onCinema={toggleCinema}
           liveSpeed={expeditionSpeed.live}
+          boatName={polarData?.boat_name}
         />
       )}
 

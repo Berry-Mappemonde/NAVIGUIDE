@@ -1,4 +1,4 @@
-/** Vitesse de croisière de l’expédition (nœuds) : polaire, sinon 7 kt. */
+/** Vitesse de croisière de l’expédition (nœuds) : BS portant, sinon 7 kt. */
 export const FALLBACK_EXPEDITION_KNOTS = 7;
 
 export function expeditionBoatKnots(polarData) {
@@ -6,8 +6,9 @@ export function expeditionBoatKnots(polarData) {
   if (!vmg || typeof vmg !== "object") return FALLBACK_EXPEDITION_KNOTS;
   const samples = [];
   for (const key of ["12", "16", "10", "8"]) {
-    const dw = vmg[key]?.downwind?.vmg ?? vmg[key]?.downwind?.speed;
-    if (Number.isFinite(Number(dw)) && Number(dw) > 0) samples.push(Number(dw));
+    const dw = vmg[key]?.downwind;
+    const bs = Number(dw?.speed ?? dw?.vmg);
+    if (Number.isFinite(bs) && bs > 0) samples.push(bs);
   }
   if (!samples.length) return FALLBACK_EXPEDITION_KNOTS;
   return samples.reduce((a, b) => a + b, 0) / samples.length;

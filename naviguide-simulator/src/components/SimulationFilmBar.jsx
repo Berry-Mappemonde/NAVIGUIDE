@@ -30,6 +30,7 @@ export function SimulationFilmBar({
   cinema,
   onCinema,
   liveSpeed,
+  boatName,
 }) {
   const { t } = useLang();
   const pct = totalNm > 0 ? Math.min(100, (nm / totalNm) * 100) : 0;
@@ -61,6 +62,7 @@ export function SimulationFilmBar({
               {remainingNm > 0.5 && !finished ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm` : ""}
               {etaHours != null && !finished ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
               {` · ${boatKnots.toFixed(1)} kt`}
+              {boatName ? ` · ${boatName}` : ""}
               {profile === "real" ? ` · ${t("speedRealHint")}` : ""}
               {liveSpeed ? ` · ${t("speedLivePolar")}` : ""}
             </div>
