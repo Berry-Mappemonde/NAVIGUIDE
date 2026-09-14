@@ -3,13 +3,15 @@ import assert from "node:assert/strict";
 import { ALL_LAYER_CONFIG } from "./layers.js";
 
 describe("ALL_LAYER_CONFIG", () => {
-  it("expose les 13 pastilles du cockpit (dont WMS EMODnet)", () => {
-    assert.equal(ALL_LAYER_CONFIG.length, 13);
+  it("remplace Science par les 8 cartes, sans pastille unique", () => {
     const keys = ALL_LAYER_CONFIG.map((c) => c.key);
     assert.deepEqual(keys, [
       "zee", "wpi", "balisage", "projects", "marinas",
-      "capitaineries", "poe", "amp", "science", "climatology",
-      "wmsBathy", "wmsSubstrate", "wmsCables",
+      "capitaineries", "poe", "amp",
+      "sextant", "argo", "odatis", "edmed", "csr",
+      "bathymetry", "fonds", "cables",
+      "climatology",
     ]);
+    assert.equal(keys.includes("science"), false);
   });
 });

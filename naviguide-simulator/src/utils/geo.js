@@ -5,13 +5,52 @@ export function toRad(deg) {
   return (deg * Math.PI) / 180;
 }
 
+export function wrapLon(lon) {
+  if (!Number.isFinite(lon)) return lon;
+  let x = lon;
+  while (x > 180) x -= 360;
+  while (x < -180) x += 360;
+  return x;
+}
+
+/** Enchaîne les longitudes pour ne pas traverser la carte au 180°. */
+export function unwrapLon(prevLon, lon) {
+  if (!Number.isFinite(lon)) return lon;
+  if (!Number.isFinite(prevLon)) return lon;
+  let x = lon;
+  while (x - prevLon > 180) x -= 360;
+  while (x - prevLon < -180) x += 360;
+  return x;
+}
+
 export function haversineNm(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
+  let dLonDeg = lon2 - lon1;
+  while (dLonDeg > 180) dLonDeg -= 360;
+  while (dLonDeg < -180) dLonDeg += 360;
+  const dLon = toRad(dLonDeg);
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R_NM * Math.asin(Math.sqrt(a));
+}
+
+/** Coupe une polyligne [lon,lat] au passage ±180° (Leaflet trace sinon tout le globe). */
+export function splitAntimeridianCoords(coords) {
+  const parts = [[]];
+  for (const c of coords || []) {
+    if (!c || !Number.isFinite(c[0]) || !Number.isFinite(c[1])) continue;
+    const part = parts[parts.length - 1];
+    if (part.length) {
+      const prev = part[part.length - 1];
+      if (Math.abs(c[0] - prev[0]) > 180) {
+        parts.push([c]);
+        continue;
+      }
+    }
+    part.push(c);
+  }
+  return parts.filter((p) => p.length >= 2);
 }
 
 /**

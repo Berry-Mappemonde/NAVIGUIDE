@@ -1,8 +1,6 @@
-import { haversineNm } from "../utils/geo.js";
 import { gebcoLookup } from "./gebco.js";
 
 export const ICI_RADIUS_NM = 30;
-export const SCIENCE_LOCAL_NM = 2;
 
 export function emptyDossier(lat, lon) {
   return {
@@ -19,64 +17,99 @@ export function emptyDossier(lat, lon) {
     weather: null,
     polar: null,
     event: null,
+    sources: { zee: null, bi: null },
     depthOffshore: null,
   };
 }
 
-/** 0 ou 1 objet science local — jamais les catalogues. */
-export function pickLocalScience(lat, lon, features, radiusNm = SCIENCE_LOCAL_NM) {
-  if (!features?.length || lat == null || lon == null) return null;
-  let best = null;
-  let bestD = Infinity;
-  for (const f of features) {
-    const p = f.properties || {};
-    let glat = p.lat;
-    let glon = p.lon;
-    if (glat == null || glon == null) {
-      const geom = f.geometry || {};
-      const c = geom.coordinates;
-      if (geom.type === "Point" && Array.isArray(c)) {
-        glon = c[0];
-        glat = c[1];
-      } else if (geom.type === "LineString" && c?.length) {
-        const mid = c[Math.floor(c.length / 2)];
-        glon = mid[0];
-        glat = mid[1];
-      }
-    }
-    if (glat == null || glon == null) continue;
-    const d = haversineNm(lat, lon, glat, glon);
-    if (d <= radiusNm && d < bestD) {
-      bestD = d;
-      best = {
-        id: p.id,
-        name: p.name,
-        source: p.source,
-        kind: p.kind,
-        error_m: p.error_m ?? null,
-        method: p.method ?? null,
-      };
-    }
+function polarFromMeta(polarMeta, jambe) {
+  if (!polarMeta && !jambe) return null;
+  const polar = {};
+  if (polarMeta) {
+    polar.boat = polarMeta.boat_name;
+    polar.vmgHint = polarMeta.vmg_summary?.["12"] ?? null;
   }
-  return best;
+  if (jambe) {
+    if (jambe.speedKnots != null) polar.speedKnots = jambe.speedKnots;
+    if (jambe.etaHours != null) polar.etaHours = jambe.etaHours;
+  }
+  return Object.keys(polar).length ? polar : null;
+}
+
+/** Fusionne le sac serveur avec polar / jambe / événement — jamais la grille. */
+export function mergeDossier(base, extras = {}) {
+  const lat = base?.at?.lat ?? extras.lat ?? 0;
+  const lon = base?.at?.lon ?? extras.lon ?? 0;
+  const d = {
+    ...emptyDossier(lat, lon),
+    ...(base || {}),
+    nearby: {
+      ...emptyDossier(lat, lon).nearby,
+      ...(base?.nearby || {}),
+    },
+    sources: {
+      ...emptyDossier(lat, lon).sources,
+      ...(base?.sources || {}),
+    },
+  };
+  const polar = polarFromMeta(extras.polarMeta, extras.jambe);
+  if (polar) d.polar = polar;
+  if (extras.weather) d.weather = extras.weather;
+  if (extras.event) d.event = extras.event;
+  if (extras.jambe) {
+    d.marks = [{
+      kind: "leg",
+      from: extras.jambe.fromStop || null,
+      to: extras.jambe.toStop || null,
+      phase: extras.jambe.phase || null,
+      vehicle: extras.jambe.vehicle || null,
+    }];
+  }
+  if (d.polar && "grid" in d.polar) {
+    const { grid: _grid, ...rest } = d.polar;
+    d.polar = rest;
+  }
+  if (extras.depthOffshore !== undefined) {
+    d.depthOffshore = extras.depthOffshore;
+  } else if (extras.gebcoGrid !== undefined || extras.distToShoreNm != null) {
+    d.depthOffshore = gebcoLookup(lat, lon, {
+      grid: extras.gebcoGrid,
+      distToShoreNm: extras.distToShoreNm,
+    });
+  } else {
+    d.depthOffshore = base?.depthOffshore ?? gebcoLookup(lat, lon, {
+      grid: extras.gebcoGrid,
+      distToShoreNm: extras.distToShoreNm,
+    });
+  }
+  return d;
 }
 
 export function ici(lat, lon, extras = {}) {
-  const d = emptyDossier(lat, lon);
-  if (extras.polarMeta) {
-    d.polar = {
-      boat: extras.polarMeta.boat_name,
-      vmgHint: extras.polarMeta.vmg_summary?.["12"] ?? null,
-    };
+  return mergeDossier(emptyDossier(lat, lon), extras);
+}
+
+/** Position du bateau (pas de l’avion) pour remplir le sac. */
+export function boatPositionFromCast(cast, snappedPosition) {
+  if (cast?.vehicle === "plane" && cast.main) {
+    return { lat: cast.main.lat, lon: cast.main.lon };
   }
-  if (extras.weather) d.weather = extras.weather;
-  if (extras.science !== undefined) d.science = extras.science;
-  else d.science = pickLocalScience(lat, lon, extras.scienceFeatures);
-  d.depthOffshore = extras.depthOffshore !== undefined
-    ? extras.depthOffshore
-    : gebcoLookup(lat, lon, {
-        grid: extras.gebcoGrid,
-        distToShoreNm: extras.distToShoreNm,
-      });
-  return d;
+  if (cast?.vehicle === "side" && cast.side) {
+    return { lat: cast.side.lat, lon: cast.side.lon };
+  }
+  if (cast?.main && Number.isFinite(cast.main.lat) && Number.isFinite(cast.main.lon)) {
+    return { lat: cast.main.lat, lon: cast.main.lon };
+  }
+  if (Array.isArray(snappedPosition) && snappedPosition.length >= 2) {
+    return { lat: snappedPosition[1], lon: snappedPosition[0] };
+  }
+  return null;
+}
+
+export function zeeEnterEvent(prevMrgid, zee) {
+  const mrgid = zee?.mrgid ?? null;
+  if (prevMrgid === undefined) return null;
+  if (mrgid === prevMrgid) return null;
+  if (!zee) return null;
+  return { type: "zee-enter", name: zee.name, mrgid };
 }
