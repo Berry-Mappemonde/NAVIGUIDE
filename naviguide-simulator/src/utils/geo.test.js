@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { haversineNm, summarizeRoute, featuresToSegments } from "./geo.js";
+import { haversineNm, summarizeRoute, featuresToSegments, splitAntimeridianCoords, unwrapLon } from "./geo.js";
 
 describe("summarizeRoute", () => {
   it("compte les segments et une distance > 0", () => {
@@ -14,6 +14,20 @@ describe("summarizeRoute", () => {
 
   it("ignore les LineString trop courtes", () => {
     assert.deepEqual(summarizeRoute([{ coords: [[0, 0]] }]), { nm: 0, segments: 0 });
+  });
+});
+
+describe("antiméridien geo", () => {
+  it("mesure le court chemin de part et d’autre du 180°", () => {
+    const d = haversineNm(-15, 179.5, -15, -179.5);
+    assert.ok(d < 80);
+    assert.ok(d > 20);
+    assert.equal(unwrapLon(179.5, -179.5), 180.5);
+  });
+
+  it("coupe une polyligne au 180°", () => {
+    const parts = splitAntimeridianCoords([[179, 0], [179.9, 0], [-179.9, 0], [-179, 0]]);
+    assert.equal(parts.length, 2);
   });
 });
 
