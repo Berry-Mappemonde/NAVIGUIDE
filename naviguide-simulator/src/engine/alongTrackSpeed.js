@@ -20,34 +20,39 @@ function roundKt(k) {
  *   bearing: number,
  *   month: number,
  *   polarRaw?: object | null,
+ *   wind?: { speedKnots: number, dirFromDeg: number, kind?: string, model?: string, source?: string, reason?: string } | null,
  * }} args
  * @returns {{
  *   speedKnots: number,
  *   windKnots: number,
  *   twa: number | null,
  *   dirFromDeg: number,
- *   kind: "climatology",
+ *   kind: string,
  *   source: string,
+ *   model: string | null,
+ *   reason: string | null,
  *   month: number,
  * }}
  */
-export function alongTrackSpeed({ lat, lon, bearing, month, polarRaw = null }) {
-  const wind = zoneWindAt(lat, lon, month);
-  const twa = trueWindAngle(bearing, wind.dirFromDeg);
+export function alongTrackSpeed({ lat, lon, bearing, month, polarRaw = null, wind = null }) {
+  const w = wind || zoneWindAt(lat, lon, month);
+  const twa = trueWindAngle(bearing, w.dirFromDeg);
   let speed = null;
   if (hasPolarRaw(polarRaw) && twa != null) {
-    speed = polarBoatSpeed(polarRaw, twa, wind.speedKnots);
+    speed = polarBoatSpeed(polarRaw, twa, w.speedKnots);
   }
   if (speed == null || !Number.isFinite(speed) || speed < 0) {
-    speed = boatSpeedFromWind(wind.speedKnots);
+    speed = boatSpeedFromWind(w.speedKnots);
   }
   return {
-    speedKnots: roundKt(speed) ?? boatSpeedFromWind(wind.speedKnots),
-    windKnots: roundKt(wind.speedKnots) ?? 0,
+    speedKnots: roundKt(speed) ?? boatSpeedFromWind(w.speedKnots),
+    windKnots: roundKt(w.speedKnots) ?? 0,
     twa: twa == null ? null : Math.round(twa * 10) / 10,
-    dirFromDeg: wind.dirFromDeg,
-    kind: "climatology",
-    source: wind.source,
+    dirFromDeg: w.dirFromDeg,
+    kind: w.kind || "climatology",
+    source: w.source,
+    model: w.model || null,
+    reason: w.reason || null,
     month: Math.max(1, Math.min(12, Number(month) || 1)),
   };
 }

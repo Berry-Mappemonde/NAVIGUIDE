@@ -19,7 +19,7 @@ GOLDEN = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 VERTEX_KEYS = {
     "filmNm", "sailNm", "lat", "lon", "bearing", "tHours", "iso",
-    "speedKnots", "windKnots", "twa", "month", "vehicle", "kind",
+    "speedKnots", "windKnots", "twa", "month", "vehicle", "kind", "seaHours",
 }
 TABLE_KEYS = {"t0", "kind", "vertices", "marks", "seaHours", "quayHours", "arrivalIso"}
 

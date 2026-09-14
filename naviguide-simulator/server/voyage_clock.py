@@ -167,8 +167,10 @@ def _default_wind(lat: float, lon: float, t: datetime) -> Dict[str, Any]:
 
 
 def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
-          speed_knots: Optional[float], wind: dict, vehicle: str, month: int) -> dict:
+          speed_knots: Optional[float], wind: dict, vehicle: str, month: int,
+          sea_hours: float = 0.0) -> dict:
     when = t0 + timedelta(hours=t_hours)
+    veh = "main" if vehicle == "boat" else vehicle
     return {
         "filmNm": _r4(p.get("filmCum", p.get("cumNm", 0)) or 0),
         "sailNm": _r4(p.get("cumNm", 0) or 0),
@@ -181,7 +183,8 @@ def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
         "windKnots": _r1(wind.get("speedKnots")),
         "twa": _r1(wind.get("twa")),
         "month": month,
-        "vehicle": vehicle,
+        "vehicle": veh,
+        "seaHours": _r4(sea_hours),
         "kind": wind.get("kind") or "climatology",
         "model": wind.get("model"),
         "leadHours": wind.get("leadHours"),
@@ -230,7 +233,7 @@ def build_voyage_clock(
         vertices.append(_emit(
             pts[i], 0.0, t0d,
             bearing_deg(pts[i]["lat"], pts[i]["lon"], nxt["lat"], nxt["lon"]),
-            None, {"kind": "climatology"}, "land", t0d.month,
+            None, {"kind": "climatology"}, "land", t0d.month, 0.0,
         ))
 
     start = pts[start_idx]
@@ -239,8 +242,8 @@ def build_voyage_clock(
         start, 0.0, t0d,
         bearing_deg(start["lat"], start["lon"], start_next["lat"], start_next["lon"]),
         None, {"kind": "climatology"},
-        "land" if start.get("nonMaritime") else "boat",
-        t0d.month,
+        "land" if start.get("nonMaritime") else "main",
+        t0d.month, 0.0,
     ))
 
     land_end_idx = -1
@@ -255,7 +258,7 @@ def build_voyage_clock(
         brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
         span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
         when = t0d + timedelta(hours=t_hours)
-        vehicle = "boat"
+        vehicle = "main"
         speed_knots: Optional[float] = None
         wind_pack: Dict[str, Any] = {"kind": "climatology"}
 
@@ -292,6 +295,7 @@ def build_voyage_clock(
         vertices.append(_emit(
             b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
             (t0d + timedelta(hours=t_hours)).month,
+            sea_hours,
         ))
 
         arrived = mark_by_index.get(i + 1)
@@ -313,6 +317,7 @@ def build_voyage_clock(
                      "speedKnots": wind_pack.get("speedKnots")},
                     "quay",
                     (t0d + timedelta(hours=t_hours)).month,
+                    sea_hours,
                 ))
 
     last = vertices[-1]
@@ -325,6 +330,7 @@ def build_voyage_clock(
         "seaHours": _r4(sea_hours),
         "quayHours": _r4(quay_hours),
         "arrivalIso": last.get("iso") or to_iso(t0d),
+        "startAt": start_at,
     }
 
 
@@ -366,6 +372,7 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
             "windKnots": b.get("windKnots") if b.get("windKnots") is not None else a.get("windKnots"),
             "model": b.get("model") or a.get("model"),
             "leadHours": b.get("leadHours") if b.get("leadHours") is not None else a.get("leadHours"),
+            "seaHours": _lerp(float(a.get("seaHours") or 0), float(b.get("seaHours") or 0), t),
         }
     return {**last, "atQuay": False, "status": "arrived"}
 

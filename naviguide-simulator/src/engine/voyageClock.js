@@ -157,6 +157,10 @@ export function buildVoyageClock({
     dirFromDeg,
     month,
     vehicle,
+    kind = "climatology",
+    model = null,
+    leadHours = null,
+    reason = null,
   }) => {
     vertices.push({
       filmNm,
@@ -173,6 +177,10 @@ export function buildVoyageClock({
       month,
       vehicle,
       seaHours,
+      kind: kind || "climatology",
+      model: model ?? null,
+      leadHours: leadHours ?? null,
+      reason: reason || null,
     });
   };
 
@@ -248,6 +256,8 @@ export function buildVoyageClock({
     let windKnots = null;
     let twa = null;
     let dirFromDeg = null;
+    let edgeKind = "climatology";
+    let edgeModel = null;
 
     const landEdge = destVehicle === "land" || (a.nonMaritime && b.nonMaritime);
     const beforeSea = filmOf(b) < seaStart.filmNm - 0.05;
@@ -275,6 +285,8 @@ export function buildVoyageClock({
       windKnots = along.windKnots;
       twa = along.twa;
       dirFromDeg = along.dirFromDeg;
+      edgeKind = along.kind || "climatology";
+      edgeModel = along.model || null;
     }
 
     pushVertex({
@@ -289,6 +301,8 @@ export function buildVoyageClock({
       dirFromDeg,
       month: monthOfT0(t0, tHours),
       vehicle: destVehicle,
+      kind: destVehicle === "plane" || destVehicle === "land" ? "climatology" : edgeKind,
+      model: destVehicle === "plane" || destVehicle === "land" ? null : edgeModel,
     });
     applyQuay(markAtPoint(clockMarksIn, i + 1, b), b, bearing);
   }
@@ -315,7 +329,9 @@ function sampleFromVertex(clock, v, extra = {}) {
   return {
     ...v,
     iso: v.iso || isoFromT0(clock.t0, v.tHours),
-    kind: "climatology",
+    kind: v.kind || "climatology",
+    model: v.model ?? null,
+    leadHours: v.leadHours ?? null,
     atQuay: false,
     holdHours: 0,
     ...extra,
@@ -383,10 +399,78 @@ export function lookupVoyageClock(clock, filmNm, { atQuay = false } = {}) {
     month: monthOfT0(clock.t0, tHours),
     vehicle: airOrQuay ? (right.vehicle === "plane" || left.vehicle === "plane" ? "plane" : vehicle) : vehicle,
     seaHours: lerpNum(left.seaHours, right.seaHours, t),
-    kind: "climatology",
+    kind: (t < 0.5 ? left.kind : right.kind) || "climatology",
+    model: right.model || left.model || null,
+    leadHours: right.leadHours ?? left.leadHours ?? null,
     atQuay: false,
     holdHours: 0,
   };
+}
+
+/**
+ * Horloge murale → position (mode Suivre, repli hors ligne).
+ */
+export function sampleClockAtHours(clock, tHours) {
+  const verts = clock?.vertices || [];
+  if (!verts.length) return null;
+  const x = Number(tHours);
+  if (x < 0) {
+    return sampleFromVertex(clock, verts[0], {
+      status: "waiting",
+      atQuay: true,
+      countdownHours: -x,
+    });
+  }
+  if (x <= verts[0].tHours) {
+    return sampleFromVertex(clock, verts[0], { status: "live", atQuay: false });
+  }
+  const last = verts[verts.length - 1];
+  if (x >= last.tHours) {
+    return sampleFromVertex(clock, last, {
+      status: "arrived",
+      atQuay: last.vehicle === "quay",
+    });
+  }
+  for (let i = 0; i < verts.length - 1; i++) {
+    const a = verts[i];
+    const b = verts[i + 1];
+    if (x > b.tHours) continue;
+    const span = (b.tHours - a.tHours) || 1;
+    const t = (x - a.tHours) / span;
+    if (Math.abs((b.filmNm ?? 0) - (a.filmNm ?? 0)) < 1e-6) {
+      return sampleFromVertex(clock, a, {
+        tHours: x,
+        iso: isoFromT0(clock.t0, x),
+        atQuay: true,
+        status: "live",
+        vehicle: "quay",
+      });
+    }
+    return {
+      ...sampleFromVertex(clock, a, { status: "live" }),
+      lat: lerpNum(a.lat, b.lat, t),
+      lon: lerpNum(a.lon, b.lon, t),
+      filmNm: lerpNum(a.filmNm, b.filmNm, t),
+      sailNm: lerpNum(a.sailNm, b.sailNm, t),
+      tHours: x,
+      iso: isoFromT0(clock.t0, x),
+      seaHours: lerpNum(a.seaHours, b.seaHours, t),
+      kind: (t < 0.5 ? a.kind : b.kind) || "climatology",
+      model: b.model || a.model || null,
+      leadHours: b.leadHours ?? a.leadHours ?? null,
+      speedKnots: b.speedKnots ?? a.speedKnots,
+      windKnots: b.windKnots ?? a.windKnots,
+    };
+  }
+  return sampleFromVertex(clock, last, { status: "arrived" });
+}
+
+export function sampleClockAtTime(clock, when) {
+  if (!clock?.t0) return null;
+  const t0 = Date.parse(clock.t0);
+  const w = when instanceof Date ? when.getTime() : Date.parse(when);
+  if (!Number.isFinite(t0) || !Number.isFinite(w)) return null;
+  return sampleClockAtHours(clock, (w - t0) / 3600000);
 }
 
 export function etaHoursToFilmNm(clock, fromFilmNm, toFilmNm, { atQuay = false } = {}) {
