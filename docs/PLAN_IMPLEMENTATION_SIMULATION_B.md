@@ -1,321 +1,322 @@
-# Plan d’implémentation — Simulation B (bateau virtuel live)
+# Implementation plan — Simulation B (live virtual boat)
 
-Document de chantier pour **`naviguide-simulator/`** uniquement.
-Il fige **comment suivre un bateau virtuel daté** et **recalculer une
-jambe** : prévision 0–10 j, mode Suivre, isochrone jusqu’à la prochaine
-escale. Ce n’est **pas** le film climatologique (A), **pas** un GRIB
-mondial, **pas** un isochrone de toute Berry.
+Workshop document for **`naviguide-simulator/`** only.
+It locks **how to follow a dated virtual boat** and **recompute a
+leg**: 0–10 d forecast, Follow mode, isochrone to the next
+stop. This is **not** the climatological film (A), **not** a worldwide
+GRIB, **not** an isochrone of all of Berry.
 
-Version **1.0** — 14 septembre 2026.
+Version **1.0** — 14 September 2026.
 
-**Prérequis :** [PLAN_IMPLEMENTATION_SIMULATION_A.md](./PLAN_IMPLEMENTATION_SIMULATION_A.md)
-recettable (table d’horloge, t0, HUD daté, tests mars / juillet).
-**Ne pas commencer B tant que A4 n’est pas vert.**
+**Prerequisite:** [PLAN_IMPLEMENTATION_SIMULATION_A.md](./PLAN_IMPLEMENTATION_SIMULATION_A.md)
+recipe-ready (clock table, t0, dated HUD, March / July tests).
+**Do not start B until A4 is green.**
 
-**English :** pas encore.
+**English :** not yet.
 
-**Cahier hackathon (FR) :** [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md)
+**Hackathon briefing (FR) :** [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md)
 
 ---
 
-## Ce que la 1.0 fige
+## What 1.0 locks
 
-A dit : « en juin, typiquement, sur le trait searoute ».  
-B dit : « si je quitte La Rochelle **demain**, voilà les 10 prochains
-jours, et voilà où le bateau **est** mercredi ». Un bouton **Recalculer**
-propose un **nouveau trait jusqu’à la prochaine escale**.
+A says: “in June, typically, on the searoute line”.
+B says: “if I leave La Rochelle **tomorrow**, here are the next 10
+days, and here is where the boat **is** on Wednesday”. A **Recompute**
+button proposes a **new line to the next stop**.
 
-| On garde (A) | On ajoute (B) | On refuse |
+| We keep (A) | We add (B) | We refuse |
 |---|---|---|
-| Table `vertex → date` | `windFn(lat, lon, t)` prévu 10 j | GRIB globe sur le VPS |
-| Trait searoute par défaut | Mode Suivre (`now()` = playhead) | Isochrone 39 000 nm |
-| Polar uploadée | Recalcul **d’une jambe** | Port 3010 de prod |
-| HUD + `kind` | Fantôme Play ≠ marqueur live | VISIR / Windy / SignalK en dep |
-| Prod intouchée | Cube couloir + cache 12 h | Vent inventé par un LLM |
+| `vertex → date` table | 10 d forecast `windFn(lat, lon, t)` | Globe GRIB on the VPS |
+| Default searoute line | Follow mode (`now()` = playhead) | 39 000 nm isochrone |
+| Uploaded polar | Recompute **of one leg** | Prod port 3010 |
+| HUD + `kind` | Play ghost ≠ live marker | VISIR / Windy / SignalK as a dep |
+| Prod untouched | Corridor cube + 12 h cache | Wind invented by an LLM |
 
 ---
 
-**Sommaire**
+**Contents**
 
-1. En une phrase
-2. Pourquoi cette étape existe
-3. Contrat skipper (dans / hors)
-4. Vocabulaire
-5. Décisions d’architecture (verrouillées)
-6. Cube de prévision
-7. Mode Suivre
-8. Recalcul d’itinéraire
-9. API simulateur (port 8010)
+1. In one sentence
+2. Why this stage exists
+3. Skipper contract (in / out)
+4. Vocabulary
+5. Architecture decisions (locked)
+6. Forecast cube
+7. Follow mode
+8. Route recompute
+9. Simulator API (port 8010)
 10. UI / UX
-11. Arborescence
-12. Ordre de chantier (B0 → B8)
-13. Fichiers touchés / interdits
-14. Recette
-15. Risques
-16. Lien A → B
-17. Hors périmètre
-18. Documents dont ce plan hérite
+11. Tree
+12. Build order (B0 → B8)
+13. Files touched / forbidden
+14. Recipe
+15. Risks
+16. A → B link
+17. Out of scope
+18. Documents this plan inherits
 
 ---
 
-## 1. En une phrase
+## 1. In one sentence
 
-Faire partir un **bateau virtuel à une date réelle** (ex. demain
-08:00 UTC) : pendant ~10 jours il avance avec le vent / courant / vague
-**prévus** ; tu le **retrouves** où il doit être en rouvrant l’app ; un
-bouton **Recalculer** propose un **nouveau trait** jusqu’à la prochaine
-escale (isochrone), sans prétendre connaître Papeete au jour près.
-
----
-
-## 2. Pourquoi cette étape existe
-
-A est honnête pour **toute** l’expédition (des mois). Elle ne dit pas
-le vent de **mardi prochain**.
-
-B est le complément **tactique** : fenêtre 0–10 jours, comme le plan
-climatologie l’avait mis **hors V1** de l’atlas (`kind: forecast`, autre
-chantier). Ce chantier-ci **est** cet autre chantier, borné au
-simulateur.
-
-Sans le mode Suivre, B n’est qu’un film A avec un vent plus frais.
-Sans le recalcul, le bateau reste collé au trait searoute même si le
-modèle dit de passer plus au sud. Les deux gestes partagent la **même**
-table d’horloge que A.
+Start a **virtual boat on a real date** (e.g. tomorrow
+08:00 UTC): for ~10 days it advances with the **forecast**
+wind / current / wave; you **find it** where it should be when
+reopening the app; a **Recompute** button proposes a **new line**
+to the next stop (isochrone), without claiming to know Papeete to
+the nearest day.
 
 ---
 
-## 3. Contrat skipper (dans / hors)
+## 2. Why this stage exists
 
-### On livre
+A is honest for the **whole** expedition (months). It does not say
+the wind of **next Tuesday**.
 
-En local, puis sur `simulator.naviguide.fr` **si** le cube tient en
-mémoire (§14.12) :
+B is the **tactical** complement: 0–10 day window, as the
+climatology plan had put **outside V1** of the atlas (`kind: forecast`, other
+workshop). This workshop **is** that other workshop, bounded to the
+simulator.
 
-1. **Nouveau voyage** : t0 (demain 08:00 UTC possible), polar, route
-   Berry ou perso.
-2. **10 premiers jours** : nœuds = polaire × **prévision** au point et
-   à l’heure. HUD : `kind: forecast`, modèle **nommé**
-   (ex. GFS 0,25° / CMEMS ANFC), échéance `+36 h`.
-3. **Après J+10** : fondu vers la table A. HUD : `kind: climatology`.
-   Jamais un GFS inventé pour novembre.
-4. **Mode Suivre** : horloge **murale** = horloge mer. Fermer l’ordi,
-   revenir 2 jours après : le bateau a avancé de 2 jours (si t0 est
-   passé). Si t0 est dans le futur : bateau **à quai** jusqu’à t0.
-5. **Play** en mode Suivre = **aperçu** (fantôme) : on peut scruber le
-   futur sans déplacer le bateau live. Bouton / touche `L` :
-   « Revenir au live ».
-6. **Recalculer l’itinéraire** : de la position live → **prochaine
-   escale à drapeau** seulement. Isochrone 6 h, vent prévu puis
-   climatologie. Aperçu (trait neuf + ancien searoute en pointillés) →
-   Accepter / Refuser.
-7. Recalcul **refusé par défaut** sur toute la circumnavigation d’un
-   coup.
-8. Disclaimer double : prévision 0–10 j / climatologie ensuite / ne
-   convient pas à la navigation.
+Without Follow mode, B is only an A film with fresher wind.
+Without recompute, the boat stays glued to the searoute line even if the
+model says to pass further south. Both gestures share the **same**
+clock table as A.
 
-Cube down : le voyage reste en **A seul** + bandeau « prévision
-indisponible, climatologie ». Le film ne devient pas noir.
+---
 
-### On ne livre pas
+## 3. Skipper contract (in / out)
 
-| Interdit en B | Pourquoi |
+### We deliver
+
+Locally, then on `simulator.naviguide.fr` **if** the cube fits in
+memory (§14.12):
+
+1. **New voyage**: t0 (tomorrow 08:00 UTC possible), polar, Berry
+   or custom route.
+2. **First 10 days**: knots = polar × **forecast** at the point and
+   at the hour. HUD: `kind: forecast`, model **named**
+   (e.g. GFS 0.25° / CMEMS ANFC), validity `+36 h`.
+3. **After D+10**: fade toward table A. HUD: `kind: climatology`.
+   Never an invented GFS for November.
+4. **Follow mode**: **wall** clock = sea clock. Close the computer,
+   come back 2 days later: the boat has advanced 2 days (if t0 has
+   passed). If t0 is in the future: boat **in port** until t0.
+5. **Play** in Follow mode = **preview** (ghost): you can scrub the
+   future without moving the live boat. Button / `L` key:
+   “Back to live”.
+6. **Recompute the route**: from the live position → **next
+   flagged stop** only. 6 h isochrone, forecast wind then
+   climatology. Preview (new line + old searoute dashed) →
+   Accept / Refuse.
+7. Recompute **refused by default** for the whole circumnavigation in
+   one go.
+8. Double disclaimer: 0–10 d forecast / climatology afterwards / not
+   suitable for navigation.
+
+Cube down: the voyage stays on **A alone** + banner “forecast
+unavailable, climatology”. The film does not go black.
+
+### We do not deliver
+
+| Forbidden in B | Why |
 |---|---|
-| GRIB mondial sur le VPS | 8 Go, plan climatologie |
-| Isochrone 39 000 nm | Mensonger + injouable |
-| VISIR-2, plugin Windy, SignalK en dépendance | On copie l’algo, pas les dépôts |
-| Brancher le port 3010 de prod | Pas déployé ; autre polar singleton |
-| Import GRIB skipper (Saildocs) en v1 | Le serveur découpe le couloir |
-| `best_match` Open-Meteo sans nommer le modèle | Loi climatologie |
-| Chat météo qui invente un vent | `climatology.no_llm_for_numbers` |
-| Modifier `www` / Blue Intelligence | Prod intouchée |
-| AIS / Iridium du vrai catamaran | Autre produit |
-| Tavily / Nemotron | Autre étape hackathon |
+| Worldwide GRIB on the VPS | 8 GB, climatology plan |
+| 39 000 nm isochrone | Dishonest + unplayable |
+| VISIR-2, Windy plugin, SignalK as a dependency | We copy the algo, not the repos |
+| Wire prod port 3010 | Not deployed; other polar singleton |
+| Skipper GRIB import (Saildocs) in v1 | The server cuts the corridor |
+| Open-Meteo `best_match` without naming the model | Climatology law |
+| Weather chat that invents a wind | `climatology.no_llm_for_numbers` |
+| Modify `www` / Blue Intelligence | Prod untouched |
+| AIS / Iridium of the real catamaran | Other product |
+| Tavily / Nemotron | Other hackathon stage |
 
 ---
 
-## 4. Vocabulaire
+## 4. Vocabulary
 
-| Mot | Sens ici |
+| Word | Meaning here |
 |---|---|
-| **Voyage** | Instance : `voyageId`, t0, polar, route, révision |
-| **Live** | Position = table d’horloge à `now()` (UTC) |
-| **Aperçu / fantôme** | Play ou scrub **sans** bouger le live |
-| **Couloir** | Buffer ~200 nm autour des ~1 500 nm **devant** le bateau, 10 j, pas 3 h |
-| **Cube** | Vent + vague + courant avec un axe **temps** |
-| **Fondu** | Entre J+7 et J+10, mélange prévision → climatologie |
-| **Recalcul** | Nouvelle géométrie **d’une jambe**, puis on **rejoue** A/B sur ce trait |
-| **Révision** | `routeRev` : searoute v0, isochrone v1, v2… |
-| **kind** | `"forecast"` ou `"climatology"` sur chaque pas / vertex |
+| **Voyage** | Instance: `voyageId`, t0, polar, route, revision |
+| **Live** | Position = clock table at `now()` (UTC) |
+| **Preview / ghost** | Play or scrub **without** moving live |
+| **Corridor** | ~200 nm buffer around the ~1 500 nm **ahead** of the boat, 10 d, not 3 h |
+| **Cube** | Wind + wave + current with a **time** axis |
+| **Fade** | Between D+7 and D+10, forecast → climatology blend |
+| **Recompute** | New geometry **of one leg**, then we **replay** A/B on that line |
+| **Revision** | `routeRev`: searoute v0, isochrone v1, v2… |
+| **kind** | `"forecast"` or `"climatology"` on each step / vertex |
 
 ---
 
-## 5. Décisions d’architecture (verrouillées)
+## 5. Architecture decisions (locked)
 
-### 5.1 B étend A, il ne le remplace pas
+### 5.1 B extends A, it does not replace it
 
-Même schéma JSON que A §7. On lui passe `windFn(lat, lon, t)` :
+Same JSON schema as A §7. We pass it `windFn(lat, lon, t)`:
 
-| Quand | Vent |
+| When | Wind |
 |---|---|
-| `t < t0 + 7 j` | Cube prévision |
-| `t` dans `[t0+7 j, t0+10 j]` | Mélange linéaire (vent ou nœuds) |
-| `t > t0 + 10 j` | `zoneWindAt` / atlas (A) |
+| `t < t0 + 7 d` | Forecast cube |
+| `t` in `[t0+7 d, t0+10 d]` | Linear blend (wind or knots) |
+| `t > t0 + 10 d` | `zoneWindAt` / atlas (A) |
 
-Le Play, la barre, le sillage, `ici()` ne changent pas de contrat.
+Play, the bar, the wake, `ici()` do not change contract.
 
-Le JS `voyageClock.js` **reste** pour A et pour l’aperçu hors ligne
-(climo seule). Dès qu’un cube existe, la table **officielle** du voyage
-live = réponse serveur (même schéma).
+JS `voyageClock.js` **stays** for A and for the offline preview
+(climo only). As soon as a cube exists, the **official** table of the live
+voyage = server response (same schema).
 
-### 5.2 Cube : pas de GRIB globe
+### 5.2 Cube: no globe GRIB
 
-**v1 B, pragmatique** (compte Copernicus déjà dans `simulator.env`) :
+**Pragmatic B v1** (Copernicus account already in `simulator.env`):
 
-| Champ | Produit | Ce qu’on change |
+| Field | Product | What we change |
 |---|---|---|
-| Vague | `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i` | Ouvrir `valid_time` de t0 à t0+10 j, **couloir**, plus `time=-1` |
-| Courant | `cmems_mod_glo_phy_anfc_0.083deg_PT1H-m` | Idem, sous-échantillon 3 h |
-| Vent 10 m | Open-Meteo Marine **GFS** (modèle **nommé**) | Le NRT L4 (`getWind.py`) = hier, **interdit** pour B |
+| Wave | `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i` | Open `valid_time` from t0 to t0+10 d, **corridor**, no more `time=-1` |
+| Current | `cmems_mod_glo_phy_anfc_0.083deg_PT1H-m` | Same, 3 h subsample |
+| 10 m wind | Open-Meteo Marine **GFS** (model **named**) | L4 NRT (`getWind.py`) = yesterday, **forbidden** for B |
 
-**B-alt** (plus tard, pas v1) : GFS GRIB2 NOMADS découpé **hors**
-requête live, pipeline type snapshots climo, jamais un `wget` globe au
+**B-alt** (later, not v1): GFS GRIB2 NOMADS cut **outside**
+the live request, pipeline like climo snapshots, never a globe `wget` at
 Play.
 
-Cache disque `server/forecast_cache/{voyageId}/` (gitignore), une
-grille petite, TTL 6–12 h. Relancer un fetch en mode Suivre si le
-cache a plus de 12 h (nouveau run 00/12 UTC).
+Disk cache `server/forecast_cache/{voyageId}/` (gitignore), one
+small grid, TTL 6–12 h. Relaunch a fetch in Follow mode if the
+cache is older than 12 h (new 00/12 UTC run).
 
-### 5.3 Mode Suivre = persistance
+### 5.3 Follow mode = persistence
 
-Un voyage vit plus longtemps qu’un onglet.
+A voyage lives longer than a tab.
 
-- `localStorage` clé `naviguide_sim_voyage_v1` : `voyageId`, t0,
-  routeKind, routeRev, hash isochrone accepté.
-- Serveur : `server/voyage_data/voyage_{id}.json` (même esprit que
-  `polar_data/`) pour retrouver le bateau sur un autre navigateur /
-  après publish.
+- `localStorage` key `naviguide_sim_voyage_v1`: `voyageId`, t0,
+  routeKind, routeRev, accepted isochrone hash.
+- Server: `server/voyage_data/voyage_{id}.json` (same spirit as
+  `polar_data/`) to find the boat on another browser /
+  after publish.
 
-Position live **calculée**, pas stockée toutes les minutes :
+Live position **computed**, not stored every minute:
 
 ```
 position = table.at(now)
 ```
 
-On persiste t0 + révision de route + polar id.
+We persist t0 + route revision + polar id.
 
-| Horloge murale | Bateau |
+| Wall clock | Boat |
 |---|---|
-| `now < t0` | À quai, HUD « appareillage dans … » |
-| `t0 ≤ now ≤ fin de table` | Live sur le trait |
-| `now` après la fin | Arrivée (ou fin d’expédition) |
+| `now < t0` | In port, HUD “casting off in …” |
+| `t0 ≤ now ≤ end of table` | Live on the line |
+| `now` after the end | Arrival (or end of expedition) |
 
 ### 5.4 Play ≠ Live
 
-| Contrôle | Effet |
+| Control | Effect |
 |---|---|
-| Mode Suivre ON | Marqueur **live** (plein). Horloge murale |
-| Play / scrub | Marqueur **fantôme** (contour). Le live **reste** |
-| « Revenir au live » / `L` | Caméra + HUD sur `now` |
-| Quitter Suivre | Retour film A (table figée, plus d’horloge murale) |
+| Follow mode ON | **Live** marker (solid). Wall clock |
+| Play / scrub | **Ghost** marker (outline). Live **stays** |
+| “Back to live” / `L` | Camera + HUD on `now` |
+| Leave Follow | Back to film A (frozen table, no more wall clock) |
 
-On ne laisse pas Play **déplacer** le bateau live.
+We do not let Play **move** the live boat.
 
-### 5.5 Recalcul = une jambe, pas le monde
+### 5.5 Recompute = one leg, not the world
 
 ```
-position live → prochaine escale à drapeau
-horizon 10 j prévision, puis climatologie jusqu’à CETTE escale
-pas de temps 6 h, cap 10°, max ~120 pas
+live position → next flagged stop
+10 d forecast horizon, then climatology up to THIS stop
+time step 6 h, heading 10°, max ~120 steps
 ```
 
-Si l’isochrone n’atteint pas l’escale : on **épisse** le meilleur
-point sur le **searoute restant** de cette jambe. Statut `spliced`.
+If the isochrone does not reach the stop: we **splice** the best
+point onto the **remaining searoute** of this leg. Status `spliced`.
 
-Le reste de Berry (escales suivantes) : **searoute inchangé**. On
-**recrée seulement l’horloge** à partir de la nouvelle heure
-d’arrivée.
+The rest of Berry (following stops): **searoute unchanged**. We
+**only recreate the clock** from the new
+arrival time.
 
-Ancien trait : pointillés, pane en dessous. Nouveau : trait plein.
-Enveloppes isochrones : **off** par défaut (toggle).
+Old line: dashes, pane underneath. New: solid line.
+Isochrone envelopes: **off** by default (toggle).
 
-Recalcul **désactivé** en phase air / relais (`filmCast` avion ou
-`side`). A gère le cast.
+Recompute **disabled** in air / relay phase (`filmCast` plane or
+`side`). A handles the cast.
 
-### 5.6 Copier l’isochrone, ne pas appeler la prod
+### 5.6 Copy the isochrone, do not call prod
 
-`naviguide/naviguide_workspace/naviguide_weather_routing/` : polar
-**singleton** Berry, vent **zones**, port 3010 **absent** en prod.
+`naviguide/naviguide_workspace/naviguide_weather_routing/`: Berry
+polar **singleton**, **zone** wind, port 3010 **absent** in prod.
 
-Dans le simulateur :
+In the simulator:
 
-- copier `isochrone.py` (propagate / prune / land mask) vers
-  `naviguide-simulator/server/isochrone.py` ;
-- injecter `wind_fn`, `current_fn`, `wave_nogo_fn` ;
-- `polar` = polaire **uploadée** (Leopard 46 ou fichier skipper) ;
-- `kind` sur chaque pas : `forecast` ou `climatology`.
+- copy `isochrone.py` (propagate / prune / land mask) to
+  `naviguide-simulator/server/isochrone.py`;
+- inject `wind_fn`, `current_fn`, `wave_nogo_fn`;
+- `polar` = **uploaded** polar (Leopard 46 or skipper file);
+- `kind` on each step: `forecast` or `climatology`.
 
-**Pas** d’`import` depuis `../../naviguide/`. Le dossier simulateur
-reste extractible.
+**No** `import` from `../../naviguide/`. The simulator folder
+stays extractable.
 
-### 5.7 Vagues = frein, pas le nœud
+### 5.7 Waves = brake, not the knot
 
-`climatology.wave_nogo_m` = 2,5 m
+`climatology.wave_nogo_m` = 2.5 m
 ([REGLES_PARAMETRES.md](./REGLES_PARAMETRES.md) §3.6).
 
-- En climo : P90 (quand l’atlas BI existe ; sinon pas de no-go vague
-  en v1).
-- En prévision : Hs du cube.
+- In climo: P90 (when the BI atlas exists; else no wave no-go
+  in v1).
+- In forecast: cube Hs.
 
-Si no-go : le pas isochrone est **jeté**. Sur polyline fixe (sans
-recalcul), `dt` × 3 ou capeye 6 h (une constante, testée). On
-n’invente pas une polaire de mer formée.
+If no-go: the isochrone step is **dropped**. On a fixed polyline (without
+recompute), `dt` × 3 or 6 h hove-to (one constant, tested). We
+do not invent a formed-sea polar.
 
-### 5.8 Zéro LLM
+### 5.8 Zero LLM
 
-B est du vent chiffré. Pas de Nemotron, pas de Tavily, pas de chat
-météo.
+B is numbered wind. No Nemotron, no Tavily, no weather
+chat.
 
-### 5.9 Création asynchrone
+### 5.9 Asynchronous creation
 
-`POST /voyage` répond tout de suite (table A, `forecast: pending`).
-Le cube se remplit en fond. `GET /voyage/{id}` passe à `ready`.
-L’UI montre un bandeau, jamais un spinner bloquant de 30 s.
+`POST /voyage` answers immediately (table A, `forecast: pending`).
+The cube fills in the background. `GET /voyage/{id}` moves to `ready`.
+The UI shows a banner, never a 30 s blocking spinner.
 
 ---
 
-## 6. Cube de prévision
+## 6. Forecast cube
 
-### Découpe
+### Cut
 
-À la création / au refresh :
+On creation / on refresh:
 
-1. Prendre ~1 500 nm de route **devant** le live (ou depuis t0 si
-   encore à quai).
-2. Buffer ~200 nm → bbox (gérer l’antiméridien : deux rectangles si
-   besoin).
-3. Fenêtre `t0 … t0+10 j` (ou `now … now+10 j` au refresh).
-4. Variables : vent 10 m `u/v` (ou force + dir), Hs, courant surface
+1. Take ~1 500 nm of route **ahead** of live (or from t0 if
+   still in port).
+2. ~200 nm buffer → bbox (handle the antimeridian: two rectangles if
+   needed).
+3. Window `t0 … t0+10 d` (or `now … now+10 d` on refresh).
+4. Variables: 10 m wind `u/v` (or force + dir), Hs, surface current
    `uo/vo`.
-5. Écrire le cache. Si trop gros : réduire le couloir, **pas** passer
-   au globe.
+5. Write the cache. If too large: shrink the corridor, **do not** switch
+   to the globe.
 
 ### Interpolation
 
-`cube.at(lat, lon, t)` : plus proche voisin ou bilinéaire spatial +
-linéaire temporel. Terre / NaN → `null` → repli A (zone) **et**
-`kind` reste honnête (`climatology` + `reason: "no_forecast_cell"`).
+`cube.at(lat, lon, t)`: nearest neighbour or spatial bilinear +
+temporal linear. Land / NaN → `null` → A fallback (zone) **and**
+`kind` stays honest (`climatology` + `reason: "no_forecast_cell"`).
 
-### Mémoire
+### Memory
 
-Objectif : cube d’un voyage **< 80 Mo**. Test de recette. Le VPS a
-`MemoryMax=1G` pour `naviguide-simulator`.
+Target: one voyage cube **< 80 MB**. Recipe test. The VPS has
+`MemoryMax=1G` for `naviguide-simulator`.
 
 ---
 
-## 7. Mode Suivre
+## 7. Follow mode
 
-### Persistance
+### Persistence
 
 ```js
 {
@@ -326,32 +327,32 @@ Objectif : cube d’un voyage **< 80 Mo**. Test de recette. Le VPS a
 }
 ```
 
-### Horloge
+### Clock
 
-`GET /voyage/{id}/at?t=` (défaut `now`). Le front n’intègre pas le
-cube. Il affiche la position renvoyée.
+`GET /voyage/{id}/at?t=` (default `now`). The front does not integrate the
+cube. It displays the returned position.
 
-Un tick local (1/min, ou à la reprise de focus) suffit. Pas de rAF
-pour le live.
+A local tick (1/min, or on focus resume) is enough. No rAF
+for live.
 
-### Deux marqueurs
+### Two markers
 
-- Live : `useCatamaranMarker` plein, `draggable: false` en Suivre
-  (le drag casserait `now()`).
-- Fantôme : second marqueur contour, seulement si Play / scrub ≠ live.
+- Live: solid `useCatamaranMarker`, `draggable: false` in Follow
+  (drag would break `now()`).
+- Ghost: second outline marker, only if Play / scrub ≠ live.
 
-Caméra : suit le **fantôme** pendant l’aperçu, le **live** sinon.
-`useFilmCamera` déjà là : lui passer l’acteur actif.
+Camera: follows the **ghost** during preview, the **live** otherwise.
+`useFilmCamera` already there: pass it the active actor.
 
 ---
 
-## 8. Recalcul d’itinéraire
+## 8. Route recompute
 
-### Entrée
+### Input
 
 ```
-from = position live
-to   = prochaine escale à drapeau (ou to_name)
+from = live position
+to   = next flagged stop (or to_name)
 t    = now
 polar = upload
 wind_fn / current_fn / wave_nogo_fn = blend §5.1
@@ -361,7 +362,7 @@ max_steps = 120
 arrival_radius_nm = 50
 ```
 
-### Sortie
+### Output
 
 ```js
 {
@@ -373,80 +374,80 @@ arrival_radius_nm = 50
 }
 ```
 
-### Acceptation
+### Acceptance
 
-1. Remplacer la jambe courante par `draft_geojson`.
-2. Incrémenter `routeRev`.
-3. Reconstruire la table d’horloge **depuis** la nouvelle arrivée
-   (aval = searoute A/B).
-4. L’amont (déjà parcouru) ne bouge pas.
+1. Replace the current leg with `draft_geojson`.
+2. Increment `routeRev`.
+3. Rebuild the clock table **from** the new arrival
+   (downstream = searoute A/B).
+4. Upstream (already travelled) does not move.
 
-Refus : rien. Le brouillon expire (ou `GET /draft` le renvoie tant
-qu’on n’a pas accepté).
+Refuse: nothing. The draft expires (or `GET /draft` returns it as long
+as we have not accepted).
 
 ---
 
-## 9. API simulateur (port 8010)
+## 9. Simulator API (port 8010)
 
-| Méthode | Chemin | Rôle |
+| Method | Path | Role |
 |---|---|---|
-| POST | `/voyage` | Crée : t0, `expedition_id`, route, `follow` |
-| GET | `/voyage/{id}` | Métadonnées + `routeRev` + `forecastStatus` |
-| GET | `/voyage/{id}/clock` | Table d’horloge (schéma A) |
-| GET | `/voyage/{id}/at?t=` | Position live / à `t` (défaut `now`) |
-| POST | `/voyage/{id}/refresh-forecast` | Recharge le couloir (12 h) |
-| POST | `/voyage/{id}/recompute` | Isochrone → jambe candidate |
-| GET | `/voyage/{id}/draft` | Trait proposé + status |
-| POST | `/voyage/{id}/accept` | Applique la révision |
-| POST | `/voyage/{id}/reject` | Jette le brouillon |
+| POST | `/voyage` | Creates: t0, `expedition_id`, route, `follow` |
+| GET | `/voyage/{id}` | Metadata + `routeRev` + `forecastStatus` |
+| GET | `/voyage/{id}/clock` | Clock table (A schema) |
+| GET | `/voyage/{id}/at?t=` | Live position / at `t` (default `now`) |
+| POST | `/voyage/{id}/refresh-forecast` | Reload the corridor (12 h) |
+| POST | `/voyage/{id}/recompute` | Isochrone → candidate leg |
+| GET | `/voyage/{id}/draft` | Proposed line + status |
+| POST | `/voyage/{id}/accept` | Apply the revision |
+| POST | `/voyage/{id}/reject` | Drop the draft |
 
-`POST /wind|/wave|/current` **inchangés** (NRT clic). Autre `kind`.
+`POST /wind|/wave|/current` **unchanged** (NRT click). Other `kind`.
 
-Pas de `/agents/*`. Pas de `/api/v1/polar/chat`.
+No `/agents/*`. No `/api/v1/polar/chat`.
 
 ---
 
 ## 10. UI / UX
 
-### Création
+### Creation
 
-Champs A + case « Bateau virtuel (prévision 10 j) » + « Mode Suivre ».
+A fields + “Virtual boat (10 d forecast)” checkbox + “Follow mode”.
 
-Si Suivre et t0 dans le futur : *Le bateau n’appareille pas avant …*.
+If Follow and t0 in the future: *The boat does not sail before …*.
 
-### HUD live
+### Live HUD
 
-Date **now**, nœuds, modèle nommé, échéance, `forecast` ou
-`climatology`. Pastille verte **LIVE** vs grise **aperçu**.
+Date **now**, knots, named model, validity, `forecast` or
+`climatology`. Green **LIVE** pill vs grey **preview**.
 
-### Recalculer
+### Recompute
 
-Bouton dans `SimulationPanel` seulement si :
+Button in `SimulationPanel` only if:
 
-- Suivre ON ;
-- véhicule = bateau (pas avion, pas relais) ;
-- `forecastStatus !== "pending"` (ou climo seule, avec bandeau).
+- Follow ON;
+- vehicle = boat (not plane, not relay);
+- `forecastStatus !== "pending"` (or climo only, with banner).
 
-Spinner. Dialog : nm et heures searoute vs proposé, carte double
-trait. Accepter / Garder searoute.
+Spinner. Dialog: searoute vs proposed nm and hours, double-line
+map. Accept / Keep searoute.
 
-### Clavier
+### Keyboard
 
-`L` = revenir au live. **Pas** de raccourci pour Recalculer
-(trop facile à lancer par erreur).
+`L` = back to live. **No** shortcut for Recompute
+(too easy to launch by mistake).
 
 ---
 
-## 11. Arborescence
+## 11. Tree
 
 ```
 naviguide-simulator/server/
   voyage_api.py              # routes §9
   voyage_store.py            # voyage_data/*.json
-  forecast_cube.py           # couloir CMEMS + vent nommé
+  forecast_cube.py           # CMEMS corridor + named wind
   forecast_blend.py          # wind_fn(t)
-  isochrone.py               # copie adaptée (pas d’import prod)
-  voyage_clock.py            # même algo que le JS A, côté serveur
+  isochrone.py               # adapted copy (no prod import)
+  voyage_clock.py            # same algo as JS A, server side
   voyage_data/               # gitignore
   forecast_cache/            # gitignore
   tests/test_voyage_clock.py
@@ -462,143 +463,143 @@ src/i18n/en.js
 
 ---
 
-## 12. Ordre de chantier (B0 → B8)
+## 12. Build order (B0 → B8)
 
-| # | Quoi | Critère de sortie |
+| # | What | Exit criterion |
 |---|---|---|
-| **B0** | Contrat JSON table A = table serveur | Un test golden partagé |
-| **B1** | `forecast_cube` couloir + cache, **sans** isochrone | 1 point, t0+36 h, vent ≠ zone juin |
-| **B2** | `wind_fn` + clock serveur | 10 j forecast, j11 = climo |
-| **B3** | `GET /at?t=now` + `useVirtualVessel` + pastille LIVE | F5 : même position |
-| **B4** | Play = fantôme, `L` = live | Deux marqueurs, un seul « vrai » |
-| **B5** | Copie isochrone + `wind_fn` + polar upload | Test jambe courte (mock cube OK) |
-| **B6** | `recompute` + dialog + accept/reject + pointillés | Géométrie d’**une** jambe |
-| **B7** | Refresh cube 12 h en Suivre | Après refresh, live peut bouger |
-| **B8** | Recette + mémoire cube < 80 Mo + disclaimer | §14 au vert |
+| **B0** | A table JSON contract = server table | One shared golden test |
+| **B1** | Corridor `forecast_cube` + cache, **without** isochrone | 1 point, t0+36 h, wind ≠ June zone |
+| **B2** | `wind_fn` + server clock | 10 d forecast, d11 = climo |
+| **B3** | `GET /at?t=now` + `useVirtualVessel` + LIVE pill | F5: same position |
+| **B4** | Play = ghost, `L` = live | Two markers, only one “true” |
+| **B5** | Isochrone copy + `wind_fn` + polar upload | Short-leg test (mock cube OK) |
+| **B6** | `recompute` + dialog + accept/reject + dashes | Geometry of **one** leg |
+| **B7** | 12 h cube refresh in Follow | After refresh, live may move |
+| **B8** | Recipe + cube memory < 80 MB + disclaimer | §14 green |
 
-Ne pas ouvrir B5 si B3 ne survit pas à un F5.  
-Ne pas isochrone toute Berry « pour voir ».
+Do not open B5 if B3 does not survive an F5.
+Do not isochrone all of Berry “to see”.
 
 ---
 
-## 13. Fichiers touchés / interdits
+## 13. Files touched / forbidden
 
-**Oui :** `naviguide-simulator/server/**` (nouveaux modules + tests),
-`naviguide-simulator/src/**` (hooks / UI B), i18n,
+**Yes:** `naviguide-simulator/server/**` (new modules + tests),
+`naviguide-simulator/src/**` (B hooks / UI), i18n,
 `server/.gitignore` (`voyage_data/`, `forecast_cache/`).
 
-**Copie ponctuelle :** `isochrone.py` (et helpers land mask /
-bathymetry **si** indispensables), recopiés et adaptés. Ensuite plus
-de lien.
+**One-off copy:** `isochrone.py` (and land mask /
+bathymetry helpers **if** indispensable), copied and adapted. Then no
+more link.
 
-**Non :**
+**No:**
 
-- `naviguide/` en import runtime, `www`, nginx skipper
-- `frontend/`, `backend/` (sauf **lire** un snapshot climo déjà
-  publié, en GET)
-- Déployer le port 3010
-- `getWind.py` comme source B (NRT 48 h)
-- `infra/vps/` sauf, **plus tard**, variables Copernicus déjà prévues
-  dans `simulator.env`
+- `naviguide/` as a runtime import, `www`, skipper nginx
+- `frontend/`, `backend/` (except **reading** a climo snapshot already
+  published, as GET)
+- Deploying port 3010
+- `getWind.py` as a B source (48 h NRT)
+- `infra/vps/` except, **later**, Copernicus variables already planned
+  in `simulator.env`
 
 ---
 
-## 14. Recette
+## 14. Recipe
 
 ### Live
 
-1. t0 = **demain 08:00 UTC**, La Rochelle, Leopard 46, Suivre ON.
-2. Aujourd’hui : bateau à quai, compte à rebours.
-3. Recette accélérée : t0 = **il y a 36 h**. Position **au large**,
-   HUD `forecast`, modèle nommé, échéance.
-4. F5 : même lat/lon ± 1 nm.
-5. Play : fantôme avance, live **immobile**. `L` : retour live.
-6. Test auto : `GET /at?t=t0+48h` (pas besoin de bouger l’horloge
-   système).
+1. t0 = **tomorrow 08:00 UTC**, La Rochelle, Leopard 46, Follow ON.
+2. Today: boat in port, countdown.
+3. Accelerated recipe: t0 = **36 h ago**. Position **offshore**,
+   HUD `forecast`, named model, validity.
+4. F5: same lat/lon ± 1 nm.
+5. Play: ghost advances, live **still**. `L`: back to live.
+6. Auto test: `GET /at?t=t0+48h` (no need to move the system
+   clock).
 
-### Fondu
+### Fade
 
-7. `GET /at?t=t0+11j` : `kind: climatology`. Plus d’échéance GFS.
+7. `GET /at?t=t0+11d`: `kind: climatology`. No more GFS validity.
 
-### Recalcul
+### Recompute
 
-8. Depuis une position Atlantique, Recalculer → Fort-de-France.
-   Trait proposé ≠ searoute (souvent). Status `arrived` ou `spliced`.
-9. Refuser : searoute inchangé.
-10. Accepter : trait plein = isochrone, searoute en pointillés,
-    horloge **après** Fort-de-France recalé, le Pacifique **pas**
-    recalculé.
-11. Cube down : bandeau + A. Pas de vent LLM.
+8. From an Atlantic position, Recompute → Fort-de-France.
+   Proposed line ≠ searoute (often). Status `arrived` or `spliced`.
+9. Refuse: searoute unchanged.
+10. Accept: solid line = isochrone, searoute dashed,
+    clock **after** Fort-de-France reset, the Pacific **not**
+    recomputed.
+11. Cube down: banner + A. No LLM wind.
 
-### Mémoire
+### Memory
 
-12. Processus serveur : cube < ~80 Mo. Sinon réduire le couloir.
+12. Server process: cube < ~80 MB. Else shrink the corridor.
 
 ---
 
-## 15. Risques
+## 15. Risks
 
-| Risque | Parade |
+| Risk | Mitigation |
 |---|---|
-| « Arrivée Papeete le 3 novembre » issue du GFS | j>10 = climo ; HUD l’écrit |
-| VPS OOM | Couloir + cache ; jamais GRIB global |
-| Deux moteurs de polar (3010 vs upload) | Un seul : celui du simulateur |
-| Isochrone à travers une terre | Land mask de la copie ; tests Ibérie / Maroc |
-| Live + Play qui se battent | Fantôme vs plein, §5.4 |
-| CMEMS lent au POST /voyage | Async, `forecast: pending` |
-| Relais Halifax pendant un live | Recalcul off en air / side |
-| Licence ECMWF | IFS hors v1 ; GFS ou CMEMS **nommés** |
-| Cube qui expire pendant Suivre | Refresh 12 h, bandeau si `unavailable` |
+| “Arrival Papeete on 3 November” from GFS | d>10 = climo; HUD writes it |
+| VPS OOM | Corridor + cache; never global GRIB |
+| Two polar engines (3010 vs upload) | One only: the simulator’s |
+| Isochrone through land | Copy’s land mask; Iberia / Morocco tests |
+| Live + Play fighting | Ghost vs solid, §5.4 |
+| Slow CMEMS on POST /voyage | Async, `forecast: pending` |
+| Halifax relay during a live | Recompute off in air / side |
+| ECMWF licence | IFS outside v1; GFS or CMEMS **named** |
+| Cube that expires during Follow | 12 h refresh, banner if `unavailable` |
 
 ---
 
-## 16. Lien A → B
+## 16. A → B link
 
 ```
-A : trait fixe + vent(mois)      → table (vertex → date)
-B : même table + vent(lat,lon,t) → 10 j prévision, puis A
-    + now() comme playhead         → Suivre
-    + isochrone(jambe)             → nouveau trait, puis table à nouveau
+A : fixed line + wind(month)      → table (vertex → date)
+B : same table + wind(lat,lon,t) → 10 d forecast, then A
+    + now() as playhead            → Follow
+    + isochrone(leg)               → new line, then table again
 ```
 
-| Question skipper | Plan |
+| Skipper question | Plan |
 |---|---|
-| On part le 15 juin, toute Berry, ETA selon la saison | **A** |
-| On part demain, je le retrouve mercredi | **B Suivre** |
-| Le GFS dit de passer plus au sud jusqu’aux Antilles | **B Recalcul** |
-| Toute la mappemonde recalculée chaque matin | **Personne** — hors contrat |
+| We leave 15 June, all of Berry, ETA by season | **A** |
+| We leave tomorrow, I find it on Wednesday | **B Follow** |
+| GFS says to pass further south to the Antilles | **B Recompute** |
+| Whole mappemonde recomputed every morning | **Nobody** — outside the contract |
 
-Deux merge requests séparées. Pas de PR unique « A+B ».
-
----
-
-## 17. Hors périmètre
-
-- VISIR-2, CO₂, voyage plan scientifique.
-- Historical Sea Routing comme **remplacement** de searoute (autre
-  géométrie mensuelle permanente) : seulement si un jour on veut
-  « quel mois, quelle route » **sans** prévision. Ni A ni B.
-- Replay AIS du vrai bateau.
-- Overlay GRIB opérateur sur toutes les couches.
-- Auto-hébergement Open-Meteo, ingestion NOMADS globe.
-- Écriture dans `naviguide.fr` / Blue Intelligence.
-- 8ᵉ pastille « Climatologie » dans le simulateur.
+Two separate merge requests. No single “A+B” PR.
 
 ---
 
-## 18. Documents dont ce plan hérite
+## 17. Out of scope
+
+- VISIR-2, CO₂, scientific voyage plan.
+- Historical Sea Routing as a **replacement** of searoute (other
+  permanent monthly geometry): only if one day we want
+  “which month, which route” **without** forecast. Neither A nor B.
+- AIS replay of the real boat.
+- Operator GRIB overlay on every layer.
+- Self-hosting Open-Meteo, globe NOMADS ingestion.
+- Writing into `naviguide.fr` / Blue Intelligence.
+- 8th “Climatology” pill in the simulator.
+
+---
+
+## 18. Documents this plan inherits
 
 - [PLAN_IMPLEMENTATION_SIMULATION_A.md](./PLAN_IMPLEMENTATION_SIMULATION_A.md)
-  — horloge, t0, schéma JSON, polar `raw`.
+  — clock, t0, JSON schema, polar `raw`.
 - [PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md](./PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md)
-  — film, exclusions, prod intouchée.
+  — film, exclusions, prod untouched.
 - [PLAN_IMPLEMENTATION_CLIMATOLOGIE.md](./PLAN_IMPLEMENTATION_CLIMATOLOGIE.md)
-  §4, §21 — prévision 0–10 j = autre `kind`, hors V1 atlas ; **ce**
-  chantier.
+  §4, §21 — 0–10 d forecast = other `kind`, outside atlas V1; **this**
+  workshop.
 - [REGLES_PARAMETRES.md](./REGLES_PARAMETRES.md) §3.6 —
   `wave_nogo_m`, `no_llm_for_numbers`, `avoid_cyclone_tracks`.
-- Code à **copier** (pas importer) :
+- Code to **copy** (not import):
   `naviguide/naviguide_workspace/naviguide_weather_routing/isochrone.py`.
-- Code à **étendre** : `naviguide-simulator/server/copernicus/getWave.py`,
-  `getCurrent.py` (idée `valid_time`, pas fusion NRT / forecast dans
-  le même endpoint clic).
+- Code to **extend**: `naviguide-simulator/server/copernicus/getWave.py`,
+  `getCurrent.py` (`valid_time` idea, not NRT / forecast merge in
+  the same click endpoint).
