@@ -141,5 +141,6 @@ describe("voyageClock contrat A", () => {
     assert.ok(s);
     assert.equal(s.status, "live");
     assert.ok(s.lat);
+    assert.equal(s.iso, "2026-06-15T20:00:00Z");
   });
 });

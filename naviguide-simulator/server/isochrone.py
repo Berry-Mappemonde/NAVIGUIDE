@@ -217,6 +217,18 @@ def default_wave_nogo(wind_fn: Callable, hs_limit: float = WAVE_NOGO_M):
     return fn
 
 
+def nudge_offshore(lat: float, lon: float, max_nm: float = 40.0) -> Tuple[float, float]:
+    """Si le départ est sur terre (corde trop droite), glisse vers la mer."""
+    if not is_land(lat, lon):
+        return lat, lon
+    for dist in (5.0, 10.0, 20.0, max_nm):
+        for hdg in range(0, 360, 45):
+            nlat, nlon = move_position(lat, lon, hdg, dist)
+            if not is_land(nlat, nlon):
+                return nlat, nlon
+    return lat, lon
+
+
 def run_leg_isochrone(
     dep_lat: float,
     dep_lon: float,
@@ -239,6 +251,7 @@ def run_leg_isochrone(
     if wave_nogo_fn is None:
         wave_nogo_fn = default_wave_nogo(wind_fn)
 
+    dep_lat, dep_lon = nudge_offshore(dep_lat, dep_lon)
     start = IsoPoint(lat=dep_lat, lon=dep_lon, time=departure_time)
     current_iso = [start]
     all_isos = [[start.to_dict()]]

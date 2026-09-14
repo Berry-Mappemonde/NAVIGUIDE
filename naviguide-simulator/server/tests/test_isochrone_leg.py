@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from climatology_zones import zone_wind_at
-from isochrone import is_path_clear, run_leg_isochrone
+from isochrone import is_path_clear, is_land, nudge_offshore, run_leg_isochrone
 
 
 def _const_wind(speed=16.0, direc=90.0):
@@ -57,6 +57,11 @@ def test_wave_nogo_discards_step():
         searoute_coords=[(46.15, -1.16), (46.00, -3.2)],
     )
     assert out["status"] in ("failed", "spliced")
+
+
+def test_nudge_offshore_leaves_iberia():
+    lat, lon = nudge_offshore(42.7, -8.8)
+    assert not is_land(lat, lon)
 
 
 def test_zone_june_not_used_as_forecast_label():

@@ -339,6 +339,7 @@ export function sampleClockAtHours(clock, tHours) {
       filmNm: lerp(a.filmNm, b.filmNm, t),
       sailNm: lerp(a.sailNm, b.sailNm, t),
       tHours: x,
+      iso: toIso(addHours(parseIso(clock.t0), x)),
       atQuay: false,
       status: "live",
       kind: t < 0.5 ? a.kind : b.kind,
