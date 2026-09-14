@@ -17,6 +17,7 @@ export default defineConfig({
         },
       },
       "/proxy": { target: "http://127.0.0.1:8010", changeOrigin: true },
+      "/ici": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/wind": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/wave": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/current": { target: "http://127.0.0.1:8010", changeOrigin: true },
