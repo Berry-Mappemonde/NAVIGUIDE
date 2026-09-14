@@ -1,9 +1,9 @@
 import { haversineNm, unwrapLon } from "../utils/geo.js";
 
-/** Unités film d’un hop aérien (durée réelle = airHopSeconds, pas des nm mer). */
+/** Film units of an air hop (real duration = airHopSeconds, not sea nm). */
 export const AIR_FILM_NM = 80;
 
-/** Deux sauts forment un épisode si le second atterrit près du départ du premier. */
+/** Two hops form an episode if the second lands near the start of the first. */
 export const AIR_HOP_RETURN_NM = 80;
 
 function filmOf(p) {
@@ -60,8 +60,8 @@ function farthestPoint(points, fromIdx, toIdx, origin) {
 }
 
 /**
- * Paire de sauts aériens aller / retour (Cayenne → Halifax … Halifax → Cayenne).
- * Entre les deux : voile découplée (Halifax ↔ Saint-Pierre).
+ * Outbound / return air-hop pair (Cayenne → Halifax … Halifax → Cayenne).
+ * Between them: decoupled sailing (Halifax ↔ Saint-Pierre).
  */
 export function detectAirEpisodes(points) {
   const pts = points || [];
@@ -106,7 +106,7 @@ export function detectAirEpisodes(points) {
   return episodes;
 }
 
-/** Recale SPM et réinscrit Cayenne au retour, pour le HUD Cayenne → Papeete. */
+/** Snap SPM and re-insert Cayenne on the return, for the Cayenne → Papeete HUD. */
 export function mergeEpisodeMarks(marks, flat, stops) {
   const episodes = nameAirEpisodes(flat?.episodes || detectAirEpisodes(flat?.points || []), stops);
   const out = [...(marks || [])];
@@ -228,7 +228,7 @@ function actorFrom(pos, bearing) {
 
 /**
  * Trois acteurs : bateau Berry (main), avion (plane), bateau relais (side).
- * Pendant l’épisode Guyane, le principal reste à quai à Cayenne.
+ * During the Guiana episode, the main boat stays alongside in Cayenne.
  */
 export function interpolateCast(flat, filmNm, { stops } = {}) {
   const pts = flat?.points || [];

@@ -5,7 +5,7 @@ import { narrateIci } from "./iciBriefing.js";
 const FORBIDDEN = /Ports\s*\/\s*Sécurité|AgentPanel|\/agents\/|Cruisers|Nemotron|Tavily/i;
 
 describe("narrateIci", () => {
-  it("raconte le sac à La Rochelle, pas toute la carte", () => {
+  it("tells the bag at La Rochelle, not the whole map", () => {
     const text = narrateIci({
       zee: {
         name: "French Exclusive Economic Zone",
@@ -52,7 +52,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, /4500|mappemonde entière|toute la carte/i);
   });
 
-  it("dit à terre hors ZEE sans inventer des ports d’entrée", () => {
+  it("says inland outside the EEZ without inventing ports of entry", () => {
     const text = narrateIci({
       zee: { name: "À terre (France)", mrgid: null, gold: false, ashore: true },
       poe: [],
@@ -66,7 +66,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, /ports d’entrée officiels les plus proches/);
   });
 
-  it("dit la haute mer sans inventer des ports d’entrée", () => {
+  it("says high seas without inventing ports of entry", () => {
     const text = narrateIci({
       zee: { name: "Haute mer", mrgid: null, gold: false },
       poe: [],
@@ -80,7 +80,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("reste honnête si Blue Intelligence est muet", () => {
+  it("stays honest if Blue Intelligence is silent", () => {
     const text = narrateIci({
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677, territory: "france_metropolitaine", gold: false },
       poe: [],
@@ -94,7 +94,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("ne dump pas une liste de projets", () => {
+  it("does not dump a list of projects", () => {
     const projects = Array.from({ length: 40 }, (_, i) => ({ name: `Projet ${i}`, nm: i + 1 }));
     const text = narrateIci({
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
@@ -109,7 +109,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("a un récit anglais du même sac", () => {
+  it("has an English story of the same bag", () => {
     const text = narrateIci({
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677, territory: "guyane", gold: true },
       poe: [{ name: "Cayenne", nm: 2 }],
@@ -124,7 +124,7 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("cite GEBCO quand un sondage au large est dans le sac", () => {
+  it("cites GEBCO when an offshore sounding is in the bag", () => {
     const text = narrateIci({
       zee: { name: "Haute mer", mrgid: null, gold: false },
       poe: [],

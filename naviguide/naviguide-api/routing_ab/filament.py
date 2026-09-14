@@ -62,7 +62,7 @@ def offset_from_filament(
         return pts
 
     br = _bearing(pts[start_i], pts[end_i - 1])
-    # Côté : on essaie les deux, on garde celui qui reste le plus souvent en mer.
+    # Side: try both, keep the one that stays at sea most often.
     best = pts
     best_water = -1
     for sign in (90, -90):

@@ -16,7 +16,7 @@ function unwrapPair(prev, lon) {
   return unwrapLon(prev, lon);
 }
 
-/** Suit l’acteur actif, ou cadre le hop aérien pour voir Cayenne et Halifax. */
+/** Follow the active actor, or frame the air hop to see Cayenne and Halifax. */
 export function useFilmCamera({
   mapRef,
   mapReady,

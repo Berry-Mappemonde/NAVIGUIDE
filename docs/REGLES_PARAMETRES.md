@@ -1,60 +1,60 @@
-# Règles et paramètres — principe, catalogue, snapshot par run
+# Rules and parameters — principle, catalogue, snapshot per run
 
-Les cahiers des charges (Projets, Formalités, Marinas) listent des **chiffres**.
-Beaucoup étaient en dur dans le Python, choisis une fois, sans dire *pourquoi*.
-Ce document fixe **comment on a le droit de poser un nombre**, comment on le
-**fait varier** d’un run à l’autre, et comment on **consigne** ce qui a été
-choisi.
+The specifications (Projects, Formalities, Marinas) list **numbers**.
+Many were hard-coded in Python, chosen once, without saying *why*.
+This document fixes **how we are allowed to set a number**, how we
+**vary** it from one run to another, and how we **record** what was
+chosen.
 
-Catalogue machine : `backend/data/run_rules.json`.
-Moteur : `backend/app/core/run_rules.py`.
-API : `GET /api/run-rules?mode=projects|formalities|marinas|amp|science|climatology`.
-
----
-
-## 1. Le principe
-
-**Un chiffre n’est pas une opinion.**
-
-Il appartient à **une** de ces quatre familles. S’il n’appartient à aucune,
-il n’a pas le droit d’être dans le code.
-
-| Famille | Sens | On le fait varier ? |
-|---------|------|---------------------|
-| **Loi** | Contrat métier (pas de snap, pas de purge, sources officielles seulement, Noonsite hors `source_urls`) | Non. On le consigne. On ne le surcharge pas. |
-| **Géométrie** | Distance dérivée d’un phénomène physique (quai, havre, journée de mer, marche douane→marina) | Oui, **dans l’intervalle** où c’est encore le même phénomène. |
-| **Score** | Seuil de classifieur ou de confiance | Oui, mais la cible est une **calibration** sur un jeu étiqueté (Gold, ROC), pas un nouveau chiffre au feeling. |
-| **Budget** | Quota, timeout, concurrence, dollars | Oui. C’est un choix d’opérateur. Toujours consigné. |
-
-### Comment on fixe le défaut et l’intervalle
-
-1. **Nommer le phénomène.** « Hinterland d’une ville-havre », pas « 15 km parce que ça marchait ».
-2. **Ancrer le défaut** sur une mesure (0,02° VLIZ → 2,2 km ; 10 min de marche → 800 m ; 4–5 h à 5–6 nœuds → 25 NM).
-3. **Poser l’intervalle** comme la plage où *on parle encore de la même chose*.
-   - En dessous : on jette des vrais cas (Cassis à 2,3 km si le sliver tombe à 2,0).
-   - Au-dessus : on accepte autre chose (un siège à Washington si `max_inland_km` = 80).
-4. **Un run ne sort pas de l’intervalle.** Sortir = changer de règle, donc changer le CDC d’abord.
-
-L’intervalle est la **prétention scientifique**. Le défaut est le **point d’opération**.
+Machine catalogue: `backend/data/run_rules.json`.
+Engine: `backend/app/core/run_rules.py`.
+API: `GET /api/run-rules?mode=projects|formalities|marinas|amp|science|climatology`.
 
 ---
 
-## 2. Comment on fait varier, et comment on consigne
+## 1. The principle
 
-Trois couches, jamais un secret dans le snapshot :
+**A number is not an opinion.**
+
+It belongs to **one** of these four families. If it belongs to none,
+it has no right to be in the code.
+
+| Family | Meaning | Do we vary it? |
+|--------|---------|----------------|
+| **Law** | Business contract (no snap, no purge, official sources only, Noonsite out of `source_urls`) | No. We record it. We do not override it. |
+| **Geometry** | Distance derived from a physical phenomenon (quay, harbour, day at sea, walk customs→marina) | Yes, **within the interval** where it is still the same phenomenon. |
+| **Score** | Classifier or confidence threshold | Yes, but the target is a **calibration** on a labelled set (Gold, ROC), not a new number by feel. |
+| **Budget** | Quota, timeout, concurrency, dollars | Yes. It is an operator choice. Always recorded. |
+
+### How we set the default and the interval
+
+1. **Name the phenomenon.** “Hinterland of a harbour-town”, not “15 km because it worked”.
+2. **Anchor the default** on a measurement (0.02° VLIZ → 2.2 km; 10 min walk → 800 m; 4–5 h at 5–6 knots → 25 NM).
+3. **Set the interval** as the range where *we are still talking about the same thing*.
+   - Below: we discard real cases (Cassis at 2.3 km if the sliver falls to 2.0).
+   - Above: we accept something else (a headquarters in Washington if `max_inland_km` = 80).
+4. **A run does not leave the interval.** Leaving = changing the rule, therefore changing the specification first.
+
+The interval is the **scientific claim**. The default is the **operating point**.
+
+---
+
+## 2. How we vary, and how we record
+
+Three layers, never a secret in the snapshot:
 
 ```
-override de run  >  profil (cdc_default | strict | recall)  >  settings Mongo  >  défaut catalogue
+run override  >  profile (cdc_default | strict | recall)  >  Mongo settings  >  catalogue default
 ```
 
-Au démarrage d’un run (Projets, Formalités, build Marinas / mouillages) :
+At the start of a run (Projects, Formalities, Marinas / anchorage build):
 
-1. On résout toutes les règles du mode (+ `shared`).
-2. On écrit `params.rules` : `hash`, `profile`, `chosen[id].{value, source, unit, principle}`, `overrides`.
-3. On **bind** le snapshot dans le context async : `get_rule("formalities.eez_sliver_km")` lit ce run, pas le fichier.
-4. À la reprise, on **garde** le snapshot d’origine (comme le `git_sha`).
+1. We resolve every rule of the mode (+ `shared`).
+2. We write `params.rules`: `hash`, `profile`, `chosen[id].{value, source, unit, principle}`, `overrides`.
+3. We **bind** the snapshot in the async context: `get_rule("formalities.eez_sliver_km")` reads this run, not the file.
+4. On resume, we **keep** the original snapshot (like the `git_sha`).
 
-Comparer deux runs = comparer `params.rules.hash` et le détail `source=override|profile|settings|catalog`.
+Comparing two runs = comparing `params.rules.hash` and the `source=override|profile|settings|catalog` detail.
 
 ### API
 
@@ -66,182 +66,182 @@ POST /api/projects/runs     { "mode": "test", "profile": "strict" }
 POST /api/marinas/build     { "profile": "cdc_default", "corridor_radius_nm": 20 }
 ```
 
-Une surcharge hors intervalle, une règle de **loi**, ou un id inconnu → **400**.
+An override outside the interval, a **law** rule, or an unknown id → **400**.
 
-### Profils
+### Profiles
 
-| Profil | Idée |
-|--------|------|
-| `cdc_default` | Point d’opération des CDC. |
-| `strict` | Rappel bas : on jette plus, on ose publier. |
-| `recall` | Rappel haut : on garde plus pour la **revue**, pas pour la carte publique. |
+| Profile | Idea |
+|---------|------|
+| `cdc_default` | Operating point of the specifications. |
+| `strict` | Low recall: we discard more, we dare to publish. |
+| `recall` | High recall: we keep more for **review**, not for the public map. |
 
-Ne pas publier un run `recall` comme s’il était `strict`. Le profil fait partie du snapshot.
+Do not publish a `recall` run as if it were `strict`. The profile is part of the snapshot.
 
 ---
 
-## 3. Inventaire par mode (CDC + code)
+## 3. Inventory by mode (specification + code)
 
-Les valeurs ci-dessous sont les **défauts**. Le détail (principe, intervalle, fichier) est dans le JSON.
+The values below are the **defaults**. The detail (principle, interval, file) is in the JSON.
 
-### 3.1 Projets — `docs/CAHIER_DES_CHARGES_PROJETS.md`
+### 3.1 Projects — `docs/CAHIER_DES_CHARGES_PROJETS.md`
 
-| Id | Défaut | Famille | Phénomène / ancrage |
-|----|--------|---------|---------------------|
-| `projects.max_inland_km` | 15 km | géométrie | Hinterland de ville-havre. Au-delà → sièges (Paris, Washington). CDC §7.3. |
-| `projects.min_marine_score` | 0,5 | score | Coupe du faisceau S_ocean. Recalibrer sur Gold (phase D). |
-| `projects.gatekeeper_accept` | 0,85 | score | Borne haute historique v1. Cible : ROC sur Gold. |
-| `projects.gatekeeper_reject` | 0,12 | score | Borne basse historique v1. Idem. |
-| `projects.max_partner_orgs` | 5 | budget | Plafond Follow the Money, plus en dur (CDC §18). |
-| `projects.test_max_urls_per_seed` | 6 | budget | Run test. |
-| `projects.full_max_urls_per_seed` | 20 | budget | Run full : un listing, pas un site. |
-| `projects.saturation_limit` | 50 | budget | N vides d’affilée = listing épuisé. |
-| `projects.rescan_after_days` | 7 | budget | Aligné sur le retry Formalités. |
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `projects.max_inland_km` | 15 km | geometry | Hinterland of a harbour-town. Beyond → headquarters (Paris, Washington). Spec §7.3. |
+| `projects.min_marine_score` | 0.5 | score | Cut of the S_ocean bundle. Recalibrate on Gold (phase D). |
+| `projects.gatekeeper_accept` | 0.85 | score | Historical v1 upper bound. Target: ROC on Gold. |
+| `projects.gatekeeper_reject` | 0.12 | score | Historical v1 lower bound. Same. |
+| `projects.max_partner_orgs` | 5 | budget | Follow the Money ceiling, no longer hard-coded (spec §18). |
+| `projects.test_max_urls_per_seed` | 6 | budget | Test run. |
+| `projects.full_max_urls_per_seed` | 20 | budget | Full run: a listing, not a site. |
+| `projects.saturation_limit` | 50 | budget | N empties in a row = listing exhausted. |
+| `projects.rescan_after_days` | 7 | budget | Aligned with the Formalities retry. |
 | `projects.allow_tinyfish_agent` | true | budget | Agent = scalpel. |
-| `projects.extract_concurrency` | 6 | budget | Borné par Nominatim 1 req/s. |
-| `projects.max_coast_km` | 50 | géométrie **legacy** | Reliquat du snap. Le CDC a refusé le snap borné. À retirer. |
-| `projects.no_hq_as_site` | true | **loi** | Un siège n’est pas un site. |
-| `shared.dedup_dist_km` | 500 m | géométrie | Même quai. CDC §17. |
+| `projects.extract_concurrency` | 6 | budget | Bounded by Nominatim 1 req/s. |
+| `projects.max_coast_km` | 50 | **legacy** geometry | Remnant of the snap. The specification refused a bounded snap. To be removed. |
+| `projects.no_hq_as_site` | true | **law** | A headquarters is not a site. |
+| `shared.dedup_dist_km` | 500 m | geometry | Same quay. Spec §17. |
 
-Déjà dans `settings` Mongo : inland, scores, partenaires, URLs, saturation, Agent. Le catalogue ajoute le **pourquoi** et l’**intervalle**.
+Already in Mongo `settings`: inland, scores, partners, URLs, saturation, Agent. The catalogue adds the **why** and the **interval**.
 
-### 3.2 Formalités — `docs/CAHIER_DES_CHARGES_POE.md`
+### 3.2 Formalities — `docs/CAHIER_DES_CHARGES_POE.md`
 
-| Id | Défaut | Famille | Phénomène / ancrage |
-|----|--------|---------|---------------------|
-| `formalities.eez_sliver_km` | 2,2 km | géométrie | 0,02° × 111 km/°. Cassis 2,3 km / Geelong 3,4 km = quasi-succès. CDC §7.3. |
-| `formalities.coastal_land_km` | 15 km | géométrie | Même hinterland que Projets. |
-| `formalities.inland_river_max_km` | 400 km | géométrie | Duisburg ~250 km, Rouen ~120 km, marge. |
-| `formalities.geocode_agree_km` | 2 km | géométrie | Même complexe portuaire. CDC §8.2. |
-| `formalities.marina_control_m` | 800 m | géométrie | ~10 min à pied douane→marina. CDC §22. |
-| `formalities.wpi_proximity_km` | 1 km | géométrie | Même terminal WPI. CDC §23. |
-| `formalities.osm_validate_radius_m` | 3 km | géométrie | Havre + douane adjacente. |
-| `formalities.catalog_min_coords` | 3 | géométrie | 1 = mention, 2 = comparaison, 3+ = liste. CDC §6.3. |
-| `formalities.catalog_looks_like_min_coords` | 1 | géométrie | Catalogue déjà reconnu + 1 GPS. |
-| `formalities.catalog_lat_hits` | 8 | géométrie | Table SCT-like (`latitud:`). |
-| `formalities.max_ports_per_zone` | 150 | budget | Anti-hallucination LLM, pas un cap métier. |
-| `formalities.inland_far_km` | 30 km | géométrie | Audit GPS au-delà du hinterland. |
-| `formalities.other_water_far_km` | 8 km | géométrie | Mer hors sliver, autre ZEE. |
-| `formalities.group_outlier_km` | 300 km | géométrie | Cluster côtier d’un listing pays. |
-| `formalities.group_outlier_in_eez_km` | 1 500 km | géométrie | Autre façade (Astoria). |
-| `formalities.listing_sim_high` / `_low` | 0,90 / 0,60 | score | Appariement listing. Recalibrer. |
-| `formalities.listing_auto_threshold` | 0,86 | score | Jointure slug→mrgid. |
-| `formalities.listing_role_sim` | 0,72 | score | Entre low et high. |
-| `formalities.listing_coverage_publish` | **0,90** | score | Le CDC disait « écrasante majorité » **sans chiffre**. 9/10 des PoE listing. Intervalle 0,80–0,95. |
-| `formalities.osm_confidence_hi` | 0,5 | score | Milieu 0–1 ; 678/1171 v1 ≥ 0,5. Recalibrer. |
-| `formalities.confidence_*_max` | 30 / 25 / 25 / 20 | score | Politique de faisceau, pas une physique. |
-| `formalities.zone_timeout_s` | 900 | budget | 3× un run v2 normal. |
-| `formalities.stale_days` | 180 | budget | Badge « pas revue » = semestre. |
-| `formalities.refresh_after_days` | 30 | budget | Re-fetch mensuel. CDC §21. |
-| `formalities.error_retry_days` | 7 | budget | Anti-bot transitoire. |
-| `formalities.cycle_every_h` | 12 | budget | 2 cycles / jour. |
-| `formalities.max_per_cycle` | 60 | budget | 285 ZEE ≈ 2,5 jours. |
-| `formalities.geocode_ttl_*` | 180 j / 14 j | budget | Hit = semestre ; miss = 2 semaines. |
-| `formalities.enrich_limit` | 200 | budget | Lot Bottom-Up. |
-| `formalities.whitelist_domain_cap` | 15 | budget | Filet TinyFish. |
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `formalities.eez_sliver_km` | 2.2 km | geometry | 0.02° × 111 km/°. Cassis 2.3 km / Geelong 3.4 km = near-successes. Spec §7.3. |
+| `formalities.coastal_land_km` | 15 km | geometry | Same hinterland as Projects. |
+| `formalities.inland_river_max_km` | 400 km | geometry | Duisburg ~250 km, Rouen ~120 km, margin. |
+| `formalities.geocode_agree_km` | 2 km | geometry | Same port complex. Spec §8.2. |
+| `formalities.marina_control_m` | 800 m | geometry | ~10 min walk customs→marina. Spec §22. |
+| `formalities.wpi_proximity_km` | 1 km | geometry | Same WPI terminal. Spec §23. |
+| `formalities.osm_validate_radius_m` | 3 km | geometry | Harbour + adjacent customs. |
+| `formalities.catalog_min_coords` | 3 | geometry | 1 = mention, 2 = comparison, 3+ = list. Spec §6.3. |
+| `formalities.catalog_looks_like_min_coords` | 1 | geometry | Catalogue already recognised + 1 GPS. |
+| `formalities.catalog_lat_hits` | 8 | geometry | SCT-like table (`latitud:`). |
+| `formalities.max_ports_per_zone` | 150 | budget | Anti-hallucination LLM, not a business cap. |
+| `formalities.inland_far_km` | 30 km | geometry | GPS audit beyond the hinterland. |
+| `formalities.other_water_far_km` | 8 km | geometry | Sea outside the sliver, other EEZ. |
+| `formalities.group_outlier_km` | 300 km | geometry | Coastal cluster of a country listing. |
+| `formalities.group_outlier_in_eez_km` | 1,500 km | geometry | Other façade (Astoria). |
+| `formalities.listing_sim_high` / `_low` | 0.90 / 0.60 | score | Listing matching. Recalibrate. |
+| `formalities.listing_auto_threshold` | 0.86 | score | Slug→mrgid join. |
+| `formalities.listing_role_sim` | 0.72 | score | Between low and high. |
+| `formalities.listing_coverage_publish` | **0.90** | score | The specification said “overwhelming majority” **without a number**. 9/10 of listing PoE. Interval 0.80–0.95. |
+| `formalities.osm_confidence_hi` | 0.5 | score | Midpoint 0–1; 678/1171 v1 ≥ 0.5. Recalibrate. |
+| `formalities.confidence_*_max` | 30 / 25 / 25 / 20 | score | Bundle policy, not a physics. |
+| `formalities.zone_timeout_s` | 900 | budget | 3× a normal v2 run. |
+| `formalities.stale_days` | 180 | budget | “Not reviewed” badge = a semester. |
+| `formalities.refresh_after_days` | 30 | budget | Monthly re-fetch. Spec §21. |
+| `formalities.error_retry_days` | 7 | budget | Transient anti-bot. |
+| `formalities.cycle_every_h` | 12 | budget | 2 cycles / day. |
+| `formalities.max_per_cycle` | 60 | budget | 285 EEZ ≈ 2.5 days. |
+| `formalities.geocode_ttl_*` | 180 d / 14 d | budget | Hit = a semester; miss = 2 weeks. |
+| `formalities.enrich_limit` | 200 | budget | Bottom-Up batch. |
+| `formalities.whitelist_domain_cap` | 15 | budget | TinyFish net. |
 | `formalities.max_parallel_runs` | 4 | budget | v1+v2+tinyfish + 1. |
-| `formalities.official_sources_only` | true | **loi** | |
-| `formalities.noonsite_blacklist` | true | **loi** | |
-| `formalities.wpi_first_port_ignored` | true | **loi** | |
+| `formalities.official_sources_only` | true | **law** | |
+| `formalities.noonsite_blacklist` | true | **law** | |
+| `formalities.wpi_first_port_ignored` | true | **law** | |
 
-### 3.3 Marinas (dump mondial — corridor = mouillages seulement)
+### 3.3 Marinas (world dump — corridor = anchorages only)
 
-Le mode Marinas charge le catalogue OSM mondial (`leisure=marina`), identité
-`osm_id`, upsert sans purge. On affiche **toutes** les marinas ; un point plus
-gros signale une URL Google `/maps/place/` déjà trouvée (tag OSM ou TinyFish
-Search, ou TinyFish Fetch du lien de recherche Maps une fois le JS rendu).
-On n'invente pas d'URL `/place/` et on ne filtre pas la couche. Les règles `corridor_*` / `waypoint_*` /
-`priority_escale_*` restent pour les **mouillages** (et l'historique).
+The Marinas mode loads the world OSM catalogue (`leisure=marina`), identity
+`osm_id`, upsert without purge. We display **all** marinas; a larger point
+signals a Google `/maps/place/` URL already found (OSM tag or TinyFish
+Search, or TinyFish Fetch of the Maps search link once the JS is rendered).
+We do not invent a `/place/` URL and we do not filter the layer. The `corridor_*` / `waypoint_*` /
+`priority_escale_*` rules remain for **anchorages** (and history).
 
-| Id | Défaut | Famille | Phénomène / ancrage |
-|----|--------|---------|---------------------|
-| `marinas.overpass_throttle_s` | 3 s | budget | AUP Overpass, une tuile à la fois. |
-| `marinas.corridor_radius_nm` | 25 NM | géométrie | 4–5 h à 5–6 nœuds = saut côtier. Bande ±25 = 50 NM. **Mouillages.** |
-| `marinas.corridor_step_nm` | 25 NM | géométrie | Pas ≤ 2× rayon pour recouvrement des disques. |
-| `marinas.waypoint_radius_nm` | 10 NM | géométrie | ~2 h d’approche d’escale. Settings `marina_search_radius_nm`. |
-| `marinas.priority_escale_nm` | 15 NM | géométrie | « Près de cette escale » (prio 1/2). |
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `marinas.overpass_throttle_s` | 3 s | budget | Overpass AUP, one tile at a time. |
+| `marinas.corridor_radius_nm` | 25 NM | geometry | 4–5 h at 5–6 knots = coastal hop. Band ±25 = 50 NM. **Anchorages.** |
+| `marinas.corridor_step_nm` | 25 NM | geometry | Step ≤ 2× radius for disk overlap. |
+| `marinas.waypoint_radius_nm` | 10 NM | geometry | ~2 h approach to a stopover. Settings `marina_search_radius_nm`. |
+| `marinas.priority_escale_nm` | 15 NM | geometry | “Near this stopover” (prio 1/2). |
 | `marinas.max_bbox_span_nm` | 500 NM | budget | Overpass time-out. |
-| `marinas.enrich_stale_days` | 365 | budget | VHF / places : l’année. |
-| `marinas.batch_concurrency` | 2 | budget | Garde-fou LLM. |
-| `marinas.openrouter_min_credits_usd` | 0,50 | budget | Stop avant un batch à sec. |
-| `marinas.tinyfish_enrich_budget_s` | 150 s | budget | Un site JS, pas un crawl. |
+| `marinas.enrich_stale_days` | 365 | budget | VHF / berths: the year. |
+| `marinas.batch_concurrency` | 2 | budget | LLM guardrail. |
+| `marinas.openrouter_min_credits_usd` | 0.50 | budget | Stop before a dry batch. |
+| `marinas.tinyfish_enrich_budget_s` | 150 s | budget | One JS site, not a crawl. |
 
-Un build marinas / mouillages écrit maintenant un document `marina_runs` avec le même `params.rules`.
+A marinas / anchorages build now writes a `marina_runs` document with the same `params.rules`.
 
 ### 3.4 Shared
 
-| Id | Défaut | Famille |
-|----|--------|---------|
-| `shared.no_snap` / `no_ocean_fallback` / `no_purge` / `no_invented_names` | true | **loi** |
-| `shared.dedup_dist_km` | 0,5 km | géométrie |
-| `shared.dedup_sim_low` / `_high` | 0,60 / 0,90 | score |
-| `shared.claude_stop_ratio` | 0,90 | budget (10 % de marge) |
+| Id | Default | Family |
+|----|---------|--------|
+| `shared.no_snap` / `no_ocean_fallback` / `no_purge` / `no_invented_names` | true | **law** |
+| `shared.dedup_dist_km` | 0.5 km | geometry |
+| `shared.dedup_sim_low` / `_high` | 0.60 / 0.90 | score |
+| `shared.claude_stop_ratio` | 0.90 | budget (10% margin) |
 | `shared.claude_budget_usd` | 0 | budget |
-| `shared.nominatim_interval_s` | 1,1 s | budget **non modulable à la baisse** (ToS) |
-| `shared.tinyfish_search_rpm` / `fetch_rpm` | 30 / 150 | budget **plafonné par le fournisseur** |
+| `shared.nominatim_interval_s` | 1.1 s | budget **not adjustable downward** (ToS) |
+| `shared.tinyfish_search_rpm` / `fetch_rpm` | 30 / 150 | budget **capped by the provider** |
 
 ### 3.5 Science — catalogues + Argo + CSR
 
-Pas de Review / Gold. Moisson d’API structurées ; les chiffres sont des **budgets** de volume, pas des opinions.
+No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**, not opinions.
 
-| Id | Défaut | Famille | Phénomène / ancrage |
-|----|--------|---------|---------------------|
-| `science.catalog_max_records` | 2000 | budget | Cap GeoNetwork / ES (plafond dur 10000). |
-| `science.argo_window_days` | 30 | budget | Dernier profil « actif ». |
-| `science.csr_max_records` | 500 | budget | Tracés CSR les plus récents. |
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `science.catalog_max_records` | 2000 | budget | GeoNetwork / ES cap (hard ceiling 10000). |
+| `science.argo_window_days` | 30 | budget | Last “active” profile. |
+| `science.csr_max_records` | 500 | budget | Most recent CSR tracks. |
 
-### 3.6 Climatologie — atlas mensuel (`kind: climatology`)
+### 3.6 Climatology — monthly atlas (`kind: climatology`)
 
-`docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` §14. **Pas** une prévision. Un LLM n’a pas le droit de produire un vent, une Hs ou un compteur cyclone.
+`docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` §14. **Not** a forecast. An LLM is not allowed to produce a wind, an Hs, or a cyclone count.
 
-| Id | Défaut | Famille | Phénomène / ancrage |
-|----|--------|---------|---------------------|
-| `climatology.kind_is_climatology` | true | **loi** | `kind` climatologie ≠ prévision. getWind / getWave / getCurrent restent NRT / ANFC. |
-| `climatology.no_llm_for_numbers` | true | **loi** | Pas de vent / Hs / crossings inventés par un modèle de langue. |
-| `climatology.wind_calm_kn` | 3 kn | géométrie | Calme Beaufort 0–1 (OpenCPN). |
-| `climatology.wind_gale_kn` | 34 kn | géométrie | Gale Beaufort 8. |
-| `climatology.wind_sectors` | 8 | **loi** | Rose 45°. |
-| `climatology.wind_min_sector_pct` | 2,5 % | géométrie | Bruit de secteur. |
-| `climatology.wind_grid_deg` | 0,5° | budget | Maille atlas stockée. |
-| `climatology.wave_nogo_m` | 2,5 m | géométrie | Seuil `overWave` / no-go isochrone. |
-| `climatology.wave_stat` | P90 = no-go | **loi** | Interdit de labeller une moyenne P90. |
-| `climatology.wave_period` | `1993-2019` | **loi** | Fenêtre WAVERYS écrite à l’écran. |
-| `climatology.current_min_kn` | 0,15 kn | géométrie | En dessous : vecteur 0 **et** `below_threshold`. |
-| `climatology.current_depth_m` | 0,5 m | **loi** | Premier niveau GLORYS. |
-| `climatology.current_period` | `1993-2016` | **loi** | Dataset climatology PUM. |
-| `climatology.cyclone_first_year` | 1980 | **loi** | Fichier IBTrACS since1980. |
-| `climatology.cyclone_dayrange` | 21 j | géométrie | Fenêtre autour du jour de route. |
-| `climatology.cyclone_radius_nm` | 120 NM | géométrie | Compteur « proche de la jambe ». |
-| `climatology.cyclone_min_kn` | 34 kn | géométrie | Afficher au moins tempête tropicale. |
-| `climatology.avoid_cyclone_tracks` | true | **loi** | Contrainte isochrone. |
-
----
-
-## 4. Autres idées (au-delà du snapshot)
-
-1. **Balayage A/B.** Même graines, deux profils (`strict` vs `recall`). On compare `listing-control.coverage`, `unlocated`, `confirmed`. Le hash dit ce qui a changé.
-2. **Calibration Gold, pas l’habitude.** `gatekeeper_*`, `min_marine_score`, `listing_*`, `osm_confidence_hi` n’ont pas de phénomène physique. Dès qu’un Gold existe (CDC Projets phase D), on pose le seuil sur une courbe précision-rappel (ex. précision ≥ 0,95 pour `accept`).
-3. **Analyse de sensibilité.** Un script qui rejoue `classify_poe_point` / `catalog_is_sufficient` / `site_publishable` sur le stock en faisant glisser *un* paramètre dans son intervalle. On ne module que ce qui **bouge** les comptes.
-4. **Retirer `max_coast_km`.** Reliquat du snap. L’UI Settings le montre encore ; le pipeline Projets ne doit plus s’en servir.
-5. **Un CDC Marinas.** Le corridor 25 NM n’a pas de cahier. Ce document en donne le phénomène ; un CDC route le figerait (escale vs corridor vs mouillage).
-6. **Ne jamais varier une loi pour « voir ».** Si on veut tester un snap borné, ce n’est plus Blue Intelligence v2.
-7. **Le hash dans le rapport markdown.** Une ligne `rules: abc123 / profile=strict` en tête de `GET …/report` pour qu’un humain compare sans ouvrir Mongo.
-8. **Settings = défaut opérateur, pas vérité.** Changer 15 → 12 dans l’UI change les *prochains* runs, pas les anciens. C’est voulu.
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `climatology.kind_is_climatology` | true | **law** | `kind` climatology ≠ forecast. getWind / getWave / getCurrent remain NRT / ANFC. |
+| `climatology.no_llm_for_numbers` | true | **law** | No wind / Hs / crossings invented by a language model. |
+| `climatology.wind_calm_kn` | 3 kn | geometry | Beaufort 0–1 calm (OpenCPN). |
+| `climatology.wind_gale_kn` | 34 kn | geometry | Beaufort 8 gale. |
+| `climatology.wind_sectors` | 8 | **law** | 45° rose. |
+| `climatology.wind_min_sector_pct` | 2.5% | geometry | Sector noise. |
+| `climatology.wind_grid_deg` | 0.5° | budget | Stored atlas mesh. |
+| `climatology.wave_nogo_m` | 2.5 m | geometry | `overWave` / isochrone no-go threshold. |
+| `climatology.wave_stat` | P90 = no-go | **law** | Forbidden to label a mean as P90. |
+| `climatology.wave_period` | `1993-2019` | **law** | WAVERYS window written on screen. |
+| `climatology.current_min_kn` | 0.15 kn | geometry | Below: vector 0 **and** `below_threshold`. |
+| `climatology.current_depth_m` | 0.5 m | **law** | First GLORYS level. |
+| `climatology.current_period` | `1993-2016` | **law** | PUM climatology dataset. |
+| `climatology.cyclone_first_year` | 1980 | **law** | IBTrACS since1980 file. |
+| `climatology.cyclone_dayrange` | 21 d | geometry | Window around the route day. |
+| `climatology.cyclone_radius_nm` | 120 NM | geometry | Counter “near the leg”. |
+| `climatology.cyclone_min_kn` | 34 kn | geometry | Display at least tropical storm. |
+| `climatology.avoid_cyclone_tracks` | true | **law** | Isochrone constraint. |
 
 ---
 
-## 5. Recette
+## 4. Other ideas (beyond the snapshot)
+
+1. **A/B sweep.** Same seeds, two profiles (`strict` vs `recall`). We compare `listing-control.coverage`, `unlocated`, `confirmed`. The hash says what changed.
+2. **Gold calibration, not habit.** `gatekeeper_*`, `min_marine_score`, `listing_*`, `osm_confidence_hi` have no physical phenomenon. As soon as a Gold exists (Projects spec phase D), we set the threshold on a precision-recall curve (e.g. precision ≥ 0.95 for `accept`).
+3. **Sensitivity analysis.** A script that replays `classify_poe_point` / `catalog_is_sufficient` / `site_publishable` on the stock while sliding *one* parameter within its interval. We only vary what **moves** the counts.
+4. **Remove `max_coast_km`.** Remnant of the snap. The Settings UI still shows it; the Projects pipeline must no longer use it.
+5. **A Marinas specification.** The 25 NM corridor has no specification. This document gives the phenomenon; a route specification would freeze it (stopover vs corridor vs anchorage).
+6. **Never vary a law “to see”.** If we want to test a bounded snap, it is no longer Blue Intelligence v2.
+7. **The hash in the markdown report.** A `rules: abc123 / profile=strict` line at the top of `GET …/report` so a human can compare without opening Mongo.
+8. **Settings = operator default, not truth.** Changing 15 → 12 in the UI changes *upcoming* runs, not old ones. That is intended.
+
+---
+
+## 5. Acceptance tests
 
 ```bash
 cd backend && python3 -m pytest tests/test_run_rules.py tests/test_run_fingerprint.py tests/test_project_runs.py -q
 ```
 
-- Le catalogue charge et chaque défaut (hors `loi` / bool) est **dans** son intervalle.
-- Les défauts géométrie Formalités / dédup / WPI / marina-contrôle **égalent** les constantes Python actuelles (anti-dérive).
-- Une surcharge hors intervalle ou une loi → `RuleError`.
-- `open_run` écrit `params.rules.hash` et `chosen`.
-- `get_rule` + bind fait varier `catalog_is_sufficient` (3 → 5 ports).
+- The catalogue loads and each default (except `loi` / bool) is **inside** its interval.
+- The Formalities geometry / dedup / WPI / marina-control defaults **equal** the current Python constants (anti-drift).
+- An override outside the interval or a law → `RuleError`.
+- `open_run` writes `params.rules.hash` and `chosen`.
+- `get_rule` + bind varies `catalog_is_sufficient` (3 → 5 ports).
 
 ---
 
-*Toute évolution de chiffre : d’abord le phénomène et l’intervalle ici / dans le JSON, ensuite le code.*
+*Any change to a number: first the phenomenon and the interval here / in the JSON, then the code.*

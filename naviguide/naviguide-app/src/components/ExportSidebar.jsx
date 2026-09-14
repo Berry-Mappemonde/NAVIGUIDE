@@ -316,7 +316,7 @@ export function ExportSidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polarFile]);
 
-  /* ── Chargement par défaut des polaires Leopard 46 ───────────────────────── */
+  /* ── Default load of Leopard 46 polars ───────────────────────── */
   useEffect(() => {
     if (polarData || defaultLoadAttemptedRef.current) return;
     defaultLoadAttemptedRef.current = true;
@@ -336,7 +336,7 @@ export function ExportSidebar({
         const uploadRes = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
         const data = await uploadRes.json();
         if (!uploadRes.ok) throw new Error(data.detail ?? `HTTP ${uploadRes.status}`);
-        if (userDroppedFileRef.current) return; // L'utilisateur a déposé pendant le chargement
+        if (userDroppedFileRef.current) return; // User dropped a file during the load
         onPolarDataLoaded({
           expedition_id: data.expedition_id,
           boat_name:     data.boat_name,

@@ -49,7 +49,7 @@ async function fetchPolarKnots(expeditionId, twa, tws) {
 }
 
 /**
- * Mini-série vent / nœuds le long du trait. Ne refetch pas à chaque tick.
+ * Mini wind / knots series along the track. Do not refetch on every tick.
  */
 export function useRouteWindProfile({ flat, marks, polarData, cruiseKnots, enabled, clock = null }) {
   const clockSeries = useMemo(
@@ -101,7 +101,7 @@ export function useRouteWindProfile({ flat, marks, polarData, cruiseKnots, enabl
             if (k != null) boat = k;
           }
         } catch {
-          /* croisière seule */
+          /* cruise only */
         }
         return { ...s, tws, windFrom, boatKnots: boat };
       });

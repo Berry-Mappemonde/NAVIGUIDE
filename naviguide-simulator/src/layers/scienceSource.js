@@ -1,4 +1,4 @@
-/** Source d’une fiche Science (même règle que Blue Intelligence). */
+/** Source of a Science record (same rule as Blue Intelligence). */
 export function scienceSourceOf(props = {}) {
   return props.source
     || (props.kind === "argo_float" ? "argo" : "")

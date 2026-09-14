@@ -1,36 +1,36 @@
 /**
- * MaritimeLayers — couches de données maritimes pour MapLibre GL JS
+ * MaritimeLayers — maritime data layers for MapLibre GL JS
  *
- *  1. ZEE         — Zones Économiques Exclusives (VLIZ / Marine Regions, via WFS proxy)
- *  2. Ports WPI   — World Port Index (NGA/MSI REST, via proxy, coords DMS→decimal)
- *  3. Balisage    — Balisage maritime via OpenSeaMap raster tiles (public, no auth)
- *                   NOTE: SHOM WFS remplacé car nécessite authentification (401).
- *  4. Blue Intelligence — les 5 modes de blueintelligence.online en points GeoJSON
- *     (Projets, Marinas, Capitaineries, Ports d'Entrée, AMP), chargés à la demande
- *     via le proxy même-origine « /bi » → API Blue Intelligence /api/export/*.
+ *  1. EEZ         — Exclusive Economic Zones (VLIZ / Marine Regions, via WFS proxy)
+ *  2. WPI Ports   — World Port Index (NGA/MSI REST, via proxy, DMS→decimal coords)
+ *  3. Marks       — maritime marks via OpenSeaMap raster tiles (public, no auth)
+ *                   NOTE: SHOM WFS replaced because it requires authentication (401).
+ *  4. Blue Intelligence — the 5 blueintelligence.online modes as GeoJSON points
+ *     (Projects, Marinas, Harbour masters, Ports of Entry, MPAs), loaded on demand
+ *     via the same-origin "/bi" proxy → Blue Intelligence /api/export/*.
  *
  * Exports:
  *  - useMaritimeLayers()        → hook (state + data fetching)
- *  - MaritimeLayers(props)      → Sources/Layers à placer DANS <Map>
- *  - MaritimeLayersPanel(props) → Panneau flottant de bascule (HORS <Map>)
- *  - BI_LAYER_CONFIG            → config des toggles Blue Intelligence (Sidebar)
+ *  - MaritimeLayers(props)      → Sources/Layers to place INSIDE <Map>
+ *  - MaritimeLayersPanel(props) → floating toggle panel (OUTSIDE <Map>)
+ *  - BI_LAYER_CONFIG            → Blue Intelligence toggle config (Sidebar)
  */
 
 import { useEffect, useState } from "react";
 import { Source, Layer } from "react-map-gl/maplibre";
 import { useLang } from "../i18n/LangContext.jsx";
 
-// Toujours URL absolue pour les tuiles (évite les problèmes de proxy Vite / preview).
+// Always an absolute URL for tiles (avoids Vite / preview proxy issues).
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-// Exports Blue Intelligence — même-origine par défaut : vite proxy en dev,
+// Blue Intelligence exports — same-origin by default: vite proxy in dev,
 // nginx (VPS) ou proxy_server.py (complete.dev) en production.
 const BI_BASE = import.meta.env.VITE_BI_API_URL || "/bi";
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
 // ── Layer paint styles ────────────────────────────────────────────────────────
 
-// ZEE via WMS — layer eez_boundaries = limites uniquement (polylignes, pas de polygones)
-// Tuiles 512×512 pour un rendu plus fin au zoom minimal (moins de flou/épaisseur)
+// EEZ via WMS — eez_boundaries layer = boundaries only (polylines, no polygons)
+// 512×512 tiles for a sharper render at minimum zoom (less blur/thickness)
 const ZEE_WMS_TILES = [
   `${API_BASE}/proxy/zee/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=eez_boundaries&FORMAT=image/png&TRANSPARENT=true&SRS=EPSG:3857&WIDTH=512&HEIGHT=512&BBOX={bbox-epsg-3857}`,
 ];
@@ -42,16 +42,16 @@ const PORTS_CIRCLE_PAINT = {
   "circle-opacity": 0.85,
 };
 
-// Couleurs des modes Blue Intelligence (cf. README Blue Intelligence)
+// Blue Intelligence mode colors (see Blue Intelligence README)
 export const BI_COLORS = {
-  biProjects:      "#06b6d4", // cyan  — Projets de conservation marine
-  biMarinas:       "#ef4444", // rouge — Marinas OSM
-  biCapitaineries: "#7dd3fc", // ciel  — Capitaineries
-  biPoe:           "#d97706", // ambre — Ports d'Entrée (formalités)
-  biAmp:           "#22c55e", // vert  — Aires Marines Protégées (centroïdes)
+  biProjects:      "#06b6d4", // cyan  — marine conservation projects
+  biMarinas:       "#ef4444", // red   — OSM marinas
+  biCapitaineries: "#7dd3fc", // sky   — harbour masters
+  biPoe:           "#d97706", // amber — Ports of Entry (formalities)
+  biAmp:           "#22c55e", // green — Marine Protected Areas (centroids)
 };
 
-// Couches denses (marinas ≈ dizaines de milliers de points) → cercles plus fins
+// Dense layers (marinas ≈ tens of thousands of points) → finer circles
 const biCirclePaint = (color) => ({
   "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 1.5, 6, 3.5, 10, 6.5],
   "circle-color": color,
@@ -76,8 +76,8 @@ async function fetchPorts() {
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 /**
- * useBiLayer — une couche Blue Intelligence : OFF par défaut,
- * fetch au premier passage à ON (les exports peuvent être volumineux).
+ * useBiLayer — one Blue Intelligence layer: OFF by default,
+ * fetch on the first switch to ON (exports can be large).
  */
 function useBiLayer(path) {
   const [show, setShow] = useState(false);
@@ -104,11 +104,11 @@ function useBiLayer(path) {
 
 /**
  * useMaritimeLayers
- * Gère l'état ON/OFF, les données GeoJSON et les états de chargement
- * pour les couches maritimes et les couches Blue Intelligence.
+ * Manages ON/OFF state, GeoJSON data and loading states
+ * for maritime layers and Blue Intelligence layers.
  */
 /**
- * AMP en polygones via GET /amp?bbox= (pas l'export centroïdes).
+ * MPA polygons via GET /amp?bbox= (not the centroid export).
  */
 function useAmpPolygons(mapRef) {
   const [show, setShow] = useState(false);
@@ -180,7 +180,7 @@ function useAmpPolygons(mapRef) {
 }
 
 export function useMaritimeLayers(mapRef) {
-  // Couches actives par défaut — chargement différé pour ne pas bloquer le rendu initial
+  // Layers on by default — deferred load so the first paint is not blocked
   const [showZee,      setShowZee]      = useState(false);
   const [showPorts,    setShowPorts]    = useState(false);
   const [showBalisage, setShowBalisage] = useState(true);
@@ -191,7 +191,7 @@ export function useMaritimeLayers(mapRef) {
 
   const [errorPorts, setErrorPorts] = useState(null);
 
-  // Chargement Ports — immédiat
+  // Ports load — immediate
   useEffect(() => {
     if (!showPorts || portsData.features.length > 0) return;
     setLoadingPorts(true);
@@ -202,7 +202,7 @@ export function useMaritimeLayers(mapRef) {
       .finally(() => setLoadingPorts(false));
   }, [showPorts]);
 
-  // Couches Blue Intelligence — les 5 modes de blueintelligence.online
+  // Blue Intelligence layers — the 5 blueintelligence.online modes
   const biProjects      = useBiLayer("/export/geojson");
   const biMarinas       = useBiLayer("/export/marinas.geojson");
   const biCapitaineries = useBiLayer("/export/capitaineries.geojson");
@@ -236,7 +236,7 @@ export function useMaritimeLayers(mapRef) {
     showBiCapitaineries: biCapitaineries.show, setShowBiCapitaineries: biCapitaineries.setShow,
     biCapitaineriesData: biCapitaineries.data,
     loadingBiCapitaineries: biCapitaineries.loading, errorBiCapitaineries: biCapitaineries.error,
-    // Blue Intelligence — Ports d'Entrée (formalités)
+    // Blue Intelligence — Ports of Entry (formalities)
     showBiPoe: biPoe.show,                     setShowBiPoe: biPoe.setShow,
     biPoeData: biPoe.data,
     loadingBiPoe: biPoe.loading,               errorBiPoe: biPoe.error,
@@ -251,15 +251,15 @@ export function useMaritimeLayers(mapRef) {
 
 /**
  * MaritimeLayers
- * Place les Sources/Layers MapLibre GL JS dans l'arbre du composant <Map>.
+ * Place MapLibre GL JS Sources/Layers in the <Map> component tree.
  *
- * IMPORTANT: toutes les sources sont TOUJOURS montées (pas de rendu conditionnel).
- * La visibilité est contrôlée via layout.visibility pour éviter les erreurs
- * MapLibre au mount/unmount des sources ("Source already exists", race conditions).
+ * IMPORTANT: every source is ALWAYS mounted (no conditional render).
+ * Visibility is controlled via layout.visibility to avoid MapLibre
+ * source mount/unmount errors ("Source already exists", race conditions).
  *
- *  - ZEE       : polygones GeoJSON via proxy backend
- *  - Ports WPI : points GeoJSON via proxy backend
- *  - Balisage  : tuiles raster OpenSeaMap (chargées directement depuis le navigateur)
+ *  - EEZ       : GeoJSON polygons via backend proxy
+ *  - WPI Ports : GeoJSON points via backend proxy
+ *  - Marks     : OpenSeaMap raster tiles (loaded directly from the browser)
  */
 export function MaritimeLayers({
   showZee,
@@ -274,7 +274,7 @@ export function MaritimeLayers({
 
   return (
     <>
-      {/* ── ZEE via WMS (tuiles à la demande, instantané) ────────────────── */}
+      {/* ── EEZ via WMS (tiles on demand, instant) ────────────────── */}
       <Source
         id="zee-source"
         type="raster"
@@ -340,7 +340,7 @@ export function MaritimeLayers({
   );
 }
 
-/** Balisage — raster au-dessus de tout (routes, markers). À placer EN DERNIER dans <Map>. */
+/** Marks — raster above everything (routes, markers). Place LAST inside <Map>. */
 const SEAMARK_TILES = [
   `${API_BASE}/proxy/seamark/{z}/{x}/{y}.png`,
   "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
@@ -376,7 +376,7 @@ const LAYER_CONFIG = [
   { key: "balisage", labelKey: "layerBalisage", titleKey: "layerBalisageTitle", color: "#10b981", showKey: "showBalisage", toggleKey: "setShowBalisage", loadingKey: "loadingBalisage", errorKey: "errorBalisage" },
 ];
 
-/** Toutes les couches carte — une seule grille de pastilles dans la Sidebar. */
+/** Every map layer — a single grid of chips in the Sidebar. */
 export const ALL_LAYER_CONFIG = [
   ...LAYER_CONFIG,
   { key: "biProjects",      labelKey: "layerBiProjects",      titleKey: "layerBiProjectsTitle",      color: BI_COLORS.biProjects,      showKey: "showBiProjects",      toggleKey: "setShowBiProjects",      loadingKey: "loadingBiProjects",      errorKey: "errorBiProjects" },
@@ -397,13 +397,13 @@ export const BI_LAYER_CONFIG = [
 
 /**
  * MaritimeLayersPanel
- * Panneau flottant avec les boutons de bascule pour chaque couche maritime.
- * À placer EN DEHORS du composant <Map>, dans le div racine de l'application.
+ * Floating panel with toggle buttons for each maritime layer.
+ * Place OUTSIDE the <Map> component, in the application root div.
  */
 export function MaritimeLayersPanel(props) {
   const { t } = useLang();
   return (
-    /* Centré en bas, entre les deux sidebars (chacune 320px) — toujours visible */
+    /* Centered at the bottom, between the two sidebars (320px each) — always visible */
     <div
       className="absolute bottom-5 left-1/2 -translate-x-1/2 z-25 flex flex-row items-center gap-1.5
                  bg-slate-900/80 backdrop-blur-sm border border-white/10 rounded-full px-3 py-1.5 shadow-xl"

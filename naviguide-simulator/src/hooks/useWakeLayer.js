@@ -11,7 +11,7 @@ const WAKE_STYLE = {
 };
 
 /**
- * Trait déjà parcouru, plus clair que la route. Leaflet only — pas deck.gl.
+ * Already-sailed track, lighter than the route. Leaflet only — no deck.gl.
  */
 export function useWakeLayer(mapRef, { flat, sailNm, enabled, mapReady }) {
   const groupRef = useRef(null);

@@ -1,4 +1,4 @@
-/** Vitesse de croisière de l’expédition (nœuds) : BS portant, sinon 7 kt. */
+/** Expedition cruise speed (knots): downwind BS, else 7 kt. */
 export const FALLBACK_EXPEDITION_KNOTS = 7;
 
 export function expeditionBoatKnots(polarData) {
@@ -15,7 +15,7 @@ export function expeditionBoatKnots(polarData) {
 }
 
 /**
- * Angle du vent vrai (0–180) : cap bateau vs direction d’où vient le vent.
+ * True-wind angle (0–180): boat heading vs direction the wind comes from.
  */
 export function trueWindAngle(headingDeg, windFromDeg) {
   if (!Number.isFinite(headingDeg) || !Number.isFinite(windFromDeg)) return null;
@@ -28,8 +28,8 @@ export const PLAY_PROFILES = ["real", "read", "normal", "fast"];
 
 /**
  * nm/s selon le profil.
- * Accéléré : Atlantique (La Rochelle → Fort-de-France) en 20 s.
- * Réelle : nœuds du bateau (1 s écran = 1 s en mer).
+ * Fast: Atlantic (La Rochelle → Fort-de-France) in 20 s.
+ * Real: boat knots (1 s on screen = 1 s at sea).
  */
 export function nmPerSecond(profile, { boatKnots, atlanticNm }) {
   const knots = Number(boatKnots) > 0 ? Number(boatKnots) : FALLBACK_EXPEDITION_KNOTS;
@@ -40,7 +40,7 @@ export function nmPerSecond(profile, { boatKnots, atlanticNm }) {
   return atl / 70;
 }
 
-/** Durée écran d’un hop aérien, pour que l’avion reste visible à chaque profil. */
+/** Screen duration of an air hop, so the plane stays visible on every profile. */
 export function airHopSeconds(profile) {
   if (profile === "real") return 8;
   if (profile === "read") return 4.5;

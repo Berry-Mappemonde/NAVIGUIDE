@@ -560,7 +560,7 @@ export function Sidebar({
         {/* ── Scrollable content (everything below logos) ────────────────── */}
         <div className="flex-1 overflow-y-auto sidebar-scroll px-4 py-3 space-y-4">
 
-          {/* ── Mode Simulation — panneau métriques + agents IA ─────────── */}
+          {/* ── Simulation mode — metrics panel + AI agents ─────────── */}
           {simulationMode && (
             <>
               <SimulationPanel

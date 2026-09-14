@@ -29,7 +29,7 @@ const laRochelleBrest = {
 };
 
 describe("buildLocalCustomBriefing", () => {
-  it("refuse une collection trop courte", () => {
+  it("rejects a collection that is too short", () => {
     assert.equal(
       buildLocalCustomBriefing({
         type: "FeatureCollection",
@@ -39,7 +39,7 @@ describe("buildLocalCustomBriefing", () => {
     );
   });
 
-  it("décrit la route dessinée, pas Berry, avec executive_briefing", () => {
+  it("describes the drawn route, not Berry, with executive_briefing", () => {
     const plan = buildLocalCustomBriefing(laRochelleBrest, "fr");
     assert.ok(plan.executive_briefing.includes("Route personnalisée"));
     assert.ok(plan.executive_briefing.includes("tracée à la main"));

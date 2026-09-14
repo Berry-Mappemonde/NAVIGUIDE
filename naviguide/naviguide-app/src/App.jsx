@@ -64,11 +64,11 @@ export default function App() {
   const [segProgress, setSegProgress] = useState({ done: 0, total: 0 });
   const boundsApplied = useRef(false);
 
-  // 🌊 Nouveau state pour les vagues
+  // 🌊 New state for waves
   const [selectedWave, setSelectedWave] = useState(null);
   const [waveLoading, setWaveLoading] = useState(false);
 
-  // 🌊 State pour les courants
+  // 🌊 State for currents
   const [selectedCurrent, setSelectedCurrent] = useState(null);
   const [currentLoading, setCurrentLoading] = useState(false);
 
@@ -97,7 +97,7 @@ export default function App() {
   const [simulationStep, setSimulationStep] = useState(0);
   const [simulationMonth, setSimulationMonth] = useState(() => new Date().getMonth() + 1);
 
-  // Route perso déclarée tôt : la simulation s'aligne sur la route affichée.
+  // Custom route declared early: simulation follows the displayed route.
   const [customRoute, setCustomRoute] = useState(null); // GeoJSON FeatureCollection
 
   const activeStops = useMemo(
@@ -157,18 +157,18 @@ export default function App() {
     setSimulationStep(bestIdx);
   }, [simulationStep, simTargets]);
 
-  // Leg context : snap géométrique + métriques
-  // simulationStep est passé pour contraindre le snap à la bonne portion de
-  // polyligne — évite que le catamaran "saute" sur le tronçon retour quand
-  // l'itinéraire passe deux fois par la même zone (ex: Cap Verde aller/retour).
+  // Leg context: geometric snap + metrics
+  // simulationStep is passed to constrain the snap to the right portion of
+  // the polyline — keeps the catamaran from "jumping" onto the return leg when
+  // the itinerary passes twice through the same area (e.g. Cape Verde out/back).
   const legContext = useLegContext(
     simulationMode ? activeCatamaranPos.lat : null,
     simulationMode ? activeCatamaranPos.lon : null,
     activeSegments,
     activeStops,
-    undefined,                               // speedKnots — dérivé du mois
-    simulationMode ? simulationStep : null,  // contrainte chronologique
-    simulationMonth,                         // climatologie : ETA qui bouge
+    undefined,                               // speedKnots — derived from the month
+    simulationMode ? simulationStep : null,  // chronological constraint
+    simulationMonth,                         // climatology: ETA that moves
   );
 
   // After each Next/Prev step, fly to the SNAPPED position (not the raw target)
@@ -179,14 +179,14 @@ export default function App() {
     flyToPos(legContext.snappedPosition[1], legContext.snappedPosition[0]);
   }, [legContext, flyToPos]);
 
-  // Changement de route affichée : le bateau reprend le départ de cette route.
+  // Displayed route changed: the boat resumes at the start of this route.
   useEffect(() => {
     if (!simulationMode) return;
     setSimulationStep(0);
     setCatamaranPos(routeStartPos);
     pendingFlyTo.current = true;
-    // customRoute identifie la route perso ; on ne dépend pas de simTargets
-    // (les segments Berry se chargent progressivement).
+    // customRoute identifies the custom route; we do not depend on simTargets
+    // (Berry segments load progressively).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customRoute]);
 
@@ -195,7 +195,7 @@ export default function App() {
     [segments],
   );
 
-  // ── Anti-overlap offsets pour les markers de drapeaux d'escales ──────────
+  // ── Anti-overlap offsets for stopover flag markers ──────────
   const markerOffsets = useMarkerOffsets(points, mapRef, routeCoords);
 
   const [routeKind, setRouteKind] = useState("berry");
@@ -478,7 +478,7 @@ export default function App() {
     setSelectedSatellite(null);
   };
 
-  // Briefing Berry uniquement sur la route Berry — jamais après un tracé perso.
+  // Berry briefing only on the Berry route — never after a custom track.
   useEffect(() => {
     if (routeKind !== "berry" || drawingMode) return;
     const cached = getCachedPlan(lang);
@@ -510,19 +510,19 @@ export default function App() {
       .catch((err) => console.warn("Orchestrator unavailable:", err));
   }, [lang, routeKind, drawingMode]);
 
-  // Recalcule le briefing perso si la langue change (l'import appelle déjà fetchCustomPlan).
+  // Recalculate the custom briefing if the language changes (import already calls fetchCustomPlan).
   useEffect(() => {
     if (routeKind !== "custom" || drawingMode || !customRoute) return;
     fetchCustomPlan(customRoute);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- volontairement lang seul
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally lang only
   }, [lang]);
 
-  // Points d'intérêt
+  // Points of interest
   useEffect(() => {
     setPoints(ITINERARY_POINTS);
   }, []);
 
-  // Fetch des segments
+  // Fetch segments
   useEffect(() => {
     if (points.length === 0) return;
 
@@ -530,14 +530,14 @@ export default function App() {
     const byName = (name) => points.find((p) => p.name === name);
 
     // Non-maritime segments (road/air only)
-    // Halifax→SPM = segment MARITIME découplé → calculé via searoute, affiché en bleu
+    // Halifax→SPM = decoupled MARITIME segment → computed via searoute, shown in blue
     const nonMaritimeNames = new Set([
       "Saint-Maur (Berry, Indre)|La Rochelle",
       "La Rochelle|Saint-Maur (Berry, Indre)",
     ]);
 
-    // Points dont la liaison séquentielle est remplacée par des legs personnalisés
-    // Marigot→Cayenne, Halifax→SPM, SPM→Halifax, Cayenne→Papeete (pas de segment Cayenne↔Halifax)
+    // Points whose sequential link is replaced by custom legs
+    // Marigot→Cayenne, Halifax→SPM, SPM→Halifax, Cayenne→Papeete (no Cayenne↔Halifax segment)
     const skipFromNames = new Set([
       "Marigot (Saint-Martin)",
       "Cayenne (Guyane)",
@@ -554,15 +554,15 @@ export default function App() {
       legs.push({ from: a, to: b });
     }
 
-    // Insert Marigot → Cayenne après la leg qui arrive à Marigot
+    // Insert Marigot → Cayenne after the leg that arrives at Marigot
     const marigotIdx = legs.findIndex((l) => l.to.name === "Marigot (Saint-Martin)");
     legs.splice(marigotIdx + 1, 0, {
       from: byName("Marigot (Saint-Martin)"),
       to: byName("Cayenne (Guyane)"),
     });
 
-    // Après Cayenne : Halifax → SPM → Halifax (air, non symbolisé), puis Cayenne → Papeete (maritime).
-    // Pas de segment Cayenne↔Halifax : les trajets aériens ne sont pas ajoutés ni affichés.
+    // After Cayenne: Halifax → SPM → Halifax (air, not symbolized), then Cayenne → Papeete (maritime).
+    // No Cayenne↔Halifax segment: air hops are neither added nor displayed.
     const cayenneIdx = legs.findIndex((l) => l.to.name === "Cayenne (Guyane)");
     legs.splice(cayenneIdx + 1, 0,
       { from: byName("Halifax (Nouvelle-Écosse)"), to: byName("Saint-Pierre (Saint-Pierre-et-Miquelon)") },
@@ -781,7 +781,7 @@ export default function App() {
 
   const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-  // Vert uniquement pendant le tracé. Après « Terminer », la route perso est bleue.
+  // Green only while drawing. After "Finish", the custom route is blue.
   const drawnLines = drawingMode
     ? {
         type: "FeatureCollection",
@@ -993,10 +993,10 @@ export default function App() {
           });
         }}
       >
-        {/* ── Maritime data layers (ZEE / Ports / Balisage) — AVANT les routes pour être en dessous ── */}
+        {/* ── Maritime data layers (EEZ / Ports / Marks) — BEFORE routes so they sit underneath ── */}
         <MaritimeLayers {...maritimeLayers} />
 
-        {/* Lignes maritimes */}
+        {/* Maritime lines */}
         <Source id="maritime" type="geojson" data={maritimeLines}>
           <Layer
             id="maritime-layer"
@@ -1684,7 +1684,7 @@ export default function App() {
           <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
         )}
 
-        {/* Escales — drapeaux + trait vers l'ancre (masqués en dessin / route perso) */}
+        {/* Stopovers — flags + line to the anchor (hidden while drawing / custom route) */}
         {!drawingMode && !customRoute && points.map((p, i) =>
           p.flag !== "" ? (
             <Marker key={i} longitude={p.lon} latitude={p.lat} anchor="bottom" offset={markerOffsets[i] || [0, 0]}>
@@ -1752,7 +1752,7 @@ export default function App() {
               </div>
             </Marker>
           ) : (
-            /* Waypoints intermédiaires — point bleu toujours visible, tooltip au survol */
+            /* Intermediate waypoints — blue dot always visible, tooltip on hover */
             <Marker key={i} longitude={p.lon} latitude={p.lat} offset={markerOffsets[i]}>
               <div
                 onMouseEnter={() => setHoveredPoint(i)}
@@ -1796,7 +1796,7 @@ export default function App() {
           )
         )}
 
-        {/* Balisage — raster AU-DESSUS de tout (routes, markers) pour être visible */}
+        {/* Marks — raster ABOVE everything (routes, markers) so it stays visible */}
         <BalisageLayer show={maritimeLayers.showBalisage} />
       </Map>
     </div>

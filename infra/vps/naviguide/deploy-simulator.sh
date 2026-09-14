@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Déploie NAVIGUIDE simulator sur simulator.naviguide.fr (même VPS).
-# Ne redémarre PAS blue-intelligence, naviguide-api, polar, orchestrateur.
-# Ne touche PAS /etc/nginx/sites-available/naviguide.
+# Deploy the NAVIGUIDE simulator on simulator.naviguide.fr (same VPS).
+# Does NOT restart blue-intelligence, naviguide-api, polar, orchestrator.
+# Does NOT touch /etc/nginx/sites-available/naviguide.
 #
-# Prérequis : code dans ~/blue-intelligence-map/naviguide-simulator
-# (rsync depuis le Mac — voir publish-simulator-from-mac.sh).
-# DNS A simulator → 135.125.226.16 déjà en place.
-# À lancer sur le VPS, hors run Complet Blue Intelligence si dist/ manque
-# (npm serait alors lancé ici).
+# Prerequisites: code in ~/blue-intelligence-map/naviguide-simulator
+# (rsync from the Mac — see publish-simulator-from-mac.sh).
+# DNS A simulator → 135.125.226.16 already in place.
+# Run on the VPS, outside a Blue Intelligence Full run if dist/ is missing
+# (npm would then run here).
 set -euo pipefail
 
 APP="$HOME/blue-intelligence-map"
@@ -32,7 +32,7 @@ SKIP_PIP="${SKIP_PIP:-0}"
 
 command -v "$UV" >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# ── Venv dédié (pas celui de naviguide/) ─────────────────────────────────────
+# ── Dedicated venv (not the naviguide/ one) ─────────────────────────────────────
 cd "$SIM"
 [ -d .venv ] || "$UV" venv --python 3.12 .venv
 if [ "$SKIP_PIP" = "1" ] && [ -x .venv/bin/python ]; then
@@ -45,7 +45,7 @@ mkdir -p "$CONF_DIR"
 if [ ! -f "$CONF_DIR/simulator.env" ]; then
   umask 077
   cp "$APP/infra/vps/naviguide/simulator.env.example" "$CONF_DIR/simulator.env"
-  # Copernicus seulement — jamais le fichier naviguide.env (clés LLM).
+  # Copernicus only — never the naviguide.env file (LLM keys).
   if [ -f "$CONF_DIR/naviguide.env" ]; then
     grep -E '^COPERNICUS_(USERNAME|PASSWORD)=' "$CONF_DIR/naviguide.env" \
       >> "$CONF_DIR/simulator.env" || true
@@ -54,13 +54,13 @@ if [ ! -f "$CONF_DIR/simulator.env" ]; then
 fi
 chmod 600 "$CONF_DIR/simulator.env"
 
-# ── Frontend : dist/ déjà buildé sur le Mac / GitHub de préférence ───────────
+# ── Frontend: dist/ already built on the Mac / GitHub preferably ───────────
 if [ "$SKIP_FRONTEND_BUILD" = "1" ]; then
   if [ ! -f "$SIM/dist/index.html" ]; then
-    echo "SKIP_FRONTEND_BUILD=1 mais $SIM/dist/index.html est absent." >&2
+    echo "SKIP_FRONTEND_BUILD=1 but $SIM/dist/index.html is missing." >&2
     exit 1
   fi
-  echo "SKIP_FRONTEND_BUILD=1 — bundle GitHub / Mac réutilisé"
+  echo "SKIP_FRONTEND_BUILD=1 — reusing the GitHub / Mac bundle"
 elif [ ! -f "$SIM/dist/index.html" ]; then
   echo "dist/ absent — npm run build sur le VPS (RAM : pas pendant un Complet)"
   cd "$SIM"
@@ -79,7 +79,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable naviguide-simulator >/dev/null 2>&1 || true
 sudo systemctl restart naviguide-simulator
 
-# ── nginx : fichier à part, sites-available/naviguide intouché ───────────────
+# ── nginx: separate file, sites-available/naviguide untouched ───────────────
 if [ -f /etc/nginx/sites-available/naviguide ]; then
   sudo cp -a /etc/nginx/sites-available/naviguide \
     "/etc/nginx/sites-available/naviguide.bak-before-simulator-$(date +%Y%m%d)"
@@ -89,9 +89,9 @@ sudo ln -sf /etc/nginx/sites-available/naviguide-simulator /etc/nginx/sites-enab
 sudo nginx -t
 sudo systemctl reload nginx
 
-# ── TLS : ajouter le SAN si absent (Let's Encrypt, gratuit) ──────────────────
-# Plugin nginx (pas webroot) : le vhost www redirige encore /.well-known
-# vers HTTPS. certonly n'écrit pas de nouveau vhost skipper.
+# ── TLS: add the SAN if missing (Let's Encrypt, free) ──────────────────
+# nginx plugin (not webroot): the www vhost still redirects /.well-known
+# to HTTPS. certonly does not write a new skipper vhost.
 CERT=/etc/letsencrypt/live/naviguide.fr/fullchain.pem
 if ! sudo test -f "$CERT"; then
   echo "Certificat $CERT introuvable — abort." >&2
@@ -106,7 +106,7 @@ if ! sudo openssl x509 -in "$CERT" -noout -text | grep -q 'DNS:simulator.navigui
   sudo systemctl reload nginx
 fi
 
-# ── Santé ────────────────────────────────────────────────────────────────────
+# ── Health ────────────────────────────────────────────────────────────────────
 code=000
 for _ in $(seq 1 20); do
   code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8010/" || true)

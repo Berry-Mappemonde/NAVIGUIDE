@@ -1,5 +1,5 @@
 /**
- * Pause courte à une escale pendant le Play continu (style MovingMarker).
+ * Short pause at a stopover during continuous Play (MovingMarker style).
  * Un seek / Next / Prev saute la pause (jump: true).
  */
 
@@ -15,7 +15,7 @@ export function dwellMsForProfile(profileId) {
 }
 
 /**
- * Prochaine escale strictement après filmNm (pas le départ à 0).
+ * Next stopover strictly after filmNm (not the start at 0).
  * @returns {{ filmNm: number, name: string, kind: string } | null}
  */
 export function nextStationAfter(filmNm, stations, { epsilon = 0.35 } = {}) {
@@ -43,7 +43,7 @@ export function stationAt(filmNm, stations, { epsilon = 0.45 } = {}) {
 }
 
 /**
- * Avance un pas de lecture. Pur — pas de Date.now.
+ * Advance one playback step. Pure — no Date.now.
  *
  * @returns {{
  *   filmNm: number,

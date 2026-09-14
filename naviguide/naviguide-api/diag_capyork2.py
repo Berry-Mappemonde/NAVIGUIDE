@@ -25,7 +25,7 @@ print("\n" + "="*70)
 print("1. Vérification: quels nœuds searoute existent entre (-14.7,145.4) et (-10.55,142.13)?")
 print("="*70)
 
-# Tester des positions intermédiaires variées pour voir si searoute les "snape" sur de nouveaux nœuds
+# Try varied intermediate positions to see if searoute "snaps" them onto new nodes
 test_intermediates = [
     (-13.0, 145.0), (-13.0, 144.5), (-13.0, 144.0), (-13.0, 143.5),
     (-12.0, 144.5), (-12.0, 144.0), (-12.0, 143.5), (-12.0, 143.0),
@@ -81,7 +81,7 @@ for lat, lon, d1, d2 in clean_candidates[:6]:
     r2 = searoute_with_exact_end(WP, tuple(TORRES))
     c1 = r1["geometry"]["coordinates"] if r1 else []
     c2 = r2["geometry"]["coordinates"] if r2 else []
-    # Critère coral aberrant: lon > 147 (pas 145 — les nœuds côtiers à 145 sont légitimes)
+    # Aberrant-coral criterion: lon > 147 (not 145 — coastal nodes at 145 are legitimate)
     co1 = [p for p in c1 if p[0] > 147 and -16 < p[1] < -8]
     co2 = [p for p in c2 if p[0] > 147 and -16 < p[1] < -8]
     la1 = [p for p in c1[1:-1] if _is_land_hires(p[1], p[0])]
@@ -94,7 +94,7 @@ for lat, lon, d1, d2 in clean_candidates[:6]:
     if co2: print(f"    ⚠️ coral_seg2 lon: {sorted([round(p[0],2) for p in co2], reverse=True)[:5]}")
     if la1: print(f"    ⚠️ land_seg1: {[[round(p[1],3),round(p[0],3)] for p in la1[:3]]}")
     if la2: print(f"    ⚠️ land_seg2: {[[round(p[1],3),round(p[0],3)] for p in la2[:3]]}")
-    # Montrer les pts max lon dans chaque segment
+    # Show the max-lon points in each segment
     if c1:
         max_lon_pt = max(c1, key=lambda p: p[0])
         print(f"    lon max seg1: {round(max_lon_pt[0],2)}°E à lat={round(max_lon_pt[1],2)}")
