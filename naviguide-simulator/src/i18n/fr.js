@@ -75,8 +75,10 @@ export default {
   gettingStartedText: "Cliquez sur un point de la route pour obtenir les données vent, vague et courant. Tracez votre propre route ou lancez la simulation.",
   searouteUnavailable: "Route officielle (searoute indisponible).",
   searouteDrawFailed: "searoute a échoué — corde temporaire.",
-  berryLocalBriefing: "Expédition Berry-Mappemonde : départ de Saint-Maur (Berry) vers La Rochelle, puis les escales outre-mer. Lancez la simulation pour lire la route comme un film (Play, quatre vitesses dont la vitesse réelle du bateau). Le dossier cockpit (sac ici) se remplira à l’étape 2.", // pragma: allowlist secret
+  berryLocalBriefing: "Expédition Berry-Mappemonde : départ de Saint-Maur (Berry) vers La Rochelle, puis les escales outre-mer. Lancez la simulation : le briefing raconte alors le sac autour du bateau — quelle ZEE, quels ports d’entrée, ce qu’il y a dans 30 nm — pas toute la carte.", // pragma: allowlist secret
   cockpitDossier: "Dossier cockpit",
+  iciBriefingLoading: "Le sac se remplit autour du bateau…",
+  iciBriefingFallback: "Le sac autour du bateau n’a pas encore de récit.",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",

@@ -3,7 +3,6 @@ import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Play, Shield, Square, T
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
-import { ici } from "../engine/ici.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.svg";
@@ -144,12 +143,13 @@ export function Sidebar({
   canFinishDraw,
   isCockpit, polarData, maritimeLayers, simulationMode, onSimulationToggle,
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
+  dossier = null, iciBriefing = null,
 }) {
   const { t } = useLang();
-  const briefing = plan?.executive_briefing || "";
-  const dossier = simulationMode && legContext?.snappedPosition
-    ? ici(legContext.snappedPosition[1], legContext.snappedPosition[0], { polarMeta: polarData })
-    : null;
+  const expeditionBriefing = plan?.executive_briefing || "";
+  const briefing = simulationMode
+    ? (iciBriefing || (briefingLoading ? "" : t("iciBriefingFallback")))
+    : expeditionBriefing;
 
   return (
     <>
@@ -274,7 +274,7 @@ export function Sidebar({
             </div>
           )}
 
-          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
+          {!isDrawing && (isCockpit || simulationMode || briefing || briefingLoading) && (
             <div>
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Shield size={12} className="text-blue-400" />
@@ -282,7 +282,9 @@ export function Sidebar({
               </div>
               <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
                 <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-                  {briefingLoading ? t("briefingLoading") : (briefing || t("briefingPlaceholder"))}
+                  {briefingLoading
+                    ? t(simulationMode ? "iciBriefingLoading" : "briefingLoading")
+                    : (briefing || t(simulationMode ? "iciBriefingFallback" : "briefingPlaceholder"))}
                 </p>
               </div>
             </div>
