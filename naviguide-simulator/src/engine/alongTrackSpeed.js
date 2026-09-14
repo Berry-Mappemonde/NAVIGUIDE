@@ -1,23 +1,53 @@
-import { polarBoatSpeed } from "./polarSpeed.js";
-import { twaDeg } from "./routeWindProfile.js";
+/**
+ * Nœuds fond le long du trait : polaire brute × vent de mois.
+ * kind: climatology. Pas de GRIB, pas de POST /wind.
+ */
+
+import { trueWindAngle } from "./playSpeeds.js";
+import { hasPolarRaw, polarBoatSpeed } from "./polarSpeed.js";
 import { boatSpeedFromWind, zoneWindAt } from "../utils/climatologyWind.js";
 
+function roundKt(k) {
+  const n = Number(k);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 10) / 10;
+}
+
 /**
- * Nœuds fond le long d’un cap, polaire brute × vent (fourni ou zone du mois).
+ * @param {{
+ *   lat: number,
+ *   lon: number,
+ *   bearing: number,
+ *   month: number,
+ *   polarRaw?: object | null,
+ * }} args
+ * @returns {{
+ *   speedKnots: number,
+ *   windKnots: number,
+ *   twa: number | null,
+ *   dirFromDeg: number,
+ *   kind: "climatology",
+ *   source: string,
+ *   month: number,
+ * }}
  */
-export function alongTrackSpeed({ lat, lon, bearing, month, polarRaw, wind } = {}) {
-  const w = wind || zoneWindAt(lat, lon, month);
-  const twa = twaDeg(bearing, w.dirFromDeg);
-  const fromPolar = polarBoatSpeed(polarRaw, twa, w.speedKnots);
-  const speedKnots = fromPolar != null ? fromPolar : boatSpeedFromWind(w.speedKnots);
+export function alongTrackSpeed({ lat, lon, bearing, month, polarRaw = null }) {
+  const wind = zoneWindAt(lat, lon, month);
+  const twa = trueWindAngle(bearing, wind.dirFromDeg);
+  let speed = null;
+  if (hasPolarRaw(polarRaw) && twa != null) {
+    speed = polarBoatSpeed(polarRaw, twa, wind.speedKnots);
+  }
+  if (speed == null || !Number.isFinite(speed) || speed < 0) {
+    speed = boatSpeedFromWind(wind.speedKnots);
+  }
   return {
-    speedKnots,
-    windKnots: Math.round(Number(w.speedKnots) * 10) / 10,
-    twa: Math.round(twa * 10) / 10,
-    dirFromDeg: w.dirFromDeg,
-    kind: w.kind || "climatology",
-    source: w.source || null,
-    model: w.model || null,
-    reason: w.reason || null,
+    speedKnots: roundKt(speed) ?? boatSpeedFromWind(wind.speedKnots),
+    windKnots: roundKt(wind.speedKnots) ?? 0,
+    twa: twa == null ? null : Math.round(twa * 10) / 10,
+    dirFromDeg: wind.dirFromDeg,
+    kind: "climatology",
+    source: wind.source,
+    month: Math.max(1, Math.min(12, Number(month) || 1)),
   };
 }

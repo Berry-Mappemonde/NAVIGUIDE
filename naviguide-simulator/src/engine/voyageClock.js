@@ -1,415 +1,462 @@
 /**
- * Table d’horloge civile le long du trait (contrat A = contrat B).
- * Intégrateur synchrone : dt = nm / nœuds. Vent via windFn ou zone du mois.
+ * Table d’horloge climatologique : vertex → date civile.
+ * Le trait searoute ne bouge pas. kind: climatology. Pas de GRIB.
  */
 
 import { alongTrackSpeed } from "./alongTrackSpeed.js";
-import { boatSpeedFromWind, zoneWindAt } from "../utils/climatologyWind.js";
-import { twaDeg } from "./routeWindProfile.js";
+import { nameAirEpisodes } from "./filmCast.js";
+import { bearingDeg } from "./routeWindProfile.js";
 
 export const AIR_CALENDAR_HOURS = 8;
-export const LAND_CALENDAR_HOURS = 4;
-export const MIN_KNOTS = 0.5;
-export const WAVE_NOGO_M = 2.5;
-export const WAVE_NOGO_DT_FACTOR = 3;
+export const SAINT_MAUR_LAND_HOURS = 4;
+export const MIN_BOAT_KNOTS = 0.5;
+export const DEFAULT_T0_ISO = "2026-06-01T08:00:00.000Z";
+export const DEFAULT_START_AT = "la-rochelle";
 
-export function portDaysFor(name) {
-  const n = String(name || "").toLowerCase();
-  if (/saint-?\s*maur/.test(n)) return 0;
-  if (/la rochelle/.test(n)) return 3;
-  if (/halifax/.test(n)) return 1;
-  return 2;
+export const DEFAULT_PORT_DAYS = Object.freeze({
+  laRochelle: 3,
+  halifax: 1,
+  saintMaur: 0,
+  default: 2,
+});
+
+const MONTHS_SHORT = {
+  fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
+  en: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+};
+
+const MONTHS_LONG = {
+  fr: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
+  en: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+};
+
+export function isoFromT0(t0, tHours) {
+  const base = Date.parse(t0);
+  const h = Number(tHours) || 0;
+  if (!Number.isFinite(base)) return null;
+  return new Date(base + h * 3600 * 1000).toISOString();
 }
 
-export function twaFromHeading(bearing, dirFromDeg) {
-  return twaDeg(bearing, dirFromDeg);
+export function monthOfT0(t0, tHours) {
+  const iso = isoFromT0(t0, tHours);
+  if (!iso) return 1;
+  return new Date(iso).getUTCMonth() + 1;
 }
 
-function toRad(d) {
-  return (d * Math.PI) / 180;
+export function portHoldHours(name, portDays = DEFAULT_PORT_DAYS) {
+  const n = String(name || "");
+  if (/saint[- ]?maur/i.test(n)) return (portDays.saintMaur ?? 0) * 24;
+  if (/la\s*rochelle/i.test(n)) return (portDays.laRochelle ?? 3) * 24;
+  if (/halifax/i.test(n)) return (portDays.halifax ?? 1) * 24;
+  return (portDays.default ?? 2) * 24;
 }
 
-export function bearingDeg(lat1, lon1, lat2, lon2) {
-  let dLon = lon2 - lon1;
-  while (dLon > 180) dLon -= 360;
-  while (dLon < -180) dLon += 360;
-  const φ1 = toRad(lat1);
-  const φ2 = toRad(lat2);
-  const Δλ = toRad(dLon);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+function filmOf(p) {
+  return p?.filmCum ?? p?.cumNm ?? 0;
 }
 
-export function parseIso(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) throw new Error(`t0 invalide: ${iso}`);
-  return d;
-}
-
-export function toIso(date) {
-  return new Date(date).toISOString().replace(/\.000Z$/, "Z");
-}
-
-function addHours(date, hours) {
-  return new Date(date.getTime() + hours * 3600 * 1000);
-}
-
-function wrapLon(lon) {
-  let x = lon;
-  while (x > 180) x -= 360;
-  while (x < -180) x += 360;
-  return x;
-}
-
-function markIndexOnPoints(marks, points) {
-  return (marks || []).map((m) => {
-    if (Number.isInteger(m.index) && m.index >= 0 && m.index < points.length) {
-      return { ...m, index: m.index };
+function resolveSeaStart(marks, flat, startAt) {
+  if (startAt === "saint-maur") {
+    return { filmNm: 0, name: (marks || [])[0]?.name || "Saint-Maur" };
+  }
+  const lr = (marks || []).find((m) => /la\s*rochelle/i.test(m.name || ""));
+  if (lr) return { filmNm: Number(lr.filmNm ?? lr.nm) || 0, name: lr.name };
+  const pts = flat?.points || [];
+  for (let i = 0; i < pts.length; i++) {
+    if (!pts[i].nonMaritime && !pts[i].jump) {
+      return { filmNm: filmOf(pts[i]), name: null, index: i };
     }
-    const targetNm = m.nm ?? m.filmNm;
-    let best = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < points.length; i++) {
-      const d = Math.abs((points[i].cumNm ?? 0) - (targetNm ?? 0));
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    return { ...m, index: best };
-  });
+  }
+  return { filmNm: 0, name: null };
 }
 
-export function findStartIndex(points, marks, startAt = "la-rochelle") {
-  if (startAt === "saint-maur") return 0;
-  const tagged = markIndexOnPoints(marks, points);
-  const lr = tagged.find((m) => /la rochelle/i.test(m.name || ""));
-  if (lr) return lr.index;
-  return 0;
+function withHubMarks(marks, flat, stops) {
+  const out = [...(marks || [])];
+  const episodes = nameAirEpisodes(flat?.episodes || [], stops);
+  for (const ep of episodes) {
+    const hubP = flat.points?.[ep.ja];
+    if (!hubP) continue;
+    const filmNm = filmOf(hubP);
+    if (out.some((m) => Math.abs((m.filmNm ?? m.nm) - filmNm) < 0.3)) continue;
+    out.push({
+      name: ep.hubName || "Halifax (Nouvelle-Écosse)",
+      filmNm,
+      nm: hubP.cumNm,
+      lat: hubP.lat,
+      lon: hubP.lon,
+      index: ep.ja,
+      kind: "hub",
+    });
+  }
+  out.sort((a, b) => (a.filmNm ?? a.nm) - (b.filmNm ?? b.nm));
+  return out;
 }
 
-function defaultWindFn(lat, lon, t) {
-  const month = t.getUTCMonth() + 1;
-  return zoneWindAt(lat, lon, month);
+function vehicleAt(points, index, episodes) {
+  const p = points[index];
+  if (!p) return "main";
+  if (p.jump) return "plane";
+  if (p.nonMaritime) return "land";
+  for (const ep of episodes || []) {
+    if (index > ep.ja && index < ep.jb) return "side";
+  }
+  return "main";
 }
 
-function emitVertex({
-  p, tHours, t0, bearing, speedKnots, wind, vehicle, month,
-}) {
-  const when = addHours(t0, tHours);
-  return {
-    filmNm: round4(p.filmCum ?? p.cumNm ?? 0),
-    sailNm: round4(p.cumNm ?? 0),
-    lat: p.lat,
-    lon: wrapLon(p.lon),
-    bearing: round1(bearing),
-    tHours: round4(tHours),
-    iso: toIso(when),
-    speedKnots: speedKnots == null ? null : round1(speedKnots),
-    windKnots: wind?.speedKnots == null ? null : round1(wind.speedKnots),
-    twa: wind?.twa == null ? null : round1(wind.twa),
-    month,
-    vehicle,
-    kind: wind?.kind || "climatology",
-    model: wind?.model || null,
-    leadHours: wind?.leadHours ?? null,
-    reason: wind?.reason || null,
-  };
+function markAtPoint(marks, index, point) {
+  const film = filmOf(point);
+  return (marks || []).find((m) => {
+    if (Number.isInteger(m.index) && m.index === index) return true;
+    return Math.abs((m.filmNm ?? m.nm) - film) < 0.2;
+  }) || null;
 }
 
-function round1(n) {
-  return Math.round(Number(n) * 10) / 10;
-}
-
-function round4(n) {
-  return Math.round(Number(n) * 10000) / 10000;
+function shouldHold(mark, seaStartFilmNm) {
+  if (!mark) return false;
+  const hold = portHoldHours(mark.name);
+  if (!(hold > 0)) return false;
+  const at = Number(mark.filmNm ?? mark.nm) || 0;
+  if (Math.abs(at - seaStartFilmNm) < 0.25) return false;
+  return true;
 }
 
 /**
- * @param {object} opts
- * @param {Array} opts.points flattenRoute.points
- * @param {Array} opts.marks escales à drapeau
- * @param {string} opts.t0 ISO UTC
- * @param {object|null} opts.polarRaw
- * @param {string} [opts.startAt]
- * @param {Function} [opts.windFn] (lat, lon, Date) => wind
+ * @returns {object} table §7 du plan A
  */
 export function buildVoyageClock({
-  points,
+  flat,
   marks = [],
-  t0,
+  t0 = DEFAULT_T0_ISO,
   polarRaw = null,
-  startAt = "la-rochelle",
-  windFn = null,
+  portDays = DEFAULT_PORT_DAYS,
+  startAt = DEFAULT_START_AT,
+  stops = [],
 } = {}) {
-  const pts = points || [];
-  const t0d = parseIso(t0);
-  const windAt = windFn || defaultWindFn;
-  const startIdx = pts.length ? findStartIndex(pts, marks, startAt) : 0;
-  const taggedMarks = markIndexOnPoints(marks, pts);
-  const markByIndex = new Map();
-  for (const m of taggedMarks) markByIndex.set(m.index, m);
-
+  const points = flat?.points || [];
+  const episodes = flat?.episodes || [];
+  const clockMarksIn = withHubMarks(marks, flat, stops);
+  const seaStart = resolveSeaStart(clockMarksIn, flat, startAt);
   const vertices = [];
-  const clockMarks = [];
+  const outMarks = [];
+  const usedMarks = new Set();
+
   let tHours = 0;
   let seaHours = 0;
   let quayHours = 0;
+  let landBudgetUsed = false;
 
-  const push = (v) => {
-    vertices.push(v);
+  const pushVertex = ({
+    filmNm,
+    sailNm,
+    lat,
+    lon,
+    bearing,
+    speedKnots,
+    windKnots,
+    twa,
+    dirFromDeg,
+    month,
+    vehicle,
+  }) => {
+    vertices.push({
+      filmNm,
+      sailNm,
+      lat,
+      lon,
+      bearing,
+      tHours,
+      iso: isoFromT0(t0, tHours),
+      speedKnots,
+      windKnots,
+      twa,
+      dirFromDeg: dirFromDeg ?? null,
+      month,
+      vehicle,
+      seaHours,
+    });
   };
 
-  for (let i = 0; i < startIdx; i++) {
-    const nxt = pts[i + 1] || pts[i];
-    push(emitVertex({
-      p: pts[i],
-      tHours: 0,
-      t0: t0d,
-      bearing: bearingDeg(pts[i].lat, pts[i].lon, nxt.lat, nxt.lon),
+  const applyQuay = (mark, point, bearing) => {
+    if (!mark || usedMarks.has(mark)) return;
+    usedMarks.add(mark);
+    const holdHours = shouldHold(mark, seaStart.filmNm)
+      ? portHoldHours(mark.name, portDays)
+      : 0;
+    const arrivalHours = tHours;
+    const arrivalIso = isoFromT0(t0, arrivalHours);
+    outMarks.push({
+      name: mark.name,
+      filmNm: mark.filmNm ?? mark.nm ?? filmOf(point),
+      tHours: arrivalHours,
+      iso: arrivalIso,
+      holdHours,
+    });
+    if (!(holdHours > 0)) return;
+    quayHours += holdHours;
+    tHours += holdHours;
+    pushVertex({
+      filmNm: filmOf(point),
+      sailNm: point.cumNm,
+      lat: point.lat,
+      lon: point.lon,
+      bearing,
       speedKnots: null,
-      wind: { kind: "climatology", speedKnots: null, twa: null },
-      vehicle: "land",
-      month: t0d.getUTCMonth() + 1,
-    }));
+      windKnots: null,
+      twa: null,
+      dirFromDeg: null,
+      month: monthOfT0(t0, tHours),
+      vehicle: "quay",
+    });
+  };
+
+  if (!points.length) {
+    return {
+      t0,
+      kind: "climatology",
+      vertices: [],
+      marks: [],
+      seaHours: 0,
+      quayHours: 0,
+      arrivalIso: isoFromT0(t0, 0),
+      startAt,
+    };
   }
 
-  if (!pts.length) {
-    return emptyClock(t0d);
-  }
-
-  const start = pts[startIdx];
-  const startNext = pts[startIdx + 1] || start;
-  push(emitVertex({
-    p: start,
-    tHours: 0,
-    t0: t0d,
-    bearing: bearingDeg(start.lat, start.lon, startNext.lat, startNext.lon),
+  const p0 = points[0];
+  pushVertex({
+    filmNm: filmOf(p0),
+    sailNm: p0.cumNm ?? 0,
+    lat: p0.lat,
+    lon: p0.lon,
+    bearing: points[1] ? bearingDeg(p0, points[1]) : 0,
     speedKnots: null,
-    wind: { kind: "climatology", speedKnots: null, twa: null },
-    vehicle: start.nonMaritime ? "land" : "boat",
-    month: t0d.getUTCMonth() + 1,
-  }));
+    windKnots: null,
+    twa: null,
+    dirFromDeg: null,
+    month: monthOfT0(t0, 0),
+    vehicle: vehicleAt(points, 0, episodes),
+  });
+  applyQuay(markAtPoint(clockMarksIn, 0, p0), p0, vertices[0].bearing);
 
-  const landEndIdx = (() => {
-    if (startAt !== "saint-maur") return -1;
-    const lr = taggedMarks.find((m) => /la rochelle/i.test(m.name || ""));
-    return lr ? lr.index : -1;
-  })();
-
-  for (let i = startIdx; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const bearing = bearingDeg(a.lat, a.lon, b.lat, b.lon);
-    const spanNm = Math.max(0, (b.cumNm ?? 0) - (a.cumNm ?? 0));
-    const when = addHours(t0d, tHours);
-    const month = when.getUTCMonth() + 1;
-    let vehicle = "boat";
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const bearing = bearingDeg(a, b);
+    const destVehicle = vehicleAt(points, i + 1, episodes);
+    const month = monthOfT0(t0, tHours);
     let speedKnots = null;
-    let windPack = { kind: "climatology", speedKnots: null, twa: null };
+    let windKnots = null;
+    let twa = null;
+    let dirFromDeg = null;
 
-    if (b.jump) {
+    const landEdge = destVehicle === "land" || (a.nonMaritime && b.nonMaritime);
+    const beforeSea = filmOf(b) < seaStart.filmNm - 0.05;
+    if (b.jump || destVehicle === "plane") {
       tHours += AIR_CALENDAR_HOURS;
-      vehicle = "plane";
-    } else if (a.nonMaritime && b.nonMaritime) {
-      vehicle = "land";
-      if (startAt === "saint-maur" && landEndIdx >= 0 && i + 1 === landEndIdx) {
-        tHours += LAND_CALENDAR_HOURS;
+    } else if (landEdge || beforeSea) {
+      if (startAt === "saint-maur" && !landBudgetUsed) {
+        tHours += SAINT_MAUR_LAND_HOURS;
+        landBudgetUsed = true;
       }
     } else {
-      const midLat = (a.lat + b.lat) / 2;
-      const midLon = (a.lon + b.lon) / 2;
-      const w = windAt(midLat, midLon, when);
+      const spanNm = Math.max(0, (b.cumNm ?? 0) - (a.cumNm ?? 0));
       const along = alongTrackSpeed({
-        lat: midLat,
-        lon: midLon,
+        lat: a.lat,
+        lon: a.lon,
         bearing,
         month,
         polarRaw,
-        wind: w,
       });
-      speedKnots = Math.max(MIN_KNOTS, along.speedKnots || boatSpeedFromWind(w.speedKnots));
-      let dt = spanNm / speedKnots;
-      if (w.hs != null && Number(w.hs) >= WAVE_NOGO_M) {
-        dt *= WAVE_NOGO_DT_FACTOR;
-      }
+      const knots = Math.max(MIN_BOAT_KNOTS, along.speedKnots || MIN_BOAT_KNOTS);
+      const dt = spanNm / knots;
       tHours += dt;
       seaHours += dt;
-      vehicle = "boat";
-      windPack = {
-        speedKnots: w.speedKnots,
-        twa: along.twa,
-        kind: along.kind || w.kind || "climatology",
-        model: w.model,
-        leadHours: w.leadHours,
-        reason: w.reason,
-      };
+      speedKnots = along.speedKnots;
+      windKnots = along.windKnots;
+      twa = along.twa;
+      dirFromDeg = along.dirFromDeg;
     }
 
-    push(emitVertex({
-      p: b,
-      tHours,
-      t0: t0d,
+    pushVertex({
+      filmNm: filmOf(b),
+      sailNm: b.cumNm ?? 0,
+      lat: b.lat,
+      lon: b.lon,
       bearing,
       speedKnots,
-      wind: windPack,
-      vehicle,
-      month: addHours(t0d, tHours).getUTCMonth() + 1,
-    }));
-
-    const arrived = markByIndex.get(i + 1);
-    if (arrived && i + 1 !== startIdx) {
-      const hold = portDaysFor(arrived.name) * 24;
-      const arriveIso = toIso(addHours(t0d, tHours));
-      clockMarks.push({
-        name: arrived.name,
-        filmNm: round4(b.filmCum ?? b.cumNm ?? 0),
-        tHours: round4(tHours),
-        iso: arriveIso,
-        holdHours: hold,
-      });
-      if (hold > 0) {
-        tHours += hold;
-        quayHours += hold;
-        push(emitVertex({
-          p: b,
-          tHours,
-          t0: t0d,
-          bearing,
-          speedKnots: 0,
-          wind: { kind: windPack.kind || "climatology", speedKnots: windPack.speedKnots, twa: null },
-          vehicle: "quay",
-          month: addHours(t0d, tHours).getUTCMonth() + 1,
-        }));
-      }
-    }
+      windKnots,
+      twa,
+      dirFromDeg,
+      month: monthOfT0(t0, tHours),
+      vehicle: destVehicle,
+    });
+    applyQuay(markAtPoint(clockMarksIn, i + 1, b), b, bearing);
   }
 
-  const last = vertices[vertices.length - 1];
-  const kinds = new Set(vertices.map((v) => v.kind).filter(Boolean));
+  const lastSail = [...vertices].reverse().find((v) => v.vehicle !== "quay") || vertices.at(-1);
   return {
-    t0: toIso(t0d),
-    kind: kinds.has("forecast") ? "mixed" : "climatology",
-    vertices,
-    marks: clockMarks,
-    seaHours: round4(seaHours),
-    quayHours: round4(quayHours),
-    arrivalIso: last?.iso || toIso(t0d),
-  };
-}
-
-function emptyClock(t0d) {
-  return {
-    t0: toIso(t0d),
+    t0,
     kind: "climatology",
-    vertices: [],
-    marks: [],
-    seaHours: 0,
-    quayHours: 0,
-    arrivalIso: toIso(t0d),
+    vertices,
+    marks: outMarks,
+    seaHours,
+    quayHours,
+    arrivalIso: lastSail?.iso || isoFromT0(t0, tHours),
+    startAt,
   };
 }
 
-export function lerp(a, b, t) {
+function lerpNum(a, b, t) {
+  if (a == null || b == null) return a ?? b ?? null;
   return a + (b - a) * t;
 }
 
-export function sampleClockAtHours(clock, tHours) {
-  const verts = clock?.vertices || [];
-  if (!verts.length) return null;
-  const x = Number(tHours);
-  if (x <= verts[0].tHours) return { ...verts[0], atQuay: false, status: x < 0 ? "waiting" : "live" };
-  const last = verts[verts.length - 1];
-  if (x >= last.tHours) return { ...last, atQuay: last.vehicle === "quay", status: "arrived" };
-  for (let i = 0; i < verts.length - 1; i++) {
-    const a = verts[i];
-    const b = verts[i + 1];
-    if (x > b.tHours) continue;
-    const span = b.tHours - a.tHours || 1;
-    const t = (x - a.tHours) / span;
-    const sameNm = Math.abs((b.filmNm ?? 0) - (a.filmNm ?? 0)) < 1e-6;
-    if (sameNm) {
-      return { ...a, tHours: x, atQuay: true, status: "live", vehicle: "quay" };
+function sampleFromVertex(clock, v, extra = {}) {
+  return {
+    ...v,
+    iso: v.iso || isoFromT0(clock.t0, v.tHours),
+    kind: "climatology",
+    atQuay: false,
+    holdHours: 0,
+    ...extra,
+  };
+}
+
+/**
+ * filmNm → date. À une escale, atQuay=true renvoie le départ (date qui saute).
+ */
+export function lookupVoyageClock(clock, filmNm, { atQuay = false } = {}) {
+  if (!clock?.vertices?.length) return null;
+  const verts = clock.vertices;
+  const x = Math.max(0, Number(filmNm) || 0);
+  const mark = (clock.marks || []).find((m) => Math.abs((m.filmNm ?? m.nm) - x) <= 0.45);
+
+  if (mark) {
+    const pair = verts.filter((v) => Math.abs(v.filmNm - (mark.filmNm ?? mark.nm)) < 1e-4);
+    const holdHours = mark.holdHours || 0;
+    if (pair.length >= 2 && atQuay && holdHours > 0) {
+      return sampleFromVertex(clock, pair[pair.length - 1], {
+        atQuay: true,
+        holdHours,
+        markName: mark.name,
+      });
     }
-    return {
-      ...a,
-      lat: lerp(a.lat, b.lat, t),
-      lon: lerp(a.lon, b.lon, t),
-      filmNm: lerp(a.filmNm, b.filmNm, t),
-      sailNm: lerp(a.sailNm, b.sailNm, t),
-      tHours: x,
-      iso: toIso(addHours(parseIso(clock.t0), x)),
-      atQuay: false,
-      status: "live",
-      kind: t < 0.5 ? a.kind : b.kind,
-      speedKnots: b.speedKnots ?? a.speedKnots,
-      windKnots: b.windKnots ?? a.windKnots,
-      model: b.model ?? a.model,
-      leadHours: b.leadHours ?? a.leadHours,
-    };
+    if (pair.length) {
+      return sampleFromVertex(clock, pair[0], {
+        atQuay: false,
+        holdHours,
+        markName: mark.name,
+      });
+    }
   }
-  return { ...last, atQuay: false, status: "arrived" };
+
+  let left = verts[0];
+  let rightIdx = verts.length - 1;
+  for (let i = 0; i < verts.length; i++) {
+    if (verts[i].filmNm <= x + 1e-9) left = verts[i];
+    if (verts[i].filmNm >= x - 1e-9) {
+      rightIdx = i;
+      break;
+    }
+  }
+  let right = verts[rightIdx];
+  if (right.filmNm <= left.filmNm + 1e-9) {
+    return sampleFromVertex(clock, left);
+  }
+  const span = right.filmNm - left.filmNm;
+  const t = Math.max(0, Math.min(1, (x - left.filmNm) / span));
+  const tHours = lerpNum(left.tHours, right.tHours, t);
+  const vehicle = t < 1 ? left.vehicle : right.vehicle;
+  const airOrQuay = vehicle === "plane" || vehicle === "quay" || right.vehicle === "plane";
+  return {
+    filmNm: lerpNum(left.filmNm, right.filmNm, t),
+    sailNm: lerpNum(left.sailNm, right.sailNm, t),
+    lat: lerpNum(left.lat, right.lat, t),
+    lon: lerpNum(left.lon, right.lon, t),
+    bearing: left.bearing,
+    tHours,
+    iso: isoFromT0(clock.t0, tHours),
+    speedKnots: airOrQuay ? right.speedKnots : lerpNum(left.speedKnots, right.speedKnots, t),
+    windKnots: airOrQuay ? right.windKnots : lerpNum(left.windKnots, right.windKnots, t),
+    twa: airOrQuay ? right.twa : lerpNum(left.twa, right.twa, t),
+    dirFromDeg: left.dirFromDeg ?? right.dirFromDeg ?? null,
+    month: monthOfT0(clock.t0, tHours),
+    vehicle: airOrQuay ? (right.vehicle === "plane" || left.vehicle === "plane" ? "plane" : vehicle) : vehicle,
+    seaHours: lerpNum(left.seaHours, right.seaHours, t),
+    kind: "climatology",
+    atQuay: false,
+    holdHours: 0,
+  };
 }
 
-export function sampleClockAtTime(clock, when) {
-  const t0 = parseIso(clock.t0);
-  const w = when instanceof Date ? when : parseIso(when);
-  const hours = (w.getTime() - t0.getTime()) / 3600000;
-  if (hours < 0) {
-    const v = clock.vertices[0];
-    return {
-      ...v,
-      atQuay: true,
-      status: "waiting",
-      countdownHours: -hours,
-    };
-  }
-  return sampleClockAtHours(clock, hours);
+export function etaHoursToFilmNm(clock, fromFilmNm, toFilmNm, { atQuay = false } = {}) {
+  const here = lookupVoyageClock(clock, fromFilmNm, { atQuay });
+  const dest = lookupVoyageClock(clock, toFilmNm, { atQuay: false });
+  if (!here || !dest) return null;
+  return Math.max(0, dest.tHours - here.tHours);
 }
 
-export function sampleClockAtFilmNm(clock, filmNm) {
-  const verts = clock?.vertices || [];
-  if (!verts.length) return null;
-  const x = Number(filmNm) || 0;
-  if (x <= verts[0].filmNm) return verts[0];
-  const last = verts[verts.length - 1];
-  if (x >= last.filmNm) return last;
-  for (let i = 0; i < verts.length - 1; i++) {
-    const a = verts[i];
-    const b = verts[i + 1];
-    if (b.filmNm < x) continue;
-    const span = b.filmNm - a.filmNm;
-    if (span <= 1e-9) return a.tHours <= b.tHours ? a : b;
-    const t = (x - a.filmNm) / span;
-    return {
-      ...a,
-      lat: lerp(a.lat, b.lat, t),
-      lon: lerp(a.lon, b.lon, t),
-      filmNm: x,
-      sailNm: lerp(a.sailNm, b.sailNm, t),
-      tHours: lerp(a.tHours, b.tHours, t),
-      iso: toIso(addHours(parseIso(clock.t0), lerp(a.tHours, b.tHours, t))),
-      kind: t < 0.5 ? a.kind : b.kind,
-      speedKnots: b.speedKnots ?? a.speedKnots,
-    };
+export function clockWindSeries(clock, { maxPoints = 24 } = {}) {
+  const verts = (clock?.vertices || []).filter(
+    (v) => (v.vehicle === "main" || v.vehicle === "side") && Number.isFinite(Number(v.windKnots)),
+  );
+  if (!verts.length) return [];
+  const pick = [];
+  if (verts.length <= maxPoints) {
+    pick.push(...verts);
+  } else {
+    for (let i = 0; i < maxPoints; i++) {
+      const idx = Math.round((i * (verts.length - 1)) / (maxPoints - 1));
+      pick.push(verts[idx]);
+    }
   }
-  return last;
+  return pick.map((v) => ({
+    filmNm: v.filmNm,
+    cumNm: v.sailNm,
+    lat: v.lat,
+    lon: v.lon,
+    tws: v.windKnots,
+    boatKnots: v.speedKnots,
+    heading: v.bearing,
+    windFrom: v.dirFromDeg,
+  }));
 }
 
-export function formatCivilUtc(iso, lang = "fr") {
+export function formatCivilDate(iso, lang = "fr") {
   if (!iso) return "—";
-  const d = parseIso(iso);
-  const months = lang === "en"
-    ? ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    : ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const months = MONTHS_SHORT[lang] || MONTHS_SHORT.fr;
   const day = d.getUTCDate();
-  const mon = months[d.getUTCMonth()];
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${day} ${mon} ${hh}:${mm} UTC`;
+  return `${day} ${months[d.getUTCMonth()]} ${hh}:${mm} UTC`;
 }
 
-export function seaDayIndex(tHours) {
-  return Math.max(0, Math.floor(Number(tHours) / 24) + (Number(tHours) > 0 ? 1 : 0));
+export function formatMonthName(month, lang = "fr") {
+  const m = Math.max(1, Math.min(12, Number(month) || 1));
+  const months = MONTHS_LONG[lang] || MONTHS_LONG.fr;
+  return months[m - 1];
+}
+
+export function formatFilmClockLine({ sailNm, seaHours, iso, lang = "fr" }) {
+  const days = Math.max(0, Math.floor((Number(seaHours) || 0) / 24));
+  const nm = Math.round(Number(sailNm) || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR");
+  const dayLabel = lang === "en" ? `d${days}` : `j${days}`;
+  return `${nm} nm · ${dayLabel} · ${formatCivilDate(iso, lang)}`;
+}
+
+export function parseDepartureUtc(dateStr, timeStr) {
+  const d = String(dateStr || "").trim();
+  const tm = String(timeStr || "08:00").trim() || "08:00";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return DEFAULT_T0_ISO;
+  const hhmm = /^\d{2}:\d{2}$/.test(tm) ? tm : "08:00";
+  return `${d}T${hhmm}:00.000Z`;
+}
+
+export function splitDepartureUtc(iso) {
+  const fallback = { date: "2026-06-01", time: "08:00" };
+  const v = String(iso || "");
+  if (v.length < 16) return fallback;
+  return { date: v.slice(0, 10), time: v.slice(11, 16) };
 }

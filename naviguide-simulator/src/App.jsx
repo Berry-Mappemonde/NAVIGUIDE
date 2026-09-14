@@ -13,17 +13,13 @@ import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
 import { ArrivalCard } from "./components/ArrivalCard.jsx";
-import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
-import { defaultVirtualT0 } from "./components/DepartureField.jsx";
 import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
 import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
-import { useWakeLayer } from "./hooks/useWakeLayer.js";
 import { useVoyageClock } from "./hooks/useVoyageClock.js";
-import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
-import { useAltRouteLayer } from "./layers/useAltRouteLayer.js";
+import { useWakeLayer } from "./hooks/useWakeLayer.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
 import { useAirHopLine } from "./hooks/useAirHopLine.js";
@@ -38,11 +34,17 @@ import {
   prevEscaleNm,
   filmLegContext,
 } from "./engine/routePlayhead.js";
-import { detectAirEpisodes, interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
-import { formatCivilUtc, seaDayIndex } from "./engine/voyageClock.js";
+import { interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import { formatSeaClock } from "./engine/seaTime.js";
 import { nextStationAfter } from "./engine/stationDwell.js";
+import {
+  etaHoursToFilmNm,
+  formatCivilDate,
+  formatFilmClockLine,
+  formatMonthName,
+  lookupVoyageClock,
+} from "./engine/voyageClock.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -118,11 +120,6 @@ export default function App() {
   const [simulationMode, setSimulationMode] = useState(false);
   const [cinemaMode, setCinemaMode] = useState(false);
   const [clockScale, setClockScale] = useState("nm");
-  const [t0, setT0] = useState(defaultVirtualT0);
-  const [startAt, setStartAt] = useState("la-rochelle");
-  const [virtualBoat, setVirtualBoat] = useState(false);
-  const [follow, setFollow] = useState(false);
-  const [voyageFlat, setVoyageFlat] = useState(null);
   const [arrivalBanner, setArrivalBanner] = useState(null);
   const [liveKnots, setLiveKnots] = useState(null);
   const cinemaSavedRef = useRef({ sidebar: true, tools: true });
@@ -173,47 +170,20 @@ export default function App() {
 
   const activeStops = useMemo(() => activeSimulationStops(customRoute, points.length ? points : ITINERARY_POINTS), [customRoute, points]);
   const activeSegments = useMemo(() => activeSimulationSegments(customRoute, segments), [customRoute, segments]);
-  const baseFlat = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
-  const flatRoute = voyageFlat || baseFlat;
+  const flatRoute = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
   const escaleMarks = useMemo(
     () => mergeEpisodeMarks(mapEscalesOnRoute(activeStops, flatRoute), flatRoute, activeStops),
     [activeStops, flatRoute],
   );
   const cruiseKnots = useMemo(() => expeditionBoatKnots(polarData), [polarData]);
-  const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
-
-  const vessel = useVirtualVessel({
-    enabled: simulationMode && (virtualBoat || follow),
-    forecast: virtualBoat,
-    follow,
-    t0,
-    startAt,
-    expeditionId: polarData?.expedition_id,
-    routeKind,
-    points: flatRoute.points,
+  const voyage = useVoyageClock({
+    flat: flatRoute,
     marks: escaleMarks,
-  });
-  const voyageClock = useVoyageClock({
-    points: flatRoute.points,
-    marks: escaleMarks,
-    t0,
     polarRaw: polarData?.raw || null,
-    startAt,
-    serverClock: vessel.clock,
+    enabled: simulationMode,
+    stops: activeStops,
   });
-
-  useEffect(() => {
-    if (vessel.voyage?.points?.length && vessel.voyage.routeRev > 0) {
-      const pts = vessel.voyage.points;
-      const last = pts[pts.length - 1];
-      setVoyageFlat({
-        points: pts,
-        totalNm: last?.cumNm || 0,
-        totalFilmNm: last?.filmCum || last?.cumNm || 0,
-        episodes: detectAirEpisodes(pts),
-      });
-    }
-  }, [vessel.voyage?.routeRev, vessel.voyage?.points]);
+  const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   const playback = useRoutePlayback({
     flat: flatRoute,
@@ -221,12 +191,17 @@ export default function App() {
     boatKnots,
     enabled: simulationMode,
   });
+  const clockSample = useMemo(
+    () => lookupVoyageClock(voyage.clock, playback.nm, { atQuay: playback.holding }),
+    [voyage.clock, playback.nm, playback.holding],
+  );
   const windProfile = useRouteWindProfile({
     flat: flatRoute,
     marks: escaleMarks,
     polarData,
     cruiseKnots,
     enabled: simulationMode,
+    clock: voyage.clock,
   });
 
   const cast = useMemo(
@@ -249,10 +224,12 @@ export default function App() {
     polarData,
     sample: cast?.vehicle === "plane" ? cast.main : sample,
     profile: playback.profile,
-    playing: playback.playing && cast?.vehicle !== "plane" && !voyageClock.clock,
+    playing: playback.playing && cast?.vehicle !== "plane",
     onLiveKnots: setLiveKnots,
     windSeries: windProfile.series,
     filmNm: playback.nm,
+    clockSample,
+    clockReady: Boolean(voyage.clock),
   });
   useWakeLayer(mapRef, {
     flat: flatRoute,
@@ -273,64 +250,77 @@ export default function App() {
     });
   }, [simulationMode, cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
 
-  const jambe = useMemo(() => {
+  const clockEtaHours = useMemo(() => {
+    if (!voyage.clock || !legContext || legContext.finished || (legContext.nmRemainingToStop ?? 0) < 0.5) {
+      return 0;
+    }
+    const destNm = legContext.chapter?.to?.filmNm ?? legContext.chapter?.to?.nm;
+    if (destNm == null) return legContext.etaHours;
+    return etaHoursToFilmNm(voyage.clock, playback.nm, destNm, { atQuay: playback.holding })
+      ?? legContext.etaHours;
+  }, [voyage.clock, legContext, playback.nm, playback.holding]);
+
+  const hudLeg = useMemo(() => {
     if (!legContext) return null;
+    const local = Number(clockSample?.speedKnots);
+    const sailing = clockSample
+      && (clockSample.vehicle === "main" || clockSample.vehicle === "side")
+      && Number.isFinite(local);
     return {
-      fromStop: legContext.fromStop,
-      toStop: legContext.toStop,
-      speedKnots: legContext.speedKnots,
-      etaHours: legContext.etaHours,
-      remainingNm: legContext.nmRemainingToStop ?? legContext.remainingNm,
-      phase: legContext.phase,
-      vehicle: legContext.vehicle,
+      ...legContext,
+      etaHours: voyage.clock ? clockEtaHours : legContext.etaHours,
+      speedKnots: sailing ? Math.round(local * 10) / 10 : (voyage.clock ? null : legContext.speedKnots),
+      kind: voyage.clock ? "climatology" : legContext.kind,
     };
-  }, [legContext]);
+  }, [legContext, clockSample, voyage.clock, clockEtaHours]);
 
-  const live = vessel.live;
-  const previewing = Boolean(
-    follow
-    && live
-    && (playback.playing || Math.abs(playback.nm - (Number(live.filmNm) || 0)) > 1.5),
-  );
-  const hudSample = follow && live && !previewing
-    ? live
-    : voyageClock.atFilmNm(playback.nm);
-  const nextClockMark = (voyageClock.clock?.marks || []).find((m) => (m.tHours ?? 0) > (hudSample?.tHours ?? 0) + 0.05);
-  const clockEtaHours = hudSample && nextClockMark
-    ? Math.max(0, nextClockMark.tHours - hudSample.tHours)
-    : null;
-  const hud = hudSample ? {
-    ...hudSample,
-    civil: formatCivilUtc(hudSample.iso, lang),
-    kind: hudSample.kind,
-    model: hudSample.model || vessel.voyage?.forecastModel,
-    leadHours: hudSample.leadHours,
-    speedKnots: hudSample.speedKnots,
-    status: hudSample.status,
-    atQuay: hudSample.atQuay,
-    countdownHours: hudSample.countdownHours,
-  } : null;
+  const jambe = useMemo(() => {
+    if (!hudLeg) return null;
+    return {
+      fromStop: hudLeg.fromStop,
+      toStop: hudLeg.toStop,
+      speedKnots: hudLeg.speedKnots,
+      etaHours: hudLeg.etaHours,
+      remainingNm: hudLeg.nmRemainingToStop ?? hudLeg.remainingNm,
+      phase: hudLeg.phase,
+      vehicle: hudLeg.vehicle,
+    };
+  }, [hudLeg]);
 
-  const goLive = useCallback(() => {
-    if (!live) return;
-    playback.pause();
-    playback.seek(Number(live.filmNm) || 0, { jump: true });
-  }, [live, playback.pause, playback.seek]);
+  const legendMarks = useMemo(() => {
+    const clockMarks = voyage.clock?.marks || [];
+    return escaleMarks.map((m) => {
+      const film = m.filmNm ?? m.nm;
+      const hit = clockMarks.find((c) => (
+        Math.abs((c.filmNm ?? c.nm) - film) < 0.6 && (!m.name || c.name === m.name)
+      )) || clockMarks.find((c) => c.name === m.name);
+      return hit ? { ...m, iso: hit.iso, holdHours: hit.holdHours } : m;
+    });
+  }, [escaleMarks, voyage.clock]);
+
+  const civilDate = formatCivilDate(clockSample?.iso, lang);
+  const monthLabel = clockSample?.month
+    ? formatMonthName(clockSample.month, lang)
+    : "";
+  const climatologyLabel = voyage.clock && monthLabel
+    ? t("voyageKindClimatology", { month: monthLabel })
+    : "";
+  const quayDays = clockSample?.holdHours > 0
+    ? Math.round(clockSample.holdHours / 24)
+    : 0;
+  const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
+  const clockLine = clockSample
+    ? formatFilmClockLine({
+      sailNm: cast?.sailNm ?? clockSample.sailNm,
+      seaHours: clockSample.seaHours,
+      iso: clockSample.iso,
+      lang,
+    })
+    : "";
 
   useEffect(() => {
-    if (!follow || !live || previewing) return;
-    const target = Number(live.filmNm) || 0;
-    if (Math.abs(playback.nm - target) > 2) {
-      playback.seek(target, { jump: true });
-    }
-  }, [follow, live?.filmNm]); // seek only when live nm jumps
-
-  const canRecompute = Boolean(
-    follow
-    && simulationMode
-    && cast?.vehicle === "main"
-    && vessel.forecastStatus !== "pending",
-  );
+    if (clockSample?.speedKnots > 0) setLiveKnots(clockSample.speedKnots);
+  }, [clockSample?.speedKnots]);
 
   const iciPack = useIciDossier({
     enabled: simulationMode,
@@ -404,7 +394,6 @@ export default function App() {
     setSimulationMode(false);
     setArrivalBanner(null);
     lastArrivalKeyRef.current = "";
-    setVoyageFlat(null);
   }, [playback.pause, leaveCinema]);
 
   const handleSimulationToggle = useCallback(() => {
@@ -419,7 +408,6 @@ export default function App() {
     prevPlayheadRef.current = 0;
     lastArrivalKeyRef.current = "";
     setArrivalBanner(null);
-    setVoyageFlat(null);
   }, [customRoute]);
 
   useEffect(() => {
@@ -481,9 +469,6 @@ export default function App() {
       } else if (e.code === "KeyC") {
         e.preventDefault();
         toggleCinema();
-      } else if (e.code === "KeyL") {
-        e.preventDefault();
-        goLive();
       } else if (e.code === "KeyT") {
         e.preventDefault();
         setClockScale((s) => (s === "nm" ? "days" : "nm"));
@@ -502,14 +487,14 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [simulationMode, cinemaMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema, goLive]);
+  }, [simulationMode, cinemaMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema]);
 
   useFilmCamera({
     mapRef,
     mapReady,
-    enabled: simulationMode && Boolean(cast?.follow || (follow && live)),
-    lat: follow && live && !previewing ? live.lat : cast?.follow?.lat,
-    lon: follow && live && !previewing ? live.lon : cast?.follow?.lon,
+    enabled: simulationMode && Boolean(cast?.follow),
+    lat: cast?.follow?.lat,
+    lon: cast?.follow?.lon,
     remainingNm: legContext?.remainingNm ?? playback.sailTotalNm,
     playing: playback.playing,
     jumpToken: playback.jumpToken,
@@ -526,7 +511,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: simulationMode && !follow && Boolean(cast?.main?.visible),
+    visible: simulationMode && Boolean(cast?.main?.visible),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -534,32 +519,6 @@ export default function App() {
     onDragStart: playback.pause,
     mapReady,
   });
-
-  useCatamaranMarker(mapRef, {
-    visible: simulationMode && follow && Boolean(live) && cast?.vehicle !== "plane",
-    lat: live?.lat,
-    lon: live?.lon,
-    bearing: live?.bearing || 0,
-    onDrag: undefined,
-    onDragStart: undefined,
-    mapReady,
-    draggable: false,
-    className: "catamaran-divicon catamaran-divicon--live",
-  });
-
-  useCatamaranMarker(mapRef, {
-    visible: simulationMode && follow && previewing && Boolean(cast?.main?.visible),
-    lat: cast?.main?.lat,
-    lon: cast?.main?.lon,
-    bearing: cast?.main?.bearing || 0,
-    onDrag: undefined,
-    onDragStart: undefined,
-    mapReady,
-    draggable: false,
-    className: "catamaran-divicon catamaran-divicon--ghost",
-  });
-
-  useAltRouteLayer(mapRef, { draft: vessel.draft, mapReady });
 
   useCatamaranMarker(mapRef, {
     visible: simulationMode && Boolean(cast?.side?.visible),
@@ -1000,28 +959,18 @@ export default function App() {
         canNext={simulationMode && playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
         onPrev={handleSimPrev}
         canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
-        legContext={legContext && {
-          ...legContext,
-          etaHours: clockEtaHours ?? legContext.etaHours,
-          speedKnots: hud?.speedKnots ?? legContext.speedKnots,
-        }}
-        escaleMarks={escaleMarks}
-        filmNm={follow && live && !previewing ? (live.filmNm ?? playback.nm) : playback.nm}
-        t0={t0}
-        onT0={setT0}
-        startAt={startAt}
-        onStartAt={setStartAt}
-        virtualBoat={virtualBoat}
-        onVirtualBoat={setVirtualBoat}
-        follow={follow}
-        onFollow={setFollow}
-        hud={hud}
-        previewing={previewing}
-        forecastStatus={virtualBoat ? vessel.forecastStatus : (follow ? vessel.forecastStatus : null)}
-        forecastModel={vessel.voyage?.forecastModel}
-        onRecompute={() => vessel.recompute()}
-        canRecompute={canRecompute}
-        recomputeBusy={vessel.busy}
+        legContext={hudLeg}
+        escaleMarks={legendMarks}
+        filmNm={playback.nm}
+        departureT0={voyage.t0}
+        departureStartAt={voyage.startAt}
+        onDepartureT0={voyage.setT0}
+        onDepartureStartAt={voyage.setStartAt}
+        clockSample={clockSample}
+        civilDate={civilDate}
+        kindLabel={climatologyLabel}
+        atQuay={atQuay}
+        quayDays={quayDays}
         onSeekEscale={(nm) => {
           lastArrivalKeyRef.current = "";
           setArrivalBanner(null);
@@ -1111,21 +1060,23 @@ export default function App() {
             escaleMarks,
           )?.name}
           holding={playback.holding}
+          civilDate={civilDate}
+          quayDays={quayDays}
         />
       )}
 
       {simulationMode && (
         <SimulationFilmBar
-          fromName={legContext?.fromStop}
-          toName={legContext?.toStop}
-          finished={Boolean(legContext?.finished)}
+          fromName={hudLeg?.fromStop}
+          toName={hudLeg?.toStop}
+          finished={Boolean(hudLeg?.finished)}
           nm={cast?.sailNm ?? 0}
           totalNm={playback.sailTotalNm || flatRoute.totalNm}
           playhead={playback.nm}
           playheadTotal={playback.totalNm}
-          remainingNm={legContext?.remainingNm ?? 0}
-          etaHours={clockEtaHours ?? legContext?.etaHours}
-          boatKnots={hud?.speedKnots || expeditionSpeed.knots}
+          remainingNm={hudLeg?.remainingNm ?? 0}
+          etaHours={hudLeg?.etaHours}
+          boatKnots={expeditionSpeed.knots}
           phase={cast?.phase}
           vehicle={cast?.vehicle}
           profile={playback.profile}
@@ -1146,26 +1097,21 @@ export default function App() {
           cinema={cinemaMode}
           onCinema={toggleCinema}
           liveSpeed={expeditionSpeed.live}
-          windKind={hud?.kind || expeditionSpeed.kind}
-          windModel={hud?.model}
-          civilLabel={hud?.civil}
-          seaDay={hud?.tHours != null ? seaDayIndex(hud.tHours) : null}
-          liveBadge={follow ? (previewing ? t("previewBadge") : "LIVE") : null}
+          windKind={expeditionSpeed.kind}
           boatName={polarData?.boat_name}
           clockScale={clockScale}
           onClockScale={setClockScale}
           windSeries={windProfile.series}
           windLoading={windProfile.loading}
           holding={playback.holding}
+          clockLine={clockLine}
+          kindLabel={climatologyLabel}
+          atQuay={atQuay}
+          quayDays={quayDays}
+          twa={clockSample?.twa}
+          disclaimer={t("voyageClockDisclaimer")}
         />
       )}
-
-      <RecomputeDialog
-        draft={vessel.draft}
-        busy={vessel.busy}
-        onAccept={async () => { await vessel.accept(); }}
-        onReject={() => vessel.reject()}
-      />
 
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 

@@ -1,146 +1,197 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { flattenRoute, mapEscalesOnRoute } from "./routePlayhead.js";
 import {
   AIR_CALENDAR_HOURS,
+  SAINT_MAUR_LAND_HOURS,
   buildVoyageClock,
-  findStartIndex,
-  sampleClockAtHours,
-  sampleClockAtTime,
+  formatFilmClockLine,
+  lookupVoyageClock,
+  parseDepartureUtc,
+  splitDepartureUtc,
 } from "./voyageClock.js";
 
-const GOLDEN = JSON.parse(readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../../server/tests/fixtures/clock_golden_route.json"),
-  "utf8",
-));
+const CAYENNE = [-52.3533, 4.9333];
+const HALIFAX = [-63.5652, 44.6488];
+const SPM = [-56.1628, 46.7761];
 
-function clock(t0, extra = {}) {
-  return buildVoyageClock({
-    points: GOLDEN.points,
-    marks: GOLDEN.marks,
-    t0,
-    polarRaw: null,
-    startAt: "la-rochelle",
-    ...extra,
-  });
+function atlanticFlat() {
+  return flattenRoute([
+    { nonMaritime: true, coords: [[1.6358, 46.8075], [-1.167, 46.1541]] },
+    {
+      nonMaritime: false,
+      coords: [
+        [-1.167, 46.1541],
+        [-12, 35],
+        [-20, 25],
+        [-25, 15],
+        [-40, 14.8],
+        [-55, 14.7],
+        [-61.0731, 14.5887],
+      ],
+    },
+  ]);
 }
 
-describe("voyageClock contrat A", () => {
-  it("schéma golden : clés de table et de vertex", () => {
-    const c = clock("2026-06-15T08:00:00Z");
-    for (const key of ["t0", "kind", "vertices", "marks", "seaHours", "quayHours", "arrivalIso"]) {
-      assert.ok(key in c, key);
-    }
-    assert.equal(c.kind, "climatology");
-    const v = c.vertices[c.vertices.length - 1];
-    for (const key of ["filmNm", "sailNm", "lat", "lon", "bearing", "tHours", "iso", "speedKnots", "windKnots", "twa", "month", "vehicle", "kind"]) {
-      assert.ok(key in v, key);
-    }
-    assert.equal(c.vertices[0].tHours, 0);
-    assert.ok(c.vertices.every((x, i, arr) => i === 0 || x.tHours >= arr[i - 1].tHours));
-  });
+function atlanticMarks(flat) {
+  return mapEscalesOnRoute([
+    { name: "Saint-Maur (Berry, Indre)", lat: 46.8075, lon: 1.6358, flag: "f" },
+    { name: "La Rochelle", lat: 46.1541, lon: -1.167, flag: "f" },
+    { name: "Fort-de-France (Martinique)", lat: 14.5887, lon: -61.0731, flag: "f" },
+  ], flat);
+}
 
-  it("t0 15 juin → Fort-de-France après le 15 juin", () => {
-    const c = clock("2026-06-15T08:00:00Z");
-    const fdf = c.marks.find((m) => /Fort-de-France/i.test(m.name));
-    assert.ok(fdf);
-    assert.ok(new Date(fdf.iso) > new Date("2026-06-15T08:00:00Z"));
-  });
+function clockFor(t0, extras = {}) {
+  const flat = atlanticFlat();
+  const marks = atlanticMarks(flat);
+  return {
+    flat,
+    marks,
+    clock: buildVoyageClock({
+      flat,
+      marks,
+      t0,
+      polarRaw: null,
+      startAt: "la-rochelle",
+      ...extras,
+    }),
+  };
+}
 
-  it("mars ≠ juillet à Fort-de-France", () => {
-    const mar = clock("2026-03-15T08:00:00Z");
-    const jul = clock("2026-07-15T08:00:00Z");
-    const a = mar.marks.find((m) => /Fort-de-France/i.test(m.name));
-    const b = jul.marks.find((m) => /Fort-de-France/i.test(m.name));
+function fdfMark(clock) {
+  return clock.marks.find((m) => /Fort-de-France/i.test(m.name));
+}
+
+describe("voyageClock Atlantique", () => {
+  it("mars vs juillet, même nm : arrivalIso Fort-de-France différent", () => {
+    const mar = clockFor("2026-03-15T08:00:00.000Z").clock;
+    const jul = clockFor("2026-07-15T08:00:00.000Z").clock;
+    assert.equal(mar.kind, "climatology");
+    assert.equal(jul.kind, "climatology");
+    const a = fdfMark(mar);
+    const b = fdfMark(jul);
     assert.ok(a && b);
-    const da = new Date(a.iso).getTime();
-    const db = new Date(b.iso).getTime();
-    assert.ok(Math.abs(da - db) > 24 * 3600 * 1000, "écart < 1 jour");
+    assert.notEqual(a.iso, b.iso);
+    const gapH = Math.abs(Date.parse(a.iso) - Date.parse(b.iso)) / 3600000;
+    assert.ok(gapH > 48, `écart Fort-de-France ${gapH} h`);
   });
 
-  it("quai 2 j : trou de 48 h à filmNm constant", () => {
-    const c = clock("2026-06-15T08:00:00Z");
-    const fdf = c.marks.find((m) => /Fort-de-France/i.test(m.name));
-    assert.equal(fdf.holdHours, 48);
-    const same = c.vertices.filter((v) => Math.abs(v.filmNm - fdf.filmNm) < 1e-6);
-    assert.ok(same.length >= 2);
-    const span = same[same.length - 1].tHours - same[0].tHours;
-    assert.ok(span >= 47.9);
-  });
-
-  it("hop aérien : +8 h, nœuds nuls", () => {
-    const points = [
-      { lat: 4.9, lon: -52.3, cumNm: 0, filmCum: 0, jump: false, nonMaritime: false },
-      { lat: 44.6, lon: -63.6, cumNm: 0, filmCum: 80, jump: true, nonMaritime: false },
-    ];
-    const c = buildVoyageClock({
-      points,
-      marks: [],
-      t0: "2026-06-15T08:00:00Z",
-      startAt: "saint-maur",
-    });
-    assert.equal(c.vertices.at(-1).tHours, AIR_CALENDAR_HOURS);
-    assert.equal(c.vertices.at(-1).speedKnots, null);
-    assert.equal(c.vertices.at(-1).vehicle, "plane");
+  it("t0 = 15 juin 08:00, départ La Rochelle → Fort-de-France > 15 juin", () => {
+    const { clock } = clockFor("2026-06-15T08:00:00.000Z");
+    const fdf = fdfMark(clock);
+    assert.ok(fdf);
+    assert.ok(Date.parse(fdf.iso) > Date.parse("2026-06-15T08:00:00.000Z"));
   });
 
   it("sans polar : source climatology, pas de crash", () => {
-    const c = clock("2026-06-15T08:00:00Z");
-    assert.ok(c.vertices.some((v) => v.kind === "climatology" && v.speedKnots > 0));
+    const { clock } = clockFor("2026-06-01T08:00:00.000Z");
+    assert.equal(clock.kind, "climatology");
+    assert.ok(clock.vertices.length > 3);
+    assert.ok(clock.vertices.every((v) => Number.isFinite(v.tHours)));
+    const sea = clock.vertices.find((v) => v.vehicle === "main" && v.speedKnots > 0);
+    assert.ok(sea);
   });
+});
 
-  it("antiméridien : tHours monotone", () => {
-    const points = [
-      { lat: -20, lon: 170, cumNm: 0, filmCum: 0, jump: false },
-      { lat: -20, lon: 176, cumNm: 300, filmCum: 300, jump: false },
-      { lat: -20, lon: -178, cumNm: 600, filmCum: 600, jump: false },
-      { lat: -20, lon: -170, cumNm: 900, filmCum: 900, jump: false },
+describe("voyageClock quais et hops", () => {
+  it("quai 2 j : trou de 48 h dans iso à filmNm constant", () => {
+    const flat = flattenRoute([
+      { coords: [[-1.2, 46.1], [-20, 20], [-40, 15]] },
+    ]);
+    const marks = [
+      { name: "La Rochelle", lat: 46.1, lon: -1.2, nm: 0, filmNm: 0, index: 0 },
+      { name: "Escale Test", lat: 20, lon: -20, nm: flat.points[1].cumNm, filmNm: flat.points[1].filmCum, index: 1 },
+      { name: "Fort-de-France (Martinique)", lat: 15, lon: -40, nm: flat.totalNm, filmNm: flat.totalFilmNm, index: flat.points.length - 1 },
     ];
-    const c = buildVoyageClock({
-      points,
-      marks: [],
-      t0: "2026-06-15T08:00:00Z",
-      startAt: "saint-maur",
-    });
-    for (let i = 1; i < c.vertices.length; i++) {
-      assert.ok(c.vertices[i].tHours >= c.vertices[i - 1].tHours);
-    }
-  });
-
-  it("startAt saint-maur : premier dt sans polaire (4 h terre)", () => {
-    const points = [
-      { lat: 46.8, lon: 1.63, cumNm: 0, filmCum: 0, jump: false, nonMaritime: true },
-      { lat: 46.15, lon: -1.16, cumNm: 200, filmCum: 200, jump: false, nonMaritime: true },
-      { lat: 45.0, lon: -5.0, cumNm: 400, filmCum: 400, jump: false, nonMaritime: false },
-    ];
-    const marks = [{ name: "La Rochelle", nm: 200, filmNm: 200, lat: 46.15, lon: -1.16, index: 1 }];
-    assert.equal(findStartIndex(points, marks, "saint-maur"), 0);
-    const c = buildVoyageClock({
-      points,
+    const clock = buildVoyageClock({
+      flat,
       marks,
-      t0: "2026-06-15T08:00:00Z",
-      startAt: "saint-maur",
+      t0: "2026-06-01T08:00:00.000Z",
+      polarRaw: null,
+      startAt: "la-rochelle",
+      portDays: { laRochelle: 0, saintMaur: 0, halifax: 0, default: 2 },
     });
-    const atLr = c.vertices.find((v) => Math.abs(v.sailNm - 200) < 1e-6 && v.vehicle !== "quay");
-    assert.ok(atLr);
-    assert.equal(atLr.tHours, 4);
+    const mid = clock.marks.find((m) => m.name === "Escale Test");
+    assert.ok(mid);
+    assert.equal(mid.holdHours, 48);
+    const pair = clock.vertices.filter((v) => Math.abs(v.filmNm - mid.filmNm) < 1e-6);
+    assert.ok(pair.length >= 2);
+    const gap = pair[pair.length - 1].tHours - pair[0].tHours;
+    assert.ok(Math.abs(gap - 48) < 1e-6);
+    const arrival = lookupVoyageClock(clock, mid.filmNm, { atQuay: false });
+    const leave = lookupVoyageClock(clock, mid.filmNm, { atQuay: true });
+    assert.ok(Math.abs(leave.tHours - arrival.tHours - 48) < 1e-6);
+    assert.equal(arrival.filmNm, leave.filmNm);
   });
 
-  it("sampleClockAtTime avant t0 → waiting", () => {
-    const c = clock("2026-06-15T08:00:00Z");
-    const s = sampleClockAtTime(c, "2026-06-14T08:00:00Z");
-    assert.equal(s.status, "waiting");
-    assert.ok(s.countdownHours > 20);
+  it("hop aérien : +8 h, speedKnots null", () => {
+    const flat = flattenRoute([
+      { coords: [[-52.36, 4.92], CAYENNE] },
+      { coords: [HALIFAX, SPM] },
+    ]);
+    const clock = buildVoyageClock({
+      flat,
+      marks: [],
+      t0: "2026-06-01T08:00:00.000Z",
+      polarRaw: null,
+      startAt: "la-rochelle",
+    });
+    const plane = clock.vertices.find((v) => v.vehicle === "plane");
+    assert.ok(plane);
+    assert.equal(plane.speedKnots, null);
+    const before = clock.vertices[clock.vertices.indexOf(plane) - 1];
+    assert.ok(Math.abs(plane.tHours - before.tHours - AIR_CALENDAR_HOURS) < 1e-6);
   });
 
-  it("sampleClockAtHours interpolé", () => {
-    const c = clock("2026-06-15T08:00:00Z");
-    const s = sampleClockAtHours(c, 12);
-    assert.ok(s);
-    assert.equal(s.status, "live");
-    assert.ok(s.lat);
-    assert.equal(s.iso, "2026-06-15T20:00:00Z");
+  it("startAt saint-maur : premier dt sans polaire", () => {
+    const { clock } = clockFor("2026-06-01T08:00:00.000Z", { startAt: "saint-maur" });
+    const lr = clock.marks.find((m) => /La Rochelle/i.test(m.name));
+    assert.ok(lr);
+    assert.ok(Math.abs(lr.tHours - SAINT_MAUR_LAND_HOURS) < 1e-6);
+    const land = clock.vertices.find((v) => v.vehicle === "land" && v.filmNm > 0);
+    assert.ok(land);
+    assert.equal(land.speedKnots, null);
+  });
+});
+
+describe("voyageClock antiméridien", () => {
+  it("tHours monotone à travers l’antiméridien", () => {
+    const flat = flattenRoute([
+      { coords: [[179.2, -15], [179.8, -15], [-179.8, -15], [-179.2, -15]] },
+    ]);
+    const clock = buildVoyageClock({
+      flat,
+      marks: [],
+      t0: "2026-06-01T08:00:00.000Z",
+      polarRaw: null,
+      startAt: "la-rochelle",
+    });
+    let prev = -1;
+    for (const v of clock.vertices) {
+      assert.ok(v.tHours >= prev - 1e-9, `tHours ${v.tHours} < ${prev}`);
+      prev = v.tHours;
+    }
+    assert.ok(clock.vertices.at(-1).tHours > 0);
+  });
+});
+
+describe("parseDepartureUtc", () => {
+  it("compose un ISO UTC depuis date + heure", () => {
+    assert.equal(parseDepartureUtc("2026-03-15", "08:00"), "2026-03-15T08:00:00.000Z");
+    assert.deepEqual(splitDepartureUtc("2026-06-01T08:00:00.000Z"), { date: "2026-06-01", time: "08:00" });
+  });
+});
+
+describe("formatFilmClockLine", () => {
+  it("compose nm · j · date UTC", () => {
+    const line = formatFilmClockLine({
+      sailNm: 4210,
+      seaHours: 18 * 24 + 2,
+      iso: "2026-07-03T14:00:00.000Z",
+      lang: "fr",
+    });
+    assert.match(line, /4[\s ]?210 nm/);
+    assert.match(line, /j18/);
+    assert.match(line, /3 juil\. 14:00 UTC/);
   });
 });
