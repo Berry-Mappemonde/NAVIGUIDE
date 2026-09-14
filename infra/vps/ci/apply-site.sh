@@ -14,6 +14,15 @@ FORCE="${FORCE_DEPLOY:-0}"
 SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-1}"
 SHA="${SHA:-unknown}"
 PROBE="$APP/infra/vps/ci/prod_jobs_busy.py"
+export APP
+
+# Lot Review Proposer : GET /api/review/suggest/status exige X-Admin-Key.
+if [ -z "${ADMIN_KEY:-}" ] && [ -f "$APP/backend/.env" ]; then
+  ADMIN_KEY="$(awk -F= '/^ADMIN_KEY=/{print substr($0,11); exit}' "$APP/backend/.env")"
+  ADMIN_KEY="${ADMIN_KEY%\"}"; ADMIN_KEY="${ADMIN_KEY#\"}"
+  ADMIN_KEY="${ADMIN_KEY%\'}"; ADMIN_KEY="${ADMIN_KEY#\'}"
+  export ADMIN_KEY
+fi
 
 mkdir -p "$STATE/pending" "$STATE/deployed"
 

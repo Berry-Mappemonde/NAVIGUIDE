@@ -88,9 +88,12 @@ restart tuerait le run en mémoire.
 | `www.naviguide.fr` | `naviguide/`, `infra/vps/naviguide/` sauf les fichiers `*simulator*` |
 | `simulator.naviguide.fr` | `naviguide-simulator/`, fichiers `*simulator*` sous `infra/vps/naviguide/` |
 
-Si un enrichissement / Complet tourne, le code est quand même copié, le
-redémarrage de Blue Intelligence est **reporté**. Toutes les 20 minutes,
-le job « Rattrapage » réessaie (`~/.local/state/blue-intelligence-deploy/pending/`).
+Si un enrichissement / Complet **ou un lot Review « Proposer »** tourne,
+le code est quand même copié, le redémarrage de Blue Intelligence est
+**reporté**. Toutes les 20 minutes, le job « Rattrapage » réessaie
+(`~/.local/state/blue-intelligence-deploy/pending/`). La sonde lit
+`ADMIN_KEY` dans `backend/.env` sur le VPS (le statut Review n'est pas
+public).
 
 Secrets du dépôt (Settings → Secrets and variables → Actions) :
 
