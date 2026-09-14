@@ -1,0 +1,9 @@
+# Banc d'essai A/B du routage mer (Problème A).
+# N'entre PAS dans le service de production /route.
+# Installer : pip install -r requirements-routing-ab.txt
+pytest>=8.0.0
+geographiclib==2.0
+searoute==1.4.3
+scgraph>=2.8
+global-land-mask>=0.5.0
+shapely>=2.0.0
