@@ -25,7 +25,7 @@ _LAND_BOXES_FALLBACK = [
     (9, 20, -88, -76),
     (-45, 8, -72, -40),
     (42, 65, 5, 35),
-    (36.5, 43.8, -9.3, 3.2),   # Ibérie — test land-crossing
+    (36.5, 43.8, -9.3, 3.2),   # Iberia — land-crossing test
     (31.0, 36.2, -10.0, -1.0),  # Maroc atlantique
     (-28, 32, 0, 42),
     (15, 28, 38, 58),
@@ -319,7 +319,7 @@ def run_leg_isochrone(
         },
         "hours": round(hours, 2),
         "distance_nm": round(dist, 2),
-        "isochrones": all_isos if False else [],  # off par défaut
+        "isochrones": all_isos if False else [],  # off by default
         "steps": steps_taken,
         "route": [p.to_dict() for p in route_pts],
     }
