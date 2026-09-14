@@ -14,6 +14,7 @@ import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
 import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
+import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
 import { useAirHopLine } from "./hooks/useAirHopLine.js";
 import { useRouteLayer } from "./layers/useRouteLayer.js";
@@ -192,6 +193,28 @@ export default function App() {
       cast,
     });
   }, [simulationMode, cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
+
+  const jambe = useMemo(() => {
+    if (!legContext) return null;
+    return {
+      fromStop: legContext.fromStop,
+      toStop: legContext.toStop,
+      speedKnots: legContext.speedKnots,
+      etaHours: legContext.etaHours,
+      remainingNm: legContext.nmRemainingToStop ?? legContext.remainingNm,
+      phase: legContext.phase,
+      vehicle: legContext.vehicle,
+    };
+  }, [legContext]);
+
+  const iciPack = useIciDossier({
+    enabled: simulationMode,
+    cast,
+    snappedPosition: legContext?.snappedPosition,
+    polarMeta: polarData,
+    jambe,
+    lang,
+  });
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -769,8 +792,10 @@ export default function App() {
         isCockpit={false}
         polarData={polarData}
         maritimeLayers={maritimeLayers}
-        briefingLoading={briefingLoading}
+        briefingLoading={simulationMode ? iciPack.loading : briefingLoading}
         officialFallback={officialFallback}
+        dossier={simulationMode ? iciPack.dossier : null}
+        iciBriefing={simulationMode ? iciPack.briefing : null}
         simulationMode={simulationMode}
         onSimulationToggle={handleSimulationToggle}
         onNext={handleSimNext}
