@@ -1190,6 +1190,9 @@ Rappel du contrat global :
   **est** le film (lecteur), pas les 4 chats de `www.naviguide.fr`.
 - `docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` — pas une couche monde à
   l’étape 1.
+- `docs/PLAN_IMPLEMENTATION_FILIERES_CARTO.md` — ce que le simulateur
+  consomme (exports, Gold, juge, EMODnet, 0 ou 1 objet satellite) vs
+  ce qui reste côté Blue Intelligence (Seamap, overlay PMTiles, isobathe).
 - `docs/ARCHITECTURE.md` — `MapView.js` + un hook par couche.
 - Code vivant :
   - film : `naviguide/naviguide-app/src/App.jsx` (searoute L.523–676,

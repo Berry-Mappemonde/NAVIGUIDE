@@ -64,6 +64,10 @@ Le dépôt applique aussi les disciplines d'ingénierie de seamap :
 - **Ordre des couches verrouillé** — `frontend/src/components/map/layerOrder.js`
   est figé par test jest (`npm test`).
 
+Le plan qui remet ces briques dans **quatre filières** (contrôle, carte,
+hydro officielle, satellite) et dit ce qui profite à Blue Intelligence
+vs au simulateur NAVIGUIDE : `docs/PLAN_IMPLEMENTATION_FILIERES_CARTO.md`.
+
 ## Architecture
 
 ```
@@ -83,7 +87,7 @@ blue-intelligence/
 │   └── models/         Modèles ML locaux entraînés (gatekeeper, classifieur SERP, NER)
 ├── frontend/           React (CRA) + Leaflet + Tailwind
 │   └── src/components/ MapView, BatchHub (audit), SettingsPanel, panneaux par mode
-├── docs/               PRD, CDC Projets, CDC Formalités (PoE), CDC Review, contrats Review par mode, règles/paramètres, architecture, audit LLM NVIDIA (`nvidia-llm-audit.md`)
+├── docs/               PRD, CDC Projets, CDC Formalités (PoE), CDC Review, contrats Review par mode, règles/paramètres, architecture, audit LLM NVIDIA (`nvidia-llm-audit.md`), plan filières carto (`PLAN_IMPLEMENTATION_FILIERES_CARTO.md`)
 ├── infra/              SearXNG auto-hébergé (`searxng/`) + déploiement production VPS OVH (`vps/`)
 ├── scripts/            Outillage d'exploitation (restauration de sauvegardes)
 ├── naviguide/          NAVIGUIDE — planificateur de route de l'expédition (application autonome, voir `naviguide/README.md`)
