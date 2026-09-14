@@ -73,6 +73,34 @@ describe("atlanticSpanNm", () => {
   });
 });
 
+describe("saut aérien Guyane → SPM", () => {
+  it("ne compte pas l’avion Cayenne→Halifax dans les nm", () => {
+    const flat = flattenRoute([
+      { coords: [[-52.3533, 4.9333], [-52.35, 4.94]] },
+      { coords: [[-63.5652, 44.6488], [-56.1628, 46.7761]] },
+    ]);
+    assert.ok(flat.totalNm < 700);
+    assert.ok(flat.totalNm > 200);
+    assert.ok(flat.points.some((p) => p.jump));
+    const cayenneEnd = flat.points.find((p) => p.jump);
+    const here = interpolateAtNm(flat, cayenneEnd.cumNm);
+    assert.ok(Math.abs(here.lat - 44.65) < 0.4);
+    assert.equal(here.jump, false);
+  });
+});
+
+describe("antiméridien", () => {
+  it("n’envoie pas le bateau au méridien 0°", () => {
+    const flat = flattenRoute([
+      { coords: [[179.2, -15], [179.8, -15], [-179.8, -15], [-179.2, -15]] },
+    ]);
+    const mid = interpolateAtNm(flat, flat.totalNm / 2);
+    const lon = ((mid.lon + 540) % 360) - 180;
+    assert.ok(Math.abs(lon) > 170, `lon interpolé ${mid.lon}`);
+    assert.ok(flat.totalNm < 120);
+  });
+});
+
 describe("filmLegContext", () => {
   it("garde les noms complets et calcule l’ETA avec la vitesse du bateau", () => {
     const marks = [
