@@ -350,6 +350,7 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
         t = (x - a["tHours"]) / span
         if abs((b.get("filmNm") or 0) - (a.get("filmNm") or 0)) < 1e-6:
             return {**a, "tHours": x, "atQuay": True, "status": "live", "vehicle": "quay"}
+        t0 = parse_iso(clock["t0"])
         return {
             **a,
             "lat": _lerp(a["lat"], b["lat"], t),
@@ -357,6 +358,7 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
             "filmNm": _lerp(a["filmNm"], b["filmNm"], t),
             "sailNm": _lerp(a["sailNm"], b["sailNm"], t),
             "tHours": x,
+            "iso": to_iso(t0 + timedelta(hours=x)),
             "atQuay": False,
             "status": "live",
             "kind": a["kind"] if t < 0.5 else b["kind"],

@@ -120,6 +120,7 @@ def test_sample_waiting_and_live():
     assert waiting["status"] == "waiting"
     live = sample_clock_at_hours(c, 12)
     assert live["status"] == "live"
+    assert live["iso"] == "2026-06-15T20:00:00Z"
 
 
 def test_js_py_same_schema_keys():
