@@ -1,18 +1,17 @@
 ---
-description: Base de données de production — le VPS est la source de vérité
+description: Production database — the VPS is the source of truth
 alwaysApply: true
 ---
 
 base-de-donnees-vps :
 
-- Depuis la bascule DNS du 2026-09-10, la base MongoDB **vivante** est celle
-  auto-hébergée sur le VPS OVH (135.125.226.16, `127.0.0.1:27017`, service
-  systemd `blue-intelligence`). MongoDB Atlas est **figé** à l'état
-  d'avant-bascule et ne reçoit plus aucune écriture.
-- **NE JAMAIS exécuter `infra/vps/sync-from-atlas.sh`** : il écraserait les
-  données récentes du VPS avec l'état périmé d'Atlas. Le script contient un
-  verrou (`FORCE_RESYNC`) — ne pas le contourner sans décision explicite de
-  l'utilisateur, pleinement informé de la perte de données.
-- Restauration de données : utiliser exclusivement les sauvegardes locales
-  quotidiennes du VPS (`~/backups/mongodb/`, rotation 14 jours) — procédure
-  dans `infra/vps/README.md`.
+- Since the DNS cutover on 2026-09-10, the **live** MongoDB is the one
+  self-hosted on the OVH VPS (135.125.226.16, `127.0.0.1:27017`, systemd
+  service `blue-intelligence`). MongoDB Atlas is **frozen** at the
+  pre-cutover state and no longer receives writes.
+- **NEVER run `infra/vps/sync-from-atlas.sh`**: it would overwrite recent
+  VPS data with the stale Atlas snapshot. The script has a lock
+  (`FORCE_RESYNC`) — do not bypass it without an explicit user decision,
+  with full awareness of the data loss.
+- Data restore: use only the VPS daily local backups (`~/backups/mongodb/`,
+  14-day rotation) — procedure in `infra/vps/README.md`.
