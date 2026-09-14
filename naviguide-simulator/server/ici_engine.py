@@ -15,13 +15,15 @@ from typing import Any
 import httpx
 
 ICI_RADIUS_NM = 30
-MAX_POE = 8
+MAX_POE = 4
 MAX_AMP = 5
 MAX_PROJECTS = 5
 MAX_NEARBY = 3
+EEZ_ACCEPT_NM = 240
 R_NM = 3440.065
 
-MRGID_LATLON_URL = "https://www.marineregions.org/rest/getGazetteerRecordsByLatLng.json/"
+# Path-style (query LatLng est en 404 depuis 2026).
+MRGID_LATLON_URL = "https://www.marineregions.org/rest/getGazetteerRecordsByLatLong.json"
 USER_AGENT = "NAVIGUIDE-simulator/0.2 (Berry-Mappemonde expedition)"
 WPI_URL = "https://msi.nga.mil/api/publications/world-port-index"
 
@@ -213,11 +215,30 @@ def nearest_places(features: list, lat: float, lon: float, radius_nm: float, lim
     return found[:limit]
 
 
+def _place_type(rec: dict) -> str:
+    return str(rec.get("placeType") or rec.get("place_type") or "").upper()
+
+
+def eez_records(records: list) -> list[dict]:
+    return [rec for rec in records or [] if _place_type(rec) == "EEZ"]
+
+
 def pick_eez_record(records: list) -> dict | None:
-    for rec in records or []:
-        if str(rec.get("placeType") or rec.get("place_type") or "").upper() == "EEZ":
-            return rec
-    return (records or [None])[0] if records else None
+    found = eez_records(records)
+    return found[0] if found else None
+
+
+def eez_plausible(rec: dict | None, lat: float, lon: float) -> bool:
+    """Le gazetteer colle parfois une ZEE lointaine (bbox immense). On garde
+    seulement si le point représentatif est à portée d’une ZEE (~200 nm)."""
+    if not rec or _place_type(rec) != "EEZ":
+        return False
+    try:
+        elat = float(rec.get("latitude"))
+        elon = float(rec.get("longitude"))
+    except (TypeError, ValueError):
+        return False
+    return haversine_nm(lat, lon, elat, elon) <= EEZ_ACCEPT_NM
 
 
 def zee_from_record(rec: dict | None) -> dict:
@@ -238,18 +259,53 @@ def zee_from_record(rec: dict | None) -> dict:
     }
 
 
+async def _gazetteer_list(client: httpx.AsyncClient, lat: float, lon: float) -> list:
+    r = await client.get(
+        f"{MRGID_LATLON_URL}/{lat:.5f}/{lon:.5f}/",
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        timeout=8.0,
+    )
+    r.raise_for_status()
+    payload = r.json()
+    return payload if isinstance(payload, list) else []
+
+
+def _first_plausible(records: list, lat: float, lon: float) -> dict | None:
+    for rec in eez_records(records):
+        if eez_plausible(rec, lat, lon):
+            return rec
+    return None
+
+
 async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple[dict | None, str]:
+    """ZEE autour du bateau. Un point à quai n’est parfois pas dans le
+    polygone : on sonde alors 8 points à ~12 nm. Une ZEE trop loin
+    (gazetteer bavard) est refusée → haute mer."""
     try:
-        r = await client.get(
-            MRGID_LATLON_URL,
-            params={"lat": f"{lat:.5f}", "lng": f"{lon:.5f}", "offset": 0, "count": 10, "placeType": "EEZ"},
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            timeout=8.0,
+        here = await _gazetteer_list(client, lat, lon)
+        rec = _first_plausible(here, lat, lon)
+        if rec:
+            return zee_from_record(rec), "marineregions"
+        if eez_records(here):
+            return zee_from_record(None), "marineregions"
+        step = 0.2
+        probes = [
+            (lat, lon - step), (lat, lon + step),
+            (lat - step, lon), (lat + step, lon),
+            (lat - step, lon - step), (lat - step, lon + step),
+            (lat + step, lon - step), (lat + step, lon + step),
+        ]
+        found = await asyncio.gather(
+            *[_gazetteer_list(client, plat, plon) for plat, plon in probes],
+            return_exceptions=True,
         )
-        r.raise_for_status()
-        payload = r.json()
-        rec = pick_eez_record(payload if isinstance(payload, list) else [])
-        return zee_from_record(rec), "marineregions"
+        for item in found:
+            if isinstance(item, Exception) or not item:
+                continue
+            rec = _first_plausible(item, lat, lon)
+            if rec:
+                return zee_from_record(rec), "marineregions"
+        return zee_from_record(None), "marineregions"
     except Exception:
         return None, "error"
 

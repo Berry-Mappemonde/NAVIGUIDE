@@ -4,6 +4,7 @@ import httpx
 
 from ici_engine import (
     FRENCH_EEZ_MRGID,
+    eez_plausible,
     empty_dossier,
     feature_latlon,
     fill_dossier,
@@ -15,6 +16,14 @@ from ici_engine import (
     reset_caches,
     zee_from_record,
 )
+
+FR_EEZ = {
+    "placeType": "EEZ",
+    "preferredGazetteerName": "French Exclusive Economic Zone",
+    "MRGID": 5677,
+    "latitude": 46.07,
+    "longitude": -1.96,
+}
 
 
 LA_ROCHELLE = (46.15, -1.16)
@@ -61,12 +70,23 @@ def test_zee_from_record_and_pick():
         "placeType": "EEZ",
         "preferredGazetteerName": "French Exclusive Economic Zone",
         "MRGID": 5677,
+        "latitude": 46.07,
+        "longitude": -1.96,
     }
     zee = zee_from_record(rec)
     assert zee["mrgid"] == 5677
     assert zee["territory"] == "france_metropolitaine"
     assert zee["gold"] is False
     assert 5677 in FRENCH_EEZ_MRGID
+    assert eez_plausible(rec, 46.15, -1.16)
+    far = {
+        "placeType": "EEZ",
+        "preferredGazetteerName": "Brazilian Exclusive Economic Zone",
+        "MRGID": 8464,
+        "latitude": -11.1,
+        "longitude": -39.4,
+    }
+    assert eez_plausible(far, 0.0, -30.0) is False
     picked = pick_eez_record([
         {"placeType": "Nation", "MRGID": 1},
         rec,
@@ -103,11 +123,7 @@ def test_empty_dossier_contract():
 def _handler(request: httpx.Request) -> httpx.Response:
     url = str(request.url)
     if "marineregions.org" in url:
-        return httpx.Response(200, json=[{
-            "placeType": "EEZ",
-            "preferredGazetteerName": "French Exclusive Economic Zone",
-            "MRGID": 5677,
-        }])
+        return httpx.Response(200, json=[FR_EEZ])
     if "poe/ports" in url:
         return httpx.Response(200, json={
             "type": "FeatureCollection",
@@ -171,11 +187,7 @@ def test_fill_dossier_bi_down_keeps_zee():
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if "marineregions.org" in url:
-            return httpx.Response(200, json=[{
-                "placeType": "EEZ",
-                "preferredGazetteerName": "French Exclusive Economic Zone",
-                "MRGID": 5677,
-            }])
+            return httpx.Response(200, json=[FR_EEZ])
         if "world-port-index" in url:
             return httpx.Response(200, json={"ports": []})
         return httpx.Response(503, json={"detail": "down"})
@@ -198,11 +210,7 @@ def test_fill_dossier_partial_bi_keeps_poe():
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if "marineregions.org" in url:
-            return httpx.Response(200, json=[{
-                "placeType": "EEZ",
-                "preferredGazetteerName": "French Exclusive Economic Zone",
-                "MRGID": 5677,
-            }])
+            return httpx.Response(200, json=[FR_EEZ])
         if "poe/ports" in url:
             return httpx.Response(200, json={
                 "type": "FeatureCollection",
@@ -221,6 +229,55 @@ def test_fill_dossier_partial_bi_keeps_poe():
     assert d["zee"]["gold"] is True
     assert d["amp"] == []
     assert d["sources"]["bi"] == "partial"
+
+
+def test_lookup_zee_inland_port_uses_offshore_probe():
+    reset_caches()
+    hits = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        hits["n"] += 1
+        if "/46.15000/-1.16000/" in url:
+            return httpx.Response(200, json=[{
+                "placeType": "Nation",
+                "preferredGazetteerName": "France",
+                "MRGID": 17,
+            }])
+        return httpx.Response(200, json=[FR_EEZ])
+
+    async def run():
+        from ici_engine import lookup_zee
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await lookup_zee(client, 46.15, -1.16)
+
+    zee, src = asyncio.run(run())
+    assert src == "marineregions"
+    assert zee["mrgid"] == 5677
+    assert hits["n"] >= 2
+
+
+def test_lookup_zee_rejects_distant_gazetteer_eez():
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[{
+            "placeType": "EEZ",
+            "preferredGazetteerName": "Brazilian Exclusive Economic Zone",
+            "MRGID": 8464,
+            "latitude": -11.1,
+            "longitude": -39.4,
+        }])
+
+    async def run():
+        from ici_engine import lookup_zee
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await lookup_zee(client, 0.0, -30.0)
+
+    zee, src = asyncio.run(run())
+    assert src == "marineregions"
+    assert zee["name"] == "Haute mer"
+    assert zee["mrgid"] is None
 
 
 def test_fill_dossier_haute_mer():
