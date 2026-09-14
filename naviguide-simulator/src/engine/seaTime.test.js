@@ -8,13 +8,13 @@ describe("seaTime", () => {
     assert.equal(seaDays(168, 7), 1);
   });
 
-  it("Berry 39 000 nm à 7 kt ≈ 232 jours", () => {
+  it("Berry 39 000 nm at 7 kt ≈ 232 days", () => {
     const days = seaDays(39_000, 7);
     assert.ok(days > 231 && days < 233);
     assert.equal(formatSeaClock(39_000, 7, { compact: true }), "232 j");
   });
 
-  it("vitesse invalide retombe à 7 kt", () => {
+  it("invalid speed falls back to 7 kt", () => {
     assert.equal(seaHours(7, 0), 1);
     assert.equal(seaHours(7, -3), 1);
   });
@@ -26,7 +26,7 @@ describe("seaTime", () => {
     assert.equal(formatSeaTime(47.7), "2 j");
   });
 
-  it("repères J0 / milieu / J232 pour Berry", () => {
+  it("D0 / midpoint / D232 marks for Berry", () => {
     const ticks = clockTickLabels({
       playheadTotal: 39_000,
       sailTotalNm: 39_000,

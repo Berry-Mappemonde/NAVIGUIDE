@@ -9,7 +9,7 @@ import {
 } from "./playSpeeds.js";
 
 describe("expeditionBoatKnots", () => {
-  it("moyenne la vitesse portant (BS), sinon VMG, sinon 7 kt", () => {
+  it("averages downwind speed (BS), else VMG, else 7 kt", () => {
     assert.equal(expeditionBoatKnots(null), FALLBACK_EXPEDITION_KNOTS);
     assert.ok(Math.abs(expeditionBoatKnots({
       vmg_summary: { 12: { downwind: { vmg: 8 } }, 16: { downwind: { vmg: 10 } } },
@@ -21,7 +21,7 @@ describe("expeditionBoatKnots", () => {
 });
 
 describe("nmPerSecond", () => {
-  it("réelle = nœuds / 3600 ; accéléré = Atlantique / 20 s", () => {
+  it("real = knots / 3600; fast = Atlantic / 20 s", () => {
     assert.ok(Math.abs(nmPerSecond("real", { boatKnots: 7.2, atlanticNm: 3600 }) - 7.2 / 3600) < 1e-9);
     assert.equal(nmPerSecond("fast", { boatKnots: 7, atlanticNm: 3600 }), 180);
     assert.equal(nmPerSecond("read", { boatKnots: 7, atlanticNm: 3600 }), 15);
@@ -31,7 +31,7 @@ describe("nmPerSecond", () => {
 });
 
 describe("airHopSeconds", () => {
-  it("reste visible à chaque profil, plus long en réelle", () => {
+  it("stays visible on every profile, longer in real", () => {
     assert.ok(airHopSeconds("real") > airHopSeconds("read"));
     assert.ok(airHopSeconds("read") > airHopSeconds("fast"));
     assert.ok(airHopSeconds("fast") >= 1.5);
@@ -39,7 +39,7 @@ describe("airHopSeconds", () => {
 });
 
 describe("trueWindAngle", () => {
-  it("ramène 0–180", () => {
+  it("clamps to 0–180", () => {
     assert.equal(trueWindAngle(90, 90), 0);
     assert.equal(trueWindAngle(0, 180), 180);
     assert.equal(trueWindAngle(10, 350), 20);

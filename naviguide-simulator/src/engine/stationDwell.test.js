@@ -9,12 +9,12 @@ const stations = [
 ];
 
 describe("stationDwell", () => {
-  it("ignore le départ à 0 nm", () => {
+  it("ignores the start at 0 nm", () => {
     assert.equal(nextStationAfter(-1, stations).name, "Horta");
     assert.equal(nextStationAfter(0, stations).name, "Horta");
   });
 
-  it("s’arrête à l’escale et pose un dwell", () => {
+  it("stops at the stopover and sets a dwell", () => {
     const r = stepPlayback({
       filmNm: 99,
       deltaMs: 1000,
@@ -29,7 +29,7 @@ describe("stationDwell", () => {
     assert.equal(r.arrived.name, "Horta");
   });
 
-  it("reste immobile pendant le dwell", () => {
+  it("stays still during the dwell", () => {
     const r = stepPlayback({
       filmNm: 100,
       dwellMsLeft: 800,
@@ -44,7 +44,7 @@ describe("stationDwell", () => {
     assert.equal(r.holding, true);
   });
 
-  it("reprend après la fin du dwell", () => {
+  it("resumes after the dwell ends", () => {
     const r = stepPlayback({
       filmNm: 100,
       dwellMsLeft: 200,
@@ -59,7 +59,7 @@ describe("stationDwell", () => {
     assert.equal(r.dwellMsLeft, 0);
   });
 
-  it("jump saute le dwell", () => {
+  it("jump skips the dwell", () => {
     const r = stepPlayback({
       filmNm: 100,
       dwellMsLeft: 1800,

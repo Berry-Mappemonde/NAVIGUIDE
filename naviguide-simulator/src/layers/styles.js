@@ -1,4 +1,4 @@
-/** Constantes partagées des couches carte (tuiles, couleurs, styles, helpers). */
+/** Shared map-layer constants (tiles, colors, styles, helpers). */
 
 export const TILE_URLS = {
   dark: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
@@ -16,7 +16,7 @@ export const ZONE_COLORS = {
   non_generee: "#64748b", ia: "#fbbf24", ia_sans_source: "#fbbf24", erreur: "#ff4a4a",
 };
 
-/** Niveau de protection pêche ProtectedSeas (LFP 0–5). */
+/** ProtectedSeas fishing-protection level (LFP 0–5). */
 export const LFP_COLORS = {
   0: "#64748b",
   1: "#86efac",
@@ -56,7 +56,7 @@ export const flagEmoji = (iso2) => {
   return String.fromCodePoint(0x1f1e6 + cc.charCodeAt(0) - 65, 0x1f1e6 + cc.charCodeAt(1) - 65);
 };
 
-/** Échappement HTML pour tout contenu injecté dans les popups Leaflet. */
+/** HTML escape for any content injected into Leaflet popups. */
 export const escH = (s) => String(s ?? "")
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");

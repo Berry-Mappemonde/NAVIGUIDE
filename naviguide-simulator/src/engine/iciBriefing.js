@@ -1,6 +1,6 @@
 /**
- * Récit du sac `ici()` — un briefing, pas quatre agents.
- * Raconte seulement ce qui est autour du bateau.
+ * Story of the `ici()` bag — one briefing, not four agents.
+ * Tells only what is around the boat.
  */
 
 const TERRITORY = {

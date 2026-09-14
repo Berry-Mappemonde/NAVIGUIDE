@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { unwrapLon } from "../utils/geo.js";
 
-/** Trait pointillé du hop aérien, seulement pendant que l’avion est en vol. */
+/** Dashed air-hop line, only while the plane is in the air. */
 export function useAirHopLine(mapRef, { mapReady, visible, from, to }) {
   const lineRef = useRef(null);
 

@@ -17,21 +17,21 @@ const LEOPARD_RAW = {
 };
 
 describe("alongTrackSpeed", () => {
-  it("kind climatology, sans polar : pas de crash", () => {
+  it("kind climatology, no polar: no crash", () => {
     const s = alongTrackSpeed({ lat: 15, lon: -25, bearing: 250, month: 6, polarRaw: null });
     assert.equal(s.kind, "climatology");
     assert.ok(s.speedKnots >= 4);
     assert.ok(s.windKnots > 0);
   });
 
-  it("alizés : mars plus vite que juillet (même cap)", () => {
+  it("trades: March faster than July (same heading)", () => {
     const args = { lat: 15, lon: -25, bearing: 250, polarRaw: null };
     const mar = alongTrackSpeed({ ...args, month: 3 });
     const jul = alongTrackSpeed({ ...args, month: 7 });
     assert.ok(mar.speedKnots > jul.speedKnots);
   });
 
-  it("Leopard 46 raw : nœuds finis, TWA renseigné", () => {
+  it("Leopard 46 raw: finite knots, TWA filled", () => {
     const s = alongTrackSpeed({
       lat: 15,
       lon: -25,
@@ -44,7 +44,7 @@ describe("alongTrackSpeed", () => {
     assert.ok(s.twa != null && s.twa >= 0 && s.twa <= 180);
   });
 
-  it("vent fourni : kind forecast et modèle nommé", () => {
+  it("wind provided: kind forecast and named model", () => {
     const s = alongTrackSpeed({
       lat: 15,
       lon: -25,

@@ -1,7 +1,7 @@
 /**
- * Placement écran des drapeaux d'escale.
- * Les points intermédiaires restent à [0, 0] (sur la route).
- * Les drapeaux sont décalés d'au plus MAX_OFFSET px, sans se chevaucher
+ * Screen placement of stopover flags.
+ * Intermediate points stay at [0, 0] (on the route).
+ * Flags are offset by at most MAX_OFFSET px, without overlapping
  * et sans recouper la route bleue.
  */
 

@@ -1,7 +1,7 @@
 /**
- * Horloge « jours de mer » : le playhead reste en nm film, l’échelle
- * affichée peut passer en temps à une vitesse bateau (nœuds).
- * ~39 000 nm Berry à 7 kt ≈ 232 jours.
+ * “Days at sea” clock: the playhead stays in film nm, the displayed
+ * scale can switch to time at a boat speed (knots).
+ * ~39 000 nm Berry at 7 kt ≈ 232 days.
  */
 
 import { FALLBACK_EXPEDITION_KNOTS } from "./playSpeeds.js";
@@ -11,7 +11,7 @@ export function boatKnotsOrCruise(knots) {
   return Number.isFinite(n) && n > 0 ? n : FALLBACK_EXPEDITION_KNOTS;
 }
 
-/** Heures de mer pour une distance voile (nm), hors hops aériens. */
+/** Hours at sea for a sailing distance (nm), excluding air hops. */
 export function seaHours(sailNm, knots) {
   const nm = Number(sailNm);
   if (!Number.isFinite(nm) || nm <= 0) return 0;
@@ -23,7 +23,7 @@ export function seaDays(sailNm, knots) {
 }
 
 /**
- * Libellé compact : « 4 h », « 2 j 6 h », « 232 j ».
+ * Compact label: “4 h”, “2 d 6 h”, “232 d”.
  * @param {number} hours
  */
 export function formatSeaTime(hours, { compact = false } = {}) {
@@ -48,7 +48,7 @@ export function formatSeaClock(sailNm, knots, opts) {
   return formatSeaTime(seaHours(sailNm, knots), opts);
 }
 
-/** Repères sous la barre : nm ou jours de mer (J0 … J232). */
+/** Marks under the bar: nm or days at sea (D0 … D232). */
 export function clockTickLabels({ playheadTotal, sailTotalNm, knots, scale = "nm" } = {}) {
   const maxFilm = Number(playheadTotal) || 0;
   const sail = Math.max(0, Number(sailTotalNm) || 0);

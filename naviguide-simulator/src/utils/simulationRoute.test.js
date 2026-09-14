@@ -45,7 +45,7 @@ describe("stopsFromCustomRoute", () => {
 });
 
 describe("buildSimTargets", () => {
-  it("part du premier point de la polyligne, pas de La Rochelle", () => {
+  it("starts from the first polyline point, not La Rochelle", () => {
     const segs = activeSimulationSegments(customFc, []);
     const targets = buildSimTargets(segs);
     assert.ok(targets.length >= 3);
@@ -57,7 +57,7 @@ describe("buildSimTargets", () => {
     assert.ok(Math.abs(targets[0].lat - 46.1541) > 1);
   });
 
-  it("retombe sur les stops si pas de LineString", () => {
+  it("falls back to stops if there is no LineString", () => {
     const stops = [{ lat: 10, lon: 20 }, { lat: 11, lon: 21 }];
     const targets = buildSimTargets([], stops);
     assert.deepEqual(targets, [
@@ -68,7 +68,7 @@ describe("buildSimTargets", () => {
 });
 
 describe("activeSimulationStops / start", () => {
-  it("utilise la route perso quand elle est affichée", () => {
+  it("uses the custom route when it is displayed", () => {
     const berry = [{ name: "La Rochelle", lat: 46.15, lon: -1.16, flag: "fr" }];
     const stops = activeSimulationStops(customFc, berry);
     assert.equal(stops[0].name, "Point 1");
@@ -76,7 +76,7 @@ describe("activeSimulationStops / start", () => {
     assert.equal(start.lat, 48.15);
   });
 
-  it("garde Berry sans route perso", () => {
+  it("keeps Berry without a custom route", () => {
     const berry = [{ name: "La Rochelle", lat: 46.15, lon: -1.16, flag: "fr" }];
     assert.equal(activeSimulationStops(null, berry)[0].name, "La Rochelle");
   });

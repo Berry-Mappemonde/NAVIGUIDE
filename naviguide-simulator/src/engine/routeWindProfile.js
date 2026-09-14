@@ -1,6 +1,6 @@
 /**
- * Échantillons le long du trait pour le mini-graphique vent / nœuds.
- * Départ + escales + points intermédiaires, hors hops aériens.
+ * Samples along the track for the wind / knots mini-chart.
+ * Start + stopovers + intermediate points, excluding air hops.
  */
 
 const AIR_KINDS = new Set(["air", "plane", "flight"]);

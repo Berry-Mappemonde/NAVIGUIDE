@@ -1,7 +1,7 @@
 /**
- * Vitesse bateau depuis le tableau brut TWA×TWS (bilinéaire).
- * Même règle que PolarData.speed côté serveur — pas la grille 181×61.
- * Idée TWA/TWS → polarSpeed (signalk-polar-performance), code original.
+ * Boat speed from the raw TWA×TWS table (bilinear).
+ * Same rule as PolarData.speed on the server — not the 181×61 grid.
+ * TWA/TWS → polarSpeed idea (signalk-polar-performance), original code.
  */
 
 function bracket(val, arr) {
@@ -25,7 +25,7 @@ export function hasPolarRaw(raw) {
 }
 
 /**
- * @returns {number|null} nœuds, ou null si pas de tableau
+ * @returns {number|null} knots, or null if there is no table
  */
 export function polarBoatSpeed(raw, twa, tws) {
   if (!hasPolarRaw(raw)) return null;

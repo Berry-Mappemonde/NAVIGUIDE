@@ -109,7 +109,7 @@ class ForecastCube:
     def estimate_bytes(self) -> int:
         n_t = max(1, len(self.times))
         n_s = max(1, len(self.samples))
-        # 6 float64 par pas (u, v, hs, uo, vo, unused)
+        # 6 float64 per step (u, v, hs, uo, vo, unused)
         return n_t * n_s * 6 * 8 + 4096
 
     def at(self, lat: float, lon: float, t: datetime) -> Optional[Dict[str, Any]]:
@@ -118,7 +118,7 @@ class ForecastCube:
         if t.tzinfo is None:
             t = t.replace(tzinfo=timezone.utc)
         t_iso = to_iso(t)
-        # index temporel : linéaire entre deux échéances
+        # time index: linear between two lead times
         times = [parse_iso(x) for x in self.times]
         if t <= times[0]:
             ti, tw = 0, 0.0

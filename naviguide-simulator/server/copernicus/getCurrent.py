@@ -30,7 +30,7 @@ def get_current_data_at_position(latitude, longitude, username=None, password=No
         # Global Ocean Physics Analysis and Forecast — currents at surface
         dataset_id = "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m"
 
-        # Fenêtre temporelle : hier (délai de traitement d'1 jour)
+        # Time window: yesterday (1-day processing lag)
         end_date   = datetime.now() - timedelta(days=1)
         start_date = end_date - timedelta(days=1)
 
@@ -55,7 +55,7 @@ def get_current_data_at_position(latitude, longitude, username=None, password=No
             coordinates_selection_method="nearest",
         )
 
-        # Sélectionner le point le plus proche
+        # Select the nearest point
         point_data = dataset.sel(
             latitude=latitude,
             longitude=longitude,
@@ -78,12 +78,12 @@ def get_current_data_at_position(latitude, longitude, username=None, password=No
             print("⚠️  u/v current is NaN — point may be on land or outside dataset coverage")
             return None
 
-        # Vitesse scalaire (m/s → nœuds)
+        # Scalar speed (m/s → knots)
         speed_ms     = math.sqrt(u_current**2 + v_current**2)
         speed_knots  = speed_ms * 1.94384
         speed_kmh    = speed_ms * 3.6
 
-        # Direction vers laquelle va le courant (océanographique)
+        # Direction the current is going (oceanographic)
         # 0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest
         direction_deg = (math.atan2(u_current, v_current) * 180.0 / math.pi) % 360
 

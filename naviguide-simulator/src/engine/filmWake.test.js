@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { wakeParts } from "./filmWake.js";
 
 describe("wakeParts", () => {
-  it("coupe avant la fin et interpole le dernier vertex", () => {
+  it("cuts before the end and interpolates the last vertex", () => {
     const flat = {
       points: [
         { lon: 0, lat: 0, cumNm: 0, jump: false },
@@ -18,7 +18,7 @@ describe("wakeParts", () => {
     assert.ok(last[0] > 1 && last[0] < 2);
   });
 
-  it("casse le sillage au saut aérien", () => {
+  it("breaks the wake at an air hop", () => {
     const flat = {
       points: [
         { lon: -52, lat: 5, cumNm: 0, jump: false },
@@ -32,7 +32,7 @@ describe("wakeParts", () => {
     assert.ok(parts.every((p) => p.length >= 2));
   });
 
-  it("reste vide sans route", () => {
+  it("stays empty without a route", () => {
     assert.deepEqual(wakeParts({ points: [] }, 10), []);
   });
 });

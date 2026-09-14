@@ -1,7 +1,7 @@
 import { haversineNm, unwrapLon } from "../utils/geo.js";
 import { AIR_FILM_NM, detectAirEpisodes } from "./filmCast.js";
 
-/** Au-delà : jonction entre segments = saut (avion), pas de la route. */
+/** Beyond this: a junction between segments is a hop (plane), not the route. */
 export const AIR_JUMP_NM = 120;
 
 export function isNamedEscale(stop) {
@@ -9,10 +9,10 @@ export function isNamedEscale(stop) {
 }
 
 /**
- * Aplati tous les segments (terre comprise) en une polyligne + miles cumulés.
+ * Flatten every segment (land included) into one polyline + cumulative miles.
  * Point 0 = premier vertex (Saint-Maur pour Berry).
- * Sauts aériens (Cayenne → Halifax / SPM) : 0 nm mer, durée film à part.
- * Longitudes déroulées pour passer l’antiméridien sans couper le film.
+ * Air hops (Cayenne → Halifax / SPM): 0 nm at sea, film duration separately.
+ * Longitudes unwrapped so the antimeridian does not cut the film.
  */
 export function flattenRoute(segments) {
   const points = [];
@@ -110,7 +110,7 @@ export function interpolateAtNm(flat, nm) {
     };
   }
   const target = Math.max(0, Math.min(flat.totalNm, Number(nm) || 0));
-  // ≤ : on franchit les sauts (plusieurs points au même cumNm) d’un coup.
+  // ≤: we cross hops (several points at the same cumNm) in one go.
   let i = 0;
   while (i < pts.length - 2 && pts[i + 1].cumNm <= target) i += 1;
   const a = pts[i];
@@ -164,7 +164,7 @@ export function nearestNm(flat, lat, lon) {
   return bestNm;
 }
 
-/** Escales à drapeau, posées sur la route dans l’ordre chronologique. */
+/** Flagged stopovers, placed on the route in chronological order. */
 export function mapEscalesOnRoute(stops, flat) {
   const pts = flat?.points || [];
   if (!pts.length) return [];
@@ -235,7 +235,7 @@ export function prevEscaleNm(marks, nm) {
   return prev;
 }
 
-/** La Rochelle → Fort-de-France, ou à défaut ~12 % de la route. */
+/** La Rochelle → Fort-de-France, or else ~12 % of the route. */
 export function atlanticSpanNm(marks, totalNm) {
   const start = (marks || []).find((m) => /La Rochelle/i.test(m.name));
   const end = (marks || []).find((m) => /Fort-de-France/i.test(m.name));
@@ -243,7 +243,7 @@ export function atlanticSpanNm(marks, totalNm) {
   return Math.max(2000, (Number(totalNm) || 8000) * 0.12);
 }
 
-/** HUD du film : noms d’escales complets, restants jusqu’à la prochaine. */
+/** Film HUD: full stopover names, remaining until the next one. */
 export function filmLegContext({ marks, nm, sample, totalNm, boatKnots, cast }) {
   const sailNm = Number(cast?.sailNm ?? nm) || 0;
   const chapter = chapterAtNm(marks, sailNm);

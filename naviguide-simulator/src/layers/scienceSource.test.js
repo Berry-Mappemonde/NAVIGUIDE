@@ -12,7 +12,7 @@ describe("scienceSourceOf", () => {
 });
 
 describe("filterScienceFeatures", () => {
-  it("garde une source à la fois", () => {
+  it("keeps one source at a time", () => {
     const fc = {
       type: "FeatureCollection",
       features: [

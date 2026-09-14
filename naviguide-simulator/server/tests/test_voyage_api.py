@@ -67,7 +67,7 @@ def test_at_plus_48h_forecast_and_f5(client):
     assert a.json()["leadHours"] == 48.0
     assert abs(a.json()["lat"] - b.json()["lat"]) < 1e-6
     assert abs(a.json()["lon"] - b.json()["lon"]) < 1e-6
-    # ± 1 nm de stabilité : même point
+    # ± 1 nm of stability: same point
     assert a.json()["status"] == "live"
 
 
@@ -94,7 +94,7 @@ def test_recompute_reject_accept(client, monkeypatch):
     t0 = datetime(2026, 6, 13, 8, tzinfo=timezone.utc)  # ~48 h before a mid-June recette
     vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
     client.get(f"/voyage/{vid}")
-    # Forcer une position « au large » : t = t0+48h via monkeypatch of _now
+    # Force an "offshore" position: t = t0+48h via monkeypatch of _now
     live_t = t0 + timedelta(hours=48)
 
     monkeypatch.setattr(voyage_api, "_now", lambda: live_t)
@@ -117,8 +117,8 @@ def test_recompute_reject_accept(client, monkeypatch):
     acc = client.post(f"/voyage/{vid}/accept")
     assert acc.status_code == 200
     assert acc.json()["routeRev"] == 1
-    # Le Pacifique n’est pas dans cette route-test ; l’aval après FDF n’existe pas.
-    # On vérifie que l’amont (La Rochelle) est toujours le premier point.
+    # The Pacific is not in this test route; the downstream after FDF does not exist.
+    # Check that the upstream (La Rochelle) is still the first point.
     assert acc.json()["points"][0]["lat"] == pytest.approx(46.15, abs=0.05)
 
 

@@ -1,20 +1,20 @@
 import L from "leaflet";
 
 /**
- * Politique d'affichage des popups carte.
+ * Map popup display policy.
  *
- * L'ancienne stratégie (translate CSS du wrapper + timeouts) échouait :
- * `.leaflet-container { overflow: hidden }` clippe la boîte `.leaflet-popup`,
- * `backdrop-filter` sur le wrapper crée un groupe de composition qui reste
- * rogné, et le contenu asynchrone (fiche ZEE, profondeur) arrive après les
- * timeouts. On ne déplace plus la carte (`autoPan: false`).
+ * The old strategy (CSS translate on the wrapper + timeouts) failed:
+ * `.leaflet-container { overflow: hidden }` clips the `.leaflet-popup` box,
+ * `backdrop-filter` on the wrapper creates a compositing group that stays
+ * clipped, and async content (EEZ sheet, depth) arrives after the timeouts.
+ * We no longer pan the map (`autoPan: false`).
  *
- * Nouvelle politique :
- * 1. Plafonner largeur/hauteur à l'emprise de la carte (le contenu scrolle).
- * 2. Rester au-dessus du point si l'espace le permet, sinon basculer dessous.
- * 3. Décaler horizontalement toute la popup (pas seulement le wrapper) et
- *    glisser la flèche pour continuer à pointer le point.
- * 4. Recalculer à chaque update / zoom / resize (pas seulement à l'ouverture).
+ * New policy:
+ * 1. Cap width/height to the map extent (content scrolls).
+ * 2. Stay above the point if space allows, otherwise flip below.
+ * 3. Shift the whole popup horizontally (not just the wrapper) and
+ *    slide the tip so it still points at the feature.
+ * 4. Recompute on every update / zoom / resize (not only on open).
  */
 
 export const POPUP_FIT_PAD = 12;
