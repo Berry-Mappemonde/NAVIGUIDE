@@ -243,7 +243,7 @@ deployed: the frontend does not call it.
 ```
 Internet → nginx (443, Let's Encrypt, SAN + simulator.naviguide.fr)
    simulator.naviguide.fr  → /var/www/naviguide-simulator
-   /route /wind /wave …    → uvicorn 127.0.0.1:8010  (naviguide-simulator)
+   /route /wind /wave /voyage … → uvicorn 127.0.0.1:8010  (naviguide-simulator)
    /api/v1/*               → the same :8010 (polar without chat)
    /bi/*                   → uvicorn 127.0.0.1:8001  (Blue Intelligence, read-only)
 ```
