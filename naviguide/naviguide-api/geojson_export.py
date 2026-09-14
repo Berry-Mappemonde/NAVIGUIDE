@@ -200,7 +200,7 @@ def searoute_with_exact_end(start, end):
 
     # Distance between the last point and the true arrival point
     geod = Geodesic.WGS84
-    dist = geod.Inverse(last_point[1], last_point[0], end[1], end[0])["s12"]  # mètres
+    dist = geod.Inverse(last_point[1], last_point[0], end[1], end[0])["s12"]  # metres
 
     # If the route does not reach the exact point, add a short geodesic line
     if dist > 1000:  # seuil = 1 km

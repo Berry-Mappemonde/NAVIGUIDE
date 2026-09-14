@@ -16,7 +16,7 @@ def main() -> int:
         return 2
     start = json.loads(sys.argv[1])
     end = json.loads(sys.argv[2])
-    import searoute as sr  # noqa: WPS433 — import local volontaire (venv dédié)
+    import searoute as sr  # noqa: WPS433 — intentional local import (dedicated venv)
 
     route = sr.searoute((float(start[0]), float(start[1])), (float(end[0]), float(end[1])))
     json.dump(route, sys.stdout)
