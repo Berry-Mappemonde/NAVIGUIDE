@@ -1,0 +1,187 @@
+name: Déploiement VPS
+
+# Trois sites, un job chacun. Build sur GitHub (pas de npm/pip sur le VPS
+# 8 Go). Blue Intelligence attend qu'aucun run d'enrichissement / Complet
+# n'occupe uvicorn ; le rattrapage toutes les 20 min reprend la file.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "Site à déployer"
+        type: choice
+        options: [all, blue-intelligence, naviguide, simulator]
+        default: all
+      force:
+        description: "Forcer Blue Intelligence même si un run est en cours"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_DEPLOY: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      bi: ${{ steps.plan.outputs.bi }}
+      naviguide: ${{ steps.plan.outputs.naviguide }}
+      simulator: ${{ steps.plan.outputs.simulator }}
+      catch_up: ${{ steps.plan.outputs.catch_up }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          INPUT_SITE: ${{ github.event.inputs.site }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 infra/vps/ci/plan_deploy.py >> "$GITHUB_OUTPUT"
+
+  blue-intelligence:
+    name: blueintelligence.online
+    needs: plan
+    if: needs.plan.outputs.bi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - name: Build production
+        working-directory: frontend
+        env:
+          CI: "true"
+          REACT_APP_BACKEND_URL: ""
+          REACT_APP_SEAMAP_STYLE_URL: https://blueintelligence.online/tiles/seamap/style.json
+        run: npm run build
+      - name: Vérifier le bundle
+        run: test -f frontend/build/index.html
+      - name: SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: bash infra/vps/ci/prepare-ssh.sh
+      - name: Rsync + apply
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          bash infra/vps/ci/rsync-to-vps.sh blue-intelligence
+          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$VPS_HOST" \
+            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh blue-intelligence"
+
+  naviguide:
+    name: www.naviguide.fr
+    needs: plan
+    if: needs.plan.outputs.naviguide == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: naviguide/naviguide-app/package-lock.json
+      - name: Env production Vite
+        run: |
+          printf '%s\n' \
+            'VITE_API_URL=https://www.naviguide.fr' \
+            'VITE_ORCHESTRATOR_URL=https://www.naviguide.fr' \
+            'VITE_WEATHER_ROUTING_URL=https://www.naviguide.fr' \
+            'VITE_POLAR_API_URL=https://www.naviguide.fr' \
+            'VITE_SEAMAP_STYLE_URL=https://www.naviguide.fr/tiles/seamap/style.json' \
+            > naviguide/naviguide-app/.env.production
+      - working-directory: naviguide/naviguide-app
+        run: npm ci
+      - working-directory: naviguide/naviguide-app
+        run: npm run build
+      - run: test -f naviguide/naviguide-app/dist/index.html
+      - name: SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: bash infra/vps/ci/prepare-ssh.sh
+      - name: Rsync + apply
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          bash infra/vps/ci/rsync-to-vps.sh naviguide
+          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$VPS_HOST" \
+            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh naviguide"
+
+  simulator:
+    name: simulator.naviguide.fr
+    needs: plan
+    if: needs.plan.outputs.simulator == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: naviguide-simulator/package-lock.json
+      - working-directory: naviguide-simulator
+        run: npm ci
+      - working-directory: naviguide-simulator
+        run: npm run build
+      - run: test -f naviguide-simulator/dist/index.html
+      - name: SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: bash infra/vps/ci/prepare-ssh.sh
+      - name: Rsync + apply
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          bash infra/vps/ci/rsync-to-vps.sh simulator
+          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$VPS_HOST" \
+            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh simulator"
+
+  catch-up:
+    name: Rattrapage (runs reportés)
+    needs: plan
+    if: needs.plan.outputs.catch_up == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: bash infra/vps/ci/prepare-ssh.sh
+      - name: Synchroniser la sonde puis apply-pending
+        run: |
+          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$VPS_HOST" "mkdir -p $REMOTE_APP/infra/vps/ci"
+          rsync -az -e "ssh -i $VPS_SSH_IDENTITY -o BatchMode=yes -o IdentitiesOnly=yes" \
+            infra/vps/ci/ "$VPS_HOST:$REMOTE_APP/infra/vps/ci/"
+          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$VPS_HOST" \
+            "chmod +x $REMOTE_APP/infra/vps/ci/*.sh $REMOTE_APP/infra/vps/ci/*.py && bash $REMOTE_APP/infra/vps/ci/apply-pending.sh"

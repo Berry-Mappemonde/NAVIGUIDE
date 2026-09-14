@@ -74,6 +74,43 @@ du code et `sudo systemctl restart blue-intelligence` (sans `npm`/`uv` si
 les dépendances n'ont pas changé). Ne pas lancer `deploy-app.sh` pendant un
 run Complet — il redémarre le service.
 
+## Redéploiement automatique (GitHub Actions)
+
+Un push sur `main` qui touche le code d'un site reconstruit ce site sur
+GitHub (pas de `npm` sur le VPS 8 Go), copie les fichiers par SSH, puis
+relance le service. NAVIGUIDE et le simulateur peuvent se publier pendant
+un Complet Blue Intelligence. **blueintelligence.online attend** : un
+restart tuerait le run en mémoire.
+
+| Site | Chemins qui déclenchent |
+|------|-------------------------|
+| `blueintelligence.online` | `frontend/`, `backend/`, `infra/vps/deploy-app.sh` et les fichiers systemd / nginx BI |
+| `www.naviguide.fr` | `naviguide/`, `infra/vps/naviguide/` sauf les fichiers `*simulator*` |
+| `simulator.naviguide.fr` | `naviguide-simulator/`, fichiers `*simulator*` sous `infra/vps/naviguide/` |
+
+Si un enrichissement / Complet tourne, le code est quand même copié, le
+redémarrage de Blue Intelligence est **reporté**. Toutes les 20 minutes,
+le job « Rattrapage » réessaie (`~/.local/state/blue-intelligence-deploy/pending/`).
+
+Secrets du dépôt (Settings → Secrets and variables → Actions) :
+
+- `VPS_SSH_KEY` — clé **privée** `~/.ssh/github-deploy-vps`
+- `VPS_HOST` — `ubuntu@135.125.226.16`
+
+Sur le Mac, une fois, envoyer la **publique** sur le VPS :
+
+```bash
+ssh-copy-id -i ~/.ssh/github-deploy-vps.pub ubuntu@135.125.226.16
+```
+
+Déploiement manuel (bouton Actions → Déploiement VPS → Run workflow).
+Cocher « Forcer » seulement si tu acceptes d'interrompre un Complet.
+
+Scripts : `infra/vps/ci/` (`prod_jobs_busy.py` sonde l'API publique,
+sans `ADMIN_KEY`). `SKIP_FRONTEND_BUILD=1` et `SKIP_PIP=1` évitent
+`npm` / `uv pip` sur le VPS quand le bundle et le `requirements.txt`
+n'ont pas changé.
+
 ## Resynchroniser les données depuis Atlas — ⛔ NE PLUS JAMAIS FAIRE
 
 **Depuis la bascule DNS du 2026-09-10, le VPS est la base vivante.** Atlas est

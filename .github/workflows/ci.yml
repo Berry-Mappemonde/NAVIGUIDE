@@ -43,3 +43,19 @@ jobs:
       - uses: actions/checkout@v7
       - name: Audit des tags (mode GeoJSON, sans Mongo)
         run: python3 scripts/audit_tags.py --geojson seed/projects.geojson seed/ports_of_entry.geojson
+
+  deploy-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sonde des files produit + plan de déploiement
+        run: python3 infra/vps/ci/test_prod_jobs_busy.py
+      - name: Syntaxe bash des scripts VPS
+        run: |
+          bash -n infra/vps/deploy-app.sh
+          bash -n infra/vps/naviguide/deploy-naviguide.sh
+          bash -n infra/vps/naviguide/deploy-simulator.sh
+          bash -n infra/vps/ci/prepare-ssh.sh
+          bash -n infra/vps/ci/rsync-to-vps.sh
+          bash -n infra/vps/ci/apply-site.sh
+          bash -n infra/vps/ci/apply-pending.sh
