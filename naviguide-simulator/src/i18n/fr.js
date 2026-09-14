@@ -198,4 +198,8 @@ export default {
   cinemaTooltip:    "Masquer les panneaux pour voir la carte en grand",
   filmArrived:      "Arrivée à {name}",
   filmScrub:        "Avancer ou reculer sur la route",
+  filmPhaseAir:     "Transfert aérien — le bateau reste à quai",
+  filmPhaseAirReturn: "Retour aérien — le bateau reprend ensuite la route",
+  filmPhaseSide:    "Voile Halifax — Saint-Pierre-et-Miquelon",
+  filmAirVehicle:   "avion",
 };
