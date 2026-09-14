@@ -6,36 +6,6 @@ export const BI_COLORS = {
   biAmp: "#22c55e",
 };
 
-export const EMODNET_WMS = [
-  {
-    key: "wmsBathy",
-    url: "https://ows.emodnet-bathymetry.eu/wms",
-    layers: "mean_multicolour",
-    pane: "sim-wms-bathy",
-    zIndex: 240,
-    opacity: 0.5,
-    attribution: "EMODnet Bathymetry",
-  },
-  {
-    key: "wmsSubstrate",
-    url: "https://drive.emodnet-geology.eu/geoserver/gtk/wms",
-    layers: "seabed_substrate_1m",
-    pane: "sim-wms-substrate",
-    zIndex: 310,
-    opacity: 0.75,
-    attribution: "EMODnet Geology",
-  },
-  {
-    key: "wmsCables",
-    url: "https://ows.emodnet-humanactivities.eu/wms",
-    layers: "telecablesactual,powercables",
-    pane: "sim-wms-cables",
-    zIndex: 370,
-    opacity: 1,
-    attribution: "EMODnet Human Activities",
-  },
-];
-
 export const ALL_LAYER_CONFIG = [
   { key: "zee", labelKey: "layerZee", titleKey: "layerZeeTitle", color: "#0e7490", showKey: "showZee", toggleKey: "setShowZee", loadingKey: "loadingZee", errorKey: "errorZee" },
   { key: "wpi", labelKey: "layerPorts", titleKey: "layerPortsTitle", color: "#f59e0b", showKey: "showPorts", toggleKey: "setShowPorts", loadingKey: "loadingPorts", errorKey: "errorPorts" },
@@ -45,9 +15,13 @@ export const ALL_LAYER_CONFIG = [
   { key: "capitaineries", labelKey: "layerBiCapitaineries", titleKey: "layerBiCapitaineriesTitle", color: BI_COLORS.biCapitaineries, showKey: "showBiCapitaineries", toggleKey: "setShowBiCapitaineries", loadingKey: "loadingBiCapitaineries", errorKey: "errorBiCapitaineries" },
   { key: "poe", labelKey: "layerBiPoe", titleKey: "layerBiPoeTitle", color: BI_COLORS.biPoe, showKey: "showBiPoe", toggleKey: "setShowBiPoe", loadingKey: "loadingBiPoe", errorKey: "errorBiPoe" },
   { key: "amp", labelKey: "layerBiAmp", titleKey: "layerBiAmpTitle", color: BI_COLORS.biAmp, showKey: "showBiAmp", toggleKey: "setShowBiAmp", loadingKey: "loadingBiAmp", errorKey: "errorBiAmp" },
-  { key: "science", labelKey: "layerScience", titleKey: "layerScienceTitle", color: "#a78bfa", showKey: "showScience", toggleKey: "setShowScience", loadingKey: "loadingScience", errorKey: "errorScience" },
+  { key: "sextant", labelKey: "layerSextant", titleKey: "layerSextantTitle", color: "#a78bfa", showKey: "showSextant", toggleKey: "setShowSextant", loadingKey: "loadingScienceCatalog", errorKey: "errorScienceCatalog" },
+  { key: "argo", labelKey: "layerArgo", titleKey: "layerArgoTitle", color: "#c4b5fd", showKey: "showArgo", toggleKey: "setShowArgo", loadingKey: "loadingScienceCatalog", errorKey: "errorScienceCatalog" },
+  { key: "odatis", labelKey: "layerOdatis", titleKey: "layerOdatisTitle", color: "#8b5cf6", showKey: "showOdatis", toggleKey: "setShowOdatis", loadingKey: "loadingScienceCatalog", errorKey: "errorScienceCatalog" },
+  { key: "edmed", labelKey: "layerEdmed", titleKey: "layerEdmedTitle", color: "#7c3aed", showKey: "showEdmed", toggleKey: "setShowEdmed", loadingKey: "loadingScienceCatalog", errorKey: "errorScienceCatalog" },
+  { key: "csr", labelKey: "layerCsr", titleKey: "layerCsrTitle", color: "#6d28d9", showKey: "showCsr", toggleKey: "setShowCsr", loadingKey: "loadingScienceCatalog", errorKey: "errorScienceCatalog" },
+  { key: "bathymetry", labelKey: "layerBathymetry", titleKey: "layerBathymetryTitle", color: "#0ea5e9", showKey: "showBathymetry", toggleKey: "setShowBathymetry", loadingKey: "loadingBathymetry", errorKey: "errorBathymetry" },
+  { key: "fonds", labelKey: "layerFonds", titleKey: "layerFondsTitle", color: "#ca8a04", showKey: "showFonds", toggleKey: "setShowFonds", loadingKey: "loadingFonds", errorKey: "errorFonds" },
+  { key: "cables", labelKey: "layerCables", titleKey: "layerCablesTitle", color: "#fb7185", showKey: "showCables", toggleKey: "setShowCables", loadingKey: "loadingCables", errorKey: "errorCables" },
   { key: "climatology", labelKey: "layerClimatology", titleKey: "layerClimatologyTitle", color: "#38bdf8", showKey: "showClimatology", toggleKey: "setShowClimatology", loadingKey: "loadingClimatology", errorKey: "errorClimatology" },
-  { key: "wmsBathy", labelKey: "layerWmsBathy", titleKey: "layerWmsBathyTitle", color: "#0ea5e9", showKey: "showWmsBathy", toggleKey: "setShowWmsBathy", loadingKey: "loadingWmsBathy", errorKey: "errorWmsBathy" },
-  { key: "wmsSubstrate", labelKey: "layerWmsSubstrate", titleKey: "layerWmsSubstrateTitle", color: "#a16207", showKey: "showWmsSubstrate", toggleKey: "setShowWmsSubstrate", loadingKey: "loadingWmsSubstrate", errorKey: "errorWmsSubstrate" },
-  { key: "wmsCables", labelKey: "layerWmsCables", titleKey: "layerWmsCablesTitle", color: "#e11d48", showKey: "showWmsCables", toggleKey: "setShowWmsCables", loadingKey: "loadingWmsCables", errorKey: "errorWmsCables" },
 ];

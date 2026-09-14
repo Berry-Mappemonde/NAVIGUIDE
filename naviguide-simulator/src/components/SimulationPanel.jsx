@@ -17,12 +17,14 @@ import { useLang } from "../i18n/LangContext.jsx";
 // ── Formatage ────────────────────────────────────────────────────────────────
 
 function formatEta(hours) {
-  if (hours == null || isNaN(hours)) return "—";
+  if (hours == null || Number.isNaN(hours)) return "—";
+  if (hours < 1 / 60) return "0 min";
+  if (hours < 1) return `${Math.round(hours * 60)} min`;
+  if (hours >= 48) return `${Math.round(hours / 24)} j`;
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
-  if (h === 0) return `${m}min`;
-  if (m === 0) return `${h}h`;
-  return `${h}h${String(m).padStart(2, "0")}`;
+  if (m === 0) return `${h} h`;
+  return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
 function formatNm(nm) {
@@ -50,7 +52,7 @@ function PrevNextButtons({ onPrev, canPrev, onNext, canNext }) {
         onClick={onPrev}
         disabled={!canPrev}
         className={[btnBase, canPrev ? `${btnActive} bg-slate-700/60 border-slate-500/50 hover:bg-slate-600/70` : btnDisabled].join(" ")}
-        title={t("previous")}
+        title={t("previousEscale")}
       >
         <ChevronLeft size={10} />
         <span>{t("previous")}</span>
@@ -59,7 +61,7 @@ function PrevNextButtons({ onPrev, canPrev, onNext, canNext }) {
         onClick={onNext}
         disabled={!canNext}
         className={[btnBase, canNext ? `${btnActive} bg-cyan-700/60 border-cyan-500/50 hover:bg-cyan-600/70` : btnDisabled].join(" ")}
-        title={t("next")}
+        title={t("nextEscale")}
       >
         <span>{t("next")}</span>
         <ChevronRight size={10} />
@@ -91,6 +93,7 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
     fromStop, toStop,
     nmCovered, nmRemainingToStop,
     etaHours, bearing, speedKnots,
+    finished,
   } = legContext;
 
   return (
@@ -98,15 +101,19 @@ export function SimulationPanel({ legContext, onClose, onPrev, canPrev, onNext, 
 
       {/* Header tronçon actif */}
       <div className="flex items-center justify-between px-3 py-2 bg-blue-900/30 border-b border-blue-700/20">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <Navigation size={11} className="text-blue-400 flex-shrink-0" />
-          <span className="text-[10px] font-semibold text-blue-300 truncate">
-            {fromStop}
+          <span className="text-[10px] font-semibold text-blue-300 leading-tight">
+            {finished ? t("filmArrived", { name: fromStop }) : fromStop}
           </span>
-          <span className="text-white/30 text-[10px]">→</span>
-          <span className="text-[10px] font-semibold text-cyan-300 truncate">
-            {toStop}
-          </span>
+          {!finished && (
+            <>
+              <span className="text-white/30 text-[10px]">→</span>
+              <span className="text-[10px] font-semibold text-cyan-300 leading-tight">
+                {toStop}
+              </span>
+            </>
+          )}
         </div>
         {onClose && (
           <button

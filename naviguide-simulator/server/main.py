@@ -29,6 +29,7 @@ from mem_limits import (
     lru_set,
     too_large,
 )
+from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
 from polar_api import router as polar_router
 from route_engine import searoute_with_exact_end
 
@@ -68,7 +69,18 @@ class PositionRequest(BaseModel):
 
 @app.get("/")
 def health():
-    return {"service": "naviguide-simulator", "version": "0.1.0"}
+    return {"service": "naviguide-simulator", "version": "0.2.0"}
+
+
+@app.get("/ici")
+async def get_ici(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    radius_nm: float = Query(ICI_RADIUS_NM, ge=5, le=40),
+):
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "lat/lon hors limites")
+    return await fill_dossier(lat, lon, radius_nm)
 
 
 @app.get("/route")
@@ -206,7 +218,6 @@ def get_current(request: PositionRequest):
     return _sim_current(request.latitude, request.longitude)
 
 
-_wpi_cache: dict = {"data": None, "ts": 0.0}
 _WPI_CACHE_TTL = 86_400
 _zee_cache: dict = {"entries": {}}
 _ZEE_CACHE_TTL = 86_400
@@ -311,40 +322,11 @@ async def proxy_zee(
 
 @app.get("/proxy/ports")
 async def proxy_ports():
-    if _wpi_cache["data"] and (time.time() - _wpi_cache["ts"] < _WPI_CACHE_TTL):
-        return JSONResponse(content=_wpi_cache["data"])
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(
-                "https://msi.nga.mil/api/publications/world-port-index",
-                params={"output": "json"},
-            )
-            resp.raise_for_status()
-            raw = resp.json()
+        features = await fetch_wpi_features()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"WPI upstream error: {exc}") from exc
-
-    ports: List = raw if isinstance(raw, list) else raw.get("ports", [])
-    features = []
-    for p in ports:
-        lat = _parse_coord(p.get("latitude") or p.get("lat"))
-        lon = _parse_coord(p.get("longitude") or p.get("lon"))
-        if lat is None or lon is None or (lat == 0.0 and lon == 0.0):
-            continue
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [lon, lat]},
-            "properties": {
-                "name": p.get("portName") or p.get("name", ""),
-                "country": p.get("countryName") or p.get("country", ""),
-                "region": p.get("regionName") or p.get("region", ""),
-                "wpi_num": p.get("portNumber") or p.get("indexNo", ""),
-            },
-        })
-    geojson = {"type": "FeatureCollection", "features": features}
-    _wpi_cache["data"] = geojson
-    _wpi_cache["ts"] = time.time()
-    return JSONResponse(content=geojson)
+    return JSONResponse(content={"type": "FeatureCollection", "features": features})
 
 
 _OPENSEAMAP_HOSTS = ["tiles.openseamap.org", "t1.openseamap.org"]
