@@ -4,7 +4,6 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
-import { FollowToggle } from "./FollowToggle.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
@@ -148,10 +147,8 @@ export function Sidebar({
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
   dossier = null, iciBriefing = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
-  t0, onT0, startAt, onStartAt, virtualBoat, onVirtualBoat,
-  follow, onFollow,
-  hud, previewing, forecastStatus, forecastModel,
-  onRecompute, canRecompute, recomputeBusy,
+  departureT0, departureStartAt, onDepartureT0, onDepartureStartAt,
+  clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
 }) {
   const { t } = useLang();
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -248,16 +245,11 @@ export function Sidebar({
         <div className="flex-1 overflow-y-auto sidebar-scroll px-4 py-3 space-y-4">
           {simulationMode && (
             <DepartureField
-              t0={t0}
-              onT0={onT0}
-              startAt={startAt}
-              onStartAt={onStartAt}
-              virtualBoat={virtualBoat}
-              onVirtualBoat={onVirtualBoat}
+              t0={departureT0}
+              startAt={departureStartAt}
+              onT0={onDepartureT0}
+              onStartAt={onDepartureStartAt}
             />
-          )}
-          {simulationMode && (
-            <FollowToggle follow={follow} onFollow={onFollow} />
           )}
           {simulationMode && (
             <SimulationPanel
@@ -267,14 +259,11 @@ export function Sidebar({
               canPrev={canPrev}
               onNext={onNext}
               canNext={canNext}
-              hud={hud}
-              follow={follow}
-              previewing={previewing}
-              forecastStatus={forecastStatus}
-              forecastModel={forecastModel}
-              onRecompute={onRecompute}
-              canRecompute={canRecompute}
-              recomputeBusy={recomputeBusy}
+              clockSample={clockSample}
+              civilDate={civilDate}
+              kindLabel={kindLabel}
+              atQuay={atQuay}
+              quayDays={quayDays}
             />
           )}
           {simulationMode && (

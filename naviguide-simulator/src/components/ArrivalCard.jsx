@@ -6,6 +6,8 @@ export function ArrivalCard({
   seaTime,
   nextName,
   holding = false,
+  civilDate = "",
+  quayDays = 0,
 }) {
   const { t } = useLang();
   if (!name) return null;
@@ -20,6 +22,7 @@ export function ArrivalCard({
             ? t("filmArrivalNm", { nm: Math.round(Number(sailNm)).toLocaleString() })
             : ""}
           {seaTime ? ` · ${t("filmArrivalSea", { time: seaTime })}` : ""}
+          {civilDate ? ` · ${civilDate}` : ""}
         </div>
         {nextName ? (
           <div className="mt-0.5 text-[11px] text-cyan-200/85">
@@ -28,7 +31,7 @@ export function ArrivalCard({
         ) : null}
         {holding ? (
           <div className="mt-1.5 text-[10px] font-semibold tracking-wide text-amber-200/90 uppercase">
-            {t("filmArrivalHold")}
+            {quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmArrivalHold")}
           </div>
         ) : null}
       </div>
