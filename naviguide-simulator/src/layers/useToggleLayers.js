@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { ampStyle } from "./styles.js";
 import { circleOpts, makePointGroup } from "./points.js";
+import { EMODNET_WMS } from "../constants/layers.js";
 
 const BI_BASE = import.meta.env.VITE_BI_BASE ?? "/bi";
 const EMPTY = { type: "FeatureCollection", features: [] };
@@ -67,7 +68,16 @@ function addPointLayer(map, fc, color, kind, onFeature) {
   return group;
 }
 
-export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
+function ensureSimWmsPanes(map) {
+  EMODNET_WMS.forEach((spec) => {
+    if (!map.getPane(spec.pane)) map.createPane(spec.pane);
+    const pane = map.getPane(spec.pane);
+    pane.style.zIndex = String(spec.zIndex);
+    pane.style.pointerEvents = "none";
+  });
+}
+
+export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   const zee = useFetchLayer(null);
   const [showZee, setShowZee] = useState(true);
   const [loadingZee] = useState(false);
@@ -80,7 +90,25 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
   const poe = useFetchLayer(`${BI_BASE}/export/poe.geojson`);
   const science = useFetchLayer(`${BI_BASE}/export/science.geojson`);
 
-  const [showBalisage, setShowBalisage] = useState(false);
+  const [showBalisage, setShowBalisageRaw] = useState(false);
+  const [showWmsBathy, setShowWmsBathyRaw] = useState(false);
+  const [showWmsSubstrate, setShowWmsSubstrateRaw] = useState(false);
+  const [showWmsCables, setShowWmsCablesRaw] = useState(false);
+
+  const gatedSet = useCallback((setter, kind) => (fn) => {
+    setter((v) => {
+      const next = typeof fn === "function" ? fn(v) : !!fn;
+      if (next && gateRef && !gateRef.current?.allowed) {
+        gateRef.current?.onNeed?.(kind);
+        return v;
+      }
+      return next;
+    });
+  }, [gateRef]);
+  const setShowBalisage = gatedSet(setShowBalisageRaw, "balisage");
+  const setShowWmsBathy = gatedSet(setShowWmsBathyRaw, "wmsBathy");
+  const setShowWmsSubstrate = gatedSet(setShowWmsSubstrateRaw, "wmsSubstrate");
+  const setShowWmsCables = gatedSet(setShowWmsCablesRaw, "wmsCables");
   const [showAmp, setShowAmp] = useState(false);
   const [loadingAmp, setLoadingAmp] = useState(false);
   const [errorAmp, setErrorAmp] = useState(null);
@@ -149,6 +177,37 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
       }
     };
   }, [mapRef, mapReady, showBalisage]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return undefined;
+    ensureSimWmsPanes(map);
+    const specs = [
+      [showWmsBathy, EMODNET_WMS[0]],
+      [showWmsSubstrate, EMODNET_WMS[1]],
+      [showWmsCables, EMODNET_WMS[2]],
+    ];
+    const added = [];
+    specs.forEach(([on, spec]) => {
+      if (!on) return;
+      const lyr = L.tileLayer.wms(spec.url, {
+        layers: spec.layers,
+        format: "image/png",
+        transparent: true,
+        version: "1.1.1",
+        opacity: spec.opacity,
+        pane: spec.pane,
+        attribution: spec.attribution,
+      });
+      lyr.addTo(map);
+      added.push(lyr);
+    });
+    return () => {
+      added.forEach((lyr) => {
+        if (map.hasLayer(lyr)) map.removeLayer(lyr);
+      });
+    };
+  }, [mapRef, mapReady, showWmsBathy, showWmsSubstrate, showWmsCables]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -261,6 +320,18 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0) {
     setShowBalisage,
     loadingBalisage: false,
     errorBalisage: null,
+    showWmsBathy,
+    setShowWmsBathy,
+    loadingWmsBathy: false,
+    errorWmsBathy: null,
+    showWmsSubstrate,
+    setShowWmsSubstrate,
+    loadingWmsSubstrate: false,
+    errorWmsSubstrate: null,
+    showWmsCables,
+    setShowWmsCables,
+    loadingWmsCables: false,
+    errorWmsCables: null,
     showBiProjects: projects.show,
     setShowBiProjects: projects.setShow,
     loadingBiProjects: projects.loading,
