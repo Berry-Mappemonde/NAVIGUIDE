@@ -1,4 +1,7 @@
-import { haversineNm } from "../utils/geo.js";
+import { haversineNm, unwrapLon } from "../utils/geo.js";
+
+/** Au-delà : jonction entre segments = saut (avion), pas de la route. */
+export const AIR_JUMP_NM = 120;
 
 export function isNamedEscale(stop) {
   return Boolean(stop?.flag);
@@ -7,28 +10,46 @@ export function isNamedEscale(stop) {
 /**
  * Aplati tous les segments (terre comprise) en une polyligne + miles cumulés.
  * Point 0 = premier vertex (Saint-Maur pour Berry).
+ * Sauts aériens (Cayenne → Halifax / SPM) : 0 nm, bateau téléporté.
+ * Longitudes déroulées pour passer l’antiméridien sans couper le film.
  */
 export function flattenRoute(segments) {
   const points = [];
   let cumNm = 0;
+
+  const add = (lon, lat, { jump = false, nonMaritime = false } = {}) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (points.length) {
+      const prev = points[points.length - 1];
+      lon = unwrapLon(prev.lon, lon);
+      const same = Math.abs(prev.lat - lat) < 1e-9 && Math.abs(prev.lon - lon) < 1e-6;
+      if (same) return;
+      if (!jump) cumNm += haversineNm(prev.lat, prev.lon, lat, lon);
+    }
+    points.push({
+      lon,
+      lat,
+      cumNm,
+      nonMaritime: Boolean(nonMaritime),
+      jump: Boolean(jump),
+    });
+  };
+
   for (const seg of segments || []) {
     const coords = seg?.coords;
     if (!coords || coords.length < 2) continue;
-    for (let i = 0; i < coords.length; i++) {
-      const [lon, lat] = coords[i];
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      if (points.length) {
-        const prev = points[points.length - 1];
-        const same = Math.abs(prev.lat - lat) < 1e-9 && Math.abs(prev.lon - lon) < 1e-9;
-        if (same) continue;
-        cumNm += haversineNm(prev.lat, prev.lon, lat, lon);
+    let start = 0;
+    if (points.length) {
+      const [lon0, lat0] = coords[0];
+      const prev = points[points.length - 1];
+      if (Number.isFinite(lat0) && Number.isFinite(lon0)
+        && haversineNm(prev.lat, prev.lon, lat0, lon0) >= AIR_JUMP_NM) {
+        add(lon0, lat0, { jump: true, nonMaritime: seg.nonMaritime });
+        start = 1;
       }
-      points.push({
-        lon,
-        lat,
-        cumNm,
-        nonMaritime: Boolean(seg.nonMaritime),
-      });
+    }
+    for (let i = start; i < coords.length; i++) {
+      add(coords[i][0], coords[i][1], { nonMaritime: seg.nonMaritime });
     }
   }
   return { points, totalNm: points.length ? points[points.length - 1].cumNm : 0 };
@@ -36,9 +57,10 @@ export function flattenRoute(segments) {
 
 function initialBearing(lat1, lon1, lat2, lon2) {
   const toRad = (d) => (d * Math.PI) / 180;
+  const lon2u = unwrapLon(lon1, lon2);
   const φ1 = toRad(lat1);
   const φ2 = toRad(lat2);
-  const Δλ = toRad(lon2 - lon1);
+  const Δλ = toRad(lon2u - lon1);
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
@@ -62,15 +84,36 @@ export function interpolateAtNm(flat, nm) {
   const pts = flat?.points || [];
   if (pts.length === 0) return null;
   if (pts.length === 1) {
-    return { lon: pts[0].lon, lat: pts[0].lat, bearing: 0, nonMaritime: pts[0].nonMaritime, nm: 0 };
+    return {
+      lon: pts[0].lon,
+      lat: pts[0].lat,
+      bearing: 0,
+      nonMaritime: pts[0].nonMaritime,
+      nm: 0,
+      jump: Boolean(pts[0].jump),
+    };
   }
   const target = Math.max(0, Math.min(flat.totalNm, Number(nm) || 0));
+  // ≤ : on franchit les sauts (plusieurs points au même cumNm) d’un coup.
   let i = 0;
-  while (i < pts.length - 2 && pts[i + 1].cumNm < target) i += 1;
+  while (i < pts.length - 2 && pts[i + 1].cumNm <= target) i += 1;
   const a = pts[i];
   const b = pts[i + 1];
+  if (b.jump) {
+    const next = pts[i + 2];
+    return {
+      lon: b.lon,
+      lat: b.lat,
+      bearing: next
+        ? initialBearing(b.lat, b.lon, next.lat, next.lon)
+        : initialBearing(a.lat, a.lon, b.lat, b.lon),
+      nonMaritime: Boolean(b.nonMaritime),
+      nm: target,
+      jump: true,
+    };
+  }
   const span = b.cumNm - a.cumNm;
-  const t = span > 0 ? (target - a.cumNm) / span : 0;
+  const t = span > 0 ? (target - a.cumNm) / span : 1;
   const lat = a.lat + t * (b.lat - a.lat);
   const lon = a.lon + t * (b.lon - a.lon);
   return {
@@ -79,6 +122,7 @@ export function interpolateAtNm(flat, nm) {
     bearing: initialBearing(a.lat, a.lon, b.lat, b.lon),
     nonMaritime: Boolean(a.nonMaritime && b.nonMaritime),
     nm: target,
+    jump: false,
   };
 }
 
@@ -90,7 +134,11 @@ export function nearestNm(flat, lat, lon) {
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
     const b = pts[i + 1];
-    const res = projectOnSegment(lat, lon, a.lat, a.lon, b.lat, b.lon);
+    if (b.jump || (a.cumNm === b.cumNm && haversineNm(a.lat, a.lon, b.lat, b.lon) >= AIR_JUMP_NM)) {
+      continue;
+    }
+    const qLon = unwrapLon(a.lon, lon);
+    const res = projectOnSegment(lat, qLon, a.lat, a.lon, b.lat, b.lon);
     if (res.distNm < bestD) {
       bestD = res.distNm;
       const span = b.cumNm - a.cumNm;

@@ -1,17 +1,11 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import catamaranImg from "../assets/img/catamaran.jpg";
+import { catamaranTransform } from "../engine/catamaranIcon.js";
 
-function buildIconHtml(bearing, southern, png) {
-  const bearingRad = (bearing * Math.PI) / 180;
-  const goingEast = Math.sin(bearingRad) >= 0;
-  const tilt = goingEast ? bearing - 90 : bearing - 270;
-  const parts = [];
-  if (!goingEast) parts.push("scaleX(-1)");
-  parts.push(`rotate(${tilt}deg)`);
-  if (southern) parts.push("scaleY(-1)");
+function buildIconHtml(bearing, png) {
   const src = png || catamaranImg;
-  return `<img src="${src}" alt="catamaran" style="width:56px;height:56px;object-fit:contain;transform:${parts.join(" ")};transition:transform 0.35s ease;" />`;
+  return `<img src="${src}" alt="catamaran" style="width:56px;height:56px;object-fit:contain;transform:${catamaranTransform(bearing)};transition:transform 0.35s ease;" />`;
 }
 
 export function useCatamaranMarker(mapRef, { visible, lat, lon, bearing, onDrag, onDragStart, mapReady }) {
@@ -28,7 +22,7 @@ export function useCatamaranMarker(mapRef, { visible, lat, lon, bearing, onDrag,
     }
     const icon = L.divIcon({
       className: "catamaran-divicon",
-      html: buildIconHtml(bearing, lat < 0),
+      html: buildIconHtml(bearing),
       iconSize: [56, 56],
       iconAnchor: [28, 28],
     });
