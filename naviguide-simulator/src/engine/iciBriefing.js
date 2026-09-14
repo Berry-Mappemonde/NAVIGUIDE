@@ -82,6 +82,14 @@ function zeeSentence(dossier, lang) {
       ? "Here, the exclusive economic zone could not be named."
       : "Ici, on n’a pas pu nommer la ZEE.";
   }
+  if (zee.ashore || String(zee.name || "").startsWith("À terre")) {
+    const extra = String(zee.name || "").startsWith("À terre")
+      ? zee.name.slice("À terre".length).trim()
+      : "";
+    return en
+      ? `Here the boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
+      : `Ici, le bateau est à terre${extra ? ` ${extra}` : ""}, hors ZEE.`;
+  }
   if (!zee.mrgid || zee.name === "Haute mer") {
     return en
       ? "Here the boat is on the high seas — no exclusive economic zone, no port of entry to clear."
