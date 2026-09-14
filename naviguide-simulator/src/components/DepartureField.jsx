@@ -1,7 +1,7 @@
 import { useLang } from "../i18n/LangContext.jsx";
 import { parseDepartureUtc, splitDepartureUtc } from "../engine/voyageClock.js";
 
-export function DepartureField({ t0, startAt, onT0, onStartAt }) {
+export function DepartureField({ t0, startAt, onT0, onStartAt, virtualBoat, onVirtualBoat }) {
   const { t, lang } = useLang();
   const { date, time } = splitDepartureUtc(t0);
 
@@ -56,6 +56,14 @@ export function DepartureField({ t0, startAt, onT0, onStartAt }) {
           {t("departureSaintMaur")}
         </label>
       </fieldset>
+      <label className="flex items-center gap-2 text-[11px] text-slate-200">
+        <input
+          type="checkbox"
+          checked={Boolean(virtualBoat)}
+          onChange={(e) => onVirtualBoat?.(e.target.checked)}
+        />
+        {t("virtualBoatLabel")}
+      </label>
     </div>
   );
 }
