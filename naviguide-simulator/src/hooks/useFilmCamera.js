@@ -61,7 +61,7 @@ export function useFilmCamera({
             [hopFrom.lat, lonA],
             [hopTo.lat, lonB],
           ],
-          { padding: [56, 56], maxZoom: 4.5, animate: true, duration: 0.9 },
+          { padding: [72, 96], maxZoom: 3.15, animate: true, duration: 0.9 },
         );
         lastFollow.current = Date.now();
         lastPos.current = null;
