@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { trueWindAngle } from "../engine/playSpeeds.js";
 import { polarBoatSpeed } from "../engine/polarSpeed.js";
+import { clockWindSeries } from "../engine/voyageClock.js";
 import {
   cacheKeyLatLon,
   mapPool,
@@ -50,10 +51,14 @@ async function fetchPolarKnots(expeditionId, twa, tws) {
 /**
  * Mini-série vent / nœuds le long du trait. Ne refetch pas à chaque tick.
  */
-export function useRouteWindProfile({ flat, marks, polarData, cruiseKnots, enabled }) {
+export function useRouteWindProfile({ flat, marks, polarData, cruiseKnots, enabled, clock = null }) {
+  const clockSeries = useMemo(
+    () => (enabled && clock ? clockWindSeries(clock) : []),
+    [enabled, clock],
+  );
   const samples = useMemo(
-    () => (enabled ? pickProfileSamples(flat, marks, { maxPoints: 24 }) : []),
-    [enabled, flat, marks],
+    () => (enabled && !clock ? pickProfileSamples(flat, marks, { maxPoints: 24 }) : []),
+    [enabled, clock, flat, marks],
   );
   const sampleKey = useMemo(
     () => samples.map((s) => `${s.filmNm.toFixed(1)}:${s.lat.toFixed(2)}:${s.lon.toFixed(2)}`).join("|"),
@@ -67,6 +72,11 @@ export function useRouteWindProfile({ flat, marks, polarData, cruiseKnots, enabl
   const polarRaw = polarData?.raw;
 
   useEffect(() => {
+    if (clockSeries.length) {
+      setSeries(clockSeries);
+      setLoading(false);
+      return undefined;
+    }
     if (!enabled || !samples.length) {
       setSeries([]);
       setLoading(false);
@@ -103,7 +113,7 @@ export function useRouteWindProfile({ flat, marks, polarData, cruiseKnots, enabl
     return () => {
       cancelled = true;
     };
-  }, [enabled, sampleKey, samples, expeditionId, cruise, polarRaw]);
+  }, [enabled, sampleKey, samples, expeditionId, cruise, polarRaw, clockSeries]);
 
-  return { samples, series, loading };
+  return { samples, series: clockSeries.length ? clockSeries : series, loading: clockSeries.length ? false : loading };
 }

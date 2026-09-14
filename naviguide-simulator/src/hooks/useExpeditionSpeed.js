@@ -13,8 +13,8 @@ function roundKt(k) {
 }
 
 /**
- * Nœuds film : climatologie le long du trait (TWA/TWS → polarSpeed),
- * plus un poll 25 s Copernicus en profil « réelle » (kind analyse).
+ * Nœuds film : table d’horloge (climatologie) dès qu’elle existe.
+ * Le poll Copernicus 25 s (kind analyse) ne tourne plus dans ce cas.
  */
 export function useExpeditionSpeed({
   polarData,
@@ -24,6 +24,8 @@ export function useExpeditionSpeed({
   onLiveKnots,
   windSeries,
   filmNm,
+  clockSample = null,
+  clockReady = false,
 }) {
   const cruise = expeditionBoatKnots(polarData);
   const [nrtKnots, setNrtKnots] = useState(null);
@@ -35,6 +37,7 @@ export function useExpeditionSpeed({
   onLiveRef.current = onLiveKnots;
 
   useEffect(() => {
+    if (clockReady) return;
     const s = sample;
     const tws = lerpSeries(windSeries, filmNm, "tws");
     const from = lerpSeries(windSeries, filmNm, "windFrom");
@@ -51,9 +54,10 @@ export function useExpeditionSpeed({
         onLiveRef.current?.(rounded);
       }
     }
-  }, [filmNm, sample?.bearing, windSeries, polarData?.raw, nrtKnots]);
+  }, [filmNm, sample?.bearing, windSeries, polarData?.raw, nrtKnots, clockReady]);
 
   useEffect(() => {
+    if (clockReady) return undefined;
     if (profile !== "real" || !playing || !polarData?.expedition_id) return undefined;
     let cancelled = false;
     const tick = async () => {
@@ -96,7 +100,7 @@ export function useExpeditionSpeed({
       cancelled = true;
       clearInterval(id);
     };
-  }, [profile, playing, polarData?.expedition_id, polarData?.raw]);
+  }, [profile, playing, polarData?.expedition_id, polarData?.raw, clockReady]);
 
   useEffect(() => {
     if (profile !== "real") {
@@ -104,6 +108,11 @@ export function useExpeditionSpeed({
     }
   }, [profile]);
 
+  const clockKnots = clockSample?.speedKnots;
+  if (clockReady) {
+    const knots = (Number(clockKnots) > 0 ? Number(clockKnots) : null) || cruise;
+    return { knots, cruise, live: false, kind: "climatology" };
+  }
   const analyse = profile === "real" && nrtKnots != null;
   const knots = (analyse ? nrtKnots : climoKnots) || cruise;
   const kind = analyse ? "analyse" : (climoKnots != null ? "climatology" : null);
