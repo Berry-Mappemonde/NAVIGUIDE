@@ -73,7 +73,14 @@ def decide(event_name: str, *, input_site: str | None = None,
         elif wanted == "simulator":
             out["simulator"] = "true"
         return out
-    return classify(files or [])
+    result = classify(files or [])
+    # Un push qui ne touche que la sonde / apply-*.sh : envoyer les scripts
+    # sur le VPS sans redémarrer les sites.
+    if (result["bi"] == "false" and result["naviguide"] == "false"
+            and result["simulator"] == "false"
+            and any((p or "").startswith("infra/vps/ci/") for p in (files or []))):
+        result["catch_up"] = "true"
+    return result
 
 
 def _changed_files(before: str, sha: str) -> list[str]:

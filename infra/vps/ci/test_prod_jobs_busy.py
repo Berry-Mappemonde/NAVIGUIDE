@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import unittest
 import urllib.error
@@ -74,7 +75,7 @@ class ConnectionRefusedTests(unittest.TestCase):
 
 class ProbeLoopTests(unittest.TestCase):
     def test_first_path_busy_stops_with_10(self):
-        def fake_fetch(url, timeout):
+        def fake_fetch(url, timeout, admin_key=""):
             if url.endswith("/api/swarm/status"):
                 return {"running": True, "run_id": "r1"}
             return {"running": False}
@@ -110,7 +111,7 @@ class ProbeLoopTests(unittest.TestCase):
         self.assertIn("error", hits[0])
 
     def test_gone_endpoint_is_skipped(self):
-        def fake_fetch(url, timeout):
+        def fake_fetch(url, timeout, admin_key=""):
             if url.endswith("/generate-batch/status"):
                 raise urllib.error.HTTPError(
                     url, 410, "Gone", hdrs=None, fp=None)
@@ -126,6 +127,42 @@ class ProbeLoopTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(hits[0].get("skipped"))
         self.assertEqual(hits[1]["path"], "/api/swarm/status")
+
+    def test_review_suggest_running_is_busy(self):
+        def fake_fetch(url, timeout, admin_key=""):
+            if url.endswith("/api/review/suggest/status"):
+                return {"running": True}
+            return {"running": False}
+
+        with mock.patch.object(probe, "fetch_json", side_effect=fake_fetch):
+            code, hits = probe.probe("http://127.0.0.1:8001", admin_key="sesame")
+        self.assertEqual(code, probe.BUSY_EXIT)
+        self.assertEqual(hits[0]["path"], "/api/review/suggest/status")
+
+    def test_review_401_without_key_is_skipped(self):
+        def fake_fetch(url, timeout, admin_key=""):
+            if url.endswith("/api/review/suggest/status"):
+                raise urllib.error.HTTPError(
+                    url, 401, "Unauthorized", hdrs=None, fp=None)
+            return {"running": False}
+
+        with mock.patch.object(probe, "fetch_json", side_effect=fake_fetch):
+            code, hits = probe.probe("http://127.0.0.1:8001")
+        self.assertEqual(code, 0)
+        review = next(h for h in hits if h["path"].endswith("/review/suggest/status"))
+        self.assertTrue(review.get("skipped"))
+
+    def test_review_401_with_key_is_error(self):
+        def fake_fetch(url, timeout, admin_key=""):
+            if url.endswith("/api/review/suggest/status"):
+                raise urllib.error.HTTPError(
+                    url, 401, "Unauthorized", hdrs=None, fp=None)
+            return {"running": False}
+
+        with mock.patch.object(probe, "fetch_json", side_effect=fake_fetch):
+            code, hits = probe.probe("http://127.0.0.1:8001", admin_key="mauvaise")
+        self.assertEqual(code, probe.ERROR_EXIT)
+        self.assertIn("review/suggest", hits[0]["path"])
 
 
 class FetchHeaderTests(unittest.TestCase):
@@ -152,6 +189,39 @@ class FetchHeaderTests(unittest.TestCase):
         self.assertEqual(data, {"running": False})
         self.assertIn("BlueIntelligence-DeployProbe", captured["ua"] or "")
         self.assertNotIn("Python-urllib", captured["ua"] or "")
+
+    def test_admin_key_header(self):
+        captured = {}
+
+        class _Resp:
+            def read(self):
+                return b'{"running":false}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=0):
+            captured["admin"] = req.get_header("X-admin-key")
+            return _Resp()
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            probe.fetch_json(
+                "http://127.0.0.1:8001/api/review/suggest/status",
+                2, admin_key="sesame")
+        self.assertEqual(captured["admin"], "sesame")
+
+    def test_load_admin_key_from_env_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = Path(tmp) / "backend"
+            backend.mkdir()
+            (backend / ".env").write_text('ADMIN_KEY="sesame-file"\n', encoding="utf-8")
+            with mock.patch.dict(os.environ, {"APP": tmp, "ADMIN_KEY": ""}, clear=False):
+                os.environ.pop("ADMIN_KEY", None)
+                self.assertEqual(probe.load_admin_key(), "sesame-file")
 
 
 class CliTests(unittest.TestCase):
@@ -216,6 +286,12 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(out["bi"], "false")
         self.assertEqual(out["naviguide"], "false")
         self.assertEqual(out["simulator"], "false")
+        self.assertEqual(out["catch_up"], "true")
+
+    def test_docs_only_no_catch_up(self):
+        import plan_deploy
+        out = plan_deploy.decide("push", files=["infra/vps/README.md"])
+        self.assertEqual(out["catch_up"], "false")
 
     def test_naviguide_infra_excludes_simulator(self):
         import plan_deploy
