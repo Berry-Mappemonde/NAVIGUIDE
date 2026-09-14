@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { haversineNm, summarizeRoute, featuresToSegments } from "./geo.js";
 
 describe("summarizeRoute", () => {
-  it("compte les segments et une distance > 0", () => {
+  it("counts segments and a distance > 0", () => {
     const { nm, segments } = summarizeRoute([
       { coords: [[-1.16, 46.15], [-16.15, 28.55]] },
       { coords: [[-16.15, 28.55], [-23.6, 15.1]] },
@@ -12,13 +12,13 @@ describe("summarizeRoute", () => {
     assert.ok(nm > 1000);
   });
 
-  it("ignore les LineString trop courtes", () => {
+  it("ignores LineStrings that are too short", () => {
     assert.deepEqual(summarizeRoute([{ coords: [[0, 0]] }]), { nm: 0, segments: 0 });
   });
 });
 
 describe("featuresToSegments", () => {
-  it("extrait les LineString d'une FeatureCollection", () => {
+  it("extracts LineStrings from a FeatureCollection", () => {
     const segs = featuresToSegments({
       type: "FeatureCollection",
       features: [

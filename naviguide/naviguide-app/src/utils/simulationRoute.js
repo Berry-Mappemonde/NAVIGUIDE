@@ -3,7 +3,7 @@ import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
 const FALLBACK_START = { lat: 46.1541, lon: -1.167 };
 
-/** Chaque waypoint de la route perso est une escale (le bateau s’y arrête). */
+/** Every waypoint of the custom route is a stopover (the boat stops there). */
 export function stopsFromCustomRoute(geojson) {
   return waypointsFromCollection(geojson).map((p) => ({
     name: p.name,
@@ -14,8 +14,8 @@ export function stopsFromCustomRoute(geojson) {
 }
 
 /**
- * Si 1 LineString = 1 jambe entre deux waypoints, nomme from/to.
- * Sinon laisse les noms vides : useLegContext s’appuie sur les stops.
+ * If 1 LineString = 1 leg between two waypoints, name from/to.
+ * Otherwise leave names empty: useLegContext relies on the stops.
  */
 export function namedSegments(segments, stops) {
   if (!Array.isArray(segments) || !segments.length) return [];
@@ -47,8 +47,8 @@ export function activeSimulationSegments(customRoute, berrySegments) {
 }
 
 /**
- * Cibles Suivant/Précédent : départ, puis milieu et fin de chaque tronçon maritime.
- * [départ, mid0, end0, mid1, end1, …]
+ * Next/Previous targets: start, then midpoint and end of each maritime leg.
+ * [start, mid0, end0, mid1, end1, …]
  */
 export function buildSimTargets(segments, fallbackStops = []) {
   const maritimeSegs = (segments || []).filter((s) => !s.nonMaritime && s.coords?.length >= 2);

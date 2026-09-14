@@ -198,11 +198,11 @@ def searoute_with_exact_end(start, end):
     coords = route["geometry"]["coordinates"]
     last_point = coords[-1]
 
-    # Calcul de la distance entre le dernier point et le vrai point d'arrivée
+    # Distance between the last point and the true arrival point
     geod = Geodesic.WGS84
     dist = geod.Inverse(last_point[1], last_point[0], end[1], end[0])["s12"]  # mètres
 
-    # Si la route ne va pas jusqu'au point exact, on ajoute une courte ligne géodésique
+    # If the route does not reach the exact point, add a short geodesic line
     if dist > 1000:  # seuil = 1 km
         n_points = max(2, int(dist // 5000))  # environ 1 point tous les 5 km
         line = geod.InverseLine(last_point[1], last_point[0], end[1], end[0])
@@ -213,12 +213,12 @@ def searoute_with_exact_end(start, end):
             lon = pos["lon2"]
             lat = pos["lat2"]
             
-            # Normaliser la longitude pour gérer le passage de l'antiméridien
-            # On vérifie si on doit ajuster la longitude pour éviter le trait global
+            # Normalize longitude to handle the antimeridian crossing
+            # Check whether longitude must be adjusted to avoid a worldwide stroke
             if len(coords) > 0:
                 prev_lon = coords[-1][0] if len(extra_coords) == 0 else extra_coords[-1][0]
                 
-                # Si la différence est > 180°, on ajuste
+                # If the difference is > 180°, adjust
                 if lon - prev_lon > 180:
                     lon -= 360
                 elif lon - prev_lon < -180:
@@ -286,7 +286,7 @@ def compute_full_route(points):
     except Exception as e:
         print(f"⚠️ Erreur Marigot->Cayenne: {e}")
 
-    # Ajouter le segment isolé Halifax (13) -> Saint-Pierre (14)
+    # Add the isolated Halifax (13) -> Saint-Pierre (14) segment
     try:
         start = (points[13]["lon"], points[13]["lat"])
         end = (points[14]["lon"], points[14]["lat"])

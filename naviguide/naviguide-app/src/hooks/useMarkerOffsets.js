@@ -1,6 +1,6 @@
 /**
- * useMarkerOffsets — décalages pixel plafonnés pour les drapeaux d'escale.
- * Les points intermédiaires restent collés à leur coordonnée.
+ * useMarkerOffsets — capped pixel offsets for stopover flags.
+ * Intermediate points stay glued to their coordinate.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets";

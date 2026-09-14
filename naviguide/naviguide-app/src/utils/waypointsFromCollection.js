@@ -1,6 +1,6 @@
 /**
- * Waypoints nommés pour l'orchestrateur et le briefing local.
- * Points d'abord ; si moins de 2, extrait départ/arrivée des LineString
+ * Named waypoints for the orchestrator and the local briefing.
+ * Points first; if fewer than 2, extract start/end from LineString
  * (fichiers GeoJSON/KML souvent sans Point).
  */
 export function waypointsFromCollection(geojson) {

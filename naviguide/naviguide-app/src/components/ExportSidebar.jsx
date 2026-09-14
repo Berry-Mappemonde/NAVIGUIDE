@@ -316,7 +316,7 @@ export function ExportSidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polarFile]);
 
-  /* ── Chargement par défaut des polaires Leopard 46 ───────────────────────── */
+  /* ── Default load of Leopard 46 polars ───────────────────────── */
   useEffect(() => {
     if (polarData || defaultLoadAttemptedRef.current) return;
     defaultLoadAttemptedRef.current = true;
