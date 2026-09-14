@@ -75,8 +75,10 @@ export default {
   gettingStartedText: "Click any point on the route to get wind, wave and current data. Draw your own route or start the simulation.",
   searouteUnavailable: "Official route (searoute unavailable).",
   searouteDrawFailed: "searoute failed — temporary rhumb line.",
-  berryLocalBriefing: "Berry-Mappemonde expedition: from Saint-Maur (Berry) to La Rochelle, then the overseas stops. Start the simulation to play the route as a film (Play, four speeds including real boat speed). The cockpit dossier (ici pack) will fill in step 2.", // pragma: allowlist secret
+  berryLocalBriefing: "Berry-Mappemonde expedition: from Saint-Maur (Berry) to La Rochelle, then the overseas stops. Start the simulation: the briefing then tells the pack around the boat — which EEZ, which ports of entry, what sits inside 30 nm — not the whole chart.", // pragma: allowlist secret
   cockpitDossier: "Cockpit dossier",
+  iciBriefingLoading: "Filling the pack around the boat…",
+  iciBriefingFallback: "The pack around the boat has no story yet.",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",

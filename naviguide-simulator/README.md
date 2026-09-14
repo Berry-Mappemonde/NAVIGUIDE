@@ -49,7 +49,8 @@ redéployé. Détail : `infra/vps/README.md` (section simulator).
 | Film NAVIGUIDE (2 sidebars, Berry, simulation, briefing) | 4 chats Ports / Sécurité / Météo / Cruisers |
 | Searoute + draw your own route | Chat polar |
 | Polar upload + tableau VMG (Leopard 46) | Import / export GeoJSON ou KML |
-| Pastilles de couches (Sextant, Argo, ODATIS, EDMED, CSR, bathymétrie, fonds, câbles + Climat stub) | `ici()` rempli (ZEE, PoE Gold, Tavily) |
-| Clic route → vent / vague / courant | Nemotron / Token Factory |
+| Pastilles de couches (Sextant, Argo, ODATIS, EDMED, CSR, bathymétrie, fonds, câbles + Climat stub) | |
+| `ici()` : ZEE, PoE Gold, AMP / projets / ports dans 30 nm — le briefing raconte ce sac | Tavily / Nemotron / Token Factory (étapes 5–6) |
+| Clic route → vent / vague / courant | Dump de toute la carte dans le récit |
 
 **Ne convient pas à la navigation.**
