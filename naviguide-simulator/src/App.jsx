@@ -13,6 +13,8 @@ import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
 import { useRouteLayer } from "./layers/useRouteLayer.js";
 import { useToggleLayers } from "./layers/useToggleLayers.js";
+import NotForNavModal from "./components/NotForNavModal.jsx";
+import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -121,7 +123,18 @@ export default function App() {
     setSelectedSatellite(null);
     setLayerPopup(fiche);
   }, []);
-  const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady);
+  const [notForNavOk, setNotForNavOk] = useState(() => readNotForNavAccepted());
+  const [notForNavOpen, setNotForNavOpen] = useState(false);
+  const pendingLayerRef = useRef(null);
+  const gateRef = useRef({
+    allowed: notForNavOk,
+    onNeed: (kind) => {
+      pendingLayerRef.current = kind;
+      setNotForNavOpen(true);
+    },
+  });
+  gateRef.current.allowed = notForNavOk;
+  const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady, gateRef);
 
   const activeStops = useMemo(() => activeSimulationStops(customRoute, points.length ? points : ITINERARY_POINTS), [customRoute, points]);
   const activeSegments = useMemo(() => activeSimulationSegments(customRoute, segments), [customRoute, segments]);
@@ -560,10 +573,28 @@ export default function App() {
   const statsSegs = customRoute ? featuresToSegments(customRoute) : segments;
   const stats = summarizeRoute(statsSegs);
 
+  const enablePendingRestricted = (kind) => {
+    if (kind === "balisage") maritimeLayers.setShowBalisage(true);
+    if (kind === "wmsBathy") maritimeLayers.setShowWmsBathy(true);
+    if (kind === "wmsSubstrate") maritimeLayers.setShowWmsSubstrate(true);
+    if (kind === "wmsCables") maritimeLayers.setShowWmsCables(true);
+  };
+
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }} className={isLightMode ? "light-mode" : ""}>
       <div ref={containerRef} id="simulator-map" style={{ height: "100%", width: "100%" }} />
 
+      <NotForNavModal
+        open={notForNavOpen}
+        onCancel={() => { pendingLayerRef.current = null; setNotForNavOpen(false); }}
+        onAccept={() => {
+          writeNotForNavAccepted();
+          setNotForNavOk(true);
+          setNotForNavOpen(false);
+          enablePendingRestricted(pendingLayerRef.current);
+          pendingLayerRef.current = null;
+        }}
+      />
       <Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
