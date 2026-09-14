@@ -16,6 +16,8 @@ from typing import Any
 
 import httpx
 
+from gebco_lookup import attach_depth_offshore, reset_gebco_cache
+
 ICI_RADIUS_NM = 30
 MAX_POE = 4
 MAX_AMP = 5
@@ -72,6 +74,7 @@ def reset_caches() -> None:
     _fc_cache.clear()
     _wpi_cache["data"] = None
     _wpi_cache["ts"] = 0.0
+    reset_gebco_cache()
 
 
 def bi_base() -> str:
@@ -93,7 +96,8 @@ def empty_dossier(lat: float, lon: float, radius_nm: float = ICI_RADIUS_NM) -> d
         "weather": None,
         "polar": None,
         "event": None,
-        "sources": {"zee": None, "bi": None},
+        "sources": {"zee": None, "bi": None, "gebco": None},
+        "depthOffshore": None,
     }
 
 
@@ -540,6 +544,8 @@ async def fill_dossier(
             d["sources"]["bi"] = "partial"
         else:
             d["sources"]["bi"] = "unavailable"
+
+        await attach_depth_offshore(d, http)
     finally:
         if own:
             await http.aclose()

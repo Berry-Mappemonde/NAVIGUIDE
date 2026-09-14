@@ -12,10 +12,13 @@ import { getCardinalDirection } from "./utils/getCardinalDirection";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
+import { ArrivalCard } from "./components/ArrivalCard.jsx";
 import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
 import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
+import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
+import { useWakeLayer } from "./hooks/useWakeLayer.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
 import { useAirHopLine } from "./hooks/useAirHopLine.js";
@@ -32,6 +35,8 @@ import {
 } from "./engine/routePlayhead.js";
 import { interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
+import { formatSeaClock } from "./engine/seaTime.js";
+import { nextStationAfter } from "./engine/stationDwell.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -106,6 +111,7 @@ export default function App() {
 
   const [simulationMode, setSimulationMode] = useState(false);
   const [cinemaMode, setCinemaMode] = useState(false);
+  const [clockScale, setClockScale] = useState("nm");
   const [arrivalBanner, setArrivalBanner] = useState(null);
   const [liveKnots, setLiveKnots] = useState(null);
   const cinemaSavedRef = useRef({ sidebar: true, tools: true });
@@ -170,6 +176,13 @@ export default function App() {
     boatKnots,
     enabled: simulationMode,
   });
+  const windProfile = useRouteWindProfile({
+    flat: flatRoute,
+    marks: escaleMarks,
+    polarData,
+    cruiseKnots,
+    enabled: simulationMode,
+  });
 
   const cast = useMemo(
     () => interpolateCast(flatRoute, playback.nm, { stops: activeStops }),
@@ -193,6 +206,14 @@ export default function App() {
     profile: playback.profile,
     playing: playback.playing && cast?.vehicle !== "plane",
     onLiveKnots: setLiveKnots,
+    windSeries: windProfile.series,
+    filmNm: playback.nm,
+  });
+  useWakeLayer(mapRef, {
+    flat: flatRoute,
+    sailNm: cast?.sailNm ?? 0,
+    enabled: simulationMode,
+    mapReady,
   });
 
   const legContext = useMemo(() => {
@@ -233,11 +254,15 @@ export default function App() {
   playheadNmRef.current = playback.nm;
 
   const handleSimNext = useCallback(() => {
+    lastArrivalKeyRef.current = "";
+    setArrivalBanner(null);
     playback.pause();
     playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
   }, [playback.pause, playback.seek, escaleMarks]);
 
   const handleSimPrev = useCallback(() => {
+    lastArrivalKeyRef.current = "";
+    setArrivalBanner(null);
     playback.pause();
     playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
   }, [playback.pause, playback.seek, escaleMarks]);
@@ -312,6 +337,22 @@ export default function App() {
     const prev = prevPlayheadRef.current;
     const cur = playback.nm;
     prevPlayheadRef.current = cur;
+    if (Math.abs(cur - prev) > 8) {
+      lastArrivalKeyRef.current = "";
+      const landed = escaleMarks.find((m) => {
+        const at = m.filmNm ?? m.nm;
+        return at > 0.5 && Math.abs(cur - at) <= 0.8;
+      });
+      if (!landed) {
+        setArrivalBanner(null);
+        return undefined;
+      }
+      const landKey = `${landed.name}-${Math.round(landed.filmNm ?? landed.nm)}`;
+      lastArrivalKeyRef.current = landKey;
+      setArrivalBanner(landed);
+      const timer = setTimeout(() => setArrivalBanner(null), 8000);
+      return () => clearTimeout(timer);
+    }
     if (cur + 2 < prev) {
       lastArrivalKeyRef.current = "";
       setArrivalBanner(null);
@@ -347,6 +388,9 @@ export default function App() {
       } else if (e.code === "KeyC") {
         e.preventDefault();
         toggleCinema();
+      } else if (e.code === "KeyT") {
+        e.preventDefault();
+        setClockScale((s) => (s === "nm" ? "days" : "nm"));
       } else if (e.code === "Escape" && cinemaMode) {
         e.preventDefault();
         leaveCinema();
@@ -801,6 +845,7 @@ export default function App() {
         onCancel={() => { pendingLayerRef.current = null; setNotForNavOpen(false); }}
         onAccept={() => {
           writeNotForNavAccepted();
+          gateRef.current.allowed = true;
           setNotForNavOk(true);
           setNotForNavOpen(false);
           enablePendingRestricted(pendingLayerRef.current);
@@ -834,6 +879,14 @@ export default function App() {
         onPrev={handleSimPrev}
         canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
         legContext={legContext}
+        escaleMarks={escaleMarks}
+        filmNm={playback.nm}
+        onSeekEscale={(nm) => {
+          lastArrivalKeyRef.current = "";
+          setArrivalBanner(null);
+          playback.pause();
+          playback.seek(nm, { jump: true });
+        }}
       />
 
       <ToolsSidebar
@@ -901,17 +954,23 @@ export default function App() {
       )}
 
       {maritimeLayers.showClimatology && (
-        <div className={`absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full ${simulationMode ? "bottom-32" : "bottom-6"}`}>
+        <div className={`absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full ${simulationMode ? "bottom-48" : "bottom-6"}`}>
           {t("climatologyStub")}
         </div>
       )}
 
-      {simulationMode && arrivalBanner && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[2030] pointer-events-none">
-          <div className="bg-slate-950/92 border border-cyan-400/40 text-white px-5 py-3 rounded-2xl shadow-2xl text-center max-w-[min(420px,92vw)]">
-            <div className="text-base font-semibold leading-snug">{t("filmArrived", { name: arrivalBanner.name })}</div>
-          </div>
-        </div>
+      {simulationMode && (arrivalBanner || playback.holdingStation) && (
+        <ArrivalCard
+          name={(arrivalBanner || playback.holdingStation).name}
+          sailNm={(arrivalBanner || playback.holdingStation).nm}
+          seaTime={formatSeaClock((arrivalBanner || playback.holdingStation).nm, expeditionSpeed.knots)}
+          nextName={nextStationAfter(
+            (arrivalBanner || playback.holdingStation).filmNm
+              ?? (arrivalBanner || playback.holdingStation).nm,
+            escaleMarks,
+          )?.name}
+          holding={playback.holding}
+        />
       )}
 
       {simulationMode && (
@@ -933,7 +992,12 @@ export default function App() {
           playing={playback.playing}
           onTogglePlay={playback.toggle}
           marks={escaleMarks}
-          onSeekNm={(nm) => { playback.pause(); playback.seek(nm); }}
+          onSeekNm={(nm) => {
+            lastArrivalKeyRef.current = "";
+            setArrivalBanner(null);
+            playback.pause();
+            playback.seek(nm, { jump: true });
+          }}
           onPrev={handleSimPrev}
           onNext={handleSimNext}
           canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
@@ -941,14 +1005,20 @@ export default function App() {
           cinema={cinemaMode}
           onCinema={toggleCinema}
           liveSpeed={expeditionSpeed.live}
+          windKind={expeditionSpeed.kind}
           boatName={polarData?.boat_name}
+          clockScale={clockScale}
+          onClockScale={setClockScale}
+          windSeries={windProfile.series}
+          windLoading={windProfile.loading}
+          holding={playback.holding}
         />
       )}
 
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className={`absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl ${simulationMode ? "bottom-36" : "bottom-8"}`}>
+        <div className={`absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl ${simulationMode ? "bottom-52" : "bottom-8"}`}>
           <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={() => setSelectedSatellite(null)}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
@@ -993,7 +1063,7 @@ export default function App() {
       )}
 
       <p className="absolute bottom-1 left-1/2 -translate-x-1/2 z-[1500] text-[9px] text-white/50 pointer-events-none">
-        {t("notForNavigation")}
+        {t("creditsLine")}
       </p>
     </div>
   );

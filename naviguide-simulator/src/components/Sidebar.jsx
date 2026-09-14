@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Play, Shield, Square, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
+import { EscaleLegend } from "./EscaleLegend.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
@@ -144,6 +145,7 @@ export function Sidebar({
   isCockpit, polarData, maritimeLayers, simulationMode, onSimulationToggle,
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
   dossier = null, iciBriefing = null,
+  escaleMarks = [], filmNm = 0, onSeekEscale,
 }) {
   const { t } = useLang();
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -247,6 +249,9 @@ export function Sidebar({
               onNext={onNext}
               canNext={canNext}
             />
+          )}
+          {simulationMode && (
+            <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
           )}
 
           {officialFallback && (

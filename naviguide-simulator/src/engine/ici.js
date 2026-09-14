@@ -17,7 +17,7 @@ export function emptyDossier(lat, lon) {
     weather: null,
     polar: null,
     event: null,
-    sources: { zee: null, bi: null },
+    sources: { zee: null, bi: null, gebco: null },
     depthOffshore: null,
   };
 }

@@ -57,3 +57,20 @@ redéployé. Détail : `infra/vps/README.md` (section simulator).
 | Clic route → vent / vague / courant | Dump de toute la carte dans le récit |
 
 **Ne convient pas à la navigation.**
+
+## Licences et attributions
+
+Le dépôt est en **MIT / Apache-2.0**. Le simulateur n’embarque pas LeafletPlayback,
+TrackPlayBack, deck.gl ni signalk-polar-performance : ce sont des *idées*
+(horloge, sillage, TWA→nœuds). Le code film / polaire est original.
+
+À afficher (déjà dans le pied de page, la carte et la modale) :
+
+| Source | Licence / mention |
+|---|---|
+| Leaflet | BSD-2-Clause — « Leaflet » dans le contrôle d’attribution |
+| Tuiles Esri Canvas | « Tiles © Esri » |
+| OpenSeaMap (balisage) | ODbL — « © OpenSeaMap contributors » |
+| EMODnet (bathy / fonds / câbles) | CC-BY — attribution WMS |
+| GEBCO (sondage au large dans le sac) | GEBCO Compilation Group — lookup point OpenTopoData (GEBCO 2020), `null` à moins de 20 M d’un port |
+| Polaire Leopard 46 | fichier ORC chargé par l’utilisateur / défaut local |

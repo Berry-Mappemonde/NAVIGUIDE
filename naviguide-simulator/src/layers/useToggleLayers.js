@@ -231,12 +231,14 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
       pane: "balisage",
       opacity: 0.85,
       errorTileUrl: "",
+      attribution: "© OpenSeaMap contributors",
     });
     tiles.on("tileerror", () => {
       if (!layersRef.current.balisageFallback) {
         layersRef.current.balisageFallback = L.tileLayer("/proxy/seamark/{z}/{x}/{y}.png", {
           pane: "balisage",
           opacity: 0.85,
+          attribution: "© OpenSeaMap contributors",
         }).addTo(map);
       }
     });
