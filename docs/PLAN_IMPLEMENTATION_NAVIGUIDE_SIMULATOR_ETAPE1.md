@@ -1151,7 +1151,10 @@ Alors on remplit le sac, **sans** Tavily :
 1. Quelle ZEE contient le point (`zee_crossings` / shapely) — **1**
    polygone, nom, mrgid, Gold oui/non.
 2. PoE de **cette** ZEE + URL.
-3. AMP / projets / 3–5 marinas-capit-WPI dans 20–30 nm.
+3. AMP / projets / 3–5 marinas-capit-WPI / une poignée de fiches Science
+   (Sextant, Argo, ODATIS, EDMED, CSR) dans 20–30 nm — pas le dump
+   catalogue. AMP = cache `/export/amp.geojson`, jamais
+   `GET /amp?bbox=` petit (ça lance ProtectedSeas, 35 s).
 4. Événement « on entre dans cette ZEE ».
 5. `polar` : déjà amorcé (bateau + VMG) ; y ajouter vitesse / ETA **de
    cette** jambe.
