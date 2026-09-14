@@ -48,6 +48,8 @@ rsync -az --delete -e "${RSH[*]}" \
   --exclude __pycache__ \
   --exclude .env \
   --exclude server/polar_data/*.json \
+  --exclude server/voyage_data/ \
+  --exclude server/forecast_cache/ \
   "$SIM/" "$VPS:$REMOTE_APP/naviguide-simulator/"
 
 echo "→ Copie des fichiers infra simulateur…"
