@@ -8,11 +8,14 @@ import {
 } from "./playSpeeds.js";
 
 describe("expeditionBoatKnots", () => {
-  it("moyenne les VMG portant, sinon 7 kt", () => {
+  it("moyenne la vitesse portant (BS), sinon VMG, sinon 7 kt", () => {
     assert.equal(expeditionBoatKnots(null), FALLBACK_EXPEDITION_KNOTS);
     assert.ok(Math.abs(expeditionBoatKnots({
       vmg_summary: { 12: { downwind: { vmg: 8 } }, 16: { downwind: { vmg: 10 } } },
     }) - 9) < 1e-9);
+    assert.ok(Math.abs(expeditionBoatKnots({
+      vmg_summary: { 12: { downwind: { speed: 8.3, vmg: 7.8 } }, 16: { downwind: { speed: 9.4, vmg: 8.9 } } },
+    }) - 8.85) < 1e-9);
   });
 });
 
