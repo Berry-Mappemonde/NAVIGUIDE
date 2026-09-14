@@ -84,6 +84,13 @@ describe("ici sac", () => {
       distToShoreNm: 4,
     });
     assert.equal(near.depthOffshore, null);
+    const fromApi = mergeDossier({
+      ...emptyDossier(35, -40),
+      depthOffshore: -3888,
+      sources: { zee: "ok", bi: "ok", gebco: "ok" },
+    }, { polarMeta: { boat_name: "Leopard 46" } });
+    assert.equal(fromApi.depthOffshore, -3888);
+    assert.equal(fromApi.sources.gebco, "ok");
   });
 
   it("signale l’entrée de ZEE seulement au changement de mrgid", () => {

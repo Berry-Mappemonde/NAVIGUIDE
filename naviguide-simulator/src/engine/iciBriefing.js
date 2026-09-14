@@ -198,6 +198,15 @@ function legSentence(dossier, lang) {
   return bits.join(" ");
 }
 
+function depthSentence(dossier, lang) {
+  const d = Number(dossier?.depthOffshore);
+  if (!Number.isFinite(d) || Math.abs(d) < 1) return "";
+  const m = Math.round(Math.abs(d));
+  return isEn(lang)
+    ? `GEBCO offshore sounding: ${m} m (GEBCO Compilation Group; not for navigation).`
+    : `Sondage GEBCO au large : ${m} m (GEBCO Compilation Group ; ne convient pas à la navigation).`;
+}
+
 function sourceSentence(dossier, lang) {
   const en = isEn(lang);
   const bi = dossier?.sources?.bi;
@@ -226,6 +235,7 @@ export function narrateIci(dossier, lang = "fr") {
     [zeeSentence(dossier, lang), poeSentence(dossier, lang)].filter(Boolean).join(" "),
     aroundSentence(dossier, lang),
     eventSentence(dossier, lang),
+    depthSentence(dossier, lang),
     legSentence(dossier, lang),
     sourceSentence(dossier, lang),
   ].filter(Boolean);

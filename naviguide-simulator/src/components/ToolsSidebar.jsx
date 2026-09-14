@@ -58,6 +58,29 @@ function StatRow({ icon, label, value }) {
   );
 }
 
+async function polarMetaFromUpload(data) {
+  let raw = data.raw;
+  if (!raw?.twa_rows && data.expedition_id) {
+    try {
+      const res = await fetch(`${POLAR_API_URL}/api/v1/polar/${encodeURIComponent(data.expedition_id)}`);
+      if (res.ok) {
+        const full = await res.json();
+        raw = full.raw;
+      }
+    } catch {
+      raw = null;
+    }
+  }
+  return {
+    expedition_id: data.expedition_id,
+    boat_name: data.boat_name,
+    grid_shape: data.grid_shape,
+    vmg_summary: data.vmg_summary,
+    created_at: data.created_at,
+    raw: raw || null,
+  };
+}
+
 function Toggle({ labelLeft, labelRight, active, onChange }) {
   return (
     <div className="flex items-center justify-between">
@@ -110,13 +133,7 @@ export function ToolsSidebar({
         const data = await uploadRes.json();
         if (!uploadRes.ok) throw new Error(data.detail ?? `HTTP ${uploadRes.status}`);
         if (userDroppedFileRef.current) return;
-        onPolarDataLoaded({
-          expedition_id: data.expedition_id,
-          boat_name: data.boat_name,
-          grid_shape: data.grid_shape,
-          vmg_summary: data.vmg_summary,
-          created_at: data.created_at,
-        });
+        onPolarDataLoaded(await polarMetaFromUpload(data));
         setPolarUploadStatus("success");
         setPolarUploadDetail(data.boat_name);
       } catch (err) {
@@ -138,13 +155,7 @@ export function ToolsSidebar({
       const res = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
-      onPolarDataLoaded({
-        expedition_id: data.expedition_id,
-        boat_name: data.boat_name,
-        grid_shape: data.grid_shape,
-        vmg_summary: data.vmg_summary,
-        created_at: data.created_at,
-      });
+      onPolarDataLoaded(await polarMetaFromUpload(data));
       setPolarUploadStatus("success");
       setPolarUploadDetail(data.boat_name);
     } catch (err) {

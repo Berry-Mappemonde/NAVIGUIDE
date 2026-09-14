@@ -1,5 +1,7 @@
 import { ChevronLeft, ChevronRight, Clapperboard, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { clockTickLabels, formatSeaClock } from "../engine/seaTime.js";
+import { FilmSpeedProfile } from "./FilmSpeedProfile.jsx";
 
 const PROFILES = [
   { id: "real", labelKey: "speedReal" },
@@ -32,9 +34,15 @@ export function SimulationFilmBar({
   cinema,
   onCinema,
   liveSpeed,
+  windKind,
   boatName,
   phase,
   vehicle,
+  clockScale = "nm",
+  onClockScale,
+  windSeries,
+  windLoading,
+  holding,
 }) {
   const { t } = useLang();
   const barTotal = playheadTotal ?? totalNm;
@@ -47,12 +55,27 @@ export function SimulationFilmBar({
       : phase === "side-sail"
         ? t("filmPhaseSide")
         : "";
+  const ticks = clockTickLabels({
+    playheadTotal: barTotal,
+    sailTotalNm: totalNm,
+    knots: boatKnots,
+    scale: clockScale,
+  });
 
   const onBarClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
+
+  const progressLabel = clockScale === "days"
+    ? `${formatSeaClock(nm, boatKnots)} / ${formatSeaClock(totalNm, boatKnots)}`
+    : `${Math.round(nm).toLocaleString()} / ${Math.round(totalNm).toLocaleString()} nm`;
+  const remainLabel = remainingNm > 0.5 && !finished && vehicle !== "plane"
+    ? (clockScale === "days"
+      ? ` · ${t("nmRemaining")} ${formatSeaClock(remainingNm, boatKnots)}`
+      : ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm`)
+    : "";
 
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[2020] w-[min(920px,calc(100vw-24px))] pointer-events-auto">
@@ -74,32 +97,47 @@ export function SimulationFilmBar({
               <div className="text-[10px] text-cyan-300/80 mt-0.5 truncate">{phaseLabel}</div>
             ) : null}
             <div className="text-[10px] text-white/55 mt-0.5">
-              {Math.round(nm).toLocaleString()} / {Math.round(totalNm).toLocaleString()} nm
-              {remainingNm > 0.5 && !finished && vehicle !== "plane" ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm` : ""}
+              {progressLabel}
+              {remainLabel}
               {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
               {vehicle === "plane" ? ` · ${t("filmAirVehicle")}` : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
               {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
               {profile === "real" && vehicle !== "plane" ? ` · ${t("speedRealHint")}` : ""}
               {liveSpeed && vehicle !== "plane" ? ` · ${t("speedLivePolar")}` : ""}
+              {windKind === "climatology" && vehicle !== "plane" ? ` · ${t("filmWindClimo")}` : ""}
+              {windKind === "analyse" && vehicle !== "plane" ? ` · ${t("filmWindAnalyse")}` : ""}
+              {holding ? ` · ${t("filmArrivalHold")}` : ""}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onCinema}
-            className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold border ${
-              cinema ? "bg-cyan-700/70 border-cyan-400/50" : "bg-white/5 border-white/10 hover:bg-white/10"
-            }`}
-            title={t("cinemaTooltip")}
-          >
-            <Clapperboard size={12} />
-            {t("cinema")}
-          </button>
+          <div className="flex flex-shrink-0 items-center gap-1">
+            {onClockScale ? (
+              <button
+                type="button"
+                onClick={() => onClockScale(clockScale === "nm" ? "days" : "nm")}
+                className="px-2 py-1 rounded-lg text-[10px] font-semibold border bg-white/5 border-white/10 hover:bg-white/10"
+                title={t("filmClockToggle")}
+              >
+                {clockScale === "days" ? t("filmClockDays") : t("filmClockNm")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onCinema}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold border ${
+                cinema ? "bg-cyan-700/70 border-cyan-400/50" : "bg-white/5 border-white/10 hover:bg-white/10"
+              }`}
+              title={t("cinemaTooltip")}
+            >
+              <Clapperboard size={12} />
+              {t("cinema")}
+            </button>
+          </div>
         </div>
 
         <button
           type="button"
           onClick={onBarClick}
-          className="relative w-full h-3 rounded-full bg-white/10 mb-2 block"
+          className="relative w-full h-3 rounded-full bg-white/10 block"
           title={t("filmScrub")}
         >
           <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
@@ -112,6 +150,35 @@ export function SimulationFilmBar({
             />
           ))}
         </button>
+        <div className="relative h-3.5 mb-1 text-[9px] text-white/50">
+          {ticks.map((tick, i) => {
+            const align = i === 0
+              ? "left-0"
+              : i === ticks.length - 1
+                ? "right-0"
+                : "-translate-x-1/2";
+            const left = i === ticks.length - 1
+              ? undefined
+              : `${barTotal > 0 ? (tick.filmNm / barTotal) * 100 : 0}%`;
+            return (
+              <span
+                key={`${tick.filmNm}-${tick.label}`}
+                className={`absolute top-0 whitespace-nowrap ${align}`}
+                style={left != null ? { left } : undefined}
+              >
+                {tick.label}
+              </span>
+            );
+          })}
+        </div>
+
+        <FilmSpeedProfile
+          series={windSeries}
+          filmNm={barNm}
+          playheadTotal={barTotal}
+          onSeek={onSeekNm}
+          loading={windLoading}
+        />
 
         <div className="flex items-center gap-2">
           <button

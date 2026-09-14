@@ -235,7 +235,42 @@ def test_fill_dossier_la_rochelle_mocked():
     assert len(d["science"]["nearby"]) == 1
     assert d["sources"]["zee"] == "marineregions"
     assert d["sources"]["bi"] == "ok"
+    assert d["depthOffshore"] is None
+    assert d["sources"]["gebco"] == "coastal"
     assert "grid" not in (d.get("polar") or {})
+
+
+def test_fill_dossier_mid_atlantic_gebco():
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "opentopodata.org" in url:
+            return httpx.Response(200, json={
+                "results": [{"elevation": -3888.0}],
+                "status": "OK",
+            })
+        if "marineregions.org" in url:
+            return httpx.Response(200, json=[{
+                "placeType": "EEZ",
+                "preferredGazetteerName": "High Seas",
+                "MRGID": None,
+                "latitude": 35,
+                "longitude": -40,
+            }])
+        if "world-port-index" in url:
+            return httpx.Response(200, json={"ports": []})
+        if "geojson" in url or url.rstrip("/").endswith("/marinas") or url.rstrip("/").endswith("/capitaineries") or "poe/ports" in url:
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+        return httpx.Response(404, json={"detail": url})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(35.0, -40.0, client=client)
+
+    d = asyncio.run(run())
+    assert d["depthOffshore"] == -3888.0
+    assert d["sources"]["gebco"] == "ok"
 
 
 def test_fill_dossier_bi_down_keeps_zee():
