@@ -1,5 +1,5 @@
 [Unit]
-Description=NAVIGUIDE — Polar API (upload polaires, VMG, chat)
+Description=NAVIGUIDE — Polar API (polar upload, VMG, chat)
 After=network-online.target
 
 [Service]

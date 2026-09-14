@@ -1,235 +1,235 @@
-# Déploiement VPS OVH — blueintelligence.online
+# OVH VPS deployment — blueintelligence.online
 
-Production auto-hébergée sur le VPS OVH `vps-52ba6d62.vps.ovh.net` (135.125.226.16,
-Ubuntu, 4 vCores / 8 Go / 75 Go) : **MongoDB 8.0 Community local** (fin du
-throttling Atlas M0), backend FastAPI + frontend React servis par **uvicorn**
-derrière le **nginx** du serveur, domaine derrière **Cloudflare**.
+Self-hosted production on the OVH VPS `vps-52ba6d62.vps.ovh.net` (135.125.226.16,
+Ubuntu, 4 vCores / 8 GB / 75 GB): **local MongoDB 8.0 Community** (end of
+Atlas M0 throttling), FastAPI backend + React frontend served by **uvicorn**
+behind the server **nginx**, domain behind **Cloudflare**.
 
 ```
-Internet → Cloudflare → nginx (443, certificat Let's Encrypt)
-                          └→ uvicorn 127.0.0.1:8001 (SERVE_FRONTEND=1 : UI + /api/*)
-                               └→ MongoDB 8.0 (127.0.0.1:27017, authentification activée)
+Internet → Cloudflare → nginx (443, Let's Encrypt certificate)
+                          └→ uvicorn 127.0.0.1:8001 (SERVE_FRONTEND=1: UI + /api/*)
+                               └→ MongoDB 8.0 (127.0.0.1:27017, authentication enabled)
 ```
 
-## Emplacements sur le VPS
+## Locations on the VPS
 
-| Quoi | Où |
-|------|-----|
-| Code de l'application | `~/blue-intelligence-map/` |
-| Secrets MongoDB local (comptes `admin` et `blue`) | `~/.config/blue-intelligence/mongo.env` (chmod 600) |
-| Chaîne Atlas (pour resynchronisation) | `~/.config/blue-intelligence/atlas.env` (chmod 600) |
-| Clés API applicatives | `~/blue-intelligence-map/backend/.env` (chmod 600) |
-| Sauvegardes quotidiennes (04:00, rotation 14 j) | `~/backups/mongodb/` + `/etc/cron.d/blue-intelligence-backup` |
-| Service applicatif | `/etc/systemd/system/blue-intelligence.service` |
-| Reverse proxy | `/etc/nginx/sites-available/blue-intelligence` (TLS géré par certbot) |
+| What | Where |
+|------|-------|
+| Application code | `~/blue-intelligence-map/` |
+| Local MongoDB secrets (`admin` and `blue` accounts) | `~/.config/blue-intelligence/mongo.env` (chmod 600) |
+| Atlas connection string (for resync) | `~/.config/blue-intelligence/atlas.env` (chmod 600) |
+| Application API keys | `~/blue-intelligence-map/backend/.env` (chmod 600) |
+| Daily backups (04:00, 14-day rotation) | `~/backups/mongodb/` + `/etc/cron.d/blue-intelligence-backup` |
+| Application service | `/etc/systemd/system/blue-intelligence.service` |
+| Reverse proxy | `/etc/nginx/sites-available/blue-intelligence` (TLS managed by certbot) |
 
-## Première installation (déjà effectuée le 2026-09-09)
+## First install (already done on 2026-09-09)
 
 ```bash
-# 1. MongoDB 8 sécurisé (idempotent — crée les comptes au premier passage)
+# 1. Secured MongoDB 8 (idempotent — creates accounts on the first pass)
 bash infra/vps/install-mongodb.sh
 
-# 2. Données depuis Atlas (ÉCRASE la base locale)
+# 2. Data from Atlas (OVERWRITES the local database)
 bash infra/vps/sync-from-atlas.sh
 
-# 3. Application (venv Python 3.12 via uv, build frontend, systemd, cron)
+# 3. Application (Python 3.12 venv via uv, frontend build, systemd, cron)
 bash infra/vps/deploy-app.sh
 ```
 
-Le `proxy_pass` nginx doit viser `127.0.0.1:8001` (voir
-`nginx-blue-intelligence.conf`, copie de référence).
+The nginx `proxy_pass` must target `127.0.0.1:8001` (see
+`nginx-blue-intelligence.conf`, reference copy).
 
-## Mémoire du VPS (8 Go, pas de marge)
+## VPS memory (8 GB, no slack)
 
-Le VPS n'a **pas de swap** d'origine. NAVIGUIDE préchargeait les ZEE mondiales
-en RAM (~3,5 Go) et un `npm run build` / `uv pip` saturait la machine.
+The VPS has **no swap** by default. NAVIGUIDE used to preload worldwide EEZs
+in RAM (~3.5 GB) and an `npm run build` / `uv pip` would saturate the machine.
 
-Une fois, hors run Complet :
+Once, outside a Full run:
 
 ```bash
 bash infra/vps/setup-memory.sh
-# Swap 4 Go + swappiness 10 + cache Mongo plafonné (restart mongod plus tard)
+# 4 GB swap + swappiness 10 + capped Mongo cache (restart mongod later)
 sudo cp infra/vps/blue-intelligence.service /etc/systemd/system/
 sudo cp infra/vps/naviguide/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl restart naviguide-api   # libère le cache ZEE ; Blue Intelligence inchangé
+sudo systemctl restart naviguide-api   # frees the EEZ cache; Blue Intelligence unchanged
 ```
 
-`MemoryMax` systemd : 3 Go (Blue Intelligence), 1 Go (naviguide-api), 512 Mo
-(orchestrateur / polar). Le Complet Projets n'a pas besoin de NAVIGUIDE.
+systemd `MemoryMax`: 3 GB (Blue Intelligence), 1 GB (naviguide-api), 512 MB
+(orchestrator / polar). A Full Projects run does not need NAVIGUIDE.
 
-## Redéployer après une mise à jour du code
+## Redeploy after a code update
 
 ```bash
 cd ~/blue-intelligence-map
-# code à jour (rsync depuis un poste, ou git pull si un remote est configuré).
-# Après un rsync -a depuis un workspace en 700 : chmod o+x ~/blue-intelligence-map
-# (nginx NAVIGUIDE lit /var/www/naviguide, mais d'autres outils peuvent encore
-# traverser le dépôt).
+# code up to date (rsync from a workstation, or git pull if a remote is configured).
+# After an rsync -a from a 700 workspace: chmod o+x ~/blue-intelligence-map
+# (NAVIGUIDE nginx reads /var/www/naviguide, but other tools may still
+# walk the repository).
 bash infra/vps/deploy-app.sh
 ```
 
-Avec peu de RAM libre : d'abord `bash infra/vps/setup-memory.sh`, puis rsync
-du code et `sudo systemctl restart blue-intelligence` (sans `npm`/`uv` si
-les dépendances n'ont pas changé). Ne pas lancer `deploy-app.sh` pendant un
-run Complet — il redémarre le service.
+With little free RAM: first `bash infra/vps/setup-memory.sh`, then rsync
+the code and `sudo systemctl restart blue-intelligence` (without `npm`/`uv` if
+dependencies have not changed). Do not run `deploy-app.sh` during a
+Full run — it restarts the service.
 
-## Resynchroniser les données depuis Atlas — ⛔ NE PLUS JAMAIS FAIRE
+## Resync data from Atlas — ⛔ NEVER DO THIS AGAIN
 
-**Depuis la bascule DNS du 2026-09-10, le VPS est la base vivante.** Atlas est
-figé à l'état d'avant-bascule : relancer `sync-from-atlas.sh` écraserait les
-données récentes (nouveaux runs, enrichissements, review…) avec cet état
-périmé. Le script contient désormais un verrou et refuse de s'exécuter ;
-il n'existe plus de raison légitime de le forcer, sauf récupération après
-sinistre décidée en connaissance de cause (`FORCE_RESYNC=oui-ecraser-la-base`).
+**Since the DNS cutover of 2026-09-10, the VPS is the live database.** Atlas is
+frozen at its pre-cutover state: rerunning `sync-from-atlas.sh` would overwrite
+recent data (new runs, enrichments, review…) with that stale
+state. The script now has a lock and refuses to run;
+there is no longer a legitimate reason to force it, except disaster recovery
+decided with full knowledge of the data loss (`FORCE_RESYNC=oui-ecraser-la-base`).
 
-En cas de besoin de restauration, utiliser les **sauvegardes locales
-quotidiennes** (voir section Sauvegardes), jamais Atlas.
+If you need a restore, use the **daily local
+backups** (see Backups), never Atlas.
 
-## Sauvegardes
+## Backups
 
-- Automatique : cron quotidien à 04:00, archives `blue-AAAA-MM-JJ.archive.gz`,
-  rotation 14 jours. Penser à copier régulièrement une archive **hors du VPS**.
-- Restaurer une archive :
+- Automatic: daily cron at 04:00, `blue-YYYY-MM-DD.archive.gz` archives,
+  14-day rotation. Remember to copy an archive **off the VPS** regularly.
+- Restore an archive:
 
 ```bash
 . ~/.config/blue-intelligence/mongo.env
 mongorestore --uri "$MONGO_URL_LOCAL" --gzip \
-  --archive=$HOME/backups/mongodb/blue-AAAA-MM-JJ.archive.gz --drop
+  --archive=$HOME/backups/mongodb/blue-YYYY-MM-DD.archive.gz --drop
 ```
 
-## Bascule Cloudflare (effectuée le 2026-09-10)
+## Cloudflare cutover (done on 2026-09-10)
 
-Le domaine (registrar OVH) pointait vers le Cloudflare de l'ancienne
-plateforme ; il a été rapatrié dans le compte Cloudflare du propriétaire :
+The domain (OVH registrar) pointed at the old platform's Cloudflare;
+it was brought back into the owner's Cloudflare account:
 
-1. Cloudflare → **Connect a domain** → `blueintelligence.online`, plan Free.
-   Zone importée depuis OVH puis corrigée : **A `@` → 135.125.226.16**
-   (proxied), CNAME `www` → racine (proxied), MX/TXT conservés tels quels.
-2. OVH (manager → Web Cloud → Noms de domaine → onglet Serveurs DNS) :
-   serveurs remplacés par `coby.ns.cloudflare.com` / `eve.ns.cloudflare.com`.
-   **DNSSEC désactivé** au préalable (indispensable), protection contre le
-   transfert laissée activée.
-3. Certificat edge « Universal SSL » émis à l'activation ; SSL/TLS en mode
-   **Full (strict)** (le certificat Let's Encrypt du VPS couvre racine + www).
-4. Vérifié : `https://blueintelligence.online/api/` → `"mongo": "local"`,
-   HTTP 200 via edge Cloudflare, garde admin 401/200, marinas 15 Mo en ~3 s.
-5. Retour arrière : chez OVH, remettre les serveurs `ns14.ovh.net` /
-   `dns14.ovh.net` (la zone OVH d'origine, intacte, redevient autoritaire et
-   re-pointe vers l'ancienne plateforme).
+1. Cloudflare → **Connect a domain** → `blueintelligence.online`, Free plan.
+   Zone imported from OVH then fixed: **A `@` → 135.125.226.16**
+   (proxied), CNAME `www` → apex (proxied), MX/TXT kept as-is.
+2. OVH (manager → Web Cloud → Domain names → DNS servers tab):
+   servers replaced with `coby.ns.cloudflare.com` / `eve.ns.cloudflare.com`.
+   **DNSSEC disabled** beforehand (required); transfer protection left
+   enabled.
+3. “Universal SSL” edge certificate issued on activation; SSL/TLS in
+   **Full (strict)** mode (the VPS Let's Encrypt certificate covers apex + www).
+4. Verified: `https://blueintelligence.online/api/` → `"mongo": "local"`,
+   HTTP 200 via the Cloudflare edge, admin gate 401/200, 15 MB marinas in ~3 s.
+5. Rollback: at OVH, restore the `ns14.ovh.net` /
+   `dns14.ovh.net` servers (the original OVH zone, intact, becomes authoritative again and
+   re-points at the old platform).
 
-Après bascule, vérifier le renouvellement du certificat : `sudo certbot renew
---dry-run` (le challenge HTTP passe par Cloudflare ; si « Always Use HTTPS »
-bloque `/.well-known/acme-challenge/`, créer une exception ou utiliser un
-certificat Origin Cloudflare).
+After cutover, check certificate renewal: `sudo certbot renew
+--dry-run` (the HTTP challenge goes through Cloudflare; if “Always Use HTTPS”
+blocks `/.well-known/acme-challenge/`, create an exception or use a
+Cloudflare Origin certificate).
 
-## Accès admin (Console / Review)
+## Admin access (Console / Review)
 
-Les onglets Console et Review, ainsi que toutes les écritures de l'API
-(`POST/PUT/PATCH/DELETE /api/*`, sauf le signalement public de projets) sont
-protégés par une clé admin :
+The Console and Review tabs, plus every API write
+(`POST/PUT/PATCH/DELETE /api/*`, except the public project report) are
+protected by an admin key:
 
-- La clé vit dans `~/blue-intelligence-map/backend/.env` sur le VPS
-  (`ADMIN_KEY=...`). Sans cette variable (dev local), tout reste ouvert.
-- Pour débloquer l'interface : ouvrir une fois
-  `https://blueintelligence.online/?admin=<clé>`. La clé est mémorisée dans le
-  navigateur (localStorage) et envoyée ensuite via le header `X-Admin-Key`.
-- Pour verrouiller un navigateur : `https://blueintelligence.online/?admin=off`.
-- Régénérer la clé : `openssl rand -hex 24`, remplacer la valeur dans
-  `backend/.env`, puis `sudo systemctl restart blue-intelligence` (les anciens
-  navigateurs admin devront re-saisir la nouvelle clé).
+- The key lives in `~/blue-intelligence-map/backend/.env` on the VPS
+  (`ADMIN_KEY=...`). Without this variable (local dev), everything stays open.
+- To unlock the UI: open once
+  `https://blueintelligence.online/?admin=<key>`. The key is stored in the
+  browser (localStorage) and then sent via the `X-Admin-Key` header.
+- To lock a browser: `https://blueintelligence.online/?admin=off`.
+- To regenerate the key: `openssl rand -hex 24`, replace the value in
+  `backend/.env`, then `sudo systemctl restart blue-intelligence` (old
+  admin browsers will need to enter the new key).
 
-## Sécurité / accès
+## Security / access
 
-- MongoDB n'écoute que sur 127.0.0.1, authentification obligatoire — jamais
-  exposé sur Internet, aucun port à ouvrir.
-- Révoquer l'accès de l'agent Cursor : supprimer la ligne
-  `cursor-agent-blue-intelligence` de `~/.ssh/authorized_keys` sur le VPS.
-- Journaux applicatifs : `sudo journalctl -u blue-intelligence -f` ;
-  MongoDB : `/var/log/mongodb/mongod.log`.
+- MongoDB listens only on 127.0.0.1, authentication required — never
+  exposed on the Internet, no port to open.
+- Revoke Cursor agent access: delete the
+  `cursor-agent-blue-intelligence` line from `~/.ssh/authorized_keys` on the VPS.
+- Application logs: `sudo journalctl -u blue-intelligence -f`;
+  MongoDB: `/var/log/mongodb/mongod.log`.
 
-## NAVIGUIDE — www.naviguide.fr (même VPS)
+## NAVIGUIDE — www.naviguide.fr (same VPS)
 
-NAVIGUIDE (`naviguide/` du monorepo) est publié sur le même VPS, sous le
-domaine **www.naviguide.fr** (DNS A → 135.125.226.16, sans Cloudflare).
-Voir `infra/vps/naviguide/`.
+NAVIGUIDE (`naviguide/` of the monorepo) is published on the same VPS, under the
+**www.naviguide.fr** domain (A DNS → 135.125.226.16, no Cloudflare).
+See `infra/vps/naviguide/`.
 
 ```
 Internet → nginx (443, Let's Encrypt)
-   www.naviguide.fr        → /var/www/naviguide (copie de naviguide-app/dist/)
+   www.naviguide.fr        → /var/www/naviguide (copy of naviguide-app/dist/)
    /route /wind /wave …    → uvicorn 127.0.0.1:9000  (naviguide-api)
    /api/v1/polar/*         → uvicorn 127.0.0.1:9004  (polar-api)
-   /api/v1/*               → uvicorn 127.0.0.1:9008  (orchestrateur LangGraph)
+   /api/v1/*               → uvicorn 127.0.0.1:9008  (LangGraph orchestrator)
    /bi/*                   → uvicorn 127.0.0.1:8001  (Blue Intelligence /api/*)
 ```
 
-| Quoi | Où |
-|------|-----|
-| Code | `~/blue-intelligence-map/naviguide/` (venv partagé `.venv/`) |
-| Frontend servi par nginx | `/var/www/naviguide` (pas le `dist/` du dépôt) |
-| Secrets (cascade LLM NVIDIA/OpenRouter/Anthropic, Copernicus, StormGlass) | `~/.config/naviguide/naviguide.env` (chmod 600) |
+| What | Where |
+|------|-------|
+| Code | `~/blue-intelligence-map/naviguide/` (shared `.venv/`) |
+| Frontend served by nginx | `/var/www/naviguide` (not the repo `dist/`) |
+| Secrets (NVIDIA/OpenRouter/Anthropic LLM cascade, Copernicus, StormGlass) | `~/.config/naviguide/naviguide.env` (chmod 600) |
 | Services | `naviguide-api`, `naviguide-orchestrator`, `naviguide-polar` (systemd) |
-| Reverse proxy | `/etc/nginx/sites-available/naviguide` (TLS certbot) |
+| Reverse proxy | `/etc/nginx/sites-available/naviguide` (certbot TLS) |
 
 ```bash
-# (Re)déploiement — build frontend + venv + systemd + nginx
+# (Re)deploy — frontend build + venv + systemd + nginx
 bash infra/vps/naviguide/deploy-naviguide.sh
-# Premier déploiement seulement : renseigner les secrets puis redémarrer
+# First deploy only: fill in secrets then restart
 vim ~/.config/naviguide/naviguide.env && sudo systemctl restart naviguide-api naviguide-orchestrator naviguide-polar
 ```
 
-TLS : le certificat Let's Encrypt `live/naviguide.fr` (SAN naviguide.fr +
-www.naviguide.fr) préexistait sur le VPS et est réutilisé tel quel par
-`nginx-naviguide.conf` (renouvellement certbot inchangé). L'ancien site nginx
-`default` (placeholder `/var/www/html` + proxys vers des ports morts 8000/8001/3008)
-a été retiré de `sites-enabled` le 2026-09-10 — sauvegarde dans
-`sites-available/default`. Le frontend est copié vers `/var/www/naviguide`
-(lisible par `www-data`) : un `rsync -a` ou `chmod 700` du dépôt ne doit plus
-faire tomber le site (incident du 2026-09-13 : nginx 500 / boucle `try_files`
-parce que `~/blue-intelligence-map` était `drwx------`).
+TLS: the Let's Encrypt `live/naviguide.fr` certificate (SAN naviguide.fr +
+www.naviguide.fr) already existed on the VPS and is reused as-is by
+`nginx-naviguide.conf` (certbot renewal unchanged). The old nginx site
+`default` (placeholder `/var/www/html` + proxies to dead ports 8000/8001/3008)
+was removed from `sites-enabled` on 2026-09-10 — backup in
+`sites-available/default`. The frontend is copied to `/var/www/naviguide`
+(readable by `www-data`): an `rsync -a` or `chmod 700` of the repo must no longer
+take the site down (incident of 2026-09-13: nginx 500 / `try_files` loop
+because `~/blue-intelligence-map` was `drwx------`).
 
-Les couches « Blue Intelligence » de la carte NAVIGUIDE consomment les exports
-GeoJSON du backend Blue Intelligence local via la route nginx `/bi/*` — aucun
-CORS, aucun appel réseau externe. Journaux : `sudo journalctl -u naviguide-api -f`
-(idem `-orchestrator`, `-polar`). Ports 9000/9004/9008 réservés à NAVIGUIDE
-(8001 = Blue Intelligence). `naviguide-weather-routing` (3010) n'est pas
-déployé : le frontend ne l'appelle pas.
+NAVIGUIDE map “Blue Intelligence” layers consume the local Blue Intelligence
+GeoJSON exports via the nginx `/bi/*` route — no
+CORS, no external network call. Logs: `sudo journalctl -u naviguide-api -f`
+(same for `-orchestrator`, `-polar`). Ports 9000/9004/9008 reserved for NAVIGUIDE
+(8001 = Blue Intelligence). `naviguide-weather-routing` (3010) is not
+deployed: the frontend does not call it.
 
-## NAVIGUIDE simulator — simulator.naviguide.fr (même VPS)
+## NAVIGUIDE simulator — simulator.naviguide.fr (same VPS)
 
-Sous-domaine **séparé** : le site skipper `www.naviguide.fr` et ses API
-(`:9000` / `:9004` avec chat / `:9008`) ne sont pas réutilisés.
+**Separate** subdomain: the skipper site `www.naviguide.fr` and its APIs
+(`:9000` / `:9004` with chat / `:9008`) are not reused.
 
 ```
 Internet → nginx (443, Let's Encrypt, SAN + simulator.naviguide.fr)
    simulator.naviguide.fr  → /var/www/naviguide-simulator
    /route /wind /wave …    → uvicorn 127.0.0.1:8010  (naviguide-simulator)
-   /api/v1/*               → le même :8010 (polar sans chat)
-   /bi/*                   → uvicorn 127.0.0.1:8001  (Blue Intelligence, lecture)
+   /api/v1/*               → the same :8010 (polar without chat)
+   /bi/*                   → uvicorn 127.0.0.1:8001  (Blue Intelligence, read-only)
 ```
 
-| Quoi | Où |
-|------|-----|
-| Code | `~/blue-intelligence-map/naviguide-simulator/` (venv `.venv/` dédié) |
-| Frontend nginx | `/var/www/naviguide-simulator` |
-| Secrets optionnels (Copernicus seulement) | `~/.config/naviguide/simulator.env` |
+| What | Where |
+|------|-------|
+| Code | `~/blue-intelligence-map/naviguide-simulator/` (dedicated `.venv/`) |
+| nginx frontend | `/var/www/naviguide-simulator` |
+| Optional secrets (Copernicus only) | `~/.config/naviguide/simulator.env` |
 | Service | `naviguide-simulator` (systemd, `MemoryMax=1G`) |
 | Reverse proxy | `/etc/nginx/sites-available/naviguide-simulator` |
 
-DNS : enregistrement **A** `simulator` → `135.125.226.16` (zone `naviguide.fr`,
-gratuit). Premier déploiement depuis une machine avec Node + SSH (build Vite
-local, pas de `npm` sur le VPS) :
+DNS: **A** record `simulator` → `135.125.226.16` (`naviguide.fr` zone,
+free). First deploy from a machine with Node + SSH (local Vite
+build, no `npm` on the VPS):
 
 ```bash
-cd /chemin/vers/Blue-Intelligence-Map
+cd /path/to/Blue-Intelligence-Map
 bash infra/vps/naviguide/publish-simulator-from-mac.sh
 ```
 
-Le script étend le certificat existant (`certbot --expand`, gratuit) s'il
-ne contient pas encore `simulator.naviguide.fr`. Il ne réécrit pas
-`sites-available/naviguide` et ne redémarre pas les services skipper / BI.
+The script extends the existing certificate (`certbot --expand`, free) if it
+does not yet contain `simulator.naviguide.fr`. It does not rewrite
+`sites-available/naviguide` and does not restart skipper / BI services.
 
-Retour arrière nginx (le site www redevient le seul vhost NAVIGUIDE) :
+nginx rollback (www becomes the only NAVIGUIDE vhost again):
 
 ```bash
 ssh ubuntu@135.125.226.16

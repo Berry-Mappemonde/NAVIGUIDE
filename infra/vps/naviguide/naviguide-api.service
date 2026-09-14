@@ -1,5 +1,5 @@
 [Unit]
-Description=NAVIGUIDE — API routage, météo Copernicus, agents IA (naviguide-api)
+Description=NAVIGUIDE — routing API, Copernicus weather, AI agents (naviguide-api)
 After=network-online.target
 
 [Service]
