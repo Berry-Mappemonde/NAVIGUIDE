@@ -1,5 +1,5 @@
 [Unit]
-Description=NAVIGUIDE — Orchestrateur LangGraph (briefing IA multi-agents)
+Description=NAVIGUIDE — LangGraph orchestrator (multi-agent AI briefing)
 After=network-online.target
 
 [Service]

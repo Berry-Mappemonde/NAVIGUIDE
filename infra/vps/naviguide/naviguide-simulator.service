@@ -1,5 +1,5 @@
 [Unit]
-Description=NAVIGUIDE simulator — searoute + polar sans chat (simulator.naviguide.fr)
+Description=NAVIGUIDE simulator — searoute + polar without chat (simulator.naviguide.fr)
 After=network-online.target
 
 [Service]
