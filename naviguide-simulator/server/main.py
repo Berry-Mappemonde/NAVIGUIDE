@@ -32,6 +32,7 @@ from mem_limits import (
 from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
 from polar_api import router as polar_router
 from route_engine import searoute_with_exact_end
+from voyage_api import router as voyage_router
 
 load_dotenv()
 
@@ -60,6 +61,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(polar_router)
+app.include_router(voyage_router)
 
 
 class PositionRequest(BaseModel):

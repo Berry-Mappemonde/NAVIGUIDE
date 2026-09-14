@@ -49,6 +49,8 @@ export function SimulationFilmBar({
   quayDays = 0,
   twa = null,
   disclaimer = "",
+  liveBadge = null,
+  windModel = null,
 }) {
   const { t } = useLang();
   const barTotal = playheadTotal ?? totalNm;
@@ -116,7 +118,10 @@ export function SimulationFilmBar({
               {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
               {profile === "real" && vehicle !== "plane" ? ` · ${t("speedRealHint")}` : ""}
               {kindLabel && vehicle !== "plane" ? ` · ${kindLabel}` : ""}
+              {windKind === "forecast" && vehicle !== "plane" ? ` · ${t("filmWindForecast")}` : ""}
+              {windModel && windKind === "forecast" ? ` · ${windModel}` : ""}
               {windKind === "analyse" && vehicle !== "plane" ? ` · ${t("filmWindAnalyse")}` : ""}
+              {liveBadge ? ` · ${liveBadge}` : ""}
               {atQuay && quayDays > 0 ? ` · ${t("voyageAtQuay", { days: quayDays })}` : (holding ? ` · ${t("filmArrivalHold")}` : "")}
             </div>
           </div>

@@ -43,4 +43,23 @@ describe("alongTrackSpeed", () => {
     assert.ok(Number.isFinite(s.speedKnots) && s.speedKnots > 0);
     assert.ok(s.twa != null && s.twa >= 0 && s.twa <= 180);
   });
+
+  it("vent fourni : kind forecast et modèle nommé", () => {
+    const s = alongTrackSpeed({
+      lat: 15,
+      lon: -25,
+      bearing: 250,
+      month: 6,
+      polarRaw: null,
+      wind: {
+        speedKnots: 22,
+        dirFromDeg: 90,
+        kind: "forecast",
+        model: "GFS 0.25° (Open-Meteo)",
+      },
+    });
+    assert.equal(s.kind, "forecast");
+    assert.equal(s.model, "GFS 0.25° (Open-Meteo)");
+    assert.ok(s.speedKnots > 0);
+  });
 });
