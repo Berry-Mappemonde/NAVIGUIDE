@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { atlanticSpanNm } from "../engine/routePlayhead.js";
 import { airHopSeconds, nmPerSecond } from "../engine/playSpeeds.js";
 import { edgeAtFilmNm, filmLength } from "../engine/filmCast.js";
-import { dwellMsForProfile, stepPlayback } from "../engine/stationDwell.js";
+import { dwellMsForProfile, shouldPauseAtStop, stepPlayback } from "../engine/stationDwell.js";
 
 function playheadLength(flat) {
   return filmLength(flat) || flat?.totalNm || 0;
@@ -26,7 +26,7 @@ function asStations(marks) {
   }));
 }
 
-export function useRoutePlayback({ flat, marks, boatKnots, enabled }) {
+export function useRoutePlayback({ flat, marks, boatKnots, enabled, stopAuto = false }) {
   const [playing, setPlaying] = useState(false);
   const [profile, setProfile] = useState("normal");
   const [nm, setNm] = useState(0);
@@ -42,6 +42,8 @@ export function useRoutePlayback({ flat, marks, boatKnots, enabled }) {
   marksRef.current = marks;
   const boatKnotsRef = useRef(boatKnots);
   boatKnotsRef.current = boatKnots;
+  const stopAutoRef = useRef(stopAuto);
+  stopAutoRef.current = stopAuto;
 
   const totalNm = playheadLength(flat);
   const atlanticNm = atlanticSpanNm(marks, flat?.totalNm || totalNm);
@@ -129,11 +131,17 @@ export function useRoutePlayback({ flat, marks, boatKnots, enabled }) {
         rate,
         stations: asStations(marksRef.current),
         maxFilmNm: total,
-        dwellMs: dwellMsForProfile(profile),
+        dwellMs: stopAutoRef.current ? 0 : dwellMsForProfile(profile),
         jump,
       });
       dwellLeftRef.current = stepped.dwellMsLeft;
       nmRef.current = stepped.filmNm;
+      if (shouldPauseAtStop(stopAutoRef.current, stepped.arrived)) {
+        setPlaying(false);
+        setNm(stepped.filmNm);
+        setHoldingStation(stepped.arrived);
+        return;
+      }
       if (stepped.arrived) setHoldingStation(stepped.arrived);
       else if (!stepped.holding) setHoldingStation(null);
       emitAcc.current += dt;

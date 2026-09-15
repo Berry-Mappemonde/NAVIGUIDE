@@ -31,6 +31,11 @@ export function nextStationAfter(filmNm, stations, { epsilon = 0.35 } = {}) {
   return best;
 }
 
+/** Stop auto ON → pause franche à l’escale. OFF → on traverse. */
+export function shouldPauseAtStop(stopAuto, arrived) {
+  return Boolean(stopAuto && arrived);
+}
+
 export function stationAt(filmNm, stations, { epsilon = 0.45 } = {}) {
   if (!Array.isArray(stations)) return null;
   const x = Number(filmNm) || 0;

@@ -21,6 +21,7 @@ import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
 import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
+import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useWakeLayer } from "./hooks/useWakeLayer.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
@@ -42,12 +43,16 @@ import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import { formatSeaClock } from "./engine/seaTime.js";
 import { nextStationAfter } from "./engine/stationDwell.js";
 import {
+  DEFAULT_START_AT,
+  DEFAULT_T0_ISO,
   etaHoursToFilmNm,
   formatCivilDate,
   formatFilmClockLine,
   formatMonthName,
   lookupVoyageClock,
 } from "./engine/voyageClock.js";
+import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
+import { filmBarInsets } from "./utils/filmBarLayout.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -120,11 +125,14 @@ export default function App() {
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
-  const [simulationMode, setSimulationMode] = useState(false);
+  const [view, setView] = useState(VIEW_SUIVRE);
   const [cinemaMode, setCinemaMode] = useState(false);
-  const [clockScale, setClockScale] = useState("nm");
-  const [virtualBoat, setVirtualBoat] = useState(false);
-  const [follow, setFollow] = useState(false);
+  const [hideFilmBar, setHideFilmBar] = useState(false);
+  const [stopAuto, setStopAuto] = useState(true);
+  const [userPreview, setUserPreview] = useState(false);
+  const isSuivre = view === VIEW_SUIVRE;
+  const isSimulation = view === VIEW_SIMULATION;
+  const barInsets = filmBarInsets({ sidebarOpen, toolsOpen });
   const [voyageFlat, setVoyageFlat] = useState(null);
   const [arrivalBanner, setArrivalBanner] = useState(null);
   const [liveKnots, setLiveKnots] = useState(null);
@@ -174,8 +182,9 @@ export default function App() {
   gateRef.current.allowed = notForNavOk;
   const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady, gateRef);
 
-  const activeStops = useMemo(() => activeSimulationStops(customRoute, points.length ? points : ITINERARY_POINTS), [customRoute, points]);
-  const activeSegments = useMemo(() => activeSimulationSegments(customRoute, segments), [customRoute, segments]);
+  const routeForView = isSuivre ? null : customRoute;
+  const activeStops = useMemo(() => activeSimulationStops(routeForView, points.length ? points : ITINERARY_POINTS), [routeForView, points]);
+  const activeSegments = useMemo(() => activeSimulationSegments(routeForView, segments), [routeForView, segments]);
   const baseFlat = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
   const flatRoute = voyageFlat || baseFlat;
   const escaleMarks = useMemo(
@@ -187,13 +196,20 @@ export default function App() {
     flat: flatRoute,
     marks: escaleMarks,
     polarRaw: polarData?.raw || null,
-    enabled: simulationMode,
+    enabled: Boolean(flatRoute.points?.length),
     stops: activeStops,
   });
+  const official = useOfficialExpedition({
+    enabled: isSuivre,
+    points: flatRoute.points,
+    marks: escaleMarks,
+    expeditionId: polarData?.expedition_id,
+    clock: voyage.clock,
+  });
   const vessel = useVirtualVessel({
-    enabled: simulationMode && (virtualBoat || follow),
-    forecast: virtualBoat,
-    follow,
+    enabled: isSimulation,
+    forecast: false,
+    follow: false,
     t0: voyage.t0,
     startAt: voyage.startAt,
     expeditionId: polarData?.expedition_id,
@@ -201,31 +217,28 @@ export default function App() {
     points: flatRoute.points,
     marks: escaleMarks,
   });
-  const officialClock = vessel.clock || voyage.clock;
+  const officialClock = voyage.clock || (isSuivre ? official.clock : vessel.clock);
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   const playback = useRoutePlayback({
     flat: flatRoute,
     marks: escaleMarks,
     boatKnots,
-    enabled: simulationMode,
+    enabled: true,
+    stopAuto: isSimulation && stopAuto,
   });
-  const live = vessel.live;
-  const previewing = Boolean(
-    follow
-    && live
-    && (playback.playing || Math.abs(playback.nm - (Number(live.filmNm) || 0)) > 1.5),
-  );
+  const live = isSuivre ? official.live : vessel.live;
+  const previewing = Boolean(isSuivre && live && userPreview);
   const clockSample = useMemo(() => {
-    if (follow && live && !previewing) return live;
+    if (isSuivre && live && !previewing) return live;
     return lookupVoyageClock(officialClock, playback.nm, { atQuay: playback.holding });
-  }, [follow, live, previewing, officialClock, playback.nm, playback.holding]);
+  }, [isSuivre, live, previewing, officialClock, playback.nm, playback.holding]);
   const windProfile = useRouteWindProfile({
     flat: flatRoute,
     marks: escaleMarks,
     polarData,
     cruiseKnots,
-    enabled: simulationMode,
+    enabled: Boolean(officialClock),
     clock: officialClock,
   });
 
@@ -259,12 +272,12 @@ export default function App() {
   useWakeLayer(mapRef, {
     flat: flatRoute,
     sailNm: cast?.sailNm ?? 0,
-    enabled: simulationMode,
+    enabled: Boolean(flatRoute.points?.length),
     mapReady,
   });
 
   const legContext = useMemo(() => {
-    if (!simulationMode || !cast) return null;
+    if (!cast) return null;
     return filmLegContext({
       marks: escaleMarks,
       nm: cast.sailNm,
@@ -273,7 +286,7 @@ export default function App() {
       boatKnots: expeditionSpeed.knots,
       cast,
     });
-  }, [simulationMode, cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
+  }, [cast, sample, escaleMarks, playback.sailTotalNm, flatRoute.totalNm, expeditionSpeed.knots]);
 
   const clockEtaHours = useMemo(() => {
     if (!officialClock || !legContext || legContext.finished || (legContext.nmRemainingToStop ?? 0) < 0.5) {
@@ -341,7 +354,7 @@ export default function App() {
   const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
   const clockLine = clockSample
     ? formatFilmClockLine({
-      sailNm: follow && !previewing
+      sailNm: isSuivre && !previewing
         ? (clockSample.sailNm ?? cast?.sailNm)
         : (cast?.sailNm ?? clockSample.sailNm),
       seaHours: clockSample.seaHours,
@@ -355,6 +368,10 @@ export default function App() {
   }, [clockSample?.speedKnots]);
 
   useEffect(() => {
+    if (isSuivre) {
+      setVoyageFlat(null);
+      return;
+    }
     if (vessel.voyage?.points?.length && vessel.voyage.routeRev > 0) {
       const pts = vessel.voyage.points;
       const last = pts[pts.length - 1];
@@ -365,31 +382,35 @@ export default function App() {
         episodes: detectAirEpisodes(pts),
       });
     }
-  }, [vessel.voyage?.routeRev, vessel.voyage?.points]);
+  }, [isSuivre, vessel.voyage?.routeRev, vessel.voyage?.points]);
 
   const goLive = useCallback(() => {
     if (!live) return;
+    setUserPreview(false);
     playback.pause();
     playback.seek(Number(live.filmNm) || 0, { jump: true });
   }, [live, playback.pause, playback.seek]);
 
   useEffect(() => {
-    if (!follow || !live || previewing) return;
+    if (isSuivre) setUserPreview(false);
+  }, [isSuivre]);
+
+  useEffect(() => {
+    if (!isSuivre || !live || userPreview) return;
     const target = Number(live.filmNm) || 0;
     if (Math.abs(playback.nm - target) > 2) {
       playback.seek(target, { jump: true });
     }
-  }, [follow, live?.filmNm]); // seek only when live nm jumps
+  }, [isSuivre, live?.filmNm, userPreview]);
 
   const canRecompute = Boolean(
-    follow
-    && simulationMode
+    isSimulation
     && cast?.vehicle === "main"
-    && vessel.forecastStatus !== "pending",
+    && vessel.voyage?.voyageId,
   );
 
   const iciPack = useIciDossier({
-    enabled: simulationMode,
+    enabled: Boolean(cast),
     cast,
     snappedPosition: legContext?.snappedPosition,
     polarMeta: polarData,
@@ -403,16 +424,18 @@ export default function App() {
   const handleSimNext = useCallback(() => {
     lastArrivalKeyRef.current = "";
     setArrivalBanner(null);
+    if (isSuivre) setUserPreview(true);
     playback.pause();
     playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
-  }, [playback.pause, playback.seek, escaleMarks]);
+  }, [playback.pause, playback.seek, escaleMarks, isSuivre]);
 
   const handleSimPrev = useCallback(() => {
     lastArrivalKeyRef.current = "";
     setArrivalBanner(null);
+    if (isSuivre) setUserPreview(true);
     playback.pause();
     playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
-  }, [playback.pause, playback.seek, escaleMarks]);
+  }, [playback.pause, playback.seek, escaleMarks, isSuivre]);
 
   const handleCatamaranDrag = useCallback((pos) => {
     playback.pause();
@@ -423,6 +446,7 @@ export default function App() {
     setSidebarOpen(cinemaSavedRef.current.sidebar);
     setToolsOpen(cinemaSavedRef.current.tools);
     setCinemaMode(false);
+    setHideFilmBar(false);
   }, []);
 
   const toggleCinema = useCallback(() => {
@@ -439,37 +463,38 @@ export default function App() {
     });
   }, [sidebarOpen, toolsOpen]);
 
-  const enterSimulation = useCallback(() => {
-    setSimulationMode(true);
-    setCinemaMode(false);
+  const selectView = useCallback((next) => {
+    setView(next);
     setArrivalBanner(null);
     lastArrivalKeyRef.current = "";
-    prevPlayheadRef.current = 0;
-    playback.pause();
-    playback.seek(0);
-    const start = interpolateCast(flatRoute, 0, { stops: activeStops })?.main
-      || interpolateAtNm(flatRoute, 0);
-    if (start && mapRef.current) {
-      mapRef.current.setView([start.lat, start.lon], 6.5, { animate: true, duration: 0.9 });
+    if (next === VIEW_SUIVRE) {
+      voyage.setT0(DEFAULT_T0_ISO);
+      voyage.setStartAt(DEFAULT_START_AT);
+      playback.pause();
     }
-  }, [playback.pause, playback.seek, flatRoute, mapRef, activeStops]);
-
-  const exitSimulation = useCallback(() => {
-    playback.pause();
-    leaveCinema();
-    setSimulationMode(false);
-    setArrivalBanner(null);
-    lastArrivalKeyRef.current = "";
-    setFollow(false);
-  }, [playback.pause, leaveCinema]);
-
-  const handleSimulationToggle = useCallback(() => {
-    if (simulationMode) exitSimulation();
-    else enterSimulation();
-  }, [simulationMode, enterSimulation, exitSimulation]);
+  }, [voyage.setT0, voyage.setStartAt, playback.pause]);
 
   useEffect(() => {
-    if (!simulationMode) return;
+    if (isSuivre) {
+      voyage.setT0(DEFAULT_T0_ISO);
+      voyage.setStartAt(DEFAULT_START_AT);
+    }
+  }, [isSuivre, voyage.setT0, voyage.setStartAt]);
+
+  useEffect(() => {
+    if (isSuivre) playback.setProfile("real");
+  }, [isSuivre, playback.setProfile]);
+
+  const flewToLiveRef = useRef(false);
+  useEffect(() => {
+    if (!isSuivre || !live || !mapRef.current || !mapReady) return;
+    if (flewToLiveRef.current) return;
+    flewToLiveRef.current = true;
+    mapRef.current.setView([live.lat, live.lon], 6.5, { animate: true, duration: 0.9 });
+  }, [isSuivre, live?.lat, live?.lon, mapReady, mapRef]);
+
+  useEffect(() => {
+    if (!isSimulation) return;
     playback.pause();
     playback.seek(0);
     prevPlayheadRef.current = 0;
@@ -478,10 +503,6 @@ export default function App() {
   }, [customRoute]);
 
   useEffect(() => {
-    if (!simulationMode) {
-      prevPlayheadRef.current = playback.nm;
-      return undefined;
-    }
     const prev = prevPlayheadRef.current;
     const cur = playback.nm;
     prevPlayheadRef.current = cur;
@@ -517,10 +538,9 @@ export default function App() {
     setArrivalBanner(hit);
     const timer = setTimeout(() => setArrivalBanner(null), 8000);
     return () => clearTimeout(timer);
-  }, [playback.nm, simulationMode, escaleMarks]);
+  }, [playback.nm, escaleMarks]);
 
   useEffect(() => {
-    if (!simulationMode) return undefined;
     const onKey = (e) => {
       if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (e.target?.closest?.("button") && e.code === "Space") return;
@@ -536,9 +556,6 @@ export default function App() {
       } else if (e.code === "KeyC") {
         e.preventDefault();
         toggleCinema();
-      } else if (e.code === "KeyT") {
-        e.preventDefault();
-        setClockScale((s) => (s === "nm" ? "days" : "nm"));
       } else if (e.code === "KeyL") {
         e.preventDefault();
         goLive();
@@ -557,16 +574,16 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [simulationMode, cinemaMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema, goLive]);
+  }, [cinemaMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema, goLive]);
 
   useFilmCamera({
     mapRef,
     mapReady,
-    enabled: simulationMode && Boolean(cast?.follow || (follow && live)),
-    lat: follow && live && !previewing ? live.lat : cast?.follow?.lat,
-    lon: follow && live && !previewing ? live.lon : cast?.follow?.lon,
+    enabled: Boolean(cast?.follow || (isSuivre && live)),
+    lat: isSuivre && live && !previewing ? live.lat : cast?.follow?.lat,
+    lon: isSuivre && live && !previewing ? live.lon : cast?.follow?.lon,
     remainingNm: legContext?.remainingNm ?? playback.sailTotalNm,
-    playing: playback.playing,
+    playing: isSuivre && !previewing ? true : playback.playing,
     jumpToken: playback.jumpToken,
     phase: cast?.phase,
     hopFrom: cast?.hopFrom,
@@ -575,13 +592,13 @@ export default function App() {
 
   useAirHopLine(mapRef, {
     mapReady,
-    visible: simulationMode && isAirPhase(cast?.phase),
+    visible: isAirPhase(cast?.phase),
     from: cast?.hopFrom,
     to: cast?.hopTo,
   });
 
   useCatamaranMarker(mapRef, {
-    visible: simulationMode && !follow && Boolean(cast?.main?.visible),
+    visible: isSimulation && Boolean(cast?.main?.visible),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -591,7 +608,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: simulationMode && follow && Boolean(live) && cast?.vehicle !== "plane",
+    visible: isSuivre && Boolean(live) && cast?.vehicle !== "plane",
     lat: live?.lat,
     lon: live?.lon,
     bearing: live?.bearing || 0,
@@ -603,7 +620,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: simulationMode && follow && previewing && Boolean(cast?.main?.visible),
+    visible: isSuivre && previewing && Boolean(cast?.main?.visible),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -617,7 +634,7 @@ export default function App() {
   useAltRouteLayer(mapRef, { draft: vessel.draft, mapReady });
 
   useCatamaranMarker(mapRef, {
-    visible: simulationMode && Boolean(cast?.side?.visible),
+    visible: Boolean(cast?.side?.visible),
     lat: cast?.side?.lat,
     lon: cast?.side?.lon,
     bearing: cast?.side?.bearing || 0,
@@ -629,7 +646,7 @@ export default function App() {
   });
 
   usePlaneMarker(mapRef, {
-    visible: simulationMode && Boolean(cast?.plane?.visible),
+    visible: Boolean(cast?.plane?.visible),
     lat: cast?.plane?.lat,
     lon: cast?.plane?.lon,
     bearing: cast?.plane?.bearing || 0,
@@ -689,6 +706,7 @@ export default function App() {
   const handleCustomRoute = (geojson) => {
     berryFetchIdRef.current += 1;
     routeKindRef.current = "custom";
+    setView(VIEW_SIMULATION);
     setCustomRoute(geojson);
     setRouteKind("custom");
     setVoyageFlat(null);
@@ -710,7 +728,7 @@ export default function App() {
   const handleDrawStart = () => {
     playback.pause();
     setCinemaMode(false);
-    setSimulationMode(false);
+    setView(VIEW_SIMULATION);
     setArrivalBanner(null);
     setDrawingMode(true);
     _resetDrawState();
@@ -735,7 +753,7 @@ export default function App() {
   const handleDrawContinue = () => {
     playback.pause();
     setCinemaMode(false);
-    setSimulationMode(false);
+    setView(VIEW_SIMULATION);
     setArrivalBanner(null);
     setDrawingMode(true);
     setExpeditionPlan(null);
@@ -1048,16 +1066,15 @@ export default function App() {
         isCockpit={false}
         polarData={polarData}
         maritimeLayers={maritimeLayers}
-        briefingLoading={simulationMode ? iciPack.loading : briefingLoading}
+        briefingLoading={iciPack.loading || briefingLoading}
         officialFallback={officialFallback}
-        dossier={simulationMode ? iciPack.dossier : null}
-        iciBriefing={simulationMode ? iciPack.briefing : null}
-        simulationMode={simulationMode}
-        onSimulationToggle={handleSimulationToggle}
+        iciBriefing={iciPack.briefing}
+        view={view}
+        onView={selectView}
         onNext={handleSimNext}
-        canNext={simulationMode && playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
+        canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
         onPrev={handleSimPrev}
-        canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
+        canPrev={playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
         legContext={hudLeg}
         escaleMarks={legendMarks}
         filmNm={playback.nm}
@@ -1070,14 +1087,10 @@ export default function App() {
         kindLabel={climatologyLabel}
         atQuay={atQuay}
         quayDays={quayDays}
-        virtualBoat={virtualBoat}
-        onVirtualBoat={setVirtualBoat}
-        follow={follow}
-        onFollow={setFollow}
         previewing={previewing}
-        forecastStatus={virtualBoat || follow ? vessel.forecastStatus : null}
-        forecastModel={vessel.voyage?.forecastModel}
-        onRecompute={() => vessel.recompute()}
+        forecastStatus={isSuivre ? official.gribStatus : null}
+        forecastModel={isSuivre ? official.gribModel : null}
+        onRecompute={() => vessel.recompute(clockSample?.iso)}
         canRecompute={canRecompute}
         recomputeBusy={vessel.busy}
         onGoLive={goLive}
@@ -1154,12 +1167,12 @@ export default function App() {
       )}
 
       {maritimeLayers.showClimatology && (
-        <div className={`absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full ${simulationMode ? "bottom-48" : "bottom-6"}`}>
+        <div className="absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full bottom-48">
           {t("climatologyStub")}
         </div>
       )}
 
-      {simulationMode && (arrivalBanner || playback.holdingStation) && (
+      {(arrivalBanner || playback.holdingStation) && (
         <ArrivalCard
           name={(arrivalBanner || playback.holdingStation).name}
           sailNm={(arrivalBanner || playback.holdingStation).nm}
@@ -1175,55 +1188,61 @@ export default function App() {
         />
       )}
 
-      {simulationMode && (
-        <SimulationFilmBar
-          fromName={hudLeg?.fromStop}
-          toName={hudLeg?.toStop}
-          finished={Boolean(hudLeg?.finished)}
-          nm={cast?.sailNm ?? 0}
-          totalNm={playback.sailTotalNm || flatRoute.totalNm}
-          playhead={playback.nm}
-          playheadTotal={playback.totalNm}
-          remainingNm={hudLeg?.remainingNm ?? 0}
-          etaHours={hudLeg?.etaHours}
-          boatKnots={expeditionSpeed.knots}
-          phase={cast?.phase}
-          vehicle={cast?.vehicle}
-          profile={playback.profile}
-          onProfile={playback.setProfile}
-          playing={playback.playing}
-          onTogglePlay={playback.toggle}
-          marks={escaleMarks}
-          onSeekNm={(nm) => {
-            lastArrivalKeyRef.current = "";
-            setArrivalBanner(null);
-            playback.pause();
-            playback.seek(nm, { jump: true });
-          }}
-          onPrev={handleSimPrev}
-          onNext={handleSimNext}
-          canPrev={simulationMode && playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
-          canNext={simulationMode && playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
-          cinema={cinemaMode}
-          onCinema={toggleCinema}
-          liveSpeed={expeditionSpeed.live}
-          boatName={polarData?.boat_name}
-          clockScale={clockScale}
-          onClockScale={setClockScale}
-          windSeries={windProfile.series}
-          windLoading={windProfile.loading}
-          holding={playback.holding}
-          clockLine={clockLine}
-          kindLabel={climatologyLabel}
-          atQuay={atQuay}
-          quayDays={quayDays}
-          twa={clockSample?.twa}
-          disclaimer={virtualBoat || follow ? t("voyageForecastDisclaimer") : t("voyageClockDisclaimer")}
-          liveBadge={follow ? (previewing ? t("previewBadge") : "LIVE") : null}
-          windKind={clockSample?.kind || expeditionSpeed.kind}
-          windModel={clockSample?.model || vessel.voyage?.forecastModel}
-        />
-      )}
+      <SimulationFilmBar
+        fromName={hudLeg?.fromStop}
+        toName={hudLeg?.toStop}
+        finished={Boolean(hudLeg?.finished)}
+        nm={isSuivre && live && !previewing ? (live.sailNm ?? cast?.sailNm ?? 0) : (cast?.sailNm ?? 0)}
+        totalNm={playback.sailTotalNm || flatRoute.totalNm}
+        playhead={isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm}
+        playheadTotal={playback.totalNm}
+        remainingNm={hudLeg?.remainingNm ?? 0}
+        etaHours={hudLeg?.etaHours}
+        boatKnots={expeditionSpeed.knots}
+        phase={cast?.phase}
+        vehicle={cast?.vehicle}
+        profile={playback.profile}
+        onProfile={playback.setProfile}
+        playing={playback.playing}
+        onTogglePlay={() => {
+          if (isSuivre) setUserPreview(true);
+          playback.toggle();
+        }}
+        marks={escaleMarks}
+        onSeekNm={(nm) => {
+          lastArrivalKeyRef.current = "";
+          setArrivalBanner(null);
+          if (isSuivre) setUserPreview(true);
+          playback.pause();
+          playback.seek(nm, { jump: true });
+        }}
+        onNext={handleSimNext}
+        canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
+        cinema={cinemaMode}
+        onCinema={toggleCinema}
+        hideBar={cinemaMode && hideFilmBar}
+        onHideBar={setHideFilmBar}
+        liveSpeed={expeditionSpeed.live}
+        boatName={polarData?.boat_name}
+        windSeries={windProfile.series}
+        windLoading={windProfile.loading}
+        holding={playback.holding}
+        clockLine={clockLine}
+        atQuay={atQuay}
+        quayDays={quayDays}
+        twa={clockSample?.twa}
+        liveBadge={isSuivre ? (previewing ? t("previewBadge") : "LIVE") : null}
+        windKind={clockSample?.kind || expeditionSpeed.kind}
+        windModel={clockSample?.model || official.gribModel}
+        showSpeeds={isSimulation}
+        showWindProfile={isSimulation}
+        stopAuto={stopAuto}
+        onStopAuto={setStopAuto}
+        showStopAuto={isSimulation}
+        sidebarOpen={sidebarOpen}
+        toolsOpen={toolsOpen}
+        gribLine={isSuivre && official.gribStatus !== "ready" ? t("gribMissing") : ""}
+      />
 
       <RecomputeDialog
         draft={vessel.draft}
@@ -1235,7 +1254,7 @@ export default function App() {
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className={`absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl ${simulationMode ? "bottom-52" : "bottom-8"}`}>
+        <div className="absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
           <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={() => setSelectedSatellite(null)}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
@@ -1279,7 +1298,11 @@ export default function App() {
         </div>
       )}
 
-      <p className="absolute bottom-1 left-1/2 -translate-x-1/2 z-[1500] text-[9px] text-white/50 pointer-events-none">
+      <p
+        data-testid="nav-disclaimer"
+        className="absolute z-[2030] text-[10px] text-amber-100/85 pointer-events-none text-center"
+        style={{ left: barInsets.left, right: barInsets.right, bottom: 2 }}
+      >
         {t("creditsLine")}
       </p>
     </div>

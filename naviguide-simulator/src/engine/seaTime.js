@@ -49,11 +49,21 @@ export function formatSeaClock(sailNm, knots, opts) {
 }
 
 /** Marks under the bar: nm or days at sea (D0 … D232). */
-export function clockTickLabels({ playheadTotal, sailTotalNm, knots, scale = "nm" } = {}) {
+export function clockTickLabels({ playheadTotal, sailTotalNm, knots, scale = "both" } = {}) {
   const maxFilm = Number(playheadTotal) || 0;
   const sail = Math.max(0, Number(sailTotalNm) || 0);
   if (maxFilm <= 0) return [];
   const fractions = [0, 0.5, 1];
+  if (scale === "both") {
+    return fractions.map((frac) => {
+      const nm = Math.round(sail * frac);
+      const days = Math.round(seaHours(sail * frac, knots) / 24);
+      return {
+        filmNm: maxFilm * frac,
+        label: `${nm.toLocaleString()} nm · j${days}`,
+      };
+    });
+  }
   if (scale === "days") {
     const totalH = seaHours(sail, knots);
     return fractions.map((t) => {

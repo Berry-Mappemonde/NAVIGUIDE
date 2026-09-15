@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Play, Shield, Square, Trash2 } from "lucide-react";
+import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Shield, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
-import { FollowToggle } from "./FollowToggle.jsx";
+import { ViewModeSwitch } from "./ViewModeSwitch.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
+import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.svg";
@@ -144,21 +145,20 @@ export function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onCustomDelete, canContinueDraw,
   canFinishDraw,
-  isCockpit, polarData, maritimeLayers, simulationMode, onSimulationToggle,
+  isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
-  dossier = null, iciBriefing = null,
+  iciBriefing = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, departureStartAt, onDepartureT0, onDepartureStartAt,
   clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
-  virtualBoat = false, onVirtualBoat, follow = false, onFollow,
   previewing = false, forecastStatus = null, forecastModel = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
 }) {
   const { t } = useLang();
+  const isSimulation = view === VIEW_SIMULATION;
+  const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
-  const briefing = simulationMode
-    ? (iciBriefing || (briefingLoading ? "" : t("iciBriefingFallback")))
-    : expeditionBriefing;
+  const briefing = iciBriefing || expeditionBriefing;
 
   return (
     <>
@@ -227,66 +227,47 @@ export function Sidebar({
             </div>
           )}
 
-          {onSimulationToggle && !isDrawing && (
-            <button
-              onClick={onSimulationToggle}
-              title={simulationMode ? t("exitSimulation") : t("simulationModeTooltip")}
-              className={[
-                "flex items-center justify-center gap-1.5 w-full mt-1.5 px-2 py-1 rounded-lg",
-                "text-[10px] font-semibold transition-all duration-150 select-none border",
-                simulationMode
-                  ? "bg-blue-600/80 text-white border-blue-500/60"
-                  : "bg-slate-800/40 text-white/50 border-white/8 hover:text-white/80 hover:bg-slate-700/50",
-              ].join(" ")}
-            >
-              {simulationMode
-                ? <><Square size={9} className="fill-current" /><span>{t("exitSimulationShort")}</span></>
-                : <><Play size={9} className="fill-current" /><span>{t("simulationModeLabel")}</span></>}
-            </button>
-          )}
+          {!isDrawing && onView ? (
+            <ViewModeSwitch view={view} onView={onView} />
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto sidebar-scroll px-4 py-3 space-y-4">
-          {simulationMode && (
+          {isSuivre && (
+            <p className="text-[10px] text-sky-100/80 border border-white/10 rounded-lg px-2 py-1.5">
+              {t("officialDepartureLocked")}
+            </p>
+          )}
+          {isSimulation && (
             <DepartureField
               t0={departureT0}
               startAt={departureStartAt}
               onT0={onDepartureT0}
               onStartAt={onDepartureStartAt}
-              virtualBoat={virtualBoat}
-              onVirtualBoat={onVirtualBoat}
             />
           )}
-          {simulationMode && (
-            <FollowToggle follow={follow} onFollow={onFollow} />
-          )}
-          {simulationMode && (
-            <SimulationPanel
-              legContext={legContext}
-              onClose={onSimulationToggle}
-              onPrev={onPrev}
-              canPrev={canPrev}
-              onNext={onNext}
-              canNext={canNext}
-              clockSample={clockSample}
-              civilDate={civilDate}
-              kindLabel={kindLabel}
-              atQuay={atQuay}
-              quayDays={quayDays}
-              follow={follow}
-              previewing={previewing}
-              forecastStatus={forecastStatus}
-              forecastModel={forecastModel}
-              onRecompute={onRecompute}
-              canRecompute={canRecompute}
-              recomputeBusy={recomputeBusy}
-              onGoLive={onGoLive}
-              virtualBoat={virtualBoat}
-            />
-          )}
-          {simulationMode && (
-            <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
-          )}
+          <SimulationPanel
+            legContext={legContext}
+            onPrev={onPrev}
+            canPrev={canPrev}
+            onNext={onNext}
+            canNext={canNext}
+            clockSample={clockSample}
+            civilDate={civilDate}
+            kindLabel={kindLabel}
+            atQuay={atQuay}
+            quayDays={quayDays}
+            liveFollow={isSuivre}
+            previewing={previewing}
+            forecastStatus={isSuivre ? forecastStatus : null}
+            forecastModel={forecastModel}
+            onRecompute={onRecompute}
+            canRecompute={canRecompute}
+            showRecompute={isSimulation}
+            recomputeBusy={recomputeBusy}
+            onGoLive={onGoLive}
+          />
+          <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
 
           {officialFallback && (
             <p className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-1.5">
@@ -313,7 +294,7 @@ export function Sidebar({
             </div>
           )}
 
-          {!isDrawing && (isCockpit || simulationMode || briefing || briefingLoading) && (
+          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
             <div>
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Shield size={12} className="text-blue-400" />
@@ -322,18 +303,11 @@ export function Sidebar({
               <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
                 <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
                   {briefingLoading
-                    ? t(simulationMode ? "iciBriefingLoading" : "briefingLoading")
-                    : (briefing || t(simulationMode ? "iciBriefingFallback" : "briefingPlaceholder"))}
+                    ? t("iciBriefingLoading")
+                    : (briefing || t("iciBriefingFallback"))}
                 </p>
               </div>
             </div>
-          )}
-
-          {dossier && (
-            <details className="text-[10px] text-slate-400">
-              <summary className="cursor-pointer text-slate-300">{t("cockpitDossier")}</summary>
-              <pre className="mt-1 overflow-auto max-h-40 bg-slate-950/50 p-2 rounded">{JSON.stringify(dossier, null, 2)}</pre>
-            </details>
           )}
         </div>
       </div>

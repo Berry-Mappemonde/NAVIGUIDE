@@ -1,0 +1,122 @@
+import json
+from datetime import datetime, timezone
+
+import pytest
+from fastapi.testclient import TestClient
+
+import forecast_cube
+import saildocs
+import voyage_store
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_FORECAST_BACKEND", "synthetic")
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_FORECAST_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("NAVIGUIDE_GRIB_DIR", str(tmp_path / "grib"))
+    monkeypatch.setenv("NAVIGUIDE_SAILDOCS_INBOX", str(tmp_path / "inbox"))
+    voyage_store._DIR = tmp_path / "voyages"
+    forecast_cube.CACHE_DIR = tmp_path / "cache"
+    saildocs.GRIB_DIR = tmp_path / "grib"
+    saildocs.INBOX_DIR = tmp_path / "inbox"
+    from main import app
+    return TestClient(app)
+
+
+def _payload():
+    return {
+        "t0": "2026-06-01T08:00:00Z",
+        "expedition_id": "berry-mappemonde-2026",
+        "routeKind": "berry",
+        "follow": True,
+        "forecast": True,
+        "startAt": "la-rochelle",
+        "points": [
+            {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False, "nonMaritime": False},
+            {"lat": 40.0, "lon": -15.0, "cumNm": 650, "filmCum": 650, "jump": False, "nonMaritime": False},
+            {"lat": 14.6, "lon": -61.07, "cumNm": 3350, "filmCum": 3350, "jump": False, "nonMaritime": False},
+        ],
+        "marks": [
+            {"name": "La Rochelle", "nm": 0, "filmNm": 0, "lat": 46.15, "lon": -1.16, "index": 0},
+            {"name": "Fort-de-France (Martinique)", "nm": 3350, "filmNm": 3350, "lat": 14.6, "lon": -61.07, "index": 2},
+        ],
+    }
+
+
+def test_official_unique_t0_and_no_recompute(client):
+    r1 = client.put("/voyage/official", json=_payload())
+    assert r1.status_code == 200
+    body = r1.json()
+    assert body["voyageId"] == "berry-mappemonde-2026-officiel"
+    assert body["t0"].startswith("2026-05-15")
+    assert body["official"] is True
+    r2 = client.put("/voyage/official", json=_payload())
+    assert r2.json()["voyageId"] == body["voyageId"]
+    rec = client.post("/voyage/berry-mappemonde-2026-officiel/recompute")
+    assert rec.status_code == 403
+
+
+def test_official_september_has_moved(client):
+    client.put("/voyage/official", json=_payload())
+    sample = client.get("/voyage/official/at", params={"t": "2026-09-15T12:00:00Z"}).json()
+    assert sample["status"] in ("live", "arrived")
+    assert float(sample.get("tHours") or 0) > 24
+
+
+def test_official_at_now_and_grib_absent(client):
+    client.put("/voyage/official", json=_payload())
+    sample = client.get("/voyage/official/at").json()
+    assert sample["voyageId"] == "berry-mappemonde-2026-officiel"
+    assert sample["status"] in ("live", "waiting", "arrived")
+    grib = client.get("/voyage/official/grib", params={"lat": 46.15, "lon": -1.16}).json()
+    assert grib["status"] == "absent"
+    assert grib["warning"] == "prévision du jour absente"
+
+
+def test_daily_grib_around_boat(client):
+    client.put("/voyage/official", json=_payload())
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    r = client.post("/voyage/official/grib", json={
+        "model": "GFS",
+        "day": day,
+        "around": {"lat": 46.15, "lon": -1.16},
+        "samples": [{
+            "lat": 46.15,
+            "lon": -1.16,
+            "t": f"{day}T08:00:00Z",
+            "windKnots": 12,
+            "dirFromDeg": 240,
+        }],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ready"
+    assert body["model"] == "GFS"
+    south, north, _west, _east = body["bbox"]
+    assert north - south < 12
+    bad = client.post("/voyage/official/grib", json={
+        "model": "GFS",
+        "bbox": [-80, 80, -180, 180],
+        "samples": [],
+    })
+    assert bad.status_code == 400
+
+
+def test_scan_inbox_json(client, tmp_path, monkeypatch):
+    import saildocs
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr(saildocs, "INBOX_DIR", inbox)
+    monkeypatch.setattr(saildocs, "GRIB_DIR", tmp_path / "grib")
+    client.put("/voyage/official", json=_payload())
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    (inbox / f"{day.replace('-', '')}_gfs.json").write_text(json.dumps({
+        "model": "GFS",
+        "day": day,
+        "around": {"lat": 46.15, "lon": -1.16},
+        "samples": [{"lat": 46.15, "lon": -1.16, "t": f"{day}T12:00:00Z", "windKnots": 9, "dirFromDeg": 200}],
+    }), encoding="utf-8")
+    scanned = client.post("/voyage/official/grib/scan").json()
+    assert scanned["status"] == "ready"
+    assert scanned["model"] == "GFS"

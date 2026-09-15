@@ -10,14 +10,15 @@ import { bearingDeg } from "./routeWindProfile.js";
 export const AIR_CALENDAR_HOURS = 8;
 export const SAINT_MAUR_LAND_HOURS = 4;
 export const MIN_BOAT_KNOTS = 0.5;
-export const DEFAULT_T0_ISO = "2026-06-01T08:00:00.000Z";
+export const DEFAULT_T0_ISO = "2026-05-15T08:00:00.000Z";
 export const DEFAULT_START_AT = "la-rochelle";
+export const OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel";
 
 export const DEFAULT_PORT_DAYS = Object.freeze({
   laRochelle: 3,
   halifax: 1,
   saintMaur: 0,
-  default: 2,
+  default: 3,
 });
 
 const MONTHS_SHORT = {
@@ -539,7 +540,7 @@ export function parseDepartureUtc(dateStr, timeStr) {
 }
 
 export function splitDepartureUtc(iso) {
-  const fallback = { date: "2026-06-01", time: "08:00" };
+  const fallback = { date: "2026-05-15", time: "08:00" };
   const v = String(iso || "");
   if (v.length < 16) return fallback;
   return { date: v.slice(0, 10), time: v.slice(11, 16) };

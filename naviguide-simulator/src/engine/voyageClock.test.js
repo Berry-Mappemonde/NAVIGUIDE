@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import { flattenRoute, mapEscalesOnRoute } from "./routePlayhead.js";
 import {
   AIR_CALENDAR_HOURS,
+  DEFAULT_PORT_DAYS,
+  DEFAULT_T0_ISO,
+  OFFICIAL_VOYAGE_ID,
   SAINT_MAUR_LAND_HOURS,
   buildVoyageClock,
   formatFilmClockLine,
   lookupVoyageClock,
   parseDepartureUtc,
+  portHoldHours,
   sampleClockAtTime,
   splitDepartureUtc,
 } from "./voyageClock.js";
@@ -208,6 +212,29 @@ describe("parseDepartureUtc", () => {
   it("compose un ISO UTC depuis date + heure", () => {
     assert.equal(parseDepartureUtc("2026-03-15", "08:00"), "2026-03-15T08:00:00.000Z");
     assert.deepEqual(splitDepartureUtc("2026-06-01T08:00:00.000Z"), { date: "2026-06-01", time: "08:00" });
+  });
+});
+
+describe("U0 horloge officielle", () => {
+  it("t0 = 15 mai 2026 08:00 UTC, pas le 1er juin", () => {
+    assert.equal(DEFAULT_T0_ISO, "2026-05-15T08:00:00.000Z");
+    assert.equal(OFFICIAL_VOYAGE_ID, "berry-mappemonde-2026-officiel");
+    assert.deepEqual(splitDepartureUtc(DEFAULT_T0_ISO), { date: "2026-05-15", time: "08:00" });
+    assert.deepEqual(splitDepartureUtc(""), { date: "2026-05-15", time: "08:00" });
+  });
+
+  it("escales Bmap = 3 jours à quai (pas 2)", () => {
+    assert.equal(DEFAULT_PORT_DAYS.default, 3);
+    assert.equal(portHoldHours("Ajaccio"), 72);
+    assert.equal(portHoldHours("Cayenne"), 72);
+    assert.equal(portHoldHours("Papeete"), 72);
+    assert.equal(portHoldHours("Mata Utu"), 72);
+    assert.equal(portHoldHours("Halifax"), 24);
+    const { clock } = clockFor(DEFAULT_T0_ISO);
+    assert.equal(clock.t0, DEFAULT_T0_ISO);
+    const fdf = fdfMark(clock);
+    assert.ok(fdf);
+    assert.equal(fdf.holdHours, 72);
   });
 });
 

@@ -7,5 +7,7 @@ __pycache__/
 server/polar_data/*.json
 server/voyage_data/
 server/forecast_cache/
+server/grib_data/
+server/saildocs_inbox/
 .env
 .DS_Store

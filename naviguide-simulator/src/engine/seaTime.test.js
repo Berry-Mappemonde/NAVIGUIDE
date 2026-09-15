@@ -36,4 +36,15 @@ describe("seaTime", () => {
     assert.equal(ticks[0].label, "J0");
     assert.equal(ticks[2].label, "J232");
   });
+
+  it("nm et jours ensemble, plus de bascule", () => {
+    const ticks = clockTickLabels({
+      playheadTotal: 39_000,
+      sailTotalNm: 39_000,
+      knots: 7,
+      scale: "both",
+    });
+    assert.match(ticks[0].label, /0 nm · j0/);
+    assert.match(ticks[2].label, /39[,.\s ]?000 nm · j232/);
+  });
 });

@@ -180,11 +180,15 @@ export function useVirtualVessel({
     return () => clearInterval(id);
   }, [enabled, voyage?.voyageId, voyage?.forecastStatus, refreshMeta]);
 
-  const recompute = useCallback(async () => {
+  const recompute = useCallback(async (fromIso) => {
     if (!voyage?.voyageId) return null;
     setBusy(true);
     try {
-      const d = await fetchJson(`/voyage/${voyage.voyageId}/recompute`, { method: "POST" });
+      const d = await fetchJson(`/voyage/${voyage.voyageId}/recompute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fromIso ? { t: fromIso } : {}),
+      });
       setDraft(d);
       return d;
     } finally {

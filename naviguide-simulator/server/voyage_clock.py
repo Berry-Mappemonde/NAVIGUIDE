@@ -13,6 +13,9 @@ LAND_CALENDAR_HOURS = 4.0
 MIN_KNOTS = 0.5
 WAVE_NOGO_M = 2.5
 WAVE_NOGO_DT_FACTOR = 3.0
+OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel"
+OFFICIAL_T0 = "2026-05-15T08:00:00Z"
+DEFAULT_BMAP_PORT_DAYS = 3
 
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
 
@@ -25,7 +28,7 @@ def port_days_for(name: str) -> int:
         return 3
     if "halifax" in n:
         return 1
-    return 2
+    return DEFAULT_BMAP_PORT_DAYS
 
 
 def parse_iso(iso: str) -> datetime:

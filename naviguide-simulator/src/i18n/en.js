@@ -72,10 +72,10 @@ export default {
   expeditionRisk:     "Expedition Risk",
   score:              "Score",
   gettingStarted:     "🧭 Getting Started",
-  gettingStartedText: "Click any point on the route to get wind, wave and current data. Draw your own route or start the simulation.",
+  gettingStartedText: "Two buttons: Follow the Berry-Mappemonde expedition (the boat now) or Simulation (play a route). Draw a custom route only in Simulation.",
   searouteUnavailable: "Official route (searoute unavailable).",
   searouteDrawFailed: "searoute failed — temporary rhumb line.",
-  berryLocalBriefing: "Berry-Mappemonde expedition: from Saint-Maur (Berry) to La Rochelle, then the overseas stops. Start the simulation: the briefing then tells the pack around the boat — which EEZ, which ports of entry, what sits inside 30 nm — not the whole chart.", // pragma: allowlist secret
+  berryLocalBriefing: "Berry-Mappemonde expedition: departure from La Rochelle on 15 May 2026, 08:00 UTC. The briefing tells the pack around the boat — which EEZ, which ports of entry, what sits inside 30 nm — not the whole chart.", // pragma: allowlist secret
   cockpitDossier: "Cockpit dossier",
   iciBriefingLoading: "Filling the pack around the boat…",
   iciBriefingFallback: "The pack around the boat has no story yet.",
@@ -176,17 +176,21 @@ export default {
   layerBiAmpTitle:           "Marine protected areas",
 
   // ── Simulation button (Sidebar) ────────────────────────────────────────────
-  simulationModeLabel:   "Simulation Mode",
-  exitSimulationShort:   "Exit simulation",
-  simulationModeTooltip: "Simulation Mode — play the expedition as a film (Play, speeds, stops)",
+  simulationModeLabel:   "Simulation",
+  exitSimulationShort:   "Simulation",
+  simulationModeTooltip: "Simulation — play the expedition (Play, speeds, stops)",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
   previous: "Previous",
   next:     "Next",
   previousEscale: "Previous stop",
-  nextEscale:     "Next stop",
+  nextEscale:     "Go to next stop",
+  goToNextStop:   "Go to next stop",
   play:  "Play",
   pause: "Pause",
+  stopAuto:       "Stop auto",
+  stopAutoOn:     "Stop auto: pause at each stop",
+  stopAutoOff:    "Stop auto: sail through stops",
 
   // ── Film player ───────────────────────────────────────────────────────────
   speedReal:        "real",
@@ -200,7 +204,9 @@ export default {
   speedRealHint:    "1 s = 1 s at sea",
   speedLivePolar:   "live polar",
   cinema:           "Cinema",
-  cinemaTooltip:    "Hide the side panels to watch the map",
+  cinemaTooltip:    "Tuck the side panels away to watch the map",
+  hideFilmBar:      "Hide the bar",
+  showFilmBar:      "Show the bar",
   filmArrived:      "Arrived at {name}",
   filmScrub:        "Scrub along the route",
   filmPhaseAir:     "Air transfer — the boat stays in port",
@@ -235,8 +241,12 @@ export default {
   voyageTwa:        "TWA {deg}°",
   voyageLocalKnots: "{knots} kt",
   escalesQuay:      "{days} d in port",
-  virtualBoatLabel: "Virtual boat (10-day forecast)",
-  followModeLabel:  "Follow mode",
+  viewModeGroup:    "Follow the expedition or Simulation",
+  followExpeditionButton: "Follow the Berry-Mappemonde expedition",
+  simulationButton: "Simulation",
+  officialDepartureLocked: "Official departure: 15 May 2026, 08:00 UTC (not editable)",
+  gribMissing:      "today’s forecast missing",
+  gribModel:        "{model}",
   previewBadge:     "preview",
   returnToLive:     "Back to live (L)",
   departsIn:        "Departs in {hours}",
@@ -253,5 +263,5 @@ export default {
   recomputeAccept:  "Accept",
   voyageKindForecast: "{model} · +{lead} h",
   voyageForecastDisclaimer: "0–10 day forecast (named model), then climatology. Not for navigation.",
-  creditsLine:      "Leaflet · Esri tiles · OpenSeaMap · EMODnet · GEBCO (offshore sounding). Not for navigation.",
+  creditsLine:      "Not for navigation.",
 };

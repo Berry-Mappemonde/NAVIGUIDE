@@ -19,7 +19,21 @@ from forecast_cube import (
     save_cube,
 )
 from isochrone import haversine, run_leg_isochrone
+from saildocs import (
+    DAILY_RADIUS_NM,
+    GRIB_MISSING,
+    absent_payload,
+    ingest_daily,
+    load_daily,
+    public_grib,
+    saildocs_query,
+    scan_inbox,
+    utc_day,
+    wind_at_daily,
+)
 from voyage_clock import (
+    OFFICIAL_T0,
+    OFFICIAL_VOYAGE_ID,
     build_voyage_clock,
     parse_iso,
     sample_clock_at_time,
@@ -43,12 +57,26 @@ class VoyageCreate(BaseModel):
     follow: bool = True
     forecast: bool = True
     startAt: str = "la-rochelle"
+    official: bool = False
     points: List[Dict[str, Any]]
     marks: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class RecomputeBody(BaseModel):
     to_name: Optional[str] = None
+    t: Optional[str] = None
+
+
+class DailyGribIn(BaseModel):
+    model: str = "GFS"
+    source: str = "saildocs"
+    day: Optional[str] = None
+    issued: Optional[str] = None
+    around: Optional[Dict[str, Any]] = None
+    bbox: Optional[List[float]] = None
+    radiusNm: float = DAILY_RADIUS_NM
+    samples: List[Dict[str, Any]] = Field(default_factory=list)
+    query: Optional[str] = None
 
 
 def _now() -> datetime:
@@ -130,7 +158,12 @@ def _fill_forecast(voyage_id: str) -> None:
         )
 
 
+def _is_official(voyage_id: str) -> bool:
+    return voyage_id == OFFICIAL_VOYAGE_ID
+
+
 def _public_meta(voy: dict) -> dict:
+    official = voy.get("official") or _is_official(voy.get("voyageId") or "")
     return {
         "voyageId": voy["voyageId"],
         "t0": voy["t0"],
@@ -138,6 +171,7 @@ def _public_meta(voy: dict) -> dict:
         "routeKind": voy.get("routeKind"),
         "routeRev": voy.get("routeRev", 0),
         "follow": voy.get("follow", True),
+        "official": official,
         "forecastStatus": voy.get("forecastStatus"),
         "forecastModel": voy.get("forecastModel"),
         "waveModel": voy.get("waveModel"),
@@ -145,8 +179,6 @@ def _public_meta(voy: dict) -> dict:
         "cubeBytes": voy.get("cubeBytes"),
         "forecastRefreshedAt": voy.get("forecastRefreshedAt"),
         "disclaimer": {
-            "forecast": "Prévision 0–10 j, modèle nommé. Pas une carte marine.",
-            "climatology": "Après J+10 : climatologie (vent typique du mois).",
             "notForNav": "Ne convient pas à la navigation.",
         },
     }
@@ -248,6 +280,172 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
+def _build_official(body: VoyageCreate) -> dict:
+    voy = {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": OFFICIAL_T0,
+        "expedition_id": body.expedition_id or "berry-mappemonde-2026",
+        "routeKind": "berry",
+        "routeRev": 0,
+        "follow": True,
+        "forecast": False,
+        "official": True,
+        "forecastStatus": "unavailable",
+        "forecastModel": None,
+        "startAt": "la-rochelle",
+        "points": body.points,
+        "marks": body.marks,
+        "draft": None,
+        "createdAt": to_iso(_now()),
+    }
+    voy["clock"] = _climo_clock(voy)
+    save_voyage(voy)
+    return voy
+
+
+@router.put("/voyage/official")
+def ensure_official(body: VoyageCreate):
+    if not body.points:
+        raise HTTPException(400, "points requis")
+    existing = load_voyage(OFFICIAL_VOYAGE_ID)
+    if existing and existing.get("points"):
+        if (
+            len(body.points) > len(existing["points"])
+            and int(existing.get("routeRev") or 0) == 0
+        ):
+            existing["points"] = body.points
+            existing["marks"] = body.marks
+            existing["t0"] = OFFICIAL_T0
+            existing["official"] = True
+            existing["clock"] = _climo_clock(existing)
+            save_voyage(existing)
+        return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
+    voy = _build_official(body)
+    return {**_public_meta(voy), "clock": voy["clock"]}
+
+
+@router.get("/voyage/official")
+def get_official():
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    return {
+        **_public_meta(voy),
+        "points": voy.get("points"),
+        "marks": voy.get("marks"),
+    }
+
+
+@router.get("/voyage/official/clock")
+def get_official_clock():
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    return voy.get("clock") or _climo_clock(voy)
+
+
+def _grib_around_from_live(voy: Optional[dict], when: datetime) -> Optional[dict]:
+    if not voy:
+        return None
+    clock = voy.get("clock") or _climo_clock(voy)
+    sample = sample_clock_at_time(clock, when)
+    if not sample:
+        return None
+    return {"lat": sample.get("lat"), "lon": sample.get("lon")}
+
+
+@router.get("/voyage/official/at")
+def official_at(t: Optional[str] = Query(None)):
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    clock = voy.get("clock") or _climo_clock(voy)
+    when = parse_iso(t) if t else _now()
+    sample = sample_clock_at_time(clock, when)
+    if sample is None:
+        raise HTTPException(404, "horloge vide")
+    sample["voyageId"] = OFFICIAL_VOYAGE_ID
+    sample["t"] = to_iso(when)
+    grib = load_daily(OFFICIAL_VOYAGE_ID, utc_day(when))
+    wind = wind_at_daily(grib, float(sample.get("lat") or 0), float(sample.get("lon") or 0), when)
+    if wind:
+        sample["kind"] = "forecast"
+        sample["model"] = wind.get("model")
+        sample["windKnots"] = wind.get("windKnots")
+        sample["dirFromDeg"] = wind.get("dirFromDeg")
+        sample["gribStatus"] = "ready"
+        sample["gribWarning"] = None
+    else:
+        if sample.get("kind") == "forecast":
+            sample["kind"] = "climatology"
+            sample["model"] = None
+            sample["leadHours"] = None
+        sample["gribStatus"] = "absent"
+        sample["gribWarning"] = GRIB_MISSING
+    return sample
+
+
+@router.get("/voyage/official/grib")
+def get_official_grib(
+    lat: Optional[float] = Query(None),
+    lon: Optional[float] = Query(None),
+    t: Optional[str] = Query(None),
+):
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    when = parse_iso(t) if t else _now()
+    around = None
+    if lat is not None and lon is not None:
+        around = {"lat": lat, "lon": lon}
+    elif voy:
+        around = _grib_around_from_live(voy, when)
+    record = load_daily(OFFICIAL_VOYAGE_ID, utc_day(when))
+    if record is None and around:
+        record = scan_inbox(OFFICIAL_VOYAGE_ID, utc_day(when), around)
+    return public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
+
+
+@router.post("/voyage/official/grib")
+def post_official_grib(body: DailyGribIn):
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    around = body.around
+    if around is None and voy:
+        around = _grib_around_from_live(voy, _now())
+    try:
+        record = ingest_daily(OFFICIAL_VOYAGE_ID, body.model_dump(), around=around)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return public_grib(record, OFFICIAL_VOYAGE_ID, around or body.around, _now())
+
+
+@router.post("/voyage/official/grib/scan")
+def scan_official_grib():
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    around = _grib_around_from_live(voy, _now()) if voy else None
+    record = scan_inbox(OFFICIAL_VOYAGE_ID, utc_day(), around)
+    if record is None:
+        return absent_payload(OFFICIAL_VOYAGE_ID, utc_day(), around)
+    return public_grib(record, OFFICIAL_VOYAGE_ID, around, _now())
+
+
+@router.get("/voyage/official/saildocs-query")
+def official_saildocs_query(
+    lat: Optional[float] = Query(None),
+    lon: Optional[float] = Query(None),
+):
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    around = {"lat": lat, "lon": lon} if lat is not None and lon is not None else (
+        _grib_around_from_live(voy, _now()) if voy else None
+    )
+    if not around:
+        raise HTTPException(400, "position bateau inconnue")
+    return {
+        "query": saildocs_query(float(around["lat"]), float(around["lon"])),
+        "around": around,
+        "radiusNm": DAILY_RADIUS_NM,
+        "model": "GFS",
+    }
+
+
 @router.get("/voyage/{voyage_id}")
 def get_voyage(voyage_id: str):
     voy = load_voyage(voyage_id)
@@ -318,12 +516,15 @@ def _maybe_auto_refresh(voy: dict) -> None:
 @router.post("/voyage/{voyage_id}/recompute")
 def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
     body = body or RecomputeBody()
+    if _is_official(voyage_id):
+        raise HTTPException(403, "recalcul interdit sur le voyage officiel")
     voy = load_voyage(voyage_id)
     if voy is None:
         raise HTTPException(404, "voyage inconnu")
     _maybe_auto_refresh(voy)
     clock = voy.get("clock") or _climo_clock(voy)
-    live = sample_clock_at_time(clock, _now())
+    when = parse_iso(body.t) if body.t else _now()
+    live = sample_clock_at_time(clock, when)
     if live is None:
         raise HTTPException(400, "pas de position live")
     if live.get("vehicle") in ("plane", "side"):
@@ -357,7 +558,7 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         dep_lon=float(live["lon"]),
         dst_lat=dst_lat,
         dst_lon=dst_lon,
-        departure_time=_now() if live.get("status") != "waiting" else t0,
+        departure_time=when if live.get("status") != "waiting" else t0,
         wind_fn=wind_fn,
         polar_raw=_polar_raw(voy.get("expedition_id") or ""),
         searoute_coords=searoute,

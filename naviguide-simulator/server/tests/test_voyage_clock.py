@@ -8,8 +8,12 @@ from pathlib import Path
 from climatology_zones import zone_wind_at
 from voyage_clock import (
     AIR_CALENDAR_HOURS,
+    DEFAULT_BMAP_PORT_DAYS,
+    OFFICIAL_T0,
+    OFFICIAL_VOYAGE_ID,
     build_voyage_clock,
     find_start_index,
+    port_days_for,
     sample_clock_at_hours,
     sample_clock_at_time,
 )
@@ -64,13 +68,23 @@ def test_march_vs_july_fdf():
     assert abs((da - db).total_seconds()) > 24 * 3600
 
 
-def test_quay_48h_same_filmn():
+def test_official_t0_and_bmap_3_days():
+    assert OFFICIAL_T0.startswith("2026-05-15")
+    assert OFFICIAL_VOYAGE_ID == "berry-mappemonde-2026-officiel"
+    assert DEFAULT_BMAP_PORT_DAYS == 3
+    assert port_days_for("Ajaccio") == 3
+    assert port_days_for("Cayenne") == 3
+    assert port_days_for("Papeete") == 3
+    assert port_days_for("Halifax") == 1
+
+
+def test_quay_72h_same_filmn():
     c = _clock("2026-06-15T08:00:00Z")
     fdf = next(m for m in c["marks"] if "Fort-de-France" in m["name"])
-    assert fdf["holdHours"] == 48
+    assert fdf["holdHours"] == 72
     same = [v for v in c["vertices"] if abs(v["filmNm"] - fdf["filmNm"]) < 1e-6]
     assert len(same) >= 2
-    assert same[-1]["tHours"] - same[0]["tHours"] >= 47.9
+    assert same[-1]["tHours"] - same[0]["tHours"] >= 71.9
 
 
 def test_air_hop():
