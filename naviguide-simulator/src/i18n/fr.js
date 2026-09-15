@@ -72,10 +72,10 @@ export default {
   expeditionRisk:     "Risque expédition",
   score:              "Score",
   gettingStarted:     "🧭 Démarrage",
-  gettingStartedText: "Cliquez sur un point de la route pour obtenir les données vent, vague et courant. Tracez votre propre route ou lancez la simulation.",
+  gettingStartedText: "Deux boutons : Suivre l’expédition Berry-Mappemonde (le bateau maintenant) ou Simulation (jouer une route). Tracez une route perso uniquement en Simulation.",
   searouteUnavailable: "Route officielle (searoute indisponible).",
   searouteDrawFailed: "searoute a échoué — corde temporaire.",
-  berryLocalBriefing: "Expédition Berry-Mappemonde : départ de Saint-Maur (Berry) vers La Rochelle, puis les escales outre-mer. Lancez la simulation : le briefing raconte alors le sac autour du bateau — quelle ZEE, quels ports d’entrée, ce qu’il y a dans 30 nm — pas toute la carte.", // pragma: allowlist secret
+  berryLocalBriefing: "Expédition Berry-Mappemonde : départ de La Rochelle le 15 mai 2026, 08:00 UTC. Le briefing raconte le sac autour du bateau — quelle ZEE, quels ports d’entrée, ce qu’il y a dans 30 nm — pas toute la carte.", // pragma: allowlist secret
   cockpitDossier: "Dossier cockpit",
   iciBriefingLoading: "Le sac se remplit autour du bateau…",
   iciBriefingFallback: "Le sac autour du bateau n’a pas encore de récit.",
@@ -176,17 +176,21 @@ export default {
   layerBiAmpTitle:           "Aires marines protégées",
 
   // ── Simulation button (Sidebar) ────────────────────────────────────────────
-  simulationModeLabel:   "Mode Simulation",
-  exitSimulationShort:   "Quitter simulation",
-  simulationModeTooltip: "Mode Simulation — lire l’expédition comme un film (Play, vitesses, escales)",
+  simulationModeLabel:   "Simulation",
+  exitSimulationShort:   "Simulation",
+  simulationModeTooltip: "Simulation — jouer l’expédition (Play, vitesses, escales)",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
   previous: "Précédent",
   next:     "Suivant",
   previousEscale: "Escale précédente",
-  nextEscale:     "Escale suivante",
+  nextEscale:     "Prochaine escale",
+  goToNextStop:   "Prochaine escale",
   play:  "Lecture",
   pause: "Pause",
+  stopAuto:       "Stop auto",
+  stopAutoOn:     "Stop auto : pause à chaque escale",
+  stopAutoOff:    "Stop auto : on traverse les escales",
 
   // ── Film player ──────────────────────────────────────────────────────────
   speedReal:        "réelle",
@@ -200,7 +204,9 @@ export default {
   speedRealHint:    "1 s = 1 s en mer",
   speedLivePolar:   "polaire live",
   cinema:           "Cinéma",
-  cinemaTooltip:    "Masquer les panneaux pour voir la carte en grand",
+  cinemaTooltip:    "Ranger les panneaux pour voir la carte en grand",
+  hideFilmBar:      "Masquer la barre",
+  showFilmBar:      "Afficher la barre",
   filmArrived:      "Arrivée à {name}",
   filmScrub:        "Avancer ou reculer sur la route",
   filmPhaseAir:     "Transfert aérien — le bateau reste à quai",
@@ -235,8 +241,12 @@ export default {
   voyageTwa:        "TWA {deg}°",
   voyageLocalKnots: "{knots} kt",
   escalesQuay:      "{days} j à quai",
-  virtualBoatLabel: "Bateau virtuel (prévision 10 j)",
-  followModeLabel:  "Mode Suivre",
+  viewModeGroup:    "Suivre l’expédition ou Simulation",
+  followExpeditionButton: "Suivre l’expédition Berry-Mappemonde",
+  simulationButton: "Simulation",
+  officialDepartureLocked: "Départ officiel : 15 mai 2026, 08:00 UTC (non éditable)",
+  gribMissing:      "prévision du jour absente",
+  gribModel:        "{model}",
   previewBadge:     "aperçu",
   returnToLive:     "Revenir au live (L)",
   departsIn:        "Appareillage dans {hours}",
@@ -253,5 +263,5 @@ export default {
   recomputeAccept:  "Accepter",
   voyageKindForecast: "{model} · +{lead} h",
   voyageForecastDisclaimer: "Prévision 0–10 j (modèle nommé), climatologie ensuite. Ne convient pas à la navigation.",
-  creditsLine:      "Leaflet · tuiles Esri · OpenSeaMap · EMODnet · GEBCO (sondage au large). Ne convient pas à la navigation.",
+  creditsLine:      "Ne convient pas à la navigation.",
 };

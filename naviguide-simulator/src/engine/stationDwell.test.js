@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { nextStationAfter, stepPlayback, dwellMsForProfile } from "./stationDwell.js";
+import { nextStationAfter, stepPlayback, dwellMsForProfile, shouldPauseAtStop } from "./stationDwell.js";
 
 const stations = [
   { filmNm: 0, name: "Départ", kind: "start" },
@@ -76,5 +76,12 @@ describe("stationDwell", () => {
 
   it("profil fast = pause plus courte", () => {
     assert.ok(dwellMsForProfile("fast") < dwellMsForProfile("real"));
+  });
+
+  it("Stop auto ON pause à l’escale, OFF traverse", () => {
+    const arrived = { name: "Ajaccio" };
+    assert.equal(shouldPauseAtStop(true, arrived), true);
+    assert.equal(shouldPauseAtStop(false, arrived), false);
+    assert.equal(shouldPauseAtStop(true, null), false);
   });
 });
