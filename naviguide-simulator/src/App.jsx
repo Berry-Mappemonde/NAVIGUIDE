@@ -52,7 +52,9 @@ import {
   lookupVoyageClock,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
-import { filmBarInsets } from "./utils/filmBarLayout.js";
+import { isRouteReady } from "./utils/routeReady.js";
+import { isSceneReady, playheadAligned } from "./utils/sceneGate.js";
+import { useGribCorridorLayer } from "./layers/useGribCorridorLayer.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -132,8 +134,8 @@ export default function App() {
   const [userPreview, setUserPreview] = useState(false);
   const isSuivre = view === VIEW_SUIVRE;
   const isSimulation = view === VIEW_SIMULATION;
-  const barInsets = filmBarInsets({ sidebarOpen, toolsOpen });
   const [voyageFlat, setVoyageFlat] = useState(null);
+  const [cameraPlaced, setCameraPlaced] = useState(false);
   const [arrivalBanner, setArrivalBanner] = useState(null);
   const [liveKnots, setLiveKnots] = useState(null);
   const cinemaSavedRef = useRef({ sidebar: true, tools: true });
@@ -183,6 +185,7 @@ export default function App() {
   const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady, gateRef);
 
   const routeForView = isSuivre ? null : customRoute;
+  const routeReady = isRouteReady(segProgress) || (officialFallback && segments.length > 0);
   const activeStops = useMemo(() => activeSimulationStops(routeForView, points.length ? points : ITINERARY_POINTS), [routeForView, points]);
   const activeSegments = useMemo(() => activeSimulationSegments(routeForView, segments), [routeForView, segments]);
   const baseFlat = useMemo(() => flattenRoute(activeSegments), [activeSegments]);
@@ -196,18 +199,18 @@ export default function App() {
     flat: flatRoute,
     marks: escaleMarks,
     polarRaw: polarData?.raw || null,
-    enabled: Boolean(flatRoute.points?.length),
+    enabled: Boolean(flatRoute.points?.length) && routeReady,
     stops: activeStops,
   });
   const official = useOfficialExpedition({
     enabled: isSuivre,
-    points: flatRoute.points,
-    marks: escaleMarks,
+    points: routeReady ? flatRoute.points : undefined,
+    marks: routeReady ? escaleMarks : [],
     expeditionId: polarData?.expedition_id,
     clock: voyage.clock,
   });
   const vessel = useVirtualVessel({
-    enabled: isSimulation,
+    enabled: isSimulation && routeReady,
     forecast: false,
     follow: false,
     t0: voyage.t0,
@@ -217,18 +220,33 @@ export default function App() {
     points: flatRoute.points,
     marks: escaleMarks,
   });
-  const officialClock = voyage.clock || (isSuivre ? official.clock : vessel.clock);
+  const officialClock = voyage.clock || official.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   const playback = useRoutePlayback({
     flat: flatRoute,
     marks: escaleMarks,
     boatKnots,
-    enabled: true,
+    enabled: routeReady,
     stopAuto: isSimulation && stopAuto,
   });
   const live = isSuivre ? official.live : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
+  const playheadReady = playheadAligned({
+    isSuivre,
+    previewing,
+    playbackNm: playback.nm,
+    liveFilmNm: live?.filmNm,
+  });
+  const sceneReady = isSceneReady({
+    routeReady,
+    hasRoute: Boolean(flatRoute.points?.length),
+    cameraPlaced,
+    playheadReady,
+    isSuivre,
+    hasLive: Boolean(live),
+    previewing,
+  });
   const clockSample = useMemo(() => {
     if (isSuivre && live && !previewing) return live;
     return lookupVoyageClock(officialClock, playback.nm, { atQuay: playback.holding });
@@ -271,8 +289,10 @@ export default function App() {
   });
   useWakeLayer(mapRef, {
     flat: flatRoute,
-    sailNm: cast?.sailNm ?? 0,
-    enabled: Boolean(flatRoute.points?.length),
+    sailNm: isSuivre && official.live && !previewing
+      ? (official.live.sailNm ?? 0)
+      : (cast?.sailNm ?? 0),
+    enabled: sceneReady,
     mapReady,
   });
 
@@ -308,9 +328,11 @@ export default function App() {
       ...legContext,
       etaHours: officialClock ? clockEtaHours : legContext.etaHours,
       speedKnots: sailing ? Math.round(local * 10) / 10 : (officialClock ? null : legContext.speedKnots),
-      kind: clockSample?.kind || (officialClock ? "climatology" : legContext.kind),
+        kind: clockSample?.kind === "forecast"
+          ? "forecast"
+          : (isSuivre ? "absent" : (clockSample?.kind || (officialClock ? "climatology" : legContext.kind))),
     };
-  }, [legContext, clockSample, officialClock, clockEtaHours]);
+  }, [legContext, clockSample, officialClock, clockEtaHours, isSuivre]);
 
   const jambe = useMemo(() => {
     if (!hudLeg) return null;
@@ -342,17 +364,19 @@ export default function App() {
     : "";
   const climatologyLabel = clockSample?.kind === "forecast"
     ? t("voyageKindForecast", {
-      model: clockSample.model || vessel.voyage?.forecastModel || "GFS",
+      model: clockSample.model || official.gribModel || vessel.voyage?.forecastModel || "GFS",
       lead: clockSample.leadHours != null ? Math.round(clockSample.leadHours) : "—",
     })
-    : officialClock && monthLabel
-      ? t("voyageKindClimatology", { month: monthLabel })
-      : "";
+    : isSuivre
+      ? ""
+      : officialClock && monthLabel
+        ? t("voyageKindClimatology", { month: monthLabel })
+        : "";
   const quayDays = clockSample?.holdHours > 0
     ? Math.round(clockSample.holdHours / 24)
     : 0;
   const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
-  const clockLine = clockSample
+  const clockLine = officialClock?.vertices?.length && clockSample
     ? formatFilmClockLine({
       sailNm: isSuivre && !previewing
         ? (clockSample.sailNm ?? cast?.sailNm)
@@ -395,13 +419,33 @@ export default function App() {
     if (isSuivre) setUserPreview(false);
   }, [isSuivre]);
 
+  const livePrimedRef = useRef(false);
   useEffect(() => {
-    if (!isSuivre || !live || userPreview) return;
+    if (!isSuivre) {
+      livePrimedRef.current = false;
+      return;
+    }
+    if (!routeReady || !live || userPreview) return;
     const target = Number(live.filmNm) || 0;
     if (Math.abs(playback.nm - target) > 2) {
-      playback.seek(target, { jump: true });
+      playback.seek(target, { jump: false });
     }
-  }, [isSuivre, live?.filmNm, userPreview]);
+    livePrimedRef.current = true;
+  }, [routeReady, isSuivre, live?.filmNm, userPreview, playback.nm, playback.seek]);
+
+  const simPrimedRef = useRef(false);
+  useEffect(() => {
+    if (!isSimulation) {
+      simPrimedRef.current = false;
+      return;
+    }
+    if (!routeReady || simPrimedRef.current) return;
+    simPrimedRef.current = true;
+    voyage.setStartAt("saint-maur");
+    playback.setProfile("normal");
+    playback.pause();
+    playback.seek(0, { jump: true });
+  }, [isSimulation, routeReady, voyage.setStartAt, playback.pause, playback.seek, playback.setProfile]);
 
   const canRecompute = Boolean(
     isSimulation
@@ -471,8 +515,14 @@ export default function App() {
       voyage.setT0(DEFAULT_T0_ISO);
       voyage.setStartAt(DEFAULT_START_AT);
       playback.pause();
+      setUserPreview(false);
+    } else {
+      voyage.setStartAt("saint-maur");
+      playback.setProfile("normal");
+      playback.pause();
+      playback.seek(0, { jump: true });
     }
-  }, [voyage.setT0, voyage.setStartAt, playback.pause]);
+  }, [voyage.setT0, voyage.setStartAt, playback.pause, playback.seek, playback.setProfile]);
 
   useEffect(() => {
     if (isSuivre) {
@@ -485,13 +535,25 @@ export default function App() {
     if (isSuivre) playback.setProfile("real");
   }, [isSuivre, playback.setProfile]);
 
-  const flewToLiveRef = useRef(false);
   useEffect(() => {
-    if (!isSuivre || !live || !mapRef.current || !mapReady) return;
-    if (flewToLiveRef.current) return;
-    flewToLiveRef.current = true;
-    mapRef.current.setView([live.lat, live.lon], 6.5, { animate: true, duration: 0.9 });
-  }, [isSuivre, live?.lat, live?.lon, mapReady, mapRef]);
+    const map = mapRef.current;
+    if (!map || !mapReady || !routeReady || !flatRoute.points?.length) {
+      setCameraPlaced(false);
+      return;
+    }
+    if (isSuivre) {
+      if (!live) {
+        setCameraPlaced(false);
+        return;
+      }
+      map.setView([live.lat, live.lon], 6.5, { animate: false });
+      setCameraPlaced(true);
+      return;
+    }
+    const start = flatRoute.points[0];
+    map.setView([start.lat, start.lon], 8, { animate: false });
+    setCameraPlaced(true);
+  }, [routeReady, isSuivre, live?.lat, live?.lon, mapReady, mapRef, flatRoute.points]);
 
   useEffect(() => {
     if (!isSimulation) return;
@@ -579,15 +641,16 @@ export default function App() {
   useFilmCamera({
     mapRef,
     mapReady,
-    enabled: Boolean(cast?.follow || (isSuivre && live)),
+    enabled: sceneReady && Boolean(cast?.follow || (isSuivre && live)),
     lat: isSuivre && live && !previewing ? live.lat : cast?.follow?.lat,
     lon: isSuivre && live && !previewing ? live.lon : cast?.follow?.lon,
     remainingNm: legContext?.remainingNm ?? playback.sailTotalNm,
-    playing: isSuivre && !previewing ? true : playback.playing,
-    jumpToken: playback.jumpToken,
+    playing: isSuivre && !previewing ? false : playback.playing,
+    jumpToken: isSuivre && !previewing ? 0 : playback.jumpToken,
     phase: cast?.phase,
     hopFrom: cast?.hopFrom,
     hopTo: cast?.hopTo,
+    resetKey: `${view}-${sceneReady ? "ready" : "load"}`,
   });
 
   useAirHopLine(mapRef, {
@@ -598,7 +661,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: isSimulation && Boolean(cast?.main?.visible),
+    visible: sceneReady && isSimulation && Boolean(cast?.main),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -608,7 +671,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: isSuivre && Boolean(live) && cast?.vehicle !== "plane",
+    visible: sceneReady && isSuivre && Boolean(live) && cast?.vehicle !== "plane",
     lat: live?.lat,
     lon: live?.lon,
     bearing: live?.bearing || 0,
@@ -620,7 +683,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: isSuivre && previewing && Boolean(cast?.main?.visible),
+    visible: sceneReady && isSuivre && previewing && Boolean(cast?.main),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -634,7 +697,7 @@ export default function App() {
   useAltRouteLayer(mapRef, { draft: vessel.draft, mapReady });
 
   useCatamaranMarker(mapRef, {
-    visible: Boolean(cast?.side?.visible),
+    visible: sceneReady && Boolean(cast?.side?.visible),
     lat: cast?.side?.lat,
     lon: cast?.side?.lon,
     bearing: cast?.side?.bearing || 0,
@@ -646,7 +709,7 @@ export default function App() {
   });
 
   usePlaneMarker(mapRef, {
-    visible: Boolean(cast?.plane?.visible),
+    visible: sceneReady && Boolean(cast?.plane?.visible),
     lat: cast?.plane?.lat,
     lon: cast?.plane?.lon,
     bearing: cast?.plane?.bearing || 0,
@@ -659,7 +722,23 @@ export default function App() {
   );
   const markerOffsets = useMarkerOffsets(points, mapRef, routeCoords);
 
-  useRouteLayer(mapRef, { segments, customRoute, drawingMode, drawnSegments, mapReady });
+  useRouteLayer(mapRef, {
+    segments: sceneReady ? segments : [],
+    customRoute: sceneReady ? customRoute : null,
+    drawingMode,
+    drawnSegments,
+    mapReady,
+    visible: sceneReady || drawingMode,
+    hideMaritime: sceneReady && !customRoute && !drawingMode,
+  });
+  useGribCorridorLayer(mapRef, {
+    grib: official.grib,
+    mapReady,
+    visible: isSuivre && official.gribStatus === "ready",
+    whenIso: clockSample?.iso,
+    lat: isSuivre ? live?.lat : null,
+    lon: isSuivre ? live?.lon : null,
+  });
 
   const applyBerryBriefing = useCallback(() => {
     setExpeditionPlan(getCachedPlan(lang) || { executive_briefing: t("berryLocalBriefing") });
@@ -930,14 +1009,12 @@ export default function App() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !segments.length || boundsApplied.current) return;
-    if (segProgress.done < segProgress.total && segProgress.total > 0) return;
+    if (!map || !mapReady || !segments.length || boundsApplied.current || !routeReady) return;
     boundsApplied.current = true;
-    const all = segments.flatMap((s) => s.coords || []);
-    if (all.length < 2) return;
-    const b = L.latLngBounds(all.map(([lon, lat]) => [lat, lon]));
-    map.fitBounds(b, { padding: [80, 80] });
-  }, [segments, segProgress, mapRef, mapReady]);
+    if (isSuivre) return;
+    const start = segments[0]?.coords?.[0];
+    if (start) map.setView([start[1], start[0]], 8, { animate: false });
+  }, [segments, routeReady, isSuivre, mapRef, mapReady]);
 
   const fetchSatellite = async (lat, lon, extra = {}) => {
     setSatelliteLoading(true);
@@ -1088,7 +1165,7 @@ export default function App() {
         atQuay={atQuay}
         quayDays={quayDays}
         previewing={previewing}
-        forecastStatus={isSuivre ? official.gribStatus : null}
+        forecastStatus={isSuivre && official.gribStatus === "ready" ? "ready" : null}
         forecastModel={isSuivre ? official.gribModel : null}
         onRecompute={() => vessel.recompute(clockSample?.iso)}
         canRecompute={canRecompute}
@@ -1119,14 +1196,14 @@ export default function App() {
         routeSegmentCount={stats.segments}
       />
 
-      {loading && (
-        <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1500] pointer-events-none">
+      {!sceneReady && !drawingMode && (
+        <div data-testid="scene-load-mask" className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-[1500] pointer-events-none">
           <div className="w-10 h-10 border-4 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" />
           <div className="mt-4 text-white/90 text-sm font-medium">{t("calculatingRoutes")}</div>
         </div>
       )}
 
-      {!loading && segProgress.done < segProgress.total && (
+      {!sceneReady && !drawingMode && segProgress.done < segProgress.total && (
         <div className="absolute bottom-20 right-5 z-20 flex items-center gap-2 bg-slate-900/90 text-white text-xs font-medium px-3 py-2 rounded-full shadow-lg pointer-events-none">
           <div className="w-3.5 h-3.5 border-2 border-blue-400/40 border-t-blue-400 rounded-full animate-spin" />
           <span>{t("routesProgress", { done: segProgress.done, total: segProgress.total })}</span>
@@ -1176,7 +1253,14 @@ export default function App() {
         <ArrivalCard
           name={(arrivalBanner || playback.holdingStation).name}
           sailNm={(arrivalBanner || playback.holdingStation).nm}
-          seaTime={formatSeaClock((arrivalBanner || playback.holdingStation).nm, expeditionSpeed.knots)}
+          seaTime={clockSample
+            ? formatFilmClockLine({
+              sailNm: clockSample.sailNm,
+              seaHours: clockSample.seaHours,
+              iso: clockSample.iso,
+              lang,
+            })
+            : formatSeaClock((arrivalBanner || playback.holdingStation).nm, expeditionSpeed.knots)}
           nextName={nextStationAfter(
             (arrivalBanner || playback.holdingStation).filmNm
               ?? (arrivalBanner || playback.holdingStation).nm,
@@ -1232,8 +1316,8 @@ export default function App() {
         quayDays={quayDays}
         twa={clockSample?.twa}
         liveBadge={isSuivre ? (previewing ? t("previewBadge") : "LIVE") : null}
-        windKind={clockSample?.kind || expeditionSpeed.kind}
-        windModel={clockSample?.model || official.gribModel}
+        windKind={clockSample?.kind === "forecast" ? "forecast" : (isSuivre ? null : (clockSample?.kind || expeditionSpeed.kind))}
+        windModel={isSuivre ? official.gribModel : (clockSample?.model || official.gribModel)}
         showSpeeds={isSimulation}
         showWindProfile={isSimulation}
         stopAuto={stopAuto}
@@ -1241,7 +1325,14 @@ export default function App() {
         showStopAuto={isSimulation}
         sidebarOpen={sidebarOpen}
         toolsOpen={toolsOpen}
-        gribLine={isSuivre && official.gribStatus !== "ready" ? t("gribMissing") : ""}
+        gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
+        clock={officialClock}
+        clockCurrent={clockSample ? {
+          filmNm: isSuivre && live && !previewing ? (Number(live.filmNm) || 0) : playback.nm,
+          sailNm: clockSample.sailNm,
+          seaHours: clockSample.seaHours,
+        } : null}
+        disclaimer={t("creditsLine")}
       />
 
       <RecomputeDialog
@@ -1298,13 +1389,6 @@ export default function App() {
         </div>
       )}
 
-      <p
-        data-testid="nav-disclaimer"
-        className="absolute z-[2030] text-[10px] text-amber-100/85 pointer-events-none text-center"
-        style={{ left: barInsets.left, right: barInsets.right, bottom: 2 }}
-      >
-        {t("creditsLine")}
-      </p>
     </div>
   );
 }

@@ -48,7 +48,10 @@ export function formatSeaClock(sailNm, knots, opts) {
   return formatSeaTime(seaHours(sailNm, knots), opts);
 }
 
-/** Marks under the bar: nm or days at sea (D0 … D232). */
+/**
+ * Ancien barème nœuds constants — ne plus servir la barre film.
+ * Les graduations HUD passent par `filmBarTicks` / `clockTickLabelsFromClock`.
+ */
 export function clockTickLabels({ playheadTotal, sailTotalNm, knots, scale = "both" } = {}) {
   const maxFilm = Number(playheadTotal) || 0;
   const sail = Math.max(0, Number(sailTotalNm) || 0);

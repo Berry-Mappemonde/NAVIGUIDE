@@ -209,6 +209,8 @@ export function Sidebar({
                     key={key}
                     onClick={() => maritimeLayers[toggleKey]((v) => !v)}
                     title={error ? `${t(titleKey)} : ${error}` : t(titleKey)}
+                    data-testid={`layer-${key}`}
+                    aria-pressed={active}
                     className={[
                       "flex items-center justify-center gap-1 px-1.5 py-0.5 rounded-full",
                       "text-[9px] font-semibold transition-all duration-150 select-none",
@@ -232,7 +234,7 @@ export function Sidebar({
           ) : null}
         </div>
 
-        <div className="flex-1 overflow-y-auto sidebar-scroll px-4 py-3 space-y-4">
+        <div className="flex-1 overflow-y-auto sidebar-scroll px-4 py-2 space-y-2">
           {isSuivre && (
             <p className="text-[10px] text-sky-100/80 border border-white/10 rounded-lg px-2 py-1.5">
               {t("officialDepartureLocked")}

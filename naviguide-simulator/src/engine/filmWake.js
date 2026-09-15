@@ -53,3 +53,55 @@ export function wakeParts(flat, sailNm) {
   }
   return parts;
 }
+
+/**
+ * Reste à parcourir : de sailNm jusqu’à la fin (même découpe hops / antimeridien).
+ * @returns {number[][][]} [lon, lat] parts
+ */
+export function remainingParts(flat, sailNm) {
+  const pts = flat?.points || [];
+  if (pts.length < 2) return [];
+  const target = Math.max(0, Number(sailNm) || 0);
+  const lastNm = pts[pts.length - 1].cumNm ?? 0;
+  if (target >= lastNm - 1e-9) return [];
+  const raw = [];
+  let cur = [];
+
+  const push = (lon, lat) => {
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+    cur.push([lon, lat]);
+  };
+  const flush = () => {
+    if (cur.length >= 2) raw.push(cur);
+    cur = [];
+  };
+
+  let started = false;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const cum = p.cumNm ?? 0;
+    if (!started) {
+      if (cum < target - 1e-9) continue;
+      const prev = i > 0 ? pts[i - 1] : null;
+      if (prev && cum > target + 1e-9 && !p.jump && !prev.jump) {
+        const span = (cum - (prev.cumNm ?? 0)) || 1;
+        const t = Math.max(0, Math.min(1, (target - (prev.cumNm ?? 0)) / span));
+        push(prev.lon + t * (p.lon - prev.lon), prev.lat + t * (p.lat - prev.lat));
+      }
+      started = true;
+    }
+    if (p.jump) {
+      flush();
+      push(p.lon, p.lat);
+      continue;
+    }
+    push(p.lon, p.lat);
+  }
+  flush();
+
+  const parts = [];
+  for (const coords of raw) {
+    parts.push(...splitAntimeridianCoords(coords));
+  }
+  return parts;
+}

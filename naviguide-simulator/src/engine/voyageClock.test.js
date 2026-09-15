@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { flattenRoute, mapEscalesOnRoute } from "./routePlayhead.js";
+import { clockTickLabels } from "./seaTime.js";
 import {
   AIR_CALENDAR_HOURS,
   DEFAULT_PORT_DAYS,
@@ -8,6 +12,8 @@ import {
   OFFICIAL_VOYAGE_ID,
   SAINT_MAUR_LAND_HOURS,
   buildVoyageClock,
+  clockTickLabelsFromClock,
+  filmBarTicks,
   formatFilmClockLine,
   lookupVoyageClock,
   parseDepartureUtc,
@@ -235,6 +241,77 @@ describe("U0 horloge officielle", () => {
     const fdf = fdfMark(clock);
     assert.ok(fdf);
     assert.equal(fdf.holdHours, 72);
+  });
+});
+
+describe("clockTickLabelsFromClock", () => {
+  it("un seul J : celui du HUD, pas un milieu à 50 % du film", () => {
+    const { clock } = clockFor(DEFAULT_T0_ISO);
+    const last = lookupVoyageClock(clock, clock.vertices.at(-1).filmNm);
+    const midFilm = last.filmNm * 0.5;
+    const mid = lookupVoyageClock(clock, midFilm);
+    const live = lookupVoyageClock(clock, last.filmNm * 0.47);
+    const ticks = clockTickLabelsFromClock(clock, "fr", {
+      filmNm: live.filmNm,
+      sailNm: live.sailNm,
+      seaHours: live.seaHours,
+    });
+    assert.equal(ticks.length, 3);
+    assert.equal(ticks[0].label.includes("j"), false);
+    assert.equal(ticks[2].label.includes("j"), false);
+    const hudJ = `j${Math.floor(live.seaHours / 24)}`;
+    assert.match(ticks[1].label, new RegExp(hudJ));
+    const midJ = `j${Math.floor(mid.seaHours / 24)}`;
+    if (midJ !== hudJ) {
+      assert.equal(ticks[1].label.includes(midJ), false);
+    }
+  });
+});
+
+describe("filmBarTicks", () => {
+  it("sans horloge : aucune graduation (pas de fallback J)", () => {
+    assert.deepEqual(filmBarTicks(null), []);
+    assert.deepEqual(filmBarTicks({ vertices: [] }), []);
+  });
+
+  it("HUD et tick courant partagent le même J — le fallback 7 kt diverge", () => {
+    const { clock } = clockFor(DEFAULT_T0_ISO);
+    const last = lookupVoyageClock(clock, clock.vertices.at(-1).filmNm);
+    const live = lookupVoyageClock(clock, last.filmNm * 0.47);
+    const ticks = filmBarTicks(clock, "fr", {
+      filmNm: live.filmNm,
+      sailNm: live.sailNm,
+      seaHours: live.seaHours,
+    });
+    const line = formatFilmClockLine({
+      sailNm: live.sailNm,
+      seaHours: live.seaHours,
+      iso: live.iso,
+      lang: "fr",
+    });
+    const clockJ = `j${Math.floor(live.seaHours / 24)}`;
+    assert.match(ticks[1].label, new RegExp(clockJ));
+    assert.match(line, new RegExp(clockJ));
+    const fallback = clockTickLabels({
+      playheadTotal: last.filmNm,
+      sailTotalNm: last.sailNm,
+      knots: 20,
+      scale: "both",
+    });
+    const fallbackJ = fallback[2].label.match(/j(\d+)/)?.[1];
+    const clockDay = String(Math.floor(live.seaHours / 24));
+    assert.ok(fallbackJ);
+    assert.notEqual(fallbackJ, clockDay);
+  });
+
+  it("SimulationFilmBar n’importe plus clockTickLabels", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/SimulationFilmBar.jsx"),
+      "utf8",
+    );
+    assert.equal(src.includes("clockTickLabels"), false);
+    assert.equal(src.includes("seaTime.js"), false);
+    assert.match(src, /filmBarTicks/);
   });
 });
 

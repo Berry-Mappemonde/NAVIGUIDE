@@ -6,6 +6,8 @@ export const BI_COLORS = {
   biAmp: "#22c55e",
 };
 
+export const DEFAULT_SHOW_ZEE = false;
+
 export const ALL_LAYER_CONFIG = [
   { key: "zee", labelKey: "layerZee", titleKey: "layerZeeTitle", color: "#0e7490", showKey: "showZee", toggleKey: "setShowZee", loadingKey: "loadingZee", errorKey: "errorZee" },
   { key: "wpi", labelKey: "layerPorts", titleKey: "layerPortsTitle", color: "#f59e0b", showKey: "showPorts", toggleKey: "setShowPorts", loadingKey: "loadingPorts", errorKey: "errorPorts" },

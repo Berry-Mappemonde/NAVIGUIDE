@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_T0_ISO, OFFICIAL_VOYAGE_ID, sampleClockAtTime } from "../engine/voyageClock.js";
+import { officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
 /**
  * Voyage officiel unique. Pas de localStorage visiteur.
  * Position = horloge locale à maintenant (1 s = 1 s).
- * GRIB du jour = overlay vent, jamais un nouveau trait.
+ * Dernier GRIB = overlay vent, jamais un nouveau trait, jamais de climatologie.
  */
 export function useOfficialExpedition({
   enabled,
@@ -18,6 +19,7 @@ export function useOfficialExpedition({
   const [meta, setMeta] = useState(null);
   const [serverClock, setServerClock] = useState(null);
   const [grib, setGrib] = useState(null);
+  const [gribPending, setGribPending] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const putRef = useRef("");
   const clockRef = useRef(clock);
@@ -31,7 +33,7 @@ export function useOfficialExpedition({
 
   const putOfficial = useCallback(async () => {
     if (!points?.length) return null;
-    const fp = `${points.length}|${points[0]?.lat}|${points[points.length - 1]?.lat}`;
+    const fp = `${points.length}|${points[0]?.lat}|${points[points.length - 1]?.lat}|${expeditionId || ""}`;
     if (putRef.current === fp && meta?.voyageId === OFFICIAL_VOYAGE_ID) return meta;
     const res = await fetch(`${API}/voyage/official`, {
       method: "PUT",
@@ -74,21 +76,33 @@ export function useOfficialExpedition({
   useEffect(() => {
     if (!enabled || !points?.length) return undefined;
     let cancelled = false;
-    putOfficial().then((body) => {
-      if (cancelled || !body) return;
-      fetch(`${API}/voyage/official/clock`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((ck) => { if (ck && !cancelled) setServerClock(ck); })
-        .catch(() => {});
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    const kick = () => {
+      putOfficial().then((body) => {
+        if (cancelled || !body) return;
+        fetch(`${API}/voyage/official/clock`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((ck) => { if (ck && !cancelled) setServerClock(ck); })
+          .catch(() => {});
+      }).catch(() => {});
+    };
+    kick();
+    const retry = setInterval(() => {
+      if (!putRef.current) kick();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(retry);
+    };
   }, [enabled, points, putOfficial]);
 
-  const refreshGrib = useCallback(async (lat, lon) => {
-    const qs = lat != null && lon != null
-      ? `?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`
-      : "";
-    const res = await fetch(`${API}/voyage/official/grib${qs}`);
+  const refreshGrib = useCallback(async ({ force = false } = {}) => {
+    const sample = clockRef.current
+      ? sampleClockAtTime(clockRef.current, new Date())
+      : null;
+    if (sample?.lat == null || sample?.lon == null) return null;
+    const qs = `?lat=${encodeURIComponent(sample.lat)}&lon=${encodeURIComponent(sample.lon)}`;
+    const url = force ? `${API}/voyage/official/grib/refresh${qs}` : `${API}/voyage/official/grib${qs}`;
+    const res = await fetch(url, force ? { method: "POST" } : undefined);
     const data = await res.json().catch(() => null);
     if (res.ok && data) setGrib(data);
     return data;
@@ -96,40 +110,73 @@ export function useOfficialExpedition({
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const tick = () => {
-      const sample = clockRef.current
-        ? sampleClockAtTime(clockRef.current, new Date())
-        : null;
-      refreshGrib(sample?.lat, sample?.lon).catch(() => {});
+    const sample = clock
+      ? sampleClockAtTime(clock, new Date())
+      : (serverClock ? sampleClockAtTime(serverClock, new Date()) : null);
+    if (sample?.lat == null) {
+      setGribPending(true);
+      return undefined;
+    }
+    let cancelled = false;
+    setGribPending(true);
+    refreshGrib({ force: true }).catch(() => {}).finally(() => {
+      if (!cancelled) setGribPending(false);
+    });
+    const id = setInterval(() => {
+      refreshGrib().catch(() => {});
+    }, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
     };
-    tick();
-    const id = setInterval(tick, 60_000);
-    return () => clearInterval(id);
-  }, [enabled, refreshGrib, meta?.voyageId]);
+  }, [enabled, refreshGrib, meta?.voyageId, clock, serverClock]);
 
   const live = useMemo(() => {
-    if (!enabled || !clock) return null;
-    const sample = sampleClockAtTime(clock, new Date(nowMs));
+    const liveClock = clock || serverClock;
+    if (!enabled || !liveClock) return null;
+    const sample = sampleClockAtTime(liveClock, new Date(nowMs));
     if (!sample) return null;
     const wind = grib?.wind;
     if (grib?.status === "ready" && wind) {
+      const models = (grib.products || [])
+        .filter((p) => p.status === "ready")
+        .map((p) => p.model);
       return {
         ...sample,
         kind: "forecast",
-        model: grib.model || wind.model || "GFS",
-        windKnots: wind.windKnots ?? sample.windKnots,
-        dirFromDeg: wind.dirFromDeg ?? sample.dirFromDeg,
+        model: models[0] || grib.model || wind.model || "GFS",
+        waveModel: grib.waveModel || wind.waveModel || null,
+        currentModel: grib.currentModel || wind.currentModel || null,
+        windKnots: wind.windKnots,
+        dirFromDeg: wind.dirFromDeg,
+        pressHpa: wind.pressHpa,
+        rainMm: wind.rainMm,
+        hs: wind.hs,
         gribStatus: "ready",
         gribWarning: null,
       };
     }
     return {
       ...sample,
-      gribStatus: grib?.status || "absent",
-      gribWarning: "prévision du jour absente",
-      model: sample.kind === "forecast" ? sample.model : null,
+      kind: "absent",
+      model: null,
+      windKnots: null,
+      dirFromDeg: null,
+      gribStatus: grib?.status === "ready" ? "ready" : (gribPending || !grib ? "pending" : "absent"),
+      gribWarning: null,
     };
-  }, [enabled, clock, nowMs, grib]);
+  }, [enabled, clock, serverClock, nowMs, grib, gribPending]);
+
+  const positioned = Boolean(
+    (clock || serverClock)
+    && sampleClockAtTime(clock || serverClock, new Date(nowMs))?.lat != null,
+  );
+  const gribStatus = officialGribStatus({
+    enabled,
+    grib,
+    pending: gribPending,
+    positioned,
+  });
 
   return {
     voyageId: OFFICIAL_VOYAGE_ID,
@@ -137,9 +184,13 @@ export function useOfficialExpedition({
     clock: serverClock,
     live,
     grib,
-    gribStatus: grib?.status || (enabled ? "absent" : null),
-    gribModel: grib?.model || null,
-    gribWarning: grib?.status === "ready" ? null : (enabled ? "prévision du jour absente" : null),
+    gribStatus,
+    gribModel: (grib?.products || [])
+      .filter((p) => p.status === "ready")
+      .map((p) => p.model)
+      .filter(Boolean)
+      .join(" · ") || grib?.model || null,
+    gribWarning: officialGribWarning({ enabled, status: gribStatus }),
     refreshGrib,
   };
 }

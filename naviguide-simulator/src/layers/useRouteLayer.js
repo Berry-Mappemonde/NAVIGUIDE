@@ -11,7 +11,16 @@ function addLine(group, coords, { color, weight, dash, pane = "route" }) {
   }
 }
 
-export function useRouteLayer(mapRef, { segments, customRoute, drawingMode, drawnSegments, drawnFailed, mapReady }) {
+export function useRouteLayer(mapRef, {
+  segments,
+  customRoute,
+  drawingMode,
+  drawnSegments,
+  drawnFailed,
+  mapReady,
+  visible = true,
+  hideMaritime = false,
+}) {
   const groupRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +41,10 @@ export function useRouteLayer(mapRef, { segments, customRoute, drawingMode, draw
       return () => group.remove();
     }
 
+    if (!visible) {
+      return () => group.remove();
+    }
+
     if (customRoute?.features) {
       customRoute.features
         .filter((f) => f.geometry?.type === "LineString")
@@ -45,14 +58,14 @@ export function useRouteLayer(mapRef, { segments, customRoute, drawingMode, draw
       if (!s.coords?.length) return;
       if (s.nonMaritime) {
         addLine(group, s.coords, { color: "orange", weight: 4, dash: "6 6" });
-      } else {
+      } else if (!hideMaritime) {
         addLine(group, s.coords, { color: ROUTE_CASING_COLOR, weight: ROUTE_CASING_WEIGHT });
         addLine(group, s.coords, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });
       }
     });
 
     return () => group.remove();
-  }, [mapRef, mapReady, segments, customRoute, drawingMode, drawnSegments, drawnFailed]);
+  }, [mapRef, mapReady, segments, customRoute, drawingMode, drawnSegments, drawnFailed, visible, hideMaritime]);
 
   return groupRef;
 }

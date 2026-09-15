@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { wakeParts } from "./filmWake.js";
+import { remainingParts, wakeParts } from "./filmWake.js";
 
 describe("wakeParts", () => {
   it("cuts before the end and interpolates the last vertex", () => {
@@ -34,5 +34,33 @@ describe("wakeParts", () => {
 
   it("stays empty without a route", () => {
     assert.deepEqual(wakeParts({ points: [] }, 10), []);
+  });
+});
+
+describe("remainingParts", () => {
+  it("starts at sailNm and keeps the rest", () => {
+    const flat = {
+      points: [
+        { lon: 0, lat: 0, cumNm: 0, jump: false },
+        { lon: 1, lat: 0, cumNm: 60, jump: false },
+        { lon: 2, lat: 0, cumNm: 120, jump: false },
+      ],
+    };
+    const parts = remainingParts(flat, 90);
+    assert.equal(parts.length, 1);
+    const first = parts[0][0];
+    const last = parts[0][parts[0].length - 1];
+    assert.ok(first[0] > 1 && first[0] < 2);
+    assert.equal(last[0], 2);
+  });
+
+  it("is empty when the boat is at the end", () => {
+    const flat = {
+      points: [
+        { lon: 0, lat: 0, cumNm: 0, jump: false },
+        { lon: 1, lat: 0, cumNm: 60, jump: false },
+      ],
+    };
+    assert.deepEqual(remainingParts(flat, 60), []);
   });
 });

@@ -4,6 +4,7 @@ import { ampStyle } from "./styles.js";
 import { circleOpts, makePointGroup } from "./points.js";
 import { filterScienceFeatures } from "./scienceSource.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
+import { DEFAULT_SHOW_ZEE } from "../constants/layers.js";
 
 const BI_BASE = import.meta.env.VITE_BI_BASE ?? "/bi";
 const EMPTY = { type: "FeatureCollection", features: [] };
@@ -146,7 +147,7 @@ function addScienceSourceLayer(map, fc, source, color, onFeature) {
 
 export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   const zee = useFetchLayer(null);
-  const [showZee, setShowZee] = useState(true);
+  const [showZee, setShowZee] = useState(DEFAULT_SHOW_ZEE);
   const [loadingZee] = useState(false);
   const [errorZee, setErrorZee] = useState(null);
 
