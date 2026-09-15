@@ -64,6 +64,16 @@ app.include_router(polar_router)
 app.include_router(voyage_router)
 
 
+@app.on_event("startup")
+def _startup_official_grib():
+    """Dernier GRIB dès le boot serveur — pas attendre le premier GET front."""
+    try:
+        from voyage_api import _kick_official_grib
+        _kick_official_grib()
+    except Exception:
+        pass
+
+
 class PositionRequest(BaseModel):
     latitude: float
     longitude: float

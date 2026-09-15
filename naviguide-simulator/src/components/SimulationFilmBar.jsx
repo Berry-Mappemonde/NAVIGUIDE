@@ -1,6 +1,6 @@
 import { ChevronRight, Clapperboard, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { clockTickLabels } from "../engine/seaTime.js";
+import { filmBarTicks } from "../engine/voyageClock.js";
 import { FilmSpeedProfile } from "./FilmSpeedProfile.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 
@@ -56,8 +56,11 @@ export function SimulationFilmBar({
   sidebarOpen = true,
   toolsOpen = true,
   gribLine = "",
+  clock = null,
+  clockCurrent = null,
+  disclaimer = "",
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
   const barTotal = playheadTotal ?? totalNm;
   const barNm = playhead ?? nm;
@@ -69,12 +72,7 @@ export function SimulationFilmBar({
       : phase === "side-sail"
         ? t("filmPhaseSide")
         : "";
-  const ticks = clockTickLabels({
-    playheadTotal: barTotal,
-    sailTotalNm: totalNm,
-    knots: boatKnots,
-    scale: "both",
-  });
+  const ticks = filmBarTicks(clock, lang, clockCurrent);
 
   const onBarClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -120,6 +118,11 @@ export function SimulationFilmBar({
             {phaseLabel ? <span className="text-[10px] font-normal text-cyan-300/80 ml-2">{phaseLabel}</span> : null}
           </div>
           <div className="flex flex-shrink-0 items-center gap-1">
+            {disclaimer ? (
+              <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right">
+                {disclaimer}
+              </span>
+            ) : null}
             {cinema && onHideBar ? (
               <button
                 type="button"
@@ -143,7 +146,7 @@ export function SimulationFilmBar({
           </div>
         </div>
 
-        <div className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
+        <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
           {clockLine || `${Math.round(nm).toLocaleString()} nm`}
           {remainingNm > 0.5 && !finished && vehicle !== "plane"
             ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm`
@@ -178,7 +181,7 @@ export function SimulationFilmBar({
             />
           ))}
         </button>
-        <div className="relative h-3 mb-0.5 text-[9px] text-white/50 tabular-nums">
+        <div data-testid="film-clock-ticks" className="relative h-3 mb-0.5 text-[9px] text-white/50 tabular-nums">
           {ticks.map((tick, i) => {
             const align = i === 0
               ? "left-0"

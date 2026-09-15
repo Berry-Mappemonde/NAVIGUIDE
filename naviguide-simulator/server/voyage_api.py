@@ -19,15 +19,21 @@ from forecast_cube import (
     save_cube,
 )
 from isochrone import haversine, run_leg_isochrone
+from grib_fetch import maybe_refresh_official
 from saildocs import (
     DAILY_RADIUS_NM,
     GRIB_MISSING,
+    GRIB_PRODUCTS,
     absent_payload,
+    dest_eta_at_next_download,
     ingest_daily,
-    load_daily,
+    last_ready_cycle,
+    load_latest,
     public_grib,
+    saildocs_queries,
     saildocs_query,
     scan_inbox,
+    track_from_clock,
     utc_day,
     wind_at_daily,
 )
@@ -303,12 +309,39 @@ def _build_official(body: VoyageCreate) -> dict:
     return voy
 
 
+def _resolve_grib_around(
+    voy: Optional[dict],
+    when: datetime,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+) -> Optional[dict]:
+    if lat is not None and lon is not None:
+        return {"lat": lat, "lon": lon}
+    if voy:
+        around = _grib_around_from_live(voy, when)
+        if around and around.get("lat") is not None:
+            return around
+    latest = load_latest(OFFICIAL_VOYAGE_ID)
+    around = (latest or {}).get("around")
+    if around and around.get("lat") is not None:
+        return around
+    return None
+
+
+def _kick_official_grib() -> None:
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    when = _now()
+    around = _resolve_grib_around(voy, when)
+    maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when, force=True)
+
+
 @router.put("/voyage/official")
-def ensure_official(body: VoyageCreate):
+def ensure_official(body: VoyageCreate, background: BackgroundTasks):
     if not body.points:
         raise HTTPException(400, "points requis")
     existing = load_voyage(OFFICIAL_VOYAGE_ID)
     if existing and existing.get("points"):
+        changed = False
         if (
             len(body.points) > len(existing["points"])
             and int(existing.get("routeRev") or 0) == 0
@@ -317,10 +350,17 @@ def ensure_official(body: VoyageCreate):
             existing["marks"] = body.marks
             existing["t0"] = OFFICIAL_T0
             existing["official"] = True
+            changed = True
+        if body.expedition_id and body.expedition_id != existing.get("expedition_id"):
+            existing["expedition_id"] = body.expedition_id
+            changed = True
+        if changed:
             existing["clock"] = _climo_clock(existing)
             save_voyage(existing)
+        background.add_task(_kick_official_grib)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
     voy = _build_official(body)
+    background.add_task(_kick_official_grib)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
@@ -345,13 +385,41 @@ def get_official_clock():
 
 
 def _grib_around_from_live(voy: Optional[dict], when: datetime) -> Optional[dict]:
+    """Couloir horloge : ici → position à l’ETA du prochain téléchargement."""
     if not voy:
         return None
     clock = voy.get("clock") or _climo_clock(voy)
+    around = track_from_clock(clock, when)
+    if around:
+        return around
     sample = sample_clock_at_time(clock, when)
     if not sample:
         return None
     return {"lat": sample.get("lat"), "lon": sample.get("lon")}
+
+
+def _saildocs_query_from_around(around: dict) -> str:
+    return saildocs_query(
+        float(around["lat"]),
+        float(around["lon"]),
+        dest=around.get("dest"),
+        waypoints=around.get("waypoints"),
+    )
+
+
+def _saildocs_queries_from_around(around: dict) -> list:
+    return saildocs_queries(
+        float(around["lat"]),
+        float(around["lon"]),
+        dest=around.get("dest"),
+        waypoints=around.get("waypoints"),
+    )
+
+
+def _latest_official_grib(around: Optional[dict], when) -> Optional[dict]:
+    record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
+    refreshed = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when)
+    return refreshed if refreshed is not None else record
 
 
 @router.get("/voyage/official/at")
@@ -366,20 +434,27 @@ def official_at(t: Optional[str] = Query(None)):
         raise HTTPException(404, "horloge vide")
     sample["voyageId"] = OFFICIAL_VOYAGE_ID
     sample["t"] = to_iso(when)
-    grib = load_daily(OFFICIAL_VOYAGE_ID, utc_day(when))
+    around = _grib_around_from_live(voy, when)
+    grib = _latest_official_grib(around, when)
     wind = wind_at_daily(grib, float(sample.get("lat") or 0), float(sample.get("lon") or 0), when)
     if wind:
         sample["kind"] = "forecast"
         sample["model"] = wind.get("model")
+        sample["waveModel"] = wind.get("waveModel")
+        sample["currentModel"] = wind.get("currentModel")
         sample["windKnots"] = wind.get("windKnots")
         sample["dirFromDeg"] = wind.get("dirFromDeg")
+        sample["pressHpa"] = wind.get("pressHpa")
+        sample["rainMm"] = wind.get("rainMm")
+        sample["hs"] = wind.get("hs")
         sample["gribStatus"] = "ready"
         sample["gribWarning"] = None
     else:
-        if sample.get("kind") == "forecast":
-            sample["kind"] = "climatology"
-            sample["model"] = None
-            sample["leadHours"] = None
+        sample["kind"] = "absent"
+        sample["model"] = None
+        sample["leadHours"] = None
+        sample["windKnots"] = None
+        sample["dirFromDeg"] = None
         sample["gribStatus"] = "absent"
         sample["gribWarning"] = GRIB_MISSING
     return sample
@@ -393,15 +468,15 @@ def get_official_grib(
 ):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     when = parse_iso(t) if t else _now()
-    around = None
-    if lat is not None and lon is not None:
-        around = {"lat": lat, "lon": lon}
-    elif voy:
-        around = _grib_around_from_live(voy, when)
-    record = load_daily(OFFICIAL_VOYAGE_ID, utc_day(when))
+    around = _resolve_grib_around(voy, when, lat, lon)
+    record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
     if record is None and around:
         record = scan_inbox(OFFICIAL_VOYAGE_ID, utc_day(when), around)
-    return public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
+    record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when) or record
+    body = public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
+    if lat is not None and lon is not None and record:
+        body["wind"] = wind_at_daily(record, lat, lon, when)
+    return body
 
 
 @router.post("/voyage/official/grib")
@@ -415,6 +490,20 @@ def post_official_grib(body: DailyGribIn):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return public_grib(record, OFFICIAL_VOYAGE_ID, around or body.around, _now())
+
+
+@router.post("/voyage/official/grib/refresh")
+def refresh_official_grib(
+    lat: Optional[float] = Query(None),
+    lon: Optional[float] = Query(None),
+):
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    when = _now()
+    around = _resolve_grib_around(voy, when, lat, lon)
+    record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when, force=True)
+    if record is None and around:
+        record = scan_inbox(OFFICIAL_VOYAGE_ID, utc_day(), around)
+    return public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
 
 
 @router.post("/voyage/official/grib/scan")
@@ -433,16 +522,22 @@ def official_saildocs_query(
     lon: Optional[float] = Query(None),
 ):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    around = {"lat": lat, "lon": lon} if lat is not None and lon is not None else (
-        _grib_around_from_live(voy, _now()) if voy else None
-    )
+    around = _grib_around_from_live(voy, _now()) if voy else None
+    if around is None and lat is not None and lon is not None:
+        around = {"lat": lat, "lon": lon}
     if not around:
         raise HTTPException(400, "position bateau inconnue")
+    queries = _saildocs_queries_from_around(around)
     return {
-        "query": saildocs_query(float(around["lat"]), float(around["lon"])),
+        "query": queries[0]["query"],
+        "queries": queries,
         "around": around,
         "radiusNm": DAILY_RADIUS_NM,
         "model": "GFS",
+        "models": [p["model"] for p in GRIB_PRODUCTS],
+        "nextDownloadAt": around.get("nextDownloadAt") or to_iso(dest_eta_at_next_download()),
+        "horizonHours": around.get("horizonHours"),
+        "cycle": around.get("cycle") or to_iso(last_ready_cycle()),
     }
 
 
