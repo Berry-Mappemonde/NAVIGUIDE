@@ -499,7 +499,6 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     showBathymetry, setShowBathymetry,
     showFonds, setShowFonds,
     showCables, setShowCables,
-    showClimatology, setShowClimatology,
     zee.show, zee.setShow, zee.loading, zee.error, zee.data,
   ]);
 }
