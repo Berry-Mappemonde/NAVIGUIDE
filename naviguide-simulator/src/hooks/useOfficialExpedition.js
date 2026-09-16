@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_T0_ISO, OFFICIAL_VOYAGE_ID, sampleClockAtTime } from "../engine/voyageClock.js";
+import { pickOfficialLiveClock } from "../utils/sceneGate.js";
 import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
 /**
  * Voyage officiel unique. Pas de localStorage visiteur.
- * Position = horloge serveur à maintenant (1 s = 1 s).
+ * Position = horloge serveur à maintenant (1 s = 1 s), avec repli figé
+ * sur le premier snapshot client si le PUT officiel n’a pas encore répondu
+ * (404 après redémarrage, 502 de deploy, calcul _climo_clock lent).
  * Dernier GRIB = overlay vent, jamais un nouveau trait, jamais de climatologie.
  */
 export function useOfficialExpedition({
@@ -14,6 +17,7 @@ export function useOfficialExpedition({
   points,
   marks,
   expeditionId,
+  clock,
 }) {
   const [meta, setMeta] = useState(null);
   const [serverClock, setServerClock] = useState(null);
@@ -22,6 +26,7 @@ export function useOfficialExpedition({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const putRef = useRef("");
   const serverClockRef = useRef(serverClock);
+  const frozenClientRef = useRef(null);
   serverClockRef.current = serverClock;
 
   useEffect(() => {
@@ -29,6 +34,16 @@ export function useOfficialExpedition({
     const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
   }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled || !points?.length) frozenClientRef.current = null;
+  }, [enabled, points]);
+
+  const liveClock = useMemo(() => {
+    const picked = pickOfficialLiveClock(serverClock, clock, frozenClientRef.current);
+    frozenClientRef.current = picked.frozenClient;
+    return picked.liveClock;
+  }, [serverClock, clock]);
 
   const putOfficial = useCallback(async () => {
     if (!points?.length) return null;
@@ -142,7 +157,6 @@ export function useOfficialExpedition({
   }, [enabled, refreshGrib, meta?.voyageId, serverClock]);
 
   const live = useMemo(() => {
-    const liveClock = serverClock;
     if (!enabled || !liveClock) return null;
     const sample = sampleClockAtTime(liveClock, new Date(nowMs));
     if (!sample) return null;
@@ -175,11 +189,11 @@ export function useOfficialExpedition({
       gribStatus: grib?.status === "ready" ? "ready" : (gribPending || !grib ? "pending" : "absent"),
       gribWarning: null,
     };
-  }, [enabled, serverClock, nowMs, grib, gribPending]);
+  }, [enabled, liveClock, nowMs, grib, gribPending]);
 
   const positioned = Boolean(
-    serverClock
-    && sampleClockAtTime(serverClock, new Date(nowMs))?.lat != null,
+    liveClock
+    && sampleClockAtTime(liveClock, new Date(nowMs))?.lat != null,
   );
   const gribStatus = officialGribStatus({
     enabled,

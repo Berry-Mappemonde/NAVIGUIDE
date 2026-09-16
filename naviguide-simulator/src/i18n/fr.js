@@ -10,6 +10,7 @@ export default {
   redo:           "Rétablir",
   copied:         "copié",
   calculatingRoutes: "Calcul des routes…",
+  positioningExpedition: "Position de l’expédition…",
   routesProgress: "Routes {done}/{total}",
 
   // ── Map markers ────────────────────────────────────────────────────────
