@@ -183,4 +183,124 @@ describe("narrateIci", () => {
     assert.match(text, /IBTrACS/);
     assert.doesNotMatch(text, /forecast|GRIB/i);
   });
+
+  it("tells visit vs manager, OSM moorings, AtoN, satellite observation and forecast weather", () => {
+    const text = narrateIci({
+      zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
+      amp: [{
+        name: "Pertuis charentais",
+        nm: 8,
+        visit_url: "https://parc-marin.fr/visite",
+        manager_url: "https://parc-marin.fr",
+      }],
+      nearby: {
+        marinas: [],
+        capitaineries: [],
+        wpi: [],
+        anchorages: [{ name: "Mouillage des Minimes", nm: 1.2 }],
+      },
+      aton: { nearby: [{ name: "Feu des Minimes", nm: 0.8 }], source: "osm-overpass" },
+      satellites: {
+        kind: "observation",
+        source: "cdse-stac",
+        scene: {
+          kind: "observation",
+          product: "sentinel-2-l2a",
+          id: "S2C_MSIL2A_X",
+          datetime: "2026-09-12T11:06:31Z",
+        },
+        derived: {
+          coastline: { value: null, reason: "not_generated" },
+          sdb: { value: null, reason: "not_generated" },
+        },
+      },
+      weather: {
+        kind: "forecast",
+        source: "openmeteo-gfs",
+        model: "GFS 0.25° / GFS-Wave 0.25° (Open-Meteo)",
+        wind: { kind: "forecast", speedKnots: 12.4, dirFromDeg: 280 },
+        wave: { kind: "forecast", hs: 1.1 },
+        current: { kind: "forecast", source: "noaa-rtofs", speedKnots: 0.58, dirToDeg: 247 },
+        current_reason: null,
+      },
+      emodnet: {
+        kind: "observation",
+        bathy: { depth_m: 18.4 },
+        seabed: { label: "sand" },
+        cables: { nearby: false, reason: "no_feature_at_point" },
+      },
+      review: { zee: { gold_on: true }, amp: { gold_on: false } },
+      climatology: {
+        kind: "climatology",
+        source: "atlas",
+        month: 6,
+        period: "1980-2020",
+        doi: { wind: "10.48670/moi-00183" },
+        rose: { stat: "rose", directions_from: [{ dir_deg: 45, pct: 22 }], calm_pct: 4, gale_pct: 1.5 },
+        point: {
+          kind: "climatology",
+          wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } },
+          current: { speed_knots: 0.4, direction_to_deg: 270 },
+          cyclone: { nearby: 0 },
+        },
+      },
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /visite parc-marin\.fr/);
+    assert.match(text, /gestionnaire parc-marin\.fr/);
+    assert.match(text, /Mouillage des Minimes/);
+    assert.match(text, /AtoN/);
+    assert.match(text, /kind observation/);
+    assert.match(text, /sentinel-2-l2a/);
+    assert.match(text, /not_generated/);
+    assert.match(text, /kind forecast/);
+    assert.match(text, /12\.4 kn/);
+    assert.match(text, /0\.58 kn \/ 247° \(RTOFS, kind forecast\)/);
+    assert.match(text, /EMODnet/);
+    assert.match(text, /18\.4/);
+    assert.match(text, /rose 8 secteurs/);
+    assert.match(text, /calme 4/);
+    assert.match(text, /vers 270/);
+    assert.match(text, /IBTrACS nearby 0/);
+    assert.match(text, /Gold oui/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("does not invent a satellite scene when the product is missing", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
+      satellites: {
+        kind: "observation",
+        scene: null,
+        reason: "cdse_stac_unavailable:HTTPStatusError",
+        derived: { coastline: { value: null, reason: "not_generated" } },
+      },
+      weather: { kind: "forecast", wind: null, reason: "openmeteo_unavailable:HTTPStatusError" },
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /kind observation/);
+    assert.match(text, /aucune scène générée/);
+    assert.match(text, /cdse_stac_unavailable/);
+    assert.match(text, /kind forecast/);
+    assert.doesNotMatch(text, /Sentinel-2 L2A 20/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("says current null only when RTOFS is dead or off-grid", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
+      weather: {
+        kind: "forecast",
+        wind: { kind: "forecast", speedKnots: 8, dirFromDeg: 90 },
+        current: null,
+        current_reason: "off_grid",
+      },
+      sources: { zee: "marineregions" },
+    }, "fr");
+    assert.match(text, /courant null \(off_grid\)/);
+    assert.doesNotMatch(text, /rtofs_not_ingested/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
 });

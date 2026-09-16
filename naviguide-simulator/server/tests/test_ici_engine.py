@@ -14,8 +14,24 @@ from ici_engine import (
     pick_eez_record,
     radius_bbox,
     reset_caches,
+    slim_amp,
     slim_science,
     zee_from_record,
+)
+from ici_layers import (
+    attach_derived_from_science,
+    aton_from_overpass,
+    climatology_rose,
+    empty_satellites,
+    fetch_review,
+    fetch_rtofs_current,
+    fetch_satellite_scene,
+    geo_from_hycom,
+    hycom_lon,
+    rtofs_from_uv,
+    rtofs_is_fill,
+    scene_bbox,
+    slim_stac_scene,
 )
 
 FR_EEZ = {
@@ -156,6 +172,13 @@ def test_empty_dossier_contract():
     assert d["sources"]["bi"] is None
     assert d["climatology"] is None
     assert d["sources"]["climatology"] is None
+    assert d["nearby"]["anchorages"] == []
+    assert d["satellites"]["scene"] is None
+    assert d["weather"]["kind"] == "forecast"
+    assert d["weather"]["wind"] is None
+    assert d["emodnet"]["bathy"] is None
+    assert d["aton"]["nearby"] == []
+    assert d["review"]["zee"] is None
 
 
 def _handler(request: httpx.Request) -> httpx.Response:
@@ -168,9 +191,14 @@ def _handler(request: httpx.Request) -> httpx.Response:
             "features": [_point("La Rochelle", 46.15, -1.15, "https://douane.gouv.fr/la-rochelle")],
         })
     if "export/amp.geojson" in url:
+        feat = _point("Pertuis charentais", 46.16, -1.20)
+        feat["properties"]["visit_url"] = "https://parc-marin.fr/visite"
+        feat["properties"]["manager_url"] = "https://parc-marin.fr"
+        feat["properties"]["visit_url_status"] = "found"
+        feat["properties"]["site_id"] = "PS-1"
         return httpx.Response(200, json={
             "type": "FeatureCollection",
-            "features": [_point("Pertuis charentais", 46.16, -1.20)],
+            "features": [feat],
         })
     if url.endswith("/export/geojson"):
         return httpx.Response(200, json={
@@ -178,6 +206,14 @@ def _handler(request: httpx.Request) -> httpx.Response:
             "features": [_point("Récif sentinelle", 46.18, -1.12)] + [
                 _point(f"Projet loin {i}", 10.0, 10.0) for i in range(20)
             ],
+        })
+    if url.rstrip("/").endswith("/anchorages"):
+        feat = _point("Mouillage des Minimes", 46.145, -1.18)
+        feat["properties"]["anchorage_type"] = "anchorage"
+        feat["properties"]["source"] = "osm"
+        return httpx.Response(200, json={
+            "type": "FeatureCollection",
+            "features": [feat],
         })
     if url.rstrip("/").endswith("/marinas"):
         return httpx.Response(200, json={
@@ -207,13 +243,91 @@ def _handler(request: httpx.Request) -> httpx.Response:
             "month": 6,
             "period": "1980-2020",
             "doi": {"wind": "10.48670/moi-00183"},
-            "wind_atlas": {"most_likely": {"speed_knots": 16.2, "dir_deg": 55}},
+            "wind_atlas": {
+                "stat": "rose",
+                "sectors_deg": 45,
+                "most_likely": {"speed_knots": 16.2, "dir_deg": 55},
+                "directions_from": [
+                    {"dir_deg": 45, "pct": 22.0, "speed_knots": 16.2},
+                    {"dir_deg": 90, "pct": 12.0, "speed_knots": 14.0},
+                ],
+                "calm_pct": 4.0,
+                "gale_pct": 1.5,
+            },
             "wave": {"hs_p50_m": 1.4, "hs_p90_m": 2.8},
             "current": {"speed_knots": 0.4, "direction_to_deg": 270},
             "cyclone": {"nearby": 0, "tracks_in_month": 4},
         })
     if "climatology/crossings" in url:
         return httpx.Response(200, json={"kind": "climatology", "count": 2})
+    if "stac.dataspace.copernicus.eu" in url:
+        return httpx.Response(200, json={
+            "type": "FeatureCollection",
+            "features": [{
+                "id": "S2C_MSIL2A_20260912T110631_T30TWR",
+                "collection": "sentinel-2-l2a",
+                "bbox": [-1.4, 46.0, -1.0, 46.3],
+                "properties": {
+                    "datetime": "2026-09-12T11:06:31Z",
+                    "eo:cloud_cover": 0.4,
+                    "platform": "sentinel-2c",
+                },
+                "links": [{"rel": "self", "href": "https://stac.dataspace.copernicus.eu/v1/collections/sentinel-2-l2a/items/S2C_MSIL2A_20260912T110631_T30TWR"}],
+            }],
+        })
+    if "marine-api.open-meteo.com" in url:
+        return httpx.Response(200, json={
+            "current": {
+                "time": "2026-09-16T09:00",
+                "wave_height": 1.1,
+                "wave_direction": 270,
+                "wave_period": 6.5,
+            },
+        })
+    if "api.open-meteo.com" in url:
+        return httpx.Response(200, json={
+            "current": {
+                "time": "2026-09-16T09:00",
+                "wind_speed_10m": 12.4,
+                "wind_direction_10m": 280,
+            },
+        })
+    if "/depth" in url or "depth_sample" in url:
+        return httpx.Response(200, json={"avg": 18.4, "depth_m": 18.4, "source": "emodnet-bathymetry"})
+    if "emodnet-geology" in url or "seabed_substrate" in url:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"type": "FeatureCollection", "features": [{
+                "type": "Feature",
+                "properties": {"substrate": "sand"},
+            }]},
+        )
+    if "emodnet-humanactivities" in url or "telecables" in url:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"type": "FeatureCollection", "features": []},
+        )
+    if "overpass" in url:
+        return httpx.Response(200, json={
+            "elements": [{
+                "type": "node",
+                "lat": 46.16,
+                "lon": -1.17,
+                "tags": {"seamark:type": "light", "seamark:name": "Feu des Minimes"},
+            }],
+        })
+    if "noaa/aids" in url:
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+    if "review/fiche" in url:
+        return httpx.Response(200, json={
+            "kind": "eez",
+            "id": "5677",
+            "gold_on": True,
+            "gold_ready": True,
+            "pre_gold": False,
+        })
     return httpx.Response(404, json={"detail": url})
 
 
@@ -243,6 +357,9 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["poe"][0]["name"] == "La Rochelle"
     assert d["poe"][0]["url"].startswith("https://douane.gouv.fr")
     assert d["amp"][0]["name"] == "Pertuis charentais"
+    assert d["amp"][0]["visit_url"] == "https://parc-marin.fr/visite"
+    assert d["amp"][0]["manager_url"] == "https://parc-marin.fr"
+    assert d["amp"][0]["url"] == "https://parc-marin.fr/visite"
     assert d["projects"][0]["name"] == "Récif sentinelle"
     assert len(d["projects"]) == 1
     assert d["nearby"]["marinas"][0]["name"] == "Port des Minimes"
@@ -260,6 +377,28 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["climatology"]["point"]["wave"]["hs_p90_m"] == 2.8
     assert d["climatology"]["crossings"]["count"] == 2
     assert d["sources"]["climatology"] == "atlas"
+    assert d["climatology"]["rose"]["stat"] == "rose"
+    assert d["climatology"]["rose"]["calm_pct"] == 4.0
+    assert d["climatology"]["rose"]["gale_pct"] == 1.5
+    assert d["climatology"]["cyclone"]["nearby"] == 0
+    assert d["climatology"]["current"]["direction_to_deg"] == 270
+    assert d["nearby"]["anchorages"][0]["name"] == "Mouillage des Minimes"
+    assert d["nearby"]["anchorages"][0]["anchorage_type"] == "anchorage"
+    assert d["satellites"]["kind"] == "observation"
+    assert d["satellites"]["scene"]["product"] == "sentinel-2-l2a"
+    assert d["satellites"]["scene"]["datetime"].startswith("2026-09-12")
+    assert d["satellites"]["derived"]["sdb"]["value"] is None
+    assert d["satellites"]["derived"]["sdb"]["reason"] == "not_generated"
+    assert d["weather"]["kind"] == "forecast"
+    assert d["weather"]["wind"]["speedKnots"] == 12.4
+    assert d["weather"]["wave"]["hs"] == 1.1
+    assert d["weather"]["current"] is None
+    assert (d["weather"]["current_reason"] or "").startswith("rtofs_unavailable")
+    assert d["emodnet"]["bathy"]["depth_m"] == 18.4
+    assert d["emodnet"]["seabed"]["label"] == "sand"
+    assert d["emodnet"]["cables"]["nearby"] is False
+    assert d["aton"]["nearby"][0]["name"] == "Feu des Minimes"
+    assert d["review"]["zee"]["gold_on"] is True
 
 
 def test_fill_dossier_mid_atlantic_gebco():
@@ -438,3 +577,284 @@ def test_fill_dossier_haute_mer():
     assert d["poe"] == []
     assert d["science"] == {"nearby": []}
     assert d["zee"]["gold"] is False
+
+
+def test_slim_amp_keeps_visit_and_manager_apart():
+    feat = {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [-1.20, 46.16]},
+        "properties": {
+            "name": "Pertuis",
+            "visit_url": "https://parc-marin.fr/visite",
+            "manager_url": "https://parc-marin.fr",
+            "visit_url_status": "found",
+            "site_id": "PS-1",
+        },
+    }
+    item = slim_amp(feat, 46.15, -1.16)
+    assert item["visit_url"] != item["manager_url"]
+    assert item["url"] == item["visit_url"]
+
+
+def test_stac_scene_is_observation_not_forecast():
+    feat = {
+        "id": "S2C_MSIL2A_X",
+        "collection": "sentinel-2-l2a",
+        "bbox": [-1.4, 46.0, -1.0, 46.3],
+        "properties": {"datetime": "2026-09-12T11:06:31Z", "eo:cloud_cover": 1.0, "platform": "sentinel-2c"},
+        "links": [{"rel": "self", "href": "https://stac.example/item"}],
+    }
+    scene = slim_stac_scene(feat, 46.15, -1.16)
+    assert scene["kind"] == "observation"
+    assert scene["product"] == "sentinel-2-l2a"
+    assert scene["link"] == "https://stac.example/item"
+    assert "browser.dataspace.copernicus.eu" in scene["browser"]
+
+
+def test_derived_satellite_stays_null_without_pilot():
+    bag = attach_derived_from_science(empty_satellites(), [
+        {"name": "Argo 1", "source": "argo", "kind": "argo_float"},
+    ])
+    assert bag["derived"]["coastline"]["value"] is None
+    assert bag["derived"]["coastline"]["reason"] == "not_generated"
+    filled = attach_derived_from_science(empty_satellites(), [
+        {"name": "Trait de côte pilote", "source": "sentinel-pilot", "kind": "coastline", "nm": 2},
+    ])
+    assert filled["derived"]["coastline"]["value"]["name"] == "Trait de côte pilote"
+    assert filled["derived"]["sdb"]["value"] is None
+
+
+def test_climatology_rose_and_overpass_aton():
+    rose = climatology_rose({
+        "wind_atlas": {
+            "stat": "rose",
+            "directions_from": [{"dir_deg": 45, "pct": 20, "speed_knots": 12}],
+            "calm_pct": 3.0,
+            "gale_pct": 1.0,
+        },
+    })
+    assert rose["stat"] == "rose"
+    assert rose["calm_pct"] == 3.0
+    found = aton_from_overpass(
+        [{"type": "node", "lat": 46.16, "lon": -1.17,
+          "tags": {"seamark:type": "light", "seamark:name": "Feu"}}],
+        46.15, -1.16, haversine_nm,
+    )
+    assert found[0]["name"] == "Feu"
+    assert found[0]["source"] == "osm-overpass"
+
+
+def test_fill_dossier_satellite_missing_stays_null():
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "marineregions.org" in url:
+            return httpx.Response(200, json=[])
+        if "world-port-index" in url:
+            return httpx.Response(200, json={"ports": []})
+        if "stac.dataspace.copernicus.eu" in url:
+            return httpx.Response(503, json={"detail": "down"})
+        if "open-meteo.com" in url:
+            return httpx.Response(503, json={"detail": "down"})
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(0.0, -30.0, client=client)
+
+    d = asyncio.run(run())
+    assert d["satellites"]["scene"] is None
+    assert d["satellites"]["kind"] == "observation"
+    assert "cdse_stac_unavailable" in (d["satellites"]["reason"] or "")
+    assert d["satellites"]["derived"]["coastline"]["value"] is None
+    assert d["weather"]["kind"] == "forecast"
+    assert d["weather"]["wind"] is None
+    assert "openmeteo_unavailable" in (d["weather"]["reason"] or "")
+
+
+def test_fill_dossier_aton_us_uses_noaa():
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "marineregions.org" in url:
+            return httpx.Response(200, json=[])
+        if "world-port-index" in url:
+            return httpx.Response(200, json={"ports": []})
+        if "noaa/aids" in url:
+            return httpx.Response(200, json={
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [-76.0, 37.0]},
+                    "properties": {"name": "Chesapeake Light", "kind": "light", "source": "noaa"},
+                }],
+            })
+        if "overpass" in url:
+            return httpx.Response(200, json={"elements": []})
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(37.0, -76.0, client=client)
+
+    d = asyncio.run(run())
+    assert d["aton"]["nearby"][0]["name"] == "Chesapeake Light"
+    assert d["aton"]["source"] == "noaa-enc"
+
+
+def test_scene_bbox_does_not_cross_antimeridian():
+    box = scene_bbox(0.0, 179.8, 30.0)
+    assert box[0] >= -180.0
+    assert box[2] <= 180.0
+    assert box[0] < box[2]
+    west = scene_bbox(0.0, -179.8, 30.0)
+    assert west[0] >= -180.0
+    assert west[2] <= 180.0
+    assert west[0] < west[2]
+
+
+def test_rtofs_hycom_wrap_and_fill():
+    assert abs(hycom_lon(-30.0) - 330.0) < 1e-6
+    assert abs(hycom_lon(0.0) - 360.0) < 1e-6
+    assert abs(hycom_lon(179.8) - 179.8) < 1e-6
+    assert abs(hycom_lon(-180.0) - 180.0) < 1e-6
+    assert abs(geo_from_hycom(330.0) + 30.0) < 1e-6
+    assert rtofs_is_fill(1.2676506e30)
+    assert rtofs_is_fill(None)
+    assert not rtofs_is_fill(0.12)
+    cur = rtofs_from_uv(0.15, -0.08, issued="2026-09-16T00:00:00Z")
+    assert cur["kind"] == "forecast"
+    assert cur["source"] == "noaa-rtofs"
+    assert cur["speedKnots"] > 0
+    assert 0 <= cur["dirToDeg"] < 360
+
+
+def test_fetch_rtofs_listing_404_is_unavailable_not_not_ingested():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": str(request.url)})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_rtofs_current(client, 0.0, -30.0)
+
+    current, reason = asyncio.run(run())
+    assert current is None
+    assert reason.startswith("rtofs_unavailable")
+    assert "not_ingested" not in reason
+
+
+def test_fill_dossier_rtofs_forecast_when_model_answers(monkeypatch):
+    reset_caches()
+
+    async def fake_rtofs(client, lat, lon):
+        return {
+            "kind": "forecast",
+            "source": "noaa-rtofs",
+            "speedKnots": 0.58,
+            "dirToDeg": 247.0,
+            "issued": "2026-09-16T00:00:00Z",
+            "product": "rtofs_glo_2ds_n000_prog.nc",
+        }, None
+
+    monkeypatch.setattr("ici_layers.fetch_rtofs_current", fake_rtofs)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler)) as client:
+            return await fill_dossier(0.0, -30.0, client=client)
+
+    d = asyncio.run(run())
+    assert d["weather"]["current"]["kind"] == "forecast"
+    assert d["weather"]["current"]["source"] == "noaa-rtofs"
+    assert d["weather"]["current"]["speedKnots"] == 0.58
+    assert d["weather"]["current_reason"] is None
+
+
+def test_fill_dossier_rtofs_off_grid(monkeypatch):
+    reset_caches()
+
+    async def fake_rtofs(client, lat, lon):
+        return None, "off_grid"
+
+    monkeypatch.setattr("ici_layers.fetch_rtofs_current", fake_rtofs)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler)) as client:
+            return await fill_dossier(46.15, -1.16, client=client)
+
+    d = asyncio.run(run())
+    assert d["weather"]["current"] is None
+    assert d["weather"]["current_reason"] == "off_grid"
+    assert d["weather"]["wind"]["speedKnots"] == 12.4
+
+
+def test_stac_200_empty_is_not_catalog_mute():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "stac.dataspace.copernicus.eu" in str(request.url):
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+        return httpx.Response(404)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_satellite_scene(client, 0.0, -30.0)
+
+    bag = asyncio.run(run())
+    assert bag["http_status"] == 200
+    assert bag["url"] == "https://stac.dataspace.copernicus.eu/v1/search"
+    assert bag["scene"] is None
+    assert bag["reason"] == "no_scene_in_bbox"
+    assert "unavailable" not in (bag["reason"] or "")
+
+
+def test_stac_down_records_status_and_url():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "down"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_satellite_scene(client, 24.0, 36.5)
+
+    bag = asyncio.run(run())
+    assert bag["scene"] is None
+    assert bag["http_status"] == 503
+    assert bag["url"] == "https://stac.dataspace.copernicus.eu/v1/search"
+    assert "cdse_stac_unavailable:503" in (bag["reason"] or "")
+
+
+def test_review_401_is_admin_not_no_eez():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"detail": "Admin key required"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_review(
+                client,
+                "https://blueintelligence.online/api",
+                {"name": "French Exclusive Economic Zone", "mrgid": 5677},
+                None,
+            )
+
+    bag = asyncio.run(run())
+    assert bag["zee"] is None
+    assert bag["reason"] == "review_requires_admin"
+    assert bag["http_status"] == 401
+    assert bag["url"]
+    assert "no_entity" not in (bag["reason"] or "")
+
+
+def test_review_high_seas_no_entity_without_fiche():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(401, json={"detail": "Admin key required"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_review(client, "https://blueintelligence.online/api", {"name": "Haute mer", "mrgid": None}, None)
+
+    bag = asyncio.run(run())
+    assert bag["reason"] == "no_entity"
+    assert bag["zee"] is None
+    assert not any("review/fiche" in url for url in seen)

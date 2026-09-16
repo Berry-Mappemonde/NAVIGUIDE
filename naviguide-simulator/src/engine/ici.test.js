@@ -22,6 +22,12 @@ describe("ici sac", () => {
     assert.equal(d.sources.bi, null);
     assert.equal(d.climatology, null);
     assert.equal(d.sources.climatology, null);
+    assert.deepEqual(d.nearby.anchorages, []);
+    assert.equal(d.satellites, null);
+    assert.equal(d.weather, null);
+    assert.equal(d.emodnet, null);
+    assert.deepEqual(d.aton.nearby, []);
+    assert.equal(d.review, null);
   });
 
   it("does not swallow a polar grid and adds the leg", () => {
@@ -56,6 +62,22 @@ describe("ici sac", () => {
     assert.equal(d.poe.length, 1);
     assert.equal(d.polar.grid, undefined);
     assert.equal(d.event.type, "zee-enter");
+  });
+
+  it("keeps satellite observation and forecast weather from the server bag", () => {
+    const remote = {
+      ...emptyDossier(46.15, -1.16),
+      satellites: {
+        kind: "observation",
+        scene: { product: "sentinel-2-l2a", datetime: "2026-09-12T11:06:31Z" },
+      },
+      weather: { kind: "forecast", wind: { speedKnots: 12.4 } },
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [{ name: "Baie", nm: 2 }] },
+    };
+    const d = mergeDossier(remote, {});
+    assert.equal(d.satellites.kind, "observation");
+    assert.equal(d.weather.kind, "forecast");
+    assert.equal(d.nearby.anchorages[0].name, "Baie");
   });
 
   it("keeps the boat at quay during the flight, the relay in side-sail", () => {

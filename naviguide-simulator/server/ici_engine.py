@@ -1,9 +1,9 @@
 """Sac `ici()` — ce qu’il y a autour du bateau, pas toute la carte.
 
-Étape 2 : ZEE (MarineRegions), PoE de cette ZEE, AMP / projets /
-marinas-capit-WPI / une poignée de fiches Science dans 20–30 nm.
-AMP = cache `/export/amp.geojson` (pas ProtectedSeas). Pas de Tavily,
-pas de LLM.
+ZEE, PoE, AMP, projets, marinas-capit-WPI, mouillages OSM, Science,
+AtoN, satellites CDSE, EMODnet au point, GRIB2/Open-Meteo, GEBCO,
+climatologie. Accès moteur au point — pas de dump GeoJSON monde.
+Pas de Tavily, pas de LLM.
 """
 from __future__ import annotations
 
@@ -19,12 +19,28 @@ import httpx
 from climatology_atlas import wind_from_point
 from climatology_zones import zone_wind_at
 from gebco_lookup import attach_depth_offshore, reset_gebco_cache
+from ici_layers import (
+    attach_derived_from_science,
+    climatology_rose,
+    empty_aton,
+    empty_emodnet,
+    empty_review,
+    empty_satellites,
+    empty_weather,
+    fetch_aton,
+    fetch_emodnet_point,
+    fetch_review,
+    fetch_satellite_scene,
+    fetch_weather_forecast,
+    reset_rtofs_cache,
+)
 
 ICI_RADIUS_NM = 30
 MAX_POE = 4
 MAX_AMP = 5
 MAX_PROJECTS = 5
 MAX_NEARBY = 3
+MAX_ANCHORAGES = 5
 MAX_SCIENCE = 5
 EEZ_ACCEPT_NM = 240
 R_NM = 3440.065
@@ -77,6 +93,7 @@ def reset_caches() -> None:
     _wpi_cache["data"] = None
     _wpi_cache["ts"] = 0.0
     reset_gebco_cache()
+    reset_rtofs_cache()
 
 
 def bi_base() -> str:
@@ -92,14 +109,29 @@ def empty_dossier(lat: float, lon: float, radius_nm: float = ICI_RADIUS_NM) -> d
         "poe": [],
         "amp": [],
         "projects": [],
-        "nearby": {"marinas": [], "capitaineries": [], "wpi": []},
+        "nearby": {"marinas": [], "capitaineries": [], "wpi": [], "anchorages": []},
         "marks": [],
+        "aton": empty_aton(),
         "science": None,
-        "weather": None,
+        "satellites": empty_satellites(),
+        "weather": empty_weather(),
+        "emodnet": empty_emodnet(),
+        "review": empty_review(),
         "polar": None,
         "event": None,
         "climatology": None,
-        "sources": {"zee": None, "bi": None, "gebco": None, "climatology": None},
+        "sources": {
+            "zee": None,
+            "bi": None,
+            "gebco": None,
+            "climatology": None,
+            "satellites": None,
+            "weather": None,
+            "emodnet": None,
+            "aton": None,
+            "anchorages": None,
+            "review": None,
+        },
         "depthOffshore": None,
     }
 
@@ -189,7 +221,10 @@ def feature_url(feat: dict) -> str | None:
             return first
         if isinstance(first, dict) and str(first.get("url") or "").startswith("http"):
             return first["url"]
-    for key in ("url", "url_bu", "visit_url", "href"):
+    visit = p.get("visit_url")
+    if isinstance(visit, str) and visit.startswith("http"):
+        return visit
+    for key in ("url", "url_bu", "href"):
         val = p.get(key)
         if isinstance(val, str) and val.startswith("http"):
             return val
@@ -221,8 +256,31 @@ def slim_place(feat: dict, lat0: float, lon0: float, extra_keys: tuple[str, ...]
     return item
 
 
+AMP_KEYS = (
+    "visit_url", "manager_url", "visit_url_status", "designation",
+    "iucn_cat", "site_id", "id", "gold_on",
+)
+ANCHORAGE_KEYS = ("anchorage_type", "osm_id", "source", "priority")
+
+
+def slim_amp(feat: dict, lat0: float, lon0: float) -> dict | None:
+    item = slim_place(feat, lat0, lon0, extra_keys=AMP_KEYS)
+    if not item:
+        return None
+    if item.get("visit_url"):
+        item["url"] = item["visit_url"]
+    return item
+
+
+def slim_anchorage(feat: dict, lat0: float, lon0: float) -> dict | None:
+    return slim_place(feat, lat0, lon0, extra_keys=ANCHORAGE_KEYS)
+
+
 def slim_science(feat: dict, lat0: float, lon0: float) -> dict | None:
-    item = slim_place(feat, lat0, lon0, extra_keys=("source", "kind", "wmo", "provider"))
+    item = slim_place(
+        feat, lat0, lon0,
+        extra_keys=("source", "kind", "wmo", "provider", "doi", "method", "error_m"),
+    )
     if not item:
         return None
     props = feat.get("properties") or {}
@@ -463,6 +521,8 @@ def _assign_result(d: dict, key: str, value: Any) -> bool:
         d["nearby"]["wpi"] = value
     elif key == "science":
         d["science"] = {"nearby": value}
+    elif key == "anchorages":
+        d["nearby"]["anchorages"] = value
     return True
 
 
@@ -537,6 +597,16 @@ async def _climatology_bag(
             "kind": "climatology",
             "source": "atlas",
         },
+        "rose": climatology_rose(point if isinstance(point, dict) else None),
+        "current": {
+            "speed_knots": wind.get("currentKn"),
+            "direction_to_deg": wind.get("currentToDeg"),
+        } if wind.get("currentKn") is not None else (point.get("current") if isinstance(point, dict) else None),
+        "cyclone": {
+            "nearby": wind.get("cycloneNearby"),
+            "tracks_in_month": (point.get("cyclone") or {}).get("tracks_in_month") if isinstance(point, dict) else None,
+            "crossings_if_leg": crossings or wind.get("crossings"),
+        },
     }
 
 
@@ -562,11 +632,13 @@ async def fill_dossier(
     async def amp_task() -> list[dict]:
         # Mongo cache (centroids). A small GET /amp?bbox= triggers ProtectedSeas.
         feats = await _cached_fc(http, f"{bi}/export/amp.geojson")
-        return nearest_places(feats, lat, lon, radius_nm, MAX_AMP)
+        return nearest_places(feats, lat, lon, radius_nm, MAX_AMP, slim=slim_amp)
 
     async def projects_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/geojson")
-        return nearest_places(feats, lat, lon, radius_nm, MAX_PROJECTS)
+        return nearest_places(
+            feats, lat, lon, radius_nm, MAX_PROJECTS, extra_keys=("gold_on",),
+        )
 
     async def marinas_task() -> list[dict]:
         # /marinas = BI memory cache; the export rebuilds all of Mongo.
@@ -585,6 +657,10 @@ async def fill_dossier(
         feats = await fetch_wpi_features(http)
         return nearest_places(feats, lat, lon, radius_nm, MAX_NEARBY)
 
+    async def anchorages_task() -> list[dict]:
+        feats = await _cached_fc(http, f"{bi}/anchorages")
+        return nearest_places(feats, lat, lon, radius_nm, MAX_ANCHORAGES, slim=slim_anchorage)
+
     try:
         amp_t = asyncio.create_task(amp_task())
         proj_t = asyncio.create_task(projects_task())
@@ -592,6 +668,13 @@ async def fill_dossier(
         cap_t = asyncio.create_task(capit_task())
         sci_t = asyncio.create_task(science_task())
         wpi_t = asyncio.create_task(wpi_task())
+        anc_t = asyncio.create_task(anchorages_task())
+        sat_t = asyncio.create_task(fetch_satellite_scene(http, lat, lon))
+        wx_t = asyncio.create_task(fetch_weather_forecast(http, lat, lon))
+        emo_t = asyncio.create_task(fetch_emodnet_point(http, bi, lat, lon))
+        aton_t = asyncio.create_task(
+            fetch_aton(http, bi, lat, lon, radius_nm, haversine_nm, radius_bbox)
+        )
 
         zee, zee_src = await lookup_zee(http, lat, lon)
         d["zee"] = zee
@@ -600,13 +683,23 @@ async def fill_dossier(
         mrgid = zee.get("mrgid") if zee else None
         poe_t = asyncio.create_task(poe_task(mrgid)) if mrgid else None
 
-        nearby = await asyncio.gather(amp_t, proj_t, mar_t, cap_t, sci_t, wpi_t, return_exceptions=True)
-        keys = ("amp", "projects", "marinas", "capitaineries", "science", "wpi")
+        nearby = await asyncio.gather(
+            amp_t, proj_t, mar_t, cap_t, sci_t, wpi_t, anc_t, return_exceptions=True,
+        )
+        keys = ("amp", "projects", "marinas", "capitaineries", "science", "wpi", "anchorages")
         bi_ok = 0
         bi_fail = 0
         for key, value in zip(keys, nearby):
             if key == "wpi":
                 _assign_result(d, key, value)
+                continue
+            if key == "anchorages":
+                if _assign_result(d, key, value):
+                    d["sources"]["anchorages"] = "osm"
+                    bi_ok += 1
+                else:
+                    d["sources"]["anchorages"] = "unavailable"
+                    bi_fail += 1
                 continue
             if _assign_result(d, key, value):
                 bi_ok += 1
@@ -630,9 +723,56 @@ async def fill_dossier(
         else:
             d["sources"]["bi"] = "unavailable"
 
+        extras = await asyncio.gather(
+            sat_t, wx_t, emo_t, aton_t,
+            fetch_review(http, bi, d.get("zee"), (d.get("amp") or [None])[0]),
+            _climatology_bag(http, bi, lat, lon, month, dest_lat, dest_lon),
+            return_exceptions=True,
+        )
+        sat, wx, emo, aton, review, climo = extras
+        science_near = (d.get("science") or {}).get("nearby") if isinstance(d.get("science"), dict) else None
+        if isinstance(sat, Exception):
+            d["satellites"] = empty_satellites()
+            d["satellites"]["reason"] = f"cdse_stac_unavailable:{type(sat).__name__}"
+            d["sources"]["satellites"] = None
+        else:
+            d["satellites"] = attach_derived_from_science(sat, science_near)
+            d["sources"]["satellites"] = d["satellites"].get("source")
+        if isinstance(wx, Exception):
+            d["weather"] = empty_weather()
+            d["weather"]["reason"] = f"openmeteo_unavailable:{type(wx).__name__}"
+            d["sources"]["weather"] = None
+        else:
+            d["weather"] = wx
+            d["sources"]["weather"] = wx.get("source")
+        if isinstance(emo, Exception):
+            d["emodnet"] = empty_emodnet()
+            d["emodnet"]["reason"] = f"emodnet_unavailable:{type(emo).__name__}"
+            d["sources"]["emodnet"] = None
+        else:
+            d["emodnet"] = emo
+            d["sources"]["emodnet"] = "emodnet"
+        if isinstance(aton, Exception):
+            d["aton"] = empty_aton()
+            d["aton"]["reason"] = f"aton_unavailable:{type(aton).__name__}"
+            d["sources"]["aton"] = None
+        else:
+            d["aton"] = aton
+            d["sources"]["aton"] = aton.get("source")
+        if isinstance(review, Exception):
+            d["review"] = empty_review()
+            d["review"]["reason"] = f"review_unavailable:{type(review).__name__}"
+            d["sources"]["review"] = None
+        else:
+            d["review"] = review
+            d["sources"]["review"] = review.get("source")
+        if isinstance(climo, Exception):
+            d["climatology"] = _zone_climo(lat, lon, int(month or 1), source="zone_fallback")
+        else:
+            d["climatology"] = climo
+        d["sources"]["climatology"] = (d["climatology"] or {}).get("source")
+
         await attach_depth_offshore(d, http)
-        d["climatology"] = await _climatology_bag(http, bi, lat, lon, month, dest_lat, dest_lon)
-        d["sources"]["climatology"] = d["climatology"].get("source")
     finally:
         if own:
             await http.aclose()

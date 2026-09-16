@@ -11,14 +11,29 @@ export function emptyDossier(lat, lon) {
     poe: [],
     amp: [],
     projects: [],
-    nearby: { marinas: [], capitaineries: [], wpi: [] },
+    nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
     marks: [],
+    aton: { nearby: [], source: null, reason: null },
     science: null,
+    satellites: null,
     weather: null,
+    emodnet: null,
+    review: null,
     polar: null,
     event: null,
     climatology: null,
-    sources: { zee: null, bi: null, gebco: null, climatology: null },
+    sources: {
+      zee: null,
+      bi: null,
+      gebco: null,
+      climatology: null,
+      satellites: null,
+      weather: null,
+      emodnet: null,
+      aton: null,
+      anchorages: null,
+      review: null,
+    },
     depthOffshore: null,
   };
 }
@@ -47,6 +62,10 @@ export function mergeDossier(base, extras = {}) {
     nearby: {
       ...emptyDossier(lat, lon).nearby,
       ...(base?.nearby || {}),
+    },
+    aton: {
+      ...emptyDossier(lat, lon).aton,
+      ...(base?.aton || {}),
     },
     sources: {
       ...emptyDossier(lat, lon).sources,
