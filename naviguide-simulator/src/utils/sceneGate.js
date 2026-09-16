@@ -1,3 +1,5 @@
+import { haversineNm } from "./geo.js";
+
 /** Porte d’affichage : rien n’est peint tant que route + horloge + caméra ne sont pas prêts. */
 
 export function playheadAligned({
@@ -25,4 +27,11 @@ export function isSceneReady({
   if (isSuivre && !hasLive && !previewing) return false;
   if (isSuivre && !playheadReady) return false;
   return true;
+}
+
+/** Premier snap, ou téléport (horloge serveur wrappée → horloge client dépliée). */
+export function shouldResnapCamera(prev, next, nm = 80) {
+  if (next?.lat == null || next?.lon == null) return false;
+  if (!prev || prev.lat == null || prev.lon == null) return true;
+  return haversineNm(prev.lat, prev.lon, next.lat, next.lon) >= nm;
 }

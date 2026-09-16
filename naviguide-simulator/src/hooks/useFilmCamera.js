@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { haversineNm, unwrapLon } from "../utils/geo.js";
+import { haversineNm } from "../utils/geo.js";
+import { cameraLngForBoat } from "../utils/waypointFlags.js";
 import { isAirPhase } from "../engine/filmCast.js";
 
 const TELEPORT_NM = 80;
@@ -13,7 +14,7 @@ function zoomForRemaining(nm) {
 }
 
 function unwrapPair(prev, lon) {
-  return unwrapLon(prev, lon);
+  return cameraLngForBoat(lon, prev);
 }
 
 /** Suit le bateau seulement si follow (cinéma). Le zoom utilisateur n’est pas volé. */

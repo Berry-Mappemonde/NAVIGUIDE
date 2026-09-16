@@ -63,13 +63,21 @@ export function worldCopyLngs(lon) {
 
 const STENCIL_DEG = 0.4;
 
+function lonDelta(a, b) {
+  let d = Number(a) - Number(b);
+  if (!Number.isFinite(d)) return Infinity;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
 function nearestSample(slice, lat, lon) {
   if (!slice.length) return null;
   if (lat == null || lon == null) return slice[0];
   let best = slice[0];
   let bestD = Infinity;
   for (const s of slice) {
-    const d = (s.lat - lat) ** 2 + (s.lon - lon) ** 2;
+    const d = (s.lat - lat) ** 2 + lonDelta(s.lon, lon) ** 2;
     if (d < bestD) {
       best = s;
       bestD = d;

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isSceneReady, playheadAligned } from "./sceneGate.js";
+import { isSceneReady, playheadAligned, shouldResnapCamera } from "./sceneGate.js";
 
 describe("playheadAligned", () => {
   it("Simulation : toujours prêt", () => {
@@ -62,5 +62,14 @@ describe("isSceneReady", () => {
     assert.match(src, /playback\.seek\(target, \{ jump: false \}\)/);
     assert.match(src, /scene-load-mask/);
     assert.match(src, /isSceneReady/);
+    assert.match(src, /shouldResnapCamera/);
+  });
+});
+
+describe("shouldResnapCamera", () => {
+  it("recadre si le live saute l’antiméridien (70° → −191°)", () => {
+    assert.equal(shouldResnapCamera(null, { lat: -22.7, lon: -191.16 }), true);
+    assert.equal(shouldResnapCamera({ lat: -19.8, lon: 70.5 }, { lat: -22.7, lon: -191.16 }), true);
+    assert.equal(shouldResnapCamera({ lat: -22.76, lon: -191.15 }, { lat: -22.76, lon: -191.16 }), false);
   });
 });
