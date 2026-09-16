@@ -10,7 +10,7 @@
  *   canAdvance   — boolean, disables the button at the end of the route
  */
 
-import { Navigation, Clock, Compass, Map as MapIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Navigation, Clock, Compass, Map as MapIcon } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -38,48 +38,11 @@ function formatBearing(deg) {
   return `${Math.round(deg)}° ${dirs[idx]}`;
 }
 
-// ── Previous / Next buttons ──────────────────────────────────────────────
-
-function PrevNextButtons({ onPrev, canPrev, onNext, canNext }) {
-  const { t } = useLang();
-  const btnBase = "flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold transition-all duration-150 select-none border";
-  const btnActive = "text-white cursor-pointer";
-  const btnDisabled = "bg-slate-700/30 text-white/25 border-white/5 cursor-not-allowed";
-  return (
-    <div className="px-1.5 pb-1.5 pt-0.5 flex gap-1">
-      <button
-        onClick={onPrev}
-        disabled={!canPrev}
-        className={[btnBase, canPrev ? `${btnActive} bg-slate-700/60 border-slate-500/50 hover:bg-slate-600/70` : btnDisabled].join(" ")}
-        title={t("previousEscale")}
-      >
-        <ChevronLeft size={10} />
-        <span>{t("previous")}</span>
-      </button>
-      <button
-        onClick={onNext}
-        disabled={!canNext}
-        className={[btnBase, canNext ? `${btnActive} bg-cyan-700/60 border-cyan-500/50 hover:bg-cyan-600/70` : btnDisabled].join(" ")}
-        title={t("nextEscale")}
-      >
-        <span>{t("next")}</span>
-        <ChevronRight size={10} />
-      </button>
-    </div>
-  );
-}
-
 // ── Main component ──────────────────────────────────────────────────────
 
 export function SimulationPanel({
   legContext,
-  onPrev,
-  canPrev,
-  onNext,
-  canNext,
-  showNavigation = true,
   clockSample = null,
-  civilDate = "",
   kindLabel = "",
   atQuay = false,
   quayDays = 0,
@@ -100,11 +63,6 @@ export function SimulationPanel({
         <div className="text-[10px] text-slate-400 text-center">
           {t("simulationDragPrompt")}
         </div>
-        {showNavigation ? (
-          <div className="mt-1">
-            <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -189,9 +147,8 @@ export function SimulationPanel({
 
       </div>
 
-      {(civilDate || kindLabel || clockSample?.twa != null || atQuay) && (
+      {(kindLabel || clockSample?.twa != null || atQuay) && (
         <div className="px-2 py-1 text-[9px] text-sky-100/90 border-t border-white/5 space-y-0 leading-tight">
-          {civilDate ? <div>{civilDate}</div> : null}
           <div className="flex flex-wrap gap-x-2 text-white/55">
             {kindLabel ? <span>{kindLabel}</span> : null}
             {clockSample?.twa != null && clockSample?.vehicle !== "plane" ? (
@@ -206,14 +163,8 @@ export function SimulationPanel({
         </div>
       )}
 
-      {liveFollow && (
+      {liveFollow && (clockSample?.status === "waiting" || (previewing && onGoLive)) && (
         <div className="px-2 py-1 border-t border-white/5 flex items-center justify-between gap-2">
-          <span className={`text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded ${
-            previewing ? "bg-slate-600/40 text-slate-300" : "bg-emerald-500/20 text-emerald-300"
-          }`}
-          >
-            {previewing ? t("previewBadge") : "LIVE"}
-          </span>
           {clockSample?.status === "waiting" && clockSample.countdownHours != null ? (
             <span className="text-[9px] text-amber-200/90">
               {t("departsIn", { hours: formatEta(clockSample.countdownHours) })}
@@ -251,10 +202,6 @@ export function SimulationPanel({
           </button>
         </div>
       )}
-
-      {showNavigation ? (
-        <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />
-      ) : null}
 
     </div>
   );

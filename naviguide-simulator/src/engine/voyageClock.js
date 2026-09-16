@@ -620,6 +620,34 @@ export function parseDepartureUtc(dateStr, timeStr) {
   return `${d}T${hhmm}:00.000Z`;
 }
 
+/** Format civil unique pour la saisie : jour/mois/année, quel que soit le navigateur. */
+export function formatDepartureDate(dateStr) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ""));
+  if (!match) return "";
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+export function parseFrenchDepartureDate(value) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (
+    date.getUTCFullYear() !== Number(year)
+    || date.getUTCMonth() !== Number(month) - 1
+    || date.getUTCDate() !== Number(day)
+  ) return null;
+  return `${year}-${month}-${day}`;
+}
+
+export function normalizeUtcTime(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const [, hours, minutes] = match;
+  if (Number(hours) > 23 || Number(minutes) > 59) return null;
+  return `${hours}:${minutes}`;
+}
+
 export function splitDepartureUtc(iso) {
   const fallback = { date: "2026-05-15", time: "08:00" };
   const v = String(iso || "");

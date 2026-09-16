@@ -35,7 +35,6 @@ import {
   DEFAULT_START_AT,
   DEFAULT_T0_ISO,
   etaHoursToFilmNm,
-  formatCivilDate,
   formatFilmClockLine,
   formatMonthName,
   lookupVoyageClock,
@@ -448,7 +447,6 @@ export default function App() {
     });
   }, [escaleMarks, officialClock]);
 
-  const civilDate = formatCivilDate(clockSample?.iso, lang);
   const monthLabel = clockSample?.month
     ? formatMonthName(clockSample.month, lang)
     : "";
@@ -478,10 +476,6 @@ export default function App() {
   const sidebarPlaybackNm = playback.nm;
   const sidebarHudLeg = hudLeg;
   const sidebarClockSample = clockSample;
-  const lastEscaleFilmNm = escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm ?? 0;
-  const firstEscaleFilmNm = escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm ?? 0;
-  const sidebarCanNext = sidebarPlaybackNm < lastEscaleFilmNm - 1;
-  const sidebarCanPrev = sidebarPlaybackNm > firstEscaleFilmNm + 1;
 
   useEffect(() => {
     if (clockSample?.speedKnots > 0) setLiveKnots(clockSample.speedKnots);
@@ -1228,17 +1222,12 @@ export default function App() {
         iciBriefing={iciPack.briefing}
         view={view}
         onView={selectView}
-        onNext={handleSimNext}
-        canNext={sidebarCanNext}
-        onPrev={handleSimPrev}
-        canPrev={sidebarCanPrev}
         legContext={sidebarHudLeg}
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}
         clockSample={sidebarClockSample}
-        civilDate={civilDate}
         kindLabel={climatologyLabel}
         atQuay={atQuay}
         quayDays={quayDays}
@@ -1315,7 +1304,7 @@ export default function App() {
       {climoAnyOn && (
         <div
           data-testid="climatology-banner"
-          className="absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full bottom-48 pointer-events-none"
+          className="naviguide-climo-banner absolute left-1/2 -translate-x-1/2 z-20 bg-sky-950/90 border border-sky-400/40 text-sky-100 text-xs px-4 py-2 rounded-full bottom-48 pointer-events-none"
         >
           {t("climatologyOn", { month: monthLabel || String(climoMonth), maps: climoMapsLabel })}
           {climoLayer.counts && (
@@ -1378,7 +1367,7 @@ export default function App() {
         atQuay={atQuay}
         quayDays={quayDays}
         twa={clockSample?.twa}
-        liveBadge={isSuivre ? (previewing ? t("previewBadge") : "LIVE") : null}
+        liveStatus={isSuivre ? (previewing ? t("previewBadge") : "LIVE") : null}
         windKind={clockSample?.kind === "forecast" ? "forecast" : (isSuivre ? null : (clockSample?.kind || expeditionSpeed.kind))}
         weatherLine={weatherLine}
         showSpeeds={isSimulation}
@@ -1408,7 +1397,7 @@ export default function App() {
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className="absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
+        <div className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
           <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
