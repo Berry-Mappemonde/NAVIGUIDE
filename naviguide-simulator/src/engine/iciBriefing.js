@@ -333,13 +333,98 @@ function reviewSentence(dossier, lang) {
     : `Review / Gold : ${bits.join(" · ")}.`;
 }
 
+function signedDelta(n, unit) {
+  if (!Number.isFinite(n)) return "";
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n} ${unit}`;
+}
+
+export function phraseForEvent(ev, lang = "fr") {
+  if (!ev) return "";
+  if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
+  const en = isEn(lang);
+  const p = ev.payload || {};
+  const name = ev.name || p.zee?.name || p.amp?.name || p.harbour?.name;
+  switch (ev.type) {
+    case "zee-enter":
+      return en
+        ? `We have just entered ${name || "this EEZ"}.`
+        : `On vient d’entrer dans ${name || "cette ZEE"}.`;
+    case "zee-exit":
+      return en
+        ? "The boat is back on the high seas — no EEZ to clear."
+        : "Retour en haute mer — plus de ZEE à déclarer.";
+    case "amp-enter": {
+      const visit = p.amp?.visitable || p.visitable;
+      return en
+        ? `A marine protected area is now inside 30 nm: ${name || "MPA"}${visit ? " (visit page in the pack)" : ""}.`
+        : `Une aire marine entre dans les 30 milles : ${name || "AMP"}${visit ? " (page visite dans le sac)" : ""}.`;
+    }
+    case "wind-shift": {
+      const kind = p.kind || ev.kind || "forecast";
+      const src = p.source ? `, ${p.source}` : "";
+      const delta = signedDelta(p.dTws, "kn");
+      return en
+        ? `Wind ${p.tws} kn / ${p.twd}° (kind: ${kind}${src})${delta ? ` — ${delta}` : ""}.`
+        : `Vent ${p.tws} kn / ${p.twd}° (kind: ${kind}${src})${delta ? ` — ${delta}` : ""}.`;
+    }
+    case "wind-gale": {
+      const kind = p.kind || ev.kind || "forecast";
+      return en
+        ? `Gale: ${p.tws} kn (kind: ${kind}${p.galePct != null ? `, gale ${p.galePct}%` : ""}).`
+        : `Coup de vent : ${p.tws} kn (kind: ${kind}${p.galePct != null ? `, gale ${p.galePct} %` : ""}).`;
+    }
+    case "current-shift": {
+      const kind = p.kind || ev.kind || "forecast";
+      return en
+        ? `Current ${p.kn} kn / ${p.dir}° (kind: ${kind}${p.source ? `, ${p.source}` : ""})${p.invert ? " — direction reversed" : ""}.`
+        : `Courant ${p.kn} kn / ${p.dir}° (kind: ${kind}${p.source ? `, ${p.source}` : ""})${p.invert ? " — inversion" : ""}.`;
+    }
+    case "hs-shift": {
+      const kind = p.kind || ev.kind || "forecast";
+      return en
+        ? `Significant wave ${p.hs} m (kind: ${kind}${p.alert ? ", alert" : ""}).`
+        : `Houle ${p.hs} m (kind: ${kind}${p.alert ? ", alerte" : ""}).`;
+    }
+    case "wx-alert": {
+      const bits = [];
+      if (p.rainMm != null) bits.push(en ? `rain ${p.rainMm} mm/h` : `pluie ${p.rainMm} mm/h`);
+      if (p.gale) bits.push(en ? "gale" : "coup de vent");
+      if (p.hs != null) bits.push(`Hs ${p.hs} m`);
+      const kind = p.kind || "forecast";
+      return en
+        ? `Weather alert (kind: ${kind}): ${bits.join(" · ") || "threshold"}.`
+        : `Alerte météo (kind: ${kind}) : ${bits.join(" · ") || "seuil"}.`;
+    }
+    case "marina-refuge": {
+      const port = p.harbour?.name || name || (en ? "a harbour" : "un port");
+      const nm = p.harbour?.nm;
+      const rain = p.rainMm != null ? (en ? `Rain ${p.rainMm} mm/h (GFS). ` : `Pluie ${p.rainMm} mm/h (GFS). `) : "";
+      return en
+        ? `${rain}Refuge: ${port}${nm != null ? ` at ${nm} nm` : ""}.`
+        : `${rain}Repli : ${port}${nm != null ? ` à ${nm} nm` : ""}.`;
+    }
+    case "depth-alert":
+      return en
+        ? `Shallow sounding ${p.depthM} m (${p.source || "DTM"}, kind: observation; not for navigation).`
+        : `Haut-fond ${p.depthM} m (${p.source || "DTM"}, kind: observation ; ne convient pas à la navigation).`;
+    case "group": {
+      if (en && ev.digest?.en) return ev.digest.en;
+      if (!en && ev.digest?.fr) return ev.digest.fr;
+      const members = (p.members || []).join(" + ");
+      return en
+        ? `Along this leg: ${members}.`
+        : `Depuis cette jambe : ${members}.`;
+    }
+    default:
+      return "";
+  }
+}
+
 function eventSentence(dossier, lang) {
   const ev = dossier?.event;
-  if (!ev || ev.type !== "zee-enter") return "";
-  const name = ev.name || (isEn(lang) ? "this EEZ" : "cette ZEE");
-  return isEn(lang)
-    ? `We have just entered ${name}.`
-    : `On vient d’entrer dans ${name}.`;
+  if (!ev) return "";
+  return phraseForEvent(ev, lang);
 }
 
 function legSentence(dossier, lang) {
