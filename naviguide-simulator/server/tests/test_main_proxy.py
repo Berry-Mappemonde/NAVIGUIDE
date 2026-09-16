@@ -34,6 +34,8 @@ def test_weather_composite_reuses_cell_cache(monkeypatch):
 
 def test_ports_are_filtered_by_requested_bbox(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_GRIB_AUTO", "0")
+    main._catalog_cache.clear()
+    main._catalog_tasks.clear()
     async def ports():
         return [
             {"type": "Feature", "geometry": {"type": "Point", "coordinates": [2, 48]}, "properties": {"name": "Brest"}},
@@ -46,6 +48,49 @@ def test_ports_are_filtered_by_requested_bbox(monkeypatch):
     assert response.status_code == 200
     assert [feature["properties"]["name"] for feature in response.json()["features"]] == ["Brest"]
     assert "max-age=180" in response.headers["cache-control"]
+
+
+def test_catalog_proxy_indexes_source_and_returns_only_requested_view(monkeypatch):
+    main._catalog_cache.clear()
+    main._catalog_tasks.clear()
+    calls = []
+
+    async def catalog_features(catalog):
+        calls.append(catalog)
+        return [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [2, 48]},
+                "properties": {"source": "argo", "name": "Argo Brest"},
+            },
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [-61, 14]},
+                "properties": {"source": "argo", "name": "Argo Martinique"},
+            },
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [2.1, 48.1]},
+                "properties": {"source": "sextant", "name": "Sextant Brest"},
+            },
+        ]
+
+    monkeypatch.setattr(main, "_fetch_catalog_features", catalog_features)
+    client = TestClient(main.app)
+    response = client.get(
+        "/proxy/catalog/science",
+        params={"bbox": "-5,40,10,55", "zoom": 8, "source": "argo"},
+    )
+    cached = client.get(
+        "/proxy/catalog/science",
+        params={"bbox": "-5,40,10,55", "zoom": 8, "source": "argo"},
+    )
+
+    assert response.status_code == 200
+    assert cached.status_code == 200
+    assert [feature["properties"]["name"] for feature in response.json()["features"]] == ["Argo Brest"]
+    assert response.json()["metadata"]["rendered"] <= 420
+    assert calls == ["science"]
 
 
 def test_wms_proxy_sets_browser_cache_headers(monkeypatch):

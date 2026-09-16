@@ -1,6 +1,7 @@
 """NAVIGUIDE simulator API — searoute, polar (sans chat), proxies, vent."""
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import re
@@ -33,6 +34,7 @@ from mem_limits import (
 from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
 from polar_api import router as polar_router
 from route_engine import searoute_with_exact_end
+from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
 
 load_dotenv()
@@ -294,6 +296,18 @@ _WPI_CACHE_TTL = 86_400
 _zee_cache: dict = {"entries": {}}
 _ZEE_CACHE_TTL = 86_400
 _VLIZ_WMS = "https://geo.vliz.be/geoserver/MarineRegions/wms"
+_CATALOG_SOURCE_TTL = 900.0
+_CATALOG_UPSTREAM = os.getenv("NAVIGUIDE_CATALOG_UPSTREAM", "http://127.0.0.1:8001/api").rstrip("/")
+_CATALOG_PATHS = {
+    "projects": "/export/geojson",
+    "marinas": "/export/marinas.geojson",
+    "capitaineries": "/export/capitaineries.geojson",
+    "poe": "/export/poe.geojson",
+    "amp": "/export/amp.geojson",
+    "science": "/export/science.geojson",
+}
+_catalog_cache: dict[str, dict] = {}
+_catalog_tasks: dict[str, asyncio.Task] = {}
 _WMS_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=21600, stale-while-revalidate=86400",
 }
@@ -399,15 +413,11 @@ async def proxy_zee(
 
 
 def _parse_ports_bbox(raw: Optional[str]) -> Optional[tuple[float, float, float, float]]:
-    if not raw:
-        return None
     try:
-        west, south, east, north = (float(value) for value in raw.split(","))
-    except (TypeError, ValueError) as exc:
+        bbox = parse_bbox(raw)
+    except ValueError as exc:
         raise HTTPException(400, "bbox ports invalide") from exc
-    if south > north or south < -90 or north > 90:
-        raise HTTPException(400, "bbox ports invalide")
-    return west, south, east, north
+    return None if bbox is None else (bbox.west, bbox.south, bbox.east, bbox.north)
 
 
 def _port_in_bbox(feature: dict, bbox: Optional[tuple[float, float, float, float]]) -> bool:
@@ -426,16 +436,102 @@ def _port_in_bbox(feature: dict, bbox: Optional[tuple[float, float, float, float
     return any(value >= west or value <= east for value in copies)
 
 
-@app.get("/proxy/ports")
-async def proxy_ports(bbox: Optional[str] = Query(None)):
-    parsed_bbox = _parse_ports_bbox(bbox)
+async def _fetch_catalog_features(catalog: str) -> list[dict]:
+    """Lit une source explicitement autorisée; aucune URL utilisateur n'est proxifiée."""
+    if catalog == "ports":
+        return await fetch_wpi_features()
+    path = _CATALOG_PATHS.get(catalog)
+    if not path:
+        raise KeyError(catalog)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(f"{_CATALOG_UPSTREAM}{path}", headers={"Accept": "application/geo+json, application/json"})
+        response.raise_for_status()
+        if too_large(len(response.content), ZEE_RESPONSE_MAX_BYTES):
+            raise ValueError("catalogue source trop volumineux")
+        payload = response.json()
+    features = payload.get("features") if isinstance(payload, dict) else None
+    if not isinstance(features, list):
+        raise ValueError("catalogue source GeoJSON invalide")
+    return features
+
+
+async def _load_catalog_index(catalog: str) -> SpatialCatalogIndex:
+    now = time.monotonic()
+    cached = _catalog_cache.get(catalog)
+    if cached and now - cached["at"] < _CATALOG_SOURCE_TTL:
+        return cached["index"]
+
+    task = _catalog_tasks.get(catalog)
+    if task is None:
+        task = asyncio.create_task(_fetch_catalog_features(catalog))
+        _catalog_tasks[catalog] = task
     try:
-        features = await fetch_wpi_features()
+        features = await asyncio.shield(task)
+    except Exception:
+        if cached:
+            return cached["index"]
+        raise
+    finally:
+        if _catalog_tasks.get(catalog) is task and task.done():
+            _catalog_tasks.pop(catalog, None)
+
+    index = SpatialCatalogIndex(catalog, features)
+    _catalog_cache[catalog] = {"at": time.monotonic(), "index": index}
+    return index
+
+
+async def _catalog_feature_collection(
+    catalog: str,
+    bbox: Optional[str],
+    zoom: float,
+    limit: int,
+    source: Optional[str] = None,
+) -> dict:
+    if catalog != "ports" and catalog not in _CATALOG_PATHS:
+        raise HTTPException(404, "catalogue inconnu")
+    try:
+        parsed_bbox = parse_bbox(bbox)
+    except ValueError as exc:
+        raise HTTPException(400, "bbox catalogue invalide") from exc
+    if parsed_bbox is None:
+        raise HTTPException(400, "bbox (minlon,minlat,maxlon,maxlat) requise")
+    try:
+        index = await _load_catalog_index(catalog)
+    except KeyError as exc:
+        raise HTTPException(404, "catalogue inconnu") from exc
+    except ValueError as exc:
+        raise HTTPException(502, detail=f"catalogue source invalide: {exc}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"WPI upstream error: {exc}") from exc
-    visible = [feature for feature in features if _port_in_bbox(feature, parsed_bbox)]
+        raise HTTPException(502, detail=f"catalogue source indisponible: {exc}") from exc
+    return index.query(parsed_bbox, zoom=zoom, limit=limit, source=source)
+
+
+@app.get("/proxy/catalog/{catalog}")
+async def proxy_catalog(
+    catalog: str,
+    bbox: str = Query(...),
+    zoom: float = Query(2, ge=0, le=18),
+    limit: int = Query(MAX_RENDER_FEATURES, ge=1, le=MAX_RENDER_FEATURES),
+    source: Optional[str] = Query(None, max_length=40),
+):
+    """API bbox locale pour les catalogues affichés par le simulateur."""
+    data = await _catalog_feature_collection(catalog, bbox, zoom, limit, source)
     return JSONResponse(
-        content={"type": "FeatureCollection", "features": visible},
+        content=data,
+        headers={"Cache-Control": "public, max-age=180, stale-while-revalidate=600"},
+    )
+
+
+@app.get("/proxy/ports")
+async def proxy_ports(
+    bbox: str = Query(...),
+    zoom: float = Query(2, ge=0, le=18),
+    limit: int = Query(MAX_RENDER_FEATURES, ge=1, le=MAX_RENDER_FEATURES),
+):
+    # Compatibilité de l'URL historique, désormais servie par le même index.
+    visible = await _catalog_feature_collection("ports", bbox, zoom, limit)
+    return JSONResponse(
+        content=visible,
         headers={"Cache-Control": "public, max-age=180, stale-while-revalidate=600"},
     )
 
