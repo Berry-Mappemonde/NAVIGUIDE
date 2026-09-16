@@ -19,7 +19,9 @@ function viewportBbox(map) {
   const step = Math.max(0.25, 90 / (2 ** Math.max(0, map.getZoom() - 2)));
   const floor = (value) => Math.floor(value / step) * step;
   const ceil = (value) => Math.ceil(value / step) * step;
-  return [floor(bounds.getWest()), floor(bounds.getSouth()), ceil(bounds.getEast()), ceil(bounds.getNorth())]
+  const south = Math.max(-90, bounds.getSouth());
+  const north = Math.min(90, bounds.getNorth());
+  return [floor(bounds.getWest()), floor(south), ceil(bounds.getEast()), ceil(north)]
     .map((value) => value.toFixed(3))
     .join(",");
 }
