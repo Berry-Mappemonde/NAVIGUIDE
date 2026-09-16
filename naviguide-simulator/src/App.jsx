@@ -17,6 +17,7 @@ import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
+import { sumRainHours } from "./engine/eventRules.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
 import { recetteMapView, recetteMonth } from "./utils/recetteQuery.js";
 import {
@@ -577,6 +578,19 @@ export default function App() {
         crossings: atlas.boatPoint.crossings || atlas.boatPoint.cyclone?.crossings_if_leg,
       }
       : null,
+    mode: isSuivre ? "suivre" : "simulation",
+    cinema: cinemaMode,
+    playbackProfile: playback.profile,
+    cumNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
+    filmCum: isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm,
+    clockMin: Number.isFinite(clockSample?.seaHours) ? clockSample.seaHours * 60 : null,
+    rainMm: isSuivre ? official.live?.rainMm ?? null : null,
+    rain3hMm: isSuivre ? sumRainHours(official.grib?.samples, official.live?.iso, 3) : null,
+    gribWindKnots: isSuivre ? official.live?.windKnots ?? null : null,
+    gribDirFromDeg: isSuivre ? official.live?.dirFromDeg ?? null : null,
+    gribHs: isSuivre ? official.live?.hs ?? null : null,
+    gribModel: isSuivre ? official.live?.model ?? official.gribModel ?? null : null,
+    gribStatus: isSuivre ? official.gribStatus : null,
   });
 
   const playheadNmRef = useRef(0);
