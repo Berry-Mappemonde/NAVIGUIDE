@@ -4,7 +4,7 @@ import { ampStyle } from "./styles.js";
 import { circleOpts, makePointGroup } from "./points.js";
 import { filterScienceFeatures } from "./scienceSource.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
-import { DEFAULT_SHOW_ZEE } from "../constants/layers.js";
+import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
 
 const BI_BASE = import.meta.env.VITE_BI_BASE ?? "/bi";
 const EMPTY = { type: "FeatureCollection", features: [] };
@@ -150,6 +150,7 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   const [showZee, setShowZee] = useState(DEFAULT_SHOW_ZEE);
   const [loadingZee] = useState(false);
   const [errorZee, setErrorZee] = useState(null);
+  const [showGrib, setShowGrib] = useState(DEFAULT_SHOW_GRIB);
 
   const ports = useFetchLayer("/proxy/ports");
   const projects = useFetchLayer(`${BI_BASE}/export/geojson`);
@@ -387,6 +388,10 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   }, [mapRef, mapReady, showAmp, ampData, onFeature]);
 
   return {
+    showGrib,
+    setShowGrib,
+    loadingGrib: false,
+    errorGrib: null,
     showZee,
     setShowZee,
     loadingZee,

@@ -152,6 +152,8 @@ export default {
   polarDownwind:          "↓ Portant",
 
   // ── Maritime layers (MaritimeLayersPanel) ─────────────────────────────────
+  layerGrib2:      "GRIB2",
+  layerGrib2Title: "Dernier GRIB2 — barbules OMM et Hs autour du bateau (Suivre)",
   layerZee:        "ZEE",
   layerZeeTitle:   "Zones Économiques Exclusives (VLIZ)",
   layerPorts:      "Ports WPI",

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
+import { worldCopyLngs } from "../utils/gribSymbols.js";
 
 function planeHtml(bearing) {
   const deg = Number(bearing) || 0;
@@ -12,15 +13,16 @@ function planeHtml(bearing) {
 }
 
 export function usePlaneMarker(mapRef, { visible, lat, lon, bearing, mapReady }) {
-  const markerRef = useRef(null);
+  const markersRef = useRef([]);
 
   useEffect(() => {
     const map = mapRef.current;
+    const clear = () => {
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+    };
     if (!map || !mapReady || !visible || lat == null || lon == null) {
-      if (markerRef.current) {
-        markerRef.current.remove();
-        markerRef.current = null;
-      }
+      clear();
       return undefined;
     }
     const icon = L.divIcon({
@@ -29,22 +31,26 @@ export function usePlaneMarker(mapRef, { visible, lat, lon, bearing, mapReady })
       iconSize: [64, 64],
       iconAnchor: [32, 32],
     });
-    if (!markerRef.current) {
-      markerRef.current = L.marker([lat, lon], {
+    const lngs = worldCopyLngs(lon);
+    if (markersRef.current.length !== lngs.length) {
+      clear();
+      markersRef.current = lngs.map((lng) => L.marker([lat, lng], {
         icon,
         draggable: false,
         interactive: false,
         pane: "boat",
-      }).addTo(map);
+      }).addTo(map));
     } else {
-      markerRef.current.setLatLng([lat, lon]);
-      markerRef.current.setIcon(icon);
+      markersRef.current.forEach((m, i) => {
+        m.setLatLng([lat, lngs[i]]);
+        m.setIcon(icon);
+      });
     }
     return undefined;
   }, [mapRef, mapReady, visible, lat, lon, bearing]);
 
   useEffect(() => () => {
-    markerRef.current?.remove();
-    markerRef.current = null;
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
   }, []);
 }

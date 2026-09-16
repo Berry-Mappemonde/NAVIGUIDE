@@ -45,7 +45,7 @@ export function SimulationFilmBar({
   quayDays = 0,
   twa = null,
   liveBadge = null,
-  windModel = null,
+  weatherLine = "",
   showSpeeds = false,
   showWindProfile = false,
   stopAuto = false,
@@ -153,8 +153,12 @@ export function SimulationFilmBar({
           {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
           {liveBadge ? ` · ${liveBadge}` : ""}
           {atQuay && quayDays > 0 ? ` · ${t("voyageAtQuay", { days: quayDays })}` : (holding ? ` · ${t("filmArrivalHold")}` : "")}
-          {windKind === "forecast" && windModel ? ` · ${windModel}` : ""}
         </div>
+        {weatherLine ? (
+          <div data-testid="weather-line" className="text-[10px] text-cyan-200/85 leading-tight truncate">
+            {weatherLine}
+          </div>
+        ) : null}
         {gribLine ? (
           <div data-testid="grib-warning" className="text-[10px] text-amber-200/90 leading-tight">
             {gribLine}

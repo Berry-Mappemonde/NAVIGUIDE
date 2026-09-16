@@ -85,7 +85,6 @@ export function SimulationPanel({
   liveFollow = false,
   previewing = false,
   forecastStatus = null,
-  forecastModel = null,
   onRecompute,
   canRecompute = false,
   showRecompute = false,
@@ -199,12 +198,6 @@ export function SimulationPanel({
           {atQuay && quayDays > 0 ? (
             <div className="text-amber-200 font-semibold uppercase tracking-wide">
               {t("voyageAtQuay", { days: quayDays })}
-            </div>
-          ) : null}
-          {clockSample?.kind === "forecast" && (clockSample.model || forecastModel) ? (
-            <div className="text-cyan-200/80">
-              {clockSample.model || forecastModel}
-              {clockSample.leadHours != null ? ` · +${Math.round(clockSample.leadHours)} h` : ""}
             </div>
           ) : null}
         </div>

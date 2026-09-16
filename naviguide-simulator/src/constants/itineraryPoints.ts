@@ -139,6 +139,7 @@ export const ITINERARY_POINTS = [
     lat: -22.2958,
     lon: 166.4572,
     flag: nouvelleCaledonie,
+    flags: [nouvelleCaledonie, france],
   },
   {
     // Torres Strait — north of Cape York tip, in the Great North East Channel.

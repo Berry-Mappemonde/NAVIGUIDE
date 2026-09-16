@@ -28,7 +28,7 @@ const WAYPOINT_FLAGS = {
   "Cayenne (Guyane)":                       guyane,
   "Papeete (Polynésie française)":          polynesie,
   "Mata-Utu (Wallis-et-Futuna)":            wallisFutuna,
-  "Nouméa (Nouvelle-Calédonie)":            nouvelleCaledonie,
+  "Nouméa (Nouvelle-Calédonie)":            [nouvelleCaledonie, france],
   "Dzaoudzi (Mayotte)":                     mayotte,
   "Tromelin (TAAF)":                        taaf,
   "Saint-Gilles (La Réunion)":              reunion,
@@ -38,8 +38,17 @@ const WAYPOINT_FLAGS = {
 /**
  * Returns the flag image asset for the given waypoint name, or null if none.
  * @param {string} name - The waypoint name (from GeoJSON properties.name)
- * @returns {string|null} - Flag image URL or null
+ * @returns {string|string[]|null} - Flag image URL, pair Kanak+FR, or null
  */
 export function getFlagForWaypoint(name) {
-  return WAYPOINT_FLAGS[name] || null;
+  const flags = WAYPOINT_FLAGS[name];
+  if (!flags) return null;
+  return Array.isArray(flags) ? flags[0] : flags;
+}
+
+/** Une ou deux images (Nouméa = Kanak + français). */
+export function getFlagsForWaypoint(name) {
+  const flags = WAYPOINT_FLAGS[name];
+  if (!flags) return [];
+  return Array.isArray(flags) ? flags.filter(Boolean) : [flags];
 }
