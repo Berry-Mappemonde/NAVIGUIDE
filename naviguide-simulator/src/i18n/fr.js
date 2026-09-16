@@ -270,6 +270,7 @@ export default {
   simulationButton: "Simulation",
   officialDepartureLocked: "Départ officiel : 15 mai 2026, 08:00 UTC",
   gribMissing:      "dernière prévision absente",
+  storiesPending:   "{n} récits en préparation",
   gribModel:        "{model}",
   previewBadge:     "aperçu",
   returnToLive:     "Revenir au live (L)",

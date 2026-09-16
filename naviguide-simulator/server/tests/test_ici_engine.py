@@ -401,6 +401,32 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["review"]["zee"]["gold_on"] is True
 
 
+def test_fill_dossier_thin_skips_weather_and_satellite():
+    reset_caches()
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
+
+    async def run():
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await fill_dossier(46.15, -1.16, client=client, month=6, thin=True)
+
+    d = asyncio.run(run())
+    assert d["zee"]["mrgid"] == 5677
+    assert d["amp"]
+    assert d["nearby"]["marinas"]
+    assert d["weather"]["reason"] == "not_in_along_pearl"
+    assert d["satellites"]["reason"] == "not_in_along_pearl"
+    assert d["climatology"] is None
+    assert not any("open-meteo" in url or "dataspace.copernicus" in url for url in seen)
+    assert not any("export/science.geojson" in url for url in seen)
+    assert any("export/amp.geojson" in url for url in seen)
+
+
 def test_fill_dossier_mid_atlantic_gebco():
     reset_caches()
 

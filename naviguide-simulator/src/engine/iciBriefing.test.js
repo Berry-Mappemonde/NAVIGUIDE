@@ -342,6 +342,44 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
+  it("prefers a ready story over the local template", () => {
+    const text = phraseForEvent({
+      type: "zee-enter",
+      name: "Spain",
+      phrase: "On vient d’entrer dans Spain.",
+      story: { status: "ready", text: "Récit NIM : entrée dans la ZEE espagnole." },
+    }, "fr");
+    assert.equal(text, "Récit NIM : entrée dans la ZEE espagnole.");
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("tells a ZEE ahead on the track", () => {
+    const text = phraseForEvent({
+      type: "zee-ahead",
+      whenNm: 40,
+      name: "Spanish Exclusive Economic Zone",
+      payload: { zee: { name: "Spanish Exclusive Economic Zone", mrgid: 8462 }, whenNm: 40 },
+    }, "fr");
+    assert.match(text, /Devant dans 40 nm/);
+    assert.match(text, /Spanish Exclusive Economic Zone/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("tells an AMP ahead on the track", () => {
+    const text = phraseForEvent({
+      type: "amp-ahead",
+      whenNm: 40,
+      payload: {
+        amp: { name: "Cabrera", visitable: true },
+        visitable: true,
+        whenNm: 40,
+      },
+    }, "fr");
+    assert.match(text, /AMP sur le trait dans 40 nm/);
+    assert.match(text, /Cabrera/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
   it("summarises a group digest", () => {
     const text = phraseForEvent({
       type: "group",

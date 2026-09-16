@@ -8,6 +8,8 @@ import {
 import { detectEvents, emptyEventMemory } from "../engine/eventRules.js";
 import { judgeEvents } from "../engine/displayJudge.js";
 import { narrateIci, phraseForEvent } from "../engine/iciBriefing.js";
+import { promoteLaterAtPlayhead, upsertLedger } from "../engine/iciAlong.js";
+import { enqueueStory, shouldEnqueueStory, storyPayload, subscribeStories } from "../engine/storyQueue.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
@@ -24,6 +26,7 @@ function legKey(jambe) {
  * Fill the `ici()` bag around the boat and turn it into a story.
  * One step = one GET /ici. No chat, no Tavily.
  * Detectors + judge run on the bag already collected. Never await a model.
+ * enqueueStory is fire-and-forget (NIM → OR → Claude).
  */
 export function useIciDossier({
   enabled,
@@ -50,6 +53,7 @@ export function useIciDossier({
   gribModel = null,
   gribStatus = null,
   skipperClickId = null,
+  along = null,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -62,9 +66,11 @@ export function useIciDossier({
   const prevBagRef = useRef(undefined);
   const lastRemoteRef = useRef(null);
   const lastNowRef = useRef(null);
+  const ledgerRef = useRef([]);
   const lastLegRef = useRef(legKey(jambe));
   const playheadRef = useRef({ cumNm, filmCum, clockMin });
   playheadRef.current = { cumNm, filmCum, clockMin };
+  const filmBucket = Number.isFinite(filmCum) ? Math.round(filmCum / 5) * 5 : null;
   const boat = boatPositionFromCast(cast, snappedPosition);
   const currentLeg = legKey(jambe);
 
@@ -74,7 +80,26 @@ export function useIciDossier({
     prevBagRef.current = undefined;
     lastRemoteRef.current = null;
     lastNowRef.current = null;
+    ledgerRef.current = [];
   }
+
+  useEffect(() => subscribeStories((job) => {
+    const idx = ledgerRef.current.findIndex((e) => (
+      e.id === job.eventId || (job.stableKey && e.stableKey === job.stableKey)
+    ));
+    if (idx < 0) return;
+    const ev = ledgerRef.current[idx];
+    const next = {
+      ...ev,
+      story: job,
+      phrase: job.status === "ready" && job.text ? job.text : ev.phrase,
+    };
+    ledgerRef.current = ledgerRef.current.map((e, i) => (i === idx ? next : e));
+    if (lastNowRef.current && (lastNowRef.current.id === ev.id || lastNowRef.current.stableKey === ev.stableKey)) {
+      lastNowRef.current = { ...lastNowRef.current, phrase: next.phrase, story: job };
+    }
+    setTick({ events: ledgerRef.current, briefing: lastNowRef.current });
+  }), []);
 
   useEffect(() => {
     if (!enabled || !boat) {
@@ -85,6 +110,7 @@ export function useIciDossier({
       prevBagRef.current = undefined;
       lastRemoteRef.current = null;
       lastNowRef.current = null;
+      ledgerRef.current = [];
       memoryRef.current = emptyEventMemory(currentLeg);
       requestIdRef.current += 1;
       clearTimeout(timerRef.current);
@@ -191,7 +217,7 @@ export function useIciDossier({
     const { events: found, memory } = detectEvents({
       at: remote,
       prev,
-      along: null,
+      along,
       ctx,
       memory: memoryRef.current,
     });
@@ -210,25 +236,56 @@ export function useIciDossier({
       skipperClickId,
       mode,
     });
-    const nextBrief = judged.briefing
+    ledgerRef.current = promoteLaterAtPlayhead(
+      upsertLedger(ledgerRef.current, judged.judged.map((ev) => ({
+        ...ev,
+        phrase: ev.phrase || phraseForEvent(ev, lang),
+      }))),
+      playheadRef.current.filmCum,
+    );
+    const clicked = skipperClickId
+      ? ledgerRef.current.find((e) => e.id === skipperClickId || e.stableKey === skipperClickId)
+      : null;
+    let nextBrief = judged.briefing
       ? { ...judged.briefing, phrase: phraseForEvent(judged.briefing, lang) }
       : lastNowRef.current;
+    if (clicked) {
+      nextBrief = { ...clicked, judge: "now", judgeReason: "skipper-click", phrase: phraseForEvent(clicked, lang) };
+      ledgerRef.current = ledgerRef.current.map((e) => (
+        e === clicked || e.id === clicked.id
+          ? { ...e, judge: "now", seenNow: true, judgeReason: "skipper-click" }
+          : e
+      ));
+    }
+    const promotedNow = ledgerRef.current.find((e) => e.promoted && e.judge === "now");
+    if (!clicked && promotedNow && !judged.briefing) {
+      nextBrief = { ...promotedNow, phrase: phraseForEvent(promotedNow, lang) };
+    }
     if (nextBrief) lastNowRef.current = nextBrief;
-    setTick((prev) => {
-      const sameBrief = prev.briefing?.id === nextBrief?.id
-        && prev.briefing?.phrase === nextBrief?.phrase;
-      const sameEvents = prev.events.length === judged.judged.length
-        && prev.events.every((e, i) => (
-          e.id === judged.judged[i]?.id && e.judge === judged.judged[i]?.judge
+    for (const ev of ledgerRef.current) {
+      if (!shouldEnqueueStory(ev)) continue;
+      ev.story = enqueueStory(storyPayload(ev, lang));
+    }
+    const ledger = ledgerRef.current;
+    setTick((prevTick) => {
+      const sameBrief = prevTick.briefing?.id === nextBrief?.id
+        && prevTick.briefing?.phrase === nextBrief?.phrase;
+      const sameEvents = prevTick.events.length === ledger.length
+        && prevTick.events.every((e, i) => (
+          e.id === ledger[i]?.id
+          && e.judge === ledger[i]?.judge
+          && e.story?.status === ledger[i]?.story?.status
         ));
-      if (sameBrief && sameEvents) return prev;
-      return { events: judged.judged, briefing: nextBrief };
+      if (sameBrief && sameEvents) return prevTick;
+      return { events: ledger, briefing: nextBrief };
     });
   }, [
     remote,
+    along,
     mode,
     cinema,
     playbackProfile,
+    filmBucket,
     rainMm,
     rain3hMm,
     gribWindKnots,
