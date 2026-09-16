@@ -6,7 +6,7 @@ const API = import.meta.env.VITE_API_URL ?? "";
 
 /**
  * Voyage officiel unique. Pas de localStorage visiteur.
- * Position = horloge locale à maintenant (1 s = 1 s).
+ * Position = horloge serveur à maintenant (1 s = 1 s).
  * Dernier GRIB = overlay vent, jamais un nouveau trait, jamais de climatologie.
  */
 export function useOfficialExpedition({
@@ -14,7 +14,6 @@ export function useOfficialExpedition({
   points,
   marks,
   expeditionId,
-  clock,
 }) {
   const [meta, setMeta] = useState(null);
   const [serverClock, setServerClock] = useState(null);
@@ -22,9 +21,7 @@ export function useOfficialExpedition({
   const [gribPending, setGribPending] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const putRef = useRef("");
-  const clockRef = useRef(clock);
   const serverClockRef = useRef(serverClock);
-  clockRef.current = clock;
   serverClockRef.current = serverClock;
 
   useEffect(() => {
@@ -145,7 +142,7 @@ export function useOfficialExpedition({
   }, [enabled, refreshGrib, meta?.voyageId, serverClock]);
 
   const live = useMemo(() => {
-    const liveClock = clock || serverClock;
+    const liveClock = serverClock;
     if (!enabled || !liveClock) return null;
     const sample = sampleClockAtTime(liveClock, new Date(nowMs));
     if (!sample) return null;
@@ -178,11 +175,11 @@ export function useOfficialExpedition({
       gribStatus: grib?.status === "ready" ? "ready" : (gribPending || !grib ? "pending" : "absent"),
       gribWarning: null,
     };
-  }, [enabled, clock, serverClock, nowMs, grib, gribPending]);
+  }, [enabled, serverClock, nowMs, grib, gribPending]);
 
   const positioned = Boolean(
-    (clock || serverClock)
-    && sampleClockAtTime(clock || serverClock, new Date(nowMs))?.lat != null,
+    serverClock
+    && sampleClockAtTime(serverClock, new Date(nowMs))?.lat != null,
   );
   const gribStatus = officialGribStatus({
     enabled,
