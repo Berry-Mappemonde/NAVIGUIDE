@@ -5,32 +5,19 @@ import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import NotForNavModal from "./components/NotForNavModal.jsx";
 import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav.js";
-import { useCatamaranMarker } from "./components/CatamaranMarker.jsx";
-import { usePlaneMarker } from "./components/PlaneMarker.jsx";
 import { WindDirectionArrow } from "./components/map/WindDirectionArrow";
 import { getCardinalDirection } from "./utils/getCardinalDirection.js";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
-import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
-import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
-import { useRoutePlayback } from "./hooks/useRoutePlayback.js";
 import { useRouteWindProfile } from "./hooks/useRouteWindProfile.js";
 import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
 import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
-import { useWakeLayer } from "./hooks/useWakeLayer.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
-import { useClimatologyLayer } from "./layers/useClimatologyLayer.js";
-import { useFilmCamera } from "./hooks/useFilmCamera.js";
-import { useAirHopLine } from "./hooks/useAirHopLine.js";
-import { useThrottledValue } from "./hooks/useThrottledValue.js";
-import { useRouteLayer } from "./layers/useRouteLayer.js";
-import { useAltRouteLayer } from "./layers/useAltRouteLayer.js";
-import { useToggleLayers } from "./layers/useToggleLayers.js";
 import { recetteMapView, recetteMonth } from "./utils/recetteQuery.js";
 import {
   flattenRoute,
@@ -42,12 +29,11 @@ import {
   filmLegContext,
   chapterAtNm,
 } from "./engine/routePlayhead.js";
-import { detectAirEpisodes, interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
+import { detectAirEpisodes, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import {
   DEFAULT_START_AT,
   DEFAULT_T0_ISO,
-  buildVoyageClock,
   etaHoursToFilmNm,
   formatCivilDate,
   formatFilmClockLine,
@@ -63,10 +49,7 @@ import {
   sceneMaskKey,
   shouldFocusSimulationJump,
   shouldKeepSceneVisible,
-  shouldPlaceInitialCamera,
-  shouldResnapCamera,
 } from "./utils/sceneGate.js";
-import { useGribCorridorLayer } from "./layers/useGribCorridorLayer.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
@@ -85,12 +68,31 @@ import {
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
-import { flagIconMetrics, flagMarkerHtml, markerWorldLngs, waypointFlagSrcs } from "./utils/waypointFlags.js";
-import L from "leaflet";
+import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
 const PLAN_CACHE_TTL = 24 * 60 * 60 * 1000;
+const NOOP = () => {};
+const EMPTY_MARITIME_LAYERS = Object.freeze({
+  showGrib: false, setShowGrib: NOOP, loadingGrib: false, errorGrib: null,
+  showZee: false, setShowZee: NOOP, loadingZee: false, errorZee: null,
+  showPorts: false, setShowPorts: NOOP, loadingPorts: false, errorPorts: null,
+  showBalisage: false, setShowBalisage: NOOP, loadingBalisage: false, errorBalisage: null,
+  showBiProjects: false, setShowBiProjects: NOOP, loadingBiProjects: false, errorBiProjects: null,
+  showBiMarinas: false, setShowBiMarinas: NOOP, loadingBiMarinas: false, errorBiMarinas: null,
+  showBiCapitaineries: false, setShowBiCapitaineries: NOOP, loadingBiCapitaineries: false, errorBiCapitaineries: null,
+  showBiPoe: false, setShowBiPoe: NOOP, loadingBiPoe: false, errorBiPoe: null,
+  showBiAmp: false, setShowBiAmp: NOOP, loadingBiAmp: false, errorBiAmp: null,
+  showSextant: false, setShowSextant: NOOP, showArgo: false, setShowArgo: NOOP,
+  showOdatis: false, setShowOdatis: NOOP, showEdmed: false, setShowEdmed: NOOP,
+  showCsr: false, setShowCsr: NOOP, loadingScienceCatalog: false, errorScienceCatalog: null,
+  showBathymetry: false, setShowBathymetry: NOOP, loadingBathymetry: false, errorBathymetry: null,
+  showFonds: false, setShowFonds: NOOP, loadingFonds: false, errorFonds: null,
+  showCables: false, setShowCables: NOOP, loadingCables: false, errorCables: null,
+  showClimoWind: false, setShowClimoWind: NOOP, showClimoWave: false, setShowClimoWave: NOOP,
+  showClimoCurrent: false, setShowClimoCurrent: NOOP, showClimoCyclones: false, setShowClimoCyclones: NOOP,
+});
 
 function planCacheKey(lang) { return `naviguide_sim_plan_v1_${lang}`; }
 function getCachedPlan(lang) {
@@ -108,29 +110,24 @@ function setCachedPlan(lang, data) {
   try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data: plan, ts: Date.now() })); } catch { /* quota */ }
 }
 
-function pointToSegmentPx(map, lat, lon, coords) {
-  const p = map.latLngToLayerPoint([lat, lon]);
-  let best = Infinity;
-  for (let i = 0; i < coords.length - 1; i++) {
-    const [lon1, lat1] = coords[i];
-    const [lon2, lat2] = coords[i + 1];
-    const a = map.latLngToLayerPoint([lat1, lon1]);
-    const b = map.latLngToLayerPoint([lat2, lon2]);
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const lenSq = dx * dx + dy * dy;
-    const t = lenSq ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq)) : 0;
-    const dist = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-    if (dist < best) best = dist;
-  }
-  return best;
-}
-
 export default function App() {
   const { lang, t } = useLang();
-  const containerRef = useRef(null);
+  const sceneApiRef = useRef(null);
+  const [sceneApi, setSceneApi] = useState(null);
+  const [playback, setPlayback] = useState({
+    nm: 0,
+    playing: false,
+    profile: "normal",
+    jumpToken: 0,
+    holdingStation: null,
+    holding: false,
+    totalNm: 0,
+    sailTotalNm: 0,
+  });
+  const [maritimeLayerState, setMaritimeLayerState] = useState(null);
+  const maritimeLayers = maritimeLayerState || EMPTY_MARITIME_LAYERS;
+  const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null });
   const [isLightMode, setIsLightMode] = useState(false);
-  const { mapRef, mapReady } = useSimulatorMap(containerRef, isLightMode);
 
   const [segments, setSegments] = useState([]);
   const [points, setPoints] = useState([]);
@@ -202,6 +199,40 @@ export default function App() {
     closeSatellite();
     setLayerPopup(fiche);
   }, [closeSatellite]);
+  const handleSceneReady = useCallback((api) => {
+    sceneApiRef.current = api;
+    setSceneApi(api);
+  }, []);
+  const handleScenePlayback = useCallback((snapshot) => {
+    setPlayback(snapshot);
+  }, []);
+  const handleLayerState = useCallback((layers) => {
+    setMaritimeLayerState(layers);
+  }, []);
+  const handleClimatologyState = useCallback((state) => {
+    setClimoLayer((previous) => (
+      previous.loading === state.loading
+      && previous.error === state.error
+      && previous.counts === state.counts
+        ? previous
+        : state
+    ));
+  }, []);
+  const handleCoordinatesCopied = useCallback((text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setClipboardToast(text);
+      setTimeout(() => setClipboardToast(null), 2000);
+    });
+  }, []);
+  const handleDrawingWaypointClick = useCallback((point, index) => {
+    setPointInfoName(point?.name || "");
+    setPointInfoFlags(point?.flags || []);
+    setSelectedSatellite({
+      lat: point?.lat,
+      lon: point?.lon,
+      drawPointIndex: index,
+    });
+  }, []);
   const [notForNavOk, setNotForNavOk] = useState(() => readNotForNavAccepted());
   const [notForNavOpen, setNotForNavOpen] = useState(false);
   const pendingLayerRef = useRef(null);
@@ -213,9 +244,6 @@ export default function App() {
     },
   });
   gateRef.current.allowed = notForNavOk;
-  const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady, gateRef, {
-    cameraFollowing: cinemaMode && cameraFollow,
-  });
 
   const routeForView = isSuivre ? null : customRoute;
   const routeReady = isRouteReady(segProgress) || (officialFallback && segments.length > 0);
@@ -266,13 +294,6 @@ export default function App() {
   const officialClock = voyage.clock || official.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
-  const playback = useRoutePlayback({
-    flat: flatRoute,
-    marks: escaleMarks,
-    boatKnots,
-    enabled: routeReady,
-    stopAuto: isSimulation && stopAuto,
-  });
   const live = isSuivre ? official.live : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
   const playheadReady = playheadAligned({
@@ -309,10 +330,7 @@ export default function App() {
     clock: officialClock,
   });
 
-  const cast = useMemo(
-    () => interpolateCast(flatRoute, playback.nm, { stops: activeStops }),
-    [flatRoute, playback.nm, activeStops],
-  );
+  const cast = playback.cast;
   const sample = useMemo(() => {
     if (!cast) return interpolateAtNm(flatRoute, playback.nm);
     const actor = cast.vehicle === "side" ? cast.side : cast.main;
@@ -321,7 +339,6 @@ export default function App() {
       lon: actor.lon,
       bearing: actor.bearing,
       nm: cast.sailNm,
-      jump: isAirPhase(cast.phase),
     };
   }, [cast, flatRoute, playback.nm]);
 
@@ -345,17 +362,6 @@ export default function App() {
     if (atlas.revision !== atlasRev) setAtlasRev(atlas.revision);
   }, [atlas.windAt, atlas.revision, atlasRev]);
 
-  const climoLayer = useClimatologyLayer({
-    mapRef,
-    mapReady,
-    showWind: maritimeLayers.showClimoWind,
-    showWave: maritimeLayers.showClimoWave,
-    showCurrent: maritimeLayers.showClimoCurrent,
-    showCyclones: maritimeLayers.showClimoCyclones,
-    month: climoMonth,
-    drawing: drawingMode,
-    t,
-  });
   const climoAnyOn = Boolean(
     maritimeLayers.showClimoWind
     || maritimeLayers.showClimoWave
@@ -380,15 +386,6 @@ export default function App() {
     clockSample,
     clockReady: Boolean(officialClock),
   });
-  useWakeLayer(mapRef, {
-    flat: flatRoute,
-    sailNm: isSuivre && official.live && !previewing
-      ? (official.live.sailNm ?? 0)
-      : (cast?.sailNm ?? 0),
-    enabled: sceneReady && !drawingMode && !customRoute,
-    mapReady,
-  });
-
   const legContext = useMemo(() => {
     if (!cast) return null;
     return filmLegContext({
@@ -478,9 +475,9 @@ export default function App() {
       lang,
     })
     : "";
-  const sidebarPlaybackNm = useThrottledValue(playback.nm, 250);
-  const sidebarHudLeg = useThrottledValue(hudLeg, 250);
-  const sidebarClockSample = useThrottledValue(clockSample, 250);
+  const sidebarPlaybackNm = playback.nm;
+  const sidebarHudLeg = hudLeg;
+  const sidebarClockSample = clockSample;
   const lastEscaleFilmNm = escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm ?? 0;
   const firstEscaleFilmNm = escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm ?? 0;
   const sidebarCanNext = sidebarPlaybackNm < lastEscaleFilmNm - 1;
@@ -510,9 +507,9 @@ export default function App() {
   const goLive = useCallback(() => {
     if (!live) return;
     setUserPreview(false);
-    playback.pause();
-    playback.seek(Number(live.filmNm) || 0, { jump: true });
-  }, [live, playback.pause, playback.seek]);
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(Number(live.filmNm) || 0, { jump: true });
+  }, [live, sceneApi]);
 
   useEffect(() => {
     if (isSuivre) setUserPreview(false);
@@ -527,10 +524,10 @@ export default function App() {
     if (!routeReady || !live || userPreview) return;
     const target = Number(live.filmNm) || 0;
     if (Math.abs(playback.nm - target) > 2) {
-      playback.seek(target, { jump: false });
+      sceneApiRef.current?.playback.seek(target, { jump: false });
     }
     livePrimedRef.current = true;
-  }, [routeReady, isSuivre, live?.filmNm, userPreview, playback.nm, playback.seek]);
+  }, [routeReady, isSuivre, live?.filmNm, userPreview, playback.nm, sceneApi]);
 
   useEffect(() => {
     if (gateReady) setSceneRevealed(true);
@@ -548,10 +545,10 @@ export default function App() {
     if (!routeReady || simPrimedRef.current) return;
     simPrimedRef.current = true;
     voyage.setStartAt("saint-maur");
-    playback.setProfile("normal");
-    playback.pause();
-    playback.seek(0, { jump: true });
-  }, [isSimulation, routeReady, voyage.setStartAt, playback.pause, playback.seek, playback.setProfile]);
+    sceneApiRef.current?.playback.setProfile("normal");
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(0, { jump: true });
+  }, [isSimulation, routeReady, voyage.setStartAt, sceneApi]);
 
   const canRecompute = Boolean(
     isSimulation
@@ -591,10 +588,10 @@ export default function App() {
       isSimulation,
       playing: playback.playing,
     });
-    playback.pause();
-    playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.pause, playback.playing, playback.seek, escaleMarks, isSimulation]);
+  }, [playback.playing, escaleMarks, isSimulation, sceneApi]);
 
   const handleSimPrev = useCallback(() => {
     if (!isSimulation) return;
@@ -602,15 +599,15 @@ export default function App() {
       isSimulation,
       playing: playback.playing,
     });
-    playback.pause();
-    playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.pause, playback.playing, playback.seek, escaleMarks, isSimulation]);
+  }, [playback.playing, escaleMarks, isSimulation, sceneApi]);
 
   const handleCatamaranDrag = useCallback((pos) => {
-    playback.pause();
-    playback.seek(sailNmToFilmNm(flatRoute, nearestNm(flatRoute, pos.lat, pos.lon)));
-  }, [playback.pause, playback.seek, flatRoute]);
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(sailNmToFilmNm(flatRoute, nearestNm(flatRoute, pos.lat, pos.lon)));
+  }, [flatRoute, sceneApi]);
 
   const recaptureBoat = useCallback(() => {
     setCameraFollow(true);
@@ -646,7 +643,7 @@ export default function App() {
     if (next === VIEW_SUIVRE) {
       voyage.setT0(DEFAULT_T0_ISO);
       voyage.setStartAt(DEFAULT_START_AT);
-      playback.pause();
+      sceneApiRef.current?.playback.pause();
       setUserPreview(false);
       if (!cinemaMode) {
         cinemaSavedRef.current = { sidebar: sidebarOpen, tools: toolsOpen };
@@ -657,16 +654,14 @@ export default function App() {
       recaptureBoat();
     } else {
       voyage.setStartAt("saint-maur");
-      playback.setProfile("normal");
-      playback.pause();
-      playback.seek(0, { jump: true });
+      sceneApiRef.current?.playback.setProfile("normal");
+      sceneApiRef.current?.playback.pause();
+      sceneApiRef.current?.playback.seek(0, { jump: true });
     }
   }, [
     cinemaMode,
-    playback.pause,
-    playback.seek,
-    playback.setProfile,
     recaptureBoat,
+    sceneApi,
     sidebarOpen,
     toolsOpen,
     voyage.setT0,
@@ -681,89 +676,14 @@ export default function App() {
   }, [isSuivre, voyage.setT0, voyage.setStartAt]);
 
   useEffect(() => {
-    if (isSuivre) playback.setProfile("real");
-  }, [isSuivre, playback.setProfile]);
-
-  const placedRef = useRef(false);
-  const snapRef = useRef(null);
-  const userNavigatedRef = useRef(false);
-  const ignoreUserNavRef = useRef(false);
-  const ignoreUserNavTimer = useRef(0);
-  const armProgrammaticNav = useCallback(() => {
-    ignoreUserNavRef.current = true;
-    window.clearTimeout(ignoreUserNavTimer.current);
-    ignoreUserNavTimer.current = window.setTimeout(() => {
-      ignoreUserNavRef.current = false;
-    }, 120);
-  }, []);
-  useEffect(() => {
-    placedRef.current = false;
-    snapRef.current = null;
-    userNavigatedRef.current = false;
-  }, [view]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !routeReady || !flatRoute.points?.length) {
-      setCameraPlaced(false);
-      return;
-    }
-    const recette = recetteMapView();
-    if (recette) {
-      armProgrammaticNav();
-      map.setView([recette.lat, recette.lon], recette.z, { animate: false });
-      placedRef.current = true;
-      setCameraPlaced(true);
-      return;
-    }
-    if (isSuivre && (!live || live.lat == null || live.lon == null)) {
-      setCameraPlaced(false);
-      return;
-    }
-    if (!shouldPlaceInitialCamera({ userNavigated: userNavigatedRef.current })) {
-      if (isSuivre) snapRef.current = { lat: live.lat, lon: live.lon };
-      placedRef.current = true;
-      setCameraPlaced(true);
-      return;
-    }
-    if (isSuivre) {
-      if (placedRef.current && !shouldResnapCamera(snapRef.current, live)) {
-        setCameraPlaced(true);
-        return;
-      }
-      armProgrammaticNav();
-      map.setView([live.lat, live.lon], 6.5, { animate: false });
-      snapRef.current = { lat: live.lat, lon: live.lon };
-      placedRef.current = true;
-      setCameraPlaced(true);
-      return;
-    }
-    placedRef.current = true;
-    setCameraPlaced(true);
-  }, [routeReady, isSuivre, live?.lat, live?.lon, mapReady, mapRef, flatRoute.points, view, armProgrammaticNav]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return undefined;
-    const onUserNav = () => {
-      if (ignoreUserNavRef.current) return;
-      userNavigatedRef.current = true;
-      map.stop();
-      setCameraFollow(false);
-    };
-    map.on("zoomstart", onUserNav);
-    map.on("dragstart", onUserNav);
-    return () => {
-      map.off("zoomstart", onUserNav);
-      map.off("dragstart", onUserNav);
-    };
-  }, [mapRef, mapReady]);
+    if (isSuivre) sceneApiRef.current?.playback.setProfile("real");
+  }, [isSuivre, sceneApi]);
 
   useEffect(() => {
     if (!isSimulation) return;
-    playback.pause();
-    playback.seek(0);
-  }, [customRoute]);
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(0);
+  }, [customRoute, isSimulation, sceneApi]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -771,7 +691,7 @@ export default function App() {
       if (e.target?.closest?.("button") && e.code === "Space") return;
       if (isSimulation && e.code === "Space") {
         e.preventDefault();
-        playback.toggle();
+        sceneApiRef.current?.playback.toggle();
       } else if (isSimulation && e.code === "ArrowRight") {
         e.preventDefault();
         handleSimNext();
@@ -788,142 +708,18 @@ export default function App() {
         e.preventDefault();
         leaveCinema();
       } else if (isSimulation && e.code === "Digit1") {
-        playback.setProfile("real");
+        sceneApiRef.current?.playback.setProfile("real");
       } else if (isSimulation && e.code === "Digit2") {
-        playback.setProfile("read");
+        sceneApiRef.current?.playback.setProfile("read");
       } else if (isSimulation && e.code === "Digit3") {
-        playback.setProfile("normal");
+        sceneApiRef.current?.playback.setProfile("normal");
       } else if (isSimulation && e.code === "Digit4") {
-        playback.setProfile("fast");
+        sceneApiRef.current?.playback.setProfile("fast");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cinemaMode, drawingMode, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, playback.setProfile, playback.toggle, toggleCinema]);
-
-  useFilmCamera({
-    mapRef,
-    mapReady,
-    enabled: sceneReady && (
-      (cameraFollow && Boolean(cast?.follow || (isSuivre && live)))
-      || (isSimulation && cameraFocusToken > 0 && Boolean(cast?.follow))
-    ),
-    lat: isSuivre && live && !previewing ? live.lat : cast?.follow?.lat,
-    lon: isSuivre && live && !previewing ? live.lon : cast?.follow?.lon,
-    remainingNm: legContext?.remainingNm ?? playback.sailTotalNm,
-    playing: cameraFollow && (isSuivre && !previewing ? true : playback.playing),
-    jumpToken: isSuivre && !previewing ? 0 : playback.jumpToken,
-    phase: cast?.phase,
-    hopFrom: cast?.hopFrom,
-    hopTo: cast?.hopTo,
-    resetKey: `${view}-${sceneReady ? "ready" : "load"}-${cinemaRecapture}`,
-    follow: cameraFollow,
-    recaptureToken: cinemaRecapture,
-    focusToken: isSimulation ? cameraFocusToken : 0,
-    onProgrammaticMove: armProgrammaticNav,
-  });
-
-  useAirHopLine(mapRef, {
-    mapReady,
-    visible: isAirPhase(cast?.phase),
-    from: cast?.hopFrom,
-    to: cast?.hopTo,
-  });
-
-  useCatamaranMarker(mapRef, {
-    visible: sceneReady && isSimulation && !drawingMode && Boolean(cast?.main),
-    lat: cast?.main?.lat,
-    lon: cast?.main?.lon,
-    bearing: cast?.main?.bearing || 0,
-    onDrag: handleCatamaranDrag,
-    onDragStart: playback.pause,
-    mapReady,
-  });
-
-  useCatamaranMarker(mapRef, {
-    visible: sceneReady && isSuivre && !drawingMode && Boolean(live) && cast?.vehicle !== "plane",
-    lat: live?.lat,
-    lon: live?.lon,
-    bearing: live?.bearing || 0,
-    onDrag: undefined,
-    onDragStart: undefined,
-    mapReady,
-    draggable: false,
-    className: "catamaran-divicon catamaran-divicon--live",
-  });
-
-  useCatamaranMarker(mapRef, {
-    visible: sceneReady && isSuivre && !drawingMode && previewing && Boolean(cast?.main),
-    lat: cast?.main?.lat,
-    lon: cast?.main?.lon,
-    bearing: cast?.main?.bearing || 0,
-    onDrag: undefined,
-    onDragStart: undefined,
-    mapReady,
-    draggable: false,
-    className: "catamaran-divicon catamaran-divicon--ghost",
-  });
-
-  useAltRouteLayer(mapRef, { draft: vessel.draft, mapReady });
-
-  useCatamaranMarker(mapRef, {
-    visible: sceneReady && !drawingMode && Boolean(cast?.side?.visible),
-    lat: cast?.side?.lat,
-    lon: cast?.side?.lon,
-    bearing: cast?.side?.bearing || 0,
-    onDrag: undefined,
-    onDragStart: undefined,
-    mapReady,
-    draggable: false,
-    className: "catamaran-divicon catamaran-divicon--side",
-  });
-
-  usePlaneMarker(mapRef, {
-    visible: sceneReady && !drawingMode && Boolean(cast?.plane?.visible),
-    lat: cast?.plane?.lat,
-    lon: cast?.plane?.lon,
-    bearing: cast?.plane?.bearing || 0,
-    mapReady,
-  });
-
-  const drawBoat = drawnSegments.length >= 1 ? drawnPoints.at(-1) : null;
-  useCatamaranMarker(mapRef, {
-    visible: drawingMode && Boolean(drawBoat),
-    lat: drawBoat?.lat,
-    lon: drawBoat?.lon,
-    bearing: 0,
-    onDrag: undefined,
-    onDragStart: undefined,
-    mapReady,
-    draggable: false,
-    className: "catamaran-divicon catamaran-divicon--draw",
-  });
-
-  const routeCoords = useMemo(
-    () => segments.filter((s) => !s.nonMaritime).flatMap((s) => s.coords || []),
-    [segments],
-  );
-  const markerOffsets = useMarkerOffsets(points, mapRef, routeCoords, { cameraFollowing: cameraFollow });
-  const waypointGroupRef = useRef(null);
-  const waypointMarkersRef = useRef(new Map());
-
-  useRouteLayer(mapRef, {
-    segments: sceneReady ? segments : [],
-    customRoute: sceneReady ? customRoute : null,
-    drawingMode,
-    drawnSegments,
-    mapReady,
-    visible: sceneReady || drawingMode,
-    hideMaritime: sceneReady && !customRoute && !drawingMode,
-  });
-  useGribCorridorLayer(mapRef, {
-    grib: official.grib,
-    mapReady,
-    visible: maritimeLayers.showGrib && isSuivre && official.gribStatus === "ready",
-    whenIso: clockSample?.iso,
-    lat: isSuivre ? live?.lat : null,
-    lon: isSuivre ? live?.lon : null,
-  });
+  }, [cinemaMode, drawingMode, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, sceneApi, toggleCinema]);
 
   const applyBerryBriefing = useCallback(() => {
     setExpeditionPlan(getCachedPlan(lang) || normalizeExpeditionPlan({ executive_briefing: t("berryLocalBriefing") }));
@@ -990,13 +786,13 @@ export default function App() {
   };
 
   const handleDrawStart = () => {
-    const map = mapRef.current;
+    const mapView = sceneApiRef.current?.getView();
     drawRestoreRef.current = {
       view,
-      center: map ? map.getCenter() : null,
-      zoom: map ? map.getZoom() : null,
+      center: mapView?.center || null,
+      zoom: mapView?.zoom ?? null,
     };
-    playback.pause();
+    sceneApiRef.current?.playback.pause();
     if (cinemaMode) {
       setSidebarOpen(cinemaSavedRef.current.sidebar);
       setToolsOpen(cinemaSavedRef.current.tools);
@@ -1017,10 +813,9 @@ export default function App() {
     closeSatellite();
     const prev = drawRestoreRef.current;
     if (prev.view && prev.view !== view) setView(prev.view);
-    const map = mapRef.current;
-    if (map && prev.center) {
-      armProgrammaticNav();
-      map.setView(prev.center, prev.zoom ?? map.getZoom(), { animate: false });
+    const mapView = sceneApiRef.current?.getView();
+    if (mapView && prev.center) {
+      sceneApiRef.current?.setView(prev.center, prev.zoom ?? mapView.zoom, { animate: false });
     }
   };
 
@@ -1038,13 +833,13 @@ export default function App() {
   };
 
   const handleDrawContinue = () => {
-    const map = mapRef.current;
+    const mapView = sceneApiRef.current?.getView();
     drawRestoreRef.current = {
       view,
-      center: map ? map.getCenter() : null,
-      zoom: map ? map.getZoom() : null,
+      center: mapView?.center || null,
+      zoom: mapView?.zoom ?? null,
     };
-    playback.pause();
+    sceneApiRef.current?.playback.pause();
     setCinemaMode(false);
     setCameraFollow(false);
     setDrawingMode(true);
@@ -1262,103 +1057,9 @@ export default function App() {
 
   useEffect(() => cancelSatelliteRequest, [cancelSatelliteRequest]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return undefined;
-    const onClick = (e) => {
-      const { lat, lng: lon } = e.latlng;
-      if (drawingMode) { handleDrawingClick(lat, lon); return; }
-      const active = customRoute ? featuresToSegments(customRoute) : segments;
-      const near = active.some((s) => s.coords?.length > 1 && pointToSegmentPx(map, lat, lon, s.coords) < 16);
-      if (near) fetchSatellite(lat, lon);
-    };
-    const onCtx = (e) => {
-      L.DomEvent.preventDefault(e);
-      const text = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-      navigator.clipboard.writeText(text).then(() => {
-        setClipboardToast(text);
-        setTimeout(() => setClipboardToast(null), 2000);
-      });
-    };
-    map.on("click", onClick);
-    map.on("contextmenu", onCtx);
-    map.getContainer().style.cursor = drawingMode ? "crosshair" : "";
-    return () => {
-      map.off("click", onClick);
-      map.off("contextmenu", onCtx);
-    };
-  }, [mapRef, mapReady, drawingMode, segments, customRoute]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return undefined;
-    if (!waypointGroupRef.current) waypointGroupRef.current = L.layerGroup().addTo(map);
-    const group = waypointGroupRef.current;
-    const src = drawingMode
-      ? drawnPoints.map((p, i) => ({ ...p, name: p.name || `${i + 1}`, flag: "", flags: [] }))
-      : (customRoute ? [] : points);
-    const expected = new Set();
-    src.forEach((p, i) => {
-      const srcs = waypointFlagSrcs(p);
-      if (!srcs.length && !drawingMode) return;
-      const off = markerOffsets[i] || [0, 0];
-      const html = srcs.length
-        ? flagMarkerHtml(srcs, off)
-        : `<div style="width:10px;height:10px;border-radius:50%;background:${i === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
-      const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
-      for (const [copyIndex, lng] of markerWorldLngs(p.lon, map.getCenter()?.lng).entries()) {
-        const key = `${drawingMode ? "draw" : "route"}:${i}:${copyIndex}`;
-        expected.add(key);
-        const iconKey = `${html}|${metrics.iconSize.join(",")}|${metrics.iconAnchor.join(",")}`;
-        let marker = waypointMarkersRef.current.get(key);
-        if (!marker) {
-          marker = L.marker([p.lat, lng], {
-            icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
-            interactive: true,
-          }).addTo(group);
-          marker._naviguideIconKey = iconKey;
-          marker.on("mouseover", () => setHoveredPoint(marker._naviguideWaypoint));
-          marker.on("mouseout", () => setHoveredPoint(null));
-          marker.on("click", (ev) => {
-            if (!marker._naviguideDrawing) return;
-            L.DomEvent.stopPropagation(ev);
-            const point = marker._naviguideWaypoint;
-            setPointInfoName(point?.name || "");
-            setSelectedSatellite({
-              lat: point?.lat,
-              lon: point?.lon,
-              drawPointIndex: marker._naviguideIndex,
-            });
-          });
-          waypointMarkersRef.current.set(key, marker);
-        }
-        marker._naviguideWaypoint = p;
-        marker._naviguideDrawing = drawingMode;
-        marker._naviguideIndex = i;
-        marker.setLatLng([p.lat, lng]);
-        if (marker._naviguideIconKey !== iconKey) {
-          marker.setIcon(L.divIcon({
-            className: "flag-divicon",
-            html,
-            iconSize: metrics.iconSize,
-            iconAnchor: metrics.iconAnchor,
-          }));
-          marker._naviguideIconKey = iconKey;
-        }
-      }
-    });
-    waypointMarkersRef.current.forEach((marker, key) => {
-      if (expected.has(key)) return;
-      group.removeLayer(marker);
-      waypointMarkersRef.current.delete(key);
-    });
-  }, [mapRef, mapReady, points, markerOffsets, drawingMode, drawnPoints, customRoute]);
-
-  useEffect(() => () => {
-    waypointGroupRef.current?.remove();
-    waypointGroupRef.current = null;
-    waypointMarkersRef.current.clear();
-  }, []);
+  const handleMapRouteClick = useCallback((position) => {
+    fetchSatellite(position.lat, position.lon);
+  }, [fetchSatellite]);
 
   const handleSaveDrawPointMeta = () => {
     if (selectedSatellite?.drawPointIndex != null) {
@@ -1388,13 +1089,76 @@ export default function App() {
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
   const handleSidebarSeek = useCallback((nm) => {
-    playback.pause();
-    playback.seek(nm, { jump: true });
-  }, [playback.pause, playback.seek]);
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(nm, { jump: true });
+  }, [sceneApi]);
   const handleRecompute = useCallback(
     () => vessel.recompute(clockSample?.iso),
     [vessel.recompute, clockSample?.iso],
   );
+  const mapScene = useMemo(() => ({
+    isLightMode,
+    view,
+    isSimulation,
+    isSuivre,
+    routeReady,
+    sceneReady,
+    segments,
+    points,
+    customRoute,
+    drawingMode,
+    drawnPoints,
+    drawnSegments,
+    flat: flatRoute,
+    marks: escaleMarks,
+    stops: activeStops,
+    boatKnots,
+    stopAuto: isSimulation && stopAuto,
+    live,
+    previewing,
+    draft: vessel.draft,
+    grib: official.grib,
+    gribStatus: official.gribStatus,
+    clockSample,
+    climoMonth,
+    t,
+    cameraFollow,
+    cinemaRecapture,
+    cameraFocusToken: isSimulation ? cameraFocusToken : 0,
+    remainingNm: hudLeg?.remainingNm ?? playback.sailTotalNm,
+    recetteMap: recetteMapView(),
+  }), [
+    isLightMode,
+    view,
+    isSimulation,
+    isSuivre,
+    routeReady,
+    sceneReady,
+    segments,
+    points,
+    customRoute,
+    drawingMode,
+    drawnPoints,
+    drawnSegments,
+    flatRoute,
+    escaleMarks,
+    activeStops,
+    boatKnots,
+    stopAuto,
+    live,
+    previewing,
+    vessel.draft,
+    official.grib,
+    official.gribStatus,
+    clockSample,
+    climoMonth,
+    t,
+    cameraFollow,
+    cinemaRecapture,
+    cameraFocusToken,
+    hudLeg?.remainingNm,
+    playback.sailTotalNm,
+  ]);
 
   const enablePendingRestricted = (kind) => {
     if (kind === "balisage") maritimeLayers.setShowBalisage(true);
@@ -1405,7 +1169,23 @@ export default function App() {
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }} className={isLightMode ? "light-mode" : ""}>
-      <div ref={containerRef} id="simulator-map" style={{ height: "100%", width: "100%" }} />
+      <MapScene
+        scene={mapScene}
+        gateRef={gateRef}
+        onReady={handleSceneReady}
+        onPlayback={handleScenePlayback}
+        onLayerState={handleLayerState}
+        onClimatologyState={handleClimatologyState}
+        onFeature={onFeature}
+        onCameraPlaced={setCameraPlaced}
+        onManualNavigation={() => setCameraFollow(false)}
+        onDrawingClick={handleDrawingClick}
+        onRouteClick={handleMapRouteClick}
+        onBoatDrag={handleCatamaranDrag}
+        onCoordinatesCopied={handleCoordinatesCopied}
+        onWaypointHover={setHoveredPoint}
+        onDrawingWaypointClick={handleDrawingWaypointClick}
+      />
 
       <NotForNavModal
         open={notForNavOpen}
@@ -1570,17 +1350,17 @@ export default function App() {
         phase={cast?.phase}
         vehicle={cast?.vehicle}
         profile={playback.profile}
-        onProfile={playback.setProfile}
+        onProfile={(profile) => sceneApiRef.current?.playback.setProfile(profile)}
         playing={playback.playing}
         onTogglePlay={() => {
           if (!isSimulation) return;
-          playback.toggle();
+          sceneApiRef.current?.playback.toggle();
         }}
         marks={escaleMarks}
         onSeekNm={(nm) => {
           if (!isSimulation) return;
-          playback.pause();
-          playback.seek(nm, { jump: true });
+          sceneApiRef.current?.playback.pause();
+          sceneApiRef.current?.playback.seek(nm, { jump: true });
         }}
         onNext={handleSimNext}
         canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
