@@ -166,11 +166,11 @@ export const Sidebar = memo(function Sidebar({
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw,
   isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
-  legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
+  legContext, briefingLoading, officialFallback,
   iciBriefing = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, onDepartureT0,
-  clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
+  clockSample = null, kindLabel = "", atQuay = false, quayDays = 0,
   previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
 }) {
@@ -187,11 +187,11 @@ export const Sidebar = memo(function Sidebar({
     <>
       <button
         onClick={onToggle}
-        className={`naviguide-sidebar-toggle absolute top-4 z-30 bg-slate-900/95 text-white
+        className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
           w-9 h-9 border border-slate-700
-          ${open ? "left-[322px]" : "left-4"}`}
+          ${open ? "left-[322px] top-4" : "left-4 top-[92px]"}`}
         title={open ? t("hideSidebar") : t("showExpeditionPanel")}
       >
         {open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
@@ -300,13 +300,7 @@ export const Sidebar = memo(function Sidebar({
           )}
           <SimulationPanel
             legContext={legContext}
-            onPrev={onPrev}
-            canPrev={canPrev}
-            onNext={onNext}
-            canNext={canNext}
-            showNavigation={isSimulation}
             clockSample={clockSample}
-            civilDate={civilDate}
             kindLabel={kindLabel}
             atQuay={atQuay}
             quayDays={quayDays}

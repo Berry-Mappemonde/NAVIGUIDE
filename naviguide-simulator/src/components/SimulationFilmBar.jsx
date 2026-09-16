@@ -46,7 +46,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   atQuay = false,
   quayDays = 0,
   twa = null,
-  liveBadge = null,
+  liveStatus = null,
   weatherLine = "",
   showSpeeds = false,
   showWindProfile = false,
@@ -102,7 +102,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={{ left: insets.left, right: insets.right }}
     >
-      <div className="rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1.5 pb-1.5 text-white backdrop-blur-sm">
+      <div className="naviguide-film-bar rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1.5 pb-1.5 text-white backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
             {finished
@@ -154,14 +154,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           {vehicle === "plane" ? ` · ${t("filmAirVehicle")}` : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
           {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
           {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
-          {liveBadge ? ` · ${liveBadge}` : ""}
+          {liveStatus ? ` · ${liveStatus}` : ""}
           {atQuay && quayDays > 0 ? ` · ${t("voyageAtQuay", { days: quayDays })}` : (holding ? ` · ${t("filmArrivalHold")}` : "")}
+          {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"> · {weatherLine}</span> : null}
         </div>
-        {weatherLine ? (
-          <div data-testid="weather-line" className="text-[10px] text-cyan-200/85 leading-tight truncate">
-            {weatherLine}
-          </div>
-        ) : null}
         {gribLine ? (
           <div data-testid="grib-warning" className="text-[10px] text-amber-200/90 leading-tight">
             {gribLine}

@@ -23,6 +23,30 @@ export function unwrapLon(prevLon, lon) {
   return x;
 }
 
+function isLonLat(coordinate) {
+  return Array.isArray(coordinate)
+    && coordinate.length >= 2
+    && Number.isFinite(Number(coordinate[0]))
+    && Number.isFinite(Number(coordinate[1]));
+}
+
+/**
+ * Déplie une ligne GeoJSON pour que 179° → −179° reste un petit trait Pacifique.
+ * La géométrie résultante peut dépasser ±180° : Leaflet peut alors la peindre
+ * sans traverser le globe.
+ */
+export function unwrapLineCoords(coords, firstLon = null) {
+  const out = [];
+  for (const coordinate of coords || []) {
+    if (!isLonLat(coordinate)) continue;
+    const lon = Number(coordinate[0]);
+    const lat = Number(coordinate[1]);
+    const previousLon = out.at(-1)?.[0] ?? firstLon;
+    out.push([unwrapLon(previousLon, lon), lat]);
+  }
+  return out;
+}
+
 export function haversineNm(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1);
   let dLonDeg = lon2 - lon1;
@@ -61,6 +85,34 @@ export function worldCopyCoords(coords) {
     coords.map(([lon, lat]) => [lon + 360, lat]),
     coords.map(([lon, lat]) => [lon - 360, lat]),
   ];
+}
+
+/** Trois copies monde d'une ligne continue, y compris au franchissement de 180°. */
+export function worldCopyLineCoords(coords) {
+  return worldCopyCoords(unwrapLineCoords(coords));
+}
+
+/**
+ * Trois copies d'un polygone GeoJSON. Chaque anneau est aligné sur l’anneau
+ * extérieur avant décalage, afin de préserver trous et surfaces au Pacifique.
+ */
+export function worldCopyPolygonCoords(rings) {
+  const outer = unwrapLineCoords(rings?.[0]);
+  if (outer.length < 3) return [];
+  const referenceLon = outer[0][0];
+  const unwrappedRings = [
+    outer,
+    ...(rings || []).slice(1).map((ring) => unwrapLineCoords(ring, referenceLon)),
+  ].filter((ring) => ring.length >= 3);
+  return [0, 360, -360].map((offset) => (
+    unwrappedRings.map((ring) => ring.map(([lon, lat]) => [lon + offset, lat]))
+  ));
+}
+
+export function worldCopyLngs(lon) {
+  const value = Number(lon);
+  if (!Number.isFinite(value)) return [];
+  return [value, value + 360, value - 360];
 }
 
 /** Triple chaque polyligne (monde 0 / +360 / −360). */

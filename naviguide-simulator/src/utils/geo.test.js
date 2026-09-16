@@ -1,6 +1,18 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { haversineNm, summarizeRoute, featuresToSegments, splitAntimeridianCoords, unwrapLon, worldCopyCoords, worldCopyParts } from "./geo.js";
+import {
+  haversineNm,
+  summarizeRoute,
+  featuresToSegments,
+  splitAntimeridianCoords,
+  unwrapLon,
+  unwrapLineCoords,
+  worldCopyCoords,
+  worldCopyLineCoords,
+  worldCopyLngs,
+  worldCopyParts,
+  worldCopyPolygonCoords,
+} from "./geo.js";
 
 describe("summarizeRoute", () => {
   it("counts segments and a distance > 0", () => {
@@ -36,6 +48,29 @@ describe("antimeridian geo", () => {
     assert.equal(copies[1][0][0], 526);
     assert.equal(copies[2][0][0], -194);
     assert.equal(worldCopyParts(copies.slice(0, 1)).length, 3);
+  });
+
+  it("déplie et triple les lignes, y compris 179° → −179°", () => {
+    const unwrapped = unwrapLineCoords([[170, -15], [179, -16], [-179, -17], [-170, -18]]);
+    assert.deepEqual(unwrapped.map(([lon]) => lon), [170, 179, 181, 190]);
+    const copies = worldCopyLineCoords(unwrapped);
+    assert.equal(copies.length, 3);
+    assert.deepEqual(copies[2].map(([lon]) => lon), [-190, -181, -179, -170]);
+    copies.forEach((line) => {
+      line.slice(1).forEach(([lon], index) => {
+        assert.ok(Math.abs(lon - line[index][0]) <= 180);
+      });
+    });
+  });
+
+  it("triple les points et conserve les anneaux d’un polygone Pacifique", () => {
+    assert.deepEqual(worldCopyLngs(179), [179, 539, -181]);
+    const copies = worldCopyPolygonCoords([[
+      [170, -10], [-170, -10], [-170, 10], [170, 10], [170, -10],
+    ]]);
+    assert.equal(copies.length, 3);
+    assert.deepEqual(copies[0][0].map(([lon]) => lon), [170, 190, 190, 170, 170]);
+    assert.deepEqual(copies[1][0].map(([lon]) => lon), [530, 550, 550, 530, 530]);
   });
 });
 
