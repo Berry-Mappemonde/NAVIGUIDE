@@ -618,6 +618,7 @@ async def fill_dossier(
     month: int | None = None,
     dest_lat: float | None = None,
     dest_lon: float | None = None,
+    thin: bool = False,
 ) -> dict:
     d = empty_dossier(lat, lon, radius_nm)
     bi = bi_base()
@@ -629,10 +630,13 @@ async def fill_dossier(
         data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)
         return _poe_from_fc(data, lat, lon)
 
+    amp_radius = 15.0 if thin else radius_nm
+    marina_radius = 25.0 if thin else radius_nm
+
     async def amp_task() -> list[dict]:
         # Mongo cache (centroids). A small GET /amp?bbox= triggers ProtectedSeas.
         feats = await _cached_fc(http, f"{bi}/export/amp.geojson")
-        return nearest_places(feats, lat, lon, radius_nm, MAX_AMP, slim=slim_amp)
+        return nearest_places(feats, lat, lon, amp_radius, MAX_AMP, slim=slim_amp)
 
     async def projects_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/geojson")
@@ -643,11 +647,11 @@ async def fill_dossier(
     async def marinas_task() -> list[dict]:
         # /marinas = BI memory cache; the export rebuilds all of Mongo.
         feats = await _cached_fc(http, f"{bi}/marinas")
-        return nearest_places(feats, lat, lon, radius_nm, MAX_NEARBY)
+        return nearest_places(feats, lat, lon, marina_radius, MAX_NEARBY)
 
     async def capit_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/capitaineries")
-        return nearest_places(feats, lat, lon, radius_nm, MAX_NEARBY)
+        return nearest_places(feats, lat, lon, marina_radius, MAX_NEARBY)
 
     async def science_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/science.geojson")
@@ -655,7 +659,7 @@ async def fill_dossier(
 
     async def wpi_task() -> list[dict]:
         feats = await fetch_wpi_features(http)
-        return nearest_places(feats, lat, lon, radius_nm, MAX_NEARBY)
+        return nearest_places(feats, lat, lon, marina_radius, MAX_NEARBY)
 
     async def anchorages_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/anchorages")
@@ -663,16 +667,16 @@ async def fill_dossier(
 
     try:
         amp_t = asyncio.create_task(amp_task())
-        proj_t = asyncio.create_task(projects_task())
         mar_t = asyncio.create_task(marinas_task())
         cap_t = asyncio.create_task(capit_task())
-        sci_t = asyncio.create_task(science_task())
         wpi_t = asyncio.create_task(wpi_task())
-        anc_t = asyncio.create_task(anchorages_task())
-        sat_t = asyncio.create_task(fetch_satellite_scene(http, lat, lon))
-        wx_t = asyncio.create_task(fetch_weather_forecast(http, lat, lon))
-        emo_t = asyncio.create_task(fetch_emodnet_point(http, bi, lat, lon))
-        aton_t = asyncio.create_task(
+        proj_t = None if thin else asyncio.create_task(projects_task())
+        sci_t = None if thin else asyncio.create_task(science_task())
+        anc_t = None if thin else asyncio.create_task(anchorages_task())
+        sat_t = None if thin else asyncio.create_task(fetch_satellite_scene(http, lat, lon))
+        wx_t = None if thin else asyncio.create_task(fetch_weather_forecast(http, lat, lon))
+        emo_t = None if thin else asyncio.create_task(fetch_emodnet_point(http, bi, lat, lon))
+        aton_t = None if thin else asyncio.create_task(
             fetch_aton(http, bi, lat, lon, radius_nm, haversine_nm, radius_bbox)
         )
 
@@ -683,10 +687,16 @@ async def fill_dossier(
         mrgid = zee.get("mrgid") if zee else None
         poe_t = asyncio.create_task(poe_task(mrgid)) if mrgid else None
 
-        nearby = await asyncio.gather(
-            amp_t, proj_t, mar_t, cap_t, sci_t, wpi_t, anc_t, return_exceptions=True,
-        )
-        keys = ("amp", "projects", "marinas", "capitaineries", "science", "wpi", "anchorages")
+        if thin:
+            nearby = await asyncio.gather(
+                amp_t, mar_t, cap_t, wpi_t, return_exceptions=True,
+            )
+            keys = ("amp", "marinas", "capitaineries", "wpi")
+        else:
+            nearby = await asyncio.gather(
+                amp_t, proj_t, mar_t, cap_t, sci_t, wpi_t, anc_t, return_exceptions=True,
+            )
+            keys = ("amp", "projects", "marinas", "capitaineries", "science", "wpi", "anchorages")
         bi_ok = 0
         bi_fail = 0
         for key, value in zip(keys, nearby):
@@ -723,56 +733,75 @@ async def fill_dossier(
         else:
             d["sources"]["bi"] = "unavailable"
 
-        extras = await asyncio.gather(
-            sat_t, wx_t, emo_t, aton_t,
-            fetch_review(http, bi, d.get("zee"), (d.get("amp") or [None])[0]),
-            _climatology_bag(http, bi, lat, lon, month, dest_lat, dest_lon),
-            return_exceptions=True,
-        )
-        sat, wx, emo, aton, review, climo = extras
-        science_near = (d.get("science") or {}).get("nearby") if isinstance(d.get("science"), dict) else None
-        if isinstance(sat, Exception):
-            d["satellites"] = empty_satellites()
-            d["satellites"]["reason"] = f"cdse_stac_unavailable:{type(sat).__name__}"
-            d["sources"]["satellites"] = None
-        else:
-            d["satellites"] = attach_derived_from_science(sat, science_near)
-            d["sources"]["satellites"] = d["satellites"].get("source")
-        if isinstance(wx, Exception):
+        if thin:
             d["weather"] = empty_weather()
-            d["weather"]["reason"] = f"openmeteo_unavailable:{type(wx).__name__}"
-            d["sources"]["weather"] = None
-        else:
-            d["weather"] = wx
-            d["sources"]["weather"] = wx.get("source")
-        if isinstance(emo, Exception):
+            d["weather"]["reason"] = "not_in_along_pearl"
+            d["satellites"] = empty_satellites()
+            d["satellites"]["reason"] = "not_in_along_pearl"
             d["emodnet"] = empty_emodnet()
-            d["emodnet"]["reason"] = f"emodnet_unavailable:{type(emo).__name__}"
-            d["sources"]["emodnet"] = None
-        else:
-            d["emodnet"] = emo
-            d["sources"]["emodnet"] = "emodnet"
-        if isinstance(aton, Exception):
+            d["emodnet"]["reason"] = "not_in_along_pearl"
             d["aton"] = empty_aton()
-            d["aton"]["reason"] = f"aton_unavailable:{type(aton).__name__}"
-            d["sources"]["aton"] = None
-        else:
-            d["aton"] = aton
-            d["sources"]["aton"] = aton.get("source")
-        if isinstance(review, Exception):
+            d["aton"]["reason"] = "not_in_along_pearl"
             d["review"] = empty_review()
-            d["review"]["reason"] = f"review_unavailable:{type(review).__name__}"
+            d["review"]["reason"] = "not_in_along_pearl"
+            d["climatology"] = None
+            d["sources"]["weather"] = None
+            d["sources"]["satellites"] = None
+            d["sources"]["emodnet"] = None
+            d["sources"]["aton"] = None
             d["sources"]["review"] = None
+            d["sources"]["climatology"] = None
+            d["sources"]["gebco"] = "not_in_along_pearl"
         else:
-            d["review"] = review
-            d["sources"]["review"] = review.get("source")
-        if isinstance(climo, Exception):
-            d["climatology"] = _zone_climo(lat, lon, int(month or 1), source="zone_fallback")
-        else:
-            d["climatology"] = climo
-        d["sources"]["climatology"] = (d["climatology"] or {}).get("source")
-
-        await attach_depth_offshore(d, http)
+            extras = await asyncio.gather(
+                sat_t, wx_t, emo_t, aton_t,
+                fetch_review(http, bi, d.get("zee"), (d.get("amp") or [None])[0]),
+                _climatology_bag(http, bi, lat, lon, month, dest_lat, dest_lon),
+                return_exceptions=True,
+            )
+            sat, wx, emo, aton, review, climo = extras
+            science_near = (d.get("science") or {}).get("nearby") if isinstance(d.get("science"), dict) else None
+            if isinstance(sat, Exception):
+                d["satellites"] = empty_satellites()
+                d["satellites"]["reason"] = f"cdse_stac_unavailable:{type(sat).__name__}"
+                d["sources"]["satellites"] = None
+            else:
+                d["satellites"] = attach_derived_from_science(sat, science_near)
+                d["sources"]["satellites"] = d["satellites"].get("source")
+            if isinstance(wx, Exception):
+                d["weather"] = empty_weather()
+                d["weather"]["reason"] = f"openmeteo_unavailable:{type(wx).__name__}"
+                d["sources"]["weather"] = None
+            else:
+                d["weather"] = wx
+                d["sources"]["weather"] = wx.get("source")
+            if isinstance(emo, Exception):
+                d["emodnet"] = empty_emodnet()
+                d["emodnet"]["reason"] = f"emodnet_unavailable:{type(emo).__name__}"
+                d["sources"]["emodnet"] = None
+            else:
+                d["emodnet"] = emo
+                d["sources"]["emodnet"] = "emodnet"
+            if isinstance(aton, Exception):
+                d["aton"] = empty_aton()
+                d["aton"]["reason"] = f"aton_unavailable:{type(aton).__name__}"
+                d["sources"]["aton"] = None
+            else:
+                d["aton"] = aton
+                d["sources"]["aton"] = aton.get("source")
+            if isinstance(review, Exception):
+                d["review"] = empty_review()
+                d["review"]["reason"] = f"review_unavailable:{type(review).__name__}"
+                d["sources"]["review"] = None
+            else:
+                d["review"] = review
+                d["sources"]["review"] = review.get("source")
+            if isinstance(climo, Exception):
+                d["climatology"] = _zone_climo(lat, lon, int(month or 1), source="zone_fallback")
+            else:
+                d["climatology"] = climo
+            d["sources"]["climatology"] = (d["climatology"] or {}).get("source")
+            await attach_depth_offshore(d, http)
     finally:
         if own:
             await http.aclose()

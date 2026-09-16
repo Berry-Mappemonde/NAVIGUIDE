@@ -204,7 +204,7 @@ export function judgeEvents(events, ctx = {}) {
   const locked = [];
   const candidates = [];
   for (const ev of visible) {
-    if (ctx.skipperClickId && ctx.skipperClickId === ev.id) {
+    if (ctx.skipperClickId && (ctx.skipperClickId === ev.id || ctx.skipperClickId === ev.stableKey)) {
       locked.push({ ...ev, judge: JUDGE_NOW, judgeReason: "skipper-click" });
       continue;
     }

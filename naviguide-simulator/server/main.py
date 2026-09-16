@@ -32,6 +32,7 @@ from mem_limits import (
     too_large,
 )
 from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
+from story_cascade import write_story
 from polar_api import router as polar_router
 from route_engine import searoute_with_exact_end
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
@@ -121,6 +122,7 @@ async def get_ici(
     month: int | None = Query(None, ge=1, le=12),
     dest_lat: float | None = Query(None),
     dest_lon: float | None = Query(None),
+    thin: bool = Query(False),
 ):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(400, "lat/lon hors limites")
@@ -128,7 +130,17 @@ async def get_ici(
         raise HTTPException(400, "dest_lat hors limites")
     if dest_lon is not None and not (-180 <= dest_lon <= 180):
         raise HTTPException(400, "dest_lon hors limites")
-    return await fill_dossier(lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon)
+    return await fill_dossier(
+        lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
+    )
+
+
+@app.post("/ici/story")
+async def post_ici_story(body: dict):
+    """Background story. NIM → OR ± :online → Claude. Play does not await this."""
+    if not isinstance(body, dict) or not (body.get("event") or body.get("eventId")):
+        raise HTTPException(400, "événement manquant")
+    return await write_story(body)
 
 
 @app.get("/route")

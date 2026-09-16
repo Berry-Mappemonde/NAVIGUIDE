@@ -17,7 +17,9 @@ import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
+import { useIciAlong } from "./hooks/useIciAlong.js";
 import { sumRainHours } from "./engine/eventRules.js";
+import { filmEventMarks } from "./engine/iciAlong.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
 import { recetteMapView, recetteMonth } from "./utils/recetteQuery.js";
 import {
@@ -149,6 +151,7 @@ export default function App() {
   const [cinemaRecapture, setCinemaRecapture] = useState(0);
   const [cameraFocusToken, setCameraFocusToken] = useState(0);
   const [userPreview, setUserPreview] = useState(false);
+  const [skipperClickId, setSkipperClickId] = useState(null);
   const isSuivre = view === VIEW_SUIVRE;
   const isSimulation = view === VIEW_SIMULATION;
   const [voyageFlat, setVoyageFlat] = useState(null);
@@ -551,6 +554,17 @@ export default function App() {
     && vessel.voyage?.voyageId,
   );
 
+  const alongPack = useIciAlong({
+    enabled: Boolean(cast && routeReady),
+    flat: flatRoute,
+    fromNm: chapterAtNm(escaleMarks, cast?.sailNm ?? playback.nm)?.from?.nm,
+    toNm: destMark?.nm,
+    boatNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
+    mode: isSuivre ? "suivre" : "simulation",
+    month: climoMonth,
+    knots: expeditionSpeed.knots,
+  });
+
   const iciPack = useIciDossier({
     enabled: Boolean(cast),
     cast,
@@ -585,6 +599,8 @@ export default function App() {
     gribHs: isSuivre ? official.live?.hs ?? null : null,
     gribModel: isSuivre ? official.live?.model ?? official.gribModel ?? null : null,
     gribStatus: isSuivre ? official.gribStatus : null,
+    along: alongPack.index,
+    skipperClickId,
   });
 
   const playheadNmRef = useRef(0);
@@ -1391,6 +1407,14 @@ export default function App() {
         showStopAuto={isSimulation}
         sidebarOpen={sidebarOpen}
         toolsOpen={toolsOpen}
+        eventMarks={filmEventMarks(iciPack.events, { mode: isSuivre ? "suivre" : "simulation" })}
+        onEventClick={(ev) => {
+          setSkipperClickId(ev.id || ev.stableKey);
+          if (!isSimulation || !Number.isFinite(ev.filmCum)) return;
+          sceneApiRef.current?.playback.pause();
+          sceneApiRef.current?.playback.seek(ev.filmCum, { jump: true });
+        }}
+        storiesPending={(iciPack.events || []).filter((e) => e.story?.status === "pending").length}
         gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
         clock={officialClock}
         clockCurrent={clockSample ? {

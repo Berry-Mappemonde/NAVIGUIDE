@@ -341,6 +341,7 @@ function signedDelta(n, unit) {
 
 export function phraseForEvent(ev, lang = "fr") {
   if (!ev) return "";
+  if (ev.story?.status === "ready" && ev.story.text) return ev.story.text;
   if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
   const en = isEn(lang);
   const p = ev.payload || {};
@@ -354,6 +355,23 @@ export function phraseForEvent(ev, lang = "fr") {
       return en
         ? "The boat is back on the high seas — no EEZ to clear."
         : "Retour en haute mer — plus de ZEE à déclarer.";
+    case "zee-ahead": {
+      const when = p.whenNm ?? ev.whenNm;
+      return en
+        ? `Ahead${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${name || "another EEZ"}.`
+        : `Devant${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${name || "une autre ZEE"}.`;
+    }
+    case "amp-ahead": {
+      const when = p.whenNm ?? ev.whenNm;
+      const visit = p.amp?.visitable || p.visitable;
+      return en
+        ? `MPA on the track${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${name || "MPA"}${visit ? " (visit page in the pack)" : ""}.`
+        : `AMP sur le trait${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${name || "AMP"}${visit ? " (page visite dans le sac)" : ""}.`;
+    }
+    case "poe-ahead":
+      return en
+        ? `Official port of entry ahead: ${p.poe?.name || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`
+        : `Port d’entrée officiel devant : ${p.poe?.name || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`;
     case "amp-enter": {
       const visit = p.amp?.visitable || p.visitable;
       return en
