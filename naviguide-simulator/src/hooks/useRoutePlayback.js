@@ -4,6 +4,8 @@ import { airHopSeconds, nmPerSecond } from "../engine/playSpeeds.js";
 import { edgeAtFilmNm, filmLength } from "../engine/filmCast.js";
 import { dwellMsForProfile, shouldPauseAtStop, stepPlayback } from "../engine/stationDwell.js";
 
+const DISPLAY_FPS = 8;
+
 function playheadLength(flat) {
   return filmLength(flat) || flat?.totalNm || 0;
 }
@@ -151,7 +153,7 @@ export function useRoutePlayback({ flat, marks, boatKnots, enabled, stopAuto = f
       if (stepped.arrived) setHoldingStation(stepped.arrived);
       else if (!stepped.holding) setHoldingStation(null);
       emitAcc.current += dt;
-      if (emitAcc.current >= 1 / 12 || stepped.filmNm >= total || stepped.arrived) {
+      if (emitAcc.current >= 1 / DISPLAY_FPS || stepped.filmNm >= total || stepped.arrived) {
         emitAcc.current = 0;
         setNm(stepped.filmNm);
       }

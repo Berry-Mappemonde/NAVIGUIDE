@@ -137,6 +137,24 @@ def get_polar_summary(expedition_id: str):
     }
 
 
+@router.get("/api/v1/polar/{expedition_id}/client")
+def get_polar_client(expedition_id: str):
+    """Données déjà calculées nécessaires au navigateur, sans la grille 181×61."""
+    dest = _polar_path(expedition_id)
+    if not dest.exists():
+        raise HTTPException(status_code=404, detail=f"No polar data found for expedition '{expedition_id}'.")
+    with open(dest, encoding="utf-8") as fh:
+        data = json.load(fh)
+    return {
+        "expedition_id": data["expedition_id"],
+        "boat_name": data["boat_name"],
+        "created_at": data["created_at"],
+        "grid_shape": data["grid_shape"],
+        "vmg_summary": data["vmg_summary"],
+        "raw": data["raw"],
+    }
+
+
 @router.get("/api/v1/polar/{expedition_id}/speed")
 def get_polar_speed(expedition_id: str, twa: float, tws: float):
     polar = _load_polar_data(expedition_id)

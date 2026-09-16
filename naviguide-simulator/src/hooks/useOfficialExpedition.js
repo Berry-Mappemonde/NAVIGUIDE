@@ -117,7 +117,7 @@ export function useOfficialExpedition({
     }
     let cancelled = false;
     setGribPending(true);
-    refreshGrib({ force: true }).catch(() => {}).finally(() => {
+    refreshGrib().catch(() => {}).finally(() => {
       if (!cancelled) setGribPending(false);
     });
     const id = setInterval(() => {

@@ -27,6 +27,7 @@ import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
 import { useClimatologyLayer } from "./layers/useClimatologyLayer.js";
 import { useFilmCamera } from "./hooks/useFilmCamera.js";
 import { useAirHopLine } from "./hooks/useAirHopLine.js";
+import { useThrottledValue } from "./hooks/useThrottledValue.js";
 import { useRouteLayer } from "./layers/useRouteLayer.js";
 import { useAltRouteLayer } from "./layers/useAltRouteLayer.js";
 import { useToggleLayers } from "./layers/useToggleLayers.js";
@@ -171,11 +172,23 @@ export default function App() {
   const [satelliteTab, setSatelliteTab] = useState("wind");
   const [pointInfoName, setPointInfoName] = useState("");
   const [pointInfoFlags, setPointInfoFlags] = useState([null, null]);
+  const satelliteRequestRef = useRef({ id: 0, controller: null });
+
+  const cancelSatelliteRequest = useCallback(() => {
+    satelliteRequestRef.current.id += 1;
+    satelliteRequestRef.current.controller?.abort();
+    satelliteRequestRef.current.controller = null;
+  }, []);
+  const closeSatellite = useCallback(() => {
+    cancelSatelliteRequest();
+    setSelectedSatellite(null);
+    setSatelliteLoading(false);
+  }, [cancelSatelliteRequest]);
 
   const onFeature = useCallback((fiche) => {
-    setSelectedSatellite(null);
+    closeSatellite();
     setLayerPopup(fiche);
-  }, []);
+  }, [closeSatellite]);
   const [notForNavOk, setNotForNavOk] = useState(() => readNotForNavAccepted());
   const [notForNavOpen, setNotForNavOpen] = useState(false);
   const pendingLayerRef = useRef(null);
@@ -444,6 +457,13 @@ export default function App() {
       lang,
     })
     : "";
+  const sidebarPlaybackNm = useThrottledValue(playback.nm, 250);
+  const sidebarHudLeg = useThrottledValue(hudLeg, 250);
+  const sidebarClockSample = useThrottledValue(clockSample, 250);
+  const lastEscaleFilmNm = escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm ?? 0;
+  const firstEscaleFilmNm = escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm ?? 0;
+  const sidebarCanNext = sidebarPlaybackNm < lastEscaleFilmNm - 1;
+  const sidebarCanPrev = sidebarPlaybackNm > firstEscaleFilmNm + 1;
 
   useEffect(() => {
     if (clockSample?.speedKnots > 0) setLiveKnots(clockSample.speedKnots);
@@ -847,14 +867,14 @@ export default function App() {
     setBriefingLoading(false);
   }, [lang, t]);
 
-  const handleRouteSwitchToBerry = () => {
+  const handleRouteSwitchToBerry = useCallback(() => {
     customFetchIdRef.current += 1;
     routeKindRef.current = "berry";
     setCustomRoute(null);
     setRouteKind("berry");
     setVoyageFlat(null);
     applyBerryBriefing();
-  };
+  }, [applyBerryBriefing]);
 
   const fetchCustomPlan = useCallback((geojson) => {
     const applyFallback = () => setExpeditionPlan(buildLocalCustomBriefing(geojson, lang));
@@ -884,7 +904,7 @@ export default function App() {
       .finally(() => clearTimeout(timer));
   }, [lang]);
 
-  const handleCustomRoute = (geojson) => {
+  const handleCustomRoute = useCallback((geojson) => {
     berryFetchIdRef.current += 1;
     routeKindRef.current = "custom";
     setView(VIEW_SIMULATION);
@@ -893,7 +913,7 @@ export default function App() {
     setVoyageFlat(null);
     setBriefingLoading(true);
     fetchCustomPlan(geojson);
-  };
+  }, [fetchCustomPlan]);
 
   const _resetDrawState = () => {
     setDrawnPoints([]);
@@ -931,7 +951,7 @@ export default function App() {
   const handleDrawCancel = () => {
     setDrawingMode(false);
     _resetDrawState();
-    setSelectedSatellite(null);
+    closeSatellite();
     const prev = drawRestoreRef.current;
     if (prev.view && prev.view !== view) setView(prev.view);
     const map = mapRef.current;
@@ -1145,23 +1165,44 @@ export default function App() {
     return () => { cancelled = true; };
   }, [points]);
 
-  const fetchSatellite = async (lat, lon, extra = {}) => {
+  const fetchSatellite = useCallback(async (lat, lon, extra = {}) => {
+    const previous = satelliteRequestRef.current;
+    previous.controller?.abort();
+    const controller = new AbortController();
+    const id = previous.id + 1;
+    satelliteRequestRef.current = { id, controller };
     setSatelliteLoading(true);
     setSatelliteTab("wind");
     setSelectedSatellite({ lat, lon, ...extra });
     try {
+      const request = (path) => fetch(`${API_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: lat, longitude: lon }),
+        signal: controller.signal,
+      }).then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      });
       const [wind, wave, current] = await Promise.all([
-        fetch(`${API_URL}/wind`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ latitude: lat, longitude: lon }) }).then((r) => r.json()),
-        fetch(`${API_URL}/wave`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ latitude: lat, longitude: lon }) }).then((r) => r.json()),
-        fetch(`${API_URL}/current`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ latitude: lat, longitude: lon }) }).then((r) => r.json()),
+        request("/wind"),
+        request("/wave"),
+        request("/current"),
       ]);
-      setSelectedSatellite((prev) => ({ ...prev, wind, wave, current }));
-    } catch {
-      setSelectedSatellite((prev) => ({ ...prev, error: true }));
+      if (satelliteRequestRef.current.id !== id) return;
+      setSelectedSatellite((prev) => (prev ? { ...prev, wind, wave, current } : prev));
+    } catch (err) {
+      if (controller.signal.aborted || satelliteRequestRef.current.id !== id) return;
+      setSelectedSatellite((prev) => (prev ? { ...prev, error: true } : prev));
     } finally {
-      setSatelliteLoading(false);
+      if (satelliteRequestRef.current.id === id) {
+        satelliteRequestRef.current.controller = null;
+        setSatelliteLoading(false);
+      }
     }
-  };
+  }, []);
+
+  useEffect(() => cancelSatelliteRequest, [cancelSatelliteRequest]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1236,8 +1277,29 @@ export default function App() {
   };
 
   const drawingMessage = drawnPoints.length === 0 ? t("drawStart") : drawnPoints.length === 1 ? t("drawFirstStop") : t("drawNextStop");
-  const statsSegs = customRoute ? featuresToSegments(customRoute) : segments;
-  const stats = summarizeRoute(statsSegs);
+  const statsSegs = useMemo(
+    () => (customRoute ? featuresToSegments(customRoute) : segments),
+    [customRoute, segments],
+  );
+  const stats = useMemo(() => summarizeRoute(statsSegs), [statsSegs]);
+  const statsPoints = useMemo(
+    () => (customRoute
+      ? (customRoute.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
+        name: f.properties?.name || "", lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], flag: "",
+      }))
+      : points),
+    [customRoute, points],
+  );
+  const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
+  const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
+  const handleSidebarSeek = useCallback((nm) => {
+    playback.pause();
+    playback.seek(nm, { jump: true });
+  }, [playback.pause, playback.seek]);
+  const handleRecompute = useCallback(
+    () => vessel.recompute(clockSample?.iso),
+    [vessel.recompute, clockSample?.iso],
+  );
 
   const enablePendingRestricted = (kind) => {
     if (kind === "balisage") maritimeLayers.setShowBalisage(true);
@@ -1265,7 +1327,7 @@ export default function App() {
       <Sidebar
         plan={expeditionPlan}
         open={sidebarOpen}
-        onToggle={() => setSidebarOpen((o) => !o)}
+        onToggle={toggleSidebar}
         onCustomRoute={handleCustomRoute}
         onRouteSwitchToBerry={handleRouteSwitchToBerry}
         isDrawing={drawingMode}
@@ -1292,42 +1354,35 @@ export default function App() {
         view={view}
         onView={selectView}
         onNext={handleSimNext}
-        canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
+        canNext={sidebarCanNext}
         onPrev={handleSimPrev}
-        canPrev={playback.nm > ((escaleMarks[0]?.filmNm ?? escaleMarks[0]?.nm) ?? 0) + 1}
-        legContext={hudLeg}
+        canPrev={sidebarCanPrev}
+        legContext={sidebarHudLeg}
         escaleMarks={legendMarks}
-        filmNm={playback.nm}
+        filmNm={sidebarPlaybackNm}
         departureT0={voyage.t0}
         departureStartAt={voyage.startAt}
         onDepartureT0={voyage.setT0}
         onDepartureStartAt={voyage.setStartAt}
-        clockSample={clockSample}
+        clockSample={sidebarClockSample}
         civilDate={civilDate}
         kindLabel={climatologyLabel}
         atQuay={atQuay}
         quayDays={quayDays}
         previewing={previewing}
         forecastStatus={isSuivre && official.gribStatus === "ready" ? "ready" : null}
-        onRecompute={() => vessel.recompute(clockSample?.iso)}
+        onRecompute={handleRecompute}
         canRecompute={canRecompute}
         recomputeBusy={vessel.busy}
         onGoLive={goLive}
-        onSeekEscale={(nm) => {
-          playback.pause();
-          playback.seek(nm, { jump: true });
-        }}
+        onSeekEscale={handleSidebarSeek}
       />
 
       <ToolsSidebar
         segments={statsSegs}
-        points={customRoute
-          ? (customRoute.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
-            name: f.properties?.name || "", lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], flag: "",
-          }))
-          : points}
+        points={statsPoints}
         open={toolsOpen}
-        onToggle={() => setToolsOpen((o) => !o)}
+        onToggle={toggleTools}
         isLightMode={isLightMode}
         onLightModeChange={setIsLightMode}
         polarData={polarData}
@@ -1480,7 +1535,7 @@ export default function App() {
 
       {selectedSatellite && (
         <div className="absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
-          <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={() => setSelectedSatellite(null)}><X size={14} /></button>
+          <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
             {["wind", "waves", "currents"].map((tab) => (

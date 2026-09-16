@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Anchor, CheckCircle2, ChevronLeft, ChevronRight, Compass, Loader2, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 
@@ -96,7 +96,7 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
   );
 }
 
-export function ToolsSidebar({
+export const ToolsSidebar = memo(function ToolsSidebar({
   segments, points, open, onToggle,
   isLightMode, onLightModeChange,
   polarData, onPolarDataLoaded,
@@ -121,6 +121,20 @@ export function ToolsSidebar({
     const loadDefaultPolars = async () => {
       setPolarUploadStatus("uploading");
       try {
+        const storedRes = await fetch(
+          `${POLAR_API_URL}/api/v1/polar/${encodeURIComponent(POLAR_EXPEDITION)}/client`,
+        );
+        if (storedRes.ok) {
+          const stored = await storedRes.json();
+          if (userDroppedFileRef.current) return;
+          onPolarDataLoaded(await polarMetaFromUpload(stored));
+          setPolarUploadStatus("success");
+          setPolarUploadDetail(stored.boat_name);
+          return;
+        }
+        if (storedRes.status !== 404) {
+          throw new Error(`HTTP ${storedRes.status}`);
+        }
         const res = await fetch(DEFAULT_POLAR_URL);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
@@ -164,10 +178,16 @@ export function ToolsSidebar({
     }
   };
 
-  const maritimeSegs = segments.filter((s) => !s.nonMaritime && s.coords?.length > 0);
-  const overlandSegs = segments.filter((s) => s.nonMaritime && s.coords?.length > 0);
-  const totalSegments = maritimeSegs.length + overlandSegs.length;
-  const totalPoints = segments.reduce((acc, s) => acc + (s.coords?.length ?? 0), 0);
+  const routeCounts = useMemo(() => {
+    const maritime = segments.filter((s) => !s.nonMaritime && s.coords?.length > 0);
+    const overland = segments.filter((s) => s.nonMaritime && s.coords?.length > 0);
+    return {
+      maritime: maritime.length,
+      overland: overland.length,
+      total: maritime.length + overland.length,
+      points: segments.reduce((count, segment) => count + (segment.coords?.length ?? 0), 0),
+    };
+  }, [segments]);
 
   return (
     <>
@@ -211,11 +231,11 @@ export function ToolsSidebar({
             </div>
             <div className="bg-slate-800/60 rounded-xl px-3 py-1 border border-slate-700/40">
               <StatRow icon="📏" label={t("totalDistanceNm")} value={routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—"} />
-              <StatRow icon="🗺️" label={t("totalSegments")} value={routeSegmentCount ?? totalSegments} />
-              <StatRow icon="⚓" label={t("maritimeLegs")} value={maritimeSegs.length} />
-              <StatRow icon="🛣️" label={t("overlandLegs")} value={overlandSegs.length} />
+              <StatRow icon="🗺️" label={t("totalSegments")} value={routeSegmentCount ?? routeCounts.total} />
+              <StatRow icon="⚓" label={t("maritimeLegs")} value={routeCounts.maritime} />
+              <StatRow icon="🛣️" label={t("overlandLegs")} value={routeCounts.overland} />
               <StatRow icon="📍" label={t("waypoints")} value={points.length} />
-              <StatRow icon="🔢" label={t("routePoints")} value={totalPoints.toLocaleString()} />
+              <StatRow icon="🔢" label={t("routePoints")} value={routeCounts.points.toLocaleString()} />
             </div>
           </div>
 
@@ -285,4 +305,4 @@ export function ToolsSidebar({
       </div>
     </>
   );
-}
+});

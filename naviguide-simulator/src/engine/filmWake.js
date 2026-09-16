@@ -7,6 +7,39 @@
 import { splitAntimeridianCoords } from "../utils/geo.js";
 
 /**
+ * Last route point already reached at `sailNm`.
+ * The previous cursor makes normal forward playback proportional only to
+ * newly crossed vertices; seeks falling behind use a binary search.
+ */
+export function wakeCursorAt(flat, sailNm, previousIndex = -1) {
+  const points = flat?.points || [];
+  if (!points.length) return -1;
+  const target = Math.max(0, Number(sailNm) || 0);
+  const previousCum = points[previousIndex]?.cumNm ?? Infinity;
+  if (previousIndex >= -1 && target >= previousCum - 1e-9) {
+    let index = previousIndex;
+    while (index + 1 < points.length && (points[index + 1].cumNm ?? 0) <= target + 1e-9) {
+      index += 1;
+    }
+    return index;
+  }
+
+  let low = 0;
+  let high = points.length - 1;
+  let result = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((points[middle].cumNm ?? 0) <= target + 1e-9) {
+      result = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return result;
+}
+
+/**
  * @returns {number[][][]} [lon, lat] parts up to sailNm
  */
 export function wakeParts(flat, sailNm) {

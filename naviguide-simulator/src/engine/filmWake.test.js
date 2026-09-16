@@ -1,6 +1,26 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { remainingParts, wakeParts } from "./filmWake.js";
+import { remainingParts, wakeCursorAt, wakeParts } from "./filmWake.js";
+
+describe("wakeCursorAt", () => {
+  const flat = {
+    points: [
+      { lon: 0, lat: 0, cumNm: 0, jump: false },
+      { lon: 1, lat: 0, cumNm: 60, jump: false },
+      { lon: 2, lat: 0, cumNm: 120, jump: false },
+      { lon: 3, lat: 0, cumNm: 180, jump: false },
+    ],
+  };
+
+  it("advances only from the previous cursor during playback", () => {
+    assert.equal(wakeCursorAt(flat, 70, 0), 1);
+    assert.equal(wakeCursorAt(flat, 130, 1), 2);
+  });
+
+  it("finds the right point after a backward seek", () => {
+    assert.equal(wakeCursorAt(flat, 70, 3), 1);
+  });
+});
 
 describe("wakeParts", () => {
   it("cuts before the end and interpolates the last vertex", () => {
