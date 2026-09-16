@@ -1,0 +1,21 @@
+---
+description: Do not record or review videos to verify work
+alwaysApply: true
+---
+
+# No video verification
+
+- Do not record the screen, do not save `.mp4` walkthroughs, do not call a
+  `videoReview` subagent, do not use `RecordScreen`.
+- Prove UI with tests, `curl`, or still screenshots only when a screenshot
+  is required. A video is never required to close a task.
+- Do not ask the user to watch a demo video. Do not block on filming.
+
+```text
+# BAD
+RecordScreen START_RECORDING → click around → SAVE_RECORDING
+CreateAgent subagent_type=videoReview
+
+# GOOD
+npm test / pytest, or one screenshot if the UI really changed
+```
