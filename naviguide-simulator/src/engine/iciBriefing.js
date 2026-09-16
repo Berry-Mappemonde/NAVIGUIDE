@@ -130,35 +130,207 @@ function poeSentence(dossier, lang) {
     : `Les ports d’entrée officiels les plus proches sont ${listed}.`;
 }
 
-function aroundSentence(dossier, lang) {
+function ampSentence(dossier, lang) {
+  const en = isEn(lang);
+  const items = dossier?.amp || [];
+  if (!items.length) return "";
+  const listed = listPlaces(items, lang, 3);
+  const first = items[0];
+  const visit = hostOf(first?.visit_url);
+  const manager = hostOf(first?.manager_url);
+  const urls = [];
+  if (visit) urls.push(en ? `visit ${visit}` : `visite ${visit}`);
+  if (manager && first?.manager_url !== first?.visit_url) {
+    urls.push(en ? `manager ${manager}` : `gestionnaire ${manager}`);
+  }
+  return en
+    ? `MPAs within 30 nm: ${listed}${urls.length ? ` (${urls.join(", ")})` : ""}.`
+    : `AMP dans les 30 milles : ${listed}${urls.length ? ` (${urls.join(", ")})` : ""}.`;
+}
+
+function projectsSentence(dossier, lang) {
+  const listed = listPlaces(dossier?.projects, lang, 3);
+  if (!listed) return "";
+  return isEn(lang)
+    ? `Projects within 30 nm: ${listed}.`
+    : `Projets dans les 30 milles : ${listed}.`;
+}
+
+function harboursSentence(dossier, lang) {
   const en = isEn(lang);
   const bits = [];
-  const amp = listPlaces(dossier?.amp, lang, 3);
-  if (amp) bits.push(en ? `MPAs ${amp}` : `les AMP ${amp}`);
-  const projects = listPlaces(dossier?.projects, lang, 3);
-  if (projects) bits.push(en ? `projects ${projects}` : `les projets ${projects}`);
   const marinas = listPlaces(dossier?.nearby?.marinas, lang, 3);
-  if (marinas) bits.push(en ? `marinas ${marinas}` : `les marinas ${marinas}`);
+  if (marinas) bits.push(en ? `marinas ${marinas}` : `marinas ${marinas}`);
   const capit = listPlaces(dossier?.nearby?.capitaineries, lang, 2);
-  if (capit) bits.push(en ? `harbour offices ${capit}` : `les capitaineries ${capit}`);
+  if (capit) bits.push(en ? `harbour offices ${capit}` : `capitaineries ${capit}`);
   const wpi = listPlaces(dossier?.nearby?.wpi, lang, 2);
-  if (wpi) bits.push(en ? `WPI ports ${wpi}` : `les ports WPI ${wpi}`);
+  if (wpi) bits.push(en ? `WPI ports ${wpi}` : `ports WPI ${wpi}`);
+  if (!bits.length) return "";
+  return en
+    ? `Harbours within 30 nm: ${bits.join("; ")}.`
+    : `Ports dans les 30 milles : ${bits.join(" ; ")}.`;
+}
+
+function scienceSentence(dossier, lang) {
   const scienceItems = (dossier?.science?.nearby || []).map((x) => ({
     ...x,
     name: x.source ? `${x.name} (${x.source})` : x.name,
   }));
   const science = listPlaces(scienceItems, lang, 3);
-  if (science) bits.push(en ? `science records ${science}` : `les fiches Science ${science}`);
+  if (!science) return "";
+  return isEn(lang)
+    ? `Science records within 30 nm: ${science}.`
+    : `Dans les 30 milles : les fiches Science ${science}.`;
+}
+
+function aroundSentence(dossier, lang) {
+  const en = isEn(lang);
+  const bits = [
+    ampSentence(dossier, lang),
+    projectsSentence(dossier, lang),
+    harboursSentence(dossier, lang),
+    scienceSentence(dossier, lang),
+    anchorageSentence(dossier, lang),
+    atonSentence(dossier, lang),
+  ].filter(Boolean);
+  if (bits.length) return bits.join("\n\n");
+  return en
+    ? "Nothing notable sits inside 30 nautical miles."
+    : "Rien de notable dans les 30 milles.";
+}
+
+function anchorageSentence(dossier, lang) {
+  const listed = listPlaces(dossier?.nearby?.anchorages, lang, 3);
+  if (!listed) return "";
+  return isEn(lang)
+    ? `OSM anchorages within 30 nm: ${listed}.`
+    : `Mouillages OSM dans les 30 milles : ${listed}.`;
+}
+
+function atonSentence(dossier, lang) {
+  const en = isEn(lang);
+  const aton = dossier?.aton;
+  const listed = listPlaces(aton?.nearby, lang, 3);
+  if (listed) {
+    const src = aton?.source || "AtoN";
+    return en
+      ? `Aids to navigation (${src}): ${listed}.`
+      : `Balisage / AtoN (${src}) : ${listed}.`;
+  }
+  if (aton?.reason) {
+    return en
+      ? `No AtoN point in the pack (${aton.reason}).`
+      : `Pas de balisage ponctuel dans le sac (${aton.reason}).`;
+  }
+  return "";
+}
+
+function satelliteSentence(dossier, lang) {
+  const en = isEn(lang);
+  const s = dossier?.satellites;
+  if (!s) return "";
+  const scene = s.scene || (s.scenes && s.scenes[0]);
+  const derived = s.derived || {};
+  const missing = Object.entries(derived)
+    .filter(([, v]) => v && v.value == null)
+    .map(([k, v]) => `${k}: ${v.reason || "null"}`);
+  if (scene) {
+    const when = scene.datetime ? String(scene.datetime).slice(0, 10) : "";
+    const product = scene.product || "Sentinel";
+    return en
+      ? `Satellite (kind observation${when ? `, ${when}` : ""}): ${product}${scene.id ? ` ${scene.id}` : ""}${missing.length ? `; derived ${missing.join(", ")}` : ""}.`
+      : `Satellite (kind observation${when ? `, ${when}` : ""}) : ${product}${scene.id ? ` ${scene.id}` : ""}${missing.length ? ` ; dérivés ${missing.join(", ")}` : ""}.`;
+  }
+  const reason = s.reason || "null";
+  return en
+    ? `Satellite (kind observation): no generated scene (${reason}).`
+    : `Satellite (kind observation) : aucune scène générée (${reason}).`;
+}
+
+function weatherSentence(dossier, lang) {
+  const en = isEn(lang);
+  const w = dossier?.weather;
+  if (!w) return "";
+  const wind = w.wind;
+  const wave = w.wave;
+  if (!wind && !wave) {
+    return en
+      ? `Weather (kind forecast): empty (${w.reason || "null"}).`
+      : `Météo (kind forecast) : vide (${w.reason || "null"}).`;
+  }
+  const bits = [];
+  if (wind?.speedKnots != null) {
+    bits.push(en
+      ? `wind ${wind.speedKnots} kn / ${wind.dirFromDeg}°`
+      : `vent ${wind.speedKnots} kn / ${wind.dirFromDeg}°`);
+  }
+  if (wave?.hs != null) bits.push(`Hs ${wave.hs} m`);
+  if (w.current && w.current.speedKnots != null) {
+    const dir = w.current.dirToDeg;
+    bits.push(en
+      ? `current ${w.current.speedKnots} kn / ${dir}° (RTOFS, kind forecast)`
+      : `courant ${w.current.speedKnots} kn / ${dir}° (RTOFS, kind forecast)`);
+  } else if (w.current == null && w.current_reason) {
+    bits.push(en
+      ? `current null (${w.current_reason})`
+      : `courant null (${w.current_reason})`);
+  }
+  const model = w.model || w.source || "Open-Meteo";
+  return en
+    ? `Weather (kind forecast, ${model}): ${bits.join(" · ")}.`
+    : `Météo (kind forecast, ${model}) : ${bits.join(" · ")}.`;
+}
+
+function emodnetSentence(dossier, lang) {
+  const en = isEn(lang);
+  const e = dossier?.emodnet;
+  if (!e) return "";
+  const bits = [];
+  const depth = e.bathy?.depth_m;
+  if (depth != null) bits.push(en ? `DTM ${depth} m` : `DTM ${depth} m`);
+  else if (e.bathy?.reason) bits.push(`bathy null (${e.bathy.reason})`);
+  if (e.seabed?.label) bits.push(en ? `seabed ${e.seabed.label}` : `fonds ${e.seabed.label}`);
+  else if (e.seabed?.reason) bits.push(`fonds null (${e.seabed.reason})`);
+  if (e.cables?.nearby === true) bits.push(en ? "cable nearby" : "câble au point");
+  else if (e.cables?.nearby === false || e.cables?.reason) {
+    bits.push(en
+      ? `cables null (${e.cables.reason || "no_feature_at_point"})`
+      : `câbles null (${e.cables.reason || "no_feature_at_point"})`);
+  }
   if (!bits.length) {
     return en
-      ? "Nothing notable sits inside 30 nautical miles."
-      : "Rien de notable dans les 30 milles.";
+      ? `EMODnet (kind observation): ${e.reason || "null"}.`
+      : `EMODnet (kind observation) : ${e.reason || "null"}.`;
   }
-  const last = bits.pop();
-  const head = bits.length ? `${bits.join(", ")}${en ? ", and " : ", et "}${last}` : last;
   return en
-    ? `Within 30 nautical miles: ${head}.`
-    : `Dans les 30 milles autour : ${head}.`;
+    ? `EMODnet (kind observation): ${bits.join(" · ")}.`
+    : `EMODnet (kind observation) : ${bits.join(" · ")}.`;
+}
+
+function reviewSentence(dossier, lang) {
+  const en = isEn(lang);
+  const r = dossier?.review;
+  if (!r) return "";
+  const bits = [];
+  if (r.zee && r.zee.gold_on != null) {
+    bits.push(en
+      ? `EEZ Gold ${r.zee.gold_on ? "on" : "off"}`
+      : `ZEE Gold ${r.zee.gold_on ? "oui" : "non"}`);
+  }
+  if (r.amp && r.amp.gold_on != null) {
+    bits.push(en
+      ? `MPA Gold ${r.amp.gold_on ? "on" : "off"}`
+      : `AMP Gold ${r.amp.gold_on ? "oui" : "non"}`);
+  }
+  if (!bits.length) {
+    if (!r.reason) return "";
+    return en
+      ? `Review / Gold not available (${r.reason}).`
+      : `Review / Gold indisponible (${r.reason}).`;
+  }
+  return en
+    ? `Review / Gold: ${bits.join(" · ")}.`
+    : `Review / Gold : ${bits.join(" · ")}.`;
 }
 
 function eventSentence(dossier, lang) {
@@ -228,7 +400,22 @@ function climatologySentence(dossier, lang) {
   else if (zone) bits.push(en ? `zone wind ${zone.speedKnots} kn / ${zone.dirFromDeg}°` : `vent de zone ${zone.speedKnots} kn / ${zone.dirFromDeg}°`);
   if (wave?.hs_p50_m != null) bits.push(`Hs P50 ${wave.hs_p50_m} m`);
   if (wave?.hs_p90_m != null) bits.push(`Hs P90 ${wave.hs_p90_m} m`);
-  if (cur && cur.speed_knots != null) bits.push(en ? `current ${cur.speed_knots} kn` : `courant ${cur.speed_knots} kn`);
+  if (cur && cur.speed_knots != null) {
+    const dir = cur.direction_to_deg;
+    bits.push(en
+      ? `current ${cur.speed_knots} kn${dir != null ? ` toward ${dir}°` : ""}`
+      : `courant ${cur.speed_knots} kn${dir != null ? ` vers ${dir}°` : ""}`);
+  }
+  const rose = c.rose || point.wind_atlas;
+  if (rose?.stat === "rose" && Array.isArray(rose.directions_from) && rose.directions_from.length) {
+    bits.push(en ? `8-sector rose` : `rose 8 secteurs`);
+  }
+  if (rose?.calm_pct != null) bits.push(en ? `calm ${rose.calm_pct}%` : `calme ${rose.calm_pct} %`);
+  if (rose?.gale_pct != null) bits.push(en ? `gale ${rose.gale_pct}%` : `coup de vent ${rose.gale_pct} %`);
+  const nearbyCyc = c.cyclone?.nearby ?? point.cyclone?.nearby;
+  if (nearbyCyc != null) {
+    bits.push(en ? `IBTrACS nearby ${nearbyCyc}` : `IBTrACS nearby ${nearbyCyc}`);
+  }
   const crossings = c.crossings?.count ?? point.cyclone?.crossings_if_leg?.count;
   if (crossings != null) {
     bits.push(en ? `IBTrACS crossings on the leg: ${crossings}` : `croisements IBTrACS sur la jambe : ${crossings}`);
@@ -275,6 +462,10 @@ export function narrateIci(dossier, lang = "fr") {
   const parts = [
     [zeeSentence(dossier, lang), poeSentence(dossier, lang)].filter(Boolean).join(" "),
     aroundSentence(dossier, lang),
+    satelliteSentence(dossier, lang),
+    weatherSentence(dossier, lang),
+    emodnetSentence(dossier, lang),
+    reviewSentence(dossier, lang),
     eventSentence(dossier, lang),
     depthSentence(dossier, lang),
     climatologySentence(dossier, lang),

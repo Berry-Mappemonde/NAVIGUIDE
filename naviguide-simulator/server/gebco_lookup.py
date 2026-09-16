@@ -31,7 +31,7 @@ def min_coast_nm(dossier: dict[str, Any]) -> float | None:
     """Proxy rivage : marina / capitainerie / WPI déjà dans le sac."""
     dists: list[float] = []
     nearby = dossier.get("nearby") or {}
-    for key in ("marinas", "capitaineries", "wpi"):
+    for key in ("marinas", "capitaineries", "wpi", "anchorages"):
         for place in nearby.get(key) or []:
             nm = place.get("nm")
             if isinstance(nm, (int, float)):
