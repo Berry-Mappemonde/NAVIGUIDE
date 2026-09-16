@@ -7,8 +7,10 @@ export const BI_COLORS = {
 };
 
 export const DEFAULT_SHOW_ZEE = false;
+export const DEFAULT_SHOW_GRIB = true;
 
 export const ALL_LAYER_CONFIG = [
+  { key: "grib2", labelKey: "layerGrib2", titleKey: "layerGrib2Title", color: "#22d3ee", showKey: "showGrib", toggleKey: "setShowGrib", loadingKey: "loadingGrib", errorKey: "errorGrib" },
   { key: "zee", labelKey: "layerZee", titleKey: "layerZeeTitle", color: "#0e7490", showKey: "showZee", toggleKey: "setShowZee", loadingKey: "loadingZee", errorKey: "errorZee" },
   { key: "wpi", labelKey: "layerPorts", titleKey: "layerPortsTitle", color: "#f59e0b", showKey: "showPorts", toggleKey: "setShowPorts", loadingKey: "loadingPorts", errorKey: "errorPorts" },
   { key: "balisage", labelKey: "layerBalisage", titleKey: "layerBalisageTitle", color: "#10b981", showKey: "showBalisage", toggleKey: "setShowBalisage", loadingKey: "loadingBalisage", errorKey: "errorBalisage" },

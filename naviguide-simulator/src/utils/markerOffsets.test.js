@@ -16,6 +16,8 @@ describe("hasFlag / capOffset", () => {
   it("treats an empty string as an intermediate point", () => {
     assert.equal(hasFlag({ flag: "" }), false);
     assert.equal(hasFlag({ flag: "/flags/fr.png" }), true);
+    assert.equal(hasFlag({ flags: ["kanak", "france"] }), true);
+    assert.equal(hasFlag({ flags: [] }), false);
   });
 
   it("plafonne un offset trop long", () => {

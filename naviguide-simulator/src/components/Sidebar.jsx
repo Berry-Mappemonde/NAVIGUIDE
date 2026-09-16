@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Shield, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
@@ -13,7 +13,7 @@ const BERRY_LOGO = "/logo-berry-mappemonde.svg";
 
 function BerryCard({
   onCustomRoute, onRouteSwitchToBerry, isDrawing,
-  onDrawStart, onDrawContinue, onDrawFinish, onCustomDelete, canContinueDraw,
+  onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw = true,
 }) {
   const { t } = useLang();
@@ -22,6 +22,12 @@ function BerryCard({
   const [drawnName, setDrawnName] = useState(null);
   const hasCustom = Boolean(drawnRoute);
   const customOn = cardMode === "file-active";
+
+  useEffect(() => {
+    if (!isDrawing && cardMode === "draw-mode") {
+      setCardMode(hasCustom ? "berry-active-file-loaded" : "berry-active");
+    }
+  }, [isDrawing, cardMode, hasCustom]);
 
   const activateBerry = () => {
     setCardMode(hasCustom ? "berry-active-file-loaded" : "berry-active");
@@ -74,15 +80,29 @@ function BerryCard({
       <div className="rounded-lg px-2 py-1.5 border border-slate-700/50 bg-slate-800/60">
         {switcher}
         {isDrawing ? (
-          <button
-            onClick={handleFinishDrawing}
-            disabled={!canFinishDraw}
-            className="w-full flex items-center justify-center gap-1.5 bg-green-600/30 hover:bg-green-600/50
-              border border-green-500/50 rounded-lg px-2 py-1.5 text-[10px] text-green-300 font-semibold
-              disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <CheckCircle size={11} /> {t("finish")}
-          </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setCardMode(hasCustom ? "berry-active-file-loaded" : "berry-active");
+                onDrawCancel?.();
+              }}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
+                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold"
+            >
+              {t("cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={handleFinishDrawing}
+              disabled={!canFinishDraw}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-green-600/30 hover:bg-green-600/50
+                border border-green-500/50 rounded-lg px-2 py-1.5 text-[10px] text-green-300 font-semibold
+                disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <CheckCircle size={11} /> {t("finish")}
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
@@ -143,7 +163,7 @@ function BerryCard({
 
 export function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
-  onDrawStart, onDrawContinue, onDrawFinish, onCustomDelete, canContinueDraw,
+  onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw,
   isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
@@ -151,7 +171,7 @@ export function Sidebar({
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, departureStartAt, onDepartureT0, onDepartureStartAt,
   clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
-  previewing = false, forecastStatus = null, forecastModel = null,
+  previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
 }) {
   const { t } = useLang();
@@ -193,6 +213,7 @@ export function Sidebar({
             onDrawStart={onDrawStart}
             onDrawContinue={onDrawContinue}
             onDrawFinish={onDrawFinish}
+            onDrawCancel={onDrawCancel}
             onCustomDelete={onCustomDelete}
             canContinueDraw={canContinueDraw}
             canFinishDraw={canFinishDraw}
@@ -262,7 +283,6 @@ export function Sidebar({
             liveFollow={isSuivre}
             previewing={previewing}
             forecastStatus={isSuivre ? forecastStatus : null}
-            forecastModel={forecastModel}
             onRecompute={onRecompute}
             canRecompute={canRecompute}
             showRecompute={isSimulation}

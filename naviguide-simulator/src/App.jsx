@@ -12,7 +12,6 @@ import { getCardinalDirection } from "./utils/getCardinalDirection";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
-import { ArrivalCard } from "./components/ArrivalCard.jsx";
 import { RecomputeDialog } from "./components/RecomputeDialog.jsx";
 import { useSimulatorMap } from "./hooks/useSimulatorMap.js";
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets.js";
@@ -40,8 +39,6 @@ import {
 } from "./engine/routePlayhead.js";
 import { detectAirEpisodes, interpolateCast, isAirPhase, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
-import { formatSeaClock } from "./engine/seaTime.js";
-import { nextStationAfter } from "./engine/stationDwell.js";
 import {
   DEFAULT_START_AT,
   DEFAULT_T0_ISO,
@@ -70,6 +67,9 @@ import {
   orientCoords,
 } from "./utils/berryLegs.js";
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
+import { isCinemaKey } from "./utils/cinemaHotkey.js";
+import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
+import { flagIconMetrics, flagMarkerHtml, waypointFlagSrcs, worldCopyLngs } from "./utils/waypointFlags.js";
 import L from "leaflet";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -137,11 +137,9 @@ export default function App() {
   const isSimulation = view === VIEW_SIMULATION;
   const [voyageFlat, setVoyageFlat] = useState(null);
   const [cameraPlaced, setCameraPlaced] = useState(false);
-  const [arrivalBanner, setArrivalBanner] = useState(null);
   const [liveKnots, setLiveKnots] = useState(null);
   const cinemaSavedRef = useRef({ sidebar: true, tools: true });
-  const prevPlayheadRef = useRef(0);
-  const lastArrivalKeyRef = useRef("");
+  const drawRestoreRef = useRef({ view: VIEW_SUIVRE, center: null, zoom: null });
   const [customRoute, setCustomRoute] = useState(null);
   const [routeKind, setRouteKind] = useState("berry");
   const routeKindRef = useRef("berry");
@@ -363,16 +361,15 @@ export default function App() {
   const monthLabel = clockSample?.month
     ? formatMonthName(clockSample.month, lang)
     : "";
-  const climatologyLabel = clockSample?.kind === "forecast"
-    ? t("voyageKindForecast", {
-      model: clockSample.model || official.gribModel || vessel.voyage?.forecastModel || "GFS",
-      lead: clockSample.leadHours != null ? Math.round(clockSample.leadHours) : "—",
-    })
-    : isSuivre
-      ? ""
-      : officialClock && monthLabel
-        ? t("voyageKindClimatology", { month: monthLabel })
-        : "";
+  const climatologyLabel = isSuivre
+    ? ""
+    : officialClock && monthLabel
+      ? t("voyageKindClimatology", { month: monthLabel })
+      : "";
+  const weatherLine = buildWeatherLine({
+    isSuivre,
+    gribReady: official.gribStatus === "ready",
+  });
   const quayDays = clockSample?.holdHours > 0
     ? Math.round(clockSample.holdHours / 24)
     : 0;
@@ -467,16 +464,12 @@ export default function App() {
   playheadNmRef.current = playback.nm;
 
   const handleSimNext = useCallback(() => {
-    lastArrivalKeyRef.current = "";
-    setArrivalBanner(null);
     if (isSuivre) setUserPreview(true);
     playback.pause();
     playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
   }, [playback.pause, playback.seek, escaleMarks, isSuivre]);
 
   const handleSimPrev = useCallback(() => {
-    lastArrivalKeyRef.current = "";
-    setArrivalBanner(null);
     if (isSuivre) setUserPreview(true);
     playback.pause();
     playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
@@ -518,8 +511,6 @@ export default function App() {
 
   const selectView = useCallback((next) => {
     setView(next);
-    setArrivalBanner(null);
-    lastArrivalKeyRef.current = "";
     if (next === VIEW_SUIVRE) {
       voyage.setT0(DEFAULT_T0_ISO);
       voyage.setStartAt(DEFAULT_START_AT);
@@ -606,48 +597,7 @@ export default function App() {
     if (!isSimulation) return;
     playback.pause();
     playback.seek(0);
-    prevPlayheadRef.current = 0;
-    lastArrivalKeyRef.current = "";
-    setArrivalBanner(null);
   }, [customRoute]);
-
-  useEffect(() => {
-    const prev = prevPlayheadRef.current;
-    const cur = playback.nm;
-    prevPlayheadRef.current = cur;
-    if (Math.abs(cur - prev) > 8) {
-      lastArrivalKeyRef.current = "";
-      const landed = escaleMarks.find((m) => {
-        const at = m.filmNm ?? m.nm;
-        return at > 0.5 && Math.abs(cur - at) <= 0.8;
-      });
-      if (!landed) {
-        setArrivalBanner(null);
-        return undefined;
-      }
-      const landKey = `${landed.name}-${Math.round(landed.filmNm ?? landed.nm)}`;
-      lastArrivalKeyRef.current = landKey;
-      setArrivalBanner(landed);
-      const timer = setTimeout(() => setArrivalBanner(null), 8000);
-      return () => clearTimeout(timer);
-    }
-    if (cur + 2 < prev) {
-      lastArrivalKeyRef.current = "";
-      setArrivalBanner(null);
-      return undefined;
-    }
-    const hit = escaleMarks.find((m) => {
-      const at = m.filmNm ?? m.nm;
-      return at > 0.5 && prev < at && cur >= at;
-    });
-    if (!hit) return undefined;
-    const key = `${hit.name}-${Math.round(hit.filmNm ?? hit.nm)}`;
-    if (lastArrivalKeyRef.current === key) return undefined;
-    lastArrivalKeyRef.current = key;
-    setArrivalBanner(hit);
-    const timer = setTimeout(() => setArrivalBanner(null), 8000);
-    return () => clearTimeout(timer);
-  }, [playback.nm, escaleMarks]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -662,13 +612,13 @@ export default function App() {
       } else if (e.code === "ArrowLeft") {
         e.preventDefault();
         handleSimPrev();
-      } else if (e.code === "KeyC") {
+      } else if (isCinemaKey(e)) {
         e.preventDefault();
         toggleCinema();
       } else if (e.code === "KeyL") {
         e.preventDefault();
         goLive();
-      } else if (e.code === "Escape" && cinemaMode) {
+      } else if (e.code === "Escape" && cinemaMode && !drawingMode) {
         e.preventDefault();
         leaveCinema();
       } else if (e.code === "Digit1") {
@@ -683,7 +633,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cinemaMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema, goLive]);
+  }, [cinemaMode, drawingMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema, goLive]);
 
   useFilmCamera({
     mapRef,
@@ -711,7 +661,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: sceneReady && isSimulation && Boolean(cast?.main),
+    visible: sceneReady && isSimulation && !drawingMode && Boolean(cast?.main),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -721,7 +671,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: sceneReady && isSuivre && Boolean(live) && cast?.vehicle !== "plane",
+    visible: sceneReady && isSuivre && !drawingMode && Boolean(live) && cast?.vehicle !== "plane",
     lat: live?.lat,
     lon: live?.lon,
     bearing: live?.bearing || 0,
@@ -733,7 +683,7 @@ export default function App() {
   });
 
   useCatamaranMarker(mapRef, {
-    visible: sceneReady && isSuivre && previewing && Boolean(cast?.main),
+    visible: sceneReady && isSuivre && !drawingMode && previewing && Boolean(cast?.main),
     lat: cast?.main?.lat,
     lon: cast?.main?.lon,
     bearing: cast?.main?.bearing || 0,
@@ -747,7 +697,7 @@ export default function App() {
   useAltRouteLayer(mapRef, { draft: vessel.draft, mapReady });
 
   useCatamaranMarker(mapRef, {
-    visible: sceneReady && Boolean(cast?.side?.visible),
+    visible: sceneReady && !drawingMode && Boolean(cast?.side?.visible),
     lat: cast?.side?.lat,
     lon: cast?.side?.lon,
     bearing: cast?.side?.bearing || 0,
@@ -759,11 +709,24 @@ export default function App() {
   });
 
   usePlaneMarker(mapRef, {
-    visible: sceneReady && Boolean(cast?.plane?.visible),
+    visible: sceneReady && !drawingMode && Boolean(cast?.plane?.visible),
     lat: cast?.plane?.lat,
     lon: cast?.plane?.lon,
     bearing: cast?.plane?.bearing || 0,
     mapReady,
+  });
+
+  const drawBoat = drawnSegments.length >= 1 ? drawnPoints.at(-1) : null;
+  useCatamaranMarker(mapRef, {
+    visible: drawingMode && Boolean(drawBoat),
+    lat: drawBoat?.lat,
+    lon: drawBoat?.lon,
+    bearing: 0,
+    onDrag: undefined,
+    onDragStart: undefined,
+    mapReady,
+    draggable: false,
+    className: "catamaran-divicon catamaran-divicon--draw",
   });
 
   const routeCoords = useMemo(
@@ -784,7 +747,7 @@ export default function App() {
   useGribCorridorLayer(mapRef, {
     grib: official.grib,
     mapReady,
-    visible: isSuivre && official.gribStatus === "ready",
+    visible: maritimeLayers.showGrib && isSuivre && official.gribStatus === "ready",
     whenIso: clockSample?.iso,
     lat: isSuivre ? live?.lat : null,
     lon: isSuivre ? live?.lon : null,
@@ -855,15 +818,38 @@ export default function App() {
   };
 
   const handleDrawStart = () => {
+    const map = mapRef.current;
+    drawRestoreRef.current = {
+      view,
+      center: map ? map.getCenter() : null,
+      zoom: map ? map.getZoom() : null,
+    };
     playback.pause();
+    if (cinemaMode) {
+      setSidebarOpen(cinemaSavedRef.current.sidebar);
+      setToolsOpen(cinemaSavedRef.current.tools);
+      setHideFilmBar(false);
+    }
     setCinemaMode(false);
-    setView(VIEW_SIMULATION);
-    setArrivalBanner(null);
+    setCameraFollow(false);
     setDrawingMode(true);
     _resetDrawState();
     berryFetchIdRef.current += 1;
     setExpeditionPlan(null);
     setBriefingLoading(false);
+  };
+
+  const handleDrawCancel = () => {
+    setDrawingMode(false);
+    _resetDrawState();
+    setSelectedSatellite(null);
+    const prev = drawRestoreRef.current;
+    if (prev.view && prev.view !== view) setView(prev.view);
+    const map = mapRef.current;
+    if (map && prev.center) {
+      armProgrammaticNav();
+      map.setView(prev.center, prev.zoom ?? map.getZoom(), { animate: false });
+    }
   };
 
   const handleDrawFinish = () => {
@@ -880,10 +866,15 @@ export default function App() {
   };
 
   const handleDrawContinue = () => {
+    const map = mapRef.current;
+    drawRestoreRef.current = {
+      view,
+      center: map ? map.getCenter() : null,
+      zoom: map ? map.getZoom() : null,
+    };
     playback.pause();
     setCinemaMode(false);
-    setView(VIEW_SIMULATION);
-    setArrivalBanner(null);
+    setCameraFollow(false);
     setDrawingMode(true);
     setExpeditionPlan(null);
     setBriefingLoading(false);
@@ -967,6 +958,17 @@ export default function App() {
     setDrawnSegments([...drawnSegmentsRef.current]);
     setCanRedo(undonePointsRef.current.length > 0);
   };
+
+  useEffect(() => {
+    const onEscDraw = (e) => {
+      if (e.code !== "Escape" || !drawingMode) return;
+      if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      handleDrawCancel();
+    };
+    window.addEventListener("keydown", onEscDraw);
+    return () => window.removeEventListener("keydown", onEscDraw);
+  }, [drawingMode]);
 
   useEffect(() => {
     if (routeKind !== "berry" || drawingMode) return;
@@ -1103,25 +1105,31 @@ export default function App() {
     const map = mapRef.current;
     if (!map || !mapReady) return undefined;
     const group = L.layerGroup().addTo(map);
-    const src = drawingMode ? drawnPoints.map((p, i) => ({ ...p, name: p.name || `${i + 1}`, flag: "" })) : (customRoute ? [] : points);
+    const src = drawingMode
+      ? drawnPoints.map((p, i) => ({ ...p, name: p.name || `${i + 1}`, flag: "", flags: [] }))
+      : (customRoute ? [] : points);
     src.forEach((p, i) => {
-      if (!p.flag && !drawingMode) return;
+      const srcs = waypointFlagSrcs(p);
+      if (!srcs.length && !drawingMode) return;
       const off = markerOffsets[i] || [0, 0];
-      const html = p.flag
-        ? `<img src="${typeof p.flag === "string" ? p.flag : p.flag}" alt="" style="height:22px;transform:translate(${off[0]}px,${off[1]}px)" />`
+      const html = srcs.length
+        ? flagMarkerHtml(srcs, off)
         : `<div style="width:10px;height:10px;border-radius:50%;background:${i === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
-      const m = L.marker([p.lat, p.lon], {
-        icon: L.divIcon({ className: "flag-divicon", html, iconSize: [24, 24], iconAnchor: [12, 12] }),
-        interactive: true,
-      }).addTo(group);
-      m.on("mouseover", () => setHoveredPoint(p));
-      m.on("mouseout", () => setHoveredPoint(null));
-      if (drawingMode) {
-        m.on("click", (ev) => {
-          L.DomEvent.stopPropagation(ev);
-          setPointInfoName(p.name || "");
-          setSelectedSatellite({ lat: p.lat, lon: p.lon, drawPointIndex: i });
-        });
+      const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
+      for (const lng of worldCopyLngs(p.lon)) {
+        const m = L.marker([p.lat, lng], {
+          icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
+          interactive: true,
+        }).addTo(group);
+        m.on("mouseover", () => setHoveredPoint(p));
+        m.on("mouseout", () => setHoveredPoint(null));
+        if (drawingMode) {
+          m.on("click", (ev) => {
+            L.DomEvent.stopPropagation(ev);
+            setPointInfoName(p.name || "");
+            setSelectedSatellite({ lat: p.lat, lon: p.lon, drawPointIndex: i });
+          });
+        }
       }
     });
     return () => group.remove();
@@ -1175,6 +1183,7 @@ export default function App() {
         onDrawStart={handleDrawStart}
         onDrawContinue={handleDrawContinue}
         onDrawFinish={handleDrawFinish}
+        onDrawCancel={handleDrawCancel}
         onCustomDelete={handleCustomDelete}
         canContinueDraw={drawnPoints.length > 0}
         canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
@@ -1204,14 +1213,11 @@ export default function App() {
         quayDays={quayDays}
         previewing={previewing}
         forecastStatus={isSuivre && official.gribStatus === "ready" ? "ready" : null}
-        forecastModel={isSuivre ? official.gribModel : null}
         onRecompute={() => vessel.recompute(clockSample?.iso)}
         canRecompute={canRecompute}
         recomputeBusy={vessel.busy}
         onGoLive={goLive}
         onSeekEscale={(nm) => {
-          lastArrivalKeyRef.current = "";
-          setArrivalBanner(null);
           playback.pause();
           playback.seek(nm, { jump: true });
         }}
@@ -1256,8 +1262,9 @@ export default function App() {
               <span>{drawingMessage}</span>
               {drawingLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               <div className="flex gap-1 ml-1 pointer-events-auto">
-                <button onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
-                <button onClick={handleDrawRedo} disabled={!canRedo} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("redo")}><Redo2 size={13} /></button>
+                <button type="button" onClick={handleDrawUndo} disabled={!drawnPoints.length} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("undoLastPoint")}><Undo2 size={13} /></button>
+                <button type="button" onClick={handleDrawRedo} disabled={!canRedo} className="w-7 h-7 flex items-center justify-center rounded-full bg-white/10 disabled:opacity-30" title={t("redo")}><Redo2 size={13} /></button>
+                <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[11px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
               </div>
             </div>
             {drawnSegments.some((s) => s.failed) && (
@@ -1287,29 +1294,6 @@ export default function App() {
         </div>
       )}
 
-      {(arrivalBanner || playback.holdingStation) && (
-        <ArrivalCard
-          name={(arrivalBanner || playback.holdingStation).name}
-          sailNm={(arrivalBanner || playback.holdingStation).nm}
-          seaTime={clockSample
-            ? formatFilmClockLine({
-              sailNm: clockSample.sailNm,
-              seaHours: clockSample.seaHours,
-              iso: clockSample.iso,
-              lang,
-            })
-            : formatSeaClock((arrivalBanner || playback.holdingStation).nm, expeditionSpeed.knots)}
-          nextName={nextStationAfter(
-            (arrivalBanner || playback.holdingStation).filmNm
-              ?? (arrivalBanner || playback.holdingStation).nm,
-            escaleMarks,
-          )?.name}
-          holding={playback.holding}
-          civilDate={civilDate}
-          quayDays={quayDays}
-        />
-      )}
-
       <SimulationFilmBar
         fromName={hudLeg?.fromStop}
         toName={hudLeg?.toStop}
@@ -1332,8 +1316,6 @@ export default function App() {
         }}
         marks={escaleMarks}
         onSeekNm={(nm) => {
-          lastArrivalKeyRef.current = "";
-          setArrivalBanner(null);
           if (isSuivre) setUserPreview(true);
           playback.pause();
           playback.seek(nm, { jump: true });
@@ -1355,7 +1337,7 @@ export default function App() {
         twa={clockSample?.twa}
         liveBadge={isSuivre ? (previewing ? t("previewBadge") : "LIVE") : null}
         windKind={clockSample?.kind === "forecast" ? "forecast" : (isSuivre ? null : (clockSample?.kind || expeditionSpeed.kind))}
-        windModel={isSuivre ? official.gribModel : (clockSample?.model || official.gribModel)}
+        weatherLine={weatherLine}
         showSpeeds={isSimulation}
         showWindProfile={false}
         stopAuto={stopAuto}

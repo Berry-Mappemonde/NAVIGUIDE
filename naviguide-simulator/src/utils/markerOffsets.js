@@ -19,6 +19,7 @@ const DIRS = [
 const RADII = [32, 44, MAX_OFFSET];
 
 export function hasFlag(point) {
+  if (Array.isArray(point?.flags) && point.flags.some(Boolean)) return true;
   return Boolean(point?.flag);
 }
 
