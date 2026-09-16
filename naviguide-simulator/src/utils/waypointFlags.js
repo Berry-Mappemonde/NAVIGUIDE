@@ -1,3 +1,4 @@
+import { wrapLon } from "./geo.js";
 import { worldCopyLngs } from "./gribSymbols.js";
 
 /** Sources d’image : `flags` (1 ou 2) ou l’ancien champ unique `flag`. */
@@ -24,13 +25,49 @@ export function flagIconMetrics(srcs) {
   return { iconSize: [w, 24], iconAnchor: [Math.round(w / 2), 12] };
 }
 
-/** Copie monde la plus proche du centre caméra (même wrap que la vue). */
-export function lonOnCameraCopy(lon, cameraLng) {
-  const copies = worldCopyLngs(lon);
-  if (!copies.length) return Number(lon);
-  const cam = Number(cameraLng);
-  if (!Number.isFinite(cam)) return copies[0];
-  return copies.reduce((best, x) => (Math.abs(x - cam) < Math.abs(best - cam) ? x : best));
+function uniqLngs(lngs) {
+  const out = [];
+  for (const lng of lngs) {
+    if (!Number.isFinite(lng)) continue;
+    if (out.every((x) => Math.abs(x - lng) > 1e-6)) out.push(lng);
+  }
+  return out;
 }
 
-export { worldCopyLngs };
+/** Copie monde la plus proche du centre caméra (même wrap que la vue). */
+export function lonOnCameraCopy(lon, cameraLng) {
+  const x = Number(lon);
+  if (!Number.isFinite(x)) return lon;
+  const copies = uniqLngs([...worldCopyLngs(x), wrapLon(x)]);
+  if (!copies.length) return x;
+  if (cameraLng == null || cameraLng === "") return x;
+  const cam = Number(cameraLng);
+  if (!Number.isFinite(cam)) return x;
+  return copies.reduce((best, v) => (Math.abs(v - cam) < Math.abs(best - cam) ? v : best));
+}
+
+/**
+ * Même lon que le sillage (horloge, éventuellement dépliée) tant qu’on n’a pas
+ * de centre carte. Dès qu’il y en a un, on colle à cette copie (après jump).
+ */
+export function cameraLngForBoat(lon, prevCameraLng) {
+  return lonOnCameraCopy(lon, prevCameraLng);
+}
+
+/**
+ * Bateau / drapeaux : d’abord la lon caméra, puis les copies ±360° comme la route.
+ * Sans ça, près de 180°, la carte (unwrap / worldCopyJump) regarde une copie
+ * et le marqueur unique reste sur l’autre.
+ */
+export function markerWorldLngs(lon, cameraLng) {
+  const x = Number(lon);
+  if (!Number.isFinite(x)) return [];
+  const aligned = cameraLngForBoat(x, cameraLng);
+  const extras = uniqLngs([
+    ...worldCopyLngs(x),
+    ...worldCopyLngs(wrapLon(x)),
+  ]).filter((lng) => Math.abs(lng - aligned) > 1e-6);
+  return [aligned, ...extras];
+}
+
+export { worldCopyLngs, wrapLon };

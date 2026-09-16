@@ -1,13 +1,10 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import catamaranImg from "../assets/img/catamaran.jpg";
-import { catamaranTransform } from "../engine/catamaranIcon.js";
-import { wrapLon } from "../utils/geo.js";
-import { worldCopyLngs } from "../utils/gribSymbols.js";
+import { catamaranSvg } from "../engine/catamaranIcon.js";
+import { markerWorldLngs, wrapLon } from "../utils/waypointFlags.js";
 
-function buildIconHtml(bearing, png) {
-  const src = png || catamaranImg;
-  return `<img src="${src}" alt="catamaran" style="width:56px;height:56px;object-fit:contain;transform:${catamaranTransform(bearing)};transition:transform 0.35s ease;" />`;
+function buildIconHtml(bearing) {
+  return catamaranSvg(bearing);
 }
 
 export function useCatamaranMarker(mapRef, {
@@ -33,38 +30,49 @@ export function useCatamaranMarker(mapRef, {
       clear();
       return undefined;
     }
-    const icon = L.divIcon({
+
+    const makeIcon = () => L.divIcon({
       className,
       html: buildIconHtml(bearing),
-      iconSize: [56, 56],
-      iconAnchor: [28, 28],
+      iconSize: [64, 64],
+      iconAnchor: [32, 32],
     });
-    const lngs = worldCopyLngs(lon);
-    if (markersRef.current.length !== lngs.length) {
-      clear();
-      markersRef.current = lngs.map((lng) => {
-        const m = L.marker([lat, lng], {
-          icon,
-          draggable: Boolean(draggable),
-          pane: "boat",
-          interactive: Boolean(draggable),
-        }).addTo(map);
-        if (draggable) {
-          m.on("dragstart", () => onDragStart?.());
-          m.on("drag", (e) => {
-            const ll = e.target.getLatLng();
-            onDrag?.({ lat: ll.lat, lon: wrapLon(ll.lng) });
-          });
-        }
-        return m;
-      });
-    } else {
-      markersRef.current.forEach((m, i) => {
-        m.setLatLng([lat, lngs[i]]);
-        m.setIcon(icon);
-      });
-    }
-    return undefined;
+
+    const sync = () => {
+      const cam = map.getCenter()?.lng;
+      const lngs = markerWorldLngs(lon, cam);
+      if (markersRef.current.length !== lngs.length) {
+        clear();
+        markersRef.current = lngs.map((lng, i) => {
+          const primary = i === 0;
+          const m = L.marker([lat, lng], {
+            icon: makeIcon(),
+            draggable: Boolean(draggable) && primary,
+            pane: "boat",
+            interactive: Boolean(draggable) && primary,
+          }).addTo(map);
+          if (draggable && primary) {
+            m.on("dragstart", () => onDragStart?.());
+            m.on("drag", (e) => {
+              const ll = e.target.getLatLng();
+              onDrag?.({ lat: ll.lat, lon: wrapLon(ll.lng) });
+            });
+          }
+          return m;
+        });
+      } else {
+        markersRef.current.forEach((m, i) => {
+          m.setLatLng([lat, lngs[i]]);
+          m.setIcon(makeIcon());
+        });
+      }
+    };
+
+    sync();
+    map.on("moveend", sync);
+    return () => {
+      map.off("moveend", sync);
+    };
   }, [mapRef, mapReady, visible, lat, lon, bearing, onDrag, onDragStart, draggable, className]);
 
   useEffect(() => () => {

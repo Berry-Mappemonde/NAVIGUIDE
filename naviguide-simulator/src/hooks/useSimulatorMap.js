@@ -16,7 +16,7 @@ export function useSimulatorMap(containerRef, isLightMode) {
       zoomSnap: 0.25,
       minZoom: 2,
       maxZoom: 18,
-      worldCopyJump: true,
+      worldCopyJump: false,
     });
     createPanes(map);
     const base = L.tileLayer(TILE_URLS.dark, {

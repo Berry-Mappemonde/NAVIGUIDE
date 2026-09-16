@@ -16,6 +16,7 @@ export const PANES = [
   { name: "route", zIndex: 380 },
   { name: "science-tracks", zIndex: 410 },
   { name: "amp", zIndex: 420 },
+  { name: "grib", zIndex: 560, pointerEvents: "none" },
   { name: "boat", zIndex: 620 },
 ];
 

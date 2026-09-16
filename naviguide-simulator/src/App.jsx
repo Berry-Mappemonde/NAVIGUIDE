@@ -50,7 +50,7 @@ import {
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
 import { isRouteReady } from "./utils/routeReady.js";
-import { isSceneReady, playheadAligned } from "./utils/sceneGate.js";
+import { isSceneReady, playheadAligned, shouldResnapCamera } from "./utils/sceneGate.js";
 import { useGribCorridorLayer } from "./layers/useGribCorridorLayer.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
@@ -69,7 +69,7 @@ import {
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
-import { flagIconMetrics, flagMarkerHtml, waypointFlagSrcs, worldCopyLngs } from "./utils/waypointFlags.js";
+import { flagIconMetrics, flagMarkerHtml, markerWorldLngs, waypointFlagSrcs } from "./utils/waypointFlags.js";
 import L from "leaflet";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -536,6 +536,7 @@ export default function App() {
   }, [isSuivre, playback.setProfile]);
 
   const placedRef = useRef(false);
+  const snapRef = useRef(null);
   const ignoreUserNavRef = useRef(false);
   const ignoreUserNavTimer = useRef(0);
   const armProgrammaticNav = useCallback(() => {
@@ -547,6 +548,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     placedRef.current = false;
+    snapRef.current = null;
   }, [view]);
 
   useEffect(() => {
@@ -555,18 +557,23 @@ export default function App() {
       setCameraPlaced(false);
       return;
     }
-    if (placedRef.current) {
-      setCameraPlaced(true);
-      return;
-    }
     if (isSuivre) {
-      if (!live) {
+      if (!live || live.lat == null || live.lon == null) {
         setCameraPlaced(false);
+        return;
+      }
+      if (placedRef.current && !shouldResnapCamera(snapRef.current, live)) {
+        setCameraPlaced(true);
         return;
       }
       armProgrammaticNav();
       map.setView([live.lat, live.lon], 6.5, { animate: false });
+      snapRef.current = { lat: live.lat, lon: live.lon };
       placedRef.current = true;
+      setCameraPlaced(true);
+      return;
+    }
+    if (placedRef.current) {
       setCameraPlaced(true);
       return;
     }
@@ -1116,7 +1123,7 @@ export default function App() {
         ? flagMarkerHtml(srcs, off)
         : `<div style="width:10px;height:10px;border-radius:50%;background:${i === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
       const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
-      for (const lng of worldCopyLngs(p.lon)) {
+      for (const lng of markerWorldLngs(p.lon)) {
         const m = L.marker([p.lat, lng], {
           icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
           interactive: true,

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import { worldCopyLngs } from "../utils/gribSymbols.js";
+import { markerWorldLngs } from "../utils/waypointFlags.js";
 
 function planeHtml(bearing) {
   const deg = Number(bearing) || 0;
@@ -25,28 +25,38 @@ export function usePlaneMarker(mapRef, { visible, lat, lon, bearing, mapReady })
       clear();
       return undefined;
     }
-    const icon = L.divIcon({
+
+    const makeIcon = () => L.divIcon({
       className: "plane-divicon",
       html: planeHtml(bearing),
       iconSize: [64, 64],
       iconAnchor: [32, 32],
     });
-    const lngs = worldCopyLngs(lon);
-    if (markersRef.current.length !== lngs.length) {
-      clear();
-      markersRef.current = lngs.map((lng) => L.marker([lat, lng], {
-        icon,
-        draggable: false,
-        interactive: false,
-        pane: "boat",
-      }).addTo(map));
-    } else {
-      markersRef.current.forEach((m, i) => {
-        m.setLatLng([lat, lngs[i]]);
-        m.setIcon(icon);
-      });
-    }
-    return undefined;
+
+    const sync = () => {
+      const cam = map.getCenter()?.lng;
+      const lngs = markerWorldLngs(lon, cam);
+      if (markersRef.current.length !== lngs.length) {
+        clear();
+        markersRef.current = lngs.map((lng) => L.marker([lat, lng], {
+          icon: makeIcon(),
+          draggable: false,
+          interactive: false,
+          pane: "boat",
+        }).addTo(map));
+      } else {
+        markersRef.current.forEach((m, i) => {
+          m.setLatLng([lat, lngs[i]]);
+          m.setIcon(makeIcon());
+        });
+      }
+    };
+
+    sync();
+    map.on("moveend", sync);
+    return () => {
+      map.off("moveend", sync);
+    };
   }, [mapRef, mapReady, visible, lat, lon, bearing]);
 
   useEffect(() => () => {

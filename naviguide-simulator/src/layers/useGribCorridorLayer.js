@@ -1,13 +1,12 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { corridorForBoat } from "../utils/gribCorridor.js";
-import { wrapLon } from "../utils/geo.js";
 import {
   gribBarbSvg,
   gribDisplayPoints,
   waveHsColor,
-  worldCopyLngs,
 } from "../utils/gribSymbols.js";
+import { cameraLngForBoat, markerWorldLngs, wrapLon } from "../utils/waypointFlags.js";
 
 function lonNearBox(lon, west, east) {
   const x = Number(lon);
@@ -20,7 +19,7 @@ function lonNearBox(lon, west, east) {
 function sampleNearBox(s, south, north, west, east) {
   if (s.lat == null || s.lon == null) return false;
   if (s.lat < south - 1 || s.lat > north + 1) return false;
-  const copies = worldCopyLngs(s.lon).concat(wrapLon(s.lon));
+  const copies = markerWorldLngs(s.lon);
   return copies.some((lng) => lonNearBox(lng, west, east) || lonNearBox(lng, wrapLon(west), wrapLon(east)));
 }
 
@@ -32,7 +31,7 @@ function cellKey(value) {
 export function useGribCorridorLayer(mapRef, { grib, mapReady, visible, whenIso, lat, lon }) {
   const groupRef = useRef(null);
   const latCell = cellKey(lat);
-  const lonCell = cellKey(lon == null ? null : wrapLon(lon));
+  const lonCell = cellKey(lon);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -41,7 +40,8 @@ export function useGribCorridorLayer(mapRef, { grib, mapReady, visible, whenIso,
       groupRef.current = null;
     }
     if (!map || !mapReady || !visible || grib?.status !== "ready") return undefined;
-    const box = corridorForBoat(grib.bbox, latCell, lonCell);
+    const camLon = cameraLngForBoat(lonCell, map.getCenter()?.lng);
+    const box = corridorForBoat(grib.bbox, latCell, camLon);
     if (!box) return undefined;
     const [south, north, west, east] = box;
 
@@ -51,13 +51,13 @@ export function useGribCorridorLayer(mapRef, { grib, mapReady, visible, whenIso,
     const near = (grib.samples || []).filter((s) => sampleNearBox(s, south, north, west, east));
     const slice = gribDisplayPoints(near.length ? near : grib.samples, {
       lat: latCell,
-      lon: lonCell,
+      lon: camLon,
       whenIso,
     });
-    const pane = map.getPane("boat") ? "boat" : "overlayPane";
+    const pane = map.getPane("grib") ? "grib" : "overlayPane";
+    const cam = Number.isFinite(camLon) ? camLon : map.getCenter()?.lng;
     for (const s of slice) {
-      const baseLon = wrapLon(s.lon);
-      for (const lng of worldCopyLngs(baseLon)) {
+      for (const lng of markerWorldLngs(s.lon, cam)) {
         if (s.hs != null) {
           L.circleMarker([s.lat, lng], {
             radius: 10,

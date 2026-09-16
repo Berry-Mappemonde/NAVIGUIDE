@@ -8,10 +8,14 @@ const root = dirname(fileURLToPath(import.meta.url));
 const read = (rel) => readFileSync(join(root, rel), "utf8");
 
 describe("recette A–G (contrats source)", () => {
-  it("A — bateau et drapeaux sur worldCopyLngs", () => {
-    assert.match(read("../components/CatamaranMarker.jsx"), /worldCopyLngs/);
-    assert.match(read("../components/PlaneMarker.jsx"), /worldCopyLngs/);
-    assert.match(read("../App.jsx"), /worldCopyLngs/);
+  it("A — bateau et drapeaux sur la même lon enveloppée que la caméra", () => {
+    assert.match(read("../components/CatamaranMarker.jsx"), /markerWorldLngs/);
+    assert.match(read("../components/PlaneMarker.jsx"), /markerWorldLngs/);
+    assert.match(read("../App.jsx"), /shouldResnapCamera/);
+    assert.match(read("../App.jsx"), /markerWorldLngs/);
+    assert.match(read("../hooks/useFilmCamera.js"), /cameraLngForBoat/);
+    assert.doesNotMatch(read("../hooks/useFilmCamera.js"), /unwrapLon/);
+    assert.match(read("../hooks/useSimulatorMap.js"), /worldCopyJump:\s*false/);
   });
 
   it("C — plus d’ArrivalCard ni d’effect banner", () => {
@@ -27,10 +31,16 @@ describe("recette A–G (contrats source)", () => {
     assert.match(read("./cinemaHotkey.js"), /metaKey \|\| e\.ctrlKey/);
   });
 
-  it("E — GRIB2 branché, pas allumé en dur hors config", () => {
+  it("E — GRIB2 branché, même lon enveloppée que le bateau", () => {
     const app = read("../App.jsx");
     assert.match(app, /maritimeLayers\.showGrib && isSuivre/);
     assert.match(read("../layers/useToggleLayers.js"), /DEFAULT_SHOW_GRIB/);
+    const grib = read("../layers/useGribCorridorLayer.js");
+    assert.match(grib, /markerWorldLngs/);
+    assert.match(grib, /cameraLngForBoat/);
+    assert.match(grib, /getPane\("grib"\)/);
+    assert.doesNotMatch(grib, /getPane\("boat"\)/);
+    assert.match(read("../layers/layerOrder.js"), /name:\s*"grib"/);
   });
 
   it("F — Annuler Draw + bateau après 1er segment", () => {
@@ -47,5 +57,15 @@ describe("recette A–G (contrats source)", () => {
     assert.doesNotMatch(panel, /Open-Meteo/);
     assert.match(read("../App.jsx"), /buildWeatherLine\(/);
     assert.match(read("../components/SimulationFilmBar.jsx"), /weather-line/);
+  });
+
+  it("H — GRIB sous le bateau, catamaran SVG proue = cap", () => {
+    const icon = read("../engine/catamaranIcon.js");
+    const marker = read("../components/CatamaranMarker.jsx");
+    assert.match(icon, /data-bow="north"/);
+    assert.match(icon, /rotate\(\$\{/);
+    assert.match(marker, /catamaranSvg/);
+    assert.doesNotMatch(marker, /catamaran\.jpg/);
+    assert.doesNotMatch(icon, /scaleX/);
   });
 });
