@@ -1,97 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ampStyle } from "./styles.js";
-import { circleOpts, makePointGroup } from "./points.js";
-import { filterScienceFeatures } from "./scienceSource.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
-import {
-  aggregatePointFeatures,
-  POINT_RENDER_BUDGET,
-  visibleFeatureCollection,
-} from "./spatialFeatures.js";
+import { SpatialCatalogLayer } from "./spatialCatalogLayer.js";
 import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
 import { recetteClimoFlags } from "../utils/recetteQuery.js";
 
-const BI_BASE = import.meta.env.VITE_BI_BASE ?? "/bi";
 const EMPTY = { type: "FeatureCollection", features: [] };
-
-function useFetchLayer(url, { lazy = true } = {}) {
-  const [show, setShow] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [data, setData] = useState(null);
-  const fetched = useRef(false);
-
-  const toggle = useCallback((fn) => {
-    setShow((v) => {
-      const next = typeof fn === "function" ? fn(v) : !v;
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!show || !url || fetched.current) return undefined;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((json) => {
-        if (cancelled) return;
-        fetched.current = true;
-        setData(json);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(String(err.message || err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [show, url, lazy]);
-
-  return { show, setShow: toggle, loading, error, data };
-}
-
-function useLazyJson(enabled, url) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const fetched = useRef(false);
-
-  useEffect(() => {
-    if (!enabled || !url || fetched.current) return undefined;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((json) => {
-        if (cancelled) return;
-        fetched.current = true;
-        setData(json);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(String(err.message || err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, url]);
-
-  return { data, loading, error };
-}
 
 function lruSet(cache, key, value, maxEntries = 8) {
   if (cache.has(key)) cache.delete(key);
@@ -123,7 +38,12 @@ function useViewportFetchLayer(url, mapRef, mapReady, viewportRevision) {
     const map = mapRef.current;
     if (!show || !url || !map || !mapReady) return undefined;
     const bbox = viewportBbox(map);
-    const requestUrl = `${url}${url.includes("?") ? "&" : "?"}bbox=${encodeURIComponent(bbox)}`;
+    const params = new URLSearchParams({
+      bbox,
+      zoom: String(map.getZoom()),
+      limit: "420",
+    });
+    const requestUrl = `${url}${url.includes("?") ? "&" : "?"}${params}`;
     const hit = cacheRef.current.get(requestUrl);
     if (hit) {
       cacheRef.current.delete(requestUrl);
@@ -157,88 +77,32 @@ function useViewportFetchLayer(url, mapRef, mapReady, viewportRevision) {
   return { show, setShow: toggle, loading, error, data };
 }
 
-function addPointLayer(map, fc, color, kind, onFeature) {
-  const group = makePointGroup();
-  const zoom = map.getZoom();
-  const renderer = group._biRenderer;
-  const visible = visibleFeatureCollection(fc, map.getBounds().pad(0.18));
-  const features = aggregatePointFeatures(
-    visible.features,
-    (lon, lat) => map.latLngToContainerPoint([lat, lon]),
-    { budget: POINT_RENDER_BUDGET },
-  );
-  features.forEach((f) => {
-    if (f.geometry?.type !== "Point") return;
-    const [lon, lat] = f.geometry.coordinates;
-    const clusterCount = Number(f.properties?.clusterCount) || 1;
-    const m = L.circleMarker([lat, lon], circleOpts(color, {
-      zoom,
-      bump: clusterCount > 1 ? Math.min(6, Math.log2(clusterCount)) : 0,
-      renderer,
-    }));
-    m.on("click", (e) => {
-      L.DomEvent.stopPropagation(e);
-      onFeature?.({ lon, lat, kind, props: f.properties || {} });
-    });
-    group.addLayer(m);
-  });
-  group.addTo(map);
-  return group;
-}
+function usePersistentCatalogLayer(mapRef, mapReady, data, enabled, options) {
+  const layerRef = useRef(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return undefined;
+    const layer = new SpatialCatalogLayer(map, optionsRef.current);
+    layerRef.current = layer;
+    return () => {
+      layer.remove();
+      layerRef.current = null;
+    };
+  }, [mapRef, mapReady]);
 
-function addScienceSourceLayer(map, fc, source, color, onFeature) {
-  const filtered = visibleFeatureCollection(
-    filterScienceFeatures(fc, source),
-    map.getBounds().pad(0.18),
-  );
-  const group = makePointGroup();
-  const zoom = map.getZoom();
-  const renderer = group._biRenderer;
-  const points = aggregatePointFeatures(
-    filtered.features,
-    (lon, lat) => map.latLngToContainerPoint([lat, lon]),
-    { budget: POINT_RENDER_BUDGET },
-  );
-  const lines = filtered.features.filter((f) => f.geometry?.type === "LineString");
-  [...lines, ...points].forEach((f) => {
-    const props = f.properties || {};
-    const geom = f.geometry || {};
-    if (geom.type === "LineString") {
-      const latlngs = (geom.coordinates || [])
-        .filter((pt) => Array.isArray(pt) && pt.length >= 2)
-        .map(([lon, lat]) => [lat, lon]);
-      if (latlngs.length < 2) return;
-      const line = L.polyline(latlngs, {
-        color,
-        weight: 2.5,
-        opacity: 0.85,
-        pane: "science-tracks",
-      });
-      line.on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        onFeature?.({ lon: e.latlng.lng, lat: e.latlng.lat, kind: "science", props });
-      });
-      group.addLayer(line);
-      return;
-    }
-    if (geom.type !== "Point") return;
-    const [lon, lat] = geom.coordinates;
-    const fill = props.kind === "argo_float" ? 0.25 : props.kind === "cruise" ? 0.45 : 0.85;
-    const clusterCount = Number(props.clusterCount) || 1;
-    const m = L.circleMarker([lat, lon], circleOpts(color, {
-      zoom,
-      bump: clusterCount > 1 ? Math.min(6, Math.log2(clusterCount)) : 0,
-      fillOpacity: fill,
-      renderer,
-    }));
-    m.on("click", (e) => {
-      L.DomEvent.stopPropagation(e);
-      onFeature?.({ lon, lat, kind: "science", props });
-    });
-    group.addLayer(m);
-  });
-  group.addTo(map);
-  return group;
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.configure(options);
+  }, [options]);
+
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.update(enabled ? data || EMPTY : EMPTY);
+  }, [data, enabled]);
 }
 
 export function useToggleLayers(
@@ -248,7 +112,6 @@ export function useToggleLayers(
   gateRef,
   { cameraFollowing = false } = {},
 ) {
-  const zee = useFetchLayer(null);
   const [showZee, setShowZee] = useState(DEFAULT_SHOW_ZEE);
   const [loadingZee] = useState(false);
   const [errorZee, setErrorZee] = useState(null);
@@ -256,21 +119,25 @@ export function useToggleLayers(
   const [viewportRevision, setViewportRevision] = useState(0);
 
   const ports = useViewportFetchLayer("/proxy/ports", mapRef, mapReady, viewportRevision);
-  const projects = useFetchLayer(`${BI_BASE}/export/geojson`);
-  const marinas = useFetchLayer(`${BI_BASE}/export/marinas.geojson`);
-  const capitaineries = useFetchLayer(`${BI_BASE}/export/capitaineries.geojson`);
-  const poe = useFetchLayer(`${BI_BASE}/export/poe.geojson`);
+  const projects = useViewportFetchLayer("/proxy/catalog/projects", mapRef, mapReady, viewportRevision);
+  const marinas = useViewportFetchLayer("/proxy/catalog/marinas", mapRef, mapReady, viewportRevision);
+  const capitaineries = useViewportFetchLayer("/proxy/catalog/capitaineries", mapRef, mapReady, viewportRevision);
+  const poe = useViewportFetchLayer("/proxy/catalog/poe", mapRef, mapReady, viewportRevision);
+  const amp = useViewportFetchLayer("/proxy/catalog/amp", mapRef, mapReady, viewportRevision);
+  const sextant = useViewportFetchLayer("/proxy/catalog/science?source=sextant", mapRef, mapReady, viewportRevision);
+  const argo = useViewportFetchLayer("/proxy/catalog/science?source=argo", mapRef, mapReady, viewportRevision);
+  const odatis = useViewportFetchLayer("/proxy/catalog/science?source=odatis", mapRef, mapReady, viewportRevision);
+  const edmed = useViewportFetchLayer("/proxy/catalog/science?source=edmed", mapRef, mapReady, viewportRevision);
+  const csr = useViewportFetchLayer("/proxy/catalog/science?source=csr", mapRef, mapReady, viewportRevision);
 
-  const [showSextant, setShowSextant] = useState(false);
-  const [showArgo, setShowArgo] = useState(false);
-  const [showOdatis, setShowOdatis] = useState(false);
-  const [showEdmed, setShowEdmed] = useState(false);
-  const [showCsr, setShowCsr] = useState(false);
+  const { show: showSextant, setShow: setShowSextant } = sextant;
+  const { show: showArgo, setShow: setShowArgo } = argo;
+  const { show: showOdatis, setShow: setShowOdatis } = odatis;
+  const { show: showEdmed, setShow: setShowEdmed } = edmed;
+  const { show: showCsr, setShow: setShowCsr } = csr;
   const [showBathymetry, setShowBathymetryRaw] = useState(false);
   const [showFonds, setShowFondsRaw] = useState(false);
   const [showCables, setShowCablesRaw] = useState(false);
-  const scienceCatalogOn = showSextant || showArgo || showOdatis || showEdmed || showCsr;
-  const scienceCatalog = useLazyJson(scienceCatalogOn, `${BI_BASE}/export/science.geojson`);
 
   const [showBalisage, setShowBalisageRaw] = useState(false);
   const gatedSet = useCallback((setter, kind) => (fn) => {
@@ -287,10 +154,6 @@ export function useToggleLayers(
   const setShowBathymetry = gatedSet(setShowBathymetryRaw, "bathymetry");
   const setShowFonds = gatedSet(setShowFondsRaw, "fonds");
   const setShowCables = gatedSet(setShowCablesRaw, "cables");
-  const [showAmp, setShowAmp] = useState(false);
-  const [loadingAmp, setLoadingAmp] = useState(false);
-  const [errorAmp, setErrorAmp] = useState(null);
-  const [ampData, setAmpData] = useState(EMPTY);
   const recetteClimo = recetteClimoFlags();
   const [showClimoWind, setShowClimoWind] = useState(recetteClimo.wind);
   const [showClimoWave, setShowClimoWave] = useState(recetteClimo.wave);
@@ -298,8 +161,51 @@ export function useToggleLayers(
   const [showClimoCyclones, setShowClimoCyclones] = useState(recetteClimo.cyclones);
 
   const layersRef = useRef({});
-  const ampRequestRef = useRef({ id: 0, controller: null });
-  const ampCacheRef = useRef(new Map());
+  const pointOptions = useMemo(() => ({
+    pane: "science-tracks",
+    pointFillOpacity: 0.8,
+    onFeature,
+  }), [onFeature]);
+  const ampOptions = useMemo(() => ({
+    pane: "amp",
+    pointFillOpacity: 0.72,
+    styleFor: (properties) => ampStyle(properties?.lfp),
+    onFeature,
+  }), [onFeature]);
+
+  usePersistentCatalogLayer(mapRef, mapReady, ports.data, ports.show, {
+    ...pointOptions, color: "#f59e0b", kind: "port",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, projects.data, projects.show, {
+    ...pointOptions, color: "#06b6d4", kind: "project",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, marinas.data, marinas.show, {
+    ...pointOptions, color: "#ef4444", kind: "marina",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, capitaineries.data, capitaineries.show, {
+    ...pointOptions, color: "#7dd3fc", kind: "capitainerie",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, poe.data, poe.show, {
+    ...pointOptions, color: "#d97706", kind: "poe",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, amp.data, amp.show, {
+    ...ampOptions, color: "#22c55e", kind: "amp",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, sextant.data, sextant.show, {
+    ...pointOptions, color: "#a78bfa", kind: "science",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, argo.data, argo.show, {
+    ...pointOptions, color: "#c4b5fd", kind: "science", pointFillOpacity: 0.25,
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, odatis.data, odatis.show, {
+    ...pointOptions, color: "#8b5cf6", kind: "science",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, edmed.data, edmed.show, {
+    ...pointOptions, color: "#7c3aed", kind: "science",
+  });
+  usePersistentCatalogLayer(mapRef, mapReady, csr.data, csr.show, {
+    ...pointOptions, color: "#6d28d9", kind: "science", pointFillOpacity: 0.45,
+  });
 
   useEffect(() => {
     const map = mapRef.current;
@@ -390,59 +296,6 @@ export function useToggleLayers(
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !ports.show || !ports.data) return undefined;
-    const g = addPointLayer(map, ports.data, "#f59e0b", "port", onFeature);
-    return () => map.removeLayer(g);
-  }, [mapRef, mapReady, ports.show, ports.data, onFeature, viewportRevision]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !projects.show || !projects.data) return undefined;
-    const g = addPointLayer(map, projects.data, "#06b6d4", "project", onFeature);
-    return () => map.removeLayer(g);
-  }, [mapRef, mapReady, projects.show, projects.data, onFeature, viewportRevision]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !marinas.show || !marinas.data) return undefined;
-    const g = addPointLayer(map, marinas.data, "#ef4444", "marina", onFeature);
-    return () => map.removeLayer(g);
-  }, [mapRef, mapReady, marinas.show, marinas.data, onFeature, viewportRevision]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !capitaineries.show || !capitaineries.data) return undefined;
-    const g = addPointLayer(map, capitaineries.data, "#7dd3fc", "capitainerie", onFeature);
-    return () => map.removeLayer(g);
-  }, [mapRef, mapReady, capitaineries.show, capitaineries.data, onFeature, viewportRevision]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !poe.show || !poe.data) return undefined;
-    const g = addPointLayer(map, poe.data, "#d97706", "poe", onFeature);
-    return () => map.removeLayer(g);
-  }, [mapRef, mapReady, poe.show, poe.data, onFeature, viewportRevision]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !scienceCatalog.data) return undefined;
-    const added = [];
-    const specs = [
-      [showSextant, "sextant", "#a78bfa"],
-      [showArgo, "argo", "#c4b5fd"],
-      [showOdatis, "odatis", "#8b5cf6"],
-      [showEdmed, "edmed", "#7c3aed"],
-      [showCsr, "csr", "#6d28d9"],
-    ];
-    specs.forEach(([on, source, color]) => {
-      if (!on) return;
-      added.push(addScienceSourceLayer(map, scienceCatalog.data, source, color, onFeature));
-    });
-    return () => added.forEach((g) => map.removeLayer(g));
-  }, [mapRef, mapReady, scienceCatalog.data, showSextant, showArgo, showOdatis, showEdmed, showCsr, onFeature, viewportRevision]);
-
-  useEffect(() => {
-    const map = mapRef.current;
     if (!map || !mapReady) return undefined;
     const enabled = { bathymetry: showBathymetry, substrate: showFonds, cables: showCables };
     const added = [];
@@ -464,85 +317,8 @@ export function useToggleLayers(
     return () => added.forEach((lyr) => map.removeLayer(lyr));
   }, [mapRef, mapReady, showBathymetry, showFonds, showCables]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !showAmp || cameraFollowing) return undefined;
-    let debounce = null;
-    const load = () => {
-      const bbox = viewportBbox(map);
-      const cached = ampCacheRef.current.get(bbox);
-      if (cached) {
-        ampCacheRef.current.delete(bbox);
-        ampCacheRef.current.set(bbox, cached);
-        setAmpData(cached);
-        setLoadingAmp(false);
-        setErrorAmp(null);
-        return;
-      }
-      const previous = ampRequestRef.current;
-      if (previous.bbox === bbox && previous.controller) return;
-      previous.controller?.abort();
-      const controller = new AbortController();
-      const id = previous.id + 1;
-      ampRequestRef.current = { id, controller, bbox };
-      setLoadingAmp(true);
-      setErrorAmp(null);
-      fetch(`${BI_BASE}/amp?bbox=${bbox}`, { signal: controller.signal })
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then((json) => {
-          if (ampRequestRef.current.id === id) {
-            lruSet(ampCacheRef.current, bbox, json, 8);
-            setAmpData(json);
-          }
-        })
-        .catch((err) => {
-          if (!controller.signal.aborted && ampRequestRef.current.id === id) {
-            setErrorAmp(String(err.message || err));
-          }
-        })
-        .finally(() => {
-          if (ampRequestRef.current.id === id) {
-            ampRequestRef.current.controller = null;
-            setLoadingAmp(false);
-          }
-        });
-    };
-    const onMove = () => {
-      clearTimeout(debounce);
-      debounce = setTimeout(load, 420);
-    };
-    debounce = setTimeout(load, 420);
-    map.on("moveend", onMove);
-    return () => {
-      clearTimeout(debounce);
-      map.off("moveend", onMove);
-      ampRequestRef.current.id += 1;
-      ampRequestRef.current.controller?.abort();
-      ampRequestRef.current.controller = null;
-      setLoadingAmp(false);
-    };
-  }, [mapRef, mapReady, showAmp, cameraFollowing]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !showAmp || !ampData) return undefined;
-    const layer = L.geoJSON(ampData, {
-      pane: "amp",
-      style: (f) => ampStyle(f.properties?.lfp),
-      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 5, color: "#22c55e" }),
-      onEachFeature: (f, lyr) => {
-        lyr.on("click", (e) => {
-          L.DomEvent.stopPropagation(e);
-          const ll = e.latlng;
-          onFeature?.({ lon: ll.lng, lat: ll.lat, kind: "amp", props: f.properties || {} });
-        });
-      },
-    }).addTo(map);
-    return () => map.removeLayer(layer);
-  }, [mapRef, mapReady, showAmp, ampData, onFeature]);
+  const scienceLoading = sextant.loading || argo.loading || odatis.loading || edmed.loading || csr.loading;
+  const scienceError = sextant.error || argo.error || odatis.error || edmed.error || csr.error || null;
 
   return useMemo(() => ({
     showGrib,
@@ -577,10 +353,10 @@ export function useToggleLayers(
     setShowBiPoe: poe.setShow,
     loadingBiPoe: poe.loading,
     errorBiPoe: poe.error,
-    showBiAmp: showAmp,
-    setShowBiAmp: setShowAmp,
-    loadingBiAmp: loadingAmp,
-    errorBiAmp: errorAmp,
+    showBiAmp: amp.show,
+    setShowBiAmp: amp.setShow,
+    loadingBiAmp: amp.loading,
+    errorBiAmp: amp.error,
     showSextant,
     setShowSextant,
     showArgo,
@@ -591,8 +367,8 @@ export function useToggleLayers(
     setShowEdmed,
     showCsr,
     setShowCsr,
-    loadingScienceCatalog: scienceCatalog.loading,
-    errorScienceCatalog: scienceCatalog.error,
+    loadingScienceCatalog: scienceLoading,
+    errorScienceCatalog: scienceError,
     showBathymetry,
     setShowBathymetry,
     loadingBathymetry: false,
@@ -614,13 +390,6 @@ export function useToggleLayers(
     showClimoCyclones,
     setShowClimoCyclones,
     errorClimatology: null,
-    zee: {
-      show: zee.show,
-      setShow: zee.setShow,
-      loading: zee.loading,
-      error: zee.error,
-      data: zee.data,
-    },
   }), [
     showGrib, showZee, loadingZee, errorZee,
     ports.show, ports.setShow, ports.loading, ports.error,
@@ -629,13 +398,12 @@ export function useToggleLayers(
     marinas.show, marinas.setShow, marinas.loading, marinas.error,
     capitaineries.show, capitaineries.setShow, capitaineries.loading, capitaineries.error,
     poe.show, poe.setShow, poe.loading, poe.error,
-    showAmp, loadingAmp, errorAmp,
+    amp.show, amp.setShow, amp.loading, amp.error,
     showSextant, showArgo, showOdatis, showEdmed, showCsr,
-    scienceCatalog.loading, scienceCatalog.error,
+    scienceLoading, scienceError,
     showBathymetry, setShowBathymetry,
     showFonds, setShowFonds,
     showCables, setShowCables,
     showClimoWind, showClimoWave, showClimoCurrent, showClimoCyclones,
-    zee.show, zee.setShow, zee.loading, zee.error, zee.data,
   ]);
 }
