@@ -168,6 +168,7 @@ export const Sidebar = memo(function Sidebar({
   isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
+  skipperNotice = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, onDepartureT0,
   clockSample = null, kindLabel = "", atQuay = false, quayDays = 0,
@@ -277,12 +278,17 @@ export const Sidebar = memo(function Sidebar({
             </div>
           )}
 
-          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
+          {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
               {briefingTitle ? (
                 <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug">
                   {briefingTitle}
                 </div>
+              ) : null}
+              {skipperNotice ? (
+                <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug">
+                  {skipperNotice}
+                </p>
               ) : null}
               <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">
                 {briefingLoading

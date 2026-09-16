@@ -18,7 +18,8 @@ import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
-import { sumRainHours } from "./engine/eventRules.js";
+import { readHs, readWind, sumRainHours } from "./engine/eventRules.js";
+import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
 import { filmEventMarks } from "./engine/iciAlong.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
 import { recetteMapView, recetteMonth } from "./utils/recetteQuery.js";
@@ -154,6 +155,12 @@ export default function App() {
   const [skipperClickId, setSkipperClickId] = useState(null);
   const isSuivre = view === VIEW_SUIVRE;
   const isSimulation = view === VIEW_SIMULATION;
+  // Skipper orders: one character, boat read from the polar, saved in this tab. Cinema keeps them active.
+  const skipper = useSkipperOrders({
+    polar: polarData,
+    mode: isSuivre ? "suivre" : "simulation",
+    lang,
+  });
   const [voyageFlat, setVoyageFlat] = useState(null);
   const [cameraPlaced, setCameraPlaced] = useState(false);
   const [sceneRevealed, setSceneRevealed] = useState(false);
@@ -562,7 +569,7 @@ export default function App() {
     boatNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
     mode: isSuivre ? "suivre" : "simulation",
     month: climoMonth,
-    knots: expeditionSpeed.knots,
+    orders: skipper.orders,
   });
 
   const iciPack = useIciDossier({
@@ -601,7 +608,26 @@ export default function App() {
     gribStatus: isSuivre ? official.gribStatus : null,
     along: alongPack.index,
     skipperClickId,
+    orders: skipper.orders,
   });
+
+  // Living example for the skipper panel: what the bag says here, against the orders.
+  const skipperSample = useMemo(() => {
+    const d = iciPack.dossier;
+    if (!d) return null;
+    const ctx = {
+      mode: isSuivre ? "suivre" : "simulation",
+      gribWind: isSuivre && Number.isFinite(official.live?.windKnots)
+        ? { windKnots: official.live.windKnots, dirFromDeg: official.live.dirFromDeg, hs: official.live.hs }
+        : null,
+    };
+    const depth = d.emodnet?.bathy?.depth_m ?? d.depthOffshore;
+    return {
+      tws: readWind(d, ctx)?.tws ?? null,
+      hs: readHs(d, ctx)?.hs ?? null,
+      depthM: Number.isFinite(depth) && Math.abs(depth) >= 1 ? Math.abs(depth) : null,
+    };
+  }, [iciPack.dossier, isSuivre, official.live?.windKnots, official.live?.dirFromDeg, official.live?.hs]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1250,6 +1276,7 @@ export default function App() {
         briefingLoading={iciPack.loading || briefingLoading}
         officialFallback={officialFallback}
         iciBriefing={iciPack.briefing}
+        skipperNotice={skipper.notice}
         view={view}
         onView={selectView}
         legContext={sidebarHudLeg}
@@ -1281,6 +1308,14 @@ export default function App() {
         onPolarDataLoaded={setPolarData}
         routeDistanceNm={stats.nm}
         routeSegmentCount={stats.segments}
+        skipperOrders={skipper.orders}
+        skipperProfile={skipper.profile}
+        onSkipperProfile={skipper.setProfile}
+        onSkipperReset={skipper.reset}
+        skipperSample={skipperSample}
+        skipperSuggest={skipper.suggest}
+        onSkipperSuggestAccept={skipper.acceptSuggest}
+        onSkipperSuggestDismiss={skipper.dismissSuggest}
       />
 
       {!sceneReady && !drawingMode && (

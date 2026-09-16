@@ -282,7 +282,7 @@ function readCurrent(at, ctx = {}) {
   };
 }
 
-function readHs(at, ctx = {}) {
+export function readHs(at, ctx = {}) {
   if (ctx.mode === "suivre") {
     const hs = at?.weather?.wave?.hs ?? ctx.gribWind?.hs;
     if (!Number.isFinite(hs)) return null;
