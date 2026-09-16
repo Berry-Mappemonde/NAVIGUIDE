@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Shield, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
@@ -8,7 +8,7 @@ import { ViewModeSwitch } from "./ViewModeSwitch.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 
-const NAVIGUIDE_LOGO = "/logo-naviguide.png";
+const NAVIGUIDE_LOGO = "/logo-naviguide.svg";
 const BERRY_LOGO = "/logo-berry-mappemonde.svg";
 
 function BerryCard({
@@ -161,7 +161,7 @@ function BerryCard({
   );
 }
 
-export function Sidebar({
+export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw,
@@ -335,4 +335,4 @@ export function Sidebar({
       </div>
     </>
   );
-}
+});

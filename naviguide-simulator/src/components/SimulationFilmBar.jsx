@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ChevronRight, Clapperboard, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
@@ -9,7 +10,7 @@ const PROFILES = [
   { id: "fast", labelKey: "speedFast" },
 ];
 
-export function SimulationFilmBar({
+export const SimulationFilmBar = memo(function SimulationFilmBar({
   fromName,
   toName,
   finished,
@@ -242,7 +243,7 @@ export function SimulationFilmBar({
       </div>
     </div>
   );
-}
+});
 
 function formatEta(hours) {
   if (hours == null || Number.isNaN(hours)) return "—";

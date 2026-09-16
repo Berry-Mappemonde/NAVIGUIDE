@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import { remainingParts, wakeParts } from "../engine/filmWake.js";
-import { worldCopyParts } from "../utils/geo.js";
+import { wakeCursorAt } from "../engine/filmWake.js";
 import { WAKE_DONE_COLOR, WAKE_REST_COLOR } from "../layers/styles.js";
+
+const WORLD_OFFSETS = [0, 360, -360];
 
 const WAKE_STYLE = {
   color: WAKE_DONE_COLOR,
@@ -20,16 +21,96 @@ const REST_STYLE = {
   interactive: false,
 };
 
-function syncLines(store, parts, style, group) {
-  while (store.current.length < parts.length) {
-    store.current.push(L.polyline([], style).addTo(group));
+function latLngs(coords, worldOffset = 0) {
+  return coords.map(([lon, lat]) => [lat, lon + worldOffset]);
+}
+
+function staticWakeParts(flat) {
+  const points = flat?.points || [];
+  const parts = [];
+  const partByPoint = new Array(points.length);
+  let current = null;
+
+  points.forEach((point, index) => {
+    if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
+    const previous = index > 0 ? points[index - 1] : null;
+    const crossesAntimeridian = Boolean(
+      current?.length
+      && previous
+      && Math.abs(point.lon - previous.lon) > 180,
+    );
+    if (!current || point.jump || crossesAntimeridian) {
+      current = [];
+      parts.push(current);
+    }
+    current.push([point.lon, point.lat]);
+    partByPoint[index] = parts.length - 1;
+  });
+
+  return { points, parts, partByPoint };
+}
+
+function createWorldLines(group, style) {
+  return WORLD_OFFSETS.map(() => L.polyline([], style).addTo(group));
+}
+
+function setTail(lines, from, to) {
+  if (!from || !to) {
+    lines.forEach((line) => line.setLatLngs([]));
+    return;
   }
-  while (store.current.length > parts.length) {
-    const line = store.current.pop();
-    group.removeLayer(line);
+  const coords = [[from.lon, from.lat], [to.lon, to.lat]];
+  lines.forEach((line, index) => {
+    line.setLatLngs(latLngs(coords, WORLD_OFFSETS[index]));
+  });
+}
+
+function clearDoneLines(lines) {
+  lines.forEach((worldLines) => {
+    worldLines.forEach((line) => line.setLatLngs([]));
+  });
+}
+
+function appendDonePoint(geometry, index) {
+  const point = geometry.points[index];
+  const partIndex = geometry.partByPoint[index];
+  if (!point || partIndex == null) return;
+  geometry.doneLines[partIndex].forEach((line, worldIndex) => {
+    line.addLatLng([point.lat, point.lon + WORLD_OFFSETS[worldIndex]]);
+  });
+}
+
+function syncWake(geometry, sailNm) {
+  const target = Math.max(0, Number(sailNm) || 0);
+  const targetIndex = wakeCursorAt(
+    { points: geometry.points },
+    target,
+    geometry.completedIndex,
+  );
+  if (targetIndex < geometry.completedIndex) {
+    clearDoneLines(geometry.doneLines);
+    geometry.completedIndex = -1;
   }
-  parts.forEach((coords, i) => {
-    store.current[i].setLatLngs(coords.map(([lon, lat]) => [lat, lon]));
+  while (geometry.completedIndex < targetIndex) {
+    geometry.completedIndex += 1;
+    appendDonePoint(geometry, geometry.completedIndex);
+  }
+
+  const previous = geometry.points[geometry.completedIndex];
+  const next = geometry.points[geometry.completedIndex + 1];
+  const samePart = previous && next
+    && geometry.partByPoint[geometry.completedIndex] === geometry.partByPoint[geometry.completedIndex + 1];
+  if (!previous || !next || next.jump || !samePart) {
+    setTail(geometry.tailLines, null, null);
+    return;
+  }
+  const span = (next.cumNm ?? 0) - (previous.cumNm ?? 0);
+  const ratio = span > 0
+    ? Math.max(0, Math.min(1, (target - (previous.cumNm ?? 0)) / span))
+    : 0;
+  setTail(geometry.tailLines, previous, {
+    lon: previous.lon + ratio * (next.lon - previous.lon),
+    lat: previous.lat + ratio * (next.lat - previous.lat),
   });
 }
 
@@ -38,32 +119,39 @@ function syncLines(store, parts, style, group) {
  */
 export function useWakeLayer(mapRef, { flat, sailNm, enabled, mapReady }) {
   const groupRef = useRef(null);
-  const wakeRef = useRef([]);
-  const restRef = useRef([]);
+  const geometryRef = useRef(null);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !enabled) {
       groupRef.current?.remove();
       groupRef.current = null;
-      wakeRef.current = [];
-      restRef.current = [];
+      geometryRef.current = null;
       return undefined;
     }
     const group = L.layerGroup().addTo(map);
+    const geometry = staticWakeParts(flat);
+    geometry.parts.forEach((part) => {
+      if (part.length < 2) return;
+      WORLD_OFFSETS.forEach((worldOffset) => {
+        L.polyline(latLngs(part, worldOffset), REST_STYLE).addTo(group);
+      });
+    });
+    geometry.doneLines = geometry.parts.map(() => createWorldLines(group, WAKE_STYLE));
+    geometry.tailLines = createWorldLines(group, WAKE_STYLE);
+    geometry.completedIndex = -1;
     groupRef.current = group;
+    geometryRef.current = geometry;
     return () => {
       group.remove();
       groupRef.current = null;
-      wakeRef.current = [];
-      restRef.current = [];
+      geometryRef.current = null;
     };
-  }, [mapRef, mapReady, enabled]);
+  }, [mapRef, mapReady, enabled, flat]);
 
   useEffect(() => {
-    const group = groupRef.current;
-    if (!group || !enabled) return;
-    syncLines(restRef, worldCopyParts(remainingParts(flat, sailNm)), REST_STYLE, group);
-    syncLines(wakeRef, worldCopyParts(wakeParts(flat, sailNm)), WAKE_STYLE, group);
-  }, [flat, sailNm, enabled]);
+    const geometry = geometryRef.current;
+    if (!geometry || !enabled) return;
+    syncWake(geometry, sailNm);
+  }, [sailNm, enabled]);
 }

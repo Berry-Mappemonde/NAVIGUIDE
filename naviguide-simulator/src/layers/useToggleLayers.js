@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ampStyle } from "./styles.js";
 import { circleOpts, makePointGroup } from "./points.js";
@@ -196,6 +196,7 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   const [showClimoCyclones, setShowClimoCyclones] = useState(recetteClimo.cyclones);
 
   const layersRef = useRef({});
+  const ampRequestRef = useRef({ id: 0, controller: null });
 
   useEffect(() => {
     const map = mapRef.current;
@@ -242,6 +243,10 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     });
     tiles.on("tileerror", () => {
       if (!layersRef.current.balisageFallback) {
+        map.removeLayer(tiles);
+        if (layersRef.current.balisage === tiles) {
+          layersRef.current.balisage = null;
+        }
         layersRef.current.balisageFallback = L.tileLayer("/proxy/seamark/{z}/{x}/{y}.png", {
           pane: "balisage",
           opacity: 0.85,
@@ -339,26 +344,35 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !showAmp) return undefined;
-    let cancelled = false;
     let debounce = null;
     const load = () => {
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
+      const previous = ampRequestRef.current;
+      previous.controller?.abort();
+      const controller = new AbortController();
+      const id = previous.id + 1;
+      ampRequestRef.current = { id, controller };
       setLoadingAmp(true);
       setErrorAmp(null);
-      fetch(`${BI_BASE}/amp?bbox=${bbox}`)
+      fetch(`${BI_BASE}/amp?bbox=${bbox}`, { signal: controller.signal })
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.json();
         })
         .then((json) => {
-          if (!cancelled) setAmpData(json);
+          if (ampRequestRef.current.id === id) setAmpData(json);
         })
         .catch((err) => {
-          if (!cancelled) setErrorAmp(String(err.message || err));
+          if (!controller.signal.aborted && ampRequestRef.current.id === id) {
+            setErrorAmp(String(err.message || err));
+          }
         })
         .finally(() => {
-          if (!cancelled) setLoadingAmp(false);
+          if (ampRequestRef.current.id === id) {
+            ampRequestRef.current.controller = null;
+            setLoadingAmp(false);
+          }
         });
     };
     const onMove = () => {
@@ -368,9 +382,11 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     debounce = setTimeout(load, 420);
     map.on("moveend", onMove);
     return () => {
-      cancelled = true;
       clearTimeout(debounce);
       map.off("moveend", onMove);
+      ampRequestRef.current.id += 1;
+      ampRequestRef.current.controller?.abort();
+      ampRequestRef.current.controller = null;
     };
   }, [mapRef, mapReady, showAmp]);
 
@@ -392,7 +408,7 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     return () => map.removeLayer(layer);
   }, [mapRef, mapReady, showAmp, ampData, onFeature]);
 
-  return {
+  return useMemo(() => ({
     showGrib,
     setShowGrib,
     loadingGrib: false,
@@ -462,6 +478,28 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     showClimoCyclones,
     setShowClimoCyclones,
     errorClimatology: null,
-    zee,
-  };
+    zee: {
+      show: zee.show,
+      setShow: zee.setShow,
+      loading: zee.loading,
+      error: zee.error,
+      data: zee.data,
+    },
+  }), [
+    showGrib, showZee, loadingZee, errorZee,
+    ports.show, ports.setShow, ports.loading, ports.error,
+    showBalisage, setShowBalisage,
+    projects.show, projects.setShow, projects.loading, projects.error,
+    marinas.show, marinas.setShow, marinas.loading, marinas.error,
+    capitaineries.show, capitaineries.setShow, capitaineries.loading, capitaineries.error,
+    poe.show, poe.setShow, poe.loading, poe.error,
+    showAmp, loadingAmp, errorAmp,
+    showSextant, showArgo, showOdatis, showEdmed, showCsr,
+    scienceCatalog.loading, scienceCatalog.error,
+    showBathymetry, setShowBathymetry,
+    showFonds, setShowFonds,
+    showCables, setShowCables,
+    showClimatology, setShowClimatology,
+    zee.show, zee.setShow, zee.loading, zee.error, zee.data,
+  ]);
 }
