@@ -15,7 +15,6 @@ import {
   upsertLedger,
 } from "./iciAlong.js";
 import { detectEvents, emptyEventMemory } from "./eventRules.js";
-import { enqueueStory } from "./storyQueue.js";
 
 function lineFlat() {
   return flattenRoute([{
@@ -169,6 +168,24 @@ describe("iciAlong events + ledger", () => {
     assert.equal(again[0].seenNow, true);
   });
 
+  it("keeps a pending story when the detector re-emits a template", () => {
+    const pending = {
+      id: "zee-enter:1",
+      stableKey: "zee-enter:8462",
+      type: "zee-enter",
+      judge: "now",
+      story: { status: "pending", cascade: "nim-or-claude", tavily: null, nvidia: null },
+      phrase: "On vient d’entrer dans Spain.",
+    };
+    const led = upsertLedger([], [pending]);
+    const again = upsertLedger(led, [{
+      ...pending,
+      story: { status: "template" },
+      phrase: "On vient d’entrer dans Spain.",
+    }]);
+    assert.equal(again[0].story.status, "pending");
+  });
+
   it("Simulation keeps every visible pill", () => {
     const marks = filmEventMarks([
       { id: "a", type: "zee-enter", judge: "now", filmCum: 10 },
@@ -192,12 +209,3 @@ describe("iciAlong events + ledger", () => {
   });
 });
 
-describe("enqueueStory prise", () => {
-  it("is a no-op on the usual cascade name, without calling a provider", () => {
-    const out = enqueueStory({ event: "zee-enter", tavily: null, nvidia: null });
-    assert.equal(out.status, "template");
-    assert.equal(out.cascade, "nim-or-claude");
-    assert.equal(out.tavily, null);
-    assert.equal(out.nvidia, null);
-  });
-});

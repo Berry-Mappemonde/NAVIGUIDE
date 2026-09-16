@@ -31,6 +31,7 @@ from mem_limits import (
     too_large,
 )
 from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
+from story_cascade import write_story
 from polar_api import router as polar_router
 from route_engine import searoute_with_exact_end
 from voyage_api import router as voyage_router
@@ -130,6 +131,14 @@ async def get_ici(
     return await fill_dossier(
         lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
     )
+
+
+@app.post("/ici/story")
+async def post_ici_story(body: dict):
+    """Background story. NIM → OR ± :online → Claude. Play does not await this."""
+    if not isinstance(body, dict) or not (body.get("event") or body.get("eventId")):
+        raise HTTPException(400, "événement manquant")
+    return await write_story(body)
 
 
 @app.get("/route")
