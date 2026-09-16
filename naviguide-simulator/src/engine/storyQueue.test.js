@@ -76,6 +76,50 @@ describe("shouldEnqueueStory + payload", () => {
     assert.equal(plain.needPage, false);
     assert.equal(plain.pageUrl, null);
   });
+
+  it("adds the skipper block: the orders that made THIS event switch, one value per id", () => {
+    const body = storyPayload({
+      id: "hs-shift:forecast:3",
+      stableKey: "hs-shift:forecast",
+      type: "hs-shift",
+      kind: "climatology",
+      severity: "alert",
+      judge: "now",
+      payload: { hs: 3.6, p50: 3.6, p90: 4.8, kind: "climatology", alert: true, tavily: null, nvidia: null },
+      skipper: {
+        profile: "cruise",
+        profile_phrase: "Ordres Berry — croisière.",
+        comfort: "normal",
+        boat: { name: "Leopard 46", loaM: 14, draftM: 1.4 },
+        used: [
+          { id: "hsShiftM", value: 1, unit: "m", source: "usage", rule: "variation de houle (croisière)" },
+          { id: "hsAlertM", value: 3.5, unit: "m", source: "usage", rule: "constante Croisière E1 3,5 m" },
+          { id: "hsAlertM", value: 99, unit: "m", source: "usage", rule: "duplicate must be dropped" },
+        ],
+      },
+    });
+    assert.equal(body.event, "hs-shift");
+    assert.equal(body.kind, "climatology");
+    assert.equal(body.skipper.profile, "cruise");
+    assert.equal(body.skipper.profile_phrase, "Ordres Berry — croisière.");
+    assert.equal(body.skipper.comfort, "normal");
+    assert.deepEqual(body.skipper.boat, { name: "Leopard 46", loaM: 14, draftM: 1.4 });
+    assert.deepEqual(body.skipper.used.map((u) => u.id), ["hsShiftM", "hsAlertM"]);
+    assert.deepEqual(
+      body.skipper.used[1],
+      { id: "hsAlertM", value: 3.5, unit: "m", source: "usage", rule: "constante Croisière E1 3,5 m" },
+    );
+    assert.equal(body.payload.p90, 4.8, "the orders never fill or change a weather field");
+    assert.equal(body.tavily, null);
+    assert.equal(body.nvidia, null);
+    assert.ok(!JSON.stringify(body).includes("polarRaw"));
+  });
+
+  it("keeps skipper null when the event carries no orders", () => {
+    const body = storyPayload({ id: "zee-exit:1", type: "zee-exit", judge: "now", payload: { tavily: null } });
+    assert.equal(body.skipper, null);
+    assert.equal(body.tavily, null);
+  });
 });
 
 describe("enqueueStory fire-and-forget", () => {
