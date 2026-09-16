@@ -32,19 +32,71 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .catamaran-divicon--draw svg { filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.85)); }
 
 .light-mode .naviguide-sidebar-panel {
-  background-color: rgb(248 250 252 / 0.97) !important;
-  color: rgb(30 41 59);
-  border-color: rgb(203 213 225) !important;
+  background-color: rgb(248 250 252 / 0.98) !important;
+  color: rgb(15 23 42);
+  border-color: rgb(191 219 254) !important;
 }
 .light-mode .naviguide-sidebar-toggle {
-  background-color: rgb(248 250 252 / 0.95) !important;
+  background-color: rgb(255 255 255 / 0.97) !important;
   color: rgb(15 23 42) !important;
+  border-color: rgb(148 163 184) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-slate-950"],
+.light-mode .naviguide-sidebar-panel [class*="bg-slate-900"] {
+  background-color: rgb(255 255 255 / 0.96) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-slate-800"] {
+  background-color: rgb(241 245 249 / 0.9) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-slate-700"] {
+  background-color: rgb(226 232 240 / 0.95) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-blue-950"] {
+  background-color: rgb(239 246 255 / 0.92) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="bg-blue-900"] {
+  background-color: rgb(219 234 254 / 0.9) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="border-slate-"],
+.light-mode .naviguide-sidebar-panel [class*="border-white/"] {
   border-color: rgb(203 213 225) !important;
 }
-.light-mode .naviguide-sidebar-panel .text-white { color: rgb(15 23 42) !important; }
-.light-mode .naviguide-sidebar-panel .text-slate-200,
-.light-mode .naviguide-sidebar-panel .text-slate-300 { color: rgb(51 65 85) !important; }
-.light-mode .naviguide-sidebar-panel .text-slate-400 { color: rgb(71 85 105) !important; }
+.light-mode .naviguide-sidebar-panel .text-white,
+.light-mode .naviguide-sidebar-panel [class*="text-slate-200"],
+.light-mode .naviguide-sidebar-panel [class*="text-slate-300"] {
+  color: rgb(15 23 42) !important;
+}
+.light-mode .naviguide-sidebar-panel [class*="text-white/"],
+.light-mode .naviguide-sidebar-panel [class*="text-slate-400"],
+.light-mode .naviguide-sidebar-panel [class*="text-slate-500"],
+.light-mode .naviguide-sidebar-panel [class*="text-slate-600"] {
+  color: rgb(71 85 105) !important;
+}
+.light-mode .naviguide-departure-field input {
+  background-color: rgb(255 255 255) !important;
+  border-color: rgb(148 163 184) !important;
+  color: rgb(15 23 42) !important;
+}
+.light-mode .naviguide-film-bar,
+.light-mode .naviguide-floating-card,
+.light-mode .naviguide-climo-banner {
+  background-color: rgb(255 255 255 / 0.96) !important;
+  color: rgb(15 23 42) !important;
+  border-color: rgb(148 163 184 / 0.8) !important;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 0.18) !important;
+}
+.light-mode .naviguide-film-bar [class*="text-white"],
+.light-mode .naviguide-floating-card [class*="text-white"] {
+  color: rgb(15 23 42) !important;
+}
+.light-mode .naviguide-film-bar [class*="bg-white/"],
+.light-mode .naviguide-floating-card [class*="bg-slate-800"] {
+  background-color: rgb(226 232 240 / 0.95) !important;
+}
+.light-mode .naviguide-film-bar [class*="border-white/"],
+.light-mode .naviguide-floating-card [class*="border-white/"] {
+  border-color: rgb(148 163 184 / 0.8) !important;
+}
 
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
 

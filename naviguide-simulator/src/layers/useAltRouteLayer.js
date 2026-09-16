@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import { splitAntimeridianCoords } from "../utils/geo.js";
+import { worldCopyLineCoords } from "../utils/geo.js";
 
 function addLine(group, coords, style) {
   if (!coords || coords.length < 2) return;
-  for (const part of splitAntimeridianCoords(coords)) {
-    L.polyline(part.map(([lon, lat]) => [lat, lon]), { ...style, pane: "route" }).addTo(group);
-  }
+  worldCopyLineCoords(coords).forEach((copy) => {
+    L.polyline(copy.map(([lon, lat]) => [lat, lon]), { ...style, pane: "route" }).addTo(group);
+  });
 }
 
 /** Old searoute dashed, new track solid. Envelopes off. */

@@ -31,10 +31,13 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const filmBar = read("../components/SimulationFilmBar.jsx");
     const sidebar = read("../components/Sidebar.jsx");
+    const simulationPanel = read("../components/SimulationPanel.jsx");
     assert.match(app, /showPlaybackControls=\{isSimulation\}/);
     assert.match(app, /if \(!isSimulation\) return;/);
     assert.match(filmBar, /disabled=\{!showPlaybackControls\}/);
-    assert.match(sidebar, /showNavigation=\{isSimulation\}/);
+    assert.match(filmBar, /goToNextStop/);
+    assert.doesNotMatch(sidebar, /onNext=\{handleSimNext\}/);
+    assert.doesNotMatch(simulationPanel, /PrevNextButtons/);
   });
 
   it("entre en Suivre directement en LIVE cinéma", () => {
@@ -50,6 +53,43 @@ describe("contrat UI produit", () => {
     const departure = read("../components/DepartureField.jsx");
     assert.match(app, /voyage\.setStartAt\("saint-maur"\)/);
     assert.doesNotMatch(departure, /type="radio"/);
+  });
+
+  it("compacte le départ en format français avec une heure éditable", () => {
+    const departure = read("../components/DepartureField.jsx");
+    assert.match(departure, /naviguide-departure-field h-\[46px\]/);
+    assert.match(departure, /formatDepartureDate/);
+    assert.match(departure, /parseFrenchDepartureDate/);
+    assert.match(departure, /placeholder="HH:MM"/);
+    assert.doesNotMatch(departure, /type="date"/);
+  });
+
+  it("garde LIVE une seule fois dans le HUD et la météo sur la même ligne", () => {
+    const app = read("../App.jsx");
+    const filmBar = read("../components/SimulationFilmBar.jsx");
+    const simulationPanel = read("../components/SimulationPanel.jsx");
+    assert.match(app, /liveStatus=\{isSuivre/);
+    assert.match(filmBar, /<span data-testid="weather-line" className="text-cyan-200\/85">/);
+    assert.doesNotMatch(simulationPanel, /bg-emerald-500\/20/);
+  });
+
+  it("dégage le zoom Leaflet et aligne les deux chevrons", () => {
+    const sidebar = read("../components/Sidebar.jsx");
+    const tools = read("../components/ToolsSidebar.jsx");
+    assert.match(sidebar, /naviguide-sidebar-toggle--left/);
+    assert.match(sidebar, /top-\[92px\]/);
+    assert.match(tools, /naviguide-sidebar-toggle--right/);
+    assert.match(tools, /w-9 h-9/);
+    assert.doesNotMatch(tools, /w-12 h-12/);
+  });
+
+  it("retire la mention non éditable et la date répétée de la jambe", () => {
+    const app = read("../App.jsx");
+    const panel = read("../components/SimulationPanel.jsx");
+    const fr = read("../i18n/fr.js");
+    assert.doesNotMatch(app, /civilDate=/);
+    assert.doesNotMatch(panel, /civilDate/);
+    assert.doesNotMatch(fr, /non éditable/);
   });
 
   it("n’affiche un titre de briefing que si briefing_title est fourni", () => {

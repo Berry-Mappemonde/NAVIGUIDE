@@ -16,6 +16,9 @@ import {
   filmBarTicks,
   formatFilmClockLine,
   lookupVoyageClock,
+  formatDepartureDate,
+  normalizeUtcTime,
+  parseFrenchDepartureDate,
   parseDepartureUtc,
   portHoldHours,
   sampleClockAtTime,
@@ -241,6 +244,19 @@ describe("parseDepartureUtc", () => {
   it("compose un ISO UTC depuis date + heure", () => {
     assert.equal(parseDepartureUtc("2026-03-15", "08:00"), "2026-03-15T08:00:00.000Z");
     assert.deepEqual(splitDepartureUtc("2026-06-01T08:00:00.000Z"), { date: "2026-06-01", time: "08:00" });
+  });
+
+  it("impose le format de saisie français et une heure UTC modifiable", () => {
+    assert.equal(formatDepartureDate("2026-05-15"), "15/05/2026");
+    assert.equal(parseFrenchDepartureDate("15/05/2026"), "2026-05-15");
+    assert.equal(parseFrenchDepartureDate("15/15/2026"), null);
+    assert.equal(parseFrenchDepartureDate("31/02/2026"), null);
+    assert.equal(normalizeUtcTime("14:30"), "14:30");
+    assert.equal(normalizeUtcTime("24:00"), null);
+    assert.equal(
+      parseDepartureUtc(parseFrenchDepartureDate("15/05/2026"), normalizeUtcTime("14:30")),
+      "2026-05-15T14:30:00.000Z",
+    );
   });
 });
 

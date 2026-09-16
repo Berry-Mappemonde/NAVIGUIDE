@@ -2,7 +2,7 @@ import L from "leaflet";
 import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { interpolateCast, isAirPhase } from "../engine/filmCast.js";
 import { wakeCursorAt } from "../engine/filmWake.js";
-import { haversineNm, splitAntimeridianCoords, unwrapLon, worldCopyCoords } from "../utils/geo.js";
+import { haversineNm, unwrapLon, worldCopyLineCoords } from "../utils/geo.js";
 import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
@@ -55,36 +55,43 @@ function latLngs(coords, worldOffset = 0) {
 
 function addRouteLine(group, coords, { color, weight, dash, pane = "route" }) {
   if (!coords || coords.length < 2) return;
-  for (const part of splitAntimeridianCoords(coords)) {
-    for (const copy of worldCopyCoords(part)) {
-      L.polyline(copy.map(([lon, lat]) => [lat, lon]), {
-        color,
-        weight,
-        dashArray: dash,
-        pane,
-        interactive: true,
-      }).addTo(group);
-    }
-  }
+  worldCopyLineCoords(coords).forEach((copy) => {
+    L.polyline(copy.map(([lon, lat]) => [lat, lon]), {
+      color,
+      weight,
+      dashArray: dash,
+      pane,
+      interactive: true,
+    }).addTo(group);
+  });
+}
+
+function addWorldLine(group, coords, style) {
+  if (!coords || coords.length < 2) return;
+  worldCopyLineCoords(coords).forEach((copy) => {
+    L.polyline(copy.map(([lon, lat]) => [lat, lon]), style).addTo(group);
+  });
 }
 
 function staticWakeParts(flat) {
   const points = flat?.points || [];
   const parts = [];
   const partByPoint = new Array(points.length);
+  const linePointByIndex = new Array(points.length);
   let current = null;
   points.forEach((point, index) => {
     if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
-    const previous = index > 0 ? points[index - 1] : null;
-    const crossesAntimeridian = Boolean(current?.length && previous && Math.abs(point.lon - previous.lon) > 180);
-    if (!current || point.jump || crossesAntimeridian) {
+    if (!current || point.jump) {
       current = [];
       parts.push(current);
     }
-    current.push([point.lon, point.lat]);
+    const lon = current.length ? unwrapLon(current.at(-1)[0], point.lon) : point.lon;
+    const linePoint = [lon, point.lat];
+    current.push(linePoint);
     partByPoint[index] = parts.length - 1;
+    linePointByIndex[index] = linePoint;
   });
-  return { points, parts, partByPoint };
+  return { points, parts, partByPoint, linePointByIndex };
 }
 
 function createWorldLines(group, style) {
@@ -96,11 +103,11 @@ function clearDoneLines(lines) {
 }
 
 function appendDonePoint(geometry, index) {
-  const point = geometry.points[index];
+  const point = geometry.linePointByIndex[index];
   const partIndex = geometry.partByPoint[index];
   if (!point || partIndex == null) return;
   geometry.doneLines[partIndex].forEach((line, worldIndex) => {
-    line.addLatLng([point.lat, point.lon + WORLD_OFFSETS[worldIndex]]);
+    line.addLatLng([point[1], point[0] + WORLD_OFFSETS[worldIndex]]);
   });
 }
 
@@ -322,9 +329,7 @@ export class MapSceneController {
     if (!draft) return;
     const add = (coords, style) => {
       if (!coords?.length) return;
-      splitAntimeridianCoords(coords).forEach((part) => {
-        L.polyline(part.map(([lon, lat]) => [lat, lon]), { ...style, pane: "route" }).addTo(group);
-      });
+      addWorldLine(group, coords, { ...style, pane: "route" });
     };
     add(draft.old_geojson?.geometry?.coordinates, { color: "#94a3b8", weight: 2, dashArray: "7 7", opacity: 0.85 });
     add(draft.draft_geojson?.geometry?.coordinates, { color: "#22d3ee", weight: 3, opacity: 0.95 });
@@ -379,8 +384,9 @@ export class MapSceneController {
     }
     const span = (following.cumNm ?? 0) - (previous.cumNm ?? 0);
     const ratio = span > 0 ? Math.max(0, Math.min(1, (target - (previous.cumNm ?? 0)) / span)) : 0;
+    const followingLon = unwrapLon(previous.lon, following.lon);
     setWakeTail(geometry.tailLines, previous, {
-      lon: previous.lon + ratio * (following.lon - previous.lon),
+      lon: previous.lon + ratio * (followingLon - previous.lon),
       lat: previous.lat + ratio * (following.lat - previous.lat),
     });
   }
@@ -484,22 +490,31 @@ export class MapSceneController {
       this.layers.remove("air-hop");
       return;
     }
-    const lonB = unwrapLon(cast.hopFrom.lon, cast.hopTo.lon);
-    this.layers.update(
-      "air-hop",
-      () => L.polyline([], {
-        color: "#67e8f9",
-        weight: 2,
-        dashArray: "7 9",
-        opacity: 0.8,
-        pane: "route",
-        interactive: false,
-      }).addTo(this.map),
-      (line) => line.setLatLngs([
-        [cast.hopFrom.lat, cast.hopFrom.lon],
-        [cast.hopTo.lat, lonB],
-      ]),
-    );
+    const group = this.layers.add("air-hop", () => L.layerGroup().addTo(this.map));
+    const copies = worldCopyLineCoords([
+      [cast.hopFrom.lon, cast.hopFrom.lat],
+      [cast.hopTo.lon, cast.hopTo.lat],
+    ]);
+    const style = {
+      color: "#67e8f9",
+      weight: 2,
+      dashArray: "7 9",
+      opacity: 0.8,
+      pane: "route",
+      interactive: false,
+    };
+    const lines = group.getLayers();
+    if (lines.length !== copies.length) {
+      group.clearLayers();
+      copies.forEach((copy) => L.polyline(
+        copy.map(([lon, lat]) => [lat, lon]),
+        style,
+      ).addTo(group));
+      return;
+    }
+    lines.forEach((line, index) => {
+      line.setLatLngs(copies[index].map(([lon, lat]) => [lat, lon]));
+    });
   }
 
   syncWaypoints() {

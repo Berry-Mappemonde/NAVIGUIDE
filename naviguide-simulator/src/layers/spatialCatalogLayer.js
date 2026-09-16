@@ -1,22 +1,31 @@
 import L from "leaflet";
 import { circleOpts } from "./points.js";
+import {
+  worldCopyLineCoords,
+  worldCopyLngs,
+  worldCopyPolygonCoords,
+} from "../utils/geo.js";
 
-function geometryLatLngs(geometry = {}) {
-  const point = ([lon, lat]) => [lat, lon];
-  const points = (coords) => (coords || [])
-    .filter((coords) => Array.isArray(coords) && coords.length >= 2)
-    .map(point);
+function latLngs(coords) {
+  return (coords || []).map(([lon, lat]) => [lat, lon]);
+}
+
+function geometryLatLngCopies(geometry = {}) {
   switch (geometry.type) {
     case "LineString":
-      return points(geometry.coordinates);
+      return worldCopyLineCoords(geometry.coordinates).map(latLngs);
     case "MultiLineString":
-      return (geometry.coordinates || []).map(points);
+      return (geometry.coordinates || []).flatMap((line) => (
+        worldCopyLineCoords(line).map(latLngs)
+      ));
     case "Polygon":
-      return (geometry.coordinates || []).map(points);
+      return worldCopyPolygonCoords(geometry.coordinates).map((rings) => rings.map(latLngs));
     case "MultiPolygon":
-      return (geometry.coordinates || []).map((polygon) => polygon.map(points));
+      return (geometry.coordinates || []).flatMap((polygon) => (
+        worldCopyPolygonCoords(polygon).map((rings) => rings.map(latLngs))
+      ));
     default:
-      return null;
+      return [];
   }
 }
 
@@ -87,7 +96,9 @@ export class SpatialCatalogLayer {
   _bindClick(layer, feature) {
     layer.on("click", (event) => {
       L.DomEvent.stopPropagation(event);
-      const [lon, lat] = (feature?.geometry?.coordinates || []);
+      const [lon, lat] = feature?.geometry?.type === "Point"
+        ? (feature.geometry.coordinates || [])
+        : [];
       if (isCluster(feature)) {
         this.map.setView(
           event.latlng || [lat, lon],
@@ -106,21 +117,35 @@ export class SpatialCatalogLayer {
     });
   }
 
-  _create(feature) {
+  _addFeatureLayers(group, feature) {
     const geometry = feature?.geometry || {};
-    let layer = null;
     if (geometry.type === "Point") {
       const [lon, lat] = geometry.coordinates || [];
-      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
-      layer = L.circleMarker([lat, lon], this._pointOptions(feature));
-    } else {
-      const latlngs = geometryLatLngs(geometry);
-      if (!latlngs) return null;
-      layer = isPolygon(geometry.type)
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+      worldCopyLngs(lon).forEach((copyLon) => {
+        const layer = L.circleMarker([lat, copyLon], this._pointOptions(feature));
+        this._bindClick(layer, feature);
+        group.addLayer(layer);
+      });
+      return;
+    }
+
+    const copies = geometryLatLngCopies(geometry);
+    copies.forEach((latlngs) => {
+      if (!latlngs.length) return;
+      const layer = isPolygon(geometry.type)
         ? L.polygon(latlngs, this._shapeOptions(feature))
         : L.polyline(latlngs, this._shapeOptions(feature));
-    }
-    this._bindClick(layer, feature);
+      this._bindClick(layer, feature);
+      group.addLayer(layer);
+    });
+  }
+
+  _create(feature) {
+    const geometry = feature?.geometry || {};
+    const layer = L.layerGroup();
+    this._addFeatureLayers(layer, feature);
+    if (!layer.getLayers().length) return null;
     this.group.addLayer(layer);
     return { layer, type: geometry.type, feature };
   }
@@ -131,16 +156,9 @@ export class SpatialCatalogLayer {
       this.group.removeLayer(record.layer);
       return this._create(feature);
     }
-    if (geometry.type === "Point") {
-      const [lon, lat] = geometry.coordinates || [];
-      record.layer.setLatLng([lat, lon]);
-      record.layer.setStyle(this._pointOptions(feature));
-    } else {
-      const latlngs = geometryLatLngs(geometry);
-      if (!latlngs) return null;
-      record.layer.setLatLngs(latlngs);
-      record.layer.setStyle(this._shapeOptions(feature));
-    }
+    record.layer.clearLayers();
+    this._addFeatureLayers(record.layer, feature);
+    if (!record.layer.getLayers().length) return null;
     record.feature = feature;
     return record;
   }

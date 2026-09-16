@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { wakeCursorAt } from "../engine/filmWake.js";
 import { WAKE_DONE_COLOR, WAKE_REST_COLOR } from "../layers/styles.js";
+import { unwrapLon } from "../utils/geo.js";
 
 const WORLD_OFFSETS = [0, 360, -360];
 
@@ -29,25 +30,23 @@ function staticWakeParts(flat) {
   const points = flat?.points || [];
   const parts = [];
   const partByPoint = new Array(points.length);
+  const linePointByIndex = new Array(points.length);
   let current = null;
 
   points.forEach((point, index) => {
     if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
-    const previous = index > 0 ? points[index - 1] : null;
-    const crossesAntimeridian = Boolean(
-      current?.length
-      && previous
-      && Math.abs(point.lon - previous.lon) > 180,
-    );
-    if (!current || point.jump || crossesAntimeridian) {
+    if (!current || point.jump) {
       current = [];
       parts.push(current);
     }
-    current.push([point.lon, point.lat]);
+    const lon = current.length ? unwrapLon(current.at(-1)[0], point.lon) : point.lon;
+    const linePoint = [lon, point.lat];
+    current.push(linePoint);
     partByPoint[index] = parts.length - 1;
+    linePointByIndex[index] = linePoint;
   });
 
-  return { points, parts, partByPoint };
+  return { points, parts, partByPoint, linePointByIndex };
 }
 
 function createWorldLines(group, style) {
@@ -72,11 +71,11 @@ function clearDoneLines(lines) {
 }
 
 function appendDonePoint(geometry, index) {
-  const point = geometry.points[index];
+  const point = geometry.linePointByIndex[index];
   const partIndex = geometry.partByPoint[index];
   if (!point || partIndex == null) return;
   geometry.doneLines[partIndex].forEach((line, worldIndex) => {
-    line.addLatLng([point.lat, point.lon + WORLD_OFFSETS[worldIndex]]);
+    line.addLatLng([point[1], point[0] + WORLD_OFFSETS[worldIndex]]);
   });
 }
 
@@ -108,8 +107,9 @@ function syncWake(geometry, sailNm) {
   const ratio = span > 0
     ? Math.max(0, Math.min(1, (target - (previous.cumNm ?? 0)) / span))
     : 0;
+  const nextLon = unwrapLon(previous.lon, next.lon);
   setTail(geometry.tailLines, previous, {
-    lon: previous.lon + ratio * (next.lon - previous.lon),
+    lon: previous.lon + ratio * (nextLon - previous.lon),
     lat: previous.lat + ratio * (next.lat - previous.lat),
   });
 }
