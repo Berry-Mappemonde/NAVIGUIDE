@@ -242,7 +242,6 @@ export default function App() {
     points: routeReady ? flatRoute.points : undefined,
     marks: routeReady ? escaleMarks : [],
     expeditionId: polarData?.expedition_id,
-    clock: voyage.clock,
   });
   const vessel = useVirtualVessel({
     enabled: isSimulation && routeReady,
