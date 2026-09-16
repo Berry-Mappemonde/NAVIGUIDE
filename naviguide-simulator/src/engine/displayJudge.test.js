@@ -11,6 +11,7 @@ import {
   judgeEvent,
   judgeEvents,
 } from "./displayJudge.js";
+import { resolveOrders } from "./skipperOrders.js";
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "displayJudge.js"), "utf8");
 
@@ -130,5 +131,25 @@ describe("displayJudge", () => {
     const wx = judged.find((e) => e.type === "wx-alert");
     assert.equal(wx.judge, JUDGE_NOW);
     assert.equal(briefing.type, "wx-alert");
+  });
+
+  it("reads Hs alert and grouping window from the skipper orders", () => {
+    const coastal = resolveOrders({ profile: "coastal" });
+    const ocean = resolveOrders({ profile: "ocean" });
+    const sea = () => ev("hs-shift", { payload: { hs: 2.7, alert: false } });
+    assert.equal(judgeEvent(sea()).judge, JUDGE_LATER, "cruise default: 2.7 m is under 3.5 m");
+    assert.equal(judgeEvent(sea(), { orders: coastal }).judge, JUDGE_NOW, "coastal speaks at 2.5 m");
+    assert.equal(judgeEvent(sea(), { orders: ocean }).judge, JUDGE_LATER);
+
+    const wx = () => ev("wx-alert", { payload: { hs: 3.8, severe: false, rain: false, gale: false } });
+    assert.equal(judgeEvent(wx()).judge, JUDGE_NOW, "cruise: 3.8 m ≥ 3.5 m");
+    assert.equal(judgeEvent(wx(), { orders: ocean }).judge, JUDGE_LATER, "ocean: 3.8 m < 5.0 m");
+
+    const pair = [ev("wind-shift", { id: "w1", whenNm: 0 }), ev("current-shift", { id: "c1", whenNm: 12 })];
+    assert.ok(judgeEvents(pair).judged.some((e) => e.judge === JUDGE_GROUP), "cruise groups inside 15 nm");
+    assert.ok(
+      !judgeEvents(pair, { orders: coastal }).judged.some((e) => e.judge === JUDGE_GROUP),
+      "coastal window is 8 nm: denser, separate pills",
+    );
   });
 });

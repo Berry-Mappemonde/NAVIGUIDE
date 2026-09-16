@@ -388,4 +388,20 @@ describe("narrateIci", () => {
     }, "fr");
     assert.match(text, /zee-enter \+ amp-enter/);
   });
+
+  it("says shelf or grounding with the skipper's depth threshold, never haut-fond for 15 m", () => {
+    const shelf = phraseForEvent({
+      type: "depth-alert",
+      payload: { depthM: 12.4, source: "emodnet", alertM: 15, label: "plateau" },
+    }, "fr");
+    assert.match(shelf, /^On approche du plateau : 12\.4 m sondés, sous 15 m/);
+    assert.doesNotMatch(shelf, /Haut-fond/);
+    const ground = phraseForEvent({
+      type: "depth-alert",
+      payload: { depthM: 4.1, source: "gebco", alertM: 5, label: "talonnage" },
+    }, "en");
+    assert.match(ground, /^Grounding risk: 4\.1 m sounded, under 5 m/);
+    const legacy = phraseForEvent({ type: "depth-alert", payload: { depthM: 9, source: "emodnet" } }, "fr");
+    assert.match(legacy, /^Haut-fond 9 m/);
+  });
 });

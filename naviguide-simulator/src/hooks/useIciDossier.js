@@ -27,6 +27,8 @@ function legKey(jambe) {
  * One step = one GET /ici. No chat, no Tavily.
  * Detectors + judge run on the bag already collected. Never await a model.
  * enqueueStory is fire-and-forget (NIM → OR → Claude).
+ * `orders` (skipper) feed detectors + judge locally, without a new GET /ici.
+ * Changing orders never rewinds: pastilles already in the ledger stay as judged.
  */
 export function useIciDossier({
   enabled,
@@ -54,6 +56,7 @@ export function useIciDossier({
   gribStatus = null,
   skipperClickId = null,
   along = null,
+  orders = null,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -210,6 +213,8 @@ export function useIciDossier({
       gribWind,
       gribStatus,
       legId: currentLeg || null,
+      orders,
+      lang,
       airHop: jambe?.vehicle === "plane"
         || jambe?.phase === "air-out"
         || jambe?.phase === "air-return",
@@ -235,6 +240,7 @@ export function useIciDossier({
       profile: playbackProfile,
       skipperClickId,
       mode,
+      orders,
     });
     ledgerRef.current = promoteLaterAtPlayhead(
       upsertLedger(ledgerRef.current, judged.judged.map((ev) => ({
@@ -298,6 +304,7 @@ export function useIciDossier({
     currentLeg,
     jambe?.vehicle,
     jambe?.phase,
+    orders,
   ]);
 
   const dossier = useMemo(() => {

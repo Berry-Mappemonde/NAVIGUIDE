@@ -422,10 +422,20 @@ export function phraseForEvent(ev, lang = "fr") {
         ? `${rain}Refuge: ${port}${nm != null ? ` at ${nm} nm` : ""}.`
         : `${rain}Repli : ${port}${nm != null ? ` à ${nm} nm` : ""}.`;
     }
-    case "depth-alert":
+    case "depth-alert": {
+      // Skipper wording: shelf (Coastal / Cruise) or grounding (Ocean). Never "haut-fond" for a 15 m shelf.
+      if (p.label && Number.isFinite(p.alertM)) {
+        const head = p.label === "talonnage"
+          ? (en ? "Grounding risk" : "Risque de talonner")
+          : (en ? "Approaching the shelf" : "On approche du plateau");
+        return en
+          ? `${head}: ${p.depthM} m sounded, under ${p.alertM} m (${p.source || "DTM"}, kind: observation; not for navigation).`
+          : `${head} : ${p.depthM} m sondés, sous ${p.alertM} m (${p.source || "DTM"}, kind: observation ; ne convient pas à la navigation).`;
+      }
       return en
         ? `Shallow sounding ${p.depthM} m (${p.source || "DTM"}, kind: observation; not for navigation).`
         : `Haut-fond ${p.depthM} m (${p.source || "DTM"}, kind: observation ; ne convient pas à la navigation).`;
+    }
     case "group": {
       if (en && ev.digest?.en) return ev.digest.en;
       if (!en && ev.digest?.fr) return ev.digest.fr;

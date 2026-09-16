@@ -1,13 +1,11 @@
 /**
  * Display judge — hide | now | later | group.
  * Rules only. Not Nemotron Ultra. No HTTP. No chat.
+ * Hs alert and grouping window come from `ctx.orders` (Cruise when absent).
+ * Already judged pastilles are never re-judged here: only the next events read new orders.
  */
 
-import {
-  GROUP_NM,
-  GROUP_NM_FAST,
-  HS_ALERT_M,
-} from "./eventRules.js";
+import { thresholdValues } from "./skipperOrders.js";
 
 export const JUDGE_HIDE = "hide";
 export const JUDGE_NOW = "now";
@@ -59,18 +57,18 @@ const METEO_SOFT = new Set([
   "hs-shift",
 ]);
 
-function isSevereWx(ev) {
+function isSevereWx(ev, T) {
   const p = ev?.payload || {};
   return ev?.type === "wx-alert" && Boolean(
-    p.severe || p.rain || p.gale || (Number.isFinite(p.hs) && p.hs >= HS_ALERT_M),
+    p.severe || p.rain || p.gale || (Number.isFinite(p.hs) && p.hs >= T.hsAlertM),
   );
 }
 
-function isImmediate(ev) {
+function isImmediate(ev, T) {
   if (NOW_TYPES.has(ev.type)) return true;
-  if (isSevereWx(ev)) return true;
+  if (isSevereWx(ev, T)) return true;
   if (ev.type === "amp-enter" && ev.payload?.visitable) return true;
-  if (ev.type === "hs-shift" && (ev.payload?.alert || ev.payload?.hs >= HS_ALERT_M)) return true;
+  if (ev.type === "hs-shift" && (ev.payload?.alert || ev.payload?.hs >= T.hsAlertM)) return true;
   if (ev.type === "wind-shift" && ev.payload?.chainedGale) return true;
   return false;
 }
@@ -183,7 +181,8 @@ function pickBriefing(judged) {
  */
 export function judgeEvents(events, ctx = {}) {
   const profile = ctx.profile || "normal";
-  const windowNm = profile === "fast" ? GROUP_NM_FAST : GROUP_NM;
+  const T = thresholdValues(ctx.orders);
+  const windowNm = profile === "fast" ? T.groupNmFast : T.groupNm;
   const judged = [];
   const visible = [];
   const seenIds = ctx.seenIds instanceof Set ? ctx.seenIds : new Set(ctx.seenIds || []);
@@ -212,7 +211,7 @@ export function judgeEvents(events, ctx = {}) {
       locked.push({ ...ev, judge: JUDGE_NOW, judgeReason: "safety" });
       continue;
     }
-    if (isSevereWx(ev)) {
+    if (isSevereWx(ev, T)) {
       locked.push({ ...ev, judge: JUDGE_NOW, judgeReason: "safety" });
       continue;
     }
@@ -241,10 +240,11 @@ export function judgeEvents(events, ctx = {}) {
         if (!digest) digest = d;
       } else {
         for (const ev of cluster) {
+          const now = isImmediate(ev, T);
           judged.push({
             ...ev,
-            judge: isImmediate(ev) ? JUDGE_NOW : JUDGE_LATER,
-            judgeReason: isImmediate(ev) ? "safety" : "later",
+            judge: now ? JUDGE_NOW : JUDGE_LATER,
+            judgeReason: now ? "safety" : "later",
           });
         }
       }

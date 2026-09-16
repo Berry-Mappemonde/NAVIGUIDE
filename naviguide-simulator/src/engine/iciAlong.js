@@ -1,6 +1,9 @@
 /**
  * Lookahead on the planned GPS track of THIS leg.
  * Pearls every ROUTE_SAMPLE_NM. Not the globe. No chat.
+ *
+ * Suivre horizon never lies (§2.6): cap nm = hours × planning knots,
+ * pearls = ceil(nm / 12). Both follow the skipper orders. No fixed 350 / 24.
  */
 
 import { interpolateAtNm } from "./routePlayhead.js";
@@ -9,15 +12,16 @@ import {
   ROUTE_SAMPLE_NM,
   MARINA_REFUGE_NM,
 } from "./eventRules.js";
+import { DEFAULT_ORDERS, lookaheadBudget, thresholdValues } from "./skipperOrders.js";
 
 export { AMP_AHEAD_MIN_NM };
 export const ALONG_AMP_NM = 15;
 export const ALONG_MARINA_NM = MARINA_REFUGE_NM;
-export const SUIVRE_LOOKAHEAD_H = 36;
-export const SUIVRE_LOOKAHEAD_MAX_NM = 350;
+export const SUIVRE_LOOKAHEAD_H = DEFAULT_ORDERS.budget.hours;
+export const SUIVRE_LOOKAHEAD_MAX_NM = DEFAULT_ORDERS.budget.maxNm;
 export const MAX_PEARLS_SIM = 60;
-export const MAX_PEARLS_SUIVRE = 24;
-export const DEFAULT_KNOTS = 7;
+export const MAX_PEARLS_SUIVRE = DEFAULT_ORDERS.budget.maxPearls;
+export const DEFAULT_KNOTS = DEFAULT_ORDERS.budget.planningKn;
 
 export function pearlKey(lat, lon, month) {
   const la = Number(lat);
@@ -26,12 +30,16 @@ export function pearlKey(lat, lon, month) {
   return `${la.toFixed(2)}:${lo.toFixed(2)}:${month ?? ""}`;
 }
 
-export function lookaheadNmFor(mode, knots) {
-  if (mode === "suivre") {
-    const kn = Number.isFinite(knots) && knots > 0 ? knots : DEFAULT_KNOTS;
-    return Math.min(SUIVRE_LOOKAHEAD_H * kn, SUIVRE_LOOKAHEAD_MAX_NM);
-  }
+/** Suivre: hours × planning knots from the orders (Cruise if none). Simulation: whole leg. */
+export function lookaheadNmFor(mode, orders = null) {
+  if (mode === "suivre") return lookaheadBudget(orders).maxNm;
   return Infinity;
+}
+
+/** Suivre: pearls follow the horizon (ceil(nm / 12)). Simulation: fixed engine cap. */
+export function maxPearlsFor(mode, orders = null) {
+  if (mode === "suivre") return lookaheadBudget(orders).maxPearls;
+  return MAX_PEARLS_SIM;
 }
 
 export function filmCumAtNm(flat, nm) {
@@ -91,18 +99,19 @@ export function sampleLeg(flat, {
   return pearls;
 }
 
-export function attachBags(pearls, bagMap, month) {
+export function attachBags(pearls, bagMap, month, orders = null) {
   const map = bagMap instanceof Map ? bagMap : new Map(Object.entries(bagMap || {}));
+  const T = thresholdValues(orders);
   return (pearls || []).map((p) => {
     const bag = map.get(pearlKey(p.lat, p.lon, month ?? p.month))
       || map.get(pearlKey(p.lat, p.lon, p.month))
       || null;
-    const amp = (bag?.amp || []).filter((a) => !Number.isFinite(a.nm) || a.nm <= ALONG_AMP_NM);
+    const amp = (bag?.amp || []).filter((a) => !Number.isFinite(a.nm) || a.nm <= T.alongAmpNm);
     const harbours = [
       ...(bag?.nearby?.marinas || []),
       ...(bag?.nearby?.capitaineries || []),
       ...(bag?.nearby?.wpi || []),
-    ].filter((h) => Number.isFinite(h?.nm) && h.nm < ALONG_MARINA_NM && h.name);
+    ].filter((h) => Number.isFinite(h?.nm) && h.nm < T.marinaRefugeNm && h.name);
     return {
       ...p,
       zee: bag?.zee ?? null,
@@ -128,8 +137,8 @@ export function alongHarbours(pearls) {
   return list;
 }
 
-export function buildAlongIndex(pearls, bagMap, month) {
-  const decorated = attachBags(pearls, bagMap, month);
+export function buildAlongIndex(pearls, bagMap, month, orders = null) {
+  const decorated = attachBags(pearls, bagMap, month, orders);
   return {
     pearls: decorated,
     harbours: alongHarbours(decorated),
@@ -165,7 +174,9 @@ export function upsertLedger(ledger, incoming) {
         && (prev.story.status === "pending" || prev.story.status === "ready")
         && (!ev.story || ev.story.status === "template");
       if (keepStory) {
+        // The story was written under the orders of that time: keep them together.
         next.story = prev.story;
+        if (prev.skipper) next.skipper = prev.skipper;
         if (prev.story.status === "ready" && prev.story.text) next.phrase = prev.story.text;
       }
       out[idx] = next;
