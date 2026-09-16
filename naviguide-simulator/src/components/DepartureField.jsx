@@ -1,37 +1,65 @@
+import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { parseDepartureUtc, splitDepartureUtc } from "../engine/voyageClock.js";
+import {
+  formatDepartureDate,
+  normalizeUtcTime,
+  parseDepartureUtc,
+  parseFrenchDepartureDate,
+  splitDepartureUtc,
+} from "../engine/voyageClock.js";
 
 export function DepartureField({ t0, onT0 }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const { date, time } = splitDepartureUtc(t0);
+  const [dateValue, setDateValue] = useState(() => formatDepartureDate(date));
+  const [timeValue, setTimeValue] = useState(time);
 
-  const setDate = (nextDate) => onT0?.(parseDepartureUtc(nextDate, time));
-  const setTime = (nextTime) => onT0?.(parseDepartureUtc(date, nextTime));
+  useEffect(() => {
+    setDateValue(formatDepartureDate(date));
+    setTimeValue(time);
+  }, [date, time]);
+
+  const setDate = (nextDate) => {
+    setDateValue(nextDate);
+    const parsedDate = parseFrenchDepartureDate(nextDate);
+    if (parsedDate) onT0?.(parseDepartureUtc(parsedDate, normalizeUtcTime(timeValue) || time));
+  };
+  const setTime = (nextTime) => {
+    setTimeValue(nextTime);
+    const parsedTime = normalizeUtcTime(nextTime);
+    if (parsedTime) onT0?.(parseDepartureUtc(parseFrenchDepartureDate(dateValue) || date, parsedTime));
+  };
 
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-800/50 px-2 py-1">
+    <div data-testid="departure-field" className="naviguide-departure-field h-[46px] rounded-lg border border-white/10 bg-slate-800/50 px-2 py-1">
       <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
         {t("departureTitle")}
       </div>
-      <div className="grid grid-cols-2 gap-1 mt-0.5">
-        <label className="block">
-          <span className="text-[8px] text-slate-500">{t("departureDate")}</span>
+      <div className="grid grid-cols-[1.35fr_0.85fr] gap-1 mt-0.5">
+        <label className="flex items-center gap-1 min-w-0">
+          <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureDate")}</span>
           <input
-            type="date"
-            lang={lang}
-            value={date}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder={t("departureDateFormat")}
+            value={dateValue}
             onChange={(e) => setDate(e.target.value)}
-            className="mt-0.5 w-full bg-slate-900/80 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white"
+            aria-invalid={dateValue !== "" && !parseFrenchDepartureDate(dateValue)}
+            className="h-5 min-w-0 w-full bg-slate-900/80 border border-white/10 rounded px-1 text-[10px] text-white tabular-nums"
           />
         </label>
-        <label className="block">
-          <span className="text-[8px] text-slate-500">{t("departureTimeUtc")}</span>
+        <label className="flex items-center gap-1 min-w-0">
+          <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureTimeUtc")}</span>
           <input
-            type="time"
-            lang={lang}
-            value={time}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="HH:MM"
+            value={timeValue}
             onChange={(e) => setTime(e.target.value)}
-            className="mt-0.5 w-full bg-slate-900/80 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white"
+            aria-invalid={timeValue !== "" && !normalizeUtcTime(timeValue)}
+            className="h-5 min-w-0 w-full bg-slate-900/80 border border-white/10 rounded px-1 text-[10px] text-white tabular-nums"
           />
         </label>
       </div>

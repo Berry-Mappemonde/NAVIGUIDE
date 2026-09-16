@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, TriangleAlert, Upload } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
@@ -105,20 +105,22 @@ async function polarMetaFromUpload(data) {
 }
 
 function Toggle({ labelLeft, labelRight, active, onChange }) {
+  const label = active ? labelRight : labelLeft;
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-400">{active ? labelRight : labelLeft}</span>
-      <button
-        type="button"
-        onClick={() => onChange(!active)}
-        aria-label={active ? labelRight : labelLeft}
-        aria-pressed={active}
-        title={active ? labelRight : labelLeft}
-        className={`w-10 h-5 rounded-full relative transition-colors ${active ? "bg-sky-500" : "bg-slate-600"}`}
-      >
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${active ? "left-5" : "left-0.5"}`} />
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!active)}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      className={`w-10 h-5 rounded-full relative transition-colors ${active ? "bg-sky-500" : "bg-slate-600"}`}
+    >
+      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${active ? "left-5" : "left-0.5"}`} />
+      <span className="sr-only">{label}</span>
+      <span aria-hidden="true" className={`absolute top-1 ${active ? "left-1" : "right-1"} text-white/90`}>
+        {active ? <Sun size={11} /> : <Moon size={11} />}
+      </span>
+    </button>
   );
 }
 
@@ -206,13 +208,13 @@ export const ToolsSidebar = memo(function ToolsSidebar({
     <>
       <button
         onClick={onToggle}
-        className={`naviguide-sidebar-toggle absolute top-4 z-30 bg-slate-900/95 text-white
-          rounded-full w-12 h-12 flex items-center justify-center shadow-lg
-          border-2 border-sky-400/70 shadow-sky-900/40
+        className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--right absolute top-4 z-30 bg-slate-900/95 text-white
+          rounded-full w-9 h-9 flex items-center justify-center shadow-lg
+          border border-slate-700
           hover:bg-slate-800 transition-all duration-300 ${open ? "right-[322px]" : "right-4"}`}
         title={open ? t("hideToolsPanel") : t("showToolsPanel")}
       >
-        {open ? <ChevronRight size={22} /> : <ChevronLeft size={22} />}
+        {open ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
       </button>
 
       <div
