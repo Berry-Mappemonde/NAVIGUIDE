@@ -46,6 +46,29 @@ export function shouldEnqueueStory(ev) {
   return ev.judge === "now" || ev.judge === "group";
 }
 
+/**
+ * The orders that made THIS event switch (frozen at detection), not the 40 constants.
+ * One `value` per id. The model cites them; it never invents another number.
+ */
+function skipperBlock(ev) {
+  const s = ev?.skipper;
+  if (!s || !Array.isArray(s.used)) return null;
+  const seen = new Set();
+  const used = [];
+  for (const u of s.used) {
+    if (!u?.id || seen.has(u.id) || !Number.isFinite(u.value)) continue;
+    seen.add(u.id);
+    used.push({ id: u.id, value: u.value, unit: u.unit ?? "", source: u.source ?? "usage", rule: u.rule ?? null });
+  }
+  return {
+    profile: s.profile,
+    profile_phrase: s.profile_phrase ?? null,
+    comfort: s.comfort ?? "normal",
+    boat: s.boat ? { name: s.boat.name ?? null, loaM: s.boat.loaM ?? null, draftM: s.boat.draftM ?? null } : null,
+    used,
+  };
+}
+
 export function storyPayload(ev, lang = "fr") {
   const p = ev?.payload || {};
   const pageUrl = p.amp?.visit_url || p.poe?.url || p.harbour?.url || null;
@@ -69,6 +92,7 @@ export function storyPayload(ev, lang = "fr") {
     judgeReason: ev.judgeReason || null,
     phrase: ev.phrase || null,
     payload: p,
+    skipper: skipperBlock(ev),
     pageUrl: needPage ? pageUrl : null,
     needPage,
     tavily: null,

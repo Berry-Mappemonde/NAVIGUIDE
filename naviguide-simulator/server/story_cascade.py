@@ -73,6 +73,15 @@ def need_page(body: dict[str, Any] | None) -> tuple[bool, str | None]:
     return True, url
 
 
+def has_skipper_orders(body: dict[str, Any] | None) -> bool:
+    """True when the event carries the skipper thresholds that made it switch."""
+    skipper = (body or {}).get("skipper")
+    if not isinstance(skipper, dict):
+        return False
+    used = skipper.get("used")
+    return isinstance(used, list) and any(isinstance(u, dict) and "value" in u for u in used)
+
+
 def build_prompt(body: dict[str, Any], page_url: str | None = None) -> tuple[str, str]:
     lang = (body.get("lang") or "fr").lower()
     en = lang.startswith("en")
@@ -87,6 +96,15 @@ def build_prompt(body: dict[str, Any], page_url: str | None = None) -> tuple[str
         "N’invente ni vent, ni pluie, ni Gold admin. Ne remplis jamais un null. "
         "Thinking OFF. Pas d’outil. Pas de recherche monde."
     )
+    if has_skipper_orders(body):
+        # One sentence more, not a second chat: the skipper's own thresholds.
+        system += (
+            " You write for THIS skipper. Their thresholds are in skipper.used: "
+            "cite value and source. Do not invent any other number. Thinking OFF."
+            if en else
+            " Tu rédiges pour CE skipper. Ses seuils sont dans skipper.used : "
+            "cite value et source. N’invente pas d’autre chiffre. Thinking OFF."
+        )
     extra = ""
     if page_url:
         extra = (
