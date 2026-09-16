@@ -3,16 +3,24 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from polar_engine import PolarData, parse_polar_csv, parse_polar_excel, parse_polar_pdf
 
 POLAR_DATA_DIR = Path(__file__).resolve().parent / "polar_data"
 POLAR_DATA_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_POLAR_EXPEDITION = "berry-mappemonde-2026"
+DEFAULT_POLAR_NAME = "Leopard 46"
+DEFAULT_POLAR_FILE = Path(__file__).resolve().parents[1] / "public" / "Leopard46_Standard_Sails.csv"
+MAX_POLAR_UPLOAD_BYTES = 10 * 1024 * 1024
 
 log = logging.getLogger("naviguide-simulator.polar")
 router = APIRouter()
@@ -23,8 +31,28 @@ def _polar_path(expedition_id: str) -> Path:
     return POLAR_DATA_DIR / f"polar_{safe}.json"
 
 
+def _read_stored_polar(expedition_id: str) -> Optional[Dict[str, Any]]:
+    dest = _polar_path(expedition_id)
+    if not dest.exists():
+        return None
+    with open(dest, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+@lru_cache(maxsize=1)
+def _default_polar() -> PolarData:
+    """Charge une polaire de secours livrée avec le simulateur, sans upload HTTP."""
+    try:
+        return parse_polar_csv(DEFAULT_POLAR_FILE.read_bytes(), boat_name=DEFAULT_POLAR_NAME)
+    except Exception as exc:
+        log.exception("Default polar loading failed")
+        raise HTTPException(
+            status_code=503,
+            detail="La polaire par défaut est indisponible.",
+        ) from exc
+
+
 def _serialize_polar(polar: PolarData, expedition_id: str) -> Dict[str, Any]:
-    full_grid = polar.generate_full_grid()
     vmg_summary = polar.summary()
     return {
         "expedition_id": expedition_id,
@@ -36,7 +64,6 @@ def _serialize_polar(polar: PolarData, expedition_id: str) -> Dict[str, Any]:
             "tws_cols": polar.tws_cols,
             "matrix": polar.matrix.tolist(),
         },
-        "grid": full_grid.tolist(),
         "vmg_summary": {
             str(tws): {
                 "upwind": d["upwind"],
@@ -48,17 +75,58 @@ def _serialize_polar(polar: PolarData, expedition_id: str) -> Dict[str, Any]:
     }
 
 
-def _load_polar_data(expedition_id: str) -> PolarData:
-    dest = _polar_path(expedition_id)
-    if not dest.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"No polar data found for expedition '{expedition_id}'.",
+def _stored_or_default_polar(expedition_id: str) -> tuple[Dict[str, Any], PolarData]:
+    data = _read_stored_polar(expedition_id)
+    if data is not None:
+        raw = data["raw"]
+        return data, PolarData(
+            raw["twa_rows"],
+            raw["tws_cols"],
+            raw["matrix"],
+            boat_name=data.get("boat_name", "Boat"),
         )
-    with open(dest, encoding="utf-8") as fh:
-        data = json.load(fh)
-    raw = data["raw"]
-    return PolarData(raw["twa_rows"], raw["tws_cols"], raw["matrix"], boat_name=data.get("boat_name", "Boat"))
+    if expedition_id == DEFAULT_POLAR_EXPEDITION:
+        polar = _default_polar()
+        return _serialize_polar(polar, expedition_id), polar
+    raise HTTPException(
+        status_code=404,
+        detail=f"No polar data found for expedition '{expedition_id}'.",
+    )
+
+
+def _load_polar_data(expedition_id: str) -> PolarData:
+    _, polar = _stored_or_default_polar(expedition_id)
+    return polar
+
+
+def _parse_uploaded_polar(raw_bytes: bytes, filename: str, boat_name: str) -> PolarData:
+    if filename.endswith(".pdf"):
+        return parse_polar_pdf(raw_bytes, boat_name=boat_name)
+    if filename.endswith(".csv"):
+        return parse_polar_csv(raw_bytes, boat_name=boat_name)
+    return parse_polar_excel(raw_bytes, boat_name=boat_name)
+
+
+def _write_polar_data(dest: Path, data: Dict[str, Any]) -> None:
+    """Écrit atomiquement pour qu'un import interrompu ne corrompe pas le cache."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=dest.parent,
+            prefix=f".{dest.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp:
+            temp_name = temp.name
+            json.dump(data, temp, ensure_ascii=False, separators=(",", ":"))
+        os.replace(temp_name, dest)
+    except OSError:
+        if temp_name:
+            Path(temp_name).unlink(missing_ok=True)
+        raise
 
 
 @router.post("/api/v1/polar/upload")
@@ -73,26 +141,32 @@ async def upload_polar(
         raise HTTPException(status_code=400, detail="Accepted formats: PDF, CSV, XLSX, XLS.")
 
     bname = boat_name or expedition_id
-    raw_bytes = await file.read()
+    raw_bytes = await file.read(MAX_POLAR_UPLOAD_BYTES + 1)
+    if len(raw_bytes) > MAX_POLAR_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Le fichier polaire dépasse la taille maximale de 10 Mo.",
+        )
+    if not raw_bytes:
+        raise HTTPException(status_code=422, detail="Le fichier polaire est vide.")
+
     try:
-        if fname.endswith(".pdf"):
-            polar = parse_polar_pdf(raw_bytes, boat_name=bname)
-        elif fname.endswith(".csv"):
-            polar = parse_polar_csv(raw_bytes, boat_name=bname)
-        else:
-            polar = parse_polar_excel(raw_bytes, boat_name=bname)
+        polar = await run_in_threadpool(_parse_uploaded_polar, raw_bytes, fname, bname)
     except Exception as exc:
         log.error("File parsing failed: %s", exc)
         raise HTTPException(status_code=422, detail=f"Parsing error: {exc}") from exc
 
     try:
-        data = _serialize_polar(polar, expedition_id)
+        data = await run_in_threadpool(_serialize_polar, polar, expedition_id)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Grid generation error: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Polar serialization error: {exc}") from exc
 
     dest = _polar_path(expedition_id)
-    with open(dest, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, ensure_ascii=False, indent=2)
+    try:
+        await run_in_threadpool(_write_polar_data, dest, data)
+    except OSError as exc:
+        log.exception("Polar data could not be saved")
+        raise HTTPException(status_code=500, detail="Impossible d'enregistrer la polaire.") from exc
 
     return {
         "status": "ok",
@@ -114,20 +188,15 @@ def polar_chat_removed():
 
 @router.get("/api/v1/polar/{expedition_id}")
 def get_polar(expedition_id: str):
-    dest = _polar_path(expedition_id)
-    if not dest.exists():
-        raise HTTPException(status_code=404, detail=f"No polar data found for expedition '{expedition_id}'.")
-    with open(dest, encoding="utf-8") as fh:
-        return json.load(fh)
+    data, polar = _stored_or_default_polar(expedition_id)
+    if "grid" not in data:
+        data = {**data, "grid": polar.generate_full_grid().tolist()}
+    return data
 
 
 @router.get("/api/v1/polar/{expedition_id}/summary")
 def get_polar_summary(expedition_id: str):
-    dest = _polar_path(expedition_id)
-    if not dest.exists():
-        raise HTTPException(status_code=404, detail=f"No polar data found for expedition '{expedition_id}'.")
-    with open(dest, encoding="utf-8") as fh:
-        data = json.load(fh)
+    data, _ = _stored_or_default_polar(expedition_id)
     return {
         "expedition_id": data["expedition_id"],
         "boat_name": data["boat_name"],
@@ -140,11 +209,7 @@ def get_polar_summary(expedition_id: str):
 @router.get("/api/v1/polar/{expedition_id}/client")
 def get_polar_client(expedition_id: str):
     """Données déjà calculées nécessaires au navigateur, sans la grille 181×61."""
-    dest = _polar_path(expedition_id)
-    if not dest.exists():
-        raise HTTPException(status_code=404, detail=f"No polar data found for expedition '{expedition_id}'.")
-    with open(dest, encoding="utf-8") as fh:
-        data = json.load(fh)
+    data, _ = _stored_or_default_polar(expedition_id)
     return {
         "expedition_id": data["expedition_id"],
         "boat_name": data["boat_name"],
