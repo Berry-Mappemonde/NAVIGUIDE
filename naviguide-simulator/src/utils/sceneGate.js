@@ -29,6 +29,11 @@ export function isSceneReady({
   return true;
 }
 
+/** Une navigation manuelle pendant le chargement garde la vue choisie par la personne. */
+export function shouldPlaceInitialCamera({ userNavigated = false } = {}) {
+  return !userNavigated;
+}
+
 /** Premier snap, ou téléport (horloge serveur wrappée → horloge client dépliée). */
 export function shouldResnapCamera(prev, next, nm = 80) {
   if (next?.lat == null || next?.lon == null) return false;
