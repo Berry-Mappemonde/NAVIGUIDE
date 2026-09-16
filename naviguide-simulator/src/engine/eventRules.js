@@ -2,7 +2,12 @@
  * Event detectors for the ici() bag.
  * Pure functions: at + prev + along + ctx + memory → EventRecord[].
  * No HTTP. No chat. No Tavily / NVIDIA.
+ *
+ * Thresholds come from `ctx.orders` (skipper orders, S2). The `export const`
+ * below stay the Cruise defaults — used when no orders are passed.
  */
+
+import { skipperSnapshot, thresholdValues } from "./skipperOrders.js";
 
 export const ROUTE_SAMPLE_NM = 12;
 export const WIND_SHIFT_KT = 8;
@@ -174,7 +179,9 @@ function ensureMemory(memory, legId) {
   return mem;
 }
 
-function cooledDown(lastNm, lastMin, ctx, nmLimit = COOLDOWN_NM, minLimit = COOLDOWN_MIN) {
+function cooledDown(lastNm, lastMin, ctx, nmLimitArg = null, minLimitArg = null) {
+  const nmLimit = nmLimitArg ?? ctx.T?.cooldownNm ?? COOLDOWN_NM;
+  const minLimit = minLimitArg ?? ctx.T?.cooldownMin ?? COOLDOWN_MIN;
   if (lastNm == null && lastMin == null) return true;
   const dNm = Number.isFinite(lastNm) && Number.isFinite(ctx.cumNm)
     ? ctx.cumNm - lastNm
@@ -297,12 +304,13 @@ function readHs(at, ctx = {}) {
 
 function rainIntense(ctx) {
   if (ctx.mode !== "suivre") return null;
+  const T = ctx.T || thresholdValues(null);
   const hour = ctx.rainMm;
   const sum3 = ctx.rain3hMm;
-  if (Number.isFinite(hour) && hour >= RAIN_MM_H) {
+  if (Number.isFinite(hour) && hour >= T.rainMmH) {
     return { rainMm: hour, rain3hMm: Number.isFinite(sum3) ? sum3 : null };
   }
-  if (Number.isFinite(sum3) && sum3 >= RAIN_3H_MM) {
+  if (Number.isFinite(sum3) && sum3 >= T.rain3hMm) {
     return { rainMm: Number.isFinite(hour) ? hour : null, rain3hMm: sum3 };
   }
   return null;
@@ -430,9 +438,10 @@ function detectAmp(at, prev, memory, ctx, events) {
 function detectWind(at, memory, ctx, events) {
   const sample = readWind(at, ctx);
   if (!sample) return;
+  const T = ctx.T;
 
-  const galeNow = sample.tws >= GALE_KT
-    || (sample.galePct != null && sample.galePct >= GALE_PCT);
+  const galeNow = sample.tws >= T.galeKt
+    || (sample.galePct != null && sample.galePct >= T.galePct);
   if (galeNow && !memory.galeHold) {
     memory.galeHold = true;
     events.push(makeEvent(memory, "wind-gale", {
@@ -451,8 +460,8 @@ function detectWind(at, memory, ctx, events) {
       },
     }));
   }
-  if (memory.galeHold && sample.tws < GALE_HOLD_KT
-    && !(sample.galePct != null && sample.galePct >= GALE_PCT)) {
+  if (memory.galeHold && sample.tws < T.galeHoldKt
+    && !(sample.galePct != null && sample.galePct >= T.galePct)) {
     memory.galeHold = false;
   }
 
@@ -471,14 +480,14 @@ function detectWind(at, memory, ctx, events) {
   const absTws = Math.abs(dTws);
 
   if (memory.windShiftOpen) {
-    if (absTws < WIND_SHIFT_RESET_KT && (dTwd == null || dTwd < WIND_SHIFT_RESET_DEG)) {
+    if (absTws < T.windShiftResetKt && (dTwd == null || dTwd < T.windShiftResetDeg)) {
       memory.windShiftOpen = false;
       memory.windBaseline = sample;
     }
     return;
   }
 
-  const shifted = absTws >= WIND_SHIFT_KT || (dTwd != null && dTwd >= WIND_SHIFT_DEG);
+  const shifted = absTws >= T.windShiftKt || (dTwd != null && dTwd >= T.windShiftDeg);
   if (!shifted) return;
   if (!cooledDown(memory.lastWindShiftNm, memory.lastWindShiftMin, ctx)) return;
 
@@ -516,14 +525,15 @@ function detectCurrent(at, memory, ctx, events) {
     return;
   }
   const prev = memory.currentBaseline;
-  if (prev.kn < CURRENT_IGNORE_KN && sample.kn < CURRENT_IGNORE_KN) {
+  const T = ctx.T;
+  if (prev.kn < T.currentIgnoreKn && sample.kn < T.currentIgnoreKn) {
     memory.currentBaseline = sample;
     return;
   }
   const dKn = Math.round((sample.kn - prev.kn) * 10) / 10;
   const dDir = smallestAngleDeg(sample.dir, prev.dir);
-  const invert = dDir != null && dDir >= CURRENT_INVERT_DEG;
-  if (Math.abs(dKn) < CURRENT_SHIFT_KN && !invert) return;
+  const invert = dDir != null && dDir >= T.currentInvertDeg;
+  if (Math.abs(dKn) < T.currentShiftKn && !invert) return;
   if (!cooledDown(memory.lastCurrentNm, memory.lastCurrentMin, ctx)) return;
   memory.lastCurrentNm = ctx.cumNm ?? null;
   memory.lastCurrentMin = ctx.clockMin ?? null;
@@ -558,10 +568,11 @@ function detectHs(at, memory, ctx, events) {
     memory.hsBaseline = sample;
     return;
   }
+  const T = ctx.T;
   const dHs = Math.round((sample.hs - memory.hsBaseline.hs) * 10) / 10;
-  const alert = sample.hs >= HS_ALERT_M
-    || (sample.p90 != null && sample.p90 >= HS_ALERT_M);
-  if (Math.abs(dHs) < HS_SHIFT_M && !alert) return;
+  const alert = sample.hs >= T.hsAlertM
+    || (sample.p90 != null && sample.p90 >= T.hsAlertM);
+  if (Math.abs(dHs) < T.hsShiftM && !alert) return;
   if (!cooledDown(memory.lastHsNm, memory.lastHsMin, ctx)) return;
   memory.lastHsNm = ctx.cumNm ?? null;
   memory.lastHsMin = ctx.clockMin ?? null;
@@ -581,18 +592,20 @@ function detectHs(at, memory, ctx, events) {
       kind: sample.kind,
       source: sample.source,
       alert,
+      alertM: T.hsAlertM,
     },
   }));
 }
 
 function detectWxMarina(at, along, memory, ctx, events) {
+  const T = ctx.T;
   const rain = rainIntense(ctx);
   const wind = readWind(at, ctx);
   const hs = readHs(at, ctx);
   const gale = Boolean(
-    wind && (wind.tws >= GALE_KT || (wind.galePct != null && wind.galePct >= GALE_PCT)),
+    wind && (wind.tws >= T.galeKt || (wind.galePct != null && wind.galePct >= T.galePct)),
   );
-  const hsHi = Boolean(hs && (hs.hs >= HS_ALERT_M || (hs.p90 != null && hs.p90 >= HS_ALERT_M)));
+  const hsHi = Boolean(hs && (hs.hs >= T.hsAlertM || (hs.p90 != null && hs.p90 >= T.hsAlertM)));
   if (!rain && !gale && !hsHi) return;
 
   const key = [rain && "rain", gale && "gale", hsHi && "hs"].filter(Boolean).join("+");
@@ -627,11 +640,11 @@ function detectWxMarina(at, along, memory, ctx, events) {
   }));
 
   if (!rain || ctx.mode !== "suivre") return;
-  const port = nearestHarbour(at, along, MARINA_REFUGE_NM);
+  const port = nearestHarbour(at, along, T.marinaRefugeNm);
   if (!port) return;
   const pkey = port.name;
   if (memory.lastMarinaKey === pkey
-    && !cooledDown(null, memory.lastMarinaMin, ctx, Infinity, MARINA_REFUGE_COOLDOWN_MIN)) {
+    && !cooledDown(null, memory.lastMarinaMin, ctx, Infinity, T.marinaRefugeCooldownMin)) {
     return;
   }
   memory.lastMarinaKey = pkey;
@@ -653,18 +666,19 @@ function detectWxMarina(at, along, memory, ctx, events) {
 }
 
 function detectDepth(at, memory, ctx, events) {
+  const T = ctx.T;
   const emod = at?.emodnet?.bathy?.depth_m;
   const gebco = at?.depthOffshore;
   let hit = null;
-  if (Number.isFinite(emod) && Math.abs(emod) < DEPTH_ALERT_M && Math.abs(emod) >= 1) {
+  if (Number.isFinite(emod) && Math.abs(emod) < T.depthAlertM && Math.abs(emod) >= 1) {
     hit = { m: Math.round(Math.abs(emod) * 10) / 10, source: "emodnet" };
-  } else if (Number.isFinite(gebco) && Math.abs(gebco) >= 1 && Math.abs(gebco) < DEPTH_ALERT_M) {
+  } else if (Number.isFinite(gebco) && Math.abs(gebco) >= 1 && Math.abs(gebco) < T.depthAlertM) {
     hit = { m: Math.round(Math.abs(gebco) * 10) / 10, source: "gebco" };
   }
   if (!hit) return;
   if (memory.lastDepthNm != null
     && Number.isFinite(ctx.cumNm)
-    && ctx.cumNm - memory.lastDepthNm < DEPTH_COOLDOWN_NM) {
+    && ctx.cumNm - memory.lastDepthNm < T.depthCooldownNm) {
     return;
   }
   memory.lastDepthNm = ctx.cumNm ?? 0;
@@ -679,6 +693,8 @@ function detectDepth(at, memory, ctx, events) {
       depthM: hit.m,
       source: hit.source,
       kind: "observation",
+      alertM: T.depthAlertM,
+      label: T.depthLabel,
     },
   }));
 }
@@ -712,7 +728,7 @@ function detectAhead(at, along, memory, ctx, events) {
   }
 
   for (const pearl of pearls) {
-    if ((pearl.whenNm ?? 0) < AMP_AHEAD_MIN_NM) continue;
+    if ((pearl.whenNm ?? 0) < ctx.T.ampAheadMinNm) continue;
     for (const amp of pearl.amp || []) {
       const id = amp.site_id ?? amp.id ?? amp.wdpaid ?? amp.name;
       if (!id || memory.seenAmpAhead.has(id) || memory.seenAmp.has(id)) continue;
@@ -765,6 +781,8 @@ function detectAhead(at, along, memory, ctx, events) {
 /**
  * Detect E1 events + E2 ahead (if `along` pearls are ready).
  * First bag (`prev === undefined`) never emits zee-enter / amp-enter.
+ * `ctx.orders` (resolved skipper orders) sets every threshold; Cruise when absent.
+ * Each event carries a frozen `skipper` snapshot: the orders that made IT switch.
  */
 export function detectEvents({
   at,
@@ -777,14 +795,18 @@ export function detectEvents({
   if (ctx.airHop) {
     return { events: [], memory: mem };
   }
+  const c = { ...ctx, T: thresholdValues(ctx.orders) };
   const events = [];
-  detectZee(at, prev, mem, ctx, events);
-  detectAmp(at, prev, mem, ctx, events);
-  detectWind(at, mem, ctx, events);
-  detectCurrent(at, mem, ctx, events);
-  detectHs(at, mem, ctx, events);
-  detectWxMarina(at, along, mem, ctx, events);
-  detectDepth(at, mem, ctx, events);
-  detectAhead(at, along, mem, ctx, events);
+  detectZee(at, prev, mem, c, events);
+  detectAmp(at, prev, mem, c, events);
+  detectWind(at, mem, c, events);
+  detectCurrent(at, mem, c, events);
+  detectHs(at, mem, c, events);
+  detectWxMarina(at, along, mem, c, events);
+  detectDepth(at, mem, c, events);
+  detectAhead(at, along, mem, c, events);
+  for (const ev of events) {
+    ev.skipper = skipperSnapshot(ev.type, ctx.orders, ev.payload, ctx.lang);
+  }
   return { events, memory: mem };
 }
