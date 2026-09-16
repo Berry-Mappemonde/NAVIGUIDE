@@ -16,7 +16,7 @@ export function officialGribQuery(clock, when = new Date()) {
 export function officialGribStatus({ enabled, grib, pending, positioned } = {}) {
   if (!enabled) return null;
   if (grib?.status === "ready") return "ready";
-  if (pending || !positioned || !grib) return "pending";
+  if (pending || grib?.status === "pending" || grib?.refreshing || !positioned || !grib) return "pending";
   return "absent";
 }
 

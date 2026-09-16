@@ -104,7 +104,10 @@ export function useOfficialExpedition({
     const url = force ? `${API}/voyage/official/grib/refresh${qs}` : `${API}/voyage/official/grib${qs}`;
     const res = await fetch(url, force ? { method: "POST" } : undefined);
     const data = await res.json().catch(() => null);
-    if (res.ok && data) setGrib(data);
+    if (res.ok && data) {
+      setGrib(data);
+      setGribPending(data.status === "pending" || Boolean(data.refreshing));
+    }
     return data;
   }, []);
 
@@ -116,15 +119,27 @@ export function useOfficialExpedition({
       return undefined;
     }
     let cancelled = false;
+    let retry = null;
     setGribPending(true);
-    refreshGrib().catch(() => {}).finally(() => {
-      if (!cancelled) setGribPending(false);
-    });
+    const refresh = () => {
+      refreshGrib()
+        .then((data) => {
+          if (!cancelled && (data?.status === "pending" || data?.refreshing)) {
+            clearTimeout(retry);
+            retry = setTimeout(refresh, 4000);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setGribPending(false);
+        });
+    };
+    refresh();
     const id = setInterval(() => {
-      refreshGrib().catch(() => {});
+      refresh();
     }, 60_000);
     return () => {
       cancelled = true;
+      clearTimeout(retry);
       clearInterval(id);
     };
   }, [enabled, refreshGrib, meta?.voyageId, serverClock]);

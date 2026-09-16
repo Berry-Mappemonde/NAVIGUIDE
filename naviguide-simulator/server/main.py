@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -77,6 +78,32 @@ def _startup_official_grib():
 class PositionRequest(BaseModel):
     latitude: float
     longitude: float
+
+
+_WEATHER_CACHE_TTL = 300.0
+_WEATHER_CACHE_MAX = 256
+_WEATHER_CELL_DEG = 0.25
+_weather_cache: dict = {}
+
+
+def _weather_cell(kind: str, lat: float, lon: float) -> tuple[str, int, int]:
+    wrapped_lon = ((float(lon) + 180.0) % 360.0) - 180.0
+    return (
+        kind,
+        math.floor((float(lat) + 90.0) / _WEATHER_CELL_DEG),
+        math.floor((wrapped_lon + 180.0) / _WEATHER_CELL_DEG),
+    )
+
+
+def _cached_weather(kind: str, request: PositionRequest, loader) -> dict:
+    key = _weather_cell(kind, request.latitude, request.longitude)
+    now = time.monotonic()
+    hit = _weather_cache.get(key)
+    if hit and now - hit["at"] < _WEATHER_CACHE_TTL:
+        return dict(hit["data"])
+    data = loader(request)
+    lru_set(_weather_cache, key, {"at": now, "data": dict(data)}, max_items=_WEATHER_CACHE_MAX)
+    return data
 
 
 @app.get("/")
@@ -186,8 +213,7 @@ def _sim_current(lat: float, lon: float) -> dict:
     }
 
 
-@app.post("/wind")
-def get_wind(request: PositionRequest):
+def _load_wind(request: PositionRequest) -> dict:
     try:
         if COPERNICUS_USERNAME and COPERNICUS_PASSWORD and get_wind_data_at_position:
             wind_data = get_wind_data_at_position(
@@ -203,8 +229,7 @@ def get_wind(request: PositionRequest):
     return _sim_wind(request.latitude, request.longitude)
 
 
-@app.post("/wave")
-def get_wave(request: PositionRequest):
+def _load_wave(request: PositionRequest) -> dict:
     try:
         if COPERNICUS_USERNAME and COPERNICUS_PASSWORD and get_wave_data_at_position:
             wave_data = get_wave_data_at_position(
@@ -220,8 +245,7 @@ def get_wave(request: PositionRequest):
     return _sim_wave(request.latitude, request.longitude)
 
 
-@app.post("/current")
-def get_current(request: PositionRequest):
+def _load_current(request: PositionRequest) -> dict:
     try:
         if COPERNICUS_USERNAME and COPERNICUS_PASSWORD and get_current_data_at_position:
             current_data = get_current_data_at_position(
@@ -237,10 +261,45 @@ def get_current(request: PositionRequest):
     return _sim_current(request.latitude, request.longitude)
 
 
+@app.post("/wind")
+def get_wind(request: PositionRequest):
+    return _cached_weather("wind", request, _load_wind)
+
+
+@app.post("/wave")
+def get_wave(request: PositionRequest):
+    return _cached_weather("wave", request, _load_wave)
+
+
+@app.post("/current")
+def get_current(request: PositionRequest):
+    return _cached_weather("current", request, _load_current)
+
+
+@app.post("/weather")
+def get_weather(request: PositionRequest):
+    """Une requête UI, trois produits dédupliqués par cellule."""
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        wind = pool.submit(get_wind, request)
+        wave = pool.submit(get_wave, request)
+        current = pool.submit(get_current, request)
+        return {
+            "wind": wind.result(),
+            "wave": wave.result(),
+            "current": current.result(),
+        }
+
+
 _WPI_CACHE_TTL = 86_400
 _zee_cache: dict = {"entries": {}}
 _ZEE_CACHE_TTL = 86_400
 _VLIZ_WMS = "https://geo.vliz.be/geoserver/MarineRegions/wms"
+_WMS_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=21600, stale-while-revalidate=86400",
+}
+_SEAMARK_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+}
 
 _DMS_RE = re.compile(
     r"""(\d+)\s*[°d]\s*(\d+)\s*[''′]\s*(\d+(?:\.\d+)?)\s*[""″]?\s*([NSEW]?)""",
@@ -290,7 +349,7 @@ async def proxy_zee_wms(request: Request):
             resp = await client.get(_VLIZ_WMS, params=params)
             if resp.status_code != 200:
                 raise HTTPException(status_code=502, detail=f"VLIZ WMS HTTP {resp.status_code}")
-            return Response(content=resp.content, media_type="image/png")
+            return Response(content=resp.content, media_type="image/png", headers=_WMS_CACHE_HEADERS)
     except HTTPException:
         raise
     except Exception as exc:
@@ -339,13 +398,46 @@ async def proxy_zee(
         raise HTTPException(status_code=502, detail=f"ZEE upstream error: {exc}") from exc
 
 
+def _parse_ports_bbox(raw: Optional[str]) -> Optional[tuple[float, float, float, float]]:
+    if not raw:
+        return None
+    try:
+        west, south, east, north = (float(value) for value in raw.split(","))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "bbox ports invalide") from exc
+    if south > north or south < -90 or north > 90:
+        raise HTTPException(400, "bbox ports invalide")
+    return west, south, east, north
+
+
+def _port_in_bbox(feature: dict, bbox: Optional[tuple[float, float, float, float]]) -> bool:
+    if bbox is None:
+        return True
+    coords = (feature.get("geometry") or {}).get("coordinates") or []
+    if len(coords) < 2:
+        return False
+    lon, lat = float(coords[0]), float(coords[1])
+    west, south, east, north = bbox
+    if lat < south or lat > north:
+        return False
+    copies = (lon - 360.0, lon, lon + 360.0)
+    if west <= east:
+        return any(west <= value <= east for value in copies)
+    return any(value >= west or value <= east for value in copies)
+
+
 @app.get("/proxy/ports")
-async def proxy_ports():
+async def proxy_ports(bbox: Optional[str] = Query(None)):
+    parsed_bbox = _parse_ports_bbox(bbox)
     try:
         features = await fetch_wpi_features()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"WPI upstream error: {exc}") from exc
-    return JSONResponse(content={"type": "FeatureCollection", "features": features})
+    visible = [feature for feature in features if _port_in_bbox(feature, parsed_bbox)]
+    return JSONResponse(
+        content={"type": "FeatureCollection", "features": visible},
+        headers={"Cache-Control": "public, max-age=180, stale-while-revalidate=600"},
+    )
 
 
 _OPENSEAMAP_HOSTS = ["tiles.openseamap.org", "t1.openseamap.org"]
@@ -386,7 +478,7 @@ async def proxy_seamark(z: int, x: int, y: str):
             try:
                 resp = await client.get(url)
                 if resp.status_code == 200:
-                    return Response(content=resp.content, media_type="image/png")
+                    return Response(content=resp.content, media_type="image/png", headers=_SEAMARK_CACHE_HEADERS)
             except Exception:
                 continue
-    return Response(content=_get_transparent_tile(), media_type="image/png")
+    return Response(content=_get_transparent_tile(), media_type="image/png", headers=_SEAMARK_CACHE_HEADERS)

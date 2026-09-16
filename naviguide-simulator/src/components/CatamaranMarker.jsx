@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { markerWorldLngs, wrapLon } from "../utils/waypointFlags.js";
+import { applyMarkerRotation } from "../utils/markerRotation.js";
 
-function buildIconHtml(bearing) {
-  return catamaranSvg(bearing);
+function buildIconHtml() {
+  return catamaranSvg(0);
 }
 
 export function useCatamaranMarker(mapRef, {
@@ -33,7 +34,7 @@ export function useCatamaranMarker(mapRef, {
 
     const makeIcon = () => L.divIcon({
       className,
-      html: buildIconHtml(bearing),
+      html: buildIconHtml(),
       iconSize: [64, 64],
       iconAnchor: [32, 32],
     });
@@ -58,12 +59,13 @@ export function useCatamaranMarker(mapRef, {
               onDrag?.({ lat: ll.lat, lon: wrapLon(ll.lng) });
             });
           }
+          applyMarkerRotation(m, bearing);
           return m;
         });
       } else {
         markersRef.current.forEach((m, i) => {
           m.setLatLng([lat, lngs[i]]);
-          m.setIcon(makeIcon());
+          applyMarkerRotation(m, bearing);
         });
       }
     };

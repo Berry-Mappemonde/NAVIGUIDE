@@ -4,6 +4,11 @@ import { ampStyle } from "./styles.js";
 import { circleOpts, makePointGroup } from "./points.js";
 import { filterScienceFeatures } from "./scienceSource.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
+import {
+  aggregatePointFeatures,
+  POINT_RENDER_BUDGET,
+  visibleFeatureCollection,
+} from "./spatialFeatures.js";
 import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
 import { recetteClimoFlags } from "../utils/recetteQuery.js";
 
@@ -88,14 +93,89 @@ function useLazyJson(enabled, url) {
   return { data, loading, error };
 }
 
+function lruSet(cache, key, value, maxEntries = 8) {
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > maxEntries) cache.delete(cache.keys().next().value);
+}
+
+function viewportBbox(map) {
+  const bounds = map.getBounds().pad(0.18);
+  const step = Math.max(0.25, 90 / (2 ** Math.max(0, map.getZoom() - 2)));
+  const floor = (value) => Math.floor(value / step) * step;
+  const ceil = (value) => Math.ceil(value / step) * step;
+  return [floor(bounds.getWest()), floor(bounds.getSouth()), ceil(bounds.getEast()), ceil(bounds.getNorth())]
+    .map((value) => value.toFixed(3))
+    .join(",");
+}
+
+function useViewportFetchLayer(url, mapRef, mapReady, viewportRevision) {
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [data, setData] = useState(null);
+  const cacheRef = useRef(new Map());
+  const toggle = useCallback((fn) => {
+    setShow((value) => (typeof fn === "function" ? fn(value) : !value));
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!show || !url || !map || !mapReady) return undefined;
+    const bbox = viewportBbox(map);
+    const requestUrl = `${url}${url.includes("?") ? "&" : "?"}bbox=${encodeURIComponent(bbox)}`;
+    const hit = cacheRef.current.get(requestUrl);
+    if (hit) {
+      cacheRef.current.delete(requestUrl);
+      cacheRef.current.set(requestUrl, hit);
+      setData(hit);
+      setLoading(false);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    fetch(requestUrl, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((json) => {
+        if (controller.signal.aborted) return;
+        lruSet(cacheRef.current, requestUrl, json);
+        setData(json);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) setError(String(err.message || err));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [show, url, mapRef, mapReady, viewportRevision]);
+
+  return { show, setShow: toggle, loading, error, data };
+}
+
 function addPointLayer(map, fc, color, kind, onFeature) {
   const group = makePointGroup();
   const zoom = map.getZoom();
   const renderer = group._biRenderer;
-  (fc?.features || []).forEach((f) => {
+  const visible = visibleFeatureCollection(fc, map.getBounds().pad(0.18));
+  const features = aggregatePointFeatures(
+    visible.features,
+    (lon, lat) => map.latLngToContainerPoint([lat, lon]),
+    { budget: POINT_RENDER_BUDGET },
+  );
+  features.forEach((f) => {
     if (f.geometry?.type !== "Point") return;
     const [lon, lat] = f.geometry.coordinates;
-    const m = L.circleMarker([lat, lon], circleOpts(color, { zoom, renderer }));
+    const clusterCount = Number(f.properties?.clusterCount) || 1;
+    const m = L.circleMarker([lat, lon], circleOpts(color, {
+      zoom,
+      bump: clusterCount > 1 ? Math.min(6, Math.log2(clusterCount)) : 0,
+      renderer,
+    }));
     m.on("click", (e) => {
       L.DomEvent.stopPropagation(e);
       onFeature?.({ lon, lat, kind, props: f.properties || {} });
@@ -107,11 +187,20 @@ function addPointLayer(map, fc, color, kind, onFeature) {
 }
 
 function addScienceSourceLayer(map, fc, source, color, onFeature) {
-  const filtered = filterScienceFeatures(fc, source);
+  const filtered = visibleFeatureCollection(
+    filterScienceFeatures(fc, source),
+    map.getBounds().pad(0.18),
+  );
   const group = makePointGroup();
   const zoom = map.getZoom();
   const renderer = group._biRenderer;
-  (filtered.features || []).forEach((f) => {
+  const points = aggregatePointFeatures(
+    filtered.features,
+    (lon, lat) => map.latLngToContainerPoint([lat, lon]),
+    { budget: POINT_RENDER_BUDGET },
+  );
+  const lines = filtered.features.filter((f) => f.geometry?.type === "LineString");
+  [...lines, ...points].forEach((f) => {
     const props = f.properties || {};
     const geom = f.geometry || {};
     if (geom.type === "LineString") {
@@ -135,7 +224,13 @@ function addScienceSourceLayer(map, fc, source, color, onFeature) {
     if (geom.type !== "Point") return;
     const [lon, lat] = geom.coordinates;
     const fill = props.kind === "argo_float" ? 0.25 : props.kind === "cruise" ? 0.45 : 0.85;
-    const m = L.circleMarker([lat, lon], circleOpts(color, { zoom, fillOpacity: fill, renderer }));
+    const clusterCount = Number(props.clusterCount) || 1;
+    const m = L.circleMarker([lat, lon], circleOpts(color, {
+      zoom,
+      bump: clusterCount > 1 ? Math.min(6, Math.log2(clusterCount)) : 0,
+      fillOpacity: fill,
+      renderer,
+    }));
     m.on("click", (e) => {
       L.DomEvent.stopPropagation(e);
       onFeature?.({ lon, lat, kind: "science", props });
@@ -146,14 +241,21 @@ function addScienceSourceLayer(map, fc, source, color, onFeature) {
   return group;
 }
 
-export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
+export function useToggleLayers(
+  mapRef,
+  onFeature,
+  mapReady = 0,
+  gateRef,
+  { cameraFollowing = false } = {},
+) {
   const zee = useFetchLayer(null);
   const [showZee, setShowZee] = useState(DEFAULT_SHOW_ZEE);
   const [loadingZee] = useState(false);
   const [errorZee, setErrorZee] = useState(null);
   const [showGrib, setShowGrib] = useState(DEFAULT_SHOW_GRIB);
+  const [viewportRevision, setViewportRevision] = useState(0);
 
-  const ports = useFetchLayer("/proxy/ports");
+  const ports = useViewportFetchLayer("/proxy/ports", mapRef, mapReady, viewportRevision);
   const projects = useFetchLayer(`${BI_BASE}/export/geojson`);
   const marinas = useFetchLayer(`${BI_BASE}/export/marinas.geojson`);
   const capitaineries = useFetchLayer(`${BI_BASE}/export/capitaineries.geojson`);
@@ -197,6 +299,27 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
 
   const layersRef = useRef({});
   const ampRequestRef = useRef({ id: 0, controller: null });
+  const ampCacheRef = useRef(new Map());
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return undefined;
+    let timer = null;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => setViewportRevision((revision) => revision + 1),
+        cameraFollowing ? 950 : 120,
+      );
+    };
+    map.on("moveend", schedule);
+    map.on("zoomend", schedule);
+    return () => {
+      clearTimeout(timer);
+      map.off("moveend", schedule);
+      map.off("zoomend", schedule);
+    };
+  }, [mapRef, mapReady, cameraFollowing]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -270,35 +393,35 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     if (!map || !mapReady || !ports.show || !ports.data) return undefined;
     const g = addPointLayer(map, ports.data, "#f59e0b", "port", onFeature);
     return () => map.removeLayer(g);
-  }, [mapRef, mapReady, ports.show, ports.data, onFeature]);
+  }, [mapRef, mapReady, ports.show, ports.data, onFeature, viewportRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !projects.show || !projects.data) return undefined;
     const g = addPointLayer(map, projects.data, "#06b6d4", "project", onFeature);
     return () => map.removeLayer(g);
-  }, [mapRef, mapReady, projects.show, projects.data, onFeature]);
+  }, [mapRef, mapReady, projects.show, projects.data, onFeature, viewportRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !marinas.show || !marinas.data) return undefined;
     const g = addPointLayer(map, marinas.data, "#ef4444", "marina", onFeature);
     return () => map.removeLayer(g);
-  }, [mapRef, mapReady, marinas.show, marinas.data, onFeature]);
+  }, [mapRef, mapReady, marinas.show, marinas.data, onFeature, viewportRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !capitaineries.show || !capitaineries.data) return undefined;
     const g = addPointLayer(map, capitaineries.data, "#7dd3fc", "capitainerie", onFeature);
     return () => map.removeLayer(g);
-  }, [mapRef, mapReady, capitaineries.show, capitaineries.data, onFeature]);
+  }, [mapRef, mapReady, capitaineries.show, capitaineries.data, onFeature, viewportRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !poe.show || !poe.data) return undefined;
     const g = addPointLayer(map, poe.data, "#d97706", "poe", onFeature);
     return () => map.removeLayer(g);
-  }, [mapRef, mapReady, poe.show, poe.data, onFeature]);
+  }, [mapRef, mapReady, poe.show, poe.data, onFeature, viewportRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -316,7 +439,7 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
       added.push(addScienceSourceLayer(map, scienceCatalog.data, source, color, onFeature));
     });
     return () => added.forEach((g) => map.removeLayer(g));
-  }, [mapRef, mapReady, scienceCatalog.data, showSextant, showArgo, showOdatis, showEdmed, showCsr, onFeature]);
+  }, [mapRef, mapReady, scienceCatalog.data, showSextant, showArgo, showOdatis, showEdmed, showCsr, onFeature, viewportRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -343,16 +466,25 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !showAmp) return undefined;
+    if (!map || !mapReady || !showAmp || cameraFollowing) return undefined;
     let debounce = null;
     const load = () => {
-      const b = map.getBounds();
-      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
+      const bbox = viewportBbox(map);
+      const cached = ampCacheRef.current.get(bbox);
+      if (cached) {
+        ampCacheRef.current.delete(bbox);
+        ampCacheRef.current.set(bbox, cached);
+        setAmpData(cached);
+        setLoadingAmp(false);
+        setErrorAmp(null);
+        return;
+      }
       const previous = ampRequestRef.current;
+      if (previous.bbox === bbox && previous.controller) return;
       previous.controller?.abort();
       const controller = new AbortController();
       const id = previous.id + 1;
-      ampRequestRef.current = { id, controller };
+      ampRequestRef.current = { id, controller, bbox };
       setLoadingAmp(true);
       setErrorAmp(null);
       fetch(`${BI_BASE}/amp?bbox=${bbox}`, { signal: controller.signal })
@@ -361,7 +493,10 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
           return r.json();
         })
         .then((json) => {
-          if (ampRequestRef.current.id === id) setAmpData(json);
+          if (ampRequestRef.current.id === id) {
+            lruSet(ampCacheRef.current, bbox, json, 8);
+            setAmpData(json);
+          }
         })
         .catch((err) => {
           if (!controller.signal.aborted && ampRequestRef.current.id === id) {
@@ -387,8 +522,9 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
       ampRequestRef.current.id += 1;
       ampRequestRef.current.controller?.abort();
       ampRequestRef.current.controller = null;
+      setLoadingAmp(false);
     };
-  }, [mapRef, mapReady, showAmp]);
+  }, [mapRef, mapReady, showAmp, cameraFollowing]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -499,6 +635,7 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     showBathymetry, setShowBathymetry,
     showFonds, setShowFonds,
     showCables, setShowCables,
+    showClimoWind, showClimoWave, showClimoCurrent, showClimoCyclones,
     zee.show, zee.setShow, zee.loading, zee.error, zee.data,
   ]);
 }

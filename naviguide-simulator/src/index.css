@@ -14,6 +14,12 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
 .catamaran-divicon, .flag-divicon, .plane-divicon, .grib-barb { background: none !important; border: none !important; }
 .grib-barb { pointer-events: none; }
+.marker-rotatable {
+  transform: rotate(var(--marker-bearing, 0deg));
+  transform-origin: 50% 50%;
+  transition: transform 0.35s ease;
+}
+.plane-icon { filter: drop-shadow(0 0 8px rgba(250, 250, 255, 0.95)); }
 .catamaran-divicon--side img,
 .catamaran-divicon--side svg { filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.9)); }
 .catamaran-divicon--live img,

@@ -25,8 +25,7 @@ function hullPath(cx) {
 /** Catamaran lisible à l’échelle carte : deux coques, trampoline, roof, mât. Proue = haut. */
 export function catamaranSvg(bearing, { size = 64 } = {}) {
   const deg = ((Number(bearing) || 0) % 360 + 360) % 360;
-  const transform = catamaranTransform(deg);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64" aria-label="catamaran" data-bow="north" data-heading="${deg}" style="display:block;transform:${transform};transform-origin:50% 50%;transition:transform 0.35s ease;">
+  return `<svg class="marker-rotatable catamaran-icon-art" data-marker-rotatable xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64" aria-label="catamaran" data-bow="north" data-heading="${deg}" style="display:block">
   <ellipse cx="32" cy="33" rx="21" ry="26" fill="#082f49"/>
   <path d="M23 11 L41 11 L42.2 21 L21.8 21 Z" fill="#0e7490"/>
   <path d="M24.2 12.2 L39.8 12.2 L40.4 19.6 L23.6 19.6 Z" fill="#155e75"/>

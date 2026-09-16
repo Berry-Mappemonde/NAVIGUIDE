@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import forecast_cube
 import saildocs
+import voyage_api
 import voyage_store
 
 
@@ -86,7 +87,39 @@ def test_grib_refresh_endpoint(client):
     client.put("/voyage/official", json=_payload())
     r = client.post("/voyage/official/grib/refresh")
     assert r.status_code == 200
-    assert r.json()["status"] in ("absent", "ready")
+    assert r.json()["status"] in ("pending", "absent", "ready")
+
+
+def test_grib_get_returns_pending_and_kicks_shared_refresh(client, monkeypatch):
+    client.put("/voyage/official", json=_payload())
+    calls = []
+    monkeypatch.setattr(voyage_api, "_kick_official_grib", lambda *args, **kwargs: calls.append((args, kwargs)) or True)
+    monkeypatch.setattr(voyage_api, "_official_grib_refreshing", lambda: True)
+
+    response = client.get("/voyage/official/grib", params={"lat": 46.15, "lon": -1.16})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    assert response.json()["refreshing"] is True
+    assert len(calls) == 1
+
+
+def test_grib_kick_deduplicates_active_thread(monkeypatch):
+    class Thread:
+        def __init__(self, **kwargs):
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+        def is_alive(self):
+            return self.started
+
+    monkeypatch.setattr(voyage_api.threading, "Thread", Thread)
+    monkeypatch.setattr(voyage_api, "_grib_refresh_thread", None)
+
+    assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is True
+    assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is False
 
 
 def test_grib_refresh_without_voyage_uses_latest_around(client, tmp_path):
@@ -129,8 +162,11 @@ def test_official_at_now_and_grib_absent(client):
     assert sample["voyageId"] == "berry-mappemonde-2026-officiel"
     assert sample["status"] in ("live", "waiting", "arrived")
     grib = client.get("/voyage/official/grib", params={"lat": 46.15, "lon": -1.16}).json()
-    assert grib["status"] == "absent"
-    assert grib["warning"] == "dernière prévision absente"
+    assert grib["status"] in ("pending", "absent")
+    if grib["status"] == "pending":
+        assert grib["warning"] is None
+    else:
+        assert grib["warning"] == "dernière prévision absente"
     sample = client.get("/voyage/official/at").json()
     assert sample["kind"] != "climatology"
     assert sample["kind"] == "absent"

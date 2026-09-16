@@ -106,6 +106,7 @@ export function gribDisplayPoints(samples, { lat, lon, whenIso } = {}) {
         lat: originLat + di * STENCIL_DEG,
         lon: originLon + dj * STENCIL_DEG,
         stencil: true,
+        stencilIndex: `${di}:${dj}`,
       });
     }
   }
