@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { narrateIci } from "./iciBriefing.js";
+import { narrateIci, phraseForEvent } from "./iciBriefing.js";
 
 const FORBIDDEN = /Ports\s*\/\s*Sécurité|AgentPanel|\/agents\/|Cruisers|Nemotron|Tavily/i;
 
@@ -302,5 +302,52 @@ describe("narrateIci", () => {
     assert.match(text, /courant null \(off_grid\)/);
     assert.doesNotMatch(text, /rtofs_not_ingested/);
     assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("cites kind on a wind-shift and never mentions Nemotron", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      event: {
+        type: "wind-shift",
+        payload: {
+          tws: 18,
+          twd: 240,
+          dTws: 10,
+          kind: "forecast",
+          source: "GFS",
+          tavily: null,
+          nvidia: null,
+        },
+      },
+      sources: { zee: "marineregions" },
+    }, "fr");
+    assert.match(text, /Vent 18 kn \/ 240°/);
+    assert.match(text, /kind: forecast/);
+    assert.match(text, /\+10 kn/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("tells a Suivre rain refuge from the pack, not a model", () => {
+    const text = phraseForEvent({
+      type: "marina-refuge",
+      payload: {
+        harbour: { name: "Port des Minimes", nm: 6 },
+        rainMm: 6,
+        kind: "forecast",
+      },
+    }, "fr");
+    assert.match(text, /Pluie 6 mm\/h \(GFS\)/);
+    assert.match(text, /Repli : Port des Minimes à 6 nm/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("summarises a group digest", () => {
+    const text = phraseForEvent({
+      type: "group",
+      digest: { fr: "Depuis cette jambe : zee-enter + amp-enter.", en: "Along this leg: zee-enter + amp-enter." },
+      payload: { members: ["zee-enter", "amp-enter"] },
+    }, "fr");
+    assert.match(text, /zee-enter \+ amp-enter/);
   });
 });
