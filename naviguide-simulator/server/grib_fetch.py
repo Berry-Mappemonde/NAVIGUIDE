@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -156,6 +157,14 @@ def _lead_times(when: datetime) -> List[str]:
     return [to_iso(start + timedelta(hours=h)) for h in range(0, FORECAST_HOURS + 1, STEP_HOURS)]
 
 
+def _fetch_product(fetcher, client: httpx.Client, lat: float, lon: float, product: str) -> Optional[dict]:
+    try:
+        return fetcher(client, lat, lon)
+    except Exception as exc:
+        log.warning("%s Open-Meteo %s,%s: %s", product, lat, lon, exc)
+        return None
+
+
 def fetch_latest_payload(around: dict, when: Optional[datetime] = None) -> Dict[str, Any]:
     now = when or datetime.now(timezone.utc)
     if now.tzinfo is None:
@@ -168,17 +177,20 @@ def fetch_latest_payload(around: dict, when: Optional[datetime] = None) -> Dict[
     gfs_ok = False
     wave_ok = False
     with httpx.Client(timeout=FETCH_TIMEOUT_S) as client:
-        for lat, lon in pts:
-            gfs = None
-            wave = None
-            try:
-                gfs = _fetch_gfs_point(client, lat, lon)
-            except Exception as exc:
-                log.warning("GFS Open-Meteo %s,%s: %s", lat, lon, exc)
-            try:
-                wave = _fetch_wave_point(client, lat, lon)
-            except Exception as exc:
-                log.warning("GFS-Wave Open-Meteo %s,%s: %s", lat, lon, exc)
+        with ThreadPoolExecutor(max_workers=min(8, max(2, len(pts) * 2))) as pool:
+            futures = {
+                (index, "gfs"): pool.submit(_fetch_product, _fetch_gfs_point, client, lat, lon, "GFS")
+                for index, (lat, lon) in enumerate(pts)
+            }
+            futures.update({
+                (index, "wave"): pool.submit(_fetch_product, _fetch_wave_point, client, lat, lon, "GFS-Wave")
+                for index, (lat, lon) in enumerate(pts)
+            })
+            products_by_point = [
+                (futures[(index, "gfs")].result(), futures[(index, "wave")].result())
+                for index in range(len(pts))
+            ]
+        for (lat, lon), (gfs, wave) in zip(pts, products_by_point):
             if gfs:
                 gfs_ok = True
             if wave:

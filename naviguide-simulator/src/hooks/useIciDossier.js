@@ -12,6 +12,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
 const MOVE_NM = 3;
 const FETCH_MS = 40000;
+const MIN_SCHEDULE_MS = 8000;
 
 /**
  * Fill the `ici()` bag around the boat and turn it into a story.
@@ -31,23 +32,28 @@ export function useIciDossier({
 }) {
   const [remote, setRemote] = useState(null);
   const lastFetchRef = useRef(null);
+  const lastScheduledRef = useRef(null);
   const prevZeeRef = useRef(undefined);
   const abortRef = useRef(null);
   const timerRef = useRef(null);
+  const requestIdRef = useRef(0);
   const boat = boatPositionFromCast(cast, snappedPosition);
 
   useEffect(() => {
     if (!enabled || !boat) {
       setRemote(null);
       lastFetchRef.current = null;
+      lastScheduledRef.current = null;
       prevZeeRef.current = undefined;
+      requestIdRef.current += 1;
+      clearTimeout(timerRef.current);
       abortRef.current?.abort();
       return undefined;
     }
 
     const lat = boat.lat;
     const lon = wrapLon(boat.lon);
-    const last = lastFetchRef.current;
+    const last = lastFetchRef.current || lastScheduledRef.current;
     if (
       last
       && haversineNm(last.lat, last.lon, lat, lon) < MOVE_NM
@@ -58,10 +64,23 @@ export function useIciDossier({
       return undefined;
     }
 
+    const now = Date.now();
+    if (
+      lastScheduledRef.current
+      && lastScheduledRef.current.month === month
+      && lastScheduledRef.current.destLat === destLat
+      && lastScheduledRef.current.destLon === destLon
+      && now - lastScheduledRef.current.scheduledAt < MIN_SCHEDULE_MS
+    ) {
+      return undefined;
+    }
+    lastScheduledRef.current = { lat, lon, month, destLat, destLon, scheduledAt: now };
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
       abortRef.current = ctrl;
       const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
       const q = new URLSearchParams({
@@ -78,20 +97,14 @@ export function useIciDossier({
       })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`ici ${r.status}`))))
         .then((data) => {
+          if (requestIdRef.current !== requestId) return;
           const event = zeeEnterEvent(prevZeeRef.current, data?.zee);
           prevZeeRef.current = data?.zee?.mrgid ?? null;
           lastFetchRef.current = { lat, lon, month, destLat, destLon };
           setRemote({ ...data, event });
         })
         .catch(() => {
-          if (ctrl.signal.aborted && lastFetchRef.current) return;
-          if (ctrl.signal.aborted && !lastFetchRef.current) {
-            setRemote({
-              ...emptyDossier(lat, lon),
-              sources: { zee: "error", bi: "unavailable" },
-            });
-            return;
-          }
+          if (ctrl.signal.aborted || requestIdRef.current !== requestId) return;
           setRemote({
             ...emptyDossier(lat, lon),
             sources: { zee: "error", bi: "unavailable" },

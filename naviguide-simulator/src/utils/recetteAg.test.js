@@ -69,8 +69,12 @@ describe("recette A–G (contrats source)", () => {
     const icon = read("../engine/catamaranIcon.js");
     const marker = read("../components/CatamaranMarker.jsx");
     assert.match(icon, /data-bow="north"/);
-    assert.match(icon, /rotate\(\$\{/);
+    assert.match(icon, /data-marker-rotatable/);
     assert.match(marker, /catamaranSvg/);
+    assert.match(marker, /applyMarkerRotation/);
+    assert.match(read("../components/PlaneMarker.jsx"), /applyMarkerRotation/);
+    assert.doesNotMatch(marker, /\.setIcon\(/);
+    assert.doesNotMatch(read("../components/PlaneMarker.jsx"), /\.setIcon\(/);
     assert.doesNotMatch(marker, /catamaran\.jpg/);
     assert.doesNotMatch(icon, /scaleX/);
   });

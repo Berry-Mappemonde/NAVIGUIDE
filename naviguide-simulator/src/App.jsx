@@ -205,7 +205,9 @@ export default function App() {
     },
   });
   gateRef.current.allowed = notForNavOk;
-  const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady, gateRef);
+  const maritimeLayers = useToggleLayers(mapRef, onFeature, mapReady, gateRef, {
+    cameraFollowing: cinemaMode && cameraFollow,
+  });
 
   const routeForView = isSuivre ? null : customRoute;
   const routeReady = isRouteReady(segProgress) || (officialFallback && segments.length > 0);
@@ -856,7 +858,9 @@ export default function App() {
     () => segments.filter((s) => !s.nonMaritime).flatMap((s) => s.coords || []),
     [segments],
   );
-  const markerOffsets = useMarkerOffsets(points, mapRef, routeCoords);
+  const markerOffsets = useMarkerOffsets(points, mapRef, routeCoords, { cameraFollowing: cameraFollow });
+  const waypointGroupRef = useRef(null);
+  const waypointMarkersRef = useRef(new Map());
 
   useRouteLayer(mapRef, {
     segments: sceneReady ? segments : [],
@@ -1189,20 +1193,14 @@ export default function App() {
     setSatelliteTab("wind");
     setSelectedSatellite({ lat, lon, ...extra });
     try {
-      const request = (path) => fetch(`${API_URL}${path}`, {
+      const response = await fetch(`${API_URL}/weather`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ latitude: lat, longitude: lon }),
         signal: controller.signal,
-      }).then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
       });
-      const [wind, wave, current] = await Promise.all([
-        request("/wind"),
-        request("/wave"),
-        request("/current"),
-      ]);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const { wind, wave, current } = await response.json();
       if (satelliteRequestRef.current.id !== id) return;
       setSelectedSatellite((prev) => (prev ? { ...prev, wind, wave, current } : prev));
     } catch (err) {
@@ -1248,10 +1246,12 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return undefined;
-    const group = L.layerGroup().addTo(map);
+    if (!waypointGroupRef.current) waypointGroupRef.current = L.layerGroup().addTo(map);
+    const group = waypointGroupRef.current;
     const src = drawingMode
       ? drawnPoints.map((p, i) => ({ ...p, name: p.name || `${i + 1}`, flag: "", flags: [] }))
       : (customRoute ? [] : points);
+    const expected = new Set();
     src.forEach((p, i) => {
       const srcs = waypointFlagSrcs(p);
       if (!srcs.length && !drawingMode) return;
@@ -1260,24 +1260,59 @@ export default function App() {
         ? flagMarkerHtml(srcs, off)
         : `<div style="width:10px;height:10px;border-radius:50%;background:${i === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
       const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
-      for (const lng of markerWorldLngs(p.lon)) {
-        const m = L.marker([p.lat, lng], {
-          icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
-          interactive: true,
-        }).addTo(group);
-        m.on("mouseover", () => setHoveredPoint(p));
-        m.on("mouseout", () => setHoveredPoint(null));
-        if (drawingMode) {
-          m.on("click", (ev) => {
+      for (const [copyIndex, lng] of markerWorldLngs(p.lon, map.getCenter()?.lng).entries()) {
+        const key = `${drawingMode ? "draw" : "route"}:${i}:${copyIndex}`;
+        expected.add(key);
+        const iconKey = `${html}|${metrics.iconSize.join(",")}|${metrics.iconAnchor.join(",")}`;
+        let marker = waypointMarkersRef.current.get(key);
+        if (!marker) {
+          marker = L.marker([p.lat, lng], {
+            icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
+            interactive: true,
+          }).addTo(group);
+          marker._naviguideIconKey = iconKey;
+          marker.on("mouseover", () => setHoveredPoint(marker._naviguideWaypoint));
+          marker.on("mouseout", () => setHoveredPoint(null));
+          marker.on("click", (ev) => {
+            if (!marker._naviguideDrawing) return;
             L.DomEvent.stopPropagation(ev);
-            setPointInfoName(p.name || "");
-            setSelectedSatellite({ lat: p.lat, lon: p.lon, drawPointIndex: i });
+            const point = marker._naviguideWaypoint;
+            setPointInfoName(point?.name || "");
+            setSelectedSatellite({
+              lat: point?.lat,
+              lon: point?.lon,
+              drawPointIndex: marker._naviguideIndex,
+            });
           });
+          waypointMarkersRef.current.set(key, marker);
+        }
+        marker._naviguideWaypoint = p;
+        marker._naviguideDrawing = drawingMode;
+        marker._naviguideIndex = i;
+        marker.setLatLng([p.lat, lng]);
+        if (marker._naviguideIconKey !== iconKey) {
+          marker.setIcon(L.divIcon({
+            className: "flag-divicon",
+            html,
+            iconSize: metrics.iconSize,
+            iconAnchor: metrics.iconAnchor,
+          }));
+          marker._naviguideIconKey = iconKey;
         }
       }
     });
-    return () => group.remove();
+    waypointMarkersRef.current.forEach((marker, key) => {
+      if (expected.has(key)) return;
+      group.removeLayer(marker);
+      waypointMarkersRef.current.delete(key);
+    });
   }, [mapRef, mapReady, points, markerOffsets, drawingMode, drawnPoints, customRoute]);
+
+  useEffect(() => () => {
+    waypointGroupRef.current?.remove();
+    waypointGroupRef.current = null;
+    waypointMarkersRef.current.clear();
+  }, []);
 
   const handleSaveDrawPointMeta = () => {
     if (selectedSatellite?.drawPointIndex != null) {

@@ -22,7 +22,7 @@ describe("catamaranTransform", () => {
 });
 
 describe("catamaranSvg", () => {
-  it("marks bow-north and rotates the whole mark", () => {
+  it("marks bow-north and exposes the CSS-rotatable mark", () => {
     const north = catamaranSvg(0);
     const east = catamaranSvg(90);
     const south = catamaranSvg(180);
@@ -30,9 +30,8 @@ describe("catamaranSvg", () => {
     assert.match(north, /data-heading="0"/);
     assert.match(east, /data-heading="90"/);
     assert.match(south, /data-heading="180"/);
-    assert.match(north, /rotate\(0deg\)/);
-    assert.match(east, /rotate\(90deg\)/);
-    assert.match(south, /rotate\(180deg\)/);
+    assert.match(north, /data-marker-rotatable/);
+    assert.doesNotMatch(north, /transform:rotate/);
     assert.match(north, /<svg /);
     assert.doesNotMatch(north, /<img /);
   });

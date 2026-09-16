@@ -19,7 +19,7 @@ from forecast_cube import (
     save_cube,
 )
 from isochrone import haversine, run_leg_isochrone
-from grib_fetch import maybe_refresh_official
+from grib_fetch import is_stale, maybe_refresh_official
 from saildocs import (
     DAILY_RADIUS_NM,
     GRIB_MISSING,
@@ -49,6 +49,8 @@ from voyage_store import load_voyage, save_voyage, update_voyage
 
 log = logging.getLogger("naviguide-simulator.voyage")
 router = APIRouter()
+_grib_refresh_lock = threading.Lock()
+_grib_refresh_thread: Optional[threading.Thread] = None
 
 try:
     from polar_api import _load_polar_data
@@ -328,11 +330,48 @@ def _resolve_grib_around(
     return None
 
 
-def _kick_official_grib() -> None:
-    voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    when = _now()
-    around = _resolve_grib_around(voy, when)
-    maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when, force=True)
+def _run_official_grib_refresh(around: Optional[dict], when: datetime, force: bool) -> None:
+    global _grib_refresh_thread
+    try:
+        maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when, force=force)
+    except Exception as exc:  # defensive: the request that started us has already returned
+        log.warning("rafraîchissement GRIB officiel: %s", exc)
+    finally:
+        with _grib_refresh_lock:
+            _grib_refresh_thread = None
+
+
+def _kick_official_grib(
+    around: Optional[dict] = None,
+    when: Optional[datetime] = None,
+    *,
+    force: bool = True,
+) -> bool:
+    """Démarre au plus un rafraîchissement GRIB pour tous les visiteurs."""
+    global _grib_refresh_thread
+    target_when = when or _now()
+    if around is None:
+        voy = load_voyage(OFFICIAL_VOYAGE_ID)
+        around = _resolve_grib_around(voy, target_when)
+    if not around:
+        return False
+    with _grib_refresh_lock:
+        if _grib_refresh_thread and _grib_refresh_thread.is_alive():
+            return False
+        thread = threading.Thread(
+            target=_run_official_grib_refresh,
+            args=(around, target_when, force),
+            name="naviguide-official-grib",
+            daemon=True,
+        )
+        _grib_refresh_thread = thread
+        thread.start()
+    return True
+
+
+def _official_grib_refreshing() -> bool:
+    with _grib_refresh_lock:
+        return bool(_grib_refresh_thread and _grib_refresh_thread.is_alive())
 
 
 @router.put("/voyage/official")
@@ -418,8 +457,23 @@ def _saildocs_queries_from_around(around: dict) -> list:
 
 def _latest_official_grib(around: Optional[dict], when) -> Optional[dict]:
     record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
-    refreshed = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when)
-    return refreshed if refreshed is not None else record
+    if around and is_stale(record, when):
+        _kick_official_grib(around, when)
+    return record
+
+
+def _pending_grib(record: Optional[dict], around: Optional[dict], when: datetime, *, refreshing: bool) -> dict:
+    body = public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
+    if not record or record.get("status") != "ready":
+        body["status"] = "pending" if refreshing else "absent"
+        body["warning"] = None if refreshing else body.get("warning")
+        if refreshing:
+            body["products"] = [
+                {**product, "status": "pending"}
+                for product in (body.get("products") or [])
+            ]
+    body["refreshing"] = refreshing
+    return body
 
 
 @router.get("/voyage/official/at")
@@ -472,8 +526,9 @@ def get_official_grib(
     record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
     if record is None and around:
         record = scan_inbox(OFFICIAL_VOYAGE_ID, utc_day(when), around)
-    record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when) or record
-    body = public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
+    requested = bool(around and is_stale(record, when) and _kick_official_grib(around, when))
+    refreshing = requested or _official_grib_refreshing()
+    body = _pending_grib(record, around, when, refreshing=refreshing)
     if lat is not None and lon is not None and record:
         body["wind"] = wind_at_daily(record, lat, lon, when)
     return body
@@ -500,10 +555,12 @@ def refresh_official_grib(
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     when = _now()
     around = _resolve_grib_around(voy, when, lat, lon)
-    record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when, force=True)
+    record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
     if record is None and around:
         record = scan_inbox(OFFICIAL_VOYAGE_ID, utc_day(), around)
-    return public_grib(record, OFFICIAL_VOYAGE_ID, around, when)
+    requested = bool(around and _kick_official_grib(around, when, force=True))
+    refreshing = requested or _official_grib_refreshing()
+    return _pending_grib(record, around, when, refreshing=refreshing)
 
 
 @router.post("/voyage/official/grib/scan")
