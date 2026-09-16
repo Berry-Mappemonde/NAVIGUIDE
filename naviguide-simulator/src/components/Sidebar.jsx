@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Shield, Trash2 } from "lucide-react";
+import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { EscaleLegend } from "./EscaleLegend.jsx";
@@ -8,8 +8,8 @@ import { ViewModeSwitch } from "./ViewModeSwitch.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 
-const NAVIGUIDE_LOGO = "/logo-naviguide.svg";
-const BERRY_LOGO = "/logo-berry-mappemonde.svg";
+const NAVIGUIDE_LOGO = "/logo-naviguide.png";
+const BERRY_LOGO = "/logo-berry-mappemonde.png";
 
 function BerryCard({
   onCustomRoute, onRouteSwitchToBerry, isDrawing,
@@ -169,7 +169,7 @@ export const Sidebar = memo(function Sidebar({
   legContext, onNext, canNext, onPrev, canPrev, briefingLoading, officialFallback,
   iciBriefing = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
-  departureT0, departureStartAt, onDepartureT0, onDepartureStartAt,
+  departureT0, onDepartureT0,
   clockSample = null, civilDate = "", kindLabel = "", atQuay = false, quayDays = 0,
   previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
@@ -179,6 +179,9 @@ export const Sidebar = memo(function Sidebar({
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
   const briefing = iciBriefing || expeditionBriefing;
+  const briefingTitle = !iciBriefing && typeof plan?.briefing_title === "string"
+    ? plan.briefing_title.trim()
+    : "";
 
   return (
     <>
@@ -261,12 +264,38 @@ export const Sidebar = memo(function Sidebar({
               {t("officialDepartureLocked")}
             </p>
           )}
+          {!isCockpit && !plan && !briefingLoading && !isDrawing && (
+            <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2">
+              <div className="text-[10px] font-semibold text-blue-300 mb-1">{t("gettingStarted")}</div>
+              <p className="text-[11px] text-slate-400 leading-snug">{t("gettingStartedText")}</p>
+            </div>
+          )}
+
+          {isDrawing && (
+            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+              <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">{t("briefingDrawHint")}</p>
+            </div>
+          )}
+
+          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
+            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+              {briefingTitle ? (
+                <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug">
+                  {briefingTitle}
+                </div>
+              ) : null}
+              <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">
+                {briefingLoading
+                  ? t("iciBriefingLoading")
+                  : (briefing || t("iciBriefingFallback"))}
+              </p>
+            </div>
+          )}
+
           {isSimulation && (
             <DepartureField
               t0={departureT0}
-              startAt={departureStartAt}
               onT0={onDepartureT0}
-              onStartAt={onDepartureStartAt}
             />
           )}
           <SimulationPanel
@@ -275,6 +304,7 @@ export const Sidebar = memo(function Sidebar({
             canPrev={canPrev}
             onNext={onNext}
             canNext={canNext}
+            showNavigation={isSimulation}
             clockSample={clockSample}
             civilDate={civilDate}
             kindLabel={kindLabel}
@@ -295,41 +325,6 @@ export const Sidebar = memo(function Sidebar({
             <p className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded-md px-2 py-1">
               {t("searouteUnavailable")}
             </p>
-          )}
-
-          {!isCockpit && !plan && !briefingLoading && !isDrawing && (
-            <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2">
-              <div className="text-[10px] font-semibold text-blue-300 mb-1">{t("gettingStarted")}</div>
-              <p className="text-[11px] text-slate-400 leading-snug">{t("gettingStartedText")}</p>
-            </div>
-          )}
-
-          {isDrawing && (
-            <div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-                <Shield size={11} className="text-blue-400" />
-                {t("briefing")}
-              </div>
-              <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
-                <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">{t("briefingDrawHint")}</p>
-              </div>
-            </div>
-          )}
-
-          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
-            <div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-                <Shield size={11} className="text-blue-400" />
-                {t("briefing")}
-              </div>
-              <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
-                <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">
-                  {briefingLoading
-                    ? t("iciBriefingLoading")
-                    : (briefing || t("iciBriefingFallback"))}
-                </p>
-              </div>
-            </div>
           )}
         </div>
       </div>

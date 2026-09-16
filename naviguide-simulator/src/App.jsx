@@ -60,6 +60,7 @@ import { isRouteReady } from "./utils/routeReady.js";
 import {
   isSceneReady,
   playheadAligned,
+  shouldFocusSimulationJump,
   shouldPlaceInitialCamera,
   shouldResnapCamera,
 } from "./utils/sceneGate.js";
@@ -67,6 +68,7 @@ import { useGribCorridorLayer } from "./layers/useGribCorridorLayer.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
+import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
 import {
   activeSimulationSegments,
   activeSimulationStops,
@@ -95,11 +97,13 @@ function getCachedPlan(lang) {
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw);
     if (Date.now() - ts > PLAN_CACHE_TTL) { localStorage.removeItem(planCacheKey(lang)); return null; }
-    return data;
+    return normalizeExpeditionPlan(data);
   } catch { return null; }
 }
 function setCachedPlan(lang, data) {
-  try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data, ts: Date.now() })); } catch { /* quota */ }
+  const plan = normalizeExpeditionPlan(data);
+  if (!plan) return;
+  try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data: plan, ts: Date.now() })); } catch { /* quota */ }
 }
 
 function pointToSegmentPx(map, lat, lon, coords) {
@@ -138,12 +142,13 @@ export default function App() {
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
-  const [view, setView] = useState(VIEW_SUIVRE);
+  const [view, setView] = useState(VIEW_SIMULATION);
   const [cinemaMode, setCinemaMode] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [stopAuto, setStopAuto] = useState(false);
   const [cameraFollow, setCameraFollow] = useState(false);
   const [cinemaRecapture, setCinemaRecapture] = useState(0);
+  const [cameraFocusToken, setCameraFocusToken] = useState(0);
   const [userPreview, setUserPreview] = useState(false);
   const isSuivre = view === VIEW_SUIVRE;
   const isSimulation = view === VIEW_SIMULATION;
@@ -564,16 +569,26 @@ export default function App() {
   playheadNmRef.current = playback.nm;
 
   const handleSimNext = useCallback(() => {
-    if (isSuivre) setUserPreview(true);
+    if (!isSimulation) return;
+    const focusBoat = shouldFocusSimulationJump({
+      isSimulation,
+      playing: playback.playing,
+    });
     playback.pause();
     playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
-  }, [playback.pause, playback.seek, escaleMarks, isSuivre]);
+    if (focusBoat) setCameraFocusToken((token) => token + 1);
+  }, [playback.pause, playback.playing, playback.seek, escaleMarks, isSimulation]);
 
   const handleSimPrev = useCallback(() => {
-    if (isSuivre) setUserPreview(true);
+    if (!isSimulation) return;
+    const focusBoat = shouldFocusSimulationJump({
+      isSimulation,
+      playing: playback.playing,
+    });
     playback.pause();
     playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
-  }, [playback.pause, playback.seek, escaleMarks, isSuivre]);
+    if (focusBoat) setCameraFocusToken((token) => token + 1);
+  }, [playback.pause, playback.playing, playback.seek, escaleMarks, isSimulation]);
 
   const handleCatamaranDrag = useCallback((pos) => {
     playback.pause();
@@ -616,13 +631,30 @@ export default function App() {
       voyage.setStartAt(DEFAULT_START_AT);
       playback.pause();
       setUserPreview(false);
+      if (!cinemaMode) {
+        cinemaSavedRef.current = { sidebar: sidebarOpen, tools: toolsOpen };
+      }
+      setSidebarOpen(false);
+      setToolsOpen(false);
+      setCinemaMode(true);
+      recaptureBoat();
     } else {
       voyage.setStartAt("saint-maur");
       playback.setProfile("normal");
       playback.pause();
       playback.seek(0, { jump: true });
     }
-  }, [voyage.setT0, voyage.setStartAt, playback.pause, playback.seek, playback.setProfile]);
+  }, [
+    cinemaMode,
+    playback.pause,
+    playback.seek,
+    playback.setProfile,
+    recaptureBoat,
+    sidebarOpen,
+    toolsOpen,
+    voyage.setT0,
+    voyage.setStartAt,
+  ]);
 
   useEffect(() => {
     if (isSuivre) {
@@ -689,13 +721,6 @@ export default function App() {
       setCameraPlaced(true);
       return;
     }
-    if (placedRef.current) {
-      setCameraPlaced(true);
-      return;
-    }
-    const start = flatRoute.points[0];
-    armProgrammaticNav();
-    map.setView([start.lat, start.lon], 8, { animate: false });
     placedRef.current = true;
     setCameraPlaced(true);
   }, [routeReady, isSuivre, live?.lat, live?.lon, mapReady, mapRef, flatRoute.points, view, armProgrammaticNav]);
@@ -727,42 +752,45 @@ export default function App() {
     const onKey = (e) => {
       if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (e.target?.closest?.("button") && e.code === "Space") return;
-      if (e.code === "Space") {
+      if (isSimulation && e.code === "Space") {
         e.preventDefault();
         playback.toggle();
-      } else if (e.code === "ArrowRight") {
+      } else if (isSimulation && e.code === "ArrowRight") {
         e.preventDefault();
         handleSimNext();
-      } else if (e.code === "ArrowLeft") {
+      } else if (isSimulation && e.code === "ArrowLeft") {
         e.preventDefault();
         handleSimPrev();
       } else if (isCinemaKey(e)) {
         e.preventDefault();
         toggleCinema();
-      } else if (e.code === "KeyL") {
+      } else if (isSuivre && e.code === "KeyL") {
         e.preventDefault();
         goLive();
       } else if (e.code === "Escape" && cinemaMode && !drawingMode) {
         e.preventDefault();
         leaveCinema();
-      } else if (e.code === "Digit1") {
+      } else if (isSimulation && e.code === "Digit1") {
         playback.setProfile("real");
-      } else if (e.code === "Digit2") {
+      } else if (isSimulation && e.code === "Digit2") {
         playback.setProfile("read");
-      } else if (e.code === "Digit3") {
+      } else if (isSimulation && e.code === "Digit3") {
         playback.setProfile("normal");
-      } else if (e.code === "Digit4") {
+      } else if (isSimulation && e.code === "Digit4") {
         playback.setProfile("fast");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cinemaMode, drawingMode, playback.toggle, playback.setProfile, handleSimNext, handleSimPrev, toggleCinema, leaveCinema, goLive]);
+  }, [cinemaMode, drawingMode, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, playback.setProfile, playback.toggle, toggleCinema]);
 
   useFilmCamera({
     mapRef,
     mapReady,
-    enabled: sceneReady && cameraFollow && Boolean(cast?.follow || (isSuivre && live)),
+    enabled: sceneReady && (
+      (cameraFollow && Boolean(cast?.follow || (isSuivre && live)))
+      || (isSimulation && cameraFocusToken > 0 && Boolean(cast?.follow))
+    ),
     lat: isSuivre && live && !previewing ? live.lat : cast?.follow?.lat,
     lon: isSuivre && live && !previewing ? live.lon : cast?.follow?.lon,
     remainingNm: legContext?.remainingNm ?? playback.sailTotalNm,
@@ -774,6 +802,7 @@ export default function App() {
     resetKey: `${view}-${sceneReady ? "ready" : "load"}-${cinemaRecapture}`,
     follow: cameraFollow,
     recaptureToken: cinemaRecapture,
+    focusToken: isSimulation ? cameraFocusToken : 0,
     onProgrammaticMove: armProgrammaticNav,
   });
 
@@ -880,7 +909,7 @@ export default function App() {
   });
 
   const applyBerryBriefing = useCallback(() => {
-    setExpeditionPlan(getCachedPlan(lang) || { executive_briefing: t("berryLocalBriefing") });
+    setExpeditionPlan(getCachedPlan(lang) || normalizeExpeditionPlan({ executive_briefing: t("berryLocalBriefing") }));
     setBriefingLoading(false);
   }, [lang, t]);
 
@@ -903,7 +932,7 @@ export default function App() {
     setBriefingLoading(true);
     const finish = (plan) => {
       if (customFetchIdRef.current !== requestId || routeKindRef.current !== "custom") return;
-      setExpeditionPlan(plan);
+      setExpeditionPlan(normalizeExpeditionPlan(plan));
       setBriefingLoading(false);
     };
     if (!ORCHESTRATOR_URL) { finish(buildLocalCustomBriefing(geojson, lang)); return; }
@@ -916,7 +945,7 @@ export default function App() {
       signal: ctrl.signal,
     })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`plan ${r.status}`))))
-      .then((data) => finish(data?.expedition_plan?.executive_briefing ? data.expedition_plan : buildLocalCustomBriefing(geojson, lang)))
+      .then((data) => finish(normalizeExpeditionPlan(data?.expedition_plan) || buildLocalCustomBriefing(geojson, lang)))
       .catch(() => finish(buildLocalCustomBriefing(geojson, lang)))
       .finally(() => clearTimeout(timer));
   }, [lang]);
@@ -1098,7 +1127,7 @@ export default function App() {
 
   useEffect(() => {
     if (routeKind !== "berry" || drawingMode) return;
-    setExpeditionPlan(getCachedPlan(lang) || { executive_briefing: t("berryLocalBriefing") });
+    setExpeditionPlan(getCachedPlan(lang) || normalizeExpeditionPlan({ executive_briefing: t("berryLocalBriefing") }));
     if (!ORCHESTRATOR_URL) return;
     const requestId = ++berryFetchIdRef.current;
     fetch(`${ORCHESTRATOR_URL}/api/v1/expedition/plan/berry-mappemonde`, {
@@ -1114,9 +1143,10 @@ export default function App() {
       .then((r) => r.json())
       .then((data) => {
         if (routeKindRef.current !== "berry" || berryFetchIdRef.current !== requestId) return;
-        if (data?.expedition_plan) {
-          setExpeditionPlan(data.expedition_plan);
-          setCachedPlan(lang, data.expedition_plan);
+        const plan = normalizeExpeditionPlan(data?.expedition_plan);
+        if (plan) {
+          setExpeditionPlan(plan);
+          setCachedPlan(lang, plan);
         }
       })
       .catch(() => {});
@@ -1409,9 +1439,7 @@ export default function App() {
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
         departureT0={voyage.t0}
-        departureStartAt={voyage.startAt}
         onDepartureT0={voyage.setT0}
-        onDepartureStartAt={voyage.setStartAt}
         clockSample={sidebarClockSample}
         civilDate={civilDate}
         kindLabel={climatologyLabel}
@@ -1528,17 +1556,18 @@ export default function App() {
         onProfile={playback.setProfile}
         playing={playback.playing}
         onTogglePlay={() => {
-          if (isSuivre) setUserPreview(true);
+          if (!isSimulation) return;
           playback.toggle();
         }}
         marks={escaleMarks}
         onSeekNm={(nm) => {
-          if (isSuivre) setUserPreview(true);
+          if (!isSimulation) return;
           playback.pause();
           playback.seek(nm, { jump: true });
         }}
         onNext={handleSimNext}
         canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
+        showPlaybackControls={isSimulation}
         cinema={cinemaMode}
         onCinema={toggleCinema}
         hideBar={cinemaMode && hideFilmBar}

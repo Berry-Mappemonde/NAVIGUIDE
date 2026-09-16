@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Anchor, CheckCircle2, ChevronLeft, ChevronRight, Compass, Loader2, TriangleAlert, Upload } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
@@ -83,11 +83,14 @@ async function polarMetaFromUpload(data) {
 
 function Toggle({ labelLeft, labelRight, active, onChange }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center gap-2">
       <span className="text-xs text-slate-400">{active ? labelRight : labelLeft}</span>
       <button
         type="button"
         onClick={() => onChange(!active)}
+        aria-label={active ? labelRight : labelLeft}
+        aria-pressed={active}
+        title={active ? labelRight : labelLeft}
         className={`w-10 h-5 rounded-full relative transition-colors ${active ? "bg-sky-500" : "bg-slate-600"}`}
       >
         <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${active ? "left-5" : "left-0.5"}`} />
@@ -209,26 +212,17 @@ export const ToolsSidebar = memo(function ToolsSidebar({
         style={{ width: 320 }}
       >
         <div className="flex-1 overflow-y-auto sidebar-scroll">
-          <div className="px-4 pt-4 pb-1">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t("language")}</span>
+          <div className="px-4 py-3 border-b border-slate-700/60">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex bg-slate-800 rounded-full p-0.5 gap-0.5">
-                <button onClick={() => switchLang("en")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "en" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>EN</button>
-                <button onClick={() => switchLang("fr")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "fr" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>FR</button>
+                <button type="button" onClick={() => switchLang("en")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "en" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>EN</button>
+                <button type="button" onClick={() => switchLang("fr")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "fr" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>FR</button>
               </div>
+              <Toggle labelLeft={t("dark")} labelRight={t("light")} active={isLightMode} onChange={onLightModeChange} />
             </div>
-          </div>
-
-          <div className="px-4 pb-3 border-b border-slate-700/60 space-y-3">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t("modes")}</div>
-            <Toggle labelLeft={t("dark")} labelRight={t("light")} active={isLightMode} onChange={onLightModeChange} />
           </div>
 
           <div className="px-4 py-3 border-b border-slate-700/60">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Anchor size={11} className="text-blue-400" />
-              {t("routeSummary")}
-            </div>
             <div className="bg-slate-800/60 rounded-xl px-3 py-1 border border-slate-700/40">
               <StatRow icon="📏" label={t("totalDistanceNm")} value={routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—"} />
               <StatRow icon="🗺️" label={t("totalSegments")} value={routeSegmentCount ?? routeCounts.total} />
@@ -241,10 +235,6 @@ export const ToolsSidebar = memo(function ToolsSidebar({
 
           <div className="px-4 py-4 space-y-3">
             <PolarStatusBadge status={polarUploadStatus} detail={polarUploadDetail} />
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Compass size={11} className="text-blue-400" />
-              {t("polarSection")}
-            </div>
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}

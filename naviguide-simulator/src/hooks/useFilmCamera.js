@@ -33,6 +33,7 @@ export function useFilmCamera({
   resetKey = "",
   follow = false,
   recaptureToken = 0,
+  focusToken = 0,
   onProgrammaticMove,
 }) {
   const lastFollow = useRef(0);
@@ -42,6 +43,7 @@ export function useFilmCamera({
   const lastPhase = useRef(null);
   const lastReset = useRef(resetKey);
   const lastRecapture = useRef(recaptureToken);
+  const lastFocus = useRef(focusToken);
 
   if (lastReset.current !== resetKey) {
     lastReset.current = resetKey;
@@ -50,6 +52,7 @@ export function useFilmCamera({
     lastPos.current = null;
     followLon.current = null;
     lastPhase.current = null;
+    lastFocus.current = focusToken;
   }
 
   useEffect(() => {
@@ -68,6 +71,8 @@ export function useFilmCamera({
     if (phase) lastPhase.current = phase;
     const recapture = recaptureToken !== lastRecapture.current;
     if (recapture) lastRecapture.current = recaptureToken;
+    const focus = focusToken !== lastFocus.current;
+    if (focus) lastFocus.current = focusToken;
 
     const move = (fn) => {
       onProgrammaticMove?.();
@@ -89,6 +94,12 @@ export function useFilmCamera({
         lastFollow.current = Date.now();
         lastPos.current = null;
       }
+      return;
+    }
+
+    if (focus) {
+      move(() => map.setView([lat, lonCam], map.getZoom(), { animate: false }));
+      lastFollow.current = Date.now();
       return;
     }
 
@@ -114,5 +125,5 @@ export function useFilmCamera({
     const cur = map.getZoom();
     const zoom = Math.abs(cur - z) >= 1.25 ? z : cur;
     move(() => map.setView([lat, lonCam], zoom, { animate: true, duration: 0.55 }));
-  }, [mapRef, mapReady, enabled, lat, lon, remainingNm, playing, jumpToken, phase, hopFrom?.lat, hopFrom?.lon, hopTo?.lat, hopTo?.lon, resetKey, follow, recaptureToken, onProgrammaticMove]);
+  }, [mapRef, mapReady, enabled, lat, lon, remainingNm, playing, jumpToken, phase, hopFrom?.lat, hopFrom?.lon, hopTo?.lat, hopTo?.lon, resetKey, follow, recaptureToken, focusToken, onProgrammaticMove]);
 }

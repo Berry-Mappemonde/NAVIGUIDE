@@ -7,7 +7,7 @@ export const BI_COLORS = {
 };
 
 export const DEFAULT_SHOW_ZEE = false;
-export const DEFAULT_SHOW_GRIB = true;
+export const DEFAULT_SHOW_GRIB = false;
 
 export const ALL_LAYER_CONFIG = [
   { key: "grib2", labelKey: "layerGrib2", titleKey: "layerGrib2Title", color: "#22d3ee", showKey: "showGrib", toggleKey: "setShowGrib", loadingKey: "loadingGrib", errorKey: "errorGrib" },
