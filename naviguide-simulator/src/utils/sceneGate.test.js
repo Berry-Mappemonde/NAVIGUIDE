@@ -64,19 +64,23 @@ describe("isSceneReady", () => {
   });
 
   it("App aligne le playhead sans jump et masque jusqu’à sceneReady", () => {
-    const src = readFileSync(
+    const app = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "../App.jsx"),
       "utf8",
     );
-    assert.match(src, /playback\.seek\(target, \{ jump: false \}\)/);
-    assert.match(src, /scene-load-mask/);
-    assert.match(src, /isSceneReady/);
-    assert.match(src, /shouldPlaceInitialCamera/);
-    assert.match(src, /userNavigatedRef\.current = true/);
-    assert.match(src, /shouldResnapCamera/);
-    assert.match(src, /clock: voyage\.clock/);
-    assert.match(src, /shouldKeepSceneVisible/);
-    assert.match(src, /sceneMaskKey/);
+    const scene = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../map/MapSceneController.js"),
+      "utf8",
+    );
+    assert.match(app, /playback\.seek\(target, \{ jump: false \}\)/);
+    assert.match(app, /scene-load-mask/);
+    assert.match(app, /isSceneReady/);
+    assert.match(scene, /shouldPlaceInitialCamera/);
+    assert.match(scene, /this\.userNavigated = true/);
+    assert.match(scene, /shouldResnapCamera/);
+    assert.match(app, /clock: voyage\.clock/);
+    assert.match(app, /shouldKeepSceneVisible/);
+    assert.match(app, /sceneMaskKey/);
   });
 });
 
