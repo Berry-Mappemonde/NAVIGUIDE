@@ -41,6 +41,12 @@ describe("recette A–G (contrats source)", () => {
     assert.match(grib, /getPane\("grib"\)/);
     assert.doesNotMatch(grib, /getPane\("boat"\)/);
     assert.match(read("../layers/layerOrder.js"), /name:\s*"grib"/);
+    const official = read("../hooks/useOfficialExpedition.js");
+    assert.match(official, /officialGribQuery\(serverClock/);
+    assert.doesNotMatch(official, /sampleClockAtTime\(clockRef/);
+    assert.match(read("../hooks/gribStatus.js"), /wrapLon\(sample\.lon\)/);
+    assert.match(read("../main.jsx"), /Icon\.Default\.mergeOptions/);
+    assert.match(read("./getCardinalDirection.js"), /typeof input === "number"/);
   });
 
   it("F — Annuler Draw + bateau après 1er segment", () => {
