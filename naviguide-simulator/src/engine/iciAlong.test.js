@@ -238,6 +238,35 @@ describe("iciAlong events + ledger", () => {
     assert.equal(again[0].story.status, "pending");
   });
 
+  it("a pill already told under the old orders keeps its story and its orders after a profile change", () => {
+    const told = {
+      id: "hs-shift:forecast:2",
+      stableKey: "hs-shift:forecast",
+      type: "hs-shift",
+      judge: "now",
+      payload: { hs: 3.6, alert: true, alertM: 3.5, tavily: null, nvidia: null },
+      skipper: { profile: "cruise", used: [{ id: "hsAlertM", value: 3.5, unit: "m", source: "usage" }] },
+      story: { status: "ready", text: "Houle 3,6 m, au-dessus des 3,5 m de croisière.", tavily: null, nvidia: null },
+      phrase: "Houle 3,6 m, au-dessus des 3,5 m de croisière.",
+    };
+    const led = upsertLedger([], [told]);
+    const afterSwitch = upsertLedger(led, [{
+      ...told,
+      payload: { hs: 3.6, alert: true, alertM: 2.5, tavily: null, nvidia: null },
+      skipper: { profile: "coastal", used: [{ id: "hsAlertM", value: 2.5, unit: "m", source: "usage" }] },
+      story: { status: "template" },
+      phrase: "Houle 3.6 m (kind: forecast, alerte).",
+    }]);
+    assert.equal(afterSwitch.length, 1, "no second pill, no rewind");
+    assert.equal(afterSwitch[0].story.status, "ready");
+    assert.equal(afterSwitch[0].phrase, told.story.text, "the ready text stays");
+    assert.equal(afterSwitch[0].skipper.profile, "cruise", "the story keeps the orders it was written under");
+    assert.equal(afterSwitch[0].skipper.used[0].value, 3.5);
+
+    const fresh = upsertLedger([], [{ ...told, story: { status: "template" }, skipper: { profile: "coastal", used: [] } }]);
+    assert.equal(fresh[0].skipper.profile, "coastal", "a pill without a story follows the new orders");
+  });
+
   it("Simulation keeps every visible pill", () => {
     const marks = filmEventMarks([
       { id: "a", type: "zee-enter", judge: "now", filmCum: 10 },

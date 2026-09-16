@@ -36,7 +36,7 @@ export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr
   const [notice, setNotice] = useState(null);
   const [dismissed, setDismissed] = useState(null);
   const timerRef = useRef(null);
-  const firstRef = useRef(true);
+  const shownProfileRef = useRef(profile);
 
   const orders = useMemo(
     () => resolveOrders({ profile }, { polar, mode }),
@@ -44,15 +44,14 @@ export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr
   );
 
   useEffect(() => {
-    if (firstRef.current) {
-      firstRef.current = false;
-      return undefined;
-    }
+    // One cyan line per character change only — not at boot (StrictMode runs
+    // effects twice), not on polar / mode / lang changes.
+    if (shownProfileRef.current === profile) return undefined;
+    shownProfileRef.current = profile;
     setNotice(ordersLine(orders, lang));
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setNotice(null), NOTICE_MS);
     return () => clearTimeout(timerRef.current);
-    // One cyan line per character change only — not on polar / mode / lang changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 

@@ -379,6 +379,17 @@ describe("skipper orders drive the thresholds (S2)", () => {
     assert.ok(!types(oceanBig).includes("wx-alert"));
   });
 
+  it("Coastal speaks at +6 kn where Cruise waits for +8 kn (denser pills on the same leg)", () => {
+    const a = bag({ weather: forecastWind(10, 240) });
+    const plus6 = bag({ weather: forecastWind(16, 240) });
+    const cruise6 = run([{ at: a, ctx: { cumNm: 0, orders: cruise } }, { at: plus6, ctx: { cumNm: 4, orders: cruise } }]);
+    assert.ok(!types(cruise6).includes("wind-shift"));
+    const coastal6 = run([{ at: a, ctx: { cumNm: 0, orders: coastal } }, { at: plus6, ctx: { cumNm: 4, orders: coastal } }]);
+    const ws = coastal6.events.find((e) => e.type === "wind-shift");
+    assert.ok(ws, "coastal fires wind-shift at +6 kn");
+    assert.ok(ws.skipper.used.some((u) => u.id === "windShiftKt" && u.value === 6 && u.source === "usage"));
+  });
+
   it("Ocean ignores the +8 kn step and needs the WMO +16 kn squall", () => {
     const a = bag({ weather: forecastWind(10, 240) });
     const plus8 = bag({ weather: forecastWind(18, 240) });
