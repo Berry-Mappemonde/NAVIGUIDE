@@ -59,6 +59,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   clock = null,
   clockCurrent = null,
   disclaimer = "",
+  eventMarks = [],
+  onEventClick,
+  storiesPending = 0,
 }) {
   const { t } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
@@ -168,23 +171,53 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        <button
-          type="button"
-          onClick={onBarClick}
-          disabled={!showPlaybackControls}
-          className="relative w-full h-2 rounded-full bg-white/10 block mt-1"
-          title={showPlaybackControls ? t("filmScrub") : undefined}
-        >
-          <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
+        <div className="relative w-full h-2 rounded-full bg-white/10 mt-1">
+          <button
+            type="button"
+            onClick={onBarClick}
+            disabled={!showPlaybackControls}
+            className="absolute inset-0 w-full h-full rounded-full"
+            title={showPlaybackControls ? t("filmScrub") : undefined}
+          >
+            <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
+          </button>
           {(marks || []).map((m) => (
             <span
               key={`${m.name}-${m.nm}`}
-              className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white"
+              className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white pointer-events-none"
               style={{ left: `${barTotal > 0 ? ((m.filmNm ?? m.nm) / barTotal) * 100 : 0}%` }}
               title={m.name}
             />
           ))}
-        </button>
+          {(eventMarks || []).map((ev) => {
+            const full = ev.judge === "now" || ev.story?.status === "ready";
+            const left = barTotal > 0 ? ((ev.filmCum ?? 0) / barTotal) * 100 : 0;
+            return (
+              <button
+                key={ev.id || ev.stableKey}
+                type="button"
+                data-testid={`event-pill-${ev.type}`}
+                data-judge={ev.judge || ""}
+                className={`absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border z-10 ${
+                  full
+                    ? "bg-cyan-300 border-cyan-50"
+                    : "bg-transparent border-cyan-200"
+                }`}
+                style={{ left: `${left}%` }}
+                title={ev.phrase || ev.type}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEventClick?.(ev);
+                }}
+              />
+            );
+          })}
+        </div>
+        {storiesPending > 0 ? (
+          <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
+            {t("storiesPending", { n: storiesPending })}
+          </div>
+        ) : null}
 
         {(showPlaybackControls || showStopAuto || showSpeeds) ? (
           <div className="flex items-center gap-1.5 mt-1">

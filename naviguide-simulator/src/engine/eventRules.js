@@ -20,6 +20,7 @@ export const CURRENT_INVERT_DEG = 120;
 export const HS_SHIFT_M = 1.0;
 export const HS_ALERT_M = 3.5;
 export const AMP_HYSTERESIS_NM = 5;
+export const AMP_AHEAD_MIN_NM = 5;
 export const RAIN_MM_H = 4;
 export const RAIN_3H_MM = 10;
 export const MARINA_REFUGE_NM = 25;
@@ -90,6 +91,9 @@ export function emptyEventMemory(legId = null) {
     lastMarinaKey: null,
     lastMarinaMin: null,
     lastDepthNm: null,
+    seenZeeAhead: new Set(),
+    seenAmpAhead: new Set(),
+    seenPoeAhead: new Set(),
   };
 }
 
@@ -143,8 +147,10 @@ function makeEvent(memory, type, {
   payload = {},
   name = null,
 } = {}) {
+  const bit = key == null || key === "" ? "x" : String(key);
   return {
     id: nextId(memory, type, key),
+    stableKey: `${type}:${bit}`,
     type,
     severity,
     whenNm,
@@ -677,8 +683,87 @@ function detectDepth(at, memory, ctx, events) {
   }));
 }
 
+function detectAhead(at, along, memory, ctx, events) {
+  const pearls = along?.pearls || [];
+  if (!pearls.length) return;
+  const boatMrgid = at?.zee?.mrgid ?? null;
+
+  for (const pearl of pearls) {
+    if ((pearl.whenNm ?? 0) < 0.5) continue;
+    const mrgid = pearl.zee?.mrgid ?? null;
+    if (!mrgid || mrgid === boatMrgid || memory.seenZeeAhead.has(mrgid) || memory.seenZee.has(mrgid)) {
+      continue;
+    }
+    memory.seenZeeAhead.add(mrgid);
+    events.push(makeEvent(memory, "zee-ahead", {
+      key: mrgid,
+      severity: "info",
+      whenNm: pearl.whenNm,
+      filmCum: pearl.filmCum ?? null,
+      legId: ctx.legId,
+      name: pearl.zee?.name || null,
+      payload: {
+        zee: { name: pearl.zee?.name || null, mrgid, gold_pack: Boolean(pearl.zee?.gold) },
+        whenNm: pearl.whenNm,
+        weather: null,
+        weather_reason: "not_in_this_event",
+      },
+    }));
+  }
+
+  for (const pearl of pearls) {
+    if ((pearl.whenNm ?? 0) < AMP_AHEAD_MIN_NM) continue;
+    for (const amp of pearl.amp || []) {
+      const id = amp.site_id ?? amp.id ?? amp.wdpaid ?? amp.name;
+      if (!id || memory.seenAmpAhead.has(id) || memory.seenAmp.has(id)) continue;
+      memory.seenAmpAhead.add(id);
+      const visitable = Boolean(amp.visit_url && amp.visit_url !== amp.manager_url);
+      events.push(makeEvent(memory, "amp-ahead", {
+        key: id,
+        severity: visitable ? "watch" : "info",
+        whenNm: pearl.whenNm,
+        filmCum: pearl.filmCum ?? null,
+        legId: ctx.legId,
+        name: amp.name || id,
+        payload: {
+          amp: {
+            name: amp.name || id,
+            site_id: id,
+            visit_url: amp.visit_url || null,
+            visitable,
+          },
+          visitable,
+          whenNm: pearl.whenNm,
+        },
+      }));
+    }
+  }
+
+  for (const pearl of pearls) {
+    if ((pearl.whenNm ?? 0) < 0.5) continue;
+    const poe = (pearl.poe || [])[0];
+    if (!poe?.name) continue;
+    const key = `${pearl.zee?.mrgid || boatMrgid || "x"}:${poe.name}`;
+    if (memory.seenPoeAhead.has(key)) continue;
+    memory.seenPoeAhead.add(key);
+    events.push(makeEvent(memory, "poe-ahead", {
+      key,
+      severity: "info",
+      whenNm: pearl.whenNm ?? poe.nm ?? 0,
+      filmCum: pearl.filmCum ?? ctx.filmCum ?? null,
+      legId: ctx.legId,
+      name: poe.name,
+      payload: {
+        poe: { name: poe.name, nm: poe.nm ?? pearl.whenNm ?? null, url: poe.url || null },
+        zee: { mrgid: pearl.zee?.mrgid || boatMrgid },
+      },
+    }));
+    break;
+  }
+}
+
 /**
- * Detect E1 events. `along` is reserved for E2 (null today).
+ * Detect E1 events + E2 ahead (if `along` pearls are ready).
  * First bag (`prev === undefined`) never emits zee-enter / amp-enter.
  */
 export function detectEvents({
@@ -700,5 +785,6 @@ export function detectEvents({
   detectHs(at, mem, ctx, events);
   detectWxMarina(at, along, mem, ctx, events);
   detectDepth(at, mem, ctx, events);
+  detectAhead(at, along, mem, ctx, events);
   return { events, memory: mem };
 }
