@@ -44,6 +44,32 @@ describe("alongTrackSpeed", () => {
     assert.ok(s.twa != null && s.twa >= 0 && s.twa <= 180);
   });
 
+  it("atlas wind: kind stays climatology, Hs and current travel with the pack", () => {
+    const s = alongTrackSpeed({
+      lat: 15,
+      lon: -25,
+      bearing: 250,
+      month: 6,
+      polarRaw: null,
+      wind: {
+        speedKnots: 16.2,
+        dirFromDeg: 55,
+        kind: "climatology",
+        source: "atlas",
+        period: "1980-2020",
+        doi: { wind: "10.48670/moi-00183" },
+        hsP50: 1.4,
+        hsP90: 2.8,
+        currentKn: 0.4,
+      },
+    });
+    assert.equal(s.kind, "climatology");
+    assert.equal(s.source, "atlas");
+    assert.equal(s.hsP90, 2.8);
+    assert.equal(s.currentKn, 0.4);
+    assert.equal(s.period, "1980-2020");
+  });
+
   it("wind provided: kind forecast and named model", () => {
     const s = alongTrackSpeed({
       lat: 15,

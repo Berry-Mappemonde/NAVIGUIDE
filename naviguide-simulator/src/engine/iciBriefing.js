@@ -207,6 +207,47 @@ function depthSentence(dossier, lang) {
     : `Sondage GEBCO au large : ${m} m (GEBCO Compilation Group ; ne convient pas à la navigation).`;
 }
 
+function climatologySentence(dossier, lang) {
+  const en = isEn(lang);
+  const c = dossier?.climatology;
+  if (!c) return "";
+  const month = c.month;
+  const point = c.point || c;
+  const w = point.wind_atlas?.most_likely || point.wind_atlas?.vector_mean;
+  const wave = point.wave;
+  const cur = point.current;
+  const zone = c.wind;
+  const src = c.source;
+  if (src === "unavailable" && !w && !zone) {
+    return en
+      ? "The climatology atlas did not answer; the clock keeps the zone fallback (kind climatology)."
+      : "L’atlas climatologie n’a pas répondu ; l’horloge garde le repli de zone (kind climatology).";
+  }
+  const bits = [];
+  if (w) bits.push(en ? `wind ${w.speed_knots} kn / ${w.dir_deg}°` : `vent ${w.speed_knots} kn / ${w.dir_deg}°`);
+  else if (zone) bits.push(en ? `zone wind ${zone.speedKnots} kn / ${zone.dirFromDeg}°` : `vent de zone ${zone.speedKnots} kn / ${zone.dirFromDeg}°`);
+  if (wave?.hs_p50_m != null) bits.push(`Hs P50 ${wave.hs_p50_m} m`);
+  if (wave?.hs_p90_m != null) bits.push(`Hs P90 ${wave.hs_p90_m} m`);
+  if (cur && cur.speed_knots != null) bits.push(en ? `current ${cur.speed_knots} kn` : `courant ${cur.speed_knots} kn`);
+  const crossings = c.crossings?.count ?? point.cyclone?.crossings_if_leg?.count;
+  if (crossings != null) {
+    bits.push(en ? `IBTrACS crossings on the leg: ${crossings}` : `croisements IBTrACS sur la jambe : ${crossings}`);
+  }
+  const period = c.period || point.period;
+  const doi = c.doi?.wind || point.doi?.wind;
+  const head = src === "atlas"
+    ? (en
+      ? `CMEMS atlas (kind climatology, month ${month}`
+      : `Atlas CMEMS (kind climatology, mois ${month}`)
+    : (en
+      ? `Zone fallback (kind climatology, month ${month}`
+      : `Repli de zone (kind climatology, mois ${month}`);
+  const tail = [];
+  if (period) tail.push(en ? `period ${period}` : `période ${period}`);
+  if (doi) tail.push(`DOI ${doi}`);
+  return `${head}${tail.length ? `, ${tail.join(", ")}` : ""})${bits.length ? ` : ${bits.join(" · ")}.` : "."}`;
+}
+
 function sourceSentence(dossier, lang) {
   const en = isEn(lang);
   const bi = dossier?.sources?.bi;
@@ -236,6 +277,7 @@ export function narrateIci(dossier, lang = "fr") {
     aroundSentence(dossier, lang),
     eventSentence(dossier, lang),
     depthSentence(dossier, lang),
+    climatologySentence(dossier, lang),
     legSentence(dossier, lang),
     sourceSentence(dossier, lang),
   ].filter(Boolean);

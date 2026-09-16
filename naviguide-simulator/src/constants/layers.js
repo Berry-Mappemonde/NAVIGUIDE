@@ -27,5 +27,8 @@ export const ALL_LAYER_CONFIG = [
   { key: "bathymetry", labelKey: "layerBathymetry", titleKey: "layerBathymetryTitle", color: "#0ea5e9", showKey: "showBathymetry", toggleKey: "setShowBathymetry", loadingKey: "loadingBathymetry", errorKey: "errorBathymetry" },
   { key: "fonds", labelKey: "layerFonds", titleKey: "layerFondsTitle", color: "#ca8a04", showKey: "showFonds", toggleKey: "setShowFonds", loadingKey: "loadingFonds", errorKey: "errorFonds" },
   { key: "cables", labelKey: "layerCables", titleKey: "layerCablesTitle", color: "#fb7185", showKey: "showCables", toggleKey: "setShowCables", loadingKey: "loadingCables", errorKey: "errorCables" },
-  { key: "climatology", labelKey: "layerClimatology", titleKey: "layerClimatologyTitle", color: "#38bdf8", showKey: "showClimatology", toggleKey: "setShowClimatology", loadingKey: "loadingClimatology", errorKey: "errorClimatology" },
+  { key: "climo-wind", labelKey: "layerClimoWind", titleKey: "layerClimoWindTitle", color: "#38bdf8", showKey: "showClimoWind", toggleKey: "setShowClimoWind", loadingKey: "loadingClimoWind", errorKey: "errorClimatology" },
+  { key: "climo-wave", labelKey: "layerClimoWave", titleKey: "layerClimoWaveTitle", color: "#2dd4bf", showKey: "showClimoWave", toggleKey: "setShowClimoWave", loadingKey: "loadingClimoWave", errorKey: "errorClimatology" },
+  { key: "climo-current", labelKey: "layerClimoCurrent", titleKey: "layerClimoCurrentTitle", color: "#f59e0b", showKey: "showClimoCurrent", toggleKey: "setShowClimoCurrent", loadingKey: "loadingClimoCurrent", errorKey: "errorClimatology" },
+  { key: "climo-cyclones", labelKey: "layerClimoCyclones", titleKey: "layerClimoCyclonesTitle", color: "#f87171", showKey: "showClimoCyclones", toggleKey: "setShowClimoCyclones", loadingKey: "loadingClimoCyclones", errorKey: "errorClimatology" },
 ];

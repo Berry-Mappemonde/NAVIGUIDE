@@ -24,6 +24,10 @@ export function useIciDossier({
   polarMeta,
   jambe,
   lang = "fr",
+  month,
+  destLat,
+  destLon,
+  climatology,
 }) {
   const [remote, setRemote] = useState(null);
   const lastFetchRef = useRef(null);
@@ -44,7 +48,13 @@ export function useIciDossier({
     const lat = boat.lat;
     const lon = wrapLon(boat.lon);
     const last = lastFetchRef.current;
-    if (last && haversineNm(last.lat, last.lon, lat, lon) < MOVE_NM) {
+    if (
+      last
+      && haversineNm(last.lat, last.lon, lat, lon) < MOVE_NM
+      && last.month === month
+      && last.destLat === destLat
+      && last.destLon === destLon
+    ) {
       return undefined;
     }
 
@@ -54,14 +64,23 @@ export function useIciDossier({
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
-      fetch(`${API_URL}/ici?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, {
+      const q = new URLSearchParams({
+        lat: String(lat),
+        lon: String(lon),
+      });
+      if (Number.isFinite(Number(month))) q.set("month", String(month));
+      if (Number.isFinite(Number(destLat)) && Number.isFinite(Number(destLon))) {
+        q.set("dest_lat", String(destLat));
+        q.set("dest_lon", String(destLon));
+      }
+      fetch(`${API_URL}/ici?${q.toString()}`, {
         signal: ctrl.signal,
       })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`ici ${r.status}`))))
         .then((data) => {
           const event = zeeEnterEvent(prevZeeRef.current, data?.zee);
           prevZeeRef.current = data?.zee?.mrgid ?? null;
-          lastFetchRef.current = { lat, lon };
+          lastFetchRef.current = { lat, lon, month, destLat, destLon };
           setRemote({ ...data, event });
         })
         .catch(() => {
@@ -84,12 +103,17 @@ export function useIciDossier({
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timerRef.current);
-  }, [enabled, boat?.lat, boat?.lon]);
+  }, [enabled, boat?.lat, boat?.lon, month, destLat, destLon]);
 
   const dossier = useMemo(() => {
     if (!enabled || !boat || !remote) return null;
-    return mergeDossier(remote, { polarMeta, jambe, event: remote.event });
-  }, [enabled, boat, remote, polarMeta, jambe]);
+    return mergeDossier(remote, {
+      polarMeta,
+      jambe,
+      event: remote.event,
+      climatology: remote.climatology || climatology || null,
+    });
+  }, [enabled, boat, remote, polarMeta, jambe, climatology]);
 
   const briefing = useMemo(
     () => (dossier ? narrateIci(dossier, lang) : ""),

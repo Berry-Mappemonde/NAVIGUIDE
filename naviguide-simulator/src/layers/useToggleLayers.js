@@ -5,6 +5,7 @@ import { circleOpts, makePointGroup } from "./points.js";
 import { filterScienceFeatures } from "./scienceSource.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
 import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
+import { recetteClimoFlags } from "../utils/recetteQuery.js";
 
 const BI_BASE = import.meta.env.VITE_BI_BASE ?? "/bi";
 const EMPTY = { type: "FeatureCollection", features: [] };
@@ -188,7 +189,11 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
   const [loadingAmp, setLoadingAmp] = useState(false);
   const [errorAmp, setErrorAmp] = useState(null);
   const [ampData, setAmpData] = useState(EMPTY);
-  const [showClimatology, setShowClimatology] = useState(false);
+  const recetteClimo = recetteClimoFlags();
+  const [showClimoWind, setShowClimoWind] = useState(recetteClimo.wind);
+  const [showClimoWave, setShowClimoWave] = useState(recetteClimo.wave);
+  const [showClimoCurrent, setShowClimoCurrent] = useState(recetteClimo.current);
+  const [showClimoCyclones, setShowClimoCyclones] = useState(recetteClimo.cyclones);
 
   const layersRef = useRef({});
 
@@ -448,9 +453,14 @@ export function useToggleLayers(mapRef, onFeature, mapReady = 0, gateRef) {
     setShowCables,
     loadingCables: false,
     errorCables: null,
-    showClimatology,
-    setShowClimatology,
-    loadingClimatology: false,
+    showClimoWind,
+    setShowClimoWind,
+    showClimoWave,
+    setShowClimoWave,
+    showClimoCurrent,
+    setShowClimoCurrent,
+    showClimoCyclones,
+    setShowClimoCyclones,
     errorClimatology: null,
     zee,
   };

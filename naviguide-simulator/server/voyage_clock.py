@@ -6,7 +6,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from climatology_zones import boat_speed_from_wind, zone_wind_at
+from climatology_atlas import atlas_wind_at_dt, prefetch_points
+from climatology_zones import boat_speed_from_wind
 
 AIR_CALENDAR_HOURS = 8.0
 LAND_CALENDAR_HOURS = 4.0
@@ -166,7 +167,7 @@ def find_start_index(points: List[dict], marks: List[dict], start_at: str = "la-
 
 
 def _default_wind(lat: float, lon: float, t: datetime) -> Dict[str, Any]:
-    return zone_wind_at(lat, lon, t.month)
+    return atlas_wind_at_dt(lat, lon, t)
 
 
 def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
@@ -192,6 +193,13 @@ def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
         "model": wind.get("model"),
         "leadHours": wind.get("leadHours"),
         "reason": wind.get("reason"),
+        "source": wind.get("source"),
+        "period": wind.get("period"),
+        "doi": wind.get("doi"),
+        "hsP50": wind.get("hsP50"),
+        "hsP90": wind.get("hsP90"),
+        "currentKn": wind.get("currentKn"),
+        "currentToDeg": wind.get("currentToDeg"),
     }
 
 
@@ -207,6 +215,9 @@ def build_voyage_clock(
     t0d = parse_iso(t0) if not isinstance(t0, datetime) else t0
     if t0d.tzinfo is None:
         t0d = t0d.replace(tzinfo=timezone.utc)
+    if wind_fn is None:
+        months = {t0d.month, (t0d.month % 12) + 1, ((t0d.month + 1) % 12) + 1}
+        prefetch_points(pts, months)
     wind_at = wind_fn or _default_wind
     marks = marks or []
     start_idx = find_start_index(pts, marks, start_at)
@@ -293,6 +304,13 @@ def build_voyage_clock(
                 "model": w.get("model"),
                 "leadHours": w.get("leadHours"),
                 "reason": w.get("reason"),
+                "source": w.get("source"),
+                "period": w.get("period"),
+                "doi": w.get("doi"),
+                "hsP50": w.get("hsP50"),
+                "hsP90": w.get("hsP90"),
+                "currentKn": w.get("currentKn"),
+                "currentToDeg": w.get("currentToDeg"),
             }
 
         vertices.append(_emit(

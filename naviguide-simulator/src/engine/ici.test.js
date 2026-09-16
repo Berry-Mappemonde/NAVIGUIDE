@@ -20,6 +20,8 @@ describe("ici sac", () => {
     assert.equal(d.event, null);
     assert.ok(d.nearby.marinas);
     assert.equal(d.sources.bi, null);
+    assert.equal(d.climatology, null);
+    assert.equal(d.sources.climatology, null);
   });
 
   it("does not swallow a polar grid and adds the leg", () => {

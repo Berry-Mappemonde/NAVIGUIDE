@@ -13,7 +13,7 @@ describe("ALL_LAYER_CONFIG", () => {
       "capitaineries", "poe", "amp",
       "sextant", "argo", "odatis", "edmed", "csr",
       "bathymetry", "fonds", "cables",
-      "climatology",
+      "climo-wind", "climo-wave", "climo-current", "climo-cyclones",
     ]);
     assert.equal(keys.includes("science"), false);
     assert.equal(keys[0], "grib2");

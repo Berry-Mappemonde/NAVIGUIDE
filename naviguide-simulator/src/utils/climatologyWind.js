@@ -1,9 +1,8 @@
 /**
  * Vent climatologique pour l'ETA NAVIGUIDE.
  *
- * Zone fallback (same logic as climatology.py) until the CMEMS atlas
- * is loaded on the client. This is NOT a forecast.
- * kind: climatology.
+ * Zone fallback only when the CMEMS atlas API is dead or empty.
+ * This is NOT a forecast. kind: climatology.
  */
 
 function interp(v, v0, v1, r0, r1) {

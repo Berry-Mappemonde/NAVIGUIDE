@@ -132,6 +132,7 @@ export function buildVoyageClock({
   portDays = DEFAULT_PORT_DAYS,
   startAt = DEFAULT_START_AT,
   stops = [],
+  windAt = null,
 } = {}) {
   const points = flat?.points || [];
   const episodes = flat?.episodes || [];
@@ -162,6 +163,14 @@ export function buildVoyageClock({
     model = null,
     leadHours = null,
     reason = null,
+    source = null,
+    period = null,
+    doi = null,
+    hsP50 = null,
+    hsP90 = null,
+    currentKn = null,
+    currentToDeg = null,
+    cycloneNearby = null,
   }) => {
     vertices.push({
       filmNm,
@@ -182,6 +191,14 @@ export function buildVoyageClock({
       model: model ?? null,
       leadHours: leadHours ?? null,
       reason: reason || null,
+      source: source || null,
+      period: period || null,
+      doi: doi || null,
+      hsP50: hsP50 ?? null,
+      hsP90: hsP90 ?? null,
+      currentKn: currentKn ?? null,
+      currentToDeg: currentToDeg ?? null,
+      cycloneNearby: cycloneNearby ?? null,
     });
   };
 
@@ -259,6 +276,7 @@ export function buildVoyageClock({
     let dirFromDeg = null;
     let edgeKind = "climatology";
     let edgeModel = null;
+    let edgeAtlas = {};
 
     const landEdge = destVehicle === "land" || (a.nonMaritime && b.nonMaritime);
     const beforeSea = filmOf(b) < seaStart.filmNm - 0.05;
@@ -277,6 +295,7 @@ export function buildVoyageClock({
         bearing,
         month,
         polarRaw,
+        wind: typeof windAt === "function" ? windAt(a.lat, a.lon, month) : null,
       });
       const knots = Math.max(MIN_BOAT_KNOTS, along.speedKnots || MIN_BOAT_KNOTS);
       const dt = spanNm / knots;
@@ -288,6 +307,16 @@ export function buildVoyageClock({
       dirFromDeg = along.dirFromDeg;
       edgeKind = along.kind || "climatology";
       edgeModel = along.model || null;
+      edgeAtlas = {
+        source: along.source || null,
+        period: along.period || null,
+        doi: along.doi || null,
+        hsP50: along.hsP50 ?? null,
+        hsP90: along.hsP90 ?? null,
+        currentKn: along.currentKn ?? null,
+        currentToDeg: along.currentToDeg ?? null,
+        cycloneNearby: along.cycloneNearby ?? null,
+      };
     }
 
     pushVertex({
@@ -304,14 +333,19 @@ export function buildVoyageClock({
       vehicle: destVehicle,
       kind: destVehicle === "plane" || destVehicle === "land" ? "climatology" : edgeKind,
       model: destVehicle === "plane" || destVehicle === "land" ? null : edgeModel,
+      ...(destVehicle === "plane" || destVehicle === "land" ? {} : edgeAtlas),
     });
     applyQuay(markAtPoint(clockMarksIn, i + 1, b), b, bearing);
   }
 
   const lastSail = [...vertices].reverse().find((v) => v.vehicle !== "quay") || vertices.at(-1);
+  const sources = new Set(vertices.map((v) => v.source).filter(Boolean));
   return {
     t0,
     kind: "climatology",
+    atlasSource: sources.has("atlas") && sources.has("zone_fallback")
+      ? "mixed"
+      : (sources.has("atlas") ? "atlas" : (sources.has("zone_fallback") ? "zone_fallback" : null)),
     vertices,
     marks: outMarks,
     seaHours,

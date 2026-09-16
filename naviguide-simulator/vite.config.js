@@ -24,7 +24,7 @@ export default defineConfig({
       "/api/v1": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/voyage": { target: "http://127.0.0.1:8010", changeOrigin: true },
       "/bi": {
-        target: "http://127.0.0.1:8001",
+        target: process.env.BI_PROXY_TARGET || "http://127.0.0.1:8001",
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/bi/, "/api"),
       },

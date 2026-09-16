@@ -16,6 +16,8 @@ from typing import Any
 
 import httpx
 
+from climatology_atlas import wind_from_point
+from climatology_zones import zone_wind_at
 from gebco_lookup import attach_depth_offshore, reset_gebco_cache
 
 ICI_RADIUS_NM = 30
@@ -96,7 +98,8 @@ def empty_dossier(lat: float, lon: float, radius_nm: float = ICI_RADIUS_NM) -> d
         "weather": None,
         "polar": None,
         "event": None,
-        "sources": {"zee": None, "bi": None, "gebco": None},
+        "climatology": None,
+        "sources": {"zee": None, "bi": None, "gebco": None, "climatology": None},
         "depthOffshore": None,
     }
 
@@ -365,8 +368,13 @@ def _ashore_from_records(records: list) -> dict | None:
     return None
 
 
-async def _get_json(client: httpx.AsyncClient, url: str, timeout: float = 4.0) -> Any:
-    r = await client.get(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, timeout=timeout)
+async def _get_json(client: httpx.AsyncClient, url: str, timeout: float = 4.0, params: dict | None = None) -> Any:
+    r = await client.get(
+        url,
+        params=params,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        timeout=timeout,
+    )
     r.raise_for_status()
     return r.json()
 
@@ -458,11 +466,88 @@ def _assign_result(d: dict, key: str, value: Any) -> bool:
     return True
 
 
+def _zone_climo(lat: float, lon: float, month: int, point=None, crossings=None, source="zone_fallback") -> dict:
+    zone = zone_wind_at(lat, lon, month)
+    return {
+        "kind": "climatology",
+        "source": source,
+        "month": month,
+        "period": None,
+        "doi": None,
+        "point": point,
+        "crossings": crossings,
+        "wind": zone,
+    }
+
+
+async def _climatology_bag(
+    http: httpx.AsyncClient,
+    bi: str,
+    lat: float,
+    lon: float,
+    month: int | None,
+    dest_lat: float | None,
+    dest_lon: float | None,
+) -> dict:
+    from datetime import datetime, timezone
+    m = int(month) if month else datetime.now(timezone.utc).month
+    m = max(1, min(12, m))
+    params = {"lat": lat, "lon": lon, "month": m}
+    if dest_lat is not None and dest_lon is not None:
+        params["dest_lat"] = dest_lat
+        params["dest_lon"] = dest_lon
+    try:
+        point = await _get_json(http, f"{bi}/climatology/point", timeout=6.0, params=params)
+    except Exception:
+        return _zone_climo(lat, lon, m, source="zone_fallback")
+    crossings = None
+    if dest_lat is not None and dest_lon is not None:
+        try:
+            crossings = await _get_json(
+                http,
+                f"{bi}/climatology/crossings",
+                timeout=6.0,
+                params={
+                    "lat1": lat, "lon1": lon, "lat2": dest_lat, "lon2": dest_lon, "month": m,
+                },
+            )
+        except Exception:
+            crossings = None
+    wind = wind_from_point(point if isinstance(point, dict) else None)
+    if not wind:
+        return _zone_climo(lat, lon, m, point=point if isinstance(point, dict) else None,
+                           crossings=crossings, source="empty")
+    if crossings and isinstance(point, dict):
+        cyc = dict(point.get("cyclone") or {})
+        cyc["crossings_if_leg"] = crossings
+        point = {**point, "cyclone": cyc, "crossings": crossings}
+    return {
+        "kind": "climatology",
+        "source": "atlas",
+        "month": m,
+        "period": point.get("period") if isinstance(point, dict) else None,
+        "doi": point.get("doi") if isinstance(point, dict) else None,
+        "periods": point.get("periods") if isinstance(point, dict) else None,
+        "provenance": point.get("provenance") if isinstance(point, dict) else None,
+        "point": point,
+        "crossings": crossings or ((point.get("cyclone") or {}).get("crossings_if_leg") if isinstance(point, dict) else None),
+        "wind": {
+            "speedKnots": wind["speedKnots"],
+            "dirFromDeg": wind["dirFromDeg"],
+            "kind": "climatology",
+            "source": "atlas",
+        },
+    }
+
+
 async def fill_dossier(
     lat: float,
     lon: float,
     radius_nm: float = ICI_RADIUS_NM,
     client: httpx.AsyncClient | None = None,
+    month: int | None = None,
+    dest_lat: float | None = None,
+    dest_lon: float | None = None,
 ) -> dict:
     d = empty_dossier(lat, lon, radius_nm)
     bi = bi_base()
@@ -546,6 +631,8 @@ async def fill_dossier(
             d["sources"]["bi"] = "unavailable"
 
         await attach_depth_offshore(d, http)
+        d["climatology"] = await _climatology_bag(http, bi, lat, lon, month, dest_lat, dest_lon)
+        d["sources"]["climatology"] = d["climatology"].get("source")
     finally:
         if own:
             await http.aclose()
