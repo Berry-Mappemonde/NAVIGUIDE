@@ -23,9 +23,13 @@ export function quantizedCatalogBbox(rawBounds, zoom) {
   const step = Math.max(0.25, 90 / (2 ** Math.max(0, Number(zoom || 2) - 2)));
   const floor = (value) => Math.floor(value / step) * step;
   const ceil = (value) => Math.ceil(value / step) * step;
-  const south = Math.max(-90, Number(bounds.south));
-  const north = Math.min(90, Number(bounds.north));
-  return [floor(Number(bounds.west)), floor(south), ceil(Number(bounds.east)), ceil(north)]
+  const clampLatitude = (value) => Math.max(-90, Math.min(90, value));
+  return [
+    floor(Number(bounds.west)),
+    clampLatitude(floor(Number(bounds.south))),
+    ceil(Number(bounds.east)),
+    clampLatitude(ceil(Number(bounds.north))),
+  ]
     .map((value) => value.toFixed(3))
     .join(",");
 }

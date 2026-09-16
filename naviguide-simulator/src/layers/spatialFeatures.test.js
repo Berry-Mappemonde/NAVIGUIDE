@@ -50,6 +50,15 @@ describe("spatialFeatures", () => {
     assert.equal(bbox, "-450.000,-90.000,450.000,90.000");
   });
 
+  it("borne les pôles après quantification à zoom fractionnaire", () => {
+    const [, south, , north] = quantizedCatalogBbox(
+      { west: 0, south: -95.459, east: 318.198, north: 0 },
+      3.5,
+    ).split(",").map(Number);
+    assert.equal(south, -90);
+    assert.equal(north, 0);
+  });
+
   it("borne les marqueurs par agrégation écran", () => {
     const features = Array.from({ length: 100 }, (_, index) => point(index / 100, index / 100));
     const aggregated = aggregatePointFeatures(features, (lon, lat) => ({ x: lon * 100, y: lat * 100 }), {
