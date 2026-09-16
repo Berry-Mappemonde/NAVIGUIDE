@@ -3,7 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isSceneReady, playheadAligned, shouldResnapCamera } from "./sceneGate.js";
+import {
+  isSceneReady,
+  playheadAligned,
+  shouldPlaceInitialCamera,
+  shouldResnapCamera,
+} from "./sceneGate.js";
 
 describe("playheadAligned", () => {
   it("Simulation : toujours prêt", () => {
@@ -62,7 +67,16 @@ describe("isSceneReady", () => {
     assert.match(src, /playback\.seek\(target, \{ jump: false \}\)/);
     assert.match(src, /scene-load-mask/);
     assert.match(src, /isSceneReady/);
+    assert.match(src, /shouldPlaceInitialCamera/);
+    assert.match(src, /userNavigatedRef\.current = true/);
     assert.match(src, /shouldResnapCamera/);
+  });
+});
+
+describe("shouldPlaceInitialCamera", () => {
+  it("laisse l’utilisateur garder sa vue s’il a déjà navigué", () => {
+    assert.equal(shouldPlaceInitialCamera({ userNavigated: false }), true);
+    assert.equal(shouldPlaceInitialCamera({ userNavigated: true }), false);
   });
 });
 

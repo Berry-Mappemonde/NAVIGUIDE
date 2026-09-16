@@ -57,7 +57,12 @@ import {
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
 import { isRouteReady } from "./utils/routeReady.js";
-import { isSceneReady, playheadAligned, shouldResnapCamera } from "./utils/sceneGate.js";
+import {
+  isSceneReady,
+  playheadAligned,
+  shouldPlaceInitialCamera,
+  shouldResnapCamera,
+} from "./utils/sceneGate.js";
 import { useGribCorridorLayer } from "./layers/useGribCorridorLayer.js";
 import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
@@ -631,6 +636,7 @@ export default function App() {
 
   const placedRef = useRef(false);
   const snapRef = useRef(null);
+  const userNavigatedRef = useRef(false);
   const ignoreUserNavRef = useRef(false);
   const ignoreUserNavTimer = useRef(0);
   const armProgrammaticNav = useCallback(() => {
@@ -643,6 +649,7 @@ export default function App() {
   useEffect(() => {
     placedRef.current = false;
     snapRef.current = null;
+    userNavigatedRef.current = false;
   }, [view]);
 
   useEffect(() => {
@@ -659,11 +666,17 @@ export default function App() {
       setCameraPlaced(true);
       return;
     }
+    if (isSuivre && (!live || live.lat == null || live.lon == null)) {
+      setCameraPlaced(false);
+      return;
+    }
+    if (!shouldPlaceInitialCamera({ userNavigated: userNavigatedRef.current })) {
+      if (isSuivre) snapRef.current = { lat: live.lat, lon: live.lon };
+      placedRef.current = true;
+      setCameraPlaced(true);
+      return;
+    }
     if (isSuivre) {
-      if (!live || live.lat == null || live.lon == null) {
-        setCameraPlaced(false);
-        return;
-      }
       if (placedRef.current && !shouldResnapCamera(snapRef.current, live)) {
         setCameraPlaced(true);
         return;
@@ -691,6 +704,7 @@ export default function App() {
     if (!map || !mapReady) return undefined;
     const onUserNav = () => {
       if (ignoreUserNavRef.current) return;
+      userNavigatedRef.current = true;
       map.stop();
       setCameraFollow(false);
     };
