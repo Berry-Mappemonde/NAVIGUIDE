@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from climatology_zones import zone_wind_at
+from climatology_atlas import atlas_wind_at
 from forecast_cube import ForecastCube
 from voyage_clock import parse_iso
 
@@ -35,7 +35,7 @@ def blended_wind(
 ) -> Dict[str, Any]:
     t0d = parse_iso(t0) if not isinstance(t0, datetime) else t0
     hours = _hours_since(t0d, t)
-    climo = zone_wind_at(lat, lon, t.month)
+    climo = atlas_wind_at(lat, lon, t.month)
 
     if cube is None or hours > FORECAST_BLEND_END_HOURS:
         return {**climo, "hs": None}

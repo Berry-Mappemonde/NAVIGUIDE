@@ -154,6 +154,8 @@ def test_empty_dossier_contract():
     assert d["polar"] is None
     assert d["science"] is None
     assert d["sources"]["bi"] is None
+    assert d["climatology"] is None
+    assert d["sources"]["climatology"] is None
 
 
 def _handler(request: httpx.Request) -> httpx.Response:
@@ -199,6 +201,19 @@ def _handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={
             "ports": [{"portName": "LA ROCHELLE", "latitude": 46.15, "longitude": -1.15}],
         })
+    if "climatology/point" in url:
+        return httpx.Response(200, json={
+            "kind": "climatology",
+            "month": 6,
+            "period": "1980-2020",
+            "doi": {"wind": "10.48670/moi-00183"},
+            "wind_atlas": {"most_likely": {"speed_knots": 16.2, "dir_deg": 55}},
+            "wave": {"hs_p50_m": 1.4, "hs_p90_m": 2.8},
+            "current": {"speed_knots": 0.4, "direction_to_deg": 270},
+            "cyclone": {"nearby": 0, "tracks_in_month": 4},
+        })
+    if "climatology/crossings" in url:
+        return httpx.Response(200, json={"kind": "climatology", "count": 2})
     return httpx.Response(404, json={"detail": url})
 
 
@@ -214,7 +229,9 @@ def test_fill_dossier_la_rochelle_mocked():
 
     async def run():
         async with httpx.AsyncClient(transport=transport) as client:
-            return await fill_dossier(46.15, -1.16, client=client)
+            return await fill_dossier(
+                46.15, -1.16, client=client, month=6, dest_lat=14.6, dest_lon=-61.0,
+            )
 
     d = asyncio.run(run())
     assert not any("amp?bbox" in url or "/export/marinas" in url for url in seen)
@@ -238,6 +255,11 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["depthOffshore"] is None
     assert d["sources"]["gebco"] == "coastal"
     assert "grid" not in (d.get("polar") or {})
+    assert d["climatology"]["kind"] == "climatology"
+    assert d["climatology"]["source"] == "atlas"
+    assert d["climatology"]["point"]["wave"]["hs_p90_m"] == 2.8
+    assert d["climatology"]["crossings"]["count"] == 2
+    assert d["sources"]["climatology"] == "atlas"
 
 
 def test_fill_dossier_mid_atlantic_gebco():

@@ -17,7 +17,8 @@ export function emptyDossier(lat, lon) {
     weather: null,
     polar: null,
     event: null,
-    sources: { zee: null, bi: null, gebco: null },
+    climatology: null,
+    sources: { zee: null, bi: null, gebco: null, climatology: null },
     depthOffshore: null,
   };
 }
@@ -56,6 +57,7 @@ export function mergeDossier(base, extras = {}) {
   if (polar) d.polar = polar;
   if (extras.weather) d.weather = extras.weather;
   if (extras.event) d.event = extras.event;
+  if (extras.climatology) d.climatology = extras.climatology;
   if (extras.jambe) {
     d.marks = [{
       kind: "leg",

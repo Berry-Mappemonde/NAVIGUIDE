@@ -137,6 +137,28 @@ def test_sample_waiting_and_live():
     assert live["iso"] == "2026-06-15T20:00:00Z"
 
 
+def test_atlas_wind_fn_keeps_kind_and_hs():
+    def wind_fn(lat, lon, t):
+        return {
+            "speedKnots": 22.0,
+            "dirFromDeg": 80.0,
+            "kind": "climatology",
+            "source": "atlas",
+            "period": "1980-2020",
+            "doi": {"wind": "10.48670/moi-00183"},
+            "hsP50": 1.2,
+            "hsP90": 2.6,
+            "currentKn": 0.3,
+        }
+
+    c = _clock("2026-06-15T08:00:00Z", wind_fn=wind_fn)
+    sea = next(v for v in c["vertices"] if (v.get("speedKnots") or 0) > 0)
+    assert sea["kind"] == "climatology"
+    assert sea["source"] == "atlas"
+    assert sea["hsP90"] == 2.6
+    assert sea["period"] == "1980-2020"
+
+
 def test_js_py_same_schema_keys():
     """Le golden partagé impose les mêmes clés des deux côtés."""
     c = _clock(GOLDEN["t0"])

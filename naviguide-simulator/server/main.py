@@ -89,10 +89,17 @@ async def get_ici(
     lat: float = Query(...),
     lon: float = Query(...),
     radius_nm: float = Query(ICI_RADIUS_NM, ge=5, le=40),
+    month: int | None = Query(None, ge=1, le=12),
+    dest_lat: float | None = Query(None),
+    dest_lon: float | None = Query(None),
 ):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(400, "lat/lon hors limites")
-    return await fill_dossier(lat, lon, radius_nm)
+    if dest_lat is not None and not (-90 <= dest_lat <= 90):
+        raise HTTPException(400, "dest_lat hors limites")
+    if dest_lon is not None and not (-180 <= dest_lon <= 180):
+        raise HTTPException(400, "dest_lon hors limites")
+    return await fill_dossier(lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon)
 
 
 @app.get("/route")

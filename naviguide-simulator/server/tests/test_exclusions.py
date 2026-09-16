@@ -22,7 +22,7 @@ def test_agents_are_404():
 
 
 def test_ici_route_exists(monkeypatch):
-    async def fake(lat, lon, radius_nm=30, client=None):
+    async def fake(lat, lon, radius_nm=30, client=None, **_kwargs):
         return {
             "version": 1,
             "at": {"lat": lat, "lon": lon},

@@ -5,6 +5,7 @@
 
 import { trueWindAngle } from "./playSpeeds.js";
 import { hasPolarRaw, polarBoatSpeed } from "./polarSpeed.js";
+import { compactAtlasFields } from "../utils/atlasPoint.js";
 import { boatSpeedFromWind, zoneWindAt } from "../utils/climatologyWind.js";
 
 function roundKt(k) {
@@ -54,5 +55,6 @@ export function alongTrackSpeed({ lat, lon, bearing, month, polarRaw = null, win
     model: w.model || null,
     reason: w.reason || null,
     month: Math.max(1, Math.min(12, Number(month) || 1)),
+    ...compactAtlasFields(w),
   };
 }

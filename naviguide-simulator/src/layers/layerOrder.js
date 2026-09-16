@@ -13,6 +13,8 @@ export const PANES = [
   { name: "science-wms-substrate", zIndex: 255, pointerEvents: "none" },
   { name: "balisage", zIndex: 260 },
   { name: "science-wms-cables", zIndex: 270, pointerEvents: "none" },
+  { name: "climatology-raster", zIndex: 350, pointerEvents: "none" },
+  { name: "climatology-vector", zIndex: 370, pointerEvents: "none" },
   { name: "route", zIndex: 380 },
   { name: "science-tracks", zIndex: 410 },
   { name: "amp", zIndex: 420 },

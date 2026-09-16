@@ -212,6 +212,29 @@ describe("voyageClock contrat B0", () => {
     }
     assert.ok(clock.vertices.every((v) => v.kind === "climatology"));
   });
+
+  it("windAt atlas replaces the zone as soon as the pack answers", () => {
+    const { clock } = clockFor("2026-06-15T08:00:00.000Z", {
+      windAt: () => ({
+        speedKnots: 22,
+        dirFromDeg: 80,
+        kind: "climatology",
+        source: "atlas",
+        period: "1980-2020",
+        doi: { wind: "10.48670/moi-00183" },
+        hsP50: 1.2,
+        hsP90: 2.6,
+        currentKn: 0.3,
+      }),
+    });
+    const sea = clock.vertices.find((v) => v.vehicle === "main" && v.speedKnots > 0);
+    assert.ok(sea);
+    assert.equal(sea.kind, "climatology");
+    assert.equal(sea.source, "atlas");
+    assert.equal(sea.hsP90, 2.6);
+    assert.equal(clock.atlasSource, "atlas");
+    assert.notEqual(sea.kind, "forecast");
+  });
 });
 
 describe("parseDepartureUtc", () => {

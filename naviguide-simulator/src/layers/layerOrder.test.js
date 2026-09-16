@@ -10,6 +10,8 @@ describe("panes", () => {
       "science-wms-substrate",
       "balisage",
       "science-wms-cables",
+      "climatology-raster",
+      "climatology-vector",
       "route",
       "science-tracks",
       "amp",
@@ -26,5 +28,7 @@ describe("panes", () => {
     assert.ok(boat.zIndex > LEAFLET_BUILTIN_PANES.markerPane);
     assert.ok(boat.zIndex < LEAFLET_BUILTIN_PANES.popupPane);
     assert.ok(PANES.find((p) => p.name === "science-wms-bathy").zIndex < PANES.find((p) => p.name === "route").zIndex);
+    assert.ok(PANES.find((p) => p.name === "climatology-raster").zIndex < PANES.find((p) => p.name === "climatology-vector").zIndex);
+    assert.ok(PANES.find((p) => p.name === "climatology-vector").zIndex < PANES.find((p) => p.name === "route").zIndex);
   });
 });

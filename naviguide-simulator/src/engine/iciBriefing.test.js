@@ -154,4 +154,33 @@ describe("narrateIci", () => {
     }, "fr");
     assert.doesNotMatch(silent, /GEBCO/);
   });
+
+  it("tells the atlas point under the boat, not a forecast", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      climatology: {
+        kind: "climatology",
+        source: "atlas",
+        month: 6,
+        period: "1980-2020",
+        doi: { wind: "10.48670/moi-00183" },
+        point: {
+          kind: "climatology",
+          wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } },
+          wave: { hs_p50_m: 1.4, hs_p90_m: 2.8 },
+          current: { speed_knots: 0.4, direction_to_deg: 270 },
+          cyclone: { crossings_if_leg: { count: 2 } },
+        },
+      },
+      sources: { zee: "marineregions", bi: "ok", climatology: "atlas" },
+    }, "fr");
+    assert.match(text, /kind climatology/);
+    assert.match(text, /16\.2 kn/);
+    assert.match(text, /Hs P50 1\.4/);
+    assert.match(text, /Hs P90 2\.8/);
+    assert.match(text, /courant 0\.4/);
+    assert.match(text, /IBTrACS/);
+    assert.doesNotMatch(text, /forecast|GRIB/i);
+  });
 });
