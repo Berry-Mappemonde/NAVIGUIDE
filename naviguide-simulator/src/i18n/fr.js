@@ -164,6 +164,10 @@ export default {
   polarLoaded:            "Polaires chargées",
   polarFailed:            "Échec",
   polarUploadErrorPrefix: "Échec",
+  polarDefaultUnavailable: "La polaire par défaut est momentanément indisponible.",
+  polarServiceUnavailable: "Service des polaires indisponible (HTTP {status}). Réessayez dans quelques instants.",
+  polarFileTooLarge:      "Le fichier dépasse la taille maximale de 10 Mo.",
+  polarNetworkError:      "Le service des polaires est inaccessible. Vérifiez la connexion puis réessayez.",
   polarUpwind:            "↑ Près",
   polarDownwind:          "↓ Portant",
 

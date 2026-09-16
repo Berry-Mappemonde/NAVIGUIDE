@@ -5,11 +5,34 @@ import { useLang } from "../i18n/LangContext.jsx";
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
 const POLAR_VMG_TWS_KEYS = ["8", "10", "12", "16", "20", "25"];
-const DEFAULT_POLAR_URL = "/Leopard46_Standard_Sails.csv";
-const DEFAULT_POLAR_NAME = "Leopard 46";
 
 function kts(v) { return v != null ? `${Number(v).toFixed(1)} kt` : "—"; }
 function deg(v) { return v != null ? `${Math.round(v)}°` : "—"; }
+
+async function readPolarResponse(response) {
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    // A proxy failure may have an HTML response rather than JSON.
+  }
+  if (response.ok) return data;
+
+  const error = new Error(data?.detail ?? `HTTP ${response.status}`);
+  error.status = response.status;
+  error.detail = data?.detail;
+  throw error;
+}
+
+function polarErrorDetail(error, t) {
+  if (error?.code === "DEFAULT_POLAR_NOT_FOUND") return t("polarDefaultUnavailable");
+  if (error?.status === 413) return t("polarFileTooLarge");
+  if (error?.status >= 500) {
+    return t("polarServiceUnavailable", { status: error.status });
+  }
+  if (error?.detail) return error.detail;
+  return t("polarNetworkError");
+}
 
 function PolarStatusBadge({ status, detail }) {
   const { t } = useLang();
@@ -21,10 +44,10 @@ function PolarStatusBadge({ status, detail }) {
   if (!status) return null;
   const c = cfg[status] ?? cfg.error;
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${c.bg} ${c.color} text-xs`}>
+    <div className={`flex items-start gap-2 px-3 py-1.5 rounded-lg ${c.bg} ${c.color} text-xs`}>
       {c.icon}
       <span className="font-medium">{c.text}</span>
-      {detail && <span className="text-slate-400 truncate ml-1">— {detail}</span>}
+      {detail && <span className="text-slate-400 ml-1 break-words">— {detail}</span>}
     </div>
   );
 }
@@ -128,7 +151,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           `${POLAR_API_URL}/api/v1/polar/${encodeURIComponent(POLAR_EXPEDITION)}/client`,
         );
         if (storedRes.ok) {
-          const stored = await storedRes.json();
+          const stored = await readPolarResponse(storedRes);
           if (userDroppedFileRef.current) return;
           onPolarDataLoaded(await polarMetaFromUpload(stored));
           setPolarUploadStatus("success");
@@ -136,31 +159,19 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           return;
         }
         if (storedRes.status !== 404) {
-          throw new Error(`HTTP ${storedRes.status}`);
+          await readPolarResponse(storedRes);
         }
-        const res = await fetch(DEFAULT_POLAR_URL);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-        const file = new File([blob], "Leopard46_Standard_Sails.csv", { type: "text/csv" });
-        const form = new FormData();
-        form.append("file", file);
-        form.append("expedition_id", POLAR_EXPEDITION);
-        form.append("boat_name", DEFAULT_POLAR_NAME);
-        const uploadRes = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
-        const data = await uploadRes.json();
-        if (!uploadRes.ok) throw new Error(data.detail ?? `HTTP ${uploadRes.status}`);
-        if (userDroppedFileRef.current) return;
-        onPolarDataLoaded(await polarMetaFromUpload(data));
-        setPolarUploadStatus("success");
-        setPolarUploadDetail(data.boat_name);
+        const error = new Error("Default polar was not found.");
+        error.code = "DEFAULT_POLAR_NOT_FOUND";
+        throw error;
       } catch (err) {
         if (userDroppedFileRef.current) return;
         setPolarUploadStatus("error");
-        setPolarUploadDetail(String(err?.message ?? err));
+        setPolarUploadDetail(polarErrorDetail(err, t));
       }
     };
     loadDefaultPolars();
-  }, [polarData, onPolarDataLoaded]);
+  }, [polarData, onPolarDataLoaded, t]);
 
   const handlePolarUpload = async (f) => {
     setPolarUploadStatus("uploading");
@@ -170,14 +181,13 @@ export const ToolsSidebar = memo(function ToolsSidebar({
     form.append("expedition_id", POLAR_EXPEDITION);
     try {
       const res = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
+      const data = await readPolarResponse(res);
       onPolarDataLoaded(await polarMetaFromUpload(data));
       setPolarUploadStatus("success");
       setPolarUploadDetail(data.boat_name);
     } catch (err) {
       setPolarUploadStatus("error");
-      setPolarUploadDetail(String(err.message ?? err));
+      setPolarUploadDetail(polarErrorDetail(err, t));
     }
   };
 
@@ -264,9 +274,6 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               <span className="text-xs text-slate-400">{t("polarDropZone")}</span>
               <span className="text-xs text-slate-600">{t("polarFormats")}</span>
             </div>
-            {polarUploadStatus === "error" && (
-              <p className="text-xs text-red-400">{t("polarUploadErrorPrefix")} — {polarUploadDetail}</p>
-            )}
             {polarData?.vmg_summary && (
               <div className="overflow-x-auto rounded-xl border border-slate-700/40 bg-slate-800/40">
                 <table className="w-full text-xs">
