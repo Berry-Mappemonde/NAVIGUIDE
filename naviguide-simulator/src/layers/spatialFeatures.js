@@ -13,6 +13,23 @@ function mapBounds(bounds) {
   return bounds;
 }
 
+/**
+ * Bbox stable envoyée à l'API catalogue. Leaflet peut étendre la Mercator
+ * au-delà des pôles à faible zoom : les latitudes HTTP restent géographiques.
+ */
+export function quantizedCatalogBbox(rawBounds, zoom) {
+  const bounds = mapBounds(rawBounds);
+  if (!bounds) return null;
+  const step = Math.max(0.25, 90 / (2 ** Math.max(0, Number(zoom || 2) - 2)));
+  const floor = (value) => Math.floor(value / step) * step;
+  const ceil = (value) => Math.ceil(value / step) * step;
+  const south = Math.max(-90, Number(bounds.south));
+  const north = Math.min(90, Number(bounds.north));
+  return [floor(Number(bounds.west)), floor(south), ceil(Number(bounds.east)), ceil(north)]
+    .map((value) => value.toFixed(3))
+    .join(",");
+}
+
 function visibleLongitude(lon, bounds) {
   const copies = [lon - 360, lon, lon + 360];
   if (bounds.west <= bounds.east) {

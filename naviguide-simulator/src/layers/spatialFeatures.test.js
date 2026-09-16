@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   aggregatePointFeatures,
   pointInBounds,
+  quantizedCatalogBbox,
   visibleFeatureCollection,
 } from "./spatialFeatures.js";
 
@@ -39,6 +40,14 @@ describe("spatialFeatures", () => {
       { west: -200, south: -10, east: -160, north: 10 },
     );
     assert.equal(result.features[0].geometry.coordinates[0], -185);
+  });
+
+  it("borne les pôles de la bbox catalogue à faible zoom", () => {
+    const bbox = quantizedCatalogBbox(
+      { west: -450, south: -180, east: 450, north: 180 },
+      2,
+    );
+    assert.equal(bbox, "-450.000,-90.000,450.000,90.000");
   });
 
   it("borne les marqueurs par agrégation écran", () => {

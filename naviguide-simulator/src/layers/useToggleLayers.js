@@ -3,6 +3,7 @@ import L from "leaflet";
 import { ampStyle } from "./styles.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
 import { SpatialCatalogLayer } from "./spatialCatalogLayer.js";
+import { quantizedCatalogBbox } from "./spatialFeatures.js";
 import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
 import { recetteClimoFlags } from "../utils/recetteQuery.js";
 
@@ -12,18 +13,6 @@ function lruSet(cache, key, value, maxEntries = 8) {
   if (cache.has(key)) cache.delete(key);
   cache.set(key, value);
   if (cache.size > maxEntries) cache.delete(cache.keys().next().value);
-}
-
-function viewportBbox(map) {
-  const bounds = map.getBounds().pad(0.18);
-  const step = Math.max(0.25, 90 / (2 ** Math.max(0, map.getZoom() - 2)));
-  const floor = (value) => Math.floor(value / step) * step;
-  const ceil = (value) => Math.ceil(value / step) * step;
-  const south = Math.max(-90, bounds.getSouth());
-  const north = Math.min(90, bounds.getNorth());
-  return [floor(bounds.getWest()), floor(south), ceil(bounds.getEast()), ceil(north)]
-    .map((value) => value.toFixed(3))
-    .join(",");
 }
 
 function useViewportFetchLayer(url, mapRef, mapReady, viewportRevision) {
@@ -39,7 +28,7 @@ function useViewportFetchLayer(url, mapRef, mapReady, viewportRevision) {
   useEffect(() => {
     const map = mapRef.current;
     if (!show || !url || !map || !mapReady) return undefined;
-    const bbox = viewportBbox(map);
+    const bbox = quantizedCatalogBbox(map.getBounds().pad(0.18), map.getZoom());
     const params = new URLSearchParams({
       bbox,
       zoom: String(map.getZoom()),
