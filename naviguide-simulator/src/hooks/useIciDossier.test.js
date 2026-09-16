@@ -15,7 +15,7 @@ describe("useIciDossier contract", () => {
     assert.match(src, /MIN_SCHEDULE_MS = 8000/);
     assert.match(src, /detectEvents/);
     assert.match(src, /judgeEvents/);
-    assert.match(src, /along: null/);
+    assert.match(src, /along,/);
     assert.doesNotMatch(src, /await fetch\(.*chat|Nemotron|Token Factory|enqueueStory/);
     assert.doesNotMatch(src, /tavily\?|nvidia\?/);
   });

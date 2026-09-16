@@ -109,6 +109,12 @@ describe("recette A–G (contrats source)", () => {
     assert.doesNotMatch(read("../hooks/useIciDossier.js"), /await narrate|Nemotron|enqueueStory/);
     assert.match(read("../engine/eventRules.js"), /WIND_SHIFT_KT = 8/);
     assert.match(read("../engine/displayJudge.js"), /hide \| now \| later \| group/);
+    assert.match(read("../engine/iciAlong.js"), /sampleLeg/);
+    assert.match(read("../hooks/useIciAlong.js"), /thin: "1"/);
+    assert.match(read("../components/SimulationFilmBar.jsx"), /event-pill-/);
+    assert.match(read("../engine/storyQueue.js"), /nim-or-claude/);
+    assert.doesNotMatch(read("../hooks/useIciAlong.js"), /Nemotron|Token Factory|enqueueStory/);
+    assert.doesNotMatch(read("../hooks/useIciDossier.js"), /Nemotron|Token Factory|enqueueStory/);
     assert.doesNotMatch(read("../utils/sceneGate.js"), /detectEvents|zee-enter/);
     const grib = read("../layers/useGribCorridorLayer.js");
     assert.match(grib, /status !== "ready"/);

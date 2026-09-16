@@ -75,6 +75,15 @@ describe("displayJudge", () => {
     const r = judgeEvent(evn, { skipperClickId: "wind-shift:click" });
     assert.equal(r.judge, JUDGE_NOW);
     assert.equal(r.judgeReason, "skipper-click");
+    const keyed = { ...ev("zee-ahead"), stableKey: "zee-ahead:8462" };
+    const viaKey = judgeEvent(keyed, { skipperClickId: "zee-ahead:8462" });
+    assert.equal(viaKey.judge, JUDGE_NOW);
+  });
+
+  it("ahead events stay later until the playhead or a click", () => {
+    assert.equal(judgeEvent(ev("zee-ahead", { whenNm: 40 })).judge, JUDGE_LATER);
+    assert.equal(judgeEvent(ev("amp-ahead", { whenNm: 40 })).judge, JUDGE_LATER);
+    assert.equal(judgeEvent(ev("poe-ahead", { whenNm: 40 })).judge, JUDGE_LATER);
   });
 
   it("groups zee-enter + amp-enter into one digest", () => {
