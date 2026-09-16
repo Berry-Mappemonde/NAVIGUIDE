@@ -103,6 +103,13 @@ describe("recette A–G (contrats source)", () => {
     assert.match(read("../engine/ici.js"), /climatology: null/);
     assert.match(read("../engine/iciBriefing.js"), /kind climatology/);
     assert.match(read("../hooks/useIciDossier.js"), /dest_lat/);
+    assert.match(read("../hooks/useIciDossier.js"), /detectEvents/);
+    assert.match(read("../hooks/useIciDossier.js"), /judgeEvents/);
+    assert.match(read("../hooks/useIciDossier.js"), /No chat, no Tavily/);
+    assert.doesNotMatch(read("../hooks/useIciDossier.js"), /await narrate|Nemotron|enqueueStory/);
+    assert.match(read("../engine/eventRules.js"), /WIND_SHIFT_KT = 8/);
+    assert.match(read("../engine/displayJudge.js"), /hide \| now \| later \| group/);
+    assert.doesNotMatch(read("../utils/sceneGate.js"), /detectEvents|zee-enter/);
     const grib = read("../layers/useGribCorridorLayer.js");
     assert.match(grib, /status !== "ready"/);
     assert.doesNotMatch(grib, /climatology\/point/);
