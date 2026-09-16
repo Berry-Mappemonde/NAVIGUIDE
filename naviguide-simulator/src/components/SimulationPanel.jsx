@@ -77,6 +77,7 @@ export function SimulationPanel({
   canPrev,
   onNext,
   canNext,
+  showNavigation = true,
   clockSample = null,
   civilDate = "",
   kindLabel = "",
@@ -99,9 +100,11 @@ export function SimulationPanel({
         <div className="text-[10px] text-slate-400 text-center">
           {t("simulationDragPrompt")}
         </div>
-        <div className="mt-1">
-          <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />
-        </div>
+        {showNavigation ? (
+          <div className="mt-1">
+            <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -249,8 +252,9 @@ export function SimulationPanel({
         </div>
       )}
 
-      {/* Previous / Next buttons */}
-      <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />
+      {showNavigation ? (
+        <PrevNextButtons onPrev={onPrev} canPrev={canPrev} onNext={onNext} canNext={canNext} />
+      ) : null}
 
     </div>
   );

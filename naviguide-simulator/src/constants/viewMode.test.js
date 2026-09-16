@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { VIEW_SUIVRE, VIEW_SIMULATION, isSuivreView, isSimulationView } from "./viewMode.js";
+import {
+  VIEW_SUIVRE,
+  VIEW_SIMULATION,
+  hasSimulationPlaybackControls,
+  isSuivreView,
+  isSimulationView,
+} from "./viewMode.js";
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
 
@@ -16,12 +22,17 @@ describe("viewMode U2", () => {
   });
 
   it("libellés : Suivre l’expédition / Simulation, sans vocabulaire interdit", () => {
-    assert.equal(fr.followExpeditionButton, "Suivre l’expédition Berry-Mappemonde");
+    assert.equal(fr.followExpeditionButton, "Suivre l’expédition");
     assert.equal(fr.simulationButton, "Simulation");
     assert.equal(en.simulationButton, "Simulation");
     assert.doesNotMatch(fr.followExpeditionButton, FORBIDDEN);
     assert.doesNotMatch(fr.simulationButton, FORBIDDEN);
     assert.doesNotMatch(en.followExpeditionButton, FORBIDDEN);
     assert.doesNotMatch(en.simulationButton, FORBIDDEN);
+  });
+
+  it("réserve les contrôles du film à Simulation", () => {
+    assert.equal(hasSimulationPlaybackControls(VIEW_SIMULATION), true);
+    assert.equal(hasSimulationPlaybackControls(VIEW_SUIVRE), false);
   });
 });

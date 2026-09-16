@@ -12,7 +12,7 @@ export function useSimulatorMap(containerRef, isLightMode) {
     if (!containerRef.current || mapRef.current) return undefined;
     const map = L.map(containerRef.current, {
       center: [22, 5],
-      zoom: 3,
+      zoom: 2,
       zoomSnap: 0.25,
       minZoom: 2,
       maxZoom: 18,

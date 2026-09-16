@@ -29,6 +29,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   onSeekNm,
   onNext,
   canNext,
+  showPlaybackControls = true,
   cinema,
   onCinema,
   hideBar = false,
@@ -72,6 +73,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         ? t("filmPhaseSide")
         : "";
   const onBarClick = (e) => {
+    if (!showPlaybackControls) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
@@ -169,8 +171,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         <button
           type="button"
           onClick={onBarClick}
+          disabled={!showPlaybackControls}
           className="relative w-full h-2 rounded-full bg-white/10 block mt-1"
-          title={t("filmScrub")}
+          title={showPlaybackControls ? t("filmScrub") : undefined}
         >
           <span className="absolute inset-y-0 left-0 rounded-full bg-cyan-400/80" style={{ width: `${pct}%` }} />
           {(marks || []).map((m) => (
@@ -183,25 +186,30 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           ))}
         </button>
 
-        <div className="flex items-center gap-1.5 mt-1">
-          <button
-            type="button"
-            onClick={onTogglePlay}
-            className="w-9 h-7 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
-            title={playing ? t("pause") : t("play")}
-          >
-            {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={!canNext}
-            className="h-7 px-2 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-1 text-[10px] font-semibold"
-            title={t("goToNextStop")}
-          >
-            <ChevronRight size={14} />
-            {t("goToNextStop")}
-          </button>
+        {(showPlaybackControls || showStopAuto || showSpeeds) ? (
+          <div className="flex items-center gap-1.5 mt-1">
+            {showPlaybackControls ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onTogglePlay}
+                  className="w-9 h-7 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
+                  title={playing ? t("pause") : t("play")}
+                >
+                  {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  disabled={!canNext}
+                  className="h-7 px-2 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-1 text-[10px] font-semibold"
+                  title={t("goToNextStop")}
+                >
+                  <ChevronRight size={14} />
+                  {t("goToNextStop")}
+                </button>
+              </>
+            ) : null}
           {showStopAuto ? (
             <button
               type="button"
@@ -239,7 +247,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               ))}
             </div>
           ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

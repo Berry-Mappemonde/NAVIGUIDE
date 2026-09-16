@@ -9,3 +9,8 @@ export function isSuivreView(view) {
 export function isSimulationView(view) {
   return view === VIEW_SIMULATION;
 }
+
+/** Lecture, curseur et sauts sont réservés au film de Simulation. */
+export function hasSimulationPlaybackControls(view) {
+  return isSimulationView(view);
+}

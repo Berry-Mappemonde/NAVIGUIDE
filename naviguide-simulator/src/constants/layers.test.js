@@ -20,9 +20,9 @@ describe("ALL_LAYER_CONFIG", () => {
     assert.equal(keys[1], "zee");
   });
 
-  it("ZEE off au premier pixel, GRIB2 on", () => {
+  it("ZEE et GRIB2 décochés au premier pixel", () => {
     assert.equal(DEFAULT_SHOW_ZEE, false);
-    assert.equal(DEFAULT_SHOW_GRIB, true);
+    assert.equal(DEFAULT_SHOW_GRIB, false);
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "../layers/useToggleLayers.js"),
       "utf8",
