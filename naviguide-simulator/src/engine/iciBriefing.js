@@ -341,6 +341,7 @@ function signedDelta(n, unit) {
 
 export function phraseForEvent(ev, lang = "fr") {
   if (!ev) return "";
+  if (ev.story?.status === "ready" && ev.story.text) return ev.story.text;
   if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
   const en = isEn(lang);
   const p = ev.payload || {};

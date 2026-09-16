@@ -9,6 +9,7 @@ import { detectEvents, emptyEventMemory } from "../engine/eventRules.js";
 import { judgeEvents } from "../engine/displayJudge.js";
 import { narrateIci, phraseForEvent } from "../engine/iciBriefing.js";
 import { promoteLaterAtPlayhead, upsertLedger } from "../engine/iciAlong.js";
+import { enqueueStory, shouldEnqueueStory, storyPayload, subscribeStories } from "../engine/storyQueue.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
@@ -25,6 +26,7 @@ function legKey(jambe) {
  * Fill the `ici()` bag around the boat and turn it into a story.
  * One step = one GET /ici. No chat, no Tavily.
  * Detectors + judge run on the bag already collected. Never await a model.
+ * enqueueStory is fire-and-forget (NIM → OR → Claude).
  */
 export function useIciDossier({
   enabled,
@@ -80,6 +82,24 @@ export function useIciDossier({
     lastNowRef.current = null;
     ledgerRef.current = [];
   }
+
+  useEffect(() => subscribeStories((job) => {
+    const idx = ledgerRef.current.findIndex((e) => (
+      e.id === job.eventId || (job.stableKey && e.stableKey === job.stableKey)
+    ));
+    if (idx < 0) return;
+    const ev = ledgerRef.current[idx];
+    const next = {
+      ...ev,
+      story: job,
+      phrase: job.status === "ready" && job.text ? job.text : ev.phrase,
+    };
+    ledgerRef.current = ledgerRef.current.map((e, i) => (i === idx ? next : e));
+    if (lastNowRef.current && (lastNowRef.current.id === ev.id || lastNowRef.current.stableKey === ev.stableKey)) {
+      lastNowRef.current = { ...lastNowRef.current, phrase: next.phrase, story: job };
+    }
+    setTick({ events: ledgerRef.current, briefing: lastNowRef.current });
+  }), []);
 
   useEffect(() => {
     if (!enabled || !boat) {
@@ -242,13 +262,19 @@ export function useIciDossier({
       nextBrief = { ...promotedNow, phrase: phraseForEvent(promotedNow, lang) };
     }
     if (nextBrief) lastNowRef.current = nextBrief;
+    for (const ev of ledgerRef.current) {
+      if (!shouldEnqueueStory(ev)) continue;
+      ev.story = enqueueStory(storyPayload(ev, lang));
+    }
     const ledger = ledgerRef.current;
     setTick((prevTick) => {
       const sameBrief = prevTick.briefing?.id === nextBrief?.id
         && prevTick.briefing?.phrase === nextBrief?.phrase;
       const sameEvents = prevTick.events.length === ledger.length
         && prevTick.events.every((e, i) => (
-          e.id === ledger[i]?.id && e.judge === ledger[i]?.judge
+          e.id === ledger[i]?.id
+          && e.judge === ledger[i]?.judge
+          && e.story?.status === ledger[i]?.story?.status
         ));
       if (sameBrief && sameEvents) return prevTick;
       return { events: ledger, briefing: nextBrief };
