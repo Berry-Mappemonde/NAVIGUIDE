@@ -324,11 +324,15 @@ describe("phrases FR / EN", () => {
     assert.match(coastal, /Fond 6 m — sous 8 m, on approche du plateau/);
   });
 
-  it("stays honest without a bag", () => {
-    assert.equal(
-      exampleLine(resolveOrders({ profile: "cruise" }), {}, "fr"),
-      "Pas encore de sac ici. Je parle à 34 kn, mer 3,5 m, fond 15 m.",
-    );
+  it("stays honest without a bag: a null is unknown, never 0 kn / 0 m", () => {
+    const o = resolveOrders({ profile: "cruise" });
+    const none = "Pas encore de sac ici. Je parle à 34 kn, mer 3,5 m, fond 15 m.";
+    assert.equal(exampleLine(o, {}, "fr"), none);
+    assert.equal(exampleLine(o, null, "fr"), none);
+    assert.equal(exampleLine(o, { tws: null, hs: null, depthM: null }, "fr"), none);
+    assert.equal(exampleLine(o, { tws: undefined, hs: "", depthM: null }, "fr"), none);
+    assert.equal(exampleLine(o, { tws: null, hs: 1.4 }, "fr"), "Mer 1,4 m — sous 3,5 m.");
+    assert.equal(exampleLine(o, { tws: 0, hs: null }, "fr"), "Vent ici 0 kn — je me tais. À 34 kn je parle.");
   });
 
   it("writes the cyan orders line and the depth phrase per profile", () => {

@@ -161,6 +161,12 @@ function isFinitePositive(n) {
   return Number.isFinite(n) && n > 0;
 }
 
+/** null / undefined / "" stay unknown (NaN) — Number(null) would lie with 0. */
+function measure(v) {
+  if (v == null || v === "") return NaN;
+  return Number(v);
+}
+
 function isEn(lang) {
   return typeof lang === "string" && lang.toLowerCase().startsWith("en");
 }
@@ -388,9 +394,9 @@ export function exampleLine(orders, sample = {}, lang = "fr") {
   const T = thresholdValues(orders);
   const en = isEn(lang);
   const parts = [];
-  const tws = Number(sample?.tws);
-  const hs = Number(sample?.hs);
-  const depth = Number(sample?.depthM);
+  const tws = measure(sample?.tws);
+  const hs = measure(sample?.hs);
+  const depth = measure(sample?.depthM);
   if (Number.isFinite(tws)) {
     if (tws >= T.galeKt) {
       parts.push(en
