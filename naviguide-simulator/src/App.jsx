@@ -8,7 +8,7 @@ import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav
 import { useCatamaranMarker } from "./components/CatamaranMarker.jsx";
 import { usePlaneMarker } from "./components/PlaneMarker.jsx";
 import { WindDirectionArrow } from "./components/map/WindDirectionArrow";
-import { getCardinalDirection } from "./utils/getCardinalDirection";
+import { getCardinalDirection } from "./utils/getCardinalDirection.js";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";

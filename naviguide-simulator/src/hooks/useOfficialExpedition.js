@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_T0_ISO, OFFICIAL_VOYAGE_ID, sampleClockAtTime } from "../engine/voyageClock.js";
-import { officialGribStatus, officialGribWarning } from "./gribStatus.js";
+import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
@@ -23,7 +23,9 @@ export function useOfficialExpedition({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const putRef = useRef("");
   const clockRef = useRef(clock);
+  const serverClockRef = useRef(serverClock);
   clockRef.current = clock;
+  serverClockRef.current = serverClock;
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -96,11 +98,9 @@ export function useOfficialExpedition({
   }, [enabled, points, putOfficial]);
 
   const refreshGrib = useCallback(async ({ force = false } = {}) => {
-    const sample = clockRef.current
-      ? sampleClockAtTime(clockRef.current, new Date())
-      : null;
-    if (sample?.lat == null || sample?.lon == null) return null;
-    const qs = `?lat=${encodeURIComponent(sample.lat)}&lon=${encodeURIComponent(sample.lon)}`;
+    const q = officialGribQuery(serverClockRef.current);
+    if (!q) return null;
+    const qs = `?lat=${encodeURIComponent(q.lat)}&lon=${encodeURIComponent(q.lon)}`;
     const url = force ? `${API}/voyage/official/grib/refresh${qs}` : `${API}/voyage/official/grib${qs}`;
     const res = await fetch(url, force ? { method: "POST" } : undefined);
     const data = await res.json().catch(() => null);
@@ -110,10 +110,8 @@ export function useOfficialExpedition({
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const sample = clock
-      ? sampleClockAtTime(clock, new Date())
-      : (serverClock ? sampleClockAtTime(serverClock, new Date()) : null);
-    if (sample?.lat == null) {
+    const q = officialGribQuery(serverClock);
+    if (!q) {
       setGribPending(true);
       return undefined;
     }
@@ -129,7 +127,7 @@ export function useOfficialExpedition({
       cancelled = true;
       clearInterval(id);
     };
-  }, [enabled, refreshGrib, meta?.voyageId, clock, serverClock]);
+  }, [enabled, refreshGrib, meta?.voyageId, serverClock]);
 
   const live = useMemo(() => {
     const liveClock = clock || serverClock;

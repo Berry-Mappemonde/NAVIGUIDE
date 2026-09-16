@@ -25,8 +25,11 @@ export function useSimulatorMap(containerRef, isLightMode) {
     baseRef.current = base;
     mapRef.current = map;
     setMapReady((n) => n + 1);
-    requestAnimationFrame(() => map.invalidateSize());
+    const raf = requestAnimationFrame(() => {
+      if (mapRef.current === map) map.invalidateSize();
+    });
     return () => {
+      cancelAnimationFrame(raf);
       map.remove();
       mapRef.current = null;
       baseRef.current = null;
