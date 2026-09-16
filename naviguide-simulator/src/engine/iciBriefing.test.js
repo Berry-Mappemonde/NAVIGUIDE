@@ -342,6 +342,17 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
+  it("prefers a ready story over the local template", () => {
+    const text = phraseForEvent({
+      type: "zee-enter",
+      name: "Spain",
+      phrase: "On vient d’entrer dans Spain.",
+      story: { status: "ready", text: "Récit NIM : entrée dans la ZEE espagnole." },
+    }, "fr");
+    assert.equal(text, "Récit NIM : entrée dans la ZEE espagnole.");
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
   it("tells a ZEE ahead on the track", () => {
     const text = phraseForEvent({
       type: "zee-ahead",

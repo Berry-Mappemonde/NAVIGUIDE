@@ -158,8 +158,18 @@ export function upsertLedger(ledger, incoming) {
     if (!ev || ev.judge === "hide") continue;
     const key = ev.stableKey || ev.id;
     const idx = out.findIndex((x) => (x.stableKey || x.id) === key);
-    if (idx >= 0) out[idx] = { ...out[idx], ...ev };
-    else out.push(ev);
+    if (idx >= 0) {
+      const prev = out[idx];
+      const next = { ...prev, ...ev };
+      const keepStory = prev.story
+        && (prev.story.status === "pending" || prev.story.status === "ready")
+        && (!ev.story || ev.story.status === "template");
+      if (keepStory) {
+        next.story = prev.story;
+        if (prev.story.status === "ready" && prev.story.text) next.phrase = prev.story.text;
+      }
+      out[idx] = next;
+    } else out.push(ev);
   }
   return out;
 }
