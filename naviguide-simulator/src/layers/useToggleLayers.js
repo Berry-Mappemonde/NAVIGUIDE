@@ -162,10 +162,13 @@ export function useToggleLayers(
 
   const layersRef = useRef({});
   const pointOptions = useMemo(() => ({
-    pane: "science-tracks",
     pointFillOpacity: 0.8,
     onFeature,
   }), [onFeature]);
+  const sciencePointOptions = useMemo(() => ({
+    ...pointOptions,
+    pane: "science-tracks",
+  }), [pointOptions]);
   const ampOptions = useMemo(() => ({
     pane: "amp",
     pointFillOpacity: 0.72,
@@ -192,19 +195,19 @@ export function useToggleLayers(
     ...ampOptions, color: "#22c55e", kind: "amp",
   });
   usePersistentCatalogLayer(mapRef, mapReady, sextant.data, sextant.show, {
-    ...pointOptions, color: "#a78bfa", kind: "science",
+    ...sciencePointOptions, color: "#a78bfa", kind: "science",
   });
   usePersistentCatalogLayer(mapRef, mapReady, argo.data, argo.show, {
-    ...pointOptions, color: "#c4b5fd", kind: "science", pointFillOpacity: 0.25,
+    ...sciencePointOptions, color: "#c4b5fd", kind: "science", pointFillOpacity: 0.25,
   });
   usePersistentCatalogLayer(mapRef, mapReady, odatis.data, odatis.show, {
-    ...pointOptions, color: "#8b5cf6", kind: "science",
+    ...sciencePointOptions, color: "#8b5cf6", kind: "science",
   });
   usePersistentCatalogLayer(mapRef, mapReady, edmed.data, edmed.show, {
-    ...pointOptions, color: "#7c3aed", kind: "science",
+    ...sciencePointOptions, color: "#7c3aed", kind: "science",
   });
   usePersistentCatalogLayer(mapRef, mapReady, csr.data, csr.show, {
-    ...pointOptions, color: "#6d28d9", kind: "science", pointFillOpacity: 0.45,
+    ...sciencePointOptions, color: "#6d28d9", kind: "science", pointFillOpacity: 0.45,
   });
 
   useEffect(() => {
