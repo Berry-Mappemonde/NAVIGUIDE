@@ -10,6 +10,7 @@ export default {
   redo:           "Redo",
   copied:         "copied",
   calculatingRoutes: "Calculating routes…",
+  positioningExpedition: "Locating the expedition…",
   routesProgress: "Routes {done}/{total}",
 
   // ── Map markers ────────────────────────────────────────────────────────────

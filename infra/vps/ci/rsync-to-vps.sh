@@ -79,6 +79,7 @@ case "$SITE" in
       --exclude __pycache__ \
       --exclude .env \
       --exclude "server/polar_data/*.json" \
+      --exclude server/voyage_data/ \
       "$ROOT/naviguide-simulator/" "$VPS:$REMOTE/naviguide-simulator/"
     rsync_to \
       "$ROOT/infra/vps/naviguide/nginx-simulator.conf" \

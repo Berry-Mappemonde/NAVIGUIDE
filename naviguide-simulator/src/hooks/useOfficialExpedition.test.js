@@ -10,13 +10,14 @@ const source = readFileSync(
 );
 
 describe("useOfficialExpedition — position officielle", () => {
-  it("attend et emploie l’horloge serveur, jamais l’horloge cliente mutable", () => {
-    assert.match(source, /const liveClock = serverClock;/);
+  it("préfère l’horloge serveur et fige le premier snapshot client", () => {
+    assert.match(source, /pickOfficialLiveClock\(serverClock, clock, frozenClientRef\.current\)/);
     assert.match(source, /if \(!enabled \|\| !liveClock\) return null;/);
     assert.doesNotMatch(source, /clock \|\| serverClock/);
+    assert.match(source, /pickOfficialLiveClock/);
     assert.match(
       source,
-      /serverClock\s*&&\s*sampleClockAtTime\(serverClock, new Date\(nowMs\)\)\?\.lat != null/,
+      /liveClock\s*&&\s*sampleClockAtTime\(liveClock, new Date\(nowMs\)\)\?\.lat != null/,
     );
   });
 });

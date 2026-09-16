@@ -5,8 +5,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   isSceneReady,
+  pickOfficialLiveClock,
   playheadAligned,
+  sceneMaskKey,
   shouldFocusSimulationJump,
+  shouldKeepSceneVisible,
   shouldPlaceInitialCamera,
   shouldResnapCamera,
 } from "./sceneGate.js";
@@ -71,6 +74,52 @@ describe("isSceneReady", () => {
     assert.match(src, /shouldPlaceInitialCamera/);
     assert.match(src, /userNavigatedRef\.current = true/);
     assert.match(src, /shouldResnapCamera/);
+    assert.match(src, /clock: voyage\.clock/);
+    assert.match(src, /shouldKeepSceneVisible/);
+    assert.match(src, /sceneMaskKey/);
+  });
+});
+
+describe("pickOfficialLiveClock", () => {
+  const server = { id: "server" };
+  const clientA = { id: "client-a" };
+  const clientB = { id: "client-b" };
+
+  it("prend le serveur dès qu’il existe, sans suivre une polaire tardive", () => {
+    assert.deepEqual(pickOfficialLiveClock(null, clientA, null), {
+      liveClock: clientA,
+      frozenClient: clientA,
+    });
+    assert.deepEqual(pickOfficialLiveClock(null, clientB, clientA), {
+      liveClock: clientA,
+      frozenClient: clientA,
+    });
+    assert.deepEqual(pickOfficialLiveClock(server, clientB, clientA), {
+      liveClock: server,
+      frozenClient: clientA,
+    });
+  });
+});
+
+describe("shouldKeepSceneVisible", () => {
+  it("garde la scène ouverte si la route est toujours là", () => {
+    assert.equal(shouldKeepSceneVisible({
+      revealed: true,
+      routeReady: true,
+      hasRoute: true,
+    }), true);
+    assert.equal(shouldKeepSceneVisible({
+      revealed: true,
+      routeReady: false,
+      hasRoute: true,
+    }), false);
+  });
+});
+
+describe("sceneMaskKey", () => {
+  it("ne dit plus « calcul des routes » une fois la route prête", () => {
+    assert.equal(sceneMaskKey({ routeReady: false }), "calculatingRoutes");
+    assert.equal(sceneMaskKey({ routeReady: true }), "positioningExpedition");
   });
 });
 

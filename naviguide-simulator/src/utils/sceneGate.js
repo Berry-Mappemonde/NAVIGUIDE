@@ -2,6 +2,32 @@ import { haversineNm } from "./geo.js";
 
 /** Porte d’affichage : rien n’est peint tant que route + horloge + caméra ne sont pas prêts. */
 
+/**
+ * Horloge live officielle.
+ * Le serveur gagne dès qu’il est là. Sinon on fige le premier snapshot client
+ * pour qu’une polaire tardive ne recalcule pas la position ni le masque.
+ * Ne jamais préférer `clock || serverClock` (horloge cliente mutable).
+ */
+export function pickOfficialLiveClock(serverClock, clientClock, frozenClient = null) {
+  if (serverClock) {
+    return {
+      liveClock: serverClock,
+      frozenClient: frozenClient || clientClock || null,
+    };
+  }
+  const frozen = frozenClient || clientClock || null;
+  return { liveClock: frozen, frozenClient: frozen };
+}
+
+/** Une fois la scène ouverte, un resync playhead / horloge serveur ne ramène pas le masque. */
+export function shouldKeepSceneVisible({ revealed, routeReady, hasRoute } = {}) {
+  return Boolean(revealed && routeReady && hasRoute);
+}
+
+export function sceneMaskKey({ routeReady } = {}) {
+  return routeReady ? "positioningExpedition" : "calculatingRoutes";
+}
+
 export function playheadAligned({
   isSuivre,
   previewing,
