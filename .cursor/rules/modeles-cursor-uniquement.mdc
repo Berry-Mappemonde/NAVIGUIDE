@@ -1,22 +1,32 @@
 ---
-description: Use only Cursor models for this agent and any workers it launches
+description: Modèles Cloud workers vs choix utilisateur (Claude BYOK)
 alwaysApply: true
 ---
 
-# Cursor models only
+# Modèles
 
-- Run this chat and every worker with a **Cursor** model only:
-  `composer-2.5`, `composer-2.5-fast`, `cursor-grok-4.6-*`, `muse-spark-1.3-*`.
-- When launching a worker, omit `model` (inherit) or pass one of those slugs.
-  Never pass `claude-*`, `gpt-*`, `gemini-*`, or another vendor slug.
-- If the user asks for a non-Cursor model, refuse that substitution and stay
-  on a Cursor model. Do not silently pick Claude, GPT, or Gemini instead.
+## Chat et Agent sur la machine de l’utilisateur
+
+- Si l’utilisateur a choisi un modèle dans Cursor (ex. **Claude Fable 5.1**,
+  **Sonnet**, **Opus**) avec clé Anthropic activée, **ne pas refuser** ni
+  basculer silencieusement vers Composer ou un autre modèle Cursor.
+- Pour une grosse implémentation (ex. plan skipper S1), suivre le plan dans le
+  **Context** du Project et le lot demandé (S1, S2…), pas « tout le plan »
+  d’un coup.
+
+## Workers Cloud (`CreateAgent`)
+
+- Les agents Cloud facturés par Cursor n’utilisent **pas** la clé Anthropic
+  locale : lancer les workers avec un modèle **Cursor** seulement —
+  `composer-2.5`, `composer-2.5-fast`, `cursor-grok-4.6-*`,
+  `muse-spark-1.3-*`.
+- Omettre `model` (héritage) ou passer un de ces slugs. Ne pas passer
+  `claude-*`, `gpt-*`, `gemini-*` sur un worker Cloud.
 
 ```text
-# BAD — worker on Claude
-CreateAgent model=claude-sonnet-5-thinking-medium
+# Chat Mac — modèle choisi par Berry-Mappemonde (OK)
+Claude Fable 5.1 + clé Anthropic → exécuter la demande
 
-# GOOD — inherit, or pin a Cursor slug
-CreateAgent
+# Worker Cloud — modèles Cursor uniquement
 CreateAgent model=cursor-grok-4.6-medium
 ```
