@@ -66,6 +66,12 @@ export function useIciDossier({
   const abortRef = useRef(null);
   const timerRef = useRef(null);
   const requestIdRef = useRef(0);
+  // S7 Expert `iciRadiusNm`: read through a ref so a new radius applies to the
+  // NEXT scheduled bag only — changing orders never triggers a GET /ici by itself.
+  const radiusRef = useRef(null);
+  radiusRef.current = Number.isFinite(orders?.values?.iciRadiusNm) && orders.values.iciRadiusNm !== 30
+    ? orders.values.iciRadiusNm
+    : null;
   const memoryRef = useRef(emptyEventMemory(legKey(jambe)));
   const prevBagRef = useRef(undefined);
   const lastRemoteRef = useRef(null);
@@ -159,6 +165,7 @@ export function useIciDossier({
         lon: String(lon),
       });
       if (Number.isFinite(Number(month))) q.set("month", String(month));
+      if (radiusRef.current != null) q.set("radius_nm", String(radiusRef.current));
       if (Number.isFinite(Number(destLat)) && Number.isFinite(Number(destLon))) {
         q.set("dest_lat", String(destLat));
         q.set("dest_lon", String(destLon));
