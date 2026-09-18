@@ -168,6 +168,7 @@ export const Sidebar = memo(function Sidebar({
   isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
+  skipperNotice = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, onDepartureT0,
   clockSample = null, kindLabel = "", atQuay = false, quayDays = 0,
@@ -277,14 +278,22 @@ export const Sidebar = memo(function Sidebar({
             </div>
           )}
 
-          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
-            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+          {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
+            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
-                <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug">
+                <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {briefingTitle}
                 </div>
               ) : null}
-              <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">
+              {skipperNotice ? (
+                <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
+                  {skipperNotice}
+                </p>
+              ) : null}
+              <p
+                data-testid="ici-briefing"
+                className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
+              >
                 {briefingLoading
                   ? t("iciBriefingLoading")
                   : (briefing || t("iciBriefingFallback"))}

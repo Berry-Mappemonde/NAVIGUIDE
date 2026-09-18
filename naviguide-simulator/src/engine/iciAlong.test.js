@@ -3,18 +3,21 @@ import assert from "node:assert/strict";
 import { flattenRoute } from "./routePlayhead.js";
 import {
   ALONG_AMP_NM,
+  MAX_PEARLS_SIM,
   MAX_PEARLS_SUIVRE,
   SUIVRE_LOOKAHEAD_MAX_NM,
   attachBags,
   buildAlongIndex,
   filmEventMarks,
   lookaheadNmFor,
+  maxPearlsFor,
   pearlKey,
   promoteLaterAtPlayhead,
   sampleLeg,
   upsertLedger,
 } from "./iciAlong.js";
 import { detectEvents, emptyEventMemory } from "./eventRules.js";
+import { resolveOrders } from "./skipperOrders.js";
 
 function lineFlat() {
   return flattenRoute([{
@@ -38,17 +41,66 @@ describe("iciAlong sample", () => {
   });
 
   it("caps Suivre lookahead well under 39 000 nm", () => {
-    assert.ok(lookaheadNmFor("suivre", 7) <= SUIVRE_LOOKAHEAD_MAX_NM);
-    assert.equal(lookaheadNmFor("simulation", 7), Infinity);
+    assert.equal(lookaheadNmFor("suivre"), SUIVRE_LOOKAHEAD_MAX_NM);
+    assert.equal(lookaheadNmFor("simulation"), Infinity);
     const flat = lineFlat();
     const pearls = sampleLeg(flat, {
       boatNm: 0,
       toNm: 20000,
-      lookaheadNm: lookaheadNmFor("suivre", 7),
+      lookaheadNm: lookaheadNmFor("suivre"),
       maxPearls: MAX_PEARLS_SUIVRE,
     });
     assert.ok(pearls.length <= MAX_PEARLS_SUIVRE);
     assert.ok((pearls.at(-1)?.cumNm ?? 0) < 400);
+  });
+
+  it("Suivre horizon follows the skipper orders: nm = H × kn, pearls = ceil(nm / 12)", () => {
+    const cruise = resolveOrders({ profile: "cruise" }, { mode: "suivre" });
+    assert.equal(lookaheadNmFor("suivre", cruise), 252);
+    assert.equal(maxPearlsFor("suivre", cruise), 21);
+    assert.equal(SUIVRE_LOOKAHEAD_MAX_NM, 252);
+    assert.equal(MAX_PEARLS_SUIVRE, 21);
+
+    const coastal = resolveOrders({ profile: "coastal" }, { mode: "suivre" });
+    assert.equal(lookaheadNmFor("suivre", coastal), 120);
+    assert.equal(maxPearlsFor("suivre", coastal), 10);
+
+    const ocean = resolveOrders({ profile: "ocean" }, { mode: "suivre" });
+    assert.equal(lookaheadNmFor("suivre", ocean), 336);
+    assert.equal(maxPearlsFor("suivre", ocean), 28);
+    assert.equal(maxPearlsFor("simulation", ocean), MAX_PEARLS_SIM);
+  });
+
+  it("48 h on Ocean really samples past the old 24 pearls / 350 nm cap", () => {
+    const ocean = resolveOrders({ profile: "ocean" }, { mode: "suivre" });
+    const flat = flattenRoute([{
+      coords: [[-1.16, 46.15], [-6.16, 46.15], [-12.16, 46.15], [-18.16, 46.15]],
+    }]);
+    assert.ok(flat.totalNm > 600, `long sea line, got ${flat.totalNm} nm`);
+    const pearls = sampleLeg(flat, {
+      boatNm: 0,
+      toNm: 20000,
+      lookaheadNm: lookaheadNmFor("suivre", ocean),
+      maxPearls: maxPearlsFor("suivre", ocean),
+    });
+    assert.ok(pearls.length > 24, `expected > 24 pearls, got ${pearls.length}`);
+    assert.ok(pearls.length <= 28);
+    assert.ok((pearls.at(-1)?.cumNm ?? 0) <= 336 + 1e-6);
+    assert.ok((pearls.at(-1)?.cumNm ?? 0) < 1000, "never the whole route");
+  });
+
+  it("along-track marina / AMP radius follow the orders", () => {
+    const pearls = [{ lat: 46.15, lon: -1.5, month: 6, whenNm: 12 }];
+    const bagMap = new Map([[pearlKey(46.15, -1.5, 6), {
+      zee: null,
+      poe: [],
+      amp: [],
+      nearby: { marinas: [{ name: "Far marina", nm: 30 }], capitaineries: [], wpi: [] },
+    }]]);
+    const cruise = attachBags(pearls, bagMap, 6, resolveOrders({ profile: "cruise" }, { mode: "suivre" }));
+    assert.equal(cruise[0].harbours.length, 0);
+    const ocean = attachBags(pearls, bagMap, 6, resolveOrders({ profile: "ocean" }, { mode: "suivre" }));
+    assert.equal(ocean[0].harbours.length, 1);
   });
 
   it("skips an air hop on the current stretch", () => {
@@ -184,6 +236,35 @@ describe("iciAlong events + ledger", () => {
       phrase: "On vient d’entrer dans Spain.",
     }]);
     assert.equal(again[0].story.status, "pending");
+  });
+
+  it("a pill already told under the old orders keeps its story and its orders after a profile change", () => {
+    const told = {
+      id: "hs-shift:forecast:2",
+      stableKey: "hs-shift:forecast",
+      type: "hs-shift",
+      judge: "now",
+      payload: { hs: 3.6, alert: true, alertM: 3.5, tavily: null, nvidia: null },
+      skipper: { profile: "cruise", used: [{ id: "hsAlertM", value: 3.5, unit: "m", source: "usage" }] },
+      story: { status: "ready", text: "Houle 3,6 m, au-dessus des 3,5 m de croisière.", tavily: null, nvidia: null },
+      phrase: "Houle 3,6 m, au-dessus des 3,5 m de croisière.",
+    };
+    const led = upsertLedger([], [told]);
+    const afterSwitch = upsertLedger(led, [{
+      ...told,
+      payload: { hs: 3.6, alert: true, alertM: 2.5, tavily: null, nvidia: null },
+      skipper: { profile: "coastal", used: [{ id: "hsAlertM", value: 2.5, unit: "m", source: "usage" }] },
+      story: { status: "template" },
+      phrase: "Houle 3.6 m (kind: forecast, alerte).",
+    }]);
+    assert.equal(afterSwitch.length, 1, "no second pill, no rewind");
+    assert.equal(afterSwitch[0].story.status, "ready");
+    assert.equal(afterSwitch[0].phrase, told.story.text, "the ready text stays");
+    assert.equal(afterSwitch[0].skipper.profile, "cruise", "the story keeps the orders it was written under");
+    assert.equal(afterSwitch[0].skipper.used[0].value, 3.5);
+
+    const fresh = upsertLedger([], [{ ...told, story: { status: "template" }, skipper: { profile: "coastal", used: [] } }]);
+    assert.equal(fresh[0].skipper.profile, "coastal", "a pill without a story follows the new orders");
   });
 
   it("Simulation keeps every visible pill", () => {

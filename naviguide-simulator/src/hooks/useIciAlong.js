@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ROUTE_SAMPLE_NM } from "../engine/eventRules.js";
 import {
-  MAX_PEARLS_SIM,
-  MAX_PEARLS_SUIVRE,
   buildAlongIndex,
   lookaheadNmFor,
+  maxPearlsFor,
   pearlKey,
   sampleLeg,
 } from "../engine/iciAlong.js";
@@ -14,6 +13,8 @@ const FETCH_MS = 20000;
 
 /**
  * Preheat thin /ici pearls on THIS leg. Never blocks Play. No chat.
+ * Suivre cap = hours × planning knots from the skipper orders; pearls follow (§2.6).
+ * Never the whole route.
  */
 export function useIciAlong({
   enabled,
@@ -23,7 +24,7 @@ export function useIciAlong({
   boatNm,
   mode = "simulation",
   month,
-  knots,
+  orders = null,
 }) {
   const [bags, setBags] = useState(() => new Map());
   const cacheRef = useRef(new Map());
@@ -38,6 +39,9 @@ export function useIciAlong({
     ? Math.floor(Number(boatNm) / ROUTE_SAMPLE_NM) * ROUTE_SAMPLE_NM
     : 0;
 
+  const lookaheadNm = lookaheadNmFor(mode, orders);
+  const maxPearls = maxPearlsFor(mode, orders);
+
   const pearls = useMemo(() => {
     if (!enabled || !flat?.points?.length) return [];
     return sampleLeg(flat, {
@@ -45,10 +49,10 @@ export function useIciAlong({
       toNm,
       boatNm: boatBucket,
       month,
-      lookaheadNm: lookaheadNmFor(mode, knots),
-      maxPearls: mode === "suivre" ? MAX_PEARLS_SUIVRE : MAX_PEARLS_SIM,
+      lookaheadNm,
+      maxPearls,
     });
-  }, [enabled, flat, fromNm, toNm, boatBucket, month, mode, knots]);
+  }, [enabled, flat, fromNm, toNm, boatBucket, month, lookaheadNm, maxPearls]);
 
   const pearlsSig = pearls.map((p) => pearlKey(p.lat, p.lon, month)).join("|");
 
@@ -92,8 +96,8 @@ export function useIciAlong({
   }, [enabled, pearlsSig, month]);
 
   const index = useMemo(
-    () => buildAlongIndex(pearls, bags, month),
-    [pearls, bags, month],
+    () => buildAlongIndex(pearls, bags, month, orders),
+    [pearls, bags, month, orders],
   );
 
   return {

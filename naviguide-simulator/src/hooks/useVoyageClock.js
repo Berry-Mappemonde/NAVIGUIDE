@@ -3,12 +3,13 @@ import {
   DEFAULT_PORT_DAYS,
   DEFAULT_START_AT,
   DEFAULT_T0_ISO,
+  simulationT0Iso,
   buildVoyageClock,
   lookupVoyageClock,
 } from "../engine/voyageClock.js";
 
 /**
- * t0 + table d’horloge. Recalcul une fois si route, polar, t0 ou startAt changent.
+ * Deux t0 : Suivre = 15 mai 2026 figé ; Simulation = aujourd’hui, éditable.
  */
 export function useVoyageClock({
   flat,
@@ -18,9 +19,11 @@ export function useVoyageClock({
   stops = [],
   windAt = null,
   atlasRev = 0,
+  mode = "simulation",
 }) {
-  const [t0, setT0] = useState(DEFAULT_T0_ISO);
+  const [simT0, setSimT0] = useState(() => simulationT0Iso());
   const [startAt, setStartAt] = useState(DEFAULT_START_AT);
+  const t0 = mode === "suivre" ? DEFAULT_T0_ISO : simT0;
 
   const clock = useMemo(() => {
     if (!enabled || !flat?.points?.length) return null;
@@ -41,5 +44,5 @@ export function useVoyageClock({
     [clock],
   );
 
-  return { clock, t0, setT0, startAt, setStartAt, sampleAt };
+  return { clock, t0, setT0: setSimT0, startAt, setStartAt, sampleAt };
 }

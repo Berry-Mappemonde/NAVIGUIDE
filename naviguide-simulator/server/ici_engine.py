@@ -29,11 +29,13 @@ from ici_layers import (
     empty_weather,
     fetch_aton,
     fetch_emodnet_point,
+    fetch_overpass_harbours,
     fetch_review,
     fetch_satellite_scene,
-    fetch_weather_forecast,
     reset_rtofs_cache,
+    snapshot_ici_weather,
 )
+from weather_pipeline import bind_weather_transport, get_pipeline
 
 ICI_RADIUS_NM = 30
 MAX_POE = 4
@@ -94,10 +96,14 @@ def reset_caches() -> None:
     _wpi_cache["ts"] = 0.0
     reset_gebco_cache()
     reset_rtofs_cache()
+    get_pipeline().clear()
+
+
+BI_LIVE_API = "https://blueintelligence.online/api"
 
 
 def bi_base() -> str:
-    return (os.getenv("BI_API_URL") or "http://127.0.0.1:8001/api").rstrip("/")
+    return (os.getenv("BI_API_URL") or BI_LIVE_API).rstrip("/")
 
 
 def empty_dossier(lat: float, lon: float, radius_nm: float = ICI_RADIUS_NM) -> dict:
@@ -504,6 +510,20 @@ def _poe_from_fc(data: Any, lat: float, lon: float) -> list[dict]:
     return out[:MAX_POE]
 
 
+def _apply_overpass_harbours(d: dict, value: Any) -> None:
+    if isinstance(value, Exception) or not value:
+        return
+    try:
+        caps, ancs = value
+    except (TypeError, ValueError):
+        return
+    if caps and not d["nearby"]["capitaineries"]:
+        d["nearby"]["capitaineries"] = caps
+    if ancs and not d["nearby"]["anchorages"]:
+        d["nearby"]["anchorages"] = ancs
+        d["sources"]["anchorages"] = "osm-overpass"
+
+
 def _assign_result(d: dict, key: str, value: Any) -> bool:
     if isinstance(value, Exception):
         return False
@@ -625,6 +645,7 @@ async def fill_dossier(
 
     own = client is None
     http = client or httpx.AsyncClient()
+    bind_weather_transport(getattr(http, "_transport", None))  # MockTransport only
 
     async def poe_task(mrgid: int) -> list[dict]:
         data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)
@@ -674,7 +695,6 @@ async def fill_dossier(
         sci_t = None if thin else asyncio.create_task(science_task())
         anc_t = None if thin else asyncio.create_task(anchorages_task())
         sat_t = None if thin else asyncio.create_task(fetch_satellite_scene(http, lat, lon))
-        wx_t = None if thin else asyncio.create_task(fetch_weather_forecast(http, lat, lon))
         emo_t = None if thin else asyncio.create_task(fetch_emodnet_point(http, bi, lat, lon))
         aton_t = None if thin else asyncio.create_task(
             fetch_aton(http, bi, lat, lon, radius_nm, haversine_nm, radius_bbox)
@@ -733,7 +753,25 @@ async def fill_dossier(
         else:
             d["sources"]["bi"] = "unavailable"
 
+        need_harbours = (
+            not d["nearby"]["capitaineries"]
+            or (not thin and not d["nearby"]["anchorages"])
+        )
+        harbour_fb = (
+            fetch_overpass_harbours(
+                http, lat, lon, radius_nm, haversine_nm,
+                max_capitaineries=MAX_NEARBY,
+                max_anchorages=0 if thin else MAX_ANCHORAGES,
+            )
+            if need_harbours else None
+        )
+
         if thin:
+            if harbour_fb is not None:
+                try:
+                    _apply_overpass_harbours(d, await harbour_fb)
+                except Exception:
+                    pass
             d["weather"] = empty_weather()
             d["weather"]["reason"] = "not_in_along_pearl"
             d["satellites"] = empty_satellites()
@@ -753,13 +791,18 @@ async def fill_dossier(
             d["sources"]["climatology"] = None
             d["sources"]["gebco"] = "not_in_along_pearl"
         else:
-            extras = await asyncio.gather(
-                sat_t, wx_t, emo_t, aton_t,
+            extra_tasks = [
+                sat_t, emo_t, aton_t,
                 fetch_review(http, bi, d.get("zee"), (d.get("amp") or [None])[0]),
                 _climatology_bag(http, bi, lat, lon, month, dest_lat, dest_lon),
-                return_exceptions=True,
-            )
-            sat, wx, emo, aton, review, climo = extras
+            ]
+            if harbour_fb is not None:
+                extra_tasks.append(harbour_fb)
+            extras = await asyncio.gather(*extra_tasks, return_exceptions=True)
+            sat, emo, aton, review, climo = extras[:5]
+            if harbour_fb is not None:
+                _apply_overpass_harbours(d, extras[5])
+            wx = snapshot_ici_weather(lat, lon)
             science_near = (d.get("science") or {}).get("nearby") if isinstance(d.get("science"), dict) else None
             if isinstance(sat, Exception):
                 d["satellites"] = empty_satellites()
