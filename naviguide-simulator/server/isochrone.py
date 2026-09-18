@@ -14,6 +14,16 @@ from climatology_zones import boat_speed_from_wind
 
 try:
     from global_land_mask import globe as _globe
+    # Direct grid indexing: globe.is_land() rebuilds numpy arrays and runs
+    # min/max/any on every scalar call (~50 µs). The isochrone asks a million
+    # times per leg — a /recompute took 77 s, 85 % in that overhead.
+    _MASK = _globe._mask  # True = ocean, shape (21600, 43200), 1 km
+    _LAT0 = float(_globe._lat[0])
+    _DLAT = float(_globe._lat[1] - _globe._lat[0])
+    _LON0 = float(_globe._lon[0])
+    _DLON = float(_globe._lon[1] - _globe._lon[0])
+    _LAT_MIN, _LAT_MAX = float(_globe._lat.min()), float(_globe._lat.max())
+    _LON_MIN, _LON_MAX = float(_globe._lon.min()), float(_globe._lon.max())
     _USE_GLOBAL_LAND_MASK = True
 except Exception:
     _USE_GLOBAL_LAND_MASK = False
@@ -64,7 +74,10 @@ def move_position(lat: float, lon: float, bearing: float, dist_nm: float) -> Tup
 def is_land(lat: float, lon: float) -> bool:
     if _USE_GLOBAL_LAND_MASK:
         try:
-            return bool(_globe.is_land(lat, lon))
+            la = min(max(float(lat), _LAT_MIN), _LAT_MAX)
+            lo = min(max(float(lon), _LON_MIN), _LON_MAX)
+            # Same truncation as globe.lat_to_index / lon_to_index (astype int).
+            return not bool(_MASK[int((la - _LAT0) / _DLAT), int((lo - _LON0) / _DLON)])
         except Exception:
             pass
     for la, lb, loa, lob in _LAND_BOXES_FALLBACK:
