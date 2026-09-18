@@ -27,6 +27,9 @@ TIMEOUT_S = 4.0
 DEAD_S = 45.0
 CELL = 0.5
 MAX_WORKERS = 8
+# Slow answers are treated like a dead atlas: a hot loop must never wait on
+# hundreds of 2-second calls in a row.
+SLOW_S = 2.5
 
 _cache: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -129,12 +132,17 @@ def fetch_atlas_point(
         params["dest_lon"] = dest_lon
     if day is not None:
         params["day"] = day
+    started = time.monotonic()
     try:
-        return _get_json(f"{bi_base()}/climatology/point", params, client)
+        payload = _get_json(f"{bi_base()}/climatology/point", params, client)
     except Exception as exc:
         log.info("atlas point down: %s", exc)
         _mark_dead()
         return None
+    if time.monotonic() - started > SLOW_S:
+        log.info("atlas point slow (%.1fs): zone fallback for %ss", time.monotonic() - started, DEAD_S)
+        _mark_dead()
+    return payload
 
 
 def fetch_atlas_crossings(
@@ -178,8 +186,56 @@ def atlas_wind_at_dt(lat: float, lon: float, t) -> Dict[str, Any]:
     return atlas_wind_at(lat, lon, t.month)
 
 
-def prefetch_atlas_cells(cells: Iterable[Tuple[float, float, int]]) -> int:
-    """Warm the cache. Returns how many atlas hits landed."""
+def atlas_wind_cached(lat: float, lon: float, month: int) -> Dict[str, Any]:
+    """Cache only — never touches the network. For hot loops (isochrone).
+
+    A cell that was not prefetched falls back to the zone climatology, still
+    labelled `kind: climatology`, `source: zone_fallback`.
+    """
+    key = _cell_key(lat, lon, month)
+    with _lock:
+        hit = _cache.get(key)
+    if hit is not None and hit.get("wind"):
+        return hit["wind"]
+    return _zone(lat, lon, month)
+
+
+def corridor_cells(
+    coords: Iterable[Tuple[float, float]],
+    months: Iterable[int],
+    pad: int = 1,
+) -> list[Tuple[float, float, int]]:
+    """Atlas cells around a leg: each (lat, lon) plus `pad` cells on every side."""
+    months = sorted({max(1, min(12, int(m))) for m in months})
+    cells: list[Tuple[float, float, int]] = []
+    seen: set[str] = set()
+    for lat, lon in coords:
+        base_lat = round(float(lat) / CELL) * CELL
+        base_lon = round(float(lon) / CELL) * CELL
+        for di in range(-pad, pad + 1):
+            for dj in range(-pad, pad + 1):
+                la = round(base_lat + di * CELL, 4)
+                lo = round(base_lon + dj * CELL, 4)
+                if la < -90 or la > 90:
+                    continue
+                for m in months:
+                    key = _cell_key(la, lo, m)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    cells.append((la, lo, m))
+    return cells
+
+
+def prefetch_atlas_cells(
+    cells: Iterable[Tuple[float, float, int]],
+    budget_s: float | None = None,
+) -> int:
+    """Warm the cache in parallel. Returns how many atlas hits landed.
+
+    With `budget_s`, stops waiting once the budget is spent: the cells still
+    missing will be served by the zone fallback (`atlas_wind_cached`).
+    """
     todo = []
     seen = set()
     for lat, lon, month in cells:
@@ -194,22 +250,32 @@ def prefetch_atlas_cells(cells: Iterable[Tuple[float, float, int]]) -> int:
     if not todo or atlas_is_dead():
         return 0
     hits = 0
+    deadline = None if budget_s is None else time.monotonic() + max(0.0, float(budget_s))
 
     def one(item):
         la, lo, m, key = item
+        if atlas_is_dead():
+            return 0
         payload = fetch_atlas_point(la, lo, m)
         wind = wind_from_point(payload)
         with _lock:
             _cache[key] = {"point": payload, "wind": wind}
         return 1 if wind else 0
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futs = [pool.submit(one, item) for item in todo]
-        for fut in as_completed(futs):
+    pool = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    futs = [pool.submit(one, item) for item in todo]
+    try:
+        remaining = None if deadline is None else max(0.01, deadline - time.monotonic())
+        for fut in as_completed(futs, timeout=remaining):
             try:
                 hits += int(fut.result())
             except Exception:
                 pass
+    except TimeoutError:
+        log.info("atlas prefetch: budget %.1fs spent, %s cells left to zone fallback",
+                 budget_s, sum(1 for f in futs if not f.done()))
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     return hits
 
 

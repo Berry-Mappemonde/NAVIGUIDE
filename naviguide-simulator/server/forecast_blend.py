@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from climatology_atlas import atlas_wind_at
+from climatology_atlas import atlas_wind_at, atlas_wind_cached
 from forecast_cube import ForecastCube
 from voyage_clock import parse_iso
 
@@ -32,10 +32,13 @@ def blended_wind(
     t: datetime,
     t0: datetime | str,
     cube: Optional[ForecastCube],
+    *,
+    atlas_network: bool = True,
 ) -> Dict[str, Any]:
+    """`atlas_network=False`: cache-only climatology (hot loops prefetch first)."""
     t0d = parse_iso(t0) if not isinstance(t0, datetime) else t0
     hours = _hours_since(t0d, t)
-    climo = atlas_wind_at(lat, lon, t.month)
+    climo = atlas_wind_at(lat, lon, t.month) if atlas_network else atlas_wind_cached(lat, lon, t.month)
 
     if cube is None or hours > FORECAST_BLEND_END_HOURS:
         return {**climo, "hs": None}
@@ -64,7 +67,9 @@ def blended_wind(
     }
 
 
-def make_wind_fn(t0: datetime | str, cube: Optional[ForecastCube]):
+def make_wind_fn(t0: datetime | str, cube: Optional[ForecastCube], *, atlas_network: bool = True):
+    t0d = parse_iso(t0) if not isinstance(t0, datetime) else t0  # parsed once, not per sample
+
     def wind_fn(lat: float, lon: float, t: datetime) -> Dict[str, Any]:
-        return blended_wind(lat, lon, t, t0, cube)
+        return blended_wind(lat, lon, t, t0d, cube, atlas_network=atlas_network)
     return wind_fn
