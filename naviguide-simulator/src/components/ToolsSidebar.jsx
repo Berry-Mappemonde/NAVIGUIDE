@@ -131,7 +131,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
-  skipperSample = null, skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
+  skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -310,7 +310,6 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               profile={skipperProfile}
               onProfile={onSkipperProfile}
               onReset={onSkipperReset}
-              sample={skipperSample}
               suggest={skipperSuggest}
               onAcceptSuggest={onSkipperSuggestAccept}
               onDismissSuggest={onSkipperSuggestDismiss}

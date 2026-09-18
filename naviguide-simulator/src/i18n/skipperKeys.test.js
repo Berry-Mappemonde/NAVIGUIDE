@@ -4,11 +4,10 @@ import fr from "./fr.js";
 import en from "./en.js";
 
 const KEYS = [
-  "skipperOrdersTitle",
+  "skipperProfileAria",
   "skipperProfileCoastal",
   "skipperProfileCruise",
   "skipperProfileOcean",
-  "skipperSharedClock",
   "skipperBoat",
   "skipperBoatUnknown",
   "skipperLoa",
@@ -17,11 +16,8 @@ const KEYS = [
   "skipperPlanningKn",
   "skipperFromPolar",
   "skipperProfileDefault",
-  "skipperHorizon",
-  "skipperHorizonLeg",
+  "skipperSuivreWindow",
   "skipperGale",
-  "skipperRainSuivre",
-  "skipperRainSimulation",
   "skipperSuggestCoastal",
   "skipperSuggestYes",
   "skipperSuggestNo",
@@ -37,13 +33,6 @@ describe("skipper i18n", () => {
     }
   });
 
-  it("tells the shared Suivre truth: the official clock does not change", () => {
-    assert.match(fr.skipperSharedClock, /horloge officielle ne change pas/);
-    assert.match(fr.skipperSharedClock, /ton skipper/);
-    assert.match(en.skipperSharedClock, /official clock does not change/);
-    assert.match(en.skipperSharedClock, /your skipper/);
-  });
-
   it("names the characters, never raw event types", () => {
     assert.equal(fr.skipperProfileCoastal, "Côtier");
     assert.equal(fr.skipperProfileCruise, "Croisière");
@@ -52,6 +41,5 @@ describe("skipper i18n", () => {
       assert.doesNotMatch(fr[k], /wind-gale|hs-shift|depth-alert/);
       assert.doesNotMatch(en[k], /wind-gale|hs-shift|depth-alert/);
     }
-    assert.match(fr.skipperRainSimulation, /Pas de pluie inventée/);
   });
 });

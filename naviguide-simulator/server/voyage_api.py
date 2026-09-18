@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -46,11 +45,10 @@ from voyage_clock import (
     to_iso,
 )
 from voyage_store import load_voyage, save_voyage, update_voyage
+from weather_pipeline import get_pipeline
 
 log = logging.getLogger("naviguide-simulator.voyage")
 router = APIRouter()
-_grib_refresh_lock = threading.Lock()
-_grib_refresh_thread: Optional[threading.Thread] = None
 
 try:
     from polar_api import _load_polar_data
@@ -284,7 +282,7 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
     voy["clock"] = _climo_clock(voy)
     save_voyage(voy)
     if body.forecast:
-        background.add_task(_fill_forecast, voyage_id)
+        _kick_forecast(voyage_id)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
@@ -330,48 +328,58 @@ def _resolve_grib_around(
     return None
 
 
-def _run_official_grib_refresh(around: Optional[dict], when: datetime, force: bool) -> None:
-    global _grib_refresh_thread
-    try:
-        maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, when, force=force)
-    except Exception as exc:  # defensive: the request that started us has already returned
-        log.warning("rafraîchissement GRIB officiel: %s", exc)
-    finally:
-        with _grib_refresh_lock:
-            _grib_refresh_thread = None
-
-
 def _kick_official_grib(
     around: Optional[dict] = None,
     when: Optional[datetime] = None,
     *,
     force: bool = True,
 ) -> bool:
-    """Démarre au plus un rafraîchissement GRIB pour tous les visiteurs."""
-    global _grib_refresh_thread
+    """Démarre au plus un rafraîchissement GRIB pour cette cellule/cycle."""
     target_when = when or _now()
     if around is None:
         voy = load_voyage(OFFICIAL_VOYAGE_ID)
         around = _resolve_grib_around(voy, target_when)
-    if not around:
+    if not around or around.get("lat") is None or around.get("lon") is None:
         return False
-    with _grib_refresh_lock:
-        if _grib_refresh_thread and _grib_refresh_thread.is_alive():
-            return False
-        thread = threading.Thread(
-            target=_run_official_grib_refresh,
-            args=(around, target_when, force),
-            name="naviguide-official-grib",
-            daemon=True,
-        )
-        _grib_refresh_thread = thread
-        thread.start()
-    return True
+
+    def _load():
+        try:
+            maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=force)
+        except Exception as exc:  # defensive: the request that started us has already returned
+            log.warning("rafraîchissement GRIB officiel: %s", exc)
+        return {}
+
+    return get_pipeline().kick(
+        "official-grib",
+        float(around["lat"]),
+        float(around["lon"]),
+        _load,
+        when=target_when,
+        force=force,
+    )
 
 
 def _official_grib_refreshing() -> bool:
-    with _grib_refresh_lock:
-        return bool(_grib_refresh_thread and _grib_refresh_thread.is_alive())
+    return get_pipeline().provider_busy("official-grib")
+
+
+def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
+    voy = load_voyage(voyage_id)
+    pts = (voy or {}).get("points") or []
+    lat = float(pts[0]["lat"]) if pts else 0.0
+    lon = float(pts[0]["lon"]) if pts else 0.0
+
+    def _load():
+        _fill_forecast(voyage_id)
+        return {}
+
+    return get_pipeline().kick(
+        f"forecast-cube:{voyage_id}",
+        lat,
+        lon,
+        _load,
+        force=force,
+    )
 
 
 @router.put("/voyage/official")
@@ -652,7 +660,7 @@ def refresh_forecast(voyage_id: str, background: BackgroundTasks):
     if voy is None:
         raise HTTPException(404, "voyage inconnu")
     update_voyage(voyage_id, forecastStatus="pending")
-    background.add_task(_fill_forecast, voyage_id)
+    _kick_forecast(voyage_id)
     return _public_meta(load_voyage(voyage_id) or voy)
 
 
@@ -662,7 +670,7 @@ def _maybe_auto_refresh(voy: dict) -> None:
         return
     age = (_now() - parse_iso(refreshed)).total_seconds() / 3600.0
     if age >= CACHE_TTL_H and voy.get("follow"):
-        threading.Thread(target=_fill_forecast, args=(voy["voyageId"],), daemon=True).start()
+        _kick_forecast(voy["voyageId"])
 
 
 @router.post("/voyage/{voyage_id}/recompute")

@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Simulateur NAVIGUIDE (Mac)",
+      "type": "shell",
+      "command": "bash dev-mac.sh",
+      "options": {
+        "cwd": "${workspaceFolder}/naviguide-simulator"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    }
+  ]
+}

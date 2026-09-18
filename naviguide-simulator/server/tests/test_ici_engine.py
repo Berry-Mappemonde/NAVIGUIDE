@@ -3,6 +3,7 @@ import asyncio
 import httpx
 
 from ici_engine import (
+    BI_LIVE_API,
     FRENCH_EEZ_MRGID,
     eez_plausible,
     empty_dossier,
@@ -19,20 +20,39 @@ from ici_engine import (
     zee_from_record,
 )
 from ici_layers import (
+    _seabed_label,
     attach_derived_from_science,
     aton_from_overpass,
+    anchorages_from_overpass,
     climatology_rose,
     empty_satellites,
     fetch_review,
     fetch_rtofs_current,
     fetch_satellite_scene,
     geo_from_hycom,
+    harbour_masters_from_overpass,
     hycom_lon,
     rtofs_from_uv,
     rtofs_is_fill,
     scene_bbox,
     slim_stac_scene,
+    snapshot_ici_weather,
 )
+from weather_pipeline import get_pipeline
+
+
+def _settle_weather(d):
+    lat = d["at"]["lat"]
+    lon = d["at"]["lon"]
+    get_pipeline().wait_providers(
+        ["openmeteo-gfs", "openmeteo-gfs-wave", "noaa-rtofs"],
+        lat,
+        lon,
+        timeout=4.0,
+    )
+    d["weather"] = snapshot_ici_weather(lat, lon)
+    d["sources"]["weather"] = d["weather"].get("source")
+    return d
 
 FR_EEZ = {
     "placeType": "EEZ",
@@ -159,6 +179,15 @@ def test_nearest_places_caps_and_prefers_props_latlon():
     assert found[0]["nm"] < 5
     plat, plon = feature_latlon(poly)
     assert abs(plat - 46.16) < 0.001
+
+
+def test_bi_base_defaults_to_live(monkeypatch):
+    from ici_engine import bi_base
+
+    monkeypatch.delenv("BI_API_URL", raising=False)
+    assert bi_base() == BI_LIVE_API
+    monkeypatch.setenv("BI_API_URL", "http://127.0.0.1:8001/api")
+    assert bi_base() == "http://127.0.0.1:8001/api"
 
 
 def test_empty_dossier_contract():
@@ -310,6 +339,23 @@ def _handler(request: httpx.Request) -> httpx.Response:
             json={"type": "FeatureCollection", "features": []},
         )
     if "overpass" in url:
+        body = (request.content or b"").decode("utf-8", "replace")
+        if "harbour_master" in body or 'seamark:type"="anchorage' in body:
+            elements = []
+            if "harbour_master" in body:
+                elements.append({
+                    "type": "way",
+                    "center": {"lat": 46.15, "lon": -1.16},
+                    "tags": {"office": "harbour_master", "name": "Capitainerie La Rochelle"},
+                })
+            if 'seamark:type"="anchorage' in body or 'leisure"="anchorage' in body:
+                elements.append({
+                    "type": "node",
+                    "lat": 46.145,
+                    "lon": -1.18,
+                    "tags": {"seamark:type": "anchorage", "name": "Mouillage des Minimes"},
+                })
+            return httpx.Response(200, json={"elements": elements})
         return httpx.Response(200, json={
             "elements": [{
                 "type": "node",
@@ -347,7 +393,7 @@ def test_fill_dossier_la_rochelle_mocked():
                 46.15, -1.16, client=client, month=6, dest_lat=14.6, dest_lon=-61.0,
             )
 
-    d = asyncio.run(run())
+    d = _settle_weather(asyncio.run(run()))
     assert not any("amp?bbox" in url or "/export/marinas" in url for url in seen)
     assert any("export/amp.geojson" in url for url in seen)
     assert any("export/science.geojson" in url for url in seen)
@@ -363,6 +409,7 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["projects"][0]["name"] == "Récif sentinelle"
     assert len(d["projects"]) == 1
     assert d["nearby"]["marinas"][0]["name"] == "Port des Minimes"
+    assert d["nearby"]["capitaineries"][0]["name"] == "Capitainerie La Rochelle"
     assert d["nearby"]["wpi"][0]["name"] == "LA ROCHELLE"
     assert d["science"]["nearby"][0]["name"] == "Pertuis bathymétrie"
     assert d["science"]["nearby"][0]["source"] == "sextant"
@@ -668,6 +715,44 @@ def test_climatology_rose_and_overpass_aton():
     )
     assert found[0]["name"] == "Feu"
     assert found[0]["source"] == "osm-overpass"
+    caps = harbour_masters_from_overpass(
+        [
+            {"type": "way", "center": {"lat": 46.15, "lon": -1.16},
+             "tags": {"office": "harbour_master", "name": "Capitainerie La Rochelle"}},
+            {"type": "node", "lat": 46.16, "lon": -1.17,
+             "tags": {"seamark:type": "light", "name": "Feu"}},
+        ],
+        46.15, -1.16, haversine_nm,
+    )
+    assert [x["name"] for x in caps] == ["Capitainerie La Rochelle"]
+    moor = anchorages_from_overpass(
+        [{"type": "node", "lat": 46.145, "lon": -1.18,
+          "tags": {"seamark:type": "anchorage", "name": "Mouillage des Minimes"}}],
+        46.15, -1.16, haversine_nm,
+    )
+    assert moor[0]["anchorage_type"] == "anchorage"
+    assert _seabed_label({"name": "Surficial sediment map"}) is None
+    assert _seabed_label({"folk_5": "sand"}) == "sand"
+
+
+def test_fill_dossier_overpass_when_bi_harbour_catalogs_empty():
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.rstrip("/").endswith("/capitaineries") or url.rstrip("/").endswith("/anchorages"):
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+        return _handler(request)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(46.15, -1.16, client=client, month=6)
+
+    d = _settle_weather(asyncio.run(run()))
+    assert d["nearby"]["capitaineries"][0]["name"] == "Capitainerie La Rochelle"
+    assert d["nearby"]["capitaineries"][0]["source"] == "osm-overpass"
+    assert d["nearby"]["anchorages"][0]["name"] == "Mouillage des Minimes"
+    assert d["sources"]["anchorages"] == "osm-overpass"
 
 
 def test_fill_dossier_satellite_missing_stays_null():
@@ -689,7 +774,7 @@ def test_fill_dossier_satellite_missing_stays_null():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await fill_dossier(0.0, -30.0, client=client)
 
-    d = asyncio.run(run())
+    d = _settle_weather(asyncio.run(run()))
     assert d["satellites"]["scene"] is None
     assert d["satellites"]["kind"] == "observation"
     assert "cdse_stac_unavailable" in (d["satellites"]["reason"] or "")
@@ -790,7 +875,7 @@ def test_fill_dossier_rtofs_forecast_when_model_answers(monkeypatch):
         async with httpx.AsyncClient(transport=httpx.MockTransport(_handler)) as client:
             return await fill_dossier(0.0, -30.0, client=client)
 
-    d = asyncio.run(run())
+    d = _settle_weather(asyncio.run(run()))
     assert d["weather"]["current"]["kind"] == "forecast"
     assert d["weather"]["current"]["source"] == "noaa-rtofs"
     assert d["weather"]["current"]["speedKnots"] == 0.58
@@ -809,7 +894,7 @@ def test_fill_dossier_rtofs_off_grid(monkeypatch):
         async with httpx.AsyncClient(transport=httpx.MockTransport(_handler)) as client:
             return await fill_dossier(46.15, -1.16, client=client)
 
-    d = asyncio.run(run())
+    d = _settle_weather(asyncio.run(run()))
     assert d["weather"]["current"] is None
     assert d["weather"]["current_reason"] == "off_grid"
     assert d["weather"]["wind"]["speedKnots"] == 12.4

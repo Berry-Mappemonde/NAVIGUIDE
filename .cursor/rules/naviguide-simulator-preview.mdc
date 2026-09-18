@@ -1,0 +1,32 @@
+---
+description: Simulateur NAVIGUIDE — preview locale sans commandes manuelles
+globs: naviguide-simulator/**
+alwaysApply: false
+---
+
+# Preview simulateur (Mac)
+
+Quand tu modifies `naviguide-simulator/` :
+
+1. **Ne demande pas** à l’utilisateur de lancer `npm run build`, `preview`, ni l’agent Cloud pour voir l’UI.
+2. **Au début** d’une tâche UI ou moteur simulateur, exécute une fois :
+   `bash naviguide-simulator/ensure-dev.sh --quiet`
+3. **À la fin** d’une tâche qui change le comportement ou l’UI :
+   `bash naviguide-simulator/ensure-dev.sh --open`
+4. Les serveurs restent en arrière-plan : **Vite recharge la page toute seule** — inutile de « réouvrir » l’app à chaque petit edit si l’onglet est déjà ouvert.
+5. **Merge prod** : uniquement via `main` sur GitHub (workflow `deploy.yml` → `simulator.naviguide.fr`). Pas de deploy VPS sans demande explicite.
+
+Merge sur `main` ≠ ouvrir le navigateur : c’est le déploiement CI.
+
+Le hook ouvre http://localhost:5174 **même sans edit** simulateur :
+
+1. **Première réponse** de la conversation (`afterAgentResponse` / `stop`)
+2. **Demande** (« ouvre / réouvre / affiche le simulateur », « en local », « localhost:5174 »)
+3. **Edit** sous `naviguide-simulator/` (comportement historique)
+
+Si le hook rate, ou si l’utilisateur dit que l’appli ne s’ouvre pas : exécute **toi-même**
+`bash naviguide-simulator/ensure-dev.sh --open` **hors sandbox** (permissions `all`,
+sinon macOS refuse `open` : « Unable to find application named Safari »).
+Journal : `naviguide-simulator/.dev/preview-hook.log`.
+
+Les serveurs restent démarrés au `sessionStart`. Ne pas redemander à l’utilisateur de lancer npm.
