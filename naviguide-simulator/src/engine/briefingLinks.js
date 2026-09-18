@@ -66,13 +66,64 @@ export function googleMapsUrl(lat, lon) {
   return `https://www.google.com/maps/search/?api=1&query=${la.toFixed(5)}%2C${lo.toFixed(5)}`;
 }
 
-function entity(kind, item, index) {
+/** OSM seamark types → words a skipper reads (FR / EN). Unknown types keep their words. */
+const ATON_WORDS = Object.freeze({
+  light_major: ["phare", "lighthouse"],
+  light_minor: ["feu", "minor light"],
+  light: ["feu", "light"],
+  light_vessel: ["bateau-feu", "light vessel"],
+  buoy_lateral: ["bouée latérale", "lateral buoy"],
+  buoy_cardinal: ["bouée cardinale", "cardinal buoy"],
+  buoy_special_purpose: ["bouée spéciale", "special buoy"],
+  buoy_safe_water: ["bouée d’eaux saines", "safe-water buoy"],
+  buoy_isolated_danger: ["bouée de danger isolé", "isolated-danger buoy"],
+  buoy_installation: ["bouée d’installation", "installation buoy"],
+  beacon_lateral: ["balise latérale", "lateral beacon"],
+  beacon_cardinal: ["balise cardinale", "cardinal beacon"],
+  beacon_special_purpose: ["balise spéciale", "special beacon"],
+  beacon_isolated_danger: ["balise de danger isolé", "isolated-danger beacon"],
+  beacon_safe_water: ["balise d’eaux saines", "safe-water beacon"],
+  landmark: ["amer", "landmark"],
+  daymark: ["amer de jour", "daymark"],
+  fog_signal: ["signal de brume", "fog signal"],
+  radar_reflector: ["réflecteur radar", "radar reflector"],
+  mooring: ["corps-mort", "mooring"],
+});
+
+/** "buoy_lateral" → "bouée latérale" ; a real name ("Fort Boyard") is untouched. */
+export function humanAtonName(name, lang = "fr") {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase();
+  if (ATON_WORDS[key]) return ATON_WORDS[key][lang === "en" ? 1 : 0];
+  if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(key)) return key.replace(/_/g, " ");
+  return raw;
+}
+
+/** Long dataset titles are cut so the briefing stays readable; the link keeps the whole sheet. */
+export const DISPLAY_NAME_MAX = 72;
+export function displayName(name, max = DISPLAY_NAME_MAX) {
+  const s = String(name || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 1);
+  const at = cut.lastIndexOf(" ");
+  return `${at > max * 0.6 ? cut.slice(0, at) : cut}…`;
+}
+
+/** The name as the briefing writes it (same function on both sides, so links match). */
+export function placeLabel(kind, item, lang = "fr") {
+  const base = kind === "aton" ? humanAtonName(item?.name, lang) : String(item?.name || "");
+  return displayName(base);
+}
+
+function entity(kind, item, index, lang) {
   if (!item || !item.name) return null;
   const url = cleanUrl(item.url) || (kind === "amp" ? cleanUrl(item.visit_url) || cleanUrl(item.manager_url) : null);
   return {
     id: `${kind}:${index}:${item.site_id ?? item.id ?? item.osm_id ?? item.name}`,
     kind,
-    name: String(item.name),
+    name: placeLabel(kind, item, lang),
+    rawName: String(item.name),
     lat: finite(item.lat),
     lon: finite(item.lon),
     nm: finite(item.nm),
@@ -85,12 +136,12 @@ function entity(kind, item, index) {
  * Entities in the order `narrateIci` writes them:
  * PoE → AMP → projects → marinas → capitaineries → WPI → science → anchorages → AtoN.
  */
-export function briefingEntities(dossier) {
+export function briefingEntities(dossier, lang = "fr") {
   if (!dossier) return [];
   const out = [];
   const push = (kind, items) => {
     (items || []).slice(0, WRITTEN[kind]).forEach((it, i) => {
-      const e = entity(kind, it, i);
+      const e = entity(kind, it, i, lang);
       if (e) out.push(e);
     });
   };
