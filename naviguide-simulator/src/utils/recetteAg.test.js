@@ -101,7 +101,7 @@ describe("recette A–G (contrats source)", () => {
     assert.match(read("../utils/atlasPoint.js"), /kind !== "climatology"/);
     assert.match(read("../engine/voyageClock.js"), /windAt/);
     assert.match(read("../engine/ici.js"), /climatology: null/);
-    assert.match(read("../engine/iciBriefing.js"), /kind climatology/);
+    assert.match(read("../engine/iciBriefing.js"), /Climatologie de \$\{when\} \(atlas Copernicus/); // climatology named as such, never as a forecast
     assert.match(read("../hooks/useIciDossier.js"), /dest_lat/);
     assert.match(read("../hooks/useIciDossier.js"), /detectEvents/);
     assert.match(read("../hooks/useIciDossier.js"), /judgeEvents/);

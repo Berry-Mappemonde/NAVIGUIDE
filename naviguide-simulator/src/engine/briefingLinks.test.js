@@ -7,9 +7,12 @@ import {
   LAYER_FOR_KIND,
   briefingEntities,
   canFocus,
+  displayName,
   entityLinks,
   googleMapsUrl,
+  humanAtonName,
   layerForEntity,
+  placeLabel,
   segmentBriefing,
 } from "./briefingLinks.js";
 import { narrateIci, narrateIciSegments } from "./iciBriefing.js";
@@ -162,5 +165,30 @@ describe("briefing links — UI contract", () => {
     assert.match(controller, /this\.callbacks\.onManualNavigation\?\.\(\)/);
     const focusFn = controller.slice(controller.indexOf("focusBriefingPlace(place, boat) {"), controller.indexOf("clearBriefingFocus() {"));
     assert.doesNotMatch(focusFn, /fetch\(|\/ici|story/);
+  });
+});
+
+describe("briefingLinks — names a skipper reads", () => {
+  it("turns OSM seamark types into words, keeps real names", () => {
+    assert.equal(humanAtonName("buoy_lateral"), "bouée latérale");
+    assert.equal(humanAtonName("buoy_special_purpose", "en"), "special buoy");
+    assert.equal(humanAtonName("light_minor"), "feu");
+    assert.equal(humanAtonName("Fort Boyard"), "Fort Boyard");
+    assert.equal(humanAtonName("some_new_type"), "some new type");
+  });
+
+  it("cuts very long dataset titles, and the linked segment uses the same label", () => {
+    const long = "Identification of SARS-CoV-2 variants by MiSeq sequencing in sewers using passive sampling";
+    const label = displayName(long);
+    assert.ok(label.length <= 73 && label.endsWith("…"));
+    assert.equal(displayName("Port des Minimes"), "Port des Minimes");
+    const d = { science: { nearby: [{ name: long, nm: 8.5, lat: 46.8, lon: 1.6, url: "https://sextant.ifremer.fr/x", source: "sextant" }] },
+      aton: { source: "osm-overpass", nearby: [{ name: "buoy_lateral", nm: 19.5, lat: 47.1, lon: -2.2 }] } };
+    const text = narrateIci(d, "fr");
+    assert.match(text, /bouée latérale \(19,5 nm\)/);
+    assert.doesNotMatch(text, /buoy_lateral|\(sextant\)|sextant\.ifremer/);
+    const linked = narrateIciSegments(d, "fr").filter((s) => s.entity);
+    assert.deepEqual(linked.map((s) => s.text), [label, "bouée latérale"]);
+    assert.equal(placeLabel("aton", { name: "buoy_lateral" }), "bouée latérale");
   });
 });
