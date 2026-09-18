@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
@@ -23,6 +23,7 @@ if str(_DIR) not in sys.path:
 
 import httpx
 
+from admin_guard import cors_origins, rate_limited
 from mem_limits import (
     ZEE_CACHE_MAX_BYTES,
     ZEE_MAX_FEATURES_CAP,
@@ -59,12 +60,15 @@ app = FastAPI(
     description="Cockpit Berry-Mappemonde — hors production.",  # pragma: allowlist secret
     version="0.1.0",
 )
+# Sécurité P0 : plus de "*" — le client de prod est servi par le même nginx,
+# CORS ne concerne que le dev Vite (5174) et les outils. NAVIGUIDE_CORS_ORIGINS
+# pour changer la liste sans toucher au code.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Naviguide-Admin"],
 )
 app.include_router(polar_router)
 app.include_router(voyage_router)
@@ -146,11 +150,20 @@ async def get_ici(
     )
 
 
-@app.post("/ici/story")
+# Dépense LLM : 12 récits / min / IP, 60 / min et 240 / h pour tout le serveur.
+# Le client tombe sur la phrase locale en cas de 429 (storyQueue → failed).
+_story_limited = rate_limited("story", 12, 60.0, global_limit=60)
+_story_hourly = rate_limited("story-hour", 10**9, 3600.0, global_limit=240)
+_weather_limited = rate_limited("weather", 90, 60.0)
+
+
+@app.post("/ici/story", dependencies=[Depends(_story_limited), Depends(_story_hourly)])
 async def post_ici_story(body: dict):
     """Background story. NIM → OR ± :online → Claude. Play does not await this."""
     if not isinstance(body, dict) or not (body.get("event") or body.get("eventId")):
         raise HTTPException(400, "événement manquant")
+    if len(str(body)) > 60_000:
+        raise HTTPException(413, "événement trop volumineux")
     return await write_story(body)
 
 
@@ -286,22 +299,22 @@ def _load_current(request: PositionRequest) -> dict:
     return _sim_current(request.latitude, request.longitude)
 
 
-@app.post("/wind")
+@app.post("/wind", dependencies=[Depends(_weather_limited)])
 def get_wind(request: PositionRequest):
     return _weather_snapshot("wind", request, _load_wind)
 
 
-@app.post("/wave")
+@app.post("/wave", dependencies=[Depends(_weather_limited)])
 def get_wave(request: PositionRequest):
     return _weather_snapshot("wave", request, _load_wave)
 
 
-@app.post("/current")
+@app.post("/current", dependencies=[Depends(_weather_limited)])
 def get_current(request: PositionRequest):
     return _weather_snapshot("current", request, _load_current)
 
 
-@app.post("/weather")
+@app.post("/weather", dependencies=[Depends(_weather_limited)])
 def get_weather(request: PositionRequest):
     """Réponse immédiate : vent / vague / courant, cache cellule + cycle."""
     lat, lon = request.latitude, request.longitude

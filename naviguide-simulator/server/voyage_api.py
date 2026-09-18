@@ -6,9 +6,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from admin_guard import is_admin, rate_limited, require_admin
 from climatology_atlas import corridor_cells, prefetch_atlas_cells
 from forecast_blend import FORECAST_BLEND_END_HOURS, make_wind_fn
 from forecast_cube import (
@@ -45,7 +46,7 @@ from voyage_clock import (
     sample_clock_at_time,
     to_iso,
 )
-from voyage_store import load_voyage, save_voyage, update_voyage
+from voyage_store import load_voyage, purge_stale_voyages, save_voyage, update_voyage
 from weather_pipeline import get_pipeline
 
 log = logging.getLogger("naviguide-simulator.voyage")
@@ -53,6 +54,15 @@ router = APIRouter()
 
 # /recompute: how long the atlas warm-up may take before the isochrone starts.
 ATLAS_PREFETCH_BUDGET_S = 6.0
+
+# Sécurité P0 — bornes d'un voyage de Simulation (la route Berry complète fait
+# ~1 500 points) et limiteurs par IP. L'admin (X-Naviguide-Admin) est exempté.
+MAX_VOYAGE_POINTS = 6000
+MAX_VOYAGE_MARKS = 300
+STALE_VOYAGE_DAYS = 7
+_create_limited = rate_limited("voyage-create", 6, 60.0, global_limit=60)
+_compute_limited = rate_limited("voyage-compute", 6, 60.0, global_limit=40)
+_official_read_limited = rate_limited("official-read", 240, 60.0)
 
 try:
     from polar_api import _load_polar_data
@@ -258,14 +268,41 @@ def _splice_points(points: List[dict], from_nm: float, to_nm: float,
     return _recompute_cum(before + mid + after)
 
 
-@router.post("/voyage")
+def _drop_cube(voyage_id: str) -> None:
+    import shutil
+    from forecast_cube import CACHE_DIR
+    shutil.rmtree(CACHE_DIR / voyage_id, ignore_errors=True)
+
+
+def _check_voyage_size(body: VoyageCreate) -> None:
+    if len(body.points) > MAX_VOYAGE_POINTS:
+        raise HTTPException(413, f"trop de points ({len(body.points)} > {MAX_VOYAGE_POINTS})")
+    if len(body.marks) > MAX_VOYAGE_MARKS:
+        raise HTTPException(413, f"trop d'escales ({len(body.marks)} > {MAX_VOYAGE_MARKS})")
+    for p in body.points:
+        try:
+            lat, lon = float(p["lat"]), float(p["lon"])
+        except Exception as exc:
+            raise HTTPException(400, "point sans lat/lon") from exc
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise HTTPException(400, "point hors limites")
+
+
+@router.post("/voyage", dependencies=[Depends(_create_limited)])
 def create_voyage(body: VoyageCreate, background: BackgroundTasks):
     if not body.points:
         raise HTTPException(400, "points requis")
+    _check_voyage_size(body)
     try:
         parse_iso(body.t0)
     except Exception as exc:
         raise HTTPException(400, f"t0 invalide: {exc}") from exc
+    # Les brouillons de Simulation ne s'accumulent pas : purge > 7 jours
+    # (jamais le voyage officiel) avec leur cube, une fois par création.
+    try:
+        purge_stale_voyages(STALE_VOYAGE_DAYS, keep={OFFICIAL_VOYAGE_ID}, on_removed=_drop_cube)
+    except Exception as exc:  # defensive: never block a visitor for housekeeping
+        log.warning("purge voyages: %s", exc)
     voyage_id = str(uuid.uuid4())
     voy = {
         "voyageId": voyage_id,
@@ -386,30 +423,40 @@ def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
     )
 
 
-@router.put("/voyage/official")
-def ensure_official(body: VoyageCreate, background: BackgroundTasks):
+@router.put("/voyage/official", dependencies=[Depends(_official_read_limited)])
+def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Request):
+    """Chaque visiteur envoie ce PUT au chargement (auto-réparation).
+
+    Sécurité P0 : un visiteur anonyme ne peut que *créer* le voyage officiel
+    s'il manque (disque neuf) — jamais modifier route, escales ou expédition
+    d'un voyage existant. Seul l'admin (X-Naviguide-Admin) met à jour.
+    """
     if not body.points:
         raise HTTPException(400, "points requis")
+    _check_voyage_size(body)
     existing = load_voyage(OFFICIAL_VOYAGE_ID)
     if existing and existing.get("points"):
         changed = False
-        if (
-            len(body.points) > len(existing["points"])
-            and int(existing.get("routeRev") or 0) == 0
-        ):
-            existing["points"] = body.points
-            existing["marks"] = body.marks
-            existing["t0"] = OFFICIAL_T0
-            existing["official"] = True
-            changed = True
-        if body.expedition_id and body.expedition_id != existing.get("expedition_id"):
-            existing["expedition_id"] = body.expedition_id
-            changed = True
+        if is_admin(request):
+            if (
+                len(body.points) > len(existing["points"])
+                and int(existing.get("routeRev") or 0) == 0
+            ):
+                existing["points"] = body.points
+                existing["marks"] = body.marks
+                existing["t0"] = OFFICIAL_T0
+                existing["official"] = True
+                changed = True
+            if body.expedition_id and body.expedition_id != existing.get("expedition_id"):
+                existing["expedition_id"] = body.expedition_id
+                changed = True
         if changed:
             existing["clock"] = _climo_clock(existing)
             save_voyage(existing)
+            log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
         background.add_task(_kick_official_grib)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
+    log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
     voy = _build_official(body)
     background.add_task(_kick_official_grib)
     return {**_public_meta(voy), "clock": voy["clock"]}
@@ -546,7 +593,7 @@ def get_official_grib(
     return body
 
 
-@router.post("/voyage/official/grib")
+@router.post("/voyage/official/grib", dependencies=[Depends(require_admin)])
 def post_official_grib(body: DailyGribIn):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     around = body.around
@@ -559,7 +606,7 @@ def post_official_grib(body: DailyGribIn):
     return public_grib(record, OFFICIAL_VOYAGE_ID, around or body.around, _now())
 
 
-@router.post("/voyage/official/grib/refresh")
+@router.post("/voyage/official/grib/refresh", dependencies=[Depends(require_admin)])
 def refresh_official_grib(
     lat: Optional[float] = Query(None),
     lon: Optional[float] = Query(None),
@@ -575,7 +622,7 @@ def refresh_official_grib(
     return _pending_grib(record, around, when, refreshing=refreshing)
 
 
-@router.post("/voyage/official/grib/scan")
+@router.post("/voyage/official/grib/scan", dependencies=[Depends(require_admin)])
 def scan_official_grib():
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     around = _grib_around_from_live(voy, _now()) if voy else None
@@ -658,8 +705,10 @@ def get_at(voyage_id: str, t: Optional[str] = Query(None)):
     return sample
 
 
-@router.post("/voyage/{voyage_id}/refresh-forecast")
-def refresh_forecast(voyage_id: str, background: BackgroundTasks):
+@router.post("/voyage/{voyage_id}/refresh-forecast", dependencies=[Depends(_compute_limited)])
+def refresh_forecast(voyage_id: str, background: BackgroundTasks, request: Request):
+    if _is_official(voyage_id) and not is_admin(request):
+        raise HTTPException(403, "le voyage officiel n'a pas de cube de prévision public")
     voy = load_voyage(voyage_id)
     if voy is None:
         raise HTTPException(404, "voyage inconnu")
@@ -677,7 +726,7 @@ def _maybe_auto_refresh(voy: dict) -> None:
         _kick_forecast(voy["voyageId"])
 
 
-@router.post("/voyage/{voyage_id}/recompute")
+@router.post("/voyage/{voyage_id}/recompute", dependencies=[Depends(_compute_limited)])
 def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
     body = body or RecomputeBody()
     if _is_official(voyage_id):
@@ -768,8 +817,10 @@ def get_draft(voyage_id: str):
     return voy["draft"]
 
 
-@router.post("/voyage/{voyage_id}/accept")
+@router.post("/voyage/{voyage_id}/accept", dependencies=[Depends(_compute_limited)])
 def accept_draft(voyage_id: str):
+    if _is_official(voyage_id):
+        raise HTTPException(403, "le voyage officiel ne se modifie pas ici")
     voy = load_voyage(voyage_id)
     if voy is None:
         raise HTTPException(404, "voyage inconnu")
@@ -795,8 +846,10 @@ def accept_draft(voyage_id: str):
     return {**_public_meta(voy), "clock": voy["clock"], "points": voy["points"]}
 
 
-@router.post("/voyage/{voyage_id}/reject")
+@router.post("/voyage/{voyage_id}/reject", dependencies=[Depends(_compute_limited)])
 def reject_draft(voyage_id: str):
+    if _is_official(voyage_id):
+        raise HTTPException(403, "le voyage officiel ne se modifie pas ici")
     voy = load_voyage(voyage_id)
     if voy is None:
         raise HTTPException(404, "voyage inconnu")

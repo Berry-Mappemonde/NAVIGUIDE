@@ -201,6 +201,14 @@ export default {
   polarFileTooLarge:      "The file exceeds the 10 MB size limit.",
   polarNetworkError:      "The polar service is unreachable. Check your connection and try again.",
   polarUpwind:            "↑ Upwind",
+
+  // ── Admin key (security P0) ───────────────────────────────────────────────
+  adminKeyLabel:       "Admin key",
+  adminKeyPlaceholder: "paste the key…",
+  adminKeySave:        "OK",
+  adminKeyActive:      "active",
+  adminKeyHint:        "Needed to change the official route, the GRIB or the polar. Stays in this browser.",
+  adminKeyRequired:    "Admin key required (tools → Admin key).",
   polarDownwind:          "↓ Downwind",
 
   // ── Maritime layers (MaritimeLayersPanel) ───────────────────────────────────
