@@ -41,19 +41,21 @@ describe("narrateIci", () => {
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
 
-    assert.match(text, /Ici, le bateau/);
-    assert.match(text, /Gold/);
+    assert.match(text, /Le bateau navigue dans/);
+    assert.match(text, /formalités d’entrée passent par des ports officiels/);
     assert.match(text, /La Rochelle/);
-    assert.match(text, /douane\.gouv\.fr/);
+    assert.match(text, /Ports d’entrée officiels les plus proches : La Rochelle \(1,2 nm\)/);
+    assert.doesNotMatch(text, /douane\.gouv\.fr/); // the sheet is a link, not text
     assert.match(text, /30 milles/);
     assert.match(text, /Pertuis/);
     assert.match(text, /On vient d’entrer/);
-    assert.match(text, /La Rochelle → Fort-de-France/);
-    assert.match(text, /7\.2 nœuds/);
+    assert.match(text, /Cap sur Fort-de-France[^.]*depuis La Rochelle/);
+    assert.match(text, /7,2 nœuds/);
     assert.match(text, /de mer/);
-    assert.match(text, /fiches Science/);
-    assert.match(text, /sextant/);
-    assert.match(text, /argo/);
+    assert.match(text, /Données scientifiques disponibles autour du bateau/);
+    assert.match(text, /Pertuis charentais bathymétrie \(6 nm\)/);
+    assert.match(text, /6901234 \(18 nm\)/);
+    assert.doesNotMatch(text, /\(sextant\)|\(argo\)|sextant\.ifremer\.fr/); // source + host live in the link
     assert.doesNotMatch(text, FORBIDDEN);
     assert.doesNotMatch(text, /4500|mappemonde entière|toute la carte/i);
   });
@@ -71,9 +73,9 @@ describe("narrateIci", () => {
       }],
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /La Rochelle → Ajaccio \(Corse\)/);
-    assert.match(text, /13 j de mer/);
-    assert.doesNotMatch(text, /à terre \(pas encore en mer\)/);
+    assert.match(text, /Cap sur Ajaccio \(Corse\) depuis La Rochelle/);
+    assert.match(text, /13 jours de mer/);
+    assert.doesNotMatch(text, /pas encore en mer/);
     assert.doesNotMatch(text, /313 h/);
   });
 
@@ -90,8 +92,8 @@ describe("narrateIci", () => {
       }],
       sources: { zee: "error" },
     }, "fr");
-    assert.match(text, /Saint-Maur \(Berry, Indre\) → La Rochelle/);
-    assert.match(text, /4 h à terre/);
+    assert.match(text, /Étape terrestre de Saint-Maur \(Berry, Indre\) vers La Rochelle/);
+    assert.match(text, /encore 4 h de route/);
     assert.match(text, /pas encore en mer/);
     assert.doesNotMatch(text, /encore 4 h de mer/);
   });
@@ -115,12 +117,13 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /Saint-Maur \(Berry, Indre\) → La Rochelle/);
-    assert.match(text, /4 h à terre/);
+    assert.match(text, /Étape terrestre de Saint-Maur \(Berry, Indre\) vers La Rochelle/);
+    assert.match(text, /encore 4 h de route/);
     assert.match(text, /pas encore en mer/);
     assert.doesNotMatch(text, /encore 4 h de mer/);
-    assert.match(text, /\u200b/);
-    assert.match(text.replace(/\u200b/g, ""), new RegExp(id));
+    // the raw scene id no longer floods the box: satellite, tile and date are written instead
+    assert.match(text, /Sentinel-2 \(S2B, tuile T31TDM\) du 14 septembre 2026 \(observation\)/);
+    assert.doesNotMatch(text, new RegExp(id));
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -141,8 +144,8 @@ describe("narrateIci", () => {
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
     assert.match(text, /à terre/i);
-    assert.match(text, /hors ZEE/);
-    assert.doesNotMatch(text, /ports d’entrée officiels les plus proches/);
+    assert.match(text, /hors de toute ZEE/);
+    assert.doesNotMatch(text, /Ports d’entrée officiels/);
   });
 
   it("null ZEE = haute mer, pas une erreur de nommage", () => {
@@ -167,7 +170,7 @@ describe("narrateIci", () => {
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
     assert.match(text, /haute mer/i);
-    assert.doesNotMatch(text, /ports d’entrée officiels les plus proches/);
+    assert.doesNotMatch(text, /Ports d’entrée officiels/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -254,13 +257,13 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok", climatology: "atlas" },
     }, "fr");
-    assert.match(text, /kind climatology/);
-    assert.match(text, /16\.2 kn/);
-    assert.match(text, /Hs P50 1\.4/);
-    assert.match(text, /Hs P90 2\.8/);
-    assert.match(text, /Tp 4\.1 s/);
-    assert.match(text, /Hs dir 284\.6/);
-    assert.match(text, /courant 0\.4/);
+    assert.match(text, /Climatologie de/);
+    assert.match(text, /atlas Copernicus/);
+    assert.match(text, /vent typique 16,2 kn/);
+    assert.match(text, /mer 1,4 m en moyenne, 2,8 m les jours agités \(P90\)/);
+    assert.match(text, /période 4,1 s/);
+    assert.match(text, /de ONO \(285°\)/);
+    assert.match(text, /courant 0,4/);
     assert.match(text, /IBTrACS/);
     assert.doesNotMatch(text, /forecast|GRIB/i);
   });
@@ -327,24 +330,25 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /visite parc-marin\.fr/);
-    assert.match(text, /gestionnaire parc-marin\.fr/);
+    assert.match(text, /Aires marines protégées à moins de 30 milles : Pertuis charentais/);
+    assert.doesNotMatch(text, /parc-marin\.fr/); // visit / manager pages are links now
     assert.match(text, /Mouillage des Minimes/);
-    assert.match(text, /AtoN/);
-    assert.match(text, /kind observation/);
-    assert.match(text, /sentinel-2-l2a/);
-    assert.match(text, /not_generated/);
-    assert.match(text, /kind forecast/);
-    assert.match(text, /12\.4 kn/);
-    assert.match(text, /Hs 1\.1 m \/ 270° \/ 6\.5 s/);
-    assert.match(text, /0\.58 kn \/ 247° \(RTOFS, kind forecast\)/);
+    assert.match(text, /Balisage : Feu des Minimes/);
+    assert.match(text, /Dernière image satellite : Sentinel-2/);
+    assert.match(text, /\(observation\)/);
+    assert.match(text, /pas encore calculé/);
+    assert.doesNotMatch(text, /not_generated|sentinel-2-l2a/);
+    assert.match(text, /Prévision météo/);
+    assert.match(text, /vent 12,4 kn de O \(280°\)/);
+    assert.match(text, /mer 1,1 m de O \(270°\), période 6,5 s/);
+    assert.match(text, /courant 0,58 kn vers OSO \(247°\) \(RTOFS\)/);
     assert.match(text, /EMODnet/);
-    assert.match(text, /18\.4/);
-    assert.match(text, /rose 8 secteurs/);
+    assert.match(text, /18,4/);
+    assert.match(text, /rose des vents disponible/);
     assert.match(text, /calme 4/);
-    assert.match(text, /vers 270/);
-    assert.match(text, /IBTrACS nearby 0/);
-    assert.match(text, /Gold oui/);
+    assert.match(text, /courant 0,4 kn vers O \(270°\)/);
+    assert.match(text, /cyclones historiques \(IBTrACS\) : aucun à proximité/);
+    assert.match(text, /formalités ZEE vérifiées, règles AMP non vérifiées/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -355,8 +359,7 @@ describe("narrateIci", () => {
       weather: { kind: "forecast", status: "pending", refreshing: true, wind: null, wave: null },
       sources: { zee: "marineregions" },
     }, "fr");
-    assert.match(text, /kind forecast/);
-    assert.match(text, /chargement/);
+    assert.match(text, /Prévision météo : chargement/);
     assert.doesNotMatch(text, /vide/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
@@ -374,10 +377,8 @@ describe("narrateIci", () => {
       weather: { kind: "forecast", wind: null, reason: "openmeteo_unavailable:HTTPStatusError" },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /kind observation/);
-    assert.match(text, /aucune scène générée/);
-    assert.match(text, /cdse_stac_unavailable/);
-    assert.match(text, /kind forecast/);
+    assert.match(text, /Aucune image satellite récente ici \(cdse_stac_unavailable/);
+    assert.match(text, /Prévision météo/);
     assert.doesNotMatch(text, /Sentinel-2 L2A 20/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
@@ -394,7 +395,8 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions" },
     }, "fr");
-    assert.match(text, /courant null \(off_grid\)/);
+    assert.match(text, /courant : hors de la grille du modèle/);
+    assert.doesNotMatch(text, /off_grid|null/);
     assert.doesNotMatch(text, /rtofs_not_ingested/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
@@ -411,8 +413,8 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /DTM 2\.3 m/);
-    assert.match(text, /fonds null \(no_substrate_class\)/);
+    assert.match(text, /Fond \(EMODnet, observation\) : 2,3 m sur la carte ; nature du fond non classée ici/);
+    assert.doesNotMatch(text, /no_substrate_class|DTM/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 

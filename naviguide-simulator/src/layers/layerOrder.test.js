@@ -17,7 +17,11 @@ describe("panes", () => {
       "amp",
       "grib",
       "boat",
+      "briefing-focus",
     ]);
+    const focus = PANES.find((p) => p.name === "briefing-focus");
+    assert.ok(focus.zIndex > PANES.find((p) => p.name === "boat").zIndex);
+    assert.ok(focus.zIndex < LEAFLET_BUILTIN_PANES.tooltipPane);
     const grib = PANES.find((p) => p.name === "grib");
     const boat = PANES.find((p) => p.name === "boat");
     assert.ok(PANES.find((p) => p.name === "route").zIndex < LEAFLET_BUILTIN_PANES.markerPane);
