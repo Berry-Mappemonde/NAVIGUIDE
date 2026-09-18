@@ -109,6 +109,15 @@ export default {
   cockpitDossier: "Dossier cockpit",
   iciBriefingLoading: "Le sac se remplit autour du bateau…",
   iciBriefingFallback: "Le sac autour du bateau n’a pas encore de récit.",
+  briefingListen:     "Écouter",
+  briefingListenStop: "Stop",
+
+  // ── Journal de bord (mémoire serveur du voyage officiel) ──────────────────
+  journalTitle:       "Journal de bord",
+  journalCount:       "{n} entrées",
+  journalHint:        "Écrit par le serveur : position de l’horloge officielle à 00, 06, 12 et 18 h UTC, escales franchies, vent du GRIB au bateau, mots du skipper. Rien d’inventé.",
+  journalEmpty:       "Le journal commence au départ.",
+  journalUnavailable: "Journal indisponible pour le moment.",
   briefingSeeOnMap: "Voir sur la carte : le bateau et ce lieu",
   briefingOfficialSheet: "Fiche / site officiel",
   briefingGoogleMaps: "Fiche Google Maps",
