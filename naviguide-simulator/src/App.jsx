@@ -15,6 +15,7 @@ import { useExpeditionSpeed } from "./hooks/useExpeditionSpeed.js";
 import { useVoyageClock } from "./hooks/useVoyageClock.js";
 import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
+import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -296,6 +297,8 @@ export default function App() {
     expeditionId: polarData?.expedition_id,
     clock: voyage.clock,
   });
+  // Mémoire du voyage officiel (journal serveur) — lecture seule, Suivre.
+  const officialJournal = useOfficialJournal({ enabled: isSuivre });
   const vessel = useVirtualVessel({
     enabled: isSimulation && routeReady,
     forecast: false,
@@ -1313,6 +1316,9 @@ export default function App() {
         iciBriefing={iciPack.briefing}
         iciBriefingSegments={iciPack.briefingSegments}
         onBriefingFocus={handleBriefingFocus}
+        journal={officialJournal.journal}
+        journalLoading={officialJournal.loading}
+        journalError={officialJournal.error}
         skipperNotice={skipper.notice}
         view={view}
         onView={selectView}
