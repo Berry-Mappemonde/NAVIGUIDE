@@ -112,6 +112,18 @@ class ForecastCube:
         # 6 float64 per step (u, v, hs, uo, vo, unused)
         return n_t * n_s * 6 * 8 + 4096
 
+    def _parsed_times(self) -> List[datetime]:
+        """Lead times parsed once — at() runs ~100k times per isochrone."""
+        cache = self.__dict__.get("_times_cache")
+        if cache is None or cache[0] is not self.times or len(cache[1]) != len(self.times):
+            cache = (self.times, [parse_iso(x) for x in self.times], parse_iso(self.issued_at))
+            self.__dict__["_times_cache"] = cache
+        return cache[1]
+
+    def _issued_dt(self) -> datetime:
+        self._parsed_times()
+        return self.__dict__["_times_cache"][2]
+
     def at(self, lat: float, lon: float, t: datetime) -> Optional[Dict[str, Any]]:
         if not self.samples or not self.times:
             return None
@@ -119,7 +131,7 @@ class ForecastCube:
             t = t.replace(tzinfo=timezone.utc)
         t_iso = to_iso(t)
         # time index: linear between two lead times
-        times = [parse_iso(x) for x in self.times]
+        times = self._parsed_times()
         if t <= times[0]:
             ti, tw = 0, 0.0
         elif t >= times[-1]:
@@ -165,7 +177,7 @@ class ForecastCube:
             spd = math.hypot(u, v) * 1.943844
             direc = (math.degrees(math.atan2(-u, -v)) + 360) % 360
 
-        lead = (t - parse_iso(self.issued_at)).total_seconds() / 3600.0
+        lead = (t - self._issued_dt()).total_seconds() / 3600.0
         return {
             "speedKnots": round(spd, 2),
             "dirFromDeg": round(direc, 1),

@@ -59,6 +59,8 @@ jobs:
   simulator:
     name: simulateur — tests JS, build, pytest
     runs-on: ubuntu-latest
+    # Un test qui ne rend pas la main doit échouer vite, pas bloquer 6 h.
+    timeout-minutes: 20
     needs: changes
     if: needs.changes.outputs.simulator == 'true'
     defaults:

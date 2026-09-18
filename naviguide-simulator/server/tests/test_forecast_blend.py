@@ -44,6 +44,20 @@ def test_empty_cube_falls_back_honest():
     assert far["kind"] == "climatology"
 
 
+def test_cache_only_mode_never_calls_the_atlas(monkeypatch):
+    def boom(*_a, **_k):
+        raise AssertionError("network call inside the isochrone loop")
+
+    monkeypatch.setattr("climatology_atlas.fetch_atlas_point", boom)
+    t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
+    far = blended_wind(-40.0, 80.0, t0 + timedelta(days=20), t0, None, atlas_network=False)
+    assert far["kind"] == "climatology"
+    assert far["source"] == "zone_fallback"
+    from forecast_blend import make_wind_fn
+    fn = make_wind_fn(t0, None, atlas_network=False)
+    assert fn(-40.0, 80.0, t0 + timedelta(days=20))["kind"] == "climatology"
+
+
 def test_cube_memory_under_80mo():
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
     cube = build_synthetic_cube(_route(), t0)

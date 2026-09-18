@@ -22,6 +22,24 @@ def test_iberia_land_crossing_blocked():
     assert not is_path_clear(38.0, -10.5, 38.0, -6.0)
 
 
+def test_is_land_matches_global_land_mask_grid():
+    """Direct grid indexing must answer exactly like the library (1 km mask)."""
+    import isochrone as iso
+    if not iso._USE_GLOBAL_LAND_MASK:
+        return
+    from global_land_mask import globe
+    points = [
+        (46.15, -1.16),   # La Rochelle harbour mouth
+        (46.16, -1.15),   # town
+        (45.0, -5.0),     # Bay of Biscay
+        (38.0, -6.0),     # inland Spain
+        (14.6, -61.07),   # Fort-de-France
+        (0.0, 0.0), (-89.99, 179.99), (89.99, -179.99), (90.0, 180.0), (-90.0, -180.0),
+    ]
+    for lat, lon in points:
+        assert iso.is_land(lat, lon) == bool(globe.is_land(lat, lon)), (lat, lon)
+
+
 def test_short_leg_arrives_or_splices():
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
     searoute = [(46.15, -1.16), (46.10, -2.0), (46.00, -3.2)]
