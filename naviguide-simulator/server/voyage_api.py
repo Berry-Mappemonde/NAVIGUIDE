@@ -48,6 +48,7 @@ from voyage_clock import (
 )
 from voyage_store import load_voyage, purge_stale_voyages, save_voyage, update_voyage
 from weather_pipeline import get_pipeline
+import voyage_journal as journal
 
 log = logging.getLogger("naviguide-simulator.voyage")
 router = APIRouter()
@@ -180,6 +181,14 @@ def _fill_forecast(voyage_id: str) -> None:
 
 def _is_official(voyage_id: str) -> bool:
     return voyage_id == OFFICIAL_VOYAGE_ID
+
+
+def _journal_safely(fn) -> None:
+    """Le journal ne casse jamais une lecture publique."""
+    try:
+        fn()
+    except Exception as exc:  # defensive
+        log.warning("journal officiel: %s", exc)
 
 
 def _public_meta(voy: dict) -> dict:
@@ -385,7 +394,9 @@ def _kick_official_grib(
 
     def _load():
         try:
-            maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=force)
+            record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=force)
+            # Mémoire : le vent du cycle au bateau entre au journal (une fois par cycle).
+            _journal_safely(lambda: journal.record_grib(record, (load_voyage(OFFICIAL_VOYAGE_ID) or {}).get("clock"), target_when))
         except Exception as exc:  # defensive: the request that started us has already returned
             log.warning("rafraîchissement GRIB officiel: %s", exc)
         return {}
@@ -479,7 +490,51 @@ def get_official_clock():
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
+    _journal_safely(lambda: journal.tick(voy, _now()))
     return voy.get("clock") or _climo_clock(voy)
+
+
+class JournalNoteIn(BaseModel):
+    text: str
+    author: Optional[str] = None
+    lang: Optional[str] = "fr"
+    t: Optional[str] = None
+
+
+@router.get("/voyage/official/journal")
+def get_official_journal(limit: int = Query(50, ge=1, le=500)):
+    """La mémoire du voyage officiel : jours disponibles + dernières entrées."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is not None:
+        _journal_safely(lambda: journal.tick(voy, _now()))
+    return {"voyageId": OFFICIAL_VOYAGE_ID, **journal.summary(limit)}
+
+
+@router.get("/voyage/official/journal/{day}")
+def get_official_journal_day(day: str):
+    try:
+        entries = journal.read_day(day)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not entries:
+        raise HTTPException(404, "aucune entrée ce jour")
+    return {"voyageId": OFFICIAL_VOYAGE_ID, "day": day, "entries": entries}
+
+
+@router.post("/voyage/official/journal/note", dependencies=[Depends(require_admin)])
+def post_official_journal_note(body: JournalNoteIn):
+    """Mot du skipper / de l'équipe — la seule écriture humaine du journal."""
+    when = _now()
+    if body.t:
+        try:
+            when = parse_iso(body.t)
+        except Exception as exc:
+            raise HTTPException(400, f"t invalide: {exc}") from exc
+    try:
+        entry = journal.add_note(body.text, when, author=body.author or "skipper", lang=body.lang or "fr")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return entry
 
 
 def _grib_around_from_live(voy: Optional[dict], when: datetime) -> Optional[dict]:
@@ -542,6 +597,7 @@ def official_at(t: Optional[str] = Query(None)):
         raise HTTPException(404, "voyage officiel absent")
     clock = voy.get("clock") or _climo_clock(voy)
     when = parse_iso(t) if t else _now()
+    _journal_safely(lambda: journal.tick(voy, _now()))
     sample = sample_clock_at_time(clock, when)
     if sample is None:
         raise HTTPException(404, "horloge vide")
@@ -581,6 +637,7 @@ def get_official_grib(
 ):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     when = parse_iso(t) if t else _now()
+    _journal_safely(lambda: journal.tick(voy, _now()))
     around = _resolve_grib_around(voy, when, lat, lon)
     record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
     if record is None and around:

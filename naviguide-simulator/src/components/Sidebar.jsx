@@ -1,13 +1,15 @@
 import { memo, useEffect, useState } from "react";
-import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Square, Trash2, Volume2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { ViewModeSwitch } from "./ViewModeSwitch.jsx";
+import { JournalPanel } from "./JournalPanel.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
+import { canSpeak, speak, stopSpeaking } from "../utils/speak.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
@@ -208,6 +210,36 @@ function BriefingText({ segments, onFocus, t }) {
   });
 }
 
+/** « Écouter » — le briefing lu à voix haute par le navigateur (zéro LLM). */
+function ListenButton({ text, t, lang }) {
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(() => () => stopSpeaking(), []);
+  if (!canSpeak() || !text) return null;
+  const toggle = () => {
+    if (speaking) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    const ok = speak(text, lang, { onEnd: () => setSpeaking(false) });
+    setSpeaking(ok);
+  };
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      data-testid="briefing-listen"
+      aria-pressed={speaking}
+      title={speaking ? t("briefingListenStop") : t("briefingListen")}
+      className={`ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border transition-colors
+        ${speaking ? "bg-sky-600/40 text-sky-100 border-sky-400/40" : "bg-slate-700/60 text-slate-200 border-white/10 hover:bg-slate-600/60"}`}
+    >
+      {speaking ? <Square size={10} /> : <Volume2 size={10} />}
+      {speaking ? t("briefingListenStop") : t("briefingListen")}
+    </button>
+  );
+}
+
 export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
@@ -222,8 +254,9 @@ export const Sidebar = memo(function Sidebar({
   clockSample = null, kindLabel = "", atQuay = false, quayDays = 0,
   previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
+  journal = null, journalLoading = false, journalError = null,
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -338,6 +371,11 @@ export const Sidebar = memo(function Sidebar({
                   {skipperNotice}
                 </p>
               ) : null}
+              {!briefingLoading && briefing ? (
+                <div className="flex items-center mb-1">
+                  <ListenButton text={briefing} t={t} lang={lang} />
+                </div>
+              ) : null}
               <p
                 data-testid="ici-briefing"
                 className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
@@ -373,6 +411,10 @@ export const Sidebar = memo(function Sidebar({
             onGoLive={onGoLive}
           />
           <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
+
+          {isSuivre && !isDrawing ? (
+            <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
+          ) : null}
 
           {officialFallback && (
             <p className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded-md px-2 py-1">
