@@ -18,7 +18,7 @@ from climatology_zones import zone_wind_at
 
 
 def bi_base() -> str:
-    return (os.getenv("BI_API_URL") or "http://127.0.0.1:8001/api").rstrip("/")
+    return (os.getenv("BI_API_URL") or "https://blueintelligence.online/api").rstrip("/")
 
 log = logging.getLogger("naviguide-simulator.atlas")
 

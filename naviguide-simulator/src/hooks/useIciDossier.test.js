@@ -17,6 +17,10 @@ describe("useIciDossier contract", () => {
     assert.match(src, /judgeEvents/);
     assert.match(src, /along,/);
     assert.match(src, /enqueueStory/);
+    assert.match(src, /orders = null/);
+    assert.match(src, /orders,\n\s+lang,/);
+    assert.match(src, /judgeEvents\(withPhrase, \{[\s\S]*?orders,[\s\S]*?\}\)/);
+    assert.match(src, /Changing orders never rewinds/);
     assert.doesNotMatch(src, /await enqueueStory|await fetch\(.*chat|Nemotron|Token Factory/);
     assert.doesNotMatch(src, /tavily\?|nvidia\?/);
   });

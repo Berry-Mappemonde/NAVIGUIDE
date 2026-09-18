@@ -40,6 +40,17 @@ function isEn(lang) {
   return lang === "en";
 }
 
+function wrapLongToken(text) {
+  if (text == null || text === "") return "";
+  return String(text).replace(/([_/.-])/g, "$1\u200b");
+}
+
+function isOverlandLeg(_dossier, mark) {
+  const from = String(mark?.from || "");
+  const to = String(mark?.to || "");
+  return /saint-maur/i.test(from) && /la\s*rochelle/i.test(to);
+}
+
 function hostOf(url) {
   if (!url || typeof url !== "string") return null;
   try {
@@ -64,6 +75,10 @@ function listPlaces(items, lang, max = 3) {
 
 function formatEta(hours, lang) {
   if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
+  if (hours >= 48) {
+    const days = Math.round(hours / 24);
+    return isEn(lang) ? `${days} d` : `${days} j`;
+  }
   if (hours < 1) {
     const m = Math.max(1, Math.round(hours * 60));
     return isEn(lang) ? `${m} min` : `${m} min`;
@@ -237,9 +252,10 @@ function satelliteSentence(dossier, lang) {
   if (scene) {
     const when = scene.datetime ? String(scene.datetime).slice(0, 10) : "";
     const product = scene.product || "Sentinel";
+    const sceneId = scene.id ? ` ${wrapLongToken(scene.id)}` : "";
     return en
-      ? `Satellite (kind observation${when ? `, ${when}` : ""}): ${product}${scene.id ? ` ${scene.id}` : ""}${missing.length ? `; derived ${missing.join(", ")}` : ""}.`
-      : `Satellite (kind observation${when ? `, ${when}` : ""}) : ${product}${scene.id ? ` ${scene.id}` : ""}${missing.length ? ` ; dérivés ${missing.join(", ")}` : ""}.`;
+      ? `Satellite (kind observation${when ? `, ${when}` : ""}): ${product}${sceneId}${missing.length ? `; derived ${missing.join(", ")}` : ""}.`
+      : `Satellite (kind observation${when ? `, ${when}` : ""}) : ${product}${sceneId}${missing.length ? ` ; dérivés ${missing.join(", ")}` : ""}.`;
   }
   const reason = s.reason || "null";
   return en
@@ -254,6 +270,11 @@ function weatherSentence(dossier, lang) {
   const wind = w.wind;
   const wave = w.wave;
   if (!wind && !wave) {
+    if (w.status === "pending") {
+      return en
+        ? "Weather (kind forecast): loading."
+        : "Météo (kind forecast) : chargement.";
+    }
     return en
       ? `Weather (kind forecast): empty (${w.reason || "null"}).`
       : `Météo (kind forecast) : vide (${w.reason || "null"}).`;
@@ -264,7 +285,12 @@ function weatherSentence(dossier, lang) {
       ? `wind ${wind.speedKnots} kn / ${wind.dirFromDeg}°`
       : `vent ${wind.speedKnots} kn / ${wind.dirFromDeg}°`);
   }
-  if (wave?.hs != null) bits.push(`Hs ${wave.hs} m`);
+  if (wave?.hs != null) {
+    const waveBits = [`Hs ${wave.hs} m`];
+    if (wave.dirDeg != null) waveBits.push(`${wave.dirDeg}°`);
+    if (wave.periodS != null) waveBits.push(`${wave.periodS} s`);
+    bits.push(waveBits.join(" / "));
+  }
   if (w.current && w.current.speedKnots != null) {
     const dir = w.current.dirToDeg;
     bits.push(en
@@ -422,10 +448,20 @@ export function phraseForEvent(ev, lang = "fr") {
         ? `${rain}Refuge: ${port}${nm != null ? ` at ${nm} nm` : ""}.`
         : `${rain}Repli : ${port}${nm != null ? ` à ${nm} nm` : ""}.`;
     }
-    case "depth-alert":
+    case "depth-alert": {
+      // Skipper wording: shelf (Coastal / Cruise) or grounding (Ocean). Never "haut-fond" for a 15 m shelf.
+      if (p.label && Number.isFinite(p.alertM)) {
+        const head = p.label === "talonnage"
+          ? (en ? "Grounding risk" : "Risque de talonner")
+          : (en ? "Approaching the shelf" : "On approche du plateau");
+        return en
+          ? `${head}: ${p.depthM} m sounded, under ${p.alertM} m (${p.source || "DTM"}, kind: observation; not for navigation).`
+          : `${head} : ${p.depthM} m sondés, sous ${p.alertM} m (${p.source || "DTM"}, kind: observation ; ne convient pas à la navigation).`;
+      }
       return en
         ? `Shallow sounding ${p.depthM} m (${p.source || "DTM"}, kind: observation; not for navigation).`
         : `Haut-fond ${p.depthM} m (${p.source || "DTM"}, kind: observation ; ne convient pas à la navigation).`;
+    }
     case "group": {
       if (en && ev.digest?.en) return ev.digest.en;
       if (!en && ev.digest?.fr) return ev.digest.fr;
@@ -456,14 +492,23 @@ function legSentence(dossier, lang) {
       : `Le bateau reste à quai${quay ? ` à ${quay}` : ""} pendant le transfert aérien.`;
   }
   const to = mark?.to;
-  const speed = Number.isFinite(polar.speedKnots) ? polar.speedKnots : null;
+  const from = mark?.from;
+  const overland = isOverlandLeg(dossier, mark);
+  const speed = !overland && Number.isFinite(polar.speedKnots) ? polar.speedKnots : null;
   const eta = formatEta(polar.etaHours, lang);
   const boat = polar.boat;
   const bits = [];
-  if (to && (speed != null || eta)) {
-    bits.push(en
-      ? `This leg toward ${to}${speed != null ? `: ${speed} knots` : ""}${eta ? `, still ${eta} at sea` : ""}.`
-      : `Cette jambe vers ${to}${speed != null ? ` : ${speed} nœuds` : ""}${eta ? `, encore ${eta} de mer` : ""}.`);
+  const pair = from && to ? `${from} → ${to}` : (to || from || "");
+  if (pair && (speed != null || eta || overland)) {
+    if (overland) {
+      bits.push(en
+        ? `This leg ${pair}${eta ? `, still ${eta} overland` : ""} (not yet at sea).`
+        : `Cette jambe ${pair}${eta ? `, encore ${eta} à terre` : ""} (pas encore en mer).`);
+    } else {
+      bits.push(en
+        ? `This leg ${pair}${speed != null ? `: ${speed} knots` : ""}${eta ? `, still ${eta} at sea` : ""}.`
+        : `Cette jambe ${pair}${speed != null ? ` : ${speed} nœuds` : ""}${eta ? `, encore ${eta} de mer` : ""}.`);
+    }
   } else if (speed != null) {
     bits.push(en ? `Boat speed on this leg: ${speed} knots.` : `Vitesse sur cette jambe : ${speed} nœuds.`);
   }
@@ -503,6 +548,8 @@ function climatologySentence(dossier, lang) {
   else if (zone) bits.push(en ? `zone wind ${zone.speedKnots} kn / ${zone.dirFromDeg}°` : `vent de zone ${zone.speedKnots} kn / ${zone.dirFromDeg}°`);
   if (wave?.hs_p50_m != null) bits.push(`Hs P50 ${wave.hs_p50_m} m`);
   if (wave?.hs_p90_m != null) bits.push(`Hs P90 ${wave.hs_p90_m} m`);
+  if (wave?.period_s != null) bits.push(en ? `Tp ${wave.period_s} s` : `Tp ${wave.period_s} s`);
+  if (wave?.dir_deg != null) bits.push(en ? `Hs dir ${wave.dir_deg}°` : `Hs dir ${wave.dir_deg}°`);
   if (cur && cur.speed_knots != null) {
     const dir = cur.direction_to_deg;
     bits.push(en
@@ -525,6 +572,7 @@ function climatologySentence(dossier, lang) {
   }
   const period = c.period || point.period;
   const doi = c.doi?.wind || point.doi?.wind;
+  const provenance = c.provenance?.wind || point.provenance?.wind;
   const head = src === "atlas"
     ? (en
       ? `CMEMS atlas (kind climatology, month ${month}`
@@ -535,6 +583,10 @@ function climatologySentence(dossier, lang) {
   const tail = [];
   if (period) tail.push(en ? `period ${period}` : `période ${period}`);
   if (doi) tail.push(`DOI ${doi}`);
+  else if (provenance) {
+    const product = String(provenance).split("·")[0].trim();
+    if (product) tail.push(en ? `source ${product}` : `source ${product}`);
+  }
   return `${head}${tail.length ? `, ${tail.join(", ")}` : ""})${bits.length ? ` : ${bits.join(" · ")}.` : "."}`;
 }
 

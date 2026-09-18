@@ -10,6 +10,7 @@ import { judgeEvents } from "../engine/displayJudge.js";
 import { narrateIci, phraseForEvent } from "../engine/iciBriefing.js";
 import { promoteLaterAtPlayhead, upsertLedger } from "../engine/iciAlong.js";
 import { enqueueStory, shouldEnqueueStory, storyPayload, subscribeStories } from "../engine/storyQueue.js";
+import { WEATHER_POLL_MS, fetchWeatherForecast } from "./weatherSnapshot.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
@@ -27,6 +28,8 @@ function legKey(jambe) {
  * One step = one GET /ici. No chat, no Tavily.
  * Detectors + judge run on the bag already collected. Never await a model.
  * enqueueStory is fire-and-forget (NIM → OR → Claude).
+ * `orders` (skipper) feed detectors + judge locally, without a new GET /ici.
+ * Changing orders never rewinds: pastilles already in the ledger stay as judged.
  */
 export function useIciDossier({
   enabled,
@@ -54,6 +57,7 @@ export function useIciDossier({
   gribStatus = null,
   skipperClickId = null,
   along = null,
+  orders = null,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -184,6 +188,35 @@ export function useIciDossier({
   }, [enabled, boat?.lat, boat?.lon, month, destLat, destLon, currentLeg]);
 
   useEffect(() => {
+    if (!remote || remote.weather?.status !== "pending") return undefined;
+    const lat = remote.at?.lat;
+    const lon = remote.at?.lon;
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return undefined;
+    let cancelled = false;
+    const tick = () => {
+      fetchWeatherForecast(lat, lon, { api: API_URL })
+        .then((wx) => {
+          if (cancelled || !wx) return;
+          setRemote((prev) => {
+            if (!prev || prev.at?.lat !== lat || prev.at?.lon !== lon) return prev;
+            return {
+              ...prev,
+              weather: wx,
+              sources: { ...prev.sources, weather: wx.source ?? prev.sources?.weather },
+            };
+          });
+        })
+        .catch(() => {});
+    };
+    const id = setInterval(tick, WEATHER_POLL_MS);
+    tick();
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [remote?.weather?.status, remote?.at?.lat, remote?.at?.lon]);
+
+  useEffect(() => {
     if (!remote) {
       setTick({ events: [], briefing: null });
       return;
@@ -210,6 +243,8 @@ export function useIciDossier({
       gribWind,
       gribStatus,
       legId: currentLeg || null,
+      orders,
+      lang,
       airHop: jambe?.vehicle === "plane"
         || jambe?.phase === "air-out"
         || jambe?.phase === "air-return",
@@ -235,6 +270,7 @@ export function useIciDossier({
       profile: playbackProfile,
       skipperClickId,
       mode,
+      orders,
     });
     ledgerRef.current = promoteLaterAtPlayhead(
       upsertLedger(ledgerRef.current, judged.judged.map((ev) => ({
@@ -298,6 +334,7 @@ export function useIciDossier({
     currentLeg,
     jambe?.vehicle,
     jambe?.phase,
+    orders,
   ]);
 
   const dossier = useMemo(() => {

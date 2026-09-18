@@ -14,6 +14,7 @@ import {
   GALE_KT,
   RAIN_MM_H,
 } from "./eventRules.js";
+import { resolveOrders } from "./skipperOrders.js";
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "eventRules.js"), "utf8");
 
@@ -337,5 +338,129 @@ describe("detectEvents wx / marina / depth", () => {
     assert.deepEqual(types(r), ["depth-alert"]);
     assert.equal(r.events[0].payload.source, "emodnet");
     assert.equal(r.events[0].kind, "observation");
+  });
+});
+
+describe("skipper orders drive the thresholds (S2)", () => {
+  const coastal = resolveOrders({ profile: "coastal" }, { mode: "suivre" });
+  const cruise = resolveOrders({ profile: "cruise" }, { mode: "suivre" });
+  const ocean = resolveOrders({ profile: "ocean" }, { mode: "suivre" });
+
+  it("without orders every event is detected under Cruise and says so", () => {
+    const a = bag({ weather: forecastWind(12, 200, { hs: 1.2 }) });
+    const b = bag({ weather: forecastWind(12, 200, { hs: 3.5 }) });
+    const r = run([{ at: a, ctx: { cumNm: 0 } }, { at: b, ctx: { cumNm: 4 } }]);
+    const hs = r.events.find((e) => e.type === "hs-shift");
+    assert.equal(hs.skipper.profile, "cruise");
+    assert.ok(hs.skipper.used.some((u) => u.id === "hsAlertM" && u.value === 3.5));
+    assert.equal(hs.payload.alertM, 3.5);
+  });
+
+  it("Coastal speaks at 2.5 m where Cruise stays quiet; Ocean waits for 5 m", () => {
+    const a = bag({ weather: forecastWind(12, 200, { hs: 1.9 }) });
+    const b = bag({ weather: forecastWind(12, 200, { hs: 2.7 }) });
+    const steps = (orders) => [{ at: a, ctx: { cumNm: 0, orders } }, { at: b, ctx: { cumNm: 4, orders } }];
+    const quiet = run(steps(cruise));
+    assert.ok(!types(quiet).includes("hs-shift"));
+    const early = run(steps(coastal));
+    const hs = early.events.find((e) => e.type === "hs-shift");
+    assert.ok(hs, "coastal fires hs-shift");
+    assert.equal(hs.payload.alert, true);
+    assert.equal(hs.payload.alertM, 2.5);
+    assert.equal(hs.skipper.profile, "coastal");
+    assert.ok(hs.skipper.used.some((u) => u.id === "hsAlertM" && u.value === 2.5));
+    const oceanBig = run([
+      { at: bag({ weather: forecastWind(12, 200, { hs: 2.0 }) }), ctx: { cumNm: 0, orders: ocean } },
+      { at: bag({ weather: forecastWind(12, 200, { hs: 4.6 }) }), ctx: { cumNm: 4, orders: ocean } },
+    ]);
+    const oh = oceanBig.events.find((e) => e.type === "hs-shift");
+    assert.ok(oh, "ocean still notes the +2.6 m shift");
+    assert.equal(oh.payload.alert, false, "4.6 m is under the 5.0 m Ocean alert");
+    assert.ok(!types(oceanBig).includes("wx-alert"));
+  });
+
+  it("Coastal speaks at +6 kn where Cruise waits for +8 kn (denser pills on the same leg)", () => {
+    const a = bag({ weather: forecastWind(10, 240) });
+    const plus6 = bag({ weather: forecastWind(16, 240) });
+    const cruise6 = run([{ at: a, ctx: { cumNm: 0, orders: cruise } }, { at: plus6, ctx: { cumNm: 4, orders: cruise } }]);
+    assert.ok(!types(cruise6).includes("wind-shift"));
+    const coastal6 = run([{ at: a, ctx: { cumNm: 0, orders: coastal } }, { at: plus6, ctx: { cumNm: 4, orders: coastal } }]);
+    const ws = coastal6.events.find((e) => e.type === "wind-shift");
+    assert.ok(ws, "coastal fires wind-shift at +6 kn");
+    assert.ok(ws.skipper.used.some((u) => u.id === "windShiftKt" && u.value === 6 && u.source === "usage"));
+  });
+
+  it("Ocean ignores the +8 kn step and needs the WMO +16 kn squall", () => {
+    const a = bag({ weather: forecastWind(10, 240) });
+    const plus8 = bag({ weather: forecastWind(18, 240) });
+    const plus16 = bag({ weather: forecastWind(26, 240) });
+    const cruise8 = run([{ at: a, ctx: { cumNm: 0, orders: cruise } }, { at: plus8, ctx: { cumNm: 4, orders: cruise } }]);
+    assert.ok(types(cruise8).includes("wind-shift"));
+    const ocean8 = run([{ at: a, ctx: { cumNm: 0, orders: ocean } }, { at: plus8, ctx: { cumNm: 4, orders: ocean } }]);
+    assert.ok(!types(ocean8).includes("wind-shift"));
+    const ocean16 = run([{ at: a, ctx: { cumNm: 0, orders: ocean } }, { at: plus16, ctx: { cumNm: 4, orders: ocean } }]);
+    const ws = ocean16.events.find((e) => e.type === "wind-shift");
+    assert.ok(ws);
+    assert.ok(ws.skipper.used.some((u) => u.id === "windShiftKt" && u.value === 16 && u.source === "wmo"));
+  });
+
+  it("gale 34 kn is identical in the three profiles", () => {
+    const a = bag({ weather: forecastWind(20, 200) });
+    const b = bag({ weather: forecastWind(34, 200) });
+    for (const orders of [coastal, cruise, ocean]) {
+      const r = run([{ at: a, ctx: { cumNm: 0, orders } }, { at: b, ctx: { cumNm: 5, orders } }]);
+      const gale = r.events.find((e) => e.type === "wind-gale");
+      assert.ok(gale, `${orders.profile} fires wind-gale at 34 kn`);
+      assert.deepEqual(
+        gale.skipper.used.map((u) => [u.id, u.value, u.source]),
+        [["galeKt", 34, "beaufort"], ["galeHoldKt", 28, "beaufort"]],
+      );
+    }
+    const under = bag({ weather: forecastWind(33, 200) });
+    for (const orders of [coastal, cruise, ocean]) {
+      const r = run([{ at: a, ctx: { cumNm: 0, orders } }, { at: under, ctx: { cumNm: 5, orders } }]);
+      assert.ok(!types(r).includes("wind-gale"));
+    }
+  });
+
+  it("depth: Coastal shelf at 8 m, Cruise shelf at 15 m, Ocean grounding at 5 m", () => {
+    const at12 = bag({ emodnet: { kind: "observation", bathy: { depth_m: 12.4 } } });
+    const at6 = bag({ emodnet: { kind: "observation", bathy: { depth_m: 6.2 } } });
+    const at4 = bag({ emodnet: { kind: "observation", bathy: { depth_m: 4.1 } } });
+    const one = (at, orders) => run([{ at, ctx: { cumNm: 20, orders } }]);
+    assert.deepEqual(types(one(at12, cruise)), ["depth-alert"]);
+    assert.equal(one(at12, cruise).events[0].payload.label, "plateau");
+    assert.deepEqual(types(one(at12, coastal)), []);
+    assert.deepEqual(types(one(at6, coastal)), ["depth-alert"]);
+    assert.equal(one(at6, coastal).events[0].payload.alertM, 8);
+    assert.deepEqual(types(one(at6, ocean)), []);
+    const ground = one(at4, ocean).events[0];
+    assert.equal(ground.type, "depth-alert");
+    assert.equal(ground.payload.label, "talonnage");
+    assert.deepEqual(ground.skipper.used.map((u) => [u.id, u.value]), [["depthAlertM", 5]]);
+  });
+
+  it("Simulation never cites rain, Suivre refuge follows the profile radius", () => {
+    const at = bag({
+      nearby: { marinas: [{ name: "Port des Minimes", nm: 20 }], capitaineries: [], wpi: [] },
+    });
+    const cruiseSim = resolveOrders({ profile: "cruise" }, { mode: "simulation" });
+    const sim = run([{ at, ctx: { rainMm: 9, cumNm: 10, clockMin: 60, orders: cruiseSim } }], { mode: "simulation" });
+    assert.ok(!types(sim).includes("marina-refuge"));
+    const far = run([{ at, ctx: { rainMm: 9, cumNm: 10, clockMin: 60, orders: coastal } }]);
+    assert.ok(!types(far).includes("marina-refuge"), "20 nm is beyond the 15 nm coastal refuge");
+    const near = run([{ at, ctx: { rainMm: 9, cumNm: 10, clockMin: 60, orders: cruise } }]);
+    const refuge = near.events.find((e) => e.type === "marina-refuge");
+    assert.ok(refuge);
+    assert.deepEqual(refuge.skipper.used.map((u) => u.id), ["rainMmH", "rain3hMm", "marinaRefugeNm"]);
+    assert.ok(refuge.skipper.used.every((u) => typeof u.value === "number"));
+  });
+
+  it("keeps the Cruise export constants for the tests of E1", () => {
+    assert.equal(cruise.values.hsAlertM, 3.5);
+    assert.equal(cruise.values.depthAlertM, 15);
+    assert.equal(cruise.values.windShiftKt, WIND_SHIFT_KT);
+    assert.equal(cruise.values.galeKt, GALE_KT);
+    assert.equal(cruise.values.rainMmH, RAIN_MM_H);
   });
 });

@@ -9,6 +9,7 @@ import {
   AIR_CALENDAR_HOURS,
   DEFAULT_PORT_DAYS,
   DEFAULT_T0_ISO,
+  simulationT0Iso,
   OFFICIAL_VOYAGE_ID,
   SAINT_MAUR_LAND_HOURS,
   buildVoyageClock,
@@ -263,6 +264,16 @@ describe("parseDepartureUtc", () => {
 describe("U0 horloge officielle", () => {
   it("t0 = 15 mai 2026 08:00 UTC, pas le 1er juin", () => {
     assert.equal(DEFAULT_T0_ISO, "2026-05-15T08:00:00.000Z");
+    assert.equal(simulationT0Iso(new Date("2026-09-17T20:46:00.000Z")), "2026-09-17T08:00:00.000Z");
+    const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../App.jsx"), "utf8");
+    const clockHook = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../hooks/useVoyageClock.js"), "utf8");
+    assert.match(clockHook, /DEFAULT_T0_ISO/);
+    assert.match(clockHook, /simulationT0Iso\(\)/);
+    assert.match(clockHook, /mode === "suivre" \? DEFAULT_T0_ISO : simT0/);
+    assert.match(clockHook, /setT0: setSimT0/);
+    assert.match(app, /mode: isSuivre \? "suivre" : "simulation"/);
+    assert.doesNotMatch(app, /voyage\.setT0\(simulationT0Iso\(\)\)/);
+    assert.doesNotMatch(app, /voyage\.setT0\(DEFAULT_T0_ISO\)/);
     assert.equal(OFFICIAL_VOYAGE_ID, "berry-mappemonde-2026-officiel");
     assert.deepEqual(splitDepartureUtc(DEFAULT_T0_ISO), { date: "2026-05-15", time: "08:00" });
     assert.deepEqual(splitDepartureUtc(""), { date: "2026-05-15", time: "08:00" });

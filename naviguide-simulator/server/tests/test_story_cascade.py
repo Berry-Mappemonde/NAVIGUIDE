@@ -3,7 +3,7 @@ from pathlib import Path
 
 import httpx
 
-from story_cascade import build_prompt, need_page, slim_event, write_story
+from story_cascade import build_prompt, has_skipper_orders, need_page, slim_event, write_story
 
 
 def test_source_forbids_nemotron_and_tavily():
@@ -38,6 +38,53 @@ def test_prompt_mentions_online_url_only_when_asked():
     _, user2 = build_prompt({"event": "amp-ahead", "lang": "fr"}, "https://cabrera.es/v")
     assert "https://cabrera.es/v" in user2
     assert "Ne cherche pas le monde" in user2
+
+
+SKIPPER = {
+    "profile": "cruise",
+    "profile_phrase": "Ordres Berry — croisière.",
+    "comfort": "normal",
+    "boat": {"name": "Leopard 46", "loaM": 14, "draftM": 1.4},
+    "used": [
+        {"id": "hsAlertM", "value": 3.5, "unit": "m", "source": "usage",
+         "rule": "constante Croisière E1 3,5 m"},
+    ],
+}
+
+
+def test_has_skipper_orders_needs_used_values():
+    assert has_skipper_orders({"skipper": SKIPPER}) is True
+    assert has_skipper_orders({"skipper": {"profile": "cruise", "used": []}}) is False
+    assert has_skipper_orders({"skipper": None}) is False
+    assert has_skipper_orders({}) is False
+    assert has_skipper_orders(None) is False
+
+
+def test_prompt_cites_the_skipper_thresholds_only_when_present():
+    body = {"event": "hs-shift", "lang": "fr", "payload": {"hs": 3.6}, "skipper": SKIPPER}
+    system, user = build_prompt(body, None)
+    assert "CE skipper" in system
+    assert "skipper.used" in system
+    assert "N’invente pas d’autre chiffre" in system
+    assert "Thinking OFF" in system
+    assert '"hsAlertM"' in user
+    assert "3.5" in user
+    assert "constante Croisière E1 3,5 m" in user
+
+    system_en, _ = build_prompt({**body, "lang": "en"}, None)
+    assert "THIS skipper" in system_en
+    assert "skipper.used" in system_en
+
+    plain, _ = build_prompt({"event": "hs-shift", "lang": "fr", "payload": {"hs": 3.6}}, None)
+    assert "skipper.used" not in plain
+    assert "CE skipper" not in plain
+
+
+def test_slim_event_keeps_skipper_used_and_tavily_null():
+    out = slim_event({"event": "hs-shift", "tavily": "nope", "skipper": SKIPPER})
+    assert out["tavily"] is None
+    assert out["skipper"]["used"][0]["value"] == 3.5
+    assert out["skipper"]["boat"]["name"] == "Leopard 46"
 
 
 def _chat_ok(text="Récit court de la ZEE.", model="openai/gpt-oss-20b"):

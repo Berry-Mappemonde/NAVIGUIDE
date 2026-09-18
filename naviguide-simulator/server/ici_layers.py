@@ -106,10 +106,14 @@ def empty_satellites() -> dict:
 def empty_weather() -> dict:
     return {
         "kind": "forecast",
+        "status": "absent",
+        "refreshing": False,
         "source": None,
         "reason": None,
         "issued": None,
         "model": None,
+        "cycle": None,
+        "cell": None,
         "wind": None,
         "wave": None,
         "current": None,
@@ -682,95 +686,183 @@ async def fetch_rtofs_current(
     return bag, None
 
 
-async def fetch_weather_forecast(
-    client: httpx.AsyncClient,
-    lat: float,
-    lon: float,
-) -> dict:
-    bag = empty_weather()
-    issued = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+class WeatherFetchError(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _sync_weather_client(timeout: float = 8.0) -> httpx.Client:
+    from weather_pipeline import weather_http_transport
+    kwargs: dict[str, Any] = {"timeout": timeout}
+    transport = weather_http_transport()
+    if transport is not None:
+        kwargs["transport"] = transport
+    return httpx.Client(**kwargs)
+
+
+def load_openmeteo_gfs(lat: float, lon: float) -> dict:
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    wind = None
-    wave = None
-    wind_err = None
-    try:
-        r = await client.get(
-            OPEN_METEO_FORECAST,
-            params={
-                "latitude": f"{lat:.4f}",
-                "longitude": f"{lon:.4f}",
-                "current": "wind_speed_10m,wind_direction_10m",
-                "wind_speed_unit": "kn",
-                "models": "gfs_global",
-                "timezone": "UTC",
-            },
-            headers=headers,
-            timeout=8.0,
-        )
-        r.raise_for_status()
-        cur = (r.json() or {}).get("current") or {}
-        if cur.get("wind_speed_10m") is not None:
-            wind = {
-                "kind": "forecast",
-                "source": "openmeteo-gfs",
-                "speedKnots": float(cur["wind_speed_10m"]),
-                "dirFromDeg": float(cur.get("wind_direction_10m") or 0),
-                "time": cur.get("time"),
-            }
-    except Exception as exc:
-        wind_err = f"openmeteo_unavailable:{type(exc).__name__}"
-    try:
-        r = await client.get(
-            OPEN_METEO_MARINE,
-            params={
-                "latitude": f"{lat:.4f}",
-                "longitude": f"{lon:.4f}",
-                "current": "wave_height,wave_direction,wave_period",
-                "models": "ncep_gfswave025",
-                "timezone": "UTC",
-            },
-            headers=headers,
-            timeout=8.0,
-        )
-        r.raise_for_status()
-        cur = (r.json() or {}).get("current") or {}
-        if cur.get("wave_height") is not None:
-            wave = {
-                "kind": "forecast",
-                "source": "openmeteo-gfs-wave",
-                "hs": float(cur["wave_height"]),
-                "dirDeg": cur.get("wave_direction"),
-                "periodS": cur.get("wave_period"),
-                "time": cur.get("time"),
-            }
-    except Exception:
-        wave = None
-    current, current_reason = await fetch_rtofs_current(client, lat, lon)
+    with _sync_weather_client() as client:
+        try:
+            r = client.get(
+                OPEN_METEO_FORECAST,
+                params={
+                    "latitude": f"{lat:.4f}",
+                    "longitude": f"{lon:.4f}",
+                    "current": "wind_speed_10m,wind_direction_10m",
+                    "wind_speed_unit": "kn",
+                    "models": "gfs_global",
+                    "timezone": "UTC",
+                },
+                headers=headers,
+            )
+            r.raise_for_status()
+            cur = (r.json() or {}).get("current") or {}
+        except httpx.HTTPStatusError:
+            raise WeatherFetchError("openmeteo_unavailable:HTTPStatusError") from None
+        except WeatherFetchError:
+            raise
+        except Exception as exc:
+            raise WeatherFetchError(f"openmeteo_unavailable:{type(exc).__name__}") from exc
+    if cur.get("wind_speed_10m") is None:
+        raise WeatherFetchError("openmeteo_empty")
+    return {
+        "kind": "forecast",
+        "source": "openmeteo-gfs",
+        "speedKnots": float(cur["wind_speed_10m"]),
+        "dirFromDeg": float(cur.get("wind_direction_10m") or 0),
+        "time": cur.get("time"),
+    }
+
+
+def load_openmeteo_gfs_wave(lat: float, lon: float) -> dict:
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    with _sync_weather_client() as client:
+        try:
+            r = client.get(
+                OPEN_METEO_MARINE,
+                params={
+                    "latitude": f"{lat:.4f}",
+                    "longitude": f"{lon:.4f}",
+                    "current": "wave_height,wave_direction,wave_period",
+                    "models": "ncep_gfswave025",
+                    "timezone": "UTC",
+                },
+                headers=headers,
+            )
+            r.raise_for_status()
+            cur = (r.json() or {}).get("current") or {}
+        except Exception:
+            return {}
+    if cur.get("wave_height") is None:
+        return {}
+    return {
+        "kind": "forecast",
+        "source": "openmeteo-gfs-wave",
+        "hs": float(cur["wave_height"]),
+        "dirDeg": cur.get("wave_direction"),
+        "periodS": cur.get("wave_period"),
+        "time": cur.get("time"),
+    }
+
+
+def load_rtofs_current(lat: float, lon: float) -> dict:
+    async def _run():
+        from weather_pipeline import weather_http_transport
+        kwargs: dict[str, Any] = {"timeout": 10.0}
+        transport = weather_http_transport()
+        if transport is not None:
+            kwargs["transport"] = transport
+        async with httpx.AsyncClient(**kwargs) as client:
+            current, reason = await fetch_rtofs_current(client, lat, lon)
+            return {"current": current, "current_reason": reason}
+
+    return asyncio.run(_run())
+
+
+def _product_from_snapshot(part: dict, keys: tuple[str, ...]) -> dict | None:
+    if part.get("status") != "ready":
+        return None
+    if not any(part.get(key) is not None for key in keys):
+        return None
+    out = {}
+    for key in ("kind", "source", *keys, "time"):
+        if key in part:
+            out[key] = part[key]
+    return out or None
+
+
+def compose_ici_weather(group: dict) -> dict:
+    bag = empty_weather()
+    bag["status"] = group.get("status") or "pending"
+    bag["refreshing"] = bool(group.get("refreshing"))
+    bag["cycle"] = group.get("cycle")
+    bag["cell"] = group.get("cell")
+    bag["issued"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    wind_p = group.get("wind") or {}
+    wave_p = group.get("wave") or {}
+    curr_p = group.get("current") or {}
+    wind = _product_from_snapshot(wind_p, ("speedKnots", "dirFromDeg"))
+    wave = _product_from_snapshot(wave_p, ("hs", "dirDeg", "periodS"))
+    current = curr_p.get("current") if curr_p.get("status") == "ready" else None
+    current_reason = curr_p.get("current_reason") if curr_p.get("status") == "ready" else None
+    if curr_p.get("status") == "error" and not current_reason:
+        current_reason = f"rtofs_unavailable:{curr_p.get('reason') or 'Error'}"
+    bag["wind"] = wind
+    bag["wave"] = wave
+    bag["current"] = current
+    bag["current_reason"] = current_reason
+    if bag["status"] == "pending":
+        bag["reason"] = None
+        bag["source"] = None
+        return bag
     if not wind and not wave and current is None:
-        bag["reason"] = wind_err or "openmeteo_empty"
-        bag["source"] = "openmeteo" if wind_err else "noaa-rtofs"
-        bag["current"] = None
-        bag["current_reason"] = current_reason
+        reason = None
+        if wind_p.get("status") == "error":
+            reason = wind_p.get("reason") or "openmeteo_unavailable:Error"
+        elif wind_p.get("reason"):
+            reason = wind_p["reason"]
+        bag["reason"] = reason or "openmeteo_empty"
+        bag["source"] = "openmeteo" if reason else "noaa-rtofs"
         return bag
     models = []
     if wind or wave:
         models.append("GFS 0.25° / GFS-Wave 0.25° (Open-Meteo)")
     if current:
         models.append("RTOFS Global 1/12°")
-    bag.update({
-        "kind": "forecast",
-        "source": "openmeteo-gfs+noaa-rtofs" if (wind or wave) and current else (
-            "noaa-rtofs" if current else "openmeteo-gfs"
-        ),
-        "reason": None,
-        "issued": issued,
-        "model": " + ".join(models) if models else "Open-Meteo",
-        "wind": wind,
-        "wave": wave,
-        "current": current,
-        "current_reason": current_reason,
-    })
+    bag["reason"] = None
+    bag["source"] = "openmeteo-gfs+noaa-rtofs" if (wind or wave) and current else (
+        "noaa-rtofs" if current else "openmeteo-gfs"
+    )
+    bag["model"] = " + ".join(models) if models else "Open-Meteo"
     return bag
+
+
+def snapshot_ici_weather(lat: float, lon: float, *, when=None) -> dict:
+    from weather_pipeline import get_pipeline
+    group = get_pipeline().snapshot_group(
+        (
+            ("wind", "openmeteo-gfs", lambda: load_openmeteo_gfs(lat, lon)),
+            ("wave", "openmeteo-gfs-wave", lambda: load_openmeteo_gfs_wave(lat, lon)),
+            ("current", "noaa-rtofs", lambda: load_rtofs_current(lat, lon)),
+        ),
+        lat,
+        lon,
+        when=when,
+    )
+    return compose_ici_weather(group)
+
+
+async def fetch_weather_forecast(
+    client: httpx.AsyncClient,
+    lat: float,
+    lon: float,
+) -> dict:
+    from weather_pipeline import bind_weather_transport
+    if client is not None:
+        bind_weather_transport(getattr(client, "_transport", None))
+    return snapshot_ici_weather(lat, lon)
 
 
 def _depth_from_emodnet_payload(payload: dict | None) -> dict | None:
@@ -796,6 +888,21 @@ def _depth_from_emodnet_payload(payload: dict | None) -> dict | None:
         "on_land": on_land,
         "raw": raw,
     }
+
+
+SEABED_LABEL_KEYS = (
+    "substrate", "SUBSTRATE", "folk_5", "FOLK_5", "folk_7", "FOLK_7",
+    "gray_cin", "GRAY_CIN", "folk5", "class", "CLASS", "sediment",
+    "SEDIMENT", "substrate_class",
+)
+
+
+def _seabed_label(props: dict) -> str | None:
+    for key in SEABED_LABEL_KEYS:
+        val = props.get(key)
+        if val not in (None, ""):
+            return str(val)
+    return None
 
 
 def _gfi_properties(payload: Any) -> dict | None:
@@ -897,18 +1004,12 @@ async def fetch_emodnet_point(
         )
         props = _gfi_properties(raw)
         if props:
-            label = (
-                props.get("substrate")
-                or props.get("SUBSTRATE")
-                or props.get("folk_5")
-                or props.get("FOLK_5")
-                or props.get("gray_cin")
-                or props.get("GRAY_CIN")
-            )
+            label = _seabed_label(props)
             seabed = {
                 "kind": "observation",
                 "source": "emodnet-geology",
                 "label": label,
+                "reason": None if label else "no_substrate_class",
                 "properties": {k: props[k] for k in list(props)[:8]},
             }
         else:
@@ -1047,21 +1148,21 @@ async def fetch_noaa_aids(
     return found[:MAX_ATON]
 
 
-async def fetch_overpass_aton(
+def _overpass_latlon(el: dict) -> tuple[float, float] | None:
+    lat = el.get("lat")
+    lon = el.get("lon")
+    if lat is None or lon is None:
+        center = el.get("center") or {}
+        lat, lon = center.get("lat"), center.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    return float(lat), float(lon)
+
+
+async def _overpass_elements(
     client: httpx.AsyncClient,
-    bbox: tuple[float, float, float, float],
-    lat: float,
-    lon: float,
-    haversine_nm,
-) -> tuple[list[dict], str | None]:
-    west, south, east, north = bbox
-    query = (
-        f"[out:json][timeout:12];"
-        f'(node["seamark:type"~"^(light|light_major|light_minor|buoy|buoy_lateral|'
-        f'buoy_cardinal|buoy_special_purpose|beacon|beacon_lateral|beacon_cardinal)$"]'
-        f"({south:.5f},{west:.5f},{north:.5f},{east:.5f}););"
-        f"out body 20;"
-    )
+    query: str,
+) -> tuple[list, str | None]:
     last_err = None
     for url in OVERPASS_ENDPOINTS:
         try:
@@ -1078,11 +1179,157 @@ async def fetch_overpass_aton(
             r.raise_for_status()
             data = r.json() if r.content else {}
             elements = data.get("elements") if isinstance(data, dict) else []
-            return aton_from_overpass(elements or [], lat, lon, haversine_nm), None
+            return list(elements or []), None
         except Exception as exc:
             last_err = type(exc).__name__
             continue
     return [], f"overpass_unavailable:{last_err or 'error'}"
+
+
+def is_harbour_master(tags: dict | None) -> bool:
+    tags = tags or {}
+    return (
+        tags.get("office") == "harbour_master"
+        or tags.get("seamark:building:function") == "harbour_master"
+        or tags.get("harbour") == "harbour_master"
+    )
+
+
+def harbour_masters_from_overpass(
+    elements: list,
+    lat0: float,
+    lon0: float,
+    haversine_nm,
+    limit: int = 3,
+) -> list[dict]:
+    found = []
+    for el in elements or []:
+        tags = el.get("tags") or {}
+        if not is_harbour_master(tags):
+            continue
+        pos = _overpass_latlon(el)
+        if pos is None:
+            continue
+        lat, lon = pos
+        name = tags.get("name") or tags.get("seamark:name") or tags.get("official_name")
+        if not name:
+            continue
+        found.append({
+            "name": str(name)[:120],
+            "lat": round(lat, 5),
+            "lon": round(lon, 5),
+            "nm": round(haversine_nm(lat0, lon0, lat, lon), 1),
+            "source": "osm-overpass",
+        })
+    found.sort(key=lambda x: x["nm"])
+    return found[:limit]
+
+
+GENERIC_ANCHORAGE_NAMES = {"anchorage", "anchor_berth", "mooring"}
+
+
+def _anchorage_type(tags: dict) -> str | None:
+    seamark = str(tags.get("seamark:type") or "")
+    if seamark in ("anchorage", "anchor_berth", "mooring"):
+        return seamark
+    if tags.get("leisure") == "anchorage":
+        return "anchorage"
+    return None
+
+
+def anchorages_from_overpass(
+    elements: list,
+    lat0: float,
+    lon0: float,
+    haversine_nm,
+    limit: int = 5,
+) -> list[dict]:
+    found = []
+    for el in elements or []:
+        tags = el.get("tags") or {}
+        kind = _anchorage_type(tags)
+        if not kind:
+            continue
+        pos = _overpass_latlon(el)
+        if pos is None:
+            continue
+        lat, lon = pos
+        named = tags.get("name") or tags.get("seamark:name")
+        name = named or tags.get("seamark:anchorage:category") or kind
+        found.append({
+            "name": str(name)[:120],
+            "lat": round(lat, 5),
+            "lon": round(lon, 5),
+            "nm": round(haversine_nm(lat0, lon0, lat, lon), 1),
+            "anchorage_type": kind,
+            "source": "osm-overpass",
+            "_named": bool(named),
+        })
+    found.sort(key=lambda x: (0 if x["_named"] else 1, x["nm"]))
+    out = found[:limit]
+    for item in out:
+        item.pop("_named", None)
+    return out
+
+
+async def fetch_overpass_harbours(
+    client: httpx.AsyncClient,
+    lat: float,
+    lon: float,
+    radius_nm: float,
+    haversine_nm,
+    max_capitaineries: int = 3,
+    max_anchorages: int = 5,
+) -> tuple[list[dict], list[dict]]:
+    """One Overpass call: harbour_master + named OSM anchorages around the boat."""
+    radius_nm = min(float(radius_nm or 15.0), 15.0)
+    around = f"(around:{int(radius_nm * 1852)},{lat:.5f},{lon:.5f})"
+    parts = []
+    if max_capitaineries:
+        parts.extend((
+            f'nwr["office"="harbour_master"]{around};',
+            f'nwr["seamark:building:function"="harbour_master"]{around};',
+            f'nwr["harbour"="harbour_master"]{around};',
+        ))
+    if max_anchorages:
+        parts.extend((
+            f'nwr["seamark:type"="anchorage"]{around};',
+            f'nwr["seamark:type"="anchor_berth"]{around};',
+            f'nwr["leisure"="anchorage"]{around};',
+        ))
+    if not parts:
+        return [], []
+    query = f"[out:json][timeout:20];({''.join(parts)});out center tags;"
+    elements, _err = await _overpass_elements(client, query)
+    return (
+        harbour_masters_from_overpass(
+            elements, lat, lon, haversine_nm, max_capitaineries,
+        ),
+        anchorages_from_overpass(
+            elements, lat, lon, haversine_nm, max_anchorages,
+        ),
+    )
+
+
+async def fetch_overpass_aton(
+    client: httpx.AsyncClient,
+    bbox: tuple[float, float, float, float],
+    lat: float,
+    lon: float,
+    haversine_nm,
+) -> tuple[list[dict], str | None]:
+    west, south, east, north = bbox
+    query = (
+        f"[out:json][timeout:12];"
+        f'(node["seamark:type"~"^(light|light_major|light_minor|buoy|buoy_lateral|'
+        f'buoy_cardinal|buoy_special_purpose|beacon|beacon_lateral|beacon_cardinal)$"]'
+        f"({south:.5f},{west:.5f},{north:.5f},{east:.5f}););"
+        f"out body 20;"
+    )
+    elements, err = await _overpass_elements(client, query)
+    if err:
+        return [], err
+    return aton_from_overpass(elements, lat, lon, haversine_nm), None
 
 
 async def fetch_aton(

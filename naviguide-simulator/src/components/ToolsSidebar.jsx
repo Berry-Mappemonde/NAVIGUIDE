@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { SkipperOrdersPanel } from "./SkipperOrdersPanel.jsx";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
@@ -129,6 +130,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   isLightMode, onLightModeChange,
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
+  skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
+  skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -300,6 +303,18 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               </div>
             )}
           </div>
+
+          {skipperOrders && (
+            <SkipperOrdersPanel
+              orders={skipperOrders}
+              profile={skipperProfile}
+              onProfile={onSkipperProfile}
+              onReset={onSkipperReset}
+              suggest={skipperSuggest}
+              onAcceptSuggest={onSkipperSuggestAccept}
+              onDismissSuggest={onSkipperSuggestDismiss}
+            />
+          )}
         </div>
       </div>
     </>

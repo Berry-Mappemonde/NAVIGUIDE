@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/simulator-ensure-dev.sh",
+        "timeout": 90
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": ".cursor/hooks/simulator-request-open.sh",
+        "timeout": 60
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/simulator-mark-edited.sh"
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": ".cursor/hooks/simulator-open-browser.sh",
+        "timeout": 60
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/simulator-open-browser.sh",
+        "timeout": 60
+      }
+    ]
+  }
+}

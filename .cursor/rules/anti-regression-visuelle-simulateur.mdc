@@ -1,0 +1,39 @@
+---
+description: Anti-régression des fonctionnalités visuelles du simulateur NAVIGUIDE vs main
+globs: naviguide-simulator/src/**
+alwaysApply: true
+---
+
+# Anti-régression visuelle (simulateur)
+
+`main` est le **plancher** de l’UI `naviguide-simulator/`. Une tâche moteur, météo ou API **n’autorise pas** à retirer, cacher, vider ou désactiver une surface visible sur `main`.
+
+Avant de modifier le JSX/CSS, comparer :
+
+`git diff main -- naviguide-simulator/src/App.jsx naviguide-simulator/src/components naviguide-simulator/src/map`
+
+## Surfaces à garder joignables (si présentes sur `main` ou déjà sur la branche)
+
+- Carte + overlays (GRIB, ZEE, ports, balisage, couches BI, bathy, fonds, câbles, climo)
+- Sidebar gauche : logos, Berry / route dessin, départ, calques, **Suivre / Simulation**
+- Tools droite : polar / VMG, export, **ordres skipper**
+- Barre film, horloge, playhead, légende escales
+- Popup satellite : onglets **Vent / Vagues / Courants** + chiffres
+- Marqueurs (catamaran, avion), fiches couche, dialogue recomput, modal not-for-nav
+
+## Interdit (sauf demande explicite de l’utilisateur)
+
+```text
+# BAD — « simplifier » en coupant l’UI
+retirer un onglet satellite, le switch Suivre/Simulation, la film bar
+conditionner tout un panneau à un nouveau status (pending) au point qu’il disparaisse
+refaire le layout d’un composant main pour coller à un chantier backend
+```
+
+```text
+# GOOD — ajouter sans enlever
+status pending sous les onglets Vent/Vagues/Courants déjà là
+nouveau champ dans un panneau existant, mêmes boutons et mêmes routes
+```
+
+Si le diff vs `main` touche l’UI sans que l’utilisateur l’ait demandé : **remettre** la surface, ne pas « remplacer » par une version allégée.

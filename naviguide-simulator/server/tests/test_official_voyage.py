@@ -105,21 +105,25 @@ def test_grib_get_returns_pending_and_kicks_shared_refresh(client, monkeypatch):
 
 
 def test_grib_kick_deduplicates_active_thread(monkeypatch):
-    class Thread:
-        def __init__(self, **kwargs):
-            self.started = False
+    import threading
 
-        def start(self):
-            self.started = True
+    from weather_pipeline import get_pipeline
 
-        def is_alive(self):
-            return self.started
+    started = threading.Event()
+    release = threading.Event()
 
-    monkeypatch.setattr(voyage_api.threading, "Thread", Thread)
-    monkeypatch.setattr(voyage_api, "_grib_refresh_thread", None)
+    def _load(*_args, **_kwargs):
+        started.set()
+        release.wait(1)
+        return None
+
+    get_pipeline().clear()
+    monkeypatch.setattr(voyage_api, "maybe_refresh_official", _load)
 
     assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is True
+    assert started.wait(1)
     assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is False
+    release.set()
 
 
 def test_grib_refresh_without_voyage_uses_latest_around(client, tmp_path):

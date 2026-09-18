@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { expeditionBoatKnots, trueWindAngle } from "../engine/playSpeeds.js";
 import { lerpSeries } from "../engine/routeWindProfile.js";
 import { polarBoatSpeed } from "../engine/polarSpeed.js";
+import { pollWeatherUntil } from "./weatherSnapshot.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? import.meta.env.VITE_API_URL ?? "";
@@ -64,15 +65,20 @@ export function useExpeditionSpeed({
       const s = sampleRef.current;
       if (!s) return;
       try {
-        const res = await fetch(`${API_URL}/wind`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ latitude: s.lat, longitude: s.lon }),
-        });
-        if (!res.ok) return;
-        const wind = await res.json();
-        const tws = Number(wind.wind_speed_knots);
-        const twa = trueWindAngle(s.bearing, Number(wind.wind_direction));
+        const wind = await pollWeatherUntil(
+          async () => {
+            const res = await fetch(`${API_URL}/wind`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ latitude: s.lat, longitude: s.lon }),
+            });
+            if (!res.ok) throw new Error("wind");
+            return res.json();
+          },
+          (row) => row?.status === "ready" && Number.isFinite(Number(row.wind_speed_knots)),
+        );
+        const tws = Number(wind?.wind_speed_knots);
+        const twa = trueWindAngle(s.bearing, Number(wind?.wind_direction));
         if (!Number.isFinite(tws) || twa == null) return;
         let k = polarBoatSpeed(polarData?.raw, twa, tws);
         if (k == null && polarData.expedition_id) {
