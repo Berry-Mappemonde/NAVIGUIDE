@@ -153,6 +153,14 @@ function markerIcon(className, html) {
  * Every object is registered once and follows an explicit add/update/remove
  * lifecycle until `dispose()` tears the scene down.
  */
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export class MapSceneController {
   static mount(container, callbacks) {
     const map = L.map(container, {
@@ -228,7 +236,64 @@ export class MapSceneController {
         seek: (nm, options) => this.playback.seek(nm, options),
         setProfile: (profile) => this.playback.setProfile(profile),
       },
+      briefing: {
+        focus: (place, boat) => this.focusBriefingPlace(place, boat),
+        clear: () => this.clearBriefingFocus(),
+      },
     };
+  }
+
+  /**
+   * Briefing link "voir sur la carte": pin the named place, draw a dashed line
+   * from the boat, and fit both in view. Counts as a manual navigation so the
+   * camera does not snap back to the boat until the skipper recaptures it.
+   */
+  focusBriefingPlace(place, boat) {
+    const lat = Number(place?.lat);
+    const lon = Number(place?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+    this.clearBriefingFocus();
+    const group = L.layerGroup();
+    const label = String(place.name || "").slice(0, 60);
+    const icon = L.divIcon({
+      className: "briefing-focus-pin",
+      html: `<div class="briefing-focus-dot"></div><div class="briefing-focus-label">${escapeHtml(label)}</div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+    L.marker([lat, lon], { icon, pane: "briefing-focus", interactive: false, keyboard: false }).addTo(group);
+    const bounds = L.latLngBounds([[lat, lon]]);
+    const bLat = Number(boat?.lat);
+    const bLon = Number(boat?.lon);
+    if (Number.isFinite(bLat) && Number.isFinite(bLon)) {
+      L.polyline([[bLat, bLon], [lat, lon]], {
+        pane: "briefing-focus",
+        color: "#7dd3fc",
+        weight: 1.5,
+        dashArray: "4 6",
+        opacity: 0.9,
+        interactive: false,
+      }).addTo(group);
+      bounds.extend([bLat, bLon]);
+    }
+    group.addTo(this.map);
+    this.briefingFocus = group;
+    this.userNavigated = true;
+    this.callbacks.onManualNavigation?.();
+    this.programmaticMove(() => this.map.fitBounds(bounds.pad(0.35), {
+      paddingTopLeft: [340, 60],
+      paddingBottomRight: [340, 120],
+      maxZoom: 13,
+      animate: true,
+    }));
+    return true;
+  }
+
+  clearBriefingFocus() {
+    if (this.briefingFocus) {
+      this.briefingFocus.remove();
+      this.briefingFocus = null;
+    }
   }
 
   setCallbacks(callbacks) {
@@ -777,6 +842,7 @@ export class MapSceneController {
   }
 
   dispose() {
+    this.clearBriefingFocus();
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);
     this.playback.destroy();

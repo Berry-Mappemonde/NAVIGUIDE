@@ -7,6 +7,7 @@ import { DepartureField } from "./DepartureField.jsx";
 import { ViewModeSwitch } from "./ViewModeSwitch.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
+import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
@@ -161,6 +162,52 @@ function BerryCard({
   );
 }
 
+/**
+ * Briefing with links. Each place the bag named:
+ *   - the name → "voir sur la carte" (layer on + fit boat & place), when it has coordinates
+ *   - ↗ → official sheet (Sextant, douane, marina site…) when the bag has a URL
+ *   - ◎ → Google Maps sheet, for real places (marinas, ports, anchorages, AtoN, PoE)
+ * Plain text is untouched: segments joined === narrateIci().
+ */
+function BriefingText({ segments, onFocus, t }) {
+  return segments.map((seg, i) => {
+    if (!seg.entity) return <span key={i}>{seg.text}</span>;
+    const e = seg.entity;
+    const links = entityLinks(e);
+    const focusable = canFocus(e) && typeof onFocus === "function";
+    return (
+      <span key={i} className="inline whitespace-nowrap" data-testid="briefing-entity" data-kind={e.kind}>
+        {focusable ? (
+          <button
+            type="button"
+            onClick={() => onFocus(e)}
+            title={t("briefingSeeOnMap")}
+            className="inline text-sky-200 underline decoration-dotted decoration-sky-400/70 underline-offset-2 hover:text-white whitespace-normal text-left"
+          >
+            {seg.text}
+          </button>
+        ) : (
+          <span className="text-slate-200">{seg.text}</span>
+        )}
+        {links.map((l) => (
+          <a
+            key={l.kind}
+            href={l.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
+            aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
+            data-testid={`briefing-link-${l.kind}`}
+            className="ml-0.5 text-[10px] text-sky-300/80 hover:text-white align-baseline no-underline"
+          >
+            {l.kind === "site" ? "↗" : "◎"}
+          </a>
+        ))}
+      </span>
+    );
+  });
+}
+
 export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
@@ -168,6 +215,7 @@ export const Sidebar = memo(function Sidebar({
   isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
+  iciBriefingSegments = null, onBriefingFocus,
   skipperNotice = null,
   escaleMarks = [], filmNm = 0, onSeekEscale,
   departureT0, onDepartureT0,
@@ -296,7 +344,9 @@ export const Sidebar = memo(function Sidebar({
               >
                 {briefingLoading
                   ? t("iciBriefingLoading")
-                  : (briefing || t("iciBriefingFallback"))}
+                  : (iciBriefing && iciBriefingSegments?.length
+                    ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
+                    : (briefing || t("iciBriefingFallback")))}
               </p>
             </div>
           )}
