@@ -1,12 +1,26 @@
 # Plan général de développement — NAVIGUIDE simulator
 
 Atelier **`naviguide-simulator/`** (`simulator.naviguide.fr`). Prod `www` et
-Blue Intelligence intouchées. Version **1.0** — 18 septembre 2026.
+Blue Intelligence intouchées. Version **1.1** — 18 septembre 2026 (soir).
 
 Ce plan **chapeaute** les plans d’atelier existants (Suivre / Simulation,
 événements `ici()`, skipper, chantiers structurants, pipeline d’affichage,
 UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 **pourquoi**, après relecture du code du 18 septembre.
+
+> **Arbitrages du porteur (18 sept. 2026, soir)** — tranchés, appliqués ci-dessous :
+> 1. « Histoire dictée » = **lue à voix haute** (voix du navigateur). La saisie
+>    vocale par l’équipage est **reportée**.
+> 2. Fiche d’escale = **liste structurée seule** pour le moment (pas de
+>    rédaction LLM).
+> 3. Sécurité P0 = **secret admin partagé** pour l’instant (compte plus tard).
+> 4. Budget IA : **60 $ de crédit Nebius** disponibles (en plus des 100 $
+>    LangSmith, non engagés).
+> 5. **Ni Tavily, ni Nemotron, ni LangSmith** pour le moment.
+>
+> **Fait depuis la v1.0** : #180 S6/S7, #181 briefing liens + langage naturel,
+> #184 CI simulateur (+ tests hermétiques, `/recompute` 77 s → 4 s) **mergés** ;
+> #185 sécurité P0 et #186 journal serveur + « Écouter » **en PR**.
 
 ---
 
@@ -19,9 +33,10 @@ UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 | Moteur | sac `ici()` 30 nm (14 familles, `kind` honnête, `null + reason`), détecteurs E1 / lookahead E2, juge E3, pastilles E4, récit E5 (NIM → OpenRouter → Claude), ordres skipper S1–S7, pipeline météo async partagé, briefing en langage naturel avec liens |
 | Données | Copernicus Marine, Open-Meteo GFS, RTOFS, Saildocs GRIB2, CDSE STAC, EMODnet, MarineRegions, Overpass, API live Blue Intelligence (ZEE, PoE, AMP, projets, science, atlas climatologie) |
 | Persistance | **JSON sur disque** (`voyage_data/`, 180 Mo en local : voyages + cubes). Pas de base. Rien n’est archivé jour après jour. |
-| Sécurité | **Aucune authentification** sur les écritures : `PUT /voyage/official`, `POST /voyage/official/grib*`, `POST /voyage`, `POST /ici/story` (dépense LLM), `POST /api/v1/polar/upload` (parse PDF / XLSX). CORS `allow_origins=["*"]`. Pas de limite de débit. nginx expose `/voyage` et `/ici` au public. |
-| Tests | 381 JS (`node --test`), ~128 Python ; CI simulateur écrite, **à activer** (jeton `workflow`) |
-| Perf | 60 fps, 0 long task ; coût = rendu React (dev), pas le moteur ; Web Worker inutile |
+| Sécurité | *v1.0 :* aucune authentification sur les écritures, CORS `*`, pas de débit. **v1.1 (PR #185) :** en-tête `X-Naviguide-Admin` (secret partagé) sur GRIB / upload polaire ; `PUT /voyage/official` anonyme = **création si absent, jamais de modification** ; limiteurs par IP (récits 12/min, création 6/min, recalcul 6/min) + `limit_req` nginx ; bornes de payload ; purge des voyages > 7 j ; CORS fermé. |
+| Mémoire | *v1.0 :* rien n’est archivé. **v1.1 (PR #186) :** journal serveur `official_journal/YYYY-MM-DD.json` — positions 00/06/12/18 UTC, escales, GRIB au bateau, notes admin ; lu par `GET /voyage/official/journal` et la section « Journal de bord ». |
+| Tests | 393 JS (`node --test`), 154 Python ; **CI simulateur active** (#184) : `npm test`, build, `pytest` sur toute PR qui touche `naviguide-simulator/`, `timeout-minutes: 20`, tests hermétiques (`BI_API_URL` → port fermé) |
+| Perf | 60 fps, 0 long task ; coût = rendu React (dev), pas le moteur ; Web Worker inutile. **`/recompute` : 77 s → ~4 s** (masque terrestre indexé directement, atlas préchargé en parallèle puis cache seul dans la boucle isochrone). |
 
 **Forces.** Un moteur pur et testé (détecteurs, juge, skipper), une discipline de
 vérité des données rare (`observation ≠ forecast ≠ climatology`, jamais un
@@ -50,13 +65,18 @@ Format : ce qu’on pensait → ce que je recommande après lecture du code.
 *Pensé :* « un PenTest et les tests courants ». *Recommandé :* d’abord fermer
 ce que la relecture montre, ensuite seulement automatiser un scan.
 
-- **P0 (cette semaine)** : un en-tête `X-Naviguide-Admin` (secret dans
-  `~/.config/naviguide/simulator.env`) obligatoire sur `PUT /voyage/official`,
-  `POST /voyage/official/grib*`, et l’acceptation / rejet de voyage ;
-  `limit_req` nginx sur `/ici/story`, `/voyage`, `/api/v1/polar/upload`
-  (ex. 10 / min / IP) ; CORS restreint à `simulator.naviguide.fr` + `localhost` ;
-  taille maximale d’upload polaire (2 Mo) et quota de voyages sur disque
-  (purge des brouillons > 7 jours).
+- **P0 — fait (PR #185)** : en-tête `X-Naviguide-Admin` (secret dans
+  `~/.config/naviguide/simulator.env`, **généré par `deploy-simulator.sh`**
+  s’il manque) obligatoire sur `POST /voyage/official/grib*` et
+  `POST /api/v1/polar/upload` ; `PUT /voyage/official` anonyme ne peut que
+  **créer** un voyage officiel absent (auto-réparation), jamais le modifier ;
+  le voyage officiel n’est jamais recalculé / accepté / rejeté ; limiteurs par
+  IP côté serveur (admin exempté) **et** `limit_req` nginx ; CORS restreint à
+  `simulator.naviguide.fr` + `localhost` ; bornes 6 000 points / 300 escales,
+  polaire ≤ 10 Mo (`client_max_body_size 12m`) ; purge des voyages de
+  Simulation > 7 jours avec leur cube. Fermé par défaut : sans secret derrière
+  nginx → 503, jamais une ouverture silencieuse. Côté navigateur : `?admin=LA_CLE`
+  une fois, ou Outils → « Clé admin ».
 - **P1** : `npm audit --omit=dev` et `pip-audit` dans la CI ; en-têtes
   (CSP, `X-Frame-Options`, HSTS via Cloudflare) ; tests e2e Playwright de
   fumée (ouvrir, Suivre, Simulation, un clic route, un lien briefing).
@@ -74,6 +94,16 @@ leurs récits, sac `ici()` allégé aux escales. Écrit par le refresh GRIB
 quotidien déjà en place (`voyage_api`). Ce journal nourrit : replay, histoire,
 fiche d’escale « vécue », carnet de bord public, évaluations LangSmith.
 
+**Fait (PR #186), v1 :** `voyage_journal.py` — positions 00/06/12/18 UTC
+(`basis: clock`, rétro-remplies depuis le 15 mai), escales franchies, GRIB au
+bateau à chaque cycle (`basis: forecast`), notes admin ; `tick()` borné à
+1 écriture / min, déclenché par les GET publics et le refresh GRIB ; lecture
+publique `GET /voyage/official/journal[/{jour}]` ; section « Journal de bord »
+dans la sidebar (Suivre). **Reste pour la v2 :** les événements jugés et leurs
+récits (aujourd’hui côté client, donc non fiables pour un journal serveur —
+à écrire quand la pré-génération 1.3 les fera naître côté serveur), le sac
+`ici()` allégé aux escales.
+
 ### 1.3 Prélancer les appels LLM
 
 *Pensé :* cache serveur + préchauffage. *Recommandé, plus précis :* l’unité de
@@ -85,6 +115,13 @@ consomme le cache au passage. Les seuls imprévisibles restent le GRIB du jour e
 les scènes satellite : racontés en direct. À mesurer honnêtement : si le récit
 LLM n’apporte pas plus que la phrase locale sur un type d’événement, on garde la
 phrase locale (moins cher, jamais faux).
+
+**Fournisseur :** les **60 $ Nebius** (API compatible OpenAI, modèles ouverts
+type Llama / Qwen / DeepSeek) sont le bon carburant de cette pré-génération :
+un cran dans la cascade `story_cascade.py` entre NIM et OpenRouter, activé par
+`NEBIUS_API_KEY`, pour les récits de jambe rédigés une fois et mis en cache.
+À brancher **avec** ce lot, pas avant (sans cache, on brûlerait le crédit en
+récits jetables).
 
 ### 1.4 Carte du moment (popups le long de la route)
 
@@ -101,8 +138,12 @@ déjà là : pane `briefing-focus`, `MapSceneController.api.briefing`, juge E3.
 par jambe**, rédigé une fois (LLM autorisé : c’est de la rédaction de données
 déjà collectées, 1× par jambe, mis en cache dans le journal), et une page
 publique « carnet de bord ». La voix = `speechSynthesis` du navigateur (gratuit,
-local, zéro LLM), un bouton « écouter » par chapitre. Si « dictée » voulait dire
-*l’équipage dicte* (saisie vocale à bord), c’est un autre produit : à trancher.
+local, zéro LLM), un bouton « écouter » par chapitre.
+
+**Tranché :** lue à voix haute ; la saisie vocale à bord est reportée.
+**Fait (PR #186) :** bouton « Écouter » sur le briefing `ici()` (FR / EN,
+liens et glyphes retirés du texte lu). Les chapitres par jambe viennent avec
+le journal v2 et la pré-génération (1.3).
 
 ### 1.6 Replay de l’expédition
 
@@ -148,8 +189,13 @@ de l’escale (`amenity=fuel`, `drinking_water`, `shop=boat|chandlery`,
 `waterway=boatyard`, `man_made=crane`, `leisure=slipway`, `shop=supermarket`,
 `tourism=*`) — même mécanique que les capitaineries déjà ajoutées. Chaque
 élément garde le contrat du briefing : nom cliquable (carte), ↗ site officiel,
-◎ Google Maps. Rédaction LLM facultative, en cache. C’est le lot le plus
-**visible** pour un visiteur et le plus utile à l’équipage.
+◎ Google Maps. C’est le lot le plus **visible** pour un visiteur et le plus
+utile à l’équipage.
+
+**Tranché :** **liste structurée seule** (gratuit, toujours exact) ; la
+rédaction LLM n’est pas au programme. Lot **L**, non commencé : il touche
+`ici_layers.py` (Overpass), un nouvel endpoint `GET /escale`, un cache 7 jours
+et une carte de sidebar — à prendre comme premier lot de la Phase 2.
 
 ### 1.10 LangSmith (100 $)
 
@@ -190,29 +236,30 @@ Taille : S ≤ 1 jour d’agent, M ≤ 3 jours, L > 3 jours. Une PR par lot.
 
 ### Phase 0 — consolider (cette semaine)
 
-| Lot | Taille | Dépend de |
-|---|---|---|
-| Merger #180 (S6/S7), #181 (briefing liens + langage naturel), #182 (perf légende) | S | recette locale |
-| Activer la CI simulateur (jeton `workflow`, branche `ci/tests-simulateur`) | S | — |
-| **Sécurité P0** : `X-Naviguide-Admin` sur les écritures officielles, `limit_req` nginx, CORS restreint, taille d’upload, purge des brouillons | M | — |
-| Merger la branche LangSmith (mise à jour sur `main`) | S | — |
+| Lot | Taille | Dépend de | Statut |
+|---|---|---|---|
+| Merger #180 (S6/S7), #181 (briefing liens + langage naturel) | S | recette locale | **mergés, déployés** |
+| #182 (perf légende des escales, mémoïsation) | S | — | en PR, à merger |
+| Activer la CI simulateur | S | — | **fait (#184)** — tests hermétiques, `/recompute` 77 s → 4 s |
+| **Sécurité P0** (1.1) | M | — | **en PR (#185)** ; après merge : lire la clé sur le VPS, ouvrir `?admin=` une fois |
+| Merger la branche LangSmith | S | — | **reporté** (décision : pas de LangSmith pour le moment) |
 
 ### Phase 1 — mémoire et fluidité
 
-| Lot | Taille | Dépend de |
-|---|---|---|
-| **Journal serveur** du voyage officiel (1.2) | M | P0 |
-| **Pré-génération des récits** + cache serveur (1.3) | M | journal (Suivre) ; rien (Simulation) |
-| **Carte du moment** sur la carte, surtout en Cinéma (1.4) | S | pré-génération |
-| LangSmith : séance guide + jeu d’évaluation du récit (1.10) | S | — |
+| Lot | Taille | Dépend de | Statut |
+|---|---|---|---|
+| **Journal serveur** du voyage officiel (1.2) v1 | M | P0 | **en PR (#186)**, empilée sur #185 |
+| **Pré-génération des récits** + cache serveur (1.3), cran Nebius dans la cascade | M | journal (Suivre) ; rien (Simulation) | à faire |
+| **Carte du moment** sur la carte, surtout en Cinéma (1.4) | S | pré-génération | à faire |
+| Journal v2 : événements jugés + récits côté serveur, sac `ici()` aux escales | S | pré-génération | à faire |
 
 ### Phase 2 — l’escale et l’histoire
 
-| Lot | Taille | Dépend de |
-|---|---|---|
-| **Fiche d’escale / ravitaillement** (1.9) : endpoint `GET /escale`, Overpass + BI, cache 7 j, carte sidebar | L | liens briefing |
-| **Chapitres de l’expédition** + page carnet de bord + bouton « écouter » (1.5) | M | journal |
-| **Replay Suivre** depuis le journal (1.6) | S | journal |
+| Lot | Taille | Dépend de | Statut |
+|---|---|---|---|
+| **Fiche d’escale** (1.9), **liste structurée seule** : `GET /escale`, Overpass + BI, cache 7 j, carte sidebar | L | liens briefing | à faire — premier lot de la phase |
+| **Chapitres de l’expédition** + page carnet de bord (1.5), « Écouter » par chapitre | M | journal v2 | à faire (« Écouter » sur le briefing : **fait**, #186) |
+| **Replay Suivre** depuis le journal (1.6) | S | journal | à faire |
 
 ### Phase 3 — planifier et router
 
@@ -244,14 +291,20 @@ Taille : S ≤ 1 jour d’agent, M ≤ 3 jours, L > 3 jours. Une PR par lot.
 ## 4. Ce qu’on ne fait pas (pour l’instant)
 
 Web Worker (le profil dit non). Recalcul de la route officielle en Suivre.
-Saisie vocale à bord. Mongo pour le simulateur (le JSON + journal suffit à
-cette échelle). Nemotron / Tavily hors des usages nommés ci-dessus. Un PenTest
-externe avant P0 + P1.
+Saisie vocale à bord (reportée). Mongo pour le simulateur (le JSON + journal
+suffit à cette échelle). **Tavily, Nemotron et LangSmith : rien pour le
+moment** (décision du 18 sept.) — les sections 1.8, 1.10, 1.11 restent des
+options documentées, pas des lots. Rédaction LLM de la fiche d’escale. Un
+PenTest externe avant P0 + P1 (P0 est en PR ; P1 = audits en CI + Playwright).
 
 ---
 
-## 5. Décisions à prendre par le porteur du projet
+## 5. Décisions du porteur du projet — tranchées le 18 sept. 2026
 
-1. « Histoire **dictée** » : lue à voix haute (recommandé) ou dictée par l’équipage ?
-2. Fiche d’escale : rédaction LLM (plus fluide, un coût) ou liste structurée seule (gratuit, toujours exact) ? Recommandation : liste d’abord, rédaction en option.
-3. Sécurité P0 : un secret admin partagé suffit-il, ou faut-il un vrai compte (GitHub OAuth) ? Recommandation : secret partagé maintenant, compte plus tard.
+1. « Histoire **dictée** » → **lue à voix haute** (voix du navigateur). Saisie vocale par l’équipage : plus tard.
+2. Fiche d’escale → **liste structurée seule**. Rédaction LLM : non.
+3. Sécurité P0 → **secret admin partagé** maintenant ; un vrai compte plus tard.
+4. Budget IA → **60 $ Nebius** à réserver à la pré-génération des récits (1.3) ; 100 $ LangSmith non engagés.
+
+Prochaine décision à prendre : l’ordre entre **fiche d’escale (L, très visible)**
+et **pré-génération des récits + carte du moment (M + S, fluidité en Cinéma)**.
