@@ -1314,6 +1314,9 @@ export default function App() {
         skipperOrders={skipper.orders}
         skipperProfile={skipper.profile}
         onSkipperProfile={skipper.setProfile}
+        onSkipperComfort={skipper.setComfort}
+        onSkipperHorizon={skipper.setHorizon}
+        onSkipperExpert={skipper.setExpert}
         onSkipperReset={skipper.reset}
         skipperSuggest={skipper.suggest}
         onSkipperSuggestAccept={skipper.acceptSuggest}
