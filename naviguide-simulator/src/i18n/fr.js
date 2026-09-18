@@ -203,6 +203,14 @@ export default {
   polarUpwind:            "↑ Près",
   polarDownwind:          "↓ Portant",
 
+  // ── Clé admin (sécurité P0) ────────────────────────────────────────────────
+  adminKeyLabel:       "Clé admin",
+  adminKeyPlaceholder: "coller la clé…",
+  adminKeySave:        "OK",
+  adminKeyActive:      "active",
+  adminKeyHint:        "Nécessaire pour modifier la route officielle, le GRIB ou la polaire. Reste dans ce navigateur.",
+  adminKeyRequired:    "Clé admin requise (outils → Clé admin).",
+
   // ── Maritime layers (MaritimeLayersPanel) ─────────────────────────────────
   layerGrib2:      "GRIB2",
   layerGrib2Title: "Dernier GRIB2 — barbules OMM et Hs autour du bateau (Suivre)",

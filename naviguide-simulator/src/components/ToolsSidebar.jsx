@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { adminHeaders, getAdminSecret, setAdminSecret } from "../utils/adminSecret.js";
 import { SkipperOrdersPanel } from "./SkipperOrdersPanel.jsx";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
@@ -27,6 +28,7 @@ async function readPolarResponse(response) {
 
 function polarErrorDetail(error, t) {
   if (error?.code === "DEFAULT_POLAR_NOT_FOUND") return t("polarDefaultUnavailable");
+  if (error?.status === 401 || error?.status === 503) return t("adminKeyRequired");
   if (error?.status === 413) return t("polarFileTooLarge");
   if (error?.status >= 500) {
     return t("polarServiceUnavailable", { status: error.status });
@@ -67,6 +69,50 @@ function PolarVmgRow({ tws, entry }) {
       <td className="py-1 px-1 text-center text-xs text-slate-200">{kts(dw.speed)}</td>
       <td className="py-1 pr-2 pl-1 text-center text-xs font-semibold text-amber-400">{kts(dw.vmg)}</td>
     </tr>
+  );
+}
+
+/**
+ * Sécurité P0 — la clé admin partagée (X-Naviguide-Admin). Sans elle, le
+ * serveur refuse les écritures officielles (route, GRIB, polaire) ; un
+ * visiteur lit tout, n'écrit rien. Stockée dans ce navigateur seulement.
+ */
+function AdminKeyField() {
+  const { t } = useLang();
+  const [value, setValue] = useState(() => getAdminSecret());
+  const [saved, setSaved] = useState(() => Boolean(getAdminSecret()));
+  const commit = () => {
+    setAdminSecret(value);
+    setSaved(Boolean(value.trim()));
+  };
+  return (
+    <div className="bg-slate-800/40 rounded-xl px-3 py-2 border border-slate-700/40" data-testid="admin-key">
+      <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+        <KeyRound size={12} className={saved ? "text-emerald-400" : "text-slate-500"} />
+        <span>{t("adminKeyLabel")}</span>
+        {saved && <span className="ml-auto text-[10px] text-emerald-400">{t("adminKeyActive")}</span>}
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          type="password"
+          autoComplete="off"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
+          placeholder={t("adminKeyPlaceholder")}
+          aria-label={t("adminKeyLabel")}
+          className="flex-1 min-w-0 bg-slate-900/70 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 placeholder:text-slate-600"
+        />
+        <button
+          type="button"
+          onClick={commit}
+          className="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-100"
+        >
+          {t("adminKeySave")}
+        </button>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-500">{t("adminKeyHint")}</p>
+    </div>
   );
 }
 
@@ -186,7 +232,11 @@ export const ToolsSidebar = memo(function ToolsSidebar({
     form.append("file", f);
     form.append("expedition_id", POLAR_EXPEDITION);
     try {
-      const res = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, { method: "POST", body: form });
+      const res = await fetch(`${POLAR_API_URL}/api/v1/polar/upload`, {
+        method: "POST",
+        headers: adminHeaders(),
+        body: form,
+      });
       const data = await readPolarResponse(res);
       onPolarDataLoaded(await polarMetaFromUpload(data));
       setPolarUploadStatus("success");
@@ -303,6 +353,10 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 </table>
               </div>
             )}
+          </div>
+
+          <div className="px-4 pb-3">
+            <AdminKeyField />
           </div>
 
           {skipperOrders && (

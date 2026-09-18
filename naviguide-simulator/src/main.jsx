@@ -8,9 +8,13 @@ import "leaflet/dist/leaflet.css";
 import "./index.css";
 import App from "./App.jsx";
 import { LangProvider } from "./i18n/LangContext.jsx";
+import { captureAdminSecretFromUrl } from "./utils/adminSecret.js";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
+
+// `?admin=…` once → stored in this browser, removed from the address bar.
+captureAdminSecretFromUrl();
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

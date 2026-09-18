@@ -54,6 +54,17 @@ if [ ! -f "$CONF_DIR/simulator.env" ]; then
 fi
 chmod 600 "$CONF_DIR/simulator.env"
 
+# ── Sécurité P0 : secret admin partagé (X-Naviguide-Admin) ──────────────────
+# Sans lui, derrière nginx, les écritures officielles répondent 503 : on en
+# génère un à la première passe. Le lire : grep NAVIGUIDE_ADMIN_SECRET "$CONF_DIR/simulator.env"
+if ! grep -qE '^NAVIGUIDE_ADMIN_SECRET=.+' "$CONF_DIR/simulator.env"; then
+  ADMIN_SECRET="$(openssl rand -hex 32)"
+  printf '\n# généré par deploy-simulator.sh le %s\nNAVIGUIDE_ADMIN_SECRET=%s\n' "$(date -u +%F)" "$ADMIN_SECRET" \
+    >> "$CONF_DIR/simulator.env"
+  echo "🔐 NAVIGUIDE_ADMIN_SECRET généré dans $CONF_DIR/simulator.env"
+  echo "   Sur ton Mac : ouvre https://simulator.naviguide.fr/?admin=<la clé> une fois."
+fi
+
 # ── Frontend: dist/ already built on the Mac / GitHub preferably ───────────
 if [ "$SKIP_FRONTEND_BUILD" = "1" ]; then
   if [ ! -f "$SIM/dist/index.html" ]; then
