@@ -7,7 +7,6 @@ import os
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -18,6 +17,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 _DIR = Path(__file__).resolve().parent
+_SIM_ROOT = _DIR.parent
 if str(_DIR) not in sys.path:
     sys.path.insert(0, str(_DIR))
 
@@ -31,6 +31,7 @@ from mem_limits import (
     lru_set,
     too_large,
 )
+from weather_pipeline import get_pipeline
 from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
 from story_cascade import write_story
 from polar_api import router as polar_router
@@ -38,7 +39,7 @@ from route_engine import searoute_with_exact_end
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
 
-load_dotenv()
+load_dotenv(_SIM_ROOT / ".env")
 
 COPERNICUS_USERNAME = os.getenv("COPERNICUS_USERNAME")
 COPERNICUS_PASSWORD = os.getenv("COPERNICUS_PASSWORD")
@@ -47,10 +48,11 @@ try:
     from copernicus.getWind import get_wind_data_at_position
     from copernicus.getWave import get_wave_data_at_position
     from copernicus.getCurrent import get_current_data_at_position
-except Exception:
+except Exception as exc:
     get_wind_data_at_position = None
     get_wave_data_at_position = None
     get_current_data_at_position = None
+    print(f"⚠️  Copernicus Marine non chargé ({type(exc).__name__}: {exc})")
 
 app = FastAPI(
     title="NAVIGUIDE simulator",
@@ -83,30 +85,39 @@ class PositionRequest(BaseModel):
     longitude: float
 
 
-_WEATHER_CACHE_TTL = 300.0
-_WEATHER_CACHE_MAX = 256
-_WEATHER_CELL_DEG = 0.25
-_weather_cache: dict = {}
-
-
-def _weather_cell(kind: str, lat: float, lon: float) -> tuple[str, int, int]:
-    wrapped_lon = ((float(lon) + 180.0) % 360.0) - 180.0
-    return (
-        kind,
-        math.floor((float(lat) + 90.0) / _WEATHER_CELL_DEG),
-        math.floor((wrapped_lon + 180.0) / _WEATHER_CELL_DEG),
+def _copernicus_ready() -> bool:
+    return bool(
+        COPERNICUS_USERNAME
+        and COPERNICUS_PASSWORD
+        and get_wind_data_at_position
+        and get_wave_data_at_position
+        and get_current_data_at_position
     )
 
 
-def _cached_weather(kind: str, request: PositionRequest, loader) -> dict:
-    key = _weather_cell(kind, request.latitude, request.longitude)
-    now = time.monotonic()
-    hit = _weather_cache.get(key)
-    if hit and now - hit["at"] < _WEATHER_CACHE_TTL:
-        return dict(hit["data"])
-    data = loader(request)
-    lru_set(_weather_cache, key, {"at": now, "data": dict(data)}, max_items=_WEATHER_CACHE_MAX)
-    return data
+def _is_estimated(record: dict | None) -> bool:
+    data = (record or {}).get("data") or {}
+    return bool(data.get("simulation")) or str(data.get("source") or "").startswith("estimated")
+
+
+def _mark_live(data: dict) -> dict:
+    out = dict(data)
+    out.pop("simulation", None)
+    out["source"] = "copernicus-marine"
+    return out
+
+
+def _force_estimated(kind: str, lat: float, lon: float) -> bool:
+    if not _copernicus_ready():
+        return False
+    return _is_estimated(get_pipeline().peek(kind, lat, lon))
+
+
+def _weather_snapshot(kind: str, request: PositionRequest, loader) -> dict:
+    lat, lon = request.latitude, request.longitude
+    return get_pipeline().snapshot(
+        kind, lat, lon, lambda: loader(request), force=_force_estimated(kind, lat, lon),
+    )
 
 
 @app.get("/")
@@ -237,9 +248,9 @@ def _load_wind(request: PositionRequest) -> dict:
                 password=COPERNICUS_PASSWORD,
             )
             if wind_data is not None:
-                return wind_data
-    except Exception:
-        pass
+                return _mark_live(wind_data)
+    except Exception as exc:
+        print(f"⚠️  Copernicus vent: {type(exc).__name__}: {exc}")
     return _sim_wind(request.latitude, request.longitude)
 
 
@@ -253,9 +264,9 @@ def _load_wave(request: PositionRequest) -> dict:
                 password=COPERNICUS_PASSWORD,
             )
             if wave_data is not None:
-                return wave_data
-    except Exception:
-        pass
+                return _mark_live(wave_data)
+    except Exception as exc:
+        print(f"⚠️  Copernicus vague: {type(exc).__name__}: {exc}")
     return _sim_wave(request.latitude, request.longitude)
 
 
@@ -269,39 +280,51 @@ def _load_current(request: PositionRequest) -> dict:
                 password=COPERNICUS_PASSWORD,
             )
             if current_data is not None:
-                return current_data
-    except Exception:
-        pass
+                return _mark_live(current_data)
+    except Exception as exc:
+        print(f"⚠️  Copernicus courant: {type(exc).__name__}: {exc}")
     return _sim_current(request.latitude, request.longitude)
 
 
 @app.post("/wind")
 def get_wind(request: PositionRequest):
-    return _cached_weather("wind", request, _load_wind)
+    return _weather_snapshot("wind", request, _load_wind)
 
 
 @app.post("/wave")
 def get_wave(request: PositionRequest):
-    return _cached_weather("wave", request, _load_wave)
+    return _weather_snapshot("wave", request, _load_wave)
 
 
 @app.post("/current")
 def get_current(request: PositionRequest):
-    return _cached_weather("current", request, _load_current)
+    return _weather_snapshot("current", request, _load_current)
 
 
 @app.post("/weather")
 def get_weather(request: PositionRequest):
-    """Une requête UI, trois produits dédupliqués par cellule."""
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        wind = pool.submit(get_wind, request)
-        wave = pool.submit(get_wave, request)
-        current = pool.submit(get_current, request)
-        return {
-            "wind": wind.result(),
-            "wave": wave.result(),
-            "current": current.result(),
-        }
+    """Réponse immédiate : vent / vague / courant, cache cellule + cycle."""
+    lat, lon = request.latitude, request.longitude
+    force = any(_force_estimated(kind, lat, lon) for kind in ("wind", "wave", "current"))
+    return get_pipeline().snapshot_group(
+        (
+            ("wind", "wind", lambda: _load_wind(PositionRequest(latitude=lat, longitude=lon))),
+            ("wave", "wave", lambda: _load_wave(PositionRequest(latitude=lat, longitude=lon))),
+            ("current", "current", lambda: _load_current(PositionRequest(latitude=lat, longitude=lon))),
+        ),
+        lat,
+        lon,
+        force=force,
+    )
+
+
+@app.get("/weather/forecast")
+def get_forecast_weather(lat: float = Query(...), lon: float = Query(...)):
+    """Sac ICI Open-Meteo + RTOFS, même pipeline (pending immédiat)."""
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "lat/lon hors limites")
+    from ici_layers import snapshot_ici_weather
+    return snapshot_ici_weather(lat, lon)
 
 
 _WPI_CACHE_TTL = 86_400
@@ -309,7 +332,10 @@ _zee_cache: dict = {"entries": {}}
 _ZEE_CACHE_TTL = 86_400
 _VLIZ_WMS = "https://geo.vliz.be/geoserver/MarineRegions/wms"
 _CATALOG_SOURCE_TTL = 900.0
-_CATALOG_UPSTREAM = os.getenv("NAVIGUIDE_CATALOG_UPSTREAM", "http://127.0.0.1:8001/api").rstrip("/")
+_CATALOG_UPSTREAM = os.getenv(
+    "NAVIGUIDE_CATALOG_UPSTREAM",
+    os.getenv("BI_API_URL") or "https://blueintelligence.online/api",
+).rstrip("/")
 _CATALOG_PATHS = {
     "projects": "/export/geojson",
     "marinas": "/export/marinas.geojson",

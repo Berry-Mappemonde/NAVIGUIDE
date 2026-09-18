@@ -5,8 +5,7 @@ import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import NotForNavModal from "./components/NotForNavModal.jsx";
 import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav.js";
-import { WindDirectionArrow } from "./components/map/WindDirectionArrow";
-import { getCardinalDirection } from "./utils/getCardinalDirection.js";
+import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
 import { useLang } from "./i18n/LangContext.jsx";
 import { ITINERARY_POINTS } from "./constants/itineraryPoints";
 import { SimulationFilmBar } from "./components/SimulationFilmBar.jsx";
@@ -18,7 +17,7 @@ import { useVirtualVessel } from "./hooks/useVirtualVessel.js";
 import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
-import { readHs, readWind, sumRainHours } from "./engine/eventRules.js";
+import { sumRainHours } from "./engine/eventRules.js";
 import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
 import { filmEventMarks } from "./engine/iciAlong.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
@@ -37,7 +36,6 @@ import { detectAirEpisodes, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/f
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import {
   DEFAULT_START_AT,
-  DEFAULT_T0_ISO,
   etaHoursToFilmNm,
   formatFilmClockLine,
   formatMonthName,
@@ -71,6 +69,12 @@ import {
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
+import {
+  fetchWeatherComposite,
+  productHasData,
+  satelliteBusy,
+  weatherPollMs,
+} from "./hooks/weatherSnapshot.js";
 import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -282,6 +286,7 @@ export default function App() {
     stops: activeStops,
     windAt: atlasWindAt,
     atlasRev,
+    mode: isSuivre ? "suivre" : "simulation",
   });
   const official = useOfficialExpedition({
     enabled: isSuivre,
@@ -611,24 +616,6 @@ export default function App() {
     orders: skipper.orders,
   });
 
-  // Living example for the skipper panel: what the bag says here, against the orders.
-  const skipperSample = useMemo(() => {
-    const d = iciPack.dossier;
-    if (!d) return null;
-    const ctx = {
-      mode: isSuivre ? "suivre" : "simulation",
-      gribWind: isSuivre && Number.isFinite(official.live?.windKnots)
-        ? { windKnots: official.live.windKnots, dirFromDeg: official.live.dirFromDeg, hs: official.live.hs }
-        : null,
-    };
-    const depth = d.emodnet?.bathy?.depth_m ?? d.depthOffshore;
-    return {
-      tws: readWind(d, ctx)?.tws ?? null,
-      hs: readHs(d, ctx)?.hs ?? null,
-      depthM: Number.isFinite(depth) && Math.abs(depth) >= 1 ? Math.abs(depth) : null,
-    };
-  }, [iciPack.dossier, isSuivre, official.live?.windKnots, official.live?.dirFromDeg, official.live?.hs]);
-
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
 
@@ -691,7 +678,6 @@ export default function App() {
   const selectView = useCallback((next) => {
     setView(next);
     if (next === VIEW_SUIVRE) {
-      voyage.setT0(DEFAULT_T0_ISO);
       voyage.setStartAt(DEFAULT_START_AT);
       sceneApiRef.current?.playback.pause();
       setUserPreview(false);
@@ -714,16 +700,12 @@ export default function App() {
     sceneApi,
     sidebarOpen,
     toolsOpen,
-    voyage.setT0,
     voyage.setStartAt,
   ]);
 
   useEffect(() => {
-    if (isSuivre) {
-      voyage.setT0(DEFAULT_T0_ISO);
-      voyage.setStartAt(DEFAULT_START_AT);
-    }
-  }, [isSuivre, voyage.setT0, voyage.setStartAt]);
+    if (isSuivre) voyage.setStartAt(DEFAULT_START_AT);
+  }, [isSuivre, voyage.setStartAt]);
 
   useEffect(() => {
     if (isSuivre) sceneApiRef.current?.playback.setProfile("real");
@@ -1084,26 +1066,47 @@ export default function App() {
     setSatelliteTab("wind");
     setSelectedSatellite({ lat, lon, ...extra });
     try {
-      const response = await fetch(`${API_URL}/weather`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude: lat, longitude: lon }),
+      const data = await fetchWeatherComposite(lat, lon, {
         signal: controller.signal,
+        api: API_URL,
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const { wind, wave, current } = await response.json();
       if (satelliteRequestRef.current.id !== id) return;
-      setSelectedSatellite((prev) => (prev ? { ...prev, wind, wave, current } : prev));
+      setSelectedSatellite((prev) => (prev ? { ...prev, ...data } : prev));
+      setSatelliteLoading(satelliteBusy(data));
     } catch (err) {
       if (controller.signal.aborted || satelliteRequestRef.current.id !== id) return;
       setSelectedSatellite((prev) => (prev ? { ...prev, error: true } : prev));
+      setSatelliteLoading(false);
     } finally {
       if (satelliteRequestRef.current.id === id) {
         satelliteRequestRef.current.controller = null;
-        setSatelliteLoading(false);
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!selectedSatellite || selectedSatellite.error) return undefined;
+    const lat = selectedSatellite.lat;
+    const lon = selectedSatellite.lon;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
+    const requestId = satelliteRequestRef.current.id;
+    const delay = weatherPollMs(selectedSatellite);
+    const timer = setInterval(() => {
+      const controller = new AbortController();
+      satelliteRequestRef.current.controller?.abort();
+      satelliteRequestRef.current.controller = controller;
+      fetchWeatherComposite(lat, lon, { signal: controller.signal, api: API_URL })
+        .then((data) => {
+          if (satelliteRequestRef.current.id !== requestId) return;
+          setSelectedSatellite((prev) => (
+            prev && prev.lat === lat && prev.lon === lon ? { ...prev, ...data } : prev
+          ));
+          setSatelliteLoading(satelliteBusy(data));
+        })
+        .catch(() => {});
+    }, delay);
+    return () => clearInterval(timer);
+  }, [selectedSatellite?.lat, selectedSatellite?.lon, selectedSatellite?.status, selectedSatellite?.refreshing, selectedSatellite?.error]);
 
   useEffect(() => cancelSatelliteRequest, [cancelSatelliteRequest]);
 
@@ -1312,7 +1315,6 @@ export default function App() {
         skipperProfile={skipper.profile}
         onSkipperProfile={skipper.setProfile}
         onSkipperReset={skipper.reset}
-        skipperSample={skipperSample}
         skipperSuggest={skipper.suggest}
         onSkipperSuggestAccept={skipper.acceptSuggest}
         onSkipperSuggestDismiss={skipper.dismissSuggest}
@@ -1470,7 +1472,7 @@ export default function App() {
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[320px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
+        <div className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
           <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
@@ -1480,29 +1482,20 @@ export default function App() {
               </button>
             ))}
           </div>
-          {satelliteLoading && <p>{t("fetchingSatellite")}</p>}
-          {!satelliteLoading && satelliteTab === "wind" && (
-            selectedSatellite.wind
-              ? (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <WindDirectionArrow direction={selectedSatellite.wind.wind_direction} />
-                    <span>{t("windSpeed")} {selectedSatellite.wind.wind_speed_knots} kt</span>
-                  </div>
-                  <div>{t("windDirection")} {getCardinalDirection(selectedSatellite.wind.wind_direction)}</div>
-                </div>
-              )
-              : <p>{t("noWindData")}</p>
+          {satelliteTab === "wind" && (
+            productHasData(selectedSatellite.wind, "wind")
+              ? <SatelliteMetPanel kind="wind" product={selectedSatellite.wind} t={t} />
+              : <p>{satelliteLoading || selectedSatellite.wind?.status === "pending" ? t("fetchingSatellite") : t("noWindData")}</p>
           )}
-          {!satelliteLoading && satelliteTab === "waves" && (
-            selectedSatellite.wave
-              ? <div>{t("waveHeight")} {selectedSatellite.wave.significant_wave_height_m} m · {t("wavePeriod")} {selectedSatellite.wave.mean_wave_period} s</div>
-              : <p>{t("noWaveData")}</p>
+          {satelliteTab === "waves" && (
+            productHasData(selectedSatellite.wave, "wave")
+              ? <SatelliteMetPanel kind="wave" product={selectedSatellite.wave} t={t} />
+              : <p>{satelliteLoading || selectedSatellite.wave?.status === "pending" ? t("fetchingSatellite") : t("noWaveData")}</p>
           )}
-          {!satelliteLoading && satelliteTab === "currents" && (
-            selectedSatellite.current
-              ? <div>{t("currentSurfaceSpeed")} {selectedSatellite.current.speed_knots} kt</div>
-              : <p>{t("noCurrentData")}</p>
+          {satelliteTab === "currents" && (
+            productHasData(selectedSatellite.current, "current")
+              ? <SatelliteMetPanel kind="current" product={selectedSatellite.current} t={t} />
+              : <p>{satelliteLoading || selectedSatellite.current?.status === "pending" ? t("fetchingSatellite") : t("noCurrentData")}</p>
           )}
           {selectedSatellite.drawPointIndex != null && (
             <div className="mt-2 border-t border-white/10 pt-2">

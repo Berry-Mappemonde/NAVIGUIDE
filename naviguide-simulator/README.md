@@ -12,25 +12,20 @@ EN plan: [`docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/P
 Simulation A (climatology clock): [`docs/PLAN_IMPLEMENTATION_SIMULATION_A.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_A.md)
 Simulation B (virtual boat, after A): [`docs/PLAN_IMPLEMENTATION_SIMULATION_B.md`](../docs/PLAN_IMPLEMENTATION_SIMULATION_B.md)
 
-## Run (macOS, Terminal)
+## Run (macOS)
 
-Two tabs. From this folder:
+**Automatique dans Cursor** (recommandé) : les hooks du projet démarrent API + Vite à l’ouverture de la session ; le navigateur s’ouvre à la fin de chaque réponse agent. Tu codes, tu regardes l’onglet `http://localhost:5174` (rechargement auto).
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r server/requirements.txt
-uvicorn server.main:app --host 127.0.0.1 --port 8010 --reload
-```
-
-Other tab:
+**Manuel** :
 
 ```bash
 cd naviguide-simulator
-npm install
-npm run dev
+bash ensure-dev.sh --open    # tout en arrière-plan
+bash dev-mac.sh              # Vite dans ce terminal
+bash stop-dev.sh             # arrêter
 ```
 
-Open `http://localhost:5174`.
+Merge sur `main` → déploiement CI vers `simulator.naviguide.fr` (voir `.github/workflows/deploy.yml`).
 
 ## Publish on the VPS
 

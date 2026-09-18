@@ -12,6 +12,16 @@ export const SAINT_MAUR_LAND_HOURS = 4;
 export const MIN_BOAT_KNOTS = 0.5;
 export const DEFAULT_T0_ISO = "2026-05-15T08:00:00.000Z";
 export const DEFAULT_START_AT = "la-rochelle";
+
+/** Départ Simulation seulement (éditable). Suivre reste DEFAULT_T0_ISO. */
+export function simulationT0Iso(now = new Date()) {
+  const d = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(d.getTime())) return DEFAULT_T0_ISO;
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}T08:00:00.000Z`;
+}
 export const OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel";
 
 export const DEFAULT_PORT_DAYS = Object.freeze({

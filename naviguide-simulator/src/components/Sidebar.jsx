@@ -279,18 +279,21 @@ export const Sidebar = memo(function Sidebar({
           )}
 
           {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
-            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
-                <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug">
+                <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {briefingTitle}
                 </div>
               ) : null}
               {skipperNotice ? (
-                <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug">
+                <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {skipperNotice}
                 </p>
               ) : null}
-              <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">
+              <p
+                data-testid="ici-briefing"
+                className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
+              >
                 {briefingLoading
                   ? t("iciBriefingLoading")
                   : (briefing || t("iciBriefingFallback"))}

@@ -7,6 +7,7 @@ import {
   mapPool,
   pickProfileSamples,
 } from "../engine/routeWindProfile.js";
+import { pollWeatherUntil } from "./weatherSnapshot.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? import.meta.env.VITE_API_URL ?? "";
@@ -17,16 +18,21 @@ const polarCache = new Map();
 async function fetchWind(lat, lon) {
   const key = cacheKeyLatLon(lat, lon);
   if (windCache.has(key)) return windCache.get(key);
-  const res = await fetch(`${API_URL}/wind`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ latitude: lat, longitude: lon }),
-  });
-  if (!res.ok) throw new Error("wind");
-  const body = await res.json();
+  const body = await pollWeatherUntil(
+    async () => {
+      const res = await fetch(`${API_URL}/wind`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: lat, longitude: lon }),
+      });
+      if (!res.ok) throw new Error("wind");
+      return res.json();
+    },
+    (row) => row?.status === "ready" && Number.isFinite(Number(row.wind_speed_knots)),
+  );
   const wind = {
-    tws: Number(body.wind_speed_knots),
-    from: Number(body.wind_direction),
+    tws: Number(body?.wind_speed_knots),
+    from: Number(body?.wind_direction),
   };
   if (!Number.isFinite(wind.tws)) throw new Error("wind");
   windCache.set(key, wind);

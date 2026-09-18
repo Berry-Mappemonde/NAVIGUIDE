@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { narrateIci, phraseForEvent } from "./iciBriefing.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const FORBIDDEN = /Ports\s*\/\s*Sécurité|AgentPanel|\/agents\/|Cruisers|Nemotron|Tavily/i;
 
@@ -43,13 +48,87 @@ describe("narrateIci", () => {
     assert.match(text, /30 milles/);
     assert.match(text, /Pertuis/);
     assert.match(text, /On vient d’entrer/);
-    assert.match(text, /Fort-de-France/);
+    assert.match(text, /La Rochelle → Fort-de-France/);
     assert.match(text, /7\.2 nœuds/);
+    assert.match(text, /de mer/);
     assert.match(text, /fiches Science/);
     assert.match(text, /sextant/);
     assert.match(text, /argo/);
     assert.doesNotMatch(text, FORBIDDEN);
     assert.doesNotMatch(text, /4500|mappemonde entière|toute la carte/i);
+  });
+
+  it("does not call a sea leg overland just because the boat is in port", () => {
+    const text = narrateIci({
+      zee: { name: "À terre (France)", mrgid: null, gold: false, ashore: true },
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      polar: { boat: "Leopard 46", etaHours: 313.95 },
+      marks: [{
+        kind: "leg",
+        from: "La Rochelle",
+        to: "Ajaccio (Corse)",
+        vehicle: "land",
+      }],
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /La Rochelle → Ajaccio \(Corse\)/);
+    assert.match(text, /13 j de mer/);
+    assert.doesNotMatch(text, /à terre \(pas encore en mer\)/);
+    assert.doesNotMatch(text, /313 h/);
+  });
+
+  it("treats Berry → La Rochelle as overland even if the ZEE bag is empty", () => {
+    const text = narrateIci({
+      zee: null,
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      polar: { etaHours: 4 },
+      marks: [{
+        kind: "leg",
+        from: "Saint-Maur (Berry, Indre)",
+        to: "La Rochelle",
+        vehicle: "main",
+      }],
+      sources: { zee: "error" },
+    }, "fr");
+    assert.match(text, /Saint-Maur \(Berry, Indre\) → La Rochelle/);
+    assert.match(text, /4 h à terre/);
+    assert.match(text, /pas encore en mer/);
+    assert.doesNotMatch(text, /encore 4 h de mer/);
+  });
+
+  it("calls Saint-Maur → La Rochelle overland, not sea time", () => {
+    const id = "S2B_MSIL2A_20260914T105619_N0512_R094_T31TDM_20260914T145142";
+    const text = narrateIci({
+      zee: { name: "À terre (France)", mrgid: null, gold: false, ashore: true },
+      poe: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      polar: { boat: "Leopard 46", etaHours: 4 },
+      marks: [{
+        kind: "leg",
+        from: "Saint-Maur (Berry, Indre)",
+        to: "La Rochelle",
+        vehicle: "land",
+      }],
+      satellites: {
+        kind: "observation",
+        scene: { product: "sentinel-2-l2a", id, datetime: "2026-09-14T10:56:19Z" },
+      },
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /Saint-Maur \(Berry, Indre\) → La Rochelle/);
+    assert.match(text, /4 h à terre/);
+    assert.match(text, /pas encore en mer/);
+    assert.doesNotMatch(text, /encore 4 h de mer/);
+    assert.match(text, /\u200b/);
+    assert.match(text.replace(/\u200b/g, ""), new RegExp(id));
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("keeps the ICI briefing inside the sidebar box", () => {
+    const sidebar = readFileSync(join(here, "../components/Sidebar.jsx"), "utf8");
+    assert.match(sidebar, /ici-briefing/);
+    assert.match(sidebar, /overflow-x-hidden/);
+    assert.match(sidebar, /overflow-wrap:anywhere/);
   });
 
   it("says inland outside the EEZ without inventing ports of entry", () => {
@@ -168,7 +247,7 @@ describe("narrateIci", () => {
         point: {
           kind: "climatology",
           wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } },
-          wave: { hs_p50_m: 1.4, hs_p90_m: 2.8 },
+          wave: { hs_p50_m: 1.4, hs_p90_m: 2.8, period_s: 4.1, dir_deg: 284.6 },
           current: { speed_knots: 0.4, direction_to_deg: 270 },
           cyclone: { crossings_if_leg: { count: 2 } },
         },
@@ -179,6 +258,8 @@ describe("narrateIci", () => {
     assert.match(text, /16\.2 kn/);
     assert.match(text, /Hs P50 1\.4/);
     assert.match(text, /Hs P90 2\.8/);
+    assert.match(text, /Tp 4\.1 s/);
+    assert.match(text, /Hs dir 284\.6/);
     assert.match(text, /courant 0\.4/);
     assert.match(text, /IBTrACS/);
     assert.doesNotMatch(text, /forecast|GRIB/i);
@@ -219,7 +300,7 @@ describe("narrateIci", () => {
         source: "openmeteo-gfs",
         model: "GFS 0.25° / GFS-Wave 0.25° (Open-Meteo)",
         wind: { kind: "forecast", speedKnots: 12.4, dirFromDeg: 280 },
-        wave: { kind: "forecast", hs: 1.1 },
+        wave: { kind: "forecast", hs: 1.1, dirDeg: 270, periodS: 6.5 },
         current: { kind: "forecast", source: "noaa-rtofs", speedKnots: 0.58, dirToDeg: 247 },
         current_reason: null,
       },
@@ -255,6 +336,7 @@ describe("narrateIci", () => {
     assert.match(text, /not_generated/);
     assert.match(text, /kind forecast/);
     assert.match(text, /12\.4 kn/);
+    assert.match(text, /Hs 1\.1 m \/ 270° \/ 6\.5 s/);
     assert.match(text, /0\.58 kn \/ 247° \(RTOFS, kind forecast\)/);
     assert.match(text, /EMODnet/);
     assert.match(text, /18\.4/);
@@ -263,6 +345,19 @@ describe("narrateIci", () => {
     assert.match(text, /vers 270/);
     assert.match(text, /IBTrACS nearby 0/);
     assert.match(text, /Gold oui/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("says weather is loading while the shared pipeline is pending", () => {
+    const text = narrateIci({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
+      weather: { kind: "forecast", status: "pending", refreshing: true, wind: null, wave: null },
+      sources: { zee: "marineregions" },
+    }, "fr");
+    assert.match(text, /kind forecast/);
+    assert.match(text, /chargement/);
+    assert.doesNotMatch(text, /vide/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -301,6 +396,23 @@ describe("narrateIci", () => {
     }, "fr");
     assert.match(text, /courant null \(off_grid\)/);
     assert.doesNotMatch(text, /rtofs_not_ingested/);
+    assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("says fonds null when EMODnet has a map footprint but no Folk class", () => {
+    const text = narrateIci({
+      zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
+      emodnet: {
+        kind: "observation",
+        bathy: { depth_m: 2.3 },
+        seabed: { label: null, reason: "no_substrate_class" },
+        cables: { nearby: false, reason: "no_feature_at_point" },
+      },
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /DTM 2\.3 m/);
+    assert.match(text, /fonds null \(no_substrate_class\)/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 

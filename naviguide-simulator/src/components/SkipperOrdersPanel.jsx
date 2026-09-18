@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { PROFILES, exampleLine } from "../engine/skipperOrders.js";
+import { PROFILES } from "../engine/skipperOrders.js";
 
 const PROFILE_KEY = {
   coastal: "skipperProfileCoastal",
@@ -32,24 +32,19 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
   profile,
   onProfile,
   onReset,
-  sample = null,
   suggest = null,
   onAcceptSuggest,
   onDismissSuggest,
 }) {
   const { lang, t } = useLang();
   if (!orders) return null;
-  const en = lang === "en";
   const T = orders.values;
   const boat = orders.boat;
   const isSuivre = orders.mode === "suivre";
-  const phrase = en ? orders.phrase.en : orders.phrase.fr;
 
   return (
     <div className="px-4 py-3 border-t border-slate-700/60" data-testid="skipper-orders">
-      <div className="text-xs font-semibold text-slate-200 mb-2">{t("skipperOrdersTitle")}</div>
-
-      <div role="group" aria-label={t("skipperOrdersTitle")} className="flex bg-slate-800 rounded-full p-0.5 gap-0.5">
+      <div role="group" aria-label={t("skipperProfileAria")} className="flex bg-slate-800 rounded-full p-0.5 gap-0.5">
         {PROFILES.map((p) => (
           <button
             key={p}
@@ -65,12 +60,6 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
           </button>
         ))}
       </div>
-
-      <p className="mt-2 text-xs text-sky-200 italic leading-snug" data-testid="skipper-phrase">{phrase}</p>
-      <p className="mt-1 text-[10px] text-slate-400 leading-snug">{t("skipperSharedClock")}</p>
-      <p className="mt-2 text-[11px] text-slate-300 leading-snug" data-testid="skipper-example">
-        {exampleLine(orders, sample || {}, lang)}
-      </p>
 
       <div className="mt-2 bg-slate-800/60 rounded-xl px-3 py-0.5 border border-slate-700/40">
         <Row label={t("skipperBoat")} value={boat.name || t("skipperBoatUnknown")} />
@@ -88,25 +77,13 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
           label={t("skipperPlanningKn")}
           value={`${num(T.planningKn, lang)} kn · ${boat.source.planningKn === "polar" ? t("skipperFromPolar") : t("skipperProfileDefault")}`}
         />
-        <Row
-          label={t("skipperHorizon")}
-          value={isSuivre
-            ? `${orders.budget.hours} h · ${num(orders.budget.maxNm, lang)} nm`
-            : t("skipperHorizonLeg")}
-          muted={!isSuivre}
-        />
+        {isSuivre && (
+          <Row
+            label={t("skipperSuivreWindow")}
+            value={`${orders.budget.hours} h · ${num(orders.budget.maxNm, lang)} nm`}
+          />
+        )}
         <Row label={t("skipperGale")} value={`${T.galeKt} / ${T.galeHoldKt} kn · Beaufort 8 / 7`} muted />
-      </div>
-
-      <div
-        data-testid="skipper-rain"
-        className={`mt-2 text-[10px] rounded-md px-2 py-1 border leading-snug ${
-          orders.rainEnabled ? "border-white/10 text-slate-300" : "border-white/5 text-slate-500"
-        }`}
-      >
-        {orders.rainEnabled
-          ? t("skipperRainSuivre", { mmh: num(T.rainMmH, lang), mm3h: num(T.rain3hMm, lang), nm: num(T.marinaRefugeNm, lang) })
-          : t("skipperRainSimulation")}
       </div>
 
       {suggest && (

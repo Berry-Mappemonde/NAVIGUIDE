@@ -30,13 +30,13 @@ describe("useSkipperOrders contract", () => {
 });
 
 describe("SkipperOrdersPanel contract (v1)", () => {
-  it("shows three pills, the phrases and a boat read from the polar — no fields, no Comfort, no Expert", () => {
+  it("shows three pills and a boat read from the polar — no fields, no Comfort, no Expert", () => {
     assert.match(panel, /PROFILES\.map/);
     assert.match(panel, /aria-pressed=\{profile === p\}/);
-    assert.match(panel, /skipperSharedClock/);
-    assert.match(panel, /exampleLine\(orders, sample/);
+    assert.match(panel, /skipperProfileAria/);
+    assert.match(panel, /skipperSuivreWindow/);
     assert.match(panel, /skipperResetBerry/);
-    assert.match(panel, /skipperRainSimulation/);
+    assert.doesNotMatch(panel, /skipperSharedClock|exampleLine|skipperRainSimulation/);
     assert.doesNotMatch(panel, /<input/);
     assert.doesNotMatch(panel, /comfort|Souple|Expert|Chiffres/i);
     assert.doesNotMatch(panel, /wind-gale|hs-shift|depth-alert/);
