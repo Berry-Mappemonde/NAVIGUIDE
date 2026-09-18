@@ -3,6 +3,8 @@
  * Tells only what is around the boat.
  */
 
+import { briefingEntities, segmentBriefing } from "./briefingLinks.js";
+
 const TERRITORY = {
   fr: {
     france_metropolitaine: "France métropolitaine",
@@ -628,4 +630,15 @@ export function narrateIci(dossier, lang = "fr") {
     sourceSentence(dossier, lang),
   ].filter(Boolean);
   return parts.join("\n\n");
+}
+
+/**
+ * Same briefing, split around the places it names so the UI can link them
+ * (map focus + official sheet / Google Maps). Plain text is unchanged:
+ * `segments.map((s) => s.text).join("")` === `narrateIci(dossier, lang)`.
+ */
+export function narrateIciSegments(dossier, lang = "fr") {
+  const text = narrateIci(dossier, lang);
+  if (!text) return [];
+  return segmentBriefing(text, briefingEntities(dossier));
 }

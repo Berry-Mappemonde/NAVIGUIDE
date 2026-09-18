@@ -18,6 +18,7 @@ import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { sumRainHours } from "./engine/eventRules.js";
+import { layerForEntity } from "./engine/briefingLinks.js";
 import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
 import { filmEventMarks } from "./engine/iciAlong.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
@@ -651,6 +652,37 @@ export default function App() {
     setCinemaRecapture((n) => n + 1);
   }, []);
 
+  /** BI toggle setter for a briefing entity's layer (null when the layer has no toggle). */
+  const LAYER_SETTER = {
+    poe: "setShowBiPoe",
+    amp: "setShowBiAmp",
+    projects: "setShowBiProjects",
+    marinas: "setShowBiMarinas",
+    capitaineries: "setShowBiCapitaineries",
+    wpi: "setShowPorts",
+    aton: "setShowBalisage",
+    sextant: "setShowSextant",
+    csr: "setShowCsr",
+    argo: "setShowArgo",
+    odatis: "setShowOdatis",
+    edmed: "setShowEdmed",
+  };
+
+  /**
+   * Briefing link "voir sur la carte": switch the place's layer on, then pin
+   * it and fit the map on the boat AND the place. Never a GET /ici, never a chat.
+   */
+  const handleBriefingFocus = useCallback((entity) => {
+    if (!entity || !Number.isFinite(entity.lat) || !Number.isFinite(entity.lon)) return;
+    const layer = layerForEntity(entity);
+    const setter = layer ? maritimeLayers[LAYER_SETTER[layer]] : null;
+    if (typeof setter === "function") setter(true);
+    const at = iciPack.dossier?.at;
+    const boat = at && Number.isFinite(at.lat) && Number.isFinite(at.lon) ? { lat: at.lat, lon: at.lon } : null;
+    sceneApiRef.current?.briefing?.focus(entity, boat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maritimeLayers, iciPack.dossier]);
+
   const leaveCinema = useCallback(() => {
     setSidebarOpen(cinemaSavedRef.current.sidebar);
     setToolsOpen(cinemaSavedRef.current.tools);
@@ -1279,6 +1311,8 @@ export default function App() {
         briefingLoading={iciPack.loading || briefingLoading}
         officialFallback={officialFallback}
         iciBriefing={iciPack.briefing}
+        iciBriefingSegments={iciPack.briefingSegments}
+        onBriefingFocus={handleBriefingFocus}
         skipperNotice={skipper.notice}
         view={view}
         onView={selectView}
