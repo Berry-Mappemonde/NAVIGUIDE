@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from climatology_atlas import corridor_cells, prefetch_atlas_cells
 from forecast_blend import FORECAST_BLEND_END_HOURS, make_wind_fn
 from forecast_cube import (
     CACHE_TTL_H,
@@ -49,6 +50,9 @@ from weather_pipeline import get_pipeline
 
 log = logging.getLogger("naviguide-simulator.voyage")
 router = APIRouter()
+
+# /recompute: how long the atlas warm-up may take before the isochrone starts.
+ATLAS_PREFETCH_BUDGET_S = 6.0
 
 try:
     from polar_api import _load_polar_data
@@ -695,10 +699,19 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         raise HTTPException(400, "aucune escale à drapeau devant")
     cube = load_cube(voyage_id)
     t0 = parse_iso(voy["t0"])
-    wind_fn = make_wind_fn(t0, cube)
     from_nm = float(live.get("sailNm") or 0)
     to_nm = float(dest.get("nm") or dest.get("filmNm") or 0)
     searoute = _leg_coords(voy.get("points") or [], from_nm, to_nm)
+
+    # The isochrone calls wind_fn thousands of times: the atlas is warmed once,
+    # in parallel and within a budget, then the loop reads the cache only.
+    # Cells still missing fall back to the zone climatology (honest label).
+    corridor = list(searoute) or [(float(live["lat"]), float(live["lon"]))]
+    if dest.get("lat") is not None and dest.get("lon") is not None:
+        corridor.append((float(dest["lat"]), float(dest["lon"])))
+    months = {when.month, (when + timedelta(days=30)).month}
+    prefetch_atlas_cells(corridor_cells(corridor, months), budget_s=ATLAS_PREFETCH_BUDGET_S)
+    wind_fn = make_wind_fn(t0, cube, atlas_network=False)
     versus_hours = None
     for m in clock.get("marks") or []:
         if m.get("name") == dest.get("name"):
