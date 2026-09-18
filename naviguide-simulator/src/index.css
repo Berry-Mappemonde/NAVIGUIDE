@@ -13,6 +13,24 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 
 .catamaran-divicon, .flag-divicon, .plane-divicon, .grib-barb { background: none !important; border: none !important; }
+
+/* Briefing focus: the place named in the sidebar, pinned on the map. */
+.briefing-focus-pin { background: none !important; border: none !important; }
+.briefing-focus-dot {
+  position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 9999px;
+  background: rgba(125, 211, 252, 0.95); border: 2px solid #0f172a;
+  box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.35), 0 0 12px rgba(125, 211, 252, 0.9);
+  animation: briefing-focus-pulse 1.6s ease-out infinite;
+}
+.briefing-focus-label {
+  position: absolute; left: 12px; top: -10px; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: #e0f2fe; background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(125, 211, 252, 0.5); border-radius: 6px; padding: 1px 6px;
+}
+@keyframes briefing-focus-pulse {
+  0% { box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.45), 0 0 12px rgba(125, 211, 252, 0.9); }
+  100% { box-shadow: 0 0 0 14px rgba(125, 211, 252, 0), 0 0 12px rgba(125, 211, 252, 0.9); }
+}
 .grib-barb { pointer-events: none; }
 .marker-rotatable {
   transform: rotate(var(--marker-bearing, 0deg));

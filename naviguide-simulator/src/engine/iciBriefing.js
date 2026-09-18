@@ -3,6 +3,9 @@
  * Tells only what is around the boat.
  */
 
+import { briefingEntities, placeLabel, segmentBriefing } from "./briefingLinks.js";
+import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+
 const TERRITORY = {
   fr: {
     france_metropolitaine: "France métropolitaine",
@@ -51,83 +54,137 @@ function isOverlandLeg(_dossier, mark) {
   return /saint-maur/i.test(from) && /la\s*rochelle/i.test(to);
 }
 
-function hostOf(url) {
-  if (!url || typeof url !== "string") return null;
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return null;
-  }
+/* ---- small helpers for plain-language sentences ---- */
+
+const MONTHS = {
+  fr: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
+  en: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+};
+
+function num(n, lang, digits = null) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  const s = digits == null ? String(Math.round(v * 100) / 100) : v.toFixed(digits);
+  return isEn(lang) ? s : s.replace(".", ",");
 }
 
-function listPlaces(items, lang, max = 3) {
-  const slice = (items || []).slice(0, max);
-  const parts = slice.map((x) => {
-    const nm = Number.isFinite(x.nm) ? ` (${x.nm} nm)` : "";
-    const host = hostOf(x.url);
-    return host ? `${x.name}${nm} — ${host}` : `${x.name}${nm}`;
-  });
+/** "NNO (329°)" — cardinal + degrees, French letters unless English. */
+function heading(deg, lang) {
+  const d = Number(deg);
+  if (!Number.isFinite(d)) return "";
+  let card = getCardinalDirection(d);
+  if (isEn(lang)) card = card.replace(/O/g, "W");
+  return `${card} (${Math.round(d)}°)`;
+}
+
+function monthName(m, lang) {
+  const i = Number(m) - 1;
+  const table = MONTHS[isEn(lang) ? "en" : "fr"];
+  return table[i] || String(m);
+}
+
+function longDate(iso, lang) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  const day = d.getUTCDate();
+  const month = monthName(d.getUTCMonth() + 1, lang);
+  return isEn(lang) ? `${day} ${month} ${d.getUTCFullYear()}` : `${day} ${month} ${d.getUTCFullYear()}`;
+}
+
+/** Engine reason codes → words. Unknown codes are kept as they are (honest, not hidden). */
+const REASONS = {
+  off_grid: ["hors de la grille du modèle", "outside the model grid"],
+  no_feature_at_point: ["rien au point", "nothing at this point"],
+  no_substrate_class: ["nature du fond non classée ici", "seabed class not mapped here"],
+  not_generated: ["pas encore calculé", "not computed yet"],
+  no_scene_in_bbox: ["aucune image récente ici", "no recent image here"],
+  review_requires_admin: ["réservée à l’administration", "administrators only"],
+  no_entity: ["rien à vérifier ici", "nothing to check here"],
+  not_in_along_pearl: ["non collecté sur cette perle", "not collected on this pearl"],
+  rtofs_not_ingested: ["RTOFS pas encore ingéré", "RTOFS not ingested yet"],
+  null: ["pas de donnée", "no data"],
+};
+
+function why(code, lang) {
+  const key = String(code ?? "null");
+  const row = REASONS[key];
+  if (row) return row[isEn(lang) ? 1 : 0];
+  if (/^openmeteo_unavailable/.test(key)) return isEn(lang) ? "Open-Meteo did not answer" : "Open-Meteo n’a pas répondu";
+  if (/^rtofs_unavailable/.test(key)) return isEn(lang) ? "RTOFS did not answer" : "RTOFS n’a pas répondu";
+  return key;
+}
+
+function joinList(parts, lang) {
   if (!parts.length) return "";
   if (parts.length === 1) return parts[0];
-  const last = parts.pop();
-  return `${parts.join(", ")}${isEn(lang) ? " and " : " et "}${last}`;
+  const last = parts[parts.length - 1];
+  return `${parts.slice(0, -1).join(", ")}${isEn(lang) ? " and " : " et "}${last}`;
+}
+
+/** "Name (0,3 nm), Other (1,2 nm) et Last (5 nm)". The sheet link is in the UI, not in the text. */
+function listPlaces(items, lang, max = 3, kind = null) {
+  const slice = (items || []).slice(0, max);
+  const parts = slice.map((x) => {
+    const name = placeLabel(kind, x, lang);
+    const nm = Number.isFinite(x.nm) ? ` (${num(x.nm, lang)} nm)` : "";
+    return `${name}${nm}`;
+  });
+  return joinList(parts, lang);
 }
 
 function formatEta(hours, lang) {
   if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
+  const en = isEn(lang);
   if (hours >= 48) {
     const days = Math.round(hours / 24);
-    return isEn(lang) ? `${days} d` : `${days} j`;
+    return en ? `${days} days` : `${days} jours`;
   }
   if (hours < 1) {
     const m = Math.max(1, Math.round(hours * 60));
-    return isEn(lang) ? `${m} min` : `${m} min`;
+    return `${m} min`;
   }
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
-  if (!m) return isEn(lang) ? `${h} h` : `${h} h`;
+  if (!m) return `${h} h`;
   return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
 function zeeSentence(dossier, lang) {
   const en = isEn(lang);
   const zee = dossier?.zee;
-  if (!zee) {
-    return en
-      ? "Here the boat is on the high seas — no exclusive economic zone, no port of entry to clear."
-      : "Ici, le bateau est en haute mer — aucune ZEE, pas de port d’entrée à déclarer.";
-  }
+  const highSeas = en
+    ? "The boat is on the high seas: no exclusive economic zone, no entry formalities to plan."
+    : "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
+  if (!zee) return highSeas;
   if (zee.ashore || String(zee.name || "").startsWith("À terre")) {
     const extra = String(zee.name || "").startsWith("À terre")
       ? zee.name.slice("À terre".length).trim()
       : "";
     return en
-      ? `Here the boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
-      : `Ici, le bateau est à terre${extra ? ` ${extra}` : ""}, hors ZEE.`;
+      ? `The boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
+      : `Le bateau est à terre${extra ? ` ${extra}` : ""}, hors de toute ZEE.`;
   }
-  if (!zee.mrgid || zee.name === "Haute mer") {
-    return en
-      ? "Here the boat is on the high seas — no exclusive economic zone, no port of entry to clear."
-      : "Ici, le bateau est en haute mer — aucune ZEE, pas de port d’entrée à déclarer.";
-  }
+  if (!zee.mrgid || zee.name === "Haute mer") return highSeas;
   const territory = TERRITORY[en ? "en" : "fr"][zee.territory];
-  const where = territory
-    ? (en ? `${zee.name} (${territory})` : `${zee.name} (${territory})`)
-    : zee.name;
-  const gold = zee.gold
-    ? (en
-      ? "This EEZ is Gold: formalities rest on official ports of entry."
-      : "Cette ZEE est Gold : les formalités s’appuient sur des ports d’entrée officiels.")
-    : (zee.territory
-      ? (en
-        ? "French EEZ, but Gold formalities are still incomplete in this pack."
-        : "ZEE française, mais les formalités Gold sont encore incomplètes dans ce sac.")
-      : (en
-        ? "This is not a French Gold EEZ."
-        : "Ce n’est pas une ZEE Gold française."));
+  const where = territory ? `${zee.name} (${territory})` : zee.name;
+  let formalities;
+  if (zee.gold) {
+    formalities = en
+      ? "Entry formalities go through official ports of entry, listed below."
+      : "Les formalités d’entrée passent par des ports officiels, listés ci-dessous.";
+  } else if (zee.territory) {
+    formalities = en
+      ? "French EEZ; the entry formalities are not complete in our data yet."
+      : "ZEE française ; les formalités d’entrée ne sont pas encore complètes dans nos données.";
+  } else {
+    formalities = en
+      ? "Not a French EEZ: check the local entry formalities."
+      : "Ce n’est pas une ZEE française : formalités d’entrée locales à vérifier.";
+  }
   return en
-    ? `Here the boat is in ${where}. ${gold}`
-    : `Ici, le bateau est dans ${where}. ${gold}`;
+    ? `The boat is sailing in ${where}. ${formalities}`
+    : `Le bateau navigue dans ${where}. ${formalities}`;
 }
 
 function poeSentence(dossier, lang) {
@@ -136,66 +193,53 @@ function poeSentence(dossier, lang) {
   if (!poe.length) {
     if (!dossier?.zee?.mrgid) return "";
     return en
-      ? "No official port of entry is listed for this EEZ in the pack."
-      : "Aucun port d’entrée officiel n’est listé pour cette ZEE dans le sac.";
+      ? "No official port of entry is known for this EEZ."
+      : "Aucun port d’entrée officiel n’est connu pour cette ZEE.";
   }
-  const listed = listPlaces(poe, lang, 4);
+  const listed = listPlaces(poe, lang, 4, "poe");
   return en
-    ? `The nearest official ports of entry are ${listed}.`
-    : `Les ports d’entrée officiels les plus proches sont ${listed}.`;
+    ? `Nearest official ports of entry: ${listed}.`
+    : `Ports d’entrée officiels les plus proches : ${listed}.`;
 }
 
 function ampSentence(dossier, lang) {
-  const en = isEn(lang);
   const items = dossier?.amp || [];
   if (!items.length) return "";
-  const listed = listPlaces(items, lang, 3);
-  const first = items[0];
-  const visit = hostOf(first?.visit_url);
-  const manager = hostOf(first?.manager_url);
-  const urls = [];
-  if (visit) urls.push(en ? `visit ${visit}` : `visite ${visit}`);
-  if (manager && first?.manager_url !== first?.visit_url) {
-    urls.push(en ? `manager ${manager}` : `gestionnaire ${manager}`);
-  }
-  return en
-    ? `MPAs within 30 nm: ${listed}${urls.length ? ` (${urls.join(", ")})` : ""}.`
-    : `AMP dans les 30 milles : ${listed}${urls.length ? ` (${urls.join(", ")})` : ""}.`;
+  const listed = listPlaces(items, lang, 3, "amp");
+  return isEn(lang)
+    ? `Marine protected areas within 30 nm: ${listed}.`
+    : `Aires marines protégées à moins de 30 milles : ${listed}.`;
 }
 
 function projectsSentence(dossier, lang) {
-  const listed = listPlaces(dossier?.projects, lang, 3);
+  const listed = listPlaces(dossier?.projects, lang, 3, "project");
   if (!listed) return "";
   return isEn(lang)
-    ? `Projects within 30 nm: ${listed}.`
-    : `Projets dans les 30 milles : ${listed}.`;
+    ? `Projects and initiatives nearby: ${listed}.`
+    : `Projets et initiatives à proximité : ${listed}.`;
 }
 
 function harboursSentence(dossier, lang) {
   const en = isEn(lang);
   const bits = [];
-  const marinas = listPlaces(dossier?.nearby?.marinas, lang, 3);
+  const marinas = listPlaces(dossier?.nearby?.marinas, lang, 3, "marina");
   if (marinas) bits.push(en ? `marinas ${marinas}` : `marinas ${marinas}`);
-  const capit = listPlaces(dossier?.nearby?.capitaineries, lang, 2);
+  const capit = listPlaces(dossier?.nearby?.capitaineries, lang, 2, "capitainerie");
   if (capit) bits.push(en ? `harbour offices ${capit}` : `capitaineries ${capit}`);
-  const wpi = listPlaces(dossier?.nearby?.wpi, lang, 2);
-  if (wpi) bits.push(en ? `WPI ports ${wpi}` : `ports WPI ${wpi}`);
+  const wpi = listPlaces(dossier?.nearby?.wpi, lang, 2, "wpi");
+  if (wpi) bits.push(en ? `commercial ports (WPI) ${wpi}` : `ports de commerce (WPI) ${wpi}`);
   if (!bits.length) return "";
   return en
-    ? `Harbours within 30 nm: ${bits.join("; ")}.`
-    : `Ports dans les 30 milles : ${bits.join(" ; ")}.`;
+    ? `Harbours nearby: ${bits.join("; ")}.`
+    : `Ports à proximité : ${bits.join(" ; ")}.`;
 }
 
 function scienceSentence(dossier, lang) {
-  const scienceItems = (dossier?.science?.nearby || []).map((x) => ({
-    ...x,
-    name: x.source ? `${x.name} (${x.source})` : x.name,
-  }));
-  const science = listPlaces(scienceItems, lang, 3);
+  const science = listPlaces(dossier?.science?.nearby, lang, 3, "science");
   if (!science) return "";
   return isEn(lang)
-    ? `Science records within 30 nm: ${science}.`
-    : `Dans les 30 milles : les fiches Science ${science}.`;
+    ? `Scientific datasets around the boat: ${science}.`
+    : `Données scientifiques disponibles autour du bateau : ${science}.`;
 }
 
 function aroundSentence(dossier, lang) {
@@ -210,34 +254,44 @@ function aroundSentence(dossier, lang) {
   ].filter(Boolean);
   if (bits.length) return bits.join("\n\n");
   return en
-    ? "Nothing notable sits inside 30 nautical miles."
-    : "Rien de notable dans les 30 milles.";
+    ? "Nothing notable within 30 nautical miles."
+    : "Rien de notable à moins de 30 milles.";
 }
 
 function anchorageSentence(dossier, lang) {
-  const listed = listPlaces(dossier?.nearby?.anchorages, lang, 3);
+  const listed = listPlaces(dossier?.nearby?.anchorages, lang, 3, "anchorage");
   if (!listed) return "";
   return isEn(lang)
-    ? `OSM anchorages within 30 nm: ${listed}.`
-    : `Mouillages OSM dans les 30 milles : ${listed}.`;
+    ? `Anchorages: ${listed}.`
+    : `Mouillages : ${listed}.`;
 }
 
 function atonSentence(dossier, lang) {
   const en = isEn(lang);
   const aton = dossier?.aton;
-  const listed = listPlaces(aton?.nearby, lang, 3);
+  const listed = listPlaces(aton?.nearby, lang, 3, "aton");
   if (listed) {
-    const src = aton?.source || "AtoN";
-    return en
-      ? `Aids to navigation (${src}): ${listed}.`
-      : `Balisage / AtoN (${src}) : ${listed}.`;
+    return en ? `Aids to navigation: ${listed}.` : `Balisage : ${listed}.`;
   }
   if (aton?.reason) {
     return en
-      ? `No AtoN point in the pack (${aton.reason}).`
-      : `Pas de balisage ponctuel dans le sac (${aton.reason}).`;
+      ? `No aid to navigation recorded here (${why(aton.reason, lang)}).`
+      : `Pas de balisage recensé ici (${why(aton.reason, lang)}).`;
   }
   return "";
+}
+
+const DERIVED_WORDS = {
+  coastline: ["trait de côte", "coastline"],
+  sdb: ["bathymétrie satellite", "satellite bathymetry"],
+  intertidal: ["zone intertidale", "intertidal zone"],
+};
+
+/** "S2B_MSIL2A_20260914T105619_N0512_R094_T31TDM_…" → { sat: "S2B", tile: "T31TDM", date: "2026-09-14" }. */
+function parseSentinelId(id) {
+  const m = /^(S2[AB])_MSIL(1C|2A)_(\d{4})(\d{2})(\d{2})T\d{6}_N\d+_R\d+_(T\w+?)_/.exec(String(id || ""));
+  if (!m) return null;
+  return { sat: m[1], level: m[2], date: `${m[3]}-${m[4]}-${m[5]}`, tile: m[6] };
 }
 
 function satelliteSentence(dossier, lang) {
@@ -247,20 +301,29 @@ function satelliteSentence(dossier, lang) {
   const scene = s.scene || (s.scenes && s.scenes[0]);
   const derived = s.derived || {};
   const missing = Object.entries(derived)
-    .filter(([, v]) => v && v.value == null)
-    .map(([k, v]) => `${k}: ${v.reason || "null"}`);
+    .filter(([, v]) => v && v.value == null);
   if (scene) {
-    const when = scene.datetime ? String(scene.datetime).slice(0, 10) : "";
-    const product = scene.product || "Sentinel";
-    const sceneId = scene.id ? ` ${wrapLongToken(scene.id)}` : "";
+    const parsed = parseSentinelId(scene.id);
+    const when = longDate(scene.datetime || parsed?.date, lang);
+    const product = /sentinel-2/i.test(scene.product || "") || parsed ? "Sentinel-2" : (scene.product || "Sentinel");
+    const detail = parsed ? ` (${parsed.sat}${parsed.tile ? `, ${en ? "tile" : "tuile"} ${parsed.tile}` : ""})` : "";
+    let tail = "";
+    if (missing.length) {
+      const names = missing.map(([k]) => (DERIVED_WORDS[k] ? DERIVED_WORDS[k][en ? 1 : 0] : k));
+      const reasons = new Set(missing.map(([, v]) => v.reason || "null"));
+      let reason = reasons.size === 1 ? why([...reasons][0], lang) : (en ? "not available" : "indisponibles");
+      if (!en && names.length > 1 && reason === "pas encore calculé") reason = "pas encore calculés";
+      const list = joinList(names, lang);
+      const sentence = list[0].toUpperCase() + list.slice(1);
+      tail = en ? ` ${sentence}: ${reason}.` : ` ${sentence} : ${reason}.`;
+    }
     return en
-      ? `Satellite (kind observation${when ? `, ${when}` : ""}): ${product}${sceneId}${missing.length ? `; derived ${missing.join(", ")}` : ""}.`
-      : `Satellite (kind observation${when ? `, ${when}` : ""}) : ${product}${sceneId}${missing.length ? ` ; dérivés ${missing.join(", ")}` : ""}.`;
+      ? `Latest satellite image: ${product}${detail}${when ? ` on ${when}` : ""} (observation).${tail}`
+      : `Dernière image satellite : ${product}${detail}${when ? ` du ${when}` : ""} (observation).${tail}`;
   }
-  const reason = s.reason || "null";
   return en
-    ? `Satellite (kind observation): no generated scene (${reason}).`
-    : `Satellite (kind observation) : aucune scène générée (${reason}).`;
+    ? `No recent satellite image here (${why(s.reason, lang)}).`
+    : `Aucune image satellite récente ici (${why(s.reason, lang)}).`;
 }
 
 function weatherSentence(dossier, lang) {
@@ -271,40 +334,39 @@ function weatherSentence(dossier, lang) {
   const wave = w.wave;
   if (!wind && !wave) {
     if (w.status === "pending") {
-      return en
-        ? "Weather (kind forecast): loading."
-        : "Météo (kind forecast) : chargement.";
+      return en ? "Weather forecast: loading…" : "Prévision météo : chargement…";
     }
     return en
-      ? `Weather (kind forecast): empty (${w.reason || "null"}).`
-      : `Météo (kind forecast) : vide (${w.reason || "null"}).`;
+      ? `Weather forecast unavailable (${why(w.reason, lang)}).`
+      : `Prévision météo indisponible (${why(w.reason, lang)}).`;
   }
   const bits = [];
   if (wind?.speedKnots != null) {
+    const from = heading(wind.dirFromDeg, lang);
     bits.push(en
-      ? `wind ${wind.speedKnots} kn / ${wind.dirFromDeg}°`
-      : `vent ${wind.speedKnots} kn / ${wind.dirFromDeg}°`);
+      ? `wind ${num(wind.speedKnots, lang)} kn${from ? ` from ${from}` : ""}`
+      : `vent ${num(wind.speedKnots, lang)} kn${from ? ` de ${from}` : ""}`);
   }
   if (wave?.hs != null) {
-    const waveBits = [`Hs ${wave.hs} m`];
-    if (wave.dirDeg != null) waveBits.push(`${wave.dirDeg}°`);
-    if (wave.periodS != null) waveBits.push(`${wave.periodS} s`);
-    bits.push(waveBits.join(" / "));
+    let sea = en ? `sea ${num(wave.hs, lang)} m` : `mer ${num(wave.hs, lang)} m`;
+    if (wave.dirDeg != null) sea += en ? ` from ${heading(wave.dirDeg, lang)}` : ` de ${heading(wave.dirDeg, lang)}`;
+    if (wave.periodS != null) sea += en ? `, period ${num(wave.periodS, lang)} s` : `, période ${num(wave.periodS, lang)} s`;
+    bits.push(sea);
   }
   if (w.current && w.current.speedKnots != null) {
-    const dir = w.current.dirToDeg;
+    const to = heading(w.current.dirToDeg, lang);
     bits.push(en
-      ? `current ${w.current.speedKnots} kn / ${dir}° (RTOFS, kind forecast)`
-      : `courant ${w.current.speedKnots} kn / ${dir}° (RTOFS, kind forecast)`);
+      ? `current ${num(w.current.speedKnots, lang)} kn${to ? ` toward ${to}` : ""} (RTOFS)`
+      : `courant ${num(w.current.speedKnots, lang)} kn${to ? ` vers ${to}` : ""} (RTOFS)`);
   } else if (w.current == null && w.current_reason) {
     bits.push(en
-      ? `current null (${w.current_reason})`
-      : `courant null (${w.current_reason})`);
+      ? `current: ${why(w.current_reason, lang)}`
+      : `courant : ${why(w.current_reason, lang)}`);
   }
   const model = w.model || w.source || "Open-Meteo";
   return en
-    ? `Weather (kind forecast, ${model}): ${bits.join(" · ")}.`
-    : `Météo (kind forecast, ${model}) : ${bits.join(" · ")}.`;
+    ? `Weather forecast (${model}): ${bits.join(", ")}.`
+    : `Prévision météo (${model}) : ${bits.join(", ")}.`;
 }
 
 function emodnetSentence(dossier, lang) {
@@ -313,24 +375,23 @@ function emodnetSentence(dossier, lang) {
   if (!e) return "";
   const bits = [];
   const depth = e.bathy?.depth_m;
-  if (depth != null) bits.push(en ? `DTM ${depth} m` : `DTM ${depth} m`);
-  else if (e.bathy?.reason) bits.push(`bathy null (${e.bathy.reason})`);
-  if (e.seabed?.label) bits.push(en ? `seabed ${e.seabed.label}` : `fonds ${e.seabed.label}`);
-  else if (e.seabed?.reason) bits.push(`fonds null (${e.seabed.reason})`);
-  if (e.cables?.nearby === true) bits.push(en ? "cable nearby" : "câble au point");
+  if (depth != null) bits.push(en ? `${num(depth, lang)} m on the chart` : `${num(depth, lang)} m sur la carte`);
+  else if (e.bathy?.reason) bits.push(en ? `depth: ${why(e.bathy.reason, lang)}` : `profondeur : ${why(e.bathy.reason, lang)}`);
+  if (e.seabed?.label) bits.push(en ? `seabed ${e.seabed.label}` : `nature du fond : ${e.seabed.label}`);
+  else if (e.seabed?.reason === "no_substrate_class") bits.push(why(e.seabed.reason, lang));
+  else if (e.seabed?.reason) bits.push(en ? `seabed: ${why(e.seabed.reason, lang)}` : `nature du fond : ${why(e.seabed.reason, lang)}`);
+  if (e.cables?.nearby === true) bits.push(en ? "a submarine cable passes here" : "un câble sous-marin passe ici");
   else if (e.cables?.nearby === false || e.cables?.reason) {
-    bits.push(en
-      ? `cables null (${e.cables.reason || "no_feature_at_point"})`
-      : `câbles null (${e.cables.reason || "no_feature_at_point"})`);
+    bits.push(en ? "no submarine cable at this point" : "aucun câble sous-marin au point");
   }
   if (!bits.length) {
     return en
-      ? `EMODnet (kind observation): ${e.reason || "null"}.`
-      : `EMODnet (kind observation) : ${e.reason || "null"}.`;
+      ? `Seabed (EMODnet): ${why(e.reason, lang)}.`
+      : `Fond (EMODnet) : ${why(e.reason, lang)}.`;
   }
   return en
-    ? `EMODnet (kind observation): ${bits.join(" · ")}.`
-    : `EMODnet (kind observation) : ${bits.join(" · ")}.`;
+    ? `Seabed (EMODnet, observation): ${bits.join("; ")}.`
+    : `Fond (EMODnet, observation) : ${bits.join(" ; ")}.`;
 }
 
 function reviewSentence(dossier, lang) {
@@ -340,23 +401,23 @@ function reviewSentence(dossier, lang) {
   const bits = [];
   if (r.zee && r.zee.gold_on != null) {
     bits.push(en
-      ? `EEZ Gold ${r.zee.gold_on ? "on" : "off"}`
-      : `ZEE Gold ${r.zee.gold_on ? "oui" : "non"}`);
+      ? `EEZ formalities ${r.zee.gold_on ? "verified" : "not verified"}`
+      : `formalités ZEE ${r.zee.gold_on ? "vérifiées" : "non vérifiées"}`);
   }
   if (r.amp && r.amp.gold_on != null) {
     bits.push(en
-      ? `MPA Gold ${r.amp.gold_on ? "on" : "off"}`
-      : `AMP Gold ${r.amp.gold_on ? "oui" : "non"}`);
+      ? `MPA rules ${r.amp.gold_on ? "verified" : "not verified"}`
+      : `règles AMP ${r.amp.gold_on ? "vérifiées" : "non vérifiées"}`);
   }
   if (!bits.length) {
-    if (!r.reason) return "";
+    if (!r.reason || r.reason === "no_entity") return "";
     return en
-      ? `Review / Gold not available (${r.reason}).`
-      : `Review / Gold indisponible (${r.reason}).`;
+      ? `Verification sheet: ${why(r.reason, lang)}.`
+      : `Fiche de vérification : ${why(r.reason, lang)}.`;
   }
   return en
-    ? `Review / Gold: ${bits.join(" · ")}.`
-    : `Review / Gold : ${bits.join(" · ")}.`;
+    ? `Verification sheet: ${bits.join(", ")}.`
+    : `Fiche de vérification : ${bits.join(", ")}.`;
 }
 
 function signedDelta(n, unit) {
@@ -498,22 +559,21 @@ function legSentence(dossier, lang) {
   const eta = formatEta(polar.etaHours, lang);
   const boat = polar.boat;
   const bits = [];
-  const pair = from && to ? `${from} → ${to}` : (to || from || "");
-  if (pair && (speed != null || eta || overland)) {
+  if (to && (speed != null || eta || overland)) {
     if (overland) {
       bits.push(en
-        ? `This leg ${pair}${eta ? `, still ${eta} overland` : ""} (not yet at sea).`
-        : `Cette jambe ${pair}${eta ? `, encore ${eta} à terre` : ""} (pas encore en mer).`);
+        ? `Overland leg${from ? ` from ${from}` : ""} to ${to}${eta ? `: still ${eta} on the road` : ""} (the boat is not at sea yet).`
+        : `Étape terrestre${from ? ` de ${from}` : ""} vers ${to}${eta ? ` : encore ${eta} de route` : ""} (le bateau n’est pas encore en mer).`);
     } else {
       bits.push(en
-        ? `This leg ${pair}${speed != null ? `: ${speed} knots` : ""}${eta ? `, still ${eta} at sea` : ""}.`
-        : `Cette jambe ${pair}${speed != null ? ` : ${speed} nœuds` : ""}${eta ? `, encore ${eta} de mer` : ""}.`);
+        ? `Heading for ${to}${from ? ` from ${from}` : ""}${eta ? `: still ${eta} at sea` : ""}${speed != null ? ` at ${num(speed, lang)} knots` : ""}.`
+        : `Cap sur ${to}${from ? ` depuis ${from}` : ""}${eta ? ` : encore ${eta} de mer` : ""}${speed != null ? ` à ${num(speed, lang)} nœuds` : ""}.`);
     }
   } else if (speed != null) {
-    bits.push(en ? `Boat speed on this leg: ${speed} knots.` : `Vitesse sur cette jambe : ${speed} nœuds.`);
+    bits.push(en ? `Boat speed on this leg: ${num(speed, lang)} knots.` : `Vitesse sur cette jambe : ${num(speed, lang)} nœuds.`);
   }
   if (boat) {
-    bits.push(en ? `Polar loaded for ${boat}.` : `Polaire chargée pour ${boat}.`);
+    bits.push(en ? `Polar loaded: ${boat}.` : `Polaire chargée : ${boat}.`);
   }
   return bits.join(" ");
 }
@@ -523,8 +583,8 @@ function depthSentence(dossier, lang) {
   if (!Number.isFinite(d) || Math.abs(d) < 1) return "";
   const m = Math.round(Math.abs(d));
   return isEn(lang)
-    ? `GEBCO offshore sounding: ${m} m (GEBCO Compilation Group; not for navigation).`
-    : `Sondage GEBCO au large : ${m} m (GEBCO Compilation Group ; ne convient pas à la navigation).`;
+    ? `Offshore depth about ${m} m (GEBCO Compilation Group; indicative, not for navigation).`
+    : `Profondeur au large : environ ${m} m (GEBCO Compilation Group ; indicatif, ne convient pas à la navigation).`;
 }
 
 function climatologySentence(dossier, lang) {
@@ -540,54 +600,71 @@ function climatologySentence(dossier, lang) {
   const src = c.source;
   if (src === "unavailable" && !w && !zone) {
     return en
-      ? "The climatology atlas did not answer; the clock keeps the zone fallback (kind climatology)."
-      : "L’atlas climatologie n’a pas répondu ; l’horloge garde le repli de zone (kind climatology).";
+      ? "The climatology atlas did not answer; the clock keeps the typical wind of the zone."
+      : "L’atlas de climatologie n’a pas répondu ; l’horloge garde le vent typique de la zone.";
   }
   const bits = [];
-  if (w) bits.push(en ? `wind ${w.speed_knots} kn / ${w.dir_deg}°` : `vent ${w.speed_knots} kn / ${w.dir_deg}°`);
-  else if (zone) bits.push(en ? `zone wind ${zone.speedKnots} kn / ${zone.dirFromDeg}°` : `vent de zone ${zone.speedKnots} kn / ${zone.dirFromDeg}°`);
-  if (wave?.hs_p50_m != null) bits.push(`Hs P50 ${wave.hs_p50_m} m`);
-  if (wave?.hs_p90_m != null) bits.push(`Hs P90 ${wave.hs_p90_m} m`);
-  if (wave?.period_s != null) bits.push(en ? `Tp ${wave.period_s} s` : `Tp ${wave.period_s} s`);
-  if (wave?.dir_deg != null) bits.push(en ? `Hs dir ${wave.dir_deg}°` : `Hs dir ${wave.dir_deg}°`);
-  if (cur && cur.speed_knots != null) {
-    const dir = cur.direction_to_deg;
+  if (w) {
     bits.push(en
-      ? `current ${cur.speed_knots} kn${dir != null ? ` toward ${dir}°` : ""}`
-      : `courant ${cur.speed_knots} kn${dir != null ? ` vers ${dir}°` : ""}`);
+      ? `typical wind ${num(w.speed_knots, lang)} kn from ${heading(w.dir_deg, lang)}`
+      : `vent typique ${num(w.speed_knots, lang)} kn de ${heading(w.dir_deg, lang)}`);
+  } else if (zone) {
+    bits.push(en
+      ? `typical wind of the zone ${num(zone.speedKnots, lang)} kn from ${heading(zone.dirFromDeg, lang)}`
+      : `vent typique de la zone ${num(zone.speedKnots, lang)} kn de ${heading(zone.dirFromDeg, lang)}`);
+  }
+  if (wave?.hs_p50_m != null || wave?.hs_p90_m != null) {
+    const parts = [];
+    if (wave.hs_p50_m != null) parts.push(en ? `${num(wave.hs_p50_m, lang)} m on average` : `${num(wave.hs_p50_m, lang)} m en moyenne`);
+    if (wave.hs_p90_m != null) parts.push(en ? `${num(wave.hs_p90_m, lang)} m on rough days (P90)` : `${num(wave.hs_p90_m, lang)} m les jours agités (P90)`);
+    let sea = (en ? "sea " : "mer ") + parts.join(", ");
+    if (wave.period_s != null) sea += en ? `, period ${num(wave.period_s, lang)} s` : `, période ${num(wave.period_s, lang)} s`;
+    if (wave.dir_deg != null) sea += en ? `, from ${heading(wave.dir_deg, lang)}` : `, de ${heading(wave.dir_deg, lang)}`;
+    bits.push(sea);
+  }
+  if (cur && cur.speed_knots != null) {
+    const to = cur.direction_to_deg != null ? heading(cur.direction_to_deg, lang) : "";
+    bits.push(en
+      ? `current ${num(cur.speed_knots, lang)} kn${to ? ` toward ${to}` : ""}`
+      : `courant ${num(cur.speed_knots, lang)} kn${to ? ` vers ${to}` : ""}`);
   }
   const rose = c.rose || point.wind_atlas;
+  if (rose?.calm_pct != null) bits.push(en ? `calm ${num(rose.calm_pct, lang)}% of the time` : `calme ${num(rose.calm_pct, lang)} % du temps`);
+  if (rose?.gale_pct != null) bits.push(en ? `gale ${num(rose.gale_pct, lang)}% of the time` : `coup de vent ${num(rose.gale_pct, lang)} % du temps`);
   if (rose?.stat === "rose" && Array.isArray(rose.directions_from) && rose.directions_from.length) {
-    bits.push(en ? `8-sector rose` : `rose 8 secteurs`);
+    bits.push(en ? "wind rose available" : "rose des vents disponible");
   }
-  if (rose?.calm_pct != null) bits.push(en ? `calm ${rose.calm_pct}%` : `calme ${rose.calm_pct} %`);
-  if (rose?.gale_pct != null) bits.push(en ? `gale ${rose.gale_pct}%` : `coup de vent ${rose.gale_pct} %`);
   const nearbyCyc = c.cyclone?.nearby ?? point.cyclone?.nearby;
-  if (nearbyCyc != null) {
-    bits.push(en ? `IBTrACS nearby ${nearbyCyc}` : `IBTrACS nearby ${nearbyCyc}`);
-  }
   const crossings = c.crossings?.count ?? point.cyclone?.crossings_if_leg?.count;
-  if (crossings != null) {
-    bits.push(en ? `IBTrACS crossings on the leg: ${crossings}` : `croisements IBTrACS sur la jambe : ${crossings}`);
+  if (nearbyCyc != null || crossings != null) {
+    const cyc = [];
+    if (nearbyCyc != null) {
+      cyc.push(nearbyCyc
+        ? (en ? `${nearbyCyc} passed nearby` : `${nearbyCyc} passé${nearbyCyc > 1 ? "s" : ""} à proximité`)
+        : (en ? "none nearby" : "aucun à proximité"));
+    }
+    if (crossings != null) {
+      cyc.push(crossings
+        ? (en ? `${crossings} track${crossings > 1 ? "s" : ""} cross this leg` : `${crossings} trajectoire${crossings > 1 ? "s" : ""} croise${crossings > 1 ? "nt" : ""} cette jambe`)
+        : (en ? "none crosses this leg" : "aucune trajectoire ne croise cette jambe"));
+    }
+    bits.push((en ? "historical cyclones (IBTrACS): " : "cyclones historiques (IBTrACS) : ") + cyc.join(", "));
   }
   const period = c.period || point.period;
   const doi = c.doi?.wind || point.doi?.wind;
   const provenance = c.provenance?.wind || point.provenance?.wind;
+  const when = monthName(month, lang);
   const head = src === "atlas"
-    ? (en
-      ? `CMEMS atlas (kind climatology, month ${month}`
-      : `Atlas CMEMS (kind climatology, mois ${month}`)
-    : (en
-      ? `Zone fallback (kind climatology, month ${month}`
-      : `Repli de zone (kind climatology, mois ${month}`);
+    ? (en ? `Climatology for ${when} (Copernicus atlas` : `Climatologie de ${when} (atlas Copernicus`)
+    : (en ? `Climatology for ${when} (zone fallback` : `Climatologie de ${when} (repli de zone`);
   const tail = [];
-  if (period) tail.push(en ? `period ${period}` : `période ${period}`);
+  if (period) tail.push(String(period).replace("-", "–"));
   if (doi) tail.push(`DOI ${doi}`);
   else if (provenance) {
     const product = String(provenance).split("·")[0].trim();
     if (product) tail.push(en ? `source ${product}` : `source ${product}`);
   }
-  return `${head}${tail.length ? `, ${tail.join(", ")}` : ""})${bits.length ? ` : ${bits.join(" · ")}.` : "."}`;
+  return `${head}${tail.length ? `, ${tail.join(", ")}` : ""})${bits.length ? ` : ${bits.join(" ; ")}.` : "."}`;
 }
 
 function sourceSentence(dossier, lang) {
@@ -602,12 +679,12 @@ function sourceSentence(dossier, lang) {
   }
   if (bi === "unavailable") {
     notes.push(en
-      ? "Blue Intelligence layers did not answer; the pack keeps the EEZ and World Port Index when they exist."
-      : "Les couches Blue Intelligence n’ont pas répondu ; le sac garde la ZEE et le World Port Index quand ils existent.");
+      ? "Blue Intelligence layers did not answer: only the EEZ and the World Port Index are kept."
+      : "Les couches Blue Intelligence n’ont pas répondu : seuls la ZEE et les ports WPI sont conservés.");
   } else if (bi === "partial") {
     notes.push(en
-      ? "Some Blue Intelligence layers are missing; the pack tells only what arrived."
-      : "Certaines couches Blue Intelligence manquent ; le sac ne raconte que ce qui est arrivé.");
+      ? "Some Blue Intelligence layers are missing: the briefing tells only what arrived."
+      : "Certaines couches Blue Intelligence manquent : le briefing ne raconte que ce qui est arrivé.");
   }
   return notes.join(" ");
 }
@@ -628,4 +705,15 @@ export function narrateIci(dossier, lang = "fr") {
     sourceSentence(dossier, lang),
   ].filter(Boolean);
   return parts.join("\n\n");
+}
+
+/**
+ * Same briefing, split around the places it names so the UI can link them
+ * (map focus + official sheet / Google Maps). Plain text is unchanged:
+ * `segments.map((s) => s.text).join("")` === `narrateIci(dossier, lang)`.
+ */
+export function narrateIciSegments(dossier, lang = "fr") {
+  const text = narrateIci(dossier, lang);
+  if (!text) return [];
+  return segmentBriefing(text, briefingEntities(dossier, lang));
 }

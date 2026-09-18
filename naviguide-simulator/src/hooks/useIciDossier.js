@@ -7,7 +7,7 @@ import {
 } from "../engine/ici.js";
 import { detectEvents, emptyEventMemory } from "../engine/eventRules.js";
 import { judgeEvents } from "../engine/displayJudge.js";
-import { narrateIci, phraseForEvent } from "../engine/iciBriefing.js";
+import { narrateIci, narrateIciSegments, phraseForEvent } from "../engine/iciBriefing.js";
 import { promoteLaterAtPlayhead, upsertLedger } from "../engine/iciAlong.js";
 import { enqueueStory, shouldEnqueueStory, storyPayload, subscribeStories } from "../engine/storyQueue.js";
 import { WEATHER_POLL_MS, fetchWeatherForecast } from "./weatherSnapshot.js";
@@ -358,10 +358,16 @@ export function useIciDossier({
     () => (dossier ? narrateIci(dossier, lang) : ""),
     [dossier, lang],
   );
+  // Same text, split around the places it names (links: map focus + sheet).
+  const briefingSegments = useMemo(
+    () => (dossier ? narrateIciSegments(dossier, lang) : []),
+    [dossier, lang],
+  );
 
   return {
     dossier,
     briefing,
+    briefingSegments,
     loading: Boolean(enabled && boat && !remote),
     events: tick.events,
     display: tick.briefing,
