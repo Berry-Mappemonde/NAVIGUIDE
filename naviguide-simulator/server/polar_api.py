@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi.concurrency import run_in_threadpool
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
+from admin_guard import require_admin
 from polar_engine import PolarData, parse_polar_csv, parse_polar_excel, parse_polar_pdf
 
 POLAR_DATA_DIR = Path(__file__).resolve().parent / "polar_data"
@@ -129,7 +130,8 @@ def _write_polar_data(dest: Path, data: Dict[str, Any]) -> None:
         raise
 
 
-@router.post("/api/v1/polar/upload")
+# Sécurité P0 : parser un PDF / XLSX inconnu et écrire sur disque = admin seulement.
+@router.post("/api/v1/polar/upload", dependencies=[Depends(require_admin)])
 async def upload_polar(
     file: UploadFile = File(...),
     expedition_id: str = Form(...),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_T0_ISO, OFFICIAL_VOYAGE_ID, sampleClockAtTime } from "../engine/voyageClock.js";
 import { pickOfficialLiveClock } from "../utils/sceneGate.js";
+import { adminHeaders } from "../utils/adminSecret.js";
 import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
 const API = import.meta.env.VITE_API_URL ?? "";
@@ -49,9 +50,11 @@ export function useOfficialExpedition({
     if (!points?.length) return null;
     const fp = `${points.length}|${points[0]?.lat}|${points[points.length - 1]?.lat}|${expeditionId || ""}`;
     if (putRef.current === fp && meta?.voyageId === OFFICIAL_VOYAGE_ID) return meta;
+    // Anonymous: the server only creates a missing official voyage, never
+    // edits it. With the admin key (X-Naviguide-Admin) it may update the route.
     const res = await fetch(`${API}/voyage/official`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
       body: JSON.stringify({
         t0: DEFAULT_T0_ISO,
         expedition_id: expeditionId || "berry-mappemonde-2026",
@@ -114,7 +117,7 @@ export function useOfficialExpedition({
     if (!q) return null;
     const qs = `?lat=${encodeURIComponent(q.lat)}&lon=${encodeURIComponent(q.lon)}`;
     const url = force ? `${API}/voyage/official/grib/refresh${qs}` : `${API}/voyage/official/grib${qs}`;
-    const res = await fetch(url, force ? { method: "POST" } : undefined);
+    const res = await fetch(url, force ? { method: "POST", headers: adminHeaders() } : undefined);
     const data = await res.json().catch(() => null);
     if (res.ok && data) {
       setGrib(data);
