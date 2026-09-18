@@ -5,6 +5,11 @@
  * Cruise = today's E1 constants (eventRules.js). Coastal / Ocean = fixed
  * numbers written here once. No formula at runtime, no second default.
  * The boat (name, L, draft, planning speed) is READ from the polar, never typed.
+ *
+ * S6: Comfort (soft / normal / hard) moves only the notable-wind step and one
+ * notch of Hs alert; the horizon knob (24 / 36 / 48 h) drives the Suivre budget.
+ * S7: the Expert drawer may force a few engine numbers, each flagged `source:
+ * "expert"` so the story cites what the skipper really set. Gale stays locked.
  */
 
 import { expeditionBoatKnots } from "./playSpeeds.js";
@@ -13,6 +18,57 @@ export const PROFILES = Object.freeze(["coastal", "cruise", "ocean"]);
 export const DEFAULT_PROFILE = "cruise";
 export const COMFORT_DEFAULT = "normal";
 export const STORAGE_KEY = "ng.sim.skipperOrders.v1";
+
+/** S6 — Comfort: three steps on the "notable wind" and one notch on Hs alert. Gale never. */
+export const COMFORTS = Object.freeze(["soft", "normal", "hard"]);
+export const COMFORT_TABLE = Object.freeze({
+  soft: Object.freeze({
+    id: "soft",
+    windShiftKt: -2,
+    windShiftDeg: -10,
+    hsAlertM: -0.5,
+    phrase: Object.freeze({ fr: "Je préviens un peu plus tôt.", en: "I warn a little earlier." }),
+  }),
+  normal: Object.freeze({
+    id: "normal",
+    windShiftKt: 0,
+    windShiftDeg: 0,
+    hsAlertM: 0,
+    phrase: Object.freeze({ fr: "", en: "" }),
+  }),
+  hard: Object.freeze({
+    id: "hard",
+    windShiftKt: 4,
+    windShiftDeg: 15,
+    hsAlertM: 0.5,
+    phrase: Object.freeze({ fr: "Je laisse passer plus.", en: "I let more go by." }),
+  }),
+});
+/** Coastal / Cruise never turn into a WMO squall (+16 kn) through Comfort alone. */
+export const COMFORT_WIND_CAP_KT = 16;
+
+/** S6 — horizon knob (Suivre). Each step is honest: the engine budget follows H (§2.6). */
+export const HORIZONS_H = Object.freeze([24, 36, 48]);
+
+/**
+ * S7 — Expert drawer "Chiffres": the ids a skipper may force outside the profile.
+ * Bounds keep the engine sane. Gale (Beaufort) is never here.
+ */
+export const EXPERT_FIELDS = Object.freeze({
+  galePct: Object.freeze({ min: 5, max: 50, step: 1 }),
+  windShiftResetKt: Object.freeze({ min: 1, max: 10, step: 1 }),
+  windShiftResetDeg: Object.freeze({ min: 5, max: 45, step: 5 }),
+  currentIgnoreKn: Object.freeze({ min: 0.1, max: 1, step: 0.1 }),
+  currentInvertDeg: Object.freeze({ min: 60, max: 180, step: 10 }),
+  rainMmH: Object.freeze({ min: 1, max: 20, step: 0.5 }),
+  rain3hMm: Object.freeze({ min: 2, max: 50, step: 1 }),
+  marinaRefugeNm: Object.freeze({ min: 5, max: 80, step: 5 }),
+  marinaRefugeCooldownMin: Object.freeze({ min: 60, max: 1440, step: 60 }),
+  iciRadiusNm: Object.freeze({ min: 5, max: 40, step: 5 }),
+  alongAmpNm: Object.freeze({ min: 5, max: 40, step: 5 }),
+  ampAheadMinNm: Object.freeze({ min: 1, max: 30, step: 1 }),
+});
+export const EXPERT_IDS = Object.freeze(Object.keys(EXPERT_FIELDS));
 export const DEFAULT_BOAT = Object.freeze({ name: null, loaM: 14, draftM: 1.4 });
 export const SMALL_BOAT_LOA_M = 11;
 export const SMALL_BOAT_DRAFT_M = 1.1;
@@ -102,6 +158,12 @@ const PROFILE_LABEL = Object.freeze({
   ocean: Object.freeze({ fr: "large", en: "offshore" }),
 });
 
+const COMFORT_LABEL = Object.freeze({
+  soft: Object.freeze({ fr: "souple", en: "soft" }),
+  normal: Object.freeze({ fr: "normal", en: "normal" }),
+  hard: Object.freeze({ fr: "dur", en: "hard" }),
+});
+
 /** unit / source / rule per id. `source` ∈ beaufort | wmo | metoffice | usage | derive | ui | engine. */
 const META = Object.freeze({
   galeKt: { unit: "kn", source: "beaufort", locked: true, rule: "Beaufort 8" },
@@ -182,6 +244,11 @@ export function profileLabel(profile, lang = "fr") {
   return isEn(lang) ? row.en : row.fr;
 }
 
+export function comfortLabel(comfort, lang = "fr") {
+  const row = COMFORT_LABEL[comfort] || COMFORT_LABEL[COMFORT_DEFAULT];
+  return isEn(lang) ? row.en : row.fr;
+}
+
 /** Budget rule §2.6 — the horizon never lies: nm = H × kn, pearls follow. */
 function budgetFrom(hours, planningKn, sampleNm) {
   const h = isFinitePositive(hours) ? hours : PROFILE_TABLE.cruise.suivreLookaheadH;
@@ -237,26 +304,63 @@ function metaFor(id, profile) {
   return { unit: m.unit || "", source, rule, locked: Boolean(m.locked) };
 }
 
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+/** One Expert value, clamped to its bounds. null when unknown id / not a number. */
+export function clampExpert(id, value) {
+  const f = EXPERT_FIELDS[id];
+  const n = measure(value);
+  if (!f || !Number.isFinite(n)) return null;
+  const clamped = Math.min(f.max, Math.max(f.min, n));
+  return Math.round(clamped * 100) / 100;
+}
+
+/** Keep only known ids with a finite number inside the bounds. {} when nothing. */
+export function sanitizeExpert(expert) {
+  const out = {};
+  if (!expert || typeof expert !== "object") return out;
+  for (const id of EXPERT_IDS) {
+    const v = clampExpert(id, expert[id]);
+    if (v != null) out[id] = v;
+  }
+  return out;
+}
+
 /**
  * resolveOrders(saved, { polar, mode }) →
- *   { profile, mode, phrase, comfort, boat, knobs, values, thresholds, rainEnabled, rainReason, budget, suggest }
- * One `value` per id. Never two candidates.
+ *   { profile, mode, phrase, comfort, comfortPhrase, boat, knobs, expert,
+ *     values, thresholds, rainEnabled, rainReason, budget, suggest }
+ * One `value` per id. Never two candidates: profile → Comfort delta → Expert
+ * override, in that order, and the threshold says which one spoke (`source`).
  */
 export function resolveOrders(saved, { polar = null, mode = "simulation" } = {}) {
   const profile = PROFILES.includes(saved?.profile) ? saved.profile : DEFAULT_PROFILE;
+  const comfort = COMFORTS.includes(saved?.comfort) ? saved.comfort : COMFORT_DEFAULT;
   const row = PROFILE_TABLE[profile];
+  const cmf = COMFORT_TABLE[comfort];
+  const horizonH = HORIZONS_H.includes(saved?.horizonH) ? saved.horizonH : row.suivreLookaheadH;
+  const expert = sanitizeExpert(saved?.expert);
   const boat = readBoat(polar);
   const planningKn = boat.planningKn ?? row.planningKnDefault;
-  const budget = budgetFrom(row.suivreLookaheadH, planningKn, SHARED.routeSampleNm);
+  const budget = budgetFrom(horizonH, planningKn, SHARED.routeSampleNm);
   const rainEnabled = mode === "suivre";
   const rainReason = rainEnabled ? null : "simulation_no_rain";
+
+  // S6 — Comfort moves the "notable wind" and one notch of Hs alert. Never the gale.
+  let windShiftKt = row.windShiftKt + cmf.windShiftKt;
+  if (profile !== "ocean") windShiftKt = Math.min(windShiftKt, COMFORT_WIND_CAP_KT);
+  windShiftKt = Math.max(windShiftKt, SHARED.windShiftResetKt);
+  const windShiftDeg = Math.max(row.windShiftDeg + cmf.windShiftDeg, SHARED.windShiftResetDeg);
+  const hsAlertM = round1(Math.max(row.hsAlertM + cmf.hsAlertM, row.hsShiftM));
 
   const values = Object.freeze({
     ...LOCKED,
     ...SHARED,
-    windShiftKt: row.windShiftKt,
-    windShiftDeg: row.windShiftDeg,
-    hsAlertM: row.hsAlertM,
+    windShiftKt,
+    windShiftDeg,
+    hsAlertM,
     hsShiftM: row.hsShiftM,
     currentShiftKn: row.currentShiftKn,
     depthAlertM: row.depthAlertM,
@@ -264,26 +368,42 @@ export function resolveOrders(saved, { polar = null, mode = "simulation" } = {})
     rainMmH: row.rainMmH,
     rain3hMm: row.rain3hMm,
     marinaRefugeNm: row.marinaRefugeNm,
-    suivreLookaheadH: row.suivreLookaheadH,
+    suivreLookaheadH: horizonH,
     suivreLookaheadMaxNm: budget.maxNm,
     maxPearlsSuivre: budget.maxPearls,
     planningKn,
     groupNm: row.groupNm,
+    // S7 — Expert overrides win, and are flagged as such below.
+    ...expert,
   });
 
+  const comfortTouched = new Set(
+    comfort === COMFORT_DEFAULT ? [] : ["windShiftKt", "windShiftDeg", "hsAlertM"],
+  );
   const thresholds = Object.keys(values)
     .filter((id) => id !== "depthLabel")
     .map((id) => {
       const m = metaFor(id, profile);
       const rain = RAIN_IDS.has(id);
+      let source = id === "planningKn" && boat.planningKn != null ? "usage" : m.source;
+      let rule = id === "planningKn"
+        ? (boat.planningKn != null ? "polaire (VMG portant)" : `défaut ${PROFILE_LABEL[profile].fr} sans polaire`)
+        : m.rule;
+      if (id in expert) {
+        source = "expert";
+        rule = `réglage Expert (profil ${PROFILE_LABEL[profile].fr})`;
+      } else if (comfortTouched.has(id)) {
+        rule = `${rule} · confort ${COMFORT_LABEL[comfort].fr}`;
+      } else if (id === "suivreLookaheadH" && horizonH !== row.suivreLookaheadH) {
+        source = "ui";
+        rule = "horizon choisi par le skipper";
+      }
       return {
         id,
         value: values[id],
         unit: m.unit,
-        source: id === "planningKn" && boat.planningKn != null ? "usage" : m.source,
-        rule: id === "planningKn"
-          ? (boat.planningKn != null ? "polaire (VMG portant)" : `défaut ${PROFILE_LABEL[profile].fr} sans polaire`)
-          : m.rule,
+        source,
+        rule,
         locked: m.locked,
         enabled: rain ? rainEnabled : true,
         reason: rain && !rainEnabled ? rainReason : null,
@@ -296,9 +416,11 @@ export function resolveOrders(saved, { polar = null, mode = "simulation" } = {})
     profile,
     mode,
     phrase: row.phrase,
-    comfort: COMFORT_DEFAULT,
+    comfort,
+    comfortPhrase: cmf.phrase,
     boat,
-    knobs: { horizonH: row.suivreLookaheadH, comfort: COMFORT_DEFAULT },
+    knobs: { horizonH, comfort, horizonDefaultH: row.suivreLookaheadH },
+    expert,
     values,
     thresholds,
     rainEnabled,
@@ -441,9 +563,12 @@ export function ordersLine(orders, lang = "fr") {
   const T = o.values;
   const en = isEn(lang);
   const label = profileLabel(o.profile, lang);
+  const comfort = o.comfort && o.comfort !== COMFORT_DEFAULT ? ` · ${comfortLabel(o.comfort, lang)}` : "";
+  const expertN = o.expert ? Object.keys(o.expert).length : 0;
+  const expert = expertN ? (en ? ` · ${expertN} expert` : ` · ${expertN} expert`) : "";
   return en
-    ? `Orders: ${label} · Hs ${fmt(T.hsAlertM, lang, 1)} m · depth ${T.depthAlertM} m`
-    : `Ordres : ${label} · Hs ${fmt(T.hsAlertM, lang, 1)} m · fond ${T.depthAlertM} m`;
+    ? `Orders: ${label}${comfort} · Hs ${fmt(T.hsAlertM, lang, 1)} m · depth ${T.depthAlertM} m${expert}`
+    : `Ordres : ${label}${comfort} · Hs ${fmt(T.hsAlertM, lang, 1)} m · fond ${T.depthAlertM} m${expert}`;
 }
 
 /** Depth phrase per profile: shelf (Coastal / Cruise) or grounding (Ocean). */
@@ -461,14 +586,29 @@ export function depthPhrase(depthM, orders, lang = "fr") {
     : `On approche du plateau : ${d} m sondés, sous ${T.depthAlertM} m.`;
 }
 
-/* ---- Persistence (tab + localStorage). v1 stores only the character. ---- */
+/* ---- Persistence (tab + localStorage). Same key since v1; S6/S7 grow the object. ---- */
+
+/**
+ * Keep only what the plan allows in `ng.sim.skipperOrders.v1`:
+ * `profile` (v1), `comfort`, `horizonH`, `expert` (S6 / S7). Nothing else.
+ * Omits defaults so a v1 reader still sees `{ profile }` when nothing changed.
+ */
+export function sanitizeSaved(obj) {
+  const profile = PROFILES.includes(obj?.profile) ? obj.profile : DEFAULT_PROFILE;
+  const out = { profile };
+  if (COMFORTS.includes(obj?.comfort) && obj.comfort !== COMFORT_DEFAULT) out.comfort = obj.comfort;
+  if (HORIZONS_H.includes(obj?.horizonH)) out.horizonH = obj.horizonH;
+  const expert = sanitizeExpert(obj?.expert);
+  if (Object.keys(expert).length) out.expert = expert;
+  return out;
+}
 
 export function readSavedOrders(storage) {
   try {
     const raw = storage?.getItem?.(STORAGE_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    return PROFILES.includes(obj?.profile) ? { profile: obj.profile } : null;
+    return PROFILES.includes(obj?.profile) ? sanitizeSaved(obj) : null;
   } catch {
     return null;
   }
@@ -476,8 +616,7 @@ export function readSavedOrders(storage) {
 
 export function writeSavedOrders(storage, saved) {
   try {
-    const profile = PROFILES.includes(saved?.profile) ? saved.profile : DEFAULT_PROFILE;
-    storage?.setItem?.(STORAGE_KEY, JSON.stringify({ profile }));
+    storage?.setItem?.(STORAGE_KEY, JSON.stringify(sanitizeSaved(saved)));
     return true;
   } catch {
     return false;
