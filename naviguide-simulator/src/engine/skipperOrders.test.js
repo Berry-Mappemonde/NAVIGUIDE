@@ -4,11 +4,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  COMFORTS,
+  COMFORT_TABLE,
+  COMFORT_WIND_CAP_KT,
   DEFAULT_ORDERS,
   DEFAULT_PROFILE,
+  EXPERT_FIELDS,
+  EXPERT_IDS,
+  HORIZONS_H,
   PROFILES,
   PROFILE_TABLE,
   STORAGE_KEY,
+  clampExpert,
   clearSavedOrders,
   depthPhrase,
   exampleLine,
@@ -17,6 +24,7 @@ import {
   readBoat,
   readSavedOrders,
   resolveOrders,
+  sanitizeSaved,
   skipperSnapshot,
   suggestProfileForBoat,
   thresholdValues,
@@ -344,13 +352,17 @@ describe("phrases FR / EN", () => {
   });
 });
 
-describe("persistence — tab + localStorage, profile only", () => {
-  it("uses the v1 key and stores only the character", () => {
+describe("persistence — tab + localStorage, same key since v1", () => {
+  it("uses the v1 key; stores the character, and S6 / S7 knobs only when they differ", () => {
     assert.equal(STORAGE_KEY, "ng.sim.skipperOrders.v1");
     const mem = memStorage();
-    assert.equal(writeSavedOrders(mem, { profile: "ocean", comfort: "hard", loaM: 9 }), true);
+    assert.equal(writeSavedOrders(mem, { profile: "ocean", loaM: 9, draftM: 1 }), true);
     assert.deepEqual(JSON.parse(mem.dump()[STORAGE_KEY]), { profile: "ocean" });
     assert.deepEqual(readSavedOrders(mem), { profile: "ocean" });
+    assert.equal(writeSavedOrders(mem, { profile: "ocean", comfort: "hard", horizonH: 24, expert: { galePct: 20, loaM: 9 } }), true);
+    assert.deepEqual(readSavedOrders(mem), { profile: "ocean", comfort: "hard", horizonH: 24, expert: { galePct: 20 } });
+    // normal comfort, unknown horizon, empty expert are not written (v1 shape stays)
+    assert.deepEqual(sanitizeSaved({ profile: "cruise", comfort: "normal", horizonH: 30, expert: { nope: 1 } }), { profile: "cruise" });
   });
 
   it("returns cruise when nothing or garbage is stored, and reset clears", () => {
@@ -363,5 +375,118 @@ describe("persistence — tab + localStorage, profile only", () => {
     assert.equal(readSavedOrders(mem), null);
     assert.equal(readSavedOrders(null), null);
     assert.equal(writeSavedOrders(null, { profile: "ocean" }), true);
+  });
+});
+
+describe("S6 — Comfort: soft / normal / hard", () => {
+  it("exposes three steps; normal changes nothing (v1 numbers stay)", () => {
+    assert.deepEqual([...COMFORTS], ["soft", "normal", "hard"]);
+    const normal = resolveOrders({ profile: "cruise", comfort: "normal" });
+    assert.deepEqual(normal.values, DEFAULT_ORDERS.values);
+    assert.equal(resolveOrders({ profile: "cruise", comfort: "tableur" }).comfort, "normal");
+  });
+
+  it("moves only the notable wind and one notch of Hs — never the gale, never depth", () => {
+    for (const profile of PROFILES) {
+      const base = resolveOrders({ profile });
+      const soft = resolveOrders({ profile, comfort: "soft" });
+      const hard = resolveOrders({ profile, comfort: "hard" });
+      assert.equal(soft.values.hsAlertM, Math.round((base.values.hsAlertM - 0.5) * 10) / 10);
+      assert.equal(hard.values.hsAlertM, Math.round((base.values.hsAlertM + 0.5) * 10) / 10);
+      assert.equal(hard.values.windShiftDeg, base.values.windShiftDeg + 15);
+      assert.equal(soft.values.windShiftKt, Math.max(base.values.windShiftKt - 2, base.values.windShiftResetKt));
+      for (const o of [soft, hard]) {
+        assert.equal(o.values.galeKt, 34);
+        assert.equal(o.values.galeHoldKt, 28);
+        assert.equal(o.values.depthAlertM, base.values.depthAlertM);
+        assert.equal(o.values.hsShiftM, base.values.hsShiftM);
+        assert.equal(o.values.rainMmH, base.values.rainMmH);
+      }
+    }
+    assert.equal(COMFORT_TABLE.hard.windShiftKt, 4);
+    assert.equal(COMFORT_TABLE.soft.hsAlertM, -0.5);
+  });
+
+  it("caps the coastal / cruise wind step under the WMO squall; ocean may go above", () => {
+    assert.equal(COMFORT_WIND_CAP_KT, 16);
+    assert.ok(resolveOrders({ profile: "cruise", comfort: "hard" }).values.windShiftKt <= 16);
+    assert.ok(resolveOrders({ profile: "coastal", comfort: "hard" }).values.windShiftKt <= 16);
+    assert.equal(resolveOrders({ profile: "ocean", comfort: "hard" }).values.windShiftKt, 20);
+  });
+
+  it("tells the LLM that comfort spoke, and the cyan line names it", () => {
+    const hard = resolveOrders({ profile: "cruise", comfort: "hard" });
+    const hs = hard.thresholds.find((t) => t.id === "hsAlertM");
+    assert.match(hs.rule, /confort dur/);
+    assert.equal(hs.source, "usage");
+    assert.equal(skipperSnapshot("hs-shift", hard, { alert: true }).comfort, "hard");
+    assert.equal(ordersLine(hard, "fr"), "Ordres : croisière · dur · Hs 4,0 m · fond 15 m");
+    assert.equal(ordersLine(DEFAULT_ORDERS, "fr"), "Ordres : croisière · Hs 3,5 m · fond 15 m");
+    assert.equal(hard.comfortPhrase.fr, "Je laisse passer plus.");
+  });
+});
+
+describe("S6 — horizon knob: the horizon never lies", () => {
+  it("offers 24 / 36 / 48 h and the budget follows the chosen H", () => {
+    assert.deepEqual([...HORIZONS_H], [24, 36, 48]);
+    const o = resolveOrders({ profile: "cruise", horizonH: 48 }, { mode: "suivre" });
+    assert.equal(o.knobs.horizonH, 48);
+    assert.equal(o.knobs.horizonDefaultH, 36);
+    assert.equal(o.budget.hours, 48);
+    assert.equal(o.budget.maxNm, 336);
+    assert.equal(o.budget.maxPearls, 28);
+    assert.equal(o.values.suivreLookaheadH, 48);
+    assert.equal(o.thresholds.find((t) => t.id === "suivreLookaheadH").rule, "horizon choisi par le skipper");
+    assert.equal(lookaheadBudget(o).maxNm, 336);
+  });
+
+  it("ignores an unknown horizon and falls back to the profile's", () => {
+    assert.equal(resolveOrders({ profile: "ocean", horizonH: 30 }).knobs.horizonH, 48);
+    assert.equal(resolveOrders({ profile: "coastal" }).budget.hours, 24);
+  });
+});
+
+describe("S7 — Expert drawer: a few numbers, clamped, cited as expert", () => {
+  it("lists only engine numbers the detectors really read, never the gale", () => {
+    assert.ok(EXPERT_IDS.length >= 10);
+    assert.ok(!EXPERT_IDS.includes("galeKt") && !EXPERT_IDS.includes("galeHoldKt"));
+    assert.ok(!EXPERT_IDS.includes("hsAlertM") && !EXPERT_IDS.includes("depthAlertM"));
+    const here = dirname(fileURLToPath(import.meta.url));
+    const engine = readFileSync(join(here, "eventRules.js"), "utf8")
+      + readFileSync(join(here, "iciAlong.js"), "utf8")
+      + readFileSync(join(here, "displayJudge.js"), "utf8")
+      + readFileSync(join(here, "..", "hooks", "useIciDossier.js"), "utf8");
+    for (const id of EXPERT_IDS) {
+      assert.match(engine, new RegExp(`\\b${id}\\b`), `${id} is read by the engine`);
+      assert.ok(EXPERT_FIELDS[id].min < EXPERT_FIELDS[id].max);
+    }
+  });
+
+  it("clamps to the bounds and drops garbage", () => {
+    assert.equal(clampExpert("galePct", 99), 50);
+    assert.equal(clampExpert("galePct", "12"), 12);
+    assert.equal(clampExpert("galePct", ""), null);
+    assert.equal(clampExpert("galePct", null), null);
+    assert.equal(clampExpert("loaM", 9), null);
+    assert.equal(clampExpert("currentIgnoreKn", 0.05), 0.1);
+  });
+
+  it("overrides the profile number, flags source expert, and the LLM gets that value", () => {
+    const o = resolveOrders({ profile: "cruise", expert: { marinaRefugeNm: 60, galePct: 25 } }, { mode: "suivre" });
+    assert.equal(o.values.marinaRefugeNm, 60);
+    assert.equal(o.values.galePct, 25);
+    const t = o.thresholds.find((x) => x.id === "marinaRefugeNm");
+    assert.equal(t.source, "expert");
+    assert.match(t.rule, /Expert/);
+    const used = thresholdsForEvent("marina-refuge", o, {});
+    assert.equal(used.find((u) => u.id === "marinaRefugeNm").value, 60);
+    assert.equal(used.find((u) => u.id === "marinaRefugeNm").source, "expert");
+    assert.deepEqual(o.expert, { marinaRefugeNm: 60, galePct: 25 });
+    assert.equal(ordersLine(o, "fr"), "Ordres : croisière · Hs 3,5 m · fond 15 m · 2 expert");
+  });
+
+  it("without expert the numbers are the profile's and thresholdValues stays E1 for cruise", () => {
+    assert.deepEqual(resolveOrders({ profile: "cruise", expert: {} }).expert, {});
+    assert.equal(thresholdValues(resolveOrders({ profile: "cruise", expert: { nope: 3 } })).galePct, 15);
   });
 });
