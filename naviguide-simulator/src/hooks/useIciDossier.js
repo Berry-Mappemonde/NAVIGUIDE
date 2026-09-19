@@ -449,6 +449,7 @@ export function useIciDossier({
     loading: Boolean(enabled && boat && !effective),
     stale: staleRemote,
     thin: Boolean(effective?.thin),
+    pearl: effective?.pearl ?? (effective?.thin ? "thin" : null),
     events: tick.events,
     display: tick.briefing,
   };
