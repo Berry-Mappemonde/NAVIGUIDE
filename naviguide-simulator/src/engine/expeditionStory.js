@@ -227,11 +227,14 @@ function notesBetween(journal, fromIso, toIso, max = 2) {
 }
 
 /** Latest GRIB entry of the journal (wind at the boat), if any. */
-function latestGrib(journal) {
+/** The most recent journaled GRIB — not later than `beforeMs` (a replay reads the past, lot E). */
+function latestGrib(journal, beforeMs = null) {
   let best = null;
   for (const e of journalEntries(journal)) {
     if (e?.kind !== "grib") continue;
-    if (!best || ms(e.t) > ms(best.t)) best = e;
+    const t = ms(e.t);
+    if (beforeMs != null && t != null && t > beforeMs) continue;
+    if (!best || t > ms(best.t)) best = e;
   }
   return best;
 }
@@ -327,9 +330,11 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
     const left = Number(leg?.remainingNm);
     const dayAtSea = days(live.seaHours);
     const elapsed = t0 != null && nowMs != null ? Math.max(0, Math.floor((nowMs - t0) / 86_400_000)) : null;
+    // In a replay (lot E) the "today" of the story is the replayed day.
+    const todayWord = live.replay ? (en ? "That day" : "Ce jour-là") : (en ? "Today" : "Aujourd’hui");
     const when = elapsed != null
-      ? (en ? `Today, day ${elapsed}${dayAtSea ? ` (${dayAtSea} at sea)` : ""}` : `Aujourd’hui, jour ${elapsed}${dayAtSea ? ` (${dayAtSea} de mer)` : ""}`)
-      : (en ? "Today" : "Aujourd’hui");
+      ? (en ? `${todayWord}, day ${elapsed}${dayAtSea ? ` (${dayAtSea} at sea)` : ""}` : `${todayWord}, jour ${elapsed}${dayAtSea ? ` (${dayAtSea} de mer)` : ""}`)
+      : todayWord;
     const dist = nmLabel(live.sailNm ?? live.filmNm, lang);
 
     if (live.status === "arrived") {
@@ -372,7 +377,7 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
   const wind = live?.kind === "forecast" && Number.isFinite(live.windKnots)
     ? { kn: live.windKnots, from: live.dirFromDeg, model: live.model, when: null }
     : null;
-  const g = !wind ? latestGrib(journal) : null;
+  const g = !wind ? latestGrib(journal, nowMs) : null;
   const gw = g && Number.isFinite(g.windKnots ?? g.wind?.windKnots)
     ? { kn: g.windKnots ?? g.wind.windKnots, from: g.dirFromDeg ?? g.wind?.dirFromDeg, model: g.model || g.wind?.model, when: g.t }
     : null;

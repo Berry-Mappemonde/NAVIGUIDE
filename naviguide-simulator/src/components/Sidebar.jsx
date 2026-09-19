@@ -221,7 +221,7 @@ export const Sidebar = memo(function Sidebar({
   previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
   journal = null, journalLoading = false, journalError = null,
-  story = null,
+  story = null, storyReplay = false,
   momentNow = null, momentNowLeft = 0, onMomentDismiss,
   momentFree = null, momentFreeLeft = 0, onMomentNext,
   escaleStop = null, escaleSheet = null, onEscaleClose,
@@ -353,14 +353,23 @@ export const Sidebar = memo(function Sidebar({
           )}
 
           {isSuivre && !isDrawing && Array.isArray(story) && story.length ? (
-            <div data-testid="expedition-story" className="rounded-lg border border-sky-500/25 bg-sky-950/30 p-2 min-w-0">
-              <div className="text-[10px] font-semibold text-sky-200 leading-snug">{t("storyTitle")}</div>
+            <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
+              <div className="text-[10px] font-semibold text-sky-200 leading-snug">
+                {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
+              </div>
               <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
-              {story.map((paragraph, i) => (
-                <p key={i} className="text-[11px] text-slate-200 leading-snug break-words [overflow-wrap:anywhere] mt-1">
-                  {paragraph}
-                </p>
-              ))}
+              {story.map((paragraph, i) => {
+                const current = storyReplay && i === story.length - 1;
+                return (
+                  <p
+                    key={i}
+                    data-current={current ? "1" : "0"}
+                    className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] mt-1 ${current ? "text-white font-medium border-l-2 border-sky-300 pl-1.5" : "text-slate-200"}`}
+                  >
+                    {paragraph}
+                  </p>
+                );
+              })}
             </div>
           ) : null}
 
