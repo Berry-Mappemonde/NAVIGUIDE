@@ -36,6 +36,7 @@ from weather_pipeline import get_pipeline
 from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
 from story_cascade import write_story
 from polar_api import router as polar_router
+from escale_api import router as escale_router
 from route_engine import searoute_with_exact_end
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
@@ -72,6 +73,7 @@ app.add_middleware(
 )
 app.include_router(polar_router)
 app.include_router(voyage_router)
+app.include_router(escale_router)
 
 
 @app.on_event("startup")

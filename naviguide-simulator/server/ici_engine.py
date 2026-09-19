@@ -160,6 +160,13 @@ def thin_cache_put(key: str, bag: dict, kind: str = "thin", lat: float | None = 
     pearl_store.put_pearl(key, bag, kind, lat, lon, hit["ts"])
 
 
+def thin_cache_drop(key: str) -> None:
+    """Forget one pearl (memory + store): the next fill collects it again."""
+    _thin_cache.pop(key, None)
+    import pearl_store  # noqa: PLC0415
+    pearl_store.delete_pearl(key)
+
+
 def reset_caches() -> None:
     _fc_cache.clear()
     _thin_cache.clear()

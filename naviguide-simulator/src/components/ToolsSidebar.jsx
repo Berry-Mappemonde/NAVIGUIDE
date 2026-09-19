@@ -149,7 +149,7 @@ function SectionTitle({ children, right = null }) {
  * The whole expedition, compact: the route in numbers on two lines and the
  * stopovers list (click = jump). Revue du 19 sept. : one box, not two.
  */
-function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale }) {
+function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet }) {
   const { t } = useLang();
   const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—";
   return (
@@ -161,7 +161,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
         <span>· {waypointCount} {t("waypoints").toLowerCase()}</span>
         <span>· {routeCounts.points.toLocaleString()} {t("routePointsShort")}</span>
       </div>
-      <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
+      <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} onSheet={onEscaleSheet} />
     </div>
   );
 }
@@ -172,7 +172,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
   maritimeLayers = null,
-  escaleMarks = [], filmNm = 0, onSeekEscale,
+  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet,
   showDeparture = false, departureT0, onDepartureT0,
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
@@ -307,6 +307,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               escaleMarks={escaleMarks}
               filmNm={filmNm}
               onSeekEscale={onSeekEscale}
+              onEscaleSheet={onEscaleSheet}
             />
             {showDeparture ? (
               <div className="mt-2">

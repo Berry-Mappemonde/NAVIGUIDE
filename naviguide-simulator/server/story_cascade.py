@@ -155,8 +155,15 @@ def _is_title(line: str) -> bool:
     return bool(s) and len(s) < 80 and not re.search(r"[.!?…]$", s)
 
 
-def tidy_story(text: str | None, fallback: str | None = None) -> str:
-    """Keep the fact, drop the machinery. Empty → the local phrase (or "")."""
+def tidy_story(
+    text: str | None,
+    fallback: str | None = None,
+    *,
+    max_sentences: int = MAX_SENTENCES,
+    max_chars: int = MAX_CHARS,
+) -> str:
+    """Keep the fact, drop the machinery. Empty → the local phrase (or "").
+    Cards keep the defaults (2 sentences); an escale paragraph asks for more."""
     lines = [
         re.sub(r"^\s*(?:[-•*]|\d+[.)])\s+", "", _MD_RE.sub("", ln)).strip()
         for ln in _clean_text(text).split("\n")
@@ -166,9 +173,9 @@ def tidy_story(text: str | None, fallback: str | None = None) -> str:
     if not raw:
         return (fallback or "").strip()
     kept = [s.strip() for s in _SENT_SPLIT_RE.split(raw) if s.strip() and not _META_RE.search(s)]
-    out = " ".join(kept[:MAX_SENTENCES]).strip()
-    if len(out) > MAX_CHARS:
-        cut = out[:MAX_CHARS]
+    out = " ".join(kept[:max_sentences]).strip()
+    if len(out) > max_chars:
+        cut = out[:max_chars]
         out = cut[: cut.rfind(" ")].rstrip(" ,;:") + "…" if " " in cut else cut
     return out or (fallback or "").strip()
 
@@ -287,6 +294,39 @@ async def _call_claude(system: str, user: str, client: httpx.AsyncClient) -> tup
     if not text:
         raise RuntimeError("claude empty")
     return text, "claude"
+
+
+async def cascade_text(
+    system: str,
+    user: str,
+    client: httpx.AsyncClient | None = None,
+    *,
+    online: bool = False,
+) -> tuple[str, str]:
+    """The usual cascade (NIM → OpenRouter → Claude) for any prompt — escale
+    sheets (lot C), logbook chat (lot D). Returns (raw text, engine) or
+    raises RuntimeError when no backend answered. Never Tavily, never Nebius."""
+    own = client is None
+    http = client or httpx.AsyncClient(timeout=TIMEOUT)
+    last = "no_llm_backend"
+    try:
+        steps = (
+            (lambda: _call_nim(system, user, http)),
+            (lambda: _call_openrouter(system, user, http, online=online)),
+            (lambda: _call_claude(system, user, http)),
+        )
+        for step in steps:
+            try:
+                text, engine = await step()
+                if _clean_text(text):
+                    return text, engine
+                last = f"{engine} empty"
+            except Exception as exc:
+                last = str(exc)[:160]
+        raise RuntimeError(last)
+    finally:
+        if own:
+            await http.aclose()
 
 
 async def write_story(

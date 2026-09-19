@@ -4,6 +4,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { JournalPanel } from "./JournalPanel.jsx";
 import { FreeMomentBlock, MomentNowCard } from "./MomentCards.jsx";
+import { EscaleSheet } from "./EscaleSheet.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 
@@ -222,6 +223,7 @@ export const Sidebar = memo(function Sidebar({
   story = null,
   momentNow = null, momentNowLeft = 0, onMomentDismiss,
   momentFree = null, momentFreeLeft = 0, onMomentNext,
+  escaleStop = null, escaleSheet = null, onEscaleClose,
 }) {
   const { t } = useLang();
   const isSimulation = view === VIEW_SIMULATION;
@@ -310,6 +312,17 @@ export const Sidebar = memo(function Sidebar({
           ) : null}
           {!isDrawing && momentFree ? (
             <FreeMomentBlock card={momentFree} left={momentFreeLeft} onNext={onMomentNext} onFocus={onBriefingFocus} inline />
+          ) : null}
+
+          {!isDrawing && escaleStop ? (
+            <EscaleSheet
+              stop={escaleStop}
+              fiche={escaleSheet?.fiche}
+              loading={Boolean(escaleSheet?.loading)}
+              error={escaleSheet?.error}
+              onClose={onEscaleClose}
+              onFocus={onBriefingFocus}
+            />
           ) : null}
 
           {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
