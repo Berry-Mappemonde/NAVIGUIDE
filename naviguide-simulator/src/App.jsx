@@ -19,10 +19,10 @@ import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
-import { useEscaleSheet } from "./hooks/useEscaleSheet.js";
+import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
 import { useReplay } from "./hooks/useReplay.js";
-import { speak, stopSpeaking } from "./utils/speak.js";
+import { useReplayVoice } from "./hooks/useReplayVoice.js";
 import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -79,12 +79,9 @@ import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
 import { mapInsetVars } from "./utils/filmBarLayout.js";
-import {
-  fetchWeatherComposite,
-  productHasData,
-  satelliteBusy,
-  weatherPollMs,
-} from "./hooks/weatherSnapshot.js";
+import { productHasData } from "./hooks/weatherSnapshot.js";
+import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
+import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -181,37 +178,24 @@ export default function App() {
   const berryFetchIdRef = useRef(0);
   const customFetchIdRef = useRef(0);
 
-  const [drawingMode, setDrawingMode] = useState(false);
-  const [drawnPoints, setDrawnPoints] = useState([]);
-  const [drawnSegments, setDrawnSegments] = useState([]);
-  const [drawingLoading, setDrawingLoading] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
-  const drawnPointsRef = useRef([]);
-  const drawnSegmentsRef = useRef([]);
-  const undonePointsRef = useRef([]);
-  const undoneSegmentsRef = useRef([]);
-  const fetchIdRef = useRef(0);
+  // The drawn route: points, searoute segments, undo / redo (lot J: hooks/useRouteDrawing.js).
+  const drawingState = useRouteDrawing();
+  const {
+    drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, canRedo,
+    reset: _resetDrawState, addPoint: handleDrawingClick, undo: handleDrawUndo, redo: handleDrawRedo,
+  } = drawingState;
 
   const [layerPopup, setLayerPopup] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [clipboardToast, setClipboardToast] = useState(null);
-  const [selectedSatellite, setSelectedSatellite] = useState(null);
-  const [satelliteLoading, setSatelliteLoading] = useState(false);
-  const [satelliteTab, setSatelliteTab] = useState("wind");
+  // Satellite / weather popup of a route click (lot J: hooks/useSatellitePopup.js).
+  const satellite = useSatellitePopup();
+  const {
+    selected: selectedSatellite, setSelected: setSelectedSatellite, loading: satelliteLoading,
+    tab: satelliteTab, setTab: setSatelliteTab, open: fetchSatellite, close: closeSatellite,
+  } = satellite;
   const [pointInfoName, setPointInfoName] = useState("");
   const [pointInfoFlags, setPointInfoFlags] = useState([null, null]);
-  const satelliteRequestRef = useRef({ id: 0, controller: null });
-
-  const cancelSatelliteRequest = useCallback(() => {
-    satelliteRequestRef.current.id += 1;
-    satelliteRequestRef.current.controller?.abort();
-    satelliteRequestRef.current.controller = null;
-  }, []);
-  const closeSatellite = useCallback(() => {
-    cancelSatelliteRequest();
-    setSelectedSatellite(null);
-    setSatelliteLoading(false);
-  }, [cancelSatelliteRequest]);
 
   const onFeature = useCallback((fiche) => {
     closeSatellite();
@@ -504,21 +488,13 @@ export default function App() {
     : 0;
   const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
 
-  // Fiche d'escale (lot C): opened from the Expedition list (▤) in any view,
-  // and by itself in Suivre when the boat is alongside — once per stop, the
-  // skipper may close it. Never a chat, never blocks Play.
-  const [escaleStop, setEscaleStop] = useState(null);
-  const escaleSheet = useEscaleSheet(escaleStop, lang);
-  const autoSheetRef = useRef(null);
-  const openEscaleSheet = useCallback((stop) => {
-    if (!stop || !Number.isFinite(stop.lat) || !Number.isFinite(stop.lon)) return;
-    setEscaleStop({ name: stop.name, lat: stop.lat, lon: stop.lon });
-    setSidebarOpen(true);
-  }, []);
-  const closeEscaleSheet = useCallback(() => {
-    if (escaleStop) autoSheetRef.current = escaleStop.name;
-    setEscaleStop(null);
-  }, [escaleStop]);
+  // Fiche d'escale (lot C; hooks/useEscaleSheetState.js since lot J).
+  const escale = useEscaleSheetState({
+    lang, isSuivre, atQuay, clockSample, marks: legendMarks,
+    onOpen: () => setSidebarOpen(true),
+  });
+  const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
+
   // Chatbot journal de bord (lot D): the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
   const chatContextRef = useRef(null);
@@ -536,19 +512,6 @@ export default function App() {
   const chatContextFn = useCallback(() => chatContextRef.current, []);
   const chat = useLogbookChat({ lang, contextFn: chatContextFn });
 
-  useEffect(() => {
-    if (!isSuivre || !atQuay || !clockSample || !Number.isFinite(clockSample.lat)) return;
-    let best = null;
-    let bestD = Infinity;
-    for (const m of legendMarks) {
-      if (!Number.isFinite(m.lat) || !Number.isFinite(m.lon)) continue;
-      const d = haversineNm(clockSample.lat, clockSample.lon, m.lat, m.lon);
-      if (d < bestD) { bestD = d; best = m; }
-    }
-    if (!best || bestD > 5 || autoSheetRef.current === best.name) return;
-    autoSheetRef.current = best.name;
-    setEscaleStop({ name: best.name, lat: best.lat, lon: best.lon });
-  }, [isSuivre, atQuay, clockSample, legendMarks]);
   const clockLine = officialClock?.vertices?.length && clockSample
     ? formatFilmClockLine({
       sailNm: isSuivre && !previewing
@@ -768,24 +731,7 @@ export default function App() {
     ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
     : (iciPack.briefing || null);
 
-  // Replay voice (lot E): each time the story gains a paragraph — a leg
-  // closed, the next one begun — the newly current paragraph is read aloud.
-  // Same browser voice as « Écouter », no LLM. Stopped with the replay.
-  const spokenRef = useRef({ count: 0, text: "" });
-  useEffect(() => {
-    if (!replay.active) {
-      if (spokenRef.current.text) stopSpeaking();
-      spokenRef.current = { count: 0, text: "" };
-      return;
-    }
-    const last = storyParagraphs[storyParagraphs.length - 1] || "";
-    if (!replay.voice || !last || last === spokenRef.current.text) return;
-    if (storyParagraphs.length !== spokenRef.current.count || !spokenRef.current.text) {
-      spokenRef.current = { count: storyParagraphs.length, text: last };
-      stopSpeaking();
-      speak(last, lang);
-    }
-  }, [replay.active, replay.voice, storyParagraphs, lang]);
+  useReplayVoice({ active: replay.active, voice: replay.voice, paragraphs: storyParagraphs, lang });
 
   const recaptureRef = useRef(null);
   const replayControls = useMemo(() => (isSuivre && officialClock ? {
@@ -1030,17 +976,6 @@ export default function App() {
     fetchCustomPlan(geojson);
   }, [fetchCustomPlan]);
 
-  const _resetDrawState = () => {
-    setDrawnPoints([]);
-    setDrawnSegments([]);
-    setCanRedo(false);
-    drawnPointsRef.current = [];
-    drawnSegmentsRef.current = [];
-    undonePointsRef.current = [];
-    undoneSegmentsRef.current = [];
-    fetchIdRef.current = 0;
-  };
-
   const handleDrawStart = () => {
     const mapView = sceneApiRef.current?.getView();
     drawRestoreRef.current = {
@@ -1081,16 +1016,8 @@ export default function App() {
   };
 
   const handleDrawFinish = () => {
-    const lineFeatures = drawnSegmentsRef.current.filter((s) => s.coords?.length > 0).map((s) => ({
-      type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: s.coords },
-    }));
-    const pointFeatures = drawnPointsRef.current.map((p, i) => ({
-      type: "Feature",
-      properties: { name: p.name || `Point ${i + 1}`, flags: p.flags || [], naviguide_type: "drawn_waypoint" },
-      geometry: { type: "Point", coordinates: [p.lon, p.lat] },
-    }));
     setDrawingMode(false);
-    return { type: "FeatureCollection", features: [...lineFeatures, ...pointFeatures] };
+    return drawingState.toGeoJson();
   };
 
   const handleDrawContinue = () => {
@@ -1116,75 +1043,6 @@ export default function App() {
     setVoyageFlat(null);
     _resetDrawState();
     applyBerryBriefing();
-  };
-
-  const fetchDrawnSegment = async (from, to) => {
-    const myFetchId = ++fetchIdRef.current;
-    setDrawingLoading(true);
-    try {
-      const params = new URLSearchParams({ start_lat: from.lat, start_lon: from.lon, end_lat: to.lat, end_lon: to.lon });
-      const res = await fetch(`${API_URL}/route?${params}`);
-      const data = await res.json();
-      let coords = coordsFromRoutePayload(data);
-      let failed = false;
-      if (!coords.length) {
-        coords = [[from.lon, from.lat], [to.lon, to.lat]];
-        failed = true;
-      }
-      if (fetchIdRef.current === myFetchId) {
-        const updated = [...drawnSegmentsRef.current, { coords, failed }];
-        drawnSegmentsRef.current = updated;
-        setDrawnSegments([...updated]);
-      }
-    } catch {
-      if (fetchIdRef.current === myFetchId) {
-        const updated = [...drawnSegmentsRef.current, { coords: [[from.lon, from.lat], [to.lon, to.lat]], failed: true }];
-        drawnSegmentsRef.current = updated;
-        setDrawnSegments([...updated]);
-      }
-    } finally {
-      if (fetchIdRef.current === myFetchId) setDrawingLoading(false);
-    }
-  };
-
-  const handleDrawingClick = (lat, lon) => {
-    const newPoint = { lat, lon };
-    const updated = [...drawnPointsRef.current, newPoint];
-    drawnPointsRef.current = updated;
-    undonePointsRef.current = [];
-    undoneSegmentsRef.current = [];
-    setCanRedo(false);
-    setDrawnPoints([...updated]);
-    if (updated.length >= 2) fetchDrawnSegment(updated[updated.length - 2], newPoint);
-  };
-
-  const handleDrawUndo = () => {
-    if (!drawnPointsRef.current.length) return;
-    fetchIdRef.current += 1;
-    undonePointsRef.current = [...undonePointsRef.current, drawnPointsRef.current.at(-1)];
-    drawnPointsRef.current = drawnPointsRef.current.slice(0, -1);
-    if (drawnSegmentsRef.current.length) {
-      undoneSegmentsRef.current = [...undoneSegmentsRef.current, drawnSegmentsRef.current.at(-1)];
-      drawnSegmentsRef.current = drawnSegmentsRef.current.slice(0, -1);
-    }
-    setDrawnPoints([...drawnPointsRef.current]);
-    setDrawnSegments([...drawnSegmentsRef.current]);
-    setDrawingLoading(false);
-    setCanRedo(true);
-  };
-
-  const handleDrawRedo = () => {
-    if (!undonePointsRef.current.length) return;
-    const restoredPoint = undonePointsRef.current.at(-1);
-    undonePointsRef.current = undonePointsRef.current.slice(0, -1);
-    drawnPointsRef.current = [...drawnPointsRef.current, restoredPoint];
-    if (undoneSegmentsRef.current.length) {
-      drawnSegmentsRef.current = [...drawnSegmentsRef.current, undoneSegmentsRef.current.at(-1)];
-      undoneSegmentsRef.current = undoneSegmentsRef.current.slice(0, -1);
-    }
-    setDrawnPoints([...drawnPointsRef.current]);
-    setDrawnSegments([...drawnSegmentsRef.current]);
-    setCanRedo(undonePointsRef.current.length > 0);
   };
 
   useEffect(() => {
@@ -1285,71 +1143,13 @@ export default function App() {
     return () => { cancelled = true; };
   }, [points]);
 
-  const fetchSatellite = useCallback(async (lat, lon, extra = {}) => {
-    const previous = satelliteRequestRef.current;
-    previous.controller?.abort();
-    const controller = new AbortController();
-    const id = previous.id + 1;
-    satelliteRequestRef.current = { id, controller };
-    setSatelliteLoading(true);
-    setSatelliteTab("wind");
-    setSelectedSatellite({ lat, lon, ...extra });
-    try {
-      const data = await fetchWeatherComposite(lat, lon, {
-        signal: controller.signal,
-        api: API_URL,
-      });
-      if (satelliteRequestRef.current.id !== id) return;
-      setSelectedSatellite((prev) => (prev ? { ...prev, ...data } : prev));
-      setSatelliteLoading(satelliteBusy(data));
-    } catch (err) {
-      if (controller.signal.aborted || satelliteRequestRef.current.id !== id) return;
-      setSelectedSatellite((prev) => (prev ? { ...prev, error: true } : prev));
-      setSatelliteLoading(false);
-    } finally {
-      if (satelliteRequestRef.current.id === id) {
-        satelliteRequestRef.current.controller = null;
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!selectedSatellite || selectedSatellite.error) return undefined;
-    const lat = selectedSatellite.lat;
-    const lon = selectedSatellite.lon;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
-    const requestId = satelliteRequestRef.current.id;
-    const delay = weatherPollMs(selectedSatellite);
-    const timer = setInterval(() => {
-      const controller = new AbortController();
-      satelliteRequestRef.current.controller?.abort();
-      satelliteRequestRef.current.controller = controller;
-      fetchWeatherComposite(lat, lon, { signal: controller.signal, api: API_URL })
-        .then((data) => {
-          if (satelliteRequestRef.current.id !== requestId) return;
-          setSelectedSatellite((prev) => (
-            prev && prev.lat === lat && prev.lon === lon ? { ...prev, ...data } : prev
-          ));
-          setSatelliteLoading(satelliteBusy(data));
-        })
-        .catch(() => {});
-    }, delay);
-    return () => clearInterval(timer);
-  }, [selectedSatellite?.lat, selectedSatellite?.lon, selectedSatellite?.status, selectedSatellite?.refreshing, selectedSatellite?.error]);
-
-  useEffect(() => cancelSatelliteRequest, [cancelSatelliteRequest]);
-
   const handleMapRouteClick = useCallback((position) => {
     fetchSatellite(position.lat, position.lon);
   }, [fetchSatellite]);
 
   const handleSaveDrawPointMeta = () => {
     if (selectedSatellite?.drawPointIndex != null) {
-      const idx = selectedSatellite.drawPointIndex;
-      const updated = [...drawnPointsRef.current];
-      updated[idx] = { ...updated[idx], name: pointInfoName.trim() || undefined, flags: pointInfoFlags.filter(Boolean) };
-      drawnPointsRef.current = updated;
-      setDrawnPoints([...updated]);
+      drawingState.updatePoint(selectedSatellite.drawPointIndex, { name: pointInfoName.trim() || undefined, flags: pointInfoFlags.filter(Boolean) });
     }
     setSelectedSatellite(null);
   };

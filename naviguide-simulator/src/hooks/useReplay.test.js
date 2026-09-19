@@ -21,7 +21,9 @@ describe("useReplay contract (lot E)", () => {
   it("App swaps the live boat for the replayed one in Suivre, jumps the playhead each frame, reads each new leg aloud", () => {
     assert.match(app, /replay\.active && replay\.live \? replay\.live : official\.live/);
     assert.match(app, /jump: Boolean\(live\.replay\)/);
-    assert.match(app, /speak\(last, lang\)/);
+    // The voice lives in hooks/useReplayVoice.js since lot J; App mounts it.
+    assert.match(app, /useReplayVoice\(\{ active: replay\.active, voice: replay\.voice, paragraphs: storyParagraphs, lang \}\)/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speak\(last, lang\)/);
     assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
