@@ -208,7 +208,13 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
         />
         <Row
           label={t("skipperPlanningKn")}
-          value={`${num(T.planningKn, lang)} kn · ${boat.source.planningKn === "polar" ? t("skipperFromPolar") : t("skipperProfileDefault")}`}
+          value={`${num(T.planningKn, lang)} kn · ${
+            boat.source.planningKn === "grib"
+              ? t("skipperPlanningGrib", { tws: num(boat.planningWind?.tws, lang), twa: boat.planningWind?.twa })
+              : boat.source.planningKn === "climatology"
+                ? t("skipperPlanningClimo", { tws: num(boat.planningWind?.tws, lang), twa: boat.planningWind?.twa })
+                : boat.source.planningKn === "polar" ? t("skipperFromPolar") : t("skipperProfileDefault")
+          }`}
         />
         {BOAT_EXPERT_IDS.map((id) => (
           <NumberRow

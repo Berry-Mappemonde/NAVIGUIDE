@@ -12,7 +12,8 @@
  * "expert"` so the story cites what the skipper really set. Gale stays locked.
  */
 
-import { expeditionBoatKnots } from "./playSpeeds.js";
+import { expeditionBoatKnots, trueWindAngle } from "./playSpeeds.js";
+import { hasPolarRaw, polarBoatSpeed } from "./polarSpeed.js";
 
 export const PROFILES = Object.freeze(["coastal", "cruise", "ocean"]);
 export const DEFAULT_PROFILE = "cruise";
@@ -293,27 +294,58 @@ export function sanitizeBoat(boat) {
   return out;
 }
 
+/** Planning speed floor: a polar at 2 kn of wind says 0 — the skipper still plans. */
+export const PLANNING_MIN_KN = 3;
+
+/**
+ * Planning speed = the polar read at the wind of the moment (revue du 19 sept.) :
+ * GRIB at the boat in Suivre, climatology of the leg in Simulation. `wind` =
+ * { tws, twd, heading, kind: "grib" | "climatology" }. Without a polar table
+ * or without wind → the downwind average of the polar (as before) → null.
+ * Returns { kn, source, twa, tws } — the numbers the panel and the story cite.
+ */
+export function planningSpeedFor(polar, wind = null) {
+  const tws = Number(wind?.tws);
+  const twa = trueWindAngle(Number(wind?.heading), Number(wind?.twd));
+  if (Number.isFinite(tws) && twa != null && hasPolarRaw(polar?.raw)) {
+    const bs = polarBoatSpeed(polar.raw, twa, tws);
+    if (Number.isFinite(bs)) {
+      return {
+        kn: Math.round(Math.max(PLANNING_MIN_KN, bs) * 10) / 10,
+        source: wind?.kind === "climatology" ? "climatology" : "grib",
+        twa: Math.round(twa),
+        tws: Math.round(tws * 10) / 10,
+      };
+    }
+  }
+  const hasPolarSpeed = Boolean(polar?.vmg_summary && typeof polar.vmg_summary === "object");
+  const kn = hasPolarSpeed ? expeditionBoatKnots(polar) : null;
+  if (isFinitePositive(kn)) return { kn: Math.round(kn * 10) / 10, source: "polar", twa: null, tws: null };
+  return null;
+}
+
 /**
  * Read the boat from the polar. Berry defaults when the polar does not say;
- * what the skipper typed (Paramètres avancés) wins over both.
+ * what the skipper typed (Paramètres avancés) wins over both. `wind` makes
+ * the planning speed follow the polar at the wind of the moment.
  */
-export function readBoat(polar, override = null) {
+export function readBoat(polar, override = null, wind = null) {
   const own = sanitizeBoat(override);
   const loaRaw = Number(polar?.loa_m ?? polar?.loaM);
   const draftRaw = Number(polar?.draft_m ?? polar?.draftM);
-  const hasPolarSpeed = Boolean(polar?.vmg_summary && typeof polar.vmg_summary === "object");
-  const kn = hasPolarSpeed ? expeditionBoatKnots(polar) : null;
+  const planning = planningSpeedFor(polar, wind);
   return {
     name: polar?.boat_name ?? polar?.name ?? DEFAULT_BOAT.name,
     expeditionId: polar?.expedition_id ?? null,
     loaM: own.loaM ?? (isFinitePositive(loaRaw) ? loaRaw : DEFAULT_BOAT.loaM),
     draftM: own.draftM ?? (isFinitePositive(draftRaw) ? draftRaw : DEFAULT_BOAT.draftM),
-    planningKn: isFinitePositive(kn) ? Math.round(kn * 10) / 10 : null,
+    planningKn: planning?.kn ?? null,
+    planningWind: planning && planning.twa != null ? { twa: planning.twa, tws: planning.tws } : null,
     source: {
       name: polar?.boat_name || polar?.name ? "polar" : null,
       loa: own.loaM != null ? "skipper" : (isFinitePositive(loaRaw) ? "polar" : "default"),
       draft: own.draftM != null ? "skipper" : (isFinitePositive(draftRaw) ? "polar" : "default"),
-      planningKn: isFinitePositive(kn) ? "polar" : "profile",
+      planningKn: planning?.source ?? "profile",
     },
   };
 }
@@ -368,7 +400,7 @@ export function sanitizeExpert(expert) {
  * One `value` per id. Never two candidates: profile → Comfort delta → Expert
  * override, in that order, and the threshold says which one spoke (`source`).
  */
-export function resolveOrders(saved, { polar = null, mode = "simulation" } = {}) {
+export function resolveOrders(saved, { polar = null, mode = "simulation", wind = null } = {}) {
   const profile = PROFILES.includes(saved?.profile) ? saved.profile : DEFAULT_PROFILE;
   const comfort = COMFORTS.includes(saved?.comfort) ? saved.comfort : COMFORT_DEFAULT;
   const row = PROFILE_TABLE[profile];
@@ -379,7 +411,7 @@ export function resolveOrders(saved, { polar = null, mode = "simulation" } = {})
   if (expert.galeHoldKt != null && expert.galeHoldKt >= (expert.galeKt ?? LOCKED.galeKt)) {
     expert.galeHoldKt = Math.max(EXPERT_FIELDS.galeHoldKt.min, (expert.galeKt ?? LOCKED.galeKt) - 4);
   }
-  const boat = readBoat(polar, saved?.boat);
+  const boat = readBoat(polar, saved?.boat, wind);
   const planningKn = boat.planningKn ?? row.planningKnDefault;
   const budget = budgetFrom(horizonH, planningKn, SHARED.routeSampleNm);
   const rainEnabled = mode === "suivre";
@@ -423,9 +455,13 @@ export function resolveOrders(saved, { polar = null, mode = "simulation" } = {})
       const m = metaFor(id, profile);
       const rain = RAIN_IDS.has(id);
       let source = id === "planningKn" && boat.planningKn != null ? "usage" : m.source;
-      let rule = id === "planningKn"
-        ? (boat.planningKn != null ? "polaire (VMG portant)" : `défaut ${PROFILE_LABEL[profile].fr} sans polaire`)
-        : m.rule;
+      let rule = m.rule;
+      if (id === "planningKn") {
+        if (boat.planningKn == null) rule = `défaut ${PROFILE_LABEL[profile].fr} sans polaire`;
+        else if (boat.source.planningKn === "grib") rule = `polaire × vent GRIB (${boat.planningWind.tws} kn, TWA ${boat.planningWind.twa}°)`;
+        else if (boat.source.planningKn === "climatology") rule = `polaire × vent typique (${boat.planningWind.tws} kn, TWA ${boat.planningWind.twa}°)`;
+        else rule = "polaire (VMG portant)";
+      }
       if (id in expert) {
         source = "expert";
         rule = `réglage Expert (profil ${PROFILE_LABEL[profile].fr})`;
