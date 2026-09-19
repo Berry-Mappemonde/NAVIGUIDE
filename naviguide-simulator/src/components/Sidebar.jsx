@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Square, Trash2, Volume2 } from "lucide-react";
+import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { EscaleLegend } from "./EscaleLegend.jsx";
@@ -9,7 +9,6 @@ import { JournalPanel } from "./JournalPanel.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
-import { canSpeak, speak, stopSpeaking } from "../utils/speak.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
@@ -210,36 +209,6 @@ function BriefingText({ segments, onFocus, t }) {
   });
 }
 
-/** « Écouter » — le briefing lu à voix haute par le navigateur (zéro LLM). */
-function ListenButton({ text, t, lang }) {
-  const [speaking, setSpeaking] = useState(false);
-  useEffect(() => () => stopSpeaking(), []);
-  if (!canSpeak() || !text) return null;
-  const toggle = () => {
-    if (speaking) {
-      stopSpeaking();
-      setSpeaking(false);
-      return;
-    }
-    const ok = speak(text, lang, { onEnd: () => setSpeaking(false) });
-    setSpeaking(ok);
-  };
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      data-testid="briefing-listen"
-      aria-pressed={speaking}
-      title={speaking ? t("briefingListenStop") : t("briefingListen")}
-      className={`ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border transition-colors
-        ${speaking ? "bg-sky-600/40 text-sky-100 border-sky-400/40" : "bg-slate-700/60 text-slate-200 border-white/10 hover:bg-slate-600/60"}`}
-    >
-      {speaking ? <Square size={10} /> : <Volume2 size={10} />}
-      {speaking ? t("briefingListenStop") : t("briefingListen")}
-    </button>
-  );
-}
-
 export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
@@ -255,8 +224,9 @@ export const Sidebar = memo(function Sidebar({
   previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
   journal = null, journalLoading = false, journalError = null,
+  story = null,
 }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -353,6 +323,20 @@ export const Sidebar = memo(function Sidebar({
             </div>
           )}
 
+          <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
+
+          {isSuivre && !isDrawing && Array.isArray(story) && story.length ? (
+            <div data-testid="expedition-story" className="rounded-lg border border-sky-500/25 bg-sky-950/30 p-2 min-w-0">
+              <div className="text-[10px] font-semibold text-sky-200 leading-snug">{t("storyTitle")}</div>
+              <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
+              {story.map((paragraph, i) => (
+                <p key={i} className="text-[11px] text-slate-200 leading-snug break-words [overflow-wrap:anywhere] mt-1">
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          ) : null}
+
           {isDrawing && (
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
               <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">{t("briefingDrawHint")}</p>
@@ -370,11 +354,6 @@ export const Sidebar = memo(function Sidebar({
                 <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {skipperNotice}
                 </p>
-              ) : null}
-              {!briefingLoading && briefing ? (
-                <div className="flex items-center mb-1">
-                  <ListenButton text={briefing} t={t} lang={lang} />
-                </div>
               ) : null}
               <p
                 data-testid="ici-briefing"
@@ -410,7 +389,6 @@ export const Sidebar = memo(function Sidebar({
             recomputeBusy={recomputeBusy}
             onGoLive={onGoLive}
           />
-          <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
 
           {isSuivre && !isDrawing ? (
             <JournalPanel journal={journal} loading={journalLoading} error={journalError} />

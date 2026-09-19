@@ -19,8 +19,14 @@ UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 > 5. **Ni Tavily, ni Nemotron, ni LangSmith** pour le moment.
 >
 > **Fait depuis la v1.0** : #180 S6/S7, #181 briefing liens + langage naturel,
-> #184 CI simulateur (+ tests hermétiques, `/recompute` 77 s → 4 s) **mergés** ;
-> #185 sécurité P0 et #186 journal serveur + « Écouter » **en PR**.
+> #184 CI simulateur (+ tests hermétiques, `/recompute` 77 s → 4 s),
+> #185 sécurité P0, #186 journal serveur + « Écouter », #182, #183 **mergés**.
+> **19 sept.** : carte du moment (1.4, deux voies NOW / FREE), récit de la
+> traversée (1.5, sans LLM), « Écouter » dans la barre film ; correctifs —
+> Suivre bloqué à Saint-Maur (le PUT officiel refusait les longitudes dépliées
+> du Pacifique depuis P0, et une horloge Simulation restait figée côté client),
+> crédits Leaflet (liens, une seule fois, dans la carte visible), fiche Gold
+> (`BI_ADMIN_KEY` côté serveur, silence côté visiteur).
 
 ---
 
@@ -131,6 +137,22 @@ précédente (pas d’empilement), avec les mêmes liens que le briefing (voir s
 carte, fiche, Google Maps). Elle prend tout son sens en **Cinéma** (sidebars
 rangées) : c’est là qu’aujourd’hui le visiteur ne voit rien. Base technique
 déjà là : pane `briefing-focus`, `MapSceneController.api.briefing`, juge E3.
+
+**Fait (19 sept. 2026), arbitrage du porteur : deux voies.** `engine/momentCard.js`
+(pur, testé) + `useMomentCards` + `MomentCards.jsx` :
+- **NOW — « À bord, maintenant »** : sécurité et décisions (coup de vent,
+  repli, haut-fond, câble, cyclone, ZEE / port d’entrée / AMP, météo qui
+  change le plan). Une carte à la fois en haut de la carte, les alertes
+  passent devant, fermable ; expire après 14 s en lecture, 90 s en Suivre,
+  jamais en pause. Texte = récit LLM quand il est prêt, phrase locale sinon.
+- **FREE — « Pendant ce temps, autour du bateau »** : information (fiches
+  science, projets, marinas, balisage, image satellite, climatologie,
+  événements « later » atteints par la tête de lecture). Bloc en bas à
+  droite, visible seulement quand rien d’urgent n’est posé ; tourne (9 s en
+  lecture, 14 s en Suivre), boucle sur les fiches du sac, « Suivant » à la main.
+- Chaque carte garde le contrat du briefing : « Voir sur la carte » (pin +
+  bateau), ↗ site officiel, ◎ Google Maps, « Écouter ». Suivre, Simulation
+  et route personnalisée passent par le même moteur. Sans Nebius (décision).
 
 ### 1.5 Histoire de l’expédition et « histoire dictée »
 
@@ -250,7 +272,8 @@ Taille : S ≤ 1 jour d’agent, M ≤ 3 jours, L > 3 jours. Une PR par lot.
 |---|---|---|---|
 | **Journal serveur** du voyage officiel (1.2) v1 | M | P0 | **en PR (#186)**, empilée sur #185 |
 | **Pré-génération des récits** + cache serveur (1.3), cran Nebius dans la cascade | M | journal (Suivre) ; rien (Simulation) | à faire |
-| **Carte du moment** sur la carte, surtout en Cinéma (1.4) | S | pré-génération | à faire |
+| **Carte du moment** sur la carte, surtout en Cinéma (1.4) | S | — | **fait** (19 sept.) : NOW + FREE, sans pré-génération — le texte local suffit, le récit LLM remplace quand il arrive |
+| **Récit de la traversée** (Suivre) : de Saint-Maur à la position du jour, depuis l’horloge officielle + journal (1.5, sans LLM) | S | journal v1 | **fait** (19 sept.) : `engine/expeditionStory.js`, bloc sidebar, lu par « Écouter » (barre film) |
 | Journal v2 : événements jugés + récits côté serveur, sac `ici()` aux escales | S | pré-génération | à faire |
 
 ### Phase 2 — l’escale et l’histoire

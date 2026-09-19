@@ -121,6 +121,22 @@ export default {
   briefingSeeOnMap: "See on the map: the boat and this place",
   briefingOfficialSheet: "Official sheet / website",
   briefingGoogleMaps: "Google Maps sheet",
+
+  // ── Moment card (popups along the route) ─────────────────────────────────
+  momentNowTitle:     "On board, now",
+  momentNowAlert:     "Safety",
+  momentNowDecision:  "Decision",
+  momentFreeTitle:    "Meanwhile, around the boat",
+  momentNext:         "Next",
+  momentClose:        "Close",
+  momentLeft:         "{n} more",
+  momentAhead:        "in {nm} nm",
+  momentStoryPending: "story on its way…",
+  momentSeeOnMap:     "See on the map",
+
+  // ── Story of the crossing (Follow) ───────────────────────────────────────
+  storyTitle:         "The story of the crossing",
+  storyHint:          "From Saint-Maur to today's position, from the official clock and the logbook.",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",

@@ -121,6 +121,22 @@ export default {
   briefingSeeOnMap: "Voir sur la carte : le bateau et ce lieu",
   briefingOfficialSheet: "Fiche / site officiel",
   briefingGoogleMaps: "Fiche Google Maps",
+
+  // ── Carte du moment (popups le long de la route) ─────────────────────────
+  momentNowTitle:     "À bord, maintenant",
+  momentNowAlert:     "Sécurité",
+  momentNowDecision:  "Décision",
+  momentFreeTitle:    "Pendant ce temps, autour du bateau",
+  momentNext:         "Suivant",
+  momentClose:        "Fermer",
+  momentLeft:         "encore {n}",
+  momentAhead:        "dans {nm} nm",
+  momentStoryPending: "récit en préparation…",
+  momentSeeOnMap:     "Voir sur la carte",
+
+  // ── Récit de la traversée (Suivre) ───────────────────────────────────────
+  storyTitle:         "Le récit de la traversée",
+  storyHint:          "Depuis Saint-Maur jusqu’à la position d’aujourd’hui, d’après l’horloge officielle et le journal de bord.",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",
