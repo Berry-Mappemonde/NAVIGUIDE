@@ -57,6 +57,11 @@ def warm_enabled() -> bool:
     return (os.environ.get("NAVIGUIDE_ICI_WARM") or "1").strip() not in ("0", "false", "no")
 
 
+def stories_enabled() -> bool:
+    """Pre-generation of the LLM stories after the pearls (lot F); off in tests."""
+    return (os.environ.get("NAVIGUIDE_STORY_PREGEN") or "1").strip() not in ("0", "false", "no")
+
+
 def status() -> dict[str, Any]:
     import pearl_store  # noqa: PLC0415
     return {**_state, "store": pearl_store.info()}
@@ -259,6 +264,13 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["zeeRefreshed"] = await refresh_zee_local()
     except Exception as exc:
         log.debug("relecture ZEE locale : %s", exc)
+    # Lot F: the stories of the route's events, written ahead of the film.
+    if stories_enabled():
+        try:
+            import story_cache  # noqa: PLC0415
+            _state["stories"] = await story_cache.pregenerate_official(points)
+        except Exception as exc:
+            log.debug("pré-génération des récits : %s", exc)
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
     log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",
