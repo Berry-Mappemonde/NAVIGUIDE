@@ -12,6 +12,8 @@ if str(ROOT) not in sys.path:
 # 45 min on /recompute before this). A test that wants the live default
 # deletes the variable itself (see test_bi_base_defaults_to_live).
 os.environ.setdefault("BI_API_URL", "http://127.0.0.1:9/api")
+# No background pearl warmer in tests: it would call MarineRegions for real.
+os.environ.setdefault("NAVIGUIDE_ICI_WARM", "0")
 
 # Le secret admin d'un .env local ne doit pas faire échouer les tests qui
 # écrivent (TestClient = appel local direct → mode dev). Les tests du garde

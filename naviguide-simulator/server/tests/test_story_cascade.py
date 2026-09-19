@@ -63,21 +63,94 @@ def test_has_skipper_orders_needs_used_values():
 def test_prompt_cites_the_skipper_thresholds_only_when_present():
     body = {"event": "hs-shift", "lang": "fr", "payload": {"hs": 3.6}, "skipper": SKIPPER}
     system, user = build_prompt(body, None)
-    assert "CE skipper" in system
     assert "skipper.used" in system
-    assert "N’invente pas d’autre chiffre" in system
+    assert "Aucun autre chiffre" in system
     assert "Thinking OFF" in system
     assert '"hsAlertM"' in user
     assert "3.5" in user
     assert "constante Croisière E1 3,5 m" in user
 
     system_en, _ = build_prompt({**body, "lang": "en"}, None)
-    assert "THIS skipper" in system_en
     assert "skipper.used" in system_en
 
     plain, _ = build_prompt({"event": "hs-shift", "lang": "fr", "payload": {"hs": 3.6}}, None)
     assert "skipper.used" not in plain
-    assert "CE skipper" not in plain
+
+
+def test_prompt_is_sober_one_or_two_sentences_no_machinery():
+    """Revue du 19 sept. : le fait et sa source, rien sur le juge, l'identifiant, le bateau."""
+    system, _ = build_prompt({"event": "depth-alert", "lang": "fr"}, None)
+    assert "UNE ou DEUX phrases" in system
+    for word in ("juge", "identifiant", "DOI", "tirant", "aucune information supplémentaire"):
+        assert word in system  # listed as forbidden
+    system_en, _ = build_prompt({"event": "depth-alert", "lang": "en"}, None)
+    assert "ONE or TWO plain sentences" in system_en
+
+
+def test_tidy_story_keeps_the_fact_drops_the_machinery():
+    from story_cascade import tidy_story
+
+    verbose = (
+        "**Briefing nautique – La Rochelle**\n\n"
+        "Le port d’entrée officiel se situe à Porto-Vecchio, à 292,3 nm. "
+        "L’évènement est classé comme poe-ahead et porte l’identifiant poe-ahead:5682. "
+        "Il a été jugé now avec la raison playhead. "
+        "Le navire, un Leopard 46 de 14 m et 1,4 m de tirant d’eau, est en croisière avec un confort normal. "
+        "Aucune information supplémentaire sur la période ou un DOI n’est disponible."
+    )
+    assert tidy_story(verbose) == "Le port d’entrée officiel se situe à Porto-Vecchio, à 292,3 nm."
+
+    depth = (
+        "La situation est classée immédiate par le juge. "
+        "On approche du plateau : 2,3 m sondés pour un seuil fixé à 15 m, source EMODnet. "
+        "Ne convient pas à la navigation. "
+        "Le skipper a indiqué ce seuil conformément aux règles de croisière."
+    )
+    assert tidy_story(depth) == (
+        "On approche du plateau : 2,3 m sondés pour un seuil fixé à 15 m, source EMODnet. "
+        "Ne convient pas à la navigation."
+    )
+
+    # Only machinery → the local phrase; nothing at all → "".
+    only_meta = "L’événement zee-exit est classé info. La décision a été prise immédiatement (juge)."
+    assert tidy_story(only_meta, "Retour en haute mer — plus de ZEE à déclarer.") == "Retour en haute mer — plus de ZEE à déclarer."
+    assert tidy_story(only_meta) == ""
+    assert tidy_story(None, "repli") == "repli"
+    # Long text is cut on a word, never mid-figure.
+    long = "Vent " + "très " * 120 + "fort."
+    out = tidy_story(long)
+    assert len(out) <= 322 and out.endswith("…")
+
+
+def test_write_story_returns_tidy_text_and_flags_local_fallback(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_ok(
+            "La ZEE française a été quittée. L’évènement est classé info et jugé immédiat.",
+        ))
+
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run(text_handler):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(text_handler)) as client:
+            return await write_story({
+                "event": "zee-exit", "eventId": "zee-exit:1", "lang": "fr", "needPage": False,
+                "phrase": "Retour en haute mer — plus de ZEE à déclarer.",
+            }, client=client)
+
+    out = asyncio.run(run(handler))
+    assert out["status"] == "ready"
+    assert out["text"] == "La ZEE française a été quittée."
+    assert out["engine"].startswith("nvidia-") and "+local" not in out["engine"]
+
+    def only_meta(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_ok("Événement classé info, jugé immédiat par le juge."))
+
+    out2 = asyncio.run(run(only_meta))
+    assert out2["status"] == "ready"
+    assert out2["text"] == "Retour en haute mer — plus de ZEE à déclarer."
+    assert out2["engine"].endswith("+local")
 
 
 def test_slim_event_keeps_skipper_used_and_tavily_null():

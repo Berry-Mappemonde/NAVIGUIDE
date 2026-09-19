@@ -1,17 +1,22 @@
 /**
  * Carte du moment — ce que le visiteur voit pendant que le bateau avance.
  *
- * Deux surfaces, une file chacune :
+ * Deux voies, une file chacune (arbitrage du porteur, 19 sept. 2026) :
  *  - NOW (« à bord, maintenant ») : sécurité et décisions — coup de vent,
- *    repli, haut-fond, câble, cyclone, formalités (ZEE, port d’entrée, AMP),
- *    météo qui change le plan. Affichée dès que le juge dit « now » ; une
- *    carte à la fois ; les alertes passent devant.
+ *    repli, haut-fond, cyclone, entrée / sortie de ZEE, port d’entrée, météo
+ *    qui change le plan, escale (arrivée / départ), **climatologie** et
+ *    **balisage**. Une carte à la fois ; les alertes passent devant ;
+ *    fermable ; en lecture une nouvelle carte remplace l’ancienne après
+ *    quelques secondes, et une carte laissée loin derrière la tête de
+ *    lecture n’est plus montrée.
  *  - FREE (« pendant ce temps, autour du bateau ») : information — fiches
- *    science, projets, marinas, balisage, image satellite, climatologie,
- *    digests groupés, événements « later » atteints par la tête de lecture.
- *    Visible seulement quand aucune carte NOW n’est posée ; tourne.
+ *    science, projets, image satellite, **câbles**, **aires marines
+ *    protégées**, digests groupés, événements « later » atteints par la tête
+ *    de lecture. Visible seulement quand aucune carte NOW n’est posée ; tourne,
+ *    boucle sur les fiches du sac.
  *
- * Fonctions pures. Pas de HTTP, pas de timer : le hook passe `nowMs`.
+ * Fonctions pures (jamais de mutation de l’état précédent : StrictMode peut
+ * rejouer un updater). Pas de HTTP, pas de timer : le hook passe `nowMs`.
  * Le texte vient de `phraseForEvent` (récit LLM quand il est prêt, phrase
  * locale sinon) ou des mêmes phrases que le briefing — jamais un chiffre
  * inventé ici.
@@ -27,22 +32,32 @@ export const LANE_FREE = "free";
 const INFO_TYPES = new Set([
   "science-hit",
   "project-nearby",
-  "aton-nearby",
   "satellite-scene",
   "anchorage-ahead",
   "group",
+  "amp-enter",
+  "amp-ahead",
+  "cable-alert",
 ]);
+
+/** Bag kinds that are decisions for the skipper (NOW lane). */
+const NOW_BAG_KINDS = new Set(["aton", "climatology"]);
 
 /** Durées d’affichage (ms). Simulation en pause / Suivre sans lecture : pas d’expiration NOW. */
 export const TTL = Object.freeze({
   nowSuivreMs: 90_000,
   nowPlayingMs: 14_000,
+  /** In playback a newer NOW card may replace the shown one after this. */
+  nowReplaceMs: 5_000,
   freeMs: 9_000,
   freeSuivreMs: 14_000,
   freePausedMs: Infinity,
 });
 
 export const QUEUE_MAX = Object.freeze({ now: 6, free: 12 });
+
+/** Simulation: an event left this far behind the playhead is history, not a card. */
+export const STALE_CARD_NM = 80;
 
 /** Cap the per-kind information items taken from one bag (same caps as the briefing). */
 const BAG_CAPS = Object.freeze({
@@ -52,7 +67,8 @@ const BAG_CAPS = Object.freeze({
   anchorage: 3,
   science: 3,
   project: 3,
-  aton: 3,
+  amp: 2,
+  aton: 1,
 });
 
 function isEn(lang) {
@@ -82,6 +98,13 @@ function reached(ev, filmCum, mode) {
   if (mode === "suivre") return true;
   if (!Number.isFinite(ev.filmCum) || !Number.isFinite(filmCum)) return true;
   return filmCum + 0.5 >= ev.filmCum;
+}
+
+/** Simulation only: the card's place on the film is far behind the boat. */
+export function isStaleCard(card, { filmCum = null, mode = "simulation" } = {}) {
+  if (mode === "suivre") return false;
+  if (!card || !Number.isFinite(card.filmCum) || !Number.isFinite(filmCum)) return false;
+  return filmCum - card.filmCum > STALE_CARD_NM;
 }
 
 /** Place the card can point at on the map (same shape as a briefing entity). */
@@ -115,9 +138,12 @@ const KIND_WORDS = Object.freeze({
   anchorage: ["Mouillage", "Anchorage"],
   science: ["Fiche science", "Science sheet"],
   project: ["Projet", "Project"],
+  amp: ["Aire marine protégée", "Marine protected area"],
   aton: ["Balisage", "Aid to navigation"],
   satellite: ["Image satellite", "Satellite image"],
   climatology: ["Climatologie", "Climatology"],
+  cable: ["Câble sous-marin", "Submarine cable"],
+  escale: ["Escale", "Stopover"],
 });
 
 export function kindWord(kind, lang) {
@@ -135,7 +161,7 @@ function placeItem(kind, item, lang) {
   const key = `bag:${kind}:${item.site_id ?? item.id ?? item.osm_id ?? `${item.name}:${Number(item.lat).toFixed(2)}:${Number(item.lon).toFixed(2)}`}`;
   return {
     key,
-    lane: LANE_FREE,
+    lane: NOW_BAG_KINDS.has(kind) ? LANE_NOW : LANE_FREE,
     origin: "bag",
     kind,
     type: kind,
@@ -157,9 +183,9 @@ function placeItem(kind, item, lang) {
 }
 
 /**
- * Information items in one `ici()` bag: what is around the boat, told one
- * card at a time when nothing urgent is up. Keys are stable per place so a
- * marina met again 3 nm later is not repeated.
+ * Cards in one `ici()` bag: what is around the boat, told one card at a time.
+ * Keys are stable per place so a marina met again 3 nm later is not repeated.
+ * Balisage and climatologie go to the NOW lane (decisions), the rest to FREE.
  */
 export function infoItemsFromBag(bag, lang = "fr") {
   if (!bag) return [];
@@ -176,6 +202,7 @@ export function infoItemsFromBag(bag, lang = "fr") {
   push("anchorage", bag.nearby?.anchorages);
   push("science", bag.science?.nearby);
   push("project", bag.projects);
+  push("amp", bag.amp);
   push("aton", bag.aton?.nearby);
 
   const scene = bag.satellites?.scene || bag.satellites?.scenes?.[0];
@@ -193,12 +220,30 @@ export function infoItemsFromBag(bag, lang = "fr") {
     });
   }
 
+  const cables = bag.emodnet?.cables;
+  if (cables?.nearby === true) {
+    const at = bag.at || {};
+    out.push({
+      key: `bag:cable:${Number(at.lat).toFixed(1)}:${Number(at.lon).toFixed(1)}`,
+      lane: LANE_FREE,
+      origin: "bag",
+      kind: "cable",
+      type: "cable-alert",
+      severity: "info",
+      title: kindWord("cable", lang),
+      text: isEn(lang)
+        ? "A submarine cable passes here (EMODnet, observation)."
+        : "Un câble sous-marin passe ici (EMODnet, observation).",
+      entity: null,
+    });
+  }
+
   const c = bag.climatology;
   if (c && (c.point || c.wind) && c.month != null) {
     const zone = c.zone || c.point?.zone || c.point?.cell || `${Math.round(Number(bag.at?.lat) / 5) * 5}:${Math.round(Number(bag.at?.lon) / 5) * 5}`;
     out.push({
       key: `bag:climatology:${c.month}:${zone}`,
-      lane: LANE_FREE,
+      lane: LANE_NOW,
       origin: "bag",
       kind: "climatology",
       type: "climatology",
@@ -231,6 +276,44 @@ export function cardFromEvent(ev, lang = "fr") {
     filmCum: ev.filmCum ?? null,
     storyStatus: ev.story?.status || null,
     judgeReason: ev.judgeReason || null,
+  };
+}
+
+/**
+ * Escale card: written when the leg changes (the boat left a stopover).
+ * `leg` = { fromStop, toStop, holdDays, legNm, etaIso } from the film clock.
+ */
+export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
+  if (!leg?.fromStop) return null;
+  const en = isEn(lang);
+  const from = String(leg.fromStop);
+  const to = leg.toStop ? String(leg.toStop) : null;
+  const quay = Number.isFinite(leg.holdDays) && leg.holdDays > 0
+    ? (en ? ` — ${leg.holdDays} day${leg.holdDays > 1 ? "s" : ""} in port` : ` — ${leg.holdDays} jour${leg.holdDays > 1 ? "s" : ""} à quai`)
+    : "";
+  const nm = Number.isFinite(leg.legNm) && leg.legNm > 0.5
+    ? ` (${Math.round(leg.legNm).toLocaleString(en ? "en-GB" : "fr-FR")} nm)`
+    : "";
+  const eta = leg.etaLabel ? (en ? `, expected on ${leg.etaLabel}` : `, arrivée prévue le ${leg.etaLabel}`) : "";
+  const text = to
+    ? (en
+      ? `Stopover ${from}${quay}. Departure: heading for ${to}${nm}${eta}.`
+      : `Escale ${from}${quay}. Départ : cap sur ${to}${nm}${eta}.`)
+    : (en ? `Stopover ${from}${quay}.` : `Escale ${from}${quay}.`);
+  return {
+    key: `ev:escale:${from}→${to || ""}`,
+    lane: LANE_NOW,
+    origin: "event",
+    kind: "escale",
+    type: "escale-out",
+    severity: "watch",
+    title: kindWord("escale", lang),
+    text,
+    entity: Number.isFinite(leg.lat) && Number.isFinite(leg.lon)
+      ? { id: `escale:${from}`, kind: "wpi", name: from, rawName: from, lat: leg.lat, lon: leg.lon, nm: 0, url: null, source: null }
+      : null,
+    filmCum,
+    whenNm: 0,
   };
 }
 
@@ -285,9 +368,9 @@ function sameText(a, b) {
 }
 
 /**
- * One step. Ingests the judged ledger + the current bag, expires cards, and
- * promotes the next one. Returns the same object when nothing changed so
- * React can skip the render.
+ * One step. Ingests the judged ledger + the current bag (+ an escale card
+ * when the leg changed), expires cards, and promotes the next one. Returns
+ * the same object when nothing changed so React can skip the render.
  */
 export function advanceMoments(prev, {
   events = [],
@@ -298,16 +381,10 @@ export function advanceMoments(prev, {
   mode = "simulation",
   lang = "fr",
   legId = null,
+  leg = null,
 } = {}) {
   let state = prev || emptyMoments();
   let changed = false;
-
-  if (legId !== state.legId) {
-    // New leg: the ledger restarted; queued cards of the old leg are stale.
-    state = { ...state, legId, nowQueue: [], freeQueue: [], free: null, freeLoop: [] };
-    changed = true;
-  }
-
   // Pure: never mutate `prev.seen` — React (StrictMode) may run an updater
   // twice with the same previous state and keep the second result.
   const seen = new Set(state.seen);
@@ -316,6 +393,25 @@ export function advanceMoments(prev, {
   let freeLoop = state.freeLoop || [];
   let now = state.now;
   let free = state.free;
+
+  if (legId !== state.legId) {
+    // New leg: the ledger restarted; queued cards of the old leg are stale.
+    const previousLeg = state.legId;
+    state = { ...state, legId };
+    nowQueue = [];
+    freeQueue = [];
+    freeLoop = [];
+    free = null;
+    changed = true;
+    // The boat just left a stopover: one NOW card says so (not on the first leg).
+    if (previousLeg != null && leg?.fromStop) {
+      const card = escaleCard(leg, lang, { filmCum });
+      if (card && !seen.has(card.key) && !state.dismissed.has(card.key)) {
+        seen.add(card.key);
+        nowQueue = pushCapped(nowQueue, card, QUEUE_MAX.now);
+      }
+    }
+  }
 
   // 1. Events → lanes.
   const eventCards = new Map();
@@ -327,6 +423,7 @@ export function advanceMoments(prev, {
     eventCards.set(card.key, card);
     if (seen.has(card.key)) continue;
     if (state.dismissed.has(card.key)) continue;
+    if (isStaleCard(card, { filmCum, mode })) continue; // history, not a card
     seen.add(card.key);
     changed = true;
     if (lane === LANE_NOW) nowQueue = pushCapped(nowQueue, card, QUEUE_MAX.now);
@@ -346,17 +443,34 @@ export function advanceMoments(prev, {
   nowQueue = nowQueue.map(refresh);
   freeQueue = freeQueue.map(refresh);
 
-  // 2. Bag → information.
+  // 2. Bag → cards (balisage / climatologie → NOW, the rest → FREE).
   for (const card of infoItemsFromBag(bag, lang)) {
     if (seen.has(card.key)) continue;
     seen.add(card.key);
-    freeQueue = pushCapped(freeQueue, card, QUEUE_MAX.free);
+    if (card.lane === LANE_NOW) nowQueue = pushCapped(nowQueue, { ...card, filmCum }, QUEUE_MAX.now);
+    else freeQueue = pushCapped(freeQueue, card, QUEUE_MAX.free);
     changed = true;
   }
 
-  // 3. Expire the NOW card, then pop the next one.
+  // 3. Drop queued cards left behind by the playhead (Simulation).
+  const beforeNow = nowQueue.length;
+  nowQueue = nowQueue.filter((c) => !isStaleCard(c, { filmCum, mode }));
+  const beforeFree = freeQueue.length;
+  freeQueue = freeQueue.filter((c) => !isStaleCard(c, { filmCum, mode }));
+  if (nowQueue.length !== beforeNow || freeQueue.length !== beforeFree) changed = true;
+
+  // 4. Expire / replace the NOW card, then pop the next one.
   const nowTtl = nowTtlMs({ mode, playing });
   if (now && Number.isFinite(nowTtl) && nowMs - now.shownAt >= nowTtl) {
+    now = null;
+    changed = true;
+  }
+  if (now && playing && mode !== "suivre" && nowQueue.length && nowMs - now.shownAt >= TTL.nowReplaceMs) {
+    // In playback the boat moves fast: a newer decision replaces the shown one.
+    now = null;
+    changed = true;
+  }
+  if (now && isStaleCard(now, { filmCum, mode })) {
     now = null;
     changed = true;
   }
@@ -367,7 +481,7 @@ export function advanceMoments(prev, {
     changed = true;
   }
 
-  // 4. FREE only breathes when nothing urgent is posted.
+  // 5. FREE only breathes when nothing urgent is posted.
   if (!now) {
     const freeTtl = freeTtlMs({ mode, playing });
     if (free && Number.isFinite(freeTtl) && nowMs - free.shownAt >= freeTtl) {
@@ -377,7 +491,7 @@ export function advanceMoments(prev, {
     }
     if (!free && !freeQueue.length && freeLoop.length >= 2) {
       // Nothing new: loop on what is around the boat (bag cards only).
-      freeQueue = freeLoop;
+      freeQueue = freeLoop.map((c) => ({ ...c, loop: true }));
       freeLoop = [];
       changed = true;
     }
@@ -411,7 +525,7 @@ export function nextFree(state, nowMs = Date.now()) {
   }
   let freeQueue = state.freeQueue;
   if (!freeQueue.length && freeLoop.length >= 2) {
-    freeQueue = freeLoop;
+    freeQueue = freeLoop.map((c) => ({ ...c, loop: true }));
     freeLoop = [];
   }
   const next = freeQueue[0] ? { ...freeQueue[0], shownAt: nowMs } : null;

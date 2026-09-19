@@ -89,9 +89,44 @@ _FC_TTL = 3600.0
 _wpi_cache: dict = {"data": None, "ts": 0.0}
 _WPI_TTL = 86_400.0
 
+# Thin bags (the along pearls, 12 nm apart) are the same for every visitor
+# and every replay of the film: one lookup per 0.02° cell, kept 7 days (ZEE,
+# ports of entry, MPA and harbours move slowly; ici_warm persists them on
+# disk). Without it a fast playback asked MarineRegions + Overpass thousands
+# of times.
+_thin_cache: dict[str, dict] = {}
+_THIN_TTL = 7 * 86400.0
+_THIN_MAX = 20_000
+
+
+def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None = None) -> str:
+    # A thin bag carries no climatology: the month never changes it, so it is
+    # not part of the key (the client sends month=9, the warmer none).
+    del month
+    return f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}:{int(radius_nm)}"
+
+
+def thin_cache_get(key: str) -> dict | None:
+    hit = _thin_cache.get(key)
+    if not hit:
+        return None
+    if time.time() - hit["ts"] > _THIN_TTL:
+        _thin_cache.pop(key, None)
+        return None
+    return hit["bag"]
+
+
+def thin_cache_put(key: str, bag: dict) -> None:
+    if len(_thin_cache) >= _THIN_MAX:
+        # Drop the oldest tenth: cheap, rare, keeps memory bounded.
+        for old in sorted(_thin_cache, key=lambda k: _thin_cache[k]["ts"])[: _THIN_MAX // 10]:
+            _thin_cache.pop(old, None)
+    _thin_cache[key] = {"ts": time.time(), "bag": bag}
+
 
 def reset_caches() -> None:
     _fc_cache.clear()
+    _thin_cache.clear()
     _wpi_cache["data"] = None
     _wpi_cache["ts"] = 0.0
     reset_gebco_cache()
@@ -639,6 +674,28 @@ async def fill_dossier(
     dest_lat: float | None = None,
     dest_lon: float | None = None,
     thin: bool = False,
+) -> dict:
+    if thin:
+        key = thin_cache_key(lat, lon, radius_nm, month)
+        cached = thin_cache_get(key)
+        if cached is not None:
+            return {**cached, "at": {"lat": lat, "lon": lon}, "cached": True}
+        bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True)
+        if (bag.get("sources") or {}).get("bi") != "unavailable":
+            thin_cache_put(key, bag)
+        return bag
+    return await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=False)
+
+
+async def _fill_dossier(
+    lat: float,
+    lon: float,
+    radius_nm: float,
+    client: httpx.AsyncClient | None,
+    month: int | None,
+    dest_lat: float | None,
+    dest_lon: float | None,
+    thin: bool,
 ) -> dict:
     d = empty_dossier(lat, lon, radius_nm)
     bi = bi_base()
