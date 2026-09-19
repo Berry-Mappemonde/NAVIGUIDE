@@ -12,3 +12,5 @@ server/grib_data/
 server/saildocs_inbox/
 .env
 .DS_Store
+test-results/
+playwright-report/
