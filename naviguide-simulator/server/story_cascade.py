@@ -83,27 +83,35 @@ def has_skipper_orders(body: dict[str, Any] | None) -> bool:
 
 
 def build_prompt(body: dict[str, Any], page_url: str | None = None) -> tuple[str, str]:
+    """Sober card text (revue du porteur, 19 sept. 2026) : the fact and its
+    source, one or two sentences, nothing about the machinery."""
     lang = (body.get("lang") or "fr").lower()
     en = lang.startswith("en")
     system = (
-        "You write one short nautical briefing from a JSON event already collected. "
-        "4 to 6 sentences. Cite kind / period / DOI if present. "
-        "Never invent wind, rain, or admin gold. Never fill a null. "
+        "You write the text of one card shown to a sailor, from a JSON event already collected. "
+        "ONE or TWO plain sentences: the fact, the figure(s) from the JSON, the source or model "
+        "(e.g. EMODnet, GFS, official port of entry). "
+        "Forbidden: any word about the machinery — judge, judged, classified, severity, identifier, "
+        "event type, reason, playhead, DOI, 'no additional information', the boat's name, length or draft, "
+        "titles, lists, bold. Never invent wind, rain, or admin gold. Never fill a null. "
         "Thinking OFF. No tools. No world search."
         if en else
-        "Tu rédiges un bref briefing nautique à partir d’un JSON d’événement déjà collecté. "
-        "4 à 6 phrases. Cite kind / période / DOI s’ils sont là. "
-        "N’invente ni vent, ni pluie, ni Gold admin. Ne remplis jamais un null. "
-        "Thinking OFF. Pas d’outil. Pas de recherche monde."
+        "Tu écris le texte d’une carte montrée à un marin, à partir d’un JSON d’événement déjà collecté. "
+        "UNE ou DEUX phrases simples : le fait, le ou les chiffres du JSON, la source ou le modèle "
+        "(EMODnet, GFS, port d’entrée officiel…). "
+        "Interdit : tout mot sur la machinerie — juge, jugé, classé, sévérité, identifiant, type d’événement, "
+        "raison, playhead, DOI, « aucune information supplémentaire », le nom, la longueur ou le tirant d’eau "
+        "du bateau, les titres, les listes, le gras. N’invente ni vent, ni pluie, ni Gold admin. "
+        "Ne remplis jamais un null. Thinking OFF. Pas d’outil. Pas de recherche monde."
     )
     if has_skipper_orders(body):
-        # One sentence more, not a second chat: the skipper's own thresholds.
+        # The threshold that made the card switch, once, in passing.
         system += (
-            " You write for THIS skipper. Their thresholds are in skipper.used: "
-            "cite value and source. Do not invent any other number. Thinking OFF."
+            " If skipper.used holds the threshold that triggered this card, say it once in passing "
+            "(e.g. 'for a limit set at 15 m'). No other number."
             if en else
-            " Tu rédiges pour CE skipper. Ses seuils sont dans skipper.used : "
-            "cite value et source. N’invente pas d’autre chiffre. Thinking OFF."
+            " Si skipper.used contient le seuil qui a déclenché cette carte, dis-le une fois, en passant "
+            "(ex. « pour un seuil fixé à 15 m »). Aucun autre chiffre."
         )
     extra = ""
     if page_url:
@@ -123,6 +131,46 @@ def build_prompt(body: dict[str, Any], page_url: str | None = None) -> tuple[str
 def _clean_text(txt: str | None) -> str:
     s = _FENCE_RE.sub("", (txt or "").strip()).strip()
     return s
+
+
+# Sentences about the machinery never reach the visitor (revue du 19 sept.).
+_META_RE = re.compile(
+    r"(\bjug[eé]e?s?\b|\bjuge\b|\bclass[ée]e?s?\b|classif|\bidentifiant|\bidentifier\b|\bID\b|"
+    r"s[ée]v[ée]rit|\bseverity\b|\bplayhead\b|\bDOI\b|aucune (?:information|donn[ée]e)|"
+    r"no (?:additional|further|extra) (?:information|data|details?)|is (?:not )?(?:provided|available) in this report|"
+    r"n[’']est (?:pas )?(?:fournie?|disponible)s? dans ce rapport|\bevent type\b|type d[’']?[ée]v[ée]nement|"
+    r"\bLOA\b|tirant d[’']eau|\bdraft\b|briefing nautique|skipper\.used|r[èe]gles? de croisi[èe]re|cruise rules|"
+    r"\bwatch\b|\bimm[ée]diate\b|d[ée]cision a [ée]t[ée] prise|the decision was taken)",
+    re.IGNORECASE,
+)
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+_MD_RE = re.compile(r"[*_#>`]+")
+MAX_SENTENCES = 2
+MAX_CHARS = 320
+
+
+def _is_title(line: str) -> bool:
+    """A heading (« Briefing nautique – La Rochelle ») : short, no sentence end."""
+    s = line.strip().rstrip(":")
+    return bool(s) and len(s) < 80 and not re.search(r"[.!?…]$", s)
+
+
+def tidy_story(text: str | None, fallback: str | None = None) -> str:
+    """Keep the fact, drop the machinery. Empty → the local phrase (or "")."""
+    lines = [
+        re.sub(r"^\s*(?:[-•*]|\d+[.)])\s+", "", _MD_RE.sub("", ln)).strip()
+        for ln in _clean_text(text).split("\n")
+    ]
+    raw = " ".join(ln for ln in lines if ln and not _is_title(ln))
+    raw = re.sub(r"\s{2,}", " ", raw).strip()
+    if not raw:
+        return (fallback or "").strip()
+    kept = [s.strip() for s in _SENT_SPLIT_RE.split(raw) if s.strip() and not _META_RE.search(s)]
+    out = " ".join(kept[:MAX_SENTENCES]).strip()
+    if len(out) > MAX_CHARS:
+        cut = out[:MAX_CHARS]
+        out = cut[: cut.rfind(" ")].rstrip(" ,;:") + "…" if " " in cut else cut
+    return out or (fallback or "").strip()
 
 
 def _openai_text(data: dict[str, Any] | None) -> str:
@@ -265,12 +313,18 @@ async def write_story(
                 (lambda: _call_openrouter(system, user, http, online=False),),
                 (lambda: _call_claude(system, user, http),),
             )
+        fallback = (body or {}).get("phrase") if isinstance((body or {}).get("phrase"), str) else None
         for (step,) in steps:
             try:
                 text, engine = await step()
+                tidy = tidy_story(text, fallback)
+                if not tidy:
+                    raise RuntimeError(f"{engine} only machinery")
+                if tidy == (fallback or "").strip() and tidy != _clean_text(text).strip():
+                    engine = f"{engine}+local"
                 return {
                     "status": "ready",
-                    "text": text,
+                    "text": tidy,
                     "engine": engine,
                     "cascade": "nim-or-claude",
                     "tavily": None,
