@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ROUTE_SAMPLE_NM } from "../engine/eventRules.js";
 import {
+  SIM_FAR_STEP_NM,
+  SIM_NEAR_NM,
   buildAlongIndex,
   lookaheadNmFor,
   maxPearlsFor,
@@ -60,8 +62,11 @@ export function useIciAlong({
       lookaheadNm,
       maxPearls,
       behindNm: BEHIND_NM,
+      // Simulation: the whole leg, dense near the boat, coarser far ahead.
+      nearNm: mode === "suivre" ? Infinity : SIM_NEAR_NM,
+      farStepNm: mode === "suivre" ? null : SIM_FAR_STEP_NM,
     });
-  }, [enabled, flat, fromNm, toNm, boatBucket, month, lookaheadNm, maxPearls]);
+  }, [enabled, flat, fromNm, toNm, boatBucket, month, lookaheadNm, maxPearls, mode]);
 
   const pearlsSig = pearls.map((p) => pearlKey(p.lat, p.lon, month)).join("|");
 

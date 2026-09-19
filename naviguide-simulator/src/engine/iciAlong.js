@@ -20,7 +20,10 @@ export const ALONG_AMP_NM = 15;
 export const ALONG_MARINA_NM = MARINA_REFUGE_NM;
 export const SUIVRE_LOOKAHEAD_H = DEFAULT_ORDERS.budget.hours;
 export const SUIVRE_LOOKAHEAD_MAX_NM = DEFAULT_ORDERS.budget.maxNm;
-export const MAX_PEARLS_SIM = 60;
+/** Simulation: the whole leg — 12 nm near the boat, then SIM_FAR_STEP_NM. */
+export const MAX_PEARLS_SIM = 200;
+export const SIM_NEAR_NM = 240;
+export const SIM_FAR_STEP_NM = 48;
 export const MAX_PEARLS_SUIVRE = DEFAULT_ORDERS.budget.maxPearls;
 export const DEFAULT_KNOTS = DEFAULT_ORDERS.budget.planningKn;
 
@@ -75,6 +78,9 @@ export function sampleLeg(flat, {
   month = null,
   /** Pearls kept just behind the boat (the one it just passed): a live thin bag at any film speed. */
   behindNm = 0,
+  /** Beyond `nearNm` ahead of the boat, pearls thin out to `farStepNm` (whole leg, bounded). */
+  nearNm = Infinity,
+  farStepNm = null,
 } = {}) {
   const boat = Number(boatNm) || 0;
   const start = Math.max(Number(fromNm) || 0, boat - (Number(behindNm) || 0), 0);
@@ -85,10 +91,11 @@ export function sampleLeg(flat, {
     flat?.totalNm ?? Infinity,
   );
   const step = Number(sampleNm) > 0 ? sampleNm : ROUTE_SAMPLE_NM;
+  const far = Number(farStepNm) > step ? Number(farStepNm) : step;
   const max = Math.max(1, maxPearls);
   const pearls = [];
   if (!flat?.points?.length || end < start) return pearls;
-  for (let nm = start; nm <= end + 1e-6 && pearls.length < max; nm += step) {
+  for (let nm = start; nm <= end + 1e-6 && pearls.length < max; nm += (nm - boat >= nearNm ? far : step)) {
     const hit = interpolateAtNm(flat, nm);
     if (!hit || hit.jump || hit.nonMaritime) continue;
     pearls.push({

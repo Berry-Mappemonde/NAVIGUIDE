@@ -50,6 +50,15 @@ describe("iciAlong sample", () => {
     assert.equal(nearestPearlBag(around, new Map(), boat), null, "perle pas encore chargée : rien");
   });
 
+  it("Simulation: dense pearls near the boat, coarser far ahead, the whole leg bounded", () => {
+    const flat = lineFlat();
+    const pearls = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 0, maxPearls: 200, nearNm: 36, farStepNm: 48 });
+    const steps = pearls.slice(1).map((p, i) => Math.round(p.cumNm - pearls[i].cumNm));
+    assert.deepEqual(steps.slice(0, 3), [12, 12, 12], "12 nm jusqu’à nearNm");
+    assert.ok(steps.slice(3).every((d) => d === 48), `puis 48 nm : ${steps}`);
+    assert.ok(pearls.at(-1).cumNm <= flat.totalNm);
+  });
+
   it("samples this leg every ~12 nm and skips nothing on a sea line", () => {
     const flat = lineFlat();
     const pearls = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 0, maxPearls: 20 });
