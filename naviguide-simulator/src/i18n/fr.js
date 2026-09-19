@@ -117,6 +117,7 @@ export default {
   journalCount:       "{n} entrées",
   journalHint:        "Écrit par le serveur : position de l’horloge officielle à 00, 06, 12 et 18 h UTC, escales franchies, vent du GRIB au bateau, mots du skipper. Rien d’inventé.",
   journalEmpty:       "Le journal commence au départ.",
+  journalEarlier:     "{n} jours précédents",
   journalUnavailable: "Journal indisponible pour le moment.",
   briefingSeeOnMap: "Voir sur la carte : le bateau et ce lieu",
   briefingOfficialSheet: "Fiche / site officiel",

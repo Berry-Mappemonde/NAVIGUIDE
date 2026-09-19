@@ -117,6 +117,7 @@ export default {
   journalCount:       "{n} entries",
   journalHint:        "Written by the server: official clock position at 00, 06, 12 and 18 UTC, stopovers passed, GRIB wind at the boat, skipper's notes. Nothing invented.",
   journalEmpty:       "The logbook starts at departure.",
+  journalEarlier:     "{n} earlier days",
   journalUnavailable: "Logbook unavailable for now.",
   briefingSeeOnMap: "See on the map: the boat and this place",
   briefingOfficialSheet: "Official sheet / website",
