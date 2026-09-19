@@ -2,6 +2,7 @@ import { memo } from "react";
 import { ChevronRight, Clapperboard, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
+import { ListenButton } from "./ListenButton.jsx";
 
 const PROFILES = [
   { id: "real", labelKey: "speedReal" },
@@ -62,8 +63,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   eventMarks = [],
   onEventClick,
   storiesPending = 0,
+  speechText = null,
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
   const barTotal = playheadTotal ?? totalNm;
   const barNm = playhead ?? nm;
@@ -215,7 +217,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        {(showPlaybackControls || showStopAuto || showSpeeds) ? (
+        {(showPlaybackControls || showStopAuto || showSpeeds || speechText) ? (
           <div className="flex items-center gap-1.5 mt-1">
             {showPlaybackControls ? (
               <>
@@ -275,6 +277,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 </button>
               ))}
             </div>
+          ) : null}
+          {speechText ? (
+            <ListenButton text={speechText} t={t} lang={lang} compact className="ml-auto" />
           ) : null}
           </div>
         ) : null}

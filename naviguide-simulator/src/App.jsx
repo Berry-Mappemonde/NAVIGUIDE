@@ -18,6 +18,9 @@ import { useOfficialExpedition } from "./hooks/useOfficialExpedition.js";
 import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
+import { useMomentCards } from "./hooks/useMomentCards.js";
+import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
+import { expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
 import { layerForEntity } from "./engine/briefingLinks.js";
 import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
@@ -71,6 +74,7 @@ import {
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
+import { mapInsetVars } from "./utils/filmBarLayout.js";
 import {
   fetchWeatherComposite,
   productHasData,
@@ -619,6 +623,39 @@ export default function App() {
     skipperClickId,
     orders: skipper.orders,
   });
+
+  // Carte du moment : NOW (sécurité / décision) + FREE (information), nourries
+  // par le registre jugé et le sac. Jamais un appel réseau de son côté.
+  const momentFilmCum = isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm;
+  const moments = useMomentCards({
+    enabled: sceneReady && !drawingMode,
+    events: iciPack.events,
+    bag: iciPack.dossier,
+    filmCum: momentFilmCum,
+    playing: playback.playing,
+    mode: isSuivre ? "suivre" : "simulation",
+    lang,
+    legId: hudLeg ? `${hudLeg.fromStop || ""}→${hudLeg.toStop || ""}` : null,
+  });
+
+  // Le récit de la traversée (Suivre) : de Saint-Maur à la position du jour,
+  // d'après l'horloge officielle et le journal. Zéro LLM.
+  const storyParagraphs = useMemo(() => {
+    if (!isSuivre || !officialClock) return [];
+    return expeditionStory({
+      clock: officialClock,
+      marks: legendMarks,
+      live,
+      leg: hudLeg,
+      journal: officialJournal.journal,
+      now: live?.iso || Date.now(),
+      lang,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuivre, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang]);
+  const speechText = isSuivre
+    ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
+    : (iciPack.briefing || null);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1255,8 +1292,15 @@ export default function App() {
     if (kind === "cables") maritimeLayers.setShowCables(true);
   };
 
+  const rootInsetVars = mapInsetVars({
+    sidebarOpen,
+    toolsOpen,
+    filmBarVisible: !(cinemaMode && hideFilmBar),
+    filmBarControls: isSimulation,
+  });
+
   return (
-    <div style={{ height: "100vh", width: "100vw", position: "relative" }} className={isLightMode ? "light-mode" : ""}>
+    <div style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }} className={isLightMode ? "light-mode" : ""}>
       <MapScene
         scene={mapScene}
         gateRef={gateRef}
@@ -1319,6 +1363,7 @@ export default function App() {
         journal={officialJournal.journal}
         journalLoading={officialJournal.loading}
         journalError={officialJournal.error}
+        story={storyParagraphs}
         skipperNotice={skipper.notice}
         view={view}
         onView={selectView}
@@ -1495,6 +1540,7 @@ export default function App() {
           sceneApiRef.current?.playback.seek(ev.filmCum, { jump: true });
         }}
         storiesPending={(iciPack.events || []).filter((e) => e.story?.status === "pending").length}
+        speechText={speechText}
         gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
         clock={officialClock}
         clockCurrent={clockSample ? {
@@ -1511,6 +1557,23 @@ export default function App() {
         onAccept={async () => { await vessel.accept(); }}
         onReject={() => vessel.reject()}
       />
+
+      {!drawingMode && sceneReady ? (
+        <>
+          <MomentNowCard
+            card={moments.now}
+            left={moments.nowLeft}
+            onDismiss={moments.dismiss}
+            onFocus={handleBriefingFocus}
+          />
+          <FreeMomentBlock
+            card={moments.free}
+            left={moments.freeLeft}
+            onNext={moments.next}
+            onFocus={handleBriefingFocus}
+          />
+        </>
+      ) : null}
 
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 

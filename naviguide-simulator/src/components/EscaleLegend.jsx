@@ -63,7 +63,7 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }
 
   return (
     <div className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden">
-      <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200">
         {t("escalesList")}
       </div>
       <ul className="max-h-36 overflow-y-auto sidebar-scroll">
