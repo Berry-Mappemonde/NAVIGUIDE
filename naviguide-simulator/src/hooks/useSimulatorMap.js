@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { TILE_URLS } from "../layers/styles.js";
+import { TILE_ATTRIBUTION, TILE_URLS } from "../layers/styles.js";
 import { createPanes } from "../layers/layerOrder.js";
 
 export function useSimulatorMap(containerRef, isLightMode) {
@@ -20,7 +20,7 @@ export function useSimulatorMap(containerRef, isLightMode) {
     });
     createPanes(map);
     const base = L.tileLayer(TILE_URLS.dark, {
-      attribution: "Leaflet | Tiles © Esri",
+      attribution: TILE_ATTRIBUTION,
     }).addTo(map);
     baseRef.current = base;
     mapRef.current = map;
@@ -44,7 +44,7 @@ export function useSimulatorMap(containerRef, isLightMode) {
     if (baseRef.current) {
       map.removeLayer(baseRef.current);
     }
-    baseRef.current = L.tileLayer(url, { attribution: "Leaflet | Tiles © Esri" }).addTo(map);
+    baseRef.current = L.tileLayer(url, { attribution: TILE_ATTRIBUTION }).addTo(map);
     baseRef.current.bringToBack();
   }, [isLightMode, mapReady]);
 

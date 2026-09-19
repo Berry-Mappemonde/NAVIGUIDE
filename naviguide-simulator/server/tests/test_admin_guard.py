@@ -119,6 +119,27 @@ def test_voyage_payload_bounds(client):
     body = _official()
     body["points"][0]["lat"] = 95
     assert client.post("/voyage", json=body).status_code == 400
+    body = _official()
+    body["points"][0]["lon"] = 1000  # plus d'un tour de globe : faux
+    assert client.post("/voyage", json=body).status_code == 400
+
+
+def test_official_put_accepts_unwrapped_pacific_longitudes(client):
+    """Le film déplie les longitudes après l'antiméridien (Papeete → Wallis →
+    Nouméa : lon > 180). Refuser ces points cassait le mode Suivre : le PUT
+    officiel répondait 400, le client ne lisait jamais l'horloge serveur et
+    le bateau restait à Saint-Maur (régression de la sécurité P0)."""
+    body = _official([
+        {"lat": -17.5, "lon": -149.6, "cumNm": 0, "filmCum": 0, "jump": False, "nonMaritime": False},
+        {"lat": -13.3, "lon": 183.8, "cumNm": 1600, "filmCum": 1600, "jump": False, "nonMaritime": False},
+        {"lat": -22.3, "lon": 193.4, "cumNm": 2900, "filmCum": 2900, "jump": False, "nonMaritime": False},
+    ])
+    r = client.put("/voyage/official", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json().get("clock", {}).get("t0")
+    official = client.get("/voyage/official").json()
+    assert len(official["points"]) == 3
+    assert client.get("/voyage/official/clock").status_code == 200
 
 
 def test_official_voyage_is_never_recomputed_or_accepted(client):

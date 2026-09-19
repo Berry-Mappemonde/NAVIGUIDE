@@ -23,6 +23,7 @@ import {
   ROUTE_CASING_COLOR,
   ROUTE_CASING_WEIGHT,
   ROUTE_MAIN_WEIGHT,
+  TILE_ATTRIBUTION,
   TILE_URLS,
   WAKE_DONE_COLOR,
   WAKE_REST_COLOR,
@@ -180,7 +181,7 @@ export class MapSceneController {
     this.callbacks = callbacks;
     this.layers = new SceneLayerRegistry();
     this.config = {};
-    this.baseLayer = L.tileLayer(TILE_URLS.dark, { attribution: "Leaflet | Tiles © Esri" }).addTo(map);
+    this.baseLayer = L.tileLayer(TILE_URLS.dark, { attribution: TILE_ATTRIBUTION }).addTo(map);
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
@@ -332,7 +333,7 @@ export class MapSceneController {
     const url = this.config.isLightMode ? TILE_URLS.light : TILE_URLS.dark;
     if (this.baseLayer?._naviguideUrl === url) return;
     this.baseLayer?.remove();
-    this.baseLayer = L.tileLayer(url, { attribution: "Leaflet | Tiles © Esri" }).addTo(this.map);
+    this.baseLayer = L.tileLayer(url, { attribution: TILE_ATTRIBUTION }).addTo(this.map);
     this.baseLayer._naviguideUrl = url;
     this.baseLayer.bringToBack();
   }

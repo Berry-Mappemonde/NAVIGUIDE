@@ -954,6 +954,35 @@ def test_review_401_is_admin_not_no_eez():
     assert "no_entity" not in (bag["reason"] or "")
 
 
+def test_review_sends_bi_admin_key_when_configured(monkeypatch):
+    """`BI_ADMIN_KEY` (simulator.env) → X-Admin-Key vers BI : la fiche Gold
+    revient au lieu de « réservée à l'administration »."""
+    monkeypatch.setenv("BI_ADMIN_KEY", "sesame-bi")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["admin"] = request.headers.get("X-Admin-Key")
+        return httpx.Response(200, json={"gold_on": True, "gold_ready": True, "pre_gold": False})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_review(
+                client,
+                "https://blueintelligence.online/api",
+                {"name": "French Exclusive Economic Zone", "mrgid": 5677},
+                None,
+            )
+
+    bag = asyncio.run(run())
+    assert seen["admin"] == "sesame-bi"
+    assert bag["zee"]["gold_on"] is True
+    assert bag["reason"] is None
+
+    monkeypatch.delenv("BI_ADMIN_KEY", raising=False)
+    from ici_layers import bi_review_headers
+    assert "X-Admin-Key" not in bi_review_headers()
+
+
 def test_review_high_seas_no_entity_without_fiche():
     seen = []
 
