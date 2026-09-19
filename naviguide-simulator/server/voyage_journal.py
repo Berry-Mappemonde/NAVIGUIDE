@@ -275,19 +275,20 @@ def record_route_events(voy: Optional[dict], clock: Optional[dict], now: datetim
             **{k: v for k, v in ev.items() if k != "idx"},
         })
     # Pearl-derived lines are a *reading* of the pearls, not a record: as the
-    # warmer refines them (thin → rich, a better ZEE), the reading changes.
-    # Keep the journal equal to the current reading — never a pile of readings.
-    _drop_basis_not_in("pearl", {e["id"] for e in entries})
+    # warmer refines them (thin → rich, a better ZEE, a better date), the
+    # reading changes. Keep the journal equal to the current reading — never
+    # a pile of readings. A same id with another time is a new reading too.
+    _drop_basis_not_in("pearl", {(e["id"], e["t"]) for e in entries})
     return _append(entries)
 
 
-def _drop_basis_not_in(basis: str, keep_ids: set) -> int:
-    """Remove entries of `basis` whose id is not in `keep_ids`."""
+def _drop_basis_not_in(basis: str, keep: set) -> int:
+    """Remove entries of `basis` whose (id, t) is not in `keep`."""
     removed = 0
     with _LOCK:
         for path in sorted(journal_dir().glob("*.json")):
             entries = _read_day(path.stem)
-            kept = [e for e in entries if e.get("basis") != basis or e.get("id") in keep_ids]
+            kept = [e for e in entries if e.get("basis") != basis or (e.get("id"), e.get("t")) in keep]
             if len(kept) != len(entries):
                 removed += len(entries) - len(kept)
                 if kept:

@@ -524,6 +524,17 @@ def get_official_journal(
     return {"voyageId": OFFICIAL_VOYAGE_ID, **out}
 
 
+@router.get("/voyage/official/plan-review")
+def get_official_plan_review():
+    """Revue de plan par règles (lot K) : par jambe, calendrier, ZEE et ports
+    d'entrée (perles), AMP, drapeaux — jamais un chiffre inventé."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    from plan_review import review_official  # noqa: PLC0415
+    return review_official(voy, _now())
+
+
 @router.get("/voyage/official/journal/{day}")
 def get_official_journal_day(day: str):
     try:
