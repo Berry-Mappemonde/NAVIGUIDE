@@ -171,3 +171,68 @@ def test_tick_is_throttled_for_public_reads(client, monkeypatch):
     assert journal.tick(voy, now)["skipped"] is True
     assert journal.tick(voy, now, force=True)["skipped"] is False
     assert journal.tick(None, now)["skipped"] is True
+
+
+def test_route_events_from_warmed_pearls_dated_by_the_clock(client, monkeypatch):
+    """v2 : ZEE franchies et AMP approchées lues sur les perles chauffées,
+    datées par l'horloge ; une perle inconnue = trou honnête, pas d'invention."""
+    import ici_engine
+    import ici_warm
+    from ici_engine import thin_cache_key
+
+    ici_engine.reset_caches()
+    now = T0 + timedelta(days=30)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    pearls = ici_warm.sample_route_nm(voy["points"])
+    assert len(pearls) > 100
+    assert pearls[0]["sailNm"] == 0 and pearls[10]["sailNm"] > pearls[9]["sailNm"]
+
+    # Warm the first 40 pearls: French EEZ, then high seas from pearl 20,
+    # an MPA within reach at pearls 5-6, a gap (unknown) at pearls 12-13,
+    # and a one-pearl gazetteer flap (high seas) at pearl 8.
+    fr = {"name": "French Exclusive Economic Zone", "mrgid": 5677, "territory": "metropole"}
+    for i, p in enumerate(pearls[:40]):
+        if i in (12, 13):
+            continue
+        zee = None if (i >= 20 or i == 8) else fr
+        amp = [{"name": "Pertuis Charentais - Filets", "site_id": "pc-1", "nm": 3.6}] if i in (5, 6) else []
+        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {"zee": zee, "amp": amp, "sources": {"bi": "ok"}})
+
+    events = ici_warm.route_events_from_pearls(voy["points"])
+    kinds = [(e["kind"], e["event"], e["idx"]) for e in events]
+    assert ("zee", "exit", 20) in kinds, kinds
+    assert ("amp", "nearby", 5) in kinds
+    assert not any(k[0] == "zee" and k[2] in (8, 9) for k in kinds), "un seul point en haute mer = bruit de gazetteer, pas une sortie"
+    assert not any(k[0] == "zee" and k[2] in (12, 13, 14) for k in kinds), "aucune transition inventée autour du trou"
+    assert sum(1 for k in kinds if k[0] == "zee") == 1, kinds
+    assert sum(1 for k in kinds if k[0] == "amp") == 1, "une AMP racontée une fois"
+
+    out = journal.tick(voy, now, force=True)
+    assert out["routeEvents"] == 2
+    latest = journal.latest(50, kinds=("zee", "amp"))
+    zee = next(e for e in latest if e["kind"] == "zee")
+    assert zee["event"] == "exit" and zee["name"].startswith("French")
+    assert parse_iso(zee["t"]) > T0 and parse_iso(zee["t"]) <= now
+    # Idempotent, and a later now does not duplicate.
+    assert journal.tick(voy, now + timedelta(hours=1), force=True)["routeEvents"] == 0
+    # The API lists the new kinds.
+    body = client.get("/voyage/official/journal?limit=500").json()
+    assert "zee" in body["kinds"] and "amp" in body["kinds"]
+    assert any(e["kind"] == "amp" for e in body["latest"])
+
+
+def test_summary_carries_the_whole_voyage_events_apart_from_positions(client, monkeypatch):
+    now = T0 + timedelta(days=40)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    journal.tick(voy, now, force=True)
+    journal.add_note("Belle étoile.", T0 + timedelta(days=1))
+    body = client.get("/voyage/official/journal?limit=10").json()
+    assert len(body["latest"]) == 10
+    kinds = {e["kind"] for e in body["events"]}
+    assert "position" not in kinds
+    assert "stop" in kinds and "note" in kinds
+    assert any(e["kind"] == "note" and e["text"] == "Belle étoile." for e in body["events"])
