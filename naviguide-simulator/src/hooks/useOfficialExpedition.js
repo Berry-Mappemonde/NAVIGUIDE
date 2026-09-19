@@ -4,7 +4,13 @@ import { pickOfficialLiveClock } from "../utils/sceneGate.js";
 import { adminHeaders } from "../utils/adminSecret.js";
 import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gribStatus.js";
 
-const API = import.meta.env.VITE_API_URL ?? "";
+const API = import.meta.env?.VITE_API_URL ?? "";
+
+/** A client clock is "official" when it starts on the expedition's fixed t0. */
+export function isOfficialClock(clock) {
+  const t0 = Date.parse(clock?.t0 ?? "");
+  return Number.isFinite(t0) && t0 === Date.parse(DEFAULT_T0_ISO);
+}
 
 /**
  * Voyage officiel unique. Pas de localStorage visiteur.
@@ -41,10 +47,18 @@ export function useOfficialExpedition({
   }, [enabled, points]);
 
   const liveClock = useMemo(() => {
-    const picked = pickOfficialLiveClock(serverClock, clock, frozenClientRef.current);
+    // Only an official clock (t0 = 15 May) may stand in for the server. A
+    // Simulation clock (t0 = today) frozen here put the boat back at
+    // Saint-Maur on day 0 — never freeze while Suivre is off.
+    if (!enabled) {
+      frozenClientRef.current = null;
+      return null;
+    }
+    const officialClient = isOfficialClock(clock) ? clock : null;
+    const picked = pickOfficialLiveClock(serverClock, officialClient, frozenClientRef.current);
     frozenClientRef.current = picked.frozenClient;
     return picked.liveClock;
-  }, [serverClock, clock]);
+  }, [enabled, serverClock, clock]);
 
   const putOfficial = useCallback(async () => {
     if (!points?.length) return null;
@@ -93,18 +107,21 @@ export function useOfficialExpedition({
   useEffect(() => {
     if (!enabled || !points?.length) return undefined;
     let cancelled = false;
+    const readClock = () => fetch(`${API}/voyage/official/clock`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((ck) => { if (ck?.t0 && !cancelled) setServerClock(ck); })
+      .catch(() => {});
     const kick = () => {
-      putOfficial().then((body) => {
-        if (cancelled || !body) return;
-        fetch(`${API}/voyage/official/clock`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((ck) => { if (ck && !cancelled) setServerClock(ck); })
-          .catch(() => {});
-      }).catch(() => {});
+      // The server clock is the truth for the boat's position: read it even
+      // when the PUT is refused (rate limit, payload rule, 5xx) — a refused
+      // self-repair must never leave the visitor on a client clock.
+      putOfficial()
+        .catch(() => null)
+        .then(() => { if (!cancelled) return readClock(); return undefined; });
     };
     kick();
     const retry = setInterval(() => {
-      if (!putRef.current) kick();
+      if (!putRef.current || !serverClockRef.current) kick();
     }, 5000);
     return () => {
       cancelled = true;
