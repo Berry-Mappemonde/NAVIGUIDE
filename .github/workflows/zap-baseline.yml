@@ -1,0 +1,32 @@
+name: ZAP baseline — simulateur (mensuel)
+
+# Sécurité P1 (lot H) : un passage OWASP ZAP « baseline » (passif, sans
+# attaque) sur la prod du simulateur, le 1er de chaque mois et à la demande.
+# Ne bloque rien : le rapport est attaché en artefact et une issue GitHub
+# est ouverte / mise à jour avec les alertes trouvées.
+
+on:
+  schedule:
+    - cron: "17 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: ZAP baseline sur https://simulator.naviguide.fr
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: "https://simulator.naviguide.fr"
+          rules_file_name: ".zap/rules.tsv"
+          cmd_options: "-a -j"
+          fail_action: false
+          allow_issue_writing: true
+          issue_title: "ZAP baseline — simulateur"
+          artifact_name: "zap-simulateur"

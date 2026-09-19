@@ -89,6 +89,45 @@ jobs:
         env:
           # Aucun secret : Copernicus et les LLM restent en repli / mock.
           PYTHONDONTWRITEBYTECODE: "1"
+      # Sécurité P1 (lot H) : une dépendance avec une faille connue bloque la
+      # PR — critique côté npm (prod seulement), toute faille côté pip.
+      - name: Audit npm (dépendances de prod, critique = bloquant)
+        run: npm audit --omit=dev --audit-level=critical
+      - name: Audit pip (server/requirements.txt)
+        run: |
+          pip install -q pip-audit
+          python -m pip_audit -r server/requirements.txt --progress-spinner off
+
+  # Sécurité P1 (lot H) : fumée Playwright sur le build de prod servi par
+  # `vite preview` — ouvrir, les deux panneaux, Suivre / Simulation, un
+  # calque, aucune erreur de page. Sans API : l'app doit tenir debout seule.
+  simulator-e2e:
+    name: simulateur — fumée Playwright (build de prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.simulator == 'true'
+    defaults:
+      run:
+        working-directory: naviguide-simulator
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: naviguide-simulator/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Fumée (ouvrir, panneaux, Suivre / Simulation, calque)
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: naviguide-simulator/playwright-report
+          retention-days: 7
 
   audit-tags:
     runs-on: ubuntu-latest
