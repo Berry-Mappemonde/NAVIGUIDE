@@ -102,6 +102,14 @@ def ici_warm_status():
     return ici_warm.status()
 
 
+@app.get("/ici/pearls")
+def ici_pearls():
+    """Les perles canoniques de la route officielle (12 nm) : le client les
+    échantillonne aux mêmes positions, ses sacs thin tombent dans le cache."""
+    import ici_warm
+    return ici_warm.official_pearls()
+
+
 class PositionRequest(BaseModel):
     latitude: float
     longitude: float

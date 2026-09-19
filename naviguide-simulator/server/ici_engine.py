@@ -99,8 +99,11 @@ _THIN_TTL = 7 * 86400.0
 _THIN_MAX = 20_000
 
 
-def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None) -> str:
-    return f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}:{int(radius_nm)}:{month or ''}"
+def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None = None) -> str:
+    # A thin bag carries no climatology: the month never changes it, so it is
+    # not part of the key (the client sends month=9, the warmer none).
+    del month
+    return f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}:{int(radius_nm)}"
 
 
 def thin_cache_get(key: str) -> dict | None:

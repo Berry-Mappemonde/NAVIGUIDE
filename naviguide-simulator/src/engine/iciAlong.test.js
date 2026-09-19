@@ -9,6 +9,7 @@ import {
   attachBags,
   buildAlongIndex,
   filmEventMarks,
+  canonicalWindow,
   lookaheadNmFor,
   maxPearlsFor,
   nearestPearlBag,
@@ -48,6 +49,20 @@ describe("iciAlong sample", () => {
     assert.ok(near.pearlNm < 3);
     assert.equal(nearestPearlBag(around, bags, { lat: 0, lon: 0 }, { maxNm: 15 }), null, "trop loin : rien");
     assert.equal(nearestPearlBag(around, new Map(), boat), null, "perle pas encore chargée : rien");
+  });
+
+  it("canonicalWindow: the server's pearls around the boat — two behind, dense, then one in four", () => {
+    const flat = lineFlat();
+    // Canonical pearls every ~12 nm along the same line (1° lon ≈ 41.6 nm at 46°N → 0.288°).
+    const canonical = [];
+    for (let i = 0; i < 14; i++) canonical.push([46.15, -1.16 - i * 0.2884]);
+    const boat = { lat: 46.15, lon: -1.16 - 5 * 0.2884 }; // on pearl #5
+    const win = canonicalWindow(canonical, flat, { boatNm: 60, boatLat: boat.lat, boatLon: boat.lon, nearCount: 3, farEvery: 2, maxPearls: 50 });
+    const idx = win.map((p) => Math.round((-1.16 - p.lon) / 0.2884));
+    assert.deepEqual(idx, [3, 4, 5, 6, 7, 8, 10, 12], "derrière ×2, dense ×3, puis un sur deux");
+    assert.ok(win[0].whenNm < 0 && win[2].whenNm >= -1 && win[2].whenNm <= 1, "la perle du bateau est à whenNm ≈ 0");
+    assert.ok(win.every((p) => p.canonical && Number.isFinite(p.cumNm) && Number.isFinite(p.filmCum)));
+    assert.deepEqual(canonicalWindow([], flat, {}), []);
   });
 
   it("Simulation: dense pearls near the boat, coarser far ahead, the whole leg bounded", () => {
