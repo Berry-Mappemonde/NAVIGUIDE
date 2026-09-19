@@ -273,7 +273,8 @@ function atonSentence(dossier, lang) {
   if (listed) {
     return en ? `Aids to navigation: ${listed}.` : `Balisage : ${listed}.`;
   }
-  if (aton?.reason) {
+  // A thin pearl never looked: say nothing rather than "not collected on this pearl".
+  if (aton?.reason && aton.reason !== "not_in_along_pearl") {
     return en
       ? `No aid to navigation recorded here (${why(aton.reason, lang)}).`
       : `Pas de balisage recensé ici (${why(aton.reason, lang)}).`;
@@ -722,24 +723,35 @@ function sourceSentence(dossier, lang) {
   return notes.join(" ");
 }
 
+/** "thin" | "rich" for a pearl standing in for the live bag, null for the live bag itself. */
+export function pearlKind(dossier) {
+  if (!dossier) return null;
+  if (dossier.pearl === "rich" || dossier.pearl === "thin") return dossier.pearl;
+  return dossier.thin ? "thin" : null;
+}
+
 export function narrateIci(dossier, lang = "fr") {
   if (!dossier) return "";
-  // A thin pearl (the along bag standing in while the full bag is on its
-  // way) never collected weather, satellite, seabed or the sheet: say
-  // nothing about them rather than "not collected on this pearl".
-  const thin = Boolean(dossier.thin);
+  // A pearl (the along bag standing in while the full bag is on its way)
+  // never collected weather, satellite or the sheet — those only make sense
+  // now: say nothing about them rather than "not collected on this pearl".
+  // A thin pearl also skipped the seabed and the aids to navigation; a rich
+  // one (lot P) carries them and tells them.
+  const kind = pearlKind(dossier);
+  const live = kind == null;
+  const thin = kind === "thin";
   const parts = [
     [zeeSentence(dossier, lang), poeSentence(dossier, lang)].filter(Boolean).join(" "),
     aroundSentence(dossier, lang),
-    thin ? "" : satelliteSentence(dossier, lang),
-    thin ? "" : weatherSentence(dossier, lang),
+    live ? satelliteSentence(dossier, lang) : "",
+    live ? weatherSentence(dossier, lang) : "",
     thin ? "" : emodnetSentence(dossier, lang),
-    thin ? "" : reviewSentence(dossier, lang),
+    live ? reviewSentence(dossier, lang) : "",
     eventSentence(dossier, lang),
     thin ? "" : depthSentence(dossier, lang),
     climatologySentence(dossier, lang),
     legSentence(dossier, lang),
-    thin ? "" : sourceSentence(dossier, lang),
+    live ? sourceSentence(dossier, lang) : "",
   ].filter(Boolean);
   return parts.join("\n\n");
 }

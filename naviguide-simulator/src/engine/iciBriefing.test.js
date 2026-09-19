@@ -352,6 +352,30 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
+  it("lot P: a rich pearl tells seabed and aids to navigation; weather, satellite and the sheet stay live-only", () => {
+    const pearl = {
+      pearl: "rich",
+      zee: { name: "French Exclusive Economic Zone", mrgid: 5677 },
+      amp: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [], anchorages: [] },
+      aton: { nearby: [{ name: "Feu des Minimes", nm: 0.8 }], source: "osm-overpass" },
+      emodnet: { kind: "observation", bathy: { depth_m: 18.4 }, seabed: { label: "sand" }, cables: { nearby: false, reason: "no_feature_at_point" } },
+      weather: { kind: null, reason: "not_in_along_pearl" },
+      satellites: { kind: null, reason: "not_in_along_pearl" },
+      review: { reason: "not_in_along_pearl" },
+      sources: { zee: "marineregions", bi: "ok" },
+    };
+    const rich = narrateIci(pearl, "fr");
+    assert.match(rich, /Balisage : Feu des Minimes/);
+    assert.match(rich, /EMODnet/);
+    assert.match(rich, /18,4/);
+    assert.doesNotMatch(rich, /perle|pearl|météo|satellite|Sentinel|Gold|fiche de vérification/i);
+    // A thin pearl (the server sends empty seabed / aids with a reason) says nothing about them.
+    const thin = narrateIci({ ...pearl, pearl: "thin", aton: { nearby: [], reason: "not_in_along_pearl" }, emodnet: { reason: "not_in_along_pearl" } }, "fr");
+    assert.doesNotMatch(thin, /EMODnet|18,4|Balisage/);
+    assert.doesNotMatch(thin, /perle|pearl|météo|satellite/i);
+  });
+
   it("says weather is loading while the shared pipeline is pending", () => {
     const text = narrateIci({
       zee: { name: "Haute mer", mrgid: null, gold: false },

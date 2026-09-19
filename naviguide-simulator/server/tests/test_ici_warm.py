@@ -31,30 +31,16 @@ def test_sample_route_every_12_nm_skips_hops_and_land():
     assert ici_warm.sample_route([]) == []
 
 
-def test_cache_round_trips_through_disk(tmp_path, monkeypatch):
-    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path))
-    import voyage_store
-    monkeypatch.setattr(voyage_store, "_DIR", tmp_path)
+def test_store_round_trips_between_restarts():
     reset_caches()
-    ici_engine.thin_cache_put(thin_cache_key(46.15, -1.16, 30, None), {"zee": {"mrgid": 5677}, "sources": {"bi": "ok"}})
-    assert ici_warm.save_cache_to_disk(force=True) is True
-    path = ici_warm.cache_path()
-    assert path.exists()
-    assert "5677" in path.read_text()
-    reset_caches()
-    assert ici_engine.thin_cache_get(thin_cache_key(46.15, -1.16, 30, None)) is None
-    assert ici_warm.load_cache_from_disk() == 1
+    ici_engine.thin_cache_put(thin_cache_key(46.15, -1.16, 30, None), {"zee": {"mrgid": 5677}, "sources": {"bi": "ok"}}, "rich", 46.15, -1.16)
+    reset_caches()  # a restart forgets memory, not the store
     assert ici_engine.thin_cache_get(thin_cache_key(46.15, -1.16, 30, None))["zee"]["mrgid"] == 5677
-    # A stale (> 7 days) or malformed entry is dropped on load.
-    path.write_text(json.dumps({"x": {"ts": 0, "bag": {}}, "bad": 1}))
-    reset_caches()
-    assert ici_warm.load_cache_from_disk() == 0
+    assert ici_warm.status()["store"]["rich"] == 1
 
 
-def test_warmer_fills_the_cache_once_and_reports(tmp_path, monkeypatch):
-    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path))
+def test_warmer_fills_rich_pearls_once_and_reports(tmp_path, monkeypatch):
     import voyage_store
-    monkeypatch.setattr(voyage_store, "_DIR", tmp_path)
     reset_caches()
     voyage_store.save_voyage({"voyageId": "berry-mappemonde-2026-officiel", "points": _route()[:6], "marks": [], "t0": "2026-05-15T08:00:00Z"})
 
@@ -73,23 +59,35 @@ def test_warmer_fills_the_cache_once_and_reports(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ici_engine, "fill_dossier", patched)
     out = asyncio.run(ici_warm.warm_official_route(pause_s=0))
-    assert out["status"] == "done"
+    assert out["status"] == "done" and out["kind"] == "rich"
     assert out["total"] >= 3
     assert out["done"] == out["total"]
     assert out["cached"] == 0
     n_calls = len(calls)
     assert n_calls > 0
-    assert ici_warm.cache_path().exists()
-    # Second pass: everything is already in the cache, no upstream call.
+    assert out["store"]["rich"] == out["total"], "every pearl is rich in the store"
+    # A rich pearl carries the timeless layers a thin one skips.
+    la, lo = ici_warm.sample_route(_route()[:6])[0]
+    bag = ici_engine.thin_cache_get(thin_cache_key(la, lo, 30))
+    assert bag["pearl"] == "rich"
+    assert "science" in bag and "aton" in bag and "emodnet" in bag
+    assert bag["weather"]["reason"] == "not_in_along_pearl", "weather stays live"
+    assert bag["satellites"]["reason"] == "not_in_along_pearl"
+    # Second pass: everything is already in the store, no upstream call.
     out2 = asyncio.run(ici_warm.warm_official_route(pause_s=0))
     assert out2["cached"] == out2["total"]
+    assert len(calls) == n_calls
+    # A thin request is served by the rich pearl (superset), without any call.
+    async def thin_req():
+        async with httpx.AsyncClient(transport=transport) as c:
+            return await real_fill(la, lo, 30.0, client=c, thin=True)
+    served = asyncio.run(thin_req())
+    assert served["cached"] is True and served["pearl"] == "rich"
     assert len(calls) == n_calls
 
 
 def test_official_pearls_endpoint_lists_canonical_positions(tmp_path, monkeypatch):
-    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path))
     import voyage_store
-    monkeypatch.setattr(voyage_store, "_DIR", tmp_path)
     ici_warm._pearls_cache["pearls"] = None
     voyage_store.save_voyage({"voyageId": "berry-mappemonde-2026-officiel", "points": _route(), "marks": [], "t0": "2026-05-15T08:00:00Z", "routeRev": 0})
     out = ici_warm.official_pearls()
