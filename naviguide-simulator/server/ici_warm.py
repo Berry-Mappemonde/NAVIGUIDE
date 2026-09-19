@@ -33,6 +33,7 @@ SAMPLE_NM = 12.0
 WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.0)
 WARM_PARALLEL = max(1, int(os.environ.get("NAVIGUIDE_ICI_WARM_PARALLEL") or 2))
 LEGACY_TTL_S = 7 * 86400.0
+POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
 
 _state: dict[str, Any] = {
     "status": "idle",  # idle | running | done | disabled | error
@@ -124,11 +125,12 @@ def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[f
 
 def route_events_from_pearls(points: list[dict]) -> list[dict]:
     """What the warmed pearls know about the route, in order: ZEE entered /
-    left, marine protected areas that come within reach. Pearls not cached
-    yet are unknown — no event is invented across a gap.
+    left, marine protected areas that come within reach, ports of entry
+    passed (≤ POE_NEARBY_NM). Pearls not cached yet are unknown — no event
+    is invented across a gap.
 
-    Each event: { kind: "zee" | "amp", event, name, mrgid | siteId, lat, lon,
-    sailNm, idx }. The journal turns `sailNm` into a time with the clock."""
+    Each event: { kind: "zee" | "amp" | "poe", event, name, mrgid | siteId |
+    poeId, lat, lon, sailNm, idx }. The journal dates `sailNm` with the clock."""
     from ici_engine import thin_cache_get, thin_cache_key  # noqa: PLC0415
 
     events: list[dict] = []
@@ -136,6 +138,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     state_known = False
     candidate: tuple | None = None  # (zee_or_None, pearl, idx) seen once, waiting for a second pearl
     seen_amp: set[str] = set()
+    seen_poe: set[str] = set()
     for idx, pearl in enumerate(sample_route_nm(points)):
         bag = thin_cache_get(thin_cache_key(pearl["lat"], pearl["lon"], 30.0))
         if bag is None:
@@ -148,6 +151,22 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
         cur = None if (mrgid is None or ashore) else {"mrgid": mrgid, "name": zee.get("name"), "territory": zee.get("territory")}
         cur_id = cur["mrgid"] if cur else None
         state_id = state["mrgid"] if state else None
+        # Ports of entry within reach of the pearl (lot A): once per port.
+        for poe in (bag.get("poe") or [])[:3]:
+            if not isinstance(poe, dict) or not poe.get("name"):
+                continue
+            nm = poe.get("nm")
+            if not isinstance(nm, (int, float)) or nm > POE_NEARBY_NM:
+                continue
+            key = str(poe.get("id") or poe.get("site_id") or poe["name"])
+            if key in seen_poe:
+                continue
+            seen_poe.add(key)
+            events.append({
+                "kind": "poe", "event": "passed", "name": poe["name"], "poeId": key,
+                "nm": nm, "url": poe.get("url"), "mrgid": cur_id,
+                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+            })
         if not state_known:
             state, state_known, candidate = cur, True, None
         elif cur_id == state_id:
