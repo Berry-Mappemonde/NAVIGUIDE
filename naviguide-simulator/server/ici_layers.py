@@ -1375,6 +1375,21 @@ async def fetch_aton(
     return bag
 
 
+def bi_review_headers() -> dict:
+    """En-têtes vers l'API Blue Intelligence pour les fiches de vérification.
+
+    En production BI protège `/review/fiche` (ADMIN_KEY → en-tête X-Admin-Key).
+    Le simulateur envoie la clé s'il en a une (`BI_ADMIN_KEY` dans
+    simulator.env) ; sinon la fiche revient 401 → `review_requires_admin`,
+    que le briefing ne raconte plus au visiteur.
+    """
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    key = (os.getenv("BI_ADMIN_KEY") or "").strip()
+    if key:
+        headers["X-Admin-Key"] = key
+    return headers
+
+
 async def fetch_review(
     client: httpx.AsyncClient,
     bi: str,
@@ -1382,7 +1397,7 @@ async def fetch_review(
     nearest_amp: dict | None,
 ) -> dict:
     bag = empty_review()
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    headers = bi_review_headers()
     mrgid = zee.get("mrgid") if zee else None
     got = False
     if mrgid:
