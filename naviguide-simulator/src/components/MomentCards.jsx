@@ -42,42 +42,43 @@ function CardLinks({ entity, onFocus, t }) {
 }
 
 /**
- * NOW — sécurité / décision. Une seule carte, posée en haut de la carte
- * (entre les panneaux), remplacée par la suivante, fermable. Rouge ambré
- * pour une alerte, cyan pour une décision.
+ * NOW — sécurité / décision. Une seule carte, remplacée par la suivante,
+ * fermable. Rouge ambré pour une alerte, cyan pour une décision.
+ * `inline` : bloc du produit « ici » de la sidebar gauche ; sinon posée en
+ * haut de la carte (Cinéma, sidebar rangée).
  */
-export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus }) {
+export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus, inline = false }) {
   const { t, lang } = useLang();
   if (!card) return null;
   const alert = card.severity === "alert";
   const ahead = Number.isFinite(card.whenNm) && card.whenNm >= 1
     ? t("momentAhead", { nm: Math.round(card.whenNm) })
     : "";
+  const border = alert ? "rgba(251, 191, 36, 0.7)" : "rgba(34, 211, 238, 0.55)";
+  const frame = inline
+    ? "rounded-lg border bg-slate-900/70 text-white px-2 py-1.5 min-w-0"
+    : "naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2050] w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border bg-slate-950/94 text-white shadow-2xl px-3 py-2.5 backdrop-blur-sm";
+  const style = inline
+    ? { borderColor: border }
+    : {
+      top: 72,
+      borderColor: border,
+      boxShadow: alert
+        ? "0 0 0 1px rgba(251,191,36,0.25), 0 18px 40px rgba(0,0,0,0.45)"
+        : "0 0 0 1px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)",
+    };
   return (
-    <div
-      data-testid="moment-now"
-      data-type={card.type}
-      className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2050] w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border bg-slate-950/94 text-white shadow-2xl px-3 py-2.5 backdrop-blur-sm"
-      style={{
-        top: 72,
-        borderColor: alert ? "rgba(251, 191, 36, 0.7)" : "rgba(34, 211, 238, 0.55)",
-        boxShadow: alert
-          ? "0 0 0 1px rgba(251,191,36,0.25), 0 18px 40px rgba(0,0,0,0.45)"
-          : "0 0 0 1px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)",
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-block w-2 h-2 rounded-full ${alert ? "bg-amber-400 animate-pulse" : "bg-cyan-300"}`}
-        />
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70">
+    <div data-testid="moment-now" data-type={card.type} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${alert ? "bg-amber-400 animate-pulse" : "bg-cyan-300"}`} />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70 min-w-0 truncate">
           {t("momentNowTitle")}
           <span className={`ml-1.5 ${alert ? "text-amber-300" : "text-cyan-200"}`}>
             · {alert ? t("momentNowAlert") : t("momentNowDecision")}
           </span>
           {ahead ? <span className="ml-1.5 text-white/50 normal-case tracking-normal">· {ahead}</span> : null}
         </span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1 flex-shrink-0">
           {left > 0 ? <span className="text-[9px] text-white/45">{t("momentLeft", { n: left })}</span> : null}
           <ListenButton text={cardSpeech(card)} t={t} lang={lang} testId="moment-listen" />
           <button
@@ -91,7 +92,8 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
           </button>
         </div>
       </div>
-      <p className="mt-1.5 text-[12px] leading-snug text-slate-100 break-words [overflow-wrap:anywhere]">
+      {card.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
+      <p className={`mt-1 leading-snug text-slate-100 break-words [overflow-wrap:anywhere] ${inline ? "text-[11px]" : "text-[12px]"}`}>
         {card.text}
         {card.storyStatus === "pending" ? (
           <span className="ml-1 text-[10px] text-white/45">{t("momentStoryPending")}</span>
@@ -103,29 +105,29 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
 });
 
 /**
- * FREE — « pendant ce temps, autour du bateau ». Un petit bloc en bas à
- * droite de la carte visible, qui tourne sur l’information (science,
- * projets, marinas, balisage, image satellite, climatologie) quand aucune
- * carte NOW n’est posée.
+ * FREE — « pendant ce temps, autour du bateau ». Tourne sur l’information
+ * quand aucune carte NOW n’est posée. `inline` dans la sidebar gauche ;
+ * sinon petit bloc en bas à droite de la carte visible.
  */
-export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, onNext, onFocus }) {
+export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, onNext, onFocus, inline = false }) {
   const { t, lang } = useLang();
   if (!card) return null;
+  const frame = inline
+    ? "rounded-lg border border-white/10 bg-slate-800/50 text-white px-2 py-1.5 min-w-0"
+    : "naviguide-floating-card absolute z-[2040] w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border border-white/12 bg-slate-950/88 text-white shadow-xl px-3 py-2 backdrop-blur-sm";
+  const style = inline
+    ? undefined
+    : {
+      right: "calc(var(--sim-inset-right, 0px) + 12px)",
+      bottom: "calc(var(--sim-inset-bottom, 0px) + 30px)",
+    };
   return (
-    <div
-      data-testid="moment-free"
-      data-kind={card.kind}
-      className="naviguide-floating-card absolute z-[2040] w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border border-white/12 bg-slate-950/88 text-white shadow-xl px-3 py-2 backdrop-blur-sm"
-      style={{
-        right: "calc(var(--sim-inset-right, 0px) + 12px)",
-        bottom: "calc(var(--sim-inset-bottom, 0px) + 30px)",
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-wider text-white/55">
+    <div data-testid="moment-free" data-kind={card.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-white/55 min-w-0 truncate">
           {t("momentFreeTitle")}
         </span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1 flex-shrink-0">
           <ListenButton text={cardSpeech(card)} t={t} lang={lang} testId="moment-free-listen" />
           <button
             type="button"

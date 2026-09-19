@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BOAT_FIELDS,
   COMFORTS,
   DEFAULT_PROFILE,
   EXPERT_IDS,
   HORIZONS_H,
   PROFILES,
+  clampBoat,
   clampExpert,
   clearSavedOrders,
   ordersLine,
@@ -107,6 +109,21 @@ export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr
     });
   }, []);
 
+  /** setBoat("loaM", 12) types the boat's length / draft; setBoat(id, null) goes back to the polar. */
+  const setBoat = useCallback((id, value) => {
+    if (!(id in BOAT_FIELDS)) return;
+    setSaved((prev) => {
+      const boat = { ...(prev.boat || {}) };
+      const v = value == null || value === "" ? null : clampBoat(id, value);
+      if (v == null) delete boat[id];
+      else boat[id] = v;
+      const next = sanitizeSaved({ ...prev, boat });
+      if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
+      writeSavedOrders(storage(), next);
+      return next;
+    });
+  }, []);
+
   const reset = useCallback(() => {
     clearSavedOrders(storage());
     setSaved({ profile: DEFAULT_PROFILE });
@@ -129,6 +146,7 @@ export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr
     setComfort,
     setHorizon,
     setExpert,
+    setBoat,
     reset,
     notice,
     suggest,

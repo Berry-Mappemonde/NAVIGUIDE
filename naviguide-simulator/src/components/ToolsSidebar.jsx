@@ -3,6 +3,9 @@ import { CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Loader2, Moon, Sun, 
 import { useLang } from "../i18n/LangContext.jsx";
 import { adminHeaders, getAdminSecret, setAdminSecret } from "../utils/adminSecret.js";
 import { SkipperOrdersPanel } from "./SkipperOrdersPanel.jsx";
+import { EscaleLegend } from "./EscaleLegend.jsx";
+import { DepartureField } from "./DepartureField.jsx";
+import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
@@ -37,24 +40,6 @@ function polarErrorDetail(error, t) {
   return t("polarNetworkError");
 }
 
-function PolarStatusBadge({ status, detail }) {
-  const { t } = useLang();
-  const cfg = {
-    uploading: { icon: <Loader2 size={12} className="animate-spin" />, color: "text-blue-400", bg: "bg-blue-900/30", text: t("polarAnalyzing") },
-    success: { icon: <CheckCircle2 size={12} />, color: "text-green-400", bg: "bg-green-900/30", text: t("polarLoaded") },
-    error: { icon: <TriangleAlert size={12} />, color: "text-red-400", bg: "bg-red-900/30", text: t("polarFailed") },
-  };
-  if (!status) return null;
-  const c = cfg[status] ?? cfg.error;
-  return (
-    <div className={`flex items-start gap-2 px-3 py-1.5 rounded-lg ${c.bg} ${c.color} text-xs`}>
-      {c.icon}
-      <span className="font-medium">{c.text}</span>
-      {detail && <span className="text-slate-400 ml-1 break-words">— {detail}</span>}
-    </div>
-  );
-}
-
 function PolarVmgRow({ tws, entry }) {
   const uw = entry?.upwind ?? {};
   const dw = entry?.downwind ?? {};
@@ -73,9 +58,8 @@ function PolarVmgRow({ tws, entry }) {
 }
 
 /**
- * Sécurité P0 — la clé admin partagée (X-Naviguide-Admin). Sans elle, le
- * serveur refuse les écritures officielles (route, GRIB, polaire) ; un
- * visiteur lit tout, n'écrit rien. Stockée dans ce navigateur seulement.
+ * Sécurité P0 — la clé admin partagée (X-Naviguide-Admin), sur une ligne :
+ * icône, champ « Coller la clé admin », OK. Stockée dans ce navigateur.
  */
 function AdminKeyField() {
   const { t } = useLang();
@@ -86,44 +70,25 @@ function AdminKeyField() {
     setSaved(Boolean(value.trim()));
   };
   return (
-    <div className="bg-slate-800/40 rounded-xl px-3 py-2 border border-slate-700/40" data-testid="admin-key">
-      <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
-        <KeyRound size={12} className={saved ? "text-emerald-400" : "text-slate-500"} />
-        <span>{t("adminKeyLabel")}</span>
-        {saved && <span className="ml-auto text-[10px] text-emerald-400">{t("adminKeyActive")}</span>}
-      </div>
-      <div className="flex gap-1.5">
-        <input
-          type="password"
-          autoComplete="off"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
-          placeholder={t("adminKeyPlaceholder")}
-          aria-label={t("adminKeyLabel")}
-          className="flex-1 min-w-0 bg-slate-900/70 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 placeholder:text-slate-600"
-        />
-        <button
-          type="button"
-          onClick={commit}
-          className="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-100"
-        >
-          {t("adminKeySave")}
-        </button>
-      </div>
-      <p className="mt-1 text-[10px] text-slate-500">{t("adminKeyHint")}</p>
-    </div>
-  );
-}
-
-function StatRow({ icon, label, value }) {
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-slate-700/40 last:border-0">
-      <div className="flex items-center gap-2 text-xs text-slate-400">
-        <span className="text-slate-500">{icon}</span>
-        {label}
-      </div>
-      <span className="text-xs font-semibold text-white">{value}</span>
+    <div className="flex items-center gap-1.5" data-testid="admin-key">
+      <KeyRound size={13} className={saved ? "text-emerald-400 flex-shrink-0" : "text-slate-500 flex-shrink-0"} title={saved ? t("adminKeyActive") : t("adminKeyLabel")} />
+      <input
+        type="password"
+        autoComplete="off"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
+        placeholder={t("adminKeyPlaceholder")}
+        aria-label={t("adminKeyLabel")}
+        className="flex-1 min-w-0 bg-slate-900/70 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 placeholder:text-slate-500"
+      />
+      <button
+        type="button"
+        onClick={commit}
+        className="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-100"
+      >
+        {t("adminKeySave")}
+      </button>
     </div>
   );
 }
@@ -171,13 +136,46 @@ function Toggle({ labelLeft, labelRight, active, onChange }) {
   );
 }
 
+function SectionTitle({ children, right = null }) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{children}</span>
+      {right}
+    </div>
+  );
+}
+
+/**
+ * The whole expedition, compact: the route in numbers on two lines and the
+ * stopovers list (click = jump). Revue du 19 sept. : one box, not two.
+ */
+function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale }) {
+  const { t } = useLang();
+  const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—";
+  return (
+    <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
+      <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary">
+        <span className="font-semibold text-white">{nm}</span>
+        <span>· {routeSegmentCount ?? routeCounts.total} {t("routeSegmentsShort")}</span>
+        <span>· {routeCounts.maritime} {t("routeSeaShort")} / {routeCounts.overland} {t("routeLandShort")}</span>
+        <span>· {waypointCount} {t("waypoints").toLowerCase()}</span>
+        <span>· {routeCounts.points.toLocaleString()} {t("routePointsShort")}</span>
+      </div>
+      <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
+    </div>
+  );
+}
+
 export const ToolsSidebar = memo(function ToolsSidebar({
   segments, points, open, onToggle,
   isLightMode, onLightModeChange,
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
+  maritimeLayers = null,
+  escaleMarks = [], filmNm = 0, onSeekEscale,
+  showDeparture = false, departureT0, onDepartureT0,
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
-  onSkipperComfort, onSkipperHorizon, onSkipperExpert,
+  onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
   skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
 }) {
   const { lang, switchLang, t } = useLang();
@@ -185,6 +183,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   const [polarUploadStatus, setPolarUploadStatus] = useState(null);
   const [polarUploadDetail, setPolarUploadDetail] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [showPolar, setShowPolar] = useState(false);
   const polarFileInputRef = useRef(null);
   const defaultLoadAttemptedRef = useRef(false);
   const userDroppedFileRef = useRef(false);
@@ -258,6 +257,15 @@ export const ToolsSidebar = memo(function ToolsSidebar({
     };
   }, [segments]);
 
+  const polarStatus = polarUploadStatus === "uploading"
+    ? { icon: <Loader2 size={12} className="animate-spin" />, color: "text-blue-300", text: t("polarAnalyzing") }
+    : polarUploadStatus === "error"
+      ? { icon: <TriangleAlert size={12} />, color: "text-red-300", text: `${t("polarFailed")} — ${polarUploadDetail}` }
+      : polarData
+        ? { icon: <CheckCircle2 size={12} />, color: "text-emerald-300", text: `${t("polarLoaded")} — ${polarData.boat_name || polarUploadDetail || ""}` }
+        : { icon: <Upload size={12} />, color: "text-slate-400", text: t("polarSection") };
+  const layersOn = activeLayerCount(maritimeLayers);
+
   return (
     <>
       <button
@@ -288,74 +296,95 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             </div>
           </div>
 
+          {/* ── L'expédition entière : la route en chiffres + les escales ── */}
           <div className="px-4 py-3 border-b border-slate-700/60">
-            <div className="bg-slate-800/60 rounded-xl px-3 py-1 border border-slate-700/40">
-              <StatRow icon="📏" label={t("totalDistanceNm")} value={routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—"} />
-              <StatRow icon="🗺️" label={t("totalSegments")} value={routeSegmentCount ?? routeCounts.total} />
-              <StatRow icon="⚓" label={t("maritimeLegs")} value={routeCounts.maritime} />
-              <StatRow icon="🛣️" label={t("overlandLegs")} value={routeCounts.overland} />
-              <StatRow icon="📍" label={t("waypoints")} value={points.length} />
-              <StatRow icon="🔢" label={t("routePoints")} value={routeCounts.points.toLocaleString()} />
-            </div>
-          </div>
-
-          <div className="px-4 py-4 space-y-3">
-            <PolarStatusBadge status={polarUploadStatus} detail={polarUploadDetail} />
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault(); setIsDragging(false);
-                const f = e.dataTransfer.files?.[0];
-                const ok = [".pdf", ".csv", ".xlsx", ".xls"];
-                if (f && ok.some((ext) => f.name.toLowerCase().endsWith(ext))) {
-                  userDroppedFileRef.current = true;
-                  setPolarFile(f);
-                }
-              }}
-              onClick={() => polarFileInputRef.current?.click()}
-              className={`flex flex-col items-center justify-center gap-1.5 p-4 border-2 border-dashed rounded-xl cursor-pointer
-                ${isDragging ? "border-blue-400 bg-blue-900/20" : "border-slate-600 hover:border-slate-500 bg-slate-800/40"}`}
-            >
-              <input
-                ref={polarFileInputRef}
-                type="file"
-                accept=".pdf,.csv,.xlsx,.xls"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) { userDroppedFileRef.current = true; setPolarFile(f); } }}
-              />
-              {polarUploadStatus === "uploading"
-                ? <Loader2 size={18} className="animate-spin text-blue-400" />
-                : <Upload size={18} className="text-slate-500" />}
-              <span className="text-xs text-slate-400">{t("polarDropZone")}</span>
-              <span className="text-xs text-slate-600">{t("polarFormats")}</span>
-            </div>
-            {polarData?.vmg_summary && (
-              <div className="overflow-x-auto rounded-xl border border-slate-700/40 bg-slate-800/40">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-800/80 border-b border-slate-700/60">
-                      <th rowSpan={2} className="py-1.5 px-1.5 text-center text-blue-300 font-bold">TWS</th>
-                      <th colSpan={3} className="py-1 text-center text-green-400">{t("polarUpwind")}</th>
-                      <th colSpan={3} className="py-1 text-center text-amber-400">{t("polarDownwind")}</th>
-                    </tr>
-                    <tr className="bg-slate-800/60 border-b border-slate-700/60">
-                      {["TWA", "BS", "VMG", "TWA", "BS", "VMG"].map((h, i) => (
-                        <th key={i} className="py-1 px-1 font-medium text-slate-400">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {POLAR_VMG_TWS_KEYS.map((tws) => (
-                      <PolarVmgRow key={tws} tws={tws} entry={polarData.vmg_summary[tws]} />
-                    ))}
-                  </tbody>
-                </table>
+            <SectionTitle>{t("expeditionTitle")}</SectionTitle>
+            <ExpeditionBox
+              routeDistanceNm={routeDistanceNm}
+              routeSegmentCount={routeSegmentCount}
+              routeCounts={routeCounts}
+              waypointCount={points.length}
+              escaleMarks={escaleMarks}
+              filmNm={filmNm}
+              onSeekEscale={onSeekEscale}
+            />
+            {showDeparture ? (
+              <div className="mt-2">
+                <DepartureField t0={departureT0} onT0={onDepartureT0} />
               </div>
-            )}
+            ) : null}
           </div>
 
-          <div className="px-4 pb-3">
+          {/* ── Réglages : polaire compacte, clé admin, paramètres avancés, calques ── */}
+          <div className="px-4 py-3 space-y-2">
+            <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="polar-box">
+              <div className={`flex items-center gap-2 text-xs ${polarStatus.color}`}>
+                {polarStatus.icon}
+                <span className="font-medium min-w-0 truncate">{polarStatus.text}</span>
+                {polarData?.vmg_summary ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowPolar((v) => !v)}
+                    aria-expanded={showPolar}
+                    data-testid="polar-show"
+                    className="ml-auto flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                  >
+                    {showPolar ? t("polarHide") : t("polarShow")}
+                  </button>
+                ) : null}
+              </div>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault(); setIsDragging(false);
+                  const f = e.dataTransfer.files?.[0];
+                  const ok = [".pdf", ".csv", ".xlsx", ".xls"];
+                  if (f && ok.some((ext) => f.name.toLowerCase().endsWith(ext))) {
+                    userDroppedFileRef.current = true;
+                    setPolarFile(f);
+                  }
+                }}
+                onClick={() => polarFileInputRef.current?.click()}
+                data-testid="polar-drop"
+                className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[10px]
+                  ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
+              >
+                <input
+                  ref={polarFileInputRef}
+                  type="file"
+                  accept=".pdf,.csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) { userDroppedFileRef.current = true; setPolarFile(f); } }}
+                />
+                <Upload size={11} />
+                <span>{polarData ? t("polarDropToReplace") : t("polarDropZone")}</span>
+              </div>
+              {showPolar && polarData?.vmg_summary && (
+                <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-800/80 border-b border-slate-700/60">
+                        <th rowSpan={2} className="py-1.5 px-1.5 text-center text-blue-300 font-bold">TWS</th>
+                        <th colSpan={3} className="py-1 text-center text-green-400">{t("polarUpwind")}</th>
+                        <th colSpan={3} className="py-1 text-center text-amber-400">{t("polarDownwind")}</th>
+                      </tr>
+                      <tr className="bg-slate-800/60 border-b border-slate-700/60">
+                        {["TWA", "BS", "VMG", "TWA", "BS", "VMG"].map((h, i) => (
+                          <th key={i} className="py-1 px-1 font-medium text-slate-400">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {POLAR_VMG_TWS_KEYS.map((tws) => (
+                        <PolarVmgRow key={tws} tws={tws} entry={polarData.vmg_summary[tws]} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             <AdminKeyField />
           </div>
 
@@ -367,12 +396,28 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               onComfort={onSkipperComfort}
               onHorizon={onSkipperHorizon}
               onExpert={onSkipperExpert}
+              onBoat={onSkipperBoat}
               onReset={onSkipperReset}
               suggest={skipperSuggest}
               onAcceptSuggest={onSkipperSuggestAccept}
               onDismissSuggest={onSkipperSuggestDismiss}
             />
           )}
+
+          {maritimeLayers ? (
+            <details className="px-4 py-3 border-t border-slate-700/60 group" data-testid="layers-drawer">
+              <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
+                  <span className="text-slate-500 group-open:rotate-90 transition-transform">›</span>
+                </span>
+              </summary>
+              <div className="mt-2">
+                <LayerToggles maritimeLayers={maritimeLayers} />
+              </div>
+            </details>
+          ) : null}
         </div>
       </div>
     </>

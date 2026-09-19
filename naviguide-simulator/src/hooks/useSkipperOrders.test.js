@@ -39,17 +39,23 @@ describe("useSkipperOrders contract", () => {
   });
 });
 
-describe("SkipperOrdersPanel contract (v1 + S6 + S7)", () => {
-  it("shows three pills and a boat read from the polar — no L / draft fields", () => {
-    assert.match(panel, /items=\{PROFILES\}/);
-    assert.match(panel, /aria-pressed=\{value === it\}/);
-    assert.match(panel, /skipperProfileAria/);
-    assert.match(panel, /skipperSuivreWindow/);
-    assert.match(panel, /skipperResetBerry/);
+describe("SkipperOrdersPanel contract (revue du 19 sept. : « Paramètres avancés » repliés)", () => {
+  it("is one folded <details> named Paramètres avancés; the boat block comes first, with typed L / draft / gale", () => {
+    assert.match(panel, /<details className="px-4 py-3 border-t[^>]*data-testid="skipper-orders"/);
+    assert.match(panel, /t\("advancedSettings"\)/);
+    assert.doesNotMatch(panel, /<details open/);
+    const boatAt = panel.indexOf('data-testid="skipper-boat"');
+    const profileAt = panel.indexOf("items={PROFILES}");
+    const comfortAt = panel.indexOf('data-testid="skipper-comfort"');
+    const expertAt = panel.indexOf('data-testid="skipper-expert"');
+    assert.ok(boatAt > 0 && boatAt < profileAt && profileAt < comfortAt && comfortAt < expertAt, "boat → character → comfort → Chiffres");
+    const boatBlock = panel.slice(boatAt, profileAt);
+    assert.match(boatBlock, /id="loaM"/);
+    assert.match(boatBlock, /id="draftM"/);
+    assert.match(boatBlock, /BOAT_EXPERT_IDS\.map/); // galeKt / galeHoldKt, editable, Beaufort as default
+    assert.match(boatBlock, /skipperPlanningKn/);
+    assert.match(panel, /onBoat/);
     assert.doesNotMatch(panel, /skipperSharedClock|exampleLine|skipperRainSimulation/);
-    const boatBlock = panel.slice(panel.indexOf('t("skipperBoat")'), panel.indexOf('data-testid="skipper-comfort"'));
-    assert.ok(boatBlock.length > 0);
-    assert.doesNotMatch(boatBlock, /<input/); // the boat block has no input
     assert.doesNotMatch(panel, /wind-gale|hs-shift|depth-alert/);
   });
 
@@ -62,25 +68,22 @@ describe("SkipperOrdersPanel contract (v1 + S6 + S7)", () => {
     assert.match(panel, /skipperHorizonLeg/);
   });
 
-  it("S7: a folded Expert drawer, inputs only there, gale read-only", () => {
-    const drawer = panel.slice(panel.indexOf("<details"), panel.indexOf("</details>"));
+  it("S7: « Chiffres » stays a folded drawer at the bottom, numbers only, back-to-profile arrow", () => {
+    const drawer = panel.slice(panel.indexOf('data-testid="skipper-expert"'), panel.lastIndexOf("</details>"));
     assert.ok(drawer.length > 0, "details drawer exists");
     assert.match(drawer, /skipperExpertTitle/);
-    assert.match(drawer, /EXPERT_IDS\.map/);
-    assert.match(drawer, /type="number"/);
-    assert.match(drawer, /min=\{f\.min\}[^]*max=\{f\.max\}[^]*step=\{f\.step\}/);
-    assert.match(drawer, /onExpert\?\.\(id, null\)/);
-    assert.match(drawer, /skipperExpertLocked/);
-    const outside = panel.replace(drawer, "");
-    assert.doesNotMatch(outside, /<input/);
-    assert.doesNotMatch(panel, /<details open/);
+    assert.match(drawer, /NUMBER_EXPERT_IDS\.map/);
+    assert.match(panel, /type="number"/);
+    assert.match(panel, /min=\{field\.min\}[^]*max=\{field\.max\}[^]*step=\{field\.step\}/);
+    assert.match(panel, /onChange\?\.\(id, null\)/);
   });
 
-  it("is mounted in the tools sidebar under the polar, not on the film bar", () => {
+  it("is mounted in the tools sidebar after the polar box, not on the film bar", () => {
     assert.match(tools, /<SkipperOrdersPanel/);
-    const polarTable = tools.indexOf("POLAR_VMG_TWS_KEYS.map");
+    const polarBox = tools.indexOf('data-testid="polar-box"');
     const panelAt = tools.indexOf("<SkipperOrdersPanel");
-    assert.ok(polarTable > 0 && panelAt > polarTable, "panel sits after the polar block");
+    assert.ok(polarBox > 0 && panelAt > polarBox, "panel sits after the polar box");
+    assert.match(tools, /onBoat=\{onSkipperBoat\}/);
     const filmBar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx"), "utf8");
     assert.doesNotMatch(filmBar, /SkipperOrders|skipperProfile/);
   });
