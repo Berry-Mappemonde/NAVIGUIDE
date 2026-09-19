@@ -5,6 +5,30 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
 .leaflet-container { background: #0f172a; font: inherit; z-index: 0; }
 
+/*
+ * Map credits stay inside the visible map: right of the tools panel's edge
+ * and above the film bar (App sets the insets as CSS variables). Under a
+ * translucent panel the text bled through — never again.
+ */
+.leaflet-container .leaflet-bottom.leaflet-right {
+  right: var(--sim-inset-right, 0px);
+  bottom: var(--sim-inset-bottom, 0px);
+  transition: right 300ms ease, bottom 300ms ease;
+}
+.leaflet-container .leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border-radius: 6px 0 0 0;
+}
+.leaflet-container .leaflet-control-attribution a { color: #7dd3fc; }
+.light-mode .leaflet-container .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.8);
+  color: rgb(51 65 85);
+}
+
 .naviguide-sidebar-panel {
   z-index: 2000 !important;
 }
