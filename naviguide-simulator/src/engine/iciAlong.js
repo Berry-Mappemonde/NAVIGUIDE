@@ -7,6 +7,7 @@
  */
 
 import { interpolateAtNm } from "./routePlayhead.js";
+import { haversineNm } from "../utils/geo.js";
 import {
   AMP_AHEAD_MIN_NM,
   ROUTE_SAMPLE_NM,
@@ -72,8 +73,11 @@ export function sampleLeg(flat, {
   maxPearls = MAX_PEARLS_SIM,
   lookaheadNm = Infinity,
   month = null,
+  /** Pearls kept just behind the boat (the one it just passed): a live thin bag at any film speed. */
+  behindNm = 0,
 } = {}) {
-  const start = Math.max(Number(fromNm) || 0, Number(boatNm) || 0);
+  const boat = Number(boatNm) || 0;
+  const start = Math.max(Number(fromNm) || 0, boat - (Number(behindNm) || 0), 0);
   const cap = Number.isFinite(lookaheadNm) ? start + lookaheadNm : Infinity;
   const end = Math.min(
     Number.isFinite(toNm) ? toNm : Infinity,
@@ -92,11 +96,41 @@ export function sampleLeg(flat, {
       lon: hit.lon,
       cumNm: nm,
       filmCum: filmCumAtNm(flat, nm),
-      whenNm: nm - (Number(boatNm) || 0),
+      whenNm: nm - boat,
       month,
     });
   }
   return pearls;
+}
+
+/**
+ * The thin bag of the pearl nearest to the boat (≤ maxNm), re-centred on the
+ * boat. While the full bag is still on its way (or already far behind in a
+ * fast film), this is what the detectors and the briefing read.
+ */
+export function nearestPearlBag(pearls, bagMap, boat, { maxNm = 15, month = null } = {}) {
+  if (!boat || !Number.isFinite(boat.lat) || !Number.isFinite(boat.lon)) return null;
+  const map = bagMap instanceof Map ? bagMap : new Map(Object.entries(bagMap || {}));
+  let best = null;
+  let bestD = Infinity;
+  for (const p of pearls || []) {
+    const bag = map.get(pearlKey(p.lat, p.lon, month ?? p.month));
+    if (!bag) continue;
+    const d = haversineNm(p.lat, p.lon, boat.lat, boat.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = { pearl: p, bag };
+    }
+  }
+  if (!best || bestD > maxNm) return null;
+  return {
+    ...best.bag,
+    at: { lat: boat.lat, lon: boat.lon },
+    thin: true,
+    pearlNm: Math.round(bestD * 10) / 10,
+    pearlCumNm: best.pearl.cumNm,
+    pearlFilmCum: best.pearl.filmCum,
+  };
 }
 
 export function attachBags(pearls, bagMap, month, orders = null) {

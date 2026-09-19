@@ -1,20 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ROUTE_SAMPLE_NM } from "../engine/eventRules.js";
 import {
   buildAlongIndex,
   lookaheadNmFor,
   maxPearlsFor,
+  nearestPearlBag,
   pearlKey,
   sampleLeg,
 } from "../engine/iciAlong.js";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const FETCH_MS = 20000;
+const PARALLEL = 4;
+/** Two pearls behind the boat stay in the window: the one just passed is the live thin bag. */
+const BEHIND_NM = 2 * ROUTE_SAMPLE_NM;
 
 /**
  * Preheat thin /ici pearls on THIS leg. Never blocks Play. No chat.
  * Suivre cap = hours × planning knots from the skipper orders; pearls follow (§2.6).
  * Never the whole route.
+ *
+ * The pearl cache lives for the whole route (not one leg): a replay or a
+ * leg change costs nothing, and `nearestBag()` gives the detectors a thin bag
+ * at the boat at any film speed while the full bag is still on its way.
  */
 export function useIciAlong({
   enabled,
@@ -28,7 +36,7 @@ export function useIciAlong({
 }) {
   const [bags, setBags] = useState(() => new Map());
   const cacheRef = useRef(new Map());
-  const routeKey = `${flat?.points?.length || 0}:${flat?.totalNm || 0}:${fromNm ?? ""}:${toNm ?? ""}:${mode}`;
+  const routeKey = `${flat?.points?.length || 0}:${flat?.totalNm || 0}:${mode}`;
   const lastRouteRef = useRef(routeKey);
   if (lastRouteRef.current !== routeKey) {
     lastRouteRef.current = routeKey;
@@ -51,6 +59,7 @@ export function useIciAlong({
       month,
       lookaheadNm,
       maxPearls,
+      behindNm: BEHIND_NM,
     });
   }, [enabled, flat, fromNm, toNm, boatBucket, month, lookaheadNm, maxPearls]);
 
@@ -65,11 +74,12 @@ export function useIciAlong({
       return undefined;
     }
     const run = async () => {
-      for (let i = 0; i < missing.length; i += 3) {
+      for (let i = 0; i < missing.length; i += PARALLEL) {
         if (cancelled) return;
-        const chunk = missing.slice(i, i + 3);
+        const chunk = missing.slice(i, i + PARALLEL);
         await Promise.all(chunk.map(async (p) => {
           const key = pearlKey(p.lat, p.lon, month);
+          if (cacheRef.current.has(key)) return;
           const ctrl = new AbortController();
           const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
           try {
@@ -100,9 +110,15 @@ export function useIciAlong({
     [pearls, bags, month, orders],
   );
 
+  const nearestBag = useCallback(
+    (boat, maxNm = 15) => nearestPearlBag(pearls, bags, boat, { maxNm, month }),
+    [pearls, bags, month],
+  );
+
   return {
     index,
     pearls,
+    nearestBag,
     loading: Boolean(enabled && pearls.length && pearls.some((p) => !bags.has(pearlKey(p.lat, p.lon, month)))),
   };
 }

@@ -429,9 +429,39 @@ function signedDelta(n, unit) {
   return `${sign}${n} ${unit}`;
 }
 
+/**
+ * Sentences about the machinery never reach the visitor (mirror of
+ * story_cascade.tidy_story). Word boundaries that know accents: `\b` in
+ * JavaScript stops at "é".
+ */
+const W = "(?<![\\p{L}\\d])";
+const E = "(?![\\p{L}\\d])";
+const STORY_META_RE = new RegExp([
+  `${W}jug[eé]e?s?${E}`, `${W}juge${E}`, `${W}class[ée]e?s?${E}`, "classif", `${W}identifiant`, `${W}identifier${E}`, `${W}ID${E}`,
+  "s[ée]v[ée]rit", `${W}severity${E}`, `${W}playhead${E}`, `${W}DOI${E}`, "aucune (?:information|donn[ée]e)",
+  "no (?:additional|further|extra) (?:information|data|details?)", `${W}event type${E}`, "type d[’']?[ée]v[ée]nement",
+  `${W}LOA${E}`, "tirant d[’']eau", `${W}draft${E}`, "briefing nautique", "skipper\\.used", "r[èe]gles? de croisi[èe]re", "cruise rules",
+  `${W}watch${E}`, `${W}imm[ée]diate${E}`, "d[ée]cision a [ée]t[ée] prise", "the decision was taken",
+].join("|"), "iu");
+
+/** Keep the fact, drop the machinery; "" when nothing is left. Max two sentences. */
+export function cleanStoryText(text) {
+  const lines = String(text || "")
+    .split("\n")
+    .map((ln) => ln.replace(/[*_#>`]+/g, "").replace(/^\s*(?:[-•]|\d+[.)])\s+/, "").trim())
+    .filter((ln) => ln && !(ln.length < 80 && !/[.!?…]$/.test(ln.replace(/:$/, ""))));
+  const raw = lines.join(" ").replace(/\s{2,}/g, " ").trim();
+  if (!raw) return "";
+  const kept = raw.split(/(?<=[.!?…])\s+(?=\S)/).filter((s) => s.trim() && !STORY_META_RE.test(s));
+  return kept.slice(0, 2).join(" ").trim();
+}
+
 export function phraseForEvent(ev, lang = "fr") {
   if (!ev) return "";
-  if (ev.story?.status === "ready" && ev.story.text) return ev.story.text;
+  if (ev.story?.status === "ready" && ev.story.text) {
+    const tidy = cleanStoryText(ev.story.text);
+    if (tidy) return tidy;
+  }
   if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
   const en = isEn(lang);
   const p = ev.payload || {};
@@ -694,18 +724,22 @@ function sourceSentence(dossier, lang) {
 
 export function narrateIci(dossier, lang = "fr") {
   if (!dossier) return "";
+  // A thin pearl (the along bag standing in while the full bag is on its
+  // way) never collected weather, satellite, seabed or the sheet: say
+  // nothing about them rather than "not collected on this pearl".
+  const thin = Boolean(dossier.thin);
   const parts = [
     [zeeSentence(dossier, lang), poeSentence(dossier, lang)].filter(Boolean).join(" "),
     aroundSentence(dossier, lang),
-    satelliteSentence(dossier, lang),
-    weatherSentence(dossier, lang),
-    emodnetSentence(dossier, lang),
-    reviewSentence(dossier, lang),
+    thin ? "" : satelliteSentence(dossier, lang),
+    thin ? "" : weatherSentence(dossier, lang),
+    thin ? "" : emodnetSentence(dossier, lang),
+    thin ? "" : reviewSentence(dossier, lang),
     eventSentence(dossier, lang),
-    depthSentence(dossier, lang),
+    thin ? "" : depthSentence(dossier, lang),
     climatologySentence(dossier, lang),
     legSentence(dossier, lang),
-    sourceSentence(dossier, lang),
+    thin ? "" : sourceSentence(dossier, lang),
   ].filter(Boolean);
   return parts.join("\n\n");
 }

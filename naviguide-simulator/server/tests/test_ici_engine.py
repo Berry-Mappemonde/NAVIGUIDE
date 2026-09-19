@@ -474,6 +474,36 @@ def test_fill_dossier_thin_skips_weather_and_satellite():
     assert any("export/amp.geojson" in url for url in seen)
 
 
+def test_thin_bag_is_cached_per_cell_for_every_visitor():
+    """Les perles along sont les mêmes pour tous les visiteurs et chaque
+    relecture du film : une cellule de 0,02° = un seul appel amont pendant 6 h."""
+    reset_caches()
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
+
+    async def run(lat, lon):
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await fill_dossier(lat, lon, client=client, month=6, thin=True)
+
+    first = asyncio.run(run(46.15, -1.16))
+    n_first = len(calls)
+    assert n_first > 0
+    # 200 m away, same cell → no upstream call, position kept honest.
+    second = asyncio.run(run(46.151, -1.161))
+    assert len(calls) == n_first
+    assert second["cached"] is True
+    assert second["at"] == {"lat": 46.151, "lon": -1.161}
+    assert second["zee"] == first["zee"]
+    # Another cell → upstream again ; a full bag never reads this cache.
+    asyncio.run(run(46.40, -1.16))
+    assert len(calls) > n_first
+
+
 def test_fill_dossier_mid_atlantic_gebco():
     reset_caches()
 

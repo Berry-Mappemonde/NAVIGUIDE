@@ -12,15 +12,39 @@ import { promoteLaterAtPlayhead, upsertLedger } from "../engine/iciAlong.js";
 import { enqueueStory, shouldEnqueueStory, storyPayload, subscribeStories } from "../engine/storyQueue.js";
 import { WEATHER_POLL_MS, fetchWeatherForecast } from "./weatherSnapshot.js";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
 const MOVE_NM = 3;
 const FETCH_MS = 40000;
 const MIN_SCHEDULE_MS = 8000;
+/** A bag collected this far from the boat is history: the briefing waits for the next one. */
+export const STALE_BAG_NM = 60;
+/** Two consecutive bags this far apart = the boat jumped (mode switch, seek): no transition event. */
+export const JUMP_NM = 100;
 
 function legKey(jambe) {
   if (!jambe) return "";
   return `${jambe.fromStop || ""}→${jambe.toStop || ""}`;
+}
+
+/** Distance between the bag's centre and the boat, in nm (Infinity when unknown). */
+export function bagDistanceNm(bag, boat) {
+  const lat = Number(bag?.at?.lat);
+  const lon = Number(bag?.at?.lon);
+  if (!boat || !Number.isFinite(lat) || !Number.isFinite(lon)) return Infinity;
+  return haversineNm(lat, lon, boat.lat, wrapLon(boat.lon));
+}
+
+export function isStaleBag(bag, boat, limitNm = STALE_BAG_NM) {
+  if (!bag) return false;
+  return bagDistanceNm(bag, boat) > limitNm;
+}
+
+/** The previous bag is a fresh start (no zee-exit, no wind-shift) when the boat jumped. */
+export function isJump(prevBag, bag, limitNm = JUMP_NM) {
+  if (!prevBag?.at || !bag?.at) return false;
+  const d = haversineNm(Number(prevBag.at.lat), Number(prevBag.at.lon), Number(bag.at.lat), Number(bag.at.lon));
+  return Number.isFinite(d) && d > limitNm;
 }
 
 /**
@@ -57,10 +81,18 @@ export function useIciDossier({
   gribStatus = null,
   skipperClickId = null,
   along = null,
+  nearestBag = null,
   orders = null,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
+  // One GET /ici at a time, never aborted by the next position: aborting it
+  // every 8 s while the film played meant no bag ever completed — and no
+  // event all the way across the Atlantic. `wantRef` remembers where the
+  // boat is now; when the request lands we fetch again if it moved.
+  const [refetch, setRefetch] = useState(0);
+  const inFlightRef = useRef(false);
+  const wantRef = useRef(null);
   const lastFetchRef = useRef(null);
   const lastScheduledRef = useRef(null);
   const abortRef = useRef(null);
@@ -93,6 +125,29 @@ export function useIciDossier({
     ledgerRef.current = [];
   }
 
+  // A bag collected far from where the boat is now (fast playback, mode
+  // switch) must not narrate this place. Meanwhile the along pearl just
+  // passed (thin bag: ZEE, ports of entry, MPA, harbours) stands in — it is
+  // what makes events fire at any film speed.
+  const staleRemote = Boolean(remote && boat && isStaleBag(remote, boat));
+  const fresh = remote && !staleRemote ? remote : null;
+  const latB = boat ? Math.round(boat.lat * 20) / 20 : null;
+  const lonB = boat ? Math.round(wrapLon(boat.lon) * 20) / 20 : null;
+  const thinBag = useMemo(() => {
+    if (fresh || !boat || typeof nearestBag !== "function") return null;
+    return nearestBag({ lat: latB, lon: lonB }, 15);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fresh, nearestBag, latB, lonB]);
+  const effective = fresh || thinBag;
+
+  useEffect(() => {
+    // New leg: the old bag belongs to another place — drop it now rather than
+    // letting it narrate (or fire a zee-exit) at the new leg's start.
+    setRemote(null);
+    lastFetchRef.current = null;
+    lastScheduledRef.current = null;
+  }, [currentLeg]);
+
   useEffect(() => subscribeStories((job) => {
     const idx = ledgerRef.current.findIndex((e) => (
       e.id === job.eventId || (job.stableKey && e.stableKey === job.stableKey)
@@ -117,6 +172,7 @@ export function useIciDossier({
       setTick({ events: [], briefing: null });
       lastFetchRef.current = null;
       lastScheduledRef.current = null;
+      wantRef.current = null;
       prevBagRef.current = undefined;
       lastRemoteRef.current = null;
       lastNowRef.current = null;
@@ -125,11 +181,13 @@ export function useIciDossier({
       requestIdRef.current += 1;
       clearTimeout(timerRef.current);
       abortRef.current?.abort();
+      inFlightRef.current = false;
       return undefined;
     }
 
     const lat = boat.lat;
     const lon = wrapLon(boat.lon);
+    wantRef.current = { lat, lon, month, destLat, destLon };
     const last = lastFetchRef.current || lastScheduledRef.current;
     if (
       last
@@ -140,25 +198,27 @@ export function useIciDossier({
     ) {
       return undefined;
     }
+    // A bag is on its way: let it land, then fetch again from wherever the
+    // boat is by then (see `finally` below). Never abort a request in flight.
+    if (inFlightRef.current) return undefined;
 
     const now = Date.now();
-    if (
-      lastScheduledRef.current
+    const sameTarget = lastScheduledRef.current
       && lastScheduledRef.current.month === month
       && lastScheduledRef.current.destLat === destLat
-      && lastScheduledRef.current.destLon === destLon
-      && now - lastScheduledRef.current.scheduledAt < MIN_SCHEDULE_MS
-    ) {
+      && lastScheduledRef.current.destLon === destLon;
+    if (sameTarget && now - lastScheduledRef.current.scheduledAt < MIN_SCHEDULE_MS && !refetch) {
       return undefined;
     }
     lastScheduledRef.current = { lat, lon, month, destLat, destLon, scheduledAt: now };
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      abortRef.current?.abort();
+      if (inFlightRef.current) return;
       const ctrl = new AbortController();
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
       abortRef.current = ctrl;
+      inFlightRef.current = true;
       const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
       const q = new URLSearchParams({
         lat: String(lat),
@@ -188,11 +248,19 @@ export function useIciDossier({
         })
         .finally(() => {
           clearTimeout(kill);
+          inFlightRef.current = false;
+          if (requestIdRef.current !== requestId) return;
+          // The boat kept moving while the bag was collected: go again now.
+          const want = wantRef.current;
+          if (want && haversineNm(want.lat, want.lon, lat, lon) >= MOVE_NM) {
+            lastScheduledRef.current = null;
+            setRefetch((n) => n + 1);
+          }
         });
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timerRef.current);
-  }, [enabled, boat?.lat, boat?.lon, month, destLat, destLon, currentLeg]);
+  }, [enabled, boat?.lat, boat?.lon, month, destLat, destLon, currentLeg, refetch]);
 
   useEffect(() => {
     if (!remote || remote.weather?.status !== "pending") return undefined;
@@ -224,12 +292,20 @@ export function useIciDossier({
   }, [remote?.weather?.status, remote?.at?.lat, remote?.at?.lon]);
 
   useEffect(() => {
+    const remote = effective;
     if (!remote) {
-      setTick({ events: [], briefing: null });
+      // Nothing at the boat yet: keep the ledger (pastilles), clear the brief.
+      setTick((prevTick) => (prevTick.briefing ? { events: prevTick.events, briefing: null } : prevTick));
       return;
     }
     const isNewBag = lastRemoteRef.current !== remote;
-    const prev = isNewBag ? prevBagRef.current : remote;
+    let prev = isNewBag ? prevBagRef.current : remote;
+    if (isNewBag && prev && isJump(prev, remote)) {
+      // The boat jumped (mode switch, seek, plane): the old bag is another
+      // place. No zee-exit / wind-shift between the two — fresh memory.
+      prev = undefined;
+      memoryRef.current = emptyEventMemory(currentLeg);
+    }
     const gribWind = Number.isFinite(gribWindKnots)
       ? {
         windKnots: gribWindKnots,
@@ -323,7 +399,7 @@ export function useIciDossier({
       return { events: ledger, briefing: nextBrief };
     });
   }, [
-    remote,
+    effective,
     along,
     mode,
     cinema,
@@ -345,14 +421,15 @@ export function useIciDossier({
   ]);
 
   const dossier = useMemo(() => {
-    if (!enabled || !boat || !remote) return null;
-    return mergeDossier(remote, {
+    if (!enabled || !boat || !effective) return null;
+    return mergeDossier(effective, {
       polarMeta,
       jambe,
-      event: tick.briefing || remote.event || null,
-      climatology: remote.climatology || climatology || null,
+      event: tick.briefing || effective.event || null,
+      // A thin pearl has no climatology of its own: the atlas at the boat still does.
+      climatology: effective.climatology || climatology || null,
     });
-  }, [enabled, boat, remote, polarMeta, jambe, climatology, tick.briefing]);
+  }, [enabled, boat, effective, polarMeta, jambe, climatology, tick.briefing]);
 
   const briefing = useMemo(
     () => (dossier ? narrateIci(dossier, lang) : ""),
@@ -368,7 +445,9 @@ export function useIciDossier({
     dossier,
     briefing,
     briefingSegments,
-    loading: Boolean(enabled && boat && !remote),
+    loading: Boolean(enabled && boat && !effective),
+    stale: staleRemote,
+    thin: Boolean(effective?.thin),
     events: tick.events,
     display: tick.briefing,
   };
