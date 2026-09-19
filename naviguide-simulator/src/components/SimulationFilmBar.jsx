@@ -2,6 +2,7 @@ import { memo } from "react";
 import { ChevronRight, Clapperboard, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
+import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { ListenButton } from "./ListenButton.jsx";
 
 const PROFILES = [
@@ -64,6 +65,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   onEventClick,
   storiesPending = 0,
   speechText = null,
+  view = null,
+  onView,
 }) {
   const { t, lang } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
@@ -126,6 +129,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right">
                 {disclaimer}
               </span>
+            ) : null}
+            {speechText ? (
+              <ListenButton text={speechText} t={t} lang={lang} className="px-2 py-0.5 !rounded-md" />
             ) : null}
             {cinema && onHideBar ? (
               <button
@@ -217,7 +223,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        {(showPlaybackControls || showStopAuto || showSpeeds || speechText) ? (
+        {(showPlaybackControls || showStopAuto || showSpeeds || onView) ? (
           <div className="flex items-center gap-1.5 mt-1">
             {showPlaybackControls ? (
               <>
@@ -278,8 +284,29 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               ))}
             </div>
           ) : null}
-          {speechText ? (
-            <ListenButton text={speechText} t={t} lang={lang} compact className="ml-auto" />
+          {onView ? (
+            <div
+              role="radiogroup"
+              aria-label={t("viewModeGroup")}
+              data-testid="film-view-switch"
+              className="ml-auto flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0"
+            >
+              {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre"], [VIEW_SIMULATION, t("simulationButton"), "view-simulation"]].map(([id, label, testId]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={view === id}
+                  data-testid={testId}
+                  onClick={() => onView(id)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
+                    view === id ? "bg-cyan-700/70 text-cyan-50 border border-cyan-400/50" : "text-white/70 hover:text-white border border-transparent"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           ) : null}
           </div>
         ) : null}

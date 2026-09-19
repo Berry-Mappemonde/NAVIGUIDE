@@ -84,6 +84,32 @@ def _startup_official_grib():
         pass
 
 
+@app.on_event("startup")
+async def _startup_ici_warm():
+    """Perles along de la route officielle : cache disque rechargé, puis
+    chauffé en fond (une perle toutes les ~1,2 s). NAVIGUIDE_ICI_WARM=0 coupe."""
+    try:
+        import ici_warm
+        ici_warm.start_background(asyncio.get_running_loop())
+    except Exception:
+        pass
+
+
+@app.get("/ici/warm/status")
+def ici_warm_status():
+    """Où en est la pré-génération des perles de la route officielle."""
+    import ici_warm
+    return ici_warm.status()
+
+
+@app.get("/ici/pearls")
+def ici_pearls():
+    """Les perles canoniques de la route officielle (12 nm) : le client les
+    échantillonne aux mêmes positions, ses sacs thin tombent dans le cache."""
+    import ici_warm
+    return ici_warm.official_pearls()
+
+
 class PositionRequest(BaseModel):
     latitude: float
     longitude: float

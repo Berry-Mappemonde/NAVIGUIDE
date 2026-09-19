@@ -2,11 +2,8 @@ import { memo, useEffect, useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
-import { EscaleLegend } from "./EscaleLegend.jsx";
-import { DepartureField } from "./DepartureField.jsx";
-import { ViewModeSwitch } from "./ViewModeSwitch.jsx";
 import { JournalPanel } from "./JournalPanel.jsx";
-import { ALL_LAYER_CONFIG } from "../constants/layers.js";
+import { FreeMomentBlock, MomentNowCard } from "./MomentCards.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 
@@ -213,18 +210,18 @@ export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw,
-  isCockpit, polarData, maritimeLayers, view = VIEW_SUIVRE, onView,
+  isCockpit, polarData, view = VIEW_SUIVRE,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
   iciBriefingSegments = null, onBriefingFocus,
   skipperNotice = null,
-  escaleMarks = [], filmNm = 0, onSeekEscale,
-  departureT0, onDepartureT0,
-  clockSample = null, kindLabel = "", atQuay = false, quayDays = 0,
+  clockSample = null, atQuay = false, quayDays = 0,
   previewing = false, forecastStatus = null,
   onRecompute, canRecompute = false, recomputeBusy = false, onGoLive,
   journal = null, journalLoading = false, journalError = null,
   story = null,
+  momentNow = null, momentNowLeft = 0, onMomentDismiss,
+  momentFree = null, momentFreeLeft = 0, onMomentNext,
 }) {
   const { t } = useLang();
   const isSimulation = view === VIEW_SIMULATION;
@@ -273,49 +270,10 @@ export const Sidebar = memo(function Sidebar({
             canContinueDraw={canContinueDraw}
             canFinishDraw={canFinishDraw}
           />
-
-          {maritimeLayers && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {ALL_LAYER_CONFIG.map(({ key, labelKey, titleKey, color, showKey, toggleKey, loadingKey, errorKey }) => {
-                const active = maritimeLayers[showKey];
-                const loading = maritimeLayers[loadingKey];
-                const error = maritimeLayers[errorKey];
-                return (
-                  <button
-                    key={key}
-                    onClick={() => maritimeLayers[toggleKey]((v) => !v)}
-                    title={error ? `${t(titleKey)} : ${error}` : t(titleKey)}
-                    data-testid={`layer-${key}`}
-                    aria-pressed={active}
-                    className={[
-                      "flex items-center justify-center gap-1 px-1.5 py-0.5 rounded-full",
-                      "text-[9px] font-semibold transition-all duration-150 select-none",
-                      active
-                        ? "bg-slate-700/80 text-white border border-white/10"
-                        : "bg-slate-800/30 text-white/40 border border-white/5 hover:text-white/70",
-                    ].join(" ")}
-                  >
-                    {loading
-                      ? <div className="w-1.5 h-1.5 rounded-full border border-white/30 border-t-white animate-spin flex-shrink-0" />
-                      : <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: active ? color : "transparent", border: `1.5px solid ${error ? "#ef4444" : color}` }} />}
-                    {t(labelKey)}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {!isDrawing && onView ? (
-            <ViewModeSwitch view={view} onView={onView} />
-          ) : null}
         </div>
 
-        <div className="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-1.5 space-y-1.5">
-          {isSuivre && (
-            <p className="text-[10px] text-sky-100/80 border border-white/10 rounded-md px-2 py-1">
-              {t("officialDepartureLocked")}
-            </p>
-          )}
+        {/* ── Le produit « ici » : où on est, ce qui se passe, ce qu’il y a autour ── */}
+        <div className="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-1.5 space-y-1.5" data-testid="here-product">
           {!isCockpit && !plan && !briefingLoading && !isDrawing && (
             <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2">
               <div className="text-[10px] font-semibold text-blue-300 mb-1">{t("gettingStarted")}</div>
@@ -323,25 +281,36 @@ export const Sidebar = memo(function Sidebar({
             </div>
           )}
 
-          <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} />
-
-          {isSuivre && !isDrawing && Array.isArray(story) && story.length ? (
-            <div data-testid="expedition-story" className="rounded-lg border border-sky-500/25 bg-sky-950/30 p-2 min-w-0">
-              <div className="text-[10px] font-semibold text-sky-200 leading-snug">{t("storyTitle")}</div>
-              <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
-              {story.map((paragraph, i) => (
-                <p key={i} className="text-[11px] text-slate-200 leading-snug break-words [overflow-wrap:anywhere] mt-1">
-                  {paragraph}
-                </p>
-              ))}
-            </div>
-          ) : null}
-
           {isDrawing && (
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
               <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">{t("briefingDrawHint")}</p>
             </div>
           )}
+
+          {!isDrawing ? (
+            <SimulationPanel
+              legContext={legContext}
+              clockSample={clockSample}
+              kindLabel=""
+              atQuay={atQuay}
+              quayDays={quayDays}
+              liveFollow={isSuivre}
+              previewing={previewing}
+              forecastStatus={isSuivre ? forecastStatus : null}
+              onRecompute={onRecompute}
+              canRecompute={canRecompute}
+              showRecompute={isSimulation}
+              recomputeBusy={recomputeBusy}
+              onGoLive={onGoLive}
+            />
+          ) : null}
+
+          {!isDrawing && momentNow ? (
+            <MomentNowCard card={momentNow} left={momentNowLeft} onDismiss={onMomentDismiss} onFocus={onBriefingFocus} inline />
+          ) : null}
+          {!isDrawing && momentFree ? (
+            <FreeMomentBlock card={momentFree} left={momentFreeLeft} onNext={onMomentNext} onFocus={onBriefingFocus} inline />
+          ) : null}
 
           {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
@@ -368,27 +337,17 @@ export const Sidebar = memo(function Sidebar({
             </div>
           )}
 
-          {isSimulation && (
-            <DepartureField
-              t0={departureT0}
-              onT0={onDepartureT0}
-            />
-          )}
-          <SimulationPanel
-            legContext={legContext}
-            clockSample={clockSample}
-            kindLabel={kindLabel}
-            atQuay={atQuay}
-            quayDays={quayDays}
-            liveFollow={isSuivre}
-            previewing={previewing}
-            forecastStatus={isSuivre ? forecastStatus : null}
-            onRecompute={onRecompute}
-            canRecompute={canRecompute}
-            showRecompute={isSimulation}
-            recomputeBusy={recomputeBusy}
-            onGoLive={onGoLive}
-          />
+          {isSuivre && !isDrawing && Array.isArray(story) && story.length ? (
+            <div data-testid="expedition-story" className="rounded-lg border border-sky-500/25 bg-sky-950/30 p-2 min-w-0">
+              <div className="text-[10px] font-semibold text-sky-200 leading-snug">{t("storyTitle")}</div>
+              <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
+              {story.map((paragraph, i) => (
+                <p key={i} className="text-[11px] text-slate-200 leading-snug break-words [overflow-wrap:anywhere] mt-1">
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          ) : null}
 
           {isSuivre && !isDrawing ? (
             <JournalPanel journal={journal} loading={journalLoading} error={journalError} />

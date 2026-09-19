@@ -27,6 +27,18 @@ UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 > du Pacifique depuis P0, et une horloge Simulation restait figée côté client),
 > crédits Leaflet (liens, une seule fois, dans la carte visible), fiche Gold
 > (`BI_ADMIN_KEY` côté serveur, silence côté visiteur).
+>
+> **19 sept. (revue visuelle du porteur, PR suivante)** : **pré-génération
+> des perles** (1.3, forme minimale) — `ici_warm.py` chauffe les 3 272 perles
+> de la route officielle au démarrage, cache thin persisté 7 jours,
+> `GET /ici/pearls` canoniques, la perle passée sert de sac live à toute
+> vitesse de film ; **des événements tout le long** (le GET /ici n'est plus
+> avorté, sac périmé écarté, saut de position = mémoire remise) ; voies NOW /
+> FREE revues (climatologie + balisage en NOW ; AMP + câbles en FREE) ; cartes
+> d'escale ; récits sobres (fait + source) ; caméra qui suit en lecture ;
+> Simulation reprise après Suivre ; Stop auto sur chaque carte ; **sidebars
+> réorganisées** (gauche « ici », droite « expédition + réglages », commandes
+> dans la barre) ; récit **chronologique** par jambe ; journal compact.
 
 ---
 
@@ -271,7 +283,7 @@ Taille : S ≤ 1 jour d’agent, M ≤ 3 jours, L > 3 jours. Une PR par lot.
 | Lot | Taille | Dépend de | Statut |
 |---|---|---|---|
 | **Journal serveur** du voyage officiel (1.2) v1 | M | P0 | **en PR (#186)**, empilée sur #185 |
-| **Pré-génération des récits** + cache serveur (1.3), cran Nebius dans la cascade | M | journal (Suivre) ; rien (Simulation) | à faire |
+| **Pré-génération des récits** + cache serveur (1.3), cran Nebius dans la cascade | M | journal (Suivre) ; rien (Simulation) | **perles faites** (19 sept.) : `ici_warm.py`, `GET /ici/pearls`, cache thin 7 j sur disque ; récits LLM pré-générés et Nebius : à faire |
 | **Carte du moment** sur la carte, surtout en Cinéma (1.4) | S | — | **fait** (19 sept.) : NOW + FREE, sans pré-génération — le texte local suffit, le récit LLM remplace quand il arrive |
 | **Récit de la traversée** (Suivre) : de Saint-Maur à la position du jour, depuis l’horloge officielle + journal (1.5, sans LLM) | S | journal v1 | **fait** (19 sept.) : `engine/expeditionStory.js`, bloc sidebar, lu par « Écouter » (barre film) |
 | Journal v2 : événements jugés + récits côté serveur, sac `ici()` aux escales | S | pré-génération | à faire |

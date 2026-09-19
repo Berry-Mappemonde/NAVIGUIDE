@@ -6,7 +6,8 @@
  * pearls = ceil(nm / 12). Both follow the skipper orders. No fixed 350 / 24.
  */
 
-import { interpolateAtNm } from "./routePlayhead.js";
+import { interpolateAtNm, nearestNm } from "./routePlayhead.js";
+import { haversineNm } from "../utils/geo.js";
 import {
   AMP_AHEAD_MIN_NM,
   ROUTE_SAMPLE_NM,
@@ -19,7 +20,10 @@ export const ALONG_AMP_NM = 15;
 export const ALONG_MARINA_NM = MARINA_REFUGE_NM;
 export const SUIVRE_LOOKAHEAD_H = DEFAULT_ORDERS.budget.hours;
 export const SUIVRE_LOOKAHEAD_MAX_NM = DEFAULT_ORDERS.budget.maxNm;
-export const MAX_PEARLS_SIM = 60;
+/** Simulation: the whole leg — 12 nm near the boat, then SIM_FAR_STEP_NM. */
+export const MAX_PEARLS_SIM = 200;
+export const SIM_NEAR_NM = 240;
+export const SIM_FAR_STEP_NM = 48;
 export const MAX_PEARLS_SUIVRE = DEFAULT_ORDERS.budget.maxPearls;
 export const DEFAULT_KNOTS = DEFAULT_ORDERS.budget.planningKn;
 
@@ -72,8 +76,14 @@ export function sampleLeg(flat, {
   maxPearls = MAX_PEARLS_SIM,
   lookaheadNm = Infinity,
   month = null,
+  /** Pearls kept just behind the boat (the one it just passed): a live thin bag at any film speed. */
+  behindNm = 0,
+  /** Beyond `nearNm` ahead of the boat, pearls thin out to `farStepNm` (whole leg, bounded). */
+  nearNm = Infinity,
+  farStepNm = null,
 } = {}) {
-  const start = Math.max(Number(fromNm) || 0, Number(boatNm) || 0);
+  const boat = Number(boatNm) || 0;
+  const start = Math.max(Number(fromNm) || 0, boat - (Number(behindNm) || 0), 0);
   const cap = Number.isFinite(lookaheadNm) ? start + lookaheadNm : Infinity;
   const end = Math.min(
     Number.isFinite(toNm) ? toNm : Infinity,
@@ -81,10 +91,11 @@ export function sampleLeg(flat, {
     flat?.totalNm ?? Infinity,
   );
   const step = Number(sampleNm) > 0 ? sampleNm : ROUTE_SAMPLE_NM;
+  const far = Number(farStepNm) > step ? Number(farStepNm) : step;
   const max = Math.max(1, maxPearls);
   const pearls = [];
   if (!flat?.points?.length || end < start) return pearls;
-  for (let nm = start; nm <= end + 1e-6 && pearls.length < max; nm += step) {
+  for (let nm = start; nm <= end + 1e-6 && pearls.length < max; nm += (nm - boat >= nearNm ? far : step)) {
     const hit = interpolateAtNm(flat, nm);
     if (!hit || hit.jump || hit.nonMaritime) continue;
     pearls.push({
@@ -92,11 +103,100 @@ export function sampleLeg(flat, {
       lon: hit.lon,
       cumNm: nm,
       filmCum: filmCumAtNm(flat, nm),
-      whenNm: nm - (Number(boatNm) || 0),
+      whenNm: nm - boat,
       month,
     });
   }
   return pearls;
+}
+
+/**
+ * Window of canonical pearls (server `GET /ici/pearls`, 12 nm apart along the
+ * official route) around the boat: the two just behind, then all of them for
+ * `nearCount`, then one in `farEvery` up to `maxPearls`. Same positions as the
+ * server's warmer → the thin bags hit its cache.
+ *
+ * Each pearl gets `cumNm` / `filmCum` on THIS flat route (nearestNm), so the
+ * lookahead detectors read `whenNm` exactly as with `sampleLeg`.
+ */
+export function canonicalWindow(canonical, flat, {
+  boatNm = 0,
+  boatLat = null,
+  boatLon = null,
+  toNm = Infinity,
+  maxPearls = MAX_PEARLS_SIM,
+  behind = 2,
+  nearCount = 20,
+  farEvery = 4,
+  lookaheadNm = Infinity,
+  month = null,
+} = {}) {
+  const list = Array.isArray(canonical) ? canonical : [];
+  if (!list.length || !flat?.points?.length) return [];
+  let at = 0;
+  if (Number.isFinite(boatLat) && Number.isFinite(boatLon)) {
+    let best = Infinity;
+    for (let i = 0; i < list.length; i++) {
+      const d = haversineNm(list[i][0], list[i][1], boatLat, boatLon);
+      if (d < best) {
+        best = d;
+        at = i;
+      }
+    }
+  }
+  const boat = Number(boatNm) || 0;
+  const out = [];
+  const cap = Number.isFinite(lookaheadNm) ? boat + lookaheadNm : Infinity;
+  const end = Math.min(Number.isFinite(toNm) ? toNm : Infinity, cap, flat.totalNm ?? Infinity);
+  for (let i = Math.max(0, at - behind); i < list.length && out.length < maxPearls; i++) {
+    const ahead = i - at;
+    if (ahead > nearCount && (ahead - nearCount) % farEvery !== 0) continue;
+    const [lat, lon] = list[i];
+    const cumNm = nearestNm(flat, lat, lon);
+    if (!Number.isFinite(cumNm)) continue;
+    if (cumNm > end + 0.5) break;
+    if (ahead > 0 && cumNm + 0.5 < boat) continue; // the route loops back: not ahead on this leg
+    out.push({
+      lat,
+      lon,
+      cumNm,
+      filmCum: filmCumAtNm(flat, cumNm),
+      whenNm: cumNm - boat,
+      month,
+      canonical: true,
+    });
+  }
+  return out;
+}
+
+/**
+ * The thin bag of the pearl nearest to the boat (≤ maxNm), re-centred on the
+ * boat. While the full bag is still on its way (or already far behind in a
+ * fast film), this is what the detectors and the briefing read.
+ */
+export function nearestPearlBag(pearls, bagMap, boat, { maxNm = 15, month = null } = {}) {
+  if (!boat || !Number.isFinite(boat.lat) || !Number.isFinite(boat.lon)) return null;
+  const map = bagMap instanceof Map ? bagMap : new Map(Object.entries(bagMap || {}));
+  let best = null;
+  let bestD = Infinity;
+  for (const p of pearls || []) {
+    const bag = map.get(pearlKey(p.lat, p.lon, month ?? p.month));
+    if (!bag) continue;
+    const d = haversineNm(p.lat, p.lon, boat.lat, boat.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = { pearl: p, bag };
+    }
+  }
+  if (!best || bestD > maxNm) return null;
+  return {
+    ...best.bag,
+    at: { lat: boat.lat, lon: boat.lon },
+    thin: true,
+    pearlNm: Math.round(bestD * 10) / 10,
+    pearlCumNm: best.pearl.cumNm,
+    pearlFilmCum: best.pearl.filmCum,
+  };
 }
 
 export function attachBags(pearls, bagMap, month, orders = null) {

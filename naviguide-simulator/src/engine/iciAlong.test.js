@@ -9,8 +9,10 @@ import {
   attachBags,
   buildAlongIndex,
   filmEventMarks,
+  canonicalWindow,
   lookaheadNmFor,
   maxPearlsFor,
+  nearestPearlBag,
   pearlKey,
   promoteLaterAtPlayhead,
   sampleLeg,
@@ -31,6 +33,47 @@ function lineFlat() {
 }
 
 describe("iciAlong sample", () => {
+  it("behindNm keeps the pearl just passed; nearestPearlBag re-centres its thin bag on the boat", () => {
+    const flat = lineFlat();
+    const ahead = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 50, maxPearls: 20 });
+    assert.ok(ahead[0].whenNm >= 0, "sans behindNm : rien derrière");
+    const around = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 50, maxPearls: 20, behindNm: 24 });
+    assert.ok(around[0].whenNm <= -20 && around[0].whenNm >= -24, `première perle derrière : ${around[0].whenNm}`);
+    const key = pearlKey(around[1].lat, around[1].lon, null);
+    const bags = new Map([[key, { at: { lat: around[1].lat, lon: around[1].lon }, zee: { name: "French EEZ", mrgid: 5677 }, poe: [], amp: [] }]]);
+    const boat = { lat: around[1].lat, lon: around[1].lon + 0.05 };
+    const near = nearestPearlBag(around, bags, boat, { maxNm: 15 });
+    assert.equal(near.thin, true);
+    assert.equal(near.zee.mrgid, 5677);
+    assert.deepEqual(near.at, boat, "le sac est recentré sur le bateau");
+    assert.ok(near.pearlNm < 3);
+    assert.equal(nearestPearlBag(around, bags, { lat: 0, lon: 0 }, { maxNm: 15 }), null, "trop loin : rien");
+    assert.equal(nearestPearlBag(around, new Map(), boat), null, "perle pas encore chargée : rien");
+  });
+
+  it("canonicalWindow: the server's pearls around the boat — two behind, dense, then one in four", () => {
+    const flat = lineFlat();
+    // Canonical pearls every ~12 nm along the same line (1° lon ≈ 41.6 nm at 46°N → 0.288°).
+    const canonical = [];
+    for (let i = 0; i < 14; i++) canonical.push([46.15, -1.16 - i * 0.2884]);
+    const boat = { lat: 46.15, lon: -1.16 - 5 * 0.2884 }; // on pearl #5
+    const win = canonicalWindow(canonical, flat, { boatNm: 60, boatLat: boat.lat, boatLon: boat.lon, nearCount: 3, farEvery: 2, maxPearls: 50 });
+    const idx = win.map((p) => Math.round((-1.16 - p.lon) / 0.2884));
+    assert.deepEqual(idx, [3, 4, 5, 6, 7, 8, 10, 12], "derrière ×2, dense ×3, puis un sur deux");
+    assert.ok(win[0].whenNm < 0 && win[2].whenNm >= -1 && win[2].whenNm <= 1, "la perle du bateau est à whenNm ≈ 0");
+    assert.ok(win.every((p) => p.canonical && Number.isFinite(p.cumNm) && Number.isFinite(p.filmCum)));
+    assert.deepEqual(canonicalWindow([], flat, {}), []);
+  });
+
+  it("Simulation: dense pearls near the boat, coarser far ahead, the whole leg bounded", () => {
+    const flat = lineFlat();
+    const pearls = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 0, maxPearls: 200, nearNm: 36, farStepNm: 48 });
+    const steps = pearls.slice(1).map((p, i) => Math.round(p.cumNm - pearls[i].cumNm));
+    assert.deepEqual(steps.slice(0, 3), [12, 12, 12], "12 nm jusqu’à nearNm");
+    assert.ok(steps.slice(3).every((d) => d === 48), `puis 48 nm : ${steps}`);
+    assert.ok(pearls.at(-1).cumNm <= flat.totalNm);
+  });
+
   it("samples this leg every ~12 nm and skips nothing on a sea line", () => {
     const flat = lineFlat();
     const pearls = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 0, maxPearls: 20 });
