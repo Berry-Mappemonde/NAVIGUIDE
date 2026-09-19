@@ -69,15 +69,18 @@ def _wrap_lon(lon: float) -> float:
     return ((lon + 180.0) % 360.0) - 180.0
 
 
-def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[float, float]]:
+def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict]:
     """Pearls every `step_nm` along the sea points, interpolated inside long
     segments (the official route has ~32 nm between points). Land legs and
-    air hops are skipped; each sea stretch starts with its own pearl."""
-    out: list[tuple[float, float]] = []
+    air hops are skipped; each sea stretch starts with its own pearl.
+    Each pearl carries `sailNm`, the sea miles from the first sea point (the
+    same scale as the clock's `sailNm`)."""
+    out: list[dict] = []
     if not points:
         return out
     prev = None
     carry = 0.0  # distance since the last pearl
+    sail = 0.0   # sea miles so far
     for p in points:
         try:
             lat, lon = float(p["lat"]), float(p["lon"])
@@ -87,7 +90,7 @@ def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[f
             prev = None
             continue
         if prev is None:
-            out.append((lat, _wrap_lon(lon)))
+            out.append({"lat": lat, "lon": _wrap_lon(lon), "sailNm": round(sail, 2)})
             carry = 0.0
             prev = (lat, lon)
             continue
@@ -97,11 +100,78 @@ def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[f
         pos = step_nm - carry  # distance along this segment to the next pearl
         while pos <= seg:
             t = pos / seg
-            out.append((prev[0] + (lat - prev[0]) * t, _wrap_lon(prev[1] + (lon - prev[1]) * t)))
+            out.append({
+                "lat": prev[0] + (lat - prev[0]) * t,
+                "lon": _wrap_lon(prev[1] + (lon - prev[1]) * t),
+                "sailNm": round(sail + pos, 2),
+            })
             pos += step_nm
         carry = seg - (pos - step_nm)
+        sail += seg
         prev = (lat, lon)
     return out
+
+
+def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[float, float]]:
+    """Positions only (warmer, GET /ici/pearls)."""
+    return [(p["lat"], p["lon"]) for p in sample_route_nm(points, step_nm)]
+
+
+def route_events_from_pearls(points: list[dict]) -> list[dict]:
+    """What the warmed pearls know about the route, in order: ZEE entered /
+    left, marine protected areas that come within reach. Pearls not cached
+    yet are unknown — no event is invented across a gap.
+
+    Each event: { kind: "zee" | "amp", event, name, mrgid | siteId, lat, lon,
+    sailNm, idx }. The journal turns `sailNm` into a time with the clock."""
+    from ici_engine import thin_cache_get, thin_cache_key  # noqa: PLC0415
+
+    events: list[dict] = []
+    state: dict | None = None      # confirmed ZEE (None = high seas)
+    state_known = False
+    candidate: tuple | None = None  # (zee_or_None, pearl, idx) seen once, waiting for a second pearl
+    seen_amp: set[str] = set()
+    for idx, pearl in enumerate(sample_route_nm(points)):
+        bag = thin_cache_get(thin_cache_key(pearl["lat"], pearl["lon"], 30.0))
+        if bag is None:
+            state_known = False
+            candidate = None
+            continue
+        zee = bag.get("zee") or None
+        mrgid = zee.get("mrgid") if isinstance(zee, dict) else None
+        ashore = bool(isinstance(zee, dict) and (zee.get("ashore") or str(zee.get("name", "")).startswith("À terre")))
+        cur = None if (mrgid is None or ashore) else {"mrgid": mrgid, "name": zee.get("name"), "territory": zee.get("territory")}
+        cur_id = cur["mrgid"] if cur else None
+        state_id = state["mrgid"] if state else None
+        if not state_known:
+            state, state_known, candidate = cur, True, None
+        elif cur_id == state_id:
+            candidate = None
+        elif candidate is not None and (candidate[0]["mrgid"] if candidate[0] else None) == cur_id:
+            # Two consecutive pearls agree (≥ 24 nm): a real crossing, not a
+            # gazetteer flap along a boundary. Dated at the first of the two.
+            first_pearl, first_idx = candidate[1], candidate[2]
+            base = {"lat": round(first_pearl["lat"], 4), "lon": round(first_pearl["lon"], 4), "sailNm": first_pearl["sailNm"], "idx": first_idx, "basis": "pearl"}
+            if state is not None:
+                events.append({"kind": "zee", "event": "exit", "name": state["name"], "mrgid": state_id, "territory": state.get("territory"), **base})
+            if cur is not None:
+                events.append({"kind": "zee", "event": "enter", "name": cur["name"], "mrgid": cur_id, "territory": cur.get("territory"), **base})
+            state, candidate = cur, None
+        else:
+            candidate = (cur, pearl, idx)
+        for amp in (bag.get("amp") or [])[:2]:
+            if not isinstance(amp, dict) or not amp.get("name"):
+                continue
+            key = str(amp.get("site_id") or amp.get("id") or amp["name"])
+            if key in seen_amp:
+                continue
+            seen_amp.add(key)
+            events.append({
+                "kind": "amp", "event": "nearby", "name": amp["name"], "siteId": key,
+                "nm": amp.get("nm"), "visitUrl": amp.get("visit_url") or amp.get("url"),
+                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+            })
+    return events
 
 
 # ── disk persistence of the thin cache ────────────────────────────────────────

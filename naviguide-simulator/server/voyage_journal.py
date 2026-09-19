@@ -7,7 +7,10 @@ UTC, écrite par le serveur seul :
                 (basis `clock` : la position planifiée, pas un GPS) ;
 - `stop`      : arrivée / départ d'une escale franchie ;
 - `grib`      : vent, pression, pluie, Hs au bateau à chaque cycle GRIB ingéré ;
-- `note`      : mot du skipper / de l'équipe (admin, X-Naviguide-Admin).
+- `note`      : mot du skipper / de l'équipe (admin, X-Naviguide-Admin) ;
+- `zee`       : ZEE entrée / quittée, lue sur les perles chauffées de la route
+                (basis `pearl`), datée par l'horloge — v2, 19 sept. ;
+- `amp`       : aire marine protégée venue à portée d'une perle (basis `pearl`).
 
 Rien n'est inventé : une position vient de l'horloge, un vent d'un GRIB
 réellement téléchargé. Les trous restent des trous (`absent`), le journal
@@ -33,7 +36,7 @@ SLOT_HOURS = (0, 6, 12, 18)
 BACKFILL_MAX_DAYS = 400          # toute l'expédition, jamais plus
 TICK_MIN_S = 60.0                # les GET publics ne réécrivent pas plus souvent
 NOTE_MAX_CHARS = 2000
-KINDS = ("position", "stop", "grib", "note")
+KINDS = ("position", "stop", "grib", "note", "zee", "amp")
 
 _LOCK = threading.RLock()
 _last_tick = 0.0
@@ -226,6 +229,46 @@ def record_stops(clock: dict, now: datetime) -> int:
     return _append(entries)
 
 
+# ── événements de route (perles) ────────────────────────────────────────────
+
+def _time_at_sail_nm(clock: dict, sail_nm: float) -> Optional[datetime]:
+    """When the official clock puts the boat at `sail_nm` sea miles (first crossing)."""
+    verts = clock.get("vertices") or []
+    t0 = parse_iso(clock["t0"])
+    x = float(sail_nm)
+    for a, b in zip(verts, verts[1:]):
+        sa, sb = float(a.get("sailNm") or 0), float(b.get("sailNm") or 0)
+        if sb < x - 1e-6 or sb <= sa:
+            continue
+        if x < sa - 1e-6:
+            return t0 + timedelta(hours=float(a["tHours"]))
+        t = (x - sa) / (sb - sa) if sb > sa else 0.0
+        hours = float(a["tHours"]) + t * (float(b["tHours"]) - float(a["tHours"]))
+        return t0 + timedelta(hours=hours)
+    return None
+
+
+def record_route_events(voy: Optional[dict], clock: Optional[dict], now: datetime) -> int:
+    """ZEE crossings and MPA neighbourhoods read on the warmed pearls, dated
+    by the clock, once each (idempotent ids). Pearls not warmed yet: nothing
+    is written — the next tick will, when the cache knows them."""
+    if not voy or not clock or not voy.get("points"):
+        return 0
+    from ici_warm import route_events_from_pearls  # noqa: PLC0415
+    entries = []
+    for ev in route_events_from_pearls(voy["points"]):
+        when = _time_at_sail_nm(clock, ev["sailNm"])
+        if when is None or when > now:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "-", str(ev.get("mrgid") or ev.get("siteId") or ev.get("name") or "").lower()).strip("-")
+        entries.append({
+            "id": f"{ev['kind']}:{ev['event']}:{key}:{ev['idx']}",
+            "t": to_iso(when),
+            **{k: v for k, v in ev.items() if k != "idx"},
+        })
+    return _append(entries)
+
+
 # ── GRIB ────────────────────────────────────────────────────────────────────
 
 def record_grib(record: Optional[dict], clock: Optional[dict], now: datetime) -> bool:
@@ -295,11 +338,20 @@ def tick(voy: Optional[dict], now: datetime, *, force: bool = False) -> Dict[str
             return {"positions": 0, "stops": 0, "skipped": True}
         _last_tick = mono
     clock = voy["clock"]
-    return {
+    out = {
         "positions": record_positions(clock, now),
         "stops": record_stops(clock, now),
         "skipped": False,
     }
+    try:
+        out["routeEvents"] = record_route_events(voy, clock, now)
+    except Exception:  # the pearls never break the journal
+        out["routeEvents"] = 0
+    return out
+
+
+EVENT_KINDS = ("stop", "grib", "note", "zee", "amp")
+EVENTS_MAX = 800
 
 
 def summary(limit: int = 50) -> Dict[str, Any]:
@@ -310,5 +362,8 @@ def summary(limit: int = 50) -> Dict[str, Any]:
         "first": days[0]["day"] if days else None,
         "last": days[-1]["day"] if days else None,
         "latest": latest(limit),
+        # Everything but the 4-a-day positions, whole voyage: what the story
+        # of the crossing reads (ZEE crossed, MPA met, stops, wind, notes).
+        "events": latest(EVENTS_MAX, kinds=EVENT_KINDS),
         "kinds": list(KINDS),
     }
