@@ -108,3 +108,23 @@ def test_warmer_is_disabled_by_env(monkeypatch):
     assert ici_warm.status()["status"] == "disabled"
     monkeypatch.setenv("NAVIGUIDE_ICI_WARM", "1")
     assert ici_warm.warm_enabled() is True
+
+
+def test_pearls_carry_the_clocks_sail_scale_including_the_land_leg():
+    """Lot K (correctif) : la perle porte le cumNm de la route — l'échelle de
+    l'horloge — et non des milles comptés depuis le premier point de mer.
+    Sans ça, chaque ligne du journal issue des perles était datée ~16 h trop tôt."""
+    pts = [
+        {"lat": 46.8, "lon": 1.6, "cumNm": 0, "filmCum": 0, "nonMaritime": True},        # Saint-Maur
+        {"lat": 46.15, "lon": -1.16, "cumNm": 122.3, "filmCum": 122.3, "nonMaritime": True},  # La Rochelle (land end)
+        {"lat": 46.24, "lon": -1.26, "cumNm": 128.8, "filmCum": 128.8},                    # first sea point
+        {"lat": 46.1, "lon": -1.7, "cumNm": 156.0, "filmCum": 156.0},
+        {"lat": 45.86, "lon": -2.45, "cumNm": 190.5, "filmCum": 190.5},
+    ]
+    pearls = ici_warm.sample_route_nm(pts)
+    assert pearls[0]["sailNm"] == 128.8, pearls[0]
+    assert all(b["sailNm"] > a["sailNm"] for a, b in zip(pearls, pearls[1:]))
+    assert pearls[-1]["sailNm"] <= 190.5 + 0.01
+    # Without cumNm the old accumulation still works (0 at the first sea point).
+    bare = ici_warm.sample_route_nm([{k: v for k, v in p.items() if k != "cumNm"} for p in pts])
+    assert bare[0]["sailNm"] == 0

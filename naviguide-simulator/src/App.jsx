@@ -82,6 +82,7 @@ import { mapInsetVars } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
+import { usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -1193,6 +1194,24 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
   }, [sceneApi]);
+  // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
+  const planReviewState = usePlanReview({
+    enabled: Boolean(officialClock),
+    clock: officialClock,
+    lookup: atlas.lookup,
+    revision: atlas.revision,
+    lang,
+    galeLimitPct: skipper.orders?.values?.galePct,
+  });
+  const planReview = useMemo(() => ({
+    legs: planReviewState.legs,
+    loading: planReviewState.loading,
+    error: planReviewState.error,
+    summary: planReviewState.review
+      ? t("planReviewSummary", { warmed: planReviewState.review.pearlsWarmed ?? 0, unknown: planReviewState.review.pearlsUnknown ?? 0 })
+      : null,
+  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, t]);
+
   // Route advice under the skipper's orders (lot G): gale and sea limits of
   // the resolved orders become no-go zones of the isochrone.
   const handleRecompute = useCallback(
@@ -1389,6 +1408,7 @@ export default function App() {
         onSeekEscale={handleSidebarSeek}
         onEscaleSheet={openEscaleSheet}
         drawing={drawing}
+        planReview={planReview}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}
