@@ -4,6 +4,7 @@ import {
   SIM_FAR_STEP_NM,
   SIM_NEAR_NM,
   buildAlongIndex,
+  canonicalWindow,
   lookaheadNmFor,
   maxPearlsFor,
   nearestPearlBag,
@@ -16,6 +17,18 @@ const FETCH_MS = 20000;
 const PARALLEL = 4;
 /** Two pearls behind the boat stay in the window: the one just passed is the live thin bag. */
 const BEHIND_NM = 2 * ROUTE_SAMPLE_NM;
+
+/** The canonical pearls of the official route are the same for every visitor: one GET per tab. */
+let canonicalPromise = null;
+function loadCanonicalPearls() {
+  if (!canonicalPromise) {
+    canonicalPromise = fetch(`${API_URL}/ici/pearls`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => (Array.isArray(data?.pearls) && data.pearls.length ? data.pearls : null))
+      .catch(() => null);
+  }
+  return canonicalPromise;
+}
 
 /**
  * Preheat thin /ici pearls on THIS leg. Never blocks Play. No chat.
@@ -32,11 +45,16 @@ export function useIciAlong({
   fromNm,
   toNm,
   boatNm,
+  boatLat = null,
+  boatLon = null,
   mode = "simulation",
   month,
   orders = null,
+  /** Berry route: sample the server's canonical pearls (warmed cache). Drawn route: own sampling. */
+  canonical = false,
 }) {
   const [bags, setBags] = useState(() => new Map());
+  const [canonicalPearls, setCanonicalPearls] = useState(null);
   const cacheRef = useRef(new Map());
   const routeKey = `${flat?.points?.length || 0}:${flat?.totalNm || 0}:${mode}`;
   const lastRouteRef = useRef(routeKey);
@@ -45,15 +63,38 @@ export function useIciAlong({
     cacheRef.current = new Map();
   }
 
+  useEffect(() => {
+    if (!enabled || !canonical) return undefined;
+    let cancelled = false;
+    loadCanonicalPearls().then((list) => { if (!cancelled) setCanonicalPearls(list); });
+    return () => { cancelled = true; };
+  }, [enabled, canonical]);
+
   const boatBucket = Number.isFinite(Number(boatNm))
     ? Math.floor(Number(boatNm) / ROUTE_SAMPLE_NM) * ROUTE_SAMPLE_NM
     : 0;
+  // The window moves by whole pearls: round the boat position to ~1 nm.
+  const latB = Number.isFinite(Number(boatLat)) ? Math.round(Number(boatLat) * 60) / 60 : null;
+  const lonB = Number.isFinite(Number(boatLon)) ? Math.round(Number(boatLon) * 60) / 60 : null;
 
   const lookaheadNm = lookaheadNmFor(mode, orders);
   const maxPearls = maxPearlsFor(mode, orders);
 
   const pearls = useMemo(() => {
     if (!enabled || !flat?.points?.length) return [];
+    if (canonical && canonicalPearls) {
+      return canonicalWindow(canonicalPearls, flat, {
+        boatNm: boatBucket,
+        boatLat: latB,
+        boatLon: lonB,
+        toNm,
+        maxPearls,
+        lookaheadNm,
+        month,
+        nearCount: mode === "suivre" ? Infinity : Math.round(SIM_NEAR_NM / ROUTE_SAMPLE_NM),
+        farEvery: Math.round(SIM_FAR_STEP_NM / ROUTE_SAMPLE_NM),
+      });
+    }
     return sampleLeg(flat, {
       fromNm,
       toNm,
@@ -66,7 +107,7 @@ export function useIciAlong({
       nearNm: mode === "suivre" ? Infinity : SIM_NEAR_NM,
       farStepNm: mode === "suivre" ? null : SIM_FAR_STEP_NM,
     });
-  }, [enabled, flat, fromNm, toNm, boatBucket, month, lookaheadNm, maxPearls, mode]);
+  }, [enabled, flat, fromNm, toNm, boatBucket, latB, lonB, month, lookaheadNm, maxPearls, mode, canonical, canonicalPearls]);
 
   const pearlsSig = pearls.map((p) => pearlKey(p.lat, p.lon, month)).join("|");
 
@@ -78,36 +119,52 @@ export function useIciAlong({
       setBags(new Map(cacheRef.current));
       return undefined;
     }
-    const run = async () => {
-      for (let i = 0; i < missing.length; i += PARALLEL) {
-        if (cancelled) return;
-        const chunk = missing.slice(i, i + PARALLEL);
-        await Promise.all(chunk.map(async (p) => {
-          const key = pearlKey(p.lat, p.lon, month);
-          if (cacheRef.current.has(key)) return;
-          const ctrl = new AbortController();
-          const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
-          try {
-            const q = new URLSearchParams({
-              lat: String(p.lat),
-              lon: String(p.lon),
-              thin: "1",
-            });
-            if (Number.isFinite(Number(month))) q.set("month", String(month));
-            const r = await fetch(`${API_URL}/ici?${q.toString()}`, { signal: ctrl.signal });
-            const data = r.ok ? await r.json() : null;
-            if (!cancelled) cacheRef.current.set(key, data);
-          } catch {
-            if (!cancelled) cacheRef.current.set(key, null);
-          } finally {
-            clearTimeout(kill);
-          }
-        }));
+    // A small pool: PARALLEL requests in flight, the next one starts as soon
+    // as one lands (a cached pearl answers in ms, a cold one in seconds —
+    // chunking made the fast ones wait for the slow ones).
+    let next = 0;
+    let publishTimer = null;
+    const publish = () => {
+      if (cancelled || publishTimer) return;
+      publishTimer = setTimeout(() => {
+        publishTimer = null;
         if (!cancelled) setBags(new Map(cacheRef.current));
+      }, 150);
+    };
+    const fetchOne = async (p) => {
+      const key = pearlKey(p.lat, p.lon, month);
+      if (cacheRef.current.has(key)) return;
+      const ctrl = new AbortController();
+      const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
+      try {
+        const q = new URLSearchParams({
+          lat: String(p.lat),
+          lon: String(p.lon),
+          thin: "1",
+        });
+        if (Number.isFinite(Number(month))) q.set("month", String(month));
+        const r = await fetch(`${API_URL}/ici?${q.toString()}`, { signal: ctrl.signal });
+        const data = r.ok ? await r.json() : null;
+        if (!cancelled) cacheRef.current.set(key, data);
+      } catch {
+        if (!cancelled) cacheRef.current.set(key, null);
+      } finally {
+        clearTimeout(kill);
+        publish();
       }
     };
-    run();
-    return () => { cancelled = true; };
+    const worker = async () => {
+      while (!cancelled && next < missing.length) {
+        const p = missing[next];
+        next += 1;
+        await fetchOne(p);
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(PARALLEL, missing.length) }, worker)).catch(() => {});
+    return () => {
+      cancelled = true;
+      clearTimeout(publishTimer);
+    };
   }, [enabled, pearlsSig, month]);
 
   const index = useMemo(

@@ -6,7 +6,7 @@
  * pearls = ceil(nm / 12). Both follow the skipper orders. No fixed 350 / 24.
  */
 
-import { interpolateAtNm } from "./routePlayhead.js";
+import { interpolateAtNm, nearestNm } from "./routePlayhead.js";
 import { haversineNm } from "../utils/geo.js";
 import {
   AMP_AHEAD_MIN_NM,
@@ -108,6 +108,65 @@ export function sampleLeg(flat, {
     });
   }
   return pearls;
+}
+
+/**
+ * Window of canonical pearls (server `GET /ici/pearls`, 12 nm apart along the
+ * official route) around the boat: the two just behind, then all of them for
+ * `nearCount`, then one in `farEvery` up to `maxPearls`. Same positions as the
+ * server's warmer → the thin bags hit its cache.
+ *
+ * Each pearl gets `cumNm` / `filmCum` on THIS flat route (nearestNm), so the
+ * lookahead detectors read `whenNm` exactly as with `sampleLeg`.
+ */
+export function canonicalWindow(canonical, flat, {
+  boatNm = 0,
+  boatLat = null,
+  boatLon = null,
+  toNm = Infinity,
+  maxPearls = MAX_PEARLS_SIM,
+  behind = 2,
+  nearCount = 20,
+  farEvery = 4,
+  lookaheadNm = Infinity,
+  month = null,
+} = {}) {
+  const list = Array.isArray(canonical) ? canonical : [];
+  if (!list.length || !flat?.points?.length) return [];
+  let at = 0;
+  if (Number.isFinite(boatLat) && Number.isFinite(boatLon)) {
+    let best = Infinity;
+    for (let i = 0; i < list.length; i++) {
+      const d = haversineNm(list[i][0], list[i][1], boatLat, boatLon);
+      if (d < best) {
+        best = d;
+        at = i;
+      }
+    }
+  }
+  const boat = Number(boatNm) || 0;
+  const out = [];
+  const cap = Number.isFinite(lookaheadNm) ? boat + lookaheadNm : Infinity;
+  const end = Math.min(Number.isFinite(toNm) ? toNm : Infinity, cap, flat.totalNm ?? Infinity);
+  for (let i = Math.max(0, at - behind); i < list.length && out.length < maxPearls; i++) {
+    const ahead = i - at;
+    if (ahead > nearCount && (ahead - nearCount) % farEvery !== 0) continue;
+    const [lat, lon] = list[i];
+    const cumNm = nearestNm(flat, lat, lon);
+    if (!Number.isFinite(cumNm)) continue;
+    if (cumNm > end + 0.5) break;
+    if (ahead > 0 && cumNm + 0.5 < boat) continue; // the route loops back: not ahead on this leg
+    out.push({
+      lat,
+      lon,
+      cumNm,
+      filmCum: filmCumAtNm(flat, cumNm),
+      whenNm: cumNm - boat,
+      month,
+      canonical: true,
+    });
+  }
+  return out;
 }
 
 /**

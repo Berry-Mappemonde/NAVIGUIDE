@@ -587,9 +587,13 @@ export default function App() {
     fromNm: chapterAtNm(escaleMarks, cast?.sailNm ?? playback.nm)?.from?.nm,
     toNm: destMark?.nm,
     boatNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
+    boatLat: sample?.lat,
+    boatLon: sample?.lon,
     mode: isSuivre ? "suivre" : "simulation",
     month: climoMonth,
     orders: skipper.orders,
+    // The Berry route has canonical pearls warmed on the server; a drawn route samples itself.
+    canonical: routeKind === "berry",
   });
 
   const iciPack = useIciDossier({

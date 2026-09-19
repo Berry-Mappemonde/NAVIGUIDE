@@ -86,6 +86,23 @@ def test_warmer_fills_the_cache_once_and_reports(tmp_path, monkeypatch):
     assert len(calls) == n_calls
 
 
+def test_official_pearls_endpoint_lists_canonical_positions(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path))
+    import voyage_store
+    monkeypatch.setattr(voyage_store, "_DIR", tmp_path)
+    ici_warm._pearls_cache["pearls"] = None
+    voyage_store.save_voyage({"voyageId": "berry-mappemonde-2026-officiel", "points": _route(), "marks": [], "t0": "2026-05-15T08:00:00Z", "routeRev": 0})
+    out = ici_warm.official_pearls()
+    assert out["stepNm"] == 12.0
+    assert out["count"] == len(out["pearls"]) >= 15
+    assert all(len(p) == 2 for p in out["pearls"])
+    assert out["warm"]["status"] in ("idle", "disabled", "running", "done")
+    # Same cell as the warmer → the thin cache key ignores the month.
+    from ici_engine import thin_cache_key
+    la, lo = out["pearls"][0]
+    assert thin_cache_key(la, lo, 30, 9) == thin_cache_key(la, lo, 30, None)
+
+
 def test_warmer_is_disabled_by_env(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_ICI_WARM", "0")
     assert ici_warm.warm_enabled() is False

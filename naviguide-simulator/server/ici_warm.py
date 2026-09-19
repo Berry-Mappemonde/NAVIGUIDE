@@ -26,7 +26,9 @@ from typing import Any
 log = logging.getLogger("naviguide-simulator.ici-warm")
 
 SAMPLE_NM = 12.0
-WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.2)
+# A thin bag already costs ~4 s upstream (MarineRegions + BI); the pause on
+# top keeps the whole route under ~4 h on a first run.
+WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 0.5)
 SAVE_EVERY_S = 30.0
 
 _state: dict[str, Any] = {
@@ -166,7 +168,7 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S) -> dict[str, Any]:
         return status()
     month = None
     for lat, lon in pearls:
-        key = thin_cache_key(lat, lon, 30.0, month)
+        key = thin_cache_key(lat, lon, 30.0)
         if thin_cache_get(key) is not None:
             _state["cached"] += 1
             _state["done"] += 1
@@ -185,6 +187,30 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S) -> dict[str, Any]:
     log.info("perles officielles chauffées : %d (%d déjà en cache, %d erreurs)",
              _state["done"], _state["cached"], _state["errors"])
     return status()
+
+
+_pearls_cache: dict[str, Any] = {"rev": None, "pearls": None}
+
+
+def official_pearls() -> dict[str, Any]:
+    """The canonical pearls of the official route: the client samples the
+    same positions, so its thin bags hit the warmed cache."""
+    from voyage_store import load_voyage  # noqa: PLC0415
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    points = (voy or {}).get("points") or []
+    rev = (voy or {}).get("routeRev"), len(points)
+    if _pearls_cache["pearls"] is None or _pearls_cache["rev"] != rev:
+        _pearls_cache["pearls"] = [[round(la, 5), round(lo, 5)] for la, lo in sample_route(points)]
+        _pearls_cache["rev"] = rev
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID if voy else None,
+        "stepNm": SAMPLE_NM,
+        "count": len(_pearls_cache["pearls"]),
+        "pearls": _pearls_cache["pearls"],
+        "warm": status(),
+    }
 
 
 def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
