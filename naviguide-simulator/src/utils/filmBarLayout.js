@@ -16,3 +16,31 @@ export function filmBarInsets({
     right: toolsOpen ? width : gutter,
   };
 }
+
+/** Hauteur occupée par la barre film (bottom-5 + contenu), selon ses lignes. */
+export const FILM_BAR_HEIGHT_PX = Object.freeze({
+  hidden: 0,
+  compact: 84, // Suivre : titre + ligne horloge + piste
+  controls: 116, // Simulation : + boutons lecture / vitesses
+});
+
+/**
+ * Variables CSS posées sur la racine : les crédits Leaflet (bas droite)
+ * restent dans la carte visible — à gauche du panneau Outils, au-dessus de
+ * la barre film — au lieu de transparaître sous un panneau translucide.
+ */
+export function mapInsetVars({
+  sidebarOpen = true,
+  toolsOpen = true,
+  filmBarVisible = true,
+  filmBarControls = false,
+} = {}) {
+  const insets = filmBarInsets({ sidebarOpen, toolsOpen });
+  let bottom = FILM_BAR_HEIGHT_PX.hidden;
+  if (filmBarVisible) bottom = filmBarControls ? FILM_BAR_HEIGHT_PX.controls : FILM_BAR_HEIGHT_PX.compact;
+  return {
+    "--sim-inset-left": `${insets.left}px`,
+    "--sim-inset-right": `${toolsOpen ? insets.right : 0}px`,
+    "--sim-inset-bottom": `${bottom}px`,
+  };
+}
