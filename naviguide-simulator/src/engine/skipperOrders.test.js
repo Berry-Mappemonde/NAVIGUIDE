@@ -150,6 +150,32 @@ describe("three profiles, one number per threshold", () => {
     }
   });
 
+  it("planning speed = the polar read at the wind of the moment (GRIB in Suivre, climatology in Simulation)", () => {
+    const polar = {
+      boat_name: "Leopard 46",
+      vmg_summary: { 12: { downwind: { speed: 8 } } },
+      raw: { twa_rows: [60, 90, 120, 150], tws_cols: [6, 10, 14, 20], matrix: [[4, 6, 7, 8], [5, 7, 8.5, 10], [4.5, 6.5, 8, 10], [3.5, 5, 7, 9]] },
+    };
+    const still = resolveOrders({ profile: "cruise" }, { polar, mode: "suivre" });
+    assert.equal(still.boat.source.planningKn, "polar", "sans vent : la VMG portant, comme avant");
+    assert.equal(still.values.planningKn, 8);
+    const grib = resolveOrders({ profile: "cruise" }, { polar, mode: "suivre", wind: { tws: 10, twd: 0, heading: 90, kind: "grib" } });
+    assert.equal(grib.boat.source.planningKn, "grib");
+    assert.equal(grib.values.planningKn, 7, "TWA 90°, 10 kn → 7 kn dans la table");
+    assert.deepEqual(grib.boat.planningWind, { twa: 90, tws: 10 });
+    assert.match(grib.thresholds.find((t) => t.id === "planningKn").rule, /polaire × vent GRIB \(10 kn, TWA 90°\)/);
+    assert.ok(grib.budget.maxNm < still.budget.maxNm, "l'anticipation suit la vitesse : 36 h × 7 kn");
+    const climo = resolveOrders({ profile: "cruise" }, { polar, mode: "simulation", wind: { tws: 20, twd: 180, heading: 30, kind: "climatology" } });
+    assert.equal(climo.boat.source.planningKn, "climatology");
+    assert.equal(climo.values.planningKn, 9, "TWA 150°, 20 kn → 9 kn dans la table");
+    // A calm reads 0 in the table: the skipper still plans at the floor.
+    const calm = resolveOrders({ profile: "cruise" }, { polar, mode: "suivre", wind: { tws: 0, twd: 0, heading: 90, kind: "grib" } });
+    assert.equal(calm.values.planningKn, 3);
+    // No polar table (VMG summary only): wind is ignored, VMG speaks.
+    const summaryOnly = resolveOrders({ profile: "cruise" }, { polar: { vmg_summary: polar.vmg_summary }, wind: { tws: 10, twd: 0, heading: 90 } });
+    assert.equal(summaryOnly.boat.source.planningKn, "polar");
+  });
+
   it("revue du 19 sept. : the skipper may move the gale (Expert) and type the boat's length / draft", () => {
     const o = resolveOrders({ profile: "cruise", expert: { galeKt: 30, galeHoldKt: 32 }, boat: { loaM: 12, draftM: 2.1 } });
     assert.equal(o.values.galeKt, 30);

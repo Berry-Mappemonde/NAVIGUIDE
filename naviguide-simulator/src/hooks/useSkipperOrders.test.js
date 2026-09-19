@@ -16,7 +16,9 @@ describe("useSkipperOrders contract", () => {
     assert.match(hook, /writeSavedOrders\(storage\(\), next\)/);
     assert.match(hook, /sanitizeSaved\(\{ \.\.\.prev, \.\.\.patch \}\)/);
     assert.match(hook, /clearSavedOrders\(storage\(\)\)/);
-    assert.match(hook, /resolveOrders\(saved, \{ polar, mode \}\)/);
+    // The wind of the moment enters the orders (planning speed = polar × wind), rounded so they only move when the polar would.
+    assert.match(hook, /resolveOrders\(saved, \{ polar, mode, wind: w \}\)/);
+    assert.match(hook, /export function roundedWind/);
     assert.match(hook, /NOTICE_MS = 6000/);
     assert.match(hook, /Never awaits a model/);
     assert.match(hook, /Never rewinds the film/);

@@ -42,7 +42,24 @@ function noticeKey(saved) {
  * Never awaits a model. Never rewinds the film. Cinema keeps the orders active.
  * A small polar proposes Coastal; it never switches silently.
  */
-export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr" } = {}) {
+/**
+ * Wind of the moment, rounded so the orders only change when the polar would
+ * read another cell: 1 kn, 10° of angle. Null when unknown.
+ */
+export function roundedWind(wind) {
+  const tws = Number(wind?.tws);
+  const twd = Number(wind?.twd);
+  const heading = Number(wind?.heading);
+  if (![tws, twd, heading].every(Number.isFinite)) return null;
+  return {
+    tws: Math.round(tws),
+    twd: Math.round(twd / 10) * 10,
+    heading: Math.round(heading / 10) * 10,
+    kind: wind?.kind === "climatology" ? "climatology" : "grib",
+  };
+}
+
+export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr", wind = null } = {}) {
   const [saved, setSaved] = useState(
     () => readSavedOrders(storage()) ?? { profile: DEFAULT_PROFILE },
   );
@@ -51,9 +68,12 @@ export function useSkipperOrders({ polar = null, mode = "simulation", lang = "fr
   const timerRef = useRef(null);
   const shownRef = useRef(noticeKey(saved));
 
+  const w = roundedWind(wind);
+  const windKey = w ? `${w.tws}|${w.twd}|${w.heading}|${w.kind}` : "";
   const orders = useMemo(
-    () => resolveOrders(saved, { polar, mode }),
-    [saved, polar, mode],
+    () => resolveOrders(saved, { polar, mode, wind: w }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [saved, polar, mode, windKey],
   );
   const profile = orders.profile;
 

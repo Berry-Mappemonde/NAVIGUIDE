@@ -155,6 +155,8 @@ export default {
   skipperBoatReset:   "Reprendre la valeur de la polaire",
   skipperExpertGaleKt:     "Coup de vent",
   skipperExpertGaleHoldKt: "Fin du coup de vent",
+  skipperPlanningGrib:     "polaire × vent GRIB ({tws} kn, TWA {twa}°)",
+  skipperPlanningClimo:    "polaire × vent typique ({tws} kn, TWA {twa}°)",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",
