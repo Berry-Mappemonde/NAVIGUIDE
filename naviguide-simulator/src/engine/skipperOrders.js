@@ -55,6 +55,9 @@ export const HORIZONS_H = Object.freeze([24, 36, 48]);
  * Bounds keep the engine sane. Gale (Beaufort) is never here.
  */
 export const EXPERT_FIELDS = Object.freeze({
+  // Revue du 19 sept. : le coup de vent se règle ; Beaufort 8 / 7 restent les défauts.
+  galeKt: Object.freeze({ min: 20, max: 50, step: 1 }),
+  galeHoldKt: Object.freeze({ min: 15, max: 45, step: 1 }),
   galePct: Object.freeze({ min: 5, max: 50, step: 1 }),
   windShiftResetKt: Object.freeze({ min: 1, max: 10, step: 1 }),
   windShiftResetDeg: Object.freeze({ min: 5, max: 45, step: 5 }),
@@ -72,8 +75,13 @@ export const EXPERT_IDS = Object.freeze(Object.keys(EXPERT_FIELDS));
 export const DEFAULT_BOAT = Object.freeze({ name: null, loaM: 14, draftM: 1.4 });
 export const SMALL_BOAT_LOA_M = 11;
 export const SMALL_BOAT_DRAFT_M = 1.1;
+/** Boat overrides typed by the skipper (Paramètres avancés), bounds keep the engine sane. */
+export const BOAT_FIELDS = Object.freeze({
+  loaM: Object.freeze({ min: 5, max: 60, step: 0.5 }),
+  draftM: Object.freeze({ min: 0.3, max: 6, step: 0.1 }),
+});
 
-/** Beaufort 8 / 7. Same in the three profiles. Read-only. */
+/** Beaufort 8 / 7. Same in the three profiles. Defaults; Expert may move them. */
 const LOCKED = Object.freeze({ galeKt: 34, galeHoldKt: 28 });
 
 /** Engine / expert numbers (hide or S7+). Same in the three profiles in v1. */
@@ -264,8 +272,33 @@ function budgetFrom(hours, planningKn, sampleNm) {
   };
 }
 
-/** Read the boat from the polar. Berry defaults when the polar does not say. */
-export function readBoat(polar) {
+/** One boat override, clamped to its bounds. null when unknown id / not a number. */
+export function clampBoat(id, value) {
+  const f = BOAT_FIELDS[id];
+  const n = measure(value);
+  // A length or a draft that is not a positive number is no measure at all.
+  if (!f || !Number.isFinite(n) || n <= 0) return null;
+  const clamped = Math.min(f.max, Math.max(f.min, n));
+  return Math.round(clamped * 100) / 100;
+}
+
+/** Keep only known boat ids with a finite number inside the bounds. {} when nothing. */
+export function sanitizeBoat(boat) {
+  const out = {};
+  if (!boat || typeof boat !== "object") return out;
+  for (const id of Object.keys(BOAT_FIELDS)) {
+    const v = clampBoat(id, boat[id]);
+    if (v != null) out[id] = v;
+  }
+  return out;
+}
+
+/**
+ * Read the boat from the polar. Berry defaults when the polar does not say;
+ * what the skipper typed (Paramètres avancés) wins over both.
+ */
+export function readBoat(polar, override = null) {
+  const own = sanitizeBoat(override);
   const loaRaw = Number(polar?.loa_m ?? polar?.loaM);
   const draftRaw = Number(polar?.draft_m ?? polar?.draftM);
   const hasPolarSpeed = Boolean(polar?.vmg_summary && typeof polar.vmg_summary === "object");
@@ -273,13 +306,13 @@ export function readBoat(polar) {
   return {
     name: polar?.boat_name ?? polar?.name ?? DEFAULT_BOAT.name,
     expeditionId: polar?.expedition_id ?? null,
-    loaM: isFinitePositive(loaRaw) ? loaRaw : DEFAULT_BOAT.loaM,
-    draftM: isFinitePositive(draftRaw) ? draftRaw : DEFAULT_BOAT.draftM,
+    loaM: own.loaM ?? (isFinitePositive(loaRaw) ? loaRaw : DEFAULT_BOAT.loaM),
+    draftM: own.draftM ?? (isFinitePositive(draftRaw) ? draftRaw : DEFAULT_BOAT.draftM),
     planningKn: isFinitePositive(kn) ? Math.round(kn * 10) / 10 : null,
     source: {
       name: polar?.boat_name || polar?.name ? "polar" : null,
-      loa: isFinitePositive(loaRaw) ? "polar" : "default",
-      draft: isFinitePositive(draftRaw) ? "polar" : "default",
+      loa: own.loaM != null ? "skipper" : (isFinitePositive(loaRaw) ? "polar" : "default"),
+      draft: own.draftM != null ? "skipper" : (isFinitePositive(draftRaw) ? "polar" : "default"),
       planningKn: isFinitePositive(kn) ? "polar" : "profile",
     },
   };
@@ -342,7 +375,11 @@ export function resolveOrders(saved, { polar = null, mode = "simulation" } = {})
   const cmf = COMFORT_TABLE[comfort];
   const horizonH = HORIZONS_H.includes(saved?.horizonH) ? saved.horizonH : row.suivreLookaheadH;
   const expert = sanitizeExpert(saved?.expert);
-  const boat = readBoat(polar);
+  // The end of a gale (hold) always sits under the gale itself.
+  if (expert.galeHoldKt != null && expert.galeHoldKt >= (expert.galeKt ?? LOCKED.galeKt)) {
+    expert.galeHoldKt = Math.max(EXPERT_FIELDS.galeHoldKt.min, (expert.galeKt ?? LOCKED.galeKt) - 4);
+  }
+  const boat = readBoat(polar, saved?.boat);
   const planningKn = boat.planningKn ?? row.planningKnDefault;
   const budget = budgetFrom(horizonH, planningKn, SHARED.routeSampleNm);
   const rainEnabled = mode === "suivre";
@@ -404,7 +441,8 @@ export function resolveOrders(saved, { polar = null, mode = "simulation" } = {})
         unit: m.unit,
         source,
         rule,
-        locked: m.locked,
+        // Beaufort stays the default; a gale typed by the skipper is not locked.
+        locked: m.locked && !(id in expert),
         enabled: rain ? rainEnabled : true,
         reason: rain && !rainEnabled ? rainReason : null,
       };
@@ -600,6 +638,8 @@ export function sanitizeSaved(obj) {
   if (HORIZONS_H.includes(obj?.horizonH)) out.horizonH = obj.horizonH;
   const expert = sanitizeExpert(obj?.expert);
   if (Object.keys(expert).length) out.expert = expert;
+  const boat = sanitizeBoat(obj?.boat);
+  if (Object.keys(boat).length) out.boat = boat;
   return out;
 }
 

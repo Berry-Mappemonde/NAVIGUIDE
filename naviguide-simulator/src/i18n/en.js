@@ -137,6 +137,23 @@ export default {
   // ── Story of the crossing (Follow) ───────────────────────────────────────
   storyTitle:         "The story of the crossing",
   storyHint:          "From Saint-Maur to today's position, from the official clock and the logbook.",
+
+  // ── Right sidebar: the whole expedition + settings (review of 19 Sept.) ──
+  expeditionTitle:    "Expedition",
+  routeSegmentsShort: "segments",
+  routeSeaShort:      "sea",
+  routeLandShort:     "land",
+  routePointsShort:   "points",
+  polarShow:          "Show polars",
+  polarHide:          "Hide",
+  advancedSettings:   "Advanced settings",
+  layersTitle:        "Layers",
+  layersOn:           "{n} on",
+  layersNone:         "none",
+  skipperProfileTitle: "Character",
+  skipperBoatReset:   "Back to the polar's value",
+  skipperExpertGaleKt:     "Gale",
+  skipperExpertGaleHoldKt: "End of gale",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",
@@ -229,7 +246,7 @@ export default {
 
   // ── Admin key (security P0) ───────────────────────────────────────────────
   adminKeyLabel:       "Admin key",
-  adminKeyPlaceholder: "paste the key…",
+  adminKeyPlaceholder: "Paste the admin key",
   adminKeySave:        "OK",
   adminKeyActive:      "active",
   adminKeyHint:        "Needed to change the official route, the GRIB or the polar. Stays in this browser.",
@@ -381,7 +398,7 @@ export default {
   skipperHorizonLeg:      "this leg (Simulation)",
   skipperPearls:          "pearls",
   skipperExpertTitle:     "Numbers",
-  skipperExpertHint:      "Expert settings, outside the profile. The story cites these numbers as they are. Beaufort 8 / 7 stays locked.",
+  skipperExpertHint:      "Expert settings, outside the profile. The story cites these numbers as they are.",
   skipperExpertReset:     "Back to the profile number",
   skipperExpertLocked:    "locked",
   skipperExpertGalePct:        "Gale (climatology rose)",

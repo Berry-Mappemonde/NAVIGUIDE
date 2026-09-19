@@ -137,6 +137,23 @@ export default {
   // ── Récit de la traversée (Suivre) ───────────────────────────────────────
   storyTitle:         "Le récit de la traversée",
   storyHint:          "Depuis Saint-Maur jusqu’à la position d’aujourd’hui, d’après l’horloge officielle et le journal de bord.",
+
+  // ── Sidebar droite : l’expédition entière + les réglages (revue du 19 sept.) ──
+  expeditionTitle:    "Expédition",
+  routeSegmentsShort: "segments",
+  routeSeaShort:      "mer",
+  routeLandShort:     "terre",
+  routePointsShort:   "points",
+  polarShow:          "Voir les polaires",
+  polarHide:          "Masquer",
+  advancedSettings:   "Paramètres avancés",
+  layersTitle:        "Calques",
+  layersOn:           "{n} actifs",
+  layersNone:         "aucun",
+  skipperProfileTitle: "Caractère",
+  skipperBoatReset:   "Reprendre la valeur de la polaire",
+  skipperExpertGaleKt:     "Coup de vent",
+  skipperExpertGaleHoldKt: "Fin du coup de vent",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",
@@ -230,7 +247,7 @@ export default {
 
   // ── Clé admin (sécurité P0) ────────────────────────────────────────────────
   adminKeyLabel:       "Clé admin",
-  adminKeyPlaceholder: "coller la clé…",
+  adminKeyPlaceholder: "Coller la clé admin",
   adminKeySave:        "OK",
   adminKeyActive:      "active",
   adminKeyHint:        "Nécessaire pour modifier la route officielle, le GRIB ou la polaire. Reste dans ce navigateur.",
@@ -381,7 +398,7 @@ export default {
   skipperHorizonLeg:      "cette jambe (Simulation)",
   skipperPearls:          "perles",
   skipperExpertTitle:     "Chiffres",
-  skipperExpertHint:      "Réglages Expert, hors profil. Le récit cite ces chiffres tels quels. Beaufort 8 / 7 reste verrouillé.",
+  skipperExpertHint:      "Réglages Expert, hors profil. Le récit cite ces chiffres tels quels.",
   skipperExpertReset:     "Remettre le chiffre du profil",
   skipperExpertLocked:    "verrouillé",
   skipperExpertGalePct:        "Coup de vent (rose climato)",

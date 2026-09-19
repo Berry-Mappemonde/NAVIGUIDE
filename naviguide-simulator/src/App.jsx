@@ -474,11 +474,8 @@ export default function App() {
   const monthLabel = clockSample?.month
     ? formatMonthName(clockSample.month, lang)
     : "";
-  const climatologyLabel = isSuivre
-    ? ""
-    : officialClock && monthLabel
-      ? t("voyageKindClimatology", { month: monthLabel })
-      : "";
+  // « Climatologie de septembre » n'est plus écrit sous l'étape : la date de
+  // départ le dit déjà (revue du 19 sept.). Le mois reste sur le bandeau climato.
   const weatherLine = buildWeatherLine({
     isSuivre,
     gribReady: official.gribStatus === "ready",
@@ -1394,14 +1391,6 @@ export default function App() {
         canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
         isCockpit={false}
         polarData={polarData}
-        maritimeLayers={{
-          ...maritimeLayers,
-          loadingClimoWind: climoLayer.loading && maritimeLayers.showClimoWind,
-          loadingClimoWave: climoLayer.loading && maritimeLayers.showClimoWave,
-          loadingClimoCurrent: climoLayer.loading && maritimeLayers.showClimoCurrent,
-          loadingClimoCyclones: climoLayer.loading && maritimeLayers.showClimoCyclones,
-          errorClimatology: climoLayer.error,
-        }}
         briefingLoading={iciPack.loading || briefingLoading}
         officialFallback={officialFallback}
         iciBriefing={iciPack.briefing}
@@ -1413,14 +1402,8 @@ export default function App() {
         story={storyParagraphs}
         skipperNotice={skipper.notice}
         view={view}
-        onView={selectView}
         legContext={sidebarHudLeg}
-        escaleMarks={legendMarks}
-        filmNm={sidebarPlaybackNm}
-        departureT0={voyage.t0}
-        onDepartureT0={voyage.setT0}
         clockSample={sidebarClockSample}
-        kindLabel={climatologyLabel}
         atQuay={atQuay}
         quayDays={quayDays}
         previewing={previewing}
@@ -1429,7 +1412,12 @@ export default function App() {
         canRecompute={canRecompute}
         recomputeBusy={vessel.busy}
         onGoLive={goLive}
-        onSeekEscale={handleSidebarSeek}
+        momentNow={sceneReady ? moments.now : null}
+        momentNowLeft={moments.nowLeft}
+        onMomentDismiss={moments.dismiss}
+        momentFree={sceneReady ? moments.free : null}
+        momentFreeLeft={moments.freeLeft}
+        onMomentNext={moments.next}
       />
 
       <ToolsSidebar
@@ -1443,12 +1431,27 @@ export default function App() {
         onPolarDataLoaded={setPolarData}
         routeDistanceNm={stats.nm}
         routeSegmentCount={stats.segments}
+        maritimeLayers={{
+          ...maritimeLayers,
+          loadingClimoWind: climoLayer.loading && maritimeLayers.showClimoWind,
+          loadingClimoWave: climoLayer.loading && maritimeLayers.showClimoWave,
+          loadingClimoCurrent: climoLayer.loading && maritimeLayers.showClimoCurrent,
+          loadingClimoCyclones: climoLayer.loading && maritimeLayers.showClimoCyclones,
+          errorClimatology: climoLayer.error,
+        }}
+        escaleMarks={legendMarks}
+        filmNm={sidebarPlaybackNm}
+        onSeekEscale={handleSidebarSeek}
+        showDeparture={isSimulation}
+        departureT0={voyage.t0}
+        onDepartureT0={voyage.setT0}
         skipperOrders={skipper.orders}
         skipperProfile={skipper.profile}
         onSkipperProfile={skipper.setProfile}
         onSkipperComfort={skipper.setComfort}
         onSkipperHorizon={skipper.setHorizon}
         onSkipperExpert={skipper.setExpert}
+        onSkipperBoat={skipper.setBoat}
         onSkipperReset={skipper.reset}
         skipperSuggest={skipper.suggest}
         onSkipperSuggestAccept={skipper.acceptSuggest}
@@ -1588,6 +1591,8 @@ export default function App() {
         }}
         storiesPending={(iciPack.events || []).filter((e) => e.story?.status === "pending").length}
         speechText={speechText}
+        view={view}
+        onView={drawingMode ? undefined : selectView}
         gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
         clock={officialClock}
         clockCurrent={clockSample ? {
@@ -1605,7 +1610,8 @@ export default function App() {
         onReject={() => vessel.reject()}
       />
 
-      {!drawingMode && sceneReady ? (
+      {/* Sidebar rangée (Cinéma) : les cartes se posent sur la carte ; ouverte, elles vivent dans le produit « ici ». */}
+      {!drawingMode && sceneReady && !sidebarOpen ? (
         <>
           <MomentNowCard
             card={moments.now}

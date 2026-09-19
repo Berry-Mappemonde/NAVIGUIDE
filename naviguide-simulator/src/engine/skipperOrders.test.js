@@ -150,6 +150,24 @@ describe("three profiles, one number per threshold", () => {
     }
   });
 
+  it("revue du 19 sept. : the skipper may move the gale (Expert) and type the boat's length / draft", () => {
+    const o = resolveOrders({ profile: "cruise", expert: { galeKt: 30, galeHoldKt: 32 }, boat: { loaM: 12, draftM: 2.1 } });
+    assert.equal(o.values.galeKt, 30);
+    assert.equal(o.values.galeHoldKt, 26, "the hold always sits 4 kn under a gale typed too high");
+    const gale = o.thresholds.find((t) => t.id === "galeKt");
+    assert.equal(gale.source, "expert");
+    assert.equal(gale.locked, false);
+    assert.equal(o.boat.loaM, 12);
+    assert.equal(o.boat.draftM, 2.1);
+    assert.equal(o.boat.source.loa, "skipper");
+    assert.equal(o.boat.source.draft, "skipper");
+    // Bounds keep the engine sane; the polar still names the boat.
+    const wild = resolveOrders({ profile: "cruise", boat: { loaM: 400, draftM: -2 } }, { polar: { boat_name: "Leopard 46", loa_m: 14 } });
+    assert.equal(wild.boat.loaM, 60);
+    assert.equal(wild.boat.draftM, 1.4, "a negative draft is ignored: the polar / default speaks");
+    assert.equal(wild.boat.name, "Leopard 46");
+  });
+
   it("marks the ocean wind step as WMO squall, the others as usage", () => {
     assert.equal(resolveOrders({ profile: "ocean" }).thresholds.find((t) => t.id === "windShiftKt").source, "wmo");
     assert.equal(resolveOrders({ profile: "cruise" }).thresholds.find((t) => t.id === "windShiftKt").source, "usage");
@@ -361,6 +379,8 @@ describe("persistence — tab + localStorage, same key since v1", () => {
     assert.deepEqual(readSavedOrders(mem), { profile: "ocean" });
     assert.equal(writeSavedOrders(mem, { profile: "ocean", comfort: "hard", horizonH: 24, expert: { galePct: 20, loaM: 9 } }), true);
     assert.deepEqual(readSavedOrders(mem), { profile: "ocean", comfort: "hard", horizonH: 24, expert: { galePct: 20 } });
+    assert.equal(writeSavedOrders(mem, { profile: "ocean", boat: { loaM: 9, draftM: "nope" } }), true);
+    assert.deepEqual(readSavedOrders(mem), { profile: "ocean", boat: { loaM: 9 } });
     // normal comfort, unknown horizon, empty expert are not written (v1 shape stays)
     assert.deepEqual(sanitizeSaved({ profile: "cruise", comfort: "normal", horizonH: 30, expert: { nope: 1 } }), { profile: "cruise" });
   });
@@ -449,7 +469,7 @@ describe("S6 — horizon knob: the horizon never lies", () => {
 describe("S7 — Expert drawer: a few numbers, clamped, cited as expert", () => {
   it("lists only engine numbers the detectors really read, never the gale", () => {
     assert.ok(EXPERT_IDS.length >= 10);
-    assert.ok(!EXPERT_IDS.includes("galeKt") && !EXPERT_IDS.includes("galeHoldKt"));
+    assert.ok(EXPERT_IDS.includes("galeKt") && EXPERT_IDS.includes("galeHoldKt"), "revue du 19 sept. : le coup de vent se règle");
     assert.ok(!EXPERT_IDS.includes("hsAlertM") && !EXPERT_IDS.includes("depthAlertM"));
     const here = dirname(fileURLToPath(import.meta.url));
     const engine = readFileSync(join(here, "eventRules.js"), "utf8")
