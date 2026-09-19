@@ -10,7 +10,11 @@ UTC, écrite par le serveur seul :
 - `note`      : mot du skipper / de l'équipe (admin, X-Naviguide-Admin) ;
 - `zee`       : ZEE entrée / quittée, lue sur les perles chauffées de la route
                 (basis `pearl`), datée par l'horloge — v2, 19 sept. ;
-- `amp`       : aire marine protégée venue à portée d'une perle (basis `pearl`).
+- `amp`       : aire marine protégée venue à portée d'une perle (basis `pearl`) ;
+- `poe`       : port d'entrée officiel passé à ≤ 15 nm d'une perle (basis `pearl`) ;
+- `wx`        : météo marquante au bateau, dérivée d'une entrée `grib` déjà
+                journalisée (vent ≥ WX_GALE_KT ou Hs ≥ WX_HS_M) — pas de GRIB,
+                pas de `wx` (lot A).
 
 Rien n'est inventé : une position vient de l'horloge, un vent d'un GRIB
 réellement téléchargé. Les trous restent des trous (`absent`), le journal
@@ -36,7 +40,9 @@ SLOT_HOURS = (0, 6, 12, 18)
 BACKFILL_MAX_DAYS = 400          # toute l'expédition, jamais plus
 TICK_MIN_S = 60.0                # les GET publics ne réécrivent pas plus souvent
 NOTE_MAX_CHARS = 2000
-KINDS = ("position", "stop", "grib", "note", "zee", "amp")
+KINDS = ("position", "stop", "grib", "note", "zee", "amp", "poe", "wx")
+WX_GALE_KT = 34.0   # Beaufort 8, the Cruise profile's gale
+WX_HS_M = 3.5       # a sea worth a line in the log
 
 _LOCK = threading.RLock()
 _last_tick = 0.0
@@ -260,12 +266,68 @@ def record_route_events(voy: Optional[dict], clock: Optional[dict], now: datetim
         when = _time_at_sail_nm(clock, ev["sailNm"])
         if when is None or when > now:
             continue
-        key = re.sub(r"[^a-z0-9]+", "-", str(ev.get("mrgid") or ev.get("siteId") or ev.get("name") or "").lower()).strip("-")
+        ident = ev.get("poeId") if ev["kind"] == "poe" else (ev.get("mrgid") or ev.get("siteId") or ev.get("name") or "")
+        key = re.sub(r"[^a-z0-9]+", "-", str(ident).lower()).strip("-")
         entries.append({
             "id": f"{ev['kind']}:{ev['event']}:{key}:{ev['idx']}",
             "t": to_iso(when),
             **{k: v for k, v in ev.items() if k != "idx"},
         })
+    # Pearl-derived lines are a *reading* of the pearls, not a record: as the
+    # warmer refines them (thin → rich, a better ZEE), the reading changes.
+    # Keep the journal equal to the current reading — never a pile of readings.
+    _drop_basis_not_in("pearl", {e["id"] for e in entries})
+    return _append(entries)
+
+
+def _drop_basis_not_in(basis: str, keep_ids: set) -> int:
+    """Remove entries of `basis` whose id is not in `keep_ids`."""
+    removed = 0
+    with _LOCK:
+        for path in sorted(journal_dir().glob("*.json")):
+            entries = _read_day(path.stem)
+            kept = [e for e in entries if e.get("basis") != basis or e.get("id") in keep_ids]
+            if len(kept) != len(entries):
+                removed += len(entries) - len(kept)
+                if kept:
+                    _write_day(path.stem, kept)
+                else:
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+    return removed
+
+
+def wx_entry_from_grib(grib: dict) -> Optional[dict]:
+    """A `wx` line derived from a journaled GRIB reading — or None when the
+    weather was unremarkable. Same numbers, same time, nothing added."""
+    wind = grib.get("windKnots")
+    hs = grib.get("hs")
+    gale = isinstance(wind, (int, float)) and wind >= WX_GALE_KT
+    sea = isinstance(hs, (int, float)) and hs >= WX_HS_M
+    if not gale and not sea:
+        return None
+    return {
+        "id": f"wx:{grib.get('id') or grib.get('cycle') or grib.get('t')}",
+        "kind": "wx",
+        "t": grib["t"],
+        "event": "gale" if gale else "sea",
+        "windKnots": wind,
+        "dirFromDeg": grib.get("dirFromDeg"),
+        "hs": hs,
+        "lat": grib.get("lat"),
+        "lon": grib.get("lon"),
+        "model": grib.get("model"),
+        "from": grib.get("id"),
+        "basis": "forecast",
+    }
+
+
+def record_wx(now: datetime) -> int:
+    """Derive `wx` entries from every journaled GRIB reading (idempotent)."""
+    del now
+    entries = [e for e in (wx_entry_from_grib(g) for g in latest(5000, kinds=("grib",))) if e]
     return _append(entries)
 
 
@@ -300,7 +362,12 @@ def record_grib(record: Optional[dict], clock: Optional[dict], now: datetime) ->
         "source": record.get("source"),
         "basis": "forecast",
     }
-    return _append([entry]) > 0
+    added = _append([entry]) > 0
+    if added:
+        wx = wx_entry_from_grib(entry)
+        if wx:
+            _append([wx])
+    return added
 
 
 # ── notes ───────────────────────────────────────────────────────────────────
@@ -347,10 +414,14 @@ def tick(voy: Optional[dict], now: datetime, *, force: bool = False) -> Dict[str
         out["routeEvents"] = record_route_events(voy, clock, now)
     except Exception:  # the pearls never break the journal
         out["routeEvents"] = 0
+    try:
+        out["wx"] = record_wx(now)
+    except Exception:
+        out["wx"] = 0
     return out
 
 
-EVENT_KINDS = ("stop", "grib", "note", "zee", "amp")
+EVENT_KINDS = ("stop", "grib", "note", "zee", "amp", "poe", "wx")
 EVENTS_MAX = 800
 
 
