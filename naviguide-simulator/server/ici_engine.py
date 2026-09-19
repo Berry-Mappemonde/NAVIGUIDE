@@ -90,10 +90,12 @@ _wpi_cache: dict = {"data": None, "ts": 0.0}
 _WPI_TTL = 86_400.0
 
 # Thin bags (the along pearls, 12 nm apart) are the same for every visitor
-# and every replay of the film: one lookup per 0.02° cell, kept 6 h. Without
-# it a fast playback asked MarineRegions + Overpass thousands of times.
+# and every replay of the film: one lookup per 0.02° cell, kept 7 days (ZEE,
+# ports of entry, MPA and harbours move slowly; ici_warm persists them on
+# disk). Without it a fast playback asked MarineRegions + Overpass thousands
+# of times.
 _thin_cache: dict[str, dict] = {}
-_THIN_TTL = 6 * 3600.0
+_THIN_TTL = 7 * 86400.0
 _THIN_MAX = 20_000
 
 

@@ -135,7 +135,8 @@ export function useIciDossier({
   const lonB = boat ? Math.round(wrapLon(boat.lon) * 20) / 20 : null;
   const thinBag = useMemo(() => {
     if (fresh || !boat || typeof nearestBag !== "function") return null;
-    return nearestBag({ lat: latB, lon: lonB }, 15);
+    // Far ahead the pearls sit 48 nm apart: the nearest one is at most 24 nm away.
+    return nearestBag({ lat: latB, lon: lonB }, 26);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fresh, nearestBag, latB, lonB]);
   const effective = fresh || thinBag;
