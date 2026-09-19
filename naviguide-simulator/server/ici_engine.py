@@ -8,6 +8,7 @@ Pas de Tavily, pas de LLM.
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 import re
@@ -36,6 +37,8 @@ from ici_layers import (
     snapshot_ici_weather,
 )
 from weather_pipeline import bind_weather_transport, get_pipeline
+
+log = logging.getLogger("naviguide-simulator.ici")
 
 ICI_RADIUS_NM = 30
 MAX_POE = 4
@@ -448,9 +451,18 @@ def _first_plausible(records: list, lat: float, lon: float) -> dict | None:
 
 
 async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple[dict | None, str]:
-    """ZEE autour du bateau. Un point à quai n’est parfois pas dans le
-    polygone : on sonde alors 8 points à ~12 nm. Une ZEE trop loin
-    (gazetteer bavard) est refusée → haute mer."""
+    """ZEE autour du bateau. Depuis le lot B : point-dans-polygone local sur
+    les ZEE VLIZ (`zee_local`, source « vliz-local ») ; le gazetteer
+    MarineRegions ne sert plus que de repli tant que la couche n'est pas
+    chargée. Repli : un point à quai n’est parfois pas dans le polygone, on
+    sonde alors 8 points à ~12 nm ; une ZEE trop loin est refusée → haute mer."""
+    try:
+        import zee_local  # noqa: PLC0415
+        local = zee_local.zee_at(lat, lon)
+        if local is not zee_local.UNKNOWN:
+            return (local if local is not None else zee_from_record(None)), "vliz-local"
+    except Exception as exc:  # the local layer never breaks a bag
+        log.debug("ZEE locale indisponible : %s", exc)
     try:
         here = await _gazetteer_list(client, lat, lon)
         rec = _first_plausible(here, lat, lon)

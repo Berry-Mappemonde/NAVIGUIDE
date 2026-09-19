@@ -243,15 +243,76 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["done"] += 1
         await asyncio.sleep(pause_s)
 
+    # The local ZEE layer first (lot B): pearls filled with it never flap,
+    # and the pearls already stored get their ZEE re-read right away.
+    try:
+        import zee_local  # noqa: PLC0415
+        if await zee_local.ensure_loaded():
+            _state["zeeRefreshed"] = await refresh_zee_local()
+    except Exception as exc:
+        log.debug("ZEE locale au démarrage du chauffeur : %s", exc)
     # Two pearls in flight: a rich pearl waits ~8 s on Overpass + EMODnet +
     # BI; two at a time halves the first run without leaning on Overpass.
     for i in range(0, len(pearls), WARM_PARALLEL):
         await asyncio.gather(*(one(la, lo) for la, lo in pearls[i:i + WARM_PARALLEL]))
+    try:
+        _state["zeeRefreshed"] = await refresh_zee_local()
+    except Exception as exc:
+        log.debug("relecture ZEE locale : %s", exc)
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
     log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",
              _state["kind"], _state["done"], _state["cached"], _state["errors"])
     return status()
+
+
+async def refresh_zee_local(pause_s: float = 0.2) -> int:
+    """Re-read the ZEE of every stored pearl with the local VLIZ layer (lot B):
+    pearls filled from the gazetteer keep their rich layers, only `zee`
+    (and the ports of entry, which hang on the ZEE) change. Returns the
+    number of pearls corrected. No-op while the layer is not loaded."""
+    import pearl_store  # noqa: PLC0415
+    import zee_local  # noqa: PLC0415
+    from ici_engine import _poe_from_fc, _get_json, bi_base, thin_cache_put, zee_from_record  # noqa: PLC0415
+
+    if not zee_local.status()["loaded"]:
+        return 0
+    import httpx  # noqa: PLC0415
+    changed = 0
+    async with httpx.AsyncClient() as http:
+        for n, (key, row) in enumerate(list(pearl_store.iter_pearls())):
+            if n % 25 == 0:
+                await asyncio.sleep(0)  # let the API breathe between batches
+            bag = row["bag"]
+            if (bag.get("sources") or {}).get("zee") == "vliz-local":
+                continue
+            try:
+                lat, lon = float(key.split(":")[0]), float(key.split(":")[1])
+            except Exception:
+                continue
+            local = zee_local.zee_at(lat, lon)
+            if local is zee_local.UNKNOWN:
+                return changed
+            new_zee = local if local is not None else zee_from_record(None)
+            old = bag.get("zee") or {}
+            bag["sources"] = {**(bag.get("sources") or {}), "zee": "vliz-local"}
+            if (old.get("mrgid") != new_zee.get("mrgid")) or bool(old.get("ashore")) != bool(new_zee.get("ashore")):
+                bag["zee"] = {**new_zee, "gold": bool(old.get("gold")) if old.get("mrgid") == new_zee.get("mrgid") else False}
+                mrgid = new_zee.get("mrgid")
+                if mrgid:
+                    try:
+                        data = await _get_json(http, f"{bi_base()}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)
+                        bag["poe"] = _poe_from_fc(data, lat, lon)
+                    except Exception:
+                        bag["poe"] = []
+                else:
+                    bag["poe"] = []
+                changed += 1
+                await asyncio.sleep(pause_s)
+            thin_cache_put(key, bag, row["kind"], lat, lon)
+    if changed:
+        log.info("ZEE locale : %d perles corrigées", changed)
+    return changed
 
 
 _pearls_cache: dict[str, Any] = {"rev": None, "pearls": None}
