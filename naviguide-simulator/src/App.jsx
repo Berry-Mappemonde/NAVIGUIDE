@@ -20,7 +20,7 @@ import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
 import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
-import { expeditionStory } from "./engine/expeditionStory.js";
+import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
 import { layerForEntity } from "./engine/briefingLinks.js";
 import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
@@ -554,6 +554,11 @@ export default function App() {
     if (!routeReady) setSceneRevealed(false);
   }, [routeReady]);
 
+  // The Simulation keeps its playhead across a visit to Suivre: coming back
+  // resumes where the film was, not at Saint-Maur (revue du 19 sept.).
+  // Captured when leaving Simulation (selectView), read when coming back.
+  const simNmRef = useRef(0);
+
   const simPrimedRef = useRef(false);
   useEffect(() => {
     if (!isSimulation) {
@@ -565,8 +570,13 @@ export default function App() {
     voyage.setStartAt("saint-maur");
     sceneApiRef.current?.playback.setProfile("normal");
     sceneApiRef.current?.playback.pause();
-    sceneApiRef.current?.playback.seek(0, { jump: true });
+    sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
   }, [isSimulation, routeReady, voyage.setStartAt, sceneApi]);
+
+  // Playing the film follows the boat; a manual drag lets go (onManualNavigation).
+  useEffect(() => {
+    if (isSimulation && playback.playing) setCameraFollow(true);
+  }, [isSimulation, playback.playing]);
 
   const canRecompute = Boolean(
     isSimulation
@@ -620,6 +630,7 @@ export default function App() {
     gribModel: isSuivre ? official.live?.model ?? official.gribModel ?? null : null,
     gribStatus: isSuivre ? official.gribStatus : null,
     along: alongPack.index,
+    nearestBag: alongPack.nearestBag,
     skipperClickId,
     orders: skipper.orders,
   });
@@ -627,6 +638,22 @@ export default function App() {
   // Carte du moment : NOW (sécurité / décision) + FREE (information), nourries
   // par le registre jugé et le sac. Jamais un appel réseau de son côté.
   const momentFilmCum = isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm;
+  const momentLegId = hudLeg ? `${hudLeg.fromStop || ""}→${hudLeg.toStop || ""}` : null;
+  // What the escale card says when the boat leaves a stopover.
+  const momentLeg = useMemo(() => {
+    if (!hudLeg?.fromStop) return null;
+    const from = legendMarks.find((m) => m.name === hudLeg.fromStop);
+    const to = hudLeg.toStop ? legendMarks.find((m) => m.name === hudLeg.toStop) : null;
+    return {
+      fromStop: hudLeg.fromStop,
+      toStop: hudLeg.toStop || null,
+      holdDays: from?.holdHours > 0 ? Math.round(from.holdHours / 24) : 0,
+      legNm: from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null,
+      etaLabel: to?.iso ? dayMonth(to.iso, lang) : null,
+      lat: from?.lat,
+      lon: from?.lon,
+    };
+  }, [hudLeg?.fromStop, hudLeg?.toStop, legendMarks, lang]);
   const moments = useMomentCards({
     enabled: sceneReady && !drawingMode,
     events: iciPack.events,
@@ -635,8 +662,23 @@ export default function App() {
     playing: playback.playing,
     mode: isSuivre ? "suivre" : "simulation",
     lang,
-    legId: hudLeg ? `${hudLeg.fromStop || ""}→${hudLeg.toStop || ""}` : null,
+    legId: momentLegId,
+    leg: momentLeg,
   });
+
+  // Stop auto : le film s'arrête sur chaque nouvelle carte (NOW, et FREE hors
+  // boucle) pour laisser le temps de lire ; Lecture repart.
+  const lastCardKeysRef = useRef({ now: null, free: null });
+  useEffect(() => {
+    const nowKey = moments.now?.key || null;
+    const freeKey = moments.free?.key || null;
+    const prevKeys = lastCardKeysRef.current;
+    const newNow = Boolean(nowKey && nowKey !== prevKeys.now);
+    const newFree = Boolean(freeKey && freeKey !== prevKeys.free && !moments.free?.loop);
+    lastCardKeysRef.current = { now: nowKey, free: freeKey };
+    if (!isSimulation || !stopAuto || !playback.playing) return;
+    if (newNow || newFree) sceneApiRef.current?.playback.pause();
+  }, [moments.now?.key, moments.free?.key, moments.free?.loop, isSimulation, stopAuto, playback.playing]);
 
   // Le récit de la traversée (Suivre) : de Saint-Maur à la position du jour,
   // d'après l'horloge officielle et le journal. Zéro LLM.
@@ -728,7 +770,7 @@ export default function App() {
     setToolsOpen(cinemaSavedRef.current.tools);
     setCinemaMode(false);
     setHideFilmBar(false);
-    setCameraFollow(false);
+    // The camera keeps following the boat: leaving Cinema is not a manual drag.
   }, []);
 
   const toggleCinema = useCallback(() => {
@@ -748,6 +790,7 @@ export default function App() {
   }, [cinemaMode, cameraFollow, sidebarOpen, toolsOpen, recaptureBoat, leaveCinema]);
 
   const selectView = useCallback((next) => {
+    if (next === VIEW_SUIVRE && view === VIEW_SIMULATION) simNmRef.current = playheadNmRef.current;
     setView(next);
     if (next === VIEW_SUIVRE) {
       voyage.setStartAt(DEFAULT_START_AT);
@@ -764,7 +807,7 @@ export default function App() {
       voyage.setStartAt("saint-maur");
       sceneApiRef.current?.playback.setProfile("normal");
       sceneApiRef.current?.playback.pause();
-      sceneApiRef.current?.playback.seek(0, { jump: true });
+      sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
     }
   }, [
     cinemaMode,
@@ -772,6 +815,7 @@ export default function App() {
     sceneApi,
     sidebarOpen,
     toolsOpen,
+    view,
     voyage.setStartAt,
   ]);
 
@@ -783,11 +827,14 @@ export default function App() {
     if (isSuivre) sceneApiRef.current?.playback.setProfile("real");
   }, [isSuivre, sceneApi]);
 
+  // A new route (drawn or Berry again) starts its film at 0 — a mode switch does not.
   useEffect(() => {
     if (!isSimulation) return;
+    simNmRef.current = 0;
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(0);
-  }, [customRoute, isSimulation, sceneApi]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customRoute, sceneApi]);
 
   useEffect(() => {
     const onKey = (e) => {

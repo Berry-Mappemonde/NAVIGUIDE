@@ -11,6 +11,7 @@ import {
   filmEventMarks,
   lookaheadNmFor,
   maxPearlsFor,
+  nearestPearlBag,
   pearlKey,
   promoteLaterAtPlayhead,
   sampleLeg,
@@ -31,6 +32,24 @@ function lineFlat() {
 }
 
 describe("iciAlong sample", () => {
+  it("behindNm keeps the pearl just passed; nearestPearlBag re-centres its thin bag on the boat", () => {
+    const flat = lineFlat();
+    const ahead = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 50, maxPearls: 20 });
+    assert.ok(ahead[0].whenNm >= 0, "sans behindNm : rien derrière");
+    const around = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 50, maxPearls: 20, behindNm: 24 });
+    assert.ok(around[0].whenNm <= -20 && around[0].whenNm >= -24, `première perle derrière : ${around[0].whenNm}`);
+    const key = pearlKey(around[1].lat, around[1].lon, null);
+    const bags = new Map([[key, { at: { lat: around[1].lat, lon: around[1].lon }, zee: { name: "French EEZ", mrgid: 5677 }, poe: [], amp: [] }]]);
+    const boat = { lat: around[1].lat, lon: around[1].lon + 0.05 };
+    const near = nearestPearlBag(around, bags, boat, { maxNm: 15 });
+    assert.equal(near.thin, true);
+    assert.equal(near.zee.mrgid, 5677);
+    assert.deepEqual(near.at, boat, "le sac est recentré sur le bateau");
+    assert.ok(near.pearlNm < 3);
+    assert.equal(nearestPearlBag(around, bags, { lat: 0, lon: 0 }, { maxNm: 15 }), null, "trop loin : rien");
+    assert.equal(nearestPearlBag(around, new Map(), boat), null, "perle pas encore chargée : rien");
+  });
+
   it("samples this leg every ~12 nm and skips nothing on a sea line", () => {
     const flat = lineFlat();
     const pearls = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 0, maxPearls: 20 });

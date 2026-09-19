@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { narrateIci, phraseForEvent } from "./iciBriefing.js";
+import { cleanStoryText, narrateIci, phraseForEvent } from "./iciBriefing.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -465,6 +465,28 @@ describe("narrateIci", () => {
     }, "fr");
     assert.equal(text, "Récit NIM : entrée dans la ZEE espagnole.");
     assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("a story about the machinery is cleaned, or replaced by the local phrase (revue du 19 sept.)", () => {
+    const verbose = phraseForEvent({
+      type: "poe-ahead",
+      phrase: "Port d’entrée officiel devant : Porto-Vecchio (292 nm).",
+      story: {
+        status: "ready",
+        text: "**Briefing nautique**\n\nLe port d’entrée officiel se situe à Porto-Vecchio, à 292,3 nm. "
+          + "L’évènement est classé comme poe-ahead et porte l’identifiant poe-ahead:5682. "
+          + "Il a été jugé now avec la raison playhead. Le navire, un Leopard 46 de 14 m et 1,4 m de tirant d’eau, est en croisière. "
+          + "Aucune information supplémentaire sur la période ou un DOI n’est disponible.",
+      },
+    }, "fr");
+    assert.equal(verbose, "Le port d’entrée officiel se situe à Porto-Vecchio, à 292,3 nm.");
+    const onlyMeta = phraseForEvent({
+      type: "zee-exit",
+      phrase: "Retour en haute mer — plus de ZEE à déclarer.",
+      story: { status: "ready", text: "L’événement zee-exit est classé info. La décision a été prise immédiatement (juge)." },
+    }, "fr");
+    assert.equal(onlyMeta, "Retour en haute mer — plus de ZEE à déclarer.");
+    assert.equal(cleanStoryText(null), "");
   });
 
   it("tells a ZEE ahead on the track", () => {
