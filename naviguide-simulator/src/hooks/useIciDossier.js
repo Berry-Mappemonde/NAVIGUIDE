@@ -83,6 +83,7 @@ export function useIciDossier({
   along = null,
   nearestBag = null,
   orders = null,
+  stories = true,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -383,7 +384,8 @@ export function useIciDossier({
     }
     if (nextBrief) lastNowRef.current = nextBrief;
     for (const ev of ledgerRef.current) {
-      if (!shouldEnqueueStory(ev)) continue;
+      // A replay (lot E) reads the journal: no LLM story is bought for its events.
+      if (!stories || !shouldEnqueueStory(ev)) continue;
       ev.story = enqueueStory(storyPayload(ev, lang));
     }
     const ledger = ledgerRef.current;

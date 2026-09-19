@@ -21,6 +21,8 @@ import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
 import { useEscaleSheet } from "./hooks/useEscaleSheet.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
+import { useReplay } from "./hooks/useReplay.js";
+import { speak, stopSpeaking } from "./utils/speak.js";
 import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -313,7 +315,11 @@ export default function App() {
   const officialClock = voyage.clock || official.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
-  const live = isSuivre ? official.live : vessel.live;
+  // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
+  // stands in for the live one — the scene, the clock line, the story and
+  // the cards all read `live`. Suivre only; Stop or the end hands back.
+  const replay = useReplay({ clock: officialClock, journal: officialJournal.journal, enabled: isSuivre, lang });
+  const live = isSuivre ? (replay.active && replay.live ? replay.live : official.live) : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
   const playheadReady = playheadAligned({
     isSuivre,
@@ -597,11 +603,13 @@ export default function App() {
     }
     if (!routeReady || !live || userPreview) return;
     const target = Number(live.filmNm) || 0;
-    if (Math.abs(playback.nm - target) > 2) {
-      sceneApiRef.current?.playback.seek(target, { jump: false });
+    // Replay (lot E): the boat moves ~200 nm per second of wall clock — jump
+    // every frame rather than pile up eased seeks.
+    if (Math.abs(playback.nm - target) > (live.replay ? 0.2 : 2)) {
+      sceneApiRef.current?.playback.seek(target, { jump: Boolean(live.replay) });
     }
     livePrimedRef.current = true;
-  }, [routeReady, isSuivre, live?.filmNm, userPreview, playback.nm, sceneApi]);
+  }, [routeReady, isSuivre, live?.filmNm, live?.replay, userPreview, playback.nm, sceneApi]);
 
   useEffect(() => {
     if (gateReady) setSceneRevealed(true);
@@ -657,6 +665,7 @@ export default function App() {
 
   const iciPack = useIciDossier({
     enabled: Boolean(cast),
+    stories: !replay.active,
     cast,
     snappedPosition: legContext?.snappedPosition,
     polarMeta: polarData,
@@ -715,7 +724,7 @@ export default function App() {
     };
   }, [hudLeg?.fromStop, hudLeg?.toStop, legendMarks, lang]);
   const moments = useMomentCards({
-    enabled: sceneReady && !drawingMode,
+    enabled: sceneReady && !drawingMode && !replay.active,
     events: iciPack.events,
     bag: iciPack.dossier,
     filmCum: momentFilmCum,
@@ -759,6 +768,41 @@ export default function App() {
     ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
     : (iciPack.briefing || null);
 
+  // Replay voice (lot E): each time the story gains a paragraph — a leg
+  // closed, the next one begun — the newly current paragraph is read aloud.
+  // Same browser voice as « Écouter », no LLM. Stopped with the replay.
+  const spokenRef = useRef({ count: 0, text: "" });
+  useEffect(() => {
+    if (!replay.active) {
+      if (spokenRef.current.text) stopSpeaking();
+      spokenRef.current = { count: 0, text: "" };
+      return;
+    }
+    const last = storyParagraphs[storyParagraphs.length - 1] || "";
+    if (!replay.voice || !last || last === spokenRef.current.text) return;
+    if (storyParagraphs.length !== spokenRef.current.count || !spokenRef.current.text) {
+      spokenRef.current = { count: storyParagraphs.length, text: last };
+      stopSpeaking();
+      speak(last, lang);
+    }
+  }, [replay.active, replay.voice, storyParagraphs, lang]);
+
+  const recaptureRef = useRef(null);
+  const replayControls = useMemo(() => (isSuivre && officialClock ? {
+    active: replay.active,
+    progress: replay.progress,
+    voice: replay.voice,
+    onStart: () => {
+      if (replay.start()) {
+        // The camera picks the replayed boat up and follows it (same as Cinema's recapture).
+        recaptureRef.current?.();
+        setSidebarOpen(true);
+      }
+    },
+    onStop: replay.stop,
+    onVoice: replay.setVoice,
+  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.start, replay.stop, replay.setVoice]);
+
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
 
@@ -793,6 +837,7 @@ export default function App() {
     setCameraFollow(true);
     setCinemaRecapture((n) => n + 1);
   }, []);
+  recaptureRef.current = recaptureBoat;
 
   /** BI toggle setter for a briefing entity's layer (null when the layer has no toggle). */
   const LAYER_SETTER = {
@@ -1463,6 +1508,7 @@ export default function App() {
         journalLoading={officialJournal.loading}
         journalError={officialJournal.error}
         story={storyParagraphs}
+        storyReplay={replay.active}
         skipperNotice={skipper.notice}
         view={view}
         legContext={sidebarHudLeg}
@@ -1475,9 +1521,9 @@ export default function App() {
         canRecompute={canRecompute}
         recomputeBusy={vessel.busy}
         onGoLive={goLive}
-        momentNow={sceneReady ? moments.now : null}
-        momentNowLeft={moments.nowLeft}
-        onMomentDismiss={moments.dismiss}
+        momentNow={replay.active ? replay.card : (sceneReady ? moments.now : null)}
+        momentNowLeft={replay.active ? 0 : moments.nowLeft}
+        onMomentDismiss={replay.active ? replay.dismissCard : moments.dismiss}
         momentFree={sceneReady ? moments.free : null}
         momentFreeLeft={moments.freeLeft}
         onMomentNext={moments.next}
@@ -1660,6 +1706,7 @@ export default function App() {
         }}
         storiesPending={(iciPack.events || []).filter((e) => e.story?.status === "pending").length}
         speechText={speechText}
+        replay={replayControls}
         view={view}
         onView={drawingMode ? undefined : selectView}
         gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
@@ -1683,9 +1730,9 @@ export default function App() {
       {!drawingMode && sceneReady && !sidebarOpen ? (
         <>
           <MomentNowCard
-            card={moments.now}
-            left={moments.nowLeft}
-            onDismiss={moments.dismiss}
+            card={replay.active ? replay.card : moments.now}
+            left={replay.active ? 0 : moments.nowLeft}
+            onDismiss={replay.active ? replay.dismissCard : moments.dismiss}
             onFocus={handleBriefingFocus}
           />
           <FreeMomentBlock

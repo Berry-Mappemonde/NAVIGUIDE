@@ -35,6 +35,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   cinema,
   onCinema,
   hideBar = false,
+  replay = null,
   onHideBar,
   liveSpeed,
   windKind,
@@ -223,7 +224,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        {(showPlaybackControls || showStopAuto || showSpeeds || onView) ? (
+        {(showPlaybackControls || showStopAuto || showSpeeds || onView || replay) ? (
           <div className="flex items-center gap-1.5 mt-1">
             {showPlaybackControls ? (
               <>
@@ -282,6 +283,47 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   {t(p.labelKey)}
                 </button>
               ))}
+            </div>
+          ) : null}
+          {replay ? (
+            <div className="flex items-center gap-1 ml-1" data-testid="replay-controls">
+              {replay.active ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={replay.onStop}
+                    data-testid="replay-stop"
+                    className="h-7 px-2 rounded-md text-[10px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
+                    title={t("replayStopTitle")}
+                  >
+                    ■ {t("replayStop")}
+                  </button>
+                  <div className="w-20 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
+                    <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={replay.onStart}
+                  data-testid="replay-start"
+                  className="h-7 px-2 rounded-md text-[10px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap"
+                  title={t("replayStartTitle")}
+                >
+                  ↺ {t("replayStart")}
+                </button>
+              )}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(replay.voice)}
+                onClick={() => replay.onVoice?.(!replay.voice)}
+                data-testid="replay-voice"
+                className={`h-7 px-2 rounded-md text-[10px] font-semibold border ${replay.voice ? "bg-sky-600/40 border-sky-400/40 text-sky-100" : "bg-white/5 border-white/10 text-white/70"}`}
+                title={replay.voice ? t("replayVoiceOn") : t("replayVoiceOff")}
+              >
+                🔊
+              </button>
             </div>
           ) : null}
           {onView ? (
