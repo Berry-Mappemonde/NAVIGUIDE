@@ -294,7 +294,7 @@ function parseSentinelId(id) {
   return { sat: m[1], level: m[2], date: `${m[3]}-${m[4]}-${m[5]}`, tile: m[6] };
 }
 
-function satelliteSentence(dossier, lang) {
+export function satelliteSentence(dossier, lang) {
   const en = isEn(lang);
   const s = dossier?.satellites;
   if (!s) return "";
@@ -410,7 +410,10 @@ function reviewSentence(dossier, lang) {
       : `règles AMP ${r.amp.gold_on ? "vérifiées" : "non vérifiées"}`);
   }
   if (!bits.length) {
-    if (!r.reason || r.reason === "no_entity") return "";
+    // No sheet to tell: nothing to check here, or the sheet is an internal
+    // (admin) status of Blue Intelligence — the visitor is not the one
+    // missing a key, so the briefing stays silent about it.
+    if (!r.reason || r.reason === "no_entity" || r.reason === "review_requires_admin") return "";
     return en
       ? `Verification sheet: ${why(r.reason, lang)}.`
       : `Fiche de vérification : ${why(r.reason, lang)}.`;
@@ -587,7 +590,7 @@ function depthSentence(dossier, lang) {
     : `Profondeur au large : environ ${m} m (GEBCO Compilation Group ; indicatif, ne convient pas à la navigation).`;
 }
 
-function climatologySentence(dossier, lang) {
+export function climatologySentence(dossier, lang) {
   const en = isEn(lang);
   const c = dossier?.climatology;
   if (!c) return "";
