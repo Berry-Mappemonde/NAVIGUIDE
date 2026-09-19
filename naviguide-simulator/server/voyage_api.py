@@ -293,7 +293,10 @@ def _check_voyage_size(body: VoyageCreate) -> None:
             lat, lon = float(p["lat"]), float(p["lon"])
         except Exception as exc:
             raise HTTPException(400, "point sans lat/lon") from exc
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        # Le film déplie les longitudes pour ne pas couper l'antiméridien
+        # (Papeete → Wallis → Nouméa dépasse 180°). On borne le tour de
+        # globe, pas la valeur brute : refuser > 180 cassait le Suivre.
+        if not (-90 <= lat <= 90 and -540 <= lon <= 540) or lat != lat or lon != lon:
             raise HTTPException(400, "point hors limites")
 
 
