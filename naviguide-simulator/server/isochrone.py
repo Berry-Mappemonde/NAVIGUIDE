@@ -230,6 +230,29 @@ def default_wave_nogo(wind_fn: Callable, hs_limit: float = WAVE_NOGO_M):
     return fn
 
 
+def skipper_nogo(wind_fn: Callable, *, wind_max_kt: Optional[float] = None,
+                 hs_max_m: Optional[float] = None) -> Callable:
+    """Lot G : les ordres du skipper comme zones interdites du routage — un
+    pas d'isochrone qui tombe dans un vent ≥ wind_max_kt ou une mer
+    ≥ hs_max_m est écarté. Sans chiffre, seule la mer forte par défaut
+    (WAVE_NOGO_M) reste interdite, comme avant. Une case sans donnée n'est
+    jamais interdite (rien d'inventé)."""
+    hs_limit = float(hs_max_m) if hs_max_m is not None and hs_max_m > 0 else WAVE_NOGO_M
+    wind_limit = float(wind_max_kt) if wind_max_kt is not None and wind_max_kt > 0 else None
+
+    def fn(lat: float, lon: float, t: datetime) -> bool:
+        w = wind_fn(lat, lon, t) or {}
+        hs = w.get("hs")
+        if hs is not None and float(hs) >= hs_limit:
+            return True
+        if wind_limit is not None:
+            spd = w.get("speedKnots")
+            if spd is not None and float(spd) >= wind_limit:
+                return True
+        return False
+    return fn
+
+
 def nudge_offshore(lat: float, lon: float, max_nm: float = 40.0) -> Tuple[float, float]:
     """Si le départ est sur terre (corde trop droite), glisse vers la mer."""
     if not is_land(lat, lon):

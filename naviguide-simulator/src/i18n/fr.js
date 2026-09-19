@@ -181,6 +181,8 @@ export default {
   replayVoiceOn: "Voix du replay activée (le récit est lu à chaque jambe)",
   replayVoiceOff: "Voix du replay coupée",
   replayBadge: "Replay",
+  recomputeConstraintsSkipper: "Sous les ordres du skipper : vent < {wind}, mer < {hs} — aucun pas de route dans ces conditions.",
+  recomputeConstraintsDefault: "Sans ordre du skipper : seule la mer ≥ {hs} est évitée.",
   skipperPlanningGrib:     "polaire × vent GRIB ({tws} kn, TWA {twa}°)",
   skipperPlanningClimo:    "polaire × vent typique ({tws} kn, TWA {twa}°)",
   brandTitle: "NAVIGUIDE simulator",
