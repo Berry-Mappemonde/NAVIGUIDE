@@ -1061,6 +1061,11 @@ export default function App() {
     berryFetchIdRef.current += 1;
     setExpeditionPlan(null);
     setBriefingLoading(false);
+    // Lot I: nothing of the official route lingers on the map while drawing —
+    // no briefing pin, no escale sheet, no replay.
+    sceneApiRef.current?.briefing?.clear?.();
+    setEscaleStop(null);
+    if (replay.active) replay.stop();
   };
 
   const handleDrawCancel = () => {
@@ -1350,6 +1355,25 @@ export default function App() {
   };
 
   const drawingMessage = drawnPoints.length === 0 ? t("drawStart") : drawnPoints.length === 1 ? t("drawFirstStop") : t("drawNextStop");
+  // Lot I: what the drawn route is so far — the boxes describe it, not the official route.
+  const drawing = useMemo(() => {
+    if (!drawingMode) return null;
+    let nm = 0;
+    let failed = 0;
+    for (const seg of drawnSegments) {
+      if (seg?.failed) failed += 1;
+      const c = seg?.coords || [];
+      for (let i = 1; i < c.length; i++) nm += haversineNm(c[i - 1][1], c[i - 1][0], c[i][1], c[i][0]);
+    }
+    return {
+      points: drawnPoints.map((p, i) => ({ name: p.name || `${t("drawPointLabel")} ${i + 1}`, lat: p.lat, lon: p.lon })),
+      distanceNm: Math.round(nm),
+      segments: drawnSegments.length,
+      failed,
+      loading: drawingLoading,
+      message: drawingMessage,
+    };
+  }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, t]);
   const statsSegs = useMemo(
     () => (customRoute ? featuresToSegments(customRoute) : segments),
     [customRoute, segments],
@@ -1502,6 +1526,8 @@ export default function App() {
         onCustomDelete={handleCustomDelete}
         canContinueDraw={drawnPoints.length > 0}
         canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
+        drawing={drawing}
+        onDrawUndo={handleDrawUndo}
         isCockpit={false}
         polarData={polarData}
         briefingLoading={iciPack.loading || briefingLoading}
@@ -1562,6 +1588,7 @@ export default function App() {
         filmNm={sidebarPlaybackNm}
         onSeekEscale={handleSidebarSeek}
         onEscaleSheet={openEscaleSheet}
+        drawing={drawing}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}
@@ -1712,6 +1739,7 @@ export default function App() {
         storiesPending={(iciPack.events || []).filter((e) => e.story?.status === "pending").length}
         speechText={speechText}
         replay={replayControls}
+        drawing={drawing}
         view={view}
         onView={drawingMode ? undefined : selectView}
         gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}

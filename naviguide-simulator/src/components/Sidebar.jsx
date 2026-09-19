@@ -211,7 +211,7 @@ function BriefingText({ segments, onFocus, t }) {
 export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
-  canFinishDraw,
+  canFinishDraw, drawing = null, onDrawUndo,
   isCockpit, polarData, view = VIEW_SUIVRE,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
@@ -290,6 +290,33 @@ export const Sidebar = memo(function Sidebar({
               <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">{t("briefingDrawHint")}</p>
             </div>
           )}
+          {isDrawing && drawing ? (
+            <div data-testid="drawing-points" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug flex-1">
+                  {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString()} nm
+                </div>
+                {drawing.points.length && onDrawUndo ? (
+                  <button type="button" onClick={onDrawUndo} className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-white/80" title={t("drawingUndoLast")}>
+                    ↶ {t("drawingUndoLast")}
+                  </button>
+                ) : null}
+              </div>
+              {drawing.points.length ? (
+                <ol className="space-y-0.5">
+                  {drawing.points.map((p, i) => (
+                    <li key={`${p.lat}-${p.lon}-${i}`} className="text-[11px] text-slate-100 leading-snug flex items-baseline gap-1">
+                      <span className="text-[9px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
+                      <span className="truncate">{p.name}</span>
+                      <span className="ml-auto text-[9px] text-slate-500 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {p.lon.toFixed(2)}°</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-[10px] text-slate-400 leading-snug">{drawing.message}</p>
+              )}
+            </div>
+          ) : null}
 
           {!isDrawing ? (
             <SimulationPanel
