@@ -7,6 +7,7 @@ import { EscaleLegend } from "./EscaleLegend.jsx";
 import { PlanReview } from "./PlanReview.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
+import { summarizeLegs } from "../utils/geo.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
@@ -179,18 +180,29 @@ function DrawingBox({ drawing }) {
   );
 }
 
-function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null }) {
-  const { t } = useLang();
-  const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—";
+function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null, segments = [] }) {
+  const { t, lang } = useLang();
+  const locale = lang === "fr" ? "fr-FR" : "en-US";
+  const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString(locale)} nm` : "—";
+  const summary = summarizeLegs(escaleMarks, segments);
+  const routerWaypoints = waypointCount ?? routeSegmentCount ?? summary.waypoints;
+  const vertexCount = summary.points || routeCounts?.points || 0;
+  const legsWord = summary.legs === 1 ? t("routeLegOne") : t("routeLegsShort");
+  const escalesWord = summary.escales === 1 ? t("routeEscaleOne") : t("routeEscalesShort");
+  const pointsHint = t("routePointsHint", {
+    waypoints: Number(routerWaypoints).toLocaleString(locale),
+    points: Number(vertexCount).toLocaleString(locale),
+  });
   if (drawing) return <DrawingBox drawing={drawing} />;
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
       <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary">
         <span className="font-semibold text-white">{nm}</span>
-        <span>· {routeSegmentCount ?? routeCounts.total} {t("routeSegmentsShort")}</span>
-        <span>· {routeCounts.maritime} {t("routeSeaShort")} / {routeCounts.overland} {t("routeLandShort")}</span>
-        <span>· {waypointCount} {t("waypoints").toLowerCase()}</span>
-        <span>· {routeCounts.points.toLocaleString()} {t("routePointsShort")}</span>
+        <span>· {summary.legs} {legsWord} ({summary.sea} {t("routeSeaShort")}, {summary.land} {t("routeLandShort")})</span>
+        <span>· {summary.escales} {escalesWord}</span>
+        <span className="cursor-help border-b border-dotted border-white/30" title={pointsHint}>
+          · {vertexCount.toLocaleString(locale)} {t("routePointsShort")}
+        </span>
       </div>
       <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} onSheet={onEscaleSheet} />
     </div>
@@ -336,6 +348,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               routeCounts={routeCounts}
               waypointCount={points.length}
               escaleMarks={escaleMarks}
+              segments={segments}
               filmNm={filmNm}
               onSeekEscale={onSeekEscale}
               onEscaleSheet={onEscaleSheet}
