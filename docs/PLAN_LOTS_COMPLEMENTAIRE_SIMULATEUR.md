@@ -198,11 +198,13 @@ Quand tu as fini : numéro de PR, compteurs de tests, liste des captures, ce que
 | [`PLAN_NEMOTRON_NEBIUS_TAVILY.md`](PLAN_NEMOTRON_NEBIUS_TAVILY.md) | L1 → L6 | **L1 tout de suite** (éligibilité) ; L2–L3 avant la vidéo ; L4–L6 ensuite |
 | [`PLAN_FILM_REVOIR_EXPEDITION.md`](PLAN_FILM_REVOIR_EXPEDITION.md) | F1 → F5 | après P2 et O ; F3 après L1 ; c'est la vidéo de soumission |
 | [`PLAN_AUDIT_CALCULS.md`](PLAN_AUDIT_CALCULS.md) | C1 → C5 | C1 tout de suite (résumé de l'expédition) ; C2 (hindcast) dès que possible : il change la position du bateau, donc le film |
-| [`PLAN_GLOBE_3D.md`](PLAN_GLOBE_3D.md) | G0 → G8 | G0 (éprouvette) quand un worker est libre ; le reste après la soumission sauf si G0–G3 tiennent avant |
+| [`PLAN_GLOBE_3D.md`](PLAN_GLOBE_3D.md) v2 | G0 → G7 | **Leaflet reste** ; le globe est un onglet « Globe » (MapLibre GL JS 6) ou une deuxième application — décision au lot G0 ; le reste après la soumission sauf si G0–G2 tiennent avant |
+| [`LOTS_ORDRE_ET_PROMPTS.md`](LOTS_ORDRE_ET_PROMPTS.md) | tous | la liste ordonnée et le **prompt complet de chaque lot** ; `infra/agents/run_lots.py` enchaîne les lots en agents Cloud la nuit |
 | [`HACKATHON_DEVPOST_SOUMISSION.md`](HACKATHON_DEVPOST_SOUMISSION.md) | textes, vidéo, formulaire | remplir après L1 en prod ; soumettre avant le 30 octobre 10:00 PT |
 | [`ESPRIT_DE_L_APPLICATION.md`](ESPRIT_DE_L_APPLICATION.md) | — | référence pour relire les diagrammes du dépôt et la description |
 
 Ordre conseillé pour un seul worker : **P2 → C1 → L1 → M → N → O → F1 → F2 →
-L2 → F3 → F4 → L3 → F5 → S → T → C2 → C3 → U → L4 → L5 → C4 → C5 → L6 → G0…**
+L2 → F3 → F4 → L3 → F5 → S → T → C2 → C3 → U → L4 → L5 → C4 → C5 → L6 → G0 → G1 → G2 → G3 → G4 → G5 → G6 → G7**
+(c'est l'ordre de `LOTS_ORDRE_ET_PROMPTS.md`).
 Avec deux workers : l'un sur P2 → M → N → O → S → T → U (UI), l'autre sur
 C1 → L1 → L2 → C2 → L3 (serveur) ; le film (F1–F5) quand les deux se rejoignent.

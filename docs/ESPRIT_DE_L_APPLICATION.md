@@ -119,15 +119,136 @@ Nebius Token Factory, avec un filtre qui refuse tout nombre absent des faits
   Panneau droit = **l'expédition** (résumé, escales et fiches, revue de plan,
   polaire, calques, ordres). Barre film = temps, modes, voix, replay.
 
-## 3. Ce qu'il faut retrouver dans un diagramme du dépôt
+## 3. Le diagramme généré depuis le dépôt (20 sept.) : ce qui est juste, ce qui manque
 
-Un diagramme juste montre : (1) deux produits, Blue Intelligence (MongoDB,
-FastAPI `backend/`) et le simulateur (FastAPI `naviguide-simulator/server/`,
-React + Leaflet `src/`), reliés par `/bi/export/*` et `BI_API_URL` ; (2) la
-chaîne § 2 avec SQLite au milieu ; (3) les LLM **en bout de chaîne**, derrière
+Le porteur a fait produire un diagramme d'architecture par un outil d'analyse
+du dépôt (cinq bandes : User Experience, Blue Intelligence API, NAVIGUIDE
+Runtime, Data Intelligence, External Systems). Vérification fichier par
+fichier contre le code :
+
+**Juste (Blue Intelligence).** Les fichiers existent et les flèches sont
+bonnes : `frontend/src/App.js` → `ReviewView.js`, `BatchHub.js`, `MapView.js`,
+panneaux de mode ; `backend/app/main.py` (le « REST Server ») → routeurs
+(`backend/app/routers/project_runs.py`, `exports.py`, `climatology.py`…) →
+services (`backend/app/services/poe_pipeline.py`, `swarm_pipeline.py`,
+`science_build.py`, `climatology_*.py`) → cœur (`backend/app/core/extract.py`,
+`geo.py`, `llm.py`, `judge.py`) → MongoDB, web maritime, fournisseurs LLM,
+catalogues science, OpenStreetMap. Remarque : `backend/server.py` n'a plus
+que 5 lignes ; l'application est `backend/app/` — `docs/ARCHITECTURE.md`
+est en retard sur ce point.
+
+**Faux ou trompeur (NAVIGUIDE).**
+
+1. `Risk Engine [risk_engine.py]` n'appartient pas au simulateur : le fichier
+   est `naviguide/naviguide_workspace/naviguide_agent3/risk_engine.py`, un
+   **ancien agent NAVIGUIDE** hors produit. Le simulateur n'a pas de moteur de
+   risque ; ses « risques » sont les cartes NOW par règles et le conseil de
+   route par isochrones.
+2. `Plan Review [usePlanReview.js]` est un **hook React** (client) posé parmi
+   les moteurs serveur ; le serveur est `server/plan_review.py`.
+3. `Nearby Context → reads nearby data → MongoDB` : **faux**. Le simulateur ne
+   touche pas MongoDB (`pearl_store.py` : « Pas de MongoDB côté simulateur »).
+   Il interroge l'API Blue Intelligence en HTTP (`BI_API_URL`,
+   `/climatology/point`, `/marinas`, `/amp`, `/bi/export/poe.geojson`).
+4. Il manque **toute la chaîne du § 2** : la mémoire SQLite (`pearl_store.py`),
+   le réchauffage des perles (`ici_warm.py`), l'horloge (`voyage_clock.py`,
+   `forecast_blend.py`, `forecast_cube.py`, `grib_fetch.py`), le journal
+   (`voyage_journal.py`), les ZEE locales (`zee_local.py`), les isochrones
+   (`isochrone.py`), la fiche d'escale (`escale_api.py`), le chat
+   (`logbook_chat.py`), la cascade LLM et son cache (`story_cascade.py`,
+   `story_cache.py`), la météo Copernicus (`weather_pipeline.py`), et côté
+   client les moteurs purs (`voyageClock.js`, `momentCard.js`,
+   `expeditionStory.js`, `replay.js`) et la carte Leaflet
+   (`MapSceneController.js`).
+5. Il manque des **systèmes externes** du simulateur : Copernicus Marine,
+   Open-Meteo / GFS (GRIB), Marine Regions (VLIZ), EMODnet, WPI, et — à venir —
+   Nebius Token Factory et Tavily.
+6. Le « Navigator » est à la fois l'utilisateur de Blue Intelligence et le
+   skipper du simulateur ; en réalité deux publics : l'**opérateur** (revue,
+   lots, console) côté Blue Intelligence, l'**équipage / le public** côté
+   simulateur.
+
+### Diagramme corrigé (à comparer à celui de l'outil)
+
+```mermaid
+flowchart TB
+  subgraph BI["Blue Intelligence — la mémoire des sources"]
+    direction TB
+    BIUI["Opérateur · frontend/src/App.js<br/>MapView · ReviewView · BatchHub"]
+    BIAPI["FastAPI backend/app/main.py<br/>routers: projects, project_runs, exports, formalities, climatology, science, amp, marinas"]
+    BISVC["services: poe_pipeline, swarm_pipeline, science_build,<br/>marina_world, climatology_*, zee_crossings"]
+    BICORE["core: extract, geo, llm, judge, nvidia, tinyfish"]
+    MONGO[("MongoDB")]
+    BIUI --> BIAPI --> BISVC --> BICORE
+    BISVC <--> MONGO
+  end
+
+  subgraph EXTBI["Sources Blue Intelligence"]
+    WEB["Web maritime · pages officielles (PoE)"]
+    OSM["OpenStreetMap / Overpass"]
+    SCI["Catalogues science"]
+    LLM1["Fournisseurs LLM (OpenRouter, NIM)"]
+  end
+  BICORE --> WEB & OSM & SCI & LLM1
+
+  subgraph SIM["NAVIGUIDE simulator — le briefing qui glisse"]
+    direction TB
+    subgraph SRV["FastAPI naviguide-simulator/server"]
+      MAIN["main.py"]
+      WARM["ici_warm.py → perles"]
+      ICI["ici_engine.py · sac ici()"]
+      ZEE["zee_local.py"]
+      CLOCK["voyage_clock.py · forecast_blend · forecast_cube · grib_fetch"]
+      JOURNAL["voyage_journal.py"]
+      ROUTE["route_engine.py (searoute) · isochrone.py"]
+      ESC["escale_api.py · logbook_chat.py · plan_review.py"]
+      LLM2["story_cascade.py → story_cache.py<br/>(Token Factory · Nemotron — filtre des nombres)"]
+      SQLITE[("SQLite pearl_store.py")]
+      WX["weather_pipeline.py (Copernicus)"]
+    end
+    subgraph CLI["React + Leaflet naviguide-simulator/src"]
+      APP["App.jsx + hooks"]
+      ENG["engine: voyageClock · momentCard · expeditionStory · replay · skipperOrders"]
+      MAP["map/MapSceneController.js (Leaflet)"]
+      UI["Sidebar · ToolsSidebar · SimulationFilmBar · MomentCards · EscaleSheet · LogbookChat"]
+    end
+    MAIN --> WARM --> ICI --> SQLITE
+    ICI --> ZEE
+    MAIN --> CLOCK --> JOURNAL --> SQLITE
+    MAIN --> ROUTE
+    MAIN --> ESC --> LLM2 --> SQLITE
+    MAIN --> WX
+    APP --> ENG --> MAP
+    APP --> UI
+    APP <-->|"HTTP :8010"| MAIN
+  end
+
+  subgraph EXTSIM["Sources du simulateur"]
+    COP["Copernicus Marine (vent, vagues, courants)"]
+    OM["Open-Meteo / GFS (GRIB, archives)"]
+    VLIZ["Marine Regions VLIZ (ZEE)"]
+    EMOD["EMODnet · WPI"]
+    TF["Nebius Token Factory (Nemotron 3) · Tavily"]
+  end
+  WX --> COP
+  CLOCK --> OM
+  ZEE --> VLIZ
+  ICI -->|"BI_API_URL : /climatology, /marinas, /amp, /bi/export/poe.geojson"| BIAPI
+  ICI --> EMOD
+  LLM2 --> TF
+
+  SKIPPER(("Équipage / public")) --> APP
+  OPER(("Opérateur")) --> BIUI
+```
+
+Ce qu'un diagramme juste doit montrer, en quatre points : (1) **deux
+produits** reliés par l'API HTTP de Blue Intelligence, pas par une base
+commune ; (2) la chaîne du § 2 avec **SQLite au milieu** côté simulateur et
+MongoDB côté Blue Intelligence ; (3) les LLM **en bout de chaîne**, derrière
 un cache et un filtre, jamais en amont des faits ; (4) le client qui tient
-debout seul (repli « les couches n'ont pas répondu »). Un diagramme qui met un
-LLM au centre, ou qui fait parler la carte entière à un modèle, est faux.
+debout seul (repli « les couches n'ont pas répondu »). Un diagramme qui met
+un LLM au centre, un moteur de risque inexistant, ou une flèche du
+simulateur vers MongoDB, est faux.
 
 ## 4. Ce qui distingue le produit (pour le jury)
 
