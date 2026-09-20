@@ -140,6 +140,43 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   border-color: rgb(148 163 184 / 0.8) !important;
 }
 
+/* Mode clair — relecture des blocs du 19 sept. (lot I) : cartes NOW / FREE,
+   fiche d'escale, journal de bord, replay, tracé. Les accents pâles conçus
+   pour le fond sombre (emerald-200, sky-200, violet-200, amber-200, cyan-200)
+   deviennent leurs teintes foncées ; les fonds teintés translucides s'éclaircissent. */
+.light-mode .naviguide-sidebar-panel [class*="text-emerald-"],
+.light-mode .naviguide-film-bar [class*="text-emerald-"],
+.light-mode .naviguide-floating-card [class*="text-emerald-"] { color: rgb(4 120 87) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-sky-"],
+.light-mode .naviguide-film-bar [class*="text-sky-"],
+.light-mode .naviguide-floating-card [class*="text-sky-"] { color: rgb(3 105 161) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-cyan-"],
+.light-mode .naviguide-film-bar [class*="text-cyan-"],
+.light-mode .naviguide-floating-card [class*="text-cyan-"] { color: rgb(14 116 144) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-violet-"],
+.light-mode .naviguide-floating-card [class*="text-violet-"] { color: rgb(109 40 217) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-amber-"],
+.light-mode .naviguide-film-bar [class*="text-amber-"],
+.light-mode .naviguide-floating-card [class*="text-amber-"] { color: rgb(180 83 9) !important; }
+.light-mode .naviguide-sidebar-panel [class*="text-blue-2"],
+.light-mode .naviguide-sidebar-panel [class*="text-blue-3"] { color: rgb(29 78 216) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-emerald-950"],
+.light-mode .naviguide-sidebar-panel [class*="bg-emerald-900"] { background-color: rgb(236 253 245 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-950"],
+.light-mode .naviguide-sidebar-panel [class*="bg-sky-900"] { background-color: rgb(240 249 255 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-violet-950"] { background-color: rgb(245 243 255 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-amber-950"],
+.light-mode .naviguide-sidebar-panel [class*="bg-rose-950"] { background-color: rgb(255 251 235 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel [class*="bg-cyan-950"],
+.light-mode .naviguide-sidebar-panel [class*="bg-cyan-900"] { background-color: rgb(236 254 255 / 0.95) !important; }
+.light-mode .naviguide-sidebar-panel input[type="text"] {
+  background-color: rgb(255 255 255) !important;
+  color: rgb(15 23 42) !important;
+  border-color: rgb(148 163 184) !important;
+}
+.light-mode .naviguide-sidebar-panel input::placeholder { color: rgb(100 116 139) !important; }
+.light-mode .naviguide-film-bar [class*="bg-slate-950"] { background-color: rgb(255 255 255 / 0.96) !important; }
+
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
 
 .layer-fiche-popup {
