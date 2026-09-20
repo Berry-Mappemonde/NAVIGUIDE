@@ -19,11 +19,11 @@ def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
     assert "api.tokenfactory.nebius.com" in src
     assert "NAVIGUIDE_LLM_PROVIDERS" in src
-    assert "integrate.api.nvidia.com" in src  # NIM still behind the flag
+    assert "integrate.api.nvidia.com" in src  # NIM : 2e maillon
     assert "openrouter.ai" in src
     assert "api.anthropic.com" in src
     assert "tavily.com" not in src
-    assert providers() == ["tokenfactory", "openrouter", "claude"]
+    assert providers() == ["tokenfactory", "nim", "openrouter", "claude"]  # ordre du porteur (20 sept.)
 
 
 def test_need_page_only_https_from_pack():
