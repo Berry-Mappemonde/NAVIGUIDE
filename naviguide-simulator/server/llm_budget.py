@@ -179,6 +179,44 @@ def last_source() -> str | None:
     return val if isinstance(val, str) and val.strip() else None
 
 
+def _tavily_empty() -> dict[str, Any]:
+    return {"credits": 0, "calls": 0}
+
+
+def _tavily_key(day: str | None = None) -> str:
+    return f"{day or today()}:tavily"
+
+
+def tavily_usage(day: str | None = None) -> dict[str, Any]:
+    """Credits consumed today (1 credit per Tavily HTTP call, lot L3)."""
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(NS, _tavily_key(day))
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return _tavily_empty()
+    out = _tavily_empty()
+    for k in out:
+        try:
+            out[k] = int(val[k])
+        except (TypeError, ValueError, KeyError):
+            pass
+    return out
+
+
+def record_tavily(credits: int = 1) -> dict[str, Any]:
+    """Add one Tavily search/extract call (1 credit / call)."""
+    import pearl_store  # noqa: PLC0415
+
+    add = max(0, int(credits))
+    with _LOCK:
+        cur = tavily_usage()
+        cur["credits"] = int(cur["credits"]) + add
+        cur["calls"] = int(cur["calls"]) + 1
+        pearl_store.kv_put(NS, _tavily_key(), cur)
+        return dict(cur)
+
+
 def status() -> dict[str, Any]:
     """Shape for `/ici/warm/status` → `llm: {tier: {tokens, calls, usd}}`."""
     out: dict[str, Any] = {}
@@ -189,6 +227,8 @@ def status() -> dict[str, Any]:
             "calls": int(u["calls"]),
             "usd": float(u["usd"]),
         }
+    tv = tavily_usage()
+    out["tavily"] = {"credits": int(tv["credits"]), "calls": int(tv["calls"])}
     src = last_source()
     if src:
         out["lastSource"] = src

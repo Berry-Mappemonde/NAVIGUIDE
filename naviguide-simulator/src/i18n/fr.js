@@ -154,6 +154,8 @@ export default {
   momentAhead:        "dans {nm} nm",
   momentStoryPending: "récit en préparation…",
   momentSeeOnMap:     "Voir sur la carte",
+  truthBadgeVerified: "Vérifié le {date} · Tavily + Nemotron 3 Ultra",
+  truthBadgeUnverifiable: "Non revérifiable",
   eventBubbleChipWind: "Vent",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} j à quai",

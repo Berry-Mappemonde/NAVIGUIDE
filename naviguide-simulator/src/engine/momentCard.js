@@ -182,6 +182,82 @@ function journalEntityKind(entry) {
   return "place";
 }
 
+/** Verdict du juge (U6/U11) porté par l'événement, la fiche ou le sac. */
+export function eventTruth(ev) {
+  const p = ev?.payload || {};
+  if (ev?.truth) return ev.truth;
+  if (p.truth) return p.truth;
+  if (p.poe?.truth) return p.poe.truth;
+  if (Array.isArray(p.poe)) {
+    const hit = p.poe.find((x) => x && x.truth);
+    if (hit) return hit.truth;
+  }
+  return null;
+}
+
+export function truthForCard(card, bag) {
+  if (card?.truth) return card.truth;
+  const url = card?.entity?.url;
+  const name = card?.entity?.rawName || card?.entity?.name;
+  for (const p of bag?.poe || []) {
+    if (!p?.truth) continue;
+    if ((url && p.url === url) || (name && p.name === name)) return p.truth;
+  }
+  return bag?.truth || null;
+}
+
+/**
+ * Découpe le texte pour barrer les affirmations `unsupported` — jamais
+ * les supprimer. Si une phrase n'est pas dans le texte, elle est ajoutée
+ * barrée à la suite.
+ */
+export function strikeParts(text, unsupported) {
+  const src = String(text || "");
+  const phrases = (unsupported || [])
+    .filter((p) => typeof p === "string" && p.trim())
+    .map((p) => p.trim())
+    .sort((a, b) => b.length - a.length);
+  if (!src && !phrases.length) return [];
+  if (!phrases.length) return src ? [{ text: src, strike: false }] : [];
+
+  const walk = (chunk) => {
+    if (!chunk) return [];
+    let best = null;
+    const lower = chunk.toLowerCase();
+    for (const p of phrases) {
+      const i = lower.indexOf(p.toLowerCase());
+      if (i < 0) continue;
+      if (!best || i < best.i || (i === best.i && p.length > best.p.length)) {
+        best = { i, p: chunk.slice(i, i + p.length) };
+      }
+    }
+    if (!best) return [{ text: chunk, strike: false }];
+    return [
+      ...walk(chunk.slice(0, best.i)),
+      { text: best.p, strike: true },
+      ...walk(chunk.slice(best.i + best.p.length)),
+    ].filter((part) => part.text);
+  };
+
+  const parts = walk(src);
+  const lowerSrc = src.toLowerCase();
+  for (const p of phrases) {
+    if (lowerSrc.includes(p.toLowerCase())) continue;
+    parts.push({ text: p, strike: true, extra: true });
+  }
+  return parts.length ? parts : [{ text: src, strike: false }];
+}
+
+export function formatTruthDate(iso, lang = "fr") {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString(isEn(lang) ? "en-GB" : "fr-FR", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
 /** A moment card (NOW lane) from a journal line — the text the journal already formats. */
 export function cardFromJournalEntry(entry, lang = "fr") {
   if (!entry || !JOURNAL_CARD_KINDS.has(entry.kind)) return null;
@@ -217,6 +293,7 @@ export function cardFromJournalEntry(entry, lang = "fr") {
       : null,
     whenNm: 0,
     at: entry.t,
+    truth: entry.truth || null,
   };
 }
 
@@ -350,6 +427,7 @@ export function cardFromEvent(ev, lang = "fr") {
     filmCum: ev.filmCum ?? null,
     storyStatus: ev.story?.status || null,
     judgeReason: ev.judgeReason || null,
+    truth: eventTruth(ev),
   };
 }
 
@@ -493,6 +571,8 @@ export function advanceMoments(prev, {
     const lane = classifyMoment(ev, { filmCum, mode });
     if (!lane) continue;
     const card = cardFromEvent(ev, lang);
+    const truth = card.truth || truthForCard(card, bag);
+    if (truth) card.truth = truth;
     if (!card.text) continue;
     eventCards.set(card.key, card);
     if (seen.has(card.key)) continue;
@@ -508,9 +588,16 @@ export function advanceMoments(prev, {
   const refresh = (card) => {
     if (!card || card.origin !== "event") return card;
     const fresh = eventCards.get(card.key);
-    if (!fresh || sameText(fresh, card)) return card;
+    const truth = fresh?.truth || truthForCard(card, bag) || card.truth || null;
+    if (!fresh || (sameText(fresh, card) && truth === card.truth)) {
+      if (truth && truth !== card.truth) {
+        changed = true;
+        return { ...card, truth };
+      }
+      return card;
+    }
     changed = true;
-    return { ...card, text: fresh.text, storyStatus: fresh.storyStatus };
+    return { ...card, text: fresh.text, storyStatus: fresh.storyStatus, truth };
   };
   now = refresh(now);
   free = refresh(free);
@@ -519,10 +606,12 @@ export function advanceMoments(prev, {
 
   // 2. Bag → cards (balisage / climatologie → NOW, the rest → FREE).
   for (const card of infoItemsFromBag(bag, lang)) {
-    if (seen.has(card.key)) continue;
-    seen.add(card.key);
-    if (card.lane === LANE_NOW) nowQueue = pushCapped(nowQueue, { ...card, filmCum }, QUEUE_MAX.now);
-    else freeQueue = pushCapped(freeQueue, card, QUEUE_MAX.free);
+    const truth = truthForCard(card, bag);
+    const withTruth = truth ? { ...card, truth } : card;
+    if (seen.has(withTruth.key)) continue;
+    seen.add(withTruth.key);
+    if (withTruth.lane === LANE_NOW) nowQueue = pushCapped(nowQueue, { ...withTruth, filmCum }, QUEUE_MAX.now);
+    else freeQueue = pushCapped(freeQueue, withTruth, QUEUE_MAX.free);
     changed = true;
   }
 

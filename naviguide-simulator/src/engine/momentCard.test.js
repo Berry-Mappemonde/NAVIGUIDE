@@ -9,6 +9,9 @@ import {
   cardFromEvent,
   cardFromJournalEntry,
   cardSpeech,
+  eventTruth,
+  strikeParts,
+  truthForCard,
   classifyMoment,
   dismissNow,
   emptyMoments,
@@ -137,6 +140,33 @@ describe("cartes", () => {
     assert.equal(card.entity.url, "https://www.douane.gouv.fr/x");
     assert.equal(entityForEvent(gale), null);
     assert.equal(cardSpeech(card), card.text);
+  });
+
+  it("truth : champ porté, affirmations unsupported barrées jamais retirées", () => {
+    const ev = {
+      ...poeAhead,
+      payload: {
+        ...poeAhead.payload,
+        poe: { ...poeAhead.payload.poe, truth: { status: "verified", checkedAt: "2026-09-20T12:00:00Z", unsupported: ["Visa 90 jours"] } },
+      },
+    };
+    const card = cardFromEvent(ev, "fr");
+    assert.equal(card.truth.status, "verified");
+    assert.deepEqual(card.truth.unsupported, ["Visa 90 jours"]);
+    assert.equal(eventTruth(ev).status, "verified");
+    const fromBag = truthForCard({ entity: { url: "https://www.douane.gouv.fr/x", name: "La Rochelle - La Pallice" } }, {
+      poe: [{ name: "La Rochelle - La Pallice", url: "https://www.douane.gouv.fr/x", truth: card.truth }],
+    });
+    assert.equal(fromBag.status, "verified");
+    const text = "Port d'entrée Fort-de-France (Gold). Visa 90 jours.";
+    const parts = strikeParts(text, ["Visa 90 jours"]);
+    const struck = parts.filter((p) => p.strike).map((p) => p.text).join("");
+    const kept = parts.map((p) => p.text).join("");
+    assert.match(struck, /Visa 90 jours/);
+    assert.equal(kept, text);
+    const extra = strikeParts("Port d'entrée Fort-de-France (Gold).", ["Visa 90 jours"]);
+    assert.ok(extra.some((p) => p.strike && p.text === "Visa 90 jours" && p.extra));
+    assert.ok(extra.some((p) => !p.strike && p.text.includes("Fort-de-France")));
   });
 
   it("infoItemsFromBag : lieux, AMP, câble, image satellite, climatologie — clés stables", () => {
