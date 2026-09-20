@@ -204,7 +204,7 @@ Quand tu as fini : numéro de PR, compteurs de tests, liste des captures, ce que
 | [`ESPRIT_DE_L_APPLICATION.md`](ESPRIT_DE_L_APPLICATION.md) | — | référence pour relire les diagrammes du dépôt et la description |
 
 Ordre conseillé pour un seul worker : **P2 → C1 → L1 → M → N → O → F1 → F2 →
-L2 → F3 → F4 → L3 → F5 → S → T → C2 → C3 → U → L4 → L5 → C4 → C5 → L6 → G0 → G1 → G2 → G3 → G4 → G5 → G6 → G7**
-(c'est l'ordre de `LOTS_ORDRE_ET_PROMPTS.md`).
+L2 → F3 → F4 → L3 → F5 → S → T → C2 → C3 → U → L4 → L5 → C4 → C5 → C7 → C6 → L6 → G0 → G1 → G2 → G3 → G4 → G5 → G6 → G7**
+(c'est l'ordre de `LOTS_ORDRE_ET_PROMPTS.md` ; C1 est fait, PR #207).
 Avec deux workers : l'un sur P2 → M → N → O → S → T → U (UI), l'autre sur
 C1 → L1 → L2 → C2 → L3 (serveur) ; le film (F1–F5) quand les deux se rejoignent.

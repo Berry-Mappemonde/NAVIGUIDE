@@ -30,7 +30,7 @@ testent avec de faux serveurs).
 | # | Lot | Plan | Taille | Dépend de | Ce que le porteur verra |
 |---|---|---|---|---|---|
 | 1 | P2 | complémentaire | S | — | 0 kn à quai, vitesse mesurée en mer |
-| 2 | C1 | audit calculs | S | — | « 16 étapes (15 mer, 1 terre) · 17 escales · 1 248 points » |
+| 2 | C1 | audit calculs | S | — | « 16 étapes (15 mer, 1 terre) · 17 escales · 1 248 points » — **fait, PR #207 mergée (20 sept., agent local, 5 min 44)** ; `--skip C1` |
 | 3 | L1 | Nemotron | M | — | libellé « Nemotron 3 Super · Token Factory » sous le récit |
 | 4 | M | complémentaire | S | — | crédits carte propres, sources cliquables |
 | 5 | N | complémentaire | S | — | chat en haut, panneau gauche qui ne saute plus |
@@ -51,15 +51,21 @@ testent avec de faux serveurs).
 | 20 | L5 | Nemotron | S | L1 | revue de plan commentée, conseil de route expliqué |
 | 21 | C4 | audit calculs | M | C2 | courant, polaire de vagues, efficacité, climatologie échantillonnée |
 | 22 | C5 | audit calculs | S | C4 | cahier des calculs, parité client/serveur |
-| 23 | L6 | Nemotron | S | L2 | traduction des textes rédigés, mémoire sémantique (option) |
-| 24 | G0 | globe | S | — | éprouvette globe (hors app) + décision A/B |
-| 25 | G1 | globe | M | G0 | onglet Carte / Globe |
-| 26 | G2 | globe | M | G1 | route, bateau, escales sur le globe |
-| 27 | G3 | globe | M | G2 | couches BI, ZEE en PMTiles |
-| 28 | G4 | globe | M | G3 | GRIB et climatologie en symboles |
-| 29 | G5 | globe | M | G4 | popups, bulle, tracer ma route sur le globe |
-| 30 | G6 | globe | S | G5, F1 | le film sur le globe |
-| 31 | G7 | globe | S | G6 | parité, tests sur les deux vues |
+| 23 | C7 | audit calculs | S | C5 | jours à quai par escale (table sourcée), repli sans polaire déclaré, info-bulle distance film |
+| 24 | C6 | audit calculs | M | C4 | ETA probabiliste par ensembles : « arrivée entre le 11 et le 14 (p10–p90) » |
+| 25 | L6 | Nemotron | S | L2 | traduction des textes rédigés, mémoire sémantique (option) |
+| 26 | G0 | globe | S | — | éprouvette globe (hors app) + décision A/B |
+| 27 | G1 | globe | M | G0 | onglet Carte / Globe |
+| 28 | G2 | globe | M | G1 | route, bateau, escales sur le globe |
+| 29 | G3 | globe | M | G2 | couches BI, ZEE en PMTiles |
+| 30 | G4 | globe | M | G3 | GRIB et climatologie en symboles |
+| 31 | G5 | globe | M | G4 | popups, bulle, tracer ma route sur le globe |
+| 32 | G6 | globe | S | G5, F1 | le film sur le globe |
+| 33 | G7 | globe | S | G6 | parité, tests sur les deux vues |
+
+Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
+§ 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
+lignes qui leur appartiennent.
 
 Taille : S ≤ ½ jour-agent, M ≤ 2 jours, L ≤ 4 jours. « Dépend de » : le lot
 suppose que l'autre est **au moins dans la même pile** (branche empilée) ;
@@ -369,6 +375,32 @@ Branche docs/lot-c5-cahier-calculs depuis la base indiquée. PR vers main, gabar
 Interdits : modifier un calcul dans ce lot (documenter et tester seulement ; si un test révèle un écart, l'écrire dans la PR sans le corriger) ; secret ; vidéo. Fin : PR, compteurs, reste à faire.
 ```
 
+<!-- LOT id="C7" title="Conventions paramétrées et repli déclaré" plan="docs/PLAN_AUDIT_CALCULS.md" size="S" deps="C5" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 1 (lignes 5, 15, 16, 18) et le « Lot C7 », et docs/audits/CALCULS_ETAT_DE_L_ART.md (mêmes lignes). Tu travailles dans naviguide-simulator/. Le lot C5 est dans ta base.
+
+Lot C7 — Conventions paramétrées et repli déclaré : jours à quai par escale (table sourcée), tronçon route et saut avion documentés, repli de vitesse sans polaire déclaré à l'écran, distance film expliquée.
+Fichiers à ouvrir (seulement) : server/voyage_clock.py (port_days_for l. 24–34, LAND_CALENDAR_HOURS, AIR_CALENDAR_HOURS, MIN_KNOTS, _emit), nouveau server/data/port_days.json, server/climatology_zones.py (boat_speed_from_wind), server/voyage_api.py (exposer params dans GET /voyage/official), src/components/ToolsSidebar.jsx PAR EXTRAIT (rg -n "filmNm|routeDistanceNm" src/components/ToolsSidebar.jsx : info-bulle), src/components/SimulationFilmBar.jsx PAR EXTRAIT (libellé « (repli sans polaire) » — ajout), src/i18n/fr.js, src/i18n/en.js, docs/REGLES_PARAMETRES.md, server/tests/test_voyage_clock.py.
+Étapes : 1) port_days.json : {"default": 3, "source": "programme Berry-Mappemonde 2026", "stops": {"Saint-Maur": 0, …}} lu par port_days_for (les valeurs actuelles deviennent la table ; ne change aucune valeur sans source — laisse le défaut) ; 2) chaque sommet de l'horloge porte basis ∈ {"polar","fallback"} ; boat_speed_from_wind n'est appelé que sans polaire ; 3) GET /voyage/official renvoie params: {landHours, airHours, minKnots, portDaysDefault, polarEfficiency si présent} ; 4) UI : info-bulle sur la distance (« distance du film : saut avion exclu ; distance totale : … ») et libellé « (repli sans polaire) » quand basis === "fallback" ; 5) REGLES_PARAMETRES.md : une ligne par constante avec sa source.
+Tests : table lue, défaut 3, Saint-Maur 0 ; sans polaire → basis "fallback" ; params présents dans la réponse. pytest, npm test, vite build.
+Recette (spec e2e/lots/c7-conventions.spec.js, captures docs/recette/lot-c7/) : survol de la distance dans data-testid="route-summary" → attribut title non vide ; capture 01-infobulle. La PR liste les constantes et leur source.
+Branche feat/lot-c7-conventions depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : changer une valeur de convention sans source écrite ; chiffre LLM ; secret ; vidéo ; retirer une surface. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="C6" title="ETA probabiliste par ensembles" plan="docs/PLAN_AUDIT_CALCULS.md" size="M" deps="C4" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 1 (ligne 9) et le « Lot C6 », et docs/audits/CALCULS_ETAT_DE_L_ART.md (ligne 9 et complément « Ensembles »). Tu travailles dans naviguide-simulator/. Les lots C2 et C4 sont dans ta base.
+
+Lot C6 — Au-delà de 7 jours, l'arrivée est une fourchette (p10–p90) calculée sur les membres d'ensemble, pas une date unique.
+Fichiers à ouvrir (seulement) : nouveau server/ensemble_eta.py (+ server/tests/test_ensemble_eta.py avec faux serveur HTTP), server/hindcast.py (réutiliser le client HTTP et le cache), server/voyage_api.py (GET /voyage/official/eta?stop=<nom> → {p10, p50, p90, members, source, computedAt}), src/components/EscaleLegend.jsx (fourchette sous la date — ajout), src/components/PlanReview.jsx (colonne ou ligne « p10–p90 » — ajout), src/hooks/usePlanReview.js, src/i18n/fr.js, src/i18n/en.js, docs/REGLES_PARAMETRES.md.
+Étapes : 1) Open-Meteo Ensemble API : ensemble-api.open-meteo.com/v1/ensemble?latitude&longitude&models=gfs_seamless,ecmwf_ifs025&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn&forecast_days=15 — une requête par point de la jambe courante (pas ≤ 60 nm), membres en colonnes (wind_speed_10m_member01…) ; cache 6 h ; 2) pour chaque membre : intégration de la jambe depuis la position actuelle avec la polaire × POLAR_EFFICIENCY, courant et polaire de vagues du lot C4 (climatologie médiane au-delà de 15 jours) ; 3) dates d'arrivée → p10, p50, p90 (quantiles empiriques), members = nombre de membres utilisés ; 4) UI : « entre le 11 et le 14 (p10–p90, 80 membres) » sous la date de la prochaine escale et dans la revue de plan ; sans ensemble disponible → rien d'affiché (jamais inventé) ; 5) REGLES_PARAMETRES.md : modèles, forecast_days, cache.
+Tests : 30 membres identiques → p10 = p50 = p90 ; membres dispersés → p10 < p50 < p90 ; API en panne → réponse {members: 0} et aucune fourchette ; cache 6 h. pytest, npm test, vite build.
+Recette (spec e2e/lots/c6-eta.spec.js, captures docs/recette/lot-c6/) : si l'API tourne, data-testid="eta-range" présent sous la prochaine escale et contient « p10 » ou « entre » ; capture 01-fourchette. Sans API : fumée.
+Branche feat/lot-c6-eta-ensembles depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : chiffre LLM ; secret ; vidéo ; retirer une surface (la date actuelle reste, la fourchette s'ajoute). Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
 <!-- LOT id="L6" title="Traduction des textes rédigés + mémoire sémantique (option)" plan="docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md" size="S" deps="L2" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md § 1 (U9, U13) et le « Lot L6 ». Tu travailles dans naviguide-simulator/. Le lot L2 est dans ta base.
@@ -538,13 +570,17 @@ confirme la clé et le modèle.
 ### Lancer
 
 ```bash
-python3 infra/agents/run_lots.py --only C1                                  # premier essai réel : un petit lot
-caffeinate -i python3 infra/agents/run_lots.py --from P2 --until L6         # la nuit (le Mac ne dort pas)
+python3 infra/agents/run_lots.py --only C1                                  # premier essai réel — fait le 20 sept. (PR #207)
+caffeinate -i python3 infra/agents/run_lots.py --from P2 --until L6 --skip C1   # la nuit : 24 lots, le Mac ne dort pas
+caffeinate -i python3 infra/agents/run_lots.py --from G0 --until G7         # une autre nuit : le globe
 python3 infra/agents/run_lots.py --from F1 --until F5 --stack none          # chacun depuis main
-python3 infra/agents/run_lots.py --resume                                   # reprend state.json
-python3 infra/agents/run_lots.py --runtime cloud --only C1                  # via l'API
+python3 infra/agents/run_lots.py --resume                                   # reprend state.json après une coupure
+python3 infra/agents/run_lots.py --runtime cloud --only C2                  # via l'API
 python3 infra/agents/run_lots.py --dry-run --from P2 --until O              # affiche les prompts, ne lance rien
 ```
+
+Un lot déjà mergé se saute avec `--skip` ; si la branche du lot précédent a
+été mergée entre-temps, le script repart de `main` tout seul.
 
 Le matin : `git fetch`, lire les PR dans l'ordre, jouer les specs
 `e2e/lots/*.spec.js` en local si besoin, merger un à un (merge commit ;

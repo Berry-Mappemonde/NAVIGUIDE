@@ -486,8 +486,23 @@ def base_line(ref: str) -> str:
             f"et ouvre ta PR vers `main` (le diff inclura le lot précédent : c'est attendu, il fondra quand il sera mergé).")
 
 
+def merged_into_main(branch: str) -> bool:
+    """Vrai si la branche (locale ou distante) est déjà contenue dans origin/main : on repart alors de main."""
+    if branch == "main":
+        return True
+    for ref in (branch, f"origin/{branch}"):
+        if sh(["git", "rev-parse", "--verify", "-q", ref], cwd=ROOT, check=False).returncode == 0:
+            return sh(["git", "merge-base", "--is-ancestor", ref, "origin/main"], cwd=ROOT, check=False).returncode == 0
+    return True  # branche disparue (supprimée après merge) : main
+
+
 def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     ref = "main" if args.stack == "none" else state.last_branch
+    if ref != "main" and not args.dry_run:
+        sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
+        if merged_into_main(ref):
+            log(f"[{lot.id}] la branche {ref} est déjà dans main — on repart de main")
+            ref = "main"
     prompt = base_line(ref) + "\n\n" + lot.prompt
     if args.dry_run:
         print(f"\n===== {lot.id} — {lot.title} (depuis {ref}, runtime {args.runtime})\n{prompt}\n")
@@ -576,6 +591,7 @@ def main() -> None:
     ap.add_argument("--from", dest="from_", help="premier lot (id)")
     ap.add_argument("--until", help="dernier lot (id)")
     ap.add_argument("--only", nargs="+", help="un ou plusieurs lots précis")
+    ap.add_argument("--skip", nargs="+", default=[], help="lots à sauter (déjà mergés, ex. --skip C1)")
     ap.add_argument("--stack", choices=["linear", "none"], default="linear", help="linear : chaque lot part de la branche du précédent (défaut) ; none : chacun depuis main")
     ap.add_argument("--resume", action="store_true", help="reprend state.json : saute les lots déjà FINISHED")
     ap.add_argument("--dry-run", action="store_true", help="affiche les prompts, ne lance rien")
@@ -617,6 +633,9 @@ def main() -> None:
 
     log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}")
     for lot in lots:
+        if lot.id in args.skip:
+            log(f"[{lot.id}] sauté (--skip)")
+            continue
         prev = state.done.get(lot.id)
         if args.resume and prev and prev.get("status") == "FINISHED":
             log(f"[{lot.id}] déjà fait ({prev.get('pr')}) — sauté")
