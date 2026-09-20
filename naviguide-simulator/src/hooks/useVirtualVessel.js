@@ -180,14 +180,21 @@ export function useVirtualVessel({
     return () => clearInterval(id);
   }, [enabled, voyage?.voyageId, voyage?.forecastStatus, refreshMeta]);
 
-  const recompute = useCallback(async (fromIso) => {
+  /**
+   * Route advice (lot G): `constraints` = { windMaxKt, hsMaxM } from the
+   * skipper's orders — the isochrone never steps into a wind or a sea above them.
+   */
+  const recompute = useCallback(async (fromIso, constraints = null) => {
     if (!voyage?.voyageId) return null;
     setBusy(true);
     try {
+      const body = { ...(fromIso ? { t: fromIso } : {}) };
+      if (Number.isFinite(constraints?.windMaxKt)) body.wind_max_kt = constraints.windMaxKt;
+      if (Number.isFinite(constraints?.hsMaxM)) body.hs_max_m = constraints.hsMaxM;
       const d = await fetchJson(`/voyage/${voyage.voyageId}/recompute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fromIso ? { t: fromIso } : {}),
+        body: JSON.stringify(body),
       });
       setDraft(d);
       return d;

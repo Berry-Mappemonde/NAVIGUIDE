@@ -148,3 +148,20 @@ def test_refresh_forecast(client):
     assert r.json()["forecastStatus"] in ("pending", "ready")
     meta = _wait_forecast(client, vid)
     assert meta["forecastStatus"] == "ready"
+
+
+def test_recompute_takes_the_skipper_orders_as_constraints(client, monkeypatch):
+    """Lot G : vent max / mer max du skipper → zones interdites du routage,
+    renvoyées dans le brouillon ; hors bornes → ignorés (défaut honnête)."""
+    t0 = datetime(2026, 6, 13, 8, tzinfo=timezone.utc)
+    vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
+    client.get(f"/voyage/{vid}")
+    monkeypatch.setattr(voyage_api, "_now", lambda: t0 + timedelta(hours=48))
+    rec = client.post(f"/voyage/{vid}/recompute", json={"wind_max_kt": 34, "hs_max_m": 3.5})
+    assert rec.status_code == 200
+    draft = rec.json()
+    assert draft["constraints"] == {"windMaxKt": 34.0, "hsMaxM": 3.5, "source": "skipper"}
+    assert "draft_geojson" in draft
+    rec2 = client.post(f"/voyage/{vid}/recompute", json={"wind_max_kt": 5, "hs_max_m": 40})
+    assert rec2.json()["constraints"]["source"] == "default"
+    assert rec2.json()["constraints"]["windMaxKt"] is None
