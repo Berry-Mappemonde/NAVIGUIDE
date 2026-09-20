@@ -516,7 +516,7 @@ de merge ni de `push --force`, `state.json` pour reprendre, `run_lots.log`.
 ```bash
 # 1. le CLI Cursor (déjà installé le 20 sept. sur ce Mac : version 2026.09.18)
 curl https://cursor.com/install -fsS | bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc   # Terminal en bash : ~/.bash_profile à la place
 agent login                       # ouvre le navigateur, se connecter au compte Cursor (Ultra)
 agent models                      # doit lister un identifiant contenant « grok »
 
