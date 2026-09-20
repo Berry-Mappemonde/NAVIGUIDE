@@ -1,7 +1,7 @@
 """Short ici() story. Cascade Token Factory → OpenRouter → Claude → rules.
 
-NIM (`integrate.api.nvidia.com`) stays behind NAVIGUIDE_LLM_PROVIDERS;
-it is no longer the default (hackathon: Token Factory only). Never Tavily.
+Order (porteur, 20 sept.): Token Factory first (hackathon), then NIM
+(`integrate.api.nvidia.com`), then OpenRouter, then Claude. Never Tavily here.
 Thinking OFF. No figure invented: filter_numbers on every LLM sentence.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
 TIMEOUT = httpx.Timeout(25.0, connect=8.0)
-DEFAULT_PROVIDERS = ("tokenfactory", "openrouter", "claude")
+DEFAULT_PROVIDERS = ("tokenfactory", "nim", "openrouter", "claude")
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
 TF_PARALLEL_DEFAULT = 4
