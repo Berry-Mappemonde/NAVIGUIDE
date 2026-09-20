@@ -72,7 +72,7 @@ describe("isSceneReady", () => {
       join(dirname(fileURLToPath(import.meta.url)), "../map/MapSceneController.js"),
       "utf8",
     );
-    assert.match(app, /playback\.seek\(target, \{ jump: false \}\)/);
+    assert.match(app, /playback\.seek\(target, \{ jump: Boolean\(live\.replay\) \}\)/, "live: eased seek; replay (lot E): jump every frame");
     assert.match(app, /scene-load-mask/);
     assert.match(app, /isSceneReady/);
     assert.match(scene, /shouldPlaceInitialCamera/);
