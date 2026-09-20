@@ -120,6 +120,16 @@ describe("expeditionStory — script du film (lot F3)", () => {
     assert.deepEqual(again.chapters.map((c) => c.text), plan.chapters.map((c) => c.text));
   });
 
+  it("lang=en : chapitre 1 anglais (left / departed, Saint-Maur, La Rochelle)", () => {
+    const plan = buildFilmScript({ ...filmFixture(), lang: "en", seconds: 150 });
+    assert.ok(plan.chapters.length >= 1);
+    const text = plan.chapters[0].text;
+    assert.match(text, /Saint-Maur/);
+    assert.match(text, /La Rochelle/);
+    assert.match(text, /left|departed/i);
+    assert.doesNotMatch(text, /quitté|a pris la route/);
+  });
+
   it("connecteurs jamais deux fois de suite", () => {
     const plan = buildFilmScript({ ...filmFixture(), lang: "fr" });
     const cons = FILM_CONNECTORS.fr;

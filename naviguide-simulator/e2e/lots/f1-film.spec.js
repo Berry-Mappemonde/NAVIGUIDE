@@ -35,15 +35,22 @@ test("lot F1 — film 150 s, zoom fixe, sous-titre Saint-Maur", async ({ page })
   await shot(page, "01-depart");
 
   await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 10_000 });
-  // Après le flyTo du chapitre 1 (1,2 s) : zoom fixe tant qu'on reste dans la jambe.
-  await page.waitForTimeout(2_500);
-  const chapter = await page.evaluate(() => window.__naviguideFilm?.chapterIdx ?? 0);
-  const z0 = await page.evaluate(() => window.__naviguideScene.map.getZoom());
-  await page.waitForTimeout(4_000);
-  const end = await page.evaluate(() => ({
-    z: window.__naviguideScene.map.getZoom(),
-    ch: window.__naviguideFilm?.chapterIdx ?? 0,
-  }));
+  // Zoom fixe pendant une jambe. Le chapitre 1 (Saint-Maur → La Rochelle) est
+  // court : on relance la fenêtre de 4 s si on a changé de chapitre.
+  await page.waitForTimeout(1_500);
+  let z0 = 0;
+  let end = { z: 0, ch: -1 };
+  let chapter = -1;
+  for (let i = 0; i < 4; i++) {
+    chapter = await page.evaluate(() => window.__naviguideFilm?.chapterIdx ?? 0);
+    z0 = await page.evaluate(() => window.__naviguideScene.map.getZoom());
+    await page.waitForTimeout(4_000);
+    end = await page.evaluate(() => ({
+      z: window.__naviguideScene.map.getZoom(),
+      ch: window.__naviguideFilm?.chapterIdx ?? 0,
+    }));
+    if (end.ch === chapter) break;
+  }
   expect(end.ch, "mesure à cheval sur deux chapitres").toBe(chapter);
   expect(Math.abs(end.z - z0), `zoom ${z0} → ${end.z}`).toBeLessThanOrEqual(0.01);
 
