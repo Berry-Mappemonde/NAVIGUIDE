@@ -3,7 +3,7 @@
  * Tells only what is around the boat.
  */
 
-import { briefingEntities, placeLabel, segmentBriefing } from "./briefingLinks.js";
+import { briefingEntities, placeLabel, segmentBriefingWithSources } from "./briefingLinks.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 
 const TERRITORY = {
@@ -271,7 +271,8 @@ function atonSentence(dossier, lang) {
   const aton = dossier?.aton;
   const listed = listPlaces(aton?.nearby, lang, 3, "aton");
   if (listed) {
-    return en ? `Aids to navigation: ${listed}.` : `Balisage : ${listed}.`;
+    const osm = /osm/i.test(String(aton?.source || "")) ? " (OpenStreetMap)" : "";
+    return en ? `Aids to navigation${osm}: ${listed}.` : `Balisage${osm} : ${listed}.`;
   }
   // A thin pearl never looked: say nothing rather than "not collected on this pearl".
   if (aton?.reason && aton.reason !== "not_in_along_pearl") {
@@ -319,8 +320,8 @@ export function satelliteSentence(dossier, lang) {
       tail = en ? ` ${sentence}: ${reason}.` : ` ${sentence} : ${reason}.`;
     }
     return en
-      ? `Latest satellite image: ${product}${detail}${when ? ` on ${when}` : ""} (observation).${tail}`
-      : `Dernière image satellite : ${product}${detail}${when ? ` du ${when}` : ""} (observation).${tail}`;
+      ? `Latest satellite image (CDSE): ${product}${detail}${when ? ` on ${when}` : ""} (observation).${tail}`
+      : `Dernière image satellite (CDSE) : ${product}${detail}${when ? ` du ${when}` : ""} (observation).${tail}`;
   }
   return en
     ? `No recent satellite image here (${why(s.reason, lang)}).`
@@ -357,8 +358,8 @@ function weatherSentence(dossier, lang) {
   if (w.current && w.current.speedKnots != null) {
     const to = heading(w.current.dirToDeg, lang);
     bits.push(en
-      ? `current ${num(w.current.speedKnots, lang)} kn${to ? ` toward ${to}` : ""} (RTOFS)`
-      : `courant ${num(w.current.speedKnots, lang)} kn${to ? ` vers ${to}` : ""} (RTOFS)`);
+      ? `current ${num(w.current.speedKnots, lang)} kn${to ? ` toward ${to}` : ""} (NOAA/RTOFS)`
+      : `courant ${num(w.current.speedKnots, lang)} kn${to ? ` vers ${to}` : ""} (NOAA/RTOFS)`);
   } else if (w.current == null && w.current_reason) {
     bits.push(en
       ? `current: ${why(w.current_reason, lang)}`
@@ -689,7 +690,7 @@ export function climatologySentence(dossier, lang) {
   const provenance = c.provenance?.wind || point.provenance?.wind;
   const when = monthName(month, lang);
   const head = src === "atlas"
-    ? (en ? `Climatology for ${when} (Copernicus atlas` : `Climatologie de ${when} (atlas Copernicus`)
+    ? (en ? `Climatology for ${when} (Copernicus Marine atlas` : `Climatologie de ${when} (atlas Copernicus Marine`)
     : (en ? `Climatology for ${when} (zone fallback` : `Climatologie de ${when} (repli de zone`);
   const tail = [];
   if (period) tail.push(String(period).replace("-", "–"));
@@ -708,8 +709,11 @@ function sourceSentence(dossier, lang) {
   const notes = [];
   if (zee === "error" && dossier?.zee?.mrgid) {
     notes.push(en
-      ? "MarineRegions did not answer for the EEZ."
-      : "MarineRegions n’a pas répondu pour la ZEE.");
+      ? "Marine Regions/VLIZ did not answer for the EEZ."
+      : "Marine Regions/VLIZ n’a pas répondu pour la ZEE.");
+  }
+  if ((dossier?.poe || []).some((p) => /douane\.gouv\.fr/i.test(String(p.url || "")))) {
+    notes.push(en ? "Entry sheets: douane.gouv.fr." : "Fiches d’entrée : douane.gouv.fr.");
   }
   if (bi === "unavailable") {
     notes.push(en
@@ -749,11 +753,24 @@ export function narrateIci(dossier, lang = "fr") {
     live ? reviewSentence(dossier, lang) : "",
     eventSentence(dossier, lang),
     thin ? "" : depthSentence(dossier, lang),
-    climatologySentence(dossier, lang),
+    climatologyShownOnBanner(dossier) ? "" : climatologySentence(dossier, lang),
     legSentence(dossier, lang),
     live ? sourceSentence(dossier, lang) : "",
   ].filter(Boolean);
-  return parts.join("\n\n");
+  const seen = new Set();
+  const unique = [];
+  for (const p of parts) {
+    if (seen.has(p)) continue;
+    seen.add(p);
+    unique.push(p);
+  }
+  return unique.join("\n\n");
+}
+
+/** Same condition as the NOW climatology card (`infoItemsFromBag`) — one place only. */
+export function climatologyShownOnBanner(dossier) {
+  const c = dossier?.climatology;
+  return Boolean(c && (c.point || c.wind) && c.month != null);
 }
 
 /**
@@ -764,5 +781,5 @@ export function narrateIci(dossier, lang = "fr") {
 export function narrateIciSegments(dossier, lang = "fr") {
   const text = narrateIci(dossier, lang);
   if (!text) return [];
-  return segmentBriefing(text, briefingEntities(dossier, lang));
+  return segmentBriefingWithSources(text, briefingEntities(dossier, lang));
 }

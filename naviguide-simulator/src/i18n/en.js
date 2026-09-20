@@ -129,6 +129,7 @@ export default {
   journalUnavailable: "Logbook unavailable for now.",
   briefingSeeOnMap: "See on the map: the boat and this place",
   briefingOfficialSheet: "Official sheet / website",
+  briefingSourceLink: "Data source",
   briefingGoogleMaps: "Google Maps sheet",
 
   // ── Moment card (popups along the route) ─────────────────────────────────

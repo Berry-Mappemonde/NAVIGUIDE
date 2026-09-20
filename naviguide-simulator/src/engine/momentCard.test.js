@@ -112,7 +112,7 @@ describe("cartes", () => {
     assert.equal(marina.entity.url, "https://port-la-rochelle.fr");
     assert.equal(items[4].entity.url, "https://www.paysdelaloire.fr/x");
     assert.equal(items[5].text, "bouée latérale à 4,6 nm.");
-    assert.match(items[6].text, /Dernière image satellite : Sentinel-2 \(S2A, tuile T30TXR\)/);
+    assert.match(items[6].text, /Dernière image satellite \(CDSE\) : Sentinel-2 \(S2A, tuile T30TXR\)/);
     assert.match(items[7].text, /câble sous-marin/);
     assert.match(items[8].text, /Climatologie de septembre/);
     assert.equal(infoItemsFromBag(bag, "en")[0].title, "Marina");
