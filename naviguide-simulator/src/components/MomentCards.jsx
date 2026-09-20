@@ -48,7 +48,7 @@ function CardLinks({ entity, onFocus, t }) {
  * haut de la carte (Cinéma, sidebar rangée).
  */
 export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus, inline = false }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   if (!card) return null;
   const alert = card.severity === "alert";
   const ahead = Number.isFinite(card.whenNm) && card.whenNm >= 1
@@ -80,7 +80,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
         </span>
         <div className="ml-auto flex items-center gap-1 flex-shrink-0">
           {left > 0 ? <span className="text-[9px] text-white/45">{t("momentLeft", { n: left })}</span> : null}
-          <ListenButton text={cardSpeech(card)} t={t} lang={lang} testId="moment-listen" />
+          {/* Pas de bouton « Écouter » ici (revue du 20 sept.) : la carte NOW se lit d'un coup d'œil, la voix est celle du récit. */}
           <button
             type="button"
             onClick={onDismiss}
