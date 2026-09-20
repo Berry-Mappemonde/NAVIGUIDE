@@ -212,7 +212,11 @@ export class MapSceneController {
     });
     this.onMoveEnd = () => {
       this.syncDynamicWorldCopies();
-      this.scheduleWaypoints();
+      // A pan the camera made while following the boat (lot I): the flags
+      // keep their offsets — recomputing them at every step made them jump.
+      // A zoom (projection change) or a pan the camera did not make: recompute.
+      this.scheduleWaypoints({ reason: this.isCameraFollowing() && this.map.getZoom() === this.waypointZoom ? "follow" : "move" });
+      this.waypointZoom = this.map.getZoom();
     };
     this.onUserNavigation = () => {
       if (this.ignoreUserNavigation) return;
@@ -326,6 +330,11 @@ export class MapSceneController {
       });
     } else if (this.currentPlayback) {
       this.renderDynamic(this.currentPlayback);
+    }
+    // Entering / leaving the drawing mode (lot I): the boats of the official
+    // route hide or come back at once, even while playback is paused.
+    if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
+      this.syncMarkers(this.currentCast, this.currentPlayback);
     }
   }
 
@@ -507,9 +516,12 @@ export class MapSceneController {
     const cfg = this.config;
     const ready = Boolean(cfg.sceneReady && !cfg.drawingMode);
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
+    // `visible` after the spread: a cast actor carries its own `visible`
+    // flag, which used to override ours (ghost boats in Simulation, boats
+    // left on the map while drawing — revue du 19 sept., lot I).
     this.syncMarker("simulation", {
-      visible: ready && cfg.isSimulation && Boolean(cast?.main),
       ...cast?.main,
+      visible: ready && cfg.isSimulation && Boolean(cast?.main),
       className: "catamaran-divicon",
       html: catamaranSvg(0),
       draggable: true,
@@ -523,27 +535,27 @@ export class MapSceneController {
       html: catamaranSvg(0),
     });
     this.syncMarker("ghost", {
-      visible: ready && cfg.isSuivre && cfg.previewing && Boolean(cast?.main),
       ...cast?.main,
+      visible: ready && cfg.isSuivre && cfg.previewing && Boolean(cast?.main),
       className: "catamaran-divicon catamaran-divicon--ghost",
       html: catamaranSvg(0),
     });
     this.syncMarker("side", {
-      visible: ready && Boolean(cast?.side?.visible),
       ...cast?.side,
+      visible: ready && Boolean(cast?.side?.visible),
       className: "catamaran-divicon catamaran-divicon--side",
       html: catamaranSvg(0),
     });
     this.syncMarker("plane", {
-      visible: ready && Boolean(cast?.plane?.visible),
       ...cast?.plane,
+      visible: ready && Boolean(cast?.plane?.visible),
       className: "plane-divicon",
       html: planeHtml(),
     });
     const drawBoat = cfg.drawnSegments?.length >= 1 ? cfg.drawnPoints?.at(-1) : null;
     this.syncMarker("drawing", {
-      visible: Boolean(cfg.drawingMode && drawBoat),
       ...drawBoat,
+      visible: Boolean(cfg.drawingMode && drawBoat),
       bearing: 0,
       className: "catamaran-divicon catamaran-divicon--draw",
       html: catamaranSvg(0),
@@ -666,8 +678,17 @@ export class MapSceneController {
     });
   }
 
-  scheduleWaypoints() {
+  /** The camera is driving the map: playback running, or the live boat followed. */
+  isCameraFollowing() {
+    const cfg = this.config || {};
+    if (!cfg.cameraFollow) return false;
+    const liveMode = Boolean(cfg.isSuivre && cfg.live && !cfg.previewing);
+    return Boolean(this.currentPlayback?.playing || liveMode);
+  }
+
+  scheduleWaypoints({ reason = "move" } = {}) {
     if (!this.config.points?.length && !this.config.drawnPoints?.length) return;
+    if (reason === "follow") return; // flags stay put while the camera follows (lot I)
     window.clearTimeout(this.waypointTimer);
     this.waypointTimer = window.setTimeout(() => {
       this.waypointsDirty = true;

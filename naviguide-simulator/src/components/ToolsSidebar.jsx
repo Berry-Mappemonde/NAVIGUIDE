@@ -149,9 +149,39 @@ function SectionTitle({ children, right = null }) {
  * The whole expedition, compact: the route in numbers on two lines and the
  * stopovers list (click = jump). Revue du 19 sept. : one box, not two.
  */
-function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet }) {
+/** Lot I — while the skipper draws, the box describes the drawn route, not the official one. */
+function DrawingBox({ drawing }) {
+  const { t } = useLang();
+  const pts = drawing?.points || [];
+  return (
+    <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 overflow-hidden" data-testid="drawing-box">
+      <div className="px-3 py-1.5 text-[10px] text-slate-200 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="drawing-summary">
+        <span className="font-semibold text-emerald-200">{t("drawingInProgress")}</span>
+        <span>· {pts.length} {t("drawingPoints")}</span>
+        <span>· {Number(drawing?.distanceNm || 0).toLocaleString()} nm</span>
+        {drawing?.failed ? <span className="text-amber-300/90">· {drawing.failed} {t("drawingFailedSegments")}</span> : null}
+      </div>
+      {pts.length ? (
+        <ol className="max-h-36 overflow-y-auto sidebar-scroll border-t border-white/5">
+          {pts.map((p, i) => (
+            <li key={`${p.lat}-${p.lon}-${i}`} className="px-2 py-1 text-[11px] text-white/80 border-t border-white/5 first:border-t-0 flex items-baseline gap-1">
+              <span className="text-[9px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
+              <span className="truncate">{p.name}</span>
+              <span className="ml-auto text-[9px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {p.lon.toFixed(2)}°</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="px-3 pb-2 text-[10px] text-slate-400 leading-snug">{drawing?.message || t("drawStart")}</p>
+      )}
+    </div>
+  );
+}
+
+function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null }) {
   const { t } = useLang();
   const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString()} nm` : "—";
+  if (drawing) return <DrawingBox drawing={drawing} />;
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
       <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary">
@@ -172,7 +202,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
   maritimeLayers = null,
-  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet,
+  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet, drawing = null,
   showDeparture = false, departureT0, onDepartureT0,
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
@@ -308,6 +338,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               filmNm={filmNm}
               onSeekEscale={onSeekEscale}
               onEscaleSheet={onEscaleSheet}
+              drawing={drawing}
             />
             {showDeparture ? (
               <div className="mt-2">
