@@ -87,7 +87,14 @@ def _startup_official_grib():
 @app.on_event("startup")
 async def _startup_ici_warm():
     """Perles along de la route officielle : cache disque rechargé, puis
-    chauffé en fond (une perle toutes les ~1,2 s). NAVIGUIDE_ICI_WARM=0 coupe."""
+    chauffé en fond (une perle toutes les ~1,2 s). NAVIGUIDE_ICI_WARM=0 coupe.
+    Avant, la couche ZEE VLIZ locale (lot B) : chargée si en cache, sinon
+    téléchargée en fond — le chauffeur lit les ZEE en local dès qu'elle est là."""
+    try:
+        import zee_local
+        zee_local.start_background(asyncio.get_running_loop())
+    except Exception:
+        pass
     try:
         import ici_warm
         ici_warm.start_background(asyncio.get_running_loop())
@@ -97,9 +104,10 @@ async def _startup_ici_warm():
 
 @app.get("/ici/warm/status")
 def ici_warm_status():
-    """Où en est la pré-génération des perles de la route officielle."""
+    """Où en est la pré-génération des perles de la route officielle (+ la couche ZEE locale)."""
     import ici_warm
-    return ici_warm.status()
+    import zee_local
+    return {**ici_warm.status(), "zeeLocal": zee_local.status()}
 
 
 @app.get("/ici/pearls")
