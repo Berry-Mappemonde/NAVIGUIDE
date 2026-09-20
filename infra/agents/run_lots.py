@@ -42,8 +42,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_MD = ROOT / "docs" / "LOTS_ORDRE_ET_PROMPTS.md"
 HERE = Path(__file__).resolve().parent
-STATE_JSON = HERE / "state.json"
-LOG_FILE = HERE / "run_lots.log"
+# BIM_STATE_DIR : dossier de state.json et du journal (tests : ne pas toucher à ceux d'une nuit en cours).
+STATE_DIR = Path(os.environ.get("BIM_STATE_DIR", str(HERE)))
+STATE_JSON = STATE_DIR / "state.json"
+LOG_FILE = STATE_DIR / "run_lots.log"
 WORKTREES = Path(os.environ.get("BIM_LOTS_DIR", str(Path.home() / "bim-lots")))
 
 CURSOR_API = "https://api.cursor.com"
@@ -72,18 +74,19 @@ class Lot:
 
 @dataclass
 class State:
-    done: dict = field(default_factory=dict)   # id -> {status, branch, pr, ci, …}
+    done: dict = field(default_factory=dict)   # id -> {status, branch, pr, ci, ci_failures, …}
     last_branch: str = "main"
+    last_lot: str = ""
 
     @classmethod
     def load(cls) -> "State":
         if STATE_JSON.exists():
             d = json.loads(STATE_JSON.read_text(encoding="utf-8"))
-            return cls(done=d.get("done", {}), last_branch=d.get("last_branch", "main"))
+            return cls(done=d.get("done", {}), last_branch=d.get("last_branch", "main"), last_lot=d.get("last_lot", ""))
         return cls()
 
     def save(self) -> None:
-        STATE_JSON.write_text(json.dumps({"done": self.done, "last_branch": self.last_branch}, indent=2, ensure_ascii=False), encoding="utf-8")
+        STATE_JSON.write_text(json.dumps({"done": self.done, "last_branch": self.last_branch, "last_lot": self.last_lot}, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def log(msg: str) -> None:
@@ -163,6 +166,17 @@ class Http:
     def github(self, path: str, method: str = "GET", body: dict | None = None):
         return self._call(f"{GITHUB_API}{path}", self.github_headers, method, body)
 
+    def github_text(self, path: str) -> str:
+        """GET qui renvoie du texte (journaux de job : GitHub redirige vers un fichier)."""
+        req = urllib.request.Request(f"{GITHUB_API}{path}", headers=self.github_headers)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read().decode(errors="replace")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"HTTP {e.code} GET {path}") from e
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise RuntimeError(f"réseau: GET {path}: {e}") from e
+
 
 def github_token_from_git() -> str | None:
     tok = os.environ.get("GITHUB_TOKEN")
@@ -191,31 +205,63 @@ def find_pr(http: Http, repo: str, branch: str) -> dict | None:
     return prs[0] if prs else None
 
 
-def ci_status(http: Http, repo: str, sha: str) -> tuple[str, list[str]]:
+FAIL_LINE = re.compile(r"(✘|✖|FAILED|failed|Error:|AssertionError|Expected|Received|\.spec\.js:\d+|test_[a-z_]+\.py::)")
+
+
+def job_failures(http: Http, repo: str, check_run: dict) -> list[str]:
+    """Lit le journal du job GitHub Actions (l'id du check-run = l'id du job) et
+    en extrait les lignes qui nomment un test qui échoue. Court, dédoublonné."""
+    try:
+        raw = http.github_text(f"/repos/{owner_repo(repo)}/actions/jobs/{check_run['id']}/logs")
+    except RuntimeError:
+        return []
+    out: list[str] = []
+    for line in raw.splitlines():
+        line = re.sub(r"^\S+T\S+Z\s*", "", line).strip()            # horodatage GitHub
+        line = re.sub(r"\x1b\[[0-9;]*m", "", line)                  # couleurs
+        if FAIL_LINE.search(line) and len(line) < 240 and line not in out:
+            out.append(line)
+        if len(out) >= 25:
+            break
+    return out
+
+
+def ci_status(http: Http, repo: str, sha: str) -> tuple[str, list[str], list[str]]:
+    """→ (statut, noms des jobs en échec, lignes d'échec extraites de leurs journaux)."""
     d = http.github(f"/repos/{owner_repo(repo)}/commits/{sha}/check-runs")
     runs = d.get("check_runs", [])
     if not runs:
-        return "none", []
-    failed = [r["name"] for r in runs if r.get("conclusion") in ("failure", "timed_out", "cancelled", "action_required")]
+        return "none", [], []
+    failed = [r for r in runs if r.get("conclusion") in ("failure", "timed_out", "cancelled", "action_required")]
     pending = [r["name"] for r in runs if r.get("status") != "completed"]
     if failed:
-        return "failure", failed
+        details: list[str] = []
+        for r in failed:
+            details += [f"[{r['name']}] {ln}" for ln in job_failures(http, repo, r)]
+        return "failure", [r["name"] for r in failed], details
     if pending:
-        return "pending", pending
-    return "success", []
+        return "pending", pending, []
+    return "success", [], []
 
 
-def wait_ci(http: Http, repo: str, branch: str, max_min: int) -> tuple[str, list[str], dict | None]:
+def wait_ci(http: Http, repo: str, branch: str, max_min: int) -> tuple[str, list[str], list[str], dict | None]:
     t0 = time.time()
     pr = None
     while time.time() - t0 < max_min * 60:
         pr = find_pr(http, repo, branch)
         if pr:
-            status, names = ci_status(http, repo, pr["head"]["sha"])
+            status, names, details = ci_status(http, repo, pr["head"]["sha"])
             if status in ("success", "failure"):
-                return status, names, pr
+                return status, names, details, pr
         time.sleep(60)
-    return "pending", [], pr
+    return "pending", [], [], pr
+
+
+def new_failures(details: list[str], inherited: list[str]) -> list[str]:
+    """Les lignes d'échec absentes de la base (lot précédent de la pile) : ce sont
+    celles que ce lot a introduites et que sa relance doit corriger."""
+    base = {re.sub(r"^\[[^\]]*\]\s*", "", d) for d in inherited}
+    return [d for d in details if re.sub(r"^\[[^\]]*\]\s*", "", d) not in base]
 
 
 # ---------------------------------------------------------------- cloud runtime
@@ -290,7 +336,7 @@ def run_lot_cloud(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
         run = cloud_wait(http, agent_id, run_id, int(args.timeout_hours * 1800), args.poll)
     return {"status": run.get("status"), "branch": cloud_branch(run, args.repo), "agent": agent_id, "run": run_id,
             "result": (run.get("result") or "")[:500],
-            "fix": lambda names: cloud_wait(http, agent_id, cloud_follow_up(http, agent_id, fix_text(names)), int(args.timeout_hours * 1800), args.poll)}
+            "fix": lambda names, details=None: cloud_wait(http, agent_id, cloud_follow_up(http, agent_id, fix_text(names, details)), int(args.timeout_hours * 1800), args.poll)}
 
 
 # ---------------------------------------------------------------- local runtime (CLI dans un worktree)
@@ -378,6 +424,10 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
             f"node_modules et .venv sont des liens vers le dépôt principal : ne lance ni npm install ni pip install sauf nécessité absolue. "
             f"Le worktree est sur un HEAD détaché à `{ref}` : commence par `git checkout -b <ta-branche>`. "
             f"{ports}"
+            f"RÈGLE CI : la CI n'a PAS d'API. Ton spec Playwright (e2e/lots/<lot>.spec.js) doit passer sans API : sonde `await page.request.get('/voyage/official')` "
+            f"et, si elle ne répond pas, saute proprement (annotation + return) les assertions qui en dépendent, sans jamais affaiblir celles qui n'en dépendent pas. "
+            f"Avant de pousser, rejoue-le deux fois : comme en CI `API_PROXY_TARGET=http://127.0.0.1:9 PW_PORT={pw_port} npm run e2e -- e2e/lots/<lot>.spec.js` (doit passer), "
+            f"puis avec l'API `PW_PORT={pw_port} npm run e2e -- e2e/lots/<lot>.spec.js`. Ne modifie jamais le spec d'un autre lot. "
             f"Quand tout est vert : `git push -u origin <ta-branche>` puis ouvre la PR avec "
             f"`python3 {HERE / 'open_pr.py'} <ta-branche> main \"<titre>\" /tmp/pr-<lot>.md` (chemin absolu ; écris d'abord le corps de la PR dans ce fichier). "
             f"Ne pose aucune question : décide et note dans la PR.")
@@ -443,7 +493,30 @@ def ensure_pr(http: Http, args, lot: Lot, branch: str, result: str) -> None:
     body.unlink(missing_ok=True)
 
 
+def adoptable_worktree(lot: Lot) -> tuple[Path, str] | None:
+    """Un worktree laissé par une session interrompue, avec une branche poussée et
+    pas encore mergée : on l'adopte au lieu de refaire le lot (et d'ouvrir une 2e PR)."""
+    path = WORKTREES / lot.id.lower()
+    if not path.exists():
+        return None
+    branch = local_branch(path)
+    if not branch or merged_into_main(branch):
+        return None
+    remote = sh(["git", "ls-remote", "--heads", "origin", branch], cwd=path, check=False, timeout=60).stdout.strip()
+    if not remote:
+        return None
+    dirty = sh(["git", "status", "--porcelain"], cwd=path, check=False).stdout.strip()
+    return None if dirty else (path, branch)
+
+
 def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
+    adopted = adoptable_worktree(lot)
+    if adopted:
+        path, branch = adopted
+        log(f"[{lot.id}] worktree {path} déjà poussé sur {branch} — adopté (pas de nouvel agent)")
+        ensure_pr(http, args, lot, branch, "(lot adopté après interruption : voir la PR)")
+        return {"status": "FINISHED", "branch": branch, "worktree": str(path), "result": "adopté",
+                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True)}
     path = prepare_worktree(lot, ref)
     log(f"[{lot.id}] worktree {path} depuis {ref} — agent local ({args.model or 'modèle par défaut du compte'})")
     status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600))
@@ -465,7 +538,7 @@ def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
     else:
         status = "ERROR" if status == "FINISHED" else status
     return {"status": status, "branch": branch, "worktree": str(path), "result": result[:500],
-            "fix": lambda names: run_agent_cli(path, fix_text(names), args.model, int(args.timeout_hours * 1800), resume=True)}
+            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True)}
 
 
 # ---------------------------------------------------------------- boucle commune
@@ -474,9 +547,12 @@ RESUME_TEXT = ("Reprends là où tu t'es arrêté : finis le lot, lance les test
                "Si un point bloque, choisis la solution la plus simple et note-la dans la PR.")
 
 
-def fix_text(names: list[str]) -> str:
-    return ("La CI de ta PR échoue sur : " + ", ".join(names) + ". Lis les journaux de la CI (GitHub Actions), corrige, "
-            "relance les tests en local, pousse. Ne merge pas. Ne retire aucune surface visible.")
+def fix_text(names: list[str], details: list[str] | None = None) -> str:
+    lines = "\n".join(f"  - {d}" for d in (details or [])[:20]) or "  (voir les journaux GitHub Actions)"
+    return ("La CI de ta PR échoue sur : " + ", ".join(names) + ".\nLignes d'échec relevées dans les journaux :\n" + lines +
+            "\nCorrige TA PR : la CI n'a pas d'API (un spec de lot doit passer sans API : sonde /voyage/official et saute les assertions qui en dépendent) ; "
+            "rejoue en local avec `API_PROXY_TARGET=http://127.0.0.1:9 PW_PORT=" + str(PW_PORT) + " npm run e2e -- e2e/lots/<ton-lot>.spec.js` puis npm test / pytest / vite build ; pousse. "
+            "Ne modifie pas le spec d'un autre lot ; ne merge pas ; ne retire aucune surface visible.")
 
 
 def base_line(ref: str) -> str:
@@ -518,22 +594,32 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
         state.save()
         return
     log(f"[{lot.id}] branche : {branch} — attente PR + CI (≤ {args.ci_wait_min} min)")
-    status, names, pr = wait_ci(http, args.repo, branch, args.ci_wait_min)
+    inherited = (state.done.get(state.last_lot) or {}).get("ci_failures", []) if args.stack == "linear" else []
+    status, names, details, pr = wait_ci(http, args.repo, branch, args.ci_wait_min)
     if pr:
         entry["pr"] = pr["html_url"]
         log(f"[{lot.id}] PR {pr['number']} {pr['html_url']} — CI {status} {names or ''}")
     else:
         log(f"[{lot.id}] aucune PR trouvée pour {branch} — à ouvrir à la main")
-    if status == "failure":
-        log(f"[{lot.id}] CI rouge — une relance de correction")
-        out["fix"](names)
+    rounds = 0
+    while status == "failure" and rounds < args.fix_rounds:
+        fresh = new_failures(details, inherited)
+        if details and not fresh:
+            log(f"[{lot.id}] CI rouge mais tous les échecs sont hérités du lot précédent ({len(details)} lignes) — pas de relance")
+            status = "failure-inherited"
+            break
+        rounds += 1
+        log(f"[{lot.id}] CI rouge — relance de correction {rounds}/{args.fix_rounds} ({len(fresh or details)} lignes d'échec transmises)")
+        out["fix"](names, fresh or details)
         if args.runtime == "local":
             ensure_pushed(Path(out["worktree"]), branch)
-        status, names, pr = wait_ci(http, args.repo, branch, args.ci_wait_min)
-        log(f"[{lot.id}] CI après correction : {status} {names or ''}")
+        status, names, details, pr = wait_ci(http, args.repo, branch, args.ci_wait_min)
+        log(f"[{lot.id}] CI après correction {rounds} : {status} {names or ''}")
     entry["ci"] = status
+    entry["ci_failures"] = details if status.startswith("failure") else []
     state.done[lot.id] = entry
     state.last_branch = branch
+    state.last_lot = lot.id
     state.save()
 
 
@@ -600,6 +686,7 @@ def main() -> None:
     ap.add_argument("--timeout-hours", type=float, default=3.0)
     ap.add_argument("--poll", type=int, default=60, help="secondes entre deux lectures d'état (cloud)")
     ap.add_argument("--ci-wait-min", type=int, default=25)
+    ap.add_argument("--fix-rounds", type=int, default=2, help="relances de correction quand la CI est rouge sur des échecs nouveaux (défaut 2)")
     args = ap.parse_args()
 
     if args.check:
