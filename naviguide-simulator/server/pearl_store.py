@@ -271,4 +271,11 @@ def kv_purge(ns: str, older_than_s: float) -> int:
 def info() -> dict[str, Any]:
     p = db_path()
     size = p.stat().st_size if p.exists() else 0
-    return {"path": str(p), "bytes": size, **count_pearls(), "escales": kv_count("escale"), "stories": kv_count("story")}
+    return {
+        "path": str(p),
+        "bytes": size,
+        **count_pearls(),
+        "escales": kv_count("escale"),
+        "stories": kv_count("story"),
+        "truth": kv_count("truth"),
+    }

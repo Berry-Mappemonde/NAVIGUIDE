@@ -1,10 +1,61 @@
-import { memo, useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 import { isNowAlertOrDecision, publishEventBubble } from "./eventBubble.js";
 import { ChevronRight, LocateFixed, X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
-import { cardSpeech } from "../engine/momentCard.js";
+import { cardSpeech, formatTruthDate, strikeParts } from "../engine/momentCard.js";
 import { ListenButton } from "./ListenButton.jsx";
+
+function useRecipeCard(card) {
+  const [fixture, setFixture] = useState(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const read = () => {
+      const v = window.__naviguideTruthFixture;
+      setFixture(v && typeof v === "object" ? v : null);
+    };
+    read();
+    window.addEventListener("naviguide-truth-fixture", read);
+    return () => window.removeEventListener("naviguide-truth-fixture", read);
+  }, []);
+  return fixture || card;
+}
+
+function CardText({ text, unsupported, className, pending }) {
+  const { t } = useLang();
+  const parts = strikeParts(text, unsupported);
+  return (
+    <p className={className}>
+      {parts.map((part, i) => (
+        part.strike ? (
+          <s key={i} className="line-through decoration-white/70">
+            {part.extra ? ` ${part.text}` : part.text}
+          </s>
+        ) : (
+          <span key={i}>{part.text}</span>
+        )
+      ))}
+      {pending ? (
+        <span className="ml-1 text-[10px] text-white/45">{t("momentStoryPending")}</span>
+      ) : null}
+    </p>
+  );
+}
+
+function TruthBadge({ truth }) {
+  const { t, lang } = useLang();
+  if (!truth) return null;
+  const unverifiable = truth.status === "unverifiable";
+  const date = formatTruthDate(truth.checkedAt, lang);
+  const label = unverifiable
+    ? t("truthBadgeUnverifiable")
+    : t("truthBadgeVerified", { date: date || "—" });
+  return (
+    <div data-testid="truth-badge" className="mt-1 text-[10px] text-white/55">
+      {label}
+    </div>
+  );
+}
 
 function CardLinks({ entity, onFocus, t }) {
   if (!entity) return null;
@@ -50,16 +101,17 @@ function CardLinks({ entity, onFocus, t }) {
  */
 export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus, inline = false }) {
   const { t } = useLang();
+  const shown = useRecipeCard(card);
   useEffect(() => {
     const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
     if (film?.startedAt && !film.ended) return;
-    if (card && isNowAlertOrDecision(card)) publishEventBubble(card);
+    if (shown && isNowAlertOrDecision(shown)) publishEventBubble(shown);
     else publishEventBubble(null);
-  }, [card]);
-  if (!card) return null;
-  const alert = card.severity === "alert";
-  const ahead = Number.isFinite(card.whenNm) && card.whenNm >= 1
-    ? t("momentAhead", { nm: Math.round(card.whenNm) })
+  }, [shown]);
+  if (!shown) return null;
+  const alert = shown.severity === "alert";
+  const ahead = Number.isFinite(shown.whenNm) && shown.whenNm >= 1
+    ? t("momentAhead", { nm: Math.round(shown.whenNm) })
     : "";
   const border = alert ? "rgba(251, 191, 36, 0.7)" : "rgba(34, 211, 238, 0.55)";
   const frame = inline
@@ -75,7 +127,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
         : "0 0 0 1px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)",
     };
   return (
-    <div data-testid="moment-now" data-type={card.type} data-kind={card.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+    <div data-testid="moment-now" data-type={shown.type} data-kind={shown.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
         <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${alert ? "bg-amber-400 animate-pulse" : "bg-cyan-300"}`} />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70 min-w-0 truncate">
@@ -99,14 +151,15 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
           </button>
         </div>
       </div>
-      {card.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
-      <p className={`mt-1 leading-snug text-slate-100 break-words [overflow-wrap:anywhere] ${inline ? "text-[11px]" : "text-[12px]"}`}>
-        {card.text}
-        {card.storyStatus === "pending" ? (
-          <span className="ml-1 text-[10px] text-white/45">{t("momentStoryPending")}</span>
-        ) : null}
-      </p>
-      <CardLinks entity={card.entity} onFocus={onFocus} t={t} />
+      {shown.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{shown.title}</div> : null}
+      <CardText
+        text={shown.text}
+        unsupported={shown.truth?.unsupported}
+        pending={shown.storyStatus === "pending"}
+        className={`mt-1 leading-snug text-slate-100 break-words [overflow-wrap:anywhere] ${inline ? "text-[11px]" : "text-[12px]"}`}
+      />
+      <TruthBadge truth={shown.truth} />
+      <CardLinks entity={shown.entity} onFocus={onFocus} t={t} />
     </div>
   );
 });
@@ -149,9 +202,12 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
         </div>
       </div>
       {card.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
-      <p className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]">
-        {card.text}
-      </p>
+      <CardText
+        text={card.text}
+        unsupported={card.truth?.unsupported}
+        className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+      />
+      <TruthBadge truth={card.truth} />
       <CardLinks entity={card.entity} onFocus={onFocus} t={t} />
     </div>
   );

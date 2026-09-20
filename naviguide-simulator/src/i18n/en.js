@@ -154,6 +154,8 @@ export default {
   momentAhead:        "in {nm} nm",
   momentStoryPending: "story on its way…",
   momentSeeOnMap:     "See on the map",
+  truthBadgeVerified: "Checked {date} · Tavily + Nemotron 3 Ultra",
+  truthBadgeUnverifiable: "Not re-checkable",
   eventBubbleChipWind: "Wind",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} d alongside",
