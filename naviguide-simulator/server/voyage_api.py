@@ -19,7 +19,7 @@ from forecast_cube import (
     load_cube,
     save_cube,
 )
-from isochrone import haversine, run_leg_isochrone
+from isochrone import WAVE_NOGO_M, haversine, run_leg_isochrone, skipper_nogo
 from grib_fetch import is_stale, maybe_refresh_official
 from saildocs import (
     DAILY_RADIUS_NM,
@@ -86,6 +86,9 @@ class VoyageCreate(BaseModel):
 class RecomputeBody(BaseModel):
     to_name: Optional[str] = None
     t: Optional[str] = None
+    # Lot G — les ordres du skipper comme contraintes du routage (conseil de route).
+    wind_max_kt: Optional[float] = None
+    hs_max_m: Optional[float] = None
 
 
 class DailyGribIn(BaseModel):
@@ -843,6 +846,8 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
     else:
         dst_lat, dst_lon = float(live["lat"]), float(live["lon"])
 
+    wind_max = body.wind_max_kt if body.wind_max_kt and 10 <= body.wind_max_kt <= 80 else None
+    hs_max = body.hs_max_m if body.hs_max_m and 0.5 <= body.hs_max_m <= 12 else None
     result = run_leg_isochrone(
         dep_lat=float(live["lat"]),
         dep_lon=float(live["lon"]),
@@ -852,10 +857,16 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         wind_fn=wind_fn,
         polar_raw=_polar_raw(voy.get("expedition_id") or ""),
         searoute_coords=searoute,
+        wave_nogo_fn=skipper_nogo(wind_fn, wind_max_kt=wind_max, hs_max_m=hs_max),
     )
     old_coords = [[lon, lat] for lat, lon in searoute]
     draft = {
         **result,
+        "constraints": {
+            "windMaxKt": wind_max,
+            "hsMaxM": hs_max if hs_max is not None else WAVE_NOGO_M,
+            "source": "skipper" if (wind_max is not None or hs_max is not None) else "default",
+        },
         "versus_searoute": {
             "hours": round(versus_hours, 2) if versus_hours is not None else None,
             "distance_nm": round(versus_nm, 2),

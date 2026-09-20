@@ -1369,9 +1369,14 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
   }, [sceneApi]);
+  // Route advice under the skipper's orders (lot G): gale and sea limits of
+  // the resolved orders become no-go zones of the isochrone.
   const handleRecompute = useCallback(
-    () => vessel.recompute(clockSample?.iso),
-    [vessel.recompute, clockSample?.iso],
+    () => vessel.recompute(clockSample?.iso, {
+      windMaxKt: skipper.orders?.values?.galeKt,
+      hsMaxM: skipper.orders?.values?.hsAlertM,
+    }),
+    [vessel.recompute, clockSample?.iso, skipper.orders?.values?.galeKt, skipper.orders?.values?.hsAlertM],
   );
   const mapScene = useMemo(() => ({
     isLightMode,

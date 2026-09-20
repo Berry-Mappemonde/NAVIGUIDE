@@ -29,6 +29,16 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
             <div>{hoursLabel(draft.hours)}</div>
           </div>
         </div>
+        {draft.constraints ? (
+          <p data-testid="recompute-constraints" className="text-[10px] text-amber-200/80 mb-2">
+            {draft.constraints.source === "skipper"
+              ? t("recomputeConstraintsSkipper", {
+                wind: draft.constraints.windMaxKt != null ? `${Math.round(draft.constraints.windMaxKt)} kn` : "—",
+                hs: draft.constraints.hsMaxM != null ? `${draft.constraints.hsMaxM} m` : "—",
+              })
+              : t("recomputeConstraintsDefault", { hs: draft.constraints.hsMaxM != null ? `${draft.constraints.hsMaxM} m` : "—" })}
+          </p>
+        ) : null}
         <p className="text-[10px] text-white/45 mb-3">{t("recomputeHint")}</p>
         <div className="flex gap-2">
           <button
