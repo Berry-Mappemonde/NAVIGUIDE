@@ -14,6 +14,7 @@ export function useReplay({ clock, journal, enabled = false, lang = "fr", second
   const [active, setActive] = useState(false);
   const [tMs, setTMs] = useState(null);
   const [card, setCard] = useState(null);
+  // Lot O — voice is piloted by the film-bar Écouter button (no replay-voice).
   const [voice, setVoice] = useState(true);
   const queueRef = useRef([]);
   const cardSinceRef = useRef(0);

@@ -749,9 +749,13 @@ export default function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuivre, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang]);
-  const speechText = isSuivre
-    ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
-    : (iciPack.briefing || null);
+  // Lot O — during a replay, Écouter / useReplayVoice read the current
+  // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
+  const speechText = replay.active
+    ? (storyParagraphs[storyParagraphs.length - 1] || null)
+    : isSuivre
+      ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
+      : (iciPack.briefing || null);
 
   useReplayVoice({ active: replay.active, voice: replay.voice, paragraphs: storyParagraphs, lang });
 
