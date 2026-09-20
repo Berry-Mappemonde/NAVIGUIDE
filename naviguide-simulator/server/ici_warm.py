@@ -84,14 +84,17 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
     """Pearls every `step_nm` along the sea points, interpolated inside long
     segments (the official route has ~32 nm between points). Land legs and
     air hops are skipped; each sea stretch starts with its own pearl.
-    Each pearl carries `sailNm`, the sea miles from the first sea point (the
-    same scale as the clock's `sailNm`)."""
+    Each pearl carries `sailNm` on the **clock's scale** — the route point's
+    `cumNm` (which counts the land leg Saint-Maur → La Rochelle, as the clock
+    does), interpolated inside a segment. Without `cumNm`, sea miles are
+    accumulated from the first sea point."""
     out: list[dict] = []
     if not points:
         return out
     prev = None
+    prev_cum = 0.0
     carry = 0.0  # distance since the last pearl
-    sail = 0.0   # sea miles so far
+    sail = 0.0   # accumulated sea miles (fallback scale)
     for p in points:
         try:
             lat, lon = float(p["lat"]), float(p["lon"])
@@ -100,10 +103,14 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
         if p.get("nonMaritime") or p.get("jump"):
             prev = None
             continue
+        cum = p.get("cumNm")
+        cum = float(cum) if isinstance(cum, (int, float)) else None
         if prev is None:
-            out.append({"lat": lat, "lon": _wrap_lon(lon), "sailNm": round(sail, 2)})
+            base = cum if cum is not None else sail
+            out.append({"lat": lat, "lon": _wrap_lon(lon), "sailNm": round(base, 2)})
             carry = 0.0
             prev = (lat, lon)
+            prev_cum = base
             continue
         seg = _haversine_nm(prev[0], prev[1], lat, lon)
         if seg <= 0:
@@ -114,12 +121,13 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
             out.append({
                 "lat": prev[0] + (lat - prev[0]) * t,
                 "lon": _wrap_lon(prev[1] + (lon - prev[1]) * t),
-                "sailNm": round(sail + pos, 2),
+                "sailNm": round(prev_cum + pos, 2),
             })
             pos += step_nm
         carry = seg - (pos - step_nm)
         sail += seg
         prev = (lat, lon)
+        prev_cum = cum if cum is not None else prev_cum + seg
     return out
 
 

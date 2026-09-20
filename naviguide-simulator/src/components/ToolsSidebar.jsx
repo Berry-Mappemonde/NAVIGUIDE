@@ -4,6 +4,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { adminHeaders, getAdminSecret, setAdminSecret } from "../utils/adminSecret.js";
 import { SkipperOrdersPanel } from "./SkipperOrdersPanel.jsx";
 import { EscaleLegend } from "./EscaleLegend.jsx";
+import { PlanReview } from "./PlanReview.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
 
@@ -202,7 +203,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
   maritimeLayers = null,
-  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet, drawing = null,
+  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet, drawing = null, planReview = null,
   showDeparture = false, departureT0, onDepartureT0,
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
@@ -340,6 +341,11 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               onEscaleSheet={onEscaleSheet}
               drawing={drawing}
             />
+            {planReview && !drawing ? (
+              <div className="mt-2">
+                <PlanReview legs={planReview.legs} loading={planReview.loading} error={planReview.error} summary={planReview.summary} />
+              </div>
+            ) : null}
             {showDeparture ? (
               <div className="mt-2">
                 <DepartureField t0={departureT0} onT0={onDepartureT0} />

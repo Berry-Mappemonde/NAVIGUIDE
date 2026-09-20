@@ -49,6 +49,14 @@ PR par lot, recette visuelle avant le suivant** (consigne du 19 sept.).
 
 ## 1. État au 19 septembre 2026
 
+> **Soir du 19 sept. — lots livrés en PR empilées (à merger dans l'ordre) :**
+> P #190 · A #191 · B #192 · C #193 · D #194 · E #195 · F #196 · G #197 ·
+> H #198 · I #199 · J #200 · K #201. Reste : G3 (conseil de route en Suivre),
+> L (Tavily, objet du hackathon), second découpage d'`App.jsx` si besoin.
+> Correctif transversal (K) : les perles portent l'échelle de milles de
+> l'horloge (le tronçon terrestre Saint-Maur → La Rochelle compte) — les
+> lignes du journal issues des perles étaient datées ~16 h trop tôt.
+
 | Fait | Où |
 |---|---|
 | Sécurité P0, journal serveur v1, « Écouter » | #185, #186 |
