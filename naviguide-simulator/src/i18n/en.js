@@ -155,6 +155,8 @@ export default {
   skipperBoatReset:   "Back to the polar's value",
   skipperExpertGaleKt:     "Gale",
   skipperExpertGaleHoldKt: "End of gale",
+  skipperPlanningGrib:     "polar × GRIB wind ({tws} kn, TWA {twa}°)",
+  skipperPlanningClimo:    "polar × typical wind ({tws} kn, TWA {twa}°)",
   brandTitle: "NAVIGUIDE simulator",
   layerSextant: "Sextant",
   layerSextantTitle: "Sextant · Ifremer/SISMER",

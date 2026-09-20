@@ -1,12 +1,27 @@
 # Plan général de développement — NAVIGUIDE simulator
 
 Atelier **`naviguide-simulator/`** (`simulator.naviguide.fr`). Prod `www` et
-Blue Intelligence intouchées. Version **1.1** — 18 septembre 2026 (soir).
+Blue Intelligence intouchées. Version **2.0** — 19 septembre 2026.
 
 Ce plan **chapeaute** les plans d’atelier existants (Suivre / Simulation,
 événements `ici()`, skipper, chantiers structurants, pipeline d’affichage,
 UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 **pourquoi**, après relecture du code du 18 septembre.
+
+> **v2.0 — où on en est, où on va.** Tout ce qui suit jusqu’au §3 est
+> l’analyse d’origine, annotée. **Ce qui reste à faire est découpé en lots
+> recettables** (tests + recette visuelle, brief prêt pour un worker Cloud)
+> dans **[PLAN_LOTS_AGENT_SIMULATEUR.md](PLAN_LOTS_AGENT_SIMULATEUR.md)** :
+> A journal v2 complet · B ZEE locale · C fiche d’escale · **D chatbot
+> journal de bord** · E replay · F récits pré-générés + Nebius · G route /
+> re-routing · H sécurité P1 · I UX première visite · J découpage `App.jsx` ·
+> K revue de plan · L Tavily (plus tard).
+>
+> **Fait le 19 sept. (passe 3, PR #189)** : **vitesse de planning = polaire ×
+> vent du moment** (GRIB au bateau en Suivre, climatologie en Simulation ;
+> l’anticipation suit) ; **journal v2 partiel** — ZEE franchies et AMP
+> approchées lues sur les perles chauffées, datées par l’horloge, racontées
+> jambe par jambe dans le récit.
 
 > **Arbitrages du porteur (18 sept. 2026, soir)** — tranchés, appliqués ci-dessous :
 > 1. « Histoire dictée » = **lue à voix haute** (voix du navigateur). La saisie
@@ -285,8 +300,10 @@ Taille : S ≤ 1 jour d’agent, M ≤ 3 jours, L > 3 jours. Une PR par lot.
 | **Journal serveur** du voyage officiel (1.2) v1 | M | P0 | **en PR (#186)**, empilée sur #185 |
 | **Pré-génération des récits** + cache serveur (1.3), cran Nebius dans la cascade | M | journal (Suivre) ; rien (Simulation) | **perles faites** (19 sept.) : `ici_warm.py`, `GET /ici/pearls`, cache thin 7 j sur disque ; récits LLM pré-générés et Nebius : à faire |
 | **Carte du moment** sur la carte, surtout en Cinéma (1.4) | S | — | **fait** (19 sept.) : NOW + FREE, sans pré-génération — le texte local suffit, le récit LLM remplace quand il arrive |
-| **Récit de la traversée** (Suivre) : de Saint-Maur à la position du jour, depuis l’horloge officielle + journal (1.5, sans LLM) | S | journal v1 | **fait** (19 sept.) : `engine/expeditionStory.js`, bloc sidebar, lu par « Écouter » (barre film) |
-| Journal v2 : événements jugés + récits côté serveur, sac `ici()` aux escales | S | pré-génération | à faire |
+| **Récit de la traversée** (Suivre) : de Saint-Maur à la position du jour, depuis l’horloge officielle + journal (1.5, sans LLM) | S | journal v1 | **fait** (19 sept.) : `engine/expeditionStory.js`, chronologique jambe par jambe (#188), événements de route racontés (#189) |
+| Journal v2 : événements de route côté serveur (ZEE, AMP → **fait #189** depuis les perles) ; ports d’entrée, météo au bateau → **lot A** | S | perles | partiel |
+| **Vitesse de planning** polaire × vent (GRIB / climatologie) | S | polaire | **fait** (#189) |
+| **Chatbot journal de bord** (poser une question sur toutes les données, consigner) | L | contexte serveur | **lot D**, à faire |
 
 ### Phase 2 — l’escale et l’histoire
 

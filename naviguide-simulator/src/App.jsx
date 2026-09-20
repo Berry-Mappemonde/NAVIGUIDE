@@ -165,12 +165,6 @@ export default function App() {
   const [skipperClickId, setSkipperClickId] = useState(null);
   const isSuivre = view === VIEW_SUIVRE;
   const isSimulation = view === VIEW_SIMULATION;
-  // Skipper orders: one character, boat read from the polar, saved in this tab. Cinema keeps them active.
-  const skipper = useSkipperOrders({
-    polar: polarData,
-    mode: isSuivre ? "suivre" : "simulation",
-    lang,
-  });
   const [voyageFlat, setVoyageFlat] = useState(null);
   const [cameraPlaced, setCameraPlaced] = useState(false);
   const [sceneRevealed, setSceneRevealed] = useState(false);
@@ -364,6 +358,23 @@ export default function App() {
       nm: cast.sailNm,
     };
   }, [cast, flatRoute, playback.nm]);
+
+  // Skipper orders: one character, boat read from the polar, saved in this tab.
+  // Cinema keeps them active. The planning speed reads the polar at the wind
+  // of the moment: GRIB at the boat in Suivre, climatology of the clock in Simulation.
+  const skipperWind = isSuivre
+    ? (live?.kind === "forecast" && Number.isFinite(live.windKnots)
+      ? { tws: live.windKnots, twd: live.dirFromDeg, heading: live.bearing ?? sample?.bearing, kind: "grib" }
+      : null)
+    : (Number.isFinite(clockSample?.windKnots)
+      ? { tws: clockSample.windKnots, twd: clockSample.dirFromDeg, heading: sample?.bearing ?? clockSample.bearing, kind: "climatology" }
+      : null);
+  const skipper = useSkipperOrders({
+    polar: polarData,
+    mode: isSuivre ? "suivre" : "simulation",
+    lang,
+    wind: skipperWind,
+  });
 
   const destMark = useMemo(
     () => chapterAtNm(escaleMarks, cast?.sailNm ?? playback.nm)?.to,
