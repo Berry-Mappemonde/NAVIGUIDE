@@ -54,4 +54,11 @@ describe("useReplay contract (lot E)", () => {
     assert.match(bar, /data-testid="film-subtitle"/);
     assert.match(bar, /data-testid="film-duration"/);
   });
+
+  it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
+    assert.match(hook, /pickFilmEvent/);
+    assert.match(hook, /publishEventBubble/);
+    assert.match(hook, /filmBubbleRef/);
+    assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
+  });
 });

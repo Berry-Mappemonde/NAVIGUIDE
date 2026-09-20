@@ -1,4 +1,5 @@
-import { memo } from "react";
+import { memo, useEffect } from "react";
+import { isNowAlertOrDecision, publishEventBubble } from "./eventBubble.js";
 import { ChevronRight, LocateFixed, X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
@@ -49,6 +50,12 @@ function CardLinks({ entity, onFocus, t }) {
  */
 export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus, inline = false }) {
   const { t } = useLang();
+  useEffect(() => {
+    const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
+    if (film?.startedAt && !film.ended) return;
+    if (card && isNowAlertOrDecision(card)) publishEventBubble(card);
+    else publishEventBubble(null);
+  }, [card]);
   if (!card) return null;
   const alert = card.severity === "alert";
   const ahead = Number.isFinite(card.whenNm) && card.whenNm >= 1

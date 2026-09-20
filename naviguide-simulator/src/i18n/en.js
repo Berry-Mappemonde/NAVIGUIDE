@@ -154,6 +154,9 @@ export default {
   momentAhead:        "in {nm} nm",
   momentStoryPending: "story on its way…",
   momentSeeOnMap:     "See on the map",
+  eventBubbleChipWind: "Wind",
+  eventBubbleChipHs:   "Hs",
+  eventBubbleChipQuay: "{n} d alongside",
 
   // ── Story of the crossing (Follow) ───────────────────────────────────────
   storyTitle:         "The story of the crossing",

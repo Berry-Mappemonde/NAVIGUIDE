@@ -4,6 +4,7 @@ import {
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
 import { canLeadWithVoice } from "../utils/speak.js";
+import { EventBubbleGate, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
@@ -53,8 +54,13 @@ export function useReplay({
   const voiceCharRef = useRef(0);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
+  const filmBubbleRef = useRef(new EventBubbleGate());
+  const publishedBubbleRef = useRef(null);
 
   const stop = useCallback(() => {
+    filmBubbleRef.current.reset();
+    publishedBubbleRef.current = null;
+    publishEventBubble(null);
     setActive(false);
     setTMs(null);
     setCard(null);
@@ -152,6 +158,8 @@ export function useReplay({
     chapterStartedAtRef.current = 0;
     voiceCharRef.current = 0;
     setVoiceRate(1);
+    filmBubbleRef.current.reset();
+    publishedBubbleRef.current = null;
     setCard(null);
     applyChapter(plan.chapters[0]);
     setTMs(plan.timeAt(0, 0));
@@ -222,14 +230,6 @@ export function useReplay({
       }
       const elapsed = (now - startWallRef.current) / 1000;
       setProgress(Math.max(0, Math.min(1, elapsed / plan.targetSeconds)));
-      if (typeof window !== "undefined") {
-        const prev = window.__naviguideFilm || {};
-        window.__naviguideFilm = {
-          ...prev,
-          chapterIdx: chapterIdxRef.current,
-          elapsed,
-        };
-      }
       const voiceLed = Boolean(voiceRef.current && canLeadWithVoice());
 
       const ingest = (next) => {
@@ -241,6 +241,7 @@ export function useReplay({
         setTMs(next);
       };
 
+      let charIdx = voiceCharRef.current;
       const done = !voiceLed && elapsed >= plan.targetSeconds;
       if (done) {
         ingest(w.endMs);
@@ -249,7 +250,7 @@ export function useReplay({
         const ch = chapterAtElapsed(plan, elapsed);
         if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
         const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
-        const charIdx = Math.floor(Math.max(0, Math.min(1, frac)) * (ch?.chars || 1));
+        charIdx = Math.floor(Math.max(0, Math.min(1, frac)) * (ch?.chars || 1));
         ingest(plan.timeAt(ch?.idx ?? 0, charIdx));
       } else {
         setTMs((cur) => {
@@ -266,9 +267,38 @@ export function useReplay({
         if (elapsed > plan.targetSeconds + 20) finish();
       }
 
-      // Card rotation: the current one stays MIN_CARD_MS when the queue is
-      // quiet, less when lines pile up — the cards never lag the boat.
-      if (queueRef.current.length && now - cardSinceRef.current >= cardDwellMs(queueRef.current.length)) {
+      const chapter = plan.chapters[chapterIdxRef.current];
+      const filmEv = pickFilmEvent({
+        chapter,
+        charIdx,
+        tMs: lastTRef.current,
+        voiceLed,
+        plan,
+      });
+      const shown = filmBubbleRef.current.propose(filmEv?.card || null);
+      if (shown !== publishedBubbleRef.current) {
+        publishedBubbleRef.current = shown;
+        if (shown) {
+          cardSinceRef.current = now;
+          setCard(shown);
+        }
+        publishEventBubble(shown);
+      }
+      if (typeof window !== "undefined") {
+        const prevFilm = window.__naviguideFilm || {};
+        window.__naviguideFilm = {
+          ...prevFilm,
+          chapterIdx: chapterIdxRef.current,
+          elapsed,
+          charIdx,
+          bubbleId: shown ? (shown.key || shown.id || null) : null,
+          bubbleKind: shown?.kind || null,
+        };
+      }
+
+      // Card rotation: journal lines fill the sidebar only when no chapter
+      // event is on screen — the bubble and the NOW card stay the same text.
+      if (!shown && queueRef.current.length && now - cardSinceRef.current >= cardDwellMs(queueRef.current.length)) {
         const nextCard = queueRef.current.shift();
         cardSinceRef.current = now;
         setCard(nextCard);
