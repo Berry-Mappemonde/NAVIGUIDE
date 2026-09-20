@@ -154,6 +154,9 @@ export default {
   momentAhead:        "dans {nm} nm",
   momentStoryPending: "récit en préparation…",
   momentSeeOnMap:     "Voir sur la carte",
+  eventBubbleChipWind: "Vent",
+  eventBubbleChipHs:   "Hs",
+  eventBubbleChipQuay: "{n} j à quai",
 
   // ── Récit de la traversée (Suivre) ───────────────────────────────────────
   storyTitle:         "Le récit de la traversée",

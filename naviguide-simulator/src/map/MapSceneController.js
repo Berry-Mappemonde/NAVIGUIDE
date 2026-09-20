@@ -31,6 +31,7 @@ import {
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
 import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
+import { attachEventBubble } from "../components/EventBubble.jsx";
 
 const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
@@ -232,6 +233,20 @@ export class MapSceneController {
     map.on("moveend", this.onMoveEnd);
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
+    this.eventBubble = attachEventBubble(this, L);
+  }
+
+  /** Marqueur du bateau « à l'écran » (copie monde 0) — ancre de la bulle F4. */
+  mainBoatMarker() {
+    const liveMode = this.config.isSuivre && this.config.live && !this.config.previewing;
+    const order = this.config.filmActive || liveMode
+      ? ["live", "ghost", "simulation", "drawing"]
+      : ["simulation", "live", "ghost", "drawing"];
+    for (const role of order) {
+      const marker = (this.markerSets.get(role) || [])[0];
+      if (marker) return marker;
+    }
+    return null;
   }
 
   get api() {
@@ -522,6 +537,7 @@ export class MapSceneController {
       marker.setLatLng([lat, lngs[index]]);
       applyMarkerRotation(marker, bearing || 0);
     });
+    this.eventBubble?.sync();
   }
 
   syncMarkers(cast, snapshot) {
@@ -572,6 +588,7 @@ export class MapSceneController {
       className: "catamaran-divicon catamaran-divicon--draw",
       html: catamaranSvg(0),
     });
+    this.eventBubble?.sync();
   }
 
   syncAirHop(cast) {
@@ -919,6 +936,8 @@ export class MapSceneController {
   }
 
   dispose() {
+    this.eventBubble?.dispose();
+    this.eventBubble = null;
     this.clearBriefingFocus();
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);
