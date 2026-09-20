@@ -1,174 +1,203 @@
-# Plan — La même application sur un globe (« version Google Earth »)
+# Plan — Un globe **en plus** de la carte plane (MapLibre GL JS), sans toucher à Leaflet
 
-Version **1.0** — 20 septembre 2026. Règles : `docs/REGLES_WORKFLOW_AGENT.md`.
-Question du porteur : *« est-il possible de faire exactement la même
-application avec un globe, Google Earth, y compris toutes les fonctionnalités,
-sauf qu'au lieu d'une carte plane ce sera un globe ? Qu'est-ce que ça
-nécessite ? »* Réponse courte : **oui, mais pas avec Google Earth** ; avec un
-moteur de globe dans le navigateur, et la façon la moins risquée est de garder
-Leaflet comme plancher et d'ajouter un rendu « Globe » derrière une
-abstraction. Recherches faites le 20 septembre (sources en bas).
+Version **2.0** — 20 septembre 2026 (v1.0 le même jour, révisée sur décision
+du porteur : *« je ne veux pas remplacer Leaflet par MapLibre ; je veux les
+deux : soit une deuxième application avec un globe, soit une deuxième
+"carte" qui serait un globe »*). Règles : `docs/REGLES_WORKFLOW_AGENT.md`.
+Recherches refaites le 20 septembre sur MapLibre GL JS (sources en bas).
 
-## 0. Ce que « Google Earth » veut dire aujourd'hui
+## 0. Décision
 
-| Produit | Programmable pour notre app ? | Verdict |
+- **Leaflet reste la carte.** Aucun fichier `src/map/*`, `src/layers/*` ni
+  aucun composant existant n'est modifié pour le globe (hors deux points
+  d'entrée : un bouton et une route d'URL). Plancher `main` intact.
+- **Le globe est une deuxième vue**, MapLibre GL JS v6 en projection globe,
+  qui lit **les mêmes données** (route, horloge, perles, journal, couches) par
+  **les mêmes hooks et la même API**. Deux façons de l'héberger, à trancher
+  par le porteur au lot G0 :
+
+| | **Option A — même application, deuxième « carte »** | **Option B — deuxième application** |
 |---|---|---|
-| **Google Earth** (application, earth.google.com) | Non. Le plugin « Google Earth API » est mort depuis 2015. Earth Web importe des KML/KMZ et des projets, sans code applicatif, sans nos couches dynamiques, sans nos panneaux. | Écarté pour l'app. Utile pour **une vidéo** : exporter la route en KML et la survoler dans **Google Earth Studio** (rendu cinématique) = plan B pour la vidéo de soumission. |
-| **Google Maps Platform — 3D Maps** (`<gmp-map-3d>`, Maps JavaScript API) | Oui : globe photoréaliste, `Polyline3DElement`, `Marker3DElement` (+ popover), `Polygon3DElement`, `Model3DElement` (glTF : un catamaran 3D), `flyCameraTo` / `flyCameraAround`, événements caméra. **Limites** : pas de couche raster à nous (pas de fond sombre Esri, pas de bathymétrie EMODnet, pas de WMS ZEE, pas de symboles GRIB peints), vecteurs seulement ; statut **Preview** (gratuit, sans SLA), tarification à l'usage annoncée à la GA ; **restriction EEE** documentée pour les tuiles photoréalistes (`Map Tiles API` refusée aux comptes facturés dans l'Espace économique européen) — à vérifier pour `gmp-map-3d` avec un compte français. | Spectaculaire, mais fermé, incertain (prix, EEE), et il faudrait abandonner la moitié de nos couches. Non recommandé comme moteur principal. |
-| **CesiumJS** (open source, Apache-2) | Oui : vrai globe 3D, terrain, 3D Tiles (y compris les tuiles Google via Cesium ion, même restriction EEE), `ImageryLayer` WMS/XYZ (nos fonds et WMS marchent), entités GeoJSON, billboards HTML, caméra libre. Lourd (≈ 3–4 Mo), courbe d'apprentissage, WebGL exigeant sur portable. | Bon si l'on veut du **relief** (bathymétrie en 3D, atterrages). Sur-dimensionné pour une route océanique. |
-| **MapLibre GL JS v5/v6** (open source, BSD) — projection **globe** | Oui : globe à faible zoom qui devient Mercator en zoomant (≈ zoom 6), **sources raster XYZ et WMS**, GeoJSON (lignes, polygones, cercles, symboles), `Marker` HTML (nos icônes catamaran / avion / drapeaux), `Popup` ancrés, `flyTo` / `easeTo` / `jumpTo`, couches WebGL personnalisées (des billets de 2026 montrent des couches custom sur le globe). Léger (≈ 800 ko), même modèle mental que Leaflet. Points connus : GeoJSON aux pôles (issue #6072), rendu des lignes très longues qui coupent l'antiméridien à tester. | **Recommandé.** C'est le chemin où l'on garde **toutes** nos couches et où la migration se fait couche par couche. |
+| Où | `naviguide-simulator/src/globe/` ; onglet **Carte / Globe** au-dessus de la zone carte ; la carte Leaflet reste montée (cachée par `display:none`, jamais démontée) quand le globe est visible | `naviguide-globe/` (Vite + React), déployée sur `globe.naviguide.fr`, même API `:8010`, moteur JS partagé par un paquet `@naviguide/engine` (workspace npm) |
+| Ce qu'on réutilise | tout : sidebars, barre film, hooks, i18n, cartes, replay, chat | le serveur et les moteurs purs (`src/engine/*`, `src/utils/*`) ; l'UI est réécrite ou copiée |
+| Ce qu'on risque | un état partagé à deux vues (on l'a déjà : `scene` de `MapScene.jsx`) ; +≈ 250 ko gzip chargés **à la demande** | duplication d'UI, deux déploiements, dérive |
+| Effort | ≈ 9 jours-agent | ≈ 15 jours-agent |
+| Avis | **recommandée** : un seul produit, le globe comme un onglet, tout le reste identique | si le porteur veut un site « globe » à part pour la communication |
 
-Autres écartés : deck.gl `GlobeView` (expérimental, pas de raster), Globe.gl /
-three-globe (jolis, mais pas de tuiles WMS ni de popups riches), Mapbox GL
-(propriétaire, facturé).
+Les lots ci-dessous sont écrits pour l'option A ; l'option B reprend les
+mêmes lots avec `naviguide-globe/` comme racine et un lot G0b de squelette.
 
-## 1. Ce qu'il faut porter (inventaire du code Leaflet)
+## 1. Ce que MapLibre GL JS sait faire aujourd'hui (vérifié le 20 sept.)
 
-Leaflet touche **≈ 2 300 lignes** dans 17 fichiers ; le reste de l'app
-(moteur, hooks, sidebars, film, serveur) est indépendant de la carte.
+- **Version** : 6.10.0 ; **ESM uniquement** (plus d'UMD) ; avec Vite il faut
+  un appel unique `setWorkerUrl()` (voir Installation) ; `import * as maplibregl from 'maplibre-gl'`.
+- **Globe** : dans le style, `"projection": {"type": "globe"}` — sphère à
+  faible zoom, passage progressif en Mercator vers le zoom 6–12 (le type
+  `globe` est un préréglage de l'interpolation `vertical-perspective` →
+  `mercator`). `map.setProjection()` se fait dans `style.load` et doit être
+  réappliqué à chaque changement de style. Ciel : `sky.atmosphere-blend`
+  (atmosphère visible à faible zoom, fondu vers zoom 7).
+- **Sources** : raster XYZ (nos fonds Esri sombre/clair, EMODnet), **WMS**
+  (`tiles: [url WMS avec bbox={bbox-epsg-3857}]`), GeoJSON (lignes, polygones,
+  cercles, symboles), vector tiles / **PMTiles** (recommandé pour les
+  polygones ZEE lourds : un seul fichier statique servi par nginx, plugin
+  `pmtiles`).
+- **Marqueurs HTML** (`maplibregl.Marker` avec `element`) : sur le globe, un
+  marqueur passé **derrière la sphère** prend l'opacité `opacityWhenCovered`
+  et sa popup se ferme — nos catamaran, avion, drapeaux passent tels quels.
+- **Popups** ancrées (`Popup.setLngLat`) : la bulle événement du film.
+- **Antiméridien** : une ligne qui traverse 180° se dessine en **dépliant**
+  la longitude (ajouter/retirer 360° au point suivant si l'écart ≥ 180°) —
+  notre route officielle est déjà dépliée (`filmCum`), c'est un avantage ;
+  `LngLatBounds.adjustAntiMeridian()` existe pour `fitBounds`. Point connu :
+  GeoJSON **aux pôles** (issue #6072) — sans objet pour nous.
+- **Caméra** : `flyTo` / `easeTo` / `jumpTo` suivent la sphère ;
+  `fitBounds` ; `pitch`, `bearing`, `roll` ; `getZoom()` **baisse quand la
+  caméra s'incline** vers un pôle (ne pas piloter des tailles par le zoom en
+  mode globe). Passage `vertical-perspective` → `globe` non animé (#5114) :
+  rester en `globe`.
+- **Couches WebGL personnalisées** sur le globe : possibles mais il faut le
+  prélude de projection (`args.shaderData.vertexShaderPrelude`, recompiler
+  quand `variantName` change) et la formule de profondeur de MapLibre pour
+  cacher la face arrière (billet mercator.blue, mai 2026). → nos flèches GRIB
+  et roses climatologiques passent en couches **`symbol`** (icônes générées
+  par `canvas` → `map.addImage`, rotation `icon-rotate` par donnée), pas en
+  couche custom.
+- **v6** : événements en classes (tester `type`, pas `instanceof`) ;
+  propriétés GeoJSON imbriquées désormais des objets (pas de `JSON.parse`) ;
+  `setMissingStyleImageResolver` remplace le listener `styleimagemissing` ;
+  `zoomLevelsToOverscale` change le découpage des tuiles vectorielles.
+- **React** : `react-map-gl/maplibre` 8.1.2 supporte v6 ; mais comme pour
+  Leaflet (classe `MapSceneController` pilotée par `useEffect`), on garde
+  **`maplibre-gl` nu** dans un `GlobeSceneController` — pas de wrapper.
+- **Performance** : guide officiel « Optimising MapLibre Performance: Tips
+  for Large GeoJSON Datasets » ; règle : GeoJSON < 5 Mo, sinon tuiles
+  vectorielles (tippecanoe → PMTiles).
+- **Coût** : 0 $ (BSD ; nos tuiles actuelles ; PMTiles statique).
 
-| Fichier | Lignes | Ce qu'il fait avec Leaflet | Équivalent MapLibre |
-|---|---|---|---|
-| `src/map/MapSceneController.js` | 881 | carte, marqueurs (13 `polyline`, 8 `marker`, 9 `divIcon`), caméra (`setView`, `flyTo`, `fitBounds`), copies-monde des drapeaux, waypoints | `Map`, `Marker` HTML, sources GeoJSON `route`, `route-done`, `waypoints`, `flyTo`/`easeTo`, plus de copies-monde (le globe n'en a pas besoin) |
-| `src/layers/useToggleLayers.js` | 403 | couches BI (GeoJSON points/polygones, `circleMarker`), WMS ZEE, EMODnet | sources GeoJSON + couches `circle`/`fill`/`line`/`symbol` ; `raster` WMS |
-| `src/layers/useClimatologyLayer.js` + `climatologyPaint.js` | 250 + | roses/cyclones peints sur `L.canvas` | couche `symbol` avec icônes générées (canvas → `addImage`) ou couche custom |
-| `src/layers/useGribCorridorLayer.js` + `gribSymbols` | 136 | flèches / barbules GRIB sur canvas | idem : `symbol` avec rotation par donnée (`icon-rotate`) — plus fluide que le canvas |
-| `src/layers/popupFit.js`, popup satellite | 260 | `L.popup` positionné | `Popup` ancré (`setLngLat`) |
-| `useRouteLayer`, `useAltRouteLayer`, `useAirHopLine`, `useWakeLayer`, `points.js`, `spatialCatalogLayer.js` | ≈ 600 | polylignes, sillage, saut avion | sources GeoJSON ; le saut avion en `line` géodésique (le globe rend l'arc naturellement) |
-| `CatamaranMarker.jsx`, `PlaneMarker.jsx` | 154 | `divIcon` React | `Marker` avec `element` React (portal) |
-| `MapScene.jsx`, `useSimulatorMap.js`, `main.jsx` | 246 | montage, `window.__naviguideScene` | idem |
-
-Ce qui devient **plus simple** sur un globe : les copies-monde (drapeaux ×3),
-la ligne de changement de date (route Pacifique), les grands cercles (le saut
-avion, la ligne Brisbane → SF), la caméra du film (orbite).
-Ce qui devient **plus difficile** : les 2 couches canvas (climatologie, GRIB)
-et le rendu des polygones ZEE de VLIZ (lourds ; passer par tuiles vectorielles
-ou simplification serveur), les tests de contrat qui lisent `getZoom()`.
-
-## 2. Décision d'architecture : un adaptateur, deux moteurs
-
-On n'échange pas Leaflet contre MapLibre d'un coup (plancher `main`). On
-introduit une **interface de scène** que `MapSceneController` consomme, avec
-deux implémentations :
+## 2. Architecture (option A)
 
 ```
-src/map/adapters/SceneAdapter.d.ts   (contrat : createMap, setCamera, flyTo, addLineSource, updateLine,
-                                       addPointLayer, addRaster, addWms, marker(create/move/remove), popup, on(event))
-src/map/adapters/leaflet/…           (l'existant, déplacé, comportement identique)
-src/map/adapters/maplibre/…          (le globe)
+src/map/MapScene.jsx (Leaflet, inchangé)  ─┐
+                                           ├─ même objet `scene` (route, horloge, bateau, couches, cartes, film)
+src/globe/GlobeScene.jsx  (MapLibre)      ─┘
+src/globe/GlobeSceneController.js   — miroir de MapSceneController pour MapLibre : sources/couches, marqueurs, caméra, popups
+src/globe/globeStyle.js             — style JSON : fonds, projection globe, sky, light
+src/globe/layers/*.js               — route, bateau, escales, BI (points/polygones), WMS, GRIB symbols, climato symbols, PMTiles ZEE
+src/globe/GlobeToggle.jsx           — onglet Carte / Globe (au-dessus de la zone carte), préférence mémorisée, `?view=globe`
 ```
 
-Le choix se fait par une **préférence utilisateur** « Carte / Globe » dans les
-outils de droite (défaut : Carte tant que la parité n'est pas recettée), et
-par `?engine=globe` pour les tests. `window.__naviguideScene.engine` dit lequel
-tourne. Le bundle du globe est chargé **à la demande** (`import()`).
+- `App.jsx` : un seul ajout — `view === "globe"` monte `GlobeScene` **à côté**
+  de `MapScene` (lazy `import()`), et passe le même `scene`. Leaflet reste
+  monté et continue de recevoir `scene` (pas de démontage, pas de perte
+  d'état) ; il est masqué par CSS pendant que le globe est visible.
+- Tout ce qui parle à la carte par `window.__naviguideScene` continue de
+  parler à Leaflet ; le globe expose `window.__naviguideGlobe` (tests).
+- Les clics sur le globe (fiches, popups, dessin) appellent **les mêmes
+  callbacks** que Leaflet (`onFocus`, `onEscaleSheet`, `drawing.add`…).
 
 ## 3. Les lots
 
-Ordre : **G0 → G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8**. Taille : S ≤ ½ jour,
-M ≤ 2 jours, L ≤ 4 jours. Chaque lot : « Carte » inchangé (recette « aucun
-changement visible » sur les trois parcours fixes) **et** un pas de plus pour
-« Globe ».
+Ordre : **G0 → G1 → G2 → G3 → G4 → G5 → G6 → G7**. Chaque lot : Carte
+(Leaflet) **inchangée** — recette « aucun changement visible » sur les trois
+parcours fixes — et un pas de plus pour le Globe. Taille : S ≤ ½ j, M ≤ 2 j.
 
-### Lot G0 — Éprouvette (S)
+### Lot G0 — Éprouvette et décision A / B (S)
 
-Page **hors application** `naviguide-simulator/globe-spike.html` : MapLibre
-globe, fond raster sombre (même URL Esri que `styles.js`), WMS ZEE, la route
-officielle (GeoJSON du serveur), un marqueur HTML catamaran qui avance,
-`flyTo`. Mesures : FPS sur MacBook, poids du bundle, rendu de la route à
-l'antiméridien, polygones ZEE VLIZ (temps de chargement). **Sortie** : une
-page de mesures dans la PR et la décision go / no-go (critères : ≥ 30 FPS,
-route continue, ZEE < 3 s).
+Page hors application `naviguide-simulator/globe-spike.html` (Vite
+multi-page, non déployée) : MapLibre 6 globe, fond raster sombre (URL de
+`src/layers/styles.js`), WMS ZEE, route officielle (`GET /voyage/official`),
+marqueur HTML catamaran qui avance, `flyTo`, mesure FPS / poids / temps de
+chargement des polygones VLIZ en GeoJSON puis en PMTiles (tippecanoe).
+**Sortie** : `docs/audits/GLOBE_SPIKE.md` (chiffres, captures) et la décision
+A / B du porteur. Critères go : ≥ 30 FPS sur MacBook, route continue au
+Pacifique, ZEE < 3 s.
 
-### Lot G1 — Adaptateur de scène, moteur Leaflet (M)
+### Lot G1 — Onglet Carte / Globe, fond, attribution, caméra (M)
 
-Extraire l'interface § 2 ; `MapSceneController` ne touche plus `L.` que par
-l'adaptateur. **Aucun changement visible** ; tous les tests de contrat passent
-(`MapSceneMarkers.test.js`, `sceneGate.test.js`). Spec fumée inchangé.
+`GlobeScene.jsx`, `GlobeSceneController.js`, `globeStyle.js`,
+`GlobeToggle.jsx` ; `App.jsx` **par extrait** (`rg -n "MapScene" src/App.jsx`) :
+montage conditionnel + `scene` partagé ; `setWorkerUrl` ; attribution avec
+liens (lot M). **Recette (Globe)** : onglet « Globe » → sphère avec fond
+sombre et atmosphère, molette, attribution ; onglet « Carte » → Leaflet exactement
+comme avant (capture avant/après identique). Spec : `data-testid="view-globe"`,
+`window.__naviguideGlobe.getProjection().type === "globe"`.
 
-### Lot G2 — Moteur globe : fonds, attribution, caméra (M)
+### Lot G2 — Route, bateau, escales, avion, sillage, caméra qui suit (M)
 
-Adaptateur MapLibre : carte, fonds raster (sombre / clair), attribution
-(liens du lot M), `setCamera`/`flyTo`, préférence « Carte / Globe » (défaut
-Carte). **Recette (Globe)** : le globe s'affiche avec le fond sombre, la
-molette zoome, l'attribution a ses liens ; capture. **Carte** : inchangé.
+Sources GeoJSON `route-done` / `route-todo` (longitudes dépliées), marqueurs
+HTML (catamaran, avion, drapeaux — un seul exemplaire chacun), sillage, saut
+avion en arc, `easeTo` continu en Suivre. **Recette (Globe)** : Suivre à
+Nouméa ; Simulation : le bateau avance, la caméra suit ; capture Papeete →
+Mata-Utu (ligne continue).
 
-### Lot G3 — Route, bateau, escales, avion, sillage (M)
+### Lot G3 — Couches BI, ZEE en PMTiles, fiches (M)
 
-Sources GeoJSON pour la route (faite / à venir), marqueurs HTML (catamaran,
-avion, drapeaux sans copies-monde), sillage, saut avion en arc. Caméra qui
-suit (mode Suivre). **Recette (Globe)** : Suivre à Nouméa : bateau, route,
-drapeaux ; Simulation : le bateau avance, la caméra suit ; capture à
-l'antiméridien (route Papeete → Mata-Utu continue).
+Ports, PoE, AMP, science, projets, balisage ; ZEE : PMTiles générées par un
+script `infra/tiles/build_zee_pmtiles.sh` (tippecanoe), servies par nginx
+(`/tiles/zee.pmtiles`, `Accept-Ranges`) ; clic → mêmes fiches (`CardLinks`).
+**Recette (Globe)** : Calques → chaque case ; clic port → fiche ; ZEE
+survolée en surbrillance.
 
-### Lot G4 — Couches BI et WMS (M)
+### Lot G4 — GRIB et climatologie en symboles (M)
 
-Ports, PoE, AMP, science, projets, balisage (points / polygones), ZEE WMS,
-EMODnet ; popups des fiches (`CardLinks` inchangés). **Recette (Globe)** :
-Calques → chaque case affiche sa couche ; clic sur un port ouvre la fiche.
+Icônes générées (flèches, barbules, roses) → `symbol` ; mêmes chiffres que
+la popup satellite. **Recette** : captures Carte / Globe côte à côte, même
+vent.
 
-### Lot G5 — GRIB et climatologie en symboles (M)
+### Lot G5 — Popups, bulle événement, tracer ma route (M)
 
-Flèches GRIB et roses climatologiques en couches `symbol` (icônes générées).
-**Recette (Globe)** : Simulation, GRIB visible autour du bateau, roses au
-zoom monde ; captures Carte / Globe côte à côte (même vent, mêmes chiffres
-dans la popup satellite).
+Popup satellite ancrée ; bulle du film (plan film F4) ancrée au marqueur ;
+dessin par clics (mêmes callbacks). **Recette** : Brisbane → SF sur le globe
+(grand cercle), trois onglets Vent / Vagues / Courants.
 
-### Lot G6 — Tracer ma route, popups satellite, bulle événement (M)
+### Lot G6 — Le film sur le globe (S)
 
-Dessin (clics → segments searoute), popup Vent / Vagues / Courants ancrée,
-bulle événement du film (plan film, lot F4) ancrée au marqueur. **Recette** :
-Brisbane → SF sur le globe (grand cercle Pacifique, pas l'Alaska) ; popup
-satellite avec ses trois onglets.
+Caméra : `easeTo` 30 Hz, altitude constante par chapitre, `pitch` 25–35°,
+orbite douce (`bearing` +2°/s) pendant les bulles longues. **Recette** :
+Revoir l'expédition en Globe, 2 min 30, zoom stable, bulles.
 
-### Lot G7 — Le film sur le globe (S)
+### Lot G7 — Parité et tests sur les deux vues (S)
 
-Caméra du film : `easeTo` continu, altitude constante par chapitre, légère
-inclinaison (`pitch` 30°) et orbite douce pendant les bulles longues.
-**Recette** : Revoir l'expédition en Globe : 2 min 30, zoom stable, bulles.
-C'est le plan « waouh » de la vidéo si G0–G6 sont recettés à temps ; sinon la
-vidéo se fait en Carte.
-
-### Lot G8 — Parité, défaut, nettoyage (S)
-
-Liste de parité cochée (toutes les surfaces du plancher `main` disponibles en
-Globe) ; si oui, le défaut peut passer à Globe **sur décision du porteur** ;
-Leaflet reste disponible (Carte) ; tests de contrat exécutés sur les deux
-moteurs (`?engine=`).
+Liste de parité cochée ; spec Playwright joué avec `?view=carte` et
+`?view=globe` ; le défaut reste **Carte** sauf décision du porteur.
 
 ## 4. Effort, risques, coût
 
-- **Effort** : G0 1 j, G1 2 j, G2 1 j, G3 2 j, G4 2 j, G5 2 j, G6 2 j, G7 1 j,
-  G8 1 j ≈ **14 jours-agent**, sécables ; rien n'oblige à finir avant la
-  soumission — G0 à G3 suffisent pour un plan de film sur globe.
-- **Risques** : performance des polygones ZEE (mitigation : tuiles vectorielles
-  `tippecanoe` servies par nginx, ou simplification serveur déjà en place dans
-  `zee_local.py`) ; couches canvas à réécrire ; Safari WebGL2 ; tests de contrat
-  qui lisent l'API Leaflet (à faire passer par l'adaptateur).
-- **Coût** : **0 $** en MapLibre (bibliothèque libre, nos tuiles actuelles).
-  Google 3D Maps : gratuit en Preview, tarif inconnu à la GA, risque EEE ;
-  Cesium : libre, ion facultatif.
+- **Effort option A** : G0 1 j, G1 1,5 j, G2 1,5 j, G3 2 j, G4 1,5 j, G5 1,5 j,
+  G6 0,5 j, G7 0,5 j ≈ **10 jours-agent**. Option B : + squelette d'app,
+  copie des sidebars/barre film, déploiement ≈ **+5 j**.
+- **Risques** : PMTiles à générer (tippecanoe sur le Mac ou le VPS) ; Safari
+  et WebGL2 ; deux vues qui consomment `scene` (le Leaflet caché continue de
+  calculer : mesurer, et si besoin geler ses effets quand il est masqué —
+  **sans le démonter**) ; `getZoom` sous inclinaison.
+- **Coût** : 0 $.
 
 ## 5. Réponse au porteur
 
-Oui, la même application peut tourner sur un globe, avec toutes ses
-fonctions, en ~14 jours-agent par lots recettables, sans rien perdre du
-plancher : MapLibre GL JS en projection globe derrière un adaptateur, Leaflet
-gardé comme « Carte ». « Google Earth » au sens strict n'est pas une plateforme
-d'application ; Google Maps 3D est possible mais fermé, payant à terme et
-vecteurs seulement ; Cesium est la voie si un jour on veut le relief.
+On garde Leaflet tel quel et on ajoute un **onglet Globe** (option A) — ou
+un site globe séparé (option B) — alimenté par les mêmes données, en
+MapLibre GL JS 6 (libre, 0 $). Dix jours-agent pour l'option A ; le film
+peut se tourner sur le globe si G0–G2 et G6 sont recettés avant la vidéo,
+sinon sur la carte.
 
 ## Sources (20 sept. 2026)
 
-- Google, référence `Map3DElement` (Maps JavaScript API, mis à jour le
-  17 sept. 2026) : propriétés, `flyCameraTo`, `flyCameraAround`, événements.
-- Google, liste de prix Maps Platform (10 sept. 2026) : « Photorealistic 3D
-  Tiles » 1 000 requêtes racine gratuites puis 6 $/1 000.
-- Spatialized.io, « Google Maps 3D Tutorial » : 3D Maps en **Preview, gratuit**,
-  tarification à la GA ; `Polyline3DElement`, `Marker3DInteractiveElement`,
-  `Polygon3DElement`, `Model3DElement` ; **restriction EEE** de la Map Tiles API.
-- MapLibre GL JS : exemples « Display a globe with an atmosphere », « Add a
-  WMS source » ; Stadia Maps, « Turn your maps into a 3D globe » (globe depuis
-  la v5) ; guide de migration v5 → v6 ; mercator.blue, « Putting custom WebGL
-  layers on MapLibre's globe » (mai 2026) ; issue #6072 (GeoJSON aux pôles).
-- Cesium, « Photorealistic 3D Tiles from Google Maps in CesiumJS ».
+- MapLibre GL JS 6.10.0 — « Display a globe with an atmosphere » (style
+  `projection: globe`, `sky.atmosphere-blend`, `light`) ; « Display line
+  that crosses 180th meridian » (dépliage de longitude) ; « v5 to v6
+  migration guide » (ESM only, `setWorkerUrl`, événements en classes,
+  propriétés GeoJSON imbriquées, `setMissingStyleImageResolver`) ; « Add a
+  WMS source » ; « PMTiles source and protocol » ; « Optimising MapLibre
+  Performance: Tips for Large GeoJSON Datasets » ; API `Map` (`flyTo` suit
+  la sphère), `LngLatBounds.adjustAntiMeridian`, `FitBoundsOptions`.
+- MapLibre Style Spec — `projection` (`vertical-perspective` → `mercator`
+  par interpolation sur le zoom).
+- GitHub maplibre-gl-js — #5079 (opacité des marqueurs derrière le globe,
+  fermeture des popups), #5114 (pas d'animation `vertical-perspective` →
+  `globe`), #6072 (GeoJSON aux pôles), #8168 (suivi des cassures v6).
+- mercator.blue, « Putting custom WebGL layers on MapLibre's globe »
+  (28 mai 2026) : prélude de projection, formule de profondeur, `getZoom`
+  sous inclinaison.
+- react-map-gl 8.1.2 (juil. 2026) : support MapLibre v6 ; Stadia Maps,
+  « Turn your maps into a 3D globe ».
