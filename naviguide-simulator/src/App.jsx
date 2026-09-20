@@ -329,7 +329,15 @@ export default function App() {
   });
   const clockSample = useMemo(() => {
     if (isSuivre && live && !previewing) return live;
-    return lookupVoyageClock(officialClock, playback.nm, { atQuay: playback.holding });
+    // Next / seek saute le dwell : un playhead posé sur une escale à hold
+    // est quand même à quai (lot P2 — sinon la barre garde les kn de jambe).
+    const x = Number(playback.nm) || 0;
+    const onHold = (officialClock?.marks || []).some((m) => (
+      (m.holdHours || 0) > 0 && Math.abs((m.filmNm ?? m.nm) - x) <= 0.45
+    ));
+    return lookupVoyageClock(officialClock, playback.nm, {
+      atQuay: Boolean(playback.holding || onHold),
+    });
   }, [isSuivre, live, previewing, officialClock, playback.nm, playback.holding]);
   const windProfile = useRouteWindProfile({
     flat: flatRoute,
