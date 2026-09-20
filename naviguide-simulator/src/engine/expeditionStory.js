@@ -61,6 +61,12 @@ function daysBetween(isoA, isoB) {
   return Math.max(0, Math.round((b - a) / 86_400_000));
 }
 
+function joinList(parts, lang) {
+  if (!parts.length) return "";
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")}${isEn(lang) ? " and " : " et "}${parts[parts.length - 1]}`;
+}
+
 function dayWord(n, lang) {
   if (isEn(lang)) return `${n} day${n > 1 ? "s" : ""}`;
   return `${n} jour${n > 1 ? "s" : ""}`;
@@ -103,8 +109,16 @@ function departureIso(stop) {
   return new Date(t + (Number(stop.holdHours) || 0) * 3_600_000).toISOString();
 }
 
+/** `events` = the whole voyage minus positions (server summary); `latest` = the recent tail. Deduped by id. */
 function journalEntries(journal) {
-  return journal?.latest || journal?.entries || [];
+  const all = [...(journal?.events || []), ...(journal?.latest || journal?.entries || [])];
+  const seen = new Set();
+  return all.filter((e) => {
+    const id = e?.id || `${e?.kind}:${e?.t}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 /** GRIB entries of the journal between two instants: mean / max wind at the boat. */
@@ -126,6 +140,47 @@ function windBetween(journal, fromIso, toIso) {
     max: Math.round(Math.max(...winds)),
     n: winds.length,
   };
+}
+
+/** Route events of the journal (v2: ZEE crossings, MPA within reach) between two instants, in order. */
+function routeEventsBetween(journal, fromIso, toIso) {
+  const a = ms(fromIso);
+  const b = ms(toIso);
+  if (a == null || b == null) return [];
+  return journalEntries(journal)
+    .filter((e) => (e?.kind === "zee" || e?.kind === "amp") && e.name)
+    .filter((e) => { const t = ms(e.t); return t != null && t >= a && t <= b; })
+    .sort((x, y) => ms(x.t) - ms(y.t));
+}
+
+/** « Entre-temps : entrée dans la ZEE espagnole le 17 mai, haute mer le 20 mai ; AMP à portée : Pertuis Charentais. » */
+function routeEventsSentence(events, lang) {
+  if (!events.length) return "";
+  const en = isEn(lang);
+  // Entries only, each EEZ once (a re-entry after a short high-seas gap is not a new fact).
+  const seenZee = new Set();
+  const zee = events.filter((e) => {
+    if (e.kind !== "zee" || e.event !== "enter") return false;
+    const key = e.mrgid ?? e.name;
+    if (seenZee.has(key)) return false;
+    seenZee.add(key);
+    return true;
+  });
+  const amp = events.filter((e) => e.kind === "amp");
+  const bits = [];
+  if (zee.length) {
+    const parts = zee.slice(0, 6).map((e) => (en ? `${e.name} on ${dayMonth(e.t, lang)}` : `${e.name} le ${dayMonth(e.t, lang)}`));
+    const more = zee.length > 6 ? (en ? ` and ${zee.length - 6} more` : ` et ${zee.length - 6} autres`) : "";
+    bits.push(en ? `entered: ${parts.join(", ")}${more}` : `entré dans : ${parts.join(", ")}${more}`);
+  }
+  if (amp.length) {
+    const names = amp.slice(0, 3).map((e) => e.name);
+    const more = amp.length > 3 ? (en ? ` and ${amp.length - 3} more` : ` et ${amp.length - 3} autres`) : "";
+    bits.push(en
+      ? `marine protected area${amp.length > 1 ? "s" : ""} within reach: ${joinList(names, lang)}${more}`
+      : `aire${amp.length > 1 ? "s" : ""} marine${amp.length > 1 ? "s" : ""} protégée${amp.length > 1 ? "s" : ""} à portée : ${joinList(names, lang)}${more}`);
+  }
+  return `${en ? "Meanwhile" : "Entre-temps"} — ${bits.join(" ; ")}.`;
 }
 
 /** Skipper notes of the journal between two instants (the human voice, verbatim). */
@@ -158,6 +213,7 @@ function legParagraph(from, to, { journal, lang, sea }) {
   const dur = daysBetween(dep, to.iso);
   const wind = windBetween(journal, dep, to.iso);
   const notes = notesBetween(journal, dep, to.iso);
+  const crossings = routeEventsSentence(routeEventsBetween(journal, dep, to.iso), lang);
   const bits = [];
   const head = from === sea
     ? (en
@@ -170,6 +226,7 @@ function legParagraph(from, to, { journal, lang, sea }) {
   if (legNm > 0.5) facts.push(nmLabel(legNm, lang));
   if (dur != null && dur > 0) facts.push(en ? `in ${dayWord(dur, lang)}` : `en ${dayWord(dur, lang)}`);
   bits.push(`${head}${facts.length ? ` : ${facts.join(en ? " " : " ")}` : ""}.`);
+  if (crossings) bits.push(crossings);
   if (wind) {
     bits.push(en
       ? `Wind at the boat: ${wind.mean} kn on average, ${wind.max} kn at most (GFS, ${wind.n} readings).`
@@ -264,12 +321,14 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
           ? `Since ${dayMonth(dep, lang)}, under way from ${shortName(current.name)}${to ? ` to ${to}` : ""}`
           : `Depuis le ${dayMonth(dep, lang)}, en route de ${shortName(current.name)}${to ? ` vers ${to}` : ""}`)
         : (en ? `Under way${to ? ` to ${to}` : ""}` : `En route${to ? ` vers ${to}` : ""}`);
-      const wind = current && dep ? windBetween(journal, dep, live.iso || new Date(nowMs).toISOString()) : null;
+      const untilIso = live.iso || new Date(nowMs).toISOString();
+      const wind = current && dep ? windBetween(journal, dep, untilIso) : null;
+      const crossings = current && dep ? routeEventsSentence(routeEventsBetween(journal, dep, untilIso), lang) : "";
       const tail = [
         Number.isFinite(left) && left > 0.5 ? (en ? `${nmLabel(left, lang)} to go` : `encore ${nmLabel(left, lang)}`) : null,
         eta ? (en ? `expected on ${eta}` : `arrivée prévue le ${eta}`) : null,
       ].filter(Boolean).join(", ");
-      out.push(`${since}${tail ? ` : ${tail}` : ""}.${wind ? (en
+      out.push(`${since}${tail ? ` : ${tail}` : ""}.${crossings ? ` ${crossings}` : ""}${wind ? (en
         ? ` Wind at the boat so far: ${wind.mean} kn on average, ${wind.max} kn at most (GFS).`
         : ` Vent au bateau depuis : ${wind.mean} kn en moyenne, ${wind.max} kn au plus fort (GFS).`) : ""}`);
       out.push(en

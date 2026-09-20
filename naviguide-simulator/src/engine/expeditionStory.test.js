@@ -22,11 +22,17 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
       { kind: "grib", t: "2026-05-20T06:00:00Z", windKnots: 10, dirFromDeg: 270, model: "GFS" },
       { kind: "grib", t: "2026-05-22T06:00:00Z", windKnots: 18, dirFromDeg: 300, model: "GFS" },
       { kind: "note", t: "2026-05-21T10:00:00Z", text: "Première nuit au large, belle étoile." },
+      { kind: "zee", t: "2026-05-16T09:00:00Z", event: "exit", name: "French Exclusive Economic Zone", mrgid: 5677 },
+      { kind: "zee", t: "2026-05-17T15:00:00Z", event: "enter", name: "Spanish Exclusive Economic Zone", mrgid: 5693 },
+      { kind: "zee", t: "2026-05-18T01:00:00Z", event: "exit", name: "Spanish Exclusive Economic Zone", mrgid: 5693 },
+      { kind: "zee", t: "2026-05-18T09:00:00Z", event: "enter", name: "Spanish Exclusive Economic Zone", mrgid: 5693 },
+      { kind: "amp", t: "2026-05-18T02:00:00Z", event: "nearby", name: "Cabrera", nm: 8 },
       { kind: "grib", t: "2026-09-18T06:00:00Z", windKnots: 14, dirFromDeg: 120, model: "GFS" },
     ] };
     const paras = expeditionStory({ clock, marks, live, leg, journal, now, lang: "fr" }).map(plain);
     assert.equal(paras[0], "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026.");
     assert.equal(paras[1], "Le 15 mai, le bateau a pris la mer à La Rochelle, vers Ajaccio (Corse) : 1 820 nm en 9 jours. "
+      + "Entre-temps — entré dans : Spanish Exclusive Economic Zone le 17 mai ; aire marine protégée à portée : Cabrera. "
       + "Vent au bateau : 14 kn en moyenne, 18 kn au plus fort (GFS, 2 relevés). "
       + "Le skipper a noté : « Première nuit au large, belle étoile. » "
       + "Arrivée à Ajaccio (Corse) le 24 mai, 3 jours à quai.");

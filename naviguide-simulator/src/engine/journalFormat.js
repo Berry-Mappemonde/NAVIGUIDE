@@ -47,7 +47,7 @@ export function formatDay(day, lang = "fr") {
   });
 }
 
-export const KIND_ICON = Object.freeze({ position: "📍", stop: "⚓", grib: "🌬", note: "📝" });
+export const KIND_ICON = Object.freeze({ position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟" });
 
 /** One journal entry → { icon, time, text }. Unknown kinds keep their raw kind. */
 export function formatJournalEntry(entry, lang = "fr") {
@@ -98,6 +98,19 @@ export function formatJournalEntry(entry, lang = "fr") {
     case "note":
       text = e.author ? `${e.author} : ${e.text || ""}` : (e.text || "");
       break;
+    case "zee": {
+      const name = e.name || (en ? "EEZ" : "ZEE");
+      text = e.event === "exit"
+        ? (en ? `Left ${name} — high seas` : `${name} quittée — haute mer`)
+        : (en ? `Entered ${name}` : `Entrée dans ${name}`);
+      break;
+    }
+    case "amp": {
+      const name = e.name || (en ? "marine protected area" : "aire marine protégée");
+      const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
+      text = en ? `Marine protected area within reach: ${name}${nm}` : `Aire marine protégée à portée : ${name}${nm}`;
+      break;
+    }
     default:
       text = e.text || e.kind || "";
   }
