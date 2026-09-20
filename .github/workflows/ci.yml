@@ -121,13 +121,21 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - name: Fumée (ouvrir, panneaux, Suivre / Simulation, calque)
-        run: npm run e2e
+        run: npx playwright test e2e/smoke.spec.js
+      # Les specs de lots (e2e/lots/*) sont la recette automatique de chaque lot :
+      # ils tournent ici sans API, à titre informatif — un spec de lot qui a
+      # besoin de l'API ne doit pas bloquer les lots suivants d'une pile.
+      - name: Specs de lots (informatif, sans API)
+        if: hashFiles('naviguide-simulator/e2e/lots/*.spec.js') != ''
+        continue-on-error: true
+        run: npx playwright test e2e/lots
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: playwright-report
           path: naviguide-simulator/playwright-report
           retention-days: 7
+          if-no-files-found: ignore
 
   audit-tags:
     runs-on: ubuntu-latest

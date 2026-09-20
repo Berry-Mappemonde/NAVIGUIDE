@@ -2,25 +2,27 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+// API_PROXY_TARGET=http://127.0.0.1:9 : simuler la CI (aucune API) en local.
+const API = process.env.API_PROXY_TARGET || "http://127.0.0.1:8010";
 const proxy = {
       "/route": {
-        target: "http://127.0.0.1:8010",
+        target: API,
         changeOrigin: true,
         bypass(req) {
           // public/route.geojson = fallback interne, pas l'API searoute
           if (req.url?.startsWith("/route.geojson")) return req.url;
         },
       },
-      "/proxy": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/ici": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/wind": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/wave": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/current": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/weather": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/api/v1": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/voyage": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/escale": { target: "http://127.0.0.1:8010", changeOrigin: true },
-      "/logbook": { target: "http://127.0.0.1:8010", changeOrigin: true },
+      "/proxy": { target: API, changeOrigin: true },
+      "/ici": { target: API, changeOrigin: true },
+      "/wind": { target: API, changeOrigin: true },
+      "/wave": { target: API, changeOrigin: true },
+      "/current": { target: API, changeOrigin: true },
+      "/weather": { target: API, changeOrigin: true },
+      "/api/v1": { target: API, changeOrigin: true },
+      "/voyage": { target: API, changeOrigin: true },
+      "/escale": { target: API, changeOrigin: true },
+      "/logbook": { target: API, changeOrigin: true },
       "/bi": {
         target: process.env.BI_PROXY_TARGET || "https://blueintelligence.online",
         changeOrigin: true,
