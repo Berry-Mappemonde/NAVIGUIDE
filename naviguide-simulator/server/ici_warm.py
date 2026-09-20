@@ -34,6 +34,9 @@ WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.0)
 WARM_PARALLEL = max(1, int(os.environ.get("NAVIGUIDE_ICI_WARM_PARALLEL") or 2))
 LEGACY_TTL_S = 7 * 86400.0
 POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
+SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal, lot F2)
+CLIMO_ROSE_TURN_DEG = 90.0
+CLIMO_CALM_KN = 8.0
 
 _state: dict[str, Any] = {
     "status": "idle",  # idle | running | done | disabled | error
@@ -137,14 +140,124 @@ def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[f
     return [(p["lat"], p["lon"]) for p in sample_route_nm(points, step_nm)]
 
 
+def _angle_delta_deg(a: float, b: float) -> float:
+    d = abs(float(a) - float(b)) % 360.0
+    return d if d <= 180.0 else 360.0 - d
+
+
+def _rose_dir_deg(rose: dict | None) -> float | None:
+    if not isinstance(rose, dict):
+        return None
+    ml = rose.get("most_likely")
+    if isinstance(ml, dict) and isinstance(ml.get("dir_deg"), (int, float)):
+        return float(ml["dir_deg"]) % 360.0
+    best: tuple[float, float] | None = None
+    for row in rose.get("directions_from") or []:
+        if not isinstance(row, dict):
+            continue
+        pct, deg = row.get("pct"), row.get("dir_deg")
+        if isinstance(pct, (int, float)) and isinstance(deg, (int, float)):
+            if best is None or pct > best[0]:
+                best = (float(pct), float(deg) % 360.0)
+    return best[1] if best else None
+
+
+def _rose_wind_kn(rose: dict | None) -> float | None:
+    if not isinstance(rose, dict):
+        return None
+    for src in (rose.get("most_likely"), rose.get("vector_mean")):
+        if isinstance(src, dict) and isinstance(src.get("speed_knots"), (int, float)):
+            return float(src["speed_knots"])
+    return None
+
+
+def _in_cyclone_season(cyc: dict | None) -> bool | None:
+    """True / False when the pearl says; None when the field is missing."""
+    if not isinstance(cyc, dict):
+        return None
+    if cyc.get("in_season") is True:
+        return True
+    if cyc.get("in_season") is False:
+        return False
+    known = False
+    for key in ("nearby", "tracks_in_month", "count", "cyclones"):
+        val = cyc.get(key)
+        if isinstance(val, (int, float)):
+            known = True
+            if val > 0:
+                return True
+    return False if known else None
+
+
+def _pearl_climo(bag: dict) -> dict | None:
+    """`climo` (plan) or `climatology` (perle riche) → rose + cyclone, or None."""
+    raw = bag.get("climo") if isinstance(bag.get("climo"), dict) else None
+    if raw is None and isinstance(bag.get("climatology"), dict):
+        raw = bag["climatology"]
+    if not raw:
+        return None
+    rose = raw.get("rose") if isinstance(raw.get("rose"), dict) else None
+    if rose is None:
+        point = raw.get("point") if isinstance(raw.get("point"), dict) else {}
+        atlas = point.get("wind_atlas") if isinstance(point.get("wind_atlas"), dict) else None
+        if atlas:
+            rose = atlas
+    cyc = raw.get("cyclones") if isinstance(raw.get("cyclones"), dict) else None
+    if cyc is None and isinstance(raw.get("cyclone"), dict):
+        cyc = raw["cyclone"]
+    if cyc is None:
+        point = raw.get("point") if isinstance(raw.get("point"), dict) else {}
+        if isinstance(point.get("cyclone"), dict):
+            cyc = point["cyclone"]
+    if rose is None and cyc is None:
+        return None
+    return {"rose": rose, "cyclone": cyc, "month": raw.get("month")}
+
+
+def _science_items(bag: dict) -> list[dict]:
+    sci = bag.get("science")
+    if isinstance(sci, dict):
+        items = sci.get("nearby") or []
+    elif isinstance(sci, list):
+        items = sci
+    else:
+        items = []
+    return [it for it in items if isinstance(it, dict) and it.get("name")]
+
+
+def _climo_title() -> dict:
+    return {"fr": "Changement de régime", "en": "Regime change"}
+
+
+def _sci_title() -> dict:
+    return {"fr": "Station croisée", "en": "Station passed"}
+
+
+def _pearl_event(pearl: dict, idx: int, kind: str, event: str, name: str | None, **extra) -> dict:
+    out = {
+        "kind": kind,
+        "event": event,
+        "lat": round(pearl["lat"], 4),
+        "lon": round(pearl["lon"], 4),
+        "sailNm": pearl["sailNm"],
+        "idx": idx,
+        "basis": "pearl",
+        **extra,
+    }
+    if name:
+        out["name"] = name
+    return out
+
+
 def route_events_from_pearls(points: list[dict]) -> list[dict]:
     """What the warmed pearls know about the route, in order: ZEE entered /
     left, marine protected areas that come within reach, ports of entry
-    passed (≤ POE_NEARBY_NM). Pearls not cached yet are unknown — no event
-    is invented across a gap.
+    passed (≤ POE_NEARBY_NM), régime climatique (climo) and scientific
+    stations (sci, ≤ SCI_NEARBY_NM, once per entity). Pearls not cached
+    yet are unknown — no event is invented across a gap.
 
-    Each event: { kind: "zee" | "amp" | "poe", event, name, mrgid | siteId |
-    poeId, lat, lon, sailNm, idx }. The journal dates `sailNm` with the clock."""
+    Each event: { kind, event, name, mrgid | siteId | poeId, lat, lon,
+    sailNm, idx, title, facts, entity }. The journal dates `sailNm`."""
     from ici_engine import thin_cache_get, thin_cache_key  # noqa: PLC0415
 
     events: list[dict] = []
@@ -153,11 +266,16 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     candidate: tuple | None = None  # (zee_or_None, pearl, idx) seen once, waiting for a second pearl
     seen_amp: set[str] = set()
     seen_poe: set[str] = set()
+    seen_sci: set[str] = set()
+    prev_climo: dict | None = None
+    in_calms = False
     for idx, pearl in enumerate(sample_route_nm(points)):
         bag = thin_cache_get(thin_cache_key(pearl["lat"], pearl["lon"], 30.0))
         if bag is None:
             state_known = False
             candidate = None
+            prev_climo = None
+            in_calms = False
             continue
         zee = bag.get("zee") or None
         mrgid = zee.get("mrgid") if isinstance(zee, dict) else None
@@ -209,6 +327,84 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
                 "nm": amp.get("nm"), "visitUrl": amp.get("visit_url") or amp.get("url"),
                 "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
             })
+        # Lot F2 — régime climatique (deux perles consécutives connues).
+        climo = _pearl_climo(bag)
+        if prev_climo is not None and climo is not None:
+            prev_cyc, cur_cyc = _in_cyclone_season(prev_climo.get("cyclone")), _in_cyclone_season(climo.get("cyclone"))
+            if prev_cyc is not None and cur_cyc is not None and prev_cyc != cur_cyc:
+                ev = "cyclone-enter" if cur_cyc else "cyclone-exit"
+                events.append(_pearl_event(
+                    pearl, idx, "climo", ev, None,
+                    title=_climo_title(),
+                    facts={"inSeason": cur_cyc},
+                    entity={"kind": "climo", "name": ev, "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4)},
+                ))
+            prev_wind, cur_wind = _rose_wind_kn(prev_climo.get("rose")), _rose_wind_kn(climo.get("rose"))
+            calm_now = (
+                prev_wind is not None and cur_wind is not None
+                and prev_wind < CLIMO_CALM_KN and cur_wind < CLIMO_CALM_KN
+            )
+            if calm_now and not in_calms:
+                mean = round((prev_wind + cur_wind) / 2.0, 1)
+                events.append(_pearl_event(
+                    pearl, idx, "climo", "calms", None,
+                    title=_climo_title(),
+                    facts={"windKn": mean},
+                    entity={"kind": "climo", "name": "calms", "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4)},
+                ))
+            elif not calm_now:
+                prev_dir, cur_dir = _rose_dir_deg(prev_climo.get("rose")), _rose_dir_deg(climo.get("rose"))
+                if prev_dir is not None and cur_dir is not None:
+                    delta = _angle_delta_deg(prev_dir, cur_dir)
+                    if delta >= CLIMO_ROSE_TURN_DEG:
+                        events.append(_pearl_event(
+                            pearl, idx, "climo", "rose", None,
+                            title=_climo_title(),
+                            facts={
+                                "fromDeg": round(prev_dir),
+                                "toDeg": round(cur_dir),
+                                "deltaDeg": round(delta),
+                            },
+                            entity={"kind": "climo", "name": "rose", "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4)},
+                        ))
+            in_calms = calm_now
+        elif climo is None:
+            in_calms = False
+        prev_climo = climo
+        # Lot F2 — station / campagne à ≤ 10 nm, une fois par entité.
+        for item in _science_items(bag):
+            nm = item.get("nm")
+            if not isinstance(nm, (int, float)):
+                ilat, ilon = item.get("lat"), item.get("lon")
+                if isinstance(ilat, (int, float)) and isinstance(ilon, (int, float)):
+                    nm = round(_haversine_nm(pearl["lat"], pearl["lon"], float(ilat), float(ilon)), 2)
+                else:
+                    continue
+            if nm > SCI_NEARBY_NM:
+                continue
+            key = str(item.get("id") or item.get("site_id") or item.get("wmo") or item["name"])
+            if key in seen_sci:
+                continue
+            seen_sci.add(key)
+            slat = item.get("lat") if isinstance(item.get("lat"), (int, float)) else pearl["lat"]
+            slon = item.get("lon") if isinstance(item.get("lon"), (int, float)) else pearl["lon"]
+            events.append(_pearl_event(
+                pearl, idx, "sci", "nearby", item["name"],
+                siteId=key,
+                nm=nm,
+                url=item.get("url") or item.get("visit_url"),
+                title=_sci_title(),
+                facts={"nm": round(float(nm), 1), "name": item["name"]},
+                entity={
+                    "kind": "science",
+                    "name": item["name"],
+                    "lat": round(float(slat), 4),
+                    "lon": round(float(slon), 4),
+                    "nm": nm,
+                    "url": item.get("url") or item.get("visit_url"),
+                    "source": item.get("source"),
+                },
+            ))
     return events
 
 

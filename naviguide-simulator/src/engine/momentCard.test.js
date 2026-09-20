@@ -7,6 +7,7 @@ import {
   TTL,
   advanceMoments,
   cardFromEvent,
+  cardFromJournalEntry,
   cardSpeech,
   classifyMoment,
   dismissNow,
@@ -91,6 +92,42 @@ describe("classifyMoment — deux voies (arbitrage du 19 sept.)", () => {
 });
 
 describe("cartes", () => {
+  it("lot F2: cardFromJournalEntry rend climo et sci (titre non vide, icône via journal)", () => {
+    const climo = cardFromJournalEntry({
+      id: "climo:rose:1",
+      kind: "climo",
+      event: "rose",
+      t: "2026-06-02T12:00:00Z",
+      lat: 22.0,
+      lon: -40.0,
+      title: { fr: "Changement de régime", en: "Regime change" },
+      facts: { fromDeg: 45, toDeg: 165, deltaDeg: 120 },
+    }, "fr");
+    assert.equal(climo.kind, "climo");
+    assert.ok(climo.title && climo.title.length > 0);
+    assert.match(climo.title, /Changement de régime/);
+    assert.match(climo.text, /120/);
+    assert.equal(climo.entity.lat, 22);
+    const sci = cardFromJournalEntry({
+      id: "sci:pirata",
+      kind: "sci",
+      event: "nearby",
+      t: "2026-06-10T06:00:00Z",
+      lat: 14.5,
+      lon: -50.0,
+      name: "PIRATA",
+      facts: { nm: 6, name: "PIRATA" },
+      entity: { kind: "science", name: "PIRATA", lat: 14.6, lon: -50.1, url: "https://www.pmel.noaa.gov/pirata/", source: "argo" },
+    }, "en");
+    assert.equal(sci.kind, "sci");
+    assert.ok(sci.title);
+    assert.match(sci.title, /Station passed/);
+    assert.match(sci.text, /PIRATA/);
+    assert.equal(sci.entity.kind, "science");
+    assert.equal(sci.entity.url, "https://www.pmel.noaa.gov/pirata/");
+    assert.equal(cardFromJournalEntry({ kind: "grib", t: "2026-05-15T12:00:00Z" }), null);
+  });
+
   it("cardFromEvent : texte de phraseForEvent, entité du payload, liens", () => {
     const card = cardFromEvent(poeAhead, "fr");
     assert.equal(card.lane, LANE_NOW);

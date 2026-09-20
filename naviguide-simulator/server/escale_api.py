@@ -251,6 +251,63 @@ def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
     return f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}"
 
 
+_TOURISM_SUBS = ("sights", "museums", "viewpoints")
+
+
+def tourism_highlights_from_cache(
+    name: str,
+    lat: float | None,
+    lon: float | None,
+    lang: str = "fr",
+    limit: int = 2,
+) -> list[dict]:
+    """Deux lieux remarquables de la section tourisme, si la fiche est en cache.
+
+    Lecture seule — pas de réseau. Champ inconnu = liste vide, jamais inventé.
+    """
+    if not name or not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return []
+    try:
+        import pearl_store  # noqa: PLC0415
+    except Exception:
+        return []
+    langs = [(lang or "fr")[:2]]
+    other = "en" if langs[0] == "fr" else "fr"
+    if other not in langs:
+        langs.append(other)
+    hit = None
+    for lg in langs:
+        hit = pearl_store.kv_get("escale", escale_key(name, float(lat), float(lon), lg), ESCALE_TTL_S)
+        if hit:
+            break
+    if not hit:
+        return []
+    tourism = ((hit.get("value") or {}).get("sections") or {}).get("tourism") or {}
+    if not isinstance(tourism, dict):
+        return []
+    items: list[dict] = []
+    for sub in _TOURISM_SUBS:
+        for it in tourism.get(sub) or []:
+            if isinstance(it, dict) and it.get("name"):
+                items.append({**it, "subsection": sub})
+    items.sort(key=lambda x: (not isinstance(x.get("nm"), (int, float)), x.get("nm") or 0))
+    seen: set[str] = set()
+    out: list[dict] = []
+    for it in items:
+        label = str(it["name"]).strip()
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        row = {"name": label, "kind": it.get("subsection")}
+        for k in ("lat", "lon", "nm", "url"):
+            if it.get(k) is not None:
+                row[k] = it[k]
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
                        client: httpx.AsyncClient | None = None, *, paragraph: bool = True) -> dict[str, Any]:
     own = client is None

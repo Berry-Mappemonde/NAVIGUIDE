@@ -8,12 +8,13 @@
  */
 import { sampleClockAtTime } from "./voyageClock.js";
 import { datedMarks, expeditionStory } from "./expeditionStory.js";
-import { formatJournalEntry } from "./journalFormat.js";
-import { LANE_NOW } from "./momentCard.js";
+import { cardFromJournalEntry, JOURNAL_CARD_KINDS } from "./momentCard.js";
+
+export { cardFromJournalEntry };
+export const CARD_KINDS = JOURNAL_CARD_KINDS;
 
 export const DEFAULT_SECONDS_PER_DAY = 1;
 export const MIN_CARD_MS = 2500;
-export const CARD_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "note"]);
 export const FILM_TARGET_SECONDS = 150;
 export const FILM_TARGET_SECONDS_LONG = 180;
 export const FILM_RATE_MIN = 0.9;
@@ -97,41 +98,6 @@ export function replaySample(clock, tMs, timeline = []) {
     dirFromDeg: wind ? wind.dirFromDeg : (s.dirFromDeg ?? null),
     hs: wind ? wind.hs : null,
     model: wind ? wind.model : null,
-  };
-}
-
-const TITLE = {
-  fr: { stop: "Escale", zee: "ZEE", amp: "Aire marine protégée", poe: "Port d’entrée", wx: "Météo au bateau", note: "Mot du skipper" },
-  en: { stop: "Stopover", zee: "EEZ", amp: "Marine protected area", poe: "Port of entry", wx: "Weather at the boat", note: "Skipper's note" },
-};
-
-function dayLabel(iso, lang) {
-  const t = ms(iso);
-  if (t == null) return "";
-  return new Date(t).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "numeric", month: "long", timeZone: "UTC" });
-}
-
-/** A moment card (NOW lane) from a journal line — the text the journal already formats. */
-export function cardFromJournalEntry(entry, lang = "fr") {
-  if (!entry || !CARD_KINDS.has(entry.kind)) return null;
-  const f = formatJournalEntry(entry, lang);
-  const words = TITLE[lang === "en" ? "en" : "fr"];
-  const when = dayLabel(entry.t, lang);
-  const hasPos = Number.isFinite(entry.lat) && Number.isFinite(entry.lon);
-  return {
-    key: `replay:${entry.id || `${entry.kind}:${entry.t}`}`,
-    lane: LANE_NOW,
-    origin: "journal",
-    kind: entry.kind,
-    type: `replay-${entry.kind}`,
-    severity: entry.kind === "wx" ? "alert" : "info",
-    title: `${words[entry.kind] || entry.kind}${when ? ` · ${when}` : ""}`,
-    text: f.text,
-    entity: hasPos
-      ? { id: `replay:${entry.kind}:${entry.name || entry.t}`, kind: entry.kind === "poe" ? "poe" : (entry.kind === "amp" ? "amp" : "place"), name: entry.name || words[entry.kind], rawName: entry.name || "", lat: entry.lat, lon: entry.lon, nm: 0, url: entry.url || entry.visitUrl || null, source: entry.basis || null }
-      : null,
-    whenNm: 0,
-    at: entry.t,
   };
 }
 

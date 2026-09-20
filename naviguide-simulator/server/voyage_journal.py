@@ -13,8 +13,11 @@ UTC, écrite par le serveur seul :
 - `amp`       : aire marine protégée venue à portée d'une perle (basis `pearl`) ;
 - `poe`       : port d'entrée officiel passé à ≤ 15 nm d'une perle (basis `pearl`) ;
 - `wx`        : météo marquante au bateau, dérivée d'une entrée `grib` déjà
-                journalisée (vent ≥ WX_GALE_KT ou Hs ≥ WX_HS_M) — pas de GRIB,
-                pas de `wx` (lot A).
+                journalisée (vent ≥ WX_GALE_KT ou mer WMO) — pas de GRIB,
+                pas de `wx` (lot A, enrichi lot F2 : durée, max, level) ;
+- `climo`     : changement de régime entre deux perles (rose ≥ 90°, calmes,
+                saison cyclonique) — lot F2 ;
+- `sci`       : station / campagne scientifique à ≤ 10 nm — lot F2.
 
 Rien n'est inventé : une position vient de l'horloge, un vent d'un GRIB
 réellement téléchargé. Les trous restent des trous (`absent`), le journal
@@ -40,10 +43,15 @@ SLOT_HOURS = (0, 6, 12, 18)
 BACKFILL_MAX_DAYS = 400          # toute l'expédition, jamais plus
 TICK_MIN_S = 60.0                # les GET publics ne réécrivent pas plus souvent
 NOTE_MAX_CHARS = 2000
-KINDS = ("position", "stop", "grib", "note", "zee", "amp", "poe", "wx", "chat")
+KINDS = ("position", "stop", "grib", "note", "zee", "amp", "poe", "wx", "chat", "climo", "sci")
 CHAT_MAX_CHARS = 1200
-WX_GALE_KT = 34.0   # Beaufort 8, the Cruise profile's gale
-WX_HS_M = 3.5       # a sea worth a line in the log
+WX_GALE_KT = 34.0          # Beaufort 8 « coup de vent »
+WX_HS_ROUGH_M = 2.5        # WMO état de la mer 5 « forte »
+WX_HS_VERY_ROUGH_M = 4.0   # WMO état de la mer 6 « très forte »
+WX_HS_DURABLE_H = 6.0      # mer forte seulement si durable
+WX_SLOT_H = 6.0            # durée d'un créneau GRIB isolé
+WX_GAP_H = 9.0             # fusionner deux lectures remarquables plus proches
+WX_HS_M = WX_HS_VERY_ROUGH_M  # nom historique : mer « très forte » instantanée
 
 _LOCK = threading.RLock()
 _last_tick = 0.0
@@ -201,6 +209,69 @@ def record_positions(clock: dict, now: datetime, *, max_days: int = BACKFILL_MAX
 
 # ── escales ─────────────────────────────────────────────────────────────────
 
+def _days_at_quay(hold_hours: Any) -> Optional[int]:
+    if not isinstance(hold_hours, (int, float)) or hold_hours <= 0:
+        return None
+    return int(round(float(hold_hours) / 24.0))
+
+
+def _stop_latlon(clock: dict, mark: dict, when: datetime) -> tuple[Optional[float], Optional[float]]:
+    if isinstance(mark.get("lat"), (int, float)) and isinstance(mark.get("lon"), (int, float)):
+        return float(mark["lat"]), float(mark["lon"])
+    sample = sample_clock_at_time(clock, when)
+    if sample and isinstance(sample.get("lat"), (int, float)) and isinstance(sample.get("lon"), (int, float)):
+        return float(sample["lat"]), float(sample["lon"])
+    return None, None
+
+
+def _stop_entry(clock: dict, mark: dict, when: datetime, event: str, key: str) -> dict:
+    name = str(mark.get("name") or "").strip()
+    lat, lon = _stop_latlon(clock, mark, when)
+    hold = mark.get("holdHours") if event == "arrival" else None
+    days = _days_at_quay(hold) if event == "arrival" else None
+    sights: List[dict] = []
+    if event == "arrival" and lat is not None and lon is not None:
+        try:
+            from escale_api import tourism_highlights_from_cache  # noqa: PLC0415
+            sights = tourism_highlights_from_cache(name, lat, lon)
+        except Exception:
+            sights = []
+    facts: Dict[str, Any] = {}
+    if days is not None:
+        facts["daysAtQuay"] = days
+    if sights:
+        facts["sights"] = [s["name"] for s in sights]
+    entry: Dict[str, Any] = {
+        "id": f"stop:{key}:{event}",
+        "kind": "stop",
+        "t": to_iso(when),
+        "event": event,
+        "name": name,
+        "filmNm": mark.get("filmNm"),
+        "title": {"fr": "Escale", "en": "Stopover"},
+        "basis": "clock",
+    }
+    if hold is not None:
+        entry["holdHours"] = hold
+    if days is not None:
+        entry["daysAtQuay"] = days
+    if sights:
+        entry["sights"] = [s["name"] for s in sights]
+    if facts:
+        entry["facts"] = facts
+    if lat is not None and lon is not None:
+        entry["lat"] = round(lat, 4)
+        entry["lon"] = round(lon, 4)
+        entry["entity"] = {
+            "kind": "escale",
+            "name": name,
+            "lat": round(lat, 4),
+            "lon": round(lon, 4),
+            "url": sights[0].get("url") if sights else None,
+        }
+    return entry
+
+
 def record_stops(clock: dict, now: datetime) -> int:
     t0 = parse_iso(clock["t0"])
     entries = []
@@ -211,28 +282,11 @@ def record_stops(clock: dict, now: datetime) -> int:
         arrival = t0 + timedelta(hours=float(m["tHours"]))
         key = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
         if arrival <= now:
-            entries.append({
-                "id": f"stop:{key}:arrival",
-                "kind": "stop",
-                "t": to_iso(arrival),
-                "event": "arrival",
-                "name": name,
-                "filmNm": m.get("filmNm"),
-                "holdHours": m.get("holdHours"),
-                "basis": "clock",
-            })
+            entries.append(_stop_entry(clock, m, arrival, "arrival", key))
         hold = float(m.get("holdHours") or 0)
         departure = arrival + timedelta(hours=hold)
         if hold > 0 and departure <= now:
-            entries.append({
-                "id": f"stop:{key}:departure",
-                "kind": "stop",
-                "t": to_iso(departure),
-                "event": "departure",
-                "name": name,
-                "filmNm": m.get("filmNm"),
-                "basis": "clock",
-            })
+            entries.append(_stop_entry(clock, m, departure, "departure", key))
     return _append(entries)
 
 
@@ -267,7 +321,14 @@ def record_route_events(voy: Optional[dict], clock: Optional[dict], now: datetim
         when = _time_at_sail_nm(clock, ev["sailNm"])
         if when is None or when > now:
             continue
-        ident = ev.get("poeId") if ev["kind"] == "poe" else (ev.get("mrgid") or ev.get("siteId") or ev.get("name") or "")
+        if ev["kind"] == "poe":
+            ident = ev.get("poeId")
+        elif ev["kind"] == "sci":
+            ident = ev.get("siteId") or ev.get("name")
+        elif ev["kind"] == "climo":
+            ident = ev.get("event") or "regime"
+        else:
+            ident = ev.get("mrgid") or ev.get("siteId") or ev.get("name") or ""
         key = re.sub(r"[^a-z0-9]+", "-", str(ident).lower()).strip("-")
         entries.append({
             "id": f"{ev['kind']}:{ev['event']}:{key}:{ev['idx']}",
@@ -301,36 +362,160 @@ def _drop_basis_not_in(basis: str, keep: set) -> int:
     return removed
 
 
-def wx_entry_from_grib(grib: dict) -> Optional[dict]:
+def _wx_hours(value: Optional[float]) -> Optional[float]:
+    if not isinstance(value, (int, float)):
+        return None
+    hours = float(value)
+    return int(hours) if hours == int(hours) else round(hours, 1)
+
+
+def _wx_level(max_hs: Optional[float]) -> Optional[str]:
+    if not isinstance(max_hs, (int, float)):
+        return None
+    if max_hs >= WX_HS_VERY_ROUGH_M:
+        return "très forte"
+    if max_hs >= WX_HS_ROUGH_M:
+        return "forte"
+    return None
+
+
+def _wx_title(event: str, level: Optional[str]) -> dict:
+    if event == "sea":
+        if level == "très forte":
+            return {"fr": "Mer très forte", "en": "Very rough sea"}
+        return {"fr": "Mer forte", "en": "Rough sea"}
+    return {"fr": "Coup de vent", "en": "Gale"}
+
+
+def wx_entry_from_grib(
+    grib: dict,
+    *,
+    hours: Optional[float] = None,
+    max_wind: Optional[float] = None,
+    max_hs: Optional[float] = None,
+) -> Optional[dict]:
     """A `wx` line derived from a journaled GRIB reading — or None when the
-    weather was unremarkable. Same numbers, same time, nothing added."""
+    weather was unremarkable. Same numbers, same time, nothing added.
+    Lot F2 : durée (heures), max, level WMO (forte / très forte)."""
     wind = grib.get("windKnots")
     hs = grib.get("hs")
-    gale = isinstance(wind, (int, float)) and wind >= WX_GALE_KT
-    sea = isinstance(hs, (int, float)) and hs >= WX_HS_M
-    if not gale and not sea:
+    dur = hours if isinstance(hours, (int, float)) else WX_SLOT_H
+    peak_wind = max_wind if isinstance(max_wind, (int, float)) else (wind if isinstance(wind, (int, float)) else None)
+    peak_hs = max_hs if isinstance(max_hs, (int, float)) else (hs if isinstance(hs, (int, float)) else None)
+    gale = isinstance(peak_wind, (int, float)) and peak_wind >= WX_GALE_KT
+    very = isinstance(peak_hs, (int, float)) and peak_hs >= WX_HS_VERY_ROUGH_M
+    rough = isinstance(peak_hs, (int, float)) and peak_hs >= WX_HS_ROUGH_M and dur >= WX_HS_DURABLE_H
+    if not gale and not very and not rough:
         return None
-    return {
+    event = "gale" if gale else "sea"
+    level = _wx_level(peak_hs)
+    hours_out = _wx_hours(dur)
+    facts: Dict[str, Any] = {}
+    if isinstance(wind, (int, float)):
+        facts["windKnots"] = wind
+    if isinstance(peak_wind, (int, float)):
+        facts["maxWindKnots"] = peak_wind
+    if isinstance(hs, (int, float)):
+        facts["hs"] = hs
+    if isinstance(peak_hs, (int, float)):
+        facts["maxHs"] = peak_hs
+    if hours_out is not None:
+        facts["hours"] = hours_out
+    if level:
+        facts["level"] = level
+    entry: Dict[str, Any] = {
         "id": f"wx:{grib.get('id') or grib.get('cycle') or grib.get('t')}",
         "kind": "wx",
         "t": grib["t"],
-        "event": "gale" if gale else "sea",
+        "event": event,
         "windKnots": wind,
         "dirFromDeg": grib.get("dirFromDeg"),
         "hs": hs,
+        "hours": hours_out,
+        "maxWindKnots": peak_wind,
+        "maxHs": peak_hs,
+        "level": level,
+        "title": _wx_title(event, level),
+        "facts": facts,
         "lat": grib.get("lat"),
         "lon": grib.get("lon"),
         "model": grib.get("model"),
         "from": grib.get("id"),
         "basis": "forecast",
     }
+    if isinstance(grib.get("lat"), (int, float)) and isinstance(grib.get("lon"), (int, float)):
+        entry["entity"] = {
+            "kind": "wx",
+            "name": event,
+            "lat": grib.get("lat"),
+            "lon": grib.get("lon"),
+        }
+    return {k: v for k, v in entry.items() if v is not None}
+
+
+def _grib_time(grib: dict) -> Optional[datetime]:
+    try:
+        return parse_iso(grib["t"]) if grib.get("t") else None
+    except Exception:
+        return None
+
+
+def _wx_runs(gribs: Iterable[dict]) -> List[dict]:
+    timed: List[tuple[datetime, dict]] = []
+    for g in gribs:
+        t = _grib_time(g)
+        if t is not None:
+            timed.append((t, g))
+    timed.sort(key=lambda x: x[0])
+    runs: List[dict] = []
+    cur: Optional[dict] = None
+    for t, g in timed:
+        wind, hs = g.get("windKnots"), g.get("hs")
+        active = (
+            (isinstance(wind, (int, float)) and wind >= WX_GALE_KT)
+            or (isinstance(hs, (int, float)) and hs >= WX_HS_ROUGH_M)
+        )
+        if not active:
+            cur = None
+            continue
+        if cur is not None and (t - cur["tLast"]).total_seconds() / 3600.0 <= WX_GAP_H:
+            cur["tLast"] = t
+            cur["gribs"].append(g)
+        else:
+            cur = {"tFirst": t, "tLast": t, "gribs": [g]}
+            runs.append(cur)
+    out: List[dict] = []
+    for run in runs:
+        span_h = (run["tLast"] - run["tFirst"]).total_seconds() / 3600.0
+        hours = max(WX_SLOT_H, span_h)
+        winds = [g["windKnots"] for g in run["gribs"] if isinstance(g.get("windKnots"), (int, float))]
+        seas = [g["hs"] for g in run["gribs"] if isinstance(g.get("hs"), (int, float))]
+        out.append({
+            "hours": hours,
+            "maxWind": max(winds) if winds else None,
+            "maxHs": max(seas) if seas else None,
+            "gribs": run["gribs"],
+        })
+    return out
+
+
+def wx_events_from_gribs(gribs: Iterable[dict]) -> List[dict]:
+    """Une entrée `wx` par épisode (run de GRIBs remarquables), avec durée et max."""
+    events: List[dict] = []
+    for run in _wx_runs(gribs):
+        first = run["gribs"][0]
+        entry = wx_entry_from_grib(
+            first, hours=run["hours"], max_wind=run["maxWind"], max_hs=run["maxHs"],
+        )
+        if entry:
+            events.append(entry)
+    return events
 
 
 def record_wx(now: datetime) -> int:
     """Derive `wx` entries from every journaled GRIB reading (idempotent)."""
     del now
-    entries = [e for e in (wx_entry_from_grib(g) for g in latest(5000, kinds=("grib",))) if e]
-    return _append(entries)
+    return _append(wx_events_from_gribs(latest(5000, kinds=("grib",))))
 
 
 # ── GRIB ────────────────────────────────────────────────────────────────────
@@ -445,7 +630,7 @@ def tick(voy: Optional[dict], now: datetime, *, force: bool = False) -> Dict[str
     return out
 
 
-EVENT_KINDS = ("stop", "grib", "note", "zee", "amp", "poe", "wx", "chat")
+EVENT_KINDS = ("stop", "grib", "note", "zee", "amp", "poe", "wx", "chat", "climo", "sci")
 EVENTS_MAX = 800
 
 
