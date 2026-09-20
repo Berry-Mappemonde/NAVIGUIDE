@@ -68,7 +68,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
         : "0 0 0 1px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)",
     };
   return (
-    <div data-testid="moment-now" data-type={card.type} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+    <div data-testid="moment-now" data-type={card.type} data-kind={card.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
         <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${alert ? "bg-amber-400 animate-pulse" : "bg-cyan-300"}`} />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70 min-w-0 truncate">

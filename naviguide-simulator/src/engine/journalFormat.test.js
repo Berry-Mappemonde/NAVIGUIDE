@@ -77,6 +77,38 @@ describe("journalFormat", () => {
     assert.equal(formatJournalEntry({ kind: "wx", t: "2026-06-04T06:00:00Z", event: "sea", windKnots: 20, hs: 4.1 }, "en").text, "Heavy sea : wind 20 kn · Hs 4.1 m");
   });
 
+  it("lot F2: climo, sci, wx durée/max/level, stop avec lieux", () => {
+    const rose = formatJournalEntry({
+      kind: "climo", t: "2026-06-02T12:00:00Z", event: "rose",
+      facts: { fromDeg: 45, toDeg: 165, deltaDeg: 120 },
+    }, "fr");
+    assert.equal(rose.icon, "🧭");
+    assert.equal(rose.text, "Le vent dominant a tourné de 120°");
+    assert.equal(formatJournalEntry({
+      kind: "climo", t: "2026-06-03T12:00:00Z", event: "calms", facts: { windKn: 6.5 },
+    }, "en").text, "Shift to the doldrums (mean wind 6.5 kn)");
+    assert.equal(formatJournalEntry({ kind: "climo", t: "2026-08-01T00:00:00Z", event: "cyclone-enter" }, "fr").text, "Entrée en saison cyclonique");
+    const sci = formatJournalEntry({
+      kind: "sci", t: "2026-06-10T06:00:00Z", name: "PIRATA", facts: { nm: 6, name: "PIRATA" },
+    }, "fr");
+    assert.equal(sci.icon, "🔬");
+    assert.equal(sci.text, "Station scientifique croisée : PIRATA (6,0 nm)");
+    const wx = formatJournalEntry({
+      kind: "wx", t: "2026-06-04T06:00:00Z", event: "sea", windKnots: 20, hs: 2.6,
+      hours: 12, maxHs: 4.2, level: "très forte",
+    }, "fr");
+    assert.match(wx.text, /Mer très forte/);
+    assert.match(wx.text, /12 h/);
+    assert.match(wx.text, /max Hs 4,2 m/);
+    assert.equal(
+      formatJournalEntry({
+        kind: "stop", t: "2026-06-05T09:00:00Z", event: "arrival", name: "Fort-de-France",
+        holdHours: 72, daysAtQuay: 3, sights: ["Fort Saint-Louis", "Bibliothèque Schoelcher"],
+      }, "fr").text,
+      "Arrivée à Fort-de-France · 3 jours à quai · Fort Saint-Louis · Bibliothèque Schoelcher",
+    );
+  });
+
   it("groups newest day first and caps the number of days", () => {
     const entries = [
       { id: "a", kind: "note", t: "2026-05-18T07:00:00Z", text: "c" },

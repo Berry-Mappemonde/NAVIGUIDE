@@ -24,6 +24,7 @@
 
 import { phraseForEvent, satelliteSentence, climatologySentence } from "./iciBriefing.js";
 import { placeLabel } from "./briefingLinks.js";
+import { formatJournalEntry } from "./journalFormat.js";
 
 export const LANE_NOW = "now";
 export const LANE_FREE = "free";
@@ -144,7 +145,80 @@ const KIND_WORDS = Object.freeze({
   climatology: ["Climatologie", "Climatology"],
   cable: ["Câble sous-marin", "Submarine cable"],
   escale: ["Escale", "Stopover"],
+  climo: ["Changement de régime", "Regime change"],
+  sci: ["Station croisée", "Station passed"],
 });
+
+/** Journal kinds that become a moment card (lot E + F2). */
+export const JOURNAL_CARD_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "note", "climo", "sci"]);
+
+const JOURNAL_TITLE = {
+  fr: { stop: "Escale", zee: "ZEE", amp: "Aire marine protégée", poe: "Port d’entrée", wx: "Météo au bateau", note: "Mot du skipper", climo: "Changement de régime", sci: "Station croisée" },
+  en: { stop: "Stopover", zee: "EEZ", amp: "Marine protected area", poe: "Port of entry", wx: "Weather at the boat", note: "Skipper's note", climo: "Regime change", sci: "Station passed" },
+};
+
+function journalDayLabel(iso, lang) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+function journalTitleOf(entry, lang) {
+  const words = JOURNAL_TITLE[isEn(lang) ? "en" : "fr"];
+  if (entry?.title && typeof entry.title === "object") {
+    const picked = isEn(lang) ? (entry.title.en || entry.title.fr) : (entry.title.fr || entry.title.en);
+    if (picked) return picked;
+  }
+  if (typeof entry?.title === "string" && entry.title) return entry.title;
+  return words[entry?.kind] || entry?.kind || "";
+}
+
+function journalEntityKind(entry) {
+  if (entry?.entity?.kind) return entry.entity.kind;
+  if (entry?.kind === "poe") return "poe";
+  if (entry?.kind === "amp") return "amp";
+  if (entry?.kind === "sci") return "science";
+  if (entry?.kind === "stop") return "escale";
+  return "place";
+}
+
+/** A moment card (NOW lane) from a journal line — the text the journal already formats. */
+export function cardFromJournalEntry(entry, lang = "fr") {
+  if (!entry || !JOURNAL_CARD_KINDS.has(entry.kind)) return null;
+  const f = formatJournalEntry(entry, lang);
+  const when = journalDayLabel(entry.t, lang);
+  const title = journalTitleOf(entry, lang);
+  const hasPos = Number.isFinite(entry.lat) && Number.isFinite(entry.lon);
+  const given = entry.entity && typeof entry.entity === "object" ? entry.entity : null;
+  const lat = Number.isFinite(given?.lat) ? given.lat : entry.lat;
+  const lon = Number.isFinite(given?.lon) ? given.lon : entry.lon;
+  return {
+    key: `replay:${entry.id || `${entry.kind}:${entry.t}`}`,
+    lane: LANE_NOW,
+    origin: "journal",
+    kind: entry.kind,
+    type: `replay-${entry.kind}`,
+    severity: entry.kind === "wx" ? "alert" : "info",
+    title: `${title}${when ? ` · ${when}` : ""}`,
+    text: f.text,
+    facts: entry.facts || null,
+    entity: hasPos || (Number.isFinite(lat) && Number.isFinite(lon))
+      ? {
+        id: `replay:${entry.kind}:${entry.name || given?.name || entry.t}`,
+        kind: journalEntityKind(entry),
+        name: given?.name || entry.name || title,
+        rawName: given?.name || entry.name || "",
+        lat: Number.isFinite(lat) ? lat : entry.lat,
+        lon: Number.isFinite(lon) ? lon : entry.lon,
+        nm: Number.isFinite(given?.nm) ? given.nm : (Number.isFinite(entry.nm) ? entry.nm : 0),
+        url: given?.url || entry.url || entry.visitUrl || null,
+        source: given?.source || entry.basis || null,
+      }
+      : null,
+    whenNm: 0,
+    at: entry.t,
+  };
+}
 
 export function kindWord(kind, lang) {
   const row = KIND_WORDS[kind];
