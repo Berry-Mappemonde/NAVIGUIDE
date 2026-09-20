@@ -12,10 +12,11 @@ et quand OSM / BI le disent un site et un téléphone :
 - formalités : ZEE, ports d'entrée officiels (BI), aires marines protégées ;
 - autour : projets et fiches science Blue Intelligence.
 
-La **rédaction** (un paragraphe de présentation, trois phrases) passe par la
-cascade LLM habituelle à partir de ces listes seulement, filtrée comme les
-cartes ; sans LLM, les listes seules. Rien n'est inventé : une section vide
-n'est pas envoyée. Cache SQLite 7 jours (`pearl_store.kv`, ns « escale »).
+La **rédaction** (un paragraphe de présentation, trois phrases) passe par
+`cascade_text(tier="fast")` (lot L2 / U5) à partir de ces listes seulement,
+filtrée comme les cartes ; sans LLM, les listes seules. Rien n'est inventé :
+une section vide n'est pas envoyée. Cache SQLite 7 jours (`pearl_store.kv`,
+ns « escale »). Chaque paragraphe porte `source`.
 """
 from __future__ import annotations
 
@@ -235,16 +236,16 @@ def _paragraph_prompt(name: str, sections: dict, lang: str) -> tuple[str, str]:
 
 async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     if not sections:
-        return {"status": "empty", "text": None, "engine": None}
+        return {"status": "empty", "text": None, "engine": None, "source": None}
     system, user = _paragraph_prompt(name, sections, lang)
     try:
-        text, engine = await cascade_text(system, user, client)
+        text, source = await cascade_text(system, user, client, tier="fast")
     except Exception as exc:
-        return {"status": "failed", "text": None, "engine": None, "reason": str(exc)[:160]}
+        return {"status": "failed", "text": None, "engine": None, "source": None, "reason": str(exc)[:160]}
     tidy = tidy_story(text, None, max_sentences=PARAGRAPH_SENTENCES, max_chars=PARAGRAPH_CHARS)
     if not tidy:
-        return {"status": "failed", "text": None, "engine": engine, "reason": "only machinery"}
-    return {"status": "ready", "text": tidy, "engine": engine}
+        return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "only machinery"}
+    return {"status": "ready", "text": tidy, "engine": source, "source": source}
 
 
 def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
@@ -317,7 +318,7 @@ async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
         osm_t = asyncio.create_task(_overpass_elements(http, osm_query(lat, lon)))
         bag, (elements, osm_err) = await asyncio.gather(bag_t, osm_t)
         sections = merge_sections(sections_from_bag(bag), classify_osm(elements, lat, lon))
-        para = await write_paragraph(name, sections, lang, http) if paragraph else {"status": "disabled", "text": None, "engine": None}
+        para = await write_paragraph(name, sections, lang, http) if paragraph else {"status": "disabled", "text": None, "engine": None, "source": None}
         return {
             "name": name,
             "lat": lat,

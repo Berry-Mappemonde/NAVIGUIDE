@@ -73,6 +73,7 @@ def test_build_escale_merges_bag_and_osm_and_writes_a_paragraph(monkeypatch):
     assert s["formalities"]["zee"]["mrgid"] == 5677
     assert fiche["paragraph"]["status"] == "ready"
     assert "Minimes" in fiche["paragraph"]["text"]
+    assert fiche["paragraph"]["source"] == "nemotron-lightning"
     assert fiche["sources"]["osm"] == "osm-overpass"
     assert any("overpass" in u for u in calls)
 
@@ -119,3 +120,19 @@ def test_endpoint_caches_seven_days(monkeypatch):
     assert len(calls) == n, "served from the store"
     assert pearl_store.kv_count("escale") == 1
     assert client.get("/escale?name=x&lat=95&lon=0").status_code == 400
+
+
+def test_write_paragraph_uses_fast_tier_and_keeps_source(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.update(kw)
+        return "La Rochelle a une marina et une capitainerie.", "nemotron-lightning"
+
+    monkeypatch.setattr(escale_api, "cascade_text", fake_cascade)
+    sections = {"mooring": {"marinas": [{"name": "Minimes", "nm": 0.2}]}}
+    out = asyncio.run(escale_api.write_paragraph("La Rochelle", sections, "fr"))
+    assert seen.get("tier") == "fast"
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-lightning"
+    assert out["engine"] == "nemotron-lightning"

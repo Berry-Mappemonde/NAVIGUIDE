@@ -26,5 +26,13 @@ describe("EscaleSheet contract (lot C)", () => {
     assert.match(hook, /\/escale\?name=\$\{encodeURIComponent\(stop\.name\)\}&lat=\$\{stop\.lat\}&lon=\$\{stop\.lon\}&lang=/);
     assert.match(hook, /cacheRef\.current\.set\(key, fiche\)/);
     assert.match(hook, /controller\.abort\(\)/);
+    assert.equal((hook.match(/useEffect\(/g) || []).length, 1, "one fetch on stop/lang, not per render");
+  });
+
+  it("shows the paragraph source under the text and does not fetch /escale itself", () => {
+    assert.match(src, /data-testid="escale-source"/);
+    assert.match(src, /storySourceLightning|storySourceSuper|storySourceRules/);
+    assert.doesNotMatch(src, /useEffect/);
+    assert.doesNotMatch(src, /\/escale/);
   });
 });

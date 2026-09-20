@@ -47,6 +47,58 @@ def _llm_transport(answer: str):
     return httpx.MockTransport(handler)
 
 
+def test_chat_tier_fast_for_short_factual_question():
+    assert logbook_chat.chat_tier("Quel vent ?") == "fast"
+    assert logbook_chat.chat_tier("Où est le bateau ?") == "fast"
+    assert logbook_chat.chat_tier("x" * 79) == "fast"
+
+
+def test_chat_tier_write_for_why_how_or_long_question():
+    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "write"
+    assert logbook_chat.chat_tier("Comment lire le vent ?") == "write"
+    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "write"
+    assert logbook_chat.chat_tier("How is the wind?") == "write"
+    assert logbook_chat.chat_tier("x" * 80) == "write"
+
+
+def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.update(kw)
+        return "Le bateau est à quai, 0 kn.", "nemotron-lightning"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 0, "atQuay": True}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question("Quel vent ?", "fr", {}, datetime.now(timezone.utc)))
+    assert seen.get("tier") == "fast"
+    assert out["source"] == "nemotron-lightning"
+    assert out["engine"] == "nemotron-lightning"
+    assert "0" in out["answer"]
+
+
+def test_answer_question_write_tier_for_pourquoi(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen["tier"] = kw.get("tier")
+        return "Parce que l'horloge dit à quai.", "nemotron-super"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"atQuay": True}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert seen["tier"] == "write"
+    assert out["source"] == "nemotron-super"
+
+
 def test_filter_numbers_drops_sentences_with_figures_absent_from_the_facts():
     ctx = {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}, "nextStop": {"name": "Ajaccio", "eta": "2026-10-03T10:00:00Z"}}
     text, dropped = logbook_chat.filter_numbers(
@@ -82,6 +134,8 @@ def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypa
     assert body["status"] == "ready" and body["logged"] is False
     assert "99 kn" not in body["answer"], "a figure absent from the facts is dropped"
     assert "Fort-de-France" in body["answer"]
+    assert body["source"] == "nemotron-lightning"
+    assert body["engine"] == "nemotron-lightning"
     assert body["facts"]["official"]["basis"] == "clock"
     assert journal.latest(10, kinds=("chat",)) == []
 
