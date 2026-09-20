@@ -192,7 +192,9 @@ export function nearestPearlBag(pearls, bagMap, boat, { maxNm = 15, month = null
   return {
     ...best.bag,
     at: { lat: boat.lat, lon: boat.lon },
-    thin: true,
+    // `pearl` = what the server collected ("rich": every timeless layer; "thin": ZEE, PoE, MPA, harbours).
+    pearl: best.bag.pearl === "rich" ? "rich" : "thin",
+    thin: best.bag.pearl !== "rich",
     pearlNm: Math.round(bestD * 10) / 10,
     pearlCumNm: best.pearl.cumNm,
     pearlFilmCum: best.pearl.filmCum,
