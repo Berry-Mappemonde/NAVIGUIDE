@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
+import { buildFilmScript } from "../engine/expeditionStory.js";
 import { canLeadWithVoice } from "../utils/speak.js";
+
+const API = import.meta.env?.VITE_API_URL ?? "";
 
 /**
  * « Revoir l'expédition » (lot E, cinématique lot F1) : rejoue la route de
@@ -30,6 +33,10 @@ export function useReplay({
   const [filmLeg, setFilmLeg] = useState(null);
   const [voiceRate, setVoiceRate] = useState(1);
   const [progress, setProgress] = useState(0);
+  const [filmSource, setFilmSource] = useState("rules");
+  const [filmStyle, setFilmStyle] = useState("raw");
+  const [hasWritten, setHasWritten] = useState(false);
+  const remotePlanRef = useRef(null);
   const queueRef = useRef([]);
   const cardSinceRef = useRef(0);
   const lastTRef = useRef(null);
@@ -85,17 +92,54 @@ export function useReplay({
     setTimeout(() => stop(), 400);
   }, [stop]);
 
+  useEffect(() => {
+    if (!enabled || !clock) return undefined;
+    const ac = new AbortController();
+    const style = filmStyle === "written" ? "written" : "raw";
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}`;
+    fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.chapters?.length) {
+          remotePlanRef.current = null;
+          setHasWritten(false);
+          if (filmStyle !== "written") setFilmSource("rules");
+          return;
+        }
+        remotePlanRef.current = data;
+        setHasWritten(Boolean(data.hasWritten));
+        setFilmSource(data.source || "rules");
+      })
+      .catch(() => {
+        remotePlanRef.current = null;
+        setHasWritten(false);
+        setFilmSource("rules");
+      });
+    return () => ac.abort();
+  }, [enabled, clock, journal, lang, targetSeconds, filmStyle]);
+
   const start = useCallback(() => {
     const w = replayWindow(clock, Date.now());
     if (!w) return false;
-    const chapters = filmChaptersFromStory({
+    const remote = remotePlanRef.current;
+    const local = buildFilmScript({
+      clock,
+      marks,
+      live: destination,
+      journal,
+      lang,
+      now: Date.now(),
+      seconds: targetSeconds,
+    });
+    const chapters = remote?.chapters?.length ? remote.chapters : (local.chapters?.length ? local.chapters : filmChaptersFromStory({
       clock,
       marks,
       live: destination,
       journal,
       lang,
       nowMs: Date.now(),
-    });
+    }));
+    if (!remote?.chapters?.length) setFilmSource(local.source || "rules");
     const plan = filmPlan({ chapters, targetSeconds });
     if (!plan.chapters.length) return false;
     windowRef.current = w;
@@ -266,5 +310,9 @@ export function useReplay({
     voiceRate,
     onVoiceBoundary,
     onVoiceEnd,
+    filmSource,
+    filmStyle,
+    setFilmStyle,
+    hasWritten,
   };
 }

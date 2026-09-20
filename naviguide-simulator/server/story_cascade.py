@@ -133,9 +133,12 @@ def _cache_ttl_s() -> float:
         return CACHE_TTL_S
 
 
-def prompt_cache_key(system: str, user: str, tier: str, *, online: bool = False) -> str:
+def prompt_cache_key(
+    system: str, user: str, tier: str, *, online: bool = False, max_tokens: int | None = None,
+) -> str:
     model = llm_budget.model_for(tier)
-    blob = f"{tier}\n{model}\n{int(online)}\n{','.join(providers())}\n{system}\n{user}"
+    extra = f"\n{max_tokens}" if max_tokens else ""
+    blob = f"{tier}\n{model}\n{int(online)}\n{','.join(providers())}\n{system}\n{user}{extra}"
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -357,6 +360,8 @@ def _claude_text(data: dict[str, Any] | None) -> str:
 
 async def _call_tokenfactory(
     system: str, user: str, tier: str, client: httpx.AsyncClient,
+    *,
+    max_tokens: int | None = None,
 ) -> tuple[str, str]:
     key = nebius_key()
     if not key:
@@ -369,7 +374,7 @@ async def _call_tokenfactory(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "max_tokens": llm_budget.max_tokens_for(t),
+        "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
         "temperature": 0.4,
         "stream": False,
     }
@@ -423,7 +428,8 @@ async def _call_nim(system: str, user: str, client: httpx.AsyncClient) -> tuple[
 
 
 async def _call_openrouter(
-    system: str, user: str, client: httpx.AsyncClient, *, online: bool
+    system: str, user: str, client: httpx.AsyncClient, *, online: bool,
+    max_tokens: int | None = None,
 ) -> tuple[str, str]:
     key = openrouter_key()
     if not key:
@@ -435,7 +441,7 @@ async def _call_openrouter(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": max_tokens or MAX_TOKENS,
         "temperature": 0.4,
     }
     r = await client.post(
@@ -455,13 +461,15 @@ async def _call_openrouter(
     return text, "openrouter"
 
 
-async def _call_claude(system: str, user: str, client: httpx.AsyncClient) -> tuple[str, str]:
+async def _call_claude(
+    system: str, user: str, client: httpx.AsyncClient, *, max_tokens: int | None = None,
+) -> tuple[str, str]:
     key = anthropic_key()
     if not key:
         raise RuntimeError("ANTHROPIC_API_KEY missing")
     payload = {
         "model": CLAUDE_MODEL,
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": max_tokens or MAX_TOKENS,
         "temperature": 0,
         "system": system,
         "messages": [{"role": "user", "content": user}],
@@ -517,8 +525,9 @@ async def _cascade_once(
     tier: str,
     facts: Any,
     fallback: str | None,
+    max_tokens: int | None = None,
 ) -> tuple[str, str]:
-    cache_key = prompt_cache_key(system, user, tier, online=online)
+    cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
     if hit:
         return hit[0], "cache"
@@ -530,11 +539,11 @@ async def _cascade_once(
     steps: list[Any] = []
     for name in providers():
         if name == "tokenfactory":
-            steps.append(lambda: _call_tokenfactory(system, user, tier, http))
+            steps.append(lambda: _call_tokenfactory(system, user, tier, http, max_tokens=max_tokens))
         elif name == "openrouter":
-            steps.append(lambda: _call_openrouter(system, user, http, online=online))
+            steps.append(lambda: _call_openrouter(system, user, http, online=online, max_tokens=max_tokens))
         elif name == "claude":
-            steps.append(lambda: _call_claude(system, user, http))
+            steps.append(lambda: _call_claude(system, user, http, max_tokens=max_tokens))
         elif name == "nim":
             steps.append(lambda: _call_nim(system, user, http))
 
@@ -567,6 +576,7 @@ async def cascade_text(
     tier: str = "write",
     fallback: str | None = None,
     facts: Any = None,
+    max_tokens: int | None = None,
 ) -> tuple[str, str]:
     """Cache SQLite → Token Factory → OpenRouter → Claude → rules.
 
@@ -577,7 +587,7 @@ async def cascade_text(
     own = client is None
     http = client or httpx.AsyncClient(timeout=TIMEOUT)
     t = llm_budget.normalize_tier(tier)
-    key = prompt_cache_key(system, user, t, online=online)
+    key = prompt_cache_key(system, user, t, online=online, max_tokens=max_tokens)
     try:
         async with _inflight_lock():
             existing = _INFLIGHT.get(key)
@@ -594,6 +604,7 @@ async def cascade_text(
             try:
                 result = await _cascade_once(
                     system, user, http, online=online, tier=t, facts=facts, fallback=fallback,
+                    max_tokens=max_tokens,
                 )
                 if not fut.done():
                     fut.set_result(result)

@@ -10,12 +10,14 @@ const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 const bar = readFileSync(join(here, "..", "components", "SimulationFilmBar.jsx"), "utf8");
 
 describe("useReplay contract (lot E)", () => {
-  it("replays on the official clock only, never fetches, and hands back to live at the end or on Stop", () => {
+  it("replays on the official clock, consumes the film plan, and hands back to live at the end or on Stop", () => {
     assert.match(hook, /replayWindow\(clock, Date\.now\(\)\)/);
     assert.match(hook, /requestAnimationFrame\(tick\)/);
     assert.match(hook, /if \(done\)/);
     assert.match(hook, /const stop = useCallback/);
-    assert.doesNotMatch(hook, /fetch\(|Nemotron|Tavily|Nebius/i);
+    assert.match(hook, /\/voyage\/official\/film/);
+    assert.match(hook, /buildFilmScript/);
+    assert.doesNotMatch(hook, /Tavily|Nebius/i);
   });
 
   it("App swaps the live boat for the replayed one in Suivre, jumps the playhead each frame, reads each new leg aloud", () => {

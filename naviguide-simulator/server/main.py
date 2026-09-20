@@ -123,6 +123,21 @@ def ici_pearls():
     return ici_warm.official_pearls()
 
 
+@app.get("/voyage/official/film")
+async def get_official_film(
+    lang: str = Query("fr"),
+    seconds: int = Query(150, ge=60, le=300),
+    style: str = Query("raw"),
+):
+    """Script du film (lot F3) : brut par règles, rédigé Nemotron si `style=written`.
+    Réponse `{chapters, source, chars, targetSeconds, hasWritten}`. Sans voyage : 404."""
+    from film_script import official_film
+    try:
+        return await official_film(lang=lang, seconds=seconds, style=style)
+    except FileNotFoundError:
+        raise HTTPException(404, "voyage officiel absent") from None
+
+
 class PositionRequest(BaseModel):
     latitude: float
     longitude: float

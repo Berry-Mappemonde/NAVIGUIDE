@@ -792,7 +792,11 @@ export default function App() {
     },
     onStop: replay.stop,
     onVoice: replay.setVoice,
-  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice]);
+    source: replay.filmSource,
+    style: replay.filmStyle,
+    hasWritten: replay.hasWritten,
+    onStyle: replay.setFilmStyle,
+  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;

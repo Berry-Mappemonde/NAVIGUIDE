@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { datedMarks, dayMonth, expeditionStory, expeditionStoryText } from "./expeditionStory.js";
+import {
+  datedMarks, dayMonth, expeditionStory, expeditionStoryText,
+  FILM_CONNECTORS, FILM_MAX_CHARS, buildFilmScript, filmCandidates, selectFilmEvents,
+} from "./expeditionStory.js";
 
 const clock = { t0: "2026-05-15T08:00:00Z" };
 const marks = [
@@ -83,5 +86,76 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(dayMonth("2026-06-01T10:00:00Z", "fr"), "1er juin");
     assert.equal(dayMonth("2026-06-01T10:00:00Z", "en"), "1 June");
     assert.equal(dayMonth("bad"), "");
+  });
+});
+
+function filmFixture() {
+  const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+  const journal = { latest: [
+    { id: "zee:es", kind: "zee", t: "2026-05-17T15:00:00Z", event: "enter", name: "Spanish Exclusive Economic Zone", mrgid: 5693 },
+    { id: "amp:cabrera", kind: "amp", t: "2026-05-18T02:00:00Z", event: "nearby", name: "Cabrera", nm: 8 },
+    { id: "poe:lr", kind: "poe", t: "2026-05-15T12:00:00Z", event: "passed", name: "La Rochelle - La Pallice", poeId: "lr", nm: 1.6 },
+    { id: "wx:gale", kind: "wx", t: "2026-05-22T06:00:00Z", event: "gale", windKnots: 36.5, maxWindKnots: 38, hours: 6, dirFromDeg: 300, hs: 2.4 },
+    { id: "climo:rose", kind: "climo", t: "2026-06-02T12:00:00Z", event: "rose", facts: { deltaDeg: 120 }, name: "alizés" },
+    { id: "sci:pirata", kind: "sci", t: "2026-06-10T06:00:00Z", name: "PIRATA", facts: { nm: 6, name: "PIRATA" } },
+    { id: "wx:sea", kind: "wx", t: "2026-07-01T06:00:00Z", event: "sea", windKnots: 22, maxHs: 4.2, hours: 12, hs: 4.2 },
+    { id: "note:1", kind: "note", t: "2026-05-21T10:00:00Z", text: "Première nuit au large." },
+    { id: "zee:fr", kind: "zee", t: "2026-05-16T09:00:00Z", event: "enter", name: "French Exclusive Economic Zone", mrgid: 5677 },
+    { id: "amp:pertuis", kind: "amp", t: "2026-05-15T18:00:00Z", event: "nearby", name: "Pertuis Charentais", nm: 3 },
+    { id: "poe:aj", kind: "poe", t: "2026-05-24T12:00:00Z", event: "passed", name: "Ajaccio", poeId: "aj" },
+    { id: "sci:argo", kind: "sci", t: "2026-08-01T06:00:00Z", name: "Argo", facts: { nm: 4 } },
+  ] };
+  return { clock, marks, live, journal, now: Date.parse("2026-09-19T02:00:00Z") };
+}
+
+describe("expeditionStory — script du film (lot F3)", () => {
+  it("brut ≤ 2 400 caractères, Saint-Maur et La Rochelle au chapitre 1", () => {
+    const plan = buildFilmScript({ ...filmFixture(), lang: "fr", seconds: 150 });
+    assert.ok(plan.chapters.length >= 1);
+    assert.ok(plan.chars <= FILM_MAX_CHARS, `chars=${plan.chars}`);
+    assert.equal(plan.source, "rules");
+    assert.match(plan.chapters[0].text, /Saint-Maur/);
+    assert.match(plan.chapters[0].text, /La Rochelle/);
+    const again = buildFilmScript({ ...filmFixture(), lang: "fr", seconds: 150 });
+    assert.deepEqual(again.chapters.map((c) => c.text), plan.chapters.map((c) => c.text));
+  });
+
+  it("connecteurs jamais deux fois de suite", () => {
+    const plan = buildFilmScript({ ...filmFixture(), lang: "fr" });
+    const cons = FILM_CONNECTORS.fr;
+    const used = [];
+    for (let i = 1; i < plan.chapters.length; i++) {
+      const hit = cons.find((c) => plan.chapters[i].text.startsWith(`${c},`));
+      if (hit) used.push(hit);
+    }
+    assert.ok(used.length >= 2, "il faut au moins deux jambes avec connecteur");
+    for (let i = 1; i < used.length; i++) {
+      assert.notEqual(used[i], used[i - 1], `connecteur répété : ${used[i]}`);
+    }
+  });
+
+  it("événements ancrés à un charIdx valide", () => {
+    const plan = buildFilmScript({ ...filmFixture(), lang: "fr" });
+    let anchored = 0;
+    for (const ch of plan.chapters) {
+      for (const ev of ch.events || []) {
+        assert.ok(Number.isFinite(ev.charIdx) && ev.charIdx >= 0 && ev.charIdx < ch.text.length, ev.id);
+        assert.ok(ch.text.slice(ev.charIdx).trim().length > 0, ev.id);
+        anchored += 1;
+      }
+    }
+    assert.ok(anchored >= 3, `ancrés=${anchored}`);
+  });
+
+  it("sélection déterministe : départ, escales, aujourd'hui, puis score", () => {
+    const fx = filmFixture();
+    const { candidates, t0, tEnd } = filmCandidates(fx);
+    const a = selectFilmEvents(candidates, { t0, tEnd }).map((e) => e.id);
+    const b = selectFilmEvents(candidates, { t0, tEnd }).map((e) => e.id);
+    assert.deepEqual(a, b);
+    assert.ok(a.includes("depart") && a.includes("today"));
+    assert.ok(a.length >= 6 && a.length <= 9);
+    const wx = a.filter((id) => String(id).startsWith("wx"));
+    assert.ok(wx.length >= 1, "un coup de vent est retenu");
   });
 });

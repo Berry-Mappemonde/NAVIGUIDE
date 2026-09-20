@@ -329,7 +329,12 @@ export function mergeShortChapters(planned, minSeconds = FILM_MIN_CHAPTER_SECOND
   for (const ch of planned) {
     const prev = out[out.length - 1];
     if (prev && (prev.seconds < minSeconds || ch.seconds < minSeconds)) {
+      const offset = (prev.text || "").length + (prev.text && ch.text ? 1 : 0);
       prev.text = [prev.text, ch.text].filter(Boolean).join(" ");
+      prev.events = [
+        ...(prev.events || []),
+        ...((ch.events || []).map((e) => ({ ...e, charIdx: (Number(e.charIdx) || 0) + offset }))),
+      ];
       prev.tB = ch.tB;
       prev.toName = ch.toName;
       prev.toLat = ch.toLat;
