@@ -41,7 +41,7 @@ def client(tmp_path, monkeypatch):
 def _llm_transport(answer: str):
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
         return _handler(request)
     return httpx.MockTransport(handler)
@@ -64,6 +64,7 @@ def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypa
     now = T0 + timedelta(days=3)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
     client.put("/voyage/official", json=_official(), headers=ADMIN)
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
     transport = _llm_transport("Le bateau est en mer, dans French Exclusive Economic Zone. Le vent au bateau est de 99 kn. Prochaine escale Fort-de-France (Martinique).")
     real = logbook_chat.answer_question
@@ -180,6 +181,7 @@ def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):
     now = T0 + timedelta(days=3)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
     client.put("/voyage/official", json=_official(), headers=ADMIN)
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "")
     monkeypatch.setattr(story_cascade, "openrouter_key", lambda: "")
     monkeypatch.setattr(story_cascade, "anthropic_key", lambda: "")
