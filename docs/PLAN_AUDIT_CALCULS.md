@@ -121,20 +121,34 @@ maintenant → +7 j       : PRÉVISION — cube GRIB courant (fondu 7 → 10 j)
 - Le régime est **affiché** avec chaque vitesse : « hindcast (ERA5) »,
   « prévision (GFS, +36 h) », « climatologie (juin) ». Champ inconnu = vide.
 
-### Données du hindcast (gratuites, sans clé, usage non commercial)
+### Données du hindcast : **tous** les produits Open-Meteo **et** Copernicus Marine
 
-| Besoin | Source | Points d'accès | Résolution | Retard |
-|---|---|---|---|---|
-| Vent 10 m (vitesse, direction, rafales), heure par heure, depuis mai 2026 | **Open-Meteo Historical Forecast API** (archives des modèles de prévision : GFS 0,25°, ECMWF IFS, ICON) | `historical-forecast-api.open-meteo.com/v1/forecast?latitude&longitude&start_date&end_date&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn` | 0,25° / horaire | ~2 jours |
-| Même chose en réanalyse (référence, plus lisse) | **Open-Meteo Historical Weather API** (ERA5 / ERA5-Land) | `archive-api.open-meteo.com/v1/archive` | 0,25° / horaire | ~5 jours |
-| Houle (Hs, direction, période), courant de surface | **Open-Meteo Marine API** | `marine-api.open-meteo.com/v1/marine?hourly=wave_height,wave_direction,wave_period,ocean_current_velocity,ocean_current_direction&start_date&end_date` | 0,08–0,25° / horaire | ~1 jour |
-| Alternative « officielle » (déjà utilisée par la popup) | Copernicus Marine (`copernicusmarine`), produits `GLOBAL_ANALYSISFORECAST_WAV`, `_PHY` (analyses passées disponibles) | déjà dans `weather_composite.py` | 1/12° | 1 jour |
+Décision du porteur (20 sept.) : pas d'alternative, **les deux fournisseurs
+sont utilisés ensemble**, sur chaque variable, et le système dit combien de
+sources il a vues et si elles sont d'accord.
+
+| Variable | Open-Meteo (sans clé, usage non commercial) | Copernicus Marine (`copernicusmarine`, identifiants déjà sur le VPS, fonctions `server/copernicus/get*.py` à doter d'un intervalle de temps) |
+|---|---|---|
+| Vent 10 m (vitesse, direction, rafales) | **Historical Forecast API** — archives des modèles de prévision (GFS 0,25°, ECMWF IFS, ICON…) : `historical-forecast-api.open-meteo.com/v1/forecast?…&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn` (retard ~2 j) ; **Historical Weather API** — réanalyse ERA5 : `archive-api.open-meteo.com/v1/archive` (retard ~5 j, correction des vents forts) | **WIND_GLO_PHY_L4_NRT_012_004**, dataset `cmems_obs-wind_glo_phy_nrt_l4_0.125deg_PT1H` (`eastward_wind`, `northward_wind`) — vent L4 issu des diffusiomètres, 0,125°, horaire (déjà utilisé par la popup) |
+| Houle (Hs, direction, période) | **Marine API** : `marine-api.open-meteo.com/v1/marine?…&hourly=wave_height,wave_direction,wave_period` (MFWAM / GWAM) | **GLOBAL_ANALYSISFORECAST_WAV_001_027**, dataset `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i` (`VHM0`, `VMDR`, `VTM02`) — analyses conservées ~2 ans, 1/12°, 3 h |
+| Courant de surface | **Marine API** : `hourly=ocean_current_velocity,ocean_current_direction` | **GLOBAL_ANALYSISFORECAST_PHY_001_024**, dataset `cmems_mod_glo_phy_anfc_0.083deg_PT1H-m` (`uo`, `vo`) — 1/12°, horaire |
+| Prévision (régime 2) | **Forecast API** (GFS, IFS, ICON — déjà `grib_fetch.py`) et **Ensemble API** (GEFS, IFS ENS) pour l'ETA probabiliste | mêmes produits WAV / PHY / WIND en partie prévision (déjà la popup) |
+
+**Fusion, par variable et par heure** : on collecte toutes les sources
+disponibles à `(lat, lon, t)` ; la valeur retenue est la **médiane** ; on
+garde la liste des sources et l'**écart** (max − min). L'horloge intègre la
+médiane ; chaque sommet porte `sources: [...]` et `spread` ; l'interface
+affiche « 3 sources · ±2 kn » ou « 1 source (ERA5) ». Une variable sans
+aucune source reste **vide** (jamais inventée). Directions : vent et vagues
+« d'où ça vient », courant « vers où ça va » (convention Copernicus / WMO).
 
 Volume : la route parcourue depuis le 15 mai ≈ 450 points de tracé ; **une
-requête par point** (série horaire sur ± 2 jours autour de l'heure estimée,
-puis raffinement si l'heure bouge de plus de 12 h) ≈ 500–900 requêtes, une
-fois, puis **une requête par jour** pour prolonger. Limite gratuite :
-10 000 requêtes/jour. Tout est mis en cache dans SQLite (`pearl_store.kv`, ns
+requête par point et par produit** (série horaire sur ± 2 jours autour de
+l'heure estimée, puis raffinement si l'heure bouge de plus de 12 h) ≈ 450 ×
+(3 Open-Meteo + 3 Copernicus) ≈ 2 700 requêtes, **une fois**, séquentielles
+(Copernicus : `subset` par point et par dataset, 1–2 s chacun ≈ 40 min ;
+Open-Meteo : limite gratuite 10 000/jour), puis **quelques requêtes par jour**
+pour prolonger. Tout est mis en cache dans SQLite (`pearl_store.kv`, ns
 `hindcast`) — jamais retéléchargé.
 
 ## 3. Les lots
@@ -171,10 +185,14 @@ vent à mi-temps, régime dans le sommet), `server/voyage_api.py`
 viennent du hindcast : durée, max), `docs/REGLES_PARAMETRES.md`.
 
 **Étapes.** 1) `hindcast.py` : `series(lat, lon, day)` → vent/rafales/houle/
-courant horaires (Open-Meteo Historical Forecast + Marine), cache, retries,
-`source` (« GFS archive », « ERA5 », « Marine ») ; **correction des vents
-forts** quand la source est ERA5 (facteur `ERA5_STRONG_WIND_FACTOR` = 1,05
-au-dessus de 15 m/s, cité dans `REGLES_PARAMETRES.md`). 2) Intégration avant :
+courant horaires depuis **toutes** les sources du tableau ci-dessus
+(Open-Meteo Historical Forecast, Historical Weather/ERA5, Marine ; Copernicus
+WIND L4, WAV, PHY via `server/copernicus/get*.py` dotés d'un paramètre
+d'intervalle de temps), fusion par **médiane** avec `sources` et `spread`,
+cache, retries, **correction des vents forts** quand la source est ERA5
+(facteur `ERA5_STRONG_WIND_FACTOR` = 1,05 au-dessus de 15 m/s, cité dans
+`REGLES_PARAMETRES.md`) ; une source en panne n'empêche rien, elle manque
+simplement dans `sources`. 2) Intégration avant :
 pour chaque pas, vent/courant à `(x_i, t_i)` ; escales → jours à quai ;
 `regime` dans chaque sommet. 3) `blended_wind` : `hours_since(now)` et non
 `t0`. 4) Le premier calcul complet tourne en tâche de fond au démarrage
@@ -182,12 +200,14 @@ pour chaque pas, vent/courant à `(x_i, t_i)` ; escales → jours à quai ;
 `kind: "climatology"`. 5) Nouvel endpoint `GET /voyage/official/regimes` :
 portions de route par régime (pour l'UI, lot C3).
 
-**Tests.** Faux Open-Meteo : deux jours de vent connus → position attendue à
-1 nm près ; à quai 0 kn ; changement de régime à `now` ; cache : deuxième
-appel sans réseau ; échec réseau → climatologie marquée.
+**Tests.** Faux Open-Meteo et faux Copernicus : deux jours de vent connus →
+position attendue à 1 nm près ; médiane de trois sources ; une source en
+panne → deux sources, `spread` calculé ; à quai 0 kn ; changement de régime à
+`now` ; cache : deuxième appel sans réseau ; tout en panne → climatologie
+marquée.
 
 **Recette (changement visible).** Barre film, en Suivre : « 7,4 kn · hindcast
-(GFS archive) » ; à quai « à quai · hindcast » ; la position du bateau
+· 3 sources ±1,5 kn » ; à quai « à quai · hindcast » ; la position du bateau
 d'aujourd'hui **change** (elle bouge de quelques dizaines à quelques centaines
 de nm par rapport à la climatologie : le dire dans la PR avec le chiffre).
 Journal : les `wx` ont une durée et un max, aux dates réelles des coups de
@@ -254,11 +274,12 @@ chaque ligne du § 1 y renvoie.
 - La vitesse **paraît** constante par jambe parce que le passé est calculé
   avec les vents **moyens du mois** ; le vrai vent n'est jamais entré dans
   l'horloge après les 10 premiers jours (A1).
-- Oui, on peut télécharger la météo passée **gratuitement** (Open-Meteo :
-  archives GFS/IFS et réanalyse ERA5, houle et courant par la Marine API),
-  la rejouer point par point depuis La Rochelle et obtenir **la position
-  d'aujourd'hui comme somme des vitesses instantanées** (lot C2), la même
-  vitesse partout (C3), le courant compris (C4).
+- Oui, on peut télécharger la météo passée — **Open-Meteo et Copernicus
+  Marine ensemble** (archives GFS/IFS, réanalyse ERA5, Marine API ; vent L4,
+  vagues et courants Copernicus), fusionnés par médiane avec le nombre de
+  sources et leur écart affichés —, la rejouer point par point depuis La
+  Rochelle et obtenir **la position d'aujourd'hui comme somme des vitesses
+  instantanées** (lot C2), la même vitesse partout (C3), le courant compris (C4).
 - Le résumé « 36 segments / 36 waypoints » compte les points de passage du
   routeur ; il deviendra « 16 étapes (15 mer, 1 terre) · 17 escales · 1 248
   points » (C1).

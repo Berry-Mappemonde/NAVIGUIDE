@@ -12,10 +12,11 @@ Deux façons de l'utiliser :
 1. **À la main** : nouvel agent → modèle Grok 4.6 xhigh fast → coller le bloc
    `text` du lot → Envoyer. Quand la PR est ouverte, passer au lot suivant.
 2. **En chaîne, la nuit** : `infra/agents/run_lots.py` lit ce fichier, lance
-   un **agent Cloud** par lot (API Cursor `POST /v1/agents`, modèle Grok 4.6
-   xhigh fast), attend la fin, vérifie la PR et sa CI, puis lance le suivant
-   — voir § 3. Les balises `<!-- LOT … -->` qui précèdent chaque prompt sont
-   lues par ce script : ne pas les modifier à la main sans mettre le script à jour.
+   **un agent par lot** — par défaut le CLI Cursor sur ce Mac dans un worktree
+   git (`--runtime local`), sinon un agent Cloud par l'API (`--runtime cloud`) —,
+   attend la fin, vérifie la PR et sa CI, puis lance le suivant — voir § 3.
+   Les balises `<!-- LOT … -->` qui précèdent chaque prompt sont lues par ce
+   script : ne pas les modifier à la main sans mettre le script à jour.
 
 **Préalables** (une fois) : la PR #203 (ces documents) est **mergée sur
 `main`** — les agents Cloud clonent `main` et doivent y trouver
@@ -281,11 +282,11 @@ Interdits : chiffre LLM ; vidéo ; secret ; retirer une surface. Décide seul en
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_AUDIT_CALCULS.md § 0 (A1–A3), § 2 et le « Lot C2 » (texte intégral), et docs/audits/CALCULS_ETAT_DE_L_ART.md (lignes 6, 9, compléments hindcast). Tu travailles dans naviguide-simulator/. Le lot P2 est dans ta base.
 
-Lot C2 — Horloge à trois régimes : hindcast (passé), prévision (7 j), climatologie (au-delà) ; position d'aujourd'hui = somme des vitesses réelles.
-Fichiers à ouvrir (seulement) : nouveau server/hindcast.py (+ server/tests/test_hindcast.py avec faux serveur HTTP), server/forecast_blend.py, server/voyage_clock.py (build_voyage_clock, l. 206–356), server/voyage_api.py (_fill_forecast → _fill_hindcast_then_forecast, tâche quotidienne), server/pearl_store.py (ns "hindcast"), server/voyage_journal.py (wx depuis le hindcast : durée, max), server/tests/test_voyage_clock.py, docs/REGLES_PARAMETRES.md, src/components/SimulationFilmBar.jsx PAR EXTRAIT (afficher le régime : data-testid="clock-regime" — ajout), src/i18n/fr.js, src/i18n/en.js.
-Étapes : 1) hindcast.series(lat, lon, day) → vent 10 m (vitesse, direction, rafales), houle (Hs, direction, période), courant (vitesse, direction) horaires depuis Open-Meteo Historical Forecast API (historical-forecast-api.open-meteo.com/v1/forecast, hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m, wind_speed_unit=kn) et Marine API (marine-api.open-meteo.com/v1/marine, hourly=wave_height,wave_direction,wave_period,ocean_current_velocity,ocean_current_direction) ; repli ERA5 (archive-api.open-meteo.com/v1/archive) avec correction des vents forts ERA5_STRONG_WIND_FACTOR = 1,05 au-dessus de 15 m/s ; cache SQLite (jamais retéléchargé), retries, source (« GFS archive » / « ERA5 » / « Marine ») ; 2) build_voyage_clock : pas d'intégration ≤ 30 nm ou 1 h (sous-découper les segments longs), vent lu à mi-pas, régime dans chaque sommet (regime ∈ hindcast/forecast/climatology, source) ; 3) forecast_blend : le fondu 7 → 10 j est relatif à MAINTENANT (heure du calcul), pas à t0 ; passé = hindcast ; 4) le premier calcul complet tourne en tâche de fond au démarrage ; l'horloge climatologique reste servie en attendant, marquée kind "climatology" ; 5) GET /voyage/official/regimes : portions de route par régime ; 6) barre film : « 7,4 kn · hindcast (GFS archive) » ; à quai « à quai · hindcast » ; 7) REGLES_PARAMETRES.md : toutes les constantes nouvelles, avec source.
-Tests : faux Open-Meteo : deux jours de vent connus → position attendue à 1 nm près ; à quai 0 kn ; changement de régime à now ; cache : deuxième appel sans réseau ; échec réseau → climatologie marquée ; correction ERA5 appliquée seulement au-dessus de 15 m/s. pytest, npm test, vite build.
-Recette (spec e2e/lots/c2-hindcast.spec.js, captures docs/recette/lot-c2/) : si l'API tourne, data-testid="clock-regime" contient « hindcast » en Suivre ; la PR donne la position du bateau d'aujourd'hui avant/après (nm d'écart) ; capture 01-regime. Sans API : le spec vérifie seulement que la barre film s'affiche (fumée).
+Lot C2 — Horloge à trois régimes : hindcast (passé), prévision (7 j), climatologie (au-delà) ; position d'aujourd'hui = somme des vitesses réelles. TOUTES les sources sont utilisées ensemble : Open-Meteo ET Copernicus Marine (décision du porteur), fusionnées par médiane.
+Fichiers à ouvrir (seulement) : nouveau server/hindcast.py (+ server/tests/test_hindcast.py avec faux serveurs HTTP et faux copernicusmarine), server/copernicus/getWind.py, getWave.py, getCurrent.py (ajouter un paramètre d'intervalle de temps start/end sans casser l'appel actuel), server/forecast_blend.py, server/voyage_clock.py (build_voyage_clock, l. 206–356), server/voyage_api.py (_fill_forecast → _fill_hindcast_then_forecast, tâche quotidienne), server/pearl_store.py (ns "hindcast"), server/voyage_journal.py (wx depuis le hindcast : durée, max), server/tests/test_voyage_clock.py, docs/REGLES_PARAMETRES.md, src/components/SimulationFilmBar.jsx PAR EXTRAIT (afficher le régime : data-testid="clock-regime" — ajout), src/i18n/fr.js, src/i18n/en.js.
+Étapes : 1) hindcast.series(lat, lon, day) interroge TOUTES les sources : (a) Open-Meteo Historical Forecast API (historical-forecast-api.open-meteo.com/v1/forecast, hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m, wind_speed_unit=kn) ; (b) Open-Meteo Historical Weather API / ERA5 (archive-api.open-meteo.com/v1/archive, mêmes variables) avec correction des vents forts ERA5_STRONG_WIND_FACTOR = 1,05 au-dessus de 15 m/s ; (c) Open-Meteo Marine API (marine-api.open-meteo.com/v1/marine, hourly=wave_height,wave_direction,wave_period,ocean_current_velocity,ocean_current_direction) ; (d) Copernicus WIND_GLO_PHY_L4_NRT_012_004, dataset cmems_obs-wind_glo_phy_nrt_l4_0.125deg_PT1H (eastward_wind, northward_wind → vitesse en kn × 1,943844, direction « de ») ; (e) Copernicus GLOBAL_ANALYSISFORECAST_WAV_001_027, dataset cmems_mod_glo_wav_anfc_0.083deg_PT3H-i (VHM0, VMDR « de », VTM02) ; (f) Copernicus GLOBAL_ANALYSISFORECAST_PHY_001_024, dataset cmems_mod_glo_phy_anfc_0.083deg_PT1H-m (uo, vo → vitesse, direction « vers » = atan2(uo, vo)). Fusion par variable et par heure : médiane des sources disponibles, sources: [...], spread = max − min ; une source en panne manque simplement ; aucune source → champ vide (jamais inventé). Cache SQLite par (point, produit, jour) — jamais retéléchargé ; appels séquentiels (Copernicus 1 subset par point et par dataset sur ± 2 jours) ; 2) build_voyage_clock : pas d'intégration ≤ 30 nm ou 1 h (sous-découper les segments longs), vent lu à mi-pas, régime dans chaque sommet (regime ∈ hindcast/forecast/climatology, sources, spread) ; 3) forecast_blend : le fondu 7 → 10 j est relatif à MAINTENANT (heure du calcul), pas à t0 ; passé = hindcast ; 4) le premier calcul complet tourne en tâche de fond au démarrage (≈ 40 min la première fois) ; l'horloge climatologique reste servie en attendant, marquée kind "climatology" ; 5) GET /voyage/official/regimes : portions de route par régime ; 6) barre film : « 7,4 kn · hindcast · 3 sources ±1,5 kn » ; à quai « à quai · hindcast » ; 7) REGLES_PARAMETRES.md : toutes les constantes nouvelles, avec source ; identifiants COPERNICUS_USERNAME / COPERNICUS_PASSWORD déjà lus par server/main.py.
+Tests : faux Open-Meteo et faux copernicusmarine : deux jours de vent connus → position attendue à 1 nm près ; médiane de trois sources ; une source en panne → deux sources et spread calculé ; à quai 0 kn ; changement de régime à now ; cache : deuxième appel sans réseau ; tout en panne → climatologie marquée ; correction ERA5 appliquée seulement au-dessus de 15 m/s et seulement sur ERA5 ; conventions : uo = 1, vo = 0 → courant vers 90°. pytest, npm test, vite build.
+Recette (spec e2e/lots/c2-hindcast.spec.js, captures docs/recette/lot-c2/) : si l'API tourne, data-testid="clock-regime" contient « hindcast » et « sources » en Suivre ; la PR donne la position du bateau d'aujourd'hui avant/après (nm d'écart) et, pour trois points de la route, les valeurs de chaque source et la médiane retenue ; capture 01-regime. Sans API : le spec vérifie seulement que la barre film s'affiche (fumée).
 Branche feat/lot-c2-hindcast depuis la base indiquée. PR vers main, gabarit REGLES § 3 ; la PR détaille l'écart de position avant/après. Ne merge pas.
 Interdits : chiffre LLM ; secret ; vidéo ; retirer une surface. Décide seul en cas de blocage (ex. variable Open-Meteo indisponible → la laisser vide, jamais inventer) et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
@@ -482,49 +483,77 @@ Interdits : changer le défaut Carte ; toucher à Leaflet ; vidéo ; secret. Fin
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)
 
 Ce que le porteur a décrit — *ouvrir un agent, choisir Grok 4.6 xhigh fast,
-coller le prompt, envoyer, attendre la fin, recommencer* — est exactement ce
-que fait l'**API Cloud Agents de Cursor** (`POST /v1/agents`) : un agent Cloud
-par lot, sur une machine Cursor, qui clone le dépôt, travaille, pousse une
-branche et **ouvre la PR** (`autoCreatePR: true`). Le script
-`infra/agents/run_lots.py` (bibliothèque standard Python seulement) fait la
-boucle :
+coller le prompt, envoyer, attendre la fin, recommencer* — se fait sans
+piloter l'interface : le script `infra/agents/run_lots.py` (Python standard,
+rien à installer) lit ce fichier, lance **un agent par lot**, attend, vérifie
+la PR et sa CI, passe au suivant. Deux façons de faire tourner l'agent :
 
-1. lit ce fichier, extrait les balises `<!-- LOT … -->` et leur bloc `text` ;
-2. vérifie que le modèle `cursor-grok-4.6-xhigh-fast` existe (`GET /v1/models`) ;
-3. pour chaque lot, dans l'ordre : `POST /v1/agents` avec le prompt, le modèle,
-   `repos[0] = {url, startingRef}` où `startingRef` = **la branche du lot
-   précédent** (pile linéaire : aucun conflit entre lots, PR à merger dans
-   l'ordre) — ou `main` avec `--stack none` ;
-4. attend (`GET /v1/agents/{id}/runs/{runId}` toutes les 60 s) ; à `ERROR` /
-   `EXPIRED`, envoie **une** relance (`POST /v1/agents/{id}/runs` : « reprends
-   là où tu t'es arrêté, finis le lot, tests, push, PR ») ; si ça échoue encore,
-   note le lot comme raté et continue depuis la dernière bonne branche ;
-5. relit la branche poussée (`run.git.branches`), retrouve la PR (API GitHub),
-   attend la CI jusqu'à 25 min ; CI rouge → **une** relance « la CI échoue sur
-   … corrige et pousse » ; puis lot suivant ;
-6. écrit `infra/agents/state.json` (pour reprendre après une coupure) et
-   `infra/agents/run_lots.log`.
+| | `--runtime local` (**défaut**) | `--runtime cloud` |
+|---|---|---|
+| Où tourne l'agent | sur le Mac, par le **CLI Cursor** (`agent -p --force`), dans un **worktree git par lot** (`~/bim-lots/<lot>`) | sur une machine Cursor (API Cloud Agents `POST /v1/agents`) |
+| Environnement | `node_modules` et `.venv` du dépôt partagés par lien, `.env` copié : `npm test`, `pytest`, `vite build`, Playwright **tournent vraiment**, la recette peut être réelle | machine neuve : l'agent doit réinstaller (npm ci, pip, navigateurs Playwright) à chaque lot — lent, fragile |
+| Modèle | ceux du compte (`agent models`) : **Grok 4.6 xhigh fast** ; rien d'autre n'est appelé | idem via `GET /v1/models` ; mais la plateforme Cloud ajoute ses propres étapes (revue automatique, enregistrement vidéo) avec **ses** modèles — que le compte n'a plus |
+| Coût | usage normal du forfait (Ultra 200 $ : usage inclus), pas de calcul Cloud facturé | usage + machine Cloud |
+| Authentification | `agent login` une fois (navigateur) | `CURSOR_API_KEY` |
+| Contrainte | le Mac reste allumé (`caffeinate -i`), un lot à la fois | rien à laisser allumé |
+| PR | l'agent pousse et ouvre la PR avec `infra/agents/open_pr.py` (ou le script le fait s'il a oublié) | `autoCreatePR` |
 
-Lancement (Mac, Terminal) :
+**Réponse à la question du porteur** : oui, avec un compte qui n'a plus que
+Grok, **le mode local est le bon choix** : il n'appelle que le modèle choisi,
+aucune revue vidéo n'est déclenchée (la règle `pas-de-verification-video`
+s'applique, et le CLI n'a pas cette étape), et l'environnement de test est
+déjà là. Le Cloud reste possible pour une machine qu'on ne veut pas laisser
+allumée.
+
+Dans les deux cas : **pile linéaire** (chaque lot part de la branche du lot
+précédent ; PR toutes vers `main`, à merger dans l'ordre — ou `--stack none`
+pour partir de `main` à chaque fois), **une** relance si l'agent s'arrête
+sans finir, **une** relance si la CI est rouge, 3 h maximum par lot, jamais
+de merge ni de `push --force`, `state.json` pour reprendre, `run_lots.log`.
+
+### Mise en route (une fois)
 
 ```bash
+# 1. le CLI Cursor (déjà installé le 20 sept. sur ce Mac : version 2026.09.18)
+curl https://cursor.com/install -fsS | bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+agent login                       # ouvre le navigateur, se connecter au compte Cursor (Ultra)
+agent models                      # doit lister un identifiant contenant « grok »
+
+# 2. vérifier que tout est prêt (ne lance rien)
 cd ~/Blue-Intelligence-Map
-export CURSOR_API_KEY="…"        # cursor.com → Dashboard → Integrations → API keys
-# le jeton GitHub est lu depuis le trousseau git (comme les PR déjà ouvertes) ; sinon export GITHUB_TOKEN=…
-caffeinate -i python3 infra/agents/run_lots.py --from P2 --until L6        # toute la nuit
-python3 infra/agents/run_lots.py --only C1                                  # un seul lot
-python3 infra/agents/run_lots.py --from F1 --until F5 --stack none          # chacun depuis main
-python3 infra/agents/run_lots.py --resume                                   # reprend state.json
+python3 infra/agents/run_lots.py --check
 ```
 
-Ce que ça **ne** fait pas, par choix : merger (le porteur recette le matin,
-dans l'ordre des PR), forcer un push, dépasser 3 h par lot (annulation puis
-lot suivant), lancer deux lots en parallèle (une pile linéaire suffit et
-évite les conflits ; `--parallel` n'existe pas). Les agents Cloud facturés
-par Cursor utilisent les modèles Cursor (`cursor-grok-4.6-xhigh-fast`), pas la
-clé Anthropic locale — conformément à `.cursor/rules/modeles-cursor-uniquement.mdc`.
+`--check` vérifie : les 31 prompts, le jeton GitHub (trousseau git), le CLI et
+sa connexion, le modèle, `node_modules` et `.venv`. Il dit « prêt » ou ce qui
+manque.
+
+Pour le mode Cloud, la clé : **cursor.com → Dashboard → Integrations → User
+API Keys → Create New API Key** (nom libre, copier la clé, elle ne se
+réaffiche pas) puis `export CURSOR_API_KEY="…"` dans le Terminal (ou dans
+`~/.zshrc`). `python3 infra/agents/run_lots.py --check --runtime cloud`
+confirme la clé et le modèle.
+
+### Lancer
+
+```bash
+python3 infra/agents/run_lots.py --only C1                                  # premier essai réel : un petit lot
+caffeinate -i python3 infra/agents/run_lots.py --from P2 --until L6         # la nuit (le Mac ne dort pas)
+python3 infra/agents/run_lots.py --from F1 --until F5 --stack none          # chacun depuis main
+python3 infra/agents/run_lots.py --resume                                   # reprend state.json
+python3 infra/agents/run_lots.py --runtime cloud --only C1                  # via l'API
+python3 infra/agents/run_lots.py --dry-run --from P2 --until O              # affiche les prompts, ne lance rien
+```
 
 Le matin : `git fetch`, lire les PR dans l'ordre, jouer les specs
 `e2e/lots/*.spec.js` en local si besoin, merger un à un (merge commit ;
 comme les PR visent toutes `main`, chaque merge fait fondre le diff de la
-suivante), supprimer les branches, vérifier la prod.
+suivante), supprimer les branches, vérifier la prod. Les worktrees restent
+dans `~/bim-lots/` pour relire le travail ; `git worktree remove --force
+~/bim-lots/<lot>` quand c'est mergé.
+
+Testé le 20 sept. avec un faux CLI : worktree créé depuis `origin/main`,
+liens `node_modules` / `.venv` exclus de git, prompt transmis, « agent qui
+ne fait rien » détecté comme raté sans rien pousser, `state.json` écrit.
+Reste à faire par le porteur : `agent login`, puis `--only C1`.
