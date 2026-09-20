@@ -15,7 +15,9 @@ UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 > A journal v2 complet · B ZEE locale · C fiche d’escale · **D chatbot
 > journal de bord** · E replay · F récits pré-générés + Nebius · G route /
 > re-routing · H sécurité P1 · I UX première visite · J découpage `App.jsx` ·
-> K revue de plan · L Tavily (plus tard).
+> K revue de plan · L Nemotron via Nebius + Tavily (plus tard, objet du hackathon).
+> **20 sept.** : lots P → K mergés ; la revue visuelle complète est découpée dans
+> [PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md](PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md).
 >
 > **Fait le 19 sept. (passe 3, PR #189)** : **vitesse de planning = polaire ×
 > vent du moment** (GRIB au bateau en Suivre, climatologie en Simulation ;
