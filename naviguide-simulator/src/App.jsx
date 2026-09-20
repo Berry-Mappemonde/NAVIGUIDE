@@ -303,7 +303,14 @@ export default function App() {
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
   // stands in for the live one — the scene, the clock line, the story and
   // the cards all read `live`. Suivre only; Stop or the end hands back.
-  const replay = useReplay({ clock: officialClock, journal: officialJournal.journal, enabled: isSuivre, lang });
+  const replay = useReplay({
+    clock: officialClock,
+    journal: officialJournal.journal,
+    enabled: isSuivre,
+    lang,
+    marks: escaleMarks,
+    destination: official.live,
+  });
   const live = isSuivre ? (replay.active && replay.live ? replay.live : official.live) : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
   const playheadReady = playheadAligned({
@@ -752,18 +759,30 @@ export default function App() {
   // Lot O — during a replay, Écouter / useReplayVoice read the current
   // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
   const speechText = replay.active
-    ? (storyParagraphs[storyParagraphs.length - 1] || null)
+    ? (replay.chapterText || null)
     : isSuivre
       ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
       : (iciPack.briefing || null);
 
-  useReplayVoice({ active: replay.active, voice: replay.voice, paragraphs: storyParagraphs, lang });
+  useReplayVoice({
+    active: replay.active,
+    voice: replay.voice,
+    lang,
+    chapterText: replay.chapterText,
+    chapterIdx: replay.chapterIdx,
+    rate: replay.voiceRate,
+    onBoundary: replay.onVoiceBoundary,
+    onEnd: replay.onVoiceEnd,
+  });
 
   const recaptureRef = useRef(null);
   const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
     progress: replay.progress,
     voice: replay.voice,
+    subtitle: replay.chapterText,
+    targetSeconds: replay.targetSeconds,
+    onDuration: replay.setTargetSeconds,
     onStart: () => {
       if (replay.start()) {
         // The camera picks the replayed boat up and follows it (same as Cinema's recapture).
@@ -773,7 +792,7 @@ export default function App() {
     },
     onStop: replay.stop,
     onVoice: replay.setVoice,
-  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.start, replay.stop, replay.setVoice]);
+  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1277,6 +1296,9 @@ export default function App() {
     cameraFocusToken: isSimulation ? cameraFocusToken : 0,
     remainingNm: hudLeg?.remainingNm ?? playback.sailTotalNm,
     recetteMap: recetteMapView(),
+    filmActive: Boolean(replay.active),
+    filmChapterIdx: replay.chapterIdx,
+    filmLeg: replay.filmLeg,
   }), [
     isLightMode,
     view,
@@ -1308,6 +1330,9 @@ export default function App() {
     cameraFocusToken,
     hudLeg?.remainingNm,
     playback.sailTotalNm,
+    replay.active,
+    replay.chapterIdx,
+    replay.filmLeg,
   ]);
 
   const enablePendingRestricted = (kind) => {

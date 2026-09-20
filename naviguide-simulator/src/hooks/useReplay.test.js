@@ -22,8 +22,9 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /replay\.active && replay\.live \? replay\.live : official\.live/);
     assert.match(app, /jump: Boolean\(live\.replay\)/);
     // The voice lives in hooks/useReplayVoice.js since lot J; App mounts it.
-    assert.match(app, /useReplayVoice\(\{ active: replay\.active, voice: replay\.voice, paragraphs: storyParagraphs, lang \}\)/);
-    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speak\(last, lang\)/);
+    assert.match(app, /useReplayVoice\(\{/);
+    assert.match(app, /chapterText: replay\.chapterText/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speak\(chapterText, lang/);
     assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
@@ -40,6 +41,15 @@ describe("useReplay contract (lot E)", () => {
 
   it("App feeds the current paragraph to speech while a replay is active", () => {
     assert.match(app, /const speechText = replay\.active/);
-    assert.match(app, /storyParagraphs\[storyParagraphs\.length - 1\]/);
+    assert.match(app, /replay\.chapterText/);
+  });
+
+  it("le film est chapitré : filmPlan, onboundary, durée cible, sous-titre", () => {
+    assert.match(hook, /filmPlan\(/);
+    assert.match(hook, /onVoiceBoundary/);
+    assert.match(hook, /targetSeconds/);
+    assert.match(hook, /if \(done\)/);
+    assert.match(bar, /data-testid="film-subtitle"/);
+    assert.match(bar, /data-testid="film-duration"/);
   });
 });

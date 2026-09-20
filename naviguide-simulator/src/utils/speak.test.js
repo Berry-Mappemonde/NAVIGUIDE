@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { canSpeak, speak, spokenText, stopSpeaking } from "./speak.js";
+import { canLeadWithVoice, canSpeak, speak, spokenText, stopSpeaking } from "./speak.js";
 
 describe("speak", () => {
   it("spokenText drops links and glyphs, keeps sentences", () => {
@@ -38,5 +38,20 @@ describe("speak", () => {
     assert.equal(spoken[1].lang, "en-GB");
     assert.equal(spoken[1].voice.name, "Daniel");
     assert.equal(speak("   ", "fr", { win }), false);
+    assert.equal(canLeadWithVoice(win), true);
+    assert.equal(canLeadWithVoice({}), false);
+    assert.equal(canLeadWithVoice({
+      ...win,
+      navigator: { webdriver: true },
+    }), false);
+    const heard = [];
+    speak("Cap au large", "fr", {
+      win,
+      rate: 2,
+      onBoundary: (i) => heard.push(i),
+    });
+    assert.equal(spoken[2].rate, 1.25);
+    spoken[2].onboundary({ charIndex: 4 });
+    assert.deepEqual(heard, [4]);
   });
 });

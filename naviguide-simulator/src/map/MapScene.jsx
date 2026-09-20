@@ -76,12 +76,15 @@ export function MapScene({
     });
     controllerRef.current = controller;
     mapRef.current = controller.map;
-    // Recette (dev only): the scene controller at hand in the console.
-    if (import.meta.env?.DEV && typeof window !== "undefined") window.__naviguideScene = controller;
+    // Recette / e2e : le contrôleur de scène est exposé (zoom, carte).
+    if (typeof window !== "undefined") window.__naviguideScene = controller;
     setMapReady(1);
     callbacksRef.current.onReady?.(controller.api);
     return () => {
       callbacksRef.current.onReady?.(null);
+      if (typeof window !== "undefined" && window.__naviguideScene === controller) {
+        delete window.__naviguideScene;
+      }
       controller.dispose();
       controllerRef.current = null;
       mapRef.current = null;
