@@ -1,17 +1,32 @@
 # Plan complémentaire en lots — revue visuelle du 19–20 septembre 2026
 
-Version **1.0** — 20 septembre 2026. Suite du [plan en lots](PLAN_LOTS_AGENT_SIMULATEUR.md)
+Version **1.1** — 20 septembre 2026. Suite du [plan en lots](PLAN_LOTS_AGENT_SIMULATEUR.md)
 (lots P → K, tous **mergés sur `main`** le 20 sept.). Ce document découpe la
 **revue visuelle complète du porteur** (soir du 19, matin du 20) en lots
 **recettables visuellement**, écrits pour un worker Cursor **Grok 4.6 Extra
 High Fast (256 k de contexte)** : chaque lot tient dans une fenêtre, cite
 ses fichiers et ses lignes, et se recette en cinq minutes.
 
+**v1.1** : les règles de branche, de PR, de merge, de recette visuelle, de
+review humaine et de **review automatique** (spec Playwright + captures par
+lot) sont désormais dans **[`REGLES_WORKFLOW_AGENT.md`](REGLES_WORKFLOW_AGENT.md)**,
+qui est le prompt à coller. Cinq plans thématiques complètent celui-ci
+(§ 4) : le film « Revoir l'expédition » (remplace Q et R), Nemotron sur
+Nebius + Tavily (remplace le lot L), l'audit des calculs et le hindcast, le
+globe, la soumission Devpost.
+
 ## 0. Règles pour le worker (à coller dans chaque brief)
 
-- Lire **d'abord** `docs/PLAN_LOTS_AGENT_SIMULATEUR.md` § 0 (règles qui ne se
-  discutent pas : `main` plancher de l'UI, aucun chiffre par un LLM, pas de
-  Tavily / Nemotron / Nebius avant le lot L, recette = tests + captures).
+- Lire **d'abord** `docs/REGLES_WORKFLOW_AGENT.md` **en entier** (branches,
+  PR, merge, recette, review, review automatique) puis
+  `docs/PLAN_LOTS_AGENT_SIMULATEUR.md` § 0 (règles qui ne se discutent pas :
+  `main` plancher de l'UI, aucun chiffre par un LLM, recette = tests +
+  captures). Tavily / Nemotron / Nebius : **seulement** dans les lots du plan
+  `PLAN_NEMOTRON_NEBIUS_TAVILY.md` (et F3 du plan film).
+- **Review automatique** : tout lot qui touche l'UI livre
+  `e2e/lots/<lot>.spec.js` (assertions puis captures JPEG dans
+  `docs/recette/<lot>/`), référencé dans la PR — gabarit dans
+  `REGLES_WORKFLOW_AGENT.md` § 5.
 - **Budget de contexte** : ne jamais lire `src/App.jsx` (1 620 lignes) ni
   `src/map/MapSceneController.js` (880 lignes) en entier — toujours par
   extraits `rg -n "motif" fichier` puis `Read` avec `offset`/`limit`.
@@ -142,22 +157,52 @@ Taille : S ≤ ½ jour, M ≤ 2 jours. Ordre conseillé : **P2 → M → N → O
 
 **Recette.** Zoom molette sur l'Atlantique : fluide ; profil avant / après joint à la PR.
 
-### Lot L (rappel, plus tard) — Nemotron via Nebius + Tavily : l'objet du hackathon
+### Lot L — remplacé par `PLAN_NEMOTRON_NEBIUS_TAVILY.md` (lots L1 → L6)
 
-Corrigé dans le plan en lots : **Nemotron (raisonnement long, via la plateforme Nebius, 60 $ de crédit) + Tavily** (veille datée par escale, juge de vérité des récits). Pas avant que M → U soient recettés ; spécification à écrire à ce moment-là.
+Le lot L1 (fournisseur Token Factory + budget + source affichée) est **le
+préalable à toute soumission** au hackathon : NIM ne compte pas.
+
+### Lots Q et R — remplacés par `PLAN_FILM_REVOIR_EXPEDITION.md` (lots F1 → F5)
+
+Les causes racines du § 1 restent valables ; la cible (film de 2 min 30 mené
+par la voix, événements en bulle sur le bateau, script rédigé par Nemotron)
+est décrite dans le plan film.
 
 ### Reste hors de ce plan
 
-G3 (conseil de route en Suivre, préalable : brouillon d'équipage), second découpage d'`App.jsx` (`useSceneWiring`) si le fichier redevient un frein, CSP nginx bloquante après lecture des rapports.
+G3 (conseil de route en Suivre, préalable : brouillon d'équipage — repris en
+partie par L5), second découpage d'`App.jsx` (`useSceneWiring`) si le fichier
+redevient un frein, CSP nginx bloquante après lecture des rapports.
 
 ## 3. Brief type pour un worker Grok 4.6 Extra High Fast
 
+Le brief à coller est `REGLES_WORKFLOW_AGENT.md` § 8 ; en remplaçant `<PLAN>`
+par ce fichier et `<X>` par le lot :
+
 ```text
-Contexte : lis docs/PLAN_LOTS_AGENT_SIMULATEUR.md § 0 puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le lot <X> (texte intégral).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md § 0 et le lot <X> (texte intégral).
 Fichiers : ouvre SEULEMENT ceux listés dans le lot ; App.jsx et MapSceneController.js par `rg -n` + Read avec offset/limit.
-Branche : feat/lot-<x>-<slug> depuis main à jour. Une PR sur main, pas de merge.
-Tests : npm test, .venv/bin/python -m pytest -q, npx vite build ; npm run e2e si la barre film ou les panneaux changent.
-Recette : les étapes « Recette » du lot, captures fixes dans la PR (pas de vidéo).
-Interdits : retirer une surface visible sur main ; un chiffre produit par un LLM ; Tavily / Nemotron / Nebius.
+Branche : <type>/lot-<x>-<slug> depuis main à jour. Une PR sur main, corps = gabarit REGLES § 3. Ne merge pas.
+Tests : cd naviguide-simulator && npm test && .venv/bin/python -m pytest -q && npx vite build ; npm run e2e -- e2e/lots/<lot>.spec.js si l'UI change.
+Recette : rejoue les étapes « Recette » du lot avec le spec Playwright du lot ; captures JPEG dans docs/recette/<lot>/ ; référence-les dans la PR.
+Interdits : retirer une surface visible sur main ; un chiffre produit par un LLM ; une vidéo ; un merge ; un push --force ; un secret dans le diff ; Tavily / Nemotron / Nebius hors des lots L* et F3.
 Modèle : cursor-grok-4.6-xhigh-fast (jamais claude-* sur un worker Cloud).
+Quand tu as fini : numéro de PR, compteurs de tests, liste des captures, ce que tu n'as pas fait.
 ```
+
+## 4. Plans thématiques (20 septembre) et ordre général
+
+| Plan | Lots | Quand |
+|---|---|---|
+| Ce plan (revue visuelle) | P2, M, N, O, S, T, U | maintenant, en parallèle par fichiers disjoints |
+| [`PLAN_NEMOTRON_NEBIUS_TAVILY.md`](PLAN_NEMOTRON_NEBIUS_TAVILY.md) | L1 → L6 | **L1 tout de suite** (éligibilité) ; L2–L3 avant la vidéo ; L4–L6 ensuite |
+| [`PLAN_FILM_REVOIR_EXPEDITION.md`](PLAN_FILM_REVOIR_EXPEDITION.md) | F1 → F5 | après P2 et O ; F3 après L1 ; c'est la vidéo de soumission |
+| [`PLAN_AUDIT_CALCULS.md`](PLAN_AUDIT_CALCULS.md) | C1 → C5 | C1 tout de suite (résumé de l'expédition) ; C2 (hindcast) dès que possible : il change la position du bateau, donc le film |
+| [`PLAN_GLOBE_3D.md`](PLAN_GLOBE_3D.md) | G0 → G8 | G0 (éprouvette) quand un worker est libre ; le reste après la soumission sauf si G0–G3 tiennent avant |
+| [`HACKATHON_DEVPOST_SOUMISSION.md`](HACKATHON_DEVPOST_SOUMISSION.md) | textes, vidéo, formulaire | remplir après L1 en prod ; soumettre avant le 30 octobre 10:00 PT |
+| [`ESPRIT_DE_L_APPLICATION.md`](ESPRIT_DE_L_APPLICATION.md) | — | référence pour relire les diagrammes du dépôt et la description |
+
+Ordre conseillé pour un seul worker : **P2 → C1 → L1 → M → N → O → F1 → F2 →
+L2 → F3 → F4 → L3 → F5 → S → T → C2 → C3 → U → L4 → L5 → C4 → C5 → L6 → G0…**
+Avec deux workers : l'un sur P2 → M → N → O → S → T → U (UI), l'autre sur
+C1 → L1 → L2 → C2 → L3 (serveur) ; le film (F1–F5) quand les deux se rejoignent.
