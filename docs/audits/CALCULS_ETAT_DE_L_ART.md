@@ -42,11 +42,17 @@ Légende des verdicts : **✔ conforme** · **≈ acceptable, à documenter** ·
 - **Hindcast** (lot C2) : ERA5 **sous-estime les vents forts en mer**
   (mise en évidence et correction proposée par Gandoin & Garza, 2024 ; biais
   documenté en Atlantique par Campos et al., 2022) et **sous-estime Hs**
-  (Bessonova et al., 2025) [20][21][22]. Décision : source primaire = archives
-  de prévision haute résolution (Open-Meteo Historical Forecast : GFS 0,25°,
-  IFS, ICON), ERA5 en référence ; appliquer une **correction des vents
-  forts** (facteur 1,05 au-dessus de 15 m/s, paramétré, cité) ; afficher la
-  source avec chaque vitesse.
+  (Bessonova et al., 2025) [20][21][22]. Décision du porteur : **toutes les
+  sources ensemble** — Open-Meteo (archives de prévision GFS 0,25° / IFS /
+  ICON, réanalyse ERA5, Marine API) **et** Copernicus Marine (vent L4
+  diffusiomètres `WIND_GLO_PHY_L4_NRT_012_004`, vagues
+  `GLOBAL_ANALYSISFORECAST_WAV_001_027`, courants
+  `GLOBAL_ANALYSISFORECAST_PHY_001_024`) —, fusionnées par **médiane** par
+  variable et par heure, avec le nombre de sources et leur écart conservés et
+  affichés ; **correction des vents forts** sur ERA5 seulement (facteur 1,05
+  au-dessus de 15 m/s, paramétré, cité). La médiane de plusieurs produits
+  indépendants est la pratique des hindcasts multi-modèles ; l'écart entre
+  sources devient une mesure honnête d'incertitude.
 - **Ensembles** : pour l'ETA au-delà de 7 jours, la bonne pratique est
   probabiliste (spread d'ensemble) ; Open-Meteo expose GEFS/IFS ENS. Option
   après C2 : « arrivée entre le 12 et le 15 (p10–p90) ».
