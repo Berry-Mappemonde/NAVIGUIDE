@@ -363,13 +363,27 @@ def prepare_worktree(lot: Lot, ref: str) -> Path:
     return path
 
 
-def local_prefix(path: Path, ref: str) -> str:
+def port_busy(port: int) -> bool:
+    p = sh(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"], check=False, timeout=20)
+    return bool(p.stdout.strip())
+
+
+def local_prefix(path: Path, ref: str, pw_port: int) -> str:
+    ports = ""
+    if port_busy(5174):
+        ports = (f"Le port 5174 est déjà pris par le serveur de dev du dépôt principal : pour Playwright, lance `PW_PORT={pw_port} npm run e2e` "
+                 f"(la config lit PW_PORT ; si ta copie de playwright.config.js ne le lit pas encore, arrête-toi à `npx vite build` + tests unitaires "
+                 f"et écris dans la PR que le spec est fourni mais n'a pas été joué). ")
     return (f"Environnement : tu travailles dans le worktree git {path} (dépôt principal : {ROOT}). "
             f"node_modules et .venv sont des liens vers le dépôt principal : ne lance ni npm install ni pip install sauf nécessité absolue. "
             f"Le worktree est sur un HEAD détaché à `{ref}` : commence par `git checkout -b <ta-branche>`. "
+            f"{ports}"
             f"Quand tout est vert : `git push -u origin <ta-branche>` puis ouvre la PR avec "
-            f"`python3 infra/agents/open_pr.py <ta-branche> main \"<titre>\" /tmp/pr-<lot>.md` (écris d'abord le corps de la PR dans ce fichier). "
+            f"`python3 {HERE / 'open_pr.py'} <ta-branche> main \"<titre>\" /tmp/pr-<lot>.md` (chemin absolu ; écris d'abord le corps de la PR dans ce fichier). "
             f"Ne pose aucune question : décide et note dans la PR.")
+
+
+PW_PORT = int(os.environ.get("BIM_PW_PORT", "5199"))
 
 
 def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
@@ -379,8 +393,9 @@ def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: b
     if resume:
         cmd += ["--continue"]
     cmd.append(prompt)
+    env = {**os.environ, "PW_PORT": str(PW_PORT)}
     try:
-        p = subprocess.run(cmd, cwd=str(path), text=True, capture_output=True, timeout=timeout_s)
+        p = subprocess.run(cmd, cwd=str(path), text=True, capture_output=True, timeout=timeout_s, env=env)
     except subprocess.TimeoutExpired:
         return "TIMEOUT", ""
     out = p.stdout.strip()
@@ -431,7 +446,7 @@ def ensure_pr(http: Http, args, lot: Lot, branch: str, result: str) -> None:
 def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
     path = prepare_worktree(lot, ref)
     log(f"[{lot.id}] worktree {path} depuis {ref} — agent local ({args.model or 'modèle par défaut du compte'})")
-    status, result = run_agent_cli(path, local_prefix(path, ref) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600))
+    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600))
     log(f"    agent: {status}")
     if status != "FINISHED":
         log(f"[{lot.id}] premier passage : {status} — une relance")
