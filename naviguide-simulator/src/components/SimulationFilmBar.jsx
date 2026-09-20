@@ -230,6 +230,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             );
           })}
         </div>
+        {replay?.active ? (
+          <div data-testid="film-subtitle" className="text-[10px] text-sky-100/90 leading-tight mt-0.5 truncate">
+            {replay.subtitle || ""}
+          </div>
+        ) : null}
         {storiesPending > 0 ? (
           <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
             {t("storiesPending", { n: storiesPending })}
@@ -325,6 +330,29 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     ↺ {t("replayStart")}
                   </button>
                 )}
+                <div
+                  data-testid="film-duration"
+                  className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
+                  title={t("filmDuration")}
+                >
+                  {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      data-seconds={sec}
+                      aria-pressed={Number(replay.targetSeconds) === sec}
+                      disabled={Boolean(replay.active)}
+                      onClick={() => replay.onDuration?.(sec)}
+                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                        Number(replay.targetSeconds) === sec
+                          ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                          : "text-white/70 hover:text-white border border-transparent"
+                      }`}
+                    >
+                      {t(key)}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>

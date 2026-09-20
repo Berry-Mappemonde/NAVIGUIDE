@@ -30,6 +30,7 @@ import {
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
+import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
 
 const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
@@ -205,6 +206,10 @@ export class MapSceneController {
       resetKey: null,
       recapture: null,
       focus: null,
+      filmChapterIdx: null,
+      filmZoom: null,
+      filmSetViewAt: 0,
+      filmFlyingUntil: 0,
     };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
@@ -309,6 +314,12 @@ export class MapSceneController {
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
+    if (previous.filmActive && !this.config.filmActive) {
+      this.camera.filmChapterIdx = null;
+      this.camera.filmZoom = null;
+      this.camera.filmSetViewAt = 0;
+      this.camera.filmFlyingUntil = 0;
+    }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
     this.syncInitialCamera();
@@ -331,6 +342,7 @@ export class MapSceneController {
     } else if (this.currentPlayback) {
       this.renderDynamic(this.currentPlayback);
     }
+    if (this.config.filmActive) this.syncFilmCamera(this.config);
     // Entering / leaving the drawing mode (lot I): the boats of the official
     // route hide or come back at once, even while playback is paused.
     if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
@@ -681,12 +693,14 @@ export class MapSceneController {
   /** The camera is driving the map: playback running, or the live boat followed. */
   isCameraFollowing() {
     const cfg = this.config || {};
+    if (cfg.filmActive) return true;
     if (!cfg.cameraFollow) return false;
     const liveMode = Boolean(cfg.isSuivre && cfg.live && !cfg.previewing);
     return Boolean(this.currentPlayback?.playing || liveMode);
   }
 
   scheduleWaypoints({ reason = "move" } = {}) {
+    if (this.config?.filmActive) return; // flags stay put for the whole film (lot F1)
     if (!this.config.points?.length && !this.config.drawnPoints?.length) return;
     if (reason === "follow") return; // flags stay put while the camera follows (lot I)
     window.clearTimeout(this.waypointTimer);
@@ -700,6 +714,10 @@ export class MapSceneController {
     const cfg = this.config;
     if (!cfg.routeReady || !cfg.flat?.points?.length) {
       this.setCameraPlaced(false);
+      return;
+    }
+    if (cfg.filmActive) {
+      this.setCameraPlaced(true);
       return;
     }
     const recette = cfg.recetteMap;
@@ -741,6 +759,10 @@ export class MapSceneController {
       resetKey: null,
       recapture: null,
       focus: null,
+      filmChapterIdx: null,
+      filmZoom: null,
+      filmSetViewAt: 0,
+      filmFlyingUntil: 0,
     };
   }
 
@@ -759,8 +781,41 @@ export class MapSceneController {
     fn();
   }
 
+  syncFilmCamera(cfg) {
+    const subject = cfg.live;
+    if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
+    const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
+    this.camera.followLon = lonCam;
+    const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx)) ? Number(cfg.filmChapterIdx) : 0;
+    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
+      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
+    }
+    let next;
+    this.programmaticMove(() => {
+      next = applyFilmCamera(this.map, {
+        chapterIdx,
+        lastChapterIdx: this.camera.filmChapterIdx,
+        lat: subject.lat,
+        lon: lonCam,
+        heading: subject.bearing,
+        zoom: this.camera.filmZoom,
+        now: Date.now(),
+        lastSetViewAt: this.camera.filmSetViewAt || 0,
+        flyingUntil: this.camera.filmFlyingUntil || 0,
+      });
+    });
+    this.camera.filmChapterIdx = next.lastChapterIdx;
+    this.camera.filmSetViewAt = next.lastSetViewAt;
+    this.camera.filmFlyingUntil = next.flyingUntil || 0;
+    this.camera.lastFollow = Date.now();
+  }
+
   syncCamera(cast, snapshot) {
     const cfg = this.config;
+    if (cfg.filmActive) {
+      this.syncFilmCamera(cfg);
+      return;
+    }
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     const subject = liveMode ? cfg.live : cast?.follow;
     const enabled = Boolean(

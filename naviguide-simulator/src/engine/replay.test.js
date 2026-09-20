@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  advance, cardDwellMs, cardFromJournalEntry, cardsBetween, journalTimeline, replayProgress, replaySample, replayScale, replayWindow, trimQueue, windFromJournalAt,
+  advance, calibrateRate, cardDwellMs, cardFromJournalEntry, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, journalTimeline, replayProgress, replaySample, replayScale, replayWindow, trimQueue, windFromJournalAt,
 } from "./replay.js";
 const T0 = "2026-05-15T08:00:00.000Z";
 
@@ -99,5 +99,69 @@ describe("replay — rejouer la route de Saint-Maur à aujourd'hui", () => {
     assert.equal(cardDwellMs(0), 2500);
     assert.equal(cardDwellMs(1), 2500);
     assert.equal(cardDwellMs(5), 900);
+  });
+});
+
+describe("replay — filmPlan (lot F1)", () => {
+  it("répartit 150 s au prorata des caractères et timeAt est monotone", () => {
+    const chapters = [
+      { text: "aa", tA: 1_000, tB: 4_000 },
+      { text: "bbbb", tA: 4_000, tB: 10_000 },
+    ];
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    assert.equal(plan.targetSeconds, 150);
+    assert.ok(Math.abs(plan.chapters[0].seconds - 50) < 1e-9);
+    assert.ok(Math.abs(plan.chapters[1].seconds - 100) < 1e-9);
+    assert.ok(Math.abs(plan.chapters[0].seconds + plan.chapters[1].seconds - 150) < 1e-9);
+    let prev = -Infinity;
+    for (const ch of plan.chapters) {
+      for (let c = 0; c <= ch.chars; c++) {
+        const t = plan.timeAt(ch.idx, c);
+        assert.ok(t >= prev - 1e-9, `timeAt(${ch.idx}, ${c}) = ${t} < ${prev}`);
+        prev = t;
+      }
+    }
+    assert.equal(plan.timeAt(0, 0), 1_000);
+    assert.equal(plan.timeAt(0, 2), 4_000);
+    assert.equal(plan.timeAt(1, 0), 4_000);
+    assert.equal(plan.timeAt(1, 4), 10_000);
+    const mid = chapterAtElapsed(plan, 50);
+    assert.equal(mid.idx, 1);
+    const squeezed = filmPlan({
+      chapters: [
+        { text: "x", tA: 1_000, tB: 2_000 },
+        { text: "y".repeat(50), tA: 2_000, tB: 8_000 },
+      ],
+      targetSeconds: 150,
+    });
+    assert.equal(squeezed.chapters.length, 1, "un chapitre trop court est fusionné");
+    assert.ok(squeezed.chapters[0].seconds >= 12);
+  });
+
+  it("calibrage du rate borné dans [0,9 ; 1,25]", () => {
+    assert.equal(calibrateRate({ chapterChars: 100, elapsedSeconds: 1, remainingChars: 10_000, remainingBudgetSeconds: 1 }), FILM_RATE_MAX);
+    assert.equal(calibrateRate({ chapterChars: 100, elapsedSeconds: 100, remainingChars: 10, remainingBudgetSeconds: 100 }), FILM_RATE_MIN);
+    const mid = calibrateRate({ chapterChars: 100, elapsedSeconds: 10, remainingChars: 200, remainingBudgetSeconds: 20 });
+    assert.ok(mid >= FILM_RATE_MIN && mid <= FILM_RATE_MAX);
+    assert.equal(calibrateRate({}), 1);
+  });
+
+  it("les chapitres sont les jambes du récit ; le premier texte dit Saint-Maur", () => {
+    const t0 = "2026-05-15T08:00:00.000Z";
+    const marks = [
+      { name: "Saint-Maur (Berry, Indre)", iso: t0, filmNm: 0, lat: 46.8, lon: 1.7 },
+      { name: "La Rochelle", iso: "2026-05-15T12:00:00.000Z", filmNm: 122, lat: 46.15, lon: -1.16 },
+    ];
+    const chapters = filmChaptersFromStory({
+      clock: { t0, marks },
+      marks,
+      live: { iso: "2026-05-16T00:00:00.000Z", lat: 45, lon: -3, filmNm: 200, sailNm: 80 },
+      lang: "fr",
+    });
+    assert.ok(chapters.length >= 1);
+    assert.match(chapters[0].text, /Saint-Maur/);
+    assert.ok(chapters[0].tB > chapters[0].tA);
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    assert.ok(Math.abs(plan.chapters.reduce((s, c) => s + c.seconds, 0) - 150) < 1e-6);
   });
 });
