@@ -129,6 +129,7 @@ export default {
   journalUnavailable: "Journal indisponible pour le moment.",
   briefingSeeOnMap: "Voir sur la carte : le bateau et ce lieu",
   briefingOfficialSheet: "Fiche / site officiel",
+  briefingSourceLink: "Source des données",
   briefingGoogleMaps: "Fiche Google Maps",
 
   // ── Carte du moment (popups le long de la route) ─────────────────────────

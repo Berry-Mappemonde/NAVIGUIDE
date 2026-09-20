@@ -190,6 +190,22 @@ function BriefingText({ segments, onFocus, t }) {
   return segments.map((seg, i) => {
     if (!seg.entity) return <span key={i}>{seg.text}</span>;
     const e = seg.entity;
+    if (e.kind === "source" && e.url) {
+      return (
+        <a
+          key={i}
+          href={e.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={t("briefingSourceLink")}
+          data-testid="briefing-source-link"
+          data-kind="source"
+          className="text-sky-200 underline decoration-sky-400/70 underline-offset-2 hover:text-white"
+        >
+          {seg.text}
+        </a>
+      );
+    }
     const links = entityLinks(e);
     const focusable = canFocus(e) && typeof onFocus === "function";
     return (
@@ -391,7 +407,7 @@ export const Sidebar = memo(function Sidebar({
           ) : null}
 
           {showIciBriefing && (
-            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
+            <div data-testid="briefing" className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
                 <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {briefingTitle}

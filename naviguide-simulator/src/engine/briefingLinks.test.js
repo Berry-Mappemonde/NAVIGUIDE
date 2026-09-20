@@ -113,7 +113,8 @@ describe("briefingLinks — segmentation never rewrites the text", () => {
       const segments = narrateIciSegments(LA_ROCHELLE, lang);
       assert.equal(segments.map((s) => s.text).join(""), text);
       const linked = segments.filter((s) => s.entity);
-      assert.equal(linked.length, briefingEntities(LA_ROCHELLE).length, `${lang}: every entity is linked`);
+      const places = linked.filter((s) => s.entity.kind !== "source");
+      assert.equal(places.length, briefingEntities(LA_ROCHELLE).length, `${lang}: every place is linked`);
       assert.deepEqual(linked.map((s) => s.entity.kind).slice(0, 4), ["poe", "poe", "amp", "project"]);
     }
   });
@@ -149,7 +150,9 @@ describe("briefing links — UI contract", () => {
     assert.match(sidebar, /target="_blank"/);
     assert.match(sidebar, /rel="noopener noreferrer"/);
     assert.match(sidebar, /data-testid="briefing-entity"/);
-    assert.match(sidebar, /briefingSeeOnMap|briefingOfficialSheet|briefingGoogleMaps/);
+    assert.match(sidebar, /data-testid="briefing-source-link"/);
+    assert.match(sidebar, /data-testid="briefing"/);
+    assert.match(sidebar, /briefingSeeOnMap|briefingOfficialSheet|briefingGoogleMaps|briefingSourceLink/);
     assert.match(sidebar, /iciBriefingSegments\?\.length/);
     assert.match(dossier, /briefingSegments/);
   });
@@ -188,7 +191,7 @@ describe("briefingLinks — names a skipper reads", () => {
     assert.match(text, /bouée latérale \(19,5 nm\)/);
     assert.doesNotMatch(text, /buoy_lateral|\(sextant\)|sextant\.ifremer/);
     const linked = narrateIciSegments(d, "fr").filter((s) => s.entity);
-    assert.deepEqual(linked.map((s) => s.text), [label, "bouée latérale"]);
+    assert.deepEqual(linked.map((s) => s.text), [label, "OpenStreetMap", "bouée latérale"]);
     assert.equal(placeLabel("aton", { name: "buoy_lateral" }), "bouée latérale");
   });
 });
