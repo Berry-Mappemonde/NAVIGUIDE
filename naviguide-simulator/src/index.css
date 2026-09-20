@@ -179,6 +179,58 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
 
+/* Lot N — hauteurs fixes du panneau gauche (un seul réglage). */
+:root {
+  --sim-box-h-chat: 168px;
+  --sim-box-h-now: 10rem;
+  --sim-box-h-ici: 16rem;
+  --sim-box-h-story: 14rem;
+}
+.sim-box-chat {
+  height: var(--sim-box-h-chat);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.sim-box-now {
+  max-height: var(--sim-box-h-now);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sim-box-ici {
+  height: var(--sim-box-h-ici);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sim-box-story {
+  height: var(--sim-box-h-story);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.light-mode .sim-box-chat {
+  height: var(--sim-box-h-chat);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.light-mode .sim-box-now {
+  max-height: var(--sim-box-h-now);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.light-mode .sim-box-ici {
+  height: var(--sim-box-h-ici);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.light-mode .sim-box-story {
+  height: var(--sim-box-h-story);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .layer-fiche-popup {
   min-width: 220px;
   max-width: 300px;

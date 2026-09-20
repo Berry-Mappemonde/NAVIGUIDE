@@ -29,13 +29,13 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
   };
 
   return (
-    <div data-testid="logbook-chat" className="rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
-      <div className="flex items-center gap-1.5 mb-1">
+    <div data-testid="logbook-chat" className="sim-box-chat rounded-lg border border-violet-500/25 bg-violet-950/25 p-2 min-w-0">
+      <div className="flex items-center gap-1.5 mb-1 flex-shrink-0">
         <MessageSquare size={12} className="text-violet-200" />
         <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200 leading-snug">{t("logbookChatTitle")}</div>
         <span className="ml-auto text-[9px] text-violet-100/60">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
       </div>
-      <div ref={listRef} className="max-h-44 overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
         {!messages.length && !pending ? (
           <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatHint")}</p>
         ) : null}
@@ -54,7 +54,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
         {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
       </div>
-      <form onSubmit={submit} className="mt-1.5 flex items-center gap-1">
+      <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input
           type="text"
           value={draft}
