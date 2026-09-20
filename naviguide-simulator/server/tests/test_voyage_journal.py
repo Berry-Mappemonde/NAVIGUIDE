@@ -236,3 +236,72 @@ def test_summary_carries_the_whole_voyage_events_apart_from_positions(client, mo
     assert "position" not in kinds
     assert "stop" in kinds and "note" in kinds
     assert any(e["kind"] == "note" and e["text"] == "Belle étoile." for e in body["events"])
+
+
+def test_lot_a_ports_of_entry_and_weather_lines(client, monkeypatch):
+    """Lot A : ports d'entrée passés (perles) et météo marquante (dérivée du GRIB)."""
+    import ici_engine
+    import ici_warm
+    from ici_engine import thin_cache_key
+
+    ici_engine.reset_caches()
+    now = T0 + timedelta(days=30)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    pearls = ici_warm.sample_route_nm(voy["points"])
+    fr = {"name": "French Exclusive Economic Zone", "mrgid": 5677}
+    for i, p in enumerate(pearls[:12]):
+        poe = [{"name": "La Rochelle - La Pallice", "id": "poe-lr", "nm": 1.6 if i < 2 else 40.0, "url": "https://douane.gouv.fr"}]
+        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {"zee": fr, "amp": [], "poe": poe, "sources": {"bi": "ok"}})
+    events = ici_warm.route_events_from_pearls(voy["points"])
+    poes = [e for e in events if e["kind"] == "poe"]
+    assert len(poes) == 1 and poes[0]["name"] == "La Rochelle - La Pallice" and poes[0]["idx"] == 0
+    assert journal.tick(voy, now, force=True)["routeEvents"] == 1
+    assert journal.latest(10, kinds=("poe",))[0]["event"] == "passed"
+
+    # A GRIB reading above the gale line yields a wx line; a quiet one does not.
+    assert journal.wx_entry_from_grib({"id": "grib:c1", "t": "2026-05-20T06:00:00Z", "windKnots": 12, "hs": 1.0}) is None
+    wx = journal.wx_entry_from_grib({"id": "grib:c2", "t": "2026-05-21T06:00:00Z", "windKnots": 36.5, "dirFromDeg": 250, "hs": 2.0, "model": "GFS"})
+    assert wx["kind"] == "wx" and wx["event"] == "gale" and wx["windKnots"] == 36.5 and wx["t"] == "2026-05-21T06:00:00Z"
+    sea = journal.wx_entry_from_grib({"id": "grib:c3", "t": "2026-05-22T06:00:00Z", "windKnots": 20, "hs": 4.1})
+    assert sea["event"] == "sea"
+    # Journaled GRIBs are turned into wx lines by the tick, once.
+    journal._append([{"id": "grib:c2", "kind": "grib", "t": "2026-05-21T06:00:00Z", "windKnots": 36.5, "dirFromDeg": 250, "hs": 2.0, "model": "GFS"}])
+    assert journal.record_wx(now) == 1
+    assert journal.record_wx(now) == 0
+    body = client.get("/voyage/official/journal?limit=20&kinds=wx,poe").json()
+    assert {e["kind"] for e in body["latest"]} == {"wx", "poe"}
+    assert any(e["kind"] == "wx" for e in body["events"])
+
+
+def test_pearl_lines_follow_the_current_reading_of_the_pearls(client, monkeypatch):
+    """Quand une perle s'affine (thin → riche, meilleure ZEE), la lecture
+    change : le journal garde la lecture courante, pas la pile des lectures."""
+    import ici_engine
+    import ici_warm
+    from ici_engine import thin_cache_key
+
+    ici_engine.reset_caches()
+    now = T0 + timedelta(days=30)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    pearls = ici_warm.sample_route_nm(voy["points"])
+    fr = {"name": "French Exclusive Economic Zone", "mrgid": 5677}
+    es = {"name": "Spanish Exclusive Economic Zone", "mrgid": 5693}
+    # First reading: French then Spanish from pearl 10.
+    for i, p in enumerate(pearls[:30]):
+        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {"zee": fr if i < 10 else es, "amp": [], "poe": [], "sources": {"bi": "ok"}}, "thin")
+    assert journal.tick(voy, now, force=True)["routeEvents"] == 2  # exit FR + enter ES at idx 10
+    first = journal.latest(20, kinds=("zee",))
+    assert {e["id"].split(":")[3] for e in first} == {"10"}
+    # Second reading (rich pearls): the boundary is really at pearl 14.
+    for i, p in enumerate(pearls[:30]):
+        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {"zee": fr if i < 14 else es, "amp": [], "poe": [], "sources": {"bi": "ok"}}, "rich")
+    journal.tick(voy, now, force=True)
+    second = journal.latest(20, kinds=("zee",))
+    assert len(second) == 2, [e["id"] for e in second]
+    assert {e["id"].split(":")[3] for e in second} == {"14"}
+    # Human and clock lines are untouched by the re-reading.
+    assert journal.latest(500, kinds=("position",))

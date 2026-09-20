@@ -148,7 +148,7 @@ function routeEventsBetween(journal, fromIso, toIso) {
   const b = ms(toIso);
   if (a == null || b == null) return [];
   return journalEntries(journal)
-    .filter((e) => (e?.kind === "zee" || e?.kind === "amp") && e.name)
+    .filter((e) => ((e?.kind === "zee" || e?.kind === "amp" || e?.kind === "poe") && e.name) || e?.kind === "wx")
     .filter((e) => { const t = ms(e.t); return t != null && t >= a && t <= b; })
     .sort((x, y) => ms(x.t) - ms(y.t));
 }
@@ -180,7 +180,38 @@ function routeEventsSentence(events, lang) {
       ? `marine protected area${amp.length > 1 ? "s" : ""} within reach: ${joinList(names, lang)}${more}`
       : `aire${amp.length > 1 ? "s" : ""} marine${amp.length > 1 ? "s" : ""} protégée${amp.length > 1 ? "s" : ""} à portée : ${joinList(names, lang)}${more}`);
   }
-  return `${en ? "Meanwhile" : "Entre-temps"} — ${bits.join(" ; ")}.`;
+  // Ports of entry passed (lot A), each once.
+  const seenPoe = new Set();
+  const poe = events.filter((e) => {
+    if (e.kind !== "poe") return false;
+    const key = e.poeId ?? e.name;
+    if (seenPoe.has(key)) return false;
+    seenPoe.add(key);
+    return true;
+  });
+  if (poe.length) {
+    const names = poe.slice(0, 4).map((e) => e.name);
+    const more = poe.length > 4 ? (en ? ` and ${poe.length - 4} more` : ` et ${poe.length - 4} autres`) : "";
+    bits.push(en
+      ? `port${poe.length > 1 ? "s" : ""} of entry passed: ${joinList(names, lang)}${more}`
+      : `port${poe.length > 1 ? "s" : ""} d’entrée passé${poe.length > 1 ? "s" : ""} : ${joinList(names, lang)}${more}`);
+  }
+  const head = bits.length ? `${en ? "Meanwhile" : "Entre-temps"} — ${bits.join(" ; ")}.` : "";
+  // Remarkable weather at the boat (lot A): derived from journaled GRIBs, cited with its numbers.
+  const wx = events.filter((e) => e.kind === "wx" && Number.isFinite(Number(e.windKnots ?? e.hs)));
+  let wxSentence = "";
+  if (wx.length) {
+    const parts = wx.slice(0, 3).map((e) => {
+      const kn = Number.isFinite(e.windKnots) ? `${Math.round(e.windKnots)} kn` : "";
+      const hs = Number.isFinite(e.hs) ? `Hs ${Number(e.hs).toLocaleString(en ? "en-GB" : "fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "";
+      const what = e.event === "sea" ? (en ? "heavy sea" : "mer forte") : (en ? "gale" : "coup de vent");
+      const nums = [kn, hs].filter(Boolean).join(", ");
+      return `${what} ${en ? "on" : "le"} ${dayMonth(e.t, lang)}${nums ? ` (${nums})` : ""}`;
+    });
+    const more = wx.length > 3 ? (en ? ` and ${wx.length - 3} more` : ` et ${wx.length - 3} autres`) : "";
+    wxSentence = en ? `Weather at the boat: ${joinList(parts, lang)}${more} (GFS).` : `Météo au bateau : ${joinList(parts, lang)}${more} (GFS).`;
+  }
+  return [head, wxSentence].filter(Boolean).join(" ");
 }
 
 /** Skipper notes of the journal between two instants (the human voice, verbatim). */

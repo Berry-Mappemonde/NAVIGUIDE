@@ -61,6 +61,15 @@ describe("journalFormat", () => {
     assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-16T07:00:00Z", event: "nearby", name: "Pertuis Charentais", nm: 3.6 }, "fr").text, "Aire marine protégée à portée : Pertuis Charentais (3,6 nm)");
   });
 
+  it("lot A: ports of entry passed and remarkable weather derived from the GRIB", () => {
+    assert.equal(formatJournalEntry({ kind: "poe", t: "2026-05-15T10:00:00Z", event: "passed", name: "La Rochelle - La Pallice", nm: 1.6 }, "fr").text, "Port d’entrée passé : La Rochelle - La Pallice (1,6 nm)");
+    assert.equal(formatJournalEntry({ kind: "poe", t: "2026-05-15T10:00:00Z", event: "passed", name: "Porto" }, "en").text, "Port of entry passed: Porto");
+    const g = formatJournalEntry({ kind: "wx", t: "2026-06-03T06:00:00Z", event: "gale", windKnots: 36.5, dirFromDeg: 250, hs: 2.0, model: "GFS" }, "fr");
+    assert.equal(g.icon, "⚠️");
+    assert.equal(g.text, "Coup de vent : vent 37 kn de OSO · Hs 2,0 m (GFS)");
+    assert.equal(formatJournalEntry({ kind: "wx", t: "2026-06-04T06:00:00Z", event: "sea", windKnots: 20, hs: 4.1 }, "en").text, "Heavy sea : wind 20 kn · Hs 4.1 m");
+  });
+
   it("groups newest day first and caps the number of days", () => {
     const entries = [
       { id: "a", kind: "note", t: "2026-05-18T07:00:00Z", text: "c" },
