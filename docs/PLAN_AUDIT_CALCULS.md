@@ -153,7 +153,11 @@ pour prolonger. Tout est mis en cache dans SQLite (`pearl_store.kv`, ns
 
 ## 3. Les lots
 
-Ordre : **C1 → C2 → C3 → C4 → C5**. C1 est indépendant.
+Ordre : **C1 → C2 → C3 → C4 → C5 → C7 → C6**. C1 est indépendant (**fait :
+PR #207, mergée le 20 sept.**). Couverture de l'audit : chaque ligne du § 1
+au verdict ✘ ou ≈ est prise par un lot — 1–3 et 14 → C5 (cahier, tests) ;
+4, 7, 8, 10, 13, 21 → C4 ; 5, 15, 16, 18 → C7 ; 6, 9 → C2 (ensembles → C6) ;
+11, 12 → P2 / C3 ; 17 → C1 ; 19 → F2 ; 20 → C5 ; 22 → S ; 23 → F1.
 
 ### Lot C1 — Résumé de l'expédition juste (S)
 
@@ -268,6 +272,56 @@ formule, unités, source, test qui la protège), `src/utils/geo.test.js`,
 
 **Recette (aucun changement visible).** Tests verts ; le cahier existe et
 chaque ligne du § 1 y renvoie.
+
+### Lot C7 — Conventions paramétrées et repli déclaré (S)
+
+Couvre les lignes 5, 15, 16, 18 du § 1 (verdicts ≈ de l'audit état de
+l'art) : le repli de vitesse sans polaire se déclare, les jours à quai sont
+une table par escale avec sa source, le tronçon route et le saut avion sont
+des paramètres documentés, `filmNm` est expliqué à l'écran.
+
+**Fichiers.** `server/voyage_clock.py` (`port_days_for`, `LAND_CALENDAR_HOURS`,
+`AIR_CALENDAR_HOURS`, `MIN_KNOTS`), nouveau `server/data/port_days.json`
+(escale → jours, source « programme Berry-Mappemonde 2026 », `default: 3`),
+`server/climatology_zones.py` (`boat_speed_from_wind` → `basis: "fallback"`
+propagé dans le sommet), `src/components/ToolsSidebar.jsx` (info-bulle
+`filmNm` : « distance du film, saut avion exclu »), `src/components/SimulationFilmBar.jsx`
+(libellé « (repli sans polaire) » quand `basis === "fallback"` — ajout),
+`docs/REGLES_PARAMETRES.md`, tests.
+
+**Tests.** Table lue, défaut 3, Saint-Maur 0 ; sans polaire → `basis:
+"fallback"` et libellé ; constantes exposées dans `/voyage/official` (`params`).
+
+**Recette (changement visible minime).** Survol de la distance film → info-bulle ;
+en retirant la polaire (paramètre de test), la barre film dit « repli sans
+polaire ».
+
+### Lot C6 — ETA probabiliste par ensembles (M)
+
+Couvre la ligne 9 (« option : ensembles ») et le complément « Ensembles » de
+l'audit : au-delà de 7 jours, l'arrivée n'est pas une date mais une
+fourchette.
+
+**Fichiers.** nouveau `server/ensemble_eta.py` (+ test, faux serveur),
+`server/hindcast.py` (client Open-Meteo réutilisé), `server/voyage_api.py`
+(`GET /voyage/official/eta?stop=…` → `{p10, p50, p90, members, source}`),
+`src/components/EscaleLegend.jsx` / `PlanReview.jsx` (« arrivée entre le 12
+et le 15 (p10–p90) » — ajout à côté de la date actuelle, rien retiré), i18n.
+
+**Étapes.** 1) Open-Meteo **Ensemble API** (`ensemble-api.open-meteo.com/v1/ensemble`,
+modèles `gfs_seamless` / `ecmwf_ifs025`, `hourly=wind_speed_10m,wind_direction_10m`,
+`wind_speed_unit=kn`) : membres (≈ 30 GEFS, 50 IFS ENS) le long de la jambe
+courante ; 2) pour chaque membre, intégration de la jambe avec la polaire ×
+`POLAR_EFFICIENCY`, courant et polaire de vagues du lot C4 (médiane du
+hindcast pour le passé, membre pour le futur, climatologie au-delà de 15 j) ;
+3) p10 / p50 / p90 des dates d'arrivée, cache 6 h ; 4) UI : fourchette sous
+la date de la prochaine escale et dans la revue de plan ; 5) `REGLES_PARAMETRES.md`.
+
+**Tests.** 30 membres identiques → p10 = p90 ; membres dispersés → p10 < p50
+< p90 ; sans ensemble → pas de fourchette (jamais inventée).
+
+**Recette (changement visible).** Légende des escales : « Nouméa · 12 oct. ·
+entre le 11 et le 14 (p10–p90, 80 membres) » ; capture.
 
 ## 4. Réponse au porteur
 
