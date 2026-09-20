@@ -30,6 +30,15 @@ async function seekFilm(page, ratio) {
   await bar.click({ position: { x: Math.max(4, box.width * ratio), y: box.height / 2 } });
 }
 
+async function enterSimulation(page) {
+  await page.getByTestId("view-simulation").click();
+  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("button", { name: /prochaine escale/i })).toBeVisible({ timeout: 15_000 });
+  // L’effet de prime Simulation fait un seek(0) une fois : on attend qu’il soit passé
+  // avant de viser une escale (sinon le seek(0) écrase le clic).
+  await page.waitForTimeout(800);
+}
+
 test("lot P2 — à quai 0 kn ; en mer la vitesse varie", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
@@ -39,30 +48,19 @@ test("lot P2 — à quai 0 kn ; en mer la vitesse varie", async ({ page }) => {
 
   const clock = page.getByTestId("clock-line");
   await expect(clock).toBeVisible({ timeout: 15_000 });
-  let line = await clock.innerText();
-  if (!/à quai/i.test(line)) {
-    // Le 20 sept. au soir le live peut déjà avoir quitté Nouméa :
-    // on se place à une escale en Simulation (holding → atQuay).
-    await page.getByTestId("view-simulation").click();
-    await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
-    const next = page.getByRole("button", { name: /prochaine escale/i });
-    await expect(next).toBeVisible({ timeout: 15_000 });
-    for (let i = 0; i < 4 && !/à quai/i.test(line); i++) {
-      await next.click();
-      await page.waitForTimeout(800);
-      line = await clock.innerText();
-    }
-  }
-  await expect(clock).toContainText("à quai", { timeout: 10_000 });
+  // CI sans API : l’horloge live n’est pas forcément à quai. On pose le
+  // playhead sur Ajaccio (3 j de hold) après le seek(0) de prime Simulation.
+  await enterSimulation(page);
+  const ajaccio = page.getByRole("button", { name: /Ajaccio/i }).first();
+  await ajaccio.scrollIntoViewIfNeeded();
+  await ajaccio.click();
+  await expect(clock).toContainText("à quai", { timeout: 15_000 });
   await expect(clock).not.toContainText(/\d+[.,]\d+\s*kt/);
   await shot(page, "01-quai");
-
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
   const seen = new Set();
-  for (const ratio of [0.18, 0.42, 0.68]) {
+  for (const ratio of [0.22, 0.38, 0.55, 0.72]) {
     await seekFilm(page, ratio);
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(600);
     const kn = knotsIn(await clock.innerText());
     if (kn != null) seen.add(kn);
   }
