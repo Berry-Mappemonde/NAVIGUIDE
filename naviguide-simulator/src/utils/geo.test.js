@@ -1,8 +1,16 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { flattenRoute, mapEscalesOnRoute } from "../engine/routePlayhead.js";
+import { mergeEpisodeMarks } from "../engine/filmCast.js";
+import { routeFromOfficial } from "./routeFromOfficial.js";
 import {
   haversineNm,
   summarizeRoute,
+  summarizeLegs,
+  marksForSummary,
   featuresToSegments,
   splitAntimeridianCoords,
   unwrapLon,
@@ -13,6 +21,26 @@ import {
   worldCopyParts,
   worldCopyPolygonCoords,
 } from "./geo.js";
+
+const OFFICIAL_ESCALES = [
+  "Saint-Maur (Berry, Indre)",
+  "La Rochelle",
+  "Ajaccio (Corse)",
+  "Fort-de-France (Martinique)",
+  "Pointe-à-Pitre (Guadeloupe)",
+  "Gustavia (Saint-Barthélemy)",
+  "Marigot (Saint-Martin)",
+  "Cayenne (Guyane)",
+  "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+  "Papeete (Polynésie française)",
+  "Mata-Utu (Wallis-et-Futuna)",
+  "Nouméa (Nouvelle-Calédonie)",
+  "Dzaoudzi (Mayotte)",
+  "Tromelin (TAAF)",
+  "Saint-Gilles (La Réunion)",
+  "Europa (TAAF)",
+  "La Rochelle",
+];
 
 describe("summarizeRoute", () => {
   it("counts segments and a distance > 0", () => {
@@ -26,6 +54,68 @@ describe("summarizeRoute", () => {
 
   it("ignores LineStrings that are too short", () => {
     assert.deepEqual(summarizeRoute([{ coords: [[0, 0]] }]), { nm: 0, segments: 0 });
+  });
+});
+
+describe("summarizeLegs", () => {
+  const landSeg = {
+    coords: [[1.6358, 46.8075], [-1.167, 46.1541]],
+    nonMaritime: true,
+    from: { name: "Saint-Maur (Berry, Indre)" },
+    to: { name: "La Rochelle" },
+  };
+  const seaSeg = {
+    coords: [[-1.167, 46.1541], [8.7386, 41.9192]],
+    nonMaritime: false,
+    from: { name: "La Rochelle" },
+    to: { name: "Ajaccio (Corse)" },
+  };
+
+  it("17 marques → 16 étapes, Saint-Maur → La Rochelle à terre", () => {
+    const marks = OFFICIAL_ESCALES.map((name) => ({ name }));
+    const out = summarizeLegs(marks, [landSeg, seaSeg]);
+    assert.equal(out.legs, 16);
+    assert.equal(out.escales, 17);
+    assert.equal(out.land, 1);
+    assert.equal(out.sea, 15);
+  });
+
+  it("route dessinée sans marques → 1 étape", () => {
+    const out = summarizeLegs([], [{ coords: [[0, 0], [1, 1]], nonMaritime: false }]);
+    assert.equal(out.legs, 1);
+    assert.equal(out.sea, 1);
+    assert.equal(out.land, 0);
+    assert.equal(out.escales, 0);
+  });
+
+  it("Cayenne réinséré (HUD aérien) ne crée pas d'escale de plus", () => {
+    const marks = [
+      ...OFFICIAL_ESCALES.slice(0, 9).map((name) => ({ name })),
+      { name: "Cayenne (Guyane)" },
+      ...OFFICIAL_ESCALES.slice(9).map((name) => ({ name })),
+    ];
+    assert.equal(marks.length, 18);
+    assert.equal(marksForSummary(marks).length, 17);
+    const out = summarizeLegs(marks, [landSeg]);
+    assert.equal(out.escales, 17);
+    assert.equal(out.legs, 16);
+  });
+
+  it("route officielle Berry : 16 étapes (15 mer, 1 terre), 17 escales, 1248 sommets", () => {
+    const raw = JSON.parse(readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../public/route.geojson"),
+      "utf8",
+    ));
+    const { segments, stops } = routeFromOfficial(raw);
+    const flat = flattenRoute(segments);
+    const marks = mergeEpisodeMarks(mapEscalesOnRoute(stops, flat), flat, stops);
+    const out = summarizeLegs(marks, segments);
+    assert.equal(out.legs, 16);
+    assert.equal(out.sea, 15);
+    assert.equal(out.land, 1);
+    assert.equal(out.escales, 17);
+    assert.equal(out.points, 1248);
+    assert.equal(out.waypoints, 36);
   });
 });
 

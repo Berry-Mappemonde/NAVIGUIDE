@@ -143,6 +143,97 @@ export function summarizeRoute(segments) {
   return { nm: Math.round(nm * 10) / 10, segments: count };
 }
 
+function segmentName(side) {
+  return side?.name || "";
+}
+
+function segmentJoinsEscales(seg, fromName, toName) {
+  const a = segmentName(seg?.from);
+  const b = segmentName(seg?.to);
+  return (a === fromName && b === toName) || (a === toName && b === fromName);
+}
+
+function legIsLand(from, to, segments) {
+  const fromName = from?.name;
+  const toName = to?.name;
+  if (fromName && toName) {
+    const hit = (segments || []).find((seg) => segmentJoinsEscales(seg, fromName, toName));
+    if (hit) return Boolean(hit.nonMaritime);
+  }
+  return Boolean(from?.nonMaritime && to?.nonMaritime);
+}
+
+/**
+ * Marques d'escale pour le résumé : une visite intérieure déjà vue
+ * (Cayenne réinséré pour le HUD aérien) n'ajoute pas d'escale ; le
+ * retour final qui reprend un nom déjà vu (La Rochelle) est gardé.
+ */
+export function marksForSummary(escaleMarks) {
+  const named = (escaleMarks || []).filter((mark) => mark?.name);
+  if (named.length <= 1) return named;
+  const seen = new Set();
+  const out = [];
+  for (let i = 0; i < named.length; i++) {
+    const name = named[i].name;
+    const isLast = i === named.length - 1;
+    if (seen.has(name) && !isLast) continue;
+    seen.add(name);
+    out.push(named[i]);
+  }
+  return out;
+}
+
+function vertexCount(segments) {
+  return (segments || []).reduce((count, seg) => count + (seg?.coords?.length ?? 0), 0);
+}
+
+function routerWaypointCount(segments) {
+  return (segments || []).filter((seg) => seg?.coords?.length >= 2).length;
+}
+
+/**
+ * Étapes entre escales (pas les sommets du routeur).
+ * Sans marques, une route dessinée compte pour 1 étape.
+ */
+export function summarizeLegs(escaleMarks, segments) {
+  const segs = segments || [];
+  const points = vertexCount(segs);
+  const waypoints = routerWaypointCount(segs);
+  const marks = marksForSummary(escaleMarks);
+
+  if (marks.length >= 2) {
+    let sea = 0;
+    let land = 0;
+    for (let i = 0; i < marks.length - 1; i++) {
+      if (legIsLand(marks[i], marks[i + 1], segs)) land += 1;
+      else sea += 1;
+    }
+    return {
+      legs: marks.length - 1,
+      sea,
+      land,
+      escales: marks.length,
+      points,
+      waypoints,
+    };
+  }
+
+  const hasTrack = segs.some((seg) => seg?.coords?.length >= 2);
+  if (hasTrack) {
+    const landOnly = segs.every((seg) => !seg.coords?.length || seg.nonMaritime);
+    return {
+      legs: 1,
+      sea: landOnly ? 0 : 1,
+      land: landOnly ? 1 : 0,
+      escales: marks.length,
+      points,
+      waypoints,
+    };
+  }
+
+  return { legs: 0, sea: 0, land: 0, escales: marks.length, points, waypoints };
+}
+
 /** FeatureCollection LineString → segments { coords } pour summarizeRoute / export. */
 export function featuresToSegments(fc) {
   if (!fc?.features) return [];
