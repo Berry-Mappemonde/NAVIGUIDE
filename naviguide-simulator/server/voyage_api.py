@@ -505,12 +505,20 @@ class JournalNoteIn(BaseModel):
 
 
 @router.get("/voyage/official/journal")
-def get_official_journal(limit: int = Query(50, ge=1, le=500)):
-    """La mémoire du voyage officiel : jours disponibles + dernières entrées."""
+def get_official_journal(
+    limit: int = Query(50, ge=1, le=500),
+    kinds: str | None = Query(None, description="filtre `latest` : kinds séparés par des virgules (zee,amp,poe,wx,…)"),
+):
+    """La mémoire du voyage officiel : jours disponibles + dernières entrées
+    (+ `events` : tout le voyage hors positions)."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is not None:
         _journal_safely(lambda: journal.tick(voy, _now()))
-    return {"voyageId": OFFICIAL_VOYAGE_ID, **journal.summary(limit)}
+    wanted = tuple(k.strip() for k in kinds.split(",") if k.strip() in journal.KINDS) if kinds else None
+    out = journal.summary(limit)
+    if wanted:
+        out["latest"] = journal.latest(limit, kinds=wanted)
+    return {"voyageId": OFFICIAL_VOYAGE_ID, **out}
 
 
 @router.get("/voyage/official/journal/{day}")

@@ -27,12 +27,16 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
       { kind: "zee", t: "2026-05-18T01:00:00Z", event: "exit", name: "Spanish Exclusive Economic Zone", mrgid: 5693 },
       { kind: "zee", t: "2026-05-18T09:00:00Z", event: "enter", name: "Spanish Exclusive Economic Zone", mrgid: 5693 },
       { kind: "amp", t: "2026-05-18T02:00:00Z", event: "nearby", name: "Cabrera", nm: 8 },
+      { kind: "poe", t: "2026-05-15T12:00:00Z", event: "passed", name: "La Rochelle - La Pallice", poeId: "lr", nm: 1.6 },
+      { kind: "poe", t: "2026-05-15T12:30:00Z", event: "passed", name: "La Rochelle - La Pallice", poeId: "lr", nm: 3 },
+      { kind: "wx", t: "2026-05-22T06:00:00Z", event: "gale", windKnots: 36.5, dirFromDeg: 300, hs: 2.4 },
       { kind: "grib", t: "2026-09-18T06:00:00Z", windKnots: 14, dirFromDeg: 120, model: "GFS" },
     ] };
     const paras = expeditionStory({ clock, marks, live, leg, journal, now, lang: "fr" }).map(plain);
     assert.equal(paras[0], "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026.");
     assert.equal(paras[1], "Le 15 mai, le bateau a pris la mer à La Rochelle, vers Ajaccio (Corse) : 1 820 nm en 9 jours. "
-      + "Entre-temps — entré dans : Spanish Exclusive Economic Zone le 17 mai ; aire marine protégée à portée : Cabrera. "
+      + "Entre-temps — entré dans : Spanish Exclusive Economic Zone le 17 mai ; aire marine protégée à portée : Cabrera ; port d’entrée passé : La Rochelle - La Pallice. "
+      + "Météo au bateau : coup de vent le 22 mai (37 kn, Hs 2,4 m) (GFS). "
       + "Vent au bateau : 14 kn en moyenne, 18 kn au plus fort (GFS, 2 relevés). "
       + "Le skipper a noté : « Première nuit au large, belle étoile. » "
       + "Arrivée à Ajaccio (Corse) le 24 mai, 3 jours à quai.");

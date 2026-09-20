@@ -47,7 +47,7 @@ export function formatDay(day, lang = "fr") {
   });
 }
 
-export const KIND_ICON = Object.freeze({ position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟" });
+export const KIND_ICON = Object.freeze({ position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟", poe: "🛃", wx: "⚠️" });
 
 /** One journal entry → { icon, time, text }. Unknown kinds keep their raw kind. */
 export function formatJournalEntry(entry, lang = "fr") {
@@ -109,6 +109,23 @@ export function formatJournalEntry(entry, lang = "fr") {
       const name = e.name || (en ? "marine protected area" : "aire marine protégée");
       const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
       text = en ? `Marine protected area within reach: ${name}${nm}` : `Aire marine protégée à portée : ${name}${nm}`;
+      break;
+    }
+    case "poe": {
+      const name = e.name || (en ? "port of entry" : "port d’entrée");
+      const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
+      text = en ? `Port of entry passed: ${name}${nm}` : `Port d’entrée passé : ${name}${nm}`;
+      break;
+    }
+    case "wx": {
+      const parts = [];
+      if (Number.isFinite(e.windKnots)) {
+        const dir = cardinal(e.dirFromDeg, lang);
+        parts.push(en ? `wind ${num(e.windKnots, lang)} kn${dir ? ` from ${dir}` : ""}` : `vent ${num(e.windKnots, lang)} kn${dir ? ` de ${dir}` : ""}`);
+      }
+      if (Number.isFinite(e.hs)) parts.push(`Hs ${num(e.hs, lang, 1)} m`);
+      const head = e.event === "sea" ? (en ? "Heavy sea" : "Mer forte") : (en ? "Gale" : "Coup de vent");
+      text = `${head}${parts.length ? ` : ${parts.join(" · ")}` : ""}${e.model ? ` (${e.model})` : ""}`;
       break;
     }
     default:
