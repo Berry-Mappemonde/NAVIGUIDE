@@ -235,6 +235,32 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {replay.subtitle || ""}
           </div>
         ) : null}
+        {replay ? (
+          <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+            <span data-testid="film-source" className="text-[9px] text-white/60 leading-tight truncate">
+              {t("filmStorySource", { source: filmSourceLabel(replay.source, t) })}
+            </span>
+            <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
+              {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`film-style-${id}`}
+                  aria-pressed={(replay.style || "raw") === id}
+                  disabled={Boolean(replay.active)}
+                  onClick={() => replay.onStyle?.(id)}
+                  className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                    (replay.style || "raw") === id
+                      ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                      : "text-white/70 hover:text-white border border-transparent"
+                  }`}
+                >
+                  {t(key)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {storiesPending > 0 ? (
           <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
             {t("storiesPending", { n: storiesPending })}
@@ -421,6 +447,22 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     </div>
   );
 });
+
+const FILM_SOURCE_I18N = Object.freeze({
+  "nemotron-lightning": "storySourceLightning",
+  "nemotron-super": "storySourceSuper",
+  "nemotron-ultra": "storySourceUltra",
+  nemotron: "storySourceSuper",
+  openrouter: "storySourceOpenrouter",
+  claude: "storySourceClaude",
+  rules: "storySourceRules",
+  budget: "storySourceBudget",
+  cache: "storySourceCache",
+});
+
+function filmSourceLabel(source, t) {
+  return t(FILM_SOURCE_I18N[source] || "storySourceRules");
+}
 
 function formatEta(hours) {
   if (hours == null || Number.isNaN(hours)) return "—";

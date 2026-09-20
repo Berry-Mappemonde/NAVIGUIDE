@@ -224,3 +224,29 @@ async def pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PA
     log.info("récits pré-générés : %d écrits, %d déjà là, %d échecs, %d hors budget",
              _state["written"], _state["cached"], _state["failed"], _state["skippedBudget"])
     return status()
+
+
+# ── film script (lot F3, ns « film ») ───────────────────────────────────────
+
+FILM_NS = "film"
+FILM_TTL_S = 86400.0  # 1×/jour ; une nouvelle escale change la clé (hash journal)
+
+
+def film_cache_key(journal_hash: str, lang: str, seconds: int) -> str:
+    return f"{journal_hash}|{(lang or 'fr')[:2].lower()}|{int(seconds or 150)}"
+
+
+def get_film_cached(key: str) -> Optional[dict]:
+    if not key:
+        return None
+    import pearl_store  # noqa: PLC0415
+    hit = pearl_store.kv_get(FILM_NS, key, FILM_TTL_S)
+    val = (hit or {}).get("value")
+    return val if isinstance(val, dict) else None
+
+
+def put_film_cached(key: str, value: dict | None) -> bool:
+    if not key or not isinstance(value, dict):
+        return False
+    import pearl_store  # noqa: PLC0415
+    return pearl_store.kv_put(FILM_NS, key, value)
