@@ -5,6 +5,7 @@ export function toRad(deg) {
   return (deg * Math.PI) / 180;
 }
 
+/** Replie dans [−180, 180]. Équivalent à ((lon + 540) % 360) − 180. */
 export function wrapLon(lon) {
   if (!Number.isFinite(lon)) return lon;
   let x = lon;
@@ -45,6 +46,11 @@ export function unwrapLineCoords(coords, firstLon = null) {
     out.push([unwrapLon(previousLon, lon), lat]);
   }
   return out;
+}
+
+/** Lot S : déplie une polyligne relativement à *refLon* (aucun saut de 360°). */
+export function unwrapPath(coords, refLon = null) {
+  return unwrapLineCoords(coords, refLon);
 }
 
 export function haversineNm(lat1, lon1, lat2, lon2) {

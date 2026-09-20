@@ -38,7 +38,7 @@ from story_cascade import write_story
 from polar_api import router as polar_router
 from escale_api import router as escale_router
 from logbook_chat import router as logbook_router
-from route_engine import searoute_with_exact_end
+from route_engine import searoute_with_exact_end, unwrap_path, wrap_lon
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
 
@@ -249,12 +249,21 @@ def get_route(
     end_lon: float = Query(...),
     check_wind: bool = Query(False),
 ):
-    start = (start_lon, start_lat)
-    end = (end_lon, end_lat)
+    # Lot S : searoute attend [−180, 180] ; le client envoie parfois une lon dépliée
+    # (236,84° = SF vue depuis l'Australie). On replie, on calcule, on redéplie
+    # relativement au départ demandé pour que Leaflet peigne le Pacifique.
+    orig_start_lon = start_lon
+    start = (wrap_lon(start_lon), start_lat)
+    end = (wrap_lon(end_lon), end_lat)
     try:
         route = searoute_with_exact_end(start, end)
         if route is None:
             raise HTTPException(status_code=404, detail="Route non trouvée")
+        coords = (route.get("geometry") or {}).get("coordinates") or []
+        if coords:
+            geometry = dict(route.get("geometry") or {})
+            geometry["coordinates"] = unwrap_path(coords, orig_start_lon)
+            route = {**route, "geometry": geometry}
         return route
     except HTTPException:
         raise

@@ -1,7 +1,17 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { coordsFromRoutePayload } from "../utils/berryLegs.js";
+import { unwrapPath, wrapLon } from "../utils/geo.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
+
+function publishDrawn(points, segments) {
+  if (typeof window === "undefined") return;
+  window.__naviguideDrawn = {
+    points,
+    segments,
+    coords: (segments || []).flatMap((s) => s.coords || []),
+  };
+}
 
 /**
  * The drawn route itself (lot J: moved out of App.jsx, behaviour unchanged):
@@ -30,31 +40,44 @@ export function useRouteDrawing() {
     undonePointsRef.current = [];
     undoneSegmentsRef.current = [];
     fetchIdRef.current = 0;
+    publishDrawn([], []);
   }, []);
 
   const fetchSegment = useCallback(async (from, to) => {
     const myFetchId = ++fetchIdRef.current;
     setDrawingLoading(true);
     try {
-      const params = new URLSearchParams({ start_lat: from.lat, start_lon: from.lon, end_lat: to.lat, end_lon: to.lon });
+      // Lot S : searoute attend [−180, 180] ; on replie, puis on redéplie
+      // le résultat sur la copie-monde du point précédent.
+      const params = new URLSearchParams({
+        start_lat: from.lat,
+        start_lon: wrapLon(from.lon),
+        end_lat: to.lat,
+        end_lon: wrapLon(to.lon),
+      });
       const res = await fetch(`${API_URL}/route?${params}`);
       const data = await res.json();
       let coords = coordsFromRoutePayload(data);
       let failed = false;
       if (!coords.length) {
-        coords = [[from.lon, from.lat], [to.lon, to.lat]];
+        coords = unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
         failed = true;
+      } else {
+        coords = unwrapPath(coords, from.lon);
       }
       if (fetchIdRef.current === myFetchId) {
         const updated = [...segmentsRef.current, { coords, failed }];
         segmentsRef.current = updated;
         setDrawnSegments([...updated]);
+        publishDrawn(pointsRef.current, updated);
       }
     } catch {
       if (fetchIdRef.current === myFetchId) {
-        const updated = [...segmentsRef.current, { coords: [[from.lon, from.lat], [to.lon, to.lat]], failed: true }];
+        const coords = unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
+        const updated = [...segmentsRef.current, { coords, failed: true }];
         segmentsRef.current = updated;
         setDrawnSegments([...updated]);
+        publishDrawn(pointsRef.current, updated);
       }
     } finally {
       if (fetchIdRef.current === myFetchId) setDrawingLoading(false);
@@ -69,6 +92,7 @@ export function useRouteDrawing() {
     undoneSegmentsRef.current = [];
     setCanRedo(false);
     setDrawnPoints([...updated]);
+    publishDrawn(updated, segmentsRef.current);
     if (updated.length >= 2) fetchSegment(updated[updated.length - 2], newPoint);
   }, [fetchSegment]);
 
@@ -83,6 +107,7 @@ export function useRouteDrawing() {
     }
     setDrawnPoints([...pointsRef.current]);
     setDrawnSegments([...segmentsRef.current]);
+    publishDrawn(pointsRef.current, segmentsRef.current);
     setDrawingLoading(false);
     setCanRedo(true);
   }, []);
@@ -98,6 +123,7 @@ export function useRouteDrawing() {
     }
     setDrawnPoints([...pointsRef.current]);
     setDrawnSegments([...segmentsRef.current]);
+    publishDrawn(pointsRef.current, segmentsRef.current);
     setCanRedo(undonePointsRef.current.length > 0);
   }, []);
 
@@ -108,6 +134,7 @@ export function useRouteDrawing() {
     updated[index] = { ...updated[index], ...patch };
     pointsRef.current = updated;
     setDrawnPoints([...updated]);
+    publishDrawn(updated, segmentsRef.current);
   }, []);
 
   /** The drawn route as the GeoJSON the plan endpoint expects. */
@@ -122,6 +149,14 @@ export function useRouteDrawing() {
     }));
     return { type: "FeatureCollection", features: [...lineFeatures, ...pointFeatures] };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.__naviguideAddDrawnPoint = addPoint;
+    return () => {
+      if (window.__naviguideAddDrawnPoint === addPoint) delete window.__naviguideAddDrawnPoint;
+    };
+  }, [addPoint]);
 
   return {
     drawingMode, setDrawingMode,

@@ -15,6 +15,8 @@ import {
   splitAntimeridianCoords,
   unwrapLon,
   unwrapLineCoords,
+  unwrapPath,
+  wrapLon,
   worldCopyCoords,
   worldCopyLineCoords,
   worldCopyLngs,
@@ -116,6 +118,27 @@ describe("summarizeLegs", () => {
     assert.equal(out.escales, 17);
     assert.equal(out.points, 1248);
     assert.equal(out.waypoints, 36);
+  });
+});
+
+describe("wrapLon / unwrapPath (lot S)", () => {
+  it("replie 236,84° (SF dépliée) dans [−180, 180]", () => {
+    assert.equal(Number(wrapLon(236.84).toFixed(2)), -123.16);
+    assert.ok(wrapLon(236.84) >= -180 && wrapLon(236.84) <= 180);
+    assert.equal(wrapLon(-122.4), -122.4);
+  });
+
+  it("unwrapPath reste continu depuis Brisbane", () => {
+    const path = unwrapPath(
+      [[153.4, -27], [179, 0], [-179, 10], [-122.4, 37.7]],
+      153.4,
+    );
+    const lons = path.map(([lon]) => lon);
+    for (let i = 1; i < lons.length; i++) {
+      assert.ok(Math.abs(lons[i] - lons[i - 1]) <= 180);
+    }
+    assert.ok(lons[lons.length - 1] > 180);
+    assert.ok(path.every(([, lat]) => lat <= 50));
   });
 });
 
