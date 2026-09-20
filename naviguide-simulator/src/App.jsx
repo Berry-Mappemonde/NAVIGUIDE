@@ -487,7 +487,7 @@ export default function App() {
   const quayDays = clockSample?.holdHours > 0
     ? Math.round(clockSample.holdHours / 24)
     : 0;
-  const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
+  const atQuay = Boolean(clockSample?.atQuay);
 
   // Fiche d'escale (lot C; hooks/useEscaleSheetState.js since lot J).
   const escale = useEscaleSheetState({
@@ -498,11 +498,24 @@ export default function App() {
 
   // Chatbot journal de bord (lot D): the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
+  // Lot P2: measured speed (expeditionSpeed.knots — `.live` is a boolean flag).
+  const chatBoatPos = isSuivre
+    ? (clockSample && Number.isFinite(clockSample.lat)
+      ? { lat: clockSample.lat, lon: clockSample.lon, iso: clockSample.iso || null }
+      : null)
+    : (sample && Number.isFinite(sample.lat)
+      ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
+      : null);
+  const chatMeasuredKnots = atQuay ? 0 : expeditionSpeed.knots;
   const chatContextRef = useRef(null);
   chatContextRef.current = {
     view: isSuivre ? "suivre" : "simulation",
-    boat: !isSuivre && sample && Number.isFinite(sample.lat)
-      ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
+    boat: chatBoatPos
+      ? {
+        ...chatBoatPos,
+        speedKnots: Number.isFinite(chatMeasuredKnots) ? chatMeasuredKnots : null,
+        atQuay,
+      }
       : null,
     polar: polarData ? { boat: polarData.boat_name || polarData.name || null, loaM: skipper.orders?.boat?.loaM, draftM: skipper.orders?.boat?.draftM, planningKn: skipper.orders?.values?.planningKn } : null,
     orders: !skipper.orders

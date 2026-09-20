@@ -464,6 +464,9 @@ export function sampleClockAtHours(clock, tHours) {
       status: "waiting",
       atQuay: true,
       countdownHours: -x,
+      speedKnots: 0,
+      vehicle: "quay",
+      plannedKnots: verts[0].speedKnots ?? null,
     });
   }
   if (x <= verts[0].tHours) {
@@ -471,9 +474,15 @@ export function sampleClockAtHours(clock, tHours) {
   }
   const last = verts[verts.length - 1];
   if (x >= last.tHours) {
+    const atQuay = last.vehicle === "quay";
     return sampleFromVertex(clock, last, {
       status: "arrived",
-      atQuay: last.vehicle === "quay",
+      atQuay,
+      ...(atQuay ? {
+        speedKnots: 0,
+        vehicle: "quay",
+        plannedKnots: last.speedKnots ?? last.plannedKnots ?? null,
+      } : {}),
     });
   }
   for (let i = 0; i < verts.length - 1; i++) {
@@ -483,12 +492,18 @@ export function sampleClockAtHours(clock, tHours) {
     const span = (b.tHours - a.tHours) || 1;
     const t = (x - a.tHours) / span;
     if (Math.abs((b.filmNm ?? 0) - (a.filmNm ?? 0)) < 1e-6) {
+      const mark = (clock.marks || []).find((m) => (
+        Math.abs((m.filmNm ?? m.nm) - (a.filmNm ?? 0)) <= 0.45
+      ));
       return sampleFromVertex(clock, a, {
         tHours: x,
         iso: isoFromT0(clock.t0, x),
         atQuay: true,
         status: "live",
         vehicle: "quay",
+        speedKnots: 0,
+        plannedKnots: a.speedKnots ?? null,
+        holdHours: mark?.holdHours || 0,
       });
     }
     return {

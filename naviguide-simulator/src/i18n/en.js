@@ -393,6 +393,7 @@ export default {
   voyageClockDisclaimer: "Typical wind for the month, not tomorrow’s forecast.",
   voyageKindClimatology: "climatology · {month}",
   voyageAtQuay:     "{days} d in port",
+  filmAtQuay:       "in port",
   voyageTwa:        "TWA {deg}°",
   voyageLocalKnots: "{knots} kt",
   escalesQuay:      "{days} d in port",

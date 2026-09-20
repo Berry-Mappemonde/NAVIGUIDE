@@ -368,7 +368,14 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
         return {**verts[0], "atQuay": False, "status": "waiting" if x < 0 else "live"}
     last = verts[-1]
     if x >= last["tHours"]:
-        return {**last, "atQuay": last.get("vehicle") == "quay", "status": "arrived"}
+        at_quay = last.get("vehicle") == "quay"
+        out = {**last, "atQuay": at_quay, "status": "arrived"}
+        if at_quay:
+            out["speedKnots"] = 0
+            out["vehicle"] = "quay"
+            if out.get("plannedKnots") is None:
+                out["plannedKnots"] = last.get("speedKnots")
+        return out
     for i in range(len(verts) - 1):
         a, b = verts[i], verts[i + 1]
         if x > b["tHours"]:
@@ -376,7 +383,21 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
         span = (b["tHours"] - a["tHours"]) or 1
         t = (x - a["tHours"]) / span
         if abs((b.get("filmNm") or 0) - (a.get("filmNm") or 0)) < 1e-6:
-            return {**a, "tHours": x, "atQuay": True, "status": "live", "vehicle": "quay"}
+            hold = 0.0
+            for m in clock.get("marks") or []:
+                if abs((m.get("filmNm") or 0) - (a.get("filmNm") or 0)) < 1e-4:
+                    hold = float(m.get("holdHours") or 0)
+                    break
+            return {
+                **a,
+                "tHours": x,
+                "atQuay": True,
+                "status": "live",
+                "vehicle": "quay",
+                "speedKnots": 0,
+                "plannedKnots": a.get("speedKnots"),
+                "holdHours": hold,
+            }
         t0 = parse_iso(clock["t0"])
         return {
             **a,
@@ -406,5 +427,13 @@ def sample_clock_at_time(clock: dict, when: datetime | str) -> Optional[dict]:
     hours = (w - t0).total_seconds() / 3600.0
     if hours < 0:
         v = (clock.get("vertices") or [{}])[0]
-        return {**v, "atQuay": True, "status": "waiting", "countdownHours": -hours}
+        return {
+            **v,
+            "atQuay": True,
+            "status": "waiting",
+            "countdownHours": -hours,
+            "speedKnots": 0,
+            "vehicle": "quay",
+            "plannedKnots": v.get("speedKnots"),
+        }
     return sample_clock_at_hours(clock, hours)
