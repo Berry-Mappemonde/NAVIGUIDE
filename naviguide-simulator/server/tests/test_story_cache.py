@@ -20,7 +20,7 @@ def _llm(answer="Le bateau entre dans la ZEE espagnole ; ports d’entrée offic
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             calls.append(url)
             return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
         return httpx.Response(404)
@@ -35,6 +35,7 @@ def test_key_only_for_position_independent_events():
 
 
 def test_story_endpoint_reads_the_cache_then_writes_through_it(monkeypatch):
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
     transport, calls = _llm()
     real = story_cascade.write_story
@@ -60,12 +61,14 @@ def test_story_endpoint_reads_the_cache_then_writes_through_it(monkeypatch):
     gale = {"event": "wind-gale", "type": "wind-gale", "stableKey": "wind-gale:x", "lang": "fr", "payload": {}}
     client.post("/ici/story", json=gale, headers=PUBLIC)
     client.post("/ici/story", json=gale, headers=PUBLIC)
-    assert len(calls) == 3
+    # gale is not in the story store, but cascade_text caches the prompt.
+    assert len(calls) == 2
     assert pearl_store.kv_count("story") == 1
 
 
 def test_pregeneration_from_pearls_under_budget(monkeypatch):
     ici_engine.reset_caches()
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
     transport, calls = _llm()
     real = story_cascade.write_story

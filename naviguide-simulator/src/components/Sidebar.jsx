@@ -9,6 +9,23 @@ import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 
+const API_URL = import.meta.env?.VITE_API_URL ?? "";
+
+const STORY_SOURCE_I18N = Object.freeze({
+  "nemotron-lightning": "storySourceLightning",
+  "nemotron-super": "storySourceSuper",
+  "nemotron-ultra": "storySourceUltra",
+  openrouter: "storySourceOpenrouter",
+  claude: "storySourceClaude",
+  rules: "storySourceRules",
+  budget: "storySourceBudget",
+  cache: "storySourceCache",
+});
+
+function storySourceLabel(source, t) {
+  return t(STORY_SOURCE_I18N[source] || "storySourceRules");
+}
+
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
 
@@ -228,6 +245,7 @@ export const Sidebar = memo(function Sidebar({
   chat = null, onChatAsk,
 }) {
   const { t } = useLang();
+  const [storySource, setStorySource] = useState("rules");
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -235,6 +253,24 @@ export const Sidebar = memo(function Sidebar({
   const briefingTitle = !iciBriefing && typeof plan?.briefing_title === "string"
     ? plan.briefing_title.trim()
     : "";
+  const showIciBriefing = !isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice);
+
+  useEffect(() => {
+    if (!showIciBriefing) return undefined;
+    let cancelled = false;
+    const ctrl = new AbortController();
+    fetch(`${API_URL}/ici/warm/status`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const src = data?.llm?.lastSource;
+        if (!cancelled && typeof src === "string" && src.trim()) setStorySource(src.trim());
+      })
+      .catch(() => { /* sans API : on garde « règles » */ });
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, [showIciBriefing, briefing]);
 
   return (
     <>
@@ -354,7 +390,7 @@ export const Sidebar = memo(function Sidebar({
             />
           ) : null}
 
-          {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
+          {showIciBriefing && (
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
                 <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
@@ -375,6 +411,12 @@ export const Sidebar = memo(function Sidebar({
                   : (iciBriefing && iciBriefingSegments?.length
                     ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
                     : (briefing || t("iciBriefingFallback")))}
+              </p>
+              <p
+                data-testid="story-source"
+                className="text-[9px] text-slate-500 leading-snug mt-1"
+              >
+                {storySourceLabel(storySource, t)}
               </p>
             </div>
           )}

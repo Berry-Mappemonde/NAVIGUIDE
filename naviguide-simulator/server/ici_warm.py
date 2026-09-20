@@ -63,8 +63,9 @@ def stories_enabled() -> bool:
 
 
 def status() -> dict[str, Any]:
+    import llm_budget  # noqa: PLC0415
     import pearl_store  # noqa: PLC0415
-    return {**_state, "store": pearl_store.info()}
+    return {**_state, "store": pearl_store.info(), "llm": llm_budget.status()}
 
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

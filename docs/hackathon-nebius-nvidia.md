@@ -115,12 +115,15 @@ ici(lat, lon)     ← sac (~30 nm), PAS 4500 projets
 Événement ?  ──non──►  JSON seul (gratuit)
         │ oui
         ▼
-Tavily (cette fiche) → Nano raconte → Ultra juge
+cascade_text (lot L1) :
+  cache SQLite
+    → Token Factory (Nemotron Lightning / Super / Ultra selon le tier)
+    → OpenRouter → Claude → règles
+  NIM hors défaut (NAVIGUIDE_LLM_PROVIDERS). Tavily = lots L3–L4.
         │
-        ├─ stretch Data Lab : chaque briefing = un log (après Nano)
-        └─ stretch Sandbox : preuve géo (entrée de ZEE)
         ▼
-Un Briefing + pastilles sur la carte
+Un Briefing + pastilles + libellé de source
+  (« Nemotron 3 Super · Token Factory » ou « règles »)
 ```
 
 | Mot | Sens |

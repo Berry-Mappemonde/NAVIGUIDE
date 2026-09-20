@@ -66,13 +66,15 @@ def get_cached(body: dict | None) -> Optional[dict]:
     if not hit or not isinstance(hit.get("value"), dict) or not hit["value"].get("text"):
         return None
     v = hit["value"]
+    src = v.get("source") or "cache"
     return {
         "status": "ready",
         "text": v["text"],
-        "engine": f"cache:{v.get('engine') or 'llm'}",
-        "cascade": "nim-or-claude",
+        "engine": f"cache:{v.get('engine') or src or 'llm'}",
+        "source": "cache",
+        "cascade": "tokenfactory-openrouter-claude",
         "tavily": None,
-        "nvidia": v.get("engine"),
+        "nvidia": v.get("engine") or src,
         "cached": True,
         "cachedAt": hit["ts"],
     }
@@ -83,7 +85,12 @@ def put_cached(body: dict | None, result: dict | None) -> bool:
     if not key or not isinstance(result, dict) or result.get("status") != "ready" or not result.get("text"):
         return False
     import pearl_store  # noqa: PLC0415
-    return pearl_store.kv_put("story", key, {"text": result["text"], "engine": result.get("engine"), "type": body.get("type")})
+    return pearl_store.kv_put("story", key, {
+        "text": result["text"],
+        "engine": result.get("engine"),
+        "source": result.get("source"),
+        "type": body.get("type"),
+    })
 
 
 # ── budget ──────────────────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ def _transport(calls=None, osm_fail=False):
             if osm_fail:
                 return httpx.Response(503, text="busy")
             return httpx.Response(200, json={"elements": _osm_elements()})
-        if "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             return httpx.Response(200, json={"choices": [{"message": {"content": "La Rochelle offre le Port des Minimes et une capitainerie. Carburant à la Station du port, courses au Carrefour Market. Port d’entrée officiel : La Rochelle - La Pallice."}}]})
         return _handler(request)
     return httpx.MockTransport(handler)
@@ -56,7 +56,9 @@ def test_classify_osm_groups_names_and_drops_unnamed_shops():
 
 def test_build_escale_merges_bag_and_osm_and_writes_a_paragraph(monkeypatch):
     ici_engine.reset_caches()
+    monkeypatch.setenv("NEBIUS_API_KEY", "test")
     monkeypatch.setenv("NVIDIA_API_KEY", "test")
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
     calls = []
 
@@ -77,6 +79,7 @@ def test_build_escale_merges_bag_and_osm_and_writes_a_paragraph(monkeypatch):
 
 def test_without_llm_the_lists_stand_alone(monkeypatch):
     ici_engine.reset_caches()
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "")
     monkeypatch.setattr(story_cascade, "openrouter_key", lambda: "")
     monkeypatch.setattr(story_cascade, "anthropic_key", lambda: "")
