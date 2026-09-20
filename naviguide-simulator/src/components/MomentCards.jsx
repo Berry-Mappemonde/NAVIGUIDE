@@ -56,7 +56,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
     : "";
   const border = alert ? "rgba(251, 191, 36, 0.7)" : "rgba(34, 211, 238, 0.55)";
   const frame = inline
-    ? "rounded-lg border bg-slate-900/70 text-white px-2 py-1.5 min-w-0"
+    ? "sim-box-now rounded-lg border bg-slate-900/70 text-white px-2 py-1.5 min-w-0"
     : "naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2050] w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border bg-slate-950/94 text-white shadow-2xl px-3 py-2.5 backdrop-blur-sm";
   const style = inline
     ? { borderColor: border }

@@ -326,6 +326,12 @@ export const Sidebar = memo(function Sidebar({
             canContinueDraw={canContinueDraw}
             canFinishDraw={canFinishDraw}
           />
+
+          {!isDrawing && chat ? (
+            <div className="mt-1.5">
+              <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
+            </div>
+          ) : null}
         </div>
 
         {/* ── Le produit « ici » : où on est, ce qui se passe, ce qu’il y a autour ── */}
@@ -406,8 +412,8 @@ export const Sidebar = memo(function Sidebar({
             />
           ) : null}
 
-          {showIciBriefing && (
-            <div data-testid="briefing" className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
+          {!isDrawing ? (
+            <div data-testid="briefing" className="sim-box-ici bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
                 <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {briefingTitle}
@@ -422,7 +428,7 @@ export const Sidebar = memo(function Sidebar({
                 data-testid="ici-briefing"
                 className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
               >
-                {briefingLoading
+                {briefingLoading || (!briefing && !iciBriefing)
                   ? t("iciBriefingLoading")
                   : (iciBriefing && iciBriefingSegments?.length
                     ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
@@ -435,16 +441,16 @@ export const Sidebar = memo(function Sidebar({
                 {storySourceLabel(storySource, t)}
               </p>
             </div>
-          )}
+          ) : null}
 
-          {isSuivre && !isDrawing && Array.isArray(story) && story.length ? (
-            <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
+          {isSuivre && !isDrawing ? (
+            <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
               <div className="text-[10px] font-semibold text-sky-200 leading-snug">
                 {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
               </div>
               <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
-              {story.map((paragraph, i) => {
-                const current = storyReplay && i === story.length - 1;
+              {(Array.isArray(story) ? story : []).map((paragraph, i) => {
+                const current = storyReplay && i === (story?.length || 0) - 1;
                 return (
                   <p
                     key={i}
@@ -460,10 +466,6 @@ export const Sidebar = memo(function Sidebar({
 
           {isSuivre && !isDrawing ? (
             <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
-          ) : null}
-
-          {!isDrawing && chat ? (
-            <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
           ) : null}
 
           {officialFallback && (
