@@ -22,9 +22,11 @@ PR par lot, recette visuelle avant le suivant** (consigne du 19 sept.).
   2. **Un chiffre ne passe jamais par un LLM.** Le LLM rédige ce qui est
      collecté ; `kind` honnête (`observation ≠ forecast ≠ climatology`),
      `null + reason` plutôt qu'une valeur inventée.
-  3. **Ni Tavily, ni Nemotron, ni LangSmith, ni Nebius** (commentaire 0).
-     Toute rédaction passe par la **cascade LLM habituelle**
-     (`story_cascade.py` : NIM → OpenRouter → Claude) avec `tidy_story`.
+  3. **Ni Tavily, ni Nemotron, ni LangSmith, ni Nebius avant le lot L**
+     (commentaires 0 et 7 : « pas pour le moment »). Toute rédaction passe par
+     la **cascade LLM habituelle** (`story_cascade.py` : NIM → OpenRouter →
+     Claude) avec `tidy_story`. Le lot L — l'objet du hackathon — est
+     précisément **Nemotron via la plateforme Nebius + Tavily**.
   4. **Recette = tests + captures fixes**, jamais de vidéo
      (`.cursor/rules/pas-de-verification-video.mdc`).
   5. Ne jamais lancer `infra/vps/sync-from-atlas.sh`.
@@ -49,10 +51,14 @@ PR par lot, recette visuelle avant le suivant** (consigne du 19 sept.).
 
 ## 1. État au 19 septembre 2026
 
-> **Soir du 19 sept. — lots livrés en PR empilées (à merger dans l'ordre) :**
-> P #190 · A #191 · B #192 · C #193 · D #194 · E #195 · F #196 · G #197 ·
-> H #198 · I #199 · J #200 · K #201. Reste : G3 (conseil de route en Suivre),
-> L (Tavily, objet du hackathon), second découpage d'`App.jsx` si besoin.
+> **20 sept. — tout est sur `main`** : #189, P #202 (l'ancienne #190 s'est
+> fermée quand sa branche de base a été supprimée), A #191 · B #192 · C #193 ·
+> D #194 · E #195 · F #196 · G #197 · H #198 · I #199 · J #200 · K #201.
+> Reste : G3 (conseil de route en Suivre), L (**Nemotron via Nebius + Tavily**,
+> objet du hackathon), second découpage d'`App.jsx` si besoin. La **revue
+> visuelle complète** du porteur est découpée dans
+> [PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md](PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md)
+> (lots P2, M, N, O, S, T, Q, R, U).
 > Correctif transversal (K) : les perles portent l'échelle de milles de
 > l'horloge (le tronçon terrestre Saint-Maur → La Rochelle compte) — les
 > lignes du journal issues des perles étaient datées ~16 h trop tôt.
@@ -221,11 +227,15 @@ profil de prod le justifie.
 `planReview.js` : par jambe, fenêtre cyclonique (IBTrACS du sac), jours à
 quai, formalités (PoE Gold), saison (atlas). Tableau dans Expédition.
 
-### Lot L — Tavily hebdomadaire et juge de vérité — *plus tard, objet du hackathon (commentaire 11)*
+### Lot L — Nemotron via Nebius + Tavily — *plus tard, l'objet du hackathon (commentaire 11)*
 
 Décision maintenue : rien pour le moment. À concevoir comme **l'objet qui
-fait gagner le hackathon** : veille hebdomadaire par escale, juge de vérité
-des récits, sources datées. Spécification à écrire après le lot K.
+fait gagner le hackathon**, avec ses deux briques : **Nemotron** (raisonnement
+long) servi par la **plateforme Nebius** (60 $ de crédit) pour l'expertise de
+planification et la rédaction unique de la revue de plan / du récit ; **Tavily**
+pour la veille datée par escale et le juge de vérité des récits (sources
+datées, jamais un chiffre sans source). Spécification à écrire après les
+lots du plan complémentaire.
 
 ## 3. Comment écrire le brief d'un worker Cloud
 
