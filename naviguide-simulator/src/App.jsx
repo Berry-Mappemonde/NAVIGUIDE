@@ -158,6 +158,7 @@ export default function App() {
 
   const [view, setView] = useState(VIEW_SIMULATION);
   const [cinemaMode, setCinemaMode] = useState(false);
+  const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [stopAuto, setStopAuto] = useState(false);
   const [cameraFollow, setCameraFollow] = useState(false);
@@ -924,6 +925,10 @@ export default function App() {
   }, [isSuivre, voyage.setStartAt]);
 
   useEffect(() => {
+    if (!isSuivre) setFilmFullscreen(false);
+  }, [isSuivre]);
+
+  useEffect(() => {
     if (isSuivre) sceneApiRef.current?.playback.setProfile("real");
   }, [isSuivre, sceneApi]);
 
@@ -955,6 +960,9 @@ export default function App() {
       } else if (isSuivre && e.code === "KeyL") {
         e.preventDefault();
         goLive();
+      } else if (e.code === "Escape" && filmFullscreen) {
+        e.preventDefault();
+        setFilmFullscreen(false);
       } else if (e.code === "Escape" && cinemaMode && !drawingMode) {
         e.preventDefault();
         leaveCinema();
@@ -970,7 +978,20 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cinemaMode, drawingMode, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, sceneApi, toggleCinema]);
+  }, [cinemaMode, drawingMode, filmFullscreen, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, sceneApi, toggleCinema]);
+
+  // Capture : la bulle événement (lot F4) coupe Échap en phase bulle.
+  useEffect(() => {
+    if (!filmFullscreen) return undefined;
+    const onEsc = (e) => {
+      if (e.code !== "Escape" && e.key !== "Escape" && e.key !== "Esc") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setFilmFullscreen(false);
+    };
+    window.addEventListener("keydown", onEsc, true);
+    return () => window.removeEventListener("keydown", onEsc, true);
+  }, [filmFullscreen]);
 
   const applyBerryBriefing = useCallback(() => {
     setExpeditionPlan(getCachedPlan(lang) || normalizeExpeditionPlan({ executive_briefing: t("berryLocalBriefing") }));
@@ -1347,14 +1368,18 @@ export default function App() {
   };
 
   const rootInsetVars = mapInsetVars({
-    sidebarOpen,
-    toolsOpen,
+    sidebarOpen: sidebarOpen && !filmFullscreen,
+    toolsOpen: toolsOpen && !filmFullscreen,
     filmBarVisible: !(cinemaMode && hideFilmBar),
     filmBarControls: isSimulation,
   });
 
   return (
-    <div style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }} className={isLightMode ? "light-mode" : ""}>
+    <div
+      data-testid="sim-root"
+      style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }}
+      className={`${isLightMode ? "light-mode" : ""}${filmFullscreen ? " film-fullscreen" : ""}`.trim()}
+    >
       <MapScene
         scene={mapScene}
         gateRef={gateRef}
@@ -1601,8 +1626,10 @@ export default function App() {
         stopAuto={stopAuto}
         onStopAuto={setStopAuto}
         showStopAuto={isSimulation}
-        sidebarOpen={sidebarOpen}
-        toolsOpen={toolsOpen}
+        sidebarOpen={sidebarOpen && !filmFullscreen}
+        toolsOpen={toolsOpen && !filmFullscreen}
+        filmFullscreen={filmFullscreen}
+        onFilmFullscreen={setFilmFullscreen}
         eventMarks={filmEventMarks(iciPack.events, { mode: isSuivre ? "suivre" : "simulation" })}
         onEventClick={(ev) => {
           setSkipperClickId(ev.id || ev.stableKey);

@@ -36,6 +36,12 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   z-index: 2010 !important;
 }
 
+/* Lot F5 — plein écran film : masque les sidebars sans les démonter. */
+.film-fullscreen .naviguide-sidebar-panel,
+.film-fullscreen .naviguide-sidebar-toggle {
+  display: none !important;
+}
+
 .catamaran-divicon, .flag-divicon, .plane-divicon, .grib-barb { background: none !important; border: none !important; }
 
 /* Briefing focus: the place named in the sidebar, pinned on the map. */

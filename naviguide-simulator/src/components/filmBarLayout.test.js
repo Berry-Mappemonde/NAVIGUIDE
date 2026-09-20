@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bar = readFileSync(join(here, "SimulationFilmBar.jsx"), "utf8");
+const app = readFileSync(join(here, "../App.jsx"), "utf8");
 
 function firstIndex(src, pattern) {
   const m = src.match(pattern);
@@ -31,6 +32,7 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /data-testid="film-source"/);
     assert.match(bar, /data-testid="film-style"/);
+    assert.match(bar, /data-testid="film-fullscreen"/);
   });
 
   it("range les commandes : Masquer · Cinéma · Écouter · Suivre/Simulation · Revoir, lecture à droite", () => {
@@ -57,5 +59,18 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /data-testid="stop-auto"/);
     assert.match(bar, /PROFILES\.map/);
     assert.match(bar, /onCinema/);
+    assert.match(bar, /onFilmFullscreen/);
+    assert.match(bar, /t\("filmFullscreen"\)/);
+  });
+});
+
+describe("plein écran film (lot F5) — sidebars masquées, pas démontées", () => {
+  it("App pose .film-fullscreen et garde <Sidebar> / <ToolsSidebar> montés", () => {
+    assert.match(app, /film-fullscreen/);
+    assert.match(app, /setFilmFullscreen/);
+    assert.match(app, /<Sidebar[\s\S]*open=\{sidebarOpen\}/);
+    assert.match(app, /<ToolsSidebar[\s\S]*open=\{toolsOpen\}/);
+    assert.doesNotMatch(app, /\{[^}]*filmFullscreen[^}]*&&\s*<Sidebar/);
+    assert.doesNotMatch(app, /\{[^}]*!filmFullscreen[^}]*&&\s*<Sidebar/);
   });
 });

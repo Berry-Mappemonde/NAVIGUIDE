@@ -63,6 +63,15 @@ def test_raw_length_bounded_and_chapter1_names():
     assert "La Rochelle" in plan["chapters"][0]["text"]
 
 
+def test_raw_english_chapter1():
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
+    text = plan["chapters"][0]["text"]
+    assert "Saint-Maur" in text
+    assert "La Rochelle" in text
+    assert ("left" in text.lower() or "departed" in text.lower())
+    assert "quitté" not in text
+
+
 def test_selection_deterministic():
     packed = film_candidates(JOURNAL, CLOCK["marks"], CLOCK, LIVE, NOW_MS)
     a = [e["id"] for e in select_film_events(packed["candidates"], packed["t0"], packed["tEnd"])]
@@ -232,3 +241,23 @@ def test_http_film_route_raw(monkeypatch):
     assert data["chapters"]
     assert "targetSeconds" in data
     assert data["chars"] <= FILM_MAX_CHARS
+
+
+def test_http_film_route_en(monkeypatch):
+    from fastapi.testclient import TestClient
+    import voyage_api
+    from main import app
+
+    monkeypatch.setattr(voyage_api, "_now", lambda: datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc))
+    client = TestClient(app)
+    body = _official()
+    body["t0"] = OFFICIAL_T0
+    client.put("/voyage/official", json=body, headers=PUBLIC)
+    r = client.get("/voyage/official/film?lang=en&seconds=150", headers=PUBLIC)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["chapters"]
+    text = data["chapters"][0]["text"]
+    if "Saint-Maur" in text:
+        assert "La Rochelle" in text
+        assert ("left" in text.lower() or "departed" in text.lower())

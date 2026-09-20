@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ChevronRight, Clapperboard, Pause, Play } from "lucide-react";
+import { ChevronRight, Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
@@ -59,6 +59,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   showStopAuto = false,
   sidebarOpen = true,
   toolsOpen = true,
+  filmFullscreen = false,
+  onFilmFullscreen,
   gribLine = "",
   clock = null,
   clockCurrent = null,
@@ -235,32 +237,6 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {replay.subtitle || ""}
           </div>
         ) : null}
-        {replay ? (
-          <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-            <span data-testid="film-source" className="text-[9px] text-white/60 leading-tight truncate">
-              {t("filmStorySource", { source: filmSourceLabel(replay.source, t) })}
-            </span>
-            <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
-              {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
-                <button
-                  key={id}
-                  type="button"
-                  data-testid={`film-style-${id}`}
-                  aria-pressed={(replay.style || "raw") === id}
-                  disabled={Boolean(replay.active)}
-                  onClick={() => replay.onStyle?.(id)}
-                  className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
-                    (replay.style || "raw") === id
-                      ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
-                      : "text-white/70 hover:text-white border border-transparent"
-                  }`}
-                >
-                  {t(key)}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
         {storiesPending > 0 ? (
           <div data-testid="stories-pending" className="text-[10px] text-white/55 leading-tight mt-0.5">
             {t("storiesPending", { n: storiesPending })}
@@ -291,6 +267,23 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 {t("cinema")}
               </button>
             ) : null}
+            {onFilmFullscreen ? (
+              <button
+                type="button"
+                data-testid="film-fullscreen"
+                onClick={() => onFilmFullscreen(!filmFullscreen)}
+                aria-pressed={filmFullscreen}
+                aria-label={filmFullscreen ? t("filmFullscreenExit") : t("filmFullscreen")}
+                className={`flex items-center justify-center w-6 h-6 rounded-md border ${
+                  filmFullscreen
+                    ? "bg-sky-700/70 border-sky-300/40"
+                    : "bg-white/5 border-white/10 hover:bg-white/10"
+                }`}
+                title={t("filmFullscreenTitle")}
+              >
+                {filmFullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+              </button>
+            ) : null}
             <ListenButton
               text={speechText}
               t={t}
@@ -303,6 +296,32 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               deferSpeak={Boolean(replay?.active)}
               className="!rounded-md whitespace-nowrap"
             />
+            {replay ? (
+              <>
+                <span data-testid="film-source" className="text-[9px] text-white/60 leading-tight truncate max-w-[7rem]">
+                  {t("filmStorySource", { source: filmSourceLabel(replay.source, t) })}
+                </span>
+                <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
+                  {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      data-testid={`film-style-${id}`}
+                      aria-pressed={(replay.style || "raw") === id}
+                      disabled={Boolean(replay.active)}
+                      onClick={() => replay.onStyle?.(id)}
+                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                        (replay.style || "raw") === id
+                          ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                          : "text-white/70 hover:text-white border border-transparent"
+                      }`}
+                    >
+                      {t(key)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
             {onView ? (
               <div
                 role="radiogroup"
