@@ -23,7 +23,7 @@ if str(_DIR) not in sys.path:
 
 import httpx
 
-from admin_guard import cors_origins, rate_limited
+from admin_guard import cors_origins, rate_limited, require_admin
 from mem_limits import (
     ZEE_CACHE_MAX_BYTES,
     ZEE_MAX_FEATURES_CAP,
@@ -110,8 +110,9 @@ async def _startup_ici_warm():
 def ici_warm_status():
     """Où en est la pré-génération des perles de la route officielle (+ la couche ZEE locale)."""
     import ici_warm
+    import story_cache
     import zee_local
-    return {**ici_warm.status(), "zeeLocal": zee_local.status()}
+    return {**ici_warm.status(), "zeeLocal": zee_local.status(), "stories": story_cache.status()}
 
 
 @app.get("/ici/pearls")
@@ -197,12 +198,32 @@ _weather_limited = rate_limited("weather", 90, 60.0)
 
 @app.post("/ici/story", dependencies=[Depends(_story_limited), Depends(_story_hourly)])
 async def post_ici_story(body: dict):
-    """Background story. NIM → OR ± :online → Claude. Play does not await this."""
+    """Background story. Cache first (lot F: pre-generated on the official
+    route), then NIM → OR ± :online → Claude. Play does not await this."""
     if not isinstance(body, dict) or not (body.get("event") or body.get("eventId")):
         raise HTTPException(400, "événement manquant")
     if len(str(body)) > 60_000:
         raise HTTPException(413, "événement trop volumineux")
-    return await write_story(body)
+    from story_cache import story_through_cache
+    return await story_through_cache(body, writer=write_story)
+
+
+@app.post("/ici/story/pregenerate", dependencies=[Depends(require_admin)])
+async def post_story_pregenerate():
+    """Admin : pré-générer maintenant les récits de la route officielle (lot F),
+    sans attendre la fin du chauffage. Tourne en fond ; l'état est dans
+    GET /ici/warm/status → stories."""
+    import story_cache
+    from voyage_store import load_voyage
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    points = (voy or {}).get("points") or []
+    if not points:
+        raise HTTPException(404, "voyage officiel absent")
+    if story_cache.status().get("status") == "running":
+        return {"started": False, **story_cache.status()}
+    asyncio.get_running_loop().create_task(story_cache.pregenerate_official(points))
+    return {"started": True, **story_cache.status()}
 
 
 @app.get("/route")
