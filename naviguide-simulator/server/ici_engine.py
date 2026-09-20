@@ -89,39 +89,72 @@ _FC_TTL = 3600.0
 _wpi_cache: dict = {"data": None, "ts": 0.0}
 _WPI_TTL = 86_400.0
 
-# Thin bags (the along pearls, 12 nm apart) are the same for every visitor
-# and every replay of the film: one lookup per 0.02° cell, kept 7 days (ZEE,
-# ports of entry, MPA and harbours move slowly; ici_warm persists them on
-# disk). Without it a fast playback asked MarineRegions + Overpass thousands
-# of times.
+# Pearls (the along bags, 12 nm apart) are the same for every visitor and
+# every replay of the film: one lookup per 0.02° cell. Two kinds (lot P):
+# `thin` (ZEE, ports of entry, MPA, harbours — 7 days) and `rich` (every
+# layer without a timestamp: + projects, science, anchorages, aton, EMODnet —
+# 30 days). Memory is an L1 in front of the SQLite store (pearl_store); a
+# rich pearl serves a thin request. Without it a fast playback asked
+# MarineRegions + Overpass thousands of times.
 _thin_cache: dict[str, dict] = {}
 _THIN_TTL = 7 * 86400.0
+_RICH_TTL = 30 * 86400.0
 _THIN_MAX = 20_000
+PEARL_KINDS = ("thin", "rich")
 
 
 def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None = None) -> str:
-    # A thin bag carries no climatology: the month never changes it, so it is
+    # A pearl carries no climatology: the month never changes it, so it is
     # not part of the key (the client sends month=9, the warmer none).
     del month
     return f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}:{int(radius_nm)}"
 
 
-def thin_cache_get(key: str) -> dict | None:
+def _pearl_ttl(kind: str) -> float:
+    return _RICH_TTL if kind == "rich" else _THIN_TTL
+
+
+def _fresh(hit: dict) -> bool:
+    return time.time() - float(hit.get("ts") or 0) <= _pearl_ttl(hit.get("kind") or "thin")
+
+
+def thin_cache_get(key: str, rich: bool = False) -> dict | None:
+    """The cached pearl for `key`; with `rich=True`, only a rich one will do."""
     hit = _thin_cache.get(key)
-    if not hit:
-        return None
-    if time.time() - hit["ts"] > _THIN_TTL:
+    if hit is not None and not _fresh(hit):
         _thin_cache.pop(key, None)
+        hit = None
+    if hit is None:
+        import pearl_store  # noqa: PLC0415
+        row = pearl_store.get_pearl(key)
+        if row and _fresh(row):
+            hit = {"ts": row["ts"], "bag": row["bag"], "kind": row["kind"]}
+            _remember(key, hit)
+    if hit is None:
+        return None
+    if rich and hit.get("kind") != "rich":
         return None
     return hit["bag"]
 
 
-def thin_cache_put(key: str, bag: dict) -> None:
+def _remember(key: str, hit: dict) -> None:
     if len(_thin_cache) >= _THIN_MAX:
         # Drop the oldest tenth: cheap, rare, keeps memory bounded.
         for old in sorted(_thin_cache, key=lambda k: _thin_cache[k]["ts"])[: _THIN_MAX // 10]:
             _thin_cache.pop(old, None)
-    _thin_cache[key] = {"ts": time.time(), "bag": bag}
+    _thin_cache[key] = hit
+
+
+def thin_cache_put(key: str, bag: dict, kind: str = "thin", lat: float | None = None, lon: float | None = None) -> None:
+    """Memory + SQLite (write-through). A rich pearl is never downgraded."""
+    kind = kind if kind in PEARL_KINDS else "thin"
+    cur = _thin_cache.get(key)
+    if cur is not None and cur.get("kind") == "rich" and kind != "rich" and _fresh(cur):
+        return
+    hit = {"ts": time.time(), "bag": bag, "kind": kind}
+    _remember(key, hit)
+    import pearl_store  # noqa: PLC0415
+    pearl_store.put_pearl(key, bag, kind, lat, lon, hit["ts"])
 
 
 def reset_caches() -> None:
@@ -674,15 +707,18 @@ async def fill_dossier(
     dest_lat: float | None = None,
     dest_lon: float | None = None,
     thin: bool = False,
+    rich: bool = False,
 ) -> dict:
+    """`thin=True` → a pearl (cached, no weather / satellite / sheet);
+    `rich=True` (with thin) → every layer without a timestamp (lot P)."""
     if thin:
         key = thin_cache_key(lat, lon, radius_nm, month)
-        cached = thin_cache_get(key)
+        cached = thin_cache_get(key, rich=rich)
         if cached is not None:
             return {**cached, "at": {"lat": lat, "lon": lon}, "cached": True}
-        bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True)
+        bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True, rich=rich)
         if (bag.get("sources") or {}).get("bi") != "unavailable":
-            thin_cache_put(key, bag)
+            thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
         return bag
     return await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=False)
 
@@ -696,9 +732,15 @@ async def _fill_dossier(
     dest_lat: float | None,
     dest_lon: float | None,
     thin: bool,
+    rich: bool = False,
 ) -> dict:
     d = empty_dossier(lat, lon, radius_nm)
     bi = bi_base()
+    # A rich pearl collects the timeless layers a full bag has, minus what
+    # only makes sense now (weather, satellite scene, Gold sheet, climatology).
+    lean = thin and not rich
+    if thin:
+        d["pearl"] = "rich" if rich else "thin"
 
     own = client is None
     http = client or httpx.AsyncClient()
@@ -748,12 +790,12 @@ async def _fill_dossier(
         mar_t = asyncio.create_task(marinas_task())
         cap_t = asyncio.create_task(capit_task())
         wpi_t = asyncio.create_task(wpi_task())
-        proj_t = None if thin else asyncio.create_task(projects_task())
-        sci_t = None if thin else asyncio.create_task(science_task())
-        anc_t = None if thin else asyncio.create_task(anchorages_task())
+        proj_t = None if lean else asyncio.create_task(projects_task())
+        sci_t = None if lean else asyncio.create_task(science_task())
+        anc_t = None if lean else asyncio.create_task(anchorages_task())
         sat_t = None if thin else asyncio.create_task(fetch_satellite_scene(http, lat, lon))
-        emo_t = None if thin else asyncio.create_task(fetch_emodnet_point(http, bi, lat, lon))
-        aton_t = None if thin else asyncio.create_task(
+        emo_t = None if lean else asyncio.create_task(fetch_emodnet_point(http, bi, lat, lon))
+        aton_t = None if lean else asyncio.create_task(
             fetch_aton(http, bi, lat, lon, radius_nm, haversine_nm, radius_bbox)
         )
 
@@ -764,7 +806,7 @@ async def _fill_dossier(
         mrgid = zee.get("mrgid") if zee else None
         poe_t = asyncio.create_task(poe_task(mrgid)) if mrgid else None
 
-        if thin:
+        if lean:
             nearby = await asyncio.gather(
                 amp_t, mar_t, cap_t, wpi_t, return_exceptions=True,
             )
@@ -812,38 +854,64 @@ async def _fill_dossier(
 
         need_harbours = (
             not d["nearby"]["capitaineries"]
-            or (not thin and not d["nearby"]["anchorages"])
+            or (not lean and not d["nearby"]["anchorages"])
         )
         harbour_fb = (
             fetch_overpass_harbours(
                 http, lat, lon, radius_nm, haversine_nm,
                 max_capitaineries=MAX_NEARBY,
-                max_anchorages=0 if thin else MAX_ANCHORAGES,
+                max_anchorages=0 if lean else MAX_ANCHORAGES,
             )
             if need_harbours else None
         )
 
         if thin:
+            pearl_tasks = [] if lean else [emo_t, aton_t]
             if harbour_fb is not None:
+                pearl_tasks.append(harbour_fb)
+            results = await asyncio.gather(*pearl_tasks, return_exceptions=True) if pearl_tasks else []
+            if not lean:
+                emo, aton = results[0], results[1]
+                if harbour_fb is not None:
+                    try:
+                        _apply_overpass_harbours(d, results[2])
+                    except Exception:
+                        pass
+                if isinstance(emo, dict):
+                    d["emodnet"] = emo
+                    d["sources"]["emodnet"] = "emodnet"
+                else:
+                    d["emodnet"] = empty_emodnet()
+                    d["emodnet"]["reason"] = f"emodnet_unavailable:{type(emo).__name__}"
+                    d["sources"]["emodnet"] = None
+                if isinstance(aton, dict):
+                    d["aton"] = aton
+                    d["sources"]["aton"] = aton.get("source")
+                else:
+                    d["aton"] = empty_aton()
+                    d["aton"]["reason"] = f"aton_unavailable:{type(aton).__name__}"
+                    d["sources"]["aton"] = None
+            elif harbour_fb is not None:
                 try:
-                    _apply_overpass_harbours(d, await harbour_fb)
+                    _apply_overpass_harbours(d, results[0])
                 except Exception:
                     pass
+            if lean:
+                d["emodnet"] = empty_emodnet()
+                d["emodnet"]["reason"] = "not_in_along_pearl"
+                d["aton"] = empty_aton()
+                d["aton"]["reason"] = "not_in_along_pearl"
+                d["sources"]["emodnet"] = None
+                d["sources"]["aton"] = None
             d["weather"] = empty_weather()
             d["weather"]["reason"] = "not_in_along_pearl"
             d["satellites"] = empty_satellites()
             d["satellites"]["reason"] = "not_in_along_pearl"
-            d["emodnet"] = empty_emodnet()
-            d["emodnet"]["reason"] = "not_in_along_pearl"
-            d["aton"] = empty_aton()
-            d["aton"]["reason"] = "not_in_along_pearl"
             d["review"] = empty_review()
             d["review"]["reason"] = "not_in_along_pearl"
             d["climatology"] = None
             d["sources"]["weather"] = None
             d["sources"]["satellites"] = None
-            d["sources"]["emodnet"] = None
-            d["sources"]["aton"] = None
             d["sources"]["review"] = None
             d["sources"]["climatology"] = None
             d["sources"]["gebco"] = "not_in_along_pearl"

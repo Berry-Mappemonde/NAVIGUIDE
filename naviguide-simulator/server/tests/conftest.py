@@ -19,3 +19,20 @@ os.environ.setdefault("NAVIGUIDE_ICI_WARM", "0")
 # écrivent (TestClient = appel local direct → mode dev). Les tests du garde
 # posent le secret eux-mêmes via monkeypatch.
 os.environ.pop("NAVIGUIDE_ADMIN_SECRET", None)
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolated_voyage_dir(tmp_path_factory, monkeypatch):
+    """Every test writes its voyages, journal and SQLite store in its own
+    temporary directory — never in the developer's `voyage_data/` (and not
+    in the test's own `tmp_path`, which some tests expect empty)."""
+    d = tmp_path_factory.mktemp("voyage_data")
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(d))
+    import voyage_store
+    monkeypatch.setattr(voyage_store, "_DIR", d)
+    import pearl_store
+    pearl_store.reset()
+    yield
+    pearl_store.reset()

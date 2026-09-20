@@ -1,14 +1,16 @@
-"""Pré-génération des perles along de la route officielle (plan §1.3, forme minimale).
+"""Pré-génération des perles along de la route officielle (plan §1.3 ; lot P).
 
 Le film joue à 15–175 nm/s ; un sac `/ici` met 1–8 s. Les événements du film
-(ZEE, ports d'entrée, AMP, ports) viennent donc des perles thin — les mêmes
-pour tous les visiteurs. Ce module :
+viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
 
-- garde le cache des sacs thin **sur disque** (`voyage_data/ici_thin_cache.json`),
-  rechargé au démarrage, écrit au plus toutes les 30 s ;
-- au démarrage, **chauffe** les perles de la route officielle, une tous les
-  ROUTE_SAMPLE_NM (12 nm), à un rythme doux (1 perle / WARM_PAUSE_S) —
-  MarineRegions n'est appelé qu'une fois par cellule, jamais rafalé.
+- garde les perles dans la base embarquée (`pearl_store`, SQLite dans
+  `voyage_data/`), rechargées à la demande ; l'ancien `ici_thin_cache.json`
+  est migré une fois au démarrage ;
+- au démarrage, **chauffe** les perles **riches** de la route officielle
+  (toutes les couches sans horodatage : ZEE, ports d'entrée, AMP, ports,
+  projets, fiches science, mouillages, balisage, EMODnet), une tous les
+  SAMPLE_NM (12 nm), à un rythme doux (1 perle / WARM_PAUSE_S) —
+  MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
 """
@@ -26,13 +28,15 @@ from typing import Any
 log = logging.getLogger("naviguide-simulator.ici-warm")
 
 SAMPLE_NM = 12.0
-# A thin bag already costs ~4 s upstream (MarineRegions + BI); the pause on
-# top keeps the whole route under ~4 h on a first run.
-WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 0.5)
-SAVE_EVERY_S = 30.0
+# A rich pearl costs ~4-8 s upstream (MarineRegions + BI + Overpass + EMODnet);
+# the pause on top keeps Overpass at well under one request a second.
+WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.0)
+WARM_PARALLEL = max(1, int(os.environ.get("NAVIGUIDE_ICI_WARM_PARALLEL") or 2))
+LEGACY_TTL_S = 7 * 86400.0
 
 _state: dict[str, Any] = {
     "status": "idle",  # idle | running | done | disabled | error
+    "kind": "rich",
     "total": 0,
     "done": 0,
     "cached": 0,
@@ -40,10 +44,10 @@ _state: dict[str, Any] = {
     "startedAt": None,
     "finishedAt": None,
 }
-_last_save = 0.0
 
 
 def cache_path() -> Path:
+    """The former JSON cache — only read once, to migrate it into SQLite."""
     from voyage_store import voyage_dir
     return voyage_dir() / "ici_thin_cache.json"
 
@@ -53,7 +57,8 @@ def warm_enabled() -> bool:
 
 
 def status() -> dict[str, Any]:
-    return dict(_state)
+    import pearl_store  # noqa: PLC0415
+    return {**_state, "store": pearl_store.info()}
 
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -174,53 +179,20 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     return events
 
 
-# ── disk persistence of the thin cache ────────────────────────────────────────
+# ── store ───────────────────────────────────────────────────────────────────
 
 def load_cache_from_disk() -> int:
-    from ici_engine import _thin_cache  # noqa: PLC0415
-    path = cache_path()
-    if not path.exists():
-        return 0
-    try:
-        data = json.loads(path.read_text())
-    except Exception as exc:
-        log.warning("cache perles illisible (%s) : on repart de zéro", exc)
-        return 0
-    now = time.time()
-    n = 0
-    for key, hit in (data or {}).items():
-        if not isinstance(hit, dict) or "bag" not in hit:
-            continue
-        if now - float(hit.get("ts") or 0) > 7 * 86400:
-            continue
-        _thin_cache[key] = {"ts": float(hit.get("ts") or now), "bag": hit["bag"]}
-        n += 1
-    log.info("cache perles : %d cellules rechargées", n)
-    return n
-
-
-def save_cache_to_disk(force: bool = False) -> bool:
-    global _last_save
-    from ici_engine import _thin_cache  # noqa: PLC0415
-    if not force and time.time() - _last_save < SAVE_EVERY_S:
-        return False
-    path = cache_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(_thin_cache, ensure_ascii=False, default=str))
-        tmp.replace(path)
-        _last_save = time.time()
-        return True
-    except Exception as exc:
-        log.warning("cache perles non écrit : %s", exc)
-        return False
+    """Startup: migrate the former JSON cache into SQLite (once). The store
+    itself needs no loading — the engine reads it on demand."""
+    import pearl_store  # noqa: PLC0415
+    return pearl_store.import_legacy_json(cache_path(), LEGACY_TTL_S)
 
 
 # ── the warmer ────────────────────────────────────────────────────────────────
 
-async def warm_official_route(pause_s: float = WARM_PAUSE_S) -> dict[str, Any]:
-    """Collect the thin bag of every pearl of the official route, gently."""
+async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) -> dict[str, Any]:
+    """Collect the (rich) pearl of every sample of the official route, gently.
+    Pearls already rich in the store are skipped; thin ones are upgraded."""
     from ici_engine import fill_dossier, thin_cache_get, thin_cache_key  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
@@ -229,33 +201,37 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S) -> dict[str, Any]:
     points = (voy or {}).get("points") or []
     pearls = sample_route(points)
     _state.update({
-        "status": "running", "total": len(pearls), "done": 0, "cached": 0, "errors": 0,
-        "startedAt": time.time(), "finishedAt": None,
+        "status": "running", "kind": "rich" if rich else "thin", "total": len(pearls),
+        "done": 0, "cached": 0, "errors": 0, "startedAt": time.time(), "finishedAt": None,
     })
     if not pearls:
         _state["status"] = "done"
         _state["finishedAt"] = time.time()
         return status()
     month = None
-    for lat, lon in pearls:
+
+    async def one(lat: float, lon: float) -> None:
         key = thin_cache_key(lat, lon, 30.0)
-        if thin_cache_get(key) is not None:
+        if thin_cache_get(key, rich=rich) is not None:
             _state["cached"] += 1
             _state["done"] += 1
-            continue
+            return
         try:
-            await fill_dossier(lat, lon, 30.0, month=month, thin=True)
+            await fill_dossier(lat, lon, 30.0, month=month, thin=True, rich=rich)
         except Exception as exc:  # network hiccup: keep going
             _state["errors"] += 1
             log.debug("perle %.3f,%.3f : %s", lat, lon, exc)
         _state["done"] += 1
-        save_cache_to_disk()
         await asyncio.sleep(pause_s)
-    save_cache_to_disk(force=True)
+
+    # Two pearls in flight: a rich pearl waits ~8 s on Overpass + EMODnet +
+    # BI; two at a time halves the first run without leaning on Overpass.
+    for i in range(0, len(pearls), WARM_PARALLEL):
+        await asyncio.gather(*(one(la, lo) for la, lo in pearls[i:i + WARM_PARALLEL]))
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
-    log.info("perles officielles chauffées : %d (%d déjà en cache, %d erreurs)",
-             _state["done"], _state["cached"], _state["errors"])
+    log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",
+             _state["kind"], _state["done"], _state["cached"], _state["errors"])
     return status()
 
 
