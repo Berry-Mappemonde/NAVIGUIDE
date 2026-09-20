@@ -1,4 +1,4 @@
-"""Récits pré-générés (lot F, commentaires 6-8 du porteur : sans Nebius).
+"""Récits pré-générés (lot F, bascule L2 / U1).
 
 Le récit LLM d'une carte est prêt **avant** que le bateau y arrive :
 
@@ -7,8 +7,9 @@ Le récit LLM d'une carte est prêt **avant** que le bateau y arrive :
   dépend pas de l'instant du bateau (entrer dans une ZEE, quitter une ZEE,
   aire marine protégée, port d'entrée devant) ; un coup de vent, une alerte
   de profondeur ou un repli restent rédigés à chaud ;
-- `POST /ici/story` lit le cache d'abord, puis la cascade habituelle
-  (NIM → OpenRouter → Claude) et garde le résultat ;
+- `POST /ici/story` lit le cache d'abord, puis `write_story` →
+  `cascade_text(tier="write")` (Token Factory Super → OpenRouter → Claude
+  → règles) et garde le résultat, **avec `source`** ;
 - après les perles, le chauffeur **pré-génère** les récits des événements
   que le film lèvera sur la route officielle (ZEE entrées, ports d'entrée),
   trois en vol, sous un budget journalier (`NAVIGUIDE_STORY_BUDGET_PER_DAY`,
@@ -121,7 +122,8 @@ def _spend(n: int = 1) -> None:
 
 async def story_through_cache(body: dict, client=None, writer=None) -> dict[str, Any]:
     """What POST /ici/story returns: the cache when it knows, else the cascade
-    (`writer`, default story_cascade.write_story) — and remember."""
+    (`writer`, default story_cascade.write_story → cascade_text tier=write)
+    — and remember, with `source` kept on the payload."""
     if writer is None:
         from story_cascade import write_story  # noqa: PLC0415
         writer = write_story
@@ -129,9 +131,12 @@ async def story_through_cache(body: dict, client=None, writer=None) -> dict[str,
     if hit:
         return hit
     out = await writer(body, client) if client is not None else await writer(body)
-    if put_cached(body, out):
+    result = {**(out or {}), "cached": False}
+    if result.get("status") == "ready" and not result.get("source"):
+        result["source"] = result.get("engine") or "rules"
+    if put_cached(body, result):
         _spend(1)
-    return {**(out or {}), "cached": False}
+    return result
 
 
 # ── pre-generation from the pearls ──────────────────────────────────────────

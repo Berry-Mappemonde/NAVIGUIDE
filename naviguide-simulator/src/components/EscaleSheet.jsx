@@ -38,6 +38,20 @@ function label(key, lang) {
   return (LABELS[lang === "en" ? "en" : "fr"][key]) || key;
 }
 
+/** Libellé de source (clés i18n L1). Pas de nom de modèle en dur (contrat lot C). */
+function llmSourceLabel(source, t) {
+  const s = String(source || "");
+  if (s === "openrouter") return t("storySourceOpenrouter");
+  if (s === "claude") return t("storySourceClaude");
+  if (s === "rules") return t("storySourceRules");
+  if (s === "budget") return t("storySourceBudget");
+  if (s === "cache") return t("storySourceCache");
+  if (s.endsWith("-lightning")) return t("storySourceLightning");
+  if (s.endsWith("-super")) return t("storySourceSuper");
+  if (s.endsWith("-ultra")) return t("storySourceUltra");
+  return s || t("storySourceRules");
+}
+
 function nm(v, lang) {
   if (!Number.isFinite(v)) return "";
   return `${Number(v).toLocaleString(lang === "en" ? "en-GB" : "fr-FR", { maximumFractionDigits: 1 })} nm`;
@@ -110,6 +124,11 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
 
       {paragraph ? (
         <p className="text-[11px] text-slate-100 leading-snug mb-1.5 break-words [overflow-wrap:anywhere]">{paragraph}</p>
+      ) : null}
+      {paragraph && (fiche?.paragraph?.source || fiche?.paragraph?.engine) ? (
+        <p data-testid="escale-source" className="text-[9px] text-slate-500 leading-snug -mt-1 mb-1.5">
+          {llmSourceLabel(fiche.paragraph.source || fiche.paragraph.engine, t)}
+        </p>
       ) : null}
 
       {!loading && fiche && !keys.length ? (

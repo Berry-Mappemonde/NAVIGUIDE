@@ -1,18 +1,20 @@
-"""Chatbot journal de bord (lot D, commentaires 3 et 4 du porteur).
+"""Chatbot journal de bord (lot D, bascule L2 / U4).
 
 Le skipper pose une question sur **toutes les données de l'application** —
 position et vent au bateau (horloge + GRIB), ZEE, ports d'entrée, AMP, ports,
 projets et fiches science autour, prochaine escale, polaire et ordres du
 skipper (envoyés par le client), journal — et la réponse **cite un JSON de
-faits construit ici**, jamais le monde. Cascade LLM habituelle
-(NIM → OpenRouter → Claude), pas de Nebius, pas de Tavily.
+faits construit ici**, jamais le monde. Cascade L1 :
+`cascade_text(tier="write")`, ou `tier="fast"` si la question fait moins de
+80 caractères et ne contient pas pourquoi / comment / why / how.
 
 Pas de détection d'intention : **chaque échange est consigné** dans le
 journal (`kind: chat` : horodatage, question, réponse, résumé) quand la clé
 admin est là ; sans clé, la réponse est rendue sans consignation.
 
 Un chiffre ne passe jamais par le LLM : toute phrase de la réponse qui porte
-un nombre absent du contexte est retirée.
+un nombre absent du contexte est retirée (`filter_numbers`, inchangé).
+Chaque réponse porte `source`.
 """
 from __future__ import annotations
 
@@ -42,6 +44,8 @@ JOURNAL_TAIL = 20
 
 _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+_WHY_RE = re.compile(r"(?i)(?<!\w)(pourquoi|comment|why|how)(?!\w)")
+FAST_QUESTION_MAX = 80
 
 
 # ── context ─────────────────────────────────────────────────────────────────
@@ -185,6 +189,14 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
 
 # ── answer ──────────────────────────────────────────────────────────────────
 
+def chat_tier(question: str) -> str:
+    """write by default; Lightning (`fast`) for a short factual question (lot L2)."""
+    q = " ".join((question or "").split())
+    if len(q) < FAST_QUESTION_MAX and not _WHY_RE.search(q):
+        return "fast"
+    return "write"
+
+
 def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
     en = (lang or "fr").lower().startswith("en")
     system = (
@@ -242,15 +254,15 @@ async def answer_question(question: str, lang: str, client_ctx: dict | None, now
     ctx = await build_context(client_ctx, now, http)
     system, user = _prompt(question, ctx, lang)
     try:
-        raw, engine = await cascade_text(system, user, http)
+        raw, source = await cascade_text(system, user, http, tier=chat_tier(question))
     except Exception as exc:
-        return {"status": "failed", "reason": str(exc)[:160], "answer": None, "engine": None, "context": ctx}
+        return {"status": "failed", "reason": str(exc)[:160], "answer": None, "engine": None, "source": None, "context": ctx}
     tidy = tidy_story(raw, None, max_sentences=ANSWER_SENTENCES, max_chars=ANSWER_CHARS)
     text, dropped = filter_numbers(tidy, ctx)
     if not text:
         text = ("Le journal n’a pas cette information dans ses données." if not (lang or "fr").startswith("en")
                 else "The logbook does not hold that information in its data.")
-    return {"status": "ready", "answer": text, "engine": engine, "droppedSentences": dropped, "context": ctx}
+    return {"status": "ready", "answer": text, "engine": source, "source": source, "droppedSentences": dropped, "context": ctx}
 
 
 # ── endpoint ────────────────────────────────────────────────────────────────
@@ -290,6 +302,7 @@ async def post_logbook_chat(body: ChatIn, request: Request):
         "answer": out.get("answer"),
         "reason": out.get("reason"),
         "engine": out.get("engine"),
+        "source": out.get("source") or out.get("engine"),
         "logged": logged,
         "entry": entry,
         "t": now.isoformat().replace("+00:00", "Z"),

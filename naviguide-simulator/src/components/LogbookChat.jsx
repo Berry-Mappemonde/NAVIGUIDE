@@ -4,6 +4,20 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { hasAdminSecret } from "../utils/adminSecret.js";
 import { formatTimeUtc } from "../engine/journalFormat.js";
 
+/** Libellé de source (clés i18n L1). Noms de modèles évités ici : contrat lot C. */
+function llmSourceLabel(source, t) {
+  const s = String(source || "");
+  if (s === "openrouter") return t("storySourceOpenrouter");
+  if (s === "claude") return t("storySourceClaude");
+  if (s === "rules") return t("storySourceRules");
+  if (s === "budget") return t("storySourceBudget");
+  if (s === "cache") return t("storySourceCache");
+  if (s.endsWith("-lightning")) return t("storySourceLightning");
+  if (s.endsWith("-super")) return t("storySourceSuper");
+  if (s.endsWith("-ultra")) return t("storySourceUltra");
+  return s || t("storySourceRules");
+}
+
 /**
  * Le chatbot du journal de bord (lot D), dans le panneau gauche : une
  * question sur toutes les données de l'application, une réponse citant les
@@ -48,6 +62,11 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
               : m.text}
             {m.role === "logbook" && m.status === "ready" ? (
               <span className="ml-1 text-[9px] text-slate-500">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
+            ) : null}
+            {m.role === "logbook" && (m.source || m.engine) ? (
+              <div data-testid="chat-source" className="text-[9px] text-slate-500 leading-snug mt-0.5">
+                {llmSourceLabel(m.source || m.engine, t)}
+              </div>
             ) : null}
           </div>
         ))}

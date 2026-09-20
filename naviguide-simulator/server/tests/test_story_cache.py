@@ -52,8 +52,11 @@ def test_story_endpoint_reads_the_cache_then_writes_through_it(monkeypatch):
     body = {"event": "zee-enter", "type": "zee-enter", "stableKey": "zee-enter:5693", "lang": "fr", "payload": {"zee": {"name": "Spanish EEZ", "mrgid": 5693}}}
     r1 = client.post("/ici/story", json=body, headers=PUBLIC).json()
     assert r1["status"] == "ready" and r1["cached"] is False and len(calls) == 1
+    assert r1["source"] == "nemotron-super"
+    assert any("tokenfactory.nebius.com" in u for u in calls)
     r2 = client.post("/ici/story", json={**body, "eventId": "other"}, headers=PUBLIC).json()
     assert r2["status"] == "ready" and r2["cached"] is True and r2["engine"].startswith("cache:")
+    assert r2["source"] == "cache"
     assert r2["text"] == r1["text"]
     assert len(calls) == 1, "served from the store"
     assert story_cache.budget_used_today() == 1
@@ -105,3 +108,24 @@ def test_pregeneration_from_pearls_under_budget(monkeypatch):
     out2 = asyncio.run(story_cache.pregenerate_official(voy["points"], pause_s=0))
     assert out2["cached"] == 1 and out2["written"] == len(bodies) - 1
     assert out2["stored"] == len(bodies)
+
+
+def test_story_through_cache_keeps_writer_source():
+    async def writer(body, client=None):
+        return {"status": "ready", "text": "Entrée dans la ZEE.", "engine": "nemotron-super", "source": "nemotron-super"}
+
+    body = {"type": "zee-enter", "stableKey": "zee-enter:l2", "lang": "fr"}
+    out = asyncio.run(story_cache.story_through_cache(body, writer=writer))
+    assert out["source"] == "nemotron-super" and out["cached"] is False
+    hit = story_cache.get_cached(body)
+    assert hit["source"] == "cache"
+    assert "nemotron-super" in hit["engine"]
+
+
+def test_story_through_cache_fills_source_from_engine_when_missing():
+    async def writer(body, client=None):
+        return {"status": "ready", "text": "Sortie de ZEE.", "engine": "rules"}
+
+    body = {"type": "zee-exit", "stableKey": "zee-exit:l2", "lang": "fr"}
+    out = asyncio.run(story_cache.story_through_cache(body, writer=writer))
+    assert out["source"] == "rules"
