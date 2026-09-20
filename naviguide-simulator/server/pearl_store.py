@@ -35,6 +35,13 @@ _SCHEMA = (
     " bag TEXT NOT NULL,"       # JSON
     " ts REAL NOT NULL)",
     "CREATE INDEX IF NOT EXISTS pearls_kind ON pearls(kind)",
+    # Generic namespaced cache: escale sheets (lot C), pre-generated stories (lot F)…
+    "CREATE TABLE IF NOT EXISTS kv ("
+    " ns TEXT NOT NULL,"
+    " key TEXT NOT NULL,"
+    " value TEXT NOT NULL,"     # JSON
+    " ts REAL NOT NULL,"
+    " PRIMARY KEY (ns, key))",
 )
 
 
@@ -111,6 +118,16 @@ def put_pearl(key: str, bag: dict, kind: str = "thin", lat: float | None = None,
         return True
     except Exception as exc:
         log.warning("store perles (écriture) : %s", exc)
+        return False
+
+
+def delete_pearl(key: str) -> bool:
+    try:
+        with _LOCK:
+            cur = _connect().execute("DELETE FROM pearls WHERE key = ?", (key,))
+            return bool(cur.rowcount)
+    except Exception as exc:
+        log.warning("store perles (suppression) : %s", exc)
         return False
 
 
@@ -197,7 +214,61 @@ def import_legacy_json(path: Path, ttl_s: float) -> int:
     return n
 
 
+# ── cache générique (ns, key) ────────────────────────────────────────────────
+
+def kv_get(ns: str, key: str, max_age_s: float | None = None) -> Optional[dict]:
+    """{ value, ts } or None (missing, stale, or broken store)."""
+    try:
+        with _LOCK:
+            row = _connect().execute("SELECT value, ts FROM kv WHERE ns = ? AND key = ?", (ns, key)).fetchone()
+    except Exception as exc:
+        log.warning("store kv (lecture) : %s", exc)
+        return None
+    if not row:
+        return None
+    ts = float(row[1])
+    if max_age_s is not None and time.time() - ts > float(max_age_s):
+        return None
+    try:
+        return {"value": json.loads(row[0]), "ts": ts}
+    except Exception:
+        return None
+
+
+def kv_put(ns: str, key: str, value: Any) -> bool:
+    try:
+        payload = json.dumps(value, ensure_ascii=False, default=str)
+        with _LOCK:
+            _connect().execute(
+                "INSERT OR REPLACE INTO kv (ns, key, value, ts) VALUES (?, ?, ?, ?)",
+                (ns, key, payload, time.time()),
+            )
+        return True
+    except Exception as exc:
+        log.warning("store kv (écriture) : %s", exc)
+        return False
+
+
+def kv_count(ns: str) -> int:
+    try:
+        with _LOCK:
+            row = _connect().execute("SELECT COUNT(*) FROM kv WHERE ns = ?", (ns,)).fetchone()
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def kv_purge(ns: str, older_than_s: float) -> int:
+    cutoff = time.time() - float(older_than_s)
+    try:
+        with _LOCK:
+            cur = _connect().execute("DELETE FROM kv WHERE ns = ? AND ts < ?", (ns, cutoff))
+            return int(cur.rowcount or 0)
+    except Exception:
+        return 0
+
+
 def info() -> dict[str, Any]:
     p = db_path()
     size = p.stat().st_size if p.exists() else 0
-    return {"path": str(p), "bytes": size, **count_pearls()}
+    return {"path": str(p), "bytes": size, **count_pearls(), "escales": kv_count("escale"), "stories": kv_count("story")}

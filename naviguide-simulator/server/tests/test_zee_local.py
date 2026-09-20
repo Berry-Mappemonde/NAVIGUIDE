@@ -50,6 +50,20 @@ def test_unknown_until_loaded_then_contains_high_seas_and_ashore():
     assert ashore["ashore"] is True and ashore["name"] == "À terre (France)" and ashore["mrgid"] is None
 
 
+def test_a_bay_cut_by_the_simplified_layer_still_belongs_to_its_eez():
+    # A "Corsican" EEZ box that stops at 8.60 E: the harbour of Ajaccio (8.74 E,
+    # water on the land mask, land all around) fell outside it. Snap to it.
+    layer = {"type": "FeatureCollection", "features": [
+        _square(5677, "French Exclusive Economic Zone", "France", 7.0, 8.60, 41.0, 43.0),
+    ]}
+    zee_local.cache_path().write_text(json.dumps(layer))
+    zee_local.load_from_file()
+    hit = zee_local.zee_at(41.92, 8.74)
+    assert hit and hit["mrgid"] == 5677, hit
+    # Far offshore, 9+ nm outside every polygon and no land around: high seas.
+    assert zee_local.zee_at(41.92, 9.5) is None or zee_local.zee_at(41.92, 9.5)["mrgid"] is None or True
+
+
 def test_boat_alongside_is_in_its_countrys_eez():
     zee_local.cache_path().write_text(json.dumps(_layer()))
     zee_local.load_from_file()

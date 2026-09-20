@@ -19,6 +19,7 @@ import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
+import { useEscaleSheet } from "./hooks/useEscaleSheet.js";
 import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -56,7 +57,7 @@ import {
   shouldFocusSimulationJump,
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
-import { summarizeRoute, featuresToSegments } from "./utils/geo.js";
+import { summarizeRoute, featuresToSegments, haversineNm } from "./utils/geo.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
@@ -495,6 +496,35 @@ export default function App() {
     ? Math.round(clockSample.holdHours / 24)
     : 0;
   const atQuay = Boolean(clockSample?.atQuay && quayDays > 0);
+
+  // Fiche d'escale (lot C): opened from the Expedition list (▤) in any view,
+  // and by itself in Suivre when the boat is alongside — once per stop, the
+  // skipper may close it. Never a chat, never blocks Play.
+  const [escaleStop, setEscaleStop] = useState(null);
+  const escaleSheet = useEscaleSheet(escaleStop, lang);
+  const autoSheetRef = useRef(null);
+  const openEscaleSheet = useCallback((stop) => {
+    if (!stop || !Number.isFinite(stop.lat) || !Number.isFinite(stop.lon)) return;
+    setEscaleStop({ name: stop.name, lat: stop.lat, lon: stop.lon });
+    setSidebarOpen(true);
+  }, []);
+  const closeEscaleSheet = useCallback(() => {
+    if (escaleStop) autoSheetRef.current = escaleStop.name;
+    setEscaleStop(null);
+  }, [escaleStop]);
+  useEffect(() => {
+    if (!isSuivre || !atQuay || !clockSample || !Number.isFinite(clockSample.lat)) return;
+    let best = null;
+    let bestD = Infinity;
+    for (const m of legendMarks) {
+      if (!Number.isFinite(m.lat) || !Number.isFinite(m.lon)) continue;
+      const d = haversineNm(clockSample.lat, clockSample.lon, m.lat, m.lon);
+      if (d < bestD) { bestD = d; best = m; }
+    }
+    if (!best || bestD > 5 || autoSheetRef.current === best.name) return;
+    autoSheetRef.current = best.name;
+    setEscaleStop({ name: best.name, lat: best.lat, lon: best.lon });
+  }, [isSuivre, atQuay, clockSample, legendMarks]);
   const clockLine = officialClock?.vertices?.length && clockSample
     ? formatFilmClockLine({
       sailNm: isSuivre && !previewing
@@ -1433,6 +1463,9 @@ export default function App() {
         momentFree={sceneReady ? moments.free : null}
         momentFreeLeft={moments.freeLeft}
         onMomentNext={moments.next}
+        escaleStop={escaleStop}
+        escaleSheet={escaleSheet}
+        onEscaleClose={closeEscaleSheet}
       />
 
       <ToolsSidebar
@@ -1457,6 +1490,7 @@ export default function App() {
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
         onSeekEscale={handleSidebarSeek}
+        onEscaleSheet={openEscaleSheet}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}

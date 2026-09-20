@@ -31,7 +31,9 @@ log = logging.getLogger("naviguide-simulator.zee-local")
 
 UNKNOWN = object()  # index not loaded yet
 CACHE_TTL_S = 30 * 86400.0
-QUAY_PROBE_DEG = 0.2  # ~12 nm: a boat alongside is in its country's EEZ
+QUAY_PROBE_DEG = 0.2    # ~12 nm: a boat alongside is in its country's EEZ
+COASTAL_GAP_DEG = 0.15  # ~9 nm: a bay the simplified layer cut across
+COAST_PROBE_DEG = 0.25  # "near a coast" = land within ~15 nm
 
 _LOCK = threading.RLock()
 _index: dict[str, Any] = {"tree": None, "geoms": None, "props": None, "loaded": False, "features": 0, "loadedAt": None}
@@ -223,6 +225,30 @@ def _nearest(lon: float, lat: float) -> Optional[dict]:
     return props[int(i)] if i is not None else None
 
 
+def _nearest_within(lon: float, lat: float, max_deg: float) -> Optional[dict]:
+    from shapely.geometry import Point  # noqa: PLC0415
+    tree, geoms, props = _index["tree"], _index["geoms"], _index["props"]
+    pt = Point(lon, lat)
+    try:
+        i = tree.nearest(pt)
+    except Exception:
+        return None
+    if i is None:
+        return None
+    i = int(i)
+    return props[i] if geoms[i].distance(pt) <= max_deg else None
+
+
+def _near_coast(lat: float, lon: float, is_land, step: float = COAST_PROBE_DEG) -> bool:
+    for dlat, dlon in ((0, -step), (0, step), (-step, 0), (step, 0), (-step, -step), (-step, step), (step, -step), (step, step)):
+        try:
+            if is_land(lat + dlat, _wrap(lon + dlon)):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _wrap(lon: float) -> float:
     return ((lon + 180.0) % 360.0) - 180.0
 
@@ -241,7 +267,17 @@ def zee_at(lat: float, lon: float):
         from isochrone import is_land  # noqa: PLC0415
         land = is_land(lat, lon)
     except Exception:
+        def is_land(_lat, _lon):  # noqa: E306
+            return False
         land = False
+    if not land:
+        # The layer served to the map is simplified: a bay or a harbour can
+        # fall just outside its own EEZ. Water near a coast that sits within
+        # ~9 nm of an EEZ polygon belongs to it — the true 200 nm limit is
+        # never that close to land.
+        near = _nearest_within(lon, lat, COASTAL_GAP_DEG)
+        if near is not None and _near_coast(lat, lon, is_land):
+            return _zee_dict(near)
     if land:
         # A boat alongside sits on the land mask: probe ~12 nm around.
         s = QUAY_PROBE_DEG
