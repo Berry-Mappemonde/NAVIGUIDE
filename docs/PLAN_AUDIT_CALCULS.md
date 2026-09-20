@@ -62,6 +62,19 @@ de route : plausible) ; `AIR_CALENDAR_HOURS = 8` ; `WX_GALE_KT = 34`
 Aucune n'est fausse en soi ; toutes doivent être dans `REGLES_PARAMETRES.md`
 avec leur source et testées aux bornes.
 
+> **Vérification faite le 20 sept. (soir)** : chaque ligne du § 1 a été
+> confrontée à l'état de l'art dans
+> [`audits/CALCULS_ETAT_DE_L_ART.md`](audits/CALCULS_ETAT_DE_L_ART.md)
+> (routeurs qtVlm / LuckGrib / PredictWind, littérature isochrones, biais
+> ERA5, conventions WMO et Copernicus). Ce qui change dans les lots :
+> C4 remplace la pénalité de mer ×3 par une **polaire de vagues** (facteur
+> continu Hs × angle), ajoute un **facteur d'efficacité de croisière**
+> (`POLAR_EFFICIENCY`, défaut 0,85) et les **limites d'allure** ; C2 corrige
+> les **vents forts d'ERA5** (sous-estimés) et prend les archives de
+> prévision comme source primaire ; le conseil de route (§ 1 l. 21) passe de
+> **6 h à 3 h** de pas (1 h près des côtes) ; la popup satellite doit tester
+> la convention **courant « vers », vent et vagues « de »**.
+
 ## 1. Inventaire des calculs (à vérifier un par un)
 
 | # | Calcul | Où | Formule / méthode actuelle | Verdict | À faire |
@@ -159,7 +172,9 @@ viennent du hindcast : durée, max), `docs/REGLES_PARAMETRES.md`.
 
 **Étapes.** 1) `hindcast.py` : `series(lat, lon, day)` → vent/rafales/houle/
 courant horaires (Open-Meteo Historical Forecast + Marine), cache, retries,
-`source` (« GFS archive », « ERA5 », « Marine »). 2) Intégration avant :
+`source` (« GFS archive », « ERA5 », « Marine ») ; **correction des vents
+forts** quand la source est ERA5 (facteur `ERA5_STRONG_WIND_FACTOR` = 1,05
+au-dessus de 15 m/s, cité dans `REGLES_PARAMETRES.md`). 2) Intégration avant :
 pour chaque pas, vent/courant à `(x_i, t_i)` ; escales → jours à quai ;
 `regime` dans chaque sommet. 3) `blended_wind` : `hours_since(now)` et non
 `t0`. 4) Le premier calcul complet tourne en tâche de fond au démarrage
@@ -197,14 +212,27 @@ prévision / climatologie) — **ajout**, rien retiré.
 **le même nombre** ; à quai : « à quai » partout ; légende des régimes sous la
 route. Spec : la vitesse de la barre = celle du chat (regex).
 
-### Lot C4 — Courant additionné, pénalité de mer continue, climatologie échantillonnée (M)
+### Lot C4 — Courant additionné, polaire de vagues, efficacité de croisière, climatologie échantillonnée (M)
 
-**Fichiers.** `server/voyage_clock.py` (§ 1 lignes 8, 7, 10), `server/climatology_atlas.py`
-(p25/p50/p75 de la rose), `server/voyage_clock_test.py`, `docs/REGLES_PARAMETRES.md`.
+**Fichiers.** `server/voyage_clock.py` (§ 1 lignes 4, 7, 8, 10), `server/isochrone.py`
+(`_boat_speed`, `time_step_h`, `heading_step_deg`), `server/climatology_atlas.py`
+(p25/p50/p75 de la rose), `src/engine/skipperOrders.js` (`planningSpeedFor`),
+`server/tests/test_voyage_clock.py`, `docs/REGLES_PARAMETRES.md`.
 
-**Tests.** Courant 2 kn dans l'axe → SOG = polaire + 2 ; contre → − 2 ; Hs
-2,4 → 2,6 m : facteur continu ; climatologie : temps p25/p50/p75 moyenné ≥
-temps à la moyenne (Jensen).
+**Étapes.** 1) Courant : SOG = projection sur la route de (vecteur polaire +
+vecteur courant `uo/vo`). 2) Polaire de vagues : `v × f(Hs, angle relatif)`,
+f = 1 jusqu'à 1,5 m, linéaire jusqu'à 0,6 à 4 m par mer de face et 0,85 par
+mer arrière, plafonné ; remplace `WAVE_NOGO_DT_FACTOR`. 3) `POLAR_EFFICIENCY`
+(0,85) appliqué partout où la polaire sert (horloge, planification, conseil
+de route) ; limites d'allure (près ≥ 40° TWA, portant ≤ 170°) dans le conseil
+de route seulement. 4) Climatologie : trois tirages de la rose (p25/p50/p75)
+→ temps moyen. 5) Isochrones : pas 3 h en haute mer, 1 h à moins de 60 nm
+d'une côte (`is_path_clear` le sait), `max_steps` recalculé.
+
+**Tests.** Courant 2 kn dans l'axe → SOG = polaire × 0,85 + 2 ; contre →
+− 2 ; Hs 2,4 → 2,6 m : facteur continu (pas de saut) ; mer de face plus
+pénalisante que mer arrière ; climatologie : temps p25/p50/p75 moyenné ≥
+temps à la moyenne (Jensen) ; isochrone : pas 1 h à 30 nm d'une côte.
 
 **Recette (aucun changement visible, sauf les nombres).** Les ETA de la
 revue de plan changent (typiquement +3 à +8 % de temps de mer) ; la PR donne
