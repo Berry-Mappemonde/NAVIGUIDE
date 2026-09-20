@@ -142,7 +142,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={{ left: insets.left, right: insets.right }}
     >
-      <div className="naviguide-film-bar rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1.5 pb-1.5 text-white backdrop-blur-sm">
+      <div className="naviguide-film-bar rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
             {finished
@@ -156,36 +156,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               )}
             {phaseLabel ? <span className="text-[10px] font-normal text-cyan-300/80 ml-2">{phaseLabel}</span> : null}
           </div>
-          <div className="flex flex-shrink-0 items-center gap-1">
-            {disclaimer ? (
-              <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right">
-                {disclaimer}
-              </span>
-            ) : null}
-            {speechText ? (
-              <ListenButton text={speechText} t={t} lang={lang} className="px-2 py-0.5 !rounded-md" />
-            ) : null}
-            {cinema && onHideBar ? (
-              <button
-                type="button"
-                onClick={() => onHideBar(true)}
-                className="px-2 py-0.5 rounded-md text-[10px] font-semibold border bg-white/5 border-white/10 hover:bg-white/10"
-              >
-                {t("hideFilmBar")}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={onCinema}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                cinema ? "bg-cyan-700/70 border-cyan-400/50" : "bg-white/5 border-white/10 hover:bg-white/10"
-              }`}
-              title={t("cinemaTooltip")}
-            >
-              <Clapperboard size={11} />
-              {t("cinema")}
-            </button>
-          </div>
+          {disclaimer ? (
+            <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right flex-shrink-0">
+              {disclaimer}
+            </span>
+          ) : null}
         </div>
 
         <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
@@ -261,134 +236,159 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        {(showPlaybackControls || showStopAuto || showSpeeds || onView || replay) ? (
-          <div className="flex items-center gap-1.5 mt-1">
+        <div data-testid="film-commands" className="flex items-center gap-1 mt-1 overflow-x-auto flex-nowrap">
+          <div className="flex items-center gap-1 flex-nowrap shrink-0">
+            {cinema && onHideBar ? (
+              <button
+                type="button"
+                onClick={() => onHideBar(true)}
+                className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-white/5 border-white/10 hover:bg-white/10 whitespace-nowrap"
+              >
+                {t("hideFilmBar")}
+              </button>
+            ) : null}
+            {onCinema ? (
+              <button
+                type="button"
+                onClick={onCinema}
+                className={`flex items-center gap-1 h-6 px-1.5 rounded-md text-[9px] font-semibold border whitespace-nowrap ${
+                  cinema ? "bg-cyan-700/70 border-cyan-400/50" : "bg-white/5 border-white/10 hover:bg-white/10"
+                }`}
+                title={t("cinemaTooltip")}
+              >
+                <Clapperboard size={11} />
+                {t("cinema")}
+              </button>
+            ) : null}
+            <ListenButton
+              text={speechText}
+              t={t}
+              lang={lang}
+              compact
+              testId="listen"
+              showWhenEmpty
+              listening={replay ? Boolean(replay.voice) : undefined}
+              onListening={replay?.onVoice}
+              deferSpeak={Boolean(replay?.active)}
+              className="!rounded-md whitespace-nowrap"
+            />
+            {onView ? (
+              <div
+                role="radiogroup"
+                aria-label={t("viewModeGroup")}
+                data-testid="film-view-switch"
+                className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0"
+              >
+                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow"], [VIEW_SIMULATION, t("simulationButton"), "view-simulation", "mode-sim"]].map(([id, label, testId, alias]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={view === id}
+                    data-testid={testId}
+                    data-mode={alias}
+                    onClick={() => onView(id)}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                      view === id ? "bg-cyan-700/70 text-cyan-50 border border-cyan-400/50" : "text-white/70 hover:text-white border border-transparent"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {replay ? (
+              <div className="flex items-center gap-1" data-testid="replay-controls">
+                {replay.active ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={replay.onStop}
+                      data-testid="replay-stop"
+                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
+                      title={t("replayStopTitle")}
+                    >
+                      ■ {t("replayStop")}
+                    </button>
+                    <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
+                      <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={replay.onStart}
+                    data-testid="replay-start"
+                    className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap"
+                    title={t("replayStartTitle")}
+                  >
+                    ↺ {t("replayStart")}
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1 ml-auto flex-nowrap shrink-0">
             {showPlaybackControls ? (
               <>
                 <button
                   type="button"
                   onClick={onTogglePlay}
-                  className="w-9 h-7 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
+                  className="w-7 h-6 rounded-md bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center"
                   title={playing ? t("pause") : t("play")}
                 >
-                  {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                  {playing ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
                 </button>
                 <button
                   type="button"
                   onClick={onNext}
                   disabled={!canNext}
-                  className="h-7 px-2 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-1 text-[10px] font-semibold"
+                  className="h-6 px-1.5 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-0.5 text-[9px] font-semibold whitespace-nowrap"
                   title={t("goToNextStop")}
                 >
-                  <ChevronRight size={14} />
+                  <ChevronRight size={12} />
                   {t("goToNextStop")}
                 </button>
               </>
             ) : null}
-          {showStopAuto ? (
-            <button
-              type="button"
-              data-testid="stop-auto"
-              role="switch"
-              aria-checked={stopAuto}
-              onClick={() => onStopAuto?.(!stopAuto)}
-              className={`h-7 px-2 rounded-md text-[10px] font-semibold border ${
-                stopAuto
-                  ? "bg-amber-600/80 border-amber-300/50"
-                  : "bg-white/5 border-white/10 text-white/70"
-              }`}
-              title={stopAuto ? t("stopAutoOn") : t("stopAutoOff")}
-            >
-              {t("stopAuto")}
-            </button>
-          ) : null}
-
-          {showSpeeds ? (
-            <div className="flex flex-wrap gap-1 ml-1">
-              {PROFILES.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onProfile(p.id)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                    profile === p.id
-                      ? "bg-white text-slate-900 border-white"
-                      : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-                  }`}
-                  title={t(`${p.labelKey}Title`)}
-                >
-                  {t(p.labelKey)}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {replay ? (
-            <div className="flex items-center gap-1 ml-1" data-testid="replay-controls">
-              {replay.active ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={replay.onStop}
-                    data-testid="replay-stop"
-                    className="h-7 px-2 rounded-md text-[10px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
-                    title={t("replayStopTitle")}
-                  >
-                    ■ {t("replayStop")}
-                  </button>
-                  <div className="w-20 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
-                    <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
-                  </div>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={replay.onStart}
-                  data-testid="replay-start"
-                  className="h-7 px-2 rounded-md text-[10px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap"
-                  title={t("replayStartTitle")}
-                >
-                  ↺ {t("replayStart")}
-                </button>
-              )}
+            {showStopAuto ? (
               <button
                 type="button"
+                data-testid="stop-auto"
                 role="switch"
-                aria-checked={Boolean(replay.voice)}
-                onClick={() => replay.onVoice?.(!replay.voice)}
-                data-testid="replay-voice"
-                className={`h-7 px-2 rounded-md text-[10px] font-semibold border ${replay.voice ? "bg-sky-600/40 border-sky-400/40 text-sky-100" : "bg-white/5 border-white/10 text-white/70"}`}
-                title={replay.voice ? t("replayVoiceOn") : t("replayVoiceOff")}
+                aria-checked={stopAuto}
+                onClick={() => onStopAuto?.(!stopAuto)}
+                className={`h-6 px-1.5 rounded-md text-[9px] font-semibold border whitespace-nowrap ${
+                  stopAuto
+                    ? "bg-amber-600/80 border-amber-300/50"
+                    : "bg-white/5 border-white/10 text-white/70"
+                }`}
+                title={stopAuto ? t("stopAutoOn") : t("stopAutoOff")}
               >
-                🔊
+                {t("stopAuto")}
               </button>
-            </div>
-          ) : null}
-          {onView ? (
-            <div
-              role="radiogroup"
-              aria-label={t("viewModeGroup")}
-              data-testid="film-view-switch"
-              className="ml-auto flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0"
-            >
-              {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre"], [VIEW_SIMULATION, t("simulationButton"), "view-simulation"]].map(([id, label, testId]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={view === id}
-                  data-testid={testId}
-                  onClick={() => onView(id)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
-                    view === id ? "bg-cyan-700/70 text-cyan-50 border border-cyan-400/50" : "text-white/70 hover:text-white border border-transparent"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+            ) : null}
+            {showSpeeds ? (
+              <div className="flex flex-nowrap gap-0.5">
+                {PROFILES.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onProfile(p.id)}
+                    className={`px-1.5 py-0.5 rounded-md text-[9px] font-semibold border whitespace-nowrap ${
+                      profile === p.id
+                        ? "bg-white text-slate-900 border-white"
+                        : "bg-white/5 border-white/10 text-white/70 hover:text-white"
+                    }`}
+                    title={t(`${p.labelKey}Title`)}
+                  >
+                    {t(p.labelKey)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );

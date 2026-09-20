@@ -28,9 +28,18 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
 
-  it("the film bar offers Revoir / Retour au live and a voice switch", () => {
+  it("the film bar offers Revoir / Retour au live ; voice follows Écouter (no 🔊)", () => {
     assert.match(bar, /data-testid="replay-start"/);
     assert.match(bar, /data-testid="replay-stop"/);
-    assert.match(bar, /data-testid="replay-voice"/);
+    assert.doesNotMatch(bar, /data-testid="replay-voice"/);
+    assert.match(bar, /testId="listen"/);
+    assert.match(bar, /onListening=\{replay\?\.onVoice\}/);
+    assert.match(bar, /deferSpeak=\{Boolean\(replay\?\.active\)\}/);
+    assert.match(hook, /voice is piloted by the film-bar/);
+  });
+
+  it("App feeds the current paragraph to speech while a replay is active", () => {
+    assert.match(app, /const speechText = replay\.active/);
+    assert.match(app, /storyParagraphs\[storyParagraphs\.length - 1\]/);
   });
 });

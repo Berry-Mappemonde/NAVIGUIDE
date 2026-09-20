@@ -4,13 +4,28 @@ import { canSpeak, speak, stopSpeaking } from "../utils/speak.js";
 
 /**
  * « Écouter » — le récit lu à voix haute par le navigateur (zéro LLM).
- * Lives in the film bar (playback controls) since 19 Sept. 2026; the same
- * button also reads a moment card. `text` may be a string or a list of
- * paragraphs (read in order, empty ones skipped).
+ * In the film bar (lot O) this is the only sound control: it arms
+ * `replay.voice` (the hook reads the current paragraph during a replay)
+ * and, outside a replay, reads the story + briefing. Moment cards and
+ * escale sheets still use it as a one-shot reader.
+ * `text` may be a string or a list of paragraphs (empty ones skipped).
  */
-export function ListenButton({ text, t, lang, compact = false, testId = "briefing-listen", className = "" }) {
+export function ListenButton({
+  text,
+  t,
+  lang,
+  compact = false,
+  testId = "briefing-listen",
+  className = "",
+  listening,
+  onListening,
+  deferSpeak = false,
+  showWhenEmpty = false,
+}) {
   const [speaking, setSpeaking] = useState(false);
   const body = Array.isArray(text) ? text.filter(Boolean).join("\n\n") : (text || "");
+  const armed = typeof listening === "boolean";
+  const pressed = speaking || (deferSpeak && armed && listening);
   useEffect(() => () => stopSpeaking(), []);
   // A new text while speaking: stop, the button goes back to « Écouter ».
   useEffect(() => {
@@ -20,30 +35,34 @@ export function ListenButton({ text, t, lang, compact = false, testId = "briefin
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body]);
-  if (!canSpeak() || !body) return null;
+  if (!canSpeak() && !showWhenEmpty) return null;
+  if (!body && !showWhenEmpty) return null;
   const toggle = () => {
-    if (speaking) {
+    if (speaking || (deferSpeak && armed && listening)) {
       stopSpeaking();
       setSpeaking(false);
+      onListening?.(false);
       return;
     }
+    onListening?.(true);
+    if (deferSpeak || !body) return;
     const ok = speak(body, lang, { onEnd: () => setSpeaking(false) });
     setSpeaking(ok);
   };
-  const label = speaking ? t("briefingListenStop") : t("briefingListen");
+  const label = pressed ? t("briefingListenStop") : t("briefingListen");
   return (
     <button
       type="button"
       onClick={toggle}
       data-testid={testId}
-      aria-pressed={speaking}
+      aria-pressed={pressed}
       title={label}
       className={`flex items-center gap-1 rounded-md text-[10px] font-semibold border transition-colors
-        ${compact ? "h-7 px-2" : "px-1.5 py-0.5 rounded-full"}
-        ${speaking ? "bg-sky-600/40 text-sky-100 border-sky-400/40" : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10 hover:text-white"}
+        ${compact ? "h-6 px-1.5" : "px-1.5 py-0.5 rounded-full"}
+        ${pressed ? "bg-sky-600/40 text-sky-100 border-sky-400/40" : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10 hover:text-white"}
         ${className}`}
     >
-      {speaking ? <Square size={11} /> : <Volume2 size={11} />}
+      {pressed ? <Square size={11} /> : <Volume2 size={11} />}
       {label}
     </button>
   );

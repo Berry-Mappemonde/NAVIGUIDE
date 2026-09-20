@@ -20,8 +20,8 @@ export function filmBarInsets({
 /** Hauteur occupée par la barre film (bottom-5 + contenu), selon ses lignes. */
 export const FILM_BAR_HEIGHT_PX = Object.freeze({
   hidden: 0,
-  compact: 84, // Suivre : titre + ligne horloge + piste
-  controls: 116, // Simulation : + boutons lecture / vitesses
+  compact: 96, // lot O : titre + horloge + piste + une rangée de commandes
+  controls: 96, // même rangée compacte en Simulation (pilules text-[9px])
 });
 
 /**
