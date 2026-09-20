@@ -46,7 +46,9 @@ describe("weatherSnapshot", () => {
   });
 
   it("is used by the satellite popup, route wind, expedition speed and ICI", () => {
-    const app = read("../App.jsx");
+    // The satellite popup lives in its own hook since lot J (App only mounts it).
+    const app = read("useSatellitePopup.js");
+    assert.match(read("../App.jsx"), /useSatellitePopup\(\)/);
     const profile = read("useRouteWindProfile.js");
     const speed = read("useExpeditionSpeed.js");
     const ici = read("useIciDossier.js");
