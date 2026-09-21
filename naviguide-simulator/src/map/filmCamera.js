@@ -8,12 +8,16 @@ import {
 const FILM_VIEW_MS = 1000 / FILM_VIEW_HZ;
 
 /** Zoom fixe d'un chapitre : la jambe tient dans ~70 % de la fenêtre, borné [3 ; 7]. */
+function finiteCoord(v) {
+  return v != null && v !== "" && Number.isFinite(Number(v));
+}
+
 export function filmChapterZoom(map, leg, { min = FILM_ZOOM_MIN, max = FILM_ZOOM_MAX } = {}) {
   const aLat = Number(leg?.fromLat);
   const aLon = Number(leg?.fromLon);
   const bLat = Number(leg?.toLat);
   const bLon = Number(leg?.toLon);
-  if (!map || ![aLat, aLon, bLat, bLon].every(Number.isFinite)) {
+  if (!map || ![leg?.fromLat, leg?.fromLon, leg?.toLat, leg?.toLon].every(finiteCoord)) {
     return Math.max(min, Math.min(max, 5));
   }
   let z = 5;
@@ -52,8 +56,9 @@ export function filmViewCenter(lat, lon, headingDeg, map) {
 }
 
 /**
- * Caméra du film : `flyTo` uniquement au changement de chapitre ;
- * sinon `setView` à 30 Hz, zoom inchangé.
+ * Caméra du film : premier mouvement = emprise du chapitre 1 (`setView`,
+ * pas d'interpolation depuis la vue live) ; `flyTo` seulement aux
+ * changements de chapitre suivants ; sinon `setView` à 30 Hz.
  */
 export function applyFilmCamera(map, {
   chapterIdx,
@@ -67,6 +72,15 @@ export function applyFilmCamera(map, {
   flyingUntil = 0,
 } = {}) {
   const center = filmViewCenter(lat, lon, heading, map);
+  if (lastChapterIdx == null) {
+    map.setView([lat, lon], zoom, { animate: false });
+    return {
+      lastChapterIdx: chapterIdx,
+      lastSetViewAt: now,
+      flyingUntil: 0,
+      action: "setView",
+    };
+  }
   if (chapterIdx !== lastChapterIdx) {
     map.flyTo(center, zoom, { duration: FILM_FLY_SECONDS });
     return {

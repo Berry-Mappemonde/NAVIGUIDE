@@ -1,6 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { canLeadWithVoice, canSpeak, speak, spokenText, stopSpeaking } from "./speak.js";
+import {
+  canLeadWithVoice,
+  canSpeak,
+  pickVoice,
+  speak,
+  splitUtterances,
+  spokenText,
+  stopSpeaking,
+  utteranceRate,
+  voiceEndKind,
+  waitForVoices,
+} from "./speak.js";
 
 describe("speak", () => {
   it("spokenText drops links and glyphs, keeps sentences", () => {
@@ -53,5 +64,81 @@ describe("speak", () => {
     assert.equal(spoken[2].rate, 1.25);
     spoken[2].onboundary({ charIndex: 4 });
     assert.deepEqual(heard, [4]);
+    assert.equal(utteranceRate("en", 1), 0.95);
+    assert.equal(spoken[1].rate, 0.95);
+  });
+});
+
+describe("speak lot R3", () => {
+  it("découpe en phrases ≤ 200 caractères et garde un charIdx global croissant", () => {
+    const long = `${"La mer est belle. ".repeat(8)}${"Vent fort, mer formée, cap à l'ouest sans relâche. ".repeat(6)}Fin.`;
+    const chunks = splitUtterances(long, 200);
+    assert.ok(chunks.length >= 2);
+    assert.ok(chunks.every((c) => c.text.length <= 200));
+    const idxs = [];
+    for (const c of chunks) {
+      idxs.push(c.start);
+      idxs.push(c.start + Math.max(0, c.text.length - 1));
+    }
+    for (let i = 1; i < idxs.length; i++) {
+      assert.ok(idxs[i] >= idxs[i - 1], `charIdx ${idxs[i - 1]} → ${idxs[i]}`);
+    }
+    assert.ok(idxs[idxs.length - 1] >= idxs[0]);
+  });
+
+  it("choisit la voix par liste de préférence sur une liste factice", () => {
+    const en = [
+      { name: "Alex", lang: "en-US" },
+      { name: "Daniel", lang: "en-GB" },
+      { name: "Google UK English Female", lang: "en-GB" },
+    ];
+    assert.equal(pickVoice(en, "en").name, "Google UK English Female");
+    const fr = [
+      { name: "Audrey", lang: "fr-FR" },
+      { name: "Thomas", lang: "fr-FR" },
+      { name: "Google français", lang: "fr-FR" },
+    ];
+    assert.equal(pickVoice(fr, "fr").name, "Google français");
+    assert.equal(pickVoice([{ name: "Moira", lang: "en-IE" }], "en").name, "Moira");
+    assert.equal(pickVoice([{ name: "Samantha", lang: "en-US" }], "en").name, "Samantha");
+  });
+
+  it("onend immédiat sans boundary : une relance, puis linéaire sans onEnd", () => {
+    assert.equal(voiceEndKind({ hadBoundary: false, elapsedMs: 80, alreadyRetried: false }), "retry");
+    assert.equal(voiceEndKind({ hadBoundary: false, elapsedMs: 80, alreadyRetried: true }), "linear");
+    assert.equal(voiceEndKind({ hadBoundary: true, elapsedMs: 80, alreadyRetried: false }), "advance");
+
+    const spoken = [];
+    class Utter { constructor(text) { this.text = text; } }
+    const win = {
+      SpeechSynthesisUtterance: Utter,
+      performance: { now: () => 0 },
+      speechSynthesis: {
+        speaking: false,
+        cancel() {},
+        getVoices: () => [{ lang: "fr-FR", name: "Thomas" }],
+        speak(u) {
+          spoken.push(u);
+          u.onend?.();
+        },
+      },
+    };
+    let ended = 0;
+    let failed = 0;
+    speak("Bonjour tout le monde.", "fr", {
+      win,
+      onEnd: () => { ended += 1; },
+      onLeadFailed: () => { failed += 1; },
+    });
+    assert.equal(spoken.length, 2, "une relance de la même utterance");
+    assert.equal(failed, 1);
+    assert.equal(ended, 0, "le chapitre ne se termine pas — le film reste en linéaire");
+    stopSpeaking(win);
+  });
+
+  it("waitForVoices résout tout de suite si la liste est déjà là", async () => {
+    const win = { speechSynthesis: { getVoices: () => [{ name: "Thomas", lang: "fr-FR" }] } };
+    const voices = await waitForVoices(win, 50);
+    assert.equal(voices[0].name, "Thomas");
   });
 });

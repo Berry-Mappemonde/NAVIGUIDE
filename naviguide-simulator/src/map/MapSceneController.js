@@ -358,11 +358,29 @@ export class MapSceneController {
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
+    if (!previous.filmActive && this.config.filmActive) {
+      this.camera.filmChapterIdx = null;
+      this.camera.filmZoom = null;
+      this.camera.filmSetViewAt = 0;
+      this.camera.filmFlyingUntil = 0;
+    }
     if (previous.filmActive && !this.config.filmActive) {
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
+      this.camera.recapture = this.config.cinemaRecapture;
+      const live = this.config.live;
+      if (live && Number.isFinite(live.lat) && Number.isFinite(live.lon) && this.map) {
+        const lonCam = cameraLngForBoat(live.lon, this.camera.followLon);
+        this.camera.followLon = lonCam;
+        this.camera.lastPos = { lat: live.lat, lon: live.lon };
+        this.programmaticMove(() => this.map.setView(
+          [live.lat, lonCam],
+          this.map.getZoom(),
+          { animate: false },
+        ));
+      }
     }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
