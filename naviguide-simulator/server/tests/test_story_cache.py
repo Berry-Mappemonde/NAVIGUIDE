@@ -129,3 +129,44 @@ def test_story_through_cache_fills_source_from_engine_when_missing():
     body = {"type": "zee-exit", "stableKey": "zee-exit:l2", "lang": "fr"}
     out = asyncio.run(story_cache.story_through_cache(body, writer=writer))
     assert out["source"] == "rules"
+
+
+def test_translate_key_includes_lang():
+    fr = "Entrée dans la ZEE 5677."
+    assert story_cache.translate_key(fr, "en").startswith("en|")
+    assert story_cache.translate_key(fr, "en") != story_cache.translate_key(fr, "fr")
+    assert story_cache.story_key({"type": "zee-enter", "stableKey": "zee-enter:1", "lang": "fr"}) != \
+        story_cache.story_key({"type": "zee-enter", "stableKey": "zee-enter:1", "lang": "en"})
+
+
+def test_story_through_cache_translates_cached_fr(monkeypatch):
+    calls = []
+
+    async def writer(body, client=None):
+        calls.append(body.get("lang"))
+        return {
+            "status": "ready",
+            "text": "Entrée dans la ZEE 5677.",
+            "engine": "nemotron-super",
+            "source": "nemotron-super",
+        }
+
+    async def fake_tr(text, lang, client=None, **kw):
+        assert "5677" in text
+        assert lang == "en"
+        return "Entry into EEZ 5677.", "nemotron-lightning"
+
+    monkeypatch.setattr(story_cascade, "translate", fake_tr)
+    fr = {"type": "zee-enter", "stableKey": "zee-enter:l6", "lang": "fr"}
+    en = {**fr, "lang": "en"}
+    first = asyncio.run(story_cache.story_through_cache(fr, writer=writer))
+    assert first["text"] == "Entrée dans la ZEE 5677." and calls == ["fr"]
+    out = asyncio.run(story_cache.story_through_cache(en, writer=writer))
+    assert out["text"] == "Entry into EEZ 5677."
+    assert out["source"] == "nemotron-lightning"
+    assert out["translatedFrom"] == "fr"
+    assert calls == ["fr"], "EN réutilise le FR en cache, pas un second Super"
+    hit = story_cache.get_cached(en)
+    assert hit["text"] == "Entry into EEZ 5677."
+    again = asyncio.run(story_cache.story_through_cache(en, writer=writer))
+    assert again["cached"] is True and again["source"] == "cache"

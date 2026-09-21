@@ -11,6 +11,7 @@ from story_cascade import (
     need_page,
     providers,
     slim_event,
+    translate,
     write_story,
 )
 
@@ -451,3 +452,104 @@ def test_nim_still_available_behind_the_flag(monkeypatch):
     assert "ZEE" in text
     assert any("nvidia.com" in u for u in seen)
     assert source.startswith("nvidia-")
+
+
+FR_STORY = "Le 21 mai 2026 le bateau entre dans la ZEE française à La Rochelle, 36,5 kn [[ev:wx:gale]]."
+EN_STORY = "On 21 May 2026 the boat entered the French EEZ at La Rochelle, 36.5 kn [[ev:wx:gale]]."
+
+
+def test_translate_fr_is_noop():
+    text, source = asyncio.run(translate("Déjà en français, ZEE 5677.", "fr"))
+    assert text == "Déjà en français, ZEE 5677."
+    assert source == "rules"
+
+
+def test_translate_empty_is_rules():
+    text, source = asyncio.run(translate("  ", "en"))
+    assert text == "" and source == "rules"
+
+
+def test_translate_en_keeps_numbers_names_dates(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        body = request.read().decode()
+        assert "Nemotron-3_5-Lightning" in body
+        assert "36,5" in body and "La Rochelle" in body and "2026" in body
+        return httpx.Response(200, json=_chat_ok(
+            EN_STORY + " Tomorrow 99 kn.",
+            model="nvidia/Nemotron-3_5-Lightning",
+        ))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await translate(FR_STORY, "en", client)
+
+    text, source = asyncio.run(run())
+    assert source == "nemotron-lightning"
+    assert "36.5" in text or "36,5" in text
+    assert "La Rochelle" in text
+    assert "2026" in text
+    assert "[[ev:wx:gale]]" in text
+    assert "99" not in text, "aucun chiffre nouveau"
+    assert any("tokenfactory" in u for u in seen)
+
+
+def test_translate_cache_is_per_lang(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_chat_ok(EN_STORY, model="nvidia/Nemotron-3_5-Lightning"))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            a = await translate(FR_STORY, "en", client)
+            b = await translate(FR_STORY, "en", client)
+            fr = await translate(FR_STORY, "fr", client)
+            return a, b, fr
+
+    (t1, s1), (t2, s2), (t3, s3) = asyncio.run(run())
+    assert t1 == t2 == EN_STORY.strip()
+    assert {s1, s2} <= {"nemotron-lightning", "cache"}
+    assert len(seen) == 1
+    assert t3 == FR_STORY and s3 == "rules"
+
+
+def test_write_story_en_translates_after_french_draft(monkeypatch):
+    seen_models = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read().decode()
+        if "Nemotron-3_5-Lightning" in body:
+            seen_models.append("fast")
+            return httpx.Response(200, json=_chat_ok(
+                "The boat entered the French EEZ 5677.",
+                model="nvidia/Nemotron-3_5-Lightning",
+            ))
+        seen_models.append("write")
+        return httpx.Response(200, json=_chat_ok("Le bateau entre dans la ZEE française 5677."))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-enter:en", "lang": "en",
+                "needPage": False, "payload": {"zee": {"mrgid": 5677}},
+            }, client=client)
+
+    out = asyncio.run(run())
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-lightning"
+    assert "5677" in out["text"]
+    assert "99" not in out["text"]
+    assert seen_models == ["write", "fast"]

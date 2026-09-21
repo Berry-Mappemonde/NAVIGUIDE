@@ -252,3 +252,84 @@ def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):
     body = r.json()
     assert body["status"] == "failed" and body["answer"] is None and body["logged"] is False
     assert journal.latest(10, kinds=("chat",)) == []
+
+
+WX_GALE = {
+    "kind": "wx",
+    "t": "2026-05-21T06:00:00Z",
+    "event": "gale",
+    "windKnots": 36.5,
+    "maxWindKnots": 36.5,
+    "dirFromDeg": 250,
+    "hs": 2.0,
+    "model": "GFS",
+}
+
+
+def test_wx_keyword_hits_cites_gale_above_threshold():
+    hits = logbook_chat.wx_keyword_hits(
+        "avons-nous déjà eu plus de 35 nœuds ?",
+        [WX_GALE, {"kind": "wx", "event": "sea", "hs": 4.1, "windKnots": 20, "t": "2026-05-20T06:00:00Z"}],
+    )
+    assert len(hits) == 1
+    assert hits[0]["windKnots"] == 36.5
+    assert hits[0]["t"] == "2026-05-21T06:00:00Z"
+    assert logbook_chat.wx_keyword_hits("avons-nous déjà eu plus de 35 nœuds ?", []) == []
+
+
+def test_embeddings_skipped_when_keywords_hit(monkeypatch):
+    called = []
+
+    async def boom(*_a, **_k):
+        called.append(1)
+        return []
+
+    monkeypatch.setattr(logbook_chat, "wx_embed_hits", boom)
+    monkeypatch.setenv("NAVIGUIDE_EMBEDDINGS", "1")
+    out = asyncio.run(logbook_chat.similar_wx("avons-nous déjà eu plus de 35 nœuds ?", [WX_GALE]))
+    assert out and out[0]["windKnots"] == 36.5
+    assert called == []
+
+
+def test_embeddings_only_when_flag_and_no_keyword(monkeypatch):
+    called = []
+
+    async def fake_emb(question, entries, client=None):
+        called.append(question)
+        return [logbook_chat._slim_wx(WX_GALE)]
+
+    monkeypatch.setattr(logbook_chat, "wx_embed_hits", fake_emb)
+    monkeypatch.setenv("NAVIGUIDE_EMBEDDINGS", "1")
+    q = "a-t-on déjà eu un temps pareil ?"
+    out = asyncio.run(logbook_chat.similar_wx(q, [WX_GALE]))
+    assert called == [q] and out[0]["windKnots"] == 36.5
+
+    called.clear()
+    monkeypatch.delenv("NAVIGUIDE_EMBEDDINGS", raising=False)
+    assert logbook_chat.embeddings_enabled() is False
+    out2 = asyncio.run(logbook_chat.similar_wx(q, [WX_GALE]))
+    assert called == [] and out2 == []
+
+
+def test_answer_cites_wx_memory_without_invented_figure(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen["user"] = user
+        return "Oui : le journal note 36,5 kn le 21 mai 2026. Demain 99 kn.", "nemotron-lightning"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 0}, "journal": []}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    monkeypatch.setattr(journal, "latest", lambda *_a, **_k: [WX_GALE])
+    out = asyncio.run(logbook_chat.answer_question(
+        "avons-nous déjà eu plus de 35 nœuds ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert "36.5" in seen["user"] or "36,5" in seen["user"]
+    assert '"memory"' in seen["user"]
+    assert out["source"] == "nemotron-lightning"
+    assert "36,5" in out["answer"] or "36.5" in out["answer"]
+    assert "99" not in out["answer"]
+    assert out["context"]["memory"][0]["windKnots"] == 36.5

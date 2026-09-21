@@ -3,6 +3,7 @@
 NIM (`integrate.api.nvidia.com`) stays behind NAVIGUIDE_LLM_PROVIDERS;
 it is no longer the default (hackathon: Token Factory only). Never Tavily.
 Thinking OFF. No figure invented: filter_numbers on every LLM sentence.
+Lot L6 : `translate(text, lang)` (Lightning) pour l'anglais — mêmes gardes.
 """
 from __future__ import annotations
 
@@ -299,6 +300,58 @@ _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
 _MD_RE = re.compile(r"[*_#>`]+")
 MAX_SENTENCES = 2
 MAX_CHARS = 320
+
+
+def _is_en(lang: str | None) -> bool:
+    return str(lang or "").lower().startswith("en")
+
+
+TRANSLATE_SYSTEM = (
+    "You translate a sailing-log paragraph from French to English. "
+    "Keep every number, unit, proper name, date and [[ev:…]] / [[ch:…]] tag exactly as written. "
+    "Do not add, drop or invent a figure. No title, no list, no bold. Thinking OFF."
+)
+
+
+def _translate_max_tokens(text: str, override: int | None) -> int:
+    if override:
+        return max(32, int(override))
+    return min(1200, max(256, (len(text or "") // 2) + 80))
+
+
+async def translate(
+    text: str,
+    lang: str,
+    client: httpx.AsyncClient | None = None,
+    *,
+    facts: Any = None,
+    max_tokens: int | None = None,
+) -> tuple[str, str]:
+    """U9: FR → EN via Lightning (`tier=fast`). Numbers, names, dates stay.
+
+    `filter_numbers` compares the translation to the source text (or `facts`).
+    Other languages are a no-op (`source=rules`). Display label: i18n
+    `storySourceLightning` — « Nemotron 3.5 Lightning · Token Factory ».
+    """
+    src = (text or "").strip()
+    if not src:
+        return "", "rules"
+    if not _is_en(lang):
+        return src, "rules"
+    user = f"French text:\n{src}"
+    out, source = await cascade_text(
+        TRANSLATE_SYSTEM,
+        user,
+        client,
+        tier="fast",
+        fallback=src,
+        facts=facts if facts is not None else src,
+        max_tokens=_translate_max_tokens(src, max_tokens),
+    )
+    cleaned = _clean_text(out)
+    if not cleaned:
+        return src, "rules"
+    return cleaned, source
 
 
 def _is_title(line: str) -> bool:
@@ -625,8 +678,15 @@ async def write_story(
     body: dict[str, Any] | None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Cascade cible (lot L1) : Token Factory → OpenRouter → Claude → règles."""
+    """Cascade cible (lot L1) : Token Factory → OpenRouter → Claude → règles.
+
+    Langue EN (lot L6 / U9) : le récit est d'abord rédigé en FR, puis traduit
+    par Lightning — les nombres restent ceux des faits, jamais un chiffre nouveau.
+    """
     event = slim_event(body)
+    want_en = _is_en((body or {}).get("lang"))
+    if want_en:
+        event = {**event, "lang": "fr"}
     page, page_url = need_page(body)
     system, user = build_prompt(event if not page else {**event, "pageUrl": page_url}, page_url)
     fallback = (body or {}).get("phrase") if isinstance((body or {}).get("phrase"), str) else None
@@ -659,8 +719,22 @@ async def write_story(
             "source": source,
             "engine": source,
         }
+    used_local = tidy == (fallback or "").strip() and tidy != _clean_text(text).strip()
+    if want_en and tidy and not used_local:
+        tidy, source = await translate(tidy, "en", client, facts=tidy)
+        if not tidy:
+            return {
+                "status": "failed",
+                "reason": f"{source} empty translation",
+                "cascade": "tokenfactory-openrouter-claude",
+                "tavily": None,
+                "nvidia": None,
+                "text": None,
+                "source": source,
+                "engine": source,
+            }
     engine = source
-    if tidy == (fallback or "").strip() and tidy != _clean_text(text).strip():
+    if used_local:
         engine = f"{source}+local"
     return {
         "status": "ready",
