@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from admin_guard import rate_limited
 from ici_engine import fill_dossier, haversine_nm
 from ici_layers import _overpass_elements, _overpass_latlon
-from story_cascade import cascade_text, tidy_story
+from story_cascade import cascade_text, tidy_story, translate
 
 log = logging.getLogger("naviguide-simulator.escale")
 
@@ -237,7 +237,8 @@ def _paragraph_prompt(name: str, sections: dict, lang: str) -> tuple[str, str]:
 async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     if not sections:
         return {"status": "empty", "text": None, "engine": None, "source": None}
-    system, user = _paragraph_prompt(name, sections, lang)
+    # U9 : rédiger en FR (U5), puis traduire si le client demande EN.
+    system, user = _paragraph_prompt(name, sections, "fr")
     try:
         text, source = await cascade_text(system, user, client, tier="fast")
     except Exception as exc:
@@ -245,6 +246,10 @@ async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.As
     tidy = tidy_story(text, None, max_sentences=PARAGRAPH_SENTENCES, max_chars=PARAGRAPH_CHARS)
     if not tidy:
         return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "only machinery"}
+    if str(lang or "fr").lower().startswith("en"):
+        tidy, source = await translate(tidy, "en", client, facts=tidy)
+        if not tidy:
+            return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "empty translation"}
     return {"status": "ready", "text": tidy, "engine": source, "source": source}
 
 

@@ -136,3 +136,29 @@ def test_write_paragraph_uses_fast_tier_and_keeps_source(monkeypatch):
     assert out["status"] == "ready"
     assert out["source"] == "nemotron-lightning"
     assert out["engine"] == "nemotron-lightning"
+
+
+def test_write_paragraph_en_translates_and_keeps_figures(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(("cascade", kw.get("tier"), "français" in system or "Tu présentes" in system))
+        return "La Rochelle a le Port des Minimes à 0,2 nm.", "nemotron-lightning"
+
+    async def fake_tr(text, lang, client=None, **kw):
+        seen.append(("translate", lang))
+        assert "0,2" in text or "0.2" in text
+        assert "Minimes" in text
+        return "La Rochelle has the Port des Minimes at 0.2 nm.", "nemotron-lightning"
+
+    monkeypatch.setattr(escale_api, "cascade_text", fake_cascade)
+    monkeypatch.setattr(escale_api, "translate", fake_tr)
+    sections = {"mooring": {"marinas": [{"name": "Minimes", "nm": 0.2}]}}
+    out = asyncio.run(escale_api.write_paragraph("La Rochelle", sections, "en"))
+    assert ("cascade", "fast", True) in seen
+    assert ("translate", "en") in seen
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-lightning"
+    assert "Minimes" in out["text"]
+    assert "0.2" in out["text"] or "0,2" in out["text"]
+    assert "99" not in out["text"]

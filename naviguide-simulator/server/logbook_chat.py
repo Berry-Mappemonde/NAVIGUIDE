@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -30,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from admin_guard import is_admin, rate_limited
-from story_cascade import cascade_text, tidy_story
+from story_cascade import TOKENFACTORY_BASE, cascade_text, nebius_key, tidy_story
 
 log = logging.getLogger("naviguide-simulator.logbook")
 
@@ -46,6 +48,13 @@ _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
 _WHY_RE = re.compile(r"(?i)(?<!\w)(pourquoi|comment|why|how)(?!\w)")
 FAST_QUESTION_MAX = 80
+WX_MEMORY = 200
+_WX_WORDS = re.compile(
+    r"(?i)(n[œoe]uds?|knots?|vent|wind|gale|coup de vent|rafale|hs|vague|mer|sea|houle|force)",
+)
+_SEA_WORDS = re.compile(r"(?i)(hs|vague|mer|sea|houle)")
+EMBED_MODEL = "Qwen/Qwen3-Embedding-8B"
+EMBED_MIN_COS = 0.25
 
 
 # ── context ─────────────────────────────────────────────────────────────────
@@ -205,6 +214,143 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
     return ctx
 
 
+# ── mémoire journal (lot L6 / U13) : mots-clés d'abord, embeddings option ──
+
+def embeddings_enabled() -> bool:
+    return (os.environ.get("NAVIGUIDE_EMBEDDINGS") or "").strip() == "1"
+
+
+def _slim_wx(entry: dict) -> dict[str, Any]:
+    return {
+        k: entry.get(k)
+        for k in (
+            "kind", "t", "event", "name", "windKnots", "maxWindKnots",
+            "hs", "maxHs", "dirFromDeg", "hours", "level", "model", "basis",
+        )
+        if entry.get(k) is not None
+    }
+
+
+def _question_threshold(question: str) -> Optional[float]:
+    nums: list[float] = []
+    for m in _NUM_RE.findall(question or ""):
+        try:
+            nums.append(float(m.replace(",", ".")))
+        except ValueError:
+            continue
+    return nums[0] if nums else None
+
+
+def wx_keyword_hits(question: str, entries: list[dict] | None) -> list[dict]:
+    """Faits wx déjà au journal. Aucun souvenir inventé.
+
+    « avons-nous déjà eu plus de 35 nœuds ? » → les entrées dont
+    `windKnots` / `maxWindKnots` ≥ 35. Sans seuil : les `gale` / `sea`.
+    """
+    q = question or ""
+    thr = _question_threshold(q)
+    if thr is None and not _WX_WORDS.search(q):
+        return []
+    sea_q = bool(_SEA_WORDS.search(q))
+    out: list[dict] = []
+    for e in entries or []:
+        if not isinstance(e, dict):
+            continue
+        wind = e.get("maxWindKnots") if e.get("maxWindKnots") is not None else e.get("windKnots")
+        hs = e.get("maxHs") if e.get("maxHs") is not None else e.get("hs")
+        if thr is not None:
+            if sea_q:
+                if isinstance(hs, (int, float)) and float(hs) >= thr:
+                    out.append(_slim_wx(e))
+            elif isinstance(wind, (int, float)) and float(wind) >= thr:
+                out.append(_slim_wx(e))
+        elif e.get("event") in {"gale", "sea"} or e.get("kind") == "wx":
+            out.append(_slim_wx(e))
+    return out[:8]
+
+
+def _wx_embed_text(entry: dict) -> str:
+    parts = [str(entry.get("kind") or "wx"), str(entry.get("event") or "")]
+    for k in ("t", "windKnots", "maxWindKnots", "hs", "maxHs", "hours", "level", "model"):
+        if entry.get(k) is not None:
+            parts.append(f"{k}={entry[k]}")
+    return " ".join(p for p in parts if p)
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na <= 0 or nb <= 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+async def _embed(texts: list[str], client: httpx.AsyncClient | None) -> list[list[float]]:
+    key = nebius_key()
+    if not key or not texts:
+        return []
+    url = f"{TOKENFACTORY_BASE}/embeddings"
+    payload = {"model": EMBED_MODEL, "input": texts}
+    own = client is None
+    http = client or httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=8.0))
+    try:
+        r = await http.post(
+            url,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json=payload,
+        )
+        if r.status_code >= 400:
+            return []
+        data = r.json()
+        rows = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            return []
+        out: list[list[float]] = []
+        for row in sorted(rows, key=lambda x: int((x or {}).get("index") or 0)):
+            emb = (row or {}).get("embedding")
+            if isinstance(emb, list) and emb:
+                out.append([float(v) for v in emb])
+        return out
+    except Exception:
+        return []
+    finally:
+        if own:
+            await http.aclose()
+
+
+async def wx_embed_hits(
+    question: str, entries: list[dict] | None, client: httpx.AsyncClient | None = None,
+) -> list[dict]:
+    """Qwen/Qwen3-Embedding-8B — seulement si NAVIGUIDE_EMBEDDINGS=1. Faits seuls."""
+    items = [e for e in (entries or []) if isinstance(e, dict)]
+    if not items or not (question or "").strip():
+        return []
+    vecs = await _embed([question] + [_wx_embed_text(e) for e in items], client)
+    if len(vecs) != 1 + len(items):
+        return []
+    qv, evs = vecs[0], vecs[1:]
+    ranked = sorted(
+        ((_cosine(qv, ev), e) for e, ev in zip(items, evs)),
+        key=lambda p: -p[0],
+    )
+    return [_slim_wx(e) for score, e in ranked if score >= EMBED_MIN_COS][:5]
+
+
+async def similar_wx(
+    question: str, entries: list[dict] | None, client: httpx.AsyncClient | None = None,
+) -> list[dict]:
+    """Mots-clés d'abord ; embeddings seulement si le drapeau est à 1 et rien trouvé."""
+    hits = wx_keyword_hits(question, entries)
+    if hits:
+        return hits
+    if embeddings_enabled():
+        return await wx_embed_hits(question, entries, client)
+    return []
+
+
 # ── answer ──────────────────────────────────────────────────────────────────
 
 def chat_tier(question: str) -> str:
@@ -270,6 +416,14 @@ def summarize(question: str, answer: str) -> str:
 async def answer_question(question: str, lang: str, client_ctx: dict | None, now: datetime,
                           http: httpx.AsyncClient | None = None) -> dict[str, Any]:
     ctx = await build_context(client_ctx, now, http)
+    try:
+        import voyage_journal as journal  # noqa: PLC0415
+        wx_all = journal.latest(WX_MEMORY, kinds=("wx",))
+    except Exception:
+        wx_all = [e for e in (ctx.get("journal") or []) if isinstance(e, dict) and e.get("kind") == "wx"]
+    memory = await similar_wx(question, wx_all, http)
+    if memory:
+        ctx["memory"] = memory
     system, user = _prompt(question, ctx, lang)
     try:
         raw, source = await cascade_text(system, user, http, tier=chat_tier(question))
@@ -324,5 +478,5 @@ async def post_logbook_chat(body: ChatIn, request: Request):
         "logged": logged,
         "entry": entry,
         "t": now.isoformat().replace("+00:00", "Z"),
-        "facts": {k: out["context"].get(k) for k in ("official", "boat", "nextStop") if out["context"].get(k) is not None},
+        "facts": {k: out["context"].get(k) for k in ("official", "boat", "nextStop", "memory") if out["context"].get(k) is not None},
     }

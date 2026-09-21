@@ -751,13 +751,16 @@ async def write_with_llm(
     facts = film_facts(raw, events)
     raw_text = "\n\n".join(c.get("text") or "" for c in raw.get("chapters") or [])
     user = (
-        f"lang={lang}\nids={json.dumps(event_ids)}\n"
+        f"lang=fr\nids={json.dumps(event_ids)}\n"
         f"facts={json.dumps(facts, ensure_ascii=False, default=str)[:6000]}\n"
         f"raw:\n{raw_text}"
     )
     text, source = await cascade(
         WRITE_SYSTEM, user, tier="write", fallback="", facts=None, max_tokens=WRITE_MAX_TOKENS,
     )
+    if _en(lang) and text:
+        from story_cascade import translate  # noqa: PLC0415
+        text, source = await translate(text, "en", facts=text, max_tokens=WRITE_MAX_TOKENS)
     ok, _, _ = written_is_valid(text, facts, event_ids)
     if not ok:
         return None, "rules"
