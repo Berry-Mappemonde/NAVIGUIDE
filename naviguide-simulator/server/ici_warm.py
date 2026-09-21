@@ -13,6 +13,8 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
+La veille Tavily (lot L4) tourne après le chauffage, puis toutes les
+6 h (`NAVIGUIDE_TAVILY_WATCH=0` pour l'éteindre).
 """
 from __future__ import annotations
 
@@ -63,6 +65,14 @@ def warm_enabled() -> bool:
 def stories_enabled() -> bool:
     """Pre-generation of the LLM stories after the pearls (lot F); off in tests."""
     return (os.environ.get("NAVIGUIDE_STORY_PREGEN") or "1").strip() not in ("0", "false", "no")
+
+
+def watch_enabled() -> bool:
+    """Veille Tavily + enrichissement (lot L4) ; off si pas de clé ou drapeau 0."""
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip() not in ("0", "false", "no")
+
+
+WATCH_LOOP_S = float(os.environ.get("NAVIGUIDE_TAVILY_WATCH_S") or 6 * 3600)
 
 
 def status() -> dict[str, Any]:
@@ -476,6 +486,12 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
             _state["stories"] = await story_cache.pregenerate_official(points)
         except Exception as exc:
             log.debug("pré-génération des récits : %s", exc)
+    if watch_enabled():
+        try:
+            import escale_watch  # noqa: PLC0415
+            _state["watch"] = await escale_watch.run_daily(voy)
+        except Exception as exc:
+            log.debug("veille Tavily : %s", exc)
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
     log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",
@@ -568,8 +584,22 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
     try:
         loop = loop or asyncio.get_event_loop()
         loop.create_task(warm_official_route())
+        if watch_enabled():
+            loop.create_task(_watch_loop())
         return True
     except Exception as exc:
         _state["status"] = "error"
         log.warning("chauffeur de perles non lancé : %s", exc)
         return False
+
+
+async def _watch_loop(pause_s: float = WATCH_LOOP_S) -> None:
+    """Relance la veille toutes les `pause_s` (cache = 1 search / escale / jour)."""
+    await asyncio.sleep(min(120.0, max(5.0, pause_s / 30)))
+    while True:
+        try:
+            import escale_watch  # noqa: PLC0415
+            _state["watch"] = await escale_watch.run_daily()
+        except Exception as exc:
+            log.debug("boucle veille : %s", exc)
+        await asyncio.sleep(pause_s)

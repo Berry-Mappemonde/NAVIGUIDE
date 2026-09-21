@@ -49,7 +49,7 @@ export function formatDay(day, lang = "fr") {
 
 export const KIND_ICON = Object.freeze({
   position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟",
-  poe: "🛃", wx: "⚠️", chat: "💬", climo: "🧭", sci: "🔬",
+  poe: "🛃", wx: "⚠️", chat: "💬", climo: "🧭", sci: "🔬", news: "📰",
 });
 
 /** One journal entry → { icon, time, text }. Unknown kinds keep their raw kind. */
@@ -175,6 +175,18 @@ export function formatJournalEntry(entry, lang = "fr") {
       const nm = Number.isFinite(facts.nm) ? facts.nm : e.nm;
       const dist = Number.isFinite(nm) ? ` (${num(nm, lang, 1)} nm)` : "";
       text = en ? `Scientific station passed: ${name}${dist}` : `Station scientifique croisée : ${name}${dist}`;
+      break;
+    }
+    case "news": {
+      const name = e.name || "";
+      const body = e.text || "";
+      const src = e.source || "";
+      const host = (() => {
+        if (!e.url) return src;
+        try { return new URL(e.url).hostname.replace(/^www\./, ""); } catch { return src; }
+      })();
+      const cite = host || src;
+      text = [name, body, cite ? `(${cite})` : ""].filter(Boolean).join(" · ");
       break;
     }
     default:

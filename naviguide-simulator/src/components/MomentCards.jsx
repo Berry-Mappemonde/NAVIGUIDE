@@ -6,19 +6,27 @@ import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { cardSpeech, formatTruthDate, strikeParts } from "../engine/momentCard.js";
 import { ListenButton } from "./ListenButton.jsx";
 
-function useRecipeCard(card) {
+function useWindowCard(card, key, eventName) {
   const [fixture, setFixture] = useState(null);
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const read = () => {
-      const v = window.__naviguideTruthFixture;
+      const v = window[key];
       setFixture(v && typeof v === "object" ? v : null);
     };
     read();
-    window.addEventListener("naviguide-truth-fixture", read);
-    return () => window.removeEventListener("naviguide-truth-fixture", read);
-  }, []);
+    window.addEventListener(eventName, read);
+    return () => window.removeEventListener(eventName, read);
+  }, [key, eventName]);
   return fixture || card;
+}
+
+function useRecipeCard(card) {
+  return useWindowCard(card, "__naviguideTruthFixture", "naviguide-truth-fixture");
+}
+
+function useNewsFixture(card) {
+  return useWindowCard(card, "__naviguideNewsFixture", "naviguide-news-fixture");
 }
 
 function CardText({ text, unsupported, className, pending }) {
@@ -171,7 +179,8 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
  */
 export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, onNext, onFocus, inline = false }) {
   const { t, lang } = useLang();
-  if (!card) return null;
+  const shown = useNewsFixture(card);
+  if (!shown) return null;
   const frame = inline
     ? "rounded-lg border border-white/10 bg-slate-800/50 text-white px-2 py-1.5 min-w-0"
     : "naviguide-floating-card absolute z-[2040] w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border border-white/12 bg-slate-950/88 text-white shadow-xl px-3 py-2 backdrop-blur-sm";
@@ -182,13 +191,13 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
       bottom: "calc(var(--sim-inset-bottom, 0px) + 30px)",
     };
   return (
-    <div data-testid="moment-free" data-kind={card.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+    <div data-testid="moment-free" data-kind={shown.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[9px] font-semibold uppercase tracking-wider text-white/55 min-w-0 truncate">
           {t("momentFreeTitle")}
         </span>
         <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-          <ListenButton text={cardSpeech(card)} t={t} lang={lang} testId="moment-free-listen" />
+          <ListenButton text={cardSpeech(shown)} t={t} lang={lang} testId="moment-free-listen" />
           <button
             type="button"
             onClick={onNext}
@@ -201,14 +210,14 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
           </button>
         </div>
       </div>
-      {card.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
+      {shown.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{shown.title}</div> : null}
       <CardText
-        text={card.text}
-        unsupported={card.truth?.unsupported}
+        text={shown.text}
+        unsupported={shown.truth?.unsupported}
         className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
       />
-      <TruthBadge truth={card.truth} />
-      <CardLinks entity={card.entity} onFocus={onFocus} t={t} />
+      <TruthBadge truth={shown.truth} />
+      <CardLinks entity={shown.entity} onFocus={onFocus} t={t} />
     </div>
   );
 });

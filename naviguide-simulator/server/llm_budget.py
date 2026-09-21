@@ -204,6 +204,18 @@ def tavily_usage(day: str | None = None) -> dict[str, Any]:
     return out
 
 
+DEFAULT_TAVILY_CAP = 80
+
+
+def tavily_cap() -> int:
+    return _env_int("NAVIGUIDE_TAVILY_DAILY_CREDITS", DEFAULT_TAVILY_CAP)
+
+
+def allow_tavily() -> bool:
+    """False when today's Tavily credits are at/over the cap — no network."""
+    return int(tavily_usage()["credits"]) < tavily_cap()
+
+
 def record_tavily(credits: int = 1) -> dict[str, Any]:
     """Add one Tavily search/extract call (1 credit / call)."""
     import pearl_store  # noqa: PLC0415

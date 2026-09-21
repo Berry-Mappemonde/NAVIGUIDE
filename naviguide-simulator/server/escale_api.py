@@ -156,7 +156,7 @@ def classify_osm(elements: list, lat0: float, lon0: float) -> dict[str, dict[str
     return out
 
 
-def _slim(items: list | None, keep: tuple[str, ...] = ("name", "lat", "lon", "nm", "url", "visit_url", "manager_url", "gold_on", "phone", "type", "kind", "source")) -> list[dict]:
+def _slim(items: list | None, keep: tuple[str, ...] = ("name", "lat", "lon", "nm", "url", "visit_url", "manager_url", "gold_on", "phone", "type", "kind", "source", "enrich", "phrase")) -> list[dict]:
     out = []
     for it in items or []:
         if not isinstance(it, dict) or not it.get("name"):

@@ -18,6 +18,8 @@ os.environ.setdefault("NAVIGUIDE_ICI_WARM", "0")
 os.environ.setdefault("NAVIGUIDE_HINDCAST", "0")
 # No LLM pre-generation after a (test) warm run either.
 os.environ.setdefault("NAVIGUIDE_STORY_PREGEN", "0")
+# Pas de boucle veille Tavily pendant les tests.
+os.environ.setdefault("NAVIGUIDE_TAVILY_WATCH", "0")
 
 # Le secret admin d'un .env local ne doit pas faire échouer les tests qui
 # écrivent (TestClient = appel local direct → mode dev). Les tests du garde

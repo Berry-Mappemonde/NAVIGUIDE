@@ -279,4 +279,6 @@ def info() -> dict[str, Any]:
         "stories": kv_count("story"),
         "truth": kv_count("truth"),
         "hindcast": kv_count("hindcast"),
+        "watch": kv_count("watch"),
+        "enrich": kv_count("enrich"),
     }

@@ -131,6 +131,7 @@ export function cardEntityNmFromBoat(card, boat) {
 
 /** FREE: the cited place is farther than FREE_STALE_NM from the boat. */
 export function isFreeStale(card, boat, limitNm = FREE_STALE_NM) {
+  if (card?.kind === "news") return false;
   const d = cardEntityNmFromBoat(card, boat);
   return d != null && d > limitNm;
 }
@@ -174,20 +175,39 @@ const KIND_WORDS = Object.freeze({
   escale: ["Escale", "Stopover"],
   climo: ["Changement de régime", "Regime change"],
   sci: ["Station croisée", "Station passed"],
+  news: ["Veille", "Watch"],
 });
 
 /** Journal kinds that become a moment card (lot E + F2). */
-export const JOURNAL_CARD_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "note", "climo", "sci"]);
+export const JOURNAL_CARD_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "note", "climo", "sci", "news"]);
 
 const JOURNAL_TITLE = {
-  fr: { stop: "Escale", zee: "ZEE", amp: "Aire marine protégée", poe: "Port d’entrée", wx: "Météo au bateau", note: "Mot du skipper", climo: "Changement de régime", sci: "Station croisée" },
-  en: { stop: "Stopover", zee: "EEZ", amp: "Marine protected area", poe: "Port of entry", wx: "Weather at the boat", note: "Skipper's note", climo: "Regime change", sci: "Station passed" },
+  fr: { stop: "Escale", zee: "ZEE", amp: "Aire marine protégée", poe: "Port d’entrée", wx: "Météo au bateau", note: "Mot du skipper", climo: "Changement de régime", sci: "Station croisée", news: "Veille" },
+  en: { stop: "Stopover", zee: "EEZ", amp: "Marine protected area", poe: "Port of entry", wx: "Weather at the boat", note: "Skipper's note", climo: "Regime change", sci: "Station passed", news: "Watch" },
 };
 
 function journalDayLabel(iso, lang) {
   const t = Date.parse(iso || "");
   if (!Number.isFinite(t)) return "";
   return new Date(t).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+function watchDayLabel(iso, lang) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString(isEn(lang) ? "en-GB" : "fr-FR", {
+    day: "numeric", month: "short", timeZone: "UTC",
+  });
+}
+
+/** Veille : plus visible après J+2. */
+export function newsExpired(entry, nowMs = Date.now()) {
+  if (!entry) return true;
+  const exp = Date.parse(entry.expires || "");
+  if (Number.isFinite(exp)) return nowMs >= exp;
+  const at = Date.parse(entry.t || "");
+  if (!Number.isFinite(at)) return false;
+  return nowMs - at >= 3 * 86_400_000;
 }
 
 function journalTitleOf(entry, lang) {
@@ -206,6 +226,7 @@ function journalEntityKind(entry) {
   if (entry?.kind === "amp") return "amp";
   if (entry?.kind === "sci") return "science";
   if (entry?.kind === "stop") return "escale";
+  if (entry?.kind === "news") return "escale";
   return "place";
 }
 
@@ -286,26 +307,29 @@ export function formatTruthDate(iso, lang = "fr") {
 }
 
 /** A moment card (NOW lane) from a journal line — the text the journal already formats. */
-export function cardFromJournalEntry(entry, lang = "fr") {
+export function cardFromJournalEntry(entry, lang = "fr", nowMs = Date.now()) {
   if (!entry || !JOURNAL_CARD_KINDS.has(entry.kind)) return null;
+  if (entry.kind === "news" && newsExpired(entry, nowMs)) return null;
   const f = formatJournalEntry(entry, lang);
-  const when = journalDayLabel(entry.t, lang);
-  const title = journalTitleOf(entry, lang);
+  const when = entry.kind === "news" ? watchDayLabel(entry.t, lang) : journalDayLabel(entry.t, lang);
+  const title = entry.kind === "news"
+    ? `${entry.name || journalTitleOf(entry, lang)}${when ? ` · ${isEn(lang) ? "watch of" : "veille du"} ${when}` : ""}`
+    : journalTitleOf(entry, lang);
   const hasPos = Number.isFinite(entry.lat) && Number.isFinite(entry.lon);
   const given = entry.entity && typeof entry.entity === "object" ? entry.entity : null;
   const lat = Number.isFinite(given?.lat) ? given.lat : entry.lat;
   const lon = Number.isFinite(given?.lon) ? given.lon : entry.lon;
   return {
     key: `replay:${entry.id || `${entry.kind}:${entry.t}`}`,
-    lane: LANE_NOW,
+    lane: entry.kind === "news" ? LANE_FREE : LANE_NOW,
     origin: "journal",
     kind: entry.kind,
     type: `replay-${entry.kind}`,
     severity: entry.kind === "wx" ? "alert" : "info",
-    title: `${title}${when ? ` · ${when}` : ""}`,
+    title: entry.kind === "news" ? title : `${title}${when ? ` · ${when}` : ""}`,
     text: f.text,
     facts: entry.facts || null,
-    entity: hasPos || (Number.isFinite(lat) && Number.isFinite(lon))
+    entity: hasPos || (Number.isFinite(lat) && Number.isFinite(lon)) || given?.url || entry.url
       ? {
         id: `replay:${entry.kind}:${entry.name || given?.name || entry.t}`,
         kind: journalEntityKind(entry),
@@ -336,6 +360,7 @@ function placeItem(kind, item, lang) {
   const en = isEn(lang);
   const where = nm != null ? (en ? ` at ${num(nm, lang)} nm` : ` à ${num(nm, lang)} nm`) : "";
   const source = item.source ? ` (${item.source})` : "";
+  const enrich = item.enrich?.text || item.phrase || "";
   const key = `bag:${kind}:${item.site_id ?? item.id ?? item.osm_id ?? `${item.name}:${Number(item.lat).toFixed(2)}:${Number(item.lon).toFixed(2)}`}`;
   return {
     key,
@@ -345,7 +370,7 @@ function placeItem(kind, item, lang) {
     type: kind,
     severity: "info",
     title: kindWord(kind, lang),
-    text: `${name}${where}${kind === "science" ? source : ""}.`,
+    text: `${name}${where}${kind === "science" ? source : ""}.${enrich ? ` ${enrich}` : ""}`,
     entity: {
       id: key,
       kind,
@@ -354,9 +379,48 @@ function placeItem(kind, item, lang) {
       lat: Number.isFinite(Number(item.lat)) ? Number(item.lat) : null,
       lon: Number.isFinite(Number(item.lon)) ? Number(item.lon) : null,
       nm,
-      url: item.url || item.website || (kind === "amp" ? item.visit_url || item.manager_url : null) || null,
-      source: item.source || null,
+      url: item.enrich?.url || item.url || item.website || (kind === "amp" ? item.visit_url || item.manager_url : null) || null,
+      source: item.source || item.enrich?.source || null,
     },
+  };
+}
+
+function newsItemFromBag(item, lang) {
+  if (!item || newsExpired(item)) return null;
+  const name = item.name || "";
+  const when = watchDayLabel(item.t, lang);
+  const host = (() => {
+    if (!item.url) return item.source || "";
+    try { return new URL(item.url).hostname.replace(/^www\./, ""); } catch { return item.source || ""; }
+  })();
+  const title = `${name}${when ? ` · ${isEn(lang) ? "watch of" : "veille du"} ${when}` : ""}`;
+  const text = `${item.text || ""}${host ? ` (${host})` : ""}`.trim();
+  if (!text) return null;
+  const key = `bag:news:${item.id || `${name}:${item.t}`}`;
+  const lat = Number.isFinite(Number(item.lat)) ? Number(item.lat) : (Number.isFinite(Number(item.entity?.lat)) ? Number(item.entity.lat) : null);
+  const lon = Number.isFinite(Number(item.lon)) ? Number(item.lon) : (Number.isFinite(Number(item.entity?.lon)) ? Number(item.entity.lon) : null);
+  return {
+    key,
+    lane: LANE_FREE,
+    origin: "bag",
+    kind: "news",
+    type: "news",
+    severity: "info",
+    title,
+    text,
+    entity: {
+      id: key,
+      kind: "escale",
+      name,
+      rawName: name,
+      lat,
+      lon,
+      nm: 0,
+      url: item.url || item.entity?.url || null,
+      source: item.source || host || null,
+    },
+    at: item.t,
+    expires: item.expires || null,
   };
 }
 
@@ -381,6 +445,10 @@ export function infoItemsFromBag(bag, lang = "fr") {
   push("science", bag.science?.nearby);
   push("project", bag.projects);
   push("amp", bag.amp);
+  (bag.news || []).forEach((it) => {
+    const card = newsItemFromBag(it, lang);
+    if (card) out.push(card);
+  });
   push("aton", bag.aton?.nearby);
 
   const scene = bag.satellites?.scene || bag.satellites?.scenes?.[0];

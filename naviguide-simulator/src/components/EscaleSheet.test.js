@@ -14,6 +14,7 @@ describe("EscaleSheet contract (lot C)", () => {
     assert.match(src, /onFocus\(\{ name: item\.name, lat: item\.lat, lon: item\.lon, kind: SUB_KIND\[sub\]/);
     assert.match(src, /target="_blank" rel="noopener noreferrer"/);
     assert.match(src, /Object\.keys\(sections\)/, "sections come from the server: nothing invented client-side");
+    assert.match(src, /escale-enrich/, "phrase sourcée de la perle, pas un fetch client");
     assert.doesNotMatch(src, /fetch\(|Nemotron|Tavily|Nebius/i);
   });
 

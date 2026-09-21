@@ -17,7 +17,9 @@ UTC, écrite par le serveur seul :
                 pas de `wx` (lot A, enrichi lot F2 : durée, max, level) ;
 - `climo`     : changement de régime entre deux perles (rose ≥ 90°, calmes,
                 saison cyclonique) — lot F2 ;
-- `sci`       : station / campagne scientifique à ≤ 10 nm — lot F2.
+- `sci`       : station / campagne scientifique à ≤ 10 nm — lot F2 ;
+- `news`      : veille Tavily d'une escale (J-10 → J+2), datée, avec URL
+                — lot L4. Expire à J+2.
 
 Rien n'est inventé : une position vient de l'horloge, un vent d'un GRIB
 réellement téléchargé. Les trous restent des trous (`absent`), le journal
@@ -43,7 +45,7 @@ SLOT_HOURS = (0, 6, 12, 18)
 BACKFILL_MAX_DAYS = 400          # toute l'expédition, jamais plus
 TICK_MIN_S = 60.0                # les GET publics ne réécrivent pas plus souvent
 NOTE_MAX_CHARS = 2000
-KINDS = ("position", "stop", "grib", "note", "zee", "amp", "poe", "wx", "chat", "climo", "sci")
+KINDS = ("position", "stop", "grib", "note", "zee", "amp", "poe", "wx", "chat", "climo", "sci", "news")
 CHAT_MAX_CHARS = 1200
 WX_GALE_KT = 34.0          # Beaufort 8 « coup de vent »
 WX_HS_ROUGH_M = 2.5        # WMO état de la mer 5 « forte »
@@ -640,6 +642,17 @@ def add_chat(question: str, answer: str, summary: str, now: datetime, *, lang: s
     return entry
 
 
+# ── veille (lot L4) ─────────────────────────────────────────────────────────
+
+def record_news(entry: dict) -> bool:
+    """Une entrée `news` datée, avec URL. Idempotente (id = news:slug:jour)."""
+    if not isinstance(entry, dict) or entry.get("kind") != "news":
+        return False
+    if not entry.get("id") or not entry.get("t") or not entry.get("text"):
+        return False
+    return _append([entry]) > 0
+
+
 # ── tick ────────────────────────────────────────────────────────────────────
 
 def tick(voy: Optional[dict], now: datetime, *, force: bool = False) -> Dict[str, Any]:
@@ -674,7 +687,7 @@ def tick(voy: Optional[dict], now: datetime, *, force: bool = False) -> Dict[str
     return out
 
 
-EVENT_KINDS = ("stop", "grib", "note", "zee", "amp", "poe", "wx", "chat", "climo", "sci")
+EVENT_KINDS = ("stop", "grib", "note", "zee", "amp", "poe", "wx", "chat", "climo", "sci", "news")
 EVENTS_MAX = 800
 
 

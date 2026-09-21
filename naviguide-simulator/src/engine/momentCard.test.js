@@ -10,6 +10,7 @@ import {
   cardFromEvent,
   cardFromJournalEntry,
   cardSpeech,
+  newsExpired,
   eventTruth,
   strikeParts,
   truthForCard,
@@ -19,6 +20,7 @@ import {
   entityForEvent,
   escaleCard,
   infoItemsFromBag,
+  isFreeStale,
   isStaleCard,
   nextFree,
 } from "./momentCard.js";
@@ -130,6 +132,49 @@ describe("cartes", () => {
     assert.equal(sci.entity.kind, "science");
     assert.equal(sci.entity.url, "https://www.pmel.noaa.gov/pirata/");
     assert.equal(cardFromJournalEntry({ kind: "grib", t: "2026-05-15T12:00:00Z" }), null);
+  });
+
+  it("lot L4: carte FREE news datée, lien, expire à J+2 ; phrase science sourcée", () => {
+    const entry = {
+      id: "news:noumea:2026-09-20",
+      kind: "news",
+      t: "2026-09-20T12:00:00Z",
+      expires: "2026-09-23T00:00:00Z",
+      name: "Nouméa",
+      text: "Travaux annoncés à la marina de Motu Uta",
+      url: "https://www.portautonome.nc/avis",
+      source: "nemotron-lightning",
+    };
+    const card = cardFromJournalEntry(entry, "fr", Date.parse("2026-09-20T15:00:00Z"));
+    assert.equal(card.lane, LANE_FREE);
+    assert.equal(card.kind, "news");
+    assert.match(card.title, /Nouméa/);
+    assert.match(card.title, /veille du/);
+    assert.match(card.text, /Travaux/);
+    assert.equal(card.entity.url, "https://www.portautonome.nc/avis");
+    assert.equal(cardFromJournalEntry(entry, "fr", Date.parse("2026-09-23T00:00:00Z")), null);
+    assert.equal(newsExpired({ ...entry, expires: "2026-09-22T00:00:00Z" }, Date.parse("2026-09-22T00:00:00Z")), true);
+
+    const withNews = {
+      ...bagFreeOnly,
+      news: [entry],
+      science: {
+        nearby: [{
+          name: "IRD Nouméa", nm: 2, lat: 46.15, lon: -1.16, source: "ird",
+          url: "https://www.ird.fr/noumea",
+          enrich: { text: "L'IRD observe le climat du Pacifique Sud.", url: "https://www.ird.fr/noumea" },
+        }],
+      },
+    };
+    const items = infoItemsFromBag(withNews, "fr");
+    const news = items.find((c) => c.kind === "news");
+    assert.ok(news);
+    assert.equal(news.lane, LANE_FREE);
+    assert.match(news.title, /Nouméa · veille du/);
+    assert.equal(news.entity.url, entry.url);
+    const sci = items.find((c) => c.kind === "science");
+    assert.match(sci.text, /IRD observe le climat/);
+    assert.equal(isFreeStale(news, { lat: 46.15, lon: -1.17 }), false);
   });
 
   it("cardFromEvent : texte de phraseForEvent, entité du payload, liens", () => {
