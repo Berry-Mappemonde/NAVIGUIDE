@@ -178,6 +178,8 @@ export default {
   routeLandShort:     "terre",
   routePointsShort:   "points",
   routePointsHint:    "{waypoints} points de passage du routeur (caps, canaux) · {points} sommets du tracé",
+  routeDistanceHint:  "distance du film : saut avion exclu ; distance totale : {total} nm",
+  speedFallback:      "(repli sans polaire)",
   polarShow:          "Voir les polaires",
   polarHide:          "Masquer",
   advancedSettings:   "Paramètres avancés",

@@ -1,14 +1,19 @@
 """Table d’horloge — même algo que src/engine/voyageClock.js (contrat A = B)."""
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from climatology_atlas import atlas_wind_at_dt, prefetch_points
 from climatology_zones import boat_speed_from_wind
+
+_PORT_DAYS_PATH = Path(__file__).resolve().parent / "data" / "port_days.json"
+_PORT_DAYS_CACHE: Optional[dict] = None
 
 AIR_CALENDAR_HOURS = 8.0
 LAND_CALENDAR_HOURS = 4.0
@@ -33,15 +38,66 @@ TWA_RUNNING_MAX = 170.0
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
 
 
+def _norm_stop(name: str) -> str:
+    return re.sub(r"[\s\-]+", "-", (name or "").strip().lower())
+
+
+def port_days_table() -> dict:
+    """Table sourcée (`server/data/port_days.json`). Valeurs = convention actuelle."""
+    global _PORT_DAYS_CACHE
+    if _PORT_DAYS_CACHE is not None:
+        return _PORT_DAYS_CACHE
+    try:
+        raw = json.loads(_PORT_DAYS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        raw = {
+            "default": DEFAULT_BMAP_PORT_DAYS,
+            "source": "programme Berry-Mappemonde 2026",
+            "stops": {"Saint-Maur": 0, "La Rochelle": 3, "Halifax": 1},
+        }
+    if not isinstance(raw, dict):
+        raw = {"default": DEFAULT_BMAP_PORT_DAYS, "source": "", "stops": {}}
+    raw.setdefault("default", DEFAULT_BMAP_PORT_DAYS)
+    raw.setdefault("stops", {})
+    _PORT_DAYS_CACHE = raw
+    return raw
+
+
 def port_days_for(name: str) -> int:
-    n = (name or "").lower()
-    if re.search(r"saint-?\s*maur", n):
-        return 0
-    if "la rochelle" in n:
-        return 3
-    if "halifax" in n:
-        return 1
-    return DEFAULT_BMAP_PORT_DAYS
+    table = port_days_table()
+    n = _norm_stop(name)
+    best_days: Optional[int] = None
+    best_len = -1
+    for key, days in (table.get("stops") or {}).items():
+        k = _norm_stop(str(key))
+        if k and k in n and len(k) > best_len:
+            try:
+                best_days = int(days)
+            except (TypeError, ValueError):
+                continue
+            best_len = len(k)
+    if best_days is not None:
+        return best_days
+    try:
+        return int(table.get("default", DEFAULT_BMAP_PORT_DAYS))
+    except (TypeError, ValueError):
+        return DEFAULT_BMAP_PORT_DAYS
+
+
+def official_clock_params() -> dict:
+    """Constantes d'horloge exposées par GET /voyage/official (`params`)."""
+    table = port_days_table()
+    try:
+        port_default = int(table.get("default", DEFAULT_BMAP_PORT_DAYS))
+    except (TypeError, ValueError):
+        port_default = DEFAULT_BMAP_PORT_DAYS
+    return {
+        "landHours": LAND_CALENDAR_HOURS,
+        "airHours": AIR_CALENDAR_HOURS,
+        "minKnots": MIN_KNOTS,
+        "portDaysDefault": port_default,
+        "polarEfficiency": polar_efficiency(),
+    }
 
 
 def parse_iso(iso: str) -> datetime:
@@ -229,16 +285,21 @@ def _wave_relative_deg(heading: float, w: dict) -> float:
         return 90.0
 
 
-def _stw_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float]:
-    """Vitesse surface : polaire × efficacité × polaire de vagues (sans courant)."""
+def _stw_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float, str]:
+    """Vitesse surface : polaire × efficacité × polaire de vagues (sans courant).
+
+    `boat_speed_from_wind` n'est appelé que sans polaire (lot C7, `basis`).
+    """
     twa = twa_deg(brg, float(w.get("dirFromDeg") or 0))
     from_polar = polar_boat_speed(polar_raw, twa, float(w.get("speedKnots") or 0))
     if from_polar is not None:
         speed = float(from_polar) * polar_efficiency()
+        basis = "polar"
     else:
         speed = boat_speed_from_wind(w.get("speedKnots") or 0)
+        basis = "fallback"
     speed *= wave_polar_factor(w.get("hs"), _wave_relative_deg(brg, w))
-    return float(speed), twa
+    return float(speed), twa, basis
 
 
 def _r1(n: Optional[float]) -> Optional[float]:
@@ -340,20 +401,21 @@ def _wind_pack_from(w: dict, twa: Optional[float] = None) -> Dict[str, Any]:
     }
 
 
-def _speed_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float]:
+def _speed_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float, str]:
     """SOG sur la route. Climatologie : moyenne harmonique des 3 tirages rose."""
     draws = w.get("roseKnots") if isinstance(w, dict) else None
     kind = (w.get("kind") or w.get("regime") or "") if isinstance(w, dict) else ""
     if kind == "climatology" and isinstance(draws, (list, tuple)) and len(draws) >= 3:
         sogs: List[float] = []
         twa = 0.0
+        basis = "fallback"
         for kn in list(draws)[:3]:
             pack = {**w, "speedKnots": kn}
-            stw, twa = _stw_from_wind(polar_raw, brg, pack)
+            stw, twa, basis = _stw_from_wind(polar_raw, brg, pack)
             sogs.append(max(MIN_KNOTS, sog_along_route(stw, w, brg)))
-        return _harmonic_mean(sogs), twa
-    stw, twa = _stw_from_wind(polar_raw, brg, w)
-    return max(MIN_KNOTS, sog_along_route(stw, w, brg)), twa
+        return _harmonic_mean(sogs), twa, basis
+    stw, twa, basis = _stw_from_wind(polar_raw, brg, w)
+    return max(MIN_KNOTS, sog_along_route(stw, w, brg)), twa, basis
 
 
 def _clock_kind(vertices: List[dict]) -> str:
@@ -367,9 +429,10 @@ def _clock_kind(vertices: List[dict]) -> str:
 
 def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
           speed_knots: Optional[float], wind: dict, vehicle: str, month: int,
-          sea_hours: float = 0.0) -> dict:
+          sea_hours: float = 0.0, basis: str = "fallback") -> dict:
     when = t0 + timedelta(hours=t_hours)
     veh = "main" if vehicle == "boat" else vehicle
+    speed_basis = basis if basis in {"polar", "fallback"} else "fallback"
     return {
         "filmNm": _r4(p.get("filmCum", p.get("cumNm", 0)) or 0),
         "sailNm": _r4(p.get("cumNm", 0) or 0),
@@ -384,6 +447,7 @@ def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
         "month": month,
         "vehicle": veh,
         "seaHours": _r4(sea_hours),
+        "basis": speed_basis,
         "kind": wind.get("kind") or wind.get("regime") or "climatology",
         "regime": wind.get("regime") or wind.get("kind") or "climatology",
         "sources": list(wind.get("sources") or []),
@@ -441,12 +505,16 @@ def build_voyage_clock(
             "arrivalIso": iso,
         }
 
+    clock_basis = "polar" if polar_raw else "fallback"
+    last_speed_basis = clock_basis
+
     for i in range(start_idx):
         nxt = pts[i + 1] if i + 1 < len(pts) else pts[i]
         vertices.append(_emit(
             pts[i], 0.0, t0d,
             bearing_deg(pts[i]["lat"], pts[i]["lon"], nxt["lat"], nxt["lon"]),
             None, {"kind": "climatology"}, "land", t0d.month, 0.0,
+            basis=clock_basis,
         ))
 
     start = pts[start_idx]
@@ -457,6 +525,7 @@ def build_voyage_clock(
         None, {"kind": "climatology"},
         "land" if start.get("nonMaritime") else "main",
         t0d.month, 0.0,
+        basis=clock_basis,
     ))
 
     land_end_idx = -1
@@ -470,7 +539,6 @@ def build_voyage_clock(
         a, b = pts[i], pts[i + 1]
         brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
         span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
-        when = t0d + timedelta(hours=t_hours)
         vehicle = "main"
         speed_knots: Optional[float] = None
         wind_pack: Dict[str, Any] = {"kind": "climatology"}
@@ -482,6 +550,7 @@ def build_voyage_clock(
                 b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
                 (t0d + timedelta(hours=t_hours)).month,
                 sea_hours,
+                basis=clock_basis,
             ))
         elif a.get("nonMaritime") and b.get("nonMaritime"):
             vehicle = "land"
@@ -491,6 +560,7 @@ def build_voyage_clock(
                 b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
                 (t0d + timedelta(hours=t_hours)).month,
                 sea_hours,
+                basis=clock_basis,
             ))
         else:
             pos_nm = 0.0
@@ -500,7 +570,7 @@ def build_voyage_clock(
                 mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
                 mid = _point_along(a, b, mid_frac)
                 w0 = wind_at(mid["lat"], mid["lon"], t0d + timedelta(hours=t_hours))
-                speed0, _twa0 = _speed_from_wind(polar_raw, brg, w0)
+                speed0, _twa0, _basis0 = _speed_from_wind(polar_raw, brg, w0)
                 dt0 = guess / speed0
                 if dt0 > MAX_STEP_H:
                     guess = speed0 * MAX_STEP_H
@@ -509,7 +579,7 @@ def build_voyage_clock(
                     mid = _point_along(a, b, mid_frac)
                 when_mid = t0d + timedelta(hours=t_hours + dt0 / 2.0)
                 w = wind_at(mid["lat"], mid["lon"], when_mid)
-                speed_knots, twa = _speed_from_wind(polar_raw, brg, w)
+                speed_knots, twa, last_speed_basis = _speed_from_wind(polar_raw, brg, w)
                 dt = guess / speed_knots
                 if dt > MAX_STEP_H + 1e-6:
                     guess = speed_knots * MAX_STEP_H
@@ -523,6 +593,7 @@ def build_voyage_clock(
                     pt, t_hours, t0d, brg, speed_knots, wind_pack, "main",
                     (t0d + timedelta(hours=t_hours)).month,
                     sea_hours,
+                    basis=last_speed_basis,
                 ))
 
         arrived = mark_by_index.get(i + 1)
@@ -548,6 +619,7 @@ def build_voyage_clock(
                     "quay",
                     (t0d + timedelta(hours=t_hours)).month,
                     sea_hours,
+                    basis=last_speed_basis,
                 ))
 
     last = vertices[-1]

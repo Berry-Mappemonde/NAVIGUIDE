@@ -13,6 +13,26 @@ const PROFILES = [
   { id: "fast", labelKey: "speedFast" },
 ];
 
+function clockSpeedBasis(clock, clockCurrent, barNm) {
+  const direct = clockCurrent?.basis;
+  if (direct === "polar" || direct === "fallback") return direct;
+  const verts = clock?.vertices;
+  if (!verts?.length) return null;
+  const x = Number(clockCurrent?.filmNm ?? barNm);
+  if (!Number.isFinite(x)) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const v of verts) {
+    if (v?.basis !== "polar" && v?.basis !== "fallback") continue;
+    const d = Math.abs(Number(v.filmNm) - x);
+    if (d < bestD) {
+      bestD = d;
+      best = v.basis;
+    }
+  }
+  return best;
+}
+
 export const SimulationFilmBar = memo(function SimulationFilmBar({
   fromName,
   toName,
@@ -77,6 +97,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
   const barTotal = playheadTotal ?? totalNm;
   const barNm = playhead ?? nm;
+  const speedBasis = clockSpeedBasis(clock, clockCurrent, barNm);
   const pct = barTotal > 0 ? Math.min(100, (barNm / barTotal) * 100) : 0;
   const phaseLabel = phase === "air-out" || phase === "air"
     ? t("filmPhaseAir")
@@ -177,7 +198,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               ? ` · ${t("filmAirVehicle")}`
               : atQuay
                 ? ` · ${quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmAtQuay")}`
-                : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
+                : ` · ${Number(boatKnots || 0).toFixed(1)} kt${speedBasis === "fallback" ? ` ${t("speedFallback")}` : ""}`}
             {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
             {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
             {liveStatus ? ` · ${liveStatus}` : ""}

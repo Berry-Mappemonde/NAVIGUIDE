@@ -9,15 +9,19 @@ from climatology_zones import zone_wind_at
 from voyage_clock import (
     AIR_CALENDAR_HOURS,
     DEFAULT_BMAP_PORT_DAYS,
+    LAND_CALENDAR_HOURS,
+    MIN_KNOTS,
     OFFICIAL_T0,
     OFFICIAL_VOYAGE_ID,
     PLANNING_MIN_KN,
     build_voyage_clock,
     find_start_index,
+    official_clock_params,
     planning_speed_for,
     polar_boat_speed,
     polar_efficiency,
     port_days_for,
+    port_days_table,
     sample_clock_at_hours,
     sample_clock_at_time,
     sog_along_route,
@@ -30,6 +34,7 @@ GOLDEN = json.loads(FIXTURE.read_text(encoding="utf-8"))
 VERTEX_KEYS = {
     "filmNm", "sailNm", "lat", "lon", "bearing", "tHours", "iso",
     "speedKnots", "windKnots", "twa", "month", "vehicle", "kind", "seaHours",
+    "basis",
 }
 TABLE_KEYS = {"t0", "kind", "vertices", "marks", "seaHours", "quayHours", "arrivalIso"}
 
@@ -328,6 +333,45 @@ def test_c4_climatology_jensen_mean_of_times():
     c_rose = _c4_leg(rose)
     c_mean = _c4_leg(mean_only)
     assert c_rose["seaHours"] >= c_mean["seaHours"] - 1e-6
+
+
+def test_c7_port_days_table_default_and_saint_maur():
+    table = port_days_table()
+    assert table["default"] == 3
+    assert table.get("source") == "programme Berry-Mappemonde 2026"
+    assert DEFAULT_BMAP_PORT_DAYS == 3
+    assert port_days_for("Saint-Maur") == 0
+    assert port_days_for("Saint-Maur (Berry, Indre)") == 0
+    assert port_days_for("Ajaccio") == 3
+    assert port_days_for("Cayenne (Guyane)") == 3
+    assert port_days_for("Halifax (Nouvelle-Écosse)") == 1
+    assert port_days_for("Port-inconnu-xyz") == 3
+
+
+def test_c7_basis_fallback_without_polar():
+    c = _clock("2026-06-15T08:00:00Z")
+    assert c["vertices"]
+    assert all(v.get("basis") in {"polar", "fallback"} for v in c["vertices"])
+    sea = [v for v in c["vertices"] if v.get("vehicle") == "main" and (v.get("speedKnots") or 0) > 0]
+    assert sea
+    assert all(v["basis"] == "fallback" for v in sea)
+
+
+def test_c7_basis_polar_when_polar():
+    c = _c4_leg({
+        "speedKnots": 16.0, "dirFromDeg": 0.0, "kind": "hindcast", "hs": 1.0,
+    })
+    sea = next(v for v in c["vertices"] if (v.get("speedKnots") or 0) > 0)
+    assert sea["basis"] == "polar"
+
+
+def test_c7_official_params():
+    p = official_clock_params()
+    assert p["landHours"] == LAND_CALENDAR_HOURS
+    assert p["airHours"] == AIR_CALENDAR_HOURS
+    assert p["minKnots"] == MIN_KNOTS
+    assert p["portDaysDefault"] == 3
+    assert p["polarEfficiency"] == polar_efficiency()
 
 
 def test_c4_planning_speed_parity_with_js():
