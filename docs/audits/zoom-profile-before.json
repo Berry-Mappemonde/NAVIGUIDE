@@ -1,0 +1,63 @@
+{
+  "phase": "before",
+  "profileOnly": true,
+  "at": "2026-09-21T00:53:45.908Z",
+  "longestMs": 50,
+  "maxLongTask": 0,
+  "maxFrameGap": 50,
+  "longTaskCount": 0,
+  "cpu": {
+    "top": [
+      {
+        "name": "(anonymous) @ index-CBW9E702.js",
+        "ms": 1026.2
+      },
+      {
+        "name": "sC @ index-CBW9E702.js",
+        "ms": 936.2
+      },
+      {
+        "name": "sw @ index-CBW9E702.js",
+        "ms": 626
+      },
+      {
+        "name": "sh @ index-CBW9E702.js",
+        "ms": 592.4
+      },
+      {
+        "name": "sv @ index-CBW9E702.js",
+        "ms": 500.3
+      },
+      {
+        "name": "I2 @ index-CBW9E702.js",
+        "ms": 343.2
+      },
+      {
+        "name": "Qg @ index-CBW9E702.js",
+        "ms": 308.1
+      },
+      {
+        "name": "WL @ index-CBW9E702.js",
+        "ms": 230.6
+      },
+      {
+        "name": "Kt @ index-CBW9E702.js",
+        "ms": 217.7
+      },
+      {
+        "name": "G @ index-CBW9E702.js",
+        "ms": 214.6
+      },
+      {
+        "name": "visitNode @ native",
+        "ms": 203.4
+      },
+      {
+        "name": "Ce @ index-CBW9E702.js",
+        "ms": 194.8
+      }
+    ],
+    "idleMs": 1232.9,
+    "workMs": 8872.8
+  }
+}

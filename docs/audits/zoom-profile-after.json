@@ -1,0 +1,65 @@
+{
+  "phase": "after",
+  "profileOnly": false,
+  "at": "2026-09-21T01:08:07.038Z",
+  "longestMs": 33.4,
+  "maxLongTask": 0,
+  "maxFrameGap": 33.4,
+  "maxSettledFrameGap": 33.4,
+  "cdpBusyStreakMs": 16.2,
+  "longTaskCount": 0,
+  "cpu": {
+    "top": [
+      {
+        "name": "(anonymous) @ index-dSkZWhs-.js",
+        "ms": 134.5
+      },
+      {
+        "name": "sC @ index-dSkZWhs-.js",
+        "ms": 127.7
+      },
+      {
+        "name": "sw @ index-dSkZWhs-.js",
+        "ms": 79.5
+      },
+      {
+        "name": "sh @ index-dSkZWhs-.js",
+        "ms": 72.4
+      },
+      {
+        "name": "sv @ index-dSkZWhs-.js",
+        "ms": 64.6
+      },
+      {
+        "name": "visitNode @ native",
+        "ms": 54.6
+      },
+      {
+        "name": "Qg @ index-dSkZWhs-.js",
+        "ms": 46.1
+      },
+      {
+        "name": "I2 @ index-dSkZWhs-.js",
+        "ms": 45.4
+      },
+      {
+        "name": "Ch @ index-dSkZWhs-.js",
+        "ms": 35.5
+      },
+      {
+        "name": "G @ index-dSkZWhs-.js",
+        "ms": 33.9
+      },
+      {
+        "name": "It @ index-dSkZWhs-.js",
+        "ms": 30.5
+      },
+      {
+        "name": "Vd @ index-dSkZWhs-.js",
+        "ms": 30.2
+      }
+    ],
+    "idleMs": 228.6,
+    "workMs": 1173.3
+  }
+}

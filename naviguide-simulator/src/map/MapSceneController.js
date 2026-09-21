@@ -17,7 +17,10 @@ import {
   shouldResnapCamera,
 } from "../utils/sceneGate.js";
 import { applyMarkerRotation } from "../utils/markerRotation.js";
-import { markerOffsetDelay } from "../hooks/useMarkerOffsets.js";
+import {
+  flagWorldLngsForView,
+  markerOffsetDelay,
+} from "../hooks/useMarkerOffsets.js";
 import { createPanes } from "../layers/layerOrder.js";
 import {
   ROUTE_CASING_COLOR,
@@ -173,6 +176,7 @@ export class MapSceneController {
       minZoom: 2,
       maxZoom: 18,
       worldCopyJump: false,
+      preferCanvas: true,
     });
     createPanes(map);
     return new MapSceneController(map, callbacks);
@@ -183,10 +187,14 @@ export class MapSceneController {
     this.callbacks = callbacks;
     this.layers = new SceneLayerRegistry();
     this.config = {};
-    this.baseLayer = L.tileLayer(TILE_URLS.dark, { attribution: TILE_ATTRIBUTION }).addTo(map);
+    this.baseLayer = L.tileLayer(TILE_URLS.dark, {
+      attribution: TILE_ATTRIBUTION,
+      updateWhenZooming: false,
+    }).addTo(map);
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
+    this.divIconCache = new Map();
     this.currentPlayback = null;
     this.currentCast = null;
     this.routeInputs = null;
@@ -216,7 +224,26 @@ export class MapSceneController {
       onFrame: (snapshot) => this.renderDynamic(snapshot),
       onPublish: (snapshot) => this.publishPlayback(snapshot),
     });
+    this.zoomAnimating = false;
+    this.zoomJustEnded = false;
+    this.waypointZoom = map.getZoom();
+    this.onZoomAnim = () => {
+      this.zoomAnimating = true;
+    };
+    this.onZoomEnd = () => {
+      this.zoomAnimating = false;
+      this.zoomJustEnded = true;
+      this.scheduleWaypoints({ reason: "zoom" });
+      this.waypointZoom = this.map.getZoom();
+    };
     this.onMoveEnd = () => {
+      // Lot U : pas de sac ni de récit ici — seulement copies bateau + offsets.
+      if (this.zoomAnimating) return;
+      if (this.zoomJustEnded) {
+        this.zoomJustEnded = false;
+        this.waypointZoom = this.map.getZoom();
+        return;
+      }
       this.syncDynamicWorldCopies();
       // A pan the camera made while following the boat (lot I): the flags
       // keep their offsets — recomputing them at every step made them jump.
@@ -230,6 +257,8 @@ export class MapSceneController {
       this.map.stop();
       this.callbacks.onManualNavigation?.();
     };
+    map.on("zoomanim", this.onZoomAnim);
+    map.on("zoomend", this.onZoomEnd);
     map.on("moveend", this.onMoveEnd);
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
@@ -369,7 +398,10 @@ export class MapSceneController {
     const url = this.config.isLightMode ? TILE_URLS.light : TILE_URLS.dark;
     if (this.baseLayer?._naviguideUrl === url) return;
     this.baseLayer?.remove();
-    this.baseLayer = L.tileLayer(url, { attribution: TILE_ATTRIBUTION }).addTo(this.map);
+    this.baseLayer = L.tileLayer(url, {
+      attribution: TILE_ATTRIBUTION,
+      updateWhenZooming: false,
+    }).addTo(this.map);
     this.baseLayer._naviguideUrl = url;
     this.baseLayer.bringToBack();
   }
@@ -658,6 +690,10 @@ export class MapSceneController {
       : [];
     const group = this.layers.add("waypoints", () => L.layerGroup().addTo(this.map));
     const expected = new Set();
+    const bounds = this.map.getBounds();
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+    const cameraLng = this.map.getCenter()?.lng;
     source.forEach((point, index) => {
       const srcs = waypointFlagSrcs(point);
       if (!srcs.length && !cfg.drawingMode) return;
@@ -666,14 +702,24 @@ export class MapSceneController {
         ? flagMarkerHtml(srcs, offset)
         : `<div style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
       const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
-      for (const [copyIndex, lng] of markerWorldLngs(point.lon, this.map.getCenter()?.lng).entries()) {
+      for (const [copyIndex, lng] of flagWorldLngsForView(point.lon, cameraLng, west, east).entries()) {
         const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${copyIndex}`;
         expected.add(key);
         const iconKey = `${html}|${metrics.iconSize.join(",")}|${metrics.iconAnchor.join(",")}`;
+        let icon = this.divIconCache.get(iconKey);
+        if (!icon) {
+          icon = L.divIcon({
+            className: "flag-divicon",
+            html,
+            iconSize: metrics.iconSize,
+            iconAnchor: metrics.iconAnchor,
+          });
+          this.divIconCache.set(iconKey, icon);
+        }
         let marker = this.waypointMarkers.get(key);
         if (!marker) {
           marker = L.marker([point.lat, lng], {
-            icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
+            icon,
             interactive: true,
           }).addTo(group);
           marker.on("mouseover", () => this.callbacks.onWaypointHover?.(marker._naviguideWaypoint));
@@ -690,12 +736,7 @@ export class MapSceneController {
         marker._naviguideIndex = index;
         marker.setLatLng([point.lat, lng]);
         if (marker._naviguideIconKey !== iconKey) {
-          marker.setIcon(L.divIcon({
-            className: "flag-divicon",
-            html,
-            iconSize: metrics.iconSize,
-            iconAnchor: metrics.iconAnchor,
-          }));
+          marker.setIcon(icon);
           marker._naviguideIconKey = iconKey;
         }
       }
@@ -720,11 +761,12 @@ export class MapSceneController {
     if (this.config?.filmActive) return; // flags stay put for the whole film (lot F1)
     if (!this.config.points?.length && !this.config.drawnPoints?.length) return;
     if (reason === "follow") return; // flags stay put while the camera follows (lot I)
+    if (this.zoomAnimating && reason !== "zoom") return;
     window.clearTimeout(this.waypointTimer);
     this.waypointTimer = window.setTimeout(() => {
       this.waypointsDirty = true;
       this.syncWaypoints();
-    }, markerOffsetDelay(this.config.cameraFollow));
+    }, markerOffsetDelay(this.config.cameraFollow, reason));
   }
 
   syncInitialCamera() {
@@ -942,6 +984,8 @@ export class MapSceneController {
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);
     this.playback.destroy();
+    this.map.off("zoomanim", this.onZoomAnim);
+    this.map.off("zoomend", this.onZoomEnd);
     this.map.off("moveend", this.onMoveEnd);
     this.map.off("zoomstart", this.onUserNavigation);
     this.map.off("dragstart", this.onUserNavigation);
@@ -949,6 +993,7 @@ export class MapSceneController {
     this.markerSets.forEach((markers) => markers.forEach((marker) => marker.remove()));
     this.markerSets.clear();
     this.waypointMarkers.clear();
+    this.divIconCache.clear();
     this.baseLayer?.remove();
     this.map.remove();
   }

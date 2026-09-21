@@ -69,3 +69,29 @@ describe("MapSceneController — caméra film (lot F1)", () => {
     assert.doesNotMatch(src, /filmActive[\s\S]{0,200}zoomForRemaining/);
   });
 });
+
+describe("MapSceneController — zoom (lot U)", () => {
+  it("n'orchestre pas un recalcul d'offsets pendant zoomanim ; attend zoomend + 250 ms", () => {
+    assert.match(src, /map\.on\("zoomanim"/);
+    assert.match(src, /map\.on\("zoomend"/);
+    assert.match(src, /reason: "zoom"/);
+    const animStart = src.indexOf("this.onZoomAnim = ");
+    const animEnd = src.indexOf("this.onZoomEnd = ");
+    assert.ok(animStart > 0 && animEnd > animStart);
+    const anim = src.slice(animStart, animEnd);
+    assert.doesNotMatch(anim, /syncWaypoints\(/);
+    assert.doesNotMatch(anim, /scheduleWaypoints\(/);
+    const zoomEnd = src.slice(src.indexOf("this.onZoomEnd = "), src.indexOf("this.onMoveEnd = "));
+    assert.match(zoomEnd, /scheduleWaypoints\(\{ reason: "zoom" \}\)/);
+    assert.match(src, /preferCanvas:\s*true/);
+    assert.match(src, /divIconCache/);
+    assert.match(src, /flagWorldLngsForView/);
+  });
+
+  it("onMoveEnd ne relance ni /ici ni le récit", () => {
+    const start = src.indexOf("this.onMoveEnd = ");
+    const end = src.indexOf("this.onUserNavigation = ");
+    const block = src.slice(start, end);
+    assert.doesNotMatch(block, /\/ici|narrateIci|enqueueStory|fetch\(/);
+  });
+});
