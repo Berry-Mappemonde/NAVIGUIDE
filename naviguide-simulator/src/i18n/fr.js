@@ -162,6 +162,7 @@ export default {
   eventBubbleChipWind: "Vent",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} j à quai",
+  eventBubbleClose:    "Fermer",
 
   // ── Récit de la traversée (Suivre) ───────────────────────────────────────
   storyTitle:         "Le récit de la traversée",

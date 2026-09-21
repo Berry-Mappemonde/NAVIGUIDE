@@ -4,6 +4,9 @@ export const EVENT_BUBBLE_MIN_MS = 3000;
 export const EVENT_BUBBLE_FADE_MS = 200;
 export const EVENT_BUBBLE_WIDTH = 280;
 export const EVENT_BUBBLE_TITLE_MAX = 40;
+export const BUBBLE_SCORE_SHOW = 2;
+export const BUBBLE_SCORE_SUM = 3;
+export const BUBBLE_SCORE_WINDOW_MS = 20_000;
 
 export function createEventPopupOptions() {
   return {
@@ -70,6 +73,86 @@ function eventMs(ev, chapter, plan) {
   if (Number.isFinite(parsed)) return parsed;
   if (plan?.timeAt && chapter && ev) return plan.timeAt(chapter.idx, ev.charIdx);
   return null;
+}
+
+/** Score bulle : 1 / 2 / 3, sinon inféré du kind (script local sans score). */
+export function bubbleScore(ev) {
+  const n = Number(ev?.score ?? ev?.card?.score);
+  if (n === 1 || n === 2 || n === 3) return n;
+  const kind = ev?.kind || ev?.card?.kind;
+  if (kind === "stop" || kind === "wx") return 3;
+  if (kind === "zee" || kind === "sci") return 2;
+  if (kind === "amp" || kind === "climo") return 1;
+  return 0;
+}
+
+/** ≥ 2 : tout de suite. Score 1 : quand la somme des non-montrés atteint 3. */
+export function shouldShowFilmEvent(score, pendingScores = []) {
+  const s = Number(score) || 0;
+  if (s >= BUBBLE_SCORE_SHOW) return true;
+  const sum = pendingScores.reduce((n, x) => n + (Number(x) || 0), 0) + s;
+  return sum >= BUBBLE_SCORE_SUM;
+}
+
+export function filmEventCard(ev) {
+  if (!ev) return null;
+  const card = ev.card && typeof ev.card === "object" ? ev.card : {};
+  const title = card.title || ev.title || ev.kind || "";
+  const text = card.text || ev.fact || "";
+  return {
+    ...card,
+    id: card.id || ev.id,
+    key: card.key || ev.id || card.key,
+    kind: card.kind || ev.kind,
+    title,
+    text,
+    score: ev.score ?? card.score,
+    lane: card.lane || "now",
+  };
+}
+
+export function applyBubbleClose(currentCard) {
+  return { card: null, closedId: bubbleId(currentCard) || true };
+}
+
+export function isBubbleSuppressed(closedId, nextCard) {
+  return Boolean(closedId && nextCard && bubbleId(nextCard) === closedId);
+}
+
+/**
+ * Une seule candidature à la fois : score ≥ 2, ou somme des scores
+ * non montrés depuis 20 s ≥ 3.
+ */
+export class FilmEventScoreGate {
+  constructor({ now = () => Date.now() } = {}) {
+    this.now = now;
+    this.pending = [];
+    this.accepted = new Set();
+  }
+
+  reset() {
+    this.pending = [];
+    this.accepted = new Set();
+  }
+
+  accept(ev) {
+    if (!ev) return null;
+    const id = ev.id || bubbleId(ev.card) || bubbleId(ev);
+    if (id && this.accepted.has(id)) return ev;
+    const t = this.now();
+    this.pending = this.pending.filter((p) => t - p.t <= BUBBLE_SCORE_WINDOW_MS);
+    const score = bubbleScore(ev);
+    const pendingScores = this.pending.map((p) => p.score);
+    if (!shouldShowFilmEvent(score, pendingScores)) {
+      if (score > 0 && id && !this.pending.some((p) => p.id === id)) {
+        this.pending.push({ id, score, t });
+      }
+      return null;
+    }
+    if (id) this.accepted.add(id);
+    this.pending = [];
+    return ev;
+  }
 }
 
 /** Voix : dernier événement dont `charIdx` est franchi. Sans voix : à la date. */

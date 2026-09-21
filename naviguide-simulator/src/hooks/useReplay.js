@@ -4,7 +4,7 @@ import {
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
 import { canLeadWithVoice, waitForVoices, voiceEndKind } from "../utils/speak.js";
-import { EventBubbleGate, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
+import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
@@ -115,10 +115,12 @@ export function useReplay({
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
   const filmBubbleRef = useRef(new EventBubbleGate());
+  const filmScoreRef = useRef(new FilmEventScoreGate());
   const publishedBubbleRef = useRef(null);
 
   const stop = useCallback(() => {
     filmBubbleRef.current.reset();
+    filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
     publishEventBubble(null);
     setActive(false);
@@ -237,7 +239,9 @@ export function useReplay({
     voiceFailedRef.current = false;
     setVoiceRate(1);
     filmBubbleRef.current.reset();
+    filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
+    publishEventBubble(null);
     setCard(null);
     applyChapter(plan.chapters[0]);
     setTMs(plan.timeAt(0, 0));
@@ -370,7 +374,8 @@ export function useReplay({
         voiceLed,
         plan,
       });
-      const shown = filmBubbleRef.current.propose(filmEv?.card || null);
+      const accepted = filmScoreRef.current.accept(filmEv);
+      const shown = filmBubbleRef.current.propose(filmEventCard(accepted));
       if (shown !== publishedBubbleRef.current) {
         publishedBubbleRef.current = shown;
         if (shown) {
