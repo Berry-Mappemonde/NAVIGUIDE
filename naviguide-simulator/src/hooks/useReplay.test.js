@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { linearFilmAt, pickFilmChapters, voiceLeadPolicy } from "./useReplay.js";
+import { approachStopEvent, linearFilmAt, pickFilmChapters, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -189,5 +189,79 @@ describe("useReplay lot R4 — temps continu entre deux boundaries", () => {
     assert.ok(slowed.t >= behind, "pas de saut arrière si la cible est derrière");
     assert.match(hook, /FILM_RECALE_MS/);
     assert.match(hook, /voiceTargetRef/);
+  });
+});
+
+describe("useReplay lot RA3 — interpolation jusqu'au dernier chapitre", () => {
+  const t0 = Date.parse("2026-05-15T08:00:00Z");
+  const hour = 3600000;
+  const clock = {
+    t0: "2026-05-15T08:00:00.000Z",
+    vertices: [
+      { tHours: 0, filmNm: 0, sailNm: 0, lat: 46.8, lon: 1.7, bearing: 260 },
+      { tHours: 4, filmNm: 122, sailNm: 122, lat: 46.15, lon: -1.16, bearing: 260 },
+      { tHours: 8, filmNm: 400, sailNm: 400, lat: 41.9, lon: 8.7, bearing: 140 },
+      { tHours: 12, filmNm: 900, sailNm: 900, lat: 14.6, lon: -61.0, bearing: 250 },
+    ],
+  };
+  const chapters = [
+    { tA: t0, tB: t0 + 4 * hour, text: "A".repeat(80), fromLat: 46.8, fromLon: 1.7, toLat: 46.15, toLon: -1.16, toName: "La Rochelle" },
+    { tA: t0 + 4 * hour, tB: t0 + 8 * hour, text: "B".repeat(80), fromLat: 46.15, fromLon: -1.16, toLat: 41.9, toLon: 8.7, toName: "Ajaccio (Corse)" },
+    { tA: t0 + 8 * hour, tB: t0 + 12 * hour, text: "C".repeat(80), fromLat: 41.9, fromLon: 8.7, toLat: 14.6, toLon: -61.0, toName: "Fort-de-France" },
+  ];
+
+  it("60 frames entre deux boundaries : positions monotones le long du trait jusqu'au dernier chapitre", () => {
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    const lastIdx = plan.chapters.length - 1;
+    const midA = plan.timeAt(0, 10);
+    const midB = plan.timeAt(0, 40);
+    let t = midA;
+    let recale = 0;
+    const positions = [];
+    const dt = 1 / 60;
+    for (let i = 0; i < 60; i++) {
+      const ch = plan.chapters[0];
+      const stepped = advanceReplayTime({
+        t, dt, chapter: ch, targetT: midB, recaleRemainMs: recale,
+      });
+      t = stepped.t;
+      recale = stepped.recaleRemainMs;
+      positions.push(positionAt(clock, t));
+    }
+    for (let i = 1; i < positions.length; i++) {
+      assert.ok(
+        positions[i].filmNm > positions[i - 1].filmNm,
+        `frame ${i} ne progresse pas le long du trait`,
+      );
+    }
+
+    const along = stepAlongPlan({
+      plan,
+      clock,
+      frames: 60,
+      dt: plan.targetSeconds / 60,
+      elapsed0: 0,
+    });
+    assert.equal(along.length, 60);
+    assert.equal(along[along.length - 1].chapterIdx, lastIdx);
+    assert.equal(along[along.length - 1].lastReached, true);
+    for (let i = 1; i < along.length; i++) {
+      assert.ok(
+        along[i].filmNm >= along[i - 1].filmNm - 1e-9,
+        `chapitre ${along[i].chapterIdx} frame ${i} recule (filmNm)`,
+      );
+    }
+    assert.ok(along[along.length - 1].filmNm > along[0].filmNm);
+    assert.match(hook, /stepAlongPlan|positionAt\(clockRef/);
+    assert.match(hook, /approachStopEvent/);
+    assert.match(hook, /lastReached/);
+  });
+
+  it("bulle d'approche : une escale proche, rien trop tôt", () => {
+    const late = approachStopEvent(chapters[1], { frac: 0.9 });
+    assert.equal(late.kind, "stop");
+    assert.match(late.card.title, /Ajaccio/);
+    assert.equal(approachStopEvent(chapters[1], { frac: 0.2 }), null);
+    assert.equal(approachStopEvent({ idx: 0, toName: "", text: "" }, { frac: 0.99 }), null);
   });
 });

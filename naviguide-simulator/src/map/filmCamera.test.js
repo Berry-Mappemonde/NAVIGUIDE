@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyFilmCamera, clampFilmPan, filmChapterZoom } from "./filmCamera.js";
+import { applyFilmCamera, clampFilmPan, filmChapterZoom, FILM_ZOOM_ARCHIPELAGO_MAX } from "./filmCamera.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const controller = readFileSync(join(here, "MapSceneController.js"), "utf8");
@@ -138,5 +138,34 @@ describe("filmCamera lot R4 — pan borné, un flyTo par chapitre", () => {
       assert.equal(wait.action, "fly-wait");
     }
     assert.equal(calls.filter((c) => c.action === "flyTo").length, 1);
+  });
+});
+
+describe("filmCamera lot RA3 — dézoom archipels, tuiles gardées", () => {
+  it("plafonne le zoom pour une jambe à sauts courts", () => {
+    const map = {
+      getBoundsZoom() { return 8; },
+      getSize() { return { x: 1280, y: 800 }; },
+    };
+    const hop = { fromLat: 14.6, fromLon: -61.07, toLat: 16.25, toLon: -61.53 };
+    const z = filmChapterZoom(map, hop);
+    assert.ok(z <= FILM_ZOOM_ARCHIPELAGO_MAX, `zoom archipel ${z} > ${FILM_ZOOM_ARCHIPELAGO_MAX}`);
+    assert.ok(z >= 3);
+
+    const ocean = { fromLat: 41.92, fromLon: 8.74, toLat: 14.6, toLon: -61.07 };
+    const zOcean = filmChapterZoom(map, ocean);
+    assert.ok(zOcean <= 7);
+    assert.ok(z < zOcean || z <= FILM_ZOOM_ARCHIPELAGO_MAX);
+  });
+
+  it("pas de switch de base layer pendant filmActive", () => {
+    assert.match(controller, /switchBaseLayer\(/);
+    assert.match(controller, /if \(this\.config\.filmActive\)/);
+    assert.match(controller, /if \(!this\.baseLayer\) this\.switchBaseLayer\(url\)/);
+    assert.match(controller, /next\.addTo\(this\.map\)/);
+    assert.match(controller, /if \(prev && prev !== next\) prev\.remove\(\)/);
+    assert.match(controller, /exitHoldZoom/);
+    assert.doesNotMatch(controller, /filmActive[\s\S]{0,80}fitBounds/);
+    assert.doesNotMatch(controller, /filmActive[\s\S]{0,200}zoomForRemaining/);
   });
 });

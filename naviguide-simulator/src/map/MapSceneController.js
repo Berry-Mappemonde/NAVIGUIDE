@@ -194,7 +194,10 @@ export class MapSceneController {
     this.baseLayer = L.tileLayer(TILE_URLS.dark, {
       attribution: TILE_ATTRIBUTION,
       updateWhenZooming: false,
+      updateWhenIdle: false,
+      keepBuffer: 6,
     }).addTo(map);
+    this.baseLayer._naviguideUrl = TILE_URLS.dark;
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
@@ -224,6 +227,8 @@ export class MapSceneController {
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
       filmLastCenter: null,
+      exitHold: false,
+      exitHoldZoom: null,
     };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
@@ -240,6 +245,7 @@ export class MapSceneController {
       this.zoomJustEnded = true;
       this.scheduleWaypoints({ reason: "zoom" });
       this.waypointZoom = this.map.getZoom();
+      this.restoreExitZoom();
     };
     this.onMoveEnd = () => {
       // Lot U : pas de sac ni de récit ici — seulement copies bateau + offsets.
@@ -377,18 +383,29 @@ export class MapSceneController {
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
       this.camera.filmLastCenter = null;
+      const holdZoom = this.map?.getZoom?.();
+      this.map?.stop?.();
+      this.camera.exitHoldZoom = Number.isFinite(holdZoom) ? holdZoom : this.map?.getZoom?.();
+      this.camera.exitHold = true;
       this.camera.recapture = this.config.cinemaRecapture;
+      this.camera.resetKey = `${this.config.view}-${this.config.sceneReady ? "ready" : "load"}-${this.config.cinemaRecapture}`;
       const live = this.config.live;
       if (live && Number.isFinite(live.lat) && Number.isFinite(live.lon) && this.map) {
         const lonCam = cameraLngForBoat(live.lon, this.camera.followLon);
         this.camera.followLon = lonCam;
         this.camera.lastPos = { lat: live.lat, lon: live.lon };
+        const hold = Number.isFinite(this.camera.exitHoldZoom)
+          ? this.camera.exitHoldZoom
+          : this.map.getZoom();
         this.programmaticMove(() => this.map.setView(
           [live.lat, lonCam],
-          this.map.getZoom(),
+          hold,
           { animate: false },
         ));
+        this.initialLive = { lat: live.lat, lon: live.lon };
       }
+      window.clearTimeout(this.exitZoomTimer);
+      this.exitZoomTimer = window.setTimeout(() => this.restoreExitZoom(), 180);
     }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
@@ -422,14 +439,28 @@ export class MapSceneController {
 
   syncBaseLayer() {
     const url = this.config.isLightMode ? TILE_URLS.light : TILE_URLS.dark;
+    if (this.config.filmActive) {
+      if (!this.baseLayer) this.switchBaseLayer(url);
+      return;
+    }
+    this.switchBaseLayer(url);
+  }
+
+  /** Ré-ajoute avant de retirer : jamais une carte sans tuiles. */
+  switchBaseLayer(url) {
     if (this.baseLayer?._naviguideUrl === url) return;
-    this.baseLayer?.remove();
-    this.baseLayer = L.tileLayer(url, {
+    const next = L.tileLayer(url, {
       attribution: TILE_ATTRIBUTION,
       updateWhenZooming: false,
-    }).addTo(this.map);
-    this.baseLayer._naviguideUrl = url;
-    this.baseLayer.bringToBack();
+      updateWhenIdle: false,
+      keepBuffer: 6,
+    });
+    next._naviguideUrl = url;
+    next.addTo(this.map);
+    next.bringToBack();
+    const prev = this.baseLayer;
+    this.baseLayer = next;
+    if (prev && prev !== next) prev.remove();
   }
 
   syncRoute() {
@@ -624,11 +655,12 @@ export class MapSceneController {
       html: catamaranSvg(0),
       draggable: true,
     });
+    const filmFollow = cfg.filmActive ? cast?.follow : null;
     this.syncMarker("live", {
       visible: ready && liveMode && cast?.vehicle !== "plane",
-      lat: cfg.live?.lat,
-      lon: cfg.live?.lon,
-      bearing: cfg.live?.bearing || 0,
+      lat: filmFollow?.lat ?? cfg.live?.lat,
+      lon: filmFollow?.lon ?? cfg.live?.lon,
+      bearing: filmFollow?.bearing || cfg.live?.bearing || 0,
       className: "catamaran-divicon catamaran-divicon--live",
       html: catamaranSvg(0),
     });
@@ -822,6 +854,13 @@ export class MapSceneController {
       this.setCameraPlaced(true);
       return;
     }
+    if (this.camera.exitHold || Number.isFinite(this.camera.exitHoldZoom)) {
+      if (cfg.isSuivre && cfg.live && Number.isFinite(cfg.live.lat)) {
+        this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
+      }
+      this.setCameraPlaced(true);
+      return;
+    }
     const recette = cfg.recetteMap;
     if (recette) {
       this.programmaticMove(() => this.map.setView([recette.lat, recette.lon], recette.z, { animate: false }));
@@ -866,6 +905,8 @@ export class MapSceneController {
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
       filmLastCenter: null,
+      exitHold: false,
+      exitHoldZoom: null,
     };
   }
 
@@ -873,6 +914,14 @@ export class MapSceneController {
     if (this.cameraPlaced === next) return;
     this.cameraPlaced = next;
     this.callbacks.onCameraPlaced?.(next);
+  }
+
+  restoreExitZoom() {
+    const hold = this.camera?.exitHoldZoom;
+    if (!Number.isFinite(hold) || this.config.filmActive || !this.map) return;
+    const z = this.map.getZoom();
+    if (Math.abs(z - hold) <= 0.05) return;
+    this.programmaticMove(() => this.map.setView(this.map.getCenter(), hold, { animate: false }));
   }
 
   programmaticMove(fn) {
@@ -885,7 +934,15 @@ export class MapSceneController {
   }
 
   syncFilmCamera(cfg) {
-    const subject = cfg.live;
+    const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
+    const follow = this.currentCast?.follow;
+    const subject = {
+      lat: Number.isFinite(follow?.lat) ? follow.lat
+        : (Number.isFinite(film?.lat) ? film.lat : cfg.live?.lat),
+      lon: Number.isFinite(follow?.lon) ? follow.lon
+        : (Number.isFinite(film?.lon) ? film.lon : cfg.live?.lon),
+      bearing: follow?.bearing ?? film?.bearing ?? cfg.live?.bearing,
+    };
     if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
     const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
     this.camera.followLon = lonCam;
@@ -913,6 +970,16 @@ export class MapSceneController {
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
     this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.lastFollow = Date.now();
+  }
+
+  filmPlayheadNm(snapshot) {
+    if (!this.config.filmActive) return snapshot?.nm;
+    const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
+    const fromFilm = Number(film?.filmNm);
+    if (Number.isFinite(fromFilm)) return fromFilm;
+    const fromLive = Number(this.config.live?.filmNm);
+    if (Number.isFinite(fromLive)) return fromLive;
+    return snapshot?.nm;
   }
 
   syncCamera(cast, snapshot) {
@@ -945,6 +1012,18 @@ export class MapSceneController {
     }
     const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
     this.camera.followLon = lonCam;
+    if (Number.isFinite(this.camera.exitHoldZoom) && cfg.cinemaRecapture === this.camera.recapture) {
+      const hold = this.camera.exitHoldZoom;
+      this.programmaticMove(() => this.map.setView([subject.lat, lonCam], hold, { animate: false }));
+      this.camera.lastPos = { lat: subject.lat, lon: subject.lon };
+      this.camera.lastFollow = Date.now();
+      this.camera.exitHold = false;
+      return;
+    }
+    if (Number.isFinite(this.camera.exitHoldZoom) && cfg.cinemaRecapture !== this.camera.recapture) {
+      this.camera.exitHoldZoom = null;
+      this.camera.exitHold = false;
+    }
     const previous = this.camera.lastPos;
     const movedNm = previous ? haversineNm(previous.lat, previous.lon, subject.lat, subject.lon) : 0;
     this.camera.lastPos = { lat: subject.lat, lon: subject.lon };
@@ -1004,7 +1083,7 @@ export class MapSceneController {
 
   renderDynamic(snapshot) {
     this.currentPlayback = snapshot;
-    const cast = interpolateCast(this.config.flat, snapshot.nm, { stops: this.config.stops });
+    const cast = interpolateCast(this.config.flat, this.filmPlayheadNm(snapshot), { stops: this.config.stops });
     this.currentCast = cast;
     const liveMode = this.config.isSuivre && this.config.live && !this.config.previewing;
     const sailNm = liveMode ? (this.config.live.sailNm ?? 0) : (cast?.sailNm ?? 0);
@@ -1031,6 +1110,7 @@ export class MapSceneController {
     this.clearBriefingFocus();
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);
+    window.clearTimeout(this.exitZoomTimer);
     this.playback.destroy();
     this.map.off("zoomanim", this.onZoomAnim);
     this.map.off("zoomend", this.onZoomEnd);

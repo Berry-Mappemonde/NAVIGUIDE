@@ -164,7 +164,9 @@ export function filmLength(flat) {
 export function edgeAtFilmNm(flat, filmNm) {
   const pts = flat?.points || [];
   if (pts.length < 2) return null;
-  const target = Math.max(0, Math.min(filmLength(flat), Number(filmNm) || 0));
+  const raw = Number(filmNm);
+  if (!Number.isFinite(raw)) return null;
+  const target = Math.max(0, Math.min(filmLength(flat), raw));
   let i = 0;
   while (i < pts.length - 2 && filmOf(pts[i + 1]) <= target) i += 1;
   const a = pts[i];
@@ -226,13 +228,25 @@ function actorFrom(pos, bearing) {
   };
 }
 
+/** Position interpolée le long du trait (jamais le sommet le plus proche). */
+export function positionAlongTrait(flat, filmNm) {
+  const edge = edgeAtFilmNm(flat, filmNm);
+  if (!edge) return null;
+  const { a, b, filmSpan } = edge;
+  const raw = Number(filmNm);
+  const target = Math.max(0, Math.min(filmLength(flat), raw));
+  const t = filmSpan > 0 ? (target - filmOf(a)) / filmSpan : 1;
+  return lerpLatLon(a, b, t);
+}
+
 /**
  * Trois acteurs : bateau Berry (main), avion (plane), bateau relais (side).
  * During the Guiana episode, the main boat stays alongside in Cayenne.
  */
 export function interpolateCast(flat, filmNm, { stops } = {}) {
   const pts = flat?.points || [];
-  const target = Math.max(0, Math.min(filmLength(flat), Number(filmNm) || 0));
+  const raw = Number(filmNm);
+  const target = Number.isFinite(raw) ? Math.max(0, Math.min(filmLength(flat), raw)) : 0;
   if (!pts.length) return null;
   const episodes = nameAirEpisodes(flat.episodes || detectAirEpisodes(pts), stops);
   const hidden = hiddenActor();
