@@ -20,7 +20,7 @@ from hindcast import (
     series,
     uv_to_current_to,
 )
-from voyage_clock import build_voyage_clock, parse_iso, sample_clock_at_time, to_iso
+from voyage_clock import build_voyage_clock, parse_iso, sample_clock_at_time, sog_along_route, to_iso
 
 T0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
 DAY0 = "2026-05-15"
@@ -223,8 +223,11 @@ def test_two_days_known_wind_position_within_1nm():
     sample = sample_clock_at_time(clock, t0 + timedelta(hours=48))
     expected_kn = boat_speed_from_wind(20.0)
     assert expected_kn == 9.0
+    pack = at(LAT, LON, t0)
+    # Lot C4 : le courant du hindcast est projeté sur la route (cap 270°).
+    sog = max(0.5, sog_along_route(expected_kn, pack, 270.0))
     assert sample is not None
-    assert abs(sample["sailNm"] - expected_kn * 48.0) <= 1.0
+    assert abs(sample["sailNm"] - sog * 48.0) <= 1.0
     assert sample["regime"] == "hindcast"
 
 

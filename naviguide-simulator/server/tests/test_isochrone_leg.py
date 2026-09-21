@@ -1,7 +1,16 @@
 from datetime import datetime, timezone
 
 from climatology_zones import zone_wind_at
-from isochrone import is_path_clear, is_land, nudge_offshore, run_leg_isochrone
+from isochrone import (
+    ISOCHRONE_STEP_COAST_H,
+    ISOCHRONE_STEP_OFFSHORE_H,
+    is_path_clear,
+    is_land,
+    isochrone_time_step_h,
+    move_position,
+    nudge_offshore,
+    run_leg_isochrone,
+)
 
 
 def _const_wind(speed=16.0, direc=90.0):
@@ -156,3 +165,10 @@ def test_stuck_route_fixtures_never_cross_land():
             for (lo_a, _la), (lo_b, _lb) in zip(coords, coords[1:]):
                 d = abs(lo_b - lo_a)
                 assert min(d, 360 - d) < 30, (lo_a, lo_b)
+
+
+def test_c4_isochrone_step_1h_at_30nm_from_coast():
+    """Lot C4 : 30 nm d'une côte → pas 1 h ; haute mer → 3 h."""
+    la_c, lo_c = move_position(46.15, -1.16, 270.0, 30.0)
+    assert isochrone_time_step_h(la_c, lo_c) == ISOCHRONE_STEP_COAST_H
+    assert isochrone_time_step_h(45.0, -15.0) == ISOCHRONE_STEP_OFFSHORE_H

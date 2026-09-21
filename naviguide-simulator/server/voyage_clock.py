@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -13,12 +14,21 @@ AIR_CALENDAR_HOURS = 8.0
 LAND_CALENDAR_HOURS = 4.0
 MIN_KNOTS = 0.5
 WAVE_NOGO_M = 2.5
-WAVE_NOGO_DT_FACTOR = 3.0
+# WAVE_NOGO_DT_FACTOR (×3 dès 2,5 m) retiré lot C4 — voir wave_polar_factor.
 MAX_STEP_NM = 30.0
 MAX_STEP_H = 1.0
 OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel"
 OFFICIAL_T0 = "2026-05-15T08:00:00Z"
 DEFAULT_BMAP_PORT_DAYS = 3
+PLANNING_MIN_KN = 3.0
+POLAR_EFFICIENCY_DEFAULT = 0.85
+MS_TO_KN = 1.943844
+WAVE_POLAR_HS_FLAT_M = 1.5
+WAVE_POLAR_HS_FULL_M = 4.0
+WAVE_POLAR_HEAD = 0.6
+WAVE_POLAR_FOLLOW = 0.85
+TWA_CLOSE_HAULED_MIN = 40.0
+TWA_RUNNING_MAX = 170.0
 
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
 
@@ -124,6 +134,113 @@ def polar_boat_speed(raw: Optional[dict], twa: float, tws: float) -> Optional[fl
     return round(bilinear(a, eff_w), 3)
 
 
+def polar_efficiency() -> float:
+    """Facteur de croisière (lot C4). Variable d'environnement POLAR_EFFICIENCY."""
+    raw = os.environ.get("POLAR_EFFICIENCY", str(POLAR_EFFICIENCY_DEFAULT))
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        v = POLAR_EFFICIENCY_DEFAULT
+    if v <= 0:
+        v = POLAR_EFFICIENCY_DEFAULT
+    return min(1.0, v)
+
+
+def wave_polar_factor(hs: Optional[float], relative_deg: float = 90.0) -> float:
+    """Facteur continu Hs × angle relatif houle/cap (lot C4, A7).
+
+    f = 1 jusqu'à 1,5 m ; linéaire jusqu'à 0,6 (mer de face) / 0,85 (mer
+    arrière) à 4 m ; plafonné au-delà. Angle 0° = mer de face (houle « de »
+    dans le cap), 180° = mer arrière.
+    """
+    if hs is None:
+        return 1.0
+    try:
+        h = float(hs)
+    except (TypeError, ValueError):
+        return 1.0
+    if h <= WAVE_POLAR_HS_FLAT_M:
+        return 1.0
+    rel = max(0.0, min(180.0, abs(float(relative_deg))))
+    f_full = WAVE_POLAR_HEAD + (WAVE_POLAR_FOLLOW - WAVE_POLAR_HEAD) * (rel / 180.0)
+    if h >= WAVE_POLAR_HS_FULL_M:
+        return f_full
+    t = (h - WAVE_POLAR_HS_FLAT_M) / (WAVE_POLAR_HS_FULL_M - WAVE_POLAR_HS_FLAT_M)
+    return 1.0 + t * (f_full - 1.0)
+
+
+def current_along_route_kn(w: dict, heading_deg: float) -> float:
+    """Projection du vecteur courant (uo/vo ou kn « vers ») sur la route."""
+    if not isinstance(w, dict):
+        return 0.0
+    uo, vo = w.get("uo"), w.get("vo")
+    if uo is not None and vo is not None:
+        try:
+            east_kn = float(uo) * MS_TO_KN
+            north_kn = float(vo) * MS_TO_KN
+        except (TypeError, ValueError):
+            return 0.0
+    elif w.get("currentKn") is not None:
+        try:
+            kn = float(w.get("currentKn") or 0)
+            to_deg = float(w.get("currentToDeg") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        rad = math.radians(to_deg)
+        east_kn = kn * math.sin(rad)
+        north_kn = kn * math.cos(rad)
+    else:
+        return 0.0
+    h = math.radians(heading_deg)
+    return east_kn * math.sin(h) + north_kn * math.cos(h)
+
+
+def sog_along_route(stw: float, w: dict, heading_deg: float) -> float:
+    """SOG = projection sur la route de (vecteur polaire + vecteur courant)."""
+    return float(stw) + current_along_route_kn(w, heading_deg)
+
+
+def planning_speed_for(polar_raw: Optional[dict], tws: float, twa: float) -> Optional[float]:
+    """Vitesse de planification : polaire × POLAR_EFFICIENCY, plancher 3 kn."""
+    bs = polar_boat_speed(polar_raw, twa, tws)
+    if bs is None:
+        return None
+    kn = max(PLANNING_MIN_KN, float(bs) * polar_efficiency())
+    # Même arrondi que Math.round JS (demi loin de zéro), pas le banker Python.
+    return math.floor(kn * 10 + 0.5) / 10.0
+
+
+def _harmonic_mean(values: List[float]) -> float:
+    vals = [float(v) for v in values if v is not None and float(v) > 1e-9]
+    if not vals:
+        return MIN_KNOTS
+    return len(vals) / sum(1.0 / v for v in vals)
+
+
+def _wave_relative_deg(heading: float, w: dict) -> float:
+    wave_from = w.get("waveFromDeg")
+    if wave_from is None:
+        wave_from = w.get("waveDirDeg")
+    if wave_from is None:
+        return 90.0
+    try:
+        return twa_deg(heading, float(wave_from))
+    except (TypeError, ValueError):
+        return 90.0
+
+
+def _stw_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float]:
+    """Vitesse surface : polaire × efficacité × polaire de vagues (sans courant)."""
+    twa = twa_deg(brg, float(w.get("dirFromDeg") or 0))
+    from_polar = polar_boat_speed(polar_raw, twa, float(w.get("speedKnots") or 0))
+    if from_polar is not None:
+        speed = float(from_polar) * polar_efficiency()
+    else:
+        speed = boat_speed_from_wind(w.get("speedKnots") or 0)
+    speed *= wave_polar_factor(w.get("hs"), _wave_relative_deg(brg, w))
+    return float(speed), twa
+
+
 def _r1(n: Optional[float]) -> Optional[float]:
     if n is None:
         return None
@@ -216,14 +333,27 @@ def _wind_pack_from(w: dict, twa: Optional[float] = None) -> Dict[str, Any]:
         "hsP90": w.get("hsP90"),
         "currentKn": w.get("currentKn"),
         "currentToDeg": w.get("currentToDeg"),
+        "uo": w.get("uo"),
+        "vo": w.get("vo"),
+        "waveFromDeg": w.get("waveFromDeg", w.get("waveDirDeg")),
+        "roseKnots": list(w["roseKnots"]) if isinstance(w.get("roseKnots"), (list, tuple)) else None,
     }
 
 
 def _speed_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float]:
-    twa = twa_deg(brg, float(w.get("dirFromDeg") or 0))
-    from_polar = polar_boat_speed(polar_raw, twa, float(w.get("speedKnots") or 0))
-    speed = from_polar if from_polar is not None else boat_speed_from_wind(w.get("speedKnots") or 0)
-    return max(MIN_KNOTS, float(speed)), twa
+    """SOG sur la route. Climatologie : moyenne harmonique des 3 tirages rose."""
+    draws = w.get("roseKnots") if isinstance(w, dict) else None
+    kind = (w.get("kind") or w.get("regime") or "") if isinstance(w, dict) else ""
+    if kind == "climatology" and isinstance(draws, (list, tuple)) and len(draws) >= 3:
+        sogs: List[float] = []
+        twa = 0.0
+        for kn in list(draws)[:3]:
+            pack = {**w, "speedKnots": kn}
+            stw, twa = _stw_from_wind(polar_raw, brg, pack)
+            sogs.append(max(MIN_KNOTS, sog_along_route(stw, w, brg)))
+        return _harmonic_mean(sogs), twa
+    stw, twa = _stw_from_wind(polar_raw, brg, w)
+    return max(MIN_KNOTS, sog_along_route(stw, w, brg)), twa
 
 
 def _clock_kind(vertices: List[dict]) -> str:
@@ -384,9 +514,6 @@ def build_voyage_clock(
                 if dt > MAX_STEP_H + 1e-6:
                     guess = speed_knots * MAX_STEP_H
                     dt = MAX_STEP_H
-                hs = w.get("hs")
-                if hs is not None and float(hs) >= WAVE_NOGO_M:
-                    dt *= WAVE_NOGO_DT_FACTOR
                 t_hours += dt
                 sea_hours += dt
                 pos_nm += guess

@@ -24,5 +24,7 @@ describe("PlanReview — commentaire (lot L5)", () => {
     assert.match(tools, /comment=\{planReview\.comment\}/);
     assert.match(tools, /<PlanReview[\s\S]*legs=\{planReview\.legs\}/);
     assert.match(src, /data-testid="plan-review"/);
+    assert.match(src, /data-testid="plan-review-leg"/);
+    assert.match(src, /data-testid="plan-review-leg-dates"/);
   });
 });

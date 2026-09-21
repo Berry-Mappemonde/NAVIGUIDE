@@ -9,8 +9,22 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from voyage_clock import WAVE_NOGO_M, bearing_deg, polar_boat_speed, twa_deg
+from voyage_clock import (
+    TWA_CLOSE_HAULED_MIN,
+    TWA_RUNNING_MAX,
+    WAVE_NOGO_M,
+    bearing_deg,
+    polar_boat_speed,
+    polar_efficiency,
+    twa_deg,
+    wave_polar_factor,
+)
 from climatology_zones import boat_speed_from_wind
+
+COAST_NEAR_NM = 60.0
+ISOCHRONE_STEP_OFFSHORE_H = 3.0
+ISOCHRONE_STEP_COAST_H = 1.0
+ISOCHRONE_MAX_HOURS = 720.0  # même horizon que 120 × 6 h (avant C4)
 
 try:
     from global_land_mask import globe as _globe
@@ -130,10 +144,56 @@ class IsoPoint:
         }
 
 
-def _boat_speed(polar_raw: Optional[dict], twa: float, tws: float) -> float:
+def near_coast(lat: float, lon: float, radius_nm: float = COAST_NEAR_NM, headings: int = 12) -> bool:
+    """True si une corde de `radius_nm` croise la terre (`is_path_clear`)."""
+    if is_land(lat, lon):
+        return True
+    n = max(4, int(headings))
+    for i in range(n):
+        hdg = i * (360.0 / n)
+        nlat, nlon = move_position(lat, lon, hdg, radius_nm)
+        if not is_path_clear(lat, lon, nlat, nlon):
+            return True
+    return False
+
+
+def isochrone_time_step_h(lat: float, lon: float, radius_nm: float = COAST_NEAR_NM) -> float:
+    """Pas 1 h à moins de 60 nm d'une côte, 3 h en haute mer (lot C4, l. 21)."""
+    if near_coast(lat, lon, radius_nm):
+        return ISOCHRONE_STEP_COAST_H
+    return ISOCHRONE_STEP_OFFSHORE_H
+
+
+def _wave_rel(heading: float, wind: dict) -> float:
+    wave_from = wind.get("waveFromDeg")
+    if wave_from is None:
+        wave_from = wind.get("waveDirDeg")
+    if wave_from is None:
+        return 90.0
+    try:
+        return twa_deg(heading, float(wave_from))
+    except (TypeError, ValueError):
+        return 90.0
+
+
+def _boat_speed(
+    polar_raw: Optional[dict],
+    twa: float,
+    tws: float,
+    *,
+    heading: Optional[float] = None,
+    wind: Optional[dict] = None,
+    apply_limits: bool = False,
+) -> float:
+    if apply_limits and (twa < TWA_CLOSE_HAULED_MIN or twa > TWA_RUNNING_MAX):
+        return 0.0
     k = polar_boat_speed(polar_raw, twa, tws)
     if k is None:
         k = boat_speed_from_wind(tws)
+    else:
+        k = float(k) * polar_efficiency()
+    if wind and heading is not None:
+        k = float(k) * wave_polar_factor(wind.get("hs"), _wave_rel(heading, wind))
     return float(k)
 
 
@@ -157,7 +217,10 @@ def _propagate(
         cur = current_fn(pt.lat, pt.lon, current_time) if current_fn else None
         for hdg in range(0, 360, heading_step_deg):
             twa = twa_deg(hdg, wind_dir)
-            spd = _boat_speed(polar_raw, twa, wind_spd)
+            spd = _boat_speed(
+                polar_raw, twa, wind_spd,
+                heading=float(hdg), wind=w, apply_limits=True,
+            )
             if spd < 0.3:
                 continue
             dist = spd * time_step_h
@@ -275,9 +338,9 @@ def run_leg_isochrone(
     polar_raw: Optional[dict] = None,
     current_fn: Optional[Callable] = None,
     wave_nogo_fn: Optional[Callable] = None,
-    time_step_h: float = 6.0,
+    time_step_h: Optional[float] = None,
     heading_step_deg: int = 10,
-    max_steps: int = 120,
+    max_steps: Optional[int] = None,
     arrival_radius_nm: float = 50.0,
     prune_sectors: int = 72,
     searoute_coords: Optional[List[Tuple[float, float]]] = None,
@@ -287,6 +350,11 @@ def run_leg_isochrone(
     if wave_nogo_fn is None:
         wave_nogo_fn = default_wave_nogo(wind_fn)
 
+    adaptive = time_step_h is None
+    min_dt = ISOCHRONE_STEP_COAST_H if adaptive else float(time_step_h)
+    if max_steps is None:
+        max_steps = max(1, int(math.ceil(ISOCHRONE_MAX_HOURS / min_dt)))
+
     dep_lat, dep_lon = nudge_offshore(dep_lat, dep_lon)
     start = IsoPoint(lat=dep_lat, lon=dep_lon, time=departure_time)
     current_iso = [start]
@@ -294,13 +362,22 @@ def run_leg_isochrone(
     best_arrival: Optional[IsoPoint] = None
     steps_taken = 0
     kinds: List[str] = []
+    elapsed_h = 0.0
+    current_time = departure_time
 
     for step in range(max_steps):
-        current_time = departure_time + timedelta(hours=step * time_step_h)
+        if adaptive:
+            dt = ISOCHRONE_STEP_COAST_H if any(
+                near_coast(p.lat, p.lon) for p in current_iso
+            ) else ISOCHRONE_STEP_OFFSHORE_H
+        else:
+            dt = float(time_step_h)
         candidates = _propagate(
-            current_iso, polar_raw, time_step_h, heading_step_deg, current_time,
+            current_iso, polar_raw, dt, heading_step_deg, current_time,
             wind_fn, current_fn, wave_nogo_fn,
         )
+        elapsed_h += dt
+        current_time = current_time + timedelta(hours=dt)
         if not candidates:
             break
         for pt in candidates:
@@ -314,6 +391,8 @@ def run_leg_isochrone(
         current_iso = _prune(candidates, prune_sectors)
         all_isos.append([p.to_dict() for p in current_iso])
         steps_taken = step + 1
+        if elapsed_h >= ISOCHRONE_MAX_HOURS:
+            break
 
     status = "failed"
     route_pts: List[IsoPoint] = []
