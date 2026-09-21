@@ -33,6 +33,15 @@ describe("i18n parity (lot F5)", () => {
     assert.match(en.regimeTooltipClimatology, /monthly average/);
   });
 
+  it("lot R5 — unités terrestres km / h de route", () => {
+    assert.equal(fr.unitKm, "km");
+    assert.equal(en.unitKm, "km");
+    assert.equal(fr.unitRoadHours, "h de route");
+    assert.equal(en.unitRoadHours, "h on the road");
+    assert.equal(fr.byRoad, "par la route");
+    assert.equal(en.byRoad, "by road");
+  });
+
   it("les libellés plein écran film existent dans les deux langues", () => {
     assert.match(fr.filmFullscreen, /Plein écran film/);
     assert.match(en.filmFullscreen, /fullscreen/i);

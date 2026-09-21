@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 import pearl_store
 import story_cache
 from film_script import (
+    CONNECTORS,
     FILM_MAX_CHARS,
     FILM_WRITE_MAX,
     FILM_WRITE_MIN,
     build_film_response,
     build_raw_script,
+    connector_at,
     film_candidates,
     film_facts,
     journal_fingerprint,
@@ -61,6 +63,24 @@ def test_raw_length_bounded_and_chapter1_names():
     assert plan["chapters"]
     assert "Saint-Maur" in plan["chapters"][0]["text"]
     assert "La Rochelle" in plan["chapters"][0]["text"]
+
+
+def test_connectors_alternate():
+    plan = _raw()
+    cons = CONNECTORS["fr"]
+    used = []
+    for i, ch in enumerate(plan["chapters"]):
+        text = ch.get("text") or ""
+        hit = next((c for c in cons if text.startswith(f"{c},")), None)
+        if hit:
+            used.append(hit)
+            assert hit == connector_at(i - 1, "fr"), f"chapitre {i}: {hit} ≠ {connector_at(i - 1, 'fr')}"
+    assert len(used) >= 2, f"connecteurs : {used}"
+    for a, b in zip(used, used[1:]):
+        assert a != b, f"connecteur répété : {a}"
+    assert connector_at(0, "fr") == "Puis"
+    assert connector_at(1, "fr") == "Ensuite"
+    assert connector_at(6, "fr") == "Puis"
 
 
 def test_raw_english_chapter1():

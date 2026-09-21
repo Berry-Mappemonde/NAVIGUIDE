@@ -26,6 +26,14 @@ CONNECTORS = {
     "fr": ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
     "en": ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
 }
+
+
+def connector_at(i: int, lang: str = "fr") -> str:
+    """Connecteur du paragraphe i : `connecteurs[i % n]`, jamais le même à la suite."""
+    cons = CONNECTORS["en" if _en(lang) else "fr"]
+    return cons[int(i) % len(cons)]
+
+
 MONTHS = {
     "fr": ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
     "en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -502,9 +510,7 @@ def _card(entry: dict) -> dict:
 
 def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None) -> list[dict]:
     en = _en(lang)
-    cons = CONNECTORS["en" if en else "fr"]
     chapters: list[dict] = []
-    last = -1
     dist = ""
     if live:
         dist = _nm_label(live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm"), lang)
@@ -512,7 +518,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         bits: list[str] = []
         placed: list[dict] = []
         if i > 0:
-            last = (last + 1) % len(cons)
+            conn = connector_at(i - 1, lang)
             dest = short_name((w.get("to") or {}).get("name") or "")
             origin = short_name((w.get("from") or {}).get("name") or "")
             dep = _departure_iso(w["from"]) if w.get("from") else None
@@ -520,9 +526,9 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 f"départ vers {dest}" if dest else f"en route depuis {origin}"
             )
             bits.append(
-                f"{cons[last]}, on {day_month(dep, lang)}, {head}."
+                f"{conn}, on {day_month(dep, lang)}, {head}."
                 if en else
-                f"{cons[last]}, le {day_month(dep, lang)}, {head}."
+                f"{conn}, le {day_month(dep, lang)}, {head}."
             )
         for ev in buckets[i]:
             rich = {**ev, "seaName": sea_name, "distLabel": dist, "name": start_name if ev.get("role") == "depart" else ev.get("name")}

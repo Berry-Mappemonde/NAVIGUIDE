@@ -1,9 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  datedMarks, dayMonth, expeditionStory, expeditionStoryText,
+  datedMarks, dayMonth, expeditionStory, expeditionStoryText, storyConnector,
   FILM_CONNECTORS, FILM_MAX_CHARS, buildFilmScript, filmCandidates, selectFilmEvents,
 } from "./expeditionStory.js";
+import { NM_TO_KM } from "../utils/berryLegs.js";
 
 const clock = { t0: "2026-05-15T08:00:00Z" };
 const marks = [
@@ -36,20 +37,53 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
       { kind: "grib", t: "2026-09-18T06:00:00Z", windKnots: 14, dirFromDeg: 120, model: "GFS" },
     ] };
     const paras = expeditionStory({ clock, marks, live, leg, journal, now, lang: "fr" }).map(plain);
+    const landKm = Math.round(122 * NM_TO_KM);
     assert.equal(paras[0], "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026.");
-    assert.equal(paras[1], "Le 15 mai, le bateau a pris la mer à La Rochelle, vers Ajaccio (Corse) : 1 820 nm en 9 jours. "
+    assert.equal(paras[1], `Puis, le 15 mai, départ vers La Rochelle : ${landKm} km par la route en 4 h de route. Arrivée à La Rochelle le 15 mai, 3 jours à quai.`);
+    assert.equal(paras[2], "Le 15 mai, le bateau a pris la mer à La Rochelle, vers Ajaccio (Corse) : 1 820 nm en 9 jours. "
       + "Entre-temps — entré dans : Spanish Exclusive Economic Zone le 17 mai ; aire marine protégée à portée : Cabrera ; port d’entrée passé : La Rochelle - La Pallice. "
       + "Météo au bateau : coup de vent le 22 mai (37 kn, Hs 2,4 m) (GFS). "
       + "Vent au bateau : 14 kn en moyenne, 18 kn au plus fort (GFS, 2 relevés). "
       + "Le skipper a noté : « Première nuit au large, belle étoile. » "
       + "Arrivée à Ajaccio (Corse) le 24 mai, 3 jours à quai.");
-    assert.equal(paras[2], "Puis, le 27 mai, départ vers Fort-de-France (Martinique) : 5 153 nm en 27 jours. Arrivée à Fort-de-France (Martinique) le 23 juin, 3 jours à quai.");
-    assert.equal(paras[3], "Puis, le 26 juin, départ vers Nouméa (Nouvelle-Calédonie) : 12 082 nm en 84 jours. Arrivée à Nouméa (Nouvelle-Calédonie) le 17 septembre, 3 jours à quai.");
-    assert.equal(paras[4], "Depuis le 20 septembre, en route de Nouméa (Nouvelle-Calédonie) vers Dzaoudzi (Mayotte) : encore 9 100 nm, arrivée prévue le 2 novembre.");
-    assert.equal(paras[5], "Aujourd’hui, jour 126 (94 de mer) : le bateau est à 19 260 nm du départ.");
-    assert.equal(paras[6], "Au bateau maintenant : vent 12 kn de SE (prévision GFS).");
-    assert.equal(paras.length, 7);
-    assert.equal(expeditionStoryText({ clock, marks, live, leg, journal, now }).split("\n\n").length, 7);
+    assert.equal(paras[3], "Ensuite, le 27 mai, départ vers Fort-de-France (Martinique) : 5 153 nm en 27 jours. Arrivée à Fort-de-France (Martinique) le 23 juin, 3 jours à quai.");
+    assert.equal(paras[4], "Plus loin, le 26 juin, départ vers Nouméa (Nouvelle-Calédonie) : 12 082 nm en 84 jours. Arrivée à Nouméa (Nouvelle-Calédonie) le 17 septembre, 3 jours à quai.");
+    assert.equal(paras[5], "Depuis le 20 septembre, en route de Nouméa (Nouvelle-Calédonie) vers Dzaoudzi (Mayotte) : encore 9 100 nm, arrivée prévue le 2 novembre.");
+    assert.equal(paras[6], "Aujourd’hui, jour 126 (94 de mer) : le bateau est à 19 260 nm du départ.");
+    assert.equal(paras[7], "Au bateau maintenant : vent 12 kn de SE (prévision GFS).");
+    assert.equal(paras.length, 8);
+    assert.equal(expeditionStoryText({ clock, marks, live, leg, journal, now }).split("\n\n").length, 8);
+  });
+
+  it("deux paragraphes consécutifs n’ont pas le même connecteur", () => {
+    const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+    const paras = expeditionStory({ clock, marks, live, now, lang: "fr" });
+    const cons = FILM_CONNECTORS.fr;
+    const used = [];
+    for (const p of paras) {
+      const hit = cons.find((c) => p.startsWith(`${c},`));
+      if (hit) used.push(hit);
+    }
+    assert.ok(used.length >= 2, `connecteurs trouvés : ${used.join(" | ")}`);
+    for (let i = 1; i < used.length; i++) {
+      assert.notEqual(used[i], used[i - 1], `connecteur répété : ${used[i]}`);
+    }
+    assert.equal(storyConnector(0, "fr"), "Puis");
+    assert.equal(storyConnector(1, "fr"), "Ensuite");
+    assert.equal(storyConnector(6, "fr"), "Puis");
+  });
+
+  it("étape terrestre : km par la route, pas de nm", () => {
+    const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+    const paras = expeditionStory({ clock, marks, live, now, lang: "fr" }).map(plain);
+    const land = paras.find((p) => /départ vers La Rochelle/.test(p));
+    assert.ok(land, "paragraphe terrestre Saint-Maur → La Rochelle");
+    assert.match(land, /\bkm\b/);
+    assert.match(land, /par la route/);
+    assert.match(land, /h de route/);
+    assert.doesNotMatch(land, /\bnm\b/);
+    const km = Math.round(122 * NM_TO_KM);
+    assert.match(land, new RegExp(`${km} km`));
   });
 
   it("anglais, à quai, vent du journal quand le GRIB live manque", () => {
@@ -62,10 +96,12 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     ] };
     const paras = expeditionStory({ clock, marks, live, leg, journal, now, lang: "en" }).map(plain);
     assert.equal(paras[0], "The Berry-Mappemonde expedition left Saint-Maur on 15 May 2026.");
-    assert.match(paras[1], /^On 15 May, the boat put to sea at La Rochelle, bound for Ajaccio \(Corse\) : 1,820 nm in 9 days\. Arrival at Ajaccio \(Corse\) on 24 May, 3 days in port\.$/);
-    assert.match(paras[2], /^Then on 27 May, departure for Fort-de-France/);
-    assert.equal(paras[4], "Today, day 126 (94 at sea): the boat is in port at Nouméa (Nouvelle-Calédonie), 19,055 nm from the start; next leg to Dzaoudzi (Mayotte), expected on 2 November.");
-    assert.equal(paras[5], "On 18 September, at the boat: wind 18 kn from the E (GFS forecast).");
+    assert.match(paras[1], /^Then, on 15 May, departure for La Rochelle : \d+ km by road in 4 h on the road/);
+    assert.doesNotMatch(paras[1], /\bnm\b/);
+    assert.match(paras[2], /^On 15 May, the boat put to sea at La Rochelle, bound for Ajaccio \(Corse\) : 1,820 nm in 9 days\. Arrival at Ajaccio \(Corse\) on 24 May, 3 days in port\.$/);
+    assert.match(paras[3], /^Next, on 27 May, departure for Fort-de-France/);
+    assert.equal(paras[5], "Today, day 126 (94 at sea): the boat is in port at Nouméa (Nouvelle-Calédonie), 19,055 nm from the start; next leg to Dzaoudzi (Mayotte), expected on 2 November.");
+    assert.equal(paras[6], "On 18 September, at the boat: wind 18 kn from the E (GFS forecast).");
   });
 
   it("avant le départ : une seule phrase, au futur", () => {
@@ -76,8 +112,8 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
   it("sans horloge ni escales : rien ; sans live : départ + jambes franchies seulement", () => {
     assert.deepEqual(expeditionStory({ now }), []);
     const paras = expeditionStory({ clock, marks, live: null, now, lang: "fr" });
-    assert.equal(paras.length, 4);
-    assert.match(paras[3], /Nouméa/);
+    assert.equal(paras.length, 5);
+    assert.match(paras[4], /Nouméa/);
   });
 
   it("datedMarks dédoublonne et trie ; dayMonth écrit 1er en français", () => {

@@ -74,6 +74,7 @@ import {
   SEGMENT_BATCH_SIZE,
   buildBerryLegs,
   coordsFromRoutePayload,
+  isLandLegNames,
   isNonMaritimeLeg,
   orientCoords,
 } from "./utils/berryLegs.js";
@@ -725,16 +726,28 @@ export default function App() {
     if (!hudLeg?.fromStop) return null;
     const from = legendMarks.find((m) => m.name === hudLeg.fromStop);
     const to = hudLeg.toStop ? legendMarks.find((m) => m.name === hudLeg.toStop) : null;
+    const land = isLandLegNames(hudLeg.fromStop, hudLeg.toStop) || hudLeg.vehicle === "land";
+    const sailNm = from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null;
+    const filmDelta = from && to
+      ? Math.max(0, (Number(to.filmNm ?? to.nm) || 0) - (Number(from.filmNm ?? from.nm) || 0))
+      : null;
+    const fromMs = Date.parse(from?.iso ?? "");
+    const toMs = Date.parse(to?.iso ?? "");
+    const roadHours = Number.isFinite(fromMs) && Number.isFinite(toMs)
+      ? Math.max(0, Math.round((toMs - fromMs) / 3_600_000))
+      : null;
     return {
       fromStop: hudLeg.fromStop,
       toStop: hudLeg.toStop || null,
       holdDays: from?.holdHours > 0 ? Math.round(from.holdHours / 24) : 0,
-      legNm: from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null,
+      legNm: land ? (filmDelta || sailNm) : sailNm,
+      kind: land ? "land" : undefined,
+      roadHours: land ? roadHours : null,
       etaLabel: to?.iso ? dayMonth(to.iso, lang) : null,
       lat: from?.lat,
       lon: from?.lon,
     };
-  }, [hudLeg?.fromStop, hudLeg?.toStop, legendMarks, lang]);
+  }, [hudLeg?.fromStop, hudLeg?.toStop, hudLeg?.vehicle, legendMarks, lang]);
   const moments = useMomentCards({
     enabled: sceneReady && !drawingMode && !replay.active,
     events: iciPack.events,
