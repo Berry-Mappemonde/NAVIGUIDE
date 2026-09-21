@@ -3,7 +3,7 @@ import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
-import { canLeadWithVoice, waitForVoices, voiceEndKind } from "../utils/speak.js";
+import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -64,6 +64,30 @@ export function linearFilmAt(elapsed, plan) {
 }
 
 export const APPROACH_FRAC = 0.8;
+
+/**
+ * Stop du film (lot RA5) : coupe la voix, libère la caméra (fin de
+ * `filmActive` + `publishFilmEnd`), annule la boucle. L'appelant remet
+ * `active=false` — MapSceneController quitte alors le suivi film.
+ */
+export function applyReplayStop({
+  cancelRaf,
+  stopVoice,
+  releaseCamera,
+} = {}) {
+  (stopVoice || stopSpeaking)();
+  (releaseCamera || publishFilmEnd)();
+  cancelRaf?.();
+  return {
+    active: false,
+    tMs: null,
+    card: null,
+    progress: 0,
+    chapterIdx: 0,
+    chapterText: "",
+    filmLeg: null,
+  };
+}
 
 function shortStopName(name) {
   return String(name || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
@@ -180,14 +204,20 @@ export function useReplay({
     filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
     publishEventBubble(null);
-    setActive(false);
-    setTMs(null);
-    setCard(null);
-    setChapterIdx(0);
-    setChapterText("");
-    setFilmLeg(null);
+    const cleared = applyReplayStop({
+      cancelRaf: () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      },
+    });
+    setActive(cleared.active);
+    setTMs(cleared.tMs);
+    setCard(cleared.card);
+    setChapterIdx(cleared.chapterIdx);
+    setChapterText(cleared.chapterText);
+    setFilmLeg(cleared.filmLeg);
     setVoiceRate(1);
-    setProgress(0);
+    setProgress(cleared.progress);
     queueRef.current = [];
     lastTRef.current = null;
     tMsRef.current = null;
@@ -195,8 +225,6 @@ export function useReplay({
     recaleRemainRef.current = 0;
     planRef.current = null;
     finishedRef.current = false;
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
   }, []);
 
   const applyChapter = useCallback((ch) => {

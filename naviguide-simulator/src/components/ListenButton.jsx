@@ -49,7 +49,10 @@ export function ListenButton({
     const ok = speak(body, lang, { onEnd: () => setSpeaking(false) });
     setSpeaking(ok);
   };
-  const label = pressed ? t("briefingListenStop") : t("briefingListen");
+  // Pendant le film, Écouter reste « Écouter » (on/off) — « Stop » est l'arrêt du film (RA5).
+  const label = (deferSpeak && armed)
+    ? t("briefingListen")
+    : (pressed ? t("briefingListenStop") : t("briefingListen"));
   return (
     <button
       type="button"

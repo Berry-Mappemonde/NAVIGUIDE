@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { approachStopEvent, linearFilmAt, pickFilmChapters, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, linearFilmAt, pickFilmChapters, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -33,7 +33,7 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
 
-  it("the film bar offers Revoir / Retour au live ; voice follows Écouter (no 🔊)", () => {
+  it("the film bar offers Revoir / Stop ; voice follows Écouter (no 🔊)", () => {
     assert.match(bar, /data-testid="replay-start"/);
     assert.match(bar, /data-testid="replay-stop"/);
     assert.doesNotMatch(bar, /data-testid="replay-voice"/);
@@ -263,5 +263,44 @@ describe("useReplay lot RA3 — interpolation jusqu'au dernier chapitre", () => 
     assert.match(late.card.title, /Ajaccio/);
     assert.equal(approachStopEvent(chapters[1], { frac: 0.2 }), null);
     assert.equal(approachStopEvent({ idx: 0, toName: "", text: "" }, { frac: 0.99 }), null);
+  });
+});
+
+describe("useReplay lot RA5 — Stop coupe voix, animation, caméra", () => {
+  it("stop() met active=false, coupe la voix, libère la caméra", () => {
+    const calls = { voice: 0, camera: 0, raf: 0 };
+    const next = applyReplayStop({
+      cancelRaf: () => { calls.raf += 1; },
+      stopVoice: () => { calls.voice += 1; },
+      releaseCamera: () => { calls.camera += 1; },
+    });
+    assert.equal(next.active, false);
+    assert.equal(next.tMs, null);
+    assert.equal(next.card, null);
+    assert.equal(next.progress, 0);
+    assert.equal(calls.voice, 1);
+    assert.equal(calls.camera, 1);
+    assert.equal(calls.raf, 1);
+    assert.match(hook, /applyReplayStop\(/);
+    assert.match(hook, /stopSpeaking/);
+    assert.match(hook, /publishFilmEnd/);
+    assert.match(app, /onStop: \(\) => \{/);
+    assert.match(app, /replay\.stop\(\)/);
+    assert.match(app, /VIEW_SUIVRE/);
+  });
+
+  it("passer en Suivre/Revoir met escaleStop à null", () => {
+    assert.match(app, /shouldCloseEscaleSheet/);
+    assert.match(app, /closeEscaleSheet\(\)/);
+    assert.match(app, /replayStarting: true/);
+    assert.match(app, /nextView: next/);
+    assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
+    assert.match(app, /filmActive: replay\.active/);
+    assert.match(app, /clearToken: escaleClear/);
+    assert.match(app, /setEscaleClear/);
+    assert.match(bar, /data-testid="replay-stop"/);
+    assert.match(bar, /data-testid="stop-auto"/);
+    assert.match(bar, /testId="listen"/);
+    assert.doesNotMatch(bar, /disabled=\{Boolean\(replay\.active\)\}[\s\S]{0,80}replay-stop/);
   });
 });
