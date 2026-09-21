@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { FILM_BAR_HEIGHT_PX, SIDEBAR_WIDTH_PX, filmBarInsets, mapInsetVars } from "./filmBarLayout.js";
+import { FILM_BAR_BOTTOM_GAP_PX, FILM_BAR_HEIGHT_PX, SIDEBAR_WIDTH_PX, filmBarInsets, mapInsetVars } from "./filmBarLayout.js";
 
 describe("filmBarLayout U6", () => {
   it("entre les deux sidebars ouvertes", () => {
@@ -23,13 +23,13 @@ describe("mapInsetVars — crédits Leaflet dans la carte visible", () => {
   it("se décale du panneau Outils et de la barre film (Simulation)", () => {
     const vars = mapInsetVars({ sidebarOpen: true, toolsOpen: true, filmBarVisible: true, filmBarControls: true });
     assert.equal(vars["--sim-inset-right"], `${SIDEBAR_WIDTH_PX}px`);
-    assert.equal(vars["--sim-inset-bottom"], `${FILM_BAR_HEIGHT_PX.controls}px`);
+    assert.equal(vars["--sim-inset-bottom"], `${FILM_BAR_HEIGHT_PX.controls + FILM_BAR_BOTTOM_GAP_PX}px`);
   });
 
   it("Suivre : barre plus basse ; Cinéma barre cachée : rien", () => {
     const suivre = mapInsetVars({ toolsOpen: false, filmBarVisible: true, filmBarControls: false });
     assert.equal(suivre["--sim-inset-right"], "0px");
-    assert.equal(suivre["--sim-inset-bottom"], `${FILM_BAR_HEIGHT_PX.compact}px`);
+    assert.equal(suivre["--sim-inset-bottom"], `${FILM_BAR_HEIGHT_PX.compact + FILM_BAR_BOTTOM_GAP_PX}px`);
     const hidden = mapInsetVars({ toolsOpen: false, filmBarVisible: false });
     assert.equal(hidden["--sim-inset-bottom"], "0px");
   });
