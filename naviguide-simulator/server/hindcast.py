@@ -195,6 +195,15 @@ def _om_get(url: str, params: dict) -> Optional[dict]:
         return None
 
 
+def om_get(url: str, params: dict) -> Optional[dict]:
+    """Client HTTP Open-Meteo partagé (hindcast, ensembles). `None` si panne."""
+    return _om_get(url, params)
+
+
+def hours_from_om(payload: Optional[dict]) -> Dict[str, dict]:
+    return _hours_from_om(payload)
+
+
 def _hours_from_om(payload: Optional[dict]) -> Dict[str, dict]:
     hourly = (payload or {}).get("hourly") or {}
     times = hourly.get("time") or []

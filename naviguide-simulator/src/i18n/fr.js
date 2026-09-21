@@ -239,6 +239,7 @@ export default {
   planReviewEmpty: "Aucune jambe à revoir.",
   planReviewSummary: "Par jambe : calendrier (horloge officielle), ZEE et ports d’entrée (perles), AMP, saison du mois (atlas). {warmed} perles lues, {unknown} pas encore chauffées.",
   planReviewCommentTitle: "Ce que je changerais",
+  etaRange: "entre le {p10} et le {p90} (p10–p90, {n} membres)",
   skipperPlanningGrib:     "polaire × vent GRIB ({tws} kn, TWA {twa}°)",
   skipperPlanningClimo:    "polaire × vent typique ({tws} kn, TWA {twa}°)",
   brandTitle: "NAVIGUIDE simulator",
