@@ -62,6 +62,8 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /pickFilmEvent/);
     assert.match(hook, /publishEventBubble/);
     assert.match(hook, /filmBubbleRef/);
+    assert.match(hook, /FilmEventScoreGate/);
+    assert.match(hook, /filmEventCard/);
     assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
   });
 });

@@ -162,6 +162,7 @@ export default {
   eventBubbleChipWind: "Wind",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} d alongside",
+  eventBubbleClose:    "Close",
 
   // ── Story of the crossing (Follow) ───────────────────────────────────────
   storyTitle:         "The story of the crossing",
