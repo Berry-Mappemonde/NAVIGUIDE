@@ -95,6 +95,27 @@ describe("film bar (lot R2)", () => {
   });
 });
 
+describe("film bar (lot RA6)", () => {
+  it("info-bulle hindcast/prévision/climatologie sur la pilule, Suivre comme Simulation", () => {
+    assert.match(bar, /title=\{regimeTitle\}/);
+    assert.match(bar, /data-testid="speed-regime-pill" title=\{regimeTitle\}/);
+    assert.match(bar, /regimeTooltipHindcast/);
+    assert.match(bar, /regimeTooltipForecast/);
+    assert.match(bar, /regimeTooltipClimatology/);
+    assert.doesNotMatch(bar, /showPlaybackControls\s*\?\s*regimeTitle/);
+    assert.doesNotMatch(bar, /isSimulation[\s\S]{0,40}regimeTitle/);
+  });
+
+  it("jambe terrestre en km par la route dans la barre", () => {
+    assert.match(bar, /formatLandLegClock/);
+    assert.match(bar, /isLandLegNames/);
+    assert.match(bar, /data-testid="film-land-leg"/);
+    assert.match(bar, /unitKm/);
+    assert.match(bar, /byRoad/);
+    assert.match(bar, /unitRoadHours/);
+  });
+});
+
 describe("plein écran film (lot F5) — sidebars masquées, pas démontées", () => {
   it("App pose .film-fullscreen et garde <Sidebar> / <ToolsSidebar> montés", () => {
     assert.match(app, /film-fullscreen/);

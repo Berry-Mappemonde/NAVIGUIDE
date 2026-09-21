@@ -35,4 +35,14 @@ describe("LogbookChat contract (lot D)", () => {
     assert.equal(effects.length, 1, "only the scroll-to-bottom effect");
     assert.match(src, /el\.scrollTop = el\.scrollHeight/);
   });
+
+  it("cadre de réponse sous la question (lot RA6)", () => {
+    assert.match(src, /data-testid="logbook-chat-reply"/);
+    const replyAt = src.indexOf('data-testid="logbook-chat-reply"');
+    const listAt = src.indexOf('data-testid="logbook-chat-list"');
+    const inputAt = src.indexOf('data-testid="logbook-chat-input"');
+    assert.ok(replyAt > 0 && listAt > replyAt, "la liste est dans le cadre");
+    assert.ok(inputAt > listAt, "le champ reste sous le cadre");
+    assert.doesNotMatch(src, /logbookChatHint/);
+  });
 });
