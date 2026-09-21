@@ -27,6 +27,33 @@ function legKey(jambe) {
   return `${jambe.fromStop || ""}→${jambe.toStop || ""}`;
 }
 
+/**
+ * Query string for GET /ici. Longitudes are folded into [−180, 180]
+ * (lot S wrapLon): searoute-style unfolded points (236.84°) must not leave the bag.
+ */
+export function iciSearchParams({
+  lat,
+  lon,
+  month,
+  destLat,
+  destLon,
+  radiusNm,
+  thin = false,
+} = {}) {
+  const q = new URLSearchParams({
+    lat: String(lat),
+    lon: String(wrapLon(Number(lon))),
+  });
+  if (Number.isFinite(Number(month))) q.set("month", String(month));
+  if (radiusNm != null && Number.isFinite(Number(radiusNm))) q.set("radius_nm", String(radiusNm));
+  if (Number.isFinite(Number(destLat)) && Number.isFinite(Number(destLon))) {
+    q.set("dest_lat", String(destLat));
+    q.set("dest_lon", String(wrapLon(Number(destLon))));
+  }
+  if (thin) q.set("thin", "1");
+  return q;
+}
+
 /** Distance between the bag's centre and the boat, in nm (Infinity when unknown). */
 export function bagDistanceNm(bag, boat) {
   const lat = Number(bag?.at?.lat);
@@ -222,16 +249,14 @@ export function useIciDossier({
       abortRef.current = ctrl;
       inFlightRef.current = true;
       const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
-      const q = new URLSearchParams({
-        lat: String(lat),
-        lon: String(lon),
+      const q = iciSearchParams({
+        lat,
+        lon,
+        month,
+        destLat,
+        destLon,
+        radiusNm: radiusRef.current,
       });
-      if (Number.isFinite(Number(month))) q.set("month", String(month));
-      if (radiusRef.current != null) q.set("radius_nm", String(radiusRef.current));
-      if (Number.isFinite(Number(destLat)) && Number.isFinite(Number(destLon))) {
-        q.set("dest_lat", String(destLat));
-        q.set("dest_lon", String(destLon));
-      }
       fetch(`${API_URL}/ici?${q.toString()}`, {
         signal: ctrl.signal,
       })
@@ -267,8 +292,8 @@ export function useIciDossier({
   useEffect(() => {
     if (!remote || remote.weather?.status !== "pending") return undefined;
     const lat = remote.at?.lat;
-    const lon = remote.at?.lon;
-    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return undefined;
+    const lon = wrapLon(Number(remote.at?.lon));
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(lon)) return undefined;
     let cancelled = false;
     const tick = () => {
       fetchWeatherForecast(lat, lon, { api: API_URL })
@@ -425,13 +450,19 @@ export function useIciDossier({
 
   const dossier = useMemo(() => {
     if (!enabled || !boat || !effective) return null;
-    return mergeDossier(effective, {
+    const merged = mergeDossier(effective, {
       polarMeta,
       jambe,
       event: tick.briefing || effective.event || null,
       // A thin pearl has no climatology of its own: the atlas at the boat still does.
       climatology: effective.climatology || climatology || null,
     });
+    // A thin pearl never asked the full BI stack: "unavailable" would be a lie.
+    const thinPearl = merged.thin || merged.pearl === "thin";
+    if (thinPearl && merged.sources?.bi === "unavailable") {
+      return { ...merged, sources: { ...merged.sources, bi: null } };
+    }
+    return merged;
   }, [enabled, boat, effective, polarMeta, jambe, climatology, tick.briefing]);
 
   const briefing = useMemo(

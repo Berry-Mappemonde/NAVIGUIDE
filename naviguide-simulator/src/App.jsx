@@ -644,6 +644,8 @@ export default function App() {
   const alongPack = useIciAlong({
     enabled: Boolean(cast && routeReady),
     flat: flatRoute,
+    // Lot T: when a route is drawn, sample that track — never GET /ici/pearls (Berry).
+    customRoute: routeForView,
     fromNm: chapterAtNm(escaleMarks, cast?.sailNm ?? playback.nm)?.from?.nm,
     toNm: destMark?.nm,
     boatNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
