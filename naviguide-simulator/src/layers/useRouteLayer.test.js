@@ -26,6 +26,20 @@ describe("useRouteLayer — teinte par régime (lot C3)", () => {
     assert.equal(REGIME_COLORS.climatology, "#c084fc");
   });
 
+  it("ne teinte pas une jambe avion", () => {
+    const verts = [
+      { sailNm: 0, lat: 4.9, lon: -52.3, regime: "climatology", vehicle: "main" },
+      { sailNm: 10, lat: 20, lon: -58, regime: "climatology", vehicle: "plane" },
+      { sailNm: 20, lat: 44.6, lon: -63.6, regime: "climatology", vehicle: "main" },
+    ];
+    const segs = traveledRegimeSegments(verts, 20);
+    assert.equal(segs.every((s) => s.regime), true);
+    assert.ok(segs.every((s) => {
+      const [[, lat0]] = s.coords;
+      return lat0 < 10 || lat0 > 40;
+    }));
+  });
+
   it("ne teinte rien sans distance parcourue", () => {
     assert.deepEqual(traveledRegimeSegments([{ sailNm: 0, lat: 0, lon: 0 }], 0), []);
   });

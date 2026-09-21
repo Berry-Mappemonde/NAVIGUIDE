@@ -259,9 +259,10 @@ export function buildVoyageClock({
   }
 
   const p0 = points[0];
+  let lastSail = p0.cumNm ?? 0;
   pushVertex({
     filmNm: filmOf(p0),
-    sailNm: p0.cumNm ?? 0,
+    sailNm: lastSail,
     lat: p0.lat,
     lon: p0.lon,
     bearing: points[1] ? bearingDeg(p0, points[1]) : 0,
@@ -279,6 +280,8 @@ export function buildVoyageClock({
     const b = points[i + 1];
     const bearing = bearingDeg(a, b);
     const destVehicle = vehicleAt(points, i + 1, episodes);
+    if (destVehicle === "side") continue;
+    if (b.air && !b.jump && destVehicle !== "plane") continue;
     const month = monthOfT0(t0, tHours);
     let speedKnots = null;
     let windKnots = null;
@@ -290,13 +293,15 @@ export function buildVoyageClock({
 
     const landEdge = destVehicle === "land" || (a.nonMaritime && b.nonMaritime);
     const beforeSea = filmOf(b) < seaStart.filmNm - 0.05;
-    if (b.jump || destVehicle === "plane") {
+    const airEdge = Boolean(b.jump || destVehicle === "plane" || b.air);
+    if (airEdge) {
       tHours += AIR_CALENDAR_HOURS;
     } else if (landEdge || beforeSea) {
       if (startAt === "saint-maur" && !landBudgetUsed) {
         tHours += SAINT_MAUR_LAND_HOURS;
         landBudgetUsed = true;
       }
+      lastSail = b.cumNm ?? lastSail;
     } else {
       const spanNm = Math.max(0, (b.cumNm ?? 0) - (a.cumNm ?? 0));
       const along = alongTrackSpeed({
@@ -311,6 +316,7 @@ export function buildVoyageClock({
       const dt = spanNm / knots;
       tHours += dt;
       seaHours += dt;
+      lastSail += spanNm;
       speedKnots = along.speedKnots;
       windKnots = along.windKnots;
       twa = along.twa;
@@ -331,7 +337,7 @@ export function buildVoyageClock({
 
     pushVertex({
       filmNm: filmOf(b),
-      sailNm: b.cumNm ?? 0,
+      sailNm: lastSail,
       lat: b.lat,
       lon: b.lon,
       bearing,
@@ -345,10 +351,10 @@ export function buildVoyageClock({
       model: destVehicle === "plane" || destVehicle === "land" ? null : edgeModel,
       ...(destVehicle === "plane" || destVehicle === "land" ? {} : edgeAtlas),
     });
-    applyQuay(markAtPoint(clockMarksIn, i + 1, b), b, bearing);
+    if (!airEdge) applyQuay(markAtPoint(clockMarksIn, i + 1, b), b, bearing);
   }
 
-  const lastSail = [...vertices].reverse().find((v) => v.vehicle !== "quay") || vertices.at(-1);
+  const lastNonQuay = [...vertices].reverse().find((v) => v.vehicle !== "quay") || vertices.at(-1);
   const sources = new Set(vertices.map((v) => v.source).filter(Boolean));
   return {
     t0,
@@ -360,7 +366,7 @@ export function buildVoyageClock({
     marks: outMarks,
     seaHours,
     quayHours,
-    arrivalIso: lastSail?.iso || isoFromT0(t0, tHours),
+    arrivalIso: lastNonQuay?.iso || isoFromT0(t0, tHours),
     startAt,
   };
 }

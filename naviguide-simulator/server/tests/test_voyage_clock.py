@@ -374,6 +374,34 @@ def test_c7_official_params():
     assert p["polarEfficiency"] == polar_efficiency()
 
 
+def test_sail_nm_excludes_air_miles():
+    """Le vol prend AIR_CALENDAR_HOURS, il n'ajoute pas de milles à la voile."""
+    points = [
+        {"lat": 4.9, "lon": -52.3, "cumNm": 1000, "filmCum": 1000, "jump": False},
+        {"lat": 44.6, "lon": -63.6, "cumNm": 2500, "filmCum": 2580, "jump": True},
+        {"lat": 44.7, "lon": -63.8, "cumNm": 2530, "filmCum": 2610, "jump": False},
+    ]
+    c = build_voyage_clock(points, [], "2026-06-15T08:00:00Z", start_at="saint-maur")
+    plane = next(v for v in c["vertices"] if v.get("vehicle") == "plane")
+    assert plane["sailNm"] == 1000
+    assert plane["tHours"] == AIR_CALENDAR_HOURS
+    sea_after = [v for v in c["vertices"] if v.get("vehicle") == "main" and v["sailNm"] > 1000]
+    assert sea_after
+    assert max(v["sailNm"] for v in sea_after) == 1030
+
+
+def test_live_position_deterministic_same_date():
+    c = _clock("2026-05-15T08:00:00Z")
+    when = "2026-05-20T12:00:00Z"
+    a = sample_clock_at_time(c, when)
+    b = sample_clock_at_time(c, when)
+    assert a["status"] == "live"
+    assert a["lat"] == b["lat"]
+    assert a["lon"] == b["lon"]
+    assert a["sailNm"] == b["sailNm"]
+    assert a["status"] == b["status"]
+
+
 def test_c4_planning_speed_parity_with_js():
     assert abs(polar_efficiency() - 0.85) < 1e-9
     assert planning_speed_for(C4_PLANNING_POLAR, 10, 90) == 6.0

@@ -75,6 +75,7 @@ import {
   SEGMENT_BATCH_SIZE,
   buildBerryLegs,
   coordsFromRoutePayload,
+  isAirLegNames,
   isLandLegNames,
   isNonMaritimeLeg,
   orientCoords,
@@ -302,7 +303,7 @@ export default function App() {
     points: flatRoute.points,
     marks: escaleMarks,
   });
-  const officialClock = voyage.clock || official.clock;
+  const officialClock = official.clock || voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
@@ -1214,6 +1215,14 @@ export default function App() {
       const fetchLeg = async (leg) => {
         if (isNonMaritimeLeg(leg.from.name, leg.to.name)) {
           return { ...leg, coords: [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]], nonMaritime: true };
+        }
+        if (isAirLegNames(leg.from.name, leg.to.name)) {
+          return {
+            ...leg,
+            coords: [[leg.from.lon, leg.from.lat], [leg.to.lon, leg.to.lat]],
+            nonMaritime: false,
+            air: true,
+          };
         }
         try {
           const params = new URLSearchParams({

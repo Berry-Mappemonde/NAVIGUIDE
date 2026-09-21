@@ -428,6 +428,33 @@ describe("lot C2 — régime sur l’échantillon", () => {
   });
 });
 
+describe("lot RA4 — voile hors avion", () => {
+  it("n'ajoute pas les milles du saut avion à sailNm", () => {
+    const flat = {
+      points: [
+        { lat: 4.9, lon: -52.3, cumNm: 1000, filmCum: 1000, jump: false },
+        { lat: 44.6, lon: -63.6, cumNm: 2500, filmCum: 2580, jump: true },
+        { lat: 44.7, lon: -63.8, cumNm: 2530, filmCum: 2610, jump: false },
+      ],
+      totalNm: 2530,
+      totalFilmNm: 2610,
+    };
+    const clock = buildVoyageClock({
+      flat,
+      marks: [],
+      t0: "2026-06-15T08:00:00.000Z",
+      startAt: "saint-maur",
+    });
+    const plane = clock.vertices.find((v) => v.vehicle === "plane");
+    assert.ok(plane);
+    assert.equal(plane.sailNm, 1000);
+    assert.equal(plane.tHours, AIR_CALENDAR_HOURS);
+    const seaAfter = clock.vertices.filter((v) => v.vehicle === "main" && v.sailNm > 1000);
+    assert.ok(seaAfter.length);
+    assert.equal(Math.max(...seaAfter.map((v) => v.sailNm)), 1030);
+  });
+});
+
 describe("formatFilmClockLine", () => {
   it("compose nm · j · date UTC", () => {
     const line = formatFilmClockLine({

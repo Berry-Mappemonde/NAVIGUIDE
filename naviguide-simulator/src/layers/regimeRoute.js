@@ -31,6 +31,8 @@ export function traveledRegimeSegments(vertices, traveledNm) {
     const b = verts[i + 1];
     if (!Number.isFinite(a?.lat) || !Number.isFinite(a?.lon)
       || !Number.isFinite(b?.lat) || !Number.isFinite(b?.lon)) continue;
+    if (a.vehicle === "plane" || a.vehicle === "side"
+      || b.vehicle === "plane" || b.vehicle === "side") continue;
     const aNm = Number(a.sailNm ?? a.filmNm ?? 0);
     const bNm = Number(b.sailNm ?? b.filmNm ?? 0);
     if (!(bNm > aNm + 1e-6)) continue;

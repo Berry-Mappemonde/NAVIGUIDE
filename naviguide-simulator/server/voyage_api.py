@@ -599,6 +599,8 @@ def _regime_portions(clock: dict) -> list:
     portions = []
     current = None
     for v in clock.get("vertices") or []:
+        if v.get("vehicle") in ("plane", "side"):
+            continue
         regime = v.get("regime") or v.get("kind") or "climatology"
         if current is None or current["regime"] != regime:
             if current:
@@ -731,6 +733,7 @@ def get_official():
 
 @router.get("/voyage/official/clock")
 def get_official_clock():
+    """Horloge officielle unique : source de la position live (lot RA4)."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")

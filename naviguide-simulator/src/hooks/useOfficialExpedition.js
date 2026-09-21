@@ -31,6 +31,7 @@ export function useOfficialExpedition({
   const [grib, setGrib] = useState(null);
   const [gribPending, setGribPending] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [clockStatus, setClockStatus] = useState("pending");
   const putRef = useRef("");
   const serverClockRef = useRef(serverClock);
   const frozenClientRef = useRef(null);
@@ -55,10 +56,16 @@ export function useOfficialExpedition({
       return null;
     }
     const officialClient = isOfficialClock(clock) ? clock : null;
-    const picked = pickOfficialLiveClock(serverClock, officialClient, frozenClientRef.current);
+    if (serverClock) {
+      frozenClientRef.current = frozenClientRef.current || officialClient;
+      return serverClock;
+    }
+    // Pas de cache client tant que le serveur n'a pas répondu : sinon saut Nouméa → Panama.
+    if (clockStatus !== "absent") return null;
+    const picked = pickOfficialLiveClock(null, officialClient, frozenClientRef.current);
     frozenClientRef.current = picked.frozenClient;
     return picked.liveClock;
-  }, [enabled, serverClock, clock]);
+  }, [enabled, serverClock, clock, clockStatus]);
 
   const putOfficial = useCallback(async () => {
     if (!points?.length) return null;
@@ -84,6 +91,7 @@ export function useOfficialExpedition({
           filmCum: p.filmCum,
           jump: Boolean(p.jump),
           nonMaritime: Boolean(p.nonMaritime),
+          air: Boolean(p.air),
         })),
         marks: (marks || []).map((m) => ({
           name: m.name,
@@ -100,7 +108,10 @@ export function useOfficialExpedition({
     if (!res.ok) return null;
     putRef.current = fp;
     setMeta(data);
-    if (data.clock) setServerClock(data.clock);
+    if (data.clock) {
+      setServerClock(data.clock);
+      setClockStatus("ready");
+    }
     return data;
   }, [points, marks, expeditionId, meta]);
 
@@ -108,9 +119,18 @@ export function useOfficialExpedition({
     if (!enabled || !points?.length) return undefined;
     let cancelled = false;
     const readClock = () => fetch(`${API}/voyage/official/clock`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((ck) => { if (ck?.t0 && !cancelled) setServerClock(ck); })
-      .catch(() => {});
+      .then((r) => {
+        if (r.ok) return r.json();
+        if (!cancelled && (r.status === 404 || r.status >= 500)) setClockStatus("absent");
+        return null;
+      })
+      .then((ck) => {
+        if (ck?.t0 && !cancelled) {
+          setServerClock(ck);
+          setClockStatus("ready");
+        }
+      })
+      .catch(() => { if (!cancelled) setClockStatus("absent"); });
     const kick = () => {
       // The server clock is the truth for the boat's position: read it even
       // when the PUT is refused (rate limit, payload rule, 5xx) — a refused

@@ -36,9 +36,25 @@ import { ScenePlaybackController } from "./ScenePlaybackController.js";
 import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
 import { attachEventBubble } from "../components/EventBubble.jsx";
 import { attachEscalePopup } from "../components/EscalePopup.jsx";
+import { officialAirRouteStyles, officialRouteLineStyle } from "../utils/berryLegs.js";
 
 const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
+/** Une copie du monde de chaque côté : ±180° + ±360°. */
+export const MAP_LON_BOUND = 540;
+export const MAP_LAT_BOUND = 85;
+export const MAP_MAX_BOUNDS = [[-MAP_LAT_BOUND, -MAP_LON_BOUND], [MAP_LAT_BOUND, MAP_LON_BOUND]];
+
+function baseTileOptions() {
+  return {
+    attribution: TILE_ATTRIBUTION,
+    updateWhenZooming: false,
+    updateWhenIdle: false,
+    keepBuffer: 6,
+    // Hors ±540° le maxBounds coupe : une copie de tuiles de chaque côté, pas l'infini.
+    noWrap: false,
+  };
+}
 
 const WAKE_STYLE = {
   color: WAKE_DONE_COLOR,
@@ -60,7 +76,7 @@ function latLngs(coords, worldOffset = 0) {
   return coords.map(([lon, lat]) => [lat, lon + worldOffset]);
 }
 
-function addRouteLine(group, coords, { color, weight, dash, pane = "route" }) {
+function addRouteLine(group, coords, { color, weight, dash, pane = "route", interactive = true }) {
   if (!coords || coords.length < 2) return;
   worldCopyLineCoords(coords).forEach((copy) => {
     L.polyline(copy.map(([lon, lat]) => [lat, lon]), {
@@ -68,7 +84,7 @@ function addRouteLine(group, coords, { color, weight, dash, pane = "route" }) {
       weight,
       dashArray: dash,
       pane,
-      interactive: true,
+      interactive,
     }).addTo(group);
   });
 }
@@ -88,6 +104,10 @@ function staticWakeParts(flat) {
   let current = null;
   points.forEach((point, index) => {
     if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
+    if (point.air && !point.jump) {
+      current = null;
+      return;
+    }
     if (!current || point.jump) {
       current = [];
       parts.push(current);
@@ -178,8 +198,7 @@ export class MapSceneController {
       maxZoom: 18,
       worldCopyJump: false,
       preferCanvas: true,
-      // Latitude seulement : les routes dépliées dépassent 180°.
-      maxBounds: [[-85, -Infinity], [85, Infinity]],
+      maxBounds: MAP_MAX_BOUNDS,
       maxBoundsViscosity: 1,
     });
     createPanes(map);
@@ -191,12 +210,7 @@ export class MapSceneController {
     this.callbacks = callbacks;
     this.layers = new SceneLayerRegistry();
     this.config = {};
-    this.baseLayer = L.tileLayer(TILE_URLS.dark, {
-      attribution: TILE_ATTRIBUTION,
-      updateWhenZooming: false,
-      updateWhenIdle: false,
-      keepBuffer: 6,
-    }).addTo(map);
+    this.baseLayer = L.tileLayer(TILE_URLS.dark, baseTileOptions()).addTo(map);
     this.baseLayer._naviguideUrl = TILE_URLS.dark;
     this.wakeGeometry = null;
     this.markerSets = new Map();
@@ -449,12 +463,7 @@ export class MapSceneController {
   /** Ré-ajoute avant de retirer : jamais une carte sans tuiles. */
   switchBaseLayer(url) {
     if (this.baseLayer?._naviguideUrl === url) return;
-    const next = L.tileLayer(url, {
-      attribution: TILE_ATTRIBUTION,
-      updateWhenZooming: false,
-      updateWhenIdle: false,
-      keepBuffer: 6,
-    });
+    const next = L.tileLayer(url, baseTileOptions());
     next._naviguideUrl = url;
     next.addTo(this.map);
     next.bringToBack();
@@ -470,6 +479,7 @@ export class MapSceneController {
       drawingMode: this.config.drawingMode,
       drawnSegments: this.config.drawnSegments,
       sceneReady: this.config.sceneReady,
+      flat: this.config.flat,
     };
     if (
       this.routeInputs
@@ -478,6 +488,7 @@ export class MapSceneController {
       && this.routeInputs.drawingMode === input.drawingMode
       && this.routeInputs.drawnSegments === input.drawnSegments
       && this.routeInputs.sceneReady === input.sceneReady
+      && this.routeInputs.flat === input.flat
     ) return;
     this.routeInputs = input;
     const group = this.layers.update("route", () => L.layerGroup().addTo(this.map), (layer) => layer.clearLayers());
@@ -504,10 +515,20 @@ export class MapSceneController {
     }
     (input.segments || []).forEach((segment) => {
       if (!segment.coords?.length) return;
-      if (segment.nonMaritime) {
-        addRouteLine(group, segment.coords, { color: "orange", weight: 4, dash: "6 6" });
-      }
+      const styles = officialAirRouteStyles(segment);
+      if (!styles.length) return;
+      styles.forEach((style) => addRouteLine(group, segment.coords, style));
     });
+    const pts = input.flat?.points || [];
+    const airStyles = officialAirRouteStyles({ air: true });
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      if (!pts[i + 1].jump) continue;
+      const coords = [
+        [pts[i].lon, pts[i].lat],
+        [pts[i + 1].lon, pts[i + 1].lat],
+      ];
+      airStyles.forEach((style) => addRouteLine(group, coords, style));
+    }
   }
 
   syncAltRoute() {
@@ -704,11 +725,12 @@ export class MapSceneController {
       [cast.hopFrom.lon, cast.hopFrom.lat],
       [cast.hopTo.lon, cast.hopTo.lat],
     ]);
+    const air = officialRouteLineStyle({ air: true });
     const style = {
-      color: "#67e8f9",
-      weight: 2,
-      dashArray: "7 9",
-      opacity: 0.8,
+      color: air.color,
+      weight: air.weight,
+      dashArray: air.dash,
+      opacity: 0.95,
       pane: "route",
       interactive: false,
     };

@@ -1,4 +1,5 @@
 import { haversineNm, unwrapLon } from "../utils/geo.js";
+import { isAirSegment } from "../utils/berryLegs.js";
 import { AIR_FILM_NM, detectAirEpisodes } from "./filmCast.js";
 
 /** Beyond this: a junction between segments is a hop (plane), not the route. */
@@ -19,7 +20,7 @@ export function flattenRoute(segments) {
   let cumNm = 0;
   let filmCum = 0;
 
-  const add = (lon, lat, { jump = false, nonMaritime = false } = {}) => {
+  const add = (lon, lat, { jump = false, nonMaritime = false, air = false } = {}) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
     if (points.length) {
       const prev = points[points.length - 1];
@@ -30,7 +31,7 @@ export function flattenRoute(segments) {
         filmCum += AIR_FILM_NM;
       } else {
         const d = haversineNm(prev.lat, prev.lon, lat, lon);
-        cumNm += d;
+        if (!air) cumNm += d;
         filmCum += d;
       }
     }
@@ -41,24 +42,26 @@ export function flattenRoute(segments) {
       filmCum,
       nonMaritime: Boolean(nonMaritime),
       jump: Boolean(jump),
+      air: Boolean(air || jump),
     });
   };
 
   for (const seg of segments || []) {
     const coords = seg?.coords;
     if (!coords || coords.length < 2) continue;
+    const air = isAirSegment(seg);
     let start = 0;
     if (points.length) {
       const [lon0, lat0] = coords[0];
       const prev = points[points.length - 1];
       if (Number.isFinite(lat0) && Number.isFinite(lon0)
         && haversineNm(prev.lat, prev.lon, lat0, lon0) >= AIR_JUMP_NM) {
-        add(lon0, lat0, { jump: true, nonMaritime: seg.nonMaritime });
+        add(lon0, lat0, { jump: true, nonMaritime: seg.nonMaritime, air: true });
         start = 1;
       }
     }
     for (let i = start; i < coords.length; i++) {
-      add(coords[i][0], coords[i][1], { nonMaritime: seg.nonMaritime });
+      add(coords[i][0], coords[i][1], { nonMaritime: seg.nonMaritime, air });
     }
   }
   const totalNm = points.length ? points[points.length - 1].cumNm : 0;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { featuresToSegments } from "../utils/geo.js";
+import { isAirSegment } from "../utils/berryLegs.js";
 import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
@@ -164,7 +165,9 @@ export function MapScene({
       }
       const active = scene.customRoute ? featuresToSegments(scene.customRoute) : scene.segments;
       const nearby = active.some((segment) => (
-        segment.coords?.length > 1 && pointToSegmentPx(map, lat, lon, segment.coords) < 16
+        !isAirSegment(segment)
+        && segment.coords?.length > 1
+        && pointToSegmentPx(map, lat, lon, segment.coords) < 16
       ));
       if (nearby) callbacksRef.current.onRouteClick?.({ lat, lon });
     };
