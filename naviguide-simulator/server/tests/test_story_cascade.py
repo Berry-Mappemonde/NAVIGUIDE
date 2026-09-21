@@ -1,9 +1,12 @@
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
 
 from story_cascade import (
+    _clean_text,
+    _openai_text,
     build_prompt,
     cascade_text,
     filter_numbers,
@@ -553,3 +556,118 @@ def test_write_story_en_translates_after_french_draft(monkeypatch):
     assert "5677" in out["text"]
     assert "99" not in out["text"]
     assert seen_models == ["write", "fast"]
+
+
+def test_openai_text_strips_think_keeps_sentence():
+    """Lot RA1 : Nemotron thinking stays out of the visitor text."""
+    data = {
+        "choices": [{
+            "message": {
+                "content": "<think>raisonnement…</think> La Rochelle est un port.",
+                "reasoning_content": "Analyze User Input: Task: Translate…",
+            },
+        }],
+    }
+    assert _openai_text(data) == "La Rochelle est un port."
+
+
+def test_openai_text_unclosed_think_is_cut():
+    data = {"choices": [{"message": {"content": "<think>encore en train de réfléchir"}}]}
+    assert _openai_text(data) == ""
+
+
+def test_clean_text_strips_analyze_preamble():
+    raw = (
+        "**Analyze User Input: Task: Translate this paragraph.** "
+        "Wait, let me re-read carefully. "
+        "Saint-Maur is a quiet harbor on the Marne."
+    )
+    assert _clean_text(raw) == "Saint-Maur is a quiet harbor on the Marne."
+
+
+def test_clean_text_prompt_leak_is_empty():
+    leaked = (
+        "You translate a sailing-log paragraph from French to English. "
+        "Keep every number, unit, proper name."
+    )
+    assert _clean_text(leaked) == ""
+    echoed = (
+        "Request: Present a stop/escales to a sailing crew arriving at Saint-Maur. "
+        "- Constraints: Max 3 sentences."
+    )
+    assert _clean_text(echoed) == ""
+    assert _clean_text("Here's a thinking process: 1") == ""
+    assert "Analyze User Input" not in _clean_text("**Analyze User Input:** Entity: REPHY")
+
+
+def test_cascade_think_block_keeps_final_sentence(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_ok(
+            "<think>raisonnement…</think> La Rochelle est un port.",
+        ))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "La Rochelle.", client, fallback="Phrase locale.", facts="La Rochelle",
+            )
+
+    text, source = asyncio.run(run())
+    assert text == "La Rochelle est un port."
+    assert source == "nemotron-super"
+
+
+def test_cascade_reasoning_only_falls_to_rules(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_ok(
+            "<think>Wait, let me analyze the task. Analyze User Input.</think>",
+        ))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user", client, fallback="Phrase locale.", facts="user",
+            )
+
+    text, source = asyncio.run(run())
+    assert source == "rules"
+    assert text == "Phrase locale."
+
+
+def test_tokenfactory_payload_disables_thinking(monkeypatch):
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "tokenfactory" in str(request.url):
+            seen.update(json.loads(request.content.decode()))
+            return httpx.Response(200, json=_chat_ok("La Rochelle est un port."))
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "La Rochelle.", client, fallback="x", facts="La Rochelle",
+            )
+
+    text, source = asyncio.run(run())
+    assert "port" in text
+    assert source == "nemotron-super"
+    assert seen["chat_template_kwargs"]["thinking"] is False
+    assert seen["reasoning_effort"] == "low"
