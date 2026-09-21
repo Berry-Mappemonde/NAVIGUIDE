@@ -240,6 +240,30 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 | `forecast.blend_end_hours` | 10 × 24 h | **law** | Fondu linéaire 7 → 10 j depuis maintenant, puis climatologie. |
 | `clock.regimes` | hindcast / forecast / climatology | **law** | Passé = hindcast ; 0–7 j = prévision ; au-delà = climatologie. Horloge officielle `kind: climatology` jusqu'au premier fill (~40 min). |
 
+### 3.8 Mer, polaire et isochrones — lot C4
+
+`docs/PLAN_AUDIT_CALCULS.md` lot C4, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 4, 7, 8, 10, 21. Aucun chiffre n'est produit par un LLM.
+
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `polar.efficiency` | 0,85 | geometry | Part de croisière de la table polaire (équipage réduit, voiles de croisière, nuit). Variable d'environnement `POLAR_EFFICIENCY`. État de l'art : 70–90 % [4][5]. Appliqué horloge, planification, conseil de route. |
+| `polar.twa_min_deg` | 40° | geometry | Limite d'allure au près — conseil de route seulement (la route imposée en Suivre / Simulation n'est pas coupée). LuckGrib ~35–45° [4]. |
+| `polar.twa_max_deg` | 170° | geometry | Limite d'allure au portant — conseil de route seulement. Plein arrière rarement tenu en croisière [4]. |
+| `wave.polar_hs_flat_m` | 1,5 m | geometry | En dessous : facteur 1 (mer peu pénalisante pour un catamaran de voyage). |
+| `wave.polar_hs_full_m` | 4,0 m | geometry | Mer « très forte » (code WMO 6) : facteur saturé. PredictWind / qtVlm : polaire de vagues continue Hs × angle [5][8]. |
+| `wave.polar_head` | 0,6 | geometry | Facteur à 4 m, mer de face (houle « de » dans le cap). |
+| `wave.polar_follow` | 0,85 | geometry | Facteur à 4 m, mer arrière. Entre 1,5 et 4 m : interpolation linéaire ; au-delà : plafonné. Remplace `WAVE_NOGO_DT_FACTOR` (×3 dès 2,5 m, discontinu). |
+| `wave.nogo_m` | 2,5 m | geometry | Seuil d'interdiction isochrone / ordres skipper (WMO mer forte). Inchangé. |
+| `current.sog` | STW + projection | **law** | SOG = projection sur la route de (vecteur polaire + vecteur courant `uo`/`vo`). Leeway ignoré (second ordre) [9][10]. Convention : courant « vers », `uo=1, vo=0` → 90°. |
+| `current.ms_to_kn` | 1,943844 | **law** | Même constante que `hindcast.ms_to_kn`. |
+| `climo.rose_draws` | p25 / p50 / p75 | **law** | Trois tirages de la rose ; le temps de mer est la moyenne des trois temps (inégalité de Jensen : ≠ temps à la moyenne) [13]. |
+| `isochrone.step_offshore_h` | 3 h | geometry | Pas en haute mer. État de l'art 1–3 h [6][7][18]. Était 6 h. |
+| `isochrone.step_coast_h` | 1 h | geometry | Pas à moins de 60 nm d'une côte (`is_path_clear` sur 12 rayons). |
+| `isochrone.coast_nm` | 60 nm | geometry | Distance à la terre qui bascule le pas. |
+| `isochrone.max_hours` | 720 h | budget | Même horizon qu'avant (120 × 6 h) ; `max_steps` = plafond / pas min. |
+| `isochrone.heading_step_deg` | 10° | geometry | Caps tous les 10° (5° près de l'arrivée : non fait, hors lot). |
+| `clock.min_knots` | 0,5 kn | geometry | Plancher SOG (calme / courant contraire). Documenté A7 ; table des jours à quai → lot C7. |
+
 ---
 
 ## 4. Other ideas (beyond the snapshot)

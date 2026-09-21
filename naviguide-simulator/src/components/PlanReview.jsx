@@ -62,11 +62,11 @@ export const PlanReview = memo(function PlanReview({
         ) : null}
         <ul className="max-h-64 overflow-y-auto sidebar-scroll">
           {legs.map((leg) => (
-            <li key={leg.key} className="px-2 py-1.5 border-t border-white/5 first:border-t-0" data-level={leg.level}>
+            <li key={leg.key} className="px-2 py-1.5 border-t border-white/5 first:border-t-0" data-level={leg.level} data-testid="plan-review-leg">
               <div className="flex items-baseline gap-1.5 min-w-0">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${LEVEL_DOT[leg.level] || LEVEL_DOT.info}`} />
                 <span className="text-[11px] font-medium text-white leading-tight truncate">{leg.title}</span>
-                <span className="ml-auto text-[9px] text-white/40 shrink-0 tabular-nums">{leg.dates}</span>
+                <span className="ml-auto text-[9px] text-white/40 shrink-0 tabular-nums" data-testid="plan-review-leg-dates">{leg.dates}</span>
               </div>
               <div className="flex flex-wrap gap-1 mt-1">
                 {leg.badges.map((b, i) => (

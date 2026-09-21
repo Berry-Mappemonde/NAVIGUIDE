@@ -297,6 +297,14 @@ export function sanitizeBoat(boat) {
 /** Planning speed floor: a polar at 2 kn of wind says 0 — the skipper still plans. */
 export const PLANNING_MIN_KN = 3;
 
+/** Croisière : part de la polaire (lot C4). Défaut 0,85 ; VITE_POLAR_EFFICIENCY. */
+const _polarEffRaw = Number(
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_POLAR_EFFICIENCY) || 0.85,
+);
+export const POLAR_EFFICIENCY = Number.isFinite(_polarEffRaw) && _polarEffRaw > 0
+  ? Math.min(1, _polarEffRaw)
+  : 0.85;
+
 /**
  * Planning speed = the polar read at the wind of the moment (revue du 19 sept.) :
  * GRIB at the boat in Suivre, climatology of the leg in Simulation. `wind` =
@@ -311,7 +319,7 @@ export function planningSpeedFor(polar, wind = null) {
     const bs = polarBoatSpeed(polar.raw, twa, tws);
     if (Number.isFinite(bs)) {
       return {
-        kn: Math.round(Math.max(PLANNING_MIN_KN, bs) * 10) / 10,
+        kn: Math.round(Math.max(PLANNING_MIN_KN, bs * POLAR_EFFICIENCY) * 10) / 10,
         source: wind?.kind === "climatology" ? "climatology" : "grib",
         twa: Math.round(twa),
         tws: Math.round(tws * 10) / 10,
