@@ -61,19 +61,25 @@ Cursor déclenchée par « Pull request opened » (cloud, voir § 2).
 
 ### 1.4 Matin — revue du porteur (humain dans la boucle)
 
-Trois passes, dans l'ordre, 10 minutes par lot :
+Le poste est **déjà prêt** quand le porteur arrive (lot **W0**, 21 sept.) : à la
+fin du batch, `run_lots.py` a fait le build de prod de la dernière branche,
+chargé les clés (`~/.config/naviguide/simulator.env`), lancé l'API et
+l'interface du même checkout, ouvert Chrome sur `http://localhost:5174` et le
+fichier `infra/agents/RECETTE_DU_BATCH.md`. S'il ne l'est pas :
+`python3 infra/agents/run_lots.py --recette`.
 
-1. **Lire** le commentaire de revue automatique et la rubrique « Décisions
-   prises seul » de la PR. Trancher chaque liberté : garder / défaire (un
-   commentaire « défaire : … » suffit, l'agent de correction s'en charge).
-2. **Voir** : jouer le spec du lot (`PW_PORT=5199 npm run e2e -- e2e/lots/<lot>.spec.js`
-   dans le worktree `~/bim-lots/<lot>`, avec l'API et les clés) et regarder
-   les captures `docs/recette/<lot>/`. Ce que le lot dit qu'on doit voir, on
-   le voit ; sinon « défaire ».
-3. **Décider** : merger dans l'ordre de la pile (merge commit), ou laisser
-   ouvert avec les corrections demandées (l'agent de correction = un
-   `run_lots.py --only <lot> --fix` qui relance l'agent du lot avec les
-   commentaires de la PR ; à écrire dans W1).
+Trois passes, dans l'ordre, **par écran** (Suivre, Simulation, Tracer ma route,
+Revoir l'expédition, panneau droit) et non par PR :
+
+1. **Regarder** : `RECETTE_DU_BATCH.md` § 1 dit, écran par écran, quoi cliquer
+   et ce qu'on doit voir. Le porteur ne lance rien d'autre que Chrome.
+2. **Dicter** ce qui ne va pas : une phrase par point (« écran, ce que je vois,
+   ce que je voulais »). Les « Décisions prises seules » des agents sont
+   listées en § 3 du même fichier : garder / défaire.
+3. **Merger** (§ 4 du fichier) : pile linéaire → merger la **dernière** PR
+   suffit, GitHub ferme les autres ; puis celles qui ont des commits propres.
+   Merge commit, jamais squash. Ce qui ne va pas devient un lot de correction
+   pour la nuit suivante ; on ne corrige pas le matin à la main.
 
 ### 1.5 Journée — livrer
 
@@ -99,9 +105,16 @@ Ce que les lots de cette nuit demandent pour **fonctionner** (sans quoi la
 recette échoue « honnêtement » : récit en `règles`, chat en `failed`, juge en
 `unverifiable`) :
 
+**Un seul fichier, même chemin sur le Mac et sur le VPS :
+`~/.config/naviguide/simulator.env`** (une ligne `NOM=valeur` par clé, jamais
+dans le dépôt). Sur le VPS c'est l'`EnvironmentFile` du service
+`naviguide-simulator` ; sur le Mac, `ensure-dev.sh` (donc `dev-mac.sh`, les
+hooks Cursor et le poste de recette) le charge dans l'environnement de l'API.
+Posées le 21 sept. : `NEBIUS_API_KEY`, `TAVILY_API_KEY` (VPS et Mac).
+
 | Lot | À poser où | Quoi |
 |---|---|---|
-| L1, L2, L6 | `naviguide-simulator/server/.env` (Mac) **et** VPS (`~/blue-intelligence-map/naviguide-simulator/server/.env` ou l'env du service `naviguide-simulator`) | `NEBIUS_API_KEY=…` (Token Factory) ; option `NAVIGUIDE_LLM_PROVIDERS=tokenfactory,nim,openrouter,claude` (défaut désormais) ; `NAVIGUIDE_TF_MODEL_FAST/WRITE/JUDGE` si le catalogue change ; plafonds `NAVIGUIDE_LLM_DAILY_TOKENS_*` |
+| L1, L2, L6 | `~/.config/naviguide/simulator.env` (Mac **et** VPS) | `NEBIUS_API_KEY=…` (Token Factory) ; option `NAVIGUIDE_LLM_PROVIDERS=tokenfactory,nim,openrouter,claude` (défaut désormais) ; `NAVIGUIDE_TF_MODEL_FAST/WRITE/JUDGE` si le catalogue change ; plafonds `NAVIGUIDE_LLM_DAILY_TOKENS_*` |
 | L1 (repli) | idem | `NVIDIA_API_KEY` (NIM, déjà), `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` (déjà) |
 | L3, L4 | idem | `TAVILY_API_KEY=…` (10 000 + 3 125 crédits reçus) |
 | C2 | idem | `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD` (déjà) ; laisser tourner le premier hindcast (≈ 40 min de tâche de fond) |
@@ -110,16 +123,19 @@ recette échoue « honnêtement » : récit en `règles`, chat en `failed`, juge
 | tous | VPS | après merge : `deploy.yml` redémarre les services ; vérifier `/ici/warm/status` → `llm.write.calls` monte quand un récit est demandé |
 | BI (hotfix #221) | VPS `backend/.env` | `POE_AUTO_REFRESH` reste à 0 tant que `generate_zone_poe` n'est pas non bloquant |
 
-Comment lire une clé déjà posée sur le VPS (Mac, Terminal) :
-`ssh ubuntu@135.125.226.16 'grep -E "NEBIUS|TAVILY|COPERNICUS" ~/blue-intelligence-map/naviguide-simulator/server/.env | sed "s/=.*/=…/"'`
-(on affiche les noms, pas les valeurs). Poser une clé : `ssh … 'echo "NEBIUS_API_KEY=xxx" >> …/.env && sudo systemctl restart naviguide-simulator'`.
+Comment lire les clés déjà posées sur le VPS (Mac, Terminal — on affiche les noms, pas les valeurs) :
+`ssh ubuntu@135.125.226.16 'sed -nE "s/^([A-Z_]+)=.*/\1/p" ~/.config/naviguide/simulator.env'`.
+Poser une clé : `ssh ubuntu@135.125.226.16 'echo "NEBIUS_API_KEY=xxx" >> ~/.config/naviguide/simulator.env && sudo systemctl restart naviguide-simulator'`.
+Vérifier qu'elle sert : `https://simulator.naviguide.fr/ici/warm/status` → `llm.lastSource` n'est plus `rules`, `llm.tavily.calls` monte.
 
 ## 4. Calendrier
 
 | Date | Objectif | Ce qui doit être vrai |
 |---|---|---|
 | **21 sept. (matin)** | revue de la nuit 1 (P2 → L6), merges dans l'ordre, clés posées, hotfix #221 déployé | prod : récit signé « Nemotron 3 Super · Token Factory », film 2:30 qui se lance, bag qui se remplit |
-| 21–22 sept. | nuit 2 : correctifs de la revue + S, T, U s'ils ont raté ; lot W1 (revue automatique) ; lot D0 (rangement docs) | CI verte sur `main`, `docs/README.md` index |
+| 21 sept. (soir) | **fait** : pile P2 → L6 mergée (#208, #237, #210), clés posées, prod répond (`llm.lastSource` = nemotron), W0 livré | `RECETTE_DU_BATCH.md` s'ouvre seul à la fin d'un batch |
+| 21–22 sept. | nuit 2 : lots **R1–R7, R11–R13** (`PLAN_CORRECTIONS_REVUE_21_SEPT.md`) — app propre, film fiable et fluide, bulles justes, fiche d'escale sur la carte | recette du matin par écran ; merge de la dernière PR |
+| 22–23 sept. | nuit 3 : **R8, R9, R10** en sous-lots (`PLAN_ICI_JOURNAL_EXPERT.md`) — produit unique « ici et maintenant », journal → récit 2:30, expert en circumnavigation ; W1 si le temps | le film raconte le journal ; la revue du plan conseille |
 | 23–25 sept. | README EN à jour (depuis `ESPRIT_DE_L_APPLICATION.md`), textes Devpost finalisés, **vidéo 2:30** tournée sur le film (F5 plein écran, EN), captures 3:2 | tout ce que `HACKATHON_DEVPOST_SOUMISSION.md` § 0 coche ; crédits Token Factory +25 $ ×2 demandés |
 | 26–27 sept. | gel : pas de lot risqué ; recette complète en prod ; Security Agents ; réponses du formulaire (notes après usage) | `simulator.naviguide.fr` stable 48 h |
 | **28 sept.** | **première soumission Devpost** (brouillon → Submit) | vidéo YouTube publique, dépôt public MIT, README, liens |
@@ -131,6 +147,7 @@ Comment lire une clé déjà posée sur le VPS (Mac, Terminal) :
 
 ## 5. Les lots « workflow » à ajouter à `LOTS_ORDRE_ET_PROMPTS.md`
 
+- **W0 — Fin de batch = poste de recette prêt** (**fait le 21 sept.**, à la main, PR `chore/lot-w0-fin-de-batch`) : `run_lots.py --recette` / fin de batch automatique, `ensure-dev.sh --prod` (build de prod, clés, API et interface du même checkout, santé), `RECETTE_DU_BATCH.md` écran par écran + ordre des merges, règle « recette visuelle seulement » dans le préfixe de chaque prompt et dans `REGLES_WORKFLOW_AGENT.md` § 3–4, règle « rien de superflu à l'écran » § 1.
 - **W1 — Revue automatique** : `infra/agents/export_transcript.py` (store.db → texte), `infra/agents/review_lots.py` (un commentaire par PR, modèle `claude-fable-5-1-max`, gabarit § 1.3), option `--fix` de `run_lots.py` (relance l'agent du lot avec les commentaires de la PR), `infra/agents/review.md` (tableau de la nuit).
 - **W2 — Automations Cursor** : trois automations créées avec `/automate` : « PR opened → revue » (secours cloud), « CI completed failure → correction » (secours), « cron jeudi 22 h → brouillon de mise à jour Devpost en PR ». Prompts avec la règle « pas de vidéo, pas de computer use ».
 - **W3 — Suite e2e robuste** : `workers: 1` pour `e2e/lots` (les agents ont vu des timeouts à 4 workers), `--repeat-each` sur la fumée, budget de temps par spec.

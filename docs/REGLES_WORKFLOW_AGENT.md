@@ -22,6 +22,12 @@ tout autre modèle.
   `Read` avec `offset`/`limit`. Chaque lot liste **les seuls fichiers à ouvrir**.
 - **Le worker ne merge jamais.** Il ouvre la PR et s'arrête. Le porteur recette
   puis merge.
+- **Rien de superflu à l'écran** (revue du 21 sept.) : aucun texte d'aide ou
+  d'explication ajouté dans l'interface (« Le journal répond avec… », « Réglages
+  Expert, hors profil… ») ; aucun libellé déjà visible ailleurs sur le même
+  écran (le bateau est nommé une fois, « Esri » une fois) ; aucune rangée
+  ajoutée à la barre film ; un bouton nouveau marche ou n'existe pas. Un état
+  inactif est grisé, pas seulement inerte.
 - **Base de données** : la MongoDB vivante est celle du VPS ; ne jamais lancer
   `infra/vps/sync-from-atlas.sh`. Le simulateur a sa SQLite locale
   (`server/pearl_store.py`), c'est la seule mémoire qu'un lot peut toucher.
@@ -65,12 +71,14 @@ Fichier:ligne et explication (pour une correction). « — » pour une fonction.
 Nouveaux tests : lesquels, ce qu'ils protègent.
 
 ## Recette (à faire par le porteur, 5 min)
-1. Étape → **ce qu'on doit voir exactement** (texte, chiffre, position).
+Écran : Suivre | Simulation | Tracer ma route | Revoir l'expédition | Panneau droit.
+1. Ouvre …, clique … → **tu dois voir** … (texte exact, chiffre, bouton présent ou absent).
 2. …
-Captures : `docs/recette/<lot>/01-….jpg` (≤ 4, 1280×800, JPEG q70).
+Captures : https://github.com/<owner>/<repo>/blob/<branche>/docs/recette/<lot>/01-….jpg?raw=true (≤ 4, 1280×800, JPEG q70).
 
 ## Review automatique
-`npm run e2e -- e2e/lots/<lot>.spec.js` : vert. Ce que le spec vérifie (liste).
+`npm run e2e -- e2e/lots/<lot>.spec.js` : vert. Ce que le spec vérifie (liste) —
+c'est ICI que vont data-testid, appels d'API, fixtures, coordonnées.
 
 ## Hors périmètre / risques
 Ce qu'on n'a pas touché exprès, ce qui pourrait bouger.
@@ -83,18 +91,30 @@ Ce qu'on n'a pas touché exprès, ce qui pourrait bouger.
 
 ## 4. Recette visuelle (ce que le porteur fait)
 
-- Toujours sur le **build de prod** : `cd naviguide-simulator && bash dev-mac.sh`
-  (API :8010 + Vite :5174) ou `npm run build && npm run preview` + API.
-- Chaque lot donne des **étapes numérotées** et, pour chacune, **ce qu'on doit
-  trouver** : un texte exact, un chiffre, une position, un bouton présent ou
-  absent. Deux formes seulement :
+- Le porteur **regarde l'application dans Chrome, rien d'autre**. Il ne lance
+  ni commande, ni `curl`, ni spec ; il ne lit pas de `data-testid` et ne se
+  place pas sur des coordonnées. Une étape de recette qui demande autre chose
+  que « ouvre, clique, regarde » est une étape mal écrite.
+- Le poste est préparé par le script, pas par le porteur : à la fin d'un batch
+  `infra/agents/run_lots.py` (ou `python3 infra/agents/run_lots.py --recette`)
+  fait le **build de prod** de la dernière branche, charge les clés de
+  `~/.config/naviguide/simulator.env`, lance l'API :8010 et l'interface :5174
+  du même checkout, ouvre le navigateur et `infra/agents/RECETTE_DU_BATCH.md`
+  (ce qu'il faut regarder, **écran par écran**, puis l'ordre des merges).
+  À la main : `cd naviguide-simulator && bash ensure-dev.sh --prod --open`.
+- Chaque lot donne des **étapes numérotées** rangées par écran (Suivre,
+  Simulation, Tracer ma route, Revoir l'expédition, Panneau droit) et, pour
+  chacune, **ce qu'on doit voir** : un texte exact, un chiffre, une position à
+  l'écran, un bouton présent ou absent. Deux formes seulement :
   - « **Changement visible** » : la liste précise des différences avec `main`.
   - « **Aucun changement visible** » : le lot est interne ; la recette, c'est
     « tout marche comme avant » sur trois parcours fixes (Suivre à Nouméa,
     Simulation La Rochelle → Ajaccio, Tracer ma route Brisbane → SF).
 - Les captures sont **fixes** (pas de vidéo), rangées dans
   `docs/recette/<lot>/`, nommées `01-…jpg`, `02-…jpg`, et **référencées dans la
-  PR**. Elles se prennent par le spec Playwright du lot (§ 5), pas à la main.
+  PR par leur URL complète sur la branche** (`…/blob/<branche>/docs/recette/…?raw=true`,
+  un chemin relatif s'ouvre sur `main` où le fichier n'existe pas encore).
+  Elles se prennent par le spec Playwright du lot (§ 5), pas à la main.
 
 ## 5. Review automatique (ce que l'agent fait avant d'ouvrir la PR)
 

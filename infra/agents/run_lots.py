@@ -14,6 +14,13 @@ Dans les deux cas : pile linéaire (chaque lot part de la branche du précédent
 attente de la fin, une relance sur échec, PR + CI (une relance si rouge),
 state.json pour reprendre. Ne merge jamais. Bibliothèque standard seulement.
 
+Fin de batch (lot W0) : quand le dernier lot est passé, le script prépare le
+poste de recette du porteur — build de prod de la dernière branche, clés lues
+dans ~/.config/naviguide/simulator.env, API :8010 + interface :5174 du même
+checkout, navigateur ouvert, et infra/agents/RECETTE_DU_BATCH.md : ce qu'il
+faut regarder écran par écran, puis l'ordre des merges. `--recette` refait ce
+poste seul (sans lancer de lot), `--no-recette` l'omet.
+
 Usage (voir docs/LOTS_ORDRE_ET_PROMPTS.md § 3) :
     python3 infra/agents/run_lots.py --check                       # vérifie l'environnement, ne lance rien
     python3 infra/agents/run_lots.py --only C1                     # un lot, en local
@@ -21,6 +28,8 @@ Usage (voir docs/LOTS_ORDRE_ET_PROMPTS.md § 3) :
     python3 infra/agents/run_lots.py --runtime cloud --only C1     # via l'API (CURSOR_API_KEY)
     python3 infra/agents/run_lots.py --resume
     python3 infra/agents/run_lots.py --dry-run --from P2 --until O
+    python3 infra/agents/run_lots.py --recette                     # poste de recette sur la dernière branche du state
+    python3 infra/agents/run_lots.py --recette --branch main       # poste de recette sur main (après les merges)
 """
 from __future__ import annotations
 
@@ -428,6 +437,12 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
             f"et, si elle ne répond pas, saute proprement (annotation + return) les assertions qui en dépendent, sans jamais affaiblir celles qui n'en dépendent pas. "
             f"Avant de pousser, rejoue-le deux fois : comme en CI `API_PROXY_TARGET=http://127.0.0.1:9 PW_PORT={pw_port} npm run e2e -- e2e/lots/<lot>.spec.js` (doit passer), "
             f"puis avec l'API `PW_PORT={pw_port} npm run e2e -- e2e/lots/<lot>.spec.js`. Ne modifie jamais le spec d'un autre lot. "
+            f"RÈGLE RECETTE : dans ta PR, la rubrique « Recette (à faire par le porteur) » ne contient que des étapes visuelles — « ouvre …, clique …, tu dois voir … » "
+            f"(texte exact, chiffre, bouton présent ou absent) — et JAMAIS de commande, de data-testid, d'URL d'API, de coordonnées ni de nom de fichier : tout cela va dans « Review automatique ». "
+            f"Chaque capture est référencée par son URL complète sur ta branche : https://github.com/{owner_repo(DEFAULT_REPO)}/blob/<ta-branche>/docs/recette/<lot>/01-….jpg?raw=true "
+            f"(un chemin relatif s'ouvre sur main, où le fichier n'existe pas encore). "
+            f"RÈGLE UI : n'ajoute aucun texte d'aide ou d'explication dans l'interface, aucun libellé déjà visible ailleurs sur le même écran, "
+            f"aucune rangée supplémentaire dans la barre film ; un bouton nouveau doit marcher ou ne pas exister. "
             f"Quand tout est vert : `git push -u origin <ta-branche>` puis ouvre la PR avec "
             f"`python3 {HERE / 'open_pr.py'} <ta-branche> main \"<titre>\" /tmp/pr-<lot>.md` (chemin absolu ; écris d'abord le corps de la PR dans ce fichier). "
             f"Ne pose aucune question : décide et note dans la PR.")
@@ -623,6 +638,232 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     state.save()
 
 
+# ---------------------------------------------------------------- fin de batch : poste de recette (lot W0)
+
+RECETTE_MD = STATE_DIR / "RECETTE_DU_BATCH.md"
+ENV_FILE = Path(os.environ.get("NAVIGUIDE_ENV_FILE", str(Path.home() / ".config" / "naviguide" / "simulator.env")))
+PROD_URL = "https://simulator.naviguide.fr"
+
+# Écrans de l'application, dans l'ordre où le porteur les regarde. Une étape de
+# recette est rangée sous le premier écran dont un mot-clé apparaît dans son texte.
+SCREENS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("revoir", "Revoir l'expédition (le film)", ("revoir", "replay", "film", "chapitre", "bulle", "sous-titre", "cinéma", "cinema")),
+    ("tracer", "Tracer ma route", ("tracer", "route dessinée", "dessine", "brisbane", "terminé", "deux clics")),
+    ("simulation", "Simulation", ("simulation", "la rochelle", "ajaccio", "recalcul", "ordre du skipper", "ordres skipper", "escale suivante", "prochaine escale")),
+    ("suivre", "Suivre l'expédition", ("suivre", "nouméa", "noumea", "live", "position du bateau", "mode-follow")),
+    ("reglages", "Panneau droit, revue du plan, réglages", ("panneau droit", "revue du plan", "paramètres", "polaire", "calques", "langue", "anglais", "english", "thème", "clair")),
+]
+# Ce qui n'est pas « regarder l'écran » : ces lignes vont dans la partie « vérifié par les tests ».
+TECH_RE = re.compile(r"data-testid|\bGET\b|\bPUT\b|\bPOST\b|\bcurl\b|\bnpm\b|\bnpx\b|pytest|\.spec\.js|window\.__|localStorage|\bfixture\b|\bspec\b|\d{1,3}\s?[°º]\s?\d", re.I)
+HEADING_RE = re.compile(r"^\s{0,3}#{2,4}\s+(.+?)\s*$")
+
+
+def pr_sections(body: str) -> dict[str, str]:
+    """Corps de PR → {titre de rubrique en minuscules: texte}. Les rubriques sont les titres ## / ###."""
+    out: dict[str, str] = {}
+    title, buf = "", []
+    for line in (body or "").splitlines():
+        m = HEADING_RE.match(line)
+        if m:
+            if title:
+                out[title] = "\n".join(buf).strip()
+            title, buf = m.group(1).strip().lower(), []
+        else:
+            buf.append(line)
+    if title:
+        out[title] = "\n".join(buf).strip()
+    return out
+
+
+def section_lines(sections: dict[str, str], *starts: str) -> list[str]:
+    """Lignes non vides des rubriques dont le titre commence par un des mots donnés."""
+    lines: list[str] = []
+    for title, text in sections.items():
+        if any(title.startswith(s) for s in starts):
+            lines += [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("```")]
+    return lines
+
+
+def screen_of(text: str) -> str:
+    low = text.lower()
+    for sid, _, words in SCREENS:
+        if any(w in low for w in words):
+            return sid
+    return "partout"
+
+
+def pr_number(url: str | None) -> int | None:
+    m = re.search(r"/pull/(\d+)", url or "")
+    return int(m.group(1)) if m else None
+
+
+def fetch_pr(http: Http | None, repo: str, number: int) -> dict | None:
+    try:
+        return (http or Http(None, None)).github(f"/repos/{owner_repo(repo)}/pulls/{number}")
+    except RuntimeError as e:
+        log(f"    PR #{number} illisible : {e}")
+        return None
+
+
+def branch_included(branch: str, last: str) -> bool:
+    """Vrai si la branche est déjà contenue dans la dernière branche de la pile (merger la dernière suffit)."""
+    if branch == last:
+        return True
+    for ref in (f"origin/{branch}", branch):
+        if sh(["git", "rev-parse", "--verify", "-q", ref], cwd=ROOT, check=False).returncode == 0:
+            for lref in (f"origin/{last}", last):
+                if sh(["git", "rev-parse", "--verify", "-q", lref], cwd=ROOT, check=False).returncode == 0:
+                    return sh(["git", "merge-base", "--is-ancestor", ref, lref], cwd=ROOT, check=False).returncode == 0
+    return False
+
+
+def env_key_names() -> list[str]:
+    if not ENV_FILE.exists():
+        return []
+    names = []
+    for line in ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=", line.strip())
+        if m and re.search(r"API_KEY|PASSWORD|SECRET", m.group(1)):
+            names.append(m.group(1))
+    return names
+
+
+def api_status() -> dict:
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8010/ici/warm/status", timeout=10) as resp:
+            return json.loads(resp.read().decode() or "{}")
+    except Exception:
+        return {}
+
+
+def recette_worktree(state: State, branch: str) -> Path:
+    """Le checkout qui sert à la recette : le dépôt principal s'il est sur main et qu'on
+    recette main ; sinon le worktree du lot qui a produit la branche ; sinon ~/bim-lots/recette."""
+    if branch == "main" and local_branch(ROOT) == "main":
+        sh(["git", "pull", "--ff-only", "-q"], cwd=ROOT, check=False, timeout=120)
+        return ROOT
+    for e in state.done.values():
+        wt = Path(e.get("worktree") or "")
+        if e.get("branch") == branch and wt.exists() and local_branch(wt) == branch:
+            sh(["git", "pull", "--ff-only", "-q"], cwd=wt, check=False, timeout=120)
+            return wt
+    return prepare_worktree(Lot("recette", "poste de recette", "", "", [], ""), branch)
+
+
+def prepare_recette(state: State, args, http: Http | None) -> None:
+    branch = getattr(args, "branch", None) or state.last_branch or "main"
+    log(f"fin de batch : poste de recette sur `{branch}`")
+    if not ENV_FILE.exists():
+        log(f"!! {ENV_FILE} absent : l'API tournera sans clé (récit « règles », chat et juge éteints)")
+    wt = recette_worktree(state, branch)
+    sim = wt / "naviguide-simulator"
+    try:
+        p = subprocess.run(["bash", str(sim / "ensure-dev.sh"), "--prod", "--open"], cwd=str(sim), text=True, capture_output=True, timeout=1200)
+        for ln in (p.stdout + p.stderr).strip().splitlines()[-12:]:
+            log(f"    {ln}")
+        launched = p.returncode == 0
+    except subprocess.TimeoutExpired:
+        log("    ensure-dev.sh --prod : délai dépassé (20 min)")
+        launched = False
+    write_recette_md(state, args, http, branch, wt, launched)
+    log(f"recette : {RECETTE_MD}")
+    if sh(["open", "-a", "Cursor", str(RECETTE_MD)], check=False, timeout=30).returncode != 0:
+        sh(["open", str(RECETTE_MD)], check=False, timeout=30)
+
+
+def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Path, launched: bool) -> None:
+    repo = getattr(args, "repo", DEFAULT_REPO)
+    keys = env_key_names()
+    st = api_status()
+    llm = st.get("llm") or {}
+    lots = [(lid, e) for lid, e in state.done.items() if e.get("status") == "FINISHED" and e.get("branch")]
+    last = state.last_branch or branch
+
+    by_screen: dict[str, list[str]] = {sid: [] for sid, _, _ in SCREENS}
+    by_screen["partout"] = []
+    tech: list[str] = []
+    captures: list[str] = []
+    decisions: list[str] = []
+    blob = f"https://github.com/{owner_repo(repo)}/blob"
+    for lid, e in lots:
+        num = pr_number(e.get("pr"))
+        pr = fetch_pr(http, repo, num) if num else None
+        tag = f"(#{num} {lid})" if num else f"({lid})"
+        if not pr:
+            by_screen["partout"].append(f"- {tag} PR illisible : ouvrir {e.get('pr') or e.get('branch')} et lire sa rubrique « Recette ».")
+            continue
+        sections = pr_sections(pr.get("body") or "")
+        steps = section_lines(sections, "recette")
+        if not steps:
+            by_screen["partout"].append(f"- {tag} la PR n'a pas de rubrique « Recette » : regarder « Objectif » — {(sections.get('objectif') or '').strip()[:200]}")
+        default_screen = screen_of(" ".join(steps) + " " + (pr.get("title") or ""))
+        for ln in steps:
+            ln = re.sub(r"^(\d+[.)]|[-*•])\s+", "", ln).strip()          # puce ou numéro, pas le gras
+            ln = re.sub(r"\]\((docs/recette/[^)]+)\)", rf"]({blob}/{e['branch']}/\1?raw=true)", ln)
+            ln = re.sub(r"`(docs/recette/[^`]+\.(?:jpg|jpeg|png))`", rf"[\1]({blob}/{e['branch']}/\1?raw=true)", ln)
+            item = f"- {tag} {ln}"
+            if re.match(r"(?i)^\**capture", ln) or "docs/recette/" in ln:
+                captures.append(item)
+            elif TECH_RE.search(ln):
+                tech.append(item)
+            else:
+                sid = screen_of(ln)
+                by_screen[sid if sid != "partout" else default_screen].append(item)
+        for ln in section_lines(sections, "décisions", "decisions", "libertés", "hors périmètre"):
+            ln = re.sub(r"^([-*•])\s+", "", ln).strip()
+            decisions.append(f"- {tag} {ln}")
+
+    merges: list[str] = []
+    extra: list[str] = []
+    for lid, e in lots:
+        num = pr_number(e.get("pr"))
+        link = f"[#{num}]({e['pr']})" if num else f"`{e['branch']}`"
+        ci = e.get("ci") or "?"
+        merges.append(f"{len(merges) + 1}. {link} — {lid} — CI {ci}")
+        if num and e["branch"] != last and not branch_included(e["branch"], last):
+            extra.append(link)
+    last_pr = next((f"[#{pr_number(e['pr'])}]({e['pr']})" for lid, e in reversed(lots) if e.get("branch") == last and pr_number(e.get("pr"))), None)
+
+    lines = [
+        f"# Recette du batch — {time.strftime('%d/%m/%Y %H:%M')}",
+        "",
+        f"Ouvre <http://localhost:5174> ({'déjà ouvert' if launched else 'le poste n’a pas démarré : `cd ' + str(wt / 'naviguide-simulator') + ' && bash ensure-dev.sh --prod --open`'}).",
+        f"Branche : `{branch}` — build de prod — API du même checkout (`{wt}`).",
+        (f"Clés chargées : {', '.join(keys)}. Source LLM vue par l'API : `{llm.get('lastSource') or '—'}` ; Tavily : {((llm.get('tavily') or {}).get('calls') or 0)} appel(s)."
+         if keys else f"Aucune clé ({ENV_FILE} absent) : récit en « règles », chat et juge éteints."),
+        "Le hindcast se remplit en fond pendant ~40 min après la première ouverture : les couleurs de la route déjà parcourue peuvent changer.",
+        "",
+        "## 1. Ce que tu regardes, écran par écran",
+        "",
+        "Ouvre l'écran, fais ce qui est écrit, compare avec ce que tu dois voir. Ce qui ne va pas : une phrase par point (« écran, ce que je vois, ce que je voulais »). Rien d'autre à faire.",
+        "",
+    ]
+    for sid, label, _ in SCREENS + [("partout", "Partout / autres", ())]:
+        items = by_screen.get(sid) or []
+        if items:
+            lines += [f"### {label}", ""] + items + [""]
+    if not any(by_screen.values()):
+        lines += ["_(aucune PR dans state.json : recette libre des trois parcours — Suivre à Nouméa, Simulation La Rochelle → Ajaccio, Tracer Brisbane → SF — et du film.)_", ""]
+    lines += ["## 2. Captures prises par les agents (à comparer avec ton écran)", ""] + (captures or ["- (aucune)"]) + [""]
+    lines += ["## 3. Vérifié par les tests à ta place (pas à regarder)", ""] + (tech or ["- (rien)"]) + [""]
+    lines += ["## 4. Décisions prises seules par les agents — à trancher : garder / défaire", ""] + (decisions or ["- (aucune notée)"]) + [""]
+    lines += ["## 5. Merger, quand la recette est bonne", ""]
+    if last_pr:
+        lines += [f"Pile linéaire : merger **{last_pr}** (la dernière) suffit — GitHub ferme les autres comme mergées.",
+                  "Bouton vert « Merge pull request », vérifier « Create a merge commit » (pas Squash), Confirm."]
+        if extra:
+            lines += [f"Puis merger aussi, si elles restent ouvertes (commits qui ne sont pas dans la dernière) : {', '.join(extra)}."]
+        lines += ["", "Ordre de la pile, pour mémoire :"] + merges
+        lines += ["", f"Ensuite : onglet Actions → déploiement ~10 min → <{PROD_URL}>. Puis `python3 infra/agents/run_lots.py --recette --branch main` pour recetter la prod en local."]
+    else:
+        lines += ["Aucune PR de batch dans state.json : rien à merger ici."]
+    lines += ["", "## 6. Si quelque chose ne va pas", "",
+              "- Le poste ne répond pas : `cd naviguide-simulator && bash ensure-dev.sh --prod --open` dans le checkout ci-dessus ; journaux dans `.dev/api.log`, `.dev/vite.log`, `.dev/build.log`.",
+              "- Une clé manque : l'ajouter dans `~/.config/naviguide/simulator.env` (une ligne `NOM=valeur`), relancer la commande ci-dessus.",
+              "- Une PR est mauvaise : ne pas la merger ; dicter ce qui ne va pas, un lot de correction repart le soir.", ""]
+    RECETTE_MD.write_text("\n".join(lines), encoding="utf-8")
+
+
 # ---------------------------------------------------------------- check
 
 def check(args) -> None:
@@ -687,10 +928,18 @@ def main() -> None:
     ap.add_argument("--poll", type=int, default=60, help="secondes entre deux lectures d'état (cloud)")
     ap.add_argument("--ci-wait-min", type=int, default=25)
     ap.add_argument("--fix-rounds", type=int, default=2, help="relances de correction quand la CI est rouge sur des échecs nouveaux (défaut 2)")
+    ap.add_argument("--recette", action="store_true", help="ne lance aucun lot : prépare le poste de recette (build de prod, clés, API, navigateur, RECETTE_DU_BATCH.md) sur la dernière branche du state ou --branch")
+    ap.add_argument("--branch", help="avec --recette : branche à recetter (défaut : dernière branche de state.json, sinon main)")
+    ap.add_argument("--no-recette", action="store_true", help="ne prépare pas le poste de recette à la fin du batch")
     args = ap.parse_args()
 
     if args.check:
         check(args)
+        return
+
+    if args.recette:
+        state = State.load()
+        prepare_recette(state, args, Http(None, github_token_from_git()))
         return
 
     lots = select(parse_lots(PROMPTS_MD.read_text(encoding="utf-8")), args)
@@ -736,6 +985,11 @@ def main() -> None:
         log("terminé. Récapitulatif :")
         for lid, e in state.done.items():
             log(f"  {lid}: {e.get('status')} — {e.get('pr') or e.get('branch')} — CI {e.get('ci')}")
+        if not args.no_recette:
+            try:
+                prepare_recette(state, args, http)
+            except Exception as e:  # le poste de recette ne doit jamais faire perdre le batch
+                log(f"poste de recette impossible : {e} — à la main : python3 infra/agents/run_lots.py --recette")
 
 
 if __name__ == "__main__":
