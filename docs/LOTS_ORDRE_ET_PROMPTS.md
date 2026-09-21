@@ -62,6 +62,18 @@ testent avec de faux serveurs).
 | 31 | G5 | globe | M | G4 | popups, bulle, tracer ma route sur le globe |
 | 32 | G6 | globe | S | G5, F1 | le film sur le globe |
 | 33 | G7 | globe | S | G6 | parité, tests sur les deux vues |
+| **nuit 2** | | **corrections revue 21 sept.** | | | `PLAN_CORRECTIONS_REVUE_21_SEPT.md` — pile P2 → L6 **mergée le 21 sept.** (#208, #237, #210) |
+| 34 | R1 | corrections | S | — | plus de phrases d'aide, Esri une fois, « Polaires chargées » seul, bouton de remise qui marche, brut/rédigé grisé |
+| 35 | R2 | corrections | S | R1 | barre film sur une rangée, Masquer partout, bouton Escale précédente |
+| 36 | R3 | corrections | M | — | Revoir : premier clic fiable, voix jusqu'au bout, caméra directe, voix EN audible |
+| 37 | R4 | corrections | M | R3 | film fluide : le bateau glisse, la caméra suit |
+| 38 | R5 | corrections | S | — | récit sans « puis, puis », km à terre |
+| 39 | R6 | corrections | M | R3 | bulles pendant le film seulement, événements importants, croix |
+| 40 | R7 | corrections | S | — | fiche d'escale sur le drapeau, sans Écouter |
+| 41 | R11 | corrections | S | — | « arrivée entre le … et le … », jours de mer cohérents |
+| 42 | R12 | corrections | S | — | carte bornée aux pôles, zoom vérifié sur build de prod |
+| 43 | R13 | corrections | S | R1 | script des redites + première suppression |
+| **nuit 3** | | **chantiers** | | | `PLAN_ICI_JOURNAL_EXPERT.md` — R8 produit unique, R9 journal → récit 2:30, R10 expert en circumnavigation (sous-lots) |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
 § 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
@@ -510,6 +522,155 @@ Tests : npm run e2e vert pour les deux vues ; npm test, vite build.
 Recette (aucun changement visible) : la PR joint la liste de parité et le rapport Playwright.
 Branche chore/lot-g7-parite-globe depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
 Interdits : changer le défaut Carte ; toucher à Leaflet ; vidéo ; secret. Fin : PR, compteurs, reste à faire.
+```
+
+### Nuit 2 — corrections de la revue du 21 septembre (R1 → R13)
+
+Socle commun rappelé dans chaque prompt : la rubrique « Recette » de la PR est
+**visuelle seulement** (« ouvre, clique, tu dois voir »), rangée par écran ;
+**rien de superflu à l'écran** (REGLES § 1) ; les captures sont référencées par
+leur URL complète sur la branche.
+
+<!-- LOT id="R1" title="Nettoyage : textes parasites, Esri une fois, polaire, bouton mort, bascule grisée" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (surtout § 1 « rien de superflu à l'écran » et § 4), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot R1 — Nettoyage.
+Objectif : plus une phrase d'explication dans l'interface ; « Esri » une seule fois dans les crédits carte ; « Polaires chargées » sans nom de bateau ; le bouton « remettre le chiffre du profil » marche ; les pilules brut / rédigé sont grisées pendant le film.
+Fichiers à ouvrir (seulement) : src/i18n/fr.js et src/i18n/en.js (clés logbookChatHint, planReviewSummary, skipperExpertHint, polarLoaded), src/components/LogbookChat.jsx (l. 54), src/components/SkipperOrdersPanel.jsx (NumberRow l. 63-95, onReset l. 143 et 191, hint l. 300), src/components/ToolsSidebar.jsx (l. 314), src/layers/styles.js (l. 12) et src/layers/styles.test.js, src/components/SimulationFilmBar.jsx (l. 367 et 445 : disabled={Boolean(replay.active)}), src/App.jsx PAR EXTRAIT : rg -n "planReviewSummary" src/App.jsx.
+Étapes : 1) supprimer les trois rendus (LogbookChat l. 54, App planReviewSummary, SkipperOrdersPanel l. 300) et les trois clés dans fr.js et en.js — rien à la place ; 2) ToolsSidebar l. 314 : le texte est t("polarLoaded") seul, sans « — <bateau> » ; 3) styles.js : TILE_ATTRIBUTION = « Tuiles © <a href="https://www.esri.com/">Esri</a> — <a href="https://www.here.com/">HERE</a>, <a href="https://www.garmin.com/">Garmin</a>, © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> » (quatre liens, le mot Esri UNE fois dans toute la chaîne) ; 4) NumberRow : le bouton de remise remet la valeur du profil courant (PROFILES[profil][champ]) et repasse forced à faux ; il est actif dès qu'une valeur est forcée ; vérifier que onReset est bien câblé pour chaque ligne (loa, et les autres chiffres) ; 5) bascule brut / rédigé : ajouter les classes disabled:opacity-30 disabled:cursor-not-allowed et aria-disabled pendant le film.
+Tests : styles.test.js — exactement une occurrence de « Esri » dans TILE_ATTRIBUTION et quatre <a> ; SkipperOrdersPanel.test.js (créer si absent, node --test + rendu statique ou test de la fonction de remise) — après remise, la valeur est celle du profil et forced est faux ; test de contrat i18n (i18n/*.test.js) — les clés logbookChatHint, planReviewSummary, skipperExpertHint n'existent plus dans fr.js ni en.js. npm test, npx vite build.
+Recette (visuelle, par écran) : Suivre — panneau gauche, Journal de bord : sous « Poser une question », aucune phrase d'explication. Panneau droit — Paramètres avancés → Chiffres : aucune phrase sous les chiffres ; modifier un chiffre puis cliquer le cercle : le chiffre du profil revient. Panneau droit — « Polaires chargées » puis « voir les polaires », sans « Léopard 46 ». Panneau droit — Revue du plan : aucune phrase « Par jambe : calendrier… » en tête. Carte — crédits en bas à droite : « Tuiles © Esri — HERE, Garmin, © OpenStreetMap contributors », Esri une seule fois. Revoir — pendant le film, brut / rédigé grisés. Spec e2e/lots/r1-nettoyage.spec.js : attribution avec une seule occurrence de « Esri » ; absence des trois textes ; captures docs/recette/lot-r1/01-credits.jpg, 02-chiffres.jpg référencées par URL complète sur ta branche.
+Branche fix/lot-r1-nettoyage depuis la base indiquée (main sinon). Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : retirer une surface visible autre que ces trois phrases ; ajouter un texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le dans la PR. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R2" title="Barre film : une rangée, Masquer partout, Escale précédente" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="R1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu à l'écran », § 4), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R2 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot R1 est dans ta base.
+
+Lot R2 — Barre film : une seule rangée, « Masquer la barre » partout, « Escale précédente ».
+Objectif : la rangée de légende des régimes (hindcast · prévision · climatologie) quitte la barre film ; « Masquer la barre » est disponible en Suivre et en Simulation, Cinéma ou non ; un bouton « Escale précédente » se tient à gauche de « Prochaine escale ».
+Fichiers à ouvrir (seulement) : src/components/SimulationFilmBar.jsx (légende l. 225-245 regimeLegend ; hideBar l. 58/116 ; goToNextStop l. 474-479), src/components/filmBarLayout.test.js, src/components/PlanReview.jsx (une ligne de légende au-dessus du tableau), src/i18n/fr.js et src/i18n/en.js (clé previousEscale existante « Escale précédente » ; clockRegime*), src/App.jsx PAR EXTRAIT : rg -n "goToNextStop|onNextStop|hideBar|cinemaMode" src/App.jsx, et le hook qui place le curseur sur une escale (rg -n "nextStop|goToStop" src/hooks).
+Étapes : 1) retirer la rangée de légende de la barre ; la légende devient l'info-bulle (attribut title, une phrase par couleur : hindcast = ce que le bateau a vraiment rencontré, prévision = 10 jours devant, climatologie = moyenne du mois au-delà) de la pilule de vitesse / régime déjà présente dans la barre, et une ligne discrète au-dessus du tableau de la Revue du plan ; hauteur de la barre ≤ 96 px (contrat du lot O) ; 2) « Masquer la barre » visible en Suivre ET en Simulation, Cinéma ou non ; « Afficher la barre » réapparaît au même endroit (bord bas) ; 3) bouton « Escale précédente » (data-testid="prev-stop", libellé t("previousEscale")) à gauche de « Prochaine escale », même style, grisé (disabled:opacity-30) sur la première escale ; il place le curseur sur l'escale précédente comme « Prochaine escale » sur la suivante (même mécanique, sens inverse).
+Tests : filmBarLayout.test.js — plus de regimeLegend dans la barre, un prev-stop, hauteur ≤ 96 px ; test du hook : depuis la 2e escale, précédente → 1re ; depuis la 1re → inchangé et canPrev faux. npm test, npx vite build, npm run e2e -- e2e/lots/o-barre.spec.js (doit rester vert).
+Recette (visuelle, par écran) : Simulation — barre film sur une seule rangée ; « Masquer la barre » présent ; le survol de la pilule de vitesse montre la légende des trois couleurs. Simulation — « Escale précédente » et « Prochaine escale » côte à côte ; à La Rochelle, « Escale précédente » est grisé ; après un clic sur « Prochaine escale », « Escale précédente » ramène à La Rochelle. Suivre — « Masquer la barre » présent hors Cinéma. Spec e2e/lots/r2-barre.spec.js ; captures docs/recette/lot-r2/01-simulation.jpg, 02-suivre.jpg (URL complète sur ta branche).
+Branche fix/lot-r2-barre-film depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : retirer une commande existante ; ajouter une rangée ou un texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul en cas de blocage et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R3" title="Revoir l'expédition : premier clic fiable, voix jusqu'au bout, caméra directe, voix EN audible" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R3 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 0 et § 4 (contrat F1). Tu travailles dans naviguide-simulator/.
+
+Lot R3 — Revoir l'expédition : fiable dès le premier clic.
+Objectif : le premier clic sur « Revoir l'expédition » lance le film et la voix ; la voix ne s'arrête plus avant la fin ; la caméra se pose directement sur la première jambe (plus de détour vers l'Asie) ; en anglais la voix est compréhensible.
+Fichiers à ouvrir (seulement) : src/hooks/useReplay.js (démarrage l. 150-170, fetch du script l. 106, boucle l. 228-310) et useReplay.test.js, src/hooks/useReplayVoice.js, src/utils/speak.js (voix l. 49-62) et speak.test.js (créer si absent), src/map/filmCamera.js et filmCamera.test.js, src/map/MapSceneController.js PAR EXTRAIT : rg -n "flyTo|fitBounds|filmCamera|syncCamera|zoomForRemaining" src/map/MapSceneController.js.
+Diagnostic d'abord (note-le dans la PR, rubrique Cause racine) : reproduis le premier clic dans Chrome avec l'API locale (bash ensure-dev.sh) — hypothèses : speechSynthesis.getVoices() vide au premier appel → onend immédiat → tous les chapitres s'enchaînent en 2 s ; ou attente du script GET /voyage/official/film qui échoue puis film vide. Corrige la cause réelle, pas l'hypothèse.
+Étapes : 1) démarrage : attendre l'événement voiceschanged (≤ 1 s) avant la première utterance ; si onend arrive sans aucun onboundary en < 500 ms, relancer l'utterance une fois, puis basculer en mode linéaire (sans voix) SANS terminer le film ; le film ne se termine que quand le dernier chapitre est joué ; 2) voix : découper chaque chapitre en phrases (≤ 200 caractères), enchaîner les utterances, charIdx global conservé pour onboundary ; keep-alive speechSynthesis.pause()/resume() toutes les 10 s pendant une utterance (Chrome coupe les longues) ; 3) caméra : le premier mouvement est celui du chapitre 1 (emprise de la jambe, zoom borné [3 ; 7]) ; aucun flyTo / fitBounds sur la route entière au lancement ni au « Retour au live » ; 4) voix par liste de préférence — en : Google UK English Female, Google US English, Samantha, Daniel, Karen, Moira, puis toute voix en-* ; fr : Google français, Thomas, Amélie, Audrey, puis fr-* ; rate 0,95 en anglais.
+Tests : useReplay.test.js — scénario « onend immédiat sans boundary » : une relance, puis linéaire, film non terminé, dernier chapitre atteint à la durée cible ; speak.test.js — découpage en phrases ≤ 200 caractères, charIdx global strictement croissant, choix de voix par préférence sur une liste factice ; filmCamera.test.js — le premier mouvement est l'emprise du chapitre 1. npm test, npx vite build, npm run e2e -- e2e/lots/f1-film.spec.js (durée 142-158 s en linéaire : inchangé).
+Recette (visuelle, par écran) : Revoir — en Suivre, PREMIER clic sur « Revoir l'expédition » après un rechargement de la page : la voix parle et le bateau part dès ce clic ; la caméra se pose directement sur la première jambe. Revoir — laisser le film entier : la voix ne s'arrête pas avant la fin ; le film finit sur la position du jour et Suivre reprend. Revoir — langue anglaise (bouton langue du panneau droit) : voix anglaise compréhensible, débit normal. Spec e2e/lots/r3-revoir.spec.js (sans voix en headless : vérifier qu'un premier clic après chargement lance bien le film et qu'il n'est pas terminé après 5 s) ; captures docs/recette/lot-r3/01-premier-clic.jpg, 02-chapitre-1.jpg (URL complète sur ta branche).
+Branche fix/lot-r3-revoir-fiable depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : changer la durée cible (150 s / 180 s) ; retirer une surface visible ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R4" title="Film fluide : le bateau glisse, la caméra suit" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="R3" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R4 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/. Le lot R3 est dans ta base.
+
+Lot R4 — Film fluide.
+Objectif : pendant une jambe, le bateau avance sans à-coups et la carte glisse avec lui — un film, pas une suite de captures. Aujourd'hui, avec la voix, le temps rejoué n'avance qu'à chaque onboundary (mot par mot) : la position est un escalier.
+Fichiers à ouvrir (seulement) : src/hooks/useReplay.js (boucle l. 228-310, onVoiceBoundary l. 176-185) et useReplay.test.js, src/engine/replay.js (timeAt, position le long du trait) et replay.test.js, src/map/filmCamera.js et filmCamera.test.js, src/engine/filmWake.js, src/map/MapSceneController.js PAR EXTRAIT : rg -n "setView|filmCamera|replayBoat|wake" src/map/MapSceneController.js.
+Étapes : 1) temps rejoué continu : à chaque frame (requestAnimationFrame), t += dt × vitesse nominale du chapitre (secondes du chapitre ÷ caractères, calibrage F1 conservé) ; chaque onboundary fournit une cible timeAt(charIdx) vers laquelle t se recale par interpolation en ≤ 300 ms ; jamais de saut arrière visible (si la cible est derrière, vitesse × 0,7 jusqu'à la rejoindre) ; 2) position du bateau = interpolation le long du trait, entre deux sommets consécutifs de la route (lat/lon dépliée), jamais « le sommet le plus proche » ; 3) caméra : setView(bateau au tiers avant, zoom fixe du chapitre, {animate:false}) à chaque frame ; déplacement par frame borné à 2 % de la largeur de l'écran hors changement de chapitre ; un seul flyTo (1,2 s) au changement de chapitre (F1) ; 4) sillage et marqueur bateau lisent la même position.
+Tests : useReplay.test.js — faux timers, 60 frames entre deux boundaries → 60 positions strictement croissantes le long de la jambe, écart max entre deux frames < 1/30 de la jambe ; replay.test.js — positionAt(t) continue (limite à gauche = limite à droite aux sommets) ; filmCamera.test.js — déplacement par frame borné, un seul flyTo par changement de chapitre. npm test, npx vite build, npm run e2e -- e2e/lots/f1-film.spec.js (zoom stable sur 4 s : inchangé).
+Recette (visuelle, par écran) : Revoir — pendant une jambe, le bateau avance sans à-coups ; la carte glisse avec lui ; le zoom ne change pas ; au changement de jambe, un seul mouvement de caméra. Spec e2e/lots/r4-fluide.spec.js (en linéaire : la position du marqueur bateau lue 10 fois en 2 s donne 10 valeurs différentes et monotones) ; captures docs/recette/lot-r4/01-jambe.jpg, 02-suivante.jpg (URL complète sur ta branche).
+Branche fix/lot-r4-film-fluide depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : changer la durée cible ; zoomer pendant une jambe ; retirer une surface visible ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R5" title="Récit : connecteurs variés, kilomètres à terre" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot R5 — Récit sans « puis, puis, puis », kilomètres à terre.
+Objectif : les paragraphes du récit et du script du film commencent par des connecteurs variés ; l'étape terrestre (Saint-Maur → La Rochelle) est comptée en kilomètres et en heures de route, pas en milles nautiques.
+Fichiers à ouvrir (seulement) : src/engine/expeditionStory.js (l. 261 « Puis, le … » en dur ; liste de connecteurs l. 412) et expeditionStory.test.js, server/film_script.py (liste l. 26) et server/tests/test_film_script.py, src/engine/momentCard.js (carte « Escale » : distance de l'étape) et momentCard.test.js, src/utils/berryLegs.js PAR EXTRAIT : rg -n "land|terrestre|kind" src/utils/berryLegs.js, src/i18n/fr.js et en.js (unités).
+Étapes : 1) expeditionStory.js : le connecteur du paragraphe i est connecteurs[i % n], jamais deux fois le même à la suite ; mettre à jour les chaînes attendues des tests (c'est voulu) ; 2) film_script.py : même règle pour le script du film ; 3) étape terrestre (jambe de type terre dans berryLegs) : distance en km (1 nm = 1,852 km, arrondi au km), durée en heures de route, libellé « par la route » — dans le récit ET dans la carte « Escale » de momentCard.js ; 4) fr.js / en.js : unités « km » / « h de route ».
+Tests : expeditionStory.test.js — deux paragraphes consécutifs n'ont pas le même connecteur ; une étape terrestre donne « km » et pas « nm » ; momentCard.test.js — carte Escale à Saint-Maur en km ; test_film_script.py — connecteurs alternés. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle, par écran) : Suivre — panneau gauche, Récit de la traversée : les paragraphes commencent par des mots différents (« Puis », « Ensuite », « Plus loin »…), jamais trois « Puis » de suite. Simulation — curseur sur Saint-Maur : la carte « Escale » indique « … km par la route », pas de milles nautiques. Spec e2e/lots/r5-recit.spec.js ; capture docs/recette/lot-r5/01-recit.jpg (URL complète sur ta branche).
+Branche fix/lot-r5-recit-connecteurs depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : chiffre produit par un LLM ; retirer une surface visible ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R6" title="Bulles sur le bateau : pendant le film seulement, événements importants, fermables" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="M" deps="R3" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R6 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md « Lot F4 ». Tu travailles dans naviguide-simulator/. Le lot R3 est dans ta base.
+
+Lot R6 — Bulles événement : pendant le film seulement, événements importants, croix.
+Objectif : plus aucune bulle sur le bateau hors film (la bulle « balisage » à l'ouverture disparaît) ; pendant « Revoir l'expédition », une bulle ancrée au bateau apparaît à chaque événement important (escale, entrée de ZEE, alerte météo, AMP, station scientifique, changement de régime), une seule à la fois, fermable par une croix et Échap sans arrêter le film ; la carte NOW du panneau gauche montre le même texte.
+Fichiers à ouvrir (seulement) : src/components/MomentCards.jsx (effet l. 113-118 : publication hors film — à supprimer) et MomentCards.test.js, src/components/eventBubble.js (pickFilmEvent l. 76, EventBubbleGate l. 105) et eventBubble.test.js, src/components/EventBubble.jsx (croix à ajouter) et EventBubble.test.js, src/hooks/useReplay.js PAR EXTRAIT (l. 270-295 : publication pendant le film), server/film_script.py (événements par chapitre) et server/tests/test_film_script.py, e2e/lots/f4-bulle.spec.js (à mettre à jour), src/i18n/fr.js et en.js.
+Diagnostic d'abord : avec l'API locale, lis GET /voyage/official/film — si les chapitres n'ont pas de tableau events non vide, c'est la cause du « rien n'apparaît » : corrige côté serveur.
+Étapes : 1) MomentCards.jsx : supprimer la publication dans la bulle hors film ; 2) film_script.py : chaque chapitre porte ses événements {charIdx, kind, title, fact, score} construits depuis le journal du voyage — arrivée/départ d'escale (score 3), entrée dans une ZEE (2), alerte vent ≥ seuil du skipper ou Hs ≥ 3 m (3), AMP à portée (1), station/campagne scientifique croisée (2), changement de régime (1) ; charIdx = position dans le texte du chapitre de la phrase qui en parle (ou proportionnelle à la date) ; 3) client : la bulle s'affiche pour tout événement de score ≥ 2, ou quand la somme des scores des événements non montrés depuis 20 s atteint 3 ; une seule bulle, ≥ 3 s, remplacée par la suivante (gate existante) ; 4) EventBubble.jsx : croix « × » (data-testid="event-bubble-close") ; croix et Échap ferment la bulle, le film continue ; 5) la carte NOW du panneau gauche affiche la même carte pendant le film.
+Tests : eventBubble.test.js — seuil de score et somme sur 20 s ; EventBubble.test.js — la croix ferme ; MomentCards.test.js — aucune publication hors film ; test_film_script.py — chaque chapitre de mer du voyage officiel a ≥ 1 événement, scores dans {1,2,3}. npm test, .venv/bin/python -m pytest -q, npx vite build, npm run e2e -- e2e/lots/f4-bulle.spec.js (mis à jour : bulle pendant le film, aucune à l'ouverture).
+Recette (visuelle, par écran) : Suivre — à l'ouverture, aucune bulle sur le bateau. Revoir — dans la première minute, une bulle ancrée au bateau apparaît (escale, ZEE, alerte…) ; la croix la ferme et le film continue ; une bulle suivante remplace la précédente ; jamais deux à la fois. Revoir — la carte NOW du panneau gauche montre le même texte que la bulle. Captures docs/recette/lot-r6/01-ouverture-sans-bulle.jpg, 02-bulle-film.jpg (URL complète sur ta branche).
+Branche fix/lot-r6-bulles-film depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : bulle hors film ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R7" title="Fiche d'escale sur la carte, au clic sur le drapeau, sans Écouter" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R7 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot R7 — Fiche d'escale sur la carte.
+Objectif : la fiche d'escale sort du panneau gauche ; elle s'ouvre en popup ancrée au drapeau de l'escale quand on clique le drapeau (et depuis la légende des escales), sans bouton Écouter, avec une croix.
+Fichiers à ouvrir (seulement) : src/map/MapSceneController.js PAR EXTRAIT (l. 698-735 : marqueurs drapeaux waypointMarkers, clic l. 727-731 réservé au dessin ; rg -n "callbacks\." pour la liste des callbacks), src/map/MapSceneMarkers.test.js, src/components/EscaleSheet.jsx (ListenButton l. 5 et 122) et EscaleSheet.test.js, src/components/Sidebar.jsx (l. 405 : rendu EscaleSheet, props l. 260) et Sidebar.layout.test.js, src/components/EventBubble.jsx PAR EXTRAIT (attachEventBubble l. 134 : le motif « React dans une popup Leaflet ancrée à un marqueur »), src/components/LayerFichePopup.jsx (motif existant), src/hooks/useEscaleSheetState.js, src/App.jsx PAR EXTRAIT : rg -n "escaleStop|openEscaleSheet|closeEscaleSheet|onEscaleSheet|callbacks" src/App.jsx.
+Étapes : 1) MapSceneController : hors mode dessin, le clic sur un drapeau appelle this.callbacks.onWaypointClick?.(point, index) ; App relie ce callback à openEscaleSheet(stop) ; 2) nouveau src/components/EscalePopup.jsx : popup Leaflet ancrée au drapeau de l'escale ouverte (comme attachEventBubble), contenu = EscaleSheet (mêmes data-testid escale-*), sans ListenButton, avec croix ; largeur ≤ 340 px, défilement interne au-delà de 260 px ; se ferme par la croix, Échap, ou clic sur un autre drapeau (qui ouvre le sien) ; 3) Sidebar.jsx : retirer le rendu de EscaleSheet ; 4) la légende des escales (bas de carte) ouvre la même popup (même état useEscaleSheetState) ; 5) fr.js / en.js : rien de nouveau.
+Tests : MapSceneMarkers.test.js — clic drapeau hors dessin → onWaypointClick(point, index) ; en dessin → inchangé ; EscaleSheet.test.js — aucun ListenButton ; Sidebar.layout.test.js — plus d'EscaleSheet dans le panneau ; EscalePopup.test.js (créer) — contenu et croix. npm test, npx vite build.
+Recette (visuelle, par écran) : Simulation — cliquer le drapeau d'Ajaccio : la fiche d'escale s'ouvre sur le drapeau ; pas de bouton Écouter ; la croix la ferme. Suivre — panneau gauche : plus de fiche d'escale ; la légende des escales (bas de carte) ouvre la même fiche sur la carte. Spec e2e/lots/r7-escale.spec.js : clic sur le drapeau d'Ajaccio → popup contenant « Ajaccio » ; captures docs/recette/lot-r7/01-popup.jpg (URL complète sur ta branche).
+Branche fix/lot-r7-fiche-escale-carte depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : retirer le contenu de la fiche (il change de place, pas de contenu) ; bouton Écouter ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R11" title="Fourchette d'arrivée lisible et jours de mer cohérents" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R11 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
+
+Lot R11 — Fourchette d'arrivée lisible, jours de mer cohérents.
+Objectif : sous la prochaine escale et dans la Revue du plan, « arrivée entre le 31 oct. et le 4 nov. » (deux dates, rien d'autre : « p10–p90 » et « membres » passent en info-bulle) ; les jours de mer d'une jambe sont cohérents avec sa distance et la vitesse planifiée (aujourd'hui Nouméa → Dzaoudzi affiche « 4,5 jours de mer » pour 42 jours).
+Fichiers à ouvrir (seulement) : src/hooks/usePlanReview.js (formatEtaRange) et usePlanReview.test.js, src/components/EscaleLegend.jsx (l. 77), src/components/PlanReview.jsx (l. 66), src/i18n/fr.js et en.js (clé etaRange), server/plan_review.py et server/tests/test_plan_review.py, server/voyage_api.py PAR EXTRAIT : rg -n "seaDays|sea_days|plan-review|/eta" server/voyage_api.py.
+Étapes : 1) diagnostic : d'où vient « 4,5 jours de mer » (jours à quai ? jambe précédente ? mauvaise unité ?) — test Python sur le voyage officiel : seaDays de chaque jambe = distance ÷ vitesse planifiée ÷ 24, à ± 10 % ; corriger la source ; 2) formatEtaRange → « arrivée entre le {p10} et le {p90} » (dates courtes « 31 oct. »), le détail (p10–p90, n membres) dans title ; 3) Suivre (EscaleLegend) et Revue du plan (PlanReview) lisent la même valeur serveur, même arrondi.
+Tests : usePlanReview.test.js — formatage fr/en ; test_plan_review.py — cohérence jours de mer / distance / vitesse sur toutes les jambes du voyage officiel. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle, par écran) : Suivre — sous la prochaine escale : « arrivée entre le … et le … » (deux dates, rien d'autre). Panneau droit — Revue du plan, jambe Nouméa → Dzaoudzi : la même fourchette et un nombre de jours de mer cohérent avec 42 jours à 8 nœuds. Spec e2e/lots/r11-eta.spec.js (sans API : passe ; avec API : les deux libellés sont identiques) ; capture docs/recette/lot-r11/01-eta.jpg (URL complète sur ta branche).
+Branche fix/lot-r11-eta-lisible depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : chiffre produit par un LLM ; texte d'aide ; retirer une surface visible ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R12" title="Carte bornée aux pôles, zoom vérifié sur build de prod" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R12 » (texte intégral), puis docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md « Lot U ». Tu travailles dans naviguide-simulator/.
+
+Lot R12 — Carte : limites de déplacement, zoom vérifié sur le build de prod.
+Objectif : on ne peut plus tirer la carte au-delà des pôles (plus d'écran entièrement bleu) ; le zoom molette est vérifié fluide sur le build de prod, et corrigé s'il ne l'est pas.
+Fichiers à ouvrir (seulement) : src/map/MapSceneController.js PAR EXTRAIT (l. 170-185 : options de la carte minZoom / worldCopyJump), src/map/MapSceneBoundary.test.js, e2e/lots/u-zoom.spec.js (existant, lot U) ; si un long task subsiste : le seul fichier de la couche fautive (nommé dans la PR).
+Étapes : 1) maxBounds en latitude seulement : lat ∈ [−85 ; 85], longitude libre (les routes dépliées dépassent 180°), maxBoundsViscosity 1 ; 2) zoom : cd naviguide-simulator && bash ensure-dev.sh --prod (build de prod + preview sur :5174) puis mesurer au zoom molette sur l'Atlantique (Performance / PerformanceObserver longtask) ; si un long task > 50 ms subsiste, nommer la couche (GRIB, ZEE, sillage…) et différer son redessin à zoomend ; sinon écrire dans la PR « vérifié sur build de prod, aucun long task > 50 ms » avec la mesure.
+Tests : MapSceneBoundary.test.js — options maxBounds / viscosity, longitude non bornée ; npm run e2e -- e2e/lots/u-zoom.spec.js sur le build de prod. npm test, npx vite build.
+Recette (visuelle, par écran) : Suivre — tirer la carte vers le haut ou le bas au maximum : on ne dépasse pas les pôles, jamais un écran entièrement bleu. Suivre — zoom molette sur l'Atlantique : la carte suit tout de suite, sans saccade. Capture docs/recette/lot-r12/01-bord-nord.jpg (URL complète sur ta branche).
+Branche fix/lot-r12-carte-bornes-zoom depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : borner la longitude ; retirer une couche ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R13" title="Redites : compter, puis supprimer" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md" size="S" deps="R1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu à l'écran »), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md § 0 et le « R13 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot R1 est dans ta base.
+
+Lot R13 — Redites : un outil qui compte, une première passe qui supprime.
+Objectif : un libellé n'apparaît qu'une fois par écran ; le nom du bateau une fois (Paramètres avancés) ; « climatologie » et « Polaire » au plus une fois par écran.
+Fichiers à ouvrir (seulement) : scripts/redites.mjs (créer), e2e/lots/r13-redites.spec.js (créer), src/i18n/fr.js et en.js, puis UNIQUEMENT les composants que le rapport désigne (les nommer dans la PR avant de les ouvrir).
+Étapes : 1) scripts/redites.mjs (node, sans dépendance) : lit src/i18n/fr.js, liste les groupes de ≥ 2 mots (hors mots vides : le, la, de, du, des, et, à, en, un, une, sur, par, au, aux, pour) présents dans ≥ 2 valeurs, et les valeurs identiques sous deux clés ; sortie triée par fréquence, commande npm run redites ; 2) e2e/lots/r13-redites.spec.js : pour Suivre, Simulation, Tracer (deux clics au large) et le panneau droit ouvert, document.body.innerText → lignes (≥ 8 caractères) présentes ≥ 2 fois sur le même écran, écrites dans docs/recette/lot-r13/redites-<écran>.txt ; 3) supprimer les redites évidentes que le rapport révèle : même texte deux fois sur le même écran, « Léopard 46 » hors Paramètres avancés, « climatologie » et « Polaire » au-delà de la première occurrence par écran — garder la première occurrence, et lister chaque suppression (fichier, texte) dans la PR ; ne pas toucher aux textes qui portent une information différente.
+Tests : npm test, npx vite build, PW_PORT=5199 npm run e2e -- e2e/lots/r13-redites.spec.js (le rapport est joint à la PR ; il doit être vide pour « même texte deux fois sur le même écran »).
+Recette (visuelle, par écran) : Suivre, Simulation, Tracer — parcourir l'écran : aucun texte identique deux fois ; le nom du bateau une seule fois, dans Paramètres avancés. Captures docs/recette/lot-r13/01-suivre.jpg (URL complète sur ta branche).
+Branche fix/lot-r13-redites depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : supprimer un texte qui porte une information absente ailleurs sur l'écran ; ajouter un texte ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, rapport, captures, reste à faire.
 ```
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)
