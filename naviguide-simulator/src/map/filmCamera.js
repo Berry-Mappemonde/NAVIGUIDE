@@ -4,6 +4,11 @@ import {
   FILM_ZOOM_MAX,
   FILM_ZOOM_MIN,
 } from "../engine/replay.js";
+import { haversineNm } from "../utils/geo.js";
+
+/** Jambe plus courte que ça : on plafonne pour montrer l'archipel d'un coup. */
+export const FILM_ARCHIPELAGO_NM = 180;
+export const FILM_ZOOM_ARCHIPELAGO_MAX = 5;
 
 function toLatLngPair(v) {
   if (!v) return null;
@@ -56,6 +61,15 @@ function finiteCoord(v) {
   return v != null && v !== "" && Number.isFinite(Number(v));
 }
 
+export function filmLegSpanNm(leg) {
+  const aLat = Number(leg?.fromLat);
+  const aLon = Number(leg?.fromLon);
+  const bLat = Number(leg?.toLat);
+  const bLon = Number(leg?.toLon);
+  if (![aLat, aLon, bLat, bLon].every(Number.isFinite)) return null;
+  return haversineNm(aLat, aLon, bLat, bLon);
+}
+
 export function filmChapterZoom(map, leg, { min = FILM_ZOOM_MIN, max = FILM_ZOOM_MAX } = {}) {
   const aLat = Number(leg?.fromLat);
   const aLon = Number(leg?.fromLon);
@@ -64,9 +78,21 @@ export function filmChapterZoom(map, leg, { min = FILM_ZOOM_MIN, max = FILM_ZOOM
   if (!map || ![leg?.fromLat, leg?.fromLon, leg?.toLat, leg?.toLon].every(finiteCoord)) {
     return Math.max(min, Math.min(max, 5));
   }
+  const spanNm = filmLegSpanNm(leg);
+  const shortHop = Number.isFinite(spanNm) && spanNm > 0 && spanNm <= FILM_ARCHIPELAGO_NM;
+  const cap = shortHop ? Math.min(max, FILM_ZOOM_ARCHIPELAGO_MAX) : max;
   let z = 5;
   try {
-    const bounds = [[aLat, aLon], [bLat, bLon]];
+    let bounds = [[aLat, aLon], [bLat, bLon]];
+    if (shortHop) {
+      const padDeg = 2.5;
+      const midLat = (aLat + bLat) / 2;
+      const midLon = (aLon + bLon) / 2;
+      bounds = [
+        [midLat - padDeg, midLon - padDeg],
+        [midLat + padDeg, midLon + padDeg],
+      ];
+    }
     const size = typeof map.getSize === "function" ? map.getSize() : null;
     const pad = size && Number.isFinite(size.x)
       ? [size.y * 0.15, size.x * 0.15]
@@ -76,7 +102,7 @@ export function filmChapterZoom(map, leg, { min = FILM_ZOOM_MIN, max = FILM_ZOOM
     }
   } catch { /* fake map in tests */ }
   if (!Number.isFinite(z)) z = 5;
-  return Math.max(min, Math.min(max, z));
+  return Math.max(min, Math.min(cap, z));
 }
 
 /** Centre carte pour placer le bateau au tiers avant (2/3 d'écran devant le cap). */
