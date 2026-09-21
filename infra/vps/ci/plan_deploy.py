@@ -31,6 +31,12 @@ def site_for_path(path: str) -> str | None:
         return "blue-intelligence"
     if path.startswith("naviguide-simulator/"):
         return "simulator"
+    if path in (
+        "infra/vps/nginx-bi-climatology-cache.conf",
+        "infra/vps/nginx-snippet-bi-climatology.conf",
+    ):
+        # Installés par deploy-simulator.sh (cache nginx climatologie BI).
+        return "simulator"
     if path.startswith("naviguide/"):
         return "naviguide"
     if path.startswith("infra/vps/naviguide/"):

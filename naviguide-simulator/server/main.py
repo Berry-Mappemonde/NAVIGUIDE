@@ -24,6 +24,7 @@ if str(_DIR) not in sys.path:
 import httpx
 
 from admin_guard import cors_origins, rate_limited, require_admin
+from bi_proxy import router as bi_proxy_router
 from mem_limits import (
     ZEE_CACHE_MAX_BYTES,
     ZEE_MAX_FEATURES_CAP,
@@ -76,6 +77,8 @@ app.include_router(polar_router)
 app.include_router(voyage_router)
 app.include_router(escale_router)
 app.include_router(logbook_router)
+# Dev / CI seulement : en prod nginx sert /bi/ avant uvicorn (cache partagé).
+app.include_router(bi_proxy_router)
 
 
 @app.on_event("startup")

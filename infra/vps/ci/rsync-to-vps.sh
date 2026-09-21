@@ -88,6 +88,11 @@ case "$SITE" in
       "$ROOT/infra/vps/naviguide/simulator.env.example" \
       "$ROOT/infra/vps/naviguide/publish-simulator-from-mac.sh" \
       "$VPS:$REMOTE/infra/vps/naviguide/"
+    # Cache nginx climatologie BI (installé par deploy-simulator.sh).
+    rsync_to \
+      "$ROOT/infra/vps/nginx-bi-climatology-cache.conf" \
+      "$ROOT/infra/vps/nginx-snippet-bi-climatology.conf" \
+      "$VPS:$REMOTE/infra/vps/"
     ;;
   *)
     echo "site inconnu: $SITE" >&2
