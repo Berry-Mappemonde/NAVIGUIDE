@@ -9,7 +9,31 @@ import copernicusmarine
 import xarray as xr
 from datetime import datetime, timedelta
 
-def get_wind_data_at_position(latitude, longitude, username=None, password=None):
+MS_TO_KN = 1.943844
+_open_dataset = None  # tests : faux copernicusmarine
+
+
+def _cm_open(**kwargs):
+    opener = _open_dataset or copernicusmarine.open_dataset
+    return opener(**kwargs)
+
+
+def _as_dt(value, default):
+    if value is None:
+        return default
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+
+
+def uv_to_wind_from(u_wind, v_wind):
+    """eastward, northward (m/s) → (m/s, kn, direction « de »)."""
+    wind_speed = math.sqrt(u_wind ** 2 + v_wind ** 2)
+    wind_direction = (math.atan2(-u_wind, -v_wind) * 180 / math.pi) % 360
+    return wind_speed, wind_speed * MS_TO_KN, wind_direction
+
+
+def get_wind_data_at_position(latitude, longitude, username=None, password=None, start=None, end=None):
     """
     Récupère les données de vent à une position donnée
     
@@ -18,6 +42,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
         longitude (float): Longitude (-180 à 180)
         username (str): Votre username Copernicus Marine
         password (str): Votre password Copernicus Marine
+        start, end: intervalle optionnel (datetime ou ISO). Défaut : [J-3 ; J-2].
     
     Returns:
         dict: Données de vent (eastward_wind, northward_wind, vitesse, direction)
@@ -27,9 +52,10 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
         # Dataset ID for global winds (satellite)
         dataset_id = "cmems_obs-wind_glo_phy_nrt_l4_0.125deg_PT1H"
         
-        # Date: take 2 days ago (satellite processing lag)
-        end_date = datetime.now() - timedelta(days=2)
-        start_date = end_date - timedelta(days=1)
+        # Date: take 2 days ago (satellite processing lag) unless start/end given
+        default_end = datetime.now() - timedelta(days=2)
+        end_date = _as_dt(end, default_end)
+        start_date = _as_dt(start, end_date - timedelta(days=1))
         
         # Create a small box around the point (±0.1 degree)
         margin = 0.1
@@ -40,7 +66,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
         print(f"   Date: {end_date.strftime('%Y-%m-%d')}")
         
         # Open the dataset with the filters
-        dataset = copernicusmarine.open_dataset(
+        dataset = _cm_open(
             dataset_id=dataset_id,
             username=username,
             password=password,
@@ -66,13 +92,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
         u_wind = float(point_data['eastward_wind'].isel(time=-1).values)
         v_wind = float(point_data['northward_wind'].isel(time=-1).values)
         
-        # Calculer vitesse et direction
-        import math
-        wind_speed = math.sqrt(u_wind**2 + v_wind**2)
-        
-        # ✅ Meteorological direction (where the wind COMES FROM)
-        # Convention : 0° = Nord, 90° = Est, 180° = Sud, 270° = Ouest
-        wind_direction = (math.atan2(-u_wind, -v_wind) * 180 / math.pi) % 360
+        wind_speed, wind_speed_kn, wind_direction = uv_to_wind_from(u_wind, v_wind)
 
         # Fetch the timestamp and convert it to an ISO string
         timestamp_value = point_data.time.isel(time=-1).values
@@ -90,7 +110,7 @@ def get_wind_data_at_position(latitude, longitude, username=None, password=None)
             "v_component": round(v_wind, 3),  # m/s (composante Nord)
             "wind_speed": round(wind_speed, 3),  # m/s
             "wind_speed_kmh": round(wind_speed * 3.6, 2),  # km/h
-            "wind_speed_knots": round(wind_speed * 1.944, 2),  # nœuds
+            "wind_speed_knots": round(wind_speed_kn, 2),  # nœuds
             "wind_direction": round(wind_direction, 1),  # degrees (where the wind comes from)
             "timestamp": timestamp_str
         }
@@ -181,3 +201,41 @@ def overWind(latitude, longitude, username=None, password=None):
         spd = _climatological_wind_knots(latitude, longitude)
         print(f"🌬️  Vitesse du vent (climatologie): {spd:.1f} kn")
         return spd > 20
+
+
+def get_wind_series(latitude, longitude, start, end, username=None, password=None):
+    """Série horaire WIND L4 (hindcast). Liste de {t, speedKnots, dirFromDeg}."""
+    start_date = _as_dt(start, datetime.now() - timedelta(days=3))
+    end_date = _as_dt(end, datetime.now() - timedelta(days=1))
+    try:
+        dataset = _cm_open(
+            dataset_id="cmems_obs-wind_glo_phy_nrt_l4_0.125deg_PT1H",
+            username=username,
+            password=password,
+            variables=["eastward_wind", "northward_wind"],
+            minimum_longitude=longitude - 0.1,
+            maximum_longitude=longitude + 0.1,
+            minimum_latitude=latitude - 0.1,
+            maximum_latitude=latitude + 0.1,
+            start_datetime=start_date.strftime("%Y-%m-%d"),
+            end_datetime=end_date.strftime("%Y-%m-%d"),
+            coordinates_selection_method="nearest",
+        )
+        point = dataset.sel(latitude=latitude, longitude=longitude, method="nearest")
+        times = point.time.values
+        out = []
+        for i, ts in enumerate(times):
+            u = float(point["eastward_wind"].isel(time=i).values)
+            v = float(point["northward_wind"].isel(time=i).values)
+            if math.isnan(u) or math.isnan(v):
+                continue
+            _ms, kn, from_deg = uv_to_wind_from(u, v)
+            if isinstance(ts, np.datetime64):
+                iso = pd.Timestamp(ts).tz_localize("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                iso = str(ts)
+            out.append({"t": iso, "speedKnots": kn, "dirFromDeg": from_deg, "u": u, "v": v})
+        return out
+    except Exception as exc:
+        print(f"cmems wind series: {exc}")
+        return []

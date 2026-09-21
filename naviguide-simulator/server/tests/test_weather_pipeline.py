@@ -1,8 +1,13 @@
 import threading
 from datetime import datetime, timedelta, timezone
 
-from saildocs import last_ready_cycle, to_iso
+from hindcast import MS_TO_KN, uv_to_current_to, uv_to_wind_from
+from saildocs import knots_from_uv, last_ready_cycle, to_iso
+from voyage_clock import MS_TO_KN as CLOCK_MS_TO_KN
 from weather_pipeline import WeatherPipeline, cache_key, forecast_cycle, weather_cell
+
+# 1 kn = 1852 m/h exactement → 1 m/s = 3600/1852 kn.
+EXACT_MS_TO_KN = 3600.0 / 1852.0
 
 
 def test_bind_ignores_async_client_transport():
@@ -156,3 +161,47 @@ def test_snapshot_group_pending_until_every_product_ready():
     assert ready["status"] == "ready"
     assert ready["wind"]["source"] == "wind"
     assert ready["wave"]["source"] == "wave"
+
+
+def test_ms_to_kn_is_1852_metre_nautical_mile():
+    """Lot C5 — 1 m/s → 1,943844 kn (horloge, hindcast, cube).
+
+    3600/1852 = 1,94384449… ; le code tronque à 6 décimales (écart ~5e-7,
+    noté dans la PR, non corrigé).
+    """
+    assert MS_TO_KN == 1.943844
+    assert CLOCK_MS_TO_KN == 1.943844
+    assert abs(MS_TO_KN - EXACT_MS_TO_KN) < 1e-6
+    kn, _ = uv_to_current_to(1.0, 0.0)
+    assert abs(kn - 1.943844) < 1e-6
+    kn_w, _ = uv_to_wind_from(1.0, 0.0)
+    assert abs(kn_w - 1.943844) < 1e-6
+    kn_s, _ = knots_from_uv(1.0, 0.0)
+    assert kn_s == 1.94
+
+
+def test_current_uo_east_vo_zero_is_toward_90():
+    """Courant « vers » : uo = 1, vo = 0 → 90° (est)."""
+    kn, to_deg = uv_to_current_to(1.0, 0.0)
+    assert abs(kn - MS_TO_KN) < 1e-6
+    assert to_deg == 90.0
+    _, to_north = uv_to_current_to(0.0, 1.0)
+    assert to_north == 0.0
+
+
+def test_wind_and_waves_use_meteorological_from():
+    """Vent et vagues « de » : u = 1, v = 0 (vers l'est) vient de l'ouest = 270°."""
+    kn, from_deg = uv_to_wind_from(1.0, 0.0)
+    assert abs(kn - MS_TO_KN) < 1e-6
+    assert from_deg == 270.0
+    _, from_south = uv_to_wind_from(0.0, 1.0)
+    assert from_south == 180.0
+    # Même vecteur : « de » = « vers » + 180°. VMDR est déjà « de » (pas +180).
+    _, to_deg = uv_to_current_to(1.0, 0.0)
+    assert abs((from_deg - to_deg) % 360 - 180.0) < 1e-9
+    from inspect import getsource
+    import hindcast
+    marine = getsource(hindcast._fetch_om_marine)
+    assert "waveDirFromDeg" in marine
+    assert "wave_direction" in marine
+    assert "+ 180" not in marine

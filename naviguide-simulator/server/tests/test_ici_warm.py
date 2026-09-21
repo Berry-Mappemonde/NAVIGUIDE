@@ -101,6 +101,15 @@ def test_official_pearls_endpoint_lists_canonical_positions(tmp_path, monkeypatc
     assert thin_cache_key(la, lo, 30, 9) == thin_cache_key(la, lo, 30, None)
 
 
+def test_status_exposes_llm_budget_counters():
+    st = ici_warm.status()
+    assert "llm" in st
+    for tier in ("fast", "write", "judge"):
+        assert set(st["llm"][tier]) >= {"tokens", "calls", "usd"}
+        assert st["llm"][tier]["tokens"] == 0
+        assert st["llm"][tier]["calls"] == 0
+
+
 def test_warmer_is_disabled_by_env(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_ICI_WARM", "0")
     assert ici_warm.warm_enabled() is False

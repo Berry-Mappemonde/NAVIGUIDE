@@ -1,6 +1,8 @@
 """API voyage — bateau virtuel (Simulation B), port 8010."""
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -12,6 +14,8 @@ from pydantic import BaseModel, Field
 from admin_guard import is_admin, rate_limited, require_admin
 from climatology_atlas import corridor_cells, prefetch_atlas_cells
 from forecast_blend import FORECAST_BLEND_END_HOURS, make_wind_fn
+from hindcast import at as hindcast_at
+from hindcast import hindcast_enabled, series as hindcast_series
 from forecast_cube import (
     CACHE_TTL_H,
     CUBE_MAX_BYTES,
@@ -42,6 +46,7 @@ from voyage_clock import (
     OFFICIAL_T0,
     OFFICIAL_VOYAGE_ID,
     build_voyage_clock,
+    official_clock_params,
     parse_iso,
     sample_clock_at_time,
     to_iso,
@@ -132,28 +137,70 @@ def _climo_clock(voy: dict) -> dict:
     )
 
 
+def _hindcast_lookup(lat: float, lon: float, t: datetime):
+    if not hindcast_enabled():
+        return None
+    try:
+        return hindcast_at(lat, lon, t)
+    except Exception:
+        return None
+
+
 def _clock_with_cube(voy: dict, cube) -> dict:
     t0 = parse_iso(voy["t0"])
+    now = _now()
     return build_voyage_clock(
         voy.get("points") or [],
         voy.get("marks") or [],
         t0,
         polar_raw=_polar_raw(voy.get("expedition_id") or ""),
         start_at=voy.get("startAt") or "la-rochelle",
-        wind_fn=make_wind_fn(t0, cube),
+        wind_fn=make_wind_fn(t0, cube, now=now, hindcast_fn=_hindcast_lookup),
     )
 
 
-def _fill_forecast(voyage_id: str) -> None:
+def _prefetch_hindcast(voy: dict, now: datetime) -> int:
+    """Une série par (point arrondi, jour) déjà visité — le cache évite le retéléchargement."""
+    if not hindcast_enabled():
+        return 0
+    clock = voy.get("clock") or _climo_clock(voy)
+    seen: set[tuple] = set()
+    n = 0
+    for v in clock.get("vertices") or []:
+        iso = v.get("iso")
+        if not iso or v.get("lat") is None:
+            continue
+        t = parse_iso(iso)
+        if t >= now:
+            continue
+        day = t.strftime("%Y-%m-%d")
+        key = (round(float(v["lat"]), 3), round(float(v["lon"]), 3), day)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            hindcast_series(v["lat"], v["lon"], day)
+            n += 1
+        except Exception as exc:
+            log.info("hindcast prefetch %s: %s", key, exc)
+        if n >= 800:
+            break
+    return n
+
+
+def _fill_hindcast_then_forecast(voyage_id: str) -> None:
     voy = load_voyage(voyage_id)
     if voy is None:
         return
+    now = _now()
     try:
+        if hindcast_enabled():
+            _prefetch_hindcast(voy, now)
         t0 = parse_iso(voy["t0"])
         live_nm = 0.0
         clock = voy.get("clock")
         if clock:
-            sample = sample_clock_at_time(clock, _now())
+            sample = sample_clock_at_time(clock, now)
             if sample:
                 live_nm = float(sample.get("sailNm") or 0)
         cube = build_voyage_cube(voy.get("points") or [], t0, from_sail_nm=live_nm)
@@ -165,21 +212,33 @@ def _fill_forecast(voyage_id: str) -> None:
         update_voyage(
             voyage_id,
             forecastStatus="ready",
+            hindcastStatus="ready" if hindcast_enabled() else "skipped",
             forecastModel=cube.model,
             waveModel=cube.wave_model,
             cubeBytes=cube.estimate_bytes(),
-            forecastRefreshedAt=to_iso(_now()),
+            forecastRefreshedAt=to_iso(now),
+            hindcastRefreshedAt=to_iso(now),
             clock=clock,
         )
+        _journal_safely(lambda: journal.record_wx_from_hindcast(clock, now))
     except Exception as exc:
-        log.warning("prévision indisponible pour %s: %s", voyage_id, exc)
+        log.warning("hindcast/prévision indisponible pour %s: %s", voyage_id, exc)
         voy = load_voyage(voyage_id) or voy
+        climo = voy.get("clock") or _climo_clock(voy)
+        if climo.get("kind") != "climatology":
+            climo = {**climo, "kind": "climatology"}
         update_voyage(
             voyage_id,
             forecastStatus="unavailable",
+            hindcastStatus="unavailable",
             forecastModel=None,
-            clock=voy.get("clock") or _climo_clock(voy),
+            clock=climo,
         )
+
+
+def _fill_forecast(voyage_id: str) -> None:
+    """Alias lot C2 : hindcast puis prévision."""
+    _fill_hindcast_then_forecast(voyage_id)
 
 
 def _is_official(voyage_id: str) -> bool:
@@ -205,11 +264,13 @@ def _public_meta(voy: dict) -> dict:
         "follow": voy.get("follow", True),
         "official": official,
         "forecastStatus": voy.get("forecastStatus"),
+        "hindcastStatus": voy.get("hindcastStatus"),
         "forecastModel": voy.get("forecastModel"),
         "waveModel": voy.get("waveModel"),
         "startAt": voy.get("startAt"),
         "cubeBytes": voy.get("cubeBytes"),
         "forecastRefreshedAt": voy.get("forecastRefreshedAt"),
+        "hindcastRefreshedAt": voy.get("hindcastRefreshedAt"),
         "disclaimer": {
             "notForNav": "Ne convient pas à la navigation.",
         },
@@ -280,6 +341,117 @@ def _splice_points(points: List[dict], from_nm: float, to_nm: float,
     return _recompute_cum(before + mid + after)
 
 
+# Lot L5 / U8 — écart officiel vs recalcul (règles) puis phrase tier fast.
+AVOID_NM = 10.0
+ADVICE_SYSTEM = (
+    "Tu expliques un recalcul de route en UNE phrase. "
+    "Tu ne produis aucun chiffre qui n'est pas déjà dans les faits. "
+    "Reprend l'écart et les points évités. Thinking OFF."
+)
+
+
+def _run_async(coro):
+    return asyncio.run(coro)
+
+
+def route_delta(
+    old_coords: List[List[float]] | None,
+    new_coords: List[List[float]] | None,
+    *,
+    official_nm: float | None,
+    recomputed_nm: float | None,
+) -> dict[str, Any]:
+    """Distance, écart max et points évités — calculés par règles, jamais par un LLM.
+
+    Coordonnées GeoJSON `[lon, lat]`. Un point officiel est « évité » s'il
+    reste à ≥ AVOID_NM nm de tout sommet de la route recalculée.
+    """
+    old = [(float(c[1]), float(c[0])) for c in (old_coords or []) if c and len(c) >= 2]
+    new = [(float(c[1]), float(c[0])) for c in (new_coords or []) if c and len(c) >= 2]
+    max_dev = 0.0
+    avoided = 0
+    if old and new:
+        for la, lo in old:
+            d = min(haversine(la, lo, na, no) for na, no in new)
+            if d > max_dev:
+                max_dev = d
+            if d >= AVOID_NM:
+                avoided += 1
+    off = int(round(float(official_nm or 0)))
+    rec = int(round(float(recomputed_nm or 0)))
+    return {
+        "official_nm": off,
+        "recomputed_nm": rec,
+        "distance_delta_nm": abs(rec - off),
+        "max_deviation_nm": int(round(max_dev)),
+        "avoided_points": int(avoided),
+    }
+
+
+def advice_facts(delta: dict[str, Any], constraints: dict[str, Any] | None = None) -> dict[str, Any]:
+    facts = {
+        "official_nm": delta.get("official_nm"),
+        "recomputed_nm": delta.get("recomputed_nm"),
+        "distance_delta_nm": delta.get("distance_delta_nm"),
+        "max_deviation_nm": delta.get("max_deviation_nm"),
+        "avoided_points": delta.get("avoided_points"),
+    }
+    cons = constraints or {}
+    if cons.get("source") == "skipper":
+        if cons.get("windMaxKt") is not None:
+            facts["wind_max_kt"] = int(round(float(cons["windMaxKt"])))
+        if cons.get("hsMaxM") is not None:
+            facts["hs_max_m"] = cons["hsMaxM"]
+    return facts
+
+
+def advice_fallback(facts: dict[str, Any]) -> str:
+    """Une phrase dont tous les nombres sont déjà dans `facts`."""
+    dev = facts.get("max_deviation_nm")
+    avoided = facts.get("avoided_points")
+    wind = facts.get("wind_max_kt")
+    off = facts.get("official_nm")
+    rec = facts.get("recomputed_nm")
+    if wind is not None and avoided:
+        return f"La route s'écarte de {dev} nm pour éviter {avoided} points (vent < {wind} kn)."
+    if avoided:
+        return f"La route s'écarte de {dev} nm pour éviter {avoided} points."
+    return f"La route s'écarte de {dev} nm (distance {off} nm → {rec} nm)."
+
+
+async def explain_recompute(
+    delta: dict[str, Any],
+    constraints: dict[str, Any] | None = None,
+    *,
+    client=None,
+    cascade=None,
+) -> dict[str, Any]:
+    """Nemotron Lightning (tier fast) : une phrase qui reprend les nombres du delta."""
+    from story_cascade import cascade_text, filter_numbers, tidy_story  # noqa: PLC0415
+
+    facts = advice_facts(delta, constraints)
+    fallback = advice_fallback(facts)
+    fn = cascade or cascade_text
+    user = (
+        "Faits du recalcul (ne pas inventer de chiffre) :\n"
+        f"{json.dumps(facts, ensure_ascii=False, default=str)}"
+    )
+    try:
+        text, source = await fn(
+            ADVICE_SYSTEM, user, client, tier="fast", fallback=fallback,
+            facts=facts, max_tokens=80,
+        )
+    except Exception as exc:
+        log.debug("explication recalcul : %s", exc)
+        text, source = fallback, "rules"
+    tidy = tidy_story(text or fallback, fallback, max_sentences=1, max_chars=240)
+    cleaned, _ = filter_numbers(tidy, facts)
+    out = (cleaned or "").strip() or fallback
+    if not out:
+        out, source = fallback, "rules"
+    return {"text": out, "source": source or "rules", "delta": facts}
+
+
 def _drop_cube(voyage_id: str) -> None:
     import shutil
     from forecast_cube import CACHE_DIR
@@ -328,6 +500,7 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
         "follow": body.follow,
         "forecast": body.forecast,
         "forecastStatus": "pending" if body.forecast else "unavailable",
+        "hindcastStatus": "pending" if body.forecast else "unavailable",
         "forecastModel": None,
         "startAt": body.startAt,
         "points": body.points,
@@ -353,6 +526,7 @@ def _build_official(body: VoyageCreate) -> dict:
         "forecast": False,
         "official": True,
         "forecastStatus": "unavailable",
+        "hindcastStatus": "pending",
         "forecastModel": None,
         "startAt": "la-rochelle",
         "points": body.points,
@@ -421,6 +595,67 @@ def _official_grib_refreshing() -> bool:
     return get_pipeline().provider_busy("official-grib")
 
 
+def _regime_portions(clock: dict) -> list:
+    portions = []
+    current = None
+    for v in clock.get("vertices") or []:
+        regime = v.get("regime") or v.get("kind") or "climatology"
+        if current is None or current["regime"] != regime:
+            if current:
+                portions.append(current)
+            current = {
+                "regime": regime,
+                "fromNm": v.get("sailNm"),
+                "toNm": v.get("sailNm"),
+                "fromIso": v.get("iso"),
+                "toIso": v.get("iso"),
+                "sources": list(v.get("sources") or []),
+                "spread": v.get("spread"),
+            }
+        else:
+            current["toNm"] = v.get("sailNm")
+            current["toIso"] = v.get("iso")
+            for src in v.get("sources") or []:
+                if src not in current["sources"]:
+                    current["sources"].append(src)
+            if v.get("spread") is not None:
+                prev = current.get("spread")
+                current["spread"] = v["spread"] if prev is None else max(prev, v["spread"])
+    if current:
+        portions.append(current)
+    return portions
+
+
+def _kick_official_hindcast(*, force: bool = False) -> bool:
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        _fill_hindcast_then_forecast(OFFICIAL_VOYAGE_ID)
+        return {}
+
+    return get_pipeline().kick(
+        "official-hindcast",
+        0.0,
+        0.0,
+        _load,
+        force=force,
+    )
+
+
+def _maybe_daily_hindcast(voy: dict) -> None:
+    last = voy.get("hindcastRefreshedAt")
+    if last:
+        try:
+            age_h = (_now() - parse_iso(last)).total_seconds() / 3600.0
+        except Exception:
+            age_h = 99.0
+        if age_h < 20.0 and voy.get("hindcastStatus") == "ready":
+            return
+    _kick_official_hindcast(force=False)
+
+
 def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
     voy = load_voyage(voyage_id)
     pts = (voy or {}).get("points") or []
@@ -472,10 +707,12 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
             save_voyage(existing)
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
         background.add_task(_kick_official_grib)
+        background.add_task(_kick_official_hindcast)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
     voy = _build_official(body)
     background.add_task(_kick_official_grib)
+    background.add_task(_kick_official_hindcast)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
@@ -488,6 +725,7 @@ def get_official():
         **_public_meta(voy),
         "points": voy.get("points"),
         "marks": voy.get("marks"),
+        "params": official_clock_params(),
     }
 
 
@@ -496,8 +734,24 @@ def get_official_clock():
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
+    _maybe_daily_hindcast(voy)
     _journal_safely(lambda: journal.tick(voy, _now()))
     return voy.get("clock") or _climo_clock(voy)
+
+
+@router.get("/voyage/official/regimes")
+def get_official_regimes():
+    """Portions de route par régime (hindcast / forecast / climatology)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    clock = voy.get("clock") or _climo_clock(voy)
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "kind": clock.get("kind") or "climatology",
+        "hindcastStatus": voy.get("hindcastStatus"),
+        "portions": _regime_portions(clock),
+    }
 
 
 class JournalNoteIn(BaseModel):
@@ -524,15 +778,30 @@ def get_official_journal(
     return {"voyageId": OFFICIAL_VOYAGE_ID, **out}
 
 
-@router.get("/voyage/official/plan-review")
-def get_official_plan_review():
-    """Revue de plan par règles (lot K) : par jambe, calendrier, ZEE et ports
-    d'entrée (perles), AMP, drapeaux — jamais un chiffre inventé."""
+@router.get("/voyage/official/eta")
+def get_official_eta(stop: str = Query(..., min_length=1)):
+    """Fourchette d'arrivée p10–p90 (ensembles). Sans membres : `{members: 0}`."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    from plan_review import review_official  # noqa: PLC0415
-    return review_official(voy, _now())
+    from ensemble_eta import official_eta  # noqa: PLC0415
+    return official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
+
+
+@router.get("/voyage/official/plan-review")
+def get_official_plan_review():
+    """Revue de plan par règles (lot K) + commentaire U7 (lot L5)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    from plan_review import comment_plan, review_official  # noqa: PLC0415
+    out = review_official(voy, _now())
+    try:
+        out["comment"] = _run_async(comment_plan(out.get("legs") or []))
+    except Exception as exc:
+        log.warning("commentaire revue : %s", exc)
+        out["comment"] = {"text": "", "source": "rules", "cached": False}
+    return out
 
 
 @router.get("/voyage/official/journal/{day}")
@@ -631,6 +900,8 @@ def official_at(t: Optional[str] = Query(None)):
     around = _grib_around_from_live(voy, when)
     grib = _latest_official_grib(around, when)
     wind = wind_at_daily(grib, float(sample.get("lat") or 0), float(sample.get("lon") or 0), when)
+    sample["regime"] = sample.get("regime") or sample.get("kind") or "climatology"
+    sample["sources"] = list(sample.get("sources") or [])
     if wind:
         sample["kind"] = "forecast"
         sample["model"] = wind.get("model")
@@ -770,18 +1041,21 @@ def get_at(voyage_id: str, t: Optional[str] = Query(None)):
     if sample is None:
         raise HTTPException(404, "horloge vide")
     t0 = parse_iso(voy["t0"])
-    hours = (when - t0).total_seconds() / 3600.0
-    if hours > FORECAST_BLEND_END_HOURS and sample.get("kind") == "forecast":
+    hours_from_now = (when - _now()).total_seconds() / 3600.0
+    if hours_from_now > FORECAST_BLEND_END_HOURS and sample.get("kind") == "forecast":
         sample["kind"] = "climatology"
+        sample["regime"] = "climatology"
         sample["leadHours"] = None
         sample["model"] = None
+    sample["regime"] = sample.get("regime") or sample.get("kind") or "climatology"
+    sample["sources"] = list(sample.get("sources") or [])
     sample["voyageId"] = voyage_id
     sample["forecastStatus"] = voy.get("forecastStatus")
     sample["forecastModel"] = voy.get("forecastModel")
     sample["t"] = to_iso(when)
     if sample.get("kind") == "forecast":
-        # Lead time = hours since t0 (not the wind at the start of the edge).
-        sample["leadHours"] = round(max(0.0, hours), 1)
+        # Lead time = heures depuis maintenant (origine du cube), plus depuis t0.
+        sample["leadHours"] = round(max(0.0, hours_from_now), 1)
         if not sample.get("model"):
             sample["model"] = voy.get("forecastModel")
     return sample
@@ -842,7 +1116,7 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         corridor.append((float(dest["lat"]), float(dest["lon"])))
     months = {when.month, (when + timedelta(days=30)).month}
     prefetch_atlas_cells(corridor_cells(corridor, months), budget_s=ATLAS_PREFETCH_BUDGET_S)
-    wind_fn = make_wind_fn(t0, cube, atlas_network=False)
+    wind_fn = make_wind_fn(t0, cube, atlas_network=False, now=_now(), hindcast_fn=_hindcast_lookup)
     versus_hours = None
     for m in clock.get("marks") or []:
         if m.get("name") == dest.get("name"):
@@ -893,6 +1167,18 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         "from_lat": live["lat"],
         "from_lon": live["lon"],
     }
+    new_coords = (result.get("draft_geojson") or {}).get("geometry", {}).get("coordinates") or []
+    delta = route_delta(
+        old_coords, new_coords,
+        official_nm=versus_nm,
+        recomputed_nm=result.get("distance_nm"),
+    )
+    try:
+        draft["advice"] = _run_async(explain_recompute(delta, draft.get("constraints")))
+    except Exception as exc:
+        log.warning("explication recalcul : %s", exc)
+        facts = advice_facts(delta, draft.get("constraints"))
+        draft["advice"] = {"text": advice_fallback(facts), "source": "rules", "delta": facts}
     update_voyage(voyage_id, draft=draft)
     return draft
 

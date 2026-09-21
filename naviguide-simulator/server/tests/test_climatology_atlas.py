@@ -9,6 +9,7 @@ from climatology_atlas import (
     corridor_cells,
     prefetch_atlas_cells,
     reset_atlas_cache,
+    rose_speed_percentiles,
     wind_from_point,
 )
 from climatology_zones import zone_wind_at
@@ -143,3 +144,24 @@ def test_climatology_block_atlas_when_point_answers(monkeypatch):
     assert block["crossings"]["count"] == 2
     assert block["point"]["wave"]["hs_p90_m"] == 2.8
     assert block["kind"] == "climatology"
+
+
+def test_c4_rose_speed_percentiles_from_sectors():
+    rose = {
+        "most_likely": {"speed_knots": 16.0, "dir_deg": 45},
+        "directions_from": [
+            {"dir_deg": 0, "pct": 25, "speed_knots": 8.0},
+            {"dir_deg": 45, "pct": 50, "speed_knots": 16.0},
+            {"dir_deg": 90, "pct": 25, "speed_knots": 22.0},
+        ],
+    }
+    p25, p50, p75 = rose_speed_percentiles(rose)
+    assert p25 <= p50 <= p75
+    assert p25 == 8.0
+    assert p50 == 16.0
+    w = wind_from_point({
+        "kind": "climatology",
+        "wind_atlas": rose,
+    })
+    assert w["roseKnots"] == [p25, p50, p75]
+    assert rose_speed_percentiles({"most_likely": {"speed_knots": 16}}) is None

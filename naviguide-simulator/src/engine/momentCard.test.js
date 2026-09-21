@@ -3,17 +3,24 @@ import assert from "node:assert/strict";
 import {
   LANE_FREE,
   LANE_NOW,
+  FREE_STALE_NM,
   STALE_CARD_NM,
   TTL,
   advanceMoments,
   cardFromEvent,
+  cardFromJournalEntry,
   cardSpeech,
+  newsExpired,
+  eventTruth,
+  strikeParts,
+  truthForCard,
   classifyMoment,
   dismissNow,
   emptyMoments,
   entityForEvent,
   escaleCard,
   infoItemsFromBag,
+  isFreeStale,
   isStaleCard,
   nextFree,
 } from "./momentCard.js";
@@ -91,6 +98,85 @@ describe("classifyMoment — deux voies (arbitrage du 19 sept.)", () => {
 });
 
 describe("cartes", () => {
+  it("lot F2: cardFromJournalEntry rend climo et sci (titre non vide, icône via journal)", () => {
+    const climo = cardFromJournalEntry({
+      id: "climo:rose:1",
+      kind: "climo",
+      event: "rose",
+      t: "2026-06-02T12:00:00Z",
+      lat: 22.0,
+      lon: -40.0,
+      title: { fr: "Changement de régime", en: "Regime change" },
+      facts: { fromDeg: 45, toDeg: 165, deltaDeg: 120 },
+    }, "fr");
+    assert.equal(climo.kind, "climo");
+    assert.ok(climo.title && climo.title.length > 0);
+    assert.match(climo.title, /Changement de régime/);
+    assert.match(climo.text, /120/);
+    assert.equal(climo.entity.lat, 22);
+    const sci = cardFromJournalEntry({
+      id: "sci:pirata",
+      kind: "sci",
+      event: "nearby",
+      t: "2026-06-10T06:00:00Z",
+      lat: 14.5,
+      lon: -50.0,
+      name: "PIRATA",
+      facts: { nm: 6, name: "PIRATA" },
+      entity: { kind: "science", name: "PIRATA", lat: 14.6, lon: -50.1, url: "https://www.pmel.noaa.gov/pirata/", source: "argo" },
+    }, "en");
+    assert.equal(sci.kind, "sci");
+    assert.ok(sci.title);
+    assert.match(sci.title, /Station passed/);
+    assert.match(sci.text, /PIRATA/);
+    assert.equal(sci.entity.kind, "science");
+    assert.equal(sci.entity.url, "https://www.pmel.noaa.gov/pirata/");
+    assert.equal(cardFromJournalEntry({ kind: "grib", t: "2026-05-15T12:00:00Z" }), null);
+  });
+
+  it("lot L4: carte FREE news datée, lien, expire à J+2 ; phrase science sourcée", () => {
+    const entry = {
+      id: "news:noumea:2026-09-20",
+      kind: "news",
+      t: "2026-09-20T12:00:00Z",
+      expires: "2026-09-23T00:00:00Z",
+      name: "Nouméa",
+      text: "Travaux annoncés à la marina de Motu Uta",
+      url: "https://www.portautonome.nc/avis",
+      source: "nemotron-lightning",
+    };
+    const card = cardFromJournalEntry(entry, "fr", Date.parse("2026-09-20T15:00:00Z"));
+    assert.equal(card.lane, LANE_FREE);
+    assert.equal(card.kind, "news");
+    assert.match(card.title, /Nouméa/);
+    assert.match(card.title, /veille du/);
+    assert.match(card.text, /Travaux/);
+    assert.equal(card.entity.url, "https://www.portautonome.nc/avis");
+    assert.equal(cardFromJournalEntry(entry, "fr", Date.parse("2026-09-23T00:00:00Z")), null);
+    assert.equal(newsExpired({ ...entry, expires: "2026-09-22T00:00:00Z" }, Date.parse("2026-09-22T00:00:00Z")), true);
+
+    const withNews = {
+      ...bagFreeOnly,
+      news: [entry],
+      science: {
+        nearby: [{
+          name: "IRD Nouméa", nm: 2, lat: 46.15, lon: -1.16, source: "ird",
+          url: "https://www.ird.fr/noumea",
+          enrich: { text: "L'IRD observe le climat du Pacifique Sud.", url: "https://www.ird.fr/noumea" },
+        }],
+      },
+    };
+    const items = infoItemsFromBag(withNews, "fr");
+    const news = items.find((c) => c.kind === "news");
+    assert.ok(news);
+    assert.equal(news.lane, LANE_FREE);
+    assert.match(news.title, /Nouméa · veille du/);
+    assert.equal(news.entity.url, entry.url);
+    const sci = items.find((c) => c.kind === "science");
+    assert.match(sci.text, /IRD observe le climat/);
+    assert.equal(isFreeStale(news, { lat: 46.15, lon: -1.17 }), false);
+  });
+
   it("cardFromEvent : texte de phraseForEvent, entité du payload, liens", () => {
     const card = cardFromEvent(poeAhead, "fr");
     assert.equal(card.lane, LANE_NOW);
@@ -100,6 +186,33 @@ describe("cartes", () => {
     assert.equal(card.entity.url, "https://www.douane.gouv.fr/x");
     assert.equal(entityForEvent(gale), null);
     assert.equal(cardSpeech(card), card.text);
+  });
+
+  it("truth : champ porté, affirmations unsupported barrées jamais retirées", () => {
+    const ev = {
+      ...poeAhead,
+      payload: {
+        ...poeAhead.payload,
+        poe: { ...poeAhead.payload.poe, truth: { status: "verified", checkedAt: "2026-09-20T12:00:00Z", unsupported: ["Visa 90 jours"] } },
+      },
+    };
+    const card = cardFromEvent(ev, "fr");
+    assert.equal(card.truth.status, "verified");
+    assert.deepEqual(card.truth.unsupported, ["Visa 90 jours"]);
+    assert.equal(eventTruth(ev).status, "verified");
+    const fromBag = truthForCard({ entity: { url: "https://www.douane.gouv.fr/x", name: "La Rochelle - La Pallice" } }, {
+      poe: [{ name: "La Rochelle - La Pallice", url: "https://www.douane.gouv.fr/x", truth: card.truth }],
+    });
+    assert.equal(fromBag.status, "verified");
+    const text = "Port d'entrée Fort-de-France (Gold). Visa 90 jours.";
+    const parts = strikeParts(text, ["Visa 90 jours"]);
+    const struck = parts.filter((p) => p.strike).map((p) => p.text).join("");
+    const kept = parts.map((p) => p.text).join("");
+    assert.match(struck, /Visa 90 jours/);
+    assert.equal(kept, text);
+    const extra = strikeParts("Port d'entrée Fort-de-France (Gold).", ["Visa 90 jours"]);
+    assert.ok(extra.some((p) => p.strike && p.text === "Visa 90 jours" && p.extra));
+    assert.ok(extra.some((p) => !p.strike && p.text.includes("Fort-de-France")));
   });
 
   it("infoItemsFromBag : lieux, AMP, câble, image satellite, climatologie — clés stables", () => {
@@ -112,7 +225,7 @@ describe("cartes", () => {
     assert.equal(marina.entity.url, "https://port-la-rochelle.fr");
     assert.equal(items[4].entity.url, "https://www.paysdelaloire.fr/x");
     assert.equal(items[5].text, "bouée latérale à 4,6 nm.");
-    assert.match(items[6].text, /Dernière image satellite : Sentinel-2 \(S2A, tuile T30TXR\)/);
+    assert.match(items[6].text, /Dernière image satellite \(CDSE\) : Sentinel-2 \(S2A, tuile T30TXR\)/);
     assert.match(items[7].text, /câble sous-marin/);
     assert.match(items[8].text, /Climatologie de septembre/);
     assert.equal(infoItemsFromBag(bag, "en")[0].title, "Marina");
@@ -274,5 +387,52 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     e = nextFree(e, 1);
     assert.equal(e.free, null);
     assert.equal(nextFree(e, 2), e);
+  });
+
+  it("lot T : carte à 90 nm exclue de la boucle FREE, à 30 nm gardée", () => {
+    assert.equal(FREE_STALE_NM, 60);
+    const boat = { lat: 18.1, lon: -16.9 };
+    const bag = {
+      at: boat,
+      nearby: {
+        marinas: [],
+        capitaineries: [],
+        wpi: [
+          { name: "Nouadhibou", nm: 30, lat: 18.6, lon: -16.9 },
+          { name: "Port Bourgenay", nm: 90, lat: 46.48, lon: -1.78 },
+        ],
+        anchorages: [],
+      },
+    };
+    const items = infoItemsFromBag(bag, "fr");
+    assert.ok(items.some((c) => c.entity?.rawName === "Nouadhibou"), "30 nm : gardée");
+    assert.ok(!items.some((c) => /Bourgenay/i.test(c.entity?.rawName || c.text || "")), "90 nm : exclue");
+
+    const farCard = {
+      key: "bag:wpi:far",
+      origin: "bag",
+      lane: LANE_FREE,
+      kind: "wpi",
+      text: "Port Bourgenay à 90 nm.",
+      entity: { name: "Port Bourgenay", rawName: "Port Bourgenay", lat: 46.48, lon: -1.78, nm: 90 },
+    };
+    const nearCard = {
+      key: "bag:wpi:near",
+      origin: "bag",
+      lane: LANE_FREE,
+      kind: "wpi",
+      text: "Nouadhibou à 30 nm.",
+      entity: { name: "Nouadhibou", rawName: "Nouadhibou", lat: 18.6, lon: -16.9, nm: 30 },
+    };
+    let s = {
+      ...emptyMoments(),
+      legId: "A",
+      seen: new Set([farCard.key, nearCard.key]),
+      freeLoop: [farCard, nearCard],
+    };
+    s = advanceMoments(s, { events: [], bag, filmCum: 0, nowMs: 0, playing: false, legId: "A" });
+    const around = [s.free, ...s.freeQueue, ...s.freeLoop].filter(Boolean);
+    assert.ok(around.some((c) => /Nouadhibou/i.test(c.entity?.rawName || c.text || "")), "30 nm reste dans la boucle");
+    assert.ok(!around.some((c) => /Bourgenay/i.test(c.entity?.rawName || c.text || "")), "90 nm sort de la boucle");
   });
 });

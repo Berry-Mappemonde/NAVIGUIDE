@@ -192,6 +192,18 @@ def _normalize_antimeridian(coords: list, prev_lon: float) -> list:
     return result
 
 
+def wrap_lon(lon: float) -> float:
+    """Replie une longitude dans [−180, 180] : ((lon + 540) % 360) − 180."""
+    return ((float(lon) + 540.0) % 360.0) - 180.0
+
+
+def unwrap_path(coords: list, ref_lon: float) -> list:
+    """Déplie une polyligne relativement à *ref_lon* (aucun saut de 360°)."""
+    if not coords:
+        return []
+    return _normalize_antimeridian(list(coords), float(ref_lon))
+
+
 def _reroute_segment(a: list, b: list) -> list:
     """
     Try to replace a land-crossing direct segment [a→b] with a proper
@@ -556,6 +568,10 @@ def searoute_with_exact_end(start, end):
     """
     import copy
 
+    # searoute attend [−180, 180] ; une lon dépliée (SF à 236,84°) partait au Béring.
+    start = (wrap_lon(start[0]), start[1])
+    end = (wrap_lon(end[0]), end[1])
+
     cache_key = _route_cache_key(start, end)
     canonical_start = (round(start[0], 4), round(start[1], 4))
 
@@ -629,6 +645,8 @@ def searoute_with_exact_end(start, end):
     #           iterative scan catches and reroutes any remaining crossings.
     coords = avoid_land(coords, max_iterations=5)
 
+    # Continu relativement au départ replié : pas de saut ±360° entre deux sommets.
+    coords = _normalize_antimeridian(coords, start[0])
     route["geometry"]["coordinates"] = coords
 
     # Store in bidirectional cache so the reverse leg reuses this result

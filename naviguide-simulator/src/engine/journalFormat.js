@@ -47,7 +47,10 @@ export function formatDay(day, lang = "fr") {
   });
 }
 
-export const KIND_ICON = Object.freeze({ position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟", poe: "🛃", wx: "⚠️", chat: "💬" });
+export const KIND_ICON = Object.freeze({
+  position: "📍", stop: "⚓", grib: "🌬", note: "📝", zee: "🛂", amp: "🐟",
+  poe: "🛃", wx: "⚠️", chat: "💬", climo: "🧭", sci: "🔬", news: "📰",
+});
 
 /** One journal entry → { icon, time, text }. Unknown kinds keep their raw kind. */
 export function formatJournalEntry(entry, lang = "fr") {
@@ -75,9 +78,12 @@ export function formatJournalEntry(entry, lang = "fr") {
         ? (en ? `Departure from ${name}` : `Départ de ${name}`)
         : (en ? `Arrival at ${name}` : `Arrivée à ${name}`);
       if (e.event !== "departure" && Number.isFinite(e.holdHours) && e.holdHours > 0) {
-        const days = Math.round(e.holdHours / 24);
+        const days = Number.isFinite(e.daysAtQuay) ? e.daysAtQuay : Math.round(e.holdHours / 24);
         text += en ? ` · ${days} day${days > 1 ? "s" : ""} alongside` : ` · ${days} jour${days > 1 ? "s" : ""} à quai`;
       }
+      const sights = Array.isArray(e.sights) ? e.sights : (e.facts && Array.isArray(e.facts.sights) ? e.facts.sights : []);
+      const named = sights.map((s) => (typeof s === "string" ? s : s?.name)).filter(Boolean).slice(0, 2);
+      if (named.length) text += ` · ${named.join(" · ")}`;
       break;
     }
     case "grib": {
@@ -127,8 +133,60 @@ export function formatJournalEntry(entry, lang = "fr") {
         parts.push(en ? `wind ${num(e.windKnots, lang)} kn${dir ? ` from ${dir}` : ""}` : `vent ${num(e.windKnots, lang)} kn${dir ? ` de ${dir}` : ""}`);
       }
       if (Number.isFinite(e.hs)) parts.push(`Hs ${num(e.hs, lang, 1)} m`);
-      const head = e.event === "sea" ? (en ? "Heavy sea" : "Mer forte") : (en ? "Gale" : "Coup de vent");
+      if (Number.isFinite(e.hours)) parts.push(`${num(e.hours, lang)} h`);
+      const maxW = Number.isFinite(e.maxWindKnots) ? e.maxWindKnots : (e.facts && Number.isFinite(e.facts.maxWindKnots) ? e.facts.maxWindKnots : null);
+      const maxH = Number.isFinite(e.maxHs) ? e.maxHs : (e.facts && Number.isFinite(e.facts.maxHs) ? e.facts.maxHs : null);
+      if (Number.isFinite(maxW)) parts.push(en ? `max ${num(maxW, lang)} kn` : `max ${num(maxW, lang)} kn`);
+      else if (Number.isFinite(maxH)) parts.push(`max Hs ${num(maxH, lang, 1)} m`);
+      const level = e.level || e.facts?.level;
+      let head;
+      if (e.event === "sea") {
+        if (level === "très forte") head = en ? "Very rough sea" : "Mer très forte";
+        else if (level === "forte") head = en ? "Rough sea" : "Mer forte";
+        else head = en ? "Heavy sea" : "Mer forte";
+      } else {
+        head = en ? "Gale" : "Coup de vent";
+      }
       text = `${head}${parts.length ? ` : ${parts.join(" · ")}` : ""}${e.model ? ` (${e.model})` : ""}`;
+      break;
+    }
+    case "climo": {
+      const facts = e.facts && typeof e.facts === "object" ? e.facts : {};
+      if (e.event === "calms") {
+        const kn = Number.isFinite(facts.windKn) ? facts.windKn : e.windKn;
+        text = en
+          ? `Shift to the doldrums${Number.isFinite(kn) ? ` (mean wind ${num(kn, lang, 1)} kn)` : ""}`
+          : `Passage aux calmes${Number.isFinite(kn) ? ` (vent moyen ${num(kn, lang, 1)} kn)` : ""}`;
+      } else if (e.event === "cyclone-enter") {
+        text = en ? "Entering the cyclone season" : "Entrée en saison cyclonique";
+      } else if (e.event === "cyclone-exit") {
+        text = en ? "Leaving the cyclone season" : "Sortie de saison cyclonique";
+      } else {
+        const deg = Number.isFinite(facts.deltaDeg) ? facts.deltaDeg : e.deltaDeg;
+        text = en
+          ? `Dominant wind shifted${Number.isFinite(deg) ? ` by ${num(deg, lang)}°` : ""}`
+          : `Le vent dominant a tourné${Number.isFinite(deg) ? ` de ${num(deg, lang)}°` : ""}`;
+      }
+      break;
+    }
+    case "sci": {
+      const facts = e.facts && typeof e.facts === "object" ? e.facts : {};
+      const name = facts.name || e.name || (en ? "scientific station" : "station scientifique");
+      const nm = Number.isFinite(facts.nm) ? facts.nm : e.nm;
+      const dist = Number.isFinite(nm) ? ` (${num(nm, lang, 1)} nm)` : "";
+      text = en ? `Scientific station passed: ${name}${dist}` : `Station scientifique croisée : ${name}${dist}`;
+      break;
+    }
+    case "news": {
+      const name = e.name || "";
+      const body = e.text || "";
+      const src = e.source || "";
+      const host = (() => {
+        if (!e.url) return src;
+        try { return new URL(e.url).hostname.replace(/^www\./, ""); } catch { return src; }
+      })();
+      const cite = host || src;
+      text = [name, body, cite ? `(${cite})` : ""].filter(Boolean).join(" · ");
       break;
     }
     default:

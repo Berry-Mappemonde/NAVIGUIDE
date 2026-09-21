@@ -177,7 +177,7 @@ export function entityLinks(e) {
   if (e.url) {
     let host = null;
     try { host = new URL(e.url).hostname.replace(/^www\./, ""); } catch { host = null; }
-    links.push({ kind: "site", href: e.url, host });
+    links.push({ kind: e.kind === "source" ? "source" : "site", href: e.url, host });
   }
   if (MAPS_KINDS.has(e.kind)) {
     const maps = googleMapsUrl(e.lat, e.lon);
@@ -211,4 +211,102 @@ export function segmentBriefing(text, entities) {
   if (cursor < src.length) segments.push({ text: src.slice(cursor) });
   if (!segments.length && src) segments.push({ text: src });
   return segments;
+}
+
+/**
+ * Source names the briefing may cite → official sheet.
+ * Aliases (RTOFS, Copernicus, MarineRegions…) share the same URL so a
+ * leftover phrase still becomes one link.
+ */
+export const SOURCE_URLS = Object.freeze({
+  "Open-Meteo": "https://open-meteo.com/",
+  "NOAA/RTOFS": "https://www.ncei.noaa.gov/products/weather-climate-models/rtofs",
+  RTOFS: "https://www.ncei.noaa.gov/products/weather-climate-models/rtofs",
+  EMODnet: "https://emodnet.ec.europa.eu/",
+  GEBCO: "https://www.gebco.net/",
+  "Copernicus Marine": "https://marine.copernicus.eu/",
+  Copernicus: "https://marine.copernicus.eu/",
+  "Marine Regions/VLIZ": "https://www.marineregions.org/",
+  "Marine Regions": "https://www.marineregions.org/",
+  MarineRegions: "https://www.marineregions.org/",
+  OpenStreetMap: "https://www.openstreetmap.org/copyright",
+  "douane.gouv.fr": "https://www.douane.gouv.fr/",
+  CDSE: "https://dataspace.copernicus.eu/",
+});
+
+/** Canonical names the lot lists — each must produce a link when cited. */
+export const KNOWN_SOURCES = Object.freeze([
+  "Open-Meteo",
+  "NOAA/RTOFS",
+  "EMODnet",
+  "GEBCO",
+  "Copernicus Marine",
+  "Marine Regions/VLIZ",
+  "OpenStreetMap",
+  "douane.gouv.fr",
+  "CDSE",
+]);
+
+export function sourceEntity(name) {
+  const url = SOURCE_URLS[name];
+  if (!url) return null;
+  return {
+    id: `source:${name}`,
+    kind: "source",
+    name,
+    rawName: name,
+    lat: null,
+    lon: null,
+    nm: null,
+    url,
+    source: name,
+  };
+}
+
+/** Longest names first so "Copernicus Marine" wins over "Copernicus". */
+const SOURCE_NAMES = Object.freeze(
+  Object.keys(SOURCE_URLS).sort((a, b) => b.length - a.length || a.localeCompare(b)),
+);
+
+export function sourceEntities() {
+  return SOURCE_NAMES.map(sourceEntity).filter(Boolean);
+}
+
+/**
+ * Split leftover briefing text around source names. Leftmost match wins;
+ * at the same index the longer name wins (NOAA/RTOFS before RTOFS).
+ */
+export function segmentSources(text) {
+  const src = text || "";
+  const segments = [];
+  let cursor = 0;
+  while (cursor < src.length) {
+    let best = null;
+    for (const name of SOURCE_NAMES) {
+      const idx = src.indexOf(name, cursor);
+      if (idx < 0) continue;
+      if (!best || idx < best.idx || (idx === best.idx && name.length > best.name.length)) {
+        best = { idx, name };
+      }
+    }
+    if (!best) {
+      segments.push({ text: src.slice(cursor) });
+      break;
+    }
+    if (best.idx > cursor) segments.push({ text: src.slice(cursor, best.idx) });
+    segments.push({ text: best.name, entity: sourceEntity(best.name) });
+    cursor = best.idx + best.name.length;
+  }
+  if (!segments.length && src) segments.push({ text: src });
+  return segments;
+}
+
+/** Places first (sequential), then source names in the leftover spans. */
+export function segmentBriefingWithSources(text, placeEntities) {
+  const out = [];
+  for (const seg of segmentBriefing(text, placeEntities)) {
+    if (seg.entity) out.push(seg);
+    else out.push(...segmentSources(seg.text));
+  }
+  return out;
 }

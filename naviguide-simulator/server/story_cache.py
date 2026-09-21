@@ -1,4 +1,4 @@
-"""Récits pré-générés (lot F, commentaires 6-8 du porteur : sans Nebius).
+"""Récits pré-générés (lot F, bascule L2 / U1).
 
 Le récit LLM d'une carte est prêt **avant** que le bateau y arrive :
 
@@ -7,8 +7,9 @@ Le récit LLM d'une carte est prêt **avant** que le bateau y arrive :
   dépend pas de l'instant du bateau (entrer dans une ZEE, quitter une ZEE,
   aire marine protégée, port d'entrée devant) ; un coup de vent, une alerte
   de profondeur ou un repli restent rédigés à chaud ;
-- `POST /ici/story` lit le cache d'abord, puis la cascade habituelle
-  (NIM → OpenRouter → Claude) et garde le résultat ;
+- `POST /ici/story` lit le cache d'abord, puis `write_story` →
+  `cascade_text(tier="write")` (Token Factory Super → OpenRouter → Claude
+  → règles) et garde le résultat, **avec `source`** ;
 - après les perles, le chauffeur **pré-génère** les récits des événements
   que le film lèvera sur la route officielle (ZEE entrées, ports d'entrée),
   trois en vol, sous un budget journalier (`NAVIGUIDE_STORY_BUDGET_PER_DAY`,
@@ -17,6 +18,7 @@ Le récit LLM d'une carte est prêt **avant** que le bateau y arrive :
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import time
@@ -45,6 +47,10 @@ def pregen_langs() -> tuple[str, ...]:
 
 # ── key / lookup ────────────────────────────────────────────────────────────
 
+def body_lang(body: dict | None) -> str:
+    return str((body or {}).get("lang") or "fr")[:2].lower()
+
+
 def story_key(body: dict | None) -> Optional[str]:
     """(type, stableKey, lang) → key, or None when this event is not cacheable."""
     if not isinstance(body, dict):
@@ -53,8 +59,54 @@ def story_key(body: dict | None) -> Optional[str]:
     stable = body.get("stableKey")
     if typ not in CACHEABLE_TYPES or not stable:
         return None
-    lang = str(body.get("lang") or "fr")[:2].lower()
-    return f"{typ}|{stable}|{lang}"
+    return f"{typ}|{stable}|{body_lang(body)}"
+
+
+# ── traduction FR → EN (lot L6 / U9), cache par (hash, lang) ────────────────
+
+TRANSLATE_NS = "story-tr"
+TRANSLATE_TTL_S = STORY_TTL_S
+
+
+def translate_key(text: str, lang: str) -> str:
+    h = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+    return f"{(lang or 'en')[:2].lower()}|{h}"
+
+
+def get_translated(text: str, lang: str) -> Optional[dict]:
+    if not text or not (lang or "").lower().startswith("en"):
+        return None
+    import pearl_store  # noqa: PLC0415
+    hit = pearl_store.kv_get(TRANSLATE_NS, translate_key(text, lang), TRANSLATE_TTL_S)
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict) or not val.get("text"):
+        return None
+    return {"text": val["text"], "source": val.get("source") or "cache"}
+
+
+def put_translated(text: str, lang: str, result: dict | None) -> bool:
+    if not text or not (lang or "").lower().startswith("en") or not isinstance(result, dict) or not result.get("text"):
+        return False
+    import pearl_store  # noqa: PLC0415
+    return pearl_store.kv_put(TRANSLATE_NS, translate_key(text, lang), {
+        "text": result["text"],
+        "source": result.get("source"),
+    })
+
+
+async def translate_through_cache(text: str, lang: str, client=None) -> tuple[str, str]:
+    """Lightning translation, keyed by (hash(text), lang). FR is a no-op."""
+    src = (text or "").strip()
+    lg = (lang or "fr")[:2].lower()
+    if not src or lg != "en":
+        return src, "rules"
+    hit = get_translated(src, lg)
+    if hit:
+        return hit["text"], hit.get("source") or "cache"
+    from story_cascade import translate  # noqa: PLC0415
+    out, source = await translate(src, "en", client, facts=src)
+    put_translated(src, "en", {"text": out, "source": source})
+    return out, source
 
 
 def get_cached(body: dict | None) -> Optional[dict]:
@@ -66,13 +118,15 @@ def get_cached(body: dict | None) -> Optional[dict]:
     if not hit or not isinstance(hit.get("value"), dict) or not hit["value"].get("text"):
         return None
     v = hit["value"]
+    src = v.get("source") or "cache"
     return {
         "status": "ready",
         "text": v["text"],
-        "engine": f"cache:{v.get('engine') or 'llm'}",
-        "cascade": "nim-or-claude",
+        "engine": f"cache:{v.get('engine') or src or 'llm'}",
+        "source": "cache",
+        "cascade": "tokenfactory-openrouter-claude",
         "tavily": None,
-        "nvidia": v.get("engine"),
+        "nvidia": v.get("engine") or src,
         "cached": True,
         "cachedAt": hit["ts"],
     }
@@ -83,7 +137,12 @@ def put_cached(body: dict | None, result: dict | None) -> bool:
     if not key or not isinstance(result, dict) or result.get("status") != "ready" or not result.get("text"):
         return False
     import pearl_store  # noqa: PLC0415
-    return pearl_store.kv_put("story", key, {"text": result["text"], "engine": result.get("engine"), "type": body.get("type")})
+    return pearl_store.kv_put("story", key, {
+        "text": result["text"],
+        "engine": result.get("engine"),
+        "source": result.get("source"),
+        "type": body.get("type"),
+    })
 
 
 # ── budget ──────────────────────────────────────────────────────────────────
@@ -112,19 +171,60 @@ def _spend(n: int = 1) -> None:
 
 # ── the cascade, through the cache ──────────────────────────────────────────
 
+async def _store_en_from_fr(body: dict, fr_text: str, client=None) -> dict[str, Any]:
+    text, source = await translate_through_cache(fr_text, "en", client)
+    result = {
+        "status": "ready",
+        "text": text,
+        "engine": source,
+        "source": source,
+        "cascade": "tokenfactory-openrouter-claude",
+        "tavily": None,
+        "nvidia": source,
+        "cached": False,
+        "translatedFrom": "fr",
+    }
+    if put_cached(body, result):
+        _spend(1)
+    return result
+
+
 async def story_through_cache(body: dict, client=None, writer=None) -> dict[str, Any]:
     """What POST /ici/story returns: the cache when it knows, else the cascade
-    (`writer`, default story_cascade.write_story) — and remember."""
+    (`writer`, default story_cascade.write_story → cascade_text tier=write)
+    — and remember, with `source` kept on the payload.
+
+    Langue EN (lot L6) : on réutilise le récit FR en cache, puis Lightning
+    traduit (clé `story` et `story-tr` portent `lang`).
+    """
     if writer is None:
         from story_cascade import write_story  # noqa: PLC0415
         writer = write_story
     hit = get_cached(body)
     if hit:
         return hit
+    if body_lang(body) == "en":
+        fr_body = {**body, "lang": "fr"}
+        fr_hit = get_cached(fr_body)
+        if fr_hit and fr_hit.get("text"):
+            return await _store_en_from_fr(body, fr_hit["text"], client)
+        if story_key(body):
+            fr_out = await writer(fr_body, client) if client is not None else await writer(fr_body)
+            fr_result = {**(fr_out or {}), "cached": False}
+            if fr_result.get("status") == "ready" and not fr_result.get("source"):
+                fr_result["source"] = fr_result.get("engine") or "rules"
+            if put_cached(fr_body, fr_result):
+                _spend(1)
+            if fr_result.get("status") == "ready" and fr_result.get("text"):
+                return await _store_en_from_fr(body, fr_result["text"], client)
+            return fr_result
     out = await writer(body, client) if client is not None else await writer(body)
-    if put_cached(body, out):
+    result = {**(out or {}), "cached": False}
+    if result.get("status") == "ready" and not result.get("source"):
+        result["source"] = result.get("engine") or "rules"
+    if put_cached(body, result):
         _spend(1)
-    return {**(out or {}), "cached": False}
+    return result
 
 
 # ── pre-generation from the pearls ──────────────────────────────────────────
@@ -212,3 +312,29 @@ async def pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PA
     log.info("récits pré-générés : %d écrits, %d déjà là, %d échecs, %d hors budget",
              _state["written"], _state["cached"], _state["failed"], _state["skippedBudget"])
     return status()
+
+
+# ── film script (lot F3, ns « film ») ───────────────────────────────────────
+
+FILM_NS = "film"
+FILM_TTL_S = 86400.0  # 1×/jour ; une nouvelle escale change la clé (hash journal)
+
+
+def film_cache_key(journal_hash: str, lang: str, seconds: int) -> str:
+    return f"{journal_hash}|{(lang or 'fr')[:2].lower()}|{int(seconds or 150)}"
+
+
+def get_film_cached(key: str) -> Optional[dict]:
+    if not key:
+        return None
+    import pearl_store  # noqa: PLC0415
+    hit = pearl_store.kv_get(FILM_NS, key, FILM_TTL_S)
+    val = (hit or {}).get("value")
+    return val if isinstance(val, dict) else None
+
+
+def put_film_cached(key: str, value: dict | None) -> bool:
+    if not key or not isinstance(value, dict):
+        return False
+    import pearl_store  # noqa: PLC0415
+    return pearl_store.kv_put(FILM_NS, key, value)

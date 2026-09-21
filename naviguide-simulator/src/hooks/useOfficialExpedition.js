@@ -181,12 +181,16 @@ export function useOfficialExpedition({
     const sample = sampleClockAtTime(liveClock, new Date(nowMs));
     if (!sample) return null;
     const wind = grib?.wind;
+    const regime = sample.regime || sample.kind || "climatology";
     if (grib?.status === "ready" && wind) {
       const models = (grib.products || [])
         .filter((p) => p.status === "ready")
         .map((p) => p.model);
       return {
         ...sample,
+        regime,
+        sources: sample.sources || [],
+        spread: sample.spread ?? null,
         kind: "forecast",
         model: models[0] || grib.model || wind.model || "GFS",
         waveModel: grib.waveModel || wind.waveModel || null,
@@ -202,6 +206,9 @@ export function useOfficialExpedition({
     }
     return {
       ...sample,
+      regime,
+      sources: sample.sources || [],
+      spread: sample.spread ?? null,
       kind: "absent",
       model: null,
       windKnots: null,

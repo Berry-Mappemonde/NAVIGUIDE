@@ -35,7 +35,7 @@ def _transport(calls=None, osm_fail=False):
             if osm_fail:
                 return httpx.Response(503, text="busy")
             return httpx.Response(200, json={"elements": _osm_elements()})
-        if "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             return httpx.Response(200, json={"choices": [{"message": {"content": "La Rochelle offre le Port des Minimes et une capitainerie. Carburant à la Station du port, courses au Carrefour Market. Port d’entrée officiel : La Rochelle - La Pallice."}}]})
         return _handler(request)
     return httpx.MockTransport(handler)
@@ -56,7 +56,9 @@ def test_classify_osm_groups_names_and_drops_unnamed_shops():
 
 def test_build_escale_merges_bag_and_osm_and_writes_a_paragraph(monkeypatch):
     ici_engine.reset_caches()
+    monkeypatch.setenv("NEBIUS_API_KEY", "test")
     monkeypatch.setenv("NVIDIA_API_KEY", "test")
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
     calls = []
 
@@ -71,12 +73,14 @@ def test_build_escale_merges_bag_and_osm_and_writes_a_paragraph(monkeypatch):
     assert s["formalities"]["zee"]["mrgid"] == 5677
     assert fiche["paragraph"]["status"] == "ready"
     assert "Minimes" in fiche["paragraph"]["text"]
+    assert fiche["paragraph"]["source"] == "nemotron-lightning"
     assert fiche["sources"]["osm"] == "osm-overpass"
     assert any("overpass" in u for u in calls)
 
 
 def test_without_llm_the_lists_stand_alone(monkeypatch):
     ici_engine.reset_caches()
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "")
     monkeypatch.setattr(story_cascade, "openrouter_key", lambda: "")
     monkeypatch.setattr(story_cascade, "anthropic_key", lambda: "")
@@ -116,3 +120,45 @@ def test_endpoint_caches_seven_days(monkeypatch):
     assert len(calls) == n, "served from the store"
     assert pearl_store.kv_count("escale") == 1
     assert client.get("/escale?name=x&lat=95&lon=0").status_code == 400
+
+
+def test_write_paragraph_uses_fast_tier_and_keeps_source(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.update(kw)
+        return "La Rochelle a une marina et une capitainerie.", "nemotron-lightning"
+
+    monkeypatch.setattr(escale_api, "cascade_text", fake_cascade)
+    sections = {"mooring": {"marinas": [{"name": "Minimes", "nm": 0.2}]}}
+    out = asyncio.run(escale_api.write_paragraph("La Rochelle", sections, "fr"))
+    assert seen.get("tier") == "fast"
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-lightning"
+    assert out["engine"] == "nemotron-lightning"
+
+
+def test_write_paragraph_en_translates_and_keeps_figures(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(("cascade", kw.get("tier"), "français" in system or "Tu présentes" in system))
+        return "La Rochelle a le Port des Minimes à 0,2 nm.", "nemotron-lightning"
+
+    async def fake_tr(text, lang, client=None, **kw):
+        seen.append(("translate", lang))
+        assert "0,2" in text or "0.2" in text
+        assert "Minimes" in text
+        return "La Rochelle has the Port des Minimes at 0.2 nm.", "nemotron-lightning"
+
+    monkeypatch.setattr(escale_api, "cascade_text", fake_cascade)
+    monkeypatch.setattr(escale_api, "translate", fake_tr)
+    sections = {"mooring": {"marinas": [{"name": "Minimes", "nm": 0.2}]}}
+    out = asyncio.run(escale_api.write_paragraph("La Rochelle", sections, "en"))
+    assert ("cascade", "fast", True) in seen
+    assert ("translate", "en") in seen
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-lightning"
+    assert "Minimes" in out["text"]
+    assert "0.2" in out["text"] or "0,2" in out["text"]
+    assert "99" not in out["text"]

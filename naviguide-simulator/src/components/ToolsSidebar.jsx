@@ -184,6 +184,12 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
   const { t, lang } = useLang();
   const locale = lang === "fr" ? "fr-FR" : "en-US";
   const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString(locale)} nm` : "—";
+  const lastMark = escaleMarks?.length ? escaleMarks[escaleMarks.length - 1] : null;
+  const filmAxis = lastMark != null ? Number(lastMark.filmNm ?? lastMark.nm) : null;
+  const totalHint = routeDistanceNm != null
+    ? Number(routeDistanceNm).toLocaleString(locale)
+    : (Number.isFinite(filmAxis) ? filmAxis.toLocaleString(locale) : "—");
+  const distanceHint = t("routeDistanceHint", { total: totalHint });
   const summary = summarizeLegs(escaleMarks, segments);
   const routerWaypoints = waypointCount ?? routeSegmentCount ?? summary.waypoints;
   const vertexCount = summary.points || routeCounts?.points || 0;
@@ -196,8 +202,8 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
   if (drawing) return <DrawingBox drawing={drawing} />;
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
-      <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary">
-        <span className="font-semibold text-white">{nm}</span>
+      <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
+        <span className="font-semibold text-white cursor-help border-b border-dotted border-white/30" title={distanceHint}>{nm}</span>
         <span>· {summary.legs} {legsWord} ({summary.sea} {t("routeSeaShort")}, {summary.land} {t("routeLandShort")})</span>
         <span>· {summary.escales} {escalesWord}</span>
         <span className="cursor-help border-b border-dotted border-white/30" title={pointsHint}>
@@ -332,8 +338,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           <div className="px-4 py-3 border-b border-slate-700/60">
             <div className="flex items-center justify-between gap-3">
               <div className="flex bg-slate-800 rounded-full p-0.5 gap-0.5">
-                <button type="button" onClick={() => switchLang("en")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "en" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>EN</button>
-                <button type="button" onClick={() => switchLang("fr")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "fr" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>FR</button>
+                <button type="button" data-testid="lang-en" onClick={() => switchLang("en")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "en" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>EN</button>
+                <button type="button" data-testid="lang-fr" onClick={() => switchLang("fr")} aria-label={t("language")} title={t("language")} className={`px-3 py-1 rounded-full text-xs font-bold ${lang === "fr" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>FR</button>
               </div>
               <Toggle labelLeft={t("dark")} labelRight={t("light")} active={isLightMode} onChange={onLightModeChange} />
             </div>
@@ -356,7 +362,14 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             />
             {planReview && !drawing ? (
               <div className="mt-2">
-                <PlanReview legs={planReview.legs} loading={planReview.loading} error={planReview.error} summary={planReview.summary} />
+                <PlanReview
+                  legs={planReview.legs}
+                  loading={planReview.loading}
+                  error={planReview.error}
+                  summary={planReview.summary}
+                  comment={planReview.comment}
+                  commentSource={planReview.commentSource}
+                />
               </div>
             ) : null}
             {showDeparture ? (

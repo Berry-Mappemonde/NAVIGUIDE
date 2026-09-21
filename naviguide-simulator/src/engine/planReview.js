@@ -89,6 +89,8 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
     title: `${leg.from} → ${leg.to}`,
     dates: `${dayMonth(leg.departIso, lang)} → ${dayMonth(leg.arriveIso, lang)}`,
     month: leg.month,
+    from: leg.from,
+    to: leg.to,
     badges,
     notes,
     level: badges.some((b) => b.level === "alert") ? "alert" : (badges.some((b) => b.level === "watch") || notes.length ? "watch" : "ok"),

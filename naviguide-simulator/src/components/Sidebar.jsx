@@ -9,6 +9,23 @@ import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 
+const API_URL = import.meta.env?.VITE_API_URL ?? "";
+
+const STORY_SOURCE_I18N = Object.freeze({
+  "nemotron-lightning": "storySourceLightning",
+  "nemotron-super": "storySourceSuper",
+  "nemotron-ultra": "storySourceUltra",
+  openrouter: "storySourceOpenrouter",
+  claude: "storySourceClaude",
+  rules: "storySourceRules",
+  budget: "storySourceBudget",
+  cache: "storySourceCache",
+});
+
+function storySourceLabel(source, t) {
+  return t(STORY_SOURCE_I18N[source] || "storySourceRules");
+}
+
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
 
@@ -173,6 +190,22 @@ function BriefingText({ segments, onFocus, t }) {
   return segments.map((seg, i) => {
     if (!seg.entity) return <span key={i}>{seg.text}</span>;
     const e = seg.entity;
+    if (e.kind === "source" && e.url) {
+      return (
+        <a
+          key={i}
+          href={e.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={t("briefingSourceLink")}
+          data-testid="briefing-source-link"
+          data-kind="source"
+          className="text-sky-200 underline decoration-sky-400/70 underline-offset-2 hover:text-white"
+        >
+          {seg.text}
+        </a>
+      );
+    }
     const links = entityLinks(e);
     const focusable = canFocus(e) && typeof onFocus === "function";
     return (
@@ -228,6 +261,7 @@ export const Sidebar = memo(function Sidebar({
   chat = null, onChatAsk,
 }) {
   const { t } = useLang();
+  const [storySource, setStorySource] = useState("rules");
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -235,6 +269,24 @@ export const Sidebar = memo(function Sidebar({
   const briefingTitle = !iciBriefing && typeof plan?.briefing_title === "string"
     ? plan.briefing_title.trim()
     : "";
+  const showIciBriefing = !isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice);
+
+  useEffect(() => {
+    if (!showIciBriefing) return undefined;
+    let cancelled = false;
+    const ctrl = new AbortController();
+    fetch(`${API_URL}/ici/warm/status`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const src = data?.llm?.lastSource;
+        if (!cancelled && typeof src === "string" && src.trim()) setStorySource(src.trim());
+      })
+      .catch(() => { /* sans API : on garde « règles » */ });
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, [showIciBriefing, briefing]);
 
   return (
     <>
@@ -274,6 +326,12 @@ export const Sidebar = memo(function Sidebar({
             canContinueDraw={canContinueDraw}
             canFinishDraw={canFinishDraw}
           />
+
+          {!isDrawing && chat ? (
+            <div className="mt-1.5">
+              <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
+            </div>
+          ) : null}
         </div>
 
         {/* ── Le produit « ici » : où on est, ce qui se passe, ce qu’il y a autour ── */}
@@ -354,8 +412,8 @@ export const Sidebar = memo(function Sidebar({
             />
           ) : null}
 
-          {!isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice) && (
-            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
+          {!isDrawing ? (
+            <div data-testid="briefing" className="sim-box-ici bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
                 <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
                   {briefingTitle}
@@ -370,23 +428,29 @@ export const Sidebar = memo(function Sidebar({
                 data-testid="ici-briefing"
                 className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
               >
-                {briefingLoading
+                {briefingLoading || (!briefing && !iciBriefing)
                   ? t("iciBriefingLoading")
                   : (iciBriefing && iciBriefingSegments?.length
                     ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
                     : (briefing || t("iciBriefingFallback")))}
               </p>
+              <p
+                data-testid="story-source"
+                className="text-[9px] text-slate-500 leading-snug mt-1"
+              >
+                {storySourceLabel(storySource, t)}
+              </p>
             </div>
-          )}
+          ) : null}
 
-          {isSuivre && !isDrawing && Array.isArray(story) && story.length ? (
-            <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
+          {isSuivre && !isDrawing ? (
+            <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
               <div className="text-[10px] font-semibold text-sky-200 leading-snug">
                 {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
               </div>
               <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
-              {story.map((paragraph, i) => {
-                const current = storyReplay && i === story.length - 1;
+              {(Array.isArray(story) ? story : []).map((paragraph, i) => {
+                const current = storyReplay && i === (story?.length || 0) - 1;
                 return (
                   <p
                     key={i}
@@ -402,10 +466,6 @@ export const Sidebar = memo(function Sidebar({
 
           {isSuivre && !isDrawing ? (
             <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
-          ) : null}
-
-          {!isDrawing && chat ? (
-            <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
           ) : null}
 
           {officialFallback && (

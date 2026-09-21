@@ -224,10 +224,11 @@ def test_route_events_from_warmed_pearls_dated_by_the_clock(client, monkeypatch)
 
 
 def test_summary_carries_the_whole_voyage_events_apart_from_positions(client, monkeypatch):
-    now = T0 + timedelta(days=40)
-    _freeze(monkeypatch, now)
     client.put("/voyage/official", json=_official())
     voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    fdf = next(m for m in voy["clock"]["marks"] if "Fort-de-France" in m["name"])
+    now = T0 + timedelta(hours=float(fdf["tHours"]) + 36)
+    _freeze(monkeypatch, now)
     journal.tick(voy, now, force=True)
     journal.add_note("Belle étoile.", T0 + timedelta(days=1))
     body = client.get("/voyage/official/journal?limit=10").json()
@@ -305,3 +306,123 @@ def test_pearl_lines_follow_the_current_reading_of_the_pearls(client, monkeypatc
     assert {e["id"].split(":")[3] for e in second} == {"14"}
     # Human and clock lines are untouched by the re-reading.
     assert journal.latest(500, kinds=("position",))
+
+
+def test_lot_f2_climo_rose_turn_and_calms(client, monkeypatch):
+    """Lot F2 : rose qui tourne de 120° → climo ; deux perles calmes → climo « calmes »."""
+    import ici_engine
+    import ici_warm
+    from ici_engine import thin_cache_key
+
+    ici_engine.reset_caches()
+    now = T0 + timedelta(days=30)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    pearls = ici_warm.sample_route_nm(voy["points"])
+
+    def put(i, **climo):
+        p = pearls[i]
+        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {
+            "zee": None, "amp": [], "poe": [],
+            "climatology": climo,
+            "science": {"nearby": []},
+            "sources": {"bi": "ok"},
+        })
+
+    for i in range(4):
+        put(i, rose={"most_likely": {"speed_knots": 16.0, "dir_deg": 30}, "stat": "rose"}, cyclone={"nearby": 0})
+    put(4, rose={"most_likely": {"speed_knots": 15.0, "dir_deg": 150}, "stat": "rose"}, cyclone={"nearby": 0})
+    events = ici_warm.route_events_from_pearls(voy["points"])
+    roses = [e for e in events if e["kind"] == "climo" and e["event"] == "rose"]
+    assert len(roses) == 1 and roses[0]["idx"] == 4
+    assert roses[0]["facts"]["deltaDeg"] == 120
+    assert roses[0]["title"]["fr"] == "Changement de régime"
+    assert roses[0]["lat"] is not None and roses[0]["entity"]["kind"] == "climo"
+
+    ici_engine.reset_caches()
+    journal.reset()
+    for i in range(2):
+        put(i, rose={"most_likely": {"speed_knots": 6.0, "dir_deg": 80}, "stat": "rose"}, cyclone={"nearby": 0})
+    events = ici_warm.route_events_from_pearls(voy["points"])
+    calms = [e for e in events if e["kind"] == "climo" and e["event"] == "calms"]
+    assert len(calms) == 1
+    assert calms[0]["facts"]["windKn"] == 6.0
+    out = journal.tick(voy, now, force=True)
+    assert out["routeEvents"] >= 1
+    logged = journal.latest(20, kinds=("climo",))
+    assert any(e["event"] == "calms" for e in logged)
+
+
+def test_lot_f2_sci_once_and_wx_stop_enriched(client, monkeypatch):
+    """Lot F2 : station à 6 nm une seule fois ; wx durée/max/level ; stop + tourisme cache."""
+    import ici_engine
+    import ici_warm
+    import pearl_store
+    from ici_engine import thin_cache_key
+    from escale_api import escale_key
+    from voyage_clock import sample_clock_at_time
+
+    ici_engine.reset_caches()
+    now = T0 + timedelta(days=40)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    pearls = ici_warm.sample_route_nm(voy["points"])
+    station = {"name": "PIRATA", "id": "pirata-1", "nm": 6.0, "lat": 14.8, "lon": -50.1, "url": "https://www.pmel.noaa.gov/pirata/"}
+    for i, p in enumerate(pearls[:8]):
+        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {
+            "zee": None, "amp": [], "poe": [],
+            "science": {"nearby": [station]},
+            "sources": {"bi": "ok"},
+        })
+    events = ici_warm.route_events_from_pearls(voy["points"])
+    scis = [e for e in events if e["kind"] == "sci"]
+    assert len(scis) == 1 and scis[0]["facts"]["nm"] == 6.0 and scis[0]["name"] == "PIRATA"
+    assert scis[0]["title"]["en"] == "Station passed"
+    assert journal.tick(voy, now, force=True)["routeEvents"] == 1
+    assert journal.tick(voy, now + timedelta(hours=1), force=True)["routeEvents"] == 0
+
+    # wx : un épisode de mer forte durable + max, et un coup de vent.
+    assert journal.wx_entry_from_grib({"id": "grib:quiet", "t": "2026-05-20T06:00:00Z", "windKnots": 12, "hs": 1.0}) is None
+    gale = journal.wx_entry_from_grib({"id": "grib:c2", "t": "2026-05-21T06:00:00Z", "windKnots": 36.5, "dirFromDeg": 250, "hs": 2.0, "model": "GFS"})
+    assert gale["event"] == "gale" and gale["hours"] == 6 and gale["maxWindKnots"] == 36.5
+    run = journal.wx_events_from_gribs([
+        {"id": "grib:s1", "t": "2026-06-01T00:00:00Z", "windKnots": 18, "hs": 2.6, "lat": 20, "lon": -30},
+        {"id": "grib:s2", "t": "2026-06-01T06:00:00Z", "windKnots": 22, "hs": 4.2, "lat": 20, "lon": -31},
+    ])
+    assert len(run) == 1
+    assert run[0]["hours"] == 6 and run[0]["maxHs"] == 4.2 and run[0]["level"] == "très forte"
+    assert run[0]["facts"]["maxHs"] == 4.2 and run[0]["title"]["fr"]
+    journal._append([
+        {"id": "grib:s1", "kind": "grib", "t": "2026-06-01T00:00:00Z", "windKnots": 18, "hs": 2.6},
+        {"id": "grib:s2", "kind": "grib", "t": "2026-06-01T06:00:00Z", "windKnots": 22, "hs": 4.2},
+    ])
+    assert journal.record_wx(now) == 1
+    assert journal.record_wx(now) == 0
+
+    # stop : jours à quai + 2 lieux si la fiche tourisme est en cache.
+    marks = voy["clock"]["marks"]
+    last = marks[-1]
+    arrival = T0 + timedelta(hours=float(last["tHours"]))
+    sample = sample_clock_at_time(voy["clock"], arrival)
+    pearl_store.kv_put("escale", escale_key(last["name"], sample["lat"], sample["lon"], "fr"), {
+        "sections": {"tourism": {"sights": [
+            {"name": "Fort Saint-Louis", "nm": 0.4, "lat": 14.60, "lon": -61.07},
+            {"name": "Bibliothèque Schoelcher", "nm": 0.8, "lat": 14.60, "lon": -61.07},
+        ]}},
+    })
+    journal.reset()
+    assert journal.record_stops(voy["clock"], arrival + timedelta(hours=1)) >= 1
+    stop = next(e for e in journal.latest(10, kinds=("stop",)) if e["event"] == "arrival" and e["name"].startswith("Fort-de-France"))
+    if isinstance(last.get("holdHours"), (int, float)) and last["holdHours"] > 0:
+        assert stop["daysAtQuay"] == int(round(float(last["holdHours"]) / 24))
+    assert stop["sights"] == ["Fort Saint-Louis", "Bibliothèque Schoelcher"]
+    assert stop["facts"]["sights"][0] == "Fort Saint-Louis"
+    assert stop["lat"] is not None and stop["entity"]["kind"] == "escale"
+
+    body = client.get("/voyage/official/journal?limit=50&kinds=climo,sci", headers=PUBLIC).json()
+    assert "climo" in body["kinds"] and "sci" in body["kinds"]
+    assert {e["kind"] for e in body["latest"]} <= {"climo", "sci"}
+    # After reset + stops only, latest filtered may be empty; kinds list still advertises them.
+    assert body["voyageId"]

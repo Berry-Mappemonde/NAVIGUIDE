@@ -3,19 +3,28 @@ from pathlib import Path
 
 import httpx
 
-from story_cascade import build_prompt, has_skipper_orders, need_page, slim_event, write_story
+from story_cascade import (
+    build_prompt,
+    cascade_text,
+    filter_numbers,
+    has_skipper_orders,
+    need_page,
+    providers,
+    slim_event,
+    translate,
+    write_story,
+)
 
 
-def test_source_forbids_nemotron_and_tavily():
+def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
-    assert "Not Nemotron" in src
-    assert "Not Tavily" in src
-    assert "Not Token Factory" in src
-    assert "integrate.api.nvidia.com" in src
+    assert "api.tokenfactory.nebius.com" in src
+    assert "NAVIGUIDE_LLM_PROVIDERS" in src
+    assert "integrate.api.nvidia.com" in src  # NIM still behind the flag
     assert "openrouter.ai" in src
     assert "api.anthropic.com" in src
     assert "tavily.com" not in src
-    assert "nvidia-nemotron" not in src.lower()
+    assert providers() == ["tokenfactory", "openrouter", "claude"]
 
 
 def test_need_page_only_https_from_pack():
@@ -128,7 +137,8 @@ def test_write_story_returns_tidy_text_and_flags_local_fallback(monkeypatch):
             "La ZEE française a été quittée. L’évènement est classé info et jugé immédiat.",
         ))
 
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
@@ -142,7 +152,8 @@ def test_write_story_returns_tidy_text_and_flags_local_fallback(monkeypatch):
     out = asyncio.run(run(handler))
     assert out["status"] == "ready"
     assert out["text"] == "La ZEE française a été quittée."
-    assert out["engine"].startswith("nvidia-") and "+local" not in out["engine"]
+    assert out["source"] == "nemotron-super"
+    assert "+local" not in out["engine"]
 
     def only_meta(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_chat_ok("Événement classé info, jugé immédiat par le juge."))
@@ -160,30 +171,186 @@ def test_slim_event_keeps_skipper_used_and_tavily_null():
     assert out["skipper"]["boat"]["name"] == "Leopard 46"
 
 
-def _chat_ok(text="Récit court de la ZEE.", model="openai/gpt-oss-20b"):
+def _chat_ok(text="Récit court de la ZEE.", model="nvidia/nemotron-3-super-120b-a12b"):
     return {
         "choices": [{"message": {"content": text}}],
         "model": model,
+        "usage": {"prompt_tokens": 12, "completion_tokens": 8},
     }
 
 
-def test_write_story_nim_first_without_page(monkeypatch):
+def _tf_body(system="sys", user="La ZEE 5677.", **kw):
+    kw.setdefault("tier", "write")
+    kw.setdefault("fallback", "Phrase locale.")
+    kw.setdefault("facts", {"zee": {"mrgid": 5677}})
+    return system, user, kw
+
+
+def test_cascade_tokenfactory_write_is_nemotron_super(monkeypatch):
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        if "nvidia.com" in str(request.url):
+        assert "tokenfactory.nebius.com" in str(request.url)
+        body = request.read().decode()
+        assert "nemotron-3-super-120b-a12b" in body
+        return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE française."))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        system, user, kw = _tf_body()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(system, user, client, **kw)
+
+    text, source = asyncio.run(run())
+    assert source == "nemotron-super"
+    assert "ZEE" in text
+    assert len(seen) == 1
+    assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
+
+
+def test_cascade_tokenfactory_429_falls_to_openrouter(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "tokenfactory" in str(request.url):
+            return httpx.Response(429, json={"error": "rate"})
+        if "openrouter.ai" in str(request.url):
+            return httpx.Response(200, json=_chat_ok("Filet OpenRouter : ZEE 5677."))
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        system, user, kw = _tf_body()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(system, user, client, **kw)
+
+    text, source = asyncio.run(run())
+    assert source == "openrouter"
+    assert "5677" in text
+    assert any("tokenfactory" in u for u in seen)
+    assert any("openrouter.ai" in u for u in seen)
+
+
+def test_cascade_all_down_returns_rules(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(503, json={"error": "down"})
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+
+    async def run():
+        system, user, kw = _tf_body()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(system, user, client, **kw)
+
+    text, source = asyncio.run(run())
+    assert source == "rules"
+    assert text == "Phrase locale."
+    assert any("tokenfactory" in u for u in seen)
+    assert any("openrouter.ai" in u for u in seen)
+    assert any("anthropic.com" in u for u in seen)
+
+
+def test_cascade_budget_cap_makes_no_request(monkeypatch):
+    import llm_budget
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "10")
+    llm_budget.record("write", 10, 0)
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_chat_ok("ne doit pas partir"))
+
+    async def run():
+        system, user, kw = _tf_body()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(system, user, client, **kw)
+
+    text, source = asyncio.run(run())
+    assert source == "budget"
+    assert seen == []
+    assert text == "Phrase locale."
+
+
+def test_cascade_lock_one_call_for_two_identical_requests(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_chat_ok("Un seul appel Token Factory, ZEE 5677."))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        system, user, kw = _tf_body()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            a, b = await asyncio.gather(
+                cascade_text(system, user, client, **kw),
+                cascade_text(system, user, client, **kw),
+            )
+            return a, b
+
+    (t1, s1), (t2, s2) = asyncio.run(run())
+    assert {s1, s2} <= {"nemotron-super", "cache"}
+    assert t1 == t2
+    assert len(seen) == 1
+
+
+def test_filter_numbers_always_applied_on_cascade(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_ok(
+            "La ZEE 5677 commence ici. Le vent sera de 99 kn demain.",
+        ))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        system, user, kw = _tf_body()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(system, user, client, **kw)
+
+    text, source = asyncio.run(run())
+    assert source == "nemotron-super"
+    assert "5677" in text
+    assert "99" not in text
+
+
+def test_filter_numbers_drops_invented_figures():
+    text, dropped = filter_numbers(
+        "La ZEE 5677. Il fera 30 kn demain.",
+        {"zee": {"mrgid": 5677}},
+    )
+    assert "5677" in text and "30" not in text and dropped == 1
+
+
+def test_write_story_tokenfactory_first_without_page(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "tokenfactory" in str(request.url):
             return httpx.Response(200, json=_chat_ok())
         return httpx.Response(500, json={"error": "no"})
 
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    transport = httpx.MockTransport(handler)
-
     async def run():
-        async with httpx.AsyncClient(transport=transport) as client:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await write_story({
                 "event": "zee-enter",
                 "eventId": "zee-enter:1",
@@ -195,30 +362,29 @@ def test_write_story_nim_first_without_page(monkeypatch):
     out = asyncio.run(run())
     assert out["status"] == "ready"
     assert out["tavily"] is None
-    assert out["cascade"] == "nim-or-claude"
-    assert out["engine"].startswith("nvidia-")
-    assert any("nvidia.com" in u for u in seen)
-    assert not any("openrouter" in u or "anthropic" in u for u in seen)
+    assert out["cascade"] == "tokenfactory-openrouter-claude"
+    assert out["source"] == "nemotron-super"
+    assert any("tokenfactory" in u for u in seen)
+    assert not any("openrouter" in u or "anthropic" in u or "nvidia.com" in u for u in seen)
 
 
-def test_write_story_online_skips_nim(monkeypatch):
+def test_write_story_need_page_still_reaches_openrouter_online(monkeypatch):
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
+        if "tokenfactory" in str(request.url):
+            return httpx.Response(503, json={"error": "down"})
         body = request.read().decode()
         assert "cabrera.es" in body
-        assert ":online" in body or "openrouter.ai" in str(request.url)
         return httpx.Response(200, json=_chat_ok("Page officielle Cabrera : visiteurs."))
 
-    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-x")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    transport = httpx.MockTransport(handler)
-
     async def run():
-        async with httpx.AsyncClient(transport=transport) as client:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await write_story({
                 "event": "amp-ahead",
                 "eventId": "amp:1",
@@ -229,9 +395,9 @@ def test_write_story_online_skips_nim(monkeypatch):
 
     out = asyncio.run(run())
     assert out["status"] == "ready"
-    assert out["engine"] == "openrouter-online"
+    assert out["source"] == "openrouter"
     assert out["tavily"] is None
-    assert not any("nvidia.com" in u for u in seen)
+    assert any("openrouter.ai" in u for u in seen)
     assert not any("tavily" in u for u in seen)
 
 
@@ -246,14 +412,12 @@ def test_write_story_falls_to_claude(monkeypatch):
             })
         return httpx.Response(503, json={"error": "down"})
 
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-x")
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-x")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
 
-    transport = httpx.MockTransport(handler)
-
     async def run():
-        async with httpx.AsyncClient(transport=transport) as client:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await write_story({
                 "event": "zee-enter",
                 "eventId": "z",
@@ -262,7 +426,130 @@ def test_write_story_falls_to_claude(monkeypatch):
 
     out = asyncio.run(run())
     assert out["status"] == "ready"
-    assert out["engine"] == "claude"
-    assert any("nvidia.com" in u for u in seen)
+    assert out["source"] == "claude"
+    assert any("tokenfactory" in u for u in seen)
     assert any("openrouter.ai" in u for u in seen)
     assert any("anthropic.com" in u for u in seen)
+
+
+def test_nim_still_available_behind_the_flag(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "nvidia.com" in str(request.url):
+            return httpx.Response(200, json=_chat_ok("NIM : ZEE."))
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NAVIGUIDE_LLM_PROVIDERS", "nim,openrouter,claude")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text("s", "ZEE 1", client, fallback="x", facts={"n": 1})
+
+    text, source = asyncio.run(run())
+    assert "ZEE" in text
+    assert any("nvidia.com" in u for u in seen)
+    assert source.startswith("nvidia-")
+
+
+FR_STORY = "Le 21 mai 2026 le bateau entre dans la ZEE française à La Rochelle, 36,5 kn [[ev:wx:gale]]."
+EN_STORY = "On 21 May 2026 the boat entered the French EEZ at La Rochelle, 36.5 kn [[ev:wx:gale]]."
+
+
+def test_translate_fr_is_noop():
+    text, source = asyncio.run(translate("Déjà en français, ZEE 5677.", "fr"))
+    assert text == "Déjà en français, ZEE 5677."
+    assert source == "rules"
+
+
+def test_translate_empty_is_rules():
+    text, source = asyncio.run(translate("  ", "en"))
+    assert text == "" and source == "rules"
+
+
+def test_translate_en_keeps_numbers_names_dates(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        body = request.read().decode()
+        assert "Nemotron-3_5-Lightning" in body
+        assert "36,5" in body and "La Rochelle" in body and "2026" in body
+        return httpx.Response(200, json=_chat_ok(
+            EN_STORY + " Tomorrow 99 kn.",
+            model="nvidia/Nemotron-3_5-Lightning",
+        ))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await translate(FR_STORY, "en", client)
+
+    text, source = asyncio.run(run())
+    assert source == "nemotron-lightning"
+    assert "36.5" in text or "36,5" in text
+    assert "La Rochelle" in text
+    assert "2026" in text
+    assert "[[ev:wx:gale]]" in text
+    assert "99" not in text, "aucun chiffre nouveau"
+    assert any("tokenfactory" in u for u in seen)
+
+
+def test_translate_cache_is_per_lang(monkeypatch):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_chat_ok(EN_STORY, model="nvidia/Nemotron-3_5-Lightning"))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            a = await translate(FR_STORY, "en", client)
+            b = await translate(FR_STORY, "en", client)
+            fr = await translate(FR_STORY, "fr", client)
+            return a, b, fr
+
+    (t1, s1), (t2, s2), (t3, s3) = asyncio.run(run())
+    assert t1 == t2 == EN_STORY.strip()
+    assert {s1, s2} <= {"nemotron-lightning", "cache"}
+    assert len(seen) == 1
+    assert t3 == FR_STORY and s3 == "rules"
+
+
+def test_write_story_en_translates_after_french_draft(monkeypatch):
+    seen_models = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read().decode()
+        if "Nemotron-3_5-Lightning" in body:
+            seen_models.append("fast")
+            return httpx.Response(200, json=_chat_ok(
+                "The boat entered the French EEZ 5677.",
+                model="nvidia/Nemotron-3_5-Lightning",
+            ))
+        seen_models.append("write")
+        return httpx.Response(200, json=_chat_ok("Le bateau entre dans la ZEE française 5677."))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-enter:en", "lang": "en",
+                "needPage": False, "payload": {"zee": {"mrgid": 5677}},
+            }, client=client)
+
+    out = asyncio.run(run())
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-lightning"
+    assert "5677" in out["text"]
+    assert "99" not in out["text"]
+    assert seen_models == ["write", "fast"]
