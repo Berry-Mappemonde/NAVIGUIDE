@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { formatEtaRange } from "../hooks/usePlanReview.js";
 
 const LEVEL_DOT = {
   ok: "bg-emerald-400",
@@ -40,7 +41,7 @@ export const PlanReview = memo(function PlanReview({
   legs = [], loading = false, error = null, summary = null,
   comment = null, commentSource = null,
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const alerts = legs.filter((l) => l.level === "alert").length;
   const watches = legs.filter((l) => l.level === "watch").length;
   const source = commentSource || "rules";
@@ -61,13 +62,18 @@ export const PlanReview = memo(function PlanReview({
           <p className="px-2 pt-1 text-[9px] text-white/45 leading-snug">{summary}</p>
         ) : null}
         <ul className="max-h-64 overflow-y-auto sidebar-scroll">
-          {legs.map((leg) => (
+          {legs.map((leg) => {
+            const etaLabel = formatEtaRange(leg.etaRange, t, lang);
+            return (
             <li key={leg.key} className="px-2 py-1.5 border-t border-white/5 first:border-t-0" data-level={leg.level} data-testid="plan-review-leg">
               <div className="flex items-baseline gap-1.5 min-w-0">
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${LEVEL_DOT[leg.level] || LEVEL_DOT.info}`} />
                 <span className="text-[11px] font-medium text-white leading-tight truncate">{leg.title}</span>
                 <span className="ml-auto text-[9px] text-white/40 shrink-0 tabular-nums" data-testid="plan-review-leg-dates">{leg.dates}</span>
               </div>
+              {etaLabel ? (
+                <p className="text-[9px] text-white/40 mt-0.5 pl-3" data-testid="plan-review-eta-range">{etaLabel}</p>
+              ) : null}
               <div className="flex flex-wrap gap-1 mt-1">
                 {leg.badges.map((b, i) => (
                   <span key={`${b.kind}-${i}`} className={`px-1.5 py-0.5 rounded-md border text-[9px] leading-tight ${BADGE[b.level] || BADGE.info}`}>{b.text}</span>
@@ -77,7 +83,8 @@ export const PlanReview = memo(function PlanReview({
                 <p key={i} className="text-[10px] text-amber-100/80 leading-snug mt-1 break-words [overflow-wrap:anywhere]">{n}</p>
               ))}
             </li>
-          ))}
+            );
+          })}
           {!legs.length && !loading ? <li className="px-2 py-1.5 text-[10px] text-white/50">{t("planReviewEmpty")}</li> : null}
         </ul>
         <div

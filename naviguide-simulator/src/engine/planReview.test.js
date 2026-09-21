@@ -21,6 +21,7 @@ describe("planReview — revue de plan par règles (lot K)", () => {
   it("puts the leg into words: badges, notes, level — nothing invented", () => {
     const r = reviewLeg(LEG, { galePct: 18, cyclones: 2, cells: 3, missing: 0 }, "fr");
     assert.equal(r.title, "Ajaccio (Corse) → Fort-de-France (Martinique)");
+    assert.equal(r.to, "Fort-de-France (Martinique)");
     assert.equal(r.dates, "27 mai → 24 juin");
     const kinds = r.badges.map((b) => b.kind);
     assert.deepEqual(kinds, ["sea", "rest", "zee", "amp", "gale", "cyclone"]);

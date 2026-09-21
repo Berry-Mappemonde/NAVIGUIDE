@@ -284,6 +284,23 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 
 `GET /voyage/official` renvoie `params: { landHours, airHours, minKnots, portDaysDefault, polarEfficiency }`.
 
+### 3.10 ETA probabiliste — ensembles Open-Meteo (lot C6)
+
+`docs/PLAN_AUDIT_CALCULS.md` lot C6, `docs/audits/CALCULS_ETAT_DE_L_ART.md` ligne 9 et complément « Ensembles ». Au-delà de 7 jours, l'arrivée n'est pas une date unique : p10 / p50 / p90 des membres. Sans ensemble, rien n'est affiché (jamais inventé).
+
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `ensemble.url` | `ensemble-api.open-meteo.com/v1/ensemble` | **law** | Open-Meteo Ensemble API, sans clé, usage non commercial. |
+| `ensemble.models` | `gfs_seamless,ecmwf_ifs025` | **law** | GEFS seamless (~31 membres) + IFS ENS 0,25° (~51 membres). Vent 10 m, nœuds. |
+| `ensemble.hourly` | `wind_speed_10m,wind_direction_10m` | **law** | Membres en colonnes `wind_speed_10m_member01`… (préfixe modèle si les deux sont demandés). |
+| `ensemble.forecast_days` | 15 | **law** | Horizon d'ensemble ; au-delà : climatologie médiane (atlas, rose p25/p50/p75 du lot C4). |
+| `ensemble.cache_ttl_s` | 6 h | budget | Cache SQLite `pearl_store.kv` ns `ensemble` (point + résultat). Jamais retéléchargé avant expiration. |
+| `ensemble.point_nm` | 60 nm | geometry | Une requête par point de la jambe restante ; pas ≤ 60 nm. |
+| `ensemble.quantiles` | p10 / p50 / p90 | **law** | Quantiles empiriques des dates d'arrivée (interpolation (n−1)·q). `members` = arrivées valides. |
+| `ensemble.physics` | polaire × 0,85 + courant + vagues | **law** | Même cinématique que l'horloge C4 (`POLAR_EFFICIENCY`, SOG, polaire de vagues). |
+
+`GET /voyage/official/eta?stop=<nom>` → `{p10, p50, p90, members, source, computedAt}`. Panne ou escale inconnue / déjà atteinte → `members: 0`, dates vides.
+
 ---
 
 ## 4. Other ideas (beyond the snapshot)

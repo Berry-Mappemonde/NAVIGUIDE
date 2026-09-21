@@ -778,6 +778,16 @@ def get_official_journal(
     return {"voyageId": OFFICIAL_VOYAGE_ID, **out}
 
 
+@router.get("/voyage/official/eta")
+def get_official_eta(stop: str = Query(..., min_length=1)):
+    """Fourchette d'arrivée p10–p90 (ensembles). Sans membres : `{members: 0}`."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    from ensemble_eta import official_eta  # noqa: PLC0415
+    return official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
+
+
 @router.get("/voyage/official/plan-review")
 def get_official_plan_review():
     """Revue de plan par règles (lot K) + commentaire U7 (lot L5)."""
