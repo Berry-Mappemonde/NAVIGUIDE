@@ -11,12 +11,9 @@ function stopMatch(name, query) {
   return n === q || n.includes(q) || q.includes(n.split(" (")[0]);
 }
 
-function etaDayLabel(iso, otherIso, lang) {
+function etaDayLabel(iso, lang) {
   const a = new Date(iso);
-  const b = new Date(otherIso);
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return "";
-  const sameMonth = a.getUTCMonth() === b.getUTCMonth() && a.getUTCFullYear() === b.getUTCFullYear();
-  if (sameMonth) return String(a.getUTCDate());
+  if (Number.isNaN(a.getTime())) return "";
   return a.toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", {
     day: "numeric",
     month: "short",
@@ -27,10 +24,16 @@ function etaDayLabel(iso, otherIso, lang) {
 /** Texte de fourchette ; chaîne vide si pas d'ensemble (jamais inventé). */
 export function formatEtaRange(eta, t, lang = "fr") {
   if (!eta || !Number(eta.members) || !eta.p10 || !eta.p90) return "";
-  const p10 = etaDayLabel(eta.p10, eta.p90, lang);
-  const p90 = etaDayLabel(eta.p90, eta.p10, lang);
+  const p10 = etaDayLabel(eta.p10, lang);
+  const p90 = etaDayLabel(eta.p90, lang);
   if (!p10 || !p90) return "";
-  return t("etaRange", { p10, p90, n: String(eta.members) });
+  return t("etaRange", { p10, p90 });
+}
+
+/** Détail p10–p90 / membres — info-bulle uniquement, jamais à l'écran. */
+export function formatEtaRangeTitle(eta, t) {
+  if (!eta || !Number(eta.members) || !eta.p10 || !eta.p90) return "";
+  return t("etaRangeTitle", { n: String(eta.members) });
 }
 
 export function nextStopFromMarks(marks, nowMs = Date.now()) {
