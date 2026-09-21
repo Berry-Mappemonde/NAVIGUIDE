@@ -219,6 +219,7 @@ export class MapSceneController {
       filmZoom: null,
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
+      filmLastCenter: null,
     };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
@@ -363,12 +364,14 @@ export class MapSceneController {
       this.camera.filmZoom = null;
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
+      this.camera.filmLastCenter = null;
     }
     if (previous.filmActive && !this.config.filmActive) {
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
+      this.camera.filmLastCenter = null;
       this.camera.recapture = this.config.cinemaRecapture;
       const live = this.config.live;
       if (live && Number.isFinite(live.lat) && Number.isFinite(live.lon) && this.map) {
@@ -530,6 +533,18 @@ export class MapSceneController {
     const samePart = previous
       && following
       && geometry.partByPoint[geometry.completedIndex] === geometry.partByPoint[geometry.completedIndex + 1];
+    const live = this.config.live;
+    const filmPin = this.config.filmActive
+      && live
+      && Number.isFinite(live.lat)
+      && Number.isFinite(live.lon);
+    if (filmPin && previous && (!following || !following.jump)) {
+      setWakeTail(geometry.tailLines, previous, {
+        lon: unwrapLon(previous.lon, live.lon),
+        lat: live.lat,
+      });
+      return;
+    }
     if (!previous || !following || following.jump || !samePart) {
       setWakeTail(geometry.tailLines, null, null);
       return;
@@ -840,6 +855,7 @@ export class MapSceneController {
       filmZoom: null,
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
+      filmLastCenter: null,
     };
   }
 
@@ -879,11 +895,13 @@ export class MapSceneController {
         now: Date.now(),
         lastSetViewAt: this.camera.filmSetViewAt || 0,
         flyingUntil: this.camera.filmFlyingUntil || 0,
+        lastCenter: this.camera.filmLastCenter,
       });
     });
     this.camera.filmChapterIdx = next.lastChapterIdx;
     this.camera.filmSetViewAt = next.lastSetViewAt;
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
+    this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.lastFollow = Date.now();
   }
 

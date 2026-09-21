@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
 import { canLeadWithVoice, waitForVoices, voiceEndKind } from "../utils/speak.js";
@@ -64,10 +64,11 @@ export function linearFilmAt(elapsed, plan) {
 }
 
 /**
- * « Revoir l'expédition » (lot E, cinématique lot F1) : rejoue la route de
- * Saint-Maur à aujourd'hui. La voix mène (onboundary / onend) ; sans voix,
- * avance linéaire sur 150 s (ou 180 s). `live` remplace le bateau officiel
- * pendant le film ; à la fin (ou sur Stop), retour au live.
+ * « Revoir l'expédition » (lot E, cinématique F1 / fluide R4) : rejoue la
+ * route de Saint-Maur à aujourd'hui. Le temps avance chaque frame ; la voix
+ * recale vers timeAt(charIdx) en ≤ 300 ms. Sans voix, avance linéaire
+ * continue sur 150 s (ou 180 s). `live` remplace le bateau officiel pendant
+ * le film ; à la fin (ou sur Stop), retour au live.
  */
 export function useReplay({
   clock,
@@ -108,6 +109,9 @@ export function useReplay({
   const finishedRef = useRef(false);
   const voiceCharRef = useRef(0);
   const voiceFailedRef = useRef(false);
+  const tMsRef = useRef(null);
+  const voiceTargetRef = useRef(null);
+  const recaleRemainRef = useRef(0);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
   const filmBubbleRef = useRef(new EventBubbleGate());
@@ -127,6 +131,9 @@ export function useReplay({
     setProgress(0);
     queueRef.current = [];
     lastTRef.current = null;
+    tMsRef.current = null;
+    voiceTargetRef.current = null;
+    recaleRemainRef.current = 0;
     planRef.current = null;
     finishedRef.current = false;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -137,6 +144,9 @@ export function useReplay({
     if (!ch) return;
     chapterIdxRef.current = ch.idx;
     voiceCharRef.current = 0;
+    voiceTargetRef.current = Number.isFinite(ch.tA) ? ch.tA : null;
+    recaleRemainRef.current = 0;
+    if (Number.isFinite(ch.tA)) tMsRef.current = ch.tA;
     setChapterIdx(ch.idx);
     setChapterText(ch.text || "");
     setFilmLeg({
@@ -217,6 +227,9 @@ export function useReplay({
     queueRef.current = [];
     cardSinceRef.current = 0;
     lastTRef.current = plan.timeAt(0, 0);
+    tMsRef.current = lastTRef.current;
+    voiceTargetRef.current = lastTRef.current;
+    recaleRemainRef.current = 0;
     finishedRef.current = false;
     startWallRef.current = 0;
     chapterStartedAtRef.current = 0;
@@ -243,7 +256,9 @@ export function useReplay({
     if (!plan || finishedRef.current) return;
     voiceCharRef.current = charIdx;
     const next = plan.timeAt(chapterIdxRef.current, charIdx);
-    if (next != null) setTMs(next);
+    if (next == null) return;
+    voiceTargetRef.current = next;
+    recaleRemainRef.current = FILM_RECALE_MS;
   }, []);
 
   const onVoiceLeadFailed = useCallback(() => {
@@ -256,7 +271,11 @@ export function useReplay({
     if (!voiceRef.current || voiceFailedRef.current || !canLeadWithVoice()) return;
     const idx = chapterIdxRef.current;
     const ch = plan.chapters[idx];
-    if (ch) setTMs(ch.tB);
+    if (ch) {
+      tMsRef.current = ch.tB;
+      lastTRef.current = ch.tB;
+      setTMs(ch.tB);
+    }
     const chapterElapsed = chapterStartedAtRef.current
       ? (performance.now() - chapterStartedAtRef.current) / 1000
       : 0;
@@ -299,12 +318,12 @@ export function useReplay({
       }
       const elapsed = (now - startWallRef.current) / 1000;
       setProgress(Math.max(0, Math.min(1, elapsed / plan.targetSeconds)));
-      const voiceLed = Boolean(
+      const voiceClock = Boolean(
         voiceRef.current
         && !voiceFailedRef.current
-        && canLeadWithVoice()
-        && voiceCharRef.current > 0,
+        && canLeadWithVoice(),
       );
+      const voiceLed = Boolean(voiceClock && voiceCharRef.current > 0);
 
       const ingest = (next) => {
         if (next == null) return;
@@ -312,30 +331,35 @@ export function useReplay({
         const fresh = cardsBetween(timelineRef.current, from, next, lang);
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
         lastTRef.current = next;
+        tMsRef.current = next;
         setTMs(next);
       };
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
-      const done = !voiceLed && linear.finish;
+      const done = !voiceClock && linear.finish;
       if (done) {
         ingest(w.endMs);
         finish();
-      } else if (!voiceLed) {
+      } else if (!voiceClock) {
         const ch = chapterAtElapsed(plan, elapsed);
         if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
         const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
-        charIdx = Math.floor(Math.max(0, Math.min(1, frac)) * (ch?.chars || 1));
-        ingest(plan.timeAt(ch?.idx ?? 0, charIdx));
+        const f = Math.max(0, Math.min(1, frac));
+        charIdx = f * (ch?.chars || 1);
+        ingest(ch ? ch.tA + f * (ch.tB - ch.tA) : plan.timeAt(0, 0));
       } else {
-        setTMs((cur) => {
-          if (cur == null) return cur;
-          const from = lastTRef.current ?? cur;
-          const fresh = cardsBetween(timelineRef.current, from, cur, lang);
-          if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
-          lastTRef.current = cur;
-          return cur;
+        const ch = plan.chapters[chapterIdxRef.current];
+        const cur = tMsRef.current ?? lastTRef.current ?? ch?.tA;
+        const stepped = advanceReplayTime({
+          t: cur,
+          dt: dt / 1000,
+          chapter: ch,
+          targetT: voiceTargetRef.current,
+          recaleRemainMs: recaleRemainRef.current,
         });
+        recaleRemainRef.current = stepped.recaleRemainMs;
+        ingest(stepped.t);
       }
 
       const chapter = plan.chapters[chapterIdxRef.current];
@@ -362,6 +386,7 @@ export function useReplay({
           chapterIdx: chapterIdxRef.current,
           elapsed,
           charIdx,
+          tMs: lastTRef.current,
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
         };

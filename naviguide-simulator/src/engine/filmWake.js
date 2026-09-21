@@ -4,7 +4,7 @@
  * sans LeafletPlayback, TrackPlayBack ni deck.gl.
  */
 
-import { splitAntimeridianCoords } from "../utils/geo.js";
+import { splitAntimeridianCoords, unwrapLon } from "../utils/geo.js";
 
 /**
  * Last route point already reached at `sailNm`.
@@ -37,6 +37,28 @@ export function wakeCursorAt(flat, sailNm, previousIndex = -1) {
     }
   }
   return result;
+}
+
+/** Point interpolé le long du trait à `sailNm` (même formule que la queue du sillage). */
+export function pointAtSailNm(flat, sailNm) {
+  const pts = flat?.points || [];
+  if (!pts.length) return null;
+  const target = Math.max(0, Number(sailNm) || 0);
+  const idx = wakeCursorAt(flat, target, -1);
+  if (idx < 0) return { lat: pts[0].lat, lon: pts[0].lon, sailNm: 0 };
+  const prev = pts[idx];
+  const next = pts[idx + 1];
+  if (!next || next.jump || prev.jump) {
+    return { lat: prev.lat, lon: prev.lon, sailNm: prev.cumNm ?? target };
+  }
+  const span = ((next.cumNm ?? 0) - (prev.cumNm ?? 0)) || 1;
+  const t = Math.max(0, Math.min(1, (target - (prev.cumNm ?? 0)) / span));
+  const lon = prev.lon + t * (unwrapLon(prev.lon, next.lon) - prev.lon);
+  return {
+    lat: prev.lat + t * (next.lat - prev.lat),
+    lon,
+    sailNm: target,
+  };
 }
 
 /**

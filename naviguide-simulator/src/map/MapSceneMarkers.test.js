@@ -37,7 +37,7 @@ describe("MapSceneController — caméra film (lot F1)", () => {
         return { getNorth: () => 10, getSouth: () => 0, getEast: () => 10, getWest: () => 0 };
       },
     };
-    let st = { lastChapterIdx: null, lastSetViewAt: 0, flyingUntil: 0 };
+    let st = { lastChapterIdx: null, lastSetViewAt: 0, flyingUntil: 0, lastCenter: null };
     const step = (chapterIdx, now, lat = 46, lon = -1) => {
       const next = applyFilmCamera(map, {
         chapterIdx,
@@ -49,14 +49,20 @@ describe("MapSceneController — caméra film (lot F1)", () => {
         now,
         lastSetViewAt: st.lastSetViewAt,
         flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter,
       });
-      st = { lastChapterIdx: next.lastChapterIdx, lastSetViewAt: next.lastSetViewAt, flyingUntil: next.flyingUntil };
+      st = {
+        lastChapterIdx: next.lastChapterIdx,
+        lastSetViewAt: next.lastSetViewAt,
+        flyingUntil: next.flyingUntil,
+        lastCenter: next.lastCenter,
+      };
       return next;
     };
     assert.equal(step(0, 1000).action, "setView");
     assert.equal(calls.flyTo, 0, "premier mouvement = setView, pas de flyTo");
     assert.equal(calls.setView, 1);
-    assert.equal(step(0, 1030).action, "skip");
+    assert.equal(step(0, 1030).action, "setView", "lot R4 : setView chaque frame, plus de skip 30 Hz");
     assert.equal(step(0, 1100).action, "setView");
     assert.equal(calls.flyTo, 0);
     assert.equal(step(1, 5000).action, "flyTo");
