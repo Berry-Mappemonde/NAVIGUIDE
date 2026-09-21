@@ -25,6 +25,34 @@ Le fil rouge : **une seule fonction `build_moment` côté serveur** produit
 l'encadré ; sa sortie horodatée est le journal ; le journal est la matière du
 récit **et** la mesure (alertes) que l'expert cherche à minimiser.
 
+### Révision du 21 septembre au soir (2ᵉ revue) — à respecter
+
+- **R8 : l'encadré n'a pas de titre.** Pas de « Ici et maintenant », pas de
+  bandeau. Juste un cadre. Il est **voué à disparaître visuellement** plus tard
+  (le récit est déclamé, on clique sur la route / le bateau / les points pour
+  savoir de quoi on parle) ; pour l'instant on fait un seul cadre, sans titre.
+- **R8 : il absorbe TOUTES les pop-up de la carte**, pas seulement les blocs de
+  la sidebar. Ce qui apparaît aujourd'hui **sur la carte** — la carte « À bord,
+  maintenant · décision » en haut, les fiches « Pendant ce temps autour du
+  bateau » (science, satellite…) en bas à droite (avec leur bouton Écouter à
+  retirer), la fiche d'escale — passe **dans le cadre**. Tout ce qui est
+  déplacé est **supprimé de la carte** : plus rien ne flotte au-dessus.
+- **R9 : le récit de 2 min 30 doit tenir dans les limites du LLM.** On
+  **préchauffe** le texte (il n'est pas généré au clic). Si Nemotron ne sait
+  pas produire 2 min 30 d'un coup, on **découpe** le journal en passages et on
+  génère passage par passage, chaque prompt incluant le **segment suivant**
+  pour la continuité. Il n'y a pas que les perles à préchauffer : beaucoup de
+  choses doivent l'être avant. Établir des **règles de récit** qui saisissent
+  l'important de chaque passage sous budget.
+- **R10 : l'alerte « trace de cyclone » n'a de sens qu'à la bonne date.** Croiser
+  géométriquement la trace historique d'un cyclone ne suffit pas : l'alerte ne
+  compte que si le bateau croise cette trace **au moment de l'année** où le
+  cyclone a réellement eu lieu (saison cyclonique). Cyclone du 15 juillet → le
+  bateau doit passer autour du 15 juillet pour que ça alerte. Un intervalle de
+  risque (changement climatique) serait plus juste mais trop complexe : on se
+  cale sur une **fenêtre de dates** autour de la date historique / du mois de la
+  saison.
+
 ## 0. Contraintes de fabrication (agent Grok 4.6 xhigh fast, 256 k de contexte)
 
 Ce que la nuit 1 a montré : un lot tient dans un agent quand il **ouvre ≤ 6
@@ -58,14 +86,21 @@ ligne. Donc :
 ### 1.0 Ce que le porteur verra
 
 Panneau gauche, de haut en bas : carte Berry (logos) → chat (hauteur fixe,
-inchangé) → **un seul encadré** qui prend **toute la hauteur restante**, avec
-trois onglets en tête : **Maintenant** (défaut) · **Récit** · **Journal**.
-Le contenu défile à l'intérieur ; rien ne saute quand il change. Plus de
-« sac ici », de « pendant ce temps », de « à bord maintenant », de fiche
-d'escale (lot R7) ni de blocs séparés : les surfaces du plancher `main`
-restent **joignables** (onglets), aucune n'est retirée.
+inchangé) → **un seul encadré sans titre** (pas de bandeau « Ici et
+maintenant », rien) qui prend **toute la hauteur restante**. En tête, un
+**sélecteur discret** (pas un titre) : **Maintenant** (défaut) · **Récit** ·
+**Journal**. Le contenu défile à l'intérieur ; rien ne saute quand il change.
 
-Onglet **Maintenant**, dans cet ordre :
+Cet encadré **remplace et supprime toutes les surfaces flottantes** : les
+blocs de la sidebar (sac ici, « pendant ce temps », récit, journal, fiche
+d'escale du lot R7) **et** les pop-up de la carte — la carte « À bord,
+maintenant · décision » en haut, les fiches « Pendant ce temps autour du
+bateau » en bas à droite (bouton Écouter retiré), la fiche d'escale. Après R8,
+**plus rien ne flotte au-dessus de la carte** ; les surfaces du plancher `main`
+restent **joignables** dans l'encadré, aucune n'est retirée, aucune n'est
+dupliquée sur la carte.
+
+Vue **Maintenant**, dans cet ordre :
 
 1. **Étape** — une ligne : « Nouméa → Dzaoudzi · J95 · 8,0 kn · reste 9 004 nm ·
    arrivée entre le 31 oct. et le 4 nov. » (la dernière ligne d'étape d'aujourd'hui,
@@ -83,9 +118,9 @@ Onglet **Maintenant**, dans cet ordre :
    « FREE » d'aujourd'hui, compactées.
 5. **Sources** — une ligne.
 
-Onglet **Récit** : le récit de la traversée (aujourd'hui « Récit de la
+Vue **Récit** : le récit de la traversée (aujourd'hui « Récit de la
 traversée », hauteur fixe validée par le porteur) — en R9c il devient la lecture
-du journal. Onglet **Journal** : la liste chronologique des changements (R9b).
+du journal. Vue **Journal** : la liste chronologique des changements (R9b).
 
 ### 1.1 Contrat de données — `Moment`
 
@@ -130,22 +165,29 @@ Fichiers : `server/main.py` par extrait (ajouter `GET /ici/moment?lat&lon&t&mode
 qui prend la perle la plus proche — ou calcule le sac comme `/ici` — puis
 `build_moment`), `src/hooks/useMoment.js` (créer : fetch + état, repli sur la
 fixture quand l'API ne répond pas), `src/components/IciMaintenant.jsx` (créer :
-trois onglets, sections § 1.0, hauteur = reste du panneau : conteneur
-`flex-1 min-h-0 overflow-auto`), `src/components/IciMaintenant.test.js`,
-`src/index.css` (variables de hauteur, mode clair), `src/i18n/fr.js`, `en.js`.
-Recette : Suivre — un seul encadré sous le chat, trois onglets, il prend toute
-la hauteur ; fermer une alerte n'en ouvre pas une autre.
+**sans titre**, sélecteur discret Maintenant/Récit/Journal, sections § 1.0,
+hauteur = reste du panneau : conteneur `flex-1 min-h-0 overflow-auto`),
+`src/components/IciMaintenant.test.js`, `src/index.css` (variables de hauteur,
+mode clair), `src/i18n/fr.js`, `en.js`. Recette : Suivre — un seul encadré
+**sans bandeau de titre** sous le chat, il prend toute la hauteur ; fermer une
+alerte n'en ouvre pas une autre.
 
-**R8c — Le branchement et le retrait des anciens blocs · S/M**
+**R8c — Le branchement et le retrait des anciens blocs ET des pop-up de carte · M**
 Fichiers : `src/components/Sidebar.jsx` (remplacer MomentCards inline, FREE,
-sac ici, récit, journal par `IciMaintenant` ; onglets Récit et Journal reçoivent
-les composants existants), `src/components/Sidebar.layout.test.js`,
-`src/App.jsx` **par extrait** (`rg -n "iciBriefing|freeCards|momentCards|storyText|journal"`) :
-un seul objet `moment` passé au panneau ; Simulation et Tracer passent par le
-même endpoint (position du curseur / de la route dessinée). Les `data-testid`
-existants sont conservés (alias). Recette : Simulation et Tracer — le même
-encadré, rempli à la position du curseur ; aucune surface de `main`
-inaccessible.
+sac ici, récit, journal par `IciMaintenant` ; les vues Récit et Journal
+reçoivent les composants existants), `src/components/Sidebar.layout.test.js`,
+`src/map/MapSceneController.js` **par extrait** (`rg -n "momentCard|nowCard|freeCard|escale|popup|bringToFront"` :
+retirer les cartes flottantes « À bord, maintenant · décision » en haut et
+« Pendant ce temps autour du bateau » en bas à droite, ainsi que la popup
+d'escale — leur contenu vit désormais dans l'encadré), `src/App.jsx` **par
+extrait** (`rg -n "iciBriefing|freeCards|momentCards|storyText|journal|escaleStop|onEscaleSheet"`) :
+un seul objet `moment` passé au panneau ; **retirer les boutons Écouter** des
+fiches déplacées ; Simulation et Tracer passent par le même endpoint (position
+du curseur / de la route dessinée). Les `data-testid` existants sont conservés
+(alias). Recette : Suivre, Simulation, Tracer — le même encadré rempli à la
+position courante ; **aucune pop-up ne flotte plus sur la carte** (ni « à bord
+maintenant », ni fiche science, ni fiche d'escale) ; aucune surface de `main`
+inaccessible ; rien n'est dupliqué carte + encadré.
 
 ## 2. R9 — Le journal des moments et le récit de 2 min 30
 
@@ -190,11 +232,26 @@ régime 1, AMP à portée 1, alerte qui s'éteint 1. Ce sont **les mêmes
 événements** que ceux de la bulle (lot R6) : R6 les construit depuis le journal
 quotidien en nuit 2, R9c les rebranche sur ce journal des moments.
 
-### 2.2 Le récit de 2 min 30 : une synthèse, pas une lecture
+### 2.2 Le récit de 2 min 30 : une synthèse, préchauffée et découpée
+
+**Préchauffé, jamais au clic** (revue du soir). Le récit rédigé du voyage
+officiel est calculé et mis en cache par le serveur (après le remplissage du
+journal), pas quand le porteur clique « Revoir l'expédition » : au clic, on lit
+le texte déjà prêt. Le `style=raw` (brut) reste instantané sans LLM ; le
+`style=written` (rédigé) est servi depuis le cache (`kv` ns `film-story`), et
+régénéré en tâche de fond quand le journal change.
+
+**Découpé pour les limites de Nemotron** (revue du soir). On ne demande jamais
+2 min 30 (~2 400 caractères) d'un coup : on génère **chapitre par chapitre**
+(une jambe entre deux escales), chaque prompt portant le **résumé du segment
+suivant** pour la continuité (« la jambe suivante mène à Fort-de-France »), et
+on concatène. Un chapitre = quelques centaines de caractères, largement dans la
+fenêtre du modèle et vérifiable par `filter_numbers`.
 
 150 s de voix française ≈ **2 400 caractères** (F1 répartit le temps au prorata
 des caractères ; 180 s ≈ 2 900). Le journal en fait dix fois plus. Le récit est
-donc une **sélection sous budget**, puis une **rédaction** :
+donc une **sélection sous budget** (les **règles de récit** ci-dessous), puis
+une **rédaction chapitre par chapitre** :
 
 1. **Chapitres** = jambes entre escales (F1, inchangé) ; budget de caractères
    par chapitre au prorata des jours de mer, plancher 120 caractères (une
@@ -206,18 +263,26 @@ donc une **sélection sous budget**, puis une **rédaction** :
    (« entrée ZEE Espagne, entrée ZEE Portugal, entrée ZEE Maroc » devient une
    seule phrase « trois ZEE traversées »). Regroupement par `kind` quand ils
    sont ≥ 3 : « 4 alertes de vent entre le 2 et le 9 juin ».
-3. **Brut** : une phrase par changement retenu, gabarit par `kind`, connecteurs
+3. **Règles de récit** (ce qui fait « l'important » d'un passage) : dans un
+   chapitre, on garde au plus 3 changements ; priorité arrivée/départ d'escale,
+   puis une alerte (le coup de vent le plus fort, la ZEE sans port d'entrée),
+   puis un fait de couleur (station scientifique, AMP remarquable) ; on
+   regroupe les répétitions (« trois ZEE traversées ») ; on cite un chiffre
+   seulement s'il est marquant (vent max, milles de la jambe, jours à quai).
+4. **Brut** : une phrase par changement retenu, gabarit par `kind`, connecteurs
    variés (R5), chiffres = ceux des `fact`. Toujours disponible, sans LLM.
-4. **Rédigé** (option, F3) : Nemotron réécrit le chapitre à partir du brut, sous
-   `filter_numbers` (aucun nombre absent des faits), même budget ± 10 %. Le
-   sous-titre « source » dit lequel des deux est lu.
-5. Les `events` de chaque chapitre (bulles R6) = exactement les changements
+5. **Rédigé** (préchauffé) : Nemotron réécrit **chaque chapitre** à partir du
+   brut + le résumé du chapitre suivant, sous `filter_numbers` (aucun nombre
+   absent des faits), budget du chapitre ± 10 % ; concaténation des chapitres.
+   Servi depuis le cache. Le sous-titre « source » dit lequel des deux est lu.
+6. Les `events` de chaque chapitre (bulles R6/RA3) = exactement les changements
    retenus, `charIdx` = position de leur phrase dans le texte du chapitre.
 
 Tests : longueur totale du brut dans [budget − 10 % ; budget + 10 %] ; chaque
-chapitre ≥ 1 phrase ; l'arrivée de chaque escale est présente ; aucun nombre du
-rédigé absent des faits ; deux chapitres consécutifs ne commencent pas par le
-même connecteur.
+chapitre ≥ 1 phrase et ≤ 3 changements ; l'arrivée de chaque escale est
+présente ; aucun nombre du rédigé absent des faits ; deux chapitres consécutifs
+ne commencent pas par le même connecteur ; le rédigé est lu depuis le cache
+(aucun appel LLM au clic dans le test).
 
 ### 2.3 Sous-lots
 
@@ -242,14 +307,20 @@ clic = placer le curseur là), `src/components/IciMaintenant.test.js`, `fr.js`,
 Journal, les entrées défilent du 15 mai à aujourd'hui ; cliquer une entrée
 place le film / le curseur à cette date.
 
-**R9c — Le film raconte le journal (serveur) · M**
+**R9c — Le film raconte le journal, préchauffé et découpé (serveur) · M**
 Fichiers : `server/film_script.py` par extrait (`rg -n "def build_script|chapters|events|written"` :
-remplacer la source des phrases par la sélection § 2.2), `server/story_cascade.py`
-par extrait (réécriture sous `filter_numbers`, existant), `server/tests/test_film_script.py`,
-`src/hooks/useReplay.js` **rien** (le format du script ne change pas : chapitres,
-texte, `events`). Recette : Revoir — le film raconte, dans l'ordre, ce qui a
-changé le long de la route (ZEE, alertes, escales, stations) ; il dure toujours
-2 min 30 ; les bulles montrent les mêmes événements que le texte.
+la source des phrases = la sélection § 2.2, dans l'**ordre exact** de la route,
+sans répétition — cohérent avec RA2), `server/story_cascade.py` par extrait
+(réécriture **chapitre par chapitre** sous `filter_numbers`, chaque prompt avec
+le résumé du chapitre suivant ; jamais 2 min 30 d'un coup), `server/pearl_store.py`
+par extrait (cache `kv` ns `film-story` du rédigé), `server/voyage_api.py` par
+extrait (préchauffage du rédigé après le journal ; `GET /voyage/official/film`
+lit le cache), `server/tests/test_film_script.py`, `src/hooks/useReplay.js`
+**rien** (le format du script ne change pas : chapitres, texte, `events`).
+Recette : Revoir — le film raconte, **dans l'ordre du voyage**, ce qui a changé
+le long de la route (escales, ZEE, alertes, stations) ; il dure 2 min 30 ; au
+clic, le texte rédigé est déjà prêt (pas d'attente LLM) ; les bulles montrent
+les mêmes événements que le texte.
 
 ## 3. R10 — L'expert en circumnavigation
 
@@ -298,6 +369,14 @@ meilleur mélange, expliqué.
   les AMP. Une alerte par échantillon au plus par `kind` ; pondération
   `weight` 1–3. Coût : quelques centaines de lectures en cache → **< 2 s** par
   plan ; résultat mis en cache par (hash du trait, dates au jour, seuils).
+- **L'alerte cyclone est datée** (revue du soir) : croiser la **trace historique**
+  d'un cyclone ne compte que si l'échantillon y passe **au moment de l'année** où
+  ce cyclone a eu lieu — une **fenêtre de ± ~15 jours** autour de la date
+  historique (à défaut, le **mois de la saison cyclonique** de la zone). Croiser
+  la même trace six mois plus tard n'alerte pas. On garde la date historique du
+  cyclone dans l'atlas ; l'alerte porte `when` (date d'échantillon) et le `fact`
+  cite le cyclone et sa date historique. (Un intervalle de risque tenant compte
+  du changement climatique serait plus juste, mais hors budget ici.)
 - **Candidats** : décalages `d ∈ {−21, −14, −7, 0, +7, +14, +21}` jours du départ
   de la jambe choisie, propagés aux suivantes × corridors `{référence, nord,
   sud}` où nord/sud = trait de référence décalé de 150 nm puis relissé (grands
@@ -331,12 +410,17 @@ meilleur mélange, expliqué.
 
 **R10a — L'évaluateur `evaluate_plan` (serveur) · M**
 Fichiers : `server/plan_alerts.py` (créer), `server/tests/test_plan_alerts.py`,
-fixture R8a + une fixture climatologie mensuelle (12 mois × 6 cases),
-`server/plan_review.py` par extrait (réutiliser la lecture de l'atlas et des
-jours à quai), `server/voyage_clock.py` par extrait (dater les échantillons).
-Tests : voyage officiel évalué < 2 s ; décaler Nouméa de +30 jours change le
-total ; les jambes passées ne changent jamais ; chaque alerte a un `fact` et
-un `when`. Recette : aucun changement visible.
+fixture R8a + une fixture climatologie mensuelle (12 mois × 6 cases) **avec la
+date historique des cyclones** (mois/jour), `server/plan_review.py` par extrait
+(réutiliser la lecture de l'atlas et des jours à quai), `server/voyage_clock.py`
+par extrait (dater les échantillons). L'alerte cyclone ne se déclenche que si la
+date de l'échantillon tombe dans une **fenêtre de ± 15 jours** de la date
+historique du cyclone (sinon le mois de saison), pas au simple croisement
+géométrique. Tests : voyage officiel évalué < 2 s ; décaler Nouméa de +30 jours
+change le total ; les jambes passées ne changent jamais ; chaque alerte a un
+`fact` et un `when` ; **croiser une trace de cyclone hors saison ne produit pas
+d'alerte, la croiser à la date historique en produit une**. Recette : aucun
+changement visible.
 
 **R10b — Le compromis par décalage de date `advise` (serveur) · M**
 Fichiers : `server/plan_advisor.py` (créer : candidats de décalage, cascade
@@ -384,17 +468,22 @@ conseil » remplace « Recalculer l'itinéraire », même carte.
 | 10 | R10d interface | M | R10c, R8c |
 
 Dix sous-lots de taille M : c'est **deux nuits** au rythme observé (11 PR en
-3 h pour des S/M), ou une nuit pour R8 + R9 et une pour R10. À trancher par le
-porteur avant le lancement :
+3 h pour des S/M), ou une nuit pour R8 + R9 et une pour R10.
 
-1. **Onglets ou empilement** dans l'encadré unique (§ 1.0 propose trois onglets
-   pour ne retirer aucune surface).
-2. **Poids du score** de l'expert (§ 3.2 : 0,3 par jour de décalage, 0,02 par
-   mille) — ce sont des réglages du skipper, exposés dans Paramètres avancés ou
-   fixes ?
-3. **Le journal des simulations** reste local au navigateur (§ 2.0) — ou faut-il
-   le garder côté serveur pour la route dessinée aussi ?
+**Tranché par le porteur (revue du soir)** :
+- **Encadré sans titre**, sélecteur discret Maintenant / Récit / Journal (pas
+  de bandeau) ; il absorbe **toutes** les pop-up de carte, qui disparaissent.
+- **Récit 2 min 30 préchauffé et découpé** chapitre par chapitre (limites de
+  Nemotron), avec des règles de récit (§ 2.2).
+- **Alerte cyclone datée** : fenêtre autour de la date historique, pas au simple
+  croisement géométrique (§ 3.2).
+
+**Restent à trancher avant le lancement** :
+1. **Poids du score** de l'expert (§ 3.2 : 0,3 par jour de décalage, 0,02 par
+   mille) — réglages du skipper (Paramètres avancés) ou fixes ?
+2. **Le journal des simulations** reste local au navigateur (§ 2.0), ou côté
+   serveur pour la route dessinée aussi ?
 
 Les prompts `<!-- LOT -->` de ces dix sous-lots s'écrivent dans
-`LOTS_ORDRE_ET_PROMPTS.md` une fois ces trois points tranchés et la nuit 2
-mergée.
+`LOTS_ORDRE_ET_PROMPTS.md` une fois ces deux points tranchés et la nuit 2
+(R1 → R13) + les corrections (RA1 → RA8) mergées.
