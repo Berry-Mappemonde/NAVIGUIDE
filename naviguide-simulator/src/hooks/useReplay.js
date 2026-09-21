@@ -3,10 +3,65 @@ import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
-import { canLeadWithVoice } from "../utils/speak.js";
+import { canLeadWithVoice, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
+
+export function chapterHasLeg(ch) {
+  return [ch?.fromLat, ch?.fromLon, ch?.toLat, ch?.toLon].every((n) => (
+    n != null && n !== "" && Number.isFinite(Number(n))
+  ));
+}
+
+/** Script API sans emprise (marks horloge sans lat/lon) : on prend le brut local. */
+export function pickFilmChapters(remote, local, fallback = []) {
+  const r = remote?.chapters || [];
+  const l = local?.chapters || [];
+  if (r.length && r.some(chapterHasLeg)) {
+    return {
+      chapters: r.map((ch) => {
+        if (chapterHasLeg(ch)) return ch;
+        const src = l.find((c) => c.id === ch.id)
+          || l.find((c) => c.fromName === ch.fromName && c.toName === ch.toName);
+        return src && chapterHasLeg(src)
+          ? { ...ch, fromLat: src.fromLat, fromLon: src.fromLon, toLat: src.toLat, toLon: src.toLon }
+          : ch;
+      }),
+      source: remote.source || "rules",
+      remote: true,
+    };
+  }
+  if (l.length) return { chapters: l, source: local.source || "rules", remote: false };
+  return { chapters: fallback, source: "rules", remote: false };
+}
+
+/** onend immédiat sans boundary : une relance, puis linéaire, film non terminé. */
+export function voiceLeadPolicy({
+  hadBoundary,
+  elapsedMs,
+  alreadyRetried,
+  chapterIdx = 0,
+  chapterCount = 1,
+} = {}) {
+  const kind = voiceEndKind({ hadBoundary, elapsedMs, alreadyRetried });
+  if (kind === "retry") return { mode: "retry", finish: false, chapterIdx };
+  if (kind === "linear") return { mode: "linear", finish: false, chapterIdx };
+  const last = chapterIdx + 1 >= chapterCount;
+  return { mode: "advance", finish: last, chapterIdx: last ? chapterIdx : chapterIdx + 1 };
+}
+
+/** Avance linéaire : le dernier chapitre est atteint à la durée cible, pas avant. */
+export function linearFilmAt(elapsed, plan) {
+  const seconds = Number(plan?.targetSeconds) || 0;
+  const ch = chapterAtElapsed(plan, elapsed);
+  const lastIdx = Math.max(0, (plan?.chapters?.length || 1) - 1);
+  return {
+    chapterIdx: ch?.idx ?? 0,
+    finish: elapsed >= seconds,
+    lastReached: (ch?.idx ?? 0) >= lastIdx,
+  };
+}
 
 /**
  * « Revoir l'expédition » (lot E, cinématique lot F1) : rejoue la route de
@@ -52,6 +107,7 @@ export function useReplay({
   const chapterStartedAtRef = useRef(0);
   const finishedRef = useRef(false);
   const voiceCharRef = useRef(0);
+  const voiceFailedRef = useRef(false);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
   const filmBubbleRef = useRef(new EventBubbleGate());
@@ -99,6 +155,12 @@ export function useReplay({
   }, [stop]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
+    waitForVoices(typeof window !== "undefined" ? window : null, 1000);
+    return undefined;
+  }, [enabled]);
+
+  useEffect(() => {
     if (!enabled || !clock) return undefined;
     const ac = new AbortController();
     const style = filmStyle === "written" ? "written" : "raw";
@@ -137,15 +199,17 @@ export function useReplay({
       now: Date.now(),
       seconds: targetSeconds,
     });
-    const chapters = remote?.chapters?.length ? remote.chapters : (local.chapters?.length ? local.chapters : filmChaptersFromStory({
+    const fallback = filmChaptersFromStory({
       clock,
       marks,
       live: destination,
       journal,
       lang,
       nowMs: Date.now(),
-    }));
-    if (!remote?.chapters?.length) setFilmSource(local.source || "rules");
+    });
+    const picked = pickFilmChapters(remote, local, fallback);
+    const chapters = picked.chapters;
+    setFilmSource(picked.source || local.source || "rules");
     const plan = filmPlan({ chapters, targetSeconds });
     if (!plan.chapters.length) return false;
     windowRef.current = w;
@@ -157,6 +221,7 @@ export function useReplay({
     startWallRef.current = 0;
     chapterStartedAtRef.current = 0;
     voiceCharRef.current = 0;
+    voiceFailedRef.current = false;
     setVoiceRate(1);
     filmBubbleRef.current.reset();
     publishedBubbleRef.current = null;
@@ -181,10 +246,14 @@ export function useReplay({
     if (next != null) setTMs(next);
   }, []);
 
+  const onVoiceLeadFailed = useCallback(() => {
+    voiceFailedRef.current = true;
+  }, []);
+
   const onVoiceEnd = useCallback(() => {
     const plan = planRef.current;
     if (!plan || finishedRef.current) return;
-    if (!voiceRef.current || !canLeadWithVoice()) return;
+    if (!voiceRef.current || voiceFailedRef.current || !canLeadWithVoice()) return;
     const idx = chapterIdxRef.current;
     const ch = plan.chapters[idx];
     if (ch) setTMs(ch.tB);
@@ -230,7 +299,12 @@ export function useReplay({
       }
       const elapsed = (now - startWallRef.current) / 1000;
       setProgress(Math.max(0, Math.min(1, elapsed / plan.targetSeconds)));
-      const voiceLed = Boolean(voiceRef.current && canLeadWithVoice());
+      const voiceLed = Boolean(
+        voiceRef.current
+        && !voiceFailedRef.current
+        && canLeadWithVoice()
+        && voiceCharRef.current > 0,
+      );
 
       const ingest = (next) => {
         if (next == null) return;
@@ -242,7 +316,8 @@ export function useReplay({
       };
 
       let charIdx = voiceCharRef.current;
-      const done = !voiceLed && elapsed >= plan.targetSeconds;
+      const linear = linearFilmAt(elapsed, plan);
+      const done = !voiceLed && linear.finish;
       if (done) {
         ingest(w.endMs);
         finish();
@@ -261,10 +336,6 @@ export function useReplay({
           lastTRef.current = cur;
           return cur;
         });
-        if (elapsed > 1.5 && voiceCharRef.current === 0 && chapterIdxRef.current === 0) {
-          voiceRef.current = false;
-        }
-        if (elapsed > plan.targetSeconds + 20) finish();
       }
 
       const chapter = plan.chapters[chapterIdxRef.current];
@@ -340,6 +411,7 @@ export function useReplay({
     voiceRate,
     onVoiceBoundary,
     onVoiceEnd,
+    onVoiceLeadFailed,
     filmSource,
     filmStyle,
     setFilmStyle,

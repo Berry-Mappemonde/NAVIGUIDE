@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { filmPlan } from "../engine/replay.js";
+import { linearFilmAt, pickFilmChapters, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -62,3 +64,58 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
   });
 });
+
+describe("useReplay lot R3 — onend immédiat sans boundary", () => {
+  const t0 = Date.parse("2026-05-15T08:00:00Z");
+  const chapters = [
+    { tA: t0, tB: t0 + 86400000, text: "A".repeat(80), fromLat: 48.8, fromLon: 2.4, toLat: 46.1, toLon: -1.1 },
+    { tA: t0 + 86400000, tB: t0 + 2 * 86400000, text: "B".repeat(80), fromLat: 46.1, fromLon: -1.1, toLat: 41.9, toLon: 8.7 },
+    { tA: t0 + 2 * 86400000, tB: t0 + 3 * 86400000, text: "C".repeat(80), fromLat: 41.9, fromLon: 8.7, toLat: 14.6, toLon: -61.0 },
+    { tA: t0 + 3 * 86400000, tB: t0 + 4 * 86400000, text: "D".repeat(80), fromLat: 14.6, fromLon: -61.0, toLat: 4.9, toLon: -52.3 },
+  ];
+
+  it("relance une fois, puis linéaire : film non terminé, dernier chapitre à la durée cible", () => {
+    const retry = voiceLeadPolicy({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: false, chapterIdx: 0, chapterCount: 4,
+    });
+    assert.equal(retry.mode, "retry");
+    assert.equal(retry.finish, false);
+    assert.equal(retry.chapterIdx, 0);
+
+    const linear = voiceLeadPolicy({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: true, chapterIdx: 0, chapterCount: 4,
+    });
+    assert.equal(linear.mode, "linear");
+    assert.equal(linear.finish, false, "le film ne se termine pas sur l'échec voix");
+    assert.equal(linear.chapterIdx, 0);
+
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    const mid = linearFilmAt(5, plan);
+    assert.equal(mid.finish, false);
+    assert.equal(mid.lastReached, false);
+
+    const end = linearFilmAt(150, plan);
+    assert.equal(end.finish, true);
+    assert.equal(end.lastReached, true);
+    assert.equal(end.chapterIdx, plan.chapters.length - 1);
+
+    assert.match(hook, /voiceFailedRef/);
+    assert.match(hook, /waitForVoices/);
+    assert.match(hook, /onVoiceLeadFailed/);
+    assert.match(hook, /pickFilmChapters/);
+    assert.doesNotMatch(hook, /targetSeconds \+ 20/);
+  });
+
+  it("script API sans emprise → brut local (première jambe avec coords)", () => {
+    const remote = { chapters: [{ id: "leg-0", text: "Ajaccio", fromLat: null, fromLon: null, toLat: null, toLon: null }], source: "rules" };
+    const local = { chapters, source: "rules" };
+    const picked = pickFilmChapters(remote, local, []);
+    assert.equal(picked.remote, false);
+    assert.equal(picked.chapters[0].fromLat, 48.8);
+    assert.ok(chapterHasFirstLeg(picked.chapters[0]));
+  });
+});
+
+function chapterHasFirstLeg(ch) {
+  return Number.isFinite(ch.fromLat) && Number.isFinite(ch.toLat);
+}

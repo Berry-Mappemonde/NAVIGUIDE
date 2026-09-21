@@ -793,6 +793,7 @@ export default function App() {
     rate: replay.voiceRate,
     onBoundary: replay.onVoiceBoundary,
     onEnd: replay.onVoiceEnd,
+    onLeadFailed: replay.onVoiceLeadFailed,
   });
 
   const recaptureRef = useRef(null);
