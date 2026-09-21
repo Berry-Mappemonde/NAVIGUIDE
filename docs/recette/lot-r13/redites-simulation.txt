@@ -2,6 +2,4 @@
 
 
 # données (information différente, conservées)
-3	La Rochelle
-2	Cayenne (Guyane)
-2	Saint-Maur (Berry, Indre)
+
