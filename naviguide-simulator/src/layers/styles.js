@@ -9,7 +9,7 @@ export const TILE_URLS = {
  * Base-map credit shown by Leaflet's attribution control. Leaflet already
  * prefixes its own link ("Leaflet") — never repeat the word here.
  */
-export const TILE_ATTRIBUTION = 'Tuiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener noreferrer">Esri</a> · données Esri, <a href="https://www.here.com/" target="_blank" rel="noopener noreferrer">HERE</a>, <a href="https://www.garmin.com/" target="_blank" rel="noopener noreferrer">Garmin</a>, &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>';
+export const TILE_ATTRIBUTION = 'Tuiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener noreferrer">Esri</a> — <a href="https://www.here.com/" target="_blank" rel="noopener noreferrer">HERE</a>, <a href="https://www.garmin.com/" target="_blank" rel="noopener noreferrer">Garmin</a>, &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>';
 
 export const FALLBACK_COLORS = {
   "MPA": "#00f0ff", "Conservation": "#39ff14", "Research": "#c084fc",

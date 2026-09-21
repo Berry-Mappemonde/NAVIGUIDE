@@ -1293,12 +1293,10 @@ export default function App() {
     legs: planReviewState.legs,
     loading: planReviewState.loading,
     error: planReviewState.error,
-    summary: planReviewState.review
-      ? t("planReviewSummary", { warmed: planReviewState.review.pearlsWarmed ?? 0, unknown: planReviewState.review.pearlsUnknown ?? 0 })
-      : null,
+    summary: null,
     comment: planReviewState.review?.comment?.text || null,
     commentSource: planReviewState.review?.comment?.source || null,
-  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, t]);
+  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review]);
 
   // Route advice under the skipper's orders (lot G): gale and sea limits of
   // the resolved orders become no-go zones of the isochrone.

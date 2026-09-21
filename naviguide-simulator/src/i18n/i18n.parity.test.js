@@ -15,6 +15,13 @@ describe("i18n parity (lot F5)", () => {
     assert.equal(en._lang, "en");
   });
 
+  it("lot R1 — plus de clés d'aide (logbook, revue, chiffres)", () => {
+    for (const k of ["logbookChatHint", "planReviewSummary", "skipperExpertHint"]) {
+      assert.equal(fr[k], undefined, `fr.${k} ne doit plus exister`);
+      assert.equal(en[k], undefined, `en.${k} ne doit plus exister`);
+    }
+  });
+
   it("les libellés plein écran film existent dans les deux langues", () => {
     assert.match(fr.filmFullscreen, /Plein écran film/);
     assert.match(en.filmFullscreen, /fullscreen/i);
