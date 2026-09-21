@@ -1,72 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  atlasCrossingsUrl,
-  atlasOrZone,
-  atlasPointUrl,
-  cellKey,
-  clampMonth,
-  windFromAtlasPoint,
-} from "../utils/atlasPoint.js";
+import { useCallback, useEffect, useState } from "react";
+import { atlasOrZone, cellKey, clampMonth } from "../utils/atlasPoint.js";
 import { monthOfT0 } from "../engine/voyageClock.js";
+import { createAtlasScheduler, routeCells } from "../engine/atlasScheduler.js";
 
-const CACHE = new Map();
-const INFLIGHT = new Map();
-const CONCURRENCY = 6;
-
-function monthsAround(t0) {
-  const m0 = monthOfT0(t0, 0);
-  return [m0, clampMonth(m0 + 1), clampMonth(m0 + 2)];
-}
-
-function sampleCells(points, t0, boatLat, boatLon, month) {
-  const cells = new Map();
-  const add = (lat, lon, m, dest) => {
-    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return;
-    const key = cellKey(lat, lon, m);
-    if (!cells.has(key)) cells.set(key, { lat, lon, month: m, dest });
-  };
-  const months = monthsAround(t0);
-  const pts = points || [];
-  const step = Math.max(1, Math.ceil(pts.length / 48));
-  for (let i = 0; i < pts.length; i += step) {
-    const p = pts[i];
-    if (p?.jump || p?.nonMaritime) continue;
-    months.forEach((m) => add(p.lat, p.lon, m));
+/**
+ * Browser fetch → JSON; HTTP errors carry `.status` so the scheduler can tell
+ * « atlas down » (5xx / 429 / network) from « this cell never answers » (4xx).
+ */
+async function fetchJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) {
+    const err = new Error(`atlas ${r.status}`);
+    err.status = r.status;
+    throw err;
   }
-  if (Number.isFinite(Number(boatLat))) {
-    add(boatLat, boatLon, month || months[0]);
-  }
-  return [...cells.values()];
-}
-
-async function fetchPoint(spec, signal) {
-  const url = atlasPointUrl(spec);
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`atlas ${r.status}`);
   return r.json();
 }
 
-async function fetchCrossings(spec, signal) {
-  const url = atlasCrossingsUrl(spec);
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`crossings ${r.status}`);
-  return r.json();
-}
-
-async function runPool(jobs, limit) {
-  const pending = [...jobs];
-  const workers = Array.from({ length: Math.min(limit, pending.length) }, async () => {
-    while (pending.length) {
-      const job = pending.shift();
-      if (job) await job();
-    }
-  });
-  await Promise.all(workers);
-}
+// One scheduler per tab: the cache and the in-flight table are shared by
+// every mount, and by resetAtlasCache() (tests, new voyage).
+const scheduler = createAtlasScheduler({ fetchJson });
 
 /**
  * Session cache of /climatology/point. Sync lookup for the clock;
  * async fill replaces zone_fallback as cells arrive.
+ *
+ * The React side only listens: the rules (dedup, no abort per tick, boat
+ * interval, cooldown when the atlas is down) live in engine/atlasScheduler.js.
  */
 export function useAtlasLookup({
   enabled = true,
@@ -81,81 +41,58 @@ export function useAtlasLookup({
   const [revision, setRevision] = useState(0);
   const [boatPoint, setBoatPoint] = useState(null);
   const [alive, setAlive] = useState(null);
-  const boatKeyRef = useRef("");
+  const [retryTick, setRetryTick] = useState(0);
+  const [boatTick, setBoatTick] = useState(0);
 
   const windAt = useCallback((lat, lon, m) => {
-    const hit = CACHE.get(cellKey(lat, lon, m));
+    const hit = scheduler.cache.get(cellKey(lat, lon, m));
     return atlasOrZone(lat, lon, m, hit?.point || null);
   }, []);
 
   const lookup = useCallback((lat, lon, m) => {
-    return CACHE.get(cellKey(lat, lon, m)) || null;
+    return scheduler.cache.get(cellKey(lat, lon, m)) || null;
   }, []);
 
+  // One subscription per mount: cells and boat answers land here whenever
+  // they arrive, even after the boat moved on (nothing is aborted).
   useEffect(() => {
     if (!enabled) return undefined;
-    const ctrl = new AbortController();
-    const cells = sampleCells(points, t0, boatLat, boatLon, month);
-    const jobs = cells.map((cell) => async () => {
-      const key = cellKey(cell.lat, cell.lon, cell.month);
-      if (CACHE.has(key) || INFLIGHT.has(key)) return;
-      const work = fetchPoint(cell, ctrl.signal)
-        .then((point) => {
-          const wind = windFromAtlasPoint(point);
-          CACHE.set(key, { point, wind, source: wind ? "atlas" : "empty" });
-          setAlive(true);
-          setRevision((n) => n + 1);
-        })
-        .catch((err) => {
-          if (ctrl.signal.aborted) return;
-          if (!CACHE.has(key)) CACHE.set(key, { point: null, wind: null, source: "zone_fallback" });
-          const msg = String(err.message || err);
-          if (/Failed to fetch|NetworkError|atlas 5\d\d/.test(msg)) setAlive(false);
-        })
-        .finally(() => {
-          INFLIGHT.delete(key);
-        });
-      INFLIGHT.set(key, work);
-      await work;
+    return scheduler.subscribe((event) => {
+      if (event.type === "down") {
+        setAlive(false);
+        return;
+      }
+      if (event.type === "boat") setBoatPoint(event.point);
+      if (event.entry?.source === "atlas") setAlive(true);
+      setRevision((n) => n + 1);
     });
-    runPool(jobs, CONCURRENCY).catch(() => {});
-    return () => ctrl.abort();
-  }, [enabled, t0, points, boatLat, boatLon, month, alive]);
+  }, [enabled]);
 
+  // Route prefetch: depends on the route and the clock, never on the boat.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let active = true;
+    let timer = null;
+    scheduler.prefetch(routeCells(points, t0)).then((res) => {
+      if (!active || res.deferred === 0) return;
+      const wait = Math.max(250, scheduler.downUntil() - Date.now() + 50);
+      timer = setTimeout(() => setRetryTick((n) => n + 1), wait);
+    }).catch(() => {});
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [enabled, t0, points, month, retryTick]);
+
+  // Boat cell (+ crossings): once per cell, at most one request per interval.
   useEffect(() => {
     if (!enabled || !Number.isFinite(Number(boatLat))) return undefined;
     const m = clampMonth(month || monthOfT0(t0, 0));
-    const key = `${cellKey(boatLat, boatLon, m)}:${destLat ?? ""}:${destLon ?? ""}`;
-    if (boatKeyRef.current === key && boatPoint) return undefined;
-    const ctrl = new AbortController();
-    const spec = { lat: boatLat, lon: boatLon, month: m, destLat, destLon };
-    Promise.all([
-      fetchPoint(spec, ctrl.signal),
-      Number.isFinite(Number(destLat))
-        ? fetchCrossings({
-          lat1: boatLat, lon1: boatLon, lat2: destLat, lon2: destLon, month: m,
-        }, ctrl.signal).catch(() => null)
-        : Promise.resolve(null),
-    ]).then(([point, crossings]) => {
-      if (ctrl.signal.aborted) return;
-      const packed = crossings ? { ...point, crossings } : point;
-      if (packed.cyclone && crossings && !packed.cyclone.crossings_if_leg) {
-        packed.cyclone = { ...packed.cyclone, crossings_if_leg: crossings };
-      }
-      CACHE.set(cellKey(boatLat, boatLon, m), {
-        point: packed,
-        wind: windFromAtlasPoint(packed),
-        source: windFromAtlasPoint(packed) ? "atlas" : "empty",
-      });
-      boatKeyRef.current = key;
-      setBoatPoint(packed);
-      setAlive(true);
-      setRevision((n) => n + 1);
-    }).catch(() => {
-      if (!ctrl.signal.aborted) setAlive((prev) => (prev == null ? false : prev));
-    });
-    return () => ctrl.abort();
-  }, [enabled, boatLat, boatLon, destLat, destLon, month, t0, boatPoint]);
+    const res = scheduler.boat({ lat: boatLat, lon: boatLon, month: m, destLat, destLon });
+    if (res.status !== "wait" && res.status !== "down") return undefined;
+    const timer = setTimeout(() => setBoatTick((n) => n + 1), Math.max(100, res.waitMs || 0));
+    return () => clearTimeout(timer);
+  }, [enabled, boatLat, boatLon, destLat, destLon, month, t0, boatTick]);
 
   return {
     windAt,
@@ -167,6 +104,5 @@ export function useAtlasLookup({
 }
 
 export function resetAtlasCache() {
-  CACHE.clear();
-  INFLIGHT.clear();
+  scheduler.reset();
 }

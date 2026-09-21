@@ -1,0 +1,119 @@
+"""Passerelle /bi/climatology/* — une requête amont par cellule et par machine."""
+import asyncio
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+import bi_proxy
+import main
+
+
+@pytest.fixture(autouse=True)
+def _cache_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_BI_CACHE_DIR", str(tmp_path / "bi-cache"))
+    bi_proxy.reset()
+    yield
+    bi_proxy.reset()
+
+
+def _upstream(calls, status=200, body=None, delay=0.0):
+    payload = json.dumps(body or {"kind": "climatology", "month": 9}).encode()
+
+    async def fake(url, params):
+        calls.append((url, tuple(params)))
+        if delay:
+            await asyncio.sleep(delay)
+        return status, payload
+    return fake
+
+
+def test_miss_then_hit_calls_upstream_once(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls))
+    client = TestClient(main.app)
+
+    first = client.get("/bi/climatology/point?lat=46.15&lon=-1.2&month=9")
+    second = client.get("/bi/climatology/point?month=9&lon=-1.2&lat=46.15")  # même cellule, autre ordre
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.headers["x-cache-status"] == "MISS"
+    assert second.headers["x-cache-status"] == "HIT"
+    assert "max-age=" in first.headers["cache-control"]
+    assert first.json()["kind"] == "climatology"
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/api/climatology/point")
+
+
+def test_only_climatology_endpoints_are_proxied(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls))
+    client = TestClient(main.app)
+    assert client.get("/bi/climatology/review/fiche?kind=eez&id=1").status_code == 404
+    assert client.get("/bi/marinas").status_code == 404
+    assert client.get("/bi/climatology/crossings?lat1=1&lon1=2&lat2=3&lon2=4&month=9").status_code == 200
+    assert len(calls) == 1
+
+
+def test_upstream_5xx_opens_a_cooldown_and_is_not_cached(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls, status=502))
+    client = TestClient(main.app)
+
+    assert client.get("/bi/climatology/point?lat=1&lon=2&month=9").status_code == 502
+    assert bi_proxy.is_dead()
+    # Rafale pendant la panne : zéro appel amont supplémentaire.
+    for _ in range(20):
+        assert client.get("/bi/climatology/point?lat=1&lon=2&month=9").status_code == 502
+    assert len(calls) == 1
+    # Panne finie, amont revenu : on redemande (rien n'a été mis en cache).
+    bi_proxy.reset()
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls))
+    assert client.get("/bi/climatology/point?lat=1&lon=2&month=9").headers["x-cache-status"] == "MISS"
+    assert len(calls) == 2
+
+
+def test_network_error_is_a_502_not_a_500(monkeypatch):
+    async def boom(url, params):
+        raise ConnectionError("refused")
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", boom)
+    client = TestClient(main.app)
+    r = client.get("/bi/climatology/point?lat=1&lon=2&month=9")
+    assert r.status_code == 502
+    assert "atlas unavailable" in r.json()["detail"]
+
+
+def test_upstream_4xx_is_passed_through_and_not_cached(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls, status=400, body={"detail": "lat/lon out of range"}))
+    client = TestClient(main.app)
+    assert client.get("/bi/climatology/point?lat=95&lon=2&month=9").status_code == 400
+    assert client.get("/bi/climatology/point?lat=95&lon=2&month=9").status_code == 400
+    assert len(calls) == 2
+    assert not bi_proxy.is_dead()
+
+
+def test_twin_requests_in_flight_share_one_upstream_call(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls, delay=0.05))
+
+    async def burst():
+        from httpx import ASGITransport, AsyncClient
+        async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://t") as c:
+            return await asyncio.gather(*[
+                c.get("/bi/climatology/point?lat=46.15&lon=-1.2&month=9") for _ in range(25)
+            ])
+
+    responses = asyncio.run(burst())
+    assert all(r.status_code == 200 for r in responses)
+    assert len(calls) == 1
+    assert sum(1 for r in responses if r.headers["x-cache-status"] == "MISS") == 1
+
+
+def test_vite_proxy_never_targets_production_by_default():
+    from pathlib import Path
+    cfg = (Path(__file__).resolve().parents[2] / "vite.config.js").read_text(encoding="utf-8")
+    assert "process.env.BI_PROXY_TARGET\n" in cfg or "process.env.BI_PROXY_TARGET" in cfg
+    # La cible par défaut de /bi est l'API locale, pas blueintelligence.online.
+    assert ': { target: API, changeOrigin: true }' in cfg
+    assert 'target: process.env.BI_PROXY_TARGET || "https://blueintelligence.online"' not in cfg

@@ -90,6 +90,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable naviguide-simulator >/dev/null 2>&1 || true
 sudo systemctl restart naviguide-simulator
 
+# ── nginx: cache climatologie BI partagé (zone + snippet inclus par le vhost) ─
+# Idempotent. Le vhost blue-intelligence (certbot) et naviguide (installé une
+# fois) incluent le même snippet : voir infra/vps/nginx-*.conf.
+sudo install -d -o www-data -g www-data -m 750 /var/cache/nginx/bi-climatology
+sudo install -m 644 "$APP/infra/vps/nginx-bi-climatology-cache.conf" \
+  /etc/nginx/conf.d/bi-climatology-cache.conf
+sudo install -m 644 "$APP/infra/vps/nginx-snippet-bi-climatology.conf" \
+  /etc/nginx/snippets/bi-climatology-cache.conf
+
 # ── nginx: separate file, sites-available/naviguide untouched ───────────────
 if [ -f /etc/nginx/sites-available/naviguide ]; then
   sudo cp -a /etc/nginx/sites-available/naviguide \

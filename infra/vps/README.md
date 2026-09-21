@@ -56,7 +56,33 @@ sudo systemctl restart naviguide-api   # frees the EEZ cache; Blue Intelligence 
 ```
 
 systemd `MemoryMax`: 3 GB (Blue Intelligence), 1 GB (naviguide-api), 512 MB
-(orchestrator / polar). A Full Projects run does not need NAVIGUIDE.
+(orchestrator / polar). `LimitNOFILE=65536` on Blue Intelligence (the Ubuntu
+soft default of 1024 overflows when the local simulator prefetches
+climatology through Cloudflare). nginx `worker_connections` on this VPS is
+**4096** (not the Ubuntu 768 default) — same burst. A Full Projects run
+does not need NAVIGUIDE.
+
+## Climatology storm — incident of 2026-09-21 and the four locks
+
+Symptom: `blueintelligence.online` 500 (nginx) / 525 (Cloudflare), `/ici`
+bag empty, backend `Too many open files`, 2 200 sockets stuck on :8001.
+Cause: the simulator hook `useAtlasLookup` aborted and restarted its
+climatology fetches on **every film tick** (600-800 req/s from dev Vite,
+Playwright and Cloud agents, all through Cloudflare), while each
+`/api/climatology/crossings` cost ~1 s of Python **inside the event loop**.
+Not a certificate problem. Locks, from the edge to the code:
+
+| Layer | Lock | Where |
+|-------|------|-------|
+| nginx | shared cache of `/api/climatology/*` (30 d, lock, `ignore_client_abort`) for the 3 vhosts | `nginx-bi-climatology-cache.conf` (conf.d), `nginx-snippet-bi-climatology.conf` (snippets), `location … /climatology/` in each vhost |
+| nginx / systemd | `worker_connections 4096`, `LimitNOFILE=65536` | `/etc/nginx/nginx.conf`, `blue-intelligence.service` |
+| backend | cyclone bbox prefilter (×5-13), LRU, `def` handlers (threadpool), `Cache-Control` 30 d | `backend/app/services/climatology_cyclones.py`, `routers/climatology.py` |
+| simulator | `engine/atlasScheduler.js`: one request per cell, boat ≤ 1 / 1.5 s, 30 s cooldown when down; dev `/bi` → local `server/bi_proxy.py` (disk cache), never prod | `naviguide-simulator/` |
+
+Check on the VPS: `curl -sI 'https://blueintelligence.online/api/climatology/point?lat=46&lon=-1&month=9' | grep -i x-cache-status`
+→ `MISS` once, then `HIT`. Cache dir: `/var/cache/nginx/bi-climatology`.
+Prod simulator already talked to BI locally (`BI_API_URL=http://127.0.0.1:8001/api`
+in `~/.config/naviguide/simulator.env`).
 
 ## Redeploy after a code update
 
