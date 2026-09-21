@@ -116,7 +116,22 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
           <div className="text-[12px] font-semibold text-white leading-snug truncate">{stop.name}</div>
         </div>
         {onClose ? (
-          <button type="button" data-testid="escale-close" onClick={onClose} className="text-slate-400 hover:text-white" title={t("momentClose")} aria-label={t("momentClose")}>
+          <button
+            type="button"
+            data-testid="escale-close"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            }}
+            className="w-6 h-6 flex items-center justify-center shrink-0 rounded-md text-slate-400 hover:text-white hover:bg-white/10"
+            title={t("momentClose")}
+            aria-label={t("momentClose")}
+          >
             <X size={13} />
           </button>
         ) : null}

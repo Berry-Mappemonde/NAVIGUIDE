@@ -1,11 +1,38 @@
 export const ESCALE_POPUP_MAX_WIDTH = 340;
 export const ESCALE_POPUP_MAX_HEIGHT = 260;
 
+const ESCALE_CLOSE_SEL = "[data-testid='escale-close']";
+
+/** Suivre, Revoir, ou film en cours : la fiche d'escale doit disparaître (RA5). */
+export function shouldCloseEscaleSheet({
+  nextView,
+  replayActive = false,
+  replayStarting = false,
+} = {}) {
+  if (replayActive || replayStarting) return true;
+  return nextView === "suivre";
+}
+
+export function isEscaleCloseClick(event) {
+  return Boolean(event?.target?.closest?.(ESCALE_CLOSE_SEL));
+}
+
+/** Ferme l'état React ; ignore le clic drapeau qui suivrait le retrait du popup. */
+export function requestEscaleClose(sheet) {
+  globalThis.__naviguideIgnoreEscaleOpen = Date.now() + 400;
+  sheet?.onClose?.();
+  return true;
+}
+
 /** Hors dessin : ouvre la fiche. En dessin : le clic reste au mode tracer. */
 export function handleWaypointMarkerClick(drawing, point, index, callbacks) {
   if (drawing) {
     callbacks?.onDrawingWaypointClick?.(point, index);
     return "draw";
+  }
+  const ignoreUntil = Number(globalThis.__naviguideIgnoreEscaleOpen);
+  if (Number.isFinite(ignoreUntil) && ignoreUntil > Date.now()) {
+    return "ignore";
   }
   callbacks?.onWaypointClick?.(point, index);
   return "sheet";

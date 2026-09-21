@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
 import { EscalePopupHost } from "./components/EscalePopup.jsx";
+import { shouldCloseEscaleSheet } from "./components/escalePopup.js";
 import NotForNavModal from "./components/NotForNavModal.jsx";
 import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav.js";
 import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
@@ -166,6 +167,7 @@ export default function App() {
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [stopAuto, setStopAuto] = useState(false);
+  const [escaleClear, setEscaleClear] = useState(0);
   const [cameraFollow, setCameraFollow] = useState(false);
   const [cinemaRecapture, setCinemaRecapture] = useState(0);
   const [cameraFocusToken, setCameraFocusToken] = useState(0);
@@ -513,6 +515,8 @@ export default function App() {
   // Fiche d'escale (lot C / J ; lot R7 : popup sur le drapeau, plus dans le panneau).
   const escale = useEscaleSheetState({
     lang, isSuivre, atQuay, clockSample, marks: legendMarks,
+    filmActive: replay.active,
+    clearToken: escaleClear,
   });
   const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
 
@@ -810,7 +814,16 @@ export default function App() {
     onLeadFailed: replay.onVoiceLeadFailed,
   });
 
+  useEffect(() => {
+    if (replay.active) closeEscaleSheet();
+  }, [replay.active, closeEscaleSheet]);
+
   const recaptureRef = useRef(null);
+  const openEscaleFromUi = useCallback((next) => {
+    if (replay.active) return;
+    openEscaleSheet(next);
+  }, [replay.active, openEscaleSheet]);
+
   const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
     progress: replay.progress,
@@ -819,19 +832,27 @@ export default function App() {
     targetSeconds: replay.targetSeconds,
     onDuration: replay.setTargetSeconds,
     onStart: () => {
+      if (shouldCloseEscaleSheet({ replayStarting: true })) {
+        closeEscaleSheet();
+        setEscaleClear((n) => n + 1);
+      }
       if (replay.start()) {
         // The camera picks the replayed boat up and follows it (same as Cinema's recapture).
         recaptureRef.current?.();
         setSidebarOpen(true);
       }
     },
-    onStop: replay.stop,
+    onStop: () => {
+      replay.stop();
+      if (shouldCloseEscaleSheet({ replayActive: true })) closeEscaleSheet();
+      if (view !== VIEW_SUIVRE) setView(VIEW_SUIVRE);
+    },
     onVoice: replay.setVoice,
     source: replay.filmSource,
     style: replay.filmStyle,
     hasWritten: replay.hasWritten,
     onStyle: replay.setFilmStyle,
-  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle]);
+  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -925,6 +946,11 @@ export default function App() {
   }, [cinemaMode, cameraFollow, sidebarOpen, toolsOpen, recaptureBoat, leaveCinema]);
 
   const selectView = useCallback((next) => {
+    if (shouldCloseEscaleSheet({ nextView: next, replayActive: replay.active })) {
+      closeEscaleSheet();
+      setEscaleClear((n) => n + 1);
+    }
+    if (next === VIEW_SUIVRE && replay.active) replay.stop();
     if (next === VIEW_SUIVRE && view === VIEW_SIMULATION) simNmRef.current = playheadNmRef.current;
     setView(next);
     if (next === VIEW_SUIVRE) {
@@ -946,7 +972,10 @@ export default function App() {
     }
   }, [
     cinemaMode,
+    closeEscaleSheet,
     recaptureBoat,
+    replay.active,
+    replay.stop,
     sceneApi,
     sidebarOpen,
     toolsOpen,
@@ -1445,7 +1474,7 @@ export default function App() {
         onCoordinatesCopied={handleCoordinatesCopied}
         onWaypointHover={setHoveredPoint}
         onDrawingWaypointClick={handleDrawingWaypointClick}
-        onWaypointClick={openEscaleSheet}
+        onWaypointClick={openEscaleFromUi}
       />
 
       <NotForNavModal
@@ -1532,7 +1561,7 @@ export default function App() {
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
         onSeekEscale={handleSidebarSeek}
-        onEscaleSheet={openEscaleSheet}
+        onEscaleSheet={openEscaleFromUi}
         drawing={drawing}
         planReview={planReview}
         showDeparture={isSimulation}
@@ -1730,7 +1759,7 @@ export default function App() {
       ) : null}
 
       <EscalePopupHost
-        stop={escaleStop}
+        stop={replay.active ? null : escaleStop}
         fiche={escaleSheet?.fiche}
         loading={Boolean(escaleSheet?.loading)}
         error={escaleSheet?.error}
