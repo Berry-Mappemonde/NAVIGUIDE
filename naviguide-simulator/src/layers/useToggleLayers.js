@@ -205,19 +205,40 @@ export function useToggleLayers(
     const map = mapRef.current;
     if (!map || !mapReady) return undefined;
     let timer = null;
-    const schedule = () => {
+    let zooming = false;
+    let zoomJustEnded = false;
+    const schedule = (ms) => {
       clearTimeout(timer);
       timer = setTimeout(
         () => setViewportRevision((revision) => revision + 1),
-        cameraFollowing ? 950 : 120,
+        ms,
       );
     };
-    map.on("moveend", schedule);
-    map.on("zoomend", schedule);
+    const onZoomAnim = () => {
+      zooming = true;
+      clearTimeout(timer);
+    };
+    const onZoomEnd = () => {
+      zooming = false;
+      zoomJustEnded = true;
+      schedule(250);
+    };
+    const onMoveEnd = () => {
+      if (zooming) return;
+      if (zoomJustEnded) {
+        zoomJustEnded = false;
+        return;
+      }
+      schedule(cameraFollowing ? 950 : 120);
+    };
+    map.on("zoomanim", onZoomAnim);
+    map.on("zoomend", onZoomEnd);
+    map.on("moveend", onMoveEnd);
     return () => {
       clearTimeout(timer);
-      map.off("moveend", schedule);
-      map.off("zoomend", schedule);
+      map.off("zoomanim", onZoomAnim);
+      map.off("zoomend", onZoomEnd);
+      map.off("moveend", onMoveEnd);
     };
   }, [mapRef, mapReady, cameraFollowing]);
 
@@ -236,6 +257,7 @@ export function useToggleLayers(
         transparent: true,
         version: "1.1.1",
         pane: "zee-wms",
+        updateWhenZooming: false,
       });
       wms.addTo(map);
       layersRef.current.zee = wms;
@@ -304,6 +326,7 @@ export function useToggleLayers(
         pane: spec.pane,
         attribution: spec.attribution,
         maxZoom: 18,
+        updateWhenZooming: false,
       });
       lyr.addTo(map);
       added.push(lyr);
