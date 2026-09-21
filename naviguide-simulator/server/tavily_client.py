@@ -100,7 +100,7 @@ async def search(
     *,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """POST /search (veille L4 ; exposé ici pour le contrat L3)."""
+    """POST /search (veille L4 : topic=news, 7 jours, 5 résultats)."""
     q = (query or "").strip()
     empty = {"results": [], "credits": 0}
     if not q:

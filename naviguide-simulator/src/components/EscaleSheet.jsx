@@ -61,7 +61,7 @@ const Item = memo(function Item({ item, sub, lang, onFocus, t }) {
   const gm = googleMapsUrl(item.lat, item.lon);
   const site = item.url || item.visit_url || item.manager_url || null;
   return (
-    <li className="flex items-baseline gap-1 min-w-0 text-[11px] leading-snug">
+    <li className="flex flex-wrap items-baseline gap-1 min-w-0 text-[11px] leading-snug">
       {onFocus && Number.isFinite(item.lat) && Number.isFinite(item.lon) ? (
         <button
           type="button"
@@ -79,6 +79,14 @@ const Item = memo(function Item({ item, sub, lang, onFocus, t }) {
       {item.phone ? <a href={`tel:${item.phone}`} className="text-slate-400 text-[9px] shrink-0 hover:text-cyan-200">{item.phone}</a> : null}
       {site ? <a href={site} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 text-[10px] shrink-0 hover:text-cyan-200" title={site}>↗</a> : null}
       {gm ? <a href={gm} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 text-[10px] shrink-0 hover:text-cyan-200" title="Google Maps">◎</a> : null}
+      {item.enrich?.text || item.phrase ? (
+        <span data-testid="escale-enrich" className="text-slate-400 text-[10px] min-w-0 basis-full">
+          {item.enrich?.text || item.phrase}
+          {item.enrich?.url ? (
+            <a href={item.enrich.url} target="_blank" rel="noopener noreferrer" className="ml-1 text-cyan-300/80 hover:text-cyan-200">↗</a>
+          ) : null}
+        </span>
+      ) : null}
     </li>
   );
 });

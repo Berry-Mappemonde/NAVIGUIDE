@@ -109,6 +109,18 @@ describe("journalFormat", () => {
     );
   });
 
+  it("lot L4: veille news datée avec URL", () => {
+    const n = formatJournalEntry({
+      kind: "news", t: "2026-09-20T12:00:00Z", name: "Nouméa",
+      text: "Travaux annoncés à la marina de Motu Uta",
+      url: "https://www.portautonome.nc/avis",
+    }, "fr");
+    assert.equal(n.icon, "📰");
+    assert.match(n.text, /Nouméa/);
+    assert.match(n.text, /Travaux/);
+    assert.match(n.text, /portautonome\.nc/);
+  });
+
   it("groups newest day first and caps the number of days", () => {
     const entries = [
       { id: "a", kind: "note", t: "2026-05-18T07:00:00Z", text: "c" },

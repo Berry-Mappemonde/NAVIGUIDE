@@ -48,6 +48,14 @@ def test_models_and_sources_are_overridable(monkeypatch):
     assert pearl_store.kv_get("llm-budget", f"{day}:fast")["value"]["calls"] == 1
 
 
+def test_allow_tavily_respects_daily_cap(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_DAILY_CREDITS", "1")
+    assert llm_budget.allow_tavily() is True
+    llm_budget.record_tavily(1)
+    assert llm_budget.tavily_usage()["credits"] == 1
+    assert llm_budget.allow_tavily() is False
+
+
 def test_remember_source_skips_cache():
     llm_budget.remember_source("nemotron-super")
     assert llm_budget.last_source() == "nemotron-super"
