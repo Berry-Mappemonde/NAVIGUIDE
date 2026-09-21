@@ -3,6 +3,9 @@ import { expeditionBoatKnots, trueWindAngle } from "../engine/playSpeeds.js";
 import { lerpSeries } from "../engine/routeWindProfile.js";
 import { polarBoatSpeed } from "../engine/polarSpeed.js";
 import { pollWeatherUntil } from "./weatherSnapshot.js";
+import { resolveFollowSpeed } from "./expeditionSpeed.js";
+
+export { resolveFollowSpeed };
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? import.meta.env.VITE_API_URL ?? "";
@@ -14,8 +17,7 @@ function roundKt(k) {
 }
 
 /**
- * Film knots: clock table (climatology) as soon as it exists.
- * The 25 s Copernicus poll (kind analyse) no longer runs in that case.
+ * Film knots: clock table in Follow; planned polar × wind in Simulation.
  */
 export function useExpeditionSpeed({
   polarData,
@@ -26,7 +28,7 @@ export function useExpeditionSpeed({
   windSeries,
   filmNm,
   clockSample = null,
-  clockReady = false,
+  follow = false,
 }) {
   const cruise = expeditionBoatKnots(polarData);
   const [nrtKnots, setNrtKnots] = useState(null);
@@ -38,7 +40,7 @@ export function useExpeditionSpeed({
   onLiveRef.current = onLiveKnots;
 
   useEffect(() => {
-    if (clockReady) return;
+    if (follow) return;
     const s = sample;
     const tws = lerpSeries(windSeries, filmNm, "tws");
     const from = lerpSeries(windSeries, filmNm, "windFrom");
@@ -55,10 +57,10 @@ export function useExpeditionSpeed({
         onLiveRef.current?.(rounded);
       }
     }
-  }, [filmNm, sample?.bearing, windSeries, polarData?.raw, nrtKnots, clockReady]);
+  }, [filmNm, sample?.bearing, windSeries, polarData?.raw, nrtKnots, follow]);
 
   useEffect(() => {
-    if (clockReady) return undefined;
+    if (follow) return undefined;
     if (profile !== "real" || !playing || !polarData?.expedition_id) return undefined;
     let cancelled = false;
     const tick = async () => {
@@ -106,7 +108,7 @@ export function useExpeditionSpeed({
       cancelled = true;
       clearInterval(id);
     };
-  }, [profile, playing, polarData?.expedition_id, polarData?.raw, clockReady]);
+  }, [profile, playing, polarData?.expedition_id, polarData?.raw, follow]);
 
   useEffect(() => {
     if (profile !== "real") {
@@ -114,10 +116,8 @@ export function useExpeditionSpeed({
     }
   }, [profile]);
 
-  const clockKnots = clockSample?.speedKnots;
-  if (clockReady) {
-    const knots = (Number(clockKnots) > 0 ? Number(clockKnots) : null) || cruise;
-    return { knots, cruise, live: false, kind: "climatology" };
+  if (follow) {
+    return { ...resolveFollowSpeed(clockSample), cruise };
   }
   const analyse = profile === "real" && nrtKnots != null;
   const knots = (analyse ? nrtKnots : climoKnots) || cruise;

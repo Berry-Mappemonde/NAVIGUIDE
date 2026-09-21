@@ -4,6 +4,7 @@ import { featuresToSegments } from "../utils/geo.js";
 import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
+import { useRouteLayer } from "../layers/useRouteLayer.js";
 import { MapSceneController } from "./MapSceneController.js";
 
 function pointToSegmentPx(map, lat, lon, coords) {
@@ -113,6 +114,17 @@ export function MapScene({
     whenIso: scene.clockSample?.iso,
     lat: scene.isSuivre ? scene.live?.lat : null,
     lon: scene.isSuivre ? scene.live?.lon : null,
+  });
+  useRouteLayer(mapRef, {
+    segments: scene.segments,
+    customRoute: scene.customRoute,
+    drawingMode: scene.drawingMode,
+    drawnSegments: scene.drawnSegments,
+    mapReady,
+    visible: Boolean(scene.sceneReady) && !scene.drawingMode,
+    paintMain: false,
+    clockVertices: scene.clockVertices,
+    traveledNm: scene.traveledNm,
   });
 
   useEffect(() => {

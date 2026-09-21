@@ -427,7 +427,7 @@ export default function App() {
     windSeries: windProfile.series,
     filmNm: playback.nm,
     clockSample,
-    clockReady: Boolean(officialClock),
+    follow: isSuivre,
   });
   const legContext = useMemo(() => {
     if (!cast) return null;
@@ -514,7 +514,7 @@ export default function App() {
 
   // Chatbot journal de bord (lot D): the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
-  // Lot P2: measured speed (expeditionSpeed.knots — `.live` is a boolean flag).
+  // Lot C3: une seule vitesse — horloge en Suivre, prévue en Simulation.
   const chatBoatPos = isSuivre
     ? (clockSample && Number.isFinite(clockSample.lat)
       ? { lat: clockSample.lat, lon: clockSample.lon, iso: clockSample.iso || null }
@@ -522,15 +522,19 @@ export default function App() {
     : (sample && Number.isFinite(sample.lat)
       ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
       : null);
-  const chatMeasuredKnots = atQuay ? 0 : expeditionSpeed.knots;
+  const displayKnots = isSuivre
+    ? (atQuay ? 0 : (Number.isFinite(Number(clockSample?.speedKnots)) ? Number(clockSample.speedKnots) : null))
+    : expeditionSpeed.knots;
+  const displayRegime = clockSample?.regime || clockSample?.kind || null;
   const chatContextRef = useRef(null);
   chatContextRef.current = {
     view: isSuivre ? "suivre" : "simulation",
     boat: chatBoatPos
       ? {
         ...chatBoatPos,
-        speedKnots: Number.isFinite(chatMeasuredKnots) ? chatMeasuredKnots : null,
+        speedKnots: Number.isFinite(displayKnots) ? displayKnots : null,
         atQuay,
+        regime: displayRegime,
       }
       : null,
     polar: polarData ? { boat: polarData.boat_name || polarData.name || null, loaM: skipper.orders?.boat?.loaM, draftM: skipper.orders?.boat?.draftM, planningKn: skipper.orders?.values?.planningKn } : null,
@@ -555,6 +559,17 @@ export default function App() {
   const sidebarPlaybackNm = playback.nm;
   const sidebarHudLeg = hudLeg;
   const sidebarClockSample = clockSample;
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.__naviguideDebug = {
+      speed: Number.isFinite(displayKnots) ? displayKnots : null,
+      regime: displayRegime,
+      atQuay,
+    };
+    return () => {
+      if (window.__naviguideDebug) delete window.__naviguideDebug;
+    };
+  }, [displayKnots, displayRegime, atQuay]);
 
   useEffect(() => {
     if (clockSample?.speedKnots > 0) setLiveKnots(clockSample.speedKnots);
@@ -1316,6 +1331,10 @@ export default function App() {
     grib: official.grib,
     gribStatus: official.gribStatus,
     clockSample,
+    clockVertices: officialClock?.vertices || null,
+    traveledNm: isSuivre && live && !previewing
+      ? (Number(live.sailNm) || Number(live.filmNm) || 0)
+      : (cast?.sailNm ?? playback.nm),
     climoMonth,
     t,
     cameraFollow,
@@ -1350,6 +1369,9 @@ export default function App() {
     official.grib,
     official.gribStatus,
     clockSample,
+    officialClock?.vertices,
+    cast?.sailNm,
+    playback.nm,
     climoMonth,
     t,
     cameraFollow,
@@ -1588,7 +1610,7 @@ export default function App() {
         playheadTotal={playback.totalNm}
         remainingNm={hudLeg?.remainingNm ?? 0}
         etaHours={hudLeg?.etaHours}
-        boatKnots={expeditionSpeed.knots}
+        boatKnots={displayKnots}
         phase={cast?.phase}
         vehicle={cast?.vehicle}
         profile={playback.profile}

@@ -97,4 +97,17 @@ describe("contrat UI produit", () => {
     assert.match(sidebar, /plan\?\.briefing_title/);
     assert.doesNotMatch(sidebar, /t\("briefing"\)/);
   });
+
+  it("lot C3 : barre film et contexte du chat lisent la même source", () => {
+    const app = read("../App.jsx");
+    const bar = read("../components/SimulationFilmBar.jsx");
+    assert.match(app, /const displayKnots = isSuivre/);
+    assert.match(app, /boatKnots=\{displayKnots\}/);
+    assert.match(app, /speedKnots: Number\.isFinite\(displayKnots\) \? displayKnots : null/);
+    assert.match(app, /follow: isSuivre/);
+    assert.match(app, /window\.__naviguideDebug/);
+    assert.match(bar, /data-testid="regime-legend"/);
+    assert.doesNotMatch(app, /boatKnots=\{expeditionSpeed\.knots\}/);
+    assert.doesNotMatch(app, /chatMeasuredKnots = atQuay \? 0 : expeditionSpeed\.knots/);
+  });
 });

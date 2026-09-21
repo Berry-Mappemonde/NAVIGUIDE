@@ -104,8 +104,12 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
             boat_in = client_ctx.get("boat") if isinstance(client_ctx.get("boat"), dict) else None
             measured = boat_in.get("speedKnots") if boat_in is not None else None
             measured = float(measured) if isinstance(measured, (int, float)) else None
+            regime = sample.get("regime") or sample.get("kind") or "climatology"
+            # Lot C3 : en Suivre, une seule vitesse — celle de l'horloge (0 à quai).
             if at_quay:
                 speed, basis = 0, "clock"
+            elif view == "suivre":
+                speed, basis = sample.get("speedKnots"), "clock"
             elif measured is not None:
                 speed, basis = measured, "measured"
             else:
@@ -119,6 +123,7 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
                 "atQuay": at_quay,
                 "status": sample.get("status"),
                 "basis": basis,
+                "regime": regime,
             }
             try:
                 around = _grib_around_from_live(voy, now)
@@ -145,12 +150,25 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
             "basis": "simulation" if view != "suivre" else "clock",
             "iso": boat.get("iso"),
         }
-        if isinstance(boat.get("speedKnots"), (int, float)):
+        if view == "suivre" and live is not None and live.get("speedKnots") is not None:
+            boat_out["speedKnots"] = float(live["speedKnots"])
+            boat_out["atQuay"] = bool(live.get("atQuay"))
+            if live.get("regime"):
+                boat_out["regime"] = live["regime"]
+        elif isinstance(boat.get("speedKnots"), (int, float)):
             boat_out["speedKnots"] = float(boat["speedKnots"])
+            if boat.get("regime"):
+                boat_out["regime"] = boat["regime"]
         ctx["boat"] = boat_out
     elif live:
         lat, lon = live["lat"], live["lon"]
-        ctx["boat"] = {"lat": lat, "lon": lon, "basis": "clock"}
+        boat_out = {"lat": lat, "lon": lon, "basis": "clock"}
+        if live.get("speedKnots") is not None:
+            boat_out["speedKnots"] = float(live["speedKnots"])
+        if live.get("regime"):
+            boat_out["regime"] = live["regime"]
+        boat_out["atQuay"] = bool(live.get("atQuay"))
+        ctx["boat"] = boat_out
 
     if lat is not None:
         try:
