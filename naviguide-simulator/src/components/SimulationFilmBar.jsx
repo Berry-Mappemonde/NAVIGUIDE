@@ -3,6 +3,7 @@ import { ChevronRight, Clapperboard, Maximize2, Minimize2, Pause, Play } from "l
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
+import { REGIME_COLORS } from "../layers/regimeRoute.js";
 import { ListenButton } from "./ListenButton.jsx";
 
 const PROFILES = [
@@ -201,6 +202,22 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             </span>
           ) : null}
           {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"> · {weatherLine}</span> : null}
+        </div>
+        <div
+          data-testid="regime-legend"
+          aria-label={t("regimeLegend")}
+          className="flex items-center gap-2.5 text-[9px] text-white/65 mt-0.5 leading-tight"
+        >
+          {[["hindcast", "clockRegimeHindcast"], ["forecast", "clockRegimeForecast"], ["climatology", "clockRegimeClimatology"]].map(([id, key]) => (
+            <span key={id} className="inline-flex items-center gap-1">
+              <span
+                className="inline-block w-2 h-2 rounded-[2px]"
+                style={{ background: REGIME_COLORS[id] }}
+                aria-hidden="true"
+              />
+              {t(key)}
+            </span>
+          ))}
         </div>
         {gribLine ? (
           <div data-testid="grib-warning" className="text-[10px] text-amber-200/90 leading-tight">

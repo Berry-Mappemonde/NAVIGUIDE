@@ -527,6 +527,7 @@ export function sampleClockAtHours(clock, tHours) {
       spread: t < 0.5 ? (a.spread ?? null) : (b.spread ?? null),
       model: b.model || a.model || null,
       leadHours: b.leadHours ?? a.leadHours ?? null,
+      // Pas courant a→b : la vitesse d'intégration est posée sur b (lot C3).
       speedKnots: b.speedKnots ?? a.speedKnots,
       windKnots: b.windKnots ?? a.windKnots,
     };

@@ -403,6 +403,29 @@ describe("lot C2 — régime sur l’échantillon", () => {
     );
     assert.match(src, /data-testid="clock-regime"/);
   });
+
+  it("sampleClockAtHours : vitesse du pas courant, pas interpolée", () => {
+    const clock = {
+      t0: "2026-05-15T08:00:00.000Z",
+      vertices: [
+        {
+          filmNm: 0, sailNm: 0, lat: 46.15, lon: -1.16, bearing: 250,
+          tHours: 0, iso: "2026-05-15T08:00:00.000Z", speedKnots: 6,
+          windKnots: 10, twa: 90, month: 5, vehicle: "main", seaHours: 0,
+          kind: "hindcast", regime: "hindcast",
+        },
+        {
+          filmNm: 20, sailNm: 20, lat: 46.0, lon: -2.0, bearing: 250,
+          tHours: 4, iso: "2026-05-15T12:00:00.000Z", speedKnots: 10,
+          windKnots: 16, twa: 90, month: 5, vehicle: "main", seaHours: 4,
+          kind: "hindcast", regime: "hindcast",
+        },
+      ],
+    };
+    const mid = sampleClockAtHours(clock, 2);
+    assert.equal(mid.speedKnots, 10);
+    assert.notEqual(mid.speedKnots, 8);
+  });
 });
 
 describe("formatFilmClockLine", () => {

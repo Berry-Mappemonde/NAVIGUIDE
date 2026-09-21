@@ -179,6 +179,7 @@ def test_build_context_at_quay_speed_zero(monkeypatch):
             "atQuay": True,
             "status": "live",
             "vehicle": "quay",
+            "regime": "hindcast",
         }
 
     monkeypatch.setattr("voyage_clock.sample_clock_at_time", _sample)
@@ -191,9 +192,12 @@ def test_build_context_at_quay_speed_zero(monkeypatch):
     assert ctx["official"]["atQuay"] is True
     assert ctx["official"]["plannedKnots"] == 11.9
     assert ctx["official"]["basis"] == "clock"
+    assert ctx["official"]["regime"] == "hindcast"
+    assert ctx["boat"]["speedKnots"] == 0
+    assert ctx["boat"]["regime"] == "hindcast"
 
 
-def test_build_context_measured_speed_at_sea(monkeypatch):
+def test_build_context_follow_uses_clock_speed(monkeypatch):
     now = datetime(2026, 7, 1, 12, tzinfo=timezone.utc)
     journal.reset()
     monkeypatch.setattr(
@@ -217,6 +221,8 @@ def test_build_context_measured_speed_at_sea(monkeypatch):
             "atQuay": False,
             "status": "live",
             "vehicle": "main",
+            "regime": "hindcast",
+            "kind": "hindcast",
         }
 
     monkeypatch.setattr("voyage_clock.sample_clock_at_time", _sample)
@@ -225,10 +231,13 @@ def test_build_context_measured_speed_at_sea(monkeypatch):
         {"view": "suivre", "boat": {"lat": 20.0, "lon": -40.0, "speedKnots": 7.4}},
         now,
     ))
-    assert ctx["official"]["speedKnots"] == 7.4
+    assert ctx["official"]["speedKnots"] == 11.9
     assert ctx["official"]["plannedKnots"] == 11.9
-    assert ctx["official"]["basis"] == "measured"
+    assert ctx["official"]["basis"] == "clock"
+    assert ctx["official"]["regime"] == "hindcast"
     assert ctx["official"]["atQuay"] is False
+    assert ctx["boat"]["speedKnots"] == 11.9
+    assert ctx["boat"]["regime"] == "hindcast"
 
 
 def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):

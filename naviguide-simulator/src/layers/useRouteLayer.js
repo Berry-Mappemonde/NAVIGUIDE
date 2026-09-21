@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { worldCopyLineCoords } from "../utils/geo.js";
 import { ROUTE_CASING_COLOR, ROUTE_CASING_WEIGHT, ROUTE_MAIN_COLOR, ROUTE_MAIN_WEIGHT } from "./styles.js";
+import { REGIME_COLORS, traveledRegimeSegments } from "./regimeRoute.js";
+
+export { REGIME_COLORS, traveledRegimeSegments };
 
 function addLine(group, coords, { color, weight, dash, pane = "route" }) {
   if (!coords || coords.length < 2) return;
@@ -20,6 +23,9 @@ export function useRouteLayer(mapRef, {
   mapReady,
   visible = true,
   hideMaritime = false,
+  paintMain = true,
+  clockVertices = null,
+  traveledNm = null,
 }) {
   const groupRef = useRef(null);
 
@@ -41,31 +47,40 @@ export function useRouteLayer(mapRef, {
       return () => group.remove();
     }
 
-    if (!visible) {
-      return () => group.remove();
-    }
-
-    if (customRoute?.features) {
-      customRoute.features
-        .filter((f) => f.geometry?.type === "LineString")
-        .forEach((f) => {
-          addLine(group, f.geometry.coordinates, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });
+    if (paintMain && visible) {
+      if (customRoute?.features) {
+        customRoute.features
+          .filter((f) => f.geometry?.type === "LineString")
+          .forEach((f) => {
+            addLine(group, f.geometry.coordinates, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });
+          });
+      } else {
+        (segments || []).forEach((s) => {
+          if (!s.coords?.length) return;
+          if (s.nonMaritime) {
+            addLine(group, s.coords, { color: "orange", weight: 4, dash: "6 6" });
+          } else if (!hideMaritime) {
+            addLine(group, s.coords, { color: ROUTE_CASING_COLOR, weight: ROUTE_CASING_WEIGHT });
+            addLine(group, s.coords, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });
+          }
         });
-      return () => group.remove();
+      }
     }
 
-    segments.forEach((s) => {
-      if (!s.coords?.length) return;
-      if (s.nonMaritime) {
-        addLine(group, s.coords, { color: "orange", weight: 4, dash: "6 6" });
-      } else if (!hideMaritime) {
-        addLine(group, s.coords, { color: ROUTE_CASING_COLOR, weight: ROUTE_CASING_WEIGHT });
-        addLine(group, s.coords, { color: "#0077ff", weight: ROUTE_MAIN_WEIGHT });
-      }
-    });
+    if (visible && clockVertices?.length && Number(traveledNm) > 0) {
+      traveledRegimeSegments(clockVertices, traveledNm).forEach((s) => {
+        addLine(group, s.coords, {
+          color: REGIME_COLORS[s.regime] || REGIME_COLORS.climatology,
+          weight: 5,
+        });
+      });
+    }
 
     return () => group.remove();
-  }, [mapRef, mapReady, segments, customRoute, drawingMode, drawnSegments, drawnFailed, visible, hideMaritime]);
+  }, [
+    mapRef, mapReady, segments, customRoute, drawingMode, drawnSegments, drawnFailed,
+    visible, hideMaritime, paintMain, clockVertices, traveledNm,
+  ]);
 
   return groupRef;
 }

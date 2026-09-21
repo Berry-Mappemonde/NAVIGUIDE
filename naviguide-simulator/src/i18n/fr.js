@@ -433,6 +433,7 @@ export default {
   clockRegimeClimatology: "climatologie",
   clockRegimeSources: "{n} sources ±{spread} kn",
   clockRegimeSourcesPlain: "{n} sources",
+  regimeLegend:     "Régimes de la route parcourue",
   voyageTwa:        "TWA {deg}°",
   voyageLocalKnots: "{knots} kt",
   escalesQuay:      "{days} j à quai",
