@@ -1,0 +1,8 @@
+# même texte deux fois (libellés)
+
+
+# données (information différente, conservées)
+2	Cayenne (Guyane)
+2	Dzaoudzi (Mayotte)
+2	La Rochelle
+2	Nouméa (Nouvelle-Calédonie)

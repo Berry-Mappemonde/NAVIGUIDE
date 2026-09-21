@@ -1,0 +1,6 @@
+# même texte deux fois (libellés)
+
+
+# données (information différente, conservées)
+2	17.60° · -16.90°
+2	18.20° · -17.80°

@@ -1650,7 +1650,6 @@ export default function App() {
         hideBar={hideFilmBar}
         onHideBar={setHideFilmBar}
         liveSpeed={expeditionSpeed.live}
-        boatName={polarData?.boat_name}
         windSeries={windProfile.series}
         windLoading={windProfile.loading}
         holding={playback.holding}
