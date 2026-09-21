@@ -42,6 +42,13 @@ describe("i18n parity (lot F5)", () => {
     assert.equal(en.byRoad, "by road");
   });
 
+  it("lot R11 — fourchette d'arrivée sans p10 ni membres à l'écran", () => {
+    assert.equal(fr.etaRange, "arrivée entre le {p10} et le {p90}");
+    assert.equal(en.etaRange, "arrival between {p10} and {p90}");
+    assert.equal(fr.etaRangeTitle, "p10–p90, {n} membres");
+    assert.equal(en.etaRangeTitle, "p10–p90, {n} members");
+  });
+
   it("les libellés plein écran film existent dans les deux langues", () => {
     assert.match(fr.filmFullscreen, /Plein écran film/);
     assert.match(en.filmFullscreen, /fullscreen/i);

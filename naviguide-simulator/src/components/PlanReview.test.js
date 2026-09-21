@@ -28,6 +28,8 @@ describe("PlanReview — commentaire (lot L5)", () => {
     assert.match(src, /data-testid="plan-review-leg-dates"/);
     assert.match(src, /data-testid="plan-review-eta-range"/);
     assert.match(src, /formatEtaRange/);
+    assert.match(src, /formatEtaRangeTitle/);
+    assert.match(src, /title=\{etaTitle/);
   });
 });
 
