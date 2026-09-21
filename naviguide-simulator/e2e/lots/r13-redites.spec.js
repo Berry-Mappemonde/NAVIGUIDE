@@ -87,7 +87,17 @@ async function settle(page) {
 async function collectScreen(page) {
   await settle(page);
   return page.evaluate(() => {
+    // Panneaux fermés (cinéma / translate) : leur innerText reste dans le
+    // body. On les exclut le temps du décompte — la recette ne voit que l'écran.
+    const panels = [...document.querySelectorAll(".naviguide-sidebar-panel")];
+    const closed = panels.filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.right < 8 || r.left > window.innerWidth - 8;
+    });
+    const prev = closed.map((el) => el.style.display);
+    closed.forEach((el) => { el.style.display = "none"; });
     const raw = document.body.innerText || "";
+    closed.forEach((el, i) => { el.style.display = prev[i]; });
     const lines = raw.split(/\n/).map((s) => s.trim()).filter((s) => s.length >= 8);
     const counts = new Map();
     for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1);
