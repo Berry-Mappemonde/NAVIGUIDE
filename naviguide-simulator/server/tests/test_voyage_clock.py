@@ -159,6 +159,15 @@ def test_atlas_wind_fn_keeps_kind_and_hs():
     assert sea["period"] == "1980-2020"
 
 
+def test_sample_at_quay_speed_zero():
+    c = _clock("2026-06-15T08:00:00Z")
+    fdf = next(m for m in c["marks"] if "Fort-de-France" in m["name"])
+    s = sample_clock_at_hours(c, float(fdf["tHours"]) + 1)
+    assert s["atQuay"] is True
+    assert s["speedKnots"] == 0
+    assert s["vehicle"] == "quay"
+
+
 def test_js_py_same_schema_keys():
     """Le golden partagé impose les mêmes clés des deux côtés."""
     c = _clock(GOLDEN["t0"])

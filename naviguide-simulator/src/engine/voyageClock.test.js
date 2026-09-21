@@ -22,6 +22,7 @@ import {
   parseFrenchDepartureDate,
   parseDepartureUtc,
   portHoldHours,
+  sampleClockAtHours,
   sampleClockAtTime,
   splitDepartureUtc,
 } from "./voyageClock.js";
@@ -150,6 +151,10 @@ describe("voyageClock quais et hops", () => {
     const leave = lookupVoyageClock(clock, mid.filmNm, { atQuay: true });
     assert.ok(Math.abs(leave.tHours - arrival.tHours - 48) < 1e-6);
     assert.equal(arrival.filmNm, leave.filmNm);
+    const atQuay = sampleClockAtHours(clock, mid.tHours + 1);
+    assert.equal(atQuay.atQuay, true);
+    assert.equal(atQuay.speedKnots, 0);
+    assert.equal(atQuay.vehicle, "quay");
   });
 
   it("air hop: +8 h, speedKnots null", () => {
