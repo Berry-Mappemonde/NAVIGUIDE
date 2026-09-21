@@ -191,6 +191,22 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
+  it("lot T : une perle mince ne raconte pas l’échec BI", () => {
+    const thin = {
+      pearl: "thin",
+      thin: true,
+      zee: { name: "Mauritanian Exclusive Economic Zone", mrgid: 8492 },
+      poe: [],
+      amp: [],
+      projects: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      sources: { zee: "marineregions", bi: "unavailable" },
+    };
+    const text = narrateIci(thin, "fr");
+    assert.doesNotMatch(text, /Blue Intelligence n’ont pas répondu/);
+    assert.doesNotMatch(text, /ports WPI sont conservés/);
+  });
+
   it("does not dump a list of projects", () => {
     const projects = Array.from({ length: 40 }, (_, i) => ({ name: `Projet ${i}`, nm: i + 1 }));
     const text = narrateIci({

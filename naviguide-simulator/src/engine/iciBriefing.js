@@ -715,11 +715,11 @@ function sourceSentence(dossier, lang) {
   if ((dossier?.poe || []).some((p) => /douane\.gouv\.fr/i.test(String(p.url || "")))) {
     notes.push(en ? "Entry sheets: douane.gouv.fr." : "Fiches d’entrée : douane.gouv.fr.");
   }
-  if (bi === "unavailable") {
+  if (bi === "unavailable" && !pearlKind(dossier) && !dossier?.thin) {
     notes.push(en
       ? "Blue Intelligence layers did not answer: only the EEZ and the World Port Index are kept."
       : "Les couches Blue Intelligence n’ont pas répondu : seuls la ZEE et les ports WPI sont conservés.");
-  } else if (bi === "partial") {
+  } else if (bi === "partial" && !pearlKind(dossier) && !dossier?.thin) {
     notes.push(en
       ? "Some Blue Intelligence layers are missing: the briefing tells only what arrived."
       : "Certaines couches Blue Intelligence manquent : le briefing ne raconte que ce qui est arrivé.");

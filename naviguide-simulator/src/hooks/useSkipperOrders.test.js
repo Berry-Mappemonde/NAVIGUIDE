@@ -101,7 +101,8 @@ describe("SkipperOrdersPanel contract (revue du 19 sept. : « Paramètres avanc�
     assert.match(tools, /onComfort=\{onSkipperComfort\}/);
     assert.match(tools, /onExpert=\{onSkipperExpert\}/);
     const dossier = readFileSync(join(here, "useIciDossier.js"), "utf8");
-    assert.match(dossier, /q\.set\("radius_nm", String\(radiusRef\.current\)\)/);
+    assert.match(dossier, /q\.set\("radius_nm", String\(radiusNm\)\)/);
+    assert.match(dossier, /radiusNm: radiusRef\.current/);
     assert.match(dossier, /radiusRef\.current = /);
     assert.doesNotMatch(app, /knots: expeditionSpeed\.knots,\n\s*\}\);\n\n\s*const iciPack/);
   });

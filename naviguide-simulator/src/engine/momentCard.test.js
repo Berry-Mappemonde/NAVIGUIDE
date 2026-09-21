@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   LANE_FREE,
   LANE_NOW,
+  FREE_STALE_NM,
   STALE_CARD_NM,
   TTL,
   advanceMoments,
@@ -341,5 +342,52 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     e = nextFree(e, 1);
     assert.equal(e.free, null);
     assert.equal(nextFree(e, 2), e);
+  });
+
+  it("lot T : carte à 90 nm exclue de la boucle FREE, à 30 nm gardée", () => {
+    assert.equal(FREE_STALE_NM, 60);
+    const boat = { lat: 18.1, lon: -16.9 };
+    const bag = {
+      at: boat,
+      nearby: {
+        marinas: [],
+        capitaineries: [],
+        wpi: [
+          { name: "Nouadhibou", nm: 30, lat: 18.6, lon: -16.9 },
+          { name: "Port Bourgenay", nm: 90, lat: 46.48, lon: -1.78 },
+        ],
+        anchorages: [],
+      },
+    };
+    const items = infoItemsFromBag(bag, "fr");
+    assert.ok(items.some((c) => c.entity?.rawName === "Nouadhibou"), "30 nm : gardée");
+    assert.ok(!items.some((c) => /Bourgenay/i.test(c.entity?.rawName || c.text || "")), "90 nm : exclue");
+
+    const farCard = {
+      key: "bag:wpi:far",
+      origin: "bag",
+      lane: LANE_FREE,
+      kind: "wpi",
+      text: "Port Bourgenay à 90 nm.",
+      entity: { name: "Port Bourgenay", rawName: "Port Bourgenay", lat: 46.48, lon: -1.78, nm: 90 },
+    };
+    const nearCard = {
+      key: "bag:wpi:near",
+      origin: "bag",
+      lane: LANE_FREE,
+      kind: "wpi",
+      text: "Nouadhibou à 30 nm.",
+      entity: { name: "Nouadhibou", rawName: "Nouadhibou", lat: 18.6, lon: -16.9, nm: 30 },
+    };
+    let s = {
+      ...emptyMoments(),
+      legId: "A",
+      seen: new Set([farCard.key, nearCard.key]),
+      freeLoop: [farCard, nearCard],
+    };
+    s = advanceMoments(s, { events: [], bag, filmCum: 0, nowMs: 0, playing: false, legId: "A" });
+    const around = [s.free, ...s.freeQueue, ...s.freeLoop].filter(Boolean);
+    assert.ok(around.some((c) => /Nouadhibou/i.test(c.entity?.rawName || c.text || "")), "30 nm reste dans la boucle");
+    assert.ok(!around.some((c) => /Bourgenay/i.test(c.entity?.rawName || c.text || "")), "90 nm sort de la boucle");
   });
 });

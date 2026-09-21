@@ -25,6 +25,7 @@
 import { phraseForEvent, satelliteSentence, climatologySentence } from "./iciBriefing.js";
 import { placeLabel } from "./briefingLinks.js";
 import { formatJournalEntry } from "./journalFormat.js";
+import { haversineNm, wrapLon } from "../utils/geo.js";
 
 export const LANE_NOW = "now";
 export const LANE_FREE = "free";
@@ -59,6 +60,9 @@ export const QUEUE_MAX = Object.freeze({ now: 6, free: 12 });
 
 /** Simulation: an event left this far behind the playhead is history, not a card. */
 export const STALE_CARD_NM = 80;
+
+/** FREE loop: a place farther than this from the boat is another sea, not "around". */
+export const FREE_STALE_NM = 60;
 
 /** Cap the per-kind information items taken from one bag (same caps as the briefing). */
 const BAG_CAPS = Object.freeze({
@@ -106,6 +110,29 @@ export function isStaleCard(card, { filmCum = null, mode = "simulation" } = {}) 
   if (mode === "suivre") return false;
   if (!card || !Number.isFinite(card.filmCum) || !Number.isFinite(filmCum)) return false;
   return filmCum - card.filmCum > STALE_CARD_NM;
+}
+
+/** Distance of the card's place from the boat (nm), or null when unknown. */
+export function cardEntityNmFromBoat(card, boat) {
+  const lat = Number(card?.entity?.lat);
+  const lon = Number(card?.entity?.lon);
+  if (
+    boat
+    && Number.isFinite(lat)
+    && Number.isFinite(lon)
+    && Number.isFinite(Number(boat.lat))
+    && Number.isFinite(Number(boat.lon))
+  ) {
+    return haversineNm(lat, wrapLon(lon), Number(boat.lat), wrapLon(Number(boat.lon)));
+  }
+  const nm = Number(card?.entity?.nm);
+  return Number.isFinite(nm) ? nm : null;
+}
+
+/** FREE: the cited place is farther than FREE_STALE_NM from the boat. */
+export function isFreeStale(card, boat, limitNm = FREE_STALE_NM) {
+  const d = cardEntityNmFromBoat(card, boat);
+  return d != null && d > limitNm;
 }
 
 /** Place the card can point at on the map (same shape as a briefing entity). */
@@ -404,7 +431,13 @@ export function infoItemsFromBag(bag, lang = "fr") {
       entity: null,
     });
   }
-  return out.filter((card) => card.text);
+  const boat = bag.at && Number.isFinite(Number(bag.at.lat)) && Number.isFinite(Number(bag.at.lon))
+    ? { lat: Number(bag.at.lat), lon: Number(bag.at.lon) }
+    : null;
+  return out.filter((card) => (
+    card.text
+    && (card.lane === LANE_NOW || !isFreeStale(card, boat))
+  ));
 }
 
 function eventKey(ev) {
@@ -604,6 +637,16 @@ export function advanceMoments(prev, {
   nowQueue = nowQueue.map(refresh);
   freeQueue = freeQueue.map(refresh);
 
+  const boat = bag?.at && Number.isFinite(Number(bag.at.lat)) && Number.isFinite(Number(bag.at.lon))
+    ? { lat: Number(bag.at.lat), lon: Number(bag.at.lon) }
+    : null;
+  const dropFarFree = (list) => {
+    if (!boat || !list?.length) return list;
+    const next = list.filter((c) => !isFreeStale(c, boat));
+    if (next.length !== list.length) changed = true;
+    return next;
+  };
+
   // 2. Bag → cards (balisage / climatologie → NOW, the rest → FREE).
   for (const card of infoItemsFromBag(bag, lang)) {
     const truth = truthForCard(card, bag);
@@ -621,6 +664,13 @@ export function advanceMoments(prev, {
   const beforeFree = freeQueue.length;
   freeQueue = freeQueue.filter((c) => !isStaleCard(c, { filmCum, mode }));
   if (nowQueue.length !== beforeNow || freeQueue.length !== beforeFree) changed = true;
+  // Lot T: a FREE place more than FREE_STALE_NM from the boat leaves the loop.
+  freeQueue = dropFarFree(freeQueue);
+  freeLoop = dropFarFree(freeLoop);
+  if (free && isFreeStale(free, boat)) {
+    free = null;
+    changed = true;
+  }
 
   // 4. Expire / replace the NOW card, then pop the next one.
   const nowTtl = nowTtlMs({ mode, playing });

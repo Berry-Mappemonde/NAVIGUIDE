@@ -5,12 +5,14 @@ import {
   SIM_NEAR_NM,
   buildAlongIndex,
   canonicalWindow,
+  flatFromCustomRoute,
   lookaheadNmFor,
   maxPearlsFor,
   nearestPearlBag,
   pearlKey,
   sampleLeg,
 } from "../engine/iciAlong.js";
+import { wrapLon } from "../utils/geo.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const FETCH_MS = 20000;
@@ -42,6 +44,8 @@ function loadCanonicalPearls() {
 export function useIciAlong({
   enabled,
   flat,
+  /** Drawn route (lot T): always sample this track, never the official pearls. */
+  customRoute = null,
   fromNm,
   toNm,
   boatNm,
@@ -56,7 +60,10 @@ export function useIciAlong({
   const [bags, setBags] = useState(() => new Map());
   const [canonicalPearls, setCanonicalPearls] = useState(null);
   const cacheRef = useRef(new Map());
-  const routeKey = `${flat?.points?.length || 0}:${flat?.totalNm || 0}:${mode}`;
+  const drawnFlat = useMemo(() => flatFromCustomRoute(customRoute), [customRoute]);
+  const track = drawnFlat || flat;
+  const alongCanonical = Boolean(canonical && !drawnFlat);
+  const routeKey = `${drawnFlat ? "c" : "o"}:${track?.points?.length || 0}:${track?.totalNm || 0}:${mode}`;
   const lastRouteRef = useRef(routeKey);
   if (lastRouteRef.current !== routeKey) {
     lastRouteRef.current = routeKey;
@@ -64,26 +71,26 @@ export function useIciAlong({
   }
 
   useEffect(() => {
-    if (!enabled || !canonical) return undefined;
+    if (!enabled || !alongCanonical) return undefined;
     let cancelled = false;
     loadCanonicalPearls().then((list) => { if (!cancelled) setCanonicalPearls(list); });
     return () => { cancelled = true; };
-  }, [enabled, canonical]);
+  }, [enabled, alongCanonical]);
 
   const boatBucket = Number.isFinite(Number(boatNm))
     ? Math.floor(Number(boatNm) / ROUTE_SAMPLE_NM) * ROUTE_SAMPLE_NM
     : 0;
   // The window moves by whole pearls: round the boat position to ~1 nm.
   const latB = Number.isFinite(Number(boatLat)) ? Math.round(Number(boatLat) * 60) / 60 : null;
-  const lonB = Number.isFinite(Number(boatLon)) ? Math.round(Number(boatLon) * 60) / 60 : null;
+  const lonB = Number.isFinite(Number(boatLon)) ? Math.round(wrapLon(Number(boatLon)) * 60) / 60 : null;
 
   const lookaheadNm = lookaheadNmFor(mode, orders);
   const maxPearls = maxPearlsFor(mode, orders);
 
   const pearls = useMemo(() => {
-    if (!enabled || !flat?.points?.length) return [];
-    if (canonical && canonicalPearls) {
-      return canonicalWindow(canonicalPearls, flat, {
+    if (!enabled || !track?.points?.length) return [];
+    if (alongCanonical && canonicalPearls) {
+      return canonicalWindow(canonicalPearls, track, {
         boatNm: boatBucket,
         boatLat: latB,
         boatLon: lonB,
@@ -95,7 +102,7 @@ export function useIciAlong({
         farEvery: Math.round(SIM_FAR_STEP_NM / ROUTE_SAMPLE_NM),
       });
     }
-    return sampleLeg(flat, {
+    return sampleLeg(track, {
       fromNm,
       toNm,
       boatNm: boatBucket,
@@ -107,7 +114,7 @@ export function useIciAlong({
       nearNm: mode === "suivre" ? Infinity : SIM_NEAR_NM,
       farStepNm: mode === "suivre" ? null : SIM_FAR_STEP_NM,
     });
-  }, [enabled, flat, fromNm, toNm, boatBucket, latB, lonB, month, lookaheadNm, maxPearls, mode, canonical, canonicalPearls]);
+  }, [enabled, track, fromNm, toNm, boatBucket, latB, lonB, month, lookaheadNm, maxPearls, mode, alongCanonical, canonicalPearls]);
 
   const pearlsSig = pearls.map((p) => pearlKey(p.lat, p.lon, month)).join("|");
 
@@ -139,7 +146,7 @@ export function useIciAlong({
       try {
         const q = new URLSearchParams({
           lat: String(p.lat),
-          lon: String(p.lon),
+          lon: String(wrapLon(Number(p.lon))),
           thin: "1",
         });
         if (Number.isFinite(Number(month))) q.set("month", String(month));
