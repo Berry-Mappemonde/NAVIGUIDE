@@ -22,6 +22,17 @@ describe("i18n parity (lot F5)", () => {
     }
   });
 
+  it("lot R2 — Escale précédente et info-bulles de régime", () => {
+    assert.equal(fr.previousEscale, "Escale précédente");
+    assert.equal(en.previousEscale, "Previous stop");
+    assert.match(fr.regimeTooltipHindcast, /vraiment rencontré/);
+    assert.match(fr.regimeTooltipForecast, /10 jours/);
+    assert.match(fr.regimeTooltipClimatology, /moyenne du mois/);
+    assert.match(en.regimeTooltipHindcast, /actually met/);
+    assert.match(en.regimeTooltipForecast, /10 days/);
+    assert.match(en.regimeTooltipClimatology, /monthly average/);
+  });
+
   it("les libellés plein écran film existent dans les deux langues", () => {
     assert.match(fr.filmFullscreen, /Plein écran film/);
     assert.match(en.filmFullscreen, /fullscreen/i);

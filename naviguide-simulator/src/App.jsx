@@ -38,6 +38,8 @@ import {
   mapEscalesOnRoute,
   nextEscaleNm,
   prevEscaleNm,
+  canNextEscale,
+  canPrevEscale,
   filmLegContext,
   chapterAtNm,
 } from "./engine/routePlayhead.js";
@@ -1394,7 +1396,7 @@ export default function App() {
   const rootInsetVars = mapInsetVars({
     sidebarOpen: sidebarOpen && !filmFullscreen,
     toolsOpen: toolsOpen && !filmFullscreen,
-    filmBarVisible: !(cinemaMode && hideFilmBar),
+    filmBarVisible: !hideFilmBar,
     filmBarControls: isSimulation,
   });
 
@@ -1626,12 +1628,14 @@ export default function App() {
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(nm, { jump: true });
         }}
+        onPrev={handleSimPrev}
+        canPrev={canPrevEscale(escaleMarks, playback.nm)}
         onNext={handleSimNext}
-        canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
+        canNext={canNextEscale(escaleMarks, playback.nm)}
         showPlaybackControls={isSimulation}
         cinema={cinemaMode}
         onCinema={toggleCinema}
-        hideBar={cinemaMode && hideFilmBar}
+        hideBar={hideFilmBar}
         onHideBar={setHideFilmBar}
         liveSpeed={expeditionSpeed.live}
         boatName={polarData?.boat_name}

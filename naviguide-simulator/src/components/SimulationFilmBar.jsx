@@ -1,9 +1,8 @@
 import { memo } from "react";
-import { ChevronRight, Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
-import { REGIME_COLORS } from "../layers/regimeRoute.js";
 import { ListenButton } from "./ListenButton.jsx";
 
 const PROFILES = [
@@ -50,6 +49,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   onTogglePlay,
   marks,
   onSeekNm,
+  onPrev,
+  canPrev,
   onNext,
   canNext,
   showPlaybackControls = true,
@@ -95,6 +96,18 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
 }) {
   const { t, lang } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
+  const regimeTitle = [
+    t("regimeTooltipHindcast"),
+    t("regimeTooltipForecast"),
+    t("regimeTooltipClimatology"),
+  ].join(" · ");
+  const regimeLabel = clockRegimeText({
+    regime: clockCurrent?.regime || clockCurrent?.kind,
+    sources: clockCurrent?.sources,
+    spread: clockCurrent?.spread,
+    t,
+    lang,
+  });
   const barTotal = playheadTotal ?? totalNm;
   const barNm = playhead ?? nm;
   const speedBasis = clockSpeedBasis(clock, clockCurrent, barNm);
@@ -121,6 +134,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       >
         <button
           type="button"
+          data-testid="show-film-bar"
           onClick={() => onHideBar?.(false)}
           className="mx-auto block px-2 py-1 rounded-md text-[10px] font-semibold bg-slate-950/80 border border-white/15 text-white/80"
         >
@@ -196,49 +210,37 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
             {vehicle === "plane"
               ? ` · ${t("filmAirVehicle")}`
-              : atQuay
-                ? ` · ${quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmAtQuay")}`
-                : ` · ${Number(boatKnots || 0).toFixed(1)} kt${speedBasis === "fallback" ? ` ${t("speedFallback")}` : ""}`}
+              : (
+                <>
+                  {" · "}
+                  <span
+                    data-testid="regime-legend"
+                    title={regimeTitle}
+                    className="inline-flex items-center rounded-md px-1 border border-white/15 bg-white/10"
+                  >
+                    <span data-testid="speed-regime-pill">
+                      {atQuay
+                        ? (quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmAtQuay"))
+                        : `${Number(boatKnots || 0).toFixed(1)} kt${speedBasis === "fallback" ? ` ${t("speedFallback")}` : ""}`}
+                    </span>
+                    <span className="sr-only">
+                      {t("clockRegimeHindcast")} {t("clockRegimeForecast")} {t("clockRegimeClimatology")}
+                    </span>
+                  </span>
+                </>
+              )}
             {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
             {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
             {liveStatus ? ` · ${liveStatus}` : ""}
             {atQuay && quayDays > 0 ? "" : (holding ? ` · ${t("filmArrivalHold")}` : "")}
           </span>
-          {clockRegimeText({
-            regime: clockCurrent?.regime || clockCurrent?.kind,
-            sources: clockCurrent?.sources,
-            spread: clockCurrent?.spread,
-            t,
-            lang,
-          }) ? (
-            <span data-testid="clock-regime">
+          {regimeLabel ? (
+            <span data-testid="clock-regime" title={regimeTitle}>
               {" · "}
-              {clockRegimeText({
-                regime: clockCurrent?.regime || clockCurrent?.kind,
-                sources: clockCurrent?.sources,
-                spread: clockCurrent?.spread,
-                t,
-                lang,
-              })}
+              {regimeLabel}
             </span>
           ) : null}
           {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"> · {weatherLine}</span> : null}
-        </div>
-        <div
-          data-testid="regime-legend"
-          aria-label={t("regimeLegend")}
-          className="flex items-center gap-2.5 text-[9px] text-white/65 mt-0.5 leading-tight"
-        >
-          {[["hindcast", "clockRegimeHindcast"], ["forecast", "clockRegimeForecast"], ["climatology", "clockRegimeClimatology"]].map(([id, key]) => (
-            <span key={id} className="inline-flex items-center gap-1">
-              <span
-                className="inline-block w-2 h-2 rounded-[2px]"
-                style={{ background: REGIME_COLORS[id] }}
-                aria-hidden="true"
-              />
-              {t(key)}
-            </span>
-          ))}
         </div>
         {gribLine ? (
           <div data-testid="grib-warning" className="text-[10px] text-amber-200/90 leading-tight">
@@ -299,17 +301,19 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        <div data-testid="film-commands" className="flex items-center gap-1 mt-1 overflow-x-auto flex-nowrap">
+        <div className="flex items-center gap-1 mt-1">
+          {onHideBar ? (
+            <button
+              type="button"
+              data-testid="hide-film-bar"
+              onClick={() => onHideBar(true)}
+              className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-white/5 border-white/10 hover:bg-white/10 whitespace-nowrap shrink-0"
+            >
+              {t("hideFilmBar")}
+            </button>
+          ) : null}
+          <div data-testid="film-commands" className="flex items-center gap-1 overflow-x-auto flex-nowrap min-w-0 flex-1">
           <div className="flex items-center gap-1 flex-nowrap shrink-0">
-            {cinema && onHideBar ? (
-              <button
-                type="button"
-                onClick={() => onHideBar(true)}
-                className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-white/5 border-white/10 hover:bg-white/10 whitespace-nowrap"
-              >
-                {t("hideFilmBar")}
-              </button>
-            ) : null}
             {onCinema ? (
               <button
                 type="button"
@@ -472,6 +476,17 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 </button>
                 <button
                   type="button"
+                  data-testid="prev-stop"
+                  onClick={onPrev}
+                  disabled={!canPrev}
+                  className="h-6 px-1.5 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-0.5 text-[9px] font-semibold whitespace-nowrap"
+                  title={t("previousEscale")}
+                >
+                  <ChevronLeft size={12} />
+                  {t("previousEscale")}
+                </button>
+                <button
+                  type="button"
                   onClick={onNext}
                   disabled={!canNext}
                   className="h-6 px-1.5 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-0.5 text-[9px] font-semibold whitespace-nowrap"
@@ -518,6 +533,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 ))}
               </div>
             ) : null}
+          </div>
           </div>
         </div>
       </div>
