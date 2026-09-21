@@ -82,8 +82,9 @@ app.include_router(logbook_router)
 def _startup_official_grib():
     """Dernier GRIB dès le boot serveur — pas attendre le premier GET front."""
     try:
-        from voyage_api import _kick_official_grib
+        from voyage_api import _kick_official_grib, _kick_official_hindcast
         _kick_official_grib()
+        _kick_official_hindcast()
     except Exception:
         pass
 

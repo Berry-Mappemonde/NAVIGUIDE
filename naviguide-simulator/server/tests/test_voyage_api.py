@@ -70,8 +70,9 @@ def test_create_pending_then_ready(client):
     assert meta["forecastModel"] == "synthetic-test"
 
 
-def test_at_plus_48h_forecast_and_f5(client):
+def test_at_plus_48h_forecast_and_f5(client, monkeypatch):
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: t0)
     r = client.post("/voyage", json=_payload(t0.isoformat().replace("+00:00", "Z")))
     vid = r.json()["voyageId"]
     _wait_forecast(client, vid)
@@ -88,8 +89,9 @@ def test_at_plus_48h_forecast_and_f5(client):
     assert a.json()["status"] == "live"
 
 
-def test_at_plus_11d_climatology(client):
+def test_at_plus_11d_climatology(client, monkeypatch):
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: t0)
     vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
     _wait_forecast(client, vid)
     when = (t0 + timedelta(days=11)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -165,3 +167,29 @@ def test_recompute_takes_the_skipper_orders_as_constraints(client, monkeypatch):
     rec2 = client.post(f"/voyage/{vid}/recompute", json={"wind_max_kt": 5, "hs_max_m": 40})
     assert rec2.json()["constraints"]["source"] == "default"
     assert rec2.json()["constraints"]["windMaxKt"] is None
+
+
+def test_c2_regime_changes_at_now_and_regimes_endpoint(client, monkeypatch):
+    t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
+    now = t0 + timedelta(days=4)
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
+    _wait_forecast(client, vid)
+    past = client.get(f"/voyage/{vid}/at", params={"t": (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}).json()
+    future = client.get(f"/voyage/{vid}/at", params={"t": (now + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}).json()
+    assert past["regime"] in ("hindcast", "climatology")
+    assert future["regime"] == "forecast"
+    clock = client.get(f"/voyage/{vid}/clock").json()
+    from voyage_api import _regime_portions
+    portions = _regime_portions(clock)
+    assert portions
+    assert {p["regime"] for p in portions} & {"forecast", "climatology", "hindcast"}
+
+
+def test_official_regimes_endpoint(client):
+    client.put("/voyage/official", json=_payload("2026-05-15T08:00:00Z"))
+    r = client.get("/voyage/official/regimes")
+    assert r.status_code == 200
+    body = r.json()
+    assert "portions" in body
+    assert body["voyageId"] == "berry-mappemonde-2026-officiel"

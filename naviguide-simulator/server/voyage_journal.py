@@ -441,7 +441,7 @@ def wx_entry_from_grib(
         "lon": grib.get("lon"),
         "model": grib.get("model"),
         "from": grib.get("id"),
-        "basis": "forecast",
+        "basis": grib.get("basis") or "forecast",
     }
     if isinstance(grib.get("lat"), (int, float)) and isinstance(grib.get("lon"), (int, float)):
         entry["entity"] = {
@@ -516,6 +516,46 @@ def record_wx(now: datetime) -> int:
     """Derive `wx` entries from every journaled GRIB reading (idempotent)."""
     del now
     return _append(wx_events_from_gribs(latest(5000, kinds=("grib",))))
+
+
+def _samples_from_hindcast_clock(clock: dict, now: datetime) -> List[dict]:
+    """Sommets hindcast déjà intégrés — durée et max viennent des heures réelles."""
+    out = []
+    t0 = parse_iso(clock["t0"])
+    for v in clock.get("vertices") or []:
+        if (v.get("regime") or v.get("kind")) != "hindcast":
+            continue
+        try:
+            when = parse_iso(v["iso"]) if v.get("iso") else t0 + timedelta(hours=float(v.get("tHours") or 0))
+        except Exception:
+            continue
+        if when > now:
+            continue
+        out.append({
+            "id": f"hindcast:{v.get('iso') or v.get('tHours')}",
+            "t": v.get("iso") or to_iso(when),
+            "windKnots": v.get("windKnots"),
+            "dirFromDeg": v.get("dirFromDeg"),
+            "hs": v.get("hs"),
+            "lat": v.get("lat"),
+            "lon": v.get("lon"),
+            "model": "hindcast",
+            "basis": "hindcast",
+        })
+    return out
+
+
+def record_wx_from_hindcast(clock: Optional[dict], now: datetime) -> int:
+    """wx depuis l'horloge hindcast : durée et max, basis hindcast."""
+    if not clock:
+        return 0
+    events = wx_events_from_gribs(_samples_from_hindcast_clock(clock, now))
+    for e in events:
+        e["basis"] = "hindcast"
+        e["from"] = e.get("from") or e.get("id")
+        if e.get("id") and not str(e["id"]).startswith("wx:hindcast"):
+            e["id"] = f"wx:hindcast:{e.get('t')}"
+    return _append(events)
 
 
 # ── GRIB ────────────────────────────────────────────────────────────────────
@@ -627,6 +667,10 @@ def tick(voy: Optional[dict], now: datetime, *, force: bool = False) -> Dict[str
         out["wx"] = record_wx(now)
     except Exception:
         out["wx"] = 0
+    try:
+        out["wxHindcast"] = record_wx_from_hindcast(clock, now)
+    except Exception:
+        out["wxHindcast"] = 0
     return out
 
 

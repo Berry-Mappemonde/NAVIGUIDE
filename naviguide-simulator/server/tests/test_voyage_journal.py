@@ -224,10 +224,11 @@ def test_route_events_from_warmed_pearls_dated_by_the_clock(client, monkeypatch)
 
 
 def test_summary_carries_the_whole_voyage_events_apart_from_positions(client, monkeypatch):
-    now = T0 + timedelta(days=40)
-    _freeze(monkeypatch, now)
     client.put("/voyage/official", json=_official())
     voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    fdf = next(m for m in voy["clock"]["marks"] if "Fort-de-France" in m["name"])
+    now = T0 + timedelta(hours=float(fdf["tHours"]) + 36)
+    _freeze(monkeypatch, now)
     journal.tick(voy, now, force=True)
     journal.add_note("Belle étoile.", T0 + timedelta(days=1))
     body = client.get("/voyage/official/journal?limit=10").json()
