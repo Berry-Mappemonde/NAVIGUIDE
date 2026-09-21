@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
-import { formatEtaRange } from "../hooks/usePlanReview.js";
+import { formatEtaRange, formatEtaRangeTitle } from "../hooks/usePlanReview.js";
+import { REGIME_COLORS } from "../layers/regimeRoute.js";
 
 const LEVEL_DOT = {
   ok: "bg-emerald-400",
@@ -61,9 +62,25 @@ export const PlanReview = memo(function PlanReview({
         {summary ? (
           <p className="px-2 pt-1 text-[9px] text-white/45 leading-snug">{summary}</p>
         ) : null}
+        <div
+          data-testid="plan-review-regime-legend"
+          aria-label={t("regimeLegend")}
+          className="flex items-center gap-2.5 px-2 pt-1 text-[9px] text-white/45 leading-tight"
+        >
+          {[["hindcast", "clockRegimeHindcast", "regimeTooltipHindcast"], ["forecast", "clockRegimeForecast", "regimeTooltipForecast"], ["climatology", "clockRegimeClimatology", "regimeTooltipClimatology"]].map(([id, key, tip]) => (
+            <span key={id} className="inline-flex items-center gap-1" title={t(tip)} aria-label={t(key)}>
+              <span
+                className="inline-block w-2 h-2 rounded-[2px]"
+                style={{ background: REGIME_COLORS[id] }}
+                aria-hidden="true"
+              />
+            </span>
+          ))}
+        </div>
         <ul className="max-h-64 overflow-y-auto sidebar-scroll">
           {legs.map((leg) => {
             const etaLabel = formatEtaRange(leg.etaRange, t, lang);
+            const etaTitle = formatEtaRangeTitle(leg.etaRange, t);
             return (
             <li key={leg.key} className="px-2 py-1.5 border-t border-white/5 first:border-t-0" data-level={leg.level} data-testid="plan-review-leg">
               <div className="flex items-baseline gap-1.5 min-w-0">
@@ -72,7 +89,7 @@ export const PlanReview = memo(function PlanReview({
                 <span className="ml-auto text-[9px] text-white/40 shrink-0 tabular-nums" data-testid="plan-review-leg-dates">{leg.dates}</span>
               </div>
               {etaLabel ? (
-                <p className="text-[9px] text-white/40 mt-0.5 pl-3" data-testid="plan-review-eta-range">{etaLabel}</p>
+                <p className="text-[9px] text-white/40 mt-0.5 pl-3" data-testid="plan-review-eta-range" title={etaTitle || undefined}>{etaLabel}</p>
               ) : null}
               <div className="flex flex-wrap gap-1 mt-1">
                 {leg.badges.map((b, i) => (

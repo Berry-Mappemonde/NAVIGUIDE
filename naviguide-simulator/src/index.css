@@ -288,6 +288,34 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   color: rgb(3 105 161) !important;
 }
 
+/* Lot R7 — fiche d'escale ancrée au drapeau (L.popup). */
+.leaflet-popup.escale-popup .leaflet-popup-content-wrapper {
+  width: 340px;
+  max-width: 340px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 0;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.leaflet-popup.escale-popup .leaflet-popup-content {
+  margin: 0;
+  width: 340px !important;
+  max-height: 260px;
+  overflow: hidden;
+}
+.leaflet-popup.escale-popup .leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.92);
+}
+.escale-popup-card { width: 100%; }
+.light-mode .leaflet-popup.escale-popup .leaflet-popup-content-wrapper,
+.light-mode .leaflet-popup.escale-popup .leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.96);
+  color: rgb(15 23 42);
+  border-color: rgb(16 185 129 / 0.45);
+}
+
 .layer-fiche-popup {
   min-width: 220px;
   max-width: 300px;

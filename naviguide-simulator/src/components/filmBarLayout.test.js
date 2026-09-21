@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { FILM_BAR_HEIGHT_PX } from "../utils/filmBarLayout.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bar = readFileSync(join(here, "SimulationFilmBar.jsx"), "utf8");
@@ -61,6 +62,36 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /onCinema/);
     assert.match(bar, /onFilmFullscreen/);
     assert.match(bar, /t\("filmFullscreen"\)/);
+  });
+});
+
+describe("film bar (lot R2)", () => {
+  it("n’a plus de légende des régimes, un prev-stop, hauteur contrat ≤ 96 px", () => {
+    assert.doesNotMatch(bar, /t\("regimeLegend"\)/);
+    assert.doesNotMatch(bar, /REGIME_COLORS/);
+    assert.match(bar, /data-testid="regime-legend"/);
+    assert.doesNotMatch(bar, /className="sr-only"/);
+    assert.match(bar, /aria-label=\{regimeTitle\}/);
+    assert.match(bar, /data-testid="prev-stop"/);
+    assert.match(bar, /t\("previousEscale"\)/);
+    assert.match(bar, /data-testid="speed-regime-pill"/);
+    assert.match(bar, /regimeTooltipHindcast/);
+    const prevAt = firstIndex(bar, /data-testid="prev-stop"/);
+    const nextAt = firstIndex(bar, /t\("goToNextStop"\)/);
+    assert.ok(prevAt < nextAt, "Escale précédente à gauche de Prochaine escale");
+    assert.ok(FILM_BAR_HEIGHT_PX.compact <= 96);
+    assert.ok(FILM_BAR_HEIGHT_PX.controls <= 96);
+  });
+
+  it("montre Masquer la barre dès que onHideBar est fourni, Cinéma ou non", () => {
+    assert.doesNotMatch(bar, /cinema && onHideBar/);
+    assert.match(bar, /\{onHideBar \? \(/);
+    assert.match(bar, /data-testid="hide-film-bar"/);
+    assert.match(bar, /data-testid="show-film-bar"/);
+    assert.match(app, /hideBar=\{hideFilmBar\}/);
+    assert.doesNotMatch(app, /hideBar=\{cinemaMode && hideFilmBar\}/);
+    assert.match(app, /onPrev=\{handleSimPrev\}/);
+    assert.match(app, /canPrev=\{canPrevEscale/);
   });
 });
 

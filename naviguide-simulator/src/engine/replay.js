@@ -9,6 +9,7 @@
 import { sampleClockAtTime } from "./voyageClock.js";
 import { datedMarks, expeditionStory } from "./expeditionStory.js";
 import { cardFromJournalEntry, JOURNAL_CARD_KINDS } from "./momentCard.js";
+import { unwrapLon } from "../utils/geo.js";
 
 export { cardFromJournalEntry };
 export const CARD_KINDS = JOURNAL_CARD_KINDS;
@@ -25,7 +26,18 @@ export const FILM_ZOOM_MAX = 7;
 export const FILM_FLY_SECONDS = 1.2;
 export const FILM_VIEW_HZ = 30;
 export const FILM_MIN_CHAPTER_SECONDS = 12;
+export const FILM_RECALE_MS = 300;
+export const FILM_BEHIND_SPEED = 0.7;
+export const FILM_PAN_MAX_SCREEN = 0.02;
 const WIND_WINDOW_MS = 4 * 3600 * 1000;
+
+function lerpNum(a, b, t) {
+  const x = Number(a);
+  const y = Number(b);
+  if (!Number.isFinite(x)) return y;
+  if (!Number.isFinite(y)) return x;
+  return x + t * (y - x);
+}
 
 function ms(iso) {
   const t = typeof iso === "number" ? iso : Date.parse(iso || "");
@@ -85,12 +97,114 @@ export function windFromJournalAt(timeline, tMs) {
  * The boat at the replayed instant: the clock's sample, dated, with the wind
  * the journal recorded then. Same shape as the live sample the scene reads.
  */
+/**
+ * Position le long du trait (sommets consécutifs, lon dépliée).
+ * Continue aux sommets : limite à gauche = limite à droite.
+ */
+export function positionAt(clock, tMs) {
+  const verts = clock?.vertices || [];
+  if (!verts.length) return null;
+  const t0 = Date.parse(clock.t0);
+  if (!Number.isFinite(t0) || !Number.isFinite(tMs)) return null;
+  const tHours = (tMs - t0) / 3600000;
+  const pts = [];
+  let prevLon = null;
+  for (const v of verts) {
+    if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon) || !Number.isFinite(v.tHours)) continue;
+    const lon = prevLon == null ? v.lon : unwrapLon(prevLon, v.lon);
+    pts.push({ lat: v.lat, lon, tHours: v.tHours, sailNm: v.sailNm, filmNm: v.filmNm });
+    prevLon = lon;
+  }
+  if (!pts.length) return null;
+  if (tHours <= pts[0].tHours) {
+    return { lat: pts[0].lat, lon: pts[0].lon, sailNm: pts[0].sailNm, filmNm: pts[0].filmNm };
+  }
+  const last = pts[pts.length - 1];
+  if (tHours >= last.tHours) {
+    return { lat: last.lat, lon: last.lon, sailNm: last.sailNm, filmNm: last.filmNm };
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (tHours > b.tHours) continue;
+    const span = b.tHours - a.tHours;
+    if (!(span > 1e-12)) {
+      return { lat: b.lat, lon: b.lon, sailNm: b.sailNm, filmNm: b.filmNm };
+    }
+    const u = (tHours - a.tHours) / span;
+    return {
+      lat: a.lat + u * (b.lat - a.lat),
+      lon: a.lon + u * (b.lon - a.lon),
+      sailNm: lerpNum(a.sailNm, b.sailNm, u),
+      filmNm: lerpNum(a.filmNm, b.filmNm, u),
+    };
+  }
+  return { lat: last.lat, lon: last.lon, sailNm: last.sailNm, filmNm: last.filmNm };
+}
+
+/** Expedition-ms per wall-second for a planned chapter (F1 share). */
+export function chapterNominalRate(chapter) {
+  const seconds = Number(chapter?.seconds);
+  const span = Number(chapter?.tB) - Number(chapter?.tA);
+  if (!(seconds > 0) || !Number.isFinite(span) || span <= 0) return 0;
+  return span / seconds;
+}
+
+/**
+ * One rAF step of replayed time. Nominal advance ; onboundary target
+ * recales in ≤ 300 ms ; never a visible backward jump (0.7× if behind).
+ */
+export function advanceReplayTime({
+  t,
+  dt,
+  chapter,
+  targetT = null,
+  recaleRemainMs = 0,
+} = {}) {
+  const nominal = chapterNominalRate(chapter);
+  const wall = Math.max(0, Number(dt) || 0);
+  const tA = Number(chapter?.tA);
+  const tB = Number(chapter?.tB);
+  let next = Number(t);
+  if (!Number.isFinite(next)) next = Number.isFinite(tA) ? tA : 0;
+  let remain = Math.max(0, Number(recaleRemainMs) || 0);
+  const hasTarget = targetT != null && Number.isFinite(Number(targetT));
+  const target = hasTarget ? Number(targetT) : null;
+
+  if (hasTarget && target < next - 1e-9) {
+    next += wall * nominal * FILM_BEHIND_SPEED;
+    remain = 0;
+  } else if (hasTarget && target > next + 1e-9 && remain > 0) {
+    const blend = Math.min(1, (wall * 1000) / remain);
+    next += (target - next) * blend;
+    remain = Math.max(0, remain - wall * 1000);
+    if (remain <= 1e-6) {
+      next = target;
+      remain = 0;
+    }
+  } else {
+    next += wall * nominal;
+    remain = Math.max(0, remain - wall * 1000);
+  }
+
+  if (Number.isFinite(tA)) next = Math.max(tA, next);
+  if (Number.isFinite(tB)) next = Math.min(tB, next);
+  return { t: next, recaleRemainMs: remain };
+}
+
 export function replaySample(clock, tMs, timeline = []) {
   const s = sampleClockAtTime(clock, new Date(tMs));
   if (!s || !Number.isFinite(s.lat)) return null;
+  const pos = positionAt(clock, tMs);
   const wind = windFromJournalAt(timeline, tMs);
   return {
     ...s,
+    ...(pos && Number.isFinite(pos.lat) ? {
+      lat: pos.lat,
+      lon: pos.lon,
+      sailNm: Number.isFinite(pos.sailNm) ? pos.sailNm : s.sailNm,
+      filmNm: Number.isFinite(pos.filmNm) ? pos.filmNm : s.filmNm,
+    } : {}),
     iso: new Date(tMs).toISOString(),
     replay: true,
     kind: wind ? "forecast" : "climatology",

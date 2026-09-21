@@ -121,6 +121,86 @@ def test_comment_fallback_uses_only_table_numbers():
     assert len([s for s in text.split(".") if s.strip()]) <= 4
 
 
+def _official_clock_compressed():
+    """Itinéraire officiel (nm publiés) avec une horloge comprimée à 4,5 j / jambe.
+
+    C'est le bug vu en recette : Nouméa → Dzaoudzi affichait 4,5 j de mer
+    (écart d'horloge, ou dernier tronçon Seychelles → Dzaoudzi ≈ 883 nm)
+    au lieu de 9 151 nm ÷ 8 kn ÷ 24.
+    """
+    stops = [
+        ("La Rochelle", 0, 0),
+        ("Ajaccio (Corse)", 1820, 1942),
+        ("Fort-de-France (Martinique)", 6973, 7095),
+        ("Nouméa (Nouvelle-Calédonie)", 19055, 19177),
+        ("Dzaoudzi (Mayotte)", 28206, 28328),
+        ("Tromelin (TAAF)", 29131, 29253),
+        ("Saint-Gilles (La Réunion)", 29453, 29575),
+        ("Europa (TAAF)", 30910, 31032),
+        ("La Rochelle", 39000, 39122),
+    ]
+    t = 0.0
+    verts = [{"tHours": 0.0, "sailNm": 0.0}]
+    marks = []
+    for i, (name, nm, film) in enumerate(stops):
+        if i == 0:
+            continue
+        t += 4.5 * 24
+        verts.append({"tHours": t, "sailNm": float(nm)})
+        marks.append({
+            "name": name, "tHours": t, "holdHours": 72,
+            "nm": float(nm), "filmNm": float(film),
+        })
+        t += 72
+        verts.append({"tHours": t, "sailNm": float(nm)})
+    return {"t0": "2026-05-15T08:00:00Z", "vertices": verts, "marks": marks}
+
+
+def test_sea_days_follow_planned_speed_on_official_legs():
+    clock = _official_clock_compressed()
+    legs = plan_review.legs_from_clock(clock, "La Rochelle")
+    assert legs, "jambes officielles attendues"
+    kn = plan_review.PLANNED_KNOTS
+    assert kn == 8.0
+    noumea = None
+    for leg in legs:
+        expected = plan_review.planned_sea_days(leg["legNm"], kn)
+        assert expected > 0
+        assert abs(leg["daysAtSea"] - expected) <= max(0.15, 0.10 * expected), (
+            f"{leg['from']} → {leg['to']}: {leg['daysAtSea']} j "
+            f"≠ {leg['legNm']} nm ÷ {kn} kn ÷ 24 (= {expected})"
+        )
+        assert abs(leg["daysAtSea"] - (leg["legNm"] / kn / 24)) <= 0.10 * (leg["legNm"] / kn / 24) + 0.05
+        if "Nouméa" in str(leg["from"]) and "Dzaoudzi" in str(leg["to"]):
+            noumea = leg
+    assert noumea is not None, [f"{l['from']}→{l['to']}" for l in legs]
+    assert noumea["legNm"] == 9151
+    assert noumea["daysAtSea"] == plan_review.planned_sea_days(9151)
+    assert noumea["daysAtSea"] > 40
+    assert noumea["daysAtSea"] != 4.5
+
+
+def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
+    """Dernier tronçon geojson (Seychelles → Dzaoudzi ≈ 883 nm) ne doit pas gagner."""
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 0, "sailNm": 19055},
+            {"tHours": 108, "sailNm": 19938},
+        ],
+        "marks": [
+            {"name": "Nouméa (Nouvelle-Calédonie)", "tHours": 0, "holdHours": 0,
+             "nm": 19055, "filmNm": 19177},
+            {"name": "Dzaoudzi (Mayotte)", "tHours": 108, "holdHours": 72,
+             "nm": 28206, "filmNm": 28328},
+        ],
+    }
+    legs = plan_review.legs_from_clock(clock, "Nouméa (Nouvelle-Calédonie)")
+    assert len(legs) == 1
+    assert legs[0]["legNm"] == 9151
+    assert legs[0]["daysAtSea"] == plan_review.planned_sea_days(9151)
+
+
 def test_plan_review_http_exposes_comment_source(client, monkeypatch):
     async def fake_comment(legs, **kw):
         return {"text": "Je changerais le repos (3 jours).", "source": "rules", "cached": False}

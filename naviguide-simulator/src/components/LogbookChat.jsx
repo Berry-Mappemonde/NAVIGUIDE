@@ -50,9 +50,6 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         <span className="ml-auto text-[9px] text-violet-100/60">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
       </div>
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
-        {!messages.length && !pending ? (
-          <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatHint")}</p>
-        ) : null}
         {messages.map((m, i) => (
           <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
             <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>

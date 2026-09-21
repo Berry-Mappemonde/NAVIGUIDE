@@ -26,6 +26,9 @@ import { phraseForEvent, satelliteSentence, climatologySentence } from "./iciBri
 import { placeLabel } from "./briefingLinks.js";
 import { formatJournalEntry } from "./journalFormat.js";
 import { haversineNm, wrapLon } from "../utils/geo.js";
+import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
+import fr from "../i18n/fr.js";
+import enDict from "../i18n/en.js";
 
 export const LANE_NOW = "now";
 export const LANE_FREE = "free";
@@ -536,22 +539,44 @@ export function cardFromEvent(ev, lang = "fr") {
  * Escale card: written when the leg changes (the boat left a stopover).
  * `leg` = { fromStop, toStop, holdDays, legNm, etaIso } from the film clock.
  */
+function isLandEscale(leg) {
+  if (leg?.kind === "land" || leg?.vehicle === "land") return true;
+  return isLandLegNames(leg?.fromStop, leg?.toStop);
+}
+
 export function escaleCard(leg, lang = "fr", { filmCum = null } = {}) {
   if (!leg?.fromStop) return null;
   const en = isEn(lang);
   const from = String(leg.fromStop);
   const to = leg.toStop ? String(leg.toStop) : null;
+  const land = isLandEscale(leg);
+  const u = en ? enDict : fr;
+  const loc = en ? "en-GB" : "fr-FR";
   const quay = Number.isFinite(leg.holdDays) && leg.holdDays > 0
     ? (en ? ` — ${leg.holdDays} day${leg.holdDays > 1 ? "s" : ""} in port` : ` — ${leg.holdDays} jour${leg.holdDays > 1 ? "s" : ""} à quai`)
     : "";
-  const nm = Number.isFinite(leg.legNm) && leg.legNm > 0.5
-    ? ` (${Math.round(leg.legNm).toLocaleString(en ? "en-GB" : "fr-FR")} nm)`
+  const distNm = Number.isFinite(leg.legNm) && leg.legNm > 0.5
+    ? leg.legNm
+    : (Number.isFinite(leg.filmNm) && leg.filmNm > 0.5 ? leg.filmNm : null);
+  let dist = "";
+  if (distNm != null) {
+    if (land) {
+      const km = nmToRoundedKm(distNm);
+      dist = km != null ? ` (${km.toLocaleString(loc)} ${u.unitKm} ${u.byRoad})` : "";
+    } else {
+      dist = ` (${Math.round(distNm).toLocaleString(loc)} nm)`;
+    }
+  }
+  const roadH = land && Number.isFinite(leg.roadHours) && leg.roadHours > 0
+    ? `, ${leg.roadHours} ${u.unitRoadHours}`
     : "";
-  const eta = leg.etaLabel ? (en ? `, expected on ${leg.etaLabel}` : `, arrivée prévue le ${leg.etaLabel}`) : "";
+  const eta = !land && leg.etaLabel
+    ? (en ? `, expected on ${leg.etaLabel}` : `, arrivée prévue le ${leg.etaLabel}`)
+    : "";
   const text = to
     ? (en
-      ? `Stopover ${from}${quay}. Departure: heading for ${to}${nm}${eta}.`
-      : `Escale ${from}${quay}. Départ : cap sur ${to}${nm}${eta}.`)
+      ? `Stopover ${from}${quay}. Departure: heading for ${to}${dist}${roadH}${eta}.`
+      : `Escale ${from}${quay}. Départ : cap sur ${to}${dist}${roadH}${eta}.`)
     : (en ? `Stopover ${from}${quay}.` : `Escale ${from}${quay}.`);
   return {
     key: `ev:escale:${from}→${to || ""}`,
@@ -656,8 +681,9 @@ export function advanceMoments(prev, {
     freeLoop = [];
     free = null;
     changed = true;
-    // The boat just left a stopover: one NOW card says so (not on the first leg).
-    if (previousLeg != null && leg?.fromStop) {
+    // Changement de jambe : une carte Escale. Première jambe : seulement
+    // l’étape terrestre (Saint-Maur → La Rochelle, km par la route, lot R5).
+    if (leg?.fromStop && (previousLeg != null || isLandEscale(leg))) {
       const card = escaleCard(leg, lang, { filmCum });
       if (card && !seen.has(card.key) && !state.dismissed.has(card.key)) {
         seen.add(card.key);

@@ -21,22 +21,22 @@ describe("Sidebar layout (lot N)", () => {
     const chatAt = firstIndex(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
     const nowAt = firstIndex(sidebar, /<MomentNowCard /);
     const freeAt = firstIndex(sidebar, /<FreeMomentBlock /);
-    const escaleAt = firstIndex(sidebar, /<EscaleSheet/);
     const iciAt = firstIndex(sidebar, /data-testid="briefing"/);
     const storyAt = firstIndex(sidebar, /data-testid="expedition-story"/);
     const journalAt = firstIndex(sidebar, /<JournalPanel /);
     assert.ok(chatAt < nowAt, "LogbookChat avant MomentNowCard");
     assert.ok(nowAt < freeAt, "NOW avant FREE");
-    assert.ok(freeAt < escaleAt, "FREE avant fiche d'escale");
-    assert.ok(escaleAt < iciAt, "fiche d'escale avant sac ici");
+    assert.ok(freeAt < iciAt, "FREE avant sac ici");
     assert.ok(iciAt < storyAt, "sac ici avant récit");
     assert.ok(storyAt < journalAt, "récit avant journal");
+    assert.doesNotMatch(sidebar, /EscaleSheet/);
   });
 
-  it("garde les surfaces : étape, FREE, fiche d'escale, journal", () => {
+  it("garde les surfaces : étape, FREE, journal — plus de fiche d'escale dans le panneau", () => {
     assert.match(sidebar, /<SimulationPanel/);
     assert.match(sidebar, /<FreeMomentBlock /);
-    assert.match(sidebar, /<EscaleSheet/);
+    assert.doesNotMatch(sidebar, /EscaleSheet/);
+    assert.doesNotMatch(sidebar, /escaleStop|onEscaleClose/);
     assert.match(sidebar, /<JournalPanel /);
     assert.match(sidebar, /data-testid="here-product"/);
   });

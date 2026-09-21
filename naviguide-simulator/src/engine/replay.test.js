@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  advance, calibrateRate, cardDwellMs, cardFromJournalEntry, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, journalTimeline, replayProgress, replaySample, replayScale, replayWindow, trimQueue, windFromJournalAt,
+  advance, calibrateRate, cardDwellMs, cardFromJournalEntry, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, trimQueue, windFromJournalAt,
 } from "./replay.js";
 const T0 = "2026-05-15T08:00:00.000Z";
 
@@ -163,5 +163,31 @@ describe("replay — filmPlan (lot F1)", () => {
     assert.ok(chapters[0].tB > chapters[0].tA);
     const plan = filmPlan({ chapters, targetSeconds: 150 });
     assert.ok(Math.abs(plan.chapters.reduce((s, c) => s + c.seconds, 0) - 150) < 1e-6);
+  });
+
+  it("positionAt(t) est continue aux sommets (limite gauche = limite droite)", () => {
+    const c = clock();
+    const mid = c.vertices[1];
+    const t0 = Date.parse(c.t0);
+    const tMid = t0 + mid.tHours * 3600000;
+    const at = positionAt(c, tMid);
+    const left = positionAt(c, tMid - 1);
+    const right = positionAt(c, tMid + 1);
+    assert.ok(at && left && right);
+    assert.ok(Math.abs(at.lat - mid.lat) < 1e-9);
+    assert.ok(Math.abs(at.lon - mid.lon) < 1e-9);
+    assert.ok(Math.abs(left.lat - at.lat) < 1e-4);
+    assert.ok(Math.abs(right.lat - at.lat) < 1e-4);
+    assert.ok(Math.abs(left.lon - at.lon) < 1e-4);
+    assert.ok(Math.abs(right.lon - at.lon) < 1e-4);
+    const wrap = {
+      t0: T0,
+      vertices: [
+        { tHours: 0, filmNm: 0, sailNm: 0, lat: 0, lon: 170 },
+        { tHours: 10, filmNm: 600, sailNm: 600, lat: 0, lon: -170 },
+      ],
+    };
+    const midWrap = positionAt(wrap, t0 + 5 * 3600000);
+    assert.ok(midWrap.lon > 170, "lon dépliée : 170 → −170 passe par 180, pas par 0");
   });
 });

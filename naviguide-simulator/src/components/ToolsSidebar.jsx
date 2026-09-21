@@ -311,7 +311,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
     : polarUploadStatus === "error"
       ? { icon: <TriangleAlert size={12} />, color: "text-red-300", text: `${t("polarFailed")} — ${polarUploadDetail}` }
       : polarData
-        ? { icon: <CheckCircle2 size={12} />, color: "text-emerald-300", text: `${t("polarLoaded")} — ${polarData.boat_name || polarUploadDetail || ""}` }
+        ? { icon: <CheckCircle2 size={12} />, color: "text-emerald-300", text: t("polarLoaded") }
         : { icon: <Upload size={12} />, color: "text-slate-400", text: t("polarSection") };
   const layersOn = activeLayerCount(maritimeLayers);
 
@@ -384,7 +384,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="polar-box">
               <div className={`flex items-center gap-2 text-xs ${polarStatus.color}`}>
                 {polarStatus.icon}
-                <span className="font-medium min-w-0 truncate">{polarStatus.text}</span>
+                <span className="font-medium min-w-0 truncate" data-testid="polar-status">{polarStatus.text}</span>
                 {polarData?.vmg_summary ? (
                   <button
                     type="button"

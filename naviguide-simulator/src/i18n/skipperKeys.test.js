@@ -31,7 +31,6 @@ const KEYS = [
   "skipperHorizonLeg",
   "skipperPearls",
   "skipperExpertTitle",
-  "skipperExpertHint",
   "skipperExpertReset",
   "skipperExpertLocked",
   "skipperExpertGalePct",

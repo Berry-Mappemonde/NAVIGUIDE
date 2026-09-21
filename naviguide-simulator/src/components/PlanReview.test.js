@@ -28,5 +28,19 @@ describe("PlanReview — commentaire (lot L5)", () => {
     assert.match(src, /data-testid="plan-review-leg-dates"/);
     assert.match(src, /data-testid="plan-review-eta-range"/);
     assert.match(src, /formatEtaRange/);
+    assert.match(src, /formatEtaRangeTitle/);
+    assert.match(src, /title=\{etaTitle/);
+  });
+});
+
+describe("PlanReview — légende des régimes (lot R2)", () => {
+  it("pose une ligne discrète au-dessus du tableau, pas dans la barre", () => {
+    assert.match(src, /data-testid="plan-review-regime-legend"/);
+    const legendAt = src.indexOf('data-testid="plan-review-regime-legend"');
+    const tableAt = src.indexOf("<ul");
+    assert.ok(legendAt > 0 && legendAt < tableAt, "légende au-dessus du tableau");
+    assert.match(src, /clockRegimeHindcast/);
+    assert.match(src, /clockRegimeForecast/);
+    assert.match(src, /clockRegimeClimatology/);
   });
 });

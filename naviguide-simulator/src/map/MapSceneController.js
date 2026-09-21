@@ -35,6 +35,7 @@ import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
 import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
 import { attachEventBubble } from "../components/EventBubble.jsx";
+import { attachEscalePopup } from "../components/EscalePopup.jsx";
 
 const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
@@ -177,6 +178,9 @@ export class MapSceneController {
       maxZoom: 18,
       worldCopyJump: false,
       preferCanvas: true,
+      // Latitude seulement : les routes dépliées dépassent 180°.
+      maxBounds: [[-85, -Infinity], [85, Infinity]],
+      maxBoundsViscosity: 1,
     });
     createPanes(map);
     return new MapSceneController(map, callbacks);
@@ -219,6 +223,7 @@ export class MapSceneController {
       filmZoom: null,
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
+      filmLastCenter: null,
     };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
@@ -263,6 +268,7 @@ export class MapSceneController {
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
     this.eventBubble = attachEventBubble(this, L);
+    this.escalePopup = attachEscalePopup(this, L);
   }
 
   /** Marqueur du bateau « à l'écran » (copie monde 0) — ancre de la bulle F4. */
@@ -358,11 +364,31 @@ export class MapSceneController {
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
+    if (!previous.filmActive && this.config.filmActive) {
+      this.camera.filmChapterIdx = null;
+      this.camera.filmZoom = null;
+      this.camera.filmSetViewAt = 0;
+      this.camera.filmFlyingUntil = 0;
+      this.camera.filmLastCenter = null;
+    }
     if (previous.filmActive && !this.config.filmActive) {
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
+      this.camera.filmLastCenter = null;
+      this.camera.recapture = this.config.cinemaRecapture;
+      const live = this.config.live;
+      if (live && Number.isFinite(live.lat) && Number.isFinite(live.lon) && this.map) {
+        const lonCam = cameraLngForBoat(live.lon, this.camera.followLon);
+        this.camera.followLon = lonCam;
+        this.camera.lastPos = { lat: live.lat, lon: live.lon };
+        this.programmaticMove(() => this.map.setView(
+          [live.lat, lonCam],
+          this.map.getZoom(),
+          { animate: false },
+        ));
+      }
     }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
@@ -512,6 +538,18 @@ export class MapSceneController {
     const samePart = previous
       && following
       && geometry.partByPoint[geometry.completedIndex] === geometry.partByPoint[geometry.completedIndex + 1];
+    const live = this.config.live;
+    const filmPin = this.config.filmActive
+      && live
+      && Number.isFinite(live.lat)
+      && Number.isFinite(live.lon);
+    if (filmPin && previous && (!following || !following.jump)) {
+      setWakeTail(geometry.tailLines, previous, {
+        lon: unwrapLon(previous.lon, live.lon),
+        lat: live.lat,
+      });
+      return;
+    }
     if (!previous || !following || following.jump || !samePart) {
       setWakeTail(geometry.tailLines, null, null);
       return;
@@ -698,9 +736,10 @@ export class MapSceneController {
       const srcs = waypointFlagSrcs(point);
       if (!srcs.length && !cfg.drawingMode) return;
       const offset = offsets[index] || [0, 0];
+      const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
-        ? flagMarkerHtml(srcs, offset)
-        : `<div style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
+        ? flagMarkerHtml(srcs, offset).replace("<div ", `<div${stamp} `)
+        : `<div${stamp} style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
       const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
       for (const [copyIndex, lng] of flagWorldLngsForView(point.lon, cameraLng, west, east).entries()) {
         const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${copyIndex}`;
@@ -725,9 +764,12 @@ export class MapSceneController {
           marker.on("mouseover", () => this.callbacks.onWaypointHover?.(marker._naviguideWaypoint));
           marker.on("mouseout", () => this.callbacks.onWaypointHover?.(null));
           marker.on("click", (event) => {
-            if (!marker._naviguideDrawing) return;
             L.DomEvent.stopPropagation(event);
-            this.callbacks.onDrawingWaypointClick?.(marker._naviguideWaypoint, marker._naviguideIndex);
+            if (marker._naviguideDrawing) {
+              this.callbacks.onDrawingWaypointClick?.(marker._naviguideWaypoint, marker._naviguideIndex);
+              return;
+            }
+            this.callbacks.onWaypointClick?.(marker._naviguideWaypoint, marker._naviguideIndex);
           });
           this.waypointMarkers.set(key, marker);
         }
@@ -746,6 +788,7 @@ export class MapSceneController {
       group.removeLayer(marker);
       this.waypointMarkers.delete(key);
     });
+    this.escalePopup?.sync();
   }
 
   /** The camera is driving the map: playback running, or the live boat followed. */
@@ -822,6 +865,7 @@ export class MapSceneController {
       filmZoom: null,
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
+      filmLastCenter: null,
     };
   }
 
@@ -861,11 +905,13 @@ export class MapSceneController {
         now: Date.now(),
         lastSetViewAt: this.camera.filmSetViewAt || 0,
         flyingUntil: this.camera.filmFlyingUntil || 0,
+        lastCenter: this.camera.filmLastCenter,
       });
     });
     this.camera.filmChapterIdx = next.lastChapterIdx;
     this.camera.filmSetViewAt = next.lastSetViewAt;
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
+    this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.lastFollow = Date.now();
   }
 
@@ -980,6 +1026,8 @@ export class MapSceneController {
   dispose() {
     this.eventBubble?.dispose();
     this.eventBubble = null;
+    this.escalePopup?.dispose();
+    this.escalePopup = null;
     this.clearBriefingFocus();
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);

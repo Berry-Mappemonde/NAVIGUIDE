@@ -4,7 +4,6 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { JournalPanel } from "./JournalPanel.jsx";
 import { FreeMomentBlock, MomentNowCard } from "./MomentCards.jsx";
-import { EscaleSheet } from "./EscaleSheet.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
@@ -257,7 +256,6 @@ export const Sidebar = memo(function Sidebar({
   story = null, storyReplay = false,
   momentNow = null, momentNowLeft = 0, onMomentDismiss,
   momentFree = null, momentFreeLeft = 0, onMomentNext,
-  escaleStop = null, escaleSheet = null, onEscaleClose,
   chat = null, onChatAsk,
 }) {
   const { t } = useLang();
@@ -401,17 +399,6 @@ export const Sidebar = memo(function Sidebar({
             <FreeMomentBlock card={momentFree} left={momentFreeLeft} onNext={onMomentNext} onFocus={onBriefingFocus} inline />
           ) : null}
 
-          {!isDrawing && escaleStop ? (
-            <EscaleSheet
-              stop={escaleStop}
-              fiche={escaleSheet?.fiche}
-              loading={Boolean(escaleSheet?.loading)}
-              error={escaleSheet?.error}
-              onClose={onEscaleClose}
-              onFocus={onBriefingFocus}
-            />
-          ) : null}
-
           {!isDrawing ? (
             <div data-testid="briefing" className="sim-box-ici bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
               {briefingTitle ? (
@@ -454,6 +441,7 @@ export const Sidebar = memo(function Sidebar({
                 return (
                   <p
                     key={i}
+                    data-testid="story-paragraph"
                     data-current={current ? "1" : "0"}
                     className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] mt-1 ${current ? "text-white font-medium border-l-2 border-sky-300 pl-1.5" : "text-slate-200"}`}
                   >

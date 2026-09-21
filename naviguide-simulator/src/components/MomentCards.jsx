@@ -1,5 +1,4 @@
 import { memo, useEffect, useState } from "react";
-import { isNowAlertOrDecision, publishEventBubble } from "./eventBubble.js";
 import { ChevronRight, LocateFixed, X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
@@ -65,7 +64,7 @@ function TruthBadge({ truth }) {
   );
 }
 
-function CardLinks({ entity, onFocus, t }) {
+function CardLinks({ entity, onFocus, t, showLabels = true }) {
   if (!entity) return null;
   const links = entityLinks(entity);
   const focusable = canFocus(entity) && typeof onFocus === "function";
@@ -78,10 +77,11 @@ function CardLinks({ entity, onFocus, t }) {
           onClick={() => onFocus(entity)}
           data-testid="moment-focus"
           title={t("briefingSeeOnMap")}
+          aria-label={t("momentSeeOnMap")}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
         >
           <LocateFixed size={11} />
-          {t("momentSeeOnMap")}
+          {showLabels ? t("momentSeeOnMap") : null}
         </button>
       ) : null}
       {links.map((l) => (
@@ -92,9 +92,12 @@ function CardLinks({ entity, onFocus, t }) {
           rel="noopener noreferrer"
           data-testid={`moment-link-${l.kind}`}
           title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
+          aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
           className="px-1.5 py-0.5 rounded-md text-[10px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
         >
-          {l.kind === "site" ? `↗ ${l.host || t("briefingOfficialSheet")}` : `◎ ${t("briefingGoogleMaps")}`}
+          {l.kind === "site"
+            ? (showLabels ? `↗ ${l.host || t("briefingOfficialSheet")}` : "↗")
+            : (showLabels ? `◎ ${t("briefingGoogleMaps")}` : "◎")}
         </a>
       ))}
     </div>
@@ -110,12 +113,6 @@ function CardLinks({ entity, onFocus, t }) {
 export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus, inline = false }) {
   const { t } = useLang();
   const shown = useRecipeCard(card);
-  useEffect(() => {
-    const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
-    if (film?.startedAt && !film.ended) return;
-    if (shown && isNowAlertOrDecision(shown)) publishEventBubble(shown);
-    else publishEventBubble(null);
-  }, [shown]);
   if (!shown) return null;
   const alert = shown.severity === "alert";
   const ahead = Number.isFinite(shown.whenNm) && shown.whenNm >= 1
@@ -217,7 +214,7 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
         className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
       />
       <TruthBadge truth={shown.truth} />
-      <CardLinks entity={shown.entity} onFocus={onFocus} t={t} />
+      <CardLinks entity={shown.entity} onFocus={onFocus} t={t} showLabels={false} />
     </div>
   );
 });

@@ -29,6 +29,17 @@ from voyage_clock import parse_iso, to_iso
 
 log = logging.getLogger("naviguide-simulator.plan-review")
 
+# Vitesse de programme Berry-Mappemonde (PLAN_ICI, recette R11 : 8 kn).
+# daysAtSea = distance ÷ cette vitesse ÷ 24 — pas l'écart d'horloge.
+PLANNED_KNOTS = 8.0
+
+
+def planned_sea_days(leg_nm: float, knots: float = PLANNED_KNOTS) -> float:
+    """Jours de mer d'une jambe : milles ÷ nœuds planifiés ÷ 24."""
+    kn = float(knots) if knots and float(knots) > 0 else PLANNED_KNOTS
+    nm = max(0.0, float(leg_nm) or 0.0)
+    return round(nm / kn / 24.0, 1)
+
 COMMENT_NS = "plan-comment"
 COMMENT_TTL_S = 7 * 86400.0
 COMMENT_MAX_SENTENCES = 4
@@ -42,15 +53,62 @@ COMMENT_SYSTEM = (
 
 
 def _sail_nm_at(clock: dict, t_hours: float) -> float:
-    """Sea miles of the clock at `t_hours` (the pearls are indexed in sea miles)."""
-    best = None
-    for v in clock.get("vertices") or []:
-        if abs(float(v.get("tHours") or 0) - t_hours) < 1e-6:
-            best = v
-            break
-    if best is None:
+    """Sea miles of the clock at `t_hours` (interpolated — exact match misses quay vertices)."""
+    verts = [v for v in (clock.get("vertices") or []) if v.get("tHours") is not None]
+    if not verts:
         return 0.0
-    return float(best.get("sailNm") or 0)
+    t = float(t_hours)
+    first, last = verts[0], verts[-1]
+    t_first = float(first.get("tHours") or 0)
+    t_last = float(last.get("tHours") or 0)
+    if t <= t_first:
+        return float(first.get("sailNm") or 0)
+    if t >= t_last:
+        return float(last.get("sailNm") or 0)
+    for a, b in zip(verts, verts[1:]):
+        ta, tb = float(a.get("tHours") or 0), float(b.get("tHours") or 0)
+        if t > tb:
+            continue
+        span = tb - ta
+        sa, sb = float(a.get("sailNm") or 0), float(b.get("sailNm") or 0)
+        if span <= 1e-9:
+            return sb
+        frac = (t - ta) / span
+        return sa + frac * (sb - sa)
+    return float(last.get("sailNm") or 0)
+
+
+def _norm_stop_name(name: str) -> str:
+    return str(name or "").lower().split(" (")[0].strip()
+
+
+def _attach_itinerary_nm(clock_marks: list[dict], voy_marks: list) -> None:
+    """Copie `nm` (milles de mer de l'itinéraire) sur les marques d'horloge."""
+    by = {}
+    for m in voy_marks or []:
+        key = _norm_stop_name(m.get("name"))
+        if key and m.get("nm") is not None:
+            by[key] = m
+    for cm in clock_marks:
+        vm = by.get(_norm_stop_name(cm.get("name")))
+        if not vm:
+            continue
+        if cm.get("nm") is None and vm.get("nm") is not None:
+            cm["nm"] = float(vm["nm"])
+
+
+def _leg_distance_nm(a: dict, b: dict, from_nm: float, to_nm: float) -> float:
+    """Mille nautiques de la jambe : horloge, sinon nm / filmNm de l'itinéraire.
+
+    Un `sailNm` à correspondance ratée (ou un cumNm local à un tronçon geojson)
+    donnait ~880 nm sur Nouméa → Dzaoudzi au lieu de ~9 150 — d'où « 4,5 j ».
+    """
+    span = max(0.0, float(to_nm) - float(from_nm))
+    if a.get("nm") is not None and b.get("nm") is not None:
+        other = float(b["nm"]) - float(a["nm"])
+        if other > span + 0.5:
+            span = other
+    return span
 
 
 def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
@@ -80,14 +138,22 @@ def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
         from_nm = a["_sailNm"] if "_sailNm" in a else (
             _sail_nm_at(clock, float(a["tHours"]) + float(a.get("holdHours") or 0)) or _sail_nm_at(clock, float(a["tHours"])))
         to_nm = _sail_nm_at(clock, float(b["tHours"]))
-        if to_nm <= from_nm + 0.5:
+        itinerary_nm = 0.0
+        if a.get("nm") is not None and b.get("nm") is not None:
+            itinerary_nm = float(b["nm"]) - float(a["nm"])
+        if to_nm <= from_nm + 0.5 and itinerary_nm <= 0.5:
             continue  # an air hop or a land leg: nothing to sail
+        leg_nm = round(_leg_distance_nm(a, b, from_nm, to_nm))
+        if leg_nm <= 0:
+            continue
+        to_nm_out = from_nm + leg_nm if to_nm <= from_nm + 0.5 else to_nm
         legs.append({
             "from": a["name"], "to": b["name"],
             "departIso": to_iso(dep), "arriveIso": to_iso(arr),
-            "daysAtSea": round(max(0.0, (arr - dep).total_seconds()) / 86400, 1),
+            "daysAtSea": planned_sea_days(leg_nm),
+            "plannedKnots": PLANNED_KNOTS,
             "holdDays": round(float(b.get("holdHours") or 0) / 24),
-            "fromNm": from_nm, "toNm": to_nm, "legNm": round(to_nm - from_nm),
+            "fromNm": from_nm, "toNm": to_nm_out, "legNm": leg_nm,
             "month": arr.month,
         })
     return legs
@@ -166,6 +232,7 @@ def review_official(voy: dict, now: datetime | None = None, *, season: bool = Tr
                 best = (d, m["name"])
         if best and best[0] <= 1.0:
             start_name = best[1]
+    _attach_itinerary_nm(clock.get("marks") or [], voy.get("marks") or [])
     legs = legs_from_clock(clock, start_name) if clock.get("t0") else []
     pearls = sample_route_nm(points)
     events = route_events_from_pearls(points) if pearls else []
