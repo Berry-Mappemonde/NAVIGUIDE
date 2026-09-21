@@ -178,6 +178,8 @@ export default {
   routeLandShort:     "land",
   routePointsShort:   "points",
   routePointsHint:    "{waypoints} router waypoints (capes, canals) · {points} track vertices",
+  routeDistanceHint:  "film distance: air hop excluded; total distance: {total} nm",
+  speedFallback:      "(fallback without polar)",
   polarShow:          "Show polars",
   polarHide:          "Hide",
   advancedSettings:   "Advanced settings",

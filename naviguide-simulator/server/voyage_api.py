@@ -46,6 +46,7 @@ from voyage_clock import (
     OFFICIAL_T0,
     OFFICIAL_VOYAGE_ID,
     build_voyage_clock,
+    official_clock_params,
     parse_iso,
     sample_clock_at_time,
     to_iso,
@@ -724,6 +725,7 @@ def get_official():
         **_public_meta(voy),
         "points": voy.get("points"),
         "marks": voy.get("marks"),
+        "params": official_clock_params(),
     }
 
 

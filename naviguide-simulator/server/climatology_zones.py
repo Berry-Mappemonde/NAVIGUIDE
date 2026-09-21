@@ -87,5 +87,6 @@ def zone_wind_at(lat: float, lon: float, month: int) -> Dict[str, Any]:
 
 
 def boat_speed_from_wind(wind_knots: float) -> float:
+    """Repli sans polaire (lot C7). Ne pas appeler si une table polaire est disponible."""
     raw = float(wind_knots) * 0.45
     return round(max(4.0, min(11.0, raw)) * 10) / 10

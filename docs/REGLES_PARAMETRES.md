@@ -264,6 +264,26 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 | `isochrone.heading_step_deg` | 10° | geometry | Caps tous les 10° (5° près de l'arrivée : non fait, hors lot). |
 | `clock.min_knots` | 0,5 kn | geometry | Plancher SOG (calme / courant contraire). Documenté A7 ; table des jours à quai → lot C7. |
 
+### 3.9 Conventions horloge et repli — lot C7
+
+`docs/PLAN_AUDIT_CALCULS.md` lot C7, `docs/audits/CALCULS_ETAT_DE_L_ART.md` lignes 5, 15, 16, 18. Aucune valeur n'est changée : la table reprend les constantes déjà dans le code. Source écrite : **programme Berry-Mappemonde 2026** (`server/data/port_days.json`).
+
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `clock.land_hours` | 4 h | convention | `LAND_CALENDAR_HOURS` — tronçon route Saint-Maur → La Rochelle. A7 / état de l'art l. 16. |
+| `clock.air_hours` | 8 h | convention | `AIR_CALENDAR_HOURS` — saut avion (durée calendaire, pas une polaire). A7 / l. 16. |
+| `clock.min_knots` | 0,5 kn | geometry | `MIN_KNOTS` — plancher SOG (déjà § 3.8). A7. |
+| `clock.port_days.default` | 3 j | convention | `DEFAULT_BMAP_PORT_DAYS` / `port_days.json` `default`. Programme 2026. |
+| `clock.port_days.Saint-Maur` | 0 j | convention | Départ, pas d'escale. Même table. |
+| `clock.port_days.Halifax` | 1 j | convention | Valeur déjà dans `port_days_for` ; inchangée. |
+| `clock.port_days.*` | 3 j | convention | Autres escales officielles (Ajaccio, Fort-de-France, …) — défaut historique. |
+| `clock.speed_basis` | `polar` \| `fallback` | **law** | Chaque sommet d'horloge. `boat_speed_from_wind` seulement si la polaire est absente. |
+| `clock.fallback_speed` | 0,45 × TWS, borné [4 ; 11] kn | convention | Repli interne (A6). Formule inchangée. Les routeurs refusent de router sans polaire [4]. |
+| `polar.efficiency` | 0,85 | geometry | Déjà § 3.8 ; exposé dans `GET /voyage/official` `params.polarEfficiency` s'il est présent. |
+| `film.air_excluded` | — | convention | Distance affichée / film : saut avion exclu (`cumNm` / `sailNm`). L'axe `filmCum` avance de 80 nm d'animation par saut (`AIR_FILM_NM`) ; info-bulle UI. L. 18. |
+
+`GET /voyage/official` renvoie `params: { landHours, airHours, minKnots, portDaysDefault, polarEfficiency }`.
+
 ---
 
 ## 4. Other ideas (beyond the snapshot)
