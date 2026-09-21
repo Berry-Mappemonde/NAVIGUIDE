@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyFilmCamera } from "./filmCamera.js";
+import { handleWaypointMarkerClick } from "../components/escalePopup.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "MapSceneController.js"), "utf8");
@@ -91,6 +92,23 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /preferCanvas:\s*true/);
     assert.match(src, /divIconCache/);
     assert.match(src, /flagWorldLngsForView/);
+  });
+
+  it("clic drapeau hors dessin → onWaypointClick ; en dessin → inchangé", () => {
+    const point = { name: "Ajaccio (Corse)", lat: 41.9192, lon: 8.7386 };
+    const calls = { sheet: [], draw: [] };
+    const callbacks = {
+      onWaypointClick: (p, i) => calls.sheet.push([p, i]),
+      onDrawingWaypointClick: (p, i) => calls.draw.push([p, i]),
+    };
+    assert.equal(handleWaypointMarkerClick(false, point, 2, callbacks), "sheet");
+    assert.deepEqual(calls.sheet, [[point, 2]]);
+    assert.equal(calls.draw.length, 0);
+    assert.equal(handleWaypointMarkerClick(true, point, 1, callbacks), "draw");
+    assert.deepEqual(calls.draw, [[point, 1]]);
+    assert.equal(calls.sheet.length, 1, "le clic dessin n'ouvre pas la fiche");
+    assert.match(src, /onWaypointClick\?\.\(marker\._naviguideWaypoint, marker\._naviguideIndex\)/);
+    assert.match(src, /if \(marker\._naviguideDrawing\) \{\s*this\.callbacks\.onDrawingWaypointClick/);
   });
 
   it("onMoveEnd ne relance ni /ici ni le récit", () => {

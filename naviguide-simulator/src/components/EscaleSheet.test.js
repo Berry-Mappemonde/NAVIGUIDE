@@ -18,9 +18,11 @@ describe("EscaleSheet contract (lot C)", () => {
     assert.doesNotMatch(src, /fetch\(|Nemotron|Tavily|Nebius/i);
   });
 
-  it("the paragraph is shown only when the cascade produced one; the listen button gets t and lang", () => {
+  it("the paragraph is shown only when the cascade produced one; no listen button (lot R7)", () => {
     assert.match(src, /fiche\?\.paragraph\?\.status === "ready" \? fiche\.paragraph\.text : ""/);
-    assert.match(src, /<ListenButton text=\{speech\} t=\{t\} lang=\{lang\} compact/);
+    assert.doesNotMatch(src, /ListenButton/);
+    assert.doesNotMatch(src, /escale-listen/);
+    assert.match(src, /data-testid="escale-close"/);
   });
 
   it("the hook asks GET /escale once per (stop, lang) and keeps it in this tab", () => {

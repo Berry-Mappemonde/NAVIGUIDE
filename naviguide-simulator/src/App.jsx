@@ -3,6 +3,7 @@ import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
+import { EscalePopupHost } from "./components/EscalePopup.jsx";
 import NotForNavModal from "./components/NotForNavModal.jsx";
 import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav.js";
 import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
@@ -508,10 +509,9 @@ export default function App() {
     : 0;
   const atQuay = Boolean(clockSample?.atQuay);
 
-  // Fiche d'escale (lot C; hooks/useEscaleSheetState.js since lot J).
+  // Fiche d'escale (lot C / J ; lot R7 : popup sur le drapeau, plus dans le panneau).
   const escale = useEscaleSheetState({
     lang, isSuivre, atQuay, clockSample, marks: legendMarks,
-    onOpen: () => setSidebarOpen(true),
   });
   const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
 
@@ -1436,6 +1436,7 @@ export default function App() {
         onCoordinatesCopied={handleCoordinatesCopied}
         onWaypointHover={setHoveredPoint}
         onDrawingWaypointClick={handleDrawingWaypointClick}
+        onWaypointClick={openEscaleSheet}
       />
 
       <NotForNavModal
@@ -1496,9 +1497,6 @@ export default function App() {
         momentFree={sceneReady ? moments.free : null}
         momentFreeLeft={moments.freeLeft}
         onMomentNext={moments.next}
-        escaleStop={escaleStop}
-        escaleSheet={escaleSheet}
-        onEscaleClose={closeEscaleSheet}
         chat={chat}
         onChatAsk={chat.ask}
       />
@@ -1723,6 +1721,14 @@ export default function App() {
         </>
       ) : null}
 
+      <EscalePopupHost
+        stop={escaleStop}
+        fiche={escaleSheet?.fiche}
+        loading={Boolean(escaleSheet?.loading)}
+        error={escaleSheet?.error}
+        onClose={closeEscaleSheet}
+        onFocus={handleBriefingFocus}
+      />
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
