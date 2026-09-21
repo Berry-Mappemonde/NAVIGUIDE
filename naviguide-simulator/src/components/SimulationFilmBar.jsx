@@ -182,6 +182,24 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {liveStatus ? ` · ${liveStatus}` : ""}
             {atQuay && quayDays > 0 ? "" : (holding ? ` · ${t("filmArrivalHold")}` : "")}
           </span>
+          {clockRegimeText({
+            regime: clockCurrent?.regime || clockCurrent?.kind,
+            sources: clockCurrent?.sources,
+            spread: clockCurrent?.spread,
+            t,
+            lang,
+          }) ? (
+            <span data-testid="clock-regime">
+              {" · "}
+              {clockRegimeText({
+                regime: clockCurrent?.regime || clockCurrent?.kind,
+                sources: clockCurrent?.sources,
+                spread: clockCurrent?.spread,
+                t,
+                lang,
+              })}
+            </span>
+          ) : null}
           {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"> · {weatherLine}</span> : null}
         </div>
         {gribLine ? (
@@ -481,6 +499,25 @@ const FILM_SOURCE_I18N = Object.freeze({
 
 function filmSourceLabel(source, t) {
   return t(FILM_SOURCE_I18N[source] || "storySourceRules");
+}
+
+function clockRegimeText({ regime, sources, spread, t, lang = "fr" }) {
+  const name = regime === "hindcast"
+    ? t("clockRegimeHindcast")
+    : regime === "forecast"
+      ? t("clockRegimeForecast")
+      : regime === "climatology"
+        ? t("clockRegimeClimatology")
+        : "";
+  if (!name) return "";
+  const n = Array.isArray(sources) ? sources.length : 0;
+  const loc = lang === "en" ? "en-US" : "fr-FR";
+  if (n > 0 && Number.isFinite(Number(spread))) {
+    const sp = Number(spread).toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return `${name} · ${t("clockRegimeSources", { n, spread: sp })}`;
+  }
+  if (n > 0) return `${name} · ${t("clockRegimeSourcesPlain", { n })}`;
+  return name;
 }
 
 function formatEta(hours) {

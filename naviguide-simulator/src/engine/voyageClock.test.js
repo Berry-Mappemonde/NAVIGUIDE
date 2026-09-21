@@ -371,6 +371,40 @@ describe("filmBarTicks", () => {
   });
 });
 
+describe("lot C2 — régime sur l’échantillon", () => {
+  it("propage regime / sources / spread", () => {
+    const clock = {
+      t0: "2026-05-15T08:00:00.000Z",
+      vertices: [
+        {
+          filmNm: 0, sailNm: 0, lat: 46.15, lon: -1.16, bearing: 250,
+          tHours: 0, iso: "2026-05-15T08:00:00.000Z", speedKnots: 7.4,
+          windKnots: 14, twa: 90, month: 5, vehicle: "main", seaHours: 0,
+          kind: "hindcast", regime: "hindcast", sources: ["om-era5", "cmems-wind"], spread: 1.5,
+        },
+        {
+          filmNm: 20, sailNm: 20, lat: 46.0, lon: -2.0, bearing: 250,
+          tHours: 3, iso: "2026-05-15T11:00:00.000Z", speedKnots: 7.4,
+          windKnots: 14, twa: 90, month: 5, vehicle: "main", seaHours: 3,
+          kind: "hindcast", regime: "hindcast", sources: ["om-era5"], spread: 1.5,
+        },
+      ],
+    };
+    const s = sampleClockAtHours(clock, 1);
+    assert.equal(s.regime, "hindcast");
+    assert.deepEqual(s.sources, ["om-era5", "cmems-wind"]);
+    assert.equal(s.spread, 1.5);
+  });
+
+  it("barre film expose data-testid clock-regime", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/SimulationFilmBar.jsx"),
+      "utf8",
+    );
+    assert.match(src, /data-testid="clock-regime"/);
+  });
+});
+
 describe("formatFilmClockLine", () => {
   it("compose nm · j · date UTC", () => {
     const line = formatFilmClockLine({

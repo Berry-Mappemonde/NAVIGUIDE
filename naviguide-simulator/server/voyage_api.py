@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from admin_guard import is_admin, rate_limited, require_admin
 from climatology_atlas import corridor_cells, prefetch_atlas_cells
 from forecast_blend import FORECAST_BLEND_END_HOURS, make_wind_fn
+from hindcast import at as hindcast_at
+from hindcast import hindcast_enabled, series as hindcast_series
 from forecast_cube import (
     CACHE_TTL_H,
     CUBE_MAX_BYTES,
@@ -132,28 +134,70 @@ def _climo_clock(voy: dict) -> dict:
     )
 
 
+def _hindcast_lookup(lat: float, lon: float, t: datetime):
+    if not hindcast_enabled():
+        return None
+    try:
+        return hindcast_at(lat, lon, t)
+    except Exception:
+        return None
+
+
 def _clock_with_cube(voy: dict, cube) -> dict:
     t0 = parse_iso(voy["t0"])
+    now = _now()
     return build_voyage_clock(
         voy.get("points") or [],
         voy.get("marks") or [],
         t0,
         polar_raw=_polar_raw(voy.get("expedition_id") or ""),
         start_at=voy.get("startAt") or "la-rochelle",
-        wind_fn=make_wind_fn(t0, cube),
+        wind_fn=make_wind_fn(t0, cube, now=now, hindcast_fn=_hindcast_lookup),
     )
 
 
-def _fill_forecast(voyage_id: str) -> None:
+def _prefetch_hindcast(voy: dict, now: datetime) -> int:
+    """Une série par (point arrondi, jour) déjà visité — le cache évite le retéléchargement."""
+    if not hindcast_enabled():
+        return 0
+    clock = voy.get("clock") or _climo_clock(voy)
+    seen: set[tuple] = set()
+    n = 0
+    for v in clock.get("vertices") or []:
+        iso = v.get("iso")
+        if not iso or v.get("lat") is None:
+            continue
+        t = parse_iso(iso)
+        if t >= now:
+            continue
+        day = t.strftime("%Y-%m-%d")
+        key = (round(float(v["lat"]), 3), round(float(v["lon"]), 3), day)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            hindcast_series(v["lat"], v["lon"], day)
+            n += 1
+        except Exception as exc:
+            log.info("hindcast prefetch %s: %s", key, exc)
+        if n >= 800:
+            break
+    return n
+
+
+def _fill_hindcast_then_forecast(voyage_id: str) -> None:
     voy = load_voyage(voyage_id)
     if voy is None:
         return
+    now = _now()
     try:
+        if hindcast_enabled():
+            _prefetch_hindcast(voy, now)
         t0 = parse_iso(voy["t0"])
         live_nm = 0.0
         clock = voy.get("clock")
         if clock:
-            sample = sample_clock_at_time(clock, _now())
+            sample = sample_clock_at_time(clock, now)
             if sample:
                 live_nm = float(sample.get("sailNm") or 0)
         cube = build_voyage_cube(voy.get("points") or [], t0, from_sail_nm=live_nm)
@@ -165,21 +209,33 @@ def _fill_forecast(voyage_id: str) -> None:
         update_voyage(
             voyage_id,
             forecastStatus="ready",
+            hindcastStatus="ready" if hindcast_enabled() else "skipped",
             forecastModel=cube.model,
             waveModel=cube.wave_model,
             cubeBytes=cube.estimate_bytes(),
-            forecastRefreshedAt=to_iso(_now()),
+            forecastRefreshedAt=to_iso(now),
+            hindcastRefreshedAt=to_iso(now),
             clock=clock,
         )
+        _journal_safely(lambda: journal.record_wx_from_hindcast(clock, now))
     except Exception as exc:
-        log.warning("prévision indisponible pour %s: %s", voyage_id, exc)
+        log.warning("hindcast/prévision indisponible pour %s: %s", voyage_id, exc)
         voy = load_voyage(voyage_id) or voy
+        climo = voy.get("clock") or _climo_clock(voy)
+        if climo.get("kind") != "climatology":
+            climo = {**climo, "kind": "climatology"}
         update_voyage(
             voyage_id,
             forecastStatus="unavailable",
+            hindcastStatus="unavailable",
             forecastModel=None,
-            clock=voy.get("clock") or _climo_clock(voy),
+            clock=climo,
         )
+
+
+def _fill_forecast(voyage_id: str) -> None:
+    """Alias lot C2 : hindcast puis prévision."""
+    _fill_hindcast_then_forecast(voyage_id)
 
 
 def _is_official(voyage_id: str) -> bool:
@@ -205,11 +261,13 @@ def _public_meta(voy: dict) -> dict:
         "follow": voy.get("follow", True),
         "official": official,
         "forecastStatus": voy.get("forecastStatus"),
+        "hindcastStatus": voy.get("hindcastStatus"),
         "forecastModel": voy.get("forecastModel"),
         "waveModel": voy.get("waveModel"),
         "startAt": voy.get("startAt"),
         "cubeBytes": voy.get("cubeBytes"),
         "forecastRefreshedAt": voy.get("forecastRefreshedAt"),
+        "hindcastRefreshedAt": voy.get("hindcastRefreshedAt"),
         "disclaimer": {
             "notForNav": "Ne convient pas à la navigation.",
         },
@@ -328,6 +386,7 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
         "follow": body.follow,
         "forecast": body.forecast,
         "forecastStatus": "pending" if body.forecast else "unavailable",
+        "hindcastStatus": "pending" if body.forecast else "unavailable",
         "forecastModel": None,
         "startAt": body.startAt,
         "points": body.points,
@@ -353,6 +412,7 @@ def _build_official(body: VoyageCreate) -> dict:
         "forecast": False,
         "official": True,
         "forecastStatus": "unavailable",
+        "hindcastStatus": "pending",
         "forecastModel": None,
         "startAt": "la-rochelle",
         "points": body.points,
@@ -421,6 +481,67 @@ def _official_grib_refreshing() -> bool:
     return get_pipeline().provider_busy("official-grib")
 
 
+def _regime_portions(clock: dict) -> list:
+    portions = []
+    current = None
+    for v in clock.get("vertices") or []:
+        regime = v.get("regime") or v.get("kind") or "climatology"
+        if current is None or current["regime"] != regime:
+            if current:
+                portions.append(current)
+            current = {
+                "regime": regime,
+                "fromNm": v.get("sailNm"),
+                "toNm": v.get("sailNm"),
+                "fromIso": v.get("iso"),
+                "toIso": v.get("iso"),
+                "sources": list(v.get("sources") or []),
+                "spread": v.get("spread"),
+            }
+        else:
+            current["toNm"] = v.get("sailNm")
+            current["toIso"] = v.get("iso")
+            for src in v.get("sources") or []:
+                if src not in current["sources"]:
+                    current["sources"].append(src)
+            if v.get("spread") is not None:
+                prev = current.get("spread")
+                current["spread"] = v["spread"] if prev is None else max(prev, v["spread"])
+    if current:
+        portions.append(current)
+    return portions
+
+
+def _kick_official_hindcast(*, force: bool = False) -> bool:
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        _fill_hindcast_then_forecast(OFFICIAL_VOYAGE_ID)
+        return {}
+
+    return get_pipeline().kick(
+        "official-hindcast",
+        0.0,
+        0.0,
+        _load,
+        force=force,
+    )
+
+
+def _maybe_daily_hindcast(voy: dict) -> None:
+    last = voy.get("hindcastRefreshedAt")
+    if last:
+        try:
+            age_h = (_now() - parse_iso(last)).total_seconds() / 3600.0
+        except Exception:
+            age_h = 99.0
+        if age_h < 20.0 and voy.get("hindcastStatus") == "ready":
+            return
+    _kick_official_hindcast(force=False)
+
+
 def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
     voy = load_voyage(voyage_id)
     pts = (voy or {}).get("points") or []
@@ -472,10 +593,12 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
             save_voyage(existing)
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
         background.add_task(_kick_official_grib)
+        background.add_task(_kick_official_hindcast)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
     voy = _build_official(body)
     background.add_task(_kick_official_grib)
+    background.add_task(_kick_official_hindcast)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
@@ -496,8 +619,24 @@ def get_official_clock():
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
+    _maybe_daily_hindcast(voy)
     _journal_safely(lambda: journal.tick(voy, _now()))
     return voy.get("clock") or _climo_clock(voy)
+
+
+@router.get("/voyage/official/regimes")
+def get_official_regimes():
+    """Portions de route par régime (hindcast / forecast / climatology)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    clock = voy.get("clock") or _climo_clock(voy)
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "kind": clock.get("kind") or "climatology",
+        "hindcastStatus": voy.get("hindcastStatus"),
+        "portions": _regime_portions(clock),
+    }
 
 
 class JournalNoteIn(BaseModel):
@@ -631,6 +770,8 @@ def official_at(t: Optional[str] = Query(None)):
     around = _grib_around_from_live(voy, when)
     grib = _latest_official_grib(around, when)
     wind = wind_at_daily(grib, float(sample.get("lat") or 0), float(sample.get("lon") or 0), when)
+    sample["regime"] = sample.get("regime") or sample.get("kind") or "climatology"
+    sample["sources"] = list(sample.get("sources") or [])
     if wind:
         sample["kind"] = "forecast"
         sample["model"] = wind.get("model")
@@ -770,18 +911,21 @@ def get_at(voyage_id: str, t: Optional[str] = Query(None)):
     if sample is None:
         raise HTTPException(404, "horloge vide")
     t0 = parse_iso(voy["t0"])
-    hours = (when - t0).total_seconds() / 3600.0
-    if hours > FORECAST_BLEND_END_HOURS and sample.get("kind") == "forecast":
+    hours_from_now = (when - _now()).total_seconds() / 3600.0
+    if hours_from_now > FORECAST_BLEND_END_HOURS and sample.get("kind") == "forecast":
         sample["kind"] = "climatology"
+        sample["regime"] = "climatology"
         sample["leadHours"] = None
         sample["model"] = None
+    sample["regime"] = sample.get("regime") or sample.get("kind") or "climatology"
+    sample["sources"] = list(sample.get("sources") or [])
     sample["voyageId"] = voyage_id
     sample["forecastStatus"] = voy.get("forecastStatus")
     sample["forecastModel"] = voy.get("forecastModel")
     sample["t"] = to_iso(when)
     if sample.get("kind") == "forecast":
-        # Lead time = hours since t0 (not the wind at the start of the edge).
-        sample["leadHours"] = round(max(0.0, hours), 1)
+        # Lead time = heures depuis maintenant (origine du cube), plus depuis t0.
+        sample["leadHours"] = round(max(0.0, hours_from_now), 1)
         if not sample.get("model"):
             sample["model"] = voy.get("forecastModel")
     return sample
@@ -842,7 +986,7 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         corridor.append((float(dest["lat"]), float(dest["lon"])))
     months = {when.month, (when + timedelta(days=30)).month}
     prefetch_atlas_cells(corridor_cells(corridor, months), budget_s=ATLAS_PREFETCH_BUDGET_S)
-    wind_fn = make_wind_fn(t0, cube, atlas_network=False)
+    wind_fn = make_wind_fn(t0, cube, atlas_network=False, now=_now(), hindcast_fn=_hindcast_lookup)
     versus_hours = None
     for m in clock.get("marks") or []:
         if m.get("name") == dest.get("name"):

@@ -215,6 +215,31 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 | `climatology.cyclone_min_kn` | 34 kn | geometry | Display at least tropical storm. |
 | `climatology.avoid_cyclone_tracks` | true | **law** | Isochrone constraint. |
 
+### 3.7 Horloge à trois régimes — hindcast / prévision / climatologie (lot C2)
+
+`docs/PLAN_AUDIT_CALCULS.md` lot C2, `docs/audits/CALCULS_ETAT_DE_L_ART.md`. Décision du porteur : **toutes** les sources (Open-Meteo + Copernicus) sont lues ensemble, fusionnées par **médiane**. Un champ sans source reste vide (jamais inventé). Identifiants `COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD` déjà lus par `server/main.py`.
+
+| Id | Default | Family | Phenomenon / anchor |
+|----|---------|--------|---------------------|
+| `hindcast.era5_strong_wind_factor` | 1.05 | geometry | Correction vents forts ERA5 **seulement** au-dessus de 15 m/s, **seulement** ERA5 (Open-Meteo Archive / ERA5 sous-estime le vent fort ; facteur revue lot C2). |
+| `hindcast.era5_strong_wind_ms` | 15 m/s | geometry | Seuil de la correction ERA5. |
+| `hindcast.ms_to_kn` | 1.943844 | **law** | 1 m/s → kn (mille international 1852 m). |
+| `hindcast.pad_days` | 2 j | budget | Fenêtre CMEMS ±2 j autour du jour demandé (1 subset / point / dataset). |
+| `hindcast.point_decimals` | 3 | budget | Clé de cache (point, produit, jour) — jamais retéléchargé. |
+| `hindcast.fetch_timeout_s` | 20 s | budget | Timeout HTTP Open-Meteo. |
+| `hindcast.fusion` | médiane | **law** | Par variable et par heure ; `spread` = max − min ; source en panne = absente. |
+| `hindcast.om_forecast` | Historical Forecast API | **law** | `historical-forecast-api.open-meteo.com/v1/forecast`, `hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m`, `wind_speed_unit=kn`. |
+| `hindcast.om_era5` | Historical Weather / ERA5 | **law** | `archive-api.open-meteo.com/v1/archive`, mêmes variables vent. |
+| `hindcast.om_marine` | Marine API | **law** | `marine-api.open-meteo.com/v1/marine` ; courant optionnel : si 400, vagues seules, courant vide. |
+| `hindcast.cmems_wind` | `WIND_GLO_PHY_L4_NRT_012_004` | **law** | `cmems_obs-wind_glo_phy_nrt_l4_0.125deg_PT1H` ; `eastward_wind`, `northward_wind` → kn × 1,943844, direction « de ». |
+| `hindcast.cmems_wave` | `GLOBAL_ANALYSISFORECAST_WAV_001_027` | **law** | `cmems_mod_glo_wav_anfc_0.083deg_PT3H-i` ; `VHM0`, `VMDR` « de », `VTM02`. |
+| `hindcast.cmems_phy` | `GLOBAL_ANALYSISFORECAST_PHY_001_024` | **law** | `cmems_mod_glo_phy_anfc_0.083deg_PT1H-m` ; `uo`, `vo` → kn, direction « vers » = atan2(uo, vo) ; uo=1, vo=0 → 90°. |
+| `clock.max_step_nm` | 30 nm | geometry | Pas d'intégration plus long (lot C2 / A3 : vent lu à mi-pas). |
+| `clock.max_step_h` | 1 h | geometry | Idem, sous-découpage temporel. |
+| `forecast.full_hours` | 7 × 24 h | **law** | Prévision pleine **depuis maintenant** (heure du calcul), plus depuis `t0`. |
+| `forecast.blend_end_hours` | 10 × 24 h | **law** | Fondu linéaire 7 → 10 j depuis maintenant, puis climatologie. |
+| `clock.regimes` | hindcast / forecast / climatology | **law** | Passé = hindcast ; 0–7 j = prévision ; au-delà = climatologie. Horloge officielle `kind: climatology` jusqu'au premier fill (~40 min). |
+
 ---
 
 ## 4. Other ideas (beyond the snapshot)

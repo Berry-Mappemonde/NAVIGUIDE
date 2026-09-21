@@ -14,6 +14,8 @@ LAND_CALENDAR_HOURS = 4.0
 MIN_KNOTS = 0.5
 WAVE_NOGO_M = 2.5
 WAVE_NOGO_DT_FACTOR = 3.0
+MAX_STEP_NM = 30.0
+MAX_STEP_H = 1.0
 OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel"
 OFFICIAL_T0 = "2026-05-15T08:00:00Z"
 DEFAULT_BMAP_PORT_DAYS = 3
@@ -167,7 +169,70 @@ def find_start_index(points: List[dict], marks: List[dict], start_at: str = "la-
 
 
 def _default_wind(lat: float, lon: float, t: datetime) -> Dict[str, Any]:
-    return atlas_wind_at_dt(lat, lon, t)
+    pack = atlas_wind_at_dt(lat, lon, t)
+    pack.setdefault("regime", pack.get("kind") or "climatology")
+    return pack
+
+
+def _lerp_lon(lon1: float, lon2: float, t: float) -> float:
+    d = lon2 - lon1
+    while d > 180:
+        d -= 360
+    while d < -180:
+        d += 360
+    return _wrap_lon(lon1 + d * t)
+
+
+def _point_along(a: dict, b: dict, frac: float) -> dict:
+    f = max(0.0, min(1.0, float(frac)))
+    span = float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0)
+    film_span = float(b.get("filmCum", b.get("cumNm", 0)) or 0) - float(a.get("filmCum", a.get("cumNm", 0)) or 0)
+    return {
+        "lat": a["lat"] + f * (b["lat"] - a["lat"]),
+        "lon": _lerp_lon(a["lon"], b["lon"], f),
+        "cumNm": float(a.get("cumNm") or 0) + f * span,
+        "filmCum": float(a.get("filmCum", a.get("cumNm", 0)) or 0) + f * film_span,
+        "jump": False,
+        "nonMaritime": False,
+    }
+
+
+def _wind_pack_from(w: dict, twa: Optional[float] = None) -> Dict[str, Any]:
+    return {
+        "speedKnots": w.get("speedKnots"),
+        "twa": twa,
+        "kind": w.get("kind") or w.get("regime") or "climatology",
+        "regime": w.get("regime") or w.get("kind") or "climatology",
+        "sources": list(w.get("sources") or []),
+        "spread": w.get("spread"),
+        "model": w.get("model"),
+        "leadHours": w.get("leadHours"),
+        "reason": w.get("reason"),
+        "source": w.get("source"),
+        "period": w.get("period"),
+        "doi": w.get("doi"),
+        "hs": w.get("hs"),
+        "hsP50": w.get("hsP50"),
+        "hsP90": w.get("hsP90"),
+        "currentKn": w.get("currentKn"),
+        "currentToDeg": w.get("currentToDeg"),
+    }
+
+
+def _speed_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float]:
+    twa = twa_deg(brg, float(w.get("dirFromDeg") or 0))
+    from_polar = polar_boat_speed(polar_raw, twa, float(w.get("speedKnots") or 0))
+    speed = from_polar if from_polar is not None else boat_speed_from_wind(w.get("speedKnots") or 0)
+    return max(MIN_KNOTS, float(speed)), twa
+
+
+def _clock_kind(vertices: List[dict]) -> str:
+    kinds = {(v.get("regime") or v.get("kind")) for v in vertices if v.get("regime") or v.get("kind")}
+    if "hindcast" in kinds or "forecast" in kinds:
+        if kinds <= {"hindcast"}:
+            return "hindcast"
+        return "mixed"
+    return "climatology"
 
 
 def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
@@ -189,13 +254,17 @@ def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
         "month": month,
         "vehicle": veh,
         "seaHours": _r4(sea_hours),
-        "kind": wind.get("kind") or "climatology",
+        "kind": wind.get("kind") or wind.get("regime") or "climatology",
+        "regime": wind.get("regime") or wind.get("kind") or "climatology",
+        "sources": list(wind.get("sources") or []),
+        "spread": wind.get("spread"),
         "model": wind.get("model"),
         "leadHours": wind.get("leadHours"),
         "reason": wind.get("reason"),
         "source": wind.get("source"),
         "period": wind.get("period"),
         "doi": wind.get("doi"),
+        "hs": wind.get("hs"),
         "hsP50": wind.get("hsP50"),
         "hsP90": wind.get("hsP90"),
         "currentKn": wind.get("currentKn"),
@@ -279,45 +348,55 @@ def build_voyage_clock(
         if b.get("jump"):
             t_hours += AIR_CALENDAR_HOURS
             vehicle = "plane"
+            vertices.append(_emit(
+                b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
+                (t0d + timedelta(hours=t_hours)).month,
+                sea_hours,
+            ))
         elif a.get("nonMaritime") and b.get("nonMaritime"):
             vehicle = "land"
             if start_at == "saint-maur" and land_end_idx >= 0 and i + 1 == land_end_idx:
                 t_hours += LAND_CALENDAR_HOURS
+            vertices.append(_emit(
+                b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
+                (t0d + timedelta(hours=t_hours)).month,
+                sea_hours,
+            ))
         else:
-            mid_lat = (a["lat"] + b["lat"]) / 2
-            mid_lon = (a["lon"] + b["lon"]) / 2
-            w = wind_at(mid_lat, mid_lon, when)
-            twa = twa_deg(brg, float(w.get("dirFromDeg") or 0))
-            from_polar = polar_boat_speed(polar_raw, twa, float(w.get("speedKnots") or 0))
-            speed_knots = from_polar if from_polar is not None else boat_speed_from_wind(w.get("speedKnots") or 0)
-            speed_knots = max(MIN_KNOTS, float(speed_knots))
-            dt = span_nm / speed_knots
-            hs = w.get("hs")
-            if hs is not None and float(hs) >= WAVE_NOGO_M:
-                dt *= WAVE_NOGO_DT_FACTOR
-            t_hours += dt
-            sea_hours += dt
-            wind_pack = {
-                "speedKnots": w.get("speedKnots"),
-                "twa": twa,
-                "kind": w.get("kind") or "climatology",
-                "model": w.get("model"),
-                "leadHours": w.get("leadHours"),
-                "reason": w.get("reason"),
-                "source": w.get("source"),
-                "period": w.get("period"),
-                "doi": w.get("doi"),
-                "hsP50": w.get("hsP50"),
-                "hsP90": w.get("hsP90"),
-                "currentKn": w.get("currentKn"),
-                "currentToDeg": w.get("currentToDeg"),
-            }
-
-        vertices.append(_emit(
-            b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
-            (t0d + timedelta(hours=t_hours)).month,
-            sea_hours,
-        ))
+            pos_nm = 0.0
+            while pos_nm < span_nm - 1e-9:
+                rem = span_nm - pos_nm
+                guess = min(MAX_STEP_NM, rem)
+                mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
+                mid = _point_along(a, b, mid_frac)
+                w0 = wind_at(mid["lat"], mid["lon"], t0d + timedelta(hours=t_hours))
+                speed0, _twa0 = _speed_from_wind(polar_raw, brg, w0)
+                dt0 = guess / speed0
+                if dt0 > MAX_STEP_H:
+                    guess = speed0 * MAX_STEP_H
+                    dt0 = MAX_STEP_H
+                    mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
+                    mid = _point_along(a, b, mid_frac)
+                when_mid = t0d + timedelta(hours=t_hours + dt0 / 2.0)
+                w = wind_at(mid["lat"], mid["lon"], when_mid)
+                speed_knots, twa = _speed_from_wind(polar_raw, brg, w)
+                dt = guess / speed_knots
+                if dt > MAX_STEP_H + 1e-6:
+                    guess = speed_knots * MAX_STEP_H
+                    dt = MAX_STEP_H
+                hs = w.get("hs")
+                if hs is not None and float(hs) >= WAVE_NOGO_M:
+                    dt *= WAVE_NOGO_DT_FACTOR
+                t_hours += dt
+                sea_hours += dt
+                pos_nm += guess
+                wind_pack = _wind_pack_from(w, twa)
+                pt = b if pos_nm >= span_nm - 1e-6 else _point_along(a, b, pos_nm / span_nm)
+                vertices.append(_emit(
+                    pt, t_hours, t0d, brg, speed_knots, wind_pack, "main",
+                    (t0d + timedelta(hours=t_hours)).month,
+                    sea_hours,
+                ))
 
         arrived = mark_by_index.get(i + 1)
         if arrived and i + 1 != start_idx:
@@ -335,6 +414,9 @@ def build_voyage_clock(
                 vertices.append(_emit(
                     b, t_hours, t0d, brg, 0.0,
                     {"kind": wind_pack.get("kind") or "climatology",
+                     "regime": wind_pack.get("regime") or wind_pack.get("kind") or "climatology",
+                     "sources": list(wind_pack.get("sources") or []),
+                     "spread": wind_pack.get("spread"),
                      "speedKnots": wind_pack.get("speedKnots")},
                     "quay",
                     (t0d + timedelta(hours=t_hours)).month,
@@ -342,10 +424,9 @@ def build_voyage_clock(
                 ))
 
     last = vertices[-1]
-    kinds = {v.get("kind") for v in vertices if v.get("kind")}
     return {
         "t0": to_iso(t0d),
-        "kind": "mixed" if "forecast" in kinds else "climatology",
+        "kind": _clock_kind(vertices),
         "vertices": vertices,
         "marks": clock_marks,
         "seaHours": _r4(sea_hours),
@@ -410,6 +491,9 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
             "atQuay": False,
             "status": "live",
             "kind": a["kind"] if t < 0.5 else b["kind"],
+            "regime": (a.get("regime") or a.get("kind")) if t < 0.5 else (b.get("regime") or b.get("kind")),
+            "sources": (a.get("sources") if t < 0.5 else b.get("sources")) or [],
+            "spread": a.get("spread") if t < 0.5 else b.get("spread"),
             "speedKnots": b.get("speedKnots") if b.get("speedKnots") is not None else a.get("speedKnots"),
             "windKnots": b.get("windKnots") if b.get("windKnots") is not None else a.get("windKnots"),
             "model": b.get("model") or a.get("model"),

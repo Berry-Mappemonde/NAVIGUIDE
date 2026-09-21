@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from climatology_zones import zone_wind_at
@@ -166,6 +166,48 @@ def test_sample_at_quay_speed_zero():
     assert s["atQuay"] is True
     assert s["speedKnots"] == 0
     assert s["vehicle"] == "quay"
+
+
+def test_c2_steps_cap_30nm_or_1h_and_mid_step_wind():
+    calls = []
+
+    def wind_fn(lat, lon, t):
+        calls.append((lat, lon, t))
+        return {"speedKnots": 20.0, "dirFromDeg": 0.0, "kind": "hindcast", "regime": "hindcast", "sources": ["om-era5"], "spread": 1.0}
+
+    points = [
+        {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+        {"lat": 46.15, "lon": -3.5, "cumNm": 90, "filmCum": 90, "jump": False},
+    ]
+    t0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+    c = build_voyage_clock(points, [], t0, start_at="saint-maur", wind_fn=wind_fn)
+    sea = [v for v in c["vertices"] if v.get("vehicle") == "main" and (v.get("speedKnots") or 0) > 0]
+    assert len(sea) >= 2
+    for a, b in zip(sea, sea[1:]):
+        assert (b["sailNm"] - a["sailNm"]) <= 30.0 + 1e-6
+        assert (b["tHours"] - a["tHours"]) <= 1.0 + 1e-6
+    assert sea[0]["regime"] == "hindcast"
+    assert sea[0]["sources"] == ["om-era5"]
+    assert calls, "vent lu à mi-pas"
+
+
+def test_c2_regime_flips_at_now():
+    now = datetime(2026, 5, 17, 8, tzinfo=timezone.utc)
+
+    def wind_fn(lat, lon, t):
+        if t < now:
+            return {"speedKnots": 14.0, "dirFromDeg": 80.0, "kind": "hindcast", "regime": "hindcast", "sources": ["om-forecast"], "spread": 0.5}
+        return {"speedKnots": 16.0, "dirFromDeg": 90.0, "kind": "forecast", "regime": "forecast"}
+
+    points = [
+        {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+        {"lat": 40.0, "lon": -15.0, "cumNm": 650, "filmCum": 650, "jump": False},
+    ]
+    c = build_voyage_clock(points, [], "2026-05-15T08:00:00Z", start_at="saint-maur", wind_fn=wind_fn)
+    before = sample_clock_at_time(c, now - timedelta(hours=2))
+    after = sample_clock_at_time(c, now + timedelta(hours=2))
+    assert before["regime"] == "hindcast"
+    assert after["regime"] == "forecast"
 
 
 def test_js_py_same_schema_keys():

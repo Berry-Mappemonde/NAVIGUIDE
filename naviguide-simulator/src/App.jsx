@@ -1651,6 +1651,9 @@ export default function App() {
           filmNm: isSuivre && live && !previewing ? (Number(live.filmNm) || 0) : playback.nm,
           sailNm: clockSample.sailNm,
           seaHours: clockSample.seaHours,
+          regime: clockSample.regime || clockSample.kind,
+          sources: clockSample.sources || [],
+          spread: clockSample.spread,
         } : null}
         disclaimer={t("creditsLine")}
       />
