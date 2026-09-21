@@ -1,4 +1,4 @@
-"""Revue de plan par règles (lot K, plan général §1.8).
+"""Revue de plan par règles (lot K, plan général §1.8) + commentaire (lot L5, U7).
 
 Par jambe de la route officielle (d'une escale à la suivante), ce que les
 données déjà collectées disent — rien d'autre :
@@ -11,14 +11,34 @@ données déjà collectées disent — rien d'autre :
 - aires marines protégées à portée sur la jambe (perles).
 
 La saison (rose des vents, cyclones IBTrACS) est lue côté client dans le
-cache de l'atlas, pour le mois de la jambe. Aucun LLM ici.
+cache de l'atlas, pour le mois de la jambe.
+
+Le commentaire « Ce que je changerais » (U7) est rédigé par
+`cascade_text(tier="write")` à partir des seules lignes du tableau ; aucun
+chiffre nouveau (`filter_numbers`). Cache par hash du tableau.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
 from voyage_clock import parse_iso, to_iso
+
+log = logging.getLogger("naviguide-simulator.plan-review")
+
+COMMENT_NS = "plan-comment"
+COMMENT_TTL_S = 7 * 86400.0
+COMMENT_MAX_SENTENCES = 4
+COMMENT_MAX_CHARS = 800
+COMMENT_SYSTEM = (
+    "Tu commentes une revue de plan de voyage déjà calculée. "
+    "Tu dis ce que tu changerais (repos, formalités, saison), en au plus 4 phrases. "
+    "Tu ne produis aucun chiffre qui n'est pas déjà dans les faits. "
+    "Thinking OFF. Pas de liste, pas de titre."
+)
 
 
 def _sail_nm_at(clock: dict, t_hours: float) -> float:
@@ -198,3 +218,137 @@ def review_official(voy: dict, now: datetime | None = None, *, season: bool = Tr
         "pearlsWarmed": sum(l["pearls"]["known"] for l in legs),
         "pearlsUnknown": sum(l["pearls"]["unknown"] for l in legs),
     }
+
+
+def table_facts(legs: list[dict] | None) -> dict[str, Any]:
+    """Lignes du tableau (faits seuls) : pas de dates ISO, pas de generatedAt."""
+    rows = []
+    for leg in legs or []:
+        if not isinstance(leg, dict):
+            continue
+        pearls = leg.get("pearls") if isinstance(leg.get("pearls"), dict) else {}
+        season = leg.get("season") if isinstance(leg.get("season"), dict) else None
+        row: dict[str, Any] = {
+            "from": leg.get("from"),
+            "to": leg.get("to"),
+            "legNm": leg.get("legNm"),
+            "daysAtSea": leg.get("daysAtSea"),
+            "holdDays": leg.get("holdDays"),
+            "ampCount": leg.get("ampCount"),
+            "pearls": {"known": pearls.get("known"), "unknown": pearls.get("unknown")},
+            "zees": [
+                {"name": z.get("name"), "gold": z.get("gold"), "poe": list(z.get("poe") or [])[:4]}
+                for z in (leg.get("zees") or []) if isinstance(z, dict)
+            ],
+            "flags": [f for f in (leg.get("flags") or []) if isinstance(f, dict)],
+        }
+        if season:
+            row["season"] = {
+                "galePct": season.get("galePct"),
+                "cyclones": season.get("cyclones"),
+                "cells": season.get("cells"),
+                "missing": season.get("missing"),
+            }
+        rows.append(row)
+    return {"n": len(rows), "legs": rows}
+
+
+def table_hash(facts: dict[str, Any]) -> str:
+    blob = json.dumps(facts, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def comment_fallback(facts: dict[str, Any]) -> str:
+    """≤ 4 phrases, uniquement les chiffres déjà dans `facts`."""
+    legs = facts.get("legs") or []
+    if not legs:
+        return ""
+    bits: list[str] = []
+    n = facts.get("n")
+    if n is not None:
+        bits.append(f"Le tableau compte {n} jambe{'s' if n != 1 else ''}.")
+    for leg in legs:
+        if len(bits) >= COMMENT_MAX_SENTENCES:
+            break
+        bits.append(
+            f"{leg.get('from') or '—'} → {leg.get('to') or '—'} : "
+            f"{leg.get('legNm')} nm, {leg.get('daysAtSea')} jours de mer."
+        )
+        names: list[str] = []
+        for flag in leg.get("flags") or []:
+            if flag.get("kind") == "formalities":
+                names.extend(str(x) for x in (flag.get("names") or []) if x)
+        if names and len(bits) < COMMENT_MAX_SENTENCES:
+            bits.append(f"Formalités à vérifier : {', '.join(names[:3])}.")
+        unknown = (leg.get("pearls") or {}).get("unknown")
+        if unknown and len(bits) < COMMENT_MAX_SENTENCES:
+            bits.append(f"{unknown} perles pas encore chauffées.")
+    return " ".join(bits[:COMMENT_MAX_SENTENCES])
+
+
+def _cache_get(key: str) -> dict[str, Any] | None:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(COMMENT_NS, key, COMMENT_TTL_S)
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return None
+    text = val.get("text")
+    source = val.get("source")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    if not isinstance(source, str) or not source.strip():
+        return None
+    return {"text": text, "source": source}
+
+
+def _cache_put(key: str, value: dict[str, Any]) -> None:
+    import pearl_store  # noqa: PLC0415
+
+    pearl_store.kv_put(COMMENT_NS, key, {"text": value.get("text"), "source": value.get("source")})
+
+
+def _clip_comment(text: str, facts: dict[str, Any], fallback: str) -> str:
+    from story_cascade import filter_numbers, tidy_story  # noqa: PLC0415
+
+    tidy = tidy_story(text or fallback, fallback, max_sentences=COMMENT_MAX_SENTENCES, max_chars=COMMENT_MAX_CHARS)
+    cleaned, _ = filter_numbers(tidy, facts)
+    return (cleaned or "").strip() or fallback
+
+
+async def comment_plan(
+    legs: list[dict] | None,
+    *,
+    client=None,
+    cascade=None,
+) -> dict[str, Any]:
+    """Nemotron Super (tier write) : ≤ 4 phrases. Cache par hash du tableau."""
+    from story_cascade import cascade_text  # noqa: PLC0415
+
+    facts = table_facts(legs)
+    key = table_hash(facts)
+    hit = _cache_get(key)
+    if hit:
+        return {**hit, "cached": True}
+    fallback = comment_fallback(facts)
+    if not facts.get("legs"):
+        return {"text": fallback, "source": "rules", "cached": False}
+    fn = cascade or cascade_text
+    user = (
+        "Faits du tableau (ne pas inventer de chiffre) :\n"
+        f"{json.dumps(facts, ensure_ascii=False, default=str)}"
+    )
+    try:
+        text, source = await fn(
+            COMMENT_SYSTEM, user, client, tier="write", fallback=fallback,
+            facts=facts, max_tokens=400,
+        )
+    except Exception as exc:
+        log.debug("commentaire revue : %s", exc)
+        text, source = fallback, "rules"
+    out_text = _clip_comment(text or fallback, facts, fallback)
+    if not out_text:
+        out_text, source = fallback, "rules"
+    out = {"text": out_text, "source": source or "rules"}
+    _cache_put(key, out)
+    return {**out, "cached": False}

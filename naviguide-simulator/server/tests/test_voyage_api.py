@@ -1,3 +1,4 @@
+import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -167,6 +168,83 @@ def test_recompute_takes_the_skipper_orders_as_constraints(client, monkeypatch):
     rec2 = client.post(f"/voyage/{vid}/recompute", json={"wind_max_kt": 5, "hs_max_m": 40})
     assert rec2.json()["constraints"]["source"] == "default"
     assert rec2.json()["constraints"]["windMaxKt"] is None
+
+
+def test_route_delta_is_rules_only():
+    old = [[-1.16, 46.15], [-15.0, 40.0], [-30.0, 28.0]]
+    new = [[-1.16, 46.15], [-18.0, 42.0], [-30.0, 28.0]]
+    d = voyage_api.route_delta(old, new, official_nm=1450.4, recomputed_nm=1499.6)
+    assert d["official_nm"] == 1450 and d["recomputed_nm"] == 1500
+    assert d["distance_delta_nm"] == 50  # |1500 − 1450|
+    assert d["max_deviation_nm"] >= 0
+    assert d["avoided_points"] >= 0
+    facts = voyage_api.advice_facts(d, {"source": "skipper", "windMaxKt": 30, "hsMaxM": 3.5})
+    phrase = voyage_api.advice_fallback(facts)
+    assert "30" in phrase
+    assert "99" not in phrase
+    for token in ("1450", "1500", "50", str(d["max_deviation_nm"]), str(d["avoided_points"])):
+        if token in phrase:
+            assert token in {str(facts[k]) for k in facts if facts[k] is not None}
+
+
+def test_explain_recompute_fast_tier_filters_invented_numbers(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.update(kw)
+        return "La route s'écarte de 12 nm pour éviter 2 points. J'ajoute 99 kn.", "nemotron-lightning"
+
+    delta = {
+        "official_nm": 100, "recomputed_nm": 110, "distance_delta_nm": 10,
+        "max_deviation_nm": 12, "avoided_points": 2,
+    }
+    out = asyncio.run(voyage_api.explain_recompute(
+        delta, {"source": "skipper", "windMaxKt": 30}, cascade=fake_cascade,
+    ))
+    assert seen.get("tier") == "fast"
+    assert "12" in out["text"] and "2" in out["text"]
+    assert "99" not in out["text"]
+    assert out["source"] == "nemotron-lightning"
+    assert out["delta"]["wind_max_kt"] == 30
+
+
+def test_recompute_advice_numbers_match_delta(client, monkeypatch):
+    def fake_iso(**kw):
+        return {
+            "status": "arrived",
+            "kind_mix": ["climatology"],
+            "draft_geojson": {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {"type": "LineString", "coordinates": [[-1.16, 46.15], [-18.0, 42.0], [-30.0, 28.0]]},
+            },
+            "hours": 10,
+            "distance_nm": 900.4,
+            "isochrones": [],
+            "steps": 1,
+            "route": [],
+        }
+
+    monkeypatch.setattr(voyage_api, "run_leg_isochrone", fake_iso)
+
+    async def fake_explain(delta, constraints=None, **kw):
+        return {
+            "text": voyage_api.advice_fallback(voyage_api.advice_facts(delta, constraints)),
+            "source": "rules",
+            "delta": voyage_api.advice_facts(delta, constraints),
+        }
+
+    monkeypatch.setattr(voyage_api, "explain_recompute", fake_explain)
+    t0 = datetime(2026, 6, 13, 8, tzinfo=timezone.utc)
+    vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
+    monkeypatch.setattr(voyage_api, "_now", lambda: t0 + timedelta(hours=48))
+    draft = client.post(f"/voyage/{vid}/recompute", json={"wind_max_kt": 30, "hs_max_m": 3.5}).json()
+    advice = draft["advice"]
+    delta = advice["delta"]
+    assert advice["source"] == "rules"
+    assert str(delta["max_deviation_nm"]) in advice["text"]
+    assert "99" not in advice["text"]
+    assert delta["wind_max_kt"] == 30
 
 
 def test_c2_regime_changes_at_now_and_regimes_endpoint(client, monkeypatch):

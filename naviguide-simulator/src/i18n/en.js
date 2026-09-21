@@ -236,6 +236,7 @@ export default {
   planReviewOk: "nothing to report",
   planReviewEmpty: "No leg to review.",
   planReviewSummary: "Per leg: calendar (official clock), EEZ and ports of entry (pearls), MPA, season of the month (atlas). {warmed} pearls read, {unknown} not warmed yet.",
+  planReviewCommentTitle: "What I would change",
   skipperPlanningGrib:     "polar × GRIB wind ({tws} kn, TWA {twa}°)",
   skipperPlanningClimo:    "polar × typical wind ({tws} kn, TWA {twa}°)",
   brandTitle: "NAVIGUIDE simulator",
