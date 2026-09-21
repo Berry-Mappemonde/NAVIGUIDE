@@ -178,6 +178,9 @@ export class MapSceneController {
       maxZoom: 18,
       worldCopyJump: false,
       preferCanvas: true,
+      // Latitude seulement : les routes dépliées dépassent 180°.
+      maxBounds: [[-85, -Infinity], [85, Infinity]],
+      maxBoundsViscosity: 1,
     });
     createPanes(map);
     return new MapSceneController(map, callbacks);

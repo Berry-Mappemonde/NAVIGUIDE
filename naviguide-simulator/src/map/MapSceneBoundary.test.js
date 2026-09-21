@@ -29,4 +29,21 @@ describe("MapScene boundary", () => {
     assert.match(playback, /onFrame/);
     assert.match(playback, /onPublish/);
   });
+
+  it("borne la latitude à ±85, laisse la longitude libre, viscosité 1", () => {
+    const src = read("./MapSceneController.js");
+    const start = src.indexOf("static mount");
+    const end = src.indexOf("constructor(map");
+    assert.ok(start >= 0 && end > start, "bloc mount() introuvable");
+    const mount = src.slice(start, end);
+    assert.match(mount, /minZoom:\s*2/);
+    assert.match(mount, /worldCopyJump:\s*false/);
+    assert.match(mount, /maxBoundsViscosity:\s*1/);
+    assert.match(
+      mount,
+      /maxBounds:\s*\[\s*\[\s*-85\s*,\s*-Infinity\s*\]\s*,\s*\[\s*85\s*,\s*Infinity\s*\]\s*\]/,
+    );
+    assert.doesNotMatch(mount, /maxBounds:[\s\S]{0,80}-180/);
+    assert.doesNotMatch(mount, /maxBounds:[\s\S]{0,80}(?<!-)180/);
+  });
 });
