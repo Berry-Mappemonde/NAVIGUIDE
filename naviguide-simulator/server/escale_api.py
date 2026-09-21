@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from admin_guard import rate_limited
 from ici_engine import fill_dossier, haversine_nm
 from ici_layers import _overpass_elements, _overpass_latlon
-from story_cascade import cascade_text, tidy_story, translate
+from story_cascade import _clean_text, cascade_text, tidy_story, translate
 
 log = logging.getLogger("naviguide-simulator.escale")
 
@@ -250,11 +250,72 @@ async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.As
         tidy, source = await translate(tidy, "en", client, facts=tidy)
         if not tidy:
             return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "empty translation"}
+    tidy = _clean_text(tidy)
+    if not tidy:
+        return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "prompt leak"}
     return {"status": "ready", "text": tidy, "engine": source, "source": source}
 
 
 def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
     return f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}"
+
+
+def _sanitize_item_text(item: dict) -> dict:
+    """Drop leaked model-thinking from a list row (enrich / phrase)."""
+    out = dict(item)
+    raw = out.get("phrase")
+    if isinstance(raw, str) and raw.strip():
+        cleaned = _clean_text(raw)
+        if cleaned:
+            out["phrase"] = cleaned
+        else:
+            out.pop("phrase", None)
+    enrich = out.get("enrich")
+    if isinstance(enrich, dict) and isinstance(enrich.get("text"), str) and enrich["text"].strip():
+        cleaned = _clean_text(enrich["text"])
+        if cleaned:
+            out["enrich"] = {**enrich, "text": cleaned}
+        else:
+            rest = {k: v for k, v in enrich.items() if k != "text"}
+            if rest.get("url"):
+                out["enrich"] = rest
+            else:
+                out.pop("enrich", None)
+    return out
+
+
+def _sanitize_sections(sections: dict) -> dict:
+    clean: dict = {}
+    for section, subs in sections.items():
+        if not isinstance(subs, dict):
+            clean[section] = subs
+            continue
+        new_subs: dict = {}
+        for sub, items in subs.items():
+            if isinstance(items, list):
+                new_subs[sub] = [
+                    _sanitize_item_text(it) if isinstance(it, dict) else it for it in items
+                ]
+            else:
+                new_subs[sub] = items
+        clean[section] = new_subs
+    return clean
+
+
+def sanitize_fiche(val: dict) -> dict | None:
+    """Strip leaked LLM text. None = the paragraph itself is a leak (rebuild)."""
+    if not isinstance(val, dict):
+        return val
+    out = dict(val)
+    para = out.get("paragraph")
+    if isinstance(para, dict) and isinstance(para.get("text"), str) and para["text"].strip():
+        cleaned = _clean_text(para["text"])
+        if not cleaned:
+            return None
+        out["paragraph"] = {**para, "text": cleaned}
+    if isinstance(out.get("sections"), dict):
+        out["sections"] = _sanitize_sections(out["sections"])
+    return out
 
 
 _TOURISM_SUBS = ("sights", "museums", "viewpoints")
@@ -362,14 +423,33 @@ async def get_escale(
     if not refresh:
         hit = pearl_store.kv_get("escale", key, ESCALE_TTL_S)
         if hit:
-            return {**hit["value"], "cached": True}
+            val = hit.get("value") if isinstance(hit, dict) else None
+            sanitized = sanitize_fiche(val) if isinstance(val, dict) else None
+            if sanitized is None:
+                hit = None
+            elif sanitized:
+                return {**sanitized, "cached": True}
     else:
         # A refresh also re-collects the stop's own pearl (its ZEE, its layers).
         from ici_engine import thin_cache_drop, thin_cache_key  # noqa: PLC0415
         thin_cache_drop(thin_cache_key(lat, lon, BAG_RADIUS_NM))
     fiche = await build_escale(name, lat, lon, lang)
+    sanitized = sanitize_fiche(fiche)
+    if sanitized is None:
+        para = dict(fiche.get("paragraph") or {})
+        fiche = {
+            **fiche,
+            "paragraph": {
+                **para,
+                "status": "failed",
+                "text": None,
+                "reason": "prompt leak",
+                "source": para.get("source") or "rules",
+            },
+        }
+        sanitized = sanitize_fiche(fiche) or fiche
     # Only a fiche with something in it is worth keeping; a failed paragraph
     # is retried on the next request that finds the cache stale.
-    if fiche["sections"]:
-        pearl_store.kv_put("escale", key, fiche)
-    return {**fiche, "cached": False}
+    if sanitized.get("sections"):
+        pearl_store.kv_put("escale", key, sanitized)
+    return {**sanitized, "cached": False}

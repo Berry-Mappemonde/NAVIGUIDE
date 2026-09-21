@@ -122,6 +122,74 @@ def test_endpoint_caches_seven_days(monkeypatch):
     assert client.get("/escale?name=x&lat=95&lon=0").status_code == 400
 
 
+def test_endpoint_rebuilds_when_cached_paragraph_is_prompt(monkeypatch):
+    """Lot RA1 : un paragraphe-prompt en cache 7 j ne doit plus être servi."""
+    key = escale_api.escale_key("La Rochelle", 46.15, -1.16, "en")
+    pearl_store.kv_put("escale", key, {
+        "name": "La Rochelle", "lat": 46.15, "lon": -1.16, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Minimes"}]}},
+        "paragraph": {
+            "status": "ready",
+            "text": "Request: Present a stop/escales to a sailing crew arriving at La Rochelle.",
+            "source": "rules",
+        },
+        "sources": {},
+    })
+    calls = []
+    rebuilt = {
+        "name": "La Rochelle", "lat": 46.15, "lon": -1.16, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Minimes"}]}},
+        "paragraph": {
+            "status": "ready",
+            "text": "La Rochelle has the Minimes marina.",
+            "source": "nemotron-lightning",
+        },
+        "sources": {},
+    }
+
+    async def patched(*_a, **_k):
+        calls.append(1)
+        return rebuilt
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+    from main import app
+    client = TestClient(app)
+    body = client.get("/escale?name=La%20Rochelle&lat=46.15&lon=-1.16&lang=en").json()
+    assert calls == [1]
+    assert body["cached"] is False
+    assert body["paragraph"]["text"] == "La Rochelle has the Minimes marina."
+    assert "Request:" not in (body["paragraph"]["text"] or "")
+
+
+def test_endpoint_strips_leaked_enrich_from_cache():
+    """Lot RA1 : un enrich science-prompt ne doit pas sortir sur la fiche."""
+    key = escale_api.escale_key("La Rochelle", 46.15, -1.16, "en")
+    pearl_store.kv_put("escale", key, {
+        "name": "La Rochelle", "lat": 46.15, "lon": -1.16, "lang": "en",
+        "sections": {
+            "around": {"science": [{
+                "name": "REPHY",
+                "nm": 9.4,
+                "enrich": {
+                    "text": "**Analyze User Input:** Entity: REPHY dataset",
+                    "url": "https://example.com/rephy",
+                },
+            }]},
+        },
+        "paragraph": {"status": "ready", "text": "La Rochelle has a marina.", "source": "rules"},
+        "sources": {},
+    })
+    from main import app
+    client = TestClient(app)
+    body = client.get("/escale?name=La%20Rochelle&lat=46.15&lon=-1.16&lang=en").json()
+    blob = json.dumps(body)
+    assert "Analyze User Input" not in blob
+    assert body["cached"] is True
+    assert body["sections"]["around"]["science"][0]["name"] == "REPHY"
+    enrich = body["sections"]["around"]["science"][0].get("enrich") or {}
+    assert "Analyze" not in (enrich.get("text") or "")
+
+
 def test_write_paragraph_uses_fast_tier_and_keeps_source(monkeypatch):
     seen = {}
 
