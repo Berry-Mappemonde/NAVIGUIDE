@@ -1,6 +1,6 @@
 """Chatbot journal de bord (lot D) : faits serveur, cascade, filtre des chiffres, consignation."""
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -97,6 +97,83 @@ def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypa
     # Guards.
     assert client.post("/logbook/chat", json={"question": "   "}, headers=PUBLIC).status_code == 400
     assert client.post("/logbook/chat", json={"question": "x" * 600}, headers=PUBLIC).status_code == 413
+
+
+def test_build_context_at_quay_speed_zero(monkeypatch):
+    now = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
+    journal.reset()
+    monkeypatch.setattr(
+        voyage_store,
+        "load_voyage",
+        lambda *_a, **_k: {
+            "clock": {
+                "t0": T0.isoformat().replace("+00:00", "Z"),
+                "vertices": [{"tHours": 0, "lat": -22.276, "lon": 166.458}],
+                "marks": [],
+            }
+        },
+    )
+
+    def _sample(_clock, _when):
+        return {
+            "lat": -22.276,
+            "lon": 166.458,
+            "sailNm": 19055,
+            "speedKnots": 0,
+            "plannedKnots": 11.9,
+            "atQuay": True,
+            "status": "live",
+            "vehicle": "quay",
+        }
+
+    monkeypatch.setattr("voyage_clock.sample_clock_at_time", _sample)
+
+    ctx = asyncio.run(logbook_chat.build_context(
+        {"view": "suivre", "boat": {"lat": -22.276, "lon": 166.458, "speedKnots": 7.2}},
+        now,
+    ))
+    assert ctx["official"]["speedKnots"] == 0
+    assert ctx["official"]["atQuay"] is True
+    assert ctx["official"]["plannedKnots"] == 11.9
+    assert ctx["official"]["basis"] == "clock"
+
+
+def test_build_context_measured_speed_at_sea(monkeypatch):
+    now = datetime(2026, 7, 1, 12, tzinfo=timezone.utc)
+    journal.reset()
+    monkeypatch.setattr(
+        voyage_store,
+        "load_voyage",
+        lambda *_a, **_k: {
+            "clock": {
+                "t0": T0.isoformat().replace("+00:00", "Z"),
+                "vertices": [{"tHours": 0, "lat": 20.0, "lon": -40.0}],
+                "marks": [],
+            }
+        },
+    )
+
+    def _sample(_clock, _when):
+        return {
+            "lat": 20.0,
+            "lon": -40.0,
+            "sailNm": 4000,
+            "speedKnots": 11.9,
+            "atQuay": False,
+            "status": "live",
+            "vehicle": "main",
+        }
+
+    monkeypatch.setattr("voyage_clock.sample_clock_at_time", _sample)
+
+    ctx = asyncio.run(logbook_chat.build_context(
+        {"view": "suivre", "boat": {"lat": 20.0, "lon": -40.0, "speedKnots": 7.4}},
+        now,
+    ))
+    assert ctx["official"]["speedKnots"] == 7.4
+    assert ctx["official"]["plannedKnots"] == 11.9
+    assert ctx["official"]["basis"] == "measured"
+    assert ctx["official"]["atQuay"] is False
 
 
 def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):

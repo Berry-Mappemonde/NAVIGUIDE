@@ -93,14 +93,28 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
     if clock:
         sample = sample_clock_at_time(clock, now)
         if sample and sample.get("lat") is not None:
+            at_quay = bool(sample.get("atQuay"))
+            planned = sample.get("plannedKnots")
+            if planned is None and not at_quay:
+                planned = sample.get("speedKnots")
+            boat_in = client_ctx.get("boat") if isinstance(client_ctx.get("boat"), dict) else None
+            measured = boat_in.get("speedKnots") if boat_in is not None else None
+            measured = float(measured) if isinstance(measured, (int, float)) else None
+            if at_quay:
+                speed, basis = 0, "clock"
+            elif measured is not None:
+                speed, basis = measured, "measured"
+            else:
+                speed, basis = sample.get("speedKnots"), "clock"
             live = {
                 "lat": round(float(sample["lat"]), 3),
                 "lon": round(float(sample["lon"]), 3),
                 "sailNm": round(float(sample.get("sailNm") or 0)),
-                "speedKnots": sample.get("speedKnots"),
-                "atQuay": bool(sample.get("atQuay")),
+                "speedKnots": speed,
+                "plannedKnots": planned,
+                "atQuay": at_quay,
                 "status": sample.get("status"),
-                "basis": "clock",
+                "basis": basis,
             }
             try:
                 around = _grib_around_from_live(voy, now)
@@ -121,7 +135,15 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
     lat = lon = None
     if boat and isinstance(boat.get("lat"), (int, float)) and isinstance(boat.get("lon"), (int, float)):
         lat, lon = float(boat["lat"]), float(boat["lon"])
-        ctx["boat"] = {"lat": round(lat, 3), "lon": round(lon, 3), "basis": "simulation", "iso": boat.get("iso")}
+        boat_out = {
+            "lat": round(lat, 3),
+            "lon": round(lon, 3),
+            "basis": "simulation" if view != "suivre" else "clock",
+            "iso": boat.get("iso"),
+        }
+        if isinstance(boat.get("speedKnots"), (int, float)):
+            boat_out["speedKnots"] = float(boat["speedKnots"])
+        ctx["boat"] = boat_out
     elif live:
         lat, lon = live["lat"], live["lon"]
         ctx["boat"] = {"lat": lat, "lon": lon, "basis": "clock"}

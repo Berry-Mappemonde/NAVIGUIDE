@@ -189,16 +189,22 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         </div>
 
         <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
-          {clockLine || `${Math.round(nm).toLocaleString()} nm`}
-          {remainingNm > 0.5 && !finished && vehicle !== "plane"
-            ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm`
-            : ""}
-          {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
-          {vehicle === "plane" ? ` · ${t("filmAirVehicle")}` : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
-          {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
-          {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
-          {liveStatus ? ` · ${liveStatus}` : ""}
-          {atQuay && quayDays > 0 ? ` · ${t("voyageAtQuay", { days: quayDays })}` : (holding ? ` · ${t("filmArrivalHold")}` : "")}
+          <span data-testid="clock-line">
+            {clockLine || `${Math.round(nm).toLocaleString()} nm`}
+            {remainingNm > 0.5 && !finished && vehicle !== "plane"
+              ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm`
+              : ""}
+            {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
+            {vehicle === "plane"
+              ? ` · ${t("filmAirVehicle")}`
+              : atQuay
+                ? ` · ${quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmAtQuay")}`
+                : ` · ${Number(boatKnots || 0).toFixed(1)} kt`}
+            {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
+            {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
+            {liveStatus ? ` · ${liveStatus}` : ""}
+            {atQuay && quayDays > 0 ? "" : (holding ? ` · ${t("filmArrivalHold")}` : "")}
+          </span>
           {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"> · {weatherLine}</span> : null}
         </div>
         {gribLine ? (
