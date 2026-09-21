@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""Collecte la revue du porteur sur une pile de PR (lot W2).
+
+Pour chaque PR de la pile, on lit :
+  - les cases de la rubrique « Recette » du corps de la PR : `- [x]` = vu et OK,
+    `- [ ]` = pas vérifié (ou pas OK sans commentaire) ;
+  - les commentaires du porteur qui commencent par « KO » / « NON » / « ❌ »
+    (« KO : écran, ce que je vois, ce que je voulais »), avec leurs images ;
+  - les captures prises par l'agent (`docs/recette/<lot>/…jpg`, sur la branche).
+
+Sortie : `infra/agents/review-<date>.json` (lu par plan_corrections.py) et
+`review-<date>.md` (résumé lisible). Les images sont téléchargées dans
+`infra/agents/review-<date>/pr-<n>/`. Lecture anonyme (dépôt public) ; le jeton
+GitHub, s'il existe, évite la limite de débit. Bibliothèque standard seulement.
+
+Usage :
+    python3 infra/agents/review_collect.py                  # les PR de state.json
+    python3 infra/agents/review_collect.py --prs 250 251    # des PR précises
+    python3 infra/agents/review_collect.py --no-images      # sans télécharger les images
+    python3 infra/agents/review_collect.py --out /tmp/rev   # dossier de sortie
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+STATE_DIR = Path(os.environ.get("BIM_STATE_DIR", str(HERE)))
+STATE_JSON = STATE_DIR / "state.json"
+REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/Blue-Intelligence")
+GITHUB_API = "https://api.github.com"
+
+HEADING_RE = re.compile(r"^\s{0,3}#{2,4}\s+(.+?)\s*$")
+CHECK_RE = re.compile(r"^\s*[-*]\s*\[( |x|X)\]\s*(.+?)\s*$")
+BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$")
+KO_RE = re.compile(r"^\s*(?:\*\*)?(KO|NON|NOK|BUG|❌|✗)\b", re.I)
+IMG_MD_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+IMG_URL_RE = re.compile(r"(https?://(?:github\.com/user-attachments/assets/|user-images\.githubusercontent\.com/|private-user-images\.githubusercontent\.com/)[^\s)>\"']+)")
+CAPTURE_RE = re.compile(r"(docs/recette/[^\s`)\]]+\.(?:jpe?g|png))", re.I)
+RECETTE_TITLES = ("recette", "recipe", "acceptance", "what to check")
+
+
+def token() -> str | None:
+    tok = os.environ.get("GITHUB_TOKEN")
+    if tok:
+        return tok
+    try:
+        p = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+                           text=True, capture_output=True, timeout=20)
+        for line in p.stdout.splitlines():
+            if line.startswith("password="):
+                return line.split("=", 1)[1]
+    except Exception:
+        return None
+    return None
+
+
+def gh(path: str, tok: str | None = None):
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "bim-review-collect", "X-GitHub-Api-Version": "2022-11-28"}
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(f"{GITHUB_API}{path}", headers=headers)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = resp.read().decode()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 502, 503) and attempt < 2:
+                time.sleep(10 * (attempt + 1))
+                continue
+            raise RuntimeError(f"HTTP {e.code} GET {path}") from e
+
+
+def sections(body: str) -> dict[str, str]:
+    """Corps → {titre en minuscules: texte} pour les titres ## / ### / ####."""
+    out: dict[str, str] = {}
+    title, buf = "", []
+    for line in (body or "").splitlines():
+        m = HEADING_RE.match(line)
+        if m:
+            if title:
+                out[title] = "\n".join(buf).strip()
+            title, buf = m.group(1).strip().lower(), []
+        else:
+            buf.append(line)
+    if title:
+        out[title] = "\n".join(buf).strip()
+    return out
+
+
+def recette_items(body: str) -> list[dict]:
+    """Items de la rubrique Recette : {text, checked: True|False|None}. None = pas de case (ancienne PR)."""
+    items: list[dict] = []
+    for title, text in sections(body).items():
+        if not any(title.startswith(t) for t in RECETTE_TITLES):
+            continue
+        for ln in text.splitlines():
+            if not ln.strip() or ln.strip().startswith("```"):
+                continue
+            m = CHECK_RE.match(ln)
+            if m:
+                items.append({"text": m.group(2), "checked": m.group(1).lower() == "x"})
+                continue
+            b = BULLET_RE.match(ln)
+            if b and "docs/recette/" not in ln and not re.match(r"(?i)^\**\s*(captures?|écran|screen)\s*:", b.group(1)):
+                items.append({"text": b.group(1), "checked": None})
+    return items
+
+
+def ko_comments(comments: list[dict]) -> list[dict]:
+    out = []
+    for c in comments or []:
+        text = (c.get("body") or "").strip()
+        if not KO_RE.match(text):
+            continue
+        images = IMG_MD_RE.findall(text) + [u for u in IMG_URL_RE.findall(text) if u not in IMG_MD_RE.findall(text)]
+        out.append({
+            "author": (c.get("user") or {}).get("login"),
+            "at": c.get("created_at"),
+            "url": c.get("html_url"),
+            "text": re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text).strip(),
+            "images": list(dict.fromkeys(images)),
+        })
+    return out
+
+
+def agent_captures(body: str, branch: str) -> list[str]:
+    paths = list(dict.fromkeys(CAPTURE_RE.findall(body or "")))
+    return [f"https://github.com/{REPO}/raw/{branch}/{p}" for p in paths]
+
+
+def download(url: str, dest: Path, tok: str | None) -> Path | None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    headers = {"User-Agent": "bim-review-collect"}
+    if tok and "github.com" in url:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+            ctype = resp.headers.get("Content-Type", "")
+    except Exception:
+        return None
+    ext = ".png" if "png" in ctype else ".jpg" if ("jpeg" in ctype or "jpg" in ctype) else Path(urllib.parse.urlparse(url).path).suffix or ".bin"
+    if dest.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+        dest = dest.with_suffix(ext)
+    dest.write_bytes(data)
+    return dest
+
+
+def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = True, lot: str = "") -> dict:
+    pr = gh(f"/repos/{REPO}/pulls/{number}", tok) or {}
+    comments = gh(f"/repos/{REPO}/issues/{number}/comments?per_page=100", tok) or []
+    body = pr.get("body") or ""
+    branch = (pr.get("head") or {}).get("ref") or ""
+    items = recette_items(body)
+    kos = ko_comments(comments)
+    captures = agent_captures(body, branch)
+    entry = {
+        "number": number, "lot": lot, "title": pr.get("title"), "url": pr.get("html_url"), "branch": branch,
+        "state": pr.get("state"), "merged": bool(pr.get("merged_at")),
+        "items": items,
+        "ok": sum(1 for i in items if i["checked"] is True),
+        "unchecked": sum(1 for i in items if i["checked"] is False),
+        "no_box": sum(1 for i in items if i["checked"] is None),
+        "ko": kos,
+        "captures": captures,
+        "local_images": [],
+    }
+    if images:
+        pr_dir = out_dir / f"pr-{number}"
+        for i, ko in enumerate(kos, 1):
+            for j, url in enumerate(ko["images"], 1):
+                p = download(url, pr_dir / f"ko-{i}-{j}.jpg", tok)
+                if p:
+                    entry["local_images"].append({"kind": "porteur", "ko": i, "path": str(p)})
+        for k, url in enumerate(captures, 1):
+            name = Path(urllib.parse.urlparse(url).path).name
+            p = download(url, pr_dir / f"agent-{k}-{name}", tok)
+            if p:
+                entry["local_images"].append({"kind": "agent", "path": str(p)})
+    return entry
+
+
+def prs_from_state() -> list[tuple[str, int]]:
+    if not STATE_JSON.exists():
+        return []
+    s = json.loads(STATE_JSON.read_text(encoding="utf-8"))
+    out = []
+    for lid, e in (s.get("done") or {}).items():
+        m = re.search(r"/pull/(\d+)", e.get("pr") or "")
+        if m and e.get("status") == "FINISHED":
+            out.append((lid, int(m.group(1))))
+    return out
+
+
+def summary_md(review: dict) -> str:
+    lines = [f"# Revue de la pile — {review['date']}", ""]
+    tot_ok = sum(p["ok"] for p in review["prs"])
+    tot_items = sum(len(p["items"]) for p in review["prs"])
+    tot_ko = sum(len(p["ko"]) for p in review["prs"])
+    lines += [f"**{tot_ok} / {tot_items} items cochés · {tot_ko} KO** sur {len(review['prs'])} PR.", ""]
+    for p in review["prs"]:
+        tag = f"#{p['number']} {p['lot']}".strip()
+        state = "mergée" if p["merged"] else p["state"]
+        lines.append(f"## {tag} — {p['title']}  ({state})")
+        lines.append(f"Cochés {p['ok']} / {len(p['items'])}" + (f" · sans case : {p['no_box']}" if p["no_box"] else "") + f" · KO : {len(p['ko'])}")
+        for it in p["items"]:
+            mark = "✅" if it["checked"] else ("⬜" if it["checked"] is False else "•")
+            lines.append(f"- {mark} {it['text']}")
+        for i, ko in enumerate(p["ko"], 1):
+            lines.append(f"- ❌ KO {i} ({ko['author']}) : {ko['text']}")
+            for im in [x for x in p["local_images"] if x.get("ko") == i]:
+                lines.append(f"    - image : `{im['path']}`")
+        agent_imgs = [x for x in p["local_images"] if x["kind"] == "agent"]
+        if agent_imgs:
+            lines.append("- captures de l'agent : " + ", ".join(f"`{x['path']}`" for x in agent_imgs))
+        lines.append("")
+    return "\n".join(lines)
+
+
+def collect(prs: list[tuple[str, int]], out_dir: Path, *, images: bool = True) -> dict:
+    tok = token()
+    date = time.strftime("%Y-%m-%d")
+    review = {"date": date, "repo": REPO, "prs": []}
+    for lot, num in prs:
+        try:
+            review["prs"].append(pr_review(num, tok, out_dir / f"review-{date}", images=images, lot=lot))
+        except RuntimeError as e:
+            review["prs"].append({"number": num, "lot": lot, "error": str(e), "items": [], "ok": 0, "unchecked": 0, "no_box": 0, "ko": [], "captures": [], "local_images": [], "merged": False, "state": "?", "title": "", "url": ""})
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"review-{date}.json").write_text(json.dumps(review, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / f"review-{date}.md").write_text(summary_md(review), encoding="utf-8")
+    review["json"] = str(out_dir / f"review-{date}.json")
+    review["md"] = str(out_dir / f"review-{date}.md")
+    return review
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--prs", nargs="+", type=int, help="numéros de PR (défaut : les PR FINISHED de state.json)")
+    ap.add_argument("--out", default=str(STATE_DIR), help="dossier de sortie (défaut : infra/agents)")
+    ap.add_argument("--no-images", action="store_true", help="ne pas télécharger les images")
+    args = ap.parse_args()
+    prs = [("", n) for n in args.prs] if args.prs else prs_from_state()
+    if not prs:
+        sys.exit("Aucune PR : passer --prs ou avoir un state.json avec des lots FINISHED.")
+    review = collect(prs, Path(args.out), images=not args.no_images)
+    print(summary_md(review))
+    print(f"\n→ {review['json']}\n→ {review['md']}")
+
+
+if __name__ == "__main__":
+    main()

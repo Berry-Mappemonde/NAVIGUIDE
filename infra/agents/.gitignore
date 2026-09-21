@@ -2,3 +2,11 @@ state*.json
 run_lots.log
 .pr-*.md
 RECETTE_DU_BATCH.md
+# lot W1–W4 : file du réviseur de nuit, revues, boucle — locaux, jamais versionnés
+queue.md
+reviews/
+review-*.json
+review-*.md
+review-*/
+corrector-prompt-*.md
+loop-state.json

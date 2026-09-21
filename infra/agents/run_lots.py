@@ -21,6 +21,12 @@ checkout, navigateur ouvert, et infra/agents/RECETTE_DU_BATCH.md : ce qu'il
 faut regarder écran par écran, puis l'ordre des merges. `--recette` refait ce
 poste seul (sans lancer de lot), `--no-recette` l'omet.
 
+Recette à la volée (lot W1) : après CHAQUE lot, le poste est rebâti sur la tête
+de pile (sans ouvrir de fenêtre) et le md régénéré avec les cases cochées par le
+porteur dans les PR (open_pr.py transforme la Recette en cases à cocher) et ses
+commentaires « KO : … ». `--no-recette-each` pour ne le faire qu'en fin de batch.
+La boucle complète (revue → correcteur → GO → batch suivant) : loop.py.
+
 Usage (voir docs/LOTS_ORDRE_ET_PROMPTS.md § 3) :
     python3 infra/agents/run_lots.py --check                       # vérifie l'environnement, ne lance rien
     python3 infra/agents/run_lots.py --only C1                     # un lot, en local
@@ -86,16 +92,19 @@ class State:
     done: dict = field(default_factory=dict)   # id -> {status, branch, pr, ci, ci_failures, …}
     last_branch: str = "main"
     last_lot: str = ""
+    extra: dict = field(default_factory=dict)  # reviews (réviseur de nuit), queued, … — conservé tel quel
 
     @classmethod
     def load(cls) -> "State":
         if STATE_JSON.exists():
             d = json.loads(STATE_JSON.read_text(encoding="utf-8"))
-            return cls(done=d.get("done", {}), last_branch=d.get("last_branch", "main"), last_lot=d.get("last_lot", ""))
+            extra = {k: v for k, v in d.items() if k not in ("done", "last_branch", "last_lot")}
+            return cls(done=d.get("done", {}), last_branch=d.get("last_branch", "main"), last_lot=d.get("last_lot", ""), extra=extra)
         return cls()
 
     def save(self) -> None:
-        STATE_JSON.write_text(json.dumps({"done": self.done, "last_branch": self.last_branch, "last_lot": self.last_lot}, indent=2, ensure_ascii=False), encoding="utf-8")
+        d = {**self.extra, "done": self.done, "last_branch": self.last_branch, "last_lot": self.last_lot}
+        STATE_JSON.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def log(msg: str) -> None:
@@ -111,14 +120,30 @@ def sh(args: list[str], cwd: Path | None = None, timeout: int | None = None, che
 
 # ---------------------------------------------------------------- lots
 
-def parse_lots(md: str) -> list[Lot]:
+def parse_lots_text(md: str) -> list[Lot]:
+    """Balises <!-- LOT … --> + bloc ```text``` → lots. Liste vide si rien (queue.md du réviseur)."""
     lots = []
-    for m in LOT_RE.finditer(md):
+    for m in LOT_RE.finditer(md or ""):
         deps = [d.strip() for d in m.group("deps").split(",") if d.strip()]
         lots.append(Lot(m.group("id"), m.group("title"), m.group("plan"), m.group("size"), deps, m.group("prompt").strip()))
+    return lots
+
+
+def parse_lots(md: str) -> list[Lot]:
+    lots = parse_lots_text(md)
     if not lots:
         sys.exit(f"Aucun lot trouvé dans {PROMPTS_MD} (balises <!-- LOT … --> attendues)")
     return lots
+
+
+QUEUE_MD = STATE_DIR / "queue.md"   # lots correctifs mis en file par le réviseur de nuit (review_agent.py)
+
+
+def queued_lots(state: "State", exclude: set[str]) -> list[Lot]:
+    """Lots de queue.md pas encore faits ni déjà en attente."""
+    if not QUEUE_MD.exists():
+        return []
+    return [l for l in parse_lots_text(QUEUE_MD.read_text(encoding="utf-8")) if l.id not in state.done and l.id not in exclude]
 
 
 def select(lots: list[Lot], args) -> list[Lot]:
@@ -443,6 +468,11 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
             f"(un chemin relatif s'ouvre sur main, où le fichier n'existe pas encore). "
             f"RÈGLE UI : n'ajoute aucun texte d'aide ou d'explication dans l'interface, aucun libellé déjà visible ailleurs sur le même écran, "
             f"aucune rangée supplémentaire dans la barre film ; un bouton nouveau doit marcher ou ne pas exister. "
+            f"RÈGLE PR BILINGUE (21 sept.) : le corps de la PR est en français PUIS en anglais — titre de PR « FR — EN », chaque rubrique en deux blocs "
+            f"(« ## Objectif / Objective » : paragraphe FR puis paragraphe EN, idem Cause racine / Root cause, Ce qui change / What changes, Tests, "
+            f"Review automatique / Automated review, Hors périmètre / Out of scope). La rubrique « Recette / What to check » est UNE liste de cases à cocher "
+            f"`- [ ] <étape FR> / <step EN>` (une seule case par item, les deux langues sur la même ligne) : le porteur coche ce qu'il voit et qui est bon, "
+            f"et écrit « KO : … » en commentaire sinon ; les lignes Écran/Captures ne sont pas des cases. "
             f"Quand tout est vert : `git push -u origin <ta-branche>` puis ouvre la PR avec "
             f"`python3 {HERE / 'open_pr.py'} <ta-branche> main \"<titre>\" /tmp/pr-<lot>.md` (chemin absolu ; écris d'abord le corps de la PR dans ce fichier). "
             f"Ne pose aucune question : décide et note dans la PR.")
@@ -636,6 +666,12 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     state.last_branch = branch
     state.last_lot = lot.id
     state.save()
+    # Lot W1 : le poste de recette suit la tête de pile — le porteur peut recetter la PR à la volée.
+    if pr and not getattr(args, "no_recette", False) and not getattr(args, "no_recette_each", False):
+        try:
+            prepare_recette(state, args, http, quiet=True)
+        except Exception as e:  # jamais bloquant pour le batch
+            log(f"    poste de recette non rafraîchi : {e}")
 
 
 # ---------------------------------------------------------------- fin de batch : poste de recette (lot W0)
@@ -750,16 +786,19 @@ def recette_worktree(state: State, branch: str) -> Path:
     return prepare_worktree(Lot("recette", "poste de recette", "", "", [], ""), branch)
 
 
-def prepare_recette(state: State, args, http: Http | None) -> None:
+def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> None:
+    """Poste de recette sur la dernière branche. `quiet` (après chaque lot, lot W1) : on rebâtit
+    l'app et le md sans ouvrir de fenêtre — le porteur recharge son onglet, la PR porte ses cases."""
     branch = getattr(args, "branch", None) or state.last_branch or "main"
-    log(f"fin de batch : poste de recette sur `{branch}`")
+    log(("poste de recette rafraîchi" if quiet else "fin de batch : poste de recette") + f" sur `{branch}`")
     if not ENV_FILE.exists():
         log(f"!! {ENV_FILE} absent : l'API tournera sans clé (récit « règles », chat et juge éteints)")
     wt = recette_worktree(state, branch)
     sim = wt / "naviguide-simulator"
     try:
-        p = subprocess.run(["bash", str(sim / "ensure-dev.sh"), "--prod", "--open"], cwd=str(sim), text=True, capture_output=True, timeout=1200)
-        for ln in (p.stdout + p.stderr).strip().splitlines()[-12:]:
+        cmd = ["bash", str(sim / "ensure-dev.sh"), "--prod"] + ([] if quiet else ["--open"])
+        p = subprocess.run(cmd, cwd=str(sim), text=True, capture_output=True, timeout=1200)
+        for ln in (p.stdout + p.stderr).strip().splitlines()[-(4 if quiet else 12):]:
             log(f"    {ln}")
         launched = p.returncode == 0
     except subprocess.TimeoutExpired:
@@ -767,6 +806,8 @@ def prepare_recette(state: State, args, http: Http | None) -> None:
         launched = False
     write_recette_md(state, args, http, branch, wt, launched)
     log(f"recette : {RECETTE_MD}")
+    if quiet:
+        return
     if sh(["open", "-a", "Cursor", str(RECETTE_MD)], check=False, timeout=30).returncode != 0:
         sh(["open", str(RECETTE_MD)], check=False, timeout=30)
 
@@ -784,7 +825,13 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
     tech: list[str] = []
     captures: list[str] = []
     decisions: list[str] = []
+    kos: list[str] = []
+    ticked = total_items = 0
     blob = f"https://github.com/{owner_repo(repo)}/blob"
+    try:
+        from review_collect import ko_comments as _ko_comments  # noqa: PLC0415  (lot W2, même dossier)
+    except Exception:  # pragma: no cover — collecte absente : le md se fait sans les KO
+        _ko_comments = None
     for lid, e in lots:
         num = pr_number(e.get("pr"))
         pr = fetch_pr(http, repo, num) if num else None
@@ -793,25 +840,40 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
             by_screen["partout"].append(f"- {tag} PR illisible : ouvrir {e.get('pr') or e.get('branch')} et lire sa rubrique « Recette ».")
             continue
         sections = pr_sections(pr.get("body") or "")
-        steps = section_lines(sections, "recette")
+        steps = section_lines(sections, "recette", "recipe", "acceptance", "what to check")
         if not steps:
             by_screen["partout"].append(f"- {tag} la PR n'a pas de rubrique « Recette » : regarder « Objectif » — {(sections.get('objectif') or '').strip()[:200]}")
         default_screen = screen_of(" ".join(steps) + " " + (pr.get("title") or ""))
         for ln in steps:
+            box = re.match(r"^\s*[-*]\s*\[( |x|X)\]\s*(.*)$", ln)             # case cochée par le porteur (lot W1)
+            mark = ""
+            if box:
+                ln = box.group(2)
+                mark = "✅ " if box.group(1).lower() == "x" else "⬜ "
             ln = re.sub(r"^(\d+[.)]|[-*•])\s+", "", ln).strip()          # puce ou numéro, pas le gras
             ln = re.sub(r"\]\((docs/recette/[^)]+)\)", rf"]({blob}/{e['branch']}/\1?raw=true)", ln)
             ln = re.sub(r"`(docs/recette/[^`]+\.(?:jpg|jpeg|png))`", rf"[\1]({blob}/{e['branch']}/\1?raw=true)", ln)
-            item = f"- {tag} {ln}"
+            item = f"- {mark}{tag} {ln}"
             if re.match(r"(?i)^\**capture", ln) or "docs/recette/" in ln:
                 captures.append(item)
             elif TECH_RE.search(ln):
                 tech.append(item)
             else:
+                if mark:
+                    total_items += 1
+                    ticked += mark.startswith("✅")
                 sid = screen_of(ln)
                 by_screen[sid if sid != "partout" else default_screen].append(item)
         for ln in section_lines(sections, "décisions", "decisions", "libertés", "hors périmètre"):
             ln = re.sub(r"^([-*•])\s+", "", ln).strip()
             decisions.append(f"- {tag} {ln}")
+        if _ko_comments and num:
+            try:
+                comments = (http or Http(None, None)).github(f"/repos/{owner_repo(repo)}/issues/{num}/comments?per_page=100") or []
+                for ko in _ko_comments(comments):
+                    kos.append(f"- ❌ {tag} {ko['text'][:300]}" + (f" — [commentaire]({ko['url']})" if ko.get("url") else ""))
+            except RuntimeError:
+                pass
 
     merges: list[str] = []
     extra: list[str] = []
@@ -833,9 +895,13 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
          if keys else f"Aucune clé ({ENV_FILE} absent) : récit en « règles », chat et juge éteints."),
         "Le hindcast se remplit en fond pendant ~40 min après la première ouverture : les couleurs de la route déjà parcourue peuvent changer.",
         "",
-        "## 1. Ce que tu regardes, écran par écran",
+        "**Comment recetter** : chaque PR porte sa recette en **cases à cocher**. Dans GitHub, coche ce que tu vois et qui est bon ; "
+        "pour ce qui ne va pas, laisse la case vide et écris un commentaire qui commence par **« KO : »** (écran, ce que je vois, ce que je voulais), "
+        "avec une capture si tu veux. Le correcteur lit ces cases et ces commentaires. Ce fichier est régénéré après chaque lot : "
+        "l'app sur :5174 est toujours la tête de pile (recharge l'onglet).",
+        (f"État de la revue : **{ticked} / {total_items} items cochés**, **{len(kos)} KO**." if total_items or kos else "État de la revue : aucune case cochée pour l'instant."),
         "",
-        "Ouvre l'écran, fais ce qui est écrit, compare avec ce que tu dois voir. Ce qui ne va pas : une phrase par point (« écran, ce que je vois, ce que je voulais »). Rien d'autre à faire.",
+        "## 1. Ce que tu regardes, écran par écran (✅ coché · ⬜ à voir)",
         "",
     ]
     for sid, label, _ in SCREENS + [("partout", "Partout / autres", ())]:
@@ -844,10 +910,11 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
             lines += [f"### {label}", ""] + items + [""]
     if not any(by_screen.values()):
         lines += ["_(aucune PR dans state.json : recette libre des trois parcours — Suivre à Nouméa, Simulation La Rochelle → Ajaccio, Tracer Brisbane → SF — et du film.)_", ""]
-    lines += ["## 2. Captures prises par les agents (à comparer avec ton écran)", ""] + (captures or ["- (aucune)"]) + [""]
-    lines += ["## 3. Vérifié par les tests à ta place (pas à regarder)", ""] + (tech or ["- (rien)"]) + [""]
-    lines += ["## 4. Décisions prises seules par les agents — à trancher : garder / défaire", ""] + (decisions or ["- (aucune notée)"]) + [""]
-    lines += ["## 5. Merger, quand la recette est bonne", ""]
+    lines += ["## 2. Tes KO déjà notés dans les PR", ""] + (kos or ["- (aucun)"]) + [""]
+    lines += ["## 3. Captures prises par les agents (à comparer avec ton écran)", ""] + (captures or ["- (aucune)"]) + [""]
+    lines += ["## 4. Vérifié par les tests à ta place (pas à regarder)", ""] + (tech or ["- (rien)"]) + [""]
+    lines += ["## 5. Décisions prises seules par les agents — à trancher : garder / défaire", ""] + (decisions or ["- (aucune notée)"]) + [""]
+    lines += ["## 6. Merger, quand la recette est bonne", ""]
     if last_pr:
         lines += [f"Pile linéaire : merger **{last_pr}** (la dernière) suffit — GitHub ferme les autres comme mergées.",
                   "Bouton vert « Merge pull request », vérifier « Create a merge commit » (pas Squash), Confirm."]
@@ -857,7 +924,7 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
         lines += ["", f"Ensuite : onglet Actions → déploiement ~10 min → <{PROD_URL}>. Puis `python3 infra/agents/run_lots.py --recette --branch main` pour recetter la prod en local."]
     else:
         lines += ["Aucune PR de batch dans state.json : rien à merger ici."]
-    lines += ["", "## 6. Si quelque chose ne va pas", "",
+    lines += ["", "## 7. Si quelque chose ne va pas", "",
               "- Le poste ne répond pas : `cd naviguide-simulator && bash ensure-dev.sh --prod --open` dans le checkout ci-dessus ; journaux dans `.dev/api.log`, `.dev/vite.log`, `.dev/build.log`.",
               "- Une clé manque : l'ajouter dans `~/.config/naviguide/simulator.env` (une ligne `NOM=valeur`), relancer la commande ci-dessus.",
               "- Une PR est mauvaise : ne pas la merger ; dicter ce qui ne va pas, un lot de correction repart le soir.", ""]
@@ -930,7 +997,12 @@ def main() -> None:
     ap.add_argument("--fix-rounds", type=int, default=2, help="relances de correction quand la CI est rouge sur des échecs nouveaux (défaut 2)")
     ap.add_argument("--recette", action="store_true", help="ne lance aucun lot : prépare le poste de recette (build de prod, clés, API, navigateur, RECETTE_DU_BATCH.md) sur la dernière branche du state ou --branch")
     ap.add_argument("--branch", help="avec --recette : branche à recetter (défaut : dernière branche de state.json, sinon main)")
-    ap.add_argument("--no-recette", action="store_true", help="ne prépare pas le poste de recette à la fin du batch")
+    ap.add_argument("--no-recette", action="store_true", help="ne prépare pas le poste de recette (ni par lot, ni en fin de batch)")
+    ap.add_argument("--no-recette-each", action="store_true", help="ne rafraîchit pas le poste après chaque lot (seulement en fin de batch)")
+    ap.add_argument("--review-every", type=int, default=int(os.environ.get("BIM_REVIEW_EVERY", "4")),
+                    help="réviseur de nuit (agent fort) toutes les N PR, lots correctifs en file exécutés en bout de pile ; 0 = jamais (défaut 4)")
+    ap.add_argument("--review-model", default=os.environ.get("BIM_REVIEW_MODEL", "claude-fable-5-thinking-xhigh"), help="modèle du réviseur de nuit (CLI Cursor)")
+    ap.add_argument("--review-timeout-hours", type=float, default=1.0)
     args = ap.parse_args()
 
     if args.check:
@@ -967,8 +1039,31 @@ def main() -> None:
             args.model = resolve_local_model(info["models"], args.model)
             log(f"CLI Cursor {info['agent']} connecté ; modèle : {args.model or 'défaut du compte'}")
 
-    log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}")
-    for lot in lots:
+    log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}" + (f" — revue de nuit toutes les {args.review_every} PR ({args.review_model})" if args.review_every else ""))
+    pending = list(lots)
+    since_review: list[str] = []          # lots FINISHED pas encore relus par le réviseur de nuit
+
+    def night_review() -> None:
+        """Lance le réviseur de nuit sur la tranche, puis met en file ses lots correctifs."""
+        if not since_review or args.dry_run:
+            return
+        cmd = [sys.executable, str(HERE / "review_agent.py"), "--lots", *since_review, "--model", args.review_model, "--timeout-hours", str(args.review_timeout_hours)]
+        log(f"revue de nuit : {since_review} → {args.review_model}")
+        try:
+            p = subprocess.run(cmd, cwd=str(ROOT), text=True, capture_output=True, timeout=int(args.review_timeout_hours * 3600) + 600,
+                               env={**os.environ, "BIM_STATE_DIR": str(STATE_DIR)})
+            for ln in (p.stdout + p.stderr).strip().splitlines()[-8:]:
+                log(f"    {ln}")
+        except subprocess.TimeoutExpired:
+            log("    réviseur : délai dépassé — on continue la pile")
+        since_review.clear()
+        added = queued_lots(State.load(), {l.id for l in pending})
+        if added:
+            log(f"    lots correctifs mis en file par le réviseur : {[l.id for l in added]} — exécutés en bout de pile")
+            pending.extend(added)
+
+    while pending:
+        lot = pending.pop(0)
         if lot.id in args.skip:
             log(f"[{lot.id}] sauté (--skip)")
             continue
@@ -980,6 +1075,14 @@ def main() -> None:
         if missing and args.stack == "linear" and not args.dry_run:
             log(f"[{lot.id}] dépendances non faites dans cette session : {missing} — lancé quand même (le plan les suppose mergées ou dans la pile) ; vérifier le matin")
         run_lot(http, lot, state, args)
+        if (state.done.get(lot.id) or {}).get("status") == "FINISHED" and (state.done.get(lot.id) or {}).get("pr"):
+            since_review.append(lot.id)
+        if args.review_every and len(since_review) >= args.review_every:
+            night_review()
+        if not pending and args.review_every and since_review:
+            night_review()                # dernière tranche, puis les lots RC éventuels reprennent la boucle
+        # lots ajoutés à queue.md à la main pendant la nuit
+        pending.extend(queued_lots(state, {l.id for l in pending}))
 
     if not args.dry_run:
         log("terminé. Récapitulatif :")

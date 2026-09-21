@@ -53,35 +53,49 @@ tout autre modèle.
 ## 3. Pull request
 
 - Une PR par lot, vers `main` (ou vers la branche n si empilée). Titre =
-  message du commit principal. **Ne pas merger.**
+  message du commit principal, **en français puis en anglais** (« … — … »).
+  **Ne pas merger.**
+- **Le corps est bilingue** (règle du 21 sept.) : chaque rubrique porte son
+  titre FR / EN et deux blocs, le français d'abord, l'anglais ensuite. Le dépôt
+  sera public pour le jury : l'anglais est lu par lui, le français par le
+  porteur.
+- **La recette est une liste de cases à cocher** (lot W1) : `- [ ] étape FR /
+  step EN` — une seule case par item, les deux langues sur la même ligne. Le
+  porteur coche ce qu'il a vu et qui est bon ; ce qui ne va pas reste vide et
+  reçoit un commentaire « **KO :** écran, ce que je vois, ce que je voulais ».
+  `open_pr.py` ajoute les cases s'il en manque ; `review_collect.py` les lit.
+  Les lignes « Écran : » et « Captures : » ne sont pas des cases.
 - Le corps suit ce gabarit, dans cet ordre :
 
 ```md
-## Objectif
+## Objectif / Objective
 Une phrase : ce que le porteur verra ou ne verra plus.
+One sentence: what the owner will see or stop seeing.
 
-## Cause racine
+## Cause racine / Root cause
 Fichier:ligne et explication (pour une correction). « — » pour une fonction.
+File:line and explanation (for a fix). "—" for a feature.
 
-## Ce qui change
-- fichier — quoi (1 ligne par fichier notable)
+## Ce qui change / What changes
+- fichier — quoi (1 ligne par fichier notable) / file — what
 
 ## Tests
 `npm test` (n JS), `pytest -q` (n Py), `npx vite build`, `npm run e2e` si UI.
-Nouveaux tests : lesquels, ce qu'ils protègent.
+Nouveaux tests : lesquels, ce qu'ils protègent. / New tests: which, what they protect.
 
-## Recette (à faire par le porteur, 5 min)
+## Recette (à faire par le porteur, 5 min) / What to check (owner, 5 min)
 Écran : Suivre | Simulation | Tracer ma route | Revoir l'expédition | Panneau droit.
-1. Ouvre …, clique … → **tu dois voir** … (texte exact, chiffre, bouton présent ou absent).
-2. …
+- [ ] Ouvre …, clique … → **tu dois voir** … / Open …, click … → **you must see** …
+- [ ] …
 Captures : https://github.com/<owner>/<repo>/blob/<branche>/docs/recette/<lot>/01-….jpg?raw=true (≤ 4, 1280×800, JPEG q70).
 
-## Review automatique
+## Review automatique / Automated review
 `npm run e2e -- e2e/lots/<lot>.spec.js` : vert. Ce que le spec vérifie (liste) —
 c'est ICI que vont data-testid, appels d'API, fixtures, coordonnées.
+What the spec checks — data-testid, API calls, fixtures, coordinates belong HERE.
 
-## Hors périmètre / risques
-Ce qu'on n'a pas touché exprès, ce qui pourrait bouger.
+## Hors périmètre / risques — Out of scope / risks
+Ce qu'on n'a pas touché exprès, ce qui pourrait bouger. / Left untouched on purpose, what might move.
 ```
 
 - La PR reste **petite** : ≤ 400 lignes de diff hors tests et données, sinon

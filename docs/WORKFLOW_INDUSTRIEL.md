@@ -8,17 +8,35 @@ Devpost, départ pour Toronto le 29), **9 octobre** (renouvellement Cursor :
 crédits), **30 octobre 10:00 PT** (clôture) — une mise à jour de la
 soumission **par semaine** entre le 9 et le 30.
 
-## 1. Le cycle (une itération = une nuit + une matinée)
+## 1. Le cycle (une itération = une nuit + une matinée) — la boucle W1–W4 (21 sept.)
 
 ```
- soir                nuit                          matin                                  journée
- ─────               ─────────────────────         ──────────────────────────────         ─────────────────
- choisir les lots →  run_lots.py (local, pile) →   1. revue automatique (agent Fable) →   merge dans l'ordre →
- (LOTS_ORDRE…)       un agent Grok/lot, PR, CI     2. revue du porteur (visuelle +         déploiement CI →
-                     relances auto                    transcripts + « libertés »)          prérequis (clés) →
-                                                   3. corrections rapides                  recette en prod →
-                                                                                            soumission (hebdo)
+ soir                nuit                                        matin                              journée
+ ─────               ───────────────────────────────────         ─────────────────────────────      ─────────────────
+ GO (merge d'une  →  run_lots.py : un agent Grok par lot,     →  1. le porteur recette dans      →  merge de la pile
+ PR docs « plan »)   PR bilingue à cases à cocher, CI ;            Chrome, coche les cases des       (la PR de tête suffit)
+                     poste de recette rebâti après chaque lot ;    PR, écrit « KO : … » ;         →  loop.py : collecte
+                     toutes les X PR, le RÉVISEUR DE NUIT           merge la pile                     (review_collect) +
+                     (Fable) relit la tranche, commente chaque                                        CORRECTEUR (Fable) →
+                     PR, met en file des lots RC exécutés                                             PR « GO » (plan +
+                     en bout de pile la même nuit                                                     lots RB…, ou fondus
+                                                                                                      dans les lots à venir)
+                                                                                                   →  merge du GO = nuit suivante
 ```
+
+Deux moments de revue, pas un : **la nuit**, un agent fort relit toutes les X PR
+(`--review-every 4`) et corrige dans la foulée grâce aux agents Grok qui
+travaillent encore ; **le matin**, le porteur voit tout, coche, et le
+correcteur transforme sa revue en lots. Les seuls gestes humains : cocher,
+merger la pile, merger le GO. Tout le programme est **pré-rédigé** dans
+`LOTS_ORDRE_ET_PROMPTS.md` pour que le correcteur puisse fondre une correction
+dans un lot à venir au lieu d'en ouvrir un.
+
+Outils (`infra/agents/`) : `run_lots.py` (`--review-every`, poste par lot),
+`open_pr.py` (cases à cocher, `--retrofit`), `review_collect.py` (cases, KO,
+images), `review_agent.py` (réviseur de nuit → commentaires + `queue.md`),
+`plan_corrections.py` (correcteur du matin → PR GO), `loop.py` (enchaînement),
+`post_pr_comment.py`.
 
 ### 1.1 Soir — choisir
 
@@ -59,27 +77,45 @@ Sortie : commentaire GitHub + une ligne dans `infra/agents/review.md`
 (local, CLI Cursor, modèle `claude-fable-5-1-max`), ou une **Automation**
 Cursor déclenchée par « Pull request opened » (cloud, voir § 2).
 
+### 1.3 bis Nuit — le réviseur (agent fort, toutes les X PR)
+
+`run_lots.py --review-every 4` : après chaque tranche de 4 PR, `review_agent.py`
+lance un agent **Claude Fable** (CLI local, `claude-fable-5-thinking-xhigh`) dans
+un worktree sur la **tête de pile** — il voit donc aussi ce que les lots
+suivants ont déjà fait. Il relit diff, corps de PR, captures, prompt du lot,
+plan et règles ; poste **un commentaire de revue par PR** (gabarit § 1.3 :
+conformité, libertés, plancher `main`, chiffres LLM / secrets / tests, recette
+visuelle et bilingue, prérequis, **verdict**) ; et, s'il faut corriger, écrit
+des lots `RC…` dans `infra/agents/queue.md` que `run_lots.py` relit entre deux
+lots et exécute **en bout de pile, la même nuit**. Il ne commite ni ne pousse
+de code, ne coche aucune case (les cases sont au porteur), ne merge rien.
+
 ### 1.4 Matin — revue du porteur (humain dans la boucle)
 
-Le poste est **déjà prêt** quand le porteur arrive (lot **W0**, 21 sept.) : à la
-fin du batch, `run_lots.py` a fait le build de prod de la dernière branche,
-chargé les clés (`~/.config/naviguide/simulator.env`), lancé l'API et
-l'interface du même checkout, ouvert Chrome sur `http://localhost:5174` et le
-fichier `infra/agents/RECETTE_DU_BATCH.md`. S'il ne l'est pas :
-`python3 infra/agents/run_lots.py --recette`.
+Le poste est **déjà prêt** quand le porteur arrive (lot **W0**, 21 sept.) et il
+l'a été **après chaque lot** (lot W1) : `run_lots.py` a fait le build de prod de
+la tête de pile, chargé les clés (`~/.config/naviguide/simulator.env`), lancé
+l'API et l'interface du même checkout, ouvert Chrome sur
+`http://localhost:5174` et `infra/agents/RECETTE_DU_BATCH.md` (régénéré à
+chaque lot, avec les cases déjà cochées et les KO déjà écrits). S'il ne l'est
+pas : `python3 infra/agents/run_lots.py --recette`.
 
 Trois passes, dans l'ordre, **par écran** (Suivre, Simulation, Tracer ma route,
 Revoir l'expédition, panneau droit) et non par PR :
 
 1. **Regarder** : `RECETTE_DU_BATCH.md` § 1 dit, écran par écran, quoi cliquer
    et ce qu'on doit voir. Le porteur ne lance rien d'autre que Chrome.
-2. **Dicter** ce qui ne va pas : une phrase par point (« écran, ce que je vois,
-   ce que je voulais »). Les « Décisions prises seules » des agents sont
-   listées en § 3 du même fichier : garder / défaire.
-3. **Merger** (§ 4 du fichier) : pile linéaire → merger la **dernière** PR
+2. **Cocher** dans chaque PR GitHub les items vus et bons ; pour un item qui ne
+   va pas, laisser la case vide et commenter « **KO :** écran, ce que je vois,
+   ce que je voulais » (capture bienvenue). Lire le commentaire du réviseur de
+   nuit et les « Décisions prises seules » (§ 5 du fichier) : garder / défaire.
+3. **Merger** (§ 6 du fichier) : pile linéaire → merger la **dernière** PR
    suffit, GitHub ferme les autres ; puis celles qui ont des commits propres.
-   Merge commit, jamais squash. Ce qui ne va pas devient un lot de correction
-   pour la nuit suivante ; on ne corrige pas le matin à la main.
+   Merge commit, jamais squash. Ce merge est le signal : `loop.py` collecte la
+   revue, lance le **correcteur du matin** (`plan_corrections.py`, Fable) qui
+   écrit le plan de corrections et ses lots — ou les **fond dans les lots à
+   venir** du programme — et ouvre la PR « GO ». Merger le GO lance la nuit
+   suivante. On ne corrige pas le matin à la main.
 
 ### 1.5 Journée — livrer
 
@@ -133,12 +169,13 @@ Vérifier qu'elle sert : `https://simulator.naviguide.fr/ici/warm/status` → `l
 | Date | Objectif | Ce qui doit être vrai |
 |---|---|---|
 | **21 sept. (matin)** | revue de la nuit 1 (P2 → L6), merges dans l'ordre, clés posées, hotfix #221 déployé | prod : récit signé « Nemotron 3 Super · Token Factory », film 2:30 qui se lance, bag qui se remplit |
-| 21 sept. (soir) | **fait** : pile P2 → L6 mergée (#208, #237, #210), clés posées, prod répond (`llm.lastSource` = nemotron), W0 livré | `RECETTE_DU_BATCH.md` s'ouvre seul à la fin d'un batch |
-| 21–22 sept. | nuit 2 : lots **R1–R7, R11–R13** (`PLAN_CORRECTIONS_REVUE_21_SEPT.md`) — app propre, film fiable et fluide, bulles justes, fiche d'escale sur la carte | recette du matin par écran ; merge de la dernière PR |
-| 22–23 sept. | nuit 3 : **R8, R9, R10** en sous-lots (`PLAN_ICI_JOURNAL_EXPERT.md`) — produit unique « ici et maintenant », journal → récit 2:30, expert en circumnavigation ; W1 si le temps | le film raconte le journal ; la revue du plan conseille |
-| 23–25 sept. | README EN à jour (depuis `ESPRIT_DE_L_APPLICATION.md`), textes Devpost finalisés, **vidéo 2:30** tournée sur le film (F5 plein écran, EN), captures 3:2 | tout ce que `HACKATHON_DEVPOST_SOUMISSION.md` § 0 coche ; crédits Token Factory +25 $ ×2 demandés |
-| 26–27 sept. | gel : pas de lot risqué ; recette complète en prod ; Security Agents ; réponses du formulaire (notes après usage) | `simulator.naviguide.fr` stable 48 h |
-| **28 sept.** | **première soumission Devpost** (brouillon → Submit) | vidéo YouTube publique, dépôt public MIT, README, liens |
+| 21 sept. | **fait** : pile P2 → L6 mergée ; clés posées ; W0 ; batch R1 → R13 (#239–248) recetté et mergé ; batch RA1 → RA8 lancé ; boucle W1–W4 construite (PR à merger) | `RECETTE_DU_BATCH.md` régénéré à chaque lot ; PR à cases à cocher |
+| 22 sept. | matin : recette RA (cocher, merger #tête), test de la boucle (`plan_corrections.py` → GO) ; nuit : **R8a–c, R9a–c** (encadré sans titre, journal → récit préchauffé) + lots RB du GO | le film raconte le journal, sans pop-up sur la carte |
+| 23 sept. | matin : recette, merge, GO ; nuit : **N1–N4** (ancien NAVIGUIDE : import/export GeoJSON + KML, anti-trafic, piraterie) + corrections | Tracer ma route importe/exporte ; score anti-trafic visible |
+| 24 sept. | matin : recette, merge, GO ; nuit : **R10a–d** (expert en circumnavigation) + corrections | « Ce que je changerais » conseille ; « Demander conseil » borné |
+| 25 sept. | matin : recette, merge, GO ; nuit : **D0** (README, manuel, rangement docs) + **G0–G2** (globe) si tout est vert, sinon corrections | docs à jour ; première vidéo du film enregistrée |
+| 26–27 sept. | gel : pas de lot risqué ; **H1** séparation des dépôts (public = simulateur seul), recette prod, Security Agents, vidéo finale | `simulator.naviguide.fr` stable 48 h |
+| **28 sept.** | **première soumission Devpost** avant minuit (brouillon → Submit) ; tout ce que `HACKATHON_DEVPOST_SOUMISSION.md` § 0 coche ; crédits Token Factory +25 $ ×2 demandés | vidéo YouTube publique, dépôt public MIT, README EN, liens |
 | 29 sept. – 8 oct. | Toronto ; nuits légères (G0–G2 globe, C-lots restants) uniquement si crédits ; sinon pause | rien ne casse `main` |
 | **9 oct.** | renouvellement Cursor : reprise des nuits complètes | plan des 3 semaines : globe (G3–G7), L4–L6 si non faits, corrections de revue |
 | 16, 23 oct. | mises à jour hebdomadaires de la soumission (vendredi) : changelog, captures, vidéo si le film a changé | chaque vendredi une version soumise |
@@ -148,9 +185,12 @@ Vérifier qu'elle sert : `https://simulator.naviguide.fr/ici/warm/status` → `l
 ## 5. Les lots « workflow » à ajouter à `LOTS_ORDRE_ET_PROMPTS.md`
 
 - **W0 — Fin de batch = poste de recette prêt** (**fait le 21 sept.**, à la main, PR `chore/lot-w0-fin-de-batch`) : `run_lots.py --recette` / fin de batch automatique, `ensure-dev.sh --prod` (build de prod, clés, API et interface du même checkout, santé), `RECETTE_DU_BATCH.md` écran par écran + ordre des merges, règle « recette visuelle seulement » dans le préfixe de chaque prompt et dans `REGLES_WORKFLOW_AGENT.md` § 3–4, règle « rien de superflu à l'écran » § 1.
-- **W1 — Revue automatique** : `infra/agents/export_transcript.py` (store.db → texte), `infra/agents/review_lots.py` (un commentaire par PR, modèle `claude-fable-5-1-max`, gabarit § 1.3), option `--fix` de `run_lots.py` (relance l'agent du lot avec les commentaires de la PR), `infra/agents/review.md` (tableau de la nuit).
-- **W2 — Automations Cursor** : trois automations créées avec `/automate` : « PR opened → revue » (secours cloud), « CI completed failure → correction » (secours), « cron jeudi 22 h → brouillon de mise à jour Devpost en PR ». Prompts avec la règle « pas de vidéo, pas de computer use ».
-- **W3 — Suite e2e robuste** : `workers: 1` pour `e2e/lots` (les agents ont vu des timeouts à 4 workers), `--repeat-each` sur la fumée, budget de temps par spec.
+- **W1 — Recette cochable et poste par lot** (**fait le 21 sept. au soir**, PR `feat/lot-w1-w4-boucle`) : `open_pr.py` transforme la rubrique Recette en cases à cocher GitHub (`--retrofit N…` pour les PR déjà ouvertes) ; `run_lots.py` rebâtit le poste de recette après **chaque** lot (`--no-recette-each` pour l'éviter) et régénère `RECETTE_DU_BATCH.md` avec les cases cochées et les KO ; règle **PR bilingue FR / EN** dans le préfixe de chaque prompt et dans REGLES § 3.
+- **W2 — Collecte de la revue** (**fait**) : `review_collect.py` lit cases, commentaires « KO : … », images du porteur et captures des agents → `review-<date>.json` + `.md`.
+- **W3 — Deux agents forts** (**fait**) : `review_agent.py`, le **réviseur de nuit** (`run_lots.py --review-every 4`, modèle `claude-fable-5-thinking-xhigh`) : un commentaire de revue par PR + lots `RC…` dans `queue.md`, exécutés en bout de pile la même nuit ; `plan_corrections.py`, le **correcteur du matin** : revue humaine + programme complet → `PLAN_CORRECTIONS_<date>.md` + lots `RB…` (ou corrections fondues dans les lots à venir) → PR « GO » terminée par `LOTS: RB1 RBn`.
+- **W4 — La boucle** (**fait**) : `loop.py` — batch → attente du merge de la pile → collecte + correcteur → attente du merge du GO → batch suivant ; `loop-state.json`, `--resume`, `--start-at`, `--cycles`.
+- **W5 — Automations Cursor** (à faire, secours cloud) : « PR opened → revue », « CI completed failure → correction », « cron jeudi 22 h → brouillon Devpost ». Prompts avec la règle « pas de vidéo, pas de computer use ».
+- **W6 — Suite e2e robuste** : `workers: 1` pour `e2e/lots`, `--repeat-each` sur la fumée, budget de temps par spec.
 - **D0 — Rangement de `docs/`** : `ETAT_DES_LIEUX_DOCS.md` § 3, liens réécrits, `ARCHITECTURE.md` réécrit.
 
 ## 6. Ce qu'on a appris cette nuit (à garder)
