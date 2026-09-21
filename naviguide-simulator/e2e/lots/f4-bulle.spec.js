@@ -1,8 +1,10 @@
-// Lot F4 — bulle événement ancrée au bateau (mode sans voix).
+// Lot R6 / F4 — bulle événement pendant le film seulement (mode sans voix).
+// Sans API : l'ouverture sans bulle se vérifie toujours ; le film local
+// peut encore poser une bulle (départ / escale du brut).
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-f4/${name}.jpg`,
+  path: `../docs/recette/lot-r6/${name}.jpg`,
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -56,7 +58,7 @@ function bubbleNearBoat() {
   };
 }
 
-test("lot F4 — bulle visible dès le premier événement, ancrée au bateau", async ({ page }) => {
+test("lot R6 — aucune bulle à l'ouverture, bulle pendant le film", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);
@@ -64,32 +66,56 @@ test("lot F4 — bulle visible dès le premier événement, ancrée au bateau", 
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
 
+  await expect(page.getByTestId("event-bubble")).toHaveCount(0);
+  await shot(page, "01-ouverture-sans-bulle");
+
+  const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
+
+  await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
   await muteFilmVoice(page);
   await page.getByTestId("replay-start").click();
   await muteFilmVoice(page);
 
-  const bubble = page.getByTestId("event-bubble");
   await page.waitForFunction(() => Boolean(window.__naviguideFilm?.startedAt), { timeout: 8_000 });
-  await expect(bubble).toBeVisible({ timeout: 1_000 });
+
+  const bubble = page.getByTestId("event-bubble");
+  const appeared = await bubble.isVisible({ timeout: 25_000 }).catch(() => false);
+  if (!appeared) {
+    if (!apiUp) {
+      test.info().annotations.push({
+        type: "sans API",
+        description: "bulle film absente — assertions ancrage / croix / NOW sautées",
+      });
+      return;
+    }
+    throw new Error("bulle attendue pendant le film");
+  }
+
+  await expect(bubble).toBeVisible();
+  expect(await page.getByTestId("event-bubble").count()).toBe(1);
 
   await page.waitForFunction(() => Boolean(window.__naviguideScene?.mainBoatMarker?.()), { timeout: 10_000 });
   const pos = await page.evaluate(bubbleNearBoat);
   expect(pos.ok, `distance bulle→bateau ${pos.dist} px`).toBeTruthy();
   expect(pos.dist).toBeLessThan(60);
+  await shot(page, "02-bulle-film");
 
-  const kind1 = (await bubble.getAttribute("data-kind")) || "stop";
-  await shot(page, "01-bulle-escale");
+  const now = page.getByTestId("moment-now");
+  if (await now.isVisible().catch(() => false)) {
+    const bubbleLines = (await bubble.innerText()).split("\n").map((s) => s.trim()).filter((s) => s && s !== "×");
+    const snippet = bubbleLines.find((s) => s.length >= 4) || "";
+    if (snippet) {
+      await expect(now).toContainText(snippet.slice(0, Math.min(24, snippet.length)));
+    }
+  }
 
-  const firstId = await page.evaluate(() => window.__naviguideFilm?.bubbleId || "");
-  await page.waitForFunction((id) => {
-    const el = document.querySelector("[data-testid='event-bubble']");
-    const kind = el?.getAttribute("data-kind") || "";
-    const cur = window.__naviguideFilm?.bubbleId || "";
-    return kind === "wx" || kind === "climo" || kind === "sci" || (cur && id && cur !== id);
-  }, firstId, { timeout: 8_000 }).catch(() => {});
+  await page.getByTestId("event-bubble-close").click();
+  await expect(page.getByTestId("event-bubble")).toHaveCount(0);
+  expect(await page.evaluate(() => Boolean(window.__naviguideFilm?.ended))).toBe(false);
+  await expect(page.getByTestId("replay-stop")).toBeVisible();
 
-  const kind2 = (await bubble.getAttribute("data-kind")) || kind1;
-  await shot(page, kind2 === "wx" ? "02-bulle-coup-de-vent" : `02-bulle-${kind2 || "kind"}`);
+  await page.waitForTimeout(4_000);
+  expect(await page.evaluate(() => Boolean(window.__naviguideFilm?.ended))).toBe(false);
+  expect(await page.getByTestId("event-bubble").count()).toBeLessThanOrEqual(1);
 });

@@ -107,6 +107,8 @@ describe("contrat UI produit", () => {
     assert.match(app, /follow: isSuivre/);
     assert.match(app, /window\.__naviguideDebug/);
     assert.match(bar, /data-testid="regime-legend"/);
+    assert.match(bar, /data-testid="speed-regime-pill"/);
+    assert.match(bar, /data-testid="prev-stop"/);
     assert.doesNotMatch(app, /boatKnots=\{expeditionSpeed\.knots\}/);
     assert.doesNotMatch(app, /chatMeasuredKnots = atQuay \? 0 : expeditionSpeed\.knots/);
   });

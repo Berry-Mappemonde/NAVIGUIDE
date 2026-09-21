@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyFilmCamera } from "./filmCamera.js";
+import { handleWaypointMarkerClick } from "../components/escalePopup.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "MapSceneController.js"), "utf8");
@@ -37,7 +38,7 @@ describe("MapSceneController — caméra film (lot F1)", () => {
         return { getNorth: () => 10, getSouth: () => 0, getEast: () => 10, getWest: () => 0 };
       },
     };
-    let st = { lastChapterIdx: null, lastSetViewAt: 0, flyingUntil: 0 };
+    let st = { lastChapterIdx: null, lastSetViewAt: 0, flyingUntil: 0, lastCenter: null };
     const step = (chapterIdx, now, lat = 46, lon = -1) => {
       const next = applyFilmCamera(map, {
         chapterIdx,
@@ -49,21 +50,26 @@ describe("MapSceneController — caméra film (lot F1)", () => {
         now,
         lastSetViewAt: st.lastSetViewAt,
         flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter,
       });
-      st = { lastChapterIdx: next.lastChapterIdx, lastSetViewAt: next.lastSetViewAt, flyingUntil: next.flyingUntil };
+      st = {
+        lastChapterIdx: next.lastChapterIdx,
+        lastSetViewAt: next.lastSetViewAt,
+        flyingUntil: next.flyingUntil,
+        lastCenter: next.lastCenter,
+      };
       return next;
     };
-    assert.equal(step(0, 1000).action, "flyTo");
-    assert.equal(calls.flyTo, 1);
-    assert.equal(step(0, 1100).action, "fly-wait");
-    assert.equal(calls.flyTo, 1, "même chapitre pendant le flyTo : pas de second flyTo");
-    assert.equal(step(0, 2300).action, "setView");
-    assert.equal(calls.flyTo, 1);
+    assert.equal(step(0, 1000).action, "setView");
+    assert.equal(calls.flyTo, 0, "premier mouvement = setView, pas de flyTo");
     assert.equal(calls.setView, 1);
-    assert.equal(step(0, 2320).action, "skip");
-    assert.equal(calls.flyTo, 1);
+    assert.equal(step(0, 1030).action, "setView", "lot R4 : setView chaque frame, plus de skip 30 Hz");
+    assert.equal(step(0, 1100).action, "setView");
+    assert.equal(calls.flyTo, 0);
     assert.equal(step(1, 5000).action, "flyTo");
-    assert.equal(calls.flyTo, 2);
+    assert.equal(calls.flyTo, 1);
+    assert.equal(step(1, 5100).action, "fly-wait");
+    assert.equal(calls.flyTo, 1, "même chapitre pendant le flyTo : pas de second flyTo");
     assert.match(src, /if \(cfg\.filmActive\)/);
     assert.match(src, /syncFilmCamera/);
     assert.doesNotMatch(src, /filmActive[\s\S]{0,200}zoomForRemaining/);
@@ -86,6 +92,23 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /preferCanvas:\s*true/);
     assert.match(src, /divIconCache/);
     assert.match(src, /flagWorldLngsForView/);
+  });
+
+  it("clic drapeau hors dessin → onWaypointClick ; en dessin → inchangé", () => {
+    const point = { name: "Ajaccio (Corse)", lat: 41.9192, lon: 8.7386 };
+    const calls = { sheet: [], draw: [] };
+    const callbacks = {
+      onWaypointClick: (p, i) => calls.sheet.push([p, i]),
+      onDrawingWaypointClick: (p, i) => calls.draw.push([p, i]),
+    };
+    assert.equal(handleWaypointMarkerClick(false, point, 2, callbacks), "sheet");
+    assert.deepEqual(calls.sheet, [[point, 2]]);
+    assert.equal(calls.draw.length, 0);
+    assert.equal(handleWaypointMarkerClick(true, point, 1, callbacks), "draw");
+    assert.deepEqual(calls.draw, [[point, 1]]);
+    assert.equal(calls.sheet.length, 1, "le clic dessin n'ouvre pas la fiche");
+    assert.match(src, /onWaypointClick\?\.\(marker\._naviguideWaypoint, marker\._naviguideIndex\)/);
+    assert.match(src, /if \(marker\._naviguideDrawing\) \{\s*this\.callbacks\.onDrawingWaypointClick/);
   });
 
   it("onMoveEnd ne relance ni /ici ni le récit", () => {

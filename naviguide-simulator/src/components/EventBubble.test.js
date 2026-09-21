@@ -4,14 +4,20 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  BUBBLE_SCORE_WINDOW_MS,
   EVENT_BUBBLE_MIN_MS,
   EventBubbleGate,
+  FilmEventScoreGate,
+  applyBubbleClose,
   bubbleId,
+  bubbleScore,
   bubbleTitle,
   createEventPopupOptions,
   ensureEventPopup,
   followPopupToMarker,
+  isBubbleSuppressed,
   pickFilmEvent,
+  shouldShowFilmEvent,
 } from "./eventBubble.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -47,7 +53,7 @@ function fakeMarker(lat, lng) {
 }
 
 describe("EventBubble — contrat (lot F4)", () => {
-  it("L.popup : autoPan false, pas de croix, classe event-bubble, 280 px", () => {
+  it("L.popup : autoPan false, pas de croix Leaflet, classe event-bubble, 280 px", () => {
     const opts = createEventPopupOptions();
     assert.equal(opts.autoPan, false);
     assert.equal(opts.closeButton, false);
@@ -131,16 +137,77 @@ describe("EventBubble — contrat (lot F4)", () => {
     })?.id, "wx");
   });
 
-  it("la scène resynchronise la popup après syncMarkers ; le film et la carte NOW l’ouvrent", () => {
+  it("la scène resynchronise la popup après syncMarkers ; le film ouvre la bulle", () => {
     assert.match(sceneSrc, /this\.eventBubble = attachEventBubble\(this, L\)/);
     assert.match(sceneSrc, /this\.eventBubble\?\.sync\(\)/);
     assert.match(sceneSrc, /mainBoatMarker\(/);
     assert.match(hook, /pickFilmEvent/);
     assert.match(hook, /publishEventBubble/);
-    assert.match(cards, /publishEventBubble/);
-    assert.match(cards, /isNowAlertOrDecision/);
+    assert.match(hook, /FilmEventScoreGate/);
+    assert.doesNotMatch(cards, /publishEventBubble/);
     assert.match(src, /keydown/);
     assert.match(src, /Escape/);
     assert.match(src, /data-testid="event-bubble"/);
+  });
+
+  it("lot R6 — la croix ferme la bulle, pas le film", () => {
+    assert.match(src, /data-testid="event-bubble-close"/);
+    assert.match(src, /×/);
+    assert.match(src, /onClose/);
+    const closed = applyBubbleClose({ id: "wx-1" });
+    assert.equal(closed.card, null);
+    assert.equal(closed.closedId, "wx-1");
+    assert.equal(isBubbleSuppressed(closed.closedId, { id: "wx-1" }), true);
+    assert.equal(isBubbleSuppressed(closed.closedId, { id: "zee-1" }), false);
+  });
+});
+
+describe("eventBubble — lot R6 : seuil de score et somme 20 s", () => {
+  it("score ≥ 2 s'affiche, score 1 seul non", () => {
+    assert.equal(shouldShowFilmEvent(3), true);
+    assert.equal(shouldShowFilmEvent(2), true);
+    assert.equal(shouldShowFilmEvent(1), false);
+    assert.equal(shouldShowFilmEvent(1, [1]), false);
+    assert.equal(shouldShowFilmEvent(1, [1, 1]), true);
+    assert.equal(shouldShowFilmEvent(0, [3]), true);
+  });
+
+  it("infère le score depuis le kind quand le script n'en a pas", () => {
+    assert.equal(bubbleScore({ kind: "stop" }), 3);
+    assert.equal(bubbleScore({ kind: "wx" }), 3);
+    assert.equal(bubbleScore({ kind: "zee" }), 2);
+    assert.equal(bubbleScore({ kind: "sci" }), 2);
+    assert.equal(bubbleScore({ kind: "amp" }), 1);
+    assert.equal(bubbleScore({ kind: "climo" }), 1);
+    assert.equal(bubbleScore({ score: 2, kind: "amp" }), 2);
+  });
+
+  it("somme des non-montrés depuis 20 s atteint 3 → bulle", () => {
+    let t = 0;
+    const gate = new FilmEventScoreGate({ now: () => t });
+    assert.equal(gate.accept({ id: "amp-1", kind: "amp", score: 1 }), null);
+    t = 5_000;
+    assert.equal(gate.accept({ id: "climo-1", kind: "climo", score: 1 }), null);
+    t = 12_000;
+    const third = gate.accept({ id: "amp-2", kind: "amp", score: 1 });
+    assert.equal(third?.id, "amp-2");
+  });
+
+  it("fenêtre de 20 s : un score 1 trop ancien ne compte plus", () => {
+    let t = 0;
+    const gate = new FilmEventScoreGate({ now: () => t });
+    assert.equal(gate.accept({ id: "amp-old", kind: "amp", score: 1 }), null);
+    t = BUBBLE_SCORE_WINDOW_MS + 1;
+    assert.equal(gate.accept({ id: "amp-new", kind: "amp", score: 1 }), null);
+    t += 1_000;
+    assert.equal(gate.accept({ id: "climo-new", kind: "climo", score: 1 }), null);
+  });
+
+  it("score 2 remplace sans attendre la somme", () => {
+    let t = 0;
+    const gate = new FilmEventScoreGate({ now: () => t });
+    assert.equal(gate.accept({ id: "amp-1", kind: "amp", score: 1 }), null);
+    t = 2_000;
+    assert.equal(gate.accept({ id: "zee-1", kind: "zee", score: 2 })?.id, "zee-1");
   });
 });

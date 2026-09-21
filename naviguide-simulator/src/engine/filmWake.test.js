@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { remainingParts, wakeCursorAt, wakeParts } from "./filmWake.js";
+import { pointAtSailNm, remainingParts, wakeCursorAt, wakeParts } from "./filmWake.js";
 
 describe("wakeCursorAt", () => {
   const flat = {
@@ -72,6 +72,19 @@ describe("remainingParts", () => {
     const last = parts[0][parts[0].length - 1];
     assert.ok(first[0] > 1 && first[0] < 2);
     assert.equal(last[0], 2);
+  });
+
+  it("pointAtSailNm interpolates between consecutive vertices", () => {
+    const flat = {
+      points: [
+        { lon: 0, lat: 0, cumNm: 0, jump: false },
+        { lon: 1, lat: 0, cumNm: 60, jump: false },
+        { lon: 2, lat: 0, cumNm: 120, jump: false },
+      ],
+    };
+    const mid = pointAtSailNm(flat, 90);
+    assert.ok(mid.lon > 1 && mid.lon < 2);
+    assert.equal(mid.lat, 0);
   });
 
   it("is empty when the boat is at the end", () => {

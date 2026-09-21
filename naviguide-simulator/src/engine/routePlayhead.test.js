@@ -9,6 +9,8 @@ import {
   isNamedEscale,
   mapEscalesOnRoute,
   nearestNm,
+  canNextEscale,
+  canPrevEscale,
   nextEscaleNm,
   playheadOnPlay,
   prevEscaleNm,
@@ -125,6 +127,26 @@ describe("filmLegContext", () => {
     assert.equal(hud.etaHours, 15);
     assert.equal(hud.finished, false);
     assert.deepEqual(hud.snappedPosition, [1, 46]);
+  });
+});
+
+describe("escale précédente (lot R2)", () => {
+  const marks = [
+    { name: "La Rochelle", nm: 0, filmNm: 0 },
+    { name: "Ajaccio (Corse)", nm: 500, filmNm: 500 },
+    { name: "Fort-de-France", nm: 4000, filmNm: 4000 },
+  ];
+
+  it("depuis la 2e escale, précédente → 1re", () => {
+    assert.equal(prevEscaleNm(marks, 500), 0);
+    assert.equal(canPrevEscale(marks, 500), true);
+    assert.equal(canNextEscale(marks, 500), true);
+  });
+
+  it("depuis la 1re → inchangé et canPrev faux", () => {
+    assert.equal(prevEscaleNm(marks, 0), 0);
+    assert.equal(canPrevEscale(marks, 0), false);
+    assert.equal(canNextEscale(marks, 0), true);
   });
 });
 

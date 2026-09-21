@@ -24,8 +24,13 @@ test.describe("simulateur — fumée", () => {
     await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
     await page.getByTestId("view-simulation").click();
     await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
-    // Les calques sont repliés (revue du 19 sept.) : ouvrir la section, puis allumer ZEE.
+    // Suivre ouvre le cinéma : les deux panneaux se ferment. Les calques
+    // sont dans le panneau droit — on le rouvre avant ZEE (sans API).
     const drawer = page.getByTestId("layers-drawer");
+    if (!(await drawer.locator("summary").isVisible().catch(() => false))) {
+      await page.locator(".naviguide-sidebar-toggle--right").click();
+      await expect(drawer.locator("summary")).toBeVisible({ timeout: 10_000 });
+    }
     await drawer.locator("summary").scrollIntoViewIfNeeded();
     if (!(await drawer.evaluate((el) => el.open))) await drawer.locator("summary").click();
     const zee = drawer.getByRole("button", { name: "ZEE", exact: true });

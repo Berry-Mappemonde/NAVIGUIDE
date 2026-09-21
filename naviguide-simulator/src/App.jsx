@@ -3,6 +3,7 @@ import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
 import { LayerFichePopup } from "./components/LayerFichePopup.jsx";
+import { EscalePopupHost } from "./components/EscalePopup.jsx";
 import NotForNavModal from "./components/NotForNavModal.jsx";
 import { readNotForNavAccepted, writeNotForNavAccepted } from "./utils/notForNav.js";
 import { SatelliteMetPanel } from "./components/SatelliteMetPanel.jsx";
@@ -38,6 +39,8 @@ import {
   mapEscalesOnRoute,
   nextEscaleNm,
   prevEscaleNm,
+  canNextEscale,
+  canPrevEscale,
   filmLegContext,
   chapterAtNm,
 } from "./engine/routePlayhead.js";
@@ -72,6 +75,7 @@ import {
   SEGMENT_BATCH_SIZE,
   buildBerryLegs,
   coordsFromRoutePayload,
+  isLandLegNames,
   isNonMaritimeLeg,
   orientCoords,
 } from "./utils/berryLegs.js";
@@ -505,10 +509,9 @@ export default function App() {
     : 0;
   const atQuay = Boolean(clockSample?.atQuay);
 
-  // Fiche d'escale (lot C; hooks/useEscaleSheetState.js since lot J).
+  // Fiche d'escale (lot C / J ; lot R7 : popup sur le drapeau, plus dans le panneau).
   const escale = useEscaleSheetState({
     lang, isSuivre, atQuay, clockSample, marks: legendMarks,
-    onOpen: () => setSidebarOpen(true),
   });
   const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
 
@@ -723,16 +726,28 @@ export default function App() {
     if (!hudLeg?.fromStop) return null;
     const from = legendMarks.find((m) => m.name === hudLeg.fromStop);
     const to = hudLeg.toStop ? legendMarks.find((m) => m.name === hudLeg.toStop) : null;
+    const land = isLandLegNames(hudLeg.fromStop, hudLeg.toStop) || hudLeg.vehicle === "land";
+    const sailNm = from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null;
+    const filmDelta = from && to
+      ? Math.max(0, (Number(to.filmNm ?? to.nm) || 0) - (Number(from.filmNm ?? from.nm) || 0))
+      : null;
+    const fromMs = Date.parse(from?.iso ?? "");
+    const toMs = Date.parse(to?.iso ?? "");
+    const roadHours = Number.isFinite(fromMs) && Number.isFinite(toMs)
+      ? Math.max(0, Math.round((toMs - fromMs) / 3_600_000))
+      : null;
     return {
       fromStop: hudLeg.fromStop,
       toStop: hudLeg.toStop || null,
       holdDays: from?.holdHours > 0 ? Math.round(from.holdHours / 24) : 0,
-      legNm: from && to ? Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0)) : null,
+      legNm: land ? (filmDelta || sailNm) : sailNm,
+      kind: land ? "land" : undefined,
+      roadHours: land ? roadHours : null,
       etaLabel: to?.iso ? dayMonth(to.iso, lang) : null,
       lat: from?.lat,
       lon: from?.lon,
     };
-  }, [hudLeg?.fromStop, hudLeg?.toStop, legendMarks, lang]);
+  }, [hudLeg?.fromStop, hudLeg?.toStop, hudLeg?.vehicle, legendMarks, lang]);
   const moments = useMomentCards({
     enabled: sceneReady && !drawingMode && !replay.active,
     events: iciPack.events,
@@ -791,6 +806,7 @@ export default function App() {
     rate: replay.voiceRate,
     onBoundary: replay.onVoiceBoundary,
     onEnd: replay.onVoiceEnd,
+    onLeadFailed: replay.onVoiceLeadFailed,
   });
 
   const recaptureRef = useRef(null);
@@ -1293,12 +1309,10 @@ export default function App() {
     legs: planReviewState.legs,
     loading: planReviewState.loading,
     error: planReviewState.error,
-    summary: planReviewState.review
-      ? t("planReviewSummary", { warmed: planReviewState.review.pearlsWarmed ?? 0, unknown: planReviewState.review.pearlsUnknown ?? 0 })
-      : null,
+    summary: null,
     comment: planReviewState.review?.comment?.text || null,
     commentSource: planReviewState.review?.comment?.source || null,
-  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, t]);
+  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review]);
 
   // Route advice under the skipper's orders (lot G): gale and sea limits of
   // the resolved orders become no-go zones of the isochrone.
@@ -1396,7 +1410,7 @@ export default function App() {
   const rootInsetVars = mapInsetVars({
     sidebarOpen: sidebarOpen && !filmFullscreen,
     toolsOpen: toolsOpen && !filmFullscreen,
-    filmBarVisible: !(cinemaMode && hideFilmBar),
+    filmBarVisible: !hideFilmBar,
     filmBarControls: isSimulation,
   });
 
@@ -1422,6 +1436,7 @@ export default function App() {
         onCoordinatesCopied={handleCoordinatesCopied}
         onWaypointHover={setHoveredPoint}
         onDrawingWaypointClick={handleDrawingWaypointClick}
+        onWaypointClick={openEscaleSheet}
       />
 
       <NotForNavModal
@@ -1482,9 +1497,6 @@ export default function App() {
         momentFree={sceneReady ? moments.free : null}
         momentFreeLeft={moments.freeLeft}
         onMomentNext={moments.next}
-        escaleStop={escaleStop}
-        escaleSheet={escaleSheet}
-        onEscaleClose={closeEscaleSheet}
         chat={chat}
         onChatAsk={chat.ask}
       />
@@ -1628,15 +1640,16 @@ export default function App() {
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(nm, { jump: true });
         }}
+        onPrev={handleSimPrev}
+        canPrev={canPrevEscale(escaleMarks, playback.nm)}
         onNext={handleSimNext}
-        canNext={playback.nm < ((escaleMarks.at(-1)?.filmNm ?? escaleMarks.at(-1)?.nm) ?? 0) - 1}
+        canNext={canNextEscale(escaleMarks, playback.nm)}
         showPlaybackControls={isSimulation}
         cinema={cinemaMode}
         onCinema={toggleCinema}
-        hideBar={cinemaMode && hideFilmBar}
+        hideBar={hideFilmBar}
         onHideBar={setHideFilmBar}
         liveSpeed={expeditionSpeed.live}
-        boatName={polarData?.boat_name}
         windSeries={windProfile.series}
         windLoading={windProfile.loading}
         holding={playback.holding}
@@ -1707,6 +1720,14 @@ export default function App() {
         </>
       ) : null}
 
+      <EscalePopupHost
+        stop={escaleStop}
+        fiche={escaleSheet?.fiche}
+        loading={Boolean(escaleSheet?.loading)}
+        error={escaleSheet?.error}
+        onClose={closeEscaleSheet}
+        onFocus={handleBriefingFocus}
+      />
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (

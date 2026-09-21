@@ -5,6 +5,7 @@ import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { LangProvider, useLang } from "../i18n/LangContext.jsx";
 import {
   EVENT_BUBBLE_FADE_MS,
+  applyBubbleClose,
   bubbleChips,
   bubbleFacts,
   bubbleId,
@@ -13,25 +14,35 @@ import {
   createEventPopupOptions,
   ensureEventPopup,
   followPopupToMarker,
+  isBubbleSuppressed,
 } from "./eventBubble.js";
 
 export {
+  BUBBLE_SCORE_SHOW,
+  BUBBLE_SCORE_SUM,
+  BUBBLE_SCORE_WINDOW_MS,
   EVENT_BUBBLE_FADE_MS,
   EVENT_BUBBLE_MIN_MS,
   EVENT_BUBBLE_TITLE_MAX,
   EVENT_BUBBLE_WIDTH,
   EventBubbleGate,
+  FilmEventScoreGate,
+  applyBubbleClose,
   bubbleChips,
   bubbleFacts,
   bubbleId,
   bubbleKindIcon,
+  bubbleScore,
   bubbleTitle,
   createEventPopupOptions,
   ensureEventPopup,
+  filmEventCard,
   followPopupToMarker,
+  isBubbleSuppressed,
   isNowAlertOrDecision,
   pickFilmEvent,
   publishEventBubble,
+  shouldShowFilmEvent,
 } from "./eventBubble.js";
 
 function CardLinks({ entity, t }) {
@@ -51,10 +62,10 @@ function CardLinks({ entity, t }) {
           }}
           data-testid="event-bubble-focus"
           title={t("briefingSeeOnMap")}
+          aria-label={t("momentSeeOnMap")}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border border-sky-400/40 bg-sky-600/20 text-sky-100 hover:bg-sky-600/40"
         >
           <LocateFixed size={11} />
-          {t("momentSeeOnMap")}
         </button>
       ) : null}
       {links.map((l) => (
@@ -65,16 +76,17 @@ function CardLinks({ entity, t }) {
           rel="noopener noreferrer"
           data-testid={`event-bubble-link-${l.kind}`}
           title={l.kind === "site" ? `${t("briefingOfficialSheet")} — ${l.host || ""}` : t("briefingGoogleMaps")}
+          aria-label={l.kind === "site" ? t("briefingOfficialSheet") : t("briefingGoogleMaps")}
           className="px-1.5 py-0.5 rounded-md text-[10px] border border-white/10 bg-white/5 text-sky-200 hover:text-white hover:bg-white/10 no-underline"
         >
-          {l.kind === "site" ? `↗ ${l.host || t("briefingOfficialSheet")}` : `◎ ${t("briefingGoogleMaps")}`}
+          {l.kind === "site" ? "↗" : "◎"}
         </a>
       ))}
     </div>
   );
 }
 
-export function EventBubble({ card }) {
+export function EventBubble({ card, onClose }) {
   const { t } = useLang();
   const title = useMemo(() => bubbleTitle(card), [card]);
   const facts = useMemo(() => bubbleFacts(card), [card]);
@@ -97,6 +109,19 @@ export function EventBubble({ card }) {
             </p>
           ) : null}
         </div>
+        <button
+          type="button"
+          data-testid="event-bubble-close"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose?.();
+          }}
+          title={t("eventBubbleClose")}
+          aria-label={t("eventBubbleClose")}
+          className="w-6 h-6 flex items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 flex-shrink-0 leading-none"
+        >
+          ×
+        </button>
       </div>
       {chips.length ? (
         <div className="flex flex-wrap gap-1 mt-1.5">
@@ -118,11 +143,11 @@ export function EventBubble({ card }) {
   );
 }
 
-function renderBubble(root, host, card) {
+function renderBubble(root, host, card, onClose) {
   if (!host || !root) return;
   root.render(card ? (
     <LangProvider>
-      <EventBubble card={card} />
+      <EventBubble card={card} onClose={onClose} />
     </LangProvider>
   ) : null);
 }
@@ -149,6 +174,14 @@ export function attachEventBubble(scene, L) {
 
   const win = typeof window !== "undefined" ? window : null;
 
+  function dismiss() {
+    const next = applyBubbleClose(currentCard);
+    closedByEsc = next.closedId;
+    currentCard = next.card;
+    if (win) win.__naviguideEventBubble = null;
+    hide();
+  }
+
   function markerOf() {
     return typeof scene.mainBoatMarker === "function" ? scene.mainBoatMarker() : null;
   }
@@ -171,7 +204,7 @@ export function attachEventBubble(scene, L) {
     const close = () => {
       try { popup.remove(); } catch { /* déjà retiré */ }
       open = false;
-      renderBubble(root, host, null);
+      renderBubble(root, host, null, dismiss);
     };
     if (immediate || !canDom) close();
     else hideTimer = setTimeout(close, EVENT_BUBBLE_FADE_MS);
@@ -189,7 +222,7 @@ export function attachEventBubble(scene, L) {
       clearTimeout(hideTimer);
       hideTimer = 0;
     }
-    renderBubble(root, host, card);
+    renderBubble(root, host, card, dismiss);
     popup.setContent(host);
     popup.setLatLng(marker.getLatLng());
     if (!open) {
@@ -207,7 +240,7 @@ export function attachEventBubble(scene, L) {
       hide();
       return;
     }
-    if (closedByEsc && bubbleId(card) === closedByEsc) return;
+    if (isBubbleSuppressed(closedByEsc, card)) return;
     closedByEsc = false;
     show(card);
   }
@@ -216,9 +249,7 @@ export function attachEventBubble(scene, L) {
     if (event.key !== "Escape" && event.key !== "Esc") return;
     if (!open) return;
     event.stopPropagation();
-    closedByEsc = bubbleId(currentCard) || true;
-    currentCard = null;
-    hide();
+    dismiss();
   }
 
   win?.addEventListener("keydown", onEsc);

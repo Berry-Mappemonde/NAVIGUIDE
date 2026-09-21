@@ -1,0 +1,291 @@
+
+> naviguide-simulator@0.1.0 redites
+> node scripts/redites.mjs
+
+# Redites i18n (src/i18n/fr.js)
+
+## Valeurs identiques sous deux clés ou plus
+3	"Masquer le panneau"
+	hideSidebar, hideToolsPanel, hideExportPanel
+3	"Simulation"
+	simulationModeLabel, exitSimulationShort, simulationButton
+2	"Accepter"
+	notForNavAccept, recomputeAccept
+2	"Afficher le panneau"
+	showToolsPanel, showExportPanel
+2	"Annuler le dernier point"
+	undoLastPoint, drawingUndoLast
+2	"climatologie"
+	filmWindClimo, clockRegimeClimatology
+2	"Coup de vent"
+	skipperExpertGaleKt, skipperGale
+2	"Distance totale"
+	totalDistance, totalDistanceNm
+2	"Échec"
+	polarFailed, polarUploadErrorPrefix
+2	"Escale"
+	stop, filmArrivalHold
+2	"Fermer"
+	momentClose, eventBubbleClose
+2	"Marinas"
+	layerBiMarinas, layerBiMarinasTitle
+2	"Ne convient pas à la navigation."
+	notForNavigation, creditsLine
+2	"prévision"
+	filmWindForecast, clockRegimeForecast
+2	"Prochaine escale"
+	nextEscale, goToNextStop
+2	"segments"
+	segments, routeSegmentsShort
+2	"Suivant"
+	momentNext, next
+2	"Veille"
+	journalKindNews, momentNewsKind
+2	"Vent"
+	eventBubbleChipWind, layerClimoWind
+2	"Vitesse (km/h)"
+	windSpeedKmh, currentSpeedKmh
+2	"Vitesse (m/s)"
+	windSpeedMs, currentSpeedMs
+
+## Groupes de ≥ 2 mots (hors mots vides) dans ≥ 2 valeurs
+6	"berry mappemonde"
+	backToBerry, berryMappemonde, briefingDrawHint, gettingStartedText, berryLocalBriefing, followExpeditionTitle
+5	"ne convient pas navigation"
+	climoDisclaimer, notForNavigation, notForNavAck, voyageForecastDisclaimer, creditsLine
+5	"convient pas navigation"
+	climoDisclaimer, notForNavigation, notForNavAck, voyageForecastDisclaimer, creditsLine
+5	"ne convient pas"
+	climoDisclaimer, notForNavigation, notForNavAck, voyageForecastDisclaimer, creditsLine
+5	"autour bateau"
+	berryLocalBriefing, iciBriefingLoading, iciBriefingFallback, momentFreeTitle, layerGrib2Title
+5	"clé admin"
+	logbookChatUnsaved, logbookChatNotLogged, adminKeyLabel, adminKeyPlaceholder, adminKeyRequired
+5	"convient pas"
+	climoDisclaimer, notForNavigation, notForNavAck, voyageForecastDisclaimer, creditsLine
+5	"ne convient"
+	climoDisclaimer, notForNavigation, notForNavAck, voyageForecastDisclaimer, creditsLine
+5	"pas navigation"
+	climoDisclaimer, notForNavigation, notForNavAck, voyageForecastDisclaimer, creditsLine
+5	"prochaine escale"
+	drawNextStop, logbookChatPlaceholder, nextEscale, goToNextStop, recomputeTitle
+5	"typique mois"
+	layerClimatologyTitle, layerClimoWindTitle, layerClimoWaveTitle, layerClimoCurrentTitle, voyageClockDisclaimer
+4	"coup vent"
+	skipperExpertGaleKt, skipperExpertGaleHoldKt, skipperGale, skipperExpertGalePct
+4	"nemotron 3"
+	storySourceLightning, storySourceSuper, storySourceUltra, truthBadgeVerified
+4	"suivre l’expédition"
+	gettingStartedText, viewModeGroup, followExpeditionButton, followExpeditionTitle
+3	"typique mois pas"
+	layerClimatologyTitle, layerClimoWindTitle, voyageClockDisclaimer
+3	"afficher panneau"
+	showExpeditionPanel, showToolsPanel, showExportPanel
+3	"atlas cmems"
+	layerClimatologyTitle, climatologyStub, climatologyOn
+3	"aucune donnée"
+	noWindData, noWaveData, noCurrentData
+3	"choisissez votre"
+	drawStart, drawFirstStop, drawNextStop
+3	"distance totale"
+	totalDistance, routeDistanceHint, totalDistanceNm
+3	"journal bord"
+	journalTitle, storyHint, logbookChatTitle
+3	"masquer panneau"
+	hideSidebar, hideToolsPanel, hideExportPanel
+3	"mois pas"
+	layerClimatologyTitle, layerClimoWindTitle, voyageClockDisclaimer
+3	"nm nm"
+	journalSciNearby, momentAhead, filmArrivalNm
+3	"nord est"
+	cardinalNNE, cardinalNE, cardinalENE
+3	"nord ouest"
+	cardinalONO, cardinalNO, cardinalNNO
+3	"saint maur"
+	storyHint, replayStartTitle, departureSaintMaur
+3	"stop auto"
+	stopAuto, stopAutoOn, stopAutoOff
+3	"sud est"
+	cardinalESE, cardinalSE, cardinalSSE
+3	"sud ouest"
+	cardinalSSO, cardinalSO, cardinalOSO
+3	"token factory"
+	storySourceLightning, storySourceSuper, storySourceUltra
+2	"15 mai 2026 08 00 utc"
+	berryLocalBriefing, officialDepartureLocked
+2	"15 mai 2026 08 00"
+	berryLocalBriefing, officialDepartureLocked
+2	"mai 2026 08 00 utc"
+	berryLocalBriefing, officialDepartureLocked
+2	"typique mois pas grib jour"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"15 mai 2026 08"
+	berryLocalBriefing, officialDepartureLocked
+2	"2026 08 00 utc"
+	berryLocalBriefing, officialDepartureLocked
+2	"mai 2026 08 00"
+	berryLocalBriefing, officialDepartureLocked
+2	"mois pas grib jour"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"suivre l’expédition berry mappemonde"
+	gettingStartedText, followExpeditionTitle
+2	"tws kn twa twa"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"typique mois pas grib"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"08 00 utc"
+	berryLocalBriefing, officialDepartureLocked
+2	"15 mai 2026"
+	berryLocalBriefing, officialDepartureLocked
+2	"2026 08 00"
+	berryLocalBriefing, officialDepartureLocked
+2	"annuler dernier point"
+	undoLastPoint, drawingUndoLast
+2	"ce mois ci"
+	climoWaveP50Hint, climoWaveP90Hint
+2	"depuis saint maur"
+	storyHint, departureSaintMaur
+2	"hs p50 p90"
+	layerClimoWaveTitle, climatologyStub
+2	"kn twa twa"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"l’expédition berry mappemonde"
+	gettingStartedText, followExpeditionTitle
+2	"mai 2026 08"
+	berryLocalBriefing, officialDepartureLocked
+2	"mois pas grib"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"nemotron 3 ultra"
+	storySourceUltra, truthBadgeVerified
+2	"pas grib jour"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"sac autour bateau"
+	berryLocalBriefing, iciBriefingFallback
+2	"suivre l’expédition berry"
+	gettingStartedText, followExpeditionTitle
+2	"tws kn twa"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"vitesse km h"
+	windSpeedKmh, currentSpeedKmh
+2	"vitesse m s"
+	windSpeedMs, currentSpeedMs
+2	"waverys 1993 2019"
+	climoWaveP50Hint, climoWaveP90Hint
+2	"00 utc"
+	berryLocalBriefing, officialDepartureLocked
+2	"08 00"
+	berryLocalBriefing, officialDepartureLocked
+2	"15 mai"
+	berryLocalBriefing, officialDepartureLocked
+2	"1993 2019"
+	climoWaveP50Hint, climoWaveP90Hint
+2	"2026 08"
+	berryLocalBriefing, officialDepartureLocked
+2	"3 ultra"
+	storySourceUltra, truthBadgeVerified
+2	"aérien bateau"
+	filmPhaseAir, filmPhaseAirReturn
+2	"annuler dernier"
+	undoLastPoint, drawingUndoLast
+2	"ce mois"
+	climoWaveP50Hint, climoWaveP90Hint
+2	"ce que"
+	planReviewCommentTitle, regimeTooltipHindcast
+2	"cliquer importer"
+	clickToImport, clickNewImport
+2	"days j"
+	voyageAtQuay, escalesQuay
+2	"depuis saint"
+	storyHint, departureSaintMaur
+2	"dernier point"
+	undoLastPoint, drawingUndoLast
+2	"données satellite"
+	satelliteData, fetchingSatellite
+2	"fiche d’escale"
+	escaleSheetTitle, escaleSheetOpen
+2	"grib jour"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"hs p50"
+	layerClimoWaveTitle, climatologyStub
+2	"indisponible moment"
+	journalUnavailable, escaleSheetError
+2	"j quai"
+	eventBubbleChipQuay, escalesQuay
+2	"jours mer"
+	filmClockToggle, filmSeaDays
+2	"km h"
+	windSpeedKmh, currentSpeedKmh
+2	"kn twa"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"l’expédition berry"
+	gettingStartedText, followExpeditionTitle
+2	"l’horloge officielle"
+	journalHint, storyHint
+2	"m s"
+	windSpeedMs, currentSpeedMs
+2	"mai 2026"
+	berryLocalBriefing, officialDepartureLocked
+2	"mer hs"
+	recomputeConstraintsSkipper, recomputeConstraintsDefault
+2	"mois ci"
+	climoWaveP50Hint, climoWaveP90Hint
+2	"n sources"
+	clockRegimeSources, clockRegimeSourcesPlain
+2	"n’a pas"
+	iciBriefingFallback, logbookChatFailed
+2	"non consigné"
+	logbookChatUnsaved, logbookChatNotLogged
+2	"nord nord"
+	cardinalNNE, cardinalNNO
+2	"ou simulation"
+	gettingStartedText, viewModeGroup
+2	"p10 p90"
+	etaRange, etaRangeTitle
+2	"p50 p90"
+	layerClimoWaveTitle, climatologyStub
+2	"pas grib"
+	layerClimatologyTitle, layerClimoWindTitle
+2	"plein écran"
+	filmFullscreen, filmFullscreenExit
+2	"pluie forte"
+	skipperExpertRainMmH, skipperExpertRain3h
+2	"point départ"
+	drawStart, startingPoint
+2	"polaire vent"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"retour calme"
+	skipperExpertWindResetKt, skipperExpertWindResetDeg
+2	"route officielle"
+	searouteUnavailable, adminKeyHint
+2	"sac autour"
+	berryLocalBriefing, iciBriefingFallback
+2	"saison cyclonique"
+	journalClimoCycloneIn, journalClimoCycloneOut
+2	"service polaires"
+	polarServiceUnavailable, polarNetworkError
+2	"simulation jouer"
+	gettingStartedText, simulationModeTooltip
+2	"sud sud"
+	cardinalSSE, cardinalSSO
+2	"twa twa"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"tws kn"
+	skipperPlanningGrib, skipperPlanningClimo
+2	"vagues hautes"
+	strongWindWave, highWaves
+2	"vent fort"
+	strongWindWave, strongWind
+2	"vent grib"
+	journalHint, skipperPlanningGrib
+2	"vent typique"
+	skipperPlanningClimo, voyageClockDisclaimer
+2	"vitesse km"
+	windSpeedKmh, currentSpeedKmh
+2	"vitesse m"
+	windSpeedMs, currentSpeedMs
+2	"voir carte"
+	briefingSeeOnMap, momentSeeOnMap
+2	"voix replay"
+	replayVoiceOn, replayVoiceOff
+2	"waverys 1993"
+	climoWaveP50Hint, climoWaveP90Hint

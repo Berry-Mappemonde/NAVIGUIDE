@@ -1,0 +1,5 @@
+# même texte deux fois (libellés)
+
+
+# données (information différente, conservées)
+

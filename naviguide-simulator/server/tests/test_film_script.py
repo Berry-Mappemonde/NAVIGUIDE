@@ -5,13 +5,17 @@ from datetime import datetime, timezone
 import pearl_store
 import story_cache
 from film_script import (
+    CONNECTORS,
     FILM_MAX_CHARS,
     FILM_WRITE_MAX,
     FILM_WRITE_MIN,
+    bubble_score,
     build_film_response,
     build_raw_script,
+    connector_at,
     film_candidates,
     film_facts,
+    is_sea_chapter,
     journal_fingerprint,
     last_stop_id,
     select_film_events,
@@ -61,6 +65,24 @@ def test_raw_length_bounded_and_chapter1_names():
     assert plan["chapters"]
     assert "Saint-Maur" in plan["chapters"][0]["text"]
     assert "La Rochelle" in plan["chapters"][0]["text"]
+
+
+def test_connectors_alternate():
+    plan = _raw()
+    cons = CONNECTORS["fr"]
+    used = []
+    for i, ch in enumerate(plan["chapters"]):
+        text = ch.get("text") or ""
+        hit = next((c for c in cons if text.startswith(f"{c},")), None)
+        if hit:
+            used.append(hit)
+            assert hit == connector_at(i - 1, "fr"), f"chapitre {i}: {hit} ≠ {connector_at(i - 1, 'fr')}"
+    assert len(used) >= 2, f"connecteurs : {used}"
+    for a, b in zip(used, used[1:]):
+        assert a != b, f"connecteur répété : {a}"
+    assert connector_at(0, "fr") == "Puis"
+    assert connector_at(1, "fr") == "Ensuite"
+    assert connector_at(6, "fr") == "Puis"
 
 
 def test_raw_english_chapter1():
@@ -241,6 +263,39 @@ def test_http_film_route_raw(monkeypatch):
     assert data["chapters"]
     assert "targetSeconds" in data
     assert data["chars"] <= FILM_MAX_CHARS
+    sea = [c for c in data["chapters"] if is_sea_chapter(c)]
+    for ch in sea:
+        evs = ch.get("events") or []
+        assert evs, f"chapitre de mer sans événement : {ch.get('id')}"
+        assert all(e.get("score") in {1, 2, 3} for e in evs)
+
+
+def test_bubble_scores_are_one_two_or_three():
+    assert bubble_score({"kind": "stop", "event": "arrival"}) == 3
+    assert bubble_score({"kind": "stop", "event": "departure"}) == 3
+    assert bubble_score({"kind": "zee", "event": "enter"}) == 2
+    assert bubble_score({"kind": "sci"}) == 2
+    assert bubble_score({"kind": "amp"}) == 1
+    assert bubble_score({"kind": "climo"}) == 1
+    assert bubble_score({"kind": "wx", "maxWindKnots": 38}) == 3
+    assert bubble_score({"kind": "wx", "hs": 3.2}) == 3
+    assert bubble_score({"kind": "wx", "windKnots": 20, "hs": 1.2}) is None
+    assert bubble_score({"kind": "wx", "maxWindKnots": 30}, wind_max_kt=28) == 3
+
+
+def test_official_sea_chapters_have_scored_events():
+    plan = _raw()
+    sea = [c for c in plan["chapters"] if is_sea_chapter(c)]
+    assert sea, "le voyage officiel a des chapitres de mer"
+    for ch in sea:
+        evs = ch.get("events") or []
+        assert evs, f"chapitre de mer sans événement : {ch.get('id')} {ch.get('fromName')} → {ch.get('toName')}"
+        for e in evs:
+            assert e.get("score") in {1, 2, 3}, e
+            assert "charIdx" in e
+            assert e.get("kind")
+            assert e.get("title") is not None
+            assert e.get("fact") is not None
 
 
 def test_http_film_route_en(monkeypatch):

@@ -22,10 +22,21 @@ FILM_GAP_FRAC = 0.03
 KIND_RANK = {"wx": 0, "climo": 1, "sci": 2, "amp": 3, "zee": 4, "poe": 5, "note": 6, "stop": 7}
 SCORED = frozenset({"wx", "climo", "sci", "amp", "zee", "poe", "note"})
 CANDIDATE_KINDS = frozenset({"stop", "zee", "amp", "poe", "wx", "climo", "sci", "note"})
+BUBBLE_KINDS = frozenset({"stop", "zee", "wx", "amp", "sci", "climo"})
+SKIPPER_GALE_KT = 34.0
+HS_BUBBLE_M = 3.0
 CONNECTORS = {
     "fr": ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
     "en": ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
 }
+
+
+def connector_at(i: int, lang: str = "fr") -> str:
+    """Connecteur du paragraphe i : `connecteurs[i % n]`, jamais le même à la suite."""
+    cons = CONNECTORS["en" if _en(lang) else "fr"]
+    return cons[int(i) % len(cons)]
+
+
 MONTHS = {
     "fr": ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
     "en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -149,6 +160,226 @@ def score_event(entry: dict) -> float:
         dur = _fact_num(entry, "hours") or 6.0
         return peak * dur
     return {"climo": 50, "sci": 40, "amp": 30, "zee": 20, "poe": 10, "note": 5, "stop": 1}.get(kind, 0)
+
+
+def is_sea_chapter(ch: dict) -> bool:
+    """Jambe de mer : tout sauf Saint-Maur → La Rochelle."""
+    frm = short_name(ch.get("fromName") or "")
+    to = short_name(ch.get("toName") or "")
+    if re.search(r"saint-?maur", frm, re.I) and re.search(r"rochelle", to, re.I):
+        return False
+    return True
+
+
+def bubble_score(
+    entry: dict | None,
+    *,
+    role: str | None = None,
+    wind_max_kt: float | None = None,
+) -> Optional[int]:
+    """Score bulle {1,2,3} depuis le journal. None = pas une bulle."""
+    if not isinstance(entry, dict):
+        return None
+    kind = entry.get("kind")
+    event = entry.get("event")
+    if role in {"depart", "today", "stop"} or kind == "stop":
+        return 3
+    if kind == "zee":
+        if event and event != "enter":
+            return None
+        return 2
+    if kind == "wx":
+        wind = _fact_num(entry, "maxWindKnots", "windKnots")
+        hs = _fact_num(entry, "hs", "maxHs")
+        thr = float(wind_max_kt) if wind_max_kt is not None else SKIPPER_GALE_KT
+        if (wind is not None and wind >= thr) or (hs is not None and hs >= HS_BUBBLE_M):
+            return 3
+        return None
+    if kind == "amp":
+        return 1
+    if kind == "sci":
+        return 2
+    if kind == "climo":
+        return 1
+    return None
+
+
+def _event_char_idx(ev: dict, chapter: dict, fact: str) -> int:
+    text = chapter.get("text") or ""
+    if not text:
+        return 0
+    name = short_name(ev.get("name") or "")
+    for needle in (name, (fact or "")[:24]):
+        if needle and len(needle) >= 3 and needle in text:
+            return text.index(needle)
+    t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+    t = ev.get("tMs")
+    if t_a is not None and t_b is not None and t is not None and t_b > t_a:
+        frac = max(0.0, min(1.0, (t - t_a) / (t_b - t_a)))
+        return int(round(frac * max(0, len(text) - 1)))
+    return 0
+
+
+def _in_chapter(ev: dict, chapter: dict, last: bool) -> bool:
+    t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+    t = ev.get("tMs")
+    if t is None or t_a is None or t_b is None:
+        return False
+    if last:
+        return t_a <= t <= t_b
+    return t_a <= t < t_b
+
+
+def _bubble_payload(ev: dict, chapter: dict, lang: str, prev: dict | None = None) -> dict:
+    entry = ev.get("entry") if isinstance(ev.get("entry"), dict) else ev
+    score = ev.get("bubbleScore")
+    if score not in {1, 2, 3}:
+        score = bubble_score(entry, role=ev.get("role"))
+    title = short_name(ev.get("name") or "") or (prev or {}).get("title") or entry.get("kind") or ev.get("kind") or ""
+    fact = event_sentence({**ev, "name": ev.get("name") or title}, lang).strip()
+    if not fact:
+        fact = ((prev or {}).get("card") or {}).get("text") or (prev or {}).get("fact") or ""
+    char_idx = (prev or {}).get("charIdx")
+    if char_idx is None:
+        char_idx = _event_char_idx(ev, chapter, fact)
+    card = dict((prev or {}).get("card") or _card(entry))
+    card["title"] = card.get("title") or title
+    card["text"] = card.get("text") or fact
+    card["kind"] = card.get("kind") or ev.get("kind")
+    card["score"] = score
+    if not card.get("at"):
+        card["at"] = ev.get("t") or entry.get("t")
+    return {
+        "id": ev.get("id") or (prev or {}).get("id"),
+        "charIdx": int(char_idx or 0),
+        "kind": ev.get("kind") or card.get("kind"),
+        "title": str(title)[:40],
+        "fact": fact,
+        "score": score,
+        "card": card,
+    }
+
+
+def _synthetic_sea_event(chapter: dict, lang: str) -> dict:
+    to = short_name(chapter.get("toName") or "")
+    frm = short_name(chapter.get("fromName") or "")
+    text = chapter.get("text") or ""
+    if to:
+        raw = {
+            "id": f"stop:{to}:{chapter.get('tB')}",
+            "kind": "stop",
+            "t": chapter.get("tB"),
+            "tMs": _ms(chapter.get("tB")),
+            "name": to,
+            "role": "stop",
+            "event": "arrival",
+            "entry": {"id": f"stop:{to}:{chapter.get('tB')}", "kind": "stop", "t": chapter.get("tB"), "event": "arrival", "name": to},
+        }
+        raw["bubbleScore"] = 3
+        placed = _bubble_payload(raw, chapter, lang)
+        if to in text:
+            placed["charIdx"] = text.rfind(to)
+        else:
+            placed["charIdx"] = max(0, len(text) - 1)
+        return placed
+    raw = {
+        "id": f"stop:{frm}:{chapter.get('tA')}",
+        "kind": "stop",
+        "t": chapter.get("tA"),
+        "tMs": _ms(chapter.get("tA")),
+        "name": frm or "mer",
+        "role": "depart",
+        "event": "departure",
+        "entry": {"id": f"stop:{frm}:{chapter.get('tA')}", "kind": "stop", "t": chapter.get("tA"), "event": "departure", "name": frm},
+    }
+    raw["bubbleScore"] = 3
+    placed = _bubble_payload(raw, chapter, lang)
+    placed["charIdx"] = 0
+    return placed
+
+
+def collect_bubble_events(
+    journal: dict | None,
+    packed: dict | None,
+    *,
+    wind_max_kt: float | None = None,
+) -> list[dict]:
+    packed = packed or {}
+    t0, t_end = packed.get("t0"), packed.get("tEnd")
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def push(raw: dict, role: str | None = None) -> None:
+        if not isinstance(raw, dict):
+            return
+        entry = raw.get("entry") if isinstance(raw.get("entry"), dict) else raw
+        score = bubble_score(entry, role=role or raw.get("role"), wind_max_kt=wind_max_kt)
+        if score is None:
+            return
+        t = _ms(raw.get("t") or entry.get("t"))
+        if t is None:
+            return
+        if t0 is not None and t < t0:
+            return
+        if t_end is not None and t > t_end:
+            return
+        eid = str(raw.get("id") or entry.get("id") or f"{entry.get('kind')}:{entry.get('t')}")
+        if not eid or eid in seen:
+            return
+        seen.add(eid)
+        out.append({
+            "id": eid,
+            "kind": raw.get("kind") or entry.get("kind"),
+            "t": raw.get("t") or entry.get("t"),
+            "tMs": t,
+            "name": short_name(raw.get("name") or entry.get("name") or ""),
+            "role": role or raw.get("role"),
+            "entry": entry,
+            "bubbleScore": score,
+        })
+
+    for e in journal_entries(journal):
+        if e.get("kind") not in BUBBLE_KINDS:
+            continue
+        push(e)
+    for c in packed.get("candidates") or []:
+        push(c, role=c.get("role"))
+    out.sort(key=lambda e: (e["tMs"], e["id"]))
+    return out
+
+
+def attach_chapter_events(
+    chapters: list[dict],
+    packed: dict | None,
+    journal: dict | None,
+    lang: str = "fr",
+    wind_max_kt: float | None = None,
+) -> list[dict]:
+    """Chaque chapitre porte {charIdx, kind, title, fact, score}. Mer : ≥ 1."""
+    pool = collect_bubble_events(journal, packed, wind_max_kt=wind_max_kt)
+    n = len(chapters or [])
+    for i, ch in enumerate(chapters or []):
+        last = i == n - 1
+        existing = {str(e.get("id")): e for e in (ch.get("events") or []) if e.get("id")}
+        placed: list[dict] = []
+        seen: set[str] = set()
+        for ev in pool:
+            if not _in_chapter(ev, ch, last):
+                continue
+            prev = existing.get(str(ev["id"]))
+            row = _bubble_payload(ev, ch, lang, prev)
+            if row.get("score") not in {1, 2, 3}:
+                continue
+            eid = str(row.get("id") or "")
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            placed.append(row)
+        if is_sea_chapter(ch) and not placed:
+            placed.append(_synthetic_sea_event(ch, lang))
+        ch["events"] = sorted(placed, key=lambda e: (int(e.get("charIdx") or 0), str(e.get("id") or "")))
+    return chapters
 
 
 def _cand(entry: dict, *, role: str | None = None, score: float | None = None, name: str | None = None) -> Optional[dict]:
@@ -502,9 +733,7 @@ def _card(entry: dict) -> dict:
 
 def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None) -> list[dict]:
     en = _en(lang)
-    cons = CONNECTORS["en" if en else "fr"]
     chapters: list[dict] = []
-    last = -1
     dist = ""
     if live:
         dist = _nm_label(live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm"), lang)
@@ -512,7 +741,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         bits: list[str] = []
         placed: list[dict] = []
         if i > 0:
-            last = (last + 1) % len(cons)
+            conn = connector_at(i - 1, lang)
             dest = short_name((w.get("to") or {}).get("name") or "")
             origin = short_name((w.get("from") or {}).get("name") or "")
             dep = _departure_iso(w["from"]) if w.get("from") else None
@@ -520,9 +749,9 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 f"départ vers {dest}" if dest else f"en route depuis {origin}"
             )
             bits.append(
-                f"{cons[last]}, on {day_month(dep, lang)}, {head}."
+                f"{conn}, on {day_month(dep, lang)}, {head}."
                 if en else
-                f"{cons[last]}, le {day_month(dep, lang)}, {head}."
+                f"{conn}, le {day_month(dep, lang)}, {head}."
             )
         for ev in buckets[i]:
             rich = {**ev, "seaName": sea_name, "distLabel": dist, "name": start_name if ev.get("role") == "depart" else ev.get("name")}
@@ -583,6 +812,7 @@ def build_raw_script(
         return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live)
 
     chapters = compose(events)
+    attach_chapter_events(chapters, packed, journal, lang)
     while script_chars(chapters) > FILM_MAX_CHARS:
         droppable = [e for e in events if e["id"] not in must_ids]
         if not droppable:
@@ -591,6 +821,7 @@ def build_raw_script(
         drop = droppable[0]
         events = [e for e in events if e["id"] != drop["id"]]
         chapters = compose(events)
+        attach_chapter_events(chapters, packed, journal, lang)
     return {
         "chapters": chapters,
         "source": "rules",
@@ -643,10 +874,16 @@ def locate_events(tagged: str, events: list[dict]) -> tuple[str, list[dict]]:
             eid = m.group(1)
             ev = by_id.get(eid)
             if ev:
+                entry = ev.get("entry") or {}
+                score = ev.get("bubbleScore") if ev.get("bubbleScore") in {1, 2, 3} else bubble_score(entry, role=ev.get("role"))
                 located.append({
                     "id": eid,
                     "charIdx": len("".join(display_parts)),
-                    "card": _card(ev.get("entry") or {}),
+                    "kind": ev.get("kind") or entry.get("kind"),
+                    "title": short_name(ev.get("name") or entry.get("name") or ""),
+                    "fact": event_sentence(ev, "fr"),
+                    "score": score,
+                    "card": _card(entry),
                 })
         pos = m.end()
     display_parts.append((tagged or "")[pos:])
@@ -783,7 +1020,15 @@ def _public_plan(plan: dict, source: str) -> dict:
             "tB": c.get("tB"),
             "text": c.get("text") or "",
             "events": [
-                {"id": e.get("id"), "charIdx": e.get("charIdx"), "card": e.get("card")}
+                {
+                    "id": e.get("id"),
+                    "charIdx": e.get("charIdx"),
+                    "kind": e.get("kind") or (e.get("card") or {}).get("kind"),
+                    "title": e.get("title") or (e.get("card") or {}).get("title"),
+                    "fact": e.get("fact") or (e.get("card") or {}).get("text"),
+                    "score": e.get("score") if e.get("score") in {1, 2, 3} else bubble_score(e.get("card") or e),
+                    "card": e.get("card"),
+                }
                 for e in (c.get("events") or [])
             ],
             "fromName": c.get("fromName"),
@@ -825,6 +1070,7 @@ async def build_film_response(
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
     raw = _public_plan(raw_full, "rules")
+    attach_chapter_events(raw.get("chapters") or [], packed, journal, lang)
     written = cached.get("written") if isinstance(cached.get("written"), dict) else None
     written_source = cached.get("writtenSource") or "nemotron"
 
@@ -855,6 +1101,8 @@ async def build_film_response(
     elif not cached:
         put_film_cached(key, {"raw": raw, "written": written, "writtenSource": written_source if written else None, "lastStop": last})
 
+    if isinstance(written, dict):
+        attach_chapter_events(written.get("chapters") or [], packed, journal, lang)
     use_written = style in {"written", "nemotron", "rédigé", "redige"} and written is not None
     plan = written if use_written else raw
     source = (written_source if use_written else "rules") or "rules"
