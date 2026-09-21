@@ -303,7 +303,7 @@ export const Sidebar = memo(function Sidebar({
       <div
         className={`naviguide-sidebar-panel absolute top-0 left-0 h-full z-20 flex flex-col bg-slate-900/97
           shadow-2xl transition-transform duration-300 border-r border-slate-700/60
-          ${open ? "translate-x-0" : "-translate-x-full"}`}
+          ${open ? "translate-x-0" : "-translate-x-full invisible"}`}
         style={{ width: 320 }}
       >
         <div className="px-2.5 pt-1.5 pb-1.5 border-b border-slate-700/60 flex-shrink-0">

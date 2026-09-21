@@ -181,7 +181,7 @@ export default {
   routePointsHint:    "{waypoints} router waypoints (capes, canals) · {points} track vertices",
   routeDistanceHint:  "film distance: air hop excluded; total distance: {total} nm",
   speedFallback:      "(fallback without polar)",
-  polarShow:          "Show polars",
+  polarShow:          "Show",
   polarHide:          "Hide",
   advancedSettings:   "Advanced settings",
   layersTitle:        "Layers",
@@ -319,7 +319,7 @@ export default {
 
   // ── Polar upload ───────────────────────────────────────────────────────────
   polarSection:           "Polars",
-  polarDropZone:          "Drop a polar file here",
+  polarDropZone:          "Drop a file here",
   polarDropToReplace:     "Drop to replace",
   polarFormats:           "PDF · CSV · XLSX",
   polarAnalyzing:         "Analyzing…",

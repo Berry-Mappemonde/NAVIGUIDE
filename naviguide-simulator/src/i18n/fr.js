@@ -181,7 +181,7 @@ export default {
   routePointsHint:    "{waypoints} points de passage du routeur (caps, canaux) · {points} sommets du tracé",
   routeDistanceHint:  "distance du film : saut avion exclu ; distance totale : {total} nm",
   speedFallback:      "(repli sans polaire)",
-  polarShow:          "Voir les polaires",
+  polarShow:          "Voir",
   polarHide:          "Masquer",
   advancedSettings:   "Paramètres avancés",
   layersTitle:        "Calques",
@@ -319,7 +319,7 @@ export default {
 
   // ── Polar upload ───────────────────────────────────────────────────────────
   polarSection:           "Polaires",
-  polarDropZone:          "Glissez un fichier polaire",
+  polarDropZone:          "Glissez un fichier",
   polarDropToReplace:     "Glissez pour remplacer",
   polarFormats:           "PDF · CSV · XLSX",
   polarAnalyzing:         "Analyse…",

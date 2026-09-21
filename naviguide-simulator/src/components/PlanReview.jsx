@@ -68,13 +68,12 @@ export const PlanReview = memo(function PlanReview({
           className="flex items-center gap-2.5 px-2 pt-1 text-[9px] text-white/45 leading-tight"
         >
           {[["hindcast", "clockRegimeHindcast", "regimeTooltipHindcast"], ["forecast", "clockRegimeForecast", "regimeTooltipForecast"], ["climatology", "clockRegimeClimatology", "regimeTooltipClimatology"]].map(([id, key, tip]) => (
-            <span key={id} className="inline-flex items-center gap-1" title={t(tip)}>
+            <span key={id} className="inline-flex items-center gap-1" title={t(tip)} aria-label={t(key)}>
               <span
                 className="inline-block w-2 h-2 rounded-[2px]"
                 style={{ background: REGIME_COLORS[id] }}
                 aria-hidden="true"
               />
-              {t(key)}
             </span>
           ))}
         </div>

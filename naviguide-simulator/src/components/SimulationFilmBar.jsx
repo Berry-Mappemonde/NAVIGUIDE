@@ -62,7 +62,6 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   onHideBar,
   liveSpeed,
   windKind,
-  boatName,
   phase,
   vehicle,
   windSeries,
@@ -216,6 +215,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   <span
                     data-testid="regime-legend"
                     title={regimeTitle}
+                    aria-label={regimeTitle}
                     className="inline-flex items-center rounded-md px-1 border border-white/15 bg-white/10"
                   >
                     <span data-testid="speed-regime-pill">
@@ -223,14 +223,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                         ? (quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmAtQuay"))
                         : `${Number(boatKnots || 0).toFixed(1)} kt${speedBasis === "fallback" ? ` ${t("speedFallback")}` : ""}`}
                     </span>
-                    <span className="sr-only">
-                      {t("clockRegimeHindcast")} {t("clockRegimeForecast")} {t("clockRegimeClimatology")}
-                    </span>
                   </span>
                 </>
               )}
             {twa != null && vehicle !== "plane" ? ` · ${t("voyageTwa", { deg: Math.round(twa) })}` : ""}
-            {boatName && vehicle !== "plane" ? ` · ${boatName}` : ""}
             {liveStatus ? ` · ${liveStatus}` : ""}
             {atQuay && quayDays > 0 ? "" : (holding ? ` · ${t("filmArrivalHold")}` : "")}
           </span>

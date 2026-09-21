@@ -70,7 +70,8 @@ describe("film bar (lot R2)", () => {
     assert.doesNotMatch(bar, /t\("regimeLegend"\)/);
     assert.doesNotMatch(bar, /REGIME_COLORS/);
     assert.match(bar, /data-testid="regime-legend"/);
-    assert.match(bar, /className="sr-only"/);
+    assert.doesNotMatch(bar, /className="sr-only"/);
+    assert.match(bar, /aria-label=\{regimeTitle\}/);
     assert.match(bar, /data-testid="prev-stop"/);
     assert.match(bar, /t\("previousEscale"\)/);
     assert.match(bar, /data-testid="speed-regime-pill"/);
