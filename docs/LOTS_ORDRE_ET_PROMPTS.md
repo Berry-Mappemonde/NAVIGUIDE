@@ -73,6 +73,15 @@ testent avec de faux serveurs).
 | 41 | R11 | corrections | S | — | « arrivée entre le … et le … », jours de mer cohérents |
 | 42 | R12 | corrections | S | — | carte bornée aux pôles, zoom vérifié sur build de prod |
 | 43 | R13 | corrections | S | R1 | script des redites + première suppression |
+| **corrections 2** | | **revue du 21 sept. au soir** | | | `PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md` — après la pile R1 → R13 mergée |
+| 44 | RA1 | corrections 2 | M | — | fiche d'escale et chat n'affichent plus le prompt / le raisonnement du modèle |
+| 45 | RA2 | corrections 2 | S | — | le récit énonce les escales dans l'ordre exact du voyage, sans répétition |
+| 46 | RA3 | corrections 2 | M | RA2 | film : fond de carte gardé, aucun saut, zoom stable en fin, dézoom archipels, bulle utile |
+| 47 | RA4 | corrections 2 | M | RA3 | jambes avion en noir pointillé, hors distance ; position live stable ; carte non répétée à l'infini |
+| 48 | RA5 | corrections 2 | M | RA4 | Stop stoppe ; pas de fiche d'escale pendant le film ; croix qui ferme |
+| 49 | RA6 | corrections 2 | S | — | redite skipper retirée, crédits au-dessus de la barre, km à terre, cadre de réponse du chat |
+| 50 | RA7 | corrections 2 | S | — | « arriver entre le … et le … » sous la prochaine escale, intervalle resserré |
+| 51 | RA8 | corrections 2 | M | — | vitesse réelle par la météo historique (archive Open-Meteo/ERA5, sans clé) le long de la route — après le film |
 | **nuit 3** | | **chantiers** | | | `PLAN_ICI_JOURNAL_EXPERT.md` — R8 produit unique, R9 journal → récit 2:30, R10 expert en circumnavigation (sous-lots) |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
@@ -671,6 +680,125 @@ Tests : npm test, npx vite build, PW_PORT=5199 npm run e2e -- e2e/lots/r13-redit
 Recette (visuelle, par écran) : Suivre, Simulation, Tracer — parcourir l'écran : aucun texte identique deux fois ; le nom du bateau une seule fois, dans Paramètres avancés. Captures docs/recette/lot-r13/01-suivre.jpg (URL complète sur ta branche).
 Branche fix/lot-r13-redites depuis la base indiquée. Une PR vers main, gabarit REGLES § 3. Ne merge pas.
 Interdits : supprimer un texte qui porte une information absente ailleurs sur l'écran ; ajouter un texte ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, rapport, captures, reste à faire.
+```
+
+### Corrections 2 — revue du 21 septembre au soir (RA1 → RA8)
+
+À enchaîner après la pile R1 → R13 mergée. Détail, anchors et recette dans
+`docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md`.
+
+<!-- LOT id="RA1" title="La pensée du modèle ne s'affiche jamais" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RA1 — La pensée du modèle ne s'affiche jamais.
+Objectif : la fiche d'escale (surtout en anglais) et le chat affichent de vraies phrases, jamais le prompt ni le raisonnement du modèle (« Analyze User Input: Task: Translate… Wait, let me re-read… »).
+Cause racine : server/story_cascade.py — _call_tokenfactory (payload ~l. 424-440) n'envoie pas chat_template_kwargs={"thinking": False} / reasoning_effort:"low" (contrairement à _call_nim l. 460-470) ; Nemotron émet son raisonnement, _openai_text (l. 389) le renvoie, _clean_text (l. 284) ne retire que les fences. La fiche d'escale (escale_api.py → cascade_text/translate) et le chat (logbook_chat.py:429 → cascade_text) l'affichent.
+Fichiers à ouvrir (seulement) : server/story_cascade.py (_call_tokenfactory, _openai_text, _clean_text, _META_RE l. 290, translate l. 322), server/tests/test_story_cascade.py, server/escale_api.py PAR EXTRAIT (rg -n "translate|tidy_story|cascade_text"), server/logbook_chat.py PAR EXTRAIT (rg -n "cascade_text|filter_numbers"), les tests server/tests/test_escale_api.py / test_logbook_chat.py s'ils existent.
+Étapes : 1) _call_tokenfactory : ajouter "chat_template_kwargs": {"thinking": False} et "reasoning_effort": "low" au payload ; 2) _openai_text : ignorer message.reasoning_content, ne lire que message.content, retirer tout bloc <think>…</think> (et un <think> ouvert sans fermeture : couper à partir de la balise) ; 3) _clean_text : après les fences, retirer un préambule méta en tête (« Analyze User Input », « Task: », « Constraints: », « Request: », « Wait, », « Let me », « The user says », « Thinking OFF », lignes de consigne en **gras**) jusqu'à la première vraie phrase ; 4) garde-fou : si le texte nettoyé contient encore un fragment du system prompt (« translate a sailing-log paragraph », « Keep every number »), renvoyer le fallback (source rules) ; 5) ne casse pas filter_numbers ni le contrat de cascade_text.
+Tests : test_story_cascade.py — une réponse factice {choices:[{message:{content:"<think>raisonnement…</think> La Rochelle est un port."}}]} → « La Rochelle est un port. » ; une réponse qui n'est que du raisonnement → fallback ; le payload Token Factory contient chat_template_kwargs.thinking == False. npm test si un fichier JS change (sinon non), .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Simulation, langue anglais, clic sur le drapeau de Saint-Maur → la fiche « Port of call sheet » contient de vraies phrases anglaises, jamais « Analyze User Input / Task / Wait, let me… ». Suivre, Journal de bord → « À quelle vitesse va le bateau ? » → une phrase, pas un prompt. Spec e2e/lots/ra1-pensee.spec.js si tu exposes un stub ; sinon capture docs/recette/lot-ra1/01-fiche-en.jpg (URL complète sur ta branche).
+Branche fix/lot-ra1-pensee-modele depuis la base indiquée (main sinon). PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : afficher le raisonnement ; inventer un chiffre ; retirer une surface visible ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA2" title="L'ordre du récit suit exactement le voyage" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RA2 — L'ordre du récit suit exactement le voyage.
+Objectif : le récit (FR et EN) et le film énoncent les escales dans l'ordre exact de la route (Saint-Maur → La Rochelle → Ajaccio/Corse → Fort-de-France → …), chaque « départ vers X » suivi de « arrivée à X », sans répéter une escale. Aujourd'hui il annonce « départ vers Fort-de-France » puis « escale à Ajaccio » (décalage d'une jambe) et répète Ajaccio.
+Fichiers à ouvrir (seulement) : src/engine/expeditionStory.js (legParagraph ~l. 281-305, stopsWithDates l. 124-141, departureIso l. 145) et expeditionStory.test.js, server/film_script.py (dated_marks l. 138-153, assemblage des chapitres l. 260-293) et server/tests/test_film_script.py.
+Étapes : 1) apparier chaque paragraphe/chapitre à une seule jambe stops[i] → stops[i+1] : « départ de stops[i] le {départ} … arrivée à stops[i+1] le {arrivée}, N jours à quai » ; 2) dédoublonner les escales (vérifier qu'aucune marque n'est citée deux fois ; le voisinage filmNm < 0.6 côté serveur suffit-il ?) ; 3) l'ordre est strictement celui de la route (filmNm croissant).
+Tests : expeditionStory.test.js et test_film_script.py — sur le voyage officiel, la suite des noms cités est exactement l'ordre de la route, sans répétition, chaque « départ vers X » suivi de « arrivée à X ». npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre → Revoir l'expédition (FR puis EN) : les escales sont énoncées dans l'ordre du voyage (Ajaccio/Corse AVANT Fort-de-France), sans répétition. Capture docs/recette/lot-ra2/01-ordre.jpg (URL complète sur ta branche).
+Branche fix/lot-ra2-ordre-recit depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : inventer une date/distance ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA3" title="Revoir l'expédition : fond de carte, pas de saut, zoom stable, dézoom archipels, bulle utile" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA2" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA3 » (texte intégral), puis docs/PLAN_FILM_REVOIR_EXPEDITION.md § 4. Tu travailles dans naviguide-simulator/. Le lot RA2 est dans ta base.
+
+Lot RA3 — Revoir l'expédition : le rendu.
+Objectif : pendant tout le film, le fond de carte reste visible ; le bateau glisse le long du trait sans saut jusqu'à la fin ; le zoom ne saute pas quand le film s'arrête (Cayenne) ; dans les Caraïbes la caméra montre l'archipel sans sauter d'île en île ; une bulle utile apparaît à l'approche des escales.
+Fichiers à ouvrir (seulement) : src/map/MapSceneController.js PAR EXTRAIT (base layer l. 194, switchBaseLayer l. 425-432, caméra film l. 367-415, syncFilmCamera), src/map/filmCamera.js (+ test), src/engine/filmCast.js (interpolation, isAirPhase), src/hooks/useReplay.js (boucle l. 228-310) et useReplay.test.js.
+Étapes : 1) fond de carte : la couche de tuiles reste visible pendant filmActive ; si switchBaseLayer est appelé pendant le film, ré-ajouter avant de retirer (jamais de carte sans tuiles) ou ne pas switcher pendant le film ; 2) aucun saut : position interpolée le long du trait sur TOUTE la durée (fin comprise), jamais « le sommet le plus proche » ni un saut de plan ; 3) zoom stable en fin : à l'arrêt du film, pas de saut de zoom, retour au live sans fitBounds sauvage ; 4) dézoom archipels : le zoom d'un chapitre borne l'emprise de la jambe mais plafonne pour montrer une sous-branche « îles proches » d'un coup ; 5) bulle : apparaît à l'approche d'une escale et sur un événement notable, une seule à la fois, fermable (croix, Échap), le film continue (le CHOIX des événements sera raffiné en R9).
+Tests : useReplay.test.js — 60 frames entre deux boundaries → positions monotones le long du trait jusqu'au dernier chapitre ; filmCamera.test.js — zoom plafonné pour une jambe à sauts courts, pas de switch de base layer pendant filmActive. npm test, npx vite build, npm run e2e -- e2e/lots/f1-film.spec.js.
+Recette (visuelle) : Revoir → pendant tout le film le fond de carte reste ; le bateau glisse sans saut jusqu'à la fin ; le zoom ne saute pas à l'arrêt ; dans les Caraïbes la caméra montre l'archipel sans sauter d'île en île ; une bulle apparaît à l'approche des escales, fermable. Captures docs/recette/lot-ra3/01-fond-carte.jpg, 02-caraibes.jpg (URL complète sur ta branche).
+Branche fix/lot-ra3-film-rendu depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : zoomer pendant une jambe ; laisser la carte sans tuiles ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA4" title="Jambes avion, position live stable, carte non répétée à l'infini" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA3" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA4 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RA3 est dans ta base.
+
+Lot RA4 — Jambes avion, position live stable, bornes de longitude.
+Objectif : les jambes avion (Cayenne ↔ Saint-Pierre-et-Miquelon, sauts Pacifique) sont en noir pointillé, non colorées par régime, non cliquables et hors de la distance « à la voile » ; la position live est stable au rechargement ; la carte ne se répète pas à l'infini en longitude.
+Fichiers à ouvrir (seulement) : src/map/MapSceneController.js PAR EXTRAIT (addRouteLine l. 63, segments de route l. 457-492, maxBounds l. 182), src/utils/berryLegs.js (type de jambe mer/terre/air), src/engine/filmCast.js (isAirPhase), server/voyage_clock.py PAR EXTRAIT (jambe avion l. 541-548, distance voile), server/voyage_api.py PAR EXTRAIT (horloge officielle), MapSceneBoundary.test.js, server/tests/test_voyage_clock.py.
+Étapes : 1) trait avion : les segments dont la jambe est de type air sont tracés en noir pointillé, non colorés par régime, non cliquables (pas de fiche, pas de survol) ; 2) la couleur/le régime/la vitesse ne s'appliquent qu'aux jambes en mer ; 3) position live : une seule source (horloge officielle serveur), pas de saut cache → recalcul au rechargement ; la distance « à la voile » cumulée exclut les milles des jambes avion (le vol prend AIR_CALENDAR_HOURS, il n'ajoute pas de milles voile) ; 4) longitude bornée : au plus une copie du monde de chaque côté (maxBounds longitude bornée, ex. [-540, 540], tuiles noWrap au-delà) — plus de répétition infinie.
+Tests : MapSceneBoundary.test.js — longitude bornée ; test route — une jambe air donne un trait dash noir non interactif ; test_voyage_clock.py — distance voile exclut les jambes air, position live déterministe (deux appels, même date → même position). npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre, carte monde — le trait Cayenne ↔ Saint-Pierre (et les sauts Pacifique) est noir pointillé, pas violet/bleu, non cliquable. Recharger (Cmd R) plusieurs fois : le bateau réapparaît à la même position (pas de saut Nouméa → Panama). Tirer la carte sur les côtés : le monde ne se répète qu'une fois de chaque côté. Captures docs/recette/lot-ra4/01-avion.jpg, 02-bornes.jpg (URL complète sur ta branche).
+Branche fix/lot-ra4-avion-live-bornes depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : colorer une jambe avion ; compter l'avion dans la distance voile ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA5" title="Logique des boutons de lecture, pas de fiche d'escale pendant le film" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="RA4" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA5 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RA4 est dans ta base.
+
+Lot RA5 — Logique des boutons + fiche d'escale hors film.
+Objectif : « Stop » arrête vraiment le film (voix + animation + caméra) et revient à la vue Suivre ; « Stop auto » (arrêt à la prochaine escale) et « Écouter » (voix on/off) sont distincts et font ce qu'ils disent ; aucun état où plus aucun bouton ne répond ; passer de Simulation à Suivre ou lancer Revoir ferme la fiche d'escale ; la croix et Échap ferment la fiche.
+Fichiers à ouvrir (seulement) : src/hooks/useReplay.js (stop / états), src/components/SimulationFilmBar.jsx (stopAuto l. 78-79, replay controls l. 407), src/App.jsx PAR EXTRAIT (rg -n "escaleStop|openEscaleSheet|closeEscaleSheet|replay|onStop|returnToLive"), src/components/EscalePopup.jsx (ou EscaleSheet en popup ; croix onClose), tests associés.
+Étapes : 1) un bouton Stop clair arrête le film et revient à Suivre ; distinct de Stop auto et d'Écouter, chacun étiqueté ; 2) machine à états cohérente Suivre ↔ Simulation ↔ Revoir : passer en Suivre/Revoir vide escaleStop (ferme la fiche) ; 3) pas de fiche pendant le film ; croix et Échap ferment (corrige R7 : la croix ne fermait pas) ; 4) aucun bouton « mort ».
+Tests : useReplay.test.js — stop() met active=false, coupe la voix, libère la caméra ; test d'état — passer en Suivre/Revoir met escaleStop à null ; EscalePopup.test.js — la croix appelle onClose. npm test, npx vite build, npm run e2e (fumée + f1-film si présent).
+Recette (visuelle) : Simulation → ouvrir la fiche d'escale → Suivre : la fiche disparaît. Lancer Revoir : pas de fiche ; Stop arrête net et revient à Suivre ; Écouter coupe/relance la voix ; aucun bouton mort. Captures docs/recette/lot-ra5/01-stop.jpg (URL complète sur ta branche).
+Branche fix/lot-ra5-boutons-lecture depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : fiche d'escale pendant le film ; bouton sans effet ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA6" title="Finitions : redite skipper, crédits au-dessus de la barre, km à terre, cadre de réponse du chat" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA6 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RA6 — Finitions.
+Objectif : plus de redite « Croisière · 36 h » à côté de « Paramètres avancés » ; les crédits carte ne sont plus coupés par la barre de lecture ; l'info-bulle de vitesse existe aussi en Suivre ; la jambe terrestre s'affiche en km dans la barre film ; le chat a un cadre de réponse (plus de grand vide violet) ; le détecteur de redites voit les états repliés/dépliés.
+Fichiers à ouvrir (seulement) : src/components/SkipperOrdersPanel.jsx (<summary> l. 183-195 vs budget l. 257), src/layers/styles.js et src/index.css (position/marge des crédits Leaflet), src/components/SimulationFilmBar.jsx (info-bulle de vitesse en Suivre ; libellé jambe terrestre en km), src/components/LogbookChat.jsx (cadre de réponse ; zone vide ~l. 54), naviguide-simulator/scripts/redites.mjs, src/i18n/fr.js et en.js, tests associés.
+Étapes : 1) l'en-tête replié de « Paramètres avancés » ne répète pas le profil + budget déjà dans le panneau (garder une seule occurrence) ; 2) remonter l'attribution Leaflet (marge basse ≥ hauteur de la barre film) pour qu'elle ne soit pas coupée ; 3) même info-bulle « hindcast/prévision/climatologie » sur la pilule de vitesse en Suivre qu'en Simulation ; 4) jambe terrestre en km dans la barre (« … km par la route · h de route ») ; 5) un cadre visible sous « Poser une question » destiné à la réponse (remplit le vide), la réponse s'y écrit ; 6) redites.mjs compte aussi les doublons entre un <summary> replié et le contenu déplié.
+Tests : SkipperOrdersPanel.test.js — profil/budget une seule fois ; test de layout/styles — marge des crédits ≥ hauteur barre ; LogbookChat.test.js — cadre de réponse présent. npm test, npx vite build, npm run e2e -- e2e/lots/r13-redites.spec.js.
+Recette (visuelle) : Panneau droit → « Paramètres avancés » : « Croisière · 36 h » une seule fois. Carte : crédits non coupés par la barre. Suivre : survol vitesse → info-bulle des trois régimes. Simulation, Saint-Maur : « km par la route ». Journal de bord : un cadre attend la réponse. Captures docs/recette/lot-ra6/01-skipper.jpg, 02-credits.jpg (URL complète sur ta branche).
+Branche fix/lot-ra6-finitions depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : ajouter un texte d'aide ; laisser une redite ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA7" title="Fourchette d'arrivée sous la prochaine escale, intervalle resserré" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA7 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
+
+Lot RA7 — Fourchette d'arrivée lisible et resserrée.
+Objectif : « arriver entre le … et le … » (deux dates courtes) s'affiche sous la prochaine escale en Suivre ; l'intervalle est de quelques jours, plus « 13 nov. → 10 juin » (7 mois) — cause : un membre d'ensemble à vitesse ~0 fait exploser p90.
+Fichiers à ouvrir (seulement) : src/hooks/usePlanReview.js (formatEtaRange l. 25, useOfficialEta), src/components/EscaleLegend.jsx (l. 75-78), server/voyage_api.py PAR EXTRAIT (/voyage/official/eta, ensemble), server/plan_review.py, tests (usePlanReview.test.js, test_plan_review.py).
+Étapes : 1) sous la prochaine escale (Suivre), afficher la fourchette quand l'ensemble existe, sinon rien (jamais inventé) ; 2) resserrer : écarter les membres à vitesse dégénérée (plancher 3 kn, comme voyage_clock.boat_speed) et/ou borner p10-p90 à une fenêtre plausible ; le détail p10-p90/membres reste en info-bulle ; 3) même source et même arrondi en Suivre et dans la Revue du plan.
+Tests : test_voyage_api/test_plan_review — sur le voyage officiel, l'intervalle Nouméa → Dzaoudzi est de quelques jours ; usePlanReview.test.js — aucun membre à 0 kn dans la fourchette. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre → sous la prochaine escale : « arriver entre le … et le … » (deux dates). Panneau droit → Revue du plan, Nouméa → Dzaoudzi : une fourchette de quelques jours. Capture docs/recette/lot-ra7/01-fourchette.jpg (URL complète sur ta branche).
+Branche fix/lot-ra7-fourchette depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : inventer une date ; membre à vitesse nulle ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RA8" title="Vitesse réelle par la météo historique (archive Open-Meteo/ERA5) le long de la route" plan="docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md § 0 et le « RA8 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C2 ». Tu travailles dans naviguide-simulator/. Ce lot passe APRÈS que le film soit solide.
+
+Lot RA8 — Vitesse réelle par la météo historique le long de la route.
+Objectif : en Suivre, la vitesse du tronçon déjà parcouru vient de la météo historique le long de la route depuis le 15 mai 2026 ; les 10 jours devant = prévision GFS ; au-delà = climatologie. Aujourd'hui la route est violette (climatologie) partout car le hindcast n'alimente pas encore la vitesse / le régime.
+Source : l'archive Open-Meteo (ERA5), PAS d'obligation Copernicus. server/hindcast.py lit déjà archive-api.open-meteo.com/v1/archive (ERA5, vent horaire depuis 1940, SANS clé) et historical-forecast-api.open-meteo.com, et fusionne par médiane avec CMEMS quand les identifiants existent (une source en panne manque, aucune source → champ vide). RA8 ne dépend donc pas de Copernicus : le vent du passé vient d'ERA5 Open-Meteo ; CMEMS reste un bonus (vagues, courant).
+Fichiers à ouvrir (seulement) : server/hindcast.py (OM_ERA5_URL, fusion), server/voyage_api.py PAR EXTRAIT (_fill_hindcast_then_forecast, _kick_official_hindcast l. 629-655), server/voyage_clock.py (régime par sommet _clock_kind l. 421-424, vitesse), server/tests/test_hindcast.py, server/tests/test_voyage_clock.py.
+Étapes : 1) vérifier que le vent ERA5 Open-Meteo date/teinte le tronçon parcouru (regime=hindcast), la prévision GFS Open-Meteo sur 10 jours, la climatologie au-delà ; /ici/warm/status → store.hindcast monte SANS dépendre de Copernicus ; 2) si le hindcast ne couvre pas toute la route parcourue, compléter le remplissage ERA5 le long du trait aux dates réelles de passage, en tâche de fond, sans bloquer le démarrage ; 3) la vitesse d'un sommet passé = vent réel de l'époque × polaire, pas la climatologie ; 4) aucun appel réseau dans les tests (fixtures ERA5, pas de Copernicus).
+Tests : test_hindcast/test_voyage_clock — un sommet daté dans le passé a regime=hindcast et une vitesse issue du vent ERA5 (fixture), pas de la climatologie ; une réponse Open-Meteo archive factice suffit. npm test si JS, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre — le tronçon déjà parcouru est teinté hindcast (plus tout violet climatologie) ; le survol d'un point passé montre une vitesse issue du vent réel de l'époque, sans clé Copernicus. Capture docs/recette/lot-ra8/01-hindcast.jpg (URL complète sur ta branche).
+Branche feat/lot-ra8-vitesse-historique depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : appel réseau dans les tests ; bloquer le démarrage ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)
