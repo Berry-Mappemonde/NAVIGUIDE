@@ -1,3 +1,4 @@
+import { RouteAdviceText } from "../hooks/useVirtualVessel.js";
 import { useLang } from "../i18n/LangContext.jsx";
 
 function hoursLabel(h) {
@@ -39,6 +40,7 @@ export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
               : t("recomputeConstraintsDefault", { hs: draft.constraints.hsMaxM != null ? `${draft.constraints.hsMaxM} m` : "—" })}
           </p>
         ) : null}
+        <RouteAdviceText draft={draft} />
         <p className="text-[10px] text-white/45 mb-3">{t("recomputeHint")}</p>
         <div className="flex gap-2">
           <button

@@ -1296,6 +1296,8 @@ export default function App() {
     summary: planReviewState.review
       ? t("planReviewSummary", { warmed: planReviewState.review.pearlsWarmed ?? 0, unknown: planReviewState.review.pearlsUnknown ?? 0 })
       : null,
+    comment: planReviewState.review?.comment?.text || null,
+    commentSource: planReviewState.review?.comment?.source || null,
   }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, t]);
 
   // Route advice under the skipper's orders (lot G): gale and sea limits of

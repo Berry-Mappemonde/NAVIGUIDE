@@ -356,7 +356,14 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             />
             {planReview && !drawing ? (
               <div className="mt-2">
-                <PlanReview legs={planReview.legs} loading={planReview.loading} error={planReview.error} summary={planReview.summary} />
+                <PlanReview
+                  legs={planReview.legs}
+                  loading={planReview.loading}
+                  error={planReview.error}
+                  summary={planReview.summary}
+                  comment={planReview.comment}
+                  commentSource={planReview.commentSource}
+                />
               </div>
             ) : null}
             {showDeparture ? (

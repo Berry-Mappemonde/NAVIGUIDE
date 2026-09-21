@@ -1,6 +1,8 @@
 """API voyage — bateau virtuel (Simulation B), port 8010."""
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -338,6 +340,117 @@ def _splice_points(points: List[dict], from_nm: float, to_nm: float,
     return _recompute_cum(before + mid + after)
 
 
+# Lot L5 / U8 — écart officiel vs recalcul (règles) puis phrase tier fast.
+AVOID_NM = 10.0
+ADVICE_SYSTEM = (
+    "Tu expliques un recalcul de route en UNE phrase. "
+    "Tu ne produis aucun chiffre qui n'est pas déjà dans les faits. "
+    "Reprend l'écart et les points évités. Thinking OFF."
+)
+
+
+def _run_async(coro):
+    return asyncio.run(coro)
+
+
+def route_delta(
+    old_coords: List[List[float]] | None,
+    new_coords: List[List[float]] | None,
+    *,
+    official_nm: float | None,
+    recomputed_nm: float | None,
+) -> dict[str, Any]:
+    """Distance, écart max et points évités — calculés par règles, jamais par un LLM.
+
+    Coordonnées GeoJSON `[lon, lat]`. Un point officiel est « évité » s'il
+    reste à ≥ AVOID_NM nm de tout sommet de la route recalculée.
+    """
+    old = [(float(c[1]), float(c[0])) for c in (old_coords or []) if c and len(c) >= 2]
+    new = [(float(c[1]), float(c[0])) for c in (new_coords or []) if c and len(c) >= 2]
+    max_dev = 0.0
+    avoided = 0
+    if old and new:
+        for la, lo in old:
+            d = min(haversine(la, lo, na, no) for na, no in new)
+            if d > max_dev:
+                max_dev = d
+            if d >= AVOID_NM:
+                avoided += 1
+    off = int(round(float(official_nm or 0)))
+    rec = int(round(float(recomputed_nm or 0)))
+    return {
+        "official_nm": off,
+        "recomputed_nm": rec,
+        "distance_delta_nm": abs(rec - off),
+        "max_deviation_nm": int(round(max_dev)),
+        "avoided_points": int(avoided),
+    }
+
+
+def advice_facts(delta: dict[str, Any], constraints: dict[str, Any] | None = None) -> dict[str, Any]:
+    facts = {
+        "official_nm": delta.get("official_nm"),
+        "recomputed_nm": delta.get("recomputed_nm"),
+        "distance_delta_nm": delta.get("distance_delta_nm"),
+        "max_deviation_nm": delta.get("max_deviation_nm"),
+        "avoided_points": delta.get("avoided_points"),
+    }
+    cons = constraints or {}
+    if cons.get("source") == "skipper":
+        if cons.get("windMaxKt") is not None:
+            facts["wind_max_kt"] = int(round(float(cons["windMaxKt"])))
+        if cons.get("hsMaxM") is not None:
+            facts["hs_max_m"] = cons["hsMaxM"]
+    return facts
+
+
+def advice_fallback(facts: dict[str, Any]) -> str:
+    """Une phrase dont tous les nombres sont déjà dans `facts`."""
+    dev = facts.get("max_deviation_nm")
+    avoided = facts.get("avoided_points")
+    wind = facts.get("wind_max_kt")
+    off = facts.get("official_nm")
+    rec = facts.get("recomputed_nm")
+    if wind is not None and avoided:
+        return f"La route s'écarte de {dev} nm pour éviter {avoided} points (vent < {wind} kn)."
+    if avoided:
+        return f"La route s'écarte de {dev} nm pour éviter {avoided} points."
+    return f"La route s'écarte de {dev} nm (distance {off} nm → {rec} nm)."
+
+
+async def explain_recompute(
+    delta: dict[str, Any],
+    constraints: dict[str, Any] | None = None,
+    *,
+    client=None,
+    cascade=None,
+) -> dict[str, Any]:
+    """Nemotron Lightning (tier fast) : une phrase qui reprend les nombres du delta."""
+    from story_cascade import cascade_text, filter_numbers, tidy_story  # noqa: PLC0415
+
+    facts = advice_facts(delta, constraints)
+    fallback = advice_fallback(facts)
+    fn = cascade or cascade_text
+    user = (
+        "Faits du recalcul (ne pas inventer de chiffre) :\n"
+        f"{json.dumps(facts, ensure_ascii=False, default=str)}"
+    )
+    try:
+        text, source = await fn(
+            ADVICE_SYSTEM, user, client, tier="fast", fallback=fallback,
+            facts=facts, max_tokens=80,
+        )
+    except Exception as exc:
+        log.debug("explication recalcul : %s", exc)
+        text, source = fallback, "rules"
+    tidy = tidy_story(text or fallback, fallback, max_sentences=1, max_chars=240)
+    cleaned, _ = filter_numbers(tidy, facts)
+    out = (cleaned or "").strip() or fallback
+    if not out:
+        out, source = fallback, "rules"
+    return {"text": out, "source": source or "rules", "delta": facts}
+
+
 def _drop_cube(voyage_id: str) -> None:
     import shutil
     from forecast_cube import CACHE_DIR
@@ -665,13 +778,18 @@ def get_official_journal(
 
 @router.get("/voyage/official/plan-review")
 def get_official_plan_review():
-    """Revue de plan par règles (lot K) : par jambe, calendrier, ZEE et ports
-    d'entrée (perles), AMP, drapeaux — jamais un chiffre inventé."""
+    """Revue de plan par règles (lot K) + commentaire U7 (lot L5)."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    from plan_review import review_official  # noqa: PLC0415
-    return review_official(voy, _now())
+    from plan_review import comment_plan, review_official  # noqa: PLC0415
+    out = review_official(voy, _now())
+    try:
+        out["comment"] = _run_async(comment_plan(out.get("legs") or []))
+    except Exception as exc:
+        log.warning("commentaire revue : %s", exc)
+        out["comment"] = {"text": "", "source": "rules", "cached": False}
+    return out
 
 
 @router.get("/voyage/official/journal/{day}")
@@ -1037,6 +1155,18 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         "from_lat": live["lat"],
         "from_lon": live["lon"],
     }
+    new_coords = (result.get("draft_geojson") or {}).get("geometry", {}).get("coordinates") or []
+    delta = route_delta(
+        old_coords, new_coords,
+        official_nm=versus_nm,
+        recomputed_nm=result.get("distance_nm"),
+    )
+    try:
+        draft["advice"] = _run_async(explain_recompute(delta, draft.get("constraints")))
+    except Exception as exc:
+        log.warning("explication recalcul : %s", exc)
+        facts = advice_facts(delta, draft.get("constraints"))
+        draft["advice"] = {"text": advice_fallback(facts), "source": "rules", "delta": facts}
     update_voyage(voyage_id, draft=draft)
     return draft
 
