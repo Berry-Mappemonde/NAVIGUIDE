@@ -1,11 +1,55 @@
 import {
   FILM_FLY_SECONDS,
-  FILM_VIEW_HZ,
+  FILM_PAN_MAX_SCREEN,
   FILM_ZOOM_MAX,
   FILM_ZOOM_MIN,
 } from "../engine/replay.js";
 
-const FILM_VIEW_MS = 1000 / FILM_VIEW_HZ;
+function toLatLngPair(v) {
+  if (!v) return null;
+  if (Array.isArray(v)) {
+    const lat = Number(v[0]);
+    const lon = Number(v[1]);
+    return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+  }
+  const lat = Number(v.lat);
+  const lon = Number(v.lng ?? v.lon);
+  return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+}
+
+/** Borne un déplacement de caméra à 2 % de la largeur d'écran. */
+export function clampFilmPan(from, to, map, { maxFrac = FILM_PAN_MAX_SCREEN } = {}) {
+  const a = toLatLngPair(from);
+  const b = toLatLngPair(to);
+  if (!a || !b) return to;
+  const size = typeof map?.getSize === "function" ? map.getSize() : { x: 1280, y: 800 };
+  const maxPx = Math.max(1, (Number(size?.x) || 1280) * maxFrac);
+  if (typeof map?.latLngToContainerPoint === "function" && typeof map?.containerPointToLatLng === "function") {
+    const p0 = map.latLngToContainerPoint(a);
+    const p1 = map.latLngToContainerPoint(b);
+    const dx = (p1.x ?? 0) - (p0.x ?? 0);
+    const dy = (p1.y ?? 0) - (p0.y ?? 0);
+    const dist = Math.hypot(dx, dy);
+    if (!(dist > maxPx)) return b;
+    const s = maxPx / dist;
+    const ll = map.containerPointToLatLng({ x: p0.x + dx * s, y: p0.y + dy * s });
+    return [ll.lat, ll.lng ?? ll.lon];
+  }
+  if (typeof map?.getBounds === "function") {
+    try {
+      const bounds = map.getBounds();
+      const widthDeg = Math.abs(bounds.getEast() - bounds.getWest()) || 1;
+      const maxDeg = widthDeg * maxFrac;
+      const dLat = b[0] - a[0];
+      const dLon = b[1] - a[1];
+      const dist = Math.hypot(dLat, dLon);
+      if (!(dist > maxDeg)) return b;
+      const s = maxDeg / dist;
+      return [a[0] + dLat * s, a[1] + dLon * s];
+    } catch { /* fake map */ }
+  }
+  return b;
+}
 
 /** Zoom fixe d'un chapitre : la jambe tient dans ~70 % de la fenêtre, borné [3 ; 7]. */
 function finiteCoord(v) {
@@ -56,9 +100,9 @@ export function filmViewCenter(lat, lon, headingDeg, map) {
 }
 
 /**
- * Caméra du film : premier mouvement = emprise du chapitre 1 (`setView`,
- * pas d'interpolation depuis la vue live) ; `flyTo` seulement aux
- * changements de chapitre suivants ; sinon `setView` à 30 Hz.
+ * Caméra du film : premier mouvement = bateau du chapitre 1 (`setView`) ;
+ * un seul `flyTo` 1,2 s au changement de chapitre ; sinon `setView` chaque
+ * frame, bateau au tiers avant, déplacement borné à 2 % de l'écran.
  */
 export function applyFilmCamera(map, {
   chapterIdx,
@@ -70,15 +114,18 @@ export function applyFilmCamera(map, {
   now = Date.now(),
   lastSetViewAt = 0,
   flyingUntil = 0,
+  lastCenter = null,
 } = {}) {
+  const desiredBoat = [lat, lon];
   const center = filmViewCenter(lat, lon, heading, map);
   if (lastChapterIdx == null) {
-    map.setView([lat, lon], zoom, { animate: false });
+    map.setView(desiredBoat, zoom, { animate: false });
     return {
       lastChapterIdx: chapterIdx,
       lastSetViewAt: now,
       flyingUntil: 0,
       action: "setView",
+      lastCenter: desiredBoat,
     };
   }
   if (chapterIdx !== lastChapterIdx) {
@@ -88,14 +135,22 @@ export function applyFilmCamera(map, {
       lastSetViewAt: now,
       flyingUntil: now + FILM_FLY_SECONDS * 1000,
       action: "flyTo",
+      lastCenter: center,
     };
   }
   if (flyingUntil && now < flyingUntil) {
-    return { lastChapterIdx, lastSetViewAt, flyingUntil, action: "fly-wait" };
+    return { lastChapterIdx, lastSetViewAt, flyingUntil, action: "fly-wait", lastCenter };
   }
-  if (now - lastSetViewAt < FILM_VIEW_MS) {
-    return { lastChapterIdx, lastSetViewAt, flyingUntil, action: "skip" };
-  }
-  map.setView(center, zoom, { animate: false });
-  return { lastChapterIdx: chapterIdx, lastSetViewAt: now, flyingUntil: 0, action: "setView" };
+  const from = lastCenter || (typeof map.getCenter === "function"
+    ? [map.getCenter().lat, map.getCenter().lng]
+    : center);
+  const clamped = clampFilmPan(from, center, map);
+  map.setView(clamped, zoom, { animate: false });
+  return {
+    lastChapterIdx: chapterIdx,
+    lastSetViewAt: now,
+    flyingUntil: 0,
+    action: "setView",
+    lastCenter: clamped,
+  };
 }
