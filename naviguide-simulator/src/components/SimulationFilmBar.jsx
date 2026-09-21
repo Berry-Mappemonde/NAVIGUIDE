@@ -364,9 +364,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       type="button"
                       data-testid={`film-style-${id}`}
                       aria-pressed={(replay.style || "raw") === id}
+                      aria-disabled={Boolean(replay.active)}
                       disabled={Boolean(replay.active)}
                       onClick={() => replay.onStyle?.(id)}
-                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
                         (replay.style || "raw") === id
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
                           : "text-white/70 hover:text-white border border-transparent"
@@ -442,9 +443,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       type="button"
                       data-seconds={sec}
                       aria-pressed={Number(replay.targetSeconds) === sec}
+                      aria-disabled={Boolean(replay.active)}
                       disabled={Boolean(replay.active)}
                       onClick={() => replay.onDuration?.(sec)}
-                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
                         Number(replay.targetSeconds) === sec
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
                           : "text-white/70 hover:text-white border border-transparent"

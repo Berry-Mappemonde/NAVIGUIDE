@@ -4,10 +4,12 @@ import {
   BOAT_FIELDS,
   COMFORTS,
   COMFORT_DEFAULT,
+  DEFAULT_PROFILE,
   EXPERT_FIELDS,
   EXPERT_IDS,
   HORIZONS_H,
   PROFILES,
+  resolveOrders,
 } from "../engine/skipperOrders.js";
 
 const PROFILE_KEY = {
@@ -59,8 +61,23 @@ function Row({ label, value, muted = false }) {
   );
 }
 
+/**
+ * Remise d’un chiffre : valeur du profil courant (bateau = polar / défaut
+ * Berry), `forced` faux. Le bouton appelle `onChange(id, null)` — setExpert /
+ * setBoat effacent le forçage et `resolveOrders` renvoie ce résultat.
+ */
+export function resetNumberToProfile(id, profile = DEFAULT_PROFILE) {
+  const orders = resolveOrders({ profile });
+  const value = id in BOAT_FIELDS ? orders.boat[id] : orders.values[id];
+  return { value, forced: false };
+}
+
 /** One editable number: input + unit + « back to default » arrow. */
-function NumberRow({ id, label, value, unit, field, forced, onChange, resetTitle, testPrefix = "skipper-expert", hint = "" }) {
+function NumberRow({ id, label, value, unit, field, forced, onChange, onReset, resetTitle, testPrefix = "skipper-expert", hint = "" }) {
+  const handleReset = () => {
+    if (onReset) onReset(id);
+    else onChange?.(id, null);
+  };
   return (
     <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-700/40 last:border-0">
       <label htmlFor={`${testPrefix}-${id}`} className={`text-[11px] ${forced ? "text-amber-200" : "text-slate-400"}`}>
@@ -85,8 +102,9 @@ function NumberRow({ id, label, value, unit, field, forced, onChange, resetTitle
         <span className="text-[10px] text-slate-500 w-10">{unit}</span>
         <button
           type="button"
-          onClick={() => onChange?.(id, null)}
+          onClick={handleReset}
           disabled={!forced}
+          data-testid={`${testPrefix}-${id}-reset`}
           aria-label={resetTitle}
           title={resetTitle}
           className={`text-[11px] px-1 rounded ${forced ? "text-amber-200 hover:bg-white/10" : "text-slate-700 cursor-default"}`}
@@ -190,6 +208,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
           field={BOAT_FIELDS.loaM}
           forced={boat.source.loa === "skipper"}
           onChange={onBoat}
+          onReset={(fieldId) => onBoat?.(fieldId, null)}
           resetTitle={t("skipperBoatReset")}
           testPrefix="skipper-boat"
           hint={boat.source.loa === "polar" ? t("skipperFromPolar") : (boat.source.loa === "default" ? t("skipperBerryDefault") : "")}
@@ -202,6 +221,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
           field={BOAT_FIELDS.draftM}
           forced={boat.source.draft === "skipper"}
           onChange={onBoat}
+          onReset={(fieldId) => onBoat?.(fieldId, null)}
           resetTitle={t("skipperBoatReset")}
           testPrefix="skipper-boat"
           hint={boat.source.draft === "polar" ? t("skipperFromPolar") : (boat.source.draft === "default" ? t("skipperBerryDefault") : "")}
@@ -226,6 +246,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
             field={EXPERT_FIELDS[id]}
             forced={id in expert}
             onChange={onExpert}
+            onReset={(fieldId) => onExpert?.(fieldId, null)}
             resetTitle={t("skipperExpertReset")}
             hint={id in expert ? "" : (id === "galeKt" ? "Beaufort 8" : "Beaufort 7")}
           />
@@ -297,7 +318,6 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
           <span>{t("skipperExpertTitle")}{expertCount ? ` · ${expertCount}` : ""}</span>
           <span className="text-slate-600 group-open/expert:rotate-90 transition-transform">›</span>
         </summary>
-        <p className="mt-1 text-[10px] text-slate-500 leading-snug">{t("skipperExpertHint")}</p>
         <div className="mt-1 bg-slate-800/60 rounded-xl px-3 py-0.5 border border-slate-700/40">
           {NUMBER_EXPERT_IDS.map((id) => (
             <NumberRow
@@ -309,6 +329,7 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
               field={EXPERT_FIELDS[id]}
               forced={id in expert}
               onChange={onExpert}
+              onReset={(fieldId) => onExpert?.(fieldId, null)}
               resetTitle={t("skipperExpertReset")}
             />
           ))}
