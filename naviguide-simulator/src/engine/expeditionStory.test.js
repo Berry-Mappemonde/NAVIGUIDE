@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   datedMarks, dayMonth, expeditionStory, expeditionStoryText, storyConnector,
   FILM_CONNECTORS, FILM_MAX_CHARS, buildFilmScript, filmCandidates, selectFilmEvents,
+  normStop,
 } from "./expeditionStory.js";
 import { NM_TO_KM } from "../utils/berryLegs.js";
 
@@ -123,7 +124,54 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(dayMonth("2026-06-01T10:00:00Z", "en"), "1 June");
     assert.equal(dayMonth("bad"), "");
   });
+
+  it("datedMarks fusionne Ajaccio et Ajaccio (Corse) ; une escale n’est pas citée deux fois", () => {
+    const d = datedMarks([
+      ...marks,
+      { name: "Ajaccio", filmNm: 1942.3, iso: "2026-05-24T13:00:00Z", holdHours: 72 },
+      { name: "Ajaccio (Corse)", filmNm: 9000, iso: "2026-07-01T00:00:00Z", holdHours: 0 },
+    ]);
+    assert.equal(d.filter((s) => /ajaccio/i.test(s.name)).length, 1);
+    assert.equal(normStop("Ajaccio (Corse)"), "ajaccio");
+    assert.equal(normStop("Fort-de-France (Martinique)"), "fort-de-france");
+  });
 });
+
+const ROUTE_STOPS = ["Saint-Maur", "La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa", "Dzaoudzi"];
+
+function firstIndex(text, needle) {
+  return String(text).search(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+}
+
+function assertRouteOrder(text, label) {
+  const hits = ROUTE_STOPS.map((n) => ({ n, i: firstIndex(text, n) })).filter((h) => h.i >= 0);
+  assert.ok(hits.length >= 4, `${label} : escales manquantes (${hits.map((h) => h.n).join(", ")})`);
+  for (let i = 1; i < hits.length; i++) {
+    assert.ok(hits[i - 1].i < hits[i].i, `${label} : ${hits[i].n} avant ${hits[i - 1].n}`);
+  }
+}
+
+function assertDepartureArrivalPairs(text, lang = "fr") {
+  const depRe = lang === "en" ? /departure for (.+?)(?:\s*:|\.|$)/gi : /départ vers (.+?)(?:\s*:|\.|$)/gi;
+  const arrRe = lang === "en" ? /Arrival at (.+?) on /gi : /Arrivée à (.+?) le /gi;
+  const deps = [...String(text).matchAll(depRe)].map((m) => ({ name: m[1].trim(), i: m.index }));
+  const arrs = [...String(text).matchAll(arrRe)].map((m) => ({ name: m[1].trim(), i: m.index }));
+  assert.ok(deps.length >= 2, `départs vers : ${deps.map((d) => d.name).join(" | ")}`);
+  assert.ok(arrs.length >= 2, `arrivées : ${arrs.map((a) => a.name).join(" | ")}`);
+  const seenArr = [];
+  for (const a of arrs) {
+    const key = normStop(a.name);
+    assert.ok(!seenArr.includes(key), `escale répétée : ${a.name}`);
+    seenArr.push(key);
+  }
+  for (const d of deps) {
+    const next = arrs.find((a) => a.i > d.i);
+    assert.ok(next, `pas d’arrivée après départ vers ${d.name}`);
+    assert.equal(normStop(next.name), normStop(d.name), `départ vers ${d.name} suivi de arrivée à ${next.name}`);
+  }
+  assert.doesNotMatch(text, /départ vers Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio/i);
+  assert.doesNotMatch(text, /departure for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio/i);
+}
 
 function filmFixture() {
   const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
@@ -203,5 +251,29 @@ describe("expeditionStory — script du film (lot F3)", () => {
     assert.ok(a.length >= 6 && a.length <= 9);
     const wx = a.filter((id) => String(id).startsWith("wx"));
     assert.ok(wx.length >= 1, "un coup de vent est retenu");
+  });
+
+  it("voyage officiel : ordre de la route, sans répétition, départ vers X puis arrivée à X (FR et EN)", () => {
+    const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+    const storyFr = expeditionStory({ clock, marks, live, now, lang: "fr" }).map(plain).join(" ");
+    const storyEn = expeditionStory({ clock, marks, live, now, lang: "en" }).map(plain).join(" ");
+    assertRouteOrder(storyFr, "récit FR");
+    assertRouteOrder(storyEn, "récit EN");
+    assertDepartureArrivalPairs(storyFr, "fr");
+    assertDepartureArrivalPairs(storyEn, "en");
+
+    const filmFr = buildFilmScript({ ...filmFixture(), lang: "fr" });
+    const filmEn = buildFilmScript({ ...filmFixture(), lang: "en" });
+    const blobFr = filmFr.chapters.map((c) => c.text).join(" ");
+    const blobEn = filmEn.chapters.map((c) => c.text).join(" ");
+    assertRouteOrder(blobFr, "film FR");
+    assertRouteOrder(blobEn, "film EN");
+    assertDepartureArrivalPairs(blobFr, "fr");
+    assertDepartureArrivalPairs(blobEn, "en");
+    for (const ch of filmFr.chapters) {
+      const dep = ch.text.match(/départ vers (.+?)(?:\s*:|\.|$)/i);
+      const arr = ch.text.match(/Arrivée à (.+?) le /i);
+      if (dep && arr) assert.equal(normStop(dep[1]), normStop(arr[1]), ch.id);
+    }
   });
 });
