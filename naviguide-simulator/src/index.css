@@ -36,6 +36,12 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   z-index: 2010 !important;
 }
 
+/* Lot F5 — plein écran film : masque les sidebars sans les démonter. */
+.film-fullscreen .naviguide-sidebar-panel,
+.film-fullscreen .naviguide-sidebar-toggle {
+  display: none !important;
+}
+
 .catamaran-divicon, .flag-divicon, .plane-divicon, .grib-barb { background: none !important; border: none !important; }
 
 /* Briefing focus: the place named in the sidebar, pinned on the map. */
@@ -178,6 +184,109 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .light-mode .naviguide-film-bar [class*="bg-slate-950"] { background-color: rgb(255 255 255 / 0.96) !important; }
 
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
+
+/* Lot N — hauteurs fixes du panneau gauche (un seul réglage). */
+:root {
+  --sim-box-h-chat: 168px;
+  --sim-box-h-now: 10rem;
+  --sim-box-h-ici: 16rem;
+  --sim-box-h-story: 14rem;
+}
+.sim-box-chat {
+  height: var(--sim-box-h-chat);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.sim-box-now {
+  max-height: var(--sim-box-h-now);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sim-box-ici {
+  height: var(--sim-box-h-ici);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sim-box-story {
+  height: var(--sim-box-h-story);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.light-mode .sim-box-chat {
+  height: var(--sim-box-h-chat);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.light-mode .sim-box-now {
+  max-height: var(--sim-box-h-now);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.light-mode .sim-box-ici {
+  height: var(--sim-box-h-ici);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.light-mode .sim-box-story {
+  height: var(--sim-box-h-story);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Lot F4 — bulle événement ancrée au bateau (L.popup). */
+.leaflet-popup.event-bubble {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.leaflet-popup.event-bubble.event-bubble--visible {
+  opacity: 1;
+}
+.leaflet-popup.event-bubble .leaflet-popup-content-wrapper {
+  width: 280px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #f8fafc;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.leaflet-popup.event-bubble .leaflet-popup-content {
+  margin: 8px 10px 10px;
+  width: 260px !important;
+}
+.leaflet-popup.event-bubble .leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.88);
+}
+.event-bubble-card { width: 100%; }
+.event-bubble-facts {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.light-mode .leaflet-popup.event-bubble .leaflet-popup-content-wrapper,
+.light-mode .leaflet-popup.event-bubble .leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.94);
+  color: rgb(15 23 42);
+  border-color: rgb(203 213 225);
+}
+.light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-sky-"],
+.light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-slate-100"] {
+  color: rgb(15 23 42) !important;
+}
+.light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="bg-white/10"] {
+  background-color: rgb(241 245 249) !important;
+  color: rgb(15 23 42) !important;
+  border-color: rgb(203 213 225) !important;
+}
+.light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-sky-200"],
+.light-mode .leaflet-popup.event-bubble .event-bubble-card [class*="text-sky-100"] {
+  color: rgb(3 105 161) !important;
+}
 
 .layer-fiche-popup {
   min-width: 220px;

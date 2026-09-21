@@ -1,14 +1,25 @@
-"""Revue de plan par règles (lot K) : jambes, ZEE / ports d'entrée des perles, drapeaux honnêtes."""
+"""Revue de plan par règles (lot K) : jambes, ZEE / ports d'entrée des perles, drapeaux honnêtes.
+
+Lot L5 : commentaire U7 — faux LLM, aucun chiffre nouveau, cache par hash.
+"""
+import asyncio
 from datetime import timedelta
 
 import ici_engine
 import ici_warm
 import plan_review
-import voyage_api
 import voyage_store
 from ici_engine import thin_cache_key
 from tests.test_voyage_journal import PUBLIC, T0, _freeze, _official, client  # noqa: F401
 from voyage_clock import OFFICIAL_VOYAGE_ID
+
+_LEGS = [{
+    "from": "La Rochelle", "to": "Fort-de-France (Martinique)",
+    "legNm": 3350, "daysAtSea": 14, "holdDays": 3,
+    "ampCount": 1, "pearls": {"known": 10, "unknown": 4},
+    "zees": [{"name": "French Exclusive Economic Zone", "gold": True, "poe": ["La Pallice"]}],
+    "flags": [{"kind": "formalities", "names": ["Somewhere Exclusive Economic Zone"]}],
+}]
 
 
 def test_review_reads_calendar_and_pearls_without_inventing(client, monkeypatch):
@@ -71,3 +82,54 @@ def test_season_reads_the_atlas_cache_and_never_counts_zone_fallback(monkeypatch
     import time
     late = plan_review.season_for_leg(clock, leg, budget_deadline=time.monotonic() - 1)
     assert late["cells"] == 0 and late["galePct"] is None
+
+
+def test_comment_plan_write_tier_filter_and_cache(monkeypatch):
+    calls = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        calls.append(kw)
+        return (
+            "Je changerais le repos à Fort-de-France (3 jours). "
+            "La jambe fait 3350 nm. J'ajouterais 99 kn de vent.",
+            "nemotron-super",
+        )
+
+    first = asyncio.run(plan_review.comment_plan(_LEGS, cascade=fake_cascade))
+    assert first["source"] == "nemotron-super"
+    assert first["cached"] is False
+    assert "3350" in first["text"] and "3" in first["text"]
+    assert "99" not in first["text"], "aucun chiffre inventé par le LLM"
+    assert first["text"].count(".") <= 4
+
+    again = asyncio.run(plan_review.comment_plan(_LEGS, cascade=fake_cascade))
+    assert again["cached"] is True
+    assert again["text"] == first["text"]
+    assert len(calls) == 1, "cache par hash du tableau"
+
+    other = [{**_LEGS[0], "legNm": 2000}]
+    third = asyncio.run(plan_review.comment_plan(other, cascade=fake_cascade))
+    assert third["cached"] is False
+    assert len(calls) == 2
+
+
+def test_comment_fallback_uses_only_table_numbers():
+    facts = plan_review.table_facts(_LEGS)
+    text = plan_review.comment_fallback(facts)
+    assert "3350" in text and "14" in text
+    assert "99" not in text
+    assert len([s for s in text.split(".") if s.strip()]) <= 4
+
+
+def test_plan_review_http_exposes_comment_source(client, monkeypatch):
+    async def fake_comment(legs, **kw):
+        return {"text": "Je changerais le repos (3 jours).", "source": "rules", "cached": False}
+
+    monkeypatch.setattr(plan_review, "comment_plan", fake_comment)
+    now = T0 + timedelta(days=10)
+    _freeze(monkeypatch, now)
+    client.put("/voyage/official", json=_official())
+    body = client.get("/voyage/official/plan-review", headers=PUBLIC).json()
+    assert "comment" in body
+    assert body["comment"]["source"] == "rules"
+    assert "99" not in (body["comment"].get("text") or "")

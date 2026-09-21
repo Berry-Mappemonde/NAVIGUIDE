@@ -12,10 +12,11 @@ et quand OSM / BI le disent un site et un téléphone :
 - formalités : ZEE, ports d'entrée officiels (BI), aires marines protégées ;
 - autour : projets et fiches science Blue Intelligence.
 
-La **rédaction** (un paragraphe de présentation, trois phrases) passe par la
-cascade LLM habituelle à partir de ces listes seulement, filtrée comme les
-cartes ; sans LLM, les listes seules. Rien n'est inventé : une section vide
-n'est pas envoyée. Cache SQLite 7 jours (`pearl_store.kv`, ns « escale »).
+La **rédaction** (un paragraphe de présentation, trois phrases) passe par
+`cascade_text(tier="fast")` (lot L2 / U5) à partir de ces listes seulement,
+filtrée comme les cartes ; sans LLM, les listes seules. Rien n'est inventé :
+une section vide n'est pas envoyée. Cache SQLite 7 jours (`pearl_store.kv`,
+ns « escale »). Chaque paragraphe porte `source`.
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from admin_guard import rate_limited
 from ici_engine import fill_dossier, haversine_nm
 from ici_layers import _overpass_elements, _overpass_latlon
-from story_cascade import cascade_text, tidy_story
+from story_cascade import cascade_text, tidy_story, translate
 
 log = logging.getLogger("naviguide-simulator.escale")
 
@@ -155,7 +156,7 @@ def classify_osm(elements: list, lat0: float, lon0: float) -> dict[str, dict[str
     return out
 
 
-def _slim(items: list | None, keep: tuple[str, ...] = ("name", "lat", "lon", "nm", "url", "visit_url", "manager_url", "gold_on", "phone", "type", "kind", "source")) -> list[dict]:
+def _slim(items: list | None, keep: tuple[str, ...] = ("name", "lat", "lon", "nm", "url", "visit_url", "manager_url", "gold_on", "phone", "type", "kind", "source", "enrich", "phrase")) -> list[dict]:
     out = []
     for it in items or []:
         if not isinstance(it, dict) or not it.get("name"):
@@ -235,20 +236,82 @@ def _paragraph_prompt(name: str, sections: dict, lang: str) -> tuple[str, str]:
 
 async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     if not sections:
-        return {"status": "empty", "text": None, "engine": None}
-    system, user = _paragraph_prompt(name, sections, lang)
+        return {"status": "empty", "text": None, "engine": None, "source": None}
+    # U9 : rédiger en FR (U5), puis traduire si le client demande EN.
+    system, user = _paragraph_prompt(name, sections, "fr")
     try:
-        text, engine = await cascade_text(system, user, client)
+        text, source = await cascade_text(system, user, client, tier="fast")
     except Exception as exc:
-        return {"status": "failed", "text": None, "engine": None, "reason": str(exc)[:160]}
+        return {"status": "failed", "text": None, "engine": None, "source": None, "reason": str(exc)[:160]}
     tidy = tidy_story(text, None, max_sentences=PARAGRAPH_SENTENCES, max_chars=PARAGRAPH_CHARS)
     if not tidy:
-        return {"status": "failed", "text": None, "engine": engine, "reason": "only machinery"}
-    return {"status": "ready", "text": tidy, "engine": engine}
+        return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "only machinery"}
+    if str(lang or "fr").lower().startswith("en"):
+        tidy, source = await translate(tidy, "en", client, facts=tidy)
+        if not tidy:
+            return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "empty translation"}
+    return {"status": "ready", "text": tidy, "engine": source, "source": source}
 
 
 def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
     return f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}"
+
+
+_TOURISM_SUBS = ("sights", "museums", "viewpoints")
+
+
+def tourism_highlights_from_cache(
+    name: str,
+    lat: float | None,
+    lon: float | None,
+    lang: str = "fr",
+    limit: int = 2,
+) -> list[dict]:
+    """Deux lieux remarquables de la section tourisme, si la fiche est en cache.
+
+    Lecture seule — pas de réseau. Champ inconnu = liste vide, jamais inventé.
+    """
+    if not name or not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return []
+    try:
+        import pearl_store  # noqa: PLC0415
+    except Exception:
+        return []
+    langs = [(lang or "fr")[:2]]
+    other = "en" if langs[0] == "fr" else "fr"
+    if other not in langs:
+        langs.append(other)
+    hit = None
+    for lg in langs:
+        hit = pearl_store.kv_get("escale", escale_key(name, float(lat), float(lon), lg), ESCALE_TTL_S)
+        if hit:
+            break
+    if not hit:
+        return []
+    tourism = ((hit.get("value") or {}).get("sections") or {}).get("tourism") or {}
+    if not isinstance(tourism, dict):
+        return []
+    items: list[dict] = []
+    for sub in _TOURISM_SUBS:
+        for it in tourism.get(sub) or []:
+            if isinstance(it, dict) and it.get("name"):
+                items.append({**it, "subsection": sub})
+    items.sort(key=lambda x: (not isinstance(x.get("nm"), (int, float)), x.get("nm") or 0))
+    seen: set[str] = set()
+    out: list[dict] = []
+    for it in items:
+        label = str(it["name"]).strip()
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        row = {"name": label, "kind": it.get("subsection")}
+        for k in ("lat", "lon", "nm", "url"):
+            if it.get(k) is not None:
+                row[k] = it[k]
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out
 
 
 async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
@@ -260,7 +323,7 @@ async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
         osm_t = asyncio.create_task(_overpass_elements(http, osm_query(lat, lon)))
         bag, (elements, osm_err) = await asyncio.gather(bag_t, osm_t)
         sections = merge_sections(sections_from_bag(bag), classify_osm(elements, lat, lon))
-        para = await write_paragraph(name, sections, lang, http) if paragraph else {"status": "disabled", "text": None, "engine": None}
+        para = await write_paragraph(name, sections, lang, http) if paragraph else {"status": "disabled", "text": None, "engine": None, "source": None}
         return {
             "name": name,
             "lat": lat,

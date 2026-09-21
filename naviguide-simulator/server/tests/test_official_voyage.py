@@ -76,6 +76,17 @@ def test_official_put_updates_when_polar_arrives(client):
     assert got.get("expedition_id") == "berry-mappemonde-2026"
 
 
+def test_official_get_exposes_clock_params(client):
+    client.put("/voyage/official", json=_payload())
+    got = client.get("/voyage/official").json()
+    params = got.get("params") or {}
+    assert params["landHours"] == 4.0
+    assert params["airHours"] == 8.0
+    assert params["minKnots"] == 0.5
+    assert params["portDaysDefault"] == 3
+    assert "polarEfficiency" in params
+
+
 def test_official_september_has_moved(client):
     client.put("/voyage/official", json=_payload())
     sample = client.get("/voyage/official/at", params={"t": "2026-09-15T12:00:00Z"}).json()

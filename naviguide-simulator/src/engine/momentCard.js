@@ -24,6 +24,8 @@
 
 import { phraseForEvent, satelliteSentence, climatologySentence } from "./iciBriefing.js";
 import { placeLabel } from "./briefingLinks.js";
+import { formatJournalEntry } from "./journalFormat.js";
+import { haversineNm, wrapLon } from "../utils/geo.js";
 
 export const LANE_NOW = "now";
 export const LANE_FREE = "free";
@@ -58,6 +60,9 @@ export const QUEUE_MAX = Object.freeze({ now: 6, free: 12 });
 
 /** Simulation: an event left this far behind the playhead is history, not a card. */
 export const STALE_CARD_NM = 80;
+
+/** FREE loop: a place farther than this from the boat is another sea, not "around". */
+export const FREE_STALE_NM = 60;
 
 /** Cap the per-kind information items taken from one bag (same caps as the briefing). */
 const BAG_CAPS = Object.freeze({
@@ -107,6 +112,30 @@ export function isStaleCard(card, { filmCum = null, mode = "simulation" } = {}) 
   return filmCum - card.filmCum > STALE_CARD_NM;
 }
 
+/** Distance of the card's place from the boat (nm), or null when unknown. */
+export function cardEntityNmFromBoat(card, boat) {
+  const lat = Number(card?.entity?.lat);
+  const lon = Number(card?.entity?.lon);
+  if (
+    boat
+    && Number.isFinite(lat)
+    && Number.isFinite(lon)
+    && Number.isFinite(Number(boat.lat))
+    && Number.isFinite(Number(boat.lon))
+  ) {
+    return haversineNm(lat, wrapLon(lon), Number(boat.lat), wrapLon(Number(boat.lon)));
+  }
+  const nm = Number(card?.entity?.nm);
+  return Number.isFinite(nm) ? nm : null;
+}
+
+/** FREE: the cited place is farther than FREE_STALE_NM from the boat. */
+export function isFreeStale(card, boat, limitNm = FREE_STALE_NM) {
+  if (card?.kind === "news") return false;
+  const d = cardEntityNmFromBoat(card, boat);
+  return d != null && d > limitNm;
+}
+
 /** Place the card can point at on the map (same shape as a briefing entity). */
 export function entityForEvent(ev) {
   const p = ev?.payload || {};
@@ -144,7 +173,180 @@ const KIND_WORDS = Object.freeze({
   climatology: ["Climatologie", "Climatology"],
   cable: ["Câble sous-marin", "Submarine cable"],
   escale: ["Escale", "Stopover"],
+  climo: ["Changement de régime", "Regime change"],
+  sci: ["Station croisée", "Station passed"],
+  news: ["Veille", "Watch"],
 });
+
+/** Journal kinds that become a moment card (lot E + F2). */
+export const JOURNAL_CARD_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "note", "climo", "sci", "news"]);
+
+const JOURNAL_TITLE = {
+  fr: { stop: "Escale", zee: "ZEE", amp: "Aire marine protégée", poe: "Port d’entrée", wx: "Météo au bateau", note: "Mot du skipper", climo: "Changement de régime", sci: "Station croisée", news: "Veille" },
+  en: { stop: "Stopover", zee: "EEZ", amp: "Marine protected area", poe: "Port of entry", wx: "Weather at the boat", note: "Skipper's note", climo: "Regime change", sci: "Station passed", news: "Watch" },
+};
+
+function journalDayLabel(iso, lang) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+function watchDayLabel(iso, lang) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString(isEn(lang) ? "en-GB" : "fr-FR", {
+    day: "numeric", month: "short", timeZone: "UTC",
+  });
+}
+
+/** Veille : plus visible après J+2. */
+export function newsExpired(entry, nowMs = Date.now()) {
+  if (!entry) return true;
+  const exp = Date.parse(entry.expires || "");
+  if (Number.isFinite(exp)) return nowMs >= exp;
+  const at = Date.parse(entry.t || "");
+  if (!Number.isFinite(at)) return false;
+  return nowMs - at >= 3 * 86_400_000;
+}
+
+function journalTitleOf(entry, lang) {
+  const words = JOURNAL_TITLE[isEn(lang) ? "en" : "fr"];
+  if (entry?.title && typeof entry.title === "object") {
+    const picked = isEn(lang) ? (entry.title.en || entry.title.fr) : (entry.title.fr || entry.title.en);
+    if (picked) return picked;
+  }
+  if (typeof entry?.title === "string" && entry.title) return entry.title;
+  return words[entry?.kind] || entry?.kind || "";
+}
+
+function journalEntityKind(entry) {
+  if (entry?.entity?.kind) return entry.entity.kind;
+  if (entry?.kind === "poe") return "poe";
+  if (entry?.kind === "amp") return "amp";
+  if (entry?.kind === "sci") return "science";
+  if (entry?.kind === "stop") return "escale";
+  if (entry?.kind === "news") return "escale";
+  return "place";
+}
+
+/** Verdict du juge (U6/U11) porté par l'événement, la fiche ou le sac. */
+export function eventTruth(ev) {
+  const p = ev?.payload || {};
+  if (ev?.truth) return ev.truth;
+  if (p.truth) return p.truth;
+  if (p.poe?.truth) return p.poe.truth;
+  if (Array.isArray(p.poe)) {
+    const hit = p.poe.find((x) => x && x.truth);
+    if (hit) return hit.truth;
+  }
+  return null;
+}
+
+export function truthForCard(card, bag) {
+  if (card?.truth) return card.truth;
+  const url = card?.entity?.url;
+  const name = card?.entity?.rawName || card?.entity?.name;
+  for (const p of bag?.poe || []) {
+    if (!p?.truth) continue;
+    if ((url && p.url === url) || (name && p.name === name)) return p.truth;
+  }
+  return bag?.truth || null;
+}
+
+/**
+ * Découpe le texte pour barrer les affirmations `unsupported` — jamais
+ * les supprimer. Si une phrase n'est pas dans le texte, elle est ajoutée
+ * barrée à la suite.
+ */
+export function strikeParts(text, unsupported) {
+  const src = String(text || "");
+  const phrases = (unsupported || [])
+    .filter((p) => typeof p === "string" && p.trim())
+    .map((p) => p.trim())
+    .sort((a, b) => b.length - a.length);
+  if (!src && !phrases.length) return [];
+  if (!phrases.length) return src ? [{ text: src, strike: false }] : [];
+
+  const walk = (chunk) => {
+    if (!chunk) return [];
+    let best = null;
+    const lower = chunk.toLowerCase();
+    for (const p of phrases) {
+      const i = lower.indexOf(p.toLowerCase());
+      if (i < 0) continue;
+      if (!best || i < best.i || (i === best.i && p.length > best.p.length)) {
+        best = { i, p: chunk.slice(i, i + p.length) };
+      }
+    }
+    if (!best) return [{ text: chunk, strike: false }];
+    return [
+      ...walk(chunk.slice(0, best.i)),
+      { text: best.p, strike: true },
+      ...walk(chunk.slice(best.i + best.p.length)),
+    ].filter((part) => part.text);
+  };
+
+  const parts = walk(src);
+  const lowerSrc = src.toLowerCase();
+  for (const p of phrases) {
+    if (lowerSrc.includes(p.toLowerCase())) continue;
+    parts.push({ text: p, strike: true, extra: true });
+  }
+  return parts.length ? parts : [{ text: src, strike: false }];
+}
+
+export function formatTruthDate(iso, lang = "fr") {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString(isEn(lang) ? "en-GB" : "fr-FR", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+/** A moment card (NOW lane) from a journal line — the text the journal already formats. */
+export function cardFromJournalEntry(entry, lang = "fr", nowMs = Date.now()) {
+  if (!entry || !JOURNAL_CARD_KINDS.has(entry.kind)) return null;
+  if (entry.kind === "news" && newsExpired(entry, nowMs)) return null;
+  const f = formatJournalEntry(entry, lang);
+  const when = entry.kind === "news" ? watchDayLabel(entry.t, lang) : journalDayLabel(entry.t, lang);
+  const title = entry.kind === "news"
+    ? `${entry.name || journalTitleOf(entry, lang)}${when ? ` · ${isEn(lang) ? "watch of" : "veille du"} ${when}` : ""}`
+    : journalTitleOf(entry, lang);
+  const hasPos = Number.isFinite(entry.lat) && Number.isFinite(entry.lon);
+  const given = entry.entity && typeof entry.entity === "object" ? entry.entity : null;
+  const lat = Number.isFinite(given?.lat) ? given.lat : entry.lat;
+  const lon = Number.isFinite(given?.lon) ? given.lon : entry.lon;
+  return {
+    key: `replay:${entry.id || `${entry.kind}:${entry.t}`}`,
+    lane: entry.kind === "news" ? LANE_FREE : LANE_NOW,
+    origin: "journal",
+    kind: entry.kind,
+    type: `replay-${entry.kind}`,
+    severity: entry.kind === "wx" ? "alert" : "info",
+    title: entry.kind === "news" ? title : `${title}${when ? ` · ${when}` : ""}`,
+    text: f.text,
+    facts: entry.facts || null,
+    entity: hasPos || (Number.isFinite(lat) && Number.isFinite(lon)) || given?.url || entry.url
+      ? {
+        id: `replay:${entry.kind}:${entry.name || given?.name || entry.t}`,
+        kind: journalEntityKind(entry),
+        name: given?.name || entry.name || title,
+        rawName: given?.name || entry.name || "",
+        lat: Number.isFinite(lat) ? lat : entry.lat,
+        lon: Number.isFinite(lon) ? lon : entry.lon,
+        nm: Number.isFinite(given?.nm) ? given.nm : (Number.isFinite(entry.nm) ? entry.nm : 0),
+        url: given?.url || entry.url || entry.visitUrl || null,
+        source: given?.source || entry.basis || null,
+      }
+      : null,
+    whenNm: 0,
+    at: entry.t,
+    truth: entry.truth || null,
+  };
+}
 
 export function kindWord(kind, lang) {
   const row = KIND_WORDS[kind];
@@ -158,6 +360,7 @@ function placeItem(kind, item, lang) {
   const en = isEn(lang);
   const where = nm != null ? (en ? ` at ${num(nm, lang)} nm` : ` à ${num(nm, lang)} nm`) : "";
   const source = item.source ? ` (${item.source})` : "";
+  const enrich = item.enrich?.text || item.phrase || "";
   const key = `bag:${kind}:${item.site_id ?? item.id ?? item.osm_id ?? `${item.name}:${Number(item.lat).toFixed(2)}:${Number(item.lon).toFixed(2)}`}`;
   return {
     key,
@@ -167,7 +370,7 @@ function placeItem(kind, item, lang) {
     type: kind,
     severity: "info",
     title: kindWord(kind, lang),
-    text: `${name}${where}${kind === "science" ? source : ""}.`,
+    text: `${name}${where}${kind === "science" ? source : ""}.${enrich ? ` ${enrich}` : ""}`,
     entity: {
       id: key,
       kind,
@@ -176,9 +379,48 @@ function placeItem(kind, item, lang) {
       lat: Number.isFinite(Number(item.lat)) ? Number(item.lat) : null,
       lon: Number.isFinite(Number(item.lon)) ? Number(item.lon) : null,
       nm,
-      url: item.url || item.website || (kind === "amp" ? item.visit_url || item.manager_url : null) || null,
-      source: item.source || null,
+      url: item.enrich?.url || item.url || item.website || (kind === "amp" ? item.visit_url || item.manager_url : null) || null,
+      source: item.source || item.enrich?.source || null,
     },
+  };
+}
+
+function newsItemFromBag(item, lang) {
+  if (!item || newsExpired(item)) return null;
+  const name = item.name || "";
+  const when = watchDayLabel(item.t, lang);
+  const host = (() => {
+    if (!item.url) return item.source || "";
+    try { return new URL(item.url).hostname.replace(/^www\./, ""); } catch { return item.source || ""; }
+  })();
+  const title = `${name}${when ? ` · ${isEn(lang) ? "watch of" : "veille du"} ${when}` : ""}`;
+  const text = `${item.text || ""}${host ? ` (${host})` : ""}`.trim();
+  if (!text) return null;
+  const key = `bag:news:${item.id || `${name}:${item.t}`}`;
+  const lat = Number.isFinite(Number(item.lat)) ? Number(item.lat) : (Number.isFinite(Number(item.entity?.lat)) ? Number(item.entity.lat) : null);
+  const lon = Number.isFinite(Number(item.lon)) ? Number(item.lon) : (Number.isFinite(Number(item.entity?.lon)) ? Number(item.entity.lon) : null);
+  return {
+    key,
+    lane: LANE_FREE,
+    origin: "bag",
+    kind: "news",
+    type: "news",
+    severity: "info",
+    title,
+    text,
+    entity: {
+      id: key,
+      kind: "escale",
+      name,
+      rawName: name,
+      lat,
+      lon,
+      nm: 0,
+      url: item.url || item.entity?.url || null,
+      source: item.source || host || null,
+    },
+    at: item.t,
+    expires: item.expires || null,
   };
 }
 
@@ -203,6 +445,10 @@ export function infoItemsFromBag(bag, lang = "fr") {
   push("science", bag.science?.nearby);
   push("project", bag.projects);
   push("amp", bag.amp);
+  (bag.news || []).forEach((it) => {
+    const card = newsItemFromBag(it, lang);
+    if (card) out.push(card);
+  });
   push("aton", bag.aton?.nearby);
 
   const scene = bag.satellites?.scene || bag.satellites?.scenes?.[0];
@@ -253,7 +499,13 @@ export function infoItemsFromBag(bag, lang = "fr") {
       entity: null,
     });
   }
-  return out.filter((card) => card.text);
+  const boat = bag.at && Number.isFinite(Number(bag.at.lat)) && Number.isFinite(Number(bag.at.lon))
+    ? { lat: Number(bag.at.lat), lon: Number(bag.at.lon) }
+    : null;
+  return out.filter((card) => (
+    card.text
+    && (card.lane === LANE_NOW || !isFreeStale(card, boat))
+  ));
 }
 
 function eventKey(ev) {
@@ -276,6 +528,7 @@ export function cardFromEvent(ev, lang = "fr") {
     filmCum: ev.filmCum ?? null,
     storyStatus: ev.story?.status || null,
     judgeReason: ev.judgeReason || null,
+    truth: eventTruth(ev),
   };
 }
 
@@ -419,6 +672,8 @@ export function advanceMoments(prev, {
     const lane = classifyMoment(ev, { filmCum, mode });
     if (!lane) continue;
     const card = cardFromEvent(ev, lang);
+    const truth = card.truth || truthForCard(card, bag);
+    if (truth) card.truth = truth;
     if (!card.text) continue;
     eventCards.set(card.key, card);
     if (seen.has(card.key)) continue;
@@ -434,21 +689,40 @@ export function advanceMoments(prev, {
   const refresh = (card) => {
     if (!card || card.origin !== "event") return card;
     const fresh = eventCards.get(card.key);
-    if (!fresh || sameText(fresh, card)) return card;
+    const truth = fresh?.truth || truthForCard(card, bag) || card.truth || null;
+    if (!fresh || (sameText(fresh, card) && truth === card.truth)) {
+      if (truth && truth !== card.truth) {
+        changed = true;
+        return { ...card, truth };
+      }
+      return card;
+    }
     changed = true;
-    return { ...card, text: fresh.text, storyStatus: fresh.storyStatus };
+    return { ...card, text: fresh.text, storyStatus: fresh.storyStatus, truth };
   };
   now = refresh(now);
   free = refresh(free);
   nowQueue = nowQueue.map(refresh);
   freeQueue = freeQueue.map(refresh);
 
+  const boat = bag?.at && Number.isFinite(Number(bag.at.lat)) && Number.isFinite(Number(bag.at.lon))
+    ? { lat: Number(bag.at.lat), lon: Number(bag.at.lon) }
+    : null;
+  const dropFarFree = (list) => {
+    if (!boat || !list?.length) return list;
+    const next = list.filter((c) => !isFreeStale(c, boat));
+    if (next.length !== list.length) changed = true;
+    return next;
+  };
+
   // 2. Bag → cards (balisage / climatologie → NOW, the rest → FREE).
   for (const card of infoItemsFromBag(bag, lang)) {
-    if (seen.has(card.key)) continue;
-    seen.add(card.key);
-    if (card.lane === LANE_NOW) nowQueue = pushCapped(nowQueue, { ...card, filmCum }, QUEUE_MAX.now);
-    else freeQueue = pushCapped(freeQueue, card, QUEUE_MAX.free);
+    const truth = truthForCard(card, bag);
+    const withTruth = truth ? { ...card, truth } : card;
+    if (seen.has(withTruth.key)) continue;
+    seen.add(withTruth.key);
+    if (withTruth.lane === LANE_NOW) nowQueue = pushCapped(nowQueue, { ...withTruth, filmCum }, QUEUE_MAX.now);
+    else freeQueue = pushCapped(freeQueue, withTruth, QUEUE_MAX.free);
     changed = true;
   }
 
@@ -458,6 +732,13 @@ export function advanceMoments(prev, {
   const beforeFree = freeQueue.length;
   freeQueue = freeQueue.filter((c) => !isStaleCard(c, { filmCum, mode }));
   if (nowQueue.length !== beforeNow || freeQueue.length !== beforeFree) changed = true;
+  // Lot T: a FREE place more than FREE_STALE_NM from the boat leaves the loop.
+  freeQueue = dropFarFree(freeQueue);
+  freeLoop = dropFarFree(freeLoop);
+  if (free && isFreeStale(free, boat)) {
+    free = null;
+    changed = true;
+  }
 
   // 4. Expire / replace the NOW card, then pop the next one.
   const nowTtl = nowTtlMs({ mode, playing });

@@ -46,6 +46,7 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
         reason: body.reason || null,
         logged: Boolean(body.logged),
         engine: body.engine || null,
+        source: body.source || body.engine || null,
         t: body.t || new Date().toISOString(),
       };
       setMessages((prev) => [...prev, reply].slice(-HISTORY_MAX));

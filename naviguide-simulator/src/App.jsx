@@ -158,6 +158,7 @@ export default function App() {
 
   const [view, setView] = useState(VIEW_SIMULATION);
   const [cinemaMode, setCinemaMode] = useState(false);
+  const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [stopAuto, setStopAuto] = useState(false);
   const [cameraFollow, setCameraFollow] = useState(false);
@@ -303,7 +304,14 @@ export default function App() {
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
   // stands in for the live one — the scene, the clock line, the story and
   // the cards all read `live`. Suivre only; Stop or the end hands back.
-  const replay = useReplay({ clock: officialClock, journal: officialJournal.journal, enabled: isSuivre, lang });
+  const replay = useReplay({
+    clock: officialClock,
+    journal: officialJournal.journal,
+    enabled: isSuivre,
+    lang,
+    marks: escaleMarks,
+    destination: official.live,
+  });
   const live = isSuivre ? (replay.active && replay.live ? replay.live : official.live) : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
   const playheadReady = playheadAligned({
@@ -419,7 +427,7 @@ export default function App() {
     windSeries: windProfile.series,
     filmNm: playback.nm,
     clockSample,
-    clockReady: Boolean(officialClock),
+    follow: isSuivre,
   });
   const legContext = useMemo(() => {
     if (!cast) return null;
@@ -506,7 +514,7 @@ export default function App() {
 
   // Chatbot journal de bord (lot D): the client adds what only it knows —
   // the view, the film boat in Simulation, the polar, the skipper's orders.
-  // Lot P2: measured speed (expeditionSpeed.knots — `.live` is a boolean flag).
+  // Lot C3: une seule vitesse — horloge en Suivre, prévue en Simulation.
   const chatBoatPos = isSuivre
     ? (clockSample && Number.isFinite(clockSample.lat)
       ? { lat: clockSample.lat, lon: clockSample.lon, iso: clockSample.iso || null }
@@ -514,15 +522,19 @@ export default function App() {
     : (sample && Number.isFinite(sample.lat)
       ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
       : null);
-  const chatMeasuredKnots = atQuay ? 0 : expeditionSpeed.knots;
+  const displayKnots = isSuivre
+    ? (atQuay ? 0 : (Number.isFinite(Number(clockSample?.speedKnots)) ? Number(clockSample.speedKnots) : null))
+    : expeditionSpeed.knots;
+  const displayRegime = clockSample?.regime || clockSample?.kind || null;
   const chatContextRef = useRef(null);
   chatContextRef.current = {
     view: isSuivre ? "suivre" : "simulation",
     boat: chatBoatPos
       ? {
         ...chatBoatPos,
-        speedKnots: Number.isFinite(chatMeasuredKnots) ? chatMeasuredKnots : null,
+        speedKnots: Number.isFinite(displayKnots) ? displayKnots : null,
         atQuay,
+        regime: displayRegime,
       }
       : null,
     polar: polarData ? { boat: polarData.boat_name || polarData.name || null, loaM: skipper.orders?.boat?.loaM, draftM: skipper.orders?.boat?.draftM, planningKn: skipper.orders?.values?.planningKn } : null,
@@ -547,6 +559,17 @@ export default function App() {
   const sidebarPlaybackNm = playback.nm;
   const sidebarHudLeg = hudLeg;
   const sidebarClockSample = clockSample;
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.__naviguideDebug = {
+      speed: Number.isFinite(displayKnots) ? displayKnots : null,
+      regime: displayRegime,
+      atQuay,
+    };
+    return () => {
+      if (window.__naviguideDebug) delete window.__naviguideDebug;
+    };
+  }, [displayKnots, displayRegime, atQuay]);
 
   useEffect(() => {
     if (clockSample?.speedKnots > 0) setLiveKnots(clockSample.speedKnots);
@@ -636,6 +659,8 @@ export default function App() {
   const alongPack = useIciAlong({
     enabled: Boolean(cast && routeReady),
     flat: flatRoute,
+    // Lot T: when a route is drawn, sample that track — never GET /ici/pearls (Berry).
+    customRoute: routeForView,
     fromNm: chapterAtNm(escaleMarks, cast?.sailNm ?? playback.nm)?.from?.nm,
     toNm: destMark?.nm,
     boatNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
@@ -749,17 +774,33 @@ export default function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuivre, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang]);
-  const speechText = isSuivre
-    ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
-    : (iciPack.briefing || null);
+  // Lot O — during a replay, Écouter / useReplayVoice read the current
+  // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
+  const speechText = replay.active
+    ? (replay.chapterText || null)
+    : isSuivre
+      ? [...storyParagraphs, iciPack.briefing].filter(Boolean)
+      : (iciPack.briefing || null);
 
-  useReplayVoice({ active: replay.active, voice: replay.voice, paragraphs: storyParagraphs, lang });
+  useReplayVoice({
+    active: replay.active,
+    voice: replay.voice,
+    lang,
+    chapterText: replay.chapterText,
+    chapterIdx: replay.chapterIdx,
+    rate: replay.voiceRate,
+    onBoundary: replay.onVoiceBoundary,
+    onEnd: replay.onVoiceEnd,
+  });
 
   const recaptureRef = useRef(null);
   const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
     progress: replay.progress,
     voice: replay.voice,
+    subtitle: replay.chapterText,
+    targetSeconds: replay.targetSeconds,
+    onDuration: replay.setTargetSeconds,
     onStart: () => {
       if (replay.start()) {
         // The camera picks the replayed boat up and follows it (same as Cinema's recapture).
@@ -769,7 +810,11 @@ export default function App() {
     },
     onStop: replay.stop,
     onVoice: replay.setVoice,
-  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.start, replay.stop, replay.setVoice]);
+    source: replay.filmSource,
+    style: replay.filmStyle,
+    hasWritten: replay.hasWritten,
+    onStyle: replay.setFilmStyle,
+  } : null), [isSuivre, officialClock, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -897,6 +942,10 @@ export default function App() {
   }, [isSuivre, voyage.setStartAt]);
 
   useEffect(() => {
+    if (!isSuivre) setFilmFullscreen(false);
+  }, [isSuivre]);
+
+  useEffect(() => {
     if (isSuivre) sceneApiRef.current?.playback.setProfile("real");
   }, [isSuivre, sceneApi]);
 
@@ -928,6 +977,9 @@ export default function App() {
       } else if (isSuivre && e.code === "KeyL") {
         e.preventDefault();
         goLive();
+      } else if (e.code === "Escape" && filmFullscreen) {
+        e.preventDefault();
+        setFilmFullscreen(false);
       } else if (e.code === "Escape" && cinemaMode && !drawingMode) {
         e.preventDefault();
         leaveCinema();
@@ -943,7 +995,20 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cinemaMode, drawingMode, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, sceneApi, toggleCinema]);
+  }, [cinemaMode, drawingMode, filmFullscreen, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, sceneApi, toggleCinema]);
+
+  // Capture : la bulle événement (lot F4) coupe Échap en phase bulle.
+  useEffect(() => {
+    if (!filmFullscreen) return undefined;
+    const onEsc = (e) => {
+      if (e.code !== "Escape" && e.key !== "Escape" && e.key !== "Esc") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setFilmFullscreen(false);
+    };
+    window.addEventListener("keydown", onEsc, true);
+    return () => window.removeEventListener("keydown", onEsc, true);
+  }, [filmFullscreen]);
 
   const applyBerryBriefing = useCallback(() => {
     setExpeditionPlan(getCachedPlan(lang) || normalizeExpeditionPlan({ executive_briefing: t("berryLocalBriefing") }));
@@ -1231,6 +1296,8 @@ export default function App() {
     summary: planReviewState.review
       ? t("planReviewSummary", { warmed: planReviewState.review.pearlsWarmed ?? 0, unknown: planReviewState.review.pearlsUnknown ?? 0 })
       : null,
+    comment: planReviewState.review?.comment?.text || null,
+    commentSource: planReviewState.review?.comment?.source || null,
   }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, t]);
 
   // Route advice under the skipper's orders (lot G): gale and sea limits of
@@ -1266,6 +1333,10 @@ export default function App() {
     grib: official.grib,
     gribStatus: official.gribStatus,
     clockSample,
+    clockVertices: officialClock?.vertices || null,
+    traveledNm: isSuivre && live && !previewing
+      ? (Number(live.sailNm) || Number(live.filmNm) || 0)
+      : (cast?.sailNm ?? playback.nm),
     climoMonth,
     t,
     cameraFollow,
@@ -1273,6 +1344,9 @@ export default function App() {
     cameraFocusToken: isSimulation ? cameraFocusToken : 0,
     remainingNm: hudLeg?.remainingNm ?? playback.sailTotalNm,
     recetteMap: recetteMapView(),
+    filmActive: Boolean(replay.active),
+    filmChapterIdx: replay.chapterIdx,
+    filmLeg: replay.filmLeg,
   }), [
     isLightMode,
     view,
@@ -1297,6 +1371,9 @@ export default function App() {
     official.grib,
     official.gribStatus,
     clockSample,
+    officialClock?.vertices,
+    cast?.sailNm,
+    playback.nm,
     climoMonth,
     t,
     cameraFollow,
@@ -1304,6 +1381,9 @@ export default function App() {
     cameraFocusToken,
     hudLeg?.remainingNm,
     playback.sailTotalNm,
+    replay.active,
+    replay.chapterIdx,
+    replay.filmLeg,
   ]);
 
   const enablePendingRestricted = (kind) => {
@@ -1314,14 +1394,18 @@ export default function App() {
   };
 
   const rootInsetVars = mapInsetVars({
-    sidebarOpen,
-    toolsOpen,
+    sidebarOpen: sidebarOpen && !filmFullscreen,
+    toolsOpen: toolsOpen && !filmFullscreen,
     filmBarVisible: !(cinemaMode && hideFilmBar),
     filmBarControls: isSimulation,
   });
 
   return (
-    <div style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }} className={isLightMode ? "light-mode" : ""}>
+    <div
+      data-testid="sim-root"
+      style={{ height: "100vh", width: "100vw", position: "relative", ...rootInsetVars }}
+      className={`${isLightMode ? "light-mode" : ""}${filmFullscreen ? " film-fullscreen" : ""}`.trim()}
+    >
       <MapScene
         scene={mapScene}
         gateRef={gateRef}
@@ -1528,7 +1612,7 @@ export default function App() {
         playheadTotal={playback.totalNm}
         remainingNm={hudLeg?.remainingNm ?? 0}
         etaHours={hudLeg?.etaHours}
-        boatKnots={expeditionSpeed.knots}
+        boatKnots={displayKnots}
         phase={cast?.phase}
         vehicle={cast?.vehicle}
         profile={playback.profile}
@@ -1568,8 +1652,10 @@ export default function App() {
         stopAuto={stopAuto}
         onStopAuto={setStopAuto}
         showStopAuto={isSimulation}
-        sidebarOpen={sidebarOpen}
-        toolsOpen={toolsOpen}
+        sidebarOpen={sidebarOpen && !filmFullscreen}
+        toolsOpen={toolsOpen && !filmFullscreen}
+        filmFullscreen={filmFullscreen}
+        onFilmFullscreen={setFilmFullscreen}
         eventMarks={filmEventMarks(iciPack.events, { mode: isSuivre ? "suivre" : "simulation" })}
         onEventClick={(ev) => {
           setSkipperClickId(ev.id || ev.stableKey);
@@ -1589,6 +1675,9 @@ export default function App() {
           filmNm: isSuivre && live && !previewing ? (Number(live.filmNm) || 0) : playback.nm,
           sailNm: clockSample.sailNm,
           seaHours: clockSample.seaHours,
+          regime: clockSample.regime || clockSample.kind,
+          sources: clockSample.sources || [],
+          spread: clockSample.spread,
         } : null}
         disclaimer={t("creditsLine")}
       />

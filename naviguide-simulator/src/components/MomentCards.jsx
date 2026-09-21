@@ -1,9 +1,69 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
+import { isNowAlertOrDecision, publishEventBubble } from "./eventBubble.js";
 import { ChevronRight, LocateFixed, X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
-import { cardSpeech } from "../engine/momentCard.js";
+import { cardSpeech, formatTruthDate, strikeParts } from "../engine/momentCard.js";
 import { ListenButton } from "./ListenButton.jsx";
+
+function useWindowCard(card, key, eventName) {
+  const [fixture, setFixture] = useState(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const read = () => {
+      const v = window[key];
+      setFixture(v && typeof v === "object" ? v : null);
+    };
+    read();
+    window.addEventListener(eventName, read);
+    return () => window.removeEventListener(eventName, read);
+  }, [key, eventName]);
+  return fixture || card;
+}
+
+function useRecipeCard(card) {
+  return useWindowCard(card, "__naviguideTruthFixture", "naviguide-truth-fixture");
+}
+
+function useNewsFixture(card) {
+  return useWindowCard(card, "__naviguideNewsFixture", "naviguide-news-fixture");
+}
+
+function CardText({ text, unsupported, className, pending }) {
+  const { t } = useLang();
+  const parts = strikeParts(text, unsupported);
+  return (
+    <p className={className}>
+      {parts.map((part, i) => (
+        part.strike ? (
+          <s key={i} className="line-through decoration-white/70">
+            {part.extra ? ` ${part.text}` : part.text}
+          </s>
+        ) : (
+          <span key={i}>{part.text}</span>
+        )
+      ))}
+      {pending ? (
+        <span className="ml-1 text-[10px] text-white/45">{t("momentStoryPending")}</span>
+      ) : null}
+    </p>
+  );
+}
+
+function TruthBadge({ truth }) {
+  const { t, lang } = useLang();
+  if (!truth) return null;
+  const unverifiable = truth.status === "unverifiable";
+  const date = formatTruthDate(truth.checkedAt, lang);
+  const label = unverifiable
+    ? t("truthBadgeUnverifiable")
+    : t("truthBadgeVerified", { date: date || "—" });
+  return (
+    <div data-testid="truth-badge" className="mt-1 text-[10px] text-white/55">
+      {label}
+    </div>
+  );
+}
 
 function CardLinks({ entity, onFocus, t }) {
   if (!entity) return null;
@@ -49,14 +109,21 @@ function CardLinks({ entity, onFocus, t }) {
  */
 export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDismiss, onFocus, inline = false }) {
   const { t } = useLang();
-  if (!card) return null;
-  const alert = card.severity === "alert";
-  const ahead = Number.isFinite(card.whenNm) && card.whenNm >= 1
-    ? t("momentAhead", { nm: Math.round(card.whenNm) })
+  const shown = useRecipeCard(card);
+  useEffect(() => {
+    const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
+    if (film?.startedAt && !film.ended) return;
+    if (shown && isNowAlertOrDecision(shown)) publishEventBubble(shown);
+    else publishEventBubble(null);
+  }, [shown]);
+  if (!shown) return null;
+  const alert = shown.severity === "alert";
+  const ahead = Number.isFinite(shown.whenNm) && shown.whenNm >= 1
+    ? t("momentAhead", { nm: Math.round(shown.whenNm) })
     : "";
   const border = alert ? "rgba(251, 191, 36, 0.7)" : "rgba(34, 211, 238, 0.55)";
   const frame = inline
-    ? "rounded-lg border bg-slate-900/70 text-white px-2 py-1.5 min-w-0"
+    ? "sim-box-now rounded-lg border bg-slate-900/70 text-white px-2 py-1.5 min-w-0"
     : "naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2050] w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border bg-slate-950/94 text-white shadow-2xl px-3 py-2.5 backdrop-blur-sm";
   const style = inline
     ? { borderColor: border }
@@ -68,7 +135,7 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
         : "0 0 0 1px rgba(34,211,238,0.18), 0 18px 40px rgba(0,0,0,0.45)",
     };
   return (
-    <div data-testid="moment-now" data-type={card.type} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+    <div data-testid="moment-now" data-type={shown.type} data-kind={shown.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
         <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${alert ? "bg-amber-400 animate-pulse" : "bg-cyan-300"}`} />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70 min-w-0 truncate">
@@ -92,14 +159,15 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
           </button>
         </div>
       </div>
-      {card.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
-      <p className={`mt-1 leading-snug text-slate-100 break-words [overflow-wrap:anywhere] ${inline ? "text-[11px]" : "text-[12px]"}`}>
-        {card.text}
-        {card.storyStatus === "pending" ? (
-          <span className="ml-1 text-[10px] text-white/45">{t("momentStoryPending")}</span>
-        ) : null}
-      </p>
-      <CardLinks entity={card.entity} onFocus={onFocus} t={t} />
+      {shown.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{shown.title}</div> : null}
+      <CardText
+        text={shown.text}
+        unsupported={shown.truth?.unsupported}
+        pending={shown.storyStatus === "pending"}
+        className={`mt-1 leading-snug text-slate-100 break-words [overflow-wrap:anywhere] ${inline ? "text-[11px]" : "text-[12px]"}`}
+      />
+      <TruthBadge truth={shown.truth} />
+      <CardLinks entity={shown.entity} onFocus={onFocus} t={t} />
     </div>
   );
 });
@@ -111,7 +179,8 @@ export const MomentNowCard = memo(function MomentNowCard({ card, left = 0, onDis
  */
 export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, onNext, onFocus, inline = false }) {
   const { t, lang } = useLang();
-  if (!card) return null;
+  const shown = useNewsFixture(card);
+  if (!shown) return null;
   const frame = inline
     ? "rounded-lg border border-white/10 bg-slate-800/50 text-white px-2 py-1.5 min-w-0"
     : "naviguide-floating-card absolute z-[2040] w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border border-white/12 bg-slate-950/88 text-white shadow-xl px-3 py-2 backdrop-blur-sm";
@@ -122,13 +191,13 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
       bottom: "calc(var(--sim-inset-bottom, 0px) + 30px)",
     };
   return (
-    <div data-testid="moment-free" data-kind={card.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
+    <div data-testid="moment-free" data-kind={shown.kind} data-inline={inline ? "1" : "0"} className={frame} style={style}>
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[9px] font-semibold uppercase tracking-wider text-white/55 min-w-0 truncate">
           {t("momentFreeTitle")}
         </span>
         <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-          <ListenButton text={cardSpeech(card)} t={t} lang={lang} testId="moment-free-listen" />
+          <ListenButton text={cardSpeech(shown)} t={t} lang={lang} testId="moment-free-listen" />
           <button
             type="button"
             onClick={onNext}
@@ -141,11 +210,14 @@ export const FreeMomentBlock = memo(function FreeMomentBlock({ card, left = 0, o
           </button>
         </div>
       </div>
-      {card.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
-      <p className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]">
-        {card.text}
-      </p>
-      <CardLinks entity={card.entity} onFocus={onFocus} t={t} />
+      {shown.title ? <div className="mt-1 text-[10px] font-semibold text-sky-200">{shown.title}</div> : null}
+      <CardText
+        text={shown.text}
+        unsupported={shown.truth?.unsupported}
+        className="mt-0.5 text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+      />
+      <TruthBadge truth={shown.truth} />
+      <CardLinks entity={shown.entity} onFocus={onFocus} t={t} />
     </div>
   );
 });

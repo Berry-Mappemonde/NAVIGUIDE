@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { formatCivilDate } from "../engine/voyageClock.js";
+import { formatEtaRange, useOfficialEta } from "../hooks/usePlanReview.js";
 
 function markAt(m) {
   return Number(m.filmNm ?? m.nm) || 0;
@@ -11,7 +12,7 @@ function markAt(m) {
  * `active` flag of two rows changes then — not the 18 formatted labels
  * (profile 18 sept. 2026: this list was 12 % of main-thread self time).
  */
-const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLabel, title, sheetTitle, active, onSeek, onSheet }) {
+const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLabel, etaLabel, title, sheetTitle, active, onSeek, onSheet }) {
   return (
     <li className={`flex items-stretch border-t border-white/5 ${active ? "bg-cyan-700/40 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"}`}>
       <button
@@ -26,6 +27,9 @@ const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLa
           {dateLabel}
           {quayLabel}
         </span>
+        {etaLabel ? (
+          <span className="text-[9px] text-white/40 block leading-tight" data-testid="eta-range">{etaLabel}</span>
+        ) : null}
       </button>
       {onSheet ? (
         <button
@@ -63,12 +67,16 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
       };
     }), [marks, lang, t]);
 
-  if (!rows.length) return null;
   const x = Number(filmNm) || 0;
   let current = 0;
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].at <= x + 0.4) current = i;
   }
+  const nextName = current + 1 < rows.length ? rows[current + 1].name : "";
+  const eta = useOfficialEta(nextName, { enabled: Boolean(nextName) });
+  const etaLabel = formatEtaRange(eta, t, lang);
+
+  if (!rows.length) return null;
 
   return (
     <div className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden">
@@ -84,6 +92,7 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
             nmLabel={r.nmLabel}
             dateLabel={r.dateLabel}
             quayLabel={r.quayLabel}
+            etaLabel={etaLabel && i === current + 1 ? etaLabel : ""}
             title={r.title}
             sheetTitle={r.sheetTitle}
             active={i === current}

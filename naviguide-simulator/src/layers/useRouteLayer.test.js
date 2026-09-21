@@ -1,0 +1,39 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { REGIME_COLORS, traveledRegimeSegments } from "./regimeRoute.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+describe("useRouteLayer — teinte par régime (lot C3)", () => {
+  it("colore le parcours jusqu'à traveledNm et fusionne les pas d'un même régime", () => {
+    const verts = [
+      { sailNm: 0, lat: 46.1, lon: -1.2, regime: "hindcast" },
+      { sailNm: 10, lat: 45.5, lon: -3, regime: "hindcast" },
+      { sailNm: 20, lat: 45.0, lon: -5, regime: "forecast" },
+      { sailNm: 40, lat: 44.0, lon: -8, regime: "climatology" },
+    ];
+    const segs = traveledRegimeSegments(verts, 25);
+    assert.equal(segs.length, 3);
+    assert.equal(segs[0].regime, "hindcast");
+    assert.equal(segs[1].regime, "forecast");
+    assert.equal(segs[2].regime, "climatology");
+    assert.ok(segs[0].coords.length >= 2);
+    assert.equal(REGIME_COLORS.hindcast, "#2dd4bf");
+    assert.equal(REGIME_COLORS.forecast, "#38bdf8");
+    assert.equal(REGIME_COLORS.climatology, "#c084fc");
+  });
+
+  it("ne teinte rien sans distance parcourue", () => {
+    assert.deepEqual(traveledRegimeSegments([{ sailNm: 0, lat: 0, lon: 0 }], 0), []);
+  });
+
+  it("le hook peint l'overlay sans retirer la route principale", () => {
+    const src = readFileSync(join(here, "useRouteLayer.js"), "utf8");
+    assert.match(src, /paintMain/);
+    assert.match(src, /traveledRegimeSegments/);
+    assert.match(src, /REGIME_COLORS/);
+  });
+});

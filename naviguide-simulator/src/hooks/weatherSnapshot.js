@@ -1,5 +1,7 @@
 /** Pipeline météo partagé : statut immédiat, poll court, refresh lent. */
 
+import { wrapLon } from "../utils/geo.js";
+
 export const WEATHER_POLL_MS = 4000;
 export const WEATHER_REFRESH_MS = 60_000;
 
@@ -42,7 +44,7 @@ export async function fetchWeatherComposite(lat, lon, { signal, api = "" } = {})
   const res = await fetch(`${api}/weather`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ latitude: lat, longitude: lon }),
+    body: JSON.stringify({ latitude: lat, longitude: wrapLon(Number(lon)) }),
     signal,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -50,7 +52,7 @@ export async function fetchWeatherComposite(lat, lon, { signal, api = "" } = {})
 }
 
 export async function fetchWeatherForecast(lat, lon, { signal, api = "" } = {}) {
-  const q = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  const q = new URLSearchParams({ lat: String(lat), lon: String(wrapLon(Number(lon))) });
   const res = await fetch(`${api}/weather/forecast?${q}`, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();

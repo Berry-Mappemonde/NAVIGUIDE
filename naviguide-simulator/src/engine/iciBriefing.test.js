@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanStoryText, narrateIci, phraseForEvent } from "./iciBriefing.js";
+import { cleanStoryText, climatologySentence, climatologyShownOnBanner, narrateIci, narrateIciSegments, phraseForEvent } from "./iciBriefing.js";
+import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -45,13 +46,15 @@ describe("narrateIci", () => {
     assert.match(text, /formalités d’entrée passent par des ports officiels/);
     assert.match(text, /La Rochelle/);
     assert.match(text, /Ports d’entrée officiels les plus proches : La Rochelle \(1,2 nm\)/);
-    assert.doesNotMatch(text, /douane\.gouv\.fr/); // the sheet is a link, not text
+    assert.match(text, /Fiches d’entrée : douane\.gouv\.fr/);
+    assert.doesNotMatch(text, /https:\/\/www\.douane\.gouv\.fr\/la-rochelle/);
     assert.match(text, /30 milles/);
     assert.match(text, /Pertuis/);
     assert.match(text, /On vient d’entrer/);
     assert.match(text, /Cap sur Fort-de-France[^.]*depuis La Rochelle/);
     assert.match(text, /7,2 nœuds/);
     assert.match(text, /de mer/);
+    assert.equal((text.match(/Polaire chargée/g) || []).length, 1);
     assert.match(text, /Données scientifiques disponibles autour du bateau/);
     assert.match(text, /Pertuis charentais bathymétrie \(6 nm\)/);
     assert.match(text, /6901234 \(18 nm\)/);
@@ -157,7 +160,7 @@ describe("narrateIci", () => {
     }, "fr");
     assert.match(text, /haute mer/i);
     assert.doesNotMatch(text, /pas pu nommer/);
-    assert.doesNotMatch(text, /MarineRegions n’a pas répondu/);
+    assert.doesNotMatch(text, /Marine Regions\/VLIZ n’a pas répondu/);
   });
 
   it("says high seas without inventing ports of entry", () => {
@@ -186,6 +189,22 @@ describe("narrateIci", () => {
     assert.match(text, /Blue Intelligence n’ont pas répondu/);
     assert.match(text, /LA ROCHELLE/);
     assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("lot T : une perle mince ne raconte pas l’échec BI", () => {
+    const thin = {
+      pearl: "thin",
+      thin: true,
+      zee: { name: "Mauritanian Exclusive Economic Zone", mrgid: 8492 },
+      poe: [],
+      amp: [],
+      projects: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [] },
+      sources: { zee: "marineregions", bi: "unavailable" },
+    };
+    const text = narrateIci(thin, "fr");
+    assert.doesNotMatch(text, /Blue Intelligence n’ont pas répondu/);
+    assert.doesNotMatch(text, /ports WPI sont conservés/);
   });
 
   it("does not dump a list of projects", () => {
@@ -257,15 +276,38 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok", climatology: "atlas" },
     }, "fr");
-    assert.match(text, /Climatologie de/);
-    assert.match(text, /atlas Copernicus/);
-    assert.match(text, /vent typique 16,2 kn/);
-    assert.match(text, /mer 1,4 m en moyenne, 2,8 m les jours agités \(P90\)/);
-    assert.match(text, /période 4,1 s/);
-    assert.match(text, /de ONO \(285°\)/);
-    assert.match(text, /courant 0,4/);
-    assert.match(text, /IBTrACS/);
-    assert.doesNotMatch(text, /forecast|GRIB/i);
+    assert.equal(climatologyShownOnBanner({
+      climatology: {
+        kind: "climatology", source: "atlas", month: 6,
+        point: { wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } } },
+      },
+    }), true);
+    assert.doesNotMatch(text, /Climatologie de/);
+    const climo = climatologySentence({
+      climatology: {
+        kind: "climatology",
+        source: "atlas",
+        month: 6,
+        period: "1980-2020",
+        doi: { wind: "10.48670/moi-00183" },
+        point: {
+          kind: "climatology",
+          wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } },
+          wave: { hs_p50_m: 1.4, hs_p90_m: 2.8, period_s: 4.1, dir_deg: 284.6 },
+          current: { speed_knots: 0.4, direction_to_deg: 270 },
+          cyclone: { crossings_if_leg: { count: 2 } },
+        },
+      },
+    }, "fr");
+    assert.match(climo, /Climatologie de/);
+    assert.match(climo, /atlas Copernicus Marine/);
+    assert.match(climo, /vent typique 16,2 kn/);
+    assert.match(climo, /mer 1,4 m en moyenne, 2,8 m les jours agités \(P90\)/);
+    assert.match(climo, /période 4,1 s/);
+    assert.match(climo, /de ONO \(285°\)/);
+    assert.match(climo, /courant 0,4/);
+    assert.match(climo, /IBTrACS/);
+    assert.doesNotMatch(climo, /forecast|GRIB/i);
   });
 
   it("tells visit vs manager, OSM moorings, AtoN, satellite observation and forecast weather", () => {
@@ -333,21 +375,38 @@ describe("narrateIci", () => {
     assert.match(text, /Aires marines protégées à moins de 30 milles : Pertuis charentais/);
     assert.doesNotMatch(text, /parc-marin\.fr/); // visit / manager pages are links now
     assert.match(text, /Mouillage des Minimes/);
-    assert.match(text, /Balisage : Feu des Minimes/);
-    assert.match(text, /Dernière image satellite : Sentinel-2/);
+    assert.match(text, /Balisage \(OpenStreetMap\) : Feu des Minimes/);
+    assert.match(text, /Dernière image satellite \(CDSE\) : Sentinel-2/);
     assert.match(text, /\(observation\)/);
     assert.match(text, /pas encore calculé/);
     assert.doesNotMatch(text, /not_generated|sentinel-2-l2a/);
     assert.match(text, /Prévision météo/);
     assert.match(text, /vent 12,4 kn de O \(280°\)/);
     assert.match(text, /mer 1,1 m de O \(270°\), période 6,5 s/);
-    assert.match(text, /courant 0,58 kn vers OSO \(247°\) \(RTOFS\)/);
+    assert.match(text, /courant 0,58 kn vers OSO \(247°\) \(NOAA\/RTOFS\)/);
     assert.match(text, /EMODnet/);
     assert.match(text, /18,4/);
-    assert.match(text, /rose des vents disponible/);
-    assert.match(text, /calme 4/);
-    assert.match(text, /courant 0,4 kn vers O \(270°\)/);
-    assert.match(text, /cyclones historiques \(IBTrACS\) : aucun à proximité/);
+    assert.doesNotMatch(text, /Climatologie de|rose des vents disponible/);
+    const climo = climatologySentence({
+      climatology: {
+        kind: "climatology",
+        source: "atlas",
+        month: 6,
+        period: "1980-2020",
+        doi: { wind: "10.48670/moi-00183" },
+        rose: { stat: "rose", directions_from: [{ dir_deg: 45, pct: 22 }], calm_pct: 4, gale_pct: 1.5 },
+        point: {
+          kind: "climatology",
+          wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } },
+          current: { speed_knots: 0.4, direction_to_deg: 270 },
+          cyclone: { nearby: 0 },
+        },
+      },
+    }, "fr");
+    assert.match(climo, /rose des vents disponible/);
+    assert.match(climo, /calme 4/);
+    assert.match(climo, /courant 0,4 kn vers O \(270°\)/);
+    assert.match(climo, /cyclones historiques \(IBTrACS\) : aucun à proximité/);
     assert.match(text, /formalités ZEE vérifiées, règles AMP non vérifiées/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
@@ -366,7 +425,7 @@ describe("narrateIci", () => {
       sources: { zee: "marineregions", bi: "ok" },
     };
     const rich = narrateIci(pearl, "fr");
-    assert.match(rich, /Balisage : Feu des Minimes/);
+    assert.match(rich, /Balisage \(OpenStreetMap\) : Feu des Minimes/);
     assert.match(rich, /EMODnet/);
     assert.match(rich, /18,4/);
     assert.doesNotMatch(rich, /perle|pearl|météo|satellite|Sentinel|Gold|fiche de vérification/i);
@@ -565,3 +624,79 @@ describe("narrateIci", () => {
     assert.match(legacy, /^Haut-fond 9 m/);
   });
 });
+
+const FULL_BAG = {
+  zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true, territory: "france_metropolitaine" },
+  poe: [{ name: "La Rochelle", nm: 1.2, url: "https://www.douane.gouv.fr/la-rochelle" }],
+  amp: [{ name: "Pertuis charentais", nm: 8 }],
+  nearby: { marinas: [{ name: "Port des Minimes", nm: 2 }], capitaineries: [], wpi: [] },
+  aton: { nearby: [{ name: "Feu des Minimes", nm: 0.8 }], source: "osm-overpass" },
+  satellites: {
+    kind: "observation",
+    source: "cdse-stac",
+    scene: {
+      product: "sentinel-2-l2a",
+      id: "S2B_MSIL2A_20260914T105619_N0512_R094_T31TDM_20260914T145142",
+      datetime: "2026-09-14T10:56:19Z",
+    },
+  },
+  weather: {
+    kind: "forecast",
+    source: "openmeteo-gfs",
+    model: "GFS 0.25° (Open-Meteo)",
+    wind: { kind: "forecast", speedKnots: 12.4, dirFromDeg: 280 },
+    current: { kind: "forecast", source: "noaa-rtofs", speedKnots: 0.58, dirToDeg: 247 },
+  },
+  emodnet: { kind: "observation", bathy: { depth_m: 18.4 }, seabed: { label: "sand" } },
+  depthOffshore: -3200,
+  climatology: {
+    kind: "climatology",
+    source: "atlas",
+    month: 6,
+    point: { wind_atlas: { most_likely: { speed_knots: 16.2, dir_deg: 55 } } },
+  },
+  polar: { boat: "Leopard 46", speedKnots: 7.2, etaHours: 42 },
+  marks: [{ kind: "leg", from: "La Rochelle", to: "Fort-de-France", vehicle: "main" }],
+  sources: { zee: "error", bi: "ok" },
+};
+
+function briefingSentences(text) {
+  return text.split(/\n\n+|(?<=\.)\s+/).map((s) => s.trim()).filter(Boolean);
+}
+
+describe("lot M — sources liées, pas de redite", () => {
+  it("chaque source connue produit un lien", () => {
+    const cited = KNOWN_SOURCES.join(" · ");
+    const segs = segmentSources(cited);
+    assert.equal(segs.map((s) => s.text).join(""), cited);
+    for (const name of KNOWN_SOURCES) {
+      const hit = segs.find((s) => s.text === name && s.entity);
+      assert.ok(hit, `${name} doit produire un lien`);
+      assert.equal(hit.entity.url, SOURCE_URLS[name]);
+      assert.equal(hit.entity.kind, "source");
+    }
+    const live = narrateIciSegments(FULL_BAG, "fr");
+    assert.equal(live.map((s) => s.text).join(""), narrateIci(FULL_BAG, "fr"));
+    const linked = new Set(live.filter((s) => s.entity?.kind === "source").map((s) => s.text));
+    for (const name of ["Open-Meteo", "NOAA/RTOFS", "EMODnet", "GEBCO", "Marine Regions/VLIZ", "OpenStreetMap", "douane.gouv.fr", "CDSE"]) {
+      assert.ok(linked.has(name), `${name} cité dans le sac doit être un lien`);
+    }
+  });
+
+  it("aucune phrase dupliquée dans un briefing complet ; polaire une fois, climatologie hors briefing", () => {
+    const text = narrateIci(FULL_BAG, "fr");
+    const sentences = briefingSentences(text);
+    assert.equal(new Set(sentences).size, sentences.length, `doublon : ${sentences.join(" | ")}`);
+    assert.equal((text.match(/Polaire chargée/g) || []).length, 1);
+    assert.doesNotMatch(text, /Polaire chargée[\s\S]*Polaire chargée/);
+    assert.equal(climatologyShownOnBanner(FULL_BAG), true);
+    assert.doesNotMatch(text, /Climatologie de/);
+    const silent = narrateIci({
+      ...FULL_BAG,
+      climatology: { source: "unavailable", month: 6 },
+    }, "fr");
+    assert.match(silent, /atlas de climatologie n’a pas répondu/);
+    assert.equal((silent.match(/atlas de climatologie n’a pas répondu/g) || []).length, 1);
+  });
+});
+

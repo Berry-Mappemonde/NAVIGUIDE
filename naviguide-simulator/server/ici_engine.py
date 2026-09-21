@@ -3,7 +3,10 @@
 ZEE, PoE, AMP, projets, marinas-capit-WPI, mouillages OSM, Science,
 AtoN, satellites CDSE, EMODnet au point, GRIB2/Open-Meteo, GEBCO,
 climatologie. Accès moteur au point — pas de dump GeoJSON monde.
-Pas de Tavily, pas de LLM.
+Le sac reste hors LLM ; le juge de vérité (lot L3) relit une fiche
+PoE Gold via `truth_judge.maybe_attach` — cache 7 jours, jamais une
+suppression de texte. La veille et les phrases sourcées (lot L4) sont
+rattachées depuis le cache (`escale_watch.attach_cached`), sans réseau.
 """
 from __future__ import annotations
 
@@ -734,7 +737,18 @@ async def fill_dossier(
         key = thin_cache_key(lat, lon, radius_nm, month)
         cached = thin_cache_get(key, rich=rich)
         if cached is not None:
-            return {**cached, "at": {"lat": lat, "lon": lon}, "cached": True}
+            bag = {**cached, "at": {"lat": lat, "lon": lon}, "cached": True}
+            try:
+                from truth_judge import maybe_attach  # noqa: PLC0415
+                await maybe_attach(bag, client=client)
+            except Exception as exc:
+                log.debug("juge de vérité ignoré : %s", exc)
+            try:
+                from escale_watch import attach_cached  # noqa: PLC0415
+                attach_cached(bag)
+            except Exception as exc:
+                log.debug("veille / enrich cache ignoré : %s", exc)
+            return bag
         bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True, rich=rich)
         if (bag.get("sources") or {}).get("bi") != "unavailable":
             thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
@@ -995,4 +1009,14 @@ async def _fill_dossier(
 
     if d["zee"] and d["zee"].get("mrgid") in FRENCH_EEZ_MRGID:
         d["zee"]["gold"] = bool(d["poe"])
+    try:
+        from truth_judge import maybe_attach  # noqa: PLC0415
+        await maybe_attach(d, client=None if own else http)
+    except Exception as exc:
+        log.debug("juge de vérité ignoré : %s", exc)
+    try:
+        from escale_watch import attach_cached  # noqa: PLC0415
+        attach_cached(d)
+    except Exception as exc:
+        log.debug("veille / enrich cache ignoré : %s", exc)
     return d

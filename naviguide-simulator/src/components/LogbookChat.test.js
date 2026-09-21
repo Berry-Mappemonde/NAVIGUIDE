@@ -22,6 +22,17 @@ describe("LogbookChat contract (lot D)", () => {
     assert.match(hook, /\.\.\.adminHeaders\(\)/);
     assert.match(hook, /inFlight\.current/);
     assert.match(hook, /contextFn\(\)/);
+    assert.match(hook, /source: body\.source \|\| body\.engine \|\| null/);
     assert.doesNotMatch(hook, /Nemotron|Tavily|Nebius/i);
+    assert.doesNotMatch(hook, /useEffect/);
+  });
+
+  it("shows the cascade source under the answer and does not fetch on render", () => {
+    assert.match(src, /data-testid="chat-source"/);
+    assert.match(src, /storySourceLightning|storySourceSuper|storySourceRules/);
+    assert.doesNotMatch(src, /\/logbook\/chat/);
+    const effects = src.match(/useEffect\(/g) || [];
+    assert.equal(effects.length, 1, "only the scroll-to-bottom effect");
+    assert.match(src, /el\.scrollTop = el\.scrollHeight/);
   });
 });

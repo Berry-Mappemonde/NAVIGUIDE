@@ -4,6 +4,7 @@ import { featuresToSegments } from "../utils/geo.js";
 import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
+import { useRouteLayer } from "../layers/useRouteLayer.js";
 import { MapSceneController } from "./MapSceneController.js";
 
 function pointToSegmentPx(map, lat, lon, coords) {
@@ -76,12 +77,15 @@ export function MapScene({
     });
     controllerRef.current = controller;
     mapRef.current = controller.map;
-    // Recette (dev only): the scene controller at hand in the console.
-    if (import.meta.env?.DEV && typeof window !== "undefined") window.__naviguideScene = controller;
+    // Recette / e2e : le contrôleur de scène est exposé (zoom, carte).
+    if (typeof window !== "undefined") window.__naviguideScene = controller;
     setMapReady(1);
     callbacksRef.current.onReady?.(controller.api);
     return () => {
       callbacksRef.current.onReady?.(null);
+      if (typeof window !== "undefined" && window.__naviguideScene === controller) {
+        delete window.__naviguideScene;
+      }
       controller.dispose();
       controllerRef.current = null;
       mapRef.current = null;
@@ -110,6 +114,17 @@ export function MapScene({
     whenIso: scene.clockSample?.iso,
     lat: scene.isSuivre ? scene.live?.lat : null,
     lon: scene.isSuivre ? scene.live?.lon : null,
+  });
+  useRouteLayer(mapRef, {
+    segments: scene.segments,
+    customRoute: scene.customRoute,
+    drawingMode: scene.drawingMode,
+    drawnSegments: scene.drawnSegments,
+    mapReady,
+    visible: Boolean(scene.sceneReady) && !scene.drawingMode,
+    paintMain: false,
+    clockVertices: scene.clockVertices,
+    traveledNm: scene.traveledNm,
   });
 
   useEffect(() => {

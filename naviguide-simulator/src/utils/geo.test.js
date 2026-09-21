@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { flattenRoute, mapEscalesOnRoute } from "../engine/routePlayhead.js";
 import { mergeEpisodeMarks } from "../engine/filmCast.js";
 import { routeFromOfficial } from "./routeFromOfficial.js";
+import { bearingDeg } from "../engine/routeWindProfile.js";
 import {
   haversineNm,
   summarizeRoute,
@@ -15,12 +16,19 @@ import {
   splitAntimeridianCoords,
   unwrapLon,
   unwrapLineCoords,
+  unwrapPath,
+  wrapLon,
   worldCopyCoords,
   worldCopyLineCoords,
   worldCopyLngs,
   worldCopyParts,
   worldCopyPolygonCoords,
 } from "./geo.js";
+
+/** Officiel Berry (`public/route.geojson`). */
+const SAINT_MAUR = { lat: 46.8075, lon: 1.6358 };
+const LA_ROCHELLE = { lat: 46.1541, lon: -1.167 };
+const AJACCIO = { lat: 41.9192, lon: 8.7386 };
 
 const OFFICIAL_ESCALES = [
   "Saint-Maur (Berry, Indre)",
@@ -119,6 +127,27 @@ describe("summarizeLegs", () => {
   });
 });
 
+describe("wrapLon / unwrapPath (lot S)", () => {
+  it("replie 236,84° (SF dépliée) dans [−180, 180]", () => {
+    assert.equal(Number(wrapLon(236.84).toFixed(2)), -123.16);
+    assert.ok(wrapLon(236.84) >= -180 && wrapLon(236.84) <= 180);
+    assert.equal(wrapLon(-122.4), -122.4);
+  });
+
+  it("unwrapPath reste continu depuis Brisbane", () => {
+    const path = unwrapPath(
+      [[153.4, -27], [179, 0], [-179, 10], [-122.4, 37.7]],
+      153.4,
+    );
+    const lons = path.map(([lon]) => lon);
+    for (let i = 1; i < lons.length; i++) {
+      assert.ok(Math.abs(lons[i] - lons[i - 1]) <= 180);
+    }
+    assert.ok(lons[lons.length - 1] > 180);
+    assert.ok(path.every(([, lat]) => lat <= 50));
+  });
+});
+
 describe("antimeridian geo", () => {
   it("measures the short path on both sides of 180°", () => {
     const d = haversineNm(-15, 179.5, -15, -179.5);
@@ -161,6 +190,34 @@ describe("antimeridian geo", () => {
     assert.equal(copies.length, 3);
     assert.deepEqual(copies[0][0].map(([lon]) => lon), [170, 190, 190, 170, 170]);
     assert.deepEqual(copies[1][0].map(([lon]) => lon), [530, 550, 550, 530, 530]);
+  });
+});
+
+describe("lot C5 — orthodromie et cardinaux", () => {
+  it("Saint-Maur → La Rochelle ≈ 122 nm ± 5 (haversine ; le plan visait 190)", () => {
+    const nm = haversineNm(SAINT_MAUR.lat, SAINT_MAUR.lon, LA_ROCHELLE.lat, LA_ROCHELLE.lon);
+    assert.ok(Math.abs(nm - 122.3) <= 5, `orthodromie ${nm} nm`);
+  });
+
+  it("La Rochelle → Ajaccio ≈ 497 nm (ordre de grandeur Méditerranée)", () => {
+    const nm = haversineNm(LA_ROCHELLE.lat, LA_ROCHELLE.lon, AJACCIO.lat, AJACCIO.lon);
+    assert.ok(nm > 450 && nm < 550, `orthodromie ${nm} nm`);
+  });
+
+  it("cardinaux du cap : N 0°, E 90°, S 180°, O 270°", () => {
+    const n = bearingDeg({ lat: 0, lon: 0 }, { lat: 1, lon: 0 });
+    const e = bearingDeg({ lat: 0, lon: 0 }, { lat: 0, lon: 1 });
+    const s = bearingDeg({ lat: 0, lon: 0 }, { lat: -1, lon: 0 });
+    const w = bearingDeg({ lat: 0, lon: 0 }, { lat: 0, lon: -1 });
+    assert.ok(Math.abs(n - 0) < 1, `N ${n}`);
+    assert.ok(Math.abs(e - 90) < 1, `E ${e}`);
+    assert.ok(Math.abs(s - 180) < 1, `S ${s}`);
+    assert.ok(Math.abs(w - 270) < 1, `O ${w}`);
+  });
+
+  it("Saint-Maur → La Rochelle : cap OSO (~252°)", () => {
+    const brg = bearingDeg(SAINT_MAUR, LA_ROCHELLE);
+    assert.ok(brg > 240 && brg < 270, `cap ${brg}`);
   });
 });
 

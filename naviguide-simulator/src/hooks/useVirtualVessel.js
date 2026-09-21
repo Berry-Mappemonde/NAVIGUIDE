@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
 
 const STORAGE_KEY = "naviguide_sim_voyage_v1";
 const API = import.meta.env.VITE_API_URL ?? "";
@@ -246,4 +246,21 @@ export function useVirtualVessel({
     reject,
     refreshForecast,
   };
+}
+
+/**
+ * Phrase d'explication du recalcul (lot L5 / U8). Les nombres viennent du
+ * serveur (`draft.advice.delta`) ; le LLM n'en invente pas.
+ */
+export function RouteAdviceText({ draft }) {
+  const text = typeof draft?.advice?.text === "string" ? draft.advice.text.trim() : "";
+  if (!text) return null;
+  return createElement(
+    "p",
+    {
+      "data-testid": "route-advice-text",
+      className: "text-[10px] text-cyan-100/85 leading-snug mb-2",
+    },
+    text,
+  );
 }

@@ -9,7 +9,23 @@ import copernicusmarine
 from datetime import datetime, timedelta
 
 
-def get_wave_data_at_position(latitude, longitude, username=None, password=None):
+_open_dataset = None  # tests : faux copernicusmarine
+
+
+def _cm_open(**kwargs):
+    opener = _open_dataset or copernicusmarine.open_dataset
+    return opener(**kwargs)
+
+
+def _as_dt(value, default):
+    if value is None:
+        return default
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+
+
+def get_wave_data_at_position(latitude, longitude, username=None, password=None, start=None, end=None):
     """
     Récupère les données de vague à une position donnée
 
@@ -18,6 +34,7 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
         longitude (float): Longitude (-180 à 180)
         username (str): Username Copernicus Marine
         password (str): Password Copernicus Marine
+        start, end: intervalle optionnel (datetime ou ISO). Défaut : [J-2 ; J-1].
 
     Returns:
         dict: Données de vague (hauteur significative, période, direction)
@@ -26,9 +43,10 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
         # Dataset ID for the global wave model
         dataset_id = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
 
-        # Date: recent data (1-day lag)
-        end_date = datetime.now() - timedelta(days=1)
-        start_date = end_date - timedelta(days=1)
+        # Date: recent data (1-day lag) unless start/end given
+        default_end = datetime.now() - timedelta(days=1)
+        end_date = _as_dt(end, default_end)
+        start_date = _as_dt(start, end_date - timedelta(days=1))
 
         # Box around the point (±0.2 degree)
         margin = 0.2
@@ -39,7 +57,7 @@ def get_wave_data_at_position(latitude, longitude, username=None, password=None)
         print(f"   Date: {end_date.strftime('%Y-%m-%d')}")
 
         # Open the dataset with the filters
-        dataset = copernicusmarine.open_dataset(
+        dataset = _cm_open(
             dataset_id=dataset_id,
             username=username,
             password=password,
@@ -153,3 +171,53 @@ def overWave(latitude, longitude, username=None, password=None):
         h = _climatological_wave_height_m(latitude, longitude)
         print(f"🌊 Hauteur vague (climatologie): {h:.2f} m")
         return h > 2.0
+
+
+def get_wave_series(latitude, longitude, start, end, username=None, password=None):
+    """Série 3 h WAV ANFC (hindcast). Liste de {t, hs, waveDirFromDeg, wavePeriodS}."""
+    start_date = _as_dt(start, datetime.now() - timedelta(days=3))
+    end_date = _as_dt(end, datetime.now() - timedelta(days=1))
+    try:
+        dataset = _cm_open(
+            dataset_id="cmems_mod_glo_wav_anfc_0.083deg_PT3H-i",
+            username=username,
+            password=password,
+            variables=["VHM0", "VTM02", "VMDR"],
+            minimum_longitude=longitude - 0.2,
+            maximum_longitude=longitude + 0.2,
+            minimum_latitude=latitude - 0.2,
+            maximum_latitude=latitude + 0.2,
+            start_datetime=start_date.strftime("%Y-%m-%d"),
+            end_datetime=end_date.strftime("%Y-%m-%d"),
+            coordinates_selection_method="nearest",
+        )
+        point = dataset.sel(latitude=latitude, longitude=longitude, method="nearest")
+        times = point.time.values
+        out = []
+        for i, ts in enumerate(times):
+            hs = float(point["VHM0"].isel(time=i).values)
+            if math.isnan(hs):
+                continue
+            row = {"hs": hs}
+            try:
+                per = float(point["VTM02"].isel(time=i).values)
+                if not math.isnan(per):
+                    row["wavePeriodS"] = per
+            except Exception:
+                pass
+            try:
+                direc = float(point["VMDR"].isel(time=i).values)
+                if not math.isnan(direc):
+                    row["waveDirFromDeg"] = direc
+            except Exception:
+                pass
+            if isinstance(ts, np.datetime64):
+                iso = pd.Timestamp(ts).tz_localize("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                iso = str(ts)
+            row["t"] = iso
+            out.append(row)
+        return out
+    except Exception as exc:
+        print(f"cmems wave series: {exc}")
+        return []

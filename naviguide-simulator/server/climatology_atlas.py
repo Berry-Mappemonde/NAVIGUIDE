@@ -68,6 +68,58 @@ def _zone(lat: float, lon: float, month: int) -> Dict[str, Any]:
     return pack
 
 
+def _weighted_percentile(samples: list[tuple[float, float]], q: float) -> float:
+    """Percentile pondéré (q dans [0, 100]) d'une liste (valeur, poids)."""
+    rows = sorted((float(v), float(w)) for v, w in samples if w > 0)
+    if not rows:
+        return 0.0
+    total = sum(w for _v, w in rows)
+    if total <= 0:
+        return rows[0][0]
+    target = max(0.0, min(100.0, float(q))) / 100.0 * total
+    acc = 0.0
+    last = rows[0][0]
+    for val, weight in rows:
+        acc += weight
+        last = val
+        if acc >= target:
+            return val
+    return last
+
+
+def rose_speed_percentiles(rose: Optional[dict]) -> Optional[list[float]]:
+    """Trois tirages p25 / p50 / p75 de la rose (lot C4, A3). None si une seule valeur."""
+    if not isinstance(rose, dict):
+        return None
+    for keys in (("p25", "p50", "p75"), ("speed_p25", "speed_p50", "speed_p75")):
+        vals = [rose.get(k) for k in keys]
+        if all(v is not None for v in vals):
+            try:
+                return [float(v) for v in vals]
+            except (TypeError, ValueError):
+                pass
+    samples: list[tuple[float, float]] = []
+    for row in rose.get("directions_from") or []:
+        if not isinstance(row, dict):
+            continue
+        spd, pct = row.get("speed_knots"), row.get("pct")
+        if spd is None or pct is None:
+            continue
+        try:
+            s, p = float(spd), float(pct)
+        except (TypeError, ValueError):
+            continue
+        if p > 0:
+            samples.append((s, p))
+    if len(samples) < 2:
+        return None
+    return [
+        _weighted_percentile(samples, 25),
+        _weighted_percentile(samples, 50),
+        _weighted_percentile(samples, 75),
+    ]
+
+
 def wind_from_point(payload: Optional[dict]) -> Optional[Dict[str, Any]]:
     if not payload or payload.get("kind") != KIND:
         return None
@@ -83,6 +135,7 @@ def wind_from_point(payload: Optional[dict]) -> Optional[Dict[str, Any]]:
     wave = payload.get("wave") or {}
     current = payload.get("current") or {}
     cyclone = payload.get("cyclone") or {}
+    draws = rose_speed_percentiles(rose)
     return {
         "speedKnots": speed,
         "dirFromDeg": direction,
@@ -97,6 +150,7 @@ def wind_from_point(payload: Optional[dict]) -> Optional[Dict[str, Any]]:
         "hsP90": wave.get("hs_p90_m"),
         "currentKn": current.get("speed_knots"),
         "currentToDeg": current.get("direction_to_deg"),
+        "roseKnots": draws,
         "cycloneNearby": cyclone.get("nearby"),
         "crossings": cyclone.get("crossings_if_leg"),
         "point": payload,

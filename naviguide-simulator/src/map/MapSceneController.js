@@ -17,7 +17,10 @@ import {
   shouldResnapCamera,
 } from "../utils/sceneGate.js";
 import { applyMarkerRotation } from "../utils/markerRotation.js";
-import { markerOffsetDelay } from "../hooks/useMarkerOffsets.js";
+import {
+  flagWorldLngsForView,
+  markerOffsetDelay,
+} from "../hooks/useMarkerOffsets.js";
 import { createPanes } from "../layers/layerOrder.js";
 import {
   ROUTE_CASING_COLOR,
@@ -30,6 +33,8 @@ import {
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
+import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
+import { attachEventBubble } from "../components/EventBubble.jsx";
 
 const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
@@ -171,6 +176,7 @@ export class MapSceneController {
       minZoom: 2,
       maxZoom: 18,
       worldCopyJump: false,
+      preferCanvas: true,
     });
     createPanes(map);
     return new MapSceneController(map, callbacks);
@@ -181,10 +187,14 @@ export class MapSceneController {
     this.callbacks = callbacks;
     this.layers = new SceneLayerRegistry();
     this.config = {};
-    this.baseLayer = L.tileLayer(TILE_URLS.dark, { attribution: TILE_ATTRIBUTION }).addTo(map);
+    this.baseLayer = L.tileLayer(TILE_URLS.dark, {
+      attribution: TILE_ATTRIBUTION,
+      updateWhenZooming: false,
+    }).addTo(map);
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
+    this.divIconCache = new Map();
     this.currentPlayback = null;
     this.currentCast = null;
     this.routeInputs = null;
@@ -205,12 +215,35 @@ export class MapSceneController {
       resetKey: null,
       recapture: null,
       focus: null,
+      filmChapterIdx: null,
+      filmZoom: null,
+      filmSetViewAt: 0,
+      filmFlyingUntil: 0,
     };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
       onPublish: (snapshot) => this.publishPlayback(snapshot),
     });
+    this.zoomAnimating = false;
+    this.zoomJustEnded = false;
+    this.waypointZoom = map.getZoom();
+    this.onZoomAnim = () => {
+      this.zoomAnimating = true;
+    };
+    this.onZoomEnd = () => {
+      this.zoomAnimating = false;
+      this.zoomJustEnded = true;
+      this.scheduleWaypoints({ reason: "zoom" });
+      this.waypointZoom = this.map.getZoom();
+    };
     this.onMoveEnd = () => {
+      // Lot U : pas de sac ni de récit ici — seulement copies bateau + offsets.
+      if (this.zoomAnimating) return;
+      if (this.zoomJustEnded) {
+        this.zoomJustEnded = false;
+        this.waypointZoom = this.map.getZoom();
+        return;
+      }
       this.syncDynamicWorldCopies();
       // A pan the camera made while following the boat (lot I): the flags
       // keep their offsets — recomputing them at every step made them jump.
@@ -224,9 +257,25 @@ export class MapSceneController {
       this.map.stop();
       this.callbacks.onManualNavigation?.();
     };
+    map.on("zoomanim", this.onZoomAnim);
+    map.on("zoomend", this.onZoomEnd);
     map.on("moveend", this.onMoveEnd);
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
+    this.eventBubble = attachEventBubble(this, L);
+  }
+
+  /** Marqueur du bateau « à l'écran » (copie monde 0) — ancre de la bulle F4. */
+  mainBoatMarker() {
+    const liveMode = this.config.isSuivre && this.config.live && !this.config.previewing;
+    const order = this.config.filmActive || liveMode
+      ? ["live", "ghost", "simulation", "drawing"]
+      : ["simulation", "live", "ghost", "drawing"];
+    for (const role of order) {
+      const marker = (this.markerSets.get(role) || [])[0];
+      if (marker) return marker;
+    }
+    return null;
   }
 
   get api() {
@@ -309,6 +358,12 @@ export class MapSceneController {
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
+    if (previous.filmActive && !this.config.filmActive) {
+      this.camera.filmChapterIdx = null;
+      this.camera.filmZoom = null;
+      this.camera.filmSetViewAt = 0;
+      this.camera.filmFlyingUntil = 0;
+    }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
     this.syncInitialCamera();
@@ -331,6 +386,7 @@ export class MapSceneController {
     } else if (this.currentPlayback) {
       this.renderDynamic(this.currentPlayback);
     }
+    if (this.config.filmActive) this.syncFilmCamera(this.config);
     // Entering / leaving the drawing mode (lot I): the boats of the official
     // route hide or come back at once, even while playback is paused.
     if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
@@ -342,7 +398,10 @@ export class MapSceneController {
     const url = this.config.isLightMode ? TILE_URLS.light : TILE_URLS.dark;
     if (this.baseLayer?._naviguideUrl === url) return;
     this.baseLayer?.remove();
-    this.baseLayer = L.tileLayer(url, { attribution: TILE_ATTRIBUTION }).addTo(this.map);
+    this.baseLayer = L.tileLayer(url, {
+      attribution: TILE_ATTRIBUTION,
+      updateWhenZooming: false,
+    }).addTo(this.map);
     this.baseLayer._naviguideUrl = url;
     this.baseLayer.bringToBack();
   }
@@ -510,6 +569,7 @@ export class MapSceneController {
       marker.setLatLng([lat, lngs[index]]);
       applyMarkerRotation(marker, bearing || 0);
     });
+    this.eventBubble?.sync();
   }
 
   syncMarkers(cast, snapshot) {
@@ -560,6 +620,7 @@ export class MapSceneController {
       className: "catamaran-divicon catamaran-divicon--draw",
       html: catamaranSvg(0),
     });
+    this.eventBubble?.sync();
   }
 
   syncAirHop(cast) {
@@ -629,6 +690,10 @@ export class MapSceneController {
       : [];
     const group = this.layers.add("waypoints", () => L.layerGroup().addTo(this.map));
     const expected = new Set();
+    const bounds = this.map.getBounds();
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+    const cameraLng = this.map.getCenter()?.lng;
     source.forEach((point, index) => {
       const srcs = waypointFlagSrcs(point);
       if (!srcs.length && !cfg.drawingMode) return;
@@ -637,14 +702,24 @@ export class MapSceneController {
         ? flagMarkerHtml(srcs, offset)
         : `<div style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
       const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
-      for (const [copyIndex, lng] of markerWorldLngs(point.lon, this.map.getCenter()?.lng).entries()) {
+      for (const [copyIndex, lng] of flagWorldLngsForView(point.lon, cameraLng, west, east).entries()) {
         const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${copyIndex}`;
         expected.add(key);
         const iconKey = `${html}|${metrics.iconSize.join(",")}|${metrics.iconAnchor.join(",")}`;
+        let icon = this.divIconCache.get(iconKey);
+        if (!icon) {
+          icon = L.divIcon({
+            className: "flag-divicon",
+            html,
+            iconSize: metrics.iconSize,
+            iconAnchor: metrics.iconAnchor,
+          });
+          this.divIconCache.set(iconKey, icon);
+        }
         let marker = this.waypointMarkers.get(key);
         if (!marker) {
           marker = L.marker([point.lat, lng], {
-            icon: L.divIcon({ className: "flag-divicon", html, iconSize: metrics.iconSize, iconAnchor: metrics.iconAnchor }),
+            icon,
             interactive: true,
           }).addTo(group);
           marker.on("mouseover", () => this.callbacks.onWaypointHover?.(marker._naviguideWaypoint));
@@ -661,12 +736,7 @@ export class MapSceneController {
         marker._naviguideIndex = index;
         marker.setLatLng([point.lat, lng]);
         if (marker._naviguideIconKey !== iconKey) {
-          marker.setIcon(L.divIcon({
-            className: "flag-divicon",
-            html,
-            iconSize: metrics.iconSize,
-            iconAnchor: metrics.iconAnchor,
-          }));
+          marker.setIcon(icon);
           marker._naviguideIconKey = iconKey;
         }
       }
@@ -681,25 +751,32 @@ export class MapSceneController {
   /** The camera is driving the map: playback running, or the live boat followed. */
   isCameraFollowing() {
     const cfg = this.config || {};
+    if (cfg.filmActive) return true;
     if (!cfg.cameraFollow) return false;
     const liveMode = Boolean(cfg.isSuivre && cfg.live && !cfg.previewing);
     return Boolean(this.currentPlayback?.playing || liveMode);
   }
 
   scheduleWaypoints({ reason = "move" } = {}) {
+    if (this.config?.filmActive) return; // flags stay put for the whole film (lot F1)
     if (!this.config.points?.length && !this.config.drawnPoints?.length) return;
     if (reason === "follow") return; // flags stay put while the camera follows (lot I)
+    if (this.zoomAnimating && reason !== "zoom") return;
     window.clearTimeout(this.waypointTimer);
     this.waypointTimer = window.setTimeout(() => {
       this.waypointsDirty = true;
       this.syncWaypoints();
-    }, markerOffsetDelay(this.config.cameraFollow));
+    }, markerOffsetDelay(this.config.cameraFollow, reason));
   }
 
   syncInitialCamera() {
     const cfg = this.config;
     if (!cfg.routeReady || !cfg.flat?.points?.length) {
       this.setCameraPlaced(false);
+      return;
+    }
+    if (cfg.filmActive) {
+      this.setCameraPlaced(true);
       return;
     }
     const recette = cfg.recetteMap;
@@ -741,6 +818,10 @@ export class MapSceneController {
       resetKey: null,
       recapture: null,
       focus: null,
+      filmChapterIdx: null,
+      filmZoom: null,
+      filmSetViewAt: 0,
+      filmFlyingUntil: 0,
     };
   }
 
@@ -759,8 +840,41 @@ export class MapSceneController {
     fn();
   }
 
+  syncFilmCamera(cfg) {
+    const subject = cfg.live;
+    if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
+    const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
+    this.camera.followLon = lonCam;
+    const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx)) ? Number(cfg.filmChapterIdx) : 0;
+    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
+      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
+    }
+    let next;
+    this.programmaticMove(() => {
+      next = applyFilmCamera(this.map, {
+        chapterIdx,
+        lastChapterIdx: this.camera.filmChapterIdx,
+        lat: subject.lat,
+        lon: lonCam,
+        heading: subject.bearing,
+        zoom: this.camera.filmZoom,
+        now: Date.now(),
+        lastSetViewAt: this.camera.filmSetViewAt || 0,
+        flyingUntil: this.camera.filmFlyingUntil || 0,
+      });
+    });
+    this.camera.filmChapterIdx = next.lastChapterIdx;
+    this.camera.filmSetViewAt = next.lastSetViewAt;
+    this.camera.filmFlyingUntil = next.flyingUntil || 0;
+    this.camera.lastFollow = Date.now();
+  }
+
   syncCamera(cast, snapshot) {
     const cfg = this.config;
+    if (cfg.filmActive) {
+      this.syncFilmCamera(cfg);
+      return;
+    }
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     const subject = liveMode ? cfg.live : cast?.follow;
     const enabled = Boolean(
@@ -864,10 +978,14 @@ export class MapSceneController {
   }
 
   dispose() {
+    this.eventBubble?.dispose();
+    this.eventBubble = null;
     this.clearBriefingFocus();
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);
     this.playback.destroy();
+    this.map.off("zoomanim", this.onZoomAnim);
+    this.map.off("zoomend", this.onZoomEnd);
     this.map.off("moveend", this.onMoveEnd);
     this.map.off("zoomstart", this.onUserNavigation);
     this.map.off("dragstart", this.onUserNavigation);
@@ -875,6 +993,7 @@ export class MapSceneController {
     this.markerSets.forEach((markers) => markers.forEach((marker) => marker.remove()));
     this.markerSets.clear();
     this.waypointMarkers.clear();
+    this.divIconCache.clear();
     this.baseLayer?.remove();
     this.map.remove();
   }

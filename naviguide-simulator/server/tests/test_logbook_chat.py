@@ -41,10 +41,62 @@ def client(tmp_path, monkeypatch):
 def _llm_transport(answer: str):
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
         return _handler(request)
     return httpx.MockTransport(handler)
+
+
+def test_chat_tier_fast_for_short_factual_question():
+    assert logbook_chat.chat_tier("Quel vent ?") == "fast"
+    assert logbook_chat.chat_tier("Où est le bateau ?") == "fast"
+    assert logbook_chat.chat_tier("x" * 79) == "fast"
+
+
+def test_chat_tier_write_for_why_how_or_long_question():
+    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "write"
+    assert logbook_chat.chat_tier("Comment lire le vent ?") == "write"
+    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "write"
+    assert logbook_chat.chat_tier("How is the wind?") == "write"
+    assert logbook_chat.chat_tier("x" * 80) == "write"
+
+
+def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.update(kw)
+        return "Le bateau est à quai, 0 kn.", "nemotron-lightning"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 0, "atQuay": True}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question("Quel vent ?", "fr", {}, datetime.now(timezone.utc)))
+    assert seen.get("tier") == "fast"
+    assert out["source"] == "nemotron-lightning"
+    assert out["engine"] == "nemotron-lightning"
+    assert "0" in out["answer"]
+
+
+def test_answer_question_write_tier_for_pourquoi(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen["tier"] = kw.get("tier")
+        return "Parce que l'horloge dit à quai.", "nemotron-super"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"atQuay": True}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert seen["tier"] == "write"
+    assert out["source"] == "nemotron-super"
 
 
 def test_filter_numbers_drops_sentences_with_figures_absent_from_the_facts():
@@ -64,6 +116,7 @@ def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypa
     now = T0 + timedelta(days=3)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
     client.put("/voyage/official", json=_official(), headers=ADMIN)
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
     transport = _llm_transport("Le bateau est en mer, dans French Exclusive Economic Zone. Le vent au bateau est de 99 kn. Prochaine escale Fort-de-France (Martinique).")
     real = logbook_chat.answer_question
@@ -81,6 +134,8 @@ def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypa
     assert body["status"] == "ready" and body["logged"] is False
     assert "99 kn" not in body["answer"], "a figure absent from the facts is dropped"
     assert "Fort-de-France" in body["answer"]
+    assert body["source"] == "nemotron-lightning"
+    assert body["engine"] == "nemotron-lightning"
     assert body["facts"]["official"]["basis"] == "clock"
     assert journal.latest(10, kinds=("chat",)) == []
 
@@ -124,6 +179,7 @@ def test_build_context_at_quay_speed_zero(monkeypatch):
             "atQuay": True,
             "status": "live",
             "vehicle": "quay",
+            "regime": "hindcast",
         }
 
     monkeypatch.setattr("voyage_clock.sample_clock_at_time", _sample)
@@ -136,9 +192,12 @@ def test_build_context_at_quay_speed_zero(monkeypatch):
     assert ctx["official"]["atQuay"] is True
     assert ctx["official"]["plannedKnots"] == 11.9
     assert ctx["official"]["basis"] == "clock"
+    assert ctx["official"]["regime"] == "hindcast"
+    assert ctx["boat"]["speedKnots"] == 0
+    assert ctx["boat"]["regime"] == "hindcast"
 
 
-def test_build_context_measured_speed_at_sea(monkeypatch):
+def test_build_context_follow_uses_clock_speed(monkeypatch):
     now = datetime(2026, 7, 1, 12, tzinfo=timezone.utc)
     journal.reset()
     monkeypatch.setattr(
@@ -162,6 +221,8 @@ def test_build_context_measured_speed_at_sea(monkeypatch):
             "atQuay": False,
             "status": "live",
             "vehicle": "main",
+            "regime": "hindcast",
+            "kind": "hindcast",
         }
 
     monkeypatch.setattr("voyage_clock.sample_clock_at_time", _sample)
@@ -170,16 +231,20 @@ def test_build_context_measured_speed_at_sea(monkeypatch):
         {"view": "suivre", "boat": {"lat": 20.0, "lon": -40.0, "speedKnots": 7.4}},
         now,
     ))
-    assert ctx["official"]["speedKnots"] == 7.4
+    assert ctx["official"]["speedKnots"] == 11.9
     assert ctx["official"]["plannedKnots"] == 11.9
-    assert ctx["official"]["basis"] == "measured"
+    assert ctx["official"]["basis"] == "clock"
+    assert ctx["official"]["regime"] == "hindcast"
     assert ctx["official"]["atQuay"] is False
+    assert ctx["boat"]["speedKnots"] == 11.9
+    assert ctx["boat"]["regime"] == "hindcast"
 
 
 def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):
     now = T0 + timedelta(days=3)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
     client.put("/voyage/official", json=_official(), headers=ADMIN)
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "")
     monkeypatch.setattr(story_cascade, "openrouter_key", lambda: "")
     monkeypatch.setattr(story_cascade, "anthropic_key", lambda: "")
@@ -187,3 +252,84 @@ def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):
     body = r.json()
     assert body["status"] == "failed" and body["answer"] is None and body["logged"] is False
     assert journal.latest(10, kinds=("chat",)) == []
+
+
+WX_GALE = {
+    "kind": "wx",
+    "t": "2026-05-21T06:00:00Z",
+    "event": "gale",
+    "windKnots": 36.5,
+    "maxWindKnots": 36.5,
+    "dirFromDeg": 250,
+    "hs": 2.0,
+    "model": "GFS",
+}
+
+
+def test_wx_keyword_hits_cites_gale_above_threshold():
+    hits = logbook_chat.wx_keyword_hits(
+        "avons-nous déjà eu plus de 35 nœuds ?",
+        [WX_GALE, {"kind": "wx", "event": "sea", "hs": 4.1, "windKnots": 20, "t": "2026-05-20T06:00:00Z"}],
+    )
+    assert len(hits) == 1
+    assert hits[0]["windKnots"] == 36.5
+    assert hits[0]["t"] == "2026-05-21T06:00:00Z"
+    assert logbook_chat.wx_keyword_hits("avons-nous déjà eu plus de 35 nœuds ?", []) == []
+
+
+def test_embeddings_skipped_when_keywords_hit(monkeypatch):
+    called = []
+
+    async def boom(*_a, **_k):
+        called.append(1)
+        return []
+
+    monkeypatch.setattr(logbook_chat, "wx_embed_hits", boom)
+    monkeypatch.setenv("NAVIGUIDE_EMBEDDINGS", "1")
+    out = asyncio.run(logbook_chat.similar_wx("avons-nous déjà eu plus de 35 nœuds ?", [WX_GALE]))
+    assert out and out[0]["windKnots"] == 36.5
+    assert called == []
+
+
+def test_embeddings_only_when_flag_and_no_keyword(monkeypatch):
+    called = []
+
+    async def fake_emb(question, entries, client=None):
+        called.append(question)
+        return [logbook_chat._slim_wx(WX_GALE)]
+
+    monkeypatch.setattr(logbook_chat, "wx_embed_hits", fake_emb)
+    monkeypatch.setenv("NAVIGUIDE_EMBEDDINGS", "1")
+    q = "a-t-on déjà eu un temps pareil ?"
+    out = asyncio.run(logbook_chat.similar_wx(q, [WX_GALE]))
+    assert called == [q] and out[0]["windKnots"] == 36.5
+
+    called.clear()
+    monkeypatch.delenv("NAVIGUIDE_EMBEDDINGS", raising=False)
+    assert logbook_chat.embeddings_enabled() is False
+    out2 = asyncio.run(logbook_chat.similar_wx(q, [WX_GALE]))
+    assert called == [] and out2 == []
+
+
+def test_answer_cites_wx_memory_without_invented_figure(monkeypatch):
+    seen = {}
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen["user"] = user
+        return "Oui : le journal note 36,5 kn le 21 mai 2026. Demain 99 kn.", "nemotron-lightning"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 0}, "journal": []}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    monkeypatch.setattr(journal, "latest", lambda *_a, **_k: [WX_GALE])
+    out = asyncio.run(logbook_chat.answer_question(
+        "avons-nous déjà eu plus de 35 nœuds ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert "36.5" in seen["user"] or "36,5" in seen["user"]
+    assert '"memory"' in seen["user"]
+    assert out["source"] == "nemotron-lightning"
+    assert "36,5" in out["answer"] or "36.5" in out["answer"]
+    assert "99" not in out["answer"]
+    assert out["context"]["memory"][0]["windKnots"] == 36.5

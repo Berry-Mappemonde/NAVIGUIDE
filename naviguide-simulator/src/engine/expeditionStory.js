@@ -18,6 +18,7 @@
  */
 
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+import { cardFromJournalEntry } from "./momentCard.js";
 
 const MONTHS = {
   fr: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
@@ -97,6 +98,8 @@ export function datedMarks(marks) {
       filmNm: film,
       nm: Number.isFinite(Number(m.nm)) ? Number(m.nm) : film,
       holdHours: Number(m.holdHours) || 0,
+      lat: Number.isFinite(Number(m.lat)) ? Number(m.lat) : null,
+      lon: Number.isFinite(Number(m.lon)) ? Number(m.lon) : null,
     });
   }
   return out.sort((a, b) => a.filmNm - b.filmNm);
@@ -395,4 +398,506 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
 
 export function expeditionStoryText(params) {
   return expeditionStory(params).join("\n\n");
+}
+
+/** Lot F3 — script brut du film (règles), bilingue, ≤ 2 400 caractères. */
+export const FILM_MAX_CHARS = 2400;
+export const FILM_MIN_EVENTS = 6;
+export const FILM_MAX_EVENTS = 9;
+export const FILM_GAP_FRAC = 0.03;
+export const FILM_KIND_RANK = Object.freeze({
+  wx: 0, climo: 1, sci: 2, amp: 3, zee: 4, poe: 5, note: 6, stop: 7,
+});
+export const FILM_CONNECTORS = Object.freeze({
+  fr: ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
+  en: ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
+});
+
+const SCORED_KINDS = new Set(["wx", "climo", "sci", "amp", "zee", "poe", "note"]);
+const CANDIDATE_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "climo", "sci", "note"]);
+
+function isoOf(msOrIso) {
+  if (msOrIso == null) return null;
+  if (typeof msOrIso === "string") return Number.isFinite(ms(msOrIso)) ? new Date(ms(msOrIso)).toISOString() : null;
+  if (typeof msOrIso === "number" && Number.isFinite(msOrIso)) return new Date(msOrIso).toISOString();
+  return null;
+}
+
+function numPlain(v, digits = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+  const f = digits > 0 ? n.toFixed(digits) : String(Math.round(n));
+  return f.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function quayDaysOf(entry) {
+  if (Number.isFinite(Number(entry?.daysAtQuay))) return Number(entry.daysAtQuay);
+  if (Number.isFinite(Number(entry?.holdHours))) return days(entry.holdHours);
+  return 0;
+}
+
+function factNum(entry, ...keys) {
+  for (const k of keys) {
+    const v = entry?.[k] ?? entry?.facts?.[k];
+    if (Number.isFinite(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+/** Score déterministe : wx = max × durée ; sinon rang du kind. */
+export function scoreFilmEvent(entry) {
+  const kind = entry?.kind;
+  if (kind === "wx") {
+    const peak = factNum(entry, "maxWindKnots", "windKnots") || 0;
+    const dur = factNum(entry, "hours") || 6;
+    return peak * dur;
+  }
+  if (kind === "climo") return 50;
+  if (kind === "sci") return 40;
+  if (kind === "amp") return 30;
+  if (kind === "zee") return 20;
+  if (kind === "poe") return 10;
+  if (kind === "note") return 5;
+  if (kind === "stop") return 1;
+  return 0;
+}
+
+function candidateId(entry, fallback) {
+  return String(entry?.id || fallback || `${entry?.kind}:${entry?.t || ""}`);
+}
+
+function toCandidate(entry, extras = {}) {
+  const tMs = ms(entry?.t);
+  if (tMs == null) return null;
+  const id = candidateId(entry, extras.id);
+  return {
+    id,
+    kind: entry.kind,
+    t: entry.t,
+    tMs,
+    name: entry.name || extras.name || "",
+    score: extras.score != null ? extras.score : scoreFilmEvent(entry),
+    role: extras.role || null,
+    quayDays: extras.quayDays != null ? extras.quayDays : quayDaysOf(entry),
+    entry,
+  };
+}
+
+/**
+ * Candidats du journal (stop, zee, amp, poe, wx, climo, sci, note)
+ * + départ / aujourd'hui si absents.
+ */
+function marksWithIso(marks, clock) {
+  const raw = marks?.length ? marks : (clock?.marks || []);
+  const clockMarks = clock?.marks || [];
+  return (raw || []).map((m) => {
+    if (m?.iso) return m;
+    const film = Number(m?.filmNm ?? m?.nm);
+    const hit = clockMarks.find((c) => (
+      Number.isFinite(film) && Math.abs((c.filmNm ?? c.nm) - film) < 0.6 && (!m?.name || c.name === m.name)
+    )) || clockMarks.find((c) => m?.name && c.name === m.name);
+    return hit ? { ...m, iso: hit.iso, holdHours: hit.holdHours ?? m.holdHours, lat: m.lat ?? hit.lat, lon: m.lon ?? hit.lon } : m;
+  });
+}
+
+export function filmCandidates({ journal, marks, clock, live, now = Date.now() } = {}) {
+  const stops = datedMarks(marksWithIso(marks, clock));
+  const start = stops[0];
+  const sea = stops.find((s, i) => i > 0 && /rochelle/i.test(s.name)) || stops[1] || null;
+  const t0 = ms(clock?.t0) ?? ms(start?.iso);
+  const nowMs = now instanceof Date ? now.getTime() : (typeof now === "number" ? now : ms(now));
+  const tEnd = ms(live?.iso) || nowMs;
+  const out = [];
+  const seen = new Set();
+
+  const push = (c) => {
+    if (!c || !c.id || seen.has(c.id)) return;
+    seen.add(c.id);
+    out.push(c);
+  };
+
+  const departIso = start?.iso || clock?.t0;
+  if (departIso && ms(departIso) != null) {
+    push(toCandidate({
+      id: "depart",
+      kind: "stop",
+      t: departIso,
+      event: "departure",
+      name: shortName(start?.name || "Saint-Maur"),
+    }, { role: "depart", score: 10_000, name: shortName(start?.name || "Saint-Maur") }));
+  }
+
+  const seenZee = new Set();
+  const seenPoe = new Set();
+  const seenSci = new Set();
+  for (const e of journalEntries(journal)) {
+    if (!CANDIDATE_KINDS.has(e?.kind)) continue;
+    if (e.kind === "zee") {
+      if (e.event && e.event !== "enter") continue;
+      const key = e.mrgid ?? e.name;
+      if (!key || seenZee.has(key)) continue;
+      seenZee.add(key);
+    }
+    if (e.kind === "poe") {
+      const key = e.poeId ?? e.name;
+      if (!key || seenPoe.has(key)) continue;
+      seenPoe.add(key);
+    }
+    if (e.kind === "sci") {
+      const key = e.entity?.id ?? e.name;
+      if (!key || seenSci.has(key)) continue;
+      seenSci.add(key);
+    }
+    if (e.kind === "stop" && e.event === "departure") continue;
+    const t = ms(e.t);
+    if (t == null) continue;
+    if (t0 != null && t < t0) continue;
+    if (tEnd != null && t > tEnd) continue;
+    push(toCandidate(e, { role: e.kind === "stop" ? "stop" : null }));
+  }
+
+  // Escales de l'horloge si le journal n'en a pas encore.
+  for (const s of stops.slice(1)) {
+    const t = ms(s.iso);
+    if (t == null || (tEnd != null && t > tEnd)) continue;
+    const id = `stop:${s.name}:${s.iso}`;
+    if (out.some((c) => c.kind === "stop" && c.role !== "depart" && c.name === s.name && Math.abs(c.tMs - t) < 3_600_000)) {
+      continue;
+    }
+    push(toCandidate({
+      id,
+      kind: "stop",
+      t: s.iso,
+      event: "arrival",
+      name: s.name,
+      holdHours: s.holdHours,
+      daysAtQuay: days(s.holdHours),
+    }, { role: "stop", score: 1 }));
+  }
+
+  const todayIso = live?.iso || (tEnd != null ? new Date(tEnd).toISOString() : isoOf(nowMs));
+  if (todayIso) {
+    push(toCandidate({
+      id: "today",
+      kind: "stop",
+      t: todayIso,
+      event: "arrival",
+      name: live?.atQuay && live?.fromStop ? shortName(live.fromStop) : "",
+    }, { role: "today", score: 9_000 }));
+  }
+
+  return { candidates: out.sort((a, b) => a.tMs - b.tMs), t0, tEnd, start, sea, stops };
+}
+
+function pickStops(stops, max = 6) {
+  const list = stops.filter((c) => c.kind === "stop" && c.role !== "depart" && c.role !== "today");
+  if (list.length <= max) return list;
+  const first = list[0];
+  const last = list[list.length - 1];
+  const long = list.filter((s) => s.quayDays > 2 && s !== first && s !== last)
+    .sort((a, b) => b.quayDays - a.quayDays || a.tMs - b.tMs);
+  const picked = [];
+  const add = (s) => {
+    if (s && !picked.some((x) => x.id === s.id)) picked.push(s);
+  };
+  add(first);
+  add(last);
+  for (const s of long) {
+    if (picked.length >= max) break;
+    add(s);
+  }
+  if (picked.length < max) {
+    for (const s of list) {
+      if (picked.length >= max) break;
+      add(s);
+    }
+  }
+  return picked.sort((a, b) => a.tMs - b.tMs).slice(0, max);
+}
+
+/**
+ * Départ, escales (max 6), aujourd'hui, puis wx > climo > sci > amp > zee > poe
+ * jusqu'à 6–9, jamais deux à moins de 3 % du temps total.
+ */
+export function selectFilmEvents(candidates, { t0, tEnd } = {}) {
+  const list = (candidates || []).filter((c) => c && c.tMs != null);
+  const span = (Number(tEnd) || 0) - (Number(t0) || 0);
+  const gap = span > 0 ? span * FILM_GAP_FRAC : 0;
+  const depart = list.find((c) => c.role === "depart" || c.id === "depart");
+  const today = list.find((c) => c.role === "today" || c.id === "today");
+  const must = [];
+  if (depart) must.push(depart);
+  must.push(...pickStops(list, 6));
+  if (today) must.push(today);
+  const selected = [...must];
+  const tooClose = (ev) => gap > 0 && selected.some((s) => Math.abs(s.tMs - ev.tMs) < gap);
+  const scored = list
+    .filter((c) => SCORED_KINDS.has(c.kind) && !must.some((m) => m.id === c.id))
+    .sort((a, b) => {
+      const ds = (b.score || 0) - (a.score || 0);
+      if (ds) return ds;
+      const dr = (FILM_KIND_RANK[a.kind] ?? 9) - (FILM_KIND_RANK[b.kind] ?? 9);
+      if (dr) return dr;
+      return a.tMs - b.tMs;
+    });
+  for (const ev of scored) {
+    if (selected.length >= FILM_MAX_EVENTS) break;
+    if (tooClose(ev)) continue;
+    selected.push(ev);
+  }
+  if (selected.length < FILM_MIN_EVENTS) {
+    for (const ev of scored) {
+      if (selected.length >= FILM_MIN_EVENTS) break;
+      if (selected.some((s) => s.id === ev.id)) continue;
+      selected.push(ev);
+    }
+  }
+  return selected.sort((a, b) => a.tMs - b.tMs);
+}
+
+function placeOf(entry, lang) {
+  const name = entry?.place || (entry?.name && entry.kind !== "wx" && entry.kind !== "stop" ? entry.name : "");
+  if (!name) return "";
+  return isEn(lang) ? ` off ${name}` : ` au large de ${name}`;
+}
+
+/** Phrase d'événement depuis un gabarit — uniquement des faits déjà là. */
+export function filmEventSentence(ev, lang = "fr") {
+  const en = isEn(lang);
+  const e = ev?.entry || ev;
+  const when = dayMonth(e.t || ev.t, lang);
+  const name = shortName(e.name || ev.name || "");
+  if (ev.role === "depart") {
+    const sea = shortName(ev.seaName || "La Rochelle");
+    const from = name || "Saint-Maur";
+    return en
+      ? `The Berry-Mappemonde expedition left ${from} on ${dayMonth(e.t, lang, { year: true })} and took the road to ${sea}.`
+      : `L’expédition Berry-Mappemonde a quitté ${from} le ${dayMonth(e.t, lang, { year: true })} et a pris la route vers ${sea}.`;
+  }
+  if (ev.role === "today") {
+    const nm = ev.distLabel || "";
+    const head = en ? "Today" : "Aujourd’hui";
+    return nm
+      ? (en ? `${head}, the boat is ${nm} from the start.` : `${head}, le bateau est à ${nm} du départ.`)
+      : (en ? `${head}, the boat is at its position of the moment.` : `${head}, le bateau est à sa position du moment.`);
+  }
+  if (ev.kind === "stop") {
+    const quay = quayDaysOf(e);
+    const sights = (Array.isArray(e.sights) ? e.sights : e.facts?.sights || []).slice(0, 2)
+      .map((s) => (typeof s === "string" ? s : s?.name)).filter(Boolean);
+    const extra = sights.length ? ` ${joinList(sights, lang)}.` : "";
+    return en
+      ? `Stopover in ${name} on ${when}${quay ? `, ${dayWord(quay, lang)} in port` : ""}.${extra}`
+      : `Escale à ${name} le ${when}${quay ? `, ${dayWord(quay, lang)} à quai` : ""}.${extra}`;
+  }
+  if (ev.kind === "wx") {
+    const kn = numPlain(factNum(e, "maxWindKnots", "windKnots"));
+    const hours = factNum(e, "hours");
+    const hs = factNum(e, "hs", "maxHs");
+    const dur = hours != null ? (en ? ` for ${numPlain(hours)} hours` : ` pendant ${numPlain(hours)} heures`) : "";
+    const sea = hs != null ? (en ? `, Hs ${numPlain(hs, 1)} m` : `, Hs ${numPlain(hs, 1)} m`) : "";
+    const place = placeOf(e, lang);
+    return en
+      ? `On ${when}${place}, the wind rose to ${kn} kn${dur}${sea}.`
+      : `Le ${when}${place}, le vent est monté à ${kn} kn${dur}${sea}.`;
+  }
+  if (ev.kind === "climo") {
+    const event = e.event || "";
+    const detail = event === "calms"
+      ? (en ? " — equatorial calms" : " — calmes équatoriaux")
+      : event === "cyclone-enter"
+        ? (en ? " — cyclone season" : " — saison cyclonique")
+        : (en ? " — wind regime" : " — régime de vent");
+    const deg = factNum(e, "deltaDeg");
+    const degBit = deg != null ? (en ? ` (${numPlain(deg)}°)` : ` (${numPlain(deg)}°)`) : "";
+    return en
+      ? `On ${when}, the climate regime changed${detail}${degBit}.`
+      : `Le ${when}, le régime climatique a changé${detail}${degBit}.`;
+  }
+  if (ev.kind === "sci") {
+    const nm = factNum(e, "nm");
+    const nmBit = nm != null ? (en ? ` at ${numPlain(nm, 1)} nm` : ` à ${numPlain(nm, 1)} nm`) : "";
+    return en
+      ? `On ${when}, the route passed${nmBit} from ${name}.`
+      : `Le ${when}, la route est passée${nmBit} de ${name}.`;
+  }
+  if (ev.kind === "amp") {
+    return en
+      ? `On ${when}, marine protected area within reach: ${name}.`
+      : `Le ${when}, aire marine protégée à portée : ${name}.`;
+  }
+  if (ev.kind === "zee") {
+    return en
+      ? `On ${when}, entered ${name}.`
+      : `Le ${when}, entrée dans ${name}.`;
+  }
+  if (ev.kind === "poe") {
+    return en
+      ? `On ${when}, port of entry passed: ${name}.`
+      : `Le ${when}, port d’entrée passé : ${name}.`;
+  }
+  if (ev.kind === "note" && e.text) {
+    const note = String(e.text).trim().slice(0, 120);
+    return en
+      ? `On ${when}, the skipper wrote: « ${note} »`
+      : `Le ${when}, le skipper a noté : « ${note} »`;
+  }
+  return "";
+}
+
+function legIntro(from, to, connector, lang, { first, sea }) {
+  const en = isEn(lang);
+  const depIso = first ? from?.iso : departureIso(from) || from?.iso;
+  const dest = shortName(to?.name || "");
+  const origin = shortName(from?.name || "");
+  if (first) {
+    return "";
+  }
+  const head = dest
+    ? (en ? `departure for ${dest}` : `départ vers ${dest}`)
+    : (en ? `under way from ${origin}` : `en route depuis ${origin}`);
+  return en
+    ? `${connector}, on ${dayMonth(depIso, lang)}, ${head}.`
+    : `${connector}, le ${dayMonth(depIso, lang)}, ${head}.`;
+}
+
+function chapterWindows(stops, t0, tEnd) {
+  const list = [];
+  const pts = stops.length ? stops : [{ name: "Saint-Maur", iso: isoOf(t0), filmNm: 0 }];
+  for (let i = 0; i < pts.length; i++) {
+    const from = pts[i];
+    const to = pts[i + 1];
+    const tA = ms(from.iso) ?? (i === 0 ? t0 : null);
+    if (tA == null || (tEnd != null && tA >= tEnd)) break;
+    const rawB = to ? ms(to.iso) : tEnd;
+    const tB = Math.min(rawB == null ? tEnd : rawB, tEnd);
+    if (tB <= tA) continue;
+    list.push({
+      id: `leg-${i}`,
+      from,
+      to: to && tB < tEnd ? to : null,
+      tA,
+      tB,
+      fromName: from.name || "",
+      toName: (to && tB < tEnd) ? (to.name || "") : "",
+      fromLat: Number.isFinite(from.lat) ? from.lat : null,
+      fromLon: Number.isFinite(from.lon) ? from.lon : null,
+      toLat: Number.isFinite(to?.lat) ? to.lat : null,
+      toLon: Number.isFinite(to?.lon) ? to.lon : null,
+    });
+    if (!to || (ms(to.iso) != null && ms(to.iso) >= tEnd)) break;
+  }
+  if (!list.length && t0 != null && tEnd != null && tEnd > t0) {
+    list.push({
+      id: "leg-0",
+      from: pts[0],
+      to: null,
+      tA: t0,
+      tB: tEnd,
+      fromName: pts[0]?.name || "Saint-Maur",
+      toName: "",
+      fromLat: null,
+      fromLon: null,
+      toLat: null,
+      toLon: null,
+    });
+  }
+  return list;
+}
+
+function assignToChapters(events, windows) {
+  const buckets = windows.map(() => []);
+  for (const ev of events) {
+    let idx = windows.findIndex((w, i) => ev.tMs >= w.tA && (i === windows.length - 1 ? ev.tMs <= w.tB : ev.tMs < w.tB));
+    if (idx < 0) idx = ev.role === "today" ? windows.length - 1 : 0;
+    if (idx >= 0) buckets[idx].push(ev);
+  }
+  return buckets;
+}
+
+function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
+  const en = isEn(lang);
+  const connectors = FILM_CONNECTORS[en ? "en" : "fr"];
+  const chapters = [];
+  let lastConn = -1;
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i];
+    const bits = [];
+    const placed = [];
+    if (i > 0) {
+      lastConn = (lastConn + 1) % connectors.length;
+      const intro = legIntro(w.from, w.to, connectors[lastConn], lang, { first: false, sea: seaName });
+      if (intro) bits.push(intro);
+    }
+    for (const ev of buckets[i] || []) {
+      const rich = {
+        ...ev,
+        seaName,
+        distLabel: live ? nmLabel(live.sailNm ?? live.filmNm, lang) : "",
+      };
+      if (ev.role === "depart") rich.name = startName;
+      const sentence = filmEventSentence(rich, lang).trim();
+      if (!sentence) continue;
+      const prefix = bits.length ? " " : "";
+      const charIdx = bits.join(" ").length + (bits.length ? 1 : 0);
+      bits.push(sentence);
+      const card = cardFromJournalEntry(ev.entry, lang);
+      placed.push({ id: ev.id, charIdx, card: card || { id: ev.id, kind: ev.kind, title: ev.name || ev.kind, text: sentence } });
+    }
+    const text = bits.join(" ").replace(/\s{2,}/g, " ").trim();
+    chapters.push({
+      id: w.id,
+      tA: isoOf(w.tA),
+      tB: isoOf(w.tB),
+      text,
+      events: placed,
+      fromName: w.fromName,
+      toName: w.toName,
+      fromLat: w.fromLat,
+      fromLon: w.fromLon,
+      toLat: w.toLat,
+      toLon: w.toLon,
+    });
+  }
+  return chapters;
+}
+
+function scriptChars(chapters) {
+  return chapters.reduce((s, c) => s + String(c.text || "").length, 0);
+}
+
+/**
+ * Script brut : chapitres = jambes, connecteurs en rotation, gabarits,
+ * longueur ≤ 2 400 (on retire d'abord les événements de score le plus bas).
+ */
+export function buildFilmScript({
+  clock, marks, live, journal = null, now = Date.now(), lang = "fr", seconds = 150,
+} = {}) {
+  const packed = filmCandidates({ journal, marks, clock, live, now });
+  const { t0, tEnd, start, sea, stops } = packed;
+  if (t0 == null || tEnd == null || !(tEnd > t0)) {
+    return { chapters: [], source: "rules", chars: 0, targetSeconds: seconds };
+  }
+  const startName = shortName(start?.name || "Saint-Maur");
+  const seaName = shortName(sea?.name || "La Rochelle");
+  const selected = selectFilmEvents(packed.candidates, { t0, tEnd }).map((ev) => (
+    ev.role === "depart" ? { ...ev, seaName, name: startName } : ev
+  ));
+  const mustIds = new Set(selected.filter((e) => e.role === "depart" || e.role === "today" || e.role === "stop").map((e) => e.id));
+  const windows = chapterWindows(stops, t0, tEnd);
+  const compose = (events) => composeChapters(windows, assignToChapters(events, windows), {
+    lang, seaName, startName, live,
+  });
+  let events = selected;
+  let chapters = compose(events);
+  while (scriptChars(chapters) > FILM_MAX_CHARS) {
+    const droppable = events.filter((e) => !mustIds.has(e.id));
+    if (!droppable.length) break;
+    droppable.sort((a, b) => (a.score || 0) - (b.score || 0) || b.tMs - a.tMs);
+    const drop = droppable[0];
+    events = events.filter((e) => e.id !== drop.id);
+    chapters = compose(events);
+  }
+  const chars = scriptChars(chapters);
+  return { chapters, source: "rules", chars, targetSeconds: Number(seconds) || 150 };
 }

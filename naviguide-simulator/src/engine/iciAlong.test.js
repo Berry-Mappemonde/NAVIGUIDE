@@ -17,6 +17,7 @@ import {
   promoteLaterAtPlayhead,
   sampleLeg,
   upsertLedger,
+  flatFromCustomRoute,
 } from "./iciAlong.js";
 import { detectEvents, emptyEventMemory } from "./eventRules.js";
 import { resolveOrders } from "./skipperOrders.js";
@@ -33,6 +34,25 @@ function lineFlat() {
 }
 
 describe("iciAlong sample", () => {
+  it("lot T : flatFromCustomRoute suit la route dessinée, pas Berry", () => {
+    const custom = {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: [[-17.8, 18.2], [-16.9, 17.6]],
+        },
+      }],
+    };
+    const flat = flatFromCustomRoute(custom);
+    assert.ok(flat?.points?.length >= 2);
+    assert.ok(flat.points.every((p) => p.lat > 17 && p.lat < 19 && p.lon < -16));
+    assert.equal(flatFromCustomRoute(null), null);
+    assert.equal(flatFromCustomRoute({ type: "FeatureCollection", features: [] }), null);
+  });
+
   it("behindNm keeps the pearl just passed; nearestPearlBag re-centres its thin bag on the boat", () => {
     const flat = lineFlat();
     const ahead = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 50, maxPearls: 20 });

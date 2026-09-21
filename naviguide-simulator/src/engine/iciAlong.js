@@ -6,8 +6,8 @@
  * pearls = ceil(nm / 12). Both follow the skipper orders. No fixed 350 / 24.
  */
 
-import { interpolateAtNm, nearestNm } from "./routePlayhead.js";
-import { haversineNm } from "../utils/geo.js";
+import { flattenRoute, interpolateAtNm, nearestNm } from "./routePlayhead.js";
+import { featuresToSegments, haversineNm } from "../utils/geo.js";
 import {
   AMP_AHEAD_MIN_NM,
   ROUTE_SAMPLE_NM,
@@ -26,6 +26,13 @@ export const SIM_NEAR_NM = 240;
 export const SIM_FAR_STEP_NM = 48;
 export const MAX_PEARLS_SUIVRE = DEFAULT_ORDERS.budget.maxPearls;
 export const DEFAULT_KNOTS = DEFAULT_ORDERS.budget.planningKn;
+
+/** Flatten a drawn FeatureCollection so along-pearls follow that track, not Berry. */
+export function flatFromCustomRoute(customRoute) {
+  if (!customRoute?.features?.length) return null;
+  const flat = flattenRoute(featuresToSegments(customRoute));
+  return flat?.points?.length ? flat : null;
+}
 
 export function pearlKey(lat, lon, month) {
   const la = Number(lat);

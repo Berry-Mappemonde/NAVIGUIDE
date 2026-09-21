@@ -28,19 +28,36 @@ def test_b1_t0_plus_36h_differs_from_june_zone():
 def test_b2_ten_days_forecast_then_climo():
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
     cube = build_synthetic_cube(_route(), t0)
-    early = blended_wind(46.15, -1.16, t0 + timedelta(hours=36), t0, cube)
+    early = blended_wind(46.15, -1.16, t0 + timedelta(hours=36), t0, cube, now=t0)
     assert early["kind"] == "forecast"
-    late = blended_wind(46.15, -1.16, t0 + timedelta(hours=FORECAST_BLEND_END_HOURS + 24), t0, cube)
+    late = blended_wind(46.15, -1.16, t0 + timedelta(hours=FORECAST_BLEND_END_HOURS + 24), t0, cube, now=t0)
     assert late["kind"] == "climatology"
     assert late.get("leadHours") is None
-    blend = blended_wind(46.15, -1.16, t0 + timedelta(hours=FORECAST_FULL_HOURS + 24), t0, cube)
+    blend = blended_wind(46.15, -1.16, t0 + timedelta(hours=FORECAST_FULL_HOURS + 24), t0, cube, now=t0)
     assert blend.get("source") == "blend"
     assert 0 < blend["blend"] < 1
 
 
+def test_c2_fade_relative_to_now_not_t0():
+    t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
+    now = t0 + timedelta(days=8)
+    cube = build_synthetic_cube(_route(), t0)
+    # now+36 h = t0+8,5 j : fondu si l'origine était t0, prévision pleine depuis maintenant.
+    later = blended_wind(46.15, -1.16, now + timedelta(hours=36), t0, cube, now=now)
+    assert later["kind"] == "forecast"
+    assert later.get("source") != "blend"
+    past = blended_wind(
+        46.15, -1.16, now - timedelta(hours=3), t0, cube, now=now,
+        hindcast_fn=lambda *_a: {"speedKnots": 11.0, "dirFromDeg": 80.0, "sources": ["om-era5"], "spread": 1.5},
+    )
+    assert past["kind"] == "hindcast"
+    assert past["regime"] == "hindcast"
+    assert past["sources"] == ["om-era5"]
+
+
 def test_empty_cube_falls_back_honest():
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
-    far = blended_wind(-40.0, 80.0, t0 + timedelta(hours=12), t0, None)
+    far = blended_wind(-40.0, 80.0, t0 + timedelta(hours=12), t0, None, now=t0)
     assert far["kind"] == "climatology"
 
 
@@ -50,11 +67,11 @@ def test_cache_only_mode_never_calls_the_atlas(monkeypatch):
 
     monkeypatch.setattr("climatology_atlas.fetch_atlas_point", boom)
     t0 = datetime(2026, 6, 15, 8, tzinfo=timezone.utc)
-    far = blended_wind(-40.0, 80.0, t0 + timedelta(days=20), t0, None, atlas_network=False)
+    far = blended_wind(-40.0, 80.0, t0 + timedelta(days=20), t0, None, atlas_network=False, now=t0)
     assert far["kind"] == "climatology"
     assert far["source"] == "zone_fallback"
     from forecast_blend import make_wind_fn
-    fn = make_wind_fn(t0, None, atlas_network=False)
+    fn = make_wind_fn(t0, None, atlas_network=False, now=t0)
     assert fn(-40.0, 80.0, t0 + timedelta(days=20))["kind"] == "climatology"
 
 
