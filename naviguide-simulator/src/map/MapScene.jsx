@@ -46,6 +46,7 @@ export function MapScene({
   onCoordinatesCopied,
   onWaypointHover,
   onDrawingWaypointClick,
+  onWaypointClick,
 }) {
   const containerRef = useRef(null);
   const controllerRef = useRef(null);
@@ -63,6 +64,7 @@ export function MapScene({
     onCoordinatesCopied,
     onWaypointHover,
     onDrawingWaypointClick,
+    onWaypointClick,
   };
 
   useEffect(() => {
@@ -74,6 +76,7 @@ export function MapScene({
       onBoatDrag: (position) => callbacksRef.current.onBoatDrag?.(position),
       onWaypointHover: (point) => callbacksRef.current.onWaypointHover?.(point),
       onDrawingWaypointClick: (point, index) => callbacksRef.current.onDrawingWaypointClick?.(point, index),
+      onWaypointClick: (point, index) => callbacksRef.current.onWaypointClick?.(point, index),
     });
     controllerRef.current = controller;
     mapRef.current = controller.map;
@@ -145,6 +148,7 @@ export function MapScene({
       onBoatDrag: (position) => callbacksRef.current.onBoatDrag?.(position),
       onWaypointHover: (point) => callbacksRef.current.onWaypointHover?.(point),
       onDrawingWaypointClick: (point, index) => callbacksRef.current.onDrawingWaypointClick?.(point, index),
+      onWaypointClick: (point, index) => callbacksRef.current.onWaypointClick?.(point, index),
     });
     controller.update(scene);
   }, [mapReady, scene]);

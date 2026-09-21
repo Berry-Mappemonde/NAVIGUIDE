@@ -35,6 +35,7 @@ import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
 import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
 import { attachEventBubble } from "../components/EventBubble.jsx";
+import { attachEscalePopup } from "../components/EscalePopup.jsx";
 
 const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
@@ -264,6 +265,7 @@ export class MapSceneController {
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
     this.eventBubble = attachEventBubble(this, L);
+    this.escalePopup = attachEscalePopup(this, L);
   }
 
   /** Marqueur du bateau « à l'écran » (copie monde 0) — ancre de la bulle F4. */
@@ -731,9 +733,10 @@ export class MapSceneController {
       const srcs = waypointFlagSrcs(point);
       if (!srcs.length && !cfg.drawingMode) return;
       const offset = offsets[index] || [0, 0];
+      const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
-        ? flagMarkerHtml(srcs, offset)
-        : `<div style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
+        ? flagMarkerHtml(srcs, offset).replace("<div ", `<div${stamp} `)
+        : `<div${stamp} style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
       const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
       for (const [copyIndex, lng] of flagWorldLngsForView(point.lon, cameraLng, west, east).entries()) {
         const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${copyIndex}`;
@@ -758,9 +761,12 @@ export class MapSceneController {
           marker.on("mouseover", () => this.callbacks.onWaypointHover?.(marker._naviguideWaypoint));
           marker.on("mouseout", () => this.callbacks.onWaypointHover?.(null));
           marker.on("click", (event) => {
-            if (!marker._naviguideDrawing) return;
             L.DomEvent.stopPropagation(event);
-            this.callbacks.onDrawingWaypointClick?.(marker._naviguideWaypoint, marker._naviguideIndex);
+            if (marker._naviguideDrawing) {
+              this.callbacks.onDrawingWaypointClick?.(marker._naviguideWaypoint, marker._naviguideIndex);
+              return;
+            }
+            this.callbacks.onWaypointClick?.(marker._naviguideWaypoint, marker._naviguideIndex);
           });
           this.waypointMarkers.set(key, marker);
         }
@@ -779,6 +785,7 @@ export class MapSceneController {
       group.removeLayer(marker);
       this.waypointMarkers.delete(key);
     });
+    this.escalePopup?.sync();
   }
 
   /** The camera is driving the map: playback running, or the live boat followed. */
@@ -1016,6 +1023,8 @@ export class MapSceneController {
   dispose() {
     this.eventBubble?.dispose();
     this.eventBubble = null;
+    this.escalePopup?.dispose();
+    this.escalePopup = null;
     this.clearBriefingFocus();
     window.clearTimeout(this.waypointTimer);
     window.clearTimeout(this.ignoreUserNavigationTimer);

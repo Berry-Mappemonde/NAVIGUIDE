@@ -2,7 +2,6 @@ import { memo } from "react";
 import { X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { googleMapsUrl } from "../engine/briefingLinks.js";
-import { ListenButton } from "./ListenButton.jsx";
 
 /** Section / subsection labels; anything unknown falls back to the raw key. */
 const LABELS = {
@@ -108,9 +107,6 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
   const sections = fiche?.sections || {};
   const keys = Object.keys(sections);
   const paragraph = fiche?.paragraph?.status === "ready" ? fiche.paragraph.text : "";
-  const speech = [paragraph, ...keys.map((s) => `${label(s, lang)} : ${Object.entries(sections[s]).map(([sub, items]) => (
-    Array.isArray(items) ? `${label(sub, lang)} ${items.map((i) => i.name).join(", ")}` : (items?.name || "")
-  )).join(" ; ")}`)].filter(Boolean).join(". ");
 
   return (
     <div data-testid="escale-sheet" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0">
@@ -119,9 +115,8 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
           <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
           <div className="text-[12px] font-semibold text-white leading-snug truncate">{stop.name}</div>
         </div>
-        {speech ? <ListenButton text={speech} t={t} lang={lang} compact testId="escale-listen" /> : null}
         {onClose ? (
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" title={t("momentClose")}>
+          <button type="button" data-testid="escale-close" onClick={onClose} className="text-slate-400 hover:text-white" title={t("momentClose")} aria-label={t("momentClose")}>
             <X size={13} />
           </button>
         ) : null}
