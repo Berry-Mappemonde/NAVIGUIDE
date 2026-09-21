@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildBerryLegs, isNonMaritimeLeg, orientCoords } from "./berryLegs.js";
+import { buildBerryLegs, isLandLegNames, isNonMaritimeLeg, nmToRoundedKm, NM_TO_KM, orientCoords } from "./berryLegs.js";
 
 describe("berryLegs", () => {
   it("skips Marigot / Halifax and inserts Marigot→Cayenne", () => {
@@ -23,6 +23,9 @@ describe("berryLegs", () => {
   it("marque overland Saint-Maur ↔ La Rochelle", () => {
     assert.equal(isNonMaritimeLeg("Saint-Maur (Berry, Indre)", "La Rochelle"), true);
     assert.equal(isNonMaritimeLeg("La Rochelle", "Ajaccio (Corse)"), false);
+    assert.equal(isLandLegNames("Saint-Maur", "La Rochelle"), true);
+    assert.equal(isLandLegNames("La Rochelle", "Ajaccio (Corse)"), false);
+    assert.equal(nmToRoundedKm(122), Math.round(122 * NM_TO_KM));
   });
 
   it("oriente A→B", () => {

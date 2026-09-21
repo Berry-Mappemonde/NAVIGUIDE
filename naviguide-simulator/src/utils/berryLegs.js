@@ -1,5 +1,8 @@
 export const SEGMENT_BATCH_SIZE = 4;
 
+/** 1 mille nautique = 1,852 km (étape terrestre, lot R5). */
+export const NM_TO_KM = 1.852;
+
 const NON_MARITIME_NAMES = new Set([
   "Saint-Maur (Berry, Indre)|La Rochelle",
   "La Rochelle|Saint-Maur (Berry, Indre)",
@@ -42,6 +45,24 @@ export function buildBerryLegs(points) {
 
 export function isNonMaritimeLeg(fromName, toName) {
   return NON_MARITIME_NAMES.has(`${fromName}|${toName}`);
+}
+
+function canonStopName(name) {
+  const s = String(name || "").trim();
+  if (/^saint-maur\b/i.test(s) && !/Berry/i.test(s)) return "Saint-Maur (Berry, Indre)";
+  return s;
+}
+
+/** Jambe terrestre (Berry : Saint-Maur ↔ La Rochelle), noms courts ou complets. */
+export function isLandLegNames(fromName, toName) {
+  return isNonMaritimeLeg(fromName, toName)
+    || isNonMaritimeLeg(canonStopName(fromName), canonStopName(toName));
+}
+
+export function nmToRoundedKm(nm) {
+  const n = Number(nm);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * NM_TO_KM);
 }
 
 export function orientCoords(coords, from, to) {

@@ -454,6 +454,7 @@ export const Sidebar = memo(function Sidebar({
                 return (
                   <p
                     key={i}
+                    data-testid="story-paragraph"
                     data-current={current ? "1" : "0"}
                     className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] mt-1 ${current ? "text-white font-medium border-l-2 border-sky-300 pl-1.5" : "text-slate-200"}`}
                   >

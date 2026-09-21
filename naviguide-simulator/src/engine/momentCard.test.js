@@ -24,6 +24,7 @@ import {
   isStaleCard,
   nextFree,
 } from "./momentCard.js";
+import { NM_TO_KM } from "../utils/berryLegs.js";
 
 const gale = {
   id: "wind-gale:1", stableKey: "wind-gale:a", type: "wind-gale", severity: "alert", judge: "now",
@@ -242,6 +243,25 @@ describe("cartes", () => {
     assert.match(escaleCard({ fromStop: "Ajaccio", toStop: "FdF", holdDays: 3 }, "en").text, /^Stopover Ajaccio — 3 days in port\. Departure: heading for FdF\.$/);
   });
 
+  it("escaleCard à Saint-Maur : km par la route, pas de nm", () => {
+    const km = Math.round(122 * NM_TO_KM);
+    const c = escaleCard({
+      fromStop: "Saint-Maur (Berry, Indre)",
+      toStop: "La Rochelle",
+      holdDays: 0,
+      legNm: 122,
+      roadHours: 4,
+      kind: "land",
+    }, "fr");
+    const text = c.text.replace(/[\u202f\u00a0]/g, " ");
+    assert.match(text, new RegExp(`${km} km par la route`));
+    assert.match(text, /4 h de route/);
+    assert.doesNotMatch(text, /\bnm\b/);
+    const short = escaleCard({ fromStop: "Saint-Maur", toStop: "La Rochelle", legNm: 122, roadHours: 4 }, "fr");
+    assert.match(short.text.replace(/[\u202f\u00a0]/g, " "), /km par la route/);
+    assert.doesNotMatch(short.text, /\bnm\b/);
+  });
+
   it("isStaleCard : en Simulation seulement, au-delà de STALE_CARD_NM derrière la tête", () => {
     const card = { filmCum: 100 };
     assert.equal(isStaleCard(card, { filmCum: 100 + STALE_CARD_NM + 1 }), true);
@@ -327,9 +347,17 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     // The gale shown at 100 nm is 1 842 nm behind: dropped; the escale card takes its place.
     assert.equal(s.now.kind, "escale");
     assert.match(s.now.text, /^Escale Ajaccio \(Corse\) — 3 jours à quai\. Départ : cap sur Fort-de-France/);
-    // First leg of the film: no escale card.
-    const first = advanceMoments(emptyMoments(), { events: [], filmCum: 0, nowMs: 0, legId: "A", leg: { fromStop: "Saint-Maur", toStop: "La Rochelle" } });
-    assert.equal(first.now, null);
+    const firstLand = advanceMoments(emptyMoments(), {
+      events: [], filmCum: 0, nowMs: 0, legId: "A",
+      leg: { fromStop: "Saint-Maur", toStop: "La Rochelle", legNm: 122, kind: "land" },
+    });
+    assert.equal(firstLand.now.kind, "escale");
+    assert.match(firstLand.now.text.replace(/[\u202f\u00a0]/g, " "), /km par la route/);
+    const firstSea = advanceMoments(emptyMoments(), {
+      events: [], filmCum: 0, nowMs: 0, legId: "A",
+      leg: { fromStop: "La Rochelle", toStop: "Ajaccio", legNm: 1820 },
+    });
+    assert.equal(firstSea.now, null);
   });
 
   it("Suivre : NOW expire après 90 s, une fiche « later » se montre sans attendre le film", () => {

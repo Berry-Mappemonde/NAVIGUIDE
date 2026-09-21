@@ -18,6 +18,9 @@
  */
 
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
+import fr from "../i18n/fr.js";
+import enDict from "../i18n/en.js";
 import { cardFromJournalEntry } from "./momentCard.js";
 
 const MONTHS = {
@@ -49,6 +52,39 @@ export function dayMonth(iso, lang = "fr", { year = false } = {}) {
 function nmLabel(nm, lang) {
   const v = Math.round(Number(nm) || 0);
   return isEn(lang) ? `${v.toLocaleString("en-GB")} nm` : `${v.toLocaleString("fr-FR")} nm`;
+}
+
+function units(lang) {
+  return isEn(lang) ? enDict : fr;
+}
+
+function locNum(n, lang) {
+  return Number(n).toLocaleString(isEn(lang) ? "en-GB" : "fr-FR");
+}
+
+function kmByRoadLabel(nm, lang) {
+  const km = nmToRoundedKm(nm);
+  if (km == null) return "";
+  const u = units(lang);
+  return `${locNum(km, lang)} ${u.unitKm} ${u.byRoad}`;
+}
+
+function roadHoursLabel(hours, lang) {
+  const u = units(lang);
+  return `${hours} ${u.unitRoadHours}`;
+}
+
+function isLandStep(from, to) {
+  return isLandLegNames(from?.name, to?.name)
+    || from?.vehicle === "land" || to?.vehicle === "land"
+    || from?.kind === "land" || to?.kind === "land";
+}
+
+function hoursBetween(isoA, isoB) {
+  const a = ms(isoA);
+  const b = ms(isoB);
+  if (a == null || b == null) return null;
+  return Math.max(0, Math.round((b - a) / 3_600_000));
 }
 
 function days(hours) {
@@ -243,26 +279,35 @@ function latestGrib(journal, beforeMs = null) {
 }
 
 /** One passed leg, told in one paragraph: departure, crossing, arrival, port. */
-function legParagraph(from, to, { journal, lang, sea }) {
+function legParagraph(from, to, { journal, lang, sea, connector }) {
   const en = isEn(lang);
+  const land = isLandStep(from, to);
   const dep = from === sea ? from.iso : departureIso(from);
-  const legNm = Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0));
-  const dur = daysBetween(dep, to.iso);
-  const wind = windBetween(journal, dep, to.iso);
+  const sailNm = Math.max(0, (Number(to.nm) || 0) - (Number(from.nm) || 0));
+  const filmNm = Math.max(0, (Number(to.filmNm) || 0) - (Number(from.filmNm) || 0));
+  const legNm = land ? (filmNm || sailNm) : sailNm;
+  const durDays = land ? null : daysBetween(dep, to.iso);
+  const durHours = land ? hoursBetween(dep, to.iso) : null;
+  const wind = land ? null : windBetween(journal, dep, to.iso);
   const notes = notesBetween(journal, dep, to.iso);
-  const crossings = routeEventsSentence(routeEventsBetween(journal, dep, to.iso), lang);
+  const crossings = land ? "" : routeEventsSentence(routeEventsBetween(journal, dep, to.iso), lang);
   const bits = [];
+  const conn = connector || storyConnector(0, lang);
   const head = from === sea
     ? (en
       ? `On ${dayMonth(dep, lang)}, the boat put to sea at ${shortName(from.name)}, bound for ${shortName(to.name)}`
       : `Le ${dayMonth(dep, lang)}, le bateau a pris la mer à ${shortName(from.name)}, vers ${shortName(to.name)}`)
     : (en
-      ? `Then on ${dayMonth(dep, lang)}, departure for ${shortName(to.name)}`
-      : `Puis, le ${dayMonth(dep, lang)}, départ vers ${shortName(to.name)}`);
+      ? `${conn}, on ${dayMonth(dep, lang)}, departure for ${shortName(to.name)}`
+      : `${conn}, le ${dayMonth(dep, lang)}, départ vers ${shortName(to.name)}`);
   const facts = [];
-  if (legNm > 0.5) facts.push(nmLabel(legNm, lang));
-  if (dur != null && dur > 0) facts.push(en ? `in ${dayWord(dur, lang)}` : `en ${dayWord(dur, lang)}`);
-  bits.push(`${head}${facts.length ? ` : ${facts.join(en ? " " : " ")}` : ""}.`);
+  if (legNm > 0.5) facts.push(land ? kmByRoadLabel(legNm, lang) : nmLabel(legNm, lang));
+  if (land && durHours != null && durHours > 0) {
+    facts.push(en ? `in ${roadHoursLabel(durHours, lang)}` : `en ${roadHoursLabel(durHours, lang)}`);
+  } else if (durDays != null && durDays > 0) {
+    facts.push(en ? `in ${dayWord(durDays, lang)}` : `en ${dayWord(durDays, lang)}`);
+  }
+  bits.push(`${head}${facts.length ? ` : ${facts.join(" ")}` : ""}.`);
   if (crossings) bits.push(crossings);
   if (wind) {
     bits.push(en
@@ -312,17 +357,23 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
     : `L’expédition Berry-Mappemonde a quitté ${shortName(start?.name || "Saint-Maur")} le ${dayMonth(departIso, lang, { year: true })}.`);
 
   // 2. Chaque jambe franchie, dans l’ordre : départ, traversée, arrivée, quai.
+  // L’étape terrestre Saint-Maur → La Rochelle est incluse (km, pas nm).
   const boatFilm = Number(live?.filmNm);
-  const seaIdx = sea ? stops.indexOf(sea) : 0;
   const passed = [];
-  for (let i = Math.max(seaIdx, 0); i < stops.length - 1; i++) {
+  for (let i = 0; i < stops.length - 1; i++) {
     const from = stops[i];
     const to = stops[i + 1];
     if (nowMs != null && ms(to.iso) > nowMs) break;
     if (Number.isFinite(boatFilm) && to.filmNm > boatFilm + 0.6) break;
     passed.push([from, to]);
   }
-  for (const [from, to] of passed) out.push(legParagraph(from, to, { journal, lang, sea }));
+  let connI = 0;
+  for (const [from, to] of passed) {
+    const needsConn = from !== sea;
+    const connector = storyConnector(connI, lang);
+    if (needsConn) connI += 1;
+    out.push(legParagraph(from, to, { journal, lang, sea, connector }));
+  }
 
   // 3. La jambe en cours, puis aujourd’hui.
   if (live && Number.isFinite(boatFilm)) {
@@ -412,6 +463,12 @@ export const FILM_CONNECTORS = Object.freeze({
   fr: ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
   en: ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
 });
+
+/** Connecteur du paragraphe i : `connecteurs[i % n]` (jamais le même à la suite, n > 1). */
+export function storyConnector(i, lang = "fr") {
+  const list = FILM_CONNECTORS[isEn(lang) ? "en" : "fr"];
+  return list[Math.abs(Number(i) || 0) % list.length];
+}
 
 const SCORED_KINDS = new Set(["wx", "climo", "sci", "amp", "zee", "poe", "note"]);
 const CANDIDATE_KINDS = new Set(["stop", "zee", "amp", "poe", "wx", "climo", "sci", "note"]);
@@ -816,17 +873,13 @@ function assignToChapters(events, windows) {
 }
 
 function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
-  const en = isEn(lang);
-  const connectors = FILM_CONNECTORS[en ? "en" : "fr"];
   const chapters = [];
-  let lastConn = -1;
   for (let i = 0; i < windows.length; i++) {
     const w = windows[i];
     const bits = [];
     const placed = [];
     if (i > 0) {
-      lastConn = (lastConn + 1) % connectors.length;
-      const intro = legIntro(w.from, w.to, connectors[lastConn], lang, { first: false, sea: seaName });
+      const intro = legIntro(w.from, w.to, storyConnector(i - 1, lang), lang, { first: false, sea: seaName });
       if (intro) bits.push(intro);
     }
     for (const ev of buckets[i] || []) {
