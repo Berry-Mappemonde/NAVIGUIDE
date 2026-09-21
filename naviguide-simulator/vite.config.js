@@ -23,11 +23,18 @@ const proxy = {
       "/voyage": { target: API, changeOrigin: true },
       "/escale": { target: API, changeOrigin: true },
       "/logbook": { target: API, changeOrigin: true },
-      "/bi": {
-        target: process.env.BI_PROXY_TARGET || "https://blueintelligence.online",
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/bi/, "/api"),
-      },
+      // Climatologie BI : par le serveur local (server/bi_proxy.py, cache
+      // disque, une requête par cellule par machine), jamais la prod en direct.
+      // Incident 2026-09-21 : dev Vite + Playwright + agents → 600-800 req/s
+      // sur blueintelligence.online. BI_PROXY_TARGET=https://blueintelligence.online
+      // pour retrouver l'ancien direct (le chemin /bi devient alors /api).
+      "/bi": process.env.BI_PROXY_TARGET
+        ? {
+          target: process.env.BI_PROXY_TARGET,
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/bi/, "/api"),
+        }
+        : { target: API, changeOrigin: true },
 };
 
 export default defineConfig({
