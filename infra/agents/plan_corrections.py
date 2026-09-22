@@ -49,6 +49,12 @@ def next_prefix(prompts_md: str) -> str:
     return "RZ"
 
 
+def then_until() -> str | None:
+    """BIM_THEN_UNTIL=D0 (environnement ou ~/.config/naviguide/simulator.env) : après les corrections,
+    la nuit enchaîne le programme jusqu'à ce lot — la ligne LOTS du GO couvre alors RB1 … D0."""
+    return os.environ.get("BIM_THEN_UNTIL") or rl._env_file_values().get("BIM_THEN_UNTIL") or None
+
+
 def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, night: list[dict]) -> str:
     md_path = review.get("md")
     json_path = review.get("json")
@@ -99,6 +105,10 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
         f"3. Vérifie : `python3 infra/agents/run_lots.py --dry-run --from {prefix}1 --until {prefix}<dernier>` liste tes lots.",
         f"4. Commit conventionnel (`docs: corrections de la revue du {date} …`), `git push -u origin docs/plan-corrections-{date}`, puis la PR avec open_pr.py. "
         f"Corps de la PR : gabarit REGLES § 3, en français PUIS en anglais, et en DERNIÈRE ligne exactement : `LOTS: {prefix}1 {prefix}<dernier>` (ou `LOTS: aucun` s'il n'y a rien à corriger).",
+        *([f"   PROGRAMME ENCHAÎNÉ : le porteur veut que la nuit continue, après les corrections, avec le programme pré-rédigé jusqu'au lot **{then_until()}**. "
+           f"Place donc tes balises `<!-- LOT id=\"{prefix}<n>\" … -->` et tes lignes de tableau JUSTE APRÈS le dernier lot déjà exécuté (la dernière balise RA…) et AVANT le bloc R8a, "
+           f"pour que l'ordre du document soit : … RA8, {prefix}1 … {prefix}<dernier>, R8a … {then_until()}. Et la dernière ligne du corps de la PR devient exactement : `LOTS: {prefix}1 {then_until()}` "
+           f"(s'il n'y a rien à corriger : `LOTS: R8a {then_until()}`). Vérifie avec `python3 infra/agents/run_lots.py --dry-run --from {prefix}1 --until {then_until()}`."] if then_until() else []),
         "5. Termine par un résumé de 5 lignes : lots créés, corrections fondues (dans quels lots), ce que tu n'as pas su rattacher.",
         "",
         "Interdits : toucher au code applicatif ; merger ; inventer une cause sans l'avoir lue dans le code ; recette technique (data-testid, GET, coordonnées) ; "
