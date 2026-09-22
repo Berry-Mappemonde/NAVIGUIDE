@@ -399,6 +399,31 @@ def test_live_like_clock_pairs_rochelle_before_ajaccio():
             assert re.search(r"Arrivée à La Rochelle", ch0), ch0
 
 
+def test_chapter_iso_tb_after_ta():
+    """Plancher 1 s : après _iso, chaque chapitre a tB > tA (filmPlan garde le ch. 0)."""
+    from film_script import _iso, _ms
+
+    plan = _raw()
+    assert plan["chapters"]
+    for ch in plan["chapters"]:
+        ta, tb = _ms(ch["tA"]), _ms(ch["tB"])
+        assert ta is not None and tb is not None
+        assert tb > ta, (ch.get("id"), ch["tA"], ch["tB"])
+        assert _iso(ta) != _iso(tb), (ch.get("id"), ch["tA"], ch["tB"])
+
+    lr = {"name": "La Rochelle", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 72}
+    live_plan = build_raw_script(
+        _live_like_clock(lr), _live_like_clock(lr)["marks"], LIVE, JOURNAL,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    assert live_plan["chapters"]
+    assert live_plan["chapters"][0]["id"] == "leg-0"
+    for ch in live_plan["chapters"]:
+        ta, tb = _ms(ch["tA"]), _ms(ch["tB"])
+        assert tb > ta, (ch.get("id"), ch["tA"], ch["tB"])
+        assert ch["tA"] != ch["tB"]
+
+
 def test_official_route_order_no_repeat_departure_then_arrival():
     fr = _raw()
     blob_fr = " ".join(c.get("text") or "" for c in fr["chapters"])

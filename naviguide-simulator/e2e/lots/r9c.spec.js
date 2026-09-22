@@ -4,7 +4,7 @@
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-rc4/${name}.jpg`,
+  path: `../docs/recette/lot-rc5/${name}.jpg`,
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -95,14 +95,16 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
       if (typeof film.hasWritten === "boolean" && film.style === "written") {
         expect(film.hasWritten, "rédigé déjà en cache").toBe(true);
       }
+      await expect(subtitle, "sous-titre : Arrivée à La Rochelle").toContainText(
+        /Arrivée à La Rochelle/i,
+        { timeout: 12_000 },
+      );
       const sub = (await subtitle.innerText()).trim();
-      if (/départ vers La Rochelle|Arrivée à La Rochelle/i.test(sub)) {
-        expect(sub, "sous-titre sans saut").not.toMatch(/Arrivée à Ajaccio/i);
-      } else {
-        test.info().annotations.push({
-          type: "sous-titre local",
-          description: "sous-titre encore le brut JS — paires lues sur GET /film",
-        });
+      const iArr = sub.toLowerCase().indexOf("arrivée à la rochelle");
+      const iAj = sub.toLowerCase().indexOf("départ vers ajaccio");
+      expect(iArr, "Arrivée à La Rochelle dans le sous-titre").toBeGreaterThanOrEqual(0);
+      if (iAj >= 0) {
+        expect(iArr, "Arrivée à La Rochelle avant départ vers Ajaccio").toBeLessThan(iAj);
       }
     }
   }

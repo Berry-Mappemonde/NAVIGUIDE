@@ -847,8 +847,9 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
         t_b = min(raw_b if raw_b is not None else t_end, t_end)
         if t_b <= t_a:
             # Iso égaux (Saint-Maur forcé à T0, La Rochelle le 15 mai à la même
-            # heure) : une fenêtre par jambe, ordre = filmNm, pas un saut.
-            t_b = t_a + 1
+            # heure) : plancher 1 s — `_iso` tronque à la seconde ; 1 ms
+            # donnait tA == tB et filmPlan jetait le chapitre 0.
+            t_b = t_a + 1000
         out.append({
             "id": f"leg-{i}",
             "from": frm,

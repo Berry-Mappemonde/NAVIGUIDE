@@ -14,16 +14,16 @@ export function chapterHasLeg(ch) {
   ));
 }
 
-/** Script API sans emprise (marks horloge sans lat/lon) : on prend le brut local. */
+/** Script remote : on garde le texte serveur ; lat/lon manquants viennent du local. */
 export function pickFilmChapters(remote, local, fallback = []) {
   const r = remote?.chapters || [];
   const l = local?.chapters || [];
-  if (r.length && r.some(chapterHasLeg)) {
+  if (r.length) {
     return {
       chapters: r.map((ch) => {
         if (chapterHasLeg(ch)) return ch;
-        const src = l.find((c) => c.id === ch.id)
-          || l.find((c) => c.fromName === ch.fromName && c.toName === ch.toName);
+        const src = l.find((c) => c.id && c.id === ch.id)
+          || l.find((c) => c.fromName && ch.fromName && c.fromName === ch.fromName && c.toName === ch.toName);
         return src && chapterHasLeg(src)
           ? { ...ch, fromLat: src.fromLat, fromLon: src.fromLon, toLat: src.toLat, toLon: src.toLon }
           : ch;
@@ -272,30 +272,31 @@ export function useReplay({
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled || !clock) return undefined;
+    if (!enabled) return undefined;
     const ac = new AbortController();
     const style = filmStyle === "written" ? "written" : "raw";
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}`;
     fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data?.chapters?.length) {
-          remotePlanRef.current = null;
-          setHasWritten(false);
-          if (filmStyle !== "written") setFilmSource("rules");
+        if (data?.chapters?.length) {
+          remotePlanRef.current = data;
+          if (ac.signal.aborted) return;
+          setHasWritten(Boolean(data.hasWritten));
+          setFilmSource(data.source || "rules");
           return;
         }
-        remotePlanRef.current = data;
-        setHasWritten(Boolean(data.hasWritten));
-        setFilmSource(data.source || "rules");
+        if (ac.signal.aborted || remotePlanRef.current) return;
+        setHasWritten(false);
+        if (filmStyle !== "written") setFilmSource("rules");
       })
-      .catch(() => {
-        remotePlanRef.current = null;
+      .catch((err) => {
+        if (err?.name === "AbortError" || ac.signal.aborted || remotePlanRef.current) return;
         setHasWritten(false);
         setFilmSource("rules");
       });
     return () => ac.abort();
-  }, [enabled, clock, journal, lang, targetSeconds, filmStyle]);
+  }, [enabled, lang, targetSeconds, filmStyle]);
 
   const start = useCallback(() => {
     const w = replayWindow(clock, Date.now());

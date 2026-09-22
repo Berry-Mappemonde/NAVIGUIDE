@@ -135,6 +135,17 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(normStop("Ajaccio (Corse)"), "ajaccio");
     assert.equal(normStop("Fort-de-France (Martinique)"), "fort-de-france");
   });
+
+  it("datedMarks ne fusionne que sameStop (Saint-Maur et La Rochelle à filmNm 0 restent)", () => {
+    const d = datedMarks([
+      { name: "Saint-Maur (Berry, Indre)", nm: 0, filmNm: 0, iso: "2026-05-15T08:00:00Z" },
+      { name: "La Rochelle", nm: 0, filmNm: 0, iso: "2026-05-15T08:00:00Z" },
+      { name: "Ajaccio (Corse)", nm: 1820, filmNm: 1942, iso: "2026-05-24T12:51:00Z" },
+    ]);
+    assert.ok(d.some((s) => normStop(s.name) === "saint-maur"));
+    assert.ok(d.some((s) => /rochelle/i.test(s.name)));
+    assert.ok(d.some((s) => /ajaccio/i.test(s.name)));
+  });
 });
 
 const ROUTE_STOPS = ["Saint-Maur", "La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa", "Dzaoudzi"];
@@ -317,6 +328,43 @@ describe("expeditionStory — script du film (lot F3)", () => {
       const dep = ch.text.match(/départ vers (.+?)(?:\s*:|\.|$)/i);
       const arr = ch.text.match(/Arrivée à (.+?) le /i);
       if (dep && arr) assert.equal(normStop(dep[1]), normStop(arr[1]), ch.id);
+    }
+  });
+
+  it("horloge live-like : Arrivée à La Rochelle avant départ vers Ajaccio", () => {
+    const t0 = "2026-05-15T08:00:00Z";
+    const variants = [
+      { name: "La Rochelle", nm: 0, filmNm: 0, iso: t0, holdHours: 72, lat: 46.15, lon: -1.16 },
+      { name: "La Rochelle", nm: 0, filmNm: 122, iso: t0, holdHours: 72, lat: 46.15, lon: -1.16 },
+    ];
+    for (const lr of variants) {
+      const liveMarks = [
+        { name: "Saint-Maur (Berry, Indre)", nm: 0, filmNm: 0, iso: t0, holdHours: 0 },
+        lr,
+        ...marks.slice(2),
+      ];
+      const plan = buildFilmScript({
+        clock: { t0, marks: liveMarks },
+        marks: liveMarks,
+        live: { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live" },
+        journal: filmFixture().journal,
+        now: Date.parse("2026-09-19T02:00:00Z"),
+        lang: "fr",
+      });
+      const blob = plan.chapters.map((c) => c.text).join(" ");
+      const iArr = blob.indexOf("Arrivée à La Rochelle");
+      const iAj = blob.search(/départ vers Ajaccio/i);
+      assert.ok(iArr >= 0, `Arrivée à La Rochelle manquante (filmNm=${lr.filmNm})`);
+      assert.ok(iAj >= 0, "départ vers Ajaccio manquant");
+      assert.ok(iArr < iAj, blob.slice(0, 500));
+      assert.match(plan.chapters[0].text, /départ vers La Rochelle/i);
+      assert.match(plan.chapters[0].text, /Arrivée à La Rochelle/);
+      assert.doesNotMatch(blob, /vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio/);
+      for (const ch of plan.chapters) {
+        const tA = Date.parse(ch.tA);
+        const tB = Date.parse(ch.tB);
+        assert.ok(tB > tA, `${ch.id} tB<=tA ${ch.tA} ${ch.tB}`);
+      }
     }
   });
 });
