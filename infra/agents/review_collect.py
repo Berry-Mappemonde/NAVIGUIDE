@@ -50,18 +50,10 @@ RECETTE_TITLES = ("recette", "recipe", "acceptance", "what to check")
 
 
 def token() -> str | None:
-    tok = os.environ.get("GITHUB_TOKEN")
-    if tok:
-        return tok
-    try:
-        p = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
-                           text=True, capture_output=True, timeout=20)
-        for line in p.stdout.splitlines():
-            if line.startswith("password="):
-                return line.split("=", 1)[1]
-    except Exception:
-        return None
-    return None
+    """Jeton éprouvé (gh_token.py) ; None → lecture anonyme (dépôt public), sans les images privées."""
+    sys.path.insert(0, str(HERE))
+    from gh_token import token as _token  # noqa: PLC0415
+    return _token(required=False)
 
 
 def gh(path: str, tok: str | None = None):

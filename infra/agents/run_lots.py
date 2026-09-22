@@ -213,17 +213,11 @@ class Http:
 
 
 def github_token_from_git() -> str | None:
-    tok = os.environ.get("GITHUB_TOKEN")
-    if tok:
-        return tok
-    try:
-        p2 = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n", text=True, capture_output=True, timeout=20)
-        for line in p2.stdout.splitlines():
-            if line.startswith("password="):
-                return line.split("=", 1)[1]
-    except Exception:
-        return None
-    return None
+    """Jeton GitHub éprouvé sur l'API (gh_token.py : variable, trousseau, fichier — le premier qui répond 200).
+    Le 21 sept., ~/.git-credentials portait un vieux jeton et le Terminal du porteur recevait des 401."""
+    sys.path.insert(0, str(HERE))
+    from gh_token import token as _token  # noqa: PLC0415
+    return _token(required=False)
 
 
 # ---------------------------------------------------------------- github
@@ -481,7 +475,26 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
 PW_PORT = int(os.environ.get("BIM_PW_PORT", "5199"))
 
 
+RATE_LIMIT_RE = re.compile(r"rate.?limit|too many requests|\b429\b|quota|capacity|overloaded|try again later", re.I)
+RATE_LIMIT_WAITS_S = (300, 600, 1200)   # 5, 10, 20 min : le fournisseur (Grok) bride après une série d'agents
+
+
 def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+    """Un agent CLI. Si le fournisseur répond « rate limited », on attend (5, 10, 20 min) et on
+    réessaie au lieu de compter le lot comme raté : la nuit est longue, le batch n'est pas pressé."""
+    for attempt, wait_s in enumerate((0,) + RATE_LIMIT_WAITS_S):
+        if wait_s:
+            log(f"    fournisseur de modèle saturé (rate limited) — nouvel essai dans {wait_s // 60} min ({attempt}/{len(RATE_LIMIT_WAITS_S)})")
+            time.sleep(wait_s)
+        status, result = _run_agent_cli_once(path, prompt, model, timeout_s, resume)
+        if status == "ERROR" and RATE_LIMIT_RE.search(result or ""):
+            resume = True   # la reprise recolle à la session commencée, s'il y en a une
+            continue
+        return status, result
+    return status, result
+
+
+def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
     cmd = [AGENT_BIN, "-p", "--force", "--trust", "--workspace", str(path), "--output-format", "json"]
     if model:
         cmd += ["--model", model]

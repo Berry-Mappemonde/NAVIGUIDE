@@ -19,14 +19,10 @@ REPO = os.environ.get("BIM_REPO", "Berry-Mappemonde/Blue-Intelligence")
 
 
 def token() -> str:
-    tok = os.environ.get("GITHUB_TOKEN")
-    if tok:
-        return tok
-    p = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n", text=True, capture_output=True, check=True)
-    for line in p.stdout.splitlines():
-        if line.startswith("password="):
-            return line.split("=", 1)[1]
-    sys.exit("Aucun jeton GitHub (GITHUB_TOKEN ou trousseau git).")
+    """Jeton éprouvé sur l'API (gh_token.py) : trousseau, fichier ou variable, le premier qui répond 200."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gh_token import token as _token  # noqa: PLC0415
+    return _token()
 
 
 def post(number: int, body: str) -> str:
