@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, linearFilmAt, pickFilmChapters, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, linearFilmAt, pickFilmChapters, shouldReturnToLive, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -107,6 +107,30 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
     assert.match(hook, /onVoiceLeadFailed/);
     assert.match(hook, /pickFilmChapters/);
     assert.doesNotMatch(hook, /targetSeconds \+ 20/);
+
+    const lastOk = voiceLeadPolicy({
+      hadBoundary: true, elapsedMs: 800, alreadyRetried: false, chapterIdx: 3, chapterCount: 4,
+    });
+    assert.equal(lastOk.mode, "advance");
+    assert.equal(lastOk.finish, true);
+
+    const lastIncident = voiceLeadPolicy({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: true, chapterIdx: 3, chapterCount: 4,
+    });
+    assert.equal(lastIncident.mode, "linear");
+    assert.equal(lastIncident.finish, false, "un incident de voix ne met pas finish");
+
+    const midCut = voiceLeadPolicy({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: false,
+      chapterIdx: 3, chapterCount: 4, hasMoreChunks: true,
+    });
+    assert.equal(midCut.mode, "advance");
+    assert.equal(midCut.finish, false);
+
+    assert.equal(shouldReturnToLive({ voiceIncident: true }), false);
+    assert.equal(shouldReturnToLive({ filmFinished: true }), true);
+    assert.equal(shouldReturnToLive({ userStopped: true }), true);
+    assert.equal(shouldReturnToLive({ voiceIncident: true, filmFinished: true }), true);
   });
 
   it("script API sans emprise → brut local (première jambe avec coords)", () => {
@@ -302,5 +326,33 @@ describe("useReplay lot RA5 — Stop coupe voix, animation, caméra", () => {
     assert.match(bar, /data-testid="stop-auto"/);
     assert.match(bar, /testId="listen"/);
     assert.doesNotMatch(bar, /disabled=\{Boolean\(replay\.active\)\}[\s\S]{0,80}replay-stop/);
+  });
+});
+
+describe("useReplay lot RB6 — voix sans coupure, Stop total, pas de live sur incident", () => {
+  it("stop() pendant la lecture coupe voix + animation + caméra au premier geste", () => {
+    const order = [];
+    const next = applyReplayStop({
+      stopVoice: () => { order.push("voice"); },
+      releaseCamera: () => { order.push("camera"); },
+      cancelRaf: () => { order.push("raf"); },
+    });
+    assert.deepEqual(order, ["voice", "camera", "raf"]);
+    assert.equal(next.active, false);
+    assert.equal(next.tMs, null);
+    assert.equal(next.progress, 0);
+
+    const stopFn = hook.slice(hook.indexOf("const stop = useCallback"));
+    assert.match(stopFn, /stoppingRef\.current = true/);
+    assert.ok(
+      stopFn.indexOf("stoppingRef.current = true") < stopFn.indexOf("applyReplayStop("),
+      "Stop pose le garde-fou avant cancel (onend de Chrome ne relance pas)",
+    );
+    assert.ok(
+      stopFn.indexOf("finishedRef.current = true") < stopFn.indexOf("applyReplayStop("),
+      "finish est bloqué avant l'arrêt de la voix",
+    );
+    assert.match(hook, /shouldReturnToLive/);
+    assert.match(hook, /stoppingRef\.current \|\| finishedRef\.current/);
   });
 });
