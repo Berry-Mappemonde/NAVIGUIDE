@@ -1,6 +1,18 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildBerryLegs, isLandLegNames, isNonMaritimeLeg, nmToRoundedKm, NM_TO_KM, orientCoords } from "./berryLegs.js";
+import {
+  buildBerryLegs,
+  isAirLegNames,
+  isAirSegment,
+  isLandLegNames,
+  isNonMaritimeLeg,
+  legKind,
+  nmToRoundedKm,
+  officialAirRouteStyles,
+  officialRouteLineStyle,
+  NM_TO_KM,
+  orientCoords,
+} from "./berryLegs.js";
 
 describe("berryLegs", () => {
   it("skips Marigot / Halifax and inserts Marigot→Cayenne", () => {
@@ -26,6 +38,33 @@ describe("berryLegs", () => {
     assert.equal(isLandLegNames("Saint-Maur", "La Rochelle"), true);
     assert.equal(isLandLegNames("La Rochelle", "Ajaccio (Corse)"), false);
     assert.equal(nmToRoundedKm(122), Math.round(122 * NM_TO_KM));
+  });
+
+  it("marque avion Cayenne ↔ Saint-Pierre / Halifax", () => {
+    assert.equal(isAirLegNames("Cayenne (Guyane)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), true);
+    assert.equal(isAirLegNames("Saint-Pierre (Saint-Pierre-et-Miquelon)", "Cayenne (Guyane)"), true);
+    assert.equal(isAirLegNames("Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)"), true);
+    assert.equal(isAirLegNames("Halifax (Nouvelle-Écosse)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), true);
+    assert.equal(isAirLegNames("Cayenne (Guyane)", "Papeete (Polynésie française)"), false);
+    assert.equal(isAirLegNames("La Rochelle", "Ajaccio (Corse)"), false);
+    assert.equal(legKind("Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)"), "air");
+    assert.equal(legKind("Saint-Maur", "La Rochelle"), "land");
+    assert.equal(legKind("La Rochelle", "Ajaccio (Corse)"), "sea");
+    const air = officialRouteLineStyle({
+      from: { name: "Cayenne (Guyane)" },
+      to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
+      coords: [[-52.3, 4.9], [-56.2, 46.8]],
+    });
+    assert.equal(air.color, "#111111");
+    assert.equal(air.dash, "7 7");
+    assert.equal(air.interactive, false);
+    const layered = officialAirRouteStyles({ air: true });
+    assert.equal(layered.length, 2);
+    assert.equal(layered[0].color, "#e5e7eb");
+    assert.equal(layered[1].color, "#111111");
+    assert.equal(isAirSegment({ air: true, coords: [[0, 0], [1, 1]] }), true);
+    assert.equal(officialRouteLineStyle({ nonMaritime: true })?.color, "orange");
+    assert.equal(officialRouteLineStyle({ coords: [[0, 0], [1, 1]] }), null);
   });
 
   it("oriente A→B", () => {

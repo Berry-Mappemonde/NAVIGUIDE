@@ -180,21 +180,11 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
     || horizonH !== orders.knobs?.horizonDefaultH
     || expertCount > 0
     || boatTouched;
-  const summary = [
-    t(PROFILE_KEY[profile]),
-    t(COMFORT_KEY[comfort]),
-    isSuivre ? `${horizonH} h` : null,
-    expertCount ? `${t("skipperExpertTitle")} · ${expertCount}` : null,
-  ].filter(Boolean).join(" · ");
-
   return (
     <details className="px-4 py-3 border-t border-slate-700/60 group" data-testid="skipper-orders">
       <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold text-slate-200">{t("advancedSettings")}</span>
-        <span className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] text-slate-500 truncate">{summary}</span>
-          <span className="text-slate-500 group-open:rotate-90 transition-transform">›</span>
-        </span>
+        <span className="text-slate-500 group-open:rotate-90 transition-transform">›</span>
       </summary>
 
       {/* Le bateau : nom (polaire), longueur / tirant d’eau saisis, vitesse de planning, coup de vent. */}

@@ -114,6 +114,21 @@ function shortName(name) {
   return String(name || "").replace(/\s*\(Berry, Indre\)\s*/, "").trim();
 }
 
+/** Same stopover: « Ajaccio » ≡ « Ajaccio (Corse) ». Berry does not call twice. */
+export function normStop(name) {
+  return String(name || "")
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function sameStop(a, b) {
+  const na = normStop(a);
+  const nb = normStop(b);
+  return Boolean(na) && na === nb;
+}
+
 function compass(deg, lang) {
   const d = Number(deg);
   if (!Number.isFinite(d)) return "";
@@ -121,13 +136,17 @@ function compass(deg, lang) {
   return isEn(lang) ? card.replace(/O/g, "W") : card;
 }
 
-/** Stopovers with a date, in route order, deduplicated by (name, filmNm). */
+/** Stopovers with a date, in route order. One mark per name, one per filmNm < 0.6. */
 export function datedMarks(marks) {
   const out = [];
   for (const m of marks || []) {
     if (!m?.name || ms(m.iso) == null) continue;
     const film = Number(m.filmNm ?? m.nm) || 0;
-    if (out.some((x) => x.name === m.name && Math.abs(x.filmNm - film) < 0.6)) continue;
+    const key = normStop(m.name);
+    if (!key) continue;
+    // filmNm < 0.6 is not enough alone: « Ajaccio » and « Ajaccio (Corse) » at
+    // the same harbour must collapse even if the labels differ.
+    if (out.some((x) => sameStop(x.name, m.name) || Math.abs(x.filmNm - film) < 0.6)) continue;
     out.push({
       name: m.name,
       iso: m.iso,
@@ -618,7 +637,7 @@ export function filmCandidates({ journal, marks, clock, live, now = Date.now() }
     const t = ms(s.iso);
     if (t == null || (tEnd != null && t > tEnd)) continue;
     const id = `stop:${s.name}:${s.iso}`;
-    if (out.some((c) => c.kind === "stop" && c.role !== "depart" && c.name === s.name && Math.abs(c.tMs - t) < 3_600_000)) {
+    if (out.some((c) => c.kind === "stop" && c.role !== "depart" && c.role !== "today" && sameStop(c.name, s.name) && Math.abs(c.tMs - t) < 3_600_000)) {
       continue;
     }
     push(toCandidate({
@@ -826,23 +845,25 @@ function chapterWindows(stops, t0, tEnd) {
     const to = pts[i + 1];
     const tA = ms(from.iso) ?? (i === 0 ? t0 : null);
     if (tA == null || (tEnd != null && tA >= tEnd)) break;
-    const rawB = to ? ms(to.iso) : tEnd;
+    const destMs = to ? ms(to.iso) : null;
+    const arrived = destMs != null && destMs <= tEnd;
+    const rawB = destMs != null ? destMs : tEnd;
     const tB = Math.min(rawB == null ? tEnd : rawB, tEnd);
     if (tB <= tA) continue;
     list.push({
       id: `leg-${i}`,
       from,
-      to: to && tB < tEnd ? to : null,
+      to: arrived ? to : null,
       tA,
       tB,
       fromName: from.name || "",
-      toName: (to && tB < tEnd) ? (to.name || "") : "",
+      toName: arrived ? (to.name || "") : "",
       fromLat: Number.isFinite(from.lat) ? from.lat : null,
       fromLon: Number.isFinite(from.lon) ? from.lon : null,
       toLat: Number.isFinite(to?.lat) ? to.lat : null,
       toLon: Number.isFinite(to?.lon) ? to.lon : null,
     });
-    if (!to || (ms(to.iso) != null && ms(to.iso) >= tEnd)) break;
+    if (!to || (destMs != null && destMs >= tEnd)) break;
   }
   if (!list.length && t0 != null && tEnd != null && tEnd > t0) {
     list.push({
@@ -862,27 +883,57 @@ function chapterWindows(stops, t0, tEnd) {
   return list;
 }
 
+function windowOwnsEvent(w, ev, i) {
+  if (ev?.kind === "stop" && ev.role !== "depart" && ev.role !== "today" && w.toName && sameStop(w.toName, ev.name)) {
+    return true;
+  }
+  // Arrival at tB belongs to this jambe (]tA, tB]), not the next « départ vers ».
+  if (i === 0) return ev.tMs >= w.tA && ev.tMs <= w.tB;
+  return ev.tMs > w.tA && ev.tMs <= w.tB;
+}
+
 function assignToChapters(events, windows) {
   const buckets = windows.map(() => []);
   for (const ev of events) {
-    let idx = windows.findIndex((w, i) => ev.tMs >= w.tA && (i === windows.length - 1 ? ev.tMs <= w.tB : ev.tMs < w.tB));
+    let idx = windows.findIndex((w, i) => windowOwnsEvent(w, ev, i));
     if (idx < 0) idx = ev.role === "today" ? windows.length - 1 : 0;
     if (idx >= 0) buckets[idx].push(ev);
   }
   return buckets;
 }
 
+function arrivalSentence(to, lang) {
+  if (!to?.name || ms(to.iso) == null) return "";
+  const en = isEn(lang);
+  const quay = days(to.holdHours);
+  return en
+    ? `Arrival at ${shortName(to.name)} on ${dayMonth(to.iso, lang)}${quay ? `, ${dayWord(quay, lang)} in port` : ""}.`
+    : `Arrivée à ${shortName(to.name)} le ${dayMonth(to.iso, lang)}${quay ? `, ${dayWord(quay, lang)} à quai` : ""}.`;
+}
+
 function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
   const chapters = [];
+  const cited = new Set();
+  const pushArrival = (bits, dest) => {
+    const key = dest ? normStop(dest.name) : "";
+    const sentence = dest ? arrivalSentence(dest, lang) : "";
+    if (!sentence || !key || cited.has(key)) return;
+    bits.push(sentence);
+    cited.add(key);
+  };
   for (let i = 0; i < windows.length; i++) {
     const w = windows[i];
     const bits = [];
     const placed = [];
+    const dest = w.to && w.to.name ? w.to : null;
     if (i > 0) {
-      const intro = legIntro(w.from, w.to, storyConnector(i - 1, lang), lang, { first: false, sea: seaName });
+      const intro = legIntro(w.from, dest, storyConnector(i - 1, lang), lang, { first: false, sea: seaName });
       if (intro) bits.push(intro);
+      pushArrival(bits, dest);
     }
     for (const ev of buckets[i] || []) {
+      // Stopovers are the jambe destination, already paired above — not a second cite.
+      if (ev.kind === "stop" && ev.role !== "depart" && ev.role !== "today") continue;
       const rich = {
         ...ev,
         seaName,
@@ -891,12 +942,12 @@ function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
       if (ev.role === "depart") rich.name = startName;
       const sentence = filmEventSentence(rich, lang).trim();
       if (!sentence) continue;
-      const prefix = bits.length ? " " : "";
       const charIdx = bits.join(" ").length + (bits.length ? 1 : 0);
       bits.push(sentence);
       const card = cardFromJournalEntry(ev.entry, lang);
       placed.push({ id: ev.id, charIdx, card: card || { id: ev.id, kind: ev.kind, title: ev.name || ev.kind, text: sentence } });
     }
+    if (i === 0) pushArrival(bits, dest);
     const text = bits.join(" ").replace(/\s{2,}/g, " ").trim();
     chapters.push({
       id: w.id,

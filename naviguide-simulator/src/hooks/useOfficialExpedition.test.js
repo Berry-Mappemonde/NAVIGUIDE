@@ -10,11 +10,12 @@ const source = readFileSync(
 );
 
 describe("useOfficialExpedition — position officielle", () => {
-  it("préfère l’horloge serveur et fige le premier snapshot client", () => {
-    assert.match(source, /pickOfficialLiveClock\(serverClock, officialClient, frozenClientRef\.current\)/);
+  it("préfère l’horloge serveur et ne peint pas le cache client en attendant", () => {
+    assert.match(source, /if \(serverClock\) \{/);
+    assert.match(source, /if \(clockStatus !== "absent"\) return null;/);
+    assert.match(source, /pickOfficialLiveClock\(null, officialClient, frozenClientRef\.current\)/);
     assert.match(source, /if \(!enabled \|\| !liveClock\) return null;/);
     assert.doesNotMatch(source, /clock \|\| serverClock/);
-    assert.match(source, /pickOfficialLiveClock/);
     assert.match(
       source,
       /liveClock\s*&&\s*sampleClockAtTime\(liveClock, new Date\(nowMs\)\)\?\.lat != null/,

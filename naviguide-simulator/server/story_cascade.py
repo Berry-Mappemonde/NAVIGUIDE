@@ -53,6 +53,37 @@ _INFLIGHT_GUARD: asyncio.Lock | None = None
 _TF_SEMA: asyncio.Semaphore | None = None
 
 _FENCE_RE = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.M)
+_THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
+_THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
+_PROMPT_LEAK_RE = re.compile(
+    r"translate a sailing-log paragraph|Keep every number"
+    r"|You write the text of one card"
+    r"|Tu écris le texte d.une carte"
+    r"|present a port of call"
+    r"|Tu présentes une escale"
+    r"|sailing crew arriving"
+    r"|THREE plain sentences"
+    r"|analyze user input"
+    r"|here'?s a thinking process"
+    r"|thinking process:",
+    re.IGNORECASE,
+)
+_PREAMBLE_LEAD_RES = (
+    re.compile(
+        r"^\s*\*\*[^*]*(?:analyze\s+user\s+input|task\s*:|constraints?\s*:|"
+        r"request\s*:|thinking\s+off)[^*]*\*\*\s*",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*analyze\s+user\s+input:?\s*", re.IGNORECASE),
+    re.compile(r"^\s*task\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*constraints?\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*request\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*thinking\s+off:?\s*", re.IGNORECASE),
+    re.compile(r"^\s*wait,\s+[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
+    re.compile(r"^\s*let\s+me\s+[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
+    re.compile(r"^\s*the\s+user\s+says\s+[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
+    re.compile(r"^\s*here'?s a thinking process\s*:?\s*[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
+)
 
 
 def _env(name: str) -> str:
@@ -281,8 +312,33 @@ def build_prompt(body: dict[str, Any], page_url: str | None = None) -> tuple[str
     return system, user
 
 
+def _strip_think(txt: str) -> str:
+    """Drop <think>…</think>; an unclosed <think> cuts from that tag."""
+    s = _THINK_BLOCK_RE.sub("", txt or "")
+    return _THINK_OPEN_RE.sub("", s).strip()
+
+
+def _strip_preamble(txt: str) -> str:
+    """Drop a leading model-meta preamble until the first real sentence."""
+    s = (txt or "").strip()
+    changed = True
+    while s and changed:
+        changed = False
+        for pat in _PREAMBLE_LEAD_RES:
+            m = pat.match(s)
+            if m:
+                s = s[m.end():].strip()
+                changed = True
+                break
+    return s
+
+
 def _clean_text(txt: str | None) -> str:
-    s = _FENCE_RE.sub("", (txt or "").strip()).strip()
+    s = _strip_think(txt or "")
+    s = _FENCE_RE.sub("", s.strip()).strip()
+    s = _strip_preamble(s)
+    if _PROMPT_LEAK_RE.search(s):
+        return ""
     return s
 
 
@@ -293,7 +349,8 @@ _META_RE = re.compile(
     r"no (?:additional|further|extra) (?:information|data|details?)|is (?:not )?(?:provided|available) in this report|"
     r"n[’']est (?:pas )?(?:fournie?|disponible)s? dans ce rapport|\bevent type\b|type d[’']?[ée]v[ée]nement|"
     r"\bLOA\b|tirant d[’']eau|\bdraft\b|briefing nautique|skipper\.used|r[èe]gles? de croisi[èe]re|cruise rules|"
-    r"\bwatch\b|\bimm[ée]diate\b|d[ée]cision a [ée]t[ée] prise|the decision was taken)",
+    r"\bwatch\b|\bimm[ée]diate\b|d[ée]cision a [ée]t[ée] prise|the decision was taken|"
+    r"analyze user input|thinking off|wait, let me|translate a sailing-log)",
     re.IGNORECASE,
 )
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
@@ -350,7 +407,7 @@ async def translate(
     )
     cleaned = _clean_text(out)
     if not cleaned:
-        return src, "rules"
+        return (_clean_text(src) or ""), "rules"
     return cleaned, source
 
 
@@ -386,6 +443,7 @@ def tidy_story(
 
 
 def _openai_text(data: dict[str, Any] | None) -> str:
+    """Read message.content only — never reasoning_content (Nemotron thinking)."""
     msg = ((data or {}).get("choices") or [{}])[0].get("message") or {}
     content = msg.get("content")
     if isinstance(content, str):
@@ -394,6 +452,8 @@ def _openai_text(data: dict[str, Any] | None) -> str:
         parts = []
         for p in content:
             if isinstance(p, dict):
+                if p.get("type") in {"reasoning", "thinking"}:
+                    continue
                 parts.append(p.get("text") or "")
             elif isinstance(p, str):
                 parts.append(p)
@@ -430,6 +490,8 @@ async def _call_tokenfactory(
         "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
         "temperature": 0.4,
         "stream": False,
+        "reasoning_effort": "low",
+        "chat_template_kwargs": {"thinking": False},
     }
     async with _tf_limiter():
         r = await client.post(
@@ -558,7 +620,10 @@ def _cache_get(key: str) -> tuple[str, str] | None:
     text = val.get("text")
     if not isinstance(text, str) or not text.strip():
         return None
-    return text, "cache"
+    cleaned = _clean_text(text)
+    if not cleaned:
+        return None
+    return cleaned, "cache"
 
 
 def _cache_put(key: str, text: str, source: str) -> None:

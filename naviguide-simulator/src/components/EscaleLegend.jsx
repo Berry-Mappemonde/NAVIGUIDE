@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { formatCivilDate } from "../engine/voyageClock.js";
-import { formatEtaRange, formatEtaRangeTitle, useOfficialEta } from "../hooks/usePlanReview.js";
+import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks, stopMatch, useOfficialEta } from "../hooks/usePlanReview.js";
 
 function markAt(m) {
   return Number(m.filmNm ?? m.nm) || 0;
@@ -72,7 +72,19 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].at <= x + 0.4) current = i;
   }
-  const nextName = current + 1 < rows.length ? rows[current + 1].name : "";
+  const calendarNext = nextStopFromMarks(marks);
+  const playheadNext = current + 1 < rows.length ? rows[current + 1].name : "";
+  const nextName = calendarNext || playheadNext;
+  const nowMs = Date.now();
+  let nextIndex = -1;
+  if (calendarNext) {
+    nextIndex = rows.findIndex((r) => {
+      if (!stopMatch(r.name, calendarNext)) return false;
+      const ts = Date.parse(r.mark?.iso || "");
+      return !Number.isFinite(ts) || ts > nowMs;
+    });
+  }
+  if (nextIndex < 0 && playheadNext) nextIndex = current + 1;
   const eta = useOfficialEta(nextName, { enabled: Boolean(nextName) });
   const etaLabel = formatEtaRange(eta, t, lang);
   const etaTitle = formatEtaRangeTitle(eta, t);
@@ -93,8 +105,8 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
             nmLabel={r.nmLabel}
             dateLabel={r.dateLabel}
             quayLabel={r.quayLabel}
-            etaLabel={etaLabel && i === current + 1 ? etaLabel : ""}
-            etaTitle={etaLabel && i === current + 1 ? etaTitle : ""}
+            etaLabel={etaLabel && i === nextIndex ? etaLabel : ""}
+            etaTitle={etaLabel && i === nextIndex ? etaTitle : ""}
             title={r.title}
             sheetTitle={r.sheetTitle}
             active={i === current}

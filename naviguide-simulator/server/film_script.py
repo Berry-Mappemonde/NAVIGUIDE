@@ -85,6 +85,17 @@ def short_name(name: str) -> str:
     return re.sub(r"\s*\(Berry, Indre\)\s*", "", str(name or "")).strip()
 
 
+def norm_stop(name: str) -> str:
+    """« Ajaccio » ≡ « Ajaccio (Corse) ». Berry n'escale pas deux fois au même port."""
+    s = re.sub(r"\s*\([^)]*\)\s*", " ", str(name or ""))
+    return re.sub(r"\s+", " ", s).strip().casefold()
+
+
+def same_stop(a: str, b: str) -> bool:
+    na, nb = norm_stop(a), norm_stop(b)
+    return bool(na) and na == nb
+
+
 def _days(hours: Any) -> int:
     try:
         return max(0, round(float(hours or 0) / 24.0))
@@ -139,7 +150,12 @@ def dated_marks(marks: list | None) -> list[dict]:
         if not isinstance(m, dict) or not m.get("name") or _ms(m.get("iso")) is None:
             continue
         film = float(m.get("filmNm") if m.get("filmNm") is not None else m.get("nm") or 0)
-        if any(x["name"] == m["name"] and abs(x["filmNm"] - film) < 0.6 for x in out):
+        key = norm_stop(m["name"])
+        if not key:
+            continue
+        # filmNm < 0.6 ne suffit pas : « Ajaccio » et « Ajaccio (Corse) » au
+        # même port doivent fusionner même si les libellés diffèrent.
+        if any(same_stop(x["name"], m["name"]) or abs(x["filmNm"] - film) < 0.6 for x in out):
             continue
         out.append({
             "name": m["name"],
@@ -220,14 +236,18 @@ def _event_char_idx(ev: dict, chapter: dict, fact: str) -> int:
     return 0
 
 
-def _in_chapter(ev: dict, chapter: dict, last: bool) -> bool:
+def _in_chapter(ev: dict, chapter: dict, last: bool, first: bool = False) -> bool:
     t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
     t = ev.get("tMs")
     if t is None or t_a is None or t_b is None:
         return False
-    if last:
+    dest = chapter.get("toName") or ""
+    if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"} and dest and same_stop(dest, ev.get("name") or ""):
+        return True
+    # Arrivée à tB = cette jambe (]tA, tB]), pas le chapitre « départ vers » suivant.
+    if first:
         return t_a <= t <= t_b
-    return t_a <= t < t_b
+    return t_a < t <= t_b
 
 
 def _bubble_payload(ev: dict, chapter: dict, lang: str, prev: dict | None = None) -> dict:
@@ -359,12 +379,13 @@ def attach_chapter_events(
     pool = collect_bubble_events(journal, packed, wind_max_kt=wind_max_kt)
     n = len(chapters or [])
     for i, ch in enumerate(chapters or []):
+        first = i == 0
         last = i == n - 1
         existing = {str(e.get("id")): e for e in (ch.get("events") or []) if e.get("id")}
         placed: list[dict] = []
         seen: set[str] = set()
         for ev in pool:
-            if not _in_chapter(ev, ch, last):
+            if not _in_chapter(ev, ch, last, first):
                 continue
             prev = existing.get(str(ev["id"]))
             row = _bubble_payload(ev, ch, lang, prev)
@@ -469,7 +490,7 @@ def film_candidates(
             continue
         if any(
             c["kind"] == "stop" and c.get("role") not in {"depart", "today"}
-            and c["name"] == s["name"] and abs(c["tMs"] - t) < 3_600_000
+            and same_stop(c["name"], s["name"]) and abs(c["tMs"] - t) < 3_600_000
             for c in out
         ):
             continue
@@ -677,24 +698,26 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
         t_a = _ms(frm.get("iso")) if frm.get("iso") else (t0 if i == 0 else None)
         if t_a is None or t_a >= t_end:
             break
-        raw_b = _ms(to["iso"]) if to else t_end
+        dest_ms = _ms(to["iso"]) if to else None
+        arrived = dest_ms is not None and dest_ms <= t_end
+        raw_b = dest_ms if dest_ms is not None else t_end
         t_b = min(raw_b if raw_b is not None else t_end, t_end)
         if t_b <= t_a:
             continue
         out.append({
             "id": f"leg-{i}",
             "from": frm,
-            "to": to if to and t_b < t_end else None,
+            "to": to if arrived else None,
             "tA": t_a,
             "tB": t_b,
             "fromName": frm.get("name") or "",
-            "toName": (to.get("name") or "") if to and t_b < t_end else "",
+            "toName": (to.get("name") or "") if arrived else "",
             "fromLat": frm.get("lat"),
             "fromLon": frm.get("lon"),
             "toLat": (to or {}).get("lat"),
             "toLon": (to or {}).get("lon"),
         })
-        if not to or (_ms(to.get("iso")) is not None and _ms(to["iso"]) >= t_end):
+        if not to or (dest_ms is not None and dest_ms >= t_end):
             break
     if not out and t_end > t0:
         out.append({
@@ -705,18 +728,34 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
     return out
 
 
+def _window_owns(w: dict, ev: dict, i: int) -> bool:
+    dest = w.get("toName") or ""
+    if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"} and dest and same_stop(dest, ev.get("name") or ""):
+        return True
+    if i == 0:
+        return ev["tMs"] >= w["tA"] and ev["tMs"] <= w["tB"]
+    return ev["tMs"] > w["tA"] and ev["tMs"] <= w["tB"]
+
+
 def _assign(events: list[dict], windows: list[dict]) -> list[list[dict]]:
     buckets: list[list[dict]] = [[] for _ in windows]
     for ev in events:
-        idx = 0
-        for i, w in enumerate(windows):
-            if ev["tMs"] >= w["tA"] and (ev["tMs"] <= w["tB"] if i == len(windows) - 1 else ev["tMs"] < w["tB"]):
-                idx = i
-                break
-        else:
+        idx = next((i for i, w in enumerate(windows) if _window_owns(w, ev, i)), None)
+        if idx is None:
             idx = len(windows) - 1 if ev.get("role") == "today" else 0
         buckets[idx].append(ev)
     return buckets
+
+
+def _arrival_sentence(stop: dict | None, lang: str) -> str:
+    if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
+        return ""
+    en = _en(lang)
+    name = short_name(stop["name"])
+    when = day_month(stop["iso"], lang)
+    quay = _days(stop.get("holdHours"))
+    q = f", {_day_word(quay, lang)} {'in port' if en else 'à quai'}" if quay else ""
+    return f"Arrival at {name} on {when}{q}." if en else f"Arrivée à {name} le {when}{q}."
 
 
 def _card(entry: dict) -> dict:
@@ -734,26 +773,40 @@ def _card(entry: dict) -> dict:
 def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None) -> list[dict]:
     en = _en(lang)
     chapters: list[dict] = []
+    cited: set[str] = set()
     dist = ""
     if live:
         dist = _nm_label(live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm"), lang)
+
+    def push_arrival(bits: list[str], dest: dict | None) -> None:
+        key = norm_stop((dest or {}).get("name") or "")
+        sentence = _arrival_sentence(dest, lang)
+        if not sentence or not key or key in cited:
+            return
+        bits.append(sentence)
+        cited.add(key)
+
     for i, w in enumerate(windows):
         bits: list[str] = []
         placed: list[dict] = []
+        dest = w.get("to") if (w.get("to") or {}).get("name") else None
         if i > 0:
             conn = connector_at(i - 1, lang)
-            dest = short_name((w.get("to") or {}).get("name") or "")
+            dest_name = short_name((dest or {}).get("name") or "")
             origin = short_name((w.get("from") or {}).get("name") or "")
             dep = _departure_iso(w["from"]) if w.get("from") else None
-            head = (f"departure for {dest}" if dest else f"under way from {origin}") if en else (
-                f"départ vers {dest}" if dest else f"en route depuis {origin}"
+            head = (f"departure for {dest_name}" if dest_name else f"under way from {origin}") if en else (
+                f"départ vers {dest_name}" if dest_name else f"en route depuis {origin}"
             )
             bits.append(
                 f"{conn}, on {day_month(dep, lang)}, {head}."
                 if en else
                 f"{conn}, le {day_month(dep, lang)}, {head}."
             )
+            push_arrival(bits, dest)
         for ev in buckets[i]:
+            if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"}:
+                continue
             rich = {**ev, "seaName": sea_name, "distLabel": dist, "name": start_name if ev.get("role") == "depart" else ev.get("name")}
             sentence = event_sentence(rich, lang).strip()
             if not sentence:
@@ -764,6 +817,8 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             card = _card(entry)
             card["text"] = sentence
             placed.append({"id": ev["id"], "charIdx": char_idx, "card": card})
+        if i == 0:
+            push_arrival(bits, dest)
         text = re.sub(r"\s{2,}", " ", " ".join(bits)).strip()
         chapters.append({
             "id": w["id"],

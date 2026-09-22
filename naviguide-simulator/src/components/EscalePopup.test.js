@@ -10,6 +10,9 @@ import {
   ensureEscalePopup,
   findWaypointMarker,
   handleWaypointMarkerClick,
+  isEscaleCloseClick,
+  requestEscaleClose,
+  shouldCloseEscaleSheet,
 } from "./escalePopup.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -99,8 +102,8 @@ describe("EscalePopup — contrat (lot R7)", () => {
   });
 
   it("App relie le clic drapeau et la légende au même état ; plus dans le panneau", () => {
-    assert.match(app, /onWaypointClick=\{openEscaleSheet\}/);
-    assert.match(app, /onEscaleSheet=\{openEscaleSheet\}/);
+    assert.match(app, /onWaypointClick=\{openEscaleFromUi\}/);
+    assert.match(app, /onEscaleSheet=\{openEscaleFromUi\}/);
     assert.match(app, /<EscalePopupHost/);
     assert.doesNotMatch(sidebar, /EscaleSheet/);
     assert.doesNotMatch(app, /escaleStop=\{escaleStop\}/);
@@ -112,5 +115,44 @@ describe("EscalePopup — contrat (lot R7)", () => {
     });
     assert.equal(calls.sheet, 1);
     assert.equal(calls.draw, 0);
+  });
+});
+
+describe("EscalePopup lot RA5 — croix, Échap, pas de fiche en Suivre/Revoir", () => {
+  it("la croix appelle onClose", () => {
+    let n = 0;
+    const event = {
+      target: { closest: (sel) => (sel === "[data-testid='escale-close']" ? {} : null) },
+      preventDefault() {},
+      stopPropagation() {},
+    };
+    assert.equal(isEscaleCloseClick(event), true);
+    assert.equal(isEscaleCloseClick({ target: { closest: () => null } }), false);
+    requestEscaleClose({ onClose: () => { n += 1; } });
+    assert.equal(n, 1);
+    assert.match(src, /requestEscaleClose/);
+    assert.match(src, /addEventListener\?\.\("click"/);
+    assert.match(src, /keydown/);
+    assert.match(sheet, /data-testid="escale-close"/);
+    assert.match(sheet, /onMouseDown/);
+    assert.match(sheet, /onClose\(\)/);
+  });
+
+  it("Suivre / Revoir vident la fiche ; le film ne la rouvre pas", () => {
+    assert.equal(shouldCloseEscaleSheet({ nextView: "suivre" }), true);
+    assert.equal(shouldCloseEscaleSheet({ replayStarting: true }), true);
+    assert.equal(shouldCloseEscaleSheet({ replayActive: true }), true);
+    assert.equal(shouldCloseEscaleSheet({ nextView: "simulation" }), false);
+    assert.match(app, /shouldCloseEscaleSheet/);
+    assert.match(app, /if \(replay\.active\) return/);
+    const prev = globalThis.__naviguideIgnoreEscaleOpen;
+    globalThis.__naviguideIgnoreEscaleOpen = Date.now() + 1000;
+    const calls = { sheet: 0 };
+    const ignored = handleWaypointMarkerClick(false, { name: "Ajaccio", lat: 41.9, lon: 8.7 }, 0, {
+      onWaypointClick: () => { calls.sheet += 1; },
+    });
+    assert.equal(ignored, "ignore");
+    assert.equal(calls.sheet, 0);
+    globalThis.__naviguideIgnoreEscaleOpen = prev;
   });
 });

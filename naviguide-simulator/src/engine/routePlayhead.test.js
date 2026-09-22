@@ -93,6 +93,20 @@ describe("Guiana → SPM air hop", () => {
     assert.ok(Math.abs(here.lat - 44.65) < 0.4);
     assert.equal(here.jump, false);
   });
+
+  it("exclut les milles Halifax ↔ Saint-Pierre du cumul à la voile", () => {
+    const flat = flattenRoute([
+      { coords: [[-52.3533, 4.9333], [-52.35, 4.94]] },
+      {
+        from: { name: "Halifax (Nouvelle-Écosse)" },
+        to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
+        coords: [[-63.5652, 44.6488], [-56.1628, 46.7761]],
+      },
+    ]);
+    assert.ok(flat.totalNm < 20, `voile ${flat.totalNm}`);
+    assert.ok(flat.points.some((p) => p.jump && p.air));
+    assert.ok(flat.totalFilmNm > 200);
+  });
 });
 
 describe("antimeridian", () => {

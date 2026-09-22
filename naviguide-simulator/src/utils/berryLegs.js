@@ -59,6 +59,54 @@ export function isLandLegNames(fromName, toName) {
     || isNonMaritimeLeg(canonStopName(fromName), canonStopName(toName));
 }
 
+function airStopKey(name) {
+  const s = String(name || "");
+  if (/cayenne/i.test(s)) return "cayenne";
+  if (/halifax/i.test(s)) return "halifax";
+  if (/saint-pierre/i.test(s) || /miquelon/i.test(s)) return "spm";
+  return "";
+}
+
+/** Jambe avion (Cayenne ↔ Halifax / Saint-Pierre, et le retour). */
+export function isAirLegNames(fromName, toName) {
+  const a = airStopKey(fromName);
+  const b = airStopKey(toName);
+  return Boolean(a && b && a !== b);
+}
+
+export function isAirSegment(segment) {
+  if (!segment) return false;
+  if (segment.air || segment.jump || segment.kind === "air") return true;
+  return isAirLegNames(segment.from?.name, segment.to?.name);
+}
+
+export function legKind(fromName, toName) {
+  if (isAirLegNames(fromName, toName)) return "air";
+  if (isLandLegNames(fromName, toName)) return "land";
+  return "sea";
+}
+
+/** Style du trait officiel : mer = sillage ; terre = orange ; air = noir pointillé. */
+export function officialRouteLineStyle(segment) {
+  if (isAirSegment(segment)) {
+    return { color: "#111111", weight: 2.5, dash: "7 7", interactive: false };
+  }
+  if (segment?.nonMaritime) {
+    return { color: "orange", weight: 4, dash: "6 6", interactive: true };
+  }
+  return null;
+}
+
+/** Liseré clair sous le noir : le dash reste visible sur le fond sombre. */
+export function officialAirRouteStyles(segment) {
+  const main = officialRouteLineStyle(segment);
+  if (!main || main.color !== "#111111") return main ? [main] : [];
+  return [
+    { ...main, color: "#e5e7eb", weight: 4.5 },
+    main,
+  ];
+}
+
 export function nmToRoundedKm(nm) {
   const n = Number(nm);
   if (!Number.isFinite(n)) return null;

@@ -67,3 +67,17 @@ describe("SkipperOrdersPanel — remise d’un chiffre (lot R1)", () => {
     assert.notEqual(after.boat.source.loa, "skipper");
   });
 });
+
+describe("SkipperOrdersPanel — une seule occurrence profil/budget (lot RA6)", () => {
+  it("l'en-tête replié ne répète pas le profil ni le budget déjà dans le panneau", () => {
+    const summary = src.match(/<summary\b[^>]*>[\s\S]*?<\/summary>/);
+    assert.ok(summary, "un <summary> racine");
+    const head = summary[0];
+    assert.match(head, /advancedSettings/);
+    assert.doesNotMatch(head, /PROFILE_KEY|COMFORT_KEY|horizonH|\{summary\}/);
+    assert.doesNotMatch(src, /const summary = \[/);
+    assert.equal((src.match(/skipper-profile/g) || []).length, 1, "pills profil une fois");
+    assert.match(src, /orders\.budget\.hours/);
+    assert.match(src, /data-testid="skipper-horizon"/);
+  });
+});
