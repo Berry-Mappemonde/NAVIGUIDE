@@ -1284,6 +1284,38 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
 
     wind_max = body.wind_max_kt if body.wind_max_kt and 10 <= body.wind_max_kt <= 80 else None
     hs_max = body.hs_max_m if body.hs_max_m and 0.5 <= body.hs_max_m <= 12 else None
+    from plan_advisor import (  # noqa: PLC0415
+        CORRIDOR_MAX_NM,
+        DISTANCE_CAP_RATIO,
+        advise,
+        corridor_track,
+        plan_from_current_leg,
+        track_nm,
+    )
+    ref_nm = versus_nm if versus_nm > 0 else track_nm(searoute)
+    max_nm = ref_nm * DISTANCE_CAP_RATIO if ref_nm > 0 else None
+    chosen = searoute
+    plan_advice = None
+    try:
+        thresholds = {}
+        if wind_max is not None:
+            thresholds["galeKt"] = wind_max
+        if hs_max is not None:
+            thresholds["hsAlertM"] = hs_max
+        mini = plan_from_current_leg(
+            [{"lat": la, "lon": lo} for la, lo in searoute] or [
+                {"lat": float(live["lat"]), "lon": float(live["lon"])},
+                {"lat": dst_lat, "lon": dst_lon},
+            ],
+            frm="position", to=str(dest.get("name") or "escale"),
+            depart=when if live.get("status") != "waiting" else t0,
+            thresholds=thresholds,
+        )
+        plan_advice = advise(mini, 0, now=when)
+        name = (plan_advice.get("best") or {}).get("corridor") or "reference"
+        chosen = corridor_track(searoute, name) or searoute
+    except Exception as exc:
+        log.warning("conseil corridor : %s", exc)
     result = run_leg_isochrone(
         dep_lat=float(live["lat"]),
         dep_lon=float(live["lon"]),
@@ -1292,7 +1324,10 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         departure_time=when if live.get("status") != "waiting" else t0,
         wind_fn=wind_fn,
         polar_raw=_polar_raw(voy.get("expedition_id") or ""),
-        searoute_coords=searoute,
+        searoute_coords=chosen or searoute,
+        corridor_coords=searoute or chosen,
+        corridor_max_nm=CORRIDOR_MAX_NM if searoute else None,
+        max_distance_nm=max_nm,
         wave_nogo_fn=skipper_nogo(wind_fn, wind_max_kt=wind_max, hs_max_m=hs_max),
     )
     old_coords = [[lon, lat] for lat, lon in searoute]
@@ -1318,6 +1353,15 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         "from_lat": live["lat"],
         "from_lon": live["lon"],
     }
+    if isinstance(plan_advice, dict) and isinstance(plan_advice.get("best"), dict):
+        best = plan_advice["best"]
+        draft["planAdvice"] = {
+            "leg": plan_advice.get("leg", 0),
+            "best": {k: best[k] for k in (
+                "shiftDays", "corridor", "extraNm", "score", "sentence",
+                "alertsBefore", "alertsAfter",
+            ) if k in best},
+        }
     new_coords = (result.get("draft_geojson") or {}).get("geometry", {}).get("coordinates") or []
     delta = route_delta(
         old_coords, new_coords,
