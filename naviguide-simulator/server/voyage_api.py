@@ -634,10 +634,41 @@ def _kick_official_moments(*, force: bool = False) -> bool:
             warm_moments(OFFICIAL_VOYAGE_ID)
         except Exception as exc:
             log.warning("journal des moments: %s", exc)
+        _kick_official_film_story(force=True)
         return {}
 
     return get_pipeline().kick(
         "official-moments",
+        0.0,
+        0.0,
+        _load,
+        force=force,
+    )
+
+
+def _kick_official_film_story(*, force: bool = False) -> bool:
+    """Préchauffe le récit du film après le journal — jamais bloquant (lot R9c)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        try:
+            import asyncio  # noqa: PLC0415
+            from film_script import warm_film_story  # noqa: PLC0415
+
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(warm_film_story(OFFICIAL_VOYAGE_ID))
+            else:
+                asyncio.create_task(warm_film_story(OFFICIAL_VOYAGE_ID))
+        except Exception as exc:
+            log.warning("préchauffage récit film: %s", exc)
+        return {}
+
+    return get_pipeline().kick(
+        "official-film-story",
         0.0,
         0.0,
         _load,

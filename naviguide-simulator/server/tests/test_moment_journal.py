@@ -10,6 +10,7 @@ from moment_journal import (
     SCORE_ALERT_OFF,
     SCORE_ALERT_ON,
     SCORE_AMP,
+    SCORE_APPROCHE,
     SCORE_ESCALE,
     SCORE_REGIME,
     SCORE_STATION,
@@ -135,6 +136,22 @@ def test_changed_signature_updates_the_line():
     assert after[0]["signature"] != before[0]
     assert after[0]["moment"]["here"]["zee"]["mrgid"] == 5693
     assert [row["seq"] for row in after] == list(range(len(after)))
+
+
+def test_warm_emits_approche_per_stop():
+    voy = _fixture_voyage()
+    warm_moments(voy["voyageId"])
+    rows = read_moments(voy["voyageId"])
+    approaches = [c for row in rows for c in row["changes"] if c.get("kind") == "approche"]
+    titles = {c["title"] for c in approaches}
+    assert approaches, "le journal doit fournir une approche d'escale"
+    assert any(c.get("score") == SCORE_APPROCHE for c in approaches)
+    assert any("Fort-de-France" in t for t in titles)
+    assert any("Pointe-à-Pitre" in t for t in titles)
+    for change in approaches:
+        assert not change["title"].lower().startswith("approche")
+        assert change["title"]
+        assert "milles nautiques" in change["fact"]
 
 
 def test_read_moments_until_cuts():

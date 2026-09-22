@@ -8,6 +8,7 @@ tâche de fond après le réchauffage des perles, jamais au démarrage.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,11 +18,14 @@ log = logging.getLogger("naviguide-simulator.moments")
 
 SCORE_ESCALE = 3
 SCORE_ALERT_ON = 3
+SCORE_APPROCHE = 3
 SCORE_ZEE = 2
 SCORE_STATION = 2
 SCORE_REGIME = 1
 SCORE_AMP = 1
 SCORE_ALERT_OFF = 1
+APPROACH_NM_FLOOR = 80.0
+APPROACH_FRAC = 0.10
 
 
 def _as_float(value: Any) -> float | None:
@@ -104,6 +108,16 @@ def _around_titles(moment: dict | None) -> list[str]:
 
 def _change(kind: str, score: int, title: str, fact: str) -> dict:
     return {"kind": kind, "score": score, "title": str(title or "").strip(), "fact": str(fact or "").strip()}
+
+
+def _stop_title(name: str) -> str:
+    """Nom d'escale seul — titre de bulle, sans « Approche de »."""
+    return re.sub(r"\s*\([^)]*\)\s*", " ", str(name or "")).strip()
+
+
+def _approach_threshold(leg_nm: float | None) -> float:
+    span = float(leg_nm) if leg_nm and leg_nm > 0 else APPROACH_NM_FLOOR
+    return max(APPROACH_NM_FLOOR, APPROACH_FRAC * span)
 
 
 def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
@@ -312,6 +326,8 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     rows: list[dict] = []
     prev: dict | None = None
     seq = 0
+    prev_rem_live: float | None = None
+    prev_leg_idx: int | None = None
     for pearl in pearls:
         sail = _as_float(pearl.get("sailNm"))
         if sail is None:
@@ -330,9 +346,44 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
         leg_idx, jambe = _leg_at(legs, sail if sail is not None else 0.0)
         cur = build_moment(pearl, clock, jambe, thresholds, lang="fr")
         sig = cur.get("signature") or signature(cur)
-        if prev is not None and sig == (prev.get("signature") or signature(prev)):
+        to_nm = _as_float(jambe.get("toNm"))
+        from_nm = _as_float(jambe.get("fromNm"))
+        leg_nm = (to_nm - from_nm) if to_nm is not None and from_nm is not None else _as_float(jambe.get("legNm"))
+        live_rem = (to_nm - sail) if to_nm is not None and sail is not None else None
+        if prev_leg_idx is not None and leg_idx != prev_leg_idx and leg_nm is not None:
+            prev_rem_live = float(leg_nm)
+        cur_to = (cur.get("leg") or {}).get("to") if isinstance(cur.get("leg"), dict) else jambe.get("to")
+        thr = _approach_threshold(leg_nm)
+        approach_hit = (
+            prev_rem_live is not None
+            and live_rem is not None
+            and bool(cur_to)
+            and live_rem <= thr < prev_rem_live
+            and live_rem > 1.0
+        )
+        same_sig = prev is not None and sig == (prev.get("signature") or signature(prev))
+        if same_sig and not approach_hit:
+            if live_rem is not None:
+                prev_rem_live = live_rem
+            prev_leg_idx = leg_idx
             continue
         changes = diff_moments(prev, cur)
+        if approach_hit:
+            title = _stop_title(str(cur_to))
+            already = any(
+                c.get("kind") == "approche"
+                or (c.get("kind") == "escale" and title and title in (c.get("title") or ""))
+                for c in changes
+            )
+            if not already:
+                rem_nm = int(round(live_rem))
+                changes.append(_change(
+                    "approche", SCORE_APPROCHE, title,
+                    f"Approche de {title}, reste {rem_nm} milles nautiques.",
+                ))
+        if live_rem is not None:
+            prev_rem_live = live_rem
+        prev_leg_idx = leg_idx
         rows.append({
             "voyageId": voyage_id,
             "seq": seq,
