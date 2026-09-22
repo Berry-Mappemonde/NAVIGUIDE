@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Square, Volume2 } from "lucide-react";
+import { Square, Volume2, VolumeX } from "lucide-react";
 import { canSpeak, speak, stopSpeaking } from "../utils/speak.js";
 
 /**
@@ -21,6 +21,7 @@ export function ListenButton({
   onListening,
   deferSpeak = false,
   showWhenEmpty = false,
+  iconOnly = false,
 }) {
   const [speaking, setSpeaking] = useState(false);
   const body = Array.isArray(text) ? text.filter(Boolean).join("\n\n") : (text || "");
@@ -53,20 +54,26 @@ export function ListenButton({
   const label = (deferSpeak && armed)
     ? t("briefingListen")
     : (pressed ? t("briefingListenStop") : t("briefingListen"));
+  const icon = iconOnly
+    ? (pressed ? <Volume2 size={11} /> : <VolumeX size={11} />)
+    : (pressed ? <Square size={11} /> : <Volume2 size={11} />);
   return (
     <button
       type="button"
       onClick={toggle}
       data-testid={testId}
       aria-pressed={pressed}
+      aria-label={label}
       title={label}
-      className={`flex items-center gap-1 rounded-md text-[10px] font-semibold border transition-colors
-        ${compact ? "h-6 px-1.5" : "px-1.5 py-0.5 rounded-full"}
+      className={`flex items-center gap-1 rounded-md text-[10px] font-semibold border transition-colors relative
+        ${iconOnly ? "w-6 h-6 px-0 justify-center" : compact ? "h-6 px-1.5" : "px-1.5 py-0.5 rounded-full"}
         ${pressed ? "bg-sky-600/40 text-sky-100 border-sky-400/40" : "bg-white/5 text-white/80 border-white/10 hover:bg-white/10 hover:text-white"}
         ${className}`}
     >
-      {pressed ? <Square size={11} /> : <Volume2 size={11} />}
-      {label}
+      {icon}
+      {iconOnly
+        ? <span className="absolute w-px h-px overflow-hidden">{label}</span>
+        : label}
     </button>
   );
 }

@@ -1,18 +1,12 @@
 import { memo } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
+import { Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
-
-const PROFILES = [
-  { id: "real", labelKey: "speedReal" },
-  { id: "read", labelKey: "speedRead" },
-  { id: "normal", labelKey: "speedNormal" },
-  { id: "fast", labelKey: "speedFast" },
-];
+import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 
 function clockSpeedBasis(clock, clockCurrent, barNm) {
   const direct = clockCurrent?.basis;
@@ -106,9 +100,19 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     regime: clockCurrent?.regime || clockCurrent?.kind,
     sources: clockCurrent?.sources,
     spread: clockCurrent?.spread,
+    weatherLine,
     t,
     lang,
   });
+  const weatherTip = clockWeatherTooltip({
+    sources: clockCurrent?.sources,
+    spread: clockCurrent?.spread,
+    weatherLine,
+    regimeTitle,
+    t,
+    lang,
+  });
+  const speed = PROFILES.find((p) => p.id === profile) || PROFILES[0];
   const barTotal = playheadTotal ?? totalNm;
   const barNm = playhead ?? nm;
   const speedBasis = clockSpeedBasis(clock, clockCurrent, barNm);
@@ -244,12 +248,12 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {atQuay && quayDays > 0 ? "" : (holding ? ` · ${t("filmArrivalHold")}` : "")}
           </span>
           {regimeLabel ? (
-            <span data-testid="clock-regime" title={regimeTitle}>
+            <span data-testid="clock-regime" title={weatherTip || regimeTitle}>
               {" · "}
               {regimeLabel}
             </span>
           ) : null}
-          {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"> · {weatherLine}</span> : null}
+          {weatherLine ? <span data-testid="weather-line" className="text-cyan-200/85"></span> : null}
         </div>
         {gribLine ? (
           <div data-testid="grib-warning" className="text-[10px] text-amber-200/90 leading-tight">
@@ -321,7 +325,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               {t("hideFilmBar")}
             </button>
           ) : null}
-          <div data-testid="film-commands" className="flex items-center gap-1 overflow-x-auto flex-nowrap min-w-0 flex-1">
+          <div data-testid="film-commands" className="flex items-center gap-1 flex-nowrap min-w-0 flex-1">
           <div className="flex items-center gap-1 flex-nowrap shrink-0">
             {onCinema ? (
               <button
@@ -358,12 +362,13 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               t={t}
               lang={lang}
               compact
+              iconOnly
               testId="listen"
               showWhenEmpty
               listening={replay ? Boolean(replay.voice) : undefined}
               onListening={replay?.onVoice}
               deferSpeak={Boolean(replay?.active)}
-              className="!rounded-md whitespace-nowrap"
+              className="!rounded-md"
             />
             {replay ? (
               <>
@@ -488,21 +493,24 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   data-testid="prev-stop"
                   onClick={onPrev}
                   disabled={!canPrev}
-                  className="h-6 px-1.5 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-0.5 text-[9px] font-semibold whitespace-nowrap"
+                  className="relative w-6 h-6 rounded-md bg-white/10 disabled:opacity-30 flex items-center justify-center text-[14px] font-semibold leading-none"
                   title={t("previousEscale")}
+                  aria-label={t("previousEscale")}
                 >
-                  <ChevronLeft size={12} />
-                  {t("previousEscale")}
+                  <span aria-hidden="true">‹</span>
+                  <span className="absolute w-px h-px overflow-hidden">{t("previousEscale")}</span>
                 </button>
                 <button
                   type="button"
+                  data-testid="next-stop"
                   onClick={onNext}
                   disabled={!canNext}
-                  className="h-6 px-1.5 rounded-md bg-white/10 disabled:opacity-30 flex items-center gap-0.5 text-[9px] font-semibold whitespace-nowrap"
+                  className="relative w-6 h-6 rounded-md bg-white/10 disabled:opacity-30 flex items-center justify-center text-[14px] font-semibold leading-none"
                   title={t("goToNextStop")}
+                  aria-label={t("goToNextStop")}
                 >
-                  <ChevronRight size={12} />
-                  {t("goToNextStop")}
+                  <span aria-hidden="true">›</span>
+                  <span className="absolute w-px h-px overflow-hidden">{t("goToNextStop")}</span>
                 </button>
               </>
             ) : null}
@@ -524,23 +532,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               </button>
             ) : null}
             {showSpeeds ? (
-              <div className="flex flex-nowrap gap-0.5">
-                {PROFILES.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => onProfile(p.id)}
-                    className={`px-1.5 py-0.5 rounded-md text-[9px] font-semibold border whitespace-nowrap ${
-                      profile === p.id
-                        ? "bg-white text-slate-900 border-white"
-                        : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-                    }`}
-                    title={t(`${p.labelKey}Title`)}
-                  >
-                    {t(p.labelKey)}
-                  </button>
-                ))}
-              </div>
+              <button
+                type="button"
+                data-testid="film-speed"
+                onClick={() => onProfile(nextFilmSpeed(profile))}
+                className="h-6 px-1.5 rounded-md text-[9px] font-semibold border whitespace-nowrap bg-white text-slate-900 border-white"
+                title={t(`${speed.labelKey}Title`)}
+              >
+                {t(speed.labelKey)}
+              </button>
             ) : null}
           </div>
           </div>
@@ -564,25 +564,6 @@ const FILM_SOURCE_I18N = Object.freeze({
 
 function filmSourceLabel(source, t) {
   return t(FILM_SOURCE_I18N[source] || "storySourceRules");
-}
-
-function clockRegimeText({ regime, sources, spread, t, lang = "fr" }) {
-  const name = regime === "hindcast"
-    ? t("clockRegimeHindcast")
-    : regime === "forecast"
-      ? t("clockRegimeForecast")
-      : regime === "climatology"
-        ? t("clockRegimeClimatology")
-        : "";
-  if (!name) return "";
-  const n = Array.isArray(sources) ? sources.length : 0;
-  const loc = lang === "en" ? "en-US" : "fr-FR";
-  if (n > 0 && Number.isFinite(Number(spread))) {
-    const sp = Number(spread).toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    return `${name} · ${t("clockRegimeSources", { n, spread: sp })}`;
-  }
-  if (n > 0) return `${name} · ${t("clockRegimeSourcesPlain", { n })}`;
-  return name;
 }
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */
