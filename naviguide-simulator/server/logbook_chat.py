@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from admin_guard import is_admin, rate_limited
-from story_cascade import TOKENFACTORY_BASE, cascade_text, nebius_key, tidy_story
+from story_cascade import TOKENFACTORY_BASE, _clean_text, cascade_text, nebius_key, tidy_story
 
 log = logging.getLogger("naviguide-simulator.logbook")
 
@@ -431,9 +431,11 @@ async def answer_question(question: str, lang: str, client_ctx: dict | None, now
         return {"status": "failed", "reason": str(exc)[:160], "answer": None, "engine": None, "source": None, "context": ctx}
     tidy = tidy_story(raw, None, max_sentences=ANSWER_SENTENCES, max_chars=ANSWER_CHARS)
     text, dropped = filter_numbers(tidy, ctx)
+    text = _clean_text(text)
     if not text:
         text = ("Le journal n’a pas cette information dans ses données." if not (lang or "fr").startswith("en")
                 else "The logbook does not hold that information in its data.")
+        source = "rules"
     return {"status": "ready", "answer": text, "engine": source, "source": source, "droppedSentences": dropped, "context": ctx}
 
 

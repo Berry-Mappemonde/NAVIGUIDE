@@ -190,6 +190,81 @@ def test_endpoint_strips_leaked_enrich_from_cache():
     assert "Analyze" not in (enrich.get("text") or "")
 
 
+CAPTURE_LEAK = (
+    "Input: A large JSON object containing marina lists.\n"
+    "- Task: Present a scale stop to a sailing crew arriving at Pointe-à-Pitre.\n"
+    "What's for the boat, what's for the crew, what to know for formalities."
+)
+
+
+def test_endpoint_leaked_capture_returns_rules_and_invalidates_key(monkeypatch):
+    """Lot RB3 : cache 7 j avec le texte de la capture → repli rules, clé droppée."""
+    key = escale_api.escale_key("Pointe-à-Pitre", 16.24, -61.53, "en")
+    pearl_store.kv_put("escale", key, {
+        "name": "Pointe-à-Pitre", "lat": 16.24, "lon": -61.53, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Bas-du-Fort"}]}},
+        "paragraph": {"status": "ready", "text": CAPTURE_LEAK, "source": "nemotron-lightning"},
+        "sources": {},
+    })
+    deleted = []
+    real_delete = pearl_store.kv_delete
+
+    def spy_delete(ns, k):
+        deleted.append((ns, k))
+        return real_delete(ns, k)
+
+    monkeypatch.setattr(pearl_store, "kv_delete", spy_delete)
+    rebuilt = {
+        "name": "Pointe-à-Pitre", "lat": 16.24, "lon": -61.53, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Bas-du-Fort"}]}},
+        "paragraph": {"status": "failed", "text": None, "engine": None, "source": "rules", "reason": "prompt leak"},
+        "sources": {},
+    }
+
+    async def patched(*_a, **_k):
+        return rebuilt
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+    from main import app
+    body = TestClient(app).get(
+        "/escale?name=Pointe-%C3%A0-Pitre&lat=16.24&lon=-61.53&lang=en",
+    ).json()
+    blob = json.dumps(body)
+    assert "Input:" not in blob
+    assert "Task:" not in blob
+    assert "JSON object" not in blob
+    assert "What's for the boat" not in blob
+    assert body["cached"] is False
+    assert body["paragraph"]["source"] == "rules"
+    assert body["paragraph"]["text"] is None
+    assert ("escale", key) in deleted
+    stored = ((pearl_store.kv_get("escale", key, escale_api.ESCALE_TTL_S) or {}).get("value") or {})
+    assert "Input:" not in json.dumps(stored)
+    assert (stored.get("paragraph") or {}).get("source") == "rules"
+
+
+def test_endpoint_healthy_cache_is_served_unchanged():
+    """Lot RB3 : une fiche saine en cache ressort mot pour mot."""
+    key = escale_api.escale_key("Pointe-à-Pitre", 16.24, -61.53, "en")
+    text = "Pointe-à-Pitre has a marina at Bas-du-Fort and a harbour master's office."
+    fiche = {
+        "name": "Pointe-à-Pitre", "lat": 16.24, "lon": -61.53, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Bas-du-Fort"}]}},
+        "paragraph": {"status": "ready", "text": text, "source": "nemotron-lightning"},
+        "sources": {},
+    }
+    pearl_store.kv_put("escale", key, fiche)
+    from main import app
+    body = TestClient(app).get(
+        "/escale?name=Pointe-%C3%A0-Pitre&lat=16.24&lon=-61.53&lang=en",
+    ).json()
+    assert body["cached"] is True
+    assert body["paragraph"]["text"] == text
+    assert body["paragraph"]["source"] == "nemotron-lightning"
+    stored = ((pearl_store.kv_get("escale", key, escale_api.ESCALE_TTL_S) or {}).get("value") or {})
+    assert stored["paragraph"]["text"] == text
+
+
 def test_write_paragraph_uses_fast_tier_and_keeps_source(monkeypatch):
     seen = {}
 

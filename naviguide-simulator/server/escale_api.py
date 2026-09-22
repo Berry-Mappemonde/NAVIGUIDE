@@ -426,8 +426,11 @@ async def get_escale(
             val = hit.get("value") if isinstance(hit, dict) else None
             sanitized = sanitize_fiche(val) if isinstance(val, dict) else None
             if sanitized is None:
+                pearl_store.kv_delete("escale", key)
                 hit = None
             elif sanitized:
+                if sanitized != val:
+                    pearl_store.kv_put("escale", key, sanitized)
                 return {**sanitized, "cached": True}
     else:
         # A refresh also re-collects the stop's own pearl (its ZEE, its layers).

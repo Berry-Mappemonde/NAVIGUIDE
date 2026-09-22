@@ -249,6 +249,17 @@ def kv_put(ns: str, key: str, value: Any) -> bool:
         return False
 
 
+def kv_delete(ns: str, key: str) -> bool:
+    """Drop one kv row. True if a row was removed. Never wipes the namespace."""
+    try:
+        with _LOCK:
+            cur = _connect().execute("DELETE FROM kv WHERE ns = ? AND key = ?", (ns, key))
+            return int(cur.rowcount or 0) > 0
+    except Exception as exc:
+        log.warning("store kv (suppression) : %s", exc)
+        return False
+
+
 def kv_count(ns: str) -> int:
     try:
         with _LOCK:
