@@ -441,6 +441,8 @@ export default {
   clockRegimeHindcast: "hindcast",
   clockRegimeForecast: "forecast",
   clockRegimeClimatology: "climatology",
+  clockWeatherGfs: "GFS",
+  clockWeatherClimoGfs: "climatology + GFS",
   clockRegimeSources: "{n} sources ±{spread} kn",
   clockRegimeSourcesPlain: "{n} sources",
   regimeLegend:     "Travelled-route weather regimes",

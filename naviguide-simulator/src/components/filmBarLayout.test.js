@@ -43,13 +43,13 @@ describe("film bar layout (lot O)", () => {
     const viewAt = firstIndex(bar, /data-testid="film-view-switch"/);
     const replayAt = firstIndex(bar, /data-testid="replay-controls"/);
     const playAt = firstIndex(bar, /onClick=\{onTogglePlay\}/);
-    const speedsAt = firstIndex(bar, /\{PROFILES\.map/);
+    const speedsAt = firstIndex(bar, /data-testid="film-speed"/);
     assert.ok(hideAt < cinemaAt, "Masquer avant Cinéma");
     assert.ok(cinemaAt < listenAt, "Cinéma avant Écouter");
     assert.ok(listenAt < viewAt, "Écouter avant le commutateur de vue");
     assert.ok(viewAt < replayAt, "commutateur avant Revoir");
     assert.ok(replayAt < playAt, "Revoir à gauche, lecture à droite");
-    assert.ok(playAt < speedsAt, "vitesses à droite, pilules text-[9px]");
+    assert.ok(playAt < speedsAt, "vitesse à droite, un bouton cyclique");
     assert.match(bar, /rounded-md text-\[9px\] font-semibold border whitespace-nowrap/);
   });
 
@@ -58,7 +58,10 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /t\("hideFilmBar"\)/);
     assert.match(bar, /t\("goToNextStop"\)/);
     assert.match(bar, /data-testid="stop-auto"/);
-    assert.match(bar, /PROFILES\.map/);
+    assert.match(bar, /data-testid="film-speed"/);
+    assert.match(bar, /nextFilmSpeed/);
+    assert.doesNotMatch(bar, /PROFILES\.map/);
+    assert.doesNotMatch(bar, /overflow-x-auto/);
     assert.match(bar, /onCinema/);
     assert.match(bar, /onFilmFullscreen/);
     assert.match(bar, /t\("filmFullscreen"\)/);
@@ -73,6 +76,7 @@ describe("film bar (lot R2)", () => {
     assert.doesNotMatch(bar, /className="sr-only"/);
     assert.match(bar, /aria-label=\{regimeTitle\}/);
     assert.match(bar, /data-testid="prev-stop"/);
+    assert.match(bar, /data-testid="next-stop"/);
     assert.match(bar, /t\("previousEscale"\)/);
     assert.match(bar, /data-testid="speed-regime-pill"/);
     assert.match(bar, /regimeTooltipHindcast/);

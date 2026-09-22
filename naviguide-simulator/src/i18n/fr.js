@@ -385,10 +385,10 @@ export default {
   stopAutoOff:    "Stop auto : on traverse les escales",
 
   // ── Film player ──────────────────────────────────────────────────────────
-  speedReal:        "réelle",
+  speedReal:        "réel",
   speedRead:        "lecture",
   speedNormal:      "normale",
-  speedFast:        "accéléré",
+  speedFast:        "accélérée",
   speedRealTitle:   "Vitesse réelle du bateau (1 seconde à l’écran = 1 seconde en mer)",
   speedReadTitle:   "Lent : on lit pendant la traversée de l’Atlantique (~4 min)",
   speedNormalTitle: "Vitesse normale : Atlantique en ~70 s",
@@ -441,6 +441,8 @@ export default {
   clockRegimeHindcast: "hindcast",
   clockRegimeForecast: "prévision",
   clockRegimeClimatology: "climatologie",
+  clockWeatherGfs: "GFS",
+  clockWeatherClimoGfs: "climatologie + GFS",
   clockRegimeSources: "{n} sources ±{spread} kn",
   clockRegimeSourcesPlain: "{n} sources",
   regimeLegend:     "Régimes de la route parcourue",
