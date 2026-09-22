@@ -1,9 +1,31 @@
 # Routine Grok Bot — pré-revue visuelle de nuit (à coller dans Grok Bot)
 
 Grok Bot tourne sur un ordinateur cloud avec un navigateur : il ne voit pas
-`localhost`. Par défaut, `run_lots.py` ouvre un **tunnel Cloudflare** vers le poste
-de recette du Mac (`cloudflared`, URL `https://….trycloudflare.com`) et poste dans
-chaque PR un commentaire « 🔗 Poste de recette : <url> » avec la consigne ci-dessous.
+`localhost`. `run_lots.py` ouvre un **tunnel Cloudflare** vers le poste de recette du
+Mac et poste dans chaque PR un commentaire « 🔗 Poste de recette : <url> » avec la
+consigne ci-dessous.
+
+**Il faut un tunnel nommé sur ton domaine** (21 sept.) : sur un tunnel rapide
+`trycloudflare.com`, Cloudflare bloque le navigateur automatisé du bot (403 « Your
+request was blocked ») alors que le HTTP simple passe. Sur `recette.blueintelligence.online`
+(`naviguide.fr` est chez OVH, hors Cloudflare : seule la zone `blueintelligence.online`
+peut porter le tunnel), le bot est traité comme sur un site normal. Mise en place, **une fois**,
+dans le Terminal du Mac (la 1ʳᵉ commande ouvre le navigateur : choisir la zone
+`blueintelligence.online`) :
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create recette
+cloudflared tunnel route dns recette recette.blueintelligence.online
+printf 'BIM_TUNNEL_NAME=recette\nBIM_TUNNEL_HOST=recette.blueintelligence.online\n' >> ~/.config/naviguide/simulator.env
+python3 infra/agents/run_lots.py --stop-tunnel && python3 infra/agents/run_lots.py --recette
+```
+
+Le dernier appel rebâtit le poste (preview autorise `recette.blueintelligence.online`), ouvre
+le tunnel nommé et re-poste le lien 🔗 dans chaque PR. Si le bot voit encore un
+403 : dans Cloudflare → Sécurité → WAF → règle personnalisée « hôte =
+recette.blueintelligence.online → Ignorer (Skip) : Bot Fight Mode, niveau de sécurité ».
+
 Option `--publish-tip` : le lien devient le site publié lui-même (la tête de pile est
 déployée sur `simulator.naviguide.fr` via la branche `recette`) — à réserver au
 moment où le dépôt public du simulateur sera la source du déploiement.
@@ -18,13 +40,22 @@ bot ». Le matin, le porteur relit : il décoche ce qu'il conteste et écrit
 
 ## Texte de la routine (français ; le bot lit aussi les PR en anglais)
 
+**Ordre de la nuit** : Grok Bot passe **avant** le réviseur de code. Après chaque
+tranche de PR, `run_lots.py` attend son commentaire « 🤖 Pré-revue » (au plus
+45 min, `--bot-wait-min`) puis lance le réviseur Grok CLI, qui reçoit les KO du bot
+dans son prompt (« où chercher dans le code »). D'où la fréquence de la routine :
+**toutes les 30 min la nuit**, sur les PR qui ont un 🔗 et pas encore de 🤖.
+
 ```text
-Chaque soir à 23 h (et à la demande), pré-revue visuelle des PR du dépôt
-Berry-Mappemonde/Blue-Intelligence :
+Toutes les 30 minutes entre 21 h et 8 h (et à la demande), pré-revue visuelle des
+PR du dépôt Berry-Mappemonde/Blue-Intelligence :
 
 1. Liste les pull requests OUVERTES dont le titre contient « (lot » et qui ont un
-   commentaire commençant par « 🔗 Poste de recette ». Traite-les dans l'ordre
-   croissant des numéros.
+   commentaire commençant par « 🔗 Poste de recette » mais PAS encore de
+   commentaire commençant par « ## 🤖 Pré-revue ». S'il n'y en a aucune, arrête-toi
+   sans rien poster. Sinon traite-les dans l'ordre croissant des numéros, au plus 3
+   par passage (les autres au passage suivant). Utilise le lien 🔗 le plus récent
+   de la PR (un nouveau tunnel = un nouveau lien).
 2. Pour chaque PR : ouvre le lien du commentaire 🔗 dans le navigateur (c'est la
    tête de pile, build de prod, clés chargées ; recharge si la page tarde). Lis la
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape

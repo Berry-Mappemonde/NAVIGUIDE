@@ -141,6 +141,9 @@ if [[ "$PROD" -eq 1 ]]; then
   fi
   stop_listener 5174 "Interface"
   log "==> Interface :5174 (vite preview, build de prod)"
+  # Poste vu depuis le cloud (Grok Bot) par un tunnel Cloudflare : Vite ≥ 6 refuse les
+  # hôtes inconnus ; cette variable l'autorise quel que soit le vite.config.js du checkout.
+  export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="${NAVIGUIDE_PREVIEW_HOST:-.trycloudflare.com}"
   nohup npx vite preview --host 127.0.0.1 --port 5174 --strictPort >> .dev/vite.log 2>&1 &
   echo $! > .dev/vite.pid
   for _ in $(seq 1 60); do

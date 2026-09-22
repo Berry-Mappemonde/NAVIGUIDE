@@ -109,7 +109,7 @@ def recette_items(body: str) -> list[dict]:
     return items
 
 
-BOT_MARK_RE = re.compile(r"🤖\s*Pr[ée]-?revue", re.I)
+BOT_MARK_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M)   # titre en début de ligne : pas le 🔗 qui cite la consigne
 BOT_ITEM_RE = re.compile(r"^\s*[-*]\s*\[( |x|X)\]\s*🤖\s*(.+?)\s*$")
 BOT_NOTE_RE = re.compile(r"\s+[—–-]\s+(KO|non v[ée]rifiable)\s*:\s*(.*)$", re.I)
 _KEY_DROP_RE = re.compile(r"[*_`«»\"'’]|\s+/\s+.*$")   # gras, guillemets, et la moitié anglaise après « / »

@@ -81,23 +81,27 @@ Cursor déclenchée par « Pull request opened » (cloud, voir § 2).
 
 Claude Fable coûte cher : il n'intervient **qu'une fois**, le matin, après la
 revue humaine (`plan_corrections.py`). La nuit, deux réviseurs **Grok** (usage
-inclus) se partagent le travail :
+inclus) se partagent le travail, **dans cet ordre** :
 
-- **Le code — Grok 4.6 par le CLI** (`review_agent.py`, `run_lots.py
-  --review-every 4`) : après chaque tranche de 4 PR, dans un worktree sur la
-  **tête de pile** (il voit ce que les lots suivants ont déjà fait), il relit
-  diff, corps de PR, captures, prompt du lot, plan et règles ; poste **un
-  commentaire de revue par PR** (gabarit § 1.3, **verdict**) ; et, s'il faut
-  corriger, écrit des lots `RC…` dans `infra/agents/queue.md` que `run_lots.py`
-  relit entre deux lots et exécute **en bout de pile, la même nuit**. Il ne
-  commite ni ne pousse de code, ne merge rien.
-- **L'écran — Grok Bot** (ordinateur cloud, navigateur ; routine à coller :
-  `infra/agents/GROK_BOT_ROUTINE.md`) : il ouvre le poste de recette par le
-  lien « 🔗 Poste de recette » que `run_lots.py` poste dans chaque PR, refait
-  chaque étape de la Recette, **coche les cases** qu'il a vérifiées et poste un
-  commentaire « 🤖 Pré-revue » qui liste ce qu'il a coché et ses KO (capture).
-  C'est cette liste qui attribue une case au bot ; le matin, le porteur décoche
-  ce qu'il conteste. Il a besoin du connecteur GitHub de Grok Bot.
+1. **L'écran d'abord — Grok Bot** (ordinateur cloud, navigateur ; routine à
+   coller : `infra/agents/GROK_BOT_ROUTINE.md`, toutes les 30 min la nuit) :
+   il ouvre le poste de recette par le lien « 🔗 Poste de recette » que
+   `run_lots.py` poste dans chaque PR, refait chaque étape de la Recette,
+   **coche les cases** qu'il a vérifiées et poste un commentaire « 🤖
+   Pré-revue » qui liste ce qu'il a coché et ses KO (capture). C'est cette
+   liste qui attribue une case au bot ; le matin, le porteur décoche ce qu'il
+   conteste. Il a besoin du connecteur GitHub de Grok Bot.
+2. **Le code ensuite — Grok 4.6 par le CLI** (`review_agent.py`, `run_lots.py
+   --review-every 4`) : après chaque tranche de 4 PR, `run_lots.py` **attend la
+   pré-revue du bot** sur la tranche (`--bot-wait-min 45`, 0 pour ne pas
+   attendre) puis lance le réviseur dans un worktree sur la **tête de pile**
+   (il voit ce que les lots suivants ont déjà fait), **avec les verdicts du bot
+   dans son prompt** — les KO de l'écran lui disent où chercher. Il relit diff,
+   corps de PR, captures, prompt du lot, plan et règles ; poste **un commentaire
+   de revue par PR** (gabarit § 1.3, **verdict**) ; et, s'il faut corriger, écrit
+   des lots `RC…` dans `infra/agents/queue.md` que `run_lots.py` relit entre deux
+   lots et exécute **en bout de pile, la même nuit**. Il ne commite ni ne pousse
+   de code, ne merge rien.
 
 **Comment le bot voit la tête de pile** : par défaut un **tunnel Cloudflare**
 (`cloudflared`, URL `trycloudflare.com` aléatoire, publique mais obscure) vers
