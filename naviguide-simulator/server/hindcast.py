@@ -52,6 +52,8 @@ PRODUCTS = (
     SRC_CMEMS_WAVE,
     SRC_CMEMS_PHY,
 )
+# Vent du passé pour l'horloge (lot RA8) : ERA5 Open-Meteo, sans Copernicus.
+ERA5_PRODUCTS = (SRC_OM_ERA5,)
 
 # Tests branchent un client / des fetchers CMEMS. Jamais le réseau réel.
 _http_factory: Optional[Callable[[], httpx.Client]] = None
@@ -299,6 +301,29 @@ def _cmems_creds() -> tuple[Optional[str], Optional[str]]:
     return os.getenv("COPERNICUS_USERNAME"), os.getenv("COPERNICUS_PASSWORD")
 
 
+def _cmems_hook(product: str):
+    if product == SRC_CMEMS_WIND:
+        return _cmems_wind
+    if product == SRC_CMEMS_WAVE:
+        return _cmems_wave
+    if product == SRC_CMEMS_PHY:
+        return _cmems_phy
+    return None
+
+
+def _product_enabled(product: str) -> bool:
+    """CMEMS : seulement si un hook de test ou des identifiants sont là.
+
+    Sans ça, RA8 ne tente même pas Copernicus — le vent du passé vient d'ERA5.
+    """
+    if product not in (SRC_CMEMS_WIND, SRC_CMEMS_WAVE, SRC_CMEMS_PHY):
+        return True
+    if _cmems_hook(product) is not None:
+        return True
+    user, password = _cmems_creds()
+    return bool(user and password)
+
+
 def _window_for_day(day: str) -> tuple[datetime, datetime]:
     d0 = parse_iso(f"{day}T00:00:00Z")
     start = d0 - timedelta(days=HINDCAST_PAD_DAYS)
@@ -397,13 +422,22 @@ _FETCHERS = {
 }
 
 
-def _load_product(lat: float, lon: float, product: str, day: str) -> Optional[dict]:
+def _blend_cache_id(products: tuple) -> str:
+    wanted = tuple(products)
+    if wanted == PRODUCTS:
+        return "blend"
+    return "blend:" + "+".join(wanted)
+
+
+def _load_product(lat: float, lon: float, product: str, day: str, *, fetch: bool = True) -> Optional[dict]:
     key = cache_key(lat, lon, product, day)
     hit = kv_get(CACHE_NS, key)
     if hit and isinstance(hit.get("value"), dict):
         return hit["value"]
     if _fetch_blocked:
         raise RuntimeError("hindcast network blocked")
+    if not fetch:
+        return None
     fetcher = _FETCHERS[product]
     raw = fetcher(lat, lon, day)
     if raw is None:
@@ -495,33 +529,47 @@ def _fuse_hour(by_source: Dict[str, dict]) -> dict:
     }
 
 
-def series(lat: float, lon: float, day: str | datetime) -> dict:
-    """Vent / houle / courant horaires du `day` (UTC), toutes sources, médiane."""
+def series(
+    lat: float,
+    lon: float,
+    day: str | datetime,
+    *,
+    products: Optional[tuple] = None,
+    fetch: bool = True,
+) -> dict:
+    """Vent / houle / courant horaires du `day` (UTC), sources demandées, médiane.
+
+    `products=ERA5_PRODUCTS` : archive Open-Meteo seulement (lot RA8).
+    `fetch=False` : cache uniquement, aucun appel réseau.
+    """
     day = _day_str(day)
-    blend_key = cache_key(lat, lon, "blend", day)
+    wanted = tuple(products) if products else PRODUCTS
+    blend_key = cache_key(lat, lon, _blend_cache_id(wanted), day)
     hit = kv_get(CACHE_NS, blend_key)
     if hit and isinstance(hit.get("value"), dict) and hit["value"].get("hours"):
         return hit["value"]
 
-    products: Dict[str, dict] = {}
-    for product in PRODUCTS:
+    loaded: Dict[str, dict] = {}
+    for product in wanted:
+        if not _product_enabled(product):
+            continue
         try:
-            pack = _load_product(lat, lon, product, day)
+            pack = _load_product(lat, lon, product, day, fetch=fetch)
         except RuntimeError:
             raise
         except Exception as exc:
             log.info("hindcast %s: %s", product, exc)
             pack = None
         if pack and pack.get("hours"):
-            products[product] = pack
+            loaded[product] = pack
 
     times: set[str] = set()
-    for pack in products.values():
+    for pack in loaded.values():
         times.update(pack.get("hours") or {})
     hours = []
     for iso in sorted(times):
         by_source = {}
-        for src, pack in products.items():
+        for src, pack in loaded.items():
             row = (pack.get("hours") or {}).get(iso)
             if row:
                 by_source[src] = row
@@ -533,18 +581,26 @@ def series(lat: float, lon: float, day: str | datetime) -> dict:
         "lat": round(float(lat), 4),
         "lon": round(float(lon), 4),
         "hours": hours,
-        "products": sorted(products.keys()),
+        "products": sorted(loaded.keys()),
     }
-    kv_put(CACHE_NS, blend_key, out)
+    if fetch:
+        kv_put(CACHE_NS, blend_key, out)
     return out
 
 
-def at(lat: float, lon: float, t: datetime | str) -> dict:
+def at(
+    lat: float,
+    lon: float,
+    t: datetime | str,
+    *,
+    products: Optional[tuple] = None,
+    fetch: bool = True,
+) -> dict:
     """Heure la plus proche ; champs vides si rien n'a répondu."""
     when = _as_dt(t)
     day = when.strftime("%Y-%m-%d")
     try:
-        packed = series(lat, lon, day)
+        packed = series(lat, lon, day, products=products, fetch=fetch)
     except Exception:
         packed = {"hours": []}
     hours = packed.get("hours") or []
@@ -577,3 +633,68 @@ def empty_pack() -> dict:
         "regime": "hindcast",
         "reason": "hindcast_empty",
     }
+
+
+def past_passage_slots(clock: dict, now: datetime | str) -> List[tuple[float, float, str]]:
+    """(lat, lon, jour) des sommets déjà parcourus, hors avion."""
+    now_d = _as_dt(now)
+    slots: List[tuple[float, float, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for v in (clock or {}).get("vertices") or []:
+        if v.get("vehicle") in ("plane", "side"):
+            continue
+        iso = v.get("iso")
+        if not iso or v.get("lat") is None or v.get("lon") is None:
+            continue
+        try:
+            t = parse_iso(iso)
+        except Exception:
+            continue
+        if t >= now_d:
+            continue
+        day = t.strftime("%Y-%m-%d")
+        key = (point_key(v["lat"], v["lon"]), day)
+        if key in seen:
+            continue
+        seen.add(key)
+        slots.append((float(v["lat"]), float(v["lon"]), day))
+    return slots
+
+
+def uncovered_era5_slots(clock: dict, now: datetime | str) -> List[tuple[float, float, str]]:
+    """Points du passé sans série ERA5 en cache — à compléter en fond."""
+    missing: List[tuple[float, float, str]] = []
+    for lat, lon, day in past_passage_slots(clock, now):
+        hit = kv_get(CACHE_NS, cache_key(lat, lon, SRC_OM_ERA5, day))
+        hours = ((hit or {}).get("value") or {}).get("hours") if hit else None
+        if not hours:
+            missing.append((lat, lon, day))
+    return missing
+
+
+def fill_era5_along(slots, *, fetch: bool = True) -> int:
+    """Archive ERA5 Open-Meteo le long du trait, sans Copernicus.
+
+    Une série par (point arrondi, jour). Le cache SQLite évite le retéléchargement.
+    """
+    n = 0
+    seen: set[tuple[str, str]] = set()
+    for item in slots or []:
+        if not item or len(item) < 3:
+            continue
+        try:
+            lat, lon, day = float(item[0]), float(item[1]), _day_str(item[2])
+        except (TypeError, ValueError):
+            continue
+        key = (point_key(lat, lon), day)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            packed = series(lat, lon, day, products=ERA5_PRODUCTS, fetch=fetch)
+        except Exception as exc:
+            log.info("era5 fill %s: %s", key, exc)
+            continue
+        if packed.get("hours"):
+            n += 1
+    return n
