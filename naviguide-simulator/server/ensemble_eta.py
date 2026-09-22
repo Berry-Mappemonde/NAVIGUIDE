@@ -504,3 +504,35 @@ def official_eta(voy: dict, stop: str, now: datetime, polar_raw: Optional[dict] 
         polar_raw=polar_raw,
         clock=clock,
     ), now)
+
+
+def next_official_stop(voy: dict, now: datetime) -> str:
+    """Prochaine escale (iso > now) du voyage officiel. Vide si aucune."""
+    now = _as_dt(now)
+    clock = voy.get("clock") or {}
+    marks = clock.get("marks") or voy.get("marks") or []
+    for m in marks:
+        iso = m.get("iso")
+        name = str(m.get("name") or "").strip()
+        if not name or not iso:
+            continue
+        try:
+            if _as_dt(iso) > now:
+                return name
+        except Exception:
+            continue
+    return ""
+
+
+def preheat_official_eta(
+    voy: dict,
+    now: datetime,
+    polar_raw: Optional[dict] = None,
+    stop: Optional[str] = None,
+) -> dict:
+    """Chauffe l'ensemble de la prochaine escale (ou `stop`). Sans membres → vide."""
+    now = _as_dt(now)
+    target = (stop or "").strip() or next_official_stop(voy, now)
+    if not target:
+        return empty_eta(now)
+    return official_eta(voy, target, now, polar_raw=polar_raw)

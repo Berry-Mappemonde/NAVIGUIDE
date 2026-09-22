@@ -85,9 +85,10 @@ app.include_router(bi_proxy_router)
 def _startup_official_grib():
     """Dernier GRIB dès le boot serveur — pas attendre le premier GET front."""
     try:
-        from voyage_api import _kick_official_grib, _kick_official_hindcast
+        from voyage_api import _kick_official_grib, _kick_official_hindcast, _kick_official_eta
         _kick_official_grib()
         _kick_official_hindcast()
+        _kick_official_eta()
     except Exception:
         pass
 

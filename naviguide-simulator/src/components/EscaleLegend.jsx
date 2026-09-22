@@ -92,7 +92,7 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
   if (!rows.length) return null;
 
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden">
+    <div className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden" data-testid="escale-legend">
       <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200">
         {t("escalesList")}
       </div>
