@@ -369,6 +369,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                   summary={planReview.summary}
                   comment={planReview.comment}
                   commentSource={planReview.commentSource}
+                  advice={planReview.advice}
+                  onApply={planReview.onApply}
                 />
               </div>
             ) : null}

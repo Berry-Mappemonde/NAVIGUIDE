@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -904,6 +905,23 @@ def get_official_plan_review():
     from plan_review import comment_plan, review_official  # noqa: PLC0415
     out = review_official(voy, _now())
     try:
+        from plan_alerts import evaluate_plan  # noqa: PLC0415
+        ev = evaluate_plan(voy, now=_now())
+        counts = {}
+        for lg in ev.get("legs") or []:
+            n = len(lg.get("alerts") or [])
+            if lg.get("idx") is not None:
+                counts[int(lg["idx"])] = n
+            counts[(lg.get("from"), lg.get("to"))] = n
+        for i, row in enumerate(out.get("legs") or []):
+            n = counts.get(i)
+            if n is None:
+                n = counts.get((row.get("from"), row.get("to")))
+            if n is not None:
+                row["alertCount"] = int(n)
+    except Exception as exc:
+        log.debug("alertCount revue : %s", exc)
+    try:
         out["comment"] = _run_async(comment_plan(out.get("legs") or []))
     except Exception as exc:
         log.warning("commentaire revue : %s", exc)
@@ -939,20 +957,52 @@ def _rewrite_plan_advice(payload: dict) -> dict:
     cleaned, _ = filter_numbers(tidy, facts)
     cand["sentence"] = (cleaned or "").strip() or fallback
     cand["sentenceSource"] = source or "rules"
+    cand["sentenceLang"] = "fr"
+    return out
+
+
+def _localize_plan_advice(payload: dict, lang: str) -> dict:
+    """L6 : texte rédigé en anglais si l'UI est EN ; copie, jamais le cache du job."""
+    out = copy.deepcopy(payload) if isinstance(payload, dict) else payload
+    cand = out.get("best") if isinstance(out, dict) else None
+    if not isinstance(cand, dict):
+        return out
+    lg = (lang or "fr")[:2].lower()
+    text = str(cand.get("sentence") or "").strip()
+    if lg == "en" and text:
+        try:
+            from story_cache import translate_through_cache  # noqa: PLC0415
+            translated, source = _run_async(translate_through_cache(text, "en"))
+            if translated:
+                cand["sentence"] = translated
+                cand["sentenceLang"] = "en"
+                cand["sentenceSource"] = source or cand.get("sentenceSource") or "rules"
+                out["best"] = cand
+                return out
+        except Exception as exc:
+            log.debug("traduction conseil : %s", exc)
+    cand.setdefault("sentenceLang", "fr")
+    out["best"] = cand
     return out
 
 
 @router.get("/voyage/official/advice")
-def get_official_advice(leg: int = Query(..., ge=0, le=400)):
+def get_official_advice(
+    leg: int = Query(..., ge=0, le=400),
+    lang: str = Query("fr"),
+):
     """Compromis par décalage de date (lot R10b). État pending|done, calcul en fond."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
     from plan_advisor import request_advice  # noqa: PLC0415
     try:
-        return request_advice(voy, int(leg), now=_now(), rewrite=_rewrite_plan_advice)
+        out = request_advice(voy, int(leg), now=_now(), rewrite=_rewrite_plan_advice)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    if out.get("status") == "done":
+        return _localize_plan_advice(out, lang)
+    return out
 
 
 @router.get("/voyage/official/journal/{day}")
@@ -1359,7 +1409,8 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
             "leg": plan_advice.get("leg", 0),
             "best": {k: best[k] for k in (
                 "shiftDays", "corridor", "extraNm", "score", "sentence",
-                "alertsBefore", "alertsAfter",
+                "alertsBefore", "alertsAfter", "cascade",
+                "totalBefore", "totalAfter", "sentenceLang",
             ) if k in best},
         }
     new_coords = (result.get("draft_geojson") or {}).get("geometry", {}).get("coordinates") or []

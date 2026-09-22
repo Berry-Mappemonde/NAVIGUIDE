@@ -68,6 +68,20 @@ describe("SkipperOrdersPanel — remise d’un chiffre (lot R1)", () => {
   });
 });
 
+describe("SkipperOrdersPanel — Demander conseil (lot R10d)", () => {
+  it("le bouton Simulation dit Demander conseil, plus Recalculer l'itinéraire", () => {
+    const sim = readFileSync(join(here, "SimulationPanel.jsx"), "utf8");
+    const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
+    const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
+    assert.match(sim, /recomputeButton/);
+    assert.match(sim, /data-testid="ask-advice"/);
+    assert.match(fr, /recomputeButton:\s*"Demander conseil"/);
+    assert.match(en, /recomputeButton:\s*"Ask for advice"/);
+    assert.doesNotMatch(fr, /Recalculer l.itin[eé]raire/);
+    assert.doesNotMatch(en, /Recalculate the route/);
+  });
+});
+
 describe("SkipperOrdersPanel — une seule occurrence profil/budget (lot RA6)", () => {
   it("l'en-tête replié ne répète pas le profil ni le budget déjà dans le panneau", () => {
     const summary = src.match(/<summary\b[^>]*>[\s\S]*?<\/summary>/);
