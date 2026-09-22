@@ -8,6 +8,7 @@ import { PlanReview } from "./PlanReview.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
 import { summarizeLegs } from "../utils/geo.js";
+import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } from "../utils/routeExport.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
@@ -226,6 +227,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
   skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
+  exportMode = "simulation", exportSegments = null, exportPoints = null,
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -314,6 +316,19 @@ export const ToolsSidebar = memo(function ToolsSidebar({
         ? { icon: <CheckCircle2 size={12} />, color: "text-emerald-300", text: t("polarLoaded") }
         : { icon: <Upload size={12} />, color: "text-slate-400", text: t("polarSection") };
   const layersOn = activeLayerCount(maritimeLayers);
+  const routeSegs = exportSegments ?? segments;
+  const routePts = exportPoints ?? points;
+  const canExport = canExportRoute(routeSegs, routePts);
+  const handleExportGeoJSON = () => {
+    if (!canExport) return;
+    const fc = buildGeoJSON(routeSegs, routePts, `naviguide-${exportMode}`);
+    downloadFile(JSON.stringify(fc, null, 2), exportFilename(exportMode, "geojson"), "application/geo+json");
+  };
+  const handleExportKML = () => {
+    if (!canExport) return;
+    const kml = buildKML(routeSegs, routePts, `naviguide-${exportMode}`);
+    downloadFile(kml, exportFilename(exportMode, "kml"), "application/vnd.google-earth.kml+xml");
+  };
 
   return (
     <>
@@ -379,6 +394,38 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 <DepartureField t0={departureT0} onT0={onDepartureT0} />
               </div>
             ) : null}
+          </div>
+
+          <div className="px-4 py-3 border-b border-slate-700/60" data-testid="export-box">
+            <SectionTitle>{t("exportTitle")}</SectionTitle>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="export-geojson"
+                disabled={!canExport}
+                onClick={handleExportGeoJSON}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                  canExport
+                    ? "border-sky-500/40 bg-sky-900/30 text-sky-100 hover:bg-sky-800/40"
+                    : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
+                }`}
+              >
+                {t("exportGeoJSON")}
+              </button>
+              <button
+                type="button"
+                data-testid="export-kml"
+                disabled={!canExport}
+                onClick={handleExportKML}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                  canExport
+                    ? "border-teal-500/40 bg-teal-900/30 text-teal-100 hover:bg-teal-800/40"
+                    : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
+                }`}
+              >
+                {t("exportKML")}
+              </button>
+            </div>
           </div>
 
           {/* ── Réglages : polaire compacte, clé admin, paramètres avancés, calques ── */}

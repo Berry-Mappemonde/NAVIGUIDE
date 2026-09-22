@@ -91,6 +91,7 @@ import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
+import { viewExportMode } from "./utils/routeExport.js";
 import { usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
@@ -1668,6 +1669,9 @@ export default function App() {
         skipperSuggest={skipper.suggest}
         onSkipperSuggestAccept={skipper.acceptSuggest}
         onSkipperSuggestDismiss={skipper.dismissSuggest}
+        exportMode={viewExportMode(drawingMode, isSuivre)}
+        exportSegments={drawingMode ? drawnSegments : activeSegments}
+        exportPoints={drawingMode ? drawnPoints : legendMarks}
       />
 
       {!sceneReady && !drawingMode && (
