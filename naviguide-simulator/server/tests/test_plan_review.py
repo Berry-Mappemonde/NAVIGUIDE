@@ -201,6 +201,30 @@ def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
     assert legs[0]["daysAtSea"] == plan_review.planned_sea_days(9151)
 
 
+def test_review_official_exposes_gibraltar_antishipping():
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 0, "sailNm": 1820, "lat": 41.92, "lon": 8.74},
+            {"tHours": 40, "sailNm": 2500, "lat": 36.05, "lon": -5.6},
+            {"tHours": 80, "sailNm": 4000, "lat": 29.3, "lon": -15.2},
+            {"tHours": 200, "sailNm": 6973, "lat": 14.59, "lon": -61.07},
+        ],
+        "marks": [
+            {"name": "Ajaccio (Corse)", "tHours": 0, "holdHours": 0, "nm": 1820, "filmNm": 1942},
+            {"name": "Fort-de-France (Martinique)", "tHours": 200, "holdHours": 72, "nm": 6973, "filmNm": 7095},
+        ],
+    }
+    voy = {"voyageId": "n3", "clock": clock, "points": [], "marks": []}
+    out = plan_review.review_official(voy, season=False)
+    assert len(out["legs"]) == 1
+    pack = out["legs"][0]["antiShipping"]
+    assert "Gibraltar" in pack["lanes"], pack
+    assert 0 <= pack["score"] < 1
+    facts = plan_review.table_facts(out["legs"])
+    assert facts["legs"][0]["antiShipping"]["lanes"] == pack["lanes"]
+
+
 def test_plan_review_http_exposes_comment_source(client, monkeypatch):
     async def fake_comment(legs, **kw):
         return {"text": "Je changerais le repos (3 jours).", "source": "rules", "cached": False}

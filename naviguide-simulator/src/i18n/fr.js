@@ -255,6 +255,7 @@ export default {
   planReviewCommentTitle: "Ce que je changerais",
   planReviewLegAlerts: "alertes : {n}",
   planReviewApply: "Appliquer",
+  planReviewLanes: "couloirs : {names}",
   planAdviceSentenceShift: "Partir de {from} le {departNow} plutôt que le {departWas}{via} : {alertsAfter} alertes au lieu de {alertsBefore} sur cette jambe{extra} ; {cascade}.",
   planAdviceSentenceStay: "Rester au départ de {from} le {departWas}{via} : {alerts} alertes sur cette jambe{extra} ; {cascade}.",
   planAdviceViaNorth: " par le corridor nord",

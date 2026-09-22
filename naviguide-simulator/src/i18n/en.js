@@ -255,6 +255,7 @@ export default {
   planReviewCommentTitle: "What I would change",
   planReviewLegAlerts: "alerts: {n}",
   planReviewApply: "Apply",
+  planReviewLanes: "lanes: {names}",
   planAdviceSentenceShift: "Leave {from} on {departNow} rather than {departWas}{via}: {alertsAfter} alerts instead of {alertsBefore} on this leg{extra}; {cascade}.",
   planAdviceSentenceStay: "Keep leaving {from} on {departWas}{via}: {alerts} alerts on this leg{extra}; {cascade}.",
   planAdviceViaNorth: " via the north corridor",

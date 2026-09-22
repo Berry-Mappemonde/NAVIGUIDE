@@ -21,7 +21,8 @@
         "zees": [],
         "flags": [],
         "ampCount": 0,
-        "pearls": { "known": 1, "unknown": 0 }
+        "pearls": { "known": 1, "unknown": 0 },
+        "antiShipping": { "score": 0.78, "lanes": ["Malacca"] }
       },
       {
         "from": "Dzaoudzi",
@@ -41,6 +42,26 @@
         "flags": [],
         "ampCount": 0,
         "pearls": { "known": 1, "unknown": 0 }
+      },
+      {
+        "from": "Ajaccio (Corse)",
+        "to": "Fort-de-France (Martinique)",
+        "departIso": "2026-05-27T08:00:00Z",
+        "arriveIso": "2026-06-24T10:00:00Z",
+        "depart": "2026-05-27",
+        "arrive": "2026-06-24",
+        "daysAtSea": 26.8,
+        "holdDays": 3,
+        "fromNm": 1820,
+        "toNm": 6973,
+        "legNm": 5153,
+        "month": 6,
+        "alertCount": 1,
+        "zees": [],
+        "flags": [],
+        "ampCount": 0,
+        "pearls": { "known": 1, "unknown": 0 },
+        "antiShipping": { "score": 0.83, "lanes": ["Gibraltar"] }
       }
     ]
   },

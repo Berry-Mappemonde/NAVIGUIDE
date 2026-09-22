@@ -84,6 +84,11 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
   if (unknown && !(leg.pearls?.known)) {
     badges.push({ kind: "pearls", level: "muted", text: en ? "pearls not warmed yet" : "perles pas encore chauffées" });
   }
+  const pack = leg.antiShipping && typeof leg.antiShipping === "object" ? leg.antiShipping : null;
+  const lanes = Array.isArray(pack?.lanes)
+    ? pack.lanes.filter((n) => typeof n === "string" && n.trim())
+    : [];
+  const score = Number(pack?.score);
   const badgeAlerts = badges.filter((b) => b.level === "alert").length;
   const given = Number(leg.alertCount);
   const alertCount = Number.isFinite(given) ? given : badgeAlerts;
@@ -99,6 +104,7 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
     alertCount,
     badges,
     notes,
+    antiShipping: lanes.length ? { score: Number.isFinite(score) ? score : null, lanes } : null,
     level: badges.some((b) => b.level === "alert") ? "alert" : (badges.some((b) => b.level === "watch") || notes.length ? "watch" : "ok"),
   };
 }

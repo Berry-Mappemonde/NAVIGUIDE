@@ -57,6 +57,17 @@ describe("PlanReview — conseil (lot R10d)", () => {
   });
 });
 
+describe("PlanReview — pastille anti-trafic (lot N3)", () => {
+  it("affiche les couloirs sous la jambe et une pastille route", () => {
+    assert.match(src, /data-testid="plan-review-lanes"/);
+    assert.match(src, /planReviewLanes/);
+    assert.match(src, /antiShipping/);
+    assert.match(src, /0\.55/);
+    assert.match(tools, /data-testid="route-anti-shipping"/);
+    assert.doesNotMatch(src, /Le score anti-trafic|hors des couloirs|aide/);
+  });
+});
+
 describe("PlanReview — légende des régimes (lot R2)", () => {
   it("pose une ligne discrète au-dessus du tableau, pas dans la barre", () => {
     assert.match(src, /data-testid="plan-review-regime-legend"/);

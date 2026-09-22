@@ -9,6 +9,7 @@ import searoute as sr
 from geographiclib.geodesic import Geodesic
 
 from mem_limits import ROUTE_CACHE_MAX, lru_set
+from shipping_lanes import attach_anti_shipping
 
 try:
     from global_land_mask import globe as _globe
@@ -581,7 +582,7 @@ def searoute_with_exact_end(start, end):
         # If this request goes in the opposite direction, reverse the coords
         if canonical_start != cached_canonical_start:
             route["geometry"]["coordinates"].reverse()
-        return route
+        return attach_anti_shipping(route)
 
     try:
         route = sr.searoute(start, end)
@@ -648,6 +649,7 @@ def searoute_with_exact_end(start, end):
     # Continu relativement au départ replié : pas de saut ±360° entre deux sommets.
     coords = _normalize_antimeridian(coords, start[0])
     route["geometry"]["coordinates"] = coords
+    attach_anti_shipping(route)
 
     # Store in bidirectional cache so the reverse leg reuses this result
     lru_set(_route_cache, cache_key, (copy.deepcopy(route), canonical_start),

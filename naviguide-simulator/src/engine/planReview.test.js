@@ -51,6 +51,16 @@ describe("planReview — revue de plan par règles (lot K)", () => {
     assert.equal(out.length, 2);
     assert.equal(out[1].level, "ok");
   });
+
+  it("porte antiShipping sans l'inventer ni l'ajouter aux badges", () => {
+    const quiet = reviewLeg(LEG, null, "fr");
+    assert.equal(quiet.antiShipping, null);
+    const hot = reviewLeg({ ...LEG, flags: [], antiShipping: { score: 0.4, lanes: ["Gibraltar"] } }, null, "fr");
+    assert.deepEqual(hot.antiShipping, { score: 0.4, lanes: ["Gibraltar"] });
+    assert.ok(!hot.badges.some((b) => b.kind === "lanes"));
+    const empty = reviewLeg({ ...LEG, flags: [], antiShipping: { score: 1, lanes: [] } }, null, "en");
+    assert.equal(empty.antiShipping, null);
+  });
 });
 
 describe("planReview — season source", () => {
