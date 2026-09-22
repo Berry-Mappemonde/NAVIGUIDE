@@ -1,9 +1,30 @@
 # Routine Grok Bot — pré-revue visuelle de nuit (à coller dans Grok Bot)
 
 Grok Bot tourne sur un ordinateur cloud avec un navigateur : il ne voit pas
-`localhost`. Par défaut, `run_lots.py` ouvre un **tunnel Cloudflare** vers le poste
-de recette du Mac (`cloudflared`, URL `https://….trycloudflare.com`) et poste dans
-chaque PR un commentaire « 🔗 Poste de recette : <url> » avec la consigne ci-dessous.
+`localhost`. `run_lots.py` ouvre un **tunnel Cloudflare** vers le poste de recette du
+Mac et poste dans chaque PR un commentaire « 🔗 Poste de recette : <url> » avec la
+consigne ci-dessous.
+
+**Il faut un tunnel nommé sur ton domaine** (21 sept.) : sur un tunnel rapide
+`trycloudflare.com`, Cloudflare bloque le navigateur automatisé du bot (403 « Your
+request was blocked ») alors que le HTTP simple passe. Sur `recette.naviguide.fr`,
+le bot est traité comme sur `simulator.naviguide.fr`. Mise en place, **une fois**,
+dans le Terminal du Mac (la 1ʳᵉ commande ouvre le navigateur : choisir la zone
+`naviguide.fr`) :
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create recette
+cloudflared tunnel route dns recette recette.naviguide.fr
+printf 'BIM_TUNNEL_NAME=recette\nBIM_TUNNEL_HOST=recette.naviguide.fr\n' >> ~/.config/naviguide/simulator.env
+python3 infra/agents/run_lots.py --stop-tunnel && python3 infra/agents/run_lots.py --recette
+```
+
+Le dernier appel rebâtit le poste (preview autorise `recette.naviguide.fr`), ouvre
+le tunnel nommé et re-poste le lien 🔗 dans chaque PR. Si le bot voit encore un
+403 : dans Cloudflare → Sécurité → WAF → règle personnalisée « hôte =
+recette.naviguide.fr → Ignorer (Skip) : Bot Fight Mode, niveau de sécurité ».
+
 Option `--publish-tip` : le lien devient le site publié lui-même (la tête de pile est
 déployée sur `simulator.naviguide.fr` via la branche `recette`) — à réserver au
 moment où le dépôt public du simulateur sera la source du déploiement.

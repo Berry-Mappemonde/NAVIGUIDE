@@ -823,10 +823,35 @@ def tunnel_url() -> str | None:
     return TUNNEL_URL.read_text(encoding="utf-8").strip() or None
 
 
+def _env_file_values() -> dict[str, str]:
+    """~/.config/naviguide/simulator.env : un seul fichier pour les clés ET les réglages BIM_* de la boucle."""
+    out: dict[str, str] = {}
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+            if m:
+                out[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+    return out
+
+
+def tunnel_settings() -> tuple[str | None, str | None]:
+    """(nom du tunnel nommé, hôte) — environnement ou fichier de clés ; (None, None) = tunnel rapide."""
+    vals = _env_file_values()
+    name = os.environ.get("BIM_TUNNEL_NAME") or vals.get("BIM_TUNNEL_NAME")
+    host = os.environ.get("BIM_TUNNEL_HOST") or vals.get("BIM_TUNNEL_HOST")
+    return (name or None), (host or None)
+
+
 def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
-    """Démarre un tunnel Cloudflare détaché vers :5174 et renvoie son URL https://….trycloudflare.com.
-    Le bot (Grok Bot) ne voit pas localhost : c'est par là qu'il regarde la tête de pile. Le tunnel
-    survit à run_lots (le bot travaille aussi après la fin du batch) : `--stop-tunnel` l'arrête."""
+    """Démarre un tunnel Cloudflare détaché vers :5174 et renvoie son URL.
+
+    Deux formes :
+    - **tunnel nommé** sur le domaine du porteur (BIM_TUNNEL_NAME=recette, BIM_TUNNEL_HOST=recette.naviguide.fr,
+      posés une fois : `cloudflared tunnel login` → `tunnel create recette` → `tunnel route dns recette recette.naviguide.fr`) :
+      URL stable, mêmes règles Cloudflare que le site — c'est ce que le navigateur de Grok Bot sait ouvrir ;
+    - sinon **tunnel rapide** `https://….trycloudflare.com` : pratique pour un humain, mais Cloudflare y bloque les
+      navigateurs automatisés (403 « Your request was blocked », 21 sept.).
+    Le tunnel survit à run_lots (le bot travaille aussi après la fin du batch) : `--stop-tunnel` l'arrête."""
     existing = tunnel_url()
     if existing:
         return existing
@@ -834,19 +859,33 @@ def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
     if not exe:
         log("cloudflared absent : pas de lien pour le bot (brew install cloudflared)")
         return None
+    name, host = tunnel_settings()
     TUNNEL_LOG.write_text("", encoding="utf-8")
+    if name and host:
+        cmd = [exe, "tunnel", "--no-autoupdate", "run", "--url", f"http://127.0.0.1:{port}", name]
+    else:
+        cmd = [exe, "tunnel", "--url", f"http://127.0.0.1:{port}", "--no-autoupdate"]
     with TUNNEL_LOG.open("a", encoding="utf-8") as fh:
-        p = subprocess.Popen([exe, "tunnel", "--url", f"http://127.0.0.1:{port}", "--no-autoupdate"],
-                             stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+        p = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
     TUNNEL_PID.write_text(str(p.pid), encoding="utf-8")
     for _ in range(wait_s * 2):
-        m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", TUNNEL_LOG.read_text(encoding="utf-8", errors="replace"))
-        if m:
-            TUNNEL_URL.write_text(m.group(0), encoding="utf-8")
-            log(f"tunnel du poste de recette : {m.group(0)} (public, obscur ; à arrêter avec --stop-tunnel)")
-            return m.group(0)
+        text = TUNNEL_LOG.read_text(encoding="utf-8", errors="replace")
+        if name and host:
+            if re.search(r"Registered tunnel connection|[Cc]onnection [0-9a-f-]+ registered", text):
+                url = f"https://{host}"
+                TUNNEL_URL.write_text(url, encoding="utf-8")
+                log(f"tunnel nommé « {name} » du poste de recette : {url} (à arrêter avec --stop-tunnel)")
+                return url
+        else:
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", text)
+            if m:
+                TUNNEL_URL.write_text(m.group(0), encoding="utf-8")
+                log(f"tunnel rapide du poste de recette : {m.group(0)} (public, obscur ; navigateurs automatisés bloqués par Cloudflare — préférer un tunnel nommé ; --stop-tunnel pour arrêter)")
+                return m.group(0)
         time.sleep(0.5)
-    log("tunnel : pas d'URL après 40 s — voir tunnel.log")
+    hint = f" (tunnel nommé « {name} » : `cloudflared tunnel login`, `tunnel create {name}`, `tunnel route dns {name} {host}` faits ?)" if name else ""
+    log(f"tunnel : pas de connexion après {wait_s} s — voir {TUNNEL_LOG}{hint}")
+    stop_tunnel()
     return None
 
 
@@ -862,7 +901,7 @@ def stop_tunnel() -> None:
 
 
 BOT_COMMENT_MARK = "🔗 Poste de recette"
-BOT_PREREVIEW_RE = re.compile(r"🤖\s*Pr[ée]-?revue", re.I)   # commentaire de Grok Bot : sa pré-revue visuelle
+BOT_PREREVIEW_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M)   # titre « ## 🤖 Pré-revue » en début de ligne (pas le 🔗 qui cite la consigne)
 RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
 
 
@@ -918,7 +957,11 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
     sim = wt / "naviguide-simulator"
     try:
         cmd = ["bash", str(sim / "ensure-dev.sh"), "--prod"] + ([] if quiet else ["--open"])
-        p = subprocess.run(cmd, cwd=str(sim), text=True, capture_output=True, timeout=1200)
+        env = dict(os.environ)
+        _name, host = tunnel_settings()
+        if host:   # le preview doit accepter l'hôte du tunnel nommé (sinon Vite : « Blocked request »)
+            env["NAVIGUIDE_PREVIEW_HOST"] = host
+        p = subprocess.run(cmd, cwd=str(sim), text=True, capture_output=True, timeout=1200, env=env)
         for ln in (p.stdout + p.stderr).strip().splitlines()[-(4 if quiet else 12):]:
             log(f"    {ln}")
         launched = p.returncode == 0
