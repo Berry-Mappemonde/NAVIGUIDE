@@ -61,22 +61,40 @@ PR du dépôt Berry-Mappemonde/Blue-Intelligence :
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape
    « ouvre …, clique … → tu dois voir … » (FR / EN sur la même ligne).
 3. Pour chaque case : fais l'étape dans l'application, à l'écran indiqué (Suivre,
-   Simulation, Tracer ma route, Revoir l'expédition, panneau droit). Si tu VOIS
-   exactement ce qui est attendu : coche la case dans la PR. Sinon : laisse-la
-   vide. Prends une capture pour chaque défaut.
+   Simulation, Tracer ma route, Revoir l'expédition, panneau droit), **la console
+   du navigateur ouverte** (F12 / ⌥⌘J). Si tu VOIS exactement ce qui est attendu :
+   coche la case dans la PR. Sinon : laisse-la vide. Prends une capture pour chaque
+   défaut. Note toute **erreur rouge de console** (exception JS, appel `/ici`,
+   `/voyage`, `/route`, `/wind` en 4xx/5xx) avec l'écran où elle est apparue ;
+   ignore les avertissements jaunes.
 4. Poste UN commentaire par PR, qui commence par `## 🤖 Pré-revue` puis une ligne
    par case, dans l'ordre :
    - `- [x] 🤖 <texte de la case>` si tu l'as cochée ;
    - `- [ ] 🤖 <texte de la case> — KO : <écran, ce que je vois, ce que je voulais>`
      si tu as vu un défaut (joins la capture) ;
    - `- [ ] 🤖 <texte de la case> — non vérifiable : <pourquoi>` si tu ne peux pas
-     (son, voix, fichier à choisir…).
+     (son, voix, fichier à choisir…) ;
+   puis une ligne par erreur de console :
+   - `- [ ] 🤖 Console (<écran>) — KO : <message, fichier:ligne ou URL et code HTTP>`.
    Termine par une ligne « Vu <n> / <total> · KO <k> ».
 5. Ne modifie pas le texte de la PR, ne ferme ni ne merge rien, ne coche pas ce
    que tu n'as pas vu, n'invente aucun chiffre. Un seul commentaire 🤖 par PR : si
    tu repasses, édite ton commentaire au lieu d'en ajouter un.
-6. À la fin, envoie-moi un résumé : PR traitées, cases cochées, KO avec captures.
+6. **Parcours de référence** (tout tester) : quand la PR de TÊTE de la pile porte un
+   commentaire « 🧭 Parcours de référence » et pas encore de commentaire
+   `## 🤖 Parcours de référence`, et que toutes les PR de la pile ont leur
+   `## 🤖 Pré-revue` : joue l'intégralité du parcours donné dans ce commentaire
+   (A → H, console ouverte), sur le lien indiqué, et poste UN commentaire
+   `## 🤖 Parcours de référence` au même format (une ligne par item, console
+   comprise), terminé par « Vu n / total · KO k ». Une fois par tête de pile.
+7. À la fin, envoie-moi un résumé : PR traitées, cases cochées, KO avec captures,
+   erreurs de console, résultat du parcours.
 ```
+
+**Pourquoi des commentaires et pas une PR du bot** : il ne code pas ; une PR
+ajouterait un merge à faire pour un simple rapport ; ses commentaires entrent
+déjà dans la boucle — `review_collect.py` les lit (cases cochées, KO, console,
+parcours) et le correcteur du matin les traite comme les KO du porteur.
 
 ## Ce que le porteur voit le matin
 

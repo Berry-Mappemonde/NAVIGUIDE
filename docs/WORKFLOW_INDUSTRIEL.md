@@ -90,7 +90,14 @@ inclus) se partagent le travail, **dans cet ordre** :
    **coche les cases** qu'il a vérifiées et poste un commentaire « 🤖
    Pré-revue » qui liste ce qu'il a coché et ses KO (capture). C'est cette
    liste qui attribue une case au bot ; le matin, le porteur décoche ce qu'il
-   conteste. Il a besoin du connecteur GitHub de Grok Bot.
+   conteste. Il a besoin du connecteur GitHub de Grok Bot. À chaque écran il
+   garde la **console ouverte** et note les erreurs rouges. En **fin de batch**,
+   `run_lots.py` poste sur la PR de tête « 🧭 Parcours de référence » : le bot
+   joue alors **tout** `infra/agents/PARCOURS_DE_REFERENCE.md` (les trois
+   parcours, le film, le panneau droit, la carte, le chat — les régressions
+   qu'aucune case de PR ne couvre) et poste « ## 🤖 Parcours de référence » ;
+   ses KO hors cases (console, régressions) arrivent au correcteur comme les KO
+   du porteur. Pas de PR du bot : il ne code pas, ses commentaires suffisent.
 2. **Le code ensuite — Grok 4.6 par le CLI** (`review_agent.py`, `run_lots.py
    --review-every 4`) : après chaque tranche de 4 PR, `run_lots.py` **attend la
    pré-revue du bot** sur la tranche (`--bot-wait-min 45`, 0 pour ne pas
