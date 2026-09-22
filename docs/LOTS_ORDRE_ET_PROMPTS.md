@@ -101,6 +101,15 @@ testent avec de faux serveurs).
 | **hygiène** | | **avant la soumission** | | | |
 | 66 | D0 | docs | S | — | README FR/EN, manuel utilisateur, `docs/README.md` index, rangement (`ETAT_DES_LIEUX_DOCS.md` § 3) |
 | 67 | H1 | dépôts | M | D0 | préparer la séparation des dépôts : script + procédure (public = simulateur seul) ; l'exécution est au porteur (26–27 sept.) |
+| **corrections 3** | | **revue du 22 sept. (matin)** | | | `PLAN_CORRECTIONS_2026-09-22.md` — après la pile RA1 → RA8 mergée ; constats fondus dans R8a, R8c, R9c, R10d ; dans l'ordre du document les RB passent AVANT R8a |
+| 68 | RB1 | corrections 3 | M | — | Halifax ↔ Saint-Pierre redevient une jambe mer (climatologie, trait coloré, bateau relais) ; l'avion ne vole que Cayenne ↔ Halifax |
+| 69 | RB2 | corrections 3 | S | — | zoom + − horizontal et compact en bas à droite, à côté des crédits, jamais masqué |
+| 70 | RB3 | corrections 3 | S | — | plus jamais de prompt : le cache des fiches est re-nettoyé, le journal répond en phrases |
+| 71 | RB4 | corrections 3 | S | — | barre de lecture sans barre de scroll : un bouton de vitesse à 4 niveaux, flèches d'escale, haut-parleur |
+| 72 | RB5 | corrections 3 | M | — | le film part de Saint-Maur le 15 mai 2026 ; la voix dit « milles nautiques » |
+| 73 | RB6 | corrections 3 | M | RB5 | la voix ne coupe plus, Stop coupe tout, la caméra ne saute plus sur la Polynésie |
+| 74 | RB7 | corrections 3 | S | — | « arrivée entre le … et le … » visible dès le démarrage (ensemble ETA préchauffé) |
+| 75 | RB8 | corrections 3 | S | RB1 | la route est dessinée sur les deux copies du monde ; survol d'un segment parcouru → vitesse de l'époque |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
 § 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
@@ -819,6 +828,133 @@ Branche feat/lot-ra8-vitesse-historique depuis la base indiquée. PR vers main, 
 Interdits : appel réseau dans les tests ; bloquer le démarrage ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
+### Corrections 3 — revue du 22 septembre au matin (RB1 → RB8)
+
+À enchaîner après la pile RA1 → RA8 mergée. Détail, causes racines
+(fichier:ligne) et recette dans `docs/PLAN_CORRECTIONS_2026-09-22.md`. Le
+programme continue ensuite avec R8a → D0 ; les constats du 22 sept. qui
+relèvent de ces lots sont fondus dans leurs prompts (R8a, R8c, R9c, R10d).
+
+<!-- LOT id="RB1" title="Halifax ↔ Saint-Pierre redevient une jambe mer ; l'avion ne vole que Cayenne ↔ Halifax" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RB1 — Halifax ↔ Saint-Pierre redevient une jambe MER (régression majeure de la revue du 22 sept.).
+Objectif : le trajet Halifax ↔ Saint-Pierre-et-Miquelon est une jambe en mer (trait coloré par régime, cliquable, climatologie et vitesse calculées dessus) ; seuls Cayenne ↔ Halifax (aller-retour) et les sauts Pacifique restent avion (noir pointillé, non cliquable, hors distance voile). La chorégraphie d'avant est conservée : le bateau reste stationné à Cayenne, l'avion va à Halifax, un bateau relais apparaît à Halifax, navigue jusqu'à Saint-Pierre et revient, l'avion repart vers Cayenne pendant que le bateau relais disparaît, puis le bateau de Cayenne continue vers la Polynésie.
+Cause racine : src/utils/berryLegs.js (version RA4) l. 62-77 — airStopKey reconnaît {cayenne, halifax, spm} et isAirLegNames déclare « air » TOUTE paire différente, donc aussi Halifax ↔ Saint-Pierre ; legKind (l. 83) et officialRouteLineStyle (l. 90) propagent l'erreur. La chorégraphie de référence est sur main : src/engine/filmCast.js l. 63-64 et l. 230 (trois acteurs : bateau Berry, avion, bateau relais) ; buildBerryLegs (berryLegs.js l. 18-44) crée déjà les jambes relais Halifax → SPM → Halifax.
+Fichiers à ouvrir (seulement) : src/utils/berryLegs.js, src/utils/berryLegs.test.js, src/engine/filmCast.js (lecture : chorégraphie de référence), src/map/MapSceneController.js PAR EXTRAIT (rg -n "officialRouteLineStyle|isAirSegment|addRouteLine"), server/voyage_clock.py PAR EXTRAIT (rg -n "air|AIR_CALENDAR"), server/tests/test_voyage_clock.py.
+Étapes : 1) isAirLegNames ne dit « air » que pour Cayenne ↔ Halifax (les deux sens) ; Halifax ↔ Saint-Pierre = mer (style nul, cliquable, régime/vitesse/climato comme les autres jambes de mer) ; 2) serveur : la jambe Halifax ↔ SPM compte ses milles à la voile et son temps de mer ; seules Cayenne ↔ Halifax restent au régime avion (AIR_CALENDAR_HOURS, zéro mille voile) ; 3) vérifier que la chorégraphie de filmCast.js est intacte après la pile RA ; si un lot RA l'a dégradée, la restaurer à l'identique du main d'avant la pile ; 4) rien d'autre de RA4 n'est retiré (bornes de longitude, trait avion des vraies jambes avion).
+Tests : berryLegs.test.js — Halifax → SPM et SPM → Halifax donnent legKind "sea" et aucun style noir pointillé ; Cayenne ↔ Halifax donnent "air" ; test_voyage_clock.py — la distance voile inclut Halifax ↔ SPM et exclut Cayenne ↔ Halifax. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre, carte monde — le trait Halifax ↔ Saint-Pierre est coloré comme une jambe de mer, un clic dessus répond ; seuls Cayenne ↔ Halifax et les sauts Pacifique sont noirs pointillés. Revoir l'expédition, passage en Guyane — le bateau reste à Cayenne, l'avion décolle, un bateau navigue Halifax → Saint-Pierre → Halifax, l'avion revient et disparaît à Cayenne, le bateau continue vers la Polynésie. Captures docs/recette/lot-rb1/01-halifax-mer.jpg, 02-choregraphie.jpg (URL complète sur ta branche).
+Branche fix/lot-rb1-halifax-mer depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : reclasser une vraie jambe avion en mer ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB2" title="Zoom horizontal compact en bas à droite, à côté des crédits" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RB2 — Le zoom en bas à droite, horizontal et compact.
+Objectif : plus de boutons + − en haut à gauche (masqués par le sidebar) ; un contrôle de zoom horizontal, compact, en bas à droite de la carte, juste à côté des citations « Leaflet | Tuiles © Esri — HERE, Garmin, OpenStreetMap contributors », jamais recouvert par la barre de lecture ni les sidebars.
+Cause racine : src/map/MapSceneController.js l. 173-184 — L.map(container, {...}) ne passe pas zoomControl: false : le contrôle Leaflet par défaut s'affiche en haut à gauche, sous le bouton d'ouverture du panneau gauche qui le masque.
+Fichiers à ouvrir (seulement) : src/map/MapSceneController.js PAR EXTRAIT (l. 170-200 et rg -n "attributionControl|control"), src/index.css, tests associés (rg -n "zoom" src/map/*.test.js*).
+Étapes : 1) zoomControl: false + contrôle de zoom en position bottomright ; 2) CSS : + et − côte à côte (horizontal), plus compacts que le défaut Leaflet, alignés avec l'attribution et au-dessus de la barre de lecture ; 3) aucune autre surface ne bouge (crédits entiers, RA6 conservé) ; 4) test de montage : le contrôle existe et il est en bas à droite.
+Tests : npm test, npx vite build, npm run e2e (fumée).
+Recette (visuelle) : tous écrans carte — plus de + − en haut à gauche ; en bas à droite, deux petits boutons + − à l'horizontale à côté des crédits ; le zoom marche ; visibles sidebars ouverts ou fermés, barre de lecture affichée ou masquée. Capture docs/recette/lot-rb2/01-zoom.jpg (URL complète sur ta branche).
+Branche fix/lot-rb2-zoom-bas-droite depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : masquer les crédits ; retirer une surface ; texte d'aide ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB3" title="Plus jamais de prompt : le cache des fiches est re-nettoyé" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RB3 — Plus jamais de prompt (fiche d'escale, journal), même depuis le cache.
+Objectif : la fiche d'escale et le journal de bord n'affichent jamais un prompt ni un raisonnement — y compris quand le texte sort du cache (le porteur voit encore « Input: A large JSON object… Task: Present a scale stop… » sur la fiche de Pointe-à-Pitre, et « toujours un prompt » au journal).
+Cause racine : server/escale_api.py l. 286 et l. 361-374 — la fiche est servie depuis pearl_store.kv_get("escale", …, ESCALE_TTL_S) (TTL 7 jours) SANS repasser par le nettoyage : les paragraphes fuités générés avant RA1 ressortent tels quels. Le garde RA1 (server/story_cascade.py, _PROMPT_LEAK_RE l. 58, _clean_text l. 336-340) ne s'applique qu'à la génération.
+Fichiers à ouvrir (seulement) : server/escale_api.py, server/story_cascade.py, server/tests/test_story_cascade.py, server/tests/test_escale_api.py (créer s'il n'existe pas), server/logbook_chat.py PAR EXTRAIT (rg -n "cascade_text|kv_get|cache").
+Étapes : 1) à la lecture du cache (fiche, et chat s'il a un cache) : repasser le paragraphe par _clean_text ; texte vide ou fuité → invalider la clé et regénérer (ou servir le repli rules), jamais servir la fuite ; 2) élargir _PROMPT_LEAK_RE aux formes du 22 sept. : « Input: A large JSON object », « What's for the boat », « - Task: » (et équivalents traduits si la fiche est traduite) ; 3) le chat passe par le même garde : réponse fuitée → repli honnête du journal ; 4) ne pas casser filter_numbers ni le contrat de cascade_text.
+Tests : une entrée de cache contenant le texte fuité de la capture → la route renvoie le repli rules et la clé est invalidée ; une entrée saine → servie inchangée ; test _PROMPT_LEAK_RE sur les nouvelles formes. .venv/bin/python -m pytest -q, npx vite build (npm test si un fichier JS change).
+Recette (visuelle) : Simulation, langue anglaise, drapeau de Pointe-à-Pitre → la fiche contient de vraies phrases sur l'escale, jamais « Input: », « Task: », « JSON ». Suivre, Journal de bord → « À quelle vitesse va le bateau ? » → une phrase (ou l'échec honnête), jamais un prompt, y compris en reposant la même question. Capture docs/recette/lot-rb3/01-fiche.jpg (URL complète sur ta branche).
+Branche fix/lot-rb3-cache-prompt depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : afficher un prompt ou un raisonnement ; inventer un chiffre ; vider le cache entier sans raison ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB4" title="Barre de lecture sans scroll : un bouton de vitesse à 4 niveaux, flèches, haut-parleur" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RB4 — Barre de lecture compacte, sans barre de scroll.
+Objectif : la barre de lecture tient sur une ligne sans barre de défilement. Un SEUL bouton de vitesse qui cycle à chaque clic : réel → lecture → normale → accélérée → réel (mêmes vitesses qu'avant, aucun niveau supprimé). « Escale précédente / Aller à la prochaine escale » deviennent deux flèches ‹ › (libellé complet en info-bulle). « Écouter » devient l'icône haut-parleur (état coupé/actif visible, libellé en info-bulle). Le libellé météo dit la vérité : « climatologie + GFS » si les deux alimentent le point courant, sinon seulement celui qui est employé (détail des modèles en info-bulle).
+Cause racine : src/components/SimulationFilmBar.jsx l. 311 — la rangée de commandes est en overflow-x-auto : avec les 4 pilules de vitesse (SPEEDS l. 9-12 : real/read/normal/fast) et les libellés longs, une barre de défilement apparaît. Libellé météo : clockRegimeText l. 556-570 concatène régime et sources sans dire ce qui est réellement employé.
+Fichiers à ouvrir (seulement) : src/components/SimulationFilmBar.jsx, ses tests (rg -n "SimulationFilmBar" src/components/*.test.js*), src/i18n/fr.js, src/i18n/en.js.
+Étapes : 1) un seul bouton de vitesse cyclique affichant le niveau courant ; 2) flèches ‹ › pour les escales, haut-parleur pour Écouter, info-bulles i18n fr/en ; 3) une ligne sans défilement aux largeurs courantes, retirer l'overflow-x-auto devenu inutile ; 4) libellé météo exact (« climatologie + GFS » ou la seule source employée) ; 5) ne pas retirer un bouton existant (Masquer la barre, Cinéma, Stop auto, modes) ; les data-testid existants restent.
+Tests : le cycle du bouton (4 clics → retour à réel) ; aucune pilule de vitesse résiduelle ; libellé météo pour « les deux » et « un seul ». npm test, npx vite build, npm run e2e (fumée).
+Recette (visuelle) : Suivre et Simulation, barre de lecture — aucune barre de défilement ; un bouton de vitesse qui passe de réel → lecture → normale → accélérée puis revient à réel ; deux flèches pour les escales ; un haut-parleur à la place d'Écouter ; « climatologie + GFS » seulement si les deux sont utilisés. Capture docs/recette/lot-rb4/01-barre.jpg (URL complète sur ta branche).
+Branche fix/lot-rb4-barre-compacte depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : barre de scroll ; retirer un bouton existant ; rangée ajoutée ; texte d'aide ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB5" title="Le film part de Saint-Maur le 15 mai 2026 ; la voix dit « milles nautiques »" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RB5 — Le film dit le voyage officiel.
+Objectif : la voix du film commence par « L'expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026… » (jamais « La Rochelle », jamais « 25 avril 2027 ») et énonce les escales dans l'ordre exact de la route (Saint-Maur → La Rochelle → Ajaccio → Fort-de-France → …) ; dans tout texte déclamé, les unités sont en toutes lettres (« milles nautiques » / « nautical miles », jamais « nm » que la voix lit « nanètres »).
+Cause racine : server/film_script.py l. 425-430 — le chapitre « depart » prend (start or {}).get("iso") or (clock or {}).get("t0") et le nom de start : quand le client envoie l'horloge d'une simulation (date réglée dans le panneau), le film déclame la date et l'escale de la simulation au lieu du départ officiel — c'est aussi pour ça que Saint-Maur manque en tête (KO bot RA2 sur le poste). Et l. 595-598, « le bateau est à {distLabel} du départ » emploie l'abréviation « nm » (l. 574).
+Fichiers à ouvrir (seulement) : server/film_script.py, server/tests/test_film_script.py, src/hooks/useReplay.js PAR EXTRAIT (rg -n "film|script|fetch" : ce que le client envoie), src/engine/expeditionStory.js (tête du récit, stopsWithDates l. 124-141), src/engine/expeditionStory.test.js.
+Étapes : 1) pour le voyage officiel, le chapitre « depart » lit la première marque de la route officielle (Saint-Maur) et la date officielle du départ (15 mai 2026), jamais le t0 d'une horloge de simulation ni une date recalculée ; la suite suit l'ordre de la route (finit RA2 sur le poste réel) ; 2) unités en toutes lettres dans tout texte déclamé (film serveur et récit client) — l'affichage écrit peut garder « nm » ; 3) aucune date ni distance inventée : tout vient de la route et de l'horloge officielles.
+Tests : test_film_script.py — le script officiel commence par Saint-Maur et « 15 mai 2026 » même quand la requête porte une horloge de simulation ; aucun « nm » nu dans les phrases du script ; expeditionStory.test.js — la tête du récit nomme Saint-Maur. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre → Revoir l'expédition (FR puis EN) — la voix commence par « a quitté Saint-Maur le 15 mai 2026 », on entend « milles nautiques », jamais « nanomètres » ni « 2027 » ; le sous-titre affiche la même suite d'escales que la liste de droite, dans le même ordre. Capture docs/recette/lot-rb5/01-depart.jpg (URL complète sur ta branche).
+Branche fix/lot-rb5-film-officiel depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : inventer une date ou une distance ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB6" title="La voix ne coupe plus, Stop coupe tout, la caméra ne saute pas sur la Polynésie" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="M" deps="RB5" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB6 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RB5 est dans ta base.
+
+Lot RB6 — Voix et Stop fiables pendant Revoir.
+Objectif : la voix du film ne s'arrête plus en plein milieu d'une phrase ; un incident de voix ne termine pas le film et ne recale jamais la caméra sur la position live (la « Polynésie » du porteur) ; Stop coupe tout (voix + animation + caméra) au premier clic, même pendant qu'une utterance joue.
+Cause racine : src/utils/speak.js l. 182-275 — « onend sans boundary en < 500 ms → une relance, puis mode linéaire » : quand Chrome coupe une utterance (keep-alive l. 9, chunks de 200 caractères l. 10), le film bascule ou finit prématurément ; et src/hooks/useReplay.js l. 48-71 — à la fin (ou sur Stop), retour au live : une fin prématurée recale la caméra sur la position live en plein film. Le « Stop qui ne marche pas » du porteur : pendant la lecture vocale, l'arrêt ne coupe pas tout d'un seul geste.
+Fichiers à ouvrir (seulement) : src/utils/speak.js, src/utils/speak.test.js, src/hooks/useReplay.js, src/hooks/useReplay.test.js, src/components/SimulationFilmBar.jsx PAR EXTRAIT (rg -n "onStop|stopReplay|listen").
+Étapes : 1) coupure en plein chunk → reprendre au chunk suivant (ou relire le chunk coupé), jamais finir le film sur un incident de voix ; la bascule linéaire ne déclenche pas de retour au live tant que des chapitres restent ; 2) la caméra ne se recale sur la position live QUE si le film est vraiment fini ou si le porteur a cliqué Stop ; 3) Stop : un clic coupe la voix (cancel), l'animation et libère la caméra dans le même geste ; le bouton répond au premier clic ; 4) ne pas casser la bascule linéaire de Playwright (canLeadWithVoice).
+Tests : speak.test.js — un onend prématuré au milieu des chunks → le texte continue au chunk suivant ; useReplay.test.js — un incident de voix ne met pas finish ; stop() pendant la lecture coupe voix + animation + caméra. npm test, npx vite build, npm run e2e (fumée + film si présent).
+Recette (visuelle) : Suivre → Revoir l'expédition, laisser parler plusieurs minutes — la voix ne s'arrête pas en plein milieu d'une phrase ; la carte ne se recale jamais sur la Polynésie pendant le film. Cliquer Stop pendant que la voix parle — tout s'arrête net au premier clic et « Revoir l'expédition » revient. Capture docs/recette/lot-rb6/01-stop.jpg (URL complète sur ta branche).
+Branche fix/lot-rb6-voix-stop depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : bouton sans effet ; retour au live sur incident de voix ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB7" title="Fourchette d'arrivée réellement affichée : ensemble ETA préchauffé" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB7 » (texte intégral), puis docs/PLAN_AUDIT_CALCULS.md « Lot C6 ». Tu travailles dans naviguide-simulator/.
+
+Lot RB7 — La fourchette d'arrivée s'affiche vraiment.
+Objectif : « arrivée entre le … et le … » apparaît sous la prochaine escale (Suivre) et dans la Revue du plan sans que le porteur recharge, au plus quelques minutes après le lancement — les 2 KO bot de RA7 venaient d'un ensemble jamais prêt (« perles pas encore chauffées »).
+Cause racine : server/voyage_api.py l. 781-788 — /voyage/official/eta appelle ensemble_eta.official_eta qui renvoie {members: 0} tant que rien n'a chauffé les membres ; côté client src/components/EscaleLegend.jsx l. 75-78 et src/hooks/usePlanReview.js l. 47-57 n'affichent rien dans ce cas : sur un poste frais la fourchette n'apparaît jamais.
+Fichiers à ouvrir (seulement) : server/voyage_api.py PAR EXTRAIT (rg -n "official/eta|_kick_official"), server/ensemble_eta.py, server/tests/test_ensemble_eta.py (ou le test existant de l'ETA), src/hooks/usePlanReview.js, src/components/EscaleLegend.jsx, tests JS associés.
+Étapes : 1) préchauffer l'ensemble ETA du voyage officiel au démarrage du serveur, en tâche de fond (comme _kick_official_hindcast), sans bloquer le démarrage ; rafraîchi avec les perles ; 2) le client re-demande l'ETA tant que members == 0 (léger, recul progressif) : la fourchette apparaît dès qu'elle est prête, sans rechargement ; 3) garder l'intervalle resserré de RA7 (membres à vitesse dégénérée écartés) ; même phrase et même arrondi en Suivre et dans la Revue du plan ; sans ensemble, rien d'inventé ; 4) aucun appel réseau dans les tests (fixtures).
+Tests : serveur — après préchauffage sur la fixture officielle, members > 0 et fenêtre de quelques jours pour Nouméa → Dzaoudzi ; client — l'affichage apparaît quand la réponse passe de members: 0 à un ensemble plein. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Suivre, liste des escales, sous la prochaine — « arrivée entre le … et le … » (deux dates proches) visible au plus quelques minutes après le lancement, sans recharger. Panneau droit → Revue du plan, Nouméa → Dzaoudzi — la même fourchette de quelques jours. Capture docs/recette/lot-rb7/01-fourchette.jpg (URL complète sur ta branche).
+Branche fix/lot-rb7-eta-prechauffe depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : inventer une date ; bloquer le démarrage ; membre à vitesse nulle ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RB8" title="La route sur les deux copies du monde ; survol d'un segment parcouru" plan="docs/PLAN_CORRECTIONS_2026-09-22.md" size="S" deps="RB1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-22.md § 0 et le « RB8 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RB1 est dans ta base.
+
+Lot RB8 — La route dessinée des deux côtés du monde, survol du parcouru.
+Objectif : en tirant la carte vers la droite jusqu'à la butée, le trajet complet (Halifax, Antilles compris) est dessiné aussi sur la copie de droite (côté africain), comme il l'est déjà à gauche ; et le survol d'un segment déjà parcouru montre la vitesse hindcast de l'époque (complète l'item non vérifiable de RA8), rien sur les jambes avion.
+Cause racine : src/utils/geo.js l. 87-94 — worldCopyCoords fait trois copies (0, +360, −360) d'une ligne DÉJÀ dépliée sur près de 360° de longitude : dans les bornes ±540° posées par RA4 (MapSceneController version RA4 l. 44, MAP_LON_BOUND = 540), la copie de droite ne couvre pas le côté africain du second monde.
+Fichiers à ouvrir (seulement) : src/utils/geo.js, src/utils/geo.test.js, src/map/MapSceneController.js PAR EXTRAIT (WORLD_OFFSETS l. 40, addRouteLine l. 63, segments l. 457-492), MapSceneBoundary.test.js (ou le test de bornes de RA4), src/i18n/fr.js, src/i18n/en.js.
+Étapes : 1) les copies de la route couvrent toute la fenêtre navigable (±540°) : calculer les décalages d'après l'étendue réelle de la ligne dépliée (p. ex. 0, ±360, +720 si besoin) au lieu du triplet fixe ; 2) même règle pour les drapeaux/escales portés par la route s'ils manquent d'un côté ; 3) survol d'un segment déjà parcouru → info-bulle courte avec la vitesse hindcast de l'époque (donnée RA8), rien pour les jambes avion, aucun nouveau panneau ; 4) i18n de l'info-bulle fr/en.
+Tests : geo.test.js — une ligne dépliée sur 360° produit des copies couvrant [−540, 540] ; test de bornes — après un grand glissement à droite, des points de route existent dans la fenêtre est ; un segment parcouru expose sa vitesse d'époque. npm test, npx vite build.
+Recette (visuelle) : Suivre — tirer la carte vers la droite jusqu'à la butée : le trajet complet est dessiné aussi de ce côté-là, comme à gauche. Survoler le trait déjà parcouru — une petite info-bulle donne la vitesse de l'époque ; sur un trait avion, rien. Captures docs/recette/lot-rb8/01-copie-droite.jpg, 02-survol.jpg (URL complète sur ta branche).
+Branche fix/lot-rb8-route-copies depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : répétition infinie du monde ; nouveau panneau ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
 ### Nuit 3 — « Ici et maintenant », journal des moments, expert en circumnavigation (R8a → R10d)
 
 Pré-rédigés le 21 sept. au soir d'après `docs/PLAN_ICI_JOURNAL_EXPERT.md` (contrats de
@@ -836,6 +972,7 @@ Lot R8a — Le modèle build_moment.
 Objectif : une seule fonction serveur produit l'encadré « ici et maintenant » : build_moment(perle, clock_point, leg, skipper_thresholds) → Moment (contrat § 1.1) et signature(moment) (champs stables seulement). Aucun changement visible.
 Fichiers à ouvrir (seulement) : server/moment.py (créer), server/tests/test_moment.py (créer), server/tests/fixtures/official_mini.json (créer : 3 escales, 40 points, 12 perles, horloge), server/ici_warm.py PAR EXTRAIT (rg -n "bag\[" : forme d'une perle), server/voyage_clock.py PAR EXTRAIT (t par point, régime), server/plan_review.py PAR EXTRAIT (saison, AMP).
 Étapes : 1) build_moment : leg (from/to/day/kn/basis/remainingNm/doneNm/headingDeg/eta/regime), alerts (wind, sea, cyclone, entry, mpa, night — chacune avec fact non vide), here (zee, entry, mpa, seamarks, seabed, weather, sentences, links), around (satellite, climatology, science, marina), sources ; 2) signature : sha1 des champs stables (alerts.id, here.zee.mrgid, here.entry, around[].title, leg.to, leg.regime) — un mille de plus ne la change pas, une nouvelle ZEE oui ; 3) aucun chiffre inventé : tout vient de la perle et de l'horloge ; 4) fixture réduite du voyage officiel, réutilisable par R8b, R9a, R10a.
+Constat de la revue du 22 sept. : le texte FR mélange les langues — « Le bateau navigue dans French Exclusive Economic Zone (Guadeloupe) (Guadeloupe) » (src/engine/iciBriefing.js l. 187 insère le nom marineregions brut, avec un doublon de parenthèses). Étape ajoutée : 5) here (zee, entry, mpa) et here.sentences portent des noms localisés dans la langue demandée (gabarit « Zone économique exclusive française (Guadeloupe) » / « French EEZ (Guadeloupe) »), sans doublon de parenthèses ; un test le vérifie sur la fixture.
 Tests : test_moment.py — mêmes entrées → même signature ; +1 nm → même signature ; nouvelle ZEE → autre signature ; toute alerte a un fact ; le Moment est sérialisable JSON. .venv/bin/python -m pytest -q.
 Recette (visuelle) : aucun changement visible — les trois parcours (Suivre Nouméa, Simulation La Rochelle → Ajaccio, Tracer Brisbane → SF) marchent comme avant.
 Branche feat/lot-r8a-moment depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
@@ -864,6 +1001,7 @@ Lot R8c — Le branchement et le retrait des anciens blocs ET des pop-up de cart
 Objectif : le panneau gauche = carte Berry → chat (inchangé) → IciMaintenant (tout le reste) ; les vues Récit et Journal reçoivent les composants existants (récit de la traversée, journal) ; les blocs séparés (MomentCards inline, FREE, sac ici, récit, journal, fiche d'escale) disparaissent du panneau ; sur la carte, PLUS AUCUNE pop-up flottante : la carte « À bord, maintenant · décision » en haut, les fiches « Pendant ce temps autour du bateau » en bas à droite (et leur bouton Écouter), la popup d'escale — leur contenu vit dans l'encadré. Simulation et Tracer passent par le même endpoint (position du curseur / route dessinée). Aucune surface de main inaccessible, rien de dupliqué carte + encadré.
 Fichiers à ouvrir (seulement) : src/components/Sidebar.jsx, src/components/Sidebar.layout.test.js, src/map/MapSceneController.js PAR EXTRAIT (rg -n "momentCard|nowCard|freeCard|escale|popup|EventBubble" : retirer les cartes flottantes hors film ; la bulle du FILM (R6/RA3) reste), src/App.jsx PAR EXTRAIT (rg -n "iciBriefing|freeCards|momentCards|storyText|journal|escaleStop|onEscaleSheet|useMoment"), src/components/IciMaintenant.jsx (vues Récit / Journal), tests de contrat existants (uiProductContract.test.js si présent).
 Étapes : 1) un seul objet moment (useMoment) passé au panneau ; 2) Sidebar : remplacer, conserver les data-testid existants par alias ; 3) MapSceneController / App : retirer les cartes flottantes hors film et leurs boutons Écouter ; la fiche d'escale s'ouvre DANS l'encadré (vue Maintenant → section Ici) au clic sur un drapeau ; 4) Simulation / Tracer : même encadré à la position courante ; 5) mode clair.
+Constat de la revue du 22 sept. : les cartes « À bord, maintenant · décision » (haut de carte) et « Pendant ce temps autour du bateau » (bas droite) apparaissent en Simulation ET en Suivre, sidebars fermés, chacune avec son bouton Écouter — « il faut tout inclure dans un encadré… il faut que ça soit un produit ; il faut enlever les boutons Écouter de ces encadrés ». C'est exactement ce que ce lot livre : plus rien ne flotte sur la carte hors la bulle du film, et aucun bouton Écouter dupliqué.
 Tests : Sidebar.layout.test.js — ordre carte Berry → chat → IciMaintenant, aucun ancien bloc ; test de contrat — aucune pop-up hors film n'est rendue ; les tests de contrat existants passent sans être affaiblis (alias). npm test, npx vite build, npm run e2e (fumée).
 Recette (visuelle) : Suivre, Simulation, Tracer — un seul encadré sans titre sous le chat, rempli à la position courante ; plus aucune carte flottante sur la carte (ni « à bord maintenant », ni fiche science, ni fiche d'escale) ; cliquer un drapeau ouvre l'escale DANS l'encadré ; thème clair identique. Captures docs/recette/lot-r8c/01-suivre.jpg, 02-simulation.jpg (URL complète sur ta branche).
 Branche feat/lot-r8c-branchement depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
@@ -906,6 +1044,7 @@ Lot R9c — Le film raconte le journal.
 Objectif : le script du film (GET /voyage/official/film) est construit depuis le journal des moments : chapitres = jambes, dans l'ORDRE EXACT de la route sans répétition (cohérent avec RA2) ; budget 2 400 caractères (150 s) réparti au prorata des jours de mer (plancher 120) ; sélection ≤ 3 changements par chapitre selon les règles de récit § 2.2 (escale, alerte la plus forte, fait de couleur ; regroupements) ; brut par gabarits (connecteurs variés) ; rédigé par Nemotron CHAPITRE PAR CHAPITRE (chaque prompt porte le résumé du chapitre suivant), sous filter_numbers, PRÉCHAUFFÉ en tâche de fond et servi depuis le cache (kv ns film-story) — jamais généré au clic ; events de chaque chapitre = les changements retenus (bulles).
 Fichiers à ouvrir (seulement) : server/film_script.py PAR EXTRAIT (rg -n "def build_script|chapters|events|written"), server/story_cascade.py PAR EXTRAIT (réécriture sous filter_numbers), server/pearl_store.py PAR EXTRAIT (kv), server/voyage_api.py PAR EXTRAIT (préchauffage après warm_moments ; /film lit le cache), server/tests/test_film_script.py, fixture R8a. src/hooks/useReplay.js : RIEN (format du script inchangé).
 Étapes : 1) sélection sous budget ; 2) brut ; 3) rédigé par chapitre + cache + préchauffage ; 4) events ; 5) ordre strict, aucune escale deux fois, chaque « départ vers X » suivi de « arrivée à X ».
+Constat de la revue du 22 sept. : la voix lisait « nm » comme « nanètres » et coupait en plein milieu de phrase ; à l'approche des escales, la bulle carte ne se déclenchait pas (KO bot RA3). Étapes ajoutées : 6) les textes déclamés écrivent les unités en toutes lettres (« milles nautiques » / « nautical miles » — RB5 corrige l'existant, ce lot ne doit pas régresser) et les chapitres préchauffés sont découpés en phrases courtes (aucune coupure) ; 7) le journal fournit un moment « approche d'escale » par escale, que la bulle du film affiche (titre = nom de l'escale).
 Tests : test_film_script.py — longueur du brut dans [budget −10 % ; +10 %] ; chaque chapitre ≥ 1 phrase et ≤ 3 changements ; arrivée de chaque escale présente ; ordre = ordre de la route ; aucun nombre du rédigé absent des faits ; deux chapitres consécutifs ne commencent pas par le même connecteur ; /film sert le cache sans appel LLM (client factice compte 0 appel). .venv/bin/python -m pytest -q, npm test, npx vite build.
 Recette (visuelle) : Suivre → Revoir l'expédition : le film raconte, dans l'ordre du voyage, ce qui a changé le long de la route (escales, ZEE, alertes, stations) ; il dure 2 min 30 ; au clic le texte rédigé est déjà prêt (aucune attente) ; les bulles montrent les mêmes événements que le texte. Capture docs/recette/lot-r9c/01-film.jpg (URL complète sur ta branche).
 Branche feat/lot-r9c-film-journal depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
@@ -962,6 +1101,7 @@ Lot R10d — L'interface de l'expert.
 Objectif : Revue du plan : chaque jambe a « alertes : n » teinté ; « Ce que je changerais » = la phrase du meilleur compromis de la jambe la plus chargée avec trois pastilles « 11 → 5 alertes · +41 nm · +7 j » et un bouton Appliquer (flux existant draft / recompute / accept) qui affiche deux colonnes (aujourd'hui / conseillé : distance, jours de mer, alertes, dates d'escale décalées) ; plus de tableau à six routes sans explication ; Ordres du skipper : « Recalculer l'itinéraire » devient « Demander conseil » → même carte deux colonnes pour la jambe courante.
 Fichiers à ouvrir (seulement) : src/components/PlanReview.jsx, src/hooks/usePlanReview.js, src/components/SkipperOrdersPanel.jsx PAR EXTRAIT (bouton), la carte de comparaison existante (rg -n "RouteCompare|comparatif|six routes|proposé" src/components), tests associés, src/i18n/fr.js, en.js, src/App.jsx PAR EXTRAIT (rg -n "recompute|accept|draft").
 Étapes : 1) ligne « alertes : n » par jambe ; 2) « Ce que je changerais » = phrase + pastilles ; 3) Appliquer → deux colonnes + dates décalées ; 4) « Demander conseil » remplace « Recalculer l'itinéraire » ; 5) aucun texte d'aide.
+Constat de la revue du 22 sept. : « Ce que je changerais » s'affiche en anglais dans l'interface FR (texte LLM non traduit, vu dans la Revue du plan). Étape ajoutée : 6) la phrase du conseil et les pastilles sont rendues dans la langue de l'interface (gabarits FR/EN ; le texte rédigé passe par la traduction du lot L6) — jamais d'anglais dans l'UI française.
 Tests : PlanReview.test.js — pastilles, phrase, deux colonnes ; SkipperOrdersPanel.test.js — libellé du bouton ; contrats existants intacts. npm test, npx vite build, npm run e2e (fumée).
 Recette (visuelle) : Panneau droit → Revue du plan : « alertes : n » par jambe ; « Ce que je changerais » nomme la jambe, le décalage et l'écart avec « 11 → 5 alertes · +41 nm · +7 j » ; Appliquer montre deux colonnes et les dates d'escale décalées. Simulation → « Demander conseil » remplace « Recalculer l'itinéraire », même carte. Captures docs/recette/lot-r10d/01-revue.jpg, 02-conseil.jpg (URL complète sur ta branche).
 Branche feat/lot-r10d-interface-expert depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
