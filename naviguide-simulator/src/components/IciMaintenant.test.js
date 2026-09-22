@@ -96,6 +96,20 @@ describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
   });
 });
 
+describe("IciMaintenant — lot R8c : récit / journal / escale, pas d'Écouter", () => {
+  it("reçoit les vues Récit et Journal et ouvre l'escale dans Ici", () => {
+    assert.match(src, /data-testid="ici-story-slot"/);
+    assert.match(src, /data-testid="ici-journal-slot"/);
+    assert.match(src, /<EscaleSheet/);
+    assert.match(src, /escale\?\.stop/);
+    assert.match(src, /testId="moment-now"/);
+    assert.match(src, /testId="moment-free"/);
+    assert.doesNotMatch(src, /ListenButton/);
+    assert.doesNotMatch(src, /moment-free-listen/);
+    assert.doesNotMatch(src, /momentNowTitle|momentFreeTitle/);
+  });
+});
+
 describe("useMoment — lot R8b", () => {
   it("interroge /ici/moment et se replie sur la fixture", () => {
     assert.match(hook, /\/ici\/moment\?/);

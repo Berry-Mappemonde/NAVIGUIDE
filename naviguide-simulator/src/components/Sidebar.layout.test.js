@@ -6,8 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
+const ici = readFileSync(join(here, "IciMaintenant.jsx"), "utf8");
 const chat = readFileSync(join(here, "LogbookChat.jsx"), "utf8");
 const cards = readFileSync(join(here, "MomentCards.jsx"), "utf8");
+const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+const scene = readFileSync(join(here, "..", "map", "MapSceneController.js"), "utf8");
 const css = readFileSync(join(here, "..", "index.css"), "utf8");
 
 function firstIndex(src, pattern) {
@@ -16,29 +19,33 @@ function firstIndex(src, pattern) {
   return m.index;
 }
 
-describe("Sidebar layout (lot N)", () => {
-  it("place le chat avant la carte NOW, le sac ici et le récit", () => {
+describe("Sidebar layout (lot R8c)", () => {
+  it("place carte Berry → chat → IciMaintenant, sans les anciens blocs", () => {
+    const berryAt = firstIndex(sidebar, /<BerryCard/);
     const chatAt = firstIndex(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
-    const nowAt = firstIndex(sidebar, /<MomentNowCard /);
-    const freeAt = firstIndex(sidebar, /<FreeMomentBlock /);
-    const iciAt = firstIndex(sidebar, /data-testid="briefing"/);
+    const iciAt = firstIndex(sidebar, /<IciMaintenant/);
     const storyAt = firstIndex(sidebar, /data-testid="expedition-story"/);
     const journalAt = firstIndex(sidebar, /<JournalPanel /);
-    assert.ok(chatAt < nowAt, "LogbookChat avant MomentNowCard");
-    assert.ok(nowAt < freeAt, "NOW avant FREE");
-    assert.ok(freeAt < iciAt, "FREE avant sac ici");
-    assert.ok(iciAt < storyAt, "sac ici avant récit");
+    assert.ok(berryAt < chatAt, "BerryCard avant LogbookChat");
+    assert.ok(chatAt < iciAt, "LogbookChat avant IciMaintenant");
+    assert.ok(iciAt < storyAt, "IciMaintenant reçoit le récit");
     assert.ok(storyAt < journalAt, "récit avant journal");
+    assert.doesNotMatch(sidebar, /<MomentNowCard /);
+    assert.doesNotMatch(sidebar, /<FreeMomentBlock /);
     assert.doesNotMatch(sidebar, /EscaleSheet/);
   });
 
-  it("garde les surfaces : étape, FREE, journal — plus de fiche d'escale dans le panneau", () => {
+  it("garde les surfaces par alias : étape, sac, récit, journal — fiche d'escale hors du sac", () => {
     assert.match(sidebar, /<SimulationPanel/);
-    assert.match(sidebar, /<FreeMomentBlock /);
-    assert.doesNotMatch(sidebar, /EscaleSheet/);
-    assert.doesNotMatch(sidebar, /escaleStop|onEscaleClose/);
-    assert.match(sidebar, /<JournalPanel /);
+    assert.match(sidebar, /<IciMaintenant/);
     assert.match(sidebar, /data-testid="here-product"/);
+    assert.match(sidebar, /data-testid="briefing"/);
+    assert.match(sidebar, /data-testid="ici-briefing"/);
+    assert.match(sidebar, /data-testid="expedition-story"/);
+    assert.match(sidebar, /<JournalPanel /);
+    assert.doesNotMatch(sidebar, /EscaleSheet/);
+    assert.match(ici, /<EscaleSheet/);
+    assert.match(ici, /testId="ici-section-here"/);
   });
 
   it("fixe les hauteurs via --sim-box-h-* et les classes sim-box-*", () => {
@@ -49,6 +56,7 @@ describe("Sidebar layout (lot N)", () => {
     assert.match(css, /\.light-mode \.sim-box-chat/);
     assert.match(css, /\.light-mode \.sim-box-ici/);
     assert.match(css, /\.light-mode \.sim-box-story/);
+    assert.match(css, /\.light-mode \.ici-maintenant/);
     assert.match(chat, /sim-box-chat/);
     assert.match(cards, /sim-box-now/);
     assert.match(sidebar, /sim-box-ici/);
@@ -59,5 +67,22 @@ describe("Sidebar layout (lot N)", () => {
     assert.match(sidebar, /iciBriefingLoading/);
     assert.match(sidebar, /Le sac se remplit|iciBriefingLoading/);
     assert.match(sidebar, /\{!isDrawing \? \(/);
+  });
+});
+
+describe("contrat pop-up hors film (lot R8c)", () => {
+  it("ne rend plus les cartes flottantes ni la popup d'escale sur la carte", () => {
+    assert.doesNotMatch(app, /<MomentNowCard/);
+    assert.doesNotMatch(app, /<FreeMomentBlock/);
+    assert.match(app, /<EscalePopupHost/);
+    assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
+    assert.match(app, /useMoment\(/);
+    assert.match(app, /mode: drawingMode \? "drawn"/);
+    assert.match(scene, /escalePopup\.setSheet = \(\) => \{\}/);
+    assert.match(scene, /escalePopup\.sync = \(\) => \{\}/);
+    assert.doesNotMatch(ici, /ListenButton/);
+    assert.doesNotMatch(ici, /moment-free-listen/);
+    assert.match(ici, /testId="moment-now"/);
+    assert.match(ici, /testId="moment-free"/);
   });
 });

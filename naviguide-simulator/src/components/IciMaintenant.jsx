@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { EscaleSheet } from "./EscaleSheet.jsx";
 import {
   ICI_TABS,
   dismissAlert,
@@ -17,12 +18,45 @@ function Section({ testId, label, children }) {
   );
 }
 
+function CardAlias({ card, testId }) {
+  if (!card) return null;
+  const url = card.entity?.url || card.entity?.visit_url || null;
+  return (
+    <div
+      data-testid={testId}
+      data-type={card.type}
+      data-kind={card.kind}
+      data-inline="1"
+      className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+    >
+      {card.title ? <div className="text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
+      {card.text ? <p>{card.text}</p> : null}
+      {url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="moment-link-site"
+          className="text-[10px] text-sky-300 hover:text-sky-100 no-underline"
+        >
+          ↗
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 export function IciMaintenant({
   moment,
   view: viewProp,
   onViewChange,
   story = null,
   journal = null,
+  simulation = null,
+  hereBody = null,
+  escale = null,
+  momentNow = null,
+  momentFree = null,
 }) {
   const { t, lang } = useLang();
   const [localView, setLocalView] = useState("now");
@@ -34,6 +68,12 @@ export function IciMaintenant({
   };
   const alerts = visibleAlerts(moment?.alerts, dismissed);
   const tint = regimeColor(moment?.leg?.regime);
+
+  useEffect(() => {
+    if (!escale?.stop) return;
+    if (typeof onViewChange === "function") onViewChange("now");
+    else setLocalView("now");
+  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange]);
 
   return (
     <div
@@ -72,6 +112,7 @@ export function IciMaintenant({
             >
               {formatLegLine(moment?.leg, t, lang)}
             </p>
+            {simulation}
           </Section>
 
           <Section testId="ici-section-alerts" label={t("iciSectionAlerts")}>
@@ -105,18 +146,20 @@ export function IciMaintenant({
                 );
               })}
             </div>
+            <CardAlias card={momentNow} testId="moment-now" />
           </Section>
 
           <Section testId="ici-section-here" label={t("iciSectionHere")}>
             <div className="flex flex-col gap-0.5">
-              {(moment?.here?.sentences || []).map((sentence) => (
+              {hereBody}
+              {!hereBody ? (moment?.here?.sentences || []).map((sentence) => (
                 <p
                   key={sentence}
                   className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                 >
                   {sentence}
                 </p>
-              ))}
+              )) : null}
               {(moment?.here?.links || []).length ? (
                 <div className="flex flex-wrap gap-1.5 mt-0.5">
                   {moment.here.links.map((link) => (
@@ -133,11 +176,22 @@ export function IciMaintenant({
                   ))}
                 </div>
               ) : null}
+              {escale?.stop ? (
+                <EscaleSheet
+                  stop={escale.stop}
+                  fiche={escale.fiche}
+                  loading={escale.loading}
+                  error={escale.error}
+                  onClose={escale.onClose}
+                  onFocus={escale.onFocus}
+                />
+              ) : null}
             </div>
           </Section>
 
           <Section testId="ici-section-around" label={t("iciSectionAround")}>
             <div className="flex flex-col gap-0.5">
+              <CardAlias card={momentFree} testId="moment-free" />
               {(moment?.around || []).map((item, i) => (
                 <details
                   key={`${item.kind || "around"}-${item.title || i}`}
