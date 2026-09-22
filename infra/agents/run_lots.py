@@ -927,22 +927,44 @@ def publish_tip(branch: str) -> bool:
     return True
 
 
+def webhook_settings() -> tuple[str | None, dict[str, str]]:
+    """(URL du webhook Grok Bot, en-têtes HTTP) — environnement ou fichier de clés.
+
+    BIM_BOT_WEBHOOK        URL du déclencheur « webhook » de la routine Grok Bot
+    BIM_BOT_WEBHOOK_TOKEN  clé donnée par Grok Bot avec l'URL (22 sept.) — jamais dans le dépôt ni dans un journal
+    BIM_BOT_WEBHOOK_HEADER nom de l'en-tête qui porte la clé (défaut Authorization → « Bearer <clé> »)"""
+    vals = _env_file_values()
+    get = lambda k: os.environ.get(k) or vals.get(k)  # noqa: E731
+    hook = get("BIM_BOT_WEBHOOK")
+    headers = {"Content-Type": "application/json", "User-Agent": "bim-run-lots"}
+    tok = get("BIM_BOT_WEBHOOK_TOKEN")
+    if tok:
+        name = (get("BIM_BOT_WEBHOOK_HEADER") or "Authorization").strip().rstrip(":")
+        if name.lower() == "authorization" and " " not in tok:
+            tok = f"Bearer {tok}"
+        headers[name] = tok
+    return (hook or None), headers
+
+
 def wake_bot(kind: str, pr: int, url: str) -> None:
     """Réveiller Grok Bot au bon moment (lot W1 bis) : si BIM_BOT_WEBHOOK est posé (environnement ou
     ~/.config/naviguide/simulator.env — l'URL du déclencheur « webhook » d'une routine Grok Bot), on
-    l'appelle juste après avoir posté le commentaire 🔗 / 🧭. Sans webhook, la routine Grok Bot peut
-    aussi se déclencher sur l'événement GitHub « commentaire de PR » — même effet, sans minuteur."""
-    hook = os.environ.get("BIM_BOT_WEBHOOK") or _env_file_values().get("BIM_BOT_WEBHOOK")
+    l'appelle juste après avoir posté le commentaire 🔗 / 🧭, avec la clé en en-tête si la routine en exige
+    une (webhook_settings). Sans webhook, la routine Grok Bot peut aussi se déclencher sur l'événement
+    GitHub « commentaire de PR » — même effet, sans minuteur."""
+    hook, headers = webhook_settings()
     if not hook:
         return
     body = json.dumps({"event": kind, "repo": owner_repo(DEFAULT_REPO), "pr": pr, "url": url,
                        "text": ("Pré-revue visuelle demandée" if kind == "prereview" else "Parcours de référence demandé") + f" sur la PR #{pr} : {url}"}).encode()
     try:
-        req = urllib.request.Request(hook, data=body, method="POST", headers={"Content-Type": "application/json", "User-Agent": "bim-run-lots"})
+        req = urllib.request.Request(hook, data=body, method="POST", headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             log(f"    Grok Bot réveillé par webhook ({kind}, HTTP {resp.status})")
+    except urllib.error.HTTPError as e:
+        log(f"    webhook Grok Bot refusé : HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) à vérifier" if e.code in (401, 403) else ""))
     except Exception as e:
-        log(f"    webhook Grok Bot injoignable : {e}")
+        log(f"    webhook Grok Bot injoignable : {type(e).__name__}")
 
 
 def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published: bool = False) -> None:

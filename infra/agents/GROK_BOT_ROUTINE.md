@@ -58,7 +58,12 @@ déclencheur se règle dans l'application de bureau Grok Bot, sur la routine) :
 - **Webhook** : si la routine expose une URL de webhook, la coller dans
   `~/.config/naviguide/simulator.env` : `BIM_BOT_WEBHOOK=https://…` —
   `run_lots.py` l'appelle (POST JSON `{event: prereview|parcours, pr, url}`) juste
-  après chaque commentaire 🔗 / 🧭.
+  après chaque commentaire 🔗 / 🧭. Si Grok Bot donne aussi une clé et un en-tête
+  (22 sept.) : `BIM_BOT_WEBHOOK_TOKEN=<clé>` et `BIM_BOT_WEBHOOK_HEADER=<nom de
+  l'en-tête>` (défaut `Authorization`, envoyé en `Bearer <clé>`). Écrire ces lignes
+  sans les faire transiter par un chat : coller la commande `printf 'BIM_BOT_WEBHOOK=%s\n'
+  "$(pbpaste)" >> ~/.config/naviguide/simulator.env` dans le Terminal sans Entrée, copier
+  la valeur, revenir, Entrée. Le fichier doit être en `chmod 600`.
 - **Minuteur** (repli) : toutes les 30 min la nuit.
 
 ```text
