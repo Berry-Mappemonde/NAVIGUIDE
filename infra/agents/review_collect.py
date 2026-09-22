@@ -43,6 +43,59 @@ HEADING_RE = re.compile(r"^\s{0,3}#{2,4}\s+(.+?)\s*$")
 CHECK_RE = re.compile(r"^\s*[-*]\s*\[( |x|X)\]\s*(.+?)\s*$")
 BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$")
 KO_RE = re.compile(r"^\s*(?:\*\*)?(KO|NON|NOK|BUG|❌|✗)\b", re.I)
+GLOBAL_RE = re.compile(r"^\s*(?:\*\*)?(GLOBAL|G[ÉE]N[ÉE]RAL|REVUE GLOBALE|VISION)\s*:", re.I)   # revue d'ensemble du porteur
+GLOBAL_MD = STATE_DIR / "REVUE_GLOBALE.md"
+GLOBAL_TEMPLATE = """# Revue globale — ce que je pense de l'application dans son ensemble
+
+Écris ici, librement (dicté ou tapé), ce qui dépasse les cases des PR : vision produit, ce qui manque,
+ce qui gêne, ce que tu veux voir disparaître, l'ordre des priorités. Une idée par paragraphe ou par
+tiret. Tu peux citer un écran (« Suivre : … », « Revoir : … ») et coller le chemin d'une capture.
+Le correcteur du matin (Claude Fable) lit ce fichier en entier, comme ta revue du 21 septembre :
+chaque point devient un lot correctif, un complément à un lot du programme, ou une décision notée.
+Le fichier est archivé (REVUE_GLOBALE-<date>.md) une fois lu, et vidé pour la fois suivante.
+
+---
+
+"""
+
+
+def global_comments(comments: list[dict]) -> list[dict]:
+    """Commentaires « GLOBAL : … » du porteur (revue d'ensemble), avec leurs images."""
+    out = []
+    for c in comments or []:
+        text = (c.get("body") or "").strip()
+        if not GLOBAL_RE.match(text):
+            continue
+        images = IMG_MD_RE.findall(text) + [u for u in IMG_URL_RE.findall(text) if u not in IMG_MD_RE.findall(text)]
+        out.append({"author": (c.get("user") or {}).get("login"), "at": c.get("created_at"), "url": c.get("html_url"),
+                    "text": re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text).strip(), "images": list(dict.fromkeys(images))})
+    return out
+
+
+def global_file_text() -> str:
+    """Le texte de REVUE_GLOBALE.md hors gabarit ; vide si rien d'écrit."""
+    if not GLOBAL_MD.exists():
+        return ""
+    body = GLOBAL_MD.read_text(encoding="utf-8")
+    if "---" in body:
+        body = body.split("---", 1)[1]
+    return body.strip()
+
+
+def ensure_global_template() -> None:
+    if not GLOBAL_MD.exists():
+        GLOBAL_MD.write_text(GLOBAL_TEMPLATE, encoding="utf-8")
+
+
+def archive_global_file(date: str) -> str | None:
+    """Après lecture par le correcteur : archiver et remettre le gabarit vide."""
+    text = global_file_text()
+    if not text:
+        return None
+    dest = STATE_DIR / f"REVUE_GLOBALE-{date}.md"
+    dest.write_text(GLOBAL_MD.read_text(encoding="utf-8"), encoding="utf-8")
+    GLOBAL_MD.write_text(GLOBAL_TEMPLATE, encoding="utf-8")
+    return str(dest)
 IMG_MD_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
 IMG_URL_RE = re.compile(r"(https?://(?:github\.com/user-attachments/assets/|user-images\.githubusercontent\.com/|private-user-images\.githubusercontent\.com/)[^\s)>\"']+)")
 CAPTURE_RE = re.compile(r"(docs/recette/[^\s`)\]]+\.(?:jpe?g|png))", re.I)
@@ -196,6 +249,7 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
     branch = (pr.get("head") or {}).get("ref") or ""
     items = recette_items(body)
     kos = [k for k in ko_comments(comments) if not BOT_MARK_RE.search(k["text"])]   # KO du porteur (les KO du bot sont dans bot)
+    globals_ = global_comments(comments)
     bot = bot_verdicts(comments)
     matched: set[str] = set()
     for it in items:   # qui a coché ? bot = coché ET listé [x] 🤖 par le bot ; porteur sinon
@@ -224,6 +278,7 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
                   + [{"text": x["text"], "note": x["note"]} for x in bot_extra if x["status"] == "ko"],
         "bot_extra": bot_extra,
         "ko": kos,
+        "global": globals_,
         "captures": captures,
         "local_images": [],
     }
@@ -234,6 +289,11 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
                 p = download(url, pr_dir / f"ko-{i}-{j}.jpg", tok)
                 if p:
                     entry["local_images"].append({"kind": "porteur", "ko": i, "path": str(p)})
+        for i, g in enumerate(globals_, 1):
+            for j, url in enumerate(g["images"], 1):
+                p = download(url, pr_dir / f"global-{i}-{j}.jpg", tok)
+                if p:
+                    entry["local_images"].append({"kind": "porteur-global", "global": i, "path": str(p)})
         for k, url in enumerate(captures, 1):
             name = Path(urllib.parse.urlparse(url).path).name
             p = download(url, pr_dir / f"agent-{k}-{name}", tok)
@@ -262,6 +322,14 @@ def summary_md(review: dict) -> str:
     tot_ko = sum(len(p["ko"]) for p in review["prs"])
     tot_bot_ko = sum(len(p.get("bot_ko") or []) for p in review["prs"])
     lines += [f"**{tot_ok} / {tot_items} items cochés** (dont {tot_bot} par le bot 🤖) · **{tot_ko} KO du porteur** · {tot_bot_ko} KO du bot, sur {len(review['prs'])} PR.", ""]
+    glob_comments = [g for p in review["prs"] for g in (p.get("global") or [])]
+    if review.get("global_file") or glob_comments:
+        lines += ["## Revue globale du porteur (vision d'ensemble — à traiter comme la revue du 21 sept.)", ""]
+        if review.get("global_file"):
+            lines += [review["global_file"], ""]
+        for g in glob_comments:
+            lines.append(f"- {g['text']}" + (f" — [commentaire]({g['url']})" if g.get("url") else ""))
+        lines.append("")
     for p in review["prs"]:
         tag = f"#{p['number']} {p['lot']}".strip()
         state = "mergée" if p["merged"] else p["state"]
@@ -296,7 +364,7 @@ def summary_md(review: dict) -> str:
 def collect(prs: list[tuple[str, int]], out_dir: Path, *, images: bool = True) -> dict:
     tok = token()
     date = time.strftime("%Y-%m-%d")
-    review = {"date": date, "repo": REPO, "prs": []}
+    review = {"date": date, "repo": REPO, "prs": [], "global_file": global_file_text()}
     for lot, num in prs:
         try:
             review["prs"].append(pr_review(num, tok, out_dir / f"review-{date}", images=images, lot=lot))
