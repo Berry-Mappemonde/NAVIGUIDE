@@ -80,6 +80,33 @@ def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
     assert "0" in out["answer"]
 
 
+def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
+    """Lot RB3 : une réponse-prompt du modèle (ou du cache) → phrase honnête, jamais le prompt."""
+
+    async def fake_cascade(system, user, client=None, **kw):
+        return (
+            "Input: A large JSON object\n- Task: What's for the boat\n"
+            "You are the logbook of the Berry-Mappemonde sailing expedition.",
+            "nemotron-super",
+        )
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 7.4}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "À quelle vitesse va le bateau ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert out["status"] == "ready"
+    assert out["source"] == "rules"
+    assert "Input:" not in out["answer"]
+    assert "Task:" not in out["answer"]
+    assert "JSON" not in out["answer"]
+    assert "logbook" not in out["answer"].lower()
+    assert "n’a pas cette information" in out["answer"] or "n'a pas cette information" in out["answer"]
+
+
 def test_answer_question_write_tier_for_pourquoi(monkeypatch):
     seen = {}
 

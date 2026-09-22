@@ -5,6 +5,9 @@ from pathlib import Path
 import httpx
 
 from story_cascade import (
+    CACHE_NS,
+    _PROMPT_LEAK_RE,
+    _cache_get,
     _clean_text,
     _openai_text,
     build_prompt,
@@ -16,6 +19,13 @@ from story_cascade import (
     slim_event,
     translate,
     write_story,
+)
+
+# Capture PR #252 / revue du 22 sept. : fiche Pointe-à-Pitre servie depuis le cache.
+CAPTURE_LEAK = (
+    "Input: A large JSON object containing marina lists.\n"
+    "- Task: Present a scale stop to a sailing crew arriving at Pointe-à-Pitre.\n"
+    "What's for the boat, what's for the crew, what to know for formalities."
 )
 
 
@@ -598,6 +608,55 @@ def test_clean_text_prompt_leak_is_empty():
     assert _clean_text(echoed) == ""
     assert _clean_text("Here's a thinking process: 1") == ""
     assert "Analyze User Input" not in _clean_text("**Analyze User Input:** Entity: REPHY")
+
+
+def test_prompt_leak_re_covers_22_sept_forms():
+    """Lot RB3 : les formes de la capture (et leurs traductions) vident le texte."""
+    forms = (
+        "Input: A large JSON object containing marina lists.",
+        "What's for the boat, what's for the crew.",
+        "- Task: Present a scale stop to a sailing crew.",
+        "Task: Present a scale stop at Pointe-à-Pitre.",
+        "Entrée : Un grand objet JSON déjà collecté.",
+        "Ce qu'il y a pour le bateau, ce qu'il y a pour l'équipage.",
+        "- Tâche : Présente une escale à Pointe-à-Pitre.",
+        "You are the logbook of the Berry-Mappemonde sailing expedition.",
+        "Tu es le journal de bord de l'expédition à la voile.",
+        CAPTURE_LEAK,
+    )
+    for form in forms:
+        assert _PROMPT_LEAK_RE.search(form), form
+        assert _clean_text(form) == "", form
+    healthy = "Pointe-à-Pitre has a marina at Bas-du-Fort and a harbour master's office."
+    assert not _PROMPT_LEAK_RE.search(healthy)
+    assert _clean_text(healthy) == healthy
+    # Un « task » sans deux-points (phrase réelle) n'est pas une fuite.
+    real = "The harbour master's task is to assign a berth."
+    assert _clean_text(real) == real
+
+
+def test_llm_cache_leaked_entry_is_invalidated(monkeypatch):
+    """Lot RB3 : une perle llm-cache fuitée est droppée, jamais re-servie."""
+    import pearl_store
+
+    monkeypatch.delenv("NAVIGUIDE_LLM_CACHE_TTL_S", raising=False)
+    key = "rb3-leak-capture"
+    pearl_store.kv_put(CACHE_NS, key, {"text": CAPTURE_LEAK, "source": "nemotron-super"})
+    assert pearl_store.kv_get(CACHE_NS, key) is not None
+    assert _cache_get(key) is None
+    assert pearl_store.kv_get(CACHE_NS, key) is None
+
+
+def test_llm_cache_healthy_entry_is_served_unchanged(monkeypatch):
+    import pearl_store
+
+    monkeypatch.delenv("NAVIGUIDE_LLM_CACHE_TTL_S", raising=False)
+    key = "rb3-healthy"
+    text = "Pointe-à-Pitre has a marina at Bas-du-Fort."
+    pearl_store.kv_put(CACHE_NS, key, {"text": text, "source": "nemotron-super"})
+    assert _cache_get(key) == (text, "cache")
+    stored = (pearl_store.kv_get(CACHE_NS, key) or {}).get("value") or {}
+    assert stored.get("text") == text
 
 
 def test_cascade_think_block_keeps_final_sentence(monkeypatch):

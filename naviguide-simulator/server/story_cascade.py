@@ -63,9 +63,28 @@ _PROMPT_LEAK_RE = re.compile(
     r"|Tu présentes une escale"
     r"|sailing crew arriving"
     r"|THREE plain sentences"
+    r"|TROIS phrases simples"
     r"|analyze user input"
     r"|here'?s a thinking process"
-    r"|thinking process:",
+    r"|thinking process:"
+    # Formes vues le 22 sept. (fiche Pointe-à-Pitre + journal) et traductions.
+    r"|Input:\s*A large JSON"
+    r"|large JSON object"
+    r"|Un grand objet JSON"
+    r"|Un gros objet JSON"
+    r"|What'?s for the boat"
+    r"|What is there for the boat"
+    r"|ce qu.il y a pour le bateau"
+    r"|Qu.y a-t-il pour le bateau"
+    r"|\bTask\s*:"
+    r"|T[âa]che\s*:"
+    r"|Present a scale stop"
+    r"|Present a stop/escales"
+    r"|Present a stop to"
+    r"|You are the logbook"
+    r"|Tu es le journal de bord"
+    r"|ONLY the JSON of facts"
+    r"|SEUL JSON de faits",
     re.IGNORECASE,
 )
 _PREAMBLE_LEAD_RES = (
@@ -76,6 +95,11 @@ _PREAMBLE_LEAD_RES = (
     ),
     re.compile(r"^\s*analyze\s+user\s+input:?\s*", re.IGNORECASE),
     re.compile(r"^\s*task\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*[-•*]\s*task\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*t[âa]che\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*[-•*]\s*t[âa]che\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*input\s*:\s*[^\n]*\n?", re.IGNORECASE),
+    re.compile(r"^\s*entr[ée]e\s*:\s*[^\n]*\n?", re.IGNORECASE),
     re.compile(r"^\s*constraints?\s*:\s*[^\n]*\n?", re.IGNORECASE),
     re.compile(r"^\s*request\s*:\s*[^\n]*\n?", re.IGNORECASE),
     re.compile(r"^\s*thinking\s+off:?\s*", re.IGNORECASE),
@@ -622,7 +646,10 @@ def _cache_get(key: str) -> tuple[str, str] | None:
         return None
     cleaned = _clean_text(text)
     if not cleaned:
+        pearl_store.kv_delete(CACHE_NS, key)
         return None
+    if cleaned != text:
+        pearl_store.kv_put(CACHE_NS, key, {"text": cleaned, "source": val.get("source") or "cache"})
     return cleaned, "cache"
 
 
