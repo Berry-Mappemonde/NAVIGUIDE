@@ -9,6 +9,7 @@ import pytest
 from climatology_zones import boat_speed_from_wind
 from forecast_blend import blended_wind
 from hindcast import (
+    ERA5_PRODUCTS,
     ERA5_STRONG_WIND_FACTOR,
     MS_TO_KN,
     apply_era5_correction,
@@ -16,10 +17,14 @@ from hindcast import (
     bind_cmems,
     bind_http,
     block_network,
+    fill_era5_along,
+    past_passage_slots,
     reset_hooks,
     series,
+    uncovered_era5_slots,
     uv_to_current_to,
 )
+from pearl_store import kv_count
 from voyage_clock import build_voyage_clock, parse_iso, sample_clock_at_time, sog_along_route, to_iso
 
 T0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
@@ -264,3 +269,110 @@ def test_wx_from_hindcast_uses_duration_and_max():
     assert wx["basis"] == "hindcast"
     assert wx["maxWindKnots"] == 41.0
     assert wx["hours"] >= 6.0
+
+
+# ── Lot RA8 — ERA5 le long de la route, sans Copernicus ───────────────────────
+
+RA8_POLAR = {
+    "twa_rows": [40, 60, 90, 120, 150, 180],
+    "tws_cols": [8, 12, 16, 20, 24],
+    "matrix": [
+        [5.0, 6.5, 7.5, 8.0, 8.2],
+        [6.0, 7.5, 8.5, 9.0, 9.2],
+        [7.0, 8.5, 9.5, 10.0, 10.4],
+        [6.5, 8.0, 9.0, 10.0, 10.2],
+        [5.5, 7.0, 8.0, 9.0, 9.2],
+        [4.5, 6.0, 7.0, 8.0, 8.2],
+    ],
+}
+
+# Point hors des fixtures C2 pour ne pas réutiliser un blend Copernicus.
+RA8_LAT, RA8_LON = 12.345, -23.456
+
+
+def test_cmems_skipped_without_credentials(monkeypatch):
+    monkeypatch.delenv("COPERNICUS_USERNAME", raising=False)
+    monkeypatch.delenv("COPERNICUS_PASSWORD", raising=False)
+    bind_om(era5_kn=14.0, forecast_kn=14.0)
+    packed = series(RA8_LAT, RA8_LON, DAY0)
+    assert "om-era5" in packed["products"]
+    assert "cmems-wind" not in packed["products"]
+    assert "cmems-wave" not in packed["products"]
+    assert "cmems-phy" not in packed["products"]
+    hour = next(h for h in packed["hours"] if h["t"].startswith(f"{DAY0}T08"))
+    assert hour["regime"] == "hindcast"
+    assert hour["speedKnots"] == 14.0
+    assert "om-era5" in hour["sources"]
+
+
+def test_era5_fill_raises_store_without_copernicus(monkeypatch):
+    monkeypatch.delenv("COPERNICUS_USERNAME", raising=False)
+    monkeypatch.delenv("COPERNICUS_PASSWORD", raising=False)
+    bind_om(era5_kn=22.0)
+    before = kv_count("hindcast")
+    n = fill_era5_along([(RA8_LAT, RA8_LON, DAY0)])
+    assert n >= 1
+    assert kv_count("hindcast") > before
+    hour = at(RA8_LAT, RA8_LON, T0, products=ERA5_PRODUCTS)
+    assert hour["speedKnots"] == 22.0
+    assert hour["regime"] == "hindcast"
+    assert hour["sources"] == ["om-era5"]
+
+
+def test_past_vertex_speed_from_era5_not_climatology(monkeypatch):
+    """Sommet daté dans le passé : régime hindcast, vitesse = ERA5 × polaire."""
+    monkeypatch.delenv("COPERNICUS_USERNAME", raising=False)
+    monkeypatch.delenv("COPERNICUS_PASSWORD", raising=False)
+    era5_kn = 24.0
+    bind_om(era5_kn=era5_kn, forecast_kn=era5_kn)
+    t0 = T0
+    now = t0 + timedelta(hours=36)
+    points = [
+        {"lat": RA8_LAT, "lon": RA8_LON, "cumNm": 0, "filmCum": 0, "jump": False},
+        {"lat": RA8_LAT, "lon": RA8_LON - 1.0, "cumNm": 30, "filmCum": 30, "jump": False},
+    ]
+    climo = build_voyage_clock(points, [], t0, polar_raw=RA8_POLAR, start_at="saint-maur")
+    climo_sea = next(v for v in climo["vertices"] if (v.get("speedKnots") or 0) > 0)
+
+    n = fill_era5_along([(RA8_LAT, RA8_LON, DAY0), (RA8_LAT, RA8_LON - 1.0, DAY0)])
+    assert n >= 1
+
+    def wind_fn(lat, lon, t):
+        return blended_wind(
+            lat, lon, t, t0, None,
+            atlas_network=False, now=now,
+            hindcast_fn=lambda la, lo, tt: at(la, lo, tt, products=ERA5_PRODUCTS),
+        )
+
+    clock = build_voyage_clock(
+        points, [], t0, polar_raw=RA8_POLAR, start_at="saint-maur", wind_fn=wind_fn,
+    )
+    past = next(
+        v for v in clock["vertices"]
+        if parse_iso(v["iso"]) < now and (v.get("speedKnots") or 0) > 0
+    )
+    assert past["regime"] == "hindcast"
+    assert past["sources"] == ["om-era5"]
+    assert past["windKnots"] == era5_kn
+    assert past["speedKnots"] != climo_sea["speedKnots"]
+    from voyage_clock import polar_boat_speed, polar_efficiency
+    stw = polar_boat_speed(RA8_POLAR, past["twa"], era5_kn) * polar_efficiency()
+    assert abs(past["speedKnots"] - stw) < 0.3
+
+
+def test_uncovered_slots_after_date_shift():
+    lat, lon = 1.111, -2.222
+    now = T0 + timedelta(days=3)
+    clock = {
+        "vertices": [
+            {"lat": lat, "lon": lon, "iso": "2026-05-15T12:00:00Z", "vehicle": "main"},
+            {"lat": lat, "lon": lon, "iso": "2026-05-20T12:00:00Z", "vehicle": "main"},
+            {"lat": lat, "lon": lon, "iso": "2026-05-16T08:00:00Z", "vehicle": "plane"},
+        ],
+    }
+    slots = past_passage_slots(clock, now)
+    assert (lat, lon, DAY0) in slots
+    assert (lat, lon, "2026-05-20") not in slots
+    assert all(s[2] != "2026-05-16" for s in slots)
+    missing = uncovered_era5_slots(clock, now)
+    assert (lat, lon, DAY0) in missing
