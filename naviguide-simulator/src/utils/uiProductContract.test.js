@@ -98,6 +98,21 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(sidebar, /t\("briefing"\)/);
   });
 
+  it("lot R8c : un seul encadré, aucune carte flottante hors film", () => {
+    const sidebar = read("../components/Sidebar.jsx");
+    const app = read("../App.jsx");
+    const ici = read("../components/IciMaintenant.jsx");
+    assert.match(sidebar, /<IciMaintenant/);
+    assert.match(sidebar, /<LogbookChat/);
+    assert.doesNotMatch(sidebar, /<MomentNowCard /);
+    assert.doesNotMatch(sidebar, /<FreeMomentBlock /);
+    assert.doesNotMatch(app, /<MomentNowCard/);
+    assert.doesNotMatch(app, /<FreeMomentBlock/);
+    assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
+    assert.match(ici, /<EscaleSheet/);
+    assert.doesNotMatch(ici, /ListenButton/);
+  });
+
   it("lot C3 : barre film et contexte du chat lisent la même source", () => {
     const app = read("../App.jsx");
     const bar = read("../components/SimulationFilmBar.jsx");

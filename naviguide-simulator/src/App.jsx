@@ -21,11 +21,11 @@ import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
+import { useMoment } from "./hooks/useMoment.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
 import { useReplay } from "./hooks/useReplay.js";
 import { useReplayVoice } from "./hooks/useReplayVoice.js";
-import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
 import { layerForEntity } from "./engine/briefingLinks.js";
@@ -530,6 +530,18 @@ export default function App() {
     : (sample && Number.isFinite(sample.lat)
       ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
       : null);
+  const drawTip = drawingMode && drawnPoints.length ? drawnPoints[drawnPoints.length - 1] : null;
+  const momentLat = Number(drawTip?.lat ?? chatBoatPos?.lat);
+  const momentLon = Number(drawTip?.lon ?? chatBoatPos?.lon);
+  const momentIso = drawTip ? null : (chatBoatPos?.iso || clockSample?.iso || null);
+  const iciMoment = useMoment({
+    lat: Number.isFinite(momentLat) ? Math.round(momentLat * 1000) / 1000 : null,
+    lon: Number.isFinite(momentLon) ? Math.round(momentLon * 1000) / 1000 : null,
+    t: momentIso ? String(momentIso).slice(0, 16) : undefined,
+    mode: drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation"),
+    lang,
+    enabled: sceneReady,
+  });
   const displayKnots = isSuivre
     ? (atQuay ? 0 : (Number.isFinite(Number(clockSample?.speedKnots)) ? Number(clockSample.speedKnots) : null))
     : expeditionSpeed.knots;
@@ -818,9 +830,14 @@ export default function App() {
     if (replay.active) closeEscaleSheet();
   }, [replay.active, closeEscaleSheet]);
 
+  useEffect(() => {
+    if (escaleStop && !replay.active) setSidebarOpen(true);
+  }, [escaleStop, replay.active]);
+
   const recaptureRef = useRef(null);
   const openEscaleFromUi = useCallback((next) => {
     if (replay.active) return;
+    setSidebarOpen(true);
     openEscaleSheet(next);
   }, [replay.active, openEscaleSheet]);
 
@@ -1537,6 +1554,12 @@ export default function App() {
         onMomentNext={moments.next}
         chat={chat}
         onChatAsk={chat.ask}
+        moment={iciMoment.moment}
+        escaleStop={replay.active ? null : escaleStop}
+        escaleFiche={escaleSheet?.fiche}
+        escaleLoading={Boolean(escaleSheet?.loading)}
+        escaleError={escaleSheet?.error}
+        onEscaleClose={closeEscaleSheet}
       />
 
       <ToolsSidebar
@@ -1739,24 +1762,6 @@ export default function App() {
         onAccept={async () => { await vessel.accept(); }}
         onReject={() => vessel.reject()}
       />
-
-      {/* Sidebar rangée (Cinéma) : les cartes se posent sur la carte ; ouverte, elles vivent dans le produit « ici ». */}
-      {!drawingMode && sceneReady && !sidebarOpen ? (
-        <>
-          <MomentNowCard
-            card={replay.active ? replay.card : moments.now}
-            left={replay.active ? 0 : moments.nowLeft}
-            onDismiss={replay.active ? replay.dismissCard : moments.dismiss}
-            onFocus={handleBriefingFocus}
-          />
-          <FreeMomentBlock
-            card={moments.free}
-            left={moments.freeLeft}
-            onNext={moments.next}
-            onFocus={handleBriefingFocus}
-          />
-        </>
-      ) : null}
 
       <EscalePopupHost
         stop={replay.active ? null : escaleStop}
