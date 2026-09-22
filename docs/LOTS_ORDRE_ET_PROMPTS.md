@@ -82,7 +82,25 @@ testent avec de faux serveurs).
 | 49 | RA6 | corrections 2 | S | — | redite skipper retirée, crédits au-dessus de la barre, km à terre, cadre de réponse du chat |
 | 50 | RA7 | corrections 2 | S | — | « arriver entre le … et le … » sous la prochaine escale, intervalle resserré |
 | 51 | RA8 | corrections 2 | M | — | vitesse réelle par la météo historique (archive Open-Meteo/ERA5, sans clé) le long de la route — après le film |
-| **nuit 3** | | **chantiers** | | | `PLAN_ICI_JOURNAL_EXPERT.md` — R8 produit unique, R9 journal → récit 2:30, R10 expert en circumnavigation (sous-lots) |
+| **nuit 3** | | **chantiers** | | | `PLAN_ICI_JOURNAL_EXPERT.md` — pré-rédigés (21 sept. soir) pour que le correcteur puisse y fondre des corrections |
+| 52 | R8a | ici / journal | S/M | RA5 | `build_moment` + `signature` (serveur, fixture) — aucun changement visible |
+| 53 | R8b | ici / journal | M | R8a | `GET /ici/moment` + encadré unique **sans titre** (Maintenant · Récit · Journal), toute la hauteur |
+| 54 | R8c | ici / journal | M | R8b | branchement ; plus aucune pop-up sur la carte (à bord maintenant, fiches science, fiche d'escale) |
+| 55 | R9a | ici / journal | M | R8a | table `moments`, remplissage le long des perles, `GET /voyage/official/moments` |
+| 56 | R9b | ici / journal | S/M | R8c, R9a | vue Journal chronologique ; clic = curseur à la date |
+| 57 | R9c | ici / journal | M | R9a | le film raconte le journal : sélection sous budget, préchauffé, chapitre par chapitre, ordre exact |
+| 58 | R10a | expert | M | R8a | `evaluate_plan` : alertes pondérées par jambe, cyclone **daté** |
+| 59 | R10b | expert | M | R10a | `advise` : décalages de date en cascade, score, phrase gabarit, `GET /voyage/official/advice` |
+| 60 | R10c | expert | M | R10b | écart local borné (+20 %, corridor ± 300 nm) — plus jamais 4 643 nm |
+| 61 | R10d | expert | M | R10c, R8c | Revue du plan conseillée, deux colonnes, **Appliquer** ; « Demander conseil » |
+| **NAVIGUIDE** | | **ancien code utile** | | | `PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md` — décisions du 21 sept. |
+| 62 | N1 | naviguide | M | — | Importer GeoJSON / KML dans « Tracer ma route » |
+| 63 | N2 | naviguide | S | — | Exporter GeoJSON / KML (route de la vue), panneau droit |
+| 64 | N3 | naviguide | M | — | score anti-trafic par jambe (searoute), pastilles ; trait inchangé |
+| 65 | N4 | naviguide | S | — | zones de piraterie → cartes NOW et alertes |
+| **hygiène** | | **avant la soumission** | | | |
+| 66 | D0 | docs | S | — | README FR/EN, manuel utilisateur, `docs/README.md` index, rangement (`ETAT_DES_LIEUX_DOCS.md` § 3) |
+| 67 | H1 | dépôts | M | D0 | préparer la séparation des dépôts : script + procédure (public = simulateur seul) ; l'exécution est au porteur (26–27 sept.) |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
 § 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
@@ -799,6 +817,250 @@ Tests : test_hindcast/test_voyage_clock — un sommet daté dans le passé a reg
 Recette (visuelle) : Suivre — le tronçon déjà parcouru est teinté hindcast (plus tout violet climatologie) ; le survol d'un point passé montre une vitesse issue du vent réel de l'époque, sans clé Copernicus. Capture docs/recette/lot-ra8/01-hindcast.jpg (URL complète sur ta branche).
 Branche feat/lot-ra8-vitesse-historique depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
 Interdits : appel réseau dans les tests ; bloquer le démarrage ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+### Nuit 3 — « Ici et maintenant », journal des moments, expert en circumnavigation (R8a → R10d)
+
+Pré-rédigés le 21 sept. au soir d'après `docs/PLAN_ICI_JOURNAL_EXPERT.md` (contrats de
+données § 1.1, § 2.1, § 3.1 ; sous-lots § 1.2, § 2.3, § 3.4). Choix par défaut
+des deux points restés ouverts : poids du score de l'expert **fixes** (constantes
+dans `plan_advisor.py`, montrées en info-bulle) ; journal des simulations **local
+au navigateur**. Le correcteur du matin peut y **fondre** des corrections
+(« Constat de la revue du <date> : … »).
+
+<!-- LOT id="R8a" title="Le modèle build_moment (serveur, sans UI)" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 0, § 1.1 (contrat Moment) et le sous-lot « R8a » (§ 1.2). Tu travailles dans naviguide-simulator/.
+
+Lot R8a — Le modèle build_moment.
+Objectif : une seule fonction serveur produit l'encadré « ici et maintenant » : build_moment(perle, clock_point, leg, skipper_thresholds) → Moment (contrat § 1.1) et signature(moment) (champs stables seulement). Aucun changement visible.
+Fichiers à ouvrir (seulement) : server/moment.py (créer), server/tests/test_moment.py (créer), server/tests/fixtures/official_mini.json (créer : 3 escales, 40 points, 12 perles, horloge), server/ici_warm.py PAR EXTRAIT (rg -n "bag\[" : forme d'une perle), server/voyage_clock.py PAR EXTRAIT (t par point, régime), server/plan_review.py PAR EXTRAIT (saison, AMP).
+Étapes : 1) build_moment : leg (from/to/day/kn/basis/remainingNm/doneNm/headingDeg/eta/regime), alerts (wind, sea, cyclone, entry, mpa, night — chacune avec fact non vide), here (zee, entry, mpa, seamarks, seabed, weather, sentences, links), around (satellite, climatology, science, marina), sources ; 2) signature : sha1 des champs stables (alerts.id, here.zee.mrgid, here.entry, around[].title, leg.to, leg.regime) — un mille de plus ne la change pas, une nouvelle ZEE oui ; 3) aucun chiffre inventé : tout vient de la perle et de l'horloge ; 4) fixture réduite du voyage officiel, réutilisable par R8b, R9a, R10a.
+Tests : test_moment.py — mêmes entrées → même signature ; +1 nm → même signature ; nouvelle ZEE → autre signature ; toute alerte a un fact ; le Moment est sérialisable JSON. .venv/bin/python -m pytest -q.
+Recette (visuelle) : aucun changement visible — les trois parcours (Suivre Nouméa, Simulation La Rochelle → Ajaccio, Tracer Brisbane → SF) marchent comme avant.
+Branche feat/lot-r8a-moment depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : UI ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
+```
+
+<!-- LOT id="R8b" title="GET /ici/moment et l'encadré unique sans titre" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 1.0 (ce que le porteur verra), § 1.1 et le sous-lot « R8b ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
+
+Lot R8b — L'endpoint et l'encadré.
+Objectif : GET /ici/moment?lat&lon&t&mode renvoie un Moment (perle la plus proche ou sac calculé comme /ici, puis build_moment) ; un composant IciMaintenant rend un Moment dans UN encadré SANS TITRE (aucun bandeau « Ici et maintenant »), sélecteur discret Maintenant · Récit · Journal, sections Étape / Alertes (pastilles fermables une à une) / Ici / Autour du bateau / Sources, hauteur = tout le reste du panneau (flex-1 min-h-0 overflow-auto), mode clair inclus. Pas encore branché dans le panneau (R8c).
+Fichiers à ouvrir (seulement) : server/main.py PAR EXTRAIT (rg -n "@app.get\(\"/ici" : ajouter la route), server/tests/test_main_moment.py (créer), src/hooks/useMoment.js (créer : fetch + état, repli fixture si l'API ne répond pas), src/components/IciMaintenant.jsx (créer), src/components/IciMaintenant.test.js (créer), src/index.css (variables de hauteur, .light-mode), src/i18n/fr.js, en.js.
+Étapes : 1) route serveur + test ; 2) composant : aucun texte d'aide, aucun titre, une pastille d'alerte fermée n'en ouvre pas une autre, liens de sources conservés ; 3) sélecteur discret (3 petits onglets texte), Récit et Journal reçoivent pour l'instant un emplacement vide (R8c/R9b les remplissent) ; 4) fr/en pour chaque libellé nouveau.
+Tests : test_main_moment.py — la route répond un Moment avec signature ; IciMaintenant.test.js — rendu des 5 sections, fermeture d'une pastille n'affecte pas les autres, aucun élément de titre. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : aucun changement visible dans l'app tant que R8c n'est pas là ; la PR joint une capture du composant rendu seul (page de test ou story) : un cadre sans titre, cinq sections, trois petits onglets.
+Branche feat/lot-r8b-encadre depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : titre ou bandeau sur l'encadré ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R8c" title="Branchement : un seul encadré, plus aucune pop-up sur la carte" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8b" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 1.0 et le sous-lot « R8c ». Tu travailles dans naviguide-simulator/. R8b est dans ta base.
+
+Lot R8c — Le branchement et le retrait des anciens blocs ET des pop-up de carte.
+Objectif : le panneau gauche = carte Berry → chat (inchangé) → IciMaintenant (tout le reste) ; les vues Récit et Journal reçoivent les composants existants (récit de la traversée, journal) ; les blocs séparés (MomentCards inline, FREE, sac ici, récit, journal, fiche d'escale) disparaissent du panneau ; sur la carte, PLUS AUCUNE pop-up flottante : la carte « À bord, maintenant · décision » en haut, les fiches « Pendant ce temps autour du bateau » en bas à droite (et leur bouton Écouter), la popup d'escale — leur contenu vit dans l'encadré. Simulation et Tracer passent par le même endpoint (position du curseur / route dessinée). Aucune surface de main inaccessible, rien de dupliqué carte + encadré.
+Fichiers à ouvrir (seulement) : src/components/Sidebar.jsx, src/components/Sidebar.layout.test.js, src/map/MapSceneController.js PAR EXTRAIT (rg -n "momentCard|nowCard|freeCard|escale|popup|EventBubble" : retirer les cartes flottantes hors film ; la bulle du FILM (R6/RA3) reste), src/App.jsx PAR EXTRAIT (rg -n "iciBriefing|freeCards|momentCards|storyText|journal|escaleStop|onEscaleSheet|useMoment"), src/components/IciMaintenant.jsx (vues Récit / Journal), tests de contrat existants (uiProductContract.test.js si présent).
+Étapes : 1) un seul objet moment (useMoment) passé au panneau ; 2) Sidebar : remplacer, conserver les data-testid existants par alias ; 3) MapSceneController / App : retirer les cartes flottantes hors film et leurs boutons Écouter ; la fiche d'escale s'ouvre DANS l'encadré (vue Maintenant → section Ici) au clic sur un drapeau ; 4) Simulation / Tracer : même encadré à la position courante ; 5) mode clair.
+Tests : Sidebar.layout.test.js — ordre carte Berry → chat → IciMaintenant, aucun ancien bloc ; test de contrat — aucune pop-up hors film n'est rendue ; les tests de contrat existants passent sans être affaiblis (alias). npm test, npx vite build, npm run e2e (fumée).
+Recette (visuelle) : Suivre, Simulation, Tracer — un seul encadré sans titre sous le chat, rempli à la position courante ; plus aucune carte flottante sur la carte (ni « à bord maintenant », ni fiche science, ni fiche d'escale) ; cliquer un drapeau ouvre l'escale DANS l'encadré ; thème clair identique. Captures docs/recette/lot-r8c/01-suivre.jpg, 02-simulation.jpg (URL complète sur ta branche).
+Branche feat/lot-r8c-branchement depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : retirer une information (elle change de place) ; laisser une pop-up hors film ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R9a" title="Table moments, remplissage le long des perles, endpoint" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 2.0, § 2.1 (ligne de journal) et le sous-lot « R9a ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
+
+Lot R9a — Le journal des moments (serveur).
+Objectif : pour le voyage officiel, une table dérivée `moments` : on parcourt les perles dans l'ordre de la route, build_moment → signature, une ligne par changement de signature avec `changes` = diff_moments(prev, cur) (kind, score 1–3, title, fact) ; remplie en tâche de fond après le réchauffage des perles, rafraîchie chaque jour ; GET /voyage/official/moments?until= la lit. Aucun changement visible.
+Fichiers à ouvrir (seulement) : server/moment_journal.py (créer : diff_moments, warm_moments(voyage_id), read_moments), server/pearl_store.py PAR EXTRAIT (table `moments` dans _SCHEMA), server/voyage_api.py PAR EXTRAIT (rg -n "_kick_official_hindcast|warm_official_route" : lancement en tâche de fond ; nouvelle route GET), server/tests/test_moment_journal.py (créer), fixture R8a.
+Étapes : 1) diff_moments avec les scores § 2.1 (escale 3, alerte qui s'allume 3, ZEE 2, station 2, régime 1, AMP 1, alerte qui s'éteint 1) ; 2) warm_moments idempotent (rejouer ne duplique pas ; une signature qui change met la ligne à jour) ; 3) /ici/warm/status expose `moments: n` ; 4) jamais bloquant au démarrage.
+Tests : test_moment_journal.py — sur la fixture, N perles → M moments avec M < N, seq croissant, changes non vides sauf la première ligne ; rejouer → même M ; read_moments(until) coupe bien. .venv/bin/python -m pytest -q.
+Recette (visuelle) : aucun changement visible ; la PR cite `/ici/warm/status` → `moments: n` sur le poste local.
+Branche feat/lot-r9a-journal depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : UI ; chiffre LLM ; bloquer le démarrage ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
+```
+
+<!-- LOT id="R9b" title="La vue Journal, et l'encadré lit le journal" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="S" deps="R8c,R9a" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 2.0 et le sous-lot « R9b ». Tu travailles dans naviguide-simulator/. R8c et R9a sont dans ta base.
+
+Lot R9b — La vue Journal.
+Objectif : dans l'encadré, la vue Journal liste chronologiquement « date · position · ce qui a changé » (voyage officiel : serveur ; simulation / route dessinée : journal local au navigateur, localStorage, ≤ 2 000 entrées, construit depuis les Moments reçus) ; cliquer une entrée place le curseur / le film à cette date ; en Suivre, la vue Maintenant lit le moment du journal ≤ maintenant (cohérence exacte).
+Fichiers à ouvrir (seulement) : src/hooks/useMomentJournal.js (créer), src/components/IciMaintenant.jsx (vue Journal), src/components/IciMaintenant.test.js, src/App.jsx PAR EXTRAIT (rg -n "useMoment|setPlayhead|seekTo|onSeek" : placer le curseur), src/i18n/fr.js, en.js.
+Étapes : 1) hook : officiel → GET /voyage/official/moments ; autres → localStorage clé = identifiant de route ; 2) vue Journal : liste défilante, une ligne par entrée, pas de texte d'aide ; 3) clic → curseur à la date ; 4) Maintenant = dernier moment ≤ t.
+Tests : IciMaintenant.test.js — N entrées rendues dans l'ordre ; clic appelle onSeek(t) ; useMomentJournal.test.js — repli localStorage, plafond 2 000. npm test, npx vite build.
+Recette (visuelle) : Suivre → vue Journal : les entrées défilent du 15 mai à aujourd'hui ; cliquer une entrée place le film / le curseur à cette date. Simulation → le journal se remplit au fil du curseur. Capture docs/recette/lot-r9b/01-journal.jpg (URL complète sur ta branche).
+Branche feat/lot-r9b-vue-journal depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R9c" title="Le film raconte le journal : sélection sous budget, préchauffé, chapitre par chapitre" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R9a" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 2.2 (règles de récit, préchauffage, découpe) et le sous-lot « R9c ». Tu travailles dans naviguide-simulator/. R9a est dans ta base.
+
+Lot R9c — Le film raconte le journal.
+Objectif : le script du film (GET /voyage/official/film) est construit depuis le journal des moments : chapitres = jambes, dans l'ORDRE EXACT de la route sans répétition (cohérent avec RA2) ; budget 2 400 caractères (150 s) réparti au prorata des jours de mer (plancher 120) ; sélection ≤ 3 changements par chapitre selon les règles de récit § 2.2 (escale, alerte la plus forte, fait de couleur ; regroupements) ; brut par gabarits (connecteurs variés) ; rédigé par Nemotron CHAPITRE PAR CHAPITRE (chaque prompt porte le résumé du chapitre suivant), sous filter_numbers, PRÉCHAUFFÉ en tâche de fond et servi depuis le cache (kv ns film-story) — jamais généré au clic ; events de chaque chapitre = les changements retenus (bulles).
+Fichiers à ouvrir (seulement) : server/film_script.py PAR EXTRAIT (rg -n "def build_script|chapters|events|written"), server/story_cascade.py PAR EXTRAIT (réécriture sous filter_numbers), server/pearl_store.py PAR EXTRAIT (kv), server/voyage_api.py PAR EXTRAIT (préchauffage après warm_moments ; /film lit le cache), server/tests/test_film_script.py, fixture R8a. src/hooks/useReplay.js : RIEN (format du script inchangé).
+Étapes : 1) sélection sous budget ; 2) brut ; 3) rédigé par chapitre + cache + préchauffage ; 4) events ; 5) ordre strict, aucune escale deux fois, chaque « départ vers X » suivi de « arrivée à X ».
+Tests : test_film_script.py — longueur du brut dans [budget −10 % ; +10 %] ; chaque chapitre ≥ 1 phrase et ≤ 3 changements ; arrivée de chaque escale présente ; ordre = ordre de la route ; aucun nombre du rédigé absent des faits ; deux chapitres consécutifs ne commencent pas par le même connecteur ; /film sert le cache sans appel LLM (client factice compte 0 appel). .venv/bin/python -m pytest -q, npm test, npx vite build.
+Recette (visuelle) : Suivre → Revoir l'expédition : le film raconte, dans l'ordre du voyage, ce qui a changé le long de la route (escales, ZEE, alertes, stations) ; il dure 2 min 30 ; au clic le texte rédigé est déjà prêt (aucune attente) ; les bulles montrent les mêmes événements que le texte. Capture docs/recette/lot-r9c/01-film.jpg (URL complète sur ta branche).
+Branche feat/lot-r9c-film-journal depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : générer au clic ; un prompt de 2 400 caractères d'un coup ; chiffre LLM hors faits ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R10a" title="L'évaluateur evaluate_plan : alertes pondérées par jambe, cyclone daté" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R8a" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.0–3.2 (dont « l'alerte cyclone est datée ») et le sous-lot « R10a ». Tu travailles dans naviguide-simulator/. R8a est dans ta base.
+
+Lot R10a — L'évaluateur de plan.
+Objectif : evaluate_plan(plan) → {legs:[{alerts:[{kind, severity, when, where, fact, weight}], score, frozen}], total} (contrat § 3.1) : échantillon tous les 60 nm, daté avec la vitesse planifiée, interrogeant climatologie du mois (vent P90, Hs P90, saison cyclonique), prévision < 10 j, hindcast figé pour le passé, seuils du skipper, ZEE / ports d'entrée, AMP, piraterie (N4 si présent), couloirs (N3 si présent). L'alerte cyclone ne compte QUE si l'échantillon passe dans une fenêtre de ± 15 jours de la date historique du cyclone (sinon le mois de saison) — jamais au simple croisement géométrique. < 2 s par plan, cache par (hash du trait, dates au jour, seuils). Aucun changement visible.
+Fichiers à ouvrir (seulement) : server/plan_alerts.py (créer), server/tests/test_plan_alerts.py (créer), server/tests/fixtures/climatology_mini.json (créer : 12 mois × 6 cases, avec dates historiques de cyclones), server/plan_review.py PAR EXTRAIT (lecture de l'atlas, jours à quai), server/voyage_clock.py PAR EXTRAIT (dater les échantillons), fixture R8a.
+Étapes : 1) échantillonnage + datation ; 2) règles d'alerte avec weight 1–3 et fact ; 3) cyclone daté ; 4) frozen pour les jambes passées ; 5) cache.
+Tests : test_plan_alerts.py — voyage officiel (fixture) évalué < 2 s ; décaler Nouméa de +30 jours change le total ; les jambes passées ne changent jamais ; chaque alerte a un fact et un when ; croiser une trace de cyclone HORS saison ne produit pas d'alerte, la croiser à la date historique en produit une. .venv/bin/python -m pytest -q.
+Recette (visuelle) : aucun changement visible.
+Branche feat/lot-r10a-evaluateur depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : UI ; chiffre LLM ; appel réseau dans les tests ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
+```
+
+<!-- LOT id="R10b" title="Le compromis par décalage de date : advise" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10a" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.1–3.2 et le sous-lot « R10b ». Tu travailles dans naviguide-simulator/. R10a est dans ta base.
+
+Lot R10b — Le compromis par décalage de date.
+Objectif : advise(plan, leg_idx) : candidats d ∈ {−21, −14, −7, 0, +7, +14, +21} jours sur le départ de la jambe, propagés à toutes les escales suivantes (jours à quai conservés) ; score = Σ weight des alertes + 0,3 × |d| + 0,02 × extraNm (constantes FIXES dans plan_advisor.py, exposées dans la réponse pour l'info-bulle) ; meilleur + 3 alternatives ; phrase gabarit depuis les facts ; GET /voyage/official/advice?leg= avec état pending|done (calcul en tâche de fond), réécriture LLM de la phrase via ADVICE_SYSTEM sous filter_numbers (repli gabarit). Aucun changement visible.
+Fichiers à ouvrir (seulement) : server/plan_advisor.py (créer), server/tests/test_plan_advisor.py (créer), server/voyage_api.py PAR EXTRAIT (rg -n "ADVICE_SYSTEM|advice_facts|advice_fallback" : nouvelle route), fixture R8a + climatology_mini.
+Étapes : 1) candidats et cascade ; 2) score et classement ; 3) phrase gabarit (nomme la jambe, le décalage, les alertes avant/après, la cascade) ; 4) route avec état ; 5) déterminisme.
+Tests : test_plan_advisor.py — le score du meilleur ≤ celui du plan actuel ; la cascade décale toutes les escales suivantes du même nombre de jours ; jours à quai conservés ; deux appels → même réponse ; aucun nombre de la phrase absent des facts. .venv/bin/python -m pytest -q.
+Recette (visuelle) : aucun changement visible ; la PR montre la réponse JSON de /voyage/official/advice?leg=3 sur le poste local.
+Branche feat/lot-r10b-compromis-dates depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : UI ; chiffre LLM hors facts ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
+```
+
+<!-- LOT id="R10c" title="L'écart local borné : corridor et cap de distance" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10b" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.2 et le sous-lot « R10c ». Tu travailles dans naviguide-simulator/. R10b est dans ta base.
+
+Lot R10c — L'écart local borné.
+Objectif : aux candidats de date s'ajoutent des corridors {référence, nord, sud} (trait décalé de 150 nm puis relissé par grands cercles), distance ≤ +20 % ; l'isochrone ne sert plus qu'À L'INTÉRIEUR du corridor retenu (corridor ± 300 nm, cap +20 %, seuils du skipper), jamais d'écart libre — le cas « La Rochelle → Ajaccio, vent max 30 kn » rend ≤ 1 650 nm, plus jamais 4 643.
+Fichiers à ouvrir (seulement) : server/plan_advisor.py (corridors, cap), server/isochrone.py PAR EXTRAIT (rg -n "def route|max_wind|constraints" : corridor et cap de distance en contraintes), server/tests/test_plan_advisor.py, server/tests/test_isochrone.py (si présent).
+Étapes : 1) corridors nord/sud relissés ; 2) cap +20 % et ± 300 nm imposés à l'isochrone ; 3) candidats dates × corridors, même score ; 4) le « recalculer » de l'ordre du skipper passe par advise (jambe courante).
+Tests : aucun candidat > +20 % de distance ; aucun point à > 300 nm du trait de référence ; La Rochelle → Ajaccio vent max 30 kn → route ≤ 1 650 nm ; déterminisme. .venv/bin/python -m pytest -q.
+Recette (visuelle) : Simulation → Ordres du skipper, vent max 30 kn → « Recalculer l'itinéraire » (ou « Demander conseil » si R10d est passé) → la route proposée fait ≤ 1 650 nm. Capture docs/recette/lot-r10c/01-borne.jpg (URL complète sur ta branche).
+Branche feat/lot-r10c-ecart-borne depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : écart libre ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="R10d" title="Revue du plan conseillée, deux colonnes, Appliquer ; Demander conseil" plan="docs/PLAN_ICI_JOURNAL_EXPERT.md" size="M" deps="R10c,R8c" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 « rien de superflu »), puis docs/PLAN_ICI_JOURNAL_EXPERT.md § 3.3 et le sous-lot « R10d ». Tu travailles dans naviguide-simulator/. R10c et R8c sont dans ta base.
+
+Lot R10d — L'interface de l'expert.
+Objectif : Revue du plan : chaque jambe a « alertes : n » teinté ; « Ce que je changerais » = la phrase du meilleur compromis de la jambe la plus chargée avec trois pastilles « 11 → 5 alertes · +41 nm · +7 j » et un bouton Appliquer (flux existant draft / recompute / accept) qui affiche deux colonnes (aujourd'hui / conseillé : distance, jours de mer, alertes, dates d'escale décalées) ; plus de tableau à six routes sans explication ; Ordres du skipper : « Recalculer l'itinéraire » devient « Demander conseil » → même carte deux colonnes pour la jambe courante.
+Fichiers à ouvrir (seulement) : src/components/PlanReview.jsx, src/hooks/usePlanReview.js, src/components/SkipperOrdersPanel.jsx PAR EXTRAIT (bouton), la carte de comparaison existante (rg -n "RouteCompare|comparatif|six routes|proposé" src/components), tests associés, src/i18n/fr.js, en.js, src/App.jsx PAR EXTRAIT (rg -n "recompute|accept|draft").
+Étapes : 1) ligne « alertes : n » par jambe ; 2) « Ce que je changerais » = phrase + pastilles ; 3) Appliquer → deux colonnes + dates décalées ; 4) « Demander conseil » remplace « Recalculer l'itinéraire » ; 5) aucun texte d'aide.
+Tests : PlanReview.test.js — pastilles, phrase, deux colonnes ; SkipperOrdersPanel.test.js — libellé du bouton ; contrats existants intacts. npm test, npx vite build, npm run e2e (fumée).
+Recette (visuelle) : Panneau droit → Revue du plan : « alertes : n » par jambe ; « Ce que je changerais » nomme la jambe, le décalage et l'écart avec « 11 → 5 alertes · +41 nm · +7 j » ; Appliquer montre deux colonnes et les dates d'escale décalées. Simulation → « Demander conseil » remplace « Recalculer l'itinéraire », même carte. Captures docs/recette/lot-r10d/01-revue.jpg, 02-conseil.jpg (URL complète sur ta branche).
+Branche feat/lot-r10d-interface-expert depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : texte d'aide ; retirer une surface ; chiffre LLM hors facts ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+### Ancien NAVIGUIDE — ce qui reste utile (N1 → N4)
+
+Décisions du porteur du 21 sept. : import ET export, GeoJSON ET KML ; anti-trafic et
+piraterie gardés ; pas de discours thématiques. Détail : `docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`.
+
+<!-- LOT id="N1" title="Importer GeoJSON / KML dans Tracer ma route" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N1 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/ (ancien code), tu ne le modifies jamais.
+
+Lot N1 — Importer GeoJSON / KML dans « Tracer ma route ».
+Objectif : un bouton Importer (à côté de Terminé / Effacer) accepte .geojson / .json / .kml ; les points (ou la ligne s'il n'y a pas de points) deviennent les waypoints de la route dessinée dans l'ordre du fichier ; le tracé se calcule comme après des clics (searoute par jambes) ; Terminé remplit le sac (lot T). Le dessin au clic reste tel quel.
+Source à lire : naviguide/naviguide-app/src/utils/waypointsFromCollection.js (l. 6-30) ; le KML n'y est pas parsé : DOMParser (Placemark > Point > coordinates ; LineString > coordinates).
+Fichiers à ouvrir (seulement) : src/utils/routeImport.js (créer : parseRouteFile(text, name) → {points:[{lat,lon,name}], source} ; GeoJSON Point/MultiPoint/LineString/FeatureCollection, KML Placemark ; noms depuis properties.name ; dédoublonnage < 0,1 nm ; max 60 points), src/utils/routeImport.test.js (créer, fixtures), src/hooks/useRouteDrawing.js (importPoints(points) : même flux qu'un clic par point), le composant du mode dessin (rg -n "drawing|Terminé|drawnPoints" src/components/*.jsx : bouton + input file), src/i18n/fr.js, en.js, src/App.jsx PAR EXTRAIT (rg -n "useRouteDrawing|addDrawnPoint|onDrawingWaypointClick").
+Étapes : 1) parseur + erreurs lisibles ; 2) importPoints remplace la route en cours (confirmation si non vide) ; 3) bouton Importer, aucun texte d'aide ; 4) fichier invalide → message court, rien d'autre ne change.
+Tests : routeImport.test.js — GeoJSON Points, LineString seule, KML Placemarks, KML LineString, fichier vide/invalide ; useRouteDrawing.test.js — importPoints ≡ N clics. npm test, npx vite build, spec e2e/lots/n1-import.spec.js (fixture chargée → route affichée).
+Recette (visuelle) : Tracer ma route → Importer → un .geojson de 3 points (fixture jointe à la PR) → tu dois voir 3 drapeaux et la route calculée ; idem avec un .kml ; Terminé → le sac se remplit comme après des clics. Captures docs/recette/lot-n1/01-import.jpg (URL complète sur ta branche).
+Branche feat/lot-n1-import-route depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : modifier naviguide/ ; retirer le dessin au clic ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="N2" title="Exporter GeoJSON / KML de la route de la vue, panneau droit" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N2 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
+
+Lot N2 — Exporter GeoJSON / KML.
+Objectif : panneau droit, bloc Exporter avec deux boutons GeoJSON et KML qui téléchargent la route de la vue (Suivre = officielle avec escales ; Tracer = dessinée ; Simulation = simulée) ; une LineString par jambe (properties from/to/nm/kind mer|terre|air), un Point par escale ; KML équivalent (jambes avion en pointillé) ; nom naviguide-<mode>-<AAAA-MM-JJ>.geojson|kml.
+Source à lire : naviguide/naviguide-app/src/components/ExportSidebar.jsx (downloadFile l. 59-70, buildGeoJSON l. 72-115, buildKML l. 116-225).
+Fichiers à ouvrir (seulement) : src/utils/routeExport.js (créer), src/utils/routeExport.test.js (créer), src/components/ToolsSidebar.jsx (bloc Exporter, data-testid="export-geojson" / "export-kml"), src/i18n/fr.js, en.js, src/App.jsx PAR EXTRAIT (rg -n "ToolsSidebar" : passer segments + marques de la vue).
+Étapes : 1) porter et alléger buildGeoJSON / buildKML / downloadFile ; 2) route de la vue selon le mode ; 3) deux boutons, aucun texte d'aide.
+Tests : routeExport.test.js — GeoJSON valide (types), KML bien formé (DOMParser), N escales → N Points, jambe avion marquée. npm test, npx vite build, spec e2e/lots/n2-export.spec.js (téléchargement intercepté non vide).
+Recette (visuelle) : Panneau droit → Exporter → GeoJSON → un fichier téléchargé qui s'ouvre dans geojson.io avec route et escales ; KML → idem dans Google Earth ; en Tracer, l'export contient la route dessinée. Capture docs/recette/lot-n2/01-export.jpg (URL complète sur ta branche).
+Branche feat/lot-n2-export-route depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : modifier naviguide/ ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="N3" title="Score anti-trafic par jambe depuis le moteur searoute" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N3 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
+
+Lot N3 — Score anti-trafic.
+Objectif : chaque jambe en mer porte antiShipping {score 0–1, lanes[]} calculé après searoute (métadonnée, le trait ne change pas) ; Revue du plan : « couloirs : Gibraltar » sous la jambe, teinte ambre si score < 0,55 ; panneau droit : pastille pour la route de la vue ; exposé à l'expert (R10a, alerte traffic poids 1).
+Source à lire : naviguide/naviguide-api/routing_ab/cargo.py (SHIPPING_LANES l. 15-41, point_lane_weight, anti_shipping_score l. 60-73, lane_hits l. 74) et test_routing_ab_metrics.py.
+Fichiers à ouvrir (seulement) : server/shipping_lanes.py (créer, source citée), server/tests/test_shipping_lanes.py (créer), server/route_engine.py PAR EXTRAIT (rg -n "def route|segments|meta" : métadonnée par jambe), server/plan_review.py, src/components/PlanReview.jsx, src/components/ToolsSidebar.jsx PAR EXTRAIT (pastille), src/i18n/fr.js, en.js.
+Étapes : 1) module + tests ; 2) GET /route et route officielle exposent antiShipping par jambe ; 3) pastilles ; 4) géométrie strictement inchangée ; aucun texte d'aide.
+Tests : test_shipping_lanes.py ; test_route_engine — Gibraltar / Aden / Malacca → score < 1, couloirs nommés, géométrie identique ; PlanReview.test.js — pastille. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Panneau droit → Revue du plan → jambe Ajaccio → Fort-de-France : « couloirs : Gibraltar » ; le trait sur la carte est inchangé. Capture docs/recette/lot-n3/01-couloirs.jpg (URL complète sur ta branche).
+Branche feat/lot-n3-anti-trafic depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : modifier naviguide/ ; décaler le trait ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="N4" title="Zones de piraterie → cartes NOW et alertes" plan="docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md § 0 et le lot « N4 » (texte intégral). Tu travailles dans naviguide-simulator/. Tu LIS naviguide/, tu ne le modifies jamais.
+
+Lot N4 — Piraterie.
+Objectif : quand le bateau est dans une zone de piraterie recensée (Suivre, Simulation, film), une carte NOW « Piraterie — <zone> · <niveau> · IMB/UKMTO » apparaît (alerte si HIGH, décision sinon) et disparaît hors zone ; exposée à l'expert (R10a : alerte piracy, poids 3 HIGH / 2 MEDIUM / 1 LOW). Aucun score composite, aucune note inventée.
+Source à lire : naviguide/naviguide_workspace/naviguide_agent3/risk_engine.py (PIRACY_ZONES l. 42-49 ; CYCLONE_BASINS : ne PAS copier).
+Fichiers à ouvrir (seulement) : server/data/piracy_zones.json (créer : boîtes, niveau, source, date), server/piracy.py (créer : zone_at(lat, lon)), server/tests/test_piracy.py (créer), server/ici_warm.py ou server/main.py PAR EXTRAIT (rg -n "def ici|bag\[" : `piracy` dans le sac), src/engine/momentCard.js PAR EXTRAIT (rg -n "kind ===|severity" : carte NOW piracy), src/engine/momentCard.test.js, src/i18n/fr.js, en.js.
+Étapes : 1) table + zone_at ; 2) sac : piracy {name, level, source} ou rien ; 3) carte NOW unique, disparaît hors zone ; 4) alerte datée pour l'expert.
+Tests : test_piracy.py — Aden → HIGH, Atlantique nord → rien ; momentCard.test.js — carte présente / absente. npm test, .venv/bin/python -m pytest -q, npx vite build.
+Recette (visuelle) : Simulation → curseur dans le golfe d'Aden → carte NOW « Piraterie — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO » ; au large de La Rochelle → aucune carte piraterie. Capture docs/recette/lot-n4/01-aden.jpg (URL complète sur ta branche).
+Branche feat/lot-n4-piraterie depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : modifier naviguide/ ; copier CYCLONE_BASINS ; score composite ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+### Hygiène avant la soumission (D0, H1)
+
+<!-- LOT id="D0" title="README FR/EN, manuel utilisateur, index et rangement de docs/" plan="docs/ETAT_DES_LIEUX_DOCS.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/ETAT_DES_LIEUX_DOCS.md (§ 3 rangement) et docs/ESPRIT_DE_L_APPLICATION.md. Documents seulement : aucun fichier de naviguide-simulator/src ni server.
+
+Lot D0 — Documentation à jour pour un dépôt public.
+Objectif : un lecteur du jury comprend l'application en 5 minutes : README.md racine (FR puis EN) — ce que fait le simulateur, les trois modes, Revoir l'expédition, où est la prod, comment lancer en local (dev-mac.sh), licence ; docs/MANUEL_UTILISATEUR.md (FR) + docs/USER_MANUAL.md (EN) — écran par écran, ce que fait chaque bouton, sans jargon ; docs/README.md — index des plans (fait / en cours / à venir) ; rangement selon ETAT_DES_LIEUX_DOCS.md § 3 (déplacer les plans terminés dans docs/archives/, corriger les liens).
+Fichiers à ouvrir (seulement) : README.md, docs/README.md (créer), docs/MANUEL_UTILISATEUR.md (créer), docs/USER_MANUAL.md (créer), docs/ETAT_DES_LIEUX_DOCS.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/HACKATHON_DEVPOST_SOUMISSION.md ; git mv pour le rangement.
+Étapes : 1) README bilingue court (≤ 150 lignes) ; 2) manuel : un chapitre par écran (Suivre, Simulation, Tracer ma route, Revoir l'expédition, panneau droit), chaque bouton en une ligne « fait quoi » ; 3) index docs/README.md ; 4) rangement + liens vérifiés (script rg des liens morts dans la PR).
+Tests : aucun code ; un script de vérification des liens Markdown (aucun lien mort) joint à la PR.
+Recette (visuelle) : ouvrir le README sur GitHub → tu dois comprendre en 5 minutes ce que fait l'app et comment la lancer ; le manuel décrit chaque bouton que tu vois à l'écran.
+Branche docs/lot-d0-readme-manuel depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : toucher au code ; supprimer un plan (archiver) ; vidéo ; secret. Décide seul et note-le. Fin : PR, liste des fichiers déplacés, reste à faire.
+```
+
+<!-- LOT id="H1" title="Préparer la séparation des dépôts (public = simulateur seul)" plan="docs/WORKFLOW_INDUSTRIEL.md" size="M" deps="D0" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/WORKFLOW_INDUSTRIEL.md § 4 (calendrier), .cursor/ask-briefs/02-separer-depots.md s'il existe, et docs/ARCHITECTURE.md. Tu PRÉPARES ; tu n'exécutes PAS la séparation (c'est le porteur, le 26–27 sept.).
+
+Lot H1 — Préparer la séparation des dépôts.
+Objectif : le dépôt PUBLIC présenté au jury ne contient que le simulateur (naviguide-simulator/, ses docs, infra de déploiement du simulateur) ; Blue Intelligence (backend/, frontend/, Archives/, naviguide/ legacy) reste PRIVÉ. Livrer : infra/split/README.md (procédure pas à pas pour un débutant sur Mac : création du dépôt public, `git subtree split` ou `git filter-repo` sur naviguide-simulator + docs choisis, réécriture des chemins, CI/deploy adaptés, redirection www.naviguide.fr → simulateur, README legacy dans naviguide/), infra/split/split.sh (idempotent, dry-run par défaut, ne pousse rien sans --push), la liste exacte des fichiers qui partent / restent, et les changements nécessaires dans .github/workflows (deploy du simulateur depuis le nouveau dépôt).
+Fichiers à ouvrir (seulement) : infra/split/README.md (créer), infra/split/split.sh (créer), .github/workflows/*.yml (lecture ; modifications proposées dans un dossier infra/split/workflows/ à copier), infra/vps/naviguide/deploy-simulator.sh (lecture), naviguide/README.md (texte legacy proposé dans infra/split/).
+Étapes : 1) inventaire partent/restent ; 2) script dry-run qui produit le dépôt public dans un dossier temporaire et vérifie `npm test` + `npx vite build` dedans ; 3) procédure ; 4) rien n'est poussé ni créé sur GitHub par le lot.
+Tests : le dry-run produit un dossier où `cd naviguide-simulator && npm ci && npm test && npx vite build` passent ; aucun secret ni .env dans le résultat (rg).
+Recette (visuelle) : la PR joint le journal du dry-run et la liste des fichiers ; le porteur lit la procédure et la trouve exécutable en 15 minutes.
+Branche chore/lot-h1-split-depots depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
+Interdits : créer ou pousser un dépôt ; supprimer des fichiers du dépôt courant ; secret ; vidéo. Décide seul et note-le. Fin : PR, journal du dry-run, reste à faire.
 ```
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)

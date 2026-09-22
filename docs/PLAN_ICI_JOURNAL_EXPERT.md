@@ -478,12 +478,12 @@ Dix sous-lots de taille M : c'est **deux nuits** au rythme observé (11 PR en
 - **Alerte cyclone datée** : fenêtre autour de la date historique, pas au simple
   croisement géométrique (§ 3.2).
 
-**Restent à trancher avant le lancement** :
-1. **Poids du score** de l'expert (§ 3.2 : 0,3 par jour de décalage, 0,02 par
-   mille) — réglages du skipper (Paramètres avancés) ou fixes ?
-2. **Le journal des simulations** reste local au navigateur (§ 2.0), ou côté
-   serveur pour la route dessinée aussi ?
+**Choix par défaut pris le 21 sept. au soir** (les prompts R8a → R10d sont
+pré-rédigés dans `LOTS_ORDRE_ET_PROMPTS.md` ; à changer avant le lancement si le
+porteur préfère autrement) :
+1. **Poids du score** de l'expert : **fixes** (constantes dans `plan_advisor.py`,
+   montrées en info-bulle) — pas de réglage utilisateur avant le 28.
+2. **Le journal des simulations** reste **local au navigateur** (§ 2.0).
 
-Les prompts `<!-- LOT -->` de ces dix sous-lots s'écrivent dans
-`LOTS_ORDRE_ET_PROMPTS.md` une fois ces deux points tranchés et la nuit 2
-(R1 → R13) + les corrections (RA1 → RA8) mergées.
+R10 est **dans le programme avant le 28** (décision du porteur), après R8/R9 et
+les lots N.
