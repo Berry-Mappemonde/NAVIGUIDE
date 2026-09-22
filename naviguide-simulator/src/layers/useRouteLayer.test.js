@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { REGIME_COLORS, traveledRegimeSegments } from "./regimeRoute.js";
+import { REGIME_COLORS, traveledEraSpeed, traveledRegimeSegments } from "./regimeRoute.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -44,10 +44,33 @@ describe("useRouteLayer — teinte par régime (lot C3)", () => {
     assert.deepEqual(traveledRegimeSegments([{ sailNm: 0, lat: 0, lon: 0 }], 0), []);
   });
 
+  it("un segment parcouru expose sa vitesse d'époque", () => {
+    const segs = traveledRegimeSegments([
+      { sailNm: 0, lat: 46.1, lon: -1.2, regime: "hindcast", speedKnots: 7.4 },
+      { sailNm: 20, lat: 45.0, lon: -5, regime: "hindcast", speedKnots: 7.4 },
+    ], 20);
+    assert.equal(segs.length, 1);
+    assert.equal(segs[0].speedKnots, 7.4);
+    assert.equal(traveledEraSpeed(segs[0]), 7.4);
+  });
+
+  it("une jambe avion n'expose pas de vitesse d'époque", () => {
+    const segs = traveledRegimeSegments([
+      { sailNm: 0, lat: 4.9, lon: -52.3, regime: "hindcast", speedKnots: 400, vehicle: "plane" },
+      { sailNm: 20, lat: 44.6, lon: -63.6, regime: "hindcast", speedKnots: 400, vehicle: "plane" },
+    ], 20);
+    assert.equal(segs.length, 0);
+    assert.equal(traveledEraSpeed({
+      regime: "hindcast", speedKnots: 400, vehicle: "plane",
+    }), null);
+  });
+
   it("le hook peint l'overlay sans retirer la route principale", () => {
     const src = readFileSync(join(here, "useRouteLayer.js"), "utf8");
     assert.match(src, /paintMain/);
     assert.match(src, /traveledRegimeSegments/);
     assert.match(src, /REGIME_COLORS/);
+    assert.match(src, /bindTooltip/);
+    assert.match(src, /traveled-era-speed/);
   });
 });
