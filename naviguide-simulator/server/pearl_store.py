@@ -42,6 +42,18 @@ _SCHEMA = (
     " value TEXT NOT NULL,"     # JSON
     " ts REAL NOT NULL,"
     " PRIMARY KEY (ns, key))",
+    # Journal des moments (lot R9a) : une ligne par changement de signature.
+    "CREATE TABLE IF NOT EXISTS moments ("
+    " voyage_id TEXT NOT NULL,"
+    " seq INTEGER NOT NULL,"
+    " t TEXT,"
+    " lat REAL, lon REAL,"
+    " leg_idx INTEGER,"
+    " signature TEXT NOT NULL,"
+    " changes TEXT NOT NULL,"   # JSON
+    " moment TEXT NOT NULL,"    # JSON
+    " PRIMARY KEY (voyage_id, seq))",
+    "CREATE INDEX IF NOT EXISTS moments_voyage_t ON moments(voyage_id, t)",
 )
 
 
@@ -279,6 +291,86 @@ def kv_purge(ns: str, older_than_s: float) -> int:
         return 0
 
 
+def replace_moments(voyage_id: str, rows: list[dict]) -> int:
+    """Réécrit le journal d'un voyage (idempotent). Jamais d'erreur vers l'appelant."""
+    try:
+        with _LOCK:
+            conn = _connect()
+            conn.execute("BEGIN")
+            try:
+                conn.execute("DELETE FROM moments WHERE voyage_id = ?", (voyage_id,))
+                for row in rows:
+                    pos = row.get("pos") if isinstance(row.get("pos"), dict) else {}
+                    conn.execute(
+                        "INSERT INTO moments "
+                        "(voyage_id, seq, t, lat, lon, leg_idx, signature, changes, moment) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            voyage_id,
+                            int(row.get("seq") or 0),
+                            row.get("t"),
+                            pos.get("lat"),
+                            pos.get("lon"),
+                            row.get("legIdx"),
+                            str(row.get("signature") or ""),
+                            json.dumps(row.get("changes") or [], ensure_ascii=False, default=str),
+                            json.dumps(row.get("moment") or {}, ensure_ascii=False, default=str),
+                        ),
+                    )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        return len(rows)
+    except Exception as exc:
+        log.warning("store moments (écriture) : %s", exc)
+        return 0
+
+
+def list_moments(voyage_id: str) -> list[dict]:
+    """Lignes du journal, ordre de seq. Jamais lève."""
+    try:
+        with _LOCK:
+            rows = _connect().execute(
+                "SELECT seq, t, lat, lon, leg_idx, signature, changes, moment "
+                "FROM moments WHERE voyage_id = ? ORDER BY seq",
+                (voyage_id,),
+            ).fetchall()
+    except Exception as exc:
+        log.warning("store moments (lecture) : %s", exc)
+        return []
+    out: list[dict] = []
+    for seq, t, lat, lon, leg_idx, sig, changes, moment in rows:
+        try:
+            out.append({
+                "voyageId": voyage_id,
+                "seq": int(seq),
+                "t": t,
+                "pos": {"lat": lat, "lon": lon},
+                "legIdx": leg_idx,
+                "signature": sig,
+                "changes": json.loads(changes),
+                "moment": json.loads(moment),
+            })
+        except Exception:
+            continue
+    return out
+
+
+def count_moments(voyage_id: str | None = None) -> int:
+    try:
+        with _LOCK:
+            if voyage_id:
+                row = _connect().execute(
+                    "SELECT COUNT(*) FROM moments WHERE voyage_id = ?", (voyage_id,),
+                ).fetchone()
+            else:
+                row = _connect().execute("SELECT COUNT(*) FROM moments").fetchone()
+        return int((row[0] if row else 0) or 0)
+    except Exception:
+        return 0
+
+
 def info() -> dict[str, Any]:
     p = db_path()
     size = p.stat().st_size if p.exists() else 0
@@ -292,4 +384,5 @@ def info() -> dict[str, Any]:
         "hindcast": kv_count("hindcast"),
         "watch": kv_count("watch"),
         "enrich": kv_count("enrich"),
+        "moments": count_moments(),
     }

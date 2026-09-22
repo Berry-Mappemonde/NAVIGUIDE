@@ -622,6 +622,29 @@ def _regime_portions(clock: dict) -> list:
     return portions
 
 
+def _kick_official_moments(*, force: bool = False) -> bool:
+    """Remplit le journal des moments en fond — jamais bloquant (lot R9a)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        try:
+            from moment_journal import warm_moments  # noqa: PLC0415
+            warm_moments(OFFICIAL_VOYAGE_ID)
+        except Exception as exc:
+            log.warning("journal des moments: %s", exc)
+        return {}
+
+    return get_pipeline().kick(
+        "official-moments",
+        0.0,
+        0.0,
+        _load,
+        force=force,
+    )
+
+
 def _kick_official_hindcast(*, force: bool = False) -> bool:
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
@@ -629,6 +652,7 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
 
     def _load():
         _fill_hindcast_then_forecast(OFFICIAL_VOYAGE_ID)
+        _kick_official_moments(force=True)
         return {}
 
     return get_pipeline().kick(
@@ -681,6 +705,7 @@ def _maybe_daily_hindcast(voy: dict) -> None:
             age_h = 99.0
         if age_h < 20.0 and voy.get("hindcastStatus") == "ready":
             _kick_official_eta(force=False)
+            _kick_official_moments(force=False)
             return
     _kick_official_hindcast(force=False)
     _kick_official_eta(force=True)
@@ -739,12 +764,14 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
         background.add_task(_kick_official_grib)
         background.add_task(_kick_official_hindcast)
         background.add_task(_kick_official_eta)
+        background.add_task(_kick_official_moments)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
     voy = _build_official(body)
     background.add_task(_kick_official_grib)
     background.add_task(_kick_official_hindcast)
     background.add_task(_kick_official_eta)
+    background.add_task(_kick_official_moments)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
@@ -792,6 +819,20 @@ class JournalNoteIn(BaseModel):
     author: Optional[str] = None
     lang: Optional[str] = "fr"
     t: Optional[str] = None
+
+
+@router.get("/voyage/official/moments")
+def get_official_moments(
+    until: str | None = Query(None, description="ISO : ne garder que les lignes t ≤ until"),
+):
+    """Journal des moments du voyage officiel (lot R9a). Lecture seule."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    _kick_official_moments(force=False)
+    from moment_journal import read_moments  # noqa: PLC0415
+    rows = read_moments(OFFICIAL_VOYAGE_ID, until=until)
+    return {"voyageId": OFFICIAL_VOYAGE_ID, "until": until, "count": len(rows), "moments": rows}
 
 
 @router.get("/voyage/official/journal")
