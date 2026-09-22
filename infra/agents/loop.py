@@ -123,9 +123,14 @@ def ensure_root_on_main() -> None:
 
 def phase_batch(st: dict, args) -> None:
     ensure_root_on_main()
-    cmd = [sys.executable, str(HERE / "run_lots.py"), "--from", st["from"], "--until", st["until"], "--review-every", str(args.review_every)]
+    cmd = [sys.executable, str(HERE / "run_lots.py"), "--from", st["from"], "--until", st["until"], "--review-every", str(args.review_every),
+           "--bot-wait-min", str(args.bot_wait_min)]
     if args.model:
         cmd += ["--model", args.model]
+    if st.get("stack_on_state"):
+        # Empiler sur la pile déjà produite (state.json) au lieu de repartir de main : les lots
+        # partent de la tête actuelle, et la revue de demain couvre aussi les PR déjà là.
+        cmd.append("--resume")
     rc = run(cmd)
     st["history"].append({"phase": "batch", "from": st["from"], "until": st["until"], "rc": rc, "at": time.strftime("%Y-%m-%d %H:%M")})
     st["tip_pr"] = tip_pr_number()
@@ -204,6 +209,8 @@ def main() -> None:
     ap.add_argument("--review-every", type=int, default=int(os.environ.get("BIM_REVIEW_EVERY", "4")))
     ap.add_argument("--model", default="", help="modèle des agents de lots (défaut run_lots)")
     ap.add_argument("--corrector-model", default=os.environ.get("BIM_CORRECTOR_MODEL", "claude-fable-5-thinking-xhigh"))
+    ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN", "45")), help="attente de la pré-revue Grok Bot par tranche (min ; 0 = aucune)")
+    ap.add_argument("--stack-on-state", action="store_true", help="empiler le batch sur la pile déjà dans state.json (ne pas repartir de main) ; la revue couvrira toute la pile")
     args = ap.parse_args()
 
     st = load()
@@ -215,7 +222,7 @@ def main() -> None:
         if args.from_ and args.until:
             st["from"], st["until"] = args.from_, args.until
     elif args.from_ and args.until:
-        st.update({"phase": "batch", "from": args.from_, "until": args.until})
+        st.update({"phase": "batch", "from": args.from_, "until": args.until, "stack_on_state": bool(args.stack_on_state)})
     elif not args.resume or not st.get("phase"):
         sys.exit("Donner --from/--until pour démarrer, --start-at <phase>, ou --resume.")
     save(st)
