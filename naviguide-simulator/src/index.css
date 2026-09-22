@@ -250,6 +250,8 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   --sim-box-h-now: 10rem;
   --sim-box-h-ici: 16rem;
   --sim-box-h-story: 14rem;
+  --sim-box-h-ici-now: 100%;
+  --sim-box-h-ici-tabs: 1.5rem;
 }
 .sim-box-chat {
   height: var(--sim-box-h-chat);
@@ -294,6 +296,45 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   height: var(--sim-box-h-story);
   overflow-x: hidden;
   overflow-y: auto;
+}
+.ici-maintenant {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.ici-maintenant-tabs {
+  height: var(--sim-box-h-ici-tabs);
+}
+.light-mode .ici-maintenant {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: rgb(255 255 255 / 0.94);
+  border-color: rgb(203 213 225);
+  color: rgb(15 23 42);
+}
+.light-mode .ici-maintenant-tabs {
+  height: var(--sim-box-h-ici-tabs);
+}
+.light-mode .ici-maintenant [data-testid="ici-tabs"] [aria-selected="true"] {
+  color: rgb(15 23 42);
+}
+.light-mode .ici-maintenant [data-testid="ici-tabs"] [aria-selected="false"] {
+  color: rgb(100 116 139);
+}
+.light-mode .ici-maintenant .ici-maintenant-section > div:first-child {
+  color: rgb(71 85 105);
+}
+.light-mode .ici-maintenant .ici-maintenant-section p,
+.light-mode .ici-maintenant .ici-maintenant-section details {
+  color: rgb(30 41 59);
+}
+.light-mode .ici-maintenant [data-testid="ici-sources-line"] {
+  color: rgb(71 85 105);
+}
+.light-mode .ici-maintenant [data-testid="ici-source-link"],
+.light-mode .ici-maintenant [data-testid="ici-around-link"] {
+  color: rgb(3 105 161);
 }
 
 /* Lot F4 — bulle événement ancrée au bateau (L.popup). */
