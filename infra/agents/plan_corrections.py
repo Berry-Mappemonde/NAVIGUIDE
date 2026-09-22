@@ -117,6 +117,78 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
     return "\n".join(parts)
 
 
+AMEND_RE = re.compile(r"^\s*(?:\*\*)?(CORRIGER|AMENDER|REVOIR|CHANGER)\s*:", re.I)
+
+
+def amend_comments(go_pr: int, seen: set[int]) -> list[dict]:
+    """Commentaires « CORRIGER : … » du porteur sur la PR GO, pas encore traités."""
+    http = rl.Http(None, rl.github_token_from_git())
+    out = []
+    for c in http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{go_pr}/comments?per_page=100") or []:
+        body = (c.get("body") or "").strip()
+        if c.get("id") in seen or not AMEND_RE.match(body):
+            continue
+        out.append({"id": c.get("id"), "author": (c.get("user") or {}).get("login"), "text": body, "url": c.get("html_url")})
+    return out
+
+
+def build_amend_prompt(go_pr: dict, comments: list[dict], wt: Path, model: str) -> str:
+    branch = (go_pr.get("head") or {}).get("ref")
+    return "\n".join([
+        f"Tu es le correcteur du GO. Un premier agent a écrit la PR #{go_pr['number']} ({go_pr['html_url']}) sur la branche `{branch}` : "
+        "docs/PLAN_CORRECTIONS_<date>.md + des lots `<!-- LOT -->` dans docs/LOTS_ORDRE_ET_PROMPTS.md. Le porteur l'a lue et demande des changements. "
+        "Ta mission : AMENDER cette PR selon ses commentaires — pas la refaire, pas ouvrir une autre PR, pas toucher au code applicatif, pas merger.",
+        "",
+        f"Environnement : worktree `{wt}`, déjà sur la branche `{branch}` (à jour d'origin). Lis d'abord le plan et les lots que tu dois amender, "
+        "puis docs/REGLES_WORKFLOW_AGENT.md § 1, § 3, § 4 et le programme complet (docs/LOTS_ORDRE_ET_PROMPTS.md).",
+        "",
+        "## Les commentaires du porteur (à traiter tous, dans l'ordre)",
+        *[f"- ({c['author']}) {c['text']}" for c in comments],
+        "",
+        "## Ce que tu produis",
+        "1. Modifie le plan et/ou les lots exactement dans le sens demandé (ajouter, retirer, fusionner, reformuler, changer une cause racine ou une recette). "
+        "Un point du porteur = un changement visible dans le diff. Si un point te semble impossible ou contradictoire, écris-le dans ta réponse au lieu d'inventer.",
+        "2. Garde la cohérence : ids de lots continus, table et balises alignées, `python3 infra/agents/run_lots.py --dry-run --from <premier> --until <dernier>` passe.",
+        "3. Commit (`docs: GO amendé selon les commentaires du porteur — …`), `git push` sur la MÊME branche (la PR se met à jour). "
+        f"Si la liste des lots à lancer change, mets à jour le corps de la PR avec `python3 {rl.HERE / 'open_pr.py'} {branch} main \"<titre inchangé>\" <corps.md>` "
+        "(il remplace le corps) en gardant la dernière ligne `LOTS: <premier> <dernier>` exacte.",
+        f"4. Réponds dans la PR : `python3 {rl.HERE / 'post_pr_comment.py'} {go_pr['number']} <fichier.md>` avec un commentaire qui commence par `## 🛠 GO amendé` : "
+        "un point par commentaire du porteur → ce que tu as changé (fichier, lot), ou pourquoi non.",
+        "5. Termine par un résumé de 5 lignes sur la sortie standard.",
+        "",
+        "Interdits : nouvelle PR ; code applicatif ; merge ; supprimer un lot que le porteur n'a pas demandé de retirer ; recette technique (data-testid, GET, coordonnées).",
+    ])
+
+
+def amend(go_pr_number: int, *, model: str = DEFAULT_MODEL, seen: set[int] | None = None, dry_run: bool = False, timeout_h: float = 1.0) -> dict:
+    """Un second agent Claude corrige le GO selon les commentaires « CORRIGER : » — autant de tours que voulu."""
+    seen = set(seen or ())
+    http = rl.Http(None, rl.github_token_from_git())
+    go_pr = http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/pulls/{go_pr_number}") or {}
+    comments = amend_comments(go_pr_number, seen)
+    if not comments:
+        return {"ok": True, "handled": [], "note": "aucun commentaire CORRIGER : nouveau"}
+    branch = (go_pr.get("head") or {}).get("ref")
+    if dry_run:
+        print(build_amend_prompt(go_pr, comments, rl.WORKTREES / "corrector", model))
+        return {"ok": True, "dry_run": True, "handled": [c["id"] for c in comments]}
+    wt = rl.WORKTREES / "corrector"
+    if not wt.exists() or rl.local_branch(wt) != branch:
+        wt = rl.prepare_worktree(rl.Lot("corrector", "correcteur du GO", "", "", [], ""), branch)
+        rl.sh(["git", "checkout", "-q", branch], cwd=wt, check=False)
+    rl.sh(["git", "fetch", "-q", "origin", branch], cwd=wt, check=False, timeout=120)
+    rl.sh(["git", "reset", "-q", "--hard", f"origin/{branch}"], cwd=wt, check=False)
+    prompt = build_amend_prompt(go_pr, comments, wt, model)
+    rl.log(f"GO #{go_pr_number} : {len(comments)} commentaire(s) CORRIGER — agent {model} sur `{branch}`")
+    status, result = rl.run_agent_cli(wt, prompt, model, int(timeout_h * 3600))
+    rl.log(f"    amendement : {status}")
+    for ln in (result or "").strip().splitlines()[-5:]:
+        rl.log(f"    {ln}")
+    if branch:
+        rl.ensure_pushed(wt, branch)
+    return {"ok": status == "FINISHED", "handled": [c["id"] for c in comments]}
+
+
 def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str | None = None, dry_run: bool = False, timeout_h: float = 1.5) -> dict:
     state = rl.State.load()
     date = time.strftime("%Y-%m-%d")
@@ -163,7 +235,12 @@ def main() -> None:
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--timeout-hours", type=float, default=1.5)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--amend", type=int, metavar="GO_PR", help="corriger la PR GO donnée selon ses commentaires « CORRIGER : » (second agent)")
     args = ap.parse_args()
+    if args.amend:
+        out = amend(args.amend, model=args.model, dry_run=args.dry_run, timeout_h=args.timeout_hours)
+        print(json.dumps(out, ensure_ascii=False))
+        return
     prs = [("", n) for n in args.prs] if args.prs else rc.prs_from_state()
     if not prs:
         sys.exit("Aucune PR : --prs … ou un state.json avec des lots FINISHED.")

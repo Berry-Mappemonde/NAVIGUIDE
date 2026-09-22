@@ -167,9 +167,34 @@ def phase_correct(st: dict, args) -> None:
     save(st)
 
 
+def wait_go(st: dict, args) -> dict:
+    """Attendre le merge du GO ; entre-temps, chaque commentaire « CORRIGER : » du porteur relance un
+    agent Claude qui amende la PR (plan + lots) et répond dedans. Autant de tours que voulu."""
+    n = int(st["go_pr"])
+    seen = set(st.get("go_comments_seen") or [])
+    rl.log(f"GO : PR #{n} — en attente du merge ; un commentaire « CORRIGER : … » la fait amender par un second agent")
+    while True:
+        try:
+            pr = gh_pr(n)
+            if pr.get("state") == "closed":
+                rl.log(f"GO : PR #{n} fermée — {'mergée' if pr.get('merged_at') else 'NON mergée'}")
+                return pr
+            pending = [c for c in gh_comments(n) if c.get("id") not in seen and re.match(r"^\s*(?:\*\*)?(CORRIGER|AMENDER|REVOIR|CHANGER)\s*:", (c.get("body") or "").strip(), re.I)]
+            if pending:
+                rl.log(f"    {len(pending)} commentaire(s) CORRIGER sur le GO → amendement")
+                rc = run([sys.executable, str(HERE / "plan_corrections.py"), "--amend", str(n), "--model", args.corrector_model], timeout=2 * 3600)
+                seen.update(c.get("id") for c in pending)
+                st["go_comments_seen"] = sorted(seen)
+                st["history"].append({"phase": "amend_go", "pr": n, "comments": len(pending), "rc": rc, "at": time.strftime("%Y-%m-%d %H:%M")})
+                save(st)
+        except Exception as e:
+            rl.log(f"    GitHub indisponible ({e}) — nouvel essai")
+        time.sleep(args.poll)
+
+
 def phase_await_go(st: dict, args) -> bool:
     """Vrai s'il y a un batch suivant."""
-    pr = wait_closed(int(st["go_pr"]), args.poll, "GO")
+    pr = wait_go(st, args)
     if not pr.get("merged_at"):
         rl.log("PR GO fermée sans merge : arrêt de la boucle.")
         st["phase"] = None
