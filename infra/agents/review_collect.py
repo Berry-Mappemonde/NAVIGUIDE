@@ -117,6 +117,45 @@ def recette_items(body: str) -> list[dict]:
     return items
 
 
+BOT_MARK_RE = re.compile(r"🤖\s*Pr[ée]-?revue", re.I)
+BOT_ITEM_RE = re.compile(r"^\s*[-*]\s*\[( |x|X)\]\s*🤖\s*(.+?)\s*$")
+BOT_NOTE_RE = re.compile(r"\s+[—–-]\s+(KO|non v[ée]rifiable)\s*:\s*(.*)$", re.I)
+_KEY_DROP_RE = re.compile(r"[*_`«»\"'’]|\s+/\s+.*$")   # gras, guillemets, et la moitié anglaise après « / »
+
+
+def item_key(text: str) -> str:
+    """Clé de rapprochement entre une case du porteur et une ligne 🤖 du bot : minuscules,
+    sans gras ni guillemets, moitié FR seulement, 60 premiers caractères."""
+    t = _KEY_DROP_RE.sub("", text or "").lower()
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:60]
+
+
+def bot_verdicts(comments: list[dict]) -> dict[str, dict]:
+    """Commentaires « 🤖 Pré-revue » (Grok Bot) → {clé d'item: {ok, ko, note, text}}.
+    Le bot coche les cases de la PR qu'il a vérifiées et liste ici ce qu'il a fait : c'est
+    ce qui permet d'attribuer une case cochée au bot plutôt qu'au porteur."""
+    out: dict[str, dict] = {}
+    for c in comments or []:
+        body = c.get("body") or ""
+        if not BOT_MARK_RE.search(body):
+            continue
+        for ln in body.splitlines():
+            m = BOT_ITEM_RE.match(ln)
+            if not m:
+                continue
+            text = m.group(2)
+            note = ""
+            n = BOT_NOTE_RE.search(text)
+            if n:
+                note = f"{n.group(1)} : {n.group(2)}".strip()
+                text = text[: n.start()].strip()
+            checked = m.group(1).lower() == "x"
+            out[item_key(text)] = {"ok": checked, "ko": (not checked) and note.upper().startswith("KO"), "note": note, "text": text,
+                                   "author": (c.get("user") or {}).get("login"), "url": c.get("html_url")}
+    return out
+
+
 def ko_comments(comments: list[dict]) -> list[dict]:
     out = []
     for c in comments or []:
@@ -164,15 +203,24 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
     body = pr.get("body") or ""
     branch = (pr.get("head") or {}).get("ref") or ""
     items = recette_items(body)
-    kos = ko_comments(comments)
+    kos = [k for k in ko_comments(comments) if not BOT_MARK_RE.search(k["text"])]   # KO du porteur (les KO du bot sont dans bot)
+    bot = bot_verdicts(comments)
+    for it in items:   # qui a coché ? bot = coché ET listé [x] 🤖 par le bot ; porteur sinon
+        b = bot.get(item_key(it["text"]))
+        it["by"] = ("bot" if (b and b.get("ok")) else "porteur") if it["checked"] else None
+        it["bot"] = None if b is None else ("ok" if b.get("ok") else ("ko" if b.get("ko") else "unverifiable"))
+        it["bot_note"] = (b or {}).get("note", "")
     captures = agent_captures(body, branch)
     entry = {
         "number": number, "lot": lot, "title": pr.get("title"), "url": pr.get("html_url"), "branch": branch,
         "state": pr.get("state"), "merged": bool(pr.get("merged_at")),
         "items": items,
         "ok": sum(1 for i in items if i["checked"] is True),
+        "ok_porteur": sum(1 for i in items if i["checked"] is True and i.get("by") == "porteur"),
+        "ok_bot": sum(1 for i in items if i["checked"] is True and i.get("by") == "bot"),
         "unchecked": sum(1 for i in items if i["checked"] is False),
         "no_box": sum(1 for i in items if i["checked"] is None),
+        "bot_ko": [{"text": i["text"], "note": i["bot_note"]} for i in items if i.get("bot") == "ko"],
         "ko": kos,
         "captures": captures,
         "local_images": [],
@@ -207,17 +255,26 @@ def prs_from_state() -> list[tuple[str, int]]:
 def summary_md(review: dict) -> str:
     lines = [f"# Revue de la pile — {review['date']}", ""]
     tot_ok = sum(p["ok"] for p in review["prs"])
+    tot_bot = sum(p.get("ok_bot", 0) for p in review["prs"])
     tot_items = sum(len(p["items"]) for p in review["prs"])
     tot_ko = sum(len(p["ko"]) for p in review["prs"])
-    lines += [f"**{tot_ok} / {tot_items} items cochés · {tot_ko} KO** sur {len(review['prs'])} PR.", ""]
+    tot_bot_ko = sum(len(p.get("bot_ko") or []) for p in review["prs"])
+    lines += [f"**{tot_ok} / {tot_items} items cochés** (dont {tot_bot} par le bot 🤖) · **{tot_ko} KO du porteur** · {tot_bot_ko} KO du bot, sur {len(review['prs'])} PR.", ""]
     for p in review["prs"]:
         tag = f"#{p['number']} {p['lot']}".strip()
         state = "mergée" if p["merged"] else p["state"]
         lines.append(f"## {tag} — {p['title']}  ({state})")
-        lines.append(f"Cochés {p['ok']} / {len(p['items'])}" + (f" · sans case : {p['no_box']}" if p["no_box"] else "") + f" · KO : {len(p['ko'])}")
+        lines.append(f"Cochés {p['ok']} / {len(p['items'])} (porteur {p.get('ok_porteur', 0)}, bot {p.get('ok_bot', 0)})"
+                     + (f" · sans case : {p['no_box']}" if p["no_box"] else "") + f" · KO porteur : {len(p['ko'])} · KO bot : {len(p.get('bot_ko') or [])}")
         for it in p["items"]:
-            mark = "✅" if it["checked"] else ("⬜" if it["checked"] is False else "•")
-            lines.append(f"- {mark} {it['text']}")
+            if it["checked"]:
+                mark = "✅🤖" if it.get("by") == "bot" else "✅"
+            elif it["checked"] is False:
+                mark = "🤖❌" if it.get("bot") == "ko" else "⬜"
+            else:
+                mark = "•"
+            note = f"  — 🤖 {it['bot_note']}" if it.get("bot_note") else ""
+            lines.append(f"- {mark} {it['text']}{note}")
         for i, ko in enumerate(p["ko"], 1):
             lines.append(f"- ❌ KO {i} ({ko['author']}) : {ko['text']}")
             for im in [x for x in p["local_images"] if x.get("ko") == i]:

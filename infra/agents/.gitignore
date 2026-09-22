@@ -10,3 +10,6 @@ review-*.md
 review-*/
 corrector-prompt-*.md
 loop-state.json
+tunnel.pid
+tunnel.url
+tunnel.log

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Réviseur de nuit (lot W3-nuit) : toutes les X PR, un agent fort relit la tranche.
+"""Réviseur de nuit (lot W3-nuit) : toutes les X PR, un agent relit le CODE de la tranche.
 
-Pendant la nuit, le porteur ne recette pas. Toutes les X PR (`run_lots.py --review-every X`),
-un agent fort (Claude Fable, CLI Cursor local) relit les X dernières PR de la pile :
-diff, corps de PR, captures, prompt du lot, plan, règles — et **profite du travail déjà
-fait** par les agents Grok sur les PR suivantes (il lit la tête de pile). Il produit :
+Pendant la nuit, le porteur ne recette pas. Deux réviseurs se partagent le travail :
+  - celui-ci, **Grok 4.6 par le CLI Cursor** (usage inclus) : le code — toutes les X PR
+    (`run_lots.py --review-every X`) il relit diff, corps de PR, captures, prompt du lot,
+    plan, règles, et **profite du travail déjà fait** par les agents suivants (tête de pile) ;
+  - **Grok Bot** (cloud, navigateur) : la pré-revue VISUELLE — il ouvre le poste de recette
+    par le tunnel (lien 🔗 posté dans chaque PR), coche les cases qu'il a vérifiées et poste
+    un commentaire « 🤖 Pré-revue » (routine : infra/agents/GROK_BOT_ROUTINE.md).
+Claude Fable, cher, n'intervient qu'une fois, le matin, après la revue humaine
+(plan_corrections.py). Ce réviseur produit :
 
   1. un commentaire de revue par PR (gabarit WORKFLOW_INDUSTRIEL § 1.3 : conformité,
      libertés prises, plancher main, chiffres LLM / secrets / tests affaiblis, prérequis,
@@ -41,7 +46,8 @@ import review_collect as rc  # noqa: E402
 
 QUEUE_MD = rl.STATE_DIR / "queue.md"
 REVIEW_DIR = rl.STATE_DIR / "reviews"
-DEFAULT_REVIEW_MODEL = os.environ.get("BIM_REVIEW_MODEL", "claude-fable-5-thinking-xhigh")
+# Grok (usage inclus) relit le code la nuit ; Claude Fable, cher, est réservé au correcteur du matin (plan_corrections.py).
+DEFAULT_REVIEW_MODEL = os.environ.get("BIM_REVIEW_MODEL", "cursor-grok-4.6-xhigh-fast")
 
 REVIEW_TEMPLATE = """Lot {lot} — revue automatique (nuit, {model})
 1. Conformité au lot : chaque étape du prompt → faite / partielle / non faite (fichier:ligne).

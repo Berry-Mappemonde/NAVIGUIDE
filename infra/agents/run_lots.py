@@ -666,10 +666,16 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     state.last_branch = branch
     state.last_lot = lot.id
     state.save()
-    # Lot W1 : le poste de recette suit la tête de pile — le porteur peut recetter la PR à la volée.
+    # Lot W1 : le poste de recette suit la tête de pile — le porteur (et le bot, par le tunnel) recettent à la volée.
     if pr and not getattr(args, "no_recette", False) and not getattr(args, "no_recette_each", False):
         try:
             prepare_recette(state, args, http, quiet=True)
+            if getattr(args, "publish_tip", False) and status == "success" and publish_tip(branch):
+                post_poste_link(state, lot.id, PROD_URL, args.repo, published=True)
+            else:
+                url = None if getattr(args, "no_tunnel", False) else start_tunnel()
+                if url:
+                    post_poste_link(state, lot.id, url, args.repo)
         except Exception as e:  # jamais bloquant pour le batch
             log(f"    poste de recette non rafraîchi : {e}")
 
@@ -786,6 +792,107 @@ def recette_worktree(state: State, branch: str) -> Path:
     return prepare_worktree(Lot("recette", "poste de recette", "", "", [], ""), branch)
 
 
+# ---- tunnel : le poste de recette vu depuis le cloud (Grok Bot), lot W1 bis
+
+TUNNEL_PID = STATE_DIR / "tunnel.pid"
+TUNNEL_URL = STATE_DIR / "tunnel.url"
+TUNNEL_LOG = STATE_DIR / "tunnel.log"
+
+
+def tunnel_url() -> str | None:
+    """URL publique du poste de recette si un tunnel tourne (cloudflared, quick tunnel)."""
+    if not (TUNNEL_PID.exists() and TUNNEL_URL.exists()):
+        return None
+    try:
+        os.kill(int(TUNNEL_PID.read_text().strip()), 0)
+    except (OSError, ValueError):
+        return None
+    return TUNNEL_URL.read_text(encoding="utf-8").strip() or None
+
+
+def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
+    """Démarre un tunnel Cloudflare détaché vers :5174 et renvoie son URL https://….trycloudflare.com.
+    Le bot (Grok Bot) ne voit pas localhost : c'est par là qu'il regarde la tête de pile. Le tunnel
+    survit à run_lots (le bot travaille aussi après la fin du batch) : `--stop-tunnel` l'arrête."""
+    existing = tunnel_url()
+    if existing:
+        return existing
+    exe = shutil.which("cloudflared")
+    if not exe:
+        log("cloudflared absent : pas de lien pour le bot (brew install cloudflared)")
+        return None
+    TUNNEL_LOG.write_text("", encoding="utf-8")
+    with TUNNEL_LOG.open("a", encoding="utf-8") as fh:
+        p = subprocess.Popen([exe, "tunnel", "--url", f"http://127.0.0.1:{port}", "--no-autoupdate"],
+                             stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+    TUNNEL_PID.write_text(str(p.pid), encoding="utf-8")
+    for _ in range(wait_s * 2):
+        m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", TUNNEL_LOG.read_text(encoding="utf-8", errors="replace"))
+        if m:
+            TUNNEL_URL.write_text(m.group(0), encoding="utf-8")
+            log(f"tunnel du poste de recette : {m.group(0)} (public, obscur ; à arrêter avec --stop-tunnel)")
+            return m.group(0)
+        time.sleep(0.5)
+    log("tunnel : pas d'URL après 40 s — voir tunnel.log")
+    return None
+
+
+def stop_tunnel() -> None:
+    if TUNNEL_PID.exists():
+        try:
+            os.kill(int(TUNNEL_PID.read_text().strip()), 15)
+            log("tunnel arrêté")
+        except (OSError, ValueError):
+            pass
+        TUNNEL_PID.unlink(missing_ok=True)
+    TUNNEL_URL.unlink(missing_ok=True)
+
+
+BOT_COMMENT_MARK = "🔗 Poste de recette"
+RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
+
+
+def publish_tip(branch: str) -> bool:
+    """Option --publish-tip : pousse la tête de pile (CI verte) sur `recette`, que deploy.yml déploie
+    sur le site (simulateur seulement). Le site publié devient alors ce que le bot et le porteur
+    recettent. Par défaut OFF : la pile de la nuit écrirait dans la base de prod."""
+    if sh(["git", "fetch", "-q", "origin", branch], cwd=ROOT, check=False, timeout=120).returncode != 0:
+        log(f"    publish-tip : fetch de {branch} impossible")
+        return False
+    sha = sh(["git", "rev-parse", f"origin/{branch}"], cwd=ROOT, check=False).stdout.strip()
+    p = sh(["git", "push", "-f", "origin", f"{sha}:refs/heads/{RECETTE_BRANCH}"], cwd=ROOT, check=False, timeout=120)
+    if p.returncode != 0:
+        log(f"    publish-tip : push impossible : {p.stderr.strip()[-200:]}")
+        return False
+    log(f"    tête de pile {branch} ({sha[:7]}) poussée sur `{RECETTE_BRANCH}` → déploiement du site dans ~8 min")
+    return True
+
+
+def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published: bool = False) -> None:
+    """Un commentaire par PR avec le lien vers la tête de pile et la consigne du bot (une seule fois)."""
+    e = state.done.get(lot_id) or {}
+    num = pr_number(e.get("pr"))
+    if not num or e.get("tunnel_comment"):
+        return
+    try:
+        from post_pr_comment import post as _post  # noqa: PLC0415
+        where = (f"site publié, déployé depuis la tête de pile `{state.last_branch}` — attendre ~8 min après ce commentaire"
+                 if published else f"tête de pile `{state.last_branch}`, build de prod, clés chargées")
+        body = (f"{BOT_COMMENT_MARK} ({where}) : {url}\n\n"
+                "🤖 **Grok Bot** — pré-revue visuelle : ouvre ce lien, vérifie chaque case de la rubrique « Recette » ci-dessus. "
+                "**Coche dans la PR** les cases que tu as vues et qui sont bonnes ; laisse vides les autres. Puis poste UN commentaire qui commence par "
+                "`## 🤖 Pré-revue` et liste exactement ce que tu as fait, une ligne par item : `- [x] 🤖 <item>` (coché par toi), "
+                "`- [ ] 🤖 <item> — KO : <écran, ce que je vois, ce que je voulais>` (défaut vu), `- [ ] 🤖 <item> — non vérifiable : <pourquoi>`. "
+                "Le porteur relit le matin : il décoche ce qu'il conteste. Ne ferme ni ne merge rien, ne modifie pas le texte de la PR.")
+        _post(num, body)
+        e["tunnel_comment"] = url
+        state.done[lot_id] = e
+        state.save()
+        log(f"    lien du poste posté sur la PR #{num}")
+    except Exception as ex:  # jamais bloquant
+        log(f"    lien du poste non posté sur #{num} : {ex}")
+
+
 def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> None:
     """Poste de recette sur la dernière branche. `quiet` (après chaque lot, lot W1) : on rebâtit
     l'app et le md sans ouvrir de fenêtre — le porteur recharge son onglet, la PR porte ses cases."""
@@ -829,9 +936,9 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
     ticked = total_items = 0
     blob = f"https://github.com/{owner_repo(repo)}/blob"
     try:
-        from review_collect import ko_comments as _ko_comments  # noqa: PLC0415  (lot W2, même dossier)
-    except Exception:  # pragma: no cover — collecte absente : le md se fait sans les KO
-        _ko_comments = None
+        from review_collect import ko_comments as _ko_comments, bot_verdicts as _bot_verdicts, item_key as _item_key  # noqa: PLC0415
+    except Exception:  # pragma: no cover — collecte absente : le md se fait sans les KO ni le bot
+        _ko_comments = _bot_verdicts = _item_key = None
     for lid, e in lots:
         num = pr_number(e.get("pr"))
         pr = fetch_pr(http, repo, num) if num else None
@@ -839,6 +946,13 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
         if not pr:
             by_screen["partout"].append(f"- {tag} PR illisible : ouvrir {e.get('pr') or e.get('branch')} et lire sa rubrique « Recette ».")
             continue
+        comments: list = []
+        if (_ko_comments or _bot_verdicts) and num:
+            try:
+                comments = (http or Http(None, None)).github(f"/repos/{owner_repo(repo)}/issues/{num}/comments?per_page=100") or []
+            except RuntimeError:
+                comments = []
+        bot = _bot_verdicts(comments) if _bot_verdicts else {}
         sections = pr_sections(pr.get("body") or "")
         steps = section_lines(sections, "recette", "recipe", "acceptance", "what to check")
         if not steps:
@@ -849,7 +963,12 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
             mark = ""
             if box:
                 ln = box.group(2)
-                mark = "✅ " if box.group(1).lower() == "x" else "⬜ "
+                checked = box.group(1).lower() == "x"
+                b = bot.get(_item_key(ln)) if (bot and _item_key) else None   # pré-revue du bot : qui a coché ?
+                if checked:
+                    mark = "✅🤖 " if (b and b.get("ok")) else "✅ "            # coché par le bot (non contredit) / par le porteur
+                else:
+                    mark = "🤖❌ " if (b and b.get("ko")) else "⬜ "            # KO vu par le bot / à voir
             ln = re.sub(r"^(\d+[.)]|[-*•])\s+", "", ln).strip()          # puce ou numéro, pas le gras
             ln = re.sub(r"\]\((docs/recette/[^)]+)\)", rf"]({blob}/{e['branch']}/\1?raw=true)", ln)
             ln = re.sub(r"`(docs/recette/[^`]+\.(?:jpg|jpeg|png))`", rf"[\1]({blob}/{e['branch']}/\1?raw=true)", ln)
@@ -898,10 +1017,12 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
         "**Comment recetter** : chaque PR porte sa recette en **cases à cocher**. Dans GitHub, coche ce que tu vois et qui est bon ; "
         "pour ce qui ne va pas, laisse la case vide et écris un commentaire qui commence par **« KO : »** (écran, ce que je vois, ce que je voulais), "
         "avec une capture si tu veux. Le correcteur lit ces cases et ces commentaires. Ce fichier est régénéré après chaque lot : "
-        "l'app sur :5174 est toujours la tête de pile (recharge l'onglet).",
+        "l'app sur :5174 est toujours la tête de pile (recharge l'onglet). Grok Bot fait une pré-revue la nuit : il coche ce qu'il a vérifié et le liste "
+        "dans son commentaire « 🤖 Pré-revue » — ✅🤖 = coché par le bot (décoche + « KO : » si tu contestes), ✅ = coché par toi, 🤖❌ = défaut vu par le bot.",
+        (f"Lien public du poste (pour le bot) : <{tunnel_url()}>" if tunnel_url() else "Pas de tunnel en route (le bot ne voit pas le poste)."),
         (f"État de la revue : **{ticked} / {total_items} items cochés**, **{len(kos)} KO**." if total_items or kos else "État de la revue : aucune case cochée pour l'instant."),
         "",
-        "## 1. Ce que tu regardes, écran par écran (✅ coché · ⬜ à voir)",
+        "## 1. Ce que tu regardes, écran par écran (✅ toi · ✅🤖 bot · ⬜ à voir · 🤖❌ KO du bot)",
         "",
     ]
     for sid, label, _ in SCREENS + [("partout", "Partout / autres", ())]:
@@ -1000,18 +1121,30 @@ def main() -> None:
     ap.add_argument("--no-recette", action="store_true", help="ne prépare pas le poste de recette (ni par lot, ni en fin de batch)")
     ap.add_argument("--no-recette-each", action="store_true", help="ne rafraîchit pas le poste après chaque lot (seulement en fin de batch)")
     ap.add_argument("--review-every", type=int, default=int(os.environ.get("BIM_REVIEW_EVERY", "4")),
-                    help="réviseur de nuit (agent fort) toutes les N PR, lots correctifs en file exécutés en bout de pile ; 0 = jamais (défaut 4)")
-    ap.add_argument("--review-model", default=os.environ.get("BIM_REVIEW_MODEL", "claude-fable-5-thinking-xhigh"), help="modèle du réviseur de nuit (CLI Cursor)")
+                    help="réviseur de nuit (code, Grok) toutes les N PR, lots correctifs en file exécutés en bout de pile ; 0 = jamais (défaut 4)")
+    ap.add_argument("--review-model", default=os.environ.get("BIM_REVIEW_MODEL", "cursor-grok-4.6-xhigh-fast"),
+                    help="modèle du réviseur de nuit (CLI Cursor). Grok : usage inclus. Fable est réservé au correcteur du matin (plan_corrections.py)")
     ap.add_argument("--review-timeout-hours", type=float, default=1.0)
+    ap.add_argument("--no-tunnel", action="store_true", help="ne pas exposer le poste de recette au bot (cloudflared) ; sinon un lien 🔗 est posté dans chaque PR")
+    ap.add_argument("--stop-tunnel", action="store_true", help="arrête le tunnel laissé en route et s'arrête")
+    ap.add_argument("--publish-tip", action="store_true", default=os.environ.get("BIM_PUBLISH_TIP") == "1",
+                    help="option : pousser chaque tête de pile (CI verte) sur la branche `recette` → le SITE publié suit la nuit (simulateur seul) ; "
+                         "le bot recette alors le vrai site. OFF par défaut : la pile écrirait dans la base de prod")
     args = ap.parse_args()
 
     if args.check:
         check(args)
         return
 
+    if args.stop_tunnel:
+        stop_tunnel()
+        return
+
     if args.recette:
         state = State.load()
         prepare_recette(state, args, Http(None, github_token_from_git()))
+        if not args.no_tunnel:
+            start_tunnel()
         return
 
     lots = select(parse_lots(PROMPTS_MD.read_text(encoding="utf-8")), args)

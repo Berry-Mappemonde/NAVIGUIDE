@@ -77,18 +77,36 @@ Sortie : commentaire GitHub + une ligne dans `infra/agents/review.md`
 (local, CLI Cursor, modèle `claude-fable-5-1-max`), ou une **Automation**
 Cursor déclenchée par « Pull request opened » (cloud, voir § 2).
 
-### 1.3 bis Nuit — le réviseur (agent fort, toutes les X PR)
+### 1.3 bis Nuit — deux réviseurs Grok, Fable seulement le matin
 
-`run_lots.py --review-every 4` : après chaque tranche de 4 PR, `review_agent.py`
-lance un agent **Claude Fable** (CLI local, `claude-fable-5-thinking-xhigh`) dans
-un worktree sur la **tête de pile** — il voit donc aussi ce que les lots
-suivants ont déjà fait. Il relit diff, corps de PR, captures, prompt du lot,
-plan et règles ; poste **un commentaire de revue par PR** (gabarit § 1.3 :
-conformité, libertés, plancher `main`, chiffres LLM / secrets / tests, recette
-visuelle et bilingue, prérequis, **verdict**) ; et, s'il faut corriger, écrit
-des lots `RC…` dans `infra/agents/queue.md` que `run_lots.py` relit entre deux
-lots et exécute **en bout de pile, la même nuit**. Il ne commite ni ne pousse
-de code, ne coche aucune case (les cases sont au porteur), ne merge rien.
+Claude Fable coûte cher : il n'intervient **qu'une fois**, le matin, après la
+revue humaine (`plan_corrections.py`). La nuit, deux réviseurs **Grok** (usage
+inclus) se partagent le travail :
+
+- **Le code — Grok 4.6 par le CLI** (`review_agent.py`, `run_lots.py
+  --review-every 4`) : après chaque tranche de 4 PR, dans un worktree sur la
+  **tête de pile** (il voit ce que les lots suivants ont déjà fait), il relit
+  diff, corps de PR, captures, prompt du lot, plan et règles ; poste **un
+  commentaire de revue par PR** (gabarit § 1.3, **verdict**) ; et, s'il faut
+  corriger, écrit des lots `RC…` dans `infra/agents/queue.md` que `run_lots.py`
+  relit entre deux lots et exécute **en bout de pile, la même nuit**. Il ne
+  commite ni ne pousse de code, ne merge rien.
+- **L'écran — Grok Bot** (ordinateur cloud, navigateur ; routine à coller :
+  `infra/agents/GROK_BOT_ROUTINE.md`) : il ouvre le poste de recette par le
+  lien « 🔗 Poste de recette » que `run_lots.py` poste dans chaque PR, refait
+  chaque étape de la Recette, **coche les cases** qu'il a vérifiées et poste un
+  commentaire « 🤖 Pré-revue » qui liste ce qu'il a coché et ses KO (capture).
+  C'est cette liste qui attribue une case au bot ; le matin, le porteur décoche
+  ce qu'il conteste. Il a besoin du connecteur GitHub de Grok Bot.
+
+**Comment le bot voit la tête de pile** : par défaut un **tunnel Cloudflare**
+(`cloudflared`, URL `trycloudflare.com` aléatoire, publique mais obscure) vers
+le poste du Mac, ouvert par `run_lots.py`, arrêté par `--stop-tunnel` ; `vite
+preview` autorise `.trycloudflare.com`. Option `--publish-tip` : la tête de pile
+(CI verte) est poussée sur la branche `recette` que `deploy.yml` déploie sur le
+**site publié** (simulateur seulement) — le bot recette alors le vrai site, mais
+la pile de la nuit écrit dans la base de prod : à réserver au jour où le dépôt
+public du simulateur sera la source du déploiement (H1, « deux dépôts clones »).
 
 ### 1.4 Matin — revue du porteur (humain dans la boucle)
 

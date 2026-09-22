@@ -50,5 +50,8 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5174,
     proxy,
+    // Poste de recette vu depuis le cloud (Grok Bot) par un tunnel Cloudflare
+    // (infra/agents/run_lots.py) : sans ceci, preview répond « Blocked request ».
+    allowedHosts: [".trycloudflare.com", "localhost", "127.0.0.1"],
   },
 });
