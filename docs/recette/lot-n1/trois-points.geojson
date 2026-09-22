@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "La Rochelle" },
+      "geometry": { "type": "Point", "coordinates": [-1.151, 46.157] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Gijon" },
+      "geometry": { "type": "Point", "coordinates": [-5.662, 43.545] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Lisbonne" },
+      "geometry": { "type": "Point", "coordinates": [-9.139, 38.722] }
+    }
+  ]
+}

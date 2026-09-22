@@ -90,6 +90,7 @@ import { mapInsetVars } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
+import { parseRouteFile } from "./utils/routeImport.js";
 import { usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
@@ -194,11 +195,13 @@ export default function App() {
   const {
     drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, canRedo,
     reset: _resetDrawState, addPoint: handleDrawingClick, undo: handleDrawUndo, redo: handleDrawRedo,
+    importPoints: handleImportPoints,
   } = drawingState;
 
   const [layerPopup, setLayerPopup] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [clipboardToast, setClipboardToast] = useState(null);
+  const [drawNotice, setDrawNotice] = useState(null);
   // Satellite / weather popup of a route click (lot J: hooks/useSatellitePopup.js).
   const satellite = useSatellitePopup();
   const {
@@ -1183,6 +1186,43 @@ export default function App() {
     return drawingState.toGeoJson();
   };
 
+  const handleImportRoute = useCallback(async (file) => {
+    if (!file) return;
+    let text = "";
+    try {
+      text = await file.text();
+    } catch {
+      setDrawNotice({ kind: "error", text: t("importRouteError") });
+      return;
+    }
+    const parsed = parseRouteFile(text, file.name);
+    if (parsed.error) {
+      setDrawNotice({
+        kind: "error",
+        text: t(parsed.error === "noPoints" ? "noCoordsFound" : "importRouteError"),
+      });
+      return;
+    }
+    if (drawnPoints.length && !window.confirm(t("importRouteReplace"))) return;
+    await handleImportPoints(parsed.points);
+    if (parsed.truncated) setDrawNotice({ kind: "notice", text: t("importRouteTruncated") });
+    else setDrawNotice(null);
+    const map = sceneApiRef.current?.getMap?.();
+    if (!map || !parsed.points.length) return;
+    const latlngs = parsed.points.map((p) => [p.lat, p.lon]);
+    if (latlngs.length === 1) {
+      sceneApiRef.current.setView(latlngs[0], 6, { animate: false });
+      return;
+    }
+    map.fitBounds(latlngs, { padding: [56, 56], maxZoom: 6, animate: false });
+  }, [drawnPoints.length, handleImportPoints, t]);
+
+  useEffect(() => {
+    if (!drawNotice) return undefined;
+    const id = setTimeout(() => setDrawNotice(null), 4000);
+    return () => clearTimeout(id);
+  }, [drawNotice]);
+
   const handleDrawContinue = () => {
     const mapView = sceneApiRef.current?.getView();
     drawRestoreRef.current = {
@@ -1544,6 +1584,8 @@ export default function App() {
         canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
         drawing={drawing}
         onDrawUndo={handleDrawUndo}
+        onImportRoute={handleImportRoute}
+        importBusy={drawingLoading}
         isCockpit={false}
         polarData={polarData}
         briefingLoading={iciPack.loading || briefingLoading}
@@ -1667,6 +1709,14 @@ export default function App() {
       {clipboardToast && (
         <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full">
           📋 {clipboardToast} {t("copied")}
+        </div>
+      )}
+      {drawNotice && (
+        <div
+          data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
+          className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full"
+        >
+          {drawNotice.text}
         </div>
       )}
 

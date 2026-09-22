@@ -85,6 +85,10 @@ export default {
   importOrDraw:       "Importer ou tracer une route",
   cancel:             "Annuler",
   finish:             "Terminer",
+  importRoute:        "Importer",
+  importRouteReplace: "Remplacer la route en cours ?",
+  importRouteError:   "Fichier illisible",
+  importRouteTruncated: "60 points maximum",
   drawOwnRoute:       "Tracer votre propre route",
   backToBerry:        "Revenir à la route Berry-Mappemonde", // pragma: allowlist secret
   berry:              "Berry",
