@@ -1039,6 +1039,37 @@ def start_loop_watch() -> None:
     log(f"la boucle veille (loop.py, journal {LOOP_LOG}) : « revue finie » sur la PR de tête déclenchera le correcteur")
 
 
+WATCHDOG_PID = STATE_DIR / "watchdog.pid"
+NIGHT_REPORT = STATE_DIR / "RAPPORT_DE_NUIT.md"
+
+
+def start_watchdog() -> None:
+    """Le chien de garde (watchdog.py, lot W6) veille à côté du batch et de la boucle : boucle absente,
+    tunnel mort, poste en panne, pré-revue du bot absente… et répare ce qu'il sait. Un seul à la fois."""
+    try:
+        if WATCHDOG_PID.exists():
+            os.kill(int(WATCHDOG_PID.read_text(encoding="utf-8").strip()), 0)
+            return
+    except (OSError, ValueError):
+        pass
+    try:
+        subprocess.Popen([sys.executable, str(HERE / "watchdog.py")], cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, env={**os.environ, "BIM_STATE_DIR": str(STATE_DIR)})
+        log(f"chien de garde lancé (watchdog.py — rapport : {NIGHT_REPORT})")
+    except Exception as e:  # jamais bloquant
+        log(f"chien de garde non lancé : {e}")
+
+
+def night_report_line() -> str | None:
+    """La ligne « Incidents : … » du rapport de nuit, pour la recette du matin."""
+    if not NIGHT_REPORT.exists():
+        return None
+    for ln in NIGHT_REPORT.read_text(encoding="utf-8", errors="replace").splitlines():
+        if ln.startswith("- Incidents :"):
+            return ln[2:] + f" — détail : `{NIGHT_REPORT}`"
+    return None
+
+
 def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> None:
     """Poste de recette sur la dernière branche. `quiet` (après chaque lot, lot W1) : on rebâtit
     l'app et le md sans ouvrir de fenêtre — le porteur recharge son onglet, la PR porte ses cases."""
@@ -1197,6 +1228,7 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
         "dans son commentaire « 🤖 Pré-revue » — ✅🤖 = coché par le bot (décoche + « KO : » si tu contestes), ✅ = coché par toi, 🤖❌ = défaut vu par le bot.",
         (f"Lien public du poste (pour le bot) : <{tunnel_url()}>" if tunnel_url() else "Pas de tunnel en route (le bot ne voit pas le poste)."),
         (f"État de la revue : **{ticked} / {total_items} items cochés**, **{len(kos)} KO**." if total_items or kos else "État de la revue : aucune case cochée pour l'instant."),
+        *([f"Chien de garde : {night_report_line()}"] if night_report_line() else []),
         "",
         "## 1. Ce que tu regardes, écran par écran (✅ toi · ✅🤖 bot · ⬜ à voir · 🤖❌ KO du bot)",
         "",
@@ -1468,6 +1500,8 @@ def main() -> None:
             args.model = resolve_local_model(info["models"], args.model)
             log(f"CLI Cursor {info['agent']} connecté ; modèle : {args.model or 'défaut du compte'}")
 
+    if not args.dry_run:
+        start_watchdog()
     log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}" + (f" — revue de nuit toutes les {args.review_every} PR ({args.review_model})" if args.review_every else ""))
     pending = list(lots)
     since_review: list[str] = []          # lots FINISHED pas encore relus par le réviseur de nuit

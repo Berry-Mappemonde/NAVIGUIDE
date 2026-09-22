@@ -251,6 +251,7 @@ def main() -> None:
     if args.status:
         print(json.dumps(st, indent=2, ensure_ascii=False))
         return
+    rl.start_watchdog()   # lot W6 : le chien de garde veille à côté de la boucle (boucle absente, tunnel, poste, bot…)
     if args.start_at:
         st["phase"] = args.start_at
         if args.from_ and args.until:
