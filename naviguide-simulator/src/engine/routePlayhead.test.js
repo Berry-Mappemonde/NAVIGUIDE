@@ -94,7 +94,7 @@ describe("Guiana → SPM air hop", () => {
     assert.equal(here.jump, false);
   });
 
-  it("exclut les milles Halifax ↔ Saint-Pierre du cumul à la voile", () => {
+  it("compte les milles Halifax ↔ Saint-Pierre à la voile", () => {
     const flat = flattenRoute([
       { coords: [[-52.3533, 4.9333], [-52.35, 4.94]] },
       {
@@ -103,9 +103,9 @@ describe("Guiana → SPM air hop", () => {
         coords: [[-63.5652, 44.6488], [-56.1628, 46.7761]],
       },
     ]);
-    assert.ok(flat.totalNm < 20, `voile ${flat.totalNm}`);
+    assert.ok(flat.totalNm > 200, `voile ${flat.totalNm}`);
     assert.ok(flat.points.some((p) => p.jump && p.air));
-    assert.ok(flat.totalFilmNm > 200);
+    assert.ok(flat.totalFilmNm > flat.totalNm);
   });
 });
 
