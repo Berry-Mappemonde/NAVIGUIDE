@@ -37,12 +37,27 @@ const proxy = {
         : { target: API, changeOrigin: true },
 };
 
+// Poste de recette vu depuis le cloud (Grok Bot) par un tunnel Cloudflare
+// (infra/agents/run_lots.py) : sans ceci, Vite répond 403 « Blocked request ».
+// Vite n'ajoute `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` qu'à `server.allowedHosts`
+// (et seulement si c'est déjà une liste), jamais à `preview` : la nuit du 22 sept.,
+// le tunnel nommé recette.blueintelligence.online a été refusé toute la nuit.
+// D'où une liste partagée, qui lit aussi NAVIGUIDE_PREVIEW_HOST (ensure-dev.sh).
+const allowedHosts = [
+  ".trycloudflare.com",
+  ".blueintelligence.online",
+  "localhost",
+  "127.0.0.1",
+  ...(process.env.NAVIGUIDE_PREVIEW_HOST ? [process.env.NAVIGUIDE_PREVIEW_HOST] : []),
+];
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     host: "0.0.0.0",
     port: 5174,
     proxy,
+    allowedHosts,
   },
   // `vite preview` (build de prod) parle à la même API : le profil de prod
   // (lot J) et la fumée Playwright tournent sur une app complète.
@@ -50,8 +65,6 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5174,
     proxy,
-    // Poste de recette vu depuis le cloud (Grok Bot) par un tunnel Cloudflare
-    // (infra/agents/run_lots.py) : sans ceci, preview répond « Blocked request ».
-    allowedHosts: [".trycloudflare.com", "localhost", "127.0.0.1"],
+    allowedHosts,
   },
 });

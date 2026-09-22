@@ -851,6 +851,9 @@ def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
       URL stable, mêmes règles Cloudflare que le site — c'est ce que le navigateur de Grok Bot sait ouvrir ;
     - sinon **tunnel rapide** `https://….trycloudflare.com` : pratique pour un humain, mais Cloudflare y bloque les
       navigateurs automatisés (403 « Your request was blocked », 21 sept.).
+    Dans les deux cas le tunnel présente `Host: localhost` à Vite (`--http-host-header`) : `vite preview` refuse
+    les hôtes qu'il ne connaît pas (403 « Blocked request » sur recette.blueintelligence.online toute la nuit
+    du 22 sept.), et `localhost` est toujours accepté, quelle que soit la config du worktree servi.
     Le tunnel survit à run_lots (le bot travaille aussi après la fin du batch) : `--stop-tunnel` l'arrête."""
     existing = tunnel_url()
     if existing:
@@ -861,10 +864,11 @@ def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
         return None
     name, host = tunnel_settings()
     TUNNEL_LOG.write_text("", encoding="utf-8")
+    origin = ["--url", f"http://127.0.0.1:{port}", "--http-host-header", "localhost"]
     if name and host:
-        cmd = [exe, "tunnel", "--no-autoupdate", "run", "--url", f"http://127.0.0.1:{port}", name]
+        cmd = [exe, "tunnel", "--no-autoupdate", "run", *origin, name]
     else:
-        cmd = [exe, "tunnel", "--url", f"http://127.0.0.1:{port}", "--no-autoupdate"]
+        cmd = [exe, "tunnel", *origin, "--no-autoupdate"]
     with TUNNEL_LOG.open("a", encoding="utf-8") as fh:
         p = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
     TUNNEL_PID.write_text(str(p.pid), encoding="utf-8")
