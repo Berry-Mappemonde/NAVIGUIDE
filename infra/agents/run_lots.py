@@ -1350,7 +1350,11 @@ def main() -> None:
                     comments = http.github(f"/repos/{owner_repo(args.repo)}/issues/{num}/comments?per_page=100") or []
                 except RuntimeError:
                     comments = []
-                if not any(BOT_PREREVIEW_RE.search(c.get("body") or "") for c in comments):
+                try:
+                    from review_collect import trusted as _trusted  # noqa: PLC0415
+                except Exception:
+                    _trusted = lambda c: True  # noqa: E731
+                if not any(BOT_PREREVIEW_RE.search(c.get("body") or "") and _trusted(c) for c in comments):
                     missing.append(f"#{num}")
             if not missing:
                 log("    pré-revue Grok Bot reçue sur toute la tranche")

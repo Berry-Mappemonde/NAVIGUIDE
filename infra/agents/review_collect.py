@@ -64,7 +64,7 @@ def global_comments(comments: list[dict]) -> list[dict]:
     out = []
     for c in comments or []:
         text = (c.get("body") or "").strip()
-        if not GLOBAL_RE.match(text):
+        if not GLOBAL_RE.match(text) or not trusted(c):
             continue
         images = IMG_MD_RE.findall(text) + [u for u in IMG_URL_RE.findall(text) if u not in IMG_MD_RE.findall(text)]
         out.append({"author": (c.get("user") or {}).get("login"), "at": c.get("created_at"), "url": c.get("html_url"),
@@ -107,6 +107,45 @@ def token() -> str | None:
     sys.path.insert(0, str(HERE))
     from gh_token import token as _token  # noqa: PLC0415
     return _token(required=False)
+
+
+_TRUSTED: set[str] | None = None
+
+
+def trusted_logins() -> set[str]:
+    """Qui a le droit de parler au pipeline : les ADMINS du dépôt (le porteur) + le compte du jeton,
+    + BIM_TRUSTED_LOGINS (env ou fichier de clés, séparés par des virgules). Le dépôt est public :
+    n'importe qui peut commenter ; un collaborateur en écriture aussi. Leurs commentaires sont ignorés."""
+    global _TRUSTED
+    if _TRUSTED is not None:
+        return _TRUSTED
+    logins: set[str] = set()
+    extra = os.environ.get("BIM_TRUSTED_LOGINS") or ""
+    env_file = Path(os.environ.get("NAVIGUIDE_ENV_FILE", str(Path.home() / ".config" / "naviguide" / "simulator.env")))
+    if not extra and env_file.exists():
+        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("BIM_TRUSTED_LOGINS="):
+                extra = line.split("=", 1)[1].strip().strip('"')
+    logins.update(x.strip() for x in extra.split(",") if x.strip())
+    tok = token()
+    if tok:
+        try:
+            me = gh("/user", tok) or {}
+            if me.get("login"):
+                logins.add(me["login"])
+            for c in gh(f"/repos/{REPO}/collaborators?affiliation=all&per_page=100", tok) or []:
+                if (c.get("permissions") or {}).get("admin"):
+                    logins.add(c["login"])
+        except Exception:
+            pass
+    _TRUSTED = logins
+    return logins
+
+
+def trusted(comment: dict) -> bool:
+    """Un commentaire compte s'il vient d'un auteur de confiance (ou si la liste est vide : pas de jeton)."""
+    allowed = trusted_logins()
+    return not allowed or ((comment.get("user") or {}).get("login") in allowed)
 
 
 def gh(path: str, tok: str | None = None):
@@ -183,7 +222,7 @@ def bot_verdicts(comments: list[dict]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for c in comments or []:
         body = c.get("body") or ""
-        if not BOT_MARK_RE.search(body):
+        if not BOT_MARK_RE.search(body) or not trusted(c):
             continue
         for ln in body.splitlines():
             m = BOT_ITEM_RE.match(ln)
@@ -205,7 +244,7 @@ def ko_comments(comments: list[dict]) -> list[dict]:
     out = []
     for c in comments or []:
         text = (c.get("body") or "").strip()
-        if not KO_RE.match(text):
+        if not KO_RE.match(text) or not trusted(c):
             continue
         images = IMG_MD_RE.findall(text) + [u for u in IMG_URL_RE.findall(text) if u not in IMG_MD_RE.findall(text)]
         out.append({

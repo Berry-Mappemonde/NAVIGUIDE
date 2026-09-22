@@ -36,6 +36,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import run_lots as rl  # noqa: E402
+import review_collect as rc  # noqa: E402
 
 LOOP_JSON = rl.STATE_DIR / "loop-state.json"
 LOTS_LINE_RE = re.compile(r"^\s*LOTS\s*:\s*(.+?)\s*$", re.I | re.M)
@@ -87,7 +88,7 @@ def wait_review_done(number: int, poll_s: int) -> dict:
                 return {"signal": "closed", "merged": bool(pr.get("merged_at"))}
             for c in gh_comments(number):
                 body = c.get("body") or ""
-                if REVIEW_DONE_RE.search(body) and "🤖" not in body[:40]:
+                if REVIEW_DONE_RE.search(body) and "🤖" not in body[:40] and rc.trusted(c):
                     rl.log(f"    signal « revue finie » reçu ({(c.get('user') or {}).get('login')}, {c.get('created_at')})")
                     return {"signal": "comment", "merged": False}
         except Exception as e:
@@ -179,7 +180,8 @@ def wait_go(st: dict, args) -> dict:
             if pr.get("state") == "closed":
                 rl.log(f"GO : PR #{n} fermée — {'mergée' if pr.get('merged_at') else 'NON mergée'}")
                 return pr
-            pending = [c for c in gh_comments(n) if c.get("id") not in seen and re.match(r"^\s*(?:\*\*)?(CORRIGER|AMENDER|REVOIR|CHANGER)\s*:", (c.get("body") or "").strip(), re.I)]
+            pending = [c for c in gh_comments(n) if c.get("id") not in seen and rc.trusted(c)
+                       and re.match(r"^\s*(?:\*\*)?(CORRIGER|AMENDER|REVOIR|CHANGER)\s*:", (c.get("body") or "").strip(), re.I)]
             if pending:
                 rl.log(f"    {len(pending)} commentaire(s) CORRIGER sur le GO → amendement")
                 rc = run([sys.executable, str(HERE / "plan_corrections.py"), "--amend", str(n), "--model", args.corrector_model], timeout=2 * 3600)
