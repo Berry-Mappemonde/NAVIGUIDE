@@ -1097,8 +1097,20 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
             extra.append(link)
     last_pr = next((f"[#{pr_number(e['pr'])}]({e['pr']})" for lid, e in reversed(lots) if e.get("branch") == last and pr_number(e.get("pr"))), None)
 
+    tip_link = f"[#{pr_number(state.done[state.last_lot]['pr'])}]({state.done[state.last_lot]['pr']})" if state.last_lot in state.done and state.done[state.last_lot].get("pr") else "la dernière PR de la pile"
     lines = [
         f"# Recette du batch — {time.strftime('%d/%m/%Y %H:%M')}",
+        "",
+        "## 0. À faire maintenant, pas à pas",
+        "",
+        "1. **Regarder** l'application ouverte dans Chrome (<http://localhost:5174>) en suivant le § 1 ci-dessous, écran par écran.",
+        "2. **Cocher** dans chaque PR GitHub (liens au § 1) les cases que tu as vues et qui sont bonnes ; pour ce qui ne va pas, laisser la case vide et écrire un commentaire qui commence par `KO :` (écran, ce que je vois, ce que je voulais). Ce que Grok Bot a déjà coché (✅🤖) reste coché si tu es d'accord.",
+        f"3. **Merger la PR de tête** {tip_link} (bouton vert « Merge pull request », option « Create a merge commit ») : GitHub ferme les autres PR de la pile.",
+        "4. **Lancer le correcteur** dans le Terminal : `cd ~/Blue-Intelligence-Map && git checkout main && git pull --ff-only && caffeinate -i python3 infra/agents/loop.py --start-at correct --cycles 1`",
+        "   → il collecte ta revue et celle du bot, écrit le plan de corrections et ouvre une PR « GO ».",
+        "5. **Lire puis merger la PR GO** : le batch suivant part tout seul ; ce fichier sera régénéré à la fin, avec les mêmes cinq étapes.",
+        "",
+        "Rien d'autre à lancer. Si une étape échoue, voir § 7.",
         "",
         f"Ouvre <http://localhost:5174> ({'déjà ouvert' if launched else 'le poste n’a pas démarré : `cd ' + str(wt / 'naviguide-simulator') + ' && bash ensure-dev.sh --prod --open`'}).",
         f"Branche : `{branch}` — build de prod — API du même checkout (`{wt}`).",
