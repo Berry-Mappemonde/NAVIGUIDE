@@ -846,8 +846,8 @@ def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
     """Démarre un tunnel Cloudflare détaché vers :5174 et renvoie son URL.
 
     Deux formes :
-    - **tunnel nommé** sur le domaine du porteur (BIM_TUNNEL_NAME=recette, BIM_TUNNEL_HOST=recette.naviguide.fr,
-      posés une fois : `cloudflared tunnel login` → `tunnel create recette` → `tunnel route dns recette recette.naviguide.fr`) :
+    - **tunnel nommé** sur le domaine du porteur (BIM_TUNNEL_NAME=recette, BIM_TUNNEL_HOST=recette.blueintelligence.online,
+      posés une fois : `cloudflared tunnel login` → `tunnel create recette` → `tunnel route dns recette recette.blueintelligence.online`) :
       URL stable, mêmes règles Cloudflare que le site — c'est ce que le navigateur de Grok Bot sait ouvrir ;
     - sinon **tunnel rapide** `https://….trycloudflare.com` : pratique pour un humain, mais Cloudflare y bloque les
       navigateurs automatisés (403 « Your request was blocked », 21 sept.).
