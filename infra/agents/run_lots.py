@@ -956,7 +956,10 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
     wt = recette_worktree(state, branch)
     sim = wt / "naviguide-simulator"
     try:
-        cmd = ["bash", str(sim / "ensure-dev.sh"), "--prod"] + ([] if quiet else ["--open"])
+        # Toujours le script du checkout principal (à jour), pointé sur le worktree du lot : une branche
+        # née avant une correction du script (hôtes autorisés du preview…) en profite quand même.
+        script = ROOT / "naviguide-simulator" / "ensure-dev.sh"
+        cmd = ["bash", str(script), "--prod", f"--dir={sim}"] + ([] if quiet else ["--open"])
         env = dict(os.environ)
         _name, host = tunnel_settings()
         if host:   # le preview doit accepter l'hôte du tunnel nommé (sinon Vite : « Blocked request »)
