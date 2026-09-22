@@ -92,6 +92,8 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /preferCanvas:\s*true/);
     assert.match(src, /divIconCache/);
     assert.match(src, /flagWorldLngsForView/);
+    assert.match(src, /zoomControl:\s*false/);
+    assert.match(src, /position:\s*"bottomright"/);
   });
 
   it("clic drapeau hors dessin → onWaypointClick ; en dessin → inchangé", () => {
