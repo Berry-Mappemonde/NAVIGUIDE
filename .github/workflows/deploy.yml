@@ -6,7 +6,9 @@ name: Déploiement VPS
 
 on:
   push:
-    branches: [main]
+    # `recette` = tête de pile poussée par infra/agents/run_lots.py --publish-tip :
+    # simulateur seulement (plan_deploy.py), jamais BI ni l'ancien NAVIGUIDE.
+    branches: [main, recette]
   schedule:
     - cron: "*/20 * * * *"
   workflow_dispatch:
@@ -50,6 +52,7 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
           INPUT_SITE: ${{ github.event.inputs.site }}
           GITHUB_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
         run: python3 infra/vps/ci/plan_deploy.py >> "$GITHUB_OUTPUT"
 
   blue-intelligence:
