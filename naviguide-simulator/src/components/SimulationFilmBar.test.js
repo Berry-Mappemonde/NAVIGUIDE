@@ -52,8 +52,8 @@ describe("barre film (lot RB4) — vitesse cyclique", () => {
   });
 });
 
-describe("barre film (lot RB4) — libellé météo", () => {
-  it("les deux : climatologie + GFS", () => {
+describe("barre film (lot RC1) — libellé météo du point", () => {
+  it("climatology + weatherLine global + sources vides → climatologie seule", () => {
     assert.equal(
       clockRegimeText({
         regime: "climatology",
@@ -61,19 +61,35 @@ describe("barre film (lot RB4) — libellé météo", () => {
         weatherLine: "GFS + GFS-Wave (Open-Meteo)",
         t,
       }),
-      "climatologie + GFS",
+      "climatologie",
     );
+    assert.equal(
+      weatherUsesGfs({
+        regime: "climatology",
+        sources: [],
+        weatherLine: "GFS + GFS-Wave (Open-Meteo)",
+      }),
+      false,
+    );
+  });
+
+  it("climatology + sources om-forecast → climatologie + GFS", () => {
     assert.equal(
       clockRegimeText({
         regime: "climatology",
         sources: ["om-forecast"],
+        weatherLine: "",
         t,
       }),
       "climatologie + GFS",
     );
+    assert.equal(
+      weatherUsesGfs({ regime: "climatology", sources: ["om-forecast"] }),
+      true,
+    );
   });
 
-  it("un seul : climatologie, ou GFS, ou hindcast", () => {
+  it("un seul : climatologie, ou GFS, ou hindcast (N sources ±spread inchangé)", () => {
     assert.equal(
       clockRegimeText({ regime: "climatology", sources: [], weatherLine: "", t }),
       "climatologie",
@@ -87,24 +103,24 @@ describe("barre film (lot RB4) — libellé météo", () => {
       }),
       "GFS",
     );
-    assert.match(
-      clockRegimeText({
-        regime: "hindcast",
-        sources: ["om-era5"],
-        spread: 1.5,
-        t,
-        lang: "fr",
-      }),
-      /hindcast/,
-    );
+    const hindcast = clockRegimeText({
+      regime: "hindcast",
+      sources: ["om-era5"],
+      spread: 1.5,
+      t,
+      lang: "fr",
+    });
+    assert.match(hindcast, /hindcast/);
+    assert.match(hindcast, /1 sources/);
+    assert.match(hindcast, /±1[,.]5 kn/);
     assert.equal(weatherUsesGfs({ regime: "climatology", sources: [], weatherLine: "" }), false);
     assert.equal(weatherUsesGfs({ regime: "forecast", sources: [], weatherLine: "" }), true);
   });
 
-  it("détail des modèles en info-bulle, pas dans le libellé des deux", () => {
+  it("détail des modèles en info-bulle, pas dans le libellé", () => {
     const both = clockRegimeText({
       regime: "climatology",
-      sources: ["atlas"],
+      sources: ["om-forecast"],
       weatherLine: "GFS + GFS-Wave (Open-Meteo)",
       t,
     });
@@ -118,5 +134,11 @@ describe("barre film (lot RB4) — libellé météo", () => {
     });
     assert.match(tip, /GFS-Wave/);
     assert.match(tip, /Open-Meteo/);
+  });
+
+  it("weather-line reste vide ; weatherUsesGfs n'ouvre plus weatherLine", () => {
+    const clockSrc = readFileSync(join(here, "filmBarClock.js"), "utf8");
+    assert.doesNotMatch(clockSrc, /\/gfs\/i\.test\(weatherLine\)/);
+    assert.match(bar, /<span data-testid="weather-line" className="text-cyan-200\/85"><\/span>/);
   });
 });

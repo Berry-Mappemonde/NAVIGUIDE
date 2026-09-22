@@ -13,15 +13,16 @@ export function nextFilmSpeed(current) {
   return PROFILES[(i + 1) % PROFILES.length].id;
 }
 
-export function weatherUsesGfs({ regime, sources, weatherLine }) {
+/** GFS du *point* : régime prévision, ou une source GFS / om-forecast / Open-Meteo.
+ *  `weatherLine` (mention globale « GFS + GFS-Wave (Open-Meteo) ») n'est pas une preuve. */
+export function weatherUsesGfs({ regime, sources }) {
   if (regime === "forecast") return true;
-  if (typeof weatherLine === "string" && /gfs/i.test(weatherLine)) return true;
   return (Array.isArray(sources) ? sources : []).some((s) => GFS_SOURCE_RE.test(String(s || "")));
 }
 
-export function clockRegimeText({ regime, sources, spread, weatherLine = "", t, lang = "fr" }) {
+export function clockRegimeText({ regime, sources, spread, t, lang = "fr" }) {
   const climo = regime === "climatology";
-  const gfs = weatherUsesGfs({ regime, sources, weatherLine });
+  const gfs = weatherUsesGfs({ regime, sources });
   if (climo && gfs) return t("clockWeatherClimoGfs");
   if (climo) return t("clockRegimeClimatology");
   if (regime === "hindcast") {
