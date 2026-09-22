@@ -923,6 +923,24 @@ def publish_tip(branch: str) -> bool:
     return True
 
 
+def wake_bot(kind: str, pr: int, url: str) -> None:
+    """Réveiller Grok Bot au bon moment (lot W1 bis) : si BIM_BOT_WEBHOOK est posé (environnement ou
+    ~/.config/naviguide/simulator.env — l'URL du déclencheur « webhook » d'une routine Grok Bot), on
+    l'appelle juste après avoir posté le commentaire 🔗 / 🧭. Sans webhook, la routine Grok Bot peut
+    aussi se déclencher sur l'événement GitHub « commentaire de PR » — même effet, sans minuteur."""
+    hook = os.environ.get("BIM_BOT_WEBHOOK") or _env_file_values().get("BIM_BOT_WEBHOOK")
+    if not hook:
+        return
+    body = json.dumps({"event": kind, "repo": owner_repo(DEFAULT_REPO), "pr": pr, "url": url,
+                       "text": ("Pré-revue visuelle demandée" if kind == "prereview" else "Parcours de référence demandé") + f" sur la PR #{pr} : {url}"}).encode()
+    try:
+        req = urllib.request.Request(hook, data=body, method="POST", headers={"Content-Type": "application/json", "User-Agent": "bim-run-lots"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            log(f"    Grok Bot réveillé par webhook ({kind}, HTTP {resp.status})")
+    except Exception as e:
+        log(f"    webhook Grok Bot injoignable : {e}")
+
+
 def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published: bool = False) -> None:
     """Un commentaire par PR avec le lien vers la tête de pile et la consigne du bot (une seule fois)."""
     e = state.done.get(lot_id) or {}
@@ -944,6 +962,7 @@ def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published
         state.done[lot_id] = e
         state.save()
         log(f"    lien du poste posté sur la PR #{num}")
+        wake_bot("prereview", num, url)
     except Exception as ex:  # jamais bloquant
         log(f"    lien du poste non posté sur #{num} : {ex}")
 
@@ -969,6 +988,7 @@ def post_parcours_request(state: State, url: str, repo: str) -> None:
         state.done[state.last_lot] = e
         state.save()
         log(f"    demande de parcours de référence postée sur la PR de tête #{num}")
+        wake_bot("parcours", num, url)
     except Exception as ex:
         log(f"    demande de parcours non postée : {ex}")
 
