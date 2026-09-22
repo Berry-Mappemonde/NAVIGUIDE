@@ -43,12 +43,22 @@ export function voiceLeadPolicy({
   alreadyRetried,
   chapterIdx = 0,
   chapterCount = 1,
+  hasMoreChunks = false,
 } = {}) {
-  const kind = voiceEndKind({ hadBoundary, elapsedMs, alreadyRetried });
+  const kind = voiceEndKind({ hadBoundary, elapsedMs, alreadyRetried, hasMoreChunks });
   if (kind === "retry") return { mode: "retry", finish: false, chapterIdx };
   if (kind === "linear") return { mode: "linear", finish: false, chapterIdx };
   const last = chapterIdx + 1 >= chapterCount;
-  return { mode: "advance", finish: last, chapterIdx: last ? chapterIdx : chapterIdx + 1 };
+  return { mode: "advance", finish: last && !hasMoreChunks, chapterIdx: last ? chapterIdx : chapterIdx + 1 };
+}
+
+/**
+ * Caméra live (Polynésie) seulement si le film est vraiment fini
+ * ou si le porteur a cliqué Stop — jamais sur un incident de voix.
+ */
+export function shouldReturnToLive({ userStopped = false, filmFinished = false, voiceIncident = false } = {}) {
+  if (voiceIncident && !userStopped && !filmFinished) return false;
+  return Boolean(userStopped || filmFinished);
 }
 
 /** Avance linéaire : le dernier chapitre est atteint à la durée cible, pas avant. */
@@ -147,7 +157,8 @@ export function stepAlongPlan({ plan, clock, frames = 60, dt = 1 / 60, elapsed0 
  * route de Saint-Maur à aujourd'hui. Le temps avance chaque frame ; la voix
  * recale vers timeAt(charIdx) en ≤ 300 ms. Sans voix, avance linéaire
  * continue sur 150 s (ou 180 s). `live` remplace le bateau officiel pendant
- * le film ; à la fin (ou sur Stop), retour au live.
+ * le film ; à la fin réelle ou sur Stop, retour au live — jamais sur
+ * un incident de voix (lot RB6).
  */
 export function useReplay({
   clock,
@@ -186,6 +197,7 @@ export function useReplay({
   const startWallRef = useRef(0);
   const chapterStartedAtRef = useRef(0);
   const finishedRef = useRef(false);
+  const stoppingRef = useRef(false);
   const voiceCharRef = useRef(0);
   const voiceFailedRef = useRef(false);
   const tMsRef = useRef(null);
@@ -200,6 +212,8 @@ export function useReplay({
   clockRef.current = clock;
 
   const stop = useCallback(() => {
+    stoppingRef.current = true;
+    finishedRef.current = true;
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
@@ -224,7 +238,6 @@ export function useReplay({
     voiceTargetRef.current = null;
     recaleRemainRef.current = 0;
     planRef.current = null;
-    finishedRef.current = false;
   }, []);
 
   const applyChapter = useCallback((ch) => {
@@ -242,7 +255,8 @@ export function useReplay({
   }, []);
 
   const finish = useCallback(() => {
-    if (finishedRef.current) return;
+    if (finishedRef.current || stoppingRef.current) return;
+    if (!shouldReturnToLive({ filmFinished: true })) return;
     finishedRef.current = true;
     const w = windowRef.current;
     if (w) setTMs(w.endMs);
@@ -318,6 +332,7 @@ export function useReplay({
     voiceTargetRef.current = lastTRef.current;
     recaleRemainRef.current = 0;
     finishedRef.current = false;
+    stoppingRef.current = false;
     startWallRef.current = 0;
     chapterStartedAtRef.current = 0;
     voiceCharRef.current = 0;
@@ -351,12 +366,13 @@ export function useReplay({
   }, []);
 
   const onVoiceLeadFailed = useCallback(() => {
+    if (stoppingRef.current || finishedRef.current) return;
     voiceFailedRef.current = true;
   }, []);
 
   const onVoiceEnd = useCallback(() => {
     const plan = planRef.current;
-    if (!plan || finishedRef.current) return;
+    if (!plan || finishedRef.current || stoppingRef.current) return;
     if (!voiceRef.current || voiceFailedRef.current || !canLeadWithVoice()) return;
     const idx = chapterIdxRef.current;
     const ch = plan.chapters[idx];
@@ -426,7 +442,8 @@ export function useReplay({
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
-      const done = !voiceClock && linear.finish && linear.lastReached;
+      const done = !voiceClock && linear.finish && linear.lastReached
+        && !stoppingRef.current;
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);
