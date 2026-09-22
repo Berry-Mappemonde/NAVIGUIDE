@@ -22,6 +22,11 @@ describe("i18n parity (lot F5)", () => {
     }
   });
 
+  it("lot RB8 — info-bulle de vitesse d'époque", () => {
+    assert.equal(fr.traveledEraSpeed, "{knots} kn");
+    assert.equal(en.traveledEraSpeed, "{knots} kn");
+  });
+
   it("lot R2 — Escale précédente et info-bulles de régime", () => {
     assert.equal(fr.previousEscale, "Escale précédente");
     assert.equal(en.previousEscale, "Previous stop");

@@ -451,6 +451,7 @@ export default {
   regimeTooltipClimatology: "climatologie : moyenne du mois au-delà",
   voyageTwa:        "TWA {deg}°",
   voyageLocalKnots: "{knots} kt",
+  traveledEraSpeed: "{knots} kn",
   escalesQuay:      "{days} j à quai",
   viewModeGroup:    "Suivre l’expédition ou Simulation",
   followExpeditionButton: "Suivre l’expédition",

@@ -5,17 +5,34 @@ export const REGIME_COLORS = Object.freeze({
   climatology: "#c084fc",
 });
 
+function sameEraSpeed(a, b) {
+  const left = Number(a);
+  const right = Number(b);
+  if (!Number.isFinite(left) && !Number.isFinite(right)) return true;
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  return Math.abs(left - right) < 0.05;
+}
+
 function mergeRegimeCoords(segs) {
   const out = [];
   for (const s of segs) {
     const last = out.at(-1);
-    if (last && last.regime === s.regime) {
+    if (last && last.regime === s.regime && sameEraSpeed(last.speedKnots, s.speedKnots)) {
       last.coords.push(s.coords[1]);
     } else {
-      out.push({ regime: s.regime, coords: s.coords.slice() });
+      out.push({ regime: s.regime, speedKnots: s.speedKnots, coords: s.coords.slice() });
     }
   }
   return out;
+}
+
+/** Vitesse hindcast d'époque, ou null (jamais inventée ; rien pour l'avion). */
+export function traveledEraSpeed(segment) {
+  if (!segment || segment.regime !== "hindcast") return null;
+  if (segment.air || segment.vehicle === "plane" || segment.vehicle === "side") return null;
+  const knots = Number(segment.speedKnots);
+  if (!Number.isFinite(knots) || knots <= 0) return null;
+  return Math.round(knots * 10) / 10;
 }
 
 /**
@@ -43,6 +60,7 @@ export function traveledRegimeSegments(vertices, traveledNm) {
     const lon = a.lon + (b.lon - a.lon) * t;
     raw.push({
       regime: b.regime || b.kind || a.regime || a.kind || "climatology",
+      speedKnots: b.speedKnots ?? a.speedKnots ?? null,
       coords: [[a.lon, a.lat], [lon, lat]],
     });
   }

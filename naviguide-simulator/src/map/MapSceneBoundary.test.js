@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { worldCopyCoords, WORLD_COPY_LON_BOUND } from "../utils/geo.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (file) => readFileSync(join(here, file), "utf8");
@@ -58,6 +59,18 @@ describe("MapScene boundary", () => {
     assert.match(css, /\.leaflet-control-zoom/);
     assert.match(css, /flex-direction:\s*row/);
     assert.match(css, /\.leaflet-bottom\.leaflet-right \.leaflet-control/);
+  });
+
+  it("après un grand glissement à droite, des points de route existent dans la fenêtre est (lot RB8)", () => {
+    const line = [];
+    for (let lon = -360; lon <= 8; lon += 8) line.push([lon, 12]);
+    const east = worldCopyCoords(line).flat().filter(([lon]) => (
+      lon >= 360 && lon <= WORLD_COPY_LON_BOUND
+    ));
+    assert.ok(east.length > 0, "fenêtre est [360, 540] sans point de route");
+    const src = read("./MapSceneController.js");
+    assert.match(src, /worldCopyOffsets/);
+    assert.match(src, /worldCopyLngs\(point\.lon\)/);
   });
 
   it("trace une jambe air en dash noir non interactif", () => {
