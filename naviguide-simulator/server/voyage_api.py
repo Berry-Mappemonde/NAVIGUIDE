@@ -787,8 +787,9 @@ def get_official_eta(stop: str = Query(..., min_length=1)):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    from ensemble_eta import official_eta  # noqa: PLC0415
-    return official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
+    from ensemble_eta import official_eta, tighten_eta_payload  # noqa: PLC0415
+    raw = official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
+    return tighten_eta_payload(raw, _now())
 
 
 @router.get("/voyage/official/plan-review")

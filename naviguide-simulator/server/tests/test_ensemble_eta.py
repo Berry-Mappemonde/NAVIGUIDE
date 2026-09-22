@@ -16,14 +16,20 @@ from ensemble_eta import (
     CACHE_NS,
     CACHE_TTL_S,
     ENSEMBLE_MODELS,
+    ETA_MAX_SPAN_DAYS,
+    ETA_MIN_KN,
     FORECAST_DAYS,
     arrival_quantiles,
+    bound_eta_quantiles,
     compute_eta,
     empty_eta,
     empirical_quantile,
     fetch_point_members,
+    implied_speed_kn,
     parse_members,
     sample_leg_points,
+    tighten_eta_arrivals,
+    tighten_eta_payload,
 )
 
 NOW = datetime(2026, 9, 20, 12, tzinfo=timezone.utc)
@@ -239,3 +245,51 @@ def test_sample_leg_points_step_at_most_60nm():
     assert all(g <= 60.0 + 1e-6 for g in gaps)
     assert ENSEMBLE_MODELS == "gfs_seamless,ecmwf_ifs025"
     assert FORECAST_DAYS == 15
+
+
+def test_compute_eta_drops_zero_wind_member():
+    times = _hours(96)
+    speeds = [12.0] * 29 + [0.0]
+    payload = _ensemble_json(times, speeds, direction=0.0)
+    server = _start_server(payload)
+    try:
+        _bind_server(server)
+        points, marks, sample = _leg()
+        out = compute_eta(
+            points=points, marks=marks, stop="Fort-de-France",
+            now=NOW, polar_raw=C4_POLAR, sample=sample,
+        )
+        assert out["members"] >= 1
+        assert all(float(k) >= ETA_MIN_KN for k in (out.get("memberKnots") or []))
+        assert 0.0 not in (out.get("memberKnots") or [])
+    finally:
+        server.shutdown()
+
+
+def test_zero_kn_member_is_dropped_and_span_is_days():
+    now = NOW
+    remaining = 9151.0
+    healthy = [now + timedelta(days=47.7 + (i - 40) * 0.05) for i in range(80)]
+    dead = now + timedelta(days=remaining / 0.5 / 24)
+    healthy[0] = dead
+    assert implied_speed_kn(remaining, now, dead) < ETA_MIN_KN
+    kept = tighten_eta_arrivals(healthy, remaining_nm=remaining, now=now)
+    assert dead not in kept
+    assert all(implied_speed_kn(remaining, now, a) >= ETA_MIN_KN for a in kept)
+    p10, p50, p90 = arrival_quantiles(kept)
+    p10, p50, p90 = bound_eta_quantiles(p10, p50, p90)
+    span = (p90 - p10).total_seconds() / 86400.0
+    assert span <= ETA_MAX_SPAN_DAYS + 1e-6
+    exploded = {
+        "members": 80,
+        "p10": (now + timedelta(days=53)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "p50": (now + timedelta(days=55)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "p90": (now + timedelta(days=262)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "memberKnots": [8.0, 8.1, 0.0],
+        "source": "open-meteo-ensemble",
+    }
+    tight = tighten_eta_payload(exploded, now)
+    assert tight["members"] == 80
+    t10, t90 = datetime.fromisoformat(tight["p10"].replace("Z", "+00:00")), datetime.fromisoformat(tight["p90"].replace("Z", "+00:00"))
+    assert (t90 - t10).total_seconds() / 86400.0 <= ETA_MAX_SPAN_DAYS + 1e-6
+    assert 0.0 not in (tight.get("memberKnots") or [])

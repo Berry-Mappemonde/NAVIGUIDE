@@ -15,7 +15,9 @@ describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
     assert.match(src, /formatEtaRange/);
     assert.match(src, /formatEtaRangeTitle/);
     assert.match(src, /useOfficialEta/);
+    assert.match(src, /nextStopFromMarks/);
+    assert.match(src, /stopMatch/);
+    assert.match(src, /nextIndex/);
     assert.match(src, /title=\{etaTitle/);
-    assert.match(src, /current \+ 1/);
   });
 });
