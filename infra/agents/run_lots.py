@@ -1042,6 +1042,12 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
     log(f"recette : {RECETTE_MD}")
     if quiet:
         return
+    try:   # la revue globale du porteur : un fichier à lui, ouvert à côté du md (lot W2 bis)
+        from review_collect import ensure_global_template, GLOBAL_MD  # noqa: PLC0415
+        ensure_global_template()
+        sh(["open", "-a", "Cursor", str(GLOBAL_MD)], check=False, timeout=30)
+    except Exception as e:
+        log(f"    REVUE_GLOBALE.md non préparé : {e}")
     if sh(["open", "-a", "Cursor", str(RECETTE_MD)], check=False, timeout=30).returncode != 0:
         sh(["open", str(RECETTE_MD)], check=False, timeout=30)
 
@@ -1145,9 +1151,10 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
         "",
         "1. **Regarder** l'application ouverte dans Chrome (<http://localhost:5174>) en suivant le § 1 ci-dessous, écran par écran.",
         "2. **Cocher** dans chaque PR GitHub (liens au § 1) les cases que tu as vues et qui sont bonnes ; pour ce qui ne va pas, laisser la case vide et écrire un commentaire qui commence par `KO :` (écran, ce que je vois, ce que je voulais). Ce que Grok Bot a déjà coché (✅🤖) reste coché si tu es d'accord.",
-        f"3. **Dire que tu as fini** : un commentaire `revue finie` sur la PR de tête {tip_link}. La boucle, qui veille, collecte alors ta revue et celle du bot, appelle Claude Fable, et ouvre une PR « GO » (plan de corrections + lots correctifs) — compte ~30 min.",
-        f"4. **Merger deux PR** quand le GO apparaît : la PR de tête {tip_link} (GitHub ferme les autres) et la PR GO. Merge commit, pas squash.",
-        "5. C'est tout : la nuit suivante part toute seule et ce fichier sera régénéré à la fin, avec les mêmes étapes.",
+        "3. **Ta revue globale** : écris ce que tu penses de l'application dans son ensemble (vision, manques, priorités) dans `infra/agents/REVUE_GLOBALE.md` (ouvert dans Cursor) — ou en commentaires `GLOBAL :` sur la PR de tête, avec captures. Le correcteur la lit en entier, comme ta revue du 21 sept.",
+        f"4. **Dire que tu as fini** : un commentaire `revue finie` sur la PR de tête {tip_link}. La boucle, qui veille, collecte alors cases, KO, revue globale et pré-revue du bot, appelle Claude Fable, et ouvre une PR « GO » (plan de corrections + lots correctifs) — compte ~30 min.",
+        f"5. **Merger deux PR** quand le GO apparaît : la PR de tête {tip_link} (GitHub ferme les autres) et la PR GO. Merge commit, pas squash.",
+        "6. C'est tout : la nuit suivante part toute seule et ce fichier sera régénéré à la fin, avec les mêmes étapes.",
         "",
         f"La veille tourne-t-elle ? `python3 infra/agents/loop.py --status` doit afficher `\"phase\": \"await_review\"`. Sinon : `caffeinate -i python3 infra/agents/loop.py --start-at await_review --cycles 1`. Si une étape échoue, voir § 7.",
         "",

@@ -14,3 +14,4 @@ tunnel.pid
 tunnel.url
 tunnel.log
 loop.log
+REVUE_GLOBALE*.md

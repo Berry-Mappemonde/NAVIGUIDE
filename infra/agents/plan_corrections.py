@@ -74,6 +74,11 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
         "",
         "## La revue du porteur",
         f"- Résumé lisible : `{md_path}` ; données : `{json_path}` (cases cochées = OK vu ; cases vides = pas vu ou pas bon ; `ko` = ce qui ne va pas, dans ses mots).",
+        "- **Sa revue globale** (vision d'ensemble, hors cases — le plus important, à traiter comme la revue du 21 sept. : chaque point → un lot, un complément de lot du programme, ou une décision notée dans le plan) :",
+        "```",
+        (review.get("global_file") or "(rien dans REVUE_GLOBALE.md)")[:12000],
+        "```",
+        *[f"- GLOBAL (PR #{p['number']}) : {g['text'][:1500]}" for p in review["prs"] for g in (p.get("global") or [])],
         "- Images (ouvre-les avec l'outil de lecture d'image ; chaque image du porteur est rattachée à quelque chose qui ne va pas) : " + (", ".join(f"`{p}`" for p in imgs) if imgs else "aucune"),
         "",
     ]
@@ -107,6 +112,8 @@ def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str |
     date = time.strftime("%Y-%m-%d")
     review = rc.collect(prs, rl.STATE_DIR, images=True)
     night = list(state.extra.get("reviews") or [])
+    if review.get("global_file"):
+        rl.log(f"revue globale du porteur : {len(review['global_file'])} caractères dans REVUE_GLOBALE.md")
     prefix = prefix or next_prefix(rl.PROMPTS_MD.read_text(encoding="utf-8"))
     if dry_run:
         prompt = build_prompt(review, rl.WORKTREES / "corrector", date, prefix, model, night)
@@ -130,8 +137,11 @@ def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str |
             rl.log(f"    PR GO #{go_pr} {pr['html_url']} — à merger par le porteur pour lancer le batch suivant")
         else:
             rl.log("    la PR GO n'a pas été ouverte par l'agent : `python3 infra/agents/open_pr.py " + branch + " main \"docs: corrections\" <corps.md>`")
+    archived = rc.archive_global_file(date) if status == "FINISHED" else None
+    if archived:
+        rl.log(f"revue globale archivée : {archived} (fichier remis à zéro)")
     state = rl.State.load()
-    state.extra.setdefault("corrections", []).append({"at": date, "prs": [n for _, n in prs], "model": model, "status": status, "branch": branch, "go_pr": go_pr, "prefix": prefix})
+    state.extra.setdefault("corrections", []).append({"at": date, "prs": [n for _, n in prs], "model": model, "status": status, "branch": branch, "go_pr": go_pr, "prefix": prefix, "global_archived": archived})
     state.save()
     return {"ok": status == "FINISHED", "branch": branch, "go_pr": go_pr, "prefix": prefix}
 
