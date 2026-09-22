@@ -22,9 +22,15 @@ export function momentSearchParams({ lat, lon, t, mode, lang } = {}) {
   return q;
 }
 
+function emptyMomentState(error = null) {
+  return { moment: null, loading: false, error, source: "none" };
+}
+
 /**
- * Fetch a Moment from GET /ici/moment. If the API does not answer, keep the
- * official_mini fixture (CI / preview without a server).
+ * Fetch a Moment from GET /ici/moment. Without lat/lon, or if the API
+ * does not answer: moment is null (empty frame). MOMENT_FIXTURE stays
+ * importable for tests and the R8b preview page — it is never the current
+ * point (lot RC2).
  */
 export function useMoment({
   lat,
@@ -34,16 +40,11 @@ export function useMoment({
   lang = "fr",
   enabled = true,
 } = {}) {
-  const [state, setState] = useState({
-    moment: MOMENT_FIXTURE,
-    loading: false,
-    error: null,
-    source: "fixture",
-  });
+  const [state, setState] = useState(emptyMomentState());
 
   useEffect(() => {
     if (!enabled || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
-      setState({ moment: MOMENT_FIXTURE, loading: false, error: null, source: "fixture" });
+      setState(emptyMomentState());
       return undefined;
     }
     const controller = new AbortController();
@@ -60,12 +61,7 @@ export function useMoment({
       })
       .catch((err) => {
         if (err?.name === "AbortError") return;
-        setState({
-          moment: MOMENT_FIXTURE,
-          loading: false,
-          error: err?.message || "error",
-          source: "fixture",
-        });
+        setState(emptyMomentState(err?.message || "error"));
       });
     return () => controller.abort();
   }, [enabled, lat, lon, t, mode, lang]);

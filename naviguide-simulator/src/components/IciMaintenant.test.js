@@ -146,14 +146,59 @@ describe("IciMaintenant — lot R9b : journal chronologique, clic → onSeek(t)"
   });
 });
 
-describe("useMoment — lot R8b", () => {
-  it("interroge /ici/moment et se replie sur la fixture", () => {
+describe("useMoment — lot R8b / RC2", () => {
+  it("interroge /ici/moment ; sans lat/lon ou API KO → moment null, pas la fixture", () => {
     assert.match(hook, /\/ici\/moment\?/);
-    assert.match(hook, /source: "fixture"/);
-    assert.match(hook, /MOMENT_FIXTURE/);
+    assert.match(hook, /moment: null/);
+    assert.match(hook, /source: "none"/);
+    assert.match(hook, /export const MOMENT_FIXTURE/);
+    assert.doesNotMatch(hook, /moment: MOMENT_FIXTURE/);
+    assert.doesNotMatch(hook, /source: "fixture"/);
     assert.match(hook, /controller\.abort\(\)/);
     const q = momentSearchParams({ lat: 37.7, lon: 236.84, t: "2026-05-15T08:00:00Z", mode: "follow", lang: "fr" });
     assert.equal(Number(Number(q.get("lon")).toFixed(2)), Number(wrapLon(236.84).toFixed(2)));
     assert.equal(q.get("t"), "2026-05-15T08:00:00Z");
+  });
+});
+
+describe("IciMaintenant — lot RC2 : encadré honnête", () => {
+  it("moment null : sections présentes, aucune ligne Antilles", () => {
+    for (const id of [
+      "ici-section-leg",
+      "ici-section-alerts",
+      "ici-section-here",
+      "ici-section-around",
+      "ici-section-sources",
+    ]) {
+      assert.match(src, new RegExp(`testId="${id}"`));
+    }
+    assert.equal(formatLegLine(null, tFr, "fr"), "");
+    assert.equal(formatLegLine(undefined, tFr, "fr"), "");
+    assert.equal(formatLegLine({}, tFr, "fr"), "");
+    assert.deepEqual(visibleAlerts(null, new Set()), []);
+    assert.doesNotMatch(src, /Fort-de-France|Pointe-à-Pitre|CORIOLIS-Guadeloupe/);
+  });
+
+  it("rend here.sentences et here.links même si hereBody est passé", () => {
+    assert.match(src, /hereBody/);
+    assert.match(src, /here\?\.sentences/);
+    assert.match(src, /here\?\.links/);
+    assert.match(src, /data-testid="ici-here-sentence"/);
+    assert.match(src, /data-testid="ici-source-link"/);
+    assert.doesNotMatch(src, /!hereBody \? \(shown\?\.here\?\.sentences/);
+    const idxBody = src.indexOf("{hereBody}");
+    const idxSent = src.indexOf("(here?.sentences || []).map");
+    assert.ok(idxBody >= 0 && idxSent > idxBody, "sentences après hereBody, sans le masquer");
+  });
+
+  it("fermeture d'une pastille inchangée", () => {
+    const alerts = fixture.alerts;
+    const first = alerts[0].id;
+    const second = alerts[1].id;
+    const afterOne = dismissAlert(new Set(), first);
+    const shown = visibleAlerts(alerts, afterOne);
+    assert.equal(shown.some((a) => a.id === first), false);
+    assert.equal(shown.some((a) => a.id === second), true);
+    assert.equal(shown.length, alerts.length - 1);
   });
 });

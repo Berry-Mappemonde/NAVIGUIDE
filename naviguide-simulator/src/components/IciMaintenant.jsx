@@ -93,7 +93,8 @@ export function IciMaintenant({
     if (typeof onViewChange === "function") onViewChange(id);
     else setLocalView(id);
   };
-  const shown = (mode === "follow" && momentAtOrBefore(journalEntries, moment?.t)) || moment;
+  const shown = (mode === "follow" && moment && momentAtOrBefore(journalEntries, moment?.t)) || moment;
+  const here = shown?.here?.sentences?.length ? shown.here : (moment?.here || shown?.here);
   const alerts = visibleAlerts(shown?.alerts, dismissed);
   const tint = regimeColor(shown?.leg?.regime);
 
@@ -180,17 +181,18 @@ export function IciMaintenant({
           <Section testId="ici-section-here" label={t("iciSectionHere")}>
             <div className="flex flex-col gap-0.5">
               {hereBody}
-              {!hereBody ? (shown?.here?.sentences || []).map((sentence) => (
+              {(here?.sentences || []).map((sentence) => (
                 <p
                   key={sentence}
+                  data-testid="ici-here-sentence"
                   className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                 >
                   {sentence}
                 </p>
-              )) : null}
-              {(shown?.here?.links || []).length ? (
+              ))}
+              {(here?.links || []).length ? (
                 <div className="flex flex-wrap gap-1.5 mt-0.5">
-                  {shown.here.links.map((link) => (
+                  {here.links.map((link) => (
                     <a
                       key={link.url}
                       href={link.url}

@@ -210,7 +210,10 @@ async def get_ici(
 
 
 _MOMENT_MODES = frozenset({"follow", "simulation", "drawn"})
-_official_mini_cache: dict | None = None
+_PEARL_LEG_KEYS = (
+    "from", "to", "day", "kn", "plannedKnots", "remainingNm", "doneNm",
+    "headingDeg", "eta", "regime", "basis", "fromNm", "toNm", "tHours",
+)
 
 
 def _now_iso() -> str:
@@ -242,18 +245,6 @@ def _pearl_pos(pearl: dict | None) -> tuple[float, float] | None:
     return None
 
 
-def _official_mini() -> dict | None:
-    global _official_mini_cache
-    if _official_mini_cache is not None:
-        return _official_mini_cache
-    try:
-        from moment import load_official_mini
-        _official_mini_cache = load_official_mini()
-    except Exception:
-        _official_mini_cache = {}
-    return _official_mini_cache or None
-
-
 def _nearest_warmed_pearl(lat: float, lon: float, max_nm: float = ICI_RADIUS_NM) -> dict | None:
     """Perle SQLite la plus proche ; None si le magasin est vide ou trop loin."""
     from ici_engine import haversine_nm
@@ -276,74 +267,25 @@ def _nearest_warmed_pearl(lat: float, lon: float, max_nm: float = ICI_RADIUS_NM)
     return best
 
 
-def _nearest_vertex(verts: list, lat: float, lon: float, t: str | None, max_nm: float) -> dict | None:
-    from datetime import datetime, timezone
-    from ici_engine import haversine_nm
-    want = None
-    if t:
-        try:
-            want = datetime.fromisoformat(str(t).replace("Z", "+00:00"))
-        except ValueError:
-            want = None
-        if want is not None and want.tzinfo is None:
-            want = want.replace(tzinfo=timezone.utc)
-    best, best_score = None, None
-    for vertex in verts:
-        if not isinstance(vertex, dict):
-            continue
-        plat, plon = vertex.get("lat"), vertex.get("lon")
-        if not isinstance(plat, (int, float)) or not isinstance(plon, (int, float)):
-            continue
-        dist = haversine_nm(lat, lon, float(plat), float(plon))
-        if dist > max_nm:
-            continue
-        score = dist
-        if want is not None:
-            iso = vertex.get("iso")
-            try:
-                vt = datetime.fromisoformat(str(iso).replace("Z", "+00:00")) if iso else None
-            except ValueError:
-                vt = None
-            if vt is not None:
-                if vt.tzinfo is None:
-                    vt = vt.replace(tzinfo=timezone.utc)
-                score = abs((vt - want).total_seconds()) / 3600.0
-        if best_score is None or score < best_score:
-            best, best_score = vertex, score
-    return best
+def _leg_from_pearl(pearl: dict | None) -> dict:
+    """Jambe déjà portée par la perle ; vide sinon — plus de greffe official_mini."""
+    if not isinstance(pearl, dict):
+        return {}
+    raw = pearl.get("leg") if isinstance(pearl.get("leg"), dict) else None
+    if raw:
+        return dict(raw)
+    return {key: pearl[key] for key in _PEARL_LEG_KEYS if pearl.get(key) is not None}
 
 
 def _moment_clock_and_leg(lat: float, lon: float, t: str | None, mode: str, pearl: dict | None):
+    """Horloge = requête ; jambe vide sauf champs déjà sur la perle (lot RC2)."""
     when = t or _now_iso()
     mode_ok = mode if mode in _MOMENT_MODES else "follow"
     clock = {"iso": when, "t": when, "lat": lat, "lon": lon, "mode": mode_ok}
-    leg: dict = {}
     thresholds = {"galeKt": 34.0, "hsAlertM": 3.0}
-    voy = _official_mini()
-    if not isinstance(voy, dict):
-        return clock, leg, thresholds
-    if isinstance(voy.get("skipper_thresholds"), dict):
-        thresholds = voy["skipper_thresholds"]
-    verts = (voy.get("clock") or {}).get("vertices") or []
-    near = _nearest_vertex(verts, lat, lon, t, ICI_RADIUS_NM)
-    if near is None:
-        return clock, leg, thresholds
-    clock = {**near, "lat": lat, "lon": lon, "iso": when, "t": when, "mode": mode_ok}
-    sail = (pearl or {}).get("sailNm") if isinstance(pearl, dict) else None
-    if sail is None:
-        sail = near.get("sailNm")
-    for jambe in voy.get("legs") or []:
-        if not isinstance(jambe, dict):
-            continue
-        lo, hi = jambe.get("fromNm"), jambe.get("toNm")
-        if (
-            isinstance(lo, (int, float))
-            and isinstance(hi, (int, float))
-            and isinstance(sail, (int, float))
-            and lo <= float(sail) <= hi
-        ):
-            return clock, jambe, thresholds
-    return clock, leg, thresholds
+    if isinstance(pearl, dict) and isinstance(pearl.get("skipper_thresholds"), dict):
+        thresholds = pearl["skipper_thresholds"]
+    return clock, _leg_from_pearl(pearl), thresholds
 
 
 @app.get("/ici/moment")

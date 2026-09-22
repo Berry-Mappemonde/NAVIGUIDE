@@ -456,11 +456,9 @@ export const Sidebar = memo(function Sidebar({
                     data-testid="ici-briefing"
                     className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
                   >
-                    {briefingLoading || (!briefing && !iciBriefing)
-                      ? t("iciBriefingLoading")
-                      : (iciBriefing && iciBriefingSegments?.length
-                        ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
-                        : (briefing || t("iciBriefingFallback")))}
+                    {iciBriefing && iciBriefingSegments?.length
+                      ? <BriefingText segments={iciBriefingSegments.filter((s) => s.entity?.kind === "source")} onFocus={onBriefingFocus} t={t} />
+                      : (briefingLoading && !(moment?.here?.sentences || []).length ? t("iciBriefingLoading") : null)}
                   </p>
                   <p
                     data-testid="story-source"
