@@ -7,27 +7,36 @@
 #   bash ensure-dev.sh --prod       # poste de recette : build de prod + `vite preview`,
 #                                   # API et interface de CE checkout (remplace celles
 #                                   # d’un autre checkout qui tiendraient les ports)
+#   bash ensure-dev.sh --prod --dir=/chemin/worktree/naviguide-simulator
+#                                   # idem, sur un autre checkout (run_lots.py : script de main,
+#                                   # worktree du lot)
 #
 # Clés : le fichier ~/.config/naviguide/simulator.env (ou $NAVIGUIDE_ENV_FILE) est
 # chargé dans l’environnement de l’API — même fichier, même contenu que celui du
 # service naviguide-simulator sur le VPS. Jamais dans le dépôt.
 set -euo pipefail
 
+# --dir <checkout>/naviguide-simulator : agir sur un AUTRE checkout (worktree d'un lot) avec CE
+# script — run_lots.py appelle toujours la version de main, même pour une branche plus ancienne.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
-
 OPEN=0
 FOREGROUND=0
 QUIET=0
 PROD=0
+DIR=""
 for arg in "$@"; do
   case "$arg" in
     --open) OPEN=1 ;;
     --foreground) FOREGROUND=1 ;;
     --quiet) QUIET=1 ;;
     --prod) PROD=1 ;;
+    --dir=*) DIR="${arg#--dir=}" ;;
   esac
 done
+if [[ -n "$DIR" ]]; then
+  ROOT="$(cd "$DIR" && pwd)"
+fi
+cd "$ROOT"
 
 log() { [[ "$QUIET" -eq 1 ]] || echo "$*"; }
 
