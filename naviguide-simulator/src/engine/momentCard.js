@@ -46,7 +46,7 @@ const INFO_TYPES = new Set([
 ]);
 
 /** Bag kinds that are decisions for the skipper (NOW lane). */
-const NOW_BAG_KINDS = new Set(["aton", "climatology"]);
+const NOW_BAG_KINDS = new Set(["aton", "climatology", "piracy"]);
 
 /** Durées d’affichage (ms). Simulation en pause / Suivre sans lecture : pas d’expiration NOW. */
 export const TTL = Object.freeze({
@@ -174,6 +174,7 @@ const KIND_WORDS = Object.freeze({
   aton: ["Balisage", "Aid to navigation"],
   satellite: ["Image satellite", "Satellite image"],
   climatology: ["Climatologie", "Climatology"],
+  piracy: ["Piraterie", "Piracy"],
   cable: ["Câble sous-marin", "Submarine cable"],
   escale: ["Escale", "Stopover"],
   climo: ["Changement de régime", "Regime change"],
@@ -427,10 +428,36 @@ function newsItemFromBag(item, lang) {
   };
 }
 
+function fillTpl(tpl, vars) {
+  return String(tpl || "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] == null ? "" : String(vars[k])));
+}
+
+/** Unique NOW card from `ici().piracy` — gone when the bag has no zone. */
+export function piracyCardFromBag(bag, lang = "fr") {
+  const p = bag?.piracy;
+  if (!p?.name || !p.level) return null;
+  const u = isEn(lang) ? enDict : fr;
+  const level = String(p.level).toUpperCase();
+  const source = p.source || "IMB/UKMTO";
+  const text = fillTpl(u.momentPiracyCard, { name: p.name, level, source });
+  if (!text) return null;
+  return {
+    key: `bag:piracy:${p.name}`,
+    lane: LANE_NOW,
+    origin: "bag",
+    kind: "piracy",
+    type: "piracy",
+    severity: level === "HIGH" ? "alert" : "watch",
+    title: null,
+    text,
+    entity: null,
+  };
+}
+
 /**
  * Cards in one `ici()` bag: what is around the boat, told one card at a time.
  * Keys are stable per place so a marina met again 3 nm later is not repeated.
- * Balisage and climatologie go to the NOW lane (decisions), the rest to FREE.
+ * Balisage, climatologie and piracy go to the NOW lane (decisions), the rest to FREE.
  */
 export function infoItemsFromBag(bag, lang = "fr") {
   if (!bag) return [];
@@ -502,6 +529,10 @@ export function infoItemsFromBag(bag, lang = "fr") {
       entity: null,
     });
   }
+
+  const piracy = piracyCardFromBag(bag, lang);
+  if (piracy) out.push(piracy);
+
   const boat = bag.at && Number.isFinite(Number(bag.at.lat)) && Number.isFinite(Number(bag.at.lon))
     ? { lat: Number(bag.at.lat), lon: Number(bag.at.lon) }
     : null;
@@ -749,6 +780,26 @@ export function advanceMoments(prev, {
     seen.add(withTruth.key);
     if (withTruth.lane === LANE_NOW) nowQueue = pushCapped(nowQueue, { ...withTruth, filmCum }, QUEUE_MAX.now);
     else freeQueue = pushCapped(freeQueue, withTruth, QUEUE_MAX.free);
+    changed = true;
+  }
+
+  // Lot N4: one piracy card, gone outside the zone (re-enters if the boat comes back).
+  const keepPiracy = bag?.piracy?.name ? `bag:piracy:${bag.piracy.name}` : null;
+  const piracyGone = (c) => c?.kind === "piracy" && c.key !== keepPiracy;
+  if (piracyGone(now)) {
+    seen.delete(now.key);
+    now = null;
+    changed = true;
+  }
+  nowQueue = nowQueue.filter((c) => {
+    if (!piracyGone(c)) return true;
+    seen.delete(c.key);
+    changed = true;
+    return false;
+  });
+  if (now && now.severity !== "alert" && nowQueue.some((c) => c.kind === "piracy" && c.severity === "alert")) {
+    nowQueue = [now, ...nowQueue];
+    now = null;
     changed = true;
   }
 

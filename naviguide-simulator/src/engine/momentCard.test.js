@@ -464,3 +464,60 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     assert.ok(!around.some((c) => /Bourgenay/i.test(c.entity?.rawName || c.text || "")), "90 nm sort de la boucle");
   });
 });
+
+describe("lot N4 — carte NOW piraterie", () => {
+  const aden = {
+    name: "Horn of Africa / Gulf Aden",
+    level: "HIGH",
+    source: "IMB/UKMTO",
+  };
+
+  it("infoItemsFromBag : carte présente dans la zone, absente hors zone", () => {
+    const inZone = infoItemsFromBag({ ...bagFreeOnly, piracy: aden }, "fr");
+    const card = inZone.find((c) => c.kind === "piracy");
+    assert.ok(card);
+    assert.equal(card.lane, LANE_NOW);
+    assert.equal(card.severity, "alert");
+    assert.equal(card.title, null);
+    assert.equal(card.text, "Piraterie — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO");
+    assert.equal(inZone.filter((c) => c.kind === "piracy").length, 1);
+
+    const en = infoItemsFromBag({ ...bagFreeOnly, piracy: aden }, "en").find((c) => c.kind === "piracy");
+    assert.equal(en.text, "Piracy — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO");
+
+    const medium = infoItemsFromBag({
+      ...bagFreeOnly,
+      piracy: { name: "Strait of Malacca", level: "MEDIUM", source: "ReCAAP" },
+    }, "fr").find((c) => c.kind === "piracy");
+    assert.equal(medium.severity, "watch");
+    assert.match(medium.text, /Strait of Malacca · MEDIUM · ReCAAP/);
+
+    assert.equal(infoItemsFromBag(bag, "fr").some((c) => c.kind === "piracy"), false);
+    assert.equal(infoItemsFromBag({ ...bag, piracy: null }, "fr").some((c) => c.kind === "piracy"), false);
+  });
+
+  it("advanceMoments : alerte HIGH devant, disparaît hors zone, revient à la rentrée", () => {
+    let s = advanceMoments(emptyMoments(), {
+      events: [], bag, filmCum: 0, nowMs: 0, playing: false, legId: "A",
+    });
+    assert.notEqual(s.now?.kind, "piracy");
+
+    s = advanceMoments(s, {
+      events: [], bag: { ...bag, piracy: aden }, filmCum: 0, nowMs: 1, playing: false, legId: "A",
+    });
+    assert.equal(s.now.kind, "piracy");
+    assert.equal(s.now.severity, "alert");
+    assert.match(s.now.text, /Horn of Africa \/ Gulf Aden · HIGH · IMB\/UKMTO/);
+
+    s = advanceMoments(s, {
+      events: [], bag, filmCum: 0, nowMs: 2, playing: false, legId: "A",
+    });
+    assert.notEqual(s.now?.kind, "piracy");
+    assert.equal([s.now, ...s.nowQueue].filter((c) => c?.kind === "piracy").length, 0);
+
+    s = advanceMoments(s, {
+      events: [], bag: { ...bag, piracy: aden }, filmCum: 0, nowMs: 3, playing: false, legId: "A",
+    });
+    assert.equal(s.now.kind, "piracy");
+  });
+});

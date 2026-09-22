@@ -163,6 +163,7 @@ export default {
   truthBadgeUnverifiable: "Non revérifiable",
   momentNewsKind:     "Veille",
   momentNewsTitle:    "{name} · veille du {date}",
+  momentPiracyCard:   "Piraterie — {name} · {level} · {source}",
   iciNowTab:          "Maintenant",
   iciStoryTab:        "Récit",
   iciJournalTab:      "Journal",
