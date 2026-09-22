@@ -885,7 +885,7 @@ def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published
     """Un commentaire par PR avec le lien vers la tête de pile et la consigne du bot (une seule fois)."""
     e = state.done.get(lot_id) or {}
     num = pr_number(e.get("pr"))
-    if not num or e.get("tunnel_comment"):
+    if not num or e.get("tunnel_comment") == url:   # déjà posté pour CETTE url ; un nouveau tunnel = nouveau lien
         return
     try:
         from post_pr_comment import post as _post  # noqa: PLC0415
@@ -1157,7 +1157,11 @@ def main() -> None:
         state = State.load()
         prepare_recette(state, args, Http(None, github_token_from_git()))
         if not args.no_tunnel:
-            start_tunnel()
+            url = start_tunnel()
+            if url:   # le bot trouve le poste par le lien 🔗 de chaque PR de la pile
+                for lid, e in state.done.items():
+                    if e.get("status") == "FINISHED" and e.get("pr"):
+                        post_poste_link(state, lid, url, args.repo)
         return
 
     lots = select(parse_lots(PROMPTS_MD.read_text(encoding="utf-8")), args)
