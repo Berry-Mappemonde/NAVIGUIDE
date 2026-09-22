@@ -58,7 +58,10 @@ déclencheur se règle dans l'application de bureau Grok Bot, sur la routine) :
 - **Webhook** : si la routine expose une URL de webhook, la coller dans
   `~/.config/naviguide/simulator.env` : `BIM_BOT_WEBHOOK=https://…` —
   `run_lots.py` l'appelle (POST JSON `{event: prereview|parcours, pr, url}`) juste
-  après chaque commentaire 🔗 / 🧭. Si Grok Bot donne aussi une clé et un en-tête
+  après chaque commentaire 🔗 / 🧭 — un réveil par PR, le bot ne traite que celle-là
+  (étape 1 ci-dessous). Avant chaque batch, le pré-vol (`run_lots.py --preflight`)
+  envoie `{event: ping}` pour vérifier URL et clé : la routine l'ignore (étape 0).
+  Si Grok Bot donne aussi une clé et un en-tête
   (22 sept.) : `BIM_BOT_WEBHOOK_TOKEN=<clé>` et `BIM_BOT_WEBHOOK_HEADER=<nom de
   l'en-tête>` (défaut `Authorization`, envoyé en `Bearer <clé>`). Écrire ces lignes
   sans les faire transiter par un chat : coller la commande `printf 'BIM_BOT_WEBHOOK=%s\n'
@@ -67,15 +70,22 @@ déclencheur se règle dans l'application de bureau Grok Bot, sur la routine) :
 - **Minuteur** (repli) : toutes les 30 min la nuit.
 
 ```text
-À chaque déclenchement (commentaire de PR sur le dépôt, webhook, ou minuteur de repli), pré-revue visuelle des
-PR du dépôt Berry-Mappemonde/Blue-Intelligence :
+À chaque déclenchement (webhook, commentaire de PR sur le dépôt, ou minuteur de repli), pré-revue visuelle des
+PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR À LA FOIS :
 
-1. Liste les pull requests OUVERTES dont le titre contient « (lot » et qui ont un
-   commentaire commençant par « 🔗 Poste de recette » mais PAS encore de
-   commentaire commençant par « ## 🤖 Pré-revue ». S'il n'y en a aucune, arrête-toi
-   sans rien poster. Sinon traite-les dans l'ordre croissant des numéros, au plus 3
-   par passage (les autres au passage suivant). Utilise le lien 🔗 le plus récent
-   de la PR (un nouveau tunnel = un nouveau lien).
+0. Si le déclencheur est un webhook dont le message contient `"event": "ping"` : c'est
+   un test de branchement, arrête-toi sans rien faire ni poster.
+1. Choisis ta cible :
+   - déclenché par WEBHOOK avec un numéro de PR (`"pr": 285`) : traite UNIQUEMENT cette
+     PR, même si d'autres attendent (un autre réveil s'en occupe : ils arrivent un par un,
+     et plusieurs de tes passages peuvent tourner en même temps sans se gêner) ;
+   - déclenché par le MINUTEUR ou un commentaire : liste les pull requests OUVERTES dont
+     le titre contient « (lot » et qui ont un commentaire commençant par « 🔗 Poste de
+     recette » mais PAS encore de commentaire commençant par « ## 🤖 Pré-revue », et
+     traite-les toutes, dans l'ordre croissant des numéros, en postant le commentaire
+     de chacune dès qu'elle est finie (pas de limite de 3 : le minuteur est un repli).
+   S'il n'y a rien à traiter, arrête-toi sans rien poster. Utilise le lien 🔗 le plus
+   récent de la PR (un nouveau tunnel = un nouveau lien).
 2. Pour chaque PR : ouvre le lien du commentaire 🔗 dans le navigateur (c'est la
    tête de pile, build de prod, clés chargées ; recharge si la page tarde). Lis la
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape

@@ -1273,6 +1273,107 @@ def check(args) -> None:
     print("\nRÉSULTAT :", "prêt" if ok else "pas encore prêt (voir ci-dessus)")
 
 
+# ---------------------------------------------------------------- pré-vol (lot W5)
+
+PREFLIGHT_KEYS = ("NEBIUS_API_KEY", "TAVILY_API_KEY", "COPERNICUS_USERNAME", "COPERNICUS_PASSWORD")
+
+
+def _http_code(url: str, timeout: int = 25) -> int:
+    """Code HTTP d'un GET (0 = injoignable). Ne suit pas les redirections Cloudflare pour ne pas masquer un 5xx."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "bim-preflight"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception:
+        return 0
+
+
+def preflight(state: State, args, http: Http | None) -> bool:
+    """Avant de lancer un batch : tout ce qui, la nuit du 22 sept., a coûté des heures sans qu'on le voie.
+
+    Bloquant (on ne part pas) : jeton GitHub, CLI Cursor, poste de recette joignable PAR L'URL PUBLIQUE
+    (page ET API : le 403 « Blocked request » de Vite, le 5xx du tunnel), disque < 2 Go.
+    Averti (on part, c'est écrit) : clés manquantes (Copernicus → « estimé »), webhook Grok Bot refusé
+    (le bot ne sera pas réveillé, seul son minuteur le fera passer), CI rouge sur main (les lots
+    hériteraient des échecs), dépôt principal pas sur main / pas à jour.
+    Le chien de garde (watchdog.py) reprend ensuite les mêmes contrôles toutes les 5 min."""
+    rows: list[tuple[str, str, str]] = []     # (✅|⚠️|❌, contrôle, détail)
+    blocking = False
+
+    def row(ok: bool | None, what: str, detail: str, *, block: bool = False) -> None:
+        nonlocal blocking
+        mark = "✅" if ok else ("❌" if block else "⚠️")
+        if not ok and block:
+            blocking = True
+        rows.append((mark, what, detail))
+
+    tok = github_token_from_git()
+    row(bool(tok), "jeton GitHub", "valide" if tok else "absent ou périmé (gh auth login / GITHUB_TOKEN)", block=True)
+    if getattr(args, "runtime", "local") == "local":
+        info = local_check()
+        ok = bool(info["agent"]) and info["logged"]
+        row(ok, "CLI Cursor", f"{info['agent']} connecté" if ok else "absent ou non connecté (`agent login`)", block=True)
+    # Clés
+    names = set(_env_file_values()) if ENV_FILE.exists() else set()
+    missing = [k for k in PREFLIGHT_KEYS if k not in names]
+    row(not missing, "clés du poste", "toutes présentes" if not missing else f"manquantes : {' '.join(missing)} → " + ("Copernicus « estimé » ; " if any(k.startswith("COPERNICUS") for k in missing) else "") + f"ajouter dans {ENV_FILE}")
+    # Dépôt principal
+    b = local_branch(ROOT)
+    sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
+    behind = sh(["git", "rev-list", "--count", "HEAD..origin/main"], cwd=ROOT, check=False).stdout.strip() or "?"
+    row(b == "main" and behind == "0", "dépôt principal", f"sur `{b}`, {behind} commit(s) de retard sur origin/main" if b == "main" else f"sur `{b}` (doit être main)")
+    # CI sur main
+    if http:
+        try:
+            sha = sh(["git", "rev-parse", "origin/main"], cwd=ROOT, check=False).stdout.strip()
+            ci, names_failed, _ = ci_status(http, args.repo, sha)
+            row(ci in ("success", "pending"), "CI sur main", f"{ci}" + (f" ({', '.join(names_failed)})" if names_failed else ""))
+        except Exception as e:
+            row(None, "CI sur main", f"illisible : {type(e).__name__}")
+    # Disque
+    free_gb = shutil.disk_usage(str(ROOT)).free / 1e9
+    row(free_gb >= 5, "disque", f"{free_gb:.0f} Go libres" + ("" if free_gb >= 5 else " (< 5 Go : les builds vont manquer de place)"), block=free_gb < 2)
+    # Poste public : le chemin complet, Cloudflare → tunnel → Vite → API, pas le port local
+    if not getattr(args, "no_tunnel", False):
+        if not port_busy(5174) or not port_busy(8010):
+            log("pré-vol : poste éteint — on l'allume sur la dernière branche connue pour tester le chemin public")
+            try:
+                prepare_recette(state, args, http, quiet=True)
+            except Exception as e:
+                log(f"    poste : {e}")
+        url = start_tunnel()
+        if not url:
+            row(False, "tunnel", "aucun tunnel (cloudflared absent ou tunnel nommé non enregistré)", block=True)
+        else:
+            page, api = _http_code(url + "/"), _http_code(url + "/ici/warm/status")
+            hint = " — Vite refuse l'hôte : vite.config.js allowedHosts / --http-host-header (PR #280)" if 403 in (page, api) else (" — origine absente derrière le tunnel : poste éteint ou en bascule" if page >= 500 or page == 0 else "")
+            row(page == 200 and api == 200, "poste public", f"{url} → page HTTP {page}, API HTTP {api}{hint}", block=True)
+    # Webhook Grok Bot
+    hook, headers = webhook_settings()
+    if hook:
+        try:
+            body = json.dumps({"event": "ping", "repo": owner_repo(args.repo), "pr": 0, "url": tunnel_url() or "", "text": "pré-vol run_lots.py"}).encode()
+            with urllib.request.urlopen(urllib.request.Request(hook, data=body, method="POST", headers=headers), timeout=30) as resp:
+                row(True, "webhook Grok Bot", f"HTTP {resp.status} (ping ignoré par la routine)")
+        except urllib.error.HTTPError as e:
+            row(False, "webhook Grok Bot", f"HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) : le bot ne sera pas réveillé" if e.code in (401, 403) else ""))
+        except Exception as e:
+            row(False, "webhook Grok Bot", f"injoignable ({type(e).__name__})")
+    else:
+        row(None, "webhook Grok Bot", "non configuré (BIM_BOT_WEBHOOK) : le bot passera à son minuteur")
+
+    log("pré-vol :")
+    for mark, what, detail in rows:
+        log(f"    {mark} {what} — {detail}")
+    if blocking:
+        log("pré-vol : ÉCHEC — on ne lance pas le batch (corriger ce qui est ❌, puis relancer ; --no-preflight pour passer outre)")
+    else:
+        log("pré-vol : OK" + (" (avec avertissements)" if any(m == "⚠️" for m, _, _ in rows) else ""))
+    return not blocking
+
+
 # ---------------------------------------------------------------- main
 
 def main() -> None:
@@ -1309,11 +1410,18 @@ def main() -> None:
     ap.add_argument("--publish-tip", action="store_true", default=os.environ.get("BIM_PUBLISH_TIP") == "1",
                     help="option : pousser chaque tête de pile (CI verte) sur la branche `recette` → le SITE publié suit la nuit (simulateur seul) ; "
                          "le bot recette alors le vrai site. OFF par défaut : la pile écrirait dans la base de prod")
+    ap.add_argument("--preflight", action="store_true", help="pré-vol seul (jeton, CLI, clés, poste PUBLIC, webhook, CI de main, disque) puis s'arrête ; code 2 si un contrôle bloquant échoue")
+    ap.add_argument("--no-preflight", action="store_true", help="lancer le batch sans pré-vol (déconseillé)")
     args = ap.parse_args()
 
     if args.check:
         check(args)
         return
+
+    if args.preflight:
+        state = State.load()
+        ok = preflight(state, args, Http(None, github_token_from_git()))
+        sys.exit(0 if ok else 2)
 
     if args.stop_tunnel:
         stop_tunnel()
@@ -1332,6 +1440,10 @@ def main() -> None:
         return
 
     lots = select(parse_lots(PROMPTS_MD.read_text(encoding="utf-8")), args)
+    if not args.dry_run and not args.no_preflight:
+        # Pré-vol AVANT d'archiver state.json : un échec laisse la pile intacte, --resume reste possible.
+        if not preflight(State.load(), args, Http(None, github_token_from_git())):
+            sys.exit(2)
     state = State.load() if args.resume else State()
     if not args.resume and STATE_JSON.exists() and not args.dry_run:
         STATE_JSON.rename(STATE_JSON.with_suffix(f".{int(time.time())}.json"))
