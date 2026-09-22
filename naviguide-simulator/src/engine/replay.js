@@ -6,8 +6,8 @@
  * des lignes du journal (escales, ZEE, AMP, ports d'entrée, météo, notes).
  * Rien n'est inventé : pas de ligne de journal, pas de carte.
  */
-import { sampleClockAtTime } from "./voyageClock.js";
-import { datedMarks, expeditionStory } from "./expeditionStory.js";
+import { DEFAULT_T0_ISO, sampleClockAtTime } from "./voyageClock.js";
+import { expeditionStory, officialDatedStops } from "./expeditionStory.js";
 import { cardFromJournalEntry, JOURNAL_CARD_KINDS } from "./momentCard.js";
 import { unwrapLon } from "../utils/geo.js";
 
@@ -322,9 +322,9 @@ export function filmChaptersFromStory({
   clock, marks, live, journal = null, lang = "fr", nowMs,
 } = {}) {
   const merged = marksWithIso(marks, clock);
-  const dated = datedMarks(merged);
+  const dated = officialDatedStops(merged, clock);
   const byName = new Map((merged || []).map((m) => [m.name, m]));
-  const t0 = ms(clock?.t0) ?? ms(dated[0]?.iso);
+  const t0 = Date.parse(DEFAULT_T0_ISO);
   const tEnd = ms(live?.iso) || nowMs || Date.now();
   if (t0 == null || !(tEnd > t0)) return [];
 

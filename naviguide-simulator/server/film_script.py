@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from story_cascade import cascade_text, filter_numbers
+from voyage_clock import OFFICIAL_T0
 
 FILM_MAX_CHARS = 2400
 FILM_WRITE_MIN = 2300
@@ -94,6 +95,98 @@ def norm_stop(name: str) -> str:
 def same_stop(a: str, b: str) -> bool:
     na, nb = norm_stop(a), norm_stop(b)
     return bool(na) and na == nb
+
+
+_SAINT_MAUR_RE = re.compile(r"saint[\s\-]*maur", re.I)
+_ROCHELLE_RE = re.compile(r"rochelle", re.I)
+
+
+def is_saint_maur(name: str) -> bool:
+    return bool(_SAINT_MAUR_RE.search(str(name or "")))
+
+
+def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[dict]:
+    """Escales datées, Saint-Maur + 15 mai 2026 en tête. Aucune autre date inventée."""
+    raw = marks if marks else (clock or {}).get("marks")
+    dated = dated_marks(raw)
+    saint_raw = next(
+        (m for m in (raw or []) if isinstance(m, dict) and is_saint_maur(m.get("name") or "")),
+        None,
+    )
+    saint = next((s for s in dated if is_saint_maur(s["name"])), None)
+    if saint:
+        head = {**saint, "iso": OFFICIAL_T0}
+    else:
+        src = saint_raw or {}
+        film = src.get("filmNm") if src.get("filmNm") is not None else src.get("nm")
+        head = {
+            "name": src.get("name") or "Saint-Maur",
+            "iso": OFFICIAL_T0,
+            "filmNm": float(film or 0),
+            "nm": float(src["nm"]) if isinstance(src.get("nm"), (int, float)) else 0.0,
+            "holdHours": float(src.get("holdHours") or 0),
+            "lat": src.get("lat") if isinstance(src.get("lat"), (int, float)) else None,
+            "lon": src.get("lon") if isinstance(src.get("lon"), (int, float)) else None,
+        }
+    rest = [s for s in dated if not is_saint_maur(s["name"])]
+    return [head, *rest]
+
+
+def _sea_stop(stops: list[dict], marks: list | None, clock: dict | None) -> Optional[dict]:
+    for s in (stops or [])[1:]:
+        if _ROCHELLE_RE.search(s.get("name") or ""):
+            return s
+    raw = list(marks or []) + list((clock or {}).get("marks") or [])
+    for m in raw:
+        if isinstance(m, dict) and _ROCHELLE_RE.search(str(m.get("name") or "")):
+            film = m.get("filmNm") if m.get("filmNm") is not None else m.get("nm")
+            return {
+                "name": m["name"],
+                "iso": m.get("iso"),
+                "filmNm": float(film or 0),
+                "nm": float(m["nm"]) if isinstance(m.get("nm"), (int, float)) else 0.0,
+                "holdHours": float(m.get("holdHours") or 0),
+                "lat": m.get("lat") if isinstance(m.get("lat"), (int, float)) else None,
+                "lon": m.get("lon") if isinstance(m.get("lon"), (int, float)) else None,
+            }
+    if len(stops or []) > 1:
+        return stops[1]
+    return {"name": "La Rochelle"}
+
+
+def merge_route_marks(route_marks: list | None, clock: dict | None) -> list[dict]:
+    """Marques de la route + iso de l'horloge. Pas de date inventée."""
+    clock_marks = [c for c in ((clock or {}).get("marks") or []) if isinstance(c, dict)]
+    if not route_marks:
+        return list(clock_marks)
+    out: list[dict] = []
+    for m in route_marks:
+        if not isinstance(m, dict):
+            continue
+        row = dict(m)
+        if _ms(row.get("iso")) is None:
+            film = float(row.get("filmNm") if row.get("filmNm") is not None else row.get("nm") or 0)
+            name = row.get("name") or ""
+            hit = next(
+                (
+                    c for c in clock_marks
+                    if abs(float(c.get("filmNm") if c.get("filmNm") is not None else c.get("nm") or 0) - film) < 0.6
+                    and (not name or c.get("name") == name)
+                ),
+                None,
+            )
+            if hit is None:
+                hit = next((c for c in clock_marks if name and c.get("name") == name), None)
+            if hit:
+                row["iso"] = hit.get("iso")
+                if hit.get("holdHours") is not None:
+                    row["holdHours"] = hit.get("holdHours")
+                if row.get("lat") is None:
+                    row["lat"] = hit.get("lat")
+                if row.get("lon") is None:
+                    row["lon"] = hit.get("lon")
+        out.append(row)
+    return out
 
 
 def _days(hours: Any) -> int:
@@ -427,12 +520,11 @@ def film_candidates(
     live: dict | None,
     now_ms: int,
 ) -> dict[str, Any]:
-    stops = dated_marks(marks if marks else (clock or {}).get("marks"))
+    raw_marks = marks if marks else (clock or {}).get("marks")
+    stops = official_dated_stops(raw_marks, clock)
     start = stops[0] if stops else None
-    sea = next((s for i, s in enumerate(stops) if i > 0 and re.search(r"rochelle", s["name"], re.I)), None)
-    if sea is None and len(stops) > 1:
-        sea = stops[1]
-    t0 = _ms((clock or {}).get("t0")) or _ms(start["iso"] if start else None)
+    sea = _sea_stop(stops, raw_marks, clock)
+    t0 = _ms(OFFICIAL_T0)
     t_end = _ms((live or {}).get("iso")) or now_ms
     out: list[dict] = []
     seen: set[str] = set()
@@ -443,8 +535,8 @@ def film_candidates(
         seen.add(c["id"])
         out.append(c)
 
-    depart_iso = (start or {}).get("iso") or (clock or {}).get("t0")
-    if depart_iso and _ms(depart_iso) is not None:
+    depart_iso = OFFICIAL_T0
+    if _ms(depart_iso) is not None:
         push(_cand({
             "id": "depart", "kind": "stop", "t": depart_iso, "event": "departure",
             "name": short_name((start or {}).get("name") or "Saint-Maur"),
@@ -591,11 +683,16 @@ def _day_word(n: int, lang: str) -> str:
 
 
 def _nm_label(nm: Any, lang: str) -> str:
+    """Distance déclamée : « milles nautiques » / « nautical miles », jamais « nm »."""
     try:
         v = round(float(nm or 0))
     except (TypeError, ValueError):
         return ""
-    return f"{v:,} nm".replace(",", " ") if not _en(lang) else f"{v:,} nm"
+    if _en(lang):
+        unit = "nautical mile" if v == 1 else "nautical miles"
+        return f"{v:,} {unit}"
+    unit = "mille nautique" if v == 1 else "milles nautiques"
+    return f"{v:,} {unit}".replace(",", " ")
 
 
 def event_sentence(ev: dict, lang: str = "fr") -> str:
@@ -653,7 +750,10 @@ def event_sentence(ev: dict, lang: str = "fr") -> str:
         )
     if ev.get("kind") == "sci":
         nm = _fact_num(e, "nm")
-        nm_bit = (f" at {_plain(nm, 1)} nm" if en else f" à {_plain(nm, 1)} nm") if nm is not None else ""
+        nm_bit = (
+            (f" at {_plain(nm, 1)} nautical miles" if en else f" à {_plain(nm, 1)} milles nautiques")
+            if nm is not None else ""
+        )
         return (
             f"On {when}, the route passed{nm_bit} from {name}."
             if en else
@@ -1107,6 +1207,7 @@ async def build_film_response(
     live: dict | None,
     journal: dict | None,
     *,
+    marks: list | None = None,
     lang: str = "fr",
     seconds: int = 150,
     style: str = "raw",
@@ -1117,7 +1218,8 @@ async def build_film_response(
     """Assemble the API payload. `want_write` triggers Nemotron (tier write)."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
 
-    marks = (clock or {}).get("marks")
+    marks = marks if marks is not None else (clock or {}).get("marks")
+    clock = {**(clock or {}), "t0": OFFICIAL_T0}
     last = last_stop_id(journal, marks)
     key = film_cache_key(journal_fingerprint(journal, last), lang, seconds)
     cached = get_film_cached(key) or {}
@@ -1181,13 +1283,15 @@ async def official_film(
     if voy is None:
         raise FileNotFoundError("voyage officiel absent")
     when = _now()
-    clock = voy.get("clock") or _climo_clock(voy)
+    raw_clock = voy.get("clock") or _climo_clock(voy)
+    clock = {**raw_clock, "t0": OFFICIAL_T0}
+    marks = merge_route_marks(voy.get("marks") or [], raw_clock)
     _journal_safely(lambda: journal.tick(voy, when))
-    live = sample_clock_at_time(clock, when) or {}
+    live = sample_clock_at_time(raw_clock, when) or {}
     payload = journal.summary(500)
     want_write = style in {"written", "nemotron", "rédigé", "redige"}
     return await build_film_response(
-        clock, live, payload, lang=lang, seconds=int(seconds or 150),
+        clock, live, payload, marks=marks, lang=lang, seconds=int(seconds or 150),
         style=style, cascade=cascade, want_write=want_write,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
     )
