@@ -83,7 +83,23 @@ export function officialDatedStops(marks, clock) {
       lat: Number.isFinite(Number(saintRaw?.lat)) ? Number(saintRaw.lat) : null,
       lon: Number.isFinite(Number(saintRaw?.lon)) ? Number(saintRaw.lon) : null,
     };
-  return [head, ...dated.filter((s) => !isSaintMaur(s.name))];
+  let rest = dated.filter((s) => !isSaintMaur(s.name));
+  // Premier départ mer (La Rochelle, filmNm ~122) : 15 mai même sans iso,
+  // et pas la date du retour (même nom, 2027).
+  let sea = rest.find((s) => /rochelle/i.test(s.name || "")) || seaStop([], raw, clock);
+  if (sea && /rochelle/i.test(sea.name || "")) {
+    const film = Number(sea.filmNm ?? sea.nm) || 0;
+    if (film < 2000) {
+      const others = rest.filter((s) => !sameStop(s.name, sea.name));
+      const nextMs = others[0] ? ms(others[0].iso) : null;
+      const seaMs = ms(sea.iso);
+      if (seaMs == null || (nextMs != null && seaMs >= nextMs)) {
+        sea = { ...sea, iso: DEFAULT_T0_ISO };
+      }
+      rest = [sea, ...others];
+    }
+  }
+  return [head, ...rest];
 }
 
 function seaStop(stops, marks, clock) {
@@ -187,7 +203,7 @@ function compass(deg, lang) {
   return isEn(lang) ? card.replace(/O/g, "W") : card;
 }
 
-/** Stopovers with a date, in route order. One mark per name, one per filmNm < 0.6. */
+/** Stopovers with a date, in route order. Merge only sameStop (not filmNm). */
 export function datedMarks(marks) {
   const out = [];
   for (const m of marks || []) {
@@ -195,9 +211,9 @@ export function datedMarks(marks) {
     const film = Number(m.filmNm ?? m.nm) || 0;
     const key = normStop(m.name);
     if (!key) continue;
-    // filmNm < 0.6 is not enough alone: « Ajaccio » and « Ajaccio (Corse) » at
-    // the same harbour must collapse even if the labels differ.
-    if (out.some((x) => sameStop(x.name, m.name) || Math.abs(x.filmNm - film) < 0.6)) continue;
+    // Même port (« Ajaccio » ≡ « Ajaccio (Corse) ») seulement.
+    // Saint-Maur et La Rochelle restent distincts même à filmNm 0.
+    if (out.some((x) => sameStop(x.name, m.name))) continue;
     out.push({
       name: m.name,
       iso: m.iso,
@@ -797,11 +813,17 @@ export function filmEventSentence(ev, lang = "fr") {
   const when = dayMonth(e.t || ev.t, lang);
   const name = shortName(e.name || ev.name || "");
   if (ev.role === "depart") {
-    const sea = shortName(ev.seaName || "La Rochelle");
+    const sea = shortName(ev.seaName || ev.toName || "");
     const from = name || "Saint-Maur";
+    const when = dayMonth(e.t, lang, { year: true });
+    if (sea) {
+      return en
+        ? `The Berry-Mappemonde expedition left ${from} on ${when} and took the road to ${sea}.`
+        : `L’expédition Berry-Mappemonde a quitté ${from} le ${when} et a pris la route vers ${sea}.`;
+    }
     return en
-      ? `The Berry-Mappemonde expedition left ${from} on ${dayMonth(e.t, lang, { year: true })} and took the road to ${sea}.`
-      : `L’expédition Berry-Mappemonde a quitté ${from} le ${dayMonth(e.t, lang, { year: true })} et a pris la route vers ${sea}.`;
+      ? `The Berry-Mappemonde expedition left ${from} on ${when}.`
+      : `L’expédition Berry-Mappemonde a quitté ${from} le ${when}.`;
   }
   if (ev.role === "today") {
     const nm = ev.distLabel || "";
@@ -892,6 +914,22 @@ function legIntro(from, to, connector, lang, { first, sea }) {
     : `${connector}, le ${dayMonth(depIso, lang)}, ${head}.`;
 }
 
+/** Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé. */
+function chapterDepart(w, i, lang) {
+  const dest = w.to && w.to.name ? w.to : null;
+  const destName = shortName(dest?.name || "");
+  const origin = shortName(w.from?.name || "");
+  const en = isEn(lang);
+  const head = destName
+    ? (en ? `departure for ${destName}` : `départ vers ${destName}`)
+    : (en ? `under way from ${origin}` : `en route depuis ${origin}`);
+  if (i === 0) {
+    if (!destName) return "";
+    return `${head[0].toUpperCase()}${head.slice(1)}.`;
+  }
+  return legIntro(w.from, dest, storyConnector(i - 1, lang), lang, { first: false });
+}
+
 function chapterWindows(stops, t0, tEnd) {
   const list = [];
   const pts = stops.length ? stops : [{ name: "Saint-Maur", iso: isoOf(t0), filmNm: 0 }];
@@ -903,8 +941,8 @@ function chapterWindows(stops, t0, tEnd) {
     const destMs = to ? ms(to.iso) : null;
     const arrived = destMs != null && destMs <= tEnd;
     const rawB = destMs != null ? destMs : tEnd;
-    const tB = Math.min(rawB == null ? tEnd : rawB, tEnd);
-    if (tB <= tA) continue;
+    let tB = Math.min(rawB == null ? tEnd : rawB, tEnd);
+    if (tB <= tA) tB = tA + 1000;
     list.push({
       id: `leg-${i}`,
       from,
@@ -981,20 +1019,31 @@ function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
     const bits = [];
     const placed = [];
     const dest = w.to && w.to.name ? w.to : null;
-    if (i > 0) {
-      const intro = legIntro(w.from, dest, storyConnector(i - 1, lang), lang, { first: false, sea: seaName });
-      if (intro) bits.push(intro);
-      pushArrival(bits, dest);
+    const destName = dest ? shortName(dest.name) : "";
+    if (i === 0) {
+      const left = filmEventSentence({
+        role: "depart",
+        kind: "stop",
+        t: DEFAULT_T0_ISO,
+        name: startName,
+        seaName: destName ? "" : seaName,
+        entry: { t: DEFAULT_T0_ISO, name: startName },
+      }, lang).trim();
+      if (left) bits.push(left);
     }
+    const head = chapterDepart(w, i, lang);
+    if (head) bits.push(head);
+    pushArrival(bits, dest);
     for (const ev of buckets[i] || []) {
       // Stopovers are the jambe destination, already paired above — not a second cite.
       if (ev.kind === "stop" && ev.role !== "depart" && ev.role !== "today") continue;
+      if (ev.role === "depart") continue;
       const rich = {
         ...ev,
-        seaName,
+        seaName: destName || seaName,
+        toName: destName,
         distLabel: live ? spokenNmLabel(live.sailNm ?? live.filmNm, lang) : "",
       };
-      if (ev.role === "depart") rich.name = startName;
       const sentence = filmEventSentence(rich, lang).trim();
       if (!sentence) continue;
       const charIdx = bits.join(" ").length + (bits.length ? 1 : 0);
@@ -1002,7 +1051,6 @@ function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
       const card = cardFromJournalEntry(ev.entry, lang);
       placed.push({ id: ev.id, charIdx, card: card || { id: ev.id, kind: ev.kind, title: ev.name || ev.kind, text: sentence } });
     }
-    if (i === 0) pushArrival(bits, dest);
     const text = bits.join(" ").replace(/\s{2,}/g, " ").trim();
     chapters.push({
       id: w.id,

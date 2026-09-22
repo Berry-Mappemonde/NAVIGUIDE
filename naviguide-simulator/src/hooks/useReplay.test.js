@@ -106,6 +106,7 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
     assert.match(hook, /waitForVoices/);
     assert.match(hook, /onVoiceLeadFailed/);
     assert.match(hook, /pickFilmChapters/);
+    assert.match(hook, /AbortError/);
     assert.doesNotMatch(hook, /targetSeconds \+ 20/);
 
     const lastOk = voiceLeadPolicy({
@@ -133,12 +134,39 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
     assert.equal(shouldReturnToLive({ voiceIncident: true, filmFinished: true }), true);
   });
 
-  it("script API sans emprise → brut local (première jambe avec coords)", () => {
-    const remote = { chapters: [{ id: "leg-0", text: "Ajaccio", fromLat: null, fromLon: null, toLat: null, toLon: null }], source: "rules" };
-    const local = { chapters, source: "rules" };
+  it("script API sans emprise : texte serveur + coords locales (id / from+to)", () => {
+    const remote = {
+      chapters: [{
+        id: "leg-0",
+        text: "Arrivée à La Rochelle",
+        fromName: "Saint-Maur",
+        toName: "La Rochelle",
+        fromLat: null,
+        fromLon: null,
+        toLat: null,
+        toLon: null,
+      }],
+      source: "rules",
+    };
+    const local = {
+      chapters: [{
+        id: "leg-0",
+        text: "quitté Saint-Maur vers La Rochelle. Aujourd'hui, le bateau est à 19 260 milles nautiques du départ",
+        fromName: "Saint-Maur",
+        toName: "La Rochelle",
+        fromLat: 48.8,
+        fromLon: 2.4,
+        toLat: 46.1,
+        toLon: -1.1,
+      }],
+      source: "rules",
+    };
     const picked = pickFilmChapters(remote, local, []);
-    assert.equal(picked.remote, false);
+    assert.equal(picked.remote, true);
+    assert.match(picked.chapters[0].text, /Arrivée à La Rochelle/);
+    assert.doesNotMatch(picked.chapters[0].text, /Aujourd'hui, le bateau est à/);
     assert.equal(picked.chapters[0].fromLat, 48.8);
+    assert.equal(picked.chapters[0].toLat, 46.1);
     assert.ok(chapterHasFirstLeg(picked.chapters[0]));
   });
 });
