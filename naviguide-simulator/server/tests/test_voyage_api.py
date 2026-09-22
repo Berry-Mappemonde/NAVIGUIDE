@@ -271,3 +271,39 @@ def test_official_regimes_endpoint(client):
     body = r.json()
     assert "portions" in body
     assert body["voyageId"] == "berry-mappemonde-2026-officiel"
+
+
+def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
+    """Lot RA7 : /voyage/official/eta resserre un p90 de 7 mois."""
+    from ensemble_eta import ETA_MAX_SPAN_DAYS, tighten_eta_payload
+    from plan_review import eta_span_days
+
+    now = datetime(2026, 9, 21, 12, tzinfo=timezone.utc)
+    exploded = {
+        "p10": "2026-11-13T00:00:00Z",
+        "p50": "2026-11-15T00:00:00Z",
+        "p90": "2027-06-10T00:00:00Z",
+        "members": 80,
+        "memberKnots": [8.0, 8.2, 0.4],
+        "source": "open-meteo-ensemble",
+        "computedAt": "2026-09-21T12:00:00Z",
+    }
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+
+    def fake_official_eta(voy, stop, when, polar_raw=None):
+        assert "Dzaoudzi" in stop or "dzaoudzi" in stop.lower()
+        return exploded
+
+    import ensemble_eta
+    monkeypatch.setattr(ensemble_eta, "official_eta", fake_official_eta)
+    client.put("/voyage/official", json=_payload("2026-05-15T08:00:00Z"))
+    r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] > 0
+    assert 0.4 not in (body.get("memberKnots") or [])
+    span = eta_span_days(body["p10"], body["p90"])
+    assert span is not None and span <= ETA_MAX_SPAN_DAYS + 1e-6
+    assert "2027-06" not in (body["p90"] or "")
+    tight = tighten_eta_payload(exploded, now)
+    assert eta_span_days(tight["p10"], tight["p90"]) <= 7.01
