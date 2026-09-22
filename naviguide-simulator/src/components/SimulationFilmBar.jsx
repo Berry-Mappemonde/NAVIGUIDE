@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Clapperboard, Maximize2, Minimize2, Pause, P
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
+import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
+import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 
 const PROFILES = [
@@ -111,6 +113,13 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   const barNm = playhead ?? nm;
   const speedBasis = clockSpeedBasis(clock, clockCurrent, barNm);
   const pct = barTotal > 0 ? Math.min(100, (barNm / barTotal) * 100) : 0;
+  const landLeg = isLandLegNames(fromName, toName) || phase === "land" || vehicle === "land";
+  const landNm = Number(remainingNm) > 0.5
+    ? Number(remainingNm)
+    : (Number(nm) > 0.5 ? Number(nm) : null);
+  const landClock = landLeg
+    ? formatLandLegClock(landNm, SAINT_MAUR_LAND_HOURS, t, lang)
+    : "";
   const phaseLabel = phase === "air-out" || phase === "air"
     ? t("filmPhaseAir")
     : phase === "air-return"
@@ -191,7 +200,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   <span className="text-cyan-200">{toName || "—"}</span>
                 </>
               )}
-            {phaseLabel ? <span className="text-[10px] font-normal text-cyan-300/80 ml-2">{phaseLabel}</span> : null}
+            {landClock ? (
+              <span data-testid="film-land-leg" className="text-[10px] font-normal text-cyan-300/80 ml-2">{landClock}</span>
+            ) : phaseLabel ? (
+              <span className="text-[10px] font-normal text-cyan-300/80 ml-2">{phaseLabel}</span>
+            ) : null}
           </div>
           {disclaimer ? (
             <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right flex-shrink-0">
@@ -203,10 +216,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
         <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
           <span data-testid="clock-line">
             {clockLine || `${Math.round(nm).toLocaleString()} nm`}
-            {remainingNm > 0.5 && !finished && vehicle !== "plane"
+            {!landClock && remainingNm > 0.5 && !finished && vehicle !== "plane"
               ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm`
               : ""}
-            {etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
+            {!landClock && etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
             {vehicle === "plane"
               ? ` · ${t("filmAirVehicle")}`
               : (
@@ -218,7 +231,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     aria-label={regimeTitle}
                     className="inline-flex items-center rounded-md px-1 border border-white/15 bg-white/10"
                   >
-                    <span data-testid="speed-regime-pill">
+                    <span data-testid="speed-regime-pill" title={regimeTitle}>
                       {atQuay
                         ? (quayDays > 0 ? t("voyageAtQuay", { days: quayDays }) : t("filmAtQuay"))
                         : `${Number(boatKnots || 0).toFixed(1)} kt${speedBasis === "fallback" ? ` ${t("speedFallback")}` : ""}`}
@@ -570,6 +583,14 @@ function clockRegimeText({ regime, sources, spread, t, lang = "fr" }) {
   }
   if (n > 0) return `${name} · ${t("clockRegimeSourcesPlain", { n })}`;
   return name;
+}
+
+/** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */
+export function formatLandLegClock(nm, hours, t, lang = "fr") {
+  const km = nmToRoundedKm(nm);
+  if (km == null || !Number.isFinite(Number(hours))) return "";
+  const loc = lang === "en" ? "en-GB" : "fr-FR";
+  return `${km.toLocaleString(loc)} ${t("unitKm")} ${t("byRoad")} · ${Number(hours)} ${t("unitRoadHours")}`;
 }
 
 function formatEta(hours) {

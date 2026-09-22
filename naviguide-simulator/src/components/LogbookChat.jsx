@@ -49,26 +49,31 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200 leading-snug">{t("logbookChatTitle")}</div>
         <span className="ml-auto text-[9px] text-violet-100/60">{admin ? t("logbookChatLogged") : t("logbookChatNotLogged")}</span>
       </div>
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
-        {messages.map((m, i) => (
-          <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
-            <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
-            <span className="font-semibold mr-1">{m.role === "skipper" ? t("logbookChatYou") : t("logbookChatBot")}</span>
-            {m.status === "failed"
-              ? <span className="text-amber-300/90">{t("logbookChatFailed")}</span>
-              : m.text}
-            {m.role === "logbook" && m.status === "ready" ? (
-              <span className="ml-1 text-[9px] text-slate-500">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
-            ) : null}
-            {m.role === "logbook" && (m.source || m.engine) ? (
-              <div data-testid="chat-source" className="text-[9px] text-slate-500 leading-snug mt-0.5">
-                {llmSourceLabel(m.source || m.engine, t)}
-              </div>
-            ) : null}
-          </div>
-        ))}
-        {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
-        {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+      <div
+        data-testid="logbook-chat-reply"
+        className="flex-1 min-h-0 rounded-md border border-violet-300/30 bg-slate-950/55 px-1.5 py-1"
+      >
+        <div ref={listRef} className="h-full overflow-y-auto sidebar-scroll space-y-1 min-w-0" data-testid="logbook-chat-list">
+          {messages.map((m, i) => (
+            <div key={`${m.t}-${i}`} className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] ${m.role === "skipper" ? "text-slate-100" : "text-violet-100"}`}>
+              <span className="text-[9px] text-slate-500 mr-1">{formatTimeUtc(m.t)}</span>
+              <span className="font-semibold mr-1">{m.role === "skipper" ? t("logbookChatYou") : t("logbookChatBot")}</span>
+              {m.status === "failed"
+                ? <span className="text-amber-300/90">{t("logbookChatFailed")}</span>
+                : m.text}
+              {m.role === "logbook" && m.status === "ready" ? (
+                <span className="ml-1 text-[9px] text-slate-500">{m.logged ? "💬 " + t("logbookChatSaved") : t("logbookChatUnsaved")}</span>
+              ) : null}
+              {m.role === "logbook" && (m.source || m.engine) ? (
+                <div data-testid="chat-source" className="text-[9px] text-slate-500 leading-snug mt-0.5">
+                  {llmSourceLabel(m.source || m.engine, t)}
+                </div>
+              ) : null}
+            </div>
+          ))}
+          {pending ? <p className="text-[10px] text-slate-400 leading-snug">{t("logbookChatPending")}</p> : null}
+          {error ? <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p> : null}
+        </div>
       </div>
       <form onSubmit={submit} className="mt-1.5 flex items-center gap-1 flex-shrink-0">
         <input

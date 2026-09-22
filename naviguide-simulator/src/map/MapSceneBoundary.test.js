@@ -30,7 +30,7 @@ describe("MapScene boundary", () => {
     assert.match(playback, /onPublish/);
   });
 
-  it("borne la latitude à ±85, laisse la longitude libre, viscosité 1", () => {
+  it("borne la latitude à ±85 et la longitude à ±540 (une copie de chaque côté)", () => {
     const src = read("./MapSceneController.js");
     const start = src.indexOf("static mount");
     const end = src.indexOf("constructor(map");
@@ -39,11 +39,21 @@ describe("MapScene boundary", () => {
     assert.match(mount, /minZoom:\s*2/);
     assert.match(mount, /worldCopyJump:\s*false/);
     assert.match(mount, /maxBoundsViscosity:\s*1/);
-    assert.match(
-      mount,
-      /maxBounds:\s*\[\s*\[\s*-85\s*,\s*-Infinity\s*\]\s*,\s*\[\s*85\s*,\s*Infinity\s*\]\s*\]/,
-    );
-    assert.doesNotMatch(mount, /maxBounds:[\s\S]{0,80}-180/);
-    assert.doesNotMatch(mount, /maxBounds:[\s\S]{0,80}(?<!-)180/);
+    assert.match(src, /MAP_LON_BOUND = 540/);
+    assert.match(src, /MAP_LAT_BOUND = 85/);
+    assert.match(mount, /maxBounds:\s*MAP_MAX_BOUNDS/);
+    assert.doesNotMatch(mount, /-Infinity/);
+    assert.doesNotMatch(mount, /Infinity/);
+  });
+
+  it("trace une jambe air en dash noir non interactif", () => {
+    const src = read("./MapSceneController.js");
+    assert.match(src, /officialRouteLineStyle/);
+    assert.match(src, /interactive,\s*$/m);
+    assert.match(src, /pts\[i \+ 1\]\.jump/);
+    const styleSrc = read("../utils/berryLegs.js");
+    assert.match(styleSrc, /color: "#111111"/);
+    assert.match(styleSrc, /dash: "7 7"/);
+    assert.match(styleSrc, /interactive: false/);
   });
 });

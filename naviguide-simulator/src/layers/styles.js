@@ -11,6 +11,13 @@ export const TILE_URLS = {
  */
 export const TILE_ATTRIBUTION = 'Tuiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener noreferrer">Esri</a> — <a href="https://www.here.com/" target="_blank" rel="noopener noreferrer">HERE</a>, <a href="https://www.garmin.com/" target="_blank" rel="noopener noreferrer">Garmin</a>, &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>';
 
+/**
+ * Marge basse min. des crédits Leaflet (px) : hauteur barre film (96) +
+ * `bottom-5` (20). `--sim-inset-bottom` ne doit jamais passer sous ce plancher
+ * tant que la barre est visible (lot RA6).
+ */
+export const LEAFLET_ATTRIBUTION_BOTTOM_MIN_PX = 116;
+
 export const FALLBACK_COLORS = {
   "MPA": "#00f0ff", "Conservation": "#39ff14", "Research": "#c084fc",
   "Fisheries": "#fbbf24", "Policy & Advocacy": "#f472b6", "Pollution": "#ff4a4a",

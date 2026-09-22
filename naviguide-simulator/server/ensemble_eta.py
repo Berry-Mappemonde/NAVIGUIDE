@@ -16,6 +16,7 @@ from hindcast import hours_from_om, om_get, point_key
 from isochrone import haversine
 from pearl_store import kv_get, kv_put
 from voyage_clock import (
+    PLANNING_MIN_KN,
     build_voyage_clock,
     parse_iso,
     sample_clock_at_time,
@@ -31,6 +32,12 @@ CACHE_NS = "ensemble"
 CACHE_TTL_S = 6 * 3600
 MAX_POINT_NM = 60.0
 SOURCE = "open-meteo-ensemble"
+# Lot RA7 : un membre à ~0 kn faisait exploser p90 (7 mois). Même plancher
+# que voyage_clock.planning_speed_for ; la fourchette affichée reste de
+# quelques jours autour de p50 (jamais inventée : sans membres valides → vide).
+ETA_MIN_KN = PLANNING_MIN_KN
+ETA_MAX_SPAN_DAYS = 7.0
+ETA_TIGHTEN_TAG = "t3"
 _SPEED_KEY = re.compile(r"^(?:(?P<model>.+)_)?wind_speed_10m(?:_member(?P<n>\d+))?$")
 
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
@@ -47,6 +54,7 @@ def empty_eta(now: Optional[datetime] = None) -> dict:
         "members": 0,
         "source": None,
         "computedAt": to_iso(when),
+        "memberKnots": [],
     }
 
 
@@ -95,6 +103,89 @@ def arrival_quantiles(arrivals: List[datetime]) -> tuple[Optional[datetime], Opt
         sec = empirical_quantile(stamps, q)
         out.append(None if sec is None else datetime.fromtimestamp(sec, tz=timezone.utc))
     return out[0], out[1], out[2]
+
+
+def implied_speed_kn(remaining_nm: float, start: datetime, arrival: datetime) -> float:
+    """Vitesse moyenne implicite (nm / heures) d'un membre, 0 si dégénéré."""
+    hours = (arrival - start).total_seconds() / 3600.0
+    if hours <= 0 or remaining_nm <= 0:
+        return 0.0
+    return float(remaining_nm) / hours
+
+
+def tighten_eta_arrivals(
+    arrivals: List[datetime],
+    *,
+    remaining_nm: float,
+    now: datetime,
+    min_kn: float = ETA_MIN_KN,
+) -> List[datetime]:
+    """Écarte les membres plus lents que le plancher de planification (3 kn)."""
+    kept: List[datetime] = []
+    for arr in arrivals or []:
+        if implied_speed_kn(remaining_nm, now, arr) + 1e-9 >= float(min_kn):
+            kept.append(arr)
+    return kept
+
+
+def bound_eta_quantiles(
+    p10: Optional[datetime],
+    p50: Optional[datetime],
+    p90: Optional[datetime],
+    max_span_days: float = ETA_MAX_SPAN_DAYS,
+) -> tuple[Optional[datetime], Optional[datetime], Optional[datetime]]:
+    """Borne p10–p90 à une fenêtre de quelques jours autour de p50."""
+    if not p10 or not p50 or not p90:
+        return p10, p50, p90
+    span = (p90 - p10).total_seconds() / 86400.0
+    if span <= float(max_span_days) + 1e-9:
+        return p10, p50, p90
+    half = timedelta(days=float(max_span_days) / 2.0)
+    lo = max(p10, p50 - half)
+    hi = min(p90, p50 + half)
+    if hi < lo:
+        lo = hi = p50
+    return lo, p50, hi
+
+
+def tighten_eta_payload(eta: dict, now: Optional[datetime] = None) -> dict:
+    """Filet : fourchette déjà calculée (cache ancien) → resserrée ou vide."""
+    if not eta or _positive_members(eta.get("members")) <= 0:
+        return empty_eta(now)
+    knots = eta.get("memberKnots") or []
+    if knots and not any(_as_kn(k) >= ETA_MIN_KN for k in knots):
+        return empty_eta(now)
+    try:
+        p10 = _as_dt(eta["p10"]) if eta.get("p10") else None
+        p50 = _as_dt(eta["p50"]) if eta.get("p50") else None
+        p90 = _as_dt(eta["p90"]) if eta.get("p90") else None
+    except Exception:
+        return empty_eta(now)
+    if not p10 or not p50 or not p90:
+        return empty_eta(now)
+    p10, p50, p90 = bound_eta_quantiles(p10, p50, p90)
+    out = dict(eta)
+    out["p10"] = to_iso(p10) if p10 else None
+    out["p50"] = to_iso(p50) if p50 else None
+    out["p90"] = to_iso(p90) if p90 else None
+    if knots:
+        out["memberKnots"] = [round(_as_kn(k), 2) for k in knots if _as_kn(k) >= ETA_MIN_KN]
+    return out
+
+
+def _positive_members(value: Any) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
+def _as_kn(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def parse_members(payload: Optional[dict]) -> Dict[str, List[dict]]:
@@ -332,11 +423,11 @@ def compute_eta(
         return empty
     result_key = (
         f"eta:{_norm_stop(stop)}:{point_key(sample['lat'], sample['lon'])}"
-        f":{now.strftime('%Y-%m-%d')}:{now.hour // 6}"
+        f":{now.strftime('%Y-%m-%d')}:{now.hour // 6}:{ETA_TIGHTEN_TAG}"
     )
     cached = kv_get(CACHE_NS, result_key, max_age_s=CACHE_TTL_S)
     if cached and isinstance(cached.get("value"), dict) and cached["value"].get("members"):
-        return cached["value"]
+        return tighten_eta_payload(cached["value"], now)
     end_nm = float(stop_mark.get("nm") or stop_mark.get("filmNm") or 0)
     start_nm = float(sample.get("sailNm") or sample.get("filmNm") or 0)
     if end_nm <= start_nm + 0.5:
@@ -373,14 +464,23 @@ def compute_eta(
             arrivals.append(arrived)
     if not arrivals:
         return empty
-    p10, p50, p90 = arrival_quantiles(arrivals)
+    remaining_nm = max(0.0, end_nm - start_nm)
+    kept = tighten_eta_arrivals(arrivals, remaining_nm=remaining_nm, now=now)
+    if not kept:
+        return empty
+    member_knots = [round(implied_speed_kn(remaining_nm, now, arr), 2) for arr in kept]
+    p10, p50, p90 = arrival_quantiles(kept)
+    p10, p50, p90 = bound_eta_quantiles(p10, p50, p90)
+    if not p10 or not p50 or not p90:
+        return empty
     out = {
-        "p10": to_iso(p10) if p10 else None,
-        "p50": to_iso(p50) if p50 else None,
-        "p90": to_iso(p90) if p90 else None,
-        "members": len(arrivals),
+        "p10": to_iso(p10),
+        "p50": to_iso(p50),
+        "p90": to_iso(p90),
+        "members": len(kept),
         "source": SOURCE,
         "computedAt": to_iso(now),
+        "memberKnots": member_knots,
     }
     kv_put(CACHE_NS, result_key, out)
     return out
@@ -396,11 +496,11 @@ def official_eta(voy: dict, stop: str, now: datetime, polar_raw: Optional[dict] 
             polar_raw=polar_raw,
             start_at=voy.get("startAt") or "la-rochelle",
         )
-    return compute_eta(
+    return tighten_eta_payload(compute_eta(
         points=voy.get("points") or [],
         marks=voy.get("marks") or clock.get("marks") or [],
         stop=stop,
         now=now,
         polar_raw=polar_raw,
         clock=clock,
-    )
+    ), now)

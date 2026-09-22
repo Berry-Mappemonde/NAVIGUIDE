@@ -213,3 +213,34 @@ def test_plan_review_http_exposes_comment_source(client, monkeypatch):
     assert "comment" in body
     assert body["comment"]["source"] == "rules"
     assert "99" not in (body["comment"].get("text") or "")
+
+
+def test_noumea_dzaoudzi_eta_interval_is_a_few_days():
+    """Lot RA7 : un membre à ~0 kn ne doit plus ouvrir 7 mois sur Nouméa → Dzaoudzi."""
+    from datetime import datetime, timezone
+
+    from ensemble_eta import (
+        ETA_MAX_SPAN_DAYS,
+        ETA_MIN_KN,
+        arrival_quantiles,
+        bound_eta_quantiles,
+        implied_speed_kn,
+        tighten_eta_arrivals,
+    )
+    from voyage_clock import PLANNING_MIN_KN
+
+    now = datetime(2026, 9, 21, 12, tzinfo=timezone.utc)
+    remaining = 9151.0
+    assert plan_review.ETA_MIN_KN == PLANNING_MIN_KN == ETA_MIN_KN == 3.0
+    assert plan_review.ETA_MAX_SPAN_DAYS == ETA_MAX_SPAN_DAYS == 7.0
+    healthy = [now + timedelta(days=47.7 + (i - 40) * 0.05) for i in range(80)]
+    dead = now + timedelta(days=remaining / 0.5 / 24)
+    arrivals = [dead] + healthy[1:]
+    kept = tighten_eta_arrivals(arrivals, remaining_nm=remaining, now=now)
+    assert dead not in kept
+    assert all(implied_speed_kn(remaining, now, a) >= ETA_MIN_KN for a in kept)
+    p10, p50, p90 = bound_eta_quantiles(*arrival_quantiles(kept))
+    span = (p90 - p10).total_seconds() / 86400.0
+    assert span <= plan_review.ETA_MAX_SPAN_DAYS + 1e-6
+    assert plan_review.eta_span_days(p10.isoformat(), p90.isoformat()) <= 7.01
+    assert plan_review.eta_span_days(None, p90.isoformat()) is None

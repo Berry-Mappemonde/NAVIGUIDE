@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 from admin_guard import is_admin, rate_limited, require_admin
 from climatology_atlas import corridor_cells, prefetch_atlas_cells
 from forecast_blend import FORECAST_BLEND_END_HOURS, make_wind_fn
-from hindcast import at as hindcast_at
-from hindcast import hindcast_enabled, series as hindcast_series
+from hindcast import ERA5_PRODUCTS, at as hindcast_at
+from hindcast import fill_era5_along, hindcast_enabled, past_passage_slots
+from hindcast import uncovered_era5_slots
 from forecast_cube import (
     CACHE_TTL_H,
     CUBE_MAX_BYTES,
@@ -138,10 +139,11 @@ def _climo_clock(voy: dict) -> dict:
 
 
 def _hindcast_lookup(lat: float, lon: float, t: datetime):
+    """Vent du passé : ERA5 Open-Meteo uniquement (Copernicus = bonus, jamais bloquant)."""
     if not hindcast_enabled():
         return None
     try:
-        return hindcast_at(lat, lon, t)
+        return hindcast_at(lat, lon, t, products=ERA5_PRODUCTS)
     except Exception:
         return None
 
@@ -160,32 +162,18 @@ def _clock_with_cube(voy: dict, cube) -> dict:
 
 
 def _prefetch_hindcast(voy: dict, now: datetime) -> int:
-    """Une série par (point arrondi, jour) déjà visité — le cache évite le retéléchargement."""
+    """ERA5 le long du trait déjà parcouru (dates du clock courant). Pas de Copernicus."""
     if not hindcast_enabled():
         return 0
     clock = voy.get("clock") or _climo_clock(voy)
-    seen: set[tuple] = set()
-    n = 0
-    for v in clock.get("vertices") or []:
-        iso = v.get("iso")
-        if not iso or v.get("lat") is None:
-            continue
-        t = parse_iso(iso)
-        if t >= now:
-            continue
-        day = t.strftime("%Y-%m-%d")
-        key = (round(float(v["lat"]), 3), round(float(v["lon"]), 3), day)
-        if key in seen:
-            continue
-        seen.add(key)
-        try:
-            hindcast_series(v["lat"], v["lon"], day)
-            n += 1
-        except Exception as exc:
-            log.info("hindcast prefetch %s: %s", key, exc)
-        if n >= 800:
-            break
-    return n
+    slots = past_passage_slots(clock, now)
+    if len(slots) > 800:
+        slots = slots[:800]
+    try:
+        return fill_era5_along(slots)
+    except Exception as exc:
+        log.info("hindcast prefetch: %s", exc)
+        return 0
 
 
 def _fill_hindcast_then_forecast(voyage_id: str) -> None:
@@ -209,6 +197,11 @@ def _fill_hindcast_then_forecast(voyage_id: str) -> None:
             cube.samples = cube.samples[: max(4, len(cube.samples) // 2)]
         save_cube(voyage_id, cube)
         clock = _clock_with_cube(voy, cube)
+        if hindcast_enabled():
+            missing = uncovered_era5_slots(clock, now)
+            if missing:
+                fill_era5_along(missing[:800])
+                clock = _clock_with_cube(voy, cube)
         update_voyage(
             voyage_id,
             forecastStatus="ready",
@@ -599,6 +592,8 @@ def _regime_portions(clock: dict) -> list:
     portions = []
     current = None
     for v in clock.get("vertices") or []:
+        if v.get("vehicle") in ("plane", "side"):
+            continue
         regime = v.get("regime") or v.get("kind") or "climatology"
         if current is None or current["regime"] != regime:
             if current:
@@ -731,6 +726,7 @@ def get_official():
 
 @router.get("/voyage/official/clock")
 def get_official_clock():
+    """Horloge officielle unique : source de la position live (lot RA4)."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
@@ -784,8 +780,9 @@ def get_official_eta(stop: str = Query(..., min_length=1)):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    from ensemble_eta import official_eta  # noqa: PLC0415
-    return official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
+    from ensemble_eta import official_eta, tighten_eta_payload  # noqa: PLC0415
+    raw = official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
+    return tighten_eta_payload(raw, _now())
 
 
 @router.get("/voyage/official/plan-review")

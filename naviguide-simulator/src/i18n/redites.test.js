@@ -1,7 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { analyze, formatReport } from "../../scripts/redites.mjs";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { analyze, analyzeFolded, formatReport } from "../../scripts/redites.mjs";
 import fr from "./fr.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 describe("scripts/redites.mjs (lot R13)", () => {
   it("liste les valeurs identiques et les groupes de ≥ 2 mots, triés par fréquence", () => {
@@ -21,5 +26,26 @@ describe("scripts/redites.mjs (lot R13)", () => {
     const text = formatReport(report);
     assert.match(text, /Valeurs identiques/);
     assert.match(text, /Groupes de ≥ 2 mots/);
+  });
+
+  it("compte les doublons <summary> / contenu déplié (lot RA6)", () => {
+    const fixture = `
+      const PROFILE_KEY = { cruise: "skipperProfileCruise" };
+      const summary = [t(PROFILE_KEY[profile]), isSuivre ? \`\${horizonH} h\` : null].join(" · ");
+      <details>
+        <summary>{t("advancedSettings")} {summary}</summary>
+        <div>{t(PROFILE_KEY[p])} {orders.budget.hours} h</div>
+      </details>
+    `;
+    const hits = analyzeFolded(fixture, fr);
+    assert.ok(hits.length >= 1, "redite profil/budget détectée");
+    const dups = hits.flatMap((h) => h.dups);
+    assert.ok(dups.includes("Croisière") || dups.includes("HORIZON_H"), `dups=${dups.join(",")}`);
+
+    const panel = readFileSync(join(here, "../components/SkipperOrdersPanel.jsx"), "utf8");
+    const live = analyzeFolded(panel, fr);
+    const liveDups = live.flatMap((h) => h.dups);
+    assert.equal(liveDups.includes("Croisière"), false, "plus de Croisière dans le summary");
+    assert.equal(liveDups.includes("HORIZON_H"), false, "plus d'horizon dans le summary");
   });
 });

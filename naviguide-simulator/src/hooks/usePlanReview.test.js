@@ -3,7 +3,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks } from "./usePlanReview.js";
+import {
+  ETA_MIN_KN,
+  boundEtaIso,
+  etaRangeFromMembers,
+  formatEtaRange,
+  formatEtaRangeTitle,
+  nextStopFromMarks,
+  tightenEtaMembers,
+} from "./usePlanReview.js";
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
 
@@ -60,5 +68,34 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(src, /Number\(body\.members\) > 0/);
     assert.match(src, /etaRange: eta/);
     assert.match(src, /formatEtaRangeTitle/);
+  });
+
+  it("écarte tout membre à 0 kn de la fourchette (lot RA7)", () => {
+    assert.equal(ETA_MIN_KN, 3);
+    const members = [
+      { knots: 8.1, arrival: "2026-11-13T00:00:00Z" },
+      { knots: 0, arrival: "2027-06-10T00:00:00Z" },
+      { knots: 7.8, arrival: "2026-11-16T00:00:00Z" },
+    ];
+    const kept = tightenEtaMembers(members);
+    assert.equal(kept.some((m) => m.knots === 0), false);
+    assert.equal(kept.length, 2);
+    const eta = etaRangeFromMembers(members);
+    assert.ok(eta);
+    assert.ok(eta.memberKnots.every((k) => k >= ETA_MIN_KN));
+    assert.doesNotMatch(eta.p90, /2027-06/);
+    const days = (Date.parse(eta.p90) - Date.parse(eta.p10)) / 86400000;
+    assert.ok(days <= 7, `span ${days} j`);
+    const label = plain(formatEtaRange({
+      members: 80,
+      p10: "2026-11-13T00:00:00Z",
+      p50: "2026-11-15T00:00:00Z",
+      p90: "2027-06-10T00:00:00Z",
+      memberKnots: [8, 8],
+    }, tFr, "fr"));
+    assert.doesNotMatch(label, /juin/i);
+    assert.match(label, /arrivée entre le/);
+    const hidden = boundEtaIso("2026-11-13T00:00:00Z", null, "2027-06-10T00:00:00Z");
+    assert.equal(hidden.p10, "");
   });
 });

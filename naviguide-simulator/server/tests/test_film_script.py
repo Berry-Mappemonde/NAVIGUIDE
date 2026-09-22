@@ -13,11 +13,13 @@ from film_script import (
     build_film_response,
     build_raw_script,
     connector_at,
+    dated_marks,
     film_candidates,
     film_facts,
     is_sea_chapter,
     journal_fingerprint,
     last_stop_id,
+    norm_stop,
     select_film_events,
     written_is_valid,
 )
@@ -296,6 +298,71 @@ def test_official_sea_chapters_have_scored_events():
             assert e.get("kind")
             assert e.get("title") is not None
             assert e.get("fact") is not None
+
+
+ROUTE_STOPS = ["Saint-Maur", "La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"]
+
+
+def _first_index(text: str, needle: str) -> int:
+    return text.lower().find(needle.lower())
+
+
+def _assert_route_order(text: str, label: str) -> None:
+    hits = [(n, _first_index(text, n)) for n in ROUTE_STOPS if _first_index(text, n) >= 0]
+    assert len(hits) >= 4, f"{label} : escales manquantes ({[n for n, _ in hits]})"
+    for (a, ia), (b, ib) in zip(hits, hits[1:]):
+        assert ia < ib, f"{label} : {b} avant {a}"
+
+
+def _assert_departure_arrival_pairs(text: str, lang: str = "fr") -> None:
+    import re
+    dep_re = r"departure for (.+?)(?:\s*:|\.|$)" if lang == "en" else r"départ vers (.+?)(?:\s*:|\.|$)"
+    arr_re = r"Arrival at (.+?) on " if lang == "en" else r"Arrivée à (.+?) le "
+    deps = [(m.group(1).strip(), m.start()) for m in re.finditer(dep_re, text, re.I)]
+    arrs = [(m.group(1).strip(), m.start()) for m in re.finditer(arr_re, text, re.I)]
+    assert len(deps) >= 2, f"départs vers : {[n for n, _ in deps]}"
+    assert len(arrs) >= 2, f"arrivées : {[n for n, _ in arrs]}"
+    seen = []
+    for name, _ in arrs:
+        key = norm_stop(name)
+        assert key not in seen, f"escale répétée : {name}"
+        seen.append(key)
+    for name, i in deps:
+        nxt = next(((n, j) for n, j in arrs if j > i), None)
+        assert nxt, f"pas d’arrivée après départ vers {name}"
+        assert norm_stop(nxt[0]) == norm_stop(name), f"départ vers {name} suivi de arrivée à {nxt[0]}"
+    assert not re.search(r"départ vers Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio", text, re.I)
+    assert not re.search(r"departure for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio", text, re.I)
+
+
+def test_dated_marks_merges_ajaccio_aliases():
+    extra = CLOCK["marks"] + [
+        {"name": "Ajaccio", "nm": 1820, "filmNm": 1942.3, "iso": "2026-05-24T13:00:00Z", "holdHours": 72},
+        {"name": "Ajaccio (Corse)", "nm": 9000, "filmNm": 9000, "iso": "2026-07-01T00:00:00Z", "holdHours": 0},
+    ]
+    dated = dated_marks(extra)
+    assert sum(1 for s in dated if "ajaccio" in s["name"].lower()) == 1
+    assert norm_stop("Ajaccio (Corse)") == "ajaccio"
+
+
+def test_official_route_order_no_repeat_departure_then_arrival():
+    fr = _raw()
+    blob_fr = " ".join(c.get("text") or "" for c in fr["chapters"])
+    _assert_route_order(blob_fr, "film FR")
+    _assert_departure_arrival_pairs(blob_fr, "fr")
+    for ch in fr["chapters"]:
+        text = ch.get("text") or ""
+        if "départ vers" in text and "Arrivée à" in text:
+            import re
+            dep = re.search(r"départ vers (.+?)(?:\s*:|\.|$)", text)
+            arr = re.search(r"Arrivée à (.+?) le ", text)
+            assert dep and arr
+            assert norm_stop(dep.group(1)) == norm_stop(arr.group(1)), ch.get("id")
+
+    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
+    blob_en = " ".join(c.get("text") or "" for c in en["chapters"])
+    _assert_route_order(blob_en, "film EN")
+    _assert_departure_arrival_pairs(blob_en, "en")
 
 
 def test_http_film_route_en(monkeypatch):

@@ -10,6 +10,9 @@ import {
   ensureEscalePopup,
   findWaypointMarker,
   handleWaypointMarkerClick,
+  isEscaleCloseClick,
+  requestEscaleClose,
+  shouldCloseEscaleSheet,
 } from "./escalePopup.js";
 
 export {
@@ -19,6 +22,9 @@ export {
   ensureEscalePopup,
   findWaypointMarker,
   handleWaypointMarkerClick,
+  isEscaleCloseClick,
+  requestEscaleClose,
+  shouldCloseEscaleSheet,
 };
 
 /** Contenu React de la fiche ancrée au drapeau (lot R7). */
@@ -28,6 +34,8 @@ export function EscalePopup({ stop, fiche, loading, error, onClose, onFocus }) {
     <div
       data-testid="escale-popup"
       className="escale-popup-card"
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
       style={{
         width: "100%",
         maxWidth: ESCALE_POPUP_MAX_WIDTH,
@@ -99,6 +107,16 @@ export function attachEscalePopup(scene, L) {
     renderSheet(root, host, null);
   }
 
+  function requestClose() {
+    requestEscaleClose(sheet);
+    // Retirer après le clic : sinon le même geste retombe sur le drapeau (R7).
+    if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      window.setTimeout(() => hide(), 0);
+    } else {
+      hide();
+    }
+  }
+
   function show() {
     if (!sheet?.stop) {
       hide();
@@ -109,12 +127,16 @@ export function attachEscalePopup(scene, L) {
     renderSheet(root, host, sheet);
     popup.setContent(host);
     popup.setLatLng(marker.getLatLng());
-    try { scene.callbacks?.onManualNavigation?.(); } catch { /* tests */ }
+    const filmOn = Boolean(scene.config?.filmActive);
+    if (!filmOn) {
+      try { scene.callbacks?.onManualNavigation?.(); } catch { /* tests */ }
+    }
     if (!open) {
       try { popup.openOn(scene.map); } catch { /* carte absente (tests) */ }
       open = true;
     }
     follow();
+    if (filmOn) return;
     try {
       const ll = marker.getLatLng();
       const zoom = scene.map?.getZoom?.();
@@ -136,9 +158,17 @@ export function attachEscalePopup(scene, L) {
     if (!open) return;
     event.stopPropagation();
     event.preventDefault();
-    sheet?.onClose?.();
+    requestClose();
   }
 
+  function onHostClick(event) {
+    if (!isEscaleCloseClick(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    requestClose();
+  }
+
+  host.addEventListener?.("click", onHostClick);
   win?.addEventListener("keydown", onEsc, true);
 
   const api = {
@@ -154,6 +184,7 @@ export function attachEscalePopup(scene, L) {
     setSheet,
     hide,
     dispose() {
+      host.removeEventListener?.("click", onHostClick);
       win?.removeEventListener("keydown", onEsc, true);
       hide();
       try { root?.unmount(); } catch { /* tests */ }

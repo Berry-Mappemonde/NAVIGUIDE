@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
-import { canLeadWithVoice, waitForVoices, voiceEndKind } from "../utils/speak.js";
+import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -63,6 +63,85 @@ export function linearFilmAt(elapsed, plan) {
   };
 }
 
+export const APPROACH_FRAC = 0.8;
+
+/**
+ * Stop du film (lot RA5) : coupe la voix, libère la caméra (fin de
+ * `filmActive` + `publishFilmEnd`), annule la boucle. L'appelant remet
+ * `active=false` — MapSceneController quitte alors le suivi film.
+ */
+export function applyReplayStop({
+  cancelRaf,
+  stopVoice,
+  releaseCamera,
+} = {}) {
+  (stopVoice || stopSpeaking)();
+  (releaseCamera || publishFilmEnd)();
+  cancelRaf?.();
+  return {
+    active: false,
+    tMs: null,
+    card: null,
+    progress: 0,
+    chapterIdx: 0,
+    chapterText: "",
+    filmLeg: null,
+  };
+}
+
+function shortStopName(name) {
+  return String(name || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Bulle à l'approche de l'escale d'arrivée du chapitre (affichage RA3 ; choix R9). */
+export function approachStopEvent(chapter, { frac } = {}) {
+  const name = shortStopName(chapter?.toName);
+  if (!name) return null;
+  const f = Number(frac);
+  if (!(f >= APPROACH_FRAC)) return null;
+  const arrival = String(chapter.text || "")
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => /arriv/i.test(s))
+    .pop() || "";
+  const id = `approach:${chapter.idx}:${name}`;
+  return {
+    id,
+    kind: "stop",
+    score: 3,
+    card: {
+      id,
+      key: id,
+      kind: "stop",
+      title: name,
+      text: arrival,
+    },
+  };
+}
+
+/** 60 frames linéaires : positions le long du trait, y compris le dernier chapitre. */
+export function stepAlongPlan({ plan, clock, frames = 60, dt = 1 / 60, elapsed0 = 0 } = {}) {
+  const positions = [];
+  let elapsed = Number(elapsed0) || 0;
+  for (let i = 0; i < frames; i++) {
+    elapsed += dt;
+    const linear = linearFilmAt(elapsed, plan);
+    const ch = chapterAtElapsed(plan, elapsed);
+    const frac = ch && ch.seconds > 0
+      ? Math.max(0, Math.min(1, (elapsed - ch.startWall) / ch.seconds))
+      : 1;
+    const tMs = ch ? ch.tA + frac * (ch.tB - ch.tA) : plan.timeAt(0, 0);
+    const pos = positionAt(clock, tMs);
+    positions.push({
+      ...(pos || {}),
+      chapterIdx: ch?.idx ?? 0,
+      tMs,
+      finish: linear.finish,
+      lastReached: linear.lastReached,
+    });
+  }
+  return positions;
+}
+
 /**
  * « Revoir l'expédition » (lot E, cinématique F1 / fluide R4) : rejoue la
  * route de Saint-Maur à aujourd'hui. Le temps avance chaque frame ; la voix
@@ -117,20 +196,28 @@ export function useReplay({
   const filmBubbleRef = useRef(new EventBubbleGate());
   const filmScoreRef = useRef(new FilmEventScoreGate());
   const publishedBubbleRef = useRef(null);
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
 
   const stop = useCallback(() => {
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
     publishEventBubble(null);
-    setActive(false);
-    setTMs(null);
-    setCard(null);
-    setChapterIdx(0);
-    setChapterText("");
-    setFilmLeg(null);
+    const cleared = applyReplayStop({
+      cancelRaf: () => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      },
+    });
+    setActive(cleared.active);
+    setTMs(cleared.tMs);
+    setCard(cleared.card);
+    setChapterIdx(cleared.chapterIdx);
+    setChapterText(cleared.chapterText);
+    setFilmLeg(cleared.filmLeg);
     setVoiceRate(1);
-    setProgress(0);
+    setProgress(cleared.progress);
     queueRef.current = [];
     lastTRef.current = null;
     tMsRef.current = null;
@@ -138,8 +225,6 @@ export function useReplay({
     recaleRemainRef.current = 0;
     planRef.current = null;
     finishedRef.current = false;
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
   }, []);
 
   const applyChapter = useCallback((ch) => {
@@ -341,9 +426,10 @@ export function useReplay({
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
-      const done = !voiceClock && linear.finish;
+      const done = !voiceClock && linear.finish && linear.lastReached;
       if (done) {
-        ingest(w.endMs);
+        const last = plan.chapters[plan.chapters.length - 1];
+        ingest(last?.tB ?? w.endMs);
         finish();
       } else if (!voiceClock) {
         const ch = chapterAtElapsed(plan, elapsed);
@@ -367,13 +453,22 @@ export function useReplay({
       }
 
       const chapter = plan.chapters[chapterIdxRef.current];
+      const span = chapter && Number.isFinite(chapter.tB - chapter.tA) ? (chapter.tB - chapter.tA) : 0;
+      const approachFrac = span > 0
+        ? Math.max(0, Math.min(1, (lastTRef.current - chapter.tA) / span))
+        : (charIdx / (chapter?.chars || 1));
+      if (typeof window !== "undefined" && publishedBubbleRef.current && !window.__naviguideEventBubble) {
+        filmBubbleRef.current.dismiss();
+        publishedBubbleRef.current = null;
+        setCard(null);
+      }
       const filmEv = pickFilmEvent({
         chapter,
         charIdx,
         tMs: lastTRef.current,
         voiceLed,
         plan,
-      });
+      }) || approachStopEvent(chapter, { frac: approachFrac });
       const accepted = filmScoreRef.current.accept(filmEv);
       const shown = filmBubbleRef.current.propose(filmEventCard(accepted));
       if (shown !== publishedBubbleRef.current) {
@@ -385,6 +480,7 @@ export function useReplay({
         publishEventBubble(shown);
       }
       if (typeof window !== "undefined") {
+        const pos = positionAt(clockRef.current, lastTRef.current);
         const prevFilm = window.__naviguideFilm || {};
         window.__naviguideFilm = {
           ...prevFilm,
@@ -392,6 +488,9 @@ export function useReplay({
           elapsed,
           charIdx,
           tMs: lastTRef.current,
+          lat: pos?.lat ?? null,
+          lon: pos?.lon ?? null,
+          filmNm: pos?.filmNm ?? null,
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
         };
@@ -417,6 +516,9 @@ export function useReplay({
   const clockProgress = active && tMs != null ? replayProgress(tMs, windowRef.current) : 0;
 
   const dismissCard = useCallback(() => {
+    filmBubbleRef.current.dismiss();
+    publishedBubbleRef.current = null;
+    publishEventBubble(null);
     setCard(null);
     cardSinceRef.current = 0;
   }, []);

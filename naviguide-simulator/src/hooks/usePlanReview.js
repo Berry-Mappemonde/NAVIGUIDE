@@ -3,8 +3,12 @@ import { reviewPlan } from "../engine/planReview.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const REFRESH_MS = 10 * 60 * 1000;
+/** Même plancher que voyage_clock.PLANNING_MIN_KN / skipperOrders.PLANNING_MIN_KN. */
+export const ETA_MIN_KN = 3;
+/** Plafond p90 − p10 (lot RA7) : quelques jours, jamais des mois. */
+export const ETA_MAX_SPAN_DAYS = 7;
 
-function stopMatch(name, query) {
+export function stopMatch(name, query) {
   const n = String(name || "").toLowerCase();
   const q = String(query || "").toLowerCase();
   if (!n || !q) return false;
@@ -21,19 +25,70 @@ function etaDayLabel(iso, lang) {
   });
 }
 
+export function tightenEtaMembers(members) {
+  return (members || []).filter((m) => Number(m?.knots) >= ETA_MIN_KN && m?.arrival);
+}
+
+export function boundEtaIso(p10, p50, p90, maxSpanDays = ETA_MAX_SPAN_DAYS) {
+  const a = Date.parse(p10);
+  const b = Date.parse(p90);
+  const m = Date.parse(p50 || "");
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return { p10: "", p90: "" };
+  const span = (b - a) / 86400000;
+  if (span <= maxSpanDays) return { p10, p90 };
+  if (!Number.isFinite(m)) return { p10: "", p90: "" };
+  const half = (maxSpanDays / 2) * 86400000;
+  return {
+    p10: new Date(Math.max(a, m - half)).toISOString(),
+    p90: new Date(Math.min(b, m + half)).toISOString(),
+  };
+}
+
+export function etaRangeFromMembers(members, maxSpanDays = ETA_MAX_SPAN_DAYS) {
+  const kept = tightenEtaMembers(members);
+  if (!kept.length) return null;
+  const times = kept.map((m) => Date.parse(m.arrival)).filter(Number.isFinite).sort((x, y) => x - y);
+  if (!times.length) return null;
+  const pick = (q) => times[Math.min(times.length - 1, Math.max(0, Math.round((times.length - 1) * q)))];
+  const p10 = new Date(pick(0.1)).toISOString();
+  const p50 = new Date(pick(0.5)).toISOString();
+  const p90 = new Date(pick(0.9)).toISOString();
+  const bound = boundEtaIso(p10, p50, p90, maxSpanDays);
+  if (!bound.p10 || !bound.p90) return null;
+  return {
+    members: kept.length,
+    p10: bound.p10,
+    p50,
+    p90: bound.p90,
+    memberKnots: kept.map((m) => Number(m.knots)),
+  };
+}
+
+function displayEta(eta) {
+  if (!eta || !Number(eta.members) || !eta.p10 || !eta.p90) return null;
+  if (Array.isArray(eta.memberKnots) && eta.memberKnots.length) {
+    if (!eta.memberKnots.some((k) => Number(k) >= ETA_MIN_KN)) return null;
+  }
+  const bound = boundEtaIso(eta.p10, eta.p50, eta.p90);
+  if (!bound.p10 || !bound.p90) return null;
+  return { ...eta, p10: bound.p10, p90: bound.p90 };
+}
+
 /** Texte de fourchette ; chaîne vide si pas d'ensemble (jamais inventé). */
 export function formatEtaRange(eta, t, lang = "fr") {
-  if (!eta || !Number(eta.members) || !eta.p10 || !eta.p90) return "";
-  const p10 = etaDayLabel(eta.p10, lang);
-  const p90 = etaDayLabel(eta.p90, lang);
+  const tight = displayEta(eta);
+  if (!tight) return "";
+  const p10 = etaDayLabel(tight.p10, lang);
+  const p90 = etaDayLabel(tight.p90, lang);
   if (!p10 || !p90) return "";
   return t("etaRange", { p10, p90 });
 }
 
 /** Détail p10–p90 / membres — info-bulle uniquement, jamais à l'écran. */
 export function formatEtaRangeTitle(eta, t) {
-  if (!eta || !Number(eta.members) || !eta.p10 || !eta.p90) return "";
-  return t("etaRangeTitle", { n: String(eta.members) });
+  const tight = displayEta(eta);
+  if (!tight) return "";
+  return t("etaRangeTitle", { n: String(tight.members) });
 }
 
 export function nextStopFromMarks(marks, nowMs = Date.now()) {

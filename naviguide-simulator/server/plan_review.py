@@ -32,6 +32,20 @@ log = logging.getLogger("naviguide-simulator.plan-review")
 # Vitesse de programme Berry-Mappemonde (PLAN_ICI, recette R11 : 8 kn).
 # daysAtSea = distance ÷ cette vitesse ÷ 24 — pas l'écart d'horloge.
 PLANNED_KNOTS = 8.0
+# Lot RA7 : même plancher que voyage_clock.PLANNING_MIN_KN ; plafond « quelques jours ».
+ETA_MIN_KN = 3.0
+ETA_MAX_SPAN_DAYS = 7.0
+
+
+def eta_span_days(p10_iso: str | None, p90_iso: str | None) -> float | None:
+    """Écart p90 − p10 en jours civils. None si une date manque (jamais inventé)."""
+    if not p10_iso or not p90_iso:
+        return None
+    try:
+        a, b = parse_iso(p10_iso), parse_iso(p90_iso)
+    except Exception:
+        return None
+    return (b - a).total_seconds() / 86400.0
 
 
 def planned_sea_days(leg_nm: float, knots: float = PLANNED_KNOTS) -> float:
