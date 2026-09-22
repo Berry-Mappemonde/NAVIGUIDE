@@ -43,11 +43,26 @@ bot ». Le matin, le porteur relit : il décoche ce qu'il conteste et écrit
 **Ordre de la nuit** : Grok Bot passe **avant** le réviseur de code. Après chaque
 tranche de PR, `run_lots.py` attend son commentaire « 🤖 Pré-revue » (au plus
 45 min, `--bot-wait-min`) puis lance le réviseur Grok CLI, qui reçoit les KO du bot
-dans son prompt (« où chercher dans le code »). D'où la fréquence de la routine :
-**toutes les 30 min la nuit**, sur les PR qui ont un 🔗 et pas encore de 🤖.
+dans son prompt (« où chercher dans le code »).
+
+**Déclencher le bot au bon moment, sans minuteur** (les routines Grok Bot se
+déclenchent aussi par événement : message Slack, événement GitHub, webhook — le
+déclencheur se règle dans l'application de bureau Grok Bot, sur la routine) :
+
+- **Événement GitHub — recommandé, zéro code** : déclencheur « commentaire sur une
+  pull request » du dépôt `Berry-Mappemonde/Blue-Intelligence`. `run_lots.py` poste
+  exactement un commentaire 🔗 par PR quand son poste est prêt, et un 🧭 sur la PR
+  de tête en fin de batch : le bot part au bon moment. La routine ci-dessous est
+  idempotente (elle ne traite que les PR avec 🔗 sans 🤖, et s'arrête sinon) : un
+  déclenchement de trop ne coûte rien.
+- **Webhook** : si la routine expose une URL de webhook, la coller dans
+  `~/.config/naviguide/simulator.env` : `BIM_BOT_WEBHOOK=https://…` —
+  `run_lots.py` l'appelle (POST JSON `{event: prereview|parcours, pr, url}`) juste
+  après chaque commentaire 🔗 / 🧭.
+- **Minuteur** (repli) : toutes les 30 min la nuit.
 
 ```text
-Toutes les 30 minutes entre 21 h et 8 h (et à la demande), pré-revue visuelle des
+À chaque déclenchement (commentaire de PR sur le dépôt, webhook, ou minuteur de repli), pré-revue visuelle des
 PR du dépôt Berry-Mappemonde/Blue-Intelligence :
 
 1. Liste les pull requests OUVERTES dont le titre contient « (lot » et qui ont un

@@ -923,6 +923,24 @@ def publish_tip(branch: str) -> bool:
     return True
 
 
+def wake_bot(kind: str, pr: int, url: str) -> None:
+    """Réveiller Grok Bot au bon moment (lot W1 bis) : si BIM_BOT_WEBHOOK est posé (environnement ou
+    ~/.config/naviguide/simulator.env — l'URL du déclencheur « webhook » d'une routine Grok Bot), on
+    l'appelle juste après avoir posté le commentaire 🔗 / 🧭. Sans webhook, la routine Grok Bot peut
+    aussi se déclencher sur l'événement GitHub « commentaire de PR » — même effet, sans minuteur."""
+    hook = os.environ.get("BIM_BOT_WEBHOOK") or _env_file_values().get("BIM_BOT_WEBHOOK")
+    if not hook:
+        return
+    body = json.dumps({"event": kind, "repo": owner_repo(DEFAULT_REPO), "pr": pr, "url": url,
+                       "text": ("Pré-revue visuelle demandée" if kind == "prereview" else "Parcours de référence demandé") + f" sur la PR #{pr} : {url}"}).encode()
+    try:
+        req = urllib.request.Request(hook, data=body, method="POST", headers={"Content-Type": "application/json", "User-Agent": "bim-run-lots"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            log(f"    Grok Bot réveillé par webhook ({kind}, HTTP {resp.status})")
+    except Exception as e:
+        log(f"    webhook Grok Bot injoignable : {e}")
+
+
 def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published: bool = False) -> None:
     """Un commentaire par PR avec le lien vers la tête de pile et la consigne du bot (une seule fois)."""
     e = state.done.get(lot_id) or {}
@@ -944,6 +962,7 @@ def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published
         state.done[lot_id] = e
         state.save()
         log(f"    lien du poste posté sur la PR #{num}")
+        wake_bot("prereview", num, url)
     except Exception as ex:  # jamais bloquant
         log(f"    lien du poste non posté sur #{num} : {ex}")
 
@@ -969,8 +988,29 @@ def post_parcours_request(state: State, url: str, repo: str) -> None:
         state.done[state.last_lot] = e
         state.save()
         log(f"    demande de parcours de référence postée sur la PR de tête #{num}")
+        wake_bot("parcours", num, url)
     except Exception as ex:
         log(f"    demande de parcours non postée : {ex}")
+
+
+LOOP_LOG = STATE_DIR / "loop.log"
+
+
+def start_loop_watch() -> None:
+    """Fin de batch lancé à la main : la boucle (loop.py) veille, détachée — le porteur n'a plus rien à
+    lancer : « revue finie » sur la PR de tête → correcteur → PR GO → merges → nuit suivante."""
+    try:
+        st = json.loads((STATE_DIR / "loop-state.json").read_text(encoding="utf-8")) if (STATE_DIR / "loop-state.json").exists() else {}
+    except Exception:
+        st = {}
+    if st.get("phase") in ("await_review", "await_pile", "correct", "await_go"):
+        log(f"la boucle veille déjà (phase {st.get('phase')})")
+        return
+    cmd = ["caffeinate", "-i", sys.executable, str(HERE / "loop.py"), "--start-at", "await_review", "--cycles", "1"]
+    with LOOP_LOG.open("a", encoding="utf-8") as fh:
+        subprocess.Popen(cmd, cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, start_new_session=True,
+                         env={**os.environ, "BIM_STATE_DIR": str(STATE_DIR)})
+    log(f"la boucle veille (loop.py, journal {LOOP_LOG}) : « revue finie » sur la PR de tête déclenchera le correcteur")
 
 
 def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> None:
@@ -1097,8 +1137,19 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
             extra.append(link)
     last_pr = next((f"[#{pr_number(e['pr'])}]({e['pr']})" for lid, e in reversed(lots) if e.get("branch") == last and pr_number(e.get("pr"))), None)
 
+    tip_link = f"[#{pr_number(state.done[state.last_lot]['pr'])}]({state.done[state.last_lot]['pr']})" if state.last_lot in state.done and state.done[state.last_lot].get("pr") else "la dernière PR de la pile"
     lines = [
         f"# Recette du batch — {time.strftime('%d/%m/%Y %H:%M')}",
+        "",
+        "## 0. À faire maintenant, pas à pas",
+        "",
+        "1. **Regarder** l'application ouverte dans Chrome (<http://localhost:5174>) en suivant le § 1 ci-dessous, écran par écran.",
+        "2. **Cocher** dans chaque PR GitHub (liens au § 1) les cases que tu as vues et qui sont bonnes ; pour ce qui ne va pas, laisser la case vide et écrire un commentaire qui commence par `KO :` (écran, ce que je vois, ce que je voulais). Ce que Grok Bot a déjà coché (✅🤖) reste coché si tu es d'accord.",
+        f"3. **Dire que tu as fini** : un commentaire `revue finie` sur la PR de tête {tip_link}. La boucle, qui veille, collecte alors ta revue et celle du bot, appelle Claude Fable, et ouvre une PR « GO » (plan de corrections + lots correctifs) — compte ~30 min.",
+        f"4. **Merger deux PR** quand le GO apparaît : la PR de tête {tip_link} (GitHub ferme les autres) et la PR GO. Merge commit, pas squash.",
+        "5. C'est tout : la nuit suivante part toute seule et ce fichier sera régénéré à la fin, avec les mêmes étapes.",
+        "",
+        f"La veille tourne-t-elle ? `python3 infra/agents/loop.py --status` doit afficher `\"phase\": \"await_review\"`. Sinon : `caffeinate -i python3 infra/agents/loop.py --start-at await_review --cycles 1`. Si une étape échoue, voir § 7.",
         "",
         f"Ouvre <http://localhost:5174> ({'déjà ouvert' if launched else 'le poste n’a pas démarré : `cd ' + str(wt / 'naviguide-simulator') + ' && bash ensure-dev.sh --prod --open`'}).",
         f"Branche : `{branch}` — build de prod — API du même checkout (`{wt}`).",
@@ -1219,6 +1270,7 @@ def main() -> None:
     ap.add_argument("--review-timeout-hours", type=float, default=1.0)
     ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN", "45")),
                     help="avant le réviseur de code, attendre la pré-revue « 🤖 » de Grok Bot sur la tranche (minutes ; 0 = ne pas attendre ; défaut 45)")
+    ap.add_argument("--no-loop", action="store_true", help="en fin de batch, ne pas lancer la veille loop.py")
     ap.add_argument("--no-tunnel", action="store_true", help="ne pas exposer le poste de recette au bot (cloudflared) ; sinon un lien 🔗 est posté dans chaque PR")
     ap.add_argument("--stop-tunnel", action="store_true", help="arrête le tunnel laissé en route et s'arrête")
     ap.add_argument("--publish-tip", action="store_true", default=os.environ.get("BIM_PUBLISH_TIP") == "1",
@@ -1353,6 +1405,8 @@ def main() -> None:
                     post_parcours_request(state, url, args.repo)
             except Exception as e:  # le poste de recette ne doit jamais faire perdre le batch
                 log(f"poste de recette impossible : {e} — à la main : python3 infra/agents/run_lots.py --recette")
+        if not os.environ.get("BIM_IN_LOOP") and not args.no_loop:
+            start_loop_watch()
 
 
 if __name__ == "__main__":
