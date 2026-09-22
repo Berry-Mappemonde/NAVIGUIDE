@@ -280,7 +280,6 @@ export function buildVoyageClock({
     const b = points[i + 1];
     const bearing = bearingDeg(a, b);
     const destVehicle = vehicleAt(points, i + 1, episodes);
-    if (destVehicle === "side") continue;
     if (b.air && !b.jump && destVehicle !== "plane") continue;
     const month = monthOfT0(t0, tHours);
     let speedKnots = null;

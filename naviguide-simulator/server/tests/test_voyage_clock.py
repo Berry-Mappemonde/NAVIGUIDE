@@ -390,6 +390,36 @@ def test_sail_nm_excludes_air_miles():
     assert max(v["sailNm"] for v in sea_after) == 1030
 
 
+def test_sail_nm_includes_halifax_spm_excludes_cayenne_halifax():
+    """RB1 : Halifax ↔ SPM compte à la voile ; seules Cayenne ↔ Halifax restent avion."""
+
+    def wind_fn(lat, lon, t):
+        return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}
+
+    points = [
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1000, "filmCum": 1000, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1000, "filmCum": 1080, "jump": True},
+        {"lat": 46.78, "lon": -56.16, "cumNm": 1400, "filmCum": 1480, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1800, "filmCum": 1880, "jump": False},
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1800, "filmCum": 1960, "jump": True},
+        {"lat": 4.80, "lon": -52.50, "cumNm": 1830, "filmCum": 1990, "jump": False},
+    ]
+    c = build_voyage_clock(
+        points, [], "2026-06-15T08:00:00Z", start_at="saint-maur", wind_fn=wind_fn,
+    )
+    planes = [v for v in c["vertices"] if v.get("vehicle") == "plane"]
+    assert len(planes) == 2
+    assert planes[0]["sailNm"] == 1000
+    assert planes[0]["tHours"] == AIR_CALENDAR_HOURS
+    assert planes[1]["sailNm"] == 1800
+    assert planes[1]["tHours"] > planes[0]["tHours"] + AIR_CALENDAR_HOURS - 1e-6
+    sea = [v for v in c["vertices"] if v.get("vehicle") == "main" and v["sailNm"] > 1000]
+    assert sea
+    assert max(v["sailNm"] for v in sea) == 1830
+    assert any(abs(v["lat"] - 46.78) < 0.05 for v in sea)
+    assert c["seaHours"] > 0
+
+
 def test_live_position_deterministic_same_date():
     c = _clock("2026-05-15T08:00:00Z")
     when = "2026-05-20T12:00:00Z"
