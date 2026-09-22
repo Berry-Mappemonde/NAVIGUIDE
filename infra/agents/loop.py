@@ -40,6 +40,13 @@ import review_collect as rc  # noqa: E402
 
 LOOP_JSON = rl.STATE_DIR / "loop-state.json"
 LOTS_LINE_RE = re.compile(r"^\s*LOTS\s*:\s*(.+?)\s*$", re.I | re.M)
+
+
+def setting(name: str, default: str) -> str:
+    """Réglage BIM_* : variable d'environnement, sinon ~/.config/naviguide/simulator.env (comme run_lots),
+    sinon la valeur par défaut. Avant le 22 sept., la boucle ne lisait que l'environnement : BIM_BOT_WAIT_MIN=15
+    posé dans le fichier de clés était ignoré et chaque tranche attendait 45 min."""
+    return os.environ.get(name) or rl._env_file_values().get(name) or default
 REVIEW_DONE_RE = re.compile(r"\b(revue|review)\s+(finie|termin[ée]e|done|finished)\b|^\s*GO\s*[!.]?\s*$", re.I | re.M)
 
 
@@ -233,10 +240,10 @@ def main() -> None:
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--cycles", type=int, default=3, help="nombre maximal de tours complets (défaut 3)")
     ap.add_argument("--poll", type=int, default=120, help="secondes entre deux lectures GitHub")
-    ap.add_argument("--review-every", type=int, default=int(os.environ.get("BIM_REVIEW_EVERY", "4")))
+    ap.add_argument("--review-every", type=int, default=int(setting("BIM_REVIEW_EVERY", "4")), help="réviseur de nuit toutes les N PR (BIM_REVIEW_EVERY)")
     ap.add_argument("--model", default="", help="modèle des agents de lots (défaut run_lots)")
-    ap.add_argument("--corrector-model", default=os.environ.get("BIM_CORRECTOR_MODEL", "claude-fable-5-thinking-xhigh"))
-    ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN", "45")), help="attente de la pré-revue Grok Bot par tranche (min ; 0 = aucune)")
+    ap.add_argument("--corrector-model", default=setting("BIM_CORRECTOR_MODEL", "claude-fable-5-thinking-xhigh"), help="modèle du correcteur du matin (BIM_CORRECTOR_MODEL)")
+    ap.add_argument("--bot-wait-min", type=int, default=int(setting("BIM_BOT_WAIT_MIN", "45")), help="attente de la pré-revue Grok Bot par tranche (min ; 0 = aucune ; BIM_BOT_WAIT_MIN)")
     ap.add_argument("--stack-on-state", action="store_true", help="empiler le batch sur la pile déjà dans state.json (ne pas repartir de main) ; la revue couvrira toute la pile")
     args = ap.parse_args()
 
