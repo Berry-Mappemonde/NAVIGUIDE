@@ -902,6 +902,8 @@ def stop_tunnel() -> None:
 
 BOT_COMMENT_MARK = "🔗 Poste de recette"
 BOT_PREREVIEW_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M)   # titre « ## 🤖 Pré-revue » en début de ligne (pas le 🔗 qui cite la consigne)
+PARCOURS_MD = HERE / "PARCOURS_DE_REFERENCE.md"   # tout tester, une fois par batch, sur la tête de pile (Grok Bot)
+PARCOURS_MARK = "🧭 Parcours de référence"
 RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
 
 
@@ -944,6 +946,31 @@ def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published
         log(f"    lien du poste posté sur la PR #{num}")
     except Exception as ex:  # jamais bloquant
         log(f"    lien du poste non posté sur #{num} : {ex}")
+
+
+def post_parcours_request(state: State, url: str, repo: str) -> None:
+    """Fin de batch : sur la PR de tête, demander à Grok Bot de jouer TOUT le parcours de référence
+    (régressions hors des cases des PR, console). Une seule fois par tête de pile."""
+    e = state.done.get(state.last_lot) or {}
+    num = pr_number(e.get("pr"))
+    if not num or e.get("parcours_comment") == url:
+        return
+    try:
+        from post_pr_comment import post as _post  # noqa: PLC0415
+        checklist = PARCOURS_MD.read_text(encoding="utf-8") if PARCOURS_MD.exists() else ""
+        body = (f"{PARCOURS_MARK} (tête de pile `{state.last_branch}`, tous les lots de la nuit) : {url}\n\n"
+                "🤖 **Grok Bot** — quand les pré-revues des PR de la pile sont faites, joue **tout** le parcours ci-dessous sur ce lien "
+                "(console ouverte à chaque écran) et poste UN commentaire qui commence par `## 🤖 Parcours de référence`, une ligne par item "
+                "(`- [x] 🤖 <item>` / `- [ ] 🤖 <item> — KO : …` / `- [ ] 🤖 Console (<écran>) — KO : <message, fichier:ligne>`), "
+                "terminé par « Vu n / total · KO k ». Ne coche rien dans cette PR, ne ferme ni ne merge rien.\n\n"
+                "<details><summary>Le parcours (infra/agents/PARCOURS_DE_REFERENCE.md)</summary>\n\n" + checklist + "\n</details>")
+        _post(num, body)
+        e["parcours_comment"] = url
+        state.done[state.last_lot] = e
+        state.save()
+        log(f"    demande de parcours de référence postée sur la PR de tête #{num}")
+    except Exception as ex:
+        log(f"    demande de parcours non postée : {ex}")
 
 
 def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = False) -> None:
@@ -1048,11 +1075,16 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
             decisions.append(f"- {tag} {ln}")
         if _ko_comments and num:
             try:
-                comments = (http or Http(None, None)).github(f"/repos/{owner_repo(repo)}/issues/{num}/comments?per_page=100") or []
                 for ko in _ko_comments(comments):
-                    kos.append(f"- ❌ {tag} {ko['text'][:300]}" + (f" — [commentaire]({ko['url']})" if ko.get("url") else ""))
+                    if not BOT_PREREVIEW_RE.search(ko["text"]) and "Parcours de référence" not in ko["text"]:
+                        kos.append(f"- ❌ {tag} {ko['text'][:300]}" + (f" — [commentaire]({ko['url']})" if ko.get("url") else ""))
             except RuntimeError:
                 pass
+        if bot and _item_key:   # KO du bot hors cases : console, régressions du parcours de référence
+            keys_of_items = {_item_key(re.sub(r"^\s*[-*]\s*\[( |x|X)\]\s*", "", ln)) for ln in steps}
+            for k, v in bot.items():
+                if k not in keys_of_items and v.get("ko"):
+                    kos.append(f"- 🤖❌ {tag} {v.get('text', '')[:160]}" + (f" — {v['note'][:160]}" if v.get("note") else ""))
 
     merges: list[str] = []
     extra: list[str] = []
@@ -1211,6 +1243,7 @@ def main() -> None:
                 for lid, e in state.done.items():
                     if e.get("status") == "FINISHED" and e.get("pr"):
                         post_poste_link(state, lid, url, args.repo)
+                post_parcours_request(state, url, args.repo)
         return
 
     lots = select(parse_lots(PROMPTS_MD.read_text(encoding="utf-8")), args)
@@ -1315,6 +1348,9 @@ def main() -> None:
         if not args.no_recette:
             try:
                 prepare_recette(state, args, http)
+                url = tunnel_url() or (PROD_URL if getattr(args, "publish_tip", False) else None)
+                if url:
+                    post_parcours_request(state, url, args.repo)
             except Exception as e:  # le poste de recette ne doit jamais faire perdre le batch
                 log(f"poste de recette impossible : {e} — à la main : python3 infra/agents/run_lots.py --recette")
 

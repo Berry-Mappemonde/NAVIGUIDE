@@ -109,7 +109,7 @@ def recette_items(body: str) -> list[dict]:
     return items
 
 
-BOT_MARK_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M)   # titre en début de ligne : pas le 🔗 qui cite la consigne
+BOT_MARK_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*(Pr[ée]-?revue|Parcours de r[ée]f[ée]rence)", re.I | re.M)   # titre en début de ligne (pré-revue d'une PR, ou parcours complet sur la PR de tête) — pas le 🔗 qui cite la consigne
 BOT_ITEM_RE = re.compile(r"^\s*[-*]\s*\[( |x|X)\]\s*🤖\s*(.+?)\s*$")
 BOT_NOTE_RE = re.compile(r"\s+[—–-]\s+(KO|non v[ée]rifiable)\s*:\s*(.*)$", re.I)
 _KEY_DROP_RE = re.compile(r"[*_`«»\"'’]|\s+/\s+.*$")   # gras, guillemets, et la moitié anglaise après « / »
@@ -197,11 +197,19 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
     items = recette_items(body)
     kos = [k for k in ko_comments(comments) if not BOT_MARK_RE.search(k["text"])]   # KO du porteur (les KO du bot sont dans bot)
     bot = bot_verdicts(comments)
+    matched: set[str] = set()
     for it in items:   # qui a coché ? bot = coché ET listé [x] 🤖 par le bot ; porteur sinon
-        b = bot.get(item_key(it["text"]))
+        k = item_key(it["text"])
+        b = bot.get(k)
+        if b is not None:
+            matched.add(k)
         it["by"] = ("bot" if (b and b.get("ok")) else "porteur") if it["checked"] else None
         it["bot"] = None if b is None else ("ok" if b.get("ok") else ("ko" if b.get("ko") else "unverifiable"))
         it["bot_note"] = (b or {}).get("note", "")
+    # Lignes 🤖 qui ne correspondent à aucune case de la PR : erreurs de console, régressions du
+    # parcours de référence… Les KO comptent comme des KO (le correcteur les lit) ; les OK sont gardés à titre d'info.
+    bot_extra = [{"text": v["text"], "status": "ok" if v.get("ok") else ("ko" if v.get("ko") else "unverifiable"), "note": v.get("note", ""), "url": v.get("url")}
+                 for k, v in bot.items() if k not in matched]
     captures = agent_captures(body, branch)
     entry = {
         "number": number, "lot": lot, "title": pr.get("title"), "url": pr.get("html_url"), "branch": branch,
@@ -212,7 +220,9 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
         "ok_bot": sum(1 for i in items if i["checked"] is True and i.get("by") == "bot"),
         "unchecked": sum(1 for i in items if i["checked"] is False),
         "no_box": sum(1 for i in items if i["checked"] is None),
-        "bot_ko": [{"text": i["text"], "note": i["bot_note"]} for i in items if i.get("bot") == "ko"],
+        "bot_ko": [{"text": i["text"], "note": i["bot_note"]} for i in items if i.get("bot") == "ko"]
+                  + [{"text": x["text"], "note": x["note"]} for x in bot_extra if x["status"] == "ko"],
+        "bot_extra": bot_extra,
         "ko": kos,
         "captures": captures,
         "local_images": [],
@@ -267,6 +277,11 @@ def summary_md(review: dict) -> str:
                 mark = "•"
             note = f"  — 🤖 {it['bot_note']}" if it.get("bot_note") else ""
             lines.append(f"- {mark} {it['text']}{note}")
+        extra_ko = [x for x in (p.get("bot_extra") or []) if x["status"] == "ko"]
+        if extra_ko:
+            lines.append(f"- 🤖 hors cases (console, parcours de référence) : {len(extra_ko)} KO")
+            for x in extra_ko:
+                lines.append(f"    - 🤖❌ {x['text'][:120]}" + (f" — {x['note'][:160]}" if x.get("note") else ""))
         for i, ko in enumerate(p["ko"], 1):
             lines.append(f"- ❌ KO {i} ({ko['author']}) : {ko['text']}")
             for im in [x for x in p["local_images"] if x.get("ko") == i]:
