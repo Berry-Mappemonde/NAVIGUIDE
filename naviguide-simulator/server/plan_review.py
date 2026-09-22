@@ -25,6 +25,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
+from shipping_lanes import anti_shipping_of
 from voyage_clock import parse_iso, to_iso
 
 log = logging.getLogger("naviguide-simulator.plan-review")
@@ -186,6 +187,42 @@ def _leg_sample_points(clock: dict, leg: dict, n: int = SEASON_SAMPLES) -> list[
     return [(float(v["lat"]), float(v["lon"])) for v in verts[::step][:n]]
 
 
+def _in_leg_nm(nm: float, leg: dict) -> bool:
+    return leg["fromNm"] - 0.5 <= float(nm) <= leg["toNm"] + 0.5
+
+
+def _leg_lonlat(clock: dict, leg: dict, points: list | None = None) -> list[list[float]]:
+    """Sommets mer de la jambe, [lon, lat] — pour le score, pas pour redessiner."""
+    coords: list[list[float]] = []
+    seen: set[tuple[float, float]] = set()
+
+    def add(lon: float, lat: float) -> None:
+        key = (round(lon, 4), round(lat, 4))
+        if key in seen:
+            return
+        seen.add(key)
+        coords.append([float(lon), float(lat)])
+
+    for v in clock.get("vertices") or []:
+        if v.get("lat") is None or v.get("lon") is None:
+            continue
+        if _in_leg_nm(float(v.get("sailNm") or 0), leg):
+            add(float(v["lon"]), float(v["lat"]))
+    for p in points or []:
+        if not isinstance(p, dict) or p.get("lat") is None or p.get("lon") is None:
+            continue
+        if p.get("jump") or p.get("nonMaritime"):
+            continue
+        nm = p.get("sailNm")
+        if nm is None:
+            nm = p.get("cumNm")
+        if nm is None:
+            continue
+        if _in_leg_nm(float(nm), leg):
+            add(float(p["lon"]), float(p["lat"]))
+    return coords
+
+
 def season_for_leg(clock: dict, leg: dict, *, budget_deadline: float | None = None) -> dict[str, Any]:
     """The month's climatology on the leg, from the BI atlas (server cache,
     zone fallback never counted as data): worst gale %, most cyclone tracks
@@ -288,6 +325,7 @@ def review_official(voy: dict, now: datetime | None = None, *, season: bool = Tr
             leg["flags"].append({"kind": "unknown", "count": unknown})
         if leg["holdDays"] == 0 and leg["daysAtSea"] >= 3:
             leg["flags"].append({"kind": "no-rest"})
+        leg["antiShipping"] = anti_shipping_of(_leg_lonlat(clock, leg, points))
     if season:
         deadline = time.monotonic() + SEASON_BUDGET_S
         for leg in legs:
@@ -323,6 +361,10 @@ def table_facts(legs: list[dict] | None) -> dict[str, Any]:
             ],
             "flags": [f for f in (leg.get("flags") or []) if isinstance(f, dict)],
         }
+        pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else None
+        if pack:
+            lanes = [n for n in (pack.get("lanes") or []) if isinstance(n, str) and n.strip()]
+            row["antiShipping"] = {"score": pack.get("score"), "lanes": lanes}
         if season:
             row["season"] = {
                 "galePct": season.get("galePct"),

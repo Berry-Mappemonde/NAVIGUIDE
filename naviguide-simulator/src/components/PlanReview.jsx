@@ -132,6 +132,14 @@ export const PlanReview = memo(function PlanReview({
                 </span>
                 <span className="text-[9px] text-white/40 shrink-0 tabular-nums" data-testid="plan-review-leg-dates">{leg.dates}</span>
               </div>
+              {leg.antiShipping?.lanes?.length ? (
+                <p
+                  data-testid="plan-review-lanes"
+                  className={`text-[9px] mt-0.5 pl-3 ${Number(leg.antiShipping.score) < 0.55 ? "text-amber-200" : "text-white/50"}`}
+                >
+                  {t("planReviewLanes", { names: leg.antiShipping.lanes.join(", ") })}
+                </p>
+              ) : null}
               {etaLabel ? (
                 <p className="text-[9px] text-white/40 mt-0.5 pl-3" data-testid="plan-review-eta-range" title={etaTitle || undefined}>{etaLabel}</p>
               ) : null}

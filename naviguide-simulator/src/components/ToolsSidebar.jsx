@@ -10,6 +10,22 @@ import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
 import { summarizeLegs } from "../utils/geo.js";
 import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } from "../utils/routeExport.js";
 
+function viewRouteAntiShipping(legs) {
+  const names = [];
+  let min = Infinity;
+  for (const leg of legs || []) {
+    const pack = leg?.antiShipping;
+    if (!pack || !Array.isArray(pack.lanes) || !pack.lanes.length) continue;
+    for (const n of pack.lanes) {
+      if (n && !names.includes(n)) names.push(n);
+    }
+    const s = Number(pack.score);
+    if (Number.isFinite(s)) min = Math.min(min, s);
+  }
+  if (!names.length) return null;
+  return { names, score: Number.isFinite(min) ? min : null };
+}
+
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
 const POLAR_VMG_TWS_KEYS = ["8", "10", "12", "16", "20", "25"];
@@ -319,6 +335,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   const routeSegs = exportSegments ?? segments;
   const routePts = exportPoints ?? points;
   const canExport = canExportRoute(routeSegs, routePts);
+  const viewLanes = viewRouteAntiShipping(planReview?.legs);
   const handleExportGeoJSON = () => {
     if (!canExport) return;
     const fc = buildGeoJSON(routeSegs, routePts, `naviguide-${exportMode}`);
@@ -377,6 +394,18 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             />
             {planReview && !drawing ? (
               <div className="mt-2">
+                {viewLanes ? (
+                  <span
+                    data-testid="route-anti-shipping"
+                    className={`inline-block mb-1 px-1.5 py-0.5 rounded-md border text-[9px] leading-tight ${
+                      Number(viewLanes.score) < 0.55
+                        ? "border-amber-400/50 text-amber-200"
+                        : "border-white/10 text-white/70"
+                    }`}
+                  >
+                    {viewLanes.names.join(" · ")}
+                  </span>
+                ) : null}
                 <PlanReview
                   legs={planReview.legs}
                   loading={planReview.loading}
