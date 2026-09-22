@@ -333,6 +333,9 @@ export default {
 
   hideToolsPanel:   "Hide panel",
   showToolsPanel:   "Show panel",
+  exportTitle:      "Export",
+  exportGeoJSON:    "GeoJSON",
+  exportKML:        "KML",
   hideExportPanel:  "Hide panel",
   showExportPanel:  "Show panel",
   modes:            "Modes",
