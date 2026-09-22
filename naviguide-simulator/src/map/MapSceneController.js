@@ -200,7 +200,9 @@ export class MapSceneController {
       preferCanvas: true,
       maxBounds: MAP_MAX_BOUNDS,
       maxBoundsViscosity: 1,
+      zoomControl: false,
     });
+    L.control.zoom({ position: "bottomright" }).addTo(map);
     createPanes(map);
     return new MapSceneController(map, callbacks);
   }

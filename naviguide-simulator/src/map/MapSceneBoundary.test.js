@@ -46,6 +46,20 @@ describe("MapScene boundary", () => {
     assert.doesNotMatch(mount, /Infinity/);
   });
 
+  it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {
+    const src = read("./MapSceneController.js");
+    const start = src.indexOf("static mount");
+    const end = src.indexOf("constructor(map");
+    assert.ok(start >= 0 && end > start, "bloc mount() introuvable");
+    const mount = src.slice(start, end);
+    assert.match(mount, /zoomControl:\s*false/);
+    assert.match(mount, /L\.control\.zoom\(\{\s*position:\s*"bottomright"\s*\}\)/);
+    const css = read("../index.css");
+    assert.match(css, /\.leaflet-control-zoom/);
+    assert.match(css, /flex-direction:\s*row/);
+    assert.match(css, /\.leaflet-bottom\.leaflet-right \.leaflet-control/);
+  });
+
   it("trace une jambe air en dash noir non interactif", () => {
     const src = read("./MapSceneController.js");
     assert.match(src, /officialRouteLineStyle/);
