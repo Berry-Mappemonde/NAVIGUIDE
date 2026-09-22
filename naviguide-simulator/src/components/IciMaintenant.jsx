@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { EscaleSheet } from "./EscaleSheet.jsx";
+import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   ICI_TABS,
   dismissAlert,
+  formatJournalLine,
   formatLegLine,
   regimeColor,
+  seekJournalEntry,
   visibleAlerts,
 } from "./iciMaintenant.js";
 
@@ -46,12 +49,36 @@ function CardAlias({ card, testId }) {
   );
 }
 
+function JournalList({ entries, onSeek, lang }) {
+  const rows = sortJournalEntries(entries);
+  return (
+    <ul data-testid="ici-journal-list" className="flex flex-col gap-0.5 m-0 p-0 list-none">
+      {rows.map((entry) => (
+        <li key={entry.signature || `${entry.seq}-${entry.t}`}>
+          <button
+            type="button"
+            data-testid="ici-journal-entry"
+            data-t={entry.t}
+            onClick={() => seekJournalEntry(onSeek, entry)}
+            className="ici-journal-entry w-full text-left text-[11px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer text-inherit hover:bg-white/5 break-words [overflow-wrap:anywhere]"
+          >
+            {formatJournalLine(entry, lang)}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function IciMaintenant({
   moment,
   view: viewProp,
   onViewChange,
   story = null,
   journal = null,
+  journalEntries = null,
+  onSeek = null,
+  mode = "follow",
   simulation = null,
   hereBody = null,
   escale = null,
@@ -66,8 +93,9 @@ export function IciMaintenant({
     if (typeof onViewChange === "function") onViewChange(id);
     else setLocalView(id);
   };
-  const alerts = visibleAlerts(moment?.alerts, dismissed);
-  const tint = regimeColor(moment?.leg?.regime);
+  const shown = (mode === "follow" && momentAtOrBefore(journalEntries, moment?.t)) || moment;
+  const alerts = visibleAlerts(shown?.alerts, dismissed);
+  const tint = regimeColor(shown?.leg?.regime);
 
   useEffect(() => {
     if (!escale?.stop) return;
@@ -110,7 +138,7 @@ export function IciMaintenant({
               className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
               style={tint ? { color: tint } : undefined}
             >
-              {formatLegLine(moment?.leg, t, lang)}
+              {formatLegLine(shown?.leg, t, lang)}
             </p>
             {simulation}
           </Section>
@@ -152,7 +180,7 @@ export function IciMaintenant({
           <Section testId="ici-section-here" label={t("iciSectionHere")}>
             <div className="flex flex-col gap-0.5">
               {hereBody}
-              {!hereBody ? (moment?.here?.sentences || []).map((sentence) => (
+              {!hereBody ? (shown?.here?.sentences || []).map((sentence) => (
                 <p
                   key={sentence}
                   className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
@@ -160,9 +188,9 @@ export function IciMaintenant({
                   {sentence}
                 </p>
               )) : null}
-              {(moment?.here?.links || []).length ? (
+              {(shown?.here?.links || []).length ? (
                 <div className="flex flex-wrap gap-1.5 mt-0.5">
-                  {moment.here.links.map((link) => (
+                  {shown.here.links.map((link) => (
                     <a
                       key={link.url}
                       href={link.url}
@@ -192,7 +220,7 @@ export function IciMaintenant({
           <Section testId="ici-section-around" label={t("iciSectionAround")}>
             <div className="flex flex-col gap-0.5">
               <CardAlias card={momentFree} testId="moment-free" />
-              {(moment?.around || []).map((item, i) => (
+              {(shown?.around || []).map((item, i) => (
                 <details
                   key={`${item.kind || "around"}-${item.title || i}`}
                   data-testid="ici-around"
@@ -221,7 +249,7 @@ export function IciMaintenant({
 
           <Section testId="ici-section-sources" label={t("iciSectionSources")}>
             <p data-testid="ici-sources-line" className="text-[10px] leading-snug text-slate-400">
-              {(moment?.sources || []).filter(Boolean).join(" · ")}
+              {(shown?.sources || []).filter(Boolean).join(" · ")}
             </p>
           </Section>
         </div>
@@ -234,8 +262,10 @@ export function IciMaintenant({
       ) : null}
 
       {view === "journal" ? (
-        <div data-testid="ici-journal-slot" className="mt-1.5 min-h-0 flex-1">
-          {journal}
+        <div data-testid="ici-journal-slot" className="mt-1.5 min-h-0 flex-1 overflow-auto">
+          {Array.isArray(journalEntries) ? (
+            <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
+          ) : journal}
         </div>
       ) : null}
     </div>

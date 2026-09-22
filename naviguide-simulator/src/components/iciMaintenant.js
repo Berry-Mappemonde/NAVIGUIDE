@@ -61,3 +61,39 @@ export function regimeColor(regime) {
   if (regime === "climatology") return "#c084fc";
   return null;
 }
+
+export function formatJournalDate(iso, lang = "fr") {
+  const day = etaDayLabel(iso, lang);
+  if (!day) return "";
+  const stamp = Date.parse(iso || "");
+  if (!Number.isFinite(stamp)) return day;
+  const d = new Date(stamp);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${hh}:${mm}`;
+}
+
+export function formatJournalPos(pos, lang = "fr") {
+  const lat = Number(pos?.lat);
+  const lon = Number(pos?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+  return `${formatNumber(lat, lang, 1)} · ${formatNumber(lon, lang, 1)}`;
+}
+
+export function journalChangeLabel(entry) {
+  const changes = (Array.isArray(entry?.changes) ? entry.changes : [])
+    .filter((c) => c && c.title)
+    .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+  return changes[0] ? String(changes[0].title) : "";
+}
+
+export function formatJournalLine(entry, lang = "fr") {
+  return [formatJournalDate(entry?.t, lang), formatJournalPos(entry?.pos, lang), journalChangeLabel(entry)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function seekJournalEntry(onSeek, entry) {
+  const t = entry?.t;
+  if (typeof onSeek === "function" && t) onSeek(t);
+}
