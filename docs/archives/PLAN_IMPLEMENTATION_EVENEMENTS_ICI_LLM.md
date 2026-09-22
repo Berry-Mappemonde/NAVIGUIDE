@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** NVIDIA / Tavily : voir `docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md`. Index : [docs/README.md](../README.md).
+
 # Plan — événements `ici()`, juge d’affichage, récit LLM
 
 Atelier **`naviguide-simulator/`** seulement. Prod `www.naviguide.fr` et
@@ -8,7 +10,7 @@ Ce fichier **est** le plan : on ne crée pas un second document.
 
 Hérite de :
 
-- [ici-tout.md](./ici-tout.md)
+- [ici-tout.md](../ici-tout.md)
   (ce que le sac point contient déjà — on ne le recopie pas)
 - [PLAN_IMPLEMENTATION_SIMULATOR_SUIVRE_ET_SIMULATION.md](./PLAN_IMPLEMENTATION_SIMULATOR_SUIVRE_ET_SIMULATION.md)
   (deux boutons, GRIB du jour, pas de dump cockpit)

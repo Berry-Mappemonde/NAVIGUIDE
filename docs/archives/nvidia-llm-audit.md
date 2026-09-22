@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — remplacé par** la cascade L1 dans `docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md`. Index : [docs/README.md](../README.md).
+
 # NIM fallbacks by usage — verdict and plan
 
 Provider (price, unchanged): **the whole NIM chain for the role**, then OpenRouter, then Claude.

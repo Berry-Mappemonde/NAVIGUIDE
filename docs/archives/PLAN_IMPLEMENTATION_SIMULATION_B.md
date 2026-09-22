@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** Bateau virtuel livré. i18n fait depuis. Index : [docs/README.md](../README.md).
+
 # Implementation plan — Simulation B (live virtual boat)
 
 Workshop document for **`naviguide-simulator/`** only.
@@ -262,7 +264,7 @@ stays extractable.
 ### 5.7 Waves = brake, not the knot
 
 `climatology.wave_nogo_m` = 2.5 m
-([REGLES_PARAMETRES.md](./REGLES_PARAMETRES.md) §3.6).
+([REGLES_PARAMETRES.md](../REGLES_PARAMETRES.md) §3.6).
 
 - In climo: P90 (when the BI atlas exists; else no wave no-go
   in v1).
@@ -596,7 +598,7 @@ Two separate merge requests. No single “A+B” PR.
 - [PLAN_IMPLEMENTATION_CLIMATOLOGIE.md](./PLAN_IMPLEMENTATION_CLIMATOLOGIE.md)
   §4, §21 — 0–10 d forecast = other `kind`, outside atlas V1; **this**
   workshop.
-- [REGLES_PARAMETRES.md](./REGLES_PARAMETRES.md) §3.6 —
+- [REGLES_PARAMETRES.md](../REGLES_PARAMETRES.md) §3.6 —
   `wave_nogo_m`, `no_llm_for_numbers`, `avoid_cyclone_tracks`.
 - Code to **copy** (not import):
   `naviguide/naviguide_workspace/naviguide_weather_routing/isochrone.py`.

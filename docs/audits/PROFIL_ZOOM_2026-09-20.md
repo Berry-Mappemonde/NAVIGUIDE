@@ -1,6 +1,6 @@
 # Profil zoom molette — simulateur, 20 septembre 2026 (lot U)
 
-Méthode : [PROFIL_BUILD_PROD_2026-09-19.md](../PROFIL_BUILD_PROD_2026-09-19.md) — `vite build` + `vite preview` (`PW_PORT=5199`), Playwright Chromium, CDP `Profiler.start` / `Profiler.stop` (échantillonnage 100 µs), `PerformanceObserver('longtask')`, écart max entre `requestAnimationFrame`. Vue Atlantique (20° N, 40° W, z=4). Chiffres lus dans `docs/audits/zoom-profile-*.json`.
+Méthode : [PROFIL_BUILD_PROD_2026-09-19.md](./PROFIL_BUILD_PROD_2026-09-19.md) — `vite build` + `vite preview` (`PW_PORT=5199`), Playwright Chromium, CDP `Profiler.start` / `Profiler.stop` (échantillonnage 100 µs), `PerformanceObserver('longtask')`, écart max entre `requestAnimationFrame`. Vue Atlantique (20° N, 40° W, z=4). Chiffres lus dans `docs/audits/zoom-profile-*.json`.
 
 L’observateur `longtask` n’a pas déclenché (aucune tâche JS > 50 ms — même constat que le profil du 19 sept.). L’écart de frame (`maxFrameGap`) vaut souvent 16,7 × n ms (vsync sauté) : ce n’est pas une longtask. La recette e2e affirme `maxLongTask < 50`.
 

@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** Lots P → K mergés. Conservé pour la mémoire. Index : [docs/README.md](../README.md).
+
 # Plan en lots — NAVIGUIDE simulator (suite du plan général)
 
 Version **1.1** — 19 septembre 2026 (après les 12 commentaires du porteur
@@ -57,7 +59,7 @@ PR par lot, recette visuelle avant le suivant** (consigne du 19 sept.).
 > Reste : G3 (conseil de route en Suivre), L (**Nemotron via Nebius + Tavily**,
 > objet du hackathon), second découpage d'`App.jsx` si besoin. La **revue
 > visuelle complète** du porteur est découpée dans
-> [PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md](PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md)
+> [PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md](../PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md)
 > (lots P2, M, N, O, S, T, Q, R, U).
 > Correctif transversal (K) : les perles portent l'échelle de milles de
 > l'horloge (le tronçon terrestre Saint-Maur → La Rochelle compte) — les

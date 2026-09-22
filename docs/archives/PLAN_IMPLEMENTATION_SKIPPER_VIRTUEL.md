@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** S1 → S5 et S7. Non fait : confort (3 pills), ordre vocal. Index : [docs/README.md](../README.md).
+
 # Plan — ordres du skipper virtuel
 
 > **Statut (18 sept. 2026)** — S1 → S5 **mergés** dans `main`

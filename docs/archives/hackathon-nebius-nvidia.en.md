@@ -1,3 +1,5 @@
+> **Archived 22 September 2026 — replaced by** `docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md` and `docs/HACKATHON_DEVPOST_SOUMISSION.md`. Index : [docs/README.md](../README.md).
+
 # Nebius × NVIDIA hackathon — single briefing
 
 **Product:** NAVIGUIDE Simulator — we replay Berry-Mappemonde.  

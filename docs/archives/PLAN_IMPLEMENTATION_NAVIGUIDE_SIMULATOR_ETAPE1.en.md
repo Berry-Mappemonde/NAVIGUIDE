@@ -1,3 +1,5 @@
+> **Archived 22 September 2026 — done.** Step 1 shipped (13 Sep). Index : [docs/README.md](../README.md).
+
 # Implementation plan — `naviguide-simulator/` stage 1
 
 Workshop document. It locks **how to place the folder** in this repo, and
@@ -1008,7 +1010,7 @@ Without that, we do not start stage 2.
 
 - one line in the root `README.md`: “Simulator (out of prod):
   `naviguide-simulator/` — see
-  `docs/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`”
+  `docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`”
 
 ### We do not open
 
@@ -1169,7 +1171,7 @@ Global contract reminder:
 - [hackathon-nebius-nvidia.en.md](./hackathon-nebius-nvidia.en.md) —
   English briefing (orientations + how we win). Simulator Simulation
   mode **is** the film (player), not the 4 chats on `www.naviguide.fr`.
-- `docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` — not a world layer at
+- `docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` — not a world layer at
   stage 1.
 - `docs/ARCHITECTURE.md` — `MapView.js` + one hook per layer.
 - Living code:

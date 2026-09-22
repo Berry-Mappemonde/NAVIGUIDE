@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** Lots UI 1–9. Le lot 10 (recalcul public) reste hors périmètre. Index : [docs/README.md](../README.md).
+
 # Plan UI / produit — NAVIGUIDE simulator
 
 ## Décisions à prendre tout de suite

@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé (v2 gelé).** Conservé pour la mémoire. Les décisions § 5 restent valables. Index : [docs/README.md](../README.md).
+
 # Plan général de développement — NAVIGUIDE simulator
 
 Atelier **`naviguide-simulator/`** (`simulator.naviguide.fr`). Prod `www` et
@@ -17,14 +19,14 @@ UI produit). Il ne les réécrit pas : il dit **dans quel ordre** et
 > re-routing · H sécurité P1 · I UX première visite · J découpage `App.jsx` ·
 > K revue de plan · L Nemotron via Nebius + Tavily (plus tard, objet du hackathon).
 > **20 sept.** : lots P → K mergés ; la revue visuelle complète est découpée dans
-> [PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md](PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md).
+> [PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md](../PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md).
 > **20 sept. (soir)** : règles de travail dans
-> [REGLES_WORKFLOW_AGENT.md](REGLES_WORKFLOW_AGENT.md) ; cinq plans
-> thématiques — [film « Revoir l’expédition »](PLAN_FILM_REVOIR_EXPEDITION.md)
-> (F1–F5, remplace Q/R), [Nemotron sur Nebius + Tavily](PLAN_NEMOTRON_NEBIUS_TAVILY.md)
-> (L1–L6, remplace L), [audit des calculs + hindcast](PLAN_AUDIT_CALCULS.md)
-> (C1–C5), [globe](PLAN_GLOBE_3D.md) (G0–G8), [soumission Devpost](HACKATHON_DEVPOST_SOUMISSION.md) ;
-> et [l’esprit de l’application](ESPRIT_DE_L_APPLICATION.md) (chaîne de traitement).
+> [REGLES_WORKFLOW_AGENT.md](../REGLES_WORKFLOW_AGENT.md) ; cinq plans
+> thématiques — [film « Revoir l’expédition »](../PLAN_FILM_REVOIR_EXPEDITION.md)
+> (F1–F5, remplace Q/R), [Nemotron sur Nebius + Tavily](../PLAN_NEMOTRON_NEBIUS_TAVILY.md)
+> (L1–L6, remplace L), [audit des calculs + hindcast](../PLAN_AUDIT_CALCULS.md)
+> (C1–C5), [globe](../PLAN_GLOBE_3D.md) (G0–G8), [soumission Devpost](../HACKATHON_DEVPOST_SOUMISSION.md) ;
+> et [l’esprit de l’application](../ESPRIT_DE_L_APPLICATION.md) (chaîne de traitement).
 >
 > **Fait le 19 sept. (passe 3, PR #189)** : **vitesse de planning = polaire ×
 > vent du moment** (GRIB au bateau en Suivre, climatologie en Simulation ;

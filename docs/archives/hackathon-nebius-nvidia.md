@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — remplacé par** `docs/PLAN_NEMOTRON_NEBIUS_TAVILY.md` et `docs/HACKATHON_DEVPOST_SOUMISSION.md`. Les crédits § 7 restent utiles. Index : [docs/README.md](../README.md).
+
 # Hackathon Nebius × NVIDIA — cahier unique
 
 **Produit :** NAVIGUIDE Simulator — on rejoue Berry-Mappemonde.  

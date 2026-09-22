@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** Horloge climatologique livrée. Index : [docs/README.md](../README.md).
+
 # Implementation plan — Simulation A (climatological clock)
 
 Workshop document for **`naviguide-simulator/`** only.
@@ -473,7 +475,7 @@ Detail: [PLAN_IMPLEMENTATION_SIMULATION_B.md](./PLAN_IMPLEMENTATION_SIMULATION_B
   — `kind: climatology`, not GFS as the engine of a circumnavigation.
 - [hackathon-nebius-nvidia.md](./hackathon-nebius-nvidia.md) — the product
   is the simulator, not `www.naviguide.fr`.
-- [REGLES_PARAMETRES.md](./REGLES_PARAMETRES.md) §3.6 — `no_llm_for_numbers`,
+- [REGLES_PARAMETRES.md](../REGLES_PARAMETRES.md) §3.6 — `no_llm_for_numbers`,
   `wave_nogo_m` (A+ only).
 - Live A code: `alongTrackSpeed.js`, `climatologyWind.js`,
   `polarSpeed.js`, `routePlayhead.js`, `filmCast.js`,

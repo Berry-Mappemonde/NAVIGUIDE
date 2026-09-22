@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé** (P1 GRIB `pending`, profil prod). Mémoire : catalogues spatiaux, pipeline météo partagé, Web Worker. Index : [docs/README.md](../README.md).
+
 # Pipeline d’affichage — simulator.naviguide.fr
 
 ## Décision : les 4 leviers à traiter d’abord

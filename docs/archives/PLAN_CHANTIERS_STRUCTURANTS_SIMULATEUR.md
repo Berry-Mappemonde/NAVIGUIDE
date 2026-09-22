@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — remplacé par** `docs/archives/PLAN_PIPELINE_AFFICHAGE_SIMULATEUR.md`. Index : [docs/README.md](../README.md).
+
 # Chantiers structurants — simulator.naviguide.fr
 
 ## Fait : MapScene et catalogues spatiaux

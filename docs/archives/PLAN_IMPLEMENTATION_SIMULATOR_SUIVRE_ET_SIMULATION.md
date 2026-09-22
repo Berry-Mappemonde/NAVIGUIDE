@@ -1,3 +1,5 @@
+> **Archivé le 22 septembre 2026 — réalisé.** Les deux modes existent. Index : [docs/README.md](../README.md).
+
 # Plan — Suivre l’expédition / Simulation
 
 Atelier **`naviguide-simulator/`** seulement. Prod `www.naviguide.fr` et
