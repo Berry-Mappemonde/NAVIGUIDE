@@ -129,6 +129,7 @@ class IsoPoint:
     wind_speed: float = 0.0
     wind_dir: float = 0.0
     kind: str = "climatology"
+    path_nm: float = 0.0
     parent: Optional["IsoPoint"] = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
@@ -206,9 +207,14 @@ def _propagate(
     wind_fn: Callable,
     current_fn: Optional[Callable],
     wave_nogo_fn: Optional[Callable],
+    corridor_coords: Optional[List[Tuple[float, float]]] = None,
+    corridor_max_nm: Optional[float] = None,
+    max_distance_nm: Optional[float] = None,
 ) -> List[IsoPoint]:
     result = []
     next_t = current_time + timedelta(hours=time_step_h)
+    band = corridor_coords if corridor_coords and corridor_max_nm is not None else None
+    cap = float(max_distance_nm) if max_distance_nm is not None and max_distance_nm > 0 else None
     for pt in prev:
         w = wind_fn(pt.lat, pt.lon, current_time) or {}
         wind_spd = float(w.get("speedKnots") or 0)
@@ -243,10 +249,15 @@ def _propagate(
                 continue
             if not is_path_clear(pt.lat, pt.lon, nlat, nlon):
                 continue
+            path_nm = float(pt.path_nm) + haversine(pt.lat, pt.lon, nlat, nlon)
+            if cap is not None and path_nm > cap:
+                continue
+            if band is not None and distance_to_track_nm(nlat, nlon, band) > corridor_max_nm:
+                continue
             result.append(IsoPoint(
                 lat=nlat, lon=nlon, time=next_t, heading=float(hdg),
                 boat_speed=spd, wind_speed=wind_spd, wind_dir=wind_dir,
-                kind=kind, parent=pt,
+                kind=kind, path_nm=path_nm, parent=pt,
             ))
     return result
 
@@ -283,6 +294,33 @@ def _closest_on_line(lat: float, lon: float, coords: List[Tuple[float, float]]) 
         if d < best_d:
             best_i, best_d = i, d
     return best_i, best_d
+
+
+def distance_to_track_nm(lat: float, lon: float, coords: List[Tuple[float, float]]) -> float:
+    """Distance (nm) au trait : sommets + projection sur chaque grand cercle."""
+    if not coords:
+        return float("inf")
+    best = min(haversine(lat, lon, la, lo) for la, lo in coords)
+    for a, b in zip(coords, coords[1:]):
+        d_ab = haversine(a[0], a[1], b[0], b[1])
+        if d_ab < 1e-6:
+            continue
+        d13 = haversine(a[0], a[1], lat, lon)
+        brg12 = math.radians(bearing_deg(a[0], a[1], b[0], b[1]))
+        brg13 = math.radians(bearing_deg(a[0], a[1], lat, lon))
+        xt = math.asin(min(1.0, max(-1.0, math.sin(d13 / _R_NM) * math.sin(brg13 - brg12)))) * _R_NM
+        denom = max(1e-12, math.cos(xt / _R_NM))
+        at = math.acos(min(1.0, max(-1.0, math.cos(d13 / _R_NM) / denom))) * _R_NM
+        if math.cos(brg13 - brg12) < 0 or at > d_ab:
+            continue
+        best = min(best, abs(xt))
+    return best
+
+
+def track_nm(coords: List[Tuple[float, float]]) -> float:
+    if len(coords) < 2:
+        return 0.0
+    return sum(haversine(a[0], a[1], b[0], b[1]) for a, b in zip(coords, coords[1:]))
 
 
 def default_wave_nogo(wind_fn: Callable, hs_limit: float = WAVE_NOGO_M):
@@ -344,6 +382,9 @@ def run_leg_isochrone(
     arrival_radius_nm: float = 50.0,
     prune_sectors: int = 72,
     searoute_coords: Optional[List[Tuple[float, float]]] = None,
+    corridor_coords: Optional[List[Tuple[float, float]]] = None,
+    corridor_max_nm: Optional[float] = None,
+    max_distance_nm: Optional[float] = None,
 ) -> Dict[str, Any]:
     if departure_time.tzinfo is None:
         departure_time = departure_time.replace(tzinfo=timezone.utc)
@@ -354,6 +395,10 @@ def run_leg_isochrone(
     min_dt = ISOCHRONE_STEP_COAST_H if adaptive else float(time_step_h)
     if max_steps is None:
         max_steps = max(1, int(math.ceil(ISOCHRONE_MAX_HOURS / min_dt)))
+
+    band = corridor_coords or searoute_coords
+    cap = float(max_distance_nm) if max_distance_nm is not None and max_distance_nm > 0 else None
+    band_nm = float(corridor_max_nm) if corridor_max_nm is not None and corridor_max_nm > 0 else None
 
     dep_lat, dep_lon = nudge_offshore(dep_lat, dep_lon)
     start = IsoPoint(lat=dep_lat, lon=dep_lon, time=departure_time)
@@ -375,6 +420,7 @@ def run_leg_isochrone(
         candidates = _propagate(
             current_iso, polar_raw, dt, heading_step_deg, current_time,
             wind_fn, current_fn, wave_nogo_fn,
+            corridor_coords=band, corridor_max_nm=band_nm, max_distance_nm=cap,
         )
         elapsed_h += dt
         current_time = current_time + timedelta(hours=dt)
@@ -415,10 +461,31 @@ def run_leg_isochrone(
         else:
             status = "failed"
 
+    fallback = searoute_coords or corridor_coords or band
+    if route_pts and fallback and (band_nm is not None or cap is not None):
+        over_band = band_nm is not None and any(
+            distance_to_track_nm(p.lat, p.lon, band or fallback) > band_nm + 1.0
+            for p in route_pts
+        )
+        dist0 = 0.0
+        for i in range(len(route_pts) - 1):
+            dist0 += haversine(route_pts[i].lat, route_pts[i].lon, route_pts[i + 1].lat, route_pts[i + 1].lon)
+        over_len = cap is not None and dist0 > cap + 1e-6
+        if over_band or over_len:
+            route_pts = [IsoPoint(lat=la, lon=lo, time=departure_time, kind="climatology") for la, lo in fallback]
+            if haversine(route_pts[-1].lat, route_pts[-1].lon, dst_lat, dst_lon) > 1.0:
+                route_pts.append(IsoPoint(lat=dst_lat, lon=dst_lon, time=departure_time, kind="climatology"))
+            status = "spliced"
+
     coords = [[p.lon, p.lat] for p in route_pts]
     dist = 0.0
     for i in range(len(route_pts) - 1):
         dist += haversine(route_pts[i].lat, route_pts[i].lon, route_pts[i + 1].lat, route_pts[i + 1].lon)
+    if cap is not None and dist > cap + 1e-6 and fallback:
+        route_pts = [IsoPoint(lat=la, lon=lo, time=departure_time, kind="climatology") for la, lo in fallback]
+        coords = [[p.lon, p.lat] for p in route_pts]
+        dist = track_nm(fallback)
+        status = "spliced"
     hours = 0.0
     if route_pts:
         hours = (route_pts[-1].time - departure_time).total_seconds() / 3600.0

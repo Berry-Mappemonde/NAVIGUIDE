@@ -1,4 +1,4 @@
-"""Lot R10b — advise : décalage de date, cascade, score, déterminisme, route."""
+"""Lots R10b–R10c — advise : dates, corridors bornés, cap +20 %, déterminisme."""
 from __future__ import annotations
 
 import copy
@@ -8,16 +8,23 @@ from datetime import date, datetime, timedelta, timezone
 
 from story_cascade import _numbers, filter_numbers
 
+from isochrone import distance_to_track_nm, skipper_nogo
 from moment import load_official_mini
 from plan_advisor import (
+    CORRIDOR_MAX_NM,
+    CORRIDORS,
+    DISTANCE_CAP_RATIO,
     SHIFT_DAYS,
     WEIGHT_EXTRA_NM,
     WEIGHT_SHIFT_PER_DAY,
     advise,
+    bounded_isochrone,
     clear_advice_jobs,
+    corridor_track,
     request_advice,
     score_of,
     shift_plan,
+    track_nm,
 )
 from plan_alerts import clear_plan_cache, evaluate_plan
 from voyage_clock import OFFICIAL_VOYAGE_ID
@@ -270,3 +277,87 @@ def test_advice_route_pending_done_and_filter_numbers(monkeypatch):
     assert "42" not in body["best"]["sentence"]
     missing = client.get("/voyage/official/advice?leg=9")
     assert missing.status_code == 400
+
+
+# ── Lot R10c — écart local borné ─────────────────────────────────────────────
+
+# La Rochelle → Gibraltar → Ajaccio ≈ 1 378 nm (le 1 371 du plan, ± 10).
+LR_AJACCIO = [
+    (46.15, -1.16),
+    (36.10, -5.40),
+    (41.92, 8.74),
+]
+
+
+def _lr_ajaccio_plan():
+    pts = [{"lat": la, "lon": lo} for la, lo in LR_AJACCIO]
+    return {
+        "legs": [_leg(0, "La Rochelle", "Ajaccio", "2026-05-15", "2026-05-24", 3, pts)],
+        "skipper_thresholds": {"galeKt": 30, "hsAlertM": 3.0},
+    }
+
+
+def test_corridors_stay_within_cap_and_300nm_of_reference():
+    ref_nm = track_nm(LR_AJACCIO)
+    assert 1360 <= ref_nm <= 1390
+    seen = []
+    for name in CORRIDORS:
+        track = corridor_track(LR_AJACCIO, name)
+        assert track is not None, name
+        assert track_nm(track) <= ref_nm * DISTANCE_CAP_RATIO + 1e-6, (name, track_nm(track), ref_nm)
+        for la, lo in track:
+            assert distance_to_track_nm(la, lo, LR_AJACCIO) <= CORRIDOR_MAX_NM + 1e-6, (name, la, lo)
+        seen.append(name)
+    assert seen == ["reference", "north", "south"]
+    north, south = corridor_track(LR_AJACCIO, "north"), corridor_track(LR_AJACCIO, "south")
+    assert north != south
+    mid_n = north[len(north) // 2]
+    mid_s = south[len(south) // 2]
+    assert mid_n[0] > mid_s[0]
+
+
+def test_advise_candidates_never_exceed_distance_cap():
+    plan = _lr_ajaccio_plan()
+    out = advise(plan, 0, now=NOW)
+    ref_nm = track_nm(LR_AJACCIO)
+    for cand in [out["best"], *out["alternatives"]]:
+        assert cand["corridor"] in CORRIDORS
+        assert cand["extraNm"] <= ref_nm * (DISTANCE_CAP_RATIO - 1.0) + 1
+        assert cand["score"] == score_of(cand["totalAfter"], cand["shiftDays"], cand["extraNm"])
+    a = advise(plan, 0, now=NOW)
+    assert a == out
+
+
+def test_la_rochelle_ajaccio_wind30_at_most_1650():
+    """Vent 40 kn partout, ordre 30 kn : sans borne l'isochrone errait (4 643 nm)."""
+    t0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+
+    def wind(lat, lon, t):
+        # Calme seulement très au nord — tentation d'écart libre vers l'Irlande.
+        kn = 14.0 if lat >= 54.0 else 40.0
+        return {"speedKnots": kn, "dirFromDeg": 270.0, "kind": "forecast", "hs": 1.0}
+
+    out = bounded_isochrone(
+        dep_lat=46.15, dep_lon=-1.16, dst_lat=41.92, dst_lon=8.74,
+        departure_time=t0, wind_fn=wind, reference=LR_AJACCIO,
+        wind_max_kt=30, time_step_h=6, heading_step_deg=20, max_steps=40,
+    )
+    assert out["distance_nm"] <= 1650
+    coords = out["draft_geojson"]["geometry"]["coordinates"]
+    assert coords
+    for lon, lat in coords:
+        assert distance_to_track_nm(lat, lon, LR_AJACCIO) <= CORRIDOR_MAX_NM + 5.0
+    via_advise = advise(_lr_ajaccio_plan(), 0, now=NOW, wind_fn=wind, wind_max_kt=30)
+    assert via_advise["best"]["extraNm"] <= track_nm(LR_AJACCIO) * 0.2 + 1
+    if via_advise["best"].get("routeNm") is not None:
+        assert via_advise["best"]["routeNm"] <= 1650
+
+
+def test_short_leg_rejects_north_south_over_cap():
+    """Jambe courte (Nouméa) : un décalage de 150 nm dépasse +20 % → seuls les dates."""
+    plan = _noumea_chain()
+    assert corridor_track(NOUMEA_POINTS, "north") is None
+    assert corridor_track(NOUMEA_POINTS, "south") is None
+    out = advise(plan, 0, now=NOW)
+    assert out["best"]["corridor"] == "reference"
+    assert all(c["corridor"] == "reference" for c in out["alternatives"])
