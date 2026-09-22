@@ -68,6 +68,14 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.match(sidebar, /Le sac se remplit|iciBriefingLoading/);
     assert.match(sidebar, /\{!isDrawing \? \(/);
   });
+
+  it("lot N1 — Importer à côté de Terminer, sans texte d'aide", () => {
+    assert.match(sidebar, /data-testid="route-import"/);
+    assert.match(sidebar, /data-testid="route-import-file"/);
+    assert.match(sidebar, /accept="\.geojson,\.json,\.kml"/);
+    assert.match(sidebar, /t\("importRoute"\)/);
+    assert.doesNotMatch(sidebar, /t\("clickToImport"\)|t\("importOrDraw"\)|t\("clickNewImport"\)/);
+  });
 });
 
 describe("contrat pop-up hors film (lot R8c)", () => {

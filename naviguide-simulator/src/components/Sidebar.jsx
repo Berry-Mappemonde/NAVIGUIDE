@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
@@ -32,8 +32,10 @@ function BerryCard({
   onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw = true,
+  onImportRoute, importBusy = false,
 }) {
   const { t } = useLang();
+  const importRef = useRef(null);
   const [cardMode, setCardMode] = useState("berry-active");
   const [drawnRoute, setDrawnRoute] = useState(null);
   const [drawnName, setDrawnName] = useState(null);
@@ -98,6 +100,29 @@ function BerryCard({
         {switcher}
         {isDrawing ? (
           <div className="flex gap-1">
+            <button
+              type="button"
+              data-testid="route-import"
+              disabled={importBusy}
+              onClick={() => importRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
+                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold
+                disabled:opacity-40 disabled:pointer-events-none"
+            >
+              {t("importRoute")}
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".geojson,.json,.kml"
+              data-testid="route-import-file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) onImportRoute?.(file);
+              }}
+            />
             <button
               type="button"
               onClick={() => {
@@ -243,7 +268,7 @@ function BriefingText({ segments, onFocus, t }) {
 export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
-  canFinishDraw, drawing = null, onDrawUndo,
+  canFinishDraw, drawing = null, onDrawUndo, onImportRoute, importBusy = false,
   isCockpit, polarData, view = VIEW_SUIVRE,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
@@ -332,6 +357,8 @@ export const Sidebar = memo(function Sidebar({
             onCustomDelete={onCustomDelete}
             canContinueDraw={canContinueDraw}
             canFinishDraw={canFinishDraw}
+            onImportRoute={onImportRoute}
+            importBusy={importBusy}
           />
 
           {!isDrawing && chat ? (

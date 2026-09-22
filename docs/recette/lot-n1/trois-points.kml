@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>La Rochelle</name>
+      <Point><coordinates>-1.151,46.157,0</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>Gijon</name>
+      <Point><coordinates>-5.662,43.545,0</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>Lisbonne</name>
+      <Point><coordinates>-9.139,38.722,0</coordinates></Point>
+    </Placemark>
+  </Document>
+</kml>

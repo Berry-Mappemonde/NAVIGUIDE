@@ -85,6 +85,10 @@ export default {
   importOrDraw:       "Import or draw a route",
   cancel:             "Cancel",
   finish:             "Finish",
+  importRoute:        "Import",
+  importRouteReplace: "Replace the current route?",
+  importRouteError:   "Unreadable file",
+  importRouteTruncated: "60 points maximum",
   drawOwnRoute:       "Draw your own route",
   backToBerry:        "Back to Berry-Mappemonde route", // pragma: allowlist secret
   berry:              "Berry",
