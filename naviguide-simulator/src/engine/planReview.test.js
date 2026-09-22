@@ -30,6 +30,8 @@ describe("planReview — revue de plan par règles (lot K)", () => {
     assert.match(r.notes[0], /Formalités à vérifier : Barbados EEZ/);
     assert.match(r.notes[1], /Saison ventée .* 18 % ≥ 15 %/);
     assert.equal(r.level, "alert");
+    assert.equal(r.alertCount, 2, "gale + cyclone, pas de chiffre inventé");
+    assert.equal(reviewLeg({ ...LEG, alertCount: 11, flags: [] }, { galePct: 1, cyclones: 0, cells: 1, missing: 0 }, "fr").alertCount, 11);
     // No atlas yet: one honest badge, no gale / cyclone claim.
     const cold = reviewLeg(LEG, { galePct: null, cyclones: null, cells: 0, missing: 5 }, "en");
     assert.ok(cold.badges.some((b) => b.text === "season: atlas not loaded"));

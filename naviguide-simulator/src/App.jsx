@@ -1381,15 +1381,6 @@ export default function App() {
     lang,
     galeLimitPct: skipper.orders?.values?.galePct,
   });
-  const planReview = useMemo(() => ({
-    legs: planReviewState.legs,
-    loading: planReviewState.loading,
-    error: planReviewState.error,
-    summary: null,
-    comment: planReviewState.review?.comment?.text || null,
-    commentSource: planReviewState.review?.comment?.source || null,
-  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review]);
-
   // Route advice under the skipper's orders (lot G): gale and sea limits of
   // the resolved orders become no-go zones of the isochrone.
   const handleRecompute = useCallback(
@@ -1399,6 +1390,16 @@ export default function App() {
     }),
     [vessel.recompute, clockSample?.iso, skipper.orders?.values?.galeKt, skipper.orders?.values?.hsAlertM],
   );
+  const planReview = useMemo(() => ({
+    legs: planReviewState.legs,
+    loading: planReviewState.loading,
+    error: planReviewState.error,
+    summary: null,
+    comment: planReviewState.review?.comment?.text || null,
+    commentSource: planReviewState.review?.comment?.source || null,
+    advice: planReviewState.advice,
+    onApply: handleRecompute,
+  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, planReviewState.advice, handleRecompute]);
   const mapScene = useMemo(() => ({
     isLightMode,
     view,

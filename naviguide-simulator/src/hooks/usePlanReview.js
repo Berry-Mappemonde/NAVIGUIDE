@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { reviewPlan } from "../engine/planReview.js";
+import { reviewPlan, reviewLeg } from "../engine/planReview.js";
+import planAdviceFixture from "../fixtures/planAdvice.json" with { type: "json" };
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const REFRESH_MS = 10 * 60 * 1000;
@@ -107,6 +108,185 @@ export function nextEtaRetryMs(attempt) {
   return caps[Math.min(attempt, caps.length - 1)];
 }
 
+export const REVIEW_FIXTURE = planAdviceFixture.review;
+export const ADVICE_FIXTURE = planAdviceFixture.advice;
+
+export function isAdviceDone(body) {
+  return Boolean(body && body.status === "done" && body.best && typeof body.best === "object");
+}
+
+export function pickHeaviestLegIdx(legs) {
+  let best = 0;
+  let score = -1;
+  (legs || []).forEach((leg, i) => {
+    const n = Number(leg?.alertCount);
+    const s = Number.isFinite(n) ? n : (leg?.level === "alert" ? 2 : leg?.level === "watch" ? 1 : 0);
+    if (s > score) {
+      score = s;
+      best = i;
+    }
+  });
+  return best;
+}
+
+export function readAdviceMeta(best) {
+  const facts = Array.isArray(best?.facts) ? best.facts : [];
+  let from = best?.from || "";
+  let to = best?.to || "";
+  let departWas = best?.departWas || "";
+  let departNow = best?.departNow || "";
+  for (const raw of facts) {
+    const jambe = String(raw).match(/^jambe (.+) → (.+)$/);
+    if (jambe) {
+      from = from || jambe[1];
+      to = to || jambe[2];
+    }
+    const dep = String(raw).match(/^départ (\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})$/);
+    if (dep) {
+      departWas = departWas || dep[1];
+      departNow = departNow || dep[2];
+    }
+  }
+  return {
+    from,
+    to,
+    departWas,
+    departNow,
+    corridor: best?.corridor || "reference",
+    shiftDays: Number.isFinite(Number(best?.shiftDays)) ? Number(best.shiftDays) : 0,
+    extraNm: Number.isFinite(Number(best?.extraNm)) ? Math.round(Number(best.extraNm)) : 0,
+    alertsBefore: Number.isFinite(Number(best?.alertsBefore)) ? Number(best.alertsBefore) : null,
+    alertsAfter: Number.isFinite(Number(best?.alertsAfter)) ? Number(best.alertsAfter) : null,
+    cascade: Array.isArray(best?.cascade) ? best.cascade : [],
+  };
+}
+
+function looksEnglish(text) {
+  return /\b(Leave|Instead|would change|alerts instead|later stops|rather than)\b/i.test(text);
+}
+
+function looksFrench(text) {
+  return /\b(Partir|Rester|plutôt|alertes au lieu|escales suivantes)\b/i.test(text);
+}
+
+/** Phrase dans la langue de l'UI : gabarit i18n ; texte rédigé seulement s'il est déjà dans cette langue (L6). */
+export function localizeAdviceSentence(best, t, lang = "fr") {
+  const template = formatAdviceSentence(best, t, lang);
+  const drafted = String(best?.sentence || "").trim();
+  if (!drafted) return template;
+  const draftedLang = String(best?.sentenceLang || "").slice(0, 2).toLowerCase();
+  const ui = String(lang || "fr").slice(0, 2).toLowerCase();
+  if (draftedLang && draftedLang === ui) {
+    if (ui === "fr" && looksEnglish(drafted)) return template;
+    if (ui === "en" && looksFrench(drafted)) return template;
+    return drafted;
+  }
+  if (ui === "fr" && looksFrench(drafted) && !looksEnglish(drafted)) return drafted;
+  return template;
+}
+
+export function formatAdviceSentence(best, t, lang = "fr") {
+  const meta = readAdviceMeta(best);
+  if (!meta.from && meta.alertsBefore == null) return "";
+  const via = meta.corridor === "north"
+    ? t("planAdviceViaNorth")
+    : meta.corridor === "south" ? t("planAdviceViaSouth") : "";
+  const extra = meta.extraNm
+    ? t("planAdviceExtraNm", { nm: String(meta.extraNm) })
+    : "";
+  const absD = Math.abs(meta.shiftDays);
+  const cascade = meta.shiftDays > 0
+    ? t("planAdviceCascadeLater", { days: String(absD) })
+    : meta.shiftDays < 0
+      ? t("planAdviceCascadeEarlier", { days: String(absD) })
+      : t("planAdviceCascadeNone");
+  const vars = {
+    from: meta.from || "—",
+    via,
+    extra,
+    cascade,
+    departWas: etaDayLabel(meta.departWas, lang) || meta.departWas || "—",
+    departNow: etaDayLabel(meta.departNow, lang) || meta.departNow || "—",
+    alertsBefore: meta.alertsBefore == null ? "—" : String(meta.alertsBefore),
+    alertsAfter: meta.alertsAfter == null ? "—" : String(meta.alertsAfter),
+    alerts: meta.alertsAfter == null ? "—" : String(meta.alertsAfter),
+  };
+  if (meta.shiftDays === 0) return t("planAdviceSentenceStay", vars);
+  return t("planAdviceSentenceShift", vars);
+}
+
+export function formatAdvicePills(best, t) {
+  const meta = readAdviceMeta(best);
+  if (meta.alertsBefore == null || meta.alertsAfter == null) return null;
+  const nm = meta.extraNm > 0 ? `+${meta.extraNm}` : String(meta.extraNm);
+  const days = meta.shiftDays > 0 ? `+${meta.shiftDays}` : String(meta.shiftDays);
+  return {
+    alerts: t("planAdvicePillAlerts", { before: String(meta.alertsBefore), after: String(meta.alertsAfter) }),
+    nm: t("planAdvicePillNm", { signed: nm }),
+    days: t("planAdvicePillDays", { signed: days }),
+  };
+}
+
+export function buildAdviceCompare(best, leg, t, lang = "fr") {
+  const meta = readAdviceMeta(best);
+  if (meta.alertsBefore == null) return null;
+  const todayNm = Number.isFinite(Number(leg?.legNm)) ? Number(leg.legNm) : null;
+  const advisedNm = todayNm != null ? todayNm + meta.extraNm : null;
+  const sea = Number.isFinite(Number(leg?.daysAtSea)) ? Number(leg.daysAtSea) : null;
+  const day = (iso) => etaDayLabel(iso, lang) || String(iso || "").slice(0, 10);
+  return {
+    today: {
+      distance: todayNm == null ? "—" : t("planCompareDistance", { nm: String(Math.round(todayNm)) }),
+      seaDays: sea == null ? "—" : t("planCompareSeaDays", { n: String(sea) }),
+      alerts: t("planCompareAlerts", { n: String(meta.alertsBefore) }),
+      stops: meta.cascade.map((row) => t("planCompareStop", { stop: row.stop || "—", date: day(row.was) })),
+    },
+    advised: {
+      distance: advisedNm == null ? "—" : t("planCompareDistance", { nm: String(Math.round(advisedNm)) }),
+      seaDays: sea == null || meta.extraNm ? "—" : t("planCompareSeaDays", { n: String(sea) }),
+      alerts: t("planCompareAlerts", { n: String(meta.alertsAfter) }),
+      stops: meta.cascade.map((row) => t("planCompareStop", { stop: row.stop || "—", date: day(row.now) })),
+    },
+  };
+}
+
+async function defaultAdviceFetch(legIdx, lang, { signal } = {}) {
+  const q = new URLSearchParams({ leg: String(legIdx), lang: String(lang || "fr") });
+  const r = await fetch(`${API_URL}/voyage/official/advice?${q}`, { signal });
+  return r.ok ? r.json() : null;
+}
+
+export async function pollOfficialAdvice(legIdx, {
+  fetchFn = defaultAdviceFetch,
+  signal,
+  sleep = sleepMs,
+  onUpdate,
+  lang = "fr",
+} = {}) {
+  let attempt = 0;
+  while (!signal?.aborted) {
+    let body = null;
+    try {
+      body = await fetchFn(legIdx, lang, { signal });
+    } catch (err) {
+      if (err?.name === "AbortError") throw err;
+      body = null;
+    }
+    if (isAdviceDone(body)) {
+      onUpdate?.(body);
+      return body;
+    }
+    if (body?.status === "pending") onUpdate?.(body);
+    else {
+      onUpdate?.(null);
+      return null;
+    }
+    await sleep(nextEtaRetryMs(attempt), signal);
+    attempt += 1;
+  }
+  return null;
+}
+
 /** Corps /eta exploitable ; sinon null (jamais inventé). */
 export function etaFromResponse(body) {
   if (body && Number(body.members) > 0 && body.p10 && body.p90) return body;
@@ -200,12 +380,18 @@ export function useOfficialEta(stopName, { enabled = true } = {}) {
  */
 export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lang = "fr", galeLimitPct } = {}) {
   const [review, setReview] = useState(null);
+  const [advice, setAdvice] = useState(null);
   const [error, setError] = useState(null);
   const nextStop = useMemo(() => nextStopFromMarks(clock?.marks), [clock]);
   const eta = useOfficialEta(nextStop, { enabled: enabled && Boolean(nextStop) });
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled) {
+      setReview(REVIEW_FIXTURE);
+      setAdvice(ADVICE_FIXTURE);
+      setError(null);
+      return undefined;
+    }
     let alive = true;
     const controller = new AbortController();
     const load = () => fetch(`${API_URL}/voyage/official/plan-review`, { signal: controller.signal })
@@ -213,8 +399,20 @@ export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lan
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((body) => { if (alive) { setReview(body); setError(null); } })
-      .catch((err) => { if (alive && err?.name !== "AbortError") setError(err?.message || "error"); });
+      .then((body) => {
+        if (alive) {
+          setReview(body);
+          setError(null);
+          setAdvice((prev) => (prev?.source === "fixture" ? null : prev));
+        }
+      })
+      .catch((err) => {
+        if (alive && err?.name !== "AbortError") {
+          setReview(REVIEW_FIXTURE);
+          setAdvice(ADVICE_FIXTURE);
+          setError(null);
+        }
+      });
     load();
     const timer = setInterval(load, REFRESH_MS);
     return () => {
@@ -224,14 +422,54 @@ export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lan
     };
   }, [enabled]);
 
+  const reviewed = useMemo(() => {
+    const source = review || (!enabled ? REVIEW_FIXTURE : null);
+    if (!source) return [];
+    const opts = galeLimitPct ? { galeLimitPct } : {};
+    if (clock) return reviewPlan(source, clock, lookup, lang, opts);
+    return (source.legs || []).map((leg) => reviewLeg(leg, null, lang, opts));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review, error, enabled, clock, lookup, revision, lang, galeLimitPct]);
+
+  const heaviestIdx = useMemo(() => pickHeaviestLegIdx(reviewed), [reviewed]);
+
+  useEffect(() => {
+    if (!enabled || !review || review.source === "fixture") return undefined;
+    const controller = new AbortController();
+    let alive = true;
+    pollOfficialAdvice(heaviestIdx, {
+      signal: controller.signal,
+      lang,
+      onUpdate: (body) => { if (alive) setAdvice(isAdviceDone(body) ? body : body); },
+    }).catch((err) => {
+      if (alive && err?.name !== "AbortError") setAdvice((prev) => prev?.source === "fixture" ? prev : null);
+    });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [enabled, review, heaviestIdx, lang]);
+
   const legs = useMemo(() => {
-    const base = review && clock ? reviewPlan(review, clock, lookup, lang, galeLimitPct ? { galeLimitPct } : {}) : [];
+    const before = isAdviceDone(advice) ? Number(advice.best?.alertsBefore) : NaN;
+    const idx = isAdviceDone(advice) ? Number(advice.leg) : NaN;
+    const base = reviewed.map((leg, i) => (
+      Number.isFinite(idx) && i === idx && Number.isFinite(before)
+        ? { ...leg, alertCount: before }
+        : leg
+    ));
     if (!eta || !eta.members || !nextStop) return base;
     return base.map((leg) => (
       stopMatch(leg.to, nextStop) ? { ...leg, etaRange: eta } : leg
     ));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [review, clock, lookup, revision, lang, galeLimitPct, eta, nextStop]);
+  }, [reviewed, advice, eta, nextStop]);
 
-  return { review, legs, error, loading: enabled && !review && !error, eta };
+  return {
+    review,
+    legs,
+    error,
+    loading: enabled && !review && !error,
+    eta,
+    advice: isAdviceDone(advice) || advice?.source === "fixture" ? advice : null,
+  };
 }

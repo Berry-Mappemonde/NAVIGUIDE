@@ -33,6 +33,30 @@ describe("PlanReview — commentaire (lot L5)", () => {
   });
 });
 
+describe("PlanReview — conseil (lot R10d)", () => {
+  it("montre alertes par jambe, phrase, pastilles et deux colonnes", () => {
+    assert.match(src, /planReviewLegAlerts/);
+    assert.match(src, /data-testid="plan-review-leg-alerts"/);
+    assert.match(src, /data-testid="plan-advice-sentence"/);
+    assert.match(src, /data-testid="plan-advice-pills"/);
+    assert.match(src, /data-testid="plan-advice-apply"/);
+    assert.match(src, /data-testid="plan-advice-compare"/);
+    assert.match(src, /planCompareToday/);
+    assert.match(src, /planCompareAdvised/);
+    assert.match(src, /localizeAdviceSentence/);
+    assert.match(src, /formatAdvicePills/);
+    assert.doesNotMatch(src, /alternatives/);
+    assert.doesNotMatch(src, /six routes/);
+  });
+
+  it("ne rend pas le commentaire LLM à la place de la phrase du conseil", () => {
+    const sentenceAt = src.indexOf("plan-advice-sentence");
+    const commentRender = src.indexOf("{comment}");
+    assert.ok(sentenceAt > 0);
+    assert.equal(commentRender, -1, "comment.text n'est plus affiché (anglais vu le 22 sept.)");
+  });
+});
+
 describe("PlanReview — légende des régimes (lot R2)", () => {
   it("pose une ligne discrète au-dessus du tableau, pas dans la barre", () => {
     assert.match(src, /data-testid="plan-review-regime-legend"/);

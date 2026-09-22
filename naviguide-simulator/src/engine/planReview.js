@@ -84,6 +84,9 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
   if (unknown && !(leg.pearls?.known)) {
     badges.push({ kind: "pearls", level: "muted", text: en ? "pearls not warmed yet" : "perles pas encore chauffées" });
   }
+  const badgeAlerts = badges.filter((b) => b.level === "alert").length;
+  const given = Number(leg.alertCount);
+  const alertCount = Number.isFinite(given) ? given : badgeAlerts;
   return {
     key: `${leg.from}→${leg.to}`,
     title: `${leg.from} → ${leg.to}`,
@@ -91,6 +94,9 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
     month: leg.month,
     from: leg.from,
     to: leg.to,
+    legNm: Number.isFinite(Number(leg.legNm)) ? Number(leg.legNm) : null,
+    daysAtSea: Number.isFinite(Number(leg.daysAtSea)) ? Number(leg.daysAtSea) : null,
+    alertCount,
     badges,
     notes,
     level: badges.some((b) => b.level === "alert") ? "alert" : (badges.some((b) => b.level === "watch") || notes.length ? "watch" : "ok"),
