@@ -151,6 +151,25 @@ def test_localized_zee_names_on_fixture_no_double_parens():
     assert localize_zee_name(pearl["zee"], "fr") == fr["here"]["zee"]["name"]
 
 
+def test_guadeloupe_sources_have_no_ok():
+    """Lot RC3 — bi=ok dans la perle ne doit pas apparaître comme libellé « ok »."""
+    pearl, clock, leg, th, lang = _inputs(mrgid=33177)
+    assert (pearl.get("sources") or {}).get("bi") == "ok"
+    moment = build_moment(pearl, clock, leg, th, lang=lang)
+    sources = moment["sources"]
+    lowered = {str(s).strip().lower() for s in sources}
+    assert "ok" not in lowered
+    assert "error" not in lowered
+    assert "pending" not in lowered
+    assert "VLIZ" in sources
+    assert "Blue Intelligence" in sources
+    assert "Open-Meteo" in sources
+    assert "CDSE" in sources
+    assert "EMODnet" in sources
+    assert "OpenStreetMap" in sources
+    assert "Atlas BI" in sources
+
+
 def test_no_invented_numbers_in_facts():
     pearl, clock, leg, th, lang = _inputs(
         extra_clock={"windKnots": 36.5, "hs": 3.4, "iso": "2026-09-15T12:00:00Z", "month": 9},

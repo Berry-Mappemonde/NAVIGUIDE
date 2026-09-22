@@ -118,6 +118,10 @@ _SOURCE_LABEL = {
     "overpass": "OpenStreetMap",
 }
 
+# Statuts de perle (ici_engine) : ce ne sont pas des ids de producteur.
+_SOURCE_STATUS = frozenset({"ok", "error", "pending", "ready"})
+_FORBIDDEN_SOURCE_LABELS = frozenset({"ok", "error", "pending"})
+
 
 def official_mini_path() -> Path:
     return Path(__file__).resolve().parent / "tests" / "fixtures" / "official_mini.json"
@@ -707,27 +711,47 @@ def _around(pearl: dict, lang: str) -> list[dict]:
     return out
 
 
+def _is_source_status(raw: Any) -> bool:
+    if isinstance(raw, bool) or raw is None:
+        return True
+    return str(raw).strip().lower() in _SOURCE_STATUS
+
+
 def _sources(pearl: dict, clock: dict) -> list[str]:
     labels: list[str] = []
     seen: set[str] = set()
 
     def add(raw: Any) -> None:
-        if raw in (None, "", False):
+        if raw in (None, "", False, True):
+            return
+        if isinstance(raw, bool):
             return
         if isinstance(raw, (list, tuple)):
             for item in raw:
                 add(item)
             return
-        key = str(raw)
-        label = _SOURCE_LABEL.get(key, key)
+        token = str(raw).strip()
+        if not token or token.lower() in _SOURCE_STATUS:
+            return
+        label = _SOURCE_LABEL.get(token, token)
+        if label.strip().lower() in _FORBIDDEN_SOURCE_LABELS:
+            return
         if label in seen:
             return
         seen.add(label)
         labels.append(label)
 
     src = pearl.get("sources") if isinstance(pearl.get("sources"), dict) else {}
-    for value in src.values():
-        add(value)
+    for key, value in src.items():
+        if isinstance(value, (list, tuple)):
+            add(value)
+            continue
+        if _is_source_status(value) or (
+            isinstance(value, str) and value.strip() not in _SOURCE_LABEL
+        ):
+            add(key)
+        else:
+            add(value)
     add(clock.get("sources"))
     weather = pearl.get("weather") if isinstance(pearl.get("weather"), dict) else {}
     add(weather.get("source"))
