@@ -1032,7 +1032,7 @@ def start_loop_watch() -> None:
     if st.get("phase") in ("await_review", "await_pile", "correct", "await_go"):
         log(f"la boucle veille déjà (phase {st.get('phase')})")
         return
-    cmd = ["caffeinate", "-i", sys.executable, str(HERE / "loop.py"), "--start-at", "await_review", "--cycles", "1"]
+    cmd = ["caffeinate", "-i", sys.executable, str(HERE / "loop.py"), "--start-at", "await_review"]
     with LOOP_LOG.open("a", encoding="utf-8") as fh:
         subprocess.Popen(cmd, cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, start_new_session=True,
                          env={**os.environ, "BIM_STATE_DIR": str(STATE_DIR)})
@@ -1209,11 +1209,11 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
         "1. **Regarder** l'application ouverte dans Chrome (<http://localhost:5174>) en suivant le § 1 ci-dessous, écran par écran.",
         "2. **Cocher** dans chaque PR GitHub (liens au § 1) les cases que tu as vues et qui sont bonnes ; pour ce qui ne va pas, laisser la case vide et écrire un commentaire qui commence par `KO :` (écran, ce que je vois, ce que je voulais). Ce que Grok Bot a déjà coché (✅🤖) reste coché si tu es d'accord.",
         "3. **Ta revue globale** : écris ce que tu penses de l'application dans son ensemble (vision, manques, priorités) dans `infra/agents/REVUE_GLOBALE.md` (ouvert dans Cursor) — ou en commentaires `GLOBAL :` sur la PR de tête, avec captures. Le correcteur la lit en entier, comme ta revue du 21 sept.",
-        f"4. **Dire que tu as fini** : un commentaire `revue finie` sur la PR de tête {tip_link}. La boucle, qui veille, collecte alors cases, KO, revue globale et pré-revue du bot, appelle Claude Fable, et ouvre une PR « GO » (plan de corrections + lots correctifs) — compte ~30 min.",
-        f"5. **Merger deux PR** quand le GO apparaît : la PR de tête {tip_link} (GitHub ferme les autres) et la PR GO. Merge commit, pas squash.",
-        "6. C'est tout : la nuit suivante part toute seule et ce fichier sera régénéré à la fin, avec les mêmes étapes.",
+        "4. **Dire que tu as fini** (ou que tu fais une pause) : un commentaire `revue finie` sur la **dernière PR que tu as relue** — n'importe laquelle de la pile. La boucle, qui veille, collecte alors ce qui est nouveau depuis la fois d'avant (cases, KO, revue globale, pré-revue du bot), appelle Claude Fable, et ouvre une PR « GO » (plan de corrections + lots correctifs) — compte ~30 min. Tu peux le refaire plusieurs fois dans la journée : chaque `revue finie` = une session de plus.",
+        f"5. **Merger le GO** quand il apparaît : les correctifs se codent aussitôt, empilés sur la pile. La PR de tête {tip_link} se merge quand **tu** le décides (GitHub ferme alors les autres) ; le batch suivant repart de `main`. Merge commit, pas squash.",
+        "6. C'est tout : ce fichier sera régénéré à la fin de chaque batch, avec les mêmes étapes.",
         "",
-        f"La veille tourne-t-elle ? `python3 infra/agents/loop.py --status` doit afficher `\"phase\": \"await_review\"`. Sinon : `caffeinate -i python3 infra/agents/loop.py --start-at await_review --cycles 1`. Si une étape échoue, voir § 7.",
+        f"La veille tourne-t-elle ? `python3 infra/agents/loop.py --status` doit afficher `\"phase\": \"await_review\"`. Sinon : `caffeinate -i python3 infra/agents/loop.py --resume` (le chien de garde le fait normalement seul). Si une étape échoue, voir § 7.",
         "",
         f"Ouvre <http://localhost:5174> ({'déjà ouvert' if launched else 'le poste n’a pas démarré : `cd ' + str(wt / 'naviguide-simulator') + ' && bash ensure-dev.sh --prod --open`'}).",
         f"Branche : `{branch}` — build de prod — API du même checkout (`{wt}`).",

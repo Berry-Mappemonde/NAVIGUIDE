@@ -138,13 +138,22 @@ Revoir l'expédition, panneau droit) et non par PR :
    va pas, laisser la case vide et commenter « **KO :** écran, ce que je vois,
    ce que je voulais » (capture bienvenue). Lire le commentaire du réviseur de
    nuit et les « Décisions prises seules » (§ 5 du fichier) : garder / défaire.
-3. **Merger** (§ 6 du fichier) : pile linéaire → merger la **dernière** PR
-   suffit, GitHub ferme les autres ; puis celles qui ont des commits propres.
-   Merge commit, jamais squash. Ce merge est le signal : `loop.py` collecte la
-   revue, lance le **correcteur du matin** (`plan_corrections.py`, Fable) qui
-   écrit le plan de corrections et ses lots — ou les **fond dans les lots à
-   venir** du programme — et ouvre la PR « GO ». Merger le GO lance la nuit
-   suivante. On ne corrige pas le matin à la main.
+3. **Dire « revue finie »** (lot **W7**, 22 sept. — revue à la volée) : un
+   commentaire `revue finie` sur la **dernière PR relue**, n'importe laquelle de
+   la pile, quand on veut — à la fin, ou à chaque pause. `loop.py` collecte ce
+   qui est **nouveau depuis la session précédente** (cases, KO, revue globale,
+   pré-revue du bot), lance le **correcteur** (`plan_corrections.py --session n`,
+   Fable) qui écrit `PLAN_CORRECTIONS_<date>-s<n>.md` et ses lots — ou les
+   **fond dans les lots à venir** — sans replanifier ce que les sessions
+   précédentes couvrent déjà, et ouvre la PR « GO ». Autant de sessions que
+   voulu dans la journée.
+4. **Merger le GO** : les correctifs se codent aussitôt, **empilés sur la pile**
+   (`--resume`), sans attendre le merge de la tête. La **tête de pile** se
+   merge quand le porteur le décide (GitHub ferme les autres PR de la pile) ;
+   le batch suivant repart alors de `main`. Merge commit, jamais squash. On ne
+   corrige pas le matin à la main. Pas de Fable sans revue humaine (W8 : le
+   déclenchement automatique existe, `BIM_CORRECTOR_AUTO=1`, mais il est éteint
+   par défaut).
 
 ### 1.5 Journée — livrer
 
@@ -217,9 +226,13 @@ Vérifier qu'elle sert : `https://simulator.naviguide.fr/ici/warm/status` → `l
 - **W1 — Recette cochable et poste par lot** (**fait le 21 sept. au soir**, PR `feat/lot-w1-w4-boucle`) : `open_pr.py` transforme la rubrique Recette en cases à cocher GitHub (`--retrofit N…` pour les PR déjà ouvertes) ; `run_lots.py` rebâtit le poste de recette après **chaque** lot (`--no-recette-each` pour l'éviter) et régénère `RECETTE_DU_BATCH.md` avec les cases cochées et les KO ; règle **PR bilingue FR / EN** dans le préfixe de chaque prompt et dans REGLES § 3.
 - **W2 — Collecte de la revue** (**fait**) : `review_collect.py` lit cases, commentaires « KO : … », images du porteur et captures des agents → `review-<date>.json` + `.md`.
 - **W3 — Deux agents forts** (**fait**) : `review_agent.py`, le **réviseur de nuit** (`run_lots.py --review-every 4`, modèle `claude-fable-5-thinking-xhigh`) : un commentaire de revue par PR + lots `RC…` dans `queue.md`, exécutés en bout de pile la même nuit ; `plan_corrections.py`, le **correcteur du matin** : revue humaine + programme complet → `PLAN_CORRECTIONS_<date>.md` + lots `RB…` (ou corrections fondues dans les lots à venir) → PR « GO » terminée par `LOTS: RB1 RBn`.
-- **W4 — La boucle** (**fait**) : `loop.py` — batch → attente du merge de la pile → collecte + correcteur → attente du merge du GO → batch suivant ; `loop-state.json`, `--resume`, `--start-at`, `--cycles`.
-- **W5 — Automations Cursor** (à faire, secours cloud) : « PR opened → revue », « CI completed failure → correction », « cron jeudi 22 h → brouillon Devpost ». Prompts avec la règle « pas de vidéo, pas de computer use ».
-- **W6 — Suite e2e robuste** : `workers: 1` pour `e2e/lots`, `--repeat-each` sur la fumée, budget de temps par spec.
+- **W4 — La boucle** (**fait**) : `loop.py` — batch → veille → collecte + correcteur → attente du merge du GO → batch suivant ; `loop-state.json`, `--resume`, `--start-at`, `--cycles`.
+- **W5 — Pré-vol et bot une PR par réveil** (**fait le 22 sept.**, PR #300) : `run_lots.py --preflight` avant chaque batch (jeton, CLI, clés, dépôt sur main, CI de main, disque, **poste par l'URL publique**, **webhook** `ping`) — bloquant sur ce qui empêcherait la nuit ; routine Grok Bot : webhook avec `pr` → cette PR seule, minuteur → toutes les PR en attente.
+- **W6 — Chien de garde** (**fait le 22 sept.**, PR #301) : `watchdog.py` toutes les 5 min — boucle absente → `loop.py --resume` ; tunnel mort → relance ; poste en 5xx/403 hors bascule → rebâti ; pré-revue absente 30 min après réveil → second réveil ; webhook refusé, fournisseur bridé, disque → signalés. `RAPPORT_DE_NUIT.md` + commentaire 🩺 sur la PR de tête en fin de batch. Répare l'infrastructure, jamais le produit.
+- **W7 — Revue à la volée** (**fait le 22 sept.**) : « revue finie » sur n'importe quelle PR de la pile, sessions successives (`--session n`, `--since` : les KO déjà lus ne sont pas replanifiés, plans du jour transmis à Fable), correctifs empilés sur la pile non mergée, tête mergée quand le porteur le décide ; un batch qui échoue au pré-vol laisse la phase intacte pour le chien de garde.
+- **W8 — Budget Fable** : matériel mesuré contre la fenêtre de Fable (1M) ; découpage en plusieurs lancements si besoin ; `BIM_CORRECTOR_MAX_RUNS` (défaut 1/jour), `BIM_CORRECTOR_AUTO` (défaut 0 : pas de Fable sans revue humaine), `COUTS.md`, « GO FABLE » pour autoriser un lancement de plus.
+- **W9 — Automations Cursor** (à faire, secours cloud) : « PR opened → revue », « CI completed failure → correction », « cron jeudi 22 h → brouillon Devpost ». Prompts avec la règle « pas de vidéo, pas de computer use ».
+- **W10 — Suite e2e robuste** : `workers: 1` pour `e2e/lots`, `--repeat-each` sur la fumée, budget de temps par spec.
 - **D0 — Rangement de `docs/`** : `ETAT_DES_LIEUX_DOCS.md` § 3, liens réécrits, `ARCHITECTURE.md` réécrit.
 
 ## 6. Ce qu'on a appris cette nuit (à garder)

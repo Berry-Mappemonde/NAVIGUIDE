@@ -49,27 +49,59 @@ def next_prefix(prompts_md: str) -> str:
     return "RZ"
 
 
+def lot_already_done(lot_id: str) -> bool:
+    """Le lot est FINISHED dans state.json ou dans une pile archivée (state.<ts>.json) : le programme
+    jusqu'à lui a déjà été joué — le rejouer depuis main referait 20 PR (garde du 22 sept.)."""
+    for p in [rl.STATE_JSON, *rl.STATE_DIR.glob("state.*.json")]:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if ((d.get("done") or {}).get(lot_id) or {}).get("status") == "FINISHED":
+            return True
+    return False
+
+
 def then_until() -> str | None:
     """BIM_THEN_UNTIL=D0 (environnement ou ~/.config/naviguide/simulator.env) : après les corrections,
-    la nuit enchaîne le programme jusqu'à ce lot — la ligne LOTS du GO couvre alors RB1 … D0."""
-    return os.environ.get("BIM_THEN_UNTIL") or rl._env_file_values().get("BIM_THEN_UNTIL") or None
+    la nuit enchaîne le programme jusqu'à ce lot — la ligne LOTS du GO couvre alors RB1 … D0.
+    Ignoré (avec une ligne de journal) si ce lot a déjà été joué."""
+    target = os.environ.get("BIM_THEN_UNTIL") or rl._env_file_values().get("BIM_THEN_UNTIL") or None
+    if target and lot_already_done(target):
+        rl.log(f"BIM_THEN_UNTIL={target} ignoré : ce lot a déjà été joué (retirer la ligne du fichier de clés)")
+        return None
+    return target
 
 
-def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, night: list[dict]) -> str:
+def previous_plans(wt: Path, date: str) -> list[str]:
+    """Plans déjà produits aujourd'hui (sessions précédentes, lot W7) — pour ne pas replanifier ce qu'ils couvrent."""
+    return sorted(str(p.relative_to(wt)) for p in (wt / "docs").glob(f"PLAN_CORRECTIONS_{date}*.md"))
+
+
+def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, night: list[dict], *, tag: str | None = None, since: str | None = None) -> str:
+    tag = tag or date
     md_path = review.get("md")
     json_path = review.get("json")
     imgs = [im["path"] for p in review["prs"] for im in p.get("local_images", [])]
     kos = sum(len(p.get("ko") or []) for p in review["prs"])
+    new_kos = sum(1 for p in review["prs"] for k in (p.get("ko") or []) if k.get("new", True))
     ticked = sum(p.get("ok", 0) for p in review["prs"])
     total = sum(len(p.get("items") or []) for p in review["prs"])
+    prev = previous_plans(wt, date)
     parts = [
         "Tu es le correcteur du matin de la pile de PR du simulateur NAVIGUIDE (Berry-Mappemonde/Blue-Intelligence). Le porteur a recetté dans Chrome : "
-        f"il a coché {ticked} items sur {total} et écrit {kos} commentaire(s) KO. Ta mission : transformer sa revue en un plan de corrections et en lots "
-        "prêts à être enchaînés par infra/agents/run_lots.py, sur une branche docs, en PR. Tu ne touches PAS au code applicatif, tu ne merges rien.",
+        f"il a coché {ticked} items sur {total} et écrit {kos} commentaire(s) KO" + (f", dont {new_kos} nouveaux depuis la session précédente ({since})" if since else "") + ". "
+        "Ta mission : transformer sa revue en un plan de corrections et en lots prêts à être enchaînés par infra/agents/run_lots.py, sur une branche docs, en PR. "
+        "Tu ne touches PAS au code applicatif, tu ne merges rien.",
         "",
-        f"Environnement : worktree `{wt}` sur `main` à jour (HEAD détaché) : `git checkout -b docs/plan-corrections-{date}` d'abord. Bibliothèque : "
+        f"Environnement : worktree `{wt}` sur `main` à jour (HEAD détaché) : `git checkout -b docs/plan-corrections-{tag}` d'abord. Bibliothèque : "
         "`python3 infra/agents/open_pr.py <branche> main \"<titre FR — EN>\" <fichier-corps.md>` pour ouvrir la PR.",
         "",
+        *([f"## Sessions précédentes aujourd'hui (lot W7 — revue à la volée)",
+           "Le porteur relit la pile en plusieurs fois ; chaque « revue finie » ouvre une session. Les plans ci-dessous existent déjà sur main et leurs lots sont "
+           "en file ou déjà codés : lis-les d'abord, et NE REPLANIFIE PAS ce qu'ils couvrent. Dans la revue, les KO marqués 🆕 (ou `new: true` dans le JSON) sont "
+           "arrivés depuis la session précédente : c'est d'abord eux que tu traites, plus toute case décochée ou tout point de la revue globale qu'aucun plan ne couvre encore.",
+           *[f"- `{p}`" for p in prev], ""] if (since or prev) else []),
         "## Lis d'abord, en entier",
         "- docs/REGLES_WORKFLOW_AGENT.md (§ 1 rien de superflu à l'écran ; § 3 gabarit de PR bilingue ; § 4 recette visuelle).",
         "- docs/LOTS_ORDRE_ET_PROMPTS.md : le PROGRAMME COMPLET, y compris les lots à venir (R8…, N…, G…). Règle d'or : quand une correction relève d'un lot à venir, "
@@ -96,14 +128,14 @@ def build_prompt(review: dict, wt: Path, date: str, prefix: str, model: str, nig
     parts += [
         "## Ce que tu produis",
         "",
-        f"1. `docs/PLAN_CORRECTIONS_{date}.md` : § 0 rappels ; § 1 revue par PR (OK / KO du porteur, verdict du réviseur de nuit) ; § 2 revue générale ; "
+        f"1. `docs/PLAN_CORRECTIONS_{tag}.md` : § 0 rappels ; § 1 revue par PR (OK / KO du porteur, verdict du réviseur de nuit) ; § 2 revue générale ; "
         "§ 3 ce qui est reporté et pourquoi (fondu dans quel lot à venir) ; § 4 les lots correctifs, chacun avec : cause racine (fichier:ligne — lis le code sur main, "
         "ne devine pas), fichiers à ouvrir (≤ 6, App.jsx / MapSceneController.js par rg -n), étapes, tests, recette VISUELLE par écran ; § 5 ordre et pile. Français.",
-        f"2. `docs/LOTS_ORDRE_ET_PROMPTS.md` : (a) une ligne de tableau par lot {prefix}<n> après la dernière ligne ; (b) les balises `<!-- LOT id=\"{prefix}<n>\" title=\"…\" plan=\"docs/PLAN_CORRECTIONS_{date}.md\" size=\"S|M\" deps=\"…\" -->` "
+        f"2. `docs/LOTS_ORDRE_ET_PROMPTS.md` : (a) une ligne de tableau par lot {prefix}<n> après la dernière ligne ; (b) les balises `<!-- LOT id=\"{prefix}<n>\" title=\"…\" plan=\"docs/PLAN_CORRECTIONS_{tag}.md\" size=\"S|M\" deps=\"…\" -->` "
         "suivies du bloc ```text``` au format exact des lots existants (lis-en deux avant d'écrire), AVANT la section « ## 3. Enchaîner » ; (c) les compléments fondus dans les lots à venir "
         "(une ligne « Constat de la revue du <date> : … » + l'étape, dans le prompt du lot concerné, sans changer son id ni sa balise).",
         f"3. Vérifie : `python3 infra/agents/run_lots.py --dry-run --from {prefix}1 --until {prefix}<dernier>` liste tes lots.",
-        f"4. Commit conventionnel (`docs: corrections de la revue du {date} …`), `git push -u origin docs/plan-corrections-{date}`, puis la PR avec open_pr.py. "
+        f"4. Commit conventionnel (`docs: corrections de la revue du {date} …`), `git push -u origin docs/plan-corrections-{tag}`, puis la PR avec open_pr.py. "
         f"Corps de la PR : gabarit REGLES § 3, en français PUIS en anglais, et en DERNIÈRE ligne exactement : `LOTS: {prefix}1 {prefix}<dernier>` (ou `LOTS: aucun` s'il n'y a rien à corriger).",
         *([f"   PROGRAMME ENCHAÎNÉ : le porteur veut que la nuit continue, après les corrections, avec le programme pré-rédigé jusqu'au lot **{then_until()}**. "
            f"Place donc tes balises `<!-- LOT id=\"{prefix}<n>\" … -->` et tes lignes de tableau JUSTE APRÈS le dernier lot déjà exécuté (la dernière balise RA…) et AVANT le bloc R8a, "
@@ -189,22 +221,24 @@ def amend(go_pr_number: int, *, model: str = DEFAULT_MODEL, seen: set[int] | Non
     return {"ok": status == "FINISHED", "handled": [c["id"] for c in comments]}
 
 
-def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str | None = None, dry_run: bool = False, timeout_h: float = 1.5) -> dict:
+def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str | None = None, dry_run: bool = False, timeout_h: float = 1.5,
+        session: int = 1, since: str | None = None) -> dict:
     state = rl.State.load()
     date = time.strftime("%Y-%m-%d")
-    review = rc.collect(prs, rl.STATE_DIR, images=True)
+    tag = f"{date}-s{session}" if session > 1 else date      # lot W7 : une branche et un plan par session
+    review = rc.collect(prs, rl.STATE_DIR, images=True, since=since, session=session)
     night = list(state.extra.get("reviews") or [])
     if review.get("global_file"):
         rl.log(f"revue globale du porteur : {len(review['global_file'])} caractères dans REVUE_GLOBALE.md")
     prefix = prefix or next_prefix(rl.PROMPTS_MD.read_text(encoding="utf-8"))
     if dry_run:
-        prompt = build_prompt(review, rl.WORKTREES / "corrector", date, prefix, model, night)
+        prompt = build_prompt(review, rl.WORKTREES / "corrector", date, prefix, model, night, tag=tag, since=since)
         print(prompt)
-        return {"ok": True, "dry_run": True, "prefix": prefix}
+        return {"ok": True, "dry_run": True, "prefix": prefix, "session": session}
     wt = rl.prepare_worktree(rl.Lot("corrector", "correcteur du matin", "", "", [], ""), "main")
-    prompt = build_prompt(review, wt, date, prefix, model, night)
-    (rl.STATE_DIR / f"corrector-prompt-{date}.md").write_text(prompt, encoding="utf-8")
-    rl.log(f"correcteur du matin : {len(prs)} PR, préfixe {prefix}, agent {model} dans {wt}")
+    prompt = build_prompt(review, wt, date, prefix, model, night, tag=tag, since=since)
+    (rl.STATE_DIR / f"corrector-prompt-{tag}.md").write_text(prompt, encoding="utf-8")
+    rl.log(f"correcteur du matin (session {session}) : {len(prs)} PR, préfixe {prefix}, agent {model} dans {wt}")
     status, result = rl.run_agent_cli(wt, prompt, model, int(timeout_h * 3600))
     rl.log(f"    correcteur : {status}")
     for ln in (result or "").strip().splitlines()[-6:]:
@@ -223,9 +257,10 @@ def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str |
     if archived:
         rl.log(f"revue globale archivée : {archived} (fichier remis à zéro)")
     state = rl.State.load()
-    state.extra.setdefault("corrections", []).append({"at": date, "prs": [n for _, n in prs], "model": model, "status": status, "branch": branch, "go_pr": go_pr, "prefix": prefix, "global_archived": archived})
+    state.extra.setdefault("corrections", []).append({"at": date, "session": session, "since": since, "prs": [n for _, n in prs], "model": model, "status": status,
+                                                      "branch": branch, "go_pr": go_pr, "prefix": prefix, "global_archived": archived})
     state.save()
-    return {"ok": status == "FINISHED", "branch": branch, "go_pr": go_pr, "prefix": prefix}
+    return {"ok": status == "FINISHED", "branch": branch, "go_pr": go_pr, "prefix": prefix, "session": session}
 
 
 def main() -> None:
@@ -236,6 +271,8 @@ def main() -> None:
     ap.add_argument("--timeout-hours", type=float, default=1.5)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--amend", type=int, metavar="GO_PR", help="corriger la PR GO donnée selon ses commentaires « CORRIGER : » (second agent)")
+    ap.add_argument("--session", type=int, default=1, help="numéro de la session de revue du jour (lot W7 : branche et plan suffixés -s<n> à partir de 2)")
+    ap.add_argument("--since", help="ISO UTC : les KO antérieurs ont déjà été lus par une session précédente (ne pas replanifier)")
     args = ap.parse_args()
     if args.amend:
         out = amend(args.amend, model=args.model, dry_run=args.dry_run, timeout_h=args.timeout_hours)
@@ -244,7 +281,7 @@ def main() -> None:
     prs = [("", n) for n in args.prs] if args.prs else rc.prs_from_state()
     if not prs:
         sys.exit("Aucune PR : --prs … ou un state.json avec des lots FINISHED.")
-    out = run(prs, model=args.model, prefix=args.prefix, dry_run=args.dry_run, timeout_h=args.timeout_hours)
+    out = run(prs, model=args.model, prefix=args.prefix, dry_run=args.dry_run, timeout_h=args.timeout_hours, session=args.session, since=args.since)
     if not args.dry_run:
         print(json.dumps(out, ensure_ascii=False))
 
