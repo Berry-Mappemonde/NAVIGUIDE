@@ -1275,7 +1275,7 @@ def main() -> None:
     ap.add_argument("--review-model", default=os.environ.get("BIM_REVIEW_MODEL", "cursor-grok-4.6-xhigh-fast"),
                     help="modèle du réviseur de nuit (CLI Cursor). Grok : usage inclus. Fable est réservé au correcteur du matin (plan_corrections.py)")
     ap.add_argument("--review-timeout-hours", type=float, default=1.0)
-    ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN", "45")),
+    ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN") or _env_file_values().get("BIM_BOT_WAIT_MIN") or "45"),
                     help="avant le réviseur de code, attendre la pré-revue « 🤖 » de Grok Bot sur la tranche (minutes ; 0 = ne pas attendre ; défaut 45)")
     ap.add_argument("--no-loop", action="store_true", help="en fin de batch, ne pas lancer la veille loop.py")
     ap.add_argument("--no-tunnel", action="store_true", help="ne pas exposer le poste de recette au bot (cloudflared) ; sinon un lien 🔗 est posté dans chaque PR")
