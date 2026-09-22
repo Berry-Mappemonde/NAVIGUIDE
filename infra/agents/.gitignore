@@ -13,3 +13,4 @@ loop-state.json
 tunnel.pid
 tunnel.url
 tunnel.log
+loop.log
