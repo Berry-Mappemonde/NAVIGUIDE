@@ -18,13 +18,22 @@ bot ». Le matin, le porteur relit : il décoche ce qu'il conteste et écrit
 
 ## Texte de la routine (français ; le bot lit aussi les PR en anglais)
 
+**Ordre de la nuit** : Grok Bot passe **avant** le réviseur de code. Après chaque
+tranche de PR, `run_lots.py` attend son commentaire « 🤖 Pré-revue » (au plus
+45 min, `--bot-wait-min`) puis lance le réviseur Grok CLI, qui reçoit les KO du bot
+dans son prompt (« où chercher dans le code »). D'où la fréquence de la routine :
+**toutes les 30 min la nuit**, sur les PR qui ont un 🔗 et pas encore de 🤖.
+
 ```text
-Chaque soir à 23 h (et à la demande), pré-revue visuelle des PR du dépôt
-Berry-Mappemonde/Blue-Intelligence :
+Toutes les 30 minutes entre 21 h et 8 h (et à la demande), pré-revue visuelle des
+PR du dépôt Berry-Mappemonde/Blue-Intelligence :
 
 1. Liste les pull requests OUVERTES dont le titre contient « (lot » et qui ont un
-   commentaire commençant par « 🔗 Poste de recette ». Traite-les dans l'ordre
-   croissant des numéros.
+   commentaire commençant par « 🔗 Poste de recette » mais PAS encore de
+   commentaire commençant par « ## 🤖 Pré-revue ». S'il n'y en a aucune, arrête-toi
+   sans rien poster. Sinon traite-les dans l'ordre croissant des numéros, au plus 3
+   par passage (les autres au passage suivant). Utilise le lien 🔗 le plus récent
+   de la PR (un nouveau tunnel = un nouveau lien).
 2. Pour chaque PR : ouvre le lien du commentaire 🔗 dans le navigateur (c'est la
    tête de pile, build de prod, clés chargées ; recharge si la page tarde). Lis la
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape

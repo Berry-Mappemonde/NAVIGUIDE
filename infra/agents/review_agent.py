@@ -116,6 +116,21 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         ]
         caps = [str(p) for p in sorted((review_dir / f"pr-{num}").glob("*")) if p.suffix.lower() in (".jpg", ".jpeg", ".png")] if num else []
         parts.append("- Captures de l'agent (à ouvrir avec l'outil de lecture d'image) : " + (", ".join(f"`{c}`" for c in caps) if caps else "aucune téléchargée"))
+        # Pré-revue visuelle de Grok Bot (passée AVANT toi) : ce que l'écran a montré.
+        bot: dict = {}
+        if num:
+            try:
+                comments = (http or rl.Http(None, None)).github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{num}/comments?per_page=100") or []
+                bot = rc.bot_verdicts(comments)
+            except RuntimeError:
+                bot = {}
+        if bot:
+            parts.append("- **Pré-revue visuelle de Grok Bot** (il a refait la recette à l'écran avant toi ; ses KO te disent où chercher dans le code) :")
+            for v in bot.values():
+                mark = "✅" if v.get("ok") else ("❌ KO" if v.get("ko") else "⬜ non vérifiable")
+                parts.append(f"  - {mark} {v.get('text', '')[:140]}" + (f" — {v['note']}" if v.get("note") else ""))
+        else:
+            parts.append("- Pré-revue visuelle de Grok Bot : absente (pas encore passée) — juge le code et la PR seuls.")
         parts.append("")
         prev_branch = f"origin/{branch}" if branch else prev_branch
     parts += [

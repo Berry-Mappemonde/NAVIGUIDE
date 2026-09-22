@@ -862,6 +862,7 @@ def stop_tunnel() -> None:
 
 
 BOT_COMMENT_MARK = "🔗 Poste de recette"
+BOT_PREREVIEW_RE = re.compile(r"🤖\s*Pr[ée]-?revue", re.I)   # commentaire de Grok Bot : sa pré-revue visuelle
 RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
 
 
@@ -1138,6 +1139,8 @@ def main() -> None:
     ap.add_argument("--review-model", default=os.environ.get("BIM_REVIEW_MODEL", "cursor-grok-4.6-xhigh-fast"),
                     help="modèle du réviseur de nuit (CLI Cursor). Grok : usage inclus. Fable est réservé au correcteur du matin (plan_corrections.py)")
     ap.add_argument("--review-timeout-hours", type=float, default=1.0)
+    ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN", "45")),
+                    help="avant le réviseur de code, attendre la pré-revue « 🤖 » de Grok Bot sur la tranche (minutes ; 0 = ne pas attendre ; défaut 45)")
     ap.add_argument("--no-tunnel", action="store_true", help="ne pas exposer le poste de recette au bot (cloudflared) ; sinon un lien 🔗 est posté dans chaque PR")
     ap.add_argument("--stop-tunnel", action="store_true", help="arrête le tunnel laissé en route et s'arrête")
     ap.add_argument("--publish-tip", action="store_true", default=os.environ.get("BIM_PUBLISH_TIP") == "1",
@@ -1193,10 +1196,35 @@ def main() -> None:
     pending = list(lots)
     since_review: list[str] = []          # lots FINISHED pas encore relus par le réviseur de nuit
 
+    def wait_bot_prereview(ids: list[str]) -> None:
+        """Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son commentaire
+        « 🤖 Pré-revue » sur chaque PR de la tranche (au plus --bot-wait-min), puis on continue."""
+        if not args.bot_wait_min or not ids:
+            return
+        nums = {lid: pr_number((state.done.get(lid) or {}).get("pr")) for lid in ids}
+        nums = {k: v for k, v in nums.items() if v}
+        log(f"attente de la pré-revue Grok Bot sur {sorted(nums.values())} (≤ {args.bot_wait_min} min)")
+        t0 = time.time()
+        while time.time() - t0 < args.bot_wait_min * 60:
+            missing = []
+            for lid, num in nums.items():
+                try:
+                    comments = http.github(f"/repos/{owner_repo(args.repo)}/issues/{num}/comments?per_page=100") or []
+                except RuntimeError:
+                    comments = []
+                if not any(BOT_PREREVIEW_RE.search(c.get("body") or "") for c in comments):
+                    missing.append(f"#{num}")
+            if not missing:
+                log("    pré-revue Grok Bot reçue sur toute la tranche")
+                return
+            time.sleep(60)
+        log(f"    pré-revue Grok Bot absente sur {missing} après {args.bot_wait_min} min — le réviseur de code part sans")
+
     def night_review() -> None:
         """Lance le réviseur de nuit sur la tranche, puis met en file ses lots correctifs."""
         if not since_review or args.dry_run:
             return
+        wait_bot_prereview(list(since_review))
         cmd = [sys.executable, str(HERE / "review_agent.py"), "--lots", *since_review, "--model", args.review_model, "--timeout-hours", str(args.review_timeout_hours)]
         log(f"revue de nuit : {since_review} → {args.review_model}")
         try:
