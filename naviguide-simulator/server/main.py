@@ -363,6 +363,12 @@ async def get_ici_moment(
         pearl = await fill_dossier(
             lat, lon, ICI_RADIUS_NM, month=_month_from_t(t), dest_lat=None, dest_lon=None, thin=False,
         )
+    try:
+        from piracy import attach_piracy  # noqa: PLC0415
+        attach_piracy(pearl, lat, lon)
+    except Exception:
+        if isinstance(pearl, dict):
+            pearl.setdefault("piracy", None)
     clock, leg, thresholds = _moment_clock_and_leg(lat, lon, t, mode, pearl)
     return build_moment(pearl, clock, leg, thresholds, lang=lang)
 

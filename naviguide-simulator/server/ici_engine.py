@@ -207,6 +207,7 @@ def empty_dossier(lat: float, lon: float, radius_nm: float = ICI_RADIUS_NM) -> d
         "polar": None,
         "event": None,
         "climatology": None,
+        "piracy": None,
         "sources": {
             "zee": None,
             "bi": None,
@@ -720,6 +721,17 @@ async def _climatology_bag(
     }
 
 
+def _with_piracy(bag: dict, lat: float, lon: float) -> dict:
+    """Lot N4 : pose ``piracy`` au point, ou ``None``. Table locale, pas de HTTP."""
+    try:
+        from piracy import attach_piracy  # noqa: PLC0415
+        attach_piracy(bag, lat, lon)
+    except Exception as exc:
+        log.debug("piraterie ignorée : %s", exc)
+        bag["piracy"] = None
+    return bag
+
+
 async def fill_dossier(
     lat: float,
     lon: float,
@@ -748,12 +760,15 @@ async def fill_dossier(
                 attach_cached(bag)
             except Exception as exc:
                 log.debug("veille / enrich cache ignoré : %s", exc)
-            return bag
+            return _with_piracy(bag, lat, lon)
         bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True, rich=rich)
         if (bag.get("sources") or {}).get("bi") != "unavailable":
             thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
-        return bag
-    return await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=False)
+        return _with_piracy(bag, lat, lon)
+    return _with_piracy(
+        await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=False),
+        lat, lon,
+    )
 
 
 async def _fill_dossier(

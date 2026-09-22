@@ -163,6 +163,7 @@ export default {
   truthBadgeUnverifiable: "Not re-checkable",
   momentNewsKind:     "Watch",
   momentNewsTitle:    "{name} · watch of {date}",
+  momentPiracyCard:   "Piracy — {name} · {level} · {source}",
   iciNowTab:          "Now",
   iciStoryTab:        "Story",
   iciJournalTab:      "Log",
