@@ -22,6 +22,7 @@ import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
 import { useMoment } from "./hooks/useMoment.js";
+import { useMomentJournal } from "./hooks/useMomentJournal.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
 import { useReplay } from "./hooks/useReplay.js";
@@ -54,6 +55,7 @@ import {
   formatMonthName,
   lookupVoyageClock,
   monthOfT0,
+  sampleClockAtTime,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
 import { isRouteReady } from "./utils/routeReady.js";
@@ -540,6 +542,17 @@ export default function App() {
     t: momentIso ? String(momentIso).slice(0, 16) : undefined,
     mode: drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation"),
     lang,
+    enabled: sceneReady,
+  });
+  const momentMode = drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation");
+  const journalRouteId = momentMode === "drawn"
+    ? "drawn"
+    : (momentMode === "follow" ? "official" : (routeKind === "custom" ? "simulation:custom" : "simulation:official"));
+  const momentJournal = useMomentJournal({
+    mode: momentMode,
+    routeId: journalRouteId,
+    incomingMoment: iciMoment.moment,
+    until: momentIso,
     enabled: sceneReady,
   });
   const displayKnots = isSuivre
@@ -1351,6 +1364,14 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
   }, [sceneApi]);
+  const handleSeekJournal = useCallback((iso) => {
+    const sample = sampleClockAtTime(officialClock, iso);
+    const nm = Number(sample?.filmNm);
+    if (!Number.isFinite(nm)) return;
+    if (isSuivre) setUserPreview(true);
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(nm, { jump: true });
+  }, [officialClock, isSuivre, sceneApi]);
   // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
     enabled: Boolean(officialClock),
@@ -1555,6 +1576,9 @@ export default function App() {
         chat={chat}
         onChatAsk={chat.ask}
         moment={iciMoment.moment}
+        journalEntries={momentJournal.entries}
+        onSeek={handleSeekJournal}
+        momentMode={momentMode}
         escaleStop={replay.active ? null : escaleStop}
         escaleFiche={escaleSheet?.fiche}
         escaleLoading={Boolean(escaleSheet?.loading)}

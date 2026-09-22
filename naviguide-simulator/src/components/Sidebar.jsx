@@ -258,6 +258,9 @@ export const Sidebar = memo(function Sidebar({
   momentFree = null, momentFreeLeft = 0, onMomentNext,
   chat = null, onChatAsk,
   moment = null,
+  journalEntries = null,
+  onSeek = null,
+  momentMode = "follow",
   escaleStop = null,
   escaleFiche = null,
   escaleLoading = false,
@@ -387,6 +390,9 @@ export const Sidebar = memo(function Sidebar({
 
           <IciMaintenant
             moment={moment}
+            journalEntries={journalEntries}
+            onSeek={onSeek}
+            mode={momentMode}
             momentNow={!isDrawing ? momentNow : null}
             momentFree={!isDrawing ? momentFree : null}
             simulation={!isDrawing ? (

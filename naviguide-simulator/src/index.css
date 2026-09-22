@@ -336,6 +336,12 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .light-mode .ici-maintenant [data-testid="ici-around-link"] {
   color: rgb(3 105 161);
 }
+.light-mode .ici-maintenant [data-testid="ici-journal-entry"] {
+  color: rgb(30 41 59);
+}
+.light-mode .ici-maintenant [data-testid="ici-journal-entry"]:hover {
+  background: rgb(15 23 42 / 0.05);
+}
 
 /* Lot F4 — bulle événement ancrée au bateau (L.popup). */
 .leaflet-popup.event-bubble {
