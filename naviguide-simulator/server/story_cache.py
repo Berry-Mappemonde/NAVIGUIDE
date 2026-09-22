@@ -314,9 +314,9 @@ async def pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PA
     return status()
 
 
-# ── film script (lot F3, ns « film ») ───────────────────────────────────────
+# ── film script (lot F3 / R9c, ns « film-story ») ───────────────────────────
 
-FILM_NS = "film"
+FILM_NS = "film-story"
 FILM_TTL_S = 86400.0  # 1×/jour ; une nouvelle escale change la clé (hash journal)
 
 

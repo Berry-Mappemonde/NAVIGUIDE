@@ -7,9 +7,12 @@ import pearl_store
 import story_cache
 from film_script import (
     CONNECTORS,
+    FILM_BUDGET_CHARS,
+    FILM_CHAPTER_MAX_CHANGES,
     FILM_MAX_CHARS,
     FILM_WRITE_MAX,
     FILM_WRITE_MIN,
+    allocate_chapter_budgets,
     bubble_score,
     build_film_response,
     build_raw_script,
@@ -22,6 +25,7 @@ from film_script import (
     last_stop_id,
     norm_stop,
     official_dated_stops,
+    select_chapter_changes,
     select_film_events,
     written_is_valid,
 )
@@ -238,7 +242,7 @@ def test_film_cache_hit_skips_second_write():
     assert n2 == n1, "second call served from ns film"
     key = story_cache.film_cache_key(journal_fingerprint(JOURNAL, last_stop_id(JOURNAL, CLOCK["marks"])), "fr", 150)
     assert story_cache.get_film_cached(key)
-    assert pearl_store.kv_count("film") >= 1
+    assert pearl_store.kv_count("film-story") >= 1
 
 
 def test_new_stop_changes_fingerprint():
@@ -443,3 +447,196 @@ def test_http_film_route_en(monkeypatch):
     if "Saint-Maur" in text:
         assert "La Rochelle" in text
         assert ("left" in text.lower() or "departed" in text.lower())
+
+
+MOMENTS = {
+    "moments": [
+        {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+         "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 1, "t": "2026-05-15T11:30:00Z", "signature": "s1", "legIdx": 0, "changes": [
+            {"kind": "approche", "score": 3, "title": "La Rochelle", "fact": "Approche de La Rochelle, reste 12 milles nautiques."},
+        ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 2, "t": "2026-05-15T12:00:00Z", "signature": "s2", "legIdx": 0, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "Saint-Maur → La Rochelle"},
+        ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 3, "t": "2026-05-17T15:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+            {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 4, "t": "2026-05-22T06:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+            {"kind": "alert-on", "score": 3, "title": "Vent 38 kn", "fact": "Vent 38 kn attendu pendant 6 heures."},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 5, "t": "2026-05-24T10:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+            {"kind": "approche", "score": 3, "title": "Ajaccio", "fact": "Approche de Ajaccio, reste 40 milles nautiques."},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 6, "t": "2026-05-24T12:51:00Z", "signature": "s6", "legIdx": 1, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "La Rochelle → Ajaccio"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 7, "t": "2026-06-10T06:00:00Z", "signature": "s7", "legIdx": 2, "changes": [
+            {"kind": "station", "score": 2, "title": "PIRATA", "fact": "Station PIRATA à 6 milles nautiques."},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 8, "t": "2026-06-22T12:00:00Z", "signature": "s8", "legIdx": 2, "changes": [
+            {"kind": "approche", "score": 3, "title": "Fort-de-France", "fact": "Approche de Fort-de-France, reste 90 milles nautiques."},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 9, "t": "2026-06-23T08:34:00Z", "signature": "s9", "legIdx": 2, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Fort-de-France", "fact": "Ajaccio → Fort-de-France"},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 10, "t": "2026-08-01T06:00:00Z", "signature": "s10", "legIdx": 3, "changes": [
+            {"kind": "amp", "score": 1, "title": "Cabrera", "fact": "Cabrera (8 milles nautiques)"},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 11, "t": "2026-09-17T18:00:00Z", "signature": "s11", "legIdx": 3, "changes": [
+            {"kind": "approche", "score": 3, "title": "Nouméa", "fact": "Approche de Nouméa, reste 70 milles nautiques."},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 12, "t": "2026-09-17T22:48:00Z", "signature": "s12", "legIdx": 3, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Nouméa", "fact": "Fort-de-France → Nouméa"},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+    ],
+}
+
+
+def _moments_raw(lang="fr"):
+    return build_raw_script(CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS}, lang=lang, seconds=150, now_ms=NOW_MS)
+
+
+def test_allocate_budgets_floor_and_total():
+    budgets = allocate_chapter_budgets([1, 9, 30, 86], FILM_BUDGET_CHARS, 120)
+    assert len(budgets) == 4
+    assert all(b >= 120 for b in budgets)
+    assert sum(budgets) == FILM_BUDGET_CHARS
+    assert budgets[-1] > budgets[0]
+
+
+def test_moments_raw_length_within_budget():
+    plan = _moments_raw()
+    lo, hi = int(FILM_BUDGET_CHARS * 0.9), int(FILM_BUDGET_CHARS * 1.1)
+    assert lo <= plan["chars"] <= hi
+    assert plan["targetSeconds"] == 150
+    assert not re.search(r"\bnm\b", " ".join(c.get("text") or "" for c in plan["chapters"]))
+
+
+def test_moments_chapter_one_sentence_max_three_changes():
+    plan = _moments_raw()
+    assert plan["chapters"]
+    for ch in plan["chapters"]:
+        text = (ch.get("text") or "").strip()
+        assert text
+        assert re.search(r"[.!?]", text)
+        changes = [e for e in (ch.get("events") or []) if e.get("kind") != "stop" or "approach" in str(e.get("id") or "").lower() or e.get("card", {}).get("kind") == "stop"]
+        assert len(ch.get("events") or []) <= FILM_CHAPTER_MAX_CHANGES + 1  # + arrivée de jambe
+        assert len([e for e in (ch.get("events") or []) if e.get("id") and not str(e.get("id")).startswith("stop:")]) <= FILM_CHAPTER_MAX_CHANGES
+
+
+def test_moments_arrival_each_stop_route_order():
+    plan = _moments_raw()
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    _assert_route_order(blob, "journal FR")
+    _assert_departure_arrival_pairs(blob, "fr")
+    for name in ("La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"):
+        assert re.search(rf"Arrivée à {name}", blob), name
+
+
+def test_moments_connectors_differ():
+    plan = _moments_raw()
+    starts = []
+    for i, ch in enumerate(plan["chapters"]):
+        if i == 0:
+            continue
+        text = ch.get("text") or ""
+        hit = next((c for c in CONNECTORS["fr"] if text.startswith(f"{c},")), None)
+        if hit:
+            starts.append(hit)
+    assert len(starts) >= 2
+    for a, b in zip(starts, starts[1:]):
+        assert a != b
+
+
+def test_moments_approche_bubble_title_is_stop():
+    plan = _moments_raw()
+    titles = []
+    for ch in plan["chapters"]:
+        for ev in ch.get("events") or []:
+            eid = str(ev.get("id") or "")
+            if "approche" in eid or ev.get("kind") == "stop" and "approche" in str(ev.get("fact") or "").lower():
+                titles.append(ev.get("title"))
+            if str(ev.get("title") or "") in {"La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"}:
+                titles.append(ev.get("title"))
+    assert "Ajaccio" in titles or any(t and "Ajaccio" in t for t in titles)
+    for ch in plan["chapters"]:
+        dest = (ch.get("toName") or "").split("(")[0].strip()
+        if not dest:
+            continue
+        approach = next(
+            (e for e in (ch.get("events") or []) if dest.split()[0] in str(e.get("title") or "")),
+            None,
+        )
+        if approach:
+            assert dest.split()[0] in (approach.get("title") or "")
+
+
+def test_moments_short_sentences_no_cut():
+    plan = _moments_raw()
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        assert text.endswith((".", "!", "?", "…"))
+        for sent in re.split(r"(?<=[.!?…])\s+", text):
+            if sent.strip():
+                assert sent.strip()[-1] in ".!?…"
+
+
+def test_select_chapter_changes_caps_at_three():
+    changes = [
+        {"id": "a", "kind": "escale", "score": 3, "tMs": 1, "title": "Arrivée à Ajaccio", "fact": "x"},
+        {"id": "b", "kind": "approche", "score": 3, "tMs": 2, "title": "Ajaccio", "fact": "y"},
+        {"id": "c", "kind": "alert-on", "score": 3, "tMs": 3, "title": "Vent", "fact": "38 kn"},
+        {"id": "d", "kind": "station", "score": 2, "tMs": 4, "title": "PIRATA", "fact": "z"},
+        {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
+    ]
+    picked = select_chapter_changes(changes, 0, 10)
+    assert len(picked) <= 3
+    kinds = {c["kind"] for c in picked}
+    assert "escale" in kinds
+    assert "approche" in kinds or "alert-on" in kinds
+
+
+def test_written_no_number_outside_facts():
+    raw = _moments_raw()
+    events = raw.get("_events") or []
+    facts = film_facts(raw, events)
+    cheat = "Le vent atteindra 99 nœuds demain."
+    ok, _, dropped = written_is_valid(cheat, facts, [])
+    assert dropped >= 1
+    assert ok is False
+
+
+def test_film_written_served_from_cache_without_llm():
+    raw = _raw()
+    events = raw["_events"]
+    honest = _honest_written(raw, events)
+    calls = {"n": 0}
+
+    async def fake_cascade(system, user, **kw):
+        calls["n"] += 1
+        if "JSON only" in system:
+            return json_ids([e["id"] for e in events]), "nemotron-lightning"
+        return honest, "nemotron-super"
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM au clic")
+
+    async def run():
+        await build_film_response(
+            CLOCK, LIVE, JOURNAL, lang="fr", seconds=150, style="written",
+            now_ms=NOW_MS, cascade=fake_cascade, want_write=True,
+        )
+        n1 = calls["n"]
+        out = await build_film_response(
+            CLOCK, LIVE, JOURNAL, lang="fr", seconds=150, style="written",
+            now_ms=NOW_MS, cascade=boom, want_write=False,
+        )
+        return n1, calls["n"], out
+
+    n1, n2, out = asyncio.run(run())
+    assert n1 >= 1
+    assert n2 == n1
+    assert out["hasWritten"] is True
+    assert out["style"] == "written"

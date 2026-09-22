@@ -229,6 +229,33 @@ def filter_numbers(answer: str, facts: Any) -> tuple[str, int]:
     return " ".join(kept), dropped
 
 
+def expand_spoken_units(text: str, lang: str = "fr") -> str:
+    """« nm » lu « nanometres » : on écrit l'unité en toutes lettres (RB5 / R9c)."""
+    en = str(lang or "").lower().startswith("en")
+    unit = "nautical miles" if en else "milles nautiques"
+    out = re.sub(r"(\d+(?:[.,]\d+)?)\s*nm\b", rf"\1 {unit}", text or "", flags=re.I)
+    return re.sub(r"\bnm\b", unit, out, flags=re.I)
+
+
+def split_short_sentences(text: str, max_len: int = 160) -> str:
+    """Phrases courtes et complètes — jamais de coupure au milieu."""
+    parts = [p.strip() for p in _SENT_SPLIT_RE.split(text or "") if p.strip()]
+    out: list[str] = []
+    for part in parts:
+        chunk = part if part.endswith((".", "!", "?", "…")) else f"{part}."
+        if len(chunk) <= max_len:
+            out.append(chunk)
+            continue
+        bits = [b.strip() for b in re.split(r"(?<=[;:])\s+", chunk) if b.strip()]
+        if len(bits) > 1:
+            out.extend(split_short_sentences(" ".join(
+                b if b.endswith((".", "!", "?", "…", ";", ":")) else f"{b}." for b in bits
+            ), max_len))
+            continue
+        out.append(chunk)
+    return " ".join(out)
+
+
 def _apply_filter(text: str, facts: Any, *, keep_if_empty: bool = False) -> str:
     if facts is None:
         return text

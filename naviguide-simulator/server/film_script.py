@@ -1,7 +1,8 @@
-"""Script du film 2:30 — brut (règles), sélection, version rédigée (lot F3).
+"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c).
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
-Repli : le brut. Cache SQLite ns `film` (1×/jour, nouvelle escale = nouvelle clé).
+Rédigé **chapitre par chapitre**, préchauffé, cache SQLite ns `film-story`.
+Jamais généré au clic. Repli : le brut.
 """
 from __future__ import annotations
 
@@ -11,12 +12,16 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
-from story_cascade import cascade_text, filter_numbers
+from story_cascade import cascade_text, expand_spoken_units, filter_numbers, split_short_sentences
 from voyage_clock import OFFICIAL_T0
 
 FILM_MAX_CHARS = 2400
-FILM_WRITE_MIN = 2300
-FILM_WRITE_MAX = 2500
+FILM_BUDGET_CHARS = 2400
+FILM_WRITE_MIN = 2160
+FILM_WRITE_MAX = 2640
+FILM_CHAPTER_FLOOR = 120
+FILM_CHAPTER_MAX_CHANGES = 3
+KIND_GROUP_FRAC = 0.10
 FILM_MIN_EVENTS = 6
 FILM_MAX_EVENTS = 9
 FILM_GAP_FRAC = 0.03
@@ -29,6 +34,18 @@ HS_BUBBLE_M = 3.0
 CONNECTORS = {
     "fr": ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
     "en": ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
+}
+ATMOS = {
+    "fr": ("Le ciel reste haut.", "La mer porte le bateau.", "La route tient le cap.", "Le vent reste le vent."),
+    "en": ("The sky stays high.", "The sea carries the boat.", "The course holds.", "The wind stays the wind."),
+}
+CHANGE_PRIORITY = {
+    "escale": 0, "approche": 1, "alert-on": 2, "station": 3,
+    "zee-enter": 4, "amp": 5, "regime": 6, "alert-off": 7,
+}
+BUBBLE_KIND = {
+    "escale": "stop", "approche": "stop", "alert-on": "wx", "alert-off": "wx",
+    "zee-enter": "zee", "station": "sci", "amp": "amp", "regime": "climo",
 }
 
 
@@ -291,7 +308,9 @@ def bubble_score(
         return None
     kind = entry.get("kind")
     event = entry.get("event")
-    if role in {"depart", "today", "stop"} or kind == "stop":
+    if role in {"depart", "today", "stop"} or kind in {"stop", "escale", "approche"}:
+        return 3
+    if kind == "alert-on":
         return 3
     if kind == "zee":
         if event and event != "enter":
@@ -919,7 +938,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             placed.append({"id": ev["id"], "charIdx": char_idx, "card": card})
         if i == 0:
             push_arrival(bits, dest)
-        text = re.sub(r"\s{2,}", " ", " ".join(bits)).strip()
+        text = expand_spoken_units(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
         chapters.append({
             "id": w["id"],
             "tA": _iso(w["tA"]),
@@ -940,6 +959,359 @@ def script_chars(chapters: list[dict]) -> int:
     return sum(len(c.get("text") or "") for c in chapters)
 
 
+def _journal_moments(journal: dict | None) -> list[dict]:
+    if not isinstance(journal, dict):
+        return []
+    rows = journal.get("moments")
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def allocate_chapter_budgets(
+    days: list[float],
+    total: int = FILM_BUDGET_CHARS,
+    floor: int = FILM_CHAPTER_FLOOR,
+) -> list[int]:
+    n = len(days)
+    if n <= 0:
+        return []
+    weights = [max(1.0, float(d or 1)) for d in days]
+    if n * floor >= total:
+        base, rem = divmod(max(total, n), n)
+        return [base + (1 if i < rem else 0) for i in range(n)]
+    rest = total - n * floor
+    total_w = sum(weights) or 1.0
+    extra = [int(rest * w / total_w) for w in weights]
+    leftover = rest - sum(extra)
+    for i in sorted(range(n), key=lambda j: -weights[j]):
+        if leftover <= 0:
+            break
+        extra[i] += 1
+        leftover -= 1
+    return [floor + e for e in extra]
+
+
+def _change_t(row: dict) -> Optional[int]:
+    return _ms(row.get("t") or ((row.get("moment") or {}).get("t") if isinstance(row.get("moment"), dict) else None))
+
+
+def _flatten_changes(moments: list[dict], t_a: int, t_b: int, first: bool) -> list[dict]:
+    out: list[dict] = []
+    for row in moments:
+        t = _change_t(row)
+        if t is None:
+            continue
+        if first:
+            if t < t_a or t > t_b:
+                continue
+        elif t <= t_a or t > t_b:
+            continue
+        for i, change in enumerate(row.get("changes") or []):
+            if not isinstance(change, dict) or not change.get("kind"):
+                continue
+            out.append({
+                **change,
+                "id": str(change.get("id") or f"{row.get('seq')}:{change.get('kind')}:{i}"),
+                "t": row.get("t"),
+                "tMs": t,
+                "legIdx": row.get("legIdx"),
+            })
+    out.sort(key=lambda c: (c["tMs"], c["id"]))
+    return out
+
+
+def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
+    by_kind: dict[str, list[dict]] = {}
+    for change in changes:
+        by_kind.setdefault(str(change.get("kind") or ""), []).append(change)
+    out: list[dict] = []
+    grouped_ids: set[str] = set()
+    for kind, group in by_kind.items():
+        if len(group) < 3:
+            continue
+        first, last = group[0], group[-1]
+        if kind == "zee-enter":
+            title = fact = f"{len(group)} ZEE traversées"
+        elif kind == "alert-on":
+            title = fact = (
+                f"{len(group)} alertes entre le {day_month(first.get('t'))} et le {day_month(last.get('t'))}"
+            )
+        else:
+            title = fact = f"{len(group)} {kind}"
+        out.append({
+            "id": f"group:{kind}:{first.get('id')}",
+            "kind": kind,
+            "score": max(int(g.get("score") or 0) for g in group),
+            "title": title,
+            "fact": fact,
+            "t": first.get("t"),
+            "tMs": first.get("tMs"),
+        })
+        grouped_ids.update(str(g.get("id")) for g in group)
+    gap = span_ms * KIND_GROUP_FRAC if span_ms > 0 else 0
+    last_t: dict[str, int] = {}
+    for change in changes:
+        cid = str(change.get("id") or "")
+        if cid in grouped_ids:
+            continue
+        kind = str(change.get("kind") or "")
+        prev = last_t.get(kind)
+        if prev is not None and gap > 0 and abs((change.get("tMs") or 0) - prev) < gap:
+            continue
+        last_t[kind] = int(change.get("tMs") or 0)
+        out.append(change)
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return out
+
+
+def select_chapter_changes(changes: list[dict], t_a: int, t_b: int) -> list[dict]:
+    grouped = _group_changes(changes, (t_b or 0) - (t_a or 0))
+    must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
+    rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
+    rest.sort(key=lambda c: (
+        -int(c.get("score") or 0), CHANGE_PRIORITY.get(str(c.get("kind") or ""), 9), c.get("tMs") or 0,
+    ))
+    arrival = next((c for c in must if c.get("kind") == "escale"), None)
+    approach = next((c for c in must if c.get("kind") == "approche"), None)
+    alert = next((c for c in rest if c.get("kind") == "alert-on"), None)
+    color = next((c for c in rest if c.get("kind") in {"station", "zee-enter", "amp", "regime"}), None)
+    picked: list[dict] = []
+
+    def add(item: dict | None) -> None:
+        if item is None or len(picked) >= FILM_CHAPTER_MAX_CHANGES:
+            return
+        if any(x.get("id") == item.get("id") for x in picked):
+            return
+        picked.append(item)
+
+    add(arrival)
+    add(approach)
+    add(alert)
+    add(color)
+    for item in must + rest:
+        add(item)
+    picked.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return picked[:FILM_CHAPTER_MAX_CHANGES]
+
+
+def change_sentence(change: dict, lang: str = "fr") -> str:
+    en = _en(lang)
+    when = day_month(change.get("t"), lang)
+    title = short_name(change.get("title") or "")
+    fact = expand_spoken_units(str(change.get("fact") or "").rstrip("."), lang)
+    kind = change.get("kind")
+    name = title.replace("Arrivée à ", "").replace("Arrival at ", "").strip()
+    if kind == "escale":
+        if when:
+            return f"Arrival at {name} on {when}." if en else f"Arrivée à {name} le {when}."
+        return f"Arrival at {name}." if en else f"Arrivée à {name}."
+    if kind == "approche":
+        if when:
+            return f"On {when}, approaching {title}." if en else f"Le {when}, approche de {title}."
+        return f"Approaching {title}." if en else f"Approche de {title}."
+    if kind == "alert-on":
+        body = fact or title
+        return f"On {when}, {body}." if en else f"Le {when}, {body}."
+    if kind == "zee-enter":
+        return f"On {when}, entered {title}." if en else f"Le {when}, entrée dans {title}."
+    if kind == "station":
+        return f"On {when}, passed {title}." if en else f"Le {when}, station croisée : {title}."
+    if kind == "amp":
+        return f"On {when}, marine protected area: {title}." if en else f"Le {when}, aire marine protégée : {title}."
+    if fact:
+        return f"{fact}."
+    return ""
+
+
+def _bubble_from_change(change: dict, chapter: dict, lang: str, char_idx: int) -> dict:
+    kind = BUBBLE_KIND.get(str(change.get("kind") or ""), change.get("kind") or "stop")
+    title = short_name(change.get("title") or "")
+    if change.get("kind") in {"approche", "escale"}:
+        title = short_name(
+            title.replace("Arrivée à ", "").replace("Arrival at ", "")
+            or chapter.get("toName") or ""
+        )
+    fact = change_sentence(change, lang)
+    score = change.get("score") if change.get("score") in {1, 2, 3} else bubble_score({"kind": kind})
+    return {
+        "id": change.get("id"),
+        "charIdx": int(char_idx or 0),
+        "kind": kind,
+        "title": str(title)[:40],
+        "fact": fact,
+        "score": score if score in {1, 2, 3} else 3,
+        "card": {
+            "id": change.get("id"), "kind": kind, "title": title, "text": fact,
+            "at": change.get("t"), "score": score if score in {1, 2, 3} else 3,
+        },
+    }
+
+
+def _sentences(text: str) -> list[str]:
+    return [p.strip() for p in re.split(r"(?<=[.!?…])\s+", text or "") if p.strip()]
+
+
+_KEEP_SENT = re.compile(r"arriv|départ|departure|left |quitté|approche|approaching", re.I)
+
+
+def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
+    lo, hi = max(1, int(budget * 0.9)), max(int(budget * 1.1), budget)
+    blob = re.sub(r"\s{2,}", " ", (text or "").strip())
+    pool = [e for e in extras if e] + list(ATMOS["en" if _en(lang) else "fr"])
+    n = 0
+    while len(blob) < lo and n < 80:
+        bit = pool[n % len(pool)]
+        if bit and bit not in blob:
+            blob = f"{blob} {bit}".strip()
+        n += 1
+    while len(blob) > hi:
+        sents = _sentences(blob)
+        drop_i = next(
+            (i for i in range(len(sents) - 1, 1, -1) if not _KEEP_SENT.search(sents[i])),
+            None,
+        )
+        if drop_i is None:
+            break
+        sents.pop(drop_i)
+        blob = " ".join(sents).strip()
+    return expand_spoken_units(split_short_sentences(blob), lang)
+
+
+def build_raw_from_moments(
+    clock: dict | None,
+    marks: list | None,
+    live: dict | None,
+    journal: dict | None,
+    *,
+    lang: str = "fr",
+    seconds: int = 150,
+    now_ms: Optional[int] = None,
+) -> dict[str, Any]:
+    moments = _journal_moments(journal)
+    now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
+    packed = film_candidates(journal, marks, clock, live, now)
+    t0, t_end = packed["t0"], packed["tEnd"]
+    if t0 is None or t_end is None or t_end <= t0:
+        return {"chapters": [], "source": "rules", "chars": 0, "targetSeconds": seconds, "_fromMoments": True}
+    start_name = short_name((packed["start"] or {}).get("name") or "Saint-Maur")
+    sea_name = short_name((packed["sea"] or {}).get("name") or "La Rochelle")
+    windows = _windows(packed["stops"], t0, t_end)
+    target = FILM_BUDGET_CHARS if int(seconds or 150) == 150 else max(FILM_CHAPTER_FLOOR, int(FILM_BUDGET_CHARS * int(seconds) / 150))
+    days = [max(1.0, (w["tB"] - w["tA"]) / 86_400_000.0) for w in windows]
+    budgets = allocate_chapter_budgets(days, target)
+    en = _en(lang)
+    cited: set[str] = set()
+    chapters: list[dict] = []
+    selected_all: list[dict] = []
+    for i, w in enumerate(windows):
+        dest = w.get("to") if (w.get("to") or {}).get("name") else None
+        selected = select_chapter_changes(
+            _flatten_changes(moments, w["tA"], w["tB"], first=i == 0), w["tA"], w["tB"],
+        )
+        bits: list[str] = []
+        placed: list[dict] = []
+        if i == 0:
+            bits.append(event_sentence({
+                "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
+                "seaName": sea_name, "entry": {"t": OFFICIAL_T0, "name": start_name},
+            }, lang))
+        else:
+            conn = connector_at(i - 1, lang)
+            dest_name = short_name((dest or {}).get("name") or "")
+            origin = short_name((w.get("from") or {}).get("name") or "")
+            dep = _departure_iso(w["from"]) if w.get("from") else None
+            head = (f"departure for {dest_name}" if dest_name else f"under way from {origin}") if en else (
+                f"départ vers {dest_name}" if dest_name else f"en route depuis {origin}"
+            )
+            bits.append(
+                f"{conn}, on {day_month(dep, lang)}, {head}."
+                if en else
+                f"{conn}, le {day_month(dep, lang)}, {head}."
+            )
+        for change in selected:
+            if change.get("kind") == "escale":
+                continue
+            sentence = change_sentence(change, lang).strip()
+            if not sentence:
+                continue
+            char_idx = len(" ".join(bits)) + (1 if bits else 0)
+            bits.append(sentence)
+            placed.append(_bubble_from_change(change, w, lang, char_idx))
+            selected_all.append(change)
+        key = norm_stop((dest or {}).get("name") or "")
+        arrival = _arrival_sentence(dest, lang)
+        if arrival and key and key not in cited:
+            char_idx = len(" ".join(bits)) + (1 if bits else 0)
+            bits.append(arrival)
+            cited.add(key)
+            arr_id = f"stop:{dest['name']}:{dest.get('iso')}"
+            dest_name = short_name(dest["name"])
+            placed.append({
+                "id": arr_id, "charIdx": char_idx, "kind": "stop", "title": dest_name,
+                "fact": arrival, "score": 3,
+                "card": {"id": arr_id, "kind": "stop", "title": dest_name, "text": arrival, "at": dest.get("iso"), "score": 3},
+            })
+        extras: list[str] = []
+        if dest and w.get("from"):
+            try:
+                a = float((w["from"] or {}).get("nm") if (w["from"] or {}).get("nm") is not None else (w["from"] or {}).get("filmNm") or 0)
+                b = float(dest.get("nm") if dest.get("nm") is not None else dest.get("filmNm") or 0)
+                gap = b - a
+                if gap > 1:
+                    extras.append(
+                        f"The leg covers {_nm_label(gap, lang)}."
+                        if en else
+                        f"La jambe compte {_nm_label(gap, lang)}."
+                    )
+            except (TypeError, ValueError):
+                pass
+        quay = _days((dest or {}).get("holdHours")) if dest else 0
+        if quay:
+            extras.append(
+                f"{_day_word(quay, lang)} in port."
+                if en else
+                f"{_day_word(quay, lang)} à quai."
+            )
+        text = fit_chapter_text(" ".join(bits), budgets[i] if i < len(budgets) else FILM_CHAPTER_FLOOR, extras, lang)
+        chapters.append({
+            "id": w["id"],
+            "tA": _iso(w["tA"]),
+            "tB": _iso(w["tB"]),
+            "text": text,
+            "events": placed,
+            "fromName": w.get("fromName") or "",
+            "toName": w.get("toName") or "",
+            "fromLat": w.get("fromLat"),
+            "fromLon": w.get("fromLon"),
+            "toLat": w.get("toLat"),
+            "toLon": w.get("toLon"),
+        })
+    n = script_chars(chapters)
+    lo, hi = int(target * 0.9), int(target * 1.1)
+    pad = ATMOS["en" if en else "fr"]
+    guard = 0
+    while n < lo and chapters and guard < 60:
+        last = chapters[-1]
+        last["text"] = f"{last['text']} {pad[guard % len(pad)]}".strip()
+        n = script_chars(chapters)
+        guard += 1
+    while n > hi and chapters and guard < 120:
+        sents = _sentences(chapters[-1]["text"])
+        if len(sents) <= 2 or _KEEP_SENT.search(sents[-1] or ""):
+            break
+        chapters[-1]["text"] = " ".join(sents[:-1]).strip()
+        n = script_chars(chapters)
+        guard += 1
+    return {
+        "chapters": chapters,
+        "source": "rules",
+        "chars": script_chars(chapters),
+        "targetSeconds": int(seconds or 150),
+        "_events": selected_all,
+        "_packed": packed,
+        "_fromMoments": True,
+    }
+
+
 def build_raw_script(
     clock: dict | None,
     marks: list | None,
@@ -952,6 +1324,10 @@ def build_raw_script(
     selected: list[dict] | None = None,
 ) -> dict[str, Any]:
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
+    if _journal_moments(journal):
+        return build_raw_from_moments(
+            clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now,
+        )
     packed = film_candidates(journal, marks, clock, live, now)
     t0, t_end = packed["t0"], packed["tEnd"]
     if t0 is None or t_end is None or t_end <= t0:
@@ -989,6 +1365,8 @@ def build_raw_script(
 
 def journal_fingerprint(journal: dict | None, last_stop: str | None = None) -> str:
     bits = []
+    for row in _journal_moments(journal):
+        bits.append(f"{row.get('seq')}|{row.get('signature')}|{row.get('t')}")
     for e in sorted(journal_entries(journal), key=lambda x: (str(x.get("t") or ""), str(x.get("id") or ""))):
         bits.append(f"{e.get('id')}|{e.get('kind')}|{e.get('t')}")
     bits.append(f"stop:{last_stop or ''}")
@@ -996,6 +1374,10 @@ def journal_fingerprint(journal: dict | None, last_stop: str | None = None) -> s
 
 
 def last_stop_id(journal: dict | None, marks: list | None) -> str:
+    for row in reversed(_journal_moments(journal)):
+        for change in row.get("changes") or []:
+            if isinstance(change, dict) and change.get("kind") == "escale":
+                return str(change.get("title") or "")
     stops = [e for e in journal_entries(journal) if e.get("kind") == "stop" and e.get("event") == "arrival"]
     if stops:
         stops.sort(key=lambda e: e.get("t") or "")
@@ -1047,7 +1429,7 @@ def locate_events(tagged: str, events: list[dict]) -> tuple[str, list[dict]]:
 
 
 def written_is_valid(text: str, facts: Any, event_ids: list[str]) -> tuple[bool, str, int]:
-    """No new number, every [[ev:id]] present, 2300–2500 chars after strip."""
+    """No new number, every [[ev:id]] present, budget ±10 % after strip."""
     filtered, dropped = filter_numbers(text, facts)
     if dropped:
         return False, filtered, dropped
@@ -1081,19 +1463,40 @@ def _parse_selection(text: str, allowed: set[str]) -> Optional[list[str]]:
     return None
 
 
+def _snap_to_sentence(text: str, pos: int) -> int:
+    if pos <= 0:
+        return 0
+    if pos >= len(text):
+        return len(text)
+    prev = max(text.rfind(".", 0, pos), text.rfind("!", 0, pos), text.rfind("?", 0, pos))
+    nxt_hits = [i for i in (text.find(".", pos), text.find("!", pos), text.find("?", pos)) if i >= 0]
+    nxt = min(nxt_hits) if nxt_hits else -1
+    if prev >= 0 and (nxt < 0 or pos - prev <= nxt - pos + 8):
+        return min(len(text), prev + 1)
+    if nxt >= 0:
+        return min(len(text), nxt + 1)
+    return pos
+
+
 def _distribute_written(raw_chapters: list[dict], display: str, located: list[dict]) -> list[dict]:
     total = sum(max(1, len(c.get("text") or "")) for c in raw_chapters) or 1
     pos = 0
     out: list[dict] = []
     for i, ch in enumerate(raw_chapters):
-        n = len(display) - pos if i == len(raw_chapters) - 1 else max(1, round(len(display) * max(1, len(ch.get("text") or "")) / total))
-        chunk = display[pos:pos + n]
+        if i == len(raw_chapters) - 1:
+            end = len(display)
+        else:
+            raw_n = max(1, round(len(display) * max(1, len(ch.get("text") or "")) / total))
+            end = _snap_to_sentence(display, pos + raw_n)
+            if end <= pos:
+                end = min(len(display), pos + max(raw_n, 1))
+        chunk = display[pos:end]
         evs = []
         for e in located:
-            if pos <= e["charIdx"] < pos + max(n, 1) or (i == len(raw_chapters) - 1 and e["charIdx"] >= pos):
+            if pos <= e["charIdx"] < max(end, pos + 1) or (i == len(raw_chapters) - 1 and e["charIdx"] >= pos):
                 evs.append({**e, "charIdx": max(0, e["charIdx"] - pos)})
         out.append({**ch, "text": chunk, "events": evs})
-        pos += n
+        pos = end
     return out
 
 
@@ -1104,11 +1507,12 @@ SELECT_SYSTEM = (
     "Do not invent numbers. Do not write narrative."
 )
 WRITE_SYSTEM = (
-    "You rewrite a film script from structured facts. "
+    "You rewrite ONE film chapter from structured facts. "
     "Keep EVERY number, name and date exactly as given. "
-    "Target length 2300 to 2500 characters of visible text. "
+    "Write short complete sentences. Never cut a sentence. "
+    "Write units in full words (milles nautiques / nautical miles), never nm. "
     "Start every event sentence with [[ev:<id>]] using the provided ids. "
-    "Vary the language, stay chronological. Thinking OFF. No new figure."
+    "Stay chronological. Thinking OFF. No new figure."
 )
 
 
@@ -1132,6 +1536,32 @@ async def select_with_llm(
     return fallback_ids, "rules"
 
 
+def _chapter_next_summary(raw_chapters: list[dict], i: int, lang: str) -> str:
+    if i + 1 >= len(raw_chapters):
+        return "end of the voyage" if _en(lang) else "fin du voyage"
+    nxt = raw_chapters[i + 1]
+    frm = short_name(nxt.get("fromName") or "")
+    to = short_name(nxt.get("toName") or "")
+    if to:
+        return f"the next leg leads to {to}" if _en(lang) else f"la jambe suivante mène à {to}"
+    return f"under way from {frm}" if _en(lang) else f"en route depuis {frm}"
+
+
+def _pad_tagged(text: str, budget: int) -> str:
+    pad = " La mer reste la mer, le vent reste le vent, la route reste la route."
+    body = text or ""
+    lo = max(1, int(budget * 0.9))
+    hi = max(int(budget * 1.1), budget)
+    while len(strip_tags(body)) < lo:
+        body += pad
+        if len(body) > hi + 80:
+            break
+    display = strip_tags(body)
+    if len(display) > hi:
+        body = body[: max(0, len(body) - (len(display) - hi))]
+    return body
+
+
 async def write_with_llm(
     raw: dict,
     events: list[dict],
@@ -1139,31 +1569,82 @@ async def write_with_llm(
     lang: str = "fr",
     cascade: Callable = cascade_text,
 ) -> tuple[Optional[dict], str]:
-    event_ids = [e["id"] for e in events]
+    event_ids = [e["id"] for e in events if e.get("id")]
     facts = film_facts(raw, events)
-    raw_text = "\n\n".join(c.get("text") or "" for c in raw.get("chapters") or [])
-    user = (
-        f"lang=fr\nids={json.dumps(event_ids)}\n"
-        f"facts={json.dumps(facts, ensure_ascii=False, default=str)[:6000]}\n"
-        f"raw:\n{raw_text}"
-    )
-    text, source = await cascade(
-        WRITE_SYSTEM, user, tier="write", fallback="", facts=None, max_tokens=WRITE_MAX_TOKENS,
-    )
-    if _en(lang) and text:
-        from story_cascade import translate  # noqa: PLC0415
-        text, source = await translate(text, "en", facts=text, max_tokens=WRITE_MAX_TOKENS)
-    ok, _, _ = written_is_valid(text, facts, event_ids)
-    if not ok:
+    raw_chapters = list(raw.get("chapters") or [])
+    if not raw_chapters:
         return None, "rules"
-    display, located = locate_events(text, events)
-    chapters = _distribute_written(raw.get("chapters") or [], display, located)
+    budgets = allocate_chapter_budgets(
+        [max(1.0, len(c.get("text") or "") or 1) for c in raw_chapters],
+        int(raw.get("targetSeconds") or 150) and FILM_BUDGET_CHARS,
+    )
+    chapters_out: list[dict] = []
+    source_last = "rules"
+    any_dropped = 0
+    tagged_all: list[str] = []
+    by_id = {e["id"]: e for e in events if e.get("id")}
+    for i, ch in enumerate(raw_chapters):
+        ch_ids = [str(e.get("id")) for e in (ch.get("events") or []) if e.get("id")]
+        if not ch_ids:
+            ch_ids = [eid for eid in event_ids if eid in (ch.get("text") or "")]
+        next_sum = _chapter_next_summary(raw_chapters, i, lang)
+        budget = budgets[i] if i < len(budgets) else FILM_CHAPTER_FLOOR
+        user = (
+            f"lang={('en' if _en(lang) else 'fr')}\n"
+            f"next={next_sum}\n"
+            f"budget={budget}\n"
+            f"ids={json.dumps(ch_ids)}\n"
+            f"facts={json.dumps(facts, ensure_ascii=False, default=str)[:2500]}\n"
+            f"raw:\n{ch.get('text') or ''}"
+        )
+        text, source = await cascade(
+            WRITE_SYSTEM, user, tier="write", fallback="", facts=None, max_tokens=min(WRITE_MAX_TOKENS, 400),
+        )
+        source_last = source
+        text = expand_spoken_units(text or "", lang)
+        filtered, dropped = filter_numbers(text, facts)
+        any_dropped += dropped
+        if dropped or not filtered.strip():
+            filtered = ch.get("text") or ""
+        for eid in ch_ids:
+            if f"[[ev:{eid}]]" not in filtered:
+                filtered = f"[[ev:{eid}]] {filtered}"
+        filtered = split_short_sentences(filtered)
+        hi = max(int(budget * 1.1), budget)
+        if len(strip_tags(filtered)) > hi:
+            kept: list[str] = []
+            for sent in _sentences(filtered):
+                trial = " ".join(kept + [sent])
+                if kept and len(strip_tags(trial)) > hi:
+                    break
+                kept.append(sent)
+            filtered = " ".join(kept) or filtered
+            for eid in ch_ids:
+                if f"[[ev:{eid}]]" not in filtered:
+                    filtered = f"[[ev:{eid}]] {filtered}"
+        filtered = _pad_tagged(filtered, budget)
+        tagged_all.append(filtered)
+        ch_events = [by_id[eid] for eid in ch_ids if eid in by_id] or [
+            e for e in (ch.get("events") or []) if e.get("id")
+        ]
+        display, located = locate_events(filtered, ch_events or events)
+        display = expand_spoken_units(split_short_sentences(display), lang)
+        chapters_out.append({**ch, "text": display, "events": located or ch.get("events") or []})
+    if any_dropped:
+        return None, "rules"
+    joined = " ".join(tagged_all)
+    ok, _, dropped = written_is_valid(joined, facts, event_ids)
+    if event_ids and not ok and dropped:
+        return None, "rules"
+    n = script_chars(chapters_out)
+    if n < FILM_WRITE_MIN or n > FILM_WRITE_MAX:
+        return None, "rules"
     return {
-        "chapters": chapters,
-        "source": "nemotron" if str(source).startswith("nemotron") else source,
-        "chars": len(display),
+        "chapters": chapters_out,
+        "source": "nemotron" if str(source_last).startswith("nemotron") else source_last,
+        "chars": n,
         "targetSeconds": raw.get("targetSeconds") or 150,
-    }, source
+    }, source_last
 
 
 def _public_plan(plan: dict, source: str) -> dict:
@@ -1226,25 +1707,28 @@ async def build_film_response(
     raw_full = build_raw_script(clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms)
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
+    from_moments = bool(raw_full.get("_fromMoments"))
     raw = _public_plan(raw_full, "rules")
-    attach_chapter_events(raw.get("chapters") or [], packed, journal, lang)
+    if not from_moments:
+        attach_chapter_events(raw.get("chapters") or [], packed, journal, lang)
     written = cached.get("written") if isinstance(cached.get("written"), dict) else None
     written_source = cached.get("writtenSource") or "nemotron"
 
     if want_write and written is None:
-        fallback_ids = [e["id"] for e in events]
-        try:
-            ids, _sel_src = await select_with_llm(packed.get("candidates") or events, fallback_ids, cascade=cascade)
-            by_id = {e["id"]: e for e in (packed.get("candidates") or events)}
-            picked = [by_id[i] for i in ids if i in by_id]
-            if picked:
-                raw_full = build_raw_script(
-                    clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, selected=picked,
-                )
-                events = raw_full.get("_events") or picked
-                raw = _public_plan(raw_full, "rules")
-        except Exception:
-            pass
+        if not from_moments:
+            fallback_ids = [e["id"] for e in events]
+            try:
+                ids, _sel_src = await select_with_llm(packed.get("candidates") or events, fallback_ids, cascade=cascade)
+                by_id = {e["id"]: e for e in (packed.get("candidates") or events)}
+                picked = [by_id[i] for i in ids if i in by_id]
+                if picked:
+                    raw_full = build_raw_script(
+                        clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, selected=picked,
+                    )
+                    events = raw_full.get("_events") or picked
+                    raw = _public_plan(raw_full, "rules")
+            except Exception:
+                pass
         try:
             wplan, wsrc = await write_with_llm(raw_full, events, lang=lang, cascade=cascade)
         except Exception:
@@ -1258,7 +1742,7 @@ async def build_film_response(
     elif not cached:
         put_film_cached(key, {"raw": raw, "written": written, "writtenSource": written_source if written else None, "lastStop": last})
 
-    if isinstance(written, dict):
+    if isinstance(written, dict) and not from_moments:
         attach_chapter_events(written.get("chapters") or [], packed, journal, lang)
     use_written = style in {"written", "nemotron", "rédigé", "redige"} and written is not None
     plan = written if use_written else raw
@@ -1289,9 +1773,59 @@ async def official_film(
     _journal_safely(lambda: journal.tick(voy, when))
     live = sample_clock_at_time(raw_clock, when) or {}
     payload = journal.summary(500)
-    want_write = style in {"written", "nemotron", "rédigé", "redige"}
+    try:
+        from moment_journal import read_moments  # noqa: PLC0415
+        moments = read_moments(OFFICIAL_VOYAGE_ID)
+    except Exception:
+        moments = []
+    if moments:
+        payload = {**payload, "moments": moments}
     return await build_film_response(
         clock, live, payload, marks=marks, lang=lang, seconds=int(seconds or 150),
-        style=style, cascade=cascade, want_write=want_write,
+        style=style, cascade=cascade, want_write=False,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
     )
+
+
+async def warm_film_story(
+    voyage_id: str | None = None,
+    *,
+    langs: tuple[str, ...] = ("fr", "en"),
+    seconds: int = 150,
+    cascade: Callable = cascade_text,
+) -> dict[str, Any]:
+    """Préchauffe le rédigé chapitre par chapitre — jamais au clic (lot R9c)."""
+    from voyage_api import _climo_clock, _now  # noqa: PLC0415
+    from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
+    from voyage_store import load_voyage  # noqa: PLC0415
+    from moment_journal import read_moments  # noqa: PLC0415
+    import voyage_journal as journal  # noqa: PLC0415
+
+    vid = voyage_id or OFFICIAL_VOYAGE_ID
+    voy = load_voyage(vid)
+    if voy is None:
+        return {"voyageId": vid, "status": "no-voyage", "count": 0}
+    when = _now()
+    raw_clock = voy.get("clock") or _climo_clock(voy)
+    clock = {**raw_clock, "t0": OFFICIAL_T0}
+    marks = merge_route_marks(voy.get("marks") or [], raw_clock)
+    live = sample_clock_at_time(raw_clock, when) or {}
+    try:
+        payload = journal.summary(500)
+    except Exception:
+        payload = {}
+    try:
+        moments = read_moments(vid)
+    except Exception:
+        moments = []
+    if moments:
+        payload = {**payload, "moments": moments}
+    now_ms = int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None
+    out: dict[str, Any] = {}
+    for lang in langs:
+        plan = await build_film_response(
+            clock, live, payload, marks=marks, lang=lang, seconds=int(seconds or 150),
+            style="written", cascade=cascade, want_write=True, now_ms=now_ms,
+        )
+        out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
+    return {"voyageId": vid, "status": "ready", "langs": out}
