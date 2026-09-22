@@ -1,5 +1,6 @@
 """Lot F3 — script du film : longueur, balises, aucun nombre nouveau, cache, sélection."""
 import asyncio
+import re
 from datetime import datetime, timezone
 
 import pearl_store
@@ -20,6 +21,7 @@ from film_script import (
     journal_fingerprint,
     last_stop_id,
     norm_stop,
+    official_dated_stops,
     select_film_events,
     written_is_valid,
 )
@@ -263,6 +265,10 @@ def test_http_film_route_raw(monkeypatch):
     data = r.json()
     assert data["source"] == "rules"
     assert data["chapters"]
+    assert "Saint-Maur" in data["chapters"][0]["text"]
+    assert "15 mai 2026" in data["chapters"][0]["text"]
+    assert "2027" not in data["chapters"][0]["text"]
+    assert not re.search(r"\bnm\b", " ".join(c.get("text") or "" for c in data["chapters"]))
     assert "targetSeconds" in data
     assert data["chars"] <= FILM_MAX_CHARS
     sea = [c for c in data["chapters"] if is_sea_chapter(c)]
@@ -363,6 +369,60 @@ def test_official_route_order_no_repeat_departure_then_arrival():
     blob_en = " ".join(c.get("text") or "" for c in en["chapters"])
     _assert_route_order(blob_en, "film EN")
     _assert_departure_arrival_pairs(blob_en, "en")
+
+
+SIM_CLOCK = {
+    "t0": "2027-04-25T08:00:00Z",
+    "marks": [
+        {"name": "La Rochelle", "nm": 0, "filmNm": 122, "iso": "2027-04-25T08:00:00Z", "holdHours": 72, "lat": 46.15, "lon": -1.16},
+        {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942, "iso": "2027-05-04T12:00:00Z", "holdHours": 72, "lat": 41.9, "lon": 8.7},
+        {"name": "Fort-de-France (Martinique)", "nm": 6973, "filmNm": 7095, "iso": "2027-06-02T08:00:00Z", "holdHours": 72, "lat": 14.6, "lon": -61.0},
+    ],
+}
+
+
+def _script_blob(plan: dict) -> str:
+    return " ".join(c.get("text") or "" for c in (plan.get("chapters") or []))
+
+
+def test_official_script_ignores_simulation_clock():
+    plan = build_raw_script(SIM_CLOCK, SIM_CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    assert plan["chapters"]
+    text0 = plan["chapters"][0]["text"]
+    assert "Saint-Maur" in text0
+    assert "15 mai 2026" in text0
+    assert "La Rochelle" in text0
+    assert "2027" not in text0
+    assert "25 avril" not in text0
+    assert not re.search(r"a quitté La Rochelle", text0, re.I)
+    blob = _script_blob(plan)
+    assert not re.search(r"\bnm\b", blob), blob
+
+
+def test_no_bare_nm_in_official_script():
+    fr = _raw()
+    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
+    blob_fr = _script_blob(fr)
+    blob_en = _script_blob(en)
+    assert "Saint-Maur" in fr["chapters"][0]["text"]
+    assert "15 mai 2026" in fr["chapters"][0]["text"]
+    assert not re.search(r"\bnm\b", blob_fr), blob_fr
+    assert not re.search(r"\bnm\b", blob_en), blob_en
+    if re.search(r"\d[\d\s]*", blob_fr) and "départ" in blob_fr.lower():
+        assert "milles nautiques" in blob_fr or "mille nautique" in blob_fr or "Aujourd" in blob_fr
+    assert "nautical mile" in blob_en or "Today" in blob_en or "left" in blob_en.lower()
+
+
+def test_official_dated_stops_pins_saint_maur():
+    stops = official_dated_stops(SIM_CLOCK["marks"], SIM_CLOCK)
+    assert is_saint_or_first(stops)
+    assert stops[0]["iso"].startswith("2026-05-15")
+
+
+def is_saint_or_first(stops):
+    assert stops
+    assert "saint-maur" in stops[0]["name"].lower().replace(" ", "-")
+    return True
 
 
 def test_http_film_route_en(monkeypatch):

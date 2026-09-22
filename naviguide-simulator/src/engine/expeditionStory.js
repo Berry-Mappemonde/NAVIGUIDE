@@ -22,6 +22,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { cardFromJournalEntry } from "./momentCard.js";
+import { DEFAULT_T0_ISO } from "./voyageClock.js";
 
 const MONTHS = {
   fr: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
@@ -52,6 +53,56 @@ export function dayMonth(iso, lang = "fr", { year = false } = {}) {
 function nmLabel(nm, lang) {
   const v = Math.round(Number(nm) || 0);
   return isEn(lang) ? `${v.toLocaleString("en-GB")} nm` : `${v.toLocaleString("fr-FR")} nm`;
+}
+
+/** Distance lue à voix haute : jamais « nm » (la synthèse dit « nanètres »). */
+function spokenNmLabel(nm, lang) {
+  const v = Math.round(Number(nm) || 0);
+  if (isEn(lang)) return `${v.toLocaleString("en-GB")} nautical mile${v === 1 ? "" : "s"}`;
+  return `${v.toLocaleString("fr-FR")} mille${v === 1 ? "" : "s"} nautique${v === 1 ? "" : "s"}`;
+}
+
+function isSaintMaur(name) {
+  return /saint[\s-]*maur/i.test(String(name || ""));
+}
+
+/** Saint-Maur + 15 mai 2026 en tête. Les autres dates restent celles de la route. */
+export function officialDatedStops(marks, clock) {
+  const raw = marks?.length ? marks : (clock?.marks || []);
+  const dated = datedMarks(raw);
+  const saintRaw = (raw || []).find((m) => isSaintMaur(m?.name));
+  const saint = dated.find((s) => isSaintMaur(s.name));
+  const head = saint
+    ? { ...saint, iso: DEFAULT_T0_ISO }
+    : {
+      name: saintRaw?.name || "Saint-Maur",
+      iso: DEFAULT_T0_ISO,
+      filmNm: Number(saintRaw?.filmNm ?? saintRaw?.nm) || 0,
+      nm: Number.isFinite(Number(saintRaw?.nm)) ? Number(saintRaw.nm) : 0,
+      holdHours: Number(saintRaw?.holdHours) || 0,
+      lat: Number.isFinite(Number(saintRaw?.lat)) ? Number(saintRaw.lat) : null,
+      lon: Number.isFinite(Number(saintRaw?.lon)) ? Number(saintRaw.lon) : null,
+    };
+  return [head, ...dated.filter((s) => !isSaintMaur(s.name))];
+}
+
+function seaStop(stops, marks, clock) {
+  const fromStops = (stops || []).find((s, i) => i > 0 && /rochelle/i.test(s.name));
+  if (fromStops) return fromStops;
+  const raw = [...(marks || []), ...((clock?.marks) || [])];
+  const lr = raw.find((m) => /rochelle/i.test(m?.name || ""));
+  if (lr) {
+    return {
+      name: lr.name,
+      iso: lr.iso,
+      filmNm: Number(lr.filmNm ?? lr.nm) || 0,
+      nm: Number.isFinite(Number(lr.nm)) ? Number(lr.nm) : 0,
+      holdHours: Number(lr.holdHours) || 0,
+      lat: Number.isFinite(Number(lr.lat)) ? Number(lr.lat) : null,
+      lon: Number.isFinite(Number(lr.lon)) ? Number(lr.lon) : null,
+    };
+  }
+  return stops?.[1] || { name: "La Rochelle" };
 }
 
 function units(lang) {
@@ -355,14 +406,16 @@ function legParagraph(from, to, { journal, lang, sea, connector }) {
 export function expeditionStory({ clock, marks, live, leg, journal = null, now = Date.now(), lang = "fr" } = {}) {
   const en = isEn(lang);
   const nowMs = now instanceof Date ? now.getTime() : (typeof now === "number" ? now : ms(now));
-  const t0 = ms(clock?.t0);
-  const stops = datedMarks(marks?.length ? marks : clock?.marks);
+  const rawMarks = marks?.length ? marks : clock?.marks;
+  if (!rawMarks?.length && !clock?.t0) return [];
+  const t0 = ms(DEFAULT_T0_ISO);
+  const stops = officialDatedStops(rawMarks, clock);
   if (t0 == null && !stops.length) return [];
   const out = [];
 
   const start = stops[0];
-  const sea = stops.find((s, i) => i > 0 && /rochelle/i.test(s.name)) || stops[1] || null;
-  const departIso = start?.iso || clock?.t0;
+  const sea = seaStop(stops, marks, clock);
+  const departIso = DEFAULT_T0_ISO;
 
   // 1. Le départ.
   if (nowMs != null && t0 != null && nowMs < t0) {
@@ -577,10 +630,10 @@ function marksWithIso(marks, clock) {
 }
 
 export function filmCandidates({ journal, marks, clock, live, now = Date.now() } = {}) {
-  const stops = datedMarks(marksWithIso(marks, clock));
+  const stops = officialDatedStops(marksWithIso(marks, clock), clock);
   const start = stops[0];
-  const sea = stops.find((s, i) => i > 0 && /rochelle/i.test(s.name)) || stops[1] || null;
-  const t0 = ms(clock?.t0) ?? ms(start?.iso);
+  const sea = seaStop(stops, marks, clock);
+  const t0 = ms(DEFAULT_T0_ISO);
   const nowMs = now instanceof Date ? now.getTime() : (typeof now === "number" ? now : ms(now));
   const tEnd = ms(live?.iso) || nowMs;
   const out = [];
@@ -592,8 +645,8 @@ export function filmCandidates({ journal, marks, clock, live, now = Date.now() }
     out.push(c);
   };
 
-  const departIso = start?.iso || clock?.t0;
-  if (departIso && ms(departIso) != null) {
+  const departIso = DEFAULT_T0_ISO;
+  if (ms(departIso) != null) {
     push(toCandidate({
       id: "depart",
       kind: "stop",
@@ -792,7 +845,9 @@ export function filmEventSentence(ev, lang = "fr") {
   }
   if (ev.kind === "sci") {
     const nm = factNum(e, "nm");
-    const nmBit = nm != null ? (en ? ` at ${numPlain(nm, 1)} nm` : ` à ${numPlain(nm, 1)} nm`) : "";
+    const nmBit = nm != null
+      ? (en ? ` at ${numPlain(nm, 1)} nautical miles` : ` à ${numPlain(nm, 1)} milles nautiques`)
+      : "";
     return en
       ? `On ${when}, the route passed${nmBit} from ${name}.`
       : `Le ${when}, la route est passée${nmBit} de ${name}.`;
@@ -937,7 +992,7 @@ function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
       const rich = {
         ...ev,
         seaName,
-        distLabel: live ? nmLabel(live.sailNm ?? live.filmNm, lang) : "",
+        distLabel: live ? spokenNmLabel(live.sailNm ?? live.filmNm, lang) : "",
       };
       if (ev.role === "depart") rich.name = startName;
       const sentence = filmEventSentence(rich, lang).trim();

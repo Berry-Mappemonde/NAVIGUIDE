@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   datedMarks, dayMonth, expeditionStory, expeditionStoryText, storyConnector,
   FILM_CONNECTORS, FILM_MAX_CHARS, buildFilmScript, filmCandidates, selectFilmEvents,
-  normStop,
+  normStop, officialDatedStops,
 } from "./expeditionStory.js";
 import { NM_TO_KM } from "../utils/berryLegs.js";
 
@@ -251,6 +251,49 @@ describe("expeditionStory — script du film (lot F3)", () => {
     assert.ok(a.length >= 6 && a.length <= 9);
     const wx = a.filter((id) => String(id).startsWith("wx"));
     assert.ok(wx.length >= 1, "un coup de vent est retenu");
+  });
+
+  it("tête du récit : Saint-Maur le 15 mai 2026 même avec une horloge de simulation", () => {
+    const simClock = { t0: "2027-04-25T08:00:00Z" };
+    const simMarks = [
+      { name: "La Rochelle", nm: 0, filmNm: 122, iso: "2027-04-25T08:00:00Z", holdHours: 72 },
+      { name: "Ajaccio (Corse)", nm: 1820, filmNm: 1942, iso: "2027-05-04T12:00:00Z", holdHours: 72 },
+      { name: "Fort-de-France (Martinique)", nm: 6973, filmNm: 7095, iso: "2027-06-02T08:00:00Z", holdHours: 72 },
+    ];
+    const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+    const paras = expeditionStory({ clock: simClock, marks: simMarks, live, now, lang: "fr" }).map(plain);
+    assert.match(paras[0], /Saint-Maur/);
+    assert.match(paras[0], /15 mai 2026/);
+    assert.doesNotMatch(paras[0], /2027/);
+    assert.doesNotMatch(paras[0], /a quitté La Rochelle/i);
+    const stops = officialDatedStops(simMarks, simClock);
+    assert.match(stops[0].name, /Saint-Maur/i);
+    assert.match(stops[0].iso, /^2026-05-15/);
+  });
+
+  it("script du film : pas de nm nu, unités en toutes lettres", () => {
+    const filmFr = buildFilmScript({ ...filmFixture(), lang: "fr" });
+    const filmEn = buildFilmScript({ ...filmFixture(), lang: "en" });
+    const blobFr = filmFr.chapters.map((c) => c.text).join(" ");
+    const blobEn = filmEn.chapters.map((c) => c.text).join(" ");
+    assert.match(filmFr.chapters[0].text, /Saint-Maur/);
+    assert.match(filmFr.chapters[0].text, /15 mai 2026/);
+    assert.doesNotMatch(blobFr, /\bnm\b/);
+    assert.doesNotMatch(blobEn, /\bnm\b/);
+    const simFilm = buildFilmScript({
+      clock: { t0: "2027-04-25T08:00:00Z" },
+      marks: [
+        { name: "La Rochelle", nm: 0, filmNm: 122, iso: "2027-04-25T08:00:00Z", holdHours: 72, lat: 46.15, lon: -1.16 },
+        { name: "Ajaccio (Corse)", nm: 1820, filmNm: 1942, iso: "2027-05-04T12:00:00Z", holdHours: 72, lat: 41.9, lon: 8.7 },
+      ],
+      live: { filmNm: 19400, sailNm: 19260, iso: "2026-09-19T02:00:00Z", status: "live" },
+      now: Date.parse("2026-09-19T02:00:00Z"),
+      lang: "fr",
+    });
+    assert.match(simFilm.chapters[0].text, /Saint-Maur/);
+    assert.match(simFilm.chapters[0].text, /15 mai 2026/);
+    assert.doesNotMatch(simFilm.chapters[0].text, /2027/);
+    assert.doesNotMatch(simFilm.chapters.map((c) => c.text).join(" "), /\bnm\b/);
   });
 
   it("voyage officiel : ordre de la route, sans répétition, départ vers X puis arrivée à X (FR et EN)", () => {
