@@ -146,6 +146,20 @@ def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[
             "lon": src.get("lon") if isinstance(src.get("lon"), (int, float)) else None,
         }
     rest = [s for s in dated if not is_saint_maur(s["name"])]
+    # Premier départ mer (La Rochelle, filmNm ~122) : garder au 15 mai même
+    # sans iso, et ne pas lui coller la date du retour (même nom, 2027).
+    sea = next((s for s in rest if _ROCHELLE_RE.search(s.get("name") or "")), None)
+    if sea is None:
+        sea = _sea_stop([], raw, clock)
+    if sea and _ROCHELLE_RE.search(sea.get("name") or ""):
+        film = float(sea.get("filmNm") if sea.get("filmNm") is not None else sea.get("nm") or 0)
+        if film < 2000:
+            others = [s for s in rest if not same_stop(s["name"], sea["name"])]
+            next_ms = _ms(others[0]["iso"]) if others else None
+            sea_ms = _ms(sea.get("iso"))
+            if sea_ms is None or (next_ms is not None and sea_ms >= next_ms):
+                sea = {**sea, "iso": OFFICIAL_T0}
+            rest = [sea, *others]
     return [head, *rest]
 
 
@@ -263,9 +277,9 @@ def dated_marks(marks: list | None) -> list[dict]:
         key = norm_stop(m["name"])
         if not key:
             continue
-        # filmNm < 0.6 ne suffit pas : « Ajaccio » et « Ajaccio (Corse) » au
-        # même port doivent fusionner même si les libellés diffèrent.
-        if any(same_stop(x["name"], m["name"]) or abs(x["filmNm"] - film) < 0.6 for x in out):
+        # Fusion seulement si c'est le même port (« Ajaccio » ≡ « Ajaccio (Corse) »).
+        # Deux noms distincts (Saint-Maur / La Rochelle) restent, même à filmNm 0.
+        if any(same_stop(x["name"], m["name"]) for x in out):
             continue
         out.append({
             "name": m["name"],
@@ -720,13 +734,20 @@ def event_sentence(ev: dict, lang: str = "fr") -> str:
     when = day_month(e.get("t") or ev.get("t"), lang)
     name = short_name(e.get("name") or ev.get("name") or "")
     if ev.get("role") == "depart":
-        sea = short_name(ev.get("seaName") or "La Rochelle")
         frm = name or "Saint-Maur"
         d = day_month(e.get("t"), lang, year=True)
+        # Pas de seaName figé : la dest de CETTE fenêtre est « départ vers X ».
+        sea = short_name(ev.get("seaName") or ev.get("toName") or "")
+        if sea:
+            return (
+                f"The Berry-Mappemonde expedition left {frm} on {d} and took the road to {sea}."
+                if en else
+                f"L’expédition Berry-Mappemonde a quitté {frm} le {d} et a pris la route vers {sea}."
+            )
         return (
-            f"The Berry-Mappemonde expedition left {frm} on {d} and took the road to {sea}."
+            f"The Berry-Mappemonde expedition left {frm} on {d}."
             if en else
-            f"L’expédition Berry-Mappemonde a quitté {frm} le {d} et a pris la route vers {sea}."
+            f"L’expédition Berry-Mappemonde a quitté {frm} le {d}."
         )
     if ev.get("role") == "today":
         nm = ev.get("distLabel") or ""
@@ -810,7 +831,10 @@ def _departure_iso(stop: dict) -> Optional[str]:
 
 
 def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
-    pts = stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}]
+    pts = list(stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}])
+    pts.sort(key=lambda s: float(
+        s.get("filmNm") if s.get("filmNm") is not None else s.get("nm") or 0
+    ))
     out: list[dict] = []
     for i, frm in enumerate(pts):
         to = pts[i + 1] if i + 1 < len(pts) else None
@@ -822,7 +846,9 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
         raw_b = dest_ms if dest_ms is not None else t_end
         t_b = min(raw_b if raw_b is not None else t_end, t_end)
         if t_b <= t_a:
-            continue
+            # Iso égaux (Saint-Maur forcé à T0, La Rochelle le 15 mai à la même
+            # heure) : une fenêtre par jambe, ordre = filmNm, pas un saut.
+            t_b = t_a + 1
         out.append({
             "id": f"leg-{i}",
             "from": frm,
@@ -866,6 +892,31 @@ def _assign(events: list[dict], windows: list[dict]) -> list[list[dict]]:
     return buckets
 
 
+def _chapter_dest(w: dict) -> dict | None:
+    dest = w.get("to") if (w.get("to") or {}).get("name") else None
+    return dest
+
+
+def _depart_towards(w: dict, *, i: int, lang: str) -> str:
+    """Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé."""
+    dest = _chapter_dest(w)
+    dest_name = short_name((dest or {}).get("name") or "")
+    origin = short_name((w.get("from") or {}).get("name") or "")
+    en = _en(lang)
+    if dest_name:
+        head = f"departure for {dest_name}" if en else f"départ vers {dest_name}"
+    else:
+        head = f"under way from {origin}" if en else f"en route depuis {origin}"
+    if i == 0:
+        if not dest_name:
+            return ""
+        return f"{head[0].upper()}{head[1:]}."
+    conn = connector_at(i - 1, lang)
+    dep = _departure_iso(w["from"]) if w.get("from") else None
+    when = day_month(dep, lang)
+    return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
+
+
 def _arrival_sentence(stop: dict | None, lang: str) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
@@ -890,7 +941,6 @@ def _card(entry: dict) -> dict:
 
 
 def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None) -> list[dict]:
-    en = _en(lang)
     chapters: list[dict] = []
     cited: set[str] = set()
     dist = ""
@@ -908,25 +958,32 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
     for i, w in enumerate(windows):
         bits: list[str] = []
         placed: list[dict] = []
-        dest = w.get("to") if (w.get("to") or {}).get("name") else None
-        if i > 0:
-            conn = connector_at(i - 1, lang)
-            dest_name = short_name((dest or {}).get("name") or "")
-            origin = short_name((w.get("from") or {}).get("name") or "")
-            dep = _departure_iso(w["from"]) if w.get("from") else None
-            head = (f"departure for {dest_name}" if dest_name else f"under way from {origin}") if en else (
-                f"départ vers {dest_name}" if dest_name else f"en route depuis {origin}"
-            )
-            bits.append(
-                f"{conn}, on {day_month(dep, lang)}, {head}."
-                if en else
-                f"{conn}, le {day_month(dep, lang)}, {head}."
-            )
-            push_arrival(bits, dest)
+        dest = _chapter_dest(w)
+        dest_name = short_name((dest or {}).get("name") or "")
+        head = _depart_towards(w, i=i, lang=lang)
+        # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis la paire de
+        # CETTE fenêtre. Plus de seaName figé « La Rochelle ».
+        if i == 0:
+            bits.append(event_sentence({
+                "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
+                "seaName": "" if dest_name else sea_name,
+                "entry": {"t": OFFICIAL_T0, "name": start_name},
+            }, lang))
+        if head:
+            bits.append(head)
+        push_arrival(bits, dest)
         for ev in buckets[i]:
             if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"}:
                 continue
-            rich = {**ev, "seaName": sea_name, "distLabel": dist, "name": start_name if ev.get("role") == "depart" else ev.get("name")}
+            if ev.get("role") == "depart":
+                continue
+            rich = {
+                **ev,
+                "seaName": dest_name or sea_name,
+                "toName": dest_name,
+                "distLabel": dist,
+                "name": ev.get("name"),
+            }
             sentence = event_sentence(rich, lang).strip()
             if not sentence:
                 continue
@@ -936,8 +993,6 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             card = _card(entry)
             card["text"] = sentence
             placed.append({"id": ev["id"], "charIdx": char_idx, "card": card})
-        if i == 0:
-            push_arrival(bits, dest)
         text = expand_spoken_units(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
         chapters.append({
             "id": w["id"],
@@ -1203,40 +1258,22 @@ def build_raw_from_moments(
     chapters: list[dict] = []
     selected_all: list[dict] = []
     for i, w in enumerate(windows):
-        dest = w.get("to") if (w.get("to") or {}).get("name") else None
+        dest = _chapter_dest(w)
+        dest_name = short_name((dest or {}).get("name") or "")
         selected = select_chapter_changes(
             _flatten_changes(moments, w["tA"], w["tB"], first=i == 0), w["tA"], w["tB"],
         )
         bits: list[str] = []
         placed: list[dict] = []
+        head = _depart_towards(w, i=i, lang=lang)
         if i == 0:
             bits.append(event_sentence({
                 "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
-                "seaName": sea_name, "entry": {"t": OFFICIAL_T0, "name": start_name},
+                "seaName": "" if dest_name else sea_name,
+                "entry": {"t": OFFICIAL_T0, "name": start_name},
             }, lang))
-        else:
-            conn = connector_at(i - 1, lang)
-            dest_name = short_name((dest or {}).get("name") or "")
-            origin = short_name((w.get("from") or {}).get("name") or "")
-            dep = _departure_iso(w["from"]) if w.get("from") else None
-            head = (f"departure for {dest_name}" if dest_name else f"under way from {origin}") if en else (
-                f"départ vers {dest_name}" if dest_name else f"en route depuis {origin}"
-            )
-            bits.append(
-                f"{conn}, on {day_month(dep, lang)}, {head}."
-                if en else
-                f"{conn}, le {day_month(dep, lang)}, {head}."
-            )
-        for change in selected:
-            if change.get("kind") == "escale":
-                continue
-            sentence = change_sentence(change, lang).strip()
-            if not sentence:
-                continue
-            char_idx = len(" ".join(bits)) + (1 if bits else 0)
-            bits.append(sentence)
-            placed.append(_bubble_from_change(change, w, lang, char_idx))
-            selected_all.append(change)
+        if head:
+            bits.append(head)
         key = norm_stop((dest or {}).get("name") or "")
         arrival = _arrival_sentence(dest, lang)
         if arrival and key and key not in cited:
@@ -1250,6 +1287,16 @@ def build_raw_from_moments(
                 "fact": arrival, "score": 3,
                 "card": {"id": arr_id, "kind": "stop", "title": dest_name, "text": arrival, "at": dest.get("iso"), "score": 3},
             })
+        for change in selected:
+            if change.get("kind") == "escale":
+                continue
+            sentence = change_sentence(change, lang).strip()
+            if not sentence:
+                continue
+            char_idx = len(" ".join(bits)) + (1 if bits else 0)
+            bits.append(sentence)
+            placed.append(_bubble_from_change(change, w, lang, char_idx))
+            selected_all.append(change)
         extras: list[str] = []
         if dest and w.get("from"):
             try:
@@ -1335,7 +1382,7 @@ def build_raw_script(
     start_name = short_name((packed["start"] or {}).get("name") or "Saint-Maur")
     sea_name = short_name((packed["sea"] or {}).get("name") or "La Rochelle")
     events = selected if selected is not None else select_film_events(packed["candidates"], t0, t_end)
-    events = [{**e, "seaName": sea_name, "name": start_name} if e.get("role") == "depart" else e for e in events]
+    events = [{**e, "name": start_name} if e.get("role") == "depart" else e for e in events]
     must_ids = {e["id"] for e in events if e.get("role") in {"depart", "today", "stop"}}
     windows = _windows(packed["stops"], t0, t_end)
 

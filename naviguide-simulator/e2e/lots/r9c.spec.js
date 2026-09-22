@@ -4,7 +4,7 @@
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-r9c/${name}.jpg`,
+  path: `../docs/recette/lot-rc4/${name}.jpg`,
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -32,12 +32,18 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));
 
+  const filmRes = apiUp
+    ? page.waitForResponse((res) => /\/voyage\/official\/film/.test(res.url()) && res.ok(), { timeout: 20_000 }).catch(() => null)
+    : Promise.resolve(null);
+
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
+  await filmRes;
+  if (apiUp) await page.waitForTimeout(800);
 
   await page.getByTestId("replay-start").click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
@@ -49,9 +55,12 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
   }).toBe(true);
   expect(await page.evaluate(() => Boolean(window.__naviguideFilm?.ended))).toBe(false);
 
+  await expect(page.getByTestId("film-duration")).toContainText("2:30");
+  await shot(page, "01-revoir-depart");
+
   const localText = (await subtitle.innerText()).trim();
   if (localText) {
-    await expect(subtitle).toContainText(/Saint-Maur|La Rochelle|Ajaccio|Fort-de-France|Nouméa/i);
+    await expect(subtitle).toContainText(/Saint-Maur|La Rochelle|Ajaccio|Fort-de-France|Nouméa|départ vers/i);
   }
 
   if (apiUp) {
@@ -61,27 +70,43 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
     if (!film || !Array.isArray(film.chapters) || !film.chapters.length) {
       test.info().annotations.push({
         type: "film vide",
-        description: "GET /voyage/official/film sans chapitres — ordre serveur non exigé",
+        description: "GET /voyage/official/film sans chapitres — paires serveur non exigées",
       });
     } else {
       const blob = film.chapters.map((c) => c.text || "").join(" ");
       expect(film.targetSeconds, "durée cible 150 s").toBe(150);
       expect(blob, "pas de nm nu").not.toMatch(/\bnm\b/);
-      const hits = ["Saint-Maur", "La Rochelle", "Ajaccio", "Fort-de-France"]
-        .map((n) => ({ n, i: blob.toLowerCase().indexOf(n.toLowerCase()) }))
-        .filter((h) => h.i >= 0);
-      expect(hits.length, "escales dans le script").toBeGreaterThanOrEqual(2);
-      for (let i = 1; i < hits.length; i += 1) {
-        expect(hits[i - 1].i, `${hits[i].n} avant ${hits[i - 1].n}`).toBeLessThan(hits[i].i);
-      }
+      const idx = (s) => blob.toLowerCase().indexOf(s.toLowerCase());
+      const iSm = idx("Saint-Maur");
+      const iDepLr = idx("départ vers La Rochelle");
+      const iArrLr = idx("Arrivée à La Rochelle");
+      const iDepAj = idx("départ vers Ajaccio");
+      const iArrAj = idx("Arrivée à Ajaccio");
+      expect(iSm, "Saint-Maur").toBeGreaterThanOrEqual(0);
+      expect(iDepLr, "départ vers La Rochelle").toBeGreaterThanOrEqual(0);
+      expect(iArrLr, "Arrivée à La Rochelle après départ").toBeGreaterThan(iDepLr);
+      expect(iDepAj, "départ vers Ajaccio après Arrivée à La Rochelle").toBeGreaterThan(iArrLr);
+      expect(iArrAj, "Arrivée à Ajaccio après départ").toBeGreaterThan(iDepAj);
+      expect(blob, "pas de saut La Rochelle → Ajaccio").not.toMatch(
+        /vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio/i,
+      );
       const sea = film.chapters.filter((c) => c.events && c.events.length);
       expect(sea.length, "chapitres avec bulles").toBeGreaterThanOrEqual(1);
       if (typeof film.hasWritten === "boolean" && film.style === "written") {
         expect(film.hasWritten, "rédigé déjà en cache").toBe(true);
       }
+      const sub = (await subtitle.innerText()).trim();
+      if (/départ vers La Rochelle|Arrivée à La Rochelle/i.test(sub)) {
+        expect(sub, "sous-titre sans saut").not.toMatch(/Arrivée à Ajaccio/i);
+      } else {
+        test.info().annotations.push({
+          type: "sous-titre local",
+          description: "sous-titre encore le brut JS — paires lues sur GET /film",
+        });
+      }
     }
   }
 
-  await shot(page, "01-film");
+  await shot(page, "02-paires-suite");
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
 });
