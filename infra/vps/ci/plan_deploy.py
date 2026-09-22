@@ -60,9 +60,19 @@ def classify(files: list[str]) -> dict[str, str]:
     return out
 
 
+RECETTE_BRANCH = "recette"   # tête de pile poussée par infra/agents/run_lots.py : le site suit la nuit
+
+
 def decide(event_name: str, *, input_site: str | None = None,
-           files: list[str] | None = None) -> dict[str, str]:
+           files: list[str] | None = None, ref_name: str | None = None) -> dict[str, str]:
     event = (event_name or "").strip()
+    if event == "push" and (ref_name or "").strip() == RECETTE_BRANCH:
+        # La branche `recette` = tête de pile des lots de la nuit : on ne publie QUE le
+        # simulateur (jamais Blue Intelligence ni l'ancien NAVIGUIDE depuis une pile),
+        # et sans regarder le diff (un force-push le rend illisible → il déploierait tout).
+        out = dict(_FALSE)
+        out["simulator"] = "true"
+        return out
     if event == "schedule":
         out = dict(_FALSE)
         out["catch_up"] = "true"
@@ -112,13 +122,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--site", default=os.environ.get("INPUT_SITE") or "")
     parser.add_argument("--before", default=os.environ.get("EVENT_BEFORE") or "")
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA") or "")
+    parser.add_argument("--ref", default=os.environ.get("REF_NAME") or os.environ.get("GITHUB_REF_NAME") or "")
     args = parser.parse_args(argv)
 
     files = None
     event = args.event or os.environ.get("GITHUB_EVENT_NAME") or ""
-    if event == "push":
+    if event == "push" and (args.ref or "").strip() != RECETTE_BRANCH:
         files = _changed_files(args.before, args.sha)
-    result = decide(event, input_site=args.site or None, files=files)
+    result = decide(event, input_site=args.site or None, files=files, ref_name=args.ref)
     for key, value in result.items():
         print(f"{key}={value}")
     return 0
