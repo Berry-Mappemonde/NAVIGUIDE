@@ -126,7 +126,7 @@ def amend_comments(go_pr: int, seen: set[int]) -> list[dict]:
     out = []
     for c in http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{go_pr}/comments?per_page=100") or []:
         body = (c.get("body") or "").strip()
-        if c.get("id") in seen or not AMEND_RE.match(body):
+        if c.get("id") in seen or not AMEND_RE.match(body) or not rc.trusted(c):
             continue
         out.append({"id": c.get("id"), "author": (c.get("user") or {}).get("login"), "text": body, "url": c.get("html_url")})
     return out
