@@ -355,6 +355,50 @@ def test_dated_marks_merges_ajaccio_aliases():
     assert norm_stop("Ajaccio (Corse)") == "ajaccio"
 
 
+def test_dated_marks_keeps_distinct_stops_at_filmnm_zero():
+    dated = dated_marks([
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0},
+        {"name": "La Rochelle", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0},
+        {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942, "iso": "2026-05-24T12:51:00Z"},
+    ])
+    keys = [norm_stop(s["name"]) for s in dated]
+    assert "saint-maur" in keys
+    assert "la rochelle" in keys
+    assert "ajaccio" in keys
+
+
+def _live_like_clock(lr: dict) -> dict:
+    return {
+        "t0": OFFICIAL_T0,
+        "marks": [CLOCK["marks"][0], lr, *CLOCK["marks"][2:]],
+    }
+
+
+def _assert_no_rochelle_to_ajaccio_skip(blob: str) -> None:
+    assert "Arrivée à La Rochelle" in blob, blob[:500]
+    assert "départ vers Ajaccio" in blob, blob[:500]
+    assert blob.find("Arrivée à La Rochelle") < blob.find("départ vers Ajaccio"), blob[:800]
+    assert not re.search(r"vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio", blob)
+    _assert_departure_arrival_pairs(blob, "fr")
+
+
+def test_live_like_clock_pairs_rochelle_before_ajaccio():
+    """La Rochelle iso = T0 ou filmNm 0 : Arrivée à La Rochelle avant départ vers Ajaccio."""
+    variants = (
+        {"name": "La Rochelle", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 72, "lat": 46.15, "lon": -1.16},
+        {"name": "La Rochelle", "nm": 0, "filmNm": 122, "iso": OFFICIAL_T0, "holdHours": 72, "lat": 46.15, "lon": -1.16},
+    )
+    for lr in variants:
+        clock = _live_like_clock(lr)
+        for journal in (JOURNAL, {**JOURNAL, **MOMENTS}):
+            plan = build_raw_script(clock, clock["marks"], LIVE, journal, lang="fr", seconds=150, now_ms=NOW_MS)
+            blob = _script_blob(plan)
+            _assert_no_rochelle_to_ajaccio_skip(blob)
+            ch0 = plan["chapters"][0]["text"]
+            assert re.search(r"départ vers La Rochelle", ch0, re.I), ch0
+            assert re.search(r"Arrivée à La Rochelle", ch0), ch0
+
+
 def test_official_route_order_no_repeat_departure_then_arrival():
     fr = _raw()
     blob_fr = " ".join(c.get("text") or "" for c in fr["chapters"])
@@ -423,6 +467,25 @@ def test_official_dated_stops_pins_saint_maur():
     assert stops[0]["iso"].startswith("2026-05-15")
 
 
+def test_official_dated_stops_pins_first_rochelle_not_return():
+    """La Rochelle départ (filmNm 122) ne doit pas hériter de l'iso du retour."""
+    marks = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": None},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2027-05-10T02:40:39Z", "holdHours": 72},
+        {"name": "Ajaccio (Corse)", "nm": 1942, "filmNm": 1942, "iso": "2026-05-30T13:56:06Z", "holdHours": 72},
+        {"name": "Fort-de-France (Martinique)", "nm": 7095, "filmNm": 7095, "iso": "2026-07-10T23:11:45Z", "holdHours": 72},
+    ]
+    stops = official_dated_stops(marks)
+    assert is_saint_or_first(stops)
+    assert "rochelle" in stops[1]["name"].lower()
+    assert stops[1]["iso"].startswith("2026-05-15")
+    assert "ajaccio" in stops[2]["name"].lower()
+    clock = {"t0": OFFICIAL_T0, "marks": marks}
+    plan = build_raw_script(clock, marks, LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    _assert_no_rochelle_to_ajaccio_skip(blob)
+
+
 def is_saint_or_first(stops):
     assert stops
     assert "saint-maur" in stops[0]["name"].lower().replace(" ", "-")
@@ -444,9 +507,15 @@ def test_http_film_route_en(monkeypatch):
     data = r.json()
     assert data["chapters"]
     text = data["chapters"][0]["text"]
+    blob = _script_blob(data)
     if "Saint-Maur" in text:
-        assert "La Rochelle" in text
         assert ("left" in text.lower() or "departed" in text.lower())
+    deps = list(re.finditer(r"departure for (.+?)(?:\s*:|\.|$)", blob, re.I))
+    arrs = list(re.finditer(r"Arrival at (.+?) on ", blob, re.I))
+    if len(deps) >= 2:
+        _assert_departure_arrival_pairs(blob, "en")
+    elif deps and arrs:
+        assert norm_stop(deps[0].group(1)) == norm_stop(arrs[0].group(1))
 
 
 MOMENTS = {
