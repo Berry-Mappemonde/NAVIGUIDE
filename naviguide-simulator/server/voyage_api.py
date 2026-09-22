@@ -911,6 +911,50 @@ def get_official_plan_review():
     return out
 
 
+def _rewrite_plan_advice(payload: dict) -> dict:
+    """Réécriture LLM de la phrase du meilleur, sous filter_numbers (repli gabarit)."""
+    from story_cascade import cascade_text, filter_numbers, tidy_story  # noqa: PLC0415
+
+    out = payload
+    cand = out.get("best") if isinstance(out, dict) else None
+    if not isinstance(cand, dict):
+        return out
+    facts = cand.get("facts")
+    fallback = str(cand.get("sentence") or "").strip()
+    user = (
+        "Réécris cette phrase de conseil de dates en UNE phrase. "
+        "Tu ne produis aucun chiffre qui n'est pas déjà dans les faits.\n"
+        f"Faits : {json.dumps(facts, ensure_ascii=False, default=str)}\n"
+        f"Gabarit : {fallback}"
+    )
+    try:
+        text, source = _run_async(cascade_text(
+            ADVICE_SYSTEM, user, None, tier="fast", fallback=fallback,
+            facts=facts, max_tokens=80,
+        ))
+    except Exception as exc:
+        log.debug("conseil dates : %s", exc)
+        text, source = fallback, "rules"
+    tidy = tidy_story(text or fallback, fallback, max_sentences=1, max_chars=280)
+    cleaned, _ = filter_numbers(tidy, facts)
+    cand["sentence"] = (cleaned or "").strip() or fallback
+    cand["sentenceSource"] = source or "rules"
+    return out
+
+
+@router.get("/voyage/official/advice")
+def get_official_advice(leg: int = Query(..., ge=0, le=400)):
+    """Compromis par décalage de date (lot R10b). État pending|done, calcul en fond."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    from plan_advisor import request_advice  # noqa: PLC0415
+    try:
+        return request_advice(voy, int(leg), now=_now(), rewrite=_rewrite_plan_advice)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/voyage/official/journal/{day}")
 def get_official_journal_day(day: str):
     try:
