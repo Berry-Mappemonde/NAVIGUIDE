@@ -7,6 +7,8 @@ const REFRESH_MS = 10 * 60 * 1000;
 export const ETA_MIN_KN = 3;
 /** Plafond p90 − p10 (lot RA7) : quelques jours, jamais des mois. */
 export const ETA_MAX_SPAN_DAYS = 7;
+/** Recul progressif tant que l'ensemble n'est pas prêt (lot RB7). */
+export const ETA_RETRY_MS = [2000, 4000, 8000, 16000, 30000];
 
 export function stopMatch(name, query) {
   const n = String(name || "").toLowerCase();
@@ -99,6 +101,73 @@ export function nextStopFromMarks(marks, nowMs = Date.now()) {
   return "";
 }
 
+export function nextEtaRetryMs(attempt) {
+  const caps = ETA_RETRY_MS;
+  if (!Number.isFinite(attempt) || attempt < 0) return caps[0];
+  return caps[Math.min(attempt, caps.length - 1)];
+}
+
+/** Corps /eta exploitable ; sinon null (jamais inventé). */
+export function etaFromResponse(body) {
+  if (body && Number(body.members) > 0 && body.p10 && body.p90) return body;
+  return null;
+}
+
+export function sleepMs(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      reject(err);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      reject(err);
+    };
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+
+async function defaultEtaFetch(stopName, { signal } = {}) {
+  const r = await fetch(`${API_URL}/voyage/official/eta?stop=${encodeURIComponent(stopName)}`, { signal });
+  return r.ok ? r.json() : null;
+}
+
+/**
+ * Relance /eta tant que members == 0. Premier appel immédiat, puis recul
+ * progressif. `onUpdate(null)` tant que l'ensemble n'est pas prêt.
+ */
+export async function pollOfficialEta(stopName, {
+  fetchFn = defaultEtaFetch,
+  signal,
+  sleep = sleepMs,
+  onUpdate,
+} = {}) {
+  let attempt = 0;
+  while (!signal?.aborted) {
+    let body = null;
+    try {
+      body = await fetchFn(stopName, { signal });
+    } catch (err) {
+      if (err?.name === "AbortError") throw err;
+      body = null;
+    }
+    const ready = etaFromResponse(body);
+    onUpdate?.(ready);
+    if (ready) return ready;
+    await sleep(nextEtaRetryMs(attempt), signal);
+    attempt += 1;
+  }
+  return null;
+}
+
 export function useOfficialEta(stopName, { enabled = true } = {}) {
   const [eta, setEta] = useState(null);
   useEffect(() => {
@@ -106,18 +175,14 @@ export function useOfficialEta(stopName, { enabled = true } = {}) {
       setEta(null);
       return undefined;
     }
-    let alive = true;
     const controller = new AbortController();
-    fetch(`${API_URL}/voyage/official/eta?stop=${encodeURIComponent(stopName)}`, { signal: controller.signal })
-      .then(async (r) => (r.ok ? r.json() : null))
-      .then((body) => {
-        if (!alive) return;
-        if (body && Number(body.members) > 0 && body.p10 && body.p90) setEta(body);
-        else setEta(null);
-      })
-      .catch((err) => {
-        if (alive && err?.name !== "AbortError") setEta(null);
-      });
+    let alive = true;
+    pollOfficialEta(stopName, {
+      signal: controller.signal,
+      onUpdate: (ready) => { if (alive) setEta(ready); },
+    }).catch((err) => {
+      if (alive && err?.name !== "AbortError") setEta(null);
+    });
     return () => {
       alive = false;
       controller.abort();

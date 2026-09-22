@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -639,6 +640,38 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
     )
 
 
+def _kick_official_eta(*, force: bool = False) -> bool:
+    """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant."""
+    raw = (os.getenv("NAVIGUIDE_ETA_PREHEAT") or "1").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        try:
+            from ensemble_eta import preheat_official_eta  # noqa: PLC0415
+            current = load_voyage(OFFICIAL_VOYAGE_ID) or voy
+            preheat_official_eta(
+                current,
+                _now(),
+                polar_raw=_polar_raw((current or {}).get("expedition_id") or ""),
+            )
+        except Exception as exc:
+            log.warning("préchauffage ETA officiel: %s", exc)
+        return {}
+
+    return get_pipeline().kick(
+        "official-eta",
+        0.0,
+        0.0,
+        _load,
+        when=_now(),
+        force=force,
+    )
+
+
 def _maybe_daily_hindcast(voy: dict) -> None:
     last = voy.get("hindcastRefreshedAt")
     if last:
@@ -647,8 +680,10 @@ def _maybe_daily_hindcast(voy: dict) -> None:
         except Exception:
             age_h = 99.0
         if age_h < 20.0 and voy.get("hindcastStatus") == "ready":
+            _kick_official_eta(force=False)
             return
     _kick_official_hindcast(force=False)
+    _kick_official_eta(force=True)
 
 
 def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
@@ -703,11 +738,13 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
         background.add_task(_kick_official_grib)
         background.add_task(_kick_official_hindcast)
+        background.add_task(_kick_official_eta)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
     voy = _build_official(body)
     background.add_task(_kick_official_grib)
     background.add_task(_kick_official_hindcast)
+    background.add_task(_kick_official_eta)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
@@ -781,6 +818,7 @@ def get_official_eta(stop: str = Query(..., min_length=1)):
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
     from ensemble_eta import official_eta, tighten_eta_payload  # noqa: PLC0415
+    _kick_official_eta(force=False)
     raw = official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
     return tighten_eta_payload(raw, _now())
 

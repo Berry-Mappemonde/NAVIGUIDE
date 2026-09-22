@@ -9,6 +9,7 @@ const src = readFileSync(join(here, "EscaleLegend.jsx"), "utf8");
 
 describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
   it("ajoute eta-range sans retirer la date", () => {
+    assert.match(src, /data-testid="escale-legend"/);
     assert.match(src, /data-testid="eta-range"/);
     assert.match(src, /formatCivilDate/);
     assert.match(src, /dateLabel/);

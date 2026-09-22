@@ -5,11 +5,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ETA_MIN_KN,
+  ETA_RETRY_MS,
   boundEtaIso,
+  etaFromResponse,
   etaRangeFromMembers,
   formatEtaRange,
   formatEtaRangeTitle,
+  nextEtaRetryMs,
   nextStopFromMarks,
+  pollOfficialEta,
   tightenEtaMembers,
 } from "./usePlanReview.js";
 import fr from "../i18n/fr.js";
@@ -68,6 +72,41 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(src, /Number\(body\.members\) > 0/);
     assert.match(src, /etaRange: eta/);
     assert.match(src, /formatEtaRangeTitle/);
+    assert.match(src, /pollOfficialEta/);
+    assert.match(src, /ETA_RETRY_MS/);
+  });
+
+  it("affiche la fourchette dès que members passe de 0 à un ensemble", async () => {
+    const empty = { members: 0, p10: null, p90: null };
+    const full = {
+      members: 40,
+      p10: "2026-11-13T00:00:00Z",
+      p50: "2026-11-15T00:00:00Z",
+      p90: "2026-11-18T00:00:00Z",
+    };
+    let n = 0;
+    const seen = [];
+    const ready = await pollOfficialEta("Dzaoudzi", {
+      fetchFn: async () => {
+        n += 1;
+        return n === 1 ? empty : full;
+      },
+      sleep: async () => {},
+      onUpdate: (eta) => seen.push(eta),
+    });
+    assert.equal(etaFromResponse(empty), null);
+    assert.equal(seen[0], null);
+    assert.equal(formatEtaRange(empty, tFr, "fr"), "");
+    assert.equal(ready.members, 40);
+    const label = plain(formatEtaRange(ready, tFr, "fr"));
+    assert.match(label, /arrivée entre le 13 nov/);
+    assert.match(label, /18 nov/);
+    assert.doesNotMatch(label, /p10|membres/i);
+    assert.equal(plain(formatEtaRange(ready, tEn, "en")).slice(0, 16).toLowerCase(), "arrival between ");
+    assert.equal(n, 2);
+    assert.equal(nextEtaRetryMs(0), ETA_RETRY_MS[0]);
+    assert.ok(nextEtaRetryMs(9) >= nextEtaRetryMs(0));
+    assert.equal(ETA_RETRY_MS[ETA_RETRY_MS.length - 1], 30000);
   });
 
   it("écarte tout membre à 0 kn de la fourchette (lot RA7)", () => {
