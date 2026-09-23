@@ -281,7 +281,7 @@ def download(url: str, dest: Path, tok: str | None) -> Path | None:
     return dest
 
 
-def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = True, lot: str = "") -> dict:
+def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = True, lot: str = "", since: str | None = None) -> dict:
     pr = gh(f"/repos/{REPO}/pulls/{number}", tok) or {}
     comments = gh(f"/repos/{REPO}/issues/{number}/comments?per_page=100", tok) or []
     body = pr.get("body") or ""
@@ -289,6 +289,8 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
     items = recette_items(body)
     kos = [k for k in ko_comments(comments) if not BOT_MARK_RE.search(k["text"])]   # KO du porteur (les KO du bot sont dans bot)
     globals_ = global_comments(comments)
+    for k in kos + globals_:   # lot W7 : sessions successives — ce qui est arrivé depuis la session précédente est « nouveau »
+        k["new"] = (since is None) or ((k.get("at") or "") >= since)
     bot = bot_verdicts(comments)
     matched: set[str] = set()
     for it in items:   # qui a coché ? bot = coché ET listé [x] 🤖 par le bot ; porteur sinon
@@ -361,6 +363,9 @@ def summary_md(review: dict) -> str:
     tot_ko = sum(len(p["ko"]) for p in review["prs"])
     tot_bot_ko = sum(len(p.get("bot_ko") or []) for p in review["prs"])
     lines += [f"**{tot_ok} / {tot_items} items cochés** (dont {tot_bot} par le bot 🤖) · **{tot_ko} KO du porteur** · {tot_bot_ko} KO du bot, sur {len(review['prs'])} PR.", ""]
+    if review.get("since"):
+        new_ko = sum(1 for p in review["prs"] for k in p["ko"] if k.get("new"))
+        lines += [f"Session {review.get('session') or '?'} : **{new_ko} KO nouveaux** (🆕) depuis la session précédente ({review['since']}) ; les autres ont déjà été lus par un plan précédent — ne pas les replanifier.", ""]
     glob_comments = [g for p in review["prs"] for g in (p.get("global") or [])]
     if review.get("global_file") or glob_comments:
         lines += ["## Revue globale du porteur (vision d'ensemble — à traiter comme la revue du 21 sept.)", ""]
@@ -390,7 +395,7 @@ def summary_md(review: dict) -> str:
             for x in extra_ko:
                 lines.append(f"    - 🤖❌ {x['text'][:120]}" + (f" — {x['note'][:160]}" if x.get("note") else ""))
         for i, ko in enumerate(p["ko"], 1):
-            lines.append(f"- ❌ KO {i} ({ko['author']}) : {ko['text']}")
+            lines.append(f"- {'🆕 ' if review.get('since') and ko.get('new') else ''}❌ KO {i} ({ko['author']}) : {ko['text']}")
             for im in [x for x in p["local_images"] if x.get("ko") == i]:
                 lines.append(f"    - image : `{im['path']}`")
         agent_imgs = [x for x in p["local_images"] if x["kind"] == "agent"]
@@ -400,20 +405,22 @@ def summary_md(review: dict) -> str:
     return "\n".join(lines)
 
 
-def collect(prs: list[tuple[str, int]], out_dir: Path, *, images: bool = True) -> dict:
+def collect(prs: list[tuple[str, int]], out_dir: Path, *, images: bool = True, since: str | None = None, session: int | None = None) -> dict:
+    """`since` (ISO UTC, lot W7) : les KO / GLOBAL postés avant sont marqués déjà lus (new=False) ; `session` nomme les fichiers."""
     tok = token()
     date = time.strftime("%Y-%m-%d")
-    review = {"date": date, "repo": REPO, "prs": [], "global_file": global_file_text()}
+    tag = f"{date}-s{session}" if session and session > 1 else date
+    review = {"date": date, "repo": REPO, "prs": [], "global_file": global_file_text(), "since": since, "session": session}
     for lot, num in prs:
         try:
-            review["prs"].append(pr_review(num, tok, out_dir / f"review-{date}", images=images, lot=lot))
+            review["prs"].append(pr_review(num, tok, out_dir / f"review-{tag}", images=images, lot=lot, since=since))
         except RuntimeError as e:
             review["prs"].append({"number": num, "lot": lot, "error": str(e), "items": [], "ok": 0, "unchecked": 0, "no_box": 0, "ko": [], "captures": [], "local_images": [], "merged": False, "state": "?", "title": "", "url": ""})
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"review-{date}.json").write_text(json.dumps(review, ensure_ascii=False, indent=2), encoding="utf-8")
-    (out_dir / f"review-{date}.md").write_text(summary_md(review), encoding="utf-8")
-    review["json"] = str(out_dir / f"review-{date}.json")
-    review["md"] = str(out_dir / f"review-{date}.md")
+    (out_dir / f"review-{tag}.json").write_text(json.dumps(review, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / f"review-{tag}.md").write_text(summary_md(review), encoding="utf-8")
+    review["json"] = str(out_dir / f"review-{tag}.json")
+    review["md"] = str(out_dir / f"review-{tag}.md")
     return review
 
 
@@ -422,11 +429,13 @@ def main() -> None:
     ap.add_argument("--prs", nargs="+", type=int, help="numéros de PR (défaut : les PR FINISHED de state.json)")
     ap.add_argument("--out", default=str(STATE_DIR), help="dossier de sortie (défaut : infra/agents)")
     ap.add_argument("--no-images", action="store_true", help="ne pas télécharger les images")
+    ap.add_argument("--since", help="ISO UTC : les KO / GLOBAL antérieurs sont marqués déjà lus (sessions successives, lot W7)")
+    ap.add_argument("--session", type=int, help="numéro de session (nomme review-<date>-s<n>.*)")
     args = ap.parse_args()
     prs = [("", n) for n in args.prs] if args.prs else prs_from_state()
     if not prs:
         sys.exit("Aucune PR : passer --prs ou avoir un state.json avec des lots FINISHED.")
-    review = collect(prs, Path(args.out), images=not args.no_images)
+    review = collect(prs, Path(args.out), images=not args.no_images, since=args.since, session=args.session)
     print(summary_md(review))
     print(f"\n→ {review['json']}\n→ {review['md']}")
 

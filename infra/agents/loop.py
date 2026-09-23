@@ -3,16 +3,19 @@
 
 Phases, mémorisées dans infra/agents/loop-state.json (reprise à tout moment) :
 
-  batch         run_lots.py --from A --until B  (réviseur de nuit toutes les X PR, poste de recette par lot)
-  await_review  attendre le signal du porteur : un commentaire « revue finie » (ou « GO ») sur la PR de
-                tête — ou son merge. (Ancien nom : await_pile.)
-  correct       review_collect + plan_corrections.py → PR « GO » (plan + lots RB…)
-  await_go      attendre le merge de la PR GO (et de la tête de pile) ; lire `LOTS: RB1 RB4`
-  → batch RB1..RB4 … ; `LOTS: aucun` → fin.
+  batch         run_lots.py --from A --until B  (pré-vol, réviseur de nuit toutes les X PR, poste par lot)
+  await_review  veille : le porteur coche et écrit ses KO QUAND IL VEUT ; un commentaire « revue finie »
+                (ou « GO ») sur N'IMPORTE QUELLE PR de la pile — ou le merge de la tête — lance une
+                session de correction avec ce qui est nouveau depuis la précédente (lot W7).
+  correct       review_collect + plan_corrections.py --session n → PR « GO » (plan + lots)
+  await_go      attendre le merge de la PR GO ; lire `LOTS: RB1 RB4` → batch RB1..RB4, EMPILÉ sur la
+                pile si la tête n'est pas mergée (le porteur merge la tête quand il le décide) ;
+                `LOTS: aucun` ou GO fermé sans merge → retour en veille.
 
-Les seuls gestes humains : cocher les cases des PR (+ « KO : … »), écrire « revue finie » sur la PR de
-tête, puis merger la tête et le GO (deux clics). run_lots.py lance cette veille tout seul en fin de batch.
-Le Mac reste allumé (`caffeinate -i`). Ne merge jamais lui-même.
+Les seuls gestes humains : cocher les cases des PR (+ « KO : … »), écrire « revue finie » sur la dernière
+PR relue, merger le GO — et la tête de pile quand on veut. Autant de sessions que voulu dans la journée.
+run_lots.py lance cette veille tout seul en fin de batch ; le chien de garde (watchdog.py) la relance si
+elle tombe. Le Mac reste allumé (`caffeinate -i`). Ne merge jamais lui-même.
 
 Usage :
     caffeinate -i python3 infra/agents/loop.py --from RA1 --until RA8     # démarre par un batch
@@ -30,6 +33,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -84,23 +88,67 @@ def gh_comments(number: int) -> list:
         return json.loads(resp.read().decode())
 
 
-def wait_review_done(number: int, poll_s: int) -> dict:
-    """Le porteur a fini sa revue : commentaire « revue finie » / « GO » sur la PR de tête, ou merge de la tête."""
-    rl.log(f"revue du porteur : PR #{number} — en attente d'un commentaire « revue finie » (ou du merge), un coup d'œil toutes les {poll_s} s")
+def gh_repo_comments_since(since_iso: str) -> list:
+    """Tous les commentaires du dépôt depuis `since`, toutes PR confondues (un appel par page de 100 ;
+    une nuit de bot et de réviseur en produit plus de 100)."""
+    tok = rl.github_token_from_git()
+    out: list = []
+    for page in range(1, 11):
+        q = urllib.parse.urlencode({"since": since_iso, "per_page": 100, "page": page, "sort": "created", "direction": "asc"})
+        req = urllib.request.Request(f"https://api.github.com/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/comments?{q}",
+                                     headers={"Accept": "application/vnd.github+json", "User-Agent": "bim-loop"})
+        if tok:
+            req.add_header("Authorization", f"Bearer {tok}")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            chunk = json.loads(resp.read().decode())
+        out.extend(chunk)
+        if len(chunk) < 100:
+            break
+    return out
+
+
+def stack_pr_numbers() -> list[int]:
+    """Les PR de la pile (lots FINISHED de state.json), la tête en premier."""
+    s = rl.State.load()
+    nums = [rl.pr_number(e.get("pr")) for e in s.done.values() if e.get("status") == "FINISHED" and e.get("pr")]
+    return [n for n in reversed(nums) if n]
+
+
+def wait_review_signal(st: dict, poll_s: int) -> dict:
+    """Lot W7 — revue à la volée : le porteur coche et écrit ses KO quand il veut ; quand il pose
+    « revue finie » (ou « GO ») sur N'IMPORTE QUELLE PR de la pile — la dernière qu'il a relue —, la
+    boucle part en correction avec tout ce qui est nouveau depuis la fois d'avant. Autant de fois qu'il
+    veut dans la journée. Le merge de la tête de pile vaut aussi signal."""
+    seen = set(st.get("review_signals_seen") or [])
+    since = st.get("review_last_at") or st.get("batch_started_at") or time.strftime("%Y-%m-%dT00:00:00Z", time.gmtime())
+    rl.log(f"revue du porteur : « revue finie » sur n'importe quelle PR de la pile (ou merge de la tête) — nouveautés depuis {since}, un coup d'œil toutes les {poll_s} s")
     while True:
         try:
-            pr = gh_pr(number)
-            if pr.get("state") == "closed":
-                rl.log(f"    PR #{number} fermée ({'mergée' if pr.get('merged_at') else 'non mergée'}) — revue considérée finie")
-                return {"signal": "closed", "merged": bool(pr.get("merged_at"))}
-            for c in gh_comments(number):
+            tip = st.get("tip_pr") or tip_pr_number()
+            if tip:
+                pr = gh_pr(int(tip))
+                if pr.get("state") == "closed":
+                    rl.log(f"    tête de pile #{tip} fermée ({'mergée' if pr.get('merged_at') else 'non mergée'}) — revue considérée finie")
+                    return {"signal": "closed", "merged": bool(pr.get("merged_at")), "pr": int(tip), "at": pr.get("closed_at")}
+            stack = set(stack_pr_numbers())
+            for c in gh_repo_comments_since(since):
+                m = re.search(r"/issues/(\d+)$", c.get("issue_url") or "")
+                num = int(m.group(1)) if m else None
                 body = c.get("body") or ""
-                if REVIEW_DONE_RE.search(body) and "🤖" not in body[:40] and rc.trusted(c):
-                    rl.log(f"    signal « revue finie » reçu ({(c.get('user') or {}).get('login')}, {c.get('created_at')})")
-                    return {"signal": "comment", "merged": False}
+                if num in stack and c.get("id") not in seen and REVIEW_DONE_RE.search(body) and "🤖" not in body[:40] and rc.trusted(c):
+                    rl.log(f"    signal « revue finie » reçu sur #{num} ({(c.get('user') or {}).get('login')}, {c.get('created_at')})")
+                    return {"signal": "comment", "merged": False, "pr": num, "id": c.get("id"), "at": c.get("created_at")}
+            hook = AUTO_TRIGGER_HOOK
+            if hook:
+                auto = hook(st)
+                if auto:
+                    return auto
         except Exception as e:
             rl.log(f"    GitHub indisponible ({e}) — nouvel essai")
         time.sleep(poll_s)
+
+
+AUTO_TRIGGER_HOOK = None   # lot W8 : déclenchement automatique du correcteur (budget) — None = jamais sans revue humaine
 
 
 def tip_pr_number() -> int | None:
@@ -129,19 +177,49 @@ def ensure_root_on_main() -> None:
     rl.sh(["git", "pull", "--ff-only", "-q"], cwd=rl.ROOT, check=False, timeout=180)
 
 
+def finished_ids() -> set[str]:
+    s = rl.State.load()
+    return {lid for lid, e in s.done.items() if e.get("status") == "FINISHED"}
+
+
+def must_resume(st: dict) -> bool:
+    """Reprendre state.json (--resume) plutôt que repartir de main : quand on empile sur une pile non
+    mergée, ou quand des lots de l'intervalle sont déjà FINISHED (boucle relancée en cours de batch —
+    sans cela run_lots archiverait state.json et referait tout depuis main)."""
+    if st.get("stack_on_state"):
+        return True
+    try:
+        ids = [l.id for l in rl.parse_lots(rl.PROMPTS_MD.read_text(encoding="utf-8"))]
+        rng = set(ids[ids.index(st["from"]): ids.index(st["until"]) + 1])
+    except (ValueError, SystemExit):
+        return False
+    return bool(rng & finished_ids())
+
+
 def phase_batch(st: dict, args) -> None:
     ensure_root_on_main()
     cmd = [sys.executable, str(HERE / "run_lots.py"), "--from", st["from"], "--until", st["until"], "--review-every", str(args.review_every),
            "--bot-wait-min", str(args.bot_wait_min)]
     if args.model:
         cmd += ["--model", args.model]
-    if st.get("stack_on_state"):
+    if must_resume(st):
         # Empiler sur la pile déjà produite (state.json) au lieu de repartir de main : les lots
-        # partent de la tête actuelle, et la revue de demain couvre aussi les PR déjà là.
+        # partent de la tête actuelle, et la revue couvre aussi les PR déjà là.
         cmd.append("--resume")
-    rc = run(cmd)
-    st["history"].append({"phase": "batch", "from": st["from"], "until": st["until"], "rc": rc, "at": time.strftime("%Y-%m-%d %H:%M")})
+    before = finished_ids()
+    st["batch_started_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    save(st)
+    code = run(cmd)
+    new = finished_ids() - before
+    st["history"].append({"phase": "batch", "from": st["from"], "until": st["until"], "rc": code, "new_lots": sorted(new), "at": time.strftime("%Y-%m-%d %H:%M")})
+    if code != 0 and not new:
+        # Rien n'est parti (pré-vol en échec, CLI, jeton…) : on reste en phase batch, on s'arrête ;
+        # le chien de garde relance `--resume` après ses remèdes (au plus 3 fois par jour).
+        rl.log(f"batch non parti (code {code}) — phase `batch` conservée ; corriger ce que le pré-vol signale puis `loop.py --resume`")
+        save(st)
+        sys.exit(code)
     st["tip_pr"] = tip_pr_number()
+    st["stack_on_state"] = False
     st["phase"] = "await_review"
     save(st)
 
@@ -152,25 +230,39 @@ def phase_await_review(st: dict, args) -> None:
         sys.exit("Aucune PR de tête de pile dans state.json : rien à attendre.")
     st["tip_pr"] = n
     save(st)
-    sig = wait_review_done(n, args.poll)
-    st["history"].append({"phase": "await_review", "pr": n, **sig, "at": time.strftime("%Y-%m-%d %H:%M")})
+    sig = wait_review_signal(st, args.poll)
+    st.setdefault("review_signals_seen", [])
+    if sig.get("id"):
+        st["review_signals_seen"].append(sig["id"])
+    st["session"] = int(st.get("session") or 0) + 1
+    st["review_since"] = st.get("review_last_at")          # ce qui est nouveau depuis la session précédente
+    st["review_last_at"] = sig.get("at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    st["history"].append({"phase": "await_review", **sig, "session": st["session"], "at": time.strftime("%Y-%m-%d %H:%M")})
     st["phase"] = "correct"
     save(st)
 
 
 def phase_correct(st: dict, args) -> None:
     ensure_root_on_main()
-    cmd = [sys.executable, str(HERE / "plan_corrections.py"), "--model", args.corrector_model]
-    rc = run(cmd, timeout=3 * 3600)
+    cmd = [sys.executable, str(HERE / "plan_corrections.py"), "--model", args.corrector_model, "--session", str(st.get("session") or 1)]
+    if st.get("review_since"):
+        cmd += ["--since", st["review_since"]]
+    code = run(cmd, timeout=3 * 3600)
     s = rl.State.load()
     last = (s.extra.get("corrections") or [{}])[-1]
-    st["go_pr"] = last.get("go_pr")
-    st["history"].append({"phase": "correct", "rc": rc, "go_pr": st["go_pr"], "at": time.strftime("%Y-%m-%d %H:%M")})
-    if not st["go_pr"]:
-        rl.log("pas de PR GO : la boucle s'arrête ici (relancer --resume quand la PR existe, ou --start-at correct).")
-        st["phase"] = "correct"
+    st["go_pr"] = last.get("go_pr") if last.get("session") in (None, st.get("session")) else None   # le GO de CETTE session
+    st["history"].append({"phase": "correct", "rc": code, "go_pr": st["go_pr"], "session": st.get("session"), "at": time.strftime("%Y-%m-%d %H:%M")})
+    if code == 3:
+        # Lot W8 : budget Fable atteint — la boucle reprend sa veille ; « GO FABLE » sur une PR de la pile autorise un lancement de plus.
+        rl.log("correcteur non lancé (budget Fable atteint) — la boucle reprend sa veille ; « GO FABLE » sur une PR de la pile autorise un lancement de plus")
+        st["phase"] = "await_review"
         save(st)
-        sys.exit(1)
+        return
+    if not st["go_pr"]:
+        rl.log("pas de PR GO : la boucle reprend sa veille (un nouveau « revue finie » relancera le correcteur ; ou --start-at correct).")
+        st["phase"] = "await_review"
+        save(st)
+        return
     st["phase"] = "await_go"
     save(st)
 
@@ -205,26 +297,31 @@ def phase_await_go(st: dict, args) -> bool:
     """Vrai s'il y a un batch suivant."""
     pr = wait_go(st, args)
     if not pr.get("merged_at"):
-        rl.log("PR GO fermée sans merge : arrêt de la boucle.")
-        st["phase"] = None
+        rl.log("PR GO fermée sans merge : la boucle reprend sa veille (un nouveau « revue finie » relancera le correcteur).")
+        st["phase"] = "await_review"
         save(st)
-        return False
-    # La tête de pile doit être mergée avant de repartir de main (sinon les lots repartiraient sans elle).
+        return True
+    # Lot W7 : on n'attend PLUS le merge de la tête de pile. Si elle est encore ouverte, les correctifs
+    # s'empilent dessus (--resume : les lots partent de la tête actuelle) ; si le porteur l'a mergée, on
+    # repart de main. Le porteur merge la tête quand IL le décide.
+    tip_open = False
     if st.get("tip_pr"):
         try:
-            if gh_pr(int(st["tip_pr"])).get("state") != "closed":
-                wait_closed(int(st["tip_pr"]), args.poll, "tête de pile (à merger aussi)")
+            tip_open = gh_pr(int(st["tip_pr"])).get("state") != "closed"
         except Exception as e:
-            rl.log(f"    tête de pile : vérification impossible ({e})")
+            rl.log(f"    tête de pile : vérification impossible ({e}) — on empile par prudence")
+            tip_open = True
     m = LOTS_LINE_RE.findall(pr.get("body") or "")
     lots = (m[-1] if m else "aucun").split()
-    st["history"].append({"phase": "await_go", "pr": st["go_pr"], "lots": lots, "at": time.strftime("%Y-%m-%d %H:%M")})
+    st["history"].append({"phase": "await_go", "pr": st["go_pr"], "lots": lots, "tip_open": tip_open, "at": time.strftime("%Y-%m-%d %H:%M")})
     if not lots or lots[0].lower() in ("aucun", "none", "-"):
-        rl.log("GO mergé, `LOTS: aucun` : rien à corriger — fin de la boucle.")
-        st["phase"] = None
+        rl.log("GO mergé, `LOTS: aucun` : rien à corriger — la boucle reprend sa veille.")
+        st["phase"] = "await_review"
         save(st)
-        return False
+        return True
     st["from"], st["until"] = lots[0], lots[-1]
+    st["stack_on_state"] = tip_open
+    rl.log(f"GO mergé : batch {lots[0]} → {lots[-1]}, " + ("empilé sur la pile en cours (tête non mergée)" if tip_open else "depuis main (tête mergée)"))
     st["cycle"] = int(st.get("cycle") or 0) + 1
     st["phase"] = "batch"
     save(st)
@@ -238,7 +335,7 @@ def main() -> None:
     ap.add_argument("--start-at", choices=["batch", "await_review", "await_pile", "correct", "await_go"], help="commencer à cette phase (pile déjà produite : await_review)")
     ap.add_argument("--resume", action="store_true", help="reprendre la phase mémorisée")
     ap.add_argument("--status", action="store_true")
-    ap.add_argument("--cycles", type=int, default=3, help="nombre maximal de tours complets (défaut 3)")
+    ap.add_argument("--cycles", type=int, default=100, help="nombre maximal de tours complets (défaut 100 : la boucle ne s'arrête pas seule)")
     ap.add_argument("--poll", type=int, default=120, help="secondes entre deux lectures GitHub")
     ap.add_argument("--review-every", type=int, default=int(setting("BIM_REVIEW_EVERY", "4")), help="réviseur de nuit toutes les N PR (BIM_REVIEW_EVERY)")
     ap.add_argument("--model", default="", help="modèle des agents de lots (défaut run_lots)")
