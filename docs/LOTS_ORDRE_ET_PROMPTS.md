@@ -110,6 +110,14 @@ testent avec de faux serveurs).
 | 73 | RB6 | corrections 3 | M | RB5 | la voix ne coupe plus, Stop coupe tout, la caméra ne saute plus sur la Polynésie |
 | 74 | RB7 | corrections 3 | S | — | « arrivée entre le … et le … » visible dès le démarrage (ensemble ETA préchauffé) |
 | 75 | RB8 | corrections 3 | S | RB1 | la route est dessinée sur les deux copies du monde ; survol d'un segment parcouru → vitesse de l'époque |
+| **corrections 4** | | **revue du 23 sept. (matin)** | | | `PLAN_CORRECTIONS_2026-09-23.md` — après la pile RB1 → RC5 (#269 → #302) mergée ; constats globe fondus dans G2 et G5 |
+| 76 | RD1 | corrections 4 | M | — | le clic sur la route ouvre le pop-up Copernicus partout (copies du monde comprises) ; plus d'ouverture du panneau gauche au clic carte ; carrés verts ▤ retirés |
+| 77 | RD2 | corrections 4 | S | — | crédits et zoom sur le fond de carte (jamais de bande blanche), toggles gauche/droit à la même hauteur, point de tracé exactement sous le clic |
+| 78 | RD3 | corrections 4 | S | — | encadré jaune des couloirs retiré (pastille par jambe conservée), nom du bateau une seule fois, remise du chiffre au profil réparée |
+| 79 | RD4 | corrections 4 | M | — | le voyage officiel est semé au démarrage serveur : plus de 404, fourchette « arrivée entre le … et le … », journal et film remplis |
+| 80 | RD5 | corrections 4 | S | — | l'app démarre en Suivre ; date de départ visible et efficace en Simulation (année affichée) ; date de Revoir réglable et distincte |
+| 81 | RD6 | corrections 4 | S | RD4 | onglet Récit jamais vide (absent hors Suivre), lignes du Journal qui nomment leur événement, plus d'espace mort |
+| 82 | RD7 | corrections 4 | M | RD4 | le film déclame les vraies données du journal (marinas, AMP, stations, cyclones, culture) ; durées 2:30/3:00 décochables, aucune par défaut ; plus de phrases de remplissage |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
 § 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
@@ -493,6 +501,7 @@ Interdits : modifier src/map/* ou src/layers/* (hors lecture) ; démonter Leafle
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_GLOBE_3D.md § 1–§ 2 et le « Lot G2 ». Tu travailles dans naviguide-simulator/src/globe/ (et rien d'autre, hors i18n et tests). Le lot G1 est dans ta base.
 
 Lot G2 — Sur le globe : route faite / à venir (GeoJSON, longitudes dépliées), marqueurs HTML (catamaran, avion, drapeaux d'escale — un exemplaire chacun, réutiliser les composants CatamaranMarker/PlaneMarker via un portal), sillage, saut avion en arc, caméra qui suit en Suivre (easeTo continu), même comportement de pause que Leaflet.
+Constat de la revue du 23 sept. (lot RD2) : sur Leaflet, le rond de point était rendu ~5 px à côté de son lat/lon (icône 24×24 ancrée [12,12] pour un rond de 10 px). Étape ajoutée : sur le globe, chaque marqueur de point (escale, point de tracé) est ancré EXACTEMENT sur son lat/lon (ancre au centre du symbole) ; test de contrat : la position écran du marqueur correspond au project() de son lat/lon, au pixel près.
 Fichiers : src/globe/layers/route.js, boat.js, stops.js, wake.js ; src/globe/GlobeSceneController.js ; tests de contrat ; src/i18n si besoin. Lecture seule : src/map/MapSceneController.js (pour copier la logique de scene → couches).
 Tests : contrat : route source mise à jour quand scene.progress change ; marqueur suit sample ; npm test, vite build, npm run e2e.
 Recette (spec e2e/lots/g2-route.spec.js, captures docs/recette/lot-g2/) : Globe + Suivre à Nouméa : marqueur bateau visible, route dessinée ; Simulation : le centre du globe suit le bateau (deux lectures de getCenter espacées de 3 s différentes et proches du bateau) ; capture 01-noumea, 02-pacifique (Papeete → Mata-Utu continue).
@@ -529,6 +538,7 @@ Interdits : toucher à Leaflet ; vidéo ; secret. Décide seul en cas de blocage
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_GLOBE_3D.md et le « Lot G5 », et docs/PLAN_FILM_REVOIR_EXPEDITION.md § 3 (bulle). Tu travailles dans naviguide-simulator/src/globe/. Le lot G4 est dans ta base ; si F4 (EventBubble) est dans ta base, réutilise le composant, sinon prévois le point d'ancrage.
 
 Lot G5 — Popup satellite (Vent / Vagues / Courants, mêmes onglets et chiffres) ancrée (maplibregl.Popup.setLngLat), bulle événement ancrée au marqueur bateau, mode Tracer ma route par clics (mêmes callbacks drawing.add/undo/finish que Leaflet), résultat searoute affiché en ligne (longitudes dépliées).
+Constat de la revue du 23 sept. (lot RD1) : sur Leaflet, le clic route ne répondait plus (copies du monde non normalisées) et des clics carte ouvraient le panneau gauche — jamais demandé. Étapes ajoutées : sur le globe, un clic sur la route (hors jambes avion) ouvre le pop-up Copernicus à toutes les longitudes (normaliser modulo 360 si le globe déplie les longitudes) ; AUCUN clic sur la carte ou sur un marqueur n'ouvre un panneau latéral (le clic drapeau remplit la section Ici seulement si le panneau est déjà ouvert, parité RD1) ; test de contrat sur les deux comportements.
 Fichiers : src/globe/popups.js, src/globe/drawing.js, src/globe/GlobeSceneController.js, tests.
 Tests : contrat : un clic en mode dessin appelle drawing.add avec une longitude repliée dans [−180, 180] ; npm test, vite build.
 Recette (spec e2e/lots/g5-popups.spec.js, captures docs/recette/lot-g5/) : Globe, clic sur la mer → popup avec trois onglets ; Tracer : Brisbane → SF, ligne dans le Pacifique ; captures 01-popup, 02-trace.
@@ -1201,6 +1211,120 @@ Tests : le dry-run produit un dossier où `cd naviguide-simulator && npm ci && n
 Recette (visuelle) : la PR joint le journal du dry-run et la liste des fichiers ; le porteur lit la procédure et la trouve exécutable en 15 minutes.
 Branche chore/lot-h1-split-depots depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN). Ne merge pas.
 Interdits : créer ou pousser un dépôt ; supprimer des fichiers du dépôt courant ; secret ; vidéo. Décide seul et note-le. Fin : PR, journal du dry-run, reste à faire.
+```
+
+### Corrections 4 — revue du 23 septembre au matin (RD1 → RD7)
+
+À enchaîner après la pile RB1 → RC5 (#269 → #302) mergée. Détail, causes
+racines (fichier:ligne, lues sur la tête de pile #302) et recette dans
+`docs/PLAN_CORRECTIONS_2026-09-23.md`. Les constats qui relèvent du globe
+sont fondus dans G2 et G5 ; « Demander conseil » (#290) et les 502
+`/bi/climatology/*` (#302) sont des artefacts du poste de recette — voir le
+plan § 3.
+
+<!-- LOT id="RD1" title="Le clic sur la carte fait ce qu'il dit : route → pop-up Copernicus, jamais le panneau gauche" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RD1 — Le clic sur la carte fait ce qu'il dit (revue du 23 sept. : « l'effet escompté, c'est que ça ouvre le pop-up Copernicus » ; « pourquoi le side bar gauche s'ouvre ? j'ai jamais demandé ça »).
+Objectif : un clic sur la route (trait coloré ou trait bleu, hors jambes avion) ouvre le pop-up Copernicus (onglets Vent / Vagues / Courants), sur toutes les copies du monde et à tous les zooms ; aucun clic carte n'ouvre le panneau gauche ; les carrés verts ▤ des lignes d'escales disparaissent.
+Cause racine : src/map/MapScene.jsx l. 159-173 — le clic ne reconnaît la route que si pointToSegmentPx(...) < 16, et pointToSegmentPx (l. 11-28) compare des longitudes non normalisées : tout clic sur une copie du monde (route RB8 à ±360°) échoue — seul Saint-Pierre-et-Miquelon (copie de base) répondait. Et src/App.jsx l. 855-859 — openEscaleFromUi fait setSidebarOpen(true) ; câblé au clic marqueur (onWaypointClick l. 1557, marqueurs MapSceneController.js l. 843-850) et au bouton ▤ des lignes d'escales (EscaleLegend.jsx l. 34-44, onEscaleSheet l. 1655) : le panneau gauche s'ouvre au clic — jamais demandé.
+Fichiers à ouvrir (seulement) : src/map/MapScene.jsx, src/App.jsx PAR EXTRAIT (rg -n "openEscaleFromUi|onWaypointClick|onEscaleSheet|setSidebarOpen"), src/components/EscaleLegend.jsx, src/utils/geo.js (wrapLon, lecture), tests associés (EscaleLegend.test, test utilitaire pour pointToSegmentPx).
+Étapes : 1) pointToSegmentPx : normaliser l'écart de longitude modulo 360 (clic et sommets ramenés dans la même copie) — le clic route répond des deux côtés du monde, seuil 16 px inchangé ; 2) le clic route ouvre le pop-up Copernicus (handleMapRouteClick existant), rien d'autre ; 3) openEscaleFromUi n'appelle plus setSidebarOpen(true) : clic drapeau → fiche dans la section Ici de l'encadré si le panneau est déjà ouvert ; panneau fermé → rien ne s'ouvre ; 4) retirer le bouton ▤ (escale-sheet-open) des lignes d'escales ; le clic sur la ligne (déplacer le curseur) reste.
+Tests : clic simulé à lng+360 d'un segment → onRouteClick appelé ; openEscaleFromUi sans setSidebarOpen ; EscaleLegend ne rend plus escale-sheet-open. npm test, npx vite build, npm run e2e.
+Recette (visuelle) : Suivre, carte monde puis carte tirée d'un tour vers la droite — un clic sur la route ouvre la carte satellite Vent / Vagues / Courants des deux côtés, à tous les zooms ; cliquer un drapeau n'ouvre pas le panneau gauche (panneau ouvert : la section Ici se remplit) ; liste des escales sans aucun carré vert. Captures docs/recette/lot-rd1/01-copernicus.jpg, 02-escales.jpg (URL complète sur ta branche).
+Branche fix/lot-rd1-clics-carte depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : ouvrir un panneau au clic carte ; retirer le pop-up Copernicus ; retirer une surface demandée ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD2" title="Habillage carte : crédits sur le fond de carte, toggles alignés, point de tracé sous le clic" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 rien de superflu), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RD2 — Habillage carte (revue du 23 sept. : « les citations sont devenues blanches, ils doivent avoir le fond de carte derrière eux » ; « le toggle du side bar gauche, mets-le à la même hauteur que celui du droit » ; « ça met le point de manière imprécise, on n'arrive pas à viser »).
+Objectif : les crédits et le zoom se lisent sur le fond de carte sans bande blanche opaque (les deux thèmes) ; les deux chevrons d'ouverture des panneaux sont à la même hauteur ; en Tracer ma route le point se pose exactement sous le clic.
+Cause racine : src/index.css l. 28-31 — en mode clair la bande des crédits est blanc opaque (rgba(255,255,255,0.8), préexistant à la pile) et le bloc RB2 .light-mode .leaflet-control-zoom ajoute un second aplat blanc à côté. src/components/Sidebar.jsx l. 327-331 — toggle gauche fermé à top-[92px] alors que le toggle droit (ToolsSidebar.jsx, chevron) est à top-4 ; la raison (zoom en haut à gauche) a disparu avec RB2. src/map/MapSceneController.js l. 806-807 — le rond de tracé fait 10 px (14 avec bordure) posé au coin haut-gauche d'une icône 24×24 ancrée [12,12] : il s'affiche ~5 px au-dessus/à gauche du lat/lon cliqué.
+Fichiers à ouvrir (seulement) : src/index.css, src/components/Sidebar.jsx, src/map/MapSceneController.js PAR EXTRAIT (rg -n "10px;height:10px|iconAnchor"), tests associés.
+Étapes : 1) reproduire dans Chrome (thème sombre puis clair) ; remplacer tout aplat blanc (attribution et zoom en mode clair) par la bande translucide discrète du mode sombre — le fond de carte reste visible derrière ; ne pas toucher au texte des crédits ; 2) toggle gauche fermé à top-4, même hauteur que le droit, panneaux ouverts ou fermés ; 3) centrer le rond de tracé : le pixel cliqué est le centre du rond (icône 14×14 ancrée [7,7] ou marge centrante), premier point (vert) et suivants (blancs) ; 4) aucun autre changement d'habillage.
+Tests : montage — iconAnchor au centre exact du rond ; assertion e2e sur l'alignement vertical des deux toggles. npm test, npx vite build, npm run e2e.
+Recette (visuelle) : tous écrans carte, thème sombre puis clair — crédits et zoom lisibles sur le fond de carte, sans bande blanche ; panneaux fermés, les deux chevrons à la même hauteur ; Tracer ma route à zoom moyen puis fort — le point tombe exactement sous la croix. Captures docs/recette/lot-rd2/01-credits.jpg, 02-tracer.jpg (URL complète sur ta branche).
+Branche fix/lot-rd2-habillage-carte depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : masquer ou raccourcir les crédits ; déplacer le zoom ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD3" title="Panneau droit : encadré jaune retiré, nom du bateau une fois, remise du chiffre au profil réparée" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 rien de superflu, rien de non demandé), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RD3 — Panneau droit (revue du 23 sept. : « un encadré jaune que j'ai jamais demandé » ; KO bot #302 : « Leopard 46 » aussi dans Paramètres avancés ; « la remise du chiffre du profil ne marche plus »).
+Objectif : plus d'encadré jaune listant les couloirs commerciaux (la pastille « couloirs : X » par jambe de la Revue du plan reste) ; le nom du bateau ne se lit qu'une fois (sous Polaires) ; la remise d'un chiffre au profil (34 → 29 → ↺ → 34) remarche.
+Cause racine : src/components/ToolsSidebar.jsx l. 13-27 — viewRouteAntiShipping agrège les couloirs de toutes les jambes ; rendu l. 397-407 (badge route-anti-shipping, bordure ambre « Bay of Biscay · Gibraltar · … ») — jamais demandé : le lot N3 prévoyait la pastille PAR JAMBE (PlanReview.jsx l. 135-141, conforme, à garder). src/components/SkipperOrdersPanel.jsx l. 192 — la rangée « Bateau » répète le nom du polar déjà affiché sous Polaires. Remise du chiffre : mécanisme SkipperOrdersPanel.jsx l. 69-79 (resetNumberToProfile, handleReset) et l. 106 (disabled={!forced}) ; le diff de la pile ne touche ni le composant ni le hook : REPRODUIRE d'abord (le bouton ↺ reste-t-il grisé ? forced jamais posé ?), chercher côté câblage onSkipperExpert={skipper.setExpert} (App.jsx l. 1666) et resolveOrders — ne pas coder à l'aveugle.
+Fichiers à ouvrir (seulement) : src/components/ToolsSidebar.jsx, src/components/SkipperOrdersPanel.jsx, src/components/PlanReview.jsx (lecture seule), src/App.jsx PAR EXTRAIT (rg -n "skipper|setExpert"), tests associés.
+Étapes : 1) supprimer le badge route-anti-shipping et viewRouteAntiShipping ; ne rien changer à la pastille par jambe ; 2) retirer la rangée « Bateau : <nom> » de Paramètres avancés (longueur / tirant d'eau restent) ; 3) reproduire la panne de la remise au profil, corriger la cause constatée, la documenter dans la PR (fichier:ligne) ; 4) test de non-régression : forcer une valeur → forced vrai → ↺ actif → retour à la valeur du profil, pour chaque champ numérique.
+Tests : ToolsSidebar ne rend plus route-anti-shipping ; SkipperOrdersPanel sans nom de bateau ; cycle remise-au-profil vert. npm test, npx vite build, npm run e2e.
+Recette (visuelle) : panneau droit — plus d'encadré jaune ; Revue du plan, chaque jambe garde sa ligne « couloirs : … » quand elle en croise ; Paramètres avancés — pas de nom de bateau (il reste sous Polaires, une fois) ; changer un chiffre (34 → 29) → ↺ s'allume → clic → 34 revient. Captures docs/recette/lot-rd3/01-panneau.jpg, 02-remise.jpg (URL complète sur ta branche).
+Branche fix/lot-rd3-panneau-droit depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : retirer la pastille par jambe (N3) ; inventer une cause non reproduite ; retirer une surface demandée ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD4" title="Le voyage officiel existe dès le démarrage serveur : fourchette, journal, moments, film" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RD4 — Le voyage officiel est semé au démarrage (KO bot #275 : eta members: 0, pas de « arrivée entre le … et le … » ; KO #284 : journal à 0 entrée ; KO #285 : film en repli — tous causés par GET /voyage/official → 404 sur un poste frais).
+Objectif : sur un poste relancé de zéro, GET /voyage/official ne renvoie jamais 404 ; l'ensemble ETA a des membres (la fourchette « arrivée entre le … et le … » s'affiche sous la prochaine escale en quelques minutes) ; le journal des moments et le film officiel se remplissent sans dépendre d'un client.
+Cause racine : server/voyage_api.py l. 699-707 — _kick_official_eta (comme les warms moments / film / hindcast) abandonne si load_voyage(OFFICIAL_VOYAGE_ID) est None ; le voyage officiel n'est créé que par l'endpoint client ensure_official (l. 766, PUT) ; le démarrage serveur (server/main.py l. 84-97) préchauffe GRIB et « ici » mais ne sème pas le voyage.
+Fichiers à ouvrir (seulement) : server/voyage_api.py PAR EXTRAIT (rg -n "_kick_official|ensure_official|OFFICIAL_VOYAGE_ID"), server/main.py, server/ensemble_eta.py (lecture), server/tests/test_voyage_api.py, server/tests/test_ensemble_eta.py s'il existe.
+Étapes : 1) au démarrage serveur, si le voyage officiel n'est pas en base, le créer côté serveur avec le même corps que ensure_official (itinéraire Berry embarqué), sans client ni clé ; 2) enchaîner les préchauffages existants (_kick_official_hindcast, _kick_official_eta, _kick_official_moments, _kick_official_film_story) en tâche de fond, sans bloquer le démarrage ; 3) GET /voyage/official jamais 404 sur poste frais ; ensemble ETA members > 0 quelques minutes après le lancement ; 4) tests pytest sur store vide (fixtures, aucun appel réseau) : après startup le voyage existe, _kick_official_eta ne renvoie plus False pour voyage absent.
+Tests : .venv/bin/python -m pytest -q, npm test, npx vite build.
+Recette (visuelle) : poste relancé de zéro — Suivre s'ouvre sur le voyage ; sous la prochaine escale, « arrivée entre le … et le … » (deux dates proches) apparaît en quelques minutes sans recharger ; onglet Journal : des lignes du 15 mai à aujourd'hui, jamais une liste vide ; Revoir l'expédition démarre tout de suite. Capture docs/recette/lot-rd4/01-fourchette.jpg (URL complète sur ta branche).
+Branche fix/lot-rd4-voyage-seme depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : bloquer le démarrage ; inventer une date ou un membre d'ensemble ; appel réseau dans les tests ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD5" title="Démarrage en Suivre ; dates de départ réglables, avec l'année" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+
+Lot RD5 — Démarrage et dates (revue du 23 sept. : « quand on recharge, on tombe sur le mode simulation » ; « la date de départ n'est plus réglable ; il faut qu'elle soit réglable, sauf qu'il ne faut pas que ce soit la même que le mode simulation » ; « 15 mai 8h00 UTC, il n'y a même pas l'année »).
+Objectif : l'application s'ouvre en Suivre ; en Simulation le champ « Date de départ » est visible sans dérouler et pilote l'horloge ; l'horloge de la barre film affiche l'année ; la date de départ de « Revoir l'expédition » est réglable (2025 possible), distincte de la Simulation, défaut 15 mai 2026.
+Cause racine : src/App.jsx l. 169 — useState(VIEW_SIMULATION) (identique sur main d'avant-pile : pas une régression, mais refusé par le porteur). Le champ Date de départ existe (ToolsSidebar.jsx l. 421-425, showDeparture={isSimulation} App.jsx l. 1658, câblé voyage.t0 l. 1659) mais est enfoui sous la Revue du plan ; l'horloge de la barre film n'affiche pas l'année ; aucun réglage n'existe pour la date de départ du replay (RB5 fixe le départ officiel au 15 mai 2026 — bon défaut, pas réglable).
+Fichiers à ouvrir (seulement) : src/App.jsx PAR EXTRAIT (rg -n "VIEW_SIMULATION|view, setView|showDeparture"), src/components/ToolsSidebar.jsx, src/components/DepartureField.jsx, src/components/SimulationFilmBar.jsx PAR EXTRAIT (rg -n "UTC"), src/hooks/useReplay.js PAR EXTRAIT (paramètres envoyés au film), src/i18n/fr.js, src/i18n/en.js, tests associés.
+Étapes : 1) vue initiale = Suivre (VIEW_SUIVRE) ; 2) remonter « Date de départ » au-dessus de la Revue du plan (Simulation) et vérifier qu'éditer la date déplace le départ (barre film, positions) ; 3) l'horloge de la barre film affiche l'année (« 15 mai 2026 · 08:00 UTC ») dans tous les modes ; 4) en Suivre, à côté de « Revoir l'expédition » : date de départ du replay réglable (même gabarit que le champ Simulation), défaut 15 mai 2026, indépendante du t0 de Simulation — la régler décale les dates déclamées et affichées du film ; aucune date inventée : tout dérive de la date choisie et des durées réelles des jambes.
+Tests : vue initiale Suivre ; le champ replay décale les dates du script (paramètre envoyé + serveur si concerné) ; l'année présente dans le libellé d'horloge. npm test, .venv/bin/python -m pytest -q si le serveur change, npx vite build, npm run e2e.
+Recette (visuelle) : recharger → on arrive sur Suivre l'expédition ; Simulation, panneau droit — « Date de départ » visible sans dérouler, la changer déplace le départ, l'horloge affiche l'année ; Suivre — régler la date de Revoir sur 2025 → le film dit « … a quitté Saint-Maur le 15 mai 2025 » ; remettre le défaut → 2026 ; le t0 de la Simulation n'a pas bougé. Captures docs/recette/lot-rd5/01-suivre.jpg, 02-dates.jpg (URL complète sur ta branche).
+Branche fix/lot-rd5-demarrage-dates depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : inventer une date ; changer le défaut officiel (15 mai 2026) ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD6" title="Encadré gauche : onglet Récit jamais vide, journal qui nomme, sans trou" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="S" deps="RD4" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un onglet marche ou n'existe pas), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD6 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RD4 est dans ta base.
+
+Lot RD6 — L'encadré gauche tient parole (revue du 23 sept. : « Récit est toujours vide », « il y a un espace », « il faudrait qu'on sache à chaque fois ce sont lesquels »).
+Objectif : l'onglet Récit n'est jamais un espace vide (absent hors Suivre, rempli en Suivre) ; chaque ligne du Journal nomme son événement ; plus d'espace mort sous les onglets Maintenant · Récit · Journal.
+Cause racine : src/App.jsx l. 813-814 — storyParagraphs renvoie [] si !isSuivre || !officialClock ; src/components/Sidebar.jsx l. 472 — le slot story n'est rendu que isSuivre && !isDrawing : en Simulation l'onglet Récit (IciMaintenant.jsx l. 260-263, slot ici-story-slot) affiche du vide. Journal : le serveur nomme les événements (server/moment_journal.py l. 223 passe name pour une AMP) mais des lignes s'affichent sans le nom (« Aire marine protégée » sec, capture PR #284).
+Fichiers à ouvrir (seulement) : src/components/IciMaintenant.jsx, src/components/Sidebar.jsx PAR EXTRAIT (rg -n "story=|journal="), src/App.jsx PAR EXTRAIT (rg -n "storyParagraphs"), src/hooks/useMomentJournal.js, server/moment_journal.py (lecture seule), tests associés.
+Étapes : 1) en Simulation et Tracer, l'onglet Récit n'apparaît pas (Maintenant · Journal seulement) ; en Suivre il apparaît et se remplit (RD4 garantit l'horloge) ; 2) chaque ligne du Journal nomme son événement : « Aire marine protégée — <nom> », « Cyclone — <nom> (<année>) », « Marina — <nom> » ; le nom vient du fait serveur, jamais inventé ; sans nom en base → le type seul ; 3) resserrer l'espace entre les onglets et le contenu (pas de slot réservé vide) ; 4) aucun texte d'aide ajouté.
+Tests : en Simulation l'onglet Récit n'est pas rendu ; en Suivre avec horloge, story-paragraph non vide ; fixture AMP avec nom → la ligne contient le nom. npm test, npx vite build, npm run e2e.
+Recette (visuelle) : Simulation, panneau gauche — onglets Maintenant · Journal, aucun onglet Récit vide, pas d'espace mort ; Suivre, onglet Récit — des paragraphes dès l'ouverture ; onglet Journal — chaque ligne dit lequel (« Aire marine protégée — Iroise », pas « Aire marine protégée » sec). Captures docs/recette/lot-rd6/01-simulation.jpg, 02-journal.jpg (URL complète sur ta branche).
+Branche fix/lot-rd6-encadre-recit depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : onglet ou slot vide ; texte d'aide ; nom inventé ; retirer une surface ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD7" title="Le film déclame les vraies données du journal ; durée libre par défaut" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="RD4" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD7 » (texte intégral). Tu travailles dans naviguide-simulator/. Le lot RD4 est dans ta base.
+
+Lot RD7 — Le film raconte les vraies données (revue du 23 sept. : « tu trouves une solution pour exploiter les vraies données que je me suis cassé le cul à collecter » ; « on va désélectionner la durée par défaut … s'il n'y a pas d'option cochée, tu dis à peu près tout ce qu'il y a dans le produit du side bar gauche, et il prend le temps que ça prend »).
+Objectif : plus jamais « Le ciel reste haut / La mer porte le bateau / La route tient le cap / Le vent reste le vent » ; les durées 2:30 et 3:00 sont décochables et aucune n'est cochée par défaut ; sans durée cochée, le film déroule tout le journal des moments (marinas, ports, aires marines protégées, stations scientifiques, traces historiques de cyclones nommées et datées, culture des escales), dans l'ordre de la route, et prend le temps qu'il faut ; avec durée cochée, le budget est tenu jusqu'au bout (plus de film fini à ~121 s, KO bot #302).
+Cause racine : server/film_script.py l. 39 — le tuple ATMOS meuble chaque jambe via le pool l. 1215 et le pad l. 1338, plus l. 1599 (« La mer reste la mer… ») : exactement les phrases moquées par le porteur ; les vraies données sont dans les moments (server/moment_journal.py) mais la sélection sous budget de 2 min 30 les écarte. src/components/SimulationFilmBar.jsx l. 458-470 — deux options [150, 180] toujours dont une active ; src/hooks/useReplay.js l. 177 — défaut FILM_TARGET_SECONDS.
+Fichiers à ouvrir (seulement) : server/film_script.py, server/tests/test_film_script.py, src/components/SimulationFilmBar.jsx PAR EXTRAIT (rg -n "filmDuration|targetSeconds"), src/hooks/useReplay.js, src/hooks/useReplay.test.js, src/i18n/fr.js, src/i18n/en.js.
+Étapes : 1) supprimer ATMOS et tous les pads : une jambe sans fait notable est racontée plus court, la voix ne meuble jamais ; 2) durées décochables (re-clic = décoché), aucune cochée par défaut ; durée cochée → budget appliqué et tenu jusqu'au bout ; aucune durée → pas de budget ; 3) sans budget, le script déroule le journal dans l'ordre de la route (paires départ/arrivée conservées, RC4/RC5) : marina croisée, port de départ, AMP traversée, stations au large, trace historique de cyclone (nom + année), culture de l'escale (faits de la fiche) — chaque fait nommé, chiffres via filter_numbers, champ inconnu = silence ; 4) la voix arrondit les distances (« 1 820 milles nautiques », jamais de décimale ni d'abréviation) — l'affichage écrit garde « nm » ; 5) tests : plus aucune phrase ATMOS ni pad dans le script officiel ; fixture de moments riches → chaque type cité au moins une fois sans budget ; budget 150 s atteint ; aucune décimale déclamée.
+Tests : .venv/bin/python -m pytest -q, npm test, npx vite build, npm run e2e -- e2e/lots/rd7-film.spec.js.
+Recette (visuelle) : Suivre, barre film — 2:30 et 3:00 décochés par défaut, cliquer coche, recliquer décoche ; Revoir sans durée cochée — le récit nomme marinas, AMP, stations, cyclones (nom et année) et la culture des escales, plus jamais « La mer porte le bateau » ; Revoir avec 2:30 — le film tient ~2 min 30 jusqu'au bout. Captures docs/recette/lot-rd7/01-durees.jpg, 02-recit.jpg (URL complète sur ta branche).
+Branche fix/lot-rd7-film-journal depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : phrase de remplissage ; chiffre produit par un LLM ; escale sautée ou répétée ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)
