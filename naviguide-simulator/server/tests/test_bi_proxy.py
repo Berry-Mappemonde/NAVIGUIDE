@@ -73,6 +73,44 @@ def test_upstream_5xx_opens_a_cooldown_and_is_not_cached(monkeypatch):
     assert len(calls) == 2
 
 
+def test_layer_failure_does_not_block_points(monkeypatch):
+    """22 sept. : wind.geojson (26 Mo, ~18 s) dépassait le délai et marquait tout l'atlas mort 30 s →
+    3 762 × 502 sur `point` alors que l'atlas répondait. Le repos est par point d'accès."""
+    calls = []
+    ok = _upstream(calls)
+
+    async def upstream(url, params):
+        if url.endswith("/wind.geojson"):
+            raise TimeoutError("read timeout")
+        return await ok(url, params)
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", upstream)
+    client = TestClient(main.app)
+
+    assert client.get("/bi/climatology/wind.geojson?month=9").status_code == 502
+    assert bi_proxy.is_dead("wind.geojson")
+    assert not bi_proxy.is_dead("point")
+    r = client.get("/bi/climatology/point?lat=46.15&lon=-1.2&month=9")
+    assert r.status_code == 200 and r.headers["x-cache-status"] == "MISS"
+    assert client.get("/bi/climatology/crossings?lat1=1&lon1=2&lat2=3&lon2=4&month=9").status_code == 200
+    # La couche, elle, reste en repos : pas de nouvel appel amont pendant 30 s.
+    assert client.get("/bi/climatology/wind.geojson?month=9").status_code == 502
+    assert len(calls) == 2
+
+
+def test_layers_get_a_longer_timeout_than_points():
+    assert bi_proxy.timeout_for("point") == bi_proxy.TIMEOUT_S
+    assert bi_proxy.timeout_for("https://blueintelligence.online/api/climatology/wind.geojson") == bi_proxy.LAYER_TIMEOUT_S
+    assert bi_proxy.LAYER_TIMEOUT_S >= 60 > bi_proxy.TIMEOUT_S
+
+
+def test_cache_is_per_machine_not_per_checkout(monkeypatch):
+    from pathlib import Path
+    monkeypatch.delenv("NAVIGUIDE_BI_CACHE_DIR", raising=False)
+    d = bi_proxy.cache_dir()
+    assert Path.home() in d.parents
+    assert ".dev" not in d.parts
+
+
 def test_network_error_is_a_502_not_a_500(monkeypatch):
     async def boom(url, params):
         raise ConnectionError("refused")
