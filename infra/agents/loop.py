@@ -41,6 +41,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import run_lots as rl  # noqa: E402
 import review_collect as rc  # noqa: E402
+import plan_corrections as pc  # noqa: E402
 
 LOOP_JSON = rl.STATE_DIR / "loop-state.json"
 LOTS_LINE_RE = re.compile(r"^\s*LOTS\s*:\s*(.+?)\s*$", re.I | re.M)
@@ -51,7 +52,10 @@ def setting(name: str, default: str) -> str:
     sinon la valeur par défaut. Avant le 22 sept., la boucle ne lisait que l'environnement : BIM_BOT_WAIT_MIN=15
     posé dans le fichier de clés était ignoré et chaque tranche attendait 45 min."""
     return os.environ.get(name) or rl._env_file_values().get(name) or default
+
+
 REVIEW_DONE_RE = re.compile(r"\b(revue|review)\s+(finie|termin[ée]e|done|finished)\b|^\s*GO\s*[!.]?\s*$", re.I | re.M)
+GO_FABLE_RE = re.compile(r"^\s*(?:\*\*)?GO\s+FABLE\b", re.I | re.M)   # lot W8 : le porteur accorde un lancement Fable de plus (et déclenche la session)
 
 
 def load() -> dict:
@@ -135,20 +139,63 @@ def wait_review_signal(st: dict, poll_s: int) -> dict:
                 m = re.search(r"/issues/(\d+)$", c.get("issue_url") or "")
                 num = int(m.group(1)) if m else None
                 body = c.get("body") or ""
-                if num in stack and c.get("id") not in seen and REVIEW_DONE_RE.search(body) and "🤖" not in body[:40] and rc.trusted(c):
+                if num not in stack or c.get("id") in seen or "🤖" in body[:40] or not rc.trusted(c):
+                    continue
+                if GO_FABLE_RE.search(body):
+                    # Lot W8 : « GO FABLE » = un lancement Fable de plus aujourd'hui, et on part en session tout de suite.
+                    day = time.strftime("%Y-%m-%d")
+                    grants = st.setdefault("fable_grants", {})
+                    grants[day] = int(grants.get(day) or 0) + 1
+                    rl.log(f"    « GO FABLE » reçu sur #{num} ({(c.get('user') or {}).get('login')}) : {grants[day]} lancement(s) accordé(s) en plus aujourd'hui")
+                    return {"signal": "go_fable", "merged": False, "pr": num, "id": c.get("id"), "at": c.get("created_at")}
+                if REVIEW_DONE_RE.search(body):
                     rl.log(f"    signal « revue finie » reçu sur #{num} ({(c.get('user') or {}).get('login')}, {c.get('created_at')})")
                     return {"signal": "comment", "merged": False, "pr": num, "id": c.get("id"), "at": c.get("created_at")}
-            hook = AUTO_TRIGGER_HOOK
-            if hook:
-                auto = hook(st)
-                if auto:
-                    return auto
+            auto = auto_trigger(st)
+            if auto:
+                return auto
         except Exception as e:
             rl.log(f"    GitHub indisponible ({e}) — nouvel essai")
         time.sleep(poll_s)
 
 
-AUTO_TRIGGER_HOOK = None   # lot W8 : déclenchement automatique du correcteur (budget) — None = jamais sans revue humaine
+def fable_extra_runs(st: dict) -> int:
+    return int((st.get("fable_grants") or {}).get(time.strftime("%Y-%m-%d")) or 0)
+
+
+_auto_last_check = 0.0
+
+
+def auto_trigger(st: dict) -> dict | None:
+    """Lot W8 — OPTION, éteinte par défaut (BIM_CORRECTOR_AUTO=0 : pas de Fable sans revue humaine).
+    Allumée : toutes les 10 min, on mesure le matériel non encore traité (KO, verdicts du bot, diffs) comme le
+    correcteur le ferait ; s'il approche le budget d'un lancement (80 %), on ouvre une session sans attendre le
+    porteur — dans la limite du plafond du jour (BIM_CORRECTOR_MAX_RUNS + GO FABLE)."""
+    global _auto_last_check
+    if setting("BIM_CORRECTOR_AUTO", "0") not in ("1", "true", "yes", "oui"):
+        return None
+    if time.time() - _auto_last_check < 600:
+        return None
+    _auto_last_check = time.time()
+    try:
+        prs = rc.prs_from_state()
+        if not prs:
+            return None
+        state = rl.State.load()
+        date = time.strftime("%Y-%m-%d")
+        if pc.runs_today(state, date) >= pc.MAX_RUNS + fable_extra_runs(st):
+            return None
+        review = rc.collect(prs, rl.STATE_DIR / "auto-probe", images=False, since=st.get("review_last_at"), session=int(st.get("session") or 0) + 1)
+        new_kos = sum(1 for p in review["prs"] for k in (p.get("ko") or []) if k.get("new", True))
+        if not new_kos:
+            return None
+        est = pc.estimate(review, "", rl.ROOT, date)
+        rl.log(f"    auto (BIM_CORRECTOR_AUTO) : {new_kos} KO nouveaux, ~{est['total']:,} tokens estimés / budget {est['budget']:,}".replace(",", " "))
+        if est["total"] >= 0.8 * est["budget"]:
+            return {"signal": "auto", "merged": False, "pr": None, "id": None, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    except Exception as e:
+        rl.log(f"    auto : mesure impossible ({type(e).__name__})")
+    return None
 
 
 def tip_pr_number() -> int | None:
@@ -212,6 +259,12 @@ def phase_batch(st: dict, args) -> None:
     code = run(cmd)
     new = finished_ids() - before
     st["history"].append({"phase": "batch", "from": st["from"], "until": st["until"], "rc": code, "new_lots": sorted(new), "at": time.strftime("%Y-%m-%d %H:%M")})
+    try:   # lot W8 : la dépense de la nuit, lisible le matin dans COUTS.md (lots Grok inclus dans l'abonnement, mais comptés)
+        reviews = [r for r in (rl.State.load().extra.get("reviews") or []) if str(r.get("at") or "").startswith(time.strftime("%Y-%m-%d"))]
+        pc.note_cost(time.strftime("%Y-%m-%d"), int(st.get("session") or 0), "batch", [], 0, args.model or rl.DEFAULT_MODEL,
+                     f"{len(new)} lot(s) codé(s), {len(reviews)} revue(s) de nuit")
+    except Exception:
+        pass
     if code != 0 and not new:
         # Rien n'est parti (pré-vol en échec, CLI, jeton…) : on reste en phase batch, on s'arrête ;
         # le chien de garde relance `--resume` après ses remèdes (au plus 3 fois par jour).
@@ -247,6 +300,8 @@ def phase_correct(st: dict, args) -> None:
     cmd = [sys.executable, str(HERE / "plan_corrections.py"), "--model", args.corrector_model, "--session", str(st.get("session") or 1)]
     if st.get("review_since"):
         cmd += ["--since", st["review_since"]]
+    if fable_extra_runs(st):
+        cmd += ["--extra-runs", str(fable_extra_runs(st))]   # lot W8 : « GO FABLE » du porteur
     code = run(cmd, timeout=3 * 3600)
     s = rl.State.load()
     last = (s.extra.get("corrections") or [{}])[-1]

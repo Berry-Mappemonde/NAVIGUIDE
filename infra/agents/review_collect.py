@@ -309,6 +309,10 @@ def pr_review(number: int, tok: str | None, out_dir: Path, *, images: bool = Tru
     entry = {
         "number": number, "lot": lot, "title": pr.get("title"), "url": pr.get("html_url"), "branch": branch,
         "state": pr.get("state"), "merged": bool(pr.get("merged_at")),
+        # lot W8 : de quoi estimer ce que le correcteur lira (diff de la PR, commentaires)
+        "changes": int(pr.get("additions") or 0) + int(pr.get("deletions") or 0),
+        "changed_files": int(pr.get("changed_files") or 0),
+        "comments_chars": sum(len(c.get("body") or "") for c in comments) + len(body),
         "items": items,
         "ok": sum(1 for i in items if i["checked"] is True),
         "ok_porteur": sum(1 for i in items if i["checked"] is True and i.get("by") == "porteur"),

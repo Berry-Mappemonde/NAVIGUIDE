@@ -195,6 +195,7 @@ Posées le 21 sept. : `NEBIUS_API_KEY`, `TAVILY_API_KEY` (VPS et Mac).
 | C4/C7 | idem | `POLAR_EFFICIENCY` (défaut 0,85), `server/data/port_days.json` (livré) |
 | G3 (plus tard) | VPS nginx | `/tiles/zee.pmtiles` généré (`infra/tiles/build_zee_pmtiles.sh`) |
 | tous | VPS | après merge : `deploy.yml` redémarre les services ; vérifier `/ici/warm/status` → `llm.write.calls` monte quand un récit est demandé |
+| W5–W8 (boucle) | `~/.config/naviguide/simulator.env` (Mac) | `BIM_TUNNEL_NAME` / `BIM_TUNNEL_HOST` (tunnel nommé), `BIM_BOT_WEBHOOK` / `_TOKEN` / `_HEADER` (réveil de Grok Bot), `BIM_BOT_WAIT_MIN` (15), `BIM_REVIEW_EVERY` (4), `BIM_CORRECTOR_MODEL`, **budget Fable** : `BIM_CORRECTOR_CONTEXT_TOKENS` (1000000), `BIM_CORRECTOR_BUDGET_SHARE` (0.6), `BIM_CORRECTOR_MAX_RUNS` (1/jour), `BIM_CORRECTOR_AUTO` (0 = jamais sans revue humaine). Dépense lisible dans `infra/agents/COUTS.md`. Retirer `BIM_THEN_UNTIL` une fois le programme joué |
 | BI (hotfix #221) | VPS `backend/.env` | `POE_AUTO_REFRESH` reste à 0 tant que `generate_zone_poe` n'est pas non bloquant |
 
 Comment lire les clés déjà posées sur le VPS (Mac, Terminal — on affiche les noms, pas les valeurs) :

@@ -15,11 +15,18 @@ captures jointes). Ce script :
 Le merge de cette PR par le porteur est le GO ; loop.py le guette et lance le batch suivant.
 Ne merge jamais. Ne touche pas au code applicatif.
 
+Budget (lot W8) : Fable est le seul modèle cher. Le matériel (prompt, revue, diffs propres des PR, commentaires,
+images, docs lus) est MESURÉ et comparé à `BIM_CORRECTOR_CONTEXT_TOKENS` (1 000 000) × `BIM_CORRECTOR_BUDGET_SHARE`
+(0,6) ; au-delà, découpage en plusieurs lancements dans la même branche, dans la limite de `BIM_CORRECTOR_MAX_RUNS`
+par jour (1 ; « GO FABLE » sur une PR de la pile en accorde un de plus). Chaque lancement est noté dans
+infra/agents/COUTS.md. `BIM_CORRECTOR_AUTO=1` autorise la boucle à lancer seule (défaut 0 : jamais sans revue humaine).
+
 Usage :
     python3 infra/agents/plan_corrections.py                       # PR de state.json, modèle Fable
     python3 infra/agents/plan_corrections.py --prs 250 251 252     # PR précises
     python3 infra/agents/plan_corrections.py --prefix RB           # préfixe des nouveaux lots (défaut : premier libre RB, RD, RE…)
-    python3 infra/agents/plan_corrections.py --dry-run             # affiche le prompt
+    python3 infra/agents/plan_corrections.py --session 2 --since 2026-09-22T14:00:00Z   # session suivante (lot W7)
+    python3 infra/agents/plan_corrections.py --dry-run             # affiche le prompt et l'estimation, ne lance rien
 """
 from __future__ import annotations
 
@@ -38,6 +45,106 @@ import review_collect as rc  # noqa: E402
 
 DEFAULT_MODEL = os.environ.get("BIM_CORRECTOR_MODEL", "claude-fable-5-thinking-xhigh")
 USED_PREFIXES_RE = re.compile(r'<!--\s*LOT\s+id="([A-Z]+)\d')
+
+
+# ---------------------------------------------------------------- budget Fable (lot W8)
+#
+# Fable est le seul modèle cher de la boucle. On MESURE ce qu'on lui envoie et ce qu'il va lire, on
+# compare à sa fenêtre (1M chez Cursor, réglable), et on découpe en plusieurs lancements s'il le faut —
+# dans la limite d'un plafond journalier que seul le porteur relève (« GO FABLE » sur une PR de la pile).
+# Par défaut : un lancement par jour, jamais sans revue humaine (BIM_CORRECTOR_AUTO=0).
+
+def setting(name: str, default: str) -> str:
+    return os.environ.get(name) or rl._env_file_values().get(name) or default
+
+
+CONTEXT_TOKENS = int(setting("BIM_CORRECTOR_CONTEXT_TOKENS", "1000000"))     # fenêtre du modèle (Fable 5.1 Max : 1M)
+BUDGET_SHARE = float(setting("BIM_CORRECTOR_BUDGET_SHARE", "0.6"))          # part de la fenêtre qu'on s'autorise à remplir
+BUDGET_TOKENS = int(CONTEXT_TOKENS * BUDGET_SHARE)
+MAX_RUNS = int(setting("BIM_CORRECTOR_MAX_RUNS", "1"))                       # lancements Fable par jour, hors « GO FABLE »
+CHARS_PER_TOKEN = 3.2          # français + code : prudent (surestime un peu)
+TOKENS_PER_DIFF_LINE = 14      # une ligne de diff lue par l'agent
+TOKENS_PER_IMAGE = 1500
+OVERHEAD = 1.5                 # sorties d'outils, raisonnement, relectures : ce que l'agent ajoute lui-même
+FIXED_DOCS = ("docs/REGLES_WORKFLOW_AGENT.md", "docs/LOTS_ORDRE_ET_PROMPTS.md", "docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md")
+COUTS_MD = rl.STATE_DIR / "COUTS.md"
+EXIT_BUDGET = 3
+
+
+def tokens_of(text: str) -> int:
+    return int(len(text or "") / CHARS_PER_TOKEN)
+
+
+def fixed_tokens(wt: Path, date: str) -> int:
+    """Ce que le correcteur lit quoi qu'il arrive : règles, programme complet, plan modèle, plans du jour."""
+    total = 0
+    for rel in list(FIXED_DOCS) + previous_plans(wt, date):
+        p = wt / rel
+        if p.exists():
+            total += tokens_of(p.read_text(encoding="utf-8", errors="replace"))
+    return total
+
+
+def own_changes(prs: list[dict]) -> dict[int, int]:
+    """Lignes de diff PROPRES à chaque PR. Les PR sont empilées et visent toutes main : le diff GitHub de la
+    k-ième contient tout ce qui précède ; sommer les 28 compterait la pile 28 fois (6 M de tokens, 22 sept.).
+    Dans l'ordre des numéros, le propre = cumul − cumul précédent ; si le cumul redescend, la PR repart de
+    main (nouvelle pile) et son diff est déjà le sien."""
+    out: dict[int, int] = {}
+    prev = 0
+    for p in sorted(prs, key=lambda x: x.get("number") or 0):
+        cum = int(p.get("changes") or 0)
+        out[p["number"]] = cum - prev if cum > prev else cum
+        prev = cum
+    return out
+
+
+def pr_tokens(p: dict, own: int) -> int:
+    """Ce qu'une PR ajoute : son diff propre, ses commentaires (bot, réviseur, porteur), ses images."""
+    return own * TOKENS_PER_DIFF_LINE + int(int(p.get("comments_chars") or 0) / CHARS_PER_TOKEN) + TOKENS_PER_IMAGE * len(p.get("local_images") or [])
+
+
+def estimate(review: dict, prompt: str, wt: Path, date: str) -> dict:
+    fixed = fixed_tokens(wt, date) + tokens_of(prompt) + tokens_of(review.get("global_file") or "")
+    own = own_changes(review["prs"])
+    per_pr = {p["number"]: pr_tokens(p, own.get(p["number"], 0)) for p in review["prs"]}
+    total = int((fixed + sum(per_pr.values())) * OVERHEAD)
+    return {"fixed": fixed, "per_pr": per_pr, "total": total, "budget": BUDGET_TOKENS, "context": CONTEXT_TOKENS}
+
+
+def group_tokens(grp: list[dict], est: dict) -> int:
+    return int((est["fixed"] + sum(est["per_pr"].get(p["number"], 0) for p in grp)) * OVERHEAD)
+
+
+def split_groups(review: dict, est: dict) -> tuple[list[list[dict]], bool]:
+    """Découper les PR en groupes qui tiennent chacun dans le budget (le fixe compte dans chaque groupe).
+    Second élément : vrai si un groupe dépasse quand même (le fixe seul est trop gros, ou une PR énorme)."""
+    room = est["budget"] / OVERHEAD - est["fixed"]
+    if room <= 0:   # même le fixe dépasse : un seul groupe, on préviendra l'agent
+        return [list(review["prs"])], True
+    groups: list[list[dict]] = [[]]
+    used = 0
+    for p in review["prs"]:
+        t = est["per_pr"].get(p["number"], 0)
+        if groups[-1] and used + t > room:
+            groups.append([])
+            used = 0
+        groups[-1].append(p)
+        used += t
+    return groups, any(group_tokens(g, est) > est["budget"] for g in groups)
+
+
+def runs_today(state: "rl.State", date: str) -> int:
+    return sum(int(c.get("runs") or 1) for c in (state.extra.get("corrections") or []) if c.get("at") == date and c.get("status") not in ("dry_run", "budget"))
+
+
+def note_cost(date: str, session: int, part: str, prs: list[int], est_tokens: int, model: str, status: str) -> None:
+    """COUTS.md : une ligne par lancement Fable — la dépense doit être lisible le matin."""
+    new = not COUTS_MD.exists()
+    with COUTS_MD.open("a", encoding="utf-8") as fh:
+        if new:
+            fh.write("# Coûts — lancements du correcteur (Fable) et batches\n\n| quand | session | partie | PR couvertes | tokens estimés | modèle | statut |\n|---|---|---|---|---|---|---|\n")
+        fh.write(f"| {time.strftime('%Y-%m-%d %H:%M')} | {session} | {part} | {' '.join(f'#{n}' for n in prs) or '—'} | {est_tokens:,} | {model} | {status} |\n".replace(",", " "))
 
 
 def next_prefix(prompts_md: str) -> str:
@@ -221,8 +328,43 @@ def amend(go_pr_number: int, *, model: str = DEFAULT_MODEL, seen: set[int] | Non
     return {"ok": status == "FINISHED", "handled": [c["id"] for c in comments]}
 
 
+def part_prompt(prompt: str, i: int, n: int, tag: str, prefix: str, go_pr: int | None, over_budget: bool) -> str:
+    """Le prompt d'une partie quand le matériel est découpé en n lancements (lot W8)."""
+    extra = []
+    if n > 1 and i == 1:
+        extra += [f"## Partie 1/{n}", f"Le matériel dépasse ce qu'un seul lancement peut lire : cette partie ne couvre que les PR listées dans la revue ci-dessus ; "
+                  f"{n - 1} autre(s) lancement(s) suivront dans la MÊME branche `docs/plan-corrections-{tag}` et compléteront le plan, les lots et la PR. "
+                  "Numérote tes lots à partir de 1, laisse le § 4 du plan ouvert (une sous-section par lot), et ouvre la PR normalement."]
+    elif n > 1:
+        extra += [f"## Partie {i}/{n} — suite d'un plan déjà commencé",
+                  f"Le plan `docs/PLAN_CORRECTIONS_{tag}.md`, des lots `{prefix}<n>` et la PR GO" + (f" #{go_pr}" if go_pr else "") + f" existent déjà (parties précédentes, branche `docs/plan-corrections-{tag}`, "
+                  "déjà extraite dans ce worktree : `git pull` d'abord). COMPLÈTE-les avec les PR de cette partie : ids de lots continus après le dernier existant, "
+                  "table et balises alignées, et mets à jour la DERNIÈRE ligne `LOTS: <premier> <dernier>` du corps de la PR avec `open_pr.py` (il remplace le corps). Pas de nouvelle PR."]
+    if over_budget:
+        extra += ["## Attention : matériel au-delà du budget",
+                  "Même découpé, ce lancement dépasse le budget prévu : lis les diffs PAR EXTRAITS (`git diff main...<branche> -- <fichier> | head`, `rg -n`), jamais en entier, "
+                  "et n'ouvre les images que si un KO les cite."]
+    return prompt + ("\n\n" + "\n".join(extra) if extra else "")
+
+
+def refuse_budget(review: dict, session: int, done: int, allowed: int, est: dict, model: str) -> None:
+    """Plafond du jour atteint : rien n'est lancé, on le dit sur la PR de tête (une fois par session)."""
+    tip = (review["prs"] or [{}])[-1].get("number")
+    rl.log(f"budget Fable : plafond atteint ({done}/{allowed} lancement(s) aujourd'hui, BIM_CORRECTOR_MAX_RUNS={MAX_RUNS}) — correcteur NON lancé ; "
+           "« GO FABLE » sur une PR de la pile autorise un lancement de plus")
+    note_cost(time.strftime("%Y-%m-%d"), session, "—", [p["number"] for p in review["prs"]], est["total"], model, f"refusé (plafond {done}/{allowed})")
+    if tip:
+        body = (f"## 🧮 Fable — plafond du jour atteint ({done}/{allowed}) / daily cap reached\n\n"
+                f"Session {session} : ~{est['total']:,} tokens estimés à envoyer au correcteur, budget {est['budget']:,}. Rien n'a été lancé. "
+                "Écris **`GO FABLE`** ici pour autoriser un lancement de plus (ou relève `BIM_CORRECTOR_MAX_RUNS` dans le fichier de clés).\n"
+                "Nothing was launched. Write **`GO FABLE`** here to allow one more run.").replace(",", " ")
+        tmp = rl.STATE_DIR / "budget-comment.md"
+        tmp.write_text(body, encoding="utf-8")
+        rl.sh([sys.executable, str(HERE / "post_pr_comment.py"), str(tip), str(tmp)], check=False, timeout=120)
+
+
 def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str | None = None, dry_run: bool = False, timeout_h: float = 1.5,
-        session: int = 1, since: str | None = None) -> dict:
+        session: int = 1, since: str | None = None, extra_runs: int = 0) -> dict:
     state = rl.State.load()
     date = time.strftime("%Y-%m-%d")
     tag = f"{date}-s{session}" if session > 1 else date      # lot W7 : une branche et un plan par session
@@ -231,36 +373,74 @@ def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str |
     if review.get("global_file"):
         rl.log(f"revue globale du porteur : {len(review['global_file'])} caractères dans REVUE_GLOBALE.md")
     prefix = prefix or next_prefix(rl.PROMPTS_MD.read_text(encoding="utf-8"))
-    if dry_run:
-        prompt = build_prompt(review, rl.WORKTREES / "corrector", date, prefix, model, night, tag=tag, since=since)
-        print(prompt)
-        return {"ok": True, "dry_run": True, "prefix": prefix, "session": session}
-    wt = rl.prepare_worktree(rl.Lot("corrector", "correcteur du matin", "", "", [], ""), "main")
+    wt = rl.WORKTREES / "corrector" if dry_run else rl.prepare_worktree(rl.Lot("corrector", "correcteur du matin", "", "", [], ""), "main")
+    docs_root = wt if (wt / "docs").exists() else rl.ROOT
     prompt = build_prompt(review, wt, date, prefix, model, night, tag=tag, since=since)
+
+    # Lot W8 : mesurer, découper, plafonner
+    est = estimate(review, prompt, docs_root, date)
+    if est["total"] <= est["budget"]:
+        groups, over_budget = [list(review["prs"])], False
+    else:
+        groups, over_budget = split_groups(review, est)
+    allowed = MAX_RUNS + int(extra_runs or 0)
+    done = runs_today(state, date)
+    rl.log((f"budget Fable : ~{est['total']:,} tokens estimés pour {len(review['prs'])} PR (fixe {est['fixed']:,}, budget {est['budget']:,} = {BUDGET_SHARE:.0%} de {CONTEXT_TOKENS:,}) "
+            f"→ {len(groups)} lancement(s) ; aujourd'hui {done}/{allowed}").replace(",", " "))
+    if not dry_run and done >= allowed:
+        refuse_budget(review, session, done, allowed, est, model)
+        state = rl.State.load()
+        state.extra.setdefault("corrections", []).append({"at": date, "session": session, "since": since, "prs": [n for _, n in prs], "model": model, "status": "budget", "runs": 0})
+        state.save()
+        return {"ok": False, "budget": True, "session": session}
+    if done + len(groups) > allowed:
+        keep = max(1, allowed - done)
+        groups = groups[:keep - 1] + [sum(groups[keep - 1:], [])]
+        over_budget = True
+        rl.log(f"    plafond : {keep} lancement(s) seulement → matériel regroupé au-delà du budget (l'agent lira les diffs par extraits)")
+    if dry_run:
+        print(part_prompt(prompt, 1, len(groups), tag, prefix, None, over_budget))
+        print(f"\n[estimation] {json.dumps({k: v for k, v in est.items() if k != 'per_pr'})} ; groupes : {[[p['number'] for p in g] for g in groups]}")
+        return {"ok": True, "dry_run": True, "prefix": prefix, "session": session, "estimate": est["total"], "runs": len(groups)}
+
     (rl.STATE_DIR / f"corrector-prompt-{tag}.md").write_text(prompt, encoding="utf-8")
-    rl.log(f"correcteur du matin (session {session}) : {len(prs)} PR, préfixe {prefix}, agent {model} dans {wt}")
-    status, result = rl.run_agent_cli(wt, prompt, model, int(timeout_h * 3600))
-    rl.log(f"    correcteur : {status}")
-    for ln in (result or "").strip().splitlines()[-6:]:
-        rl.log(f"    {ln}")
-    branch = rl.local_branch(wt)
-    go_pr = None
-    if branch and rl.ensure_pushed(wt, branch):
-        http = rl.Http(None, rl.github_token_from_git())
-        pr = rl.find_pr(http, rl.DEFAULT_REPO, branch)
-        if pr:
-            go_pr = pr["number"]
-            rl.log(f"    PR GO #{go_pr} {pr['html_url']} — à merger par le porteur pour lancer le batch suivant")
+    rl.log(f"correcteur du matin (session {session}) : {len(prs)} PR, préfixe {prefix}, agent {model} dans {wt}, {len(groups)} lancement(s)")
+    http = rl.Http(None, rl.github_token_from_git())
+    status, branch, go_pr = "ERROR", None, None
+    for i, grp in enumerate(groups, 1):
+        rev_i = review if len(groups) == 1 else {**review, "prs": grp, "md": str(rl.STATE_DIR / f"review-{tag}-p{i}.md")}
+        if len(groups) > 1:
+            Path(rev_i["md"]).write_text(rc.summary_md(rev_i), encoding="utf-8")
+            prompt_i = part_prompt(build_prompt(rev_i, wt, date, prefix, model, night, tag=tag, since=since), i, len(groups), tag, prefix, go_pr, over_budget)
         else:
-            rl.log("    la PR GO n'a pas été ouverte par l'agent : `python3 infra/agents/open_pr.py " + branch + " main \"docs: corrections\" <corps.md>`")
+            prompt_i = part_prompt(prompt, 1, 1, tag, prefix, None, over_budget)
+        part = f"{i}/{len(groups)}"
+        est_i = group_tokens(grp, est)
+        status, result = rl.run_agent_cli(wt, prompt_i, model, int(timeout_h * 3600))
+        rl.log(f"    correcteur (partie {part}) : {status}")
+        for ln in (result or "").strip().splitlines()[-6:]:
+            rl.log(f"    {ln}")
+        note_cost(date, session, part, [p["number"] for p in grp], est_i, model, status)
+        branch = rl.local_branch(wt)
+        if branch and rl.ensure_pushed(wt, branch):
+            pr = rl.find_pr(http, rl.DEFAULT_REPO, branch)
+            if pr:
+                go_pr = pr["number"]
+        if status != "FINISHED":
+            break
+    if go_pr:
+        rl.log(f"    PR GO #{go_pr} https://github.com/{rl.owner_repo(rl.DEFAULT_REPO)}/pull/{go_pr} — à merger par le porteur pour lancer le batch suivant")
+    elif branch:
+        rl.log("    la PR GO n'a pas été ouverte par l'agent : `python3 infra/agents/open_pr.py " + branch + " main \"docs: corrections\" <corps.md>`")
     archived = rc.archive_global_file(date) if status == "FINISHED" else None
     if archived:
         rl.log(f"revue globale archivée : {archived} (fichier remis à zéro)")
     state = rl.State.load()
     state.extra.setdefault("corrections", []).append({"at": date, "session": session, "since": since, "prs": [n for _, n in prs], "model": model, "status": status,
-                                                      "branch": branch, "go_pr": go_pr, "prefix": prefix, "global_archived": archived})
+                                                      "branch": branch, "go_pr": go_pr, "prefix": prefix, "global_archived": archived,
+                                                      "runs": len(groups), "estimate_tokens": est["total"], "over_budget": over_budget})
     state.save()
-    return {"ok": status == "FINISHED", "branch": branch, "go_pr": go_pr, "prefix": prefix, "session": session}
+    return {"ok": status == "FINISHED", "branch": branch, "go_pr": go_pr, "prefix": prefix, "session": session, "runs": len(groups)}
 
 
 def main() -> None:
@@ -273,6 +453,7 @@ def main() -> None:
     ap.add_argument("--amend", type=int, metavar="GO_PR", help="corriger la PR GO donnée selon ses commentaires « CORRIGER : » (second agent)")
     ap.add_argument("--session", type=int, default=1, help="numéro de la session de revue du jour (lot W7 : branche et plan suffixés -s<n> à partir de 2)")
     ap.add_argument("--since", help="ISO UTC : les KO antérieurs ont déjà été lus par une session précédente (ne pas replanifier)")
+    ap.add_argument("--extra-runs", type=int, default=0, help="lancements Fable accordés en plus du plafond du jour (« GO FABLE » du porteur, lot W8)")
     args = ap.parse_args()
     if args.amend:
         out = amend(args.amend, model=args.model, dry_run=args.dry_run, timeout_h=args.timeout_hours)
@@ -281,9 +462,12 @@ def main() -> None:
     prs = [("", n) for n in args.prs] if args.prs else rc.prs_from_state()
     if not prs:
         sys.exit("Aucune PR : --prs … ou un state.json avec des lots FINISHED.")
-    out = run(prs, model=args.model, prefix=args.prefix, dry_run=args.dry_run, timeout_h=args.timeout_hours, session=args.session, since=args.since)
+    out = run(prs, model=args.model, prefix=args.prefix, dry_run=args.dry_run, timeout_h=args.timeout_hours, session=args.session, since=args.since,
+              extra_runs=args.extra_runs)
     if not args.dry_run:
         print(json.dumps(out, ensure_ascii=False))
+    if out.get("budget"):
+        sys.exit(EXIT_BUDGET)
 
 
 if __name__ == "__main__":
