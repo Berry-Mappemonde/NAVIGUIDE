@@ -338,10 +338,12 @@ def wait_go(st: dict, args) -> dict:
                        and re.match(r"^\s*(?:\*\*)?(CORRIGER|AMENDER|REVOIR|CHANGER)\s*:", (c.get("body") or "").strip(), re.I)]
             if pending:
                 rl.log(f"    {len(pending)} commentaire(s) CORRIGER sur le GO → amendement")
-                rc = run([sys.executable, str(HERE / "plan_corrections.py"), "--amend", str(n), "--model", args.corrector_model], timeout=2 * 3600)
+                # `code`, pas `rc` : `rc` est le module review_collect (rc.trusted ci-dessus) — une variable
+                # locale du même nom rendait tout `wait_go` inopérant dès le premier commentaire (24 sept., 03:27).
+                code = run([sys.executable, str(HERE / "plan_corrections.py"), "--amend", str(n), "--model", args.corrector_model], timeout=2 * 3600)
                 seen.update(c.get("id") for c in pending)
                 st["go_comments_seen"] = sorted(seen)
-                st["history"].append({"phase": "amend_go", "pr": n, "comments": len(pending), "rc": rc, "at": time.strftime("%Y-%m-%d %H:%M")})
+                st["history"].append({"phase": "amend_go", "pr": n, "comments": len(pending), "rc": code, "at": time.strftime("%Y-%m-%d %H:%M")})
                 save(st)
         except Exception as e:
             rl.log(f"    GitHub indisponible ({e}) — nouvel essai")
