@@ -167,9 +167,12 @@ describe("cartes", () => {
         }],
       },
     };
-    const items = infoItemsFromBag(withNews, "fr");
+    // Heure fixe : l'actualité expire le 23 sept. 2026 — jugée à l'horloge murale, ce test est devenu
+    // rouge ce jour-là sur main et sur toutes les PR (24 sept.).
+    const items = infoItemsFromBag(withNews, "fr", Date.parse("2026-09-20T15:00:00Z"));
     const news = items.find((c) => c.kind === "news");
     assert.ok(news);
+    assert.equal(infoItemsFromBag(withNews, "fr", Date.parse("2026-09-23T00:00:00Z")).find((c) => c.kind === "news"), undefined);
     assert.equal(news.lane, LANE_FREE);
     assert.match(news.title, /Nouméa · veille du/);
     assert.equal(news.entity.url, entry.url);
