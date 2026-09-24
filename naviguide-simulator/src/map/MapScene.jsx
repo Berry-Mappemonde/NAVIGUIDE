@@ -1,31 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { featuresToSegments } from "../utils/geo.js";
-import { isAirSegment } from "../utils/berryLegs.js";
 import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
 import { useRouteLayer } from "../layers/useRouteLayer.js";
 import { MapSceneController } from "./MapSceneController.js";
-
-function pointToSegmentPx(map, lat, lon, coords) {
-  const point = map.latLngToLayerPoint([lat, lon]);
-  let best = Infinity;
-  for (let index = 0; index < coords.length - 1; index += 1) {
-    const [lon1, lat1] = coords[index];
-    const [lon2, lat2] = coords[index + 1];
-    const from = map.latLngToLayerPoint([lat1, lon1]);
-    const to = map.latLngToLayerPoint([lat2, lon2]);
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const lengthSq = dx * dx + dy * dy;
-    const ratio = lengthSq
-      ? Math.max(0, Math.min(1, ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSq))
-      : 0;
-    best = Math.min(best, Math.hypot(point.x - (from.x + ratio * dx), point.y - (from.y + ratio * dy)));
-  }
-  return best;
-}
+import { isNearRoute } from "./routeClick.js";
 
 /**
  * React boundary for the map. Its controller owns all mobile Leaflet objects;
@@ -164,12 +145,7 @@ export function MapScene({
         return;
       }
       const active = scene.customRoute ? featuresToSegments(scene.customRoute) : scene.segments;
-      const nearby = active.some((segment) => (
-        !isAirSegment(segment)
-        && segment.coords?.length > 1
-        && pointToSegmentPx(map, lat, lon, segment.coords) < 16
-      ));
-      if (nearby) callbacksRef.current.onRouteClick?.({ lat, lon });
+      if (isNearRoute(map, lat, lon, active)) callbacksRef.current.onRouteClick?.({ lat, lon });
     };
     const onContextMenu = (event) => {
       L.DomEvent.preventDefault(event);
