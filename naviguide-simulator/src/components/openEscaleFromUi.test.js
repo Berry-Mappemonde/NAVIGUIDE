@@ -21,3 +21,18 @@ describe("openEscaleFromUi — pas d'ouverture de panneau (lot RD1)", () => {
     assert.doesNotMatch(app, /if \(escaleStop && !replay\.active\) setSidebarOpen\(true\)/);
   });
 });
+
+describe("handleSidebarSeek — lot RC6 : preview utilisateur", () => {
+  it("en Suivre, setUserPreview(true) avant pause+seek", () => {
+    const start = app.indexOf("const handleSidebarSeek");
+    const end = app.indexOf("const handleSeekJournal");
+    assert.ok(start >= 0 && end > start, "handleSidebarSeek introuvable");
+    const block = app.slice(start, end);
+    assert.match(block, /if \(isSuivre\) setUserPreview\(true\)/);
+    assert.match(block, /playback\.pause/);
+    assert.match(block, /playback\.seek/);
+    const preview = block.indexOf("setUserPreview(true)");
+    const pause = block.indexOf("playback.pause");
+    assert.ok(preview >= 0 && pause > preview, "preview avant pause");
+  });
+});

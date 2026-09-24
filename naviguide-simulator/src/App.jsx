@@ -1405,9 +1405,10 @@ export default function App() {
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
   const handleSidebarSeek = useCallback((nm) => {
+    if (isSuivre) setUserPreview(true);
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
-  }, [sceneApi]);
+  }, [isSuivre, sceneApi]);
   const handleSeekJournal = useCallback((iso) => {
     const sample = sampleClockAtTime(officialClock, iso);
     const nm = Number(sample?.filmNm);
