@@ -7,6 +7,16 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "EscaleLegend.jsx"), "utf8");
 
+describe("EscaleLegend — plus de carré vert (lot RD1)", () => {
+  it("ne rend plus escale-sheet-open", () => {
+    assert.doesNotMatch(src, /escale-sheet-open/);
+    assert.doesNotMatch(src, /▤/);
+    assert.doesNotMatch(src, /onSheet/);
+    assert.match(src, /onSeek/);
+    assert.match(src, /data-testid="escale-legend"/);
+  });
+});
+
 describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
   it("ajoute eta-range sans retirer la date", () => {
     assert.match(src, /data-testid="escale-legend"/);
