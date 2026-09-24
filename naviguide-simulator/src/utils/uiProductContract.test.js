@@ -114,14 +114,17 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(ici, /ListenButton/);
   });
 
-  it("lot RD5 : Date de départ au-dessus de la revue, replay distinct, horloge avec année", () => {
+  it("lot RD5 / RD9 : Date de départ dans le panneau droit, revue dans l'encadré gauche, replay distinct, horloge avec année", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
+    const ici = read("../components/IciMaintenant.jsx");
     const bar = read("../components/SimulationFilmBar.jsx");
     const clock = read("../engine/voyageClock.js");
     const depAt = tools.indexOf("{showDeparture ?");
-    const planAt = tools.indexOf("{planReview && !drawing");
-    assert.ok(depAt >= 0 && planAt >= 0 && depAt < planAt, "Date de départ au-dessus de la Revue du plan");
+    assert.ok(depAt >= 0, "Date de départ toujours dans le panneau droit");
+    assert.doesNotMatch(tools, /<PlanReview/);
+    assert.doesNotMatch(tools, /planReview && !drawing/);
+    assert.match(ici, /<PlanReview/);
     assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
     assert.match(app, /t0: replayT0/);

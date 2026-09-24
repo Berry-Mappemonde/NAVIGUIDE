@@ -1626,6 +1626,7 @@ export default function App() {
         journalEntries={momentJournal.entries}
         onSeek={handleSeekJournal}
         momentMode={momentMode}
+        planReview={planReview}
         escaleStop={replay.active ? null : escaleStop}
         escaleFiche={escaleSheet?.fiche}
         escaleLoading={Boolean(escaleSheet?.loading)}
@@ -1657,7 +1658,6 @@ export default function App() {
         onSeekEscale={handleSidebarSeek}
         onEscaleSheet={openEscaleFromUi}
         drawing={drawing}
-        planReview={planReview}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}

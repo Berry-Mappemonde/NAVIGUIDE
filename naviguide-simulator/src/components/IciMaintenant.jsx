@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { EscaleSheet } from "./EscaleSheet.jsx";
+import { PlanReview } from "./PlanReview.jsx";
 import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   visibleIciTabs,
@@ -79,6 +80,7 @@ export function IciMaintenant({
   journalEntries = null,
   onSeek = null,
   mode = "follow",
+  planReview = null,
   simulation = null,
   hereBody = null,
   escale = null,
@@ -106,8 +108,7 @@ export function IciMaintenant({
   }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange]);
 
   useEffect(() => {
-    if (view !== "story") return;
-    if (tabs.some((tab) => tab.id === "story")) return;
+    if (tabs.some((tab) => tab.id === view)) return;
     setView("now");
   }, [mode, view]);
 
@@ -275,6 +276,24 @@ export function IciMaintenant({
           {Array.isArray(journalEntries) ? (
             <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
           ) : journal}
+        </div>
+      ) : null}
+
+      {view === "review" ? (
+        <div data-testid="ici-review-slot" className="mt-1 min-h-0 overflow-auto">
+          {planReview ? (
+            <PlanReview
+              legs={planReview.legs}
+              loading={planReview.loading}
+              error={planReview.error}
+              summary={planReview.summary}
+              comment={planReview.comment}
+              commentSource={planReview.commentSource}
+              advice={planReview.advice}
+              onApply={planReview.onApply}
+              startOpen
+            />
+          ) : null}
         </div>
       ) : null}
     </div>

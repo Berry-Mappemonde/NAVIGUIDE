@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "PlanReview.jsx"), "utf8");
 const tools = readFileSync(join(here, "ToolsSidebar.jsx"), "utf8");
+const ici = readFileSync(join(here, "IciMaintenant.jsx"), "utf8");
+const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 
 describe("PlanReview — commentaire (lot L5)", () => {
@@ -21,8 +23,12 @@ describe("PlanReview — commentaire (lot L5)", () => {
   it("reçoit le commentaire depuis la revue serveur, sans retirer le tableau", () => {
     assert.match(app, /comment: planReviewState\.review\?\.comment\?\.text/);
     assert.match(app, /commentSource: planReviewState\.review\?\.comment\?\.source/);
-    assert.match(tools, /comment=\{planReview\.comment\}/);
-    assert.match(tools, /<PlanReview[\s\S]*legs=\{planReview\.legs\}/);
+    assert.match(ici, /comment=\{planReview\.comment\}/);
+    assert.match(ici, /<PlanReview[\s\S]*legs=\{planReview\.legs\}/);
+    assert.match(sidebar, /planReview=\{!isDrawing \? planReview : null\}/);
+    assert.match(app, /planReview=\{planReview\}/);
+    assert.doesNotMatch(tools, /<PlanReview/);
+    assert.doesNotMatch(tools, /planReview && !drawing/);
     assert.match(src, /data-testid="plan-review"/);
     assert.match(src, /data-testid="plan-review-leg"/);
     assert.match(src, /data-testid="plan-review-leg-dates"/);
