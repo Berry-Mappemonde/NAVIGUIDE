@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { nextEtaRetryMs, sleepMs } from "./usePlanReview.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 
@@ -171,6 +172,49 @@ export function appendLocalMoment(entries, moment, { voyageId = "local" } = {}) 
   return ordered.concat(next).slice(-MOMENT_JOURNAL_CAP);
 }
 
+async function defaultMomentsFetch({ signal } = {}) {
+  const res = await fetch(`${API_URL}/voyage/official/moments`, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Relance GET /moments tant que la liste est vide ou que le fetch a échoué.
+ * Même recul que pollOfficialEta / nextEtaRetryMs. S'arrête dès qu'il y a des lignes.
+ */
+export async function pollOfficialMoments({
+  fetchFn = defaultMomentsFetch,
+  signal,
+  sleep = sleepMs,
+  onUpdate,
+} = {}) {
+  let attempt = 0;
+  while (!signal?.aborted) {
+    let body = null;
+    let errMsg = null;
+    try {
+      body = await fetchFn({ signal });
+    } catch (err) {
+      if (err?.name === "AbortError") throw err;
+      body = null;
+      errMsg = err?.message || "error";
+    }
+    const entries = parseOfficialMoments(body);
+    if (entries.length) {
+      onUpdate?.({ entries, error: null, source: "api" });
+      return entries;
+    }
+    onUpdate?.({
+      entries: [],
+      error: errMsg,
+      source: "none",
+    });
+    await sleep(nextEtaRetryMs(attempt), signal);
+    attempt += 1;
+  }
+  return [];
+}
+
 /**
  * Official voyage: GET /voyage/official/moments.
  * Simulation / drawn: localStorage, key = route id, ≤ 2 000, built from Moments.
@@ -202,30 +246,32 @@ export function useMomentJournal({
       return undefined;
     }
     const controller = new AbortController();
+    let alive = true;
     setState({ entries: [], loading: true, error: null, source: "none" });
-    fetch(`${API_URL}/voyage/official/moments`, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((body) => {
+    pollOfficialMoments({
+      signal: controller.signal,
+      onUpdate: (next) => {
+        if (!alive) return;
         setState({
-          entries: parseOfficialMoments(body),
+          entries: next.entries,
           loading: false,
-          error: null,
-          source: "api",
+          error: next.error,
+          source: next.source,
         });
-      })
-      .catch((err) => {
-        if (err?.name === "AbortError") return;
-        setState({
-          entries: [],
-          loading: false,
-          error: err?.message || "error",
-          source: "none",
-        });
+      },
+    }).catch((err) => {
+      if (!alive || err?.name === "AbortError") return;
+      setState({
+        entries: [],
+        loading: false,
+        error: err?.message || "error",
+        source: "none",
       });
-    return () => controller.abort();
+    });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
   }, [enabled, local, routeId]);
 
   useEffect(() => {

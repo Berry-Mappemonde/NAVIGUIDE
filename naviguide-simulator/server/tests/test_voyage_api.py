@@ -450,6 +450,53 @@ def test_get_eta_seeded_without_clock_is_empty_no_fetch(client, monkeypatch):
     assert moments.json().get("moments") == []
 
 
+def test_kick_official_eta_restarts_when_first_ready_is_empty(tmp_path, monkeypatch):
+    """Lot RC9 : un premier ready vide n'est pas terminal — GET /eta relance le warm."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+    assert voy.get("clock") is None
+
+    import ensemble_eta
+
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 0})
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta(force=True, stop="Dzaoudzi") is True
+    voyage_api._wait_official_kick("official-eta", timeout=2.0)
+    hit = get_pipeline().peek("official-eta", 0.0, 0.0, when=voyage_api._now())
+    assert hit and hit.get("status") in {"ready", "error"}
+
+    assert voyage_api._kick_official_eta(force=False, stop="Dzaoudzi") is True
+
+
+def test_kick_official_eta_stays_when_members_ready(tmp_path, monkeypatch):
+    """Lot RC9 : dès qu'il y a des membres, force=False ne relance pas."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+
+    import ensemble_eta
+
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 12})
+    monkeypatch.setattr(
+        ensemble_eta,
+        "peek_official_eta",
+        lambda *a, **k: {"members": 12, "p10": "2026-10-11T00:00:00Z", "p90": "2026-10-13T00:00:00Z"},
+    )
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta(force=True, stop="Dzaoudzi") is True
+    voyage_api._wait_official_kick("official-eta", timeout=2.0)
+    assert voyage_api._kick_official_eta(force=False, stop="Dzaoudzi") is False
+
+
 def test_get_eta_serves_alias_cache_without_clock(client, monkeypatch):
     """Lot RC7 : cache alias → GET /eta 200 avec membres, toujours sans clock."""
     import ensemble_eta
