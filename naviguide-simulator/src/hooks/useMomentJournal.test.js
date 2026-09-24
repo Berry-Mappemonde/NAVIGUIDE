@@ -4,6 +4,7 @@ import fixture from "../fixtures/moment.json" with { type: "json" };
 import {
   MOMENT_JOURNAL_CAP,
   appendLocalMoment,
+  localChanges,
   momentAtOrBefore,
   momentJournalStorageKey,
   parseOfficialMoments,
@@ -88,5 +89,45 @@ describe("useMomentJournal — lot R9b : repli localStorage, plafond 2 000", () 
     assert.equal(body.length, 2);
     assert.equal(body[0].signature, "a");
     assert.equal(parseOfficialMoments({}).length, 0);
+  });
+});
+
+describe("useMomentJournal — lot RD6 : nom d'AMP depuis le fait", () => {
+  it("porte le nom de l'AMP (here.mpa) et de la marina (around), jamais inventé", () => {
+    const prev = {
+      here: { zee: { name: "ZEE A" }, mpa: [] },
+      leg: { to: "La Rochelle", regime: "climatology" },
+      alerts: [],
+      around: [],
+    };
+    const cur = {
+      here: {
+        zee: { name: "ZEE A" },
+        mpa: [{ name: "Iroise", nm: 4, site_id: "fr-amp-iroise" }],
+      },
+      leg: { to: "La Rochelle", regime: "climatology" },
+      alerts: [{
+        id: "mpa-fr-amp-iroise",
+        kind: "mpa",
+        title: "Aire marine protégée",
+        fact: "Iroise (4 nm): IUCN II.",
+      }],
+      around: [{
+        kind: "marina",
+        title: "Marina du Château",
+        fact: "Marina du Château (2 nm)",
+      }],
+    };
+    const changes = localChanges(prev, cur);
+    const amp = changes.find((c) => c.kind === "amp");
+    assert.ok(amp, "entrée AMP");
+    assert.equal(amp.title, "Iroise");
+    assert.match(amp.fact, /Iroise/);
+    assert.equal(changes.filter((c) => c.kind === "amp").length, 1, "pas de doublon alerte / mpa");
+    const marina = changes.find((c) => c.kind === "marina");
+    assert.ok(marina);
+    assert.equal(marina.title, "Marina du Château");
+    assert.match(marina.fact, /Marina du Château/);
+    assert.equal(changes.some((c) => /invent|exemple|placeholder/i.test(`${c.title} ${c.fact}`)), false);
   });
 });
