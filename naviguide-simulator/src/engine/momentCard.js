@@ -388,8 +388,8 @@ function placeItem(kind, item, lang) {
   };
 }
 
-function newsItemFromBag(item, lang) {
-  if (!item || newsExpired(item)) return null;
+function newsItemFromBag(item, lang, nowMs = Date.now()) {
+  if (!item || newsExpired(item, nowMs)) return null;
   const name = item.name || "";
   const when = watchDayLabel(item.t, lang);
   const host = (() => {
@@ -432,7 +432,9 @@ function newsItemFromBag(item, lang) {
  * Keys are stable per place so a marina met again 3 nm later is not repeated.
  * Balisage and climatologie go to the NOW lane (decisions), the rest to FREE.
  */
-export function infoItemsFromBag(bag, lang = "fr") {
+export function infoItemsFromBag(bag, lang = "fr", nowMs = Date.now()) {
+  // `nowMs` : l'heure de référence du moment (advanceMoments) — les actualités qui expirent
+  // sont jugées à cette heure, pas à l'horloge murale (test L4 devenu rouge le 23 sept. 2026).
   if (!bag) return [];
   const out = [];
   const push = (kind, items) => {
@@ -449,7 +451,7 @@ export function infoItemsFromBag(bag, lang = "fr") {
   push("project", bag.projects);
   push("amp", bag.amp);
   (bag.news || []).forEach((it) => {
-    const card = newsItemFromBag(it, lang);
+    const card = newsItemFromBag(it, lang, nowMs);
     if (card) out.push(card);
   });
   push("aton", bag.aton?.nearby);
@@ -742,7 +744,7 @@ export function advanceMoments(prev, {
   };
 
   // 2. Bag → cards (balisage / climatologie → NOW, the rest → FREE).
-  for (const card of infoItemsFromBag(bag, lang)) {
+  for (const card of infoItemsFromBag(bag, lang, nowMs)) {
     const truth = truthForCard(card, bag);
     const withTruth = truth ? { ...card, truth } : card;
     if (seen.has(withTruth.key)) continue;
