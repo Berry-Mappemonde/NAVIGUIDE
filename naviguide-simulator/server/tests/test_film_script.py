@@ -282,6 +282,27 @@ def test_http_film_route_raw(monkeypatch):
         assert all(e.get("score") in {1, 2, 3} for e in evs)
 
 
+def test_http_film_route_replay_t0(monkeypatch):
+    from fastapi.testclient import TestClient
+    import voyage_api
+    from main import app
+
+    monkeypatch.setattr(voyage_api, "_now", lambda: datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc))
+    client = TestClient(app)
+    body = _official()
+    body["t0"] = OFFICIAL_T0
+    client.put("/voyage/official", json=body, headers=PUBLIC)
+    r = client.get(
+        "/voyage/official/film?lang=fr&seconds=150&t0=2025-05-15T08:00:00.000Z",
+        headers=PUBLIC,
+    )
+    assert r.status_code == 200
+    text0 = r.json()["chapters"][0]["text"]
+    assert "Saint-Maur" in text0
+    assert "15 mai 2025" in text0
+    assert "15 mai 2026" not in text0
+
+
 def test_bubble_scores_are_one_two_or_three():
     assert bubble_score({"kind": "stop", "event": "arrival"}) == 3
     assert bubble_score({"kind": "stop", "event": "departure"}) == 3

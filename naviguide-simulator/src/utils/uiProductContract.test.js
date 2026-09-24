@@ -8,10 +8,11 @@ const src = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(src, path), "utf8");
 
 describe("contrat UI produit", () => {
-  it("démarre en Simulation sur la vue monde sans recadrage initial", () => {
+  it("démarre en Suivre sur la vue monde sans recadrage initial", () => {
     const app = read("../App.jsx");
     const map = read("../hooks/useSimulatorMap.js");
-    assert.match(app, /useState\(VIEW_SIMULATION\)/);
+    assert.match(app, /useState\(VIEW_SUIVRE\)/);
+    assert.doesNotMatch(app, /useState\(VIEW_SIMULATION\)/);
     assert.match(map, /zoom:\s*2/);
     assert.doesNotMatch(app, /map\.setView\(\[start\.lat,\s*start\.lon\],\s*8/);
   });
@@ -111,6 +112,25 @@ describe("contrat UI produit", () => {
     assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
     assert.match(ici, /<EscaleSheet/);
     assert.doesNotMatch(ici, /ListenButton/);
+  });
+
+  it("lot RD5 : Date de départ au-dessus de la revue, replay distinct, horloge avec année", () => {
+    const app = read("../App.jsx");
+    const tools = read("../components/ToolsSidebar.jsx");
+    const bar = read("../components/SimulationFilmBar.jsx");
+    const clock = read("../engine/voyageClock.js");
+    const depAt = tools.indexOf("{showDeparture ?");
+    const planAt = tools.indexOf("{planReview && !drawing");
+    assert.ok(depAt >= 0 && planAt >= 0 && depAt < planAt, "Date de départ au-dessus de la Revue du plan");
+    assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
+    assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
+    assert.match(app, /t0: replayT0/);
+    assert.match(app, /departureT0=\{voyage\.t0\}/);
+    assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
+    assert.match(bar, /data-testid="replay-departure"/);
+    assert.match(bar, /<DepartureField/);
+    assert.match(clock, /getUTCFullYear\(\)/);
+    assert.match(clock, / · \$\{hh\}:\$\{mm\} UTC/);
   });
 
   it("lot C3 : barre film et contexte du chat lisent la même source", () => {

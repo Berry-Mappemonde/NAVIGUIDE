@@ -6,6 +6,7 @@ import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
+import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
 
 function clockSpeedBasis(clock, clockCurrent, barNm) {
@@ -424,6 +425,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             ) : null}
             {replay ? (
               <div className="flex items-center gap-1" data-testid="replay-controls">
+                <div data-testid="replay-departure" className="shrink-0 w-[9.75rem]">
+                  <DepartureField
+                    t0={replay.t0}
+                    onT0={replay.onT0}
+                    compact
+                    testId="replay-departure-field"
+                    disabled={Boolean(replay.active)}
+                  />
+                </div>
                 {replay.active ? (
                   <>
                     <button

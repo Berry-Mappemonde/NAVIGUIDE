@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, linearFilmAt, pickFilmChapters, shouldReturnToLive, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, filmTextHasT0Year, linearFilmAt, pickFilmChapters, shouldReturnToLive, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -18,6 +18,8 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /if \(done\)/);
     assert.match(hook, /const stop = useCallback/);
     assert.match(hook, /\/voyage\/official\/film/);
+    assert.match(hook, /t0=\$\{encodeURIComponent\(t0\)\}/);
+    assert.match(hook, /t0 = DEFAULT_T0_ISO/);
     assert.match(hook, /buildFilmScript/);
     assert.doesNotMatch(hook, /Tavily|Nebius/i);
   });
@@ -168,6 +170,13 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
     assert.equal(picked.chapters[0].fromLat, 48.8);
     assert.equal(picked.chapters[0].toLat, 46.1);
     assert.ok(chapterHasFirstLeg(picked.chapters[0]));
+  });
+
+  it("lot RD5 : un script distant qui ignore t0 n'est pas retenu", () => {
+    const ch2026 = [{ text: "L’expédition a quitté Saint-Maur le 15 mai 2026." }];
+    assert.equal(filmTextHasT0Year(ch2026, "2026-05-15T08:00:00.000Z"), true);
+    assert.equal(filmTextHasT0Year(ch2026, "2025-05-15T08:00:00.000Z"), false);
+    assert.match(hook, /filmTextHasT0Year\(remote\.chapters, t0\)/);
   });
 });
 

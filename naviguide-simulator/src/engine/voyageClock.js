@@ -587,9 +587,28 @@ export function formatCivilDate(iso, lang = "fr") {
   if (Number.isNaN(d.getTime())) return "—";
   const months = MONTHS_SHORT[lang] || MONTHS_SHORT.fr;
   const day = d.getUTCDate();
+  const year = d.getUTCFullYear();
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${day} ${months[d.getUTCMonth()]} ${hh}:${mm} UTC`;
+  return `${day} ${months[d.getUTCMonth()]} ${year} · ${hh}:${mm} UTC`;
+}
+
+/** Décale une ISO de `fromT0` vers `toT0` (mêmes nombres d’heures, aucune date inventée). */
+export function rebaseIso(iso, fromT0, toT0) {
+  const a = Date.parse(iso ?? "");
+  const from = Date.parse(fromT0 ?? "");
+  const to = Date.parse(toT0 ?? "");
+  if (!Number.isFinite(a) || !Number.isFinite(from) || !Number.isFinite(to) || from === to) {
+    return iso;
+  }
+  return new Date(a + (to - from)).toISOString();
+}
+
+/** t0 de récit : ISO valide, sinon le départ officiel (15 mai 2026). */
+export function resolveStoryT0(t0) {
+  const parsed = Date.parse(t0 || "");
+  if (!Number.isFinite(parsed)) return DEFAULT_T0_ISO;
+  return new Date(parsed).toISOString();
 }
 
 export function formatMonthName(month, lang = "fr") {

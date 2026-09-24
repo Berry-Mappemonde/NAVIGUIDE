@@ -22,7 +22,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { cardFromJournalEntry } from "./momentCard.js";
-import { DEFAULT_T0_ISO } from "./voyageClock.js";
+import { DEFAULT_T0_ISO, rebaseIso, resolveStoryT0 } from "./voyageClock.js";
 
 const MONTHS = {
   fr: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
@@ -419,7 +419,7 @@ function legParagraph(from, to, { journal, lang, sea, connector }) {
  * @param {string} p.lang
  * @returns {string[]} paragraphs, chronological
  */
-export function expeditionStory({ clock, marks, live, leg, journal = null, now = Date.now(), lang = "fr" } = {}) {
+export function expeditionStory({ clock, marks, live, leg, journal = null, now = Date.now(), lang = "fr", t0: storyT0 } = {}) {
   const en = isEn(lang);
   const nowMs = now instanceof Date ? now.getTime() : (typeof now === "number" ? now : ms(now));
   const rawMarks = marks?.length ? marks : clock?.marks;
@@ -431,7 +431,7 @@ export function expeditionStory({ clock, marks, live, leg, journal = null, now =
 
   const start = stops[0];
   const sea = seaStop(stops, marks, clock);
-  const departIso = DEFAULT_T0_ISO;
+  const departIso = resolveStoryT0(storyT0);
 
   // 1. Le départ.
   if (nowMs != null && t0 != null && nowMs < t0) {
@@ -898,9 +898,10 @@ export function filmEventSentence(ev, lang = "fr") {
   return "";
 }
 
-function legIntro(from, to, connector, lang, { first, sea }) {
+function legIntro(from, to, connector, lang, { first, sea, storyT0 = DEFAULT_T0_ISO }) {
   const en = isEn(lang);
-  const depIso = first ? from?.iso : departureIso(from) || from?.iso;
+  const rawDep = first ? from?.iso : departureIso(from) || from?.iso;
+  const depIso = rebaseIso(rawDep, DEFAULT_T0_ISO, storyT0);
   const dest = shortName(to?.name || "");
   const origin = shortName(from?.name || "");
   if (first) {
@@ -915,7 +916,7 @@ function legIntro(from, to, connector, lang, { first, sea }) {
 }
 
 /** Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé. */
-function chapterDepart(w, i, lang) {
+function chapterDepart(w, i, lang, storyT0 = DEFAULT_T0_ISO) {
   const dest = w.to && w.to.name ? w.to : null;
   const destName = shortName(dest?.name || "");
   const origin = shortName(w.from?.name || "");
@@ -927,7 +928,7 @@ function chapterDepart(w, i, lang) {
     if (!destName) return "";
     return `${head[0].toUpperCase()}${head.slice(1)}.`;
   }
-  return legIntro(w.from, dest, storyConnector(i - 1, lang), lang, { first: false });
+  return legIntro(w.from, dest, storyConnector(i - 1, lang), lang, { first: false, storyT0 });
 }
 
 function chapterWindows(stops, t0, tEnd) {
@@ -995,21 +996,22 @@ function assignToChapters(events, windows) {
   return buckets;
 }
 
-function arrivalSentence(to, lang) {
+function arrivalSentence(to, lang, storyT0 = DEFAULT_T0_ISO) {
   if (!to?.name || ms(to.iso) == null) return "";
   const en = isEn(lang);
   const quay = days(to.holdHours);
+  const when = dayMonth(rebaseIso(to.iso, DEFAULT_T0_ISO, storyT0), lang);
   return en
-    ? `Arrival at ${shortName(to.name)} on ${dayMonth(to.iso, lang)}${quay ? `, ${dayWord(quay, lang)} in port` : ""}.`
-    : `Arrivée à ${shortName(to.name)} le ${dayMonth(to.iso, lang)}${quay ? `, ${dayWord(quay, lang)} à quai` : ""}.`;
+    ? `Arrival at ${shortName(to.name)} on ${when}${quay ? `, ${dayWord(quay, lang)} in port` : ""}.`
+    : `Arrivée à ${shortName(to.name)} le ${when}${quay ? `, ${dayWord(quay, lang)} à quai` : ""}.`;
 }
 
-function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
+function composeChapters(windows, buckets, { lang, seaName, startName, live, storyT0 = DEFAULT_T0_ISO }) {
   const chapters = [];
   const cited = new Set();
   const pushArrival = (bits, dest) => {
     const key = dest ? normStop(dest.name) : "";
-    const sentence = dest ? arrivalSentence(dest, lang) : "";
+    const sentence = dest ? arrivalSentence(dest, lang, storyT0) : "";
     if (!sentence || !key || cited.has(key)) return;
     bits.push(sentence);
     cited.add(key);
@@ -1024,25 +1026,28 @@ function composeChapters(windows, buckets, { lang, seaName, startName, live }) {
       const left = filmEventSentence({
         role: "depart",
         kind: "stop",
-        t: DEFAULT_T0_ISO,
+        t: storyT0,
         name: startName,
         seaName: destName ? "" : seaName,
-        entry: { t: DEFAULT_T0_ISO, name: startName },
+        entry: { t: storyT0, name: startName },
       }, lang).trim();
       if (left) bits.push(left);
     }
-    const head = chapterDepart(w, i, lang);
+    const head = chapterDepart(w, i, lang, storyT0);
     if (head) bits.push(head);
     pushArrival(bits, dest);
     for (const ev of buckets[i] || []) {
       // Stopovers are the jambe destination, already paired above — not a second cite.
       if (ev.kind === "stop" && ev.role !== "depart" && ev.role !== "today") continue;
       if (ev.role === "depart") continue;
+      const displayT = rebaseIso(ev.t || ev.entry?.t, DEFAULT_T0_ISO, storyT0);
       const rich = {
         ...ev,
+        t: displayT,
         seaName: destName || seaName,
         toName: destName,
         distLabel: live ? spokenNmLabel(live.sailNm ?? live.filmNm, lang) : "",
+        entry: ev.entry ? { ...ev.entry, t: rebaseIso(ev.entry.t, DEFAULT_T0_ISO, storyT0) } : ev.entry,
       };
       const sentence = filmEventSentence(rich, lang).trim();
       if (!sentence) continue;
@@ -1078,13 +1083,14 @@ function scriptChars(chapters) {
  * longueur ≤ 2 400 (on retire d'abord les événements de score le plus bas).
  */
 export function buildFilmScript({
-  clock, marks, live, journal = null, now = Date.now(), lang = "fr", seconds = 150,
+  clock, marks, live, journal = null, now = Date.now(), lang = "fr", seconds = 150, t0: storyT0,
 } = {}) {
   const packed = filmCandidates({ journal, marks, clock, live, now });
   const { t0, tEnd, start, sea, stops } = packed;
   if (t0 == null || tEnd == null || !(tEnd > t0)) {
     return { chapters: [], source: "rules", chars: 0, targetSeconds: seconds };
   }
+  const displayT0 = resolveStoryT0(storyT0);
   const startName = shortName(start?.name || "Saint-Maur");
   const seaName = shortName(sea?.name || "La Rochelle");
   const selected = selectFilmEvents(packed.candidates, { t0, tEnd }).map((ev) => (
@@ -1093,7 +1099,7 @@ export function buildFilmScript({
   const mustIds = new Set(selected.filter((e) => e.role === "depart" || e.role === "today" || e.role === "stop").map((e) => e.id));
   const windows = chapterWindows(stops, t0, tEnd);
   const compose = (events) => composeChapters(windows, assignToChapters(events, windows), {
-    lang, seaName, startName, live,
+    lang, seaName, startName, live, storyT0: displayT0,
   });
   let events = selected;
   let chapters = compose(events);

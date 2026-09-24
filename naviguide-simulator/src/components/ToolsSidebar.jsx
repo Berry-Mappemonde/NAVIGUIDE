@@ -375,6 +375,11 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               onEscaleSheet={onEscaleSheet}
               drawing={drawing}
             />
+            {showDeparture ? (
+              <div className="mt-2">
+                <DepartureField t0={departureT0} onT0={onDepartureT0} />
+              </div>
+            ) : null}
             {planReview && !drawing ? (
               <div className="mt-2">
                 <PlanReview
@@ -387,11 +392,6 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                   advice={planReview.advice}
                   onApply={planReview.onApply}
                 />
-              </div>
-            ) : null}
-            {showDeparture ? (
-              <div className="mt-2">
-                <DepartureField t0={departureT0} onT0={onDepartureT0} />
               </div>
             ) : null}
           </div>
