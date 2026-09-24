@@ -108,6 +108,8 @@ export function writeLocalJournal(routeId, entries, storage) {
   }
 }
 
+const NAMED_ALERT_KIND = Object.freeze({ mpa: "amp", amp: "amp", cyclone: "cyclone" });
+
 export function localChanges(prev, cur) {
   if (!prev || !cur) return [];
   const out = [];
@@ -121,10 +123,22 @@ export function localChanges(prev, cur) {
   if (curTo && curTo !== prevTo) {
     out.push({ kind: "escale", score: 3, title: String(curTo), fact: "" });
   }
+  const prevMpa = new Set(
+    (prev.here?.mpa || []).map((m) => m && (m.site_id || m.name)).filter(Boolean),
+  );
+  for (const mpa of cur.here?.mpa || []) {
+    const key = mpa && (mpa.site_id || mpa.name);
+    if (!key || !mpa.name || prevMpa.has(key)) continue;
+    const nm = Number(mpa.nm);
+    const fact = Number.isFinite(nm) ? `${mpa.name} (${mpa.nm} nm)` : String(mpa.name);
+    out.push({ kind: "amp", score: 1, title: String(mpa.name), fact });
+  }
   const prevAlerts = new Set((prev.alerts || []).map((a) => a && a.id).filter(Boolean));
   for (const alert of cur.alerts || []) {
     if (alert?.id && alert.title && !prevAlerts.has(alert.id)) {
-      out.push({ kind: "alert-on", score: 3, title: String(alert.title), fact: String(alert.fact || "") });
+      const kind = NAMED_ALERT_KIND[alert.kind] || "alert-on";
+      if (kind === "amp" && out.some((c) => c.kind === "amp")) continue;
+      out.push({ kind, score: 3, title: String(alert.title), fact: String(alert.fact || "") });
     }
   }
   const prevAround = new Set((prev.around || []).map((item) => item && item.title).filter(Boolean));

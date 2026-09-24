@@ -469,13 +469,13 @@ export const Sidebar = memo(function Sidebar({
                 </div>
               </div>
             ) : null}
-            story={isSuivre && !isDrawing ? (
-              <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
+            story={isSuivre && !isDrawing && (Array.isArray(story) ? story : []).some(Boolean) ? (
+              <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story !h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
                 <div className="text-[10px] font-semibold text-sky-200 leading-snug">
                   {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
                 </div>
-                {(Array.isArray(story) ? story : []).map((paragraph, i) => {
-                  const current = storyReplay && i === (story?.length || 0) - 1;
+                {(Array.isArray(story) ? story : []).filter(Boolean).map((paragraph, i, rows) => {
+                  const current = storyReplay && i === rows.length - 1;
                   return (
                     <p
                       key={i}

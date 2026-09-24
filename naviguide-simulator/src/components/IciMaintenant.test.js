@@ -10,9 +10,11 @@ import { sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   dismissAlert,
   formatJournalLine,
-  formatLegLine,
+  journalChangeLabel,
   seekJournalEntry,
   visibleAlerts,
+  visibleIciTabs,
+  formatLegLine,
 } from "./iciMaintenant.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +38,9 @@ describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
     assert.match(src, /data-testid="ici-tabs"/);
     assert.match(src, /data-testid=\{testId\}/);
     assert.match(src, /data-testid=\{tab\.testId\}/);
+    assert.match(src, /visibleIciTabs\(mode\)/);
+    assert.match(src, /tabs\.map\(\(tab\) =>/);
+    assert.doesNotMatch(src, /ICI_TABS\.map/);
     for (const id of [
       "ici-section-leg",
       "ici-section-alerts",
@@ -200,5 +205,54 @@ describe("IciMaintenant — lot RC2 : encadré honnête", () => {
     assert.equal(shown.some((a) => a.id === first), false);
     assert.equal(shown.some((a) => a.id === second), true);
     assert.equal(shown.length, alerts.length - 1);
+  });
+});
+
+describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
+  it("n'expose Récit qu'en Suivre", () => {
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal"]);
+    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["now", "journal"]);
+    assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["now", "journal"]);
+    assert.match(src, /visibleIciTabs\(mode\)/);
+    assert.doesNotMatch(src, /className="mt-1\.5 min-h-0 flex-1"/);
+    assert.doesNotMatch(src, /placeholder|journalHint|récit vide|onglet vide/i);
+  });
+
+  it("nomme l'AMP, le cyclone et la marina d'après le fait, sans inventer", () => {
+    const ampNamed = journalChangeLabel({
+      changes: [{ kind: "amp", score: 1, title: "Iroise", fact: "Iroise (4 nm)" }],
+    }, "fr");
+    assert.equal(ampNamed, "Aire marine protégée — Iroise");
+    const ampFromFact = journalChangeLabel({
+      changes: [{ kind: "alert-on", score: 3, title: "Aire marine protégée", fact: "Iroise (4 nm): IUCN II." }],
+    }, "fr");
+    assert.equal(ampFromFact, "Aire marine protégée — Iroise");
+    const ampTypeOnly = journalChangeLabel({
+      changes: [{ kind: "amp", score: 1, title: "Aire marine protégée", fact: "" }],
+    }, "fr");
+    assert.equal(ampTypeOnly, "Aire marine protégée");
+    const cyclone = journalChangeLabel({
+      changes: [{ kind: "cyclone", score: 3, title: "Cyclone", fact: "Irma (2017)" }],
+    }, "fr");
+    assert.equal(cyclone, "Cyclone — Irma (2017)");
+    const cycloneAnon = journalChangeLabel({
+      changes: [{ kind: "cyclone", score: 3, title: "Cyclone", fact: "3 traces de cyclone ce mois-ci." }],
+    }, "fr");
+    assert.equal(cycloneAnon, "Cyclone");
+    const marina = journalChangeLabel({
+      changes: [{ kind: "marina", score: 1, title: "Marina Bas-du-Fort", fact: "Marina Bas-du-Fort (16 nm)" }],
+    }, "fr");
+    assert.equal(marina, "Marina — Marina Bas-du-Fort");
+    const ports = journalChangeLabel({
+      changes: [{ kind: "zee-enter", score: 2, title: "Ports d'entrée : Pointe-à-Pitre", fact: "Pointe-à-Pitre" }],
+    }, "fr");
+    assert.equal(ports, "Ports d'entrée : Pointe-à-Pitre");
+    const line = formatJournalLine({
+      t: "2026-05-16T10:00:00Z",
+      pos: { lat: 48.2, lon: -4.8 },
+      changes: [{ kind: "amp", score: 1, title: "Iroise", fact: "Iroise (4 nm)" }],
+    }, "fr");
+    assert.match(line, /Aire marine protégée — Iroise/);
+    assert.doesNotMatch(line, /Iroise Iroise/);
   });
 });

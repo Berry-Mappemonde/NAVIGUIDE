@@ -3,7 +3,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { EscaleSheet } from "./EscaleSheet.jsx";
 import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
-  ICI_TABS,
+  visibleIciTabs,
   dismissAlert,
   formatJournalLine,
   formatLegLine,
@@ -97,12 +97,19 @@ export function IciMaintenant({
   const here = shown?.here?.sentences?.length ? shown.here : (moment?.here || shown?.here);
   const alerts = visibleAlerts(shown?.alerts, dismissed);
   const tint = regimeColor(shown?.leg?.regime);
+  const tabs = visibleIciTabs(mode);
 
   useEffect(() => {
     if (!escale?.stop) return;
     if (typeof onViewChange === "function") onViewChange("now");
     else setLocalView("now");
   }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange]);
+
+  useEffect(() => {
+    if (view !== "story") return;
+    if (tabs.some((tab) => tab.id === "story")) return;
+    setView("now");
+  }, [mode, view]);
 
   return (
     <div
@@ -114,7 +121,7 @@ export function IciMaintenant({
         data-testid="ici-tabs"
         className="ici-maintenant-tabs flex items-center gap-2 shrink-0"
       >
-        {ICI_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -132,7 +139,7 @@ export function IciMaintenant({
       </div>
 
       {view === "now" ? (
-        <div className="flex flex-col gap-2 mt-1.5 min-h-0">
+        <div className="flex flex-col gap-2 mt-1 min-h-0">
           <Section testId="ici-section-leg" label={t("iciSectionLeg")}>
             <p
               data-testid="ici-leg-line"
@@ -258,13 +265,13 @@ export function IciMaintenant({
       ) : null}
 
       {view === "story" ? (
-        <div data-testid="ici-story-slot" className="mt-1.5 min-h-0 flex-1">
+        <div data-testid="ici-story-slot" className="mt-1 min-h-0">
           {story}
         </div>
       ) : null}
 
       {view === "journal" ? (
-        <div data-testid="ici-journal-slot" className="mt-1.5 min-h-0 flex-1 overflow-auto">
+        <div data-testid="ici-journal-slot" className="mt-1 min-h-0 overflow-auto">
           {Array.isArray(journalEntries) ? (
             <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
           ) : journal}
