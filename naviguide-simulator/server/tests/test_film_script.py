@@ -16,7 +16,9 @@ from film_script import (
     bubble_score,
     build_film_response,
     build_raw_script,
+    change_sentence,
     connector_at,
+    cyclone_name_year,
     dated_marks,
     film_candidates,
     film_facts,
@@ -27,7 +29,9 @@ from film_script import (
     official_dated_stops,
     select_chapter_changes,
     select_film_events,
+    speak_film_text,
     written_is_valid,
+    _nm_label,
 )
 from tests.test_voyage_journal import PUBLIC, _official
 from voyage_clock import OFFICIAL_T0
@@ -620,12 +624,27 @@ def test_allocate_budgets_floor_and_total():
     assert budgets[-1] > budgets[0]
 
 
-def test_moments_raw_length_within_budget():
+FILLER = (
+    "Le ciel reste haut", "La mer porte le bateau", "La route tient le cap",
+    "Le vent reste le vent", "The sky stays high", "The sea carries the boat",
+    "The course holds", "The wind stays the wind", "La mer reste la mer",
+    "le vent reste le vent, la route reste la route",
+)
+
+
+def _assert_no_filler(blob: str) -> None:
+    for phrase in FILLER:
+        assert phrase not in blob, phrase
+
+
+def test_moments_raw_no_atmos_budget_flag():
     plan = _moments_raw()
-    lo, hi = int(FILM_BUDGET_CHARS * 0.9), int(FILM_BUDGET_CHARS * 1.1)
-    assert lo <= plan["chars"] <= hi
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     assert plan["targetSeconds"] == 150
-    assert not re.search(r"\bnm\b", " ".join(c.get("text") or "" for c in plan["chapters"]))
+    assert plan["chars"] > 0
+    assert plan["chars"] <= FILM_MAX_CHARS
+    _assert_no_filler(blob)
+    assert not re.search(r"\bnm\b", blob)
 
 
 def test_moments_chapter_one_sentence_max_three_changes():
@@ -755,3 +774,96 @@ def test_film_written_served_from_cache_without_llm():
     assert n2 == n1
     assert out["hasWritten"] is True
     assert out["style"] == "written"
+
+
+def _rich_journal():
+    extra = [
+        {"seq": 13, "t": "2026-05-15T11:00:00Z", "signature": "marina", "legIdx": 0, "changes": [],
+         "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"},
+                    "around": [{"kind": "marina", "title": "Les Minimes", "fact": "Les Minimes (2 nm)"}]}},
+        {"seq": 14, "t": "2026-05-15T12:10:00Z", "signature": "port", "legIdx": 1, "changes": [
+            {"kind": "port", "score": 2, "title": "La Rochelle", "fact": "La Rochelle"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 15, "t": "2026-07-10T06:00:00Z", "signature": "irma", "legIdx": 3, "changes": [
+            {"kind": "cyclone", "score": 3, "title": "Irma", "fact": "Irma (2017)"},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 16, "t": "2026-06-23T08:00:00Z", "signature": "culture", "legIdx": 2, "changes": [
+            {"kind": "culture", "score": 1, "title": "Fort Saint-Louis", "fact": "Fort Saint-Louis."},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 17, "t": "2026-07-11T06:00:00Z", "signature": "nameless", "legIdx": 3, "changes": [
+            {"kind": "cyclone", "score": 1, "title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+    ]
+    return {**JOURNAL, "moments": MOMENTS["moments"] + extra}
+
+
+def _rich_raw(seconds=0, lang="fr"):
+    return build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _rich_journal(), lang=lang, seconds=seconds, now_ms=NOW_MS,
+    )
+
+
+def test_official_script_has_no_atmos_or_pad():
+    for plan in (_raw(), _moments_raw(), _rich_raw(0), _rich_raw(150)):
+        blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+        _assert_no_filler(blob)
+
+
+def test_rich_moments_without_budget_cites_each_type():
+    plan = _rich_raw(0)
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert plan["targetSeconds"] == 0
+    assert "Les Minimes" in blob
+    assert re.search(r"marina croisée", blob)
+    assert re.search(r"port de départ", blob)
+    assert re.search(r"aire marine protégée : Cabrera", blob)
+    assert re.search(r"station croisée : PIRATA", blob)
+    assert "Irma" in blob and "2017" in blob
+    assert "Fort Saint-Louis" in blob
+    assert "traces de cyclone ce mois-ci" not in blob
+    _assert_no_filler(blob)
+    _assert_departure_arrival_pairs(blob, "fr")
+    _assert_route_order(blob, "journal riche FR")
+    assert not re.search(r"\bnm\b", blob)
+    assert not re.search(r"\d+[.,]\d{1,2}(?!\d)", blob)
+    assert "1 820 milles nautiques" in blob or "1820 milles nautiques" in blob
+
+
+def test_budget_150_reached_and_no_decimals():
+    plan = _rich_raw(150)
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert plan["targetSeconds"] == 150
+    _assert_no_filler(blob)
+    assert not re.search(r"\d+[.,]\d{1,2}(?!\d)", blob)
+    assert not re.search(r"\bnm\b", blob)
+
+
+def test_spoken_distances_rounded_no_abbrev():
+    assert _nm_label(1820.4, "fr") == "1 820 milles nautiques"
+    assert _nm_label(1, "fr") == "1 mille nautique"
+    spoken = speak_film_text("Approche, reste 12.4 nm.", "fr")
+    assert "nm" not in spoken
+    assert "12.4" not in spoken
+    assert "12 milles nautiques" in spoken
+
+
+def test_nameless_cyclone_is_silence():
+    assert cyclone_name_year({"title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."}) == ("", "")
+    assert cyclone_name_year({"title": "Irma", "fact": "Irma (2017)"}) == ("Irma", "2017")
+    assert change_sentence({"kind": "cyclone", "title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."}, "fr") == ""
+
+
+def test_select_chapter_changes_unlimited_without_budget():
+    changes = [
+        {"id": "a", "kind": "escale", "score": 3, "tMs": 1, "title": "Arrivée à Ajaccio", "fact": "x"},
+        {"id": "b", "kind": "approche", "score": 3, "tMs": 2, "title": "Ajaccio", "fact": "y"},
+        {"id": "c", "kind": "alert-on", "score": 3, "tMs": 3, "title": "Vent", "fact": "38 kn"},
+        {"id": "d", "kind": "station", "score": 2, "tMs": 4, "title": "PIRATA", "fact": "z"},
+        {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
+        {"id": "f", "kind": "marina", "score": 2, "tMs": 6, "title": "Les Minimes", "fact": "Les Minimes"},
+        {"id": "g", "kind": "cyclone", "score": 3, "tMs": 7, "title": "Irma", "fact": "Irma (2017)"},
+        {"id": "h", "kind": "culture", "score": 1, "tMs": 8, "title": "Fort Saint-Louis", "fact": "Fort Saint-Louis."},
+    ]
+    picked = select_chapter_changes(changes, 0, 10, budget=False)
+    assert len(picked) == 8
+    assert {c["kind"] for c in picked} >= {"marina", "cyclone", "culture", "amp", "station"}

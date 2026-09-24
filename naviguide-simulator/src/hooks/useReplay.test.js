@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, filmTextHasT0Year, linearFilmAt, pickFilmChapters, shouldReturnToLive, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, filmSpeakSeconds, filmTextHasT0Year, linearFilmAt, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -58,6 +58,24 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /if \(done\)/);
     assert.match(bar, /data-testid="film-subtitle"/);
     assert.match(bar, /data-testid="film-duration"/);
+    assert.match(hook, /useState\(0\)/);
+    assert.match(bar, /=== sec \? 0 : sec/);
+  });
+
+  it("lot RD7 — durées décochables, budget tenu, temps naturel sans case", () => {
+    assert.equal(toggleFilmDuration(0, 150), 150);
+    assert.equal(toggleFilmDuration(150, 150), 0);
+    assert.equal(toggleFilmDuration(150, 180), 180);
+    assert.equal(toggleFilmDuration(180, 180), 0);
+    const chapters = [{ text: "x".repeat(320) }];
+    assert.equal(resolveFilmTargetSeconds(150, chapters), 150);
+    assert.equal(resolveFilmTargetSeconds(0, chapters), filmSpeakSeconds(chapters));
+    assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 121, lastChapter: true }), true);
+    assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 150, lastChapter: true }), false);
+    assert.equal(shouldHoldFilmForBudget({ userBudget: 0, wallElapsed: 80, lastChapter: true }), false);
+    assert.match(hook, /shouldHoldFilmForBudget/);
+    assert.match(hook, /budgetSeconds/);
+    assert.match(hook, /resolveFilmTargetSeconds/);
   });
 
   it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
