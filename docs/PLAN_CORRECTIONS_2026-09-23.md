@@ -1,11 +1,11 @@
-# Plan — Corrections de la revue du 23 septembre (matin) : lots RD1 → RD7
+# Plan — Corrections de la revue du 23 septembre (matin) : lots RD1 → RD8
 
 Version **1.0** — 23 septembre 2026. Le porteur a recetté dans Chrome le batch
 RB1 → RC5 (PR #269 → #302, 28 PR ouvertes, pile linéaire). Il n'a pas fait de
 revue PR par PR (« tu considères que la revue du bot vaut pour la revue PR par
 PR ») : il a coché 8 items sur 98 (R8c #279, R9a #281, RC3 #298) et livré une
 **revue globale de l'application**, très mécontente. Ce plan transforme cette
-revue — et les 14 KO du réviseur de nuit (bot) — en lots correctifs RD1 → RD7,
+revue — et les 14 KO du réviseur de nuit (bot) — en lots correctifs RD1 → RD8 (RD8 ajouté le 24 sept. : couches en tuiles),
 à enchaîner par `infra/agents/run_lots.py`.
 
 **Prérequis.** Les lots RD partent de `main` **après merge de la pile
@@ -195,7 +195,7 @@ Le porteur n'a pas relu PR par PR : le verdict PR par PR est celui du bot
 Convention : « Fichiers » = les seuls à ouvrir (`rg -n` + `Read`
 offset/limit pour App.jsx et MapSceneController.js). « Recette » = ce que le
 porteur voit dans Chrome, par écran. Ancres `fichier:ligne` = tête de pile
-#302 (= `main` après merge). Pile linéaire RD1 → RD7.
+#302 (= `main` après merge). Pile linéaire RD1 → RD8.
 
 ### RD1 — Le clic sur la carte fait ce qu'il dit : route → pop-up Copernicus, jamais le panneau gauche (M)
 
@@ -512,6 +512,84 @@ Recette (visuelle) :
   bateau », « Le ciel reste haut », « Le vent reste le vent ».
 - Revoir avec 2:30 coché : le film tient environ 2 min 30, jusqu'au bout.
 
+### RD8 — Couches climatologie en tuiles : la zone visible, au détail natif (M, indépendant)
+
+Demande du porteur (24 sept.) : « un lot qui résout le poids de wind.geojson
+grâce à des tuiles ». Constat (mesuré le 24 sept.) : le front charge
+`wind.geojson?month=m&spacing_deg=4` — **1,6 Mo** pour le vent (0,5 Mo
+courants), le globe entier à chaque changement de mois, et la couche reste
+**grossière partout** (un point tous les 4°, ~440 km, même au zoom maximum)
+alors que l'atlas est à 1° (43 205 cellules ; sans décimation le fichier fait
+26 Mo et sort du VPS en 18 s). Des tuiles règlent les deux : on ne charge que
+ce qu'on regarde, au détail natif quand on zoome.
+
+Cause racine : `backend/app/routers/climatology.py:180-207` — trois routes
+`/climatology/{kind}.geojson` globales, seule décimation `spacing_deg` ;
+`backend/app/services/climatology_wind.py:214-262` (`wind_geojson`, idem
+`wave_geojson`, `current_geojson`) — parcours de toute la grille
+`lats × lons`, rose des vents complète (`directions_from`) sur chaque point ;
+`naviguide-simulator/src/layers/useClimatologyLayer.js:102,124,146` — trois
+`fetchJson(atlasLayerUrl(kind, m, { spacing_deg: "4" }))` sur le monde entier ;
+`src/utils/atlasPoint.js:60` (`atlasLayerUrl`).
+
+Fichiers (backend BI) : `backend/app/routers/climatology.py`,
+`backend/app/services/climatology_wind.py`, `climatology_wave.py`,
+`climatology_current.py`, `backend/tests/test_climatology.py` ;
+(simulateur) : `src/layers/useClimatologyLayer.js`, `src/utils/atlasPoint.js`,
+`src/utils/atlasPoint.test.js`, `src/layers/climatologyPaint.js` PAR EXTRAIT
+(lecture seule : le rendu ne change pas), `server/bi_proxy.py` (liste
+`ALLOWED`), `server/tests/test_bi_proxy.py`, `e2e/lots/rd8-tuiles.spec.js`.
+`infra/vps/nginx-bi-climatology-cache.conf` : la clé `~^/(api|bi)/climatology/(?<rest>.*)$`
+couvre déjà les tuiles — ne pas toucher.
+
+Étapes :
+1. Backend : route `GET /api/climatology/{kind}/tiles/{z}/{x}/{y}.json?month=`
+   (`kind` ∈ wind | wave | current ; `stat` pour wave comme aujourd'hui).
+   Tuile XYZ Web Mercator (même schéma que les tuiles Leaflet), bbox depuis
+   z/x/y (lat bornée ±85). Pas de décimation en degrés : `step_deg =
+   max(1, 16 / 2**z)` → z ≤ 2 : 4°, z = 3 : 2°, z ≥ 4 : 1° (natif). Un
+   itérateur commun `iter_cells(bundle, bbox, step)` sert les tuiles ET les
+   `.geojson` existants (sortie inchangée, `is_land` respecté).
+2. Propriétés **légères** dans les tuiles : vent `speed_knots`,
+   `dir_from_deg`, `calm_pct`, `gale_pct` ; vagues `hs_m` (+ `stat`), `dir` ;
+   courants `speed_knots`, `direction_to_deg`. Jamais `directions_from` (la
+   rose reste servie par `/climatology/point` au clic, comme aujourd'hui).
+   Cible : une tuile ≤ 80 Ko, une vue plein écran ≤ 1 Mo au total.
+3. En-tête `Cache-Control` = `CACHE_CONTROL_LAYER` (climatologie 1980-2020,
+   immuable) ; tuile hors océan ou sans snapshot → `FeatureCollection` vide,
+   200. `bi_proxy.ALLOWED` accepte `^(wind|wave|current)/tiles/\d+/\d+/\d+\.json$`
+   (cache disque par URL, repos par point d'accès conservé).
+4. Front : `atlasTileUrl(kind, month, z, x, y, extra)` dans `atlasPoint.js`
+   (`atlasLayerUrl` reste pour l'export) ; `useClimatologyLayer.js` remplace
+   les trois chargements globaux par un chargeur de tuiles : à `moveend` /
+   `zoomend` (200 ms de débounce), `zTile = clamp(round(zoom), 0, 6)`, tuiles
+   visibles + une marge d'une tuile, antiméridien géré (x modulo 2^z) ;
+   cache `Map` clé `kind:month:z/x/y`, `AbortController` par mois/kind ;
+   les features des tuiles visibles sont fusionnées dans la collection
+   passée à `climatologyPaint.js` — **le rendu ne change pas** (mêmes
+   flèches, mêmes couleurs, même popup au clic). Tuiles sorties de l'écran
+   (au-delà de la marge) libérées.
+5. Tests : backend — bbox(z,x,y) sur 4 tuiles connues, pas par zoom
+   (4°/2°/1°), une tuile ne contient que des points dans sa bbox, propriétés
+   légères seulement, tuile vide = 200, `.geojson` inchangé ; simulateur —
+   énumération des tuiles visibles (dont un viewport qui chevauche
+   l'antiméridien), `atlasTileUrl`, `bi_proxy` accepte/refuse les bons
+   chemins ; e2e `rd8-tuiles.spec.js` — couche vent allumée : requêtes
+   `/bi/climatology/wind/tiles/…json` seulement, **aucune** `wind.geojson` ;
+   après un pan, de nouvelles tuiles ; des flèches dessinées.
+
+Recette (visuelle) :
+- Suivre, pastille vent (panneau droit) allumée → **tu dois voir** les
+  flèches de vent en moins de 2 s sur la zone affichée.
+- Zoome sur le golfe de Gascogne → **tu dois voir** les flèches se
+  **densifier** (une par degré, ~110 km) au lieu d'une tous les 4° ; recule →
+  elles s'espacent, sans trou ni saut.
+- Fais glisser la carte vers l'ouest → **tu dois voir** les flèches
+  apparaître sur la nouvelle zone en moins de 2 s ; l'ancienne zone ne
+  clignote pas.
+- Onglet Réseau de Chrome (F12) : des requêtes `…/wind/tiles/4/…json` de
+  quelques dizaines de Ko, **aucune** `wind.geojson`.
+
 ## 5. Ordre, pile, lancement
 
 | # | Lot | Taille | Touche surtout |
@@ -523,14 +601,17 @@ Recette (visuelle) :
 | 5 | RD5 | S | App.jsx, ToolsSidebar.jsx, SimulationFilmBar.jsx (Suivre au départ, dates) |
 | 6 | RD6 | S | IciMaintenant.jsx, Sidebar.jsx, useMomentJournal.js (Récit, journal nommé) — après RD4 |
 | 7 | RD7 | M | film_script.py, SimulationFilmBar.jsx, useReplay.js (récit du film, durée libre) — après RD4 |
+| 8 | RD8 | M | backend climatology.py / climatology_wind.py, useClimatologyLayer.js, atlasPoint.js, bi_proxy.py (couches en tuiles) — indépendant |
 
-Lancement, une fois la pile #269 → #302 mergée (décision du porteur) et la
-PR de ce document mergée :
+Lancement : la boucle (`loop.py`) part seule au merge de la PR de ce
+document, **empilée sur la pile #269 → #302** si elle n'est pas mergée
+(les ancres ci-dessus ont été lues sur sa tête), depuis `main` sinon. À la
+main, si besoin :
 
 ```bash
 cd ~/Blue-Intelligence-Map && git checkout main && git pull --ff-only
 python3 infra/agents/run_lots.py --check
-caffeinate -i python3 infra/agents/run_lots.py --from RD1 --until RD7
+caffeinate -i python3 infra/agents/run_lots.py --from RD1 --until RD8 --resume
 ```
 
 Fin de batch : le poste de recette s'ouvre seul (W0) ; recette par écran ;
