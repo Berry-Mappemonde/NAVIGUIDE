@@ -83,9 +83,24 @@ app.include_router(bi_proxy_router)
 
 @app.on_event("startup")
 def _startup_official_grib():
-    """Dernier GRIB dès le boot serveur — pas attendre le premier GET front."""
+    """Semis du voyage officiel + préchauffages — jamais bloquant (lot RD4).
+
+    Sans voyage en base, _kick_official_* abandonnait (404, ensemble vide,
+    journal à 0, film en repli). On sème l'itinéraire Berry embarqué puis
+    on enchaîne les kicks en fond. En pytest le semis est coupé (fixtures
+    PUT à 3 points) sauf NAVIGUIDE_SEED_OFFICIAL=force.
+    """
     try:
-        from voyage_api import _kick_official_grib, _kick_official_hindcast, _kick_official_eta
+        from voyage_api import (
+            _auto_seed_official_enabled,
+            _kick_official_eta,
+            _kick_official_grib,
+            _kick_official_hindcast,
+            startup_official_voyage,
+        )
+        if _auto_seed_official_enabled():
+            startup_official_voyage()
+            return
         _kick_official_grib()
         _kick_official_hindcast()
         _kick_official_eta()

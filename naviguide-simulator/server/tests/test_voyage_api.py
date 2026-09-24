@@ -307,3 +307,82 @@ def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
     assert "2027-06" not in (body["p90"] or "")
     tight = tighten_eta_payload(exploded, now)
     assert eta_span_days(tight["p10"], tight["p90"]) <= 7.01
+
+
+def test_official_itinerary_body_is_embedded_berry_without_network():
+    """Lot RD4 : l'itinéraire Berry est lu sur disque, pas inventé."""
+    from hindcast import block_network, unblock_network
+
+    block_network()
+    try:
+        body = voyage_api.official_itinerary_body()
+    finally:
+        unblock_network()
+    assert body is not None
+    assert len(body.points) > 200
+    assert body.points[0]["lat"] == pytest.approx(46.8075, abs=0.01)
+    assert body.points[0]["lon"] == pytest.approx(1.6358, abs=0.01)
+    names = [m["name"] for m in body.marks]
+    assert any("Saint-Maur" in n for n in names)
+    assert any("Dzaoudzi" in n for n in names)
+    assert names[-1].startswith("La Rochelle")
+    assert body.t0.startswith("2026-05-15")
+
+
+def test_get_official_never_404_on_empty_store(client):
+    """Store vide : GET sème et répond 200, sans 404."""
+    assert voyage_store.load_voyage("berry-mappemonde-2026-officiel") is None
+    r = client.get("/voyage/official")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["voyageId"] == "berry-mappemonde-2026-officiel"
+    assert body["official"] is True
+    assert len(body["points"] or []) > 200
+    assert voyage_store.load_voyage("berry-mappemonde-2026-officiel") is not None
+
+
+def test_startup_seeds_official_on_empty_store_without_blocking(tmp_path, monkeypatch):
+    """Hook de boot : semé, kicks en fond, retour immédiat."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_SEED_OFFICIAL", "force")
+    voyage_store._DIR = tmp_path / "voyages"
+    assert voyage_store.load_voyage("berry-mappemonde-2026-officiel") is None
+
+    monkeypatch.setattr(voyage_api, "_kick_official_grib", lambda *a, **k: True)
+    monkeypatch.setattr(voyage_api, "_kick_official_hindcast", lambda *a, **k: True)
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda *a, **k: True)
+    monkeypatch.setattr(voyage_api, "_kick_official_moments", lambda *a, **k: True)
+    monkeypatch.setattr(voyage_api, "_kick_official_film_story", lambda *a, **k: True)
+
+    from main import _startup_official_grib
+
+    t0 = time.monotonic()
+    _startup_official_grib()
+    assert time.monotonic() - t0 < 1.0
+    voy = voyage_store.load_voyage("berry-mappemonde-2026-officiel")
+    assert voy is not None
+    assert len(voy.get("points") or []) > 200
+    assert voy.get("clock") is None
+    again = voyage_api.seed_official_voyage()
+    assert again["voyageId"] == voy["voyageId"]
+    assert len(again["points"]) == len(voy["points"])
+
+
+def test_kick_official_eta_false_until_seeded(tmp_path, monkeypatch):
+    """Sans voyage : False (absent). Après semis : plus False pour cause d'absence."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+
+    assert voyage_store.load_voyage("berry-mappemonde-2026-officiel") is None
+    assert voyage_api._kick_official_eta() is False
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+
+    import ensemble_eta
+
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 12})
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta() is True
