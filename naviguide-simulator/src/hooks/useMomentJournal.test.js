@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import fixture from "../fixtures/moment.json" with { type: "json" };
+import { ETA_RETRY_MS, nextEtaRetryMs } from "./usePlanReview.js";
 import {
   MOMENT_JOURNAL_CAP,
   appendLocalMoment,
@@ -8,10 +12,14 @@ import {
   momentAtOrBefore,
   momentJournalStorageKey,
   parseOfficialMoments,
+  pollOfficialMoments,
   readLocalJournal,
   sortJournalEntries,
   writeLocalJournal,
 } from "./useMomentJournal.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const src = readFileSync(join(here, "useMomentJournal.js"), "utf8");
 
 function fakeStorage() {
   const m = new Map();
@@ -89,6 +97,48 @@ describe("useMomentJournal — lot R9b : repli localStorage, plafond 2 000", () 
     assert.equal(body.length, 2);
     assert.equal(body[0].signature, "a");
     assert.equal(parseOfficialMoments({}).length, 0);
+  });
+});
+
+describe("useMomentJournal — lot RC9 : re-demande /moments tant que vide", () => {
+  it("relance après un premier [] puis remplit les lignes", async () => {
+    assert.match(src, /pollOfficialMoments/);
+    assert.match(src, /nextEtaRetryMs/);
+    const rows = [
+      { t: "2026-05-15T08:00:00Z", signature: "a", pos: { lat: 48.8, lon: 2.3 } },
+      { t: "2026-09-24T08:00:00Z", signature: "b", pos: { lat: 32.1, lon: -16.9 } },
+    ];
+    let n = 0;
+    const seen = [];
+    const entries = await pollOfficialMoments({
+      fetchFn: async () => {
+        n += 1;
+        return n === 1 ? { moments: [] } : { moments: rows };
+      },
+      sleep: async () => {},
+      onUpdate: (next) => seen.push(next.entries.length),
+    });
+    assert.equal(n, 2);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].signature, "a");
+    assert.equal(entries[1].signature, "b");
+    assert.deepEqual(seen, [0, 2]);
+    assert.equal(nextEtaRetryMs(0), ETA_RETRY_MS[0]);
+  });
+
+  it("relance après un fetch en erreur puis s'arrête dès qu'il y a des lignes", async () => {
+    let n = 0;
+    const entries = await pollOfficialMoments({
+      fetchFn: async () => {
+        n += 1;
+        if (n === 1) throw new Error("HTTP 500");
+        return { moments: [{ t: "2026-05-15T08:00:00Z", signature: "a" }] };
+      },
+      sleep: async () => {},
+    });
+    assert.equal(n, 2);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].signature, "a");
   });
 });
 

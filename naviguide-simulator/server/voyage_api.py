@@ -933,13 +933,30 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
 
 
 def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bool:
-    """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant."""
+    """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant.
+
+    Lot RC9 : un premier vide / erreur pipeline n'est pas terminal. Tant que
+    ``peek_official_eta`` a ``members == 0``, un GET /eta relance le warm.
+    """
     raw = (os.getenv("NAVIGUIDE_ETA_PREHEAT") or "1").strip().lower()
     if raw in ("0", "false", "no"):
         return False
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         return False
+
+    if not force:
+        from ensemble_eta import next_official_stop, peek_official_eta  # noqa: PLC0415
+        target = (stop or "").strip() or next_official_stop(voy, _now())
+        if target:
+            peeked = peek_official_eta(voy, target, _now())
+            members = peeked.get("members") if isinstance(peeked, dict) else 0
+            try:
+                n = int(members or 0)
+            except (TypeError, ValueError):
+                n = 0
+            if n <= 0:
+                force = True
 
     def _load():
         try:

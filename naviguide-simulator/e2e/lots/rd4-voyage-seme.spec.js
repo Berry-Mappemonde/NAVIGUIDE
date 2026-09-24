@@ -1,15 +1,22 @@
-// Lot RD4 / RC7 — voyage officiel semé au démarrage : GET /voyage/official
+// Lot RD4 / RC7 / RC9 — voyage officiel semé au démarrage : GET /voyage/official
 // ne 404 pas ; Suivre, fourchette, journal et Revoir tiennent.
 // Sans API : Suivre, barre film et Revoir tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions qui en dépendent — jamais Suivre, ni Revoir, ni l'onglet Journal.
 // Avec API : GET /eta et /moments sont 200 en < 5 s (échec si 524 / connexion
-// fermée). Fourchette / lignes de journal seulement si members > 0 / moments
-// non vides — plus d'annotation qui verdit un GET mort.
+// fermée). Fourchette seulement si members > 0. Journal : après le 200 rapide,
+// si un second GET /moments (quelques secondes) a des lignes, ici-journal-entry
+// doit être visible — plus un Journal vide alors que l'API a des moments.
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
+const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc9");
+mkdirSync(recetteDir, { recursive: true });
+
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-rc7/${name}.jpg`,
+  path: join(recetteDir, `${name}.jpg`),
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -111,13 +118,30 @@ test("lot RD4 — voyage semé : Suivre, fourchette, journal, Revoir", async ({ 
   await page.getByTestId("ici-tab-journal").click();
   await expect(page.getByTestId("ici-tab-journal")).toHaveAttribute("aria-selected", "true");
   // Slot vide = hauteur 0 → Playwright le compte « hidden » ; l'onglet suffit
-  // sans API. Les lignes ne sont exigées que si GET /moments en a renvoyé.
+  // sans API. Les lignes ne sont exigées que si un GET /moments en a renvoyé.
   await expect(page.getByTestId("ici-journal-slot")).toHaveCount(1);
 
-  if (apiUp && momentRows.length) {
-    const entries = page.getByTestId("ici-journal-entry");
-    await expect(entries.first()).toBeVisible({ timeout: 20_000 });
-    expect(await entries.count()).toBeGreaterThan(0);
+  if (apiUp) {
+    // Après le 200 rapide : un second GET quelques secondes plus tard.
+    // S'il a des lignes, le Journal doit les montrer. S'il est vide, lent
+    // ou absent, on n'exige pas de lignes (jamais inventées).
+    await page.waitForTimeout(3_000);
+    const mom2 = await page.request.get("/voyage/official/moments", { timeout: 5000 }).catch(() => null);
+    if (mom2 && mom2.ok()) {
+      const later = await mom2.json().catch(() => ({}));
+      const laterRows = Array.isArray(later.moments) ? later.moments : [];
+      if (laterRows.length) momentRows = laterRows;
+    } else {
+      test.info().annotations.push({
+        type: "moments tardifs",
+        description: "second GET /moments absent ou lent — lignes de journal non exigées",
+      });
+    }
+    if (momentRows.length) {
+      const entries = page.getByTestId("ici-journal-entry");
+      await expect(entries.first()).toBeVisible({ timeout: 20_000 });
+      expect(await entries.count()).toBeGreaterThan(0);
+    }
   }
 
   await page.getByText(/Position de l.expédition|Positioning the expedition/i)
