@@ -188,6 +188,16 @@ export function IciMaintenant({
 
           <Section testId="ici-section-here" label={t("iciSectionHere")}>
             <div className="flex flex-col gap-0.5">
+              {escale?.stop ? (
+                <EscaleSheet
+                  stop={escale.stop}
+                  fiche={escale.fiche}
+                  loading={escale.loading}
+                  error={escale.error}
+                  onClose={escale.onClose}
+                  onFocus={escale.onFocus}
+                />
+              ) : null}
               {hereBody}
               {(here?.sentences || []).map((sentence) => (
                 <p
@@ -213,16 +223,6 @@ export function IciMaintenant({
                     </a>
                   ))}
                 </div>
-              ) : null}
-              {escale?.stop ? (
-                <EscaleSheet
-                  stop={escale.stop}
-                  fiche={escale.fiche}
-                  loading={escale.loading}
-                  error={escale.error}
-                  onClose={escale.onClose}
-                  onFocus={escale.onFocus}
-                />
               ) : null}
             </div>
           </Section>

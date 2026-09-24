@@ -259,6 +259,17 @@ describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
   });
 });
 
+describe("IciMaintenant — lot RC6 : fiche d'escale en tête de Ici", () => {
+  it("rend EscaleSheet avant hereBody / story-source quand escale.stop", () => {
+    const idxSheet = src.indexOf("<EscaleSheet");
+    const idxBody = src.indexOf("{hereBody}");
+    assert.ok(idxSheet >= 0 && idxBody > idxSheet, "fiche avant hereBody (ligne Nemotron)");
+    assert.match(src, /escale\?\.stop/);
+    assert.match(src, /onViewChange\("now"\)/);
+    assert.doesNotMatch(src, /placeholder|aide|hint|cliquez le drapeau/i);
+  });
+});
+
 describe("IciMaintenant — lot RD9 : onglet Revue du plan", () => {
   it("rend l'onglet Revue en Suivre et Simulation, jamais en Tracer", () => {
     assert.ok(visibleIciTabs("follow").some((t) => t.id === "review"));
