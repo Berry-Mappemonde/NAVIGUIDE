@@ -7,12 +7,19 @@ export const ICI_TABS = [
   { id: "now", testId: "ici-tab-now", labelKey: "iciNowTab" },
   { id: "story", testId: "ici-tab-story", labelKey: "iciStoryTab" },
   { id: "journal", testId: "ici-tab-journal", labelKey: "iciJournalTab" },
+  { id: "review", testId: "ici-tab-review", labelKey: "planReviewTitle" },
 ];
 
-/** Récit seulement en Suivre (lot RD6) : hors follow l'onglet mène au vide. */
+/**
+ * Récit seulement en Suivre (lot RD6). Revue du plan en Suivre et Simulation
+ * (horloge officielle, lot RD9), jamais en Tracer — un onglet marche ou n'existe pas.
+ */
 export function visibleIciTabs(mode) {
-  if (mode === "follow") return ICI_TABS;
-  return ICI_TABS.filter((tab) => tab.id !== "story");
+  return ICI_TABS.filter((tab) => {
+    if (tab.id === "story") return mode === "follow";
+    if (tab.id === "review") return mode === "follow" || mode === "simulation";
+    return true;
+  });
 }
 
 const EVENT_TYPE_LABEL = {

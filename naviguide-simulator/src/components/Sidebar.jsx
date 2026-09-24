@@ -286,6 +286,7 @@ export const Sidebar = memo(function Sidebar({
   journalEntries = null,
   onSeek = null,
   momentMode = "follow",
+  planReview = null,
   escaleStop = null,
   escaleFiche = null,
   escaleLoading = false,
@@ -492,6 +493,7 @@ export const Sidebar = memo(function Sidebar({
             journal={isSuivre && !isDrawing ? (
               <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
             ) : null}
+            planReview={!isDrawing ? planReview : null}
             escale={!isDrawing && escaleStop ? {
               stop: escaleStop,
               fiche: escaleFiche,

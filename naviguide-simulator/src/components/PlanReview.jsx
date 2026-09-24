@@ -74,6 +74,7 @@ export const PlanReview = memo(function PlanReview({
   legs = [], loading = false, error = null, summary = null,
   comment = null, commentSource = null,
   advice = null, onApply,
+  startOpen = false,
 }) {
   const { t, lang } = useLang();
   const [applied, setApplied] = useState(false);
@@ -88,18 +89,8 @@ export const PlanReview = memo(function PlanReview({
   const compare = applied && best ? buildAdviceCompare(best, advisedLeg, t, lang) : null;
   const source = (best && (advice?.best?.sentenceSource || commentSource)) || commentSource || "rules";
   const sourceLabel = llmSourceLabel(source, t);
-  return (
-    <details className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden group" data-testid="plan-review">
-      <summary className="cursor-pointer select-none list-none px-2 py-1 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-200">{t("planReviewTitle")}</span>
-        <span className="ml-auto text-[9px] text-white/50">
-          {loading ? t("planReviewLoading") : error ? t("planReviewError") : (
-            alerts ? `${alerts} ${t("planReviewAlerts")}` : watches ? `${watches} ${t("planReviewWatch")}` : t("planReviewOk")
-          )}
-        </span>
-        <span className="text-white/40 text-[10px] transition-transform group-open:rotate-90">›</span>
-      </summary>
-      <div className="border-t border-white/5">
+  const body = (
+      <div className={startOpen ? "" : "border-t border-white/5"}>
         {summary ? (
           <p className="px-2 pt-1 text-[9px] text-white/45 leading-snug">{summary}</p>
         ) : null}
@@ -186,6 +177,23 @@ export const PlanReview = memo(function PlanReview({
           <p className="text-[9px] text-white/40 mt-1">{sourceLabel}</p>
         </div>
       </div>
+  );
+  const shell = "rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden group";
+  if (startOpen) {
+    return <div className={shell} data-testid="plan-review">{body}</div>;
+  }
+  return (
+    <details className={shell} data-testid="plan-review">
+      <summary className="cursor-pointer select-none list-none px-2 py-1 flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-200">{t("planReviewTitle")}</span>
+        <span className="ml-auto text-[9px] text-white/50">
+          {loading ? t("planReviewLoading") : error ? t("planReviewError") : (
+            alerts ? `${alerts} ${t("planReviewAlerts")}` : watches ? `${watches} ${t("planReviewWatch")}` : t("planReviewOk")
+          )}
+        </span>
+        <span className="text-white/40 text-[10px] transition-transform group-open:rotate-90">›</span>
+      </summary>
+      {body}
     </details>
   );
 });

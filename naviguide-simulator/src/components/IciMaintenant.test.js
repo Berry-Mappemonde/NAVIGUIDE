@@ -53,9 +53,11 @@ describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
     assert.match(helpers, /ici-tab-now/);
     assert.match(helpers, /ici-tab-story/);
     assert.match(helpers, /ici-tab-journal/);
+    assert.match(helpers, /ici-tab-review/);
     assert.match(helpers, /iciNowTab/);
     assert.match(helpers, /iciStoryTab/);
     assert.match(helpers, /iciJournalTab/);
+    assert.match(helpers, /planReviewTitle/);
     assert.match(src, /iciSectionLeg/);
     assert.match(src, /iciSectionAlerts/);
     assert.match(src, /iciSectionHere/);
@@ -210,8 +212,8 @@ describe("IciMaintenant — lot RC2 : encadré honnête", () => {
 
 describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
   it("n'expose Récit qu'en Suivre", () => {
-    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal"]);
-    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["now", "journal"]);
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
+    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["now", "journal", "review"]);
     assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["now", "journal"]);
     assert.match(src, /visibleIciTabs\(mode\)/);
     assert.doesNotMatch(src, /className="mt-1\.5 min-h-0 flex-1"/);
@@ -254,5 +256,20 @@ describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
     }, "fr");
     assert.match(line, /Aire marine protégée — Iroise/);
     assert.doesNotMatch(line, /Iroise Iroise/);
+  });
+});
+
+describe("IciMaintenant — lot RD9 : onglet Revue du plan", () => {
+  it("rend l'onglet Revue en Suivre et Simulation, jamais en Tracer", () => {
+    assert.ok(visibleIciTabs("follow").some((t) => t.id === "review"));
+    assert.ok(visibleIciTabs("simulation").some((t) => t.id === "review"));
+    assert.equal(visibleIciTabs("drawn").some((t) => t.id === "review"), false);
+    assert.match(helpers, /ici-tab-review/);
+    assert.match(helpers, /planReviewTitle/);
+    assert.match(src, /data-testid="ici-review-slot"/);
+    assert.match(src, /<PlanReview/);
+    assert.match(src, /planReview\.legs/);
+    assert.match(src, /startOpen/);
+    assert.doesNotMatch(src, /placeholder|onglet vide|aide|hint/i);
   });
 });

@@ -26,6 +26,8 @@ from film_script import (
     journal_fingerprint,
     last_stop_id,
     norm_stop,
+    review_leg_for_chapter,
+    review_sentences,
     official_dated_stops,
     select_chapter_changes,
     select_film_events,
@@ -851,6 +853,65 @@ def test_nameless_cyclone_is_silence():
     assert cyclone_name_year({"title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."}) == ("", "")
     assert cyclone_name_year({"title": "Irma", "fact": "Irma (2017)"}) == ("Irma", "2017")
     assert change_sentence({"kind": "cyclone", "title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."}, "fr") == ""
+
+
+REVIEW_GIBRALTAR = {
+    "legs": [
+        {
+            "from": "Ajaccio (Corse)",
+            "to": "Fort-de-France (Martinique)",
+            "antiShipping": {"score": 0.4, "lanes": ["Gibraltar"]},
+            "season": {"galePct": 22, "cyclones": 3, "cells": 4, "missing": 0},
+            "flags": [{"kind": "formalities", "names": ["Espagne"]}],
+        }
+    ]
+}
+
+
+def test_review_sentences_facts_only():
+    assert review_sentences(None) == []
+    assert review_sentences({}) == []
+    assert review_sentences({"from": "Ajaccio", "to": "Fort-de-France"}) == []
+    bits = review_sentences(REVIEW_GIBRALTAR["legs"][0], "fr")
+    assert any("Gibraltar" in s for s in bits)
+    assert any("Saison cyclonique" in s for s in bits)
+    assert any("Coup de vent" in s and "22" in s for s in bits)
+    assert any(s == "Alerte." for s in bits)
+    assert review_leg_for_chapter(REVIEW_GIBRALTAR, "Ajaccio", "Fort-de-France")
+    assert review_leg_for_chapter(REVIEW_GIBRALTAR, "La Rochelle", "Ajaccio") is None
+
+
+def test_review_lane_named_in_correct_chapter():
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=REVIEW_GIBRALTAR,
+    )
+    hit = [c for c in plan["chapters"] if "Gibraltar" in (c.get("text") or "")]
+    assert len(hit) == 1, [c.get("fromName") for c in plan["chapters"]]
+    ch = hit[0]
+    assert "Ajaccio" in (ch.get("fromName") or "")
+    assert "Fort-de-France" in (ch.get("toName") or "")
+    assert "Saison cyclonique" in ch["text"]
+    assert "Coup de vent" in ch["text"]
+    assert "22" in ch["text"]
+    for c in plan["chapters"]:
+        if c is not ch:
+            assert "Gibraltar" not in (c.get("text") or "")
+    _assert_no_filler(" ".join(c.get("text") or "" for c in plan["chapters"]))
+
+
+def test_review_unknown_fields_are_silence():
+    empty = {"legs": [{"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}]}
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=empty,
+    )
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert "Gibraltar" not in blob
+    assert "Saison cyclonique" not in blob
+    assert "Couloirs" not in blob
+    assert "À surveiller" not in blob
+    _assert_no_filler(blob)
 
 
 def test_select_chapter_changes_unlimited_without_budget():

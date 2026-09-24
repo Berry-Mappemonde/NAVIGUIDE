@@ -769,6 +769,95 @@ def _facts_with_rounded(change: dict) -> str:
     return f"{blob} {' '.join(extras)}"
 
 
+def _review_legs(review: dict | None) -> list[dict]:
+    if not isinstance(review, dict):
+        return []
+    legs = review.get("legs")
+    return [leg for leg in legs if isinstance(leg, dict)] if isinstance(legs, list) else []
+
+
+def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) -> dict | None:
+    """Jambe de review_official dont from/to sont la fenêtre du chapitre. Sinon silence."""
+    frm, to = from_name or "", to_name or ""
+    if not frm or not to:
+        return None
+    for leg in _review_legs(review):
+        if same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to):
+            return leg
+    return None
+
+
+def review_fingerprint(review: dict | None) -> str:
+    bits: list[str] = []
+    for leg in _review_legs(review):
+        pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else {}
+        season = leg.get("season") if isinstance(leg.get("season"), dict) else {}
+        lanes = ",".join(
+            n.strip() for n in (pack.get("lanes") or []) if isinstance(n, str) and n.strip()
+        )
+        flags = ",".join(
+            str(f.get("kind") or "") for f in (leg.get("flags") or []) if isinstance(f, dict)
+        )
+        bits.append(
+            f"{leg.get('from')}|{leg.get('to')}|{lanes}|{season.get('galePct')}|{season.get('cyclones')}|{flags}"
+        )
+    return hashlib.sha256("\n".join(bits).encode("utf-8")).hexdigest() if bits else ""
+
+
+def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
+    """Ce que la revue signale : verdict, couloirs nommés, saison. Champ inconnu = silence."""
+    if not isinstance(leg, dict):
+        return []
+    en = _en(lang)
+    bits: list[str] = []
+    flags = [f for f in (leg.get("flags") or []) if isinstance(f, dict)]
+    season = leg.get("season") if isinstance(leg.get("season"), dict) else None
+    gale = season.get("galePct") if season else None
+    cyclones = season.get("cyclones") if season else None
+    pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else None
+    lanes = [
+        n.strip() for n in ((pack or {}).get("lanes") or [])
+        if isinstance(n, str) and n.strip()
+    ] if pack else []
+
+    alert = isinstance(cyclones, (int, float)) and cyclones > 0
+    watch = bool(flags)
+    if alert:
+        bits.append("Alert." if en else "Alerte.")
+    elif watch:
+        bits.append("To watch." if en else "À surveiller.")
+
+    if lanes:
+        names = ", ".join(lanes)
+        bits.append(f"Shipping lanes: {names}." if en else f"Couloirs : {names}.")
+
+    if isinstance(gale, (int, float)):
+        n = int(round(float(gale)))
+        bits.append(
+            f"Gale {n} percent of the time."
+            if en else
+            f"Coup de vent {n} % du temps."
+        )
+
+    if isinstance(cyclones, (int, float)) and cyclones > 0:
+        bits.append("Cyclone season." if en else "Saison cyclonique.")
+
+    return bits
+
+
+def _append_review_sentences(bits: list[str], review: dict | None, window: dict, lang: str) -> None:
+    """Ajoute les phrases de revue au chapitre. Chiffres via filter_numbers."""
+    leg = review_leg_for_chapter(review, window.get("fromName") or "", window.get("toName") or "")
+    if not leg:
+        return
+    facts = _facts_with_rounded(leg)
+    for sentence in review_sentences(leg, lang):
+        filtered, _dropped = filter_numbers(sentence, facts)
+        sentence = (filtered or "").strip()
+        if sentence:
+            bits.append(sentence)
+
+
 def cyclone_name_year(change: dict) -> tuple[str, str]:
     """Nom + année d'une trace : champ inconnu → vide (silence)."""
     title = short_name(change.get("title") or "")
@@ -1481,6 +1570,7 @@ def build_raw_from_moments(
     seconds: int = 150,
     now_ms: Optional[int] = None,
     display_t0: str | None = None,
+    review: dict | None = None,
 ) -> dict[str, Any]:
     moments = _journal_moments(journal)
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -1552,6 +1642,7 @@ def build_raw_from_moments(
             bits.append(sentence)
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)
+        _append_review_sentences(bits, review, w, lang)
         extras: list[str] = []
         if dest and w.get("from"):
             try:
@@ -1614,12 +1705,13 @@ def build_raw_script(
     now_ms: Optional[int] = None,
     selected: list[dict] | None = None,
     display_t0: str | None = None,
+    review: dict | None = None,
 ) -> dict[str, Any]:
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
     if _journal_moments(journal):
         return build_raw_from_moments(
             clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now,
-            display_t0=display_t0,
+            display_t0=display_t0, review=review,
         )
     packed = film_candidates(journal, marks, clock, live, now)
     t0, t_end = packed["t0"], packed["tEnd"]
@@ -1987,6 +2079,7 @@ async def build_film_response(
     cascade: Callable = cascade_text,
     want_write: bool = False,
     display_t0: str | None = None,
+    review: dict | None = None,
 ) -> dict[str, Any]:
     """Assemble the API payload. `want_write` triggers Nemotron (tier write)."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
@@ -1996,11 +2089,17 @@ async def build_film_response(
     clock = {**(clock or {}), "t0": OFFICIAL_T0}
     last = last_stop_id(journal, marks)
     fp = journal_fingerprint(journal, last)
+    rev = review_fingerprint(review)
+    if rev:
+        fp = f"{fp}|rev={rev}"
     if shown != OFFICIAL_T0:
         fp = f"{fp}|t0={shown}"
     key = film_cache_key(fp, lang, seconds)
     cached = get_film_cached(key) or {}
-    raw_full = build_raw_script(clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, display_t0=shown)
+    raw_full = build_raw_script(
+        clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms,
+        display_t0=shown, review=review,
+    )
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
     from_moments = bool(raw_full.get("_fromMoments"))
@@ -2020,6 +2119,7 @@ async def build_film_response(
                 if picked:
                     raw_full = build_raw_script(
                         clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, selected=picked,
+                        review=review,
                     )
                     events = raw_full.get("_events") or picked
                     raw = _public_plan(raw_full, "rules")
@@ -2077,11 +2177,18 @@ async def official_film(
         moments = []
     if moments:
         payload = {**payload, "moments": moments}
+    review = None
+    try:
+        from plan_review import review_official  # noqa: PLC0415
+        review = review_official(voy, when)
+    except Exception:
+        review = None
     return await build_film_response(
         clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
         style=style, cascade=cascade, want_write=False,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
         display_t0=resolve_film_t0(t0),
+        review=review,
     )
 
 
