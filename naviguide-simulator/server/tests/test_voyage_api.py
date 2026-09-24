@@ -290,12 +290,12 @@ def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
     }
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
 
-    def fake_official_eta(voy, stop, when, polar_raw=None):
+    def fake_peek_official_eta(voy, stop, when):
         assert "Dzaoudzi" in stop or "dzaoudzi" in stop.lower()
         return exploded
 
     import ensemble_eta
-    monkeypatch.setattr(ensemble_eta, "official_eta", fake_official_eta)
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek_official_eta)
     client.put("/voyage/official", json=_payload("2026-05-15T08:00:00Z"))
     r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
     assert r.status_code == 200
@@ -386,3 +386,133 @@ def test_kick_official_eta_false_until_seeded(tmp_path, monkeypatch):
     monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 12})
     get_pipeline().clear()
     assert voyage_api._kick_official_eta() is True
+
+
+def test_get_eta_seeded_without_clock_is_empty_no_fetch(client, monkeypatch):
+    """Lot RC7 : voyage semé sans clock → GET /eta 200, members 0, aucun fetch."""
+    from hindcast import block_network, unblock_network
+    import ensemble_eta
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy is not None
+    assert voy.get("clock") is None
+    assert voyage_store.load_voyage("berry-mappemonde-2026-officiel") is not None
+
+    kicked = []
+    monkeypatch.setattr(
+        voyage_api,
+        "_kick_official_eta",
+        lambda **k: kicked.append(k) or True,
+    )
+    calls = {"compute": 0, "clock": 0, "fetch": 0, "official": 0}
+
+    def boom_compute(*_a, **_k):
+        calls["compute"] += 1
+        raise AssertionError("compute_eta sur le thread HTTP")
+
+    def boom_clock(*_a, **_k):
+        calls["clock"] += 1
+        raise AssertionError("build_voyage_clock sur le thread HTTP")
+
+    def boom_fetch(*_a, **_k):
+        calls["fetch"] += 1
+        raise AssertionError("fetch_point_members sur le thread HTTP")
+
+    def boom_official(*_a, **_k):
+        calls["official"] += 1
+        raise AssertionError("official_eta sur le thread HTTP")
+
+    monkeypatch.setattr(ensemble_eta, "compute_eta", boom_compute)
+    monkeypatch.setattr(ensemble_eta, "build_voyage_clock", boom_clock)
+    monkeypatch.setattr(ensemble_eta, "fetch_point_members", boom_fetch)
+    monkeypatch.setattr(ensemble_eta, "official_eta", boom_official)
+
+    block_network()
+    try:
+        t0 = time.monotonic()
+        r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
+        elapsed = time.monotonic() - t0
+        moments = client.get("/voyage/official/moments")
+    finally:
+        unblock_network()
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] == 0
+    assert body.get("p10") is None and body.get("p90") is None
+    assert elapsed < 2.0
+    assert kicked
+    assert calls["compute"] == 0
+    assert calls["clock"] == 0
+    assert calls["fetch"] == 0
+    assert calls["official"] == 0
+    assert moments.status_code == 200
+    assert moments.json().get("moments") == []
+
+
+def test_get_eta_serves_alias_cache_without_clock(client, monkeypatch):
+    """Lot RC7 : cache alias → GET /eta 200 avec membres, toujours sans clock."""
+    import ensemble_eta
+    from pearl_store import kv_put
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy.get("clock") is None
+    now = datetime(2026, 9, 21, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda **k: True)
+    payload = {
+        "p10": "2026-10-11T00:00:00Z",
+        "p50": "2026-10-12T00:00:00Z",
+        "p90": "2026-10-13T00:00:00Z",
+        "members": 12,
+        "memberKnots": [8.0, 8.2],
+        "source": "open-meteo-ensemble",
+        "computedAt": "2026-09-21T12:00:00Z",
+    }
+    kv_put(
+        ensemble_eta.CACHE_NS,
+        ensemble_eta.official_eta_alias_key("Dzaoudzi (Mayotte)", now),
+        payload,
+    )
+    r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] == 12
+    assert body["p10"] and body["p90"]
+
+
+def test_kick_official_warmups_one_after_another(monkeypatch):
+    """Lot RC7 : hindcast puis eta puis moments puis film, jamais les cinq ensemble."""
+    log = []
+
+    def wrap(name):
+        def kick(*_a, **_k):
+            log.append(f"kick:{name}")
+            return True
+        return kick
+
+    monkeypatch.setattr(voyage_api, "_kick_official_grib", wrap("grib"))
+    monkeypatch.setattr(voyage_api, "_kick_official_hindcast", wrap("hindcast"))
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", wrap("eta"))
+    monkeypatch.setattr(voyage_api, "_kick_official_moments", wrap("moments"))
+    monkeypatch.setattr(voyage_api, "_kick_official_film_story", wrap("film"))
+    monkeypatch.setattr(
+        voyage_api,
+        "_wait_official_kick",
+        lambda provider, timeout=900.0: log.append(f"wait:{provider}"),
+    )
+    t0 = time.monotonic()
+    voyage_api.kick_official_warmups()
+    assert time.monotonic() - t0 < 1.0
+    assert log == [
+        "kick:grib",
+        "wait:official-grib",
+        "kick:hindcast",
+        "wait:official-hindcast",
+        "kick:eta",
+        "wait:official-eta",
+        "kick:moments",
+        "wait:official-moments",
+        "kick:film",
+        "wait:official-film-story",
+    ]
