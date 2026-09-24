@@ -178,9 +178,21 @@ SEASON_SAMPLES = 3
 SEASON_BUDGET_S = 6.0
 
 
-def _leg_sample_points(clock: dict, leg: dict, n: int = SEASON_SAMPLES) -> list[tuple[float, float]]:
+def _leg_sample_points(
+    clock: dict, leg: dict, n: int = SEASON_SAMPLES, points: list | None = None,
+) -> list[tuple[float, float]]:
     verts = [v for v in (clock.get("vertices") or [])
-             if v.get("lat") is not None and leg["fromNm"] - 0.5 <= float(v.get("sailNm") or 0) <= leg["toNm"] + 0.5]
+             if v.get("lat") is not None and _in_leg_nm(float(v.get("sailNm") or 0), leg)]
+    if not verts:
+        for p in points or []:
+            if not isinstance(p, dict) or p.get("lat") is None or p.get("lon") is None:
+                continue
+            if not _sea_point(p):
+                continue
+            nm = _point_nm(p)
+            if nm is None or not _in_leg_nm(nm, leg):
+                continue
+            verts.append(p)
     if not verts:
         return []
     step = max(1, len(verts) // n)
@@ -189,6 +201,121 @@ def _leg_sample_points(clock: dict, leg: dict, n: int = SEASON_SAMPLES) -> list[
 
 def _in_leg_nm(nm: float, leg: dict) -> bool:
     return leg["fromNm"] - 0.5 <= float(nm) <= leg["toNm"] + 0.5
+
+
+def _mark_nm(mark: dict) -> float | None:
+    if mark.get("nm") is not None:
+        return float(mark["nm"])
+    if mark.get("filmNm") is not None:
+        return float(mark["filmNm"])
+    return None
+
+
+def _point_nm(point: dict) -> float | None:
+    for key in ("sailNm", "cumNm", "filmCum"):
+        if point.get(key) is not None:
+            return float(point[key])
+    return None
+
+
+def _sea_point(point: dict) -> bool:
+    return not (point.get("jump") or point.get("nonMaritime") or point.get("air"))
+
+
+def _points_in_nm(points: list | None, from_nm: float, to_nm: float) -> list[dict]:
+    out: list[dict] = []
+    for p in points or []:
+        if not isinstance(p, dict):
+            continue
+        nm = _point_nm(p)
+        if nm is None:
+            continue
+        if from_nm - 0.5 <= nm <= to_nm + 0.5:
+            out.append(p)
+    return out
+
+
+def _leg_is_sailable(from_nm: float, to_nm: float, points: list | None) -> bool:
+    """Air hop (nm plat) ou terre seule → pas une jambe à revoir."""
+    if to_nm <= from_nm + 0.5:
+        return False
+    span = _points_in_nm(points, from_nm, to_nm)
+    if not span:
+        return True
+    return any(_sea_point(p) for p in span)
+
+
+def _parse_mark_iso(mark: dict):
+    raw = mark.get("iso")
+    if not raw:
+        return None
+    try:
+        return parse_iso(raw)
+    except Exception:
+        return None
+
+
+def legs_from_voyage(voy: dict) -> list[dict]:
+    """Jambes depuis marks + t0 + points — sans clock, sans build_voyage_clock.
+
+    from/to et fromNm/toNm viennent de `nm` / `filmNm` ; les dates, de `iso`
+    ou de t0 + milles ÷ 8 kn. Une jambe terre ou un saut avion est sautée.
+    """
+    marks = [m for m in (voy.get("marks") or []) if isinstance(m, dict) and m.get("name")]
+    if len(marks) < 2:
+        return []
+
+    def _key(m: dict) -> tuple:
+        nm = _mark_nm(m)
+        idx = float(m.get("index") or 0)
+        if nm is not None:
+            return (0, nm, idx)
+        return (1, idx, 0.0)
+
+    marks = sorted(marks, key=_key)
+    t0 = None
+    if voy.get("t0"):
+        try:
+            t0 = parse_iso(voy["t0"])
+        except Exception:
+            t0 = None
+    points = voy.get("points") or []
+    legs: list[dict] = []
+    elapsed_h = 0.0
+    for a, b in zip(marks, marks[1:]):
+        from_nm = _mark_nm(a)
+        to_nm = _mark_nm(b)
+        if from_nm is None or to_nm is None:
+            continue
+        if not _leg_is_sailable(from_nm, to_nm, points):
+            continue
+        leg_nm = round(_leg_distance_nm(a, b, from_nm, to_nm))
+        if leg_nm <= 0:
+            continue
+        to_nm_out = from_nm + leg_nm if to_nm <= from_nm + 0.5 else to_nm
+        hold_b = float(b.get("holdHours") or 0)
+        dep = _parse_mark_iso(a)
+        if dep is not None:
+            dep = dep + timedelta(hours=float(a.get("holdHours") or 0))
+        arr = _parse_mark_iso(b)
+        if t0 is not None:
+            if dep is None:
+                dep = t0 + timedelta(hours=elapsed_h)
+            if arr is None:
+                arr = dep + timedelta(hours=leg_nm / PLANNED_KNOTS)
+            elapsed_h = (arr - t0).total_seconds() / 3600.0 + hold_b
+        if dep is None or arr is None:
+            continue
+        legs.append({
+            "from": a["name"], "to": b["name"],
+            "departIso": to_iso(dep), "arriveIso": to_iso(arr),
+            "daysAtSea": planned_sea_days(leg_nm),
+            "plannedKnots": PLANNED_KNOTS,
+            "holdDays": round(hold_b / 24),
+            "fromNm": from_nm, "toNm": to_nm_out, "legNm": leg_nm,
+            "month": arr.month,
+        })
+    return legs
 
 
 def _leg_lonlat(clock: dict, leg: dict, points: list | None = None) -> list[list[float]]:
@@ -211,11 +338,9 @@ def _leg_lonlat(clock: dict, leg: dict, points: list | None = None) -> list[list
     for p in points or []:
         if not isinstance(p, dict) or p.get("lat") is None or p.get("lon") is None:
             continue
-        if p.get("jump") or p.get("nonMaritime"):
+        if not _sea_point(p):
             continue
-        nm = p.get("sailNm")
-        if nm is None:
-            nm = p.get("cumNm")
+        nm = _point_nm(p)
         if nm is None:
             continue
         if _in_leg_nm(float(nm), leg):
@@ -223,7 +348,9 @@ def _leg_lonlat(clock: dict, leg: dict, points: list | None = None) -> list[list
     return coords
 
 
-def season_for_leg(clock: dict, leg: dict, *, budget_deadline: float | None = None) -> dict[str, Any]:
+def season_for_leg(
+    clock: dict, leg: dict, *, budget_deadline: float | None = None, points: list | None = None,
+) -> dict[str, Any]:
     """The month's climatology on the leg, from the BI atlas (server cache,
     zone fallback never counted as data): worst gale %, most cyclone tracks
     nearby, cells read / missing."""
@@ -232,7 +359,7 @@ def season_for_leg(clock: dict, leg: dict, *, budget_deadline: float | None = No
 
     gale = cyc = None
     cells = missing = 0
-    for lat, lon in _leg_sample_points(clock, leg):
+    for lat, lon in _leg_sample_points(clock, leg, points=points):
         if budget_deadline is not None and time.monotonic() > budget_deadline:
             missing += 1
             continue
@@ -284,7 +411,12 @@ def review_official(voy: dict, now: datetime | None = None, *, season: bool = Tr
         if best and best[0] <= 1.0:
             start_name = best[1]
     _attach_itinerary_nm(clock.get("marks") or [], voy.get("marks") or [])
+    # Semis RD4/RC7 : pas de clock.t0. Les jambes viennent des marks + t0 +
+    # points — jamais build_voyage_clock sur le thread HTTP (lot RC8).
+    # Si le clock a un t0 mais pas encore de sommets, on ne reste pas à [].
     legs = legs_from_clock(clock, start_name) if clock.get("t0") else []
+    if not legs:
+        legs = legs_from_voyage(voy)
     pearls = sample_route_nm(points)
     events = route_events_from_pearls(points) if pearls else []
 
@@ -329,7 +461,9 @@ def review_official(voy: dict, now: datetime | None = None, *, season: bool = Tr
     if season:
         deadline = time.monotonic() + SEASON_BUDGET_S
         for leg in legs:
-            leg["season"] = season_for_leg(clock, leg, budget_deadline=deadline)
+            if not leg.get("month"):
+                continue
+            leg["season"] = season_for_leg(clock, leg, budget_deadline=deadline, points=points)
     return {
         "voyageId": voy.get("voyageId"),
         "generatedAt": to_iso(now) if now else None,

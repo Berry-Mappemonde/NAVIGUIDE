@@ -1157,7 +1157,7 @@ def _card(entry: dict) -> dict:
     }
 
 
-def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None) -> list[dict]:
+def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None) -> list[dict]:
     chapters: list[dict] = []
     cited: set[str] = set()
     dist = ""
@@ -1210,6 +1210,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             card = _card(entry)
             card["text"] = sentence
             placed.append({"id": ev["id"], "charIdx": char_idx, "card": card})
+        _append_review_sentences(bits, review, w, lang)
         text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
         chapters.append({
             "id": w["id"],
@@ -1725,7 +1726,7 @@ def build_raw_script(
     windows = _windows(packed["stops"], t0, t_end)
 
     def compose(evs: list[dict]) -> list[dict]:
-        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0)
+        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0, review=review)
 
     chapters = compose(events)
     attach_chapter_events(chapters, packed, journal, lang)
@@ -2180,7 +2181,8 @@ async def official_film(
     review = None
     try:
         from plan_review import review_official  # noqa: PLC0415
-        review = review_official(voy, when)
+        # Saison atlas hors HTTP (budget 6 s) : les couloirs viennent des points.
+        review = review_official(voy, when, season=False)
     except Exception:
         review = None
     return await build_film_response(
@@ -2225,12 +2227,19 @@ async def warm_film_story(
         moments = []
     if moments:
         payload = {**payload, "moments": moments}
+    review = None
+    try:
+        from plan_review import review_official  # noqa: PLC0415
+        review = review_official(voy, when, season=False)
+    except Exception:
+        review = None
     now_ms = int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None
     out: dict[str, Any] = {}
     for lang in langs:
         plan = await build_film_response(
             clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
             style="written", cascade=cascade, want_write=True, now_ms=now_ms,
+            review=review,
         )
         out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
     return {"voyageId": vid, "status": "ready", "langs": out}
