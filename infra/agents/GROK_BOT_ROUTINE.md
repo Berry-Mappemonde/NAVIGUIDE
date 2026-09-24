@@ -87,7 +87,10 @@ PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR À LA FOIS :
    S'il n'y a rien à traiter, arrête-toi sans rien poster. Utilise le lien 🔗 le plus
    récent de la PR (un nouveau tunnel = un nouveau lien).
 2. Pour chaque PR : ouvre le lien du commentaire 🔗 dans le navigateur (c'est la
-   tête de pile, build de prod, clés chargées ; recharge si la page tarde). Lis la
+   tête de pile, build de prod, clés chargées ; recharge si la page tarde). Si la
+   page ou l'API répond 5xx (502, 503…), ce n'est pas une panne : le poste se
+   rebâtit pendant quelques secondes après chaque lot — attends 60 s et réessaie,
+   deux fois au plus, avant de conclure « poste inaccessible ». Lis la
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape
    « ouvre …, clique … → tu dois voir … » (FR / EN sur la même ligne).
 3. Pour chaque case : fais l'étape dans l'application, à l'écran indiqué (Suivre,
