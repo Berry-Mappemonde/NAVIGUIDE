@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 import time
 from pathlib import Path
 
@@ -40,6 +41,11 @@ ALLOWED = frozenset({
     "point", "crossings", "meta",
     "wind.geojson", "wave.geojson", "current.geojson", "cyclones.geojson",
 })
+TILE_RE = re.compile(r"^(wind|wave|current)/tiles/\d+/\d+/\d+\.json$")
+
+
+def is_allowed(rest: str) -> bool:
+    return rest in ALLOWED or bool(TILE_RE.fullmatch(rest))
 TTL_S = 30 * 24 * 3600
 TIMEOUT_S = 12.0            # point, crossings, meta : l'atlas répond en moins d'une seconde
 LAYER_TIMEOUT_S = 90.0      # *.geojson : wind.geojson = 26 Mo, ~18 s même derrière nginx (22 sept.)
@@ -146,7 +152,7 @@ def _json_response(body: bytes, status: str, code: int = 200) -> Response:
 
 @router.get("/bi/climatology/{rest:path}")
 async def bi_climatology(rest: str, request: Request):
-    if rest not in ALLOWED:
+    if not is_allowed(rest):
         raise HTTPException(404, "not a climatology endpoint")
     query = canonical_query(request)
     key = cache_key(rest, query)

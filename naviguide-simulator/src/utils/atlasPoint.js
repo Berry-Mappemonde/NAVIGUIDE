@@ -62,6 +62,69 @@ export function atlasLayerUrl(kind, month, extra = {}) {
   return `${BI_BASE}/climatology/${kind}.geojson?${q.toString()}`;
 }
 
+export function atlasTileUrl(kind, month, z, x, y, extra = {}) {
+  const q = new URLSearchParams({ month: String(clampMonth(month)), ...extra });
+  return `${BI_BASE}/climatology/${kind}/tiles/${z}/${x}/${y}.json?${q.toString()}`;
+}
+
+function boundNum(bounds, getter, key) {
+  if (bounds && typeof bounds[getter] === "function") return Number(bounds[getter]());
+  return Number(bounds?.[key]);
+}
+
+export function lonToTileX(lon, z) {
+  const n = 2 ** z;
+  return Math.floor(((Number(lon) + 180) / 360) * n);
+}
+
+export function latToTileY(lat, z) {
+  const n = 2 ** z;
+  const φ = (Math.max(-85, Math.min(85, Number(lat))) * Math.PI) / 180;
+  return Math.floor((1 - Math.log(Math.tan(φ) + 1 / Math.cos(φ)) / Math.PI) / 2 * n);
+}
+
+/**
+ * Visible XYZ tiles (Leaflet) plus an optional one-tile margin.
+ * Antimeridian: west > east (e.g. 170 → −170) is split; x is taken modulo 2^z.
+ */
+export function visibleClimoTiles(bounds, zoom, { margin = 1, zMax = 6 } = {}) {
+  const z = Math.max(0, Math.min(zMax, Math.round(Number(zoom) || 0)));
+  const n = 2 ** z;
+  const north = boundNum(bounds, "getNorth", "north");
+  const south = boundNum(bounds, "getSouth", "south");
+  const west = boundNum(bounds, "getWest", "west");
+  const east = boundNum(bounds, "getEast", "east");
+  const yA = latToTileY(north, z);
+  const yB = latToTileY(south, z);
+  const y0 = Math.max(0, Math.min(yA, yB) - margin);
+  const y1 = Math.min(n - 1, Math.max(yA, yB) + margin);
+  const tiles = [];
+  const seen = new Set();
+
+  const pushXRange = (x0, x1) => {
+    for (let x = x0; x <= x1; x += 1) {
+      const xx = ((x % n) + n) % n;
+      for (let y = y0; y <= y1; y += 1) {
+        const k = `${z}/${xx}/${y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        tiles.push({ z, x: xx, y });
+      }
+    }
+  };
+
+  const span = east - west;
+  if (!Number.isFinite(west) || !Number.isFinite(east) || span >= 360 - 1e-6) {
+    pushXRange(0, n - 1);
+  } else if (west <= east) {
+    pushXRange(lonToTileX(west, z) - margin, lonToTileX(east, z) + margin);
+  } else {
+    pushXRange(lonToTileX(west, z) - margin, n - 1);
+    pushXRange(0, lonToTileX(east, z) + margin);
+  }
+  return tiles;
+}
+
 /**
  * @returns {{
  *   speedKnots: number,
