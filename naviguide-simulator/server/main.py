@@ -146,7 +146,7 @@ def ici_pearls():
 @app.get("/voyage/official/film")
 async def get_official_film(
     lang: str = Query("fr"),
-    seconds: int = Query(150, ge=60, le=300),
+    seconds: int = Query(150, ge=0, le=300),
     style: str = Query("raw"),
     t0: str | None = Query(None),
 ):

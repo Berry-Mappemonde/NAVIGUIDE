@@ -321,7 +321,13 @@ FILM_TTL_S = 86400.0  # 1×/jour ; une nouvelle escale change la clé (hash jour
 
 
 def film_cache_key(journal_hash: str, lang: str, seconds: int) -> str:
-    return f"{journal_hash}|{(lang or 'fr')[:2].lower()}|{int(seconds or 150)}"
+    try:
+        n = int(seconds)
+    except (TypeError, ValueError):
+        n = 150
+    if n < 0:
+        n = 0
+    return f"{journal_hash}|{(lang or 'fr')[:2].lower()}|{n}"
 
 
 def get_film_cached(key: str) -> Optional[dict]:

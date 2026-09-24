@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
 import { DEFAULT_T0_ISO } from "../engine/voyageClock.js";
@@ -78,9 +78,39 @@ export function linearFilmAt(elapsed, plan) {
   const lastIdx = Math.max(0, (plan?.chapters?.length || 1) - 1);
   return {
     chapterIdx: ch?.idx ?? 0,
-    finish: elapsed >= seconds,
+    finish: seconds > 0 && elapsed >= seconds,
     lastReached: (ch?.idx ?? 0) >= lastIdx,
   };
+}
+
+/** ~ FILM_BUDGET_CHARS / 150 s : la voix ne meuble pas, le temps suit le texte. */
+export const FILM_CHARS_PER_SECOND = 16;
+
+export function filmSpeakSeconds(chapters) {
+  const chars = (chapters || []).reduce((s, c) => s + String(c?.text || "").length, 0);
+  return Math.max(1, Math.round(chars / FILM_CHARS_PER_SECOND));
+}
+
+/** Durée cochée → budget ; aucune → le temps que prend le journal. */
+export function resolveFilmTargetSeconds(selected, chapters) {
+  const n = Number(selected);
+  if (Number.isFinite(n) && n > 0) return n;
+  return filmSpeakSeconds(chapters);
+}
+
+/** Re-clic sur la même durée = décoché (0). */
+export function toggleFilmDuration(current, clicked) {
+  const a = Number(current);
+  const b = Number(clicked);
+  if (Number.isFinite(a) && Number.isFinite(b) && a === b) return 0;
+  return Number.isFinite(b) && b > 0 ? b : 0;
+}
+
+/** Budget coché : on attend la fin du budget, même si la voix a fini (KO #302). */
+export function shouldHoldFilmForBudget({
+  userBudget = 0, wallElapsed = 0, lastChapter = false,
+} = {}) {
+  return Boolean(lastChapter) && Number(userBudget) > 0 && Number(wallElapsed) < Number(userBudget);
 }
 
 export const APPROACH_FRAC = 0.8;
@@ -185,7 +215,7 @@ export function useReplay({
   const [card, setCard] = useState(null);
   // Lot O — voice is piloted by the film-bar Écouter button (no replay-voice).
   const [voice, setVoice] = useState(true);
-  const [targetSeconds, setTargetSeconds] = useState(FILM_TARGET_SECONDS);
+  const [targetSeconds, setTargetSeconds] = useState(0);
   const [chapterIdx, setChapterIdx] = useState(0);
   const [chapterText, setChapterText] = useState("");
   const [filmLeg, setFilmLeg] = useState(null);
@@ -221,6 +251,7 @@ export function useReplay({
   const publishedBubbleRef = useRef(null);
   const clockRef = useRef(clock);
   clockRef.current = clock;
+  const budgetRef = useRef(0);
 
   const stop = useCallback(() => {
     stoppingRef.current = true;
@@ -337,7 +368,10 @@ export function useReplay({
     const picked = pickFilmChapters(remoteOk ? remote : null, local, fallback);
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
-    const plan = filmPlan({ chapters, targetSeconds });
+    const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
+    budgetRef.current = userBudget;
+    const planSeconds = resolveFilmTargetSeconds(userBudget, chapters);
+    const plan = filmPlan({ chapters, targetSeconds: planSeconds });
     if (!plan.chapters.length) return false;
     windowRef.current = w;
     planRef.current = plan;
@@ -364,6 +398,9 @@ export function useReplay({
     setProgress(0);
     setActive(true);
     publishFilmStart(plan.targetSeconds);
+    if (typeof window !== "undefined" && window.__naviguideFilm) {
+      window.__naviguideFilm.budgetSeconds = userBudget;
+    }
     return true;
   }, [clock, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
 
@@ -413,6 +450,13 @@ export function useReplay({
       }));
     }
     if (idx + 1 >= plan.chapters.length) {
+      if (shouldHoldFilmForBudget({
+        userBudget: budgetRef.current,
+        wallElapsed,
+        lastChapter: true,
+      })) {
+        return;
+      }
       finish();
       return;
     }
@@ -438,7 +482,8 @@ export function useReplay({
         return;
       }
       const elapsed = (now - startWallRef.current) / 1000;
-      setProgress(Math.max(0, Math.min(1, elapsed / plan.targetSeconds)));
+      const denom = Number(plan.targetSeconds) > 0 ? plan.targetSeconds : 1;
+      setProgress(Math.max(0, Math.min(1, elapsed / denom)));
       const voiceClock = Boolean(
         voiceRef.current
         && !voiceFailedRef.current
@@ -458,8 +503,11 @@ export function useReplay({
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
-      const done = !voiceClock && linear.finish && linear.lastReached
-        && !stoppingRef.current;
+      const budgetDone = budgetRef.current > 0 && elapsed >= plan.targetSeconds;
+      const done = !stoppingRef.current && (
+        budgetDone
+        || (!voiceClock && linear.finish && linear.lastReached)
+      );
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);

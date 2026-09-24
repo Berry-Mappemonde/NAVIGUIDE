@@ -473,7 +473,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       aria-pressed={Number(replay.targetSeconds) === sec}
                       aria-disabled={Boolean(replay.active)}
                       disabled={Boolean(replay.active)}
-                      onClick={() => replay.onDuration?.(sec)}
+                      onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
                       className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
                         Number(replay.targetSeconds) === sec
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
