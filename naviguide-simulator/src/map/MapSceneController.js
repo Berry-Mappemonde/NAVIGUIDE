@@ -6,6 +6,8 @@ import { haversineNm, unwrapLon, worldCopyLineCoords, worldCopyLngs, worldCopyOf
 import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
+  drawingPinHtml,
+  drawingPinMetrics,
   flagIconMetrics,
   flagMarkerHtml,
   markerWorldLngs,
@@ -803,8 +805,8 @@ export class MapSceneController {
       const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
         ? flagMarkerHtml(srcs, offset).replace("<div ", `<div${stamp} `)
-        : `<div${stamp} style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
-      const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
+        : drawingPinHtml(index, stamp);
+      const metrics = srcs.length ? flagIconMetrics(srcs) : drawingPinMetrics();
       const lngs = [];
       const seen = new Set();
       const addLng = (lng) => {

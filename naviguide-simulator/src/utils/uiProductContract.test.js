@@ -76,9 +76,9 @@ describe("contrat UI produit", () => {
   it("dégage le zoom Leaflet et aligne les deux chevrons", () => {
     const sidebar = read("../components/Sidebar.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
-    assert.match(sidebar, /naviguide-sidebar-toggle--left/);
-    assert.match(sidebar, /top-\[92px\]/);
-    assert.match(tools, /naviguide-sidebar-toggle--right/);
+    assert.match(sidebar, /naviguide-sidebar-toggle--left[\s\S]{0,80}absolute top-4/);
+    assert.doesNotMatch(sidebar, /top-\[92px\]/);
+    assert.match(tools, /naviguide-sidebar-toggle--right[\s\S]{0,40}absolute top-4/);
     assert.match(tools, /w-9 h-9/);
     assert.doesNotMatch(tools, /w-12 h-12/);
   });

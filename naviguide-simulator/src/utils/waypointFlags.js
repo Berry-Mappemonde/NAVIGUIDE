@@ -25,6 +25,19 @@ export function flagIconMetrics(srcs) {
   return { iconSize: [w, 24], iconAnchor: [Math.round(w / 2), 12] };
 }
 
+/** Rond de tracé : 14 px (remplissage + bordure), ancré au centre du clic. */
+export const DRAWING_PIN_PX = 14;
+
+export function drawingPinMetrics() {
+  const half = DRAWING_PIN_PX / 2;
+  return { iconSize: [DRAWING_PIN_PX, DRAWING_PIN_PX], iconAnchor: [half, half] };
+}
+
+export function drawingPinHtml(index, attrs = "") {
+  const fill = index === 0 ? "#22c55e" : "#e2e8f0";
+  return `<div${attrs} style="width:${DRAWING_PIN_PX}px;height:${DRAWING_PIN_PX}px;box-sizing:border-box;border-radius:50%;background:${fill};border:2px solid #0f172a"></div>`;
+}
+
 function uniqLngs(lngs) {
   const out = [];
   for (const lng of lngs) {

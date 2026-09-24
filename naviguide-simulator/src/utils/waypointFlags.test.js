@@ -5,6 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   cameraLngForBoat,
+  drawingPinHtml,
+  drawingPinMetrics,
+  DRAWING_PIN_PX,
   flagIconMetrics,
   flagMarkerHtml,
   lonOnCameraCopy,
@@ -29,6 +32,22 @@ describe("waypointFlagSrcs", () => {
     assert.equal((two.match(/<img/g) || []).length, 2);
     assert.match(two, /translate\(3px,-2px\)/);
     assert.deepEqual(flagIconMetrics(["a"]).iconSize[0] < flagIconMetrics(["a", "b"]).iconSize[0], true);
+  });
+
+  it("lot RD2 — iconAnchor au centre exact du rond", () => {
+    const m = drawingPinMetrics();
+    assert.equal(DRAWING_PIN_PX, 14);
+    assert.deepEqual(m.iconSize, [14, 14]);
+    assert.deepEqual(m.iconAnchor, [7, 7]);
+    assert.equal(m.iconAnchor[0], m.iconSize[0] / 2);
+    assert.equal(m.iconAnchor[1], m.iconSize[1] / 2);
+    const first = drawingPinHtml(0, ` data-testid="waypoint-flag"`);
+    const next = drawingPinHtml(1);
+    assert.match(first, /#22c55e/);
+    assert.match(next, /#e2e8f0/);
+    assert.match(first, /width:14px;height:14px/);
+    assert.match(first, /box-sizing:border-box/);
+    assert.match(first, /data-testid="waypoint-flag"/);
   });
 });
 

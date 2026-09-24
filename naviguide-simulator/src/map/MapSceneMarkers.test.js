@@ -113,6 +113,13 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /if \(marker\._naviguideDrawing\) \{\s*this\.callbacks\.onDrawingWaypointClick/);
   });
 
+  it("lot RD2 — rond de tracé via drawingPinMetrics, plus d'icône 24×24 décalée", () => {
+    assert.match(src, /drawingPinHtml\(index, stamp\)/);
+    assert.match(src, /drawingPinMetrics\(\)/);
+    assert.doesNotMatch(src, /width:10px;height:10px/);
+    assert.doesNotMatch(src, /iconSize: \[24, 24\], iconAnchor: \[12, 12\]/);
+  });
+
   it("onMoveEnd ne relance ni /ici ni le récit", () => {
     const start = src.indexOf("this.onMoveEnd = ");
     const end = src.indexOf("this.onUserNavigation = ");
