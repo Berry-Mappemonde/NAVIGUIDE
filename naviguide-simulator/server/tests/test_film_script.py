@@ -29,6 +29,7 @@ from film_script import (
     review_leg_for_chapter,
     review_sentences,
     official_dated_stops,
+    warm_film_story,
     select_chapter_changes,
     select_film_events,
     speak_film_text,
@@ -898,6 +899,60 @@ def test_review_lane_named_in_correct_chapter():
         if c is not ch:
             assert "Gibraltar" not in (c.get("text") or "")
     _assert_no_filler(" ".join(c.get("text") or "" for c in plan["chapters"]))
+
+
+def test_review_lane_named_without_moments_journal():
+    """Lot RC8 : sans moments, _compose doit encore citer le couloir."""
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+        lang="fr", seconds=0, now_ms=NOW_MS, review=REVIEW_GIBRALTAR,
+    )
+    hit = [c for c in plan["chapters"] if "Gibraltar" in (c.get("text") or "")]
+    assert len(hit) == 1, [c.get("fromName") for c in plan["chapters"]]
+    assert "Ajaccio" in (hit[0].get("fromName") or "")
+    assert "Fort-de-France" in (hit[0].get("toName") or "")
+    _assert_no_filler(" ".join(c.get("text") or "" for c in plan["chapters"]))
+
+
+def test_warm_film_story_passes_review_without_clock(monkeypatch):
+    """Lot RC8 : le préchauffe envoie review_official à build_film_response."""
+    import film_script
+    import voyage_store
+
+    voy = {
+        "voyageId": "seed-no-clock",
+        "t0": OFFICIAL_T0,
+        "marks": [
+            {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942},
+            {"name": "Fort-de-France (Martinique)", "nm": 6973, "filmNm": 7095},
+        ],
+        "points": [
+            {"lat": 41.92, "lon": 8.74, "cumNm": 1820},
+            {"lat": 36.05, "lon": -5.6, "cumNm": 2500},
+            {"lat": 14.59, "lon": -61.07, "cumNm": 6973},
+        ],
+    }
+    captured: list = []
+
+    async def fake_build(*_a, **kw):
+        captured.append(kw.get("review"))
+        return {"hasWritten": False, "chars": 0, "source": "rules"}
+
+    monkeypatch.setattr(film_script, "build_film_response", fake_build)
+    monkeypatch.setattr(voyage_store, "load_voyage", lambda _vid: voy)
+    monkeypatch.setattr("voyage_api._climo_clock", lambda _v: {
+        "t0": OFFICIAL_T0, "vertices": [], "marks": voy["marks"],
+    })
+    out = asyncio.run(warm_film_story("seed-no-clock", langs=("fr",)))
+    assert out["status"] == "ready"
+    assert captured and captured[0] is not None
+    legs = (captured[0] or {}).get("legs") or []
+    assert any("Ajaccio" in (leg.get("from") or "") and "Fort-de-France" in (leg.get("to") or "") for leg in legs)
+    pack = next(
+        (leg.get("antiShipping") or {}) for leg in legs
+        if "Ajaccio" in (leg.get("from") or "")
+    )
+    assert "Gibraltar" in (pack.get("lanes") or [])
 
 
 def test_review_unknown_fields_are_silence():
