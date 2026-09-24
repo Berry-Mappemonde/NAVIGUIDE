@@ -45,45 +45,47 @@ tranche de PR, `run_lots.py` attend son commentaire « 🤖 Pré-revue » (au pl
 45 min, `--bot-wait-min`) puis lance le réviseur Grok CLI, qui reçoit les KO du bot
 dans son prompt (« où chercher dans le code »).
 
-**Déclencher le bot au bon moment, sans minuteur** (les routines Grok Bot se
-déclenchent aussi par événement : message Slack, événement GitHub, webhook — le
-déclencheur se règle dans l'application de bureau Grok Bot, sur la routine) :
+**Un seul déclencheur : le webhook** (depuis le 24 sept. ; le porteur a retiré
+« commentaire de PR » et le minuteur de repli — un réveil de trop coûtait un
+passage à vide, et le minuteur faisait doublon avec le réveil par PR) :
 
-- **Événement GitHub — recommandé, zéro code** : déclencheur « commentaire sur une
-  pull request » du dépôt `Berry-Mappemonde/Blue-Intelligence`. `run_lots.py` poste
-  exactement un commentaire 🔗 par PR quand son poste est prêt, et un 🧭 sur la PR
-  de tête en fin de batch : le bot part au bon moment. La routine ci-dessous est
-  idempotente (elle ne traite que les PR avec 🔗 sans 🤖, et s'arrête sinon) : un
-  déclenchement de trop ne coûte rien.
-- **Webhook** : si la routine expose une URL de webhook, la coller dans
+- **Webhook** : l'URL exposée par la routine est dans
   `~/.config/naviguide/simulator.env` : `BIM_BOT_WEBHOOK=https://…` —
-  `run_lots.py` l'appelle (POST JSON `{event: prereview|parcours, pr, url}`) juste
-  après chaque commentaire 🔗 / 🧭 — un réveil par PR, le bot ne traite que celle-là
-  (étape 1 ci-dessous). Avant chaque batch, le pré-vol (`run_lots.py --preflight`)
-  envoie `{event: ping}` pour vérifier URL et clé : la routine l'ignore (étape 0).
+  `run_lots.py` l'appelle (POST JSON `{event: prereview|parcours|ping, pr, url}`) :
+  `prereview` juste après chaque commentaire 🔗 (un réveil par PR, le bot ne traite
+  que celle-là), `parcours` après le 🧭 de fin de batch sur la PR de tête, `ping` au
+  pré-vol (`run_lots.py --preflight`) pour vérifier URL et clé — la routine l'ignore
+  (étape 0). Le chien de garde (`watchdog.py`) renvoie un `prereview` si une PR n'a
+  toujours pas de 🤖 trente minutes après son 🔗. Sans minuteur, **un réveil manqué
+  n'est rattrapé que par lui** : le pré-vol refuse donc de partir si le webhook
+  répond 401/403.
   Si Grok Bot donne aussi une clé et un en-tête
   (22 sept.) : `BIM_BOT_WEBHOOK_TOKEN=<clé>` et `BIM_BOT_WEBHOOK_HEADER=<nom de
   l'en-tête>` (défaut `Authorization`, envoyé en `Bearer <clé>`). Écrire ces lignes
   sans les faire transiter par un chat : coller la commande `printf 'BIM_BOT_WEBHOOK=%s\n'
   "$(pbpaste)" >> ~/.config/naviguide/simulator.env` dans le Terminal sans Entrée, copier
   la valeur, revenir, Entrée. Le fichier doit être en `chmod 600`.
-- **Minuteur** (repli) : toutes les 30 min la nuit.
+- **Ni minuteur ni événement GitHub** : retirés le 24 sept. Un lancement à la main
+  de la routine (sans message webhook) vaut balayage : toutes les PR avec 🔗 et sans
+  🤖 (étape 1, dernier cas).
 
 ```text
-À chaque déclenchement (webhook, commentaire de PR sur le dépôt, ou minuteur de repli), pré-revue visuelle des
-PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR À LA FOIS :
+Tu es réveillé par un webhook. Son message JSON dit ce qu'on attend de toi : `"event"`
+(`ping`, `prereview` ou `parcours`), `"pr"` (numéro de la pull request) et `"url"` (le poste
+de recette). Pré-revue visuelle des PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR
+À LA FOIS :
 
-0. Si le déclencheur est un webhook dont le message contient `"event": "ping"` : c'est
-   un test de branchement, arrête-toi sans rien faire ni poster.
+0. `"event": "ping"` : c'est un test de branchement — arrête-toi sans rien faire ni poster.
 1. Choisis ta cible :
-   - déclenché par WEBHOOK avec un numéro de PR (`"pr": 285`) : traite UNIQUEMENT cette
-     PR, même si d'autres attendent (un autre réveil s'en occupe : ils arrivent un par un,
-     et plusieurs de tes passages peuvent tourner en même temps sans se gêner) ;
-   - déclenché par le MINUTEUR ou un commentaire : liste les pull requests OUVERTES dont
-     le titre contient « (lot » et qui ont un commentaire commençant par « 🔗 Poste de
-     recette » mais PAS encore de commentaire commençant par « ## 🤖 Pré-revue », et
-     traite-les toutes, dans l'ordre croissant des numéros, en postant le commentaire
-     de chacune dès qu'elle est finie (pas de limite de 3 : le minuteur est un repli).
+   - `"event": "prereview"` avec `"pr"` : traite UNIQUEMENT cette PR, même si d'autres
+     attendent (un autre réveil s'en occupe : ils arrivent un par un, et plusieurs de tes
+     passages peuvent tourner en même temps sans se gêner) ;
+   - `"event": "parcours"` avec `"pr"` : c'est la PR de TÊTE en fin de batch → étape 6 ;
+   - pas de message, ou message sans `"pr"` (lancement à la main) : liste les pull
+     requests OUVERTES dont le titre contient « (lot » et qui ont un commentaire
+     commençant par « 🔗 Poste de recette » mais PAS encore de commentaire commençant
+     par « ## 🤖 Pré-revue », et traite-les toutes, dans l'ordre croissant des numéros,
+     en postant le commentaire de chacune dès qu'elle est finie.
    S'il n'y a rien à traiter, arrête-toi sans rien poster. Utilise le lien 🔗 le plus
    récent de la PR (un nouveau tunnel = un nouveau lien).
 2. Pour chaque PR : ouvre le lien du commentaire 🔗 dans le navigateur (c'est la
@@ -117,13 +119,14 @@ PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR À LA FOIS :
 5. Ne modifie pas le texte de la PR, ne ferme ni ne merge rien, ne coche pas ce
    que tu n'as pas vu, n'invente aucun chiffre. Un seul commentaire 🤖 par PR : si
    tu repasses, édite ton commentaire au lieu d'en ajouter un.
-6. **Parcours de référence** (tout tester) : quand la PR de TÊTE de la pile porte un
-   commentaire « 🧭 Parcours de référence » et pas encore de commentaire
-   `## 🤖 Parcours de référence`, et que toutes les PR de la pile ont leur
-   `## 🤖 Pré-revue` : joue l'intégralité du parcours donné dans ce commentaire
-   (A → H, console ouverte), sur le lien indiqué, et poste UN commentaire
-   `## 🤖 Parcours de référence` au même format (une ligne par item, console
-   comprise), terminé par « Vu n / total · KO k ». Une fois par tête de pile.
+6. **Parcours de référence** (tout tester) — réveil `"event": "parcours"` : la PR
+   `"pr"` est la TÊTE de la pile et porte un commentaire « 🧭 Parcours de référence ».
+   Si elle a déjà un commentaire `## 🤖 Parcours de référence`, arrête-toi. Sinon :
+   d'abord, s'il reste des PR de la pile avec 🔗 et sans `## 🤖 Pré-revue`, fais leur
+   pré-revue (étapes 2 à 5) ; puis joue l'intégralité du parcours donné dans le
+   commentaire 🧭 (A → H, console ouverte, page rechargée), sur le lien indiqué, et
+   poste UN commentaire `## 🤖 Parcours de référence` au même format (une ligne par
+   item, console comprise), terminé par « Vu n / total · KO k ». Une fois par tête.
 7. À la fin, envoie-moi un résumé : PR traitées, cases cochées, KO avec captures,
    erreurs de console, résultat du parcours.
 ```

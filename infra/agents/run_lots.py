@@ -1390,11 +1390,13 @@ def preflight(state: State, args, http: Http | None) -> bool:
             with urllib.request.urlopen(urllib.request.Request(hook, data=body, method="POST", headers=headers), timeout=30) as resp:
                 row(True, "webhook Grok Bot", f"HTTP {resp.status} (ping ignoré par la routine)")
         except urllib.error.HTTPError as e:
-            row(False, "webhook Grok Bot", f"HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) : le bot ne sera pas réveillé" if e.code in (401, 403) else ""))
+            # Depuis le 24 sept. le webhook est le SEUL déclencheur du bot (plus de minuteur) : refusé = pas de pré-revue de la nuit.
+            row(False, "webhook Grok Bot", f"HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) : sans lui, aucune pré-revue cette nuit" if e.code in (401, 403) else ""),
+                block=e.code in (401, 403))
         except Exception as e:
             row(False, "webhook Grok Bot", f"injoignable ({type(e).__name__})")
     else:
-        row(None, "webhook Grok Bot", "non configuré (BIM_BOT_WEBHOOK) : le bot passera à son minuteur")
+        row(None, "webhook Grok Bot", "non configuré (BIM_BOT_WEBHOOK) : le bot ne sera pas réveillé (plus de minuteur depuis le 24 sept.)")
 
     log("pré-vol :")
     for mark, what, detail in rows:
