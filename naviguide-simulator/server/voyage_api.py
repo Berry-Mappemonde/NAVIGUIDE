@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -735,13 +736,28 @@ def seed_official_voyage() -> Optional[dict]:
     return _build_official(body, compute_clock=False)
 
 
+def _wait_official_kick(provider: str, timeout: float = 900.0) -> None:
+    """Attend la fin d'un kick pipeline. Appelé depuis le fil de warm, pas HTTP."""
+    deadline = time.monotonic() + float(timeout)
+    pipe = get_pipeline()
+    while time.monotonic() < deadline:
+        if not pipe.provider_busy(provider):
+            return
+        time.sleep(0.2)
+
+
 def kick_official_warmups(*, force: bool = False) -> None:
-    """Préchauffages existants — chacun rend tout de suite (pipeline)."""
+    """Un préchauffage après l'autre — jamais les cinq en parallèle (lot RC7)."""
     _kick_official_grib()
+    _wait_official_kick("official-grib")
     _kick_official_hindcast(force=force)
+    _wait_official_kick("official-hindcast")
     _kick_official_eta(force=force)
+    _wait_official_kick("official-eta")
     _kick_official_moments(force=force)
+    _wait_official_kick("official-moments")
     _kick_official_film_story(force=force)
+    _wait_official_kick("official-film-story")
 
 
 def startup_official_voyage() -> Optional[dict]:
@@ -905,7 +921,6 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
 
     def _load():
         _fill_hindcast_then_forecast(OFFICIAL_VOYAGE_ID)
-        _kick_official_moments(force=True)
         return {}
 
     return get_pipeline().kick(
@@ -917,7 +932,7 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
     )
 
 
-def _kick_official_eta(*, force: bool = False) -> bool:
+def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bool:
     """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant."""
     raw = (os.getenv("NAVIGUIDE_ETA_PREHEAT") or "1").strip().lower()
     if raw in ("0", "false", "no"):
@@ -934,6 +949,7 @@ def _kick_official_eta(*, force: bool = False) -> bool:
                 current,
                 _now(),
                 polar_raw=_polar_raw((current or {}).get("expedition_id") or ""),
+                stop=stop,
             )
         except Exception as exc:
             log.warning("préchauffage ETA officiel: %s", exc)
@@ -962,6 +978,7 @@ def _maybe_daily_hindcast(voy: dict) -> None:
             return
     _kick_official_hindcast(force=False)
     _kick_official_eta(force=True)
+    _kick_official_moments(force=False)
 
 
 def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
@@ -1109,14 +1126,13 @@ def get_official_journal(
 
 @router.get("/voyage/official/eta")
 def get_official_eta(stop: str = Query(..., min_length=1)):
-    """Fourchette d'arrivée p10–p90 (ensembles). Sans membres : `{members: 0}`."""
+    """Fourchette p10–p90. Cache ou `{members: 0}` tout de suite — jamais de compute HTTP."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    from ensemble_eta import official_eta, tighten_eta_payload  # noqa: PLC0415
-    _kick_official_eta(force=False)
-    raw = official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
-    return tighten_eta_payload(raw, _now())
+    from ensemble_eta import peek_official_eta, tighten_eta_payload  # noqa: PLC0415
+    _kick_official_eta(force=False, stop=stop)
+    return tighten_eta_payload(peek_official_eta(voy, stop, _now()), _now())
 
 
 @router.get("/voyage/official/plan-review")
