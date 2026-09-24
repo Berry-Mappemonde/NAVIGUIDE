@@ -6,8 +6,10 @@ import copy
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -69,6 +71,10 @@ ATLAS_PREFETCH_BUDGET_S = 6.0
 MAX_VOYAGE_POINTS = 6000
 MAX_VOYAGE_MARKS = 300
 STALE_VOYAGE_DAYS = 7
+# Itinéraire Berry embarqué (public/route.geojson) — même source que le client.
+_ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
+_AIR_JUMP_NM = 120.0
+_AIR_FILM_NM = 80.0
 _create_limited = rate_limited("voyage-create", 6, 60.0, global_limit=60)
 _compute_limited = rate_limited("voyage-compute", 6, 60.0, global_limit=40)
 _official_read_limited = rate_limited("official-read", 240, 60.0)
@@ -89,6 +95,9 @@ class VoyageCreate(BaseModel):
     official: bool = False
     points: List[Dict[str, Any]]
     marks: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+_OFFICIAL_BODY_CACHE: Optional[VoyageCreate] = None
 
 
 class RecomputeBody(BaseModel):
@@ -510,7 +519,7 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
-def _build_official(body: VoyageCreate) -> dict:
+def _build_official(body: VoyageCreate, *, compute_clock: bool = True) -> dict:
     voy = {
         "voyageId": OFFICIAL_VOYAGE_ID,
         "t0": OFFICIAL_T0,
@@ -529,8 +538,220 @@ def _build_official(body: VoyageCreate) -> dict:
         "draft": None,
         "createdAt": to_iso(_now()),
     }
-    voy["clock"] = _climo_clock(voy)
+    # Le clock climatologique sur ~1 200 sommets est trop lent pour le boot :
+    # GET /voyage/official n'en a pas besoin ; /clock et les kicks le posent.
+    if compute_clock:
+        voy["clock"] = _climo_clock(voy)
     save_voyage(voy)
+    return voy
+
+
+def _unwrap_lon(prev: float, lon: float) -> float:
+    x = float(lon)
+    while x - prev > 180.0:
+        x -= 360.0
+    while x - prev < -180.0:
+        x += 360.0
+    return x
+
+
+def _nm_wrap(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine en milles, longitude repliée (même contrat que geo.js)."""
+    dlon = float(lon2) - float(lon1)
+    while dlon > 180.0:
+        dlon -= 360.0
+    while dlon < -180.0:
+        dlon += 360.0
+    return haversine(lat1, lon1, lat2, lon1 + dlon)
+
+
+def _air_stop_key(name: str) -> str:
+    s = (name or "").lower()
+    if "cayenne" in s:
+        return "cayenne"
+    if "halifax" in s:
+        return "halifax"
+    return ""
+
+
+def _is_air_leg(from_name: str, to_name: str) -> bool:
+    a, b = _air_stop_key(from_name), _air_stop_key(to_name)
+    return (a == "cayenne" and b == "halifax") or (a == "halifax" and b == "cayenne")
+
+
+def official_itinerary_body() -> Optional[VoyageCreate]:
+    """Corps ensure_official : public/route.geojson aplati (pas de réseau)."""
+    global _OFFICIAL_BODY_CACHE
+    if _OFFICIAL_BODY_CACHE is not None:
+        return _OFFICIAL_BODY_CACHE
+    if not _ROUTE_GEOJSON.is_file():
+        return None
+    try:
+        fc = json.loads(_ROUTE_GEOJSON.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("itinéraire Berry embarqué illisible: %s", exc)
+        return None
+
+    segments: List[dict] = []
+    stops: List[dict] = []
+    for feat in (fc.get("features") or []):
+        geom = (feat or {}).get("geometry") or {}
+        props = (feat or {}).get("properties") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates") or []
+        if gtype == "LineString" and len(coords) >= 2:
+            segments.append({
+                "from": str(props.get("from") or ""),
+                "to": str(props.get("to") or ""),
+                "coords": coords,
+                "nonMaritime": props.get("type") == "overland",
+                "air": props.get("type") == "air" or _is_air_leg(
+                    str(props.get("from") or ""), str(props.get("to") or ""),
+                ),
+            })
+        elif gtype == "Point" and len(coords) >= 2:
+            stops.append({
+                "name": str(props.get("name") or ""),
+                "lon": float(coords[0]),
+                "lat": float(coords[1]),
+                "flag": props.get("point_type") == "escale",
+            })
+
+    points: List[dict] = []
+    cum_nm = 0.0
+    film_cum = 0.0
+
+    def _add(lon: float, lat: float, *, jump: bool = False, non_maritime: bool = False, air: bool = False) -> None:
+        nonlocal cum_nm, film_cum
+        if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):
+            return
+        lon_u = float(lon)
+        lat_u = float(lat)
+        if points:
+            prev = points[-1]
+            lon_u = _unwrap_lon(prev["lon"], lon_u)
+            if abs(prev["lat"] - lat_u) < 1e-9 and abs(prev["lon"] - lon_u) < 1e-6:
+                return
+            if jump:
+                film_cum += _AIR_FILM_NM
+            else:
+                dist = _nm_wrap(prev["lat"], prev["lon"], lat_u, lon_u)
+                if not air:
+                    cum_nm += dist
+                film_cum += dist
+        points.append({
+            "lon": lon_u,
+            "lat": lat_u,
+            "cumNm": cum_nm,
+            "filmCum": film_cum,
+            "nonMaritime": bool(non_maritime),
+            "jump": bool(jump),
+            "air": bool(air or jump),
+        })
+
+    for seg in segments:
+        coords = seg["coords"]
+        air = bool(seg["air"])
+        start = 0
+        if points:
+            lon0, lat0 = coords[0][0], coords[0][1]
+            prev = points[-1]
+            if (
+                isinstance(lat0, (int, float))
+                and isinstance(lon0, (int, float))
+                and _nm_wrap(prev["lat"], prev["lon"], float(lat0), float(lon0)) >= _AIR_JUMP_NM
+            ):
+                _add(float(lon0), float(lat0), jump=True, non_maritime=seg["nonMaritime"], air=True)
+                start = 1
+        for i in range(start, len(coords)):
+            pair = coords[i]
+            if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                continue
+            _add(float(pair[0]), float(pair[1]), non_maritime=seg["nonMaritime"], air=air)
+
+    if not points:
+        return None
+
+    marks: List[dict] = []
+    search = 0
+    for stop in stops:
+        if not stop.get("flag") or not stop.get("name"):
+            continue
+        best = search
+        best_d = float("inf")
+        for i in range(search, len(points)):
+            d = _nm_wrap(stop["lat"], stop["lon"], points[i]["lat"], points[i]["lon"])
+            if d < best_d:
+                best_d = d
+                best = i
+        pt = points[best]
+        marks.append({
+            "name": stop["name"],
+            "lat": stop["lat"],
+            "lon": stop["lon"],
+            "nm": pt["cumNm"],
+            "filmNm": pt.get("filmCum", pt["cumNm"]),
+            "index": best,
+            "flag": True,
+        })
+        search = best
+
+    body = VoyageCreate(
+        t0=OFFICIAL_T0,
+        expedition_id="berry-mappemonde-2026",
+        routeKind="berry",
+        follow=True,
+        forecast=False,
+        startAt="la-rochelle",
+        official=True,
+        points=points,
+        marks=marks,
+    )
+    _OFFICIAL_BODY_CACHE = body
+    return body
+
+
+def _auto_seed_official_enabled() -> bool:
+    """Pytest : pas de semis au boot (fixtures PUT à 3 points). force = tests du lot."""
+    raw = (os.getenv("NAVIGUIDE_SEED_OFFICIAL") or "1").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    if raw == "force":
+        return True
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return False
+    return True
+
+
+def seed_official_voyage() -> Optional[dict]:
+    """Crée le voyage officiel s'il manque, sans client ni clé. Sans clock (boot)."""
+    existing = load_voyage(OFFICIAL_VOYAGE_ID)
+    if existing and existing.get("points"):
+        return existing
+    body = official_itinerary_body()
+    if body is None or not body.points:
+        return None
+    log.info("voyage officiel semé côté serveur (%s points)", len(body.points))
+    return _build_official(body, compute_clock=False)
+
+
+def kick_official_warmups(*, force: bool = False) -> None:
+    """Préchauffages existants — chacun rend tout de suite (pipeline)."""
+    _kick_official_grib()
+    _kick_official_hindcast(force=force)
+    _kick_official_eta(force=force)
+    _kick_official_moments(force=force)
+    _kick_official_film_story(force=force)
+
+
+def startup_official_voyage() -> Optional[dict]:
+    """Semis + kicks en fil daemon : le boot uvicorn ne bloque pas."""
+    voy = seed_official_voyage()
+    threading.Thread(
+        target=kick_official_warmups,
+        name="naviguide-official-warm",
+        daemon=True,
+    ).start()
     return voy
 
 
@@ -810,6 +1031,8 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
 @router.get("/voyage/official")
 def get_official():
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None or not voy.get("points"):
+        voy = seed_official_voyage()
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
     return {
