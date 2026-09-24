@@ -69,9 +69,9 @@ stop_listener() {
       log "!! $what :$port est tenu par un autre programme ($cmd) — non arrêté"
     fi
   done
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 100); do          # 5 s au plus, mais on repart dès que le port est libre (~50 ms)
     port_up "$port" || return 0
-    sleep 0.25
+    sleep 0.05
   done
   for pid in $(listener_pids "$port"); do kill -9 "$pid" 2>/dev/null || true; done
   sleep 0.5
@@ -148,12 +148,19 @@ if [[ "$PROD" -eq 1 ]]; then
     echo "ensure-dev: le build de prod a échoué — voir $ROOT/.dev/build.log" >&2
     exit 1
   fi
-  stop_listener 5174 "Interface"
-  log "==> Interface :5174 (vite preview, build de prod)"
+  # Bascule la plus courte possible : le build est déjà fait, l'ancienne interface n'est arrêtée
+  # qu'au dernier moment et la nouvelle part par le binaire de Vite (0,3 s) plutôt que par npx
+  # (résolution + vérification de mise à jour npm : 0,8 s). Il reste ~1 s sans origine derrière
+  # le tunnel à chaque lot (22 sept., 12:27:01Z : 4 requêtes « Unable to reach the origin »,
+  # Grok Bot a conclu 503) : la routine du bot réessaie après un 5xx (GROK_BOT_ROUTINE.md § 2).
+  local_vite=(npx vite)
+  [[ -x node_modules/.bin/vite ]] && local_vite=(node_modules/.bin/vite)
   # Poste vu depuis le cloud (Grok Bot) par un tunnel Cloudflare : Vite ≥ 6 refuse les
   # hôtes inconnus ; cette variable l'autorise quel que soit le vite.config.js du checkout.
   export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="${NAVIGUIDE_PREVIEW_HOST:-.trycloudflare.com}"
-  nohup npx vite preview --host 127.0.0.1 --port 5174 --strictPort >> .dev/vite.log 2>&1 &
+  stop_listener 5174 "Interface"
+  log "==> Interface :5174 (vite preview, build de prod)"
+  nohup "${local_vite[@]}" preview --host 127.0.0.1 --port 5174 --strictPort >> .dev/vite.log 2>&1 &
   echo $! > .dev/vite.pid
   for _ in $(seq 1 60); do
     port_up 5174 && break
