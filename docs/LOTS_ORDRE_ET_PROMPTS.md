@@ -119,6 +119,7 @@ testent avec de faux serveurs).
 | 81 | RD6 | corrections 4 | S | RD4 | onglet Récit jamais vide (absent hors Suivre), lignes du Journal qui nomment leur événement, plus d'espace mort |
 | 82 | RD7 | corrections 4 | M | RD4 | le film déclame les vraies données du journal (marinas, AMP, stations, cyclones, culture) ; durées 2:30/3:00 décochables, aucune par défaut ; plus de phrases de remplissage
 | 83 | RD8 | corrections 4 | M | — | couches climatologie (vent, vagues, courants) en tuiles XYZ : zone visible seulement, détail natif 1° au zoom, propriétés légères, cache ; plus de `wind.geojson` global (1,6 Mo à 4°) dans l'application |
+| 84 | RD9 | corrections 4 | M | RD6, RD7 | la Revue du plan devient un onglet de l'encadré gauche (retirée du panneau droit — demande du porteur, PR #305) ; le récit déclamé du film reprend les faits de la revue (verdicts, couloirs nommés, saison) |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
 § 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
@@ -1214,7 +1215,7 @@ Branche chore/lot-h1-split-depots depuis la base indiquée. PR vers main, gabari
 Interdits : créer ou pousser un dépôt ; supprimer des fichiers du dépôt courant ; secret ; vidéo. Décide seul et note-le. Fin : PR, journal du dry-run, reste à faire.
 ```
 
-### Corrections 4 — revue du 23 septembre au matin (RD1 → RD7)
+### Corrections 4 — revue du 23 septembre au matin (RD1 → RD9)
 
 À enchaîner après la pile RB1 → RC5 (#269 → #302) mergée. Détail, causes
 racines (fichier:ligne, lues sur la tête de pile #302) et recette dans
@@ -1341,6 +1342,21 @@ Tests : cd backend && .venv/bin/python -m pytest -q tests/test_climatology.py ; 
 Recette (visuelle, par écran) : Suivre, pastille vent allumée → tu dois voir les flèches en moins de 2 s sur la zone affichée ; zoome sur le golfe de Gascogne → tu dois voir les flèches se densifier (une par degré) au lieu d'une tous les 4°, recule → elles s'espacent sans trou ni saut ; fais glisser la carte vers l'ouest → tu dois voir les flèches apparaître sur la nouvelle zone en moins de 2 s, sans clignotement de l'ancienne ; onglet Réseau (F12) → des requêtes …/wind/tiles/4/…json de quelques dizaines de Ko, aucune wind.geojson. Captures docs/recette/lot-rd8/01-dense.jpg, 02-reseau.jpg (URL complète sur ta branche).
 Branche feat/lot-rd8-tuiles-climato depuis la base indiquée. PR vers main, gabarit REGLES § 3 (FR puis EN) ; dans « Hors périmètre », dire que le merge déploiera aussi le backend BI (deploy.yml). Ne merge pas.
 Interdits : changer le rendu des flèches ou la popup ; retirer les routes .geojson ; toucher nginx ; chiffre produit par un LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
+```
+
+<!-- LOT id="RD9" title="La Revue du plan en onglet de l'encadré gauche ; le récit déclamé s'en nourrit" plan="docs/PLAN_CORRECTIONS_2026-09-23.md" size="M" deps="RD6,RD7" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier (§ 1 : un onglet marche ou n'existe pas), puis docs/PLAN_CORRECTIONS_2026-09-23.md § 0 et le « RD9 » (texte intégral). Tu travailles dans naviguide-simulator/. Les lots RD6 et RD7 sont dans ta base.
+
+Lot RD9 — La Revue du plan en onglet gauche, et dans le récit déclamé (demande du porteur, PR #305, 24 sept. : « met Revue du plan en onglet de l'encadré du sidebar gauche et fais en sorte que cette revue aussi soit utilisée par le récit déclamé »).
+Objectif : la Revue du plan (verdicts par jambe, pastille « couloirs : X » par jambe, commentaire « Ce que je changerais », conseil avec Appliquer) devient un onglet de l'encadré gauche, à côté de Maintenant · (Récit ·) Journal, et disparaît du panneau droit ; le récit déclamé du film dit ce que la revue dit de chaque jambe (verdict, couloirs nommés, saison).
+Cause racine : — (déplacement de surface et enrichissement demandés — point 15 § 2 du plan, tranché par le porteur : l'exception « demande explicite » de l'anti-régression s'applique au retrait côté droit). État des lieux : la revue est rendue dans le panneau droit (ToolsSidebar.jsx l. 395-419, bloc planReview && !drawing) ; les onglets gauches sont ICI_TABS (iciMaintenant.js l. 6-10, remaniés par RD6) ; les données viennent de usePlanReview (GET /voyage/official/plan-review, servi par voyage_api.py l. 899 → plan_review.py review_official l. 258, faits par jambe table_facts l. 342 : verdict, couloirs antiShipping.lanes, saison galePct/cyclones), câblées App.jsx l. 1417-1443 (planReview, passé au seul ToolsSidebar l. 1657) ; le récit déclamé (film_script.py, build_raw_from_moments l. 1235, build_film_response l. 1734) déroule après RD7 les moments du journal mais ignore la revue.
+Fichiers à ouvrir (seulement) : src/components/iciMaintenant.js, src/components/IciMaintenant.jsx, src/components/Sidebar.jsx PAR EXTRAIT (rg -n "IciMaintenant|story="), src/components/ToolsSidebar.jsx, src/App.jsx PAR EXTRAIT (rg -n "planReview"), src/i18n/fr.js, src/i18n/en.js, server/film_script.py, server/plan_review.py (lecture seule), server/tests/test_film_script.py, tests associés (IciMaintenant, ToolsSidebar, PlanReview).
+Étapes : 1) onglet « Revue du plan » dans l'encadré gauche (ICI_TABS + rendu IciMaintenant) : le composant PlanReview y est rendu tel quel (verdicts, pastille couloirs par jambe RD3, commentaire, conseil avec Appliquer) ; le libellé planReviewTitle existe déjà en fr/en ; 2) l'onglet apparaît en Suivre et en Simulation (l'horloge officielle est là, RD4), jamais en Tracer — un onglet marche ou n'existe pas (règle RD6) ; 3) retirer le bloc Revue du plan du panneau droit (ToolsSidebar) — retrait demandé par le porteur (PR #305) ; le reste du panneau droit (Date de départ RD5, Polaires, ordres) ne bouge pas ; 4) le récit déclamé reprend la revue : au chapitre d'une jambe, la voix dit ce que la revue signale pour cette jambe — verdict (alerte, à surveiller), couloirs commerciaux nommés, saison (coup de vent, saison cyclonique) — faits de review_official uniquement, chiffres via filter_numbers, champ inconnu = silence, jamais une phrase gabarit (règle RD7) ; sous budget 2:30/3:00 ces phrases comptent comme les autres.
+Tests : l'encadré gauche rend l'onglet Revue du plan avec des jambes ; ToolsSidebar ne rend plus PlanReview ; pas d'onglet Revue en Tracer ; fixture de revue (jambe avec couloir et saison) → le script déclamé cite le couloir nommé dans le chapitre de la bonne jambe. npm test, .venv/bin/python -m pytest -q, npx vite build, npm run e2e -- e2e/lots/rd9-revue-onglet.spec.js.
+Recette (visuelle) : Suivre, panneau gauche — un onglet Revue du plan à côté de Maintenant · Récit · Journal, avec les jambes, leurs verdicts, « couloirs : … » et « Ce que je changerais » ; Simulation — même onglet ; panneau droit sans Revue du plan, Date de départ / Polaires / ordres inchangés ; Tracer ma route — pas d'onglet Revue ; Revoir l'expédition — au passage d'une jambe qui croise un couloir, la voix nomme le couloir et dit ce que la revue signale, jamais une phrase de remplissage. Captures docs/recette/lot-rd9/01-onglet.jpg, 02-panneau-droit.jpg (URL complète sur ta branche).
+Branche feat/lot-rd9-revue-onglet-recit depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : garder la revue en double (droite ET gauche) ; onglet vide ; phrase de remplissage ; chiffre produit par un LLM ; retirer une autre surface du panneau droit ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)

@@ -1,12 +1,14 @@
-# Plan — Corrections de la revue du 23 septembre (matin) : lots RD1 → RD8
+# Plan — Corrections de la revue du 23 septembre (matin) : lots RD1 → RD9
 
 Version **1.0** — 23 septembre 2026. Le porteur a recetté dans Chrome le batch
 RB1 → RC5 (PR #269 → #302, 28 PR ouvertes, pile linéaire). Il n'a pas fait de
 revue PR par PR (« tu considères que la revue du bot vaut pour la revue PR par
 PR ») : il a coché 8 items sur 98 (R8c #279, R9a #281, RC3 #298) et livré une
 **revue globale de l'application**, très mécontente. Ce plan transforme cette
-revue — et les 14 KO du réviseur de nuit (bot) — en lots correctifs RD1 → RD8 (RD8 ajouté le 24 sept. : couches en tuiles),
-à enchaîner par `infra/agents/run_lots.py`.
+revue — et les 14 KO du réviseur de nuit (bot) — en lots correctifs RD1 → RD9
+(RD8 et RD9 ajoutés le 24 sept. : couches en tuiles ; Revue du plan en onglet
+gauche, reprise par le récit déclamé), à enchaîner par
+`infra/agents/run_lots.py`.
 
 **Prérequis.** Les lots RD partent de `main` **après merge de la pile
 #269 → #302** (merger la PR de tête #302 suffit, pile linéaire — la décision
@@ -162,8 +164,10 @@ Le porteur n'a pas relu PR par PR : le verdict PR par PR est celui du bot
     reproduire puis à chercher dans le forçage (`forced`) et le câblage
     `onSkipperExpert={skipper.setExpert}` (`App.jsx:1666`). → **RD3**.
 15. **« À la limite, la Revue du plan pourrait être un onglet du panneau
-    gauche. »** Décision notée, pas tranchée par le porteur (« à la
-    limite ») : aucun lot — voir § 3.
+    gauche. »** Tranché le 24 sept., commentaire du porteur sur la PR #305 :
+    « CORRIGER: met Revue du plan en onglet de l'encadré du sidebar gauche
+    et fais en sorte que cette revue aussi soit utilisée par le récit
+    déclamé ». La demande ferme est là. → **RD9**.
 
 ## 3. Ce qui est reporté ou fondu, et pourquoi
 
@@ -181,10 +185,12 @@ Le porteur n'a pas relu PR par PR : le verdict PR par PR est celui du bot
   un défaut du code du simulateur. Noté pour le porteur : relancer la recette
   avec l'atlas joignable ; si le 502 revient en prod, c'est un ticket infra,
   pas un lot simulateur.
-- **Revue du plan en onglet du panneau gauche** : suggestion du porteur au
-  conditionnel. Décision **notée, non exécutée** — à confirmer par le porteur
-  avant d'ouvrir un lot (déplacement de surface : REGLES § 1, on ne déplace
-  pas sans demande ferme).
+- **Revue du plan en onglet du panneau gauche** : suggestion d'abord au
+  conditionnel, **confirmée par le porteur le 24 sept.** (commentaire sur la
+  PR #305 : « CORRIGER: met Revue du plan en onglet de l'encadré du sidebar
+  gauche et fais en sorte que cette revue aussi soit utilisée par le récit
+  déclamé »). La demande ferme attendue (REGLES § 1) est arrivée : ce n'est
+  plus un report, c'est le lot **RD9**.
 - **Ordre du récit (saut de La Rochelle, KO bot #285/#299)** : corrigé par
   RC4 + RC5 (tête de pile) ; la revue du porteur **entend les paires**
   (« Départ vers La Rochelle. Arrivée à La Rochelle… ») ; simple vérification
@@ -195,7 +201,7 @@ Le porteur n'a pas relu PR par PR : le verdict PR par PR est celui du bot
 Convention : « Fichiers » = les seuls à ouvrir (`rg -n` + `Read`
 offset/limit pour App.jsx et MapSceneController.js). « Recette » = ce que le
 porteur voit dans Chrome, par écran. Ancres `fichier:ligne` = tête de pile
-#302 (= `main` après merge). Pile linéaire RD1 → RD8.
+#302 (= `main` après merge). Pile linéaire RD1 → RD9.
 
 ### RD1 — Le clic sur la carte fait ce qu'il dit : route → pop-up Copernicus, jamais le panneau gauche (M)
 
@@ -590,6 +596,76 @@ Recette (visuelle) :
 - Onglet Réseau de Chrome (F12) : des requêtes `…/wind/tiles/4/…json` de
   quelques dizaines de Ko, **aucune** `wind.geojson`.
 
+### RD9 — La Revue du plan devient un onglet de l'encadré gauche ; le récit déclamé s'en nourrit (M, après RD6 et RD7)
+
+Demande du porteur (24 sept., commentaire sur la PR #305) : « CORRIGER: met
+Revue du plan en onglet de l'encadré du sidebar gauche et fais en sorte que
+cette revue aussi soit utilisée par le récit déclamé ». C'est le point 15 du
+§ 2, tranché : le déplacement de surface est maintenant **demandé fermement**
+(l'exception « demande explicite » de l'anti-régression s'applique).
+
+Cause racine : — (déplacement de surface et enrichissement demandés, pas un
+bug). État des lieux : la Revue du plan est rendue dans le **panneau droit**
+(`src/components/ToolsSidebar.jsx:395-419`, bloc `planReview && !drawing`,
+composant `PlanReview.jsx` : verdicts par jambe, pastille « couloirs : X »
+par jambe (conservée par RD3), commentaire « Ce que je changerais », conseil
+avec Appliquer). Les onglets de l'encadré gauche sont `ICI_TABS`
+(`src/components/iciMaintenant.js:6-10` : Maintenant, Récit, Journal —
+remaniés par RD6). Les données viennent de `usePlanReview`
+(`src/hooks/usePlanReview.js:397`, `GET /voyage/official/plan-review`, servi
+par `server/voyage_api.py:899` → `server/plan_review.py:258`
+`review_official` ; faits par jambe `table_facts` `:342` : verdict, couloirs
+`antiShipping.lanes`, saison `galePct` / `cyclones`), câblées dans
+`src/App.jsx:1417-1443` (`planReview`, passé au seul `ToolsSidebar`
+`:1657`). Le récit déclamé du film est bâti par `server/film_script.py`
+(`build_raw_from_moments:1235`, `build_film_response:1734`) : après RD7 il
+déroule les moments du journal, mais il **ignore la revue du plan**.
+
+Fichiers : `src/components/iciMaintenant.js`,
+`src/components/IciMaintenant.jsx`, `src/components/Sidebar.jsx` PAR EXTRAIT
+(`rg -n "IciMaintenant|story="`), `src/components/ToolsSidebar.jsx`,
+`src/App.jsx` PAR EXTRAIT (`rg -n "planReview"`), `src/i18n/fr.js`,
+`src/i18n/en.js`, `server/film_script.py`, `server/plan_review.py`
+(lecture), `server/tests/test_film_script.py`, tests associés
+(`IciMaintenant`, `ToolsSidebar`, `PlanReview`).
+
+Étapes :
+1. Ajouter l'onglet **Revue du plan** à l'encadré gauche (`ICI_TABS` +
+   rendu dans `IciMaintenant.jsx`) : le composant `PlanReview` y est rendu
+   **tel quel** — verdicts par jambe, pastille « couloirs : X » par jambe,
+   commentaire « Ce que je changerais », conseil avec Appliquer (le libellé
+   `planReviewTitle` existe déjà en fr/en).
+2. Règle RD6 (un onglet marche ou n'existe pas) : l'onglet apparaît en
+   Suivre et en Simulation (la revue de l'itinéraire officiel est là dès que
+   l'horloge officielle est chargée — garanti par RD4) ; **pas d'onglet en
+   Tracer** (aujourd'hui déjà, la revue se cache pendant le dessin).
+3. Retirer le bloc Revue du plan du **panneau droit** (`ToolsSidebar.jsx`) —
+   retrait demandé par le porteur (PR #305) ; le reste du panneau droit
+   (Date de départ remontée par RD5, Polaires, ordres skipper) ne bouge pas.
+4. Le récit déclamé **reprend la revue** : au chapitre d'une jambe, la voix
+   du film dit ce que la revue signale pour cette jambe — verdict (alerte,
+   à surveiller), couloirs commerciaux **nommés**, saison (risque de coup de
+   vent, saison cyclonique) — faits de `review_official` uniquement, chiffres
+   via `filter_numbers`, champ inconnu = silence, jamais une phrase gabarit
+   (règle RD7). Sous budget (2:30 / 3:00 cochés), ces phrases comptent dans
+   le budget comme les autres.
+5. Tests : l'encadré gauche rend l'onglet Revue du plan avec des jambes ;
+   `ToolsSidebar` ne rend plus `PlanReview` ; pas d'onglet Revue en Tracer ;
+   fixture de revue (jambe avec couloir et saison) → le script déclamé cite
+   le couloir nommé dans le chapitre de la bonne jambe.
+
+Recette (visuelle) :
+- Suivre, panneau gauche : un onglet **Revue du plan** à côté de
+  Maintenant · Récit · Journal ; on y retrouve les jambes, leurs verdicts,
+  les lignes « couloirs : … » et « Ce que je changerais ».
+- Simulation, panneau gauche : le même onglet ; panneau droit : la Revue du
+  plan **n'y est plus** — « Date de départ », Polaires et les ordres n'ont
+  pas bougé.
+- Tracer ma route : pas d'onglet Revue du plan.
+- Revoir l'expédition : au passage d'une jambe qui croise un couloir
+  commercial, la voix **nomme** le couloir (« Gibraltar ») et dit ce que la
+  revue signale (verdict, saison) — jamais une phrase de remplissage.
+
 ## 5. Ordre, pile, lancement
 
 | # | Lot | Taille | Touche surtout |
@@ -602,6 +678,7 @@ Recette (visuelle) :
 | 6 | RD6 | S | IciMaintenant.jsx, Sidebar.jsx, useMomentJournal.js (Récit, journal nommé) — après RD4 |
 | 7 | RD7 | M | film_script.py, SimulationFilmBar.jsx, useReplay.js (récit du film, durée libre) — après RD4 |
 | 8 | RD8 | M | backend climatology.py / climatology_wind.py, useClimatologyLayer.js, atlasPoint.js, bi_proxy.py (couches en tuiles) — indépendant |
+| 9 | RD9 | M | iciMaintenant.js, IciMaintenant.jsx, ToolsSidebar.jsx, film_script.py (Revue du plan en onglet gauche, récit qui s'en nourrit) — après RD6 et RD7 |
 
 Lancement : la boucle (`loop.py`) part seule au merge de la PR de ce
 document, **empilée sur la pile #269 → #302** si elle n'est pas mergée
@@ -611,7 +688,7 @@ main, si besoin :
 ```bash
 cd ~/Blue-Intelligence-Map && git checkout main && git pull --ff-only
 python3 infra/agents/run_lots.py --check
-caffeinate -i python3 infra/agents/run_lots.py --from RD1 --until RD8 --resume
+caffeinate -i python3 infra/agents/run_lots.py --from RD1 --until RD9 --resume
 ```
 
 Fin de batch : le poste de recette s'ouvre seul (W0) ; recette par écran ;
