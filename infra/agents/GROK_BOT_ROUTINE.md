@@ -91,7 +91,10 @@ PR du dépôt Berry-Mappemonde/Blue-Intelligence — UNE PR À LA FOIS :
    en commençant chaque PR** (⇧⌘R / Ctrl+Shift+R) : le poste change de build à
    chaque lot et une page déjà ouverte garde l'ancien (22 sept., #290 : le bot a
    jugé « Recalculer l'itinéraire » sur une page chargée avant le build qui disait
-   « Demander conseil »). Recharge aussi si la page tarde. Lis la
+   « Demander conseil »). Recharge aussi si la page tarde. Si la page ou l'API
+   répond 5xx (502, 503…), ce n'est pas une panne : le poste se rebâtit pendant
+   quelques secondes après chaque lot — attends 60 s et réessaie, deux fois au
+   plus, avant de conclure « poste inaccessible ». Lis la
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape
    « ouvre …, clique … → tu dois voir … » (FR / EN sur la même ligne).
 3. Pour chaque case : fais l'étape dans l'application, à l'écran indiqué (Suivre,
