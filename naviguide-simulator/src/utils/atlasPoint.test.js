@@ -4,10 +4,12 @@ import {
   atlasLayerUrl,
   atlasOrZone,
   atlasPointUrl,
+  atlasTileUrl,
   cellKey,
   civilMonth,
   compactAtlasFields,
   hasAtlasBlocks,
+  visibleClimoTiles,
   windFromAtlasPoint,
 } from "./atlasPoint.js";
 
@@ -58,8 +60,26 @@ describe("atlasPoint", () => {
     assert.match(point, /dest_lat=14\.6/);
     assert.match(atlasPointUrl({ lat: 15, lon: 186, month: 9 }), /lon=-174/);
     assert.equal(atlasLayerUrl("wave", 6, { stat: "p90", spacing_deg: "4" }).includes("stat=p90"), true);
+    assert.equal(
+      atlasTileUrl("wind", 6, 4, 8, 5),
+      "/bi/climatology/wind/tiles/4/8/5.json?month=6",
+    );
+    assert.match(atlasTileUrl("wave", 9, 3, 2, 1, { stat: "p90" }), /stat=p90/);
     assert.equal(cellKey(15.1, -25.1, 6), cellKey(15.2, -25.2, 6));
     assert.equal(civilMonth("2026-07-15T08:00:00.000Z"), 7);
+  });
+
+  it("enumerates visible tiles and wraps x across the antimeridian", () => {
+    const europe = visibleClimoTiles({ west: -10, south: 35, east: 20, north: 55 }, 4, { margin: 0 });
+    assert.ok(europe.length >= 1);
+    assert.ok(europe.every((t) => t.z === 4 && t.x >= 0 && t.x < 16 && t.y >= 0 && t.y < 16));
+
+    const wrap = visibleClimoTiles({ west: 170, south: -10, east: -170, north: 10 }, 3, { margin: 1 });
+    const xs = [...new Set(wrap.map((t) => t.x))].sort((a, b) => a - b);
+    assert.ok(wrap.every((t) => t.z === 3));
+    assert.ok(xs.includes(0), `expected x=0 among ${xs}`);
+    assert.ok(xs.includes(7), `expected x=7 among ${xs}`);
+    assert.ok(xs[0] < xs[xs.length - 1] || xs.includes(0));
   });
 
   it("compacts fields for the clock without dropping kind", () => {
