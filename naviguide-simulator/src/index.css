@@ -24,8 +24,11 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   clear: none;
   margin: 0;
 }
-.leaflet-container .leaflet-control-attribution {
+/* Lot RD2 — sélecteur plus spécifique que le chunk Leaflet (chargé après)
+ * pour garder la bande translucide dans les deux thèmes, sans aplat blanc. */
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution {
   background: rgba(15, 23, 42, 0.72);
+  background-color: rgba(15, 23, 42, 0.72);
   color: rgba(226, 232, 240, 0.85);
   font-size: 10px;
   line-height: 1.3;
@@ -33,59 +36,45 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   margin: 0;
   border-radius: 6px 0 0 0;
 }
-.leaflet-container .leaflet-control-attribution a { color: #7dd3fc; }
-.light-mode .leaflet-container .leaflet-control-attribution {
-  background: rgba(255, 255, 255, 0.8);
-  color: rgb(51 65 85);
-}
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
 
 /* Lot RB2 — +/− horizontaux, plus petits que le 26–30 px Leaflet, à côté des crédits. */
-.leaflet-container .leaflet-control-zoom.leaflet-bar {
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom.leaflet-bar {
   display: flex;
   flex-direction: row;
   box-shadow: none;
   border: none;
   background: rgba(15, 23, 42, 0.72);
+  background-color: rgba(15, 23, 42, 0.72);
   border-radius: 6px;
   overflow: hidden;
 }
-.leaflet-container .leaflet-control-zoom a,
-.leaflet-container.leaflet-touch .leaflet-control-zoom a {
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a,
+.leaflet-container.leaflet-touch .leaflet-bottom.leaflet-right .leaflet-control-zoom a {
   width: 20px;
   height: 20px;
   line-height: 20px;
   font: 700 14px/20px ui-monospace, "Lucida Console", Monaco, monospace;
   background: transparent;
+  background-color: transparent;
   color: rgba(226, 232, 240, 0.95);
   border: none;
   border-right: 1px solid rgba(226, 232, 240, 0.18);
   border-radius: 0;
   text-indent: 0;
 }
-.leaflet-container .leaflet-control-zoom a:last-child {
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a:last-child {
   border-right: none;
 }
-.leaflet-container .leaflet-control-zoom a:hover,
-.leaflet-container .leaflet-control-zoom a:focus {
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a:hover,
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a:focus {
   background: rgba(226, 232, 240, 0.12);
+  background-color: rgba(226, 232, 240, 0.12);
 }
-.leaflet-container .leaflet-control-zoom a.leaflet-disabled {
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a.leaflet-disabled {
   background: transparent;
+  background-color: transparent;
   color: rgba(226, 232, 240, 0.35);
-}
-.light-mode .leaflet-container .leaflet-control-zoom.leaflet-bar {
-  background: rgba(255, 255, 255, 0.8);
-}
-.light-mode .leaflet-container .leaflet-control-zoom a {
-  color: rgb(51 65 85);
-  border-right-color: rgba(51, 65, 85, 0.18);
-}
-.light-mode .leaflet-container .leaflet-control-zoom a:hover,
-.light-mode .leaflet-container .leaflet-control-zoom a:focus {
-  background: rgba(15, 23, 42, 0.08);
-}
-.light-mode .leaflet-container .leaflet-control-zoom a.leaflet-disabled {
-  color: rgb(148 163 184);
 }
 
 .naviguide-sidebar-panel {

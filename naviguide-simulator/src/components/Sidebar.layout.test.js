@@ -76,6 +76,17 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.match(sidebar, /t\("importRoute"\)/);
     assert.doesNotMatch(sidebar, /t\("clickToImport"\)|t\("importOrDraw"\)|t\("clickNewImport"\)/);
   });
+
+  it("lot RD2 — toggle gauche fermé à top-4, pas d'aplat blanc crédits/zoom", () => {
+    assert.match(sidebar, /naviguide-sidebar-toggle--left[\s\S]{0,280}absolute top-4/);
+    assert.doesNotMatch(sidebar, /top-\[92px\]/);
+    assert.match(css, /\.leaflet-bottom\.leaflet-right \.leaflet-control-attribution \{[\s\S]{0,80}background:\s*rgba\(15,\s*23,\s*42,\s*0\.72\)/);
+    assert.match(css, /\.leaflet-bottom\.leaflet-right \.leaflet-control-zoom\.leaflet-bar \{[\s\S]{0,180}background:\s*rgba\(15,\s*23,\s*42,\s*0\.72\)/);
+    assert.doesNotMatch(css, /\.light-mode \.leaflet-container \.leaflet-control-attribution/);
+    assert.doesNotMatch(css, /\.light-mode \.leaflet-container \.leaflet-control-zoom/);
+    assert.doesNotMatch(css, /leaflet-control-attribution[\s\S]{0,220}rgba\(255,\s*255,\s*255/);
+    assert.doesNotMatch(css, /leaflet-control-zoom\.leaflet-bar[\s\S]{0,220}rgba\(255,\s*255,\s*255/);
+  });
 });
 
 describe("contrat pop-up hors film (lot R8c)", () => {

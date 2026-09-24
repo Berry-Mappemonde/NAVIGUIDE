@@ -324,11 +324,11 @@ export const Sidebar = memo(function Sidebar({
     <>
       <button
         onClick={onToggle}
-        className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute z-30 bg-slate-900/95 text-white
+        className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute top-4 z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
           w-9 h-9 border border-slate-700
-          ${open ? "left-[322px] top-4" : "left-4 top-[92px]"}`}
+          ${open ? "left-[322px]" : "left-4"}`}
         title={open ? t("hideSidebar") : t("showExpeditionPanel")}
       >
         {open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
