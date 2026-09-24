@@ -86,6 +86,20 @@ def _iso(ms: Optional[int]) -> Optional[str]:
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def rebase_iso(iso: Any, from_t0: str, to_t0: str) -> Any:
+    """Décale une ISO de from_t0 vers to_t0 (mêmes durées, aucune date inventée)."""
+    a, fr, to = _ms(iso), _ms(from_t0), _ms(to_t0)
+    if a is None or fr is None or to is None or fr == to:
+        return iso
+    return _iso(a + (to - fr))
+
+
+def resolve_film_t0(t0: str | None) -> str:
+    if not t0 or _ms(t0) is None:
+        return OFFICIAL_T0
+    return t0
+
+
 def day_month(iso: Any, lang: str = "fr", *, year: bool = False) -> str:
     t = _ms(iso)
     if t is None:
@@ -728,14 +742,15 @@ def _nm_label(nm: Any, lang: str) -> str:
     return f"{v:,} {unit}".replace(",", " ")
 
 
-def event_sentence(ev: dict, lang: str = "fr") -> str:
+def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) -> str:
     en = _en(lang)
     e = ev.get("entry") or ev
-    when = day_month(e.get("t") or ev.get("t"), lang)
+    shown = display_t0 or OFFICIAL_T0
+    when = day_month(rebase_iso(e.get("t") or ev.get("t"), OFFICIAL_T0, shown), lang)
     name = short_name(e.get("name") or ev.get("name") or "")
     if ev.get("role") == "depart":
         frm = name or "Saint-Maur"
-        d = day_month(e.get("t"), lang, year=True)
+        d = day_month(rebase_iso(e.get("t"), OFFICIAL_T0, shown), lang, year=True)
         # Pas de seaName figé : la dest de CETTE fenêtre est « départ vers X ».
         sea = short_name(ev.get("seaName") or ev.get("toName") or "")
         if sea:
@@ -898,7 +913,7 @@ def _chapter_dest(w: dict) -> dict | None:
     return dest
 
 
-def _depart_towards(w: dict, *, i: int, lang: str) -> str:
+def _depart_towards(w: dict, *, i: int, lang: str, display_t0: str | None = None) -> str:
     """Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé."""
     dest = _chapter_dest(w)
     dest_name = short_name((dest or {}).get("name") or "")
@@ -914,16 +929,16 @@ def _depart_towards(w: dict, *, i: int, lang: str) -> str:
         return f"{head[0].upper()}{head[1:]}."
     conn = connector_at(i - 1, lang)
     dep = _departure_iso(w["from"]) if w.get("from") else None
-    when = day_month(dep, lang)
+    when = day_month(rebase_iso(dep, OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
 
 
-def _arrival_sentence(stop: dict | None, lang: str) -> str:
+def _arrival_sentence(stop: dict | None, lang: str, display_t0: str | None = None) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
     en = _en(lang)
     name = short_name(stop["name"])
-    when = day_month(stop["iso"], lang)
+    when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     quay = _days(stop.get("holdHours"))
     q = f", {_day_word(quay, lang)} {'in port' if en else 'à quai'}" if quay else ""
     return f"Arrival at {name} on {when}{q}." if en else f"Arrivée à {name} le {when}{q}."
@@ -941,7 +956,7 @@ def _card(entry: dict) -> dict:
     }
 
 
-def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None) -> list[dict]:
+def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None) -> list[dict]:
     chapters: list[dict] = []
     cited: set[str] = set()
     dist = ""
@@ -950,7 +965,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
 
     def push_arrival(bits: list[str], dest: dict | None) -> None:
         key = norm_stop((dest or {}).get("name") or "")
-        sentence = _arrival_sentence(dest, lang)
+        sentence = _arrival_sentence(dest, lang, display_t0)
         if not sentence or not key or key in cited:
             return
         bits.append(sentence)
@@ -961,7 +976,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         placed: list[dict] = []
         dest = _chapter_dest(w)
         dest_name = short_name((dest or {}).get("name") or "")
-        head = _depart_towards(w, i=i, lang=lang)
+        head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
         # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis la paire de
         # CETTE fenêtre. Plus de seaName figé « La Rochelle ».
         if i == 0:
@@ -969,7 +984,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
                 "seaName": "" if dest_name else sea_name,
                 "entry": {"t": OFFICIAL_T0, "name": start_name},
-            }, lang))
+            }, lang, display_t0=display_t0))
         if head:
             bits.append(head)
         push_arrival(bits, dest)
@@ -985,7 +1000,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "distLabel": dist,
                 "name": ev.get("name"),
             }
-            sentence = event_sentence(rich, lang).strip()
+            sentence = event_sentence(rich, lang, display_t0=display_t0).strip()
             if not sentence:
                 continue
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
@@ -1241,6 +1256,7 @@ def build_raw_from_moments(
     lang: str = "fr",
     seconds: int = 150,
     now_ms: Optional[int] = None,
+    display_t0: str | None = None,
 ) -> dict[str, Any]:
     moments = _journal_moments(journal)
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -1266,17 +1282,17 @@ def build_raw_from_moments(
         )
         bits: list[str] = []
         placed: list[dict] = []
-        head = _depart_towards(w, i=i, lang=lang)
+        head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
         if i == 0:
             bits.append(event_sentence({
                 "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
                 "seaName": "" if dest_name else sea_name,
                 "entry": {"t": OFFICIAL_T0, "name": start_name},
-            }, lang))
+            }, lang, display_t0=display_t0))
         if head:
             bits.append(head)
         key = norm_stop((dest or {}).get("name") or "")
-        arrival = _arrival_sentence(dest, lang)
+        arrival = _arrival_sentence(dest, lang, display_t0)
         if arrival and key and key not in cited:
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(arrival)
@@ -1370,11 +1386,13 @@ def build_raw_script(
     seconds: int = 150,
     now_ms: Optional[int] = None,
     selected: list[dict] | None = None,
+    display_t0: str | None = None,
 ) -> dict[str, Any]:
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
     if _journal_moments(journal):
         return build_raw_from_moments(
             clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now,
+            display_t0=display_t0,
         )
     packed = film_candidates(journal, marks, clock, live, now)
     t0, t_end = packed["t0"], packed["tEnd"]
@@ -1388,7 +1406,7 @@ def build_raw_script(
     windows = _windows(packed["stops"], t0, t_end)
 
     def compose(evs: list[dict]) -> list[dict]:
-        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live)
+        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0)
 
     chapters = compose(events)
     attach_chapter_events(chapters, packed, journal, lang)
@@ -1743,16 +1761,21 @@ async def build_film_response(
     now_ms: Optional[int] = None,
     cascade: Callable = cascade_text,
     want_write: bool = False,
+    display_t0: str | None = None,
 ) -> dict[str, Any]:
     """Assemble the API payload. `want_write` triggers Nemotron (tier write)."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
 
+    shown = resolve_film_t0(display_t0)
     marks = marks if marks is not None else (clock or {}).get("marks")
     clock = {**(clock or {}), "t0": OFFICIAL_T0}
     last = last_stop_id(journal, marks)
-    key = film_cache_key(journal_fingerprint(journal, last), lang, seconds)
+    fp = journal_fingerprint(journal, last)
+    if shown != OFFICIAL_T0:
+        fp = f"{fp}|t0={shown}"
+    key = film_cache_key(fp, lang, seconds)
     cached = get_film_cached(key) or {}
-    raw_full = build_raw_script(clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms)
+    raw_full = build_raw_script(clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, display_t0=shown)
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
     from_moments = bool(raw_full.get("_fromMoments"))
@@ -1805,6 +1828,7 @@ async def official_film(
     seconds: int = 150,
     style: str = "raw",
     cascade: Callable = cascade_text,
+    t0: str | None = None,
 ) -> dict[str, Any]:
     from voyage_api import _climo_clock, _journal_safely, _now  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
@@ -1832,6 +1856,7 @@ async def official_film(
         clock, live, payload, marks=marks, lang=lang, seconds=int(seconds or 150),
         style=style, cascade=cascade, want_write=False,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
+        display_t0=resolve_film_t0(t0),
     )
 
 

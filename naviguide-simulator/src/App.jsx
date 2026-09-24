@@ -50,11 +50,13 @@ import { detectAirEpisodes, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/f
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import {
   DEFAULT_START_AT,
+  DEFAULT_T0_ISO,
   etaHoursToFilmNm,
   formatFilmClockLine,
   formatMonthName,
   lookupVoyageClock,
   monthOfT0,
+  rebaseIso,
   sampleClockAtTime,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
@@ -166,7 +168,8 @@ export default function App() {
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
-  const [view, setView] = useState(VIEW_SIMULATION);
+  const [view, setView] = useState(VIEW_SUIVRE);
+  const [replayT0, setReplayT0] = useState(DEFAULT_T0_ISO);
   const [cinemaMode, setCinemaMode] = useState(false);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
@@ -311,7 +314,7 @@ export default function App() {
     points: flatRoute.points,
     marks: escaleMarks,
   });
-  const officialClock = official.clock || voyage.clock;
+  const officialClock = isSuivre ? (official.clock || voyage.clock) : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
@@ -324,6 +327,7 @@ export default function App() {
     lang,
     marks: escaleMarks,
     destination: official.live,
+    t0: replayT0,
   });
   const live = isSuivre ? (replay.active && replay.live ? replay.live : official.live) : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
@@ -589,7 +593,9 @@ export default function App() {
         ? (clockSample.sailNm ?? cast?.sailNm)
         : (cast?.sailNm ?? clockSample.sailNm),
       seaHours: clockSample.seaHours,
-      iso: clockSample.iso,
+      iso: isSuivre && replay.active
+        ? rebaseIso(clockSample.iso, DEFAULT_T0_ISO, replayT0)
+        : clockSample.iso,
       lang,
     })
     : "";
@@ -881,7 +887,9 @@ export default function App() {
     style: replay.filmStyle,
     hasWritten: replay.hasWritten,
     onStyle: replay.setFilmStyle,
-  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle]);
+    t0: replayT0,
+    onT0: setReplayT0,
+  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;

@@ -307,6 +307,17 @@ describe("expeditionStory — script du film (lot F3)", () => {
     assert.doesNotMatch(simFilm.chapters.map((c) => c.text).join(" "), /\bnm\b/);
   });
 
+  it("lot RD5 : t0 replay 2025 décale le texte, t0 absent reste 2026", () => {
+    const fx = filmFixture();
+    const official = buildFilmScript({ ...fx, lang: "fr" });
+    assert.match(official.chapters[0].text, /15 mai 2026/);
+    const shifted = buildFilmScript({ ...fx, lang: "fr", t0: "2025-05-15T08:00:00.000Z" });
+    assert.match(shifted.chapters[0].text, /15 mai 2025/);
+    assert.doesNotMatch(shifted.chapters[0].text, /15 mai 2026/);
+    const story = expeditionStory({ clock, marks, live: fx.live, now, lang: "fr", t0: "2025-05-15T08:00:00.000Z" });
+    assert.match(story[0], /15 mai 2025/);
+  });
+
   it("voyage officiel : ordre de la route, sans répétition, départ vers X puis arrivée à X (FR et EN)", () => {
     const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
     const storyFr = expeditionStory({ clock, marks, live, now, lang: "fr" }).map(plain).join(" ");

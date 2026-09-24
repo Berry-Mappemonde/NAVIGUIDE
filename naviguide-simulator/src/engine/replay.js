@@ -319,7 +319,7 @@ function marksWithIso(marks, clock) {
  * le script rédigé). Chaque chapitre porte [tA, tB] et le texte de la jambe.
  */
 export function filmChaptersFromStory({
-  clock, marks, live, journal = null, lang = "fr", nowMs,
+  clock, marks, live, journal = null, lang = "fr", nowMs, t0: storyT0,
 } = {}) {
   const merged = marksWithIso(marks, clock);
   const dated = officialDatedStops(merged, clock);
@@ -329,7 +329,7 @@ export function filmChaptersFromStory({
   if (t0 == null || !(tEnd > t0)) return [];
 
   const paragraphs = expeditionStory({
-    clock, marks: merged, live, journal, now: live?.iso || tEnd, lang,
+    clock, marks: merged, live, journal, now: live?.iso || tEnd, lang, t0: storyT0,
   }).map((p) => String(p || "").trim()).filter(Boolean);
 
   const stops = dated.length ? dated : [{ name: "Saint-Maur", iso: clock?.t0, filmNm: 0 }];

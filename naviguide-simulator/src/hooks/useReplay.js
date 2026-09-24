@@ -3,6 +3,7 @@ import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_TARGET_SECONDS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
+import { DEFAULT_T0_ISO } from "../engine/voyageClock.js";
 import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
@@ -15,6 +16,15 @@ export function chapterHasLeg(ch) {
 }
 
 /** Script remote : on garde le texte serveur ; lat/lon manquants viennent du local. */
+/** Le script distant ne vaut que s'il porte l'année du t0 demandé (lot RD5). */
+export function filmTextHasT0Year(chapters, t0) {
+  const year = new Date(t0 || "").getUTCFullYear();
+  if (!Number.isFinite(year)) return true;
+  const text = String(chapters?.[0]?.text || "");
+  if (!text) return false;
+  return text.includes(String(year));
+}
+
 export function pickFilmChapters(remote, local, fallback = []) {
   const r = remote?.chapters || [];
   const l = local?.chapters || [];
@@ -168,6 +178,7 @@ export function useReplay({
   secondsPerDay = DEFAULT_SECONDS_PER_DAY,
   marks = [],
   destination = null,
+  t0 = DEFAULT_T0_ISO,
 } = {}) {
   const [active, setActive] = useState(false);
   const [tMs, setTMs] = useState(null);
@@ -275,7 +286,8 @@ export function useReplay({
     if (!enabled) return undefined;
     const ac = new AbortController();
     const style = filmStyle === "written" ? "written" : "raw";
-    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}`;
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
+    remotePlanRef.current = null;
     fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -296,7 +308,7 @@ export function useReplay({
         setFilmSource("rules");
       });
     return () => ac.abort();
-  }, [enabled, lang, targetSeconds, filmStyle]);
+  }, [enabled, lang, targetSeconds, filmStyle, t0]);
 
   const start = useCallback(() => {
     const w = replayWindow(clock, Date.now());
@@ -310,6 +322,7 @@ export function useReplay({
       lang,
       now: Date.now(),
       seconds: targetSeconds,
+      t0,
     });
     const fallback = filmChaptersFromStory({
       clock,
@@ -318,8 +331,10 @@ export function useReplay({
       journal,
       lang,
       nowMs: Date.now(),
+      t0,
     });
-    const picked = pickFilmChapters(remote, local, fallback);
+    const remoteOk = remote && filmTextHasT0Year(remote.chapters, t0);
+    const picked = pickFilmChapters(remoteOk ? remote : null, local, fallback);
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
     const plan = filmPlan({ chapters, targetSeconds });
@@ -350,7 +365,7 @@ export function useReplay({
     setActive(true);
     publishFilmStart(plan.targetSeconds);
     return true;
-  }, [clock, marks, destination, journal, lang, targetSeconds, applyChapter]);
+  }, [clock, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
 
   useEffect(() => {
     if (!enabled && active) stop();
