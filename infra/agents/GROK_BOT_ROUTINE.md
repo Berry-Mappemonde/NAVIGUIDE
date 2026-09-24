@@ -55,10 +55,13 @@ passage à vide, et le minuteur faisait doublon avec le réveil par PR) :
   `prereview` juste après chaque commentaire 🔗 (un réveil par PR, le bot ne traite
   que celle-là), `parcours` après le 🧭 de fin de batch sur la PR de tête, `ping` au
   pré-vol (`run_lots.py --preflight`) pour vérifier URL et clé — la routine l'ignore
-  (étape 0). Le chien de garde (`watchdog.py`) renvoie un `prereview` si une PR n'a
-  toujours pas de 🤖 trente minutes après son 🔗. Sans minuteur, **un réveil manqué
-  n'est rattrapé que par lui** : le pré-vol refuse donc de partir si le webhook
-  répond 401/403.
+  (étape 0). **Jamais refusé, ou retenté** : réseau, 5xx, 429 → `run_lots.py`
+  réessaie à 30 s puis 2 min, et le chien de garde (`watchdog.py`) renvoie un
+  `prereview` si une PR n'a toujours pas de 🤖 trente minutes après son 🔗 ; 401/403
+  (la clé) → rien à réessayer : un commentaire d'alerte est posté **tout de suite**
+  sur la PR (notification GitHub), le batch continue sans le bot, et la clé remise
+  dans le fichier sert au lot suivant sans rien redémarrer (le fichier est relu à
+  chaque réveil). Le pré-vol le signale aussi avant le départ, sans bloquer la nuit.
   Si Grok Bot donne aussi une clé et un en-tête
   (22 sept.) : `BIM_BOT_WEBHOOK_TOKEN=<clé>` et `BIM_BOT_WEBHOOK_HEADER=<nom de
   l'en-tête>` (défaut `Authorization`, envoyé en `Bearer <clé>`). Écrire ces lignes
