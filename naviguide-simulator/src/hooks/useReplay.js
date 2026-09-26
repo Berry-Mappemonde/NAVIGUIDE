@@ -3,7 +3,12 @@ import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
-import { DEFAULT_T0_ISO } from "../engine/voyageClock.js";
+import {
+  DEFAULT_T0_ISO,
+  etaHoursToFilmNm,
+  formatFilmClockLine,
+  rebaseIso,
+} from "../engine/voyageClock.js";
 import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
@@ -17,6 +22,32 @@ export function chapterHasLeg(ch) {
 
 /** Script remote : on garde le texte serveur ; lat/lon manquants viennent du local. */
 /** Le script distant ne vaut que s'il porte l'année du t0 demandé (lot RD5). */
+/**
+ * Ligne d'état Suivre : mêmes milles et heures de mer (durées réelles),
+ * date civile décalée vers le t0 choisi. Identité si t0 = départ officiel.
+ * Ne touche pas au t0 Simulation.
+ */
+export function followClockLineFromT0({
+  sailNm,
+  seaHours,
+  iso,
+  fromT0 = DEFAULT_T0_ISO,
+  t0 = DEFAULT_T0_ISO,
+  lang = "fr",
+} = {}) {
+  return formatFilmClockLine({
+    sailNm,
+    seaHours,
+    iso: rebaseIso(iso, fromT0, t0),
+    lang,
+  });
+}
+
+/** ETA / restants : heures d'horloge, indépendantes du t0 Simulation. */
+export function followEtaFromClock(clock, fromFilmNm, toFilmNm, { atQuay = false } = {}) {
+  return etaHoursToFilmNm(clock, fromFilmNm, toFilmNm, { atQuay });
+}
+
 export function filmTextHasT0Year(chapters, t0) {
   const year = new Date(t0 || "").getUTCFullYear();
   if (!Number.isFinite(year)) return true;
