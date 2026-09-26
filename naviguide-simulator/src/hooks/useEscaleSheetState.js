@@ -1,35 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { haversineNm } from "../utils/geo.js";
 import { useEscaleSheet } from "./useEscaleSheet.js";
+import { nearestAlongside, pickAutoEscaleStop } from "./escaleSheetPick.js";
 
-const ALONGSIDE_NM = 5;
-
-/**
- * Which stop's sheet is open (lot C, moved out of App.jsx in lot J): opened
- * from the Expedition list (▤) in any view, and by itself in Suivre when the
- * boat is alongside — once per stop, the skipper may close it.
- */
-function nearestAlongside(clockSample, marks) {
-  if (!clockSample || !Number.isFinite(clockSample.lat) || !Number.isFinite(clockSample.lon)) {
-    return null;
-  }
-  let best = null;
-  let bestD = Infinity;
-  for (const m of marks || []) {
-    if (!Number.isFinite(m.lat) || !Number.isFinite(m.lon)) continue;
-    const d = haversineNm(clockSample.lat, clockSample.lon, m.lat, m.lon);
-    if (d < bestD) { bestD = d; best = m; }
-  }
-  if (!best || bestD > ALONGSIDE_NM) return null;
-  return best;
-}
+export { nearestAlongside, pickAutoEscaleStop };
 
 /**
  * Which stop's sheet is open (lot C, moved out of App.jsx in lot J): opened
- * from the Expedition list (▤) in any view, and by itself in Suivre when the
- * boat is alongside — once per stop, the skipper may close it.
+ * from a flag click, and by itself in Suivre when the boat is alongside —
+ * once per stop, the skipper may close it.
  * `clearToken` (RA5) : Suivre / Revoir vident la fiche et bloquent le
  * ré-auto-open immédiat. `filmActive` : pas de fiche pendant le film.
+ * `userPickedRef` (RE2) : une fiche désignée n'est pas écrasée par l'auto-quai.
  */
 export function useEscaleSheetState({
   lang, isSuivre, atQuay, clockSample, marks, onOpen, filmActive = false, clearToken = 0,
@@ -38,16 +19,19 @@ export function useEscaleSheetState({
   const sheet = useEscaleSheet(stop, lang);
   const autoRef = useRef(null);
   const holdRef = useRef(false);
+  const userPickedRef = useRef(false);
 
   const open = useCallback((next) => {
     if (!next || !Number.isFinite(next.lat) || !Number.isFinite(next.lon)) return;
     holdRef.current = false;
+    userPickedRef.current = true;
     autoRef.current = next.name;
     setStop({ name: next.name, lat: next.lat, lon: next.lon });
     onOpen?.();
   }, [onOpen]);
 
   const close = useCallback(() => {
+    userPickedRef.current = false;
     if (stop) autoRef.current = stop.name;
     setStop(null);
   }, [stop]);
@@ -55,6 +39,7 @@ export function useEscaleSheetState({
   useEffect(() => {
     if (!clearToken) return;
     holdRef.current = true;
+    userPickedRef.current = false;
     if (stop) autoRef.current = stop.name;
     const near = nearestAlongside(clockSample, marks);
     if (near) autoRef.current = near.name;
@@ -70,11 +55,19 @@ export function useEscaleSheetState({
   useEffect(() => {
     if (filmActive) {
       holdRef.current = true;
+      userPickedRef.current = false;
       if (stop) setStop(null);
       return;
     }
-    if (holdRef.current || !isSuivre || !atQuay) return;
-    const best = nearestAlongside(clockSample, marks);
+    const best = pickAutoEscaleStop({
+      filmActive,
+      hold: holdRef.current,
+      userPicked: userPickedRef.current,
+      isSuivre,
+      atQuay,
+      clockSample,
+      marks,
+    });
     if (!best || autoRef.current === best.name) return;
     autoRef.current = best.name;
     setStop({ name: best.name, lat: best.lat, lon: best.lon });

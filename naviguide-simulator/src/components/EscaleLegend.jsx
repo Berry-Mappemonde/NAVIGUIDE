@@ -12,25 +12,57 @@ function markAt(m) {
  * `active` flag of two rows changes then — not the 18 formatted labels
  * (profile 18 sept. 2026: this list was 12 % of main-thread self time).
  */
-const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, title, active, onSeek }) {
+function EscaleRowBody({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle }) {
   return (
-    <li className={`flex items-stretch border-t border-white/5 ${active ? "bg-cyan-700/40 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"}`}>
-      <button
-        type="button"
-        onClick={() => onSeek?.(at, { jump: true })}
-        title={title}
-        className="flex-1 min-w-0 text-left px-2 py-1 text-[11px]"
-      >
-        <span className="font-medium leading-tight block truncate">{name}</span>
-        <span className="text-[9px] text-white/40">
-          {nmLabel}
-          {dateLabel}
-          {quayLabel}
-        </span>
-        {etaLabel ? (
-          <span className="text-[9px] text-white/40 block leading-tight" data-testid="eta-range" title={etaTitle || undefined}>{etaLabel}</span>
-        ) : null}
-      </button>
+    <>
+      <span className="font-medium leading-tight block truncate">{name}</span>
+      <span className="text-[9px] text-white/40">
+        {nmLabel}
+        {dateLabel}
+        {quayLabel}
+      </span>
+      {etaLabel ? (
+        <span className="text-[9px] text-white/40 block leading-tight" data-testid="eta-range" title={etaTitle || undefined}>{etaLabel}</span>
+      ) : null}
+    </>
+  );
+}
+
+const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, title, active, onSeek }) {
+  const interactive = typeof onSeek === "function";
+  const idle = active ? "bg-cyan-700/40 text-white" : "text-white/70";
+  const hover = interactive && !active ? " hover:bg-white/5 hover:text-white" : "";
+  const inner = (
+    <EscaleRowBody
+      name={name}
+      nmLabel={nmLabel}
+      dateLabel={dateLabel}
+      quayLabel={quayLabel}
+      etaLabel={etaLabel}
+      etaTitle={etaTitle}
+    />
+  );
+  return (
+    <li
+      data-testid="escale-legend-row"
+      data-escale={name}
+      data-interactive={interactive ? "true" : "false"}
+      className={`flex items-stretch border-t border-white/5 ${idle}${hover}`}
+    >
+      {interactive ? (
+        <button
+          type="button"
+          onClick={() => onSeek(at, { jump: true })}
+          title={title}
+          className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-pointer"
+        >
+          {inner}
+        </button>
+      ) : (
+        <div className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-default">
+          {inner}
+        </div>
+      )}
     </li>
   );
 });
