@@ -53,6 +53,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_MD = ROOT / "docs" / "LOTS_ORDRE_ET_PROMPTS.md"
@@ -226,9 +227,11 @@ def owner_repo(repo: str) -> str:
     return repo.replace("https://github.com/", "").rstrip("/")
 
 
-def find_pr(http: Http, repo: str, branch: str) -> dict | None:
+def find_pr(http: Http, repo: str, branch: str, state: str = "open") -> dict | None:
+    """La PR d'une branche. `state="all"` retrouve aussi une PR déjà mergée (le GO mergé par le porteur
+    avant que la boucle ne l'ait enregistré, 26 sept.)."""
     org = owner_repo(repo).split("/")[0]
-    q = urllib.parse.urlencode({"head": f"{org}:{branch}", "state": "open"})
+    q = urllib.parse.urlencode({"head": f"{org}:{branch}", "state": state, "sort": "created", "direction": "desc"})
     prs = http.github(f"/repos/{owner_repo(repo)}/pulls?{q}")
     return prs[0] if prs else None
 
@@ -494,19 +497,18 @@ def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: b
     return status, result
 
 
-def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+def _agent_cmd(path: Path, prompt: str, model: str, resume: bool) -> list[str]:
     cmd = [AGENT_BIN, "-p", "--force", "--trust", "--workspace", str(path), "--output-format", "json"]
     if model:
         cmd += ["--model", model]
     if resume:
         cmd += ["--continue"]
     cmd.append(prompt)
-    env = {**os.environ, "PW_PORT": str(PW_PORT)}
-    try:
-        p = subprocess.run(cmd, cwd=str(path), text=True, capture_output=True, timeout=timeout_s, env=env)
-    except subprocess.TimeoutExpired:
-        return "TIMEOUT", ""
-    out = p.stdout.strip()
+    return cmd
+
+
+def _agent_outcome(returncode: int, stdout: str, stderr: str) -> tuple[str, str]:
+    out = (stdout or "").strip()
     result = out
     for chunk in reversed(out.splitlines()):
         try:
@@ -518,9 +520,50 @@ def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, res
                 break
         except json.JSONDecodeError:
             continue
-    if p.returncode != 0:
-        return "ERROR", (p.stderr or out)[-800:]
+    if returncode != 0:
+        return "ERROR", (stderr or out)[-800:]
     return "FINISHED", str(result)[-800:]
+
+
+def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+    env = {**os.environ, "PW_PORT": str(PW_PORT)}
+    try:
+        p = subprocess.run(_agent_cmd(path, prompt, model, resume), cwd=str(path), text=True, capture_output=True, timeout=timeout_s, env=env)
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT", ""
+    return _agent_outcome(p.returncode, p.stdout, p.stderr)
+
+
+def run_agent_cli_watched(path: Path, prompt: str, model: str, timeout_s: int, done: "Callable[[], str | None]", every_s: int = 60) -> tuple[str, str]:
+    """Un agent CLI qu'on surveille : toutes les `every_s` secondes, `done()` dit si son travail est
+    déjà livré (par exemple : sa PR existe, et elle est mergée ou n'a plus bougé depuis 20 min). Si oui,
+    on l'ARRÊTE et on rend « STOPPED » avec la raison — plutôt que d'attendre qu'il veuille bien finir.
+    26 sept. : le correcteur a ouvert la PR GO en 20 min puis a tourné une heure de plus, jusqu'à défaire
+    son propre travail dans son worktree, pendant que la boucle attendait sa sortie."""
+    env = {**os.environ, "PW_PORT": str(PW_PORT)}
+    p = subprocess.Popen(_agent_cmd(path, prompt, model, False), cwd=str(path), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                         start_new_session=True)
+    t0 = time.time()
+    while True:
+        try:
+            out, err = p.communicate(timeout=every_s)
+            return _agent_outcome(p.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            pass
+        reason = None
+        try:
+            reason = done()
+        except Exception as e:  # la surveillance ne doit jamais tuer par erreur
+            log(f"    surveillance de l'agent : {type(e).__name__}")
+        if reason or time.time() - t0 > timeout_s:
+            why = reason or f"délai de {timeout_s // 60} min dépassé"
+            log(f"    agent arrêté : {why}")
+            try:
+                os.killpg(p.pid, 15)
+                p.communicate(timeout=30)
+            except Exception:
+                p.kill()
+            return ("STOPPED" if reason else "TIMEOUT"), why
 
 
 def local_branch(path: Path) -> str | None:
