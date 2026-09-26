@@ -60,6 +60,10 @@ describe("atlasPoint", () => {
     assert.match(point, /dest_lat=14\.6/);
     assert.match(atlasPointUrl({ lat: 15, lon: 186, month: 9 }), /lon=-174/);
     assert.equal(atlasLayerUrl("wave", 6, { stat: "p90", spacing_deg: "4" }).includes("stat=p90"), true);
+    assert.match(
+      atlasLayerUrl("wind", 5, { spacing_deg: "4" }),
+      /\/climatology\/wind\.geojson\?.*month=5.*spacing_deg=4|\/climatology\/wind\.geojson\?.*spacing_deg=4.*month=5/,
+    );
     assert.equal(
       atlasTileUrl("wind", 6, 4, 8, 5),
       "/bi/climatology/wind/tiles/4/8/5.json?month=6",
