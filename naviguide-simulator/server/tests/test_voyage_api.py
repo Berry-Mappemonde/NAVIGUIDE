@@ -563,3 +563,128 @@ def test_kick_official_warmups_one_after_another(monkeypatch):
         "kick:film",
         "wait:official-film-story",
     ]
+
+
+def test_get_eta_failed_ensemble_returns_reason(client, monkeypatch):
+    """Lot RE5 : members 0 → raison / dernière tentative / prochaine relance, pas de date."""
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda **k: False)
+
+    def fake_peek(_voy, stop, _when):
+        assert "Papeete" in stop or "papeete" in stop.lower()
+        return {
+            "members": 0,
+            "p10": None,
+            "p50": None,
+            "p90": None,
+            "source": None,
+            "computedAt": "2026-09-26T12:00:00Z",
+            "memberKnots": [],
+            "reason": "ensemble_unavailable",
+            "lastAttempt": "2026-09-26T12:00:00Z",
+            "nextRetry": "2026-09-27T00:15:00Z",
+            "detail": "Daily API request limit exceeded. Please try again tomorrow.",
+        }
+
+    import ensemble_eta
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
+    client.get("/voyage/official")
+    r = client.get("/voyage/official/eta", params={"stop": "Papeete (Polynésie française)"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] == 0
+    assert body["p10"] is None and body["p90"] is None
+    assert body["reason"] == "ensemble_unavailable"
+    assert body["lastAttempt"]
+    assert body["nextRetry"]
+    assert "limit exceeded" in (body.get("detail") or "")
+
+
+def test_get_eta_ready_members_bounded(client, monkeypatch):
+    """Lot RE5 : ensemble qui répond → membres et fourchette bornée."""
+    from ensemble_eta import ETA_MAX_SPAN_DAYS
+    from plan_review import eta_span_days
+
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda **k: False)
+
+    def fake_peek(_voy, stop, _when):
+        return {
+            "p10": "2026-10-11T00:00:00Z",
+            "p50": "2026-10-12T12:00:00Z",
+            "p90": "2026-10-14T00:00:00Z",
+            "members": 24,
+            "memberKnots": [8.0, 8.2, 7.9],
+            "source": "open-meteo-ensemble",
+            "computedAt": "2026-09-26T12:00:00Z",
+        }
+
+    import ensemble_eta
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
+    client.get("/voyage/official")
+    r = client.get("/voyage/official/eta", params={"stop": "Papeete (Polynésie française)"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] > 0
+    assert body["p10"] and body["p90"]
+    span = eta_span_days(body["p10"], body["p90"])
+    assert span is not None and span <= ETA_MAX_SPAN_DAYS + 1e-6
+    assert not body.get("reason")
+
+
+def test_kick_official_eta_backs_off_until_next_retry(tmp_path, monkeypatch):
+    """Lot RE5 : après un échec, force=False ne relance pas avant nextRetry."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+
+    import ensemble_eta
+    future = (voyage_api._now() + timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 0})
+    monkeypatch.setattr(
+        ensemble_eta,
+        "peek_official_eta",
+        lambda *a, **k: {
+            "members": 0,
+            "reason": "ensemble_unavailable",
+            "nextRetry": future,
+            "lastAttempt": "2026-09-26T12:00:00Z",
+        },
+    )
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta(force=True, stop="Papeete") is True
+    voyage_api._wait_official_kick("official-eta", timeout=2.0)
+    assert voyage_api._kick_official_eta(force=False, stop="Papeete") is False
+
+
+def test_kick_official_eta_retries_when_backoff_elapsed(tmp_path, monkeypatch):
+    """Lot RE5 : nextRetry échu → GET relance le warm (RC9 conservé)."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+
+    import ensemble_eta
+    past = (voyage_api._now() - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 0})
+    monkeypatch.setattr(
+        ensemble_eta,
+        "peek_official_eta",
+        lambda *a, **k: {
+            "members": 0,
+            "reason": "ensemble_unavailable",
+            "nextRetry": past,
+            "lastAttempt": "2026-09-26T11:00:00Z",
+        },
+    )
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta(force=True, stop="Papeete") is True
+    voyage_api._wait_official_kick("official-eta", timeout=2.0)
+    assert voyage_api._kick_official_eta(force=False, stop="Papeete") is True

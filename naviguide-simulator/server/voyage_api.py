@@ -935,8 +935,8 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
 def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bool:
     """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant.
 
-    Lot RC9 : un premier vide / erreur pipeline n'est pas terminal. Tant que
-    ``peek_official_eta`` a ``members == 0``, un GET /eta relance le warm.
+    Lot RC9 : un premier vide n'est pas terminal. Lot RE5 : on ne martèle
+    plus à chaque GET — tant que ``nextRetry`` n'est pas échu, pas de relance.
     """
     raw = (os.getenv("NAVIGUIDE_ETA_PREHEAT") or "1").strip().lower()
     if raw in ("0", "false", "no"):
@@ -946,7 +946,7 @@ def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bo
         return False
 
     if not force:
-        from ensemble_eta import next_official_stop, peek_official_eta  # noqa: PLC0415
+        from ensemble_eta import eta_retry_due, next_official_stop, peek_official_eta  # noqa: PLC0415
         target = (stop or "").strip() or next_official_stop(voy, _now())
         if target:
             peeked = peek_official_eta(voy, target, _now())
@@ -955,7 +955,7 @@ def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bo
                 n = int(members or 0)
             except (TypeError, ValueError):
                 n = 0
-            if n <= 0:
+            if n <= 0 and eta_retry_due(peeked, _now()):
                 force = True
 
     def _load():
@@ -1143,7 +1143,7 @@ def get_official_journal(
 
 @router.get("/voyage/official/eta")
 def get_official_eta(stop: str = Query(..., min_length=1)):
-    """Fourchette p10–p90. Cache ou `{members: 0}` tout de suite — jamais de compute HTTP."""
+    """Fourchette p10–p90. Cache ou `{members: 0}` + état (raison, relance) — jamais de compute HTTP."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
