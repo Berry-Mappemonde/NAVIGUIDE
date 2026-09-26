@@ -16,6 +16,7 @@ from moment_journal import (
     SCORE_STATION,
     SCORE_ZEE,
     diff_moments,
+    named_title,
     read_moments,
     warm_moments,
 )
@@ -72,6 +73,7 @@ def test_diff_moments_scores_match_plan():
     zee["here"]["zee"] = {"name": "Spanish EEZ", "mrgid": 5693, "entry": {"known": False, "ports": []}}
     kinds = {c["kind"]: c for c in diff_moments(base, zee)}
     assert kinds["zee-enter"]["score"] == SCORE_ZEE
+    assert not kinds["zee-enter"]["title"].lower().startswith("entrée dans")
 
     station = copy.deepcopy(base)
     station["around"] = list(base.get("around") or []) + [{
@@ -79,6 +81,7 @@ def test_diff_moments_scores_match_plan():
     }]
     kinds = {c["kind"]: c for c in diff_moments(base, station)}
     assert kinds["station"]["score"] == SCORE_STATION
+    assert kinds["station"]["title"] == "PIRATA"
 
     regime = copy.deepcopy(base)
     regime["leg"] = {**base["leg"], "regime": "forecast"}
@@ -218,3 +221,29 @@ def test_kick_official_moments_returns_without_waiting(monkeypatch):
     monkeypatch.setattr(voyage_api.get_pipeline(), "kick", fake_kick)
     assert voyage_api._kick_official_moments() is True
     assert started == [True]
+
+
+def test_diff_moments_silence_without_name():
+    assert named_title("Station croisée", "Station croisée", "station") == ""
+    assert named_title("Station croisée", "Station PIRATA (8 nm)", "station") == "PIRATA"
+    voy = load_official_mini()
+    base = _moment(voy, 0)
+    empty = copy.deepcopy(base)
+    empty["here"] = copy.deepcopy(base["here"])
+    empty["here"]["entry"] = {"known": False, "ports": []}
+    if isinstance(empty["here"].get("zee"), dict):
+        empty["here"]["zee"] = {**empty["here"]["zee"], "entry": {"known": False, "ports": []}}
+    no_port = copy.deepcopy(empty)
+    no_port["here"]["entry"] = {"known": False, "ports": []}
+    silent = diff_moments(empty, no_port)
+    assert not any("Aucun port" in (c.get("fact") or "") for c in silent)
+    assert not any("Ports d'entrée" in (c.get("title") or "") for c in silent)
+    with_port = copy.deepcopy(empty)
+    with_port["here"]["entry"] = {"known": True, "ports": ["Les Sables-d'Olonne"]}
+    kinds = {c["kind"]: c for c in diff_moments(empty, with_port)}
+    assert kinds["port"]["title"] == "Les Sables-d'Olonne"
+    nameless = copy.deepcopy(base)
+    nameless["around"] = list(base.get("around") or []) + [{
+        "kind": "science", "title": "Station croisée", "fact": "Station croisée",
+    }]
+    assert not any(c.get("kind") == "station" for c in diff_moments(base, nameless))
