@@ -313,13 +313,17 @@ export default function App() {
     marks: escaleMarks,
   });
   const officialClock = isSuivre ? (official.clock || voyage.clock) : voyage.clock;
+  // Lot RC10 — le film n'utilise pas le repli voyage.clock (script Simulation).
+  const filmClock = isSuivre ? official.clock : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
   // stands in for the live one — the scene, the clock line, the story and
   // the cards all read `live`. Suivre only; Stop or the end hands back.
   const replay = useReplay({
-    clock: officialClock,
+    clock: filmClock,
+    fallbackClock: voyage.clock,
+    requireOfficialFilm: isSuivre,
     journal: officialJournal.journal,
     enabled: isSuivre,
     lang,
@@ -857,7 +861,7 @@ export default function App() {
     openEscaleSheet(next);
   }, [replay.active, openEscaleSheet]);
 
-  const replayControls = useMemo(() => (isSuivre && officialClock ? {
+  const replayControls = useMemo(() => (isSuivre && officialClock && replay.canStart ? {
     active: replay.active,
     progress: replay.progress,
     voice: replay.voice,
@@ -887,7 +891,7 @@ export default function App() {
     onStyle: replay.setFilmStyle,
     t0: replayT0,
     onT0: setReplayT0,
-  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
+  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;

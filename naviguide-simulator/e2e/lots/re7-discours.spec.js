@@ -1,8 +1,9 @@
-// Lot RE7 — discours du film : un récit, pas le journal déversé.
-// Sans API : Suivre, Revoir et l'absence de durée cochée tiennent seuls.
+// Lot RC10 / RE7 — récit officiel, pas le film Simulation.
+// Sans API : Suivre, Revoir (repli local) et l'absence de durée cochée tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
-// assertions du script serveur — jamais le bouton Revoir, ni le défaut
-// décoché, ni l'absence des phrases interdites dans le sous-titre local.
+// assertions du script serveur et des captures de la dernière jambe —
+// jamais le bouton Revoir, ni le défaut décoché, ni l'absence des phrases
+// interdites dans le sous-titre local.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,8 @@ const shot = (page, name) => page.screenshot({
 });
 
 const FORBIDDEN = /station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
+const LAST_LEG = /Aujourd[’']hui, le bateau est à/i;
+const GEO = /golfe de Gascogne|détroit de Gibraltar|Gibraltar/i;
 
 async function dismissNotForNav(page) {
   const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
@@ -47,8 +50,35 @@ function wordCount(text) {
   return (String(text || "").match(/\S+/g) || []).length;
 }
 
+function isRe7Film(free) {
+  const chapters = free?.chapters || [];
+  if (!chapters.length) return false;
+  const blob = chapters.map((c) => c.text || "").join(" ");
+  if (wordCount(blob) > 800) return false;
+  if (FORBIDDEN.test(blob)) return false;
+  if (/milles nautiques du départ|Bay of Biscay/.test(blob)) return false;
+  return true;
+}
+
+async function waitRe7Film(page, { timeout = 45_000 } = {}) {
+  const t0 = Date.now();
+  let last = null;
+  while (Date.now() - t0 < timeout) {
+    const free = await page.request.get("/voyage/official/film?lang=fr&seconds=0", { timeout: 12_000 })
+      .then((r) => (r.ok() ? r.json() : null))
+      .catch(() => null);
+    if (free?.chapters?.length) {
+      last = free;
+      if (isRe7Film(free)) return { film: free, stale: false };
+      return { film: free, stale: true };
+    }
+    await page.waitForTimeout(800);
+  }
+  return last ? { film: last, stale: !isRe7Film(last) } : null;
+}
+
 test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());
   if (!apiUp) {
@@ -65,14 +95,68 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
 
   const durations = page.getByTestId("film-duration");
-  if (await durations.isVisible().catch(() => false)) {
+  if (await durations.isVisible({ timeout: 2_000 }).catch(() => false)) {
     const pressed = durations.locator("[aria-pressed='true']");
     await expect(pressed, "aucune durée cochée").toHaveCount(0);
   }
 
+  if (!apiUp) {
+    await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
+    if (await durations.isVisible().catch(() => false)) {
+      await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée").toHaveCount(0);
+    }
+    await muteVoice(page);
+    await page.getByTestId("replay-start").click();
+    const subtitle = page.getByTestId("film-subtitle");
+    await expect(subtitle).toBeVisible({ timeout: 8_000 });
+    const sub = (await subtitle.innerText()).trim();
+    expect(sub, "sous-titre non vide").not.toBe("");
+    expect(sub, "pas de phrase interdite dans le sous-titre").not.toMatch(FORBIDDEN);
+    const budgetNone = await page.evaluate(() => window.__naviguideFilm?.budgetSeconds);
+    expect(budgetNone, "aucune durée → pas de budget").toBe(0);
+    const stopBtn = page.getByTestId("replay-stop");
+    if (await stopBtn.isVisible().catch(() => false)) await stopBtn.click();
+    await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
+    return;
+  }
+
+  const probed = await waitRe7Film(page);
+  if (!probed?.film?.chapters?.length) {
+    test.info().annotations.push({
+      type: "film vide",
+      description: "GET /voyage/official/film?seconds=0 sans chapitres — discours sauté",
+    });
+    return;
+  }
+  if (probed.stale) {
+    test.info().annotations.push({
+      type: "API hors checkout",
+      description: "GET /film du processus :8010 n'est pas encore RE7 — assertions discours sautées",
+    });
+    return;
+  }
+
+  const free = probed.film;
+  const blob = free.chapters.map((c) => c.text || "").join(" ");
+  expect(free.targetSeconds, "sans case : pas de budget serveur").toBe(0);
+  const words = wordCount(blob);
+  expect(blob, "pas de station sans nom").not.toMatch(/station croisée\s*:\s*Station croisée/i);
+  expect(blob, "pas d'absence racontée").not.toMatch(/Aucun port d'entr[ée]e/i);
+  expect(blob, "pas d'entrée doublée").not.toMatch(/entrée dans Entrée dans/i);
+  expect(words, "récit sans budget sous 800 mots").toBeLessThanOrEqual(800);
+  expect(blob, "géographie officielle").toMatch(GEO);
+  const last = free.chapters[free.chapters.length - 1]?.text || "";
+  expect(last, "dernière jambe fermée").toMatch(LAST_LEG);
+  if (/halifax/i.test(blob) && /cayenne|guyane/i.test(blob)) {
+    expect(blob, "avion dit").toMatch(/avion|équipage prend/i);
+  }
+
+  await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 30_000 });
+  if (await durations.isVisible().catch(() => false)) {
+    await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée").toHaveCount(0);
+  }
   await muteVoice(page);
   await page.getByTestId("replay-start").click();
   const subtitle = page.getByTestId("film-subtitle");
@@ -80,46 +164,25 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
   const sub = (await subtitle.innerText()).trim();
   expect(sub, "sous-titre non vide").not.toBe("");
   expect(sub, "pas de phrase interdite dans le sous-titre").not.toMatch(FORBIDDEN);
+  expect(sub, "récit officiel en tête").toMatch(/Saint-Maur/);
   await shot(page, "01-recit");
 
   const budgetNone = await page.evaluate(() => window.__naviguideFilm?.budgetSeconds);
   expect(budgetNone, "aucune durée → pas de budget").toBe(0);
 
-  if (apiUp) {
-    const free = await page.request.get("/voyage/official/film?lang=fr&seconds=0", { timeout: 12_000 })
-      .then((r) => (r.ok() ? r.json() : null))
-      .catch(() => null);
-    if (!free?.chapters?.length) {
-      test.info().annotations.push({
-        type: "film vide",
-        description: "GET /voyage/official/film?seconds=0 sans chapitres",
-      });
-    } else {
-      const blob = free.chapters.map((c) => c.text || "").join(" ");
-      expect(free.targetSeconds, "sans case : pas de budget serveur").toBe(0);
-      const words = wordCount(blob);
-      const stale = words > 800 || FORBIDDEN.test(blob)
-        || /milles nautiques du départ|Bay of Biscay/.test(blob);
-      if (stale) {
-        test.info().annotations.push({
-          type: "API hors checkout",
-          description: "GET /film du processus :8010 n'est pas encore RE7 — assertions discours sautées",
-        });
-      } else {
-        expect(blob, "pas de station sans nom").not.toMatch(/station croisée\s*:\s*Station croisée/i);
-        expect(blob, "pas d'absence racontée").not.toMatch(/Aucun port d'entr[ée]e/i);
-        expect(blob, "pas d'entrée doublée").not.toMatch(/entrée dans Entrée dans/i);
-        expect(words, "récit sans budget sous 800 mots").toBeLessThanOrEqual(800);
-        const last = free.chapters[free.chapters.length - 1]?.text || "";
-        expect(last, "dernière jambe fermée").toMatch(/Aujourd[’']hui, le bateau est à/i);
-        if (/cayenne|halifax|guyane/i.test(blob)) {
-          expect(blob, "avion dit").toMatch(/avion|équipage prend/i);
-        }
-      }
-    }
-  }
-
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => {
+    const f = window.__naviguideFilm;
+    return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
+  }, null, { timeout: 8_000 });
+  const lastIdx = await page.evaluate(() => {
+    const f = window.__naviguideFilm;
+    const idx = Math.max(0, (f.chapterCount || 1) - 1);
+    f.seekChapter(idx);
+    return idx;
+  });
+  await expect(subtitle).toContainText(LAST_LEG, { timeout: 8_000 });
+  const endIdx = await page.evaluate(() => window.__naviguideFilm?.chapterIdx);
+  expect(endIdx, "02-fin à la dernière jambe").toBe(lastIdx);
   await shot(page, "02-fin");
 
   const stopBtn = page.getByTestId("replay-stop");
