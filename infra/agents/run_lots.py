@@ -946,25 +946,61 @@ def webhook_settings() -> tuple[str | None, dict[str, str]]:
     return (hook or None), headers
 
 
-def wake_bot(kind: str, pr: int, url: str) -> None:
-    """Réveiller Grok Bot au bon moment (lot W1 bis) : si BIM_BOT_WEBHOOK est posé (environnement ou
-    ~/.config/naviguide/simulator.env — l'URL du déclencheur « webhook » d'une routine Grok Bot), on
-    l'appelle juste après avoir posté le commentaire 🔗 / 🧭, avec la clé en en-tête si la routine en exige
-    une (webhook_settings). Sans webhook, la routine Grok Bot peut aussi se déclencher sur l'événement
-    GitHub « commentaire de PR » — même effet, sans minuteur."""
+WEBHOOK_RETRY_WAITS_S = (30, 120)   # réseau, 5xx, 429 : on réessaie ; 401/403 : c'est la clé, on prévient le porteur
+
+
+def alert_webhook_refused(code: int, pr: int | None) -> None:
+    """Le webhook est le SEUL déclencheur du bot (24 sept.) : une clé refusée = plus aucune pré-revue tant que
+    le porteur n'a pas remis la bonne dans le fichier de clés. On le lui dit TOUT DE SUITE, là où il reçoit
+    des notifications (un commentaire sur la PR), une fois par jour ; le batch continue sans le bot. Le
+    fichier de clés est relu à chaque réveil : la clé corrigée sert au lot suivant, sans rien redémarrer."""
+    marker = STATE_DIR / f"webhook-alert-{time.strftime('%Y-%m-%d')}"
+    if marker.exists():
+        return
+    marker.write_text(str(code), encoding="utf-8")
+    log(f"    !! webhook Grok Bot refusé (HTTP {code}) : le bot ne sera plus réveillé — remettre la clé (BIM_BOT_WEBHOOK_TOKEN / _HEADER) dans {ENV_FILE} ; le batch continue")
+    num = pr or pr_number((State.load().done.get(State.load().last_lot) or {}).get("pr"))
+    if not num:
+        return
+    body = (f"## ⚠️ Webhook Grok Bot refusé (HTTP {code}) / Grok Bot webhook rejected\n\n"
+            f"Le réveil du bot est refusé : clé ou en-tête (`BIM_BOT_WEBHOOK_TOKEN` / `BIM_BOT_WEBHOOK_HEADER`) à remettre dans `~/.config/naviguide/simulator.env` "
+            "(coller `printf 'BIM_BOT_WEBHOOK_TOKEN=%s\\n' \"$(pbpaste)\" >> ~/.config/naviguide/simulator.env` dans le Terminal sans Entrée, copier la clé dans Grok Bot, revenir, Entrée). "
+            "**Le batch continue** ; dès que la clé est bonne, le lot suivant réveille le bot — rien à redémarrer. Les PR déjà ouvertes seront réveillées par le chien de garde.\n\n"
+            "The bot wake-up is rejected: fix the key/header in the key file; the batch goes on and the next lot will wake the bot — nothing to restart.")
+    tmp = STATE_DIR / "webhook-alert.md"
+    tmp.write_text(body, encoding="utf-8")
+    sh([sys.executable, str(HERE / "post_pr_comment.py"), str(num), str(tmp)], check=False, timeout=120)
+
+
+def wake_bot(kind: str, pr: int, url: str) -> bool:
+    """Réveiller Grok Bot au bon moment (lot W1 bis) : BIM_BOT_WEBHOOK (environnement ou ~/.config/naviguide/simulator.env)
+    est l'URL du déclencheur « webhook » de sa routine — depuis le 24 sept., son SEUL déclencheur. Appelé juste
+    après le commentaire 🔗 / 🧭, avec la clé en en-tête (webhook_settings). Réseau, 5xx, 429 : réessais à 30 s
+    puis 2 min (le chien de garde renvoie encore un réveil à 30 min) ; 401/403 : la clé — on prévient le porteur
+    sur la PR et on continue. Vrai si le bot a répondu 2xx."""
     hook, headers = webhook_settings()
     if not hook:
-        return
+        return False
     body = json.dumps({"event": kind, "repo": owner_repo(DEFAULT_REPO), "pr": pr, "url": url,
                        "text": ("Pré-revue visuelle demandée" if kind == "prereview" else "Parcours de référence demandé") + f" sur la PR #{pr} : {url}"}).encode()
-    try:
-        req = urllib.request.Request(hook, data=body, method="POST", headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            log(f"    Grok Bot réveillé par webhook ({kind}, HTTP {resp.status})")
-    except urllib.error.HTTPError as e:
-        log(f"    webhook Grok Bot refusé : HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) à vérifier" if e.code in (401, 403) else ""))
-    except Exception as e:
-        log(f"    webhook Grok Bot injoignable : {type(e).__name__}")
+    for attempt, wait_s in enumerate((0,) + WEBHOOK_RETRY_WAITS_S):
+        if wait_s:
+            log(f"    webhook Grok Bot : nouvel essai dans {wait_s} s ({attempt}/{len(WEBHOOK_RETRY_WAITS_S)})")
+            time.sleep(wait_s)
+        try:
+            req = urllib.request.Request(hook, data=body, method="POST", headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                log(f"    Grok Bot réveillé par webhook ({kind}, HTTP {resp.status})")
+                return True
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                alert_webhook_refused(e.code, pr)
+                return False
+            log(f"    webhook Grok Bot : HTTP {e.code}")
+        except Exception as e:
+            log(f"    webhook Grok Bot injoignable : {type(e).__name__}")
+    log("    webhook Grok Bot : abandon après 3 essais — le chien de garde renverra un réveil dans 30 min")
+    return False
 
 
 def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published: bool = False) -> None:
@@ -1390,11 +1426,15 @@ def preflight(state: State, args, http: Http | None) -> bool:
             with urllib.request.urlopen(urllib.request.Request(hook, data=body, method="POST", headers=headers), timeout=30) as resp:
                 row(True, "webhook Grok Bot", f"HTTP {resp.status} (ping ignoré par la routine)")
         except urllib.error.HTTPError as e:
-            row(False, "webhook Grok Bot", f"HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) : le bot ne sera pas réveillé" if e.code in (401, 403) else ""))
+            # Le webhook est le SEUL déclencheur du bot (24 sept.) : refusé = pas de pré-revue tant que la clé n'est pas remise.
+            # On ne bloque pas la nuit pour autant (les lots et le réviseur de code n'en dépendent pas) : on prévient, fort.
+            row(False, "webhook Grok Bot", f"HTTP {e.code}" + (" — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) à remettre : sans cela, aucune pré-revue du bot ; alerte postée sur la PR" if e.code in (401, 403) else ""))
+            if e.code in (401, 403):
+                alert_webhook_refused(e.code, None)
         except Exception as e:
-            row(False, "webhook Grok Bot", f"injoignable ({type(e).__name__})")
+            row(False, "webhook Grok Bot", f"injoignable ({type(e).__name__}) — les réveils de la nuit réessaieront (30 s, 2 min, puis le chien de garde)")
     else:
-        row(None, "webhook Grok Bot", "non configuré (BIM_BOT_WEBHOOK) : le bot passera à son minuteur")
+        row(None, "webhook Grok Bot", "non configuré (BIM_BOT_WEBHOOK) : le bot ne sera pas réveillé (plus de minuteur depuis le 24 sept.)")
 
     log("pré-vol :")
     for mark, what, detail in rows:

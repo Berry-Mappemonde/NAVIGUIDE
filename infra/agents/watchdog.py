@@ -55,7 +55,7 @@ BOT_REWAKE_MIN = 30       # 🔗 posté depuis ≥ 30 min sans 🤖 → un secon
 COOLDOWN_S = 1800         # entre deux remèdes du même genre
 MAX_RELAUNCH_PER_DAY = 3  # relances de la boucle / du poste : au-delà, c'est au porteur
 ACTIVE_PHASES = ("batch", "await_review", "await_pile", "correct", "await_go")
-WEBHOOK_KO_RE = re.compile(r"webhook Grok Bot (?:refusé : HTTP (401|403)|injoignable : HTTP Error (401|403))")
+WEBHOOK_KO_RE = re.compile(r"webhook Grok Bot (?:refusé[^0-9]{0,12}HTTP (401|403)|injoignable : HTTP Error (401|403))")
 RATE_RE = re.compile(r"rate limited", re.I)
 
 
@@ -270,7 +270,13 @@ def check_logs(st: dict) -> None:
     for ln in recent:
         m = WEBHOOK_KO_RE.search(ln)
         if m:
-            incident(st, "webhook refusé", f"HTTP {m.group(1) or m.group(2)} dans run_lots.log", "rien à réparer seul — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) ; le bot passe à son minuteur", fixed=False, key=f"webhook:{today()}")
+            code = int(m.group(1) or m.group(2))
+            # Plus de minuteur (24 sept.) : le porteur doit remettre la clé — on le lui dit sur la PR, une fois par jour.
+            try:
+                rl.alert_webhook_refused(code, None)
+            except Exception:
+                pass
+            incident(st, "webhook refusé", f"HTTP {code} dans run_lots.log", "alerte postée sur la PR de tête — clé ou en-tête (BIM_BOT_WEBHOOK_TOKEN / _HEADER) à remettre par le porteur ; le batch continue", fixed=False, key=f"webhook:{today()}")
             break
     rate = sum(1 for ln in recent if RATE_RE.search(ln))
     if rate:
