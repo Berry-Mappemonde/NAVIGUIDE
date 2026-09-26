@@ -31,6 +31,7 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import calendar
 import json
 import os
 import re
@@ -319,13 +320,35 @@ def amend(go_pr_number: int, *, model: str = DEFAULT_MODEL, seen: set[int] | Non
     rl.sh(["git", "reset", "-q", "--hard", f"origin/{branch}"], cwd=wt, check=False)
     prompt = build_amend_prompt(go_pr, comments, wt, model)
     rl.log(f"GO #{go_pr_number} : {len(comments)} commentaire(s) CORRIGER — agent {model} sur `{branch}`")
-    status, result = rl.run_agent_cli(wt, prompt, model, int(timeout_h * 3600))
+    started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    status, result = rl.run_agent_cli_watched(wt, prompt, model, int(timeout_h * 3600), done=lambda: amend_delivered(http, go_pr_number, started))
     rl.log(f"    amendement : {status}")
     for ln in (result or "").strip().splitlines()[-5:]:
         rl.log(f"    {ln}")
+    if status == "STOPPED":
+        rl.sh(["git", "checkout", "-q", "--", "."], cwd=wt, check=False)
     if branch:
         rl.ensure_pushed(wt, branch)
-    return {"ok": status == "FINISHED", "handled": [c["id"] for c in comments]}
+    return {"ok": status in ("FINISHED", "STOPPED"), "handled": [c["id"] for c in comments]}
+
+
+def amend_delivered(http: "rl.Http", go_pr_number: int, since_iso: str) -> str | None:
+    """L'agent d'amendement a fini quand sa réponse « ## 🛠 GO amendé » est postée (après le début) et que la
+    PR est mergée ou n'a plus bougé depuis GO_IDLE_MIN."""
+    try:
+        pr = http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/pulls/{go_pr_number}") or {}
+        if pr.get("merged_at"):
+            return f"la PR GO #{go_pr_number} est déjà mergée"
+        comments = http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{go_pr_number}/comments?per_page=100") or []
+    except Exception:
+        return None
+    answered = [c for c in comments if (c.get("body") or "").lstrip().startswith("## 🛠") and (c.get("created_at") or "") >= since_iso]
+    if not answered:
+        return None
+    last_ts = calendar.timegm(time.strptime(answered[-1]["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
+    if (time.time() - last_ts) / 60 >= 5:   # cinq minutes après sa réponse, il n'a plus rien à faire
+        return f"réponse « GO amendé » postée sur #{go_pr_number}, sans suite depuis 5 min"
+    return None
 
 
 def part_prompt(prompt: str, i: int, n: int, tag: str, prefix: str, go_pr: int | None, over_budget: bool) -> str:
@@ -416,23 +439,26 @@ def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str |
             prompt_i = part_prompt(prompt, 1, 1, tag, prefix, None, over_budget)
         part = f"{i}/{len(groups)}"
         est_i = group_tokens(grp, est)
-        status, result = rl.run_agent_cli(wt, prompt_i, model, int(timeout_h * 3600))
+        status, result = rl.run_agent_cli_watched(wt, prompt_i, model, int(timeout_h * 3600), done=lambda: go_delivered(http, f"docs/plan-corrections-{tag}", last_part=(i == len(groups))))
         rl.log(f"    correcteur (partie {part}) : {status}")
         for ln in (result or "").strip().splitlines()[-6:]:
             rl.log(f"    {ln}")
         note_cost(date, session, part, [p["number"] for p in grp], est_i, model, status)
+        if status == "STOPPED":   # le travail était livré ; un brouillon laissé derrière ne doit pas partir
+            rl.sh(["git", "checkout", "-q", "--", "."], cwd=wt, check=False)
         branch = rl.local_branch(wt)
         if branch and rl.ensure_pushed(wt, branch):
-            pr = rl.find_pr(http, rl.DEFAULT_REPO, branch)
+            pr = rl.find_pr(http, rl.DEFAULT_REPO, branch, state="all")   # même déjà mergée par le porteur
             if pr:
                 go_pr = pr["number"]
-        if status != "FINISHED":
+        if status not in ("FINISHED", "STOPPED"):
             break
+    delivered = status in ("FINISHED", "STOPPED")
     if go_pr:
         rl.log(f"    PR GO #{go_pr} https://github.com/{rl.owner_repo(rl.DEFAULT_REPO)}/pull/{go_pr} — à merger par le porteur pour lancer le batch suivant")
     elif branch:
         rl.log("    la PR GO n'a pas été ouverte par l'agent : `python3 infra/agents/open_pr.py " + branch + " main \"docs: corrections\" <corps.md>`")
-    archived = rc.archive_global_file(date) if status == "FINISHED" else None
+    archived = rc.archive_global_file(date) if delivered else None
     if archived:
         rl.log(f"revue globale archivée : {archived} (fichier remis à zéro)")
     state = rl.State.load()
@@ -440,7 +466,38 @@ def run(prs: list[tuple[str, int]], *, model: str = DEFAULT_MODEL, prefix: str |
                                                       "branch": branch, "go_pr": go_pr, "prefix": prefix, "global_archived": archived,
                                                       "runs": len(groups), "estimate_tokens": est["total"], "over_budget": over_budget})
     state.save()
-    return {"ok": status == "FINISHED", "branch": branch, "go_pr": go_pr, "prefix": prefix, "session": session, "runs": len(groups)}
+    return {"ok": delivered, "branch": branch, "go_pr": go_pr, "prefix": prefix, "session": session, "runs": len(groups)}
+
+
+GO_IDLE_MIN = 20   # PR GO ouverte et plus aucun commit depuis 20 min : l'agent a fini, même s'il ne le dit pas
+
+
+def go_delivered(http: "rl.Http", branch: str, *, last_part: bool = True) -> str | None:
+    """Raison d'arrêter le correcteur, ou None. Sa PR existe et : elle est mergée (le porteur n'attend plus
+    rien de lui) ; ou elle n'a plus bougé depuis GO_IDLE_MIN (il rumine — 26 sept. : une heure de plus,
+    jusqu'à défaire ses lots dans son worktree). Pour une partie intermédiaire (matériel découpé), on
+    laisse l'agent finir : la PR sera complétée par la partie suivante."""
+    try:
+        pr = rl.find_pr(http, rl.DEFAULT_REPO, branch, state="all")
+    except Exception:
+        return None
+    if not pr:
+        return None
+    if pr.get("merged_at"):
+        return f"la PR GO #{pr['number']} est déjà mergée"
+    if not last_part:
+        return None
+    commits = http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/pulls/{pr['number']}/commits?per_page=100") or []
+    stamps = [((c.get("commit") or {}).get("committer") or {}).get("date") or "" for c in commits] + [pr.get("created_at") or ""]
+    last = max(stamps)
+    try:
+        last_ts = calendar.timegm(time.strptime(last, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+    idle_min = (time.time() - last_ts) / 60
+    if idle_min >= GO_IDLE_MIN:
+        return f"la PR GO #{pr['number']} est ouverte et n'a plus bougé depuis {idle_min:.0f} min"
+    return None
 
 
 def main() -> None:
