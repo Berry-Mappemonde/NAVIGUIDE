@@ -3,7 +3,6 @@ import L from "leaflet";
 import {
   atlasLayerUrl,
   atlasPointUrl,
-  atlasTileUrl,
   clampMonth,
   visibleClimoTiles,
 } from "../utils/atlasPoint.js";
@@ -18,6 +17,7 @@ import {
   waveColor,
 } from "./climatologyPaint.js";
 import { climoPointLngs, cycloneLatLngCopies, groupCycloneFeatures } from "./climatologyWorld.js";
+import { fetchJson, loadClimoLayerFeatures } from "./climoLayerLoad.js";
 
 function currentIcon(p) {
   return L.divIcon({
@@ -26,12 +26,6 @@ function currentIcon(p) {
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
-}
-
-async function fetchJson(url, signal) {
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
 }
 
 function paintWindProps(p) {
@@ -88,6 +82,7 @@ export function useClimatologyLayer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [counts, setCounts] = useState(null);
+  const [source, setSource] = useState(null);
   const layersRef = useRef({ ...EMPTY_LAYERS });
   const tRef = useRef(t);
   tRef.current = t;
@@ -111,6 +106,7 @@ export function useClimatologyLayer({
       setLoading(false);
       setError(null);
       setCounts(null);
+      setSource(null);
       return undefined;
     }
 
@@ -120,6 +116,7 @@ export function useClimatologyLayer({
     const cache = new Map();
     const popupOpts = { ...POPUP_OPTS, maxWidth: 300 };
     const countsRef = { wind: 0, waveP50: 0, waveP90: 0, waveMean: 0, current: 0, cyclones: 0 };
+    const sourcesRef = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null };
 
     const loadSafe = (name, fn) => fn().catch((err) => {
       console.error(`[climatology] ${name} layer failed`, err);
@@ -160,23 +157,20 @@ export function useClimatologyLayer({
       const tiles = visibleClimoTiles(map.getBounds(), zTile, { margin: 1, zMax: 6 });
       const keep = new Set(tiles.map((tile) => `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`));
       evict(kind, keep);
-      const collections = await Promise.all(tiles.map(async (tile) => {
-        const key = `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`;
-        const hit = cache.get(key);
-        if (hit?.features) return hit.features;
-        try {
-          const data = await fetchJson(atlasTileUrl(kind, m, tile.z, tile.x, tile.y, extra), signal);
-          const features = data.features || [];
-          cache.set(key, { features });
-          return features;
-        } catch (err) {
-          if (err?.name === "AbortError") return null;
-          return [];
-        }
-      }));
-      if (cancelled || signal.aborted) return 0;
-      const features = mergeTileFeatures(collections, paintProps);
+      const loaded = await loadClimoLayerFeatures({
+        kind,
+        month: m,
+        extra,
+        tiles,
+        cache,
+        cacheKey: (tile) => `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`,
+        fetchJson,
+        signal,
+      });
+      if (cancelled || loaded.aborted || signal.aborted) return 0;
+      const features = mergeTileFeatures([loaded.features], paintProps);
       replaceGroup(layerKey, addPointMarkers({ features }, makeLayer));
+      if (layerKey in sourcesRef) sourcesRef[layerKey] = loaded.source;
       return features.length;
     };
 
@@ -223,6 +217,8 @@ export function useClimatologyLayer({
     const publishCounts = () => {
       if (cancelled) return;
       setCounts({ ...countsRef });
+      const used = Object.values(sourcesRef).filter(Boolean);
+      setSource(used.includes("global") ? "global" : (used.length ? "tiles" : null));
       const painted = Object.values(countsRef).some(Boolean);
       if (!painted) setError("atlas_empty");
       else setError(null);
@@ -329,5 +325,5 @@ export function useClimatologyLayer({
     };
   }, [mapRef, mapReady, anyOn, showWind, showWave, showCurrent, showCyclones, m]);
 
-  return { loading, error, counts };
+  return { loading, error, counts, source };
 }

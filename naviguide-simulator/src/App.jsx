@@ -151,7 +151,7 @@ export default function App() {
   });
   const [maritimeLayerState, setMaritimeLayerState] = useState(null);
   const maritimeLayers = maritimeLayerState || EMPTY_MARITIME_LAYERS;
-  const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null });
+  const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null, source: null });
   const [isLightMode, setIsLightMode] = useState(false);
 
   const [segments, setSegments] = useState([]);
@@ -1754,6 +1754,9 @@ export default function App() {
                 maritimeLayers.showClimoCurrent && `courant ${climoLayer.counts.current || 0}`,
                 maritimeLayers.showClimoCyclones && `IBTrACS ${climoLayer.counts.cyclones || 0}`,
               ].filter(Boolean).join(" · ")}
+              {climoLayer.source === "global" && (
+                <span data-testid="climatology-source">{` · ${t("climatologySourceGlobal")}`}</span>
+              )}
             </span>
           )}
           {climoLayer.error === "atlas_empty" && atlas.alive === false && (

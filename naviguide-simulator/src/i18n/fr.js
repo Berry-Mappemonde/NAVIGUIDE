@@ -308,6 +308,7 @@ export default {
   climatologyStub: "Atlas CMEMS — roses, Hs P50/P90, courant, cyclones.",
   climatologyOn: "Atlas CMEMS · {month} · {maps} · kind climatology",
   climatologyAtlasDown: "Atlas muet — vent de zone en repli.",
+  climatologySourceGlobal: "maille 4°",
   modeClimatologyFull: "Climatologie",
   climoAverage: "AVERAGE",
   climoMostLikely: "MOST_LIKELY",
