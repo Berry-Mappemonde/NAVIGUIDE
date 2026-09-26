@@ -19,15 +19,20 @@ from ensemble_eta import (
     ETA_MAX_SPAN_DAYS,
     ETA_MIN_KN,
     FORECAST_DAYS,
+    MAX_PROBES_PER_LEG,
+    REASON_UNAVAILABLE,
     arrival_quantiles,
     bound_eta_quantiles,
     compute_eta,
+    compute_next_retry,
     empty_eta,
     empirical_quantile,
+    eta_retry_due,
     fetch_point_members,
     implied_speed_kn,
     next_official_stop,
     parse_members,
+    peek_official_eta,
     preheat_official_eta,
     sample_leg_points,
     tighten_eta_arrivals,
@@ -55,10 +60,12 @@ C4_POLAR = {
 def _hooks():
     reset_hooks()
     saved_url = ensemble_eta.ENSEMBLE_URL
+    ensemble_eta._reset_fetch_note()
     yield
     ensemble_eta.ENSEMBLE_URL = saved_url
     reset_hooks()
     unblock_network()
+    ensemble_eta._reset_fetch_note()
 
 
 def _hours(n: int = 48) -> list[str]:
@@ -206,6 +213,9 @@ def test_api_down_members_zero():
         assert out["members"] == 0
         assert out["p10"] is None and out["p50"] is None and out["p90"] is None
         assert out["source"] is None
+        assert out["reason"] == REASON_UNAVAILABLE
+        assert out["lastAttempt"]
+        assert out["nextRetry"]
         assert empty_eta(NOW)["members"] == 0
     finally:
         server.shutdown()
@@ -390,6 +400,8 @@ def test_preheat_without_members_invents_nothing(monkeypatch):
         unblock_network()
     assert out["members"] == 0
     assert out["p10"] is None and out["p90"] is None
+    assert out.get("reason")
+    assert not out.get("p10") and not out.get("p50")
 
 
 def test_kick_official_eta_does_not_block(monkeypatch):
@@ -428,3 +440,87 @@ def test_startup_and_put_kick_official_eta():
     assert "background.add_task(_kick_official_eta)" in api_src
     assert "_maybe_daily_hindcast" in api_src
     assert "kick_official_warmups" in api_src
+
+
+def test_sample_leg_points_capped_at_12_keeps_ends():
+    points = [
+        {"lat": 4.9, "lon": -52.3, "cumNm": 0},
+        {"lat": -17.5, "lon": -149.5, "cumNm": 7504},
+    ]
+    sampled = sample_leg_points(points, 60.0)
+    assert sampled[0]["cumNm"] == 0
+    assert sampled[-1]["cumNm"] == 7504
+    assert len(sampled) == MAX_PROBES_PER_LEG
+    assert len(sampled) <= 12
+    assert MAX_PROBES_PER_LEG == 12
+
+
+def test_compute_eta_caps_fetches_on_long_leg(monkeypatch):
+    calls = []
+
+    def fake_fetch(lat, lon):
+        calls.append((lat, lon))
+        return _fixture_members(4, kn=10.0)
+
+    def fake_integrate(_points, stop_name, now, polar_raw, wind_fn):
+        pack = wind_fn(-10.0, -100.0, now)
+        kn = float((pack or {}).get("speedKnots") or 10.0)
+        return NOW + timedelta(days=20 + (10.0 - kn) * 0.2)
+
+    monkeypatch.setattr(ensemble_eta, "fetch_point_members", fake_fetch)
+    monkeypatch.setattr(ensemble_eta, "_integrate_member", fake_integrate)
+    points = [
+        {"lat": 4.9, "lon": -52.3, "cumNm": 0, "filmCum": 0, "jump": False, "nonMaritime": False},
+        {"lat": -17.5, "lon": -149.5, "cumNm": 4200, "filmCum": 4200, "jump": False, "nonMaritime": False},
+    ]
+    marks = [{"name": "Papeete", "nm": 4200, "filmNm": 4200, "lat": -17.5, "lon": -149.5, "index": 1}]
+    sample = {"lat": 4.9, "lon": -52.3, "sailNm": 0, "filmNm": 0}
+    out = compute_eta(
+        points=points, marks=marks, stop="Papeete",
+        now=NOW, polar_raw=C4_POLAR, sample=sample,
+    )
+    assert len(calls) <= 12
+    assert out["members"] > 0
+    assert out["p10"] and out["p90"]
+    t10 = datetime.fromisoformat(out["p10"].replace("Z", "+00:00"))
+    t90 = datetime.fromisoformat(out["p90"].replace("Z", "+00:00"))
+    assert (t90 - t10).total_seconds() / 86400.0 <= ETA_MAX_SPAN_DAYS + 1e-6
+
+
+def test_compute_next_retry_quota_is_tomorrow():
+    nxt = compute_next_retry(
+        NOW, 0, "Daily API request limit exceeded. Please try again tomorrow.",
+    )
+    assert nxt.date() == (NOW + timedelta(days=1)).date()
+    assert nxt.hour == 0 and nxt.minute == 15
+    stepped = compute_next_retry(NOW, 0, None)
+    assert stepped == NOW + timedelta(seconds=30)
+    later = compute_next_retry(NOW, 5, None)
+    assert later == NOW + timedelta(seconds=900)
+
+
+def test_eta_retry_due_respects_backoff():
+    assert eta_retry_due({"members": 0}, NOW) is True
+    assert eta_retry_due({"members": 12, "p10": "x", "p90": "y"}, NOW) is False
+    future = (NOW + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert eta_retry_due({"members": 0, "nextRetry": future}, NOW) is False
+    past = (NOW - timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert eta_retry_due({"members": 0, "nextRetry": past}, NOW) is True
+
+
+def test_peek_after_failed_compute_keeps_reason(monkeypatch):
+    monkeypatch.setattr(ensemble_eta, "fetch_point_members", lambda *_a, **_k: {})
+    points, marks, sample = _leg()
+    voy = {"points": points, "marks": marks, "clock": None}
+    out = compute_eta(
+        points=points, marks=marks, stop="Fort-de-France",
+        now=NOW, polar_raw=C4_POLAR, sample=sample,
+    )
+    assert out["members"] == 0
+    assert out["reason"] == REASON_UNAVAILABLE
+    peeked = peek_official_eta(voy, "Fort-de-France", NOW)
+    assert peeked["members"] == 0
+    assert peeked["reason"] == REASON_UNAVAILABLE
+    assert peeked["lastAttempt"]
+    assert peeked["nextRetry"]
+    assert peeked["p10"] is None and peeked["p90"] is None
