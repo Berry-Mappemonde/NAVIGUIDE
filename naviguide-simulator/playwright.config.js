@@ -12,6 +12,11 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
   retries: process.env.CI ? 1 : 0,
+  // Le job GitHub a 15 min (install + fumée + lots). Les lots sont
+  // informatifs : deux workers et un plafond pour finir avant que le
+  // job n'annule une fumée déjà verte.
+  workers: process.env.CI ? 2 : undefined,
+  globalTimeout: process.env.CI ? 8 * 60 * 1000 : undefined,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: origin,
