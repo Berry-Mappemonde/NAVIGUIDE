@@ -1,13 +1,18 @@
-# Plan — Corrections de la revue du 26 septembre (session 4) : lots RF1 → RF8
+# Plan — Corrections de la revue du 26 septembre (session 4) : lots RF1 → RF9
 
-Version **1.0** — 26 septembre 2026. Le porteur a recetté dans Chrome la pile
+Version **1.1** — 26 septembre 2026 (amendée le soir même selon les
+commentaires du porteur sur la PR #336 : lot **RF9** — le voyage officiel est
+précalculé et stocké — inséré **avant RF2** ; RF2 réduit à la robustesse, RF3
+lit le stock ; les pilules **2:30 / 3:00 restent**, RF7 corrige **leur place**
+dans la barre au lieu de les retirer). Le porteur a recetté dans Chrome la pile
 #325 → #334 (lots RE1 → RE7, RC10, RC11) : 13 items cochés sur 26 (dont 11 par
 le bot), **8 KO du porteur, tous nouveaux** depuis la session précédente
 (2026-09-26T10:55:38Z), plus une **revue globale en quatre priorités
 imposées** : les erreurs de console partout, les erreurs de console pendant le
 film, le discours du film, la cinématique du film — « tout autre correctif
-passe après ces quatre ». Ce plan transforme ces 8 KO 🆕 et les priorités en
-lots correctifs RF1 → RF8, à enchaîner par `infra/agents/run_lots.py`. Les KO
+passe après ces quatre ». Ce plan transforme ces 8 KO 🆕, les priorités et les
+commentaires de la PR #336 en 9 lots correctifs — RF1, **RF9**, RF2 → RF8,
+dans cet ordre — à enchaîner par `infra/agents/run_lots.py`. Les KO
 du bot déjà lus par les plans précédents (`PLAN_CORRECTIONS_2026-09-23.md`,
 `PLAN_CORRECTIONS_2026-09-26-s2.md`) ne sont **pas** replanifiés ici ; seuls
 ceux qui recoupent un KO 🆕 ou une priorité sont cités en appui.
@@ -23,15 +28,25 @@ ne répondait plus (`POST /voyage` 500 puis 429, `GET /ici` 500, polaires 500) :
 le Journal est resté vide, le récit du film est retombé sur le court trajet de
 la Simulation, et le porteur n'a **pas pu recetter** #327, #331, #333 et #334
 (« revue non faite car le Journal est vide »). Quatre des huit KO 🆕 ont cette
-seule cause serveur — c'est le lot RF2, en tête de pile avec RF1.
+seule cause serveur — c'est le couple **RF9** (le voyage officiel est
+précalculé et stocké, le serveur sert) + **RF2** (robustesse), en tête de pile
+avec RF1.
 
 ## 0. Rappels de la revue (à lire avant tout lot)
 
 - Le porteur regarde Chrome, il ne lance rien (REGLES § 4).
 - **Rien de superflu à l'écran** (REGLES § 1) : un bouton visible marche ou
-  n'existe pas. Quand ce plan **retire** une surface (pilules 2:30 / 3:00,
-  « Récit : règles »), c'est sur **demande explicite du porteur** (KO #327) —
-  l'exception à l'anti-régression est assumée et citée dans le lot.
+  n'existe pas. Quand ce plan **retire** une surface (« Récit : règles »),
+  c'est sur **demande explicite du porteur** (KO #327). Les pilules
+  **2:30 / 3:00 restent** (décochées par défaut, RD7) : le porteur demande de
+  corriger **leur place** dans la barre, pas de les retirer (commentaires sur
+  la PR #336, captures du 26 sept. 18:10).
+- **Le voyage officiel est précalculé et stocké** (commentaires sur la PR
+  #336) : tout ce dont Suivre et Revoir ont besoin est calculé **une fois**,
+  rangé dans un stock **persistant** (il survit aux redémarrages et aux
+  déploiements), puis **servi tel quel** par l'API — jamais de calcul ni
+  d'appel à un fournisseur externe dans le chemin d'une requête. C'est le lot
+  **RF9**, placé avant RF2.
 - **Aucun chiffre produit par un LLM** ; champ inconnu = silence.
 - **La demande la plus récente du porteur l'emporte** : l'accueil en
   **Suivre** + Cinéma + monde dézoomé (KO #325, 26 sept. session 4)
@@ -54,13 +69,13 @@ ce plan.
 |---|---|---|---|---|---|
 | #325 | RE1 | 3/3 (porteur 1) | **l'application doit s'ouvrir en Suivre + Cinéma + carte monde entière (dézoomée)** | 4 KO : caméra pas recadrée en Suivre (`POST /voyage` 500 en est la cause), console 500, advice 400 | → **RF6** (accueil, D1') ; console → **RF1**, **RF2** |
 | #326 | RE2 | 3/3 🤖 | **les escales de la liste du panneau droit doivent être juste informatives quel que soit le mode** | rien | → **RF7** (D2') |
-| #327 | RE3 | 1/5 | **journal vide** (devrait être rempli depuis le départ) ; **pilules 2:30 / 3:00 à ne plus afficher du tout** ; **supprimer « Récit : règles »** (jamais demandé) ; **encadré date/heure de départ à la taille exacte du format XX-XX-XXXX XX:XX** ; **Tracer bugue et refuse de dézoomer** (voulu : monde entièrement dézoomé) | 1 KO console (~188–257 erreurs rouges : advice 400, /voyage 500→429, /ici 5xx, polar 500, climato 500…) | journal → **RF2** ; barre → **RF7** (D3') ; Tracer → **RF6** (D4') ; console → **RF1**, **RF2** |
+| #327 | RE3 | 1/5 | **journal vide** (devrait être rempli depuis le départ) ; **pilules 2:30 / 3:00 : lecture corrigée par le porteur (PR #336) — les garder, mais elles débordent de la barre film et passent sous le panneau droit (captures du 26 sept. 18:10) : corriger leur place** ; **supprimer « Récit : règles »** (jamais demandé) ; **encadré date/heure de départ à la taille exacte du format XX-XX-XXXX XX:XX** ; **Tracer bugue et refuse de dézoomer** (voulu : monde entièrement dézoomé) | 1 KO console (~188–257 erreurs rouges : advice 400, /voyage 500→429, /ici 5xx, polar 500, climato 500…) | journal → **RF9**, **RF2** ; barre → **RF7** (D3') ; Tracer → **RF6** (D4') ; console → **RF1**, **RF2** |
 | #328 | RE4 | 3/3 🤖 | — | 1 KO console (429/500, advice 400, ERR_HTTP2) | → **RF1**, **RF2** |
-| #329 | RE5 | 0/2 | **« idem pré-revue »** (fourchette toujours absente, `members: 0`) | 3 KO : advice 400, ERR_CONNECTION_CLOSED sur /ici et /eta, ERR_HTTP2 | § 3 (re-recette après RF2 ; RE5 est codé) ; advice → **RF1** |
+| #329 | RE5 | 0/2 | **« idem pré-revue »** (fourchette toujours absente, `members: 0`) | 3 KO : advice 400, ERR_CONNECTION_CLOSED sur /ici et /eta, ERR_HTTP2 | § 3 (re-recette après RF9 + RF2 ; RE5 est codé, l'ETA et la fourchette sont servies depuis le stock RF9) ; advice → **RF1** |
 | #330 | RE6 | 2/2 (porteur 1) | **avec les roses de vent affichées, le zoom est très lent et l'appli se fige** | — | → **RF8** ; parité globe fondue dans **G4** |
-| #331 | RE7 | 0/4 | **KO général : le journal est vide et le récit ne contient aucun événement** | 3 KO : l'avion n'est pas dit (Cayenne nommée, aucun vol) ; console film (400 advice, 500 /eta et /ici en rafale) | journal/récit → **RF2** ; avion → **RF4** ; console film → **RF3** |
-| #333 | RC10 | 1/2 🤖 | **revue non faite car le Journal est vide** | 2 KO : le sous-titre de fin (« Aujourd'hui, le bateau est à… ») n'apparaît pas, barre récit absente une fois le film arrêté ; console film > 1 000 erreurs | journal → **RF2** ; fin du film → **RF4** ; console film → **RF3** |
-| #334 | RC11 | 0/2 | **revue non faite car le Journal est vide** | 8 KO : advice 400 (×5 écrans), fourchette absente (`members: 0`), 404 tuiles climato, chat « Quel vent » sans réponse | journal → **RF2** ; advice → **RF1** ; fourchette, tuiles, chat → § 3 |
+| #331 | RE7 | 0/4 | **KO général : le journal est vide et le récit ne contient aucun événement** | 3 KO : l'avion n'est pas dit (Cayenne nommée, aucun vol) ; console film (400 advice, 500 /eta et /ici en rafale) | journal/récit → **RF9**, **RF2** ; avion → **RF4** ; console film → **RF3** |
+| #333 | RC10 | 1/2 🤖 | **revue non faite car le Journal est vide** | 2 KO : le sous-titre de fin (« Aujourd'hui, le bateau est à… ») n'apparaît pas, barre récit absente une fois le film arrêté ; console film > 1 000 erreurs | journal → **RF9**, **RF2** ; fin du film → **RF4** ; console film → **RF3** |
+| #334 | RC11 | 0/2 | **revue non faite car le Journal est vide** | 8 KO : advice 400 (×5 écrans), fourchette absente (`members: 0`), 404 tuiles climato, chat « Quel vent » sans réponse | journal → **RF9**, **RF2** ; advice → **RF1** ; fourchette, tuiles, chat → § 3 |
 
 Les captures du bot confirment le fil rouge : ligne d'état retombée sur
 « Saint-Maur → La Rochelle · 0 nm · j0 » (le trajet court de la Simulation, pas
@@ -104,7 +119,11 @@ tête de pile :
    corrompu ou à l'ancien format → 500 à chaque GET, et le bandeau « Échec —
    Service des polaires indisponible »). Conséquence directe : **journal
    vide** (KO #327, #331, #333, #334) — sans voyage officiel, pas de moments
-   à lire. → **RF2**.
+   à lire. Réponse en deux lots (commentaires PR #336) : **RF9** — le voyage
+   officiel est **précalculé et stocké**, le serveur **sert** et ne calcule
+   plus au moment de la demande ; **RF2** — la robustesse (plus de 500 bruts,
+   polaires gardées, re-créations espacées), sans plus rien recalculer
+   lui-même. → **RF9**, **RF2**.
 3. `404 /bi/climatology/wind/tiles/…` (#334, console D) : la route des tuiles
    n'existe pas sur le backend BI du poste — c'est le **déploiement** de la
    PR #317, déjà tranché (plan s2 § 3) ; le repli client est codé (RE6,
@@ -122,7 +141,10 @@ re-sonde `/ici` tous les 3 milles (`src/hooks/useIciDossier.js:17`
 `MOVE_NM = 3`, re-planification l.218-247) : un tour du monde en ~2 minutes →
 des **centaines de requêtes**, chacune en 500 sur le poste (compteur console
 > 1 000, #333) ; même mécanique pour l'ETA d'escale re-sondée pendant le film
-(`src/components/EscaleLegend.jsx:108` + `usePlanReview.js:351`). → **RF3**.
+(`src/components/EscaleLegend.jsx:108` + `usePlanReview.js:351`). Avec RF9,
+le film **lit le stock** (script, sacs par point) : RF3 devient trivial —
+geler les hooks pendant le film, un rattrapage à l'arrêt. → **RF3** (après
+RF9).
 
 **Priorité 3 — Le discours du film.** Les six règles (dédoublonner par nom,
 sans nom = silence, trié par la route, vocabulaire juste, chronologie stricte
@@ -135,8 +157,8 @@ officiel complet (fenêtre avion perdue par la fusion/sélection sous
 `targetSeconds` ≈ 108 s, ou `vehicle` absent des marques du voyage semé) ;
 (b) le sous-titre de fin (« Aujourd'hui, le bateau est à… ») **disparaît**
 avec la barre récit dès que le film s'arrête (KO bot #333) ; (c) « le récit ne
-contient aucun événement » (KO #331) est le fil rouge serveur — RF2. → **RF4**
-(a et b), **RF2** (c).
+contient aucun événement » (KO #331) est le fil rouge serveur — RF9 + RF2.
+→ **RF4** (a et b), **RF9** + **RF2** (c).
 
 **Priorité 4 — La cinématique du film.** « Un vrai film — caméra qui suit le
 bateau, mouvements fluides, pas une série de sauts ; zoom stable pendant une
@@ -165,16 +187,40 @@ chargées — captures #331, #333, #334). Le zoom par chapitre est déjà stable
   escales… soient juste informatives **quel que soit le mode** » (KO #326).
   Le clic-ligne de la Simulation (déplacer le curseur) disparaît aussi ; la
   liste n'est plus cliquable nulle part. → **RF7**.
-- **D3' — Barre de lecture épurée.** « Je ne veux pas qu'ils apparaissent,
-  pour gagner de la place » : les pilules **2:30 / 3:00** sont retirées de la
-  barre (le film sans durée reste le défaut, le moteur de budget RD7 reste
-  servi par l'API) ; « **Récit : règles** » (jamais demandé) est retiré ;
-  l'encadré date + heure de départ prend **exactement** la place du format
-  « XX-XX-XXXX XX:XX ». Retraits demandés par le porteur = exception assumée
-  à l'anti-régression, à citer dans la PR. → **RF7**.
+- **D3' — Barre de lecture : pilules gardées et remises dans le cadre
+  (lecture du KO #327 corrigée par le porteur, PR #336).** Les pilules
+  **2:30 / 3:00 restent** (décochées par défaut, RD7 ; le film sans durée
+  reste le défaut) mais **ne débordent plus** du cadre de la barre film et
+  **ne passent plus sous le panneau droit** quand il est ouvert (captures du
+  porteur, 26 sept. 18:10 : les pilules sortent du cadre à droite de « Revoir
+  l'expédition »). La barre s'adapte à la largeur disponible (panneau droit
+  ouvert ou fermé) : les pilules restent dans son cadre, à côté de « Revoir
+  l'expédition », ou passent **sous lui** si la place manque — jamais hors
+  cadre, jamais sous un panneau. « **Récit : règles** » (jamais demandé) est
+  retiré ; l'encadré date + heure de départ prend **exactement** la place du
+  format « XX-XX-XXXX XX:XX ». → **RF7**.
 - **D4' — Tracer.** « En mode Tracer, l'application affiche une carte monde
   entièrement dézoomée » ; le bug qui **refuse de dézoomer** est à reproduire
   et corriger. → **RF6**.
+- **D5' — Le voyage officiel est précalculé et stocké (commentaires du
+  porteur sur la PR #336).** RF2 et RF3 réduisaient la charge mais laissaient
+  le serveur *calculer à la demande* (au démarrage, à chaque voyage, pendant
+  le film). Principe inverse pour le **voyage officiel** : journal des
+  moments, script du film, ETA et fourchettes par escale, climatologie et
+  fiches par point de la route, sac « ici » par point, plan review sont
+  **précalculés une fois** et **stockés de façon persistante** (base de
+  données — MongoDB est déjà sur le VPS — ou fichiers sur disque, au choix,
+  mais qui survit aux redémarrages **et aux déploiements**), puis **servis
+  tels quels** par l'API. Règles : une seule version par (route officielle,
+  t0, date des données) ; un **travail de fond** met à jour le stock quand
+  une entrée manque ou vieillit, jamais dans le chemin d'une requête ; l'API
+  répond depuis le stock en **< 200 ms** et n'appelle plus les fournisseurs
+  externes (Copernicus, Open-Meteo, atlas BI, LLM) au moment de la demande ;
+  entrée manquante → réponse honnête « **en préparation** », pas un 500 ni un
+  recalcul synchrone ; le poste de recette part avec un **stock déjà rempli**
+  (le script de recette le remplit ou le copie). → **RF9** (avant RF2) ;
+  RF2 garde ses corrections de robustesse mais ne recalcule plus rien
+  lui-même ; RF3 devient trivial (le film lit le stock).
 
 ## 3. Ce qui est reporté ou fondu, et pourquoi
 
@@ -190,7 +236,9 @@ chargées — captures #331, #333, #334). Le zoom par chapitre est déjà stable
   codé** (PR #329 : sondes plafonnées, raison honnête quand `members: 0`,
   relances espacées) ; sur le poste, l'ETA restait à `members: 0` avec
   `ERR_CONNECTION_CLOSED` — l'ensemble n'a pas pu être re-testé sur un
-  serveur sain. Re-recetter **après merge de la pile + RF2** ; si la raison
+  serveur sain. L'ETA et les fourchettes par escale font partie du **stock
+  RF9** (précalculées, servies telles quelles). Re-recetter **après merge de
+  la pile + RF9 + RF2** ; si la raison
   affichée est un quota de l'API ensemble, c'est une décision du porteur
   (clé, autre source) — pas un nouveau lot aujourd'hui.
 - **404 tuiles climatologie (#334, console D)** : route absente du backend BI
@@ -219,8 +267,9 @@ chargées — captures #331, #333, #334). Le zoom par chapitre est déjà stable
 Convention : « Fichiers » = les seuls à ouvrir (`rg -n` + `Read`
 offset/limit pour App.jsx et MapSceneController.js). « Recette » = ce que le
 porteur voit dans Chrome, par écran. Ancres `fichier:ligne` = tête de pile
-#334 (= `main` après merge). Pile linéaire RF1 → RF8, dans l'ordre des
-priorités du porteur.
+#334 (= `main` après merge). Pile linéaire RF1 → **RF9** → RF2 → RF3 → … →
+RF8 (RF9 inséré avant RF2 sur les commentaires de la PR #336), dans l'ordre
+des priorités du porteur.
 
 ### RF1 — Console : plus jamais de 400 sur `/voyage/official/advice` (S)
 
@@ -264,7 +313,81 @@ Recette (visuelle) :
 - Panneau gauche, onglet Revue du plan : la revue s'affiche comme avant
   (conseil compris quand il existe).
 
-### RF2 — Le serveur tient debout : plus de 500/429 au parcours nominal, le Journal se remplit (M)
+### RF9 — Le voyage officiel est précalculé et stocké : le serveur sert, il ne calcule plus (M)
+
+Principe (D5', commentaires du porteur sur la PR #336) — pas un bug mais un
+renversement : RF2 et RF3 réduisent la charge mais laissent le serveur
+**calculer à la demande** — au démarrage (`startup_official_voyage` +
+préchauffages, `server/main.py:84-135`, `voyage_api.py:763`), à chaque voyage
+(`_climo_clock` en synchrone à chaque `POST /voyage`,
+`server/voyage_api.py:516`), pendant le film (`/ici` et ETA re-sondés). Pour
+le **voyage officiel**, tout ce dont Suivre et Revoir ont besoin est
+**précalculé une fois**, **stocké de façon persistante**, puis **servi tel
+quel** par l'API.
+
+Périmètre du stock : journal des moments, script du film, ETA et fourchettes
+par escale, climatologie et fiches par point de la route, sac « ici » par
+point, plan review.
+
+Règles :
+- **une seule version** par (route officielle, t0, date des données) — c'est
+  la clé de version du stock ;
+- un **travail de fond** (au boot puis périodique) met à jour le stock quand
+  une entrée **manque ou vieillit** — jamais dans le chemin d'une requête ;
+- l'API répond **depuis le stock en < 200 ms** et n'appelle **plus aucun
+  fournisseur externe** (Copernicus, Open-Meteo, atlas BI, LLM) au moment de
+  la demande ;
+- entrée manquante → réponse honnête « **en préparation** » (état propre que
+  le client sait afficher), **jamais** un 500 ni un recalcul synchrone ;
+- le poste de recette part avec un **stock déjà rempli** : le script de
+  recette le remplit (ou le copie) avant d'ouvrir Chrome.
+
+Où vit le stock — au choix du lot, documenté dans la PR : **fichiers /
+SQLite sur disque** dans `voyage_dir()` (la base `naviguide.sqlite` de
+`server/pearl_store.py` existe déjà, avec les tables `moments` et `kv` ;
+répertoire `NAVIGUIDE_VOYAGE_DIR`, défaut `server/voyage_data/`) **ou
+MongoDB** (déjà en place sur le VPS, `127.0.0.1:27017`). Sur le **poste** :
+le `voyage_dir()` du checkout, rempli par le script de recette. Sur le
+**VPS** : `NAVIGUIDE_VOYAGE_DIR` pointé sur un répertoire **hors du dossier
+de déploiement** (ex. `/home/ubuntu/naviguide-data/`, réglé dans
+`~/.config/naviguide/simulator.env`) — le stock survit aux redémarrages **et
+aux déploiements**. Premier démarrage : stock vide → le travail de fond le
+remplit ; l'API répond « en préparation » entre-temps, jamais une erreur.
+
+Fichiers : `server/voyage_api.py` PAR EXTRAIT
+(`rg -n "startup_official_voyage|official"`), `server/main.py` PAR EXTRAIT
+(`rg -n "startup"`), `server/pearl_store.py`, `server/voyage_store.py`,
+nouveau module du stock (ex. `server/official_store.py`), `server/tests/`
+(tests du stock).
+
+Étapes :
+1. Le module du stock : clé (route officielle, t0, date des données),
+   lecture/écriture des six familles du périmètre, horodatage par entrée,
+   remplacement atomique d'une version par la suivante.
+2. Le travail de fond : au boot puis périodiquement, il compare le stock à la
+   clé courante, calcule ce qui manque ou a vieilli et remplace — hors du
+   chemin des requêtes : jamais un client n'attend un calcul.
+3. Les routes du voyage officiel (journal, script du film, ETA et
+   fourchettes, climatologie et fiches, sac « ici », plan review) répondent
+   **depuis le stock** ; plus aucun appel Copernicus / Open-Meteo / atlas BI /
+   LLM au moment de la demande ; entrée absente → état « en préparation ».
+4. Le script de recette remplit (ou copie) le stock avant d'ouvrir le
+   navigateur : sur le poste préparé, le porteur ne voit jamais « en
+   préparation ».
+5. Tests : clé identique → aucun recalcul ; entrée manquante → « en
+   préparation » sans 500 ni recalcul synchrone ; fournisseurs externes
+   mockés pour échouer s'ils sont appelés pendant une requête → les réponses
+   passent quand même ; le stock relu après un redémarrage simulé sert les
+   mêmes données.
+
+Recette (visuelle) :
+- Poste préparé (script de recette), Suivre : le Journal, la fourchette
+  d'arrivée et la Revue du plan s'affichent **immédiatement** au chargement —
+  aucune attente, aucune ligne rouge en console.
+- Recharger la page : aussi immédiat — rien ne se recalcule.
+- Revoir l'expédition : le film part sans délai (le script est lu du stock).
+
+### RF2 — Le serveur tient debout : plus de 500/429 au parcours nominal, le Journal se remplit (M, après RF9)
 
 Cause racine (à **confirmer sur poste par les logs** avant de coder — ne pas
 deviner) : sur le poste de recette, `POST /voyage` répond 500 puis 429,
@@ -284,6 +407,12 @@ corrompu, `:82` `data["raw"]` KeyError sur un format ancien → 500 et bandeau
 les préchauffages partent tous au boot (`server/main.py:84-135`,
 `startup_official_voyage` `voyage_api.py:763` + warms en fils).
 
+Périmètre après RF9 (commentaires PR #336) : les recalculs (horloge climato,
+semis, préchauffages, journal) appartiennent au **stock et au travail de fond
+de RF9** — RF2 garde ses **corrections de robustesse** (plus de 500 bruts,
+erreurs propres et datées, polaires gardées, repli progressif du client) mais
+**ne recalcule plus rien lui-même**.
+
 Fichiers : `server/voyage_api.py` PAR EXTRAIT
 (`rg -n "create_voyage|_climo_clock|_create_limited"`), `server/polar_api.py`,
 `server/main.py` PAR EXTRAIT (`rg -n "startup|/ici"`),
@@ -299,12 +428,14 @@ Fichiers : `server/voyage_api.py` PAR EXTRAIT
 3. Polaires : un fichier stocké corrompu ou à l'ancien format ne casse plus
    la route — repli sur la polaire par défaut, avertissement en log, et le
    panneau droit garde « Polaires chargées ».
-4. La création de voyage ne recalcule pas l'horloge climato à chaque
-   tentative (réutilisation/cache quand la route et t0 n'ont pas changé) ; le
-   client espace ses re-créations (repli progressif) au lieu de marteler
+4. La création du voyage officiel ne recalcule **rien** dans le chemin de la
+   requête : l'horloge climato et le journal sont **lus du stock RF9** (une
+   entrée absente répond « en préparation », le travail de fond la produit) ;
+   le client espace ses re-créations (repli progressif) au lieu de marteler
    jusqu'au 429.
 5. Le Journal (panneau gauche) se remplit des événements **depuis le départ**
-   dès que le serveur est sain — c'est la définition du fini de ce lot.
+   (lus du stock RF9) dès que le serveur est sain — c'est la définition du
+   fini de ce lot.
 6. Tests : fixture polaire corrompue → 200 avec repli ; création de voyage en
    échec → le client attend avant de retenter (pas de 429) ; parcours nominal
    sous TestClient sans aucun 500.
@@ -319,7 +450,7 @@ Recette (visuelle) :
 - Panneau droit : « Polaires chargées », plus jamais « Échec — Service des
   polaires indisponible ».
 
-### RF3 — Pendant le film : le client ne mitraille plus l'API (S, après RF2)
+### RF3 — Pendant le film : le client ne mitraille plus l'API — le film lit le stock (S, après RF9)
 
 Cause racine : pendant « Revoir l'expédition », le bateau du film alimente
 les hooks du live — `useIciDossier` reste actif (`src/App.jsx:722`,
@@ -330,7 +461,9 @@ re-fetch au posé du sac l.218-247) : un tour du monde en ~2 minutes déclenche
 des centaines de `GET /ici?lat=…` (rafale > 1 000 entrées console, KO bot
 #333, #331) ; l'ETA d'escale est re-sondée au fil des changements de jambe du
 film (`src/components/EscaleLegend.jsx:108`, `usePlanReview.js:351`
-`useOfficialEta`).
+`useOfficialEta`). Après RF9, ce lot devient **trivial** : tout ce que le
+film montre (script, sacs par point, ETA) est déjà dans le **stock** — il ne
+reste qu'à geler les hooks du live pendant le film.
 
 Fichiers : `src/App.jsx` PAR EXTRAIT (`rg -n "useIciDossier|replay.active"`),
 `src/hooks/useIciDossier.js`, `src/components/EscaleLegend.jsx` PAR EXTRAIT
@@ -340,7 +473,8 @@ tests associés.
 Étapes :
 1. Pendant `replay.active`, le sac « ici », `/ici/moment`, l'ETA d'escale et
    le conseil restent **gelés sur la position live** (celle d'avant le film) —
-   aucune requête déclenchée par la position du film.
+   aucune requête déclenchée par la position du film ; ce que le film montre
+   vient du **stock RF9** (script, sacs par point), déjà chargé au lancement.
 2. À l'arrêt du film (Stop ou fin), **une seule** requête de rattrapage
    remet le sac et l'ETA à jour sur la position live.
 3. Ne rien changer au film lui-même (récit, caméra, sous-titres) ni au
@@ -353,8 +487,7 @@ Recette (visuelle) :
 - Suivre, console ouverte, Revoir l'expédition sans durée cochée, laisser
   le film aller **du lancement à la fin** : **aucune ligne rouge** et le
   compteur réseau ne s'affole plus (plus jamais > 1 000 requêtes).
-- Même vérification avec 2:30 coché (tant que la pilule existe encore sur la
-  base de recette) ou via le film par défaut après RF7.
+- Même vérification avec la pilule 2:30 cochée (les pilules restent, D3').
 - Après Stop : le panneau gauche montre à nouveau le sac de la position live.
 
 ### RF4 — Le récit dit l'avion, et la fin du film reste affichée (S, après RF2)
@@ -491,16 +624,20 @@ Recette (visuelle) :
   molette arrière n'importe où : la carte dézoome jusqu'à la vue monde, sans
   blocage.
 
-### RF7 — Liste des escales informative partout (D2') ; barre épurée : pilules et « Récit : règles » retirés, encadré date au format (D3') (S)
+### RF7 — Liste des escales informative partout (D2') ; barre : pilules 2:30 / 3:00 dans le cadre, « Récit : règles » retiré, encadré date au format (D3') (S)
 
 Cause racine : liste — les lignes restent des boutons hors Suivre :
 `src/App.jsx:1668` (`onSeekEscale={isSuivre ? undefined : handleSidebarSeek}`,
 posé par RE2 sur D3, que le KO #326 **étend**) → `ToolsSidebar.jsx:213` →
 `EscaleLegend.jsx:31-60` (`interactive = typeof onSeek === "function"`).
-Barre — pilules : bloc `film-duration`
-(`src/components/SimulationFilmBar.jsx:467-489`) rendu dès que le film peut
-se lancer ; le porteur ne les veut **plus du tout** (KO #327, captures à
-l'appui) ; « Récit : règles » : `SimulationFilmBar.jsx:377`
+Barre — pilules : le bloc `film-duration`
+(`src/components/SimulationFilmBar.jsx:467-489`) **déborde du cadre de la
+barre** à droite de « Revoir l'expédition » et **passe sous le panneau
+droit** quand il est ouvert (captures du porteur, 26 sept. 18:10) : la barre
+ne s'adapte pas à la largeur disponible et les pilules ne passent jamais à la
+ligne. Le porteur les **garde** (décochées par défaut, RD7) et demande de
+corriger **leur place** — lecture du KO #327 corrigée par ses commentaires
+sur la PR #336 ; « Récit : règles » : `SimulationFilmBar.jsx:377`
 (`filmStorySource` = « Récit : {source} », `src/i18n/fr.js:238`) — jamais
 demandé ; encadré date/heure : conteneur `replay-departure` figé à
 `w-[9.75rem]` + champ heure séparé (`SimulationFilmBar.jsx:428-436`) — le
@@ -516,26 +653,32 @@ EXTRAIT (`rg -n "film-duration|filmStorySource|replay-departure"`),
    lignes affichent nom, distance, date, jours à quai, fourchette ; pas de
    curseur main, aucune action au clic (le clic-curseur de la barre film
    reste, lui, inchangé).
-2. Pilules 2:30 / 3:00 : bloc retiré de la barre (JSX + test de layout mis à
-   jour) ; le film sans durée reste le défaut ; l'API de budget (RD7) n'est
-   pas touchée. Citer la demande explicite du porteur (KO #327) dans la PR —
-   exception assumée à l'anti-régression.
+2. Pilules 2:30 / 3:00 : **gardées** (décochées par défaut ; le film sans
+   durée reste le défaut ; l'API de budget RD7 n'est pas touchée). La barre
+   s'adapte à la **largeur disponible** (panneau droit ouvert ou fermé) : les
+   pilules restent **dans le cadre de la barre**, à côté de « Revoir
+   l'expédition », ou passent **sous lui** si la place manque — jamais hors
+   cadre, jamais sous un panneau. Test de layout mis à jour.
 3. « Récit : règles » : libellé retiré de la barre (la source du récit reste
    lisible dans la PR / les tests, pas à l'écran).
 4. Encadré date + heure de départ : une seule boîte à la taille du contenu
    « XX-XX-XXXX XX:XX » (largeur au format, pas un rem arbitraire), mêmes
    valeurs, même comportement.
 5. Tests : EscaleLegend sans gestionnaire de clic dans tous les modes ; le
-   layout de la barre ne contient plus `film-duration` ni « Récit : » ; la
-   boîte date/heure a la largeur de son format.
+   layout de la barre garde `film-duration` **dans le cadre** (panneau droit
+   ouvert et fermé) et ne contient plus « Récit : » ; la boîte date/heure a
+   la largeur de son format.
 
 Recette (visuelle) :
 - Suivre **et** Simulation, panneau droit, liste des escales : le pointeur ne
   devient jamais une main ; cliquer une escale → **rien ne se passe**.
-- Suivre, barre film : **plus de pilules 2:30 / 3:00**, **plus de « Récit :
-  règles »** ; l'encadré date + heure fait exactement la taille de
-  « 15-05-2026 08:00 » ; le bouton « Revoir l'expédition » respire.
-- Le film se lance toujours (sans durée par défaut).
+- Suivre, barre film, panneau droit **fermé puis ouvert** : les pilules
+  **2:30 / 3:00 restent dans le cadre de la barre**, à côté de « Revoir
+  l'expédition » (ou dessous si la place manque) — jamais coupées, jamais
+  sous le panneau ; **plus de « Récit : règles »** ; l'encadré date + heure
+  fait exactement la taille de « 15-05-2026 08:00 » ; le bouton « Revoir
+  l'expédition » respire.
+- Le film se lance toujours (sans durée par défaut, pilules décochées).
 
 ### RF8 — Roses de vent : zoom fluide, l'application ne se fige plus (M)
 
@@ -581,13 +724,14 @@ Recette (visuelle) :
 | # | Lot | Taille | Priorité porteur | Touche surtout |
 |---|---|---|---|---|
 | 1 | RF1 | S | 1 (console) | voyage_api.py, plan_advisor.py, usePlanReview.js (advice sans 400) |
-| 2 | RF2 | M | 1 (console) | voyage_api.py, polar_api.py, main.py, useVirtualVessel.js (serveur sain, Journal rempli) |
-| 3 | RF3 | S | 2 (console film) | App.jsx, useIciDossier.js, EscaleLegend.jsx (hooks gelés pendant le film) — après RF2 |
-| 4 | RF4 | S | 3 (discours) | film_script.py, useReplay.js, SimulationFilmBar.jsx (avion dit, fin affichée) — après RF2 |
-| 5 | RF5 | M | 4 (cinématique) | filmCamera.js, MapSceneController.js, useReplay.js (caméra fluide, fond visible) |
-| 6 | RF6 | S | après | App.jsx, MapSceneController.js (accueil Suivre D1', Tracer monde D4') |
-| 7 | RF7 | S | après | EscaleLegend.jsx, SimulationFilmBar.jsx, i18n (liste informative D2', barre épurée D3') |
-| 8 | RF8 | M | après | useClimatologyLayer.js (roses : zoom fluide) |
+| 2 | RF9 | M | 1 (console — principe D5') | official_store (nouveau), voyage_api.py, main.py, pearl_store.py (le voyage officiel précalculé et stocké, travail de fond, l'API sert) |
+| 3 | RF2 | M | 1 (console) | voyage_api.py, polar_api.py, useVirtualVessel.js (robustesse : erreurs propres, polaires gardées, repli client — lit le stock RF9) — après RF9 |
+| 4 | RF3 | S | 2 (console film) | App.jsx, useIciDossier.js, EscaleLegend.jsx (le film lit le stock, hooks gelés) — après RF9 |
+| 5 | RF4 | S | 3 (discours) | film_script.py, useReplay.js, SimulationFilmBar.jsx (avion dit, fin affichée) — après RF2 |
+| 6 | RF5 | M | 4 (cinématique) | filmCamera.js, MapSceneController.js, useReplay.js (caméra fluide, fond visible) |
+| 7 | RF6 | S | après | App.jsx, MapSceneController.js (accueil Suivre D1', Tracer monde D4') |
+| 8 | RF7 | S | après | EscaleLegend.jsx, SimulationFilmBar.jsx, i18n (liste informative D2' ; pilules dans le cadre, « Récit : règles » retiré D3') |
+| 9 | RF8 | M | après | useClimatologyLayer.js (roses : zoom fluide) |
 
 Lancement : la boucle (`loop.py`) part seule au merge de la PR de ce
 document, **empilée sur la pile #325 → #334** si elle n'est pas mergée (les
@@ -599,6 +743,9 @@ cd ~/Blue-Intelligence-Map && git checkout main && git pull --ff-only
 python3 infra/agents/run_lots.py --check
 caffeinate -i python3 infra/agents/run_lots.py --from RF1 --until RF8 --resume
 ```
+
+(`--from RF1 --until RF8` couvre les **9** lots : RF9 est inséré entre RF1 et
+RF2 dans l'ordre du fichier des prompts, que le lanceur suit.)
 
 Fin de batch : le poste de recette s'ouvre seul (W0) ; recette par écran,
 console ouverte (priorités 1 et 2 du porteur : zéro ligne rouge, du
