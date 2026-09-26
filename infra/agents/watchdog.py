@@ -227,10 +227,16 @@ def check_stuck(st: dict, phase: str | None) -> None:
              "rien fait (l'agent a son propre délai de 3 h) — si ça dure, au porteur : regarder l'agent dans Cursor", fixed=None, key=f"muet:{today()}:{int(age // 60)}")
 
 
+REWAKE_AGAIN_H = 2   # après un second réveil sans effet (réseau du bot filtré, 26 sept.), on réessaie toutes les 2 h tant qu'une phase est en cours
+
+
 def check_bot(st: dict, phase: str | None, url: str | None) -> None:
-    """PR réveillées il y a ≥ 30 min sans pré-revue 🤖 : un second réveil, une seule fois par PR."""
-    if phase != "batch" or not url:
+    """PR réveillées il y a ≥ 30 min sans pré-revue 🤖 : un second réveil, puis un de plus toutes les 2 h
+    tant que la PR n'a pas son 🤖 (le bot poste une ligne ⏳ quand le poste est injoignable de son côté)."""
+    if phase not in ("batch", "await_review") or not url:
         return
+    if isinstance(st.get("rewoken"), list):   # ancien format : liste de numéros → dict {numéro: horodatage}
+        st["rewoken"] = {str(n): 0.0 for n in st["rewoken"]}
     hook, _ = rl.webhook_settings()
     if not hook:
         return
@@ -243,7 +249,10 @@ def check_bot(st: dict, phase: str | None, url: str | None) -> None:
     lots = [(lid, e) for lid, e in state.done.items() if e.get("status") == "FINISHED" and e.get("pr")][-8:]
     for lid, e in lots:
         num = rl.pr_number(e.get("pr"))
-        if not num or num in st["rewoken"]:
+        if not num:
+            continue
+        last = float(st["rewoken"].get(str(num), 0.0))
+        if last and time.time() - last < REWAKE_AGAIN_H * 3600:
             continue
         try:
             comments = http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{num}/comments?per_page=100") or []
@@ -260,8 +269,8 @@ def check_bot(st: dict, phase: str | None, url: str | None) -> None:
         if age_min < BOT_REWAKE_MIN:
             continue
         rl.wake_bot("prereview", num, url)
-        st["rewoken"].append(num)
-        incident(st, "pré-revue absente", f"PR #{num} ({lid}) : 🔗 depuis {age_min:.0f} min, pas de 🤖", "second réveil du bot par webhook", fixed=None, key=f"bot:{num}")
+        st["rewoken"][str(num)] = time.time()
+        incident(st, "pré-revue absente", f"PR #{num} ({lid}) : 🔗 depuis {age_min:.0f} min, pas de 🤖", "réveil du bot par webhook (renouvelé toutes les 2 h tant qu'il manque)", fixed=None, key=f"bot:{num}:{int(time.time() // (REWAKE_AGAIN_H * 3600))}")
 
 
 def check_logs(st: dict) -> None:
