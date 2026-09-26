@@ -2,7 +2,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("simulateur — fumée", () => {
-  test("ouvre, montre les deux panneaux et la barre film, sans erreur de page", async ({ page }) => {
+  test("ouvre en Simulation cinéma, barre film, sans erreur de page", async ({ page }) => {
     const errors = [];
     page.on("pageerror", (err) => errors.push(String(err)));
     await page.goto("/");
@@ -10,8 +10,10 @@ test.describe("simulateur — fumée", () => {
     const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer/i }).first();
     if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) await ok.click();
     await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Berry-Mappemonde Tracer votre propre route" })).toBeVisible();
-    await expect(page.getByText(/Expédition/i).first()).toBeVisible();
+    await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+    const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
+    await expect(cinema).toBeVisible();
+    expect((await cinema.getAttribute("class")) || "").toMatch(/bg-cyan-700/);
     expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
   });
 

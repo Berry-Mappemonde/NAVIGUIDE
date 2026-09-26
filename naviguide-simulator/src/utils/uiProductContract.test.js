@@ -8,13 +8,31 @@ const src = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(src, path), "utf8");
 
 describe("contrat UI produit", () => {
-  it("démarre en Suivre sur la vue monde sans recadrage initial", () => {
+  it("lot RE1 : démarre en Simulation cinéma, vue monde, panneaux fermés", () => {
     const app = read("../App.jsx");
     const map = read("../hooks/useSimulatorMap.js");
-    assert.match(app, /useState\(VIEW_SUIVRE\)/);
-    assert.doesNotMatch(app, /useState\(VIEW_SIMULATION\)/);
+    const scene = read("../map/MapSceneController.js");
+    assert.match(app, /useState\(VIEW_SIMULATION\)/);
+    assert.doesNotMatch(app, /useState\(VIEW_SUIVRE\)/);
+    assert.match(app, /const \[cinemaMode, setCinemaMode\] = useState\(true\)/);
+    assert.match(app, /const \[sidebarOpen, setSidebarOpen\] = useState\(false\)/);
+    assert.match(app, /const \[toolsOpen, setToolsOpen\] = useState\(false\)/);
     assert.match(map, /zoom:\s*2/);
+    assert.match(scene, /zoom:\s*2/);
     assert.doesNotMatch(app, /map\.setView\(\[start\.lat,\s*start\.lon\],\s*8/);
+    const tools = read("../components/ToolsSidebar.jsx");
+    assert.match(tools, /visibility: open \? "visible" : "hidden"/, "Cinéma : le panneau droit n'est pas peint fermé");
+  });
+
+  it("lot RE1 : Suivre → Simulation quitte le Cinéma et ouvre les deux panneaux", () => {
+    const app = read("../App.jsx");
+    const selectAt = app.indexOf("const selectView = useCallback");
+    assert.ok(selectAt >= 0, "selectView présent");
+    const selectChunk = app.slice(selectAt, selectAt + 1800);
+    assert.match(selectChunk, /if \(view === VIEW_SUIVRE\) \{/);
+    assert.match(selectChunk, /leaveCinema\(\)/);
+    assert.match(selectChunk, /setSidebarOpen\(true\)/);
+    assert.match(selectChunk, /setToolsOpen\(true\)/);
   });
 
   it("utilise les PNG validés et le favicon d’origine", () => {

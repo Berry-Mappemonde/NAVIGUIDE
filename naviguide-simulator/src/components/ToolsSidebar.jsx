@@ -346,7 +346,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
         className={`naviguide-sidebar-panel absolute top-0 right-0 h-full z-20 flex flex-col bg-slate-900/97
           border-l-2 border-sky-400/40 shadow-2xl transition-transform duration-300
           ${open ? "translate-x-0" : "translate-x-full"}`}
-        style={{ width: 320 }}
+        style={{ width: 320, visibility: open ? "visible" : "hidden" }}
       >
         <div className="flex-1 overflow-y-auto sidebar-scroll">
           <div className="px-4 py-3 border-b border-slate-700/60">

@@ -162,15 +162,15 @@ export default function App() {
   const [segProgress, setSegProgress] = useState({ done: 0, total: 0 });
   const [officialFallback, setOfficialFallback] = useState(false);
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [toolsOpen, setToolsOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [expeditionPlan, setExpeditionPlan] = useState(null);
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
-  const [view, setView] = useState(VIEW_SUIVRE);
+  const [view, setView] = useState(VIEW_SIMULATION);
   const [replayT0, setReplayT0] = useState(DEFAULT_T0_ISO);
-  const [cinemaMode, setCinemaMode] = useState(false);
+  const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [stopAuto, setStopAuto] = useState(false);
@@ -1006,10 +1006,16 @@ export default function App() {
       sceneApiRef.current?.playback.setProfile("normal");
       sceneApiRef.current?.playback.pause();
       sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
+      if (view === VIEW_SUIVRE) {
+        leaveCinema();
+        setSidebarOpen(true);
+        setToolsOpen(true);
+      }
     }
   }, [
     cinemaMode,
     closeEscaleSheet,
+    leaveCinema,
     recaptureBoat,
     replay.active,
     replay.stop,
