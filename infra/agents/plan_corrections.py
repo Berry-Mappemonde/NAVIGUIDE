@@ -158,16 +158,9 @@ def next_prefix(prompts_md: str) -> str:
 
 
 def lot_already_done(lot_id: str) -> bool:
-    """Le lot est FINISHED dans state.json ou dans une pile archivée (state.<ts>.json) : le programme
-    jusqu'à lui a déjà été joué — le rejouer depuis main referait 20 PR (garde du 22 sept.)."""
-    for p in [rl.STATE_JSON, *rl.STATE_DIR.glob("state.*.json")]:
-        try:
-            d = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if ((d.get("done") or {}).get(lot_id) or {}).get("status") == "FINISHED":
-            return True
-    return False
+    """Le lot est FINISHED dans state.json ou dans une pile archivée : le programme jusqu'à lui a déjà été
+    joué — le rejouer depuis main referait 20 PR (garde du 22 sept.). Même règle que la file des correctifs."""
+    return rl.lot_done_anywhere(lot_id)
 
 
 def then_until() -> str | None:

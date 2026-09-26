@@ -140,11 +140,42 @@ def parse_lots(md: str) -> list[Lot]:
 QUEUE_MD = STATE_DIR / "queue.md"   # lots correctifs mis en file par le réviseur de nuit (review_agent.py)
 
 
+def lot_done_anywhere(lot_id: str) -> bool:
+    """FINISHED dans state.json OU dans une pile archivée (state.<ts>.json) : un lot correctif d'une nuit
+    précédente, déjà mergé, ne doit jamais être rejoué. 26 sept. : la pile RE partait de main (state
+    archivé) et la file portait encore RC1 → RC9 du 22 sept. — RC1 a été relancé sur RE7."""
+    for p in [STATE_JSON, *STATE_DIR.glob("state.*.json")]:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if ((d.get("done") or {}).get(lot_id) or {}).get("status") == "FINISHED":
+            return True
+    return False
+
+
 def queued_lots(state: "State", exclude: set[str]) -> list[Lot]:
-    """Lots de queue.md pas encore faits ni déjà en attente."""
+    """Lots de queue.md pas encore faits (dans cette pile ou une précédente) ni déjà en attente."""
     if not QUEUE_MD.exists():
         return []
-    return [l for l in parse_lots_text(QUEUE_MD.read_text(encoding="utf-8")) if l.id not in state.done and l.id not in exclude]
+    return [l for l in parse_lots_text(QUEUE_MD.read_text(encoding="utf-8"))
+            if l.id not in state.done and l.id not in exclude and not lot_done_anywhere(l.id)]
+
+
+def purge_queue() -> list[str]:
+    """Retire de queue.md les blocs des lots déjà faits ; renvoie leurs ids."""
+    if not QUEUE_MD.exists():
+        return []
+    text = QUEUE_MD.read_text(encoding="utf-8")
+    gone: list[str] = []
+    for m in list(LOT_RE.finditer(text)):
+        if lot_done_anywhere(m.group("id")):
+            gone.append(m.group("id"))
+    for lid in gone:
+        text = re.sub(r'<!--\s*LOT\s+id="' + re.escape(lid) + r'".*?-->\s*```text.*?```\s*', "", text, count=1, flags=re.S)
+    if gone:
+        QUEUE_MD.write_text(text, encoding="utf-8")
+    return gone
 
 
 def select(lots: list[Lot], args) -> list[Lot]:
@@ -1587,7 +1618,14 @@ def main() -> None:
         start_watchdog()
     log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}" + (f" — revue de nuit toutes les {args.review_every} PR ({args.review_model})" if args.review_every else ""))
     pending = list(lots)
-    since_review: list[str] = []          # lots FINISHED pas encore relus par le réviseur de nuit
+    # Lots FINISHED pas encore relus par le réviseur de nuit. Mémorisé dans state.json : une reprise
+    # (--resume après une veille, un arrêt, une relance par le chien de garde) relit quand même la
+    # dernière tranche, même si elle compte moins de --review-every lots (26 sept.).
+    since_review: list[str] = [x for x in (state.extra.get("since_review") or []) if x in state.done] if args.resume else []
+
+    def remember_review_slice() -> None:
+        state.extra["since_review"] = list(since_review)
+        state.save()
 
     def wait_bot_prereview(ids: list[str]) -> None:
         """Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son commentaire
@@ -1632,32 +1670,47 @@ def main() -> None:
         except subprocess.TimeoutExpired:
             log("    réviseur : délai dépassé — on continue la pile")
         since_review.clear()
+        remember_review_slice()
         added = queued_lots(State.load(), {l.id for l in pending})
         if added:
             log(f"    lots correctifs mis en file par le réviseur : {[l.id for l in added]} — exécutés en bout de pile")
             pending.extend(added)
 
-    while pending:
-        lot = pending.pop(0)
-        if lot.id in args.skip:
-            log(f"[{lot.id}] sauté (--skip)")
-            continue
-        prev = state.done.get(lot.id)
-        if args.resume and prev and prev.get("status") == "FINISHED":
-            log(f"[{lot.id}] déjà fait ({prev.get('pr')}) — sauté")
-            continue
-        missing = [d for d in lot.deps if d not in state.done or state.done[d].get("status") != "FINISHED"]
-        if missing and args.stack == "linear" and not args.dry_run:
-            log(f"[{lot.id}] dépendances non faites dans cette session : {missing} — lancé quand même (le plan les suppose mergées ou dans la pile) ; vérifier le matin")
-        run_lot(http, lot, state, args)
-        if (state.done.get(lot.id) or {}).get("status") == "FINISHED" and (state.done.get(lot.id) or {}).get("pr"):
-            since_review.append(lot.id)
-        if args.review_every and len(since_review) >= args.review_every:
+    if not args.dry_run:
+        gone = purge_queue()
+        if gone:
+            log(f"file des correctifs purgée des lots déjà faits : {gone}")
+    # Lots correctifs déjà en file (réviseur d'une tranche précédente, ou ajoutés à la main) : pris dès le départ,
+    # y compris quand tous les lots de l'intervalle sont déjà faits (reprise après interruption).
+    pending.extend(queued_lots(state, {l.id for l in pending}))
+
+    while True:
+        while pending:
+            lot = pending.pop(0)
+            if lot.id in args.skip:
+                log(f"[{lot.id}] sauté (--skip)")
+                continue
+            prev = state.done.get(lot.id)
+            if args.resume and prev and prev.get("status") == "FINISHED":
+                log(f"[{lot.id}] déjà fait ({prev.get('pr')}) — sauté")
+                continue
+            missing = [d for d in lot.deps if d not in state.done or state.done[d].get("status") != "FINISHED"]
+            if missing and args.stack == "linear" and not args.dry_run:
+                log(f"[{lot.id}] dépendances non faites dans cette session : {missing} — lancé quand même (le plan les suppose mergées ou dans la pile) ; vérifier le matin")
+            run_lot(http, lot, state, args)
+            if (state.done.get(lot.id) or {}).get("status") == "FINISHED" and (state.done.get(lot.id) or {}).get("pr"):
+                since_review.append(lot.id)
+                remember_review_slice()
+            if args.review_every and len(since_review) >= args.review_every:
+                night_review()
+            # lots ajoutés à queue.md pendant la nuit (réviseur ou porteur)
+            pending.extend(queued_lots(state, {l.id for l in pending}))
+        # Plus rien en attente : la dernière tranche est relue quelle que soit sa taille — et si le réviseur
+        # met des correctifs en file, la pile reprend ; sinon c'est la fin du batch.
+        if args.review_every and since_review and not args.dry_run:
             night_review()
-        if not pending and args.review_every and since_review:
-            night_review()                # dernière tranche, puis les lots RC éventuels reprennent la boucle
-        # lots ajoutés à queue.md à la main pendant la nuit
-        pending.extend(queued_lots(state, {l.id for l in pending}))
+        if not pending:
+            break
 
     if not args.dry_run:
         log("terminé. Récapitulatif :")
