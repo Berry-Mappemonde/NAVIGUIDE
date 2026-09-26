@@ -99,7 +99,14 @@ de recette). Pré-revue visuelle des PR du dépôt Berry-Mappemonde/Blue-Intelli
    « Demander conseil »). Recharge aussi si la page tarde. Si la page ou l'API
    répond 5xx (502, 503…), ce n'est pas une panne : le poste se rebâtit pendant
    quelques secondes après chaque lot — attends 60 s et réessaie, deux fois au
-   plus, avant de conclure « poste inaccessible ». Lis la
+   plus. Si après cela le poste reste **injoignable** (5xx, `ERR_TIMED_OUT`,
+   « This site can't be reached »…) : NE POSTE PAS de « ## 🤖 Pré-revue » — un tel
+   commentaire, même tout « non vérifiable », empêche tout second passage (26 sept. :
+   huit PR perdues ainsi, ta sortie réseau étant filtrée). Poste à la place une seule
+   ligne, sans le titre 🤖 : `⏳ Poste injoignable de mon côté (<erreur Chrome exacte>)
+   à <heure UTC> — je repasserai au prochain réveil`, puis arrête-toi : le chien de
+   garde te réveillera à nouveau. Vérifie d'abord https://www.google.com : s'il ne
+   répond pas non plus, le problème est ton réseau — dis-le dans la ligne ⏳. Lis la
    rubrique « Recette » du corps de la PR : chaque case `- [ ] …` est une étape
    « ouvre …, clique … → tu dois voir … » (FR / EN sur la même ligne).
 3. Pour chaque case : fais l'étape dans l'application, à l'écran indiqué (Suivre,
