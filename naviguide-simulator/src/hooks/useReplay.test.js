@@ -282,28 +282,43 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     }), "stale");
   });
 
-  it("Revoir attend l'horloge officielle + /film RE7 ; repli local seulement sans API", () => {
+  it("Revoir attend l'horloge officielle + /film RE7 ; absent + requireOfficialFilm → false", () => {
     assert.equal(canStartOfficialReplay({ officialClock: { t0: "x" }, remoteStatus: "ready" }), true);
     assert.equal(canStartOfficialReplay({ officialClock: null, remoteStatus: "ready" }), false);
     assert.equal(canStartOfficialReplay({
+      requireOfficialFilm: true,
+      officialClock: { t0: "x" },
+      fallbackClock: { t0: "y" },
+      remoteStatus: "absent",
+    }), false);
+    assert.equal(canStartOfficialReplay({
       officialClock: null, fallbackClock: { t0: "y" }, remoteStatus: "absent",
-    }), true);
+    }), false);
     assert.equal(canStartOfficialReplay({ officialClock: { t0: "x" }, remoteStatus: "pending" }), false);
     assert.equal(canStartOfficialReplay({ officialClock: { t0: "x" }, remoteStatus: "stale" }), false);
+    assert.equal(canStartOfficialReplay({
+      requireOfficialFilm: false, fallbackClock: { t0: "y" }, remoteStatus: "absent",
+    }), true);
   });
 
-  it("App : film = official.clock, Revoir seulement si canStart", () => {
+  it("App : replayControls dès officialClock, canStart passé à la barre", () => {
     assert.match(app, /const filmClock = isSuivre \? official\.clock : voyage\.clock/);
     assert.match(app, /clock: filmClock/);
     assert.match(app, /fallbackClock: voyage\.clock/);
     assert.match(app, /requireOfficialFilm: isSuivre/);
-    assert.match(app, /officialClock && replay\.canStart/);
+    assert.match(app, /isSuivre && officialClock \?/);
+    assert.doesNotMatch(app, /officialClock && replay\.canStart/);
+    assert.match(app, /canStart: replay\.canStart/);
     assert.match(hook, /isRe7OfficialFilm/);
     assert.match(hook, /seekChapter/);
     assert.match(hook, /pinnedIdxRef/);
     const replayCall = app.slice(app.indexOf("const replay = useReplay"), app.indexOf("const live = isSuivre"));
     assert.match(replayCall, /clock: filmClock/);
     assert.doesNotMatch(replayCall, /clock: officialClock/);
+    const startFn = hook.slice(hook.indexOf("const start = useCallback"), hook.indexOf("const onVoiceBoundary"));
+    assert.match(startFn, /status === "ready" && isRe7OfficialFilm/);
+    assert.doesNotMatch(startFn, /fallbackClock \|\| clock/);
+    assert.doesNotMatch(startFn, /status === "absent"/);
   });
 });
 
