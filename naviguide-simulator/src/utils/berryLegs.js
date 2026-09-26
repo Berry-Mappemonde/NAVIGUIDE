@@ -63,15 +63,14 @@ function airStopKey(name) {
   const s = String(name || "");
   if (/cayenne/i.test(s)) return "cayenne";
   if (/halifax/i.test(s)) return "halifax";
-  if (/saint-pierre/i.test(s) || /miquelon/i.test(s)) return "spm";
   return "";
 }
 
-/** Jambe avion (Cayenne ↔ Halifax / Saint-Pierre, et le retour). */
+/** Jambe avion : uniquement Cayenne ↔ Halifax (aller et retour). Halifax ↔ Saint-Pierre est mer. */
 export function isAirLegNames(fromName, toName) {
   const a = airStopKey(fromName);
   const b = airStopKey(toName);
-  return Boolean(a && b && a !== b);
+  return (a === "cayenne" && b === "halifax") || (a === "halifax" && b === "cayenne");
 }
 
 export function isAirSegment(segment) {

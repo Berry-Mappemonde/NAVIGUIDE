@@ -6,8 +6,8 @@
  * des lignes du journal (escales, ZEE, AMP, ports d'entrée, météo, notes).
  * Rien n'est inventé : pas de ligne de journal, pas de carte.
  */
-import { sampleClockAtTime } from "./voyageClock.js";
-import { datedMarks, expeditionStory } from "./expeditionStory.js";
+import { DEFAULT_T0_ISO, sampleClockAtTime } from "./voyageClock.js";
+import { expeditionStory, officialDatedStops } from "./expeditionStory.js";
 import { cardFromJournalEntry, JOURNAL_CARD_KINDS } from "./momentCard.js";
 import { unwrapLon } from "../utils/geo.js";
 
@@ -319,17 +319,17 @@ function marksWithIso(marks, clock) {
  * le script rédigé). Chaque chapitre porte [tA, tB] et le texte de la jambe.
  */
 export function filmChaptersFromStory({
-  clock, marks, live, journal = null, lang = "fr", nowMs,
+  clock, marks, live, journal = null, lang = "fr", nowMs, t0: storyT0,
 } = {}) {
   const merged = marksWithIso(marks, clock);
-  const dated = datedMarks(merged);
+  const dated = officialDatedStops(merged, clock);
   const byName = new Map((merged || []).map((m) => [m.name, m]));
-  const t0 = ms(clock?.t0) ?? ms(dated[0]?.iso);
+  const t0 = Date.parse(DEFAULT_T0_ISO);
   const tEnd = ms(live?.iso) || nowMs || Date.now();
   if (t0 == null || !(tEnd > t0)) return [];
 
   const paragraphs = expeditionStory({
-    clock, marks: merged, live, journal, now: live?.iso || tEnd, lang,
+    clock, marks: merged, live, journal, now: live?.iso || tEnd, lang, t0: storyT0,
   }).map((p) => String(p || "").trim()).filter(Boolean);
 
   const stops = dated.length ? dated : [{ name: "Saint-Maur", iso: clock?.t0, filmNm: 0 }];

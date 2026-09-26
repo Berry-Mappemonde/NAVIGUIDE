@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import { atlasLayerUrl, atlasPointUrl, clampMonth } from "../utils/atlasPoint.js";
+import {
+  atlasLayerUrl,
+  atlasPointUrl,
+  atlasTileUrl,
+  clampMonth,
+  visibleClimoTiles,
+} from "../utils/atlasPoint.js";
 import { wrapLon } from "../utils/geo.js";
 import { POPUP_OPTS } from "./points.js";
 import {
@@ -28,10 +34,43 @@ async function fetchJson(url, signal) {
   return r.json();
 }
 
+function paintWindProps(p) {
+  return {
+    ...p,
+    wind_speed_knots: p.wind_speed_knots ?? p.speed_knots,
+    wind_direction_from_deg: p.wind_direction_from_deg ?? p.dir_from_deg,
+  };
+}
+
+function paintWaveProps(p) {
+  return {
+    ...p,
+    dir_deg: p.dir_deg ?? p.dir,
+  };
+}
+
+function mergeTileFeatures(collections, paintProps) {
+  const merged = [];
+  const seen = new Set();
+  for (const feats of collections) {
+    if (!feats) continue;
+    for (const f of feats) {
+      const [lon, lat] = f.geometry?.coordinates || [];
+      if (lat == null || lon == null) continue;
+      const k = `${lat}:${lon}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push({ ...f, properties: paintProps(f.properties || {}) });
+    }
+  }
+  return merged;
+}
+
 const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null, cyclones: null };
 
 /**
  * Four atlas maps (wind / wave / current / cyclones), each optional.
+ * Wind, wave and current load XYZ tiles of the visible area; cyclones stay global.
  * Points and IBTrACS tracks are painted on the three world copies.
  */
 export function useClimatologyLayer({
@@ -77,7 +116,10 @@ export function useClimatologyLayer({
 
     let cancelled = false;
     const ctrl = new AbortController();
+    const tileAbort = { ctrl: new AbortController() };
+    const cache = new Map();
     const popupOpts = { ...POPUP_OPTS, maxWidth: 300 };
+    const countsRef = { wind: 0, waveP50: 0, waveP90: 0, waveMean: 0, current: 0, cyclones: 0 };
 
     const loadSafe = (name, fn) => fn().catch((err) => {
       console.error(`[climatology] ${name} layer failed`, err);
@@ -98,66 +140,120 @@ export function useClimatologyLayer({
       return group;
     };
 
-    const loadWind = async () => {
-      const data = await fetchJson(atlasLayerUrl("wind", m, { spacing_deg: "4" }), ctrl.signal);
-      if (cancelled) return 0;
-      const group = addPointMarkers(data, (ll, p) => {
-        const marker = L.marker(ll, {
-          icon: L.divIcon({
-            className: "bi-climo-rose",
-            html: roseSvg(p),
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-          }),
-          pane: "climatology-vector",
-          interactive: false,
-        });
-        marker.bindPopup(() => layerPopupHtml("wind", p, tRef.current), popupOpts);
-        return marker;
-      });
-      layersRef.current.wind = group;
-      group.addTo(map);
-      return (data.features || []).length;
-    };
-
-    const loadWave = async (stat) => {
-      const data = await fetchJson(atlasLayerUrl("wave", m, { stat, spacing_deg: "4" }), ctrl.signal);
-      if (cancelled) return 0;
-      const group = addPointMarkers(data, (ll, p) => {
-        const c = L.circleMarker(ll, {
-          pane: "climatology-raster",
-          radius: stat === "p50" ? 2.8 : 3.6,
-          color: waveColor(Number(p.hs_m) || 0, p.stat || stat),
-          fillColor: waveColor(Number(p.hs_m) || 0, p.stat || stat),
-          fillOpacity: stat === "p50" ? 0.4 : 0.55,
-          weight: 0,
-          interactive: false,
-        });
-        c.bindPopup(() => layerPopupHtml("wave", p, tRef.current), popupOpts);
-        return c;
-      });
-      const key = stat === "p50" ? "waveP50" : stat === "p90" ? "waveP90" : "waveMean";
+    const replaceGroup = (key, group) => {
+      const prev = layersRef.current[key];
       layersRef.current[key] = group;
       group.addTo(map);
-      return (data.features || []).length;
+      if (prev && prev !== group && map.hasLayer(prev)) map.removeLayer(prev);
     };
 
-    const loadCurrent = async () => {
-      const data = await fetchJson(atlasLayerUrl("current", m, { spacing_deg: "4" }), ctrl.signal);
-      if (cancelled) return 0;
-      const group = addPointMarkers(data, (ll, p) => {
-        if (p.below_threshold) return null;
-        const marker = L.marker(ll, {
-          icon: currentIcon(p),
-          pane: "climatology-vector",
-          interactive: false,
-        });
-        marker.bindPopup(() => layerPopupHtml("current", p, tRef.current), popupOpts);
-        return marker;
+    const evict = (kind, keep) => {
+      const prefix = `${kind}:${m}:`;
+      for (const k of [...cache.keys()]) {
+        if (k.startsWith(prefix) && !keep.has(k)) cache.delete(k);
+      }
+    };
+
+    const loadTiles = async (kind, extra, makeLayer, layerKey, paintProps) => {
+      const signal = tileAbort.ctrl.signal;
+      const zTile = Math.max(0, Math.min(6, Math.round(map.getZoom())));
+      const tiles = visibleClimoTiles(map.getBounds(), zTile, { margin: 1, zMax: 6 });
+      const keep = new Set(tiles.map((tile) => `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`));
+      evict(kind, keep);
+      const collections = await Promise.all(tiles.map(async (tile) => {
+        const key = `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`;
+        const hit = cache.get(key);
+        if (hit?.features) return hit.features;
+        try {
+          const data = await fetchJson(atlasTileUrl(kind, m, tile.z, tile.x, tile.y, extra), signal);
+          const features = data.features || [];
+          cache.set(key, { features });
+          return features;
+        } catch (err) {
+          if (err?.name === "AbortError") return null;
+          return [];
+        }
+      }));
+      if (cancelled || signal.aborted) return 0;
+      const features = mergeTileFeatures(collections, paintProps);
+      replaceGroup(layerKey, addPointMarkers({ features }, makeLayer));
+      return features.length;
+    };
+
+    const makeWind = (ll, p) => {
+      const marker = L.marker(ll, {
+        icon: L.divIcon({
+          className: "bi-climo-rose",
+          html: roseSvg(p),
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+        }),
+        pane: "climatology-vector",
+        interactive: false,
       });
-      layersRef.current.current = group;
-      group.addTo(map);
-      return (data.features || []).length;
+      marker.bindPopup(() => layerPopupHtml("wind", p, tRef.current), popupOpts);
+      return marker;
+    };
+
+    const makeWave = (stat) => (ll, p) => {
+      const c = L.circleMarker(ll, {
+        pane: "climatology-raster",
+        radius: stat === "p50" ? 2.8 : 3.6,
+        color: waveColor(Number(p.hs_m) || 0, p.stat || stat),
+        fillColor: waveColor(Number(p.hs_m) || 0, p.stat || stat),
+        fillOpacity: stat === "p50" ? 0.4 : 0.55,
+        weight: 0,
+        interactive: false,
+      });
+      c.bindPopup(() => layerPopupHtml("wave", p, tRef.current), popupOpts);
+      return c;
+    };
+
+    const makeCurrent = (ll, p) => {
+      if (p.below_threshold) return null;
+      const marker = L.marker(ll, {
+        icon: currentIcon(p),
+        pane: "climatology-vector",
+        interactive: false,
+      });
+      marker.bindPopup(() => layerPopupHtml("current", p, tRef.current), popupOpts);
+      return marker;
+    };
+
+    const publishCounts = () => {
+      if (cancelled) return;
+      setCounts({ ...countsRef });
+      const painted = Object.values(countsRef).some(Boolean);
+      if (!painted) setError("atlas_empty");
+      else setError(null);
+    };
+
+    const refreshVectors = async () => {
+      tileAbort.ctrl.abort();
+      tileAbort.ctrl = new AbortController();
+      const jobs = [];
+      if (showWind) {
+        jobs.push(loadSafe("wind", () => loadTiles("wind", {}, makeWind, "wind", paintWindProps))
+          .then((n) => { countsRef.wind = n || 0; }));
+      }
+      if (showWave) {
+        jobs.push(loadSafe("wave-p50", () => loadTiles("wave", { stat: "p50" }, makeWave("p50"), "waveP50", paintWaveProps))
+          .then((n) => { countsRef.waveP50 = n || 0; }));
+        jobs.push(loadSafe("wave-p90", () => loadTiles("wave", { stat: "p90" }, makeWave("p90"), "waveP90", paintWaveProps))
+          .then((n) => { countsRef.waveP90 = n || 0; }));
+      }
+      if (showCurrent) {
+        jobs.push(loadSafe("current", () => loadTiles("current", {}, makeCurrent, "current", (p) => p))
+          .then((n) => { countsRef.current = n || 0; }));
+      }
+      await Promise.all(jobs);
+      if (cancelled) return;
+      if (showWave && !countsRef.waveP50 && !countsRef.waveP90) {
+        countsRef.waveMean = await loadSafe("wave-mean", () => (
+          loadTiles("wave", { stat: "mean" }, makeWave("mean"), "waveMean", paintWaveProps)
+        ));
+      }
+      publishCounts();
     };
 
     const loadCyclones = async () => {
@@ -180,44 +276,27 @@ export function useClimatologyLayer({
           group.addLayer(line);
         });
       });
-      layersRef.current.cyclones = group;
-      group.addTo(map);
+      replaceGroup("cyclones", group);
       return (data.features || []).length;
     };
 
     setLoading(true);
     setError(null);
-    const jobs = [];
-    if (showWind) jobs.push(loadSafe("wind", loadWind));
-    if (showWave) {
-      jobs.push(loadSafe("wave-p50", () => loadWave("p50")));
-      jobs.push(loadSafe("wave-p90", () => loadWave("p90")));
+    const first = [refreshVectors()];
+    if (showCyclones) {
+      first.push(loadSafe("cyclones", loadCyclones).then((n) => { countsRef.cyclones = n || 0; }));
     }
-    if (showCurrent) jobs.push(loadSafe("current", loadCurrent));
-    if (showCyclones) jobs.push(loadSafe("cyclones", loadCyclones));
-
-    Promise.all(jobs).then(async (nums) => {
-      if (cancelled) return;
-      const next = { wind: 0, waveP50: 0, waveP90: 0, waveMean: 0, current: 0, cyclones: 0 };
-      let i = 0;
-      if (showWind) next.wind = nums[i++] || 0;
-      if (showWave) {
-        next.waveP50 = nums[i++] || 0;
-        next.waveP90 = nums[i++] || 0;
-        if (!next.waveP50 && !next.waveP90) {
-          next.waveMean = await loadSafe("wave-mean", () => loadWave("mean"));
-        }
-      }
-      if (showCurrent) next.current = nums[i++] || 0;
-      if (showCyclones) next.cyclones = nums[i++] || 0;
-      setCounts(next);
-      const painted = Object.values(next).some(Boolean);
-      if (!painted) setError("atlas_empty");
-    }).catch((err) => {
-      if (!cancelled) setError(String(err.message || err));
-    }).finally(() => {
+    Promise.all(first).finally(() => {
       if (!cancelled) setLoading(false);
     });
+
+    let debounceTimer = 0;
+    const onView = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => { refreshVectors(); }, 200);
+    };
+    map.on("moveend", onView);
+    map.on("zoomend", onView);
 
     const onClick = (ev) => {
       if (drawingRef.current) return;
@@ -237,8 +316,12 @@ export function useClimatologyLayer({
 
     return () => {
       cancelled = true;
+      clearTimeout(debounceTimer);
+      tileAbort.ctrl.abort();
       ctrl.abort();
       map.off("click", onClick);
+      map.off("moveend", onView);
+      map.off("zoomend", onView);
       Object.values(layersRef.current).forEach((lyr) => {
         if (lyr && map.hasLayer(lyr)) map.removeLayer(lyr);
       });

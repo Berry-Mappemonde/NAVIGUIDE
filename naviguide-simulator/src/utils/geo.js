@@ -83,17 +83,60 @@ export function splitAntimeridianCoords(coords) {
   return parts.filter((p) => p.length >= 2);
 }
 
-/** Copies ±360° pour que le tour du monde reste visible (Afrique + Pacifique). */
-export function worldCopyCoords(coords) {
-  if (!coords || coords.length < 2) return [];
-  return [
-    coords,
-    coords.map(([lon, lat]) => [lon + 360, lat]),
-    coords.map(([lon, lat]) => [lon - 360, lat]),
-  ];
+/** Fenêtre navigable RA4 : une copie de chaque côté, pas l'infini. */
+export const WORLD_COPY_LON_BOUND = 540;
+/** 0, ±360, ±720 au plus — jamais une répétition infinie du monde. */
+const MAX_WORLD_COPY_OFFSETS = 5;
+
+function lonExtent(coords) {
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  for (const coordinate of coords || []) {
+    const lon = Number(coordinate?.[0]);
+    if (!Number.isFinite(lon)) continue;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+  }
+  return [minLon, maxLon];
 }
 
-/** Trois copies monde d'une ligne continue, y compris au franchissement de 180°. */
+function sortWorldCopyK(a, b) {
+  if (a === 0) return -1;
+  if (b === 0) return 1;
+  if (a > 0 && b < 0) return -1;
+  if (a < 0 && b > 0) return 1;
+  return Math.abs(a) - Math.abs(b) || a - b;
+}
+
+/**
+ * Décalages 360k pour qu'une ligne déjà dépliée recouvre [−bound, +bound].
+ * Une ligne de ~360° produit souvent 0, ±360 et +720 (côté africain à droite).
+ */
+export function worldCopyOffsets(coords, lonBound = WORLD_COPY_LON_BOUND) {
+  const [minLon, maxLon] = lonExtent(coords);
+  if (!Number.isFinite(minLon)) return [0];
+  const kLo = Math.ceil((-lonBound - maxLon) / 360);
+  const kHi = Math.floor((lonBound - minLon) / 360);
+  const ks = [];
+  for (let k = kLo; k <= kHi; k += 1) ks.push(k);
+  if (!ks.length) ks.push(0);
+  if (ks.length > MAX_WORLD_COPY_OFFSETS) {
+    ks.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
+    ks.length = MAX_WORLD_COPY_OFFSETS;
+  }
+  ks.sort(sortWorldCopyK);
+  return ks.map((k) => k * 360);
+}
+
+/** Copies nécessaires pour couvrir la fenêtre navigable (±540°). */
+export function worldCopyCoords(coords, lonBound = WORLD_COPY_LON_BOUND) {
+  if (!coords || coords.length < 2) return [];
+  return worldCopyOffsets(coords, lonBound).map((offset) => (
+    offset === 0 ? coords : coords.map(([lon, lat]) => [lon + offset, lat])
+  ));
+}
+
+/** Copies monde d'une ligne continue, y compris au franchissement de 180°. */
 export function worldCopyLineCoords(coords) {
   return worldCopyCoords(unwrapLineCoords(coords));
 }
@@ -115,13 +158,13 @@ export function worldCopyPolygonCoords(rings) {
   ));
 }
 
-export function worldCopyLngs(lon) {
+export function worldCopyLngs(lon, lonBound = WORLD_COPY_LON_BOUND) {
   const value = Number(lon);
   if (!Number.isFinite(value)) return [];
-  return [value, value + 360, value - 360];
+  return worldCopyOffsets([[value, 0], [value, 0]], lonBound).map((offset) => value + offset);
 }
 
-/** Triple chaque polyligne (monde 0 / +360 / −360). */
+/** Copies monde de chaque polyligne (décalages d'après l'étendue). */
 export function worldCopyParts(parts) {
   const out = [];
   for (const coords of parts || []) {

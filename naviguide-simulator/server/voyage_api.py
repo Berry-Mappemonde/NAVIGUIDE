@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
+import os
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -67,6 +72,10 @@ ATLAS_PREFETCH_BUDGET_S = 6.0
 MAX_VOYAGE_POINTS = 6000
 MAX_VOYAGE_MARKS = 300
 STALE_VOYAGE_DAYS = 7
+# Itinéraire Berry embarqué (public/route.geojson) — même source que le client.
+_ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
+_AIR_JUMP_NM = 120.0
+_AIR_FILM_NM = 80.0
 _create_limited = rate_limited("voyage-create", 6, 60.0, global_limit=60)
 _compute_limited = rate_limited("voyage-compute", 6, 60.0, global_limit=40)
 _official_read_limited = rate_limited("official-read", 240, 60.0)
@@ -87,6 +96,9 @@ class VoyageCreate(BaseModel):
     official: bool = False
     points: List[Dict[str, Any]]
     marks: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+_OFFICIAL_BODY_CACHE: Optional[VoyageCreate] = None
 
 
 class RecomputeBody(BaseModel):
@@ -508,7 +520,7 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
-def _build_official(body: VoyageCreate) -> dict:
+def _build_official(body: VoyageCreate, *, compute_clock: bool = True) -> dict:
     voy = {
         "voyageId": OFFICIAL_VOYAGE_ID,
         "t0": OFFICIAL_T0,
@@ -527,8 +539,235 @@ def _build_official(body: VoyageCreate) -> dict:
         "draft": None,
         "createdAt": to_iso(_now()),
     }
-    voy["clock"] = _climo_clock(voy)
+    # Le clock climatologique sur ~1 200 sommets est trop lent pour le boot :
+    # GET /voyage/official n'en a pas besoin ; /clock et les kicks le posent.
+    if compute_clock:
+        voy["clock"] = _climo_clock(voy)
     save_voyage(voy)
+    return voy
+
+
+def _unwrap_lon(prev: float, lon: float) -> float:
+    x = float(lon)
+    while x - prev > 180.0:
+        x -= 360.0
+    while x - prev < -180.0:
+        x += 360.0
+    return x
+
+
+def _nm_wrap(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine en milles, longitude repliée (même contrat que geo.js)."""
+    dlon = float(lon2) - float(lon1)
+    while dlon > 180.0:
+        dlon -= 360.0
+    while dlon < -180.0:
+        dlon += 360.0
+    return haversine(lat1, lon1, lat2, lon1 + dlon)
+
+
+def _air_stop_key(name: str) -> str:
+    s = (name or "").lower()
+    if "cayenne" in s:
+        return "cayenne"
+    if "halifax" in s:
+        return "halifax"
+    return ""
+
+
+def _is_air_leg(from_name: str, to_name: str) -> bool:
+    a, b = _air_stop_key(from_name), _air_stop_key(to_name)
+    return (a == "cayenne" and b == "halifax") or (a == "halifax" and b == "cayenne")
+
+
+def official_itinerary_body() -> Optional[VoyageCreate]:
+    """Corps ensure_official : public/route.geojson aplati (pas de réseau)."""
+    global _OFFICIAL_BODY_CACHE
+    if _OFFICIAL_BODY_CACHE is not None:
+        return _OFFICIAL_BODY_CACHE
+    if not _ROUTE_GEOJSON.is_file():
+        return None
+    try:
+        fc = json.loads(_ROUTE_GEOJSON.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("itinéraire Berry embarqué illisible: %s", exc)
+        return None
+
+    segments: List[dict] = []
+    stops: List[dict] = []
+    for feat in (fc.get("features") or []):
+        geom = (feat or {}).get("geometry") or {}
+        props = (feat or {}).get("properties") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates") or []
+        if gtype == "LineString" and len(coords) >= 2:
+            segments.append({
+                "from": str(props.get("from") or ""),
+                "to": str(props.get("to") or ""),
+                "coords": coords,
+                "nonMaritime": props.get("type") == "overland",
+                "air": props.get("type") == "air" or _is_air_leg(
+                    str(props.get("from") or ""), str(props.get("to") or ""),
+                ),
+            })
+        elif gtype == "Point" and len(coords) >= 2:
+            stops.append({
+                "name": str(props.get("name") or ""),
+                "lon": float(coords[0]),
+                "lat": float(coords[1]),
+                "flag": props.get("point_type") == "escale",
+            })
+
+    points: List[dict] = []
+    cum_nm = 0.0
+    film_cum = 0.0
+
+    def _add(lon: float, lat: float, *, jump: bool = False, non_maritime: bool = False, air: bool = False) -> None:
+        nonlocal cum_nm, film_cum
+        if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):
+            return
+        lon_u = float(lon)
+        lat_u = float(lat)
+        if points:
+            prev = points[-1]
+            lon_u = _unwrap_lon(prev["lon"], lon_u)
+            if abs(prev["lat"] - lat_u) < 1e-9 and abs(prev["lon"] - lon_u) < 1e-6:
+                return
+            if jump:
+                film_cum += _AIR_FILM_NM
+            else:
+                dist = _nm_wrap(prev["lat"], prev["lon"], lat_u, lon_u)
+                if not air:
+                    cum_nm += dist
+                film_cum += dist
+        points.append({
+            "lon": lon_u,
+            "lat": lat_u,
+            "cumNm": cum_nm,
+            "filmCum": film_cum,
+            "nonMaritime": bool(non_maritime),
+            "jump": bool(jump),
+            "air": bool(air or jump),
+        })
+
+    for seg in segments:
+        coords = seg["coords"]
+        air = bool(seg["air"])
+        start = 0
+        if points:
+            lon0, lat0 = coords[0][0], coords[0][1]
+            prev = points[-1]
+            if (
+                isinstance(lat0, (int, float))
+                and isinstance(lon0, (int, float))
+                and _nm_wrap(prev["lat"], prev["lon"], float(lat0), float(lon0)) >= _AIR_JUMP_NM
+            ):
+                _add(float(lon0), float(lat0), jump=True, non_maritime=seg["nonMaritime"], air=True)
+                start = 1
+        for i in range(start, len(coords)):
+            pair = coords[i]
+            if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                continue
+            _add(float(pair[0]), float(pair[1]), non_maritime=seg["nonMaritime"], air=air)
+
+    if not points:
+        return None
+
+    marks: List[dict] = []
+    search = 0
+    for stop in stops:
+        if not stop.get("flag") or not stop.get("name"):
+            continue
+        best = search
+        best_d = float("inf")
+        for i in range(search, len(points)):
+            d = _nm_wrap(stop["lat"], stop["lon"], points[i]["lat"], points[i]["lon"])
+            if d < best_d:
+                best_d = d
+                best = i
+        pt = points[best]
+        marks.append({
+            "name": stop["name"],
+            "lat": stop["lat"],
+            "lon": stop["lon"],
+            "nm": pt["cumNm"],
+            "filmNm": pt.get("filmCum", pt["cumNm"]),
+            "index": best,
+            "flag": True,
+        })
+        search = best
+
+    body = VoyageCreate(
+        t0=OFFICIAL_T0,
+        expedition_id="berry-mappemonde-2026",
+        routeKind="berry",
+        follow=True,
+        forecast=False,
+        startAt="la-rochelle",
+        official=True,
+        points=points,
+        marks=marks,
+    )
+    _OFFICIAL_BODY_CACHE = body
+    return body
+
+
+def _auto_seed_official_enabled() -> bool:
+    """Pytest : pas de semis au boot (fixtures PUT à 3 points). force = tests du lot."""
+    raw = (os.getenv("NAVIGUIDE_SEED_OFFICIAL") or "1").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    if raw == "force":
+        return True
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return False
+    return True
+
+
+def seed_official_voyage() -> Optional[dict]:
+    """Crée le voyage officiel s'il manque, sans client ni clé. Sans clock (boot)."""
+    existing = load_voyage(OFFICIAL_VOYAGE_ID)
+    if existing and existing.get("points"):
+        return existing
+    body = official_itinerary_body()
+    if body is None or not body.points:
+        return None
+    log.info("voyage officiel semé côté serveur (%s points)", len(body.points))
+    return _build_official(body, compute_clock=False)
+
+
+def _wait_official_kick(provider: str, timeout: float = 900.0) -> None:
+    """Attend la fin d'un kick pipeline. Appelé depuis le fil de warm, pas HTTP."""
+    deadline = time.monotonic() + float(timeout)
+    pipe = get_pipeline()
+    while time.monotonic() < deadline:
+        if not pipe.provider_busy(provider):
+            return
+        time.sleep(0.2)
+
+
+def kick_official_warmups(*, force: bool = False) -> None:
+    """Un préchauffage après l'autre — jamais les cinq en parallèle (lot RC7)."""
+    _kick_official_grib()
+    _wait_official_kick("official-grib")
+    _kick_official_hindcast(force=force)
+    _wait_official_kick("official-hindcast")
+    _kick_official_eta(force=force)
+    _wait_official_kick("official-eta")
+    _kick_official_moments(force=force)
+    _wait_official_kick("official-moments")
+    _kick_official_film_story(force=force)
+    _wait_official_kick("official-film-story")
+
+
+def startup_official_voyage() -> Optional[dict]:
+    """Semis + kicks en fil daemon : le boot uvicorn ne bloque pas."""
+    voy = seed_official_voyage()
+    threading.Thread(
+        target=kick_official_warmups,
+        name="naviguide-official-warm",
+        daemon=True,
+    ).start()
     return voy
 
 
@@ -621,6 +860,60 @@ def _regime_portions(clock: dict) -> list:
     return portions
 
 
+def _kick_official_moments(*, force: bool = False) -> bool:
+    """Remplit le journal des moments en fond — jamais bloquant (lot R9a)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        try:
+            from moment_journal import warm_moments  # noqa: PLC0415
+            warm_moments(OFFICIAL_VOYAGE_ID)
+        except Exception as exc:
+            log.warning("journal des moments: %s", exc)
+        _kick_official_film_story(force=True)
+        return {}
+
+    return get_pipeline().kick(
+        "official-moments",
+        0.0,
+        0.0,
+        _load,
+        force=force,
+    )
+
+
+def _kick_official_film_story(*, force: bool = False) -> bool:
+    """Préchauffe le récit du film après le journal — jamais bloquant (lot R9c)."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    def _load():
+        try:
+            import asyncio  # noqa: PLC0415
+            from film_script import warm_film_story  # noqa: PLC0415
+
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(warm_film_story(OFFICIAL_VOYAGE_ID))
+            else:
+                asyncio.create_task(warm_film_story(OFFICIAL_VOYAGE_ID))
+        except Exception as exc:
+            log.warning("préchauffage récit film: %s", exc)
+        return {}
+
+    return get_pipeline().kick(
+        "official-film-story",
+        0.0,
+        0.0,
+        _load,
+        force=force,
+    )
+
+
 def _kick_official_hindcast(*, force: bool = False) -> bool:
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
@@ -639,6 +932,56 @@ def _kick_official_hindcast(*, force: bool = False) -> bool:
     )
 
 
+def _kick_official_eta(*, force: bool = False, stop: Optional[str] = None) -> bool:
+    """Préchauffe l'ensemble ETA du voyage officiel, sans bloquer l'appelant.
+
+    Lot RC9 : un premier vide / erreur pipeline n'est pas terminal. Tant que
+    ``peek_official_eta`` a ``members == 0``, un GET /eta relance le warm.
+    """
+    raw = (os.getenv("NAVIGUIDE_ETA_PREHEAT") or "1").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        return False
+
+    if not force:
+        from ensemble_eta import next_official_stop, peek_official_eta  # noqa: PLC0415
+        target = (stop or "").strip() or next_official_stop(voy, _now())
+        if target:
+            peeked = peek_official_eta(voy, target, _now())
+            members = peeked.get("members") if isinstance(peeked, dict) else 0
+            try:
+                n = int(members or 0)
+            except (TypeError, ValueError):
+                n = 0
+            if n <= 0:
+                force = True
+
+    def _load():
+        try:
+            from ensemble_eta import preheat_official_eta  # noqa: PLC0415
+            current = load_voyage(OFFICIAL_VOYAGE_ID) or voy
+            preheat_official_eta(
+                current,
+                _now(),
+                polar_raw=_polar_raw((current or {}).get("expedition_id") or ""),
+                stop=stop,
+            )
+        except Exception as exc:
+            log.warning("préchauffage ETA officiel: %s", exc)
+        return {}
+
+    return get_pipeline().kick(
+        "official-eta",
+        0.0,
+        0.0,
+        _load,
+        when=_now(),
+        force=force,
+    )
+
+
 def _maybe_daily_hindcast(voy: dict) -> None:
     last = voy.get("hindcastRefreshedAt")
     if last:
@@ -647,8 +990,12 @@ def _maybe_daily_hindcast(voy: dict) -> None:
         except Exception:
             age_h = 99.0
         if age_h < 20.0 and voy.get("hindcastStatus") == "ready":
+            _kick_official_eta(force=False)
+            _kick_official_moments(force=False)
             return
     _kick_official_hindcast(force=False)
+    _kick_official_eta(force=True)
+    _kick_official_moments(force=False)
 
 
 def _kick_forecast(voyage_id: str, *, force: bool = True) -> bool:
@@ -703,17 +1050,23 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
         background.add_task(_kick_official_grib)
         background.add_task(_kick_official_hindcast)
+        background.add_task(_kick_official_eta)
+        background.add_task(_kick_official_moments)
         return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
     voy = _build_official(body)
     background.add_task(_kick_official_grib)
     background.add_task(_kick_official_hindcast)
+    background.add_task(_kick_official_eta)
+    background.add_task(_kick_official_moments)
     return {**_public_meta(voy), "clock": voy["clock"]}
 
 
 @router.get("/voyage/official")
 def get_official():
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None or not voy.get("points"):
+        voy = seed_official_voyage()
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
     return {
@@ -757,6 +1110,20 @@ class JournalNoteIn(BaseModel):
     t: Optional[str] = None
 
 
+@router.get("/voyage/official/moments")
+def get_official_moments(
+    until: str | None = Query(None, description="ISO : ne garder que les lignes t ≤ until"),
+):
+    """Journal des moments du voyage officiel (lot R9a). Lecture seule."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    _kick_official_moments(force=False)
+    from moment_journal import read_moments  # noqa: PLC0415
+    rows = read_moments(OFFICIAL_VOYAGE_ID, until=until)
+    return {"voyageId": OFFICIAL_VOYAGE_ID, "until": until, "count": len(rows), "moments": rows}
+
+
 @router.get("/voyage/official/journal")
 def get_official_journal(
     limit: int = Query(50, ge=1, le=500),
@@ -776,13 +1143,13 @@ def get_official_journal(
 
 @router.get("/voyage/official/eta")
 def get_official_eta(stop: str = Query(..., min_length=1)):
-    """Fourchette d'arrivée p10–p90 (ensembles). Sans membres : `{members: 0}`."""
+    """Fourchette p10–p90. Cache ou `{members: 0}` tout de suite — jamais de compute HTTP."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    from ensemble_eta import official_eta, tighten_eta_payload  # noqa: PLC0415
-    raw = official_eta(voy, stop, _now(), polar_raw=_polar_raw(voy.get("expedition_id") or ""))
-    return tighten_eta_payload(raw, _now())
+    from ensemble_eta import peek_official_eta, tighten_eta_payload  # noqa: PLC0415
+    _kick_official_eta(force=False, stop=stop)
+    return tighten_eta_payload(peek_official_eta(voy, stop, _now()), _now())
 
 
 @router.get("/voyage/official/plan-review")
@@ -794,10 +1161,103 @@ def get_official_plan_review():
     from plan_review import comment_plan, review_official  # noqa: PLC0415
     out = review_official(voy, _now())
     try:
+        from plan_alerts import evaluate_plan  # noqa: PLC0415
+        ev = evaluate_plan(voy, now=_now())
+        counts = {}
+        for lg in ev.get("legs") or []:
+            n = len(lg.get("alerts") or [])
+            if lg.get("idx") is not None:
+                counts[int(lg["idx"])] = n
+            counts[(lg.get("from"), lg.get("to"))] = n
+        for i, row in enumerate(out.get("legs") or []):
+            n = counts.get(i)
+            if n is None:
+                n = counts.get((row.get("from"), row.get("to")))
+            if n is not None:
+                row["alertCount"] = int(n)
+    except Exception as exc:
+        log.debug("alertCount revue : %s", exc)
+    try:
         out["comment"] = _run_async(comment_plan(out.get("legs") or []))
     except Exception as exc:
         log.warning("commentaire revue : %s", exc)
         out["comment"] = {"text": "", "source": "rules", "cached": False}
+    return out
+
+
+def _rewrite_plan_advice(payload: dict) -> dict:
+    """Réécriture LLM de la phrase du meilleur, sous filter_numbers (repli gabarit)."""
+    from story_cascade import cascade_text, filter_numbers, tidy_story  # noqa: PLC0415
+
+    out = payload
+    cand = out.get("best") if isinstance(out, dict) else None
+    if not isinstance(cand, dict):
+        return out
+    facts = cand.get("facts")
+    fallback = str(cand.get("sentence") or "").strip()
+    user = (
+        "Réécris cette phrase de conseil de dates en UNE phrase. "
+        "Tu ne produis aucun chiffre qui n'est pas déjà dans les faits.\n"
+        f"Faits : {json.dumps(facts, ensure_ascii=False, default=str)}\n"
+        f"Gabarit : {fallback}"
+    )
+    try:
+        text, source = _run_async(cascade_text(
+            ADVICE_SYSTEM, user, None, tier="fast", fallback=fallback,
+            facts=facts, max_tokens=80,
+        ))
+    except Exception as exc:
+        log.debug("conseil dates : %s", exc)
+        text, source = fallback, "rules"
+    tidy = tidy_story(text or fallback, fallback, max_sentences=1, max_chars=280)
+    cleaned, _ = filter_numbers(tidy, facts)
+    cand["sentence"] = (cleaned or "").strip() or fallback
+    cand["sentenceSource"] = source or "rules"
+    cand["sentenceLang"] = "fr"
+    return out
+
+
+def _localize_plan_advice(payload: dict, lang: str) -> dict:
+    """L6 : texte rédigé en anglais si l'UI est EN ; copie, jamais le cache du job."""
+    out = copy.deepcopy(payload) if isinstance(payload, dict) else payload
+    cand = out.get("best") if isinstance(out, dict) else None
+    if not isinstance(cand, dict):
+        return out
+    lg = (lang or "fr")[:2].lower()
+    text = str(cand.get("sentence") or "").strip()
+    if lg == "en" and text:
+        try:
+            from story_cache import translate_through_cache  # noqa: PLC0415
+            translated, source = _run_async(translate_through_cache(text, "en"))
+            if translated:
+                cand["sentence"] = translated
+                cand["sentenceLang"] = "en"
+                cand["sentenceSource"] = source or cand.get("sentenceSource") or "rules"
+                out["best"] = cand
+                return out
+        except Exception as exc:
+            log.debug("traduction conseil : %s", exc)
+    cand.setdefault("sentenceLang", "fr")
+    out["best"] = cand
+    return out
+
+
+@router.get("/voyage/official/advice")
+def get_official_advice(
+    leg: int = Query(..., ge=0, le=400),
+    lang: str = Query("fr"),
+):
+    """Compromis par décalage de date (lot R10b). État pending|done, calcul en fond."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy is None:
+        raise HTTPException(404, "voyage officiel absent")
+    from plan_advisor import request_advice  # noqa: PLC0415
+    try:
+        out = request_advice(voy, int(leg), now=_now(), rewrite=_rewrite_plan_advice)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if out.get("status") == "done":
+        return _localize_plan_advice(out, lang)
     return out
 
 
@@ -1130,6 +1590,38 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
 
     wind_max = body.wind_max_kt if body.wind_max_kt and 10 <= body.wind_max_kt <= 80 else None
     hs_max = body.hs_max_m if body.hs_max_m and 0.5 <= body.hs_max_m <= 12 else None
+    from plan_advisor import (  # noqa: PLC0415
+        CORRIDOR_MAX_NM,
+        DISTANCE_CAP_RATIO,
+        advise,
+        corridor_track,
+        plan_from_current_leg,
+        track_nm,
+    )
+    ref_nm = versus_nm if versus_nm > 0 else track_nm(searoute)
+    max_nm = ref_nm * DISTANCE_CAP_RATIO if ref_nm > 0 else None
+    chosen = searoute
+    plan_advice = None
+    try:
+        thresholds = {}
+        if wind_max is not None:
+            thresholds["galeKt"] = wind_max
+        if hs_max is not None:
+            thresholds["hsAlertM"] = hs_max
+        mini = plan_from_current_leg(
+            [{"lat": la, "lon": lo} for la, lo in searoute] or [
+                {"lat": float(live["lat"]), "lon": float(live["lon"])},
+                {"lat": dst_lat, "lon": dst_lon},
+            ],
+            frm="position", to=str(dest.get("name") or "escale"),
+            depart=when if live.get("status") != "waiting" else t0,
+            thresholds=thresholds,
+        )
+        plan_advice = advise(mini, 0, now=when)
+        name = (plan_advice.get("best") or {}).get("corridor") or "reference"
+        chosen = corridor_track(searoute, name) or searoute
+    except Exception as exc:
+        log.warning("conseil corridor : %s", exc)
     result = run_leg_isochrone(
         dep_lat=float(live["lat"]),
         dep_lon=float(live["lon"]),
@@ -1138,7 +1630,10 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         departure_time=when if live.get("status") != "waiting" else t0,
         wind_fn=wind_fn,
         polar_raw=_polar_raw(voy.get("expedition_id") or ""),
-        searoute_coords=searoute,
+        searoute_coords=chosen or searoute,
+        corridor_coords=searoute or chosen,
+        corridor_max_nm=CORRIDOR_MAX_NM if searoute else None,
+        max_distance_nm=max_nm,
         wave_nogo_fn=skipper_nogo(wind_fn, wind_max_kt=wind_max, hs_max_m=hs_max),
     )
     old_coords = [[lon, lat] for lat, lon in searoute]
@@ -1164,6 +1659,16 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         "from_lat": live["lat"],
         "from_lon": live["lon"],
     }
+    if isinstance(plan_advice, dict) and isinstance(plan_advice.get("best"), dict):
+        best = plan_advice["best"]
+        draft["planAdvice"] = {
+            "leg": plan_advice.get("leg", 0),
+            "best": {k: best[k] for k in (
+                "shiftDays", "corridor", "extraNm", "score", "sentence",
+                "alertsBefore", "alertsAfter", "cascade",
+                "totalBefore", "totalAfter", "sentenceLang",
+            ) if k in best},
+        }
     new_coords = (result.get("draft_geojson") or {}).get("geometry", {}).get("coordinates") or []
     delta = route_delta(
         old_coords, new_coords,

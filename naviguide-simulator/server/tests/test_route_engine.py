@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import pytest
 from geographiclib.geodesic import Geodesic
 
@@ -10,6 +12,7 @@ from route_engine import (
     unwrap_path,
     wrap_lon,
 )
+from shipping_lanes import attach_anti_shipping
 
 BRISBANE = (153.4, -27.0)
 SAN_FRANCISCO = (-122.4, 37.7)
@@ -75,3 +78,35 @@ def test_brisbane_san_francisco_unfolded_lon():
     lons = [c[0] for c in coords]
     for a, b in zip(lons, lons[1:]):
         assert abs(b - a) <= 180
+
+
+def test_berry_corridors_named_geometry_unchanged():
+    samples = [
+        ([[-5.5, 36.0], [-5.8, 36.1], [-6.2, 36.0]], "Gibraltar"),
+        ([[48.0, 13.0], [50.0, 13.2], [54.0, 13.5]], "Gulf of Aden"),
+        ([[101.0, 3.0], [102.0, 4.0], [108.0, 3.5]], "Malacca"),
+    ]
+    for coords, name in samples:
+        route = {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": deepcopy(coords)},
+            "properties": {},
+        }
+        before = deepcopy(route["geometry"]["coordinates"])
+        attach_anti_shipping(route)
+        assert route["geometry"]["coordinates"] == before
+        pack = route["properties"]["antiShipping"]
+        assert pack["score"] < 1, name
+        assert name in pack["lanes"], pack["lanes"]
+
+
+def test_searoute_gibraltar_exposes_antishipping_without_moving_the_line():
+    route = searoute_with_exact_end((-5.8, 36.05), (-5.2, 35.95))
+    assert route is not None
+    coords = route["geometry"]["coordinates"]
+    before = deepcopy(coords)
+    attach_anti_shipping(route)
+    assert route["geometry"]["coordinates"] == before
+    pack = (route.get("properties") or {}).get("antiShipping") or {}
+    assert pack.get("score") is not None and pack["score"] < 1
+    assert "Gibraltar" in (pack.get("lanes") or [])

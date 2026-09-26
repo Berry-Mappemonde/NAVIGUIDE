@@ -52,6 +52,8 @@ describe("SkipperOrdersPanel contract (revue du 19 sept. : « Paramètres avanc�
     const expertAt = panel.indexOf('data-testid="skipper-expert"');
     assert.ok(boatAt > 0 && boatAt < profileAt && profileAt < comfortAt && comfortAt < expertAt, "boat → character → comfort → Chiffres");
     const boatBlock = panel.slice(boatAt, profileAt);
+    assert.doesNotMatch(boatBlock, /label=\{t\("skipperBoat"\)\}/);
+    assert.match(tools, /data-testid="polar-boat"/);
     assert.match(boatBlock, /id="loaM"/);
     assert.match(boatBlock, /id="draftM"/);
     assert.match(boatBlock, /BOAT_EXPERT_IDS\.map/); // galeKt / galeHoldKt, editable, Beaufort as default

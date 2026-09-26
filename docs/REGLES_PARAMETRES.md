@@ -192,7 +192,7 @@ No Review / Gold. Harvest of structured APIs; the numbers are volume **budgets**
 
 ### 3.6 Climatology — monthly atlas (`kind: climatology`)
 
-`docs/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` §14. **Not** a forecast. An LLM is not allowed to produce a wind, an Hs, or a cyclone count.
+`docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` §14. **Not** a forecast. An LLM is not allowed to produce a wind, an Hs, or a cyclone count.
 
 | Id | Default | Family | Phenomenon / anchor |
 |----|---------|--------|---------------------|

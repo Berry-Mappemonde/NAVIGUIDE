@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, linearFilmAt, pickFilmChapters, stepAlongPlan, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, filmSpeakSeconds, filmTextHasT0Year, linearFilmAt, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, voiceLeadPolicy } from "./useReplay.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useReplay.js"), "utf8");
@@ -18,6 +18,8 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /if \(done\)/);
     assert.match(hook, /const stop = useCallback/);
     assert.match(hook, /\/voyage\/official\/film/);
+    assert.match(hook, /t0=\$\{encodeURIComponent\(t0\)\}/);
+    assert.match(hook, /t0 = DEFAULT_T0_ISO/);
     assert.match(hook, /buildFilmScript/);
     assert.doesNotMatch(hook, /Tavily|Nebius/i);
   });
@@ -56,6 +58,24 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /if \(done\)/);
     assert.match(bar, /data-testid="film-subtitle"/);
     assert.match(bar, /data-testid="film-duration"/);
+    assert.match(hook, /useState\(0\)/);
+    assert.match(bar, /=== sec \? 0 : sec/);
+  });
+
+  it("lot RD7 — durées décochables, budget tenu, temps naturel sans case", () => {
+    assert.equal(toggleFilmDuration(0, 150), 150);
+    assert.equal(toggleFilmDuration(150, 150), 0);
+    assert.equal(toggleFilmDuration(150, 180), 180);
+    assert.equal(toggleFilmDuration(180, 180), 0);
+    const chapters = [{ text: "x".repeat(320) }];
+    assert.equal(resolveFilmTargetSeconds(150, chapters), 150);
+    assert.equal(resolveFilmTargetSeconds(0, chapters), filmSpeakSeconds(chapters));
+    assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 121, lastChapter: true }), true);
+    assert.equal(shouldHoldFilmForBudget({ userBudget: 150, wallElapsed: 150, lastChapter: true }), false);
+    assert.equal(shouldHoldFilmForBudget({ userBudget: 0, wallElapsed: 80, lastChapter: true }), false);
+    assert.match(hook, /shouldHoldFilmForBudget/);
+    assert.match(hook, /budgetSeconds/);
+    assert.match(hook, /resolveFilmTargetSeconds/);
   });
 
   it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
@@ -106,16 +126,75 @@ describe("useReplay lot R3 — onend immédiat sans boundary", () => {
     assert.match(hook, /waitForVoices/);
     assert.match(hook, /onVoiceLeadFailed/);
     assert.match(hook, /pickFilmChapters/);
+    assert.match(hook, /AbortError/);
     assert.doesNotMatch(hook, /targetSeconds \+ 20/);
+
+    const lastOk = voiceLeadPolicy({
+      hadBoundary: true, elapsedMs: 800, alreadyRetried: false, chapterIdx: 3, chapterCount: 4,
+    });
+    assert.equal(lastOk.mode, "advance");
+    assert.equal(lastOk.finish, true);
+
+    const lastIncident = voiceLeadPolicy({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: true, chapterIdx: 3, chapterCount: 4,
+    });
+    assert.equal(lastIncident.mode, "linear");
+    assert.equal(lastIncident.finish, false, "un incident de voix ne met pas finish");
+
+    const midCut = voiceLeadPolicy({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: false,
+      chapterIdx: 3, chapterCount: 4, hasMoreChunks: true,
+    });
+    assert.equal(midCut.mode, "advance");
+    assert.equal(midCut.finish, false);
+
+    assert.equal(shouldReturnToLive({ voiceIncident: true }), false);
+    assert.equal(shouldReturnToLive({ filmFinished: true }), true);
+    assert.equal(shouldReturnToLive({ userStopped: true }), true);
+    assert.equal(shouldReturnToLive({ voiceIncident: true, filmFinished: true }), true);
   });
 
-  it("script API sans emprise → brut local (première jambe avec coords)", () => {
-    const remote = { chapters: [{ id: "leg-0", text: "Ajaccio", fromLat: null, fromLon: null, toLat: null, toLon: null }], source: "rules" };
-    const local = { chapters, source: "rules" };
+  it("script API sans emprise : texte serveur + coords locales (id / from+to)", () => {
+    const remote = {
+      chapters: [{
+        id: "leg-0",
+        text: "Arrivée à La Rochelle",
+        fromName: "Saint-Maur",
+        toName: "La Rochelle",
+        fromLat: null,
+        fromLon: null,
+        toLat: null,
+        toLon: null,
+      }],
+      source: "rules",
+    };
+    const local = {
+      chapters: [{
+        id: "leg-0",
+        text: "quitté Saint-Maur vers La Rochelle. Aujourd'hui, le bateau est à 19 260 milles nautiques du départ",
+        fromName: "Saint-Maur",
+        toName: "La Rochelle",
+        fromLat: 48.8,
+        fromLon: 2.4,
+        toLat: 46.1,
+        toLon: -1.1,
+      }],
+      source: "rules",
+    };
     const picked = pickFilmChapters(remote, local, []);
-    assert.equal(picked.remote, false);
+    assert.equal(picked.remote, true);
+    assert.match(picked.chapters[0].text, /Arrivée à La Rochelle/);
+    assert.doesNotMatch(picked.chapters[0].text, /Aujourd'hui, le bateau est à/);
     assert.equal(picked.chapters[0].fromLat, 48.8);
+    assert.equal(picked.chapters[0].toLat, 46.1);
     assert.ok(chapterHasFirstLeg(picked.chapters[0]));
+  });
+
+  it("lot RD5 : un script distant qui ignore t0 n'est pas retenu", () => {
+    const ch2026 = [{ text: "L’expédition a quitté Saint-Maur le 15 mai 2026." }];
+    assert.equal(filmTextHasT0Year(ch2026, "2026-05-15T08:00:00.000Z"), true);
+    assert.equal(filmTextHasT0Year(ch2026, "2025-05-15T08:00:00.000Z"), false);
+    assert.match(hook, /filmTextHasT0Year\(remote\.chapters, t0\)/);
   });
 });
 
@@ -302,5 +381,33 @@ describe("useReplay lot RA5 — Stop coupe voix, animation, caméra", () => {
     assert.match(bar, /data-testid="stop-auto"/);
     assert.match(bar, /testId="listen"/);
     assert.doesNotMatch(bar, /disabled=\{Boolean\(replay\.active\)\}[\s\S]{0,80}replay-stop/);
+  });
+});
+
+describe("useReplay lot RB6 — voix sans coupure, Stop total, pas de live sur incident", () => {
+  it("stop() pendant la lecture coupe voix + animation + caméra au premier geste", () => {
+    const order = [];
+    const next = applyReplayStop({
+      stopVoice: () => { order.push("voice"); },
+      releaseCamera: () => { order.push("camera"); },
+      cancelRaf: () => { order.push("raf"); },
+    });
+    assert.deepEqual(order, ["voice", "camera", "raf"]);
+    assert.equal(next.active, false);
+    assert.equal(next.tMs, null);
+    assert.equal(next.progress, 0);
+
+    const stopFn = hook.slice(hook.indexOf("const stop = useCallback"));
+    assert.match(stopFn, /stoppingRef\.current = true/);
+    assert.ok(
+      stopFn.indexOf("stoppingRef.current = true") < stopFn.indexOf("applyReplayStop("),
+      "Stop pose le garde-fou avant cancel (onend de Chrome ne relance pas)",
+    );
+    assert.ok(
+      stopFn.indexOf("finishedRef.current = true") < stopFn.indexOf("applyReplayStop("),
+      "finish est bloqué avant l'arrêt de la voix",
+    );
+    assert.match(hook, /shouldReturnToLive/);
+    assert.match(hook, /stoppingRef\.current \|\| finishedRef\.current/);
   });
 });

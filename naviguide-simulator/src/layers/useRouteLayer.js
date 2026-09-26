@@ -1,16 +1,32 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
+import { useLang } from "../i18n/LangContext.jsx";
 import { worldCopyLineCoords } from "../utils/geo.js";
 import { ROUTE_CASING_COLOR, ROUTE_CASING_WEIGHT, ROUTE_MAIN_COLOR, ROUTE_MAIN_WEIGHT } from "./styles.js";
-import { REGIME_COLORS, traveledRegimeSegments } from "./regimeRoute.js";
+import { REGIME_COLORS, traveledEraSpeed, traveledRegimeSegments } from "./regimeRoute.js";
 
-export { REGIME_COLORS, traveledRegimeSegments };
+export { REGIME_COLORS, traveledEraSpeed, traveledRegimeSegments };
 
-function addLine(group, coords, { color, weight, dash, pane = "route" }) {
+function addLine(group, coords, { color, weight, dash, pane = "route", tooltip = null }) {
   if (!coords || coords.length < 2) return;
   worldCopyLineCoords(coords).forEach((copy) => {
     const latlngs = copy.map(([lon, lat]) => [lat, lon]);
-    L.polyline(latlngs, { color, weight, dashArray: dash, pane, interactive: true }).addTo(group);
+    const line = L.polyline(latlngs, {
+      color,
+      weight,
+      dashArray: dash,
+      pane,
+      interactive: true,
+    });
+    if (tooltip) {
+      line.bindTooltip(tooltip, {
+        sticky: true,
+        direction: "top",
+        opacity: 0.95,
+        className: "traveled-era-speed",
+      });
+    }
+    line.addTo(group);
   });
 }
 
@@ -27,6 +43,7 @@ export function useRouteLayer(mapRef, {
   clockVertices = null,
   traveledNm = null,
 }) {
+  const { t } = useLang();
   const groupRef = useRef(null);
 
   useEffect(() => {
@@ -69,9 +86,14 @@ export function useRouteLayer(mapRef, {
 
     if (visible && clockVertices?.length && Number(traveledNm) > 0) {
       traveledRegimeSegments(clockVertices, traveledNm).forEach((s) => {
+        const knots = traveledEraSpeed(s);
+        const tooltip = knots == null
+          ? null
+          : `<span data-testid="traveled-era-speed">${t("traveledEraSpeed", { knots: knots.toFixed(1) })}</span>`;
         addLine(group, s.coords, {
           color: REGIME_COLORS[s.regime] || REGIME_COLORS.climatology,
           weight: 5,
+          tooltip,
         });
       });
     }
@@ -79,7 +101,7 @@ export function useRouteLayer(mapRef, {
     return () => group.remove();
   }, [
     mapRef, mapReady, segments, customRoute, drawingMode, drawnSegments, drawnFailed,
-    visible, hideMaritime, paintMain, clockVertices, traveledNm,
+    visible, hideMaritime, paintMain, clockVertices, traveledNm, t,
   ]);
 
   return groupRef;

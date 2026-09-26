@@ -21,11 +21,12 @@ import { useOfficialJournal } from "./hooks/useOfficialJournal.js";
 import { useIciDossier } from "./hooks/useIciDossier.js";
 import { useIciAlong } from "./hooks/useIciAlong.js";
 import { useMomentCards } from "./hooks/useMomentCards.js";
+import { useMoment } from "./hooks/useMoment.js";
+import { useMomentJournal } from "./hooks/useMomentJournal.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
 import { useReplay } from "./hooks/useReplay.js";
 import { useReplayVoice } from "./hooks/useReplayVoice.js";
-import { FreeMomentBlock, MomentNowCard } from "./components/MomentCards.jsx";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
 import { layerForEntity } from "./engine/briefingLinks.js";
@@ -49,11 +50,14 @@ import { detectAirEpisodes, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/f
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
 import {
   DEFAULT_START_AT,
+  DEFAULT_T0_ISO,
   etaHoursToFilmNm,
   formatFilmClockLine,
   formatMonthName,
   lookupVoyageClock,
   monthOfT0,
+  rebaseIso,
+  sampleClockAtTime,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
 import { isRouteReady } from "./utils/routeReady.js";
@@ -88,6 +92,8 @@ import { mapInsetVars } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
+import { parseRouteFile } from "./utils/routeImport.js";
+import { viewExportMode } from "./utils/routeExport.js";
 import { usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
@@ -162,7 +168,8 @@ export default function App() {
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
-  const [view, setView] = useState(VIEW_SIMULATION);
+  const [view, setView] = useState(VIEW_SUIVRE);
+  const [replayT0, setReplayT0] = useState(DEFAULT_T0_ISO);
   const [cinemaMode, setCinemaMode] = useState(false);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
@@ -192,11 +199,13 @@ export default function App() {
   const {
     drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, canRedo,
     reset: _resetDrawState, addPoint: handleDrawingClick, undo: handleDrawUndo, redo: handleDrawRedo,
+    importPoints: handleImportPoints,
   } = drawingState;
 
   const [layerPopup, setLayerPopup] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [clipboardToast, setClipboardToast] = useState(null);
+  const [drawNotice, setDrawNotice] = useState(null);
   // Satellite / weather popup of a route click (lot J: hooks/useSatellitePopup.js).
   const satellite = useSatellitePopup();
   const {
@@ -305,7 +314,7 @@ export default function App() {
     points: flatRoute.points,
     marks: escaleMarks,
   });
-  const officialClock = official.clock || voyage.clock;
+  const officialClock = isSuivre ? (official.clock || voyage.clock) : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
@@ -318,6 +327,7 @@ export default function App() {
     lang,
     marks: escaleMarks,
     destination: official.live,
+    t0: replayT0,
   });
   const live = isSuivre ? (replay.active && replay.live ? replay.live : official.live) : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
@@ -530,6 +540,29 @@ export default function App() {
     : (sample && Number.isFinite(sample.lat)
       ? { lat: sample.lat, lon: sample.lon, iso: clockSample?.iso || null }
       : null);
+  const drawTip = drawingMode && drawnPoints.length ? drawnPoints[drawnPoints.length - 1] : null;
+  const momentLat = Number(drawTip?.lat ?? chatBoatPos?.lat);
+  const momentLon = Number(drawTip?.lon ?? chatBoatPos?.lon);
+  const momentIso = drawTip ? null : (chatBoatPos?.iso || clockSample?.iso || null);
+  const iciMoment = useMoment({
+    lat: Number.isFinite(momentLat) ? Math.round(momentLat * 1000) / 1000 : null,
+    lon: Number.isFinite(momentLon) ? Math.round(momentLon * 1000) / 1000 : null,
+    t: momentIso ? String(momentIso).slice(0, 16) : undefined,
+    mode: drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation"),
+    lang,
+    enabled: sceneReady,
+  });
+  const momentMode = drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation");
+  const journalRouteId = momentMode === "drawn"
+    ? "drawn"
+    : (momentMode === "follow" ? "official" : (routeKind === "custom" ? "simulation:custom" : "simulation:official"));
+  const momentJournal = useMomentJournal({
+    mode: momentMode,
+    routeId: journalRouteId,
+    incomingMoment: iciMoment.moment,
+    until: momentIso,
+    enabled: sceneReady,
+  });
   const displayKnots = isSuivre
     ? (atQuay ? 0 : (Number.isFinite(Number(clockSample?.speedKnots)) ? Number(clockSample.speedKnots) : null))
     : expeditionSpeed.knots;
@@ -560,7 +593,9 @@ export default function App() {
         ? (clockSample.sailNm ?? cast?.sailNm)
         : (cast?.sailNm ?? clockSample.sailNm),
       seaHours: clockSample.seaHours,
-      iso: clockSample.iso,
+      iso: isSuivre && replay.active
+        ? rebaseIso(clockSample.iso, DEFAULT_T0_ISO, replayT0)
+        : clockSample.iso,
       lang,
     })
     : "";
@@ -852,7 +887,9 @@ export default function App() {
     style: replay.filmStyle,
     hasWritten: replay.hasWritten,
     onStyle: replay.setFilmStyle,
-  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle]);
+    t0: replayT0,
+    onT0: setReplayT0,
+  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1153,6 +1190,43 @@ export default function App() {
     return drawingState.toGeoJson();
   };
 
+  const handleImportRoute = useCallback(async (file) => {
+    if (!file) return;
+    let text = "";
+    try {
+      text = await file.text();
+    } catch {
+      setDrawNotice({ kind: "error", text: t("importRouteError") });
+      return;
+    }
+    const parsed = parseRouteFile(text, file.name);
+    if (parsed.error) {
+      setDrawNotice({
+        kind: "error",
+        text: t(parsed.error === "noPoints" ? "noCoordsFound" : "importRouteError"),
+      });
+      return;
+    }
+    if (drawnPoints.length && !window.confirm(t("importRouteReplace"))) return;
+    await handleImportPoints(parsed.points);
+    if (parsed.truncated) setDrawNotice({ kind: "notice", text: t("importRouteTruncated") });
+    else setDrawNotice(null);
+    const map = sceneApiRef.current?.getMap?.();
+    if (!map || !parsed.points.length) return;
+    const latlngs = parsed.points.map((p) => [p.lat, p.lon]);
+    if (latlngs.length === 1) {
+      sceneApiRef.current.setView(latlngs[0], 6, { animate: false });
+      return;
+    }
+    map.fitBounds(latlngs, { padding: [56, 56], maxZoom: 6, animate: false });
+  }, [drawnPoints.length, handleImportPoints, t]);
+
+  useEffect(() => {
+    if (!drawNotice) return undefined;
+    const id = setTimeout(() => setDrawNotice(null), 4000);
+    return () => clearTimeout(id);
+  }, [drawNotice]);
+
   const handleDrawContinue = () => {
     const mapView = sceneApiRef.current?.getView();
     drawRestoreRef.current = {
@@ -1331,9 +1405,18 @@ export default function App() {
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
   const handleSidebarSeek = useCallback((nm) => {
+    if (isSuivre) setUserPreview(true);
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
-  }, [sceneApi]);
+  }, [isSuivre, sceneApi]);
+  const handleSeekJournal = useCallback((iso) => {
+    const sample = sampleClockAtTime(officialClock, iso);
+    const nm = Number(sample?.filmNm);
+    if (!Number.isFinite(nm)) return;
+    if (isSuivre) setUserPreview(true);
+    sceneApiRef.current?.playback.pause();
+    sceneApiRef.current?.playback.seek(nm, { jump: true });
+  }, [officialClock, isSuivre, sceneApi]);
   // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
     enabled: Boolean(officialClock),
@@ -1343,15 +1426,6 @@ export default function App() {
     lang,
     galeLimitPct: skipper.orders?.values?.galePct,
   });
-  const planReview = useMemo(() => ({
-    legs: planReviewState.legs,
-    loading: planReviewState.loading,
-    error: planReviewState.error,
-    summary: null,
-    comment: planReviewState.review?.comment?.text || null,
-    commentSource: planReviewState.review?.comment?.source || null,
-  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review]);
-
   // Route advice under the skipper's orders (lot G): gale and sea limits of
   // the resolved orders become no-go zones of the isochrone.
   const handleRecompute = useCallback(
@@ -1361,6 +1435,16 @@ export default function App() {
     }),
     [vessel.recompute, clockSample?.iso, skipper.orders?.values?.galeKt, skipper.orders?.values?.hsAlertM],
   );
+  const planReview = useMemo(() => ({
+    legs: planReviewState.legs,
+    loading: planReviewState.loading,
+    error: planReviewState.error,
+    summary: null,
+    comment: planReviewState.review?.comment?.text || null,
+    commentSource: planReviewState.review?.comment?.source || null,
+    advice: planReviewState.advice,
+    onApply: handleRecompute,
+  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, planReviewState.advice, handleRecompute]);
   const mapScene = useMemo(() => ({
     isLightMode,
     view,
@@ -1505,6 +1589,8 @@ export default function App() {
         canFinishDraw={drawnPoints.length >= 2 && !drawingLoading}
         drawing={drawing}
         onDrawUndo={handleDrawUndo}
+        onImportRoute={handleImportRoute}
+        importBusy={drawingLoading}
         isCockpit={false}
         polarData={polarData}
         briefingLoading={iciPack.loading || briefingLoading}
@@ -1537,6 +1623,16 @@ export default function App() {
         onMomentNext={moments.next}
         chat={chat}
         onChatAsk={chat.ask}
+        moment={iciMoment.moment}
+        journalEntries={momentJournal.entries}
+        onSeek={handleSeekJournal}
+        momentMode={momentMode}
+        planReview={planReview}
+        escaleStop={replay.active ? null : escaleStop}
+        escaleFiche={escaleSheet?.fiche}
+        escaleLoading={Boolean(escaleSheet?.loading)}
+        escaleError={escaleSheet?.error}
+        onEscaleClose={closeEscaleSheet}
       />
 
       <ToolsSidebar
@@ -1563,7 +1659,6 @@ export default function App() {
         onSeekEscale={handleSidebarSeek}
         onEscaleSheet={openEscaleFromUi}
         drawing={drawing}
-        planReview={planReview}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}
@@ -1578,6 +1673,9 @@ export default function App() {
         skipperSuggest={skipper.suggest}
         onSkipperSuggestAccept={skipper.acceptSuggest}
         onSkipperSuggestDismiss={skipper.dismissSuggest}
+        exportMode={viewExportMode(drawingMode, isSuivre)}
+        exportSegments={drawingMode ? drawnSegments : activeSegments}
+        exportPoints={drawingMode ? drawnPoints : legendMarks}
       />
 
       {!sceneReady && !drawingMode && (
@@ -1619,6 +1717,14 @@ export default function App() {
       {clipboardToast && (
         <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full">
           📋 {clipboardToast} {t("copied")}
+        </div>
+      )}
+      {drawNotice && (
+        <div
+          data-testid={drawNotice.kind === "error" ? "route-import-error" : "route-import-notice"}
+          className="absolute top-5 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 text-white text-xs px-4 py-2 rounded-full"
+        >
+          {drawNotice.text}
         </div>
       )}
 
@@ -1740,24 +1846,6 @@ export default function App() {
         onReject={() => vessel.reject()}
       />
 
-      {/* Sidebar rangée (Cinéma) : les cartes se posent sur la carte ; ouverte, elles vivent dans le produit « ici ». */}
-      {!drawingMode && sceneReady && !sidebarOpen ? (
-        <>
-          <MomentNowCard
-            card={replay.active ? replay.card : moments.now}
-            left={replay.active ? 0 : moments.nowLeft}
-            onDismiss={replay.active ? replay.dismissCard : moments.dismiss}
-            onFocus={handleBriefingFocus}
-          />
-          <FreeMomentBlock
-            card={moments.free}
-            left={moments.freeLeft}
-            onNext={moments.next}
-            onFocus={handleBriefingFocus}
-          />
-        </>
-      ) : null}
-
       <EscalePopupHost
         stop={replay.active ? null : escaleStop}
         fiche={escaleSheet?.fiche}
@@ -1769,12 +1857,12 @@ export default function App() {
       <LayerFichePopup popup={layerPopup} onClose={() => setLayerPopup(null)} />
 
       {selectedSatellite && (
-        <div className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
-          <button type="button" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
+        <div data-testid="satellite-popup" className="naviguide-floating-card absolute left-1/2 -translate-x-1/2 z-[2100] w-[360px] bg-slate-900/96 border border-white/10 rounded-xl p-3 text-white text-xs shadow-2xl bottom-52">
+          <button type="button" data-testid="satellite-popup-close" className="absolute top-2 right-2 text-slate-400" onClick={closeSatellite}><X size={14} /></button>
           <div className="font-semibold mb-2">{t("satelliteData")}</div>
           <div className="flex gap-1 mb-2">
             {["wind", "waves", "currents"].map((tab) => (
-              <button key={tab} type="button" onClick={() => setSatelliteTab(tab)} className={`px-2 py-1 rounded ${satelliteTab === tab ? "bg-blue-600" : "bg-slate-800"}`}>
+              <button key={tab} type="button" data-testid={`satellite-tab-${tab}`} onClick={() => setSatelliteTab(tab)} className={`px-2 py-1 rounded ${satelliteTab === tab ? "bg-blue-600" : "bg-slate-800"}`}>
                 {tab === "wind" ? t("windTab") : tab === "waves" ? t("wavesTab") : t("currentsTab")}
               </button>
             ))}

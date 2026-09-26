@@ -194,6 +194,7 @@ export function SimulationPanel({
         <div className="px-1.5 pb-1.5">
           <button
             type="button"
+            data-testid="ask-advice"
             disabled={!canRecompute || recomputeBusy || forecastStatus === "pending"}
             onClick={onRecompute}
             className="w-full rounded-md border border-cyan-500/40 bg-cyan-900/30 py-1 text-[10px] font-semibold text-cyan-100 hover:bg-cyan-800/40 disabled:opacity-40"

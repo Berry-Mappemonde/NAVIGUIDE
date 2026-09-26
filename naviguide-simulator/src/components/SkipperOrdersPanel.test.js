@@ -7,6 +7,8 @@ import {
   BOAT_FIELDS,
   DEFAULT_BOAT,
   DEFAULT_PROFILE,
+  EXPERT_FIELDS,
+  EXPERT_IDS,
   resolveOrders,
 } from "../engine/skipperOrders.js";
 
@@ -31,6 +33,9 @@ describe("SkipperOrdersPanel — remise d’un chiffre (lot R1)", () => {
     assert.match(src, /id="draftM"[\s\S]*?onReset=\{\(fieldId\) => onBoat\?\.\(fieldId, null\)\}/);
     assert.equal((src.match(/onReset=\{\(fieldId\) => onExpert\?\.\(fieldId, null\)\}/g) || []).length, 2);
     assert.doesNotMatch(src, /skipperExpertHint/);
+    assert.doesNotMatch(src, /label=\{t\("skipperBoat"\)\}/);
+    assert.match(src, /const \[draft, setDraft\]/);
+    assert.match(src, /onBlur=/);
   });
 
   it("après remise, la valeur est celle du profil et forced est faux", () => {
@@ -65,6 +70,51 @@ describe("SkipperOrdersPanel — remise d’un chiffre (lot R1)", () => {
     assert.equal(expected.value, DEFAULT_BOAT.loaM);
     assert.equal(expected.forced, false);
     assert.notEqual(after.boat.source.loa, "skipper");
+  });
+
+  it("cycle force → forced → remise au profil pour chaque champ numérique", () => {
+    const profile = "cruise";
+    for (const id of EXPERT_IDS) {
+      const field = EXPERT_FIELDS[id];
+      const base = resolveOrders({ profile }).values[id];
+      const forcedVal = Number(base) === field.min ? field.max : field.min;
+      const forced = resolveOrders({ profile, expert: { [id]: forcedVal } });
+      assert.equal(id in forced.expert, true, `${id} forced`);
+      assert.equal(forced.values[id], forced.expert[id], `${id} valeur forcée`);
+      const after = resolveOrders({ profile, expert: {} });
+      const expected = resetNumberToProfile(id, profile);
+      assert.equal(after.values[id], expected.value, `${id} profil`);
+      assert.equal(expected.forced, false);
+      assert.equal(id in after.expert, false, `${id} plus forced`);
+    }
+    for (const id of Object.keys(BOAT_FIELDS)) {
+      const field = BOAT_FIELDS[id];
+      const base = resolveOrders({ profile }).boat[id];
+      const forcedVal = Number(base) === field.min ? field.max : field.min;
+      const forced = resolveOrders({ profile, boat: { [id]: forcedVal } });
+      const srcKey = id === "loaM" ? "loa" : "draft";
+      assert.equal(forced.boat.source[srcKey], "skipper", `${id} source skipper`);
+      assert.equal(forced.boat[id], forcedVal, `${id} valeur forcée`);
+      const after = resolveOrders({ profile, boat: {} });
+      const expected = resetNumberToProfile(id, profile);
+      assert.equal(after.boat[id], expected.value, `${id} polar/défaut`);
+      assert.equal(expected.forced, false);
+      assert.notEqual(after.boat.source[srcKey], "skipper", `${id} plus skipper`);
+    }
+  });
+});
+
+describe("SkipperOrdersPanel — Demander conseil (lot R10d)", () => {
+  it("le bouton Simulation dit Demander conseil, plus Recalculer l'itinéraire", () => {
+    const sim = readFileSync(join(here, "SimulationPanel.jsx"), "utf8");
+    const fr = readFileSync(join(here, "..", "i18n", "fr.js"), "utf8");
+    const en = readFileSync(join(here, "..", "i18n", "en.js"), "utf8");
+    assert.match(sim, /recomputeButton/);
+    assert.match(sim, /data-testid="ask-advice"/);
+    assert.match(fr, /recomputeButton:\s*"Demander conseil"/);
+    assert.match(en, /recomputeButton:\s*"Ask for advice"/);
+    assert.doesNotMatch(fr, /Recalculer l.itin[eé]raire/);
+    assert.doesNotMatch(en, /Recalculate the route/);
   });
 });
 

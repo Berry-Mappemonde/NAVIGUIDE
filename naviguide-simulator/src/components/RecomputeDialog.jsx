@@ -8,26 +8,47 @@ function hoursLabel(h) {
 }
 
 export function RecomputeDialog({ draft, busy, onAccept, onReject }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   if (!draft) return null;
   const vs = draft.versus_searoute || {};
+  const best = draft.planAdvice?.best;
+  const cascade = Array.isArray(best?.cascade) ? best.cascade : [];
+  const todayLabel = best ? t("planCompareToday") : t("recomputeSearoute");
+  const advisedLabel = best ? t("planCompareAdvised") : t("recomputeProposed");
+  const day = (iso) => {
+    const a = new Date(iso);
+    if (Number.isNaN(a.getTime())) return String(iso || "").slice(0, 10);
+    return a.toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { day: "numeric", month: "short", timeZone: "UTC" });
+  };
   return (
     <div className="fixed inset-0 z-[2400] flex items-center justify-center bg-slate-950/70 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-900 p-4 text-white shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-900 p-4 text-white shadow-2xl" data-testid="route-compare">
         <div className="text-sm font-semibold mb-1">{t("recomputeTitle")}</div>
         <p className="text-[11px] text-white/60 mb-3">
           {t("recomputeTo", { name: draft.to_name || "—" })} · {draft.status}
         </p>
         <div className="grid grid-cols-2 gap-2 text-[11px] mb-3">
-          <div className="rounded-lg bg-slate-800/80 p-2">
-            <div className="text-white/40 uppercase text-[9px]">{t("recomputeSearoute")}</div>
+          <div className="rounded-lg bg-slate-800/80 p-2" data-testid="route-compare-today">
+            <div className="text-white/40 uppercase text-[9px]">{todayLabel}</div>
             <div>{vs.distance_nm ?? "—"} nm</div>
             <div>{hoursLabel(vs.hours)}</div>
+            {best && Number.isFinite(Number(best.alertsBefore)) ? (
+              <div>{t("planCompareAlerts", { n: String(best.alertsBefore) })}</div>
+            ) : null}
+            {cascade.map((row, i) => (
+              <div key={`was-${i}`}>{t("planCompareStop", { stop: row.stop || "—", date: day(row.was) })}</div>
+            ))}
           </div>
-          <div className="rounded-lg bg-cyan-950/50 p-2 border border-cyan-500/30">
-            <div className="text-cyan-300/70 uppercase text-[9px]">{t("recomputeProposed")}</div>
+          <div className="rounded-lg bg-cyan-950/50 p-2 border border-cyan-500/30" data-testid="route-compare-advised">
+            <div className="text-cyan-300/70 uppercase text-[9px]">{advisedLabel}</div>
             <div>{draft.distance_nm ?? "—"} nm</div>
             <div>{hoursLabel(draft.hours)}</div>
+            {best && Number.isFinite(Number(best.alertsAfter)) ? (
+              <div>{t("planCompareAlerts", { n: String(best.alertsAfter) })}</div>
+            ) : null}
+            {cascade.map((row, i) => (
+              <div key={`now-${i}`}>{t("planCompareStop", { stop: row.stop || "—", date: day(row.now) })}</div>
+            ))}
           </div>
         </div>
         {draft.constraints ? (

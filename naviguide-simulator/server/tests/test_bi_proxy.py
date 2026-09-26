@@ -55,6 +55,22 @@ def test_only_climatology_endpoints_are_proxied(monkeypatch):
     assert len(calls) == 1
 
 
+def test_tile_paths_are_proxied_and_bad_paths_are_refused(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls))
+    client = TestClient(main.app)
+    ok = client.get("/bi/climatology/wind/tiles/4/8/5.json?month=9")
+    assert ok.status_code == 200
+    assert calls[0][0].endswith("/api/climatology/wind/tiles/4/8/5.json")
+    assert client.get("/bi/climatology/wave/tiles/3/2/1.json?month=1&stat=p90").status_code == 200
+    assert client.get("/bi/climatology/current/tiles/0/0/0.json?month=6").status_code == 200
+    assert client.get("/bi/climatology/wind/tiles/foo/1/1.json").status_code == 404
+    assert client.get("/bi/climatology/cyclones/tiles/1/1/1.json").status_code == 404
+    assert client.get("/bi/climatology/wind/tiles/4/8/5.geojson").status_code == 404
+    assert client.get("/bi/climatology/wind/tiles/4/8/5.json/extra").status_code == 404
+    assert len(calls) == 3
+
+
 def test_upstream_5xx_opens_a_cooldown_and_is_not_cached(monkeypatch):
     calls = []
     monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls, status=502))

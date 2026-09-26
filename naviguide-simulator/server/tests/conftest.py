@@ -16,6 +16,8 @@ os.environ.setdefault("BI_API_URL", "http://127.0.0.1:9/api")
 os.environ.setdefault("NAVIGUIDE_ICI_WARM", "0")
 # Jamais d'Open-Meteo / Copernicus réels pendant les tests (lot C2).
 os.environ.setdefault("NAVIGUIDE_HINDCAST", "0")
+# Pas de préchauffage ETA (Open-Meteo Ensemble) pendant les tests.
+os.environ.setdefault("NAVIGUIDE_ETA_PREHEAT", "0")
 # No LLM pre-generation after a (test) warm run either.
 os.environ.setdefault("NAVIGUIDE_STORY_PREGEN", "0")
 # Pas de boucle veille Tavily pendant les tests.

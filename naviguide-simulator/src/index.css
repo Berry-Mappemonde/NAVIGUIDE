@@ -13,10 +13,22 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .leaflet-container .leaflet-bottom.leaflet-right {
   right: var(--sim-inset-right, 0px);
   bottom: var(--sim-inset-bottom, 0px);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 4px;
   transition: right 300ms ease, bottom 300ms ease;
 }
-.leaflet-container .leaflet-control-attribution {
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control {
+  float: none;
+  clear: none;
+  margin: 0;
+}
+/* Lot RD2 — sélecteur plus spécifique que le chunk Leaflet (chargé après)
+ * pour garder la bande translucide dans les deux thèmes, sans aplat blanc. */
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution {
   background: rgba(15, 23, 42, 0.72);
+  background-color: rgba(15, 23, 42, 0.72);
   color: rgba(226, 232, 240, 0.85);
   font-size: 10px;
   line-height: 1.3;
@@ -24,10 +36,45 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   margin: 0;
   border-radius: 6px 0 0 0;
 }
-.leaflet-container .leaflet-control-attribution a { color: #7dd3fc; }
-.light-mode .leaflet-container .leaflet-control-attribution {
-  background: rgba(255, 255, 255, 0.8);
-  color: rgb(51 65 85);
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
+
+/* Lot RB2 — +/− horizontaux, plus petits que le 26–30 px Leaflet, à côté des crédits. */
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom.leaflet-bar {
+  display: flex;
+  flex-direction: row;
+  box-shadow: none;
+  border: none;
+  background: rgba(15, 23, 42, 0.72);
+  background-color: rgba(15, 23, 42, 0.72);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a,
+.leaflet-container.leaflet-touch .leaflet-bottom.leaflet-right .leaflet-control-zoom a {
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  font: 700 14px/20px ui-monospace, "Lucida Console", Monaco, monospace;
+  background: transparent;
+  background-color: transparent;
+  color: rgba(226, 232, 240, 0.95);
+  border: none;
+  border-right: 1px solid rgba(226, 232, 240, 0.18);
+  border-radius: 0;
+  text-indent: 0;
+}
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a:last-child {
+  border-right: none;
+}
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a:hover,
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a:focus {
+  background: rgba(226, 232, 240, 0.12);
+  background-color: rgba(226, 232, 240, 0.12);
+}
+.leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a.leaflet-disabled {
+  background: transparent;
+  background-color: transparent;
+  color: rgba(226, 232, 240, 0.35);
 }
 
 .naviguide-sidebar-panel {
@@ -192,6 +239,8 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   --sim-box-h-now: 10rem;
   --sim-box-h-ici: 16rem;
   --sim-box-h-story: 14rem;
+  --sim-box-h-ici-now: 100%;
+  --sim-box-h-ici-tabs: 1.5rem;
 }
 .sim-box-chat {
   height: var(--sim-box-h-chat);
@@ -236,6 +285,51 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   height: var(--sim-box-h-story);
   overflow-x: hidden;
   overflow-y: auto;
+}
+.ici-maintenant {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.ici-maintenant-tabs {
+  height: var(--sim-box-h-ici-tabs);
+}
+.light-mode .ici-maintenant {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: rgb(255 255 255 / 0.94);
+  border-color: rgb(203 213 225);
+  color: rgb(15 23 42);
+}
+.light-mode .ici-maintenant-tabs {
+  height: var(--sim-box-h-ici-tabs);
+}
+.light-mode .ici-maintenant [data-testid="ici-tabs"] [aria-selected="true"] {
+  color: rgb(15 23 42);
+}
+.light-mode .ici-maintenant [data-testid="ici-tabs"] [aria-selected="false"] {
+  color: rgb(100 116 139);
+}
+.light-mode .ici-maintenant .ici-maintenant-section > div:first-child {
+  color: rgb(71 85 105);
+}
+.light-mode .ici-maintenant .ici-maintenant-section p,
+.light-mode .ici-maintenant .ici-maintenant-section details {
+  color: rgb(30 41 59);
+}
+.light-mode .ici-maintenant [data-testid="ici-sources-line"] {
+  color: rgb(71 85 105);
+}
+.light-mode .ici-maintenant [data-testid="ici-source-link"],
+.light-mode .ici-maintenant [data-testid="ici-around-link"] {
+  color: rgb(3 105 161);
+}
+.light-mode .ici-maintenant [data-testid="ici-journal-entry"] {
+  color: rgb(30 41 59);
+}
+.light-mode .ici-maintenant [data-testid="ici-journal-entry"]:hover {
+  background: rgb(15 23 42 / 0.05);
 }
 
 /* Lot F4 — bulle événement ancrée au bateau (L.popup). */

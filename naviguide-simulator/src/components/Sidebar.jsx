@@ -1,9 +1,9 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { CheckCircle, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { JournalPanel } from "./JournalPanel.jsx";
-import { FreeMomentBlock, MomentNowCard } from "./MomentCards.jsx";
+import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
@@ -32,8 +32,10 @@ function BerryCard({
   onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw = true,
+  onImportRoute, importBusy = false,
 }) {
   const { t } = useLang();
+  const importRef = useRef(null);
   const [cardMode, setCardMode] = useState("berry-active");
   const [drawnRoute, setDrawnRoute] = useState(null);
   const [drawnName, setDrawnName] = useState(null);
@@ -98,6 +100,29 @@ function BerryCard({
         {switcher}
         {isDrawing ? (
           <div className="flex gap-1">
+            <button
+              type="button"
+              data-testid="route-import"
+              disabled={importBusy}
+              onClick={() => importRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
+                border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold
+                disabled:opacity-40 disabled:pointer-events-none"
+            >
+              {t("importRoute")}
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".geojson,.json,.kml"
+              data-testid="route-import-file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) onImportRoute?.(file);
+              }}
+            />
             <button
               type="button"
               onClick={() => {
@@ -243,7 +268,7 @@ function BriefingText({ segments, onFocus, t }) {
 export const Sidebar = memo(function Sidebar({
   plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
-  canFinishDraw, drawing = null, onDrawUndo,
+  canFinishDraw, drawing = null, onDrawUndo, onImportRoute, importBusy = false,
   isCockpit, polarData, view = VIEW_SUIVRE,
   legContext, briefingLoading, officialFallback,
   iciBriefing = null,
@@ -257,6 +282,16 @@ export const Sidebar = memo(function Sidebar({
   momentNow = null, momentNowLeft = 0, onMomentDismiss,
   momentFree = null, momentFreeLeft = 0, onMomentNext,
   chat = null, onChatAsk,
+  moment = null,
+  journalEntries = null,
+  onSeek = null,
+  momentMode = "follow",
+  planReview = null,
+  escaleStop = null,
+  escaleFiche = null,
+  escaleLoading = false,
+  escaleError = null,
+  onEscaleClose,
 }) {
   const { t } = useLang();
   const [storySource, setStorySource] = useState("rules");
@@ -290,11 +325,11 @@ export const Sidebar = memo(function Sidebar({
     <>
       <button
         onClick={onToggle}
-        className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute z-30 bg-slate-900/95 text-white
+        className={`naviguide-sidebar-toggle naviguide-sidebar-toggle--left absolute top-4 z-30 bg-slate-900/95 text-white
           rounded-full flex items-center justify-center shadow-lg
           hover:bg-slate-800 transition-all duration-300
           w-9 h-9 border border-slate-700
-          ${open ? "left-[322px] top-4" : "left-4 top-[92px]"}`}
+          ${open ? "left-[322px]" : "left-4"}`}
         title={open ? t("hideSidebar") : t("showExpeditionPanel")}
       >
         {open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
@@ -323,6 +358,8 @@ export const Sidebar = memo(function Sidebar({
             onCustomDelete={onCustomDelete}
             canContinueDraw={canContinueDraw}
             canFinishDraw={canFinishDraw}
+            onImportRoute={onImportRoute}
+            importBusy={importBusy}
           />
 
           {!isDrawing && chat ? (
@@ -332,22 +369,21 @@ export const Sidebar = memo(function Sidebar({
           ) : null}
         </div>
 
-        {/* ── Le produit « ici » : où on est, ce qui se passe, ce qu’il y a autour ── */}
-        <div className="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-1.5 space-y-1.5" data-testid="here-product">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col px-2.5 py-1.5 gap-1.5">
           {!isCockpit && !plan && !briefingLoading && !isDrawing && (
-            <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2">
+            <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-2 shrink-0">
               <div className="text-[10px] font-semibold text-blue-300 mb-1">{t("gettingStarted")}</div>
               <p className="text-[11px] text-slate-400 leading-snug">{t("gettingStartedText")}</p>
             </div>
           )}
 
           {isDrawing && (
-            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+            <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 shrink-0">
               <p className="text-[11px] text-slate-300 leading-snug whitespace-pre-line">{t("briefingDrawHint")}</p>
             </div>
           )}
           {isDrawing && drawing ? (
-            <div data-testid="drawing-points" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0">
+            <div data-testid="drawing-points" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0 shrink-0">
               <div className="flex items-center gap-2 mb-1">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug flex-1">
                   {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString()} nm
@@ -374,93 +410,99 @@ export const Sidebar = memo(function Sidebar({
             </div>
           ) : null}
 
-          {!isDrawing ? (
-            <SimulationPanel
-              legContext={legContext}
-              clockSample={clockSample}
-              kindLabel=""
-              atQuay={atQuay}
-              quayDays={quayDays}
-              liveFollow={isSuivre}
-              previewing={previewing}
-              forecastStatus={isSuivre ? forecastStatus : null}
-              onRecompute={onRecompute}
-              canRecompute={canRecompute}
-              showRecompute={isSimulation}
-              recomputeBusy={recomputeBusy}
-              onGoLive={onGoLive}
-            />
-          ) : null}
-
-          {!isDrawing && momentNow ? (
-            <MomentNowCard card={momentNow} left={momentNowLeft} onDismiss={onMomentDismiss} onFocus={onBriefingFocus} inline />
-          ) : null}
-          {!isDrawing && momentFree ? (
-            <FreeMomentBlock card={momentFree} left={momentFreeLeft} onNext={onMomentNext} onFocus={onBriefingFocus} inline />
-          ) : null}
-
-          {!isDrawing ? (
-            <div data-testid="briefing" className="sim-box-ici bg-slate-800/50 rounded-lg p-2 border border-slate-700/50 min-w-0 overflow-x-hidden">
-              {briefingTitle ? (
-                <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
-                  {briefingTitle}
-                </div>
-              ) : null}
-              {skipperNotice ? (
-                <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
-                  {skipperNotice}
-                </p>
-              ) : null}
-              <p
-                data-testid="ici-briefing"
-                className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
-              >
-                {briefingLoading || (!briefing && !iciBriefing)
-                  ? t("iciBriefingLoading")
-                  : (iciBriefing && iciBriefingSegments?.length
-                    ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
-                    : (briefing || t("iciBriefingFallback")))}
-              </p>
-              <p
-                data-testid="story-source"
-                className="text-[9px] text-slate-500 leading-snug mt-1"
-              >
-                {storySourceLabel(storySource, t)}
-              </p>
-            </div>
-          ) : null}
-
-          {isSuivre && !isDrawing ? (
-            <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
-              <div className="text-[10px] font-semibold text-sky-200 leading-snug">
-                {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
-              </div>
-              <div className="text-[9px] text-sky-100/60 leading-snug mb-1">{t("storyHint")}</div>
-              {(Array.isArray(story) ? story : []).map((paragraph, i) => {
-                const current = storyReplay && i === (story?.length || 0) - 1;
-                return (
-                  <p
-                    key={i}
-                    data-testid="story-paragraph"
-                    data-current={current ? "1" : "0"}
-                    className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] mt-1 ${current ? "text-white font-medium border-l-2 border-sky-300 pl-1.5" : "text-slate-200"}`}
-                  >
-                    {paragraph}
-                  </p>
-                );
-              })}
-            </div>
-          ) : null}
-
-          {isSuivre && !isDrawing ? (
-            <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
-          ) : null}
-
           {officialFallback && (
-            <p className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded-md px-2 py-1">
+            <p className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded-md px-2 py-1 shrink-0">
               {t("searouteUnavailable")}
             </p>
           )}
+
+          <IciMaintenant
+            moment={moment}
+            journalEntries={journalEntries}
+            onSeek={onSeek}
+            mode={momentMode}
+            momentNow={!isDrawing ? momentNow : null}
+            momentFree={!isDrawing ? momentFree : null}
+            simulation={!isDrawing ? (
+              <SimulationPanel
+                legContext={legContext}
+                clockSample={clockSample}
+                kindLabel=""
+                atQuay={atQuay}
+                quayDays={quayDays}
+                liveFollow={isSuivre}
+                previewing={previewing}
+                forecastStatus={isSuivre ? forecastStatus : null}
+                onRecompute={onRecompute}
+                canRecompute={canRecompute}
+                showRecompute={isSimulation}
+                recomputeBusy={recomputeBusy}
+                onGoLive={onGoLive}
+              />
+            ) : null}
+            hereBody={!isDrawing ? (
+              <div data-testid="here-product">
+                <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">
+                  {briefingTitle ? (
+                    <div className="text-[10px] font-semibold text-blue-200 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
+                      {briefingTitle}
+                    </div>
+                  ) : null}
+                  {skipperNotice ? (
+                    <p data-testid="skipper-notice" className="text-[10px] font-semibold text-cyan-300 mb-1 leading-snug break-words [overflow-wrap:anywhere]">
+                      {skipperNotice}
+                    </p>
+                  ) : null}
+                  <p
+                    data-testid="ici-briefing"
+                    className="text-[11px] text-slate-300 leading-snug whitespace-pre-line break-words [overflow-wrap:anywhere] max-w-full"
+                  >
+                    {iciBriefing && iciBriefingSegments?.length
+                      ? <BriefingText segments={iciBriefingSegments.filter((s) => s.entity?.kind === "source")} onFocus={onBriefingFocus} t={t} />
+                      : (briefingLoading && !(moment?.here?.sentences || []).length ? t("iciBriefingLoading") : null)}
+                  </p>
+                  <p
+                    data-testid="story-source"
+                    className="text-[9px] text-slate-500 leading-snug mt-1"
+                  >
+                    {storySourceLabel(storySource, t)}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            story={isSuivre && !isDrawing && (Array.isArray(story) ? story : []).some(Boolean) ? (
+              <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story !h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
+                <div className="text-[10px] font-semibold text-sky-200 leading-snug">
+                  {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
+                </div>
+                {(Array.isArray(story) ? story : []).filter(Boolean).map((paragraph, i, rows) => {
+                  const current = storyReplay && i === rows.length - 1;
+                  return (
+                    <p
+                      key={i}
+                      data-testid="story-paragraph"
+                      data-current={current ? "1" : "0"}
+                      className={`text-[11px] leading-snug break-words [overflow-wrap:anywhere] mt-1 ${current ? "text-white font-medium border-l-2 border-sky-300 pl-1.5" : "text-slate-200"}`}
+                    >
+                      {paragraph}
+                    </p>
+                  );
+                })}
+              </div>
+            ) : null}
+            journal={isSuivre && !isDrawing ? (
+              <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
+            ) : null}
+            planReview={!isDrawing ? planReview : null}
+            escale={!isDrawing && escaleStop ? {
+              stop: escaleStop,
+              fiche: escaleFiche,
+              loading: escaleLoading,
+              error: escaleError,
+              onClose: onEscaleClose,
+              onFocus: onBriefingFocus,
+            } : null}
+          />
         </div>
       </div>
     </>

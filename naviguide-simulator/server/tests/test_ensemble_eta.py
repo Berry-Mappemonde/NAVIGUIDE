@@ -26,7 +26,9 @@ from ensemble_eta import (
     empirical_quantile,
     fetch_point_members,
     implied_speed_kn,
+    next_official_stop,
     parse_members,
+    preheat_official_eta,
     sample_leg_points,
     tighten_eta_arrivals,
     tighten_eta_payload,
@@ -293,3 +295,136 @@ def test_zero_kn_member_is_dropped_and_span_is_days():
     t10, t90 = datetime.fromisoformat(tight["p10"].replace("Z", "+00:00")), datetime.fromisoformat(tight["p90"].replace("Z", "+00:00"))
     assert (t90 - t10).total_seconds() / 86400.0 <= ETA_MAX_SPAN_DAYS + 1e-6
     assert 0.0 not in (tight.get("memberKnots") or [])
+
+
+def _official_noumea_dzaoudzi():
+    """Fixture officielle : Nouméa déjà passé, Dzaoudzi à ~9 150 nm (jambe réelle)."""
+    t0 = "2026-05-15T08:00:00Z"
+    now_iso = "2026-09-22T12:00:00Z"
+    remaining = 9151.0
+    points = [
+        {"lat": -22.27, "lon": 166.44, "cumNm": 0, "filmCum": 0, "jump": False, "nonMaritime": False},
+        {"lat": -12.78, "lon": 45.23, "cumNm": remaining, "filmCum": remaining, "jump": False, "nonMaritime": False},
+    ]
+    marks = [
+        {
+            "name": "Nouméa (Nouvelle-Calédonie)",
+            "nm": 0, "filmNm": 0, "lat": -22.27, "lon": 166.44,
+            "iso": "2026-09-17T22:48:00Z", "index": 0,
+        },
+        {
+            "name": "Dzaoudzi (Mayotte)",
+            "nm": remaining, "filmNm": remaining, "lat": -12.78, "lon": 45.23,
+            "iso": "2026-11-15T00:00:00Z", "index": 1,
+        },
+    ]
+    return {
+        "points": points,
+        "marks": marks,
+        "t0": t0,
+        "startAt": "saint-maur",
+        "expedition_id": "berry-mappemonde-2026",
+        "clock": {
+            "t0": t0,
+            "marks": marks,
+            "vertices": [
+                {"tHours": 0, "sailNm": 0, "filmNm": 0, "lat": -22.27, "lon": 166.44, "iso": t0},
+                {"tHours": 3124, "sailNm": 0, "filmNm": 0, "lat": -22.27, "lon": 166.44, "iso": now_iso},
+            ],
+        },
+    }
+
+
+def _fixture_members(n: int = 12, kn: float = 10.0) -> dict:
+    times = _hours(24)
+    out = {}
+    for i in range(1, n + 1):
+        speed = kn + (i - n / 2) * 0.35
+        out[f"member{i:02d}"] = [
+            {"t": t, "speedKnots": speed, "dirFromDeg": 90.0} for t in times
+        ]
+    return out
+
+
+def test_next_official_stop_is_dzaoudzi_after_noumea():
+    voy = _official_noumea_dzaoudzi()
+    assert "Dzaoudzi" in next_official_stop(voy, NOW)
+    later = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    assert next_official_stop(voy, later) == ""
+
+
+def test_preheat_official_noumea_dzaoudzi_members_no_network(monkeypatch):
+    """Lot RB7 : préchauffage sur fixture officielle, sans HTTP, fenêtre de quelques jours."""
+    voy = _official_noumea_dzaoudzi()
+    members = _fixture_members()
+
+    def fake_integrate(points, stop_name, now, polar_raw, wind_fn):
+        assert "Dzaoudzi" in stop_name
+        pack = wind_fn(-22.0, 165.0, now)
+        kn = float((pack or {}).get("speedKnots") or 10.0)
+        days = 47.7 + (10.0 - kn) * 0.35
+        return NOW + timedelta(days=days)
+
+    monkeypatch.setattr(ensemble_eta, "fetch_point_members", lambda *_a, **_k: members)
+    monkeypatch.setattr(ensemble_eta, "_integrate_member", fake_integrate)
+    block_network()
+    try:
+        out = preheat_official_eta(voy, NOW, polar_raw=C4_POLAR)
+    finally:
+        unblock_network()
+    assert out["members"] > 0
+    assert out["p10"] and out["p50"] and out["p90"]
+    t10 = datetime.fromisoformat(out["p10"].replace("Z", "+00:00"))
+    t90 = datetime.fromisoformat(out["p90"].replace("Z", "+00:00"))
+    span = (t90 - t10).total_seconds() / 86400.0
+    assert span <= ETA_MAX_SPAN_DAYS + 1e-6
+    assert all(float(k) >= ETA_MIN_KN for k in (out.get("memberKnots") or []))
+
+
+def test_preheat_without_members_invents_nothing(monkeypatch):
+    monkeypatch.setattr(ensemble_eta, "fetch_point_members", lambda *_a, **_k: {})
+    block_network()
+    try:
+        out = preheat_official_eta(_official_noumea_dzaoudzi(), NOW, polar_raw=C4_POLAR)
+    finally:
+        unblock_network()
+    assert out["members"] == 0
+    assert out["p10"] is None and out["p90"] is None
+
+
+def test_kick_official_eta_does_not_block(monkeypatch):
+    import time
+    import voyage_api
+    from weather_pipeline import get_pipeline
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_preheat(*_a, **_k):
+        started.set()
+        release.wait(2)
+        return {"members": 12, "p10": "2026-11-13T00:00:00Z", "p90": "2026-11-16T00:00:00Z"}
+
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    monkeypatch.setattr(voyage_api, "load_voyage", lambda *_a, **_k: _official_noumea_dzaoudzi())
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", fake_preheat)
+    get_pipeline().clear()
+    t0 = time.monotonic()
+    assert voyage_api._kick_official_eta() is True
+    assert time.monotonic() - t0 < 0.5
+    assert started.wait(1)
+    assert voyage_api._kick_official_eta() is False
+    release.set()
+
+
+def test_startup_and_put_kick_official_eta():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    main_src = (root / "main.py").read_text()
+    api_src = (root / "voyage_api.py").read_text()
+    assert "_kick_official_eta" in main_src
+    assert "startup_official_voyage" in main_src
+    assert "seed_official_voyage" in api_src
+    assert "background.add_task(_kick_official_eta)" in api_src
+    assert "_maybe_daily_hindcast" in api_src
+    assert "kick_official_warmups" in api_src

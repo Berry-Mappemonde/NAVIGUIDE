@@ -1,18 +1,24 @@
 """Lot F3 — script du film : longueur, balises, aucun nombre nouveau, cache, sélection."""
 import asyncio
+import re
 from datetime import datetime, timezone
 
 import pearl_store
 import story_cache
 from film_script import (
     CONNECTORS,
+    FILM_BUDGET_CHARS,
+    FILM_CHAPTER_MAX_CHANGES,
     FILM_MAX_CHARS,
     FILM_WRITE_MAX,
     FILM_WRITE_MIN,
+    allocate_chapter_budgets,
     bubble_score,
     build_film_response,
     build_raw_script,
+    change_sentence,
     connector_at,
+    cyclone_name_year,
     dated_marks,
     film_candidates,
     film_facts,
@@ -20,8 +26,15 @@ from film_script import (
     journal_fingerprint,
     last_stop_id,
     norm_stop,
+    review_leg_for_chapter,
+    review_sentences,
+    official_dated_stops,
+    warm_film_story,
+    select_chapter_changes,
     select_film_events,
+    speak_film_text,
     written_is_valid,
+    _nm_label,
 )
 from tests.test_voyage_journal import PUBLIC, _official
 from voyage_clock import OFFICIAL_T0
@@ -236,7 +249,7 @@ def test_film_cache_hit_skips_second_write():
     assert n2 == n1, "second call served from ns film"
     key = story_cache.film_cache_key(journal_fingerprint(JOURNAL, last_stop_id(JOURNAL, CLOCK["marks"])), "fr", 150)
     assert story_cache.get_film_cached(key)
-    assert pearl_store.kv_count("film") >= 1
+    assert pearl_store.kv_count("film-story") >= 1
 
 
 def test_new_stop_changes_fingerprint():
@@ -263,6 +276,10 @@ def test_http_film_route_raw(monkeypatch):
     data = r.json()
     assert data["source"] == "rules"
     assert data["chapters"]
+    assert "Saint-Maur" in data["chapters"][0]["text"]
+    assert "15 mai 2026" in data["chapters"][0]["text"]
+    assert "2027" not in data["chapters"][0]["text"]
+    assert not re.search(r"\bnm\b", " ".join(c.get("text") or "" for c in data["chapters"]))
     assert "targetSeconds" in data
     assert data["chars"] <= FILM_MAX_CHARS
     sea = [c for c in data["chapters"] if is_sea_chapter(c)]
@@ -270,6 +287,27 @@ def test_http_film_route_raw(monkeypatch):
         evs = ch.get("events") or []
         assert evs, f"chapitre de mer sans événement : {ch.get('id')}"
         assert all(e.get("score") in {1, 2, 3} for e in evs)
+
+
+def test_http_film_route_replay_t0(monkeypatch):
+    from fastapi.testclient import TestClient
+    import voyage_api
+    from main import app
+
+    monkeypatch.setattr(voyage_api, "_now", lambda: datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc))
+    client = TestClient(app)
+    body = _official()
+    body["t0"] = OFFICIAL_T0
+    client.put("/voyage/official", json=body, headers=PUBLIC)
+    r = client.get(
+        "/voyage/official/film?lang=fr&seconds=150&t0=2025-05-15T08:00:00.000Z",
+        headers=PUBLIC,
+    )
+    assert r.status_code == 200
+    text0 = r.json()["chapters"][0]["text"]
+    assert "Saint-Maur" in text0
+    assert "15 mai 2025" in text0
+    assert "15 mai 2026" not in text0
 
 
 def test_bubble_scores_are_one_two_or_three():
@@ -345,6 +383,75 @@ def test_dated_marks_merges_ajaccio_aliases():
     assert norm_stop("Ajaccio (Corse)") == "ajaccio"
 
 
+def test_dated_marks_keeps_distinct_stops_at_filmnm_zero():
+    dated = dated_marks([
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0},
+        {"name": "La Rochelle", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0},
+        {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942, "iso": "2026-05-24T12:51:00Z"},
+    ])
+    keys = [norm_stop(s["name"]) for s in dated]
+    assert "saint-maur" in keys
+    assert "la rochelle" in keys
+    assert "ajaccio" in keys
+
+
+def _live_like_clock(lr: dict) -> dict:
+    return {
+        "t0": OFFICIAL_T0,
+        "marks": [CLOCK["marks"][0], lr, *CLOCK["marks"][2:]],
+    }
+
+
+def _assert_no_rochelle_to_ajaccio_skip(blob: str) -> None:
+    assert "Arrivée à La Rochelle" in blob, blob[:500]
+    assert "départ vers Ajaccio" in blob, blob[:500]
+    assert blob.find("Arrivée à La Rochelle") < blob.find("départ vers Ajaccio"), blob[:800]
+    assert not re.search(r"vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio", blob)
+    _assert_departure_arrival_pairs(blob, "fr")
+
+
+def test_live_like_clock_pairs_rochelle_before_ajaccio():
+    """La Rochelle iso = T0 ou filmNm 0 : Arrivée à La Rochelle avant départ vers Ajaccio."""
+    variants = (
+        {"name": "La Rochelle", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 72, "lat": 46.15, "lon": -1.16},
+        {"name": "La Rochelle", "nm": 0, "filmNm": 122, "iso": OFFICIAL_T0, "holdHours": 72, "lat": 46.15, "lon": -1.16},
+    )
+    for lr in variants:
+        clock = _live_like_clock(lr)
+        for journal in (JOURNAL, {**JOURNAL, **MOMENTS}):
+            plan = build_raw_script(clock, clock["marks"], LIVE, journal, lang="fr", seconds=150, now_ms=NOW_MS)
+            blob = _script_blob(plan)
+            _assert_no_rochelle_to_ajaccio_skip(blob)
+            ch0 = plan["chapters"][0]["text"]
+            assert re.search(r"départ vers La Rochelle", ch0, re.I), ch0
+            assert re.search(r"Arrivée à La Rochelle", ch0), ch0
+
+
+def test_chapter_iso_tb_after_ta():
+    """Plancher 1 s : après _iso, chaque chapitre a tB > tA (filmPlan garde le ch. 0)."""
+    from film_script import _iso, _ms
+
+    plan = _raw()
+    assert plan["chapters"]
+    for ch in plan["chapters"]:
+        ta, tb = _ms(ch["tA"]), _ms(ch["tB"])
+        assert ta is not None and tb is not None
+        assert tb > ta, (ch.get("id"), ch["tA"], ch["tB"])
+        assert _iso(ta) != _iso(tb), (ch.get("id"), ch["tA"], ch["tB"])
+
+    lr = {"name": "La Rochelle", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 72}
+    live_plan = build_raw_script(
+        _live_like_clock(lr), _live_like_clock(lr)["marks"], LIVE, JOURNAL,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    assert live_plan["chapters"]
+    assert live_plan["chapters"][0]["id"] == "leg-0"
+    for ch in live_plan["chapters"]:
+        ta, tb = _ms(ch["tA"]), _ms(ch["tB"])
+        assert tb > ta, (ch.get("id"), ch["tA"], ch["tB"])
+        assert ch["tA"] != ch["tB"]
+
+
 def test_official_route_order_no_repeat_departure_then_arrival():
     fr = _raw()
     blob_fr = " ".join(c.get("text") or "" for c in fr["chapters"])
@@ -365,6 +472,79 @@ def test_official_route_order_no_repeat_departure_then_arrival():
     _assert_departure_arrival_pairs(blob_en, "en")
 
 
+SIM_CLOCK = {
+    "t0": "2027-04-25T08:00:00Z",
+    "marks": [
+        {"name": "La Rochelle", "nm": 0, "filmNm": 122, "iso": "2027-04-25T08:00:00Z", "holdHours": 72, "lat": 46.15, "lon": -1.16},
+        {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942, "iso": "2027-05-04T12:00:00Z", "holdHours": 72, "lat": 41.9, "lon": 8.7},
+        {"name": "Fort-de-France (Martinique)", "nm": 6973, "filmNm": 7095, "iso": "2027-06-02T08:00:00Z", "holdHours": 72, "lat": 14.6, "lon": -61.0},
+    ],
+}
+
+
+def _script_blob(plan: dict) -> str:
+    return " ".join(c.get("text") or "" for c in (plan.get("chapters") or []))
+
+
+def test_official_script_ignores_simulation_clock():
+    plan = build_raw_script(SIM_CLOCK, SIM_CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    assert plan["chapters"]
+    text0 = plan["chapters"][0]["text"]
+    assert "Saint-Maur" in text0
+    assert "15 mai 2026" in text0
+    assert "La Rochelle" in text0
+    assert "2027" not in text0
+    assert "25 avril" not in text0
+    assert not re.search(r"a quitté La Rochelle", text0, re.I)
+    blob = _script_blob(plan)
+    assert not re.search(r"\bnm\b", blob), blob
+
+
+def test_no_bare_nm_in_official_script():
+    fr = _raw()
+    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
+    blob_fr = _script_blob(fr)
+    blob_en = _script_blob(en)
+    assert "Saint-Maur" in fr["chapters"][0]["text"]
+    assert "15 mai 2026" in fr["chapters"][0]["text"]
+    assert not re.search(r"\bnm\b", blob_fr), blob_fr
+    assert not re.search(r"\bnm\b", blob_en), blob_en
+    if re.search(r"\d[\d\s]*", blob_fr) and "départ" in blob_fr.lower():
+        assert "milles nautiques" in blob_fr or "mille nautique" in blob_fr or "Aujourd" in blob_fr
+    assert "nautical mile" in blob_en or "Today" in blob_en or "left" in blob_en.lower()
+
+
+def test_official_dated_stops_pins_saint_maur():
+    stops = official_dated_stops(SIM_CLOCK["marks"], SIM_CLOCK)
+    assert is_saint_or_first(stops)
+    assert stops[0]["iso"].startswith("2026-05-15")
+
+
+def test_official_dated_stops_pins_first_rochelle_not_return():
+    """La Rochelle départ (filmNm 122) ne doit pas hériter de l'iso du retour."""
+    marks = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": None},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2027-05-10T02:40:39Z", "holdHours": 72},
+        {"name": "Ajaccio (Corse)", "nm": 1942, "filmNm": 1942, "iso": "2026-05-30T13:56:06Z", "holdHours": 72},
+        {"name": "Fort-de-France (Martinique)", "nm": 7095, "filmNm": 7095, "iso": "2026-07-10T23:11:45Z", "holdHours": 72},
+    ]
+    stops = official_dated_stops(marks)
+    assert is_saint_or_first(stops)
+    assert "rochelle" in stops[1]["name"].lower()
+    assert stops[1]["iso"].startswith("2026-05-15")
+    assert "ajaccio" in stops[2]["name"].lower()
+    clock = {"t0": OFFICIAL_T0, "marks": marks}
+    plan = build_raw_script(clock, marks, LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    _assert_no_rochelle_to_ajaccio_skip(blob)
+
+
+def is_saint_or_first(stops):
+    assert stops
+    assert "saint-maur" in stops[0]["name"].lower().replace(" ", "-")
+    return True
+
+
 def test_http_film_route_en(monkeypatch):
     from fastapi.testclient import TestClient
     import voyage_api
@@ -380,6 +560,426 @@ def test_http_film_route_en(monkeypatch):
     data = r.json()
     assert data["chapters"]
     text = data["chapters"][0]["text"]
+    blob = _script_blob(data)
     if "Saint-Maur" in text:
-        assert "La Rochelle" in text
         assert ("left" in text.lower() or "departed" in text.lower())
+    deps = list(re.finditer(r"departure for (.+?)(?:\s*:|\.|$)", blob, re.I))
+    arrs = list(re.finditer(r"Arrival at (.+?) on ", blob, re.I))
+    if len(deps) >= 2:
+        _assert_departure_arrival_pairs(blob, "en")
+    elif deps and arrs:
+        assert norm_stop(deps[0].group(1)) == norm_stop(arrs[0].group(1))
+
+
+MOMENTS = {
+    "moments": [
+        {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+         "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 1, "t": "2026-05-15T11:30:00Z", "signature": "s1", "legIdx": 0, "changes": [
+            {"kind": "approche", "score": 3, "title": "La Rochelle", "fact": "Approche de La Rochelle, reste 12 milles nautiques."},
+        ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 2, "t": "2026-05-15T12:00:00Z", "signature": "s2", "legIdx": 0, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "Saint-Maur → La Rochelle"},
+        ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 3, "t": "2026-05-17T15:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+            {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 4, "t": "2026-05-22T06:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+            {"kind": "alert-on", "score": 3, "title": "Vent 38 kn", "fact": "Vent 38 kn attendu pendant 6 heures."},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 5, "t": "2026-05-24T10:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+            {"kind": "approche", "score": 3, "title": "Ajaccio", "fact": "Approche de Ajaccio, reste 40 milles nautiques."},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 6, "t": "2026-05-24T12:51:00Z", "signature": "s6", "legIdx": 1, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "La Rochelle → Ajaccio"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 7, "t": "2026-06-10T06:00:00Z", "signature": "s7", "legIdx": 2, "changes": [
+            {"kind": "station", "score": 2, "title": "PIRATA", "fact": "Station PIRATA à 6 milles nautiques."},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 8, "t": "2026-06-22T12:00:00Z", "signature": "s8", "legIdx": 2, "changes": [
+            {"kind": "approche", "score": 3, "title": "Fort-de-France", "fact": "Approche de Fort-de-France, reste 90 milles nautiques."},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 9, "t": "2026-06-23T08:34:00Z", "signature": "s9", "legIdx": 2, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Fort-de-France", "fact": "Ajaccio → Fort-de-France"},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 10, "t": "2026-08-01T06:00:00Z", "signature": "s10", "legIdx": 3, "changes": [
+            {"kind": "amp", "score": 1, "title": "Cabrera", "fact": "Cabrera (8 milles nautiques)"},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 11, "t": "2026-09-17T18:00:00Z", "signature": "s11", "legIdx": 3, "changes": [
+            {"kind": "approche", "score": 3, "title": "Nouméa", "fact": "Approche de Nouméa, reste 70 milles nautiques."},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 12, "t": "2026-09-17T22:48:00Z", "signature": "s12", "legIdx": 3, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Nouméa", "fact": "Fort-de-France → Nouméa"},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+    ],
+}
+
+
+def _moments_raw(lang="fr"):
+    return build_raw_script(CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS}, lang=lang, seconds=150, now_ms=NOW_MS)
+
+
+def test_allocate_budgets_floor_and_total():
+    budgets = allocate_chapter_budgets([1, 9, 30, 86], FILM_BUDGET_CHARS, 120)
+    assert len(budgets) == 4
+    assert all(b >= 120 for b in budgets)
+    assert sum(budgets) == FILM_BUDGET_CHARS
+    assert budgets[-1] > budgets[0]
+
+
+FILLER = (
+    "Le ciel reste haut", "La mer porte le bateau", "La route tient le cap",
+    "Le vent reste le vent", "The sky stays high", "The sea carries the boat",
+    "The course holds", "The wind stays the wind", "La mer reste la mer",
+    "le vent reste le vent, la route reste la route",
+)
+
+
+def _assert_no_filler(blob: str) -> None:
+    for phrase in FILLER:
+        assert phrase not in blob, phrase
+
+
+def test_moments_raw_no_atmos_budget_flag():
+    plan = _moments_raw()
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert plan["targetSeconds"] == 150
+    assert plan["chars"] > 0
+    assert plan["chars"] <= FILM_MAX_CHARS
+    _assert_no_filler(blob)
+    assert not re.search(r"\bnm\b", blob)
+
+
+def test_moments_chapter_one_sentence_max_three_changes():
+    plan = _moments_raw()
+    assert plan["chapters"]
+    for ch in plan["chapters"]:
+        text = (ch.get("text") or "").strip()
+        assert text
+        assert re.search(r"[.!?]", text)
+        changes = [e for e in (ch.get("events") or []) if e.get("kind") != "stop" or "approach" in str(e.get("id") or "").lower() or e.get("card", {}).get("kind") == "stop"]
+        assert len(ch.get("events") or []) <= FILM_CHAPTER_MAX_CHANGES + 1  # + arrivée de jambe
+        assert len([e for e in (ch.get("events") or []) if e.get("id") and not str(e.get("id")).startswith("stop:")]) <= FILM_CHAPTER_MAX_CHANGES
+
+
+def test_moments_arrival_each_stop_route_order():
+    plan = _moments_raw()
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    _assert_route_order(blob, "journal FR")
+    _assert_departure_arrival_pairs(blob, "fr")
+    for name in ("La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"):
+        assert re.search(rf"Arrivée à {name}", blob), name
+
+
+def test_moments_connectors_differ():
+    plan = _moments_raw()
+    starts = []
+    for i, ch in enumerate(plan["chapters"]):
+        if i == 0:
+            continue
+        text = ch.get("text") or ""
+        hit = next((c for c in CONNECTORS["fr"] if text.startswith(f"{c},")), None)
+        if hit:
+            starts.append(hit)
+    assert len(starts) >= 2
+    for a, b in zip(starts, starts[1:]):
+        assert a != b
+
+
+def test_moments_approche_bubble_title_is_stop():
+    plan = _moments_raw()
+    titles = []
+    for ch in plan["chapters"]:
+        for ev in ch.get("events") or []:
+            eid = str(ev.get("id") or "")
+            if "approche" in eid or ev.get("kind") == "stop" and "approche" in str(ev.get("fact") or "").lower():
+                titles.append(ev.get("title"))
+            if str(ev.get("title") or "") in {"La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"}:
+                titles.append(ev.get("title"))
+    assert "Ajaccio" in titles or any(t and "Ajaccio" in t for t in titles)
+    for ch in plan["chapters"]:
+        dest = (ch.get("toName") or "").split("(")[0].strip()
+        if not dest:
+            continue
+        approach = next(
+            (e for e in (ch.get("events") or []) if dest.split()[0] in str(e.get("title") or "")),
+            None,
+        )
+        if approach:
+            assert dest.split()[0] in (approach.get("title") or "")
+
+
+def test_moments_short_sentences_no_cut():
+    plan = _moments_raw()
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        assert text.endswith((".", "!", "?", "…"))
+        for sent in re.split(r"(?<=[.!?…])\s+", text):
+            if sent.strip():
+                assert sent.strip()[-1] in ".!?…"
+
+
+def test_select_chapter_changes_caps_at_three():
+    changes = [
+        {"id": "a", "kind": "escale", "score": 3, "tMs": 1, "title": "Arrivée à Ajaccio", "fact": "x"},
+        {"id": "b", "kind": "approche", "score": 3, "tMs": 2, "title": "Ajaccio", "fact": "y"},
+        {"id": "c", "kind": "alert-on", "score": 3, "tMs": 3, "title": "Vent", "fact": "38 kn"},
+        {"id": "d", "kind": "station", "score": 2, "tMs": 4, "title": "PIRATA", "fact": "z"},
+        {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
+    ]
+    picked = select_chapter_changes(changes, 0, 10)
+    assert len(picked) <= 3
+    kinds = {c["kind"] for c in picked}
+    assert "escale" in kinds
+    assert "approche" in kinds or "alert-on" in kinds
+
+
+def test_written_no_number_outside_facts():
+    raw = _moments_raw()
+    events = raw.get("_events") or []
+    facts = film_facts(raw, events)
+    cheat = "Le vent atteindra 99 nœuds demain."
+    ok, _, dropped = written_is_valid(cheat, facts, [])
+    assert dropped >= 1
+    assert ok is False
+
+
+def test_film_written_served_from_cache_without_llm():
+    raw = _raw()
+    events = raw["_events"]
+    honest = _honest_written(raw, events)
+    calls = {"n": 0}
+
+    async def fake_cascade(system, user, **kw):
+        calls["n"] += 1
+        if "JSON only" in system:
+            return json_ids([e["id"] for e in events]), "nemotron-lightning"
+        return honest, "nemotron-super"
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM au clic")
+
+    async def run():
+        await build_film_response(
+            CLOCK, LIVE, JOURNAL, lang="fr", seconds=150, style="written",
+            now_ms=NOW_MS, cascade=fake_cascade, want_write=True,
+        )
+        n1 = calls["n"]
+        out = await build_film_response(
+            CLOCK, LIVE, JOURNAL, lang="fr", seconds=150, style="written",
+            now_ms=NOW_MS, cascade=boom, want_write=False,
+        )
+        return n1, calls["n"], out
+
+    n1, n2, out = asyncio.run(run())
+    assert n1 >= 1
+    assert n2 == n1
+    assert out["hasWritten"] is True
+    assert out["style"] == "written"
+
+
+def _rich_journal():
+    extra = [
+        {"seq": 13, "t": "2026-05-15T11:00:00Z", "signature": "marina", "legIdx": 0, "changes": [],
+         "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"},
+                    "around": [{"kind": "marina", "title": "Les Minimes", "fact": "Les Minimes (2 nm)"}]}},
+        {"seq": 14, "t": "2026-05-15T12:10:00Z", "signature": "port", "legIdx": 1, "changes": [
+            {"kind": "port", "score": 2, "title": "La Rochelle", "fact": "La Rochelle"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        {"seq": 15, "t": "2026-07-10T06:00:00Z", "signature": "irma", "legIdx": 3, "changes": [
+            {"kind": "cyclone", "score": 3, "title": "Irma", "fact": "Irma (2017)"},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 16, "t": "2026-06-23T08:00:00Z", "signature": "culture", "legIdx": 2, "changes": [
+            {"kind": "culture", "score": 1, "title": "Fort Saint-Louis", "fact": "Fort Saint-Louis."},
+        ], "moment": {"leg": {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}}},
+        {"seq": 17, "t": "2026-07-11T06:00:00Z", "signature": "nameless", "legIdx": 3, "changes": [
+            {"kind": "cyclone", "score": 1, "title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."},
+        ], "moment": {"leg": {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+    ]
+    return {**JOURNAL, "moments": MOMENTS["moments"] + extra}
+
+
+def _rich_raw(seconds=0, lang="fr"):
+    return build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _rich_journal(), lang=lang, seconds=seconds, now_ms=NOW_MS,
+    )
+
+
+def test_official_script_has_no_atmos_or_pad():
+    for plan in (_raw(), _moments_raw(), _rich_raw(0), _rich_raw(150)):
+        blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+        _assert_no_filler(blob)
+
+
+def test_rich_moments_without_budget_cites_each_type():
+    plan = _rich_raw(0)
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert plan["targetSeconds"] == 0
+    assert "Les Minimes" in blob
+    assert re.search(r"marina croisée", blob)
+    assert re.search(r"port de départ", blob)
+    assert re.search(r"aire marine protégée : Cabrera", blob)
+    assert re.search(r"station croisée : PIRATA", blob)
+    assert "Irma" in blob and "2017" in blob
+    assert "Fort Saint-Louis" in blob
+    assert "traces de cyclone ce mois-ci" not in blob
+    _assert_no_filler(blob)
+    _assert_departure_arrival_pairs(blob, "fr")
+    _assert_route_order(blob, "journal riche FR")
+    assert not re.search(r"\bnm\b", blob)
+    assert not re.search(r"\d+[.,]\d{1,2}(?!\d)", blob)
+    assert "1 820 milles nautiques" in blob or "1820 milles nautiques" in blob
+
+
+def test_budget_150_reached_and_no_decimals():
+    plan = _rich_raw(150)
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert plan["targetSeconds"] == 150
+    _assert_no_filler(blob)
+    assert not re.search(r"\d+[.,]\d{1,2}(?!\d)", blob)
+    assert not re.search(r"\bnm\b", blob)
+
+
+def test_spoken_distances_rounded_no_abbrev():
+    assert _nm_label(1820.4, "fr") == "1 820 milles nautiques"
+    assert _nm_label(1, "fr") == "1 mille nautique"
+    spoken = speak_film_text("Approche, reste 12.4 nm.", "fr")
+    assert "nm" not in spoken
+    assert "12.4" not in spoken
+    assert "12 milles nautiques" in spoken
+
+
+def test_nameless_cyclone_is_silence():
+    assert cyclone_name_year({"title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."}) == ("", "")
+    assert cyclone_name_year({"title": "Irma", "fact": "Irma (2017)"}) == ("Irma", "2017")
+    assert change_sentence({"kind": "cyclone", "title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."}, "fr") == ""
+
+
+REVIEW_GIBRALTAR = {
+    "legs": [
+        {
+            "from": "Ajaccio (Corse)",
+            "to": "Fort-de-France (Martinique)",
+            "antiShipping": {"score": 0.4, "lanes": ["Gibraltar"]},
+            "season": {"galePct": 22, "cyclones": 3, "cells": 4, "missing": 0},
+            "flags": [{"kind": "formalities", "names": ["Espagne"]}],
+        }
+    ]
+}
+
+
+def test_review_sentences_facts_only():
+    assert review_sentences(None) == []
+    assert review_sentences({}) == []
+    assert review_sentences({"from": "Ajaccio", "to": "Fort-de-France"}) == []
+    bits = review_sentences(REVIEW_GIBRALTAR["legs"][0], "fr")
+    assert any("Gibraltar" in s for s in bits)
+    assert any("Saison cyclonique" in s for s in bits)
+    assert any("Coup de vent" in s and "22" in s for s in bits)
+    assert any(s == "Alerte." for s in bits)
+    assert review_leg_for_chapter(REVIEW_GIBRALTAR, "Ajaccio", "Fort-de-France")
+    assert review_leg_for_chapter(REVIEW_GIBRALTAR, "La Rochelle", "Ajaccio") is None
+
+
+def test_review_lane_named_in_correct_chapter():
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=REVIEW_GIBRALTAR,
+    )
+    hit = [c for c in plan["chapters"] if "Gibraltar" in (c.get("text") or "")]
+    assert len(hit) == 1, [c.get("fromName") for c in plan["chapters"]]
+    ch = hit[0]
+    assert "Ajaccio" in (ch.get("fromName") or "")
+    assert "Fort-de-France" in (ch.get("toName") or "")
+    assert "Saison cyclonique" in ch["text"]
+    assert "Coup de vent" in ch["text"]
+    assert "22" in ch["text"]
+    for c in plan["chapters"]:
+        if c is not ch:
+            assert "Gibraltar" not in (c.get("text") or "")
+    _assert_no_filler(" ".join(c.get("text") or "" for c in plan["chapters"]))
+
+
+def test_review_lane_named_without_moments_journal():
+    """Lot RC8 : sans moments, _compose doit encore citer le couloir."""
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, JOURNAL,
+        lang="fr", seconds=0, now_ms=NOW_MS, review=REVIEW_GIBRALTAR,
+    )
+    hit = [c for c in plan["chapters"] if "Gibraltar" in (c.get("text") or "")]
+    assert len(hit) == 1, [c.get("fromName") for c in plan["chapters"]]
+    assert "Ajaccio" in (hit[0].get("fromName") or "")
+    assert "Fort-de-France" in (hit[0].get("toName") or "")
+    _assert_no_filler(" ".join(c.get("text") or "" for c in plan["chapters"]))
+
+
+def test_warm_film_story_passes_review_without_clock(monkeypatch):
+    """Lot RC8 : le préchauffe envoie review_official à build_film_response."""
+    import film_script
+    import voyage_store
+
+    voy = {
+        "voyageId": "seed-no-clock",
+        "t0": OFFICIAL_T0,
+        "marks": [
+            {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942},
+            {"name": "Fort-de-France (Martinique)", "nm": 6973, "filmNm": 7095},
+        ],
+        "points": [
+            {"lat": 41.92, "lon": 8.74, "cumNm": 1820},
+            {"lat": 36.05, "lon": -5.6, "cumNm": 2500},
+            {"lat": 14.59, "lon": -61.07, "cumNm": 6973},
+        ],
+    }
+    captured: list = []
+
+    async def fake_build(*_a, **kw):
+        captured.append(kw.get("review"))
+        return {"hasWritten": False, "chars": 0, "source": "rules"}
+
+    monkeypatch.setattr(film_script, "build_film_response", fake_build)
+    monkeypatch.setattr(voyage_store, "load_voyage", lambda _vid: voy)
+    monkeypatch.setattr("voyage_api._climo_clock", lambda _v: {
+        "t0": OFFICIAL_T0, "vertices": [], "marks": voy["marks"],
+    })
+    out = asyncio.run(warm_film_story("seed-no-clock", langs=("fr",)))
+    assert out["status"] == "ready"
+    assert captured and captured[0] is not None
+    legs = (captured[0] or {}).get("legs") or []
+    assert any("Ajaccio" in (leg.get("from") or "") and "Fort-de-France" in (leg.get("to") or "") for leg in legs)
+    pack = next(
+        (leg.get("antiShipping") or {}) for leg in legs
+        if "Ajaccio" in (leg.get("from") or "")
+    )
+    assert "Gibraltar" in (pack.get("lanes") or [])
+
+
+def test_review_unknown_fields_are_silence():
+    empty = {"legs": [{"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)"}]}
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=empty,
+    )
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert "Gibraltar" not in blob
+    assert "Saison cyclonique" not in blob
+    assert "Couloirs" not in blob
+    assert "À surveiller" not in blob
+    _assert_no_filler(blob)
+
+
+def test_select_chapter_changes_unlimited_without_budget():
+    changes = [
+        {"id": "a", "kind": "escale", "score": 3, "tMs": 1, "title": "Arrivée à Ajaccio", "fact": "x"},
+        {"id": "b", "kind": "approche", "score": 3, "tMs": 2, "title": "Ajaccio", "fact": "y"},
+        {"id": "c", "kind": "alert-on", "score": 3, "tMs": 3, "title": "Vent", "fact": "38 kn"},
+        {"id": "d", "kind": "station", "score": 2, "tMs": 4, "title": "PIRATA", "fact": "z"},
+        {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
+        {"id": "f", "kind": "marina", "score": 2, "tMs": 6, "title": "Les Minimes", "fact": "Les Minimes"},
+        {"id": "g", "kind": "cyclone", "score": 3, "tMs": 7, "title": "Irma", "fact": "Irma (2017)"},
+        {"id": "h", "kind": "culture", "score": 1, "tMs": 8, "title": "Fort Saint-Louis", "fact": "Fort Saint-Louis."},
+    ]
+    picked = select_chapter_changes(changes, 0, 10, budget=False)
+    assert len(picked) == 8
+    assert {c["kind"] for c in picked} >= {"marina", "cyclone", "culture", "amp", "station"}

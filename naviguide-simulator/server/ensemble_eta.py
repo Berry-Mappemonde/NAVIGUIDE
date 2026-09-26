@@ -398,6 +398,42 @@ def _integrate_member(
     return _as_dt(iso) if iso else None
 
 
+def official_eta_alias_key(stop: str, now: datetime) -> str:
+    """Clé cache stable par escale + cycle 6 h — lisible sans clock (lot RC7)."""
+    when = _as_dt(now)
+    return (
+        f"eta-official:{_norm_stop(stop)}:{when.strftime('%Y-%m-%d')}"
+        f":{when.hour // 6}:{ETA_TIGHTEN_TAG}"
+    )
+
+
+def peek_official_eta(voy: dict, stop: str, now: datetime) -> dict:
+    """Lecture cache uniquement. Jamais de clock ni de fetch (lot RC7)."""
+    when = _as_dt(now)
+    empty = empty_eta(when)
+    if not isinstance(voy, dict) or not (stop or "").strip():
+        return empty
+    clock = voy.get("clock")
+    if clock:
+        sample = sample_clock_at_time(clock, when)
+        if sample and sample.get("lat") is not None:
+            marks = voy.get("marks") or clock.get("marks") or []
+            if _find_stop(marks, stop):
+                result_key = (
+                    f"eta:{_norm_stop(stop)}:{point_key(sample['lat'], sample['lon'])}"
+                    f":{when.strftime('%Y-%m-%d')}:{when.hour // 6}:{ETA_TIGHTEN_TAG}"
+                )
+                cached = kv_get(CACHE_NS, result_key, max_age_s=CACHE_TTL_S)
+                raw = cached.get("value") if cached else None
+                if isinstance(raw, dict) and raw.get("members"):
+                    return dict(raw)
+    alias = kv_get(CACHE_NS, official_eta_alias_key(stop, when), max_age_s=CACHE_TTL_S)
+    raw = alias.get("value") if alias else None
+    if isinstance(raw, dict) and raw.get("members"):
+        return dict(raw)
+    return empty
+
+
 def compute_eta(
     *,
     points: List[dict],
@@ -483,6 +519,7 @@ def compute_eta(
         "memberKnots": member_knots,
     }
     kv_put(CACHE_NS, result_key, out)
+    kv_put(CACHE_NS, official_eta_alias_key(stop, now), out)
     return out
 
 
@@ -504,3 +541,35 @@ def official_eta(voy: dict, stop: str, now: datetime, polar_raw: Optional[dict] 
         polar_raw=polar_raw,
         clock=clock,
     ), now)
+
+
+def next_official_stop(voy: dict, now: datetime) -> str:
+    """Prochaine escale (iso > now) du voyage officiel. Vide si aucune."""
+    now = _as_dt(now)
+    clock = voy.get("clock") or {}
+    marks = clock.get("marks") or voy.get("marks") or []
+    for m in marks:
+        iso = m.get("iso")
+        name = str(m.get("name") or "").strip()
+        if not name or not iso:
+            continue
+        try:
+            if _as_dt(iso) > now:
+                return name
+        except Exception:
+            continue
+    return ""
+
+
+def preheat_official_eta(
+    voy: dict,
+    now: datetime,
+    polar_raw: Optional[dict] = None,
+    stop: Optional[str] = None,
+) -> dict:
+    """Chauffe l'ensemble de la prochaine escale (ou `stop`). Sans membres → vide."""
+    now = _as_dt(now)
+    target = (stop or "").strip() or next_official_stop(voy, now)
+    if not target:
+        return empty_eta(now)
+    return official_eta(voy, target, now, polar_raw=polar_raw)

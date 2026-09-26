@@ -16,6 +16,8 @@ import {
   clockTickLabelsFromClock,
   filmBarTicks,
   formatFilmClockLine,
+  rebaseIso,
+  resolveStoryT0,
   lookupVoyageClock,
   formatDepartureDate,
   normalizeUtcTime,
@@ -465,6 +467,16 @@ describe("formatFilmClockLine", () => {
     });
     assert.match(line, /4[\s ]?210 nm/);
     assert.match(line, /j18/);
-    assert.match(line, /3 juil\. 14:00 UTC/);
+    assert.match(line, /3 juil\. 2026 · 14:00 UTC/);
+  });
+
+  it("rebaseIso décale d’un an sans inventer le jour", () => {
+    assert.equal(
+      rebaseIso("2026-05-15T08:00:00.000Z", DEFAULT_T0_ISO, "2025-05-15T08:00:00.000Z"),
+      "2025-05-15T08:00:00.000Z",
+    );
+    assert.equal(rebaseIso("2026-05-24T08:00:00.000Z", DEFAULT_T0_ISO, DEFAULT_T0_ISO), "2026-05-24T08:00:00.000Z");
+    assert.equal(resolveStoryT0("2025-05-15T08:00:00.000Z"), "2025-05-15T08:00:00.000Z");
+    assert.equal(resolveStoryT0("pas-une-date"), DEFAULT_T0_ISO);
   });
 });

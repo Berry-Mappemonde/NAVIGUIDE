@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import {
   BOAT_FIELDS,
@@ -72,15 +72,30 @@ export function resetNumberToProfile(id, profile = DEFAULT_PROFILE) {
   return { value, forced: false };
 }
 
-/** One editable number: input + unit + « back to default » arrow. */
+/**
+ * One editable number: input + unit + « back to default » arrow.
+ * Draft while typing: clamp-on-keystroke (setExpert → clampExpert) turned
+ * « 34 → 2 → 29 » into 20 then 50, so ↺ never saw 29 (lot RD3, :5174).
+ */
 function NumberRow({ id, label, value, unit, field, forced, onChange, onReset, resetTitle, testPrefix = "skipper-expert", hint = "" }) {
+  const [draft, setDraft] = useState(null);
+  useEffect(() => { setDraft(null); }, [value]);
+  const shown = draft != null ? draft : (value ?? "");
+  const draftNum = draft != null && draft !== "" ? Number(draft) : NaN;
+  const dirty = draft != null && !(Number.isFinite(draftNum) && draftNum === Number(value));
+  const canReset = Boolean(forced) || dirty;
   const handleReset = () => {
+    setDraft(null);
     if (onReset) onReset(id);
     else onChange?.(id, null);
   };
+  const commit = (raw) => {
+    setDraft(null);
+    onChange?.(id, raw);
+  };
   return (
     <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-700/40 last:border-0">
-      <label htmlFor={`${testPrefix}-${id}`} className={`text-[11px] ${forced ? "text-amber-200" : "text-slate-400"}`}>
+      <label htmlFor={`${testPrefix}-${id}`} className={`text-[11px] ${canReset ? "text-amber-200" : "text-slate-400"}`}>
         {label}
         {hint ? <span className="ml-1 text-[9px] text-slate-500">{hint}</span> : null}
       </label>
@@ -92,22 +107,35 @@ function NumberRow({ id, label, value, unit, field, forced, onChange, onReset, r
           min={field.min}
           max={field.max}
           step={field.step}
-          value={value}
-          onChange={(e) => onChange?.(id, e.target.value)}
+          value={shown}
+          onChange={(e) => {
+            const raw = e.target.value;
+            const n = Number(raw);
+            if (raw !== "" && Number.isFinite(n) && n >= field.min && n <= field.max) {
+              commit(raw);
+              return;
+            }
+            setDraft(raw);
+          }}
+          onBlur={(e) => {
+            if (draft == null) return;
+            commit(e.target.value);
+          }}
           data-testid={`${testPrefix}-${id}`}
           className={`w-16 bg-slate-900 border rounded px-1 py-0.5 text-[11px] text-right text-white ${
-            forced ? "border-amber-500/60" : "border-slate-700"
+            canReset ? "border-amber-500/60" : "border-slate-700"
           }`}
         />
         <span className="text-[10px] text-slate-500 w-10">{unit}</span>
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={handleReset}
-          disabled={!forced}
+          disabled={!canReset}
           data-testid={`${testPrefix}-${id}-reset`}
           aria-label={resetTitle}
           title={resetTitle}
-          className={`text-[11px] px-1 rounded ${forced ? "text-amber-200 hover:bg-white/10" : "text-slate-700 cursor-default"}`}
+          className={`text-[11px] px-1 rounded ${canReset ? "text-amber-200 hover:bg-white/10" : "text-slate-700 cursor-default"}`}
         >
           ↺
         </button>
@@ -145,10 +173,10 @@ function Pills({ items, value, onPick, label, disabled = false, testPrefix, rend
 
 /**
  * « Paramètres avancés » — folded by default (revue du 19 sept.). Inside, top
- * to bottom: the boat (name from the polar, length / draft typed by the
- * skipper, planning speed, gale), then the character / comfort / horizon
- * pills, then the « Chiffres » Expert drawer. Cinema hides the sidebar: the
- * orders stay active.
+ * to bottom: the boat (length / draft typed by the skipper, planning speed,
+ * gale — the polar name lives under Polaires, once), then the character /
+ * comfort / horizon pills, then the « Chiffres » Expert drawer. Cinema hides
+ * the sidebar: the orders stay active.
  */
 export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
   orders,
@@ -187,9 +215,8 @@ export const SkipperOrdersPanel = memo(function SkipperOrdersPanel({
         <span className="text-slate-500 group-open:rotate-90 transition-transform">›</span>
       </summary>
 
-      {/* Le bateau : nom (polaire), longueur / tirant d’eau saisis, vitesse de planning, coup de vent. */}
+      {/* Le bateau : longueur / tirant d’eau saisis, vitesse de planning, coup de vent. */}
       <div className="mt-2 bg-slate-800/60 rounded-xl px-3 py-0.5 border border-slate-700/40" data-testid="skipper-boat">
-        <Row label={t("skipperBoat")} value={boat.name || t("skipperBoatUnknown")} />
         <NumberRow
           id="loaM"
           label={t("skipperLoa")}

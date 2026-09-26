@@ -40,29 +40,48 @@ describe("berryLegs", () => {
     assert.equal(nmToRoundedKm(122), Math.round(122 * NM_TO_KM));
   });
 
-  it("marque avion Cayenne ↔ Saint-Pierre / Halifax", () => {
-    assert.equal(isAirLegNames("Cayenne (Guyane)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), true);
-    assert.equal(isAirLegNames("Saint-Pierre (Saint-Pierre-et-Miquelon)", "Cayenne (Guyane)"), true);
+  it("marque avion seulement Cayenne ↔ Halifax ; Halifax ↔ Saint-Pierre est mer", () => {
     assert.equal(isAirLegNames("Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)"), true);
-    assert.equal(isAirLegNames("Halifax (Nouvelle-Écosse)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), true);
+    assert.equal(isAirLegNames("Halifax (Nouvelle-Écosse)", "Cayenne (Guyane)"), true);
+    assert.equal(isAirLegNames("Halifax (Nouvelle-Écosse)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), false);
+    assert.equal(isAirLegNames("Saint-Pierre (Saint-Pierre-et-Miquelon)", "Halifax (Nouvelle-Écosse)"), false);
+    assert.equal(isAirLegNames("Cayenne (Guyane)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), false);
     assert.equal(isAirLegNames("Cayenne (Guyane)", "Papeete (Polynésie française)"), false);
     assert.equal(isAirLegNames("La Rochelle", "Ajaccio (Corse)"), false);
     assert.equal(legKind("Cayenne (Guyane)", "Halifax (Nouvelle-Écosse)"), "air");
+    assert.equal(legKind("Halifax (Nouvelle-Écosse)", "Cayenne (Guyane)"), "air");
+    assert.equal(legKind("Halifax (Nouvelle-Écosse)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), "sea");
+    assert.equal(legKind("Saint-Pierre (Saint-Pierre-et-Miquelon)", "Halifax (Nouvelle-Écosse)"), "sea");
     assert.equal(legKind("Saint-Maur", "La Rochelle"), "land");
     assert.equal(legKind("La Rochelle", "Ajaccio (Corse)"), "sea");
     const air = officialRouteLineStyle({
       from: { name: "Cayenne (Guyane)" },
-      to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
-      coords: [[-52.3, 4.9], [-56.2, 46.8]],
+      to: { name: "Halifax (Nouvelle-Écosse)" },
+      coords: [[-52.3, 4.9], [-63.6, 44.6]],
     });
     assert.equal(air.color, "#111111");
     assert.equal(air.dash, "7 7");
     assert.equal(air.interactive, false);
+    const seaOut = officialRouteLineStyle({
+      from: { name: "Halifax (Nouvelle-Écosse)" },
+      to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
+      coords: [[-63.6, 44.6], [-56.2, 46.8]],
+    });
+    assert.equal(seaOut, null);
+    const seaBack = officialRouteLineStyle({
+      from: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
+      to: { name: "Halifax (Nouvelle-Écosse)" },
+    });
+    assert.equal(seaBack, null);
     const layered = officialAirRouteStyles({ air: true });
     assert.equal(layered.length, 2);
     assert.equal(layered[0].color, "#e5e7eb");
     assert.equal(layered[1].color, "#111111");
     assert.equal(isAirSegment({ air: true, coords: [[0, 0], [1, 1]] }), true);
+    assert.equal(isAirSegment({
+      from: { name: "Halifax (Nouvelle-Écosse)" },
+      to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
+    }), false);
     assert.equal(officialRouteLineStyle({ nonMaritime: true })?.color, "orange");
     assert.equal(officialRouteLineStyle({ coords: [[0, 0], [1, 1]] }), null);
   });
