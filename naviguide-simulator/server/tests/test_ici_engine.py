@@ -200,6 +200,7 @@ def test_empty_dossier_contract():
     assert d["science"] is None
     assert d["sources"]["bi"] is None
     assert d["climatology"] is None
+    assert d["piracy"] is None
     assert d["sources"]["climatology"] is None
     assert d["nearby"]["anchorages"] == []
     assert d["satellites"]["scene"] is None

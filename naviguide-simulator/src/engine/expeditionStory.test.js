@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   datedMarks, dayMonth, expeditionStory, expeditionStoryText, storyConnector,
   FILM_CONNECTORS, FILM_MAX_CHARS, buildFilmScript, filmCandidates, selectFilmEvents,
-  normStop,
+  normStop, officialDatedStops,
 } from "./expeditionStory.js";
 import { NM_TO_KM } from "../utils/berryLegs.js";
 
@@ -135,6 +135,17 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(normStop("Ajaccio (Corse)"), "ajaccio");
     assert.equal(normStop("Fort-de-France (Martinique)"), "fort-de-france");
   });
+
+  it("datedMarks ne fusionne que sameStop (Saint-Maur et La Rochelle à filmNm 0 restent)", () => {
+    const d = datedMarks([
+      { name: "Saint-Maur (Berry, Indre)", nm: 0, filmNm: 0, iso: "2026-05-15T08:00:00Z" },
+      { name: "La Rochelle", nm: 0, filmNm: 0, iso: "2026-05-15T08:00:00Z" },
+      { name: "Ajaccio (Corse)", nm: 1820, filmNm: 1942, iso: "2026-05-24T12:51:00Z" },
+    ]);
+    assert.ok(d.some((s) => normStop(s.name) === "saint-maur"));
+    assert.ok(d.some((s) => /rochelle/i.test(s.name)));
+    assert.ok(d.some((s) => /ajaccio/i.test(s.name)));
+  });
 });
 
 const ROUTE_STOPS = ["Saint-Maur", "La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa", "Dzaoudzi"];
@@ -253,6 +264,60 @@ describe("expeditionStory — script du film (lot F3)", () => {
     assert.ok(wx.length >= 1, "un coup de vent est retenu");
   });
 
+  it("tête du récit : Saint-Maur le 15 mai 2026 même avec une horloge de simulation", () => {
+    const simClock = { t0: "2027-04-25T08:00:00Z" };
+    const simMarks = [
+      { name: "La Rochelle", nm: 0, filmNm: 122, iso: "2027-04-25T08:00:00Z", holdHours: 72 },
+      { name: "Ajaccio (Corse)", nm: 1820, filmNm: 1942, iso: "2027-05-04T12:00:00Z", holdHours: 72 },
+      { name: "Fort-de-France (Martinique)", nm: 6973, filmNm: 7095, iso: "2027-06-02T08:00:00Z", holdHours: 72 },
+    ];
+    const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
+    const paras = expeditionStory({ clock: simClock, marks: simMarks, live, now, lang: "fr" }).map(plain);
+    assert.match(paras[0], /Saint-Maur/);
+    assert.match(paras[0], /15 mai 2026/);
+    assert.doesNotMatch(paras[0], /2027/);
+    assert.doesNotMatch(paras[0], /a quitté La Rochelle/i);
+    const stops = officialDatedStops(simMarks, simClock);
+    assert.match(stops[0].name, /Saint-Maur/i);
+    assert.match(stops[0].iso, /^2026-05-15/);
+  });
+
+  it("script du film : pas de nm nu, unités en toutes lettres", () => {
+    const filmFr = buildFilmScript({ ...filmFixture(), lang: "fr" });
+    const filmEn = buildFilmScript({ ...filmFixture(), lang: "en" });
+    const blobFr = filmFr.chapters.map((c) => c.text).join(" ");
+    const blobEn = filmEn.chapters.map((c) => c.text).join(" ");
+    assert.match(filmFr.chapters[0].text, /Saint-Maur/);
+    assert.match(filmFr.chapters[0].text, /15 mai 2026/);
+    assert.doesNotMatch(blobFr, /\bnm\b/);
+    assert.doesNotMatch(blobEn, /\bnm\b/);
+    const simFilm = buildFilmScript({
+      clock: { t0: "2027-04-25T08:00:00Z" },
+      marks: [
+        { name: "La Rochelle", nm: 0, filmNm: 122, iso: "2027-04-25T08:00:00Z", holdHours: 72, lat: 46.15, lon: -1.16 },
+        { name: "Ajaccio (Corse)", nm: 1820, filmNm: 1942, iso: "2027-05-04T12:00:00Z", holdHours: 72, lat: 41.9, lon: 8.7 },
+      ],
+      live: { filmNm: 19400, sailNm: 19260, iso: "2026-09-19T02:00:00Z", status: "live" },
+      now: Date.parse("2026-09-19T02:00:00Z"),
+      lang: "fr",
+    });
+    assert.match(simFilm.chapters[0].text, /Saint-Maur/);
+    assert.match(simFilm.chapters[0].text, /15 mai 2026/);
+    assert.doesNotMatch(simFilm.chapters[0].text, /2027/);
+    assert.doesNotMatch(simFilm.chapters.map((c) => c.text).join(" "), /\bnm\b/);
+  });
+
+  it("lot RD5 : t0 replay 2025 décale le texte, t0 absent reste 2026", () => {
+    const fx = filmFixture();
+    const official = buildFilmScript({ ...fx, lang: "fr" });
+    assert.match(official.chapters[0].text, /15 mai 2026/);
+    const shifted = buildFilmScript({ ...fx, lang: "fr", t0: "2025-05-15T08:00:00.000Z" });
+    assert.match(shifted.chapters[0].text, /15 mai 2025/);
+    assert.doesNotMatch(shifted.chapters[0].text, /15 mai 2026/);
+    const story = expeditionStory({ clock, marks, live: fx.live, now, lang: "fr", t0: "2025-05-15T08:00:00.000Z" });
+    assert.match(story[0], /15 mai 2025/);
+  });
+
   it("voyage officiel : ordre de la route, sans répétition, départ vers X puis arrivée à X (FR et EN)", () => {
     const live = { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live", vehicle: "main" };
     const storyFr = expeditionStory({ clock, marks, live, now, lang: "fr" }).map(plain).join(" ");
@@ -274,6 +339,43 @@ describe("expeditionStory — script du film (lot F3)", () => {
       const dep = ch.text.match(/départ vers (.+?)(?:\s*:|\.|$)/i);
       const arr = ch.text.match(/Arrivée à (.+?) le /i);
       if (dep && arr) assert.equal(normStop(dep[1]), normStop(arr[1]), ch.id);
+    }
+  });
+
+  it("horloge live-like : Arrivée à La Rochelle avant départ vers Ajaccio", () => {
+    const t0 = "2026-05-15T08:00:00Z";
+    const variants = [
+      { name: "La Rochelle", nm: 0, filmNm: 0, iso: t0, holdHours: 72, lat: 46.15, lon: -1.16 },
+      { name: "La Rochelle", nm: 0, filmNm: 122, iso: t0, holdHours: 72, lat: 46.15, lon: -1.16 },
+    ];
+    for (const lr of variants) {
+      const liveMarks = [
+        { name: "Saint-Maur (Berry, Indre)", nm: 0, filmNm: 0, iso: t0, holdHours: 0 },
+        lr,
+        ...marks.slice(2),
+      ];
+      const plan = buildFilmScript({
+        clock: { t0, marks: liveMarks },
+        marks: liveMarks,
+        live: { filmNm: 19400, sailNm: 19260, seaHours: 94 * 24, iso: "2026-09-19T02:00:00Z", status: "live" },
+        journal: filmFixture().journal,
+        now: Date.parse("2026-09-19T02:00:00Z"),
+        lang: "fr",
+      });
+      const blob = plan.chapters.map((c) => c.text).join(" ");
+      const iArr = blob.indexOf("Arrivée à La Rochelle");
+      const iAj = blob.search(/départ vers Ajaccio/i);
+      assert.ok(iArr >= 0, `Arrivée à La Rochelle manquante (filmNm=${lr.filmNm})`);
+      assert.ok(iAj >= 0, "départ vers Ajaccio manquant");
+      assert.ok(iArr < iAj, blob.slice(0, 500));
+      assert.match(plan.chapters[0].text, /départ vers La Rochelle/i);
+      assert.match(plan.chapters[0].text, /Arrivée à La Rochelle/);
+      assert.doesNotMatch(blob, /vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio/);
+      for (const ch of plan.chapters) {
+        const tA = Date.parse(ch.tA);
+        const tB = Date.parse(ch.tB);
+        assert.ok(tB > tA, `${ch.id} tB<=tA ${ch.tA} ${ch.tB}`);
+      }
     }
   });
 });

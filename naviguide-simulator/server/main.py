@@ -83,11 +83,27 @@ app.include_router(bi_proxy_router)
 
 @app.on_event("startup")
 def _startup_official_grib():
-    """Dernier GRIB dès le boot serveur — pas attendre le premier GET front."""
+    """Semis du voyage officiel + préchauffages — jamais bloquant (lot RD4).
+
+    Sans voyage en base, _kick_official_* abandonnait (404, ensemble vide,
+    journal à 0, film en repli). On sème l'itinéraire Berry embarqué puis
+    on enchaîne les kicks en fond. En pytest le semis est coupé (fixtures
+    PUT à 3 points) sauf NAVIGUIDE_SEED_OFFICIAL=force.
+    """
     try:
-        from voyage_api import _kick_official_grib, _kick_official_hindcast
+        from voyage_api import (
+            _auto_seed_official_enabled,
+            _kick_official_eta,
+            _kick_official_grib,
+            _kick_official_hindcast,
+            startup_official_voyage,
+        )
+        if _auto_seed_official_enabled():
+            startup_official_voyage()
+            return
         _kick_official_grib()
         _kick_official_hindcast()
+        _kick_official_eta()
     except Exception:
         pass
 
@@ -130,14 +146,15 @@ def ici_pearls():
 @app.get("/voyage/official/film")
 async def get_official_film(
     lang: str = Query("fr"),
-    seconds: int = Query(150, ge=60, le=300),
+    seconds: int = Query(150, ge=0, le=300),
     style: str = Query("raw"),
+    t0: str | None = Query(None),
 ):
     """Script du film (lot F3) : brut par règles, rédigé Nemotron si `style=written`.
     Réponse `{chapters, source, chars, targetSeconds, hasWritten}`. Sans voyage : 404."""
     from film_script import official_film
     try:
-        return await official_film(lang=lang, seconds=seconds, style=style)
+        return await official_film(lang=lang, seconds=seconds, style=style, t0=t0)
     except FileNotFoundError:
         raise HTTPException(404, "voyage officiel absent") from None
 
@@ -206,6 +223,112 @@ async def get_ici(
     return await fill_dossier(
         lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
     )
+
+
+_MOMENT_MODES = frozenset({"follow", "simulation", "drawn"})
+_PEARL_LEG_KEYS = (
+    "from", "to", "day", "kn", "plannedKnots", "remainingNm", "doneNm",
+    "headingDeg", "eta", "regime", "basis", "fromNm", "toNm", "tHours",
+)
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _month_from_t(value: str | None) -> int | None:
+    from datetime import datetime, timezone
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.month
+
+
+def _pearl_pos(pearl: dict | None) -> tuple[float, float] | None:
+    if not isinstance(pearl, dict):
+        return None
+    at = pearl.get("at") if isinstance(pearl.get("at"), dict) else {}
+    lat = at.get("lat") if at.get("lat") is not None else pearl.get("lat")
+    lon = at.get("lon") if at.get("lon") is not None else pearl.get("lon")
+    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+        return float(lat), float(lon)
+    return None
+
+
+def _nearest_warmed_pearl(lat: float, lon: float, max_nm: float = ICI_RADIUS_NM) -> dict | None:
+    """Perle SQLite la plus proche ; None si le magasin est vide ou trop loin."""
+    from ici_engine import haversine_nm
+    import pearl_store
+    best, best_d = None, None
+    try:
+        rows = pearl_store.iter_pearls()
+    except Exception:
+        return None
+    for _key, row in rows:
+        bag = (row or {}).get("bag") if isinstance(row, dict) else None
+        pos = _pearl_pos(bag)
+        if pos is None:
+            continue
+        dist = haversine_nm(lat, lon, pos[0], pos[1])
+        if best_d is None or dist < best_d:
+            best, best_d = bag, dist
+    if best is None or best_d is None or best_d > max_nm:
+        return None
+    return best
+
+
+def _leg_from_pearl(pearl: dict | None) -> dict:
+    """Jambe déjà portée par la perle ; vide sinon — plus de greffe official_mini."""
+    if not isinstance(pearl, dict):
+        return {}
+    raw = pearl.get("leg") if isinstance(pearl.get("leg"), dict) else None
+    if raw:
+        return dict(raw)
+    return {key: pearl[key] for key in _PEARL_LEG_KEYS if pearl.get(key) is not None}
+
+
+def _moment_clock_and_leg(lat: float, lon: float, t: str | None, mode: str, pearl: dict | None):
+    """Horloge = requête ; jambe vide sauf champs déjà sur la perle (lot RC2)."""
+    when = t or _now_iso()
+    mode_ok = mode if mode in _MOMENT_MODES else "follow"
+    clock = {"iso": when, "t": when, "lat": lat, "lon": lon, "mode": mode_ok}
+    thresholds = {"galeKt": 34.0, "hsAlertM": 3.0}
+    if isinstance(pearl, dict) and isinstance(pearl.get("skipper_thresholds"), dict):
+        thresholds = pearl["skipper_thresholds"]
+    return clock, _leg_from_pearl(pearl), thresholds
+
+
+@app.get("/ici/moment")
+async def get_ici_moment(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    t: str | None = Query(None),
+    mode: str = Query("follow"),
+    lang: str = Query("fr"),
+):
+    """Moment (lot R8b) : perle la plus proche, sinon sac comme /ici, puis build_moment."""
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "lat/lon hors limites")
+    from moment import build_moment
+    pearl = _nearest_warmed_pearl(lat, lon)
+    if pearl is None:
+        pearl = await fill_dossier(
+            lat, lon, ICI_RADIUS_NM, month=_month_from_t(t), dest_lat=None, dest_lon=None, thin=False,
+        )
+    try:
+        from piracy import attach_piracy  # noqa: PLC0415
+        attach_piracy(pearl, lat, lon)
+    except Exception:
+        if isinstance(pearl, dict):
+            pearl.setdefault("piracy", None)
+    clock, leg, thresholds = _moment_clock_and_leg(lat, lon, t, mode, pearl)
+    return build_moment(pearl, clock, leg, thresholds, lang=lang)
 
 
 # Dépense LLM : 12 récits / min / IP, 60 / min et 240 / h pour tout le serveur.

@@ -13,7 +13,8 @@ describe("routeFromOfficial", () => {
     const { segments, stops } = routeFromOfficial(fc);
     assert.ok(segments.some((s) => s.nonMaritime && s.from.name.includes("Saint-Maur")));
     assert.ok(segments.some((s) => !s.nonMaritime));
-    assert.ok(segments.some((s) => s.air && /Halifax/i.test(s.from.name) && /Saint-Pierre/i.test(s.to.name)));
+    assert.ok(segments.some((s) => !s.air && /Halifax/i.test(s.from.name) && /Saint-Pierre/i.test(s.to.name)));
+    assert.ok(segments.every((s) => !s.air), "les sauts avion sont des trous géographiques, pas des LineString");
     assert.ok(stops.some((s) => s.flag && s.name === "La Rochelle"));
   });
 

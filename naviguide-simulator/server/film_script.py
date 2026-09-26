@@ -1,7 +1,8 @@
-"""Script du film 2:30 — brut (règles), sélection, version rédigée (lot F3).
+"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c).
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
-Repli : le brut. Cache SQLite ns `film` (1×/jour, nouvelle escale = nouvelle clé).
+Rédigé **chapitre par chapitre**, préchauffé, cache SQLite ns `film-story`.
+Jamais généré au clic. Repli : le brut.
 """
 from __future__ import annotations
 
@@ -11,11 +12,16 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
-from story_cascade import cascade_text, filter_numbers
+from story_cascade import cascade_text, expand_spoken_units, filter_numbers, split_short_sentences
+from voyage_clock import OFFICIAL_T0
 
 FILM_MAX_CHARS = 2400
-FILM_WRITE_MIN = 2300
-FILM_WRITE_MAX = 2500
+FILM_BUDGET_CHARS = 2400
+FILM_WRITE_MIN = 2160
+FILM_WRITE_MAX = 2640
+FILM_CHAPTER_FLOOR = 120
+FILM_CHAPTER_MAX_CHANGES = 3
+KIND_GROUP_FRAC = 0.10
 FILM_MIN_EVENTS = 6
 FILM_MAX_EVENTS = 9
 FILM_GAP_FRAC = 0.03
@@ -29,6 +35,36 @@ CONNECTORS = {
     "fr": ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
     "en": ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
 }
+CHANGE_PRIORITY = {
+    "escale": 0, "approche": 1, "alert-on": 2, "station": 3,
+    "zee-enter": 4, "amp": 5, "marina": 6, "cyclone": 7, "culture": 8,
+    "port": 9, "regime": 10, "alert-off": 11,
+}
+BUBBLE_KIND = {
+    "escale": "stop", "approche": "stop", "alert-on": "wx", "alert-off": "wx",
+    "zee-enter": "zee", "station": "sci", "amp": "amp", "regime": "climo",
+    "marina": "stop", "cyclone": "climo", "culture": "stop", "port": "poe",
+}
+AROUND_TO_KIND = {
+    "marina": "marina", "science": "station", "station": "station",
+    "mpa": "amp", "amp": "amp", "cyclone": "cyclone", "culture": "culture",
+    "port": "port",
+}
+NAMELESS_CYCLONE = re.compile(
+    r"traces de cyclone|cyclone tracks|saison cyclonique|cyclone season|ce mois-ci|this month",
+    re.I,
+)
+CYCLONE_YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
+DIST_UNIT_RE = re.compile(
+    r"(?P<num>\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?)\s*"
+    r"(?P<unit>nm|milles?\s+nautiques?|nautical\s+miles?)\b",
+    re.I,
+)
+DECIMAL_RE = re.compile(r"\d+[.,]\d{1,2}(?!\d)")
+GENERIC_CYCLONE = frozenset({"cyclone", "cyclones"})
+COLOR_KINDS = frozenset({
+    "station", "zee-enter", "amp", "regime", "marina", "cyclone", "culture", "port",
+})
 
 
 def connector_at(i: int, lang: str = "fr") -> str:
@@ -68,6 +104,20 @@ def _iso(ms: Optional[int]) -> Optional[str]:
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def rebase_iso(iso: Any, from_t0: str, to_t0: str) -> Any:
+    """Décale une ISO de from_t0 vers to_t0 (mêmes durées, aucune date inventée)."""
+    a, fr, to = _ms(iso), _ms(from_t0), _ms(to_t0)
+    if a is None or fr is None or to is None or fr == to:
+        return iso
+    return _iso(a + (to - fr))
+
+
+def resolve_film_t0(t0: str | None) -> str:
+    if not t0 or _ms(t0) is None:
+        return OFFICIAL_T0
+    return t0
+
+
 def day_month(iso: Any, lang: str = "fr", *, year: bool = False) -> str:
     t = _ms(iso)
     if t is None:
@@ -94,6 +144,112 @@ def norm_stop(name: str) -> str:
 def same_stop(a: str, b: str) -> bool:
     na, nb = norm_stop(a), norm_stop(b)
     return bool(na) and na == nb
+
+
+_SAINT_MAUR_RE = re.compile(r"saint[\s\-]*maur", re.I)
+_ROCHELLE_RE = re.compile(r"rochelle", re.I)
+
+
+def is_saint_maur(name: str) -> bool:
+    return bool(_SAINT_MAUR_RE.search(str(name or "")))
+
+
+def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[dict]:
+    """Escales datées, Saint-Maur + 15 mai 2026 en tête. Aucune autre date inventée."""
+    raw = marks if marks else (clock or {}).get("marks")
+    dated = dated_marks(raw)
+    saint_raw = next(
+        (m for m in (raw or []) if isinstance(m, dict) and is_saint_maur(m.get("name") or "")),
+        None,
+    )
+    saint = next((s for s in dated if is_saint_maur(s["name"])), None)
+    if saint:
+        head = {**saint, "iso": OFFICIAL_T0}
+    else:
+        src = saint_raw or {}
+        film = src.get("filmNm") if src.get("filmNm") is not None else src.get("nm")
+        head = {
+            "name": src.get("name") or "Saint-Maur",
+            "iso": OFFICIAL_T0,
+            "filmNm": float(film or 0),
+            "nm": float(src["nm"]) if isinstance(src.get("nm"), (int, float)) else 0.0,
+            "holdHours": float(src.get("holdHours") or 0),
+            "lat": src.get("lat") if isinstance(src.get("lat"), (int, float)) else None,
+            "lon": src.get("lon") if isinstance(src.get("lon"), (int, float)) else None,
+        }
+    rest = [s for s in dated if not is_saint_maur(s["name"])]
+    # Premier départ mer (La Rochelle, filmNm ~122) : garder au 15 mai même
+    # sans iso, et ne pas lui coller la date du retour (même nom, 2027).
+    sea = next((s for s in rest if _ROCHELLE_RE.search(s.get("name") or "")), None)
+    if sea is None:
+        sea = _sea_stop([], raw, clock)
+    if sea and _ROCHELLE_RE.search(sea.get("name") or ""):
+        film = float(sea.get("filmNm") if sea.get("filmNm") is not None else sea.get("nm") or 0)
+        if film < 2000:
+            others = [s for s in rest if not same_stop(s["name"], sea["name"])]
+            next_ms = _ms(others[0]["iso"]) if others else None
+            sea_ms = _ms(sea.get("iso"))
+            if sea_ms is None or (next_ms is not None and sea_ms >= next_ms):
+                sea = {**sea, "iso": OFFICIAL_T0}
+            rest = [sea, *others]
+    return [head, *rest]
+
+
+def _sea_stop(stops: list[dict], marks: list | None, clock: dict | None) -> Optional[dict]:
+    for s in (stops or [])[1:]:
+        if _ROCHELLE_RE.search(s.get("name") or ""):
+            return s
+    raw = list(marks or []) + list((clock or {}).get("marks") or [])
+    for m in raw:
+        if isinstance(m, dict) and _ROCHELLE_RE.search(str(m.get("name") or "")):
+            film = m.get("filmNm") if m.get("filmNm") is not None else m.get("nm")
+            return {
+                "name": m["name"],
+                "iso": m.get("iso"),
+                "filmNm": float(film or 0),
+                "nm": float(m["nm"]) if isinstance(m.get("nm"), (int, float)) else 0.0,
+                "holdHours": float(m.get("holdHours") or 0),
+                "lat": m.get("lat") if isinstance(m.get("lat"), (int, float)) else None,
+                "lon": m.get("lon") if isinstance(m.get("lon"), (int, float)) else None,
+            }
+    if len(stops or []) > 1:
+        return stops[1]
+    return {"name": "La Rochelle"}
+
+
+def merge_route_marks(route_marks: list | None, clock: dict | None) -> list[dict]:
+    """Marques de la route + iso de l'horloge. Pas de date inventée."""
+    clock_marks = [c for c in ((clock or {}).get("marks") or []) if isinstance(c, dict)]
+    if not route_marks:
+        return list(clock_marks)
+    out: list[dict] = []
+    for m in route_marks:
+        if not isinstance(m, dict):
+            continue
+        row = dict(m)
+        if _ms(row.get("iso")) is None:
+            film = float(row.get("filmNm") if row.get("filmNm") is not None else row.get("nm") or 0)
+            name = row.get("name") or ""
+            hit = next(
+                (
+                    c for c in clock_marks
+                    if abs(float(c.get("filmNm") if c.get("filmNm") is not None else c.get("nm") or 0) - film) < 0.6
+                    and (not name or c.get("name") == name)
+                ),
+                None,
+            )
+            if hit is None:
+                hit = next((c for c in clock_marks if name and c.get("name") == name), None)
+            if hit:
+                row["iso"] = hit.get("iso")
+                if hit.get("holdHours") is not None:
+                    row["holdHours"] = hit.get("holdHours")
+                if row.get("lat") is None:
+                    row["lat"] = hit.get("lat")
+                if row.get("lon") is None:
+                    row["lon"] = hit.get("lon")
+        out.append(row)
+    return out
 
 
 def _days(hours: Any) -> int:
@@ -153,9 +309,9 @@ def dated_marks(marks: list | None) -> list[dict]:
         key = norm_stop(m["name"])
         if not key:
             continue
-        # filmNm < 0.6 ne suffit pas : « Ajaccio » et « Ajaccio (Corse) » au
-        # même port doivent fusionner même si les libellés diffèrent.
-        if any(same_stop(x["name"], m["name"]) or abs(x["filmNm"] - film) < 0.6 for x in out):
+        # Fusion seulement si c'est le même port (« Ajaccio » ≡ « Ajaccio (Corse) »).
+        # Deux noms distincts (Saint-Maur / La Rochelle) restent, même à filmNm 0.
+        if any(same_stop(x["name"], m["name"]) for x in out):
             continue
         out.append({
             "name": m["name"],
@@ -198,7 +354,9 @@ def bubble_score(
         return None
     kind = entry.get("kind")
     event = entry.get("event")
-    if role in {"depart", "today", "stop"} or kind == "stop":
+    if role in {"depart", "today", "stop"} or kind in {"stop", "escale", "approche"}:
+        return 3
+    if kind == "alert-on":
         return 3
     if kind == "zee":
         if event and event != "enter":
@@ -427,12 +585,11 @@ def film_candidates(
     live: dict | None,
     now_ms: int,
 ) -> dict[str, Any]:
-    stops = dated_marks(marks if marks else (clock or {}).get("marks"))
+    raw_marks = marks if marks else (clock or {}).get("marks")
+    stops = official_dated_stops(raw_marks, clock)
     start = stops[0] if stops else None
-    sea = next((s for i, s in enumerate(stops) if i > 0 and re.search(r"rochelle", s["name"], re.I)), None)
-    if sea is None and len(stops) > 1:
-        sea = stops[1]
-    t0 = _ms((clock or {}).get("t0")) or _ms(start["iso"] if start else None)
+    sea = _sea_stop(stops, raw_marks, clock)
+    t0 = _ms(OFFICIAL_T0)
     t_end = _ms((live or {}).get("iso")) or now_ms
     out: list[dict] = []
     seen: set[str] = set()
@@ -443,8 +600,8 @@ def film_candidates(
         seen.add(c["id"])
         out.append(c)
 
-    depart_iso = (start or {}).get("iso") or (clock or {}).get("t0")
-    if depart_iso and _ms(depart_iso) is not None:
+    depart_iso = OFFICIAL_T0
+    if _ms(depart_iso) is not None:
         push(_cand({
             "id": "depart", "kind": "stop", "t": depart_iso, "event": "departure",
             "name": short_name((start or {}).get("name") or "Saint-Maur"),
@@ -590,27 +747,223 @@ def _day_word(n: int, lang: str) -> str:
     return f"{n} jour" + ("s" if n > 1 else "")
 
 
-def _nm_label(nm: Any, lang: str) -> str:
+def _film_seconds(seconds: Any) -> int:
+    """0 = pas de budget (lot RD7). Toute valeur invalide ou négative → 0."""
     try:
-        v = round(float(nm or 0))
+        n = int(seconds)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
+def _facts_with_rounded(change: dict) -> str:
+    """Faits + arrondis : filter_numbers accepte le chiffre déclamé."""
+    blob = json.dumps(change, ensure_ascii=False, default=str)
+    extras: list[str] = []
+    for token in re.findall(r"\d+(?:[.,]\d+)?", blob):
+        raw = token.replace(",", ".")
+        try:
+            extras.append(str(int(round(float(raw)))))
+        except ValueError:
+            continue
+    return f"{blob} {' '.join(extras)}"
+
+
+def _review_legs(review: dict | None) -> list[dict]:
+    if not isinstance(review, dict):
+        return []
+    legs = review.get("legs")
+    return [leg for leg in legs if isinstance(leg, dict)] if isinstance(legs, list) else []
+
+
+def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) -> dict | None:
+    """Jambe de review_official dont from/to sont la fenêtre du chapitre. Sinon silence."""
+    frm, to = from_name or "", to_name or ""
+    if not frm or not to:
+        return None
+    for leg in _review_legs(review):
+        if same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to):
+            return leg
+    return None
+
+
+def review_fingerprint(review: dict | None) -> str:
+    bits: list[str] = []
+    for leg in _review_legs(review):
+        pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else {}
+        season = leg.get("season") if isinstance(leg.get("season"), dict) else {}
+        lanes = ",".join(
+            n.strip() for n in (pack.get("lanes") or []) if isinstance(n, str) and n.strip()
+        )
+        flags = ",".join(
+            str(f.get("kind") or "") for f in (leg.get("flags") or []) if isinstance(f, dict)
+        )
+        bits.append(
+            f"{leg.get('from')}|{leg.get('to')}|{lanes}|{season.get('galePct')}|{season.get('cyclones')}|{flags}"
+        )
+    return hashlib.sha256("\n".join(bits).encode("utf-8")).hexdigest() if bits else ""
+
+
+def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
+    """Ce que la revue signale : verdict, couloirs nommés, saison. Champ inconnu = silence."""
+    if not isinstance(leg, dict):
+        return []
+    en = _en(lang)
+    bits: list[str] = []
+    flags = [f for f in (leg.get("flags") or []) if isinstance(f, dict)]
+    season = leg.get("season") if isinstance(leg.get("season"), dict) else None
+    gale = season.get("galePct") if season else None
+    cyclones = season.get("cyclones") if season else None
+    pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else None
+    lanes = [
+        n.strip() for n in ((pack or {}).get("lanes") or [])
+        if isinstance(n, str) and n.strip()
+    ] if pack else []
+
+    alert = isinstance(cyclones, (int, float)) and cyclones > 0
+    watch = bool(flags)
+    if alert:
+        bits.append("Alert." if en else "Alerte.")
+    elif watch:
+        bits.append("To watch." if en else "À surveiller.")
+
+    if lanes:
+        names = ", ".join(lanes)
+        bits.append(f"Shipping lanes: {names}." if en else f"Couloirs : {names}.")
+
+    if isinstance(gale, (int, float)):
+        n = int(round(float(gale)))
+        bits.append(
+            f"Gale {n} percent of the time."
+            if en else
+            f"Coup de vent {n} % du temps."
+        )
+
+    if isinstance(cyclones, (int, float)) and cyclones > 0:
+        bits.append("Cyclone season." if en else "Saison cyclonique.")
+
+    return bits
+
+
+def _append_review_sentences(bits: list[str], review: dict | None, window: dict, lang: str) -> None:
+    """Ajoute les phrases de revue au chapitre. Chiffres via filter_numbers."""
+    leg = review_leg_for_chapter(review, window.get("fromName") or "", window.get("toName") or "")
+    if not leg:
+        return
+    facts = _facts_with_rounded(leg)
+    for sentence in review_sentences(leg, lang):
+        filtered, _dropped = filter_numbers(sentence, facts)
+        sentence = (filtered or "").strip()
+        if sentence:
+            bits.append(sentence)
+
+
+def cyclone_name_year(change: dict) -> tuple[str, str]:
+    """Nom + année d'une trace : champ inconnu → vide (silence)."""
+    title = short_name(change.get("title") or "")
+    fact = str(change.get("fact") or "")
+    blob = f"{title} {fact}".strip()
+    if not blob or (NAMELESS_CYCLONE.search(blob) and not CYCLONE_YEAR_RE.search(blob)):
+        return "", ""
+    year = ""
+    found = CYCLONE_YEAR_RE.search(blob)
+    if found:
+        year = found.group(1)
+    name = title
+    if name.casefold() in GENERIC_CYCLONE or not name:
+        named = re.search(
+            r"(?:cyclone\s+)?([A-ZÀ-Ý][\w\-']+)\s*\((?:19|20)\d{2}\)",
+            fact, re.I,
+        )
+        if named:
+            name = named.group(1)
+        else:
+            named = re.search(r"(?:cyclone\s+)([A-ZÀ-Ý][\w\-']+)", fact, re.I)
+            name = named.group(1) if named else ""
+    if name.casefold() in GENERIC_CYCLONE:
+        name = ""
+    return name, year
+
+
+def _parse_dist_num(raw: str) -> Optional[float]:
+    cleaned = (raw or "").replace("\u00a0", "").replace(" ", "")
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        left, right = cleaned.split(",", 1)
+        cleaned = left + right if len(right) == 3 and left.isdigit() else f"{left}.{right}"
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def round_spoken_distances(text: str, lang: str = "fr") -> str:
+    """Distances à la voix : entier, unité en toutes lettres, jamais « nm »."""
+
+    def repl(m: re.Match) -> str:
+        v = _parse_dist_num(m.group("num"))
+        if v is None:
+            return m.group(0)
+        return _nm_label(int(round(v)), lang)
+
+    return DIST_UNIT_RE.sub(repl, text or "")
+
+
+def round_spoken_decimals(text: str) -> str:
+    """Aucune décimale déclamée (Hs, kn) : on arrondit à l'entier."""
+
+    def repl(m: re.Match) -> str:
+        raw = m.group(0).replace(",", ".")
+        try:
+            return str(int(round(float(raw))))
+        except ValueError:
+            return m.group(0)
+
+    return DECIMAL_RE.sub(repl, text or "")
+
+
+def speak_film_text(text: str, lang: str = "fr") -> str:
+    """Texte du film : distances arrondies, unités parlées, pas de décimale."""
+    spoken = round_spoken_distances(text or "", lang)
+    spoken = expand_spoken_units(spoken, lang)
+    return round_spoken_decimals(spoken)
+
+
+def _nm_label(nm: Any, lang: str) -> str:
+    """Distance déclamée : « 1 820 milles nautiques », jamais de décimale ni « nm »."""
+    try:
+        v = int(round(float(nm or 0)))
     except (TypeError, ValueError):
         return ""
-    return f"{v:,} nm".replace(",", " ") if not _en(lang) else f"{v:,} nm"
+    if _en(lang):
+        unit = "nautical mile" if v == 1 else "nautical miles"
+        return f"{v:,} {unit}"
+    unit = "mille nautique" if v == 1 else "milles nautiques"
+    return f"{v:,} {unit}".replace(",", " ")
 
 
-def event_sentence(ev: dict, lang: str = "fr") -> str:
+def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) -> str:
     en = _en(lang)
     e = ev.get("entry") or ev
-    when = day_month(e.get("t") or ev.get("t"), lang)
+    shown = display_t0 or OFFICIAL_T0
+    when = day_month(rebase_iso(e.get("t") or ev.get("t"), OFFICIAL_T0, shown), lang)
     name = short_name(e.get("name") or ev.get("name") or "")
     if ev.get("role") == "depart":
-        sea = short_name(ev.get("seaName") or "La Rochelle")
         frm = name or "Saint-Maur"
-        d = day_month(e.get("t"), lang, year=True)
+        d = day_month(rebase_iso(e.get("t"), OFFICIAL_T0, shown), lang, year=True)
+        # Pas de seaName figé : la dest de CETTE fenêtre est « départ vers X ».
+        sea = short_name(ev.get("seaName") or ev.get("toName") or "")
+        if sea:
+            return (
+                f"The Berry-Mappemonde expedition left {frm} on {d} and took the road to {sea}."
+                if en else
+                f"L’expédition Berry-Mappemonde a quitté {frm} le {d} et a pris la route vers {sea}."
+            )
         return (
-            f"The Berry-Mappemonde expedition left {frm} on {d} and took the road to {sea}."
+            f"The Berry-Mappemonde expedition left {frm} on {d}."
             if en else
-            f"L’expédition Berry-Mappemonde a quitté {frm} le {d} et a pris la route vers {sea}."
+            f"L’expédition Berry-Mappemonde a quitté {frm} le {d}."
         )
     if ev.get("role") == "today":
         nm = ev.get("distLabel") or ""
@@ -631,7 +984,7 @@ def event_sentence(ev: dict, lang: str = "fr") -> str:
         hours = _fact_num(e, "hours")
         hs = _fact_num(e, "hs", "maxHs")
         dur = (f" for {_plain(hours)} hours" if en else f" pendant {_plain(hours)} heures") if hours is not None else ""
-        sea = f", Hs {_plain(hs, 1)} m" if hs is not None else ""
+        sea = f", Hs {_plain(hs, 0)} m" if hs is not None else ""
         place = ""
         return (
             f"On {when}{place}, the wind rose to {kn} kn{dur}{sea}."
@@ -653,7 +1006,10 @@ def event_sentence(ev: dict, lang: str = "fr") -> str:
         )
     if ev.get("kind") == "sci":
         nm = _fact_num(e, "nm")
-        nm_bit = (f" at {_plain(nm, 1)} nm" if en else f" à {_plain(nm, 1)} nm") if nm is not None else ""
+        nm_bit = (
+            (f" at {_plain(nm, 1)} nautical miles" if en else f" à {_plain(nm, 1)} milles nautiques")
+            if nm is not None else ""
+        )
         return (
             f"On {when}, the route passed{nm_bit} from {name}."
             if en else
@@ -691,7 +1047,10 @@ def _departure_iso(stop: dict) -> Optional[str]:
 
 
 def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
-    pts = stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}]
+    pts = list(stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}])
+    pts.sort(key=lambda s: float(
+        s.get("filmNm") if s.get("filmNm") is not None else s.get("nm") or 0
+    ))
     out: list[dict] = []
     for i, frm in enumerate(pts):
         to = pts[i + 1] if i + 1 < len(pts) else None
@@ -703,7 +1062,10 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
         raw_b = dest_ms if dest_ms is not None else t_end
         t_b = min(raw_b if raw_b is not None else t_end, t_end)
         if t_b <= t_a:
-            continue
+            # Iso égaux (Saint-Maur forcé à T0, La Rochelle le 15 mai à la même
+            # heure) : plancher 1 s — `_iso` tronque à la seconde ; 1 ms
+            # donnait tA == tB et filmPlan jetait le chapitre 0.
+            t_b = t_a + 1000
         out.append({
             "id": f"leg-{i}",
             "from": frm,
@@ -747,12 +1109,37 @@ def _assign(events: list[dict], windows: list[dict]) -> list[list[dict]]:
     return buckets
 
 
-def _arrival_sentence(stop: dict | None, lang: str) -> str:
+def _chapter_dest(w: dict) -> dict | None:
+    dest = w.get("to") if (w.get("to") or {}).get("name") else None
+    return dest
+
+
+def _depart_towards(w: dict, *, i: int, lang: str, display_t0: str | None = None) -> str:
+    """Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé."""
+    dest = _chapter_dest(w)
+    dest_name = short_name((dest or {}).get("name") or "")
+    origin = short_name((w.get("from") or {}).get("name") or "")
+    en = _en(lang)
+    if dest_name:
+        head = f"departure for {dest_name}" if en else f"départ vers {dest_name}"
+    else:
+        head = f"under way from {origin}" if en else f"en route depuis {origin}"
+    if i == 0:
+        if not dest_name:
+            return ""
+        return f"{head[0].upper()}{head[1:]}."
+    conn = connector_at(i - 1, lang)
+    dep = _departure_iso(w["from"]) if w.get("from") else None
+    when = day_month(rebase_iso(dep, OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
+    return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
+
+
+def _arrival_sentence(stop: dict | None, lang: str, display_t0: str | None = None) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
     en = _en(lang)
     name = short_name(stop["name"])
-    when = day_month(stop["iso"], lang)
+    when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     quay = _days(stop.get("holdHours"))
     q = f", {_day_word(quay, lang)} {'in port' if en else 'à quai'}" if quay else ""
     return f"Arrival at {name} on {when}{q}." if en else f"Arrivée à {name} le {when}{q}."
@@ -770,8 +1157,7 @@ def _card(entry: dict) -> dict:
     }
 
 
-def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None) -> list[dict]:
-    en = _en(lang)
+def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None) -> list[dict]:
     chapters: list[dict] = []
     cited: set[str] = set()
     dist = ""
@@ -780,7 +1166,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
 
     def push_arrival(bits: list[str], dest: dict | None) -> None:
         key = norm_stop((dest or {}).get("name") or "")
-        sentence = _arrival_sentence(dest, lang)
+        sentence = _arrival_sentence(dest, lang, display_t0)
         if not sentence or not key or key in cited:
             return
         bits.append(sentence)
@@ -789,26 +1175,33 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
     for i, w in enumerate(windows):
         bits: list[str] = []
         placed: list[dict] = []
-        dest = w.get("to") if (w.get("to") or {}).get("name") else None
-        if i > 0:
-            conn = connector_at(i - 1, lang)
-            dest_name = short_name((dest or {}).get("name") or "")
-            origin = short_name((w.get("from") or {}).get("name") or "")
-            dep = _departure_iso(w["from"]) if w.get("from") else None
-            head = (f"departure for {dest_name}" if dest_name else f"under way from {origin}") if en else (
-                f"départ vers {dest_name}" if dest_name else f"en route depuis {origin}"
-            )
-            bits.append(
-                f"{conn}, on {day_month(dep, lang)}, {head}."
-                if en else
-                f"{conn}, le {day_month(dep, lang)}, {head}."
-            )
-            push_arrival(bits, dest)
+        dest = _chapter_dest(w)
+        dest_name = short_name((dest or {}).get("name") or "")
+        head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
+        # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis la paire de
+        # CETTE fenêtre. Plus de seaName figé « La Rochelle ».
+        if i == 0:
+            bits.append(event_sentence({
+                "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
+                "seaName": "" if dest_name else sea_name,
+                "entry": {"t": OFFICIAL_T0, "name": start_name},
+            }, lang, display_t0=display_t0))
+        if head:
+            bits.append(head)
+        push_arrival(bits, dest)
         for ev in buckets[i]:
             if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"}:
                 continue
-            rich = {**ev, "seaName": sea_name, "distLabel": dist, "name": start_name if ev.get("role") == "depart" else ev.get("name")}
-            sentence = event_sentence(rich, lang).strip()
+            if ev.get("role") == "depart":
+                continue
+            rich = {
+                **ev,
+                "seaName": dest_name or sea_name,
+                "toName": dest_name,
+                "distLabel": dist,
+                "name": ev.get("name"),
+            }
+            sentence = event_sentence(rich, lang, display_t0=display_t0).strip()
             if not sentence:
                 continue
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
@@ -817,9 +1210,8 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             card = _card(entry)
             card["text"] = sentence
             placed.append({"id": ev["id"], "charIdx": char_idx, "card": card})
-        if i == 0:
-            push_arrival(bits, dest)
-        text = re.sub(r"\s{2,}", " ", " ".join(bits)).strip()
+        _append_review_sentences(bits, review, w, lang)
+        text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
         chapters.append({
             "id": w["id"],
             "tA": _iso(w["tA"]),
@@ -840,6 +1232,469 @@ def script_chars(chapters: list[dict]) -> int:
     return sum(len(c.get("text") or "") for c in chapters)
 
 
+def _journal_moments(journal: dict | None) -> list[dict]:
+    if not isinstance(journal, dict):
+        return []
+    rows = journal.get("moments")
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def allocate_chapter_budgets(
+    days: list[float],
+    total: int = FILM_BUDGET_CHARS,
+    floor: int = FILM_CHAPTER_FLOOR,
+) -> list[int]:
+    n = len(days)
+    if n <= 0:
+        return []
+    weights = [max(1.0, float(d or 1)) for d in days]
+    if n * floor >= total:
+        base, rem = divmod(max(total, n), n)
+        return [base + (1 if i < rem else 0) for i in range(n)]
+    rest = total - n * floor
+    total_w = sum(weights) or 1.0
+    extra = [int(rest * w / total_w) for w in weights]
+    leftover = rest - sum(extra)
+    for i in sorted(range(n), key=lambda j: -weights[j]):
+        if leftover <= 0:
+            break
+        extra[i] += 1
+        leftover -= 1
+    return [floor + e for e in extra]
+
+
+def _change_t(row: dict) -> Optional[int]:
+    return _ms(row.get("t") or ((row.get("moment") or {}).get("t") if isinstance(row.get("moment"), dict) else None))
+
+
+def _moment_extra_changes(row: dict) -> list[dict]:
+    """Faits du Moment (around) : marina, station, AMP, cyclone nommé, culture."""
+    moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+    extras: list[dict] = []
+    seen: set[tuple] = set()
+    for i, item in enumerate(moment.get("around") or []):
+        if not isinstance(item, dict):
+            continue
+        kind = AROUND_TO_KIND.get(str(item.get("kind") or ""))
+        if not kind:
+            continue
+        title = short_name(item.get("title") or "")
+        fact = str(item.get("fact") or title or "").strip()
+        if kind == "cyclone":
+            name, year = cyclone_name_year({"title": title, "fact": fact})
+            if not name:
+                continue
+            title = name
+            fact = f"{name} ({year})" if year else name
+        if not title and not fact:
+            continue
+        key = (kind, norm_stop(title), fact)
+        if key in seen:
+            continue
+        seen.add(key)
+        extras.append({
+            "kind": kind,
+            "title": title or fact,
+            "fact": fact,
+            "score": item.get("score") if item.get("score") in {1, 2, 3} else 2,
+            "id": str(item.get("id") or f"around:{row.get('seq')}:{kind}:{i}"),
+        })
+    return extras
+
+
+def _dest_culture_changes(dest: dict | None) -> list[dict]:
+    """Faits de fiche d'escale (sights) : culture nommée, jamais inventée."""
+    if not isinstance(dest, dict):
+        return []
+    sights = dest.get("sights") or (dest.get("facts") or {}).get("sights") or []
+    out: list[dict] = []
+    for i, item in enumerate(sights[:2]):
+        if isinstance(item, str):
+            name, extra = item.strip(), ""
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            extra = str(item.get("fact") or item.get("text") or "").strip()
+        else:
+            continue
+        body = extra or name
+        if not body:
+            continue
+        out.append({
+            "kind": "culture",
+            "title": name or body,
+            "fact": body,
+            "id": f"culture:{dest.get('name')}:{i}",
+            "score": 1,
+        })
+    return out
+
+
+def _flatten_changes(moments: list[dict], t_a: int, t_b: int, first: bool) -> list[dict]:
+    out: list[dict] = []
+    seen: set[tuple] = set()
+    for row in moments:
+        t = _change_t(row)
+        if t is None:
+            continue
+        if first:
+            if t < t_a or t > t_b:
+                continue
+        elif t <= t_a or t > t_b:
+            continue
+        raw = list(row.get("changes") or []) + _moment_extra_changes(row)
+        for i, change in enumerate(raw):
+            if not isinstance(change, dict) or not change.get("kind"):
+                continue
+            title = short_name(change.get("title") or "")
+            fact = str(change.get("fact") or "")
+            key = (str(change.get("kind")), norm_stop(title), fact)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({
+                **change,
+                "id": str(change.get("id") or f"{row.get('seq')}:{change.get('kind')}:{i}"),
+                "t": row.get("t"),
+                "tMs": t,
+                "legIdx": row.get("legIdx"),
+            })
+    out.sort(key=lambda c: (c["tMs"], str(c.get("id") or "")))
+    return out
+
+
+def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
+    by_kind: dict[str, list[dict]] = {}
+    for change in changes:
+        by_kind.setdefault(str(change.get("kind") or ""), []).append(change)
+    out: list[dict] = []
+    grouped_ids: set[str] = set()
+    for kind, group in by_kind.items():
+        if len(group) < 3:
+            continue
+        first, last = group[0], group[-1]
+        if kind == "zee-enter":
+            title = fact = f"{len(group)} ZEE traversées"
+        elif kind == "alert-on":
+            title = fact = (
+                f"{len(group)} alertes entre le {day_month(first.get('t'))} et le {day_month(last.get('t'))}"
+            )
+        else:
+            title = fact = f"{len(group)} {kind}"
+        out.append({
+            "id": f"group:{kind}:{first.get('id')}",
+            "kind": kind,
+            "score": max(int(g.get("score") or 0) for g in group),
+            "title": title,
+            "fact": fact,
+            "t": first.get("t"),
+            "tMs": first.get("tMs"),
+        })
+        grouped_ids.update(str(g.get("id")) for g in group)
+    gap = span_ms * KIND_GROUP_FRAC if span_ms > 0 else 0
+    last_t: dict[str, int] = {}
+    for change in changes:
+        cid = str(change.get("id") or "")
+        if cid in grouped_ids:
+            continue
+        kind = str(change.get("kind") or "")
+        prev = last_t.get(kind)
+        if prev is not None and gap > 0 and abs((change.get("tMs") or 0) - prev) < gap:
+            continue
+        last_t[kind] = int(change.get("tMs") or 0)
+        out.append(change)
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return out
+
+
+def select_chapter_changes(
+    changes: list[dict], t_a: int, t_b: int, *, budget: bool = True,
+) -> list[dict]:
+    if not budget:
+        seen: set[str] = set()
+        out: list[dict] = []
+        for change in sorted(changes, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))):
+            cid = str(change.get("id") or "")
+            if cid and cid in seen:
+                continue
+            if cid:
+                seen.add(cid)
+            out.append(change)
+        return out
+    grouped = _group_changes(changes, (t_b or 0) - (t_a or 0))
+    must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
+    rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
+    rest.sort(key=lambda c: (
+        -int(c.get("score") or 0), CHANGE_PRIORITY.get(str(c.get("kind") or ""), 9), c.get("tMs") or 0,
+    ))
+    arrival = next((c for c in must if c.get("kind") == "escale"), None)
+    approach = next((c for c in must if c.get("kind") == "approche"), None)
+    alert = next((c for c in rest if c.get("kind") == "alert-on"), None)
+    color = next((c for c in rest if c.get("kind") in COLOR_KINDS), None)
+    picked: list[dict] = []
+
+    def add(item: dict | None) -> None:
+        if item is None or len(picked) >= FILM_CHAPTER_MAX_CHANGES:
+            return
+        if any(x.get("id") == item.get("id") for x in picked):
+            return
+        picked.append(item)
+
+    add(arrival)
+    add(approach)
+    add(alert)
+    add(color)
+    for item in must + rest:
+        add(item)
+    picked.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return picked[:FILM_CHAPTER_MAX_CHANGES]
+
+
+def change_sentence(change: dict, lang: str = "fr") -> str:
+    en = _en(lang)
+    when = day_month(change.get("t"), lang)
+    title = short_name(change.get("title") or "")
+    fact = expand_spoken_units(str(change.get("fact") or "").rstrip("."), lang)
+    kind = change.get("kind")
+    name = title.replace("Arrivée à ", "").replace("Arrival at ", "").strip()
+    if kind == "escale":
+        if when:
+            return f"Arrival at {name} on {when}." if en else f"Arrivée à {name} le {when}."
+        return f"Arrival at {name}." if en else f"Arrivée à {name}."
+    if kind == "approche":
+        if when:
+            return f"On {when}, approaching {title}." if en else f"Le {when}, approche de {title}."
+        return f"Approaching {title}." if en else f"Approche de {title}."
+    if kind == "alert-on":
+        body = fact or title
+        return f"On {when}, {body}." if en else f"Le {when}, {body}."
+    if kind == "zee-enter":
+        return f"On {when}, entered {title}." if en else f"Le {when}, entrée dans {title}."
+    if kind == "station":
+        return f"On {when}, passed {title}." if en else f"Le {when}, station croisée : {title}."
+    if kind == "amp":
+        return f"On {when}, marine protected area: {title}." if en else f"Le {when}, aire marine protégée : {title}."
+    if kind == "marina":
+        name = title or fact
+        if not name:
+            return ""
+        return f"On {when}, marina: {name}." if en else f"Le {when}, marina croisée : {name}."
+    if kind == "cyclone":
+        cyc_name, year = cyclone_name_year(change)
+        if not cyc_name:
+            return ""
+        if year:
+            return (
+                f"Historical track of cyclone {cyc_name} ({year})."
+                if en else
+                f"Trace historique du cyclone {cyc_name} ({year})."
+            )
+        return (
+            f"Historical track of cyclone {cyc_name}."
+            if en else
+            f"Trace historique du cyclone {cyc_name}."
+        )
+    if kind == "culture":
+        body = fact or title
+        if not body:
+            return ""
+        return body if body.endswith(".") else f"{body}."
+    if kind == "port":
+        name = title or fact
+        if not name:
+            return ""
+        return f"On {when}, port of departure: {name}." if en else f"Le {when}, port de départ : {name}."
+    if fact:
+        return f"{fact}."
+    return ""
+
+
+def _bubble_from_change(change: dict, chapter: dict, lang: str, char_idx: int) -> dict:
+    kind = BUBBLE_KIND.get(str(change.get("kind") or ""), change.get("kind") or "stop")
+    title = short_name(change.get("title") or "")
+    if change.get("kind") in {"approche", "escale"}:
+        title = short_name(
+            title.replace("Arrivée à ", "").replace("Arrival at ", "")
+            or chapter.get("toName") or ""
+        )
+    fact = change_sentence(change, lang)
+    score = change.get("score") if change.get("score") in {1, 2, 3} else bubble_score({"kind": kind})
+    return {
+        "id": change.get("id"),
+        "charIdx": int(char_idx or 0),
+        "kind": kind,
+        "title": str(title)[:40],
+        "fact": fact,
+        "score": score if score in {1, 2, 3} else 3,
+        "card": {
+            "id": change.get("id"), "kind": kind, "title": title, "text": fact,
+            "at": change.get("t"), "score": score if score in {1, 2, 3} else 3,
+        },
+    }
+
+
+def _sentences(text: str) -> list[str]:
+    return [p.strip() for p in re.split(r"(?<=[.!?…])\s+", text or "") if p.strip()]
+
+
+_KEEP_SENT = re.compile(r"arriv|départ|departure|left |quitté|approche|approaching", re.I)
+
+
+def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
+    """Assemble le chapitre. Jamais de phrase de remplissage. Budget = plafond, pas un plancher."""
+    blob = re.sub(r"\s{2,}", " ", (text or "").strip())
+    for bit in extras:
+        if bit and bit not in blob:
+            blob = f"{blob} {bit}".strip()
+    cap = int(budget or 0)
+    if cap > 0:
+        hi = max(int(cap * 1.1), cap)
+        while len(blob) > hi:
+            sents = _sentences(blob)
+            drop_i = next(
+                (i for i in range(len(sents) - 1, 1, -1) if not _KEEP_SENT.search(sents[i])),
+                None,
+            )
+            if drop_i is None:
+                break
+            sents.pop(drop_i)
+            blob = " ".join(sents).strip()
+    return speak_film_text(split_short_sentences(blob), lang)
+
+
+def build_raw_from_moments(
+    clock: dict | None,
+    marks: list | None,
+    live: dict | None,
+    journal: dict | None,
+    *,
+    lang: str = "fr",
+    seconds: int = 150,
+    now_ms: Optional[int] = None,
+    display_t0: str | None = None,
+    review: dict | None = None,
+) -> dict[str, Any]:
+    moments = _journal_moments(journal)
+    now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
+    packed = film_candidates(journal, marks, clock, live, now)
+    t0, t_end = packed["t0"], packed["tEnd"]
+    if t0 is None or t_end is None or t_end <= t0:
+        return {"chapters": [], "source": "rules", "chars": 0, "targetSeconds": _film_seconds(seconds), "_fromMoments": True}
+    start_name = short_name((packed["start"] or {}).get("name") or "Saint-Maur")
+    sea_name = short_name((packed["sea"] or {}).get("name") or "La Rochelle")
+    windows = _windows(packed["stops"], t0, t_end)
+    has_budget = _film_seconds(seconds) > 0
+    budget_s = _film_seconds(seconds)
+    if has_budget:
+        target = FILM_BUDGET_CHARS if budget_s == 150 else max(
+            FILM_CHAPTER_FLOOR, int(FILM_BUDGET_CHARS * budget_s / 150),
+        )
+        days = [max(1.0, (w["tB"] - w["tA"]) / 86_400_000.0) for w in windows]
+        budgets = allocate_chapter_budgets(days, target)
+    else:
+        target = 0
+        budgets = [0] * len(windows)
+    en = _en(lang)
+    cited: set[str] = set()
+    chapters: list[dict] = []
+    selected_all: list[dict] = []
+    for i, w in enumerate(windows):
+        dest = _chapter_dest(w)
+        dest_name = short_name((dest or {}).get("name") or "")
+        flat = _flatten_changes(moments, w["tA"], w["tB"], first=i == 0)
+        for extra in _dest_culture_changes(dest):
+            extra = {**extra, "t": (dest or {}).get("iso"), "tMs": w["tB"]}
+            flat.append(extra)
+        selected = select_chapter_changes(flat, w["tA"], w["tB"], budget=has_budget)
+        bits: list[str] = []
+        placed: list[dict] = []
+        head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
+        if i == 0:
+            bits.append(event_sentence({
+                "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
+                "seaName": "" if dest_name else sea_name,
+                "entry": {"t": OFFICIAL_T0, "name": start_name},
+            }, lang, display_t0=display_t0))
+        if head:
+            bits.append(head)
+        key = norm_stop((dest or {}).get("name") or "")
+        arrival = _arrival_sentence(dest, lang, display_t0)
+        if arrival and key and key not in cited:
+            char_idx = len(" ".join(bits)) + (1 if bits else 0)
+            bits.append(arrival)
+            cited.add(key)
+            arr_id = f"stop:{dest['name']}:{dest.get('iso')}"
+            dest_name = short_name(dest["name"])
+            placed.append({
+                "id": arr_id, "charIdx": char_idx, "kind": "stop", "title": dest_name,
+                "fact": arrival, "score": 3,
+                "card": {"id": arr_id, "kind": "stop", "title": dest_name, "text": arrival, "at": dest.get("iso"), "score": 3},
+            })
+        for change in selected:
+            if change.get("kind") == "escale":
+                continue
+            sentence = change_sentence(change, lang).strip()
+            if not sentence:
+                continue
+            filtered, _dropped = filter_numbers(sentence, _facts_with_rounded(change))
+            sentence = (filtered or "").strip()
+            if not sentence:
+                continue
+            char_idx = len(" ".join(bits)) + (1 if bits else 0)
+            bits.append(sentence)
+            placed.append(_bubble_from_change(change, w, lang, char_idx))
+            selected_all.append(change)
+        _append_review_sentences(bits, review, w, lang)
+        extras: list[str] = []
+        if dest and w.get("from"):
+            try:
+                a = float((w["from"] or {}).get("nm") if (w["from"] or {}).get("nm") is not None else (w["from"] or {}).get("filmNm") or 0)
+                b = float(dest.get("nm") if dest.get("nm") is not None else dest.get("filmNm") or 0)
+                gap = b - a
+                if gap > 1:
+                    extras.append(
+                        f"The leg covers {_nm_label(gap, lang)}."
+                        if en else
+                        f"La jambe compte {_nm_label(gap, lang)}."
+                    )
+            except (TypeError, ValueError):
+                pass
+        chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
+        text = fit_chapter_text(" ".join(bits), chapter_budget, extras, lang)
+        chapters.append({
+            "id": w["id"],
+            "tA": _iso(w["tA"]),
+            "tB": _iso(w["tB"]),
+            "text": text,
+            "events": placed,
+            "fromName": w.get("fromName") or "",
+            "toName": w.get("toName") or "",
+            "fromLat": w.get("fromLat"),
+            "fromLon": w.get("fromLon"),
+            "toLat": w.get("toLat"),
+            "toLon": w.get("toLon"),
+        })
+    if has_budget and target > 0:
+        n = script_chars(chapters)
+        hi = int(target * 1.1)
+        guard = 0
+        while n > hi and chapters and guard < 120:
+            sents = _sentences(chapters[-1]["text"])
+            if len(sents) <= 2 or _KEEP_SENT.search(sents[-1] or ""):
+                break
+            chapters[-1]["text"] = " ".join(sents[:-1]).strip()
+            n = script_chars(chapters)
+            guard += 1
+    return {
+        "chapters": chapters,
+        "source": "rules",
+        "chars": script_chars(chapters),
+        "targetSeconds": budget_s,
+        "_events": selected_all,
+        "_packed": packed,
+        "_fromMoments": True,
+    }
+
+
 def build_raw_script(
     clock: dict | None,
     marks: list | None,
@@ -850,21 +1705,28 @@ def build_raw_script(
     seconds: int = 150,
     now_ms: Optional[int] = None,
     selected: list[dict] | None = None,
+    display_t0: str | None = None,
+    review: dict | None = None,
 ) -> dict[str, Any]:
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
+    if _journal_moments(journal):
+        return build_raw_from_moments(
+            clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now,
+            display_t0=display_t0, review=review,
+        )
     packed = film_candidates(journal, marks, clock, live, now)
     t0, t_end = packed["t0"], packed["tEnd"]
     if t0 is None or t_end is None or t_end <= t0:
-        return {"chapters": [], "source": "rules", "chars": 0, "targetSeconds": seconds}
+        return {"chapters": [], "source": "rules", "chars": 0, "targetSeconds": _film_seconds(seconds)}
     start_name = short_name((packed["start"] or {}).get("name") or "Saint-Maur")
     sea_name = short_name((packed["sea"] or {}).get("name") or "La Rochelle")
     events = selected if selected is not None else select_film_events(packed["candidates"], t0, t_end)
-    events = [{**e, "seaName": sea_name, "name": start_name} if e.get("role") == "depart" else e for e in events]
+    events = [{**e, "name": start_name} if e.get("role") == "depart" else e for e in events]
     must_ids = {e["id"] for e in events if e.get("role") in {"depart", "today", "stop"}}
     windows = _windows(packed["stops"], t0, t_end)
 
     def compose(evs: list[dict]) -> list[dict]:
-        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live)
+        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0, review=review)
 
     chapters = compose(events)
     attach_chapter_events(chapters, packed, journal, lang)
@@ -881,7 +1743,7 @@ def build_raw_script(
         "chapters": chapters,
         "source": "rules",
         "chars": script_chars(chapters),
-        "targetSeconds": int(seconds or 150),
+        "targetSeconds": _film_seconds(seconds),
         "_events": events,
         "_packed": packed,
     }
@@ -889,6 +1751,8 @@ def build_raw_script(
 
 def journal_fingerprint(journal: dict | None, last_stop: str | None = None) -> str:
     bits = []
+    for row in _journal_moments(journal):
+        bits.append(f"{row.get('seq')}|{row.get('signature')}|{row.get('t')}")
     for e in sorted(journal_entries(journal), key=lambda x: (str(x.get("t") or ""), str(x.get("id") or ""))):
         bits.append(f"{e.get('id')}|{e.get('kind')}|{e.get('t')}")
     bits.append(f"stop:{last_stop or ''}")
@@ -896,6 +1760,10 @@ def journal_fingerprint(journal: dict | None, last_stop: str | None = None) -> s
 
 
 def last_stop_id(journal: dict | None, marks: list | None) -> str:
+    for row in reversed(_journal_moments(journal)):
+        for change in row.get("changes") or []:
+            if isinstance(change, dict) and change.get("kind") == "escale":
+                return str(change.get("title") or "")
     stops = [e for e in journal_entries(journal) if e.get("kind") == "stop" and e.get("event") == "arrival"]
     if stops:
         stops.sort(key=lambda e: e.get("t") or "")
@@ -947,7 +1815,7 @@ def locate_events(tagged: str, events: list[dict]) -> tuple[str, list[dict]]:
 
 
 def written_is_valid(text: str, facts: Any, event_ids: list[str]) -> tuple[bool, str, int]:
-    """No new number, every [[ev:id]] present, 2300–2500 chars after strip."""
+    """No new number, every [[ev:id]] present, budget ±10 % after strip."""
     filtered, dropped = filter_numbers(text, facts)
     if dropped:
         return False, filtered, dropped
@@ -981,19 +1849,40 @@ def _parse_selection(text: str, allowed: set[str]) -> Optional[list[str]]:
     return None
 
 
+def _snap_to_sentence(text: str, pos: int) -> int:
+    if pos <= 0:
+        return 0
+    if pos >= len(text):
+        return len(text)
+    prev = max(text.rfind(".", 0, pos), text.rfind("!", 0, pos), text.rfind("?", 0, pos))
+    nxt_hits = [i for i in (text.find(".", pos), text.find("!", pos), text.find("?", pos)) if i >= 0]
+    nxt = min(nxt_hits) if nxt_hits else -1
+    if prev >= 0 and (nxt < 0 or pos - prev <= nxt - pos + 8):
+        return min(len(text), prev + 1)
+    if nxt >= 0:
+        return min(len(text), nxt + 1)
+    return pos
+
+
 def _distribute_written(raw_chapters: list[dict], display: str, located: list[dict]) -> list[dict]:
     total = sum(max(1, len(c.get("text") or "")) for c in raw_chapters) or 1
     pos = 0
     out: list[dict] = []
     for i, ch in enumerate(raw_chapters):
-        n = len(display) - pos if i == len(raw_chapters) - 1 else max(1, round(len(display) * max(1, len(ch.get("text") or "")) / total))
-        chunk = display[pos:pos + n]
+        if i == len(raw_chapters) - 1:
+            end = len(display)
+        else:
+            raw_n = max(1, round(len(display) * max(1, len(ch.get("text") or "")) / total))
+            end = _snap_to_sentence(display, pos + raw_n)
+            if end <= pos:
+                end = min(len(display), pos + max(raw_n, 1))
+        chunk = display[pos:end]
         evs = []
         for e in located:
-            if pos <= e["charIdx"] < pos + max(n, 1) or (i == len(raw_chapters) - 1 and e["charIdx"] >= pos):
+            if pos <= e["charIdx"] < max(end, pos + 1) or (i == len(raw_chapters) - 1 and e["charIdx"] >= pos):
                 evs.append({**e, "charIdx": max(0, e["charIdx"] - pos)})
         out.append({**ch, "text": chunk, "events": evs})
-        pos += n
+        pos = end
     return out
 
 
@@ -1004,11 +1893,12 @@ SELECT_SYSTEM = (
     "Do not invent numbers. Do not write narrative."
 )
 WRITE_SYSTEM = (
-    "You rewrite a film script from structured facts. "
+    "You rewrite ONE film chapter from structured facts. "
     "Keep EVERY number, name and date exactly as given. "
-    "Target length 2300 to 2500 characters of visible text. "
+    "Write short complete sentences. Never cut a sentence. "
+    "Write units in full words (milles nautiques / nautical miles), never nm. "
     "Start every event sentence with [[ev:<id>]] using the provided ids. "
-    "Vary the language, stay chronological. Thinking OFF. No new figure."
+    "Stay chronological. Thinking OFF. No new figure."
 )
 
 
@@ -1032,6 +1922,30 @@ async def select_with_llm(
     return fallback_ids, "rules"
 
 
+def _chapter_next_summary(raw_chapters: list[dict], i: int, lang: str) -> str:
+    if i + 1 >= len(raw_chapters):
+        return "end of the voyage" if _en(lang) else "fin du voyage"
+    nxt = raw_chapters[i + 1]
+    frm = short_name(nxt.get("fromName") or "")
+    to = short_name(nxt.get("toName") or "")
+    if to:
+        return f"the next leg leads to {to}" if _en(lang) else f"la jambe suivante mène à {to}"
+    return f"under way from {frm}" if _en(lang) else f"en route depuis {frm}"
+
+
+def _pad_tagged(text: str, budget: int) -> str:
+    """Plus de remplissage : on coupe si trop long, on ne meuble jamais (lot RD7)."""
+    body = text or ""
+    cap = int(budget or 0)
+    if cap <= 0:
+        return body
+    hi = max(int(cap * 1.1), cap)
+    display = strip_tags(body)
+    if len(display) > hi:
+        body = body[: max(0, len(body) - (len(display) - hi))]
+    return body
+
+
 async def write_with_llm(
     raw: dict,
     events: list[dict],
@@ -1039,31 +1953,82 @@ async def write_with_llm(
     lang: str = "fr",
     cascade: Callable = cascade_text,
 ) -> tuple[Optional[dict], str]:
-    event_ids = [e["id"] for e in events]
+    event_ids = [e["id"] for e in events if e.get("id")]
     facts = film_facts(raw, events)
-    raw_text = "\n\n".join(c.get("text") or "" for c in raw.get("chapters") or [])
-    user = (
-        f"lang=fr\nids={json.dumps(event_ids)}\n"
-        f"facts={json.dumps(facts, ensure_ascii=False, default=str)[:6000]}\n"
-        f"raw:\n{raw_text}"
-    )
-    text, source = await cascade(
-        WRITE_SYSTEM, user, tier="write", fallback="", facts=None, max_tokens=WRITE_MAX_TOKENS,
-    )
-    if _en(lang) and text:
-        from story_cascade import translate  # noqa: PLC0415
-        text, source = await translate(text, "en", facts=text, max_tokens=WRITE_MAX_TOKENS)
-    ok, _, _ = written_is_valid(text, facts, event_ids)
-    if not ok:
+    raw_chapters = list(raw.get("chapters") or [])
+    if not raw_chapters:
         return None, "rules"
-    display, located = locate_events(text, events)
-    chapters = _distribute_written(raw.get("chapters") or [], display, located)
+    budgets = allocate_chapter_budgets(
+        [max(1.0, len(c.get("text") or "") or 1) for c in raw_chapters],
+        int(raw.get("targetSeconds") or 150) and FILM_BUDGET_CHARS,
+    )
+    chapters_out: list[dict] = []
+    source_last = "rules"
+    any_dropped = 0
+    tagged_all: list[str] = []
+    by_id = {e["id"]: e for e in events if e.get("id")}
+    for i, ch in enumerate(raw_chapters):
+        ch_ids = [str(e.get("id")) for e in (ch.get("events") or []) if e.get("id")]
+        if not ch_ids:
+            ch_ids = [eid for eid in event_ids if eid in (ch.get("text") or "")]
+        next_sum = _chapter_next_summary(raw_chapters, i, lang)
+        budget = budgets[i] if i < len(budgets) else FILM_CHAPTER_FLOOR
+        user = (
+            f"lang={('en' if _en(lang) else 'fr')}\n"
+            f"next={next_sum}\n"
+            f"budget={budget}\n"
+            f"ids={json.dumps(ch_ids)}\n"
+            f"facts={json.dumps(facts, ensure_ascii=False, default=str)[:2500]}\n"
+            f"raw:\n{ch.get('text') or ''}"
+        )
+        text, source = await cascade(
+            WRITE_SYSTEM, user, tier="write", fallback="", facts=None, max_tokens=min(WRITE_MAX_TOKENS, 400),
+        )
+        source_last = source
+        text = speak_film_text(text or "", lang)
+        filtered, dropped = filter_numbers(text, facts)
+        any_dropped += dropped
+        if dropped or not filtered.strip():
+            filtered = ch.get("text") or ""
+        for eid in ch_ids:
+            if f"[[ev:{eid}]]" not in filtered:
+                filtered = f"[[ev:{eid}]] {filtered}"
+        filtered = split_short_sentences(filtered)
+        hi = max(int(budget * 1.1), budget)
+        if len(strip_tags(filtered)) > hi:
+            kept: list[str] = []
+            for sent in _sentences(filtered):
+                trial = " ".join(kept + [sent])
+                if kept and len(strip_tags(trial)) > hi:
+                    break
+                kept.append(sent)
+            filtered = " ".join(kept) or filtered
+            for eid in ch_ids:
+                if f"[[ev:{eid}]]" not in filtered:
+                    filtered = f"[[ev:{eid}]] {filtered}"
+        filtered = _pad_tagged(filtered, budget)
+        tagged_all.append(filtered)
+        ch_events = [by_id[eid] for eid in ch_ids if eid in by_id] or [
+            e for e in (ch.get("events") or []) if e.get("id")
+        ]
+        display, located = locate_events(filtered, ch_events or events)
+        display = speak_film_text(split_short_sentences(display), lang)
+        chapters_out.append({**ch, "text": display, "events": located or ch.get("events") or []})
+    if any_dropped:
+        return None, "rules"
+    joined = " ".join(tagged_all)
+    ok, _, dropped = written_is_valid(joined, facts, event_ids)
+    if event_ids and not ok and dropped:
+        return None, "rules"
+    n = script_chars(chapters_out)
+    if n < FILM_WRITE_MIN or n > FILM_WRITE_MAX:
+        return None, "rules"
     return {
-        "chapters": chapters,
-        "source": "nemotron" if str(source).startswith("nemotron") else source,
-        "chars": len(display),
-        "targetSeconds": raw.get("targetSeconds") or 150,
-    }, source
+        "chapters": chapters_out,
+        "source": "nemotron" if str(source_last).startswith("nemotron") else source_last,
+        "chars": n,
+        "targetSeconds": _film_seconds(raw.get("targetSeconds")),
+    }, source_last
 
 
 def _public_plan(plan: dict, source: str) -> dict:
@@ -1098,7 +2063,7 @@ def _public_plan(plan: dict, source: str) -> dict:
         "chapters": chapters,
         "source": source,
         "chars": chars,
-        "targetSeconds": plan.get("targetSeconds") or 150,
+        "targetSeconds": int(plan["targetSeconds"]) if plan.get("targetSeconds") is not None else 150,
     }
 
 
@@ -1107,42 +2072,60 @@ async def build_film_response(
     live: dict | None,
     journal: dict | None,
     *,
+    marks: list | None = None,
     lang: str = "fr",
     seconds: int = 150,
     style: str = "raw",
     now_ms: Optional[int] = None,
     cascade: Callable = cascade_text,
     want_write: bool = False,
+    display_t0: str | None = None,
+    review: dict | None = None,
 ) -> dict[str, Any]:
     """Assemble the API payload. `want_write` triggers Nemotron (tier write)."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
 
-    marks = (clock or {}).get("marks")
+    shown = resolve_film_t0(display_t0)
+    marks = marks if marks is not None else (clock or {}).get("marks")
+    clock = {**(clock or {}), "t0": OFFICIAL_T0}
     last = last_stop_id(journal, marks)
-    key = film_cache_key(journal_fingerprint(journal, last), lang, seconds)
+    fp = journal_fingerprint(journal, last)
+    rev = review_fingerprint(review)
+    if rev:
+        fp = f"{fp}|rev={rev}"
+    if shown != OFFICIAL_T0:
+        fp = f"{fp}|t0={shown}"
+    key = film_cache_key(fp, lang, seconds)
     cached = get_film_cached(key) or {}
-    raw_full = build_raw_script(clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms)
+    raw_full = build_raw_script(
+        clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms,
+        display_t0=shown, review=review,
+    )
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
+    from_moments = bool(raw_full.get("_fromMoments"))
     raw = _public_plan(raw_full, "rules")
-    attach_chapter_events(raw.get("chapters") or [], packed, journal, lang)
+    if not from_moments:
+        attach_chapter_events(raw.get("chapters") or [], packed, journal, lang)
     written = cached.get("written") if isinstance(cached.get("written"), dict) else None
     written_source = cached.get("writtenSource") or "nemotron"
 
     if want_write and written is None:
-        fallback_ids = [e["id"] for e in events]
-        try:
-            ids, _sel_src = await select_with_llm(packed.get("candidates") or events, fallback_ids, cascade=cascade)
-            by_id = {e["id"]: e for e in (packed.get("candidates") or events)}
-            picked = [by_id[i] for i in ids if i in by_id]
-            if picked:
-                raw_full = build_raw_script(
-                    clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, selected=picked,
-                )
-                events = raw_full.get("_events") or picked
-                raw = _public_plan(raw_full, "rules")
-        except Exception:
-            pass
+        if not from_moments:
+            fallback_ids = [e["id"] for e in events]
+            try:
+                ids, _sel_src = await select_with_llm(packed.get("candidates") or events, fallback_ids, cascade=cascade)
+                by_id = {e["id"]: e for e in (packed.get("candidates") or events)}
+                picked = [by_id[i] for i in ids if i in by_id]
+                if picked:
+                    raw_full = build_raw_script(
+                        clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, selected=picked,
+                        review=review,
+                    )
+                    events = raw_full.get("_events") or picked
+                    raw = _public_plan(raw_full, "rules")
+            except Exception:
+                pass
         try:
             wplan, wsrc = await write_with_llm(raw_full, events, lang=lang, cascade=cascade)
         except Exception:
@@ -1156,7 +2139,7 @@ async def build_film_response(
     elif not cached:
         put_film_cached(key, {"raw": raw, "written": written, "writtenSource": written_source if written else None, "lastStop": last})
 
-    if isinstance(written, dict):
+    if isinstance(written, dict) and not from_moments:
         attach_chapter_events(written.get("chapters") or [], packed, journal, lang)
     use_written = style in {"written", "nemotron", "rédigé", "redige"} and written is not None
     plan = written if use_written else raw
@@ -1171,6 +2154,7 @@ async def official_film(
     seconds: int = 150,
     style: str = "raw",
     cascade: Callable = cascade_text,
+    t0: str | None = None,
 ) -> dict[str, Any]:
     from voyage_api import _climo_clock, _journal_safely, _now  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
@@ -1181,13 +2165,81 @@ async def official_film(
     if voy is None:
         raise FileNotFoundError("voyage officiel absent")
     when = _now()
-    clock = voy.get("clock") or _climo_clock(voy)
+    raw_clock = voy.get("clock") or _climo_clock(voy)
+    clock = {**raw_clock, "t0": OFFICIAL_T0}
+    marks = merge_route_marks(voy.get("marks") or [], raw_clock)
     _journal_safely(lambda: journal.tick(voy, when))
-    live = sample_clock_at_time(clock, when) or {}
+    live = sample_clock_at_time(raw_clock, when) or {}
     payload = journal.summary(500)
-    want_write = style in {"written", "nemotron", "rédigé", "redige"}
+    try:
+        from moment_journal import read_moments  # noqa: PLC0415
+        moments = read_moments(OFFICIAL_VOYAGE_ID)
+    except Exception:
+        moments = []
+    if moments:
+        payload = {**payload, "moments": moments}
+    review = None
+    try:
+        from plan_review import review_official  # noqa: PLC0415
+        # Saison atlas hors HTTP (budget 6 s) : les couloirs viennent des points.
+        review = review_official(voy, when, season=False)
+    except Exception:
+        review = None
     return await build_film_response(
-        clock, live, payload, lang=lang, seconds=int(seconds or 150),
-        style=style, cascade=cascade, want_write=want_write,
+        clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
+        style=style, cascade=cascade, want_write=False,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
+        display_t0=resolve_film_t0(t0),
+        review=review,
     )
+
+
+async def warm_film_story(
+    voyage_id: str | None = None,
+    *,
+    langs: tuple[str, ...] = ("fr", "en"),
+    seconds: int = 150,
+    cascade: Callable = cascade_text,
+) -> dict[str, Any]:
+    """Préchauffe le rédigé chapitre par chapitre — jamais au clic (lot R9c)."""
+    from voyage_api import _climo_clock, _now  # noqa: PLC0415
+    from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
+    from voyage_store import load_voyage  # noqa: PLC0415
+    from moment_journal import read_moments  # noqa: PLC0415
+    import voyage_journal as journal  # noqa: PLC0415
+
+    vid = voyage_id or OFFICIAL_VOYAGE_ID
+    voy = load_voyage(vid)
+    if voy is None:
+        return {"voyageId": vid, "status": "no-voyage", "count": 0}
+    when = _now()
+    raw_clock = voy.get("clock") or _climo_clock(voy)
+    clock = {**raw_clock, "t0": OFFICIAL_T0}
+    marks = merge_route_marks(voy.get("marks") or [], raw_clock)
+    live = sample_clock_at_time(raw_clock, when) or {}
+    try:
+        payload = journal.summary(500)
+    except Exception:
+        payload = {}
+    try:
+        moments = read_moments(vid)
+    except Exception:
+        moments = []
+    if moments:
+        payload = {**payload, "moments": moments}
+    review = None
+    try:
+        from plan_review import review_official  # noqa: PLC0415
+        review = review_official(voy, when, season=False)
+    except Exception:
+        review = None
+    now_ms = int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None
+    out: dict[str, Any] = {}
+    for lang in langs:
+        plan = await build_film_response(
+            clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
+            style="written", cascade=cascade, want_write=True, now_ms=now_ms,
+            review=review,
+        )
+        out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
+    return {"voyageId": vid, "status": "ready", "langs": out}

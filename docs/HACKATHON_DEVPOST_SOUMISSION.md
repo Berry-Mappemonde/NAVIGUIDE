@@ -3,7 +3,7 @@
 Version **1.0** — 20 septembre 2026. Textes **en anglais** (exigé par les
 règles), prêts à coller ; consignes en français. Ton : honnête, vrai, court,
 compréhensible par un jury qui n'est pas que technique (marketing, UX).
-Ce document remplace la partie « soumission » de `hackathon-nebius-nvidia.md`.
+Ce document remplace la partie « soumission » de `docs/archives/hackathon-nebius-nvidia.md`.
 
 ## 0. Avant de soumettre — ce qui doit être vrai
 

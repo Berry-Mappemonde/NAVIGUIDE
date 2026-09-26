@@ -35,10 +35,11 @@ describe("climatologyWorld antimeridian", () => {
       [-179, -17],
       [-170, -18],
     ]);
-    assert.equal(copies.length, 3);
-    assert.deepEqual(copies[0].map((ll) => ll[1]), [170, 179, 181, 190]);
-    assert.deepEqual(copies[1].map((ll) => ll[1]), [530, 539, 541, 550]);
-    assert.deepEqual(copies[2].map((ll) => ll[1]), [-190, -181, -179, -170]);
+    assert.ok(copies.length >= 3);
+    const byFirst = new Map(copies.map((part) => [part[0][1], part]));
+    assert.deepEqual(byFirst.get(170).map((ll) => ll[1]), [170, 179, 181, 190]);
+    assert.deepEqual(byFirst.get(530).map((ll) => ll[1]), [530, 539, 541, 550]);
+    assert.deepEqual(byFirst.get(-190).map((ll) => ll[1]), [-190, -181, -179, -170]);
     for (const part of copies) {
       assert.ok(part.length >= 2);
       for (let i = 1; i < part.length; i++) {

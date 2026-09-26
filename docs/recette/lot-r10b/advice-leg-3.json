@@ -1,0 +1,75 @@
+{
+  "status": "done",
+  "leg": 3,
+  "weights": {
+    "shiftPerDay": 0.3,
+    "extraNm": 0.02
+  },
+  "best": {
+    "shiftDays": -7,
+    "corridor": "reference",
+    "extraNm": 0,
+    "alertsBefore": 12,
+    "alertsAfter": 0,
+    "totalBefore": 28,
+    "totalAfter": 0,
+    "score": 2.1,
+    "cascade": [
+      {
+        "stop": "Dzaoudzi",
+        "was": "2026-10-02",
+        "now": "2026-09-25"
+      },
+      {
+        "stop": "Le Cap",
+        "was": "2026-10-09",
+        "now": "2026-10-02"
+      }
+    ],
+    "facts": [
+      "jambe Nouméa → Dzaoudzi",
+      "décalage -7 jours (absolu 7)",
+      "départ 2026-10-01 → 2026-09-24",
+      "jour 1 → 24",
+      "mois 10 → 9",
+      "année 2026 → 2026",
+      "alertes 12 → 0",
+      "total 28 → 0",
+      "extraNm 0",
+      "poids 0.3 par jour, 0.02 par nm",
+      "Dzaoudzi 2026-10-02 → 2026-09-25",
+      "Le Cap 2026-10-09 → 2026-10-02"
+    ],
+    "sentence": "Partir de Nouméa le 24 septembre plutôt que le 1er octobre : 0 alertes au lieu de 12 sur cette jambe ; toutes les escales suivantes avancent de 7 jours.",
+    "sentenceSource": "rules"
+  },
+  "alternatives": [
+    {
+      "shiftDays": -14,
+      "extraNm": 0,
+      "alertsBefore": 12,
+      "alertsAfter": 0,
+      "totalAfter": 0,
+      "score": 4.2,
+      "sentence": "Partir de Nouméa le 17 septembre plutôt que le 1er octobre : 0 alertes au lieu de 12 sur cette jambe ; toutes les escales suivantes avancent de 14 jours."
+    },
+    {
+      "shiftDays": -21,
+      "extraNm": 0,
+      "alertsBefore": 12,
+      "alertsAfter": 0,
+      "totalAfter": 0,
+      "score": 6.3,
+      "sentence": "Partir de Nouméa le 10 septembre plutôt que le 1er octobre : 0 alertes au lieu de 12 sur cette jambe ; toutes les escales suivantes avancent de 21 jours."
+    },
+    {
+      "shiftDays": 0,
+      "extraNm": 0,
+      "alertsBefore": 12,
+      "alertsAfter": 12,
+      "totalAfter": 28,
+      "score": 28.0,
+      "sentence": "Rester au départ de Nouméa le 1er octobre : 12 alertes sur cette jambe ; aucun décalage des escales suivantes."
+    }
+  ]
+}

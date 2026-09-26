@@ -2,10 +2,12 @@ import L from "leaflet";
 import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { interpolateCast, isAirPhase } from "../engine/filmCast.js";
 import { wakeCursorAt } from "../engine/filmWake.js";
-import { haversineNm, unwrapLon, worldCopyLineCoords } from "../utils/geo.js";
+import { haversineNm, unwrapLon, worldCopyLineCoords, worldCopyLngs, worldCopyOffsets } from "../utils/geo.js";
 import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
+  drawingPinHtml,
+  drawingPinMetrics,
   flagIconMetrics,
   flagMarkerHtml,
   markerWorldLngs,
@@ -38,7 +40,6 @@ import { attachEventBubble } from "../components/EventBubble.jsx";
 import { attachEscalePopup } from "../components/EscalePopup.jsx";
 import { officialAirRouteStyles, officialRouteLineStyle } from "../utils/berryLegs.js";
 
-const WORLD_OFFSETS = [0, 360, -360];
 const TELEPORT_NM = 80;
 /** Une copie du monde de chaque côté : ±180° + ±360°. */
 export const MAP_LON_BOUND = 540;
@@ -121,8 +122,8 @@ function staticWakeParts(flat) {
   return { points, parts, partByPoint, linePointByIndex };
 }
 
-function createWorldLines(group, style) {
-  return WORLD_OFFSETS.map(() => L.polyline([], style).addTo(group));
+function createWorldLines(group, style, offsets) {
+  return offsets.map(() => L.polyline([], style).addTo(group));
 }
 
 function clearDoneLines(lines) {
@@ -133,18 +134,19 @@ function appendDonePoint(geometry, index) {
   const point = geometry.linePointByIndex[index];
   const partIndex = geometry.partByPoint[index];
   if (!point || partIndex == null) return;
+  const offsets = geometry.worldOffsets || [0];
   geometry.doneLines[partIndex].forEach((line, worldIndex) => {
-    line.addLatLng([point[1], point[0] + WORLD_OFFSETS[worldIndex]]);
+    line.addLatLng([point[1], point[0] + offsets[worldIndex]]);
   });
 }
 
-function setWakeTail(lines, from, to) {
+function setWakeTail(lines, from, to, offsets = [0]) {
   if (!from || !to) {
     lines.forEach((line) => line.setLatLngs([]));
     return;
   }
   const coords = [[from.lon, from.lat], [to.lon, to.lat]];
-  lines.forEach((line, index) => line.setLatLngs(latLngs(coords, WORLD_OFFSETS[index])));
+  lines.forEach((line, index) => line.setLatLngs(latLngs(coords, offsets[index] || 0)));
 }
 
 function zoomForRemaining(nm) {
@@ -200,7 +202,9 @@ export class MapSceneController {
       preferCanvas: true,
       maxBounds: MAP_MAX_BOUNDS,
       maxBoundsViscosity: 1,
+      zoomControl: false,
     });
+    L.control.zoom({ position: "bottomright" }).addTo(map);
     createPanes(map);
     return new MapSceneController(map, callbacks);
   }
@@ -289,6 +293,12 @@ export class MapSceneController {
     map.on("dragstart", this.onUserNavigation);
     this.eventBubble = attachEventBubble(this, L);
     this.escalePopup = attachEscalePopup(this, L);
+    if (this.escalePopup) {
+      this.escalePopup.setSheet?.(null);
+      this.escalePopup.setSheet = () => {};
+      this.escalePopup.sync = () => {};
+      this.escalePopup.hide?.();
+    }
   }
 
   /** Marqueur du bateau « à l'écran » (copie monde 0) — ancre de la bulle F4. */
@@ -565,12 +575,14 @@ export class MapSceneController {
       group.clearLayers();
       const geometry = staticWakeParts(flat);
       geometry.flat = flat;
+      const offsets = worldCopyOffsets(geometry.parts.flat());
+      geometry.worldOffsets = offsets;
       geometry.parts.forEach((part) => {
         if (part.length < 2) return;
-        WORLD_OFFSETS.forEach((offset) => L.polyline(latLngs(part, offset), REST_STYLE).addTo(group));
+        offsets.forEach((offset) => L.polyline(latLngs(part, offset), REST_STYLE).addTo(group));
       });
-      geometry.doneLines = geometry.parts.map(() => createWorldLines(group, WAKE_STYLE));
-      geometry.tailLines = createWorldLines(group, WAKE_STYLE);
+      geometry.doneLines = geometry.parts.map(() => createWorldLines(group, WAKE_STYLE, offsets));
+      geometry.tailLines = createWorldLines(group, WAKE_STYLE, offsets);
       geometry.completedIndex = -1;
       this.wakeGeometry = geometry;
     }
@@ -599,11 +611,11 @@ export class MapSceneController {
       setWakeTail(geometry.tailLines, previous, {
         lon: unwrapLon(previous.lon, live.lon),
         lat: live.lat,
-      });
+      }, geometry.worldOffsets);
       return;
     }
     if (!previous || !following || following.jump || !samePart) {
-      setWakeTail(geometry.tailLines, null, null);
+      setWakeTail(geometry.tailLines, null, null, geometry.worldOffsets);
       return;
     }
     const span = (following.cumNm ?? 0) - (previous.cumNm ?? 0);
@@ -612,7 +624,7 @@ export class MapSceneController {
     setWakeTail(geometry.tailLines, previous, {
       lon: previous.lon + ratio * (followingLon - previous.lon),
       lat: previous.lat + ratio * (following.lat - previous.lat),
-    });
+    }, geometry.worldOffsets);
   }
 
   syncMarker(role, {
@@ -793,9 +805,22 @@ export class MapSceneController {
       const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
         ? flagMarkerHtml(srcs, offset).replace("<div ", `<div${stamp} `)
-        : `<div${stamp} style="width:10px;height:10px;border-radius:50%;background:${index === 0 ? "#22c55e" : "#e2e8f0"};border:2px solid #0f172a"></div>`;
-      const metrics = srcs.length ? flagIconMetrics(srcs) : { iconSize: [24, 24], iconAnchor: [12, 12] };
-      for (const [copyIndex, lng] of flagWorldLngsForView(point.lon, cameraLng, west, east).entries()) {
+        : drawingPinHtml(index, stamp);
+      const metrics = srcs.length ? flagIconMetrics(srcs) : drawingPinMetrics();
+      const lngs = [];
+      const seen = new Set();
+      const addLng = (lng) => {
+        if (!Number.isFinite(lng)) return;
+        const key = lng.toFixed(5);
+        if (seen.has(key)) return;
+        seen.add(key);
+        lngs.push(lng);
+      };
+      for (const lng of flagWorldLngsForView(point.lon, cameraLng, west, east)) addLng(lng);
+      for (const lng of worldCopyLngs(point.lon)) {
+        if (lng >= west - 60 && lng <= east + 60) addLng(lng);
+      }
+      for (const [copyIndex, lng] of lngs.entries()) {
         const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${copyIndex}`;
         expected.add(key);
         const iconKey = `${html}|${metrics.iconSize.join(",")}|${metrics.iconAnchor.join(",")}`;

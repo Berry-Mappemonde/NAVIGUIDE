@@ -2,7 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { coordsFromRoutePayload } from "../utils/berryLegs.js";
 import { unwrapPath, wrapLon } from "../utils/geo.js";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+const API_URL = import.meta.env?.VITE_API_URL ?? "";
+
+/** Same path as N map clicks: clear, then one addPoint per imported waypoint. */
+export async function importPointsSequential(addPoint, reset, points) {
+  reset();
+  for (const p of points || []) {
+    const lat = Number(p.lat);
+    const lon = Number(p.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    await addPoint(lat, lon, p.name ? { name: String(p.name) } : undefined);
+  }
+}
 
 function publishDrawn(points, segments) {
   if (typeof window === "undefined") return;
@@ -40,6 +51,7 @@ export function useRouteDrawing() {
     undonePointsRef.current = [];
     undoneSegmentsRef.current = [];
     fetchIdRef.current = 0;
+    setDrawingLoading(false);
     publishDrawn([], []);
   }, []);
 
@@ -84,8 +96,10 @@ export function useRouteDrawing() {
     }
   }, []);
 
-  const addPoint = useCallback((lat, lon) => {
+  const addPoint = useCallback((lat, lon, extra) => {
     const newPoint = { lat, lon };
+    if (extra?.name) newPoint.name = extra.name;
+    if (extra?.flags) newPoint.flags = extra.flags;
     const updated = [...pointsRef.current, newPoint];
     pointsRef.current = updated;
     undonePointsRef.current = [];
@@ -93,8 +107,14 @@ export function useRouteDrawing() {
     setCanRedo(false);
     setDrawnPoints([...updated]);
     publishDrawn(updated, segmentsRef.current);
-    if (updated.length >= 2) fetchSegment(updated[updated.length - 2], newPoint);
+    if (updated.length >= 2) return fetchSegment(updated[updated.length - 2], newPoint);
+    return Promise.resolve();
   }, [fetchSegment]);
+
+  const importPoints = useCallback(
+    (points) => importPointsSequential(addPoint, reset, points),
+    [addPoint, reset],
+  );
 
   const undo = useCallback(() => {
     if (!pointsRef.current.length) return;
@@ -161,6 +181,6 @@ export function useRouteDrawing() {
   return {
     drawingMode, setDrawingMode,
     drawnPoints, drawnSegments, drawingLoading, canRedo,
-    reset, addPoint, undo, redo, updatePoint, toGeoJson,
+    reset, addPoint, importPoints, undo, redo, updatePoint, toGeoJson,
   };
 }

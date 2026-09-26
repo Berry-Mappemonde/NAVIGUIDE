@@ -1,6 +1,10 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+
+const root = path.dirname(fileURLToPath(import.meta.url));
 
 // API_PROXY_TARGET=http://127.0.0.1:9 : simuler la CI (aucune API) en local.
 const API = process.env.API_PROXY_TARGET || "http://127.0.0.1:8010";
@@ -53,6 +57,14 @@ const allowedHosts = [
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(root, "index.html"),
+        lotR8b: path.resolve(root, "lot-r8b.html"),
+      },
+    },
+  },
   server: {
     host: "0.0.0.0",
     port: 5174,

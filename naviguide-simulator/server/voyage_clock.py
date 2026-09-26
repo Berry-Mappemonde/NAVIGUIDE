@@ -16,7 +16,6 @@ _PORT_DAYS_PATH = Path(__file__).resolve().parent / "data" / "port_days.json"
 _PORT_DAYS_CACHE: Optional[dict] = None
 
 AIR_CALENDAR_HOURS = 8.0
-AIR_HOP_RETURN_NM = 80.0
 LAND_CALENDAR_HOURS = 4.0
 MIN_KNOTS = 0.5
 WAVE_NOGO_M = 2.5
@@ -113,36 +112,6 @@ def to_iso(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r_nm = 3440.065
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dlat = p2 - p1
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
-    return 2 * r_nm * math.asin(min(1.0, math.sqrt(a)))
-
-
-def _side_dest_indices(pts: List[dict]) -> set:
-    """Indices entre une paire de sauts aller/retour (Halifax ↔ SPM) : pas de milles voile."""
-    jumps = [i for i, p in enumerate(pts) if p.get("jump")]
-    side: set = set()
-    used: set = set()
-    for a, ja in enumerate(jumps):
-        if ja in used or ja < 1:
-            continue
-        origin = pts[ja - 1]
-        for jb in jumps[a + 1:]:
-            if jb in used:
-                continue
-            dest = pts[jb]
-            if _haversine_nm(origin["lat"], origin["lon"], dest["lat"], dest["lon"]) <= AIR_HOP_RETURN_NM:
-                side.update(range(ja + 1, jb))
-                used.add(ja)
-                used.add(jb)
-                break
-    return side
 
 
 def bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -566,13 +535,10 @@ def build_voyage_clock(
                 land_end_idx = int(m["index"])
                 break
 
-    side_idx = _side_dest_indices(pts)
     sail_nm = float(start.get("cumNm") or 0)
 
     for i in range(start_idx, len(pts) - 1):
         a, b = pts[i], pts[i + 1]
-        if (i + 1) in side_idx:
-            continue
         brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
         span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
         vehicle = "main"

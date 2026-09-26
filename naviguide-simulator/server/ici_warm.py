@@ -78,7 +78,13 @@ WATCH_LOOP_S = float(os.environ.get("NAVIGUIDE_TAVILY_WATCH_S") or 6 * 3600)
 def status() -> dict[str, Any]:
     import llm_budget  # noqa: PLC0415
     import pearl_store  # noqa: PLC0415
-    return {**_state, "store": pearl_store.info(), "llm": llm_budget.status()}
+    info = pearl_store.info()
+    return {
+        **_state,
+        "store": info,
+        "llm": llm_budget.status(),
+        "moments": info.get("moments", 0),
+    }
 
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -492,6 +498,15 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
             _state["watch"] = await escale_watch.run_daily(voy)
         except Exception as exc:
             log.debug("veille Tavily : %s", exc)
+    # Lot R9a : journal des moments après les perles — déjà dans cette tâche
+    # de fond, jamais au démarrage.
+    try:
+        from moment_journal import warm_moments  # noqa: PLC0415
+        from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+        warmed = warm_moments(OFFICIAL_VOYAGE_ID)
+        _state["moments"] = int((warmed or {}).get("count") or 0)
+    except Exception as exc:
+        log.debug("journal des moments : %s", exc)
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
     log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",

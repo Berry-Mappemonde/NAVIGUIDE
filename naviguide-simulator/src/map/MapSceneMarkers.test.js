@@ -92,6 +92,8 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /preferCanvas:\s*true/);
     assert.match(src, /divIconCache/);
     assert.match(src, /flagWorldLngsForView/);
+    assert.match(src, /zoomControl:\s*false/);
+    assert.match(src, /position:\s*"bottomright"/);
   });
 
   it("clic drapeau hors dessin → onWaypointClick ; en dessin → inchangé", () => {
@@ -109,6 +111,13 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.equal(calls.sheet.length, 1, "le clic dessin n'ouvre pas la fiche");
     assert.match(src, /onWaypointClick\?\.\(marker\._naviguideWaypoint, marker\._naviguideIndex\)/);
     assert.match(src, /if \(marker\._naviguideDrawing\) \{\s*this\.callbacks\.onDrawingWaypointClick/);
+  });
+
+  it("lot RD2 — rond de tracé via drawingPinMetrics, plus d'icône 24×24 décalée", () => {
+    assert.match(src, /drawingPinHtml\(index, stamp\)/);
+    assert.match(src, /drawingPinMetrics\(\)/);
+    assert.doesNotMatch(src, /width:10px;height:10px/);
+    assert.doesNotMatch(src, /iconSize: \[24, 24\], iconAnchor: \[12, 12\]/);
   });
 
   it("onMoveEnd ne relance ni /ici ni le récit", () => {

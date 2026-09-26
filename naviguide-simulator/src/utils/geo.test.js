@@ -21,8 +21,10 @@ import {
   worldCopyCoords,
   worldCopyLineCoords,
   worldCopyLngs,
+  worldCopyOffsets,
   worldCopyParts,
   worldCopyPolygonCoords,
+  WORLD_COPY_LON_BOUND,
 } from "./geo.js";
 
 /** Officiel Berry (`public/route.geojson`). */
@@ -169,17 +171,38 @@ describe("antimeridian geo", () => {
     assert.equal(worldCopyParts(copies.slice(0, 1)).length, 3);
   });
 
-  it("déplie et triple les lignes, y compris 179° → −179°", () => {
+  it("déplie et copie les lignes, y compris 179° → −179°", () => {
     const unwrapped = unwrapLineCoords([[170, -15], [179, -16], [-179, -17], [-170, -18]]);
     assert.deepEqual(unwrapped.map(([lon]) => lon), [170, 179, 181, 190]);
     const copies = worldCopyLineCoords(unwrapped);
-    assert.equal(copies.length, 3);
-    assert.deepEqual(copies[2].map(([lon]) => lon), [-190, -181, -179, -170]);
+    assert.ok(copies.length >= 3);
+    const west = copies.find((line) => Math.abs(line[0][0] - (170 - 360)) < 1e-6);
+    assert.ok(west, "copie −360°");
+    assert.deepEqual(west.map(([lon]) => lon), [-190, -181, -179, -170]);
     copies.forEach((line) => {
       line.slice(1).forEach(([lon], index) => {
         assert.ok(Math.abs(lon - line[index][0]) <= 180);
       });
     });
+  });
+
+  it("une ligne dépliée sur 360° produit des copies couvrant [−540, 540]", () => {
+    const line = [];
+    for (let lon = -360; lon <= 0; lon += 5) line.push([lon, 12]);
+    const copies = worldCopyCoords(line);
+    assert.ok(worldCopyOffsets(line).includes(720), " +720° pour le côté africain à droite");
+    const intervals = copies.map((copy) => {
+      const lons = copy.map(([lon]) => lon);
+      return [Math.min(...lons), Math.max(...lons)];
+    }).sort((a, b) => a[0] - b[0]);
+    let covered = -WORLD_COPY_LON_BOUND;
+    for (const [start, end] of intervals) {
+      if (start > covered + 1e-6) break;
+      covered = Math.max(covered, end);
+    }
+    assert.ok(covered >= WORLD_COPY_LON_BOUND - 1e-6, `couverture jusqu'à ${covered}`);
+    const east = copies.flat().filter(([lon]) => lon >= 360 && lon <= WORLD_COPY_LON_BOUND);
+    assert.ok(east.length > 0, "fenêtre est [360, 540] sans point");
   });
 
   it("triple les points et conserve les anneaux d’un polygone Pacifique", () => {

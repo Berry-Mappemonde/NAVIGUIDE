@@ -8,10 +8,11 @@ const src = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(src, path), "utf8");
 
 describe("contrat UI produit", () => {
-  it("démarre en Simulation sur la vue monde sans recadrage initial", () => {
+  it("démarre en Suivre sur la vue monde sans recadrage initial", () => {
     const app = read("../App.jsx");
     const map = read("../hooks/useSimulatorMap.js");
-    assert.match(app, /useState\(VIEW_SIMULATION\)/);
+    assert.match(app, /useState\(VIEW_SUIVRE\)/);
+    assert.doesNotMatch(app, /useState\(VIEW_SIMULATION\)/);
     assert.match(map, /zoom:\s*2/);
     assert.doesNotMatch(app, /map\.setView\(\[start\.lat,\s*start\.lon\],\s*8/);
   });
@@ -76,9 +77,9 @@ describe("contrat UI produit", () => {
   it("dégage le zoom Leaflet et aligne les deux chevrons", () => {
     const sidebar = read("../components/Sidebar.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
-    assert.match(sidebar, /naviguide-sidebar-toggle--left/);
-    assert.match(sidebar, /top-\[92px\]/);
-    assert.match(tools, /naviguide-sidebar-toggle--right/);
+    assert.match(sidebar, /naviguide-sidebar-toggle--left[\s\S]{0,80}absolute top-4/);
+    assert.doesNotMatch(sidebar, /top-\[92px\]/);
+    assert.match(tools, /naviguide-sidebar-toggle--right[\s\S]{0,40}absolute top-4/);
     assert.match(tools, /w-9 h-9/);
     assert.doesNotMatch(tools, /w-12 h-12/);
   });
@@ -96,6 +97,43 @@ describe("contrat UI produit", () => {
     const sidebar = read("../components/Sidebar.jsx");
     assert.match(sidebar, /plan\?\.briefing_title/);
     assert.doesNotMatch(sidebar, /t\("briefing"\)/);
+  });
+
+  it("lot R8c : un seul encadré, aucune carte flottante hors film", () => {
+    const sidebar = read("../components/Sidebar.jsx");
+    const app = read("../App.jsx");
+    const ici = read("../components/IciMaintenant.jsx");
+    assert.match(sidebar, /<IciMaintenant/);
+    assert.match(sidebar, /<LogbookChat/);
+    assert.doesNotMatch(sidebar, /<MomentNowCard /);
+    assert.doesNotMatch(sidebar, /<FreeMomentBlock /);
+    assert.doesNotMatch(app, /<MomentNowCard/);
+    assert.doesNotMatch(app, /<FreeMomentBlock/);
+    assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
+    assert.match(ici, /<EscaleSheet/);
+    assert.doesNotMatch(ici, /ListenButton/);
+  });
+
+  it("lot RD5 / RD9 : Date de départ dans le panneau droit, revue dans l'encadré gauche, replay distinct, horloge avec année", () => {
+    const app = read("../App.jsx");
+    const tools = read("../components/ToolsSidebar.jsx");
+    const ici = read("../components/IciMaintenant.jsx");
+    const bar = read("../components/SimulationFilmBar.jsx");
+    const clock = read("../engine/voyageClock.js");
+    const depAt = tools.indexOf("{showDeparture ?");
+    assert.ok(depAt >= 0, "Date de départ toujours dans le panneau droit");
+    assert.doesNotMatch(tools, /<PlanReview/);
+    assert.doesNotMatch(tools, /planReview && !drawing/);
+    assert.match(ici, /<PlanReview/);
+    assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
+    assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
+    assert.match(app, /t0: replayT0/);
+    assert.match(app, /departureT0=\{voyage\.t0\}/);
+    assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
+    assert.match(bar, /data-testid="replay-departure"/);
+    assert.match(bar, /<DepartureField/);
+    assert.match(clock, /getUTCFullYear\(\)/);
+    assert.match(clock, / · \$\{hh\}:\$\{mm\} UTC/);
   });
 
   it("lot C3 : barre film et contexte du chat lisent la même source", () => {

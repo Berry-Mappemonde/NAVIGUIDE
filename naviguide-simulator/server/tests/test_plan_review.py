@@ -201,6 +201,89 @@ def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
     assert legs[0]["daysAtSea"] == plan_review.planned_sea_days(9151)
 
 
+def test_review_official_exposes_gibraltar_antishipping():
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 0, "sailNm": 1820, "lat": 41.92, "lon": 8.74},
+            {"tHours": 40, "sailNm": 2500, "lat": 36.05, "lon": -5.6},
+            {"tHours": 80, "sailNm": 4000, "lat": 29.3, "lon": -15.2},
+            {"tHours": 200, "sailNm": 6973, "lat": 14.59, "lon": -61.07},
+        ],
+        "marks": [
+            {"name": "Ajaccio (Corse)", "tHours": 0, "holdHours": 0, "nm": 1820, "filmNm": 1942},
+            {"name": "Fort-de-France (Martinique)", "tHours": 200, "holdHours": 72, "nm": 6973, "filmNm": 7095},
+        ],
+    }
+    voy = {"voyageId": "n3", "clock": clock, "points": [], "marks": []}
+    out = plan_review.review_official(voy, season=False)
+    assert len(out["legs"]) == 1
+    pack = out["legs"][0]["antiShipping"]
+    assert "Gibraltar" in pack["lanes"], pack
+    assert 0 <= pack["score"] < 1
+    facts = plan_review.table_facts(out["legs"])
+    assert facts["legs"][0]["antiShipping"]["lanes"] == pack["lanes"]
+
+
+def test_review_official_without_clock_builds_legs_and_names_gibraltar():
+    """Lot RC8 : semis sans clock → jambes depuis marks + t0 + points."""
+    voy = {
+        "voyageId": "seed-no-clock",
+        "t0": "2026-05-15T08:00:00Z",
+        "marks": [
+            {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0},
+            {"name": "La Rochelle", "nm": 122, "filmNm": 122},
+            {"name": "Ajaccio (Corse)", "nm": 1942, "filmNm": 1942},
+            {"name": "Fort-de-France (Martinique)", "nm": 7095, "filmNm": 7095},
+        ],
+        "points": [
+            {"lat": 46.8, "lon": 1.6, "cumNm": 0, "nonMaritime": True},
+            {"lat": 46.15, "lon": -1.16, "cumNm": 122, "nonMaritime": True},
+            {"lat": 44.0, "lon": -2.0, "cumNm": 400},
+            {"lat": 41.92, "lon": 8.74, "cumNm": 1942},
+            {"lat": 36.05, "lon": -5.6, "cumNm": 2500},
+            {"lat": 29.3, "lon": -15.2, "cumNm": 4000},
+            {"lat": 14.59, "lon": -61.07, "cumNm": 7095},
+        ],
+    }
+    assert "clock" not in voy
+    out = plan_review.review_official(voy, season=False)
+    pairs = [(leg["from"], leg["to"]) for leg in out["legs"]]
+    assert pairs, "jambes attendues sans clock"
+    assert not any("Saint-Maur" in a and "La Rochelle" in b for a, b in pairs)
+    assert any("Ajaccio" in a and "Fort-de-France" in b for a, b in pairs), pairs
+    aj = next(leg for leg in out["legs"] if "Ajaccio" in leg["from"] and "Fort-de-France" in leg["to"])
+    assert "Gibraltar" in ((aj.get("antiShipping") or {}).get("lanes") or []), aj
+
+
+def test_plan_review_seeded_without_clock_has_legs(client, monkeypatch):
+    """Lot RC8 : voyage semé sans clock → GET /plan-review 200, jambes, Ajaccio."""
+    import voyage_api
+    import voyage_clock
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy is not None
+    assert voy.get("clock") is None
+    assert any("Ajaccio" in (m.get("name") or "") for m in voy.get("marks") or [])
+
+    def boom(*_a, **_k):
+        raise AssertionError("build_voyage_clock sur le thread HTTP")
+
+    monkeypatch.setattr(voyage_clock, "build_voyage_clock", boom)
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+
+    async def fake_comment(legs, **_kw):
+        return {"text": "", "source": "rules", "cached": False}
+
+    monkeypatch.setattr(plan_review, "comment_plan", fake_comment)
+    r = client.get("/voyage/official/plan-review", headers=PUBLIC)
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body.get("legs") or []) > 0
+    blob = " ".join(f"{leg.get('from')} {leg.get('to')}" for leg in body["legs"])
+    assert "Ajaccio" in blob
+
+
 def test_plan_review_http_exposes_comment_source(client, monkeypatch):
     async def fake_comment(legs, **kw):
         return {"text": "Je changerais le repos (3 jours).", "source": "rules", "cached": False}

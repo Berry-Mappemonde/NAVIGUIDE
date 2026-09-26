@@ -4,12 +4,24 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ADVICE_FIXTURE,
   ETA_MIN_KN,
+  ETA_RETRY_MS,
   boundEtaIso,
+  buildAdviceCompare,
+  etaFromResponse,
   etaRangeFromMembers,
+  formatAdvicePills,
+  formatAdviceSentence,
   formatEtaRange,
   formatEtaRangeTitle,
+  isAdviceDone,
+  localizeAdviceSentence,
+  nextEtaRetryMs,
   nextStopFromMarks,
+  pickHeaviestLegIdx,
+  pollOfficialAdvice,
+  pollOfficialEta,
   tightenEtaMembers,
 } from "./usePlanReview.js";
 import fr from "../i18n/fr.js";
@@ -68,6 +80,41 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(src, /Number\(body\.members\) > 0/);
     assert.match(src, /etaRange: eta/);
     assert.match(src, /formatEtaRangeTitle/);
+    assert.match(src, /pollOfficialEta/);
+    assert.match(src, /ETA_RETRY_MS/);
+  });
+
+  it("affiche la fourchette dès que members passe de 0 à un ensemble", async () => {
+    const empty = { members: 0, p10: null, p90: null };
+    const full = {
+      members: 40,
+      p10: "2026-11-13T00:00:00Z",
+      p50: "2026-11-15T00:00:00Z",
+      p90: "2026-11-18T00:00:00Z",
+    };
+    let n = 0;
+    const seen = [];
+    const ready = await pollOfficialEta("Dzaoudzi", {
+      fetchFn: async () => {
+        n += 1;
+        return n === 1 ? empty : full;
+      },
+      sleep: async () => {},
+      onUpdate: (eta) => seen.push(eta),
+    });
+    assert.equal(etaFromResponse(empty), null);
+    assert.equal(seen[0], null);
+    assert.equal(formatEtaRange(empty, tFr, "fr"), "");
+    assert.equal(ready.members, 40);
+    const label = plain(formatEtaRange(ready, tFr, "fr"));
+    assert.match(label, /arrivée entre le 13 nov/);
+    assert.match(label, /18 nov/);
+    assert.doesNotMatch(label, /p10|membres/i);
+    assert.equal(plain(formatEtaRange(ready, tEn, "en")).slice(0, 16).toLowerCase(), "arrival between ");
+    assert.equal(n, 2);
+    assert.equal(nextEtaRetryMs(0), ETA_RETRY_MS[0]);
+    assert.ok(nextEtaRetryMs(9) >= nextEtaRetryMs(0));
+    assert.equal(ETA_RETRY_MS[ETA_RETRY_MS.length - 1], 30000);
   });
 
   it("écarte tout membre à 0 kn de la fourchette (lot RA7)", () => {
@@ -97,5 +144,76 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(label, /arrivée entre le/);
     const hidden = boundEtaIso("2026-11-13T00:00:00Z", null, "2027-06-10T00:00:00Z");
     assert.equal(hidden.p10, "");
+  });
+});
+
+describe("usePlanReview — conseil (lot R10d)", () => {
+  it("écrit la phrase et les pastilles en FR et EN, sans anglais en FR", () => {
+    const best = ADVICE_FIXTURE.best;
+    const fr = formatAdviceSentence(best, tFr, "fr");
+    const en = formatAdviceSentence(best, tEn, "en");
+    assert.match(fr, /Partir de Nouméa/);
+    assert.match(fr, /5 alertes au lieu de 11/);
+    assert.match(fr, /\+41 nm/);
+    assert.match(fr, /7 jours/);
+    assert.doesNotMatch(fr, /\b(Leave|Instead|alerts instead)\b/);
+    assert.match(en, /Leave Nouméa/);
+    assert.match(en, /5 alerts instead of 11/);
+    const pillsFr = formatAdvicePills(best, tFr);
+    assert.equal(pillsFr.alerts, "11 → 5 alertes");
+    assert.equal(pillsFr.nm, "+41 nm");
+    assert.equal(pillsFr.days, "+7 j");
+    const pillsEn = formatAdvicePills(best, tEn);
+    assert.equal(pillsEn.alerts, "11 → 5 alerts");
+  });
+
+  it("écarte un texte rédigé anglais quand l'UI est FR", () => {
+    const best = {
+      ...ADVICE_FIXTURE.best,
+      sentence: "Leave Nouméa rather than 1 Oct: 5 alerts instead of 11.",
+      sentenceLang: "en",
+    };
+    const fr = localizeAdviceSentence(best, tFr, "fr");
+    assert.match(fr, /Partir de Nouméa/);
+    assert.doesNotMatch(fr, /Leave Nouméa/);
+    const en = localizeAdviceSentence({ ...ADVICE_FIXTURE.best, sentenceLang: "fr" }, tEn, "en");
+    assert.match(en, /Leave Nouméa/);
+  });
+
+  it("construit deux colonnes avec les dates d'escale décalées", () => {
+    const compare = buildAdviceCompare(ADVICE_FIXTURE.best, { legNm: 6144, daysAtSea: 32 }, tFr, "fr");
+    assert.match(compare.today.distance, /6144 nm/);
+    assert.match(compare.advised.distance, /6185 nm/);
+    assert.equal(compare.today.alerts, "11 alertes");
+    assert.equal(compare.advised.alerts, "5 alertes");
+    assert.ok(compare.today.stops.some((s) => /Dzaoudzi/.test(s)));
+    assert.ok(compare.advised.stops.some((s) => /Dzaoudzi/.test(s)));
+    assert.notEqual(compare.today.stops[0], compare.advised.stops[0]);
+  });
+
+  it("prend la jambe la plus chargée et sondé /advice?leg=", () => {
+    assert.equal(pickHeaviestLegIdx([{ alertCount: 2 }, { alertCount: 11 }]), 1);
+    assert.equal(isAdviceDone(ADVICE_FIXTURE), true);
+    assert.match(src, /\/voyage\/official\/advice\?/);
+    assert.match(src, /pollOfficialAdvice/);
+  });
+
+  it("relance /advice tant que pending, puis garde le best", async () => {
+    const pending = { status: "pending", leg: 0 };
+    const done = ADVICE_FIXTURE;
+    let n = 0;
+    const seen = [];
+    const ready = await pollOfficialAdvice(0, {
+      fetchFn: async () => {
+        n += 1;
+        return n === 1 ? pending : done;
+      },
+      sleep: async () => {},
+      onUpdate: (body) => seen.push(body),
+      lang: "fr",
+    });
+    assert.equal(n, 2);
+    assert.equal(ready.best.alertsAfter, 5);
+    assert.equal(seen[0].status, "pending");
   });
 });

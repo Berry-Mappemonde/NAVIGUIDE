@@ -1,6 +1,6 @@
 # Plan complémentaire en lots — revue visuelle du 19–20 septembre 2026
 
-Version **1.1** — 20 septembre 2026. Suite du [plan en lots](PLAN_LOTS_AGENT_SIMULATEUR.md)
+Version **1.1** — 20 septembre 2026. Suite du [plan en lots](archives/PLAN_LOTS_AGENT_SIMULATEUR.md)
 (lots P → K, tous **mergés sur `main`** le 20 sept.). Ce document découpe la
 **revue visuelle complète du porteur** (soir du 19, matin du 20) en lots
 **recettables visuellement**, écrits pour un worker Cursor **Grok 4.6 Extra
@@ -19,7 +19,7 @@ globe, la soumission Devpost.
 
 - Lire **d'abord** `docs/REGLES_WORKFLOW_AGENT.md` **en entier** (branches,
   PR, merge, recette, review, review automatique) puis
-  `docs/PLAN_LOTS_AGENT_SIMULATEUR.md` § 0 (règles qui ne se discutent pas :
+  `docs/archives/PLAN_LOTS_AGENT_SIMULATEUR.md` § 0 (règles qui ne se discutent pas :
   `main` plancher de l'UI, aucun chiffre par un LLM, recette = tests +
   captures). Tavily / Nemotron / Nebius : **seulement** dans les lots du plan
   `PLAN_NEMOTRON_NEBIUS_TAVILY.md` (et F3 du plan film).
@@ -151,7 +151,7 @@ Taille : S ≤ ½ jour, M ≤ 2 jours. Ordre conseillé : **P2 → M → N → O
 
 **Objectif.** Le zoom à la molette répond immédiatement ; aucune tâche > 50 ms pendant un zoom.
 
-**Fichiers.** `src/map/MapSceneController.js` (`syncWaypoints` l. 586–670, `onMoveEnd`, `syncDynamicWorldCopies`), `src/hooks/useMarkerOffsets.js`, `src/layers/useToggleLayers.js` (WMS ZEE), `docs/PROFIL_BUILD_PROD_2026-09-19.md` (méthode).
+**Fichiers.** `src/map/MapSceneController.js` (`syncWaypoints` l. 586–670, `onMoveEnd`, `syncDynamicWorldCopies`), `src/hooks/useMarkerOffsets.js`, `src/layers/useToggleLayers.js` (WMS ZEE), `docs/audits/PROFIL_BUILD_PROD_2026-09-19.md` (méthode).
 
 **Étapes.** 1) Profiler un zoom (Chrome Performance, 10 s de molette) sur le build de prod ; noter les trois postes. 2) Mesures probables : copies-monde des drapeaux seulement si la vue touche ±180° ; `setIcon` sauté quand la clé d'icône n'a pas changé (déjà) mais **pas de recalcul d'offsets pendant l'animation de zoom** (`zoomanim` → attendre `zoomend` + 250 ms) ; `preferCanvas: true` pour les polylignes ; réutiliser les `divIcon` ; ne pas relancer `/ici` ni le récit sur `moveend`. 3) Re-profiler, consigner dans `docs/`.
 

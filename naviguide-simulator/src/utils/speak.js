@@ -27,6 +27,8 @@ export const VOICE_PREFS = {
 };
 
 let keepAliveTimer = null;
+/** Incrémenté à chaque `stopSpeaking` : un `onend` de `cancel()` ne relance rien. */
+let speakGeneration = 0;
 
 /** Briefing text as spoken: no URLs, no arrows/glyphs, tidy spaces. */
 export function spokenText(text) {
@@ -67,6 +69,7 @@ function clearKeepAlive() {
 }
 
 export function stopSpeaking(win = typeof window !== "undefined" ? window : null) {
+  speakGeneration += 1;
   clearKeepAlive();
   try {
     win?.speechSynthesis?.cancel();
@@ -179,10 +182,20 @@ export function splitUtterances(text, max = SENTENCE_MAX_CHARS) {
   });
 }
 
-/** onend sans boundary en < 500 ms → une relance, puis mode linéaire. */
-export function voiceEndKind({ hadBoundary, elapsedMs, alreadyRetried } = {}) {
+/**
+ * onend sans boundary en < 500 ms :
+ * — des chunks restent → avancer (reprendre au suivant, jamais finir) ;
+ * — dernier chunk → une relance, puis mode linéaire.
+ */
+export function voiceEndKind({
+  hadBoundary,
+  elapsedMs,
+  alreadyRetried,
+  hasMoreChunks = false,
+} = {}) {
   const elapsed = Number(elapsedMs);
   if (!hadBoundary && Number.isFinite(elapsed) && elapsed < VOICE_IMMEDIATE_END_MS) {
+    if (hasMoreChunks) return "advance";
     return alreadyRetried ? "linear" : "retry";
   }
   return "advance";
@@ -202,7 +215,7 @@ function armKeepAlive(win) {
     try {
       const synth = win?.speechSynthesis;
       if (!synth?.speaking) return;
-      synth.pause();
+      // `pause()`+`resume()` coupe l'utterance (onend) : on ne fait que `resume()`.
       synth.resume();
     } catch { /* Chrome keep-alive */ }
   }, UTTERANCE_KEEPALIVE_MS);
@@ -211,9 +224,11 @@ function armKeepAlive(win) {
 
 function beginUtterances(body, lang, opts, voices) {
   const win = opts.win;
+  const generation = speakGeneration;
+  const stillThisSpeak = () => generation === speakGeneration;
   const chunks = splitUtterances(body, SENTENCE_MAX_CHARS);
   if (!chunks.length) {
-    opts.onEnd?.();
+    if (stillThisSpeak()) opts.onEnd?.();
     return;
   }
   const voice = pickVoice(voices, lang);
@@ -223,9 +238,10 @@ function beginUtterances(body, lang, opts, voices) {
   let retried = false;
 
   const speakChunk = () => {
+    if (!stillThisSpeak()) return;
     if (chunkIdx >= chunks.length) {
       clearKeepAlive();
-      opts.onEnd?.();
+      if (stillThisSpeak()) opts.onEnd?.();
       return;
     }
     const chunk = chunks[chunkIdx];
@@ -234,6 +250,7 @@ function beginUtterances(body, lang, opts, voices) {
     utter.rate = rate;
     if (voice) utter.voice = voice;
     let hadBoundary = false;
+    let settled = false;
     const started = nowMs(win);
     utter.onboundary = (ev) => {
       hadBoundary = true;
@@ -241,10 +258,14 @@ function beginUtterances(body, lang, opts, voices) {
       if (Number.isFinite(idx)) opts.onBoundary?.(chunk.start + idx);
     };
     const finishUtter = () => {
+      if (!stillThisSpeak() || settled) return;
+      settled = true;
+      const hasMoreChunks = chunkIdx < chunks.length - 1;
       const kind = voiceEndKind({
         hadBoundary,
         elapsedMs: nowMs(win) - started,
         alreadyRetried: retried,
+        hasMoreChunks,
       });
       if (kind === "retry") {
         retried = true;

@@ -107,6 +107,12 @@ describe("speak lot R3", () => {
     assert.equal(voiceEndKind({ hadBoundary: false, elapsedMs: 80, alreadyRetried: false }), "retry");
     assert.equal(voiceEndKind({ hadBoundary: false, elapsedMs: 80, alreadyRetried: true }), "linear");
     assert.equal(voiceEndKind({ hadBoundary: true, elapsedMs: 80, alreadyRetried: false }), "advance");
+    assert.equal(voiceEndKind({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: false, hasMoreChunks: true,
+    }), "advance");
+    assert.equal(voiceEndKind({
+      hadBoundary: false, elapsedMs: 80, alreadyRetried: true, hasMoreChunks: true,
+    }), "advance");
 
     const spoken = [];
     class Utter { constructor(text) { this.text = text; } }
@@ -134,6 +140,45 @@ describe("speak lot R3", () => {
     assert.equal(failed, 1);
     assert.equal(ended, 0, "le chapitre ne se termine pas — le film reste en linéaire");
     stopSpeaking(win);
+  });
+
+  it("onend prématuré au milieu des chunks → le texte continue au chunk suivant", () => {
+    const long = `${"La mer est belle et le vent porte. ".repeat(8)}${"Cap à l'ouest sans relâche vers l'escale suivante. ".repeat(6)}Fin du chapitre.`;
+    const chunks = splitUtterances(long, 200);
+    assert.ok(chunks.length >= 2, "le texte doit tenir en plusieurs chunks");
+
+    const spoken = [];
+    class Utter { constructor(text) { this.text = text; } }
+    const win = {
+      SpeechSynthesisUtterance: Utter,
+      performance: { now: () => 0 },
+      speechSynthesis: {
+        speaking: false,
+        cancel() {},
+        getVoices: () => [{ lang: "fr-FR", name: "Thomas" }],
+        speak(u) { spoken.push(u); },
+      },
+    };
+    let ended = 0;
+    let failed = 0;
+    speak(long, "fr", {
+      win,
+      onEnd: () => { ended += 1; },
+      onLeadFailed: () => { failed += 1; },
+    });
+    assert.equal(spoken.length, 1);
+    assert.equal(spoken[0].text, chunks[0].text);
+    spoken[0].onend?.();
+    assert.equal(spoken.length, 2, "chunk suivant parlé, pas d'abandon");
+    assert.equal(spoken[1].text, chunks[1].text);
+    assert.equal(failed, 0, "pas de bascule linéaire tant qu'il reste des chunks");
+    assert.equal(ended, 0, "le chapitre ne se termine pas sur l'incident");
+    stopSpeaking(win);
+    spoken[1].onend?.();
+    spoken[1].onerror?.();
+    assert.equal(spoken.length, 2, "cancel : pas de relance");
+    assert.equal(ended, 0);
+    assert.equal(failed, 0);
   });
 
   it("waitForVoices résout tout de suite si la liste est déjà là", async () => {

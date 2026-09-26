@@ -2,7 +2,7 @@
 
 Version **1.0** — 20 septembre 2026. Règles : `docs/REGLES_WORKFLOW_AGENT.md`.
 Remplace le « lot L » de `PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md` et met à
-jour `docs/hackathon-nebius-nvidia.md` § 5–7. Le porteur a demandé de
+jour `docs/archives/hackathon-nebius-nvidia.md` § 5–7. Le porteur a demandé de
 **remettre le dossier sur la table** : au-delà du « juge de vérité », quels
 usages des LLM dans le code actuel et projeté, avec un budget de **60 $**.
 
@@ -119,7 +119,7 @@ L1 est **le préalable à toute soumission**. Le film (lot F3) suppose L1.
 
 **Fichiers.** `server/story_cascade.py`, nouveau `server/llm_budget.py` (+ test),
 `server/pearl_store.py` (ns `kv` existant), `server/ici_warm.py` (status),
-`server/.env.example`, `docs/hackathon-nebius-nvidia.md` § 5.
+`server/.env.example`, `docs/archives/hackathon-nebius-nvidia.md` § 5.
 
 **Étapes.** 1) `_call_tokenfactory(system, user, tier)` : URL § 0, modèle par
 `tier` (`fast` → Lightning, `write` → Super, `judge` → Ultra), `max_tokens`
