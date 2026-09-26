@@ -25,7 +25,7 @@ import { useMoment } from "./hooks/useMoment.js";
 import { useMomentJournal } from "./hooks/useMomentJournal.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
-import { useReplay } from "./hooks/useReplay.js";
+import { followClockLineFromT0, useReplay } from "./hooks/useReplay.js";
 import { useReplayVoice } from "./hooks/useReplayVoice.js";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -52,11 +52,9 @@ import {
   DEFAULT_START_AT,
   DEFAULT_T0_ISO,
   etaHoursToFilmNm,
-  formatFilmClockLine,
   formatMonthName,
   lookupVoyageClock,
   monthOfT0,
-  rebaseIso,
   sampleClockAtTime,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
@@ -588,14 +586,14 @@ export default function App() {
   const chat = useLogbookChat({ lang, contextFn: chatContextFn });
 
   const clockLine = officialClock?.vertices?.length && clockSample
-    ? formatFilmClockLine({
+    ? followClockLineFromT0({
       sailNm: isSuivre && !previewing
         ? (clockSample.sailNm ?? cast?.sailNm)
         : (cast?.sailNm ?? clockSample.sailNm),
       seaHours: clockSample.seaHours,
-      iso: isSuivre && replay.active
-        ? rebaseIso(clockSample.iso, DEFAULT_T0_ISO, replayT0)
-        : clockSample.iso,
+      iso: clockSample.iso,
+      fromT0: officialClock.t0 || DEFAULT_T0_ISO,
+      t0: isSuivre ? replayT0 : (officialClock.t0 || DEFAULT_T0_ISO),
       lang,
     })
     : "";

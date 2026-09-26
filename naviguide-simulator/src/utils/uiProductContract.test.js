@@ -146,6 +146,8 @@ describe("contrat UI produit", () => {
     assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
     assert.match(app, /t0: replayT0/);
+    assert.match(app, /followClockLineFromT0/);
+    assert.match(app, /t0: isSuivre \? replayT0/);
     assert.match(app, /departureT0=\{voyage\.t0\}/);
     assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
     assert.match(bar, /data-testid="replay-departure"/);
