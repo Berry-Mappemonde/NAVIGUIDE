@@ -291,6 +291,10 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   min-height: 0;
   overflow: auto;
 }
+/* Lot RE3 — journal : couleur explicite dans les deux thèmes (pas text-inherit). */
+.ici-maintenant [data-testid="ici-journal-entry"] {
+  color: rgb(226 232 240);
+}
 .ici-maintenant-tabs {
   height: var(--sim-box-h-ici-tabs);
 }

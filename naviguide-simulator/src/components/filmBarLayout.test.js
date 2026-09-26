@@ -120,6 +120,24 @@ describe("film bar (lot RA6)", () => {
   });
 });
 
+describe("film bar (lot RE3)", () => {
+  it("rend les pilules seulement à côté du lancement, jamais pendant le film", () => {
+    const startAt = firstIndex(bar, /data-testid="replay-start"/);
+    const durationAt = firstIndex(bar, /data-testid="film-duration"/);
+    const stopAt = firstIndex(bar, /data-testid="replay-stop"/);
+    assert.ok(stopAt < startAt, "Stop dans la branche film actif");
+    assert.ok(startAt < durationAt, "2:30 / 3:00 à côté de Revoir l'expédition");
+    const beforeStart = bar.slice(0, startAt);
+    const afterStart = bar.slice(startAt);
+    assert.doesNotMatch(beforeStart, /data-testid="film-duration"/);
+    assert.match(afterStart, /data-testid="film-duration"/);
+    const durBlock = bar.slice(durationAt, durationAt + 900);
+    assert.doesNotMatch(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
+    assert.doesNotMatch(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /=== sec \? 0 : sec/);
+  });
+});
+
 describe("plein écran film (lot F5) — sidebars masquées, pas démontées", () => {
   it("App pose .film-fullscreen et garde <Sidebar> / <ToolsSidebar> montés", () => {
     assert.match(app, /film-fullscreen/);

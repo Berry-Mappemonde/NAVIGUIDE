@@ -450,40 +450,40 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     </div>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={replay.onStart}
-                    data-testid="replay-start"
-                    className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap"
-                    title={t("replayStartTitle")}
-                  >
-                    ↺ {t("replayStart")}
-                  </button>
-                )}
-                <div
-                  data-testid="film-duration"
-                  className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
-                  title={t("filmDuration")}
-                >
-                  {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                  <>
                     <button
-                      key={sec}
                       type="button"
-                      data-seconds={sec}
-                      aria-pressed={Number(replay.targetSeconds) === sec}
-                      aria-disabled={Boolean(replay.active)}
-                      disabled={Boolean(replay.active)}
-                      onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
-                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
-                        Number(replay.targetSeconds) === sec
-                          ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
-                          : "text-white/70 hover:text-white border border-transparent"
-                      }`}
+                      onClick={replay.onStart}
+                      data-testid="replay-start"
+                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap"
+                      title={t("replayStartTitle")}
                     >
-                      {t(key)}
+                      ↺ {t("replayStart")}
                     </button>
-                  ))}
-                </div>
+                    <div
+                      data-testid="film-duration"
+                      className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
+                      title={t("filmDuration")}
+                    >
+                      {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                        <button
+                          key={sec}
+                          type="button"
+                          data-seconds={sec}
+                          aria-pressed={Number(replay.targetSeconds) === sec}
+                          onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
+                          className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                            Number(replay.targetSeconds) === sec
+                              ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                              : "text-white/70 hover:text-white border border-transparent"
+                          }`}
+                        >
+                          {t(key)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
           </div>
