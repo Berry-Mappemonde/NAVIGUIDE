@@ -26,6 +26,25 @@ SCORE_AMP = 1
 SCORE_ALERT_OFF = 1
 APPROACH_NM_FLOOR = 80.0
 APPROACH_FRAC = 0.10
+_GENERIC_TITLES = frozenset({
+    "station croisée", "station", "stations", "croisée", "croisee",
+    "marina croisée", "marina", "marinas",
+    "aire marine protégée", "amp", "mpa",
+    "formalités d'entrée", "ports d'entrée", "port d'entrée",
+    "autour du bateau",
+})
+_NO_DATA_RE = re.compile(
+    r"aucun port d'entr[ée]e|no official port of entry|n'est connu",
+    re.I,
+)
+_DIST_PAREN_RE = re.compile(
+    r"\s*\(\s*\d+(?:[.,]\d+)?\s*(?:nm|milles?|km)[^)]*\)\s*",
+    re.I,
+)
+_LIST_PREFIX_RE = re.compile(
+    r"^(?:ports? d'entr[ée]e|formalit[ée]s d'entr[ée]e|entr[ée]e dans)\s*:?\s*",
+    re.I,
+)
 
 
 def _as_float(value: Any) -> float | None:
@@ -110,6 +129,40 @@ def _change(kind: str, score: int, title: str, fact: str) -> dict:
     return {"kind": kind, "score": score, "title": str(title or "").strip(), "fact": str(fact or "").strip()}
 
 
+def _is_generic_title(title: str, kind: str = "") -> bool:
+    t = re.sub(r"\s+", " ", str(title or "")).strip().casefold()
+    if not t:
+        return True
+    if t in _GENERIC_TITLES:
+        return True
+    k = str(kind or "").casefold()
+    return bool(k) and (t == k or t == f"{k} croisée" or t == f"{k} croisee")
+
+
+def named_title(title: Any, fact: Any, kind: str = "") -> str:
+    """Nom réel, ou vide (silence). Jamais le type à la place du nom."""
+    for raw in (title, fact):
+        s = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if not s or _NO_DATA_RE.search(s) or _is_generic_title(s, kind):
+            continue
+        s = _LIST_PREFIX_RE.sub("", s).strip(" :")
+        s = _DIST_PAREN_RE.sub("", s).strip()
+        s = re.sub(
+            r"^(station|marina|aire marine protégée|amp)\s+",
+            "",
+            s,
+            flags=re.I,
+        ).strip()
+        if s and not _is_generic_title(s, kind):
+            return s
+    return ""
+
+
+def _zee_place(name: Any) -> str:
+    s = _LIST_PREFIX_RE.sub("", str(name or "").strip()).strip(" :")
+    return s
+
+
 def _stop_title(name: str) -> str:
     """Nom d'escale seul — titre de bulle, sans « Approche de »."""
     return re.sub(r"\s*\([^)]*\)\s*", " ", str(name or "")).strip()
@@ -166,40 +219,33 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
             ))
 
     prev_mrgid, cur_mrgid = _zee(prev).get("mrgid"), _zee(cur).get("mrgid")
-    cur_name = _zee(cur).get("name") or "Haute mer"
-    if cur_mrgid and cur_mrgid != prev_mrgid:
-        changes.append(_change(
-            "zee-enter", SCORE_ZEE,
-            f"Entrée dans {cur_name}",
-            cur_name,
-        ))
+    cur_name = _zee_place(_zee(cur).get("name"))
+    if cur_mrgid and cur_mrgid != prev_mrgid and cur_name:
+        changes.append(_change("zee-enter", SCORE_ZEE, cur_name, cur_name))
     elif prev_mrgid and not cur_mrgid:
-        prev_name = _zee(prev).get("name") or "ZEE"
-        changes.append(_change(
-            "zee-enter", SCORE_ZEE,
-            "Haute mer",
-            f"Sortie de {prev_name}.",
-        ))
+        prev_name = _zee_place(_zee(prev).get("name"))
+        if prev_name:
+            changes.append(_change(
+                "zee-enter", SCORE_ZEE,
+                "Haute mer",
+                f"Sortie de {prev_name}.",
+            ))
     elif _entry(prev) != _entry(cur) and not any(c.get("kind") == "zee-enter" for c in changes):
-        ports = _entry(cur).get("ports") or []
+        ports = [str(p).strip() for p in (_entry(cur).get("ports") or []) if str(p).strip()]
         known = bool(_entry(cur).get("known"))
-        fact = ", ".join(str(p) for p in ports) if ports else (
-            "Aucun port d'entrée officiel n'est connu pour cette ZEE."
-        )
-        changes.append(_change(
-            "zee-enter", SCORE_ZEE,
-            "Formalités d'entrée" if not known or not ports else f"Ports d'entrée : {ports[0]}",
-            fact,
-        ))
+        port = named_title(ports[0] if ports else "", "", "port")
+        if known and port:
+            changes.append(_change("port", SCORE_ZEE, port, port))
 
     prev_sci = {item.get("fact") or item.get("title") for item in _around_by_kind(prev, "science")}
     for item in _around_by_kind(cur, "science"):
         key = item.get("fact") or item.get("title")
-        if key and key not in prev_sci:
+        title = named_title(item.get("title"), item.get("fact"), "station")
+        if key and key not in prev_sci and title:
             changes.append(_change(
                 "station", SCORE_STATION,
-                item.get("title") or "Station croisée",
-                item.get("fact") or item.get("title") or "Station croisée",
+                title,
+                item.get("fact") or title,
             ))
 
     prev_reg, cur_reg = prev_leg.get("regime"), cur_leg.get("regime")
@@ -233,9 +279,11 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
             )
             kind = (item or {}).get("kind") or "station"
             score = SCORE_STATION if kind == "science" else SCORE_REGIME
-            title = added[0] if added else (removed[0] if removed else "Autour du bateau")
-            fact = (item or {}).get("fact") or title
-            changes.append(_change(kind if kind == "science" else kind, score, title, fact))
+            raw = added[0] if added else (removed[0] if removed else "")
+            title = named_title(raw, (item or {}).get("fact"), kind)
+            if title:
+                fact = (item or {}).get("fact") or title
+                changes.append(_change(kind if kind == "science" else kind, score, title, fact))
 
     return [c for c in changes if c.get("title") and c.get("fact")]
 
