@@ -56,6 +56,47 @@ export function filmTextHasT0Year(chapters, t0) {
   return text.includes(String(year));
 }
 
+const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
+
+/** Empreinte RE7 : récit court, pas le journal déversé ni le script Simulation. */
+export function filmWordCount(text) {
+  return (String(text || "").match(/\S+/g) || []).length;
+}
+
+export function isRe7OfficialFilm(data) {
+  const chapters = data?.chapters || [];
+  if (!chapters.length) return false;
+  const blob = chapters.map((c) => c.text || "").join(" ");
+  if (filmWordCount(blob) > 800) return false;
+  return !RE7_STALE.test(blob);
+}
+
+/** pending | ready | stale | empty | absent */
+export function officialFilmStatus(data, { fetchFailed = false } = {}) {
+  if (fetchFailed) return "absent";
+  if (isRe7OfficialFilm(data)) return "ready";
+  if (data?.chapters?.length) return "stale";
+  if (data == null) return "pending";
+  return "empty";
+}
+
+/**
+ * Revoir en Suivre : horloge officielle + /film RE7, ou repli local seulement
+ * si l'API est absente (CI). Jamais le script Simulation tant que /film pend
+ * ou qu'il n'est pas ce checkout.
+ */
+export function canStartOfficialReplay({
+  requireOfficialFilm = true,
+  officialClock = null,
+  fallbackClock = null,
+  remoteStatus = "pending",
+} = {}) {
+  if (!requireOfficialFilm) return Boolean(officialClock || fallbackClock);
+  if (remoteStatus === "ready") return Boolean(officialClock);
+  if (remoteStatus === "absent") return Boolean(fallbackClock || officialClock);
+  return false;
+}
+
 export function pickFilmChapters(remote, local, fallback = []) {
   const r = remote?.chapters || [];
   const l = local?.chapters || [];
@@ -233,6 +274,8 @@ export function stepAlongPlan({ plan, clock, frames = 60, dt = 1 / 60, elapsed0 
  */
 export function useReplay({
   clock,
+  fallbackClock = null,
+  requireOfficialFilm = true,
   journal,
   enabled = false,
   lang = "fr",
@@ -256,6 +299,14 @@ export function useReplay({
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const remotePlanRef = useRef(null);
+  const [remoteStatus, setRemoteStatus] = useState("pending");
+  const remoteStatusRef = useRef("pending");
+  const setFilmStatus = useCallback((s) => {
+    remoteStatusRef.current = s;
+    setRemoteStatus(s);
+  }, []);
+  const pinnedIdxRef = useRef(null);
+  const seekChapterRef = useRef(null);
   const queueRef = useRef([]);
   const cardSinceRef = useRef(0);
   const lastTRef = useRef(null);
@@ -281,12 +332,13 @@ export function useReplay({
   const filmScoreRef = useRef(new FilmEventScoreGate());
   const publishedBubbleRef = useRef(null);
   const clockRef = useRef(clock);
-  clockRef.current = clock;
+  if (clock) clockRef.current = clock;
   const budgetRef = useRef(0);
 
   const stop = useCallback(() => {
     stoppingRef.current = true;
     finishedRef.current = true;
+    pinnedIdxRef.current = null;
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
@@ -345,39 +397,130 @@ export function useReplay({
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled) {
+      setFilmStatus("pending");
+      remotePlanRef.current = null;
+      return undefined;
+    }
+    let cancelled = false;
+    let retryTimer = 0;
     const ac = new AbortController();
     const style = filmStyle === "written" ? "written" : "raw";
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
-    remotePlanRef.current = null;
-    fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.chapters?.length) {
-          remotePlanRef.current = data;
-          if (ac.signal.aborted) return;
-          setHasWritten(Boolean(data.hasWritten));
-          setFilmSource(data.source || "rules");
-          return;
-        }
-        if (ac.signal.aborted || remotePlanRef.current) return;
-        setHasWritten(false);
-        if (filmStyle !== "written") setFilmSource("rules");
-      })
-      .catch((err) => {
-        if (err?.name === "AbortError" || ac.signal.aborted || remotePlanRef.current) return;
-        setHasWritten(false);
-        setFilmSource("rules");
-      });
-    return () => ac.abort();
-  }, [enabled, lang, targetSeconds, filmStyle, t0]);
+
+    const applyData = (data) => {
+      if (cancelled) return true;
+      if (isRe7OfficialFilm(data)) {
+        remotePlanRef.current = data;
+        setHasWritten(Boolean(data.hasWritten));
+        setFilmSource(data.source || "rules");
+        setFilmStatus("ready");
+        return true;
+      }
+      if (data?.chapters?.length) {
+        remotePlanRef.current = data;
+        setFilmStatus("stale");
+        return true;
+      }
+      return false;
+    };
+
+    const markAbsent = () => {
+      remotePlanRef.current = null;
+      setHasWritten(false);
+      setFilmSource("rules");
+      setFilmStatus("absent");
+    };
+
+    const load = () => {
+      if (cancelled) return;
+      setFilmStatus("pending");
+      remotePlanRef.current = null;
+      fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
+        .then((r) => {
+          if (!r.ok) return { fail: true };
+          return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
+        })
+        .then((pack) => {
+          if (cancelled || ac.signal.aborted) return;
+          if (!pack || pack.fail) {
+            markAbsent();
+            return;
+          }
+          if (applyData(pack.data)) return;
+          setFilmStatus("empty");
+          retryTimer = setTimeout(load, 2000);
+        })
+        .catch((err) => {
+          if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
+          markAbsent();
+        });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+      ac.abort();
+      clearTimeout(retryTimer);
+    };
+  }, [enabled, lang, targetSeconds, filmStyle, t0, setFilmStatus]);
+
+  const canStart = canStartOfficialReplay({
+    requireOfficialFilm,
+    officialClock: clock,
+    fallbackClock,
+    remoteStatus,
+  });
+
+  const seekChapter = useCallback((idx) => {
+    const plan = planRef.current;
+    if (!plan?.chapters?.length) return false;
+    const last = plan.chapters.length - 1;
+    const n = Math.max(0, Math.min(last, Number(idx)));
+    const ch = plan.chapters[n];
+    if (!ch) return false;
+    pinnedIdxRef.current = ch.idx;
+    applyChapter(ch);
+    const at = Number.isFinite(ch.tB) ? ch.tB : ch.tA;
+    if (Number.isFinite(at)) {
+      tMsRef.current = at;
+      lastTRef.current = at;
+      setTMs(at);
+    }
+    if (ch.idx >= last) setProgress(1);
+    if (typeof window !== "undefined") {
+      const prev = window.__naviguideFilm || {};
+      window.__naviguideFilm = {
+        ...prev,
+        chapterIdx: ch.idx,
+        chapterText: ch.text || "",
+        chapterCount: plan.chapters.length,
+      };
+    }
+    return true;
+  }, [applyChapter]);
+  seekChapterRef.current = seekChapter;
 
   const start = useCallback(() => {
-    const w = replayWindow(clock, Date.now());
-    if (!w) return false;
+    const status = remoteStatusRef.current;
     const remote = remotePlanRef.current;
+    let clockToUse = clock;
+    let remoteToUse = remote;
+    if (requireOfficialFilm) {
+      if (status === "ready" && isRe7OfficialFilm(remote) && clock) {
+        clockToUse = clock;
+        remoteToUse = remote;
+      } else if (status === "absent") {
+        clockToUse = fallbackClock || clock;
+        remoteToUse = null;
+      } else {
+        return false;
+      }
+    }
+    const w = replayWindow(clockToUse, Date.now());
+    if (!w) return false;
     const local = buildFilmScript({
-      clock,
+      clock: clockToUse,
       marks,
       live: destination,
       journal,
@@ -387,7 +530,7 @@ export function useReplay({
       t0,
     });
     const fallback = filmChaptersFromStory({
-      clock,
+      clock: clockToUse,
       marks,
       live: destination,
       journal,
@@ -395,8 +538,11 @@ export function useReplay({
       nowMs: Date.now(),
       t0,
     });
-    const remoteOk = remote && filmTextHasT0Year(remote.chapters, t0);
-    const picked = pickFilmChapters(remoteOk ? remote : null, local, fallback);
+    const remoteOk = Boolean(
+      remoteToUse?.chapters?.length
+      && (isRe7OfficialFilm(remoteToUse) || filmTextHasT0Year(remoteToUse.chapters, t0)),
+    );
+    const picked = pickFilmChapters(remoteOk ? remoteToUse : null, local, fallback);
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
@@ -404,6 +550,8 @@ export function useReplay({
     const planSeconds = resolveFilmTargetSeconds(userBudget, chapters);
     const plan = filmPlan({ chapters, targetSeconds: planSeconds });
     if (!plan.chapters.length) return false;
+    clockRef.current = clockToUse;
+    pinnedIdxRef.current = null;
     windowRef.current = w;
     planRef.current = plan;
     queueRef.current = [];
@@ -429,11 +577,23 @@ export function useReplay({
     setProgress(0);
     setActive(true);
     publishFilmStart(plan.targetSeconds);
-    if (typeof window !== "undefined" && window.__naviguideFilm) {
-      window.__naviguideFilm.budgetSeconds = userBudget;
+    if (typeof window !== "undefined") {
+      const prev = window.__naviguideFilm || {};
+      window.__naviguideFilm = {
+        ...prev,
+        budgetSeconds: userBudget,
+        chapterCount: plan.chapters.length,
+        chapters: plan.chapters.map((c) => ({
+          idx: c.idx,
+          text: c.text || "",
+          fromName: c.fromName || "",
+          toName: c.toName || "",
+        })),
+        seekChapter: (idx) => seekChapterRef.current?.(idx),
+      };
     }
     return true;
-  }, [clock, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
+  }, [clock, fallbackClock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
 
   useEffect(() => {
     if (!enabled && active) stop();
@@ -544,12 +704,18 @@ export function useReplay({
         ingest(last?.tB ?? w.endMs);
         finish();
       } else if (!voiceClock) {
-        const ch = chapterAtElapsed(plan, elapsed);
+        const pinned = pinnedIdxRef.current;
+        const ch = pinned != null ? plan.chapters[pinned] : chapterAtElapsed(plan, elapsed);
         if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
-        const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
-        const f = Math.max(0, Math.min(1, frac));
-        charIdx = f * (ch?.chars || 1);
-        ingest(ch ? ch.tA + f * (ch.tB - ch.tA) : plan.timeAt(0, 0));
+        if (pinned != null && ch) {
+          charIdx = ch.chars || 1;
+          ingest(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));
+        } else {
+          const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
+          const f = Math.max(0, Math.min(1, frac));
+          charIdx = f * (ch?.chars || 1);
+          ingest(ch ? ch.tA + f * (ch.tB - ch.tA) : plan.timeAt(0, 0));
+        }
       } else {
         const ch = plan.chapters[chapterIdxRef.current];
         const cur = tMsRef.current ?? lastTRef.current ?? ch?.tA;
@@ -597,6 +763,8 @@ export function useReplay({
         window.__naviguideFilm = {
           ...prevFilm,
           chapterIdx: chapterIdxRef.current,
+          chapterText: chapter?.text || prevFilm.chapterText || "",
+          chapterCount: plan.chapters.length,
           elapsed,
           charIdx,
           tMs: lastTRef.current,
@@ -605,6 +773,7 @@ export function useReplay({
           filmNm: pos?.filmNm ?? null,
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
+          seekChapter: prevFilm.seekChapter || ((idx) => seekChapterRef.current?.(idx)),
         };
       }
 
@@ -660,5 +829,8 @@ export function useReplay({
     filmStyle,
     setFilmStyle,
     hasWritten,
+    canStart,
+    seekChapter,
+    remoteStatus,
   };
 }
