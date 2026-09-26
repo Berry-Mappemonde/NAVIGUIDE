@@ -22,6 +22,12 @@ describe("openEscaleFromUi — pas d'ouverture de panneau (lot RD1)", () => {
   });
 });
 
+describe("onSeekEscale — lot RE2 : pas de seek depuis la liste en Suivre", () => {
+  it("débranche handleSidebarSeek quand isSuivre", () => {
+    assert.match(app, /onSeekEscale=\{isSuivre \? undefined : handleSidebarSeek\}/);
+  });
+});
+
 describe("handleSidebarSeek — lot RC6 : preview utilisateur", () => {
   it("en Suivre, setUserPreview(true) avant pause+seek", () => {
     const start = app.indexOf("const handleSidebarSeek");

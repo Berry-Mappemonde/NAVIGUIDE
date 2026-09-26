@@ -17,6 +17,22 @@ describe("EscaleLegend — plus de carré vert (lot RD1)", () => {
   });
 });
 
+describe("EscaleLegend — informatif en Suivre (lot RE2)", () => {
+  it("sans onSeek, la ligne n'est pas un bouton et n'a pas de clic", () => {
+    assert.match(src, /data-testid="escale-legend-row"/);
+    assert.match(src, /data-interactive=\{interactive \? "true" : "false"\}/);
+    assert.match(src, /typeof onSeek === "function"/);
+    assert.match(src, /cursor-default/);
+    assert.match(src, /cursor-pointer/);
+    const branch = src.slice(src.indexOf("{interactive ? ("), src.indexOf("</li>"));
+    assert.match(branch, /<button[\s\S]*onClick=\{\(\) => onSeek\(at/);
+    const idle = branch.slice(branch.indexOf(") : ("));
+    assert.match(idle, /<div className="flex-1 min-w-0 text-left px-2 py-1 text-\[11px\] cursor-default"/);
+    assert.doesNotMatch(idle, /onClick/);
+    assert.doesNotMatch(idle, /<button/);
+  });
+});
+
 describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
   it("ajoute eta-range sans retirer la date", () => {
     assert.match(src, /data-testid="escale-legend"/);
