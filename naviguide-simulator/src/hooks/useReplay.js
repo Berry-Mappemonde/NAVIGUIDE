@@ -81,9 +81,9 @@ export function officialFilmStatus(data, { fetchFailed = false } = {}) {
 }
 
 /**
- * Revoir en Suivre : horloge officielle + /film RE7, ou repli local seulement
- * si l'API est absente (CI). Jamais le script Simulation tant que /film pend
- * ou qu'il n'est pas ce checkout.
+ * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
+ * absent / pending / stale / empty : pas de repli Simulation (plus de
+ * récit La Rochelle → Ajaccio sur un HTTP 500).
  */
 export function canStartOfficialReplay({
   requireOfficialFilm = true,
@@ -93,7 +93,6 @@ export function canStartOfficialReplay({
 } = {}) {
   if (!requireOfficialFilm) return Boolean(officialClock || fallbackClock);
   if (remoteStatus === "ready") return Boolean(officialClock);
-  if (remoteStatus === "absent") return Boolean(fallbackClock || officialClock);
   return false;
 }
 
@@ -510,9 +509,6 @@ export function useReplay({
       if (status === "ready" && isRe7OfficialFilm(remote) && clock) {
         clockToUse = clock;
         remoteToUse = remote;
-      } else if (status === "absent") {
-        clockToUse = fallbackClock || clock;
-        remoteToUse = null;
       } else {
         return false;
       }
@@ -593,7 +589,7 @@ export function useReplay({
       };
     }
     return true;
-  }, [clock, fallbackClock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
+  }, [clock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
 
   useEffect(() => {
     if (!enabled && active) stop();

@@ -1,9 +1,8 @@
-// Lot RC10 / RE7 — récit officiel, pas le film Simulation.
-// Sans API : Suivre, Revoir (repli local) et l'absence de durée cochée tiennent seuls.
-// GET /voyage/official sondé ; s'il manque, annotation + saut des seules
-// assertions du script serveur et des captures de la dernière jambe —
-// jamais le bouton Revoir, ni le défaut décoché, ni l'absence des phrases
-// interdites dans le sous-titre local.
+// Lot RC11 / RC10 / RE7 — récit officiel, pas le film Simulation.
+// Sans API : Revoir visible et non cliquable, champ date là, pas de récit
+// Ajaccio. GET /voyage/official sondé ; s'il manque, annotation + saut des
+// seules assertions du script serveur — jamais Revoir retiré, ni le champ
+// date, ni les asserts hors API.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,22 +102,15 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
   }
 
   if (!apiUp) {
-    await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
-    if (await durations.isVisible().catch(() => false)) {
-      await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée").toHaveCount(0);
-    }
-    await muteVoice(page);
-    await page.getByTestId("replay-start").click();
-    const subtitle = page.getByTestId("film-subtitle");
-    await expect(subtitle).toBeVisible({ timeout: 8_000 });
-    const sub = (await subtitle.innerText()).trim();
-    expect(sub, "sous-titre non vide").not.toBe("");
-    expect(sub, "pas de phrase interdite dans le sous-titre").not.toMatch(FORBIDDEN);
-    const budgetNone = await page.evaluate(() => window.__naviguideFilm?.budgetSeconds);
-    expect(budgetNone, "aucune durée → pas de budget").toBe(0);
-    const stopBtn = page.getByTestId("replay-stop");
-    if (await stopBtn.isVisible().catch(() => false)) await stopBtn.click();
-    await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
+    const start = page.getByTestId("replay-start");
+    await expect(start).toBeVisible({ timeout: 15_000 });
+    await expect(start).toBeDisabled();
+    await expect(page.getByTestId("replay-departure")).toBeVisible();
+    await expect(durations).toHaveCount(0);
+    await expect(page.getByTestId("replay-stop")).toHaveCount(0);
+    await expect(page.getByTestId("film-subtitle")).toHaveCount(0);
+    const started = await page.evaluate(() => Boolean(window.__naviguideFilm?.startedAt));
+    expect(started, "pas de film Simulation sans /film").toBe(false);
     return;
   }
 
@@ -153,12 +145,14 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
     expect(blob, "avion dit").toMatch(/avion|équipage prend/i);
   }
 
-  await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 30_000 });
+  const start = page.getByTestId("replay-start");
+  await expect(start).toBeVisible({ timeout: 30_000 });
+  await expect(start).toBeEnabled({ timeout: 30_000 });
   if (await durations.isVisible().catch(() => false)) {
     await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée").toHaveCount(0);
   }
   await muteVoice(page);
-  await page.getByTestId("replay-start").click();
+  await start.click();
   const subtitle = page.getByTestId("film-subtitle");
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
   const sub = (await subtitle.innerText()).trim();

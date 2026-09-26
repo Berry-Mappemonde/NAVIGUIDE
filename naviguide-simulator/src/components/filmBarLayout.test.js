@@ -135,6 +135,9 @@ describe("film bar (lot RE3)", () => {
     assert.doesNotMatch(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
     assert.doesNotMatch(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
     assert.match(durBlock, /=== sec \? 0 : sec/);
+    assert.match(bar, /disabled=\{!replay\.canStart\}/);
+    assert.match(bar, /replay\.canStart \? \(/);
+    assert.match(bar, /disabled:opacity-30 disabled:cursor-not-allowed/);
   });
 });
 

@@ -861,8 +861,9 @@ export default function App() {
     openEscaleSheet(next);
   }, [replay.active, openEscaleSheet]);
 
-  const replayControls = useMemo(() => (isSuivre && officialClock && replay.canStart ? {
+  const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
+    canStart: replay.canStart,
     progress: replay.progress,
     voice: replay.voice,
     subtitle: replay.chapterText,
