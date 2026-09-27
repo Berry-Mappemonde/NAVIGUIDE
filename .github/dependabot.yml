@@ -1,0 +1,40 @@
+# Mises à jour de dépendances (27 sept.) : Dependabot ouvre des PR, la CI les teste, le porteur merge
+# à la main quand c'est vert. Une passe par semaine, le lundi matin ; mineures et patchs groupées
+# (une PR par écosystème), majeures chacune dans sa PR. Node.js lui-même : .nvmrc (à la main, une fois par an).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /naviguide-simulator
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+    open-pull-requests-limit: 5
+    groups:
+      simulateur-mineures-et-patchs:
+        update-types: [minor, patch]
+    commit-message: { prefix: "chore(deps)" }
+    labels: [dependances]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+    open-pull-requests-limit: 5
+    groups:
+      frontend-mineures-et-patchs:
+        update-types: [minor, patch]
+    commit-message: { prefix: "chore(deps)" }
+    labels: [dependances]
+  - package-ecosystem: pip
+    directory: /naviguide-simulator/server
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+    open-pull-requests-limit: 5
+    groups:
+      serveur-mineures-et-patchs:
+        update-types: [minor, patch]
+    commit-message: { prefix: "chore(deps)" }
+    labels: [dependances]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+    groups:
+      actions:
+        update-types: [minor, patch, major]
+    commit-message: { prefix: "chore(ci)" }
+    labels: [dependances]
