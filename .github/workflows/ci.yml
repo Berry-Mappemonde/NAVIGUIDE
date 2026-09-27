@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -48,7 +48,7 @@ jobs:
       simulator: ${{ steps.filter.outputs.simulator }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: naviguide-simulator/package-lock.json
       - run: npm ci
@@ -78,7 +78,7 @@ jobs:
         run: npm test
       - name: Build Vite
         run: npm run build
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -114,10 +114,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: naviguide-simulator/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -128,13 +128,17 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Fumée (ouvrir, panneaux, Suivre / Simulation, calque)
         run: npx playwright test e2e/smoke.spec.js
-      # Lot RF11 : l'API tourne hors ligne sur le stock disque figé.
+      # Les specs de lots (e2e/lots/*) sont la recette automatique de chaque lot.
+      # Lot RF11 : l'API tourne hors ligne sur le stock disque figé (npm run e2e:store) ;
       # continue-on-error tant que la suite n'est pas stable deux nuits.
+      # 27 sept. : 4 workers (le runner public a 4 cœurs) ; pas de rejeu (un échec est
+      # déterministe, le rejeu doublait son coût) ; 30 s par test ; butée explicite à 9 min — avant,
+      # la suite butait à 480 s sans jamais aller au bout (« 55 did not run ») et personne ne le voyait.
       - name: Specs de lots (avec API, stock figé)
         if: hashFiles('naviguide-simulator/e2e/lots/*.spec.js') != ''
         continue-on-error: true
-        run: npm run e2e:store -- --workers=4
-      - uses: actions/upload-artifact@v4
+        run: npm run e2e:store -- --workers=4 --retries=0 --timeout=30000 --global-timeout=540000
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-report

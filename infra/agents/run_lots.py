@@ -53,6 +53,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_MD = ROOT / "docs" / "LOTS_ORDRE_ET_PROMPTS.md"
@@ -139,11 +140,42 @@ def parse_lots(md: str) -> list[Lot]:
 QUEUE_MD = STATE_DIR / "queue.md"   # lots correctifs mis en file par le réviseur de nuit (review_agent.py)
 
 
+def lot_done_anywhere(lot_id: str) -> bool:
+    """FINISHED dans state.json OU dans une pile archivée (state.<ts>.json) : un lot correctif d'une nuit
+    précédente, déjà mergé, ne doit jamais être rejoué. 26 sept. : la pile RE partait de main (state
+    archivé) et la file portait encore RC1 → RC9 du 22 sept. — RC1 a été relancé sur RE7."""
+    for p in [STATE_JSON, *STATE_DIR.glob("state.*.json")]:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if ((d.get("done") or {}).get(lot_id) or {}).get("status") == "FINISHED":
+            return True
+    return False
+
+
 def queued_lots(state: "State", exclude: set[str]) -> list[Lot]:
-    """Lots de queue.md pas encore faits ni déjà en attente."""
+    """Lots de queue.md pas encore faits (dans cette pile ou une précédente) ni déjà en attente."""
     if not QUEUE_MD.exists():
         return []
-    return [l for l in parse_lots_text(QUEUE_MD.read_text(encoding="utf-8")) if l.id not in state.done and l.id not in exclude]
+    return [l for l in parse_lots_text(QUEUE_MD.read_text(encoding="utf-8"))
+            if l.id not in state.done and l.id not in exclude and not lot_done_anywhere(l.id)]
+
+
+def purge_queue() -> list[str]:
+    """Retire de queue.md les blocs des lots déjà faits ; renvoie leurs ids."""
+    if not QUEUE_MD.exists():
+        return []
+    text = QUEUE_MD.read_text(encoding="utf-8")
+    gone: list[str] = []
+    for m in list(LOT_RE.finditer(text)):
+        if lot_done_anywhere(m.group("id")):
+            gone.append(m.group("id"))
+    for lid in gone:
+        text = re.sub(r'<!--\s*LOT\s+id="' + re.escape(lid) + r'".*?-->\s*```text.*?```\s*', "", text, count=1, flags=re.S)
+    if gone:
+        QUEUE_MD.write_text(text, encoding="utf-8")
+    return gone
 
 
 def select(lots: list[Lot], args) -> list[Lot]:
@@ -226,9 +258,11 @@ def owner_repo(repo: str) -> str:
     return repo.replace("https://github.com/", "").rstrip("/")
 
 
-def find_pr(http: Http, repo: str, branch: str) -> dict | None:
+def find_pr(http: Http, repo: str, branch: str, state: str = "open") -> dict | None:
+    """La PR d'une branche. `state="all"` retrouve aussi une PR déjà mergée (le GO mergé par le porteur
+    avant que la boucle ne l'ait enregistré, 26 sept.)."""
     org = owner_repo(repo).split("/")[0]
-    q = urllib.parse.urlencode({"head": f"{org}:{branch}", "state": "open"})
+    q = urllib.parse.urlencode({"head": f"{org}:{branch}", "state": state, "sort": "created", "direction": "desc"})
     prs = http.github(f"/repos/{owner_repo(repo)}/pulls?{q}")
     return prs[0] if prs else None
 
@@ -434,7 +468,59 @@ def prepare_worktree(lot: Lot, ref: str) -> Path:
     env = sim / "server" / ".env"
     if env.exists() and not (path / "naviguide-simulator" / "server" / ".env").exists():
         shutil.copy2(env, path / "naviguide-simulator" / "server" / ".env")
+    snapshot_shared_caches(path)
     return path
+
+
+OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel"
+# Caches du poste partagés entre ses rebuilds (variables posées dans ~/.config/naviguide/simulator.env, 26 sept.)
+# → dossier par défaut du checkout que le serveur de l'agent lit sans ces variables.
+SHARED_CACHE_DIRS = (("NAVIGUIDE_VOYAGE_DIR", "voyage_data"), ("NAVIGUIDE_FORECAST_CACHE", "forecast_cache"), ("NAVIGUIDE_GRIB_DIR", "grib_data"))
+VOYAGE_DATA_FILES = ("eez_vliz_v12.geojson", "ici_thin_cache.json", "official_journal", f"voyage_{OFFICIAL_VOYAGE_ID}.json")
+
+
+def snapshot_shared_caches(path: Path) -> list[str]:
+    """Le serveur que l'agent lance dans son worktree (tests, recette locale) ne lit pas simulator.env :
+    sans rien, il refait au démarrage les 3 272 perles « ici » (des heures d'appels amont), le hindcast
+    ERA5 (~8 600 appels — quota Open-Meteo brûlé le 26 sept.), le cube GFS, les récits LLM du film…
+    On lui donne un INSTANTANÉ (copie) des caches partagés du poste — jamais le dossier lui-même :
+    un agent bugué (façon RF2) ne peut pas polluer le poste. Ces dossiers sont ignorés par git
+    (naviguide-simulator/.gitignore) : rien n'entre dans sa PR. Jamais bloquant."""
+    vals = _env_file_values()
+    server = path / "naviguide-simulator" / "server"
+    copied: list[str] = []
+    try:
+        for key, rel in SHARED_CACHE_DIRS:
+            src = Path(vals[key]).expanduser() if vals.get(key) else None
+            if not src or not src.is_dir():
+                continue
+            dst = server / rel
+            dst.mkdir(parents=True, exist_ok=True)
+            if rel != "voyage_data":
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+                copied.append(rel)
+                continue
+            db = src / "naviguide.sqlite"
+            if db.exists():
+                import sqlite3  # noqa: PLC0415
+                # Sauvegarde en ligne : cohérente même si le serveur du poste écrit dedans en même temps.
+                with sqlite3.connect(str(db)) as s, sqlite3.connect(str(dst / "naviguide.sqlite")) as d:
+                    s.backup(d)
+                copied.append(f"kv {db.stat().st_size // 1048576} Mo")
+            for name in VOYAGE_DATA_FILES:
+                f = src / name
+                if f.is_dir():
+                    shutil.copytree(f, dst / name, dirs_exist_ok=True)
+                elif f.is_file():
+                    shutil.copy2(f, dst / name)
+                else:
+                    continue
+                copied.append(name)
+    except Exception as e:  # l'instantané est un confort : le lot part quand même
+        log(f"    instantané des caches partagés incomplet : {type(e).__name__}: {e} — le serveur de l'agent recalculera ce qui manque")
+    if copied:
+        log(f"    caches partagés copiés dans le worktree ({', '.join(copied)}) : aucun préchauffage à refaire")
+    return copied
 
 
 def port_busy(port: int) -> bool:
@@ -451,6 +537,9 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
     return (f"Environnement : tu travailles dans le worktree git {path} (dépôt principal : {ROOT}). "
             f"node_modules et .venv sont des liens vers le dépôt principal : ne lance ni npm install ni pip install sauf nécessité absolue. "
             f"Le worktree est sur un HEAD détaché à `{ref}` : commence par `git checkout -b <ta-branche>`. "
+            f"DOCUMENTS À JOUR : ta branche part d'une pile plus ancienne que `main` — le plan (docs/PLAN_*.md), docs/LOTS_ORDRE_ET_PROMPTS.md et "
+            f"docs/REGLES_WORKFLOW_AGENT.md que ton prompt te demande de lire sont ceux du dépôt principal : lis-les dans {ROOT}/docs/ (pas dans ton worktree, "
+            f"où ils peuvent manquer ou être périmés) ; n'y écris rien. "
             f"{ports}"
             f"RÈGLE CI : la CI n'a PAS d'API. Ton spec Playwright (e2e/lots/<lot>.spec.js) doit passer sans API : sonde `await page.request.get('/voyage/official')` "
             f"et, si elle ne répond pas, saute proprement (annotation + return) les assertions qui en dépendent, sans jamais affaiblir celles qui n'en dépendent pas. "
@@ -460,8 +549,14 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
             f"(texte exact, chiffre, bouton présent ou absent) — et JAMAIS de commande, de data-testid, d'URL d'API, de coordonnées ni de nom de fichier : tout cela va dans « Review automatique ». "
             f"Chaque capture est référencée par son URL complète sur ta branche : https://github.com/{owner_repo(DEFAULT_REPO)}/blob/<ta-branche>/docs/recette/<lot>/01-….jpg?raw=true "
             f"(un chemin relatif s'ouvre sur main, où le fichier n'existe pas encore). "
+            f"RÈGLE DONNÉES RÉELLES (26 sept.) : aucune donnée factice (seed, fixture, constante, « contenu du poste de recette ») n'est écrite dans un stock ou un cache "
+            f"que le poste lit, ni servie comme prête ; ce qui n'est pas calculé pour de vrai reste « en préparation ». La Recette de ta PR décrit ce qu'on voit avec les VRAIES "
+            f"données du poste — jamais une valeur que ton code écrit lui-même (une PR qui coche sa propre recette avec des constantes est fermée sans revue). "
             f"RÈGLE UI : n'ajoute aucun texte d'aide ou d'explication dans l'interface, aucun libellé déjà visible ailleurs sur le même écran, "
             f"aucune rangée supplémentaire dans la barre film ; un bouton nouveau doit marcher ou ne pas exister. "
+            f"RÈGLE FIN DE LOT (26 sept.) : avant de terminer, ARRÊTE tout serveur ou processus que tu as lancé pour tes essais (uvicorn, vite, "
+            f"playwright, npm run dev…) — rien ne doit rester en arrière-plan ; un agent qui laisse tourner un serveur bloque toute la nuit. "
+            f"Une fois la PR ouverte et poussée, termine immédiatement : ne relis pas, ne « nettoie » pas ton travail livré. "
             f"RÈGLE PR BILINGUE (21 sept.) : le corps de la PR est en français PUIS en anglais — titre de PR « FR — EN », chaque rubrique en deux blocs "
             f"(« ## Objectif / Objective » : paragraphe FR puis paragraphe EN, idem Cause racine / Root cause, Ce qui change / What changes, Tests, "
             f"Review automatique / Automated review, Hors périmètre / Out of scope). La rubrique « Recette / What to check » est UNE liste de cases à cocher "
@@ -479,34 +574,73 @@ RATE_LIMIT_RE = re.compile(r"rate.?limit|too many requests|\b429\b|quota|capacit
 RATE_LIMIT_WAITS_S = (300, 600, 1200)   # 5, 10, 20 min : le fournisseur (Grok) bride après une série d'agents
 
 
-def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False,
+                  done: "Callable[[], str | None] | None" = None) -> tuple[str, str]:
     """Un agent CLI. Si le fournisseur répond « rate limited », on attend (5, 10, 20 min) et on
-    réessaie au lieu de compter le lot comme raté : la nuit est longue, le batch n'est pas pressé."""
-    for attempt, wait_s in enumerate((0,) + RATE_LIMIT_WAITS_S):
-        if wait_s:
-            log(f"    fournisseur de modèle saturé (rate limited) — nouvel essai dans {wait_s // 60} min ({attempt}/{len(RATE_LIMIT_WAITS_S)})")
-            time.sleep(wait_s)
-        status, result = _run_agent_cli_once(path, prompt, model, timeout_s, resume)
-        if status == "ERROR" and RATE_LIMIT_RE.search(result or ""):
-            resume = True   # la reprise recolle à la session commencée, s'il y en a une
-            continue
+    réessaie au lieu de compter le lot comme raté : la nuit est longue, le batch n'est pas pressé.
+    Avec `done`, l'agent est surveillé (run_agent_cli_watched) et arrêté dès que son travail est livré.
+    Dans tous les cas, les serveurs qu'il aurait laissés tourner dans son worktree sont arrêtés à la fin."""
+    try:
+        for attempt, wait_s in enumerate((0,) + RATE_LIMIT_WAITS_S):
+            if wait_s:
+                log(f"    fournisseur de modèle saturé (rate limited) — nouvel essai dans {wait_s // 60} min ({attempt}/{len(RATE_LIMIT_WAITS_S)})")
+                time.sleep(wait_s)
+            if done is not None:
+                status, result = run_agent_cli_watched(path, prompt, model, timeout_s, done, resume=resume)
+            else:
+                status, result = _run_agent_cli_once(path, prompt, model, timeout_s, resume)
+            if status == "ERROR" and RATE_LIMIT_RE.search(result or ""):
+                resume = True   # la reprise recolle à la session commencée, s'il y en a une
+                continue
+            return status, result
         return status, result
-    return status, result
+    finally:
+        stop_worktree_servers(path)
 
 
-def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+def stop_worktree_servers(path: Path) -> list[str]:
+    """Arrête les serveurs qu'un agent a laissés tourner dans son worktree (uvicorn d'essai, vite, playwright…).
+    26 sept., RF2 : un `uvicorn :8020` oublié a tenu l'agent en vie 30 min après sa PR, et le batch avec lui.
+    Ne touche à rien hors du worktree (le poste de recette vit dans un autre checkout)."""
+    stopped: list[str] = []
+    root = os.path.realpath(str(path))   # macOS : /tmp → /private/tmp ; lsof rend le chemin réel
+    try:
+        out = sh(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"], check=False, timeout=30).stdout
+    except Exception:
+        return stopped
+    pid, cmd = None, ""
+    for ln in out.splitlines():
+        if ln.startswith("p"):
+            pid, cmd = int(ln[1:]), ""
+        elif ln.startswith("c"):
+            cmd = ln[1:]
+        elif ln.startswith("n") and pid:
+            cwd = sh(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], check=False, timeout=15).stdout
+            cwd = os.path.realpath(next((l[1:] for l in cwd.splitlines() if l.startswith("n")), "") or "/nonexistent")
+            if (cwd == root or cwd.startswith(root + "/")) and pid != os.getpid():
+                try:
+                    os.kill(pid, 15)
+                    stopped.append(f"{cmd} {ln[1:]} (pid {pid})")
+                except OSError:
+                    pass
+            pid = None
+    if stopped:
+        log(f"    serveurs laissés par l'agent, arrêtés : {stopped}")
+    return stopped
+
+
+def _agent_cmd(path: Path, prompt: str, model: str, resume: bool) -> list[str]:
     cmd = [AGENT_BIN, "-p", "--force", "--trust", "--workspace", str(path), "--output-format", "json"]
     if model:
         cmd += ["--model", model]
     if resume:
         cmd += ["--continue"]
     cmd.append(prompt)
-    env = {**os.environ, "PW_PORT": str(PW_PORT)}
-    try:
-        p = subprocess.run(cmd, cwd=str(path), text=True, capture_output=True, timeout=timeout_s, env=env)
-    except subprocess.TimeoutExpired:
-        return "TIMEOUT", ""
-    out = p.stdout.strip()
+    return cmd
+
+
+def _agent_outcome(returncode: int, stdout: str, stderr: str) -> tuple[str, str]:
+    out = (stdout or "").strip()
     result = out
     for chunk in reversed(out.splitlines()):
         try:
@@ -518,9 +652,51 @@ def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, res
                 break
         except json.JSONDecodeError:
             continue
-    if p.returncode != 0:
-        return "ERROR", (p.stderr or out)[-800:]
+    if returncode != 0:
+        return "ERROR", (stderr or out)[-800:]
     return "FINISHED", str(result)[-800:]
+
+
+def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+    env = {**os.environ, "PW_PORT": str(PW_PORT)}
+    try:
+        p = subprocess.run(_agent_cmd(path, prompt, model, resume), cwd=str(path), text=True, capture_output=True, timeout=timeout_s, env=env)
+    except subprocess.TimeoutExpired:
+        return "TIMEOUT", ""
+    return _agent_outcome(p.returncode, p.stdout, p.stderr)
+
+
+def run_agent_cli_watched(path: Path, prompt: str, model: str, timeout_s: int, done: "Callable[[], str | None]", every_s: int = 60,
+                          resume: bool = False) -> tuple[str, str]:
+    """Un agent CLI qu'on surveille : toutes les `every_s` secondes, `done()` dit si son travail est
+    déjà livré (par exemple : sa PR existe, et elle est mergée ou n'a plus bougé depuis 20 min). Si oui,
+    on l'ARRÊTE et on rend « STOPPED » avec la raison — plutôt que d'attendre qu'il veuille bien finir.
+    26 sept. : le correcteur a ouvert la PR GO en 20 min puis a tourné une heure de plus, jusqu'à défaire
+    son propre travail dans son worktree, pendant que la boucle attendait sa sortie."""
+    env = {**os.environ, "PW_PORT": str(PW_PORT)}
+    p = subprocess.Popen(_agent_cmd(path, prompt, model, resume), cwd=str(path), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                         start_new_session=True)
+    t0 = time.time()
+    while True:
+        try:
+            out, err = p.communicate(timeout=every_s)
+            return _agent_outcome(p.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            pass
+        reason = None
+        try:
+            reason = done()
+        except Exception as e:  # la surveillance ne doit jamais tuer par erreur
+            log(f"    surveillance de l'agent : {type(e).__name__}")
+        if reason or time.time() - t0 > timeout_s:
+            why = reason or f"délai de {timeout_s // 60} min dépassé"
+            log(f"    agent arrêté : {why}")
+            try:
+                os.killpg(p.pid, 15)
+                p.communicate(timeout=30)
+            except Exception:
+                p.kill()
+            return ("STOPPED" if reason else "TIMEOUT"), why
 
 
 def local_branch(path: Path) -> str | None:
@@ -567,21 +743,54 @@ def adoptable_worktree(lot: Lot) -> tuple[Path, str] | None:
     return None if dirty else (path, branch)
 
 
+LOT_IDLE_MIN = 10   # PR du lot poussée, worktree propre, plus aucun commit depuis 10 min : l'agent a fini, même s'il ne sort pas
+
+
+def lot_delivered(http: Http, path: Path, repo: str) -> str | None:
+    """Raison d'arrêter l'agent d'un lot, ou None : sa branche a une PR, son worktree est propre (tout est
+    commité et poussé) et plus rien n'a bougé depuis LOT_IDLE_MIN. 26 sept., RF2 : PR ouverte à 20:44,
+    agent encore là à 21:10 (un uvicorn d'essai oublié le tenait en vie), le batch attendait."""
+    branch = local_branch(path)
+    if not branch:
+        return None
+    if sh(["git", "status", "--porcelain"], cwd=path, check=False).stdout.strip():
+        return None   # il travaille encore
+    try:
+        pr = find_pr(http, repo, branch)
+    except RuntimeError:
+        return None
+    if not pr:
+        return None
+    local_sha = sh(["git", "rev-parse", "HEAD"], cwd=path, check=False).stdout.strip()
+    if pr["head"]["sha"] != local_sha:
+        return None   # pas encore poussé
+    last = sh(["git", "log", "-1", "--format=%ct"], cwd=path, check=False).stdout.strip()
+    idle_min = (time.time() - int(last)) / 60 if last.isdigit() else 0
+    if idle_min >= LOT_IDLE_MIN:
+        return f"PR #{pr['number']} poussée, worktree propre, rien depuis {idle_min:.0f} min"
+    return None
+
+
 def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
+    watch = lambda: lot_delivered(http, path, args.repo)  # noqa: E731
     adopted = adoptable_worktree(lot)
     if adopted:
         path, branch = adopted
         log(f"[{lot.id}] worktree {path} déjà poussé sur {branch} — adopté (pas de nouvel agent)")
         ensure_pr(http, args, lot, branch, "(lot adopté après interruption : voir la PR)")
         return {"status": "FINISHED", "branch": branch, "worktree": str(path), "result": "adopté",
-                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True)}
+                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True, done=watch)}
     path = prepare_worktree(lot, ref)
     log(f"[{lot.id}] worktree {path} depuis {ref} — agent local ({args.model or 'modèle par défaut du compte'})")
-    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600))
+    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600), done=watch)
     log(f"    agent: {status}")
+    if status == "STOPPED":
+        status = "FINISHED"   # le travail était livré (PR poussée, worktree propre) ; on a juste cessé d'attendre l'agent
     if status != "FINISHED":
         log(f"[{lot.id}] premier passage : {status} — une relance")
-        status, result = run_agent_cli(path, RESUME_TEXT, args.model, int(args.timeout_hours * 1800), resume=True)
+        status, result = run_agent_cli(path, RESUME_TEXT, args.model, int(args.timeout_hours * 1800), resume=True, done=watch)
+        if status == "STOPPED":
+            status = "FINISHED"
         log(f"    relance: {status}")
     branch = local_branch(path)
     if branch is None:
@@ -596,7 +805,7 @@ def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
     else:
         status = "ERROR" if status == "FINISHED" else status
     return {"status": status, "branch": branch, "worktree": str(path), "result": result[:500],
-            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True)}
+            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True, done=watch)}
 
 
 # ---------------------------------------------------------------- boucle commune
@@ -632,6 +841,7 @@ def merged_into_main(branch: str) -> bool:
 
 def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     ref = "main" if args.stack == "none" else state.last_branch
+    prev_lot = state.last_lot   # sa PR est celle que Grok Bot recette encore sur le poste
     if ref != "main" and not args.dry_run:
         sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
         if merged_into_main(ref):
@@ -680,7 +890,12 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     state.last_lot = lot.id
     state.save()
     # Lot W1 : le poste de recette suit la tête de pile — le porteur (et le bot, par le tunnel) recettent à la volée.
+    # Mais pas avant que le bot ait rendu son verdict sur la PR précédente (--bot-gate-min) : il la recette sur CE poste.
     if pr and not getattr(args, "no_recette", False) and not getattr(args, "no_recette_each", False):
+        try:
+            wait_bot_before_poste_swap(http, state, prev_lot, args)
+        except Exception as e:  # l'attente ne doit jamais empêcher le poste de suivre la pile
+            log(f"    attente du bot impossible : {e} — le poste est rebâti sans attendre")
         try:
             prepare_recette(state, args, http, quiet=True)
             if getattr(args, "publish_tip", False) and status == "success" and publish_tip(branch):
@@ -909,6 +1124,56 @@ BOT_PREREVIEW_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M
 PARCOURS_MD = HERE / "PARCOURS_DE_REFERENCE.md"   # tout tester, une fois par batch, sur la tête de pile (Grok Bot)
 PARCOURS_MARK = "🧭 Parcours de référence"
 RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
+
+
+def bot_prereview_seen(http: Http, repo: str, num: int) -> bool:
+    """Vrai si Grok Bot (auteur de confiance) a posté son « ## 🤖 Pré-revue » sur la PR."""
+    try:
+        comments = http.github(f"/repos/{owner_repo(repo)}/issues/{num}/comments?per_page=100") or []
+    except RuntimeError:
+        return False
+    try:
+        from review_collect import trusted as _trusted  # noqa: PLC0415
+    except Exception:
+        _trusted = lambda c: True  # noqa: E731
+    return any(BOT_PREREVIEW_RE.search(c.get("body") or "") and _trusted(c) for c in comments)
+
+
+def wait_bot_prereview(http: Http, repo: str, nums: list[int], minutes: float, why: str) -> list[int]:
+    """Attend le « ## 🤖 Pré-revue » de Grok Bot sur chaque PR (au plus `minutes`, 0 = pas d'attente).
+    Rend les PR encore sans verdict à l'échéance (vide = toutes vues)."""
+    nums = sorted({n for n in nums if n})
+    if not minutes or not nums:
+        return []
+    log(f"attente de la pré-revue Grok Bot sur {[f'#{n}' for n in nums]} — {why} (≤ {minutes:g} min)")
+    t0 = time.time()
+    while True:
+        missing = [n for n in nums if not bot_prereview_seen(http, repo, n)]
+        if not missing:
+            log("    pré-revue Grok Bot reçue")
+            return []
+        if time.time() - t0 >= minutes * 60:
+            log(f"    pré-revue Grok Bot absente sur {[f'#{n}' for n in missing]} après {minutes:g} min — on continue sans")
+            return missing
+        time.sleep(60)
+
+
+def wait_bot_before_poste_swap(http: Http | None, state: State, prev_lot: str | None, args) -> None:
+    """Porteur, 26 sept. : « le script attend la pré-revue après chaque lot ». Le poste de recette est
+    un seul build, celui de la tête de pile : si on le rebâtit sur le lot n+1 pendant que Grok Bot
+    recette encore la PR du lot n, il juge la PR n sur un autre code (et voit un 503 pendant l'échange).
+    Le CODAGE du lot suivant n'attend pas (il a son propre worktree) : seul l'ÉCHANGE du poste attend
+    le verdict du bot sur la PR précédente — au plus --bot-gate-min, puis on échange quand même (le
+    chien de garde a déjà renvoyé un réveil à 30 min)."""
+    minutes = getattr(args, "bot_gate_min", 0)
+    e = (state.done.get(prev_lot) or {}) if prev_lot else {}
+    num = pr_number(e.get("pr"))
+    if not minutes or not http or not num or not e.get("tunnel_comment"):   # pas de 🔗 : le bot n'a pas été réveillé pour elle
+        return
+    sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
+    if e.get("branch") and merged_into_main(e["branch"]):   # PR déjà mergée par le porteur : plus rien à recetter dessus
+        return
+    wait_bot_prereview(http, args.repo, [num], minutes, f"PR #{num} ({prev_lot}) avant d'échanger le poste de recette")
 
 
 def publish_tip(branch: str) -> bool:
@@ -1358,6 +1623,111 @@ def _http_code(url: str, timeout: int = 25) -> int:
         return 0
 
 
+NPM_PROJECTS = ("naviguide-simulator", "frontend")   # chacun : package-lock.json + node_modules (liés dans les worktrees)
+PIP_PROJECT = ("naviguide-simulator", "server/requirements.txt", ".venv/bin/python")
+
+
+def _norm_pkg(name: str) -> str:
+    return re.sub(r"\[.*\]", "", name).strip().lower().replace("_", "-")
+
+
+def npm_installed_vs_lock(project: Path) -> tuple[int, list[str]] | None:
+    """Compare package-lock.json (ce que la CI installe) à node_modules/.package-lock.json (ce que npm a
+    vraiment posé sur le Mac). Rend (paquets comparés, écarts « nom : installé → attendu ») ; None si
+    l'un des deux fichiers manque. Les paquets `optional` (binaires d'une autre plateforme) sont ignorés."""
+    lock, hidden = project / "package-lock.json", project / "node_modules" / ".package-lock.json"
+    if not lock.exists() or not hidden.exists():
+        return None
+    try:
+        want = json.loads(lock.read_text(encoding="utf-8")).get("packages") or {}
+        have = json.loads(hidden.read_text(encoding="utf-8")).get("packages") or {}
+    except (OSError, ValueError):
+        return None
+    diffs: list[str] = []
+    n = 0
+    for key, spec in want.items():
+        if not key or not isinstance(spec, dict) or spec.get("optional") or spec.get("link"):
+            continue
+        n += 1
+        got = (have.get(key) or {}).get("version")
+        exp = spec.get("version")
+        if got != exp:
+            diffs.append(f"{key.rsplit('node_modules/', 1)[-1]} : {got or 'absent'} → {exp}")
+    return n, diffs
+
+
+def pip_installed_vs_requirements(project: Path, req_rel: str, py_rel: str) -> tuple[int, list[str]] | None:
+    """requirements.txt (ce que la CI installe) contre les paquets du .venv : versions épinglées (==)
+    comparées, les autres seulement présentes. Rend (paquets comparés, écarts) ; None si illisible."""
+    req, py = project / req_rel, project / py_rel
+    if not req.exists() or not py.exists():
+        return None
+    p = sh([str(py), "-c", "import importlib.metadata as m, json; print(json.dumps({d.metadata['Name'].lower().replace('_','-'): d.version for d in m.distributions()}))"],
+           cwd=project, check=False, timeout=60)
+    if p.returncode != 0:
+        return None
+    try:
+        have = json.loads(p.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    diffs: list[str] = []
+    n = 0
+    for line in req.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_.\-\[\]]+)\s*(==|>=|~=|<=|!=|>|<)?\s*([^;\s]*)", line)
+        if not m:
+            continue
+        name, op, ver = _norm_pkg(m.group(1)), m.group(2), m.group(3)
+        n += 1
+        got = have.get(name)
+        if got is None:
+            diffs.append(f"{name} : absent → {ver or 'requis'}")
+        elif op == "==" and got != ver:
+            diffs.append(f"{name} : {got} → {ver}")
+    return n, diffs
+
+
+def preflight_dependencies(row) -> None:
+    """Le porteur (27 sept.) : « le pré-vol DOIT vérifier que le lock et l'installé concordent ». Les agents
+    testent avec node_modules et .venv du dépôt principal (liés) : s'ils sont en retard sur le lock, ils
+    testent avec d'anciennes versions et la CI dit autre chose (27 sept. : le frontend ne buildait plus
+    en local, MapLibre installé sans son worker). Averti, pas bloquant ; le remède est dans la ligne."""
+    for name in NPM_PROJECTS:
+        res = npm_installed_vs_lock(ROOT / name)
+        if res is None:
+            row(None, f"dépendances {name}", f"impossible de comparer (package-lock.json ou node_modules/.package-lock.json absent) → `cd {name} && npm ci`")
+            continue
+        n, diffs = res
+        if not diffs:
+            row(True, f"dépendances {name}", f"les {n} paquets installés sont ceux du lock : les agents testent avec les mêmes versions que la CI")
+        else:
+            ex = " ; ".join(diffs[:3]) + (f" ; … ({len(diffs)} au total)" if len(diffs) > 3 else "")
+            row(False, f"dépendances {name}", f"{len(diffs)} paquet(s) installé(s) ne correspondent pas au lock ({ex}) → les agents testeraient avec d'anciennes versions. Remède : `cd {name} && npm ci`")
+    proj, req_rel, py_rel = PIP_PROJECT
+    res = pip_installed_vs_requirements(ROOT / proj, req_rel, py_rel)
+    if res is None:
+        row(None, "dépendances serveur Python", f"impossible de comparer ({req_rel} ou {py_rel} absent) → `cd {proj} && .venv/bin/pip install -r {req_rel}`")
+    else:
+        n, diffs = res
+        if not diffs:
+            row(True, "dépendances serveur Python", f"les {n} paquets de {req_rel} sont installés dans .venv (versions épinglées vérifiées)")
+        else:
+            ex = " ; ".join(diffs[:3]) + (f" ; … ({len(diffs)} au total)" if len(diffs) > 3 else "")
+            row(False, "dépendances serveur Python", f"{len(diffs)} écart(s) avec {req_rel} ({ex}). Remède : `cd {proj} && .venv/bin/pip install -r {req_rel}`")
+    nvmrc = ROOT / ".nvmrc"
+    if nvmrc.exists():
+        want = nvmrc.read_text(encoding="utf-8").strip().lstrip("v")
+        p = sh(["node", "--version"], check=False, timeout=20)
+        got = p.stdout.strip().lstrip("v") if p.returncode == 0 else ""
+        try:
+            ok = int(got.split(".")[0]) >= int(want.split(".")[0])
+        except ValueError:
+            ok = False
+        row(ok, "Node du Mac", (f"Node {got} ici, Node {want} en CI : " + ("même version ou plus récente, bon" if ok else f"plus ancien que la CI → mets à jour (`brew upgrade node`)")) if got else "node introuvable dans le PATH")
+
+
 def preflight(state: State, args, http: Http | None) -> bool:
     """Avant de lancer un batch : tout ce qui, la nuit du 22 sept., a coûté des heures sans qu'on le voie.
 
@@ -1392,6 +1762,11 @@ def preflight(state: State, args, http: Http | None) -> bool:
     sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
     behind = sh(["git", "rev-list", "--count", "HEAD..origin/main"], cwd=ROOT, check=False).stdout.strip() or "?"
     row(b == "main" and behind == "0", "dépôt principal", f"sur `{b}`, {behind} commit(s) de retard sur origin/main" if b == "main" else f"sur `{b}` (doit être main)")
+    # Dépendances installées = lock (les agents testent avec node_modules / .venv du dépôt principal)
+    try:
+        preflight_dependencies(row)
+    except Exception as e:  # jamais bloquant
+        row(None, "dépendances", f"contrôle impossible : {type(e).__name__}")
     # CI sur main
     if http:
         try:
@@ -1476,6 +1851,9 @@ def main() -> None:
     ap.add_argument("--review-timeout-hours", type=float, default=1.0)
     ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN") or _env_file_values().get("BIM_BOT_WAIT_MIN") or "45"),
                     help="avant le réviseur de code, attendre la pré-revue « 🤖 » de Grok Bot sur la tranche (minutes ; 0 = ne pas attendre ; défaut 45)")
+    ap.add_argument("--bot-gate-min", type=float, default=float(os.environ.get("BIM_BOT_GATE_MIN") or _env_file_values().get("BIM_BOT_GATE_MIN") or "30"),
+                    help="après chaque lot : ne rebâtir le poste de recette sur la nouvelle tête qu'une fois la pré-revue « 🤖 » de Grok Bot reçue sur la PR "
+                         "précédente (minutes d'attente au plus, une fois la CI du nouveau lot finie ; 0 = échanger sans attendre ; défaut 30). Le codage du lot suivant n'attend pas")
     ap.add_argument("--no-loop", action="store_true", help="en fin de batch, ne pas lancer la veille loop.py")
     ap.add_argument("--no-tunnel", action="store_true", help="ne pas exposer le poste de recette au bot (cloudflared) ; sinon un lien 🔗 est posté dans chaque PR")
     ap.add_argument("--stop-tunnel", action="store_true", help="arrête le tunnel laissé en route et s'arrête")
@@ -1544,41 +1922,23 @@ def main() -> None:
         start_watchdog()
     log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}" + (f" — revue de nuit toutes les {args.review_every} PR ({args.review_model})" if args.review_every else ""))
     pending = list(lots)
-    since_review: list[str] = []          # lots FINISHED pas encore relus par le réviseur de nuit
+    # Lots FINISHED pas encore relus par le réviseur de nuit. Mémorisé dans state.json : une reprise
+    # (--resume après une veille, un arrêt, une relance par le chien de garde) relit quand même la
+    # dernière tranche, même si elle compte moins de --review-every lots (26 sept.).
+    since_review: list[str] = [x for x in (state.extra.get("since_review") or []) if x in state.done] if args.resume else []
 
-    def wait_bot_prereview(ids: list[str]) -> None:
-        """Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son commentaire
-        « 🤖 Pré-revue » sur chaque PR de la tranche (au plus --bot-wait-min), puis on continue."""
-        if not args.bot_wait_min or not ids:
-            return
-        nums = {lid: pr_number((state.done.get(lid) or {}).get("pr")) for lid in ids}
-        nums = {k: v for k, v in nums.items() if v}
-        log(f"attente de la pré-revue Grok Bot sur {sorted(nums.values())} (≤ {args.bot_wait_min} min)")
-        t0 = time.time()
-        while time.time() - t0 < args.bot_wait_min * 60:
-            missing = []
-            for lid, num in nums.items():
-                try:
-                    comments = http.github(f"/repos/{owner_repo(args.repo)}/issues/{num}/comments?per_page=100") or []
-                except RuntimeError:
-                    comments = []
-                try:
-                    from review_collect import trusted as _trusted  # noqa: PLC0415
-                except Exception:
-                    _trusted = lambda c: True  # noqa: E731
-                if not any(BOT_PREREVIEW_RE.search(c.get("body") or "") and _trusted(c) for c in comments):
-                    missing.append(f"#{num}")
-            if not missing:
-                log("    pré-revue Grok Bot reçue sur toute la tranche")
-                return
-            time.sleep(60)
-        log(f"    pré-revue Grok Bot absente sur {missing} après {args.bot_wait_min} min — le réviseur de code part sans")
+    def remember_review_slice() -> None:
+        state.extra["since_review"] = list(since_review)
+        state.save()
 
     def night_review() -> None:
         """Lance le réviseur de nuit sur la tranche, puis met en file ses lots correctifs."""
         if not since_review or args.dry_run:
             return
-        wait_bot_prereview(list(since_review))
+        # Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son « 🤖 Pré-revue » sur chaque
+        # PR de la tranche (au plus --bot-wait-min ; avec --bot-gate-min il ne manque au plus que la dernière), puis on continue.
+        wait_bot_prereview(http, args.repo, [pr_number((state.done.get(lid) or {}).get("pr")) for lid in since_review],
+                           args.bot_wait_min, "avant le réviseur de code")
         cmd = [sys.executable, str(HERE / "review_agent.py"), "--lots", *since_review, "--model", args.review_model, "--timeout-hours", str(args.review_timeout_hours)]
         log(f"revue de nuit : {since_review} → {args.review_model}")
         try:
@@ -1589,32 +1949,47 @@ def main() -> None:
         except subprocess.TimeoutExpired:
             log("    réviseur : délai dépassé — on continue la pile")
         since_review.clear()
+        remember_review_slice()
         added = queued_lots(State.load(), {l.id for l in pending})
         if added:
             log(f"    lots correctifs mis en file par le réviseur : {[l.id for l in added]} — exécutés en bout de pile")
             pending.extend(added)
 
-    while pending:
-        lot = pending.pop(0)
-        if lot.id in args.skip:
-            log(f"[{lot.id}] sauté (--skip)")
-            continue
-        prev = state.done.get(lot.id)
-        if args.resume and prev and prev.get("status") == "FINISHED":
-            log(f"[{lot.id}] déjà fait ({prev.get('pr')}) — sauté")
-            continue
-        missing = [d for d in lot.deps if d not in state.done or state.done[d].get("status") != "FINISHED"]
-        if missing and args.stack == "linear" and not args.dry_run:
-            log(f"[{lot.id}] dépendances non faites dans cette session : {missing} — lancé quand même (le plan les suppose mergées ou dans la pile) ; vérifier le matin")
-        run_lot(http, lot, state, args)
-        if (state.done.get(lot.id) or {}).get("status") == "FINISHED" and (state.done.get(lot.id) or {}).get("pr"):
-            since_review.append(lot.id)
-        if args.review_every and len(since_review) >= args.review_every:
+    if not args.dry_run:
+        gone = purge_queue()
+        if gone:
+            log(f"file des correctifs purgée des lots déjà faits : {gone}")
+    # Lots correctifs déjà en file (réviseur d'une tranche précédente, ou ajoutés à la main) : pris dès le départ,
+    # y compris quand tous les lots de l'intervalle sont déjà faits (reprise après interruption).
+    pending.extend(queued_lots(state, {l.id for l in pending}))
+
+    while True:
+        while pending:
+            lot = pending.pop(0)
+            if lot.id in args.skip:
+                log(f"[{lot.id}] sauté (--skip)")
+                continue
+            prev = state.done.get(lot.id)
+            if args.resume and prev and prev.get("status") == "FINISHED":
+                log(f"[{lot.id}] déjà fait ({prev.get('pr')}) — sauté")
+                continue
+            missing = [d for d in lot.deps if d not in state.done or state.done[d].get("status") != "FINISHED"]
+            if missing and args.stack == "linear" and not args.dry_run:
+                log(f"[{lot.id}] dépendances non faites dans cette session : {missing} — lancé quand même (le plan les suppose mergées ou dans la pile) ; vérifier le matin")
+            run_lot(http, lot, state, args)
+            if (state.done.get(lot.id) or {}).get("status") == "FINISHED" and (state.done.get(lot.id) or {}).get("pr"):
+                since_review.append(lot.id)
+                remember_review_slice()
+            if args.review_every and len(since_review) >= args.review_every:
+                night_review()
+            # lots ajoutés à queue.md pendant la nuit (réviseur ou porteur)
+            pending.extend(queued_lots(state, {l.id for l in pending}))
+        # Plus rien en attente : la dernière tranche est relue quelle que soit sa taille — et si le réviseur
+        # met des correctifs en file, la pile reprend ; sinon c'est la fin du batch.
+        if args.review_every and since_review and not args.dry_run:
             night_review()
-        if not pending and args.review_every and since_review:
-            night_review()                # dernière tranche, puis les lots RC éventuels reprennent la boucle
-        # lots ajoutés à queue.md à la main pendant la nuit
-        pending.extend(queued_lots(state, {l.id for l in pending}))
+        if not pending:
+            break
 
     if not args.dry_run:
         log("terminé. Récapitulatif :")
@@ -1622,6 +1997,7 @@ def main() -> None:
             log(f"  {lid}: {e.get('status')} — {e.get('pr') or e.get('branch')} — CI {e.get('ci')}")
         if not args.no_recette:
             try:
+                wait_bot_before_poste_swap(http, state, state.last_lot, args)   # même tête, mais l'échange coupe le poste : après le verdict du bot
                 prepare_recette(state, args, http)
                 url = tunnel_url() or (PROD_URL if getattr(args, "publish_tip", False) else None)
                 if url:
