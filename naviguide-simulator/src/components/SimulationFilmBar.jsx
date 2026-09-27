@@ -304,7 +304,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             );
           })}
         </div>
-        {replay?.active ? (
+        {(replay?.active || replay?.subtitle) ? (
           <div data-testid="film-subtitle" className="text-[10px] text-sky-100/90 leading-tight mt-0.5 truncate">
             {replay.subtitle || ""}
           </div>

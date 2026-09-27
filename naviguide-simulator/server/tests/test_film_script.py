@@ -1123,3 +1123,63 @@ def test_re7_discourse_eleven_defects():
     assert 0 <= idx_zee < idx_dep
     _assert_no_filler(blob)
     assert not re.search(r"\bnm\b", blob)
+
+
+def _rf5_air_marks_no_halifax_iso():
+    marks = []
+    for m in RE7_CLOCK["marks"]:
+        row = dict(m)
+        if "Halifax" in row["name"]:
+            row.pop("iso", None)
+            row.pop("vehicle", None)
+        marks.append(row)
+    return marks
+
+
+def test_rf5_air_survives_tight_budget():
+    """Lot RF5 : jambe avion aller + retour, budget 150 s et 108 s."""
+    for seconds in (150, 108):
+        plan = build_raw_script(
+            RE7_CLOCK, RE7_CLOCK["marks"], RE7_LIVE, _re7_journal(),
+            lang="fr", seconds=seconds, now_ms=NOW_MS, review=RE7_REVIEW,
+        )
+        blob = _script_blob(plan)
+        assert plan["targetSeconds"] == seconds
+        assert re.search(r"prend l'avion pour Halifax", blob), blob
+        assert re.search(r"retour en avion vers Cayenne", blob), blob
+        _assert_no_filler(blob)
+
+
+def test_rf5_air_when_halifax_has_no_iso():
+    """Arrivée avion sans iso (hors clock_marks) : Cayenne nommée ne suffit pas — l'avion reste dit."""
+    marks = _rf5_air_marks_no_halifax_iso()
+    clock = {**RE7_CLOCK, "marks": marks}
+    plan = build_raw_script(clock, marks, RE7_LIVE, None, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "Cayenne" in blob
+    assert re.search(r"prend l'avion pour Halifax", blob), blob
+    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert "avion pour Nouméa" not in blob
+    _assert_no_filler(blob)
+
+
+def test_rf5_air_return_without_moments():
+    """Sans moments, dated_marks dédoublonne Cayenne : le retour avion doit quand même être dit."""
+    plan = build_raw_script(
+        RE7_CLOCK, RE7_CLOCK["marks"], RE7_LIVE, None,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(plan)
+    assert re.search(r"prend l'avion pour Halifax", blob), blob
+    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert "avion pour Nouméa" not in blob
+    _assert_no_filler(blob)
+
+
+def test_rf5_no_air_invented_on_ajaccio_route():
+    """Route sans Cayenne/Halifax : pas de phrase d'avion inventée."""
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "Cayenne" not in blob
+    assert "Halifax" not in blob
+    assert not re.search(r"prend l'avion|retour en avion|flies to|return flight", blob)

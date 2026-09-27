@@ -191,21 +191,32 @@ export const APPROACH_FRAC = 0.8;
  * `filmActive` + `publishFilmEnd`), annule la boucle. L'appelant remet
  * `active=false` — MapSceneController quitte alors le suivi film.
  */
+/** Dernière phrase de clôture, pour qu'elle reste lisible après l'arrêt (ligne tronquée). */
+export function closingSubtitle(text) {
+  const parts = String(text || "").split(/(?<=[.!?…])\s+/).filter(Boolean);
+  const last = parts[parts.length - 1] || "";
+  if (/aujourd|today/i.test(last)) return last;
+  return String(text || "");
+}
+
 export function applyReplayStop({
   cancelRaf,
   stopVoice,
   releaseCamera,
+  keepChapterText = false,
+  chapterText = "",
 } = {}) {
   (stopVoice || stopSpeaking)();
   (releaseCamera || publishFilmEnd)();
   cancelRaf?.();
+  const kept = keepChapterText ? closingSubtitle(chapterText) : "";
   return {
     active: false,
     tMs: null,
     card: null,
-    progress: 0,
+    progress: kept ? 1 : 0,
     chapterIdx: 0,
-    chapterText: "",
+    chapterText: kept,
     filmLeg: null,
   };
 }
@@ -320,6 +331,8 @@ export function useReplay({
   const chapterStartedAtRef = useRef(0);
   const finishedRef = useRef(false);
   const stoppingRef = useRef(false);
+  const chapterTextRef = useRef("");
+  const finishRef = useRef(() => {});
   const voiceCharRef = useRef(0);
   const voiceFailedRef = useRef(false);
   const tMsRef = useRef(null);
@@ -334,7 +347,8 @@ export function useReplay({
   if (clock) clockRef.current = clock;
   const budgetRef = useRef(0);
 
-  const stop = useCallback(() => {
+  const stop = useCallback((opts) => {
+    const keep = Boolean(opts && opts.keepSubtitle);
     stoppingRef.current = true;
     finishedRef.current = true;
     pinnedIdxRef.current = null;
@@ -347,12 +361,15 @@ export function useReplay({
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       },
+      keepChapterText: keep,
+      chapterText: keep ? chapterTextRef.current : "",
     });
     setActive(cleared.active);
     setTMs(cleared.tMs);
     setCard(cleared.card);
     setChapterIdx(cleared.chapterIdx);
     setChapterText(cleared.chapterText);
+    chapterTextRef.current = cleared.chapterText || "";
     setFilmLeg(cleared.filmLeg);
     setVoiceRate(1);
     setProgress(cleared.progress);
@@ -372,6 +389,7 @@ export function useReplay({
     recaleRemainRef.current = 0;
     if (Number.isFinite(ch.tA)) tMsRef.current = ch.tA;
     setChapterIdx(ch.idx);
+    chapterTextRef.current = ch.text || "";
     setChapterText(ch.text || "");
     setFilmLeg({
       fromLat: ch.fromLat, fromLon: ch.fromLon, toLat: ch.toLat, toLon: ch.toLon,
@@ -386,8 +404,9 @@ export function useReplay({
     if (w) setTMs(w.endMs);
     setProgress(1);
     publishFilmEnd();
-    setTimeout(() => stop(), 400);
+    setTimeout(() => stop({ keepSubtitle: true }), 400);
   }, [stop]);
+  finishRef.current = finish;
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -586,6 +605,7 @@ export function useReplay({
           toName: c.toName || "",
         })),
         seekChapter: (idx) => seekChapterRef.current?.(idx),
+        finishFilm: () => finishRef.current?.(),
       };
     }
     return true;
@@ -770,6 +790,7 @@ export function useReplay({
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
           seekChapter: prevFilm.seekChapter || ((idx) => seekChapterRef.current?.(idx)),
+          finishFilm: prevFilm.finishFilm || (() => finishRef.current?.()),
         };
       }
 
