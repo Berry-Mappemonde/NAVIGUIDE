@@ -113,6 +113,23 @@ def get_pearl(key: str) -> Optional[dict]:
         return None
 
 
+def pearl_meta(key: str) -> Optional[dict]:
+    """{ kind, ts } sans décoder le sac — pour savoir si une perle est là et riche (3 272 sacs × json.loads
+    au boot tenaient la boucle d'événements ~2 min, 27 sept.)."""
+    try:
+        with _LOCK:
+            row = _connect().execute("SELECT kind, ts FROM pearls WHERE key = ?", (key,)).fetchone()
+    except Exception as exc:
+        log.warning("store perles (méta) : %s", exc)
+        return None
+    if not row:
+        return None
+    try:
+        return {"kind": row[0], "ts": float(row[1])}
+    except Exception:
+        return None
+
+
 def put_pearl(key: str, bag: dict, kind: str = "thin", lat: float | None = None,
               lon: float | None = None, ts: float | None = None) -> bool:
     """Insert or replace. A rich pearl is never downgraded by a thin one."""
