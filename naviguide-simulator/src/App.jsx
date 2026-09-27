@@ -166,7 +166,7 @@ export default function App() {
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
-  const [view, setView] = useState(VIEW_SIMULATION);
+  const [view, setView] = useState(VIEW_SUIVRE);
   const [replayT0, setReplayT0] = useState(DEFAULT_T0_ISO);
   const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
@@ -349,7 +349,10 @@ export default function App() {
     hasLive: Boolean(live),
     previewing,
   });
-  const sceneReady = gateReady || shouldKeepSceneVisible({
+  // RF7 / D1' : la vue monde se montre dès que la route et la caméra sont
+  // posées — pas d'attente du live ni du playhead (aucun recadrage serveur).
+  const worldReady = Boolean(routeReady && hasRoute && cameraPlaced);
+  const sceneReady = gateReady || worldReady || shouldKeepSceneVisible({
     revealed: sceneRevealed,
     routeReady,
     hasRoute,
@@ -666,8 +669,8 @@ export default function App() {
   }, [routeReady, isSuivre, live?.filmNm, live?.replay, userPreview, playback.nm, sceneApi]);
 
   useEffect(() => {
-    if (gateReady) setSceneRevealed(true);
-  }, [gateReady]);
+    if (gateReady || worldReady) setSceneRevealed(true);
+  }, [gateReady, worldReady]);
   useEffect(() => {
     if (!routeReady) setSceneRevealed(false);
   }, [routeReady]);
@@ -1182,6 +1185,7 @@ export default function App() {
     sceneApiRef.current?.briefing?.clear?.();
     setEscaleStop(null);
     if (replay.active) replay.stop();
+    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
   };
 
   const handleDrawCancel = () => {
@@ -1251,6 +1255,7 @@ export default function App() {
     setDrawingMode(true);
     setExpeditionPlan(null);
     setBriefingLoading(false);
+    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
   };
 
   const handleCustomDelete = () => {
@@ -1272,6 +1277,12 @@ export default function App() {
     };
     window.addEventListener("keydown", onEscDraw);
     return () => window.removeEventListener("keydown", onEscDraw);
+  }, [drawingMode]);
+
+  useEffect(() => {
+    if (!drawingMode) return undefined;
+    const id = requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
+    return () => cancelAnimationFrame(id);
   }, [drawingMode]);
 
   useEffect(() => {

@@ -8,20 +8,29 @@ const src = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(src, path), "utf8");
 
 describe("contrat UI produit", () => {
-  it("lot RE1 : démarre en Simulation cinéma, vue monde, panneaux fermés", () => {
+  it("lot RF7 : démarre en Suivre cinéma, vue monde, panneaux fermés", () => {
     const app = read("../App.jsx");
     const map = read("../hooks/useSimulatorMap.js");
     const scene = read("../map/MapSceneController.js");
-    assert.match(app, /useState\(VIEW_SIMULATION\)/);
-    assert.doesNotMatch(app, /useState\(VIEW_SUIVRE\)/);
+    assert.match(app, /const \[view, setView\] = useState\(VIEW_SUIVRE\)/);
+    assert.doesNotMatch(app, /const \[view, setView\] = useState\(VIEW_SIMULATION\)/);
     assert.match(app, /const \[cinemaMode, setCinemaMode\] = useState\(true\)/);
     assert.match(app, /const \[sidebarOpen, setSidebarOpen\] = useState\(false\)/);
     assert.match(app, /const \[toolsOpen, setToolsOpen\] = useState\(false\)/);
     assert.match(map, /zoom:\s*2/);
-    assert.match(scene, /zoom:\s*2/);
+    assert.match(scene, /WORLD_ZOOM = 2/);
+    assert.match(scene, /zoom: WORLD_ZOOM/);
     assert.doesNotMatch(app, /map\.setView\(\[start\.lat,\s*start\.lon\],\s*8/);
     const tools = read("../components/ToolsSidebar.jsx");
     assert.match(tools, /visibility: open \? "visible" : "hidden"/, "Cinéma : le panneau droit n'est pas peint fermé");
+  });
+
+  it("lot RF7 : entrée Tracer pose la vue monde", () => {
+    const app = read("../App.jsx");
+    const scene = read("../map/MapSceneController.js");
+    assert.match(app, /sceneApiRef\.current\?\.showWorld/);
+    assert.match(scene, /showWorld\(\)/);
+    assert.match(scene, /setView\(WORLD_CENTER, WORLD_ZOOM/);
   });
 
   it("lot RE1 : Suivre → Simulation quitte le Cinéma et ouvre les deux panneaux", () => {

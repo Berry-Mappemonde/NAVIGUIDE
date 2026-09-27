@@ -37,7 +37,9 @@ describe("MapScene boundary", () => {
     const end = src.indexOf("constructor(map");
     assert.ok(start >= 0 && end > start, "bloc mount() introuvable");
     const mount = src.slice(start, end);
-    assert.match(mount, /minZoom:\s*2/);
+    assert.match(mount, /minZoom:\s*MAP_MIN_ZOOM/);
+    assert.match(src, /MAP_MIN_ZOOM = 0/);
+    assert.match(src, /WORLD_ZOOM = 2/);
     assert.match(mount, /worldCopyJump:\s*false/);
     assert.match(mount, /maxBoundsViscosity:\s*1/);
     assert.match(src, /MAP_LON_BOUND = 540/);
@@ -45,6 +47,25 @@ describe("MapScene boundary", () => {
     assert.match(mount, /maxBounds:\s*MAP_MAX_BOUNDS/);
     assert.doesNotMatch(mount, /-Infinity/);
     assert.doesNotMatch(mount, /Infinity/);
+  });
+
+  it("lot RF7 : pas de recadrage bateau au calage initial Suivre", () => {
+    const src = read("./MapSceneController.js");
+    const start = src.indexOf("  syncInitialCamera()");
+    const end = src.indexOf("  showWorld()");
+    assert.ok(start >= 0 && end > start, "syncInitialCamera / showWorld introuvables");
+    const chunk = src.slice(start, end);
+    assert.doesNotMatch(chunk, /6\.5/);
+    assert.doesNotMatch(chunk, /setView\(\[cfg\.live/);
+    assert.match(chunk, /setCameraPlaced\(true\)/);
+  });
+
+  it("lot RF7 : en Tracer la caméra ne reprend pas le zoom bateau", () => {
+    const src = read("./MapSceneController.js");
+    assert.match(src, /if \(cfg\.filmActive \|\| cfg\.drawingMode\) return/);
+    assert.match(src, /this\.config\.drawingMode \|\| !this\.map/);
+    assert.match(src, /event\?\.type !== "zoomstart"/);
+    assert.match(src, /setMaxBounds\?\.\(null\)/);
   });
 
   it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {
