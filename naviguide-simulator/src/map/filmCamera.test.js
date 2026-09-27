@@ -3,7 +3,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyFilmCamera, clampFilmPan, filmChapterZoom, FILM_ZOOM_ARCHIPELAGO_MAX } from "./filmCamera.js";
+import { FILM_PAN_MAX_SCREEN } from "../engine/replay.js";
+import {
+  applyFilmCamera,
+  clampFilmPan,
+  filmChapterZoom,
+  FILM_INTERP_DELAY_MS,
+  FILM_TILE_SLOW,
+  FILM_ZOOM_ARCHIPELAGO_MAX,
+  filmPanMaxFrac,
+  interpolateFilmSamples,
+  preloadFilmTiles,
+  pushFilmSample,
+  stepFilmCamera,
+  tilesAlongLeg,
+} from "./filmCamera.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const controller = readFileSync(join(here, "MapSceneController.js"), "utf8");
@@ -167,5 +181,132 @@ describe("filmCamera lot RA3 — dézoom archipels, tuiles gardées", () => {
     assert.match(controller, /exitHoldZoom/);
     assert.doesNotMatch(controller, /filmActive[\s\S]{0,80}fitBounds/);
     assert.doesNotMatch(controller, /filmActive[\s\S]{0,200}zoomForRemaining/);
+  });
+});
+
+describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", () => {
+  function fakeMap(center = { lat: 46, lng: -1 }) {
+    const calls = [];
+    let here = { ...center };
+    const map = {
+      flyTo(c, zoom) { calls.push({ action: "flyTo", center: c, zoom }); here = { lat: c[0], lng: c[1] }; },
+      setView(c, zoom, opts) { calls.push({ action: "setView", center: c, zoom, opts }); here = { lat: c[0], lng: c[1] }; },
+      getSize() { return { x: 1000, y: 800 }; },
+      getCenter() { return here; },
+      getZoom() { return 5; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : ll.lng;
+        return { x: lng * 10, y: lat * 10 };
+      },
+      containerPointToLatLng(p) { return { lat: p.y / 10, lng: p.x / 10 }; },
+      getBoundsZoom() { return 5; },
+      getBounds() {
+        return {
+          getNorth: () => 50,
+          getSouth: () => 40,
+          getEast: () => 10,
+          getWest: () => -10,
+        };
+      },
+    };
+    return { map, calls };
+  }
+
+  it("cadence dégradée : positions caméra monotones, pas au-delà du pas borné", () => {
+    const { map } = fakeMap({ lat: 46, lng: -1 });
+    const samples = [];
+    for (let i = 0; i <= 5; i++) {
+      pushFilmSample(samples, {
+        t: i * 200,
+        lat: 46,
+        lon: -1 + i * 2,
+        heading: 90,
+        chapterIdx: 0,
+      });
+    }
+    let lastChapterIdx = 0;
+    let lastCenter = [46, -1];
+    let flyingUntil = 0;
+    const centers = [];
+    const maxPx = 1000 * FILM_PAN_MAX_SCREEN + 1e-6;
+    for (let now = FILM_INTERP_DELAY_MS; now <= 1000; now += 16) {
+      const next = stepFilmCamera(map, {
+        samples,
+        now,
+        lastChapterIdx,
+        lastCenter,
+        flyingUntil,
+        zoom: 5,
+        tilesReady: true,
+        chapterIdx: 0,
+      });
+      lastChapterIdx = next.lastChapterIdx;
+      lastCenter = next.lastCenter;
+      flyingUntil = next.flyingUntil;
+      if (next.action === "setView" && lastCenter) centers.push(lastCenter);
+    }
+    assert.ok(centers.length >= 8, `pas assez de pas (${centers.length})`);
+    for (let i = 1; i < centers.length; i++) {
+      assert.ok(centers[i][1] >= centers[i - 1][1] - 1e-9, `lon recule à ${i}`);
+      const stepPx = Math.abs((centers[i][1] - centers[i - 1][1]) * 10);
+      assert.ok(stepPx <= maxPx, `saut ${stepPx} px > ${maxPx} px`);
+    }
+    assert.equal(filmPanMaxFrac(false), FILM_PAN_MAX_SCREEN * FILM_TILE_SLOW);
+  });
+
+  it("zoom invariant dans une jambe", () => {
+    const { map, calls } = fakeMap();
+    const samples = [];
+    pushFilmSample(samples, { t: 0, lat: 46, lon: -1, heading: 90, chapterIdx: 0 });
+    pushFilmSample(samples, { t: 400, lat: 46.2, lon: 0, heading: 90, chapterIdx: 0 });
+    let st = { lastChapterIdx: 0, lastCenter: [46, -1], flyingUntil: 0 };
+    for (let now = 80; now <= 400; now += 16) {
+      const next = stepFilmCamera(map, {
+        samples,
+        now,
+        ...st,
+        zoom: 5,
+        chapterIdx: 0,
+      });
+      st = {
+        lastChapterIdx: next.lastChapterIdx,
+        lastCenter: next.lastCenter,
+        flyingUntil: next.flyingUntil,
+      };
+    }
+    const zooms = calls.filter((c) => c.action === "setView").map((c) => c.zoom);
+    assert.ok(zooms.length > 0);
+    assert.ok(zooms.every((z) => z === 5), `zoom ${zooms.join(",")}`);
+  });
+
+  it("interpole entre deux échantillons espacés", () => {
+    const samples = [];
+    pushFilmSample(samples, { t: 0, lat: 46, lon: -1, heading: 90, chapterIdx: 0, filmNm: 0 });
+    pushFilmSample(samples, { t: 200, lat: 46, lon: 1, heading: 90, chapterIdx: 0, filmNm: 10 });
+    const mid = interpolateFilmSamples(samples, 100);
+    assert.ok(Math.abs(mid.lon - 0) < 1e-9, `lon milieu ${mid.lon}`);
+    assert.ok(Math.abs(mid.filmNm - 5) < 1e-9);
+  });
+
+  it("précharge les tuiles d'une jambe au zoom du chapitre", () => {
+    const tiles = tilesAlongLeg({ fromLat: 46, fromLon: -1, toLat: 46.2, toLon: 0 }, 5);
+    assert.ok(tiles.length > 0);
+    assert.ok(tiles.every((t) => t.z === 5));
+    const urls = [];
+    class FakeImage {
+      set src(v) { urls.push(v); }
+    }
+    preloadFilmTiles("http://t/{z}/{y}/{x}", tiles.slice(0, 3), { ImageCtor: FakeImage });
+    assert.equal(urls.length, 3);
+    assert.match(urls[0], /\/5\//);
+  });
+
+  it("MapSceneController : boucle rAF hors du rendu React", () => {
+    assert.match(controller, /ensureFilmCameraLoop/);
+    assert.match(controller, /requestAnimationFrame\(tick\)/);
+    assert.match(controller, /stepFilmCamera/);
+    assert.match(controller, /preloadFilmTiles/);
+    assert.doesNotMatch(controller, /if \(this\.config\.filmActive\) this\.syncFilmCamera\(this\.config\);/);
   });
 });

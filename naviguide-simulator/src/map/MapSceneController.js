@@ -35,7 +35,14 @@ import {
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
-import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
+import {
+  filmChapterZoom,
+  filmTilesReady,
+  preloadFilmTiles,
+  pushFilmSample,
+  stepFilmCamera,
+  tilesAlongLeg,
+} from "./filmCamera.js";
 import { attachEventBubble } from "../components/EventBubble.jsx";
 import { attachEscalePopup } from "../components/EscalePopup.jsx";
 import { officialAirRouteStyles, officialRouteLineStyle } from "../utils/berryLegs.js";
@@ -248,6 +255,10 @@ export class MapSceneController {
       exitHold: false,
       exitHoldZoom: null,
     };
+    this.filmLoopRaf = 0;
+    this.filmSamples = [];
+    this.filmPose = null;
+    this.filmPreload = { key: "", images: [] };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
       onPublish: (snapshot) => this.publishPlayback(snapshot),
@@ -400,8 +411,16 @@ export class MapSceneController {
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
       this.camera.filmLastCenter = null;
+      this.filmSamples = [];
+      this.filmPose = null;
+      this.filmPreload = { key: "", images: [] };
+      this.ensureFilmCameraLoop();
     }
     if (previous.filmActive && !this.config.filmActive) {
+      this.stopFilmCameraLoop();
+      this.filmSamples = [];
+      this.filmPose = null;
+      this.filmPreload = { key: "", images: [] };
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
       this.camera.filmSetViewAt = 0;
@@ -453,7 +472,7 @@ export class MapSceneController {
     } else if (this.currentPlayback) {
       this.renderDynamic(this.currentPlayback);
     }
-    if (this.config.filmActive) this.syncFilmCamera(this.config);
+    if (this.config.filmActive) this.ensureFilmCameraLoop();
     // Entering / leaving the drawing mode (lot I): the boats of the official
     // route hide or come back at once, even while playback is paused.
     if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
@@ -603,14 +622,15 @@ export class MapSceneController {
       && following
       && geometry.partByPoint[geometry.completedIndex] === geometry.partByPoint[geometry.completedIndex + 1];
     const live = this.config.live;
-    const filmPin = this.config.filmActive
-      && live
-      && Number.isFinite(live.lat)
-      && Number.isFinite(live.lon);
+    const pose = this.config.filmActive ? this.filmPose : null;
+    const pin = pose && Number.isFinite(pose.lat) && Number.isFinite(pose.lon)
+      ? pose
+      : (this.config.filmActive && live && Number.isFinite(live.lat) && Number.isFinite(live.lon) ? live : null);
+    const filmPin = Boolean(this.config.filmActive && pin);
     if (filmPin && previous && (!following || !following.jump)) {
       setWakeTail(geometry.tailLines, previous, {
-        lon: unwrapLon(previous.lon, live.lon),
-        lat: live.lat,
+        lon: unwrapLon(previous.lon, pin.lon),
+        lat: pin.lat,
       }, geometry.worldOffsets);
       return;
     }
@@ -688,12 +708,12 @@ export class MapSceneController {
       html: catamaranSvg(0),
       draggable: true,
     });
-    const filmFollow = cfg.filmActive ? cast?.follow : null;
+    const filmFollow = cfg.filmActive ? (this.filmPose || cast?.follow) : null;
     this.syncMarker("live", {
       visible: ready && liveMode && cast?.vehicle !== "plane",
       lat: filmFollow?.lat ?? cfg.live?.lat,
       lon: filmFollow?.lon ?? cfg.live?.lon,
-      bearing: filmFollow?.bearing || cfg.live?.bearing || 0,
+      bearing: filmFollow?.heading ?? filmFollow?.bearing ?? cfg.live?.bearing ?? 0,
       className: "catamaran-divicon catamaran-divicon--live",
       html: catamaranSvg(0),
     });
@@ -955,6 +975,10 @@ export class MapSceneController {
       exitHold: false,
       exitHoldZoom: null,
     };
+    this.stopFilmCameraLoop();
+    this.filmSamples = [];
+    this.filmPose = null;
+    this.filmPreload = { key: "", images: [] };
   }
 
   setCameraPlaced(next) {
@@ -980,47 +1004,117 @@ export class MapSceneController {
     fn();
   }
 
-  syncFilmCamera(cfg) {
+  ensureFilmCameraLoop() {
+    if (this.filmLoopRaf) return;
+    const tick = (now) => {
+      if (!this.config.filmActive) {
+        this.filmLoopRaf = 0;
+        return;
+      }
+      this.syncFilmCamera(this.config, now);
+      this.filmLoopRaf = requestAnimationFrame(tick);
+    };
+    this.filmLoopRaf = requestAnimationFrame(tick);
+  }
+
+  stopFilmCameraLoop() {
+    if (this.filmLoopRaf) cancelAnimationFrame(this.filmLoopRaf);
+    this.filmLoopRaf = 0;
+  }
+
+  ensureFilmTiles(leg, zoom) {
+    const z = Math.round(Number(zoom));
+    const key = `${z}:${leg?.fromLat}:${leg?.fromLon}:${leg?.toLat}:${leg?.toLon}`;
+    if (!leg || !Number.isFinite(z) || this.filmPreload.key === key) return;
+    const template = this.baseLayer?._url || TILE_URLS.dark;
+    this.filmPreload = {
+      key,
+      images: preloadFilmTiles(template, tilesAlongLeg(leg, z)),
+    };
+  }
+
+  syncFilmCamera(cfg, now = (typeof performance !== "undefined" ? performance.now() : Date.now())) {
     const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
     const follow = this.currentCast?.follow;
     const subject = {
-      lat: Number.isFinite(follow?.lat) ? follow.lat
-        : (Number.isFinite(film?.lat) ? film.lat : cfg.live?.lat),
-      lon: Number.isFinite(follow?.lon) ? follow.lon
-        : (Number.isFinite(film?.lon) ? film.lon : cfg.live?.lon),
-      bearing: follow?.bearing ?? film?.bearing ?? cfg.live?.bearing,
+      lat: Number.isFinite(film?.lat) ? film.lat
+        : (Number.isFinite(follow?.lat) ? follow.lat : cfg.live?.lat),
+      lon: Number.isFinite(film?.lon) ? film.lon
+        : (Number.isFinite(follow?.lon) ? follow.lon : cfg.live?.lon),
+      heading: film?.heading ?? film?.bearing ?? follow?.bearing ?? cfg.live?.bearing,
     };
     if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
     const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
     this.camera.followLon = lonCam;
-    const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx)) ? Number(cfg.filmChapterIdx) : 0;
-    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
-      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
-    }
-    let next;
-    this.programmaticMove(() => {
-      next = applyFilmCamera(this.map, {
-        chapterIdx,
-        lastChapterIdx: this.camera.filmChapterIdx,
+    const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx))
+      ? Number(cfg.filmChapterIdx)
+      : (Number.isFinite(Number(film?.chapterIdx)) ? Number(film.chapterIdx) : 0);
+    const last = this.filmSamples[this.filmSamples.length - 1];
+    const moved = !last
+      || Math.abs(last.lat - subject.lat) > 1e-7
+      || Math.abs(last.lon - lonCam) > 1e-7
+      || last.chapterIdx !== chapterIdx;
+    if (moved) {
+      pushFilmSample(this.filmSamples, {
+        t: now,
         lat: subject.lat,
         lon: lonCam,
-        heading: subject.bearing,
-        zoom: this.camera.filmZoom,
-        now: Date.now(),
+        heading: subject.heading,
+        chapterIdx,
+        filmNm: Number.isFinite(Number(film?.filmNm)) ? Number(film.filmNm) : Number(cfg.live?.filmNm),
+      });
+    }
+    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
+      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
+      this.ensureFilmTiles(cfg.filmLeg, this.camera.filmZoom);
+    }
+    const tilesReady = filmTilesReady(this.map, this.baseLayer);
+    let next;
+    this.programmaticMove(() => {
+      next = stepFilmCamera(this.map, {
+        samples: this.filmSamples,
+        now,
+        lastChapterIdx: this.camera.filmChapterIdx,
         lastSetViewAt: this.camera.filmSetViewAt || 0,
         flyingUntil: this.camera.filmFlyingUntil || 0,
         lastCenter: this.camera.filmLastCenter,
+        zoom: this.camera.filmZoom,
+        tilesReady,
+        chapterIdx,
       });
     });
+    if (!next || next.action === "idle") return;
+    const pose = next.pose;
+    if (pose) {
+      this.filmPose = { ...pose, lon: cameraLngForBoat(pose.lon, lonCam), heading: pose.heading };
+    }
     this.camera.filmChapterIdx = next.lastChapterIdx;
     this.camera.filmSetViewAt = next.lastSetViewAt;
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
     this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.lastFollow = Date.now();
+    if (this.filmPose) this.syncFilmBoat(this.filmPose);
+  }
+
+  syncFilmBoat(pose) {
+    const cfg = this.config;
+    if (!cfg.filmActive || !pose) return;
+    const ready = Boolean(cfg.sceneReady && !cfg.drawingMode);
+    const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
+    this.syncMarker("live", {
+      visible: ready && liveMode && this.currentCast?.vehicle !== "plane",
+      lat: pose.lat,
+      lon: pose.lon,
+      bearing: pose.heading || 0,
+      className: "catamaran-divicon catamaran-divicon--live",
+      html: catamaranSvg(0),
+    });
   }
 
   filmPlayheadNm(snapshot) {
     if (!this.config.filmActive) return snapshot?.nm;
+    const fromPose = Number(this.filmPose?.filmNm);
+    if (Number.isFinite(fromPose)) return fromPose;
     const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
     const fromFilm = Number(film?.filmNm);
     if (Number.isFinite(fromFilm)) return fromFilm;
@@ -1031,10 +1125,7 @@ export class MapSceneController {
 
   syncCamera(cast, snapshot) {
     const cfg = this.config;
-    if (cfg.filmActive) {
-      this.syncFilmCamera(cfg);
-      return;
-    }
+    if (cfg.filmActive) return;
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     const subject = liveMode ? cfg.live : cast?.follow;
     const enabled = Boolean(
@@ -1150,6 +1241,7 @@ export class MapSceneController {
   }
 
   dispose() {
+    this.stopFilmCameraLoop();
     this.eventBubble?.dispose();
     this.eventBubble = null;
     this.escalePopup?.dispose();

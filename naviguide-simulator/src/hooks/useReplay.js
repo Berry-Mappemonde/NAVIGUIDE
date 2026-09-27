@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
+import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
 import {
   DEFAULT_T0_ISO,
@@ -346,6 +347,7 @@ export function useReplay({
   const clockRef = useRef(clock);
   if (clock) clockRef.current = clock;
   const budgetRef = useRef(0);
+  const lastUiAtRef = useRef(0);
 
   const stop = useCallback((opts) => {
     const keep = Boolean(opts && opts.keepSubtitle);
@@ -690,7 +692,11 @@ export function useReplay({
       }
       const elapsed = (now - startWallRef.current) / 1000;
       const denom = Number(plan.targetSeconds) > 0 ? plan.targetSeconds : 1;
-      setProgress(Math.max(0, Math.min(1, elapsed / denom)));
+      const uiDue = now - lastUiAtRef.current >= FILM_UI_MS;
+      if (uiDue) {
+        lastUiAtRef.current = now;
+        setProgress(Math.max(0, Math.min(1, elapsed / denom)));
+      }
       const voiceClock = Boolean(
         voiceRef.current
         && !voiceFailedRef.current
@@ -705,7 +711,7 @@ export function useReplay({
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
         lastTRef.current = next;
         tMsRef.current = next;
-        setTMs(next);
+        if (uiDue) setTMs(next);
       };
 
       let charIdx = voiceCharRef.current;
@@ -775,6 +781,7 @@ export function useReplay({
       }
       if (typeof window !== "undefined") {
         const pos = positionAt(clockRef.current, lastTRef.current);
+        const sample = replaySample(clockRef.current, lastTRef.current, timelineRef.current);
         const prevFilm = window.__naviguideFilm || {};
         window.__naviguideFilm = {
           ...prevFilm,
@@ -784,9 +791,10 @@ export function useReplay({
           elapsed,
           charIdx,
           tMs: lastTRef.current,
-          lat: pos?.lat ?? null,
-          lon: pos?.lon ?? null,
-          filmNm: pos?.filmNm ?? null,
+          lat: pos?.lat ?? sample?.lat ?? null,
+          lon: pos?.lon ?? sample?.lon ?? null,
+          heading: sample?.bearing ?? prevFilm.heading ?? null,
+          filmNm: pos?.filmNm ?? sample?.filmNm ?? null,
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
           seekChapter: prevFilm.seekChapter || ((idx) => seekChapterRef.current?.(idx)),
