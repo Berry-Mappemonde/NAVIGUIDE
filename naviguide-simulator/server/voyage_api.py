@@ -21,8 +21,8 @@ from admin_guard import is_admin, rate_limited, require_admin
 from climatology_atlas import corridor_cells, prefetch_atlas_cells
 from forecast_blend import FORECAST_BLEND_END_HOURS, make_wind_fn
 from hindcast import ERA5_PRODUCTS, at as hindcast_at
-from hindcast import fill_era5_along, hindcast_enabled, past_passage_slots
-from hindcast import uncovered_era5_slots
+from hindcast import fill_era5_along, hindcast_enabled, hindcast_status_fields
+from hindcast import om_quota_blocked, past_passage_slots, uncovered_era5_slots
 from forecast_cube import (
     CACHE_TTL_H,
     CUBE_MAX_BYTES,
@@ -157,7 +157,7 @@ def _hindcast_lookup(lat: float, lon: float, t: datetime):
     if not hindcast_enabled():
         return None
     try:
-        return hindcast_at(lat, lon, t, products=ERA5_PRODUCTS)
+        return hindcast_at(lat, lon, t, products=ERA5_PRODUCTS, fetch=False)
     except Exception:
         return None
 
@@ -196,8 +196,9 @@ def _fill_hindcast_then_forecast(voyage_id: str) -> None:
         return
     now = _now()
     try:
-        if hindcast_enabled():
-            _prefetch_hindcast(voy, now)
+        obtained = 0
+        if hindcast_enabled() and not om_quota_blocked():
+            obtained += _prefetch_hindcast(voy, now)
         t0 = parse_iso(voy["t0"])
         live_nm = 0.0
         clock = voy.get("clock")
@@ -211,21 +212,25 @@ def _fill_hindcast_then_forecast(voyage_id: str) -> None:
             cube.samples = cube.samples[: max(4, len(cube.samples) // 2)]
         save_cube(voyage_id, cube)
         clock = _clock_with_cube(voy, cube)
-        if hindcast_enabled():
+        if hindcast_enabled() and not om_quota_blocked():
             missing = uncovered_era5_slots(clock, now)
             if missing:
-                fill_era5_along(missing[:800])
+                obtained += fill_era5_along(missing[:800])
                 clock = _clock_with_cube(voy, cube)
+        extra = {}
+        if hindcast_enabled():
+            extra.update(hindcast_status_fields(clock, now, obtained=obtained > 0))
+        else:
+            extra["hindcastStatus"] = "skipped"
         update_voyage(
             voyage_id,
             forecastStatus="ready",
-            hindcastStatus="ready" if hindcast_enabled() else "skipped",
             forecastModel=cube.model,
             waveModel=cube.wave_model,
             cubeBytes=cube.estimate_bytes(),
             forecastRefreshedAt=to_iso(now),
-            hindcastRefreshedAt=to_iso(now),
             clock=clock,
+            **extra,
         )
         _journal_safely(lambda: journal.record_wx_from_hindcast(clock, now))
     except Exception as exc:
@@ -272,6 +277,8 @@ def _public_meta(voy: dict) -> dict:
         "official": official,
         "forecastStatus": voy.get("forecastStatus"),
         "hindcastStatus": voy.get("hindcastStatus"),
+        "hindcastCoverage": voy.get("hindcastCoverage"),
+        "hindcastReason": voy.get("hindcastReason"),
         "forecastModel": voy.get("forecastModel"),
         "waveModel": voy.get("waveModel"),
         "startAt": voy.get("startAt"),
@@ -1025,6 +1032,10 @@ def _maybe_daily_hindcast(voy: dict) -> None:
             _kick_official_eta(force=False)
             _kick_official_moments(force=False)
             return
+    if om_quota_blocked() and voy.get("hindcastStatus") in ("empty", "partial"):
+        _kick_official_eta(force=False)
+        _kick_official_moments(force=False)
+        return
     _kick_official_hindcast(force=False)
     _kick_official_eta(force=True)
     _kick_official_moments(force=False)
@@ -1157,6 +1168,8 @@ def get_official_regimes():
         "voyageId": OFFICIAL_VOYAGE_ID,
         "kind": clock.get("kind") or "climatology",
         "hindcastStatus": (voy or {}).get("hindcastStatus"),
+        "hindcastCoverage": (voy or {}).get("hindcastCoverage"),
+        "hindcastReason": (voy or {}).get("hindcastReason"),
         "portions": portions,
         "status": "ready",
     }

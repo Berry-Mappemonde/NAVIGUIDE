@@ -316,6 +316,28 @@ Then, **only** in `~/.config/naviguide/simulator.env` on the VPS:
 SIMULATOR_MONGO_URL=mongodb://naviguide_sim:THE_PASSWORD@127.0.0.1:27017/naviguide_simulator?authSource=naviguide_simulator
 ```
 
+### Voyage / hindcast SQLite (lot RF10) — do not move existing files
+
+`NAVIGUIDE_VOYAGE_DIR` is already read by `naviguide-simulator/server/voyage_store.py`.
+It is the directory of `voyage_*.json` and `naviguide.sqlite` (pearls, ERA5
+hindcast cache, Open-Meteo daily budget). Without the variable, that file lives
+inside the checkout (`naviguide-simulator/server/voyage_data`) — a new worktree
+or a rebuild of the station starts empty.
+
+Recommended on the VPS (service data, **outside** the checkout). This lot does
+**not** change the systemd unit, does not create the directory, and does not
+copy or delete any existing sqlite — set the variable only when the owner
+wants a cache that survives deploys:
+
+```
+# ~/.config/naviguide/simulator.env
+NAVIGUIDE_VOYAGE_DIR=/var/lib/naviguide/voyage_data
+```
+
+The recette station already uses `~/.cache/naviguide/voyage_data` (26 sept.).
+Also `NAVIGUIDE_OM_DAILY_BUDGET` (default 3000): max Open-Meteo HTTP calls per
+UTC day. The first 429 or the cap stops the hindcast fill until the next UTC day.
+
 On a Mac or in CI the variable is unset: the same module writes files
 under `~/.cache/naviguide/voyage-store/` (or a temp dir). First boot with
 an empty store: the background worker fills it; the API answers
