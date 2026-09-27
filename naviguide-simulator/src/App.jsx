@@ -25,7 +25,7 @@ import { useMoment } from "./hooks/useMoment.js";
 import { useMomentJournal } from "./hooks/useMomentJournal.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
-import { followClockLineFromT0, useReplay } from "./hooks/useReplay.js";
+import { followClockLineFromT0, useReplay, visibleFilmSubtitle } from "./hooks/useReplay.js";
 import { useReplayVoice } from "./hooks/useReplayVoice.js";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -871,7 +871,7 @@ export default function App() {
     canStart: replay.canStart,
     progress: replay.progress,
     voice: replay.voice,
-    subtitle: replay.chapterText,
+    subtitle: visibleFilmSubtitle(replay.chapterText),
     targetSeconds: replay.targetSeconds,
     onDuration: replay.setTargetSeconds,
     onStart: () => {
