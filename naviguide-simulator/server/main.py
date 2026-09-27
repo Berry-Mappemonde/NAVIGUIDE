@@ -47,6 +47,8 @@ from voyage_api import router as voyage_router
 log = logging.getLogger("naviguide-simulator")
 
 load_dotenv(_SIM_ROOT / ".env")
+from offline import apply_at_startup, enabled as offline_enabled
+apply_at_startup()
 
 COPERNICUS_USERNAME = os.getenv("COPERNICUS_USERNAME")
 COPERNICUS_PASSWORD = os.getenv("COPERNICUS_PASSWORD")
@@ -188,6 +190,8 @@ class PositionRequest(BaseModel):
 
 
 def _copernicus_ready() -> bool:
+    if offline_enabled():
+        return False
     return bool(
         COPERNICUS_USERNAME
         and COPERNICUS_PASSWORD

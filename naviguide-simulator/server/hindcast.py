@@ -107,6 +107,8 @@ def om_http_call_count() -> int:
 
 
 def hindcast_enabled() -> bool:
+    if (os.getenv("NAVIGUIDE_OFFLINE") or "").strip().lower() in ("1", "true", "yes"):
+        return False
     raw = (os.getenv("NAVIGUIDE_HINDCAST") or "1").lower()
     if raw in ("0", "false", "no"):
         return False

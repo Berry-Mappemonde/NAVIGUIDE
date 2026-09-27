@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,7 @@ from official_store import (
     READY,
     film_snapshot_stale,
     make_key,
+    parse_key,
     preparing_payload,
 )
 
@@ -29,6 +31,12 @@ class _FakeColl:
 
     def find_one(self, filt):
         return self.docs.get((filt or {}).get("_id"))
+
+    def find(self, filt=None):
+        filt = filt or {}
+        for doc in self.docs.values():
+            if all(doc.get(k) == v for k, v in filt.items()):
+                yield dict(doc)
 
     def replace_one(self, filt, doc, upsert=True):
         self.docs[doc["_id"]] = dict(doc)
@@ -463,3 +471,86 @@ def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeyp
     low = blob.lower()
     assert "prend l'avion pour" in low
     assert "retour en avion vers" in low
+
+
+YESTERDAY = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+TODAY = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("backend_name", ["disk", "mongo"])
+def test_missing_today_serves_latest_with_data_date(tmp_path, monkeypatch, backend_name):
+    voy = {"t0": T0, "points": [{"lat": 1.0, "lon": 2.0}], "marks": []}
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    store = dict(_stores(tmp_path))[backend_name]
+    store._now = lambda: TODAY
+    old_key = store.family_key("moments", voy, YESTERDAY)
+    store.put("moments", _payload("moments"), old_key)
+    today_key = store.family_key("moments", voy, TODAY)
+    assert today_key != old_key
+    assert store.get("moments", today_key) is None
+    hit = store.get("moments")
+    assert hit is not None
+    assert hit["payload"]["journal"]["count"] == 2
+    assert hit["dataDate"] == "2026-09-26"
+    assert hit["storedAt"]
+    route, t0, date, _suf = parse_key(hit["key"])
+    assert t0 == T0
+    assert date == "2026-09-26"
+    assert route == official_store.route_fingerprint(voy)
+    official_store._INSTANCE = store
+    try:
+        served = official_store.serve_journal(50)
+        assert served["status"] == READY
+        assert served["dataDate"] == "2026-09-26"
+        assert served["storedAt"]
+    finally:
+        official_store.reset_store()
+
+
+def test_http_yesterday_key_is_served_with_data_date(client):
+    voy = official_store._load_official()
+    key = official_store.make_key(
+        official_store.route_fingerprint(voy),
+        (voy or {}).get("t0") or "",
+        "2026-09-26",
+    )
+    official_store.put("moments", _payload("moments"), key)
+    journal = client.get("/voyage/official/journal")
+    assert journal.status_code == 200
+    body = journal.json()
+    assert body["status"] == READY
+    assert body["dataDate"] == "2026-09-26"
+    assert body["storedAt"]
+    assert body["latest"][0]["kind"] == "stop"
+
+
+def test_freeze_then_unpack_same_payloads(tmp_path):
+    import importlib.util
+
+    src = tmp_path / "src"
+    store = OfficialStore(DiskBackend(src), now=lambda: NOW)
+    key = make_key("routeA", T0, "2026-09-26")
+    expected = {}
+    for name in FAMILIES:
+        payload = _payload(name, "freeze")
+        store.put(name, payload, key)
+        expected[name] = payload
+
+    spec = importlib.util.spec_from_file_location(
+        "freeze_official_store",
+        Path(__file__).resolve().parents[2] / "scripts" / "freeze_official_store.py",
+    )
+    freeze = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(freeze)
+
+    archive = tmp_path / "official_store.tar.gz"
+    info = freeze.freeze(src, archive)
+    assert info["docs"] == len(FAMILIES)
+    assert archive.stat().st_size > 0
+    dest = tmp_path / "unpacked"
+    freeze.unpack(archive, dest)
+    again = OfficialStore(DiskBackend(dest), now=lambda: NOW)
+    for name in FAMILIES:
+        hit = again.get(name, key)
+        assert hit is not None
+        assert hit["payload"] == expected[name]
