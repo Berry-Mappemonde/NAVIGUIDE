@@ -4,7 +4,15 @@ import {
   FILM_ZOOM_MAX,
   FILM_ZOOM_MIN,
 } from "../engine/replay.js";
-import { haversineNm } from "../utils/geo.js";
+import { haversineNm, unwrapLon } from "../utils/geo.js";
+
+/** Horloge UI React : assez pour la barre, trop rare pour faire sauter la caméra. */
+export const FILM_UI_MS = 80;
+/** La pose affichée est en retard d'un cran : on interpole entre deux échantillons. */
+export const FILM_INTERP_DELAY_MS = 80;
+/** Au-delà, une tuile manquante ralentit le pan (évite le damier gris). */
+export const FILM_TILE_READY_MIN = 0.7;
+export const FILM_TILE_SLOW = 0.35;
 
 /** Jambe plus courte que ça : on plafonne pour montrer l'archipel d'un coup. */
 export const FILM_ARCHIPELAGO_NM = 180;
@@ -125,10 +133,163 @@ export function filmViewCenter(lat, lon, headingDeg, map) {
   }
 }
 
+export function lerpHeading(a, b, t) {
+  const x = Number(a);
+  const y = Number(b);
+  if (!Number.isFinite(x)) return Number.isFinite(y) ? y : 0;
+  if (!Number.isFinite(y)) return x;
+  let d = y - x;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return x + d * t;
+}
+
+export function lerpFilmSample(a, b, u) {
+  const t = Math.max(0, Math.min(1, Number(u) || 0));
+  if (!a) return b || null;
+  if (!b) return a;
+  const lon0 = Number(a.lon);
+  const lon1 = unwrapLon(lon0, Number(b.lon));
+  const filmA = Number(a.filmNm);
+  const filmB = Number(b.filmNm);
+  return {
+    lat: Number(a.lat) + (Number(b.lat) - Number(a.lat)) * t,
+    lon: lon0 + (lon1 - lon0) * t,
+    heading: lerpHeading(a.heading, b.heading, t),
+    chapterIdx: t < 1 ? a.chapterIdx : b.chapterIdx,
+    filmNm: Number.isFinite(filmA) && Number.isFinite(filmB) ? filmA + (filmB - filmA) * t : (Number.isFinite(filmB) ? filmB : filmA),
+    t: (Number(a.t) || 0) + ((Number(b.t) || 0) - (Number(a.t) || 0)) * t,
+  };
+}
+
+/** Échantillons horodatés (horloge murale). On n'en garde que les derniers. */
+export function pushFilmSample(samples, sample, { max = 8 } = {}) {
+  const list = samples || [];
+  if (!sample || !Number.isFinite(Number(sample.lat)) || !Number.isFinite(Number(sample.lon))) {
+    return list;
+  }
+  const next = {
+    t: Number(sample.t),
+    lat: Number(sample.lat),
+    lon: Number(sample.lon),
+    heading: Number.isFinite(Number(sample.heading)) ? Number(sample.heading) : 0,
+    chapterIdx: Number.isFinite(Number(sample.chapterIdx)) ? Number(sample.chapterIdx) : 0,
+    filmNm: Number(sample.filmNm),
+  };
+  if (!Number.isFinite(next.t)) return list;
+  const last = list[list.length - 1];
+  if (last && last.t === next.t && last.lat === next.lat && last.lon === next.lon) return list;
+  list.push(next);
+  if (list.length > max) list.splice(0, list.length - max);
+  return list;
+}
+
+/** Pose entre deux échantillons : le bateau glisse même si React n'a pas rendu. */
+export function interpolateFilmSamples(samples, now) {
+  if (!samples?.length) return null;
+  const t = Number(now);
+  if (!Number.isFinite(t)) return { ...samples[samples.length - 1] };
+  if (samples.length === 1 || t <= samples[0].t) return { ...samples[0] };
+  const last = samples[samples.length - 1];
+  if (t >= last.t) return { ...last };
+  let i = 0;
+  while (i < samples.length - 1 && samples[i + 1].t < t) i += 1;
+  const a = samples[i];
+  const b = samples[i + 1];
+  if (!b) return { ...a };
+  const span = b.t - a.t;
+  return lerpFilmSample(a, b, span > 0 ? (t - a.t) / span : 1);
+}
+
+export function lonLatToTile(lon, lat, z) {
+  const zoom = Math.round(Number(z));
+  const n = 2 ** zoom;
+  const x = Math.floor(((Number(lon) + 180) / 360) * n);
+  const latRad = (Number(lat) * Math.PI) / 180;
+  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+  return { x, y, z: zoom };
+}
+
+/** Tuiles le long de la jambe au zoom du chapitre (plus les voisines). */
+export function tilesAlongLeg(leg, zoom, { pad = 1, samples = 24 } = {}) {
+  const aLat = Number(leg?.fromLat);
+  const aLon = Number(leg?.fromLon);
+  const bLat = Number(leg?.toLat);
+  const bLon = Number(leg?.toLon);
+  const z = Math.round(Number(zoom));
+  if (![aLat, aLon, bLat, bLon, z].every(Number.isFinite) || z < 0) return [];
+  const lon1 = unwrapLon(aLon, bLon);
+  const out = new Map();
+  const n = Math.max(2, Number(samples) || 24);
+  for (let i = 0; i <= n; i++) {
+    const u = i / n;
+    const lat = aLat + (bLat - aLat) * u;
+    const lon = aLon + (lon1 - aLon) * u;
+    const tile = lonLatToTile(lon, lat, z);
+    for (let dy = -pad; dy <= pad; dy++) {
+      for (let dx = -pad; dx <= pad; dx++) {
+        const x = tile.x + dx;
+        const y = tile.y + dy;
+        const key = `${z}/${x}/${y}`;
+        if (!out.has(key)) out.set(key, { z, x, y });
+      }
+    }
+  }
+  return [...out.values()];
+}
+
+export function filmTileUrl(template, tile) {
+  if (!template || !tile) return "";
+  return String(template)
+    .replace(/\{z\}/g, String(tile.z))
+    .replace(/\{y\}/g, String(tile.y))
+    .replace(/\{x\}/g, String(tile.x));
+}
+
+export function preloadFilmTiles(template, tiles, { ImageCtor = globalThis.Image } = {}) {
+  if (!template || !ImageCtor) return [];
+  const imgs = [];
+  for (const tile of tiles || []) {
+    const url = filmTileUrl(template, tile);
+    if (!url) continue;
+    const img = new ImageCtor();
+    if ("decoding" in img) img.decoding = "async";
+    img.src = url;
+    imgs.push(img);
+  }
+  return imgs;
+}
+
+/** 1 si les tuiles visibles sont là ; 0 si le fond est encore un damier. */
+export function filmTilesReady(map, layer) {
+  if (!layer) return true;
+  try {
+    const hasIsLoading = typeof layer.isLoading === "function";
+    const tiles = layer._tiles;
+    if (!hasIsLoading && (tiles == null || typeof tiles !== "object")) return true;
+    if (hasIsLoading && layer.isLoading()) return false;
+    if (!tiles) return false;
+    const vals = Object.values(tiles);
+    if (!vals.length) return false;
+    let loaded = 0;
+    for (const t of vals) {
+      if (t?.loaded || t?.el?.complete) loaded += 1;
+    }
+    return loaded / vals.length >= FILM_TILE_READY_MIN;
+  } catch {
+    return true;
+  }
+}
+
+export function filmPanMaxFrac(tilesReady = true) {
+  return FILM_PAN_MAX_SCREEN * (tilesReady ? 1 : FILM_TILE_SLOW);
+}
+
 /**
  * Caméra du film : premier mouvement = bateau du chapitre 1 (`setView`) ;
  * un seul `flyTo` 1,2 s au changement de chapitre ; sinon `setView` chaque
- * frame, bateau au tiers avant, déplacement borné à 2 % de l'écran.
+ * pas de la boucle carte, bateau au tiers avant, déplacement borné à 2 %
+ * de l'écran (ralentit si les tuiles ne sont pas prêtes).
  */
 export function applyFilmCamera(map, {
   chapterIdx,
@@ -141,6 +302,7 @@ export function applyFilmCamera(map, {
   lastSetViewAt = 0,
   flyingUntil = 0,
   lastCenter = null,
+  maxFrac = FILM_PAN_MAX_SCREEN,
 } = {}) {
   const desiredBoat = [lat, lon];
   const center = filmViewCenter(lat, lon, heading, map);
@@ -170,7 +332,7 @@ export function applyFilmCamera(map, {
   const from = lastCenter || (typeof map.getCenter === "function"
     ? [map.getCenter().lat, map.getCenter().lng]
     : center);
-  const clamped = clampFilmPan(from, center, map);
+  const clamped = clampFilmPan(from, center, map, { maxFrac });
   map.setView(clamped, zoom, { animate: false });
   return {
     lastChapterIdx: chapterIdx,
@@ -179,4 +341,47 @@ export function applyFilmCamera(map, {
     action: "setView",
     lastCenter: clamped,
   };
+}
+
+/**
+ * Un pas de la boucle impérative : interpole la pose, puis applique la caméra.
+ * Cadence dégradée des échantillons → pas toujours ≤ 2 % d'écran (pas de saut).
+ */
+export function stepFilmCamera(map, {
+  samples,
+  now,
+  lastChapterIdx,
+  lastSetViewAt = 0,
+  flyingUntil = 0,
+  lastCenter = null,
+  zoom,
+  tilesReady = true,
+  chapterIdx: chapterOverride,
+} = {}) {
+  const pose = interpolateFilmSamples(samples, Number(now) - FILM_INTERP_DELAY_MS);
+  if (!pose || !Number.isFinite(pose.lat) || !Number.isFinite(pose.lon)) {
+    return {
+      lastChapterIdx,
+      lastSetViewAt,
+      flyingUntil,
+      lastCenter,
+      action: "idle",
+      pose: null,
+    };
+  }
+  const chapterIdx = Number.isFinite(Number(chapterOverride)) ? Number(chapterOverride) : pose.chapterIdx;
+  const next = applyFilmCamera(map, {
+    chapterIdx,
+    lastChapterIdx,
+    lat: pose.lat,
+    lon: pose.lon,
+    heading: pose.heading,
+    zoom,
+    now,
+    lastSetViewAt,
+    flyingUntil,
+    lastCenter,
+    maxFrac: filmPanMaxFrac(tilesReady),
+  });
+  return { ...next, pose };
 }

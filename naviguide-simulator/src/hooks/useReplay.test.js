@@ -22,6 +22,8 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /t0=\$\{encodeURIComponent\(t0\)\}/);
     assert.match(hook, /t0 = DEFAULT_T0_ISO/);
     assert.match(hook, /buildFilmScript/);
+    assert.match(hook, /FILM_UI_MS/);
+    assert.match(hook, /if \(uiDue\) setTMs\(next\)/);
     assert.doesNotMatch(hook, /Tavily|Nebius/i);
   });
 
