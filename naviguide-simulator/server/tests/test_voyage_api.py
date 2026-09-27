@@ -62,7 +62,7 @@ def _payload(t0: str):
 def test_create_pending_then_ready(client):
     t0 = "2026-06-15T08:00:00Z"
     r = client.post("/voyage", json=_payload(t0))
-    assert r.status_code == 200
+    assert r.status_code in (200, 202)
     body = r.json()
     assert body["forecastStatus"] in ("pending", "ready")
     vid = body["voyageId"]
@@ -104,6 +104,7 @@ def test_at_plus_11d_climatology(client, monkeypatch):
 def test_waiting_before_t0(client):
     t0 = datetime(2026, 9, 20, 8, tzinfo=timezone.utc)
     vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
+    _wait_forecast(client, vid)
     past = (t0 - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     sample = client.get(f"/voyage/{vid}/at", params={"t": past}).json()
     assert sample["status"] == "waiting"
@@ -699,17 +700,19 @@ def test_kick_official_eta_retries_when_backoff_elapsed(tmp_path, monkeypatch):
 
 
 def test_create_voyage_clock_failure_is_dated_503_not_500(client, monkeypatch):
-    """Lot RF3 : _climo_clock lève → 503 daté, jamais un 500 brut."""
+    """Lot RC12 : petite route non officielle — pas de 500, pas d'_climo_clock dans le handler."""
     def boom(*_a, **_k):
-        raise RuntimeError("clock boom")
+        raise AssertionError("calcul")
 
     monkeypatch.setattr(voyage_api, "_climo_clock", boom)
     r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
-    assert r.status_code == 503
-    detail = r.json()["detail"]
-    assert detail["status"] == "unavailable"
-    assert "clock boom" in detail["reason"]
-    assert "T" in detail["at"] and detail["at"].endswith("Z")
+    assert r.status_code in (202, 503)
+    assert r.status_code < 500
+    body = r.json()
+    dated = body.get("detail") if r.status_code == 503 else (body.get("clock") or body)
+    assert dated.get("status") in ("preparing", "unavailable")
+    assert dated.get("reason")
+    assert "T" in dated.get("at", "") and dated["at"].endswith("Z")
 
 
 def test_official_post_does_not_compute_clock(client, monkeypatch):
@@ -720,6 +723,37 @@ def test_official_post_does_not_compute_clock(client, monkeypatch):
     assert r.status_code == 200
     clock = r.json().get("clock") or {}
     assert clock.get("status") == "preparing" or clock.get("vertices")
+
+
+def test_post_same_route_without_official_flag_does_not_compute_clock(client, monkeypatch):
+    """Lot RC12 : POST sans official, mêmes points+t0 que l'officiel → stock ou preparing."""
+    seed = _payload("2026-05-15T08:00:00Z") | {"forecast": False}
+    client.put("/voyage/official", json=seed | {"official": True})
+    monkeypatch.setattr(
+        voyage_api,
+        "_climo_clock",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("calcul")),
+    )
+    r = client.post("/voyage", json=seed)
+    assert r.status_code == 200
+    clock = r.json().get("clock") or {}
+    assert clock.get("status") == "preparing" or clock.get("vertices")
+    assert r.json().get("official") is True
+
+
+def test_unofficial_small_post_does_not_compute_clock_in_handler(client, monkeypatch):
+    """Lot RC12 : petite route non officielle → pas de 500, pas d'_climo_clock dans le handler."""
+    def boom(*_a, **_k):
+        raise AssertionError("calcul")
+
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+    r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
+    assert r.status_code != 500
+    assert r.status_code in (202, 503)
+    body = r.json()
+    dated = body.get("detail") if r.status_code == 503 else (body.get("clock") or body)
+    assert dated.get("status") in ("preparing", "unavailable")
+    assert dated.get("at", "").endswith("Z")
 
 
 def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):

@@ -30,6 +30,13 @@ describe("useVirtualVessel — explication de recalcul (lot L5)", () => {
     assert.match(src, /body\.wind_max_kt = constraints\.windMaxKt/);
     assert.match(src, /body\.hs_max_m = constraints\.hsMaxM/);
   });
+
+  it("n'envoie jamais official (lot RC12 : le serveur reconnaît l'empreinte)", () => {
+    assert.match(src, /method: "POST"/);
+    assert.match(src, /JSON\.stringify\(\{/);
+    assert.doesNotMatch(src, /official:\s*(true|Boolean|follow)/);
+    assert.match(src, /CREATE_BACKOFF_MS/);
+  });
 });
 
 describe("createBackoffMs — repli progressif (lot RF3)", () => {
