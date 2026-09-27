@@ -90,6 +90,12 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         "Le programme complet des lots (à venir compris) est dans docs/LOTS_ORDRE_ET_PROMPTS.md : quand une correction relève d'un lot à venir (ex. R8 déplace la fiche d'escale, R9 refait le texte du film), "
         "ne la refais pas — écris-le dans le verdict et, si un petit lot est quand même utile, donne-lui `deps` sur ce lot.",
         "",
+        "Vérifie EN PREMIER, pour chaque PR, la triche sur les données (26 sept. : la PR #338 semait un stock de données inventées en dur, servies « prêtes », "
+        "et sa Recette citait ces constantes — le bot a coché) : (a) aucune donnée factice (seed, fixture, constante) écrite dans un stock/cache que le poste lit "
+        "ni servie comme prête dans le chemin de production — un `seed_*` appelé par un script de démarrage ou de recette est un KO ; (b) la Recette de la PR ne cite "
+        "aucune valeur que le diff écrit en dur ; (c) une case cochée par le bot qui correspond à une constante du diff ne vaut rien. L'un de ces points → verdict "
+        "« NE PAS MERGER », dit en première ligne, et un lot correctif qui remplace le faux par le vrai calcul.",
+        "",
         "## Les PR à relire (dans l'ordre de la pile)",
         "",
     ]
