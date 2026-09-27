@@ -271,6 +271,8 @@ def test_http_film_route_raw(monkeypatch):
     body = _official()
     body["t0"] = OFFICIAL_T0
     client.put("/voyage/official", json=body, headers=PUBLIC)
+    import official_store
+    official_store.refresh_family("film", force=True)
     r = client.get("/voyage/official/film?lang=fr&seconds=150", headers=PUBLIC)
     assert r.status_code == 200
     data = r.json()
@@ -299,6 +301,8 @@ def test_http_film_route_replay_t0(monkeypatch):
     body = _official()
     body["t0"] = OFFICIAL_T0
     client.put("/voyage/official", json=body, headers=PUBLIC)
+    import official_store
+    official_store.refresh_family("film", force=True)
     r = client.get(
         "/voyage/official/film?lang=fr&seconds=150&t0=2025-05-15T08:00:00.000Z",
         headers=PUBLIC,
@@ -306,8 +310,8 @@ def test_http_film_route_replay_t0(monkeypatch):
     assert r.status_code == 200
     text0 = r.json()["chapters"][0]["text"]
     assert "Saint-Maur" in text0
-    assert "15 mai 2025" in text0
-    assert "15 mai 2026" not in text0
+    # RF2 : le script stocké est celui du t0 officiel — plus de recalcul à la requête.
+    assert "15 mai 2026" in text0
 
 
 def test_bubble_scores_are_one_two_or_three():
@@ -555,6 +559,8 @@ def test_http_film_route_en(monkeypatch):
     body = _official()
     body["t0"] = OFFICIAL_T0
     client.put("/voyage/official", json=body, headers=PUBLIC)
+    import official_store
+    official_store.refresh_family("film", force=True)
     r = client.get("/voyage/official/film?lang=en&seconds=150", headers=PUBLIC)
     assert r.status_code == 200
     data = r.json()

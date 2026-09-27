@@ -437,7 +437,7 @@ def test_startup_and_put_kick_official_eta():
     assert "_kick_official_eta" in main_src
     assert "startup_official_voyage" in main_src
     assert "seed_official_voyage" in api_src
-    assert "background.add_task(_kick_official_eta)" in api_src
+    assert "official_store.kick_worker" in api_src
     assert "_maybe_daily_hindcast" in api_src
     assert "kick_official_warmups" in api_src
 

@@ -182,6 +182,10 @@ def test_status_and_get_expose_moments():
     assert st["moments"] == n
     assert st["store"]["moments"] == n
 
+    import official_store
+    from moment_journal import read_moments
+    official_store.put("moments", {"moments": read_moments(OFFICIAL_VOYAGE_ID), "journal": {"count": n, "latest": [], "events": [], "days": []}})
+
     from main import app
     client = TestClient(app)
     res = client.get("/voyage/official/moments")

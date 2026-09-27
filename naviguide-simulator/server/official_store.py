@@ -1,0 +1,872 @@
+"""Stock persistant du voyage officiel — une interface, deux dos (lot RF2, D5').
+
+Lecture/écriture des six familles (moments, film, eta, climo, ici, plan_review).
+Clé : (route officielle, t0, date des données). Une entrée porte un horodatage ;
+le remplacement est atomique. Derrière : MongoDB si SIMULATOR_MONGO_URL est posé
+(base naviguide_simulator), fichiers sur disque sinon.
+
+Aucune donnée n'est inventée : `put` n'accepte que le résultat d'un vrai calcul.
+Une famille absente reste « en préparation ». Le travail de fond calcule hors
+des requêtes. Aucun test ne se connecte à une vraie base.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+import tempfile
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+log = logging.getLogger("naviguide-simulator.official-store")
+
+FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
+PREPARING = "preparing"
+READY = "ready"
+DB_NAME = "naviguide_simulator"
+COLLECTION = "official_voyage"
+DEFAULT_DISK = Path.home() / ".cache" / "naviguide" / "voyage-store"
+PERIOD_S = float(os.environ.get("NAVIGUIDE_OFFICIAL_STORE_PERIOD_S") or 6 * 3600)
+ROUTE_NEAR_NM = 8.0
+
+_LOCK = threading.RLock()
+_INSTANCE: Optional["OfficialStore"] = None
+_WORKER_STARTED = False
+_REFRESH_LOCK = threading.Lock()
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(dt: datetime | None = None) -> str:
+    when = dt or _utc_now()
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _data_date(now: datetime | None = None) -> str:
+    when = now or _utc_now()
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%d")
+
+
+def route_fingerprint(voy: dict | None) -> str:
+    """Empreinte stable de la route officielle (points + marques + t0)."""
+    voy = voy or {}
+    raw = json.dumps(
+        {
+            "t0": voy.get("t0") or "",
+            "n": len(voy.get("points") or []),
+            "rev": voy.get("routeRev") or 0,
+            "marks": [
+                (m.get("name"), round(float(m.get("nm") or 0), 3))
+                for m in (voy.get("marks") or [])
+                if isinstance(m, dict)
+            ],
+            "first": (voy.get("points") or [{}])[0].get("lat") if voy.get("points") else None,
+            "last": (voy.get("points") or [{}])[-1].get("lat") if voy.get("points") else None,
+        },
+        ensure_ascii=False, separators=(",", ":"),
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def make_key(route_id: str, t0: str, data_date: str) -> str:
+    return f"{route_id}:{t0}:{data_date}"
+
+
+def preparing_payload(family: str, extra: Optional[dict] = None) -> dict:
+    """Réponse honnête — jamais un 500, jamais un calcul. Le client sait déjà
+    afficher un journal vide / un film pending / une fourchette absente."""
+    body = {"status": PREPARING, "reason": "en préparation", "family": family}
+    if extra:
+        body.update(extra)
+    return body
+
+
+def worker_enabled() -> bool:
+    raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST") and raw != "force":
+        return False
+    return True
+
+
+def disk_root() -> Path:
+    env = (os.environ.get("NAVIGUIDE_OFFICIAL_STORE_DIR") or "").strip()
+    if env:
+        return Path(env)
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("CI"):
+        return Path(tempfile.mkdtemp(prefix="naviguide-voyage-store-"))
+    return DEFAULT_DISK
+
+
+# ── dos disque ───────────────────────────────────────────────────────────────
+
+class DiskBackend:
+    def __init__(self, root: Optional[Path] = None):
+        self.root = Path(root) if root is not None else disk_root()
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, key: str, family: str) -> Path:
+        safe = key.replace("/", "_").replace("\\", "_").replace(":", "_")
+        d = self.root / safe
+        d.mkdir(parents=True, exist_ok=True)
+        return d / f"{family}.json"
+
+    def get(self, key: str, family: str) -> Optional[dict]:
+        dest = self._path(key, family)
+        if not dest.exists():
+            return None
+        try:
+            return json.loads(dest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("stock disque illisible %s/%s : %s", key, family, exc)
+            return None
+
+    def put(self, key: str, family: str, doc: dict) -> dict:
+        dest = self._path(key, family)
+        tmp = dest.with_suffix(".tmp")
+        payload = json.dumps(doc, ensure_ascii=False, indent=2)
+        tmp.write_text(payload, encoding="utf-8")
+        tmp.replace(dest)
+        return doc
+
+
+# ── dos Mongo (client injecté en tests — jamais une vraie base) ───────────────
+
+class MongoBackend:
+    """Dos MongoDB : base naviguide_simulator uniquement.
+
+    `client` injecté (mongomock / faux client). En production, pymongo à partir
+    de SIMULATOR_MONGO_URL — jamais MONGO_URL_LOCAL ni mongo.env.
+    """
+
+    def __init__(self, client: Any, db_name: str = DB_NAME):
+        self._col = client[db_name][COLLECTION]
+
+    def get(self, key: str, family: str) -> Optional[dict]:
+        doc = self._col.find_one({"_id": f"{key}:{family}"})
+        if not doc:
+            return None
+        return {
+            "key": doc.get("key") or key,
+            "family": doc.get("family") or family,
+            "storedAt": doc.get("storedAt"),
+            "payload": doc.get("payload"),
+        }
+
+    def put(self, key: str, family: str, doc: dict) -> dict:
+        stored = {
+            "_id": f"{key}:{family}",
+            "key": key,
+            "family": family,
+            "storedAt": doc.get("storedAt"),
+            "payload": doc.get("payload"),
+        }
+        self._col.replace_one({"_id": stored["_id"]}, stored, upsert=True)
+        return {k: stored[k] for k in ("key", "family", "storedAt", "payload")}
+
+
+def _mongo_client_from_url(url: str):
+    from pymongo import MongoClient  # noqa: PLC0415
+    return MongoClient(url, serverSelectionTimeoutMS=2000)
+
+
+# ── interface unique ─────────────────────────────────────────────────────────
+
+class OfficialStore:
+    def __init__(self, backend: Any, *, now: Optional[Callable[[], datetime]] = None):
+        self.backend = backend
+        self._now = now or _utc_now
+        self._mem: dict[tuple[str, str], dict] = {}
+        self._clock_bytes: Optional[bytes] = None
+        self._clock_bytes_key: Optional[str] = None
+
+    def current_key(self, voy: Optional[dict] = None, now: Optional[datetime] = None) -> str:
+        voy = voy if voy is not None else _load_official()
+        t0 = (voy or {}).get("t0") or ""
+        return make_key(route_fingerprint(voy), t0, _data_date(now or self._now()))
+
+    def get(self, family: str, key: Optional[str] = None) -> Optional[dict]:
+        if family not in FAMILIES:
+            raise ValueError(f"famille inconnue: {family}")
+        dest = key or self.current_key()
+        with _LOCK:
+            hit = self._mem.get((dest, family))
+            if hit is not None:
+                return hit
+            hit = self.backend.get(dest, family)
+            if hit is not None:
+                self._mem[(dest, family)] = hit
+            return hit
+
+    def put(self, family: str, payload: dict, key: Optional[str] = None) -> dict:
+        if family not in FAMILIES:
+            raise ValueError(f"famille inconnue: {family}")
+        if payload is None:
+            raise ValueError("payload vide — une famille non calculée reste en préparation")
+        dest_key = key or self.current_key()
+        doc = {
+            "key": dest_key,
+            "family": family,
+            "storedAt": _iso(self._now()),
+            "payload": payload,
+        }
+        with _LOCK:
+            stored = self.backend.put(dest_key, family, doc)
+            self._mem[(dest_key, family)] = stored
+            if family == "climo":
+                self._clock_bytes = None
+                self._clock_bytes_key = None
+            return stored
+
+    def status(self, key: Optional[str] = None) -> dict:
+        dest = key or self.current_key()
+        families = {}
+        for name in FAMILIES:
+            hit = self.get(name, dest)
+            families[name] = {
+                "status": READY if hit and hit.get("payload") is not None else PREPARING,
+                "storedAt": (hit or {}).get("storedAt"),
+            }
+        return {"key": dest, "families": families}
+
+
+def get_store(*, reset: bool = False) -> OfficialStore:
+    """Dos choisi tout seul : Mongo si SIMULATOR_MONGO_URL, disque sinon."""
+    global _INSTANCE
+    if reset:
+        _INSTANCE = None
+    if _INSTANCE is not None:
+        return _INSTANCE
+    url = (os.environ.get("SIMULATOR_MONGO_URL") or "").strip()
+    if url:
+        _INSTANCE = OfficialStore(MongoBackend(_mongo_client_from_url(url)))
+    else:
+        _INSTANCE = OfficialStore(DiskBackend())
+    return _INSTANCE
+
+
+def reset_store() -> None:
+    """Tests : oublier le singleton (nouveau répertoire / faux client)."""
+    global _INSTANCE
+    _INSTANCE = None
+
+
+def get(family: str, key: Optional[str] = None) -> Optional[dict]:
+    return get_store().get(family, key)
+
+
+def put(family: str, payload: dict, key: Optional[str] = None) -> dict:
+    return get_store().put(family, payload, key)
+
+
+def family_status() -> dict:
+    return get_store().status()
+
+
+def payload_of(family: str) -> Optional[dict]:
+    hit = get(family)
+    if not hit:
+        return None
+    body = hit.get("payload")
+    return body if isinstance(body, dict) else None
+
+
+def stored_clock() -> Optional[dict]:
+    body = payload_of("climo")
+    clock = (body or {}).get("clock")
+    return clock if isinstance(clock, dict) and clock.get("t0") else None
+
+
+def serve_clock_bytes() -> Optional[bytes]:
+    """Horloge déjà sérialisée — GET /clock sans recalcul ni ré-encodage."""
+    st = get_store()
+    clock = stored_clock()
+    if not clock:
+        return None
+    key = st.current_key()
+    with _LOCK:
+        if st._clock_bytes is not None and st._clock_bytes_key == key:
+            return st._clock_bytes
+        raw = json.dumps(clock, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        st._clock_bytes = raw
+        st._clock_bytes_key = key
+        return raw
+
+
+# ── proximité route officielle (sac ici) ─────────────────────────────────────
+
+def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from isochrone import haversine  # noqa: PLC0415
+    dlon = float(lon2) - float(lon1)
+    while dlon > 180.0:
+        dlon -= 360.0
+    while dlon < -180.0:
+        dlon += 360.0
+    return haversine(lat1, lon1, lat2, lon1 + dlon)
+
+
+def _load_official() -> Optional[dict]:
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+    from voyage_store import load_voyage  # noqa: PLC0415
+    return load_voyage(OFFICIAL_VOYAGE_ID)
+
+
+def on_official_route(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> bool:
+    voy = _load_official()
+    points = (voy or {}).get("points") or []
+    if not points:
+        return False
+    step = max(1, len(points) // 400)
+    for p in points[::step]:
+        try:
+            if _haversine_nm(lat, lon, float(p["lat"]), float(p["lon"])) <= max_nm:
+                return True
+        except (KeyError, TypeError, ValueError):
+            continue
+    return False
+
+
+def ici_bag_near(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> Optional[dict]:
+    body = payload_of("ici")
+    if not body:
+        return None
+    best = None
+    best_d = max_nm
+    for row in body.get("points") or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            d = _haversine_nm(lat, lon, float(row["lat"]), float(row["lon"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if d < best_d:
+            best_d = d
+            best = row.get("bag")
+    return best if isinstance(best, dict) else None
+
+
+def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:
+    from ici_engine import empty_dossier  # noqa: PLC0415
+    bag = empty_dossier(lat, lon, radius_nm)
+    bag["status"] = PREPARING
+    bag["reason"] = "en préparation"
+    return bag
+
+
+# ── calculs (mêmes fonctions que le serveur d'aujourd'hui) ───────────────────
+
+def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
+    from voyage_api import _climo_clock, _regime_portions  # noqa: PLC0415
+    from voyage_store import save_voyage  # noqa: PLC0415
+
+    clock = _climo_clock(voy)
+    if not clock or not clock.get("t0"):
+        return None
+    voy = dict(voy)
+    voy["clock"] = clock
+    save_voyage(voy)
+    fiches = []
+    for v in clock.get("vertices") or []:
+        if not isinstance(v, dict) or v.get("lat") is None:
+            continue
+        fiches.append({
+            "lat": v.get("lat"), "lon": v.get("lon"),
+            "iso": v.get("iso"), "sailNm": v.get("sailNm"),
+            "regime": v.get("regime") or v.get("kind"),
+            "windKnots": v.get("windKnots"),
+            "dirFromDeg": v.get("dirFromDeg"),
+        })
+    return {"clock": clock, "regimes": _regime_portions(clock), "fiches": fiches}
+
+
+def compute_moments(voy: dict, now: datetime) -> Optional[dict]:
+    import voyage_journal as journal  # noqa: PLC0415
+    from moment_journal import read_moments, warm_moments  # noqa: PLC0415
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+
+    if not voy.get("clock"):
+        return None
+    journal.tick(voy, now, force=True)
+    summary = journal.summary(500)
+    days = {}
+    for row in summary.get("days") or []:
+        day = row.get("day")
+        if day:
+            try:
+                days[day] = journal.read_day(day)
+            except Exception:
+                days[day] = []
+    try:
+        warm_moments(OFFICIAL_VOYAGE_ID)
+        moments = read_moments(OFFICIAL_VOYAGE_ID)
+    except Exception as exc:
+        log.warning("moments : %s", exc)
+        moments = []
+    if (summary.get("count") or 0) <= 0 and not moments:
+        return None
+    payload = {"moments": moments, "journal": summary, "journal_days": days}
+    if not moments:
+        payload["moments"] = _rows_from_journal(payload)
+    return payload
+
+
+def compute_film(voy: dict, now: datetime) -> Optional[dict]:
+    import asyncio  # noqa: PLC0415
+    from film_script import official_film  # noqa: PLC0415
+
+    if not voy.get("clock"):
+        return None
+
+    async def _both():
+        fr = await official_film(lang="fr", seconds=0, style="raw")
+        try:
+            en = await official_film(lang="en", seconds=0, style="raw")
+        except Exception:
+            en = None
+        return fr, en
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        fr, en = asyncio.run(_both())
+    else:
+        return None
+    if not isinstance(fr, dict) or not (fr.get("chapters") or []):
+        return None
+    out = {"fr": fr, "default": fr}
+    if isinstance(en, dict) and (en.get("chapters") or []):
+        out["en"] = en
+    return out
+
+
+def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
+    from ensemble_eta import (  # noqa: PLC0415
+        next_official_stop,
+        peek_official_eta,
+        preheat_official_eta,
+        tighten_eta_payload,
+    )
+    from voyage_api import _polar_raw  # noqa: PLC0415
+
+    if not voy.get("clock"):
+        return None
+    try:
+        preheat_official_eta(
+            voy, now, polar_raw=_polar_raw(voy.get("expedition_id") or ""),
+        )
+    except Exception as exc:
+        log.warning("préchauffage ETA : %s", exc)
+    stops: dict[str, dict] = {}
+    names = []
+    nxt = next_official_stop(voy, now)
+    if nxt:
+        names.append(nxt)
+    for m in voy.get("marks") or []:
+        n = (m or {}).get("name")
+        if n and n not in names:
+            names.append(n)
+    for name in names[:12]:
+        try:
+            raw = peek_official_eta(voy, name, now)
+            stops[name] = tighten_eta_payload(raw, now)
+        except Exception as exc:
+            log.warning("ETA %s : %s", name, exc)
+    if not any(int((s or {}).get("members") or 0) > 0 for s in stops.values()):
+        return None
+    return {"stops": stops}
+
+
+def compute_ici(voy: dict, now: datetime) -> Optional[dict]:
+    from ici_engine import thin_cache_get, thin_cache_key  # noqa: PLC0415
+    from ici_warm import official_pearls, sample_route_nm  # noqa: PLC0415
+
+    points = []
+    seen = set()
+
+    def _add(lat: float, lon: float, nm: Any, bag: dict) -> None:
+        key = (round(lat, 4), round(lon, 4))
+        if key in seen:
+            return
+        seen.add(key)
+        points.append({"lat": lat, "lon": lon, "nm": nm, "bag": bag})
+
+    try:
+        pearls = official_pearls()
+        for p in (pearls.get("pearls") if isinstance(pearls, dict) else pearls) or []:
+            if isinstance(p, (list, tuple)) and len(p) >= 2:
+                lat, lon = float(p[0]), float(p[1])
+                bag = thin_cache_get(thin_cache_key(lat, lon, 30.0))
+                if bag:
+                    _add(lat, lon, None, bag)
+                continue
+            if not isinstance(p, dict):
+                continue
+            bag = p.get("bag") if isinstance(p.get("bag"), dict) else None
+            lat, lon = p.get("lat"), p.get("lon")
+            if lat is None:
+                at = (bag or {}).get("at") or {}
+                lat, lon = at.get("lat"), at.get("lon")
+            if lat is None or lon is None:
+                continue
+            if bag is None:
+                bag = thin_cache_get(thin_cache_key(float(lat), float(lon), 30.0))
+            if bag:
+                _add(float(lat), float(lon), p.get("sailNm") or p.get("nm"), bag)
+    except Exception as exc:
+        log.debug("perles officielles : %s", exc)
+
+    for p in sample_route_nm(voy.get("points") or []):
+        bag = thin_cache_get(thin_cache_key(p["lat"], p["lon"], 30.0))
+        if bag:
+            _add(float(p["lat"]), float(p["lon"]), p.get("sailNm"), bag)
+
+    if not points:
+        return None
+    return {"points": points}
+
+
+def compute_plan_review(voy: dict, now: datetime) -> Optional[dict]:
+    from plan_alerts import evaluate_plan  # noqa: PLC0415
+    from plan_review import review_official  # noqa: PLC0415
+
+    if not voy.get("clock"):
+        return None
+    out = review_official(voy, now, season=False)
+    if not isinstance(out, dict) or not (out.get("legs") or []):
+        return None
+    try:
+        ev = evaluate_plan(voy, now=now)
+        counts: dict = {}
+        for lg in ev.get("legs") or []:
+            n = len(lg.get("alerts") or [])
+            if lg.get("idx") is not None:
+                counts[int(lg["idx"])] = n
+            counts[(lg.get("from"), lg.get("to"))] = n
+        for i, row in enumerate(out.get("legs") or []):
+            n = counts.get(i)
+            if n is None:
+                n = counts.get((row.get("from"), row.get("to")))
+            if n is not None:
+                row["alertCount"] = int(n)
+    except Exception as exc:
+        log.debug("alertCount stock : %s", exc)
+    out.setdefault("comment", {"text": "", "source": "rules", "cached": False})
+    return out
+
+
+COMPUTE: dict[str, Callable[[dict, datetime], Optional[dict]]] = {
+    "climo": compute_climo,
+    "moments": compute_moments,
+    "film": compute_film,
+    "eta": compute_eta,
+    "ici": compute_ici,
+    "plan_review": compute_plan_review,
+}
+
+# Horloge d'abord : les autres familles s'appuient dessus.
+COMPUTE_ORDER = ("climo", "moments", "film", "eta", "ici", "plan_review")
+
+
+def refresh_family(
+    family: str,
+    *,
+    force: bool = False,
+    compute: Optional[Callable[[dict, datetime], Optional[dict]]] = None,
+    now: Optional[datetime] = None,
+    store: Optional[OfficialStore] = None,
+    voy: Optional[dict] = None,
+) -> str:
+    """Calcule une famille et la range. `unchanged` si la clé est déjà servie."""
+    st = store or get_store()
+    when = now or st._now()
+    current = voy if voy is not None else _load_official()
+    if current is None:
+        return PREPARING
+    key = st.current_key(current, when)
+    if not force:
+        hit = st.get(family, key)
+        if hit and hit.get("payload") is not None:
+            return "unchanged"
+    fn = compute or COMPUTE[family]
+    if family != "climo" and not current.get("clock"):
+        clock = stored_clock()
+        if clock:
+            current = dict(current)
+            current["clock"] = clock
+    payload = fn(current, when)
+    if payload is None:
+        return PREPARING
+    st.put(family, payload, key)
+    return READY
+
+
+def refresh_missing(
+    *,
+    force: bool = False,
+    progress: Optional[Callable[[str, str, str], None]] = None,
+    now: Optional[datetime] = None,
+    store: Optional[OfficialStore] = None,
+    computes: Optional[dict] = None,
+) -> dict:
+    """Remplit ce qui manque ou a vieilli — hors chemin HTTP."""
+    from voyage_api import seed_official_voyage  # noqa: PLC0415
+
+    def _log(family: str, status: str, detail: str = "") -> None:
+        if progress:
+            progress(family, status, detail)
+        else:
+            log.info("stock %s : %s %s", family, status, detail)
+
+    if not _REFRESH_LOCK.acquire(blocking=False):
+        _log("*", "busy", "déjà en cours")
+        return family_status()
+    try:
+        voy = seed_official_voyage()
+        if voy is None:
+            _log("*", PREPARING, "itinéraire officiel absent")
+            return family_status()
+        st = store or get_store()
+        when = now or st._now()
+        fns = computes or COMPUTE
+        for family in COMPUTE_ORDER:
+            try:
+                status = refresh_family(
+                    family, force=force, compute=fns.get(family),
+                    now=when, store=st, voy=_load_official() or voy,
+                )
+                _log(family, status)
+            except Exception as exc:
+                log.warning("stock %s : %s", family, exc)
+                _log(family, PREPARING, str(exc)[:160])
+        return st.status()
+    finally:
+        _REFRESH_LOCK.release()
+
+
+def start_worker() -> None:
+    """Au boot : un fil daemon, puis périodique. Pytest : no-op."""
+    global _WORKER_STARTED
+    if not worker_enabled():
+        return
+    with _LOCK:
+        if _WORKER_STARTED:
+            return
+        _WORKER_STARTED = True
+    threading.Thread(target=_worker_loop, name="naviguide-official-store", daemon=True).start()
+
+
+def kick_worker() -> None:
+    """Relance un passage en fond — le client n'attend pas."""
+    if not worker_enabled():
+        return
+    start_worker()
+    threading.Thread(
+        target=lambda: refresh_missing(),
+        name="naviguide-official-store-kick",
+        daemon=True,
+    ).start()
+
+
+def _worker_loop() -> None:
+    try:
+        refresh_missing()
+    except Exception:
+        log.exception("stock officiel : premier passage")
+    while True:
+        time.sleep(max(60.0, PERIOD_S))
+        try:
+            refresh_missing()
+        except Exception:
+            log.exception("stock officiel : passage périodique")
+
+
+def reset_worker_flag() -> None:
+    global _WORKER_STARTED
+    _WORKER_STARTED = False
+
+
+# ── lecture pour les routes ──────────────────────────────────────────────────
+
+def serve_journal(limit: int = 50, kinds: Optional[tuple] = None) -> dict:
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+    import voyage_journal as journal  # noqa: PLC0415
+
+    extra = {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "days": [], "count": 0, "first": None, "last": None,
+        "latest": [], "events": [], "kinds": list(journal.KINDS),
+    }
+    body = payload_of("moments")
+    if not body:
+        return preparing_payload("moments", extra)
+    summary = dict(body.get("journal") or {})
+    latest = list(summary.get("latest") or [])
+    events = list(summary.get("events") or [])
+    if kinds:
+        latest = [e for e in latest if (e or {}).get("kind") in kinds]
+        events = [e for e in events if (e or {}).get("kind") in kinds]
+    summary.update({
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "status": READY,
+        "latest": latest[: max(1, int(limit))],
+        "events": events,
+        "kinds": list(journal.KINDS),
+    })
+    return summary
+
+
+def serve_journal_day(day: str) -> Optional[list]:
+    body = payload_of("moments")
+    if not body:
+        return None
+    days = body.get("journal_days") or {}
+    return days.get(day)
+
+
+def _rows_from_journal(body: dict) -> list:
+    """Même journal (tick réel) au format attendu par l'onglet Journal (signature)."""
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+
+    days = body.get("journal_days") or {}
+    raw: list = []
+    if days:
+        for day in sorted(days):
+            raw.extend(e for e in (days.get(day) or []) if isinstance(e, dict))
+    if not raw:
+        journal = body.get("journal") or {}
+        raw = list(journal.get("events") or []) + list(journal.get("latest") or [])
+    rows = []
+    seen = set()
+    for e in raw:
+        t = e.get("t")
+        if not t:
+            continue
+        sig = str(e.get("id") or e.get("signature") or f"{e.get('kind')}:{t}")
+        if sig in seen:
+            continue
+        seen.add(sig)
+        lat, lon = e.get("lat"), e.get("lon")
+        title = e.get("title")
+        if isinstance(title, dict):
+            title = title.get("fr") or title.get("en")
+        fact = e.get("name") or ""
+        kind = e.get("kind") or ""
+        changes = []
+        if kind and kind != "position":
+            changes.append({
+                "kind": kind, "score": 1,
+                "title": str(title or kind), "fact": str(fact),
+            })
+        rows.append({
+            "voyageId": OFFICIAL_VOYAGE_ID,
+            "seq": len(rows),
+            "t": t,
+            "signature": sig,
+            "pos": {"lat": lat, "lon": lon} if lat is not None and lon is not None else None,
+            "changes": changes,
+            "moment": e,
+        })
+    return rows
+
+
+def serve_moments(until: Optional[str] = None) -> dict:
+    from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+    from moment_journal import _iso_le  # noqa: PLC0415
+
+    extra = {"voyageId": OFFICIAL_VOYAGE_ID, "until": until, "count": 0, "moments": []}
+    body = payload_of("moments")
+    if not body:
+        return preparing_payload("moments", extra)
+    rows = list(body.get("moments") or [])
+    if not rows:
+        rows = _rows_from_journal(body)
+    if until:
+        rows = [row for row in rows if _iso_le(row.get("t"), until)]
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "until": until,
+        "count": len(rows),
+        "moments": rows,
+        "status": READY,
+    }
+
+
+def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
+    extra = {
+        "chapters": [], "source": "rules", "chars": 0,
+        "targetSeconds": seconds, "hasWritten": False,
+    }
+    body = payload_of("film")
+    if not body:
+        return preparing_payload("film", extra)
+    lg = (lang or "fr")[:2].lower()
+    plan = body.get(lg) or body.get("default") or body.get("fr")
+    if not isinstance(plan, dict) or not (plan.get("chapters") or []):
+        return preparing_payload("film", extra)
+    out = dict(plan)
+    out["status"] = READY
+    return out
+
+
+def serve_eta(stop: str) -> dict:
+    from ensemble_eta import empty_eta  # noqa: PLC0415
+
+    empty = empty_eta(_utc_now(), reason="en préparation")
+    empty["status"] = PREPARING
+    body = payload_of("eta")
+    if not body:
+        return empty
+    stops = body.get("stops") or {}
+    if stop in stops:
+        out = dict(stops[stop])
+        out["status"] = READY
+        return out
+    needle = (stop or "").strip().lower()
+    for name, payload in stops.items():
+        if needle and needle in name.lower():
+            out = dict(payload)
+            out["status"] = READY
+            return out
+    return empty
+
+
+def serve_plan_review() -> dict:
+    extra = {"legs": []}
+    body = payload_of("plan_review")
+    if not body:
+        return preparing_payload("plan_review", extra)
+    out = dict(body)
+    out["status"] = READY
+    return out
+
+
+def serve_climo() -> Optional[dict]:
+    return payload_of("climo")
+
+
+def append_note_to_store(note: dict) -> None:
+    """Écriture humaine : on met à jour le snapshot, on ne recalcule rien."""
+    body = payload_of("moments")
+    if not body:
+        return
+    payload = json.loads(json.dumps(body))
+    journal = payload.setdefault("journal", {})
+    latest = journal.setdefault("latest", [])
+    latest.insert(0, note)
+    events = journal.setdefault("events", [])
+    events.insert(0, note)
+    journal["count"] = int(journal.get("count") or 0) + 1
+    day = (note.get("t") or "")[:10]
+    if day:
+        days = payload.setdefault("journal_days", {})
+        days.setdefault(day, []).append(note)
+    put("moments", payload)
