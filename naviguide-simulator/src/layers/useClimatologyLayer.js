@@ -17,6 +17,13 @@ import {
   waveColor,
 } from "./climatologyPaint.js";
 import { climoPointLngs, cycloneLatLngCopies, groupCycloneFeatures } from "./climatologyWorld.js";
+import {
+  VIEW_DEBOUNCE_MS,
+  publishClimoRoseStats,
+  resetClimoRoseStats,
+  syncClimoPointMarkers,
+  visibleClimoLngs,
+} from "./climoRoseMarkers.js";
 import { fetchJson, loadClimoLayerFeatures } from "./climoLayerLoad.js";
 
 function currentIcon(p) {
@@ -65,7 +72,7 @@ const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null,
 /**
  * Four atlas maps (wind / wave / current / cyclones), each optional.
  * Wind, wave and current load XYZ tiles of the visible area; cyclones stay global.
- * Points and IBTrACS tracks are painted on the three world copies.
+ * Visible world copies only; markers are reused between view passes.
  */
 export function useClimatologyLayer({
   mapRef,
@@ -123,17 +130,25 @@ export function useClimatologyLayer({
       return 0;
     });
 
-    const addPointMarkers = (data, makeLayer) => {
-      const group = L.layerGroup();
-      (data?.features || []).forEach((f) => {
-        const [lon, lat] = f.geometry?.coordinates || [];
-        if (lat == null || lon == null) return;
-        const p = f.properties || {};
-        for (const lng of climoPointLngs(lon)) {
-          const lyr = makeLayer([lat, lng], p);
-          if (lyr) group.addLayer(lyr);
-        }
-      });
+    const pools = {
+      wind: new Map(),
+      waveP50: new Map(),
+      waveP90: new Map(),
+      waveMean: new Map(),
+      current: new Map(),
+    };
+    resetClimoRoseStats();
+    let windSyncs = 0;
+
+    const ensureGroup = (key) => {
+      let group = layersRef.current[key];
+      if (!group) {
+        group = L.layerGroup();
+        layersRef.current[key] = group;
+        group.addTo(map);
+      } else if (!map.hasLayer(group)) {
+        group.addTo(map);
+      }
       return group;
     };
 
@@ -142,6 +157,24 @@ export function useClimatologyLayer({
       layersRef.current[key] = group;
       group.addTo(map);
       if (prev && prev !== group && map.hasLayer(prev)) map.removeLayer(prev);
+    };
+
+    const syncPointGroup = (layerKey, features, makeLayer) => {
+      const bounds = map.getBounds();
+      const stats = syncClimoPointMarkers({
+        group: ensureGroup(layerKey),
+        pool: pools[layerKey],
+        features,
+        zoom: map.getZoom(),
+        bounds,
+        makeLayer,
+        copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+      });
+      if (layerKey === "wind") {
+        windSyncs += 1;
+        publishClimoRoseStats({ ...stats, syncs: windSyncs });
+      }
+      return stats;
     };
 
     const evict = (kind, keep) => {
@@ -169,9 +202,9 @@ export function useClimatologyLayer({
       });
       if (cancelled || loaded.aborted || signal.aborted) return 0;
       const features = mergeTileFeatures([loaded.features], paintProps);
-      replaceGroup(layerKey, addPointMarkers({ features }, makeLayer));
+      const stats = syncPointGroup(layerKey, features, makeLayer);
       if (layerKey in sourcesRef) sourcesRef[layerKey] = loaded.source;
-      return features.length;
+      return stats.shown;
     };
 
     const makeWind = (ll, p) => {
@@ -287,12 +320,23 @@ export function useClimatologyLayer({
     });
 
     let debounceTimer = 0;
+    let zooming = false;
     const onView = () => {
       clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => { refreshVectors(); }, 200);
+      debounceTimer = window.setTimeout(() => { refreshVectors(); }, VIEW_DEBOUNCE_MS);
     };
-    map.on("moveend", onView);
-    map.on("zoomend", onView);
+    const onZoomStart = () => { zooming = true; };
+    const onZoomEnd = () => {
+      zooming = false;
+      onView();
+    };
+    const onMoveEnd = () => {
+      if (zooming || map._animatingZoom) return;
+      onView();
+    };
+    map.on("zoomstart", onZoomStart);
+    map.on("moveend", onMoveEnd);
+    map.on("zoomend", onZoomEnd);
 
     const onClick = (ev) => {
       if (drawingRef.current) return;
@@ -316,8 +360,9 @@ export function useClimatologyLayer({
       tileAbort.ctrl.abort();
       ctrl.abort();
       map.off("click", onClick);
-      map.off("moveend", onView);
-      map.off("zoomend", onView);
+      map.off("zoomstart", onZoomStart);
+      map.off("moveend", onMoveEnd);
+      map.off("zoomend", onZoomEnd);
       Object.values(layersRef.current).forEach((lyr) => {
         if (lyr && map.hasLayer(lyr)) map.removeLayer(lyr);
       });
