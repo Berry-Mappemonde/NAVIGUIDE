@@ -496,6 +496,9 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
             f"(un chemin relatif s'ouvre sur main, où le fichier n'existe pas encore). "
             f"RÈGLE UI : n'ajoute aucun texte d'aide ou d'explication dans l'interface, aucun libellé déjà visible ailleurs sur le même écran, "
             f"aucune rangée supplémentaire dans la barre film ; un bouton nouveau doit marcher ou ne pas exister. "
+            f"RÈGLE FIN DE LOT (26 sept.) : avant de terminer, ARRÊTE tout serveur ou processus que tu as lancé pour tes essais (uvicorn, vite, "
+            f"playwright, npm run dev…) — rien ne doit rester en arrière-plan ; un agent qui laisse tourner un serveur bloque toute la nuit. "
+            f"Une fois la PR ouverte et poussée, termine immédiatement : ne relis pas, ne « nettoie » pas ton travail livré. "
             f"RÈGLE PR BILINGUE (21 sept.) : le corps de la PR est en français PUIS en anglais — titre de PR « FR — EN », chaque rubrique en deux blocs "
             f"(« ## Objectif / Objective » : paragraphe FR puis paragraphe EN, idem Cause racine / Root cause, Ce qui change / What changes, Tests, "
             f"Review automatique / Automated review, Hors périmètre / Out of scope). La rubrique « Recette / What to check » est UNE liste de cases à cocher "
@@ -513,19 +516,59 @@ RATE_LIMIT_RE = re.compile(r"rate.?limit|too many requests|\b429\b|quota|capacit
 RATE_LIMIT_WAITS_S = (300, 600, 1200)   # 5, 10, 20 min : le fournisseur (Grok) bride après une série d'agents
 
 
-def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
+def run_agent_cli(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False,
+                  done: "Callable[[], str | None] | None" = None) -> tuple[str, str]:
     """Un agent CLI. Si le fournisseur répond « rate limited », on attend (5, 10, 20 min) et on
-    réessaie au lieu de compter le lot comme raté : la nuit est longue, le batch n'est pas pressé."""
-    for attempt, wait_s in enumerate((0,) + RATE_LIMIT_WAITS_S):
-        if wait_s:
-            log(f"    fournisseur de modèle saturé (rate limited) — nouvel essai dans {wait_s // 60} min ({attempt}/{len(RATE_LIMIT_WAITS_S)})")
-            time.sleep(wait_s)
-        status, result = _run_agent_cli_once(path, prompt, model, timeout_s, resume)
-        if status == "ERROR" and RATE_LIMIT_RE.search(result or ""):
-            resume = True   # la reprise recolle à la session commencée, s'il y en a une
-            continue
+    réessaie au lieu de compter le lot comme raté : la nuit est longue, le batch n'est pas pressé.
+    Avec `done`, l'agent est surveillé (run_agent_cli_watched) et arrêté dès que son travail est livré.
+    Dans tous les cas, les serveurs qu'il aurait laissés tourner dans son worktree sont arrêtés à la fin."""
+    try:
+        for attempt, wait_s in enumerate((0,) + RATE_LIMIT_WAITS_S):
+            if wait_s:
+                log(f"    fournisseur de modèle saturé (rate limited) — nouvel essai dans {wait_s // 60} min ({attempt}/{len(RATE_LIMIT_WAITS_S)})")
+                time.sleep(wait_s)
+            if done is not None:
+                status, result = run_agent_cli_watched(path, prompt, model, timeout_s, done, resume=resume)
+            else:
+                status, result = _run_agent_cli_once(path, prompt, model, timeout_s, resume)
+            if status == "ERROR" and RATE_LIMIT_RE.search(result or ""):
+                resume = True   # la reprise recolle à la session commencée, s'il y en a une
+                continue
+            return status, result
         return status, result
-    return status, result
+    finally:
+        stop_worktree_servers(path)
+
+
+def stop_worktree_servers(path: Path) -> list[str]:
+    """Arrête les serveurs qu'un agent a laissés tourner dans son worktree (uvicorn d'essai, vite, playwright…).
+    26 sept., RF2 : un `uvicorn :8020` oublié a tenu l'agent en vie 30 min après sa PR, et le batch avec lui.
+    Ne touche à rien hors du worktree (le poste de recette vit dans un autre checkout)."""
+    stopped: list[str] = []
+    root = os.path.realpath(str(path))   # macOS : /tmp → /private/tmp ; lsof rend le chemin réel
+    try:
+        out = sh(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"], check=False, timeout=30).stdout
+    except Exception:
+        return stopped
+    pid, cmd = None, ""
+    for ln in out.splitlines():
+        if ln.startswith("p"):
+            pid, cmd = int(ln[1:]), ""
+        elif ln.startswith("c"):
+            cmd = ln[1:]
+        elif ln.startswith("n") and pid:
+            cwd = sh(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], check=False, timeout=15).stdout
+            cwd = os.path.realpath(next((l[1:] for l in cwd.splitlines() if l.startswith("n")), "") or "/nonexistent")
+            if (cwd == root or cwd.startswith(root + "/")) and pid != os.getpid():
+                try:
+                    os.kill(pid, 15)
+                    stopped.append(f"{cmd} {ln[1:]} (pid {pid})")
+                except OSError:
+                    pass
+            pid = None
+    if stopped:
+        log(f"    serveurs laissés par l'agent, arrêtés : {stopped}")
+    return stopped
 
 
 def _agent_cmd(path: Path, prompt: str, model: str, resume: bool) -> list[str]:
@@ -565,14 +608,15 @@ def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, res
     return _agent_outcome(p.returncode, p.stdout, p.stderr)
 
 
-def run_agent_cli_watched(path: Path, prompt: str, model: str, timeout_s: int, done: "Callable[[], str | None]", every_s: int = 60) -> tuple[str, str]:
+def run_agent_cli_watched(path: Path, prompt: str, model: str, timeout_s: int, done: "Callable[[], str | None]", every_s: int = 60,
+                          resume: bool = False) -> tuple[str, str]:
     """Un agent CLI qu'on surveille : toutes les `every_s` secondes, `done()` dit si son travail est
     déjà livré (par exemple : sa PR existe, et elle est mergée ou n'a plus bougé depuis 20 min). Si oui,
     on l'ARRÊTE et on rend « STOPPED » avec la raison — plutôt que d'attendre qu'il veuille bien finir.
     26 sept. : le correcteur a ouvert la PR GO en 20 min puis a tourné une heure de plus, jusqu'à défaire
     son propre travail dans son worktree, pendant que la boucle attendait sa sortie."""
     env = {**os.environ, "PW_PORT": str(PW_PORT)}
-    p = subprocess.Popen(_agent_cmd(path, prompt, model, False), cwd=str(path), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+    p = subprocess.Popen(_agent_cmd(path, prompt, model, resume), cwd=str(path), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                          start_new_session=True)
     t0 = time.time()
     while True:
@@ -641,21 +685,54 @@ def adoptable_worktree(lot: Lot) -> tuple[Path, str] | None:
     return None if dirty else (path, branch)
 
 
+LOT_IDLE_MIN = 10   # PR du lot poussée, worktree propre, plus aucun commit depuis 10 min : l'agent a fini, même s'il ne sort pas
+
+
+def lot_delivered(http: Http, path: Path, repo: str) -> str | None:
+    """Raison d'arrêter l'agent d'un lot, ou None : sa branche a une PR, son worktree est propre (tout est
+    commité et poussé) et plus rien n'a bougé depuis LOT_IDLE_MIN. 26 sept., RF2 : PR ouverte à 20:44,
+    agent encore là à 21:10 (un uvicorn d'essai oublié le tenait en vie), le batch attendait."""
+    branch = local_branch(path)
+    if not branch:
+        return None
+    if sh(["git", "status", "--porcelain"], cwd=path, check=False).stdout.strip():
+        return None   # il travaille encore
+    try:
+        pr = find_pr(http, repo, branch)
+    except RuntimeError:
+        return None
+    if not pr:
+        return None
+    local_sha = sh(["git", "rev-parse", "HEAD"], cwd=path, check=False).stdout.strip()
+    if pr["head"]["sha"] != local_sha:
+        return None   # pas encore poussé
+    last = sh(["git", "log", "-1", "--format=%ct"], cwd=path, check=False).stdout.strip()
+    idle_min = (time.time() - int(last)) / 60 if last.isdigit() else 0
+    if idle_min >= LOT_IDLE_MIN:
+        return f"PR #{pr['number']} poussée, worktree propre, rien depuis {idle_min:.0f} min"
+    return None
+
+
 def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
+    watch = lambda: lot_delivered(http, path, args.repo)  # noqa: E731
     adopted = adoptable_worktree(lot)
     if adopted:
         path, branch = adopted
         log(f"[{lot.id}] worktree {path} déjà poussé sur {branch} — adopté (pas de nouvel agent)")
         ensure_pr(http, args, lot, branch, "(lot adopté après interruption : voir la PR)")
         return {"status": "FINISHED", "branch": branch, "worktree": str(path), "result": "adopté",
-                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True)}
+                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True, done=watch)}
     path = prepare_worktree(lot, ref)
     log(f"[{lot.id}] worktree {path} depuis {ref} — agent local ({args.model or 'modèle par défaut du compte'})")
-    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600))
+    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600), done=watch)
     log(f"    agent: {status}")
+    if status == "STOPPED":
+        status = "FINISHED"   # le travail était livré (PR poussée, worktree propre) ; on a juste cessé d'attendre l'agent
     if status != "FINISHED":
         log(f"[{lot.id}] premier passage : {status} — une relance")
-        status, result = run_agent_cli(path, RESUME_TEXT, args.model, int(args.timeout_hours * 1800), resume=True)
+        status, result = run_agent_cli(path, RESUME_TEXT, args.model, int(args.timeout_hours * 1800), resume=True, done=watch)
+        if status == "STOPPED":
+            status = "FINISHED"
         log(f"    relance: {status}")
     branch = local_branch(path)
     if branch is None:
@@ -670,7 +747,7 @@ def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
     else:
         status = "ERROR" if status == "FINISHED" else status
     return {"status": status, "branch": branch, "worktree": str(path), "result": result[:500],
-            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True)}
+            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True, done=watch)}
 
 
 # ---------------------------------------------------------------- boucle commune
