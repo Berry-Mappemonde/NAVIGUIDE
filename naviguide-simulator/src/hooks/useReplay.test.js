@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, filmSpeakSeconds, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmSpeakSeconds, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, voiceLeadPolicy } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -477,6 +477,7 @@ describe("useReplay lot RA5 — Stop coupe voix, animation, caméra", () => {
     assert.equal(next.tMs, null);
     assert.equal(next.card, null);
     assert.equal(next.progress, 0);
+    assert.equal(next.chapterText, "");
     assert.equal(calls.voice, 1);
     assert.equal(calls.camera, 1);
     assert.equal(calls.raf, 1);
@@ -529,5 +530,30 @@ describe("useReplay lot RB6 — voix sans coupure, Stop total, pas de live sur i
     );
     assert.match(hook, /shouldReturnToLive/);
     assert.match(hook, /stoppingRef\.current \|\| finishedRef\.current/);
+  });
+});
+
+describe("useReplay lot RF5 — fin du film : sous-titre de clôture conservé", () => {
+  it("applyReplayStop garde le dernier sous-titre si keepChapterText", () => {
+    const close = "Aujourd’hui, le bateau est à Nouméa.";
+    const merged = `Départ vers Fort-de-France. ${close}`;
+    assert.equal(closingSubtitle(merged), close);
+    const kept = applyReplayStop({
+      keepChapterText: true,
+      chapterText: merged,
+    });
+    assert.equal(kept.active, false);
+    assert.equal(kept.chapterText, close);
+    assert.equal(kept.progress, 1);
+    const cleared = applyReplayStop({});
+    assert.equal(cleared.chapterText, "");
+    assert.equal(cleared.progress, 0);
+  });
+
+  it("finish() arrête sans effacer le sous-titre ; Stop utilisateur l'efface", () => {
+    assert.match(hook, /keepSubtitle: true/);
+    assert.match(hook, /keepChapterText: keep/);
+    assert.match(hook, /chapterTextRef/);
+    assert.match(bar, /replay\?\.active \|\| replay\?\.subtitle/);
   });
 });
