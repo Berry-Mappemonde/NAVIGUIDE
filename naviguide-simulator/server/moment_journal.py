@@ -454,11 +454,10 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
                 prev_rem_live = live_rem
             prev_leg_idx = leg_idx
             continue
-        changes = diff_moments(prev, cur)
-        for place in new_places:
-            key = (place["kind"], _norm_place(place["title"]))
-            if not any((c.get("kind"), _norm_place(c.get("title"))) == key for c in changes):
-                changes.append(place)
+        # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas
+        # (« Porto de Peniche » ×4) : marinas et ports viennent désormais de _new_places_nearby, une fois chacun.
+        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port"}]
+        changes.extend(new_places)
         if approach_hit:
             title = _stop_title(str(cur_to))
             already = any(
