@@ -52,8 +52,8 @@ describe("MapScene boundary", () => {
   it("lot RF7 : pas de recadrage bateau au calage initial Suivre", () => {
     const src = read("./MapSceneController.js");
     const start = src.indexOf("  syncInitialCamera()");
-    const end = src.indexOf("  showWorld()");
-    assert.ok(start >= 0 && end > start, "syncInitialCamera / showWorld introuvables");
+    const end = src.indexOf("  liftBoundsForDrawing()");
+    assert.ok(start >= 0 && end > start, "syncInitialCamera / liftBoundsForDrawing introuvables");
     const chunk = src.slice(start, end);
     assert.doesNotMatch(chunk, /6\.5/);
     assert.doesNotMatch(chunk, /setView\(\[cfg\.live/);
@@ -66,6 +66,26 @@ describe("MapScene boundary", () => {
     assert.match(src, /this\.config\.drawingMode \|\| !this\.map/);
     assert.match(src, /event\?\.type !== "zoomstart"/);
     assert.match(src, /setMaxBounds\?\.\(null\)/);
+  });
+
+  it("lot RC14 : entrée Tracer pose drawingMode et lève maxBounds avant showWorld", () => {
+    const app = read("../App.jsx");
+    const src = read("./MapSceneController.js");
+    assert.match(app, /beginDrawingWorld/);
+    assert.match(src, /beginDrawingWorld\(\)/);
+    assert.match(src, /drawingMode: true/);
+    assert.match(src, /keepBoundsLifted/);
+    const enter = src.indexOf("if (!previous.drawingMode && this.config.drawingMode)");
+    assert.ok(enter >= 0, "branche entrée drawingMode introuvable");
+    const enterChunk = src.slice(enter, enter + 220);
+    assert.match(enterChunk, /liftBoundsForDrawing\(\)/);
+    assert.match(enterChunk, /showWorld\(\{ keepBoundsLifted: true \}\)/);
+    const showAt = src.indexOf("showWorld({ keepBoundsLifted = false } = {})");
+    const showEnd = src.indexOf("  resetCameraForView()");
+    assert.ok(showAt >= 0 && showEnd > showAt, "showWorld introuvable");
+    const showChunk = src.slice(showAt, showEnd);
+    assert.match(showChunk, /leaveLifted = keepBoundsLifted \|\| this\.config\.drawingMode/);
+    assert.match(showChunk, /if \(!leaveLifted && bounds\)/);
   });
 
   it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {
