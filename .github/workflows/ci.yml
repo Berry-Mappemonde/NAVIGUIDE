@@ -48,7 +48,7 @@ jobs:
       simulator: ${{ steps.filter.outputs.simulator }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -78,7 +78,7 @@ jobs:
         run: npm test
       - name: Build Vite
         run: npm run build
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -132,7 +132,7 @@ jobs:
         if: hashFiles('naviguide-simulator/e2e/lots/*.spec.js') != ''
         continue-on-error: true
         run: npx playwright test e2e/lots --workers=4 --retries=0 --timeout=30000 --global-timeout=540000
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-report
