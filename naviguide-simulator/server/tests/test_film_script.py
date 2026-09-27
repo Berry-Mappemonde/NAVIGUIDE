@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pearl_store
 import story_cache
 from film_script import (
+    chapter_anchors,
     CONNECTORS,
     FILM_BUDGET_CHARS,
     FILM_CHAPTER_MAX_CHANGES,
@@ -666,6 +667,51 @@ def test_moments_chapter_one_sentence_max_three_changes():
         changes = [e for e in (ch.get("events") or []) if e.get("kind") != "stop" or "approach" in str(e.get("id") or "").lower() or e.get("card", {}).get("kind") == "stop"]
         assert len(ch.get("events") or []) <= FILM_CHAPTER_MAX_CHANGES + 1  # + arrivée de jambe
         assert len([e for e in (ch.get("events") or []) if e.get("id") and not str(e.get("id")).startswith("stop:")]) <= FILM_CHAPTER_MAX_CHANGES
+
+
+def test_moments_anchors_follow_the_route_chronologically():
+    """27 sept. : chaque phrase gardée porte l'instant du trajet dont elle parle (ancres), croissant,
+    borné au chapitre ; « approche de Fort-de-France » est ancrée à l'instant de l'approche."""
+    plan = _moments_raw()
+    seen_any = False
+    for ch in plan["chapters"]:
+        anchors = ch.get("anchors") or []
+        t_a, t_b = _parse_iso_ms(ch["tA"]), _parse_iso_ms(ch["tB"])
+        last_idx, last_t = -1, None
+        for a in anchors:
+            seen_any = True
+            assert isinstance(a["charIdx"], int) and 0 <= a["charIdx"] < len(ch["text"])
+            assert a["charIdx"] > last_idx, "ancres triées et sans doublon"
+            t = _parse_iso_ms(a["t"])
+            assert t_a <= t <= t_b, "ancre bornée au chapitre"
+            assert last_t is None or t >= last_t, "chronologie stricte"
+            last_idx, last_t = a["charIdx"], t
+        text = ch["text"]
+        pos = text.find("approche de Fort-de-France")
+        if pos >= 0:
+            hit = [a for a in anchors if text[a["charIdx"]:].startswith("Le 22 juin, approche de Fort-de-France")]
+            assert hit, "la phrase d'approche a son ancre"
+            assert _parse_iso_ms(hit[0]["t"]) == _parse_iso_ms("2026-06-22T12:00:00Z")
+    assert seen_any
+
+
+def _parse_iso_ms(value: str) -> int:
+    from datetime import datetime, timezone
+    return int(datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc).timestamp() * 1000)
+
+
+def test_chapter_anchors_unit_sorted_bounded_deduped():
+    text = "Départ vers Ajaccio. Le 31 mai, approche d’Ajaccio. Arrivée le 1er juin."
+    anchored = [
+        ("Arrivée le 1er juin.", 5_000),      # après tB → borné
+        ("Le 31 mai, approche d’Ajaccio.", 900),
+        ("Départ vers Ajaccio.", -50),        # avant tA → borné
+        ("Phrase coupée par le budget.", 500),  # absente du texte → ignorée
+        ("Le 31 mai, approche d’Ajaccio.", 950),  # même position → une seule ancre
+    ]
+    out = chapter_anchors(text, anchored, 0, 2_000, "fr")
+    assert [a["charIdx"] for a in out] == [0, text.find("Le 31"), text.find("Arrivée")]
+    assert [a["t"] for a in out] == ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00Z", "1970-01-01T00:00:02Z"]
 
 
 def test_moments_arrival_each_stop_route_order():

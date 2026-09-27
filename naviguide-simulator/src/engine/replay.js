@@ -423,18 +423,69 @@ export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {})
     startWall += share;
     return row;
   });
-  const merged = mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS);
+  const merged = mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS)
+    .map((c) => ({ ...c, anchors: chapterAnchors(c) }));
 
   function timeAt(chapterIdx, charIdx) {
     if (!merged.length) return null;
     const i = Math.max(0, Math.min(merged.length - 1, Number(chapterIdx) || 0));
-    const ch = merged[i];
-    const span = Math.max(1, ch.chars);
-    const frac = Math.max(0, Math.min(1, Number(charIdx) / span));
-    return ch.tA + frac * (ch.tB - ch.tA);
+    return anchoredTimeAt(merged[i], charIdx);
   }
 
   return { chapters: merged, targetSeconds: seconds, totalChars, timeAt };
+}
+
+/**
+ * Ancres phrase → instant (fournies par le serveur : `anchors: [{charIdx, t}]`),
+ * bornées au chapitre, triées, croissantes, encadrées par (0, tA) et (chars, tB).
+ */
+export function chapterAnchors(ch) {
+  const tA = Number(ch?.tA);
+  const tB = Number(ch?.tB);
+  const chars = Math.max(1, Number(ch?.chars) || String(ch?.text || "").length || 1);
+  if (!Number.isFinite(tA) || !Number.isFinite(tB)) return [];
+  const raw = (ch?.anchors || [])
+    .map((a) => ({ charIdx: Number(a?.charIdx), t: ms(a?.t) }))
+    .filter((a) => Number.isFinite(a.charIdx) && a.t != null && a.charIdx >= 0 && a.charIdx <= chars)
+    .sort((a, b) => a.charIdx - b.charIdx);
+  const points = [{ charIdx: 0, t: tA }];
+  for (const a of raw) {
+    const t = Math.max(tA, Math.min(tB, a.t));
+    const last = points[points.length - 1];
+    const clamped = Math.max(last.t, t);
+    if (a.charIdx <= last.charIdx) {
+      last.t = clamped;
+      continue;
+    }
+    points.push({ charIdx: a.charIdx, t: clamped });
+  }
+  const last = points[points.length - 1];
+  if (last.charIdx >= chars) last.t = tB;
+  else points.push({ charIdx: chars, t: tB });
+  return points;
+}
+
+/**
+ * Instant du trajet à la position `charIdx` de la voix : linéaire entre deux ancres.
+ * Le bateau est là où la phrase le dit — « approche d'Ajaccio » quand il approche d'Ajaccio.
+ */
+export function anchoredTimeAt(ch, charIdx) {
+  if (!ch) return null;
+  const tA = Number(ch.tA);
+  const tB = Number(ch.tB);
+  const chars = Math.max(1, Number(ch.chars) || 1);
+  const x = Math.max(0, Math.min(chars, Number(charIdx) || 0));
+  const points = ch.anchors?.length >= 2 ? ch.anchors : [{ charIdx: 0, t: tA }, { charIdx: chars, t: tB }];
+  for (let k = 1; k < points.length; k += 1) {
+    const a = points[k - 1];
+    const b = points[k];
+    if (x <= b.charIdx) {
+      const w = b.charIdx - a.charIdx;
+      const f = w > 0 ? (x - a.charIdx) / w : 1;
+      return a.t + f * (b.t - a.t);
+    }
+  }
+  return tB;
 }
 
 export function mergeShortChapters(planned, minSeconds = FILM_MIN_CHAPTER_SECONDS) {
@@ -448,6 +499,10 @@ export function mergeShortChapters(planned, minSeconds = FILM_MIN_CHAPTER_SECOND
       prev.events = [
         ...(prev.events || []),
         ...((ch.events || []).map((e) => ({ ...e, charIdx: (Number(e.charIdx) || 0) + offset }))),
+      ];
+      prev.anchors = [
+        ...(prev.anchors || []),
+        ...((ch.anchors || []).map((a) => ({ ...a, charIdx: (Number(a.charIdx) || 0) + offset }))),
       ];
       prev.tB = ch.tB;
       prev.toName = ch.toName;
