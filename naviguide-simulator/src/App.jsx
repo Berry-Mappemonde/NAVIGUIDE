@@ -1185,6 +1185,7 @@ export default function App() {
     sceneApiRef.current?.briefing?.clear?.();
     setEscaleStop(null);
     if (replay.active) replay.stop();
+    sceneApiRef.current?.beginDrawingWorld?.();
     requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
   };
 
@@ -1255,6 +1256,7 @@ export default function App() {
     setDrawingMode(true);
     setExpeditionPlan(null);
     setBriefingLoading(false);
+    sceneApiRef.current?.beginDrawingWorld?.();
     requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
   };
 
@@ -1281,6 +1283,7 @@ export default function App() {
 
   useEffect(() => {
     if (!drawingMode) return undefined;
+    sceneApiRef.current?.beginDrawingWorld?.();
     const id = requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
     return () => cancelAnimationFrame(id);
   }, [drawingMode]);

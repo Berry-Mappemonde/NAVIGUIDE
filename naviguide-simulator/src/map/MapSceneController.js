@@ -342,6 +342,7 @@ export class MapSceneController {
       getView: () => ({ center: this.map.getCenter(), zoom: this.map.getZoom() }),
       setView: (center, zoom, options) => this.programmaticMove(() => this.map.setView(center, zoom, options)),
       showWorld: () => this.showWorld(),
+      beginDrawingWorld: () => this.beginDrawingWorld(),
       playback: {
         play: () => this.playback.play(),
         pause: () => this.playback.pause(),
@@ -491,11 +492,8 @@ export class MapSceneController {
       this.syncMarkers(this.currentCast, this.currentPlayback);
     }
     if (!previous.drawingMode && this.config.drawingMode) {
-      this.camera.exitHoldZoom = null;
-      this.camera.exitHold = false;
-      this.boundsBeforeDraw = this.map?.options?.maxBounds || MAP_MAX_BOUNDS;
-      this.map?.setMinZoom?.(MAP_MIN_ZOOM);
-      this.map?.setMaxBounds?.(null);
+      this.liftBoundsForDrawing();
+      this.showWorld({ keepBoundsLifted: true });
     }
     if (previous.drawingMode && !this.config.drawingMode) {
       this.map?.setMaxBounds?.(this.boundsBeforeDraw || MAP_MAX_BOUNDS);
@@ -971,8 +969,27 @@ export class MapSceneController {
     this.setCameraPlaced(true);
   }
 
+  /** Lève maxBounds et pose drawingMode avant showWorld (lot RC14). */
+  liftBoundsForDrawing() {
+    this.camera.exitHoldZoom = null;
+    this.camera.exitHold = false;
+    this.boundsBeforeDraw = this.map?.options?.maxBounds || MAP_MAX_BOUNDS;
+    this.map?.setMinZoom?.(MAP_MIN_ZOOM);
+    this.map?.setMaxBounds?.(null);
+  }
+
+  /**
+   * Entrée Tracer : drawingMode sur le contrôleur AVANT showWorld, pour
+   * que le geste ne remette pas maxBounds (revue du 26 sept., zoom 3 Amériques).
+   */
+  beginDrawingWorld() {
+    this.config = { ...this.config, drawingMode: true };
+    this.liftBoundsForDrawing();
+    this.showWorld({ keepBoundsLifted: true });
+  }
+
   /** Tracer / accueil : monde entier, même si maxBounds a relevé le plancher. */
-  showWorld() {
+  showWorld({ keepBoundsLifted = false } = {}) {
     if (!this.map) return;
     this.map.invalidateSize();
     this.map.setMinZoom(MAP_MIN_ZOOM);
@@ -980,7 +997,8 @@ export class MapSceneController {
       const bounds = this.map.options.maxBounds;
       if (bounds) this.map.setMaxBounds(null);
       this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
-      if (!this.config.drawingMode && bounds) {
+      const leaveLifted = keepBoundsLifted || this.config.drawingMode;
+      if (!leaveLifted && bounds) {
         this.map.setMaxBounds(bounds);
         if (this.map.getZoom() - WORLD_ZOOM > 0.05) {
           this.map.setMaxBounds(null);
