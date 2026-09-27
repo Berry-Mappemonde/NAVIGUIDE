@@ -783,6 +783,7 @@ def merged_into_main(branch: str) -> bool:
 
 def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     ref = "main" if args.stack == "none" else state.last_branch
+    prev_lot = state.last_lot   # sa PR est celle que Grok Bot recette encore sur le poste
     if ref != "main" and not args.dry_run:
         sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
         if merged_into_main(ref):
@@ -831,7 +832,12 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     state.last_lot = lot.id
     state.save()
     # Lot W1 : le poste de recette suit la tête de pile — le porteur (et le bot, par le tunnel) recettent à la volée.
+    # Mais pas avant que le bot ait rendu son verdict sur la PR précédente (--bot-gate-min) : il la recette sur CE poste.
     if pr and not getattr(args, "no_recette", False) and not getattr(args, "no_recette_each", False):
+        try:
+            wait_bot_before_poste_swap(http, state, prev_lot, args)
+        except Exception as e:  # l'attente ne doit jamais empêcher le poste de suivre la pile
+            log(f"    attente du bot impossible : {e} — le poste est rebâti sans attendre")
         try:
             prepare_recette(state, args, http, quiet=True)
             if getattr(args, "publish_tip", False) and status == "success" and publish_tip(branch):
@@ -1060,6 +1066,56 @@ BOT_PREREVIEW_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M
 PARCOURS_MD = HERE / "PARCOURS_DE_REFERENCE.md"   # tout tester, une fois par batch, sur la tête de pile (Grok Bot)
 PARCOURS_MARK = "🧭 Parcours de référence"
 RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
+
+
+def bot_prereview_seen(http: Http, repo: str, num: int) -> bool:
+    """Vrai si Grok Bot (auteur de confiance) a posté son « ## 🤖 Pré-revue » sur la PR."""
+    try:
+        comments = http.github(f"/repos/{owner_repo(repo)}/issues/{num}/comments?per_page=100") or []
+    except RuntimeError:
+        return False
+    try:
+        from review_collect import trusted as _trusted  # noqa: PLC0415
+    except Exception:
+        _trusted = lambda c: True  # noqa: E731
+    return any(BOT_PREREVIEW_RE.search(c.get("body") or "") and _trusted(c) for c in comments)
+
+
+def wait_bot_prereview(http: Http, repo: str, nums: list[int], minutes: float, why: str) -> list[int]:
+    """Attend le « ## 🤖 Pré-revue » de Grok Bot sur chaque PR (au plus `minutes`, 0 = pas d'attente).
+    Rend les PR encore sans verdict à l'échéance (vide = toutes vues)."""
+    nums = sorted({n for n in nums if n})
+    if not minutes or not nums:
+        return []
+    log(f"attente de la pré-revue Grok Bot sur {[f'#{n}' for n in nums]} — {why} (≤ {minutes:g} min)")
+    t0 = time.time()
+    while True:
+        missing = [n for n in nums if not bot_prereview_seen(http, repo, n)]
+        if not missing:
+            log("    pré-revue Grok Bot reçue")
+            return []
+        if time.time() - t0 >= minutes * 60:
+            log(f"    pré-revue Grok Bot absente sur {[f'#{n}' for n in missing]} après {minutes:g} min — on continue sans")
+            return missing
+        time.sleep(60)
+
+
+def wait_bot_before_poste_swap(http: Http | None, state: State, prev_lot: str | None, args) -> None:
+    """Porteur, 26 sept. : « le script attend la pré-revue après chaque lot ». Le poste de recette est
+    un seul build, celui de la tête de pile : si on le rebâtit sur le lot n+1 pendant que Grok Bot
+    recette encore la PR du lot n, il juge la PR n sur un autre code (et voit un 503 pendant l'échange).
+    Le CODAGE du lot suivant n'attend pas (il a son propre worktree) : seul l'ÉCHANGE du poste attend
+    le verdict du bot sur la PR précédente — au plus --bot-gate-min, puis on échange quand même (le
+    chien de garde a déjà renvoyé un réveil à 30 min)."""
+    minutes = getattr(args, "bot_gate_min", 0)
+    e = (state.done.get(prev_lot) or {}) if prev_lot else {}
+    num = pr_number(e.get("pr"))
+    if not minutes or not http or not num or not e.get("tunnel_comment"):   # pas de 🔗 : le bot n'a pas été réveillé pour elle
+        return
+    sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
+    if e.get("branch") and merged_into_main(e["branch"]):   # PR déjà mergée par le porteur : plus rien à recetter dessus
+        return
+    wait_bot_prereview(http, args.repo, [num], minutes, f"PR #{num} ({prev_lot}) avant d'échanger le poste de recette")
 
 
 def publish_tip(branch: str) -> bool:
@@ -1627,6 +1683,9 @@ def main() -> None:
     ap.add_argument("--review-timeout-hours", type=float, default=1.0)
     ap.add_argument("--bot-wait-min", type=int, default=int(os.environ.get("BIM_BOT_WAIT_MIN") or _env_file_values().get("BIM_BOT_WAIT_MIN") or "45"),
                     help="avant le réviseur de code, attendre la pré-revue « 🤖 » de Grok Bot sur la tranche (minutes ; 0 = ne pas attendre ; défaut 45)")
+    ap.add_argument("--bot-gate-min", type=float, default=float(os.environ.get("BIM_BOT_GATE_MIN") or _env_file_values().get("BIM_BOT_GATE_MIN") or "30"),
+                    help="après chaque lot : ne rebâtir le poste de recette sur la nouvelle tête qu'une fois la pré-revue « 🤖 » de Grok Bot reçue sur la PR "
+                         "précédente (minutes d'attente au plus, une fois la CI du nouveau lot finie ; 0 = échanger sans attendre ; défaut 30). Le codage du lot suivant n'attend pas")
     ap.add_argument("--no-loop", action="store_true", help="en fin de batch, ne pas lancer la veille loop.py")
     ap.add_argument("--no-tunnel", action="store_true", help="ne pas exposer le poste de recette au bot (cloudflared) ; sinon un lien 🔗 est posté dans chaque PR")
     ap.add_argument("--stop-tunnel", action="store_true", help="arrête le tunnel laissé en route et s'arrête")
@@ -1704,39 +1763,14 @@ def main() -> None:
         state.extra["since_review"] = list(since_review)
         state.save()
 
-    def wait_bot_prereview(ids: list[str]) -> None:
-        """Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son commentaire
-        « 🤖 Pré-revue » sur chaque PR de la tranche (au plus --bot-wait-min), puis on continue."""
-        if not args.bot_wait_min or not ids:
-            return
-        nums = {lid: pr_number((state.done.get(lid) or {}).get("pr")) for lid in ids}
-        nums = {k: v for k, v in nums.items() if v}
-        log(f"attente de la pré-revue Grok Bot sur {sorted(nums.values())} (≤ {args.bot_wait_min} min)")
-        t0 = time.time()
-        while time.time() - t0 < args.bot_wait_min * 60:
-            missing = []
-            for lid, num in nums.items():
-                try:
-                    comments = http.github(f"/repos/{owner_repo(args.repo)}/issues/{num}/comments?per_page=100") or []
-                except RuntimeError:
-                    comments = []
-                try:
-                    from review_collect import trusted as _trusted  # noqa: PLC0415
-                except Exception:
-                    _trusted = lambda c: True  # noqa: E731
-                if not any(BOT_PREREVIEW_RE.search(c.get("body") or "") and _trusted(c) for c in comments):
-                    missing.append(f"#{num}")
-            if not missing:
-                log("    pré-revue Grok Bot reçue sur toute la tranche")
-                return
-            time.sleep(60)
-        log(f"    pré-revue Grok Bot absente sur {missing} après {args.bot_wait_min} min — le réviseur de code part sans")
-
     def night_review() -> None:
         """Lance le réviseur de nuit sur la tranche, puis met en file ses lots correctifs."""
         if not since_review or args.dry_run:
             return
-        wait_bot_prereview(list(since_review))
+        # Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son « 🤖 Pré-revue » sur chaque
+        # PR de la tranche (au plus --bot-wait-min ; avec --bot-gate-min il ne manque au plus que la dernière), puis on continue.
+        wait_bot_prereview(http, args.repo, [pr_number((state.done.get(lid) or {}).get("pr")) for lid in since_review],
+                           args.bot_wait_min, "avant le réviseur de code")
         cmd = [sys.executable, str(HERE / "review_agent.py"), "--lots", *since_review, "--model", args.review_model, "--timeout-hours", str(args.review_timeout_hours)]
         log(f"revue de nuit : {since_review} → {args.review_model}")
         try:
@@ -1795,6 +1829,7 @@ def main() -> None:
             log(f"  {lid}: {e.get('status')} — {e.get('pr') or e.get('branch')} — CI {e.get('ci')}")
         if not args.no_recette:
             try:
+                wait_bot_before_poste_swap(http, state, state.last_lot, args)   # même tête, mais l'échange coupe le poste : après le verdict du bot
                 prepare_recette(state, args, http)
                 url = tunnel_url() or (PROD_URL if getattr(args, "publish_tip", False) else None)
                 if url:

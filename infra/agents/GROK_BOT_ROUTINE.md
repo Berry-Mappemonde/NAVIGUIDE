@@ -43,7 +43,11 @@ bot ». Le matin, le porteur relit : il décoche ce qu'il conteste et écrit
 **Ordre de la nuit** : Grok Bot passe **avant** le réviseur de code. Après chaque
 tranche de PR, `run_lots.py` attend son commentaire « 🤖 Pré-revue » (au plus
 45 min, `--bot-wait-min`) puis lance le réviseur Grok CLI, qui reçoit les KO du bot
-dans son prompt (« où chercher dans le code »).
+dans son prompt (« où chercher dans le code »). Et **le poste attend le bot** (26
+sept.) : le lot suivant se code tout de suite, mais le poste n'est rebâti sur la
+nouvelle tête qu'une fois le « 🤖 Pré-revue » reçu sur la PR précédente (au plus
+30 min, `--bot-gate-min`) — le bot recette donc toujours la PR sur SON build, et un
+réveil n'arrive jamais pendant qu'il traite la PR d'avant.
 
 **Un seul déclencheur : le webhook** (depuis le 24 sept. ; le porteur a retiré
 « commentaire de PR » et le minuteur de repli — un réveil de trop coûtait un
