@@ -514,15 +514,22 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
             _state["watch"] = await escale_watch.run_daily(voy)
         except Exception as exc:
             log.debug("veille Tavily : %s", exc)
-    # Lot R9a : journal des moments après les perles — déjà dans cette tâche
-    # de fond, jamais au démarrage.
+    # Lot R9a : journal des moments après les perles. RC18 (27 sept.) : quand le stock a son remplisseur
+    # (processus séparé, avec l'horloge), l'API ne le refait pas — ici, sans horloge, ça produisait 770
+    # moments sans date pour 46 s de CPU dans le processus de l'API.
     try:
-        from moment_journal import warm_moments  # noqa: PLC0415
-        from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
-        warmed = warm_moments(OFFICIAL_VOYAGE_ID)
-        _state["moments"] = int((warmed or {}).get("count") or 0)
-    except Exception as exc:
-        log.debug("journal des moments : %s", exc)
+        import official_store  # noqa: PLC0415
+        external_filler = official_store.worker_enabled() and official_store.WORKER_MODE != "thread"
+    except Exception:
+        external_filler = False
+    if not external_filler:
+        try:
+            from moment_journal import warm_moments  # noqa: PLC0415
+            from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+            warmed = warm_moments(OFFICIAL_VOYAGE_ID)
+            _state["moments"] = int((warmed or {}).get("count") or 0)
+        except Exception as exc:
+            log.debug("journal des moments : %s", exc)
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
     log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",

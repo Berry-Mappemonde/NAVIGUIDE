@@ -288,14 +288,33 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
     return [c for c in changes if c.get("title") and c.get("fact")]
 
 
+class _ClockIndex:
+    """Sommets triés par sailNm + recherche dichotomique. Avant (27 sept.) : un `min` linéaire sur 8 878
+    sommets pour chacune des 3 272 perles — 46 s de CPU dans l'API à chaque démarrage (profil cProfile)."""
+
+    def __init__(self, vertices: list):
+        import bisect  # noqa: PLC0415
+        self._bisect = bisect
+        rows = [v for v in (vertices or []) if isinstance(v, dict)]
+        rows.sort(key=lambda v: float(v.get("sailNm") or 0))
+        self.rows = rows
+        self.keys = [float(v.get("sailNm") or 0) for v in rows]
+
+    def near(self, sail_nm: float) -> dict:
+        if not self.rows:
+            return {}
+        i = self._bisect.bisect_left(self.keys, sail_nm)
+        cands = [j for j in (i - 1, i) if 0 <= j < len(self.rows)]
+        best = min(cands, key=lambda j: abs(self.keys[j] - sail_nm))
+        return self.rows[best]
+
+
 def _clock_near(vertices: list, sail_nm: float) -> dict:
     if not vertices:
         return {}
-    return min(
-        (v for v in vertices if isinstance(v, dict)),
-        key=lambda v: abs(float(v.get("sailNm") or 0) - sail_nm),
-        default={},
-    )
+    if isinstance(vertices, _ClockIndex):
+        return vertices.near(sail_nm)
+    return _ClockIndex(vertices).near(sail_nm)
 
 
 def _legs_from_voyage(voy: dict) -> list[dict]:
@@ -401,6 +420,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     vertices = (voy.get("clock") or {}).get("vertices") or []
     if not isinstance(vertices, list):
         vertices = []
+    vertices = _ClockIndex(vertices)   # indexé une fois, interrogé 3 272 fois
     legs = _legs_from_voyage(voy)
     thresholds = voy.get("skipper_thresholds") if isinstance(voy.get("skipper_thresholds"), dict) else {
         "galeKt": 34.0,
