@@ -16,12 +16,14 @@ import {
   formatEtaRange,
   formatEtaRangeTitle,
   isAdviceDone,
+  isAdviceUnavailable,
   localizeAdviceSentence,
   nextEtaRetryMs,
   nextStopFromMarks,
   pickHeaviestLegIdx,
   pollOfficialAdvice,
   pollOfficialEta,
+  reviewAdviceKey,
   tightenEtaMembers,
 } from "./usePlanReview.js";
 import fr from "../i18n/fr.js";
@@ -215,5 +217,38 @@ describe("usePlanReview — conseil (lot R10d)", () => {
     assert.equal(n, 2);
     assert.equal(ready.best.alertsAfter, 5);
     assert.equal(seen[0].status, "pending");
+  });
+
+  it("s'arrête après unavailable, sans re-sonde", async () => {
+    const unavailable = { status: "unavailable", leg: 0, reason: "no_clock" };
+    let n = 0;
+    const seen = [];
+    const ready = await pollOfficialAdvice(0, {
+      fetchFn: async () => {
+        n += 1;
+        return unavailable;
+      },
+      sleep: async () => {
+        throw new Error("ne doit pas relancer");
+      },
+      onUpdate: (body) => seen.push(body),
+      lang: "fr",
+    });
+    assert.equal(isAdviceUnavailable(unavailable), true);
+    assert.equal(isAdviceDone(unavailable), false);
+    assert.equal(n, 1);
+    assert.equal(ready.status, "unavailable");
+    assert.equal(seen[0].reason, "no_clock");
+  });
+
+  it("garde la même clé tant que les jambes de la revue ne changent pas", () => {
+    const a = { legs: [{ from: "Nouméa", to: "Dzaoudzi" }, { from: "Dzaoudzi", to: "Le Cap" }] };
+    const b = { generatedAt: "2026-09-26T22:00:00Z", legs: [{ from: "Nouméa", to: "Dzaoudzi" }, { from: "Dzaoudzi", to: "Le Cap" }] };
+    assert.equal(reviewAdviceKey(a, 0), reviewAdviceKey(b, 0));
+    assert.notEqual(reviewAdviceKey(a, 0), reviewAdviceKey(a, 1));
+    assert.equal(reviewAdviceKey({ source: "fixture", legs: a.legs }, 0), "");
+    assert.equal(reviewAdviceKey({ legs: [] }, 0), "");
+    assert.match(src, /reviewAdviceKey/);
+    assert.match(src, /isAdviceUnavailable/);
   });
 });
