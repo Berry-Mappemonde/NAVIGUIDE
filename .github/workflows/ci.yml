@@ -128,7 +128,7 @@ jobs:
       - name: Specs de lots (informatif, sans API)
         if: hashFiles('naviguide-simulator/e2e/lots/*.spec.js') != ''
         continue-on-error: true
-        run: npx playwright test e2e/lots
+        run: npx playwright test e2e/lots --workers=4
       - uses: actions/upload-artifact@v4
         if: always()
         with:
