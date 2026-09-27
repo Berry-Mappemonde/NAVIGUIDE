@@ -23,6 +23,16 @@ function fingerprint(points, t0, startAt) {
   return `${t0}|${startAt}|${points?.length}|${first?.lat}|${last?.lat}|${last?.cumNm}`;
 }
 
+/** Repli progressif après un POST /voyage en échec (lot RF3) : 2 s → 30 s, jamais un martelage. */
+export const CREATE_BACKOFF_MS = [2000, 4000, 8000, 16000, 30000];
+
+export function createBackoffMs(failCount) {
+  const n = Number(failCount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const i = Math.min(CREATE_BACKOFF_MS.length, Math.floor(n)) - 1;
+  return CREATE_BACKOFF_MS[i];
+}
+
 export function useVirtualVessel({
   enabled,
   forecast,
@@ -42,6 +52,10 @@ export function useVirtualVessel({
   const [busy, setBusy] = useState(false);
   const fpRef = useRef("");
   const creatingRef = useRef(false);
+  const failCountRef = useRef(0);
+  const nextCreateAtRef = useRef(0);
+  const lastAttemptFpRef = useRef("");
+  const retryTimerRef = useRef(null);
 
   const persist = useCallback((voy) => {
     if (!voy) return;
@@ -120,9 +134,13 @@ export function useVirtualVessel({
       setClock(body.clock || null);
       persist(body);
       fpRef.current = fingerprint(points, t0, startAt);
+      failCountRef.current = 0;
+      nextCreateAtRef.current = 0;
       await refreshLive(body.voyageId);
       return body;
     } catch (err) {
+      failCountRef.current += 1;
+      nextCreateAtRef.current = Date.now() + createBackoffMs(failCountRef.current);
       setError(String(err.message || err));
       return null;
     } finally {
@@ -148,15 +166,37 @@ export function useVirtualVessel({
           const meta = await refreshMeta(stored.voyageId);
           if (!cancelled && meta) {
             fpRef.current = fp;
+            failCountRef.current = 0;
+            nextCreateAtRef.current = 0;
             await refreshLive(meta.voyageId);
             return;
           }
         } catch { /* recreate */ }
       }
+      if (lastAttemptFpRef.current !== fp) {
+        lastAttemptFpRef.current = fp;
+        failCountRef.current = 0;
+        nextCreateAtRef.current = 0;
+      }
+      const wait = nextCreateAtRef.current - Date.now();
+      if (wait > 0) {
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          if (!cancelled) create();
+        }, wait);
+        return;
+      }
+      lastAttemptFpRef.current = fp;
       if (!cancelled) await create();
     };
     boot();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
   }, [enabled, points, t0, startAt]); // eslint-line — create/refresh via refs
 
   useEffect(() => {
