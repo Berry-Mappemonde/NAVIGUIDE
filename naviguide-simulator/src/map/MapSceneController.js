@@ -52,6 +52,15 @@ const TELEPORT_NM = 80;
 export const MAP_LON_BOUND = 540;
 export const MAP_LAT_BOUND = 85;
 export const MAP_MAX_BOUNDS = [[-MAP_LAT_BOUND, -MAP_LON_BOUND], [MAP_LAT_BOUND, MAP_LON_BOUND]];
+/** Vue monde (accueil RF7, entrée Tracer) : centre historique, zoom 2. */
+export const WORLD_CENTER = [22, 5];
+export const WORLD_ZOOM = 2;
+/**
+ * Zoom 2 + maxBounds viscosité 1 : sur un écran plus haut que le globe
+ * (1024 px à z=2), Leaflet refuse le dézoom (plan s4 D4', KO #327).
+ * minZoom 0 laisse toujours atteindre la vue monde.
+ */
+export const MAP_MIN_ZOOM = 0;
 
 function baseTileOptions() {
   return {
@@ -200,10 +209,10 @@ function escapeHtml(text) {
 export class MapSceneController {
   static mount(container, callbacks) {
     const map = L.map(container, {
-      center: [22, 5],
-      zoom: 2,
+      center: WORLD_CENTER,
+      zoom: WORLD_ZOOM,
       zoomSnap: 0.25,
-      minZoom: 2,
+      minZoom: MAP_MIN_ZOOM,
       maxZoom: 18,
       worldCopyJump: false,
       preferCanvas: true,
@@ -291,10 +300,12 @@ export class MapSceneController {
       this.scheduleWaypoints({ reason: this.isCameraFollowing() && this.map.getZoom() === this.waypointZoom ? "follow" : "move" });
       this.waypointZoom = this.map.getZoom();
     };
-    this.onUserNavigation = () => {
+    this.onUserNavigation = (event) => {
       if (this.ignoreUserNavigation) return;
       this.userNavigated = true;
-      this.map.stop();
+      // zoomstart + stop() annule la molette (KO #327). On n'arrête un flyTo
+      // que sur un glisser.
+      if (event?.type !== "zoomstart") this.map.stop();
       this.callbacks.onManualNavigation?.();
     };
     map.on("zoomanim", this.onZoomAnim);
@@ -330,6 +341,7 @@ export class MapSceneController {
       getMap: () => this.map,
       getView: () => ({ center: this.map.getCenter(), zoom: this.map.getZoom() }),
       setView: (center, zoom, options) => this.programmaticMove(() => this.map.setView(center, zoom, options)),
+      showWorld: () => this.showWorld(),
       playback: {
         play: () => this.playback.play(),
         pause: () => this.playback.pause(),
@@ -477,6 +489,17 @@ export class MapSceneController {
     // route hide or come back at once, even while playback is paused.
     if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
       this.syncMarkers(this.currentCast, this.currentPlayback);
+    }
+    if (!previous.drawingMode && this.config.drawingMode) {
+      this.camera.exitHoldZoom = null;
+      this.camera.exitHold = false;
+      this.boundsBeforeDraw = this.map?.options?.maxBounds || MAP_MAX_BOUNDS;
+      this.map?.setMinZoom?.(MAP_MIN_ZOOM);
+      this.map?.setMaxBounds?.(null);
+    }
+    if (previous.drawingMode && !this.config.drawingMode) {
+      this.map?.setMaxBounds?.(this.boundsBeforeDraw || MAP_MAX_BOUNDS);
+      this.boundsBeforeDraw = null;
     }
   }
 
@@ -934,24 +957,37 @@ export class MapSceneController {
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre && (!cfg.live || cfg.live.lat == null || cfg.live.lon == null)) {
-      this.setCameraPlaced(false);
-      return;
+    if (cfg.isSuivre && cfg.live && Number.isFinite(cfg.live.lat) && Number.isFinite(cfg.live.lon)) {
+      if (!this.initialLive || shouldResnapCamera(this.initialLive, cfg.live)) {
+        this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
+      }
     }
+    // RF7 / D1' : le premier calage reste la vue monde du mount. Le recadrage
+    // bateau n'existe que sur le clic Suivre (cinemaRecapture / syncCamera).
     if (!shouldPlaceInitialCamera({ userNavigated: this.userNavigated })) {
-      if (cfg.isSuivre) this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre) {
-      if (this.initialLive && !shouldResnapCamera(this.initialLive, cfg.live)) {
-        this.setCameraPlaced(true);
-        return;
-      }
-      this.programmaticMove(() => this.map.setView([cfg.live.lat, cfg.live.lon], 6.5, { animate: false }));
-      this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
-    }
     this.setCameraPlaced(true);
+  }
+
+  /** Tracer / accueil : monde entier, même si maxBounds a relevé le plancher. */
+  showWorld() {
+    if (!this.map) return;
+    this.map.invalidateSize();
+    this.map.setMinZoom(MAP_MIN_ZOOM);
+    this.programmaticMove(() => {
+      const bounds = this.map.options.maxBounds;
+      if (bounds) this.map.setMaxBounds(null);
+      this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+      if (!this.config.drawingMode && bounds) {
+        this.map.setMaxBounds(bounds);
+        if (this.map.getZoom() - WORLD_ZOOM > 0.05) {
+          this.map.setMaxBounds(null);
+          this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+        }
+      }
+    });
   }
 
   resetCameraForView() {
@@ -989,7 +1025,7 @@ export class MapSceneController {
 
   restoreExitZoom() {
     const hold = this.camera?.exitHoldZoom;
-    if (!Number.isFinite(hold) || this.config.filmActive || !this.map) return;
+    if (!Number.isFinite(hold) || this.config.filmActive || this.config.drawingMode || !this.map) return;
     const z = this.map.getZoom();
     if (Math.abs(z - hold) <= 0.05) return;
     this.programmaticMove(() => this.map.setView(this.map.getCenter(), hold, { animate: false }));
@@ -1125,7 +1161,7 @@ export class MapSceneController {
 
   syncCamera(cast, snapshot) {
     const cfg = this.config;
-    if (cfg.filmActive) return;
+    if (cfg.filmActive || cfg.drawingMode) return;
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     const subject = liveMode ? cfg.live : cast?.follow;
     const enabled = Boolean(
