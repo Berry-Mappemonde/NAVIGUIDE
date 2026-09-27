@@ -75,6 +75,7 @@ function AdminKeyField() {
     <div className="flex items-center gap-1.5" data-testid="admin-key">
       <KeyRound size={13} className={saved ? "text-emerald-400 flex-shrink-0" : "text-slate-500 flex-shrink-0"} title={saved ? t("adminKeyActive") : t("adminKeyLabel")} />
       <input
+        name="admin-key"
         type="password"
         autoComplete="off"
         value={value}
@@ -456,6 +457,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               >
                 <input
                   ref={polarFileInputRef}
+                  name="polar-file"
                   type="file"
                   accept=".pdf,.csv,.xlsx,.xls"
                   className="hidden"

@@ -59,6 +59,7 @@ export function DepartureField({
         <label className="flex items-center gap-1 min-w-0">
           {compact ? null : <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureDate")}</span>}
           <input
+            name="departure-date"
             type="text"
             inputMode="numeric"
             autoComplete="off"
@@ -74,6 +75,7 @@ export function DepartureField({
         <label className="flex items-center gap-1 min-w-0">
           {compact ? null : <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureTimeUtc")}</span>}
           <input
+            name="departure-time-utc"
             type="text"
             inputMode="numeric"
             autoComplete="off"

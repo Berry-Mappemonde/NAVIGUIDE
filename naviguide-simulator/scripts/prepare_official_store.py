@@ -98,7 +98,8 @@ def loop(period_s: float) -> int:
     nudge = official_store.fill_nudgefile()
     try:
         pidfile.parent.mkdir(parents=True, exist_ok=True)
-        pidfile.write_text(f"{os.getpid()}\n{Path(__file__).resolve()}\n", encoding="utf-8")
+        me = Path(__file__).resolve()
+        pidfile.write_text(f"{os.getpid()}\n{me}\n{me.stat().st_mtime_ns}\n", encoding="utf-8")
     except OSError:
         pass
 
