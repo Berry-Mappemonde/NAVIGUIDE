@@ -277,11 +277,29 @@ def _smooth_gc(coords: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return out
 
 
+_CORRIDOR_MEMO: dict[tuple, list[tuple[float, float]] | None] = {}
+_CORRIDOR_MEMO_MAX = 256
+
+
 def corridor_track(points: Any, name: str) -> list[tuple[float, float]] | None:
-    """Trait de corridor. None si distance > +20 % ou un point > 300 nm du référence."""
+    """Trait de corridor. None si distance > +20 % ou un point > 300 nm du référence.
+    Mémoïsé par (jambe, couloir) : le calcul (distance de chaque point du trait au trait de référence) coûtait
+    des secondes de CPU à chaque /advice, pour des jambes qui ne changent pas (RC18, 27 sept.)."""
     raw = _as_coords(points)
     if len(raw) < 2:
         return raw or None
+    memo_key = (tuple(raw), str(name or ""))
+    if memo_key in _CORRIDOR_MEMO:
+        hit = _CORRIDOR_MEMO[memo_key]
+        return list(hit) if hit is not None else None
+    out = _corridor_track_uncached(raw, name)
+    if len(_CORRIDOR_MEMO) >= _CORRIDOR_MEMO_MAX:
+        _CORRIDOR_MEMO.clear()
+    _CORRIDOR_MEMO[memo_key] = list(out) if out is not None else None
+    return out
+
+
+def _corridor_track_uncached(raw: list[tuple[float, float]], name: str) -> list[tuple[float, float]] | None:
     ref = _smooth_gc(_jalons(raw)) if len(raw) < 4 else raw
     if name in (CORRIDOR_REFERENCE, "", None):
         return ref
