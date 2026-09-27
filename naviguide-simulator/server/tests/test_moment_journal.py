@@ -111,7 +111,9 @@ def test_fixture_pearls_collapse_to_fewer_moments():
     assert 1 <= m < n
     seqs = [row["seq"] for row in rows]
     assert seqs == list(range(m))
-    assert rows[0]["changes"] == []
+    # Première ligne : pas de différence avec un moment précédent — seulement, le cas échéant, les marinas et
+    # ports croisés dès la première perle (27 sept. : chaque marina/port à moins de 15 nm, cité une fois).
+    assert all(c["kind"] in {"marina", "port"} for c in rows[0]["changes"])
     for row in rows[1:]:
         assert row["changes"], f"seq {row['seq']} sans changes"
         for change in row["changes"]:
