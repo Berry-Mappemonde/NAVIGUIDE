@@ -554,3 +554,80 @@ def test_freeze_then_unpack_same_payloads(tmp_path):
         hit = again.get(name, key)
         assert hit is not None
         assert hit["payload"] == expected[name]
+
+
+# ── RC18 : le remplisseur est un processus séparé, l'API relit le stock quand il change ──────────────────
+
+@pytest.mark.parametrize("backend_name", ["disk", "mongo"])
+def test_get_rereads_when_another_process_rewrote(tmp_path, backend_name):
+    """L'API garde une copie mémoire ; si le remplisseur (autre processus) a réécrit l'entrée, elle la relit."""
+    import os
+    import time
+
+    key = make_key("r", T0, "2026-09-26")
+    if backend_name == "disk":
+        root = tmp_path / "shared"
+        api = OfficialStore(DiskBackend(root), now=lambda: NOW)
+        filler = OfficialStore(DiskBackend(root), now=lambda: datetime(2026, 9, 26, 13, tzinfo=timezone.utc))
+    else:
+        client = _mongo_client()
+        api = OfficialStore(MongoBackend(client), now=lambda: NOW)
+        filler = OfficialStore(MongoBackend(client), now=lambda: datetime(2026, 9, 26, 13, tzinfo=timezone.utc))
+    api.put("eta", _payload("eta"), key)
+    assert api.get("eta", key)["storedAt"] == "2026-09-26T12:00:00Z"
+    time.sleep(0.02)
+    filler.put("eta", {"stops": {"Papeete": {"members": 99}}}, key)
+    if backend_name == "disk":   # mtime à la seconde sur certains systèmes : on force un horodatage plus récent
+        f = next((root).rglob("eta.json"))
+        os.utime(f, (time.time() + 5, time.time() + 5))
+    hit = api.get("eta", key)
+    assert hit["storedAt"] == "2026-09-26T13:00:00Z"
+    assert hit["payload"]["stops"]["Papeete"]["members"] == 99
+
+
+def test_process_mode_spawns_filler_once_and_never_computes_in_api(tmp_path, monkeypatch):
+    """Mode process (défaut) : kick_worker lance scripts/prepare_official_store.py --loop UNE fois, le réveille
+    par le fichier nudge, et ne calcule jamais dans le processus de l'API."""
+    import subprocess
+
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "force")      # pytest coupe le worker sinon
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setattr(official_store, "WORKER_MODE", "process")
+    calls: list[list[str]] = []
+
+    class _Proc:
+        pid = 424242
+
+    def fake_popen(cmd, **kwargs):
+        calls.append(list(cmd))
+        return _Proc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(official_store, "_process_command", lambda pid: f"python {official_store.FILL_SCRIPT} --loop" if pid == 424242 else "")
+    monkeypatch.setattr(official_store.os, "kill", lambda pid, sig: None if pid == 424242 else (_ for _ in ()).throw(OSError()))
+
+    def boom(*a, **k):
+        raise AssertionError("refresh_missing appelé dans le processus de l'API")
+
+    monkeypatch.setattr(official_store, "refresh_missing", boom)
+
+    official_store.kick_worker()
+    official_store.kick_worker()
+    official_store.start_worker()
+    assert len(calls) == 1, calls
+    assert calls[0][1] == str(official_store.FILL_SCRIPT) and "--loop" in calls[0]
+    assert official_store.fill_pidfile().read_text(encoding="utf-8").splitlines()[0] == "424242"
+    assert official_store.fill_nudgefile().exists()
+    assert official_store.fill_process_alive() == 424242
+
+
+def test_filler_from_another_checkout_is_replaced(tmp_path, monkeypatch):
+    """Un remplisseur d'un ancien worktree (autre chemin de script) écrirait un stock d'un autre format : remplacé."""
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    official_store.fill_pidfile().parent.mkdir(parents=True, exist_ok=True)
+    official_store.fill_pidfile().write_text("31337\n/ailleurs/scripts/prepare_official_store.py\n", encoding="utf-8")
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(official_store.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(official_store, "_process_command", lambda pid: "python /ailleurs/scripts/prepare_official_store.py --loop")
+    assert official_store.fill_process_alive() is None
+    assert (31337, 15) in killed

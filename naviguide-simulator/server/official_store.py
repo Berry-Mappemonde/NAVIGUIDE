@@ -186,6 +186,16 @@ class DiskBackend:
             log.warning("stock disque illisible %s/%s : %s", key, family, exc)
             return None
 
+    def stamp(self, key: str, family: str) -> Optional[str]:
+        """Empreinte de l'entrée telle qu'elle est sur disque (mtime + taille) : un autre PROCESSUS
+        (le remplisseur, RC18) a pu la remplacer — l'API relit alors au lieu de servir sa copie mémoire."""
+        dest = self._path(key, family)
+        try:
+            st = dest.stat()
+        except OSError:
+            return None
+        return f"{st.st_mtime_ns}:{st.st_size}"
+
     def list_family(self, family: str) -> list[tuple[str, dict]]:
         out: list[tuple[str, dict]] = []
         if not self.root.exists():
@@ -236,6 +246,16 @@ class MongoBackend:
             "payload": doc.get("payload"),
         }
 
+    def stamp(self, key: str, family: str) -> Optional[str]:
+        """storedAt de l'entrée (requête légère par _id) : change quand le remplisseur a réécrit."""
+        try:
+            doc = self._col.find_one({"_id": f"{key}:{family}"}, {"storedAt": 1})
+        except TypeError:   # faux client de test sans projection
+            doc = self._col.find_one({"_id": f"{key}:{family}"})
+        if not doc:
+            return None
+        return str(doc.get("storedAt") or "")
+
     def list_family(self, family: str) -> list[tuple[str, dict]]:
         out: list[tuple[str, dict]] = []
         for doc in self._col.find({"family": family}):
@@ -274,6 +294,7 @@ class OfficialStore:
         self.backend = backend
         self._now = now or _utc_now
         self._mem: dict[tuple[str, str], dict] = {}
+        self._stamps: dict[tuple[str, str], Optional[str]] = {}
         self._clock_bytes: Optional[bytes] = None
         self._clock_bytes_key: Optional[str] = None
 
@@ -339,19 +360,46 @@ class OfficialStore:
             raise ValueError(f"famille inconnue: {family}")
         dest = key if key is not None else self.family_key(family)
         with _LOCK:
-            hit = self._mem.get((dest, family))
-            if hit is None:
-                hit = self.backend.get(dest, family)
-                if hit is not None:
-                    self._mem[(dest, family)] = hit
+            hit = self._cached(dest, family)
             if hit is not None:
                 return self._with_date(hit)
             if key is not None:
                 return None
             found = self._latest_hit(family, dest)
             if found is not None and found.get("key"):
-                self._mem[(found["key"], family)] = found
+                self._remember(found["key"], family, found)
             return self._with_date(found)
+
+    def _stamp(self, key: str, family: str) -> Optional[str]:
+        stamper = getattr(self.backend, "stamp", None)
+        if not callable(stamper):
+            return None
+        try:
+            return stamper(key, family)
+        except Exception:
+            return None
+
+    def _remember(self, key: str, family: str, hit: dict) -> None:
+        self._mem[(key, family)] = hit
+        self._stamps[(key, family)] = self._stamp(key, family)
+
+    def _cached(self, key: str, family: str) -> Optional[dict]:
+        """Copie mémoire, relue si le dos a changé sous nos pieds (le remplisseur est un autre processus, RC18)."""
+        stamp = self._stamp(key, family)
+        hit = self._mem.get((key, family))
+        if hit is not None and self._stamps.get((key, family)) == stamp:
+            return hit
+        hit = self.backend.get(key, family)
+        if hit is None:
+            self._mem.pop((key, family), None)
+            self._stamps.pop((key, family), None)
+            return None
+        self._mem[(key, family)] = hit
+        self._stamps[(key, family)] = stamp
+        if family == "climo":
+            self._clock_bytes = None
+            self._clock_bytes_key = None
+        return hit
 
     def put(self, family: str, payload: dict, key: Optional[str] = None) -> dict:
         if family not in FAMILIES:
@@ -367,7 +415,7 @@ class OfficialStore:
         }
         with _LOCK:
             stored = self.backend.put(dest_key, family, doc)
-            self._mem[(dest_key, family)] = stored
+            self._remember(dest_key, family, stored)
             if family == "climo":
                 self._clock_bytes = None
                 self._clock_bytes_key = None
@@ -972,10 +1020,114 @@ def refresh_missing(
         _REFRESH_LOCK.release()
 
 
+# ── remplisseur : un PROCESSUS séparé (RC18) ─────────────────────────────────
+# Le calcul (horloge sur 8 878 sommets, 845 moments, films, ETA) tient le GIL : dans le processus de l'API,
+# la boucle d'événements ne reprend la main que par miettes — 27 sept. : 97 % CPU, /clock en 7 s au lieu de
+# 5 ms, POST /voyage coupé par Cloudflare à 100 s, 1 430 lignes rouges chez le bot. L'API ne calcule donc
+# JAMAIS : elle lance scripts/prepare_official_store.py --loop (priorité basse), le réveille par un fichier
+# « nudge », et relit le stock quand il change (stamp). Mode « thread » conservé pour les tests.
+
+WORKER_MODE = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER_MODE") or "process").strip().lower()
+FILL_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "prepare_official_store.py"
+FILL_NICE = int(os.environ.get("NAVIGUIDE_OFFICIAL_FILL_NICE") or 10)
+
+
+def fill_pidfile() -> Path:
+    return disk_root() / "fill-worker.pid"
+
+
+def fill_nudgefile() -> Path:
+    return disk_root() / "fill-worker.nudge"
+
+
+def fill_logfile() -> Path:
+    return disk_root() / "fill-worker.log"
+
+
+def _process_command(pid: int) -> str:
+    import subprocess  # noqa: PLC0415
+    try:
+        out = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
+        return (out.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def fill_process_alive() -> Optional[int]:
+    """PID du remplisseur s'il tourne ET vient de CE checkout (un remplisseur d'un ancien worktree écrirait
+    un stock d'un autre format : on le remplace)."""
+    try:
+        raw = fill_pidfile().read_text(encoding="utf-8").strip().splitlines()
+        pid = int(raw[0])
+        script = raw[1] if len(raw) > 1 else ""
+    except (OSError, ValueError, IndexError):
+        return None
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return None
+    cmd = _process_command(pid)
+    if FILL_SCRIPT.name not in cmd:
+        return None
+    if script and script != str(FILL_SCRIPT):
+        log.warning("stock officiel : remplisseur d'un autre checkout (%s, pid %s) — arrêté", script, pid)
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+        return None
+    return pid
+
+
+def ensure_fill_process() -> Optional[int]:
+    """Lance le remplisseur s'il ne tourne pas. Jamais de calcul dans l'API."""
+    import subprocess  # noqa: PLC0415
+    import sys as _sys  # noqa: PLC0415
+    with _LOCK:
+        pid = fill_process_alive()
+        if pid:
+            return pid
+        if not FILL_SCRIPT.exists():
+            log.warning("stock officiel : %s absent — pas de remplisseur", FILL_SCRIPT)
+            return None
+        env = {**os.environ, "NAVIGUIDE_OFFICIAL_STORE_DIR": str(disk_root()), "NAVIGUIDE_OFFICIAL_WORKER": "0"}
+        try:
+            fill_logfile().parent.mkdir(parents=True, exist_ok=True)
+            logf = open(fill_logfile(), "a", encoding="utf-8")   # noqa: SIM115 — hérité par l'enfant
+            p = subprocess.Popen(
+                [_sys.executable, str(FILL_SCRIPT), "--loop", "--period", str(int(max(60.0, PERIOD_S))), "--nice", str(FILL_NICE)],
+                cwd=str(FILL_SCRIPT.parents[1]), env=env, stdout=logf, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, start_new_session=True,
+            )
+            logf.close()
+        except Exception as exc:
+            log.warning("stock officiel : remplisseur non lancé : %s", exc)
+            return None
+        try:
+            fill_pidfile().write_text(f"{p.pid}\n{FILL_SCRIPT}\n", encoding="utf-8")
+        except OSError:
+            pass
+        log.info("stock officiel : remplisseur lancé (pid %s, nice %s, période %s s)", p.pid, FILL_NICE, int(PERIOD_S))
+        return p.pid
+
+
+def nudge_fill_process() -> None:
+    """Demande un passage tout de suite : le remplisseur surveille la date de ce fichier."""
+    try:
+        f = fill_nudgefile()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(_iso(_utc_now()), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def start_worker() -> None:
-    """Au boot : un fil daemon, puis périodique. Pytest : no-op."""
+    """Au boot. Mode process (défaut) : lance le remplisseur externe. Mode thread : fil daemon (tests)."""
     global _WORKER_STARTED
     if not worker_enabled():
+        return
+    if WORKER_MODE != "thread":
+        ensure_fill_process()
         return
     with _LOCK:
         if _WORKER_STARTED:
@@ -1000,8 +1152,12 @@ def _force_film_once() -> None:
 
 
 def kick_worker() -> None:
-    """Relance un passage en fond — le client n'attend pas."""
+    """Relance un passage en fond — le client n'attend pas, et l'API ne calcule pas (mode process)."""
     if not worker_enabled():
+        return
+    if WORKER_MODE != "thread":
+        ensure_fill_process()
+        nudge_fill_process()
         return
     start_worker()
     threading.Thread(
