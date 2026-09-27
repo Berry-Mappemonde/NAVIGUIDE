@@ -756,6 +756,11 @@ async def cascade_text(
     keeps the old contract (raise when no backend). A string fallback — even
     empty — yields `source=rules` after every provider failed. Never Tavily.
     """
+    import offline
+    if offline.enabled():
+        if fallback is None:
+            raise offline.OfflineError("NAVIGUIDE_OFFLINE=1")
+        return (fallback or ""), "rules"
     own = client is None
     http = client or httpx.AsyncClient(timeout=TIMEOUT)
     t = llm_budget.normalize_tier(tier)

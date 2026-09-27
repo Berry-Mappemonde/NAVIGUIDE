@@ -83,6 +83,55 @@ def make_key(route_id: str, t0: str, data_date: str) -> str:
     return f"{route_id}:{t0}:{data_date}"
 
 
+def _is_data_date(value: str) -> bool:
+    return (
+        len(value) == 10
+        and value[4] == "-"
+        and value[7] == "-"
+        and value[:4].isdigit()
+        and value[5:7].isdigit()
+        and value[8:10].isdigit()
+    )
+
+
+def parse_key(key: str) -> tuple[str, str, str, Optional[str]]:
+    """Décompose `route:t0:data_date[:rev]` — t0 peut contenir des `:`."""
+    if not key or ":" not in key:
+        raise ValueError(f"clé invalide: {key}")
+    suffix = None
+    rest = key
+    last = rest.rsplit(":", 1)
+    if len(last) == 2 and not _is_data_date(last[1]):
+        suffix = last[1]
+        rest = last[0]
+    if ":" not in rest:
+        raise ValueError(f"clé invalide: {key}")
+    route_and_t0, data_date = rest.rsplit(":", 1)
+    if not _is_data_date(data_date) or ":" not in route_and_t0:
+        raise ValueError(f"clé invalide: {key}")
+    route_id, t0 = route_and_t0.split(":", 1)
+    return route_id, t0, data_date, suffix
+
+
+def _stamp(hit: Optional[dict]) -> dict:
+    """storedAt / dataDate à recopier dans une réponse HTTP."""
+    if not hit:
+        return {}
+    out: dict[str, str] = {}
+    stored = hit.get("storedAt")
+    if stored:
+        out["storedAt"] = stored
+    date = hit.get("dataDate")
+    if not date:
+        try:
+            date = parse_key(str(hit.get("key") or ""))[2]
+        except (TypeError, ValueError):
+            date = None
+    if date:
+        out["dataDate"] = date
+    return out
+
+
 def preparing_payload(family: str, extra: Optional[dict] = None) -> dict:
     """Réponse honnête — jamais un 500, jamais un calcul. Le client sait déjà
     afficher un journal vide / un film pending / une fourchette absente."""
@@ -133,6 +182,24 @@ class DiskBackend:
             log.warning("stock disque illisible %s/%s : %s", key, family, exc)
             return None
 
+    def list_family(self, family: str) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        if not self.root.exists():
+            return out
+        for folder in self.root.iterdir():
+            dest = folder / f"{family}.json"
+            if not dest.is_file():
+                continue
+            try:
+                doc = json.loads(dest.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                log.warning("stock disque illisible %s : %s", dest, exc)
+                continue
+            if not isinstance(doc, dict) or not doc.get("key"):
+                continue
+            out.append((str(doc["key"]), doc))
+        return out
+
     def put(self, key: str, family: str, doc: dict) -> dict:
         dest = self._path(key, family)
         tmp = dest.with_suffix(".tmp")
@@ -164,6 +231,20 @@ class MongoBackend:
             "storedAt": doc.get("storedAt"),
             "payload": doc.get("payload"),
         }
+
+    def list_family(self, family: str) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        for doc in self._col.find({"family": family}):
+            key = (doc or {}).get("key")
+            if not key:
+                continue
+            out.append((str(key), {
+                "key": key,
+                "family": doc.get("family") or family,
+                "storedAt": doc.get("storedAt"),
+                "payload": doc.get("payload"),
+            }))
+        return out
 
     def put(self, key: str, family: str, doc: dict) -> dict:
         stored = {
@@ -209,18 +290,64 @@ class OfficialStore:
             return f"{base}:{FILM_SCRIPT_REV}"
         return base
 
+    def _with_date(self, hit: Optional[dict]) -> Optional[dict]:
+        if not hit:
+            return None
+        out = dict(hit)
+        if not out.get("dataDate"):
+            try:
+                out["dataDate"] = parse_key(str(out.get("key") or ""))[2]
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    def _latest_hit(self, family: str, current: str) -> Optional[dict]:
+        """Plus récente entrée même route + même t0 (minuit UTC / CI)."""
+        try:
+            route_id, t0, _, want_suf = parse_key(current)
+        except ValueError:
+            return None
+        lister = getattr(self.backend, "list_family", None)
+        if not callable(lister):
+            return None
+        best: Optional[tuple[str, str, dict]] = None
+        for stored_key, doc in lister(family):
+            try:
+                r, t, date, suf = parse_key(stored_key)
+            except ValueError:
+                continue
+            if r != route_id or t != t0:
+                continue
+            if (want_suf or None) != (suf or None):
+                continue
+            if best is None or date > best[0]:
+                best = (date, stored_key, doc)
+        if not best:
+            return None
+        date, stored_key, doc = best
+        out = dict(doc)
+        out["key"] = stored_key
+        out["dataDate"] = date
+        return out
+
     def get(self, family: str, key: Optional[str] = None) -> Optional[dict]:
         if family not in FAMILIES:
             raise ValueError(f"famille inconnue: {family}")
         dest = key if key is not None else self.family_key(family)
         with _LOCK:
             hit = self._mem.get((dest, family))
+            if hit is None:
+                hit = self.backend.get(dest, family)
+                if hit is not None:
+                    self._mem[(dest, family)] = hit
             if hit is not None:
-                return hit
-            hit = self.backend.get(dest, family)
-            if hit is not None:
-                self._mem[(dest, family)] = hit
-            return hit
+                return self._with_date(hit)
+            if key is not None:
+                return None
+            found = self._latest_hit(family, dest)
+            if found is not None and found.get("key"):
+                self._mem[(found["key"], family)] = found
+            return self._with_date(found)
 
     def put(self, family: str, payload: dict, key: Optional[str] = None) -> dict:
         if family not in FAMILIES:
@@ -246,11 +373,15 @@ class OfficialStore:
         dest = key if key is not None else self.current_key()
         families = {}
         for name in FAMILIES:
-            lookup = key if key is not None else self.family_key(name)
-            hit = self.get(name, lookup)
+            if key is not None:
+                hit = self.get(name, key)
+            else:
+                hit = self.get(name)
             families[name] = {
                 "status": READY if hit and hit.get("payload") is not None else PREPARING,
                 "storedAt": (hit or {}).get("storedAt"),
+                "dataDate": (hit or {}).get("dataDate"),
+                "key": (hit or {}).get("key"),
             }
         return {"key": dest, "families": families}
 
@@ -426,14 +557,17 @@ def stored_clock() -> Optional[dict]:
 def serve_clock_bytes() -> Optional[bytes]:
     """Horloge déjà sérialisée — GET /clock sans recalcul ni ré-encodage."""
     st = get_store()
-    clock = stored_clock()
-    if not clock:
+    hit = st.get("climo")
+    clock = ((hit or {}).get("payload") or {}).get("clock") if hit else None
+    if not isinstance(clock, dict) or not clock.get("t0"):
         return None
-    key = st.current_key()
+    key = (hit or {}).get("key") or st.current_key()
     with _LOCK:
         if st._clock_bytes is not None and st._clock_bytes_key == key:
             return st._clock_bytes
-        raw = json.dumps(clock, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        body = dict(clock)
+        body.update(_stamp(hit))
+        raw = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         st._clock_bytes = raw
         st._clock_bytes_key = key
         return raw
@@ -866,7 +1000,8 @@ def serve_journal(limit: int = 50, kinds: Optional[tuple] = None) -> dict:
         "days": [], "count": 0, "first": None, "last": None,
         "latest": [], "events": [], "kinds": list(journal.KINDS),
     }
-    body = payload_of("moments")
+    hit = get("moments")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not body:
         return preparing_payload("moments", extra)
     summary = dict(body.get("journal") or {})
@@ -881,6 +1016,7 @@ def serve_journal(limit: int = 50, kinds: Optional[tuple] = None) -> dict:
         "latest": latest[: max(1, int(limit))],
         "events": events,
         "kinds": list(journal.KINDS),
+        **_stamp(hit),
     })
     return summary
 
@@ -944,7 +1080,8 @@ def serve_moments(until: Optional[str] = None) -> dict:
     from moment_journal import _iso_le  # noqa: PLC0415
 
     extra = {"voyageId": OFFICIAL_VOYAGE_ID, "until": until, "count": 0, "moments": []}
-    body = payload_of("moments")
+    hit = get("moments")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not body:
         return preparing_payload("moments", extra)
     rows = list(body.get("moments") or [])
@@ -958,6 +1095,7 @@ def serve_moments(until: Optional[str] = None) -> dict:
         "count": len(rows),
         "moments": rows,
         "status": READY,
+        **_stamp(hit),
     }
 
 
@@ -966,7 +1104,8 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,
     }
-    body = payload_of("film")
+    hit = get("film")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not body:
         return preparing_payload("film", extra)
     if film_snapshot_stale(body, _load_official()):
@@ -977,6 +1116,7 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
         return preparing_payload("film", extra)
     out = dict(plan)
     out["status"] = READY
+    out.update(_stamp(hit))
     return out
 
 
@@ -985,30 +1125,36 @@ def serve_eta(stop: str) -> dict:
 
     empty = empty_eta(_utc_now(), reason="en préparation")
     empty["status"] = PREPARING
-    body = payload_of("eta")
+    hit = get("eta")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not body:
         return empty
+    stamp = _stamp(hit)
     stops = body.get("stops") or {}
     if stop in stops:
         out = dict(stops[stop])
         out["status"] = READY
+        out.update(stamp)
         return out
     needle = (stop or "").strip().lower()
     for name, payload in stops.items():
         if needle and needle in name.lower():
             out = dict(payload)
             out["status"] = READY
+            out.update(stamp)
             return out
     return empty
 
 
 def serve_plan_review() -> dict:
     extra = {"legs": []}
-    body = payload_of("plan_review")
+    hit = get("plan_review")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not body:
         return preparing_payload("plan_review", extra)
     out = dict(body)
     out["status"] = READY
+    out.update(_stamp(hit))
     return out
 
 
