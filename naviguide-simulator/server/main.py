@@ -2,12 +2,21 @@
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import logging
 import math
 import os
 import re
+import signal
 import sys
 import time
+
+# Diagnostic (RC18) : `kill -USR1 <pid de l'API>` écrit les piles Python de tous les fils sur stderr
+# (donc dans .dev/api.log sur le poste, journalctl sur le VPS). Sans root, sans py-spy.
+try:
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=False)
+except (AttributeError, ValueError, RuntimeError):
+    pass
 from pathlib import Path
 from typing import List, Optional, Union
 
