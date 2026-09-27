@@ -1679,7 +1679,6 @@ export default function App() {
         }}
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
-        onSeekEscale={isSuivre ? undefined : handleSidebarSeek}
         onEscaleSheet={openEscaleFromUi}
         frozen={Boolean(replay.active)}
         drawing={drawing}

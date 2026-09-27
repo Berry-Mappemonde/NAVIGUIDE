@@ -22,9 +22,10 @@ describe("openEscaleFromUi — pas d'ouverture de panneau (lot RD1)", () => {
   });
 });
 
-describe("onSeekEscale — lot RE2 : pas de seek depuis la liste en Suivre", () => {
-  it("débranche handleSidebarSeek quand isSuivre", () => {
-    assert.match(app, /onSeekEscale=\{isSuivre \? undefined : handleSidebarSeek\}/);
+describe("onSeekEscale — lot RF8 : liste informative dans tous les modes", () => {
+  it("ne passe plus handleSidebarSeek à la liste", () => {
+    assert.doesNotMatch(app, /onSeekEscale=/);
+    assert.doesNotMatch(app, /onSeekEscale=\{isSuivre \? undefined : handleSidebarSeek\}/);
   });
 });
 

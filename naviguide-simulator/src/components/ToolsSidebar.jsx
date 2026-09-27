@@ -210,7 +210,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
           · {vertexCount.toLocaleString(locale)} {t("routePointsShort")}
         </span>
       </div>
-      <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} onSheet={onEscaleSheet} frozen={frozen} />
+      <EscaleLegend marks={escaleMarks} filmNm={filmNm} frozen={frozen} />
     </div>
   );
 }
