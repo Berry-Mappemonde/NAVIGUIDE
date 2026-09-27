@@ -28,46 +28,30 @@ function EscaleRowBody({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle
   );
 }
 
-const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, title, active, onSeek }) {
-  const interactive = typeof onSeek === "function";
+const EscaleRow = memo(function EscaleRow({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, active }) {
   const idle = active ? "bg-cyan-700/40 text-white" : "text-white/70";
-  const hover = interactive && !active ? " hover:bg-white/5 hover:text-white" : "";
-  const inner = (
-    <EscaleRowBody
-      name={name}
-      nmLabel={nmLabel}
-      dateLabel={dateLabel}
-      quayLabel={quayLabel}
-      etaLabel={etaLabel}
-      etaTitle={etaTitle}
-    />
-  );
   return (
     <li
       data-testid="escale-legend-row"
       data-escale={name}
-      data-interactive={interactive ? "true" : "false"}
-      className={`flex items-stretch border-t border-white/5 ${idle}${hover}`}
+      data-interactive="false"
+      className={`flex items-stretch border-t border-white/5 ${idle}`}
     >
-      {interactive ? (
-        <button
-          type="button"
-          onClick={() => onSeek(at, { jump: true })}
-          title={title}
-          className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-pointer"
-        >
-          {inner}
-        </button>
-      ) : (
-        <div className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-default">
-          {inner}
-        </div>
-      )}
+      <div className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-default">
+        <EscaleRowBody
+          name={name}
+          nmLabel={nmLabel}
+          dateLabel={dateLabel}
+          quayLabel={quayLabel}
+          etaLabel={etaLabel}
+          etaTitle={etaTitle}
+        />
+      </div>
     </li>
   );
 });
 
-export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, frozen = false }) {
+export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, frozen = false }) {
   const { t, lang } = useLang();
 
   // Labels depend on marks + language only: built once per route / language.
@@ -80,7 +64,6 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
         name: m.name,
         at,
         mark: m,
-        title: t("escalesJump", { name: m.name }),
         nmLabel: `${Math.round(Number(m.nm) || 0).toLocaleString()} nm`,
         dateLabel: m.iso ? ` · ${formatCivilDate(m.iso, lang)}` : "",
         quayLabel: m.holdHours > 0 ? ` · ${t("escalesQuay", { days: Math.round(m.holdHours / 24) })}` : "",
@@ -121,15 +104,12 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, 
           <EscaleRow
             key={r.key}
             name={r.name}
-            at={r.at}
             nmLabel={r.nmLabel}
             dateLabel={r.dateLabel}
             quayLabel={r.quayLabel}
             etaLabel={etaLabel && i === nextIndex ? etaLabel : ""}
             etaTitle={etaLabel && i === nextIndex ? etaTitle : ""}
-            title={r.title}
             active={i === current}
-            onSeek={onSeek}
           />
         ))}
       </ul>

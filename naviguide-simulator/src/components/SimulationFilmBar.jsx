@@ -193,7 +193,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={{ left: insets.left, right: insets.right }}
     >
-      <div className="naviguide-film-bar rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
+        <div className="naviguide-film-bar overflow-hidden rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
             {finished
@@ -315,7 +315,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-1 mt-1">
+        <div className="flex items-start gap-1 mt-1 min-w-0">
           {onHideBar ? (
             <button
               type="button"
@@ -326,8 +326,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               {t("hideFilmBar")}
             </button>
           ) : null}
-          <div data-testid="film-commands" className="flex items-center gap-1 flex-nowrap min-w-0 flex-1">
-          <div className="flex items-center gap-1 flex-nowrap shrink-0">
+          <div data-testid="film-commands" className="flex items-start gap-1 min-w-0 flex-1">
+          <div className="flex items-center gap-1 flex-wrap min-w-0 flex-1">
             {onCinema ? (
               <button
                 type="button"
@@ -373,8 +373,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay ? (
               <>
-                <span data-testid="film-source" className="text-[9px] text-white/60 leading-tight truncate max-w-[7rem]">
-                  {t("filmStorySource", { source: filmSourceLabel(replay.source, t) })}
+                <span data-testid="film-source" hidden>
+                  {filmSourceLabel(replay.source, t)}
                 </span>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
@@ -424,8 +424,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               </div>
             ) : null}
             {replay ? (
-              <div className="flex items-center gap-1" data-testid="replay-controls">
-                <div data-testid="replay-departure" className="shrink-0 w-[9.75rem]">
+              <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
+                <div data-testid="replay-departure" className="w-max shrink-0">
                   <DepartureField
                     t0={replay.t0}
                     onT0={replay.onT0}
@@ -450,7 +450,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     </div>
                   </>
                 ) : (
-                  <>
+                  <div className="flex flex-wrap items-center gap-1 min-w-0">
                     <button
                       type="button"
                       onClick={replay.onStart}
@@ -486,12 +486,12 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                         ))}
                       </div>
                     ) : null}
-                  </>
+                  </div>
                 )}
               </div>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 ml-auto flex-nowrap shrink-0">
+          <div className="flex items-center gap-1 flex-nowrap shrink-0">
             {showPlaybackControls ? (
               <>
                 <button

@@ -8,6 +8,7 @@ import { FILM_BAR_HEIGHT_PX } from "../utils/filmBarLayout.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const bar = readFileSync(join(here, "SimulationFilmBar.jsx"), "utf8");
 const app = readFileSync(join(here, "../App.jsx"), "utf8");
+const departure = readFileSync(join(here, "DepartureField.jsx"), "utf8");
 
 function firstIndex(src, pattern) {
   const m = src.match(pattern);
@@ -138,6 +139,37 @@ describe("film bar (lot RE3)", () => {
     assert.match(bar, /disabled=\{!replay\.canStart\}/);
     assert.match(bar, /replay\.canStart \? \(/);
     assert.match(bar, /disabled:opacity-30 disabled:cursor-not-allowed/);
+  });
+});
+
+describe("film bar (lot RF8)", () => {
+  it("garde 2:30 / 3:00 dans le cadre, sans « Récit : », date à la taille du format", () => {
+    assert.match(bar, /data-testid="film-duration"/);
+    assert.match(bar, /data-testid="replay-start"/);
+    assert.match(bar, /filmDuration150/);
+    assert.match(bar, /filmDuration180/);
+    assert.match(bar, /flex-wrap/);
+    assert.match(bar, /overflow-hidden/);
+    assert.doesNotMatch(bar, /overflow-x-auto/);
+    assert.doesNotMatch(bar, /w-\[9\.75rem\]/);
+    assert.doesNotMatch(bar, /filmStorySource/);
+    assert.doesNotMatch(bar, /Récit :/);
+    assert.match(bar, /data-testid="film-source"/);
+    assert.match(bar, /data-testid="film-source" hidden/);
+    assert.doesNotMatch(bar, /className="sr-only"/);
+    assert.match(bar, /data-testid="replay-departure"/);
+    assert.match(bar, /w-max/);
+    assert.match(departure, /w-\[10ch\]/);
+    assert.match(departure, /w-\[5ch\]/);
+    assert.match(departure, /gap-\[1ch\]/);
+    assert.match(departure, /w-max/);
+    const startAt = firstIndex(bar, /data-testid="replay-start"/);
+    const durationAt = firstIndex(bar, /data-testid="film-duration"/);
+    assert.ok(startAt < durationAt, "2:30 / 3:00 à côté ou sous Revoir l'expédition");
+    assert.match(
+      bar,
+      /flex flex-wrap items-center gap-1 min-w-0">\s*<button[\s\S]*?data-testid="replay-start"/,
+    );
   });
 });
 
