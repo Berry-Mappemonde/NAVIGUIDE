@@ -342,9 +342,16 @@ def test_lot_f2_climo_rose_turn_and_calms(client, monkeypatch):
 
     ici_engine.reset_caches()
     journal.reset()
-    for i in range(2):
+    # Resample after reset: a seed/warm thread may have replaced the official
+    # points; reset_caches() clears memory only, so drop the cells we seed.
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    pts = list(voy["points"])
+    pearls = ici_warm.sample_route_nm(pts)
+    assert len(pearls) >= 3
+    for i in range(3):
+        ici_engine.thin_cache_drop(thin_cache_key(pearls[i]["lat"], pearls[i]["lon"], 30.0))
         put(i, rose={"most_likely": {"speed_knots": 6.0, "dir_deg": 80}, "stat": "rose"}, cyclone={"nearby": 0})
-    events = ici_warm.route_events_from_pearls(voy["points"])
+    events = ici_warm.route_events_from_pearls(pts)
     calms = [e for e in events if e["kind"] == "climo" and e["event"] == "calms"]
     assert len(calms) == 1
     assert calms[0]["facts"]["windKn"] == 6.0
