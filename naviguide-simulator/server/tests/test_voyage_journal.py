@@ -129,6 +129,8 @@ def test_public_reads_and_admin_note(client, monkeypatch):
     now = T0 + timedelta(days=1)
     _freeze(monkeypatch, now)
     client.put("/voyage/official", json=_official())
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    journal.tick(voy, now, force=True)
 
     r = client.get("/voyage/official/journal", headers=PUBLIC)
     assert r.status_code == 200

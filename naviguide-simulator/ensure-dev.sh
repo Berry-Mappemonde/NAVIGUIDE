@@ -129,6 +129,13 @@ start_api() {
 }
 
 if [[ "$PROD" -eq 1 ]]; then
+  # Recette RF2 : remplir le stock DISQUE par le vrai calcul avant d'ouvrir Chrome.
+  log "==> stock officiel (calcul réel, disque)…"
+  export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
+  unset SIMULATOR_MONGO_URL
+  if ! .venv/bin/python scripts/prepare_official_store.py; then
+    log "!! stock officiel : calcul incomplet — l'API répondra « en préparation » pour les familles manquantes"
+  fi
   # Recette : l’API doit être celle de CE checkout, avec les clés d’aujourd’hui.
   stop_listener 8010 "API"
   start_api ""

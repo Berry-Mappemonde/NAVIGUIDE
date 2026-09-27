@@ -83,12 +83,12 @@ app.include_router(bi_proxy_router)
 
 @app.on_event("startup")
 def _startup_official_grib():
-    """Semis du voyage officiel + préchauffages — jamais bloquant (lot RD4).
+    """Semis du voyage officiel + travail de fond du stock RF2 — jamais bloquant.
 
-    Sans voyage en base, _kick_official_* abandonnait (404, ensemble vide,
-    journal à 0, film en repli). On sème l'itinéraire Berry embarqué puis
-    on enchaîne les kicks en fond. En pytest le semis est coupé (fixtures
-    PUT à 3 points) sauf NAVIGUIDE_SEED_OFFICIAL=force.
+    Sans voyage en base, le stock est vide : l'API répond « en préparation ».
+    On sème l'itinéraire Berry embarqué puis le worker remplit le stock hors
+    des requêtes. En pytest le semis est coupé (fixtures PUT à 3 points)
+    sauf NAVIGUIDE_SEED_OFFICIAL=force.
     """
     try:
         from voyage_api import (
@@ -150,13 +150,12 @@ async def get_official_film(
     style: str = Query("raw"),
     t0: str | None = Query(None),
 ):
-    """Script du film (lot F3) : brut par règles, rédigé Nemotron si `style=written`.
-    Réponse `{chapters, source, chars, targetSeconds, hasWritten}`. Sans voyage : 404."""
-    from film_script import official_film
-    try:
-        return await official_film(lang=lang, seconds=seconds, style=style, t0=t0)
-    except FileNotFoundError:
-        raise HTTPException(404, "voyage officiel absent") from None
+    """Script du film — snapshot du stock RF2, jamais un calcul sur la requête."""
+    import official_store
+    out = official_store.serve_film(lang=lang, seconds=seconds)
+    if out.get("status") == official_store.PREPARING:
+        official_store.kick_worker()
+    return out
 
 
 class PositionRequest(BaseModel):
@@ -220,6 +219,17 @@ async def get_ici(
         raise HTTPException(400, "dest_lat hors limites")
     if dest_lon is not None and not (-180 <= dest_lon <= 180):
         raise HTTPException(400, "dest_lon hors limites")
+    import official_store
+    stored = official_store.ici_bag_near(lat, lon)
+    if stored:
+        bag = dict(stored)
+        bag.setdefault("at", {"lat": lat, "lon": lon})
+        bag["cached"] = True
+        bag["status"] = bag.get("status") or "ready"
+        return bag
+    if official_store.on_official_route(lat, lon):
+        official_store.kick_worker()
+        return official_store.preparing_ici(lat, lon, radius_nm)
     return await fill_dossier(
         lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
     )
@@ -316,7 +326,11 @@ async def get_ici_moment(
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(400, "lat/lon hors limites")
     from moment import build_moment
-    pearl = _nearest_warmed_pearl(lat, lon)
+    import official_store
+    pearl = official_store.ici_bag_near(lat, lon) or _nearest_warmed_pearl(lat, lon)
+    if pearl is None and official_store.on_official_route(lat, lon):
+        official_store.kick_worker()
+        pearl = official_store.preparing_ici(lat, lon, ICI_RADIUS_NM)
     if pearl is None:
         pearl = await fill_dossier(
             lat, lon, ICI_RADIUS_NM, month=_month_from_t(t), dest_lat=None, dest_lon=None, thin=False,

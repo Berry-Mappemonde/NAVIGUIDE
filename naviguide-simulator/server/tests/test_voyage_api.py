@@ -297,6 +297,8 @@ def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
     import ensemble_eta
     monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek_official_eta)
     client.put("/voyage/official", json=_payload("2026-05-15T08:00:00Z"))
+    import official_store
+    official_store.put("eta", {"stops": {"Dzaoudzi (Mayotte)": tighten_eta_payload(exploded, now)}})
     r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
     assert r.status_code == 200
     body = r.json()
@@ -441,7 +443,7 @@ def test_get_eta_seeded_without_clock_is_empty_no_fetch(client, monkeypatch):
     assert body["members"] == 0
     assert body.get("p10") is None and body.get("p90") is None
     assert elapsed < 2.0
-    assert kicked
+    assert body.get("status") == "preparing"
     assert calls["compute"] == 0
     assert calls["clock"] == 0
     assert calls["fetch"] == 0
@@ -521,6 +523,8 @@ def test_get_eta_serves_alias_cache_without_clock(client, monkeypatch):
         ensemble_eta.official_eta_alias_key("Dzaoudzi (Mayotte)", now),
         payload,
     )
+    import official_store
+    official_store.put("eta", {"stops": {"Dzaoudzi (Mayotte)": payload}})
     r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
     assert r.status_code == 200
     body = r.json()
@@ -590,6 +594,8 @@ def test_get_eta_failed_ensemble_returns_reason(client, monkeypatch):
     import ensemble_eta
     monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
     client.get("/voyage/official")
+    import official_store
+    official_store.put("eta", {"stops": {"Papeete (Polynésie française)": fake_peek(None, "Papeete (Polynésie française)", now)}})
     r = client.get("/voyage/official/eta", params={"stop": "Papeete (Polynésie française)"})
     assert r.status_code == 200
     body = r.json()
@@ -624,6 +630,8 @@ def test_get_eta_ready_members_bounded(client, monkeypatch):
     import ensemble_eta
     monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
     client.get("/voyage/official")
+    import official_store
+    official_store.put("eta", {"stops": {"Papeete (Polynésie française)": fake_peek(None, "Papeete", now)}})
     r = client.get("/voyage/official/eta", params={"stop": "Papeete (Polynésie française)"})
     assert r.status_code == 200
     body = r.json()

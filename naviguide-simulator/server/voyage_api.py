@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from admin_guard import is_admin, rate_limited, require_admin
@@ -60,6 +61,7 @@ from voyage_clock import (
 from voyage_store import load_voyage, purge_stale_voyages, save_voyage, update_voyage
 from weather_pipeline import get_pipeline
 import voyage_journal as journal
+import official_store
 
 log = logging.getLogger("naviguide-simulator.voyage")
 router = APIRouter()
@@ -761,13 +763,9 @@ def kick_official_warmups(*, force: bool = False) -> None:
 
 
 def startup_official_voyage() -> Optional[dict]:
-    """Semis + kicks en fil daemon : le boot uvicorn ne bloque pas."""
+    """Semis + travail de fond du stock (lot RF2) : le boot uvicorn ne bloque pas."""
     voy = seed_official_voyage()
-    threading.Thread(
-        target=kick_official_warmups,
-        name="naviguide-official-warm",
-        daemon=True,
-    ).start()
+    official_store.start_worker()
     return voy
 
 
@@ -1045,21 +1043,24 @@ def ensure_official(body: VoyageCreate, background: BackgroundTasks, request: Re
                 existing["expedition_id"] = body.expedition_id
                 changed = True
         if changed:
-            existing["clock"] = _climo_clock(existing)
             save_voyage(existing)
             log.info("voyage officiel mis à jour par l'admin (%s points)", len(existing["points"]))
-        background.add_task(_kick_official_grib)
-        background.add_task(_kick_official_hindcast)
-        background.add_task(_kick_official_eta)
-        background.add_task(_kick_official_moments)
-        return {**_public_meta(existing), "clock": existing.get("clock") or _climo_clock(existing)}
+        background.add_task(official_store.kick_worker)
+        clock = official_store.stored_clock() or existing.get("clock")
+        meta = _public_meta(existing)
+        if clock:
+            meta["clock"] = clock
+        return meta
     log.warning("voyage officiel absent : créé depuis un client (%s points)", len(body.points))
-    voy = _build_official(body)
-    background.add_task(_kick_official_grib)
-    background.add_task(_kick_official_hindcast)
-    background.add_task(_kick_official_eta)
-    background.add_task(_kick_official_moments)
-    return {**_public_meta(voy), "clock": voy["clock"]}
+    # Route officielle (~1 200 pts) : jamais d'horloge sur la requête (RF2).
+    # Fixtures de test (quelques points) : horloge locale, aucun fournisseur.
+    voy = _build_official(body, compute_clock=len(body.points) < 80)
+    background.add_task(official_store.kick_worker)
+    clock = official_store.stored_clock() or voy.get("clock")
+    meta = _public_meta(voy)
+    if clock:
+        meta["clock"] = clock
+    return meta
 
 
 @router.get("/voyage/official")
@@ -1079,27 +1080,40 @@ def get_official():
 
 @router.get("/voyage/official/clock")
 def get_official_clock():
-    """Horloge officielle unique : source de la position live (lot RA4)."""
+    """Horloge officielle : lue du stock RF2 — jamais un calcul sur la requête."""
+    raw = official_store.serve_clock_bytes()
+    if raw:
+        return Response(content=raw, media_type="application/json")
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    if voy is None:
-        raise HTTPException(404, "voyage officiel absent")
-    _maybe_daily_hindcast(voy)
-    _journal_safely(lambda: journal.tick(voy, _now()))
-    return voy.get("clock") or _climo_clock(voy)
+    clock = (voy or {}).get("clock")
+    if clock and clock.get("t0"):
+        return clock
+    official_store.kick_worker()
+    return official_store.preparing_payload("climo", {"t0": OFFICIAL_T0})
 
 
 @router.get("/voyage/official/regimes")
 def get_official_regimes():
-    """Portions de route par régime (hindcast / forecast / climatology)."""
+    """Portions de route par régime — snapshot du stock (lot RF2)."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    if voy is None:
-        raise HTTPException(404, "voyage officiel absent")
-    clock = voy.get("clock") or _climo_clock(voy)
+    climo = official_store.serve_climo()
+    clock = (climo or {}).get("clock") or official_store.stored_clock() or (voy or {}).get("clock")
+    if not clock:
+        official_store.kick_worker()
+        return official_store.preparing_payload("climo", {
+            "voyageId": OFFICIAL_VOYAGE_ID,
+            "kind": "climatology",
+            "portions": [],
+        })
+    portions = (climo or {}).get("regimes")
+    if portions is None:
+        portions = _regime_portions(clock)
     return {
         "voyageId": OFFICIAL_VOYAGE_ID,
         "kind": clock.get("kind") or "climatology",
-        "hindcastStatus": voy.get("hindcastStatus"),
-        "portions": _regime_portions(clock),
+        "hindcastStatus": (voy or {}).get("hindcastStatus"),
+        "portions": portions,
+        "status": "ready",
     }
 
 
@@ -1114,14 +1128,11 @@ class JournalNoteIn(BaseModel):
 def get_official_moments(
     until: str | None = Query(None, description="ISO : ne garder que les lignes t ≤ until"),
 ):
-    """Journal des moments du voyage officiel (lot R9a). Lecture seule."""
-    voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    if voy is None:
-        raise HTTPException(404, "voyage officiel absent")
-    _kick_official_moments(force=False)
-    from moment_journal import read_moments  # noqa: PLC0415
-    rows = read_moments(OFFICIAL_VOYAGE_ID, until=until)
-    return {"voyageId": OFFICIAL_VOYAGE_ID, "until": until, "count": len(rows), "moments": rows}
+    """Journal des moments — lu du stock RF2, jamais un warm sur la requête."""
+    out = official_store.serve_moments(until=until)
+    if out.get("status") == official_store.PREPARING:
+        official_store.kick_worker()
+    return out
 
 
 @router.get("/voyage/official/journal")
@@ -1129,59 +1140,37 @@ def get_official_journal(
     limit: int = Query(50, ge=1, le=500),
     kinds: str | None = Query(None, description="filtre `latest` : kinds séparés par des virgules (zee,amp,poe,wx,…)"),
 ):
-    """La mémoire du voyage officiel : jours disponibles + dernières entrées
-    (+ `events` : tout le voyage hors positions)."""
-    voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    if voy is not None:
-        _journal_safely(lambda: journal.tick(voy, _now()))
+    """La mémoire du voyage officiel — snapshot du stock RF2, sans tick HTTP."""
     wanted = tuple(k.strip() for k in kinds.split(",") if k.strip() in journal.KINDS) if kinds else None
-    out = journal.summary(limit)
-    if wanted:
-        out["latest"] = journal.latest(limit, kinds=wanted)
-    return {"voyageId": OFFICIAL_VOYAGE_ID, **out}
+    out = official_store.serve_journal(limit, wanted)
+    if out.get("status") != official_store.PREPARING:
+        return out
+    # Fichiers déjà écrits hors requête (tick du travail de fond, notes) :
+    # on les sert tels quels, on ne tick pas.
+    legacy = journal.summary(limit)
+    if (legacy.get("count") or 0) > 0:
+        if wanted:
+            legacy["latest"] = journal.latest(limit, kinds=wanted)
+        return {"voyageId": OFFICIAL_VOYAGE_ID, "status": "ready", **legacy}
+    official_store.kick_worker()
+    return out
 
 
 @router.get("/voyage/official/eta")
 def get_official_eta(stop: str = Query(..., min_length=1)):
-    """Fourchette p10–p90. Cache ou `{members: 0}` + état (raison, relance) — jamais de compute HTTP."""
-    voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    if voy is None:
-        raise HTTPException(404, "voyage officiel absent")
-    from ensemble_eta import peek_official_eta, tighten_eta_payload  # noqa: PLC0415
-    _kick_official_eta(force=False, stop=stop)
-    return tighten_eta_payload(peek_official_eta(voy, stop, _now()), _now())
+    """Fourchette p10–p90 — lue du stock RF2, jamais un fetch sur la requête."""
+    out = official_store.serve_eta(stop)
+    if out.get("status") == official_store.PREPARING:
+        official_store.kick_worker()
+    return out
 
 
 @router.get("/voyage/official/plan-review")
 def get_official_plan_review():
-    """Revue de plan par règles (lot K) + commentaire U7 (lot L5)."""
-    voy = load_voyage(OFFICIAL_VOYAGE_ID)
-    if voy is None:
-        raise HTTPException(404, "voyage officiel absent")
-    from plan_review import comment_plan, review_official  # noqa: PLC0415
-    out = review_official(voy, _now())
-    try:
-        from plan_alerts import evaluate_plan  # noqa: PLC0415
-        ev = evaluate_plan(voy, now=_now())
-        counts = {}
-        for lg in ev.get("legs") or []:
-            n = len(lg.get("alerts") or [])
-            if lg.get("idx") is not None:
-                counts[int(lg["idx"])] = n
-            counts[(lg.get("from"), lg.get("to"))] = n
-        for i, row in enumerate(out.get("legs") or []):
-            n = counts.get(i)
-            if n is None:
-                n = counts.get((row.get("from"), row.get("to")))
-            if n is not None:
-                row["alertCount"] = int(n)
-    except Exception as exc:
-        log.debug("alertCount revue : %s", exc)
-    try:
-        out["comment"] = _run_async(comment_plan(out.get("legs") or []))
-    except Exception as exc:
-        log.warning("commentaire revue : %s", exc)
-        out["comment"] = {"text": "", "source": "rules", "cached": False}
+    """Revue de plan — snapshot du stock RF2, sans atlas ni LLM sur la requête."""
+    out = official_store.serve_plan_review()
+    if out.get("status") == official_store.PREPARING:
+        official_store.kick_worker()
     return out
 
 
@@ -1265,6 +1254,9 @@ def get_official_advice(
 @router.get("/voyage/official/journal/{day}")
 def get_official_journal_day(day: str):
     try:
+        stored = official_store.serve_journal_day(day)
+        if stored is not None:
+            return {"voyageId": OFFICIAL_VOYAGE_ID, "day": day, "entries": stored, "status": "ready"}
         entries = journal.read_day(day)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -1286,6 +1278,7 @@ def post_official_journal_note(body: JournalNoteIn):
         entry = journal.add_note(body.text, when, author=body.author or "skipper", lang=body.lang or "fr")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    official_store.append_note_to_store(entry)
     return entry
 
 
@@ -1293,7 +1286,9 @@ def _grib_around_from_live(voy: Optional[dict], when: datetime) -> Optional[dict
     """Couloir horloge : ici → position à l’ETA du prochain téléchargement."""
     if not voy:
         return None
-    clock = voy.get("clock") or _climo_clock(voy)
+    clock = official_store.stored_clock() or (voy or {}).get("clock")
+    if not clock:
+        return None
     around = track_from_clock(clock, when)
     if around:
         return around
@@ -1347,16 +1342,18 @@ def official_at(t: Optional[str] = Query(None)):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
-    clock = voy.get("clock") or _climo_clock(voy)
+    clock = official_store.stored_clock() or voy.get("clock")
+    if not clock:
+        official_store.kick_worker()
+        return official_store.preparing_payload("climo")
     when = parse_iso(t) if t else _now()
-    _journal_safely(lambda: journal.tick(voy, _now()))
     sample = sample_clock_at_time(clock, when)
     if sample is None:
         raise HTTPException(404, "horloge vide")
     sample["voyageId"] = OFFICIAL_VOYAGE_ID
     sample["t"] = to_iso(when)
     around = _grib_around_from_live(voy, when)
-    grib = _latest_official_grib(around, when)
+    grib = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
     wind = wind_at_daily(grib, float(sample.get("lat") or 0), float(sample.get("lon") or 0), when)
     sample["regime"] = sample.get("regime") or sample.get("kind") or "climatology"
     sample["sources"] = list(sample.get("sources") or [])
@@ -1391,7 +1388,6 @@ def get_official_grib(
 ):
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     when = parse_iso(t) if t else _now()
-    _journal_safely(lambda: journal.tick(voy, _now()))
     around = _resolve_grib_around(voy, when, lat, lon)
     record = load_latest(OFFICIAL_VOYAGE_ID, utc_day(when))
     if record is None and around:
