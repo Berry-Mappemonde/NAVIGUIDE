@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, voiceLedStep, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
@@ -144,6 +144,9 @@ export function shouldReturnToLive({ userStopped = false, filmFinished = false, 
 }
 
 /** Avance linéaire : le dernier chapitre est atteint à la durée cible, pas avant. */
+/** Voix sans aucun mot depuis ce délai en plein chapitre : synthèse considérée plantée. */
+export const FILM_VOICE_STALL_MS = 12000;
+
 /** Part du récit déjà dite (0..1) : caractères prononcés / caractères du film. */
 export function spokenProgress(plan, chapterIdx, charIdx) {
   const list = plan?.chapters || [];
@@ -380,6 +383,7 @@ export function useReplay({
   const voiceCharRef = useRef(0);
   const voiceFailedRef = useRef(false);
   const voiceSpokenAllRef = useRef(false);
+  const voiceBoundaryAtRef = useRef(0);
   const tMsRef = useRef(null);
   const voiceTargetRef = useRef(null);
   const recaleRemainRef = useRef(0);
@@ -628,6 +632,7 @@ export function useReplay({
     voiceCharRef.current = 0;
     voiceFailedRef.current = false;
     voiceSpokenAllRef.current = false;
+    voiceBoundaryAtRef.current = 0;
     setVoiceRate(1);
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
@@ -666,6 +671,7 @@ export function useReplay({
     const plan = planRef.current;
     if (!plan || finishedRef.current) return;
     voiceCharRef.current = charIdx;
+    voiceBoundaryAtRef.current = performance.now();
     const next = plan.timeAt(chapterIdxRef.current, charIdx);
     if (next == null) return;
     voiceTargetRef.current = next;
@@ -731,6 +737,14 @@ export function useReplay({
       const elapsed = (now - startWallRef.current) / 1000;
       const denom = Number(plan.targetSeconds) > 0 ? plan.targetSeconds : 1;
       const uiDue = now - lastUiAtRef.current >= FILM_UI_MS;
+      if (
+        voiceRef.current && !voiceFailedRef.current && !voiceSpokenAllRef.current
+        && voiceBoundaryAtRef.current > 0 && now - voiceBoundaryAtRef.current > FILM_VOICE_STALL_MS
+      ) {
+        // Voix muette depuis trop longtemps (synthèse plantée) : l'horloge murale reprend la main
+        // plutôt que de figer le film.
+        voiceFailedRef.current = true;
+      }
       const voiceClock = Boolean(
         voiceRef.current
         && !voiceFailedRef.current
@@ -784,12 +798,16 @@ export function useReplay({
       } else {
         const ch = plan.chapters[chapterIdxRef.current];
         const cur = tMsRef.current ?? lastTRef.current ?? ch?.tA;
-        const stepped = advanceReplayTime({
+        // Le bateau suit la voix, jamais l'inverse (27 sept.) : il vise l'instant de ce qui va
+        // être dit dans ~1 s, à la pente locale des ancres, et n'a pas le droit de le dépasser.
+        const stepped = voiceLedStep({
           t: cur,
           dt: dt / 1000,
           chapter: ch,
-          targetT: voiceTargetRef.current,
-          recaleRemainMs: recaleRemainRef.current,
+          plan,
+          chapterIdx: chapterIdxRef.current,
+          charIdx: voiceCharRef.current,
+          cps: measuredCps(voiceCharRef.current, chapterStartedAtRef.current ? now - chapterStartedAtRef.current : 0),
         });
         recaleRemainRef.current = stepped.recaleRemainMs;
         ingest(stepped.t);
