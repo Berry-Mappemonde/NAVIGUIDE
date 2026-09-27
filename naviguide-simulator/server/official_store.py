@@ -1060,6 +1060,7 @@ def fill_process_alive() -> Optional[int]:
         raw = fill_pidfile().read_text(encoding="utf-8").strip().splitlines()
         pid = int(raw[0])
         script = raw[1] if len(raw) > 1 else ""
+        stamp = raw[2] if len(raw) > 2 else ""
     except (OSError, ValueError, IndexError):
         return None
     try:
@@ -1069,14 +1070,24 @@ def fill_process_alive() -> Optional[int]:
     cmd = _process_command(pid)
     if FILL_SCRIPT.name not in cmd:
         return None
-    if script and script != str(FILL_SCRIPT):
-        log.warning("stock officiel : remplisseur d'un autre checkout (%s, pid %s) — arrêté", script, pid)
+    # Autre checkout, OU même chemin mais code changé (le poste réutilise toujours ~/bim-lots/recette : après un
+    # rebuild, le remplisseur en mémoire est celui de l'ancienne branche) → on le remplace.
+    if (script and script != str(FILL_SCRIPT)) or (stamp and stamp != _fill_script_stamp()):
+        log.warning("stock officiel : remplisseur d'un autre code (%s, pid %s) — arrêté", script or "?", pid)
         try:
             os.kill(pid, 15)
         except OSError:
             pass
         return None
     return pid
+
+
+def _fill_script_stamp() -> str:
+    """Empreinte du code du remplisseur : mtime du script (change à chaque checkout d'une autre branche)."""
+    try:
+        return str(FILL_SCRIPT.stat().st_mtime_ns)
+    except OSError:
+        return ""
 
 
 def ensure_fill_process() -> Optional[int]:
@@ -1104,7 +1115,7 @@ def ensure_fill_process() -> Optional[int]:
             log.warning("stock officiel : remplisseur non lancé : %s", exc)
             return None
         try:
-            fill_pidfile().write_text(f"{p.pid}\n{FILL_SCRIPT}\n", encoding="utf-8")
+            fill_pidfile().write_text(f"{p.pid}\n{FILL_SCRIPT}\n{_fill_script_stamp()}\n", encoding="utf-8")
         except OSError:
             pass
         log.info("stock officiel : remplisseur lancé (pid %s, nice %s, période %s s)", p.pid, FILL_NICE, int(PERIOD_S))
