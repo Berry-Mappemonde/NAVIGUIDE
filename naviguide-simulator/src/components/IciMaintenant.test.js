@@ -163,6 +163,8 @@ describe("useMoment — lot R8b / RC2", () => {
     assert.doesNotMatch(hook, /moment: MOMENT_FIXTURE/);
     assert.doesNotMatch(hook, /source: "fixture"/);
     assert.match(hook, /controller\.abort\(\)/);
+    assert.match(hook, /frozen = false/);
+    assert.match(hook, /if \(frozen\) return undefined/);
     const q = momentSearchParams({ lat: 37.7, lon: 236.84, t: "2026-05-15T08:00:00Z", mode: "follow", lang: "fr" });
     assert.equal(Number(Number(q.get("lon")).toFixed(2)), Number(wrapLon(236.84).toFixed(2)));
     assert.equal(q.get("t"), "2026-05-15T08:00:00Z");

@@ -20,6 +20,8 @@ import {
   localizeAdviceSentence,
   nextEtaRetryMs,
   nextStopFromMarks,
+  countOfficialEtaPolls,
+  shouldPollOfficialEta,
   pickHeaviestLegIdx,
   pollOfficialAdvice,
   pollOfficialEta,
@@ -250,5 +252,18 @@ describe("usePlanReview — conseil (lot R10d)", () => {
     assert.equal(reviewAdviceKey({ legs: [] }, 0), "");
     assert.match(src, /reviewAdviceKey/);
     assert.match(src, /isAdviceUnavailable/);
+  });
+});
+
+describe("usePlanReview — ETA gelée pendant le film (lot RF4)", () => {
+  const stops = ["La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa", "Dzaoudzi"];
+
+  it("ne re-sonde pas l'ETA tant que le film tourne, une sonde à l'arrêt", () => {
+    assert.equal(countOfficialEtaPolls(stops, { frozen: true }), 0);
+    assert.equal(shouldPollOfficialEta({ frozen: true, enabled: true, stopName: "Nouméa" }), false);
+    assert.equal(shouldPollOfficialEta({ frozen: false, enabled: true, stopName: "Nouméa" }), true);
+    assert.equal(countOfficialEtaPolls(["Nouméa"], { frozen: false }), 1);
+    assert.match(src, /shouldPollOfficialEta/);
+    assert.match(src, /frozen = false/);
   });
 });
