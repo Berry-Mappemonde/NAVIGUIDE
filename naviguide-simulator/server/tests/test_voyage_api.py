@@ -696,3 +696,76 @@ def test_kick_official_eta_retries_when_backoff_elapsed(tmp_path, monkeypatch):
     assert voyage_api._kick_official_eta(force=True, stop="Papeete") is True
     voyage_api._wait_official_kick("official-eta", timeout=2.0)
     assert voyage_api._kick_official_eta(force=False, stop="Papeete") is True
+
+
+def test_create_voyage_clock_failure_is_dated_503_not_500(client, monkeypatch):
+    """Lot RF3 : _climo_clock lève → 503 daté, jamais un 500 brut."""
+    def boom(*_a, **_k):
+        raise RuntimeError("clock boom")
+
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+    r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert detail["status"] == "unavailable"
+    assert "clock boom" in detail["reason"]
+    assert "T" in detail["at"] and detail["at"].endswith("Z")
+
+
+def test_official_post_does_not_compute_clock(client, monkeypatch):
+    """Lot RF3 : POST officiel lit le stock, aucun _climo_clock."""
+    monkeypatch.setattr(voyage_api, "_climo_clock", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("calcul")))
+    body = _payload("2026-05-15T08:00:00Z") | {"official": True, "forecast": False}
+    r = client.post("/voyage", json=body)
+    assert r.status_code == 200
+    clock = r.json().get("clock") or {}
+    assert clock.get("status") == "preparing" or clock.get("vertices")
+
+
+def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):
+    """Lot RF3 : parcours nominal TestClient — aucun 500 sur les routes du fil rouge."""
+    import polar_api
+
+    monkeypatch.setattr(polar_api, "POLAR_DATA_DIR", tmp_path / "polar")
+    polar_api._default_polar.cache_clear()
+    dest = polar_api._polar_path(polar_api.DEFAULT_POLAR_EXPEDITION)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("{bad", encoding="utf-8")
+
+    paths = [
+        ("GET", "/voyage/official", {}),
+        ("GET", "/voyage/official/clock", {}),
+        ("GET", "/voyage/official/moments", {}),
+        ("GET", "/voyage/official/journal", {}),
+        ("GET", "/voyage/official/eta", {"stop": "Nouméa"}),
+        ("GET", "/voyage/official/plan-review", {}),
+        ("GET", "/ici", {"lat": 46.15, "lon": -1.16}),
+        ("GET", "/ici/moment", {"lat": 46.15, "lon": -1.16}),
+        ("GET", "/ici/pearls", {}),
+        ("GET", "/ici/warm/status", {}),
+        ("GET", f"/api/v1/polar/{polar_api.DEFAULT_POLAR_EXPEDITION}/client", {}),
+    ]
+    for method, path, params in paths:
+        r = client.request(method, path, params=params)
+        assert r.status_code < 500, f"{path} → {r.status_code} {r.text[:200]}"
+
+    polar = client.get(f"/api/v1/polar/{polar_api.DEFAULT_POLAR_EXPEDITION}/client")
+    assert polar.status_code == 200
+    assert polar.json()["boat_name"] == "Leopard 46"
+    assert polar.json().get("source") == "default"
+
+
+def test_ici_fill_failure_is_dated_200(client, monkeypatch):
+    """Lot RF3 : fill_dossier lève → /ici 200 daté, pas un 500."""
+    import main
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("bi down")
+
+    monkeypatch.setattr(main, "fill_dossier", boom)
+    r = client.get("/ici", params={"lat": 0.0, "lon": 0.0})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "unavailable"
+    assert "bi down" in body["reason"]
+    assert body["at"].endswith("Z")
