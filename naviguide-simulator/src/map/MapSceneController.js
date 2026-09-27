@@ -48,6 +48,7 @@ import { attachEscalePopup } from "../components/EscalePopup.jsx";
 import { officialAirRouteStyles, officialRouteLineStyle } from "../utils/berryLegs.js";
 
 const TELEPORT_NM = 80;
+const EXIT_HOLD_MS = 1500;   // zoom de sortie du film tenu 1,5 s au plus, puis relâché (KO #350)
 /** Une copie du monde de chaque côté : ±180° + ±360°. */
 export const MAP_LON_BOUND = 540;
 export const MAP_LAT_BOUND = 85;
@@ -262,6 +263,7 @@ export class MapSceneController {
       filmFlyingUntil: 0,
       filmLastCenter: null,
       exitHold: false,
+      exitHoldUntil: null,
       exitHoldZoom: null,
     };
     this.filmLoopRaf = 0;
@@ -283,7 +285,13 @@ export class MapSceneController {
       this.zoomJustEnded = true;
       this.scheduleWaypoints({ reason: "zoom" });
       this.waypointZoom = this.map.getZoom();
-      this.restoreExitZoom();
+      if (this.ignoreUserNavigation) {
+        this.restoreExitZoom();
+      } else {
+        // Zoom de l'utilisateur : le zoom de sortie du film ne doit plus rien imposer (KO #350, 27 sept. :
+        // après Revoir, chaque zoom était aussitôt annulé — impossible de dézoomer).
+        this.releaseExitZoom();
+      }
     };
     this.onMoveEnd = () => {
       // Lot U : pas de sac ni de récit ici — seulement copies bateau + offsets.
@@ -443,6 +451,7 @@ export class MapSceneController {
       this.map?.stop?.();
       this.camera.exitHoldZoom = Number.isFinite(holdZoom) ? holdZoom : this.map?.getZoom?.();
       this.camera.exitHold = true;
+      this.camera.exitHoldUntil = Date.now() + EXIT_HOLD_MS;
       this.camera.recapture = this.config.cinemaRecapture;
       this.camera.resetKey = `${this.config.view}-${this.config.sceneReady ? "ready" : "load"}-${this.config.cinemaRecapture}`;
       const live = this.config.live;
@@ -1027,6 +1036,7 @@ export class MapSceneController {
       filmFlyingUntil: 0,
       filmLastCenter: null,
       exitHold: false,
+      exitHoldUntil: null,
       exitHoldZoom: null,
     };
     this.stopFilmCameraLoop();
@@ -1041,12 +1051,28 @@ export class MapSceneController {
     this.callbacks.onCameraPlaced?.(next);
   }
 
+  /**
+   * Zoom de sortie du film : tenu quelques instants seulement (le temps qu'un dernier flyTo du film se pose),
+   * puis relâché. Avant le 27 sept. il n'était jamais relâché : onZoomEnd le ré-imposait à chaque zoom.
+   */
   restoreExitZoom() {
     const hold = this.camera?.exitHoldZoom;
     if (!Number.isFinite(hold) || this.config.filmActive || this.config.drawingMode || !this.map) return;
+    if (Number.isFinite(this.camera.exitHoldUntil) && Date.now() > this.camera.exitHoldUntil) {
+      this.releaseExitZoom();
+      return;
+    }
     const z = this.map.getZoom();
     if (Math.abs(z - hold) <= 0.05) return;
     this.programmaticMove(() => this.map.setView(this.map.getCenter(), hold, { animate: false }));
+  }
+
+  releaseExitZoom() {
+    if (!this.camera) return;
+    this.camera.exitHold = false;
+    this.camera.exitHoldZoom = null;
+    this.camera.exitHoldUntil = null;
+    window.clearTimeout(this.exitZoomTimer);
   }
 
   programmaticMove(fn) {
