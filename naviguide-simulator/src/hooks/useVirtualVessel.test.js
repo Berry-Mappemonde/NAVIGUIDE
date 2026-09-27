@@ -37,6 +37,22 @@ describe("useVirtualVessel — explication de recalcul (lot L5)", () => {
     assert.doesNotMatch(src, /official:\s*(true|Boolean|follow)/);
     assert.match(src, /CREATE_BACKOFF_MS/);
   });
+
+  it("n'appelle pas /at tant que clock.status === preparing (lot RC15)", () => {
+    function shouldFetchAt(clock) {
+      if (!clock || typeof clock !== "object") return false;
+      if (clock.status === "preparing") return false;
+      return Array.isArray(clock.vertices) && clock.vertices.length > 0;
+    }
+    assert.match(src, /export function shouldFetchAt/);
+    assert.match(src, /clock\.status === "preparing"/);
+    assert.match(src, /if \(shouldFetchAt\(body\.clock\)\)/);
+    assert.match(src, /if \(!shouldFetchAt\(ck\)\) return null/);
+    assert.doesNotMatch(src, /await refreshLive\(body\.voyageId\);/);
+    assert.equal(shouldFetchAt({ status: "preparing", reason: "horloge en préparation" }), false);
+    assert.equal(shouldFetchAt({ vertices: [{ t: 1 }] }), true);
+    assert.equal(shouldFetchAt(null), false);
+  });
 });
 
 describe("createBackoffMs — repli progressif (lot RF3)", () => {

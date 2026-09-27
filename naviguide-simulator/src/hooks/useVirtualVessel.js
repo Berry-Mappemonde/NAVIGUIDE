@@ -33,6 +33,13 @@ export function createBackoffMs(failCount) {
   return CREATE_BACKOFF_MS[i];
 }
 
+/** GET /voyage/{id}/at seulement quand l'horloge a des sommets (lot RC15). */
+export function shouldFetchAt(clock) {
+  if (!clock || typeof clock !== "object") return false;
+  if (clock.status === "preparing") return false;
+  return Array.isArray(clock.vertices) && clock.vertices.length > 0;
+}
+
 export function useVirtualVessel({
   enabled,
   forecast,
@@ -56,6 +63,7 @@ export function useVirtualVessel({
   const nextCreateAtRef = useRef(0);
   const lastAttemptFpRef = useRef("");
   const retryTimerRef = useRef(null);
+  const clockRef = useRef(null);
 
   const persist = useCallback((voy) => {
     if (!voy) return;
@@ -77,8 +85,10 @@ export function useVirtualVessel({
     return data;
   }, []);
 
-  const refreshLive = useCallback(async (voyageId) => {
+  const refreshLive = useCallback(async (voyageId, clockHint) => {
     if (!voyageId) return null;
+    const ck = clockHint !== undefined ? clockHint : clockRef.current;
+    if (!shouldFetchAt(ck)) return null;
     const sample = await fetchJson(`/voyage/${voyageId}/at`);
     setLive(sample);
     return sample;
@@ -90,10 +100,14 @@ export function useVirtualVessel({
     persist(meta);
     try {
       const ck = await fetchJson(`/voyage/${voyageId}/clock`);
+      clockRef.current = ck;
       setClock(ck);
+      if (shouldFetchAt(ck)) {
+        await refreshLive(voyageId, ck);
+      }
     } catch { /* clock optional */ }
     return meta;
-  }, [fetchJson, persist]);
+  }, [fetchJson, persist, refreshLive]);
 
   const create = useCallback(async () => {
     if (!points?.length || !t0 || creatingRef.current) return null;
@@ -131,12 +145,15 @@ export function useVirtualVessel({
         }),
       });
       setVoyage(body);
+      clockRef.current = body.clock || null;
       setClock(body.clock || null);
       persist(body);
       fpRef.current = fingerprint(points, t0, startAt);
       failCountRef.current = 0;
       nextCreateAtRef.current = 0;
-      await refreshLive(body.voyageId);
+      if (shouldFetchAt(body.clock)) {
+        await refreshLive(body.voyageId, body.clock);
+      }
       return body;
     } catch (err) {
       failCountRef.current += 1;
@@ -158,7 +175,6 @@ export function useVirtualVessel({
     const boot = async () => {
       if (fpRef.current === fp && voyage?.voyageId) {
         await refreshMeta(voyage.voyageId);
-        await refreshLive(voyage.voyageId);
         return;
       }
       if (stored?.voyageId && stored.t0 === t0) {
@@ -168,7 +184,6 @@ export function useVirtualVessel({
             fpRef.current = fp;
             failCountRef.current = 0;
             nextCreateAtRef.current = 0;
-            await refreshLive(meta.voyageId);
             return;
           }
         } catch { /* recreate */ }
@@ -201,7 +216,10 @@ export function useVirtualVessel({
 
   useEffect(() => {
     if (!enabled || !follow || !voyage?.voyageId) return undefined;
-    const tick = () => refreshLive(voyage.voyageId).catch(() => {});
+    const tick = () => {
+      if (!shouldFetchAt(clockRef.current)) return;
+      refreshLive(voyage.voyageId).catch(() => {});
+    };
     const id = setInterval(tick, 60_000);
     const onFocus = () => tick();
     window.addEventListener("focus", onFocus);
@@ -249,10 +267,13 @@ export function useVirtualVessel({
     try {
       const body = await fetchJson(`/voyage/${voyage.voyageId}/accept`, { method: "POST" });
       setVoyage(body);
+      clockRef.current = body.clock || null;
       setClock(body.clock || null);
       setDraft(null);
       persist(body);
-      await refreshLive(body.voyageId);
+      if (shouldFetchAt(body.clock)) {
+        await refreshLive(body.voyageId, body.clock);
+      }
       return body;
     } finally {
       setBusy(false);
