@@ -20,7 +20,7 @@ FILM_BUDGET_CHARS = 2400
 FILM_WRITE_MIN = 2160
 FILM_WRITE_MAX = 2640
 FILM_CHAPTER_FLOOR = 120
-FILM_CHAPTER_MAX_CHANGES = 3
+FILM_CHAPTER_MAX_CHANGES = 4   # arrivée + un fait de mer + la marina de l'escale + approche (27 sept. ; était 3)
 KIND_GROUP_FRAC = 0.10
 FILM_MIN_EVENTS = 6
 FILM_MAX_EVENTS = 9
@@ -80,7 +80,9 @@ GENERIC_TITLES = frozenset({
     "autour du bateau", "zee",
 })
 NO_DATA_RE = re.compile(
-    r"aucun port d'entr[ée]e|no official port of entry|n'est connu",
+    # Les deux apostrophes : droite « ' » et typographique « ’ » — le journal écrit « d’entrée », « n’est connu »
+    # (27 sept. : avec la seule apostrophe droite, le filtre RE7 ne filtrait rien).
+    r"aucun port d['’]entr[ée]e|no official port of entry|n['’]est connu",
     re.I,
 )
 DIST_IN_TEXT = re.compile(
@@ -92,7 +94,7 @@ DIST_PAREN_RE = re.compile(
     re.I,
 )
 LIST_PREFIX_RE = re.compile(
-    r"^(?:ports? d'entr[ée]e|formalit[ée]s d'entr[ée]e|entr[ée]e dans)\s*:?\s*",
+    r"^(?:ports? d['’]entr[ée]e|formalit[ée]s d['’]entr[ée]e|entr[ée]e dans)\s*:?\s*",
     re.I,
 )
 IUCN_RE = re.compile(r"\bIUCN\s+\S+", re.I)
@@ -160,6 +162,47 @@ _ZEE_NATION = (
     (re.compile(r"mauritan", re.I), ("mauritaniennes", "Mauritanian")),
     (re.compile(r"papua|papou", re.I), ("papouanes", "Papua New Guinean")),
     (re.compile(r"philippine", re.I), ("philippines", "Philippine")),
+    # Route Berry-Mappemonde (27 sept.) : le film disait « les eaux Antiguan and Barbudan », « dominicaine ».
+    (re.compile(r"antigua", re.I), ("d'Antigua-et-Barbuda", "Antiguan")),
+    (re.compile(r"dominican republic|r[ée]publique dominicaine", re.I), ("de la République dominicaine", "Dominican Republic")),
+    (re.compile(r"dominica|dominiquais", re.I), ("de la Dominique", "Dominican")),
+    (re.compile(r"kittitian|saint[- ]kitts|nevis", re.I), ("de Saint-Christophe-et-Niévès", "Kittitian")),
+    (re.compile(r"montserrat", re.I), ("de Montserrat", "Montserratian")),
+    (re.compile(r"anguill", re.I), ("d'Anguilla", "Anguillan")),
+    (re.compile(r"sint[- ]maarten|saint[- ]martin", re.I), ("de Saint-Martin", "Saint-Martin")),
+    (re.compile(r"surinam", re.I), ("surinamaises", "Surinamese")),
+    (re.compile(r"guyanese|guyana\b", re.I), ("du Guyana", "Guyanese")),
+    (re.compile(r"trinidad|tobag", re.I), ("de Trinité-et-Tobago", "Trinidadian")),
+    (re.compile(r"barbad", re.I), ("barbadiennes", "Barbadian")),
+    (re.compile(r"saint[- ]lucia|lucian", re.I), ("de Sainte-Lucie", "Saint Lucian")),
+    (re.compile(r"grenad", re.I), ("grenadiennes", "Grenadian")),
+    (re.compile(r"vincent", re.I), ("de Saint-Vincent-et-les-Grenadines", "Vincentian")),
+    (re.compile(r"panama|panam[ée]", re.I), ("panaméennes", "Panamanian")),
+    (re.compile(r"costa ric", re.I), ("costariciennes", "Costa Rican")),
+    (re.compile(r"ecuador|[ée]quatorien", re.I), ("équatoriennes", "Ecuadorian")),
+    (re.compile(r"peru|p[ée]rou|peruvian", re.I), ("péruviennes", "Peruvian")),
+    (re.compile(r"kiribati|gilbert", re.I), ("des Kiribati", "Kiribati")),
+    (re.compile(r"cook island", re.I), ("des Îles Cook", "Cook Islands")),
+    (re.compile(r"tonga", re.I), ("tongiennes", "Tongan")),
+    (re.compile(r"samoa", re.I), ("samoanes", "Samoan")),
+    (re.compile(r"tuvalu", re.I), ("des Tuvalu", "Tuvaluan")),
+    (re.compile(r"vanuatu|vanuatuan", re.I), ("du Vanuatu", "Vanuatuan")),
+    (re.compile(r"solomon", re.I), ("des Îles Salomon", "Solomon Islands")),
+    (re.compile(r"comor", re.I), ("comoriennes", "Comorian")),
+    (re.compile(r"mauriti|mauricien", re.I), ("mauriciennes", "Mauritian")),
+    (re.compile(r"madagas|malgache", re.I), ("malgaches", "Malagasy")),
+    (re.compile(r"mozambi", re.I), ("mozambicaines", "Mozambican")),
+    (re.compile(r"seychell", re.I), ("seychelloises", "Seychellois")),
+    (re.compile(r"tanzan", re.I), ("tanzaniennes", "Tanzanian")),
+    (re.compile(r"kenya", re.I), ("kényanes", "Kenyan")),
+    (re.compile(r"cape verd|cap-vert|capverd", re.I), ("capverdiennes", "Cape Verdean")),
+    (re.compile(r"gibraltar", re.I), ("de Gibraltar", "Gibraltar")),
+    (re.compile(r"bermud", re.I), ("des Bermudes", "Bermudian")),
+    (re.compile(r"bahamas|bahamian", re.I), ("bahaméennes", "Bahamian")),
+    (re.compile(r"haiti|ha[ïi]tien", re.I), ("haïtiennes", "Haitian")),
+    (re.compile(r"jamaic", re.I), ("jamaïcaines", "Jamaican")),
+    (re.compile(r"honduran|honduras", re.I), ("honduriennes", "Honduran")),
+    (re.compile(r"nicaragua", re.I), ("nicaraguayennes", "Nicaraguan")),
 )
 
 
@@ -320,6 +363,8 @@ def change_place_name(change: dict) -> str:
     if kind == "cyclone":
         name, _year = cyclone_name_year(change)
         return name
+    if kind == "alert-on" and alert_is_amp(change):
+        return alert_amp_name(change)   # même clé qu'un changement « amp » : une AMP n'est dite qu'une fois
     return clean_spoken_label(extract_named(title, fact, kind))
 
 
@@ -346,16 +391,58 @@ def change_on_route(change: dict) -> bool:
     return True
 
 
+# Titres de stations qui sont des jeux de données, des campagnes ou des textes réglementaires, pas des lieux :
+# « Photos anciennes - Outre Mer - … 1938 », « Arrêté n°2002/1249/PREF… », « CTD profiles in Corsica … July 2021 »,
+# « MNT - Plage de Yalimapo … 2017 à Aujourd'hui », « Dissolved and particulate trace metals … (1988 onwards) ».
+# Règle du 26 sept. : sans nom de lieu, silence.
+DATASET_TITLE_RE = re.compile(
+    r"\b(?:19|20)\d{2}\b|photos? anciennes|arr[êe]t[ée]\s*n|\bmnt\b|\bctd\b|profiles?\b|\bdata\b|dataset|cruise|"
+    r"campagne|survey|onwards|zooplankton|trace metals|\bmedits\b|\bessteh|\bmodel\b|mod[èe]le|time.?series",
+    re.I,
+)
+
+
+def station_name_speakable(name: str) -> bool:
+    """Une station se dit si elle porte un nom de lieu ou d'instrument court, pas un titre de jeu de données."""
+    n = (name or "").strip()
+    if not n or len(n) > 48:
+        return False
+    if DATASET_TITLE_RE.search(n):
+        return False
+    if re.fullmatch(r"(?=.*[0-9_])[A-Z0-9_\-]{5,}", n):
+        return False      # « TR_ZLOPTP », « A1B2C3 » : un code, pas un nom (« PIRATA » reste un nom)
+    return not _is_generic_title(n, "station")
+
+
+def alert_is_amp(change: dict) -> bool:
+    return bool(IUCN_RE.search(f"{change.get('fact') or ''} {change.get('title') or ''}"))
+
+
+def alert_amp_name(change: dict) -> str:
+    """« Pertuis charentais - Rochebonne (12,2 nm): IUCN Unassigned; » → « Pertuis charentais - Rochebonne »."""
+    fact = str(change.get("fact") or "")
+    head = re.split(r"\s*\(\s*\d", fact, maxsplit=1)[0]
+    head = re.split(r":\s*IUCN", head, maxsplit=1, flags=re.I)[0]
+    return clean_spoken_label(head.strip(" ;:-"))
+
+
 def change_is_speakable(change: dict) -> bool:
     kind = str(change.get("kind") or "")
     if kind in {"regime", "alert-off"}:
         return False
     if kind == "alert-on":
-        return bool(str(change.get("fact") or change.get("title") or "").strip())
+        body = str(change.get("fact") or change.get("title") or "").strip()
+        if not body or NO_DATA_RE.search(body):
+            return False      # « Aucun port d'entrée officiel n'est connu pour … » : l'absence ne se raconte pas
+        if alert_is_amp(change):
+            return bool(alert_amp_name(change))
+        return True
     if kind == "cyclone":
         return bool(cyclone_name_year(change)[0])
     if kind == "culture":
         return bool(change_place_name(change) or change.get("fact"))
+    if kind == "station":
+        return station_name_speakable(change_place_name(change))
     return bool(change_place_name(change))
 
 
@@ -1436,6 +1523,7 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
             "fromName": frm.get("name") or "",
             "toName": dest_name if arrived else "",
             "destName": dest_name,
+            "destNm": (to.get("nm") if isinstance((to or {}).get("nm"), (int, float)) else (to or {}).get("filmNm")) if to else None,
             "arrived": arrived,
             "last": to is None,
             "vehicle": _window_vehicle(frm, to),
@@ -1501,21 +1589,31 @@ def _air_sentence(w: dict, *, i: int, lang: str, display_t0: str | None = None) 
 
 
 def _close_sentence(w: dict, live: dict | None, lang: str) -> str:
-    place = short_name(
-        (live or {}).get("fromStop")
-        or (live or {}).get("atStop")
-        or (live or {}).get("name")
-        or ""
-    )
+    """Dernière phrase : où est le bateau AUJOURD'HUI. À quai → « à X ». En mer → « en mer, à N milles de
+    <prochaine escale> » (27 sept. : le film disait « à Saint-Pierre » — la dernière escale passée — alors
+    que le bateau était à 13 300 nm, en plein Pacifique, en route vers Papeete)."""
+    en = _en(lang)
+    live = live or {}
+    at_quay = short_name(live.get("atStop") or "")
+    if at_quay:
+        return f"Today, the boat is at {at_quay}." if en else f"Aujourd’hui, le bateau est à {at_quay}."
+    dest = short_name(w.get("destName") or w.get("toName") or "")
+    sail = live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm")
+    dest_nm = w.get("destNm")
+    if dest and not w.get("arrived") and isinstance(sail, (int, float)) and isinstance(dest_nm, (int, float)) and dest_nm > sail:
+        left = _nm_label(dest_nm - sail, lang)
+        return (f"Today, the boat is at sea, {left} from {dest}." if en
+                else f"Aujourd’hui, le bateau est en mer, à {left} {_de(dest)}.")
+    if dest and not w.get("arrived"):
+        return f"Today, the boat is at sea, bound for {dest}." if en else f"Aujourd’hui, le bateau est en mer, en route vers {dest}."
+    place = short_name(live.get("fromStop") or live.get("name") or "")
     if not place and w.get("arrived"):
         place = short_name(w.get("toName") or "")
     if not place:
         place = short_name(w.get("fromName") or "")
     if not place:
         return ""
-    if _en(lang):
-        return f"Today, the boat is at {place}."
-    return f"Aujourd’hui, le bateau est à {place}."
+    return f"Today, the boat is at {place}." if en else f"Aujourd’hui, le bateau est à {place}."
 
 
 def _depart_towards(w: dict, *, i: int, lang: str, display_t0: str | None = None) -> str:
@@ -1796,13 +1894,15 @@ def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for kind, group in by_kind.items():
         if len(group) < 3:
             continue
+        if kind in {"alert-on", "marina", "port", "amp"}:
+            # Pas de « 10 alertes entre le… » ni « 14 marina » : ces changements se disent un par un (la meilleure
+            # par chapitre) ou pas du tout — un compte n'est pas un récit (27 sept.).
+            continue
         first, last = group[0], group[-1]
         if kind == "zee-enter":
             title = fact = f"{len(group)} ZEE traversées"
-        elif kind == "alert-on":
-            title = fact = (
-                f"{len(group)} alertes entre le {day_month(first.get('t'))} et le {day_month(last.get('t'))}"
-            )
+        elif kind == "station":
+            title = fact = f"{len(group)} stations scientifiques croisées"
         else:
             title = fact = f"{len(group)} {kind}"
         out.append({
@@ -1871,7 +1971,8 @@ def select_chapter_changes(
             CHANGE_PRIORITY.get(str(c.get("kind") or ""), 9),
             c.get("tMs") or 0,
         ))
-        return usable[:FILM_CHAPTER_MAX_FREE]
+        # Choisis par importance, mais DITS dans l'ordre du voyage (règle « chronologie stricte », 26 sept.).
+        return sorted(usable[:FILM_CHAPTER_MAX_FREE], key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
     grouped = _group_changes(usable, (t_b or 0) - (t_a or 0))
     must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
     rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
@@ -1881,7 +1982,9 @@ def select_chapter_changes(
     arrival = next((c for c in must if c.get("kind") == "escale"), None)
     approach = next((c for c in must if c.get("kind") == "approche"), None)
     alert = next((c for c in rest if c.get("kind") == "alert-on"), None)
-    color = next((c for c in rest if c.get("kind") in COLOR_KINDS), None)
+    color = next((c for c in rest if c.get("kind") in COLOR_KINDS and c.get("kind") != "marina"), None)
+    # La marina de l'escale (« cultures d'escale », 26 sept.) : la dernière marina à portée de la fenêtre.
+    marina = next((c for c in sorted(rest, key=lambda c: -(c.get("tMs") or 0)) if c.get("kind") == "marina"), None)
     picked: list[dict] = []
 
     def add(item: dict | None) -> None:
@@ -1895,17 +1998,46 @@ def select_chapter_changes(
         picked.append(item)
 
     add(arrival)
+    add(color)
+    add(marina)
     add(approach)
     add(alert)
-    add(color)
     for item in must + rest:
         add(item)
     picked.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
     return picked[:FILM_CHAPTER_MAX_CHANGES]
 
 
+def _de(name: str) -> str:
+    """« de Papeete » mais « d’Ajaccio », « d’Anse à Rodrigue » (élision devant voyelle ou h muet)."""
+    n = (name or "").strip()
+    if n and re.match(r"^[aeiouyâàäéèêëîïôöûùüœh]", n, re.I):
+        return f"d’{n}"
+    return f"de {n}"
+
+
+def _group_sentence(change: dict, lang: str) -> str:
+    """Phrase d'un groupe (« 14 stations scientifiques croisées », « 5 ZEE traversées »), sans gabarit « station X »."""
+    en = _en(lang)
+    when = day_month(change.get("t"), lang)
+    kind = str(change.get("kind") or "")
+    m = re.match(r"^(\d+)\s", str(change.get("fact") or change.get("title") or ""))
+    n = int(m.group(1)) if m else 0
+    if not n:
+        return ""
+    if kind == "station":
+        body = f"{n} science stations passed" if en else f"{n} stations scientifiques croisées"
+    elif kind == "zee-enter":
+        body = f"{n} exclusive economic zones crossed" if en else f"{n} zones économiques exclusives traversées"
+    else:
+        return ""
+    return f"From {when}, {body}." if en else f"À partir du {when}, {body}."
+
+
 def change_sentence(change: dict, lang: str = "fr") -> str:
     en = _en(lang)
+    if str(change.get("id") or "").startswith("group:"):
+        return _group_sentence(change, lang)
     when = day_month(change.get("t"), lang)
     title = short_name(change.get("title") or "")
     fact = expand_spoken_units(str(change.get("fact") or "").rstrip("."), lang)
@@ -1917,12 +2049,19 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         return f"Arrival at {name}." if en else f"Arrivée à {name}."
     if kind == "approche":
         if when:
-            return f"On {when}, approaching {title}." if en else f"Le {when}, approche de {title}."
-        return f"Approaching {title}." if en else f"Approche de {title}."
+            return f"On {when}, approaching {title}." if en else f"Le {when}, approche {_de(title)}."
+        return f"Approaching {title}." if en else f"Approche {_de(title)}."
     if kind == "alert-on":
-        body = fact or title
+        if alert_is_amp(change):
+            amp = alert_amp_name(change)
+            if not amp:
+                return ""
+            return f"On {when}, marine protected area within reach: {amp}." if en else f"Le {when}, aire marine protégée à portée : {amp}."
+        body = IUCN_RE.sub("", fact or title).strip(" ;:")
+        if not body or NO_DATA_RE.search(body):
+            return ""
         return f"On {when}, {body}." if en else f"Le {when}, {body}."
-    if kind == "zee-enter" and re.search(r"ports? d'entr|formalit", f"{title} {fact}", re.I):
+    if kind == "zee-enter" and re.search(r"ports? d['’]entr|formalit", f"{title} {fact}", re.I):
         name = extract_named(title, fact, "port")
         if not name:
             return ""
@@ -1949,7 +2088,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         name = change_place_name(change)
         if not name:
             return ""
-        return f"On {when}, within reach of {name}." if en else f"Le {when}, à portée de {name}."
+        return f"On {when}, within reach of {name}." if en else f"Le {when}, à portée {_de(name)}."
     if kind == "cyclone":
         cyc_name, year = cyclone_name_year(change)
         if not cyc_name:
@@ -2828,7 +2967,16 @@ async def official_film(
     if voy is None:
         raise FileNotFoundError("voyage officiel absent")
     when = _now()
-    raw_clock = voy.get("clock") or _climo_clock(voy)
+    raw_clock = voy.get("clock")
+    if not raw_clock:
+        # Depuis RF2 l'horloge vit dans le stock : la relire (ms) plutôt que la recalculer (5 min, 27 sept.).
+        try:
+            from official_store import stored_clock  # noqa: PLC0415
+            raw_clock = stored_clock()
+        except Exception:
+            raw_clock = None
+    raw_clock = raw_clock or _climo_clock(voy)
+    voy = {**voy, "clock": raw_clock}
     clock = {**raw_clock, "t0": OFFICIAL_T0}
     marks = merge_route_marks(voy.get("marks") or [], raw_clock)
     _journal_safely(lambda: journal.tick(voy, when))

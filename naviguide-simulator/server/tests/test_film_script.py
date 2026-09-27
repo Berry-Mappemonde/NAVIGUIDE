@@ -734,10 +734,11 @@ def test_select_chapter_changes_caps_at_three():
         {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
     ]
     picked = select_chapter_changes(changes, 0, 10)
-    assert len(picked) <= 3
+    assert len(picked) <= FILM_CHAPTER_MAX_CHANGES   # 4 depuis le 27 sept. (arrivée, fait de mer, marina d'escale, approche)
     kinds = {c["kind"] for c in picked}
     assert "escale" in kinds
     assert "approche" in kinds or "alert-on" in kinds
+    assert [c["tMs"] for c in picked] == sorted(c["tMs"] for c in picked)   # dits dans l'ordre du voyage
 
 
 def test_written_no_number_outside_facts():

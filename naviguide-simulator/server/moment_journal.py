@@ -329,6 +329,41 @@ def _leg_at(legs: list[dict], sail_nm: float) -> tuple[int, dict]:
     return len(legs) - 1, legs[-1]
 
 
+PLACE_NEAR_NM = 15.0          # une marina ou un port « croisé » : à moins de 15 nm de la route
+SCORE_PLACE = 2
+_PLACE_LISTS = (("marina", "marinas"), ("port", "wpi"), ("port", "capitaineries"))
+
+
+def _norm_place(name: Any) -> str:
+    return re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+
+
+def _new_places_nearby(pearl: dict, seen: set[tuple[str, str]]) -> list[dict]:
+    """Marinas et ports (WPI, capitaineries) du sac de la perle à moins de PLACE_NEAR_NM, pas encore cités
+    sur le voyage → un changement chacun (kind marina | port). Sans nom, ou trop loin : rien."""
+    nearby = pearl.get("nearby") if isinstance(pearl.get("nearby"), dict) else {}
+    out: list[dict] = []
+    for kind, field in _PLACE_LISTS:
+        for item in nearby.get(field) or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name or _is_generic_title(name, kind) or len(name) > 40 or "|" in name:
+                continue
+            if re.search(r"\b(tour|excursion|activit|autorit[ée]s?|club nautique de plaisance|charter)\b", name, re.I):
+                continue      # une activité ou une administration, pas un port
+            nm = _as_float(item.get("nm"))
+            if nm is not None and nm > PLACE_NEAR_NM:
+                continue
+            key = (kind, _norm_place(name))
+            if key in seen:
+                continue
+            seen.add(key)
+            fact = f"{name} ({nm:.0f} nm)" if nm is not None else name
+            out.append(_change(kind, SCORE_PLACE, name, fact))
+    return out
+
+
 def _pearls_in_route_order(voy: dict) -> list[dict]:
     embedded = [p for p in (voy.get("pearls") or []) if isinstance(p, dict)]
     if embedded:
@@ -376,6 +411,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     seq = 0
     prev_rem_live: float | None = None
     prev_leg_idx: int | None = None
+    seen_places: set[tuple[str, str]] = set()
     for pearl in pearls:
         sail = _as_float(pearl.get("sailNm"))
         if sail is None:
@@ -409,13 +445,20 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             and live_rem <= thr < prev_rem_live
             and live_rem > 1.0
         )
+        # Marinas et ports croisés (27 sept.) : chacun une fois, à moins de PLACE_NEAR_NM de la route — le
+        # Journal ne les citait que quand « la plus proche » changeait (29 lignes pour 237 marinas connues).
+        new_places = _new_places_nearby(pearl, seen_places)
         same_sig = prev is not None and sig == (prev.get("signature") or signature(prev))
-        if same_sig and not approach_hit:
+        if same_sig and not approach_hit and not new_places:
             if live_rem is not None:
                 prev_rem_live = live_rem
             prev_leg_idx = leg_idx
             continue
         changes = diff_moments(prev, cur)
+        for place in new_places:
+            key = (place["kind"], _norm_place(place["title"]))
+            if not any((c.get("kind"), _norm_place(c.get("title"))) == key for c in changes):
+                changes.append(place)
         if approach_hit:
             title = _stop_title(str(cur_to))
             already = any(
@@ -447,16 +490,36 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     return rows
 
 
-def warm_moments(voyage_id: str) -> dict[str, Any]:
-    """Parcourt les perles, n'écrit que les changements de signature. Idempotent."""
+def _with_clock(voy: dict) -> dict:
+    """Depuis RF2 l'horloge officielle vit dans le stock (famille climo), plus dans le JSON du voyage :
+    sans elle, `_build_rows` ne peut dater aucune perle (27 sept. : 740 moments avec t = NULL, donc un
+    film sans aucun événement). On la prend dans le stock quand le voyage ne l'a pas."""
+    if isinstance(voy.get("clock"), dict) and (voy["clock"].get("vertices") or []):
+        return voy
+    try:
+        from official_store import stored_clock  # noqa: PLC0415
+        clock = stored_clock()
+    except Exception:
+        clock = None
+    return {**voy, "clock": clock} if clock else voy
+
+
+def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
+    """Parcourt les perles, n'écrit que les changements de signature. Idempotent.
+    `voy` : le voyage déjà chargé (avec son horloge) ; sinon relu du disque, horloge du stock si besoin."""
     import pearl_store  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
 
-    voy = load_voyage(voyage_id)
+    voy = voy if voy is not None else load_voyage(voyage_id)
     if voy is None:
         return {"voyageId": voyage_id, "count": 0, "status": "no-voyage"}
+    voy = _with_clock(voy)
     try:
         rows = _build_rows(voyage_id, voy)
+        if rows and not any(r.get("t") for r in rows):
+            # Des moments sans date ne servent ni au Journal ni au film : mieux vaut le dire que les ranger.
+            log.warning("warm_moments(%s) : %d moments sans date (horloge absente ?) — rien n'est écrit", voyage_id, len(rows))
+            return {"voyageId": voyage_id, "count": pearl_store.count_moments(voyage_id), "status": "undated"}
         n = pearl_store.replace_moments(voyage_id, rows)
         return {"voyageId": voyage_id, "count": n, "status": "ready"}
     except Exception as exc:

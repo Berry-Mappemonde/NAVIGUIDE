@@ -25,13 +25,17 @@ from typing import Any, Callable, Optional
 log = logging.getLogger("naviguide-simulator.official-store")
 
 FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
+FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
 # Clé film : un snapshot RF2 (avant phrases avion) ne matche plus.
 FILM_SCRIPT_REV = "rf5"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
-DEFAULT_DISK = Path.home() / ".cache" / "naviguide" / "voyage-store"
+# Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
+# dans son worktree ne peut plus écrire dans le stock du poste (27 sept. : l'agent RF2 y avait figé un journal
+# sans événements, servi 14 h). Le poste pose NAVIGUIDE_OFFICIAL_STORE_DIR (ensure-dev.sh) → ~/.cache/naviguide/voyage-store.
+DEFAULT_DISK = Path(__file__).resolve().parent / "voyage_data" / "official-store"
 PERIOD_S = float(os.environ.get("NAVIGUIDE_OFFICIAL_STORE_PERIOD_S") or 6 * 3600)
 ROUTE_NEAR_NM = 8.0
 
@@ -659,6 +663,25 @@ def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
     return {"clock": clock, "regimes": _regime_portions(clock), "fiches": fiches}
 
 
+RICH_EVENT_KINDS = frozenset({"zee", "sci", "science", "poe", "amp", "climo", "wx", "grib", "marina", "port"})
+
+
+def journal_degraded(summary: dict | None) -> bool:
+    """Vrai si le journal ne connaît que des escales / positions alors que le poste a des perles riches
+    (donc des ZEE, stations, ports d'entrée, AMP à raconter). Un tel journal est un accident de calcul,
+    pas un état du voyage : il ne doit pas être figé comme « prêt »."""
+    rows = list((summary or {}).get("events") or []) + list((summary or {}).get("latest") or (summary or {}).get("entries") or [])
+    kinds = {str(r.get("kind")) for r in rows if isinstance(r, dict)}
+    if kinds & RICH_EVENT_KINDS:
+        return False
+    try:
+        import pearl_store  # noqa: PLC0415
+        rich = int((pearl_store.count_pearls() or {}).get("rich") or 0)
+    except Exception:
+        rich = 0
+    return bool(rich)
+
+
 def compute_moments(voy: dict, now: datetime) -> Optional[dict]:
     import voyage_journal as journal  # noqa: PLC0415
     from moment_journal import read_moments, warm_moments  # noqa: PLC0415
@@ -677,12 +700,21 @@ def compute_moments(voy: dict, now: datetime) -> Optional[dict]:
             except Exception:
                 days[day] = []
     try:
-        warm_moments(OFFICIAL_VOYAGE_ID)
+        warm_moments(OFFICIAL_VOYAGE_ID, voy)   # avec l'horloge : sinon 740 moments sans date (27 sept.)
         moments = read_moments(OFFICIAL_VOYAGE_ID)
     except Exception as exc:
         log.warning("moments : %s", exc)
         moments = []
     if (summary.get("count") or 0) <= 0 and not moments:
+        return None
+    # Garde-fou (27 sept.) : le stock a servi pendant 14 h un journal réduit aux escales et 740 moments
+    # sans date, calculés dans un worktree sans perles — puis plus jamais recalculés parce que « prêts ».
+    # Une famille dégradée reste « en préparation » : le prochain passage la recalculera.
+    if moments and not any(m.get("t") for m in moments):
+        log.warning("stock moments : %d moments sans date — non rangés (horloge ?)", len(moments))
+        return None
+    if journal_degraded(summary):
+        log.warning("stock moments : journal sans événements (escales seulement) alors que des perles riches existent — non rangé")
         return None
     payload = {"moments": moments, "journal": summary, "journal_days": days}
     if not moments:
@@ -697,26 +729,41 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     if not voy.get("clock"):
         return None
 
-    async def _both():
-        fr = await official_film(lang="fr", seconds=0, style="raw")
-        try:
-            en = await official_film(lang="en", seconds=0, style="raw")
-        except Exception:
-            en = None
-        return fr, en
+    # 27 sept. : calculé en mode LIBRE (seconds=0), le film déversait jusqu'à dix changements bruts par chapitre,
+    # hors chronologie — exactement le « journal déversé » refusé le 26. On range les variantes BUDGET que les
+    # pilules de la barre demandent (2:30 = 150 s, 3:00 = 180 s) ; serve_film sert la plus proche.
+    async def _variants():
+        out: dict[str, dict[str, dict]] = {}
+        for lang in ("fr", "en"):
+            for secs in FILM_VARIANT_SECONDS:
+                try:
+                    plan = await official_film(lang=lang, seconds=secs, style="raw")
+                except Exception as exc:
+                    if lang == "fr":
+                        raise
+                    log.warning("film %s %ss : %s", lang, secs, exc)
+                    continue
+                if isinstance(plan, dict) and (plan.get("chapters") or []):
+                    out.setdefault(lang, {})[str(secs)] = plan
+        return out
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        fr, en = asyncio.run(_both())
+        variants = asyncio.run(_variants())
     else:
         return None
+    fr = (variants.get("fr") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if not isinstance(fr, dict) or not (fr.get("chapters") or []):
         return None
-    fr = _apply_air_sentences(fr, "fr", voy)
-    out = {"fr": fr, "default": fr}
+    for lang, by_secs in variants.items():
+        for secs, plan in list(by_secs.items()):
+            by_secs[secs] = _apply_air_sentences(plan, lang, voy)
+    fr = variants["fr"][str(FILM_VARIANT_SECONDS[0])]
+    out = {"fr": fr, "default": fr, "variants": variants}
+    en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if isinstance(en, dict) and (en.get("chapters") or []):
-        out["en"] = _apply_air_sentences(en, "en", voy)
+        out["en"] = en
     return out
 
 
@@ -1111,7 +1158,18 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
     if film_snapshot_stale(body, _load_official()):
         return preparing_payload("film", extra)
     lg = (lang or "fr")[:2].lower()
-    plan = body.get(lg) or body.get("default") or body.get("fr")
+    plan = None
+    variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
+    by_secs = variants.get(lg) or variants.get("fr") or {}
+    if by_secs:
+        # La variante budget la plus proche de la durée demandée (0 = libre → la plus longue).
+        want = int(seconds or 0)
+        keys = sorted(int(k) for k in by_secs if str(k).isdigit())
+        if keys:
+            pick = keys[-1] if want <= 0 else min(keys, key=lambda k: (abs(k - want), k))
+            plan = by_secs.get(str(pick))
+    if plan is None:
+        plan = body.get(lg) or body.get("default") or body.get("fr")
     if not isinstance(plan, dict) or not (plan.get("chapters") or []):
         return preparing_payload("film", extra)
     out = dict(plan)
