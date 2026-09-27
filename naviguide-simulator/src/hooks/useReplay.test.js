@@ -56,7 +56,10 @@ describe("useReplay contract (lot E)", () => {
   it("le film est chapitré : filmPlan, onboundary, durée cible, sous-titre", () => {
     assert.match(hook, /filmPlan\(/);
     assert.match(hook, /onVoiceBoundary/);
-    assert.match(hook, /advanceReplayTime/);
+    // 27 sept. : le pas de temps mené par la voix passe par voiceLedStep (ancres, plafond),
+    // et la voix n'est plus recalibrée (débit constant).
+    assert.match(hook, /voiceLedStep\(/);
+    assert.doesNotMatch(hook, /calibrateRate/);
     assert.match(hook, /targetSeconds/);
     assert.match(hook, /if \(done\)/);
     assert.match(bar, /data-testid="film-subtitle"/);

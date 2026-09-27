@@ -28,6 +28,11 @@ export const FILM_VIEW_HZ = 30;
 export const FILM_MIN_CHAPTER_SECONDS = 12;
 export const FILM_RECALE_MS = 300;
 export const FILM_BEHIND_SPEED = 0.7;
+/** Voix : le bateau vise ce qui va être dit dans ~1 s (12 caractères), jamais plus loin. */
+export const FILM_VOICE_LOOKAHEAD_CHARS = 12;
+export const FILM_VOICE_CPS_DEFAULT = 15;
+export const FILM_VOICE_CPS_MIN = 6;
+export const FILM_VOICE_CPS_MAX = 40;
 export const FILM_PAN_MAX_SCREEN = 0.02;
 const WIND_WINDOW_MS = 4 * 3600 * 1000;
 
@@ -160,6 +165,7 @@ export function advanceReplayTime({
   chapter,
   targetT = null,
   recaleRemainMs = 0,
+  capT = null,
 } = {}) {
   const nominal = chapterNominalRate(chapter);
   const wall = Math.max(0, Number(dt) || 0);
@@ -189,7 +195,35 @@ export function advanceReplayTime({
 
   if (Number.isFinite(tA)) next = Math.max(tA, next);
   if (Number.isFinite(tB)) next = Math.min(tB, next);
+  // Plafond (27 sept.) : mené par la voix, le bateau n'est jamais plus loin que ce qui est dit.
+  if (capT != null && Number.isFinite(Number(capT))) next = Math.min(next, Math.max(Number.isFinite(tA) ? tA : -Infinity, Number(capT)));
   return { t: next, recaleRemainMs: remain };
+}
+
+/**
+ * Pas de temps du bateau mené par la voix : cible = instant de ce qui sera dit dans
+ * `lookahead` caractères (ancres), atteinte en `lookahead / cps` secondes, jamais dépassée.
+ * Le bateau va donc à la vitesse de la phrase en cours — lent à quai, vite en traversée.
+ */
+export function voiceLedStep({
+  t, dt, chapter, plan, chapterIdx, charIdx, cps = FILM_VOICE_CPS_DEFAULT,
+  lookahead = FILM_VOICE_LOOKAHEAD_CHARS,
+} = {}) {
+  const rate = Math.max(FILM_VOICE_CPS_MIN, Math.min(FILM_VOICE_CPS_MAX, Number(cps) || FILM_VOICE_CPS_DEFAULT));
+  const ahead = Math.max(1, Number(lookahead) || FILM_VOICE_LOOKAHEAD_CHARS);
+  const target = plan?.timeAt ? plan.timeAt(chapterIdx, (Number(charIdx) || 0) + ahead) : null;
+  const horizonMs = (ahead / rate) * 1000;
+  return advanceReplayTime({
+    t, dt, chapter, targetT: target, recaleRemainMs: horizonMs, capT: target,
+  });
+}
+
+/** Débit mesuré de la voix (caractères/s) sur le chapitre en cours, borné ; défaut si trop tôt. */
+export function measuredCps(charIdx, elapsedMs, fallback = FILM_VOICE_CPS_DEFAULT) {
+  const c = Number(charIdx) || 0;
+  const s = (Number(elapsedMs) || 0) / 1000;
+  if (c < 20 || s < 1.5) return fallback;
+  return Math.max(FILM_VOICE_CPS_MIN, Math.min(FILM_VOICE_CPS_MAX, c / s));
 }
 
 export function replaySample(clock, tMs, timeline = []) {
