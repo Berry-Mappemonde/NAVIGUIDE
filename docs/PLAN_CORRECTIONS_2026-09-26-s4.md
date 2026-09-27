@@ -774,6 +774,33 @@ Recette (visuelle) :
 - Les roses, leurs popups et le bandeau de source sont identiques à avant.
 - Pastille éteinte : rien ne change.
 
+### RF10 — Hindcast ERA5 par cellule 0,25° et plage de dates, cache partagé persistant, quota Open-Meteo respecté, statut honnête (M, après RF2 ; ajouté le 26 sept. 23:15 par le porteur)
+
+Constat : la route parcourue et la ligne d'état disent « climatologie »
+partout alors que l'historique Open-Meteo marchait avant. Cause : l'archive
+Open-Meteo répond `429 Daily API request limit exceeded` — le quota gratuit
+du jour est brûlé. Il l'est parce que le cache ERA5 vit **dans chaque
+checkout** (`server/voyage_data/naviguide.sqlite`) : chaque rebuild du poste
+(chaque lot) repart de zéro et redemande jusqu'à 800 points‑jours ; et les
+créneaux sont à ~100 m près alors que la grille ERA5 fait 0,25° : un
+remplissage complet du voyage ≈ 8 600 appels pour un poste. Les échecs sont
+mis en cache comme des résultats vides, et `hindcastStatus` dit `ready`.
+
+Ce qui change : créneaux par **cellule 0,25° et plage de jours** (un appel
+couvre la traversée d'une cellule) ; **budget** d'appels par jour et arrêt au
+premier 429 (reprise le lendemain là où on en était) ; cache **partagé et
+persistant** par `NAVIGUIDE_VOYAGE_DIR` (posé sur le poste le 26 sept. :
+`~/.cache/naviguide/voyage_data` ; valeur recommandée documentée pour le VPS,
+sans déplacer les données) ; **statut honnête** `ready` / `partial n/total` /
+`empty` + raison. Le repli climatologie reste et se voit (violet).
+
+Recette (visuelle, si Open-Meteo répond ce jour-là) :
+- Suivre → route parcourue **turquoise** (hindcast) sur l'essentiel du trajet,
+  violet seulement sur les tout derniers jours (ERA5 a ~5 jours de retard).
+- Journal → les relevés de vent passés sont là.
+- Relance du poste → même teinte immédiatement, sans nouveau préchauffage.
+- Console : aucune ligne rouge.
+
 ## 5. Ordre, pile, lancement
 
 | # | Lot | Taille | Priorité porteur | Touche surtout |
