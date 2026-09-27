@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from admin_guard import is_admin, rate_limited, require_admin
@@ -307,6 +307,59 @@ def _official_clock_from_store(voy: Optional[dict] = None) -> Optional[dict]:
     return None
 
 
+def _normalized_t0(raw: str) -> str:
+    return to_iso(parse_iso(raw))
+
+
+def _same_t0(a: str, b: str) -> bool:
+    try:
+        return parse_iso(a) == parse_iso(b)
+    except Exception:
+        return False
+
+
+def _route_fp(points, marks, t0: str) -> str:
+    """Empreinte RF2 (points + marques + t0). Le t0 est déjà normalisé."""
+    return official_store.route_fingerprint({
+        "t0": t0,
+        "points": points or [],
+        "marks": marks or [],
+        "routeRev": 0,
+    })
+
+
+def _official_route_fp() -> Optional[str]:
+    """Empreinte du voyage officiel chargé, sinon celle de l'itinéraire Berry."""
+    voy = load_voyage(OFFICIAL_VOYAGE_ID)
+    if voy and voy.get("points"):
+        raw = voy.get("t0") or OFFICIAL_T0
+        try:
+            t0 = _normalized_t0(raw)
+        except Exception:
+            t0 = OFFICIAL_T0
+        return _route_fp(voy.get("points"), voy.get("marks"), t0)
+    itinerary = official_itinerary_body()
+    if itinerary and itinerary.points:
+        return _route_fp(itinerary.points, itinerary.marks, OFFICIAL_T0)
+    return None
+
+
+def _matches_official_request(body: VoyageCreate) -> bool:
+    """official:true, ou même t0 officiel + même empreinte de route (lot RC12)."""
+    if body.official:
+        return True
+    if not _same_t0(body.t0, OFFICIAL_T0):
+        return False
+    official_fp = _official_route_fp()
+    if not official_fp:
+        return False
+    try:
+        t0 = _normalized_t0(body.t0)
+    except Exception:
+        return False
+    return _route_fp(body.points, body.marks, t0) == official_fp
+
+
 def _flag_marks(marks: List[dict]) -> List[dict]:
     out = []
     for m in marks or []:
@@ -520,6 +573,19 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
         purge_stale_voyages(STALE_VOYAGE_DAYS, keep={OFFICIAL_VOYAGE_ID}, on_removed=_drop_cube)
     except Exception as exc:  # defensive: never block a visitor for housekeeping
         log.warning("purge voyages: %s", exc)
+    if _matches_official_request(body):
+        # Route+t0 officiels (empreinte / t0, ou official:true) : stock RF2,
+        # jamais _climo_clock dans ce handler (lot RC12).
+        voy = _build_official(body, compute_clock=False)
+        official_store.kick_worker()
+        clock = _official_clock_from_store(voy)
+        if clock is None:
+            clock = {
+                **official_store.preparing_payload("climo", {"t0": OFFICIAL_T0}),
+                **_dated_error("horloge officielle en préparation", "preparing"),
+            }
+        return {**_public_meta(voy), "clock": clock}
+
     voyage_id = str(uuid.uuid4())
     voy = {
         "voyageId": voyage_id,
@@ -538,29 +604,16 @@ def create_voyage(body: VoyageCreate, background: BackgroundTasks):
         "draft": None,
         "createdAt": to_iso(_now()),
     }
-    if body.official:
-        # Voyage officiel : horloge et journal viennent du stock RF2, jamais un calcul ici.
-        voy = _build_official(body, compute_clock=False)
-        official_store.kick_worker()
-        clock = _official_clock_from_store(voy)
-        if clock is None:
-            clock = {
-                **official_store.preparing_payload("climo", {"t0": OFFICIAL_T0}),
-                **_dated_error("horloge officielle en préparation", "preparing"),
-            }
-        return {**_public_meta(voy), "clock": clock}
-    try:
-        voy["clock"] = _climo_clock(voy)
-    except Exception as exc:
-        log.exception("POST /voyage: horloge climato échouée")
-        raise HTTPException(
-            status_code=503,
-            detail=_dated_error(f"horloge climato indisponible: {exc}"),
-        ) from exc
+    # Tout autre POST : pas d'_climo_clock ici. Le cube (forecast) ou le
+    # worker déjà là calcule hors requête ; le client garde son backoff.
     save_voyage(voy)
     if body.forecast:
         _kick_forecast(voyage_id)
-    return {**_public_meta(voy), "clock": voy["clock"]}
+    dated = _dated_error("horloge en préparation", "preparing")
+    return JSONResponse(
+        status_code=202,
+        content={**_public_meta(voy), "clock": dated, **dated},
+    )
 
 
 def _build_official(body: VoyageCreate, *, compute_clock: bool = True) -> dict:
