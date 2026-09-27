@@ -468,7 +468,59 @@ def prepare_worktree(lot: Lot, ref: str) -> Path:
     env = sim / "server" / ".env"
     if env.exists() and not (path / "naviguide-simulator" / "server" / ".env").exists():
         shutil.copy2(env, path / "naviguide-simulator" / "server" / ".env")
+    snapshot_shared_caches(path)
     return path
+
+
+OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel"
+# Caches du poste partagés entre ses rebuilds (variables posées dans ~/.config/naviguide/simulator.env, 26 sept.)
+# → dossier par défaut du checkout que le serveur de l'agent lit sans ces variables.
+SHARED_CACHE_DIRS = (("NAVIGUIDE_VOYAGE_DIR", "voyage_data"), ("NAVIGUIDE_FORECAST_CACHE", "forecast_cache"), ("NAVIGUIDE_GRIB_DIR", "grib_data"))
+VOYAGE_DATA_FILES = ("eez_vliz_v12.geojson", "ici_thin_cache.json", "official_journal", f"voyage_{OFFICIAL_VOYAGE_ID}.json")
+
+
+def snapshot_shared_caches(path: Path) -> list[str]:
+    """Le serveur que l'agent lance dans son worktree (tests, recette locale) ne lit pas simulator.env :
+    sans rien, il refait au démarrage les 3 272 perles « ici » (des heures d'appels amont), le hindcast
+    ERA5 (~8 600 appels — quota Open-Meteo brûlé le 26 sept.), le cube GFS, les récits LLM du film…
+    On lui donne un INSTANTANÉ (copie) des caches partagés du poste — jamais le dossier lui-même :
+    un agent bugué (façon RF2) ne peut pas polluer le poste. Ces dossiers sont ignorés par git
+    (naviguide-simulator/.gitignore) : rien n'entre dans sa PR. Jamais bloquant."""
+    vals = _env_file_values()
+    server = path / "naviguide-simulator" / "server"
+    copied: list[str] = []
+    try:
+        for key, rel in SHARED_CACHE_DIRS:
+            src = Path(vals[key]).expanduser() if vals.get(key) else None
+            if not src or not src.is_dir():
+                continue
+            dst = server / rel
+            dst.mkdir(parents=True, exist_ok=True)
+            if rel != "voyage_data":
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+                copied.append(rel)
+                continue
+            db = src / "naviguide.sqlite"
+            if db.exists():
+                import sqlite3  # noqa: PLC0415
+                # Sauvegarde en ligne : cohérente même si le serveur du poste écrit dedans en même temps.
+                with sqlite3.connect(str(db)) as s, sqlite3.connect(str(dst / "naviguide.sqlite")) as d:
+                    s.backup(d)
+                copied.append(f"kv {db.stat().st_size // 1048576} Mo")
+            for name in VOYAGE_DATA_FILES:
+                f = src / name
+                if f.is_dir():
+                    shutil.copytree(f, dst / name, dirs_exist_ok=True)
+                elif f.is_file():
+                    shutil.copy2(f, dst / name)
+                else:
+                    continue
+                copied.append(name)
+    except Exception as e:  # l'instantané est un confort : le lot part quand même
+        log(f"    instantané des caches partagés incomplet : {type(e).__name__}: {e} — le serveur de l'agent recalculera ce qui manque")
+    if copied:
+        log(f"    caches partagés copiés dans le worktree ({', '.join(copied)}) : aucun préchauffage à refaire")
+    return copied
 
 
 def port_busy(port: int) -> bool:
