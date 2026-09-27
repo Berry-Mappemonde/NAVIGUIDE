@@ -1623,6 +1623,111 @@ def _http_code(url: str, timeout: int = 25) -> int:
         return 0
 
 
+NPM_PROJECTS = ("naviguide-simulator", "frontend")   # chacun : package-lock.json + node_modules (liés dans les worktrees)
+PIP_PROJECT = ("naviguide-simulator", "server/requirements.txt", ".venv/bin/python")
+
+
+def _norm_pkg(name: str) -> str:
+    return re.sub(r"\[.*\]", "", name).strip().lower().replace("_", "-")
+
+
+def npm_installed_vs_lock(project: Path) -> tuple[int, list[str]] | None:
+    """Compare package-lock.json (ce que la CI installe) à node_modules/.package-lock.json (ce que npm a
+    vraiment posé sur le Mac). Rend (paquets comparés, écarts « nom : installé → attendu ») ; None si
+    l'un des deux fichiers manque. Les paquets `optional` (binaires d'une autre plateforme) sont ignorés."""
+    lock, hidden = project / "package-lock.json", project / "node_modules" / ".package-lock.json"
+    if not lock.exists() or not hidden.exists():
+        return None
+    try:
+        want = json.loads(lock.read_text(encoding="utf-8")).get("packages") or {}
+        have = json.loads(hidden.read_text(encoding="utf-8")).get("packages") or {}
+    except (OSError, ValueError):
+        return None
+    diffs: list[str] = []
+    n = 0
+    for key, spec in want.items():
+        if not key or not isinstance(spec, dict) or spec.get("optional") or spec.get("link"):
+            continue
+        n += 1
+        got = (have.get(key) or {}).get("version")
+        exp = spec.get("version")
+        if got != exp:
+            diffs.append(f"{key.rsplit('node_modules/', 1)[-1]} : {got or 'absent'} → {exp}")
+    return n, diffs
+
+
+def pip_installed_vs_requirements(project: Path, req_rel: str, py_rel: str) -> tuple[int, list[str]] | None:
+    """requirements.txt (ce que la CI installe) contre les paquets du .venv : versions épinglées (==)
+    comparées, les autres seulement présentes. Rend (paquets comparés, écarts) ; None si illisible."""
+    req, py = project / req_rel, project / py_rel
+    if not req.exists() or not py.exists():
+        return None
+    p = sh([str(py), "-c", "import importlib.metadata as m, json; print(json.dumps({d.metadata['Name'].lower().replace('_','-'): d.version for d in m.distributions()}))"],
+           cwd=project, check=False, timeout=60)
+    if p.returncode != 0:
+        return None
+    try:
+        have = json.loads(p.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    diffs: list[str] = []
+    n = 0
+    for line in req.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_.\-\[\]]+)\s*(==|>=|~=|<=|!=|>|<)?\s*([^;\s]*)", line)
+        if not m:
+            continue
+        name, op, ver = _norm_pkg(m.group(1)), m.group(2), m.group(3)
+        n += 1
+        got = have.get(name)
+        if got is None:
+            diffs.append(f"{name} : absent → {ver or 'requis'}")
+        elif op == "==" and got != ver:
+            diffs.append(f"{name} : {got} → {ver}")
+    return n, diffs
+
+
+def preflight_dependencies(row) -> None:
+    """Le porteur (27 sept.) : « le pré-vol DOIT vérifier que le lock et l'installé concordent ». Les agents
+    testent avec node_modules et .venv du dépôt principal (liés) : s'ils sont en retard sur le lock, ils
+    testent avec d'anciennes versions et la CI dit autre chose (27 sept. : le frontend ne buildait plus
+    en local, MapLibre installé sans son worker). Averti, pas bloquant ; le remède est dans la ligne."""
+    for name in NPM_PROJECTS:
+        res = npm_installed_vs_lock(ROOT / name)
+        if res is None:
+            row(None, f"dépendances {name}", f"impossible de comparer (package-lock.json ou node_modules/.package-lock.json absent) → `cd {name} && npm ci`")
+            continue
+        n, diffs = res
+        if not diffs:
+            row(True, f"dépendances {name}", f"les {n} paquets installés sont ceux du lock : les agents testent avec les mêmes versions que la CI")
+        else:
+            ex = " ; ".join(diffs[:3]) + (f" ; … ({len(diffs)} au total)" if len(diffs) > 3 else "")
+            row(False, f"dépendances {name}", f"{len(diffs)} paquet(s) installé(s) ne correspondent pas au lock ({ex}) → les agents testeraient avec d'anciennes versions. Remède : `cd {name} && npm ci`")
+    proj, req_rel, py_rel = PIP_PROJECT
+    res = pip_installed_vs_requirements(ROOT / proj, req_rel, py_rel)
+    if res is None:
+        row(None, "dépendances serveur Python", f"impossible de comparer ({req_rel} ou {py_rel} absent) → `cd {proj} && .venv/bin/pip install -r {req_rel}`")
+    else:
+        n, diffs = res
+        if not diffs:
+            row(True, "dépendances serveur Python", f"les {n} paquets de {req_rel} sont installés dans .venv (versions épinglées vérifiées)")
+        else:
+            ex = " ; ".join(diffs[:3]) + (f" ; … ({len(diffs)} au total)" if len(diffs) > 3 else "")
+            row(False, "dépendances serveur Python", f"{len(diffs)} écart(s) avec {req_rel} ({ex}). Remède : `cd {proj} && .venv/bin/pip install -r {req_rel}`")
+    nvmrc = ROOT / ".nvmrc"
+    if nvmrc.exists():
+        want = nvmrc.read_text(encoding="utf-8").strip().lstrip("v")
+        p = sh(["node", "--version"], check=False, timeout=20)
+        got = p.stdout.strip().lstrip("v") if p.returncode == 0 else ""
+        try:
+            ok = int(got.split(".")[0]) >= int(want.split(".")[0])
+        except ValueError:
+            ok = False
+        row(ok, "Node du Mac", (f"Node {got} ici, Node {want} en CI : " + ("même version ou plus récente, bon" if ok else f"plus ancien que la CI → mets à jour (`brew upgrade node`)")) if got else "node introuvable dans le PATH")
+
+
 def preflight(state: State, args, http: Http | None) -> bool:
     """Avant de lancer un batch : tout ce qui, la nuit du 22 sept., a coûté des heures sans qu'on le voie.
 
@@ -1657,6 +1762,11 @@ def preflight(state: State, args, http: Http | None) -> bool:
     sh(["git", "fetch", "-q", "origin"], cwd=ROOT, check=False, timeout=120)
     behind = sh(["git", "rev-list", "--count", "HEAD..origin/main"], cwd=ROOT, check=False).stdout.strip() or "?"
     row(b == "main" and behind == "0", "dépôt principal", f"sur `{b}`, {behind} commit(s) de retard sur origin/main" if b == "main" else f"sur `{b}` (doit être main)")
+    # Dépendances installées = lock (les agents testent avec node_modules / .venv du dépôt principal)
+    try:
+        preflight_dependencies(row)
+    except Exception as e:  # jamais bloquant
+        row(None, "dépendances", f"contrôle impossible : {type(e).__name__}")
     # CI sur main
     if http:
         try:
