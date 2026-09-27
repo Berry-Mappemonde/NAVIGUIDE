@@ -319,24 +319,16 @@ def _pearl_pos(pearl: dict | None) -> tuple[float, float] | None:
 
 def _nearest_warmed_pearl(lat: float, lon: float, max_nm: float = ICI_RADIUS_NM) -> dict | None:
     """Perle SQLite la plus proche ; None si le magasin est vide ou trop loin."""
-    from ici_engine import haversine_nm
     import pearl_store
-    best, best_d = None, None
     try:
-        rows = pearl_store.iter_pearls()
+        key, dist = pearl_store.nearest_pearl_key(lat, lon)   # colonnes lat/lon : aucun sac décodé (RC18)
     except Exception:
         return None
-    for _key, row in rows:
-        bag = (row or {}).get("bag") if isinstance(row, dict) else None
-        pos = _pearl_pos(bag)
-        if pos is None:
-            continue
-        dist = haversine_nm(lat, lon, pos[0], pos[1])
-        if best_d is None or dist < best_d:
-            best, best_d = bag, dist
-    if best is None or best_d is None or best_d > max_nm:
+    if not key or dist is None or dist > max_nm:
         return None
-    return best
+    row = pearl_store.get_pearl(key)
+    bag = (row or {}).get("bag") if isinstance(row, dict) else None
+    return bag if isinstance(bag, dict) else None
 
 
 def _leg_from_pearl(pearl: dict | None) -> dict:

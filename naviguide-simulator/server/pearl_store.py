@@ -189,6 +189,35 @@ def purge_pearls(older_than_s: float, kind: str | None = None) -> int:
         return 0
 
 
+def nearest_pearl_key(lat: float, lon: float, *, kind: str | None = None) -> tuple[Optional[str], Optional[float]]:
+    """(clé, distance nm) de la perle la plus proche — sur les colonnes lat/lon, SANS décoder les sacs.
+    27 sept. : /ici/moment décodait les 3 272 sacs à chaque requête (34 requêtes au démarrage → minutes de CPU)."""
+    import math  # noqa: PLC0415
+    try:
+        with _LOCK:
+            if kind:
+                rows = _connect().execute("SELECT key, lat, lon FROM pearls WHERE kind = ? AND lat IS NOT NULL AND lon IS NOT NULL", (kind,)).fetchall()
+            else:
+                rows = _connect().execute("SELECT key, lat, lon FROM pearls WHERE lat IS NOT NULL AND lon IS NOT NULL").fetchall()
+    except Exception as exc:
+        log.warning("store perles (plus proche) : %s", exc)
+        return None, None
+    best_key, best_d = None, None
+    la1 = math.radians(float(lat))
+    for key, plat, plon in rows:
+        try:
+            la2 = math.radians(float(plat))
+            dlon = math.radians(float(plon) - float(lon))
+            # distance sphérique (nm), même formule que isochrone.haversine
+            a = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
+            d = 2 * 3440.065 * math.asin(min(1.0, math.sqrt(a)))
+        except (TypeError, ValueError):
+            continue
+        if best_d is None or d < best_d:
+            best_key, best_d = key, d
+    return best_key, best_d
+
+
 def iter_pearls(kind: str | None = None) -> Iterator[tuple[str, dict]]:
     """(key, { kind, bag, ts }) for every pearl — used by the warmer's status only."""
     try:
