@@ -1247,15 +1247,16 @@ def get_official_advice(
     leg: int = Query(..., ge=0, le=400),
     lang: str = Query("fr"),
 ):
-    """Compromis par décalage de date (lot R10b). État pending|done, calcul en fond."""
+    """Compromis par décalage de date (lot R10b). pending|done|unavailable — jamais 400 d'indice."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         raise HTTPException(404, "voyage officiel absent")
     from plan_advisor import request_advice  # noqa: PLC0415
     try:
         out = request_advice(voy, int(leg), now=_now(), rewrite=_rewrite_plan_advice)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    except ValueError:
+        from plan_advisor import advice_unavailable  # noqa: PLC0415
+        return advice_unavailable(int(leg), "unknown_leg")
     if out.get("status") == "done":
         return _localize_plan_advice(out, lang)
     return out

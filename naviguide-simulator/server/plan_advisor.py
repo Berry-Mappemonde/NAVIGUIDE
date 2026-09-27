@@ -35,7 +35,7 @@ from plan_alerts import (
     haversine_nm,
     plan_from_voyage,
 )
-from plan_review import PLANNED_KNOTS
+from plan_review import PLANNED_KNOTS, _attach_itinerary_nm, legs_from_clock, legs_from_voyage
 from voyage_clock import bearing_deg, to_iso
 
 log = logging.getLogger("naviguide-simulator.plan-advisor")
@@ -67,6 +67,84 @@ def clear_advice_jobs() -> None:
     with _JOB_LOCK:
         _JOBS.clear()
         _JOB_THREADS.clear()
+
+
+def _review_start_name(voy: dict) -> str | None:
+    """Même départ mer que `review_official` (plan-review), pas `voy.startAt`."""
+    clock = voy.get("clock") or {}
+    verts = clock.get("vertices") or []
+    if not verts:
+        return None
+    sea_start = verts[0]
+    for a, b in zip(verts, verts[1:]):
+        if b.get("vehicle") in ("main", "side"):
+            sea_start = a
+            break
+    film0 = float(sea_start.get("filmNm") or 0)
+    best = None
+    for m in voy.get("marks") or []:
+        if not m.get("name"):
+            continue
+        d = abs(float(m.get("filmNm", m.get("nm")) or 0) - film0)
+        if best is None or d < best[0]:
+            best = (d, m["name"])
+    if best and best[0] <= 1.0:
+        return best[1]
+    return None
+
+
+def review_legs(voy: dict) -> list[dict]:
+    """Jambes du même référentiel que GET /voyage/official/plan-review."""
+    if not isinstance(voy, dict):
+        return []
+    clock = voy.get("clock") or {}
+    start_name = _review_start_name(voy)
+    _attach_itinerary_nm(clock.get("marks") or [], voy.get("marks") or [])
+    legs = legs_from_clock(clock, start_name) if clock.get("t0") else []
+    if not legs:
+        legs = legs_from_voyage(voy)
+    return legs
+
+
+def _map_review_to_prepared(wanted: dict, prepared: list) -> int | None:
+    wf, wt = wanted.get("from"), wanted.get("to")
+    for i, lg in enumerate(prepared or []):
+        if lg.get("from") == wf and lg.get("to") == wt:
+            return i
+    return None
+
+
+def advice_unavailable(leg_idx: int, reason: str) -> dict:
+    return {
+        "status": "unavailable",
+        "leg": int(leg_idx),
+        "reason": str(reason),
+        "weights": dict(WEIGHTS),
+    }
+
+
+def resolve_advice_leg(plan: dict, leg_idx: int, *, now: Any = None) -> tuple[dict, int | None, str | None]:
+    """Indice de la revue → plan préparé. `reason` si la jambe n'est pas calculable.
+
+    Choix RF1 : l'indice client est celui de plan-review. On le traduit vers
+    le plan de `prepare_plan` par (from, to). Pas d'invention de jambe.
+    """
+    src = prepare_plan(plan, now=now)
+    prepared = src.get("legs") or []
+    review = review_legs(plan) if isinstance(plan, dict) else []
+    idx = int(leg_idx)
+    if review:
+        if not (0 <= idx < len(review)):
+            return src, None, "unknown_leg"
+        mapped = _map_review_to_prepared(review[idx], prepared)
+        if mapped is not None:
+            return src, mapped, None
+        if not prepared:
+            return src, None, "no_clock"
+        return src, None, "not_computable"
+    if not (0 <= idx < len(prepared)):
+        return src, None, "no_clock" if not prepared else "unknown_leg"
+    return src, idx, None
 
 
 def prepare_plan(plan: dict, *, now: Any = None) -> dict:
@@ -561,16 +639,18 @@ def request_advice(
     climatology: dict | None = None,
     rewrite: Callable[[dict], dict] | None = None,
 ) -> dict:
-    """Réponse immédiate : `{status: pending}` ou le conseil `done` (tâche de fond)."""
-    src = prepare_plan(plan, now=now)
-    if not (0 <= int(leg_idx) < len(src.get("legs") or [])):
-        raise ValueError(f"jambe {leg_idx} absente ({len(src.get('legs') or [])} jambes)")
+    """Réponse immédiate : pending, done, ou unavailable (jamais d'exception d'indice)."""
+    src, resolved, reason = resolve_advice_leg(plan, int(leg_idx), now=now)
+    if reason or resolved is None:
+        return advice_unavailable(int(leg_idx), reason or "not_computable")
     now_dt = _now_dt(now)
-    key = _job_key(src, int(leg_idx), now_dt)
+    key = _job_key(src, int(resolved), now_dt)
     with _JOB_LOCK:
         hit = _JOBS.get(key)
         if hit and hit.get("status") == "done":
-            return copy.deepcopy(hit)
+            out = copy.deepcopy(hit)
+            out["leg"] = int(leg_idx)
+            return out
         running = _JOB_THREADS.get(key)
         if hit and hit.get("status") == "pending" and running and running.is_alive():
             return {"status": "pending", "leg": int(leg_idx), "weights": dict(WEIGHTS)}
@@ -578,15 +658,17 @@ def request_advice(
 
         def _run() -> None:
             try:
-                out = advise(src, int(leg_idx), now=now_dt, climatology=climatology)
+                out = advise(src, int(resolved), now=now_dt, climatology=climatology)
                 if rewrite:
                     out = rewrite(out)
                 out["status"] = "done"
+                out["leg"] = int(leg_idx)
             except Exception as exc:
                 log.warning("conseil dates : %s", exc)
                 try:
-                    out = advise(src, int(leg_idx), now=now_dt, climatology=climatology)
+                    out = advise(src, int(resolved), now=now_dt, climatology=climatology)
                     out["status"] = "done"
+                    out["leg"] = int(leg_idx)
                 except Exception as exc2:
                     out = {"status": "done", "leg": int(leg_idx), "weights": dict(WEIGHTS), "error": str(exc2)}
             with _JOB_LOCK:
