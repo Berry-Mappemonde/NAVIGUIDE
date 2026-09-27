@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
@@ -144,6 +144,18 @@ export function shouldReturnToLive({ userStopped = false, filmFinished = false, 
 }
 
 /** Avance linéaire : le dernier chapitre est atteint à la durée cible, pas avant. */
+/** Part du récit déjà dite (0..1) : caractères prononcés / caractères du film. */
+export function spokenProgress(plan, chapterIdx, charIdx) {
+  const list = plan?.chapters || [];
+  const total = list.reduce((s, c) => s + (Number(c.chars) || 0), 0);
+  if (!total) return 0;
+  const i = Math.max(0, Math.min(list.length - 1, Number(chapterIdx) || 0));
+  let before = 0;
+  for (let k = 0; k < i; k += 1) before += Number(list[k].chars) || 0;
+  const cur = Math.max(0, Math.min(Number(list[i]?.chars) || 0, Number(charIdx) || 0));
+  return Math.max(0, Math.min(1, (before + cur) / total));
+}
+
 export function linearFilmAt(elapsed, plan) {
   const seconds = Number(plan?.targetSeconds) || 0;
   const ch = chapterAtElapsed(plan, elapsed);
@@ -367,6 +379,7 @@ export function useReplay({
   const finishRef = useRef(() => {});
   const voiceCharRef = useRef(0);
   const voiceFailedRef = useRef(false);
+  const voiceSpokenAllRef = useRef(false);
   const tMsRef = useRef(null);
   const voiceTargetRef = useRef(null);
   const recaleRemainRef = useRef(0);
@@ -614,6 +627,7 @@ export function useReplay({
     chapterStartedAtRef.current = 0;
     voiceCharRef.current = 0;
     voiceFailedRef.current = false;
+    voiceSpokenAllRef.current = false;
     setVoiceRate(1);
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
@@ -674,27 +688,20 @@ export function useReplay({
       lastTRef.current = ch.tB;
       setTMs(ch.tB);
     }
-    const chapterElapsed = chapterStartedAtRef.current
-      ? (performance.now() - chapterStartedAtRef.current) / 1000
-      : 0;
     const wallElapsed = startWallRef.current
       ? (performance.now() - startWallRef.current) / 1000
-      : chapterElapsed;
-    if (idx === 0 && plan.chapters.length > 1) {
-      const remainingChars = plan.chapters.slice(1).reduce((s, c) => s + c.chars, 0);
-      setVoiceRate(calibrateRate({
-        chapterChars: ch?.chars,
-        elapsedSeconds: chapterElapsed,
-        remainingChars,
-        remainingBudgetSeconds: plan.targetSeconds - wallElapsed,
-      }));
-    }
+      : 0;
+    // Débit constant (27 sept.) : on ne recalibre plus la voix pour tenir le budget — c'était
+    // l'accélération audible après le premier chapitre. Le budget (2:30 / 3:00) choisit le TEXTE
+    // côté serveur ; la durée réelle suit la voix, et le bateau suit la voix.
     if (idx + 1 >= plan.chapters.length) {
       if (shouldHoldFilmForBudget({
         userBudget: budgetRef.current,
         wallElapsed,
         lastChapter: true,
       })) {
+        // Voix finie avant le budget : on tient la dernière image ; la boucle finira au budget.
+        voiceSpokenAllRef.current = true;
         return;
       }
       finish();
@@ -724,16 +731,18 @@ export function useReplay({
       const elapsed = (now - startWallRef.current) / 1000;
       const denom = Number(plan.targetSeconds) > 0 ? plan.targetSeconds : 1;
       const uiDue = now - lastUiAtRef.current >= FILM_UI_MS;
-      if (uiDue) {
-        lastUiAtRef.current = now;
-        setProgress(Math.max(0, Math.min(1, elapsed / denom)));
-      }
       const voiceClock = Boolean(
         voiceRef.current
         && !voiceFailedRef.current
         && canLeadWithVoice(),
       );
       const voiceLed = Boolean(voiceClock && voiceCharRef.current > 0);
+      if (uiDue) {
+        lastUiAtRef.current = now;
+        setProgress(voiceClock
+          ? spokenProgress(plan, chapterIdxRef.current, voiceCharRef.current)
+          : Math.max(0, Math.min(1, elapsed / denom)));
+      }
 
       const ingest = (next) => {
         if (next == null) return;
@@ -747,7 +756,10 @@ export function useReplay({
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
-      const budgetDone = budgetRef.current > 0 && elapsed >= plan.targetSeconds;
+      // Mené par la voix, le film finit quand la voix a fini le dernier chapitre (onVoiceEnd),
+      // jamais coupé par le budget au milieu d'une phrase.
+      const budgetDone = budgetRef.current > 0 && elapsed >= plan.targetSeconds
+        && (!voiceClock || voiceSpokenAllRef.current);
       const done = !stoppingRef.current && (
         budgetDone
         || (!voiceClock && linear.finish && linear.lastReached)
@@ -767,7 +779,7 @@ export function useReplay({
           const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
           const f = Math.max(0, Math.min(1, frac));
           charIdx = f * (ch?.chars || 1);
-          ingest(ch ? ch.tA + f * (ch.tB - ch.tA) : plan.timeAt(0, 0));
+          ingest(ch ? plan.timeAt(ch.idx, charIdx) : plan.timeAt(0, 0));
         }
       } else {
         const ch = plan.chapters[chapterIdxRef.current];

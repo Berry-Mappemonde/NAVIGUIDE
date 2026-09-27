@@ -3,6 +3,7 @@ import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { interpolateCast, isAirPhase } from "../engine/filmCast.js";
 import { wakeCursorAt } from "../engine/filmWake.js";
 import { haversineNm, unwrapLon, worldCopyLineCoords, worldCopyLngs, worldCopyOffsets } from "../utils/geo.js";
+import { followMinZoom } from "./zoomFloor.js";
 import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
@@ -321,6 +322,8 @@ export class MapSceneController {
     map.on("moveend", this.onMoveEnd);
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
+    this.onResize = () => this.applyZoomFloor();
+    map.on("resize", this.onResize);
     this.eventBubble = attachEventBubble(this, L);
     this.escalePopup = attachEscalePopup(this, L);
     if (this.escalePopup) {
@@ -474,6 +477,7 @@ export class MapSceneController {
     }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
+    this.applyZoomFloor();
     this.syncInitialCamera();
     this.syncRoute();
     this.syncAltRoute();
@@ -692,6 +696,10 @@ export class MapSceneController {
       this.markerSets.set(role, []);
       return;
     }
+    // Pendant l'animation de zoom, Leaflet transforme les icônes en CSS ; un setLatLng calculé sur
+    // l'ancienne projection les fait glisser horizontalement (27 sept.). On garde l'image, la
+    // prochaine frame après zoomend repositionne.
+    if (this.zoomAnimating && markers.length) return;
     const lngs = markerWorldLngs(lon, this.map.getCenter()?.lng);
     if (markers.length !== lngs.length) {
       markers.forEach((marker) => marker.remove());
@@ -812,6 +820,11 @@ export class MapSceneController {
 
   syncWaypoints() {
     const cfg = this.config;
+    if (this.zoomAnimating && this.waypointMarkers.size) {
+      // Drapeaux : mêmes glissements pendant l'animation de zoom ; onZoomEnd replanifie.
+      this.waypointsDirty = true;
+      return;
+    }
     const source = cfg.drawingMode
       ? (cfg.drawnPoints || []).map((point, index) => ({ ...point, name: point.name || `${index + 1}`, flag: "", flags: [] }))
       : (cfg.customRoute ? [] : (cfg.points || []));
@@ -976,6 +989,20 @@ export class MapSceneController {
       return;
     }
     this.setCameraPlaced(true);
+  }
+
+  /**
+   * Plancher de dézoom : en Suivre, le monde n'apparaît jamais plusieurs fois d'affilée ;
+   * Tracer, Simulation et accueil gardent la vue monde (MAP_MIN_ZOOM).
+   */
+  applyZoomFloor() {
+    if (!this.map?.setMinZoom) return;
+    const cfg = this.config || {};
+    const follow = Boolean(cfg.isSuivre && !cfg.drawingMode);
+    const floor = follow ? followMinZoom(this.map.getSize(), this.map.options.zoomSnap, MAP_MIN_ZOOM) : MAP_MIN_ZOOM;
+    if (this.map.options.minZoom === floor) return;
+    // setMinZoom remonte la vue si elle est sous le plancher : mouvement de la carte, pas de l'utilisateur.
+    this.programmaticMove(() => this.map.setMinZoom(floor));
   }
 
   /** Lève maxBounds et pose drawingMode avant showWorld (lot RC14). */
@@ -1335,6 +1362,7 @@ export class MapSceneController {
     this.map.off("zoomend", this.onZoomEnd);
     this.map.off("moveend", this.onMoveEnd);
     this.map.off("zoomstart", this.onUserNavigation);
+    this.map.off("resize", this.onResize);
     this.map.off("dragstart", this.onUserNavigation);
     this.layers.clear();
     this.markerSets.forEach((markers) => markers.forEach((marker) => marker.remove()));

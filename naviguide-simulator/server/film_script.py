@@ -2175,6 +2175,43 @@ def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> st
     return speak_film_text(split_short_sentences(blob), lang)
 
 
+def chapter_anchors(text: str, anchored: list[tuple[str, Optional[int]]], t_a: int, t_b: int, lang: str) -> list[dict]:
+    """[{charIdx, t}] : position dans le texte FINAL de chaque phrase gardée → instant du trajet (ISO).
+    Le client cale le bateau dessus pendant que la phrase est dite. Les phrases coupées par le budget
+    n'ont pas d'ancre ; les instants sont bornés à [tA, tB] et rendus croissants (chronologie stricte)."""
+    out: list[tuple[int, int]] = []
+    if not text or not anchored:
+        return []
+    for sentence, t_ms in anchored:
+        if not sentence or t_ms is None:
+            continue
+        spoken = speak_film_text(str(sentence).strip(), lang)
+        needle = spoken[:28] if len(spoken) > 28 else spoken
+        idx = text.find(needle) if needle else -1
+        if idx < 0 and len(needle) > 12:
+            idx = text.find(needle[:12])
+        if idx < 0:
+            continue
+        t = int(t_ms)
+        if t_a is not None:
+            t = max(int(t_a), t)
+        if t_b is not None:
+            t = min(int(t_b), t)
+        out.append((idx, t))
+    out.sort(key=lambda p: p[0])
+    result: list[dict] = []
+    last_t: Optional[int] = None
+    for idx, t in out:
+        if last_t is not None and t < last_t:
+            t = last_t
+        last_t = t
+        if result and result[-1]["charIdx"] == idx:
+            result[-1]["t"] = _iso(t)
+            continue
+        result.append({"charIdx": idx, "t": _iso(t)})
+    return result
+
+
 def _trim_free_script(chapters: list[dict], max_words: int = FILM_FREE_MAX_WORDS) -> list[dict]:
     guard = 0
     while script_words(chapters) > max_words and guard < 200:
@@ -2394,15 +2431,21 @@ def build_raw_from_moments(
                 return
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(sentence)
+            anchored.append((sentence, change.get("tMs")))
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)
 
+        # Ancres (27 sept.) : chaque phrase porte l'instant du trajet dont elle parle — le client y cale le
+        # bateau pendant qu'elle est dite (« approche d'Ajaccio » quand le bateau approche d'Ajaccio).
+        anchored: list[tuple[str, Optional[int]]] = []
         if i == 0:
-            bits.append(event_sentence({
+            first = event_sentence({
                 "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
                 "seaName": "" if dest_name else sea_name,
                 "entry": {"t": OFFICIAL_T0, "name": start_name},
-            }, lang, display_t0=display_t0))
+            }, lang, display_t0=display_t0)
+            bits.append(first)
+            anchored.append((first, w["tA"]))
         quay = [c for c in selected if (c.get("tMs") or 0) < depart_ms]
         sea = [c for c in selected if (c.get("tMs") or 0) >= depart_ms]
         for change in quay:
@@ -2410,10 +2453,12 @@ def build_raw_from_moments(
         head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
         if head:
             bits.append(head)
+            anchored.append((head, depart_ms or w["tA"]))
         for extra_air in _air_bits_from_moments(
             moments, w, i=i, lang=lang, display_t0=display_t0, already=" ".join(bits),
         ):
             bits.append(extra_air)
+            anchored.append((extra_air, depart_ms or w["tA"]))
         for change in sea:
             speak_change(change)
         key = norm_stop((dest or {}).get("name") or "")
@@ -2421,6 +2466,7 @@ def build_raw_from_moments(
         if arrival and key and key not in cited:
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(arrival)
+            anchored.append((arrival, w["tB"]))
             cited.add(key)
             arr_id = f"stop:{dest['name']}:{dest.get('iso')}"
             dest_title = short_name(dest["name"])
@@ -2454,11 +2500,13 @@ def build_raw_from_moments(
             close = _close_sentence(w, live, lang)
             if close and close not in text:
                 text = speak_film_text(f"{text} {close}".strip(), lang)
+                anchored.append((close, w["tB"]))
         chapters.append({
             "id": w["id"],
             "tA": _iso(w["tA"]),
             "tB": _iso(w["tB"]),
             "text": text,
+            "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
             "events": placed,
             "fromName": w.get("fromName") or "",
             "toName": w.get("toName") or "",
@@ -2841,6 +2889,11 @@ def _public_plan(plan: dict, source: str) -> dict:
             "tA": c.get("tA"),
             "tB": c.get("tB"),
             "text": c.get("text") or "",
+            "anchors": [
+                {"charIdx": a.get("charIdx"), "t": a.get("t")}
+                for a in (c.get("anchors") or [])
+                if isinstance(a, dict) and a.get("t") is not None
+            ],
             "events": [
                 {
                     "id": e.get("id"),

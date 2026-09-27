@@ -191,3 +191,59 @@ describe("replay — filmPlan (lot F1)", () => {
     assert.ok(midWrap.lon > 170, "lon dépliée : 170 → −170 passe par 180, pas par 0");
   });
 });
+
+describe("replay — ancres phrase → instant (27 sept.)", () => {
+  const tA = Date.parse("2026-05-15T12:00:00Z");
+  const tB = Date.parse("2026-06-01T09:00:00Z");
+  const depart = Date.parse("2026-05-18T10:00:00Z");
+  const approche = Date.parse("2026-05-31T18:00:00Z");
+  const text = "À La Rochelle, 3 jours à quai. Puis, le 18 mai, départ vers Ajaccio. Le 31 mai, approche d’Ajaccio. Arrivée le 1er juin.";
+  const chapter = {
+    id: "leg-1", tA: new Date(tA).toISOString(), tB: new Date(tB).toISOString(), text,
+    anchors: [
+      { charIdx: 0, t: new Date(tA).toISOString() },
+      { charIdx: text.indexOf("Puis"), t: new Date(depart).toISOString() },
+      { charIdx: text.indexOf("Le 31"), t: new Date(approche).toISOString() },
+      { charIdx: text.indexOf("Arrivée"), t: new Date(tB).toISOString() },
+    ],
+  };
+
+  it("le bateau est là où la phrase le dit : « approche d’Ajaccio » = instant de l’approche", () => {
+    const plan = filmPlan({ chapters: [chapter], targetSeconds: 150 });
+    const ch = plan.chapters[0];
+    assert.equal(plan.timeAt(0, 0), tA);
+    assert.equal(plan.timeAt(0, text.indexOf("Puis")), depart);
+    assert.equal(plan.timeAt(0, text.indexOf("Le 31")), approche);
+    assert.equal(plan.timeAt(0, ch.chars), tB);
+    // pendant « 3 jours à quai » le bateau reste entre tA et le départ, pas au milieu de la jambe
+    const midQuay = plan.timeAt(0, 10);
+    assert.ok(midQuay >= tA && midQuay <= depart, "à quai avant le départ");
+    // la correspondance est monotone : la voix avance, le bateau ne recule jamais
+    let prev = -Infinity;
+    for (let c = 0; c <= ch.chars; c += 3) {
+      const t = plan.timeAt(0, c);
+      assert.ok(t >= prev, `monotone à ${c}`);
+      prev = t;
+    }
+  });
+
+  it("sans ancres : linéaire ; ancres hors chronologie : rendues croissantes et bornées", () => {
+    const lin = filmPlan({ chapters: [{ ...chapter, anchors: [] }], targetSeconds: 150 });
+    const half = lin.timeAt(0, lin.chapters[0].chars / 2);
+    assert.ok(Math.abs(half - (tA + tB) / 2) < 1000);
+    const messy = filmPlan({
+      chapters: [{
+        ...chapter,
+        anchors: [
+          { charIdx: 40, t: "2026-07-01T00:00:00Z" }, // après tB → borné à tB
+          { charIdx: 80, t: "2026-05-01T00:00:00Z" }, // avant tA et avant l'ancre précédente → remonté
+        ],
+      }],
+      targetSeconds: 150,
+    });
+    const at40 = messy.timeAt(0, 40);
+    const at80 = messy.timeAt(0, 80);
+    assert.equal(at40, tB);
+    assert.ok(at80 >= at40, "jamais de retour en arrière");
+  });
+});
