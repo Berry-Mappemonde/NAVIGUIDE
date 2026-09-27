@@ -48,6 +48,12 @@ test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", asy
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());
+  const officialBody = apiUp ? await official.json().catch(() => null) : null;
+  const markBlob = JSON.stringify([
+    ...((officialBody && officialBody.marks) || []),
+    ...((officialBody && officialBody.escales) || []),
+  ]);
+  const routeHasAir = /cayenne/i.test(markBlob) && /halifax/i.test(markBlob);
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
@@ -94,7 +100,7 @@ test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", asy
 
   const blob = film.chapters.map((c) => c.text || "").join(" ");
   expect(film.targetSeconds, "sans case : pas de budget serveur").toBe(0);
-  if (/cayenne|guyane/i.test(blob) && /halifax/i.test(blob)) {
+  if (routeHasAir) {
     expect(blob, "avion aller").toMatch(/prend l'avion pour Halifax|the crew flies to Halifax/i);
     expect(blob, "avion retour").toMatch(/retour en avion vers Cayenne|return flight to Cayenne/i);
   }
