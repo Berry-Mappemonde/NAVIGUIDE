@@ -1083,9 +1083,13 @@ def fill_process_alive() -> Optional[int]:
 
 
 def _fill_script_stamp() -> str:
-    """Empreinte du code du remplisseur : mtime du script (change à chaque checkout d'une autre branche)."""
+    """Empreinte du code du remplisseur : mtime le plus récent du script ET des modules serveur qu'il importe
+    (le poste réutilise le même chemin de worktree : seul le contenu change entre deux rebuilds)."""
     try:
-        return str(FILL_SCRIPT.stat().st_mtime_ns)
+        latest = FILL_SCRIPT.stat().st_mtime_ns
+        for p in Path(__file__).resolve().parent.glob("*.py"):
+            latest = max(latest, p.stat().st_mtime_ns)
+        return str(latest)
     except OSError:
         return ""
 

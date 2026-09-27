@@ -99,7 +99,7 @@ def loop(period_s: float) -> int:
     try:
         pidfile.parent.mkdir(parents=True, exist_ok=True)
         me = Path(__file__).resolve()
-        pidfile.write_text(f"{os.getpid()}\n{me}\n{me.stat().st_mtime_ns}\n", encoding="utf-8")
+        pidfile.write_text(f"{os.getpid()}\n{me}\n{official_store._fill_script_stamp()}\n", encoding="utf-8")
     except OSError:
         pass
 
