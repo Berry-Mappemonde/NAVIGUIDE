@@ -67,7 +67,7 @@ const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLa
   );
 });
 
-export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }) {
+export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek, frozen = false }) {
   const { t, lang } = useLang();
 
   // Labels depend on marks + language only: built once per route / language.
@@ -105,7 +105,7 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }
     });
   }
   if (nextIndex < 0 && playheadNext) nextIndex = current + 1;
-  const eta = useOfficialEta(nextName, { enabled: Boolean(nextName) });
+  const eta = useOfficialEta(nextName, { enabled: Boolean(nextName), frozen });
   const etaLabel = formatEtaRange(eta, t, lang);
   const etaTitle = formatEtaRangeTitle(eta, t);
 

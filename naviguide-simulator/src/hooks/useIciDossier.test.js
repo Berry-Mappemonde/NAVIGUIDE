@@ -3,8 +3,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { wrapLon } from "../utils/geo.js";
-import { iciSearchParams } from "./useIciDossier.js";
+import { haversineNm, wrapLon } from "../utils/geo.js";
+import {
+  MOVE_NM,
+  countIciFetchesAlongTrack,
+  iciSearchParams,
+  shouldCatchUpIci,
+  shouldScheduleIciFetch,
+} from "./useIciDossier.js";
+
+function trackNm(startLat, startLon, totalNm, stepNm = 10) {
+  const points = [];
+  for (let d = 0; d <= totalNm; d += stepNm) {
+    points.push({ lat: startLat + d / 60, lon: startLon });
+  }
+  return points;
+}
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "useIciDossier.js"), "utf8");
 
@@ -40,5 +54,41 @@ describe("useIciDossier contract", () => {
     assert.match(src, /Changing orders never rewinds/);
     assert.doesNotMatch(src, /await enqueueStory|await fetch\(.*chat|Nemotron|Token Factory/);
     assert.doesNotMatch(src, /tavily\?|nvidia\?/);
+    assert.match(src, /frozen = false/);
+    assert.match(src, /shouldScheduleIciFetch/);
+    assert.match(src, /shouldCatchUpIci/);
+  });
+});
+
+describe("useIciDossier — film gelé (lot RF4)", () => {
+  const last = { lat: 0, lon: 0, month: 5, destLat: 10, destLon: 10 };
+  const dest = { month: 5, destLat: 10, destLon: 10 };
+
+  it("un tour de 3 000 nm pendant le film : zéro GET /ici, un rattrapage à l'arrêt", () => {
+    const points = trackNm(0, 0, 3000, 10);
+    assert.ok(haversineNm(0, 0, points.at(-1).lat, 0) >= 2990, "piste ≥ 3 000 nm");
+    assert.equal(countIciFetchesAlongTrack(points, { frozen: true, last, ...dest }), 0);
+    assert.equal(shouldCatchUpIci({ wasFrozen: true, frozen: true }), false);
+    assert.equal(shouldCatchUpIci({ wasFrozen: true, frozen: false }), true);
+    assert.equal(
+      shouldScheduleIciFetch({ frozen: false, last: null, lat: 0, lon: 0, ...dest }),
+      true,
+    );
+  });
+
+  it("hors film, 3 nm déclenchent encore une sonde", () => {
+    const unfrozen = countIciFetchesAlongTrack(trackNm(0, 0, 3000, 10), { frozen: false, last, ...dest });
+    assert.ok(unfrozen > 100, `hors film ${unfrozen} sondes`);
+    assert.equal(MOVE_NM, 3);
+    assert.equal(shouldScheduleIciFetch({
+      frozen: false, last, lat: 0, lon: 0, ...dest,
+    }), false);
+  });
+
+  it("App gèle le sac, le moment, l'along et la revue pendant replay.active", () => {
+    const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "App.jsx"), "utf8");
+    assert.match(app, /frozen:\s*replay\.active/);
+    assert.match(app, /enabled: Boolean\(cast && routeReady\) && !replay\.active/);
+    assert.match(app, /frozen=\{Boolean\(replay\.active\)\}/);
   });
 });

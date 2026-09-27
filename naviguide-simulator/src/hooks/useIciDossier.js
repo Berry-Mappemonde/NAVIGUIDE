@@ -14,7 +14,7 @@ import { WEATHER_POLL_MS, fetchWeatherForecast } from "./weatherSnapshot.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 const DEBOUNCE_MS = 800;
-const MOVE_NM = 3;
+export const MOVE_NM = 3;
 const FETCH_MS = 40000;
 const MIN_SCHEDULE_MS = 8000;
 /** A bag collected this far from the boat is history: the briefing waits for the next one. */
@@ -75,6 +75,59 @@ export function isJump(prevBag, bag, limitNm = JUMP_NM) {
 }
 
 /**
+ * Lot RF4 — decide if GET /ici should run. Frozen (Revoir l'expédition):
+ * the film boat never schedules a bag. Catch-up after Stop is separate.
+ */
+export function shouldScheduleIciFetch({
+  frozen = false,
+  last = null,
+  lat,
+  lon,
+  month,
+  destLat,
+  destLon,
+  moveNm = MOVE_NM,
+} = {}) {
+  if (frozen) return false;
+  if (
+    last
+    && haversineNm(last.lat, last.lon, lat, lon) < moveNm
+    && last.month === month
+    && last.destLat === destLat
+    && last.destLon === destLon
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** One GET /ici after Stop / end of film — even if the live boat did not move 3 nm. */
+export function shouldCatchUpIci({ wasFrozen, frozen } = {}) {
+  return Boolean(wasFrozen && !frozen);
+}
+
+/** Simulate a film track: how many /ici would fire (lot RF4). */
+export function countIciFetchesAlongTrack(points, {
+  frozen = false,
+  last = null,
+  month,
+  destLat,
+  destLon,
+  moveNm = MOVE_NM,
+} = {}) {
+  let cur = last;
+  let n = 0;
+  for (const p of points || []) {
+    if (!shouldScheduleIciFetch({
+      frozen, last: cur, lat: p.lat, lon: p.lon, month, destLat, destLon, moveNm,
+    })) continue;
+    n += 1;
+    cur = { lat: p.lat, lon: p.lon, month, destLat, destLon };
+  }
+  return n;
+}
+
+/**
  * Fill the `ici()` bag around the boat and turn it into a story.
  * One step = one GET /ici. No chat, no Tavily.
  * Detectors + judge run on the bag already collected. Never await a model.
@@ -111,6 +164,7 @@ export function useIciDossier({
   nearestBag = null,
   orders = null,
   stories = true,
+  frozen = false,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -140,6 +194,8 @@ export function useIciDossier({
   const lastLegRef = useRef(legKey(jambe));
   const playheadRef = useRef({ cumNm, filmCum, clockMin });
   playheadRef.current = { cumNm, filmCum, clockMin };
+  const prevFrozenRef = useRef(frozen);
+  const holdRef = useRef(null);
   const filmBucket = Number.isFinite(filmCum) ? Math.round(filmCum / 5) * 5 : null;
   const boat = boatPositionFromCast(cast, snappedPosition);
   const currentLeg = legKey(jambe);
@@ -157,7 +213,8 @@ export function useIciDossier({
   // switch) must not narrate this place. Meanwhile the along pearl just
   // passed (thin bag: ZEE, ports of entry, MPA, harbours) stands in — it is
   // what makes events fire at any film speed.
-  const staleRemote = Boolean(remote && boat && isStaleBag(remote, boat));
+  // Lot RF4: during the film the live bag stays put — do not treat it as stale.
+  const staleRemote = Boolean(!frozen && remote && boat && isStaleBag(remote, boat));
   const fresh = remote && !staleRemote ? remote : null;
   const latB = boat ? Math.round(boat.lat * 20) / 20 : null;
   const lonB = boat ? Math.round(wrapLon(boat.lon) * 20) / 20 : null;
@@ -196,6 +253,12 @@ export function useIciDossier({
   }), []);
 
   useEffect(() => {
+    const justUnfroze = shouldCatchUpIci({ wasFrozen: prevFrozenRef.current, frozen });
+    prevFrozenRef.current = frozen;
+    if (frozen) {
+      clearTimeout(timerRef.current);
+      return undefined;
+    }
     if (!enabled || !boat) {
       setRemote(null);
       setTick({ events: [], briefing: null });
@@ -214,17 +277,18 @@ export function useIciDossier({
       return undefined;
     }
 
+    if (justUnfroze) {
+      lastFetchRef.current = null;
+      lastScheduledRef.current = null;
+    }
+
     const lat = boat.lat;
     const lon = wrapLon(boat.lon);
     wantRef.current = { lat, lon, month, destLat, destLon };
     const last = lastFetchRef.current || lastScheduledRef.current;
-    if (
-      last
-      && haversineNm(last.lat, last.lon, lat, lon) < MOVE_NM
-      && last.month === month
-      && last.destLat === destLat
-      && last.destLon === destLon
-    ) {
+    if (!shouldScheduleIciFetch({
+      frozen, last, lat, lon, month, destLat, destLon,
+    })) {
       return undefined;
     }
     // A bag is on its way: let it land, then fetch again from wherever the
@@ -287,9 +351,10 @@ export function useIciDossier({
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timerRef.current);
-  }, [enabled, boat?.lat, boat?.lon, month, destLat, destLon, currentLeg, refetch]);
+  }, [enabled, frozen, boat?.lat, boat?.lon, month, destLat, destLon, currentLeg, refetch]);
 
   useEffect(() => {
+    if (frozen) return undefined;
     if (!remote || remote.weather?.status !== "pending") return undefined;
     const lat = remote.at?.lat;
     const lon = wrapLon(Number(remote.at?.lon));
@@ -316,9 +381,10 @@ export function useIciDossier({
       cancelled = true;
       clearInterval(id);
     };
-  }, [remote?.weather?.status, remote?.at?.lat, remote?.at?.lon]);
+  }, [frozen, remote?.weather?.status, remote?.at?.lat, remote?.at?.lon]);
 
   useEffect(() => {
+    if (frozen) return;
     const remote = effective;
     if (!remote) {
       // Nothing at the boat yet: keep the ledger (pastilles), clear the brief.
@@ -446,6 +512,7 @@ export function useIciDossier({
     jambe?.vehicle,
     jambe?.phase,
     orders,
+    frozen,
   ]);
 
   const dossier = useMemo(() => {
@@ -475,7 +542,7 @@ export function useIciDossier({
     [dossier, lang],
   );
 
-  return {
+  const pack = {
     dossier,
     briefing,
     briefingSegments,
@@ -486,4 +553,6 @@ export function useIciDossier({
     events: tick.events,
     display: tick.briefing,
   };
+  if (!frozen) holdRef.current = pack;
+  return frozen && holdRef.current ? holdRef.current : pack;
 }

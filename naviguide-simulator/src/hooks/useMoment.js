@@ -39,10 +39,12 @@ export function useMoment({
   mode = "follow",
   lang = "fr",
   enabled = true,
+  frozen = false,
 } = {}) {
   const [state, setState] = useState(emptyMomentState());
 
   useEffect(() => {
+    if (frozen) return undefined;
     if (!enabled || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
       setState(emptyMomentState());
       return undefined;
@@ -64,7 +66,7 @@ export function useMoment({
         setState(emptyMomentState(err?.message || "error"));
       });
     return () => controller.abort();
-  }, [enabled, lat, lon, t, mode, lang]);
+  }, [enabled, frozen, lat, lon, t, mode, lang]);
 
   return state;
 }

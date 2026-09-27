@@ -413,8 +413,8 @@ export default function App() {
     enabled: routeReady,
     t0: voyage.t0,
     points: flatRoute.points,
-    boatLat: sample?.lat,
-    boatLon: sample?.lon,
+    boatLat: replay.active && Number.isFinite(Number(official.live?.lat)) ? official.live.lat : sample?.lat,
+    boatLon: replay.active && Number.isFinite(Number(official.live?.lon)) ? official.live.lon : sample?.lon,
     destLat: destMark?.lat,
     destLon: destMark?.lon,
     month: climoMonth,
@@ -553,6 +553,7 @@ export default function App() {
     mode: drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation"),
     lang,
     enabled: sceneReady,
+    frozen: replay.active,
   });
   const momentMode = drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation");
   const journalRouteId = momentMode === "drawn"
@@ -702,7 +703,7 @@ export default function App() {
   );
 
   const alongPack = useIciAlong({
-    enabled: Boolean(cast && routeReady),
+    enabled: Boolean(cast && routeReady) && !replay.active,
     flat: flatRoute,
     // Lot T: when a route is drawn, sample that track — never GET /ici/pearls (Berry).
     customRoute: routeForView,
@@ -720,6 +721,7 @@ export default function App() {
 
   const iciPack = useIciDossier({
     enabled: Boolean(cast),
+    frozen: replay.active,
     stories: !replay.active,
     cast,
     snappedPosition: legContext?.snappedPosition,
@@ -1429,6 +1431,7 @@ export default function App() {
   // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
     enabled: Boolean(officialClock),
+    frozen: replay.active,
     clock: officialClock,
     lookup: atlas.lookup,
     revision: atlas.revision,
@@ -1667,6 +1670,7 @@ export default function App() {
         filmNm={sidebarPlaybackNm}
         onSeekEscale={isSuivre ? undefined : handleSidebarSeek}
         onEscaleSheet={openEscaleFromUi}
+        frozen={Boolean(replay.active)}
         drawing={drawing}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
