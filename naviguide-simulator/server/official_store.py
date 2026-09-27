@@ -27,6 +27,8 @@ log = logging.getLogger("naviguide-simulator.official-store")
 FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 PREPARING = "preparing"
 READY = "ready"
+# Clé film : un snapshot RF2 (avant phrases avion) ne matche plus.
+FILM_SCRIPT_REV = "rf5"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 DEFAULT_DISK = Path.home() / ".cache" / "naviguide" / "voyage-store"
@@ -36,6 +38,7 @@ ROUTE_NEAR_NM = 8.0
 _LOCK = threading.RLock()
 _INSTANCE: Optional["OfficialStore"] = None
 _WORKER_STARTED = False
+_FILM_FORCED = False
 _REFRESH_LOCK = threading.Lock()
 
 
@@ -194,10 +197,22 @@ class OfficialStore:
         t0 = (voy or {}).get("t0") or ""
         return make_key(route_fingerprint(voy), t0, _data_date(now or self._now()))
 
+    def family_key(
+        self,
+        family: str,
+        voy: Optional[dict] = None,
+        now: Optional[datetime] = None,
+    ) -> str:
+        """Clé de rangement : le film inclut la révision du script (RF5)."""
+        base = self.current_key(voy, now)
+        if family == "film":
+            return f"{base}:{FILM_SCRIPT_REV}"
+        return base
+
     def get(self, family: str, key: Optional[str] = None) -> Optional[dict]:
         if family not in FAMILIES:
             raise ValueError(f"famille inconnue: {family}")
-        dest = key or self.current_key()
+        dest = key if key is not None else self.family_key(family)
         with _LOCK:
             hit = self._mem.get((dest, family))
             if hit is not None:
@@ -212,7 +227,7 @@ class OfficialStore:
             raise ValueError(f"famille inconnue: {family}")
         if payload is None:
             raise ValueError("payload vide — une famille non calculée reste en préparation")
-        dest_key = key or self.current_key()
+        dest_key = key if key is not None else self.family_key(family)
         doc = {
             "key": dest_key,
             "family": family,
@@ -228,10 +243,11 @@ class OfficialStore:
             return stored
 
     def status(self, key: Optional[str] = None) -> dict:
-        dest = key or self.current_key()
+        dest = key if key is not None else self.current_key()
         families = {}
         for name in FAMILIES:
-            hit = self.get(name, dest)
+            lookup = key if key is not None else self.family_key(name)
+            hit = self.get(name, lookup)
             families[name] = {
                 "status": READY if hit and hit.get("payload") is not None else PREPARING,
                 "storedAt": (hit or {}).get("storedAt"),
@@ -278,6 +294,127 @@ def payload_of(family: str) -> Optional[dict]:
         return None
     body = hit.get("payload")
     return body if isinstance(body, dict) else None
+
+
+def _film_chapters_blob(payload: Optional[dict]) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    parts: list[str] = []
+    for key in ("fr", "default", "en"):
+        plan = payload.get(key)
+        if not isinstance(plan, dict):
+            continue
+        for ch in plan.get("chapters") or []:
+            if isinstance(ch, dict):
+                parts.append(str(ch.get("text") or ""))
+    return " ".join(parts)
+
+
+def _itinerary_marks() -> list:
+    """Cayenne / Halifax de l'itinéraire Berry (route.geojson), escales ou intermédiaires.
+
+    Halifax est un waypoint `intermediate` : `official_itinerary_body` ne le met
+    pas dans les marques d'escales — ce n'est pas une invention, le point est
+    dans le GeoJSON officiel.
+    """
+    try:
+        from voyage_api import _ROUTE_GEOJSON  # noqa: PLC0415
+        fc = json.loads(_ROUTE_GEOJSON.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    out: list[dict] = []
+    for feat in fc.get("features") or []:
+        geom = (feat or {}).get("geometry") or {}
+        props = (feat or {}).get("properties") or {}
+        if geom.get("type") != "Point":
+            continue
+        name = str(props.get("name") or "")
+        low = name.lower()
+        if "cayenne" not in low and "halifax" not in low:
+            continue
+        coords = geom.get("coordinates") or []
+        if len(coords) < 2:
+            continue
+        try:
+            out.append({
+                "name": name,
+                "lon": float(coords[0]),
+                "lat": float(coords[1]),
+            })
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _voy_stored_marks(voy: Optional[dict]) -> list:
+    voy = voy or {}
+    marks = [m for m in (voy.get("marks") or []) if isinstance(m, dict)]
+    clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else None
+    if clock:
+        marks.extend(m for m in (clock.get("marks") or []) if isinstance(m, dict))
+    else:
+        stored = stored_clock()
+        if stored:
+            marks.extend(m for m in (stored.get("marks") or []) if isinstance(m, dict))
+    return marks
+
+
+def _name_is_cayenne(name: str) -> bool:
+    return "cayenne" in (name or "").lower()
+
+
+def _marks_have_cayenne(marks: list) -> bool:
+    return any(_name_is_cayenne(m.get("name") or "") for m in marks if isinstance(m, dict))
+
+
+def _voy_air_marks(voy: Optional[dict], plan: Optional[dict] = None) -> list:
+    """Marques du voyage ; l'itinéraire Berry n'est ajouté que si Cayenne est déjà là."""
+    marks = list(_voy_stored_marks(voy))
+    if _marks_have_cayenne(marks):
+        marks.extend(_itinerary_marks())
+        return marks
+    blob = ""
+    if isinstance(plan, dict):
+        blob = " ".join(
+            f"{c.get('fromName') or ''} {c.get('toName') or ''} {c.get('text') or ''}"
+            for c in (plan.get("chapters") or [])
+            if isinstance(c, dict)
+        )
+    if "cayenne" in blob.lower() or "guyane" in blob.lower():
+        marks.extend(_itinerary_marks())
+    return marks
+
+
+def _apply_air_sentences(plan: dict, lang: str, voy: Optional[dict]) -> dict:
+    """Garde l'aller/retour avion si la route officielle a la paire — pas d'invention."""
+    from film_script import _ensure_air_sentences  # noqa: PLC0415
+
+    if not isinstance(plan, dict):
+        return plan
+    chapters = [dict(c) for c in (plan.get("chapters") or []) if isinstance(c, dict)]
+    if not chapters:
+        return plan
+    _ensure_air_sentences(
+        chapters, marks=_voy_air_marks(voy, plan), moments=None, lang=lang,
+    )
+    out = dict(plan)
+    out["chapters"] = chapters
+    return out
+
+
+def film_snapshot_stale(payload: Optional[dict], voy: Optional[dict] = None) -> bool:
+    """True si la route a Cayenne↔Halifax mais le snapshot ne dit pas l'avion.
+
+    Pas d'invention : sans la paire, le snapshot n'est jamais « périmé ».
+    """
+    from film_script import _AIR_BACK_RE, _AIR_OUT_RE, _route_has_air_pair  # noqa: PLC0415
+
+    if not _route_has_air_pair(_voy_air_marks(voy, payload.get("fr") if isinstance(payload, dict) else None)):
+        return False
+    blob = _film_chapters_blob(payload)
+    if not blob.strip():
+        return True
+    return not (_AIR_OUT_RE.search(blob) and _AIR_BACK_RE.search(blob))
 
 
 def stored_clock() -> Optional[dict]:
@@ -442,9 +579,10 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
         return None
     if not isinstance(fr, dict) or not (fr.get("chapters") or []):
         return None
+    fr = _apply_air_sentences(fr, "fr", voy)
     out = {"fr": fr, "default": fr}
     if isinstance(en, dict) and (en.get("chapters") or []):
-        out["en"] = en
+        out["en"] = _apply_air_sentences(en, "en", voy)
     return out
 
 
@@ -591,11 +729,12 @@ def refresh_family(
     current = voy if voy is not None else _load_official()
     if current is None:
         return PREPARING
-    key = st.current_key(current, when)
+    key = st.family_key(family, current, when)
     if not force:
         hit = st.get(family, key)
         if hit and hit.get("payload") is not None:
-            return "unchanged"
+            if family != "film" or not film_snapshot_stale(hit.get("payload"), current):
+                return "unchanged"
     fn = compute or COMPUTE[family]
     if family != "climo" and not current.get("clock"):
         clock = stored_clock()
@@ -664,21 +803,42 @@ def start_worker() -> None:
     threading.Thread(target=_worker_loop, name="naviguide-official-store", daemon=True).start()
 
 
+def _force_film_once() -> None:
+    """Au boot / premier kick : recalcule le script RF5. Pas à chaque passage."""
+    global _FILM_FORCED
+    with _LOCK:
+        if _FILM_FORCED:
+            return
+        _FILM_FORCED = True
+    try:
+        refresh_family("film", force=True)
+    except Exception:
+        log.exception("stock officiel : force film")
+        with _LOCK:
+            _FILM_FORCED = False
+
+
 def kick_worker() -> None:
     """Relance un passage en fond — le client n'attend pas."""
     if not worker_enabled():
         return
     start_worker()
     threading.Thread(
-        target=lambda: refresh_missing(),
+        target=_kick_refresh,
         name="naviguide-official-store-kick",
         daemon=True,
     ).start()
 
 
+def _kick_refresh() -> None:
+    refresh_missing()
+    _force_film_once()
+
+
 def _worker_loop() -> None:
     try:
         refresh_missing()
+        _force_film_once()
     except Exception:
         log.exception("stock officiel : premier passage")
     while True:
@@ -690,8 +850,9 @@ def _worker_loop() -> None:
 
 
 def reset_worker_flag() -> None:
-    global _WORKER_STARTED
+    global _WORKER_STARTED, _FILM_FORCED
     _WORKER_STARTED = False
+    _FILM_FORCED = False
 
 
 # ── lecture pour les routes ──────────────────────────────────────────────────
@@ -807,6 +968,8 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
     }
     body = payload_of("film")
     if not body:
+        return preparing_payload("film", extra)
+    if film_snapshot_stale(body, _load_official()):
         return preparing_payload("film", extra)
     lg = (lang or "fr")[:2].lower()
     plan = body.get(lg) or body.get("default") or body.get("fr")

@@ -9,10 +9,12 @@ import official_store
 from official_store import (
     DiskBackend,
     FAMILIES,
+    FILM_SCRIPT_REV,
     MongoBackend,
     OfficialStore,
     PREPARING,
     READY,
+    film_snapshot_stale,
     make_key,
     preparing_payload,
 )
@@ -105,7 +107,7 @@ def test_same_key_no_recompute(tmp_path, backend_name):
         "film", compute=compute, now=NOW, store=store, voy=voy, force=True,
     )
     assert first == READY
-    key = store.current_key(voy, NOW)
+    key = store.family_key("film", voy, NOW)
     stored_at = store.get("film", key)["storedAt"]
     again = official_store.refresh_family(
         "film", compute=compute, now=NOW, store=store, voy=voy, force=False,
@@ -259,3 +261,205 @@ def test_http_ici_official_point_from_store_not_fill(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body.get("cached") is True or (body.get("zee") or {}).get("name") == "FR"
+
+
+AIR_MARKS = [
+    {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "lat": 46.8, "lon": 1.6},
+    {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "lat": 4.9, "lon": -52.3},
+    {"name": "Halifax (Nouvelle-Écosse)", "nm": 4100, "filmNm": 4100, "lat": 44.6, "lon": -63.6},
+    {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 19000, "filmNm": 19000, "lat": -22.2, "lon": 166.4},
+]
+
+
+def _air_voy():
+    return {
+        "t0": T0,
+        "points": [{"lat": 46.8, "lon": 1.6}, {"lat": 4.9, "lon": -52.3}],
+        "marks": AIR_MARKS,
+        "clock": {"t0": T0, "marks": AIR_MARKS, "vertices": []},
+    }
+
+
+def _stale_film_payload():
+    chapter = {
+        "id": "c1",
+        "text": "Le 1er juillet, départ vers Saint-Pierre.",
+        "tA": T0,
+        "tB": T0,
+    }
+    plan = {"chapters": [chapter], "source": "rules", "chars": 40, "targetSeconds": 0}
+    return {"fr": plan, "default": plan}
+
+
+def _rf5_from_marks(marks, lang="fr"):
+    import film_script
+    outbound, back = film_script._air_pair_sentences(marks, lang)
+    text = f"{outbound} {back}".strip()
+    return {
+        "chapters": [{"id": "c1", "text": text, "tA": T0, "tB": T0}],
+        "source": "rules",
+        "chars": len(text),
+        "targetSeconds": 0,
+        "hasWritten": False,
+    }
+
+
+def test_film_key_includes_script_rev(tmp_path):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    film_key = store.family_key("film", voy, NOW)
+    base = store.current_key(voy, NOW)
+    assert film_key == f"{base}:{FILM_SCRIPT_REV}"
+    assert store.family_key("eta", voy, NOW) == base
+
+
+def test_stale_film_refreshed_when_marks_have_air_pair(tmp_path):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _air_voy()
+    calls = {"n": 0}
+
+    def compute(_voy, _now):
+        calls["n"] += 1
+        plan = _rf5_from_marks(_voy.get("marks") or [])
+        return {"fr": plan, "default": plan}
+
+    key = store.family_key("film", voy, NOW)
+    store.put("film", _stale_film_payload(), key)
+    assert film_snapshot_stale(store.get("film", key)["payload"], voy)
+    status = official_store.refresh_family(
+        "film", compute=compute, now=NOW, store=store, voy=voy, force=False,
+    )
+    assert status == READY
+    assert calls["n"] == 1
+    blob = " ".join(
+        c.get("text") or ""
+        for c in store.get("film", key)["payload"]["fr"]["chapters"]
+    )
+    low = blob.lower()
+    assert "prend l'avion pour" in low
+    assert "retour en avion vers" in low
+
+    again = official_store.refresh_family(
+        "film", compute=compute, now=NOW, store=store, voy=voy, force=False,
+    )
+    assert again == "unchanged"
+    assert calls["n"] == 1
+
+
+def test_ajaccio_refresh_does_not_invent_air(tmp_path):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {
+        "t0": T0,
+        "points": [{"lat": 46.15, "lon": -1.16}],
+        "marks": [
+            {"name": "La Rochelle", "nm": 0, "lat": 46.15, "lon": -1.16},
+            {"name": "Ajaccio (Corse)", "nm": 1820, "lat": 41.9, "lon": 8.7},
+        ],
+        "clock": {"t0": T0, "marks": [], "vertices": []},
+    }
+    plan = {
+        "chapters": [{"id": "c1", "text": "Le 15 mai, départ vers Ajaccio.", "tA": T0, "tB": T0}],
+        "source": "rules", "chars": 30, "targetSeconds": 0,
+    }
+
+    def compute(_voy, _now):
+        return {"fr": plan, "default": plan}
+
+    assert film_snapshot_stale({"fr": plan}, voy) is False
+    status = official_store.refresh_family(
+        "film", compute=compute, now=NOW, store=store, voy=voy, force=True,
+    )
+    assert status == READY
+    blob = store.get("film", store.family_key("film", voy, NOW))["payload"]["fr"]["chapters"][0]["text"]
+    assert "prend l'avion" not in blob
+    assert "retour en avion" not in blob
+
+
+def test_cayenne_voyage_uses_itinerary_halifax_for_air(tmp_path):
+    """Voyage stocké sans Halifax : l'itinéraire Berry (route.geojson) porte la paire."""
+    from film_script import _route_has_air_pair
+
+    if not _route_has_air_pair(official_store._itinerary_marks()):
+        return
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {
+        "t0": T0,
+        "points": [{"lat": 4.9, "lon": -52.3}],
+        "marks": [{"name": "Cayenne (Guyane)", "nm": 4000, "lat": 4.9, "lon": -52.3}],
+        "clock": {"t0": T0, "marks": [], "vertices": []},
+    }
+    plan = {
+        "chapters": [{
+            "id": "c1",
+            "text": "Le 18 août, départ vers Saint-Pierre.",
+            "fromName": "Cayenne (Guyane)",
+            "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+        }],
+        "source": "rules", "chars": 40, "targetSeconds": 0,
+    }
+    stale = {"fr": plan, "default": plan}
+    assert film_snapshot_stale(stale, voy)
+
+    def compute(v, _now):
+        raw = {
+            "chapters": [dict(plan["chapters"][0])],
+            "source": "rules", "chars": 40, "targetSeconds": 0,
+        }
+        done = official_store._apply_air_sentences(raw, "fr", v)
+        return {"fr": done, "default": done}
+
+    status = official_store.refresh_family(
+        "film", compute=compute, now=NOW, store=store, voy=voy, force=True,
+    )
+    assert status == READY
+    blob = store.get("film", store.family_key("film", voy, NOW))["payload"]["fr"]["chapters"][0]["text"]
+    low = blob.lower()
+    assert "prend l'avion pour" in low
+    assert "retour en avion vers" in low
+
+
+def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeypatch):
+    import film_script
+    import voyage_store
+    from tests.test_voyage_journal import PUBLIC
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+
+    body = {
+        "t0": T0,
+        "expedition_id": "berry-mappemonde-2026",
+        "routeKind": "berry",
+        "follow": True,
+        "forecast": False,
+        "official": True,
+        "points": [
+            {"lat": 46.8, "lon": 1.6, "cumNm": 0},
+            {"lat": 4.9, "lon": -52.3, "cumNm": 4000},
+            {"lat": 44.6, "lon": -63.6, "cumNm": 4100},
+            {"lat": -22.2, "lon": 166.4, "cumNm": 19000},
+        ],
+        "marks": AIR_MARKS,
+    }
+    put = client.put("/voyage/official", json=body, headers=PUBLIC)
+    assert put.status_code == 200
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    assert voy and voy.get("marks")
+    names = " ".join(m.get("name") or "" for m in voy["marks"])
+    assert "Cayenne" in names and "Halifax" in names
+
+    async def from_marks(*, lang="fr", **_k):
+        return _rf5_from_marks(voy.get("marks") or [], lang)
+
+    monkeypatch.setattr(film_script, "official_film", from_marks)
+    official_store.put("film", _stale_film_payload())
+    stale = client.get("/voyage/official/film?lang=fr&seconds=0")
+    assert stale.status_code == 200
+    assert stale.json()["status"] == PREPARING
+    assert stale.json()["chapters"] == []
+
+    assert official_store.refresh_family("film", force=True) == READY
+    film = client.get("/voyage/official/film?lang=fr&seconds=0")
+    assert film.status_code == 200
+    blob = " ".join(c.get("text") or "" for c in film.json().get("chapters") or [])
+    low = blob.lower()
+    assert "prend l'avion pour" in low
+    assert "retour en avion vers" in low
