@@ -200,6 +200,37 @@ export function closingSubtitle(text) {
   return String(text || "");
 }
 
+/** Phrases avion RF5 déjà présentes dans le chapitre — on ne les invente pas. */
+export const FILM_AIR_PHRASE_RE =
+  /prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to/i;
+
+/**
+ * Ligne visible du sous-titre (lot RC16) : si le chapitre contient les
+ * phrases avion RF5, on les montre ; sinon le texte du chapitre inchangé.
+ */
+export function visibleFilmSubtitle(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  if (!FILM_AIR_PHRASE_RE.test(raw)) return raw;
+  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+  const found = raw.match(airSentence) || [];
+  const parts = [];
+  const seen = new Set();
+  for (const piece of found) {
+    const s = piece.trim();
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(s);
+  }
+  return parts.length ? parts.join(" ") : raw;
+}
+
+export function filmSubtitleShowsAir(text) {
+  return FILM_AIR_PHRASE_RE.test(String(text || ""));
+}
+
 export function applyReplayStop({
   cancelRaf,
   stopVoice,

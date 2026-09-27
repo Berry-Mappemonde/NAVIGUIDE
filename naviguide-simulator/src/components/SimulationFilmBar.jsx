@@ -8,6 +8,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
+import { filmSubtitleShowsAir, visibleFilmSubtitle } from "../hooks/useReplay.js";
 
 function clockSpeedBasis(clock, clockCurrent, barNm) {
   const direct = clockCurrent?.basis;
@@ -138,6 +139,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
+  const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "");
+  const filmSubtitleAir = filmSubtitleShowsAir(filmSubtitle);
 
   if (hideBar) {
     return (
@@ -305,8 +308,13 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           })}
         </div>
         {(replay?.active || replay?.subtitle) ? (
-          <div data-testid="film-subtitle" className="text-[10px] text-sky-100/90 leading-tight mt-0.5 truncate">
-            {replay.subtitle || ""}
+          <div
+            data-testid="film-subtitle"
+            className={`text-[10px] text-sky-100/90 leading-tight mt-0.5 ${
+              filmSubtitleAir ? "whitespace-normal" : "truncate"
+            }`}
+          >
+            {filmSubtitle}
           </div>
         ) : null}
         {storiesPending > 0 ? (

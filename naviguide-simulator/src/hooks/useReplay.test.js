@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmSpeakSeconds, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -557,5 +557,35 @@ describe("useReplay lot RF5 — fin du film : sous-titre de clôture conservé",
     assert.match(hook, /keepChapterText: keep/);
     assert.match(hook, /chapterTextRef/);
     assert.match(bar, /replay\?\.active \|\| replay\?\.subtitle/);
+  });
+});
+
+describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => {
+  it("choisit les phrases avion déjà dans le chapitre, sans inventer", () => {
+    const long = [
+      "Puis, le 18 août, départ vers Saint-Pierre-et-Miquelon, escale prévue.",
+      "Puis, le 18 août, l'équipage prend l'avion pour Halifax.",
+      "Ensuite, le 22 août, retour en avion vers Cayenne.",
+    ].join(" ");
+    const shown = visibleFilmSubtitle(long);
+    assert.match(shown, /prend l'avion pour Halifax/);
+    assert.match(shown, /retour en avion vers Cayenne/);
+    assert.doesNotMatch(shown, /départ vers Saint-Pierre/);
+    assert.equal(filmSubtitleShowsAir(shown), true);
+    const plain = "Départ de Saint-Maur vers La Rochelle.";
+    assert.equal(visibleFilmSubtitle(plain), plain);
+    assert.equal(filmSubtitleShowsAir(plain), false);
+    const en = "Then, on 18 August, the crew flies to Halifax. Later, return flight to Cayenne.";
+    assert.match(visibleFilmSubtitle(en), /the crew flies to Halifax/);
+    assert.match(visibleFilmSubtitle(en), /return flight to Cayenne/);
+    assert.equal(visibleFilmSubtitle(""), "");
+  });
+
+  it("App passe le sous-titre choisi ; la barre ne tronque pas l'avion", () => {
+    assert.match(app, /visibleFilmSubtitle\(replay\.chapterText\)/);
+    assert.match(bar, /visibleFilmSubtitle/);
+    assert.match(bar, /filmSubtitleShowsAir/);
+    assert.match(bar, /filmSubtitleAir \? "whitespace-normal" : "truncate"/);
+    assert.doesNotMatch(bar, /data-testid="film-subtitle" className="[^"]*truncate/);
   });
 });
