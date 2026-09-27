@@ -789,6 +789,37 @@ def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):
     assert polar.json().get("source") == "default"
 
 
+def test_unofficial_at_without_vertices_is_dated_not_503(client, monkeypatch):
+    """Lot RC15 : POST petite route non officielle → GET /at et /clock 200 daté, pas 503."""
+    def boom(*_a, **_k):
+        raise AssertionError("calcul")
+
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+    r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
+    assert r.status_code == 202
+    vid = r.json()["voyageId"]
+    at = client.get(f"/voyage/{vid}/at")
+    assert at.status_code in (200, 202)
+    assert at.status_code != 503
+    body = at.json()
+    assert body.get("status") == "preparing"
+    assert body.get("reason")
+    assert "T" in body.get("at", "") and body["at"].endswith("Z")
+    clock = client.get(f"/voyage/{vid}/clock")
+    assert clock.status_code in (200, 202)
+    assert clock.status_code != 503
+    dated = clock.json()
+    assert dated.get("status") == "preparing"
+    assert dated.get("reason")
+    assert "T" in dated.get("at", "") and dated["at"].endswith("Z")
+    assert not dated.get("vertices")
+    src = open(voyage_api.__file__, encoding="utf-8").read()
+    at_fn = src.split("def get_at(", 1)[1].split("def refresh_forecast", 1)[0]
+    clock_fn = src.split("def get_clock(", 1)[1].split("def get_at(", 1)[0]
+    assert "_climo_clock" not in at_fn
+    assert "_climo_clock" not in clock_fn
+
+
 def test_ici_fill_failure_is_dated_200(client, monkeypatch):
     """Lot RF3 : fill_dossier lève → /ici 200 daté, pas un 500."""
     import main

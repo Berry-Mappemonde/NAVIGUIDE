@@ -296,6 +296,19 @@ def _dated_error(reason: str, status: str = "unavailable") -> dict:
     return {"status": status, "reason": str(reason), "at": to_iso(_now())}
 
 
+def _clock_has_vertices(clock) -> bool:
+    return isinstance(clock, dict) and bool(clock.get("vertices"))
+
+
+def _preparing_clock_body(voy: dict, reason: str) -> dict:
+    """Même contrat que l'officiel preparing : daté, sans sommets inventés."""
+    body = _dated_error(reason, "preparing")
+    t0 = voy.get("t0")
+    if t0:
+        body = {"t0": t0, **body}
+    return body
+
+
 def _official_clock_from_store(voy: Optional[dict] = None) -> Optional[dict]:
     """Horloge officielle : stock RF2, sinon celle déjà posée sur le voyage. Jamais un calcul."""
     clock = official_store.stored_clock()
@@ -1626,7 +1639,7 @@ def get_clock(voyage_id: str):
         raise HTTPException(404, "voyage inconnu")
     if _is_official(voyage_id):
         clock = _official_clock_from_store(voy)
-        if clock is None:
+        if not _clock_has_vertices(clock):
             official_store.kick_worker()
             return official_store.preparing_payload("climo", {
                 "t0": OFFICIAL_T0,
@@ -1634,9 +1647,11 @@ def get_clock(voyage_id: str):
             })
         return clock
     clock = voy.get("clock")
-    if isinstance(clock, dict) and clock.get("vertices"):
+    if _clock_has_vertices(clock):
         return clock
-    raise HTTPException(503, _dated_error("horloge absente"))
+    # Voyage non officiel sans sommets : 200 daté, jamais 503 (lot RC15).
+    # Aucune horloge inventée dans ce handler.
+    return _preparing_clock_body(voy, "horloge en préparation")
 
 
 @router.get("/voyage/{voyage_id}/at")
@@ -1646,13 +1661,16 @@ def get_at(voyage_id: str, t: Optional[str] = Query(None)):
         raise HTTPException(404, "voyage inconnu")
     if _is_official(voyage_id):
         clock = _official_clock_from_store(voy)
-        if clock is None:
+        if not _clock_has_vertices(clock):
             official_store.kick_worker()
             return {"voyageId": voyage_id, "t": t, **_dated_error("horloge officielle en préparation", "preparing")}
     else:
         clock = voy.get("clock")
-    if not isinstance(clock, dict) or not clock.get("vertices"):
-        raise HTTPException(503, _dated_error("horloge absente"))
+        if not _clock_has_vertices(clock):
+            # Même contrat que l'officiel preparing : 200 daté, jamais 503 (lot RC15).
+            return {"voyageId": voyage_id, "t": t, **_dated_error("horloge en préparation", "preparing")}
+    if not _clock_has_vertices(clock):
+        return {"voyageId": voyage_id, "t": t, **_dated_error("horloge officielle en préparation", "preparing")}
     when = parse_iso(t) if t else _now()
     sample = sample_clock_at_time(clock, when)
     if sample is None:
