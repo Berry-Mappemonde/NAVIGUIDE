@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildLocalCustomBriefing } from "./customRouteBriefing.js";
+import { buildLocalCustomBriefing, coastNameNear } from "./customRouteBriefing.js";
 
 const laRochelleBrest = {
   type: "FeatureCollection",
@@ -56,5 +56,32 @@ describe("buildLocalCustomBriefing", () => {
     const plan = buildLocalCustomBriefing(laRochelleBrest, "en");
     assert.ok(plan.executive_briefing.includes("Custom route"));
     assert.ok(plan.executive_briefing.includes("La Teste"));
+  });
+
+  it("lot T — au large de Nouadhibou, le sac nomme la Mauritanie", () => {
+    assert.equal(coastNameNear(18.2, -17.8, "fr"), "Mauritanie");
+    assert.equal(coastNameNear(17.6, -16.9, "en"), "Mauritania");
+    assert.equal(coastNameNear(46.15, -1.16, "fr"), "");
+    const plan = buildLocalCustomBriefing({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { name: "A" },
+          geometry: { type: "Point", coordinates: [-17.8, 18.2] },
+        },
+        {
+          type: "Feature",
+          properties: { name: "B" },
+          geometry: { type: "Point", coordinates: [-16.9, 17.6] },
+        },
+        {
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: [[-17.8, 18.2], [-16.9, 17.6]] },
+        },
+      ],
+    }, "fr");
+    assert.match(plan.executive_briefing, /Mauritanie/);
+    assert.ok(!/Bourgenay|Saint-Maur|La Rochelle/i.test(plan.executive_briefing));
   });
 });

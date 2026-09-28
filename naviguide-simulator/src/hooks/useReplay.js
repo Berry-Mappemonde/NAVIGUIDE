@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, voiceLedStep, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, FILM_TARGET_SECONDS, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, voiceLedStep, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
@@ -615,7 +615,8 @@ export function useReplay({
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     budgetRef.current = userBudget;
-    const planSeconds = resolveFilmTargetSeconds(userBudget, chapters);
+    // Case décochée : pas de budget imposé (RD7), mais le plan tient 2:30 (F1).
+    const planSeconds = userBudget > 0 ? userBudget : FILM_TARGET_SECONDS;
     const plan = filmPlan({ chapters, targetSeconds: planSeconds });
     if (!plan.chapters.length) return false;
     clockRef.current = clockToUse;
