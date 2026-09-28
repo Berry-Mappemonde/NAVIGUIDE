@@ -8,6 +8,10 @@ updates:
     schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
     open-pull-requests-limit: 5
     groups:
+      # Vite et ses plugins avancent ensemble (27 sept. : plugin-react 6 seul → rouge, il exige Vite 8).
+      vite:
+        patterns: ["vite", "@vitejs/*"]
+        update-types: [major, minor, patch]
       simulateur-mineures-et-patchs:
         update-types: [minor, patch]
     commit-message: { prefix: "chore(deps)" }
@@ -16,6 +20,15 @@ updates:
     directory: /frontend
     schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
     open-pull-requests-limit: 5
+    # Le frontend est un CRA 5 (react-scripts) : React 19 et Tailwind 4 sont des migrations, pas des bumps
+    # (27 sept. : PR rouges #376 #378 #379). On garde les mineures/patchs, on ignore ces majeures.
+    ignore:
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
     groups:
       frontend-mineures-et-patchs:
         update-types: [minor, patch]
