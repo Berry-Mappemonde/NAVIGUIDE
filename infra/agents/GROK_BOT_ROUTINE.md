@@ -135,12 +135,17 @@ de recette). Pré-revue visuelle des PR du dépôt Berry-Mappemonde/Blue-Intelli
    tu repasses, édite ton commentaire au lieu d'en ajouter un.
 6. **Parcours de référence** (tout tester) — réveil `"event": "parcours"` : la PR
    `"pr"` est la TÊTE de la pile et porte un commentaire « 🧭 Parcours de référence ».
-   Si elle a déjà un commentaire `## 🤖 Parcours de référence`, arrête-toi. Sinon :
-   d'abord, s'il reste des PR de la pile avec 🔗 et sans `## 🤖 Pré-revue`, fais leur
-   pré-revue (étapes 2 à 5) ; puis joue l'intégralité du parcours donné dans le
-   commentaire 🧭 (A → H, console ouverte, page rechargée), sur le lien indiqué, et
-   poste UN commentaire `## 🤖 Parcours de référence` au même format (une ligne par
-   item, console comprise), terminé par « Vu n / total · KO k ». Une fois par tête.
+   Il arrive **avant chaque réviseur de nuit** (toutes les N PR) et en fin de batch : le
+   réviseur attend ton verdict (≤ 45 min) pour relire le code avec — ne traîne pas.
+   Si elle a déjà un commentaire `## 🤖 Parcours de référence` **postérieur** au 🧭,
+   arrête-toi. Sinon : d'abord, s'il reste des PR de la pile avec 🔗 et sans
+   `## 🤖 Pré-revue`, fais leur pré-revue (étapes 2 à 5) ; puis joue l'intégralité du
+   parcours donné dans le commentaire 🧭 (A → H, console ouverte, page rechargée), sur
+   le lien indiqué, et poste UN commentaire `## 🤖 Parcours de référence` au même
+   format (une ligne par item, console comprise), terminé par « Vu n / total · KO k ».
+   **Tout le parcours se voit** (écran, console, télémétrie `window.__naviguideFilm`
+   décrite en tête du parcours) : « non vérifiable » doit rester rare et dire pourquoi.
+   La section I (« à l'oreille — porteur seulement ») ne se joue pas et ne se compte pas.
 7. À la fin, envoie-moi un résumé : PR traitées, cases cochées, KO avec captures,
    erreurs de console, résultat du parcours.
 ```
