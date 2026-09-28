@@ -54,6 +54,15 @@ Le film servi le 28 sept. (11 chapitres, 2 913 caractères, variantes 2:30 et 3:
   (année) ; zoom d'accueil ≤ 2,25 (RC18 a posé un plancher de dézoom) ; `regime-legend` /hindcast/
   (la CI n'a pas d'hindcast) ; `route-summary`, `expedition-story`, `ici-story-slot` (surfaces
   déplacées). Personne ne lit ces rouges : la « recette automatique de chaque lot » n'existe plus.
+- **Fourchette d'arrivée absente** (parcours de référence de Grok Bot sur #386, 28 sept. : « la fourchette
+  “arriver entre le…” n'apparaît toujours pas sous la prochaine escale » — seul KO du parcours, Vu 51/60).
+  Sur le poste, `GET /voyage/official/eta?stop=Nouméa…` répond `status: preparing, members: 0, reason:
+  "en préparation"` depuis des heures : la famille `eta` du stock n'est jamais écrite parce que
+  `compute_eta` rend `None` tant qu'aucune escale n'a de membres (`server/official_store.py` l. 851-853),
+  et les membres viennent de l'API ensemble Open-Meteo, en quota épuisé (429 « try again tomorrow »,
+  `server/ensemble_eta.py` l. 98-101, 407-409). Le remplisseur repasse toutes les 10 s (« [4/6] ETA et
+  fourchettes … en préparation »), la raison réelle (quota, retour demain) n'atteint jamais l'écran, et la
+  légende n'affiche rien du tout — alors que RE5 avait décidé « réponse qui dit pourquoi ».
 - **Carte au dézoom** (revue du 27 sept.) : drapeaux et bateaux qui se baladent horizontalement au
   zoom / dézoom, monde vu plusieurs fois — deux garde-fous posés dans #386 (plancher de dézoom en
   Suivre, gel des marqueurs pendant l'animation), le reste à reproduire et corriger (RG15).
@@ -266,6 +275,24 @@ Le prompt complet, exécutable par `infra/agents/run_lots.py`, est dans `docs/LO
   chronologique des ancres, chaque chapitre avec ouverture / route / escale ; parcours de référence du
   bot (`infra/agents/PARCOURS_DE_REFERENCE.md`) mis à jour avec ces points.
 
+### RG17 — Fourchette d'arrivée : présente, ou expliquée (S)
+- Constat : § 1 « Fourchette d'arrivée absente » (KO du parcours de référence, #386).
+- Causes : `server/official_store.py` `compute_eta` l. 818-853 (`None` tant qu'aucun membre → famille
+  jamais écrite, `preparing` sans fin) ; `server/ensemble_eta.py` l. 98-101 et 407-409 (quota 429 détecté,
+  `nextRetry` = lendemain, mais l'information reste dans le module) ; remplisseur : relance à chaque
+  passe malgré `nextRetry` ; client : la légende des escales cache la ligne quand `members` = 0 (à
+  localiser : `rg -n "arriver entre|escale-legend" src/components`).
+- Ce qui change : la famille `eta` est écrite même partielle — par escale `{p10, p50, p90, members,
+  status, reason, nextRetry}` — donc plus jamais `preparing` sans fin ; le remplisseur ne rappelle pas
+  l'ensemble avant `nextRetry` ; la légende affiche la fourchette quand `members > 0`, sinon UNE ligne
+  honnête : « fourchette indisponible — quota Open-Meteo atteint, nouvel essai le <date> » (ou la raison
+  réelle) ; budget Open-Meteo partagé avec l'hindcast RF10 (une seule enveloppe journalière, l'ensemble
+  n'épuise pas l'hindcast et inversement).
+- Tests : ensemble en 429 → famille écrite avec raison et `nextRetry`, aucune relance avant ; membres > 0
+  → fourchette ; client : ligne de raison rendue quand `members` = 0.
+- Recette : Suivre → sous la prochaine escale, la fourchette OU la ligne de raison ; jamais rien ;
+  `GET /voyage/official/eta?stop=…` → plus de `preparing` au-delà d'une passe du remplisseur.
+
 ### RG12 — Vitesse continue du bateau (M)
 - Constat : § 5.1, § 5.2-1, § 5.2-2 ; D2, D3.
 - Causes : `src/engine/replay.js` `anchoredTimeAt` l. 506 (ligne brisée entre ancres : paliers de vitesse
@@ -347,9 +374,9 @@ demande après RG10.
 ## 5. Ordre, pile, lancement
 
 Ordre d'exécution (dépendances respectées, le récit d'abord, la cinématique ensuite, la carte, puis la
-robustesse) : **RG16 → RG1 → RG2 → RG3 → RG4 → RG5 → RG6 → RG7 → RG8 → RG9 → RG10 → RG12 → RG13 →
+robustesse) : **RG16 → RG1 → RG2 → RG3 → RG4 → RG5 → RG6 → RG7 → RG8 → RG9 → RG10 → RG17 → RG12 → RG13 →
 RG15 → RG14 → RH1 → RH2** (RG11 hors batch). RG16 ouvre le batch : les quinze lots suivants ont une CI
 qui les juge. Depuis `main` (la pile #386 est mergée) ; chaque lot empile sur
 la tête ; poste de recette reconstruit sur la tête après le verdict du bot (`--bot-gate-min`).
 
-`python3 infra/agents/run_lots.py --dry-run --from RG16 --until RH2` doit lister ces 17 lots dans l'ordre.
+`python3 infra/agents/run_lots.py --dry-run --from RG16 --until RH2` doit lister ces 18 lots dans l'ordre.
