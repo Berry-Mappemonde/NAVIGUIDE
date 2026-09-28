@@ -314,6 +314,8 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.match(app, /isSuivre && officialClock \?/);
     assert.doesNotMatch(app, /officialClock && replay\.canStart/);
     assert.match(app, /canStart: replay\.canStart/);
+    assert.match(hook, /keepReady/);
+    assert.match(hook, /remoteStatusRef\.current === "ready"/);
     assert.match(hook, /isRe7OfficialFilm/);
     assert.match(hook, /seekChapter/);
     assert.match(hook, /pinnedIdxRef/);

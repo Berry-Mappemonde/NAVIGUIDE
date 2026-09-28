@@ -34,4 +34,4 @@ export ALL_PROXY="${ALL_PROXY:-http://127.0.0.1:9}"
 export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
 unset SIMULATOR_MONGO_URL || true
 cd "$ROOT"
-exec "$PY" -m uvicorn server.main:app --host 127.0.0.1 --port "$PORT"
+exec "$PY" -m uvicorn server.main:app --host 127.0.0.1 --port "$PORT" --timeout-keep-alive 30

@@ -164,6 +164,11 @@ async def bi_climatology(rest: str, request: Request):
     cached = _read_cache(path)
     if cached is not None:
         return _json_response(cached, "HIT")
+    import offline
+    if offline.enabled():
+        # Stock figé : pas d'atlas amont. 200 vide → repli zone, pas de 502
+        # dans la console (recette Playwright RF4).
+        return _json_response(b'{"kind":"unavailable"}', "OFFLINE")
     if is_dead(rest):
         raise HTTPException(502, f"atlas unavailable (cooldown {rest})")
 
@@ -176,9 +181,6 @@ async def bi_climatology(rest: str, request: Request):
             raise HTTPException(502, f"atlas unavailable (cooldown {rest})")
         params = request.query_params.multi_items()
         try:
-            import offline
-            if offline.enabled():
-                raise HTTPException(502, "atlas unavailable (offline)")
             async with _sem_get():
                 status, body = await fetch_upstream(f"{bi_base()}/climatology/{rest}", params)
         except Exception as exc:  # réseau, timeout, refus de connexion — ce point d'accès seulement
