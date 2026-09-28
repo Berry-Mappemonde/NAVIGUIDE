@@ -519,8 +519,29 @@ export class MapSceneController {
       this.showWorld({ keepBoundsLifted: true });
     }
     if (previous.drawingMode && !this.config.drawingMode) {
-      this.map?.setMaxBounds?.(this.boundsBeforeDraw || MAP_MAX_BOUNDS);
-      this.boundsBeforeDraw = null;
+      if (this._worldLockUntil && Date.now() < this._worldLockUntil) {
+        this.liftBoundsForDrawing();
+      } else {
+        this.map?.setMaxBounds?.(this.boundsBeforeDraw || MAP_MAX_BOUNDS);
+        this.boundsBeforeDraw = null;
+        this._worldLockUntil = 0;
+      }
+    }
+    if (
+      !this._enforcingWorld
+      && this.config.drawingMode
+      && this._worldLockUntil
+      && Date.now() < this._worldLockUntil
+      && !this.userNavigated
+      && this.map
+      && this.map.getZoom() - WORLD_ZOOM > 0.05
+    ) {
+      this._enforcingWorld = true;
+      try {
+        this.showWorld({ keepBoundsLifted: true });
+      } finally {
+        this._enforcingWorld = false;
+      }
     }
   }
 
@@ -1008,7 +1029,8 @@ export class MapSceneController {
   applyZoomFloor() {
     if (!this.map?.setMinZoom) return;
     const cfg = this.config || {};
-    const follow = Boolean(cfg.isSuivre && !cfg.drawingMode);
+    const worldLock = Boolean(this._worldLockUntil && Date.now() < this._worldLockUntil);
+    const follow = Boolean(cfg.isSuivre && !cfg.drawingMode && !worldLock);
     const floor = follow ? followMinZoom(this.map.getSize(), this.map.options.zoomSnap, MAP_MIN_ZOOM) : MAP_MIN_ZOOM;
     if (this.map.options.minZoom === floor) return;
     // setMinZoom remonte la vue si elle est sous le plancher : mouvement de la carte, pas de l'utilisateur.
@@ -1029,7 +1051,9 @@ export class MapSceneController {
    * que le geste ne remette pas maxBounds (revue du 26 sept., zoom 3 Amériques).
    */
   beginDrawingWorld() {
-    this._pendingDrawUntil = Date.now() + 400;
+    this._pendingDrawUntil = Date.now() + 2000;
+    this._worldLockUntil = Date.now() + 2000;
+    this.userNavigated = false;
     this.config = { ...this.config, drawingMode: true };
     this.liftBoundsForDrawing();
     this.showWorld({ keepBoundsLifted: true });
@@ -1038,6 +1062,9 @@ export class MapSceneController {
   /** Tracer / accueil : monde entier, même si maxBounds a relevé le plancher. */
   showWorld({ keepBoundsLifted = false } = {}) {
     if (!this.map) return;
+    if (keepBoundsLifted || this.config.drawingMode) {
+      this._worldLockUntil = Date.now() + 2000;
+    }
     this.map.invalidateSize();
     this.map.setMinZoom(MAP_MIN_ZOOM);
     this.programmaticMove(() => {

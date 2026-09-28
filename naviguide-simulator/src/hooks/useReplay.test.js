@@ -82,6 +82,7 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /shouldHoldFilmForBudget/);
     assert.match(hook, /budgetSeconds/);
     assert.match(hook, /resolveFilmTargetSeconds/);
+    assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
   });
 
   it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {

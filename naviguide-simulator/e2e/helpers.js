@@ -58,10 +58,36 @@ export async function showLeftPanel(page) {
 
 export async function showRightPanel(page) {
   await leaveCinema(page);
-  if (!(await panelClosed(page, "right").catch(() => true))) return;
+  if (!(await panelClosed(page, "right").catch(() => true))) {
+    await bringOffscreenFlagsIntoView(page);
+    return;
+  }
   const toggle = page.locator(".naviguide-sidebar-toggle--right");
   if (await toggle.isVisible().catch(() => false)) await toggle.evaluate((el) => el.click());
   await expect.poll(() => panelClosed(page, "right"), { timeout: 10_000 }).toBe(false);
+  await bringOffscreenFlagsIntoView(page);
+}
+
+/** Drapeaux Leaflet hors cadre : le scroll de page ne les ramène pas (lot R7). */
+export async function bringOffscreenFlagsIntoView(page) {
+  await page.evaluate(() => {
+    const scene = window.__naviguideScene;
+    const map = scene?.map;
+    if (!map || !scene.waypointMarkers?.size) return;
+    const box = map.getContainer().getBoundingClientRect();
+    const off = [];
+    for (const marker of scene.waypointMarkers.values()) {
+      const el = marker.getElement?.() || marker._icon;
+      const r = el?.getBoundingClientRect?.();
+      const ll = marker.getLatLng?.();
+      if (!ll) continue;
+      if (!r || r.width === 0 || r.right < box.left || r.left > box.right || r.bottom < box.top || r.top > box.bottom) {
+        off.push([ll.lat, ll.lng]);
+      }
+    }
+    if (!off.length) return;
+    map.fitBounds(off, { padding: [48, 48], maxZoom: 7, animate: false });
+  });
 }
 
 export async function openIciTab(page, testId, slotTestId) {
@@ -113,6 +139,7 @@ export async function enterTracer(page) {
   await drawBtn.scrollIntoViewIfNeeded();
   await drawBtn.click({ force: true });
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => window.__naviguideScene?.beginDrawingWorld?.());
 }
 
 export async function probeOfficial(requestOrPage) {
