@@ -502,8 +502,11 @@ export function useReplay({
 
     const load = () => {
       if (cancelled) return;
-      setFilmStatus("pending");
-      remotePlanRef.current = null;
+      const keepReady = remoteStatusRef.current === "ready" && remotePlanRef.current;
+      if (!keepReady) {
+        setFilmStatus("pending");
+        remotePlanRef.current = null;
+      }
       fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
         .then((r) => {
           if (!r.ok) return { fail: true };

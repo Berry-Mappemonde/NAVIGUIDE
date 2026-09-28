@@ -86,6 +86,8 @@ describe("MapScene boundary", () => {
     const showChunk = src.slice(showAt, showEnd);
     assert.match(showChunk, /leaveLifted = keepBoundsLifted \|\| this\.config\.drawingMode/);
     assert.match(showChunk, /if \(!leaveLifted && bounds\)/);
+    assert.match(app, /showWorld\?\.\(\{ keepBoundsLifted: true \}\)/);
+    assert.match(src, /_pendingDrawUntil/);
   });
 
   it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {

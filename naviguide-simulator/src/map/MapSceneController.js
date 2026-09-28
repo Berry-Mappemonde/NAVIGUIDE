@@ -352,7 +352,7 @@ export class MapSceneController {
       getMap: () => this.map,
       getView: () => ({ center: this.map.getCenter(), zoom: this.map.getZoom() }),
       setView: (center, zoom, options) => this.programmaticMove(() => this.map.setView(center, zoom, options)),
-      showWorld: () => this.showWorld(),
+      showWorld: (opts) => this.showWorld(opts),
       beginDrawingWorld: () => this.beginDrawingWorld(),
       playback: {
         play: () => this.playback.play(),
@@ -426,6 +426,16 @@ export class MapSceneController {
   }
 
   update(next) {
+    const incoming = next || {};
+    if (this._pendingDrawUntil) {
+      if (incoming.drawingMode) {
+        this._pendingDrawUntil = 0;
+      } else if (Date.now() < this._pendingDrawUntil) {
+        next = { ...incoming, drawingMode: true };
+      } else {
+        this._pendingDrawUntil = 0;
+      }
+    }
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
@@ -1019,6 +1029,7 @@ export class MapSceneController {
    * que le geste ne remette pas maxBounds (revue du 26 sept., zoom 3 Amériques).
    */
   beginDrawingWorld() {
+    this._pendingDrawUntil = Date.now() + 400;
     this.config = { ...this.config, drawingMode: true };
     this.liftBoundsForDrawing();
     this.showWorld({ keepBoundsLifted: true });
@@ -1040,6 +1051,11 @@ export class MapSceneController {
           this.map.setMaxBounds(null);
           this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
         }
+      }
+      if (this.map.getZoom() - WORLD_ZOOM > 0.05) {
+        this.map.setMaxBounds(null);
+        this.map.setMinZoom(MAP_MIN_ZOOM);
+        this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
       }
     });
   }

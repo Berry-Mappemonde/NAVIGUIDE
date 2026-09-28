@@ -1186,7 +1186,7 @@ export default function App() {
     setEscaleStop(null);
     if (replay.active) replay.stop();
     sceneApiRef.current?.beginDrawingWorld?.();
-    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
+    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.({ keepBoundsLifted: true }));
   };
 
   const handleDrawCancel = () => {
@@ -1257,7 +1257,7 @@ export default function App() {
     setExpeditionPlan(null);
     setBriefingLoading(false);
     sceneApiRef.current?.beginDrawingWorld?.();
-    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
+    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.({ keepBoundsLifted: true }));
   };
 
   const handleCustomDelete = () => {
@@ -1284,7 +1284,7 @@ export default function App() {
   useEffect(() => {
     if (!drawingMode) return undefined;
     sceneApiRef.current?.beginDrawingWorld?.();
-    const id = requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
+    const id = requestAnimationFrame(() => sceneApiRef.current?.showWorld?.({ keepBoundsLifted: true }));
     return () => cancelAnimationFrame(id);
   }, [drawingMode]);
 

@@ -29,7 +29,7 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const scene = read("../map/MapSceneController.js");
     assert.match(app, /sceneApiRef\.current\?\.showWorld/);
-    assert.match(scene, /showWorld\(\)/);
+    assert.match(scene, /showWorld\(/);
     assert.match(scene, /setView\(WORLD_CENTER, WORLD_ZOOM/);
   });
 

@@ -38,7 +38,7 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
   retries: 0,
-  workers: 4,
+  workers: process.env.CI ? 2 : 4,
   globalTimeout: 12 * 60 * 1000,
   reporter: process.env.CI
     ? [
