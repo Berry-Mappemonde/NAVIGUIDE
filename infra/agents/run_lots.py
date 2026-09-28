@@ -1121,6 +1121,7 @@ def stop_tunnel() -> None:
 
 BOT_COMMENT_MARK = "🔗 Poste de recette"
 BOT_PREREVIEW_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Pr[ée]-?revue", re.I | re.M)   # titre « ## 🤖 Pré-revue » en début de ligne (pas le 🔗 qui cite la consigne)
+BOT_PARCOURS_RE = re.compile(r"^\s*#{1,3}\s*🤖\s*Parcours de r[ée]f[ée]rence", re.I | re.M)   # verdict du parcours complet (tête de pile)
 PARCOURS_MD = HERE / "PARCOURS_DE_REFERENCE.md"   # tout tester, une fois par batch, sur la tête de pile (Grok Bot)
 PARCOURS_MARK = "🧭 Parcours de référence"
 RECETTE_BRANCH = "recette"   # option --publish-tip : le site publié suit la tête de pile (simulateur seul)
@@ -1137,6 +1138,39 @@ def bot_prereview_seen(http: Http, repo: str, num: int) -> bool:
     except Exception:
         _trusted = lambda c: True  # noqa: E731
     return any(BOT_PREREVIEW_RE.search(c.get("body") or "") and _trusted(c) for c in comments)
+
+
+def bot_parcours_seen(http: Http, repo: str, num: int, since: str | None = None) -> bool:
+    """Vrai si Grok Bot a posté son « ## 🤖 Parcours de référence » sur la PR (après `since`, ISO, si donné :
+    un parcours joué sur une tête plus ancienne ne vaut pas pour la tranche suivante)."""
+    try:
+        comments = http.github(f"/repos/{owner_repo(repo)}/issues/{num}/comments?per_page=100") or []
+    except RuntimeError:
+        return False
+    try:
+        from review_collect import trusted as _trusted  # noqa: PLC0415
+    except Exception:
+        _trusted = lambda c: True  # noqa: E731
+    return any(BOT_PARCOURS_RE.search(c.get("body") or "") and _trusted(c) and (not since or (c.get("created_at") or "") >= since)
+               for c in comments)
+
+
+def wait_bot_parcours(http: Http, repo: str, num: int | None, minutes: float, why: str, since: str | None = None) -> bool:
+    """Attend le verdict du parcours de référence de Grok Bot sur la PR de tête (au plus `minutes`).
+    Porteur, 28 sept. : « il faudrait qu'il joue ce parcours avant le réviseur de nuit pour que celui-ci
+    puisse en profiter ». Vrai si le verdict est là."""
+    if not minutes or not num:
+        return False
+    log(f"attente du parcours de référence Grok Bot sur #{num} — {why} (≤ {minutes:g} min)")
+    t0 = time.time()
+    while True:
+        if bot_parcours_seen(http, repo, num, since):
+            log("    parcours de référence reçu")
+            return True
+        if time.time() - t0 >= minutes * 60:
+            log(f"    parcours de référence absent sur #{num} après {minutes:g} min — le réviseur relit sans lui")
+            return False
+        time.sleep(60)
 
 
 def wait_bot_prereview(http: Http, repo: str, nums: list[int], minutes: float, why: str) -> list[int]:
@@ -1294,13 +1328,17 @@ def post_poste_link(state: State, lot_id: str, url: str, repo: str, *, published
         log(f"    lien du poste non posté sur #{num} : {ex}")
 
 
-def post_parcours_request(state: State, url: str, repo: str) -> None:
-    """Fin de batch : sur la PR de tête, demander à Grok Bot de jouer TOUT le parcours de référence
-    (régressions hors des cases des PR, console). Une seule fois par tête de pile."""
+def post_parcours_request(state: State, url: str, repo: str) -> str | None:
+    """Sur la PR de tête, demander à Grok Bot de jouer TOUT le parcours de référence (régressions hors des
+    cases des PR, console). Appelé avant chaque réviseur de nuit et en fin de batch ; une seule fois par
+    tête de pile (la clé est l'URL du poste + la branche de tête). Rend l'heure ISO de la demande (ou celle
+    déjà mémorisée) pour n'accepter que le verdict qui la suit."""
     e = state.done.get(state.last_lot) or {}
     num = pr_number(e.get("pr"))
-    if not num or e.get("parcours_comment") == url:
-        return
+    if not num:
+        return None
+    if e.get("parcours_comment") == url:
+        return e.get("parcours_asked_at")
     try:
         from post_pr_comment import post as _post  # noqa: PLC0415
         checklist = PARCOURS_MD.read_text(encoding="utf-8") if PARCOURS_MD.exists() else ""
@@ -1311,13 +1349,17 @@ def post_parcours_request(state: State, url: str, repo: str) -> None:
                 "terminé par « Vu n / total · KO k ». Ne coche rien dans cette PR, ne ferme ni ne merge rien.\n\n"
                 "<details><summary>Le parcours (infra/agents/PARCOURS_DE_REFERENCE.md)</summary>\n\n" + checklist + "\n</details>")
         _post(num, body)
+        asked_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         e["parcours_comment"] = url
+        e["parcours_asked_at"] = asked_at
         state.done[state.last_lot] = e
         state.save()
         log(f"    demande de parcours de référence postée sur la PR de tête #{num}")
         wake_bot("parcours", num, url)
+        return asked_at
     except Exception as ex:
         log(f"    demande de parcours non postée : {ex}")
+        return None
 
 
 LOOP_LOG = STATE_DIR / "loop.log"
@@ -1935,10 +1977,22 @@ def main() -> None:
         """Lance le réviseur de nuit sur la tranche, puis met en file ses lots correctifs."""
         if not since_review or args.dry_run:
             return
-        # Grok Bot (pré-revue visuelle) passe AVANT le réviseur de code : on attend son « 🤖 Pré-revue » sur chaque
-        # PR de la tranche (au plus --bot-wait-min ; avec --bot-gate-min il ne manque au plus que la dernière), puis on continue.
+        # Grok Bot passe AVANT le réviseur de code (porteur, 28 sept.) : le parcours de référence est demandé
+        # sur la tête de pile (le poste est déjà bâti dessus, --bot-gate-min), puis on attend ses « 🤖 Pré-revue »
+        # sur chaque PR de la tranche et son « 🤖 Parcours de référence » sur la tête (au plus --bot-wait-min
+        # chacun) : le réviseur lit les deux avant de relire le code.
+        tip_num = pr_number((state.done.get(state.last_lot) or {}).get("pr"))
+        asked_at = None
+        try:
+            url = tunnel_url() or (PROD_URL if getattr(args, "publish_tip", False) else None)
+            if url:
+                asked_at = post_parcours_request(state, url, args.repo)
+        except Exception as ex:  # jamais bloquant
+            log(f"    parcours de référence non demandé : {ex}")
         wait_bot_prereview(http, args.repo, [pr_number((state.done.get(lid) or {}).get("pr")) for lid in since_review],
                            args.bot_wait_min, "avant le réviseur de code")
+        if asked_at:
+            wait_bot_parcours(http, args.repo, tip_num, args.bot_wait_min, "avant le réviseur de code", since=asked_at)
         cmd = [sys.executable, str(HERE / "review_agent.py"), "--lots", *since_review, "--model", args.review_model, "--timeout-hours", str(args.review_timeout_hours)]
         log(f"revue de nuit : {since_review} → {args.review_model}")
         try:

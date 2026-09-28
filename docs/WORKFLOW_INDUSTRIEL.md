@@ -91,13 +91,17 @@ inclus) se partagent le travail, **dans cet ordre** :
    Pré-revue » qui liste ce qu'il a coché et ses KO (capture). C'est cette
    liste qui attribue une case au bot ; le matin, le porteur décoche ce qu'il
    conteste. Il a besoin du connecteur GitHub de Grok Bot. À chaque écran il
-   garde la **console ouverte** et note les erreurs rouges. En **fin de batch**,
-   `run_lots.py` poste sur la PR de tête « 🧭 Parcours de référence » : le bot
-   joue alors **tout** `infra/agents/PARCOURS_DE_REFERENCE.md` (les trois
-   parcours, le film, le panneau droit, la carte, le chat — les régressions
-   qu'aucune case de PR ne couvre) et poste « ## 🤖 Parcours de référence » ;
-   ses KO hors cases (console, régressions) arrivent au correcteur comme les KO
-   du porteur. Pas de PR du bot : il ne code pas, ses commentaires suffisent.
+   garde la **console ouverte** et note les erreurs rouges. **Avant chaque
+   réviseur de nuit** (toutes les N PR) et en fin de batch, `run_lots.py` poste
+   sur la PR de tête « 🧭 Parcours de référence » : le bot joue alors **tout**
+   `infra/agents/PARCOURS_DE_REFERENCE.md` (les trois parcours, le film, le
+   panneau droit, la carte, le chat — les régressions qu'aucune case de PR ne
+   couvre ; chaque item se **voit** : écran, console ou télémétrie
+   `window.__naviguideFilm` — rien à l'oreille, section I réservée au porteur)
+   et poste « ## 🤖 Parcours de référence ». Le réviseur de nuit attend ce
+   verdict (au plus `--bot-wait-min`) et le lit avant le code ; ses KO hors
+   cases (console, régressions) arrivent aussi au correcteur comme les KO du
+   porteur. Pas de PR du bot : il ne code pas, ses commentaires suffisent.
    **Le poste attend le bot** (26 sept.) : le codage du lot suivant part tout de
    suite dans son propre worktree, mais le poste n'est **rebâti sur la nouvelle
    tête** qu'une fois le « 🤖 Pré-revue » reçu sur la PR précédente

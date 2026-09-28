@@ -75,6 +75,36 @@ def lot_texts(ids: list[str]) -> dict[str, rl.Lot]:
     return {i: known[i] for i in ids if i in known}
 
 
+def parcours_section(state: rl.State, ids: list[str], http: rl.Http | None) -> list[str]:
+    """Le verdict du parcours de référence de Grok Bot sur la tête de pile (joué AVANT le réviseur, porteur 28 sept.) :
+    les KO sont des régressions de la pile que les cases des PR ne couvrent pas — le réviseur les rattache à une
+    PR de la tranche ou à un lot à venir, sinon il met un lot correctif en file."""
+    tip = ids[-1] if ids else None
+    num = rl.pr_number(((state.done.get(tip) or {}) if tip else {}).get("pr"))
+    if not num:
+        return []
+    try:
+        comments = (http or rl.Http(None, None)).github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{num}/comments?per_page=100") or []
+    except RuntimeError:
+        comments = []
+    verdicts = [c for c in comments if rl.BOT_PARCOURS_RE.search(c.get("body") or "") and rc.trusted(c)]
+    if not verdicts:
+        return ["## Parcours de référence de Grok Bot (tête de pile)", "",
+                f"- Absent sur #{num} au moment de ta revue — juge la pile sur les PR seules ; dis-le dans ton résumé.", ""]
+    last = verdicts[-1]
+    lines = [ln.strip() for ln in (last.get("body") or "").splitlines()]
+    items = [ln for ln in lines if ln.startswith("- [")]
+    total = next((ln for ln in lines if ln.lower().startswith("vu ")), "")
+    kos = [ln for ln in items if "— KO" in ln or "- KO" in ln]
+    out = [f"## Parcours de référence de Grok Bot (tête de pile #{num}, {last.get('created_at', '')[:16]})", "",
+           f"- Verdict : {total or '(total absent)'} — {len(kos)} KO. Commentaire : {last.get('html_url')}",
+           "- Chaque KO ci-dessous est une régression vue à l'écran sur la tête de pile : rattache-le à une PR de la tranche (dis laquelle et pourquoi) "
+           "ou à un lot à venir du programme (cite-le) ; sinon, mets un lot correctif en file. Un KO déjà couvert par un lot à venir n'est pas replanifié."]
+    out += [f"  {ln}" for ln in kos] or ["  (aucun KO)"]
+    out.append("")
+    return out
+
+
 def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, model: str, http: rl.Http | None) -> str:
     texts = lot_texts(ids)
     parts = [
@@ -139,6 +169,7 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
             parts.append("- Pré-revue visuelle de Grok Bot : absente (pas encore passée) — juge le code et la PR seuls.")
         parts.append("")
         prev_branch = f"origin/{branch}" if branch else prev_branch
+    parts += parcours_section(state, ids, http)
     parts += [
         "## Ce que tu produis",
         "",
