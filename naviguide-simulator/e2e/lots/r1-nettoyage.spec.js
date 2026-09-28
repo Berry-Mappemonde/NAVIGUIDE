@@ -37,12 +37,14 @@ async function showToolsPanel(page) {
 }
 
 test("lot R1 — Esri une fois, plus d'aide, remise du chiffre, pilules grisées", async ({ page }) => {
+  test.setTimeout(45_000);
   await page.goto("/");
   await dismissNotForNav(page);
-  await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 20_000 });
 
-  const cinema = page.getByRole("button", { name: /^cinéma$/i });
-  await cinema.click();
+  const { leaveCinema } = await import("../helpers.js");
+  await leaveCinema(page);
+  const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
   const attr = page.locator(".leaflet-control-attribution");
   await expect(attr).toBeVisible();
   const attrText = await attr.innerText();
@@ -60,7 +62,7 @@ test("lot R1 — Esri une fois, plus d'aide, remise du chiffre, pilules grisées
   expect(ours, `liens tuiles : ${JSON.stringify(ours)}`).toHaveLength(4);
   expect(ours.filter((a) => a.text === "Esri")).toHaveLength(1);
   await shot(page, "01-credits");
-  await cinema.click();
+  await cinema.evaluate((el) => el.click());
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");

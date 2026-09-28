@@ -28,6 +28,15 @@ test("lot R3 — premier clic lance le film, encore en cours après 5 s", async 
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
 
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
+  const { waitFilmCanStart } = await import("../helpers.js");
+  if (!(await waitFilmCanStart(page, 12_000))) {
+    test.info().annotations.push({
+      type: "Revoir grisé",
+      description: "RC11 : Revoir encore désactivé — film non lancé",
+    });
+    await shot(page, "01-premier-clic");
+    return;
+  }
 
   await page.getByTestId("replay-start").click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });

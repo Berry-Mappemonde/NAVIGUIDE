@@ -129,7 +129,7 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");

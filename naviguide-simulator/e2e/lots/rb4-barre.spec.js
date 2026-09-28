@@ -52,6 +52,8 @@ test("lot RB4 — barre compacte, vitesse cyclique, flèches, haut-parleur", asy
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-simulation").click();
   await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
 
   const bar = page.getByTestId("film-bar");

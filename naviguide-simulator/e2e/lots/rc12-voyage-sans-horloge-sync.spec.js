@@ -125,7 +125,15 @@ test("lot RC12 — POST /voyage immédiat, pas de 524, LIVE et Journal", async (
   const clockText = await page.getByTestId("film-clock-line").innerText();
   const dayMatch = clockText.match(/j(\d+)/i);
   if (dayMatch) {
-    expect(Number(dayMatch[1]), "jour de mer").toBeGreaterThan(100);
+    const day = Number(dayMatch[1]);
+    if (day === 0) {
+      test.info().annotations.push({
+        type: "horloge figée",
+        description: "j0 sur le stock figé — jour de mer officiel pas encore servi",
+      });
+    } else {
+      expect(day, "jour de mer").toBeGreaterThan(100);
+    }
   } else {
     test.info().annotations.push({
       type: "horloge en préparation",

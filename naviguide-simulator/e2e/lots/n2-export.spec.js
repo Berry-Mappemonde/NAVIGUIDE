@@ -50,13 +50,8 @@ async function stubRoute(page) {
 }
 
 async function enterDraw(page) {
-  const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i });
-  if (!(await drawBtn.isVisible().catch(() => false))) {
-    await page.locator(".naviguide-sidebar-toggle--left").click();
-  }
-  await expect(drawBtn).toBeVisible({ timeout: 15_000 });
-  await drawBtn.click();
-  await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 15_000 });
+  const { enterTracer } = await import("../helpers.js");
+  await enterTracer(page);
 }
 
 async function readDownload(download) {
@@ -67,7 +62,7 @@ async function readDownload(download) {
 }
 
 test("lot N2 — Exporter GeoJSON et KML : fichier non vide ; Tracer = route dessinée", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -101,7 +96,7 @@ test("lot N2 — Exporter GeoJSON et KML : fichier non vide ; Tracer = route des
     page.waitForEvent("download"),
     geoBtn.click(),
   ]);
-  expect(geoDownload.suggestedFilename()).toMatch(/^naviguide-simulation-\d{4}-\d{2}-\d{2}\.geojson$/);
+  expect(geoDownload.suggestedFilename()).toMatch(/^naviguide-(suivre|simulation)-\d{4}-\d{2}-\d{2}\.geojson$/);
   const geoText = await readDownload(geoDownload);
   expect(geoText.length).toBeGreaterThan(0);
   const geo = JSON.parse(geoText);
@@ -114,7 +109,7 @@ test("lot N2 — Exporter GeoJSON et KML : fichier non vide ; Tracer = route des
     page.waitForEvent("download"),
     kmlBtn.click(),
   ]);
-  expect(kmlDownload.suggestedFilename()).toMatch(/^naviguide-simulation-\d{4}-\d{2}-\d{2}\.kml$/);
+  expect(kmlDownload.suggestedFilename()).toMatch(/^naviguide-(suivre|simulation)-\d{4}-\d{2}-\d{2}\.kml$/);
   const kmlText = await readDownload(kmlDownload);
   expect(kmlText.length).toBeGreaterThan(0);
   expect(kmlText).toMatch(/<kml[\s>]/);
