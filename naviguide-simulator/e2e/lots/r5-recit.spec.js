@@ -71,7 +71,7 @@ test("lot R5 — connecteurs variés, Escale Saint-Maur en km", async ({ page })
   }
   if (await landCard.isVisible({ timeout: 10_000 }).catch(() => false)) {
     await expect(landCard).toHaveAttribute("data-kind", "escale");
-    const cardText = await landCard.innerText();
+    const cardText = await landCard.innerText({ timeout: 10_000 });
     expect(cardText, `carte Escale : ${cardText}`).toMatch(/\bkm\b/);
     expect(cardText).toMatch(/par la route|by road/);
     expect(cardText).not.toMatch(/\bnm\b/);
@@ -105,8 +105,8 @@ test("lot R5 — connecteurs variés, Escale Saint-Maur en km", async ({ page })
       throw new Error(`récit : ${n} paragraphe(s), attendu ≥ 2`);
     }
   } else {
-    const texts = [];
-    for (let i = 0; i < n; i++) texts.push((await paras.nth(i).innerText()).trim());
+    // Une seule lecture : le récit peut se re-rendre pendant qu'on lit paragraphe par paragraphe (délai en CI).
+    const texts = (await paras.allInnerTexts()).map((s) => s.trim());
     const used = [];
     for (const t of texts) {
       const hit = CONNECTORS_FR.find((c) => t.startsWith(`${c},`) || t.startsWith(`${c} `));
