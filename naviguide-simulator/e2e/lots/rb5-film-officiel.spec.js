@@ -174,8 +174,10 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
     });
   }
 
+  const filmEnLoaded = page.waitForResponse((r) => /voyage\/official\/film\?lang=en/.test(r.url()), { timeout: 15_000 }).catch(() => null);
   await switchLang(page, "en");
   await expect(page.getByTestId("view-suivre")).toContainText(/Follow/i);
+  await filmEnLoaded;   // le plan anglais est chargé avant de relancer Revoir
   const stopBtn = page.getByTestId("replay-stop");
   if (await stopBtn.isVisible().catch(() => false)) await stopBtn.click();
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });

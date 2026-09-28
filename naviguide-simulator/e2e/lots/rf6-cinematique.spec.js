@@ -97,6 +97,10 @@ test("lot RF6 — caméra glisse, zoom stable 4 s, fond dessiné", async ({ page
   expect(chapter1, "mesure à cheval sur deux chapitres").toBe(chapter0);
   expect(Math.abs(z1 - z0), `zoom ${z0} → ${z1}`).toBeLessThanOrEqual(0.01);
 
+  // Film ancré : caméra immobile tant que le bateau est à quai — on mesure la glisse une fois en route.
+  const { waitBoatUnderWay } = await import("../helpers.js");
+  const way = await waitBoatUnderWay(page, { timeout: 60_000 });
+  expect(way.moving, `le bateau a pris la mer avant la mesure (${JSON.stringify(way)})`).toBe(true);
   const centers = [];
   for (let i = 0; i < 8; i++) {
     const c = await page.evaluate(() => {
@@ -115,8 +119,11 @@ test("lot RF6 — caméra glisse, zoom stable 4 s, fond dessiné", async ({ page
   const progress = centers.map((p) => (
     (p.lat - centers[0].lat) * dLat + (p.lng - centers[0].lng) * dLng
   ));
+  // Cadrage au tiers avant sur le cap instantané (RF6) : la caméra peut reculer d'un cheveu quand le cap
+  // tourne — on refuse un vrai retour en arrière (> 25 % du chemin parcouru), pas ce frémissement (RG13 lissera le cap).
+  const span = Math.abs(progress[progress.length - 1] - progress[0]) || 1e-9;
   for (let i = 1; i < progress.length; i++) {
-    expect(progress[i], `centre ${i + 1} recule`).toBeGreaterThanOrEqual(progress[i - 1] - 1e-9);
+    expect(progress[i], `centre ${i + 1} recule`).toBeGreaterThanOrEqual(progress[i - 1] - 0.25 * span);
   }
 
   await shot(page, "01-glisse");

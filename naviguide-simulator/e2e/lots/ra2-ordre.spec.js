@@ -89,10 +89,8 @@ async function switchLang(page, code) {
 
 async function storyBlob(page) {
   const paras = page.getByTestId("story-paragraph");
-  const n = await paras.count();
-  const texts = [];
-  for (let i = 0; i < n; i++) texts.push((await paras.nth(i).innerText()).trim());
-  return { n, text: texts.join(" ") };
+  const texts = (await paras.allInnerTexts()).map((s) => s.trim());
+  return { n: texts.length, text: texts.join(" ") };
 }
 
 async function probeOfficial(page) {
@@ -183,6 +181,8 @@ test("lot RA2 — récit FR puis EN : Ajaccio avant Fort-de-France, sans répét
   await switchLang(page, "en");
   await expect(page.getByTestId("view-suivre")).toContainText(/Follow/i);
   await showLeftPanel(page);
+  const { waitStoryLang } = await import("../helpers.js");
+  await waitStoryLang(page, "en");
   const en = await storyBlob(page);
   if (en.n < 2) {
     if (!apiUp) {

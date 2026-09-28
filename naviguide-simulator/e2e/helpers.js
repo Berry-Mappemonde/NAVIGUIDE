@@ -168,3 +168,38 @@ export async function waitFilmCanStart(page, timeout = 25_000) {
   }, null, { timeout }).catch(() => null);
   return start.isEnabled();
 }
+
+/**
+ * Le film ancré (RC18) laisse le bateau à quai pendant les premières phrases (Saint-Maur → La Rochelle
+ * par la route — comptée dans filmNm —, puis l'escale) : on ne mesure sa glisse qu'une fois qu'il BOUGE
+ * vraiment (plus de `minDeg` degrés entre deux lectures à 500 ms), pas sur les milles déjà au compteur.
+ */
+export async function waitBoatUnderWay(page, { minDeg = 0.01, timeout = 60_000 } = {}) {
+  return page.evaluate(async ([min, limit]) => {
+    const read = () => {
+      const f = window.__naviguideFilm || {};
+      return Number.isFinite(f.lat) && Number.isFinite(f.lon) ? { lat: f.lat, lon: f.lon, nm: Number(f.filmNm) || 0, ended: Boolean(f.ended) } : null;
+    };
+    const t0 = performance.now();
+    let prev = read();
+    while (performance.now() - t0 < limit) {
+      await new Promise((r) => setTimeout(r, 500));
+      const cur = read();
+      if (cur?.ended) return { moving: false, ended: true, nm: cur.nm };
+      if (prev && cur && Math.abs(cur.lat - prev.lat) + Math.abs(cur.lon - prev.lon) > min) return { moving: true, ended: false, nm: cur.nm };
+      prev = cur || prev;
+    }
+    return { moving: false, ended: false, nm: prev?.nm || 0 };
+  }, [minDeg, timeout]);
+}
+
+/** Le récit du panneau gauche dans la langue demandée (après une bascule FR/EN, il se recharge). */
+export async function waitStoryLang(page, lang, timeout = 20_000) {
+  const re = lang === "en" ? /expedition|left|departure|arrival/i : /expédition|quitté|départ|arrivée/i;
+  await page.waitForFunction(([pattern, flags]) => {
+    const box = document.querySelector("[data-testid='expedition-story']");
+    const txt = box ? box.textContent || "" : "";
+    const names = ["Saint-Maur", "La Rochelle", "Ajaccio", "Fort-de-France"].filter((n) => txt.includes(n));
+    return new RegExp(pattern, flags).test(txt) && names.length >= 3;
+  }, [re.source, re.flags], { timeout }).catch(() => null);
+}

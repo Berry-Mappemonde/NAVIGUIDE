@@ -356,6 +356,10 @@ export function useReplay({
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const remotePlanRef = useRef(null);
+  // Langue et budget du plan chargé : on ne garde le plan « prêt » pendant un rechargement que s'il
+  // répond à la MÊME demande — sinon un clic Revoir juste après le passage en anglais jouait le film
+  // français (spec rb5 / ra2 en CI, 28 sept.).
+  const remotePlanKeyRef = useRef("");
   const [remoteStatus, setRemoteStatus] = useState("pending");
   const remoteStatusRef = useRef("pending");
   const setFilmStatus = useCallback((s) => {
@@ -480,6 +484,7 @@ export function useReplay({
       if (cancelled) return true;
       if (isRe7OfficialFilm(data)) {
         remotePlanRef.current = data;
+        remotePlanKeyRef.current = q;
         setHasWritten(Boolean(data.hasWritten));
         setFilmSource(data.source || "rules");
         setFilmStatus("ready");
@@ -487,6 +492,7 @@ export function useReplay({
       }
       if (data?.chapters?.length) {
         remotePlanRef.current = data;
+        remotePlanKeyRef.current = q;
         setFilmStatus("stale");
         return true;
       }
@@ -502,7 +508,7 @@ export function useReplay({
 
     const load = () => {
       if (cancelled) return;
-      const keepReady = remoteStatusRef.current === "ready" && remotePlanRef.current;
+      const keepReady = remoteStatusRef.current === "ready" && remotePlanRef.current && remotePlanKeyRef.current === q;
       if (!keepReady) {
         setFilmStatus("pending");
         remotePlanRef.current = null;
