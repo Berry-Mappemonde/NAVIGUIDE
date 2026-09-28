@@ -1,4 +1,4 @@
-# Plan de corrections — 28 septembre 2026 : « le film raconte la route » (RG1 → RG15, puis RH1, RH2)
+# Plan de corrections — 28 septembre 2026 : « le film raconte la route » (RG16, RG1 → RG15, puis RH1, RH2)
 
 Batch décidé par le porteur le 28 sept. au matin, après sa revue globale de la pile #386 (mergée le
 28 sept. 06:32 UTC) : *« il faut prévoir un plus gros batch centré sur l'amélioration du film et du
@@ -44,6 +44,16 @@ Le film servi le 28 sept. (11 chapitres, 2 913 caractères, variantes 2:30 et 3:
   frames sur trois puis bonds de 12-29 px ; caméra à sa butée (29 px/frame) ; vitesse du temps-film de
   0 à 154 h de voyage par seconde d'une phrase à l'autre ; menée par la voix, dent de scie à chaque mot
   (rapport 6,8) ; ancre au début de la phrase (le bateau quitte le lieu pendant qu'on en parle).
+- **CI Playwright inutile** (porteur, 28 sept. : « elle est longue et ne sert pas à grand chose ») —
+  mesuré sur le dernier run vert de `main` (36388263060) : le job « fumée Playwright » dure **10 min**,
+  dont **9 min** pour les specs de lots ; **58 specs sur 101 échouent** et le job est vert quand même
+  (`continue-on-error`). Les échecs sont des contrats périmés, pas des régressions : 12 specs attendent
+  l'ouverture en Simulation (`view-simulation` = true) alors que RF7 a décidé l'accueil en Suivre ; 9
+  attendent `plan-review` visible alors que RD9 l'a mis dans un onglet ; `film-duration` visible hors
+  film (RE3 / RF8) ; « Aujourd'hui, le bateau est à » (RC17 a changé la phrase de fin) ; « 15 mai 2025 »
+  (année) ; zoom d'accueil ≤ 2,25 (RC18 a posé un plancher de dézoom) ; `regime-legend` /hindcast/
+  (la CI n'a pas d'hindcast) ; `route-summary`, `expedition-story`, `ici-story-slot` (surfaces
+  déplacées). Personne ne lit ces rouges : la « recette automatique de chaque lot » n'existe plus.
 - **Carte au dézoom** (revue du 27 sept.) : drapeaux et bateaux qui se baladent horizontalement au
   zoom / dézoom, monde vu plusieurs fois — deux garde-fous posés dans #386 (plancher de dézoom en
   Suivre, gel des marqueurs pendant l'animation), le reste à reproduire et corriger (RG15).
@@ -76,11 +86,17 @@ Le film servi le 28 sept. (11 chapitres, 2 913 caractères, variantes 2:30 et 3:
   `projects` (export BI, `gold_on`), et les événements de route en tirent « projet à proximité ».
 - **D6 — Climatologie honnête.** Un changement notable est dit avec ses chiffres (force, direction, date)
   et sa nature : « vents moyens de saison » (climatologie) ou « mesuré » (hindcast). Rien n'est inventé
-  quand l'atlas manque (repli de zone : dit comme tel, ou passé sous silence).
+  quand l'atlas manque (repli de zone : dit comme tel, ou tu).
 - **D7 — Les pilules 2:30 / 3:00 produisent des textes différents** ; une troisième variante
   « intégral » existe côté serveur ; la durée estimée s'affiche.
 - **D8 — RG11 « Rédigé » (LLM) est hors batch**, documenté pour plus tard.
 - **D9 — RH1 et RH2 restent en queue du batch**, inchangés.
+- **D11 — La CI Playwright devient la recette automatique, bloquante.** Chaque spec de lot est
+  ramené au contrat actuel du produit (la décision qui l'a changé est citée), marqué `poste` s'il dépend
+  de données que la CI ne peut pas avoir (hindcast, LLM, réseau), ou supprimé si la surface n'existe
+  plus par décision — jamais affaibli pour passer. Une vraie régression trouvée en chemin est notée,
+  pas masquée. Puis `continue-on-error` disparaît : un spec rouge = PR rouge. Un lot n'est fini que si
+  son spec passe avec `npm run e2e:store`. Objectif de durée : ≤ 4 min pour le job.
 - **D10 — Chaque lot est mesurable** : le script `naviguide-simulator/scripts/film-cinematique.mjs` (livré
   avec la revue) et un test serveur du discours (RG10) donnent des seuils, écrits dans la rubrique Recette.
 
@@ -88,6 +104,27 @@ Le film servi le 28 sept. (11 chapitres, 2 913 caractères, variantes 2:30 et 3:
 
 Pour chaque lot : constat → cause lue sur `main` (fichier:ligne) → ce qui change → tests → recette.
 Le prompt complet, exécutable par `infra/agents/run_lots.py`, est dans `docs/LOTS_ORDRE_ET_PROMPTS.md` § 2.
+
+### RG16 — La CI Playwright utile : recette automatique des lots, bloquante, ≤ 4 min (M) — en premier
+- Constat : § 1 « CI Playwright inutile » (58 specs rouges sur 101, 9 min, job vert).
+- Causes : `.github/workflows/ci.yml` job `simulator-e2e` (`continue-on-error: true` sur les specs de
+  lots ; `npx playwright install --with-deps chromium` à chaque run, 32 s ; deux invocations Playwright) ;
+  `naviguide-simulator/playwright.config.js` l. 44-48 (retries 1 en CI, 4 workers) ; `e2e/lots/*.spec.js`
+  (101 specs, un par lot, jamais relus quand une décision change le produit) ; `scripts/e2e-store-api.sh`
+  + `server/tests/fixtures/official_store.tar.gz` (stock figé : climo, film, ici, moments, plan_review —
+  pas d'`eta`) ; `docs/REGLES_WORKFLOW_AGENT.md` (aucune règle « le spec du lot passe avec l'API »).
+- Ce qui change : triage des 58 specs rouges, un par un, en trois sorts (contrat actuel, `poste`,
+  supprimé) avec la décision citée dans la PR ; les régressions réelles trouvées sont listées dans
+  « reste à faire » (pas corrigées ici, pas masquées) ; `continue-on-error` retiré ; une seule invocation
+  Playwright (fumée + lots) avec l'API sur le stock figé, navigateurs mis en cache (`actions/cache` sur
+  `~/.cache/ms-playwright`, clé = version de Playwright), reporter `github` + résumé d'étape
+  (`$GITHUB_STEP_SUMMARY` : specs rouges nommés) ; `eta` ajouté au stock figé si des specs en ont besoin ;
+  REGLES § 3 : « un lot n'est fini que si `npm run e2e:store -- e2e/lots/<spec>` passe » ; nom du job :
+  « simulateur — recette automatique (Playwright, stock figé) ».
+- Tests : la suite complète verte en CI (0 rouge, 0 `did not run`) en ≤ 4 min ; les specs `poste`
+  ignorés en CI et joués par le script de recette sur le poste.
+- Recette : ouvrir le run CI de la PR → job vert, résumé d'étape listant 0 spec rouge, durée ≤ 4 min ;
+  casser volontairement un spec en local → le job passe rouge (montre-le dans la PR, puis retire).
 
 ### RG1 — Faits justes : départ de l'horloge, le vol est un vol, la route est la route (M)
 - Constat : A1, A2, A5 (FILM_DISCOURS_ETAT § 3).
@@ -310,8 +347,9 @@ demande après RG10.
 ## 5. Ordre, pile, lancement
 
 Ordre d'exécution (dépendances respectées, le récit d'abord, la cinématique ensuite, la carte, puis la
-robustesse) : **RG1 → RG2 → RG3 → RG4 → RG5 → RG6 → RG7 → RG8 → RG9 → RG10 → RG12 → RG13 → RG15 →
-RG14 → RH1 → RH2** (RG11 hors batch). Depuis `main` (la pile #386 est mergée) ; chaque lot empile sur
+robustesse) : **RG16 → RG1 → RG2 → RG3 → RG4 → RG5 → RG6 → RG7 → RG8 → RG9 → RG10 → RG12 → RG13 →
+RG15 → RG14 → RH1 → RH2** (RG11 hors batch). RG16 ouvre le batch : les quinze lots suivants ont une CI
+qui les juge. Depuis `main` (la pile #386 est mergée) ; chaque lot empile sur
 la tête ; poste de recette reconstruit sur la tête après le verdict du bot (`--bot-gate-min`).
 
-`python3 infra/agents/run_lots.py --dry-run --from RG1 --until RH2` doit lister ces 16 lots dans l'ordre.
+`python3 infra/agents/run_lots.py --dry-run --from RG16 --until RH2` doit lister ces 17 lots dans l'ordre.
