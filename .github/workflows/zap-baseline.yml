@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: ZAP baseline sur https://simulator.naviguide.fr
-        uses: zaproxy/action-baseline@v0.14.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: "https://simulator.naviguide.fr"
           rules_file_name: ".zap/rules.tsv"
