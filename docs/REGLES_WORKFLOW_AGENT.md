@@ -101,7 +101,11 @@ Ce qu'on n'a pas touché exprès, ce qui pourrait bouger. / Left untouched on pu
 - La PR reste **petite** : ≤ 400 lignes de diff hors tests et données, sinon
   on découpe (le plan le prévoit).
 - CI verte obligatoire : `simulator` (tests JS + Python, build, audits) et
-  `simulator-e2e` (Playwright sur le build de prod).
+  `simulator-e2e` (Playwright, stock figé, **bloquant** — lot RG16).
+- **Un lot n'est fini que si `npm run e2e:store -- e2e/lots/<spec>` passe.**
+  Un spec qui dépend d'une donnée absente en CI (hindcast, LLM, réseau) est
+  marqué `test.skip(process.env.CI, "poste : …")` et le script de recette du
+  poste le joue.
 
 ## 4. Recette visuelle (ce que le porteur fait)
 
@@ -165,8 +169,9 @@ Règles du spec :
   au plus une assertion.
 - Chaque `data-testid` nouveau est listé dans la PR ; on ne renomme pas ceux
   qui existent (les tests de contrat les lisent).
-- Commande : `npm run e2e -- e2e/lots/<lot>.spec.js` ; en CI, `npm run e2e`
-  joue tout le dossier.
+- Commande : `npm run e2e:store -- e2e/lots/<lot>.spec.js` (API + stock figé).
+  En CI, une seule invocation joue la fumée et tout le dossier. Un spec
+  `poste` est ignoré en CI.
 
 ## 6. Review humaine (ce que le porteur ou un second agent vérifie)
 

@@ -78,8 +78,9 @@ test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("scene-load-mask").waitFor({ state: "hidden", timeout: 25_000 }).catch(() => {});
 
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "false");
+  // RF7 remplace RE1 : accueil Suivre + Cinéma + monde (plus Simulation).
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "false");
   await expect(cinemaButton(page)).toBeVisible();
   expect(await cinemaPressed(page), "Cinéma enfoncé au chargement").toBe(true);
   await expect.poll(() => panelOnScreen(page, "left"), { timeout: 8_000 }).toBe(false);
@@ -90,8 +91,8 @@ test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre
     .catch(() => false);
   if (mapReady) {
     const zoom0 = await mapZoom(page);
-    expect(zoom0, "carte initiale monde dézoomée").toBeGreaterThanOrEqual(2);
-    expect(zoom0, "carte initiale monde dézoomée").toBeLessThanOrEqual(2.25);
+    expect(zoom0, "plancher RC18 (monde une fois)").toBeGreaterThanOrEqual(2.4);
+    expect(zoom0, "plancher RC18 (monde une fois)").toBeLessThanOrEqual(2.6);
   }
 
   await shot(page, "01-accueil");

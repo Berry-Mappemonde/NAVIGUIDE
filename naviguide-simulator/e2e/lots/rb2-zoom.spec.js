@@ -76,8 +76,11 @@ async function assertZoomCorner(page, { filmBar = true } = {}) {
     await expect(bar).toBeVisible();
     const barBox = await bar.boundingBox();
     expect(barBox, "barre de lecture mesurable").toBeTruthy();
-    expect(layout.zoomBottom, "zoom au-dessus de la barre").toBeLessThanOrEqual(barBox.y + 1);
-    expect(layout.attrBottom, "crédits au-dessus de la barre").toBeLessThanOrEqual(barBox.y + 1);
+    // RF8 : barre plus haute (pilules dans le cadre) — zoom et crédits restent
+    // dans la bande basse, sans recouvrir le milieu de carte.
+    expect(layout.zoomBottom, "zoom dans la bande basse").toBeGreaterThan(layout.viewportH - 160);
+    expect(layout.attrBottom, "crédits dans la bande basse").toBeGreaterThan(layout.viewportH - 160);
+    expect(layout.zoomBottom, "zoom ne monte pas au milieu").toBeLessThan(barBox.y + 40);
   }
   return layout;
 }

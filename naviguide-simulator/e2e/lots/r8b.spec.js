@@ -67,7 +67,8 @@ test("lot R8b — encadré seul, puis aucun changement visible dans l'app", asyn
   await pills.nth(0).getByTestId("ici-alert-close").click();
   await expect(page.getByTestId("ici-alert")).toHaveCount(n - 1);
   await page.getByTestId("ici-tab-story").click();
-  await expect(page.getByTestId("ici-story-slot")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-story")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("ici-story-slot")).toBeAttached();
   await expect(page.getByTestId("ici-section-leg")).toHaveCount(0);
   await page.getByTestId("ici-tab-now").click();
   await expect(page.getByTestId("ici-section-leg")).toBeVisible();
@@ -83,7 +84,8 @@ test("lot R8b — encadré seul, puis aucun changement visible dans l'app", asyn
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("view-suivre")).toBeVisible();
   await expect(page.getByTestId("view-simulation")).toBeVisible();
-  await expect(page.getByTestId("ici-maintenant")).toHaveCount(0);
+  // R8c : l'encadré Ici est dans l'app (plus seulement /lot-r8b.html).
+  await expect(page.getByTestId("ici-maintenant")).toHaveCount(1);
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
@@ -96,7 +98,7 @@ test("lot R8b — encadré seul, puis aucun changement visible dans l'app", asyn
   await page.getByTestId("view-simulation").click();
   await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("film-bar")).toBeVisible();
-  await expect(page.getByTestId("ici-maintenant")).toHaveCount(0);
+  await expect(page.getByTestId("ici-maintenant")).toHaveCount(1);
 
   await showLeftPanel(page);
   const draw = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Draw your own route/i });
@@ -104,7 +106,8 @@ test("lot R8b — encadré seul, puis aucun changement visible dans l'app", asyn
   await draw.scrollIntoViewIfNeeded();
   await draw.click({ force: true });
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("ici-maintenant")).toHaveCount(0);
+  // R8c : l'encadré Ici reste à gauche en Tracer.
+  await expect(page.getByTestId("ici-maintenant")).toHaveCount(1);
 
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
 });

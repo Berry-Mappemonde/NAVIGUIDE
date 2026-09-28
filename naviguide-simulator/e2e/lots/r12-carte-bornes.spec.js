@@ -46,15 +46,16 @@ test("lot R12 — pôles bornés, longitude libre, zoom molette", async ({ page 
       viscosity: map.options.maxBoundsViscosity,
       south,
       north,
-      westFinite: Number.isFinite(west),
-      eastFinite: Number.isFinite(east),
+      west,
+      east,
     };
   });
   expect(options.viscosity).toBe(1);
   expect(options.south).toBe(-85);
   expect(options.north).toBe(85);
-  expect(options.westFinite, "longitude ouest non bornée").toBe(false);
-  expect(options.eastFinite, "longitude est non bornée").toBe(false);
+  // RA4 : une répétition de chaque côté (±540°), plus l'infini.
+  expect(options.west, "longitude ouest ±540").toBe(-540);
+  expect(options.east, "longitude est ±540").toBe(540);
 
   const northEdge = await page.evaluate(() => {
     const map = window.__naviguideScene.map;

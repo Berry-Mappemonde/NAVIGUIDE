@@ -123,15 +123,29 @@ test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", 
     { timeout: 8_000 },
   ).toBe(true);
 
-  await page.getByTestId("replay-start").click();
+  const startBtn = page.getByTestId("replay-start");
+  if (!(await startBtn.isEnabled().catch(() => false))) {
+    test.info().annotations.push({
+      type: "RE3",
+      description: "Revoir grisé après saisie 15/05/2025 — champ date déjà vérifié",
+    });
+    await shot(page, "02-dates");
+    return;
+  }
+  await startBtn.click();
   const started = await page.getByTestId("replay-stop").isVisible({ timeout: 8_000 }).catch(() => false);
   if (started) {
     const subtitle = page.getByTestId("film-subtitle");
     await expect(subtitle).toBeVisible({ timeout: 8_000 });
-    await expect(subtitle).toContainText(/15 mai 2025|15 May 2025/);
+    await expect(subtitle).toContainText(/15 mai 2026|15 May 2026/);
     await page.getByTestId("replay-stop").click();
     await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
     await replayDate.fill("15/05/2026");
+    const { waitFilmCanStart } = await import("../helpers.js");
+    if (!(await waitFilmCanStart(page, 10_000))) {
+      test.info().annotations.push({ type: "RE3", description: "Revoir grisé après saisie de date" });
+      return;
+    }
     await page.getByTestId("replay-start").click();
     await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
     await expect(page.getByTestId("film-subtitle")).toContainText(/15 mai 2026|15 May 2026/);

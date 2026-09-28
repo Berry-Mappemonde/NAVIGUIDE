@@ -19,11 +19,10 @@ async function dismissNotForNav(page) {
   }
 }
 
-async function showToolsPanel(page) {
-  const review = page.getByTestId("plan-review");
-  if (await review.isVisible({ timeout: 2000 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--right").click();
-  await expect(review).toBeVisible({ timeout: 10_000 });
+async function showReview(page) {
+  const { openReviewTab, showRightPanel } = await import("../helpers.js");
+  await showRightPanel(page);
+  await openReviewTab(page);
 }
 
 test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({ page }) => {
@@ -69,12 +68,9 @@ test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({
     return;
   }
 
-  await showToolsPanel(page);
+  await showReview(page);
   const review = page.getByTestId("plan-review");
   await review.scrollIntoViewIfNeeded();
-  if (!(await review.evaluate((el) => el.open))) {
-    await review.locator("summary").click();
-  }
 
   const reviewBody = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
     .then((r) => (r.ok() ? r.json() : null)).catch(() => null);

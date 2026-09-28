@@ -44,13 +44,8 @@ async function stubRoute(page) {
 }
 
 async function enterDraw(page) {
-  const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i });
-  if (!(await drawBtn.isVisible().catch(() => false))) {
-    await page.locator(".naviguide-sidebar-toggle--left").click();
-  }
-  await expect(drawBtn).toBeVisible({ timeout: 15_000 });
-  await drawBtn.click();
-  await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 15_000 });
+  const { enterTracer } = await import("../helpers.js");
+  await enterTracer(page);
   await expect(page.getByTestId("route-import")).toBeVisible();
 }
 
@@ -59,7 +54,7 @@ async function importFile(page, name) {
 }
 
 test("lot N1 — Importer un .geojson puis un .kml : 3 drapeaux, route, Terminer", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({

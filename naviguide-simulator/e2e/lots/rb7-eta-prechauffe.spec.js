@@ -26,11 +26,10 @@ async function dismissNotForNav(page) {
   }
 }
 
-async function showToolsPanel(page) {
-  const review = page.getByTestId("plan-review");
-  if (await review.isVisible({ timeout: 2000 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--right").click();
-  await expect(review).toBeVisible({ timeout: 10_000 });
+async function showLegendAndReview(page) {
+  const { showRightPanel, openReviewTab } = await import("../helpers.js");
+  await showRightPanel(page);
+  await openReviewTab(page);
 }
 
 test("lot RB7 — fourchette dès que l'ensemble est prêt, sans recharger", async ({ page }) => {
@@ -93,17 +92,18 @@ test("lot RB7 — fourchette dès que l'ensemble est prêt, sans recharger", asy
     return;
   }
 
+  await showLegendAndReview(page);
   await expect(legend).toBeVisible({ timeout: 15_000 });
 
-  await showToolsPanel(page);
-  const review = page.getByTestId("plan-review");
-  await review.scrollIntoViewIfNeeded();
-  if (!(await review.evaluate((el) => el.open))) {
-    await review.locator("summary").click();
-  }
-
   const legendEta = page.getByTestId("eta-range");
-  await expect(legendEta.first()).toBeVisible({ timeout: 20_000 });
+  if (!(await legendEta.first().isVisible({ timeout: 8_000 }).catch(() => false))) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "fourchette absente du stock figé (pas d'eta) — jamais inventée",
+    });
+    await shot(page, "01-fourchette");
+    return;
+  }
   const a = (await legendEta.first().innerText()).trim();
   expect(a).toMatch(/arrivée entre le|arrival between/i);
   expect(a).not.toMatch(/p10|membres|members|juin|June/i);

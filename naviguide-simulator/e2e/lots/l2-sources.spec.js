@@ -23,7 +23,8 @@ test("lot L2 — chat-source : s'il est là après une question, il n'est pas vi
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
-  // Simulation par défaut : le chat est dans le panneau gauche, hors cinéma.
+  const { showLeftPanel } = await import("../helpers.js");
+  await showLeftPanel(page);
   const chat = page.getByTestId("logbook-chat");
   await expect(chat).toBeVisible({ timeout: 10_000 });
   await chat.getByTestId("logbook-chat-input").fill("Quel vent au bateau ?");

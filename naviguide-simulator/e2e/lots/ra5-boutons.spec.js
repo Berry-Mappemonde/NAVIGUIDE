@@ -49,6 +49,8 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-simulation").click();
   await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
 
   const apiUp = await probeOfficial(page);
@@ -73,6 +75,10 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
   await flag.click({ force: true });
   await expect(page.getByTestId("escale-sheet")).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press("Escape");
+  // RF7 : Échap quitte le cinéma ; la fiche se ferme par la croix.
+  if (await page.getByTestId("escale-sheet").count()) {
+    await page.getByTestId("escale-close").click();
+  }
   await expect(page.getByTestId("escale-sheet")).toHaveCount(0);
 
   await flag.click({ force: true });

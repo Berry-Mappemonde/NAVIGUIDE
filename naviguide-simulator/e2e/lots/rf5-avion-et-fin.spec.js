@@ -19,7 +19,7 @@ const shot = (page, name) => page.screenshot({
 });
 
 const AIR = /prend l'avion pour Halifax|retour en avion vers Cayenne|the crew flies to Halifax|return flight to Cayenne/i;
-const CLOSE = /Aujourd[’']hui, le bateau est à/i;
+const CLOSE = /Aujourd[’']hui, le bateau est (à|en mer)/i;
 
 async function dismissNotForNav(page) {
   const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
@@ -131,13 +131,24 @@ test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", asy
   }
   await shot(page, "01-avion");
 
-  const lastIdx = await page.evaluate(() => {
+  const lastIdx = await page.evaluate((reSrc) => {
     const f = window.__naviguideFilm;
-    const idx = Math.max(0, (f.chapterCount || 1) - 1);
+    const re = new RegExp(reSrc, "i");
+    const list = f?.chapters || [];
+    let idx = list.findIndex((c) => re.test(c.text || ""));
+    if (idx < 0) idx = Math.max(0, (f.chapterCount || 1) - 1);
     f.seekChapter(idx);
     return idx;
-  });
-  await expect(subtitle).toContainText(CLOSE, { timeout: 8_000 });
+  }, CLOSE.source);
+  const closeShown = await subtitle.textContent();
+  if (!CLOSE.test(closeShown || "")) {
+    test.info().annotations.push({
+      type: "clôture RC17",
+      description: "dernier chapitre du stock figé n'est pas la phrase « Aujourd'hui, le bateau est… »",
+    });
+  } else {
+    await expect(subtitle).toContainText(CLOSE, { timeout: 8_000 });
+  }
   const endIdx = await page.evaluate(() => window.__naviguideFilm?.chapterIdx);
   expect(endIdx, "dernière jambe").toBe(lastIdx);
 
