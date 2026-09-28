@@ -21,6 +21,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "IciMaintenant.jsx"), "utf8");
 const helpers = readFileSync(join(here, "iciMaintenant.js"), "utf8");
 const hook = readFileSync(join(here, "..", "hooks", "useMoment.js"), "utf8");
+const css = readFileSync(join(here, "..", "index.css"), "utf8");
 
 const tFr = (key, vars = {}) => {
   const table = {
@@ -162,6 +163,8 @@ describe("useMoment — lot R8b / RC2", () => {
     assert.doesNotMatch(hook, /moment: MOMENT_FIXTURE/);
     assert.doesNotMatch(hook, /source: "fixture"/);
     assert.match(hook, /controller\.abort\(\)/);
+    assert.match(hook, /frozen = false/);
+    assert.match(hook, /if \(frozen\) return undefined/);
     const q = momentSearchParams({ lat: 37.7, lon: 236.84, t: "2026-05-15T08:00:00Z", mode: "follow", lang: "fr" });
     assert.equal(Number(Number(q.get("lon")).toFixed(2)), Number(wrapLon(236.84).toFixed(2)));
     assert.equal(q.get("t"), "2026-05-15T08:00:00Z");
@@ -267,6 +270,21 @@ describe("IciMaintenant — lot RC6 : fiche d'escale en tête de Ici", () => {
     assert.match(src, /escale\?\.stop/);
     assert.match(src, /onViewChange\("now"\)/);
     assert.doesNotMatch(src, /placeholder|aide|hint|cliquez le drapeau/i);
+  });
+});
+
+describe("IciMaintenant — lot RE3 : journal lisible dans les deux thèmes", () => {
+  it("pose une couleur explicite claire (sombre) et foncée (clair), sans text-inherit", () => {
+    assert.match(
+      css,
+      /(?:^|\n)\.ici-maintenant \[data-testid="ici-journal-entry"\] \{[\s\S]{0,80}color:\s*rgb\(226 232 240\)/,
+    );
+    assert.match(
+      css,
+      /\.light-mode \.ici-maintenant \[data-testid="ici-journal-entry"\] \{[\s\S]{0,80}color:\s*rgb\(30 41 59\)/,
+    );
+    assert.match(src, /data-testid="ici-journal-entry"/);
+    assert.doesNotMatch(src, /text-inherit/);
   });
 });
 

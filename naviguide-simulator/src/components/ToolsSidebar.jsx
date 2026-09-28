@@ -75,6 +75,7 @@ function AdminKeyField() {
     <div className="flex items-center gap-1.5" data-testid="admin-key">
       <KeyRound size={13} className={saved ? "text-emerald-400 flex-shrink-0" : "text-slate-500 flex-shrink-0"} title={saved ? t("adminKeyActive") : t("adminKeyLabel")} />
       <input
+        name="admin-key"
         type="password"
         autoComplete="off"
         value={value}
@@ -180,7 +181,7 @@ function DrawingBox({ drawing }) {
   );
 }
 
-function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null, segments = [] }) {
+function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null, segments = [], frozen = false }) {
   const { t, lang } = useLang();
   const locale = lang === "fr" ? "fr-FR" : "en-US";
   const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString(locale)} nm` : "—";
@@ -210,7 +211,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
           · {vertexCount.toLocaleString(locale)} {t("routePointsShort")}
         </span>
       </div>
-      <EscaleLegend marks={escaleMarks} filmNm={filmNm} onSeek={onSeekEscale} onSheet={onEscaleSheet} />
+      <EscaleLegend marks={escaleMarks} filmNm={filmNm} frozen={frozen} />
     </div>
   );
 }
@@ -221,7 +222,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   polarData, onPolarDataLoaded,
   routeDistanceNm, routeSegmentCount,
   maritimeLayers = null,
-  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet, drawing = null,
+  escaleMarks = [], filmNm = 0, onSeekEscale, onEscaleSheet, drawing = null, frozen = false,
   showDeparture = false, departureT0, onDepartureT0,
   skipperOrders = null, skipperProfile = "cruise", onSkipperProfile, onSkipperReset,
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
@@ -346,7 +347,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
         className={`naviguide-sidebar-panel absolute top-0 right-0 h-full z-20 flex flex-col bg-slate-900/97
           border-l-2 border-sky-400/40 shadow-2xl transition-transform duration-300
           ${open ? "translate-x-0" : "translate-x-full"}`}
-        style={{ width: 320 }}
+        style={{ width: 320, visibility: open ? "visible" : "hidden" }}
       >
         <div className="flex-1 overflow-y-auto sidebar-scroll">
           <div className="px-4 py-3 border-b border-slate-700/60">
@@ -373,6 +374,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               onSeekEscale={onSeekEscale}
               onEscaleSheet={onEscaleSheet}
               drawing={drawing}
+              frozen={frozen}
             />
             {showDeparture ? (
               <div className="mt-2">
@@ -455,6 +457,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               >
                 <input
                   ref={polarFileInputRef}
+                  name="polar-file"
                   type="file"
                   accept=".pdf,.csv,.xlsx,.xls"
                   className="hidden"

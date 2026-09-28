@@ -63,3 +63,35 @@ def test_client_polar_payload_reuses_stored_raw_without_grid(tmp_path, monkeypat
     assert payload["raw"]["twa_rows"] == [0, 180]
     assert payload["vmg_summary"]["6"]["gybe_angle"] == 120
     assert "grid" not in payload
+
+
+def test_corrupt_polar_file_falls_back_to_default(tmp_path, monkeypatch):
+    """Lot RF3 : JSON corrompu → 200 avec la polaire par défaut, pas un 500."""
+    monkeypatch.setattr(polar_api, "POLAR_DATA_DIR", tmp_path)
+    polar_api._default_polar.cache_clear()
+    dest = polar_api._polar_path(polar_api.DEFAULT_POLAR_EXPEDITION)
+    dest.write_text("{not json", encoding="utf-8")
+
+    payload = polar_api.get_polar_client(polar_api.DEFAULT_POLAR_EXPEDITION)
+
+    assert payload["boat_name"] == "Leopard 46"
+    assert payload["raw"]["twa_rows"][0] == 0
+    assert payload.get("source") == "default"
+
+
+def test_old_polar_format_without_raw_falls_back_to_default(tmp_path, monkeypatch):
+    """Lot RF3 : format ancien (pas de raw) → repli défaut, pas KeyError."""
+    monkeypatch.setattr(polar_api, "POLAR_DATA_DIR", tmp_path)
+    polar_api._default_polar.cache_clear()
+    dest = polar_api._polar_path(polar_api.DEFAULT_POLAR_EXPEDITION)
+    dest.write_text(json.dumps({
+        "expedition_id": "berry-mappemonde-2026",
+        "boat_name": "Ancien format",
+        "grid": [[0]],
+    }), encoding="utf-8")
+
+    payload = polar_api.get_polar_client(polar_api.DEFAULT_POLAR_EXPEDITION)
+
+    assert payload["boat_name"] == "Leopard 46"
+    assert "raw" in payload
+    assert payload.get("source") == "default"

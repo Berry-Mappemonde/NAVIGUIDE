@@ -2,11 +2,21 @@
 from __future__ import annotations
 
 import asyncio
+import faulthandler
+import logging
 import math
 import os
 import re
+import signal
 import sys
 import time
+
+# Diagnostic (RC18) : `kill -USR1 <pid de l'API>` écrit les piles Python de tous les fils sur stderr
+# (donc dans .dev/api.log sur le poste, journalctl sur le VPS). Sans root, sans py-spy.
+try:
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=False)
+except (AttributeError, ValueError, RuntimeError):
+    pass
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -34,7 +44,7 @@ from mem_limits import (
     too_large,
 )
 from weather_pipeline import get_pipeline
-from ici_engine import ICI_RADIUS_NM, fetch_wpi_features, fill_dossier
+from ici_engine import ICI_RADIUS_NM, empty_dossier, fetch_wpi_features, fill_dossier
 from story_cascade import write_story
 from polar_api import router as polar_router
 from escale_api import router as escale_router
@@ -43,7 +53,11 @@ from route_engine import searoute_with_exact_end, unwrap_path, wrap_lon
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
 
+log = logging.getLogger("naviguide-simulator")
+
 load_dotenv(_SIM_ROOT / ".env")
+from offline import apply_at_startup, enabled as offline_enabled
+apply_at_startup()
 
 COPERNICUS_USERNAME = os.getenv("COPERNICUS_USERNAME")
 COPERNICUS_PASSWORD = os.getenv("COPERNICUS_PASSWORD")
@@ -83,12 +97,12 @@ app.include_router(bi_proxy_router)
 
 @app.on_event("startup")
 def _startup_official_grib():
-    """Semis du voyage officiel + préchauffages — jamais bloquant (lot RD4).
+    """Semis du voyage officiel + travail de fond du stock RF2 — jamais bloquant.
 
-    Sans voyage en base, _kick_official_* abandonnait (404, ensemble vide,
-    journal à 0, film en repli). On sème l'itinéraire Berry embarqué puis
-    on enchaîne les kicks en fond. En pytest le semis est coupé (fixtures
-    PUT à 3 points) sauf NAVIGUIDE_SEED_OFFICIAL=force.
+    Sans voyage en base, le stock est vide : l'API répond « en préparation ».
+    On sème l'itinéraire Berry embarqué puis le worker remplit le stock hors
+    des requêtes. En pytest le semis est coupé (fixtures PUT à 3 points)
+    sauf NAVIGUIDE_SEED_OFFICIAL=force.
     """
     try:
         from voyage_api import (
@@ -104,8 +118,8 @@ def _startup_official_grib():
         _kick_official_grib()
         _kick_official_hindcast()
         _kick_official_eta()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("startup officiel: %s", exc)
 
 
 @app.on_event("startup")
@@ -117,30 +131,42 @@ async def _startup_ici_warm():
     try:
         import zee_local
         zee_local.start_background(asyncio.get_running_loop())
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("startup ZEE locale: %s", exc)
     try:
         import ici_warm
         ici_warm.start_background(asyncio.get_running_loop())
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("startup ici warm: %s", exc)
+
+
+def _dated_ici(reason: str, status: str = "unavailable") -> dict:
+    return {"status": status, "reason": str(reason), "at": _now_iso()}
 
 
 @app.get("/ici/warm/status")
 def ici_warm_status():
     """Où en est la pré-génération des perles de la route officielle (+ la couche ZEE locale)."""
-    import ici_warm
-    import story_cache
-    import zee_local
-    return {**ici_warm.status(), "zeeLocal": zee_local.status(), "stories": story_cache.status()}
+    try:
+        import ici_warm
+        import story_cache
+        import zee_local
+        return {**ici_warm.status(), "zeeLocal": zee_local.status(), "stories": story_cache.status()}
+    except Exception as exc:
+        log.exception("GET /ici/warm/status")
+        return _dated_ici(f"préchauffage indisponible: {exc}")
 
 
 @app.get("/ici/pearls")
 def ici_pearls():
     """Les perles canoniques de la route officielle (12 nm) : le client les
     échantillonne aux mêmes positions, ses sacs thin tombent dans le cache."""
-    import ici_warm
-    return ici_warm.official_pearls()
+    try:
+        import ici_warm
+        return ici_warm.official_pearls()
+    except Exception as exc:
+        log.exception("GET /ici/pearls")
+        return {"voyageId": None, "pearls": [], "count": 0, **_dated_ici(f"perles indisponibles: {exc}")}
 
 
 @app.get("/voyage/official/film")
@@ -150,13 +176,21 @@ async def get_official_film(
     style: str = Query("raw"),
     t0: str | None = Query(None),
 ):
-    """Script du film (lot F3) : brut par règles, rédigé Nemotron si `style=written`.
-    Réponse `{chapters, source, chars, targetSeconds, hasWritten}`. Sans voyage : 404."""
-    from film_script import official_film
+    """Script du film — snapshot du stock RF2, jamais un calcul sur la requête."""
+    import official_store
     try:
-        return await official_film(lang=lang, seconds=seconds, style=style, t0=t0)
-    except FileNotFoundError:
-        raise HTTPException(404, "voyage officiel absent") from None
+        out = official_store.serve_film(lang=lang, seconds=seconds)
+    except Exception as exc:
+        log.exception("GET /voyage/official/film")
+        official_store.kick_worker()
+        return official_store.preparing_payload("film", {
+            "chapters": [], "source": "rules", "chars": 0,
+            "targetSeconds": seconds, "hasWritten": False,
+            **_dated_ici(f"film indisponible: {exc}", "preparing"),
+        })
+    if out.get("status") == official_store.PREPARING:
+        official_store.kick_worker()
+    return out
 
 
 class PositionRequest(BaseModel):
@@ -165,6 +199,8 @@ class PositionRequest(BaseModel):
 
 
 def _copernicus_ready() -> bool:
+    if offline_enabled():
+        return False
     return bool(
         COPERNICUS_USERNAME
         and COPERNICUS_PASSWORD
@@ -220,9 +256,29 @@ async def get_ici(
         raise HTTPException(400, "dest_lat hors limites")
     if dest_lon is not None and not (-180 <= dest_lon <= 180):
         raise HTTPException(400, "dest_lon hors limites")
-    return await fill_dossier(
-        lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
-    )
+    import official_store
+    try:
+        stored = official_store.ici_bag_near(lat, lon)
+        if stored:
+            bag = dict(stored)
+            bag.setdefault("at", {"lat": lat, "lon": lon})
+            bag["cached"] = True
+            bag["status"] = bag.get("status") or "ready"
+            return bag
+        if official_store.on_official_route(lat, lon):
+            official_store.kick_worker()
+            return official_store.preparing_ici(lat, lon, radius_nm)
+    except Exception as exc:
+        log.warning("stock /ici: %s", exc)
+    try:
+        return await fill_dossier(
+            lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
+        )
+    except Exception as exc:
+        log.exception("GET /ici")
+        bag = empty_dossier(lat, lon, radius_nm)
+        bag.update(_dated_ici(f"sac ici indisponible: {exc}"))
+        return bag
 
 
 _MOMENT_MODES = frozenset({"follow", "simulation", "drawn"})
@@ -263,24 +319,16 @@ def _pearl_pos(pearl: dict | None) -> tuple[float, float] | None:
 
 def _nearest_warmed_pearl(lat: float, lon: float, max_nm: float = ICI_RADIUS_NM) -> dict | None:
     """Perle SQLite la plus proche ; None si le magasin est vide ou trop loin."""
-    from ici_engine import haversine_nm
     import pearl_store
-    best, best_d = None, None
     try:
-        rows = pearl_store.iter_pearls()
+        key, dist = pearl_store.nearest_pearl_key(lat, lon)   # colonnes lat/lon : aucun sac décodé (RC18)
     except Exception:
         return None
-    for _key, row in rows:
-        bag = (row or {}).get("bag") if isinstance(row, dict) else None
-        pos = _pearl_pos(bag)
-        if pos is None:
-            continue
-        dist = haversine_nm(lat, lon, pos[0], pos[1])
-        if best_d is None or dist < best_d:
-            best, best_d = bag, dist
-    if best is None or best_d is None or best_d > max_nm:
+    if not key or dist is None or dist > max_nm:
         return None
-    return best
+    row = pearl_store.get_pearl(key)
+    bag = (row or {}).get("bag") if isinstance(row, dict) else None
+    return bag if isinstance(bag, dict) else None
 
 
 def _leg_from_pearl(pearl: dict | None) -> dict:
@@ -316,19 +364,51 @@ async def get_ici_moment(
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(400, "lat/lon hors limites")
     from moment import build_moment
-    pearl = _nearest_warmed_pearl(lat, lon)
+    import official_store
+    pearl = None
+    try:
+        pearl = official_store.ici_bag_near(lat, lon) or _nearest_warmed_pearl(lat, lon)
+        if pearl is None and official_store.on_official_route(lat, lon):
+            official_store.kick_worker()
+            pearl = official_store.preparing_ici(lat, lon, ICI_RADIUS_NM)
+    except Exception as exc:
+        log.warning("stock /ici/moment: %s", exc)
+        pearl = None
     if pearl is None:
-        pearl = await fill_dossier(
-            lat, lon, ICI_RADIUS_NM, month=_month_from_t(t), dest_lat=None, dest_lon=None, thin=False,
-        )
+        try:
+            pearl = await fill_dossier(
+                lat, lon, ICI_RADIUS_NM, month=_month_from_t(t), dest_lat=None, dest_lon=None, thin=False,
+            )
+        except Exception as exc:
+            log.exception("GET /ici/moment fill_dossier")
+            return {
+                **_dated_ici(f"moment indisponible: {exc}"),
+                "t": t,
+                "pos": {"lat": lat, "lon": lon},
+                "here": {},
+                "alerts": [],
+                "around": [],
+            }
     try:
         from piracy import attach_piracy  # noqa: PLC0415
         attach_piracy(pearl, lat, lon)
-    except Exception:
+    except Exception as exc:
+        log.warning("piracy /ici/moment: %s", exc)
         if isinstance(pearl, dict):
             pearl.setdefault("piracy", None)
-    clock, leg, thresholds = _moment_clock_and_leg(lat, lon, t, mode, pearl)
-    return build_moment(pearl, clock, leg, thresholds, lang=lang)
+    try:
+        clock, leg, thresholds = _moment_clock_and_leg(lat, lon, t, mode, pearl)
+        return build_moment(pearl, clock, leg, thresholds, lang=lang)
+    except Exception as exc:
+        log.exception("GET /ici/moment")
+        return {
+            **_dated_ici(f"moment indisponible: {exc}"),
+            "t": t,
+            "pos": {"lat": lat, "lon": lon},
+            "here": {},
+            "alerts": [],
+            "around": [],
+        }
 
 
 # Dépense LLM : 12 récits / min / IP, 60 / min et 240 / h pour tout le serveur.

@@ -26,6 +26,25 @@ SCORE_AMP = 1
 SCORE_ALERT_OFF = 1
 APPROACH_NM_FLOOR = 80.0
 APPROACH_FRAC = 0.10
+_GENERIC_TITLES = frozenset({
+    "station croisée", "station", "stations", "croisée", "croisee",
+    "marina croisée", "marina", "marinas",
+    "aire marine protégée", "amp", "mpa",
+    "formalités d'entrée", "ports d'entrée", "port d'entrée",
+    "autour du bateau",
+})
+_NO_DATA_RE = re.compile(
+    r"aucun port d'entr[ée]e|no official port of entry|n'est connu",
+    re.I,
+)
+_DIST_PAREN_RE = re.compile(
+    r"\s*\(\s*\d+(?:[.,]\d+)?\s*(?:nm|milles?|km)[^)]*\)\s*",
+    re.I,
+)
+_LIST_PREFIX_RE = re.compile(
+    r"^(?:ports? d'entr[ée]e|formalit[ée]s d'entr[ée]e|entr[ée]e dans)\s*:?\s*",
+    re.I,
+)
 
 
 def _as_float(value: Any) -> float | None:
@@ -110,6 +129,40 @@ def _change(kind: str, score: int, title: str, fact: str) -> dict:
     return {"kind": kind, "score": score, "title": str(title or "").strip(), "fact": str(fact or "").strip()}
 
 
+def _is_generic_title(title: str, kind: str = "") -> bool:
+    t = re.sub(r"\s+", " ", str(title or "")).strip().casefold()
+    if not t:
+        return True
+    if t in _GENERIC_TITLES:
+        return True
+    k = str(kind or "").casefold()
+    return bool(k) and (t == k or t == f"{k} croisée" or t == f"{k} croisee")
+
+
+def named_title(title: Any, fact: Any, kind: str = "") -> str:
+    """Nom réel, ou vide (silence). Jamais le type à la place du nom."""
+    for raw in (title, fact):
+        s = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if not s or _NO_DATA_RE.search(s) or _is_generic_title(s, kind):
+            continue
+        s = _LIST_PREFIX_RE.sub("", s).strip(" :")
+        s = _DIST_PAREN_RE.sub("", s).strip()
+        s = re.sub(
+            r"^(station|marina|aire marine protégée|amp)\s+",
+            "",
+            s,
+            flags=re.I,
+        ).strip()
+        if s and not _is_generic_title(s, kind):
+            return s
+    return ""
+
+
+def _zee_place(name: Any) -> str:
+    s = _LIST_PREFIX_RE.sub("", str(name or "").strip()).strip(" :")
+    return s
+
+
 def _stop_title(name: str) -> str:
     """Nom d'escale seul — titre de bulle, sans « Approche de »."""
     return re.sub(r"\s*\([^)]*\)\s*", " ", str(name or "")).strip()
@@ -166,40 +219,33 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
             ))
 
     prev_mrgid, cur_mrgid = _zee(prev).get("mrgid"), _zee(cur).get("mrgid")
-    cur_name = _zee(cur).get("name") or "Haute mer"
-    if cur_mrgid and cur_mrgid != prev_mrgid:
-        changes.append(_change(
-            "zee-enter", SCORE_ZEE,
-            f"Entrée dans {cur_name}",
-            cur_name,
-        ))
+    cur_name = _zee_place(_zee(cur).get("name"))
+    if cur_mrgid and cur_mrgid != prev_mrgid and cur_name:
+        changes.append(_change("zee-enter", SCORE_ZEE, cur_name, cur_name))
     elif prev_mrgid and not cur_mrgid:
-        prev_name = _zee(prev).get("name") or "ZEE"
-        changes.append(_change(
-            "zee-enter", SCORE_ZEE,
-            "Haute mer",
-            f"Sortie de {prev_name}.",
-        ))
+        prev_name = _zee_place(_zee(prev).get("name"))
+        if prev_name:
+            changes.append(_change(
+                "zee-enter", SCORE_ZEE,
+                "Haute mer",
+                f"Sortie de {prev_name}.",
+            ))
     elif _entry(prev) != _entry(cur) and not any(c.get("kind") == "zee-enter" for c in changes):
-        ports = _entry(cur).get("ports") or []
+        ports = [str(p).strip() for p in (_entry(cur).get("ports") or []) if str(p).strip()]
         known = bool(_entry(cur).get("known"))
-        fact = ", ".join(str(p) for p in ports) if ports else (
-            "Aucun port d'entrée officiel n'est connu pour cette ZEE."
-        )
-        changes.append(_change(
-            "zee-enter", SCORE_ZEE,
-            "Formalités d'entrée" if not known or not ports else f"Ports d'entrée : {ports[0]}",
-            fact,
-        ))
+        port = named_title(ports[0] if ports else "", "", "port")
+        if known and port:
+            changes.append(_change("port", SCORE_ZEE, port, port))
 
     prev_sci = {item.get("fact") or item.get("title") for item in _around_by_kind(prev, "science")}
     for item in _around_by_kind(cur, "science"):
         key = item.get("fact") or item.get("title")
-        if key and key not in prev_sci:
+        title = named_title(item.get("title"), item.get("fact"), "station")
+        if key and key not in prev_sci and title:
             changes.append(_change(
                 "station", SCORE_STATION,
-                item.get("title") or "Station croisée",
-                item.get("fact") or item.get("title") or "Station croisée",
+                title,
+                item.get("fact") or title,
             ))
 
     prev_reg, cur_reg = prev_leg.get("regime"), cur_leg.get("regime")
@@ -233,21 +279,42 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
             )
             kind = (item or {}).get("kind") or "station"
             score = SCORE_STATION if kind == "science" else SCORE_REGIME
-            title = added[0] if added else (removed[0] if removed else "Autour du bateau")
-            fact = (item or {}).get("fact") or title
-            changes.append(_change(kind if kind == "science" else kind, score, title, fact))
+            raw = added[0] if added else (removed[0] if removed else "")
+            title = named_title(raw, (item or {}).get("fact"), kind)
+            if title:
+                fact = (item or {}).get("fact") or title
+                changes.append(_change(kind if kind == "science" else kind, score, title, fact))
 
     return [c for c in changes if c.get("title") and c.get("fact")]
+
+
+class _ClockIndex:
+    """Sommets triés par sailNm + recherche dichotomique. Avant (27 sept.) : un `min` linéaire sur 8 878
+    sommets pour chacune des 3 272 perles — 46 s de CPU dans l'API à chaque démarrage (profil cProfile)."""
+
+    def __init__(self, vertices: list):
+        import bisect  # noqa: PLC0415
+        self._bisect = bisect
+        rows = [v for v in (vertices or []) if isinstance(v, dict)]
+        rows.sort(key=lambda v: float(v.get("sailNm") or 0))
+        self.rows = rows
+        self.keys = [float(v.get("sailNm") or 0) for v in rows]
+
+    def near(self, sail_nm: float) -> dict:
+        if not self.rows:
+            return {}
+        i = self._bisect.bisect_left(self.keys, sail_nm)
+        cands = [j for j in (i - 1, i) if 0 <= j < len(self.rows)]
+        best = min(cands, key=lambda j: abs(self.keys[j] - sail_nm))
+        return self.rows[best]
 
 
 def _clock_near(vertices: list, sail_nm: float) -> dict:
     if not vertices:
         return {}
-    return min(
-        (v for v in vertices if isinstance(v, dict)),
-        key=lambda v: abs(float(v.get("sailNm") or 0) - sail_nm),
-        default={},
-    )
+    if isinstance(vertices, _ClockIndex):
+        return vertices.near(sail_nm)
+    return _ClockIndex(vertices).near(sail_nm)
 
 
 def _legs_from_voyage(voy: dict) -> list[dict]:
@@ -279,6 +346,41 @@ def _leg_at(legs: list[dict], sail_nm: float) -> tuple[int, dict]:
     if first_lo is not None and sail_nm < first_lo:
         return 0, legs[0]
     return len(legs) - 1, legs[-1]
+
+
+PLACE_NEAR_NM = 15.0          # une marina ou un port « croisé » : à moins de 15 nm de la route
+SCORE_PLACE = 2
+_PLACE_LISTS = (("marina", "marinas"), ("port", "wpi"), ("port", "capitaineries"))
+
+
+def _norm_place(name: Any) -> str:
+    return re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+
+
+def _new_places_nearby(pearl: dict, seen: set[tuple[str, str]]) -> list[dict]:
+    """Marinas et ports (WPI, capitaineries) du sac de la perle à moins de PLACE_NEAR_NM, pas encore cités
+    sur le voyage → un changement chacun (kind marina | port). Sans nom, ou trop loin : rien."""
+    nearby = pearl.get("nearby") if isinstance(pearl.get("nearby"), dict) else {}
+    out: list[dict] = []
+    for kind, field in _PLACE_LISTS:
+        for item in nearby.get(field) or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name or _is_generic_title(name, kind) or len(name) > 40 or "|" in name:
+                continue
+            if re.search(r"\b(tour|excursion|activit|autorit[ée]s?|club nautique de plaisance|charter)\b", name, re.I):
+                continue      # une activité ou une administration, pas un port
+            nm = _as_float(item.get("nm"))
+            if nm is not None and nm > PLACE_NEAR_NM:
+                continue
+            key = (kind, _norm_place(name))
+            if key in seen:
+                continue
+            seen.add(key)
+            fact = f"{name} ({nm:.0f} nm)" if nm is not None else name
+            out.append(_change(kind, SCORE_PLACE, name, fact))
+    return out
 
 
 def _pearls_in_route_order(voy: dict) -> list[dict]:
@@ -318,6 +420,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     vertices = (voy.get("clock") or {}).get("vertices") or []
     if not isinstance(vertices, list):
         vertices = []
+    vertices = _ClockIndex(vertices)   # indexé une fois, interrogé 3 272 fois
     legs = _legs_from_voyage(voy)
     thresholds = voy.get("skipper_thresholds") if isinstance(voy.get("skipper_thresholds"), dict) else {
         "galeKt": 34.0,
@@ -328,6 +431,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     seq = 0
     prev_rem_live: float | None = None
     prev_leg_idx: int | None = None
+    seen_places: set[tuple[str, str]] = set()
     for pearl in pearls:
         sail = _as_float(pearl.get("sailNm"))
         if sail is None:
@@ -361,13 +465,19 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             and live_rem <= thr < prev_rem_live
             and live_rem > 1.0
         )
+        # Marinas et ports croisés (27 sept.) : chacun une fois, à moins de PLACE_NEAR_NM de la route — le
+        # Journal ne les citait que quand « la plus proche » changeait (29 lignes pour 237 marinas connues).
+        new_places = _new_places_nearby(pearl, seen_places)
         same_sig = prev is not None and sig == (prev.get("signature") or signature(prev))
-        if same_sig and not approach_hit:
+        if same_sig and not approach_hit and not new_places:
             if live_rem is not None:
                 prev_rem_live = live_rem
             prev_leg_idx = leg_idx
             continue
-        changes = diff_moments(prev, cur)
+        # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas
+        # (« Porto de Peniche » ×4) : marinas et ports viennent désormais de _new_places_nearby, une fois chacun.
+        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port"}]
+        changes.extend(new_places)
         if approach_hit:
             title = _stop_title(str(cur_to))
             already = any(
@@ -399,16 +509,36 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     return rows
 
 
-def warm_moments(voyage_id: str) -> dict[str, Any]:
-    """Parcourt les perles, n'écrit que les changements de signature. Idempotent."""
+def _with_clock(voy: dict) -> dict:
+    """Depuis RF2 l'horloge officielle vit dans le stock (famille climo), plus dans le JSON du voyage :
+    sans elle, `_build_rows` ne peut dater aucune perle (27 sept. : 740 moments avec t = NULL, donc un
+    film sans aucun événement). On la prend dans le stock quand le voyage ne l'a pas."""
+    if isinstance(voy.get("clock"), dict) and (voy["clock"].get("vertices") or []):
+        return voy
+    try:
+        from official_store import stored_clock  # noqa: PLC0415
+        clock = stored_clock()
+    except Exception:
+        clock = None
+    return {**voy, "clock": clock} if clock else voy
+
+
+def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
+    """Parcourt les perles, n'écrit que les changements de signature. Idempotent.
+    `voy` : le voyage déjà chargé (avec son horloge) ; sinon relu du disque, horloge du stock si besoin."""
     import pearl_store  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
 
-    voy = load_voyage(voyage_id)
+    voy = voy if voy is not None else load_voyage(voyage_id)
     if voy is None:
         return {"voyageId": voyage_id, "count": 0, "status": "no-voyage"}
+    voy = _with_clock(voy)
     try:
         rows = _build_rows(voyage_id, voy)
+        if rows and not any(r.get("t") for r in rows):
+            # Des moments sans date ne servent ni au Journal ni au film : mieux vaut le dire que les ranger.
+            log.warning("warm_moments(%s) : %d moments sans date (horloge absente ?) — rien n'est écrit", voyage_id, len(rows))
+            return {"voyageId": voyage_id, "count": pearl_store.count_moments(voyage_id), "status": "undated"}
         n = pearl_store.replace_moments(voyage_id, rows)
         return {"voyageId": voyage_id, "count": n, "status": "ready"}
     except Exception as exc:

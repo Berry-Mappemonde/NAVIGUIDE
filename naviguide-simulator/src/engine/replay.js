@@ -28,6 +28,11 @@ export const FILM_VIEW_HZ = 30;
 export const FILM_MIN_CHAPTER_SECONDS = 12;
 export const FILM_RECALE_MS = 300;
 export const FILM_BEHIND_SPEED = 0.7;
+/** Voix : le bateau vise ce qui va être dit dans ~1 s (12 caractères), jamais plus loin. */
+export const FILM_VOICE_LOOKAHEAD_CHARS = 12;
+export const FILM_VOICE_CPS_DEFAULT = 15;
+export const FILM_VOICE_CPS_MIN = 6;
+export const FILM_VOICE_CPS_MAX = 40;
 export const FILM_PAN_MAX_SCREEN = 0.02;
 const WIND_WINDOW_MS = 4 * 3600 * 1000;
 
@@ -160,6 +165,7 @@ export function advanceReplayTime({
   chapter,
   targetT = null,
   recaleRemainMs = 0,
+  capT = null,
 } = {}) {
   const nominal = chapterNominalRate(chapter);
   const wall = Math.max(0, Number(dt) || 0);
@@ -189,7 +195,35 @@ export function advanceReplayTime({
 
   if (Number.isFinite(tA)) next = Math.max(tA, next);
   if (Number.isFinite(tB)) next = Math.min(tB, next);
+  // Plafond (27 sept.) : mené par la voix, le bateau n'est jamais plus loin que ce qui est dit.
+  if (capT != null && Number.isFinite(Number(capT))) next = Math.min(next, Math.max(Number.isFinite(tA) ? tA : -Infinity, Number(capT)));
   return { t: next, recaleRemainMs: remain };
+}
+
+/**
+ * Pas de temps du bateau mené par la voix : cible = instant de ce qui sera dit dans
+ * `lookahead` caractères (ancres), atteinte en `lookahead / cps` secondes, jamais dépassée.
+ * Le bateau va donc à la vitesse de la phrase en cours — lent à quai, vite en traversée.
+ */
+export function voiceLedStep({
+  t, dt, chapter, plan, chapterIdx, charIdx, cps = FILM_VOICE_CPS_DEFAULT,
+  lookahead = FILM_VOICE_LOOKAHEAD_CHARS,
+} = {}) {
+  const rate = Math.max(FILM_VOICE_CPS_MIN, Math.min(FILM_VOICE_CPS_MAX, Number(cps) || FILM_VOICE_CPS_DEFAULT));
+  const ahead = Math.max(1, Number(lookahead) || FILM_VOICE_LOOKAHEAD_CHARS);
+  const target = plan?.timeAt ? plan.timeAt(chapterIdx, (Number(charIdx) || 0) + ahead) : null;
+  const horizonMs = (ahead / rate) * 1000;
+  return advanceReplayTime({
+    t, dt, chapter, targetT: target, recaleRemainMs: horizonMs, capT: target,
+  });
+}
+
+/** Débit mesuré de la voix (caractères/s) sur le chapitre en cours, borné ; défaut si trop tôt. */
+export function measuredCps(charIdx, elapsedMs, fallback = FILM_VOICE_CPS_DEFAULT) {
+  const c = Number(charIdx) || 0;
+  const s = (Number(elapsedMs) || 0) / 1000;
+  if (c < 20 || s < 1.5) return fallback;
+  return Math.max(FILM_VOICE_CPS_MIN, Math.min(FILM_VOICE_CPS_MAX, c / s));
 }
 
 export function replaySample(clock, tMs, timeline = []) {
@@ -423,18 +457,69 @@ export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {})
     startWall += share;
     return row;
   });
-  const merged = mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS);
+  const merged = mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS)
+    .map((c) => ({ ...c, anchors: chapterAnchors(c) }));
 
   function timeAt(chapterIdx, charIdx) {
     if (!merged.length) return null;
     const i = Math.max(0, Math.min(merged.length - 1, Number(chapterIdx) || 0));
-    const ch = merged[i];
-    const span = Math.max(1, ch.chars);
-    const frac = Math.max(0, Math.min(1, Number(charIdx) / span));
-    return ch.tA + frac * (ch.tB - ch.tA);
+    return anchoredTimeAt(merged[i], charIdx);
   }
 
   return { chapters: merged, targetSeconds: seconds, totalChars, timeAt };
+}
+
+/**
+ * Ancres phrase → instant (fournies par le serveur : `anchors: [{charIdx, t}]`),
+ * bornées au chapitre, triées, croissantes, encadrées par (0, tA) et (chars, tB).
+ */
+export function chapterAnchors(ch) {
+  const tA = Number(ch?.tA);
+  const tB = Number(ch?.tB);
+  const chars = Math.max(1, Number(ch?.chars) || String(ch?.text || "").length || 1);
+  if (!Number.isFinite(tA) || !Number.isFinite(tB)) return [];
+  const raw = (ch?.anchors || [])
+    .map((a) => ({ charIdx: Number(a?.charIdx), t: ms(a?.t) }))
+    .filter((a) => Number.isFinite(a.charIdx) && a.t != null && a.charIdx >= 0 && a.charIdx <= chars)
+    .sort((a, b) => a.charIdx - b.charIdx);
+  const points = [{ charIdx: 0, t: tA }];
+  for (const a of raw) {
+    const t = Math.max(tA, Math.min(tB, a.t));
+    const last = points[points.length - 1];
+    const clamped = Math.max(last.t, t);
+    if (a.charIdx <= last.charIdx) {
+      last.t = clamped;
+      continue;
+    }
+    points.push({ charIdx: a.charIdx, t: clamped });
+  }
+  const last = points[points.length - 1];
+  if (last.charIdx >= chars) last.t = tB;
+  else points.push({ charIdx: chars, t: tB });
+  return points;
+}
+
+/**
+ * Instant du trajet à la position `charIdx` de la voix : linéaire entre deux ancres.
+ * Le bateau est là où la phrase le dit — « approche d'Ajaccio » quand il approche d'Ajaccio.
+ */
+export function anchoredTimeAt(ch, charIdx) {
+  if (!ch) return null;
+  const tA = Number(ch.tA);
+  const tB = Number(ch.tB);
+  const chars = Math.max(1, Number(ch.chars) || 1);
+  const x = Math.max(0, Math.min(chars, Number(charIdx) || 0));
+  const points = ch.anchors?.length >= 2 ? ch.anchors : [{ charIdx: 0, t: tA }, { charIdx: chars, t: tB }];
+  for (let k = 1; k < points.length; k += 1) {
+    const a = points[k - 1];
+    const b = points[k];
+    if (x <= b.charIdx) {
+      const w = b.charIdx - a.charIdx;
+      const f = w > 0 ? (x - a.charIdx) / w : 1;
+      return a.t + f * (b.t - a.t);
+    }
+  }
+  return tB;
 }
 
 export function mergeShortChapters(planned, minSeconds = FILM_MIN_CHAPTER_SECONDS) {
@@ -448,6 +533,10 @@ export function mergeShortChapters(planned, minSeconds = FILM_MIN_CHAPTER_SECOND
       prev.events = [
         ...(prev.events || []),
         ...((ch.events || []).map((e) => ({ ...e, charIdx: (Number(e.charIdx) || 0) + offset }))),
+      ];
+      prev.anchors = [
+        ...(prev.anchors || []),
+        ...((ch.anchors || []).map((a) => ({ ...a, charIdx: (Number(a.charIdx) || 0) + offset }))),
       ];
       prev.tB = ch.tB;
       prev.toName = ch.toName;

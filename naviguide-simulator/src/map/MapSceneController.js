@@ -3,6 +3,7 @@ import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { interpolateCast, isAirPhase } from "../engine/filmCast.js";
 import { wakeCursorAt } from "../engine/filmWake.js";
 import { haversineNm, unwrapLon, worldCopyLineCoords, worldCopyLngs, worldCopyOffsets } from "../utils/geo.js";
+import { followMinZoom } from "./zoomFloor.js";
 import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
@@ -35,16 +36,33 @@ import {
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
-import { applyFilmCamera, filmChapterZoom } from "./filmCamera.js";
+import {
+  filmChapterZoom,
+  filmTilesReady,
+  preloadFilmTiles,
+  pushFilmSample,
+  stepFilmCamera,
+  tilesAlongLeg,
+} from "./filmCamera.js";
 import { attachEventBubble } from "../components/EventBubble.jsx";
 import { attachEscalePopup } from "../components/EscalePopup.jsx";
 import { officialAirRouteStyles, officialRouteLineStyle } from "../utils/berryLegs.js";
 
 const TELEPORT_NM = 80;
+const EXIT_HOLD_MS = 1500;   // zoom de sortie du film tenu 1,5 s au plus, puis relâché (KO #350)
 /** Une copie du monde de chaque côté : ±180° + ±360°. */
 export const MAP_LON_BOUND = 540;
 export const MAP_LAT_BOUND = 85;
 export const MAP_MAX_BOUNDS = [[-MAP_LAT_BOUND, -MAP_LON_BOUND], [MAP_LAT_BOUND, MAP_LON_BOUND]];
+/** Vue monde (accueil RF7, entrée Tracer) : centre historique, zoom 2. */
+export const WORLD_CENTER = [22, 5];
+export const WORLD_ZOOM = 2;
+/**
+ * Zoom 2 + maxBounds viscosité 1 : sur un écran plus haut que le globe
+ * (1024 px à z=2), Leaflet refuse le dézoom (plan s4 D4', KO #327).
+ * minZoom 0 laisse toujours atteindre la vue monde.
+ */
+export const MAP_MIN_ZOOM = 0;
 
 function baseTileOptions() {
   return {
@@ -193,10 +211,10 @@ function escapeHtml(text) {
 export class MapSceneController {
   static mount(container, callbacks) {
     const map = L.map(container, {
-      center: [22, 5],
-      zoom: 2,
+      center: WORLD_CENTER,
+      zoom: WORLD_ZOOM,
       zoomSnap: 0.25,
-      minZoom: 2,
+      minZoom: MAP_MIN_ZOOM,
       maxZoom: 18,
       worldCopyJump: false,
       preferCanvas: true,
@@ -246,8 +264,13 @@ export class MapSceneController {
       filmFlyingUntil: 0,
       filmLastCenter: null,
       exitHold: false,
+      exitHoldUntil: null,
       exitHoldZoom: null,
     };
+    this.filmLoopRaf = 0;
+    this.filmSamples = [];
+    this.filmPose = null;
+    this.filmPreload = { key: "", images: [] };
     this.playback = new ScenePlaybackController({
       onFrame: (snapshot) => this.renderDynamic(snapshot),
       onPublish: (snapshot) => this.publishPlayback(snapshot),
@@ -263,7 +286,13 @@ export class MapSceneController {
       this.zoomJustEnded = true;
       this.scheduleWaypoints({ reason: "zoom" });
       this.waypointZoom = this.map.getZoom();
-      this.restoreExitZoom();
+      if (this.ignoreUserNavigation) {
+        this.restoreExitZoom();
+      } else {
+        // Zoom de l'utilisateur : le zoom de sortie du film ne doit plus rien imposer (KO #350, 27 sept. :
+        // après Revoir, chaque zoom était aussitôt annulé — impossible de dézoomer).
+        this.releaseExitZoom();
+      }
     };
     this.onMoveEnd = () => {
       // Lot U : pas de sac ni de récit ici — seulement copies bateau + offsets.
@@ -280,10 +309,12 @@ export class MapSceneController {
       this.scheduleWaypoints({ reason: this.isCameraFollowing() && this.map.getZoom() === this.waypointZoom ? "follow" : "move" });
       this.waypointZoom = this.map.getZoom();
     };
-    this.onUserNavigation = () => {
+    this.onUserNavigation = (event) => {
       if (this.ignoreUserNavigation) return;
       this.userNavigated = true;
-      this.map.stop();
+      // zoomstart + stop() annule la molette (KO #327). On n'arrête un flyTo
+      // que sur un glisser.
+      if (event?.type !== "zoomstart") this.map.stop();
       this.callbacks.onManualNavigation?.();
     };
     map.on("zoomanim", this.onZoomAnim);
@@ -291,6 +322,8 @@ export class MapSceneController {
     map.on("moveend", this.onMoveEnd);
     map.on("zoomstart", this.onUserNavigation);
     map.on("dragstart", this.onUserNavigation);
+    this.onResize = () => this.applyZoomFloor();
+    map.on("resize", this.onResize);
     this.eventBubble = attachEventBubble(this, L);
     this.escalePopup = attachEscalePopup(this, L);
     if (this.escalePopup) {
@@ -319,6 +352,8 @@ export class MapSceneController {
       getMap: () => this.map,
       getView: () => ({ center: this.map.getCenter(), zoom: this.map.getZoom() }),
       setView: (center, zoom, options) => this.programmaticMove(() => this.map.setView(center, zoom, options)),
+      showWorld: () => this.showWorld(),
+      beginDrawingWorld: () => this.beginDrawingWorld(),
       playback: {
         play: () => this.playback.play(),
         pause: () => this.playback.pause(),
@@ -400,8 +435,16 @@ export class MapSceneController {
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
       this.camera.filmLastCenter = null;
+      this.filmSamples = [];
+      this.filmPose = null;
+      this.filmPreload = { key: "", images: [] };
+      this.ensureFilmCameraLoop();
     }
     if (previous.filmActive && !this.config.filmActive) {
+      this.stopFilmCameraLoop();
+      this.filmSamples = [];
+      this.filmPose = null;
+      this.filmPreload = { key: "", images: [] };
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
       this.camera.filmSetViewAt = 0;
@@ -411,6 +454,7 @@ export class MapSceneController {
       this.map?.stop?.();
       this.camera.exitHoldZoom = Number.isFinite(holdZoom) ? holdZoom : this.map?.getZoom?.();
       this.camera.exitHold = true;
+      this.camera.exitHoldUntil = Date.now() + EXIT_HOLD_MS;
       this.camera.recapture = this.config.cinemaRecapture;
       this.camera.resetKey = `${this.config.view}-${this.config.sceneReady ? "ready" : "load"}-${this.config.cinemaRecapture}`;
       const live = this.config.live;
@@ -433,6 +477,7 @@ export class MapSceneController {
     }
     if (previousView && previousView !== this.config.view) this.resetCameraForView();
     this.syncBaseLayer();
+    this.applyZoomFloor();
     this.syncInitialCamera();
     this.syncRoute();
     this.syncAltRoute();
@@ -453,11 +498,19 @@ export class MapSceneController {
     } else if (this.currentPlayback) {
       this.renderDynamic(this.currentPlayback);
     }
-    if (this.config.filmActive) this.syncFilmCamera(this.config);
+    if (this.config.filmActive) this.ensureFilmCameraLoop();
     // Entering / leaving the drawing mode (lot I): the boats of the official
     // route hide or come back at once, even while playback is paused.
     if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
       this.syncMarkers(this.currentCast, this.currentPlayback);
+    }
+    if (!previous.drawingMode && this.config.drawingMode) {
+      this.liftBoundsForDrawing();
+      this.showWorld({ keepBoundsLifted: true });
+    }
+    if (previous.drawingMode && !this.config.drawingMode) {
+      this.map?.setMaxBounds?.(this.boundsBeforeDraw || MAP_MAX_BOUNDS);
+      this.boundsBeforeDraw = null;
     }
   }
 
@@ -603,14 +656,15 @@ export class MapSceneController {
       && following
       && geometry.partByPoint[geometry.completedIndex] === geometry.partByPoint[geometry.completedIndex + 1];
     const live = this.config.live;
-    const filmPin = this.config.filmActive
-      && live
-      && Number.isFinite(live.lat)
-      && Number.isFinite(live.lon);
+    const pose = this.config.filmActive ? this.filmPose : null;
+    const pin = pose && Number.isFinite(pose.lat) && Number.isFinite(pose.lon)
+      ? pose
+      : (this.config.filmActive && live && Number.isFinite(live.lat) && Number.isFinite(live.lon) ? live : null);
+    const filmPin = Boolean(this.config.filmActive && pin);
     if (filmPin && previous && (!following || !following.jump)) {
       setWakeTail(geometry.tailLines, previous, {
-        lon: unwrapLon(previous.lon, live.lon),
-        lat: live.lat,
+        lon: unwrapLon(previous.lon, pin.lon),
+        lat: pin.lat,
       }, geometry.worldOffsets);
       return;
     }
@@ -642,6 +696,10 @@ export class MapSceneController {
       this.markerSets.set(role, []);
       return;
     }
+    // Pendant l'animation de zoom, Leaflet transforme les icônes en CSS ; un setLatLng calculé sur
+    // l'ancienne projection les fait glisser horizontalement (27 sept.). On garde l'image, la
+    // prochaine frame après zoomend repositionne.
+    if (this.zoomAnimating && markers.length) return;
     const lngs = markerWorldLngs(lon, this.map.getCenter()?.lng);
     if (markers.length !== lngs.length) {
       markers.forEach((marker) => marker.remove());
@@ -688,12 +746,12 @@ export class MapSceneController {
       html: catamaranSvg(0),
       draggable: true,
     });
-    const filmFollow = cfg.filmActive ? cast?.follow : null;
+    const filmFollow = cfg.filmActive ? (this.filmPose || cast?.follow) : null;
     this.syncMarker("live", {
       visible: ready && liveMode && cast?.vehicle !== "plane",
       lat: filmFollow?.lat ?? cfg.live?.lat,
       lon: filmFollow?.lon ?? cfg.live?.lon,
-      bearing: filmFollow?.bearing || cfg.live?.bearing || 0,
+      bearing: filmFollow?.heading ?? filmFollow?.bearing ?? cfg.live?.bearing ?? 0,
       className: "catamaran-divicon catamaran-divicon--live",
       html: catamaranSvg(0),
     });
@@ -762,6 +820,11 @@ export class MapSceneController {
 
   syncWaypoints() {
     const cfg = this.config;
+    if (this.zoomAnimating && this.waypointMarkers.size) {
+      // Drapeaux : mêmes glissements pendant l'animation de zoom ; onZoomEnd replanifie.
+      this.waypointsDirty = true;
+      return;
+    }
     const source = cfg.drawingMode
       ? (cfg.drawnPoints || []).map((point, index) => ({ ...point, name: point.name || `${index + 1}`, flag: "", flags: [] }))
       : (cfg.customRoute ? [] : (cfg.points || []));
@@ -914,24 +977,71 @@ export class MapSceneController {
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre && (!cfg.live || cfg.live.lat == null || cfg.live.lon == null)) {
-      this.setCameraPlaced(false);
-      return;
+    if (cfg.isSuivre && cfg.live && Number.isFinite(cfg.live.lat) && Number.isFinite(cfg.live.lon)) {
+      if (!this.initialLive || shouldResnapCamera(this.initialLive, cfg.live)) {
+        this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
+      }
     }
+    // RF7 / D1' : le premier calage reste la vue monde du mount. Le recadrage
+    // bateau n'existe que sur le clic Suivre (cinemaRecapture / syncCamera).
     if (!shouldPlaceInitialCamera({ userNavigated: this.userNavigated })) {
-      if (cfg.isSuivre) this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre) {
-      if (this.initialLive && !shouldResnapCamera(this.initialLive, cfg.live)) {
-        this.setCameraPlaced(true);
-        return;
-      }
-      this.programmaticMove(() => this.map.setView([cfg.live.lat, cfg.live.lon], 6.5, { animate: false }));
-      this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
-    }
     this.setCameraPlaced(true);
+  }
+
+  /**
+   * Plancher de dézoom : en Suivre, le monde n'apparaît jamais plusieurs fois d'affilée ;
+   * Tracer, Simulation et accueil gardent la vue monde (MAP_MIN_ZOOM).
+   */
+  applyZoomFloor() {
+    if (!this.map?.setMinZoom) return;
+    const cfg = this.config || {};
+    const follow = Boolean(cfg.isSuivre && !cfg.drawingMode);
+    const floor = follow ? followMinZoom(this.map.getSize(), this.map.options.zoomSnap, MAP_MIN_ZOOM) : MAP_MIN_ZOOM;
+    if (this.map.options.minZoom === floor) return;
+    // setMinZoom remonte la vue si elle est sous le plancher : mouvement de la carte, pas de l'utilisateur.
+    this.programmaticMove(() => this.map.setMinZoom(floor));
+  }
+
+  /** Lève maxBounds et pose drawingMode avant showWorld (lot RC14). */
+  liftBoundsForDrawing() {
+    this.camera.exitHoldZoom = null;
+    this.camera.exitHold = false;
+    this.boundsBeforeDraw = this.map?.options?.maxBounds || MAP_MAX_BOUNDS;
+    this.map?.setMinZoom?.(MAP_MIN_ZOOM);
+    this.map?.setMaxBounds?.(null);
+  }
+
+  /**
+   * Entrée Tracer : drawingMode sur le contrôleur AVANT showWorld, pour
+   * que le geste ne remette pas maxBounds (revue du 26 sept., zoom 3 Amériques).
+   */
+  beginDrawingWorld() {
+    this.config = { ...this.config, drawingMode: true };
+    this.liftBoundsForDrawing();
+    this.showWorld({ keepBoundsLifted: true });
+  }
+
+  /** Tracer / accueil : monde entier, même si maxBounds a relevé le plancher. */
+  showWorld({ keepBoundsLifted = false } = {}) {
+    if (!this.map) return;
+    this.map.invalidateSize();
+    this.map.setMinZoom(MAP_MIN_ZOOM);
+    this.programmaticMove(() => {
+      const bounds = this.map.options.maxBounds;
+      if (bounds) this.map.setMaxBounds(null);
+      this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+      const leaveLifted = keepBoundsLifted || this.config.drawingMode;
+      if (!leaveLifted && bounds) {
+        this.map.setMaxBounds(bounds);
+        if (this.map.getZoom() - WORLD_ZOOM > 0.05) {
+          this.map.setMaxBounds(null);
+          this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+        }
+      }
+    });
   }
 
   resetCameraForView() {
@@ -953,8 +1063,13 @@ export class MapSceneController {
       filmFlyingUntil: 0,
       filmLastCenter: null,
       exitHold: false,
+      exitHoldUntil: null,
       exitHoldZoom: null,
     };
+    this.stopFilmCameraLoop();
+    this.filmSamples = [];
+    this.filmPose = null;
+    this.filmPreload = { key: "", images: [] };
   }
 
   setCameraPlaced(next) {
@@ -963,12 +1078,28 @@ export class MapSceneController {
     this.callbacks.onCameraPlaced?.(next);
   }
 
+  /**
+   * Zoom de sortie du film : tenu quelques instants seulement (le temps qu'un dernier flyTo du film se pose),
+   * puis relâché. Avant le 27 sept. il n'était jamais relâché : onZoomEnd le ré-imposait à chaque zoom.
+   */
   restoreExitZoom() {
     const hold = this.camera?.exitHoldZoom;
-    if (!Number.isFinite(hold) || this.config.filmActive || !this.map) return;
+    if (!Number.isFinite(hold) || this.config.filmActive || this.config.drawingMode || !this.map) return;
+    if (Number.isFinite(this.camera.exitHoldUntil) && Date.now() > this.camera.exitHoldUntil) {
+      this.releaseExitZoom();
+      return;
+    }
     const z = this.map.getZoom();
     if (Math.abs(z - hold) <= 0.05) return;
     this.programmaticMove(() => this.map.setView(this.map.getCenter(), hold, { animate: false }));
+  }
+
+  releaseExitZoom() {
+    if (!this.camera) return;
+    this.camera.exitHold = false;
+    this.camera.exitHoldZoom = null;
+    this.camera.exitHoldUntil = null;
+    window.clearTimeout(this.exitZoomTimer);
   }
 
   programmaticMove(fn) {
@@ -980,47 +1111,117 @@ export class MapSceneController {
     fn();
   }
 
-  syncFilmCamera(cfg) {
+  ensureFilmCameraLoop() {
+    if (this.filmLoopRaf) return;
+    const tick = (now) => {
+      if (!this.config.filmActive) {
+        this.filmLoopRaf = 0;
+        return;
+      }
+      this.syncFilmCamera(this.config, now);
+      this.filmLoopRaf = requestAnimationFrame(tick);
+    };
+    this.filmLoopRaf = requestAnimationFrame(tick);
+  }
+
+  stopFilmCameraLoop() {
+    if (this.filmLoopRaf) cancelAnimationFrame(this.filmLoopRaf);
+    this.filmLoopRaf = 0;
+  }
+
+  ensureFilmTiles(leg, zoom) {
+    const z = Math.round(Number(zoom));
+    const key = `${z}:${leg?.fromLat}:${leg?.fromLon}:${leg?.toLat}:${leg?.toLon}`;
+    if (!leg || !Number.isFinite(z) || this.filmPreload.key === key) return;
+    const template = this.baseLayer?._url || TILE_URLS.dark;
+    this.filmPreload = {
+      key,
+      images: preloadFilmTiles(template, tilesAlongLeg(leg, z)),
+    };
+  }
+
+  syncFilmCamera(cfg, now = (typeof performance !== "undefined" ? performance.now() : Date.now())) {
     const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
     const follow = this.currentCast?.follow;
     const subject = {
-      lat: Number.isFinite(follow?.lat) ? follow.lat
-        : (Number.isFinite(film?.lat) ? film.lat : cfg.live?.lat),
-      lon: Number.isFinite(follow?.lon) ? follow.lon
-        : (Number.isFinite(film?.lon) ? film.lon : cfg.live?.lon),
-      bearing: follow?.bearing ?? film?.bearing ?? cfg.live?.bearing,
+      lat: Number.isFinite(film?.lat) ? film.lat
+        : (Number.isFinite(follow?.lat) ? follow.lat : cfg.live?.lat),
+      lon: Number.isFinite(film?.lon) ? film.lon
+        : (Number.isFinite(follow?.lon) ? follow.lon : cfg.live?.lon),
+      heading: film?.heading ?? film?.bearing ?? follow?.bearing ?? cfg.live?.bearing,
     };
     if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
     const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
     this.camera.followLon = lonCam;
-    const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx)) ? Number(cfg.filmChapterIdx) : 0;
-    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
-      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
-    }
-    let next;
-    this.programmaticMove(() => {
-      next = applyFilmCamera(this.map, {
-        chapterIdx,
-        lastChapterIdx: this.camera.filmChapterIdx,
+    const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx))
+      ? Number(cfg.filmChapterIdx)
+      : (Number.isFinite(Number(film?.chapterIdx)) ? Number(film.chapterIdx) : 0);
+    const last = this.filmSamples[this.filmSamples.length - 1];
+    const moved = !last
+      || Math.abs(last.lat - subject.lat) > 1e-7
+      || Math.abs(last.lon - lonCam) > 1e-7
+      || last.chapterIdx !== chapterIdx;
+    if (moved) {
+      pushFilmSample(this.filmSamples, {
+        t: now,
         lat: subject.lat,
         lon: lonCam,
-        heading: subject.bearing,
-        zoom: this.camera.filmZoom,
-        now: Date.now(),
+        heading: subject.heading,
+        chapterIdx,
+        filmNm: Number.isFinite(Number(film?.filmNm)) ? Number(film.filmNm) : Number(cfg.live?.filmNm),
+      });
+    }
+    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
+      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
+      this.ensureFilmTiles(cfg.filmLeg, this.camera.filmZoom);
+    }
+    const tilesReady = filmTilesReady(this.map, this.baseLayer);
+    let next;
+    this.programmaticMove(() => {
+      next = stepFilmCamera(this.map, {
+        samples: this.filmSamples,
+        now,
+        lastChapterIdx: this.camera.filmChapterIdx,
         lastSetViewAt: this.camera.filmSetViewAt || 0,
         flyingUntil: this.camera.filmFlyingUntil || 0,
         lastCenter: this.camera.filmLastCenter,
+        zoom: this.camera.filmZoom,
+        tilesReady,
+        chapterIdx,
       });
     });
+    if (!next || next.action === "idle") return;
+    const pose = next.pose;
+    if (pose) {
+      this.filmPose = { ...pose, lon: cameraLngForBoat(pose.lon, lonCam), heading: pose.heading };
+    }
     this.camera.filmChapterIdx = next.lastChapterIdx;
     this.camera.filmSetViewAt = next.lastSetViewAt;
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
     this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.lastFollow = Date.now();
+    if (this.filmPose) this.syncFilmBoat(this.filmPose);
+  }
+
+  syncFilmBoat(pose) {
+    const cfg = this.config;
+    if (!cfg.filmActive || !pose) return;
+    const ready = Boolean(cfg.sceneReady && !cfg.drawingMode);
+    const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
+    this.syncMarker("live", {
+      visible: ready && liveMode && this.currentCast?.vehicle !== "plane",
+      lat: pose.lat,
+      lon: pose.lon,
+      bearing: pose.heading || 0,
+      className: "catamaran-divicon catamaran-divicon--live",
+      html: catamaranSvg(0),
+    });
   }
 
   filmPlayheadNm(snapshot) {
     if (!this.config.filmActive) return snapshot?.nm;
+    const fromPose = Number(this.filmPose?.filmNm);
+    if (Number.isFinite(fromPose)) return fromPose;
     const film = typeof window !== "undefined" ? window.__naviguideFilm : null;
     const fromFilm = Number(film?.filmNm);
     if (Number.isFinite(fromFilm)) return fromFilm;
@@ -1031,10 +1232,7 @@ export class MapSceneController {
 
   syncCamera(cast, snapshot) {
     const cfg = this.config;
-    if (cfg.filmActive) {
-      this.syncFilmCamera(cfg);
-      return;
-    }
+    if (cfg.filmActive || cfg.drawingMode) return;
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     const subject = liveMode ? cfg.live : cast?.follow;
     const enabled = Boolean(
@@ -1150,6 +1348,7 @@ export class MapSceneController {
   }
 
   dispose() {
+    this.stopFilmCameraLoop();
     this.eventBubble?.dispose();
     this.eventBubble = null;
     this.escalePopup?.dispose();
@@ -1163,6 +1362,7 @@ export class MapSceneController {
     this.map.off("zoomend", this.onZoomEnd);
     this.map.off("moveend", this.onMoveEnd);
     this.map.off("zoomstart", this.onUserNavigation);
+    this.map.off("resize", this.onResize);
     this.map.off("dragstart", this.onUserNavigation);
     this.layers.clear();
     this.markerSets.forEach((markers) => markers.forEach((marker) => marker.remove()));

@@ -62,7 +62,7 @@ def _payload(t0: str):
 def test_create_pending_then_ready(client):
     t0 = "2026-06-15T08:00:00Z"
     r = client.post("/voyage", json=_payload(t0))
-    assert r.status_code == 200
+    assert r.status_code in (200, 202)
     body = r.json()
     assert body["forecastStatus"] in ("pending", "ready")
     vid = body["voyageId"]
@@ -104,6 +104,7 @@ def test_at_plus_11d_climatology(client, monkeypatch):
 def test_waiting_before_t0(client):
     t0 = datetime(2026, 9, 20, 8, tzinfo=timezone.utc)
     vid = client.post("/voyage", json=_payload(t0.strftime("%Y-%m-%dT%H:%M:%SZ"))).json()["voyageId"]
+    _wait_forecast(client, vid)
     past = (t0 - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     sample = client.get(f"/voyage/{vid}/at", params={"t": past}).json()
     assert sample["status"] == "waiting"
@@ -297,6 +298,8 @@ def test_official_eta_noumea_dzaoudzi_span_is_days(client, monkeypatch):
     import ensemble_eta
     monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek_official_eta)
     client.put("/voyage/official", json=_payload("2026-05-15T08:00:00Z"))
+    import official_store
+    official_store.put("eta", {"stops": {"Dzaoudzi (Mayotte)": tighten_eta_payload(exploded, now)}})
     r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
     assert r.status_code == 200
     body = r.json()
@@ -441,7 +444,7 @@ def test_get_eta_seeded_without_clock_is_empty_no_fetch(client, monkeypatch):
     assert body["members"] == 0
     assert body.get("p10") is None and body.get("p90") is None
     assert elapsed < 2.0
-    assert kicked
+    assert body.get("status") == "preparing"
     assert calls["compute"] == 0
     assert calls["clock"] == 0
     assert calls["fetch"] == 0
@@ -521,6 +524,8 @@ def test_get_eta_serves_alias_cache_without_clock(client, monkeypatch):
         ensemble_eta.official_eta_alias_key("Dzaoudzi (Mayotte)", now),
         payload,
     )
+    import official_store
+    official_store.put("eta", {"stops": {"Dzaoudzi (Mayotte)": payload}})
     r = client.get("/voyage/official/eta", params={"stop": "Dzaoudzi (Mayotte)"})
     assert r.status_code == 200
     body = r.json()
@@ -563,3 +568,269 @@ def test_kick_official_warmups_one_after_another(monkeypatch):
         "kick:film",
         "wait:official-film-story",
     ]
+
+
+def test_get_eta_failed_ensemble_returns_reason(client, monkeypatch):
+    """Lot RE5 : members 0 → raison / dernière tentative / prochaine relance, pas de date."""
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda **k: False)
+
+    def fake_peek(_voy, stop, _when):
+        assert "Papeete" in stop or "papeete" in stop.lower()
+        return {
+            "members": 0,
+            "p10": None,
+            "p50": None,
+            "p90": None,
+            "source": None,
+            "computedAt": "2026-09-26T12:00:00Z",
+            "memberKnots": [],
+            "reason": "ensemble_unavailable",
+            "lastAttempt": "2026-09-26T12:00:00Z",
+            "nextRetry": "2026-09-27T00:15:00Z",
+            "detail": "Daily API request limit exceeded. Please try again tomorrow.",
+        }
+
+    import ensemble_eta
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
+    client.get("/voyage/official")
+    import official_store
+    official_store.put("eta", {"stops": {"Papeete (Polynésie française)": fake_peek(None, "Papeete (Polynésie française)", now)}})
+    r = client.get("/voyage/official/eta", params={"stop": "Papeete (Polynésie française)"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] == 0
+    assert body["p10"] is None and body["p90"] is None
+    assert body["reason"] == "ensemble_unavailable"
+    assert body["lastAttempt"]
+    assert body["nextRetry"]
+    assert "limit exceeded" in (body.get("detail") or "")
+
+
+def test_get_eta_ready_members_bounded(client, monkeypatch):
+    """Lot RE5 : ensemble qui répond → membres et fourchette bornée."""
+    from ensemble_eta import ETA_MAX_SPAN_DAYS
+    from plan_review import eta_span_days
+
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    monkeypatch.setattr(voyage_api, "_kick_official_eta", lambda **k: False)
+
+    def fake_peek(_voy, stop, _when):
+        return {
+            "p10": "2026-10-11T00:00:00Z",
+            "p50": "2026-10-12T12:00:00Z",
+            "p90": "2026-10-14T00:00:00Z",
+            "members": 24,
+            "memberKnots": [8.0, 8.2, 7.9],
+            "source": "open-meteo-ensemble",
+            "computedAt": "2026-09-26T12:00:00Z",
+        }
+
+    import ensemble_eta
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
+    client.get("/voyage/official")
+    import official_store
+    official_store.put("eta", {"stops": {"Papeete (Polynésie française)": fake_peek(None, "Papeete", now)}})
+    r = client.get("/voyage/official/eta", params={"stop": "Papeete (Polynésie française)"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["members"] > 0
+    assert body["p10"] and body["p90"]
+    span = eta_span_days(body["p10"], body["p90"])
+    assert span is not None and span <= ETA_MAX_SPAN_DAYS + 1e-6
+    assert not body.get("reason")
+
+
+def test_kick_official_eta_backs_off_until_next_retry(tmp_path, monkeypatch):
+    """Lot RE5 : après un échec, force=False ne relance pas avant nextRetry."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+
+    import ensemble_eta
+    future = (voyage_api._now() + timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 0})
+    monkeypatch.setattr(
+        ensemble_eta,
+        "peek_official_eta",
+        lambda *a, **k: {
+            "members": 0,
+            "reason": "ensemble_unavailable",
+            "nextRetry": future,
+            "lastAttempt": "2026-09-26T12:00:00Z",
+        },
+    )
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta(force=True, stop="Papeete") is True
+    voyage_api._wait_official_kick("official-eta", timeout=2.0)
+    assert voyage_api._kick_official_eta(force=False, stop="Papeete") is False
+
+
+def test_kick_official_eta_retries_when_backoff_elapsed(tmp_path, monkeypatch):
+    """Lot RE5 : nextRetry échu → GET relance le warm (RC9 conservé)."""
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyages"))
+    monkeypatch.setenv("NAVIGUIDE_ETA_PREHEAT", "1")
+    voyage_store._DIR = tmp_path / "voyages"
+    get_pipeline().clear()
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+
+    import ensemble_eta
+    past = (voyage_api._now() - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *a, **k: {"members": 0})
+    monkeypatch.setattr(
+        ensemble_eta,
+        "peek_official_eta",
+        lambda *a, **k: {
+            "members": 0,
+            "reason": "ensemble_unavailable",
+            "nextRetry": past,
+            "lastAttempt": "2026-09-26T11:00:00Z",
+        },
+    )
+    get_pipeline().clear()
+    assert voyage_api._kick_official_eta(force=True, stop="Papeete") is True
+    voyage_api._wait_official_kick("official-eta", timeout=2.0)
+    assert voyage_api._kick_official_eta(force=False, stop="Papeete") is True
+
+
+def test_create_voyage_clock_failure_is_dated_503_not_500(client, monkeypatch):
+    """Lot RC12 : petite route non officielle — pas de 500, pas d'_climo_clock dans le handler."""
+    def boom(*_a, **_k):
+        raise AssertionError("calcul")
+
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+    r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
+    assert r.status_code in (202, 503)
+    assert r.status_code < 500
+    body = r.json()
+    dated = body.get("detail") if r.status_code == 503 else (body.get("clock") or body)
+    assert dated.get("status") in ("preparing", "unavailable")
+    assert dated.get("reason")
+    assert "T" in dated.get("at", "") and dated["at"].endswith("Z")
+
+
+def test_official_post_does_not_compute_clock(client, monkeypatch):
+    """Lot RF3 : POST officiel lit le stock, aucun _climo_clock."""
+    monkeypatch.setattr(voyage_api, "_climo_clock", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("calcul")))
+    body = _payload("2026-05-15T08:00:00Z") | {"official": True, "forecast": False}
+    r = client.post("/voyage", json=body)
+    assert r.status_code == 200
+    clock = r.json().get("clock") or {}
+    assert clock.get("status") == "preparing" or clock.get("vertices")
+
+
+def test_post_same_route_without_official_flag_does_not_compute_clock(client, monkeypatch):
+    """Lot RC12 : POST sans official, mêmes points+t0 que l'officiel → stock ou preparing."""
+    seed = _payload("2026-05-15T08:00:00Z") | {"forecast": False}
+    client.put("/voyage/official", json=seed | {"official": True})
+    monkeypatch.setattr(
+        voyage_api,
+        "_climo_clock",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("calcul")),
+    )
+    r = client.post("/voyage", json=seed)
+    assert r.status_code == 200
+    clock = r.json().get("clock") or {}
+    assert clock.get("status") == "preparing" or clock.get("vertices")
+    assert r.json().get("official") is True
+
+
+def test_unofficial_small_post_does_not_compute_clock_in_handler(client, monkeypatch):
+    """Lot RC12 : petite route non officielle → pas de 500, pas d'_climo_clock dans le handler."""
+    def boom(*_a, **_k):
+        raise AssertionError("calcul")
+
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+    r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
+    assert r.status_code != 500
+    assert r.status_code in (202, 503)
+    body = r.json()
+    dated = body.get("detail") if r.status_code == 503 else (body.get("clock") or body)
+    assert dated.get("status") in ("preparing", "unavailable")
+    assert dated.get("at", "").endswith("Z")
+
+
+def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):
+    """Lot RF3 : parcours nominal TestClient — aucun 500 sur les routes du fil rouge."""
+    import polar_api
+
+    monkeypatch.setattr(polar_api, "POLAR_DATA_DIR", tmp_path / "polar")
+    polar_api._default_polar.cache_clear()
+    dest = polar_api._polar_path(polar_api.DEFAULT_POLAR_EXPEDITION)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("{bad", encoding="utf-8")
+
+    paths = [
+        ("GET", "/voyage/official", {}),
+        ("GET", "/voyage/official/clock", {}),
+        ("GET", "/voyage/official/moments", {}),
+        ("GET", "/voyage/official/journal", {}),
+        ("GET", "/voyage/official/eta", {"stop": "Nouméa"}),
+        ("GET", "/voyage/official/plan-review", {}),
+        ("GET", "/ici", {"lat": 46.15, "lon": -1.16}),
+        ("GET", "/ici/moment", {"lat": 46.15, "lon": -1.16}),
+        ("GET", "/ici/pearls", {}),
+        ("GET", "/ici/warm/status", {}),
+        ("GET", f"/api/v1/polar/{polar_api.DEFAULT_POLAR_EXPEDITION}/client", {}),
+    ]
+    for method, path, params in paths:
+        r = client.request(method, path, params=params)
+        assert r.status_code < 500, f"{path} → {r.status_code} {r.text[:200]}"
+
+    polar = client.get(f"/api/v1/polar/{polar_api.DEFAULT_POLAR_EXPEDITION}/client")
+    assert polar.status_code == 200
+    assert polar.json()["boat_name"] == "Leopard 46"
+    assert polar.json().get("source") == "default"
+
+
+def test_unofficial_at_without_vertices_is_dated_not_503(client, monkeypatch):
+    """Lot RC15 : POST petite route non officielle → GET /at et /clock 200 daté, pas 503."""
+    def boom(*_a, **_k):
+        raise AssertionError("calcul")
+
+    monkeypatch.setattr(voyage_api, "_climo_clock", boom)
+    r = client.post("/voyage", json=_payload("2026-06-15T08:00:00Z") | {"forecast": False})
+    assert r.status_code == 202
+    vid = r.json()["voyageId"]
+    at = client.get(f"/voyage/{vid}/at")
+    assert at.status_code in (200, 202)
+    assert at.status_code != 503
+    body = at.json()
+    assert body.get("status") == "preparing"
+    assert body.get("reason")
+    assert "T" in body.get("at", "") and body["at"].endswith("Z")
+    clock = client.get(f"/voyage/{vid}/clock")
+    assert clock.status_code in (200, 202)
+    assert clock.status_code != 503
+    dated = clock.json()
+    assert dated.get("status") == "preparing"
+    assert dated.get("reason")
+    assert "T" in dated.get("at", "") and dated["at"].endswith("Z")
+    assert not dated.get("vertices")
+    src = open(voyage_api.__file__, encoding="utf-8").read()
+    at_fn = src.split("def get_at(", 1)[1].split("def refresh_forecast", 1)[0]
+    clock_fn = src.split("def get_clock(", 1)[1].split("def get_at(", 1)[0]
+    assert "_climo_clock" not in at_fn
+    assert "_climo_clock" not in clock_fn
+
+
+def test_ici_fill_failure_is_dated_200(client, monkeypatch):
+    """Lot RF3 : fill_dossier lève → /ici 200 daté, pas un 500."""
+    import main
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("bi down")
+
+    monkeypatch.setattr(main, "fill_dossier", boom)
+    r = client.get("/ici", params={"lat": 0.0, "lon": 0.0})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "unavailable"
+    assert "bi down" in body["reason"]
+    assert body["at"].endswith("Z")

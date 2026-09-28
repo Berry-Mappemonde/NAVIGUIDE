@@ -12,19 +12,25 @@ from hindcast import (
     ERA5_PRODUCTS,
     ERA5_STRONG_WIND_FACTOR,
     MS_TO_KN,
+    SRC_OM_ERA5,
     apply_era5_correction,
     at,
     bind_cmems,
     bind_http,
     block_network,
+    cache_key,
+    cell_center,
     fill_era5_along,
+    hindcast_status_fields,
+    om_http_call_count,
+    om_quota_blocked,
     past_passage_slots,
     reset_hooks,
     series,
     uncovered_era5_slots,
     uv_to_current_to,
 )
-from pearl_store import kv_count
+from pearl_store import kv_count, kv_get, kv_put
 from voyage_clock import build_voyage_clock, parse_iso, sample_clock_at_time, sog_along_route, to_iso
 
 T0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
@@ -371,8 +377,136 @@ def test_uncovered_slots_after_date_shift():
         ],
     }
     slots = past_passage_slots(clock, now)
-    assert (lat, lon, DAY0) in slots
-    assert (lat, lon, "2026-05-20") not in slots
+    clat, clon = cell_center(lat, lon)
+    assert (clat, clon, DAY0) in slots
+    assert (clat, clon, "2026-05-20") not in slots
     assert all(s[2] != "2026-05-16" for s in slots)
     missing = uncovered_era5_slots(clock, now)
-    assert (lat, lon, DAY0) in missing
+    assert (clat, clon, DAY0) in missing
+
+
+# ── Lot RF10 — cellule 0,25°, plage, quota, statut honnête ──────────────────
+
+SAME_CELL_A = (46.15, -1.16)
+SAME_CELL_B = (46.20, -1.20)
+DAY2 = "2026-05-17"
+
+
+def _put_era5_hours(lat, lon, day, kn=10.0):
+    hours = {
+        f"{day}T{h:02d}:00:00Z": {"speedKnots": kn, "dirFromDeg": 0.0, "gustKnots": kn + 2}
+        for h in range(24)
+    }
+    kv_put("hindcast", cache_key(lat, lon, SRC_OM_ERA5, day), {
+        "hours": hours, "source": SRC_OM_ERA5,
+    })
+
+
+def test_rf10_same_cell_same_day_one_call():
+    assert cell_center(*SAME_CELL_A) == cell_center(*SAME_CELL_B)
+    bind_om(era5_kn=12.0)
+    n = fill_era5_along([(*SAME_CELL_A, DAY0), (*SAME_CELL_B, DAY0)])
+    assert n == 1
+    assert om_http_call_count() == 1
+    a = at(*SAME_CELL_A, T0, products=ERA5_PRODUCTS, fetch=False)
+    b = at(*SAME_CELL_B, T0, products=ERA5_PRODUCTS, fetch=False)
+    assert a["speedKnots"] == 12.0
+    assert b["speedKnots"] == 12.0
+
+
+def test_rf10_three_day_range_one_call_three_cache_entries():
+    bind_om(era5_kn=11.0)
+    slots = [(*SAME_CELL_A, DAY0), (*SAME_CELL_A, DAY1), (*SAME_CELL_A, DAY2)]
+    n = fill_era5_along(slots)
+    assert n == 3
+    assert om_http_call_count() == 1
+    for day in (DAY0, DAY1, DAY2):
+        hit = kv_get("hindcast", cache_key(*SAME_CELL_A, SRC_OM_ERA5, day))
+        hours = ((hit or {}).get("value") or {}).get("hours")
+        assert hours
+
+
+def test_rf10_429_stops_empty_status_no_more_calls():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="Daily API request limit exceeded")
+
+    bind_http(lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    slots = [
+        (10.0, -20.0, DAY0),
+        (20.0, -30.0, DAY0),
+        (30.0, -40.0, DAY0),
+    ]
+    assert fill_era5_along(slots) == 0
+    assert om_http_call_count() == 1
+    assert om_quota_blocked()
+    assert kv_get("hindcast", cache_key(10.0, -20.0, SRC_OM_ERA5, DAY0)) is None
+    assert fill_era5_along(slots) == 0
+    assert om_http_call_count() == 1
+    clock = {
+        "vertices": [
+            {"lat": 10.0, "lon": -20.0, "iso": "2026-05-15T12:00:00Z", "vehicle": "main"},
+            {"lat": 20.0, "lon": -30.0, "iso": "2026-05-15T18:00:00Z", "vehicle": "main"},
+        ],
+    }
+    fields = hindcast_status_fields(clock, T0 + timedelta(days=3), obtained=False)
+    assert fields["hindcastStatus"] == "empty"
+    assert fields["hindcastReason"] == "quota Open-Meteo"
+    assert fields["hindcastCoverage"] == "0/2"
+    assert "hindcastRefreshedAt" not in fields
+
+
+def test_rf10_cached_cell_zero_calls_on_next_fill():
+    bind_om(era5_kn=9.0)
+    slot = (*SAME_CELL_A, DAY0)
+    assert fill_era5_along([slot]) == 1
+    assert om_http_call_count() == 1
+    reset_hooks()
+    bind_om(era5_kn=99.0)
+    assert fill_era5_along([slot]) == 0
+    assert om_http_call_count() == 0
+    hour = at(*SAME_CELL_A, T0, products=ERA5_PRODUCTS, fetch=False)
+    assert hour["speedKnots"] == 9.0
+
+
+def test_rf10_status_ready_partial_empty():
+    now = T0 + timedelta(days=30)
+    verts = []
+    for i in range(20):
+        lat = 10.0 + i * 0.5
+        verts.append({
+            "lat": lat, "lon": -20.0,
+            "iso": (T0 + timedelta(days=i)).strftime("%Y-%m-%dT12:00:00Z"),
+            "vehicle": "main",
+        })
+    clock = {"vertices": verts}
+    empty = hindcast_status_fields(clock, now, obtained=False)
+    assert empty["hindcastStatus"] == "empty"
+    assert empty["hindcastCoverage"] == "0/20"
+    assert empty["hindcastReason"] == "panne"
+
+    for i in range(18):
+        _put_era5_hours(10.0 + i * 0.5, -20.0, (T0 + timedelta(days=i)).strftime("%Y-%m-%d"))
+    partial = hindcast_status_fields(clock, now, obtained=True)
+    assert partial["hindcastStatus"] == "partial"
+    assert partial["hindcastCoverage"] == "18/20"
+    assert "hindcastRefreshedAt" in partial
+
+    _put_era5_hours(10.0 + 18 * 0.5, -20.0, (T0 + timedelta(days=18)).strftime("%Y-%m-%d"))
+    ready = hindcast_status_fields(clock, now, obtained=True)
+    assert ready["hindcastStatus"] == "ready"
+    assert ready["hindcastCoverage"] == "19/20"
+
+
+def test_rf10_voyage_dir_hosts_sqlite(tmp_path, monkeypatch):
+    d = tmp_path / "shared-cache"
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(d))
+    import voyage_store
+    monkeypatch.setattr(voyage_store, "_DIR", d)
+    import pearl_store
+    pearl_store.reset()
+    bind_om(era5_kn=8.0)
+    fill_era5_along([(*SAME_CELL_A, DAY0)])
+    assert (d / "naviguide.sqlite").exists()
+    from pearl_store import db_path
+    assert db_path() == d / "naviguide.sqlite"
+    pearl_store.reset()

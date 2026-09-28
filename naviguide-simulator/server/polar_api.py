@@ -36,8 +36,16 @@ def _read_stored_polar(expedition_id: str) -> Optional[Dict[str, Any]]:
     dest = _polar_path(expedition_id)
     if not dest.exists():
         return None
-    with open(dest, encoding="utf-8") as fh:
-        return json.load(fh)
+    try:
+        with open(dest, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        log.warning("polaire stockée illisible %s: %s — repli défaut", dest.name, exc)
+        return None
+    if not isinstance(data, dict):
+        log.warning("polaire stockée invalide %s: pas un objet — repli défaut", dest.name)
+        return None
+    return data
 
 
 @lru_cache(maxsize=1)
@@ -76,16 +84,39 @@ def _serialize_polar(polar: PolarData, expedition_id: str) -> Dict[str, Any]:
     }
 
 
+def _polar_from_stored(data: Dict[str, Any]) -> PolarData:
+    raw = data.get("raw")
+    if not isinstance(raw, dict):
+        raise ValueError("format ancien: champ raw absent")
+    twa, tws, matrix = raw.get("twa_rows"), raw.get("tws_cols"), raw.get("matrix")
+    if not twa or not tws or matrix is None:
+        raise ValueError("format ancien: raw incomplet")
+    return PolarData(
+        twa,
+        tws,
+        matrix,
+        boat_name=data.get("boat_name", "Boat"),
+    )
+
+
+def _fallback_default_polar(expedition_id: str, why: str) -> tuple[Dict[str, Any], PolarData]:
+    log.warning("polaire %s: %s — repli sur la polaire par défaut", expedition_id, why)
+    polar = _default_polar()
+    payload = _serialize_polar(polar, expedition_id)
+    payload["source"] = "default"
+    return payload, polar
+
+
 def _stored_or_default_polar(expedition_id: str) -> tuple[Dict[str, Any], PolarData]:
+    dest = _polar_path(expedition_id)
     data = _read_stored_polar(expedition_id)
     if data is not None:
-        raw = data["raw"]
-        return data, PolarData(
-            raw["twa_rows"],
-            raw["tws_cols"],
-            raw["matrix"],
-            boat_name=data.get("boat_name", "Boat"),
-        )
+        try:
+            return data, _polar_from_stored(data)
+        except Exception as exc:
+            return _fallback_default_polar(expedition_id, f"{type(exc).__name__}: {exc}")
+    if dest.exists():
+        return _fallback_default_polar(expedition_id, "fichier illisible")
     if expedition_id == DEFAULT_POLAR_EXPEDITION:
         polar = _default_polar()
         return _serialize_polar(polar, expedition_id), polar
@@ -212,7 +243,7 @@ def get_polar_summary(expedition_id: str):
 def get_polar_client(expedition_id: str):
     """Données déjà calculées nécessaires au navigateur, sans la grille 181×61."""
     data, _ = _stored_or_default_polar(expedition_id)
-    return {
+    out = {
         "expedition_id": data["expedition_id"],
         "boat_name": data["boat_name"],
         "created_at": data["created_at"],
@@ -220,6 +251,9 @@ def get_polar_client(expedition_id: str):
         "vmg_summary": data["vmg_summary"],
         "raw": data["raw"],
     }
+    if data.get("source"):
+        out["source"] = data["source"]
+    return out
 
 
 @router.get("/api/v1/polar/{expedition_id}/speed")

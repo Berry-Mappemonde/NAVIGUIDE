@@ -8,13 +8,40 @@ const src = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(src, path), "utf8");
 
 describe("contrat UI produit", () => {
-  it("démarre en Suivre sur la vue monde sans recadrage initial", () => {
+  it("lot RF7 : démarre en Suivre cinéma, vue monde, panneaux fermés", () => {
     const app = read("../App.jsx");
     const map = read("../hooks/useSimulatorMap.js");
-    assert.match(app, /useState\(VIEW_SUIVRE\)/);
-    assert.doesNotMatch(app, /useState\(VIEW_SIMULATION\)/);
+    const scene = read("../map/MapSceneController.js");
+    assert.match(app, /const \[view, setView\] = useState\(VIEW_SUIVRE\)/);
+    assert.doesNotMatch(app, /const \[view, setView\] = useState\(VIEW_SIMULATION\)/);
+    assert.match(app, /const \[cinemaMode, setCinemaMode\] = useState\(true\)/);
+    assert.match(app, /const \[sidebarOpen, setSidebarOpen\] = useState\(false\)/);
+    assert.match(app, /const \[toolsOpen, setToolsOpen\] = useState\(false\)/);
     assert.match(map, /zoom:\s*2/);
+    assert.match(scene, /WORLD_ZOOM = 2/);
+    assert.match(scene, /zoom: WORLD_ZOOM/);
     assert.doesNotMatch(app, /map\.setView\(\[start\.lat,\s*start\.lon\],\s*8/);
+    const tools = read("../components/ToolsSidebar.jsx");
+    assert.match(tools, /visibility: open \? "visible" : "hidden"/, "Cinéma : le panneau droit n'est pas peint fermé");
+  });
+
+  it("lot RF7 : entrée Tracer pose la vue monde", () => {
+    const app = read("../App.jsx");
+    const scene = read("../map/MapSceneController.js");
+    assert.match(app, /sceneApiRef\.current\?\.showWorld/);
+    assert.match(scene, /showWorld\(\)/);
+    assert.match(scene, /setView\(WORLD_CENTER, WORLD_ZOOM/);
+  });
+
+  it("lot RE1 : Suivre → Simulation quitte le Cinéma et ouvre les deux panneaux", () => {
+    const app = read("../App.jsx");
+    const selectAt = app.indexOf("const selectView = useCallback");
+    assert.ok(selectAt >= 0, "selectView présent");
+    const selectChunk = app.slice(selectAt, selectAt + 1800);
+    assert.match(selectChunk, /if \(view === VIEW_SUIVRE\) \{/);
+    assert.match(selectChunk, /leaveCinema\(\)/);
+    assert.match(selectChunk, /setSidebarOpen\(true\)/);
+    assert.match(selectChunk, /setToolsOpen\(true\)/);
   });
 
   it("utilise les PNG validés et le favicon d’origine", () => {
@@ -128,6 +155,8 @@ describe("contrat UI produit", () => {
     assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
     assert.match(app, /t0: replayT0/);
+    assert.match(app, /followClockLineFromT0/);
+    assert.match(app, /t0: isSuivre \? replayT0/);
     assert.match(app, /departureT0=\{voyage\.t0\}/);
     assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
     assert.match(bar, /data-testid="replay-departure"/);

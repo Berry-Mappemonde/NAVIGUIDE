@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pearl_store
 import story_cache
 from film_script import (
+    chapter_anchors,
     CONNECTORS,
     FILM_BUDGET_CHARS,
     FILM_CHAPTER_MAX_CHANGES,
@@ -271,6 +272,8 @@ def test_http_film_route_raw(monkeypatch):
     body = _official()
     body["t0"] = OFFICIAL_T0
     client.put("/voyage/official", json=body, headers=PUBLIC)
+    import official_store
+    official_store.refresh_family("film", force=True)
     r = client.get("/voyage/official/film?lang=fr&seconds=150", headers=PUBLIC)
     assert r.status_code == 200
     data = r.json()
@@ -299,6 +302,8 @@ def test_http_film_route_replay_t0(monkeypatch):
     body = _official()
     body["t0"] = OFFICIAL_T0
     client.put("/voyage/official", json=body, headers=PUBLIC)
+    import official_store
+    official_store.refresh_family("film", force=True)
     r = client.get(
         "/voyage/official/film?lang=fr&seconds=150&t0=2025-05-15T08:00:00.000Z",
         headers=PUBLIC,
@@ -306,8 +311,8 @@ def test_http_film_route_replay_t0(monkeypatch):
     assert r.status_code == 200
     text0 = r.json()["chapters"][0]["text"]
     assert "Saint-Maur" in text0
-    assert "15 mai 2025" in text0
-    assert "15 mai 2026" not in text0
+    # RF2 : le script stocké est celui du t0 officiel — plus de recalcul à la requête.
+    assert "15 mai 2026" in text0
 
 
 def test_bubble_scores_are_one_two_or_three():
@@ -555,6 +560,8 @@ def test_http_film_route_en(monkeypatch):
     body = _official()
     body["t0"] = OFFICIAL_T0
     client.put("/voyage/official", json=body, headers=PUBLIC)
+    import official_store
+    official_store.refresh_family("film", force=True)
     r = client.get("/voyage/official/film?lang=en&seconds=150", headers=PUBLIC)
     assert r.status_code == 200
     data = r.json()
@@ -662,6 +669,51 @@ def test_moments_chapter_one_sentence_max_three_changes():
         assert len([e for e in (ch.get("events") or []) if e.get("id") and not str(e.get("id")).startswith("stop:")]) <= FILM_CHAPTER_MAX_CHANGES
 
 
+def test_moments_anchors_follow_the_route_chronologically():
+    """27 sept. : chaque phrase gardée porte l'instant du trajet dont elle parle (ancres), croissant,
+    borné au chapitre ; « approche de Fort-de-France » est ancrée à l'instant de l'approche."""
+    plan = _moments_raw()
+    seen_any = False
+    for ch in plan["chapters"]:
+        anchors = ch.get("anchors") or []
+        t_a, t_b = _parse_iso_ms(ch["tA"]), _parse_iso_ms(ch["tB"])
+        last_idx, last_t = -1, None
+        for a in anchors:
+            seen_any = True
+            assert isinstance(a["charIdx"], int) and 0 <= a["charIdx"] < len(ch["text"])
+            assert a["charIdx"] > last_idx, "ancres triées et sans doublon"
+            t = _parse_iso_ms(a["t"])
+            assert t_a <= t <= t_b, "ancre bornée au chapitre"
+            assert last_t is None or t >= last_t, "chronologie stricte"
+            last_idx, last_t = a["charIdx"], t
+        text = ch["text"]
+        pos = text.find("approche de Fort-de-France")
+        if pos >= 0:
+            hit = [a for a in anchors if text[a["charIdx"]:].startswith("Le 22 juin, approche de Fort-de-France")]
+            assert hit, "la phrase d'approche a son ancre"
+            assert _parse_iso_ms(hit[0]["t"]) == _parse_iso_ms("2026-06-22T12:00:00Z")
+    assert seen_any
+
+
+def _parse_iso_ms(value: str) -> int:
+    from datetime import datetime, timezone
+    return int(datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc).timestamp() * 1000)
+
+
+def test_chapter_anchors_unit_sorted_bounded_deduped():
+    text = "Départ vers Ajaccio. Le 31 mai, approche d’Ajaccio. Arrivée le 1er juin."
+    anchored = [
+        ("Arrivée le 1er juin.", 5_000),      # après tB → borné
+        ("Le 31 mai, approche d’Ajaccio.", 900),
+        ("Départ vers Ajaccio.", -50),        # avant tA → borné
+        ("Phrase coupée par le budget.", 500),  # absente du texte → ignorée
+        ("Le 31 mai, approche d’Ajaccio.", 950),  # même position → une seule ancre
+    ]
+    out = chapter_anchors(text, anchored, 0, 2_000, "fr")
+    assert [a["charIdx"] for a in out] == [0, text.find("Le 31"), text.find("Arrivée")]
+    assert [a["t"] for a in out] == ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00Z", "1970-01-01T00:00:02Z"]
+
+
 def test_moments_arrival_each_stop_route_order():
     plan = _moments_raw()
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
@@ -728,10 +780,11 @@ def test_select_chapter_changes_caps_at_three():
         {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
     ]
     picked = select_chapter_changes(changes, 0, 10)
-    assert len(picked) <= 3
+    assert len(picked) <= FILM_CHAPTER_MAX_CHANGES   # 4 depuis le 27 sept. (arrivée, fait de mer, marina d'escale, approche)
     kinds = {c["kind"] for c in picked}
     assert "escale" in kinds
     assert "approche" in kinds or "alert-on" in kinds
+    assert [c["tMs"] for c in picked] == sorted(c["tMs"] for c in picked)   # dits dans l'ordre du voyage
 
 
 def test_written_no_number_outside_facts():
@@ -817,13 +870,15 @@ def test_rich_moments_without_budget_cites_each_type():
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     assert plan["targetSeconds"] == 0
     assert "Les Minimes" in blob
-    assert re.search(r"marina croisée", blob)
-    assert re.search(r"port de départ", blob)
+    assert re.search(r"à portée de Les Minimes", blob)
+    assert re.search(r"devant La Rochelle", blob)
     assert re.search(r"aire marine protégée : Cabrera", blob)
-    assert re.search(r"station croisée : PIRATA", blob)
+    assert re.search(r"station PIRATA", blob)
     assert "Irma" in blob and "2017" in blob
     assert "Fort Saint-Louis" in blob
     assert "traces de cyclone ce mois-ci" not in blob
+    assert "marina croisée" not in blob
+    assert "station croisée : Station croisée" not in blob
     _assert_no_filler(blob)
     _assert_departure_arrival_pairs(blob, "fr")
     _assert_route_order(blob, "journal riche FR")
@@ -975,11 +1030,203 @@ def test_select_chapter_changes_unlimited_without_budget():
         {"id": "b", "kind": "approche", "score": 3, "tMs": 2, "title": "Ajaccio", "fact": "y"},
         {"id": "c", "kind": "alert-on", "score": 3, "tMs": 3, "title": "Vent", "fact": "38 kn"},
         {"id": "d", "kind": "station", "score": 2, "tMs": 4, "title": "PIRATA", "fact": "z"},
-        {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "AMP", "fact": "w"},
+        {"id": "e", "kind": "amp", "score": 1, "tMs": 5, "title": "Cabrera", "fact": "Cabrera"},
         {"id": "f", "kind": "marina", "score": 2, "tMs": 6, "title": "Les Minimes", "fact": "Les Minimes"},
         {"id": "g", "kind": "cyclone", "score": 3, "tMs": 7, "title": "Irma", "fact": "Irma (2017)"},
         {"id": "h", "kind": "culture", "score": 1, "tMs": 8, "title": "Fort Saint-Louis", "fact": "Fort Saint-Louis."},
+        {"id": "i", "kind": "marina", "score": 2, "tMs": 9, "title": "Les Minimes", "fact": "Les Minimes encore"},
+        {"id": "j", "kind": "station", "score": 2, "tMs": 10, "title": "Station croisée", "fact": "Station croisée"},
     ]
     picked = select_chapter_changes(changes, 0, 10, budget=False)
-    assert len(picked) == 8
+    names = [c.get("title") for c in picked]
+    assert names.count("Les Minimes") == 1
+    assert not any(
+        (c.get("title") or "").casefold() == "station croisée" for c in picked
+    )
     assert {c["kind"] for c in picked} >= {"marina", "cyclone", "culture", "amp", "station"}
+
+
+RE7_CLOCK = {
+    "t0": OFFICIAL_T0,
+    "marks": [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": "2026-05-15T08:00:00Z", "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z", "holdHours": 72, "lat": 46.15, "lon": -1.16},
+        {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "iso": "2026-07-01T08:00:00Z", "holdHours": 24, "lat": 4.9, "lon": -52.3},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4000, "filmNm": 4100, "iso": "2026-07-02T08:00:00Z", "holdHours": 24, "lat": 44.6, "lon": -63.6},
+        {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 19055, "filmNm": 19177, "iso": "2026-09-17T22:48:00Z", "holdHours": 72, "lat": -22.2, "lon": 166.4},
+    ],
+}
+RE7_LIVE = {
+    "filmNm": 19400, "sailNm": 19260, "iso": "2026-09-19T02:00:00Z",
+    "status": "live", "fromStop": "Nouméa",
+}
+RE7_REVIEW = {
+    "legs": [
+        {
+            "from": "La Rochelle",
+            "to": "Cayenne (Guyane)",
+            "antiShipping": {"score": 0.4, "lanes": ["Bay of Biscay", "Gibraltar"]},
+            "season": {"galePct": 18, "cyclones": 0, "cells": 2, "missing": 0},
+        }
+    ]
+}
+
+
+def _re7_journal():
+    moments = [
+        {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+         "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "Saint-Maur → La Rochelle"},
+        ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+        {"seq": 2, "t": "2026-05-16T09:00:00Z", "signature": "s2", "legIdx": 1, "changes": [
+            {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive espagnole",
+             "fact": "Entrée dans Zone économique exclusive espagnole"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 3, "t": "2026-05-16T10:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+            {"kind": "marina", "score": 2, "title": "Gran Roque", "fact": "Gran Roque (2 nm)"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 4, "t": "2026-05-16T11:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+            {"kind": "marina", "score": 2, "title": "Gran Roque", "fact": "Gran Roque (2 nm)", "id": "gr2"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 5, "t": "2026-05-16T12:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+            {"kind": "marina", "score": 2, "title": "Gran Roque", "fact": "Gran Roque encore", "id": "gr3"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 6, "t": "2026-05-16T13:00:00Z", "signature": "s6", "legIdx": 1, "changes": [
+            {"kind": "station", "score": 2, "title": "Station croisée", "fact": "Station croisée"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 7, "t": "2026-05-16T14:00:00Z", "signature": "s7", "legIdx": 1, "changes": [
+            {"kind": "zee-enter", "score": 2, "title": "Ports d'entrée : Les Sables-d'Olonne",
+             "fact": "Les Sables-d'Olonne"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 8, "t": "2026-05-16T15:00:00Z", "signature": "s8", "legIdx": 1, "changes": [
+            {"kind": "zee-enter", "score": 2, "title": "Formalités d'entrée",
+             "fact": "Aucun port d'entrée officiel n'est connu pour cette ZEE."},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 9, "t": "2026-05-16T16:00:00Z", "signature": "s9", "legIdx": 1, "changes": [
+            {"kind": "marina", "score": 1, "title": "Monaco", "fact": "Monaco (80 nm)", "nm": 80},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 10, "t": "2026-07-01T08:00:00Z", "signature": "s10", "legIdx": 2, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Cayenne", "fact": "La Rochelle → Cayenne"},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Cayenne (Guyane)"}}},
+        {"seq": 11, "t": "2026-07-01T10:00:00Z", "signature": "s11", "legIdx": 2, "changes": [],
+         "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Halifax (Nouvelle-Écosse)", "vehicle": "plane"}}},
+        {"seq": 12, "t": "2026-07-02T08:00:00Z", "signature": "s12", "legIdx": 3, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Halifax", "fact": "Cayenne → Halifax"},
+        ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Halifax (Nouvelle-Écosse)", "vehicle": "plane"}}},
+        {"seq": 13, "t": "2026-07-03T10:00:00Z", "signature": "s13", "legIdx": 3, "changes": [],
+         "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Cayenne (Guyane)", "vehicle": "plane"}}},
+        {"seq": 14, "t": "2026-07-10T06:00:00Z", "signature": "s14", "legIdx": 4, "changes": [
+            {"kind": "cyclone", "score": 3, "title": "Irma", "fact": "Irma (2017)"},
+        ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 15, "t": "2026-07-11T06:00:00Z", "signature": "s15", "legIdx": 4, "changes": [
+            {"kind": "cyclone", "score": 1, "title": "Cyclone", "fact": "3 traces de cyclone ce mois-ci."},
+        ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 16, "t": "2026-08-01T06:00:00Z", "signature": "s16", "legIdx": 4, "changes": [
+            {"kind": "amp", "score": 1, "title": "Cabrera (IUCN Unassigned)", "fact": "Cabrera (IUCN Unassigned)"},
+        ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 17, "t": "2026-08-02T06:00:00Z", "signature": "s17", "legIdx": 4, "changes": [
+            {"kind": "station", "score": 2, "title": "PIRATA", "fact": "Station PIRATA à 6 milles nautiques."},
+        ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 18, "t": "2026-08-03T06:00:00Z", "signature": "s18", "legIdx": 4, "changes": [
+            {"kind": "culture", "score": 1, "title": "Fort Saint-Louis", "fact": "Fort Saint-Louis."},
+        ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+        {"seq": 19, "t": "2026-09-17T22:48:00Z", "signature": "s19", "legIdx": 4, "changes": [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Nouméa", "fact": "Halifax → Nouméa"},
+        ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Nouméa (Nouvelle-Calédonie)"}}},
+    ]
+    return {"moments": moments, "latest": []}
+
+
+def test_re7_discourse_eleven_defects():
+    from film_script import script_words
+
+    plan = build_raw_script(
+        RE7_CLOCK, RE7_CLOCK["marks"], RE7_LIVE, _re7_journal(),
+        lang="fr", seconds=0, now_ms=NOW_MS, review=RE7_REVIEW,
+    )
+    blob = _script_blob(plan)
+    assert plan["targetSeconds"] == 0
+    assert script_words(plan["chapters"]) <= 800
+    assert "station croisée : Station croisée" not in blob
+    assert "Aucun port d'entrée" not in blob
+    assert "entrée dans Entrée dans" not in blob
+    assert "IUCN" not in blob
+    assert blob.lower().count("gran roque") == 1
+    assert "Monaco" not in blob
+    assert re.search(r"prend l'avion pour Halifax", blob)
+    assert re.search(r"retour en avion vers Cayenne", blob)
+    assert re.search(r"Aujourd’hui, le bateau est à Nouméa", blob)
+    assert "Irma" in blob and "2017" in blob
+    assert "PIRATA" in blob
+    assert "Cabrera" in blob
+    assert "Fort Saint-Louis" in blob
+    assert "golfe de Gascogne" in blob
+    assert "détroit de Gibraltar" in blob
+    assert "Bay of Biscay" not in blob
+    assert re.search(r"eaux espagnoles", blob)
+    idx_zee = blob.find("eaux espagnoles")
+    idx_dep = blob.find("départ vers Cayenne")
+    assert 0 <= idx_zee < idx_dep
+    _assert_no_filler(blob)
+    assert not re.search(r"\bnm\b", blob)
+
+
+def _rf5_air_marks_no_halifax_iso():
+    marks = []
+    for m in RE7_CLOCK["marks"]:
+        row = dict(m)
+        if "Halifax" in row["name"]:
+            row.pop("iso", None)
+            row.pop("vehicle", None)
+        marks.append(row)
+    return marks
+
+
+def test_rf5_air_survives_tight_budget():
+    """Lot RF5 : jambe avion aller + retour, budget 150 s et 108 s."""
+    for seconds in (150, 108):
+        plan = build_raw_script(
+            RE7_CLOCK, RE7_CLOCK["marks"], RE7_LIVE, _re7_journal(),
+            lang="fr", seconds=seconds, now_ms=NOW_MS, review=RE7_REVIEW,
+        )
+        blob = _script_blob(plan)
+        assert plan["targetSeconds"] == seconds
+        assert re.search(r"prend l'avion pour Halifax", blob), blob
+        assert re.search(r"retour en avion vers Cayenne", blob), blob
+        _assert_no_filler(blob)
+
+
+def test_rf5_air_when_halifax_has_no_iso():
+    """Arrivée avion sans iso (hors clock_marks) : Cayenne nommée ne suffit pas — l'avion reste dit."""
+    marks = _rf5_air_marks_no_halifax_iso()
+    clock = {**RE7_CLOCK, "marks": marks}
+    plan = build_raw_script(clock, marks, RE7_LIVE, None, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "Cayenne" in blob
+    assert re.search(r"prend l'avion pour Halifax", blob), blob
+    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert "avion pour Nouméa" not in blob
+    _assert_no_filler(blob)
+
+
+def test_rf5_air_return_without_moments():
+    """Sans moments, dated_marks dédoublonne Cayenne : le retour avion doit quand même être dit."""
+    plan = build_raw_script(
+        RE7_CLOCK, RE7_CLOCK["marks"], RE7_LIVE, None,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(plan)
+    assert re.search(r"prend l'avion pour Halifax", blob), blob
+    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert "avion pour Nouméa" not in blob
+    _assert_no_filler(blob)
+
+
+def test_rf5_no_air_invented_on_ajaccio_route():
+    """Route sans Cayenne/Halifax : pas de phrase d'avion inventée."""
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "Cayenne" not in blob
+    assert "Halifax" not in blob
+    assert not re.search(r"prend l'avion|retour en avion|flies to|return flight", blob)

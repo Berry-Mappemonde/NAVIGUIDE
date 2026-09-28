@@ -1,7 +1,8 @@
 """Hindcast multi-sources — Open-Meteo + Copernicus, fusion par médiane.
 
 Une source en panne manque ; aucune source → champ vide (jamais inventé).
-Cache SQLite `pearl_store.kv` ns `hindcast`, clé (point, produit, jour).
+Cache SQLite `pearl_store.kv` ns `hindcast`, clé (cellule ERA5 0,25°, produit, jour).
+Budget Open-Meteo : ns `om-budget`, plafond NAVIGUIDE_OM_DAILY_BUDGET (défaut 3000).
 """
 from __future__ import annotations
 
@@ -24,8 +25,11 @@ ERA5_STRONG_WIND_MS = 15.0
 MS_TO_KN = 1.943844
 HINDCAST_PAD_DAYS = 2
 CACHE_NS = "hindcast"
+OM_BUDGET_NS = "om-budget"
 FETCH_TIMEOUT_S = 20.0
-POINT_DECIMALS = 3
+ERA5_CELL_DEG = 0.25
+READY_COVERAGE = 0.95
+DEFAULT_OM_DAILY_BUDGET = 3000
 
 OM_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 OM_ERA5_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -61,6 +65,11 @@ _cmems_wind: Optional[Callable] = None
 _cmems_wave: Optional[Callable] = None
 _cmems_phy: Optional[Callable] = None
 _fetch_blocked = False
+_om_http_count = 0
+
+
+class OpenMeteoQuotaExceeded(Exception):
+    """429 ou plafond journalier — le remplissage s'arrête jusqu'au lendemain UTC."""
 
 
 def bind_http(factory: Optional[Callable[[], httpx.Client]]) -> None:
@@ -85,12 +94,21 @@ def unblock_network() -> None:
 
 
 def reset_hooks() -> None:
+    global _om_http_count
     bind_http(None)
     bind_cmems(wind=None, wave=None, phy=None)
     unblock_network()
+    _om_http_count = 0
+
+
+def om_http_call_count() -> int:
+    """Appels HTTP Open-Meteo réellement envoyés depuis `reset_hooks` (tests)."""
+    return _om_http_count
 
 
 def hindcast_enabled() -> bool:
+    if (os.getenv("NAVIGUIDE_OFFLINE") or "").strip().lower() in ("1", "true", "yes"):
+        return False
     raw = (os.getenv("NAVIGUIDE_HINDCAST") or "1").lower()
     if raw in ("0", "false", "no"):
         return False
@@ -99,12 +117,100 @@ def hindcast_enabled() -> bool:
     return True
 
 
+def cell_center(lat: float, lon: float) -> tuple[float, float]:
+    """Centre de la cellule ERA5 0,25° la plus proche (arrondi)."""
+    step = ERA5_CELL_DEG
+
+    def _snap(value: float) -> float:
+        return round(round(float(value) / step) * step, 2)
+
+    return _snap(lat), _snap(lon)
+
+
 def point_key(lat: float, lon: float) -> str:
-    return f"{round(float(lat), POINT_DECIMALS):.{POINT_DECIMALS}f}:{round(float(lon), POINT_DECIMALS):.{POINT_DECIMALS}f}"
+    clat, clon = cell_center(lat, lon)
+    return f"{clat:.2f}:{clon:.2f}"
 
 
 def cache_key(lat: float, lon: float, product: str, day: str) -> str:
     return f"{point_key(lat, lon)}:{product}:{day}"
+
+
+def om_daily_budget() -> int:
+    raw = (os.getenv("NAVIGUIDE_OM_DAILY_BUDGET") or "").strip()
+    if not raw:
+        return DEFAULT_OM_DAILY_BUDGET
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return DEFAULT_OM_DAILY_BUDGET
+
+
+def _utc_day() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _budget_key(day: Optional[str] = None) -> str:
+    return f"calls:{day or _utc_day()}"
+
+
+def _block_key(day: Optional[str] = None) -> str:
+    return f"blocked:{day or _utc_day()}"
+
+
+def om_calls_today() -> int:
+    hit = kv_get(OM_BUDGET_NS, _budget_key())
+    val = (hit or {}).get("value")
+    if isinstance(val, dict):
+        try:
+            return int(val.get("n") or 0)
+        except (TypeError, ValueError):
+            return 0
+    if isinstance(val, int):
+        return val
+    return 0
+
+
+def om_quota_blocked() -> bool:
+    hit = kv_get(OM_BUDGET_NS, _block_key())
+    if hit and hit.get("value"):
+        return True
+    return om_calls_today() >= om_daily_budget()
+
+
+def om_quota_reason() -> Optional[str]:
+    hit = kv_get(OM_BUDGET_NS, _block_key())
+    val = (hit or {}).get("value")
+    if isinstance(val, dict) and val.get("reason"):
+        raw = str(val["reason"])
+        if raw in ("429", "budget", "quota Open-Meteo"):
+            return "quota Open-Meteo"
+        return raw
+    if val:
+        return "quota Open-Meteo"
+    if om_calls_today() >= om_daily_budget():
+        return "quota Open-Meteo"
+    return None
+
+
+def _mark_om_quota_blocked(reason: str) -> None:
+    kv_put(OM_BUDGET_NS, _block_key(), {"reason": reason})
+
+
+def _record_om_call() -> None:
+    global _om_http_count
+    _om_http_count += 1
+    n = om_calls_today() + 1
+    kv_put(OM_BUDGET_NS, _budget_key(), {"n": n})
+    if n >= om_daily_budget():
+        _mark_om_quota_blocked("budget")
+
+
+def _cached_hours(hit: Optional[dict]) -> Any:
+    if not hit or not isinstance(hit.get("value"), dict):
+        return None
+    hours = hit["value"].get("hours")
+    return hours or None
 
 
 def _day_str(day: str | datetime) -> str:
@@ -187,19 +293,33 @@ def _client() -> httpx.Client:
 def _om_get(url: str, params: dict) -> Optional[dict]:
     if _fetch_blocked:
         raise RuntimeError("hindcast network blocked")
+    if om_quota_blocked() or not (om_calls_today() < om_daily_budget()):
+        if om_calls_today() >= om_daily_budget() and not kv_get(OM_BUDGET_NS, _block_key()):
+            _mark_om_quota_blocked("budget")
+        raise OpenMeteoQuotaExceeded(om_quota_reason() or "quota Open-Meteo")
     try:
         with _client() as client:
             resp = client.get(url, params=params)
+            _record_om_call()
+            if resp.status_code == 429:
+                _mark_om_quota_blocked("429")
+                log.info("open-meteo %s: 429 quota", url.split("/")[2])
+                raise OpenMeteoQuotaExceeded("quota Open-Meteo")
             resp.raise_for_status()
             return resp.json()
+    except OpenMeteoQuotaExceeded:
+        raise
     except Exception as exc:
         log.info("open-meteo %s: %s", url.split("/")[2], exc)
         return None
 
 
 def om_get(url: str, params: dict) -> Optional[dict]:
-    """Client HTTP Open-Meteo partagé (hindcast, ensembles). `None` si panne."""
-    return _om_get(url, params)
+    """Client HTTP Open-Meteo partagé (hindcast, ensembles). `None` si panne ou quota."""
+    try:
+        return _om_get(url, params)
+    except OpenMeteoQuotaExceeded:
+        return None
 
 
 def hours_from_om(payload: Optional[dict]) -> Dict[str, dict]:
@@ -241,12 +361,32 @@ def _fetch_om_forecast(lat: float, lon: float, day: str) -> Optional[dict]:
     return {"hours": hours, "source": SRC_OM_FORECAST}
 
 
-def _fetch_om_era5(lat: float, lon: float, day: str) -> Optional[dict]:
+def _era5_hour_row(row: dict) -> dict:
+    raw = _num(row.get("wind_speed_10m"))
+    return {
+        "speedKnots": apply_era5_correction(raw) if raw is not None else None,
+        "dirFromDeg": _num(row.get("wind_direction_10m")),
+        "gustKnots": _num(row.get("wind_gusts_10m")),
+    }
+
+
+def _split_hours_by_day(hours: Dict[str, dict]) -> Dict[str, dict]:
+    by_day: Dict[str, dict] = {}
+    for iso, row in hours.items():
+        day = str(iso)[:10]
+        by_day.setdefault(day, {})[iso] = row
+    return by_day
+
+
+def _fetch_om_era5(lat: float, lon: float, day: str, end_date: Optional[str] = None) -> Optional[dict]:
+    clat, clon = cell_center(lat, lon)
+    start = _day_str(day)
+    end = _day_str(end_date or day)
     data = _om_get(OM_ERA5_URL, {
-        "latitude": f"{lat:.4f}",
-        "longitude": f"{lon:.4f}",
-        "start_date": day,
-        "end_date": day,
+        "latitude": f"{clat:.4f}",
+        "longitude": f"{clon:.4f}",
+        "start_date": start,
+        "end_date": end,
         "hourly": OM_WIND_HOURLY,
         "wind_speed_unit": "kn",
         "timezone": "UTC",
@@ -255,13 +395,10 @@ def _fetch_om_era5(lat: float, lon: float, day: str) -> Optional[dict]:
         return None
     hours = {}
     for iso, row in _hours_from_om(data).items():
-        raw = _num(row.get("wind_speed_10m"))
-        hours[iso] = {
-            "speedKnots": apply_era5_correction(raw) if raw is not None else None,
-            "dirFromDeg": _num(row.get("wind_direction_10m")),
-            "gustKnots": _num(row.get("wind_gusts_10m")),
-        }
-    return {"hours": hours, "source": SRC_OM_ERA5}
+        hours[iso] = _era5_hour_row(row)
+    extra = {d: {"hours": h} for d, h in _split_hours_by_day(hours).items()}
+    packed = extra.get(start) or {"hours": {}}
+    return {"hours": packed.get("hours") or {}, "source": SRC_OM_ERA5, "extraDays": extra}
 
 
 def _fetch_om_marine(lat: float, lon: float, day: str) -> Optional[dict]:
@@ -429,10 +566,20 @@ def _blend_cache_id(products: tuple) -> str:
     return "blend:" + "+".join(wanted)
 
 
+def _store_product_day(lat: float, lon: float, product: str, day: str, hours: dict) -> Optional[dict]:
+    """Écrit une journée seulement si elle a des heures — un échec n'est pas un résultat."""
+    if not hours:
+        return None
+    stored = {"hours": hours, "source": product}
+    kv_put(CACHE_NS, cache_key(lat, lon, product, day), stored)
+    return stored
+
+
 def _load_product(lat: float, lon: float, product: str, day: str, *, fetch: bool = True) -> Optional[dict]:
     key = cache_key(lat, lon, product, day)
     hit = kv_get(CACHE_NS, key)
-    if hit and isinstance(hit.get("value"), dict):
+    hours = _cached_hours(hit)
+    if hours:
         return hit["value"]
     if _fetch_blocked:
         raise RuntimeError("hindcast network blocked")
@@ -443,16 +590,12 @@ def _load_product(lat: float, lon: float, product: str, day: str, *, fetch: bool
     if raw is None:
         return None
     extra = raw.pop("extraDays", None)
-    stored = {"hours": raw.get("hours") or {}, "source": product}
-    kv_put(CACHE_NS, key, stored)
+    stored = _store_product_day(lat, lon, product, day, raw.get("hours") or {})
     if extra:
         for extra_day, pack in extra.items():
             if extra_day == day:
                 continue
-            kv_put(CACHE_NS, cache_key(lat, lon, product, extra_day), {
-                "hours": pack.get("hours") or {},
-                "source": product,
-            })
+            _store_product_day(lat, lon, product, extra_day, pack.get("hours") or {})
     return stored
 
 
@@ -555,6 +698,8 @@ def series(
             continue
         try:
             pack = _load_product(lat, lon, product, day, fetch=fetch)
+        except OpenMeteoQuotaExceeded:
+            raise
         except RuntimeError:
             raise
         except Exception as exc:
@@ -583,7 +728,7 @@ def series(
         "hours": hours,
         "products": sorted(loaded.keys()),
     }
-    if fetch:
+    if fetch and hours:
         kv_put(CACHE_NS, blend_key, out)
     return out
 
@@ -601,6 +746,8 @@ def at(
     day = when.strftime("%Y-%m-%d")
     try:
         packed = series(lat, lon, day, products=products, fetch=fetch)
+    except OpenMeteoQuotaExceeded:
+        packed = {"hours": []}
     except Exception:
         packed = {"hours": []}
     hours = packed.get("hours") or []
@@ -636,7 +783,7 @@ def empty_pack() -> dict:
 
 
 def past_passage_slots(clock: dict, now: datetime | str) -> List[tuple[float, float, str]]:
-    """(lat, lon, jour) des sommets déjà parcourus, hors avion."""
+    """(lat, lon, jour) des sommets déjà parcourus, hors avion — un créneau par cellule."""
     now_d = _as_dt(now)
     slots: List[tuple[float, float, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -653,31 +800,69 @@ def past_passage_slots(clock: dict, now: datetime | str) -> List[tuple[float, fl
         if t >= now_d:
             continue
         day = t.strftime("%Y-%m-%d")
-        key = (point_key(v["lat"], v["lon"]), day)
+        clat, clon = cell_center(v["lat"], v["lon"])
+        key = (point_key(clat, clon), day)
         if key in seen:
             continue
         seen.add(key)
-        slots.append((float(v["lat"]), float(v["lon"]), day))
+        slots.append((clat, clon, day))
     return slots
 
 
 def uncovered_era5_slots(clock: dict, now: datetime | str) -> List[tuple[float, float, str]]:
-    """Points du passé sans série ERA5 en cache — à compléter en fond."""
+    """Cellules du passé sans série ERA5 en cache — à compléter en fond."""
     missing: List[tuple[float, float, str]] = []
     for lat, lon, day in past_passage_slots(clock, now):
         hit = kv_get(CACHE_NS, cache_key(lat, lon, SRC_OM_ERA5, day))
-        hours = ((hit or {}).get("value") or {}).get("hours") if hit else None
-        if not hours:
+        if not _cached_hours(hit):
             missing.append((lat, lon, day))
     return missing
+
+
+def _shift_day(day: str, n: int) -> str:
+    return (datetime.strptime(_day_str(day), "%Y-%m-%d") + timedelta(days=n)).strftime("%Y-%m-%d")
+
+
+def _contiguous_ranges(days: List[str]) -> List[tuple[str, str]]:
+    if not days:
+        return []
+    ordered = sorted(set(days))
+    ranges: List[tuple[str, str]] = []
+    start = prev = ordered[0]
+    for d in ordered[1:]:
+        if d == _shift_day(prev, 1):
+            prev = d
+        else:
+            ranges.append((start, prev))
+            start = prev = d
+    ranges.append((start, prev))
+    return ranges
+
+
+def _load_era5_range(lat: float, lon: float, start: str, end: str) -> int:
+    """Un appel Open-Meteo pour une plage ; chaque jour non vide est mis en cache."""
+    raw = _fetch_om_era5(lat, lon, start, end_date=end)
+    if raw is None:
+        return 0
+    extra = raw.get("extraDays") or {}
+    stored = 0
+    if raw.get("hours"):
+        extra = {**extra, start: {"hours": raw["hours"]}}
+    for day, pack in extra.items():
+        if _store_product_day(lat, lon, SRC_OM_ERA5, day, pack.get("hours") or {}):
+            stored += 1
+    return stored
 
 
 def fill_era5_along(slots, *, fetch: bool = True) -> int:
     """Archive ERA5 Open-Meteo le long du trait, sans Copernicus.
 
-    Une série par (point arrondi, jour). Le cache SQLite évite le retéléchargement.
+    Un appel par (cellule 0,25°, plage de jours contigus). Un échec n'est pas
+    mis en cache. Au premier 429 ou plafond, on s'arrête jusqu'au lendemain UTC.
     """
-    n = 0
+    if om_quota_blocked():
+        return 0
+    needed: List[tuple[float, float, str]] = []
     seen: set[tuple[str, str]] = set()
     for item in slots or []:
         if not item or len(item) < 3:
@@ -686,15 +871,76 @@ def fill_era5_along(slots, *, fetch: bool = True) -> int:
             lat, lon, day = float(item[0]), float(item[1]), _day_str(item[2])
         except (TypeError, ValueError):
             continue
-        key = (point_key(lat, lon), day)
+        clat, clon = cell_center(lat, lon)
+        key = (point_key(clat, clon), day)
         if key in seen:
             continue
         seen.add(key)
-        try:
-            packed = series(lat, lon, day, products=ERA5_PRODUCTS, fetch=fetch)
-        except Exception as exc:
-            log.info("era5 fill %s: %s", key, exc)
+        hit = kv_get(CACHE_NS, cache_key(clat, clon, SRC_OM_ERA5, day))
+        if _cached_hours(hit):
             continue
-        if packed.get("hours"):
-            n += 1
+        needed.append((clat, clon, day))
+    if not fetch or not needed:
+        return 0
+    by_cell: Dict[str, List[tuple[float, float, str]]] = {}
+    for lat, lon, day in needed:
+        by_cell.setdefault(point_key(lat, lon), []).append((lat, lon, day))
+    n = 0
+    for items in by_cell.values():
+        if om_quota_blocked():
+            break
+        lat, lon = items[0][0], items[0][1]
+        for start, end in _contiguous_ranges([it[2] for it in items]):
+            if om_quota_blocked() or om_calls_today() >= om_daily_budget():
+                if om_calls_today() >= om_daily_budget():
+                    _mark_om_quota_blocked("budget")
+                break
+            try:
+                n += _load_era5_range(lat, lon, start, end)
+            except OpenMeteoQuotaExceeded:
+                log.info("era5 fill stop: quota Open-Meteo")
+                return n
+            except Exception as exc:
+                log.info("era5 fill %s %s–%s: %s", point_key(lat, lon), start, end, exc)
+                continue
+        if om_quota_blocked():
+            break
     return n
+
+
+def era5_coverage(clock: dict, now: datetime | str) -> tuple[int, int]:
+    """(remplis, total) des créneaux passés ayant des heures ERA5."""
+    slots = past_passage_slots(clock, now)
+    filled = 0
+    for lat, lon, day in slots:
+        hit = kv_get(CACHE_NS, cache_key(lat, lon, SRC_OM_ERA5, day))
+        if _cached_hours(hit):
+            filled += 1
+    return filled, len(slots)
+
+
+def hindcast_status_fields(clock: dict, now: datetime | str, *, obtained: bool) -> dict:
+    """Statut honnête : ready ≥ 95 %, sinon partial n/total, sinon empty + raison."""
+    filled, total = era5_coverage(clock, now)
+    coverage = f"{filled}/{total}"
+    reason = None
+    if total == 0 or filled == 0:
+        status = "empty"
+        if om_quota_blocked() or om_quota_reason():
+            reason = "quota Open-Meteo"
+        elif total > 0:
+            reason = "panne"
+    elif filled / total >= READY_COVERAGE:
+        status = "ready"
+    else:
+        status = "partial"
+        if om_quota_blocked():
+            reason = "quota Open-Meteo"
+    out = {
+        "hindcastStatus": status,
+        "hindcastCoverage": coverage,
+        "hindcastReason": reason,
+    }
+    if obtained:
+        out["hindcastRefreshedAt"] = to_iso(_as_dt(now))
+    return out

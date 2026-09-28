@@ -37,7 +37,9 @@ describe("MapScene boundary", () => {
     const end = src.indexOf("constructor(map");
     assert.ok(start >= 0 && end > start, "bloc mount() introuvable");
     const mount = src.slice(start, end);
-    assert.match(mount, /minZoom:\s*2/);
+    assert.match(mount, /minZoom:\s*MAP_MIN_ZOOM/);
+    assert.match(src, /MAP_MIN_ZOOM = 0/);
+    assert.match(src, /WORLD_ZOOM = 2/);
     assert.match(mount, /worldCopyJump:\s*false/);
     assert.match(mount, /maxBoundsViscosity:\s*1/);
     assert.match(src, /MAP_LON_BOUND = 540/);
@@ -45,6 +47,45 @@ describe("MapScene boundary", () => {
     assert.match(mount, /maxBounds:\s*MAP_MAX_BOUNDS/);
     assert.doesNotMatch(mount, /-Infinity/);
     assert.doesNotMatch(mount, /Infinity/);
+  });
+
+  it("lot RF7 : pas de recadrage bateau au calage initial Suivre", () => {
+    const src = read("./MapSceneController.js");
+    const start = src.indexOf("  syncInitialCamera()");
+    const end = src.indexOf("  liftBoundsForDrawing()");
+    assert.ok(start >= 0 && end > start, "syncInitialCamera / liftBoundsForDrawing introuvables");
+    const chunk = src.slice(start, end);
+    assert.doesNotMatch(chunk, /6\.5/);
+    assert.doesNotMatch(chunk, /setView\(\[cfg\.live/);
+    assert.match(chunk, /setCameraPlaced\(true\)/);
+  });
+
+  it("lot RF7 : en Tracer la caméra ne reprend pas le zoom bateau", () => {
+    const src = read("./MapSceneController.js");
+    assert.match(src, /if \(cfg\.filmActive \|\| cfg\.drawingMode\) return/);
+    assert.match(src, /this\.config\.drawingMode \|\| !this\.map/);
+    assert.match(src, /event\?\.type !== "zoomstart"/);
+    assert.match(src, /setMaxBounds\?\.\(null\)/);
+  });
+
+  it("lot RC14 : entrée Tracer pose drawingMode et lève maxBounds avant showWorld", () => {
+    const app = read("../App.jsx");
+    const src = read("./MapSceneController.js");
+    assert.match(app, /beginDrawingWorld/);
+    assert.match(src, /beginDrawingWorld\(\)/);
+    assert.match(src, /drawingMode: true/);
+    assert.match(src, /keepBoundsLifted/);
+    const enter = src.indexOf("if (!previous.drawingMode && this.config.drawingMode)");
+    assert.ok(enter >= 0, "branche entrée drawingMode introuvable");
+    const enterChunk = src.slice(enter, enter + 220);
+    assert.match(enterChunk, /liftBoundsForDrawing\(\)/);
+    assert.match(enterChunk, /showWorld\(\{ keepBoundsLifted: true \}\)/);
+    const showAt = src.indexOf("showWorld({ keepBoundsLifted = false } = {})");
+    const showEnd = src.indexOf("  resetCameraForView()");
+    assert.ok(showAt >= 0 && showEnd > showAt, "showWorld introuvable");
+    const showChunk = src.slice(showAt, showEnd);
+    assert.match(showChunk, /leaveLifted = keepBoundsLifted \|\| this\.config\.drawingMode/);
+    assert.match(showChunk, /if \(!leaveLifted && bounds\)/);
   });
 
   it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {

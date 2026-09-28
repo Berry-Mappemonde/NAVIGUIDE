@@ -8,6 +8,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
+import { filmSubtitleShowsAir, visibleFilmSubtitle } from "../hooks/useReplay.js";
 
 function clockSpeedBasis(clock, clockCurrent, barNm) {
   const direct = clockCurrent?.basis;
@@ -138,6 +139,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
+  const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "");
+  const filmSubtitleAir = filmSubtitleShowsAir(filmSubtitle);
 
   if (hideBar) {
     return (
@@ -193,7 +196,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={{ left: insets.left, right: insets.right }}
     >
-      <div className="naviguide-film-bar rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
+        <div className="naviguide-film-bar overflow-hidden rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
             {finished
@@ -304,9 +307,14 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             );
           })}
         </div>
-        {replay?.active ? (
-          <div data-testid="film-subtitle" className="text-[10px] text-sky-100/90 leading-tight mt-0.5 truncate">
-            {replay.subtitle || ""}
+        {(replay?.active || replay?.subtitle) ? (
+          <div
+            data-testid="film-subtitle"
+            className={`text-[10px] text-sky-100/90 leading-tight mt-0.5 ${
+              filmSubtitleAir ? "whitespace-normal" : "truncate"
+            }`}
+          >
+            {filmSubtitle}
           </div>
         ) : null}
         {storiesPending > 0 ? (
@@ -315,7 +323,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-1 mt-1">
+        <div className="flex items-start gap-1 mt-1 min-w-0">
           {onHideBar ? (
             <button
               type="button"
@@ -326,8 +334,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               {t("hideFilmBar")}
             </button>
           ) : null}
-          <div data-testid="film-commands" className="flex items-center gap-1 flex-nowrap min-w-0 flex-1">
-          <div className="flex items-center gap-1 flex-nowrap shrink-0">
+          <div data-testid="film-commands" className="flex items-start gap-1 min-w-0 flex-1">
+          <div className="flex items-center gap-1 flex-wrap min-w-0 flex-1">
             {onCinema ? (
               <button
                 type="button"
@@ -373,8 +381,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay ? (
               <>
-                <span data-testid="film-source" className="text-[9px] text-white/60 leading-tight truncate max-w-[7rem]">
-                  {t("filmStorySource", { source: filmSourceLabel(replay.source, t) })}
+                <span data-testid="film-source" hidden>
+                  {filmSourceLabel(replay.source, t)}
                 </span>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
@@ -424,8 +432,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               </div>
             ) : null}
             {replay ? (
-              <div className="flex items-center gap-1" data-testid="replay-controls">
-                <div data-testid="replay-departure" className="shrink-0 w-[9.75rem]">
+              <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
+                <div data-testid="replay-departure" className="w-max shrink-0">
                   <DepartureField
                     t0={replay.t0}
                     onT0={replay.onT0}
@@ -450,44 +458,48 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     </div>
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={replay.onStart}
-                    data-testid="replay-start"
-                    className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap"
-                    title={t("replayStartTitle")}
-                  >
-                    ↺ {t("replayStart")}
-                  </button>
-                )}
-                <div
-                  data-testid="film-duration"
-                  className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
-                  title={t("filmDuration")}
-                >
-                  {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                  <div className="flex flex-wrap items-center gap-1 min-w-0">
                     <button
-                      key={sec}
                       type="button"
-                      data-seconds={sec}
-                      aria-pressed={Number(replay.targetSeconds) === sec}
-                      aria-disabled={Boolean(replay.active)}
-                      disabled={Boolean(replay.active)}
-                      onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
-                      className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
-                        Number(replay.targetSeconds) === sec
-                          ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
-                          : "text-white/70 hover:text-white border border-transparent"
-                      }`}
+                      onClick={replay.onStart}
+                      disabled={!replay.canStart}
+                      aria-disabled={!replay.canStart}
+                      data-testid="replay-start"
+                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+                      title={t("replayStartTitle")}
                     >
-                      {t(key)}
+                      ↺ {t("replayStart")}
                     </button>
-                  ))}
-                </div>
+                    {replay.canStart ? (
+                      <div
+                        data-testid="film-duration"
+                        className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
+                        title={t("filmDuration")}
+                      >
+                        {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            data-seconds={sec}
+                            aria-pressed={Number(replay.targetSeconds) === sec}
+                            onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
+                            className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                              Number(replay.targetSeconds) === sec
+                                ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                                : "text-white/70 hover:text-white border border-transparent"
+                            }`}
+                          >
+                            {t(key)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 ml-auto flex-nowrap shrink-0">
+          <div className="flex items-center gap-1 flex-nowrap shrink-0">
             {showPlaybackControls ? (
               <>
                 <button

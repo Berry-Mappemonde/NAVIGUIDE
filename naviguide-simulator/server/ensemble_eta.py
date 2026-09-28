@@ -12,9 +12,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from climatology_atlas import atlas_wind_at_dt
-from hindcast import hours_from_om, om_get, point_key
+from hindcast import hours_from_om, point_key
 from isochrone import haversine
-from pearl_store import kv_get, kv_put
+from pearl_store import kv_delete, kv_get, kv_put
 from voyage_clock import (
     PLANNING_MIN_KN,
     build_voyage_clock,
@@ -31,7 +31,16 @@ FORECAST_DAYS = 15
 CACHE_NS = "ensemble"
 CACHE_TTL_S = 6 * 3600
 MAX_POINT_NM = 60.0
+MAX_PROBES_PER_LEG = 12
 SOURCE = "open-meteo-ensemble"
+STATUS_TTL_S = 36 * 3600
+ETA_BACKOFF_S = (30, 60, 120, 300, 600, 900)
+REASON_UNAVAILABLE = "ensemble_unavailable"
+REASON_BEYOND_HORIZON = "beyond_horizon"
+REASON_EMPTY = "empty_ensemble"
+REASON_NO_STOP = "no_stop"
+REASON_NO_REMAINING = "no_remaining"
+REASON_INTEGRATION = "integration_empty"
 # Lot RA7 : un membre à ~0 kn faisait exploser p90 (7 mois). Même plancher
 # que voyage_clock.planning_speed_for ; la fourchette affichée reste de
 # quelques jours autour de p50 (jamais inventée : sans membres valides → vide).
@@ -43,11 +52,18 @@ _SPEED_KEY = re.compile(r"^(?:(?P<model>.+)_)?wind_speed_10m(?:_member(?P<n>\d+)
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
 
 
-def empty_eta(now: Optional[datetime] = None) -> dict:
+def empty_eta(
+    now: Optional[datetime] = None,
+    *,
+    reason: Optional[str] = None,
+    last_attempt: Optional[str] = None,
+    next_retry: Optional[str] = None,
+    detail: Optional[str] = None,
+) -> dict:
     when = now or datetime.now(timezone.utc)
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-    return {
+    out = {
         "p10": None,
         "p50": None,
         "p90": None,
@@ -56,6 +72,96 @@ def empty_eta(now: Optional[datetime] = None) -> dict:
         "computedAt": to_iso(when),
         "memberKnots": [],
     }
+    if reason or last_attempt or next_retry or detail:
+        out["reason"] = reason
+        out["lastAttempt"] = last_attempt or to_iso(when)
+        out["nextRetry"] = next_retry
+        if detail:
+            out["detail"] = str(detail)[:240]
+    return out
+
+
+def official_eta_status_key(stop: str, now: datetime) -> str:
+    """État d'un warm vide (raison / prochaine relance), indépendant du clock."""
+    when = _as_dt(now)
+    return (
+        f"eta-official-status:{_norm_stop(stop)}:{when.strftime('%Y-%m-%d')}"
+        f":{when.hour // 6}:{ETA_TIGHTEN_TAG}"
+    )
+
+
+def compute_next_retry(
+    now: datetime,
+    attempt: int = 0,
+    detail: Optional[str] = None,
+) -> datetime:
+    """Prochaine relance : quota journalier → lendemain UTC ; sinon repli 30 s → 15 min."""
+    when = _as_dt(now)
+    text = (detail or "").lower()
+    if "limit exceeded" in text or "try again tomorrow" in text or "429" in text:
+        nxt = (when + timedelta(days=1)).replace(hour=0, minute=15, second=0, microsecond=0)
+        if nxt <= when:
+            nxt += timedelta(days=1)
+        return nxt
+    delay = ETA_BACKOFF_S[min(max(int(attempt), 0), len(ETA_BACKOFF_S) - 1)]
+    return when + timedelta(seconds=delay)
+
+
+def eta_retry_due(peeked: Optional[dict], now: datetime) -> bool:
+    """True s'il faut relancer le warm (pas de membres, backoff expiré ou absent)."""
+    if _positive_members((peeked or {}).get("members")) > 0:
+        return False
+    raw = (peeked or {}).get("nextRetry")
+    if not raw:
+        return True
+    try:
+        return _as_dt(raw) <= _as_dt(now)
+    except Exception:
+        return True
+
+
+def remember_eta_failure(
+    stop: str,
+    now: datetime,
+    reason: str,
+    detail: Optional[str] = None,
+) -> dict:
+    """Enregistre un warm vide : raison lue, dernière tentative, prochaine relance."""
+    when = _as_dt(now)
+    prev = kv_get(CACHE_NS, official_eta_status_key(stop, when), max_age_s=STATUS_TTL_S)
+    raw = prev.get("value") if prev else None
+    try:
+        attempt = int((raw or {}).get("attempt") or 0)
+    except (TypeError, ValueError):
+        attempt = 0
+    nxt = compute_next_retry(when, attempt, detail)
+    payload = {
+        "reason": reason,
+        "lastAttempt": to_iso(when),
+        "nextRetry": to_iso(nxt),
+        "detail": (str(detail)[:240] if detail else None),
+        "attempt": attempt + 1,
+        "members": 0,
+    }
+    kv_put(CACHE_NS, official_eta_status_key(stop, when), payload)
+    return empty_eta(
+        when,
+        reason=reason,
+        last_attempt=payload["lastAttempt"],
+        next_retry=payload["nextRetry"],
+        detail=payload["detail"],
+    )
+
+
+def _empty_for(
+    stop: str,
+    now: datetime,
+    reason: str,
+    detail: Optional[str] = None,
+) -> dict:
+    if (stop or "").strip():
+        return remember_eta_failure(stop, now, reason, detail)
+    return empty_eta(now, reason=reason, detail=detail)
 
 
 def _as_dt(value: datetime | str) -> datetime:
@@ -151,7 +257,13 @@ def bound_eta_quantiles(
 def tighten_eta_payload(eta: dict, now: Optional[datetime] = None) -> dict:
     """Filet : fourchette déjà calculée (cache ancien) → resserrée ou vide."""
     if not eta or _positive_members(eta.get("members")) <= 0:
-        return empty_eta(now)
+        return empty_eta(
+            now,
+            reason=eta.get("reason") if eta else None,
+            last_attempt=eta.get("lastAttempt") if eta else None,
+            next_retry=eta.get("nextRetry") if eta else None,
+            detail=eta.get("detail") if eta else None,
+        )
     knots = eta.get("memberKnots") or []
     if knots and not any(_as_kn(k) >= ETA_MIN_KN for k in knots):
         return empty_eta(now)
@@ -230,6 +342,83 @@ def _cache_key(lat: float, lon: float) -> str:
     return f"{point_key(lat, lon)}:{ENSEMBLE_MODELS}:{FORECAST_DAYS}"
 
 
+_fetch_note: Dict[str, Any] = {"reason": None, "detail": None, "ok": 0, "fail": 0}
+
+
+def _reset_fetch_note() -> None:
+    _fetch_note["reason"] = None
+    _fetch_note["detail"] = None
+    _fetch_note["ok"] = 0
+    _fetch_note["fail"] = 0
+
+
+def _note_fetch(reason: Optional[str] = None, detail: Optional[str] = None, *, ok: bool = False) -> None:
+    if ok:
+        _fetch_note["ok"] = int(_fetch_note.get("ok") or 0) + 1
+        return
+    _fetch_note["fail"] = int(_fetch_note.get("fail") or 0) + 1
+    if reason and not _fetch_note.get("reason"):
+        _fetch_note["reason"] = reason
+        _fetch_note["detail"] = detail
+
+
+def _http_detail(resp: Any) -> str:
+    text = ""
+    try:
+        text = (resp.text or "").strip()
+    except Exception:
+        text = ""
+    if text:
+        try:
+            body = resp.json()
+            if isinstance(body, dict):
+                text = str(body.get("reason") or body.get("error") or text)
+        except Exception:
+            pass
+    return text[:240]
+
+
+def _fetch_ensemble_json(lat: float, lon: float) -> tuple[Optional[dict], Optional[str], Optional[str]]:
+    """(payload, raison, détail). La raison n'est posée que si le payload manque.
+
+    Lot RE5 : on lit le statut HTTP ici (429 quota) au lieu de l'avaler dans
+    ``om_get`` (hindcast.py:195-197 → None). Cache par point inchangé.
+    """
+    from hindcast import _client, _fetch_blocked  # noqa: PLC0415
+
+    if _fetch_blocked:
+        return None, REASON_UNAVAILABLE, "hindcast network blocked"
+    params = {
+        "latitude": f"{float(lat):.4f}",
+        "longitude": f"{float(lon):.4f}",
+        "models": ENSEMBLE_MODELS,
+        "hourly": "wind_speed_10m,wind_direction_10m",
+        "wind_speed_unit": "kn",
+        "forecast_days": FORECAST_DAYS,
+        "timezone": "UTC",
+        "cell_selection": "sea",
+    }
+    try:
+        with _client() as client:
+            resp = client.get(ENSEMBLE_URL, params=params)
+    except Exception as exc:
+        log.info("ensemble %s: %s", point_key(lat, lon), exc)
+        return None, REASON_UNAVAILABLE, str(exc)[:240]
+    if resp.status_code == 429:
+        detail = _http_detail(resp) or "Daily API request limit exceeded"
+        log.info("ensemble %s: HTTP 429 %s", point_key(lat, lon), detail)
+        return None, REASON_UNAVAILABLE, detail
+    if resp.status_code >= 400:
+        detail = _http_detail(resp) or f"HTTP {resp.status_code}"
+        log.info("ensemble %s: HTTP %s %s", point_key(lat, lon), resp.status_code, detail)
+        return None, REASON_UNAVAILABLE, detail
+    try:
+        return resp.json(), None, None
+    except Exception as exc:
+        log.info("ensemble %s: %s", point_key(lat, lon), exc)
+        return None, REASON_UNAVAILABLE, str(exc)[:240]
+
+
 def fetch_point_members(lat: float, lon: float) -> Dict[str, List[dict]]:
     """Une requête Ensemble API, cache 6 h. Vide si panne (jamais inventé)."""
     key = _cache_key(lat, lon)
@@ -237,28 +426,51 @@ def fetch_point_members(lat: float, lon: float) -> Dict[str, List[dict]]:
     if hit and isinstance(hit.get("value"), dict):
         raw = hit["value"].get("members")
         if isinstance(raw, dict) and raw:
+            _note_fetch(ok=True)
             return raw
     try:
-        data = om_get(ENSEMBLE_URL, {
-            "latitude": f"{float(lat):.4f}",
-            "longitude": f"{float(lon):.4f}",
-            "models": ENSEMBLE_MODELS,
-            "hourly": "wind_speed_10m,wind_direction_10m",
-            "wind_speed_unit": "kn",
-            "forecast_days": FORECAST_DAYS,
-            "timezone": "UTC",
-            "cell_selection": "sea",
-        })
-    except RuntimeError:
+        data, reason, detail = _fetch_ensemble_json(lat, lon)
+    except RuntimeError as exc:
+        _note_fetch(REASON_UNAVAILABLE, str(exc)[:240])
+        return {}
+    if reason or data is None:
+        _note_fetch(reason or REASON_UNAVAILABLE, detail)
         return {}
     members = parse_members(data)
     if members:
         kv_put(CACHE_NS, key, {"members": members, "source": SOURCE})
-    return members
+        _note_fetch(ok=True)
+        return members
+    _note_fetch(REASON_EMPTY, "ensemble payload without members")
+    return {}
 
 
-def sample_leg_points(points: List[dict], max_nm: float = MAX_POINT_NM) -> List[dict]:
-    """Sommets de la jambe, pas ≤ 60 nm (on saute les points trop proches)."""
+def _cap_probes(points: List[dict], max_probes: int) -> List[dict]:
+    """Garde premier et dernier, répartit le reste. L'intégration n'est pas échantillonnée."""
+    if max_probes < 2 or len(points) <= max_probes:
+        return points
+    out: List[dict] = []
+    last_idx = -1
+    span = len(points) - 1
+    for i in range(max_probes):
+        idx = int(round(i * span / (max_probes - 1)))
+        if idx <= last_idx:
+            idx = last_idx + 1
+        if idx > span:
+            break
+        out.append(points[idx])
+        last_idx = idx
+    if out and out[-1] is not points[-1]:
+        out[-1] = points[-1]
+    return out
+
+
+def sample_leg_points(
+    points: List[dict],
+    max_nm: float = MAX_POINT_NM,
+    max_probes: int = MAX_PROBES_PER_LEG,
+) -> List[dict]:
+    """Sommets de la jambe, pas ≤ 60 nm, puis plafond (lot RE5 : ≤ 12 sondes)."""
     if not points:
         return []
     out = [points[0]]
@@ -287,7 +499,7 @@ def sample_leg_points(points: List[dict], max_nm: float = MAX_POINT_NM) -> List[
             last_nm, last = nm, p
     if points[-1] is not out[-1]:
         out.append(points[-1])
-    return out
+    return _cap_probes(out, max_probes)
 
 
 def _nearest_hour(series: List[dict], when: datetime) -> Optional[dict]:
@@ -431,6 +643,16 @@ def peek_official_eta(voy: dict, stop: str, now: datetime) -> dict:
     raw = alias.get("value") if alias else None
     if isinstance(raw, dict) and raw.get("members"):
         return dict(raw)
+    status = kv_get(CACHE_NS, official_eta_status_key(stop, when), max_age_s=STATUS_TTL_S)
+    raw = status.get("value") if status else None
+    if isinstance(raw, dict) and (raw.get("reason") or raw.get("lastAttempt")):
+        return empty_eta(
+            when,
+            reason=raw.get("reason"),
+            last_attempt=raw.get("lastAttempt"),
+            next_retry=raw.get("nextRetry"),
+            detail=raw.get("detail"),
+        )
     return empty
 
 
@@ -449,14 +671,13 @@ def compute_eta(
     `sample` = position actuelle (sinon échantillon d'horloge à `now`).
     """
     now = _as_dt(now)
-    empty = empty_eta(now)
     stop_mark = _find_stop(marks, stop)
     if not stop_mark or not points:
-        return empty
+        return _empty_for(stop, now, REASON_NO_STOP)
     if sample is None and clock:
         sample = sample_clock_at_time(clock, now)
     if not sample or sample.get("lat") is None:
-        return empty
+        return _empty_for(stop, now, REASON_NO_STOP)
     result_key = (
         f"eta:{_norm_stop(stop)}:{point_key(sample['lat'], sample['lon'])}"
         f":{now.strftime('%Y-%m-%d')}:{now.hour // 6}:{ETA_TIGHTEN_TAG}"
@@ -467,26 +688,34 @@ def compute_eta(
     end_nm = float(stop_mark.get("nm") or stop_mark.get("filmNm") or 0)
     start_nm = float(sample.get("sailNm") or sample.get("filmNm") or 0)
     if end_nm <= start_nm + 0.5:
-        return empty
+        return _empty_for(stop, now, REASON_NO_REMAINING)
     remaining = _remaining_points(points, sample, end_nm)
     if len(remaining) < 2:
-        return empty
+        return _empty_for(stop, now, REASON_NO_REMAINING)
+    remaining_nm = max(0.0, end_nm - start_nm)
     probes = sample_leg_points(remaining, MAX_POINT_NM)
     fields: List[dict] = []
     member_ids: set[str] = set()
+    _reset_fetch_note()
     for p in probes:
         try:
             members = fetch_point_members(float(p["lat"]), float(p["lon"]))
-        except RuntimeError:
+        except RuntimeError as exc:
+            _note_fetch(REASON_UNAVAILABLE, str(exc)[:240])
             members = {}
         except Exception as exc:
             log.info("ensemble %s: %s", point_key(p["lat"], p["lon"]), exc)
+            _note_fetch(REASON_UNAVAILABLE, str(exc)[:240])
             members = {}
         if members:
             fields.append({"lat": p["lat"], "lon": p["lon"], "members": members})
             member_ids.update(members)
     if not fields or not member_ids:
-        return empty
+        reason = _fetch_note.get("reason") or REASON_UNAVAILABLE
+        hours_left = remaining_nm / max(ETA_MIN_KN, 1e-6)
+        if reason == REASON_EMPTY and hours_left > FORECAST_DAYS * 24.0:
+            reason = REASON_BEYOND_HORIZON
+        return _empty_for(stop, now, reason, _fetch_note.get("detail"))
     arrivals: List[datetime] = []
     for mid in sorted(member_ids):
         def wind_fn(lat, lon, t, _mid=mid):
@@ -499,16 +728,15 @@ def compute_eta(
         if arrived is not None:
             arrivals.append(arrived)
     if not arrivals:
-        return empty
-    remaining_nm = max(0.0, end_nm - start_nm)
+        return _empty_for(stop, now, REASON_INTEGRATION)
     kept = tighten_eta_arrivals(arrivals, remaining_nm=remaining_nm, now=now)
     if not kept:
-        return empty
+        return _empty_for(stop, now, REASON_INTEGRATION)
     member_knots = [round(implied_speed_kn(remaining_nm, now, arr), 2) for arr in kept]
     p10, p50, p90 = arrival_quantiles(kept)
     p10, p50, p90 = bound_eta_quantiles(p10, p50, p90)
     if not p10 or not p50 or not p90:
-        return empty
+        return _empty_for(stop, now, REASON_INTEGRATION)
     out = {
         "p10": to_iso(p10),
         "p50": to_iso(p50),
@@ -520,6 +748,7 @@ def compute_eta(
     }
     kv_put(CACHE_NS, result_key, out)
     kv_put(CACHE_NS, official_eta_alias_key(stop, now), out)
+    kv_delete(CACHE_NS, official_eta_status_key(stop, now))
     return out
 
 

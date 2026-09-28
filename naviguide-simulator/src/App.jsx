@@ -25,7 +25,7 @@ import { useMoment } from "./hooks/useMoment.js";
 import { useMomentJournal } from "./hooks/useMomentJournal.js";
 import { useEscaleSheetState } from "./hooks/useEscaleSheetState.js";
 import { useLogbookChat } from "./hooks/useLogbookChat.js";
-import { useReplay } from "./hooks/useReplay.js";
+import { followClockLineFromT0, useReplay, visibleFilmSubtitle } from "./hooks/useReplay.js";
 import { useReplayVoice } from "./hooks/useReplayVoice.js";
 import { dayMonth, expeditionStory } from "./engine/expeditionStory.js";
 import { sumRainHours } from "./engine/eventRules.js";
@@ -52,11 +52,9 @@ import {
   DEFAULT_START_AT,
   DEFAULT_T0_ISO,
   etaHoursToFilmNm,
-  formatFilmClockLine,
   formatMonthName,
   lookupVoyageClock,
   monthOfT0,
-  rebaseIso,
   sampleClockAtTime,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
@@ -153,7 +151,7 @@ export default function App() {
   });
   const [maritimeLayerState, setMaritimeLayerState] = useState(null);
   const maritimeLayers = maritimeLayerState || EMPTY_MARITIME_LAYERS;
-  const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null });
+  const [climoLayer, setClimoLayer] = useState({ loading: false, error: null, counts: null, source: null });
   const [isLightMode, setIsLightMode] = useState(false);
 
   const [segments, setSegments] = useState([]);
@@ -162,15 +160,15 @@ export default function App() {
   const [segProgress, setSegProgress] = useState({ done: 0, total: 0 });
   const [officialFallback, setOfficialFallback] = useState(false);
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [toolsOpen, setToolsOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [expeditionPlan, setExpeditionPlan] = useState(null);
   const [polarData, setPolarData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
 
   const [view, setView] = useState(VIEW_SUIVRE);
   const [replayT0, setReplayT0] = useState(DEFAULT_T0_ISO);
-  const [cinemaMode, setCinemaMode] = useState(false);
+  const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
   const [stopAuto, setStopAuto] = useState(false);
@@ -315,13 +313,17 @@ export default function App() {
     marks: escaleMarks,
   });
   const officialClock = isSuivre ? (official.clock || voyage.clock) : voyage.clock;
+  // Lot RC10 — le film n'utilise pas le repli voyage.clock (script Simulation).
+  const filmClock = isSuivre ? official.clock : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
   // stands in for the live one — the scene, the clock line, the story and
   // the cards all read `live`. Suivre only; Stop or the end hands back.
   const replay = useReplay({
-    clock: officialClock,
+    clock: filmClock,
+    fallbackClock: voyage.clock,
+    requireOfficialFilm: isSuivre,
     journal: officialJournal.journal,
     enabled: isSuivre,
     lang,
@@ -347,7 +349,10 @@ export default function App() {
     hasLive: Boolean(live),
     previewing,
   });
-  const sceneReady = gateReady || shouldKeepSceneVisible({
+  // RF7 / D1' : la vue monde se montre dès que la route et la caméra sont
+  // posées — pas d'attente du live ni du playhead (aucun recadrage serveur).
+  const worldReady = Boolean(routeReady && hasRoute && cameraPlaced);
+  const sceneReady = gateReady || worldReady || shouldKeepSceneVisible({
     revealed: sceneRevealed,
     routeReady,
     hasRoute,
@@ -411,8 +416,8 @@ export default function App() {
     enabled: routeReady,
     t0: voyage.t0,
     points: flatRoute.points,
-    boatLat: sample?.lat,
-    boatLon: sample?.lon,
+    boatLat: replay.active && Number.isFinite(Number(official.live?.lat)) ? official.live.lat : sample?.lat,
+    boatLon: replay.active && Number.isFinite(Number(official.live?.lon)) ? official.live.lon : sample?.lon,
     destLat: destMark?.lat,
     destLon: destMark?.lon,
     month: climoMonth,
@@ -551,6 +556,7 @@ export default function App() {
     mode: drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation"),
     lang,
     enabled: sceneReady,
+    frozen: replay.active,
   });
   const momentMode = drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation");
   const journalRouteId = momentMode === "drawn"
@@ -588,14 +594,14 @@ export default function App() {
   const chat = useLogbookChat({ lang, contextFn: chatContextFn });
 
   const clockLine = officialClock?.vertices?.length && clockSample
-    ? formatFilmClockLine({
+    ? followClockLineFromT0({
       sailNm: isSuivre && !previewing
         ? (clockSample.sailNm ?? cast?.sailNm)
         : (cast?.sailNm ?? clockSample.sailNm),
       seaHours: clockSample.seaHours,
-      iso: isSuivre && replay.active
-        ? rebaseIso(clockSample.iso, DEFAULT_T0_ISO, replayT0)
-        : clockSample.iso,
+      iso: clockSample.iso,
+      fromT0: officialClock.t0 || DEFAULT_T0_ISO,
+      t0: isSuivre ? replayT0 : (officialClock.t0 || DEFAULT_T0_ISO),
       lang,
     })
     : "";
@@ -663,8 +669,8 @@ export default function App() {
   }, [routeReady, isSuivre, live?.filmNm, live?.replay, userPreview, playback.nm, sceneApi]);
 
   useEffect(() => {
-    if (gateReady) setSceneRevealed(true);
-  }, [gateReady]);
+    if (gateReady || worldReady) setSceneRevealed(true);
+  }, [gateReady, worldReady]);
   useEffect(() => {
     if (!routeReady) setSceneRevealed(false);
   }, [routeReady]);
@@ -700,7 +706,7 @@ export default function App() {
   );
 
   const alongPack = useIciAlong({
-    enabled: Boolean(cast && routeReady),
+    enabled: Boolean(cast && routeReady) && !replay.active,
     flat: flatRoute,
     // Lot T: when a route is drawn, sample that track — never GET /ici/pearls (Berry).
     customRoute: routeForView,
@@ -718,6 +724,7 @@ export default function App() {
 
   const iciPack = useIciDossier({
     enabled: Boolean(cast),
+    frozen: replay.active,
     stories: !replay.active,
     cast,
     snappedPosition: legContext?.snappedPosition,
@@ -861,9 +868,10 @@ export default function App() {
 
   const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
+    canStart: replay.canStart,
     progress: replay.progress,
     voice: replay.voice,
-    subtitle: replay.chapterText,
+    subtitle: visibleFilmSubtitle(replay.chapterText),
     targetSeconds: replay.targetSeconds,
     onDuration: replay.setTargetSeconds,
     onStart: () => {
@@ -889,7 +897,7 @@ export default function App() {
     onStyle: replay.setFilmStyle,
     t0: replayT0,
     onT0: setReplayT0,
-  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
+  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1006,10 +1014,16 @@ export default function App() {
       sceneApiRef.current?.playback.setProfile("normal");
       sceneApiRef.current?.playback.pause();
       sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
+      if (view === VIEW_SUIVRE) {
+        leaveCinema();
+        setSidebarOpen(true);
+        setToolsOpen(true);
+      }
     }
   }, [
     cinemaMode,
     closeEscaleSheet,
+    leaveCinema,
     recaptureBoat,
     replay.active,
     replay.stop,
@@ -1171,6 +1185,8 @@ export default function App() {
     sceneApiRef.current?.briefing?.clear?.();
     setEscaleStop(null);
     if (replay.active) replay.stop();
+    sceneApiRef.current?.beginDrawingWorld?.();
+    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
   };
 
   const handleDrawCancel = () => {
@@ -1240,6 +1256,8 @@ export default function App() {
     setDrawingMode(true);
     setExpeditionPlan(null);
     setBriefingLoading(false);
+    sceneApiRef.current?.beginDrawingWorld?.();
+    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
   };
 
   const handleCustomDelete = () => {
@@ -1261,6 +1279,13 @@ export default function App() {
     };
     window.addEventListener("keydown", onEscDraw);
     return () => window.removeEventListener("keydown", onEscDraw);
+  }, [drawingMode]);
+
+  useEffect(() => {
+    if (!drawingMode) return undefined;
+    sceneApiRef.current?.beginDrawingWorld?.();
+    const id = requestAnimationFrame(() => sceneApiRef.current?.showWorld?.());
+    return () => cancelAnimationFrame(id);
   }, [drawingMode]);
 
   useEffect(() => {
@@ -1420,6 +1445,7 @@ export default function App() {
   // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
     enabled: Boolean(officialClock),
+    frozen: replay.active,
     clock: officialClock,
     lookup: atlas.lookup,
     revision: atlas.revision,
@@ -1656,8 +1682,8 @@ export default function App() {
         }}
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
-        onSeekEscale={handleSidebarSeek}
         onEscaleSheet={openEscaleFromUi}
+        frozen={Boolean(replay.active)}
         drawing={drawing}
         showDeparture={isSimulation}
         departureT0={voyage.t0}
@@ -1750,6 +1776,9 @@ export default function App() {
                 maritimeLayers.showClimoCurrent && `courant ${climoLayer.counts.current || 0}`,
                 maritimeLayers.showClimoCyclones && `IBTrACS ${climoLayer.counts.cyclones || 0}`,
               ].filter(Boolean).join(" · ")}
+              {climoLayer.source === "global" && (
+                <span data-testid="climatology-source">{` · ${t("climatologySourceGlobal")}`}</span>
+              )}
             </span>
           )}
           {climoLayer.error === "atlas_empty" && atlas.alive === false && (

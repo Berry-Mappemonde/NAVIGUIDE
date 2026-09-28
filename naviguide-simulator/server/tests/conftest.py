@@ -41,9 +41,16 @@ def _isolated_voyage_dir(tmp_path_factory, monkeypatch):
     temporary directory — never in the developer's `voyage_data/` (and not
     in the test's own `tmp_path`, which some tests expect empty)."""
     d = tmp_path_factory.mktemp("voyage_data")
+    store = tmp_path_factory.mktemp("official_store")
     monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(d))
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(store))
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "0")
+    monkeypatch.delenv("SIMULATOR_MONGO_URL", raising=False)
     import voyage_store
+    import official_store
     monkeypatch.setattr(voyage_store, "_DIR", d)
+    official_store.reset_store()
+    official_store.reset_worker_flag()
     import pearl_store
     pearl_store.reset()
     import story_cascade
@@ -53,3 +60,5 @@ def _isolated_voyage_dir(tmp_path_factory, monkeypatch):
     yield
     story_cascade.reset_runtime()
     pearl_store.reset()
+    official_store.reset_store()
+    official_store.reset_worker_flag()

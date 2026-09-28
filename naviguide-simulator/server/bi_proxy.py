@@ -136,6 +136,9 @@ def _write_cache(path: Path, body: bytes) -> None:
 
 async def fetch_upstream(url: str, params: list[tuple[str, str]]) -> tuple[int, bytes]:
     """(status, body). Isolé pour les tests (monkeypatch). Délai selon la nature de l'URL (couche ou point)."""
+    import offline
+    if offline.enabled():
+        offline.deny_outgoing(url)
     async with httpx.AsyncClient(timeout=timeout_for(url)) as client:
         r = await client.get(url, params=params, headers={"Accept": "application/json"})
         return r.status_code, r.content
@@ -173,6 +176,9 @@ async def bi_climatology(rest: str, request: Request):
             raise HTTPException(502, f"atlas unavailable (cooldown {rest})")
         params = request.query_params.multi_items()
         try:
+            import offline
+            if offline.enabled():
+                raise HTTPException(502, "atlas unavailable (offline)")
             async with _sem_get():
                 status, body = await fetch_upstream(f"{bi_base()}/climatology/{rest}", params)
         except Exception as exc:  # réseau, timeout, refus de connexion — ce point d'accès seulement

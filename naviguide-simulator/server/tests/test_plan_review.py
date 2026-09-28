@@ -53,6 +53,8 @@ def test_review_reads_calendar_and_pearls_without_inventing(client, monkeypatch)
     assert "formalities" in kinds, kinds
     assert next(f for f in leg["flags"] if f["kind"] == "formalities")["names"] == ["Somewhere Exclusive Economic Zone"]
     assert "no-rest" not in kinds, "3 days alongside at Fort-de-France"
+    import official_store
+    official_store.put("plan_review", out)
     body = client.get("/voyage/official/plan-review", headers=PUBLIC).json()
     assert body["legs"][0]["to"] == "Fort-de-France (Martinique)"
     assert body["pearlsUnknown"] == leg["pearls"]["unknown"]
@@ -276,6 +278,8 @@ def test_plan_review_seeded_without_clock_has_legs(client, monkeypatch):
         return {"text": "", "source": "rules", "cached": False}
 
     monkeypatch.setattr(plan_review, "comment_plan", fake_comment)
+    import official_store
+    official_store.put("plan_review", plan_review.review_official(voy, season=False))
     r = client.get("/voyage/official/plan-review", headers=PUBLIC)
     assert r.status_code == 200
     body = r.json()
@@ -292,6 +296,11 @@ def test_plan_review_http_exposes_comment_source(client, monkeypatch):
     now = T0 + timedelta(days=10)
     _freeze(monkeypatch, now)
     client.put("/voyage/official", json=_official())
+    import official_store
+    voy = voyage_store.load_voyage(OFFICIAL_VOYAGE_ID)
+    out = plan_review.review_official(voy, now, season=False)
+    out["comment"] = {"text": "Je changerais le repos (3 jours).", "source": "rules", "cached": False}
+    official_store.put("plan_review", out)
     body = client.get("/voyage/official/plan-review", headers=PUBLIC).json()
     assert "comment" in body
     assert body["comment"]["source"] == "rules"
