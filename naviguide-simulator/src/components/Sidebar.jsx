@@ -113,6 +113,7 @@ function BerryCard({
             </button>
             <input
               ref={importRef}
+              name="route-import-file"
               type="file"
               accept=".geojson,.json,.kml"
               data-testid="route-import-file"

@@ -308,6 +308,7 @@ export default {
   climatologyStub: "CMEMS atlas — roses, Hs P50/P90, current, cyclones.",
   climatologyOn: "CMEMS atlas · {month} · {maps} · kind climatology",
   climatologyAtlasDown: "Atlas silent — zone wind fallback.",
+  climatologySourceGlobal: "4° mesh",
   modeClimatologyFull: "Climatology",
   climoAverage: "AVERAGE",
   climoMostLikely: "MOST_LIKELY",

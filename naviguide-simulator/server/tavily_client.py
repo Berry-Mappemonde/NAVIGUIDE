@@ -51,6 +51,9 @@ async def extract(
     empty = {"text": "", "results": [], "failed": [], "credits": 0}
     if not wanted:
         return empty
+    import offline
+    if offline.enabled():
+        return empty
     key = api_key()
     if not key:
         return empty
@@ -104,6 +107,9 @@ async def search(
     q = (query or "").strip()
     empty = {"results": [], "credits": 0}
     if not q:
+        return empty
+    import offline
+    if offline.enabled():
         return empty
     key = api_key()
     if not key:

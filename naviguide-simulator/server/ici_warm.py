@@ -435,6 +435,20 @@ def load_cache_from_disk() -> int:
 
 # ── the warmer ────────────────────────────────────────────────────────────────
 
+def _pearl_ready(key: str, rich: bool) -> bool:
+    """Perle déjà en stock (et riche si demandé), sans décoder son sac : au boot, 3 272 json.loads
+    tenaient la boucle d'événements ~2 min et l'API ne répondait plus (27 sept.)."""
+    try:
+        import pearl_store  # noqa: PLC0415
+        from ici_engine import _fresh  # noqa: PLC0415
+        meta = pearl_store.pearl_meta(key)
+    except Exception:
+        return False
+    if not meta or not _fresh(meta):
+        return False
+    return (not rich) or meta.get("kind") == "rich"
+
+
 async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) -> dict[str, Any]:
     """Collect the (rich) pearl of every sample of the official route, gently.
     Pearls already rich in the store are skipped; thin ones are upgraded."""
@@ -457,9 +471,11 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
 
     async def one(lat: float, lon: float) -> None:
         key = thin_cache_key(lat, lon, 30.0)
-        if thin_cache_get(key, rich=rich) is not None:
+        if _pearl_ready(key, rich) or thin_cache_get(key, rich=rich) is not None:
             _state["cached"] += 1
             _state["done"] += 1
+            if _state["cached"] % 64 == 0:
+                await asyncio.sleep(0)   # rendre la main à l'API entre deux paquets de perles déjà là
             return
         try:
             await fill_dossier(lat, lon, 30.0, month=month, thin=True, rich=rich)
@@ -498,15 +514,22 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
             _state["watch"] = await escale_watch.run_daily(voy)
         except Exception as exc:
             log.debug("veille Tavily : %s", exc)
-    # Lot R9a : journal des moments après les perles — déjà dans cette tâche
-    # de fond, jamais au démarrage.
+    # Lot R9a : journal des moments après les perles. RC18 (27 sept.) : quand le stock a son remplisseur
+    # (processus séparé, avec l'horloge), l'API ne le refait pas — ici, sans horloge, ça produisait 770
+    # moments sans date pour 46 s de CPU dans le processus de l'API.
     try:
-        from moment_journal import warm_moments  # noqa: PLC0415
-        from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
-        warmed = warm_moments(OFFICIAL_VOYAGE_ID)
-        _state["moments"] = int((warmed or {}).get("count") or 0)
-    except Exception as exc:
-        log.debug("journal des moments : %s", exc)
+        import official_store  # noqa: PLC0415
+        external_filler = official_store.worker_enabled() and official_store.WORKER_MODE != "thread"
+    except Exception:
+        external_filler = False
+    if not external_filler:
+        try:
+            from moment_journal import warm_moments  # noqa: PLC0415
+            from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
+            warmed = warm_moments(OFFICIAL_VOYAGE_ID)
+            _state["moments"] = int((warmed or {}).get("count") or 0)
+        except Exception as exc:
+            log.debug("journal des moments : %s", exc)
     _state["status"] = "done"
     _state["finishedAt"] = time.time()
     log.info("perles officielles chauffées (%s) : %d (%d déjà en base, %d erreurs)",

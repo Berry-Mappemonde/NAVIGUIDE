@@ -115,6 +115,19 @@ export function isAdviceDone(body) {
   return Boolean(body && body.status === "done" && body.best && typeof body.best === "object");
 }
 
+export function isAdviceUnavailable(body) {
+  return Boolean(body && body.status === "unavailable");
+}
+
+/** Empreinte stable : un rechargement de la même revue ne relance pas /advice. */
+export function reviewAdviceKey(review, heaviestIdx) {
+  if (!review || review.source === "fixture") return "";
+  const legs = review.legs || [];
+  if (!legs.length) return "";
+  const sig = legs.map((l) => `${l.from || ""}>${l.to || ""}`).join("|");
+  return `${Number(heaviestIdx)}:${sig}`;
+}
+
 export function pickHeaviestLegIdx(legs) {
   let best = 0;
   let score = -1;
@@ -276,6 +289,10 @@ export async function pollOfficialAdvice(legIdx, {
       onUpdate?.(body);
       return body;
     }
+    if (isAdviceUnavailable(body)) {
+      onUpdate?.(body);
+      return body;
+    }
     if (body?.status === "pending") onUpdate?.(body);
     else {
       onUpdate?.(null);
@@ -348,11 +365,24 @@ export async function pollOfficialEta(stopName, {
   return null;
 }
 
-export function useOfficialEta(stopName, { enabled = true } = {}) {
+/** Lot RF4 — no /eta while the film plays; one poll after Stop. */
+export function shouldPollOfficialEta({ frozen = false, enabled = true, stopName } = {}) {
+  return Boolean(!frozen && enabled && stopName);
+}
+
+export function countOfficialEtaPolls(stopNames, { frozen = false, enabled = true } = {}) {
+  let n = 0;
+  for (const stopName of stopNames || []) {
+    if (shouldPollOfficialEta({ frozen, enabled, stopName })) n += 1;
+  }
+  return n;
+}
+
+export function useOfficialEta(stopName, { enabled = true, frozen = false } = {}) {
   const [eta, setEta] = useState(null);
   useEffect(() => {
-    if (!enabled || !stopName) {
-      setEta(null);
+    if (!shouldPollOfficialEta({ frozen, enabled, stopName })) {
+      if (!frozen && (!enabled || !stopName)) setEta(null);
       return undefined;
     }
     const controller = new AbortController();
@@ -367,7 +397,7 @@ export function useOfficialEta(stopName, { enabled = true } = {}) {
       alive = false;
       controller.abort();
     };
-  }, [enabled, stopName]);
+  }, [enabled, stopName, frozen]);
   return eta;
 }
 
@@ -378,14 +408,15 @@ export function useOfficialEta(stopName, { enabled = true } = {}) {
  * Read-only; refreshed every 10 min (the pearls keep warming).
  * Lot C6 : fourchette p10–p90 de la prochaine escale, si l'ensemble répond.
  */
-export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lang = "fr", galeLimitPct } = {}) {
+export function usePlanReview({ enabled = true, frozen = false, clock, lookup, revision = 0, lang = "fr", galeLimitPct } = {}) {
   const [review, setReview] = useState(null);
   const [advice, setAdvice] = useState(null);
   const [error, setError] = useState(null);
   const nextStop = useMemo(() => nextStopFromMarks(clock?.marks), [clock]);
-  const eta = useOfficialEta(nextStop, { enabled: enabled && Boolean(nextStop) });
+  const eta = useOfficialEta(nextStop, { enabled: enabled && Boolean(nextStop), frozen });
 
   useEffect(() => {
+    if (frozen) return undefined;
     if (!enabled) {
       setReview(REVIEW_FIXTURE);
       setAdvice(ADVICE_FIXTURE);
@@ -420,7 +451,7 @@ export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lan
       controller.abort();
       clearInterval(timer);
     };
-  }, [enabled]);
+  }, [enabled, frozen]);
 
   const reviewed = useMemo(() => {
     const source = review || (!enabled ? REVIEW_FIXTURE : null);
@@ -432,15 +463,16 @@ export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lan
   }, [review, error, enabled, clock, lookup, revision, lang, galeLimitPct]);
 
   const heaviestIdx = useMemo(() => pickHeaviestLegIdx(reviewed), [reviewed]);
+  const adviceKey = useMemo(() => reviewAdviceKey(review, heaviestIdx), [review, heaviestIdx]);
 
   useEffect(() => {
-    if (!enabled || !review || review.source === "fixture") return undefined;
+    if (frozen || !enabled || !adviceKey) return undefined;
     const controller = new AbortController();
     let alive = true;
     pollOfficialAdvice(heaviestIdx, {
       signal: controller.signal,
       lang,
-      onUpdate: (body) => { if (alive) setAdvice(isAdviceDone(body) ? body : body); },
+      onUpdate: (body) => { if (alive) setAdvice(body); },
     }).catch((err) => {
       if (alive && err?.name !== "AbortError") setAdvice((prev) => prev?.source === "fixture" ? prev : null);
     });
@@ -448,7 +480,7 @@ export function usePlanReview({ enabled = true, clock, lookup, revision = 0, lan
       alive = false;
       controller.abort();
     };
-  }, [enabled, review, heaviestIdx, lang]);
+  }, [enabled, frozen, adviceKey, heaviestIdx, lang]);
 
   const legs = useMemo(() => {
     const before = isAdviceDone(advice) ? Number(advice.best?.alertsBefore) : NaN;

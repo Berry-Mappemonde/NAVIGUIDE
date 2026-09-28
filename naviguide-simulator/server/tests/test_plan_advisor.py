@@ -22,6 +22,8 @@ from plan_advisor import (
     clear_advice_jobs,
     corridor_track,
     request_advice,
+    resolve_advice_leg,
+    review_legs,
     score_of,
     shift_plan,
     track_nm,
@@ -276,7 +278,113 @@ def test_advice_route_pending_done_and_filter_numbers(monkeypatch):
     assert "99" not in body["best"]["sentence"]
     assert "42" not in body["best"]["sentence"]
     missing = client.get("/voyage/official/advice?leg=9")
-    assert missing.status_code == 400
+    assert missing.status_code == 200
+    miss = missing.json()
+    assert miss["status"] == "unavailable"
+    assert miss["reason"] == "unknown_leg"
+    assert miss["leg"] == 9
+
+
+def _marks_no_clock():
+    """Voyage avec marks (revue) mais sans clock.t0 — prepare_plan avait 0 jambe."""
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": "2026-10-01T08:00:00Z",
+        "official": True,
+        "skipper_thresholds": TH,
+        "marks": [
+            {"name": "Nouméa", "nm": 0, "iso": "2026-10-01T08:00:00Z", "holdHours": 0},
+            {"name": "Dzaoudzi", "nm": 80, "iso": "2026-10-02T08:00:00Z", "holdHours": 0},
+            {"name": "Le Cap", "nm": 160, "iso": "2026-10-09T08:00:00Z", "holdHours": 0},
+        ],
+        "points": [
+            {"lat": -22.27, "lon": 166.45, "sailNm": 0},
+            {"lat": -21.9, "lon": 165.4, "sailNm": 40},
+            {"lat": -21.6, "lon": 164.4, "sailNm": 80},
+            {"lat": -27.0, "lon": 80.0, "sailNm": 120},
+            {"lat": -33.92, "lon": 18.42, "sailNm": 160},
+        ],
+    }
+
+
+def test_request_advice_no_clock_is_unavailable_not_http_error():
+    voy = {"voyageId": "x"}
+    out = request_advice(voy, 0, now=NOW)
+    assert out["status"] == "unavailable"
+    assert out["reason"] == "no_clock"
+    assert out["leg"] == 0
+    assert "best" not in out
+
+
+def test_request_advice_accepts_review_index_without_clock():
+    voy = _marks_no_clock()
+    legs = review_legs(voy)
+    assert len(legs) >= 1
+    src, mapped, reason = resolve_advice_leg(voy, 0, now=NOW)
+    assert reason == "no_clock"
+    assert mapped is None
+    assert (src.get("legs") or []) == []
+    out = request_advice(voy, 0, now=NOW)
+    assert out["status"] == "unavailable"
+    assert out["reason"] == "no_clock"
+    assert out["leg"] == 0
+
+
+def test_request_advice_maps_review_index_onto_prepared_plan():
+    voy = {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": "2026-10-01T08:00:00Z",
+        "skipper_thresholds": TH,
+        "marks": [
+            {"name": "Nouméa", "nm": 0, "iso": "2026-10-01T08:00:00Z"},
+            {"name": "Dzaoudzi", "nm": 80, "iso": "2026-10-02T08:00:00Z"},
+            {"name": "Le Cap", "nm": 160, "iso": "2026-10-09T08:00:00Z"},
+        ],
+        "points": [
+            {"lat": -22.27, "lon": 166.45, "sailNm": 0},
+            {"lat": -21.6, "lon": 164.4, "sailNm": 80},
+            {"lat": -33.92, "lon": 18.42, "sailNm": 160},
+        ],
+        "legs": [
+            _leg(0, "Terre", "La Rochelle", "2026-05-01", "2026-05-14", 0, BISCAY_POINTS),
+            _leg(1, "Nouméa", "Dzaoudzi", "2026-10-01", "2026-10-02", 5, NOUMEA_POINTS),
+            _leg(2, "Dzaoudzi", "Le Cap", "2026-10-07", "2026-10-09", 3, DZAOUDZI_POINTS),
+        ],
+    }
+    rev = review_legs(voy)
+    assert [(lg["from"], lg["to"]) for lg in rev][0] == ("Nouméa", "Dzaoudzi")
+    _src, mapped, reason = resolve_advice_leg(voy, 0, now=NOW)
+    assert reason is None
+    assert mapped == 1
+    first = request_advice(voy, 0, now=NOW)
+    assert first["status"] in ("pending", "done")
+    assert first["leg"] == 0
+    body = first
+    for _ in range(80):
+        if body.get("status") == "done":
+            break
+        time.sleep(0.05)
+        body = request_advice(voy, 0, now=NOW)
+    assert body["status"] == "done"
+    assert body["leg"] == 0
+    assert "Nouméa" in (body["best"].get("sentence") or "")
+
+
+def test_advice_route_no_clock_returns_200_unavailable(monkeypatch):
+    import voyage_api
+    import voyage_store
+    from fastapi.testclient import TestClient
+    from main import app
+
+    voyage_store.save_voyage(_marks_no_clock())
+    monkeypatch.setattr(voyage_api, "_now", lambda: datetime(2026, 9, 22, 12, tzinfo=timezone.utc))
+    client = TestClient(app)
+    r = client.get("/voyage/official/advice?leg=0&lang=fr")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "unavailable"
+    assert body["reason"] == "no_clock"
+    assert body["leg"] == 0
 
 
 # ── Lot R10c — écart local borné ─────────────────────────────────────────────

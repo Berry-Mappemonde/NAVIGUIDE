@@ -3,7 +3,6 @@ import L from "leaflet";
 import {
   atlasLayerUrl,
   atlasPointUrl,
-  atlasTileUrl,
   clampMonth,
   visibleClimoTiles,
 } from "../utils/atlasPoint.js";
@@ -18,6 +17,14 @@ import {
   waveColor,
 } from "./climatologyPaint.js";
 import { climoPointLngs, cycloneLatLngCopies, groupCycloneFeatures } from "./climatologyWorld.js";
+import {
+  VIEW_DEBOUNCE_MS,
+  publishClimoRoseStats,
+  resetClimoRoseStats,
+  syncClimoPointMarkers,
+  visibleClimoLngs,
+} from "./climoRoseMarkers.js";
+import { fetchJson, loadClimoLayerFeatures } from "./climoLayerLoad.js";
 
 function currentIcon(p) {
   return L.divIcon({
@@ -26,12 +33,6 @@ function currentIcon(p) {
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
-}
-
-async function fetchJson(url, signal) {
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
 }
 
 function paintWindProps(p) {
@@ -71,7 +72,7 @@ const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null,
 /**
  * Four atlas maps (wind / wave / current / cyclones), each optional.
  * Wind, wave and current load XYZ tiles of the visible area; cyclones stay global.
- * Points and IBTrACS tracks are painted on the three world copies.
+ * Visible world copies only; markers are reused between view passes.
  */
 export function useClimatologyLayer({
   mapRef,
@@ -88,6 +89,7 @@ export function useClimatologyLayer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [counts, setCounts] = useState(null);
+  const [source, setSource] = useState(null);
   const layersRef = useRef({ ...EMPTY_LAYERS });
   const tRef = useRef(t);
   tRef.current = t;
@@ -111,6 +113,7 @@ export function useClimatologyLayer({
       setLoading(false);
       setError(null);
       setCounts(null);
+      setSource(null);
       return undefined;
     }
 
@@ -120,23 +123,32 @@ export function useClimatologyLayer({
     const cache = new Map();
     const popupOpts = { ...POPUP_OPTS, maxWidth: 300 };
     const countsRef = { wind: 0, waveP50: 0, waveP90: 0, waveMean: 0, current: 0, cyclones: 0 };
+    const sourcesRef = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null };
 
     const loadSafe = (name, fn) => fn().catch((err) => {
       console.error(`[climatology] ${name} layer failed`, err);
       return 0;
     });
 
-    const addPointMarkers = (data, makeLayer) => {
-      const group = L.layerGroup();
-      (data?.features || []).forEach((f) => {
-        const [lon, lat] = f.geometry?.coordinates || [];
-        if (lat == null || lon == null) return;
-        const p = f.properties || {};
-        for (const lng of climoPointLngs(lon)) {
-          const lyr = makeLayer([lat, lng], p);
-          if (lyr) group.addLayer(lyr);
-        }
-      });
+    const pools = {
+      wind: new Map(),
+      waveP50: new Map(),
+      waveP90: new Map(),
+      waveMean: new Map(),
+      current: new Map(),
+    };
+    resetClimoRoseStats();
+    let windSyncs = 0;
+
+    const ensureGroup = (key) => {
+      let group = layersRef.current[key];
+      if (!group) {
+        group = L.layerGroup();
+        layersRef.current[key] = group;
+        group.addTo(map);
+      } else if (!map.hasLayer(group)) {
+        group.addTo(map);
+      }
       return group;
     };
 
@@ -145,6 +157,24 @@ export function useClimatologyLayer({
       layersRef.current[key] = group;
       group.addTo(map);
       if (prev && prev !== group && map.hasLayer(prev)) map.removeLayer(prev);
+    };
+
+    const syncPointGroup = (layerKey, features, makeLayer) => {
+      const bounds = map.getBounds();
+      const stats = syncClimoPointMarkers({
+        group: ensureGroup(layerKey),
+        pool: pools[layerKey],
+        features,
+        zoom: map.getZoom(),
+        bounds,
+        makeLayer,
+        copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+      });
+      if (layerKey === "wind") {
+        windSyncs += 1;
+        publishClimoRoseStats({ ...stats, syncs: windSyncs });
+      }
+      return stats;
     };
 
     const evict = (kind, keep) => {
@@ -160,24 +190,21 @@ export function useClimatologyLayer({
       const tiles = visibleClimoTiles(map.getBounds(), zTile, { margin: 1, zMax: 6 });
       const keep = new Set(tiles.map((tile) => `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`));
       evict(kind, keep);
-      const collections = await Promise.all(tiles.map(async (tile) => {
-        const key = `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`;
-        const hit = cache.get(key);
-        if (hit?.features) return hit.features;
-        try {
-          const data = await fetchJson(atlasTileUrl(kind, m, tile.z, tile.x, tile.y, extra), signal);
-          const features = data.features || [];
-          cache.set(key, { features });
-          return features;
-        } catch (err) {
-          if (err?.name === "AbortError") return null;
-          return [];
-        }
-      }));
-      if (cancelled || signal.aborted) return 0;
-      const features = mergeTileFeatures(collections, paintProps);
-      replaceGroup(layerKey, addPointMarkers({ features }, makeLayer));
-      return features.length;
+      const loaded = await loadClimoLayerFeatures({
+        kind,
+        month: m,
+        extra,
+        tiles,
+        cache,
+        cacheKey: (tile) => `${kind}:${m}:${tile.z}/${tile.x}/${tile.y}`,
+        fetchJson,
+        signal,
+      });
+      if (cancelled || loaded.aborted || signal.aborted) return 0;
+      const features = mergeTileFeatures([loaded.features], paintProps);
+      const stats = syncPointGroup(layerKey, features, makeLayer);
+      if (layerKey in sourcesRef) sourcesRef[layerKey] = loaded.source;
+      return stats.shown;
     };
 
     const makeWind = (ll, p) => {
@@ -223,6 +250,8 @@ export function useClimatologyLayer({
     const publishCounts = () => {
       if (cancelled) return;
       setCounts({ ...countsRef });
+      const used = Object.values(sourcesRef).filter(Boolean);
+      setSource(used.includes("global") ? "global" : (used.length ? "tiles" : null));
       const painted = Object.values(countsRef).some(Boolean);
       if (!painted) setError("atlas_empty");
       else setError(null);
@@ -291,12 +320,23 @@ export function useClimatologyLayer({
     });
 
     let debounceTimer = 0;
+    let zooming = false;
     const onView = () => {
       clearTimeout(debounceTimer);
-      debounceTimer = window.setTimeout(() => { refreshVectors(); }, 200);
+      debounceTimer = window.setTimeout(() => { refreshVectors(); }, VIEW_DEBOUNCE_MS);
     };
-    map.on("moveend", onView);
-    map.on("zoomend", onView);
+    const onZoomStart = () => { zooming = true; };
+    const onZoomEnd = () => {
+      zooming = false;
+      onView();
+    };
+    const onMoveEnd = () => {
+      if (zooming || map._animatingZoom) return;
+      onView();
+    };
+    map.on("zoomstart", onZoomStart);
+    map.on("moveend", onMoveEnd);
+    map.on("zoomend", onZoomEnd);
 
     const onClick = (ev) => {
       if (drawingRef.current) return;
@@ -320,8 +360,9 @@ export function useClimatologyLayer({
       tileAbort.ctrl.abort();
       ctrl.abort();
       map.off("click", onClick);
-      map.off("moveend", onView);
-      map.off("zoomend", onView);
+      map.off("zoomstart", onZoomStart);
+      map.off("moveend", onMoveEnd);
+      map.off("zoomend", onZoomEnd);
       Object.values(layersRef.current).forEach((lyr) => {
         if (lyr && map.hasLayer(lyr)) map.removeLayer(lyr);
       });
@@ -329,5 +370,5 @@ export function useClimatologyLayer({
     };
   }, [mapRef, mapReady, anyOn, showWind, showWave, showCurrent, showCyclones, m]);
 
-  return { loading, error, counts };
+  return { loading, error, counts, source };
 }

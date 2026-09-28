@@ -10,6 +10,7 @@
     "test": "node --test src/utils/*.test.js src/i18n/*.test.js src/engine/*.test.js src/layers/*.test.js src/constants/*.test.js src/hooks/*.test.js src/map/*.test.js src/components/*.test.js",
     "server": "uvicorn server.main:app --host 127.0.0.1 --port 8010 --reload",
     "e2e": "playwright test",
+    "e2e:store": "PW_WITH_API=1 playwright test e2e/lots",
     "redites": "node scripts/redites.mjs"
   },
   "dependencies": {

@@ -37,7 +37,7 @@ export function DepartureField({
   };
 
   const inputClass = compact
-    ? "h-5 min-w-0 w-full bg-slate-900/80 border border-white/10 rounded px-1 text-[9px] text-white tabular-nums disabled:opacity-40"
+    ? "h-5 min-w-0 bg-transparent border-0 p-0 text-[9px] text-white tabular-nums disabled:opacity-40"
     : "h-5 min-w-0 w-full bg-slate-900/80 border border-white/10 rounded px-1 text-[10px] text-white tabular-nums disabled:opacity-40";
 
   return (
@@ -45,7 +45,7 @@ export function DepartureField({
       data-testid={testId}
       aria-disabled={disabled || undefined}
       className={compact
-        ? "naviguide-departure-field h-6 rounded-md border border-white/10 bg-slate-800/50 px-1 flex items-center"
+        ? "naviguide-departure-field h-6 rounded-md border border-white/10 bg-slate-800/50 px-1 inline-flex items-center w-max"
         : "naviguide-departure-field h-[46px] rounded-lg border border-white/10 bg-slate-800/50 px-2 py-1"}
     >
       {compact ? (
@@ -55,10 +55,11 @@ export function DepartureField({
           {t("departureTitle")}
         </div>
       )}
-      <div className={compact ? "grid grid-cols-[1.35fr_0.85fr] gap-1 w-full" : "grid grid-cols-[1.35fr_0.85fr] gap-1 mt-0.5"}>
+      <div className={compact ? "flex items-center gap-[1ch] w-max" : "grid grid-cols-[1.35fr_0.85fr] gap-1 mt-0.5"}>
         <label className="flex items-center gap-1 min-w-0">
           {compact ? null : <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureDate")}</span>}
           <input
+            name="departure-date"
             type="text"
             inputMode="numeric"
             autoComplete="off"
@@ -68,12 +69,13 @@ export function DepartureField({
             onChange={(e) => setDate(e.target.value)}
             aria-label={t("departureDate")}
             aria-invalid={dateValue !== "" && !parseFrenchDepartureDate(dateValue)}
-            className={inputClass}
+            className={compact ? `${inputClass} w-[10ch]` : inputClass}
           />
         </label>
         <label className="flex items-center gap-1 min-w-0">
           {compact ? null : <span className="text-[8px] text-slate-500 whitespace-nowrap">{t("departureTimeUtc")}</span>}
           <input
+            name="departure-time-utc"
             type="text"
             inputMode="numeric"
             autoComplete="off"
@@ -83,7 +85,7 @@ export function DepartureField({
             onChange={(e) => setTime(e.target.value)}
             aria-label={t("departureTimeUtc")}
             aria-invalid={timeValue !== "" && !normalizeUtcTime(timeValue)}
-            className={inputClass}
+            className={compact ? `${inputClass} w-[5ch]` : inputClass}
           />
         </label>
       </div>

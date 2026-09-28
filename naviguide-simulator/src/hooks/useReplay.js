@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, advanceReplayTime, calibrateRate, cardDwellMs, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, voiceLedStep, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
+import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
-import { DEFAULT_T0_ISO } from "../engine/voyageClock.js";
+import {
+  DEFAULT_T0_ISO,
+  etaHoursToFilmNm,
+  formatFilmClockLine,
+  rebaseIso,
+} from "../engine/voyageClock.js";
 import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
@@ -17,12 +23,78 @@ export function chapterHasLeg(ch) {
 
 /** Script remote : on garde le texte serveur ; lat/lon manquants viennent du local. */
 /** Le script distant ne vaut que s'il porte l'année du t0 demandé (lot RD5). */
+/**
+ * Ligne d'état Suivre : mêmes milles et heures de mer (durées réelles),
+ * date civile décalée vers le t0 choisi. Identité si t0 = départ officiel.
+ * Ne touche pas au t0 Simulation.
+ */
+export function followClockLineFromT0({
+  sailNm,
+  seaHours,
+  iso,
+  fromT0 = DEFAULT_T0_ISO,
+  t0 = DEFAULT_T0_ISO,
+  lang = "fr",
+} = {}) {
+  return formatFilmClockLine({
+    sailNm,
+    seaHours,
+    iso: rebaseIso(iso, fromT0, t0),
+    lang,
+  });
+}
+
+/** ETA / restants : heures d'horloge, indépendantes du t0 Simulation. */
+export function followEtaFromClock(clock, fromFilmNm, toFilmNm, { atQuay = false } = {}) {
+  return etaHoursToFilmNm(clock, fromFilmNm, toFilmNm, { atQuay });
+}
+
 export function filmTextHasT0Year(chapters, t0) {
   const year = new Date(t0 || "").getUTCFullYear();
   if (!Number.isFinite(year)) return true;
   const text = String(chapters?.[0]?.text || "");
   if (!text) return false;
   return text.includes(String(year));
+}
+
+const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
+
+/** Empreinte RE7 : récit court, pas le journal déversé ni le script Simulation. */
+export function filmWordCount(text) {
+  return (String(text || "").match(/\S+/g) || []).length;
+}
+
+export function isRe7OfficialFilm(data) {
+  const chapters = data?.chapters || [];
+  if (!chapters.length) return false;
+  const blob = chapters.map((c) => c.text || "").join(" ");
+  if (filmWordCount(blob) > 800) return false;
+  return !RE7_STALE.test(blob);
+}
+
+/** pending | ready | stale | empty | absent */
+export function officialFilmStatus(data, { fetchFailed = false } = {}) {
+  if (fetchFailed) return "absent";
+  if (isRe7OfficialFilm(data)) return "ready";
+  if (data?.chapters?.length) return "stale";
+  if (data == null) return "pending";
+  return "empty";
+}
+
+/**
+ * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
+ * absent / pending / stale / empty : pas de repli Simulation (plus de
+ * récit La Rochelle → Ajaccio sur un HTTP 500).
+ */
+export function canStartOfficialReplay({
+  requireOfficialFilm = true,
+  officialClock = null,
+  fallbackClock = null,
+  remoteStatus = "pending",
+} = {}) {
+  if (!requireOfficialFilm) return Boolean(officialClock || fallbackClock);
+  if (remoteStatus === "ready") return Boolean(officialClock);
+  return false;
 }
 
 export function pickFilmChapters(remote, local, fallback = []) {
@@ -72,6 +144,21 @@ export function shouldReturnToLive({ userStopped = false, filmFinished = false, 
 }
 
 /** Avance linéaire : le dernier chapitre est atteint à la durée cible, pas avant. */
+/** Voix sans aucun mot depuis ce délai en plein chapitre : synthèse considérée plantée. */
+export const FILM_VOICE_STALL_MS = 12000;
+
+/** Part du récit déjà dite (0..1) : caractères prononcés / caractères du film. */
+export function spokenProgress(plan, chapterIdx, charIdx) {
+  const list = plan?.chapters || [];
+  const total = list.reduce((s, c) => s + (Number(c.chars) || 0), 0);
+  if (!total) return 0;
+  const i = Math.max(0, Math.min(list.length - 1, Number(chapterIdx) || 0));
+  let before = 0;
+  for (let k = 0; k < i; k += 1) before += Number(list[k].chars) || 0;
+  const cur = Math.max(0, Math.min(Number(list[i]?.chars) || 0, Number(charIdx) || 0));
+  return Math.max(0, Math.min(1, (before + cur) / total));
+}
+
 export function linearFilmAt(elapsed, plan) {
   const seconds = Number(plan?.targetSeconds) || 0;
   const ch = chapterAtElapsed(plan, elapsed);
@@ -120,21 +207,63 @@ export const APPROACH_FRAC = 0.8;
  * `filmActive` + `publishFilmEnd`), annule la boucle. L'appelant remet
  * `active=false` — MapSceneController quitte alors le suivi film.
  */
+/** Dernière phrase de clôture, pour qu'elle reste lisible après l'arrêt (ligne tronquée). */
+export function closingSubtitle(text) {
+  const parts = String(text || "").split(/(?<=[.!?…])\s+/).filter(Boolean);
+  const last = parts[parts.length - 1] || "";
+  if (/aujourd|today/i.test(last)) return last;
+  return String(text || "");
+}
+
+/** Phrases avion RF5 déjà présentes dans le chapitre — on ne les invente pas. */
+export const FILM_AIR_PHRASE_RE =
+  /prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to/i;
+
+/**
+ * Ligne visible du sous-titre (lot RC16) : si le chapitre contient les
+ * phrases avion RF5, on les montre ; sinon le texte du chapitre inchangé.
+ */
+export function visibleFilmSubtitle(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  if (!FILM_AIR_PHRASE_RE.test(raw)) return raw;
+  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+  const found = raw.match(airSentence) || [];
+  const parts = [];
+  const seen = new Set();
+  for (const piece of found) {
+    const s = piece.trim();
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(s);
+  }
+  return parts.length ? parts.join(" ") : raw;
+}
+
+export function filmSubtitleShowsAir(text) {
+  return FILM_AIR_PHRASE_RE.test(String(text || ""));
+}
+
 export function applyReplayStop({
   cancelRaf,
   stopVoice,
   releaseCamera,
+  keepChapterText = false,
+  chapterText = "",
 } = {}) {
   (stopVoice || stopSpeaking)();
   (releaseCamera || publishFilmEnd)();
   cancelRaf?.();
+  const kept = keepChapterText ? closingSubtitle(chapterText) : "";
   return {
     active: false,
     tMs: null,
     card: null,
-    progress: 0,
+    progress: kept ? 1 : 0,
     chapterIdx: 0,
-    chapterText: "",
+    chapterText: kept,
     filmLeg: null,
   };
 }
@@ -202,6 +331,8 @@ export function stepAlongPlan({ plan, clock, frames = 60, dt = 1 / 60, elapsed0 
  */
 export function useReplay({
   clock,
+  fallbackClock = null,
+  requireOfficialFilm = true,
   journal,
   enabled = false,
   lang = "fr",
@@ -225,6 +356,14 @@ export function useReplay({
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const remotePlanRef = useRef(null);
+  const [remoteStatus, setRemoteStatus] = useState("pending");
+  const remoteStatusRef = useRef("pending");
+  const setFilmStatus = useCallback((s) => {
+    remoteStatusRef.current = s;
+    setRemoteStatus(s);
+  }, []);
+  const pinnedIdxRef = useRef(null);
+  const seekChapterRef = useRef(null);
   const queueRef = useRef([]);
   const cardSinceRef = useRef(0);
   const lastTRef = useRef(null);
@@ -239,8 +378,12 @@ export function useReplay({
   const chapterStartedAtRef = useRef(0);
   const finishedRef = useRef(false);
   const stoppingRef = useRef(false);
+  const chapterTextRef = useRef("");
+  const finishRef = useRef(() => {});
   const voiceCharRef = useRef(0);
   const voiceFailedRef = useRef(false);
+  const voiceSpokenAllRef = useRef(false);
+  const voiceBoundaryAtRef = useRef(0);
   const tMsRef = useRef(null);
   const voiceTargetRef = useRef(null);
   const recaleRemainRef = useRef(0);
@@ -250,12 +393,15 @@ export function useReplay({
   const filmScoreRef = useRef(new FilmEventScoreGate());
   const publishedBubbleRef = useRef(null);
   const clockRef = useRef(clock);
-  clockRef.current = clock;
+  if (clock) clockRef.current = clock;
   const budgetRef = useRef(0);
+  const lastUiAtRef = useRef(0);
 
-  const stop = useCallback(() => {
+  const stop = useCallback((opts) => {
+    const keep = Boolean(opts && opts.keepSubtitle);
     stoppingRef.current = true;
     finishedRef.current = true;
+    pinnedIdxRef.current = null;
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
@@ -265,12 +411,15 @@ export function useReplay({
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       },
+      keepChapterText: keep,
+      chapterText: keep ? chapterTextRef.current : "",
     });
     setActive(cleared.active);
     setTMs(cleared.tMs);
     setCard(cleared.card);
     setChapterIdx(cleared.chapterIdx);
     setChapterText(cleared.chapterText);
+    chapterTextRef.current = cleared.chapterText || "";
     setFilmLeg(cleared.filmLeg);
     setVoiceRate(1);
     setProgress(cleared.progress);
@@ -290,6 +439,7 @@ export function useReplay({
     recaleRemainRef.current = 0;
     if (Number.isFinite(ch.tA)) tMsRef.current = ch.tA;
     setChapterIdx(ch.idx);
+    chapterTextRef.current = ch.text || "";
     setChapterText(ch.text || "");
     setFilmLeg({
       fromLat: ch.fromLat, fromLon: ch.fromLon, toLat: ch.toLat, toLon: ch.toLon,
@@ -304,8 +454,9 @@ export function useReplay({
     if (w) setTMs(w.endMs);
     setProgress(1);
     publishFilmEnd();
-    setTimeout(() => stop(), 400);
+    setTimeout(() => stop({ keepSubtitle: true }), 400);
   }, [stop]);
+  finishRef.current = finish;
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -314,39 +465,127 @@ export function useReplay({
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled) {
+      setFilmStatus("pending");
+      remotePlanRef.current = null;
+      return undefined;
+    }
+    let cancelled = false;
+    let retryTimer = 0;
     const ac = new AbortController();
     const style = filmStyle === "written" ? "written" : "raw";
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
-    remotePlanRef.current = null;
-    fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.chapters?.length) {
-          remotePlanRef.current = data;
-          if (ac.signal.aborted) return;
-          setHasWritten(Boolean(data.hasWritten));
-          setFilmSource(data.source || "rules");
-          return;
-        }
-        if (ac.signal.aborted || remotePlanRef.current) return;
-        setHasWritten(false);
-        if (filmStyle !== "written") setFilmSource("rules");
-      })
-      .catch((err) => {
-        if (err?.name === "AbortError" || ac.signal.aborted || remotePlanRef.current) return;
-        setHasWritten(false);
-        setFilmSource("rules");
-      });
-    return () => ac.abort();
-  }, [enabled, lang, targetSeconds, filmStyle, t0]);
+
+    const applyData = (data) => {
+      if (cancelled) return true;
+      if (isRe7OfficialFilm(data)) {
+        remotePlanRef.current = data;
+        setHasWritten(Boolean(data.hasWritten));
+        setFilmSource(data.source || "rules");
+        setFilmStatus("ready");
+        return true;
+      }
+      if (data?.chapters?.length) {
+        remotePlanRef.current = data;
+        setFilmStatus("stale");
+        return true;
+      }
+      return false;
+    };
+
+    const markAbsent = () => {
+      remotePlanRef.current = null;
+      setHasWritten(false);
+      setFilmSource("rules");
+      setFilmStatus("absent");
+    };
+
+    const load = () => {
+      if (cancelled) return;
+      setFilmStatus("pending");
+      remotePlanRef.current = null;
+      fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
+        .then((r) => {
+          if (!r.ok) return { fail: true };
+          return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
+        })
+        .then((pack) => {
+          if (cancelled || ac.signal.aborted) return;
+          if (!pack || pack.fail) {
+            markAbsent();
+            return;
+          }
+          if (applyData(pack.data)) return;
+          setFilmStatus("empty");
+          retryTimer = setTimeout(load, 2000);
+        })
+        .catch((err) => {
+          if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
+          markAbsent();
+        });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+      ac.abort();
+      clearTimeout(retryTimer);
+    };
+  }, [enabled, lang, targetSeconds, filmStyle, t0, setFilmStatus]);
+
+  const canStart = canStartOfficialReplay({
+    requireOfficialFilm,
+    officialClock: clock,
+    fallbackClock,
+    remoteStatus,
+  });
+
+  const seekChapter = useCallback((idx) => {
+    const plan = planRef.current;
+    if (!plan?.chapters?.length) return false;
+    const last = plan.chapters.length - 1;
+    const n = Math.max(0, Math.min(last, Number(idx)));
+    const ch = plan.chapters[n];
+    if (!ch) return false;
+    pinnedIdxRef.current = ch.idx;
+    applyChapter(ch);
+    const at = Number.isFinite(ch.tB) ? ch.tB : ch.tA;
+    if (Number.isFinite(at)) {
+      tMsRef.current = at;
+      lastTRef.current = at;
+      setTMs(at);
+    }
+    if (ch.idx >= last) setProgress(1);
+    if (typeof window !== "undefined") {
+      const prev = window.__naviguideFilm || {};
+      window.__naviguideFilm = {
+        ...prev,
+        chapterIdx: ch.idx,
+        chapterText: ch.text || "",
+        chapterCount: plan.chapters.length,
+      };
+    }
+    return true;
+  }, [applyChapter]);
+  seekChapterRef.current = seekChapter;
 
   const start = useCallback(() => {
-    const w = replayWindow(clock, Date.now());
-    if (!w) return false;
+    const status = remoteStatusRef.current;
     const remote = remotePlanRef.current;
+    let clockToUse = clock;
+    let remoteToUse = remote;
+    if (requireOfficialFilm) {
+      if (status === "ready" && isRe7OfficialFilm(remote) && clock) {
+        clockToUse = clock;
+        remoteToUse = remote;
+      } else {
+        return false;
+      }
+    }
+    const w = replayWindow(clockToUse, Date.now());
+    if (!w) return false;
     const local = buildFilmScript({
-      clock,
+      clock: clockToUse,
       marks,
       live: destination,
       journal,
@@ -356,7 +595,7 @@ export function useReplay({
       t0,
     });
     const fallback = filmChaptersFromStory({
-      clock,
+      clock: clockToUse,
       marks,
       live: destination,
       journal,
@@ -364,8 +603,11 @@ export function useReplay({
       nowMs: Date.now(),
       t0,
     });
-    const remoteOk = remote && filmTextHasT0Year(remote.chapters, t0);
-    const picked = pickFilmChapters(remoteOk ? remote : null, local, fallback);
+    const remoteOk = Boolean(
+      remoteToUse?.chapters?.length
+      && (isRe7OfficialFilm(remoteToUse) || filmTextHasT0Year(remoteToUse.chapters, t0)),
+    );
+    const picked = pickFilmChapters(remoteOk ? remoteToUse : null, local, fallback);
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
@@ -373,6 +615,8 @@ export function useReplay({
     const planSeconds = resolveFilmTargetSeconds(userBudget, chapters);
     const plan = filmPlan({ chapters, targetSeconds: planSeconds });
     if (!plan.chapters.length) return false;
+    clockRef.current = clockToUse;
+    pinnedIdxRef.current = null;
     windowRef.current = w;
     planRef.current = plan;
     queueRef.current = [];
@@ -387,6 +631,8 @@ export function useReplay({
     chapterStartedAtRef.current = 0;
     voiceCharRef.current = 0;
     voiceFailedRef.current = false;
+    voiceSpokenAllRef.current = false;
+    voiceBoundaryAtRef.current = 0;
     setVoiceRate(1);
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
@@ -398,11 +644,24 @@ export function useReplay({
     setProgress(0);
     setActive(true);
     publishFilmStart(plan.targetSeconds);
-    if (typeof window !== "undefined" && window.__naviguideFilm) {
-      window.__naviguideFilm.budgetSeconds = userBudget;
+    if (typeof window !== "undefined") {
+      const prev = window.__naviguideFilm || {};
+      window.__naviguideFilm = {
+        ...prev,
+        budgetSeconds: userBudget,
+        chapterCount: plan.chapters.length,
+        chapters: plan.chapters.map((c) => ({
+          idx: c.idx,
+          text: c.text || "",
+          fromName: c.fromName || "",
+          toName: c.toName || "",
+        })),
+        seekChapter: (idx) => seekChapterRef.current?.(idx),
+        finishFilm: () => finishRef.current?.(),
+      };
     }
     return true;
-  }, [clock, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
+  }, [clock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
 
   useEffect(() => {
     if (!enabled && active) stop();
@@ -412,6 +671,7 @@ export function useReplay({
     const plan = planRef.current;
     if (!plan || finishedRef.current) return;
     voiceCharRef.current = charIdx;
+    voiceBoundaryAtRef.current = performance.now();
     const next = plan.timeAt(chapterIdxRef.current, charIdx);
     if (next == null) return;
     voiceTargetRef.current = next;
@@ -434,27 +694,20 @@ export function useReplay({
       lastTRef.current = ch.tB;
       setTMs(ch.tB);
     }
-    const chapterElapsed = chapterStartedAtRef.current
-      ? (performance.now() - chapterStartedAtRef.current) / 1000
-      : 0;
     const wallElapsed = startWallRef.current
       ? (performance.now() - startWallRef.current) / 1000
-      : chapterElapsed;
-    if (idx === 0 && plan.chapters.length > 1) {
-      const remainingChars = plan.chapters.slice(1).reduce((s, c) => s + c.chars, 0);
-      setVoiceRate(calibrateRate({
-        chapterChars: ch?.chars,
-        elapsedSeconds: chapterElapsed,
-        remainingChars,
-        remainingBudgetSeconds: plan.targetSeconds - wallElapsed,
-      }));
-    }
+      : 0;
+    // Débit constant (27 sept.) : on ne recalibre plus la voix pour tenir le budget — c'était
+    // l'accélération audible après le premier chapitre. Le budget (2:30 / 3:00) choisit le TEXTE
+    // côté serveur ; la durée réelle suit la voix, et le bateau suit la voix.
     if (idx + 1 >= plan.chapters.length) {
       if (shouldHoldFilmForBudget({
         userBudget: budgetRef.current,
         wallElapsed,
         lastChapter: true,
       })) {
+        // Voix finie avant le budget : on tient la dernière image ; la boucle finira au budget.
+        voiceSpokenAllRef.current = true;
         return;
       }
       finish();
@@ -483,13 +736,27 @@ export function useReplay({
       }
       const elapsed = (now - startWallRef.current) / 1000;
       const denom = Number(plan.targetSeconds) > 0 ? plan.targetSeconds : 1;
-      setProgress(Math.max(0, Math.min(1, elapsed / denom)));
+      const uiDue = now - lastUiAtRef.current >= FILM_UI_MS;
+      if (
+        voiceRef.current && !voiceFailedRef.current && !voiceSpokenAllRef.current
+        && voiceBoundaryAtRef.current > 0 && now - voiceBoundaryAtRef.current > FILM_VOICE_STALL_MS
+      ) {
+        // Voix muette depuis trop longtemps (synthèse plantée) : l'horloge murale reprend la main
+        // plutôt que de figer le film.
+        voiceFailedRef.current = true;
+      }
       const voiceClock = Boolean(
         voiceRef.current
         && !voiceFailedRef.current
         && canLeadWithVoice(),
       );
       const voiceLed = Boolean(voiceClock && voiceCharRef.current > 0);
+      if (uiDue) {
+        lastUiAtRef.current = now;
+        setProgress(voiceClock
+          ? spokenProgress(plan, chapterIdxRef.current, voiceCharRef.current)
+          : Math.max(0, Math.min(1, elapsed / denom)));
+      }
 
       const ingest = (next) => {
         if (next == null) return;
@@ -498,12 +765,15 @@ export function useReplay({
         if (fresh.length) queueRef.current = trimQueue([...queueRef.current, ...fresh]);
         lastTRef.current = next;
         tMsRef.current = next;
-        setTMs(next);
+        if (uiDue) setTMs(next);
       };
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
-      const budgetDone = budgetRef.current > 0 && elapsed >= plan.targetSeconds;
+      // Mené par la voix, le film finit quand la voix a fini le dernier chapitre (onVoiceEnd),
+      // jamais coupé par le budget au milieu d'une phrase.
+      const budgetDone = budgetRef.current > 0 && elapsed >= plan.targetSeconds
+        && (!voiceClock || voiceSpokenAllRef.current);
       const done = !stoppingRef.current && (
         budgetDone
         || (!voiceClock && linear.finish && linear.lastReached)
@@ -513,21 +783,31 @@ export function useReplay({
         ingest(last?.tB ?? w.endMs);
         finish();
       } else if (!voiceClock) {
-        const ch = chapterAtElapsed(plan, elapsed);
+        const pinned = pinnedIdxRef.current;
+        const ch = pinned != null ? plan.chapters[pinned] : chapterAtElapsed(plan, elapsed);
         if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
-        const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
-        const f = Math.max(0, Math.min(1, frac));
-        charIdx = f * (ch?.chars || 1);
-        ingest(ch ? ch.tA + f * (ch.tB - ch.tA) : plan.timeAt(0, 0));
+        if (pinned != null && ch) {
+          charIdx = ch.chars || 1;
+          ingest(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));
+        } else {
+          const frac = ch && ch.seconds > 0 ? (elapsed - ch.startWall) / ch.seconds : 1;
+          const f = Math.max(0, Math.min(1, frac));
+          charIdx = f * (ch?.chars || 1);
+          ingest(ch ? plan.timeAt(ch.idx, charIdx) : plan.timeAt(0, 0));
+        }
       } else {
         const ch = plan.chapters[chapterIdxRef.current];
         const cur = tMsRef.current ?? lastTRef.current ?? ch?.tA;
-        const stepped = advanceReplayTime({
+        // Le bateau suit la voix, jamais l'inverse (27 sept.) : il vise l'instant de ce qui va
+        // être dit dans ~1 s, à la pente locale des ancres, et n'a pas le droit de le dépasser.
+        const stepped = voiceLedStep({
           t: cur,
           dt: dt / 1000,
           chapter: ch,
-          targetT: voiceTargetRef.current,
-          recaleRemainMs: recaleRemainRef.current,
+          plan,
+          chapterIdx: chapterIdxRef.current,
+          charIdx: voiceCharRef.current,
+          cps: measuredCps(voiceCharRef.current, chapterStartedAtRef.current ? now - chapterStartedAtRef.current : 0),
         });
         recaleRemainRef.current = stepped.recaleRemainMs;
         ingest(stepped.t);
@@ -562,18 +842,24 @@ export function useReplay({
       }
       if (typeof window !== "undefined") {
         const pos = positionAt(clockRef.current, lastTRef.current);
+        const sample = replaySample(clockRef.current, lastTRef.current, timelineRef.current);
         const prevFilm = window.__naviguideFilm || {};
         window.__naviguideFilm = {
           ...prevFilm,
           chapterIdx: chapterIdxRef.current,
+          chapterText: chapter?.text || prevFilm.chapterText || "",
+          chapterCount: plan.chapters.length,
           elapsed,
           charIdx,
           tMs: lastTRef.current,
-          lat: pos?.lat ?? null,
-          lon: pos?.lon ?? null,
-          filmNm: pos?.filmNm ?? null,
+          lat: pos?.lat ?? sample?.lat ?? null,
+          lon: pos?.lon ?? sample?.lon ?? null,
+          heading: sample?.bearing ?? prevFilm.heading ?? null,
+          filmNm: pos?.filmNm ?? sample?.filmNm ?? null,
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
+          seekChapter: prevFilm.seekChapter || ((idx) => seekChapterRef.current?.(idx)),
+          finishFilm: prevFilm.finishFilm || (() => finishRef.current?.()),
         };
       }
 
@@ -629,5 +915,8 @@ export function useReplay({
     filmStyle,
     setFilmStyle,
     hasWritten,
+    canStart,
+    seekChapter,
+    remoteStatus,
   };
 }

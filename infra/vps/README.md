@@ -279,8 +279,69 @@ Internet → nginx (443, Let's Encrypt, SAN + simulator.naviguide.fr)
 | Code | `~/blue-intelligence-map/naviguide-simulator/` (dedicated `.venv/`) |
 | nginx frontend | `/var/www/naviguide-simulator` |
 | Optional secrets (Copernicus only) | `~/.config/naviguide/simulator.env` |
+| Simulator Mongo (stock officiel RF2, **base séparée**) | `SIMULATOR_MONGO_URL` in `~/.config/naviguide/simulator.env` — **never** `~/.config/blue-intelligence/mongo.env`, never `MONGO_URL_LOCAL` / `DB_NAME` |
 | Service | `naviguide-simulator` (systemd, `MemoryMax=1G`) |
 | Reverse proxy | `/etc/nginx/sites-available/naviguide-simulator` |
+
+### Official-voyage store (lot RF2) — once, by the owner
+
+The simulator persists the precomputed official voyage in a **separate**
+MongoDB database `naviguide_simulator` on the same instance
+(`127.0.0.1:27017`), with a **dedicated** user that has `readWrite` on
+**that database only**. The Blue Intelligence database is neither read,
+written, nor migrated. The store is recalculable: its loss costs a
+recompute, never a source record. It is **not** in the daily backup
+(the cron stays `--db` BI only). MongoDB is not restarted; after
+`pymongo` is installed, only `naviguide-simulator` is restarted.
+
+Create the user **once** (owner, on the VPS — this lot does **not** run
+the command). Authenticate as the local Mongo admin the way you already
+do for MongoDB maintenance; do not put that admin URI in
+`simulator.env`.
+
+```javascript
+// mongosh, authenticated as the local admin. No dropDatabase. No admin role
+// on this user. No rights on the Blue Intelligence database.
+use naviguide_simulator
+db.createUser({
+  user: "naviguide_sim",
+  pwd: passwordPrompt(),
+  roles: [ { role: "readWrite", db: "naviguide_simulator" } ]
+})
+```
+
+Then, **only** in `~/.config/naviguide/simulator.env` on the VPS:
+
+```
+SIMULATOR_MONGO_URL=mongodb://naviguide_sim:THE_PASSWORD@127.0.0.1:27017/naviguide_simulator?authSource=naviguide_simulator
+```
+
+### Voyage / hindcast SQLite (lot RF10) — do not move existing files
+
+`NAVIGUIDE_VOYAGE_DIR` is already read by `naviguide-simulator/server/voyage_store.py`.
+It is the directory of `voyage_*.json` and `naviguide.sqlite` (pearls, ERA5
+hindcast cache, Open-Meteo daily budget). Without the variable, that file lives
+inside the checkout (`naviguide-simulator/server/voyage_data`) — a new worktree
+or a rebuild of the station starts empty.
+
+Recommended on the VPS (service data, **outside** the checkout). This lot does
+**not** change the systemd unit, does not create the directory, and does not
+copy or delete any existing sqlite — set the variable only when the owner
+wants a cache that survives deploys:
+
+```
+# ~/.config/naviguide/simulator.env
+NAVIGUIDE_VOYAGE_DIR=/var/lib/naviguide/voyage_data
+```
+
+The recette station already uses `~/.cache/naviguide/voyage_data` (26 sept.).
+Also `NAVIGUIDE_OM_DAILY_BUDGET` (default 3000): max Open-Meteo HTTP calls per
+UTC day. The first 429 or the cap stops the hindcast fill until the next UTC day.
+
+On a Mac or in CI the variable is unset: the same module writes files
+under `~/.cache/naviguide/voyage-store/` (or a temp dir). First boot with
+an empty store: the background worker fills it; the API answers
+« en préparation » until a family is actually computed.
 
 DNS: **A** record `simulator` → `135.125.226.16` (`naviguide.fr` zone,
 free). First deploy from a machine with Node + SSH (local Vite

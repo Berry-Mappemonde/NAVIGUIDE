@@ -12,30 +12,46 @@ function markAt(m) {
  * `active` flag of two rows changes then — not the 18 formatted labels
  * (profile 18 sept. 2026: this list was 12 % of main-thread self time).
  */
-const EscaleRow = memo(function EscaleRow({ name, at, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, title, active, onSeek }) {
+function EscaleRowBody({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle }) {
   return (
-    <li className={`flex items-stretch border-t border-white/5 ${active ? "bg-cyan-700/40 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"}`}>
-      <button
-        type="button"
-        onClick={() => onSeek?.(at, { jump: true })}
-        title={title}
-        className="flex-1 min-w-0 text-left px-2 py-1 text-[11px]"
-      >
-        <span className="font-medium leading-tight block truncate">{name}</span>
-        <span className="text-[9px] text-white/40">
-          {nmLabel}
-          {dateLabel}
-          {quayLabel}
-        </span>
-        {etaLabel ? (
-          <span className="text-[9px] text-white/40 block leading-tight" data-testid="eta-range" title={etaTitle || undefined}>{etaLabel}</span>
-        ) : null}
-      </button>
+    <>
+      <span className="font-medium leading-tight block truncate">{name}</span>
+      <span className="text-[9px] text-white/40">
+        {nmLabel}
+        {dateLabel}
+        {quayLabel}
+      </span>
+      {etaLabel ? (
+        <span className="text-[9px] text-white/40 block leading-tight" data-testid="eta-range" title={etaTitle || undefined}>{etaLabel}</span>
+      ) : null}
+    </>
+  );
+}
+
+const EscaleRow = memo(function EscaleRow({ name, nmLabel, dateLabel, quayLabel, etaLabel, etaTitle, active }) {
+  const idle = active ? "bg-cyan-700/40 text-white" : "text-white/70";
+  return (
+    <li
+      data-testid="escale-legend-row"
+      data-escale={name}
+      data-interactive="false"
+      className={`flex items-stretch border-t border-white/5 ${idle}`}
+    >
+      <div className="flex-1 min-w-0 text-left px-2 py-1 text-[11px] cursor-default">
+        <EscaleRowBody
+          name={name}
+          nmLabel={nmLabel}
+          dateLabel={dateLabel}
+          quayLabel={quayLabel}
+          etaLabel={etaLabel}
+          etaTitle={etaTitle}
+        />
+      </div>
     </li>
   );
 });
 
-export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }) {
+export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, frozen = false }) {
   const { t, lang } = useLang();
 
   // Labels depend on marks + language only: built once per route / language.
@@ -48,7 +64,6 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }
         name: m.name,
         at,
         mark: m,
-        title: t("escalesJump", { name: m.name }),
         nmLabel: `${Math.round(Number(m.nm) || 0).toLocaleString()} nm`,
         dateLabel: m.iso ? ` · ${formatCivilDate(m.iso, lang)}` : "",
         quayLabel: m.holdHours > 0 ? ` · ${t("escalesQuay", { days: Math.round(m.holdHours / 24) })}` : "",
@@ -73,7 +88,7 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }
     });
   }
   if (nextIndex < 0 && playheadNext) nextIndex = current + 1;
-  const eta = useOfficialEta(nextName, { enabled: Boolean(nextName) });
+  const eta = useOfficialEta(nextName, { enabled: Boolean(nextName), frozen });
   const etaLabel = formatEtaRange(eta, t, lang);
   const etaTitle = formatEtaRangeTitle(eta, t);
 
@@ -89,15 +104,12 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, onSeek }
           <EscaleRow
             key={r.key}
             name={r.name}
-            at={r.at}
             nmLabel={r.nmLabel}
             dateLabel={r.dateLabel}
             quayLabel={r.quayLabel}
             etaLabel={etaLabel && i === nextIndex ? etaLabel : ""}
             etaTitle={etaLabel && i === nextIndex ? etaTitle : ""}
-            title={r.title}
             active={i === current}
-            onSeek={onSeek}
           />
         ))}
       </ul>

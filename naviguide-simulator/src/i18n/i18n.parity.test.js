@@ -54,6 +54,11 @@ describe("i18n parity (lot F5)", () => {
     assert.equal(en.etaRangeTitle, "p10–p90, {n} members");
   });
 
+  it("lot RE6 — bandeau climato : source du repli global", () => {
+    assert.equal(fr.climatologySourceGlobal, "maille 4°");
+    assert.equal(en.climatologySourceGlobal, "4° mesh");
+  });
+
   it("les libellés plein écran film existent dans les deux langues", () => {
     assert.match(fr.filmFullscreen, /Plein écran film/);
     assert.match(en.filmFullscreen, /fullscreen/i);

@@ -28,6 +28,7 @@ const EVENT_TYPE_LABEL = {
     mpa: "Aire marine protégée",
     cyclone: "Cyclone",
     marina: "Marina",
+    port: "Port",
     station: "Station croisée",
     science: "Station croisée",
   },
@@ -36,6 +37,7 @@ const EVENT_TYPE_LABEL = {
     mpa: "Marine protected area",
     cyclone: "Cyclone",
     marina: "Marina",
+    port: "Port",
     station: "Station passed",
     science: "Station passed",
   },
@@ -46,13 +48,14 @@ const TYPE_ONLY_TITLES = new Set([
   "Marine protected area",
   "Cyclone",
   "Marina",
+  "Port",
   "Station croisée",
   "Station passed",
   "Fiche science",
   "Science sheet",
 ]);
 
-const NAMED_EVENT_KINDS = new Set(["amp", "mpa", "cyclone", "marina", "station", "science"]);
+const NAMED_EVENT_KINDS = new Set(["amp", "mpa", "cyclone", "marina", "port", "station", "science"]);
 
 const NAMELESS_FACT = /traces de cyclone|cyclone tracks|saison cyclonique|cyclone season|ce mois-ci|this month/i;
 

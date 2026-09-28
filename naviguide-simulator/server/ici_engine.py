@@ -745,6 +745,12 @@ async def fill_dossier(
 ) -> dict:
     """`thin=True` → a pearl (cached, no weather / satellite / sheet);
     `rich=True` (with thin) → every layer without a timestamp (lot P)."""
+    import offline
+    if offline.enabled():
+        bag = empty_dossier(lat, lon, radius_nm)
+        bag["status"] = "unavailable"
+        bag["reason"] = "hors ligne"
+        return _with_piracy(bag, lat, lon)
     if thin:
         key = thin_cache_key(lat, lon, radius_nm, month)
         cached = thin_cache_get(key, rich=rich)

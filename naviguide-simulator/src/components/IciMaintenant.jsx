@@ -61,7 +61,7 @@ function JournalList({ entries, onSeek, lang }) {
             data-testid="ici-journal-entry"
             data-t={entry.t}
             onClick={() => seekJournalEntry(onSeek, entry)}
-            className="ici-journal-entry w-full text-left text-[11px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer text-inherit hover:bg-white/5 break-words [overflow-wrap:anywhere]"
+            className="ici-journal-entry w-full text-left text-[11px] leading-snug px-0.5 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-white/5 break-words [overflow-wrap:anywhere]"
           >
             {formatJournalLine(entry, lang)}
           </button>
