@@ -88,6 +88,11 @@ test("lot RE4 — date de la barre pilote la ligne d'état, Simulation inchangé
 
   const clock = page.getByTestId("clock-line");
   await expect(clock).toBeVisible({ timeout: 15_000 });
+  // La ligne démarre sur le gabarit « 0 nm · j0 · 15 mai 2026 » puis passe à l'horloge officielle (jour de mer
+  // réel, minute UTC qui avance, milles qui tickent) : on attend cette bascule quand l'API est là, et le retour
+  // au défaut se compare sur le jour de mer, l'année et LIVE — pas sur le texte entier (tranche 5/6, 29 sept.).
+  if (apiUp) await expect(clock).not.toHaveText(/\bj0\b/, { timeout: 20_000 }).catch(() => {});
+  const clockKey = (s) => `${(s.match(/\bj\d+\b|\bd\d+\b/) || [""])[0]} ${(s.match(/\b\d{4}\b/) || [""])[0]} ${/\bLIVE\b/.test(s) ? "LIVE" : ""}`.trim();
   const lineBefore = (await clock.innerText()).trim();
   expect(lineBefore, "ligne d'état initiale").toMatch(/j\d+|d\d+/);
   if (/\d{4}/.test(lineBefore)) {
@@ -110,10 +115,10 @@ test("lot RE4 — date de la barre pilote la ligne d'état, Simulation inchangé
 
   await replayDate.fill("15/05/2026");
   await expect(replayDate).toHaveValue("15/05/2026");
-  await expect.poll(async () => (await clock.innerText()).trim(), { timeout: 8_000 })
-    .toBe(lineBefore);
+  await expect.poll(async () => clockKey((await clock.innerText()).trim()), { timeout: 8_000 })
+    .toBe(clockKey(lineBefore));
   const lineRestored = (await clock.innerText()).trim();
-  expect(lineRestored, "retour au défaut = ligne d'origine").toBe(lineBefore);
+  expect(clockKey(lineRestored), `retour au défaut = ligne d'origine (${lineBefore} → ${lineRestored})`).toBe(clockKey(lineBefore));
   if (/\d{4}/.test(lineRestored)) {
     expect(lineRestored).toMatch(/2026/);
   }
