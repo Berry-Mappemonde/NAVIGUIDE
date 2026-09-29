@@ -102,9 +102,10 @@ jobs:
   # (fumée + lots) sur le build de prod, API hors ligne, stock figé.
   # Un spec rouge bloque la PR. Specs `poste` (hindcast, LLM, réseau) ignorés en CI.
   simulator-e2e:
-    # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en deux tranches parallèles (--shard) :
-    # même contenu, même API sur le stock figé, ~3 min chacune. Deux jobs verts = recette verte.
-    name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/2
+    # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en trois tranches parallèles (--shard) :
+    # même contenu, même API sur le stock figé, ~1 min 40 de tests chacune + ~1 min 30 de mise en place.
+    # Trois jobs verts = recette verte. (Au-delà, la mise en place domine et les minutes de runner triplent.)
+    name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
     timeout-minutes: 12
     needs: changes
@@ -112,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: naviguide-simulator
@@ -142,10 +143,10 @@ jobs:
           restore-keys: |
             playwright-${{ runner.os }}-
       - run: npx playwright install --with-deps chromium
-      - name: Recette automatique (fumée + lots, stock figé) — tranche ${{ matrix.shard }}/2
+      - name: Recette automatique (fumée + lots, stock figé) — tranche ${{ matrix.shard }}/3
         env:
           PW_WITH_API: "1"
-        run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/2
+        run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/3
       - name: Résumé d'étape
         if: always()
         run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
