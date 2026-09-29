@@ -101,6 +101,9 @@ function BerryCard({
         <button
           type="button"
           data-testid="route-switch-draw"
+          // Même nom accessible que le bouton du bas qu'elle remplace en Tracer
+          // (les specs des lots N4/R9a/R13 le cherchent par ce nom).
+          aria-label={`${t("berryMappemonde")} · ${t("drawOwnRoute")}`}
           onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
           className={pillOff}
           title={t("drawOwnRoute")}
