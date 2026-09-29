@@ -111,7 +111,13 @@ test("lot RG6 — gabarit d'étape, sans jargon ni annexe", async ({ page }) => 
   }
 
   const blob = film.chapters.map((c) => c.text || "").join(" ");
-  if (FORBIDDEN.test(blob) || QUAY_REPEAT.test(blob) || !OPENING.test(blob)) {
+  const hasRgOpening = OPENING.test(blob)
+    || /L['’]expédition Berry-Mappemonde|The Berry-Mappemonde expedition/i.test(blob);
+  // RC21 : ouverture RG6/RG7 ⇒ Revoir jouable ; plus de skip « pré-RG » qui cache un bouton grisé.
+  if (hasRgOpening) {
+    await expect(start).toBeEnabled({ timeout: 30_000 });
+  }
+  if (!hasRgOpening) {
     test.info().annotations.push({
       type: "stock pré-RG6",
       description: "film servi encore à l'ancienne clé — remplisseur doit recalculer (FILM_SCRIPT_REV=rg6)",

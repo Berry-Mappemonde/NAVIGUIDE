@@ -59,20 +59,31 @@ export function filmTextHasT0Year(chapters, t0) {
 
 const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
 
-/** Empreinte RE7 : pas le journal déversé ni le script Simulation.
- * RG8 : l'intégral n'a plus de plafond 800 mots — le dump se reconnaît à RE7_STALE. */
-export const FILM_READY_MAX_WORDS = 2500;
+/** Au-delà : ready seulement avec l'empreinte RG6/RG7 (intégral long, lot RC21). */
+export const FILM_READY_MAX_WORDS = 800;
+
+const RG6_OPENING = /Berry-Mappemonde quitte|L['’]expédition Berry-Mappemonde|Berry-Mappemonde leaves|The Berry-Mappemonde expedition/i;
+const RG6_MILES_DAYS = /milles|jours de mer|days at sea|\bmiles\b/i;
+const RG7_CLOSE = /Aujourd['’]hui, le bateau|Today, the boat/i;
 
 export function filmWordCount(text) {
   return (String(text || "").match(/\S+/g) || []).length;
+}
+
+/** Ouverture RG6/RG7 + milles/jours, ou clôture « Aujourd'hui, le bateau ». */
+export function filmHasRg6Rg7Fingerprint(text) {
+  const blob = String(text || "");
+  if (RG7_CLOSE.test(blob)) return true;
+  return RG6_OPENING.test(blob) && RG6_MILES_DAYS.test(blob);
 }
 
 export function isRe7OfficialFilm(data) {
   const chapters = data?.chapters || [];
   if (!chapters.length) return false;
   const blob = chapters.map((c) => c.text || "").join(" ");
-  if (filmWordCount(blob) > FILM_READY_MAX_WORDS) return false;
-  return !RE7_STALE.test(blob);
+  if (RE7_STALE.test(blob)) return false;
+  if (filmWordCount(blob) <= FILM_READY_MAX_WORDS) return true;
+  return filmHasRg6Rg7Fingerprint(blob);
 }
 
 /** pending | ready | stale | empty | absent */

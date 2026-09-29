@@ -49,13 +49,23 @@ function wordCount(text) {
   return (String(text || "").match(/\S+/g) || []).length;
 }
 
+const RG6_OPENING = /Berry-Mappemonde quitte|L['’]expédition Berry-Mappemonde|Berry-Mappemonde leaves|The Berry-Mappemonde expedition/i;
+const RG6_MILES_DAYS = /milles|jours de mer|days at sea|\bmiles\b/i;
+const RG7_CLOSE = /Aujourd['’]hui, le bateau|Today, the boat/i;
+
+function hasRg6Rg7Fingerprint(blob) {
+  if (RG7_CLOSE.test(blob)) return true;
+  return RG6_OPENING.test(blob) && RG6_MILES_DAYS.test(blob);
+}
+
 function isRe7Film(free) {
   const chapters = free?.chapters || [];
   if (!chapters.length) return false;
   const blob = chapters.map((c) => c.text || "").join(" ");
-  if (wordCount(blob) > 800) return false;
   if (FORBIDDEN.test(blob)) return false;
   if (/milles nautiques du départ|Bay of Biscay/.test(blob)) return false;
+  // RC21 : un film RG6+ long n'est pas stale pour le seul plafond 800.
+  if (wordCount(blob) > 800 && !hasRg6Rg7Fingerprint(blob)) return false;
   return true;
 }
 
@@ -133,11 +143,9 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
   const free = probed.film;
   const blob = free.chapters.map((c) => c.text || "").join(" ");
   expect(free.targetSeconds, "sans case : pas de budget serveur").toBe(0);
-  const words = wordCount(blob);
   expect(blob, "pas de station sans nom").not.toMatch(/station croisée\s*:\s*Station croisée/i);
   expect(blob, "pas d'absence racontée").not.toMatch(/Aucun port d'entr[ée]e/i);
   expect(blob, "pas d'entrée doublée").not.toMatch(/entrée dans Entrée dans/i);
-  expect(words, "récit sans budget sous 800 mots").toBeLessThanOrEqual(800);
   expect(blob, "géographie officielle").toMatch(GEO);
   const last = free.chapters[free.chapters.length - 1]?.text || "";
   if (LAST_LEG.test(last)) {
