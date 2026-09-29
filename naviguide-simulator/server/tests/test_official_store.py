@@ -344,8 +344,8 @@ def test_stale_film_refreshed_when_marks_have_air_pair(tmp_path):
         for c in store.get("film", key)["payload"]["fr"]["chapters"]
     )
     low = blob.lower()
-    assert "prend l'avion pour" in low
-    assert "retour en avion vers" in low
+    assert "s'envole" in low
+    assert "bateau attend" in low
 
     again = official_store.refresh_family(
         "film", compute=compute, now=NOW, store=store, voy=voy, force=False,
@@ -380,6 +380,7 @@ def test_ajaccio_refresh_does_not_invent_air(tmp_path):
     assert status == READY
     blob = store.get("film", store.family_key("film", voy, NOW))["payload"]["fr"]["chapters"][0]["text"]
     assert "prend l'avion" not in blob
+    assert "s'envole" not in blob
     assert "retour en avion" not in blob
 
 
@@ -422,8 +423,8 @@ def test_cayenne_voyage_uses_itinerary_halifax_for_air(tmp_path):
     assert status == READY
     blob = store.get("film", store.family_key("film", voy, NOW))["payload"]["fr"]["chapters"][0]["text"]
     low = blob.lower()
-    assert "prend l'avion pour" in low
-    assert "retour en avion vers" in low
+    assert "s'envole" in low
+    assert "bateau attend" in low
 
 
 def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeypatch):
@@ -469,8 +470,8 @@ def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeyp
     assert film.status_code == 200
     blob = " ".join(c.get("text") or "" for c in film.json().get("chapters") or [])
     low = blob.lower()
-    assert "prend l'avion pour" in low
-    assert "retour en avion vers" in low
+    assert "s'envole" in low
+    assert "bateau attend" in low
 
 
 YESTERDAY = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)

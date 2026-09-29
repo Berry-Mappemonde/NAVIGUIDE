@@ -30,6 +30,10 @@ from film_script import (
     review_leg_for_chapter,
     review_sentences,
     official_dated_stops,
+    _ms,
+    _nm_between,
+    _window_depart_ms,
+    _windows,
     warm_film_story,
     select_chapter_changes,
     select_film_events,
@@ -370,10 +374,15 @@ def _assert_departure_arrival_pairs(text: str, lang: str = "fr") -> None:
         key = norm_stop(name)
         assert key not in seen, f"escale répétée : {name}"
         seen.append(key)
+    def _pair_name(name: str) -> str:
+        return re.sub(r"\s+(par la route|by road)\s*$", "", name, flags=re.I).strip()
+
     for name, i in deps:
         nxt = next(((n, j) for n, j in arrs if j > i), None)
         assert nxt, f"pas d’arrivée après départ vers {name}"
-        assert norm_stop(nxt[0]) == norm_stop(name), f"départ vers {name} suivi de arrivée à {nxt[0]}"
+        assert norm_stop(_pair_name(nxt[0])) == norm_stop(_pair_name(name)), (
+            f"départ vers {name} suivi de arrivée à {nxt[0]}"
+        )
     assert not re.search(r"départ vers Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio", text, re.I)
     assert not re.search(r"departure for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio", text, re.I)
 
@@ -1154,8 +1163,8 @@ def test_re7_discourse_eleven_defects():
     assert "IUCN" not in blob
     assert blob.lower().count("gran roque") == 1
     assert "Monaco" not in blob
-    assert re.search(r"prend l'avion pour Halifax", blob)
-    assert re.search(r"retour en avion vers Cayenne", blob)
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob)
+    assert re.search(r"le bateau attend à Cayenne", blob)
     assert re.search(r"Aujourd’hui, le bateau est à Nouméa", blob)
     assert "Irma" in blob and "2017" in blob
     assert "PIRATA" in blob
@@ -1167,7 +1176,7 @@ def test_re7_discourse_eleven_defects():
     assert re.search(r"eaux espagnoles", blob)
     idx_zee = blob.find("eaux espagnoles")
     idx_dep = blob.find("départ vers Cayenne")
-    assert 0 <= idx_zee < idx_dep
+    assert 0 <= idx_dep < idx_zee
     _assert_no_filler(blob)
     assert not re.search(r"\bnm\b", blob)
 
@@ -1192,8 +1201,8 @@ def test_rf5_air_survives_tight_budget():
         )
         blob = _script_blob(plan)
         assert plan["targetSeconds"] == seconds
-        assert re.search(r"prend l'avion pour Halifax", blob), blob
-        assert re.search(r"retour en avion vers Cayenne", blob), blob
+        assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+        assert re.search(r"le bateau attend à Cayenne", blob), blob
         _assert_no_filler(blob)
 
 
@@ -1204,8 +1213,8 @@ def test_rf5_air_when_halifax_has_no_iso():
     plan = build_raw_script(clock, marks, RE7_LIVE, None, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = _script_blob(plan)
     assert "Cayenne" in blob
-    assert re.search(r"prend l'avion pour Halifax", blob), blob
-    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+    assert re.search(r"le bateau attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1217,8 +1226,8 @@ def test_rf5_air_return_without_moments():
         lang="fr", seconds=150, now_ms=NOW_MS,
     )
     blob = _script_blob(plan)
-    assert re.search(r"prend l'avion pour Halifax", blob), blob
-    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+    assert re.search(r"le bateau attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1229,4 +1238,126 @@ def test_rf5_no_air_invented_on_ajaccio_route():
     blob = _script_blob(plan)
     assert "Cayenne" not in blob
     assert "Halifax" not in blob
-    assert not re.search(r"prend l'avion|retour en avion|flies to|return flight", blob)
+    assert not re.search(r"prend l'avion|retour en avion|s'envole|flies to|return flight|the boat waits", blob)
+
+
+def test_rg1_road_phrase_on_first_chapter():
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
+    ch0 = plan["chapters"][0]["text"]
+    assert re.search(r"départ vers La Rochelle par la route", ch0, re.I), ch0
+
+
+def test_rg1_depart_ms_is_clock_leave_not_hold():
+    """Écart nul quand l'horloge quitte à tA — jamais tA + 3 jours d'escale."""
+    t_a = _ms(OFFICIAL_T0)
+    t_end = _ms("2026-09-19T02:00:00Z")
+    lr = {
+        "name": "La Rochelle", "iso": OFFICIAL_T0, "holdHours": 72,
+        "lat": 46.15, "lon": -1.16, "filmNm": 122, "nm": 0,
+    }
+    aj = {
+        "name": "Ajaccio (Corse)", "iso": "2026-05-24T12:00:00Z", "holdHours": 72,
+        "lat": 41.9, "lon": 8.7, "filmNm": 1942, "nm": 1820,
+    }
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": [lr, aj],
+        "vertices": [
+            {"iso": OFFICIAL_T0, "lat": 46.20, "lon": -1.16, "vehicle": "main"},
+        ],
+    }
+    windows = _windows([lr, aj], t_a, t_end, clock)
+    sail = next(w for w in windows if "ajaccio" in (w.get("destName") or "").lower())
+    assert _window_depart_ms(sail) == t_a
+    bare = _windows([lr, aj], t_a, t_end, {"t0": OFFICIAL_T0, "vertices": [], "marks": [lr, aj]})
+    sail_bare = next(w for w in bare if "ajaccio" in (w.get("destName") or "").lower())
+    assert _window_depart_ms(sail_bare) == t_a
+    hold_ms = 72 * 3_600_000
+    assert _window_depart_ms(sail_bare) != t_a + hold_ms
+
+
+def test_rg1_air_window_not_told_as_navigation():
+    marks = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z", "holdHours": 0, "lat": 46.15, "lon": -1.16},
+        {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "iso": "2026-07-19T08:00:00Z", "holdHours": 72, "lat": 4.93, "lon": -52.33},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4100, "filmNm": 4100, "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Papeete (Polynésie française)", "nm": 11000, "filmNm": 11100, "iso": "2026-09-08T08:00:00Z", "holdHours": 72, "lat": -17.5, "lon": -149.5},
+    ]
+    clock = {"t0": OFFICIAL_T0, "marks": marks, "vertices": [
+        {"iso": "2026-07-19T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "quay"},
+        {"iso": "2026-07-22T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "plane"},
+        {"iso": "2026-07-25T18:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
+        {"iso": "2026-07-28T08:00:00Z", "lat": 4.80, "lon": -52.50, "vehicle": "main"},
+    ]}
+    live = {"filmNm": 12000, "sailNm": 11800, "iso": "2026-09-19T02:00:00Z", "status": "live"}
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-07-23T08:00:00Z", "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive canadienne",
+                 "fact": "Entrée dans Zone économique exclusive canadienne"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
+            {"seq": 1, "t": "2026-07-25T06:00:00Z", "changes": [
+                {"kind": "approche", "score": 3, "title": "Saint-Pierre", "fact": "Approche de Saint-Pierre"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
+            {"seq": 2, "t": "2026-07-25T08:00:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Saint-Pierre", "fact": "Cayenne → Saint-Pierre"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
+            {"seq": 3, "t": "2026-07-28T09:00:00Z", "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive du Panama",
+                 "fact": "Entrée dans Zone économique exclusive du Panama"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(clock, marks, live, journal, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert re.search(r"s'envole de Cayenne pour Saint-Pierre-et-Miquelon", blob), blob
+    assert re.search(r"le bateau attend à Cayenne", blob), blob
+    assert not re.search(r"départ vers Saint-Pierre", blob), blob
+    assert not re.search(r"approche de Saint-Pierre", blob, re.I), blob
+    assert not re.search(r"Arrivée à Saint-Pierre", blob), blob
+    assert not re.search(r"eaux canadiennes", blob), blob
+    next_sail = next(
+        c for c in plan["chapters"]
+        if re.search(r"départ vers Papeete", c.get("text") or "")
+    )
+    assert "Cayenne" in (next_sail.get("fromName") or "")
+    assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
+
+
+def test_rg1_depart_anchor_stays_at_port():
+    t_end = _ms("2026-09-19T02:00:00Z")
+    lr = {
+        "name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "holdHours": 72,
+        "lat": 46.15, "lon": -1.16, "filmNm": 122, "nm": 0,
+    }
+    aj = {
+        "name": "Ajaccio (Corse)", "iso": "2026-05-24T12:00:00Z", "holdHours": 72,
+        "lat": 41.9, "lon": 8.7, "filmNm": 1942, "nm": 1820,
+    }
+    leave_iso = "2026-05-15T13:00:00Z"
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": [CLOCK["marks"][0], lr, aj],
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": leave_iso, "lat": 46.15, "lon": -1.24, "vehicle": "main"},
+        ],
+    }
+    live = {"filmNm": 2000, "sailNm": 1900, "iso": "2026-05-25T00:00:00Z", "status": "live"}
+    plan = build_raw_script(clock, clock["marks"], live, None, lang="fr", seconds=0, now_ms=t_end)
+    ch = next(c for c in plan["chapters"] if "départ vers Ajaccio" in (c.get("text") or ""))
+    anchors = ch.get("anchors") or []
+    assert anchors, ch
+    depart_anchor = next(
+        a for a in anchors
+        if "départ vers Ajaccio" in (ch.get("text") or "")[max(0, int(a.get("charIdx") or 0)):]
+    )
+    t_anchor = _ms(depart_anchor["t"])
+    vert = min(
+        clock["vertices"],
+        key=lambda v: abs((_ms(v["iso"]) or 0) - (t_anchor or 0)),
+    )
+    d = _nm_between(46.15, -1.16, vert["lat"], vert["lon"])
+    assert d is not None and d <= 5.0, (d, depart_anchor, vert)

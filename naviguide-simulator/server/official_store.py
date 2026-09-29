@@ -28,8 +28,8 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
-# Clé film : un snapshot RF2 (avant phrases avion) ne matche plus.
-FILM_SCRIPT_REV = "rf5"
+# Clé film : RG1 (départ horloge, vol typé, par la route) invalide rf5.
+FILM_SCRIPT_REV = "rg1"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -309,7 +309,7 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : le film inclut la révision du script (RF5)."""
+        """Clé de rangement : le film inclut la révision du script (RG1)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
