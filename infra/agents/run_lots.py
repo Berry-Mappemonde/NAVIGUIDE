@@ -232,12 +232,26 @@ class Http:
     def github(self, path: str, method: str = "GET", body: dict | None = None):
         return self._call(f"{GITHUB_API}{path}", self.github_headers, method, body)
 
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+            return None
+
     def github_text(self, path: str) -> str:
-        """GET qui renvoie du texte (journaux de job : GitHub redirige vers un fichier)."""
+        """GET qui renvoie du texte (journaux de job). GitHub répond 302 vers un fichier sur le stockage
+        Azure : ce fichier doit être lu SANS l'en-tête Authorization, sinon 401 (toute la nuit du 29 sept.,
+        chaque relance de correction partait avec « 0 lignes d'échec transmises » pour cette raison)."""
+        opener = urllib.request.build_opener(self._NoRedirect)
         req = urllib.request.Request(f"{GITHUB_API}{path}", headers=self.github_headers)
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return resp.read().decode(errors="replace")
+            try:
+                with opener.open(req, timeout=60) as resp:
+                    return resp.read().decode(errors="replace")
+            except urllib.error.HTTPError as e:
+                if e.code not in (301, 302, 303, 307, 308) or not e.headers.get("Location"):
+                    raise
+                blob = urllib.request.Request(e.headers["Location"], headers={"User-Agent": "bim-run-lots"})
+                with urllib.request.urlopen(blob, timeout=120) as resp:
+                    return resp.read().decode(errors="replace")
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"HTTP {e.code} GET {path}") from e
         except (urllib.error.URLError, TimeoutError) as e:
@@ -267,7 +281,9 @@ def find_pr(http: Http, repo: str, branch: str, state: str = "open") -> dict | N
     return prs[0] if prs else None
 
 
-FAIL_LINE = re.compile(r"(✘|✖|FAILED|failed|Error:|AssertionError|Expected|Received|\.spec\.js:\d+|test_[a-z_]+\.py::)")
+FAIL_LINE = re.compile(r"(✘|✖|##\[error\]|FAILED|failed|Error:|AssertionError|Expected:|Received:|\.spec\.js:\d+|test_[a-z_]+\.py::)")
+# Bruit du journal GitHub qui contient ces mots sans nommer un échec (téléchargement du cache Playwright).
+FAIL_NOISE = re.compile(r"^\s*(✓|✔|-\s+\[skipped\])|Received \d+ of \d+|Cache (restored|saved)|::(debug|group|endgroup)|\d+ passed \(")
 
 
 def job_failures(http: Http, repo: str, check_run: dict) -> list[str]:
@@ -281,7 +297,7 @@ def job_failures(http: Http, repo: str, check_run: dict) -> list[str]:
     for line in raw.splitlines():
         line = re.sub(r"^\S+T\S+Z\s*", "", line).strip()            # horodatage GitHub
         line = re.sub(r"\x1b\[[0-9;]*m", "", line)                  # couleurs
-        if FAIL_LINE.search(line) and len(line) < 240 and line not in out:
+        if FAIL_LINE.search(line) and not FAIL_NOISE.search(line) and len(line) < 240 and line not in out:
             out.append(line)
         if len(out) >= 25:
             break
