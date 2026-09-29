@@ -176,6 +176,9 @@ test("lot RF9 — Vent allumé : zoom borné, roses réutilisées", async ({ pag
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await leaveCinema(page);
+  // L'arrivée de l'horloge officielle recadre la carte sur le bateau : on l'attend AVANT de figer la vue
+  // Atlantique, sinon la « 2e passe même vue » n'est plus la même vue (441 roses recréées, 29 sept.).
+  if (apiUp) await expect(page.getByTestId("film-clock-line")).not.toHaveText(/\bj0\b/, { timeout: 20_000 }).catch(() => {});
   await turnOnWind(page);
   await pinAtlantic(page, 3);
   await waitRosesStable(page);
