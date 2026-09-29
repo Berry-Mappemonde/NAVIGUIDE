@@ -176,7 +176,8 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   const draw = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i });
   await expect(draw).toBeVisible({ timeout: 15_000 });
   await draw.scrollIntoViewIfNeeded();
-  await draw.click({ force: true });
+  // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
+  await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/Choisissez votre point de départ|Choose your starting point/i).first()).toBeVisible();
   await expect(page.getByTestId("ici-maintenant")).toBeVisible();
