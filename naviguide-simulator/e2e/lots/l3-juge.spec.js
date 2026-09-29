@@ -29,7 +29,11 @@ async function hideSidebarForFloatingCard(page) {
 }
 
 test("lot L3 — truth-badge et texte barré sur une carte de fixture", async ({ page }) => {
-  test.skip(!!process.env.CI, "poste : Tavily / Nemotron absents en CI (R8c : plus de carte flottante)");
+  // 28 sept. : ce n'est PAS une question de clés. Depuis R8c (plus de pop-up sur la carte), les composants qui
+  // portaient le badge du juge (truth-badge) — MomentNowCard / FreeMomentBlock, et leur fixture window.__naviguide*Fixture — ne sont plus
+  // rendus nulle part (IciMaintenant utilise CardAlias, sans badge ni fixture). À trancher par le porteur : un lot pour
+  // remettre le badge du juge (truth-badge) dans le panneau, ou la suppression de ce spec. En attendant, ignoré partout, honnêtement.
+  test.skip(true, "R8c : le badge du juge (truth-badge) n'est plus rendu — décision à prendre (remettre, ou supprimer ce spec)");
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -55,9 +59,6 @@ test("lot L3 — truth-badge et texte barré sur une carte de fixture", async ({
   });
 
   const badge = page.getByTestId("truth-badge");
-  if (!(await badge.isVisible({ timeout: 8_000 }).catch(() => false))) {
-    test.skip(true, "poste : badge juge seulement avec Tavily / Nemotron (R8c : plus de carte flottante)");
-  }
   await expect(badge).toContainText(/Tavily|Nemotron|Vérifié|Checked/i);
   const struck = page.locator("s, .line-through");
   await expect(struck.first()).toBeVisible();
