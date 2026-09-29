@@ -28,8 +28,8 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
-# Clé film : RG6 (gabarit d'étape) invalide rg5. moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rg6"
+# Clé film : RG7 (ouverture + fin) invalide rg6. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rg7"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
@@ -964,8 +964,8 @@ COMPUTE: dict[str, Callable[[dict, datetime], Optional[dict]]] = {
     "plan_review": compute_plan_review,
 }
 
-# Horloge d'abord : les autres familles s'appuient dessus.
-COMPUTE_ORDER = ("climo", "moments", "film", "eta", "ici", "plan_review")
+# Horloge d'abord. Plan-review et eta avant le film (RG7 : le script les lit).
+COMPUTE_ORDER = ("climo", "moments", "plan_review", "eta", "film", "ici")
 
 
 def refresh_family(

@@ -44,12 +44,17 @@ from film_script import (
     looks_english_title,
     norm_stop,
     review_leg_for_chapter,
+    review_plan_stats,
     review_sentences,
+    upcoming_stop_names,
+    eta_payload_for_stop,
     official_dated_stops,
     spoken_sea_days,
     thin_chapter_dates,
     _arrival_harbor,
+    _close_sentence,
     _de,
+    _film_open_sentences,
     _ms,
     _nm_between,
     _window_depart_ms,
@@ -127,7 +132,7 @@ def test_raw_english_chapter1():
     text = plan["chapters"][0]["text"]
     assert "Saint-Maur" in text
     assert "La Rochelle" in text
-    assert ("left" in text.lower() or "departed" in text.lower())
+    assert ("left" in text.lower() or "departed" in text.lower() or "leaves" in text.lower())
     assert "quitté" not in text
 
 
@@ -460,7 +465,7 @@ def test_live_like_clock_pairs_rochelle_before_ajaccio():
             blob = _script_blob(plan)
             _assert_no_rochelle_to_ajaccio_skip(blob)
             ch0 = plan["chapters"][0]["text"]
-            assert re.search(r"par la route pour La Rochelle|quitte Saint-Maur", ch0, re.I), ch0
+            assert re.search(r"par la route jusqu|quitte Saint-Maur|quitté Saint-Maur", ch0, re.I), ch0
             assert re.search(r"Arrivée à La Rochelle", ch0), ch0
 
 
@@ -605,7 +610,7 @@ def test_http_film_route_en(monkeypatch):
     text = data["chapters"][0]["text"]
     blob = _script_blob(data)
     if "Saint-Maur" in text:
-        assert ("left" in text.lower() or "departed" in text.lower())
+        assert ("left" in text.lower() or "departed" in text.lower() or "leaves" in text.lower())
     deps = list(re.finditer(r"departure for (.+?)(?:\s*:|\.|$)", blob, re.I))
     arrs = list(re.finditer(r"Arrival at (.+?) on ", blob, re.I))
     if len(deps) >= 2:
@@ -2044,3 +2049,184 @@ def test_rg6_arrival_harbor_ignores_far_marina():
     only_far = _arrival_harbor([far], dest, "fr")
     assert "Ajaccio" in only_far
     assert "Barizo" not in only_far
+
+
+def _rg7_review():
+    """Plan-review de test : chiffres lus tels quels, jamais servis au poste."""
+    return {
+        "legs": [
+            {"from": "Saint-Maur", "to": "La Rochelle", "legNm": 0},
+            {"from": "La Rochelle", "to": "Ajaccio (Corse)", "legNm": 1820},
+            {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)", "legNm": 5153},
+            {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)", "legNm": 12082},
+            {"from": "Nouméa (Nouvelle-Calédonie)", "to": "Dzaoudzi (Mayotte)", "legNm": 9152},
+            {"from": "Dzaoudzi (Mayotte)", "to": "Europa", "legNm": 400},
+            {"from": "Europa", "to": "Tromelin", "legNm": 300},
+            {"from": "Tromelin", "to": "La Réunion", "legNm": 250},
+        ]
+    }
+
+
+def _rg7_eta():
+    return {
+        "stops": {
+            "Nouméa (Nouvelle-Calédonie)": {
+                "members": 24,
+                "p10": "2026-10-03T00:00:00Z",
+                "p50": "2026-10-05T00:00:00Z",
+                "p90": "2026-10-08T00:00:00Z",
+            }
+        }
+    }
+
+
+def test_rg7_plan_stats_sum_and_count():
+    stats = review_plan_stats(_rg7_review())
+    assert stats["nStops"] == 8
+    assert stats["totalNm"] == 1820 + 5153 + 12082 + 9152 + 400 + 300 + 250
+    assert stats["finalDest"] == "La Réunion"
+    assert review_plan_stats(None)["nStops"] is None
+    assert review_plan_stats({"legs": []})["totalNm"] is None
+
+
+def test_rg7_upcoming_from_current_and_air_skipped():
+    review = _rg7_review()
+    names = upcoming_stop_names(review, "Nouméa (Nouvelle-Calédonie)", arrived=False)
+    assert names == ["Nouméa", "Dzaoudzi", "Europa", "Tromelin", "La Réunion"]
+    after = upcoming_stop_names(review, "Nouméa", arrived=True)
+    assert after == ["Dzaoudzi", "Europa", "Tromelin", "La Réunion"]
+    assert upcoming_stop_names(review, "Inconnu") == []
+    with_air = {
+        "legs": [
+            {"from": "Cayenne", "to": "Halifax (Nouvelle-Écosse)", "legNm": 10},
+            {"from": "Cayenne", "to": "Nouméa (Nouvelle-Calédonie)", "legNm": 100},
+        ]
+    }
+    assert upcoming_stop_names(with_air, "Nouméa") == ["Nouméa"]
+
+
+def test_rg7_eta_payload_requires_members():
+    assert eta_payload_for_stop(_rg7_eta(), "Nouméa")["p10"].startswith("2026-10-03")
+    empty = {"stops": {"Nouméa": {"members": 0, "p10": "2026-10-01T00:00:00Z", "p90": "2026-10-02T00:00:00Z"}}}
+    assert eta_payload_for_stop(empty, "Nouméa") is None
+    assert eta_payload_for_stop(None, "Nouméa") is None
+
+
+def test_rg7_opening_uses_plan_review_totals():
+    review = _rg7_review()
+    stats = review_plan_stats(review)
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="fr", review=review,
+    )
+    blob = " ".join(opens)
+    assert "Berry-Mappemonde" in blob
+    assert "Saint-Maur" in blob
+    assert "La Rochelle" in blob
+    assert "par la route" in blob
+    assert "15 mai 2026" in blob
+    assert "huit escales" in blob
+    assert "29 157 milles" in blob
+    assert "La Réunion" in blob
+    assert stats["totalNm"] == 29157
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review,
+    )
+    text0 = plan["chapters"][0]["text"]
+    assert "L’expédition Berry-Mappemonde a quitté Saint-Maur" in text0 or "L'expédition Berry-Mappemonde a quitté Saint-Maur" in text0
+    assert "par la route jusqu" in text0
+    assert "huit escales" in text0
+    assert "29 157 milles" in text0
+    assert "La Réunion" in text0
+
+
+def test_rg7_opening_silent_on_missing_review_numbers():
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="fr", review=None,
+    )
+    blob = " ".join(opens)
+    assert "Berry-Mappemonde" in blob
+    assert "Saint-Maur" in blob
+    assert "par la route" in blob
+    assert "Le plan compte" not in blob
+    assert "escales" not in blob
+    assert "milles" not in blob
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    text0 = plan["chapters"][0]["text"]
+    assert "Le plan compte" not in text0
+
+
+def test_rg7_opening_english():
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="en", review=_rg7_review(),
+    )
+    blob = " ".join(opens)
+    assert "Berry-Mappemonde expedition left Saint-Maur" in blob
+    assert "15 May 2026" in blob
+    assert "by road to La Rochelle" in blob
+    assert "eight stops" in blob
+    assert "29,157 miles" in blob
+    assert "La Réunion" in blob
+    assert "quitté" not in blob
+
+
+def test_rg7_close_eta_range_and_upcoming():
+    review = _rg7_review()
+    eta = _rg7_eta()
+    w = {
+        "destName": "Nouméa (Nouvelle-Calédonie)", "toName": "Nouméa (Nouvelle-Calédonie)",
+        "destNm": 19055, "arrived": False,
+    }
+    live = {"sailNm": 18000, "filmNm": 18000, "status": "live"}
+    close = _close_sentence(w, live, "fr", review=review, eta=eta)
+    assert "Aujourd’hui" in close or "Aujourd'hui" in close
+    assert "Nouméa" in close
+    assert "entre le 3 octobre et le 8 octobre" in close
+    assert "Les escales à venir :" in close
+    assert close.index("Nouméa") < close.index("Dzaoudzi")
+    assert "Dzaoudzi" in close and "Europa" in close and "Tromelin" in close and "La Réunion" in close
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], live, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review, eta=eta,
+    )
+    last = plan["chapters"][-1]["text"]
+    assert "entre le 3 octobre et le 8 octobre" in last
+    assert "Les escales à venir :" in last
+    assert "Dzaoudzi" in last
+
+
+def test_rg7_close_no_invented_eta_when_missing():
+    review = _rg7_review()
+    w = {
+        "destName": "Nouméa (Nouvelle-Calédonie)", "toName": "Nouméa (Nouvelle-Calédonie)",
+        "destNm": 19055, "arrived": False,
+    }
+    live = {"sailNm": 18000, "filmNm": 18000}
+    close = _close_sentence(w, live, "fr", review=review, eta=None)
+    assert "entre le" not in close
+    assert "octobre" not in close
+    empty = {"stops": {"Nouméa": {"members": 0, "p10": "2026-11-01T00:00:00Z", "p90": "2026-11-04T00:00:00Z"}}}
+    silent = _close_sentence(w, live, "fr", review=review, eta=empty)
+    assert "novembre" not in silent
+    assert "entre le" not in silent
+    en_empty = _close_sentence(w, live, "en", review=review, eta=None)
+    assert "between" not in en_empty.lower()
+    assert "October" not in en_empty
+
+
+def test_rg7_close_english_with_eta():
+    close = _close_sentence(
+        {
+            "destName": "Nouméa (Nouvelle-Calédonie)",
+            "toName": "Nouméa (Nouvelle-Calédonie)",
+            "destNm": 19055, "arrived": False,
+        },
+        {"sailNm": 18000},
+        "en",
+        review=_rg7_review(),
+        eta=_rg7_eta(),
+    )
+    assert "Today" in close
+    assert "between 3 October and 8 October" in close
+    assert "Stops still to come:" in close
+    assert "Nouméa, Dzaoudzi, Europa, Tromelin, La Réunion" in close

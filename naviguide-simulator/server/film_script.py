@@ -2284,6 +2284,225 @@ def review_fingerprint(review: dict | None) -> str:
     return hashlib.sha256("\n".join(bits).encode("utf-8")).hexdigest() if bits else ""
 
 
+def eta_fingerprint(eta: dict | None) -> str:
+    stops = (eta or {}).get("stops") if isinstance(eta, dict) else None
+    if not isinstance(stops, dict) or not stops:
+        return ""
+    bits: list[str] = []
+    for name in sorted(stops):
+        raw = stops[name]
+        if not isinstance(raw, dict):
+            continue
+        bits.append(
+            f"{name}|{raw.get('p10')}|{raw.get('p50')}|{raw.get('p90')}|{raw.get('members')}"
+        )
+    return hashlib.sha256("\n".join(bits).encode("utf-8")).hexdigest() if bits else ""
+
+
+def _stop_spoken(name: str) -> str:
+    """Nom d'escale à la voix : « Nouméa », sans parenthèse de territoire."""
+    raw = re.sub(r"\s*\([^)]*\)\s*", " ", short_name(name) or "")
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def review_plan_stats(review: dict | None) -> dict[str, Any]:
+    """Totaux du plan-review : destinations uniques, somme des legNm, destination finale.
+
+    Aucun chiffre inventé : une jambe sans `legNm` n'entre pas dans la somme ;
+    sans jambe, `nStops` et `totalNm` restent vides.
+    """
+    dests: list[str] = []
+    seen: set[str] = set()
+    total = 0.0
+    has_nm = False
+    for leg in _review_legs(review):
+        to = _stop_spoken(leg.get("to") or "")
+        if to:
+            key = norm_stop(to)
+            if key and key not in seen:
+                seen.add(key)
+                dests.append(to)
+        nm = leg.get("legNm")
+        if isinstance(nm, (int, float)) and not isinstance(nm, bool) and float(nm) > 0:
+            total += float(nm)
+            has_nm = True
+    return {
+        "nStops": len(dests) if dests else None,
+        "totalNm": total if has_nm else None,
+        "finalDest": dests[-1] if dests else "",
+        "dests": dests,
+    }
+
+
+def upcoming_stop_names(
+    review: dict | None,
+    current_dest: str,
+    *,
+    arrived: bool = False,
+) -> list[str]:
+    """Escales à venir dans l'ordre du plan-review, depuis la dest courante.
+
+    Si la dest courante n'est pas dans la revue, on se tait (rien n'est inventé).
+    Les escales avion seules (Halifax…) sont omises : le bateau n'y va pas.
+    """
+    dests = [
+        name for name in (review_plan_stats(review).get("dests") or [])
+        if name and not _is_air_only_stop(name)
+    ]
+    if not dests or not current_dest:
+        return []
+    idx = next((i for i, name in enumerate(dests) if same_stop(name, current_dest)), None)
+    if idx is None:
+        return []
+    start = idx + 1 if arrived else idx
+    return dests[start:]
+
+
+def eta_payload_for_stop(eta: dict | None, name: str) -> dict | None:
+    """Entrée du stock eta pour une escale. `members` ≤ 0 → absente (pas de date inventée)."""
+    if not isinstance(eta, dict) or not name:
+        return None
+    stops = eta.get("stops") if isinstance(eta.get("stops"), dict) else {}
+    raw = stops.get(name) if name in stops else None
+    if not isinstance(raw, dict):
+        needle = name.strip().casefold()
+        for key, payload in stops.items():
+            if not isinstance(payload, dict):
+                continue
+            if same_stop(key, name) or needle in key.casefold() or key.casefold() in needle:
+                raw = payload
+                break
+    if not isinstance(raw, dict):
+        return None
+    try:
+        members = int(raw.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    if members <= 0:
+        return None
+    return raw
+
+
+def _honest_bookend(text: str, facts: Any, lang: str) -> str:
+    filtered, _dropped = filter_numbers(text, facts)
+    sentence = (filtered or "").strip()
+    if not sentence:
+        return ""
+    return speak_film_text(sentence, lang)
+
+
+def _film_open_sentences(
+    *,
+    start_name: str,
+    sea_name: str,
+    lang: str,
+    display_t0: str | None = None,
+    review: dict | None = None,
+) -> list[str]:
+    """Ouverture du film (2 phrases) : qui, d'où, par la route, totaux du plan-review."""
+    en = _en(lang)
+    shown = display_t0 or OFFICIAL_T0
+    when = day_month(rebase_iso(OFFICIAL_T0, OFFICIAL_T0, shown), lang, year=True)
+    frm = short_name(start_name or "Saint-Maur") or "Saint-Maur"
+    sea = short_name(sea_name or "La Rochelle") or "La Rochelle"
+    stats = review_plan_stats(review)
+    n = stats.get("nStops")
+    total = stats.get("totalNm")
+    final = short_name(stats.get("finalDest") or "")
+    nm_s = _opening_nm_label(total, lang) if total is not None else ""
+    n_s = ""
+    if isinstance(n, int) and n > 0:
+        if n <= 30:
+            n_s = f"{_spoken_int(n, lang)} {'stops' if en else 'escales'}"
+        else:
+            n_s = f"{n} stops" if en else f"{n} escales"
+    if en:
+        first = f"The Berry-Mappemonde expedition left {frm} on {when} by road to {sea}."
+    else:
+        first = (
+            f"L’expédition Berry-Mappemonde a quitté {frm} le {when} "
+            f"par la route jusqu’à {sea}."
+        )
+    second = ""
+    if n_s and nm_s and final:
+        second = (
+            f"The plan has {n_s} and {nm_s}, through to {final}."
+            if en else
+            f"Le plan compte {n_s} et {nm_s}, jusqu’à {final}."
+        )
+    elif n_s and nm_s:
+        second = (
+            f"The plan has {n_s} and {nm_s}."
+            if en else
+            f"Le plan compte {n_s} et {nm_s}."
+        )
+    elif final:
+        second = f"The destination is {final}." if en else f"La destination est {final}."
+    facts = _facts_with_rounded({
+        "t0": shown,
+        "officialT0": OFFICIAL_T0,
+        "nStops": n,
+        "totalNm": int(round(float(total))) if total is not None else None,
+        "totalNmLabel": nm_s,
+        "finalDest": final,
+    })
+    out: list[str] = []
+    for raw in (first, second):
+        if not raw:
+            continue
+        spoken = _honest_bookend(raw, facts, lang)
+        if spoken:
+            out.append(spoken)
+    return out
+
+
+def _eta_sentence(name: str, eta: dict | None, lang: str) -> str:
+    raw = eta_payload_for_stop(eta, name)
+    if not raw or not name:
+        return ""
+    d10 = day_month(raw.get("p10"), lang)
+    d50 = day_month(raw.get("p50"), lang)
+    d90 = day_month(raw.get("p90"), lang)
+    en = _en(lang)
+    if d10 and d90:
+        return (
+            f"Arrival at {name} between {d10} and {d90}."
+            if en else
+            f"Arrivée à {name} entre le {d10} et le {d90}."
+        )
+    when = d50 or d10 or d90
+    if not when:
+        return ""
+    return (
+        f"Arrival at {name} on {when}."
+        if en else
+        f"Arrivée à {name} le {when}."
+    )
+
+
+def _upcoming_sentence(names: list[str], lang: str) -> str:
+    if not names:
+        return ""
+    label = ", ".join(names)
+    return f"Stops still to come: {label}." if _en(lang) else f"Les escales à venir : {label}."
+
+
+def _stored_review_and_eta() -> tuple[dict | None, dict | None]:
+    """Lit le stock RF2. Absence → (None, None), jamais une valeur inventée."""
+    review = eta = None
+    try:
+        from official_store import payload_of  # noqa: PLC0415
+        stored = payload_of("plan_review")
+        if isinstance(stored, dict) and stored.get("legs"):
+            review = stored
+        stored_eta = payload_of("eta")
+        if isinstance(stored_eta, dict):
+            eta = stored_eta
+    except Exception:
+        return None, None
+    return review, eta
+
+
 def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
     """Faits de revue fondus dans la route : plus d'annexe « À surveiller / Couloirs »."""
     if not isinstance(leg, dict):
@@ -2760,10 +2979,8 @@ def _air_sentence(w: dict, *, i: int, lang: str, display_t0: str | None = None) 
     return _air_window_sentence(w, lang=lang, display_t0=display_t0)
 
 
-def _close_sentence(w: dict, live: dict | None, lang: str) -> str:
-    """Dernière phrase : où est le bateau AUJOURD'HUI. À quai → « à X ». En mer → « en mer, à N milles de
-    <prochaine escale> » (27 sept. : le film disait « à Saint-Pierre » — la dernière escale passée — alors
-    que le bateau était à 13 300 nm, en plein Pacifique, en route vers Papeete)."""
+def _close_position(w: dict, live: dict | None, lang: str) -> str:
+    """Où est le bateau aujourd'hui — horloge / live, jamais une position inventée."""
     en = _en(lang)
     live = live or {}
     at_quay = short_name(live.get("atStop") or "")
@@ -2786,6 +3003,47 @@ def _close_sentence(w: dict, live: dict | None, lang: str) -> str:
     if not place:
         return ""
     return f"Today, the boat is at {place}." if en else f"Aujourd’hui, le bateau est à {place}."
+
+
+def _close_sentence(
+    w: dict,
+    live: dict | None,
+    lang: str,
+    review: dict | None = None,
+    eta: dict | None = None,
+) -> str:
+    """Fin du film (2–3 phrases) : aujourd'hui, ETA du stock, escales à venir du plan-review."""
+    live = live or {}
+    first = _close_position(w, live, lang)
+    at_quay = short_name(live.get("atStop") or "")
+    dest = short_name(w.get("destName") or w.get("toName") or "")
+    next_name = _stop_spoken(at_quay or dest)
+    arrived = bool(at_quay or w.get("arrived"))
+    eta_s = _eta_sentence(next_name, eta, lang) if next_name else ""
+    upcoming = upcoming_stop_names(review, next_name, arrived=arrived)
+    up_s = _upcoming_sentence(upcoming, lang)
+    raw = " ".join(bit for bit in (first, eta_s, up_s) if bit)
+    if not raw:
+        return ""
+    sail = live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm")
+    dest_nm = w.get("destNm")
+    left = None
+    if isinstance(sail, (int, float)) and isinstance(dest_nm, (int, float)) and dest_nm > sail:
+        left = dest_nm - sail
+    eta_raw = eta_payload_for_stop(eta, next_name) if next_name else None
+    facts = _facts_with_rounded({
+        "live": live,
+        "destNm": dest_nm,
+        "sailNm": sail,
+        "leftNm": left,
+        "leftLabel": _nm_label(left, lang) if left is not None else "",
+        "eta": eta,
+        "etaStop": eta_raw,
+        "upcoming": upcoming,
+        "review": review_plan_stats(review),
+        "first": first,
+    })
+    return _honest_bookend(raw, facts, lang)
 
 
 def _harbor_spoken(name: str, dest: str, kind: str, lang: str) -> str:
@@ -3035,7 +3293,7 @@ def _card(entry: dict) -> dict:
     }
 
 
-def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None) -> list[dict]:
+def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None, eta: dict | None = None) -> list[dict]:
     chapters: list[dict] = []
     cited: set[str] = set()
     dist = ""
@@ -3073,6 +3331,17 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 anchored[:] = [(thinned[j], anchored[j][1]) for j in range(len(thinned))]
             bits[:] = thinned
             text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
+            if film_opens:
+                head = " ".join(film_opens)
+                if head and head not in text:
+                    text = speak_film_text(f"{head} {text}".strip(), lang)
+                    for sent in reversed(film_opens):
+                        anchored.insert(0, (sent, w["tA"]))
+            if i == len(windows) - 1:
+                close = _close_sentence(w, live, lang, review=review, eta=eta)
+                if close and close not in text:
+                    text = speak_film_text(f"{text} {close}".strip(), lang)
+                    anchored.append((close, w["tB"]))
             chapters.append({
                 "id": w["id"],
                 "tA": _iso(w["tA"]),
@@ -3088,15 +3357,15 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 "toLon": w.get("toLon"),
             })
 
+        film_opens: list[str] = []
+        skip_depart = False
+        if i == 0:
+            film_opens = _film_open_sentences(
+                start_name=start_name, sea_name=sea_name, lang=lang,
+                display_t0=display_t0, review=review,
+            )
+            skip_depart = _is_road_window(w) and bool(film_opens)
         if _is_air_window(w):
-            if i == 0:
-                first = event_sentence({
-                    "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
-                    "seaName": "",
-                    "entry": {"t": OFFICIAL_T0, "name": start_name},
-                }, lang, display_t0=display_t0)
-                bits.append(first)
-                anchored.append((first, w["tA"]))
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
                 review=review, n=len(windows),
@@ -3104,23 +3373,8 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             if head:
                 bits.append(head)
                 anchored.append((head, depart_ms or w["tA"]))
-            if i == len(windows) - 1:
-                close = _close_sentence(w, live, lang)
-                if close and close not in bits:
-                    bits.append(close)
-                    anchored.append((close, w["tB"]))
             finish_chapter()
             continue
-        # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis l'ouverture de
-        # CETTE fenêtre. Plus de seaName figé « La Rochelle ».
-        if i == 0:
-            first = event_sentence({
-                "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
-                "seaName": "" if dest_name else sea_name,
-                "entry": {"t": OFFICIAL_T0, "name": start_name},
-            }, lang, display_t0=display_t0)
-            bits.append(first)
-            anchored.append((first, w["tA"]))
 
         def speak_ev(ev: dict) -> None:
             if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"}:
@@ -3164,14 +3418,15 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             sci_here.sort(key=lambda ev: (_sci_nm(ev), ev.get("tMs") or 0))
             sci_keep_id = str(sci_here[0].get("id") or "")
 
-        head = _depart_towards(
-            w, i=i, lang=lang, display_t0=display_t0,
-            heading_deg=_heading_deg_at(None, depart_ms, clock=w.get("clock")),
-            review=review, n=len(windows), include_date=i != 0,
-        )
-        if head:
-            bits.append(head)
-            anchored.append((head, depart_ms or w["tA"]))
+        if not skip_depart:
+            head = _depart_towards(
+                w, i=i, lang=lang, display_t0=display_t0,
+                heading_deg=_heading_deg_at(None, depart_ms, clock=w.get("clock")),
+                review=review, n=len(windows), include_date=i != 0,
+            )
+            if head:
+                bits.append(head)
+                anchored.append((head, depart_ms or w["tA"]))
         for ev in buckets[i]:
             if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
                 continue
@@ -3183,11 +3438,6 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             push_arrival(bits, dest, clock=w.get("clock"), harbor=harbor, chapter_i=i)
             if len(bits) > before:
                 anchored.append((bits[-1], w["tB"]))
-        if i == len(windows) - 1:
-            close = _close_sentence(w, live, lang)
-            if close and close not in bits:
-                bits.append(close)
-                anchored.append((close, w["tB"]))
         finish_chapter()
     return chapters
 
@@ -3780,6 +4030,8 @@ _KEEP_SENT = re.compile(
     r"nœuds de moyenne|knots on average|amarré|moored|d'escale|stopover|"
     r"départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
+    r"expédition|expedition|escales|stops|destination|entre le |between |"
+    r"à venir|still to come|le plan compte|the plan has|"
     r"eaux |waters|longe |skirts |d[ée]troit|strait|cap au |heading |haute mer|high seas|"
     r"aliz[ée]|trade wind|calmes|calms|de saison|mesur[ée]|seasonal|westerl|mistral|tramontane",
     re.I,
@@ -4010,6 +4262,7 @@ def build_raw_from_moments(
     now_ms: Optional[int] = None,
     display_t0: str | None = None,
     review: dict | None = None,
+    eta: dict | None = None,
 ) -> dict[str, Any]:
     moments = _journal_moments(journal)
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -4091,14 +4344,14 @@ def build_raw_from_moments(
         # Ancres (27 sept.) : chaque phrase porte l'instant du trajet dont elle parle — le client y cale le
         # bateau pendant qu'elle est dite (« approche d'Ajaccio » quand le bateau approche d'Ajaccio).
         anchored: list[tuple[str, Optional[int]]] = []
+        skip_depart = False
+        film_opens: list[str] = []
         if i == 0:
-            first = event_sentence({
-                "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
-                "seaName": "" if dest_name else sea_name,
-                "entry": {"t": OFFICIAL_T0, "name": start_name},
-            }, lang, display_t0=display_t0)
-            bits.append(first)
-            anchored.append((first, w["tA"]))
+            film_opens = _film_open_sentences(
+                start_name=start_name, sea_name=sea_name, lang=lang,
+                display_t0=display_t0, review=review,
+            )
+            skip_depart = _is_road_window(w) and bool(film_opens)
         if _is_air_window(w):
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
@@ -4110,8 +4363,14 @@ def build_raw_from_moments(
             bits[:] = thin_chapter_dates(bits, lang)
             chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
             text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
+            if film_opens:
+                head = " ".join(film_opens)
+                if head and head not in text:
+                    text = speak_film_text(f"{head} {text}".strip(), lang)
+                    for sent in reversed(film_opens):
+                        anchored.insert(0, (sent, w["tA"]))
             if i == len(windows) - 1:
-                close = _close_sentence(w, live, lang)
+                close = _close_sentence(w, live, lang, review=review, eta=eta)
                 if close and close not in text:
                     text = speak_film_text(f"{text} {close}".strip(), lang)
                     anchored.append((close, w["tB"]))
@@ -4130,14 +4389,15 @@ def build_raw_from_moments(
                 "toLon": w.get("toLon"),
             })
             continue
-        head = _depart_towards(
-            w, i=i, lang=lang, display_t0=display_t0,
-            heading_deg=_heading_deg_at(sail_moments, depart_ms, clock=w.get("clock") or clock),
-            review=review, n=len(windows), include_date=i != 0,
-        )
-        if head:
-            bits.append(head)
-            anchored.append((head, depart_ms or w["tA"]))
+        if not skip_depart:
+            head = _depart_towards(
+                w, i=i, lang=lang, display_t0=display_t0,
+                heading_deg=_heading_deg_at(sail_moments, depart_ms, clock=w.get("clock") or clock),
+                review=review, n=len(windows), include_date=i != 0,
+            )
+            if head:
+                bits.append(head)
+                anchored.append((head, depart_ms or w["tA"]))
         for change in selected:
             speak_change(change)
         _append_review_sentences(bits, review, w, lang)
@@ -4167,8 +4427,14 @@ def build_raw_from_moments(
         bits[:] = thinned
         chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
         text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
+        if film_opens:
+            head = " ".join(film_opens)
+            if head and head not in text:
+                text = speak_film_text(f"{head} {text}".strip(), lang)
+                for sent in reversed(film_opens):
+                    anchored.insert(0, (sent, w["tA"]))
         if i == len(windows) - 1:
-            close = _close_sentence(w, live, lang)
+            close = _close_sentence(w, live, lang, review=review, eta=eta)
             if close and close not in text:
                 text = speak_film_text(f"{text} {close}".strip(), lang)
                 anchored.append((close, w["tB"]))
@@ -4223,12 +4489,13 @@ def build_raw_script(
     selected: list[dict] | None = None,
     display_t0: str | None = None,
     review: dict | None = None,
+    eta: dict | None = None,
 ) -> dict[str, Any]:
     now = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
     if _journal_moments(journal):
         return build_raw_from_moments(
             clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now,
-            display_t0=display_t0, review=review,
+            display_t0=display_t0, review=review, eta=eta,
         )
     packed = film_candidates(journal, marks, clock, live, now)
     t0, t_end = packed["t0"], packed["tEnd"]
@@ -4242,7 +4509,7 @@ def build_raw_script(
     windows = _windows(packed["stops"], t0, t_end, clock)
 
     def compose(evs: list[dict]) -> list[dict]:
-        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0, review=review)
+        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0, review=review, eta=eta)
 
     chapters = compose(events)
     attach_chapter_events(chapters, packed, journal, lang)
@@ -4607,6 +4874,7 @@ async def build_film_response(
     want_write: bool = False,
     display_t0: str | None = None,
     review: dict | None = None,
+    eta: dict | None = None,
 ) -> dict[str, Any]:
     """Assemble the API payload. `want_write` triggers Nemotron (tier write)."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
@@ -4619,13 +4887,16 @@ async def build_film_response(
     rev = review_fingerprint(review)
     if rev:
         fp = f"{fp}|rev={rev}"
+    eta_fp = eta_fingerprint(eta)
+    if eta_fp:
+        fp = f"{fp}|eta={eta_fp}"
     if shown != OFFICIAL_T0:
         fp = f"{fp}|t0={shown}"
     key = film_cache_key(fp, lang, seconds)
     cached = get_film_cached(key) or {}
     raw_full = build_raw_script(
         clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms,
-        display_t0=shown, review=review,
+        display_t0=shown, review=review, eta=eta,
     )
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
@@ -4646,7 +4917,7 @@ async def build_film_response(
                 if picked:
                     raw_full = build_raw_script(
                         clock, marks, live, journal, lang=lang, seconds=seconds, now_ms=now_ms, selected=picked,
-                        review=review,
+                        review=review, eta=eta,
                     )
                     events = raw_full.get("_events") or picked
                     raw = _public_plan(raw_full, "rules")
@@ -4713,19 +4984,21 @@ async def official_film(
         moments = []
     if moments:
         payload = {**payload, "moments": moments}
-    review = None
-    try:
-        from plan_review import review_official  # noqa: PLC0415
-        # Saison atlas hors HTTP (budget 6 s) : les couloirs viennent des points.
-        review = review_official(voy, when, season=False)
-    except Exception:
-        review = None
+    review, eta = _stored_review_and_eta()
+    if review is None:
+        try:
+            from plan_review import review_official  # noqa: PLC0415
+            # Saison atlas hors HTTP (budget 6 s) : les couloirs viennent des points.
+            review = review_official(voy, when, season=False)
+        except Exception:
+            review = None
     return await build_film_response(
         clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
         style=style, cascade=cascade, want_write=False,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
         display_t0=resolve_film_t0(t0),
         review=review,
+        eta=eta,
     )
 
 
@@ -4762,12 +5035,13 @@ async def warm_film_story(
         moments = []
     if moments:
         payload = {**payload, "moments": moments}
-    review = None
-    try:
-        from plan_review import review_official  # noqa: PLC0415
-        review = review_official(voy, when, season=False)
-    except Exception:
-        review = None
+    review, eta = _stored_review_and_eta()
+    if review is None:
+        try:
+            from plan_review import review_official  # noqa: PLC0415
+            review = review_official(voy, when, season=False)
+        except Exception:
+            review = None
     now_ms = int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None
     out: dict[str, Any] = {}
     import llm_budget  # noqa: PLC0415
@@ -4777,7 +5051,7 @@ async def warm_film_story(
             plan = await build_film_response(
                 clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
                 style="written", cascade=cascade, want_write=True, now_ms=now_ms,
-                review=review,
+                review=review, eta=eta,
             )
             out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
     return {"voyageId": vid, "status": "ready", "langs": out}
