@@ -145,7 +145,13 @@ test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async
   }
 
   const clock = page.getByTestId("film-clock-line");
-  const clockBefore = ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
+  // La ligne d'horloge démarre sur le gabarit « 0 nm · j0 · 15 mai 2026 » puis passe à l'horloge officielle
+  // (jour de mer réel, heure UTC qui avance) : on attend cette bascule, et on compare le JOUR DE MER et
+  // l'état LIVE — pas le texte entier, dont la minute peut tourner pendant le test (tranche 5/6, 29 sept.).
+  if (apiUp) await expect(clock).not.toHaveText(/\bj0\b/, { timeout: 20_000 }).catch(() => {});
+  const readClock = async () => ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
+  const cursorOf = (s) => `${(s.match(/\bj\d+\b/) || [""])[0]} ${/\bLIVE\b/.test(s) ? "LIVE" : ""}`.trim();
+  const clockBefore = await readClock();
   const sheetBefore = await page.getByTestId("escale-sheet").count();
 
   const named = ["Saint-Maur", "La Rochelle"];
@@ -158,8 +164,8 @@ test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async
     await row.click({ force: true });
     await page.waitForTimeout(400);
     await expect(row.locator("button")).toHaveCount(0);
-    const clockAfter = ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
-    expect(clockAfter, `clic ${name} a bougé le curseur`).toBe(clockBefore);
+    const clockAfter = await readClock();
+    expect(cursorOf(clockAfter), `clic ${name} a bougé le curseur (${clockBefore} → ${clockAfter})`).toBe(cursorOf(clockBefore));
     await expect(page.getByTestId("escale-sheet").filter({ hasText: /Fort-de-France/i })).toHaveCount(0);
     expect(await page.getByTestId("escale-sheet").count(), `clic ${name} a ouvert une fiche`).toBe(sheetBefore);
   }
@@ -173,8 +179,8 @@ test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async
     const row = rows.first();
     await row.click({ force: true });
     await page.waitForTimeout(400);
-    const clockAfter = ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
-    expect(clockAfter, "clic ligne Suivre a bougé le curseur").toBe(clockBefore);
+    const clockAfter = await readClock();
+    expect(cursorOf(clockAfter), `clic ligne Suivre a bougé le curseur (${clockBefore} → ${clockAfter})`).toBe(cursorOf(clockBefore));
     await expect(page.getByTestId("escale-sheet").filter({ hasText: /Fort-de-France/i })).toHaveCount(0);
   }
 
