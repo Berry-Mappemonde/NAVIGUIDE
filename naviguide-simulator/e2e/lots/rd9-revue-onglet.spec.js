@@ -131,7 +131,8 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   });
   if (await draw.isVisible().catch(() => false)) {
     await draw.scrollIntoViewIfNeeded();
-    await draw.click({ force: true });
+    // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
+  await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
     const drawing = await page.getByTestId("drawing-box").isVisible({ timeout: 8_000 }).catch(() => false);
     if (drawing) {
       await showLeftPanel(page);

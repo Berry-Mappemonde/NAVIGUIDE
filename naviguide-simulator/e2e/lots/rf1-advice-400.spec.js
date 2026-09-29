@@ -91,7 +91,8 @@ test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => 
   });
   await expect(draw).toBeVisible({ timeout: 15_000 });
   await draw.scrollIntoViewIfNeeded();
-  await draw.click({ force: true });
+  // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
+  await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("ici-tab-review")).toHaveCount(0);
   await page.waitForTimeout(1500);
