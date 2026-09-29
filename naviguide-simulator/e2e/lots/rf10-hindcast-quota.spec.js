@@ -83,8 +83,9 @@ test("lot RF10 — route hindcast, journal, statut honnête", async ({ page }) =
   await showLeftPanel(page);
   const journalTab = page.getByTestId("ici-tab-journal");
   await expect(journalTab).toBeVisible({ timeout: 10_000 });
-  await journalTab.click();
-  await expect(journalTab).toHaveAttribute("aria-selected", "true");
+  // L'onglet se re-rend à chaque tick (compteur) : le clic géométrique n'atteint jamais « stable » — clic DOM.
+  await journalTab.evaluate((el) => el.click());
+  await expect(journalTab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
   await expect(page.getByTestId("ici-journal-slot")).toBeAttached();
 
   if (!apiUp) {

@@ -86,7 +86,8 @@ test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({
       expect(days, `jours de mer Nouméa → Dzaoudzi : ${days}`).toBeGreaterThan(30);
     }
     const row = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
-    if (await row.count()) await row.first().scrollIntoViewIfNeeded();
+    // La revue du plan se re-rend pendant le chargement : le scroll est un confort, pas une assertion.
+    if (await row.count()) await row.first().scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
   } else if (noumeaLeg) {
     test.info().annotations.push({
       type: "API autre checkout",
