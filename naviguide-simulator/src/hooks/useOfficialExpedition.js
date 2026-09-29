@@ -6,6 +6,14 @@ import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gr
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
+/** Relances de la lecture de l'horloge officielle tant qu'elle n'est pas arrivée : 5 s, 10, 20, 40, puis 60 s. */
+export const OFFICIAL_RETRY_MS = [5000, 10000, 20000, 40000, 60000];
+
+export function officialRetryDelayMs(attempt) {
+  const i = Number.isFinite(attempt) && attempt > 0 ? Math.min(Math.floor(attempt), OFFICIAL_RETRY_MS.length) : 1;
+  return OFFICIAL_RETRY_MS[i - 1];
+}
+
 /** A client clock is "official" when it starts on the expedition's fixed t0. */
 export function isOfficialClock(clock) {
   const t0 = Date.parse(clock?.t0 ?? "");
@@ -115,9 +123,17 @@ export function useOfficialExpedition({
     return data;
   }, [points, marks, expeditionId, meta]);
 
+  // Une seule lecture de l'horloge à la fois. 29 sept. (Grok Bot, poste derrière le tunnel) : la réponse
+  // /voyage/official/clock pèse 3,9 Mo et le PUT /voyage/official la porte aussi ; la relance toutes les 5 s
+  // repartait sans attendre la précédente — 134 requêtes en 4 min, 50 téléchargements de l'horloge en vol,
+  // le tunnel saturé, l'horloge jamais arrivée : le bateau restait au jour 0 et Revoir grisé.
+  const inflightRef = useRef(false);
+  const attemptRef = useRef(0);
+
   useEffect(() => {
     if (!enabled || !points?.length) return undefined;
     let cancelled = false;
+    let timer = null;
     const readClock = () => fetch(`${API}/voyage/official/clock`)
       .then((r) => {
         if (r.ok) return r.json();
@@ -128,26 +144,43 @@ export function useOfficialExpedition({
         if (ck?.t0 && !cancelled) {
           setServerClock(ck);
           setClockStatus("ready");
+          return ck;
         }
+        return null;
       })
-      .catch(() => { if (!cancelled) setClockStatus("absent"); });
-    const kick = () => {
-      // Horloge serveur d'abord : le PUT de réparation peut durer des
-      // secondes. L'attendre laissait l'UI sur le t0 client (15 mai, 0 nm)
-      // puis sautait à la position live — RF8 voyait ça comme un seek.
-      // On relit après le PUT : un 404 / refus ne doit pas figer le client.
-      readClock();
-      putOfficial()
-        .catch(() => null)
-        .then(() => { if (!cancelled) return readClock(); return undefined; });
+      .catch(() => { if (!cancelled) setClockStatus("absent"); return null; });
+    const kick = async () => {
+      if (cancelled) return;
+      if (inflightRef.current) {
+        // Une paire GET / PUT est déjà en vol (autre rendu du hook) : on repasse plus tard, on n'empile pas.
+        timer = setTimeout(kick, 2000);
+        return;
+      }
+      inflightRef.current = true;
+      let gotClock = false;
+      try {
+        // Horloge serveur d'abord (RG10) : le PUT de réparation peut durer des secondes — l'attendre laissait
+        // l'UI sur le t0 client (15 mai, 0 nm) puis sautait à la position live. Les deux partent ENSEMBLE,
+        // une seule fois par tentative ; l'horloge vient du premier qui la porte (le PUT la rend aussi) —
+        // plus de relecture après le PUT : chaque lecture pèse 3,9 Mo (335 ko gzippés) derrière le tunnel.
+        const [ck, data] = await Promise.all([readClock(), putOfficial().catch(() => null)]);
+        if (cancelled) return;
+        gotClock = Boolean(ck) || Boolean(data?.clock?.t0);
+      } finally {
+        inflightRef.current = false;
+      }
+      if (cancelled) return;
+      if (gotClock || serverClockRef.current) {
+        attemptRef.current = 0;
+        return;
+      }
+      attemptRef.current += 1;
+      timer = setTimeout(kick, officialRetryDelayMs(attemptRef.current));
     };
     kick();
-    const retry = setInterval(() => {
-      if (!putRef.current || !serverClockRef.current) kick();
-    }, 5000);
     return () => {
       cancelled = true;
-      clearInterval(retry);
+      clearTimeout(timer);
     };
   }, [enabled, points, putOfficial]);
 
