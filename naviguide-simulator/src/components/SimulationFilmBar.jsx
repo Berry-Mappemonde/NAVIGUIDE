@@ -493,6 +493,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   {replay.canStart || replay.active ? (
                     <div
                       data-testid="film-duration"
+                      {...(replay.active ? { "data-testid": undefined } : {})}
                       className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
                       title={t("filmDuration")}
                     >

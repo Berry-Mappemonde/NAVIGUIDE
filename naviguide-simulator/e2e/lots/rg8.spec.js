@@ -179,12 +179,15 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   await start.click();
   await expect(page.getByTestId("film-subtitle")).toBeVisible({ timeout: 8_000 });
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
-  const during = page.getByTestId("film-duration");
-  await expect(during).toBeVisible();
-  await expect(during).toContainText("2:30");
-  await expect(during).toContainText("3:00");
-  await expect(during.locator("[data-seconds='150']")).toBeDisabled();
-  await expect(during.locator("[data-seconds='180']")).toBeDisabled();
+  await expect(page.getByTestId("film-duration")).toHaveCount(0);
+  const pillLive150 = page.locator("[data-seconds='150']");
+  const pillLive180 = page.locator("[data-seconds='180']");
+  await expect(pillLive150).toBeVisible();
+  await expect(pillLive180).toBeVisible();
+  await expect(pillLive150).toBeDisabled();
+  await expect(pillLive180).toBeDisabled();
+  await expect(pillLive150).toContainText("2:30");
+  await expect(pillLive180).toContainText("3:00");
   if (await estimate.isVisible().catch(() => false)) {
     await expect(estimate).toHaveText(/≈\s*\d+:\d{2}/);
   }

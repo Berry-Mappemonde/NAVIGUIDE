@@ -277,9 +277,18 @@ export class MapSceneController {
       filmLastCenter: null,
       filmFramesSinceReset: 0,
       filmLastBoat: null,
+      filmZoomHold: null,
       exitHold: false,
       exitHoldUntil: null,
       exitHoldZoom: null,
+    };
+    this._mapStop = map.stop.bind(map);
+    map.stop = (...args) => {
+      if (this.config?.filmActive) {
+        const z = map.getZoom?.();
+        if (Number.isFinite(z)) this.camera.filmZoomHold = z;
+      }
+      return this._mapStop(...args);
     };
     this.filmLoopRaf = 0;
     this.filmSamples = [];
@@ -464,6 +473,7 @@ export class MapSceneController {
       this.camera.filmLastCenter = null;
       this.camera.filmFramesSinceReset = 0;
       this.camera.filmLastBoat = null;
+      this.camera.filmZoomHold = null;
       this.filmSamples = [];
       this.filmPose = null;
       this.filmPreload = { key: "", images: [] };
@@ -482,7 +492,10 @@ export class MapSceneController {
       this.camera.filmLastCenter = null;
       this.camera.filmFramesSinceReset = 0;
       this.camera.filmLastBoat = null;
-      const holdZoom = this.map?.getZoom?.();
+      const holdZoom = Number.isFinite(this.camera.filmZoomHold)
+        ? this.camera.filmZoomHold
+        : this.map?.getZoom?.();
+      this.camera.filmZoomHold = null;
       this.map?.stop?.();
       this.camera.exitHoldZoom = Number.isFinite(holdZoom) ? holdZoom : this.map?.getZoom?.();
       this.camera.exitHold = true;
@@ -1166,6 +1179,7 @@ export class MapSceneController {
       filmLastCenter: null,
       filmFramesSinceReset: 0,
       filmLastBoat: null,
+      filmZoomHold: null,
       exitHold: false,
       exitHoldUntil: null,
       exitHoldZoom: null,
@@ -1276,7 +1290,9 @@ export class MapSceneController {
         filmNm: Number.isFinite(Number(film?.filmNm)) ? Number(film.filmNm) : Number(cfg.live?.filmNm),
       });
     }
-    if (this.camera.filmZoomBase == null || this.camera.filmChapterIdx !== chapterIdx) {
+    const holdZ = this.camera.filmZoomHold;
+    const zoomHeld = Number.isFinite(holdZ);
+    if (!zoomHeld && (this.camera.filmZoomBase == null || this.camera.filmChapterIdx !== chapterIdx)) {
       this.camera.filmZoomBase = filmChapterZoom(this.map, cfg.filmLeg);
       this.camera.filmZoom = this.camera.filmZoomBase;
       this.ensureFilmTiles(cfg.filmLeg, this.camera.filmZoomBase);
@@ -1291,11 +1307,11 @@ export class MapSceneController {
         lastSetViewAt: this.camera.filmSetViewAt || 0,
         flyingUntil: this.camera.filmFlyingUntil || 0,
         lastCenter: this.camera.filmLastCenter,
-        zoom: this.camera.filmZoom,
-        baseZoom: this.camera.filmZoomBase,
+        zoom: zoomHeld ? holdZ : this.camera.filmZoom,
+        baseZoom: zoomHeld ? holdZ : this.camera.filmZoomBase,
         tilesReady,
         chapterIdx,
-        filmLeg: cfg.filmLeg,
+        filmLeg: zoomHeld ? null : cfg.filmLeg,
         lastBoat: this.camera.filmLastBoat,
         framesSinceReset: this.camera.filmFramesSinceReset || 0,
       });
@@ -1311,7 +1327,8 @@ export class MapSceneController {
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
     this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.filmFramesSinceReset = next.framesSinceReset ?? 0;
-    if (Number.isFinite(Number(next.zoom))) this.camera.filmZoom = Number(next.zoom);
+    if (zoomHeld) this.camera.filmZoom = holdZ;
+    else if (Number.isFinite(Number(next.zoom))) this.camera.filmZoom = Number(next.zoom);
     else if (pose) this.camera.filmZoom = this.camera.filmZoom;
     this.camera.lastFollow = Date.now();
     if (this.filmPose) this.syncFilmBoat(this.filmPose);
@@ -1371,12 +1388,15 @@ export class MapSceneController {
     }
     const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
     this.camera.followLon = lonCam;
-    if (Number.isFinite(this.camera.exitHoldZoom) && cfg.cinemaRecapture === this.camera.recapture) {
+    const holdAlive = Number.isFinite(this.camera.exitHoldZoom)
+      && Number.isFinite(this.camera.exitHoldUntil)
+      && Date.now() <= this.camera.exitHoldUntil;
+    if (holdAlive) {
+      this.camera.recapture = cfg.cinemaRecapture;
       const hold = this.camera.exitHoldZoom;
       this.programmaticMove(() => this.map.setView([subject.lat, lonCam], hold, { animate: false }));
       this.camera.lastPos = { lat: subject.lat, lon: subject.lon };
       this.camera.lastFollow = Date.now();
-      this.camera.exitHold = false;
       return;
     }
     if (Number.isFinite(this.camera.exitHoldZoom) && cfg.cinemaRecapture !== this.camera.recapture) {
