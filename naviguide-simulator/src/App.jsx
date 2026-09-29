@@ -854,6 +854,9 @@ export default function App() {
     onBoundary: replay.onVoiceBoundary,
     onEnd: replay.onVoiceEnd,
     onLeadFailed: replay.onVoiceLeadFailed,
+    onSentenceStart: replay.onSentenceStart,
+    onSentenceEnd: replay.onSentenceEnd,
+    isVoiceHeld: replay.isVoiceHeld,
   });
 
   useEffect(() => {
