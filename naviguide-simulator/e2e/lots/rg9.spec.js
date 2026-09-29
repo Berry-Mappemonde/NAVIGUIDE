@@ -1,4 +1,4 @@
-// Lot RG9 — client robuste : sans voix, horloge murale ; sous-titre = phrase.
+// Lot RG9 / RC23 — client robuste : sans voix, horloge murale ; sous-titre = une phrase.
 // Sans API : barre et Revoir tiennent seuls. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des assertions film — jamais la barre ni Revoir.
 import { mkdirSync } from "node:fs";
@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, leaveCinema, waitFilmCanStart } from "../helpers.js";
 
-const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg9");
+const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc23");
 mkdirSync(recetteDir, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
@@ -25,6 +25,23 @@ async function probeOfficial(page) {
   const body = await res.json().catch(() => null);
   if (!body || typeof body !== "object") return { apiUp: false };
   return { apiUp: true };
+}
+
+function chapterSentences(text) {
+  return String(text || "").split(/(?<=[.!?…])\s+/).map((s) => s.trim()).filter(Boolean);
+}
+
+function expectSubtitleIsPhrase(subtitle, chapterText, label) {
+  const sub = String(subtitle || "").trim();
+  const chap = String(chapterText || "").trim();
+  if (!sub || !chap) return;
+  const parts = chapterSentences(chap);
+  if (parts.length <= 1) {
+    expect(sub.length, label).toBeLessThanOrEqual(chap.length);
+  } else {
+    expect(sub.length, `${label} — une phrase, pas le chapitre`).toBeLessThan(chap.length);
+  }
+  expect(chap.includes(sub) || parts.some((p) => p === sub || p.startsWith(sub)), label).toBeTruthy();
 }
 
 test("lot RG9 — sans voix le film roule, sous-titre = phrase", async ({ page }) => {
@@ -77,6 +94,34 @@ test("lot RG9 — sans voix le film roule, sous-titre = phrase", async ({ page }
 
   const first = (await subtitle.innerText()).trim();
   expect(first.length).toBeGreaterThan(0);
+  const atStart = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    const i = Number.isFinite(Number(f.chapterIdx)) ? Number(f.chapterIdx) : 0;
+    const fromList = String(f.chapters?.[i]?.text || f.chapters?.[0]?.text || "");
+    return {
+      chapterText: String(f.chapterText || fromList),
+      subtitle: String(f.subtitle || ""),
+      charIdx: Number(f.charIdx) || 0,
+    };
+  });
+  const startChapter = atStart.chapterText;
+  expect(startChapter.length, "chapitre publié").toBeGreaterThan(0);
+  expectSubtitleIsPhrase(first, startChapter, "DOM au départ");
+  if (atStart.subtitle) expectSubtitleIsPhrase(atStart.subtitle, startChapter, "__naviguideFilm.subtitle au départ");
+  const startParts = chapterSentences(startChapter);
+  if (startParts.length > 1) {
+    expect(first.includes(startParts[1]), "la 2e phrase n'est pas dans le sous-titre au départ").toBeFalsy();
+  }
+  if (atStart.charIdx === 0) {
+    await expect(page.getByTestId("film-subtitle-place")).toHaveCount(0);
+  }
+  await page.waitForTimeout(800);
+  await shot(page, "01-sous-titre-phrase");
+  const place = page.getByTestId("film-subtitle-place");
+  const placeOn = await place.waitFor({ state: "visible", timeout: 15_000 }).then(() => true).catch(() => false);
+  if (placeOn) {
+    await shot(page, "02-lieu-en-avant");
+  }
   await page.evaluate((prev) => { window.__rg9FirstSubtitle = prev; }, first);
 
   await page.waitForTimeout(2500);
@@ -91,10 +136,7 @@ test("lot RG9 — sans voix le film roule, sous-titre = phrase", async ({ page }
   });
   expect(mid.ended, "ne doit pas finir à ~2,5 s").toBe(false);
   expect(mid.elapsed).toBeGreaterThan(1.5);
-  if (mid.chapterText && mid.subtitle) {
-    expect(mid.subtitle.length, "sous-titre = phrase, pas le chapitre").toBeLessThanOrEqual(mid.chapterText.length);
-    expect(mid.chapterText.includes(mid.subtitle)).toBeTruthy();
-  }
+  expectSubtitleIsPhrase(mid.subtitle || (await subtitle.innerText()).trim(), mid.chapterText, "à ~2,5 s");
 
   await page.waitForFunction(() => {
     const el = document.querySelector("[data-testid='film-subtitle']");
@@ -103,6 +145,8 @@ test("lot RG9 — sans voix le film roule, sous-titre = phrase", async ({ page }
   }, null, { timeout: 30_000 });
   const next = (await subtitle.innerText()).trim();
   expect(next).not.toEqual(first);
+  const laterChapter = await page.evaluate(() => String(window.__naviguideFilm?.chapterText || ""));
+  expectSubtitleIsPhrase(next, laterChapter || startChapter, "phrase suivante");
 
   const later = await page.evaluate(() => {
     const f = window.__naviguideFilm || {};
@@ -111,5 +155,5 @@ test("lot RG9 — sans voix le film roule, sous-titre = phrase", async ({ page }
   expect(later.ended, "sans voix, ended seulement à la fin").toBe(false);
   expect(later.elapsed).toBeGreaterThan(mid.elapsed - 0.2);
 
-  await shot(page, "01-sous-titre-phrase");
+  await shot(page, "03-sous-titre-phrase-suivante");
 });

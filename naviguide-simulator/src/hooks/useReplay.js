@@ -441,33 +441,28 @@ export function filmSubtitleAt(text, charIdx, opts = {}) {
 }
 
 /**
- * Ligne de la barre : chapitre entier (extrait avion RC16) au départ et
- * après un seek ; phrase courante + lieu seulement après la 1re phrase.
- * Les lots existants lisent encore « La Rochelle » / « avion » au start/seek.
+ * Ligne de la barre : une phrase dès charIdx=0 (lot RC23 / revue #413).
+ * Seek et pinned : la phrase sous le curseur, jamais le chapitre entier.
+ * Extrait avion RC16 : la phrase qui contient « avion » / « flies ».
  */
 export function filmBarSubtitle({
   chapterText = "",
   charIdx = 0,
-  pinned = false,
+  pinned: _pinned = false,
   sentenceStarts,
   fromName,
   toName,
   anchors,
 } = {}) {
   const raw = String(chapterText || "");
-  const whole = visibleFilmSubtitle(raw);
-  if (pinned || !raw) {
-    return { text: whole, place: "", sentenceMode: false };
-  }
-  const sentences = splitFilmSentences(raw, sentenceStarts);
-  const first = sentences[0];
-  const firstEnd = first ? first.start + first.text.length : raw.length;
+  if (!raw) return { text: "", place: "", sentenceMode: false };
   const x = Math.max(0, Number(charIdx) || 0);
-  if (x + 1e-9 < firstEnd) {
-    return { text: whole, place: "", sentenceMode: false };
-  }
   const sub = filmSubtitleAt(raw, x, { sentenceStarts, fromName, toName, anchors });
-  return { text: sub.sentence, place: sub.place, sentenceMode: true };
+  let text = sub.sentence;
+  if (FILM_AIR_PHRASE_RE.test(text)) {
+    text = visibleFilmSubtitle(text) || text;
+  }
+  return { text, place: sub.place, sentenceMode: true };
 }
 
 export function filmSubtitleHighlight(text, place) {
@@ -1302,7 +1297,7 @@ export function useReplay({
           ...prevFilm,
           chapterIdx: chapterIdxRef.current,
           chapterText: chapter?.text || prevFilm.chapterText || "",
-          subtitle: sub.sentence,
+          subtitle: sub.text,
           subtitlePlace: sub.place,
           chapterCount: plan.chapters.length,
           elapsed,
