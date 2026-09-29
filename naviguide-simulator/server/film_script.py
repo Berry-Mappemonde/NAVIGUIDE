@@ -10,7 +10,7 @@ import hashlib
 import json
 import math
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from climo_events import climo_sentence, dose_climo_changes, notable_climo_changes
@@ -39,10 +39,61 @@ LONG_AMP_PROJECT = 3
 CLUSTER_MS = 86_400_000
 SKIPPER_GALE_KT = 34.0
 HS_BUBBLE_M = 3.0
+# RG6 : plus de rotation « Puis / À la jambe suivante ». Formes liées au contenu
+# (première étape, traversée longue, saut d'île, dernière étape) — chapter_shape.
 CONNECTORS = {
-    "fr": ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"],
-    "en": ["Then", "Next", "Further on", "From there", "On the way", "On the next leg"],
+    "fr": ["Le lendemain", "Puis", "D'île en île", "La longue traversée", "Pour la dernière étape"],
+    "en": ["The next day", "Then", "From island to island", "The long crossing", "For the last stage"],
 }
+FORBIDDEN_FILM_RE = re.compile(
+    r"\bjambe\b|zone économique exclusive|exclusive economic zone|"
+    r"\bCouloirs\b|\bShipping lanes\b|À surveiller|To watch\.|"
+    r"à portée de|within reach of|\bde de\b",
+    re.I,
+)
+_EN_TITLE_RE = re.compile(
+    r"\b(the|center|deposit|licence|license|prohibition|exclusive economic|careenage)\b",
+    re.I,
+)
+_EN_STOP_RE = re.compile(
+    r"\b(the|of|and|for|in|to|with|from|into|on|at|by|a|an|global|project|"
+    r"blue|economy|caribbean|coral|reef|marine|coastal|laboratory|ship|test|"
+    r"innovations|extreme|conditions|coordination|initiative|management|"
+    r"strategies|technologies|solutions|bycatch|tropical|ecosystem|fisheries|"
+    r"regional|oceanscape|unleashing|cetacean|future|expedition|restoration|"
+    r"combatting|fishing|smartphone|technology|educational|recognition|"
+    r"underwater|monitoring|gardeners|conservation|children|yacht|club|small|"
+    r"harbour|harbor|lesser|antilles|friends|system|intellireefs|speSeas)\b",
+    re.I,
+)
+_FR_MARK_RE = re.compile(
+    r"[àâäéèêëïîôùûüçœ]|\b(le|la|les|un|une|des|du|aux|pour|dans|sur|avec)\b",
+    re.I,
+)
+_GENERIC_HARBOR_RE = re.compile(
+    r"^(petite marina|marina|harbour|harbor|autorités portuaires|authorities)\b",
+    re.I,
+)
+_DATE_FR_RE = re.compile(
+    r"(1er|\d{1,2}) (janvier|février|mars|avril|mai|juin|juillet|août|septembre|"
+    r"octobre|novembre|décembre)(?: \d{4})?",
+    re.I,
+)
+_DATE_EN_RE = re.compile(
+    r"(\d{1,2}) (January|February|March|April|May|June|July|August|September|"
+    r"October|November|December)(?: \d{4})?",
+    re.I,
+)
+_LEAD_DATE_FR_RE = re.compile(
+    r"^(?:Le |À partir du )?((?:1er|\d{1,2}) (?:janvier|février|mars|avril|mai|juin|"
+    r"juillet|août|septembre|octobre|novembre|décembre)(?: \d{4})?), ",
+    re.I,
+)
+_LEAD_DATE_EN_RE = re.compile(
+    r"^(?:On )?((?:\d{1,2}) (?:January|February|March|April|May|June|July|"
+    r"August|September|October|November|December)(?: \d{4})?), ",
+    re.I,
+)
 CHANGE_PRIORITY = {
     "escale": 0, "approche": 1, "alert-on": 2, "station": 3,
     "zee-enter": 4, "coast": 4, "amp": 5, "project": 5, "climo": 5, "marina": 6, "cyclone": 7, "culture": 8,
@@ -336,9 +387,37 @@ _COAST_PORT_SHORT = (
 
 
 def connector_at(i: int, lang: str = "fr") -> str:
-    """Connecteur du paragraphe i : `connecteurs[i % n]`, jamais le même à la suite."""
+    """Ancien index de rotation — RG6 ne l'emploie plus pour assembler un chapitre."""
     cons = CONNECTORS["en" if _en(lang) else "fr"]
     return cons[int(i) % len(cons)]
+
+
+def looks_english_title(name: str) -> bool:
+    """Titre anglais interdit à la voix (The Careenage, titres de projets EN)."""
+    s = str(name or "").strip()
+    if not s:
+        return False
+    if re.match(r"^The\s+[A-Z]", s):
+        return True
+    if _EN_TITLE_RE.search(s):
+        return True
+    if re.search(r"\b(marina|yacht club|harbour|harbor|intellireefs)\b", s, re.I) and not _FR_MARK_RE.search(s):
+        return True
+    hits = len(_EN_STOP_RE.findall(s))
+    if hits >= 2 and not _FR_MARK_RE.search(s):
+        return True
+    if hits >= 4:
+        return True
+    return False
+
+
+def film_has_forbidden(text: str) -> bool:
+    return bool(FORBIDDEN_FILM_RE.search(text or ""))
+
+
+def scrub_spoken(text: str) -> str:
+    """Filet : « de de » impossible ; le reste des interdits ne se génère pas."""
+    return re.sub(r"\bde de\b", "de", text or "", flags=re.I)
 
 
 MONTHS = {
@@ -531,7 +610,11 @@ def heading_phrase(deg: Any, lang: str = "fr") -> str:
         return ""
     idx = int((d % 360.0) / 45.0 + 0.5) % 8
     fr, en = _HEADING_8[idx]
-    return f"heading {en}" if _en(lang) else f"cap au {fr}"
+    if _en(lang):
+        return f"heading {en}"
+    if fr in {"est", "ouest"}:
+        return f"cap à l'{fr}"
+    return f"cap au {fr}"
 
 
 def _utc_day(change: dict) -> str:
@@ -1125,6 +1208,10 @@ def _classify_window_mode(
         if d is not None and d <= _PORT_LEAVE_NM:
             continue
         found = _mode_from_vehicle(v.get("vehicle"))
+        # Sommet route loin du port = autre fenêtre (Saint-Maur → La Rochelle
+        # ne doit pas classer La Rochelle → Ajaccio « par la route »).
+        if found == "road" and d is not None and d > 80:
+            continue
         if found:
             return found
     for src in (frm, to):
@@ -1351,7 +1438,14 @@ def official_dated_stops(marks: list | None, clock: dict | None = None) -> list[
     rest = [s for s in dated if not is_saint_maur(s["name"])]
     # Premier départ mer (La Rochelle, filmNm ~122) : garder au 15 mai même
     # sans iso, et ne pas lui coller la date du retour (même nom, 2027).
-    sea = next((s for s in rest if _ROCHELLE_RE.search(s.get("name") or "")), None)
+    sea = next(
+        (
+            s for s in rest
+            if _ROCHELLE_RE.search(s.get("name") or "")
+            and float(s.get("filmNm") if s.get("filmNm") is not None else s.get("nm") or 0) < 2000
+        ),
+        None,
+    )
     if sea is None:
         sea = _sea_stop([], raw, clock)
     if sea and _ROCHELLE_RE.search(sea.get("name") or ""):
@@ -1487,7 +1581,16 @@ def merge_route_marks(route_marks: list | None, clock: dict | None) -> list[dict
                 None,
             )
             if hit is None:
-                hit = next((c for c in clock_marks if name and c.get("name") == name), None)
+                named = [
+                    c for c in clock_marks
+                    if name and same_stop(c.get("name") or "", name)
+                ]
+                compat = [
+                    c for c in named
+                    if abs(float(c.get("filmNm") if c.get("filmNm") is not None else c.get("nm") or 0) - film) < 80
+                    or (film < 2000 and float(c.get("filmNm") if c.get("filmNm") is not None else c.get("nm") or 0) < 2000)
+                ]
+                hit = compat[0] if compat else None
             if hit:
                 row["iso"] = hit.get("iso")
                 if hit.get("holdHours") is not None:
@@ -2035,10 +2138,133 @@ def review_leg_for_chapter(review: dict | None, from_name: str, to_name: str) ->
     frm, to = from_name or "", to_name or ""
     if not frm or not to:
         return None
-    for leg in _review_legs(review):
+    legs = _review_legs(review)
+    for leg in legs:
         if same_stop(leg.get("from") or "", frm) and same_stop(leg.get("to") or "", to):
             return leg
+    # Vol : le bateau repart de Cayenne, la revue date encore Saint-Pierre → dest.
+    if _air_stop_key(frm) == "cayenne":
+        for leg in legs:
+            if same_stop(leg.get("to") or "", to) and _is_air_only_stop(leg.get("from") or ""):
+                return leg
     return None
+
+
+def _window_leg_nm(w: dict) -> Optional[float]:
+    """Écart de milles de l'horloge / des marques — même source que plan-review."""
+    frm = w.get("from") or {}
+    dest = w.get("to") or {}
+
+    def num(row: dict | None, *keys: str) -> Optional[float]:
+        for key in keys:
+            val = (row or {}).get(key)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                return float(val)
+        return None
+
+    a_nm, b_nm = num(frm, "nm"), num(dest, "nm")
+    if a_nm is not None and b_nm is not None and (b_nm - a_nm) > 1:
+        return b_nm - a_nm
+    a = num(frm, "nm", "filmNm")
+    b = num(dest, "nm", "filmNm")
+    if b is None and isinstance(w.get("destNm"), (int, float)):
+        b = float(w["destNm"])
+    if a is None or b is None:
+        return None
+    gap = b - a
+    return gap if gap > 1 else None
+
+
+def chapter_metrics(w: dict, review: dict | None = None) -> dict[str, Any]:
+    """legNm, daysAtSea, plannedKnots : revue d'abord, sinon la même formule que plan-review."""
+    to = w.get("toName") or w.get("destName") or ""
+    frm = w.get("fromName") or (w.get("from") or {}).get("name") or ""
+    leg = review_leg_for_chapter(review, frm, to)
+    nm = days = kn = None
+    if leg:
+        if isinstance(leg.get("legNm"), (int, float)):
+            nm = float(leg["legNm"])
+        if isinstance(leg.get("daysAtSea"), (int, float)):
+            days = float(leg["daysAtSea"])
+        if isinstance(leg.get("plannedKnots"), (int, float)):
+            kn = float(leg["plannedKnots"])
+    if nm is None and not _is_air_window(w):
+        nm = _window_leg_nm(w)
+    if nm is not None and not _is_road_window(w) and (days is None or kn is None):
+        from plan_review import PLANNED_KNOTS, planned_sea_days  # noqa: PLC0415
+        if kn is None:
+            kn = float(PLANNED_KNOTS)
+        if days is None:
+            days = planned_sea_days(float(nm), float(kn))
+    return {"legNm": nm, "daysAtSea": days, "plannedKnots": kn}
+
+
+def chapter_shape(w: dict, i: int, n: int, metrics: dict | None = None) -> str:
+    """Connecteur lié au contenu : first / long / hop / last / ''."""
+    if _is_air_window(w) or _is_road_window(w):
+        return ""
+    metrics = metrics or {}
+    if w.get("last") or (n and i == n - 1):
+        return "last"
+    days = metrics.get("daysAtSea")
+    nm = metrics.get("legNm")
+    if (isinstance(days, (int, float)) and days >= 10) or (
+        isinstance(nm, (int, float)) and nm >= 2000
+    ):
+        return "long"
+    if i > 1 and (
+        (isinstance(days, (int, float)) and days <= 3)
+        or (isinstance(nm, (int, float)) and nm <= 250)
+    ):
+        return "hop"
+    return ""
+
+
+def spoken_sea_days(days: Any, lang: str = "fr") -> str:
+    """Jours de mer arrondis à la voix : 9,5 → « une dizaine de jours de mer »."""
+    try:
+        d = float(days)
+    except (TypeError, ValueError):
+        return ""
+    en = _en(lang)
+    if d < 1.5:
+        return "one day at sea" if en else "un jour de mer"
+    if d < 8:
+        n = int(round(d))
+        if en:
+            return f"{_spoken_int(n, lang)} day{'' if n == 1 else 's'} at sea"
+        return f"{_spoken_int(n, lang)} jour{'' if n == 1 else 's'} de mer"
+    if d < 12.5:
+        return "about ten days at sea" if en else "une dizaine de jours de mer"
+    if d < 17.5:
+        return "about fifteen days at sea" if en else "une quinzaine de jours de mer"
+    if d < 25:
+        return "about twenty days at sea" if en else "une vingtaine de jours de mer"
+    if d < 35:
+        return "about thirty days at sea" if en else "une trentaine de jours de mer"
+    if d < 45:
+        return "about forty days at sea" if en else "une quarantaine de jours de mer"
+    n = int(round(d))
+    return f"{n} days at sea" if en else f"{n} jours de mer"
+
+
+def _opening_nm_label(nm: Any, lang: str) -> str:
+    """« 1 820 milles » / « 1,820 miles » — chiffres du plan-review, pas « nm »."""
+    try:
+        v = int(round(float(nm)))
+    except (TypeError, ValueError):
+        return ""
+    if v <= 0:
+        return ""
+    if _en(lang):
+        return f"{v:,} miles"
+    return f"{v:,} milles".replace(",", " ")
+
+
+def _spoken_days_word(n: int, lang: str) -> str:
+    if _en(lang):
+        return f"{_spoken_int(n, lang)} day" + ("" if n == 1 else "s")
+    return f"{_spoken_int(n, lang)} jour" + ("" if n == 1 else "s")
 
 
 def review_fingerprint(review: dict | None) -> str:
@@ -2059,12 +2285,11 @@ def review_fingerprint(review: dict | None) -> str:
 
 
 def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
-    """Ce que la revue signale : verdict, couloirs nommés, saison. Champ inconnu = silence."""
+    """Faits de revue fondus dans la route : plus d'annexe « À surveiller / Couloirs »."""
     if not isinstance(leg, dict):
         return []
     en = _en(lang)
     bits: list[str] = []
-    flags = [f for f in (leg.get("flags") or []) if isinstance(f, dict)]
     season = leg.get("season") if isinstance(leg.get("season"), dict) else None
     gale = season.get("galePct") if season else None
     cyclones = season.get("cyclones") if season else None
@@ -2074,18 +2299,23 @@ def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
         for n in ((pack or {}).get("lanes") or [])
         if isinstance(n, str) and n.strip()
     ] if pack else []
-    lanes = [n for n in lanes if n]
-
-    alert = isinstance(cyclones, (int, float)) and cyclones > 0
-    watch = bool(flags)
-    if alert:
-        bits.append("Alert." if en else "Alerte.")
-    elif watch:
-        bits.append("To watch." if en else "À surveiller.")
+    lanes = [n for n in lanes if n and not looks_english_title(n)]
 
     if lanes:
-        names = ", ".join(lanes)
-        bits.append(f"Shipping lanes: {names}." if en else f"Couloirs : {names}.")
+        def _lane(n: str) -> str:
+            if re.match(r"^(le |la |l['’]|the )", n, re.I):
+                return n
+            if re.match(r"^(détroit|golfe|canal|cap)\b", n, re.I):
+                return f"the {n}" if en else f"le {n}"
+            if re.match(r"^(mer|méditerranée|caraïbe|atlantique)\b", n, re.I):
+                return n if en else (n if n[:1].islower() else n)
+            return n
+        names = ", ".join(_lane(n) for n in lanes)
+        bits.append(
+            f"The route goes through {names}."
+            if en else
+            f"La route passe par {names}."
+        )
 
     if isinstance(gale, (int, float)):
         n = int(round(float(gale)))
@@ -2103,15 +2333,22 @@ def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
 
 def _append_review_sentences(bits: list[str], review: dict | None, window: dict, lang: str) -> None:
     """Ajoute les phrases de revue au chapitre. Chiffres via filter_numbers."""
-    leg = review_leg_for_chapter(review, window.get("fromName") or "", window.get("toName") or "")
+    to = window.get("toName") or window.get("destName") or ""
+    leg = review_leg_for_chapter(review, window.get("fromName") or "", to)
     if not leg:
         return
+    already = " ".join(bits)
     facts = _facts_with_rounded(leg)
     for sentence in review_sentences(leg, lang):
         filtered, _dropped = filter_numbers(sentence, facts)
         sentence = (filtered or "").strip()
-        if sentence:
-            bits.append(sentence)
+        if not sentence:
+            continue
+        if any(part and part in already for part in re.findall(r"[A-ZÀ-Ý][\w'-]{3,}", sentence)):
+            # Le détroit / la mer est déjà nommé dans la route.
+            if re.search(r"passe par|goes through", sentence, re.I):
+                continue
+        bits.append(sentence)
 
 
 def cyclone_name_year(change: dict) -> tuple[str, str]:
@@ -2183,7 +2420,8 @@ def speak_film_text(text: str, lang: str = "fr") -> str:
     """Texte du film : distances arrondies, unités parlées, pas de décimale."""
     spoken = round_spoken_distances(text or "", lang)
     spoken = expand_spoken_units(spoken, lang)
-    return round_spoken_decimals(spoken)
+    spoken = round_spoken_decimals(spoken)
+    return scrub_spoken(spoken)
 
 
 def _nm_label(nm: Any, lang: str) -> str:
@@ -2550,43 +2788,239 @@ def _close_sentence(w: dict, live: dict | None, lang: str) -> str:
     return f"Today, the boat is at {place}." if en else f"Aujourd’hui, le bateau est à {place}."
 
 
-def _depart_towards(
-    w: dict, *, i: int, lang: str, display_t0: str | None = None,
+def _harbor_spoken(name: str, dest: str, kind: str, lang: str) -> str:
+    """« le port d'Ajaccio » / « la marina Les Minimes ». Titre anglais → port de l'escale."""
+    en = _en(lang)
+    raw = (name or "").strip()
+    if looks_english_title(raw) or not raw or _GENERIC_HARBOR_RE.search(raw):
+        raw = (dest or "").strip()
+        kind = "port"
+    if not raw:
+        return ""
+    if re.match(r"^(le |la |l['’]|the )(port|marina|harbour|harbor)\b", raw, re.I):
+        return raw
+    if re.match(r"^(port|marina|harbour|harbor)\b", raw, re.I):
+        return raw if not en else raw
+    marina = kind == "marina" or bool(re.search(r"marina|minimes", raw, re.I))
+    if marina:
+        return f"the {raw} marina" if en else f"la marina {raw}"
+    return f"the port of {raw}" if en else f"le port {_de(raw)}"
+
+
+def _moored_phrase(harbor: str, lang: str) -> str:
+    if not harbor:
+        return ""
+    if _en(lang):
+        return f"moored at {harbor}"
+    if harbor.startswith("le "):
+        return f"amarré au {harbor[3:]}"
+    if harbor.startswith("la "):
+        return f"amarré à {harbor}"
+    if harbor.startswith("l’") or harbor.startswith("l'"):
+        return f"amarré à {harbor}"
+    return f"amarré à {harbor}"
+
+
+def _hold_phrase(days: int, chapter_i: int, lang: str) -> str:
+    """Durée dite une fois, formulations qui tournent — jamais « 3 jours à quai »."""
+    if not days:
+        return ""
+    spoken = _spoken_days_word(int(days), lang)
+    if _en(lang):
+        variants = (
+            f"a {spoken} stopover",
+            f"a stay of {spoken}",
+            f"{spoken} at the harbour",
+            f"{spoken} alongside",
+        )
+    else:
+        variants = (
+            f"{spoken} d'escale",
+            f"escale de {spoken}",
+            f"{spoken} au port",
+            f"on reste {spoken}",
+        )
+    return variants[int(chapter_i) % len(variants)]
+
+
+def _item_place(item: dict) -> tuple[str, str]:
+    kind = str(item.get("kind") or "")
+    if item.get("title") or item.get("fact"):
+        name = change_place_name(item)
+        if name:
+            return name, kind or "port"
+    return short_name(item.get("name") or ""), kind or "port"
+
+
+def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
+    """Marina / port le plus proche de l'escale ; sinon le port d'arrivée nommé."""
+    dest = dest or {}
+    dest_name = short_name(dest.get("name") or "")
+    dest_lat, dest_lon = dest.get("lat"), dest.get("lon")
+    scored: list[tuple[tuple, str, str]] = []
+    for item in items or []:
+        kind = str(item.get("kind") or "")
+        if kind not in {"marina", "port", "poe"}:
+            continue
+        name, k = _item_place(item)
+        if not name or looks_english_title(name):
+            continue
+        dist = _nm_between(dest_lat, dest_lon, item.get("lat"), item.get("lon"))
+        near = bool(dest_name) and (
+            dest_name.casefold() in name.casefold() or name.casefold() in dest_name.casefold()
+        )
+        if not near and (dist is None or dist > 25.0):
+            continue
+        t = item.get("tMs") or _ms(item.get("t")) or 0
+        scored.append(((0 if near else 1, dist if dist is not None else 999.0, -int(t)), name, k))
+    if scored:
+        scored.sort(key=lambda row: row[0])
+        return _harbor_spoken(scored[0][1], dest_name, scored[0][2], lang)
+    if dest_name:
+        return _harbor_spoken(dest_name, dest_name, "port", lang)
+    return ""
+
+
+def _opening_sentence(
+    w: dict,
+    *,
+    i: int,
+    lang: str,
+    display_t0: str | None = None,
     heading_deg: Any = None,
+    review: dict | None = None,
+    n: int = 0,
+    include_date: bool = True,
 ) -> str:
-    """Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé."""
+    """Ouverture d'étape : date, port, cap, dest, milles, jours, vitesse — gabarit § 4."""
     dest_name = _window_dest_name(w)
     if _is_air_window(w):
         return _air_window_sentence(w, lang=lang, display_t0=display_t0)
     if not dest_name:
         return ""
     en = _en(lang)
-    if _is_road_window(w):
-        head = f"departure for {dest_name} by road" if en else f"départ vers {dest_name} par la route"
-    else:
-        head = f"departure for {dest_name}" if en else f"départ vers {dest_name}"
-    cap = heading_phrase(heading_deg if heading_deg is not None else w.get("headingDeg"), lang)
-    if cap and not _is_road_window(w):
-        head = f"{head}, {cap}"
-    if i == 0:
-        return f"{head[0].upper()}{head[1:]}."
-    conn = connector_at(i - 1, lang)
+    origin = short_name(
+        w.get("fromName") or (w.get("from") or {}).get("name") or ""
+    )
+    metrics = chapter_metrics(w, review)
+    shape = chapter_shape(w, i, n or 0, metrics)
     dep_ms = _window_depart_ms(w)
-    when = day_month(rebase_iso(_iso(dep_ms), OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang) if dep_ms else ""
+    when = ""
+    if include_date and dep_ms:
+        when = day_month(rebase_iso(_iso(dep_ms), OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
+    cap = ""
+    if not _is_road_window(w):
+        cap = heading_phrase(heading_deg if heading_deg is not None else w.get("headingDeg"), lang)
+    dest_for = dest_name
+    if shape == "long":
+        dest_for = f"the long crossing to {dest_name}" if en else f"la longue traversée vers {dest_name}"
+    boat = "Berry-Mappemonde"
+    if _is_road_window(w):
+        km = ""
+        gap = metrics.get("legNm")
+        if gap:
+            km = _km_label(gap, lang)
+        if en:
+            body = f"{boat} leaves {origin} by road for {dest_name}" if origin else f"{boat} takes the road to {dest_name}"
+            if km:
+                body = f"{body}. {km[0].upper()}{km[1:]}" if km else body
+        else:
+            body = (
+                f"{boat} quitte {origin} par la route pour {dest_name}"
+                if origin else
+                f"{boat} prend la route pour {dest_name}"
+            )
+            if km:
+                body = f"{body}. {km[0].upper()}{km[1:]}"
+        if when:
+            return f"On {when}, {body}." if en else f"Le {when}, {body}."
+        return f"{body[0].upper()}{body[1:]}."
+
+    stats: list[str] = []
+    nm = _opening_nm_label(metrics.get("legNm"), lang)
+    days = spoken_sea_days(metrics.get("daysAtSea"), lang) if metrics.get("daysAtSea") is not None else ""
+    kn = metrics.get("plannedKnots")
+    kn_s = ""
+    if isinstance(kn, (int, float)) and not isinstance(kn, bool):
+        kn_i = int(round(float(kn)))
+        kn_s = f"{kn_i} knots on average" if en else f"{kn_i} nœuds de moyenne"
+    if nm:
+        stats.append(nm)
+    if days:
+        stats.append(days)
+    if kn_s:
+        stats.append(kn_s if not days else (f"at {kn_s}" if en else f"à {kn_s}"))
+    extra = ""
+    if stats:
+        # Point, pas « : » : split_short_sentences reboucle sinon sur le même texte.
+        extra = ". " + ", ".join(stats)
+
+    hop = ""
+    last = ""
+    if shape == "hop":
+        hop = "from island to island, " if en else "d'île en île, "
+    if shape == "last":
+        last = "for the last stage, " if en else "pour la dernière étape, "
+
+    if en:
+        mid = f", {cap}" if cap else ""
+        leave = f"{hop}{last}{boat} leaves {origin}{mid} for {dest_for}{extra}" if origin else f"{hop}{last}{boat} sails for {dest_for}{extra}"
+        if when:
+            return f"On {when}, {leave}."
+        return f"{leave[0].upper()}{leave[1:]}."
+    mid = f", {cap}" if cap else ""
+    leave = (
+        f"{hop}{last}{boat} quitte {origin}{mid} pour {dest_for}{extra}"
+        if origin else
+        f"{hop}{last}{boat} met le cap sur {dest_for}{extra}"
+    )
     if when:
-        return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
-    return f"{conn}, {head}." if en else f"{conn}, {head}."
+        return f"Le {when}, {leave}."
+    return f"{leave[0].upper()}{leave[1:]}."
 
 
-def _arrival_sentence(stop: dict | None, lang: str, display_t0: str | None = None, clock: dict | None = None) -> str:
+def _depart_towards(
+    w: dict, *, i: int, lang: str, display_t0: str | None = None,
+    heading_deg: Any = None,
+    review: dict | None = None,
+    n: int = 0,
+    include_date: bool = True,
+) -> str:
+    return _opening_sentence(
+        w, i=i, lang=lang, display_t0=display_t0, heading_deg=heading_deg,
+        review=review, n=n, include_date=include_date,
+    )
+
+
+def _arrival_sentence(
+    stop: dict | None,
+    lang: str,
+    display_t0: str | None = None,
+    clock: dict | None = None,
+    harbor: str = "",
+    chapter_i: int = 0,
+) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
     en = _en(lang)
     name = short_name(stop["name"])
     when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     quay = _days(_quay_hours_for_arrival(stop, clock))
-    q = f", {_day_word(quay, lang)} {'in port' if en else 'à quai'}" if quay else ""
-    return f"Arrival at {name} on {when}{q}." if en else f"Arrivée à {name} le {when}{q}."
+    moored = _moored_phrase(harbor, lang)
+    hold = _hold_phrase(quay, chapter_i, lang)
+    if en:
+        head = f"Arrival at {name} on {when}" if when else f"Arrival at {name}"
+        if moored:
+            head = f"{head}, {moored}"
+        if hold:
+            head = f"{head}. {hold[0].upper()}{hold[1:]}"
+        return f"{head}."
+    head = f"Arrivée à {name} le {when}" if when else f"Arrivée à {name}"
+    if moored:
+        head = f"{head}, {moored}"
+    if hold:
+        head = f"{head}. {hold[0].upper()}{hold[1:]}"
+    return f"{head}."
 
 
 def _card(entry: dict) -> dict:
@@ -2608,9 +3042,17 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
     if live:
         dist = _nm_label(live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm"), lang)
 
-    def push_arrival(bits: list[str], dest: dict | None, clock: dict | None = None) -> None:
+    def push_arrival(
+        bits: list[str],
+        dest: dict | None,
+        clock: dict | None = None,
+        harbor: str = "",
+        chapter_i: int = 0,
+    ) -> None:
         key = norm_stop((dest or {}).get("name") or "")
-        sentence = _arrival_sentence(dest, lang, display_t0, clock=clock)
+        sentence = _arrival_sentence(
+            dest, lang, display_t0, clock=clock, harbor=harbor, chapter_i=chapter_i,
+        )
         if not sentence or not key or key in cited:
             return
         bits.append(sentence)
@@ -2626,6 +3068,10 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         depart_ms = _window_depart_ms(w) or 0
 
         def finish_chapter() -> None:
+            thinned = thin_chapter_dates(bits, lang)
+            if len(thinned) == len(bits) and len(anchored) == len(bits):
+                anchored[:] = [(thinned[j], anchored[j][1]) for j in range(len(thinned))]
+            bits[:] = thinned
             text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
             chapters.append({
                 "id": w["id"],
@@ -2651,7 +3097,10 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 }, lang, display_t0=display_t0)
                 bits.append(first)
                 anchored.append((first, w["tA"]))
-            head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
+            head = _depart_towards(
+                w, i=i, lang=lang, display_t0=display_t0,
+                review=review, n=len(windows),
+            )
             if head:
                 bits.append(head)
                 anchored.append((head, depart_ms or w["tA"]))
@@ -2662,7 +3111,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                     anchored.append((close, w["tB"]))
             finish_chapter()
             continue
-        # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis la paire de
+        # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis l'ouverture de
         # CETTE fenêtre. Plus de seaName figé « La Rochelle ».
         if i == 0:
             first = event_sentence({
@@ -2677,6 +3126,15 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"}:
                 return
             if ev.get("role") in {"depart", "today"}:
+                return
+            if ev.get("kind") == "marina":
+                return
+            ev_name = short_name(ev.get("name") or "")
+            if ev.get("kind") in {"approche", "stop"} and dest_name and ev_name and (
+                same_stop(ev_name, dest_name) or dest_name.casefold() in ev_name.casefold()
+            ):
+                return
+            if looks_english_title(ev_name):
                 return
             rich = {
                 **ev,
@@ -2706,29 +3164,25 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             sci_here.sort(key=lambda ev: (_sci_nm(ev), ev.get("tMs") or 0))
             sci_keep_id = str(sci_here[0].get("id") or "")
 
-        quay = [ev for ev in buckets[i] if (ev.get("tMs") or 0) < depart_ms]
-        sea = [ev for ev in buckets[i] if (ev.get("tMs") or 0) >= depart_ms]
-        for ev in quay:
-            if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
-                continue
-            speak_ev(ev)
         head = _depart_towards(
             w, i=i, lang=lang, display_t0=display_t0,
             heading_deg=_heading_deg_at(None, depart_ms, clock=w.get("clock")),
+            review=review, n=len(windows), include_date=i != 0,
         )
         if head:
             bits.append(head)
             anchored.append((head, depart_ms or w["tA"]))
-        for ev in sea:
+        for ev in buckets[i]:
             if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
                 continue
             speak_ev(ev)
+        _append_review_sentences(bits, review, w, lang)
         if arrived:
+            harbor = _arrival_harbor(buckets[i], dest, lang)
             before = len(bits)
-            push_arrival(bits, dest, clock=w.get("clock"))
+            push_arrival(bits, dest, clock=w.get("clock"), harbor=harbor, chapter_i=i)
             if len(bits) > before:
                 anchored.append((bits[-1], w["tB"]))
-        _append_review_sentences(bits, review, w, lang)
         if i == len(windows) - 1:
             close = _close_sentence(w, live, lang)
             if close and close not in bits:
@@ -2806,6 +3260,8 @@ def _moment_extra_changes(row: dict) -> list[dict]:
             "score": item.get("score") if item.get("score") in {1, 2, 3} else 2,
             "id": str(item.get("id") or f"around:{row.get('seq')}:{kind}:{i}"),
             "nm": item.get("nm") if isinstance(item.get("nm"), (int, float)) else None,
+            "lat": item.get("lat") if isinstance(item.get("lat"), (int, float)) else None,
+            "lon": item.get("lon") if isinstance(item.get("lon"), (int, float)) else None,
         }
         if not change_is_speakable(extra):
             continue
@@ -3024,9 +3480,13 @@ def select_chapter_changes(
 
 
 def _de(name: str) -> str:
-    """« de Papeete » mais « d’Ajaccio », « d’Anse à Rodrigue » (élision devant voyelle ou h muet)."""
+    """« de Papeete » mais « d’Ajaccio ». Un nom déjà « de Fineveke » ne devient pas « de de »."""
     n = (name or "").strip()
-    if n and re.match(r"^[aeiouyâàäéèêëîïôöûùüœh]", n, re.I):
+    if not n:
+        return "de"
+    if re.match(r"^(de |d['’]|du |des )", n, re.I):
+        return n
+    if re.match(r"^[aeiouyâàäéèêëîïôöûùüœh]", n, re.I):
         return f"d’{n}"
     return f"de {n}"
 
@@ -3051,9 +3511,15 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
             return f"Arrival at {name} on {when}." if en else f"Arrivée à {name} le {when}."
         return f"Arrival at {name}." if en else f"Arrivée à {name}."
     if kind == "approche":
+        if looks_english_title(title):
+            return ""
         if when:
-            return f"On {when}, approaching {title}." if en else f"Le {when}, approche {_de(title)}."
-        return f"Approaching {title}." if en else f"Approche {_de(title)}."
+            return (
+                f"On {when}, the approach is by {title}."
+                if en else
+                f"Le {when}, l'approche se fait par {title}."
+            )
+        return f"The approach is by {title}." if en else f"L'approche se fait par {title}."
     if kind == "alert-on":
         from ici_engine import is_fishing_amp  # noqa: PLC0415
         if is_fishing_amp({"name": title, "title": title, "fact": fact}):
@@ -3117,7 +3583,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         if is_fishing_amp({"name": title, "title": title, "fact": fact}):
             return ""
         name = spoken_amp_name(change_place_name(change) or title) or change_place_name(change)
-        if not name:
+        if not name or looks_english_title(name):
             return ""
         nm = change_distance_nm(change)
         dist = spoken_distance(nm, lang) if nm is not None else ""
@@ -3130,7 +3596,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         return f"On {when}, marine protected area: {name}." if en else f"Le {when}, aire marine protégée : {name}."
     if kind == "project":
         name = change_place_name(change)
-        if not name:
+        if not name or looks_english_title(name):
             return ""
         nm = change_distance_nm(change)
         dist = spoken_distance(nm, lang) if nm is not None else ""
@@ -3144,10 +3610,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
     if kind == "climo":
         return climo_sentence(change, lang)
     if kind == "marina":
-        name = change_place_name(change)
-        if not name:
-            return ""
-        return f"On {when}, within reach of {name}." if en else f"Le {when}, à portée {_de(name)}."
+        return ""
     if kind == "cyclone":
         cyc_name, year = cyclone_name_year(change)
         if not cyc_name:
@@ -3170,7 +3633,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         return body if body.endswith(".") else f"{body}."
     if kind == "port":
         name = change_place_name(change)
-        if not name:
+        if not name or looks_english_title(name):
             return ""
         return f"On {when}, off {name}." if en else f"Le {when}, devant {name}."
     if fact:
@@ -3206,8 +3669,116 @@ def _sentences(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"(?<=[.!?…])\s+", text or "") if p.strip()]
 
 
+def _sentence_has_date(text: str, lang: str) -> bool:
+    return bool((_DATE_EN_RE if _en(lang) else _DATE_FR_RE).search(text or ""))
+
+
+def _parse_spoken_date(text: str, lang: str) -> Optional[datetime]:
+    rx = _DATE_EN_RE if _en(lang) else _DATE_FR_RE
+    found = rx.search(text or "")
+    if not found:
+        return None
+    day_s, month_s = found.group(1), found.group(2)
+    rest = found.group(0)
+    year_m = re.search(r"(\d{4})$", rest)
+    year = int(year_m.group(1)) if year_m else 2026
+    try:
+        day = 1 if str(day_s).lower() == "1er" else int(day_s)
+    except (TypeError, ValueError):
+        return None
+    months = MONTHS["en" if _en(lang) else "fr"]
+    key = str(month_s).casefold()
+    idx = next((i for i, m in enumerate(months) if m.casefold() == key), -1)
+    if idx < 0:
+        return None
+    try:
+        return datetime(year, idx + 1, day, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _is_arrival_sentence(text: str) -> bool:
+    return bool(re.match(r"^(Arrivée à|Arrival at)\b", text or "", re.I))
+
+
+def _relative_lead(prev: Optional[datetime], cur: Optional[datetime], lang: str) -> str:
+    if prev and cur:
+        try:
+            if (cur.date() - prev.date()) == timedelta(days=1):
+                return "The next day, " if _en(lang) else "Le lendemain, "
+        except (TypeError, ValueError):
+            pass
+    return "Then, " if _en(lang) else "Puis, "
+
+
+def _strip_lead_date(text: str, lang: str) -> str:
+    rx = _LEAD_DATE_EN_RE if _en(lang) else _LEAD_DATE_FR_RE
+    return rx.sub("", text or "", count=1)
+
+
+def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
+    """Au plus une date calendaire toutes les deux phrases. L'arrivée garde sa date."""
+    out = [scrub_spoken(s) for s in sentences]
+    dated = [_sentence_has_date(s, lang) for s in out]
+    i = 1
+    while i < len(out):
+        if dated[i] and dated[i - 1]:
+            if _is_arrival_sentence(out[i]):
+                prev_d = _parse_spoken_date(out[i - 1], lang)
+                cur_d = _parse_spoken_date(out[i], lang)
+                body = _strip_lead_date(out[i - 1], lang)
+                if body == out[i - 1]:
+                    body = (_DATE_EN_RE if _en(lang) else _DATE_FR_RE).sub("", out[i - 1], count=1)
+                    body = re.sub(r"\s{2,}", " ", body).replace("Le ,", "Puis,").strip()
+                else:
+                    body = _relative_lead(prev_d, cur_d, lang) + body[0].lower() + body[1:] if body else out[i - 1]
+                out[i - 1] = body[0].upper() + body[1:] if body else out[i - 1]
+                dated[i - 1] = False
+            else:
+                prev_d = _parse_spoken_date(out[i - 1], lang)
+                cur_d = _parse_spoken_date(out[i], lang)
+                body = _strip_lead_date(out[i], lang)
+                if body != out[i]:
+                    lead = _relative_lead(prev_d, cur_d, lang)
+                    out[i] = lead + (body[0].lower() + body[1:] if body else "")
+                    if out[i] and not out[i].endswith((".", "!", "?", "…")):
+                        pass
+                dated[i] = False
+        i += 1
+    # Deuxième passe : densité globale ≤ 1 date / 2 phrases (ouverture et arrivée gardées).
+    while True:
+        dated = [_sentence_has_date(s, lang) for s in out]
+        if date_density_ok(" ".join(out), lang):
+            break
+        drop = next(
+            (
+                j for j in range(1, len(out) - 1)
+                if dated[j] and not _is_arrival_sentence(out[j])
+            ),
+            None,
+        )
+        if drop is None:
+            break
+        body = _strip_lead_date(out[drop], lang)
+        if body == out[drop]:
+            break
+        lead = "Puis, " if not _en(lang) else "Then, "
+        out[drop] = lead + (body[0].lower() + body[1:] if body else "")
+    return [s for s in out if s]
+
+
+def date_density_ok(text: str, lang: str = "fr") -> bool:
+    sents = _sentences(text)
+    if not sents:
+        return True
+    n_dates = sum(1 for s in sents if _sentence_has_date(s, lang))
+    return n_dates * 2 <= len(sents) + 1
+
+
 _KEEP_SENT = re.compile(
-    r"arriv|départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
+    r"arriv|Berry-Mappemonde|quitte|leaves |milles|miles|jours de mer|days at sea|"
+    r"nœuds de moyenne|knots on average|amarré|moored|d'escale|stopover|"
+    r"départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"eaux |waters|longe |skirts |d[ée]troit|strait|cap au |heading |haute mer|high seas|"
     r"aliz[ée]|trade wind|calmes|calms|de saison|mesur[ée]|seasonal|westerl|mistral|tramontane",
@@ -3234,7 +3805,9 @@ def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> st
                 break
             sents.pop(drop_i)
             blob = " ".join(sents).strip()
-    return speak_film_text(split_short_sentences(blob), lang)
+    blob = speak_film_text(split_short_sentences(blob), lang)
+    blob = " ".join(thin_chapter_dates(_sentences(blob), lang))
+    return blob
 
 
 def chapter_anchors(text: str, anchored: list[tuple[str, Optional[int]]], t_a: int, t_b: int, lang: str) -> list[dict]:
@@ -3252,6 +3825,9 @@ def chapter_anchors(text: str, anchored: list[tuple[str, Optional[int]]], t_a: i
         idx = text.find(needle) if needle else -1
         if idx < 0 and len(needle) > 12:
             idx = text.find(needle[:12])
+        if idx < 0 and len(spoken) > 24:
+            tail = spoken[-24:]
+            idx = text.find(tail)
         if idx < 0:
             continue
         t = int(t_ms)
@@ -3485,16 +4061,26 @@ def build_raw_from_moments(
         placed: list[dict] = []
 
         def speak_change(change: dict) -> None:
-            if change.get("kind") == "escale":
+            if change.get("kind") in {"escale", "marina"}:
                 return
             if _is_air_only_stop(str(change.get("title") or "")):
                 return
+            title = short_name(change.get("title") or "")
+            if change.get("kind") == "approche" and dest_name and title and (
+                same_stop(title, dest_name) or dest_name.casefold() in title.casefold()
+            ):
+                return
+            place = change_place_name(change) or title
+            if looks_english_title(place) and change.get("kind") in {
+                "port", "approche", "culture", "project", "amp", "marina",
+            }:
+                return
             sentence = change_sentence(change, lang).strip()
-            if not sentence:
+            if not sentence or film_has_forbidden(sentence):
                 return
             filtered, _dropped = filter_numbers(sentence, _facts_with_rounded(change))
             sentence = (filtered or "").strip()
-            if not sentence:
+            if not sentence or film_has_forbidden(sentence):
                 return
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(sentence)
@@ -3514,10 +4100,14 @@ def build_raw_from_moments(
             bits.append(first)
             anchored.append((first, w["tA"]))
         if _is_air_window(w):
-            head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
+            head = _depart_towards(
+                w, i=i, lang=lang, display_t0=display_t0,
+                review=review, n=len(windows),
+            )
             if head:
                 bits.append(head)
                 anchored.append((head, depart_ms or w["tA"]))
+            bits[:] = thin_chapter_dates(bits, lang)
             chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
             text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
             if i == len(windows) - 1:
@@ -3540,21 +4130,25 @@ def build_raw_from_moments(
                 "toLon": w.get("toLon"),
             })
             continue
-        quay = [c for c in selected if (c.get("tMs") or 0) < depart_ms]
-        sea = [c for c in selected if (c.get("tMs") or 0) >= depart_ms]
-        for change in quay:
-            speak_change(change)
         head = _depart_towards(
             w, i=i, lang=lang, display_t0=display_t0,
             heading_deg=_heading_deg_at(sail_moments, depart_ms, clock=w.get("clock") or clock),
+            review=review, n=len(windows), include_date=i != 0,
         )
         if head:
             bits.append(head)
             anchored.append((head, depart_ms or w["tA"]))
-        for change in sea:
+        for change in selected:
             speak_change(change)
+        _append_review_sentences(bits, review, w, lang)
         key = norm_stop((dest or {}).get("name") or "")
-        arrival = _arrival_sentence(dest, lang, display_t0, clock=w.get("clock")) if arrived else ""
+        harbor = _arrival_harbor(selected, dest, lang) if arrived else ""
+        arrival = (
+            _arrival_sentence(
+                dest, lang, display_t0, clock=w.get("clock"),
+                harbor=harbor, chapter_i=i,
+            ) if arrived else ""
+        )
         if arrival and key and key not in cited:
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(arrival)
@@ -3567,27 +4161,12 @@ def build_raw_from_moments(
                 "fact": arrival, "score": 3,
                 "card": {"id": arr_id, "kind": "stop", "title": dest_title, "text": arrival, "at": dest.get("iso"), "score": 3},
             })
-        _append_review_sentences(bits, review, w, lang)
-        extras: list[str] = []
-        if dest and w.get("from"):
-            try:
-                a = float((w["from"] or {}).get("nm") if (w["from"] or {}).get("nm") is not None else (w["from"] or {}).get("filmNm") or 0)
-                b = float(dest.get("nm") if dest.get("nm") is not None else dest.get("filmNm") or 0)
-                gap = b - a
-                if gap > 1:
-                    land = (w.get("vehicle") == "land") or _is_land_leg(
-                        (w.get("from") or {}).get("name") or "", dest.get("name") or "",
-                    )
-                    label = _km_label(gap, lang) if land else _nm_label(gap, lang)
-                    extras.append(
-                        f"The leg covers {label}."
-                        if en else
-                        f"La jambe compte {label}."
-                    )
-            except (TypeError, ValueError):
-                pass
+        thinned = thin_chapter_dates(bits, lang)
+        if len(thinned) == len(bits) and len(anchored) == len(bits):
+            anchored[:] = [(thinned[j], anchored[j][1]) for j in range(len(thinned))]
+        bits[:] = thinned
         chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
-        text = fit_chapter_text(" ".join(bits), chapter_budget, extras, lang)
+        text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
         if i == len(windows) - 1:
             close = _close_sentence(w, live, lang)
             if close and close not in text:
