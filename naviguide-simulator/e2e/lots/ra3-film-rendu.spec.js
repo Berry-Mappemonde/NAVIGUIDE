@@ -106,6 +106,10 @@ test("lot RA3 — fond gardé, bateau glisse, zoom stable, bulle fermable", asyn
       throw new Error("marqueur bateau absent avec API");
     }
   } else {
+    // Film ancré (RC18) : à quai pendant les premières phrases — la glisse se mesure une fois en route.
+    const { waitBoatUnderWay } = await import("../helpers.js");
+    const way = await waitBoatUnderWay(page, { timeout: 60_000 });
+    expect(way.moving, `le bateau a pris la mer avant la mesure (${JSON.stringify(way)})`).toBe(true);
     const samples = [];
     for (let i = 0; i < 8; i++) {
       const pos = await page.evaluate(boatLatLng);

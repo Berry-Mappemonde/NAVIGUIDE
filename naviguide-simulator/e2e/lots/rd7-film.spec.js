@@ -116,7 +116,9 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
 
   await btn150.click();
-  await expect(btn150).toHaveAttribute("aria-pressed", "true");
+  // RE3 : les pilules se cachent le temps que le plan 2:30 se recharge, puis reviennent pressées.
+  await expect(btn150).toBeVisible({ timeout: 20_000 });
+  await expect(btn150).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   await muteVoice(page);
   if (!(await waitFilmCanStart(page, 10_000))) {
     test.info().annotations.push({ type: "RE3", description: "Revoir grisé après 2:30 — budget client déjà vu" });
