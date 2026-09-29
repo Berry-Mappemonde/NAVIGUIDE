@@ -723,13 +723,22 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.ok(hi.before.includes("Arrivée"));
   });
 
-  it("barre : chapitre entier au départ et au seek, phrase ensuite", () => {
+  it("barre : charIdx=0 = 1re phrase, pas le chapitre ; lieu seulement une fois dit", () => {
     const text = "L’expédition a quitté Saint-Maur. Puis La Rochelle. Ensuite l’avion pour Halifax.";
     const starts = splitFilmSentences(text).map((s) => s.start);
-    const atStart = filmBarSubtitle({ chapterText: text, charIdx: 0, sentenceStarts: starts });
-    assert.match(atStart.text, /La Rochelle/);
-    assert.match(atStart.text, /avion/);
-    assert.equal(atStart.sentenceMode, false);
+    const atStart = filmBarSubtitle({ chapterText: text, charIdx: 0, sentenceStarts: starts, toName: "Saint-Maur" });
+    assert.equal(atStart.sentenceMode, true);
+    assert.match(atStart.text, /Saint-Maur/);
+    assert.doesNotMatch(atStart.text, /La Rochelle/);
+    assert.doesNotMatch(atStart.text, /avion/);
+    assert.equal(atStart.place, "");
+    const named = filmBarSubtitle({
+      chapterText: text,
+      charIdx: text.indexOf("Saint-Maur") + 1,
+      sentenceStarts: starts,
+      toName: "Saint-Maur",
+    });
+    assert.equal(named.place, "Saint-Maur");
     const later = filmBarSubtitle({
       chapterText: text,
       charIdx: text.indexOf("La Rochelle"),
@@ -739,6 +748,7 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.equal(later.sentenceMode, true);
     assert.match(later.text, /La Rochelle/);
     assert.doesNotMatch(later.text, /avion/);
+    assert.doesNotMatch(later.text, /Saint-Maur/);
     assert.equal(later.place, "La Rochelle");
     const pinned = filmBarSubtitle({
       chapterText: text,
@@ -746,15 +756,23 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
       pinned: true,
       sentenceStarts: starts,
     });
-    assert.equal(pinned.sentenceMode, false);
+    assert.equal(pinned.sentenceMode, true);
     assert.match(pinned.text, /avion/);
+    assert.doesNotMatch(pinned.text, /Saint-Maur/);
     const air = "Mer calme. L’équipage prend l’avion pour Halifax. Retour en avion vers Cayenne.";
+    const airAt = filmBarSubtitle({ chapterText: air, charIdx: air.indexOf("avion") });
+    assert.match(airAt.text, /prend l['’]avion pour Halifax/);
+    assert.doesNotMatch(airAt.text, /Mer calme/);
+    assert.doesNotMatch(airAt.text, /Cayenne/);
     const airPinned = filmBarSubtitle({ chapterText: air, charIdx: air.length, pinned: true });
     assert.match(airPinned.text, /avion/i);
-    assert.ok(airPinned.text.length < air.length || /prend l['’]avion/i.test(airPinned.text));
+    assert.ok(airPinned.text.length < air.length);
+    assert.doesNotMatch(airPinned.text, /Mer calme/);
     const officialCh1 = "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026. Puis, le 15 mai, départ vers La Rochelle.";
     const rb5 = filmBarSubtitle({ chapterText: officialCh1, charIdx: 0 });
-    assert.match(rb5.text, /La Rochelle/);
+    assert.match(rb5.text, /Saint-Maur/);
+    assert.doesNotMatch(rb5.text, /La Rochelle/);
+    assert.ok(rb5.text.length < officialCh1.length);
     assert.match(filmSubtitleAt(officialCh1, 0).sentence, /Saint-Maur/);
     assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
   });
