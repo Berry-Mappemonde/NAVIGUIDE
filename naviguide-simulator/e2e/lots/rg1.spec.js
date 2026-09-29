@@ -64,10 +64,19 @@ function haversineNm(lat1, lon1, lat2, lon2) {
   return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
+async function probeOfficial(page) {
+  const res = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  if (!res || !res.ok()) return { apiUp: false };
+  const ctype = String(res.headers()["content-type"] || "").toLowerCase();
+  if (!ctype.includes("json")) return { apiUp: false };
+  const body = await res.json().catch(() => null);
+  if (!body || typeof body !== "object") return { apiUp: false };
+  return { apiUp: true };
+}
+
 test("lot RG1 — départ horloge, vol, par la route", async ({ page }) => {
   test.setTimeout(90_000);
-  const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
-  const apiUp = Boolean(official && official.ok());
+  const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
