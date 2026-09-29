@@ -832,27 +832,47 @@ def change_on_route(change: dict) -> bool:
     return True
 
 
-# Titres de stations qui sont des jeux de données, des campagnes ou des textes réglementaires, pas des lieux :
-# « Photos anciennes - Outre Mer - … 1938 », « Arrêté n°2002/1249/PREF… », « CTD profiles in Corsica … July 2021 »,
-# « MNT - Plage de Yalimapo … 2017 à Aujourd'hui », « Dissolved and particulate trace metals … (1988 onwards) ».
-# Règle du 26 sept. : sans nom de lieu, silence.
-DATASET_TITLE_RE = re.compile(
-    r"\b(?:19|20)\d{2}\b|photos? anciennes|arr[êe]t[ée]\s*n|\bmnt\b|\bctd\b|profiles?\b|\bdata\b|dataset|cruise|"
-    r"campagne|survey|onwards|zooplankton|trace metals|\bmedits\b|\bessteh|\bmodel\b|mod[èe]le|time.?series",
-    re.I,
-)
+def _station_item(change: dict) -> dict:
+    """Métadonnées du sac (source / type / titre) pour qualifier une station."""
+    if not isinstance(change, dict):
+        return {}
+    entity = change.get("entity") if isinstance(change.get("entity"), dict) else {}
+    facts = change.get("facts") if isinstance(change.get("facts"), dict) else {}
+    raw_kind = str(change.get("kind") or "")
+    sci_kind = raw_kind if raw_kind not in {"station", "sci", "science", "nearby"} else ""
+    for cand in (
+        change.get("sciKind"), change.get("type"),
+        entity.get("sciKind"), facts.get("kind"),
+    ):
+        s = str(cand or "")
+        if s and s not in {"station", "sci", "science", "nearby"}:
+            sci_kind = sci_kind or s
+            break
+    return {
+        "name": change.get("name") or change.get("title") or entity.get("name") or facts.get("name") or "",
+        "title": change.get("title") or "",
+        "fact": change.get("fact") or "",
+        "source": change.get("source") or entity.get("source") or facts.get("source") or "",
+        "kind": sci_kind,
+        "type": change.get("sciType") or facts.get("type") or entity.get("type") or "",
+        "entity": entity,
+        "facts": facts,
+    }
+
+
+def station_spoken_label(change: dict, lang: str = "fr") -> str:
+    """Type parlé seulement — jamais le titre de jeu de données (RG5)."""
+    from ici_engine import spoken_science_type  # noqa: PLC0415
+    return spoken_science_type(_station_item(change), lang)
 
 
 def station_name_speakable(name: str) -> bool:
-    """Une station se dit si elle porte un nom de lieu ou d'instrument court, pas un titre de jeu de données."""
+    """Une station se dit seulement si un type est reconnu (Argo, PELGAS, bouée, CTD, observatoire)."""
+    from ici_engine import science_type_key  # noqa: PLC0415
     n = (name or "").strip()
-    if not n or len(n) > 48:
+    if not n or _is_generic_title(n, "station"):
         return False
-    if DATASET_TITLE_RE.search(n):
-        return False
-    if re.fullmatch(r"(?=.*[0-9_])[A-Z0-9_\-]{5,}", n):
-        return False      # « TR_ZLOPTP », « A1B2C3 » : un code, pas un nom (« PIRATA » reste un nom)
-    return not _is_generic_title(n, "station")
+    return bool(science_type_key({"name": n, "title": n}))
 
 
 def alert_is_amp(change: dict) -> bool:
@@ -971,6 +991,20 @@ def dose_project_changes(changes: list[dict], span_ms: int) -> list[dict]:
     return projs[:limit]
 
 
+def dose_station_changes(changes: list[dict], span_ms: int = 0) -> list[dict]:
+    """Une station qualifiée par étape, la plus proche de la route ; pas de comptage (RG5)."""
+    del span_ms
+    rows = [
+        c for c in changes
+        if str(c.get("kind") or "") == "station" and station_spoken_label(c, "fr")
+    ]
+    rows.sort(key=lambda c: (
+        change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+        c.get("tMs") or 0,
+    ))
+    return rows[:1]
+
+
 def change_is_speakable(change: dict) -> bool:
     kind = str(change.get("kind") or "")
     if kind in {"regime", "alert-off"}:
@@ -997,7 +1031,7 @@ def change_is_speakable(change: dict) -> bool:
     if kind == "culture":
         return bool(change_place_name(change) or change.get("fact"))
     if kind == "station":
-        return station_name_speakable(change_place_name(change))
+        return bool(station_spoken_label(change, "fr"))
     return bool(change_place_name(change))
 
 
@@ -1843,6 +1877,9 @@ def film_candidates(
                 continue
             seen_poe.add(key)
         if e.get("kind") == "sci":
+            from ici_engine import science_type_key  # noqa: PLC0415
+            if not science_type_key(_station_item(e)):
+                continue
             key = (e.get("entity") or {}).get("id") if isinstance(e.get("entity"), dict) else e.get("name")
             if not key or key in seen_sci:
                 continue
@@ -2228,16 +2265,12 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
             f"Le {when}, le régime climatique a changé{detail}."
         )
     if ev.get("kind") == "sci":
-        nm = _fact_num(e, "nm")
-        nm_bit = (
-            (f" at {_plain(nm, 1)} nautical miles" if en else f" à {_plain(nm, 1)} milles nautiques")
-            if nm is not None else ""
-        )
-        return (
-            f"On {when}, the route passed{nm_bit} from {name}."
-            if en else
-            f"Le {when}, la route est passée{nm_bit} de {name}."
-        )
+        spoken = station_spoken_label({**e, **ev}, lang)
+        if not spoken:
+            return ""
+        if when:
+            return f"On {when}, {spoken}." if en else f"Le {when}, {spoken}."
+        return f"{spoken[0].upper()}{spoken[1:]}."
     if ev.get("kind") == "amp":
         from ici_engine import spoken_amp_name  # noqa: PLC0415
         spoken = spoken_amp_name(name) or name
@@ -2662,9 +2695,22 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             card["text"] = sentence
             placed.append({"id": ev["id"], "charIdx": char_idx, "card": card})
 
+        sci_keep_id = ""
+        sci_here = [ev for ev in buckets[i] if ev.get("kind") == "sci" and station_spoken_label(ev, lang)]
+        if sci_here:
+            def _sci_nm(ev: dict) -> float:
+                raw = _fact_num(ev, "nm")
+                if raw is None:
+                    raw = _fact_num(ev.get("entry") or {}, "nm")
+                return float(raw) if raw is not None else 999.0
+            sci_here.sort(key=lambda ev: (_sci_nm(ev), ev.get("tMs") or 0))
+            sci_keep_id = str(sci_here[0].get("id") or "")
+
         quay = [ev for ev in buckets[i] if (ev.get("tMs") or 0) < depart_ms]
         sea = [ev for ev in buckets[i] if (ev.get("tMs") or 0) >= depart_ms]
         for ev in quay:
+            if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
+                continue
             speak_ev(ev)
         head = _depart_towards(
             w, i=i, lang=lang, display_t0=display_t0,
@@ -2674,6 +2720,8 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             bits.append(head)
             anchored.append((head, depart_ms or w["tA"]))
         for ev in sea:
+            if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
+                continue
             speak_ev(ev)
         if arrived:
             before = len(bits)
@@ -2841,14 +2889,11 @@ def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for kind, group in by_kind.items():
         if len(group) < 3:
             continue
-        if kind in {"alert-on", "marina", "port", "amp", "project", "zee-enter", "coast", "climo"}:
-            # Pas de « 10 alertes » ni « N ZEE » : les ZEE et côtes se dosent par date, jamais un comptage (RG2).
+        if kind in {"alert-on", "marina", "port", "amp", "project", "zee-enter", "coast", "climo", "station"}:
+            # Pas de « 10 alertes », « N ZEE » ni « N stations » : une station qualifiée, jamais un comptage (RG5).
             continue
         first, last = group[0], group[-1]
-        if kind == "station":
-            title = fact = f"{len(group)} stations scientifiques croisées"
-        else:
-            title = fact = f"{len(group)} {kind}"
+        title = fact = f"{len(group)} {kind}"
         out.append({
             "id": f"group:{kind}:{first.get('id')}",
             "kind": kind,
@@ -2916,12 +2961,13 @@ def select_chapter_changes(
     amp = dose_amp_changes(usable, span)
     proj = dose_project_changes(usable, span)
     climo = dose_climo_changes(usable, span)
+    stations = dose_station_changes(usable, span)
     rest_src = [
         c for c in usable
         if str(c.get("kind") or "") not in ROUTE_NAMING_KINDS
         and not _is_coast_source(c)
         and not _is_amp_change(c)
-        and str(c.get("kind") or "") not in {"project", "climo"}
+        and str(c.get("kind") or "") not in {"project", "climo", "station"}
     ]
     if not budget:
         rest_src.sort(key=lambda c: (
@@ -2929,9 +2975,9 @@ def select_chapter_changes(
             c.get("tMs") or 0,
         ))
         others = rest_src[:FILM_CHAPTER_MAX_FREE]
-        # ZEE, côtes, AMP, projets et climatologie dosés : hors plafond des autres faits.
+        # ZEE, côtes, AMP, projets, climatologie et une station : hors plafond des autres faits.
         return sorted(
-            zee + coast + amp + proj + climo + others,
+            zee + coast + amp + proj + climo + stations + others,
             key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")),
         )
     grouped = _group_changes(rest_src, span)
@@ -2966,7 +3012,7 @@ def select_chapter_changes(
     for item in must + rest:
         add(item)
     seen = {str(x.get("id") or "") for x in picked}
-    for item in zee + coast + amp + proj + climo:
+    for item in zee + coast + amp + proj + climo + stations:
         cid = str(item.get("id") or "")
         if cid and cid in seen:
             continue
@@ -2986,21 +3032,9 @@ def _de(name: str) -> str:
 
 
 def _group_sentence(change: dict, lang: str) -> str:
-    """Phrase d'un groupe (« 14 stations scientifiques croisées »). Les ZEE ne sont plus comptées (RG2)."""
-    en = _en(lang)
-    when = day_month(change.get("t"), lang)
-    kind = str(change.get("kind") or "")
-    m = re.match(r"^(\d+)\s", str(change.get("fact") or change.get("title") or ""))
-    n = int(m.group(1)) if m else 0
-    if not n:
-        return ""
-    if kind == "station":
-        body = f"{n} science stations passed" if en else f"{n} stations scientifiques croisées"
-    elif kind == "zee-enter":
-        return ""
-    else:
-        return ""
-    return f"From {when}, {body}." if en else f"À partir du {when}, {body}."
+    """Plus aucun comptage à la voix (ZEE : RG2 ; stations : RG5)."""
+    del change, lang
+    return ""
 
 
 def change_sentence(change: dict, lang: str = "fr") -> str:
@@ -3072,10 +3106,12 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
     if kind == "coast":
         return coast_sentence(change, lang)
     if kind == "station":
-        name = change_place_name(change)
-        if not name:
+        spoken = station_spoken_label(change, lang)
+        if not spoken:
             return ""
-        return f"On {when}, station {name}." if en else f"Le {when}, station {name}."
+        if when:
+            return f"On {when}, {spoken}." if en else f"Le {when}, {spoken}."
+        return f"{spoken[0].upper()}{spoken[1:]}."
     if kind == "amp":
         from ici_engine import is_fishing_amp, spoken_amp_name  # noqa: PLC0415
         if is_fishing_amp({"name": title, "title": title, "fact": fact}):

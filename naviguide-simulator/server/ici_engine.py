@@ -450,7 +450,7 @@ def slim_anchorage(feat: dict, lat0: float, lon0: float) -> dict | None:
 def slim_science(feat: dict, lat0: float, lon0: float) -> dict | None:
     item = slim_place(
         feat, lat0, lon0,
-        extra_keys=("source", "kind", "wmo", "provider", "doi", "method", "error_m"),
+        extra_keys=("source", "kind", "type", "wmo", "provider", "doi", "method", "error_m"),
     )
     if not item:
         return None
@@ -461,6 +461,78 @@ def slim_science(feat: dict, lat0: float, lon0: float) -> dict | None:
         elif props.get("kind") == "cruise":
             item["source"] = "csr"
     return item
+
+
+# Types parlables seulement (lot RG5). Jamais un titre de jeu de données.
+_SCI_TYPE_LABELS = {
+    "argo": {"fr": "un flotteur Argo", "en": "an Argo float"},
+    "pelgas": {"fr": "la campagne PELGAS", "en": "the PELGAS campaign"},
+    "campaign": {"fr": "une campagne", "en": "a research cruise"},
+    "buoy": {"fr": "une bouée", "en": "a buoy"},
+    "coastal": {"fr": "une station côtière", "en": "a coastal station"},
+    "observatory": {"fr": "un observatoire", "en": "an observatory"},
+}
+_SCI_EVENT_KINDS = frozenset({"station", "sci", "science", "nearby"})
+_SCI_ARGO_KIND = frozenset({"argo", "argo_float"})
+_SCI_CRUISE_KIND = frozenset({"cruise", "campagne", "campaign"})
+_SCI_BUOY_KIND = frozenset({"buoy", "mooring", "bouee", "bouée"})
+_SCI_OBS_KIND = frozenset({"observatory", "observatoire"})
+_SCI_CTD_KIND = frozenset({"ctd"})
+
+
+def _science_blob(item: dict) -> str:
+    entity = item.get("entity") if isinstance(item.get("entity"), dict) else {}
+    facts = item.get("facts") if isinstance(item.get("facts"), dict) else {}
+    parts = [
+        item.get("source"), item.get("kind"), item.get("type"), item.get("sciKind"),
+        item.get("name"), item.get("title"), item.get("fact"),
+        entity.get("source"), entity.get("sciKind"),
+        facts.get("source"), facts.get("kind"), facts.get("name"),
+        item.get("provider"),
+    ]
+    return " ".join(str(part) for part in parts if part).casefold()
+
+
+def science_type_key(item: dict | None) -> str:
+    """Type depuis source / kind / mots du titre. Vide = la station ne se dit pas."""
+    if not isinstance(item, dict):
+        return ""
+    entity = item.get("entity") if isinstance(item.get("entity"), dict) else {}
+    facts = item.get("facts") if isinstance(item.get("facts"), dict) else {}
+    source = str(item.get("source") or entity.get("source") or facts.get("source") or "").casefold()
+    kind = str(item.get("sciKind") or item.get("type") or "").casefold()
+    raw_kind = str(item.get("kind") or "").casefold()
+    if raw_kind not in _SCI_EVENT_KINDS:
+        kind = kind or raw_kind
+    if kind in _SCI_EVENT_KINDS:
+        kind = ""
+    blob = _science_blob(item)
+    if source == "argo" or kind in _SCI_ARGO_KIND or re.search(r"\bargo\b", blob):
+        return "argo"
+    if re.search(r"\bpelgas", blob):
+        return "pelgas"
+    if (
+        source in {"buoy", "mooring"}
+        or kind in _SCI_BUOY_KIND
+        or re.search(r"\b(buoy|bou[ée]e|mooring|pirata)\b", blob)
+    ):
+        return "buoy"
+    if kind in _SCI_OBS_KIND or re.search(r"\bobservator(?:y|ies)\b|\bobservatoire", blob):
+        return "observatory"
+    if kind in _SCI_CTD_KIND or re.search(r"\bctd\b", blob):
+        return "coastal"
+    if source == "csr" or kind in _SCI_CRUISE_KIND or re.search(r"\b(campagne|cruise)\b", blob):
+        return "campaign"
+    return ""
+
+
+def spoken_science_type(item: dict | None, lang: str = "fr") -> str:
+    """Libellé parlé FR/EN du type, ou vide. Jamais le titre brut."""
+    key = science_type_key(item)
+    if not key:
+        return ""
+    labels = _SCI_TYPE_LABELS[key]
+    return labels["en"] if str(lang or "").lower().startswith("en") else labels["fr"]
 
 
 def nearest_places(
