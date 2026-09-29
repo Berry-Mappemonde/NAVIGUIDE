@@ -931,6 +931,12 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     state.done[lot.id] = entry
     state.last_branch = branch
     state.last_lot = lot.id
+    # La tranche du réviseur de nuit est mémorisée ICI, dans la même écriture que le FINISHED — pas après le
+    # rebuild du poste (29 sept. 17:50 : une pause du porteur entre les deux a fait perdre RC19 à la revue).
+    if entry.get("status") == "FINISHED" and entry.get("pr"):
+        slice_ = state.extra.setdefault("since_review", [])
+        if lot.id not in slice_:
+            slice_.append(lot.id)
     state.save()
     # Lot W1 : le poste de recette suit la tête de pile — le porteur (et le bot, par le tunnel) recettent à la volée.
     # Mais pas avant que le bot ait rendu son verdict sur la PR précédente (--bot-gate-min) : il la recette sur CE poste.
@@ -2131,10 +2137,11 @@ def main() -> None:
     # Lots FINISHED pas encore relus par le réviseur de nuit. Mémorisé dans state.json : une reprise
     # (--resume après une veille, un arrêt, une relance par le chien de garde) relit quand même la
     # dernière tranche, même si elle compte moins de --review-every lots (26 sept.).
-    since_review: list[str] = [x for x in (state.extra.get("since_review") or []) if x in state.done] if args.resume else []
+    # Une seule liste, partagée avec state.extra : run_lot y ajoute chaque FINISHED dans l'écriture du FINISHED lui-même.
+    state.extra["since_review"] = [x for x in (state.extra.get("since_review") or []) if x in state.done] if args.resume else []
+    since_review: list[str] = state.extra["since_review"]
 
     def remember_review_slice() -> None:
-        state.extra["since_review"] = list(since_review)
         state.save()
 
     def night_review() -> None:
@@ -2199,10 +2206,7 @@ def main() -> None:
             missing = [d for d in lot.deps if d not in state.done or state.done[d].get("status") != "FINISHED"]
             if missing and args.stack == "linear" and not args.dry_run:
                 log(f"[{lot.id}] dépendances non faites dans cette session : {missing} — lancé quand même (le plan les suppose mergées ou dans la pile) ; vérifier le matin")
-            run_lot(http, lot, state, args)
-            if (state.done.get(lot.id) or {}).get("status") == "FINISHED" and (state.done.get(lot.id) or {}).get("pr"):
-                since_review.append(lot.id)
-                remember_review_slice()
+            run_lot(http, lot, state, args)   # ajoute le lot à since_review (state.extra) s'il est FINISHED avec PR
             if args.review_every and len(since_review) >= args.review_every:
                 night_review()
             # lots ajoutés à queue.md pendant la nuit (réviseur ou porteur)
