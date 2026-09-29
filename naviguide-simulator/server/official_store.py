@@ -154,6 +154,17 @@ def worker_enabled() -> bool:
     return True
 
 
+def _film_rev_relaxed() -> bool:
+    """Sans remplisseur (CI, stock figé) : une ancienne rev film reste joignable.
+
+    La clé `…:rg1` n'existe pas encore dans l'archive gelée à `…:rf5` ; sans
+    ça, GET /film reste « en préparation » et Revoir reste grisé.
+    Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
+    """
+    raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
+    return raw in ("0", "false", "no")
+
+
 def disk_root() -> Path:
     env = (os.environ.get("NAVIGUIDE_OFFICIAL_STORE_DIR") or "").strip()
     if env:
@@ -335,7 +346,7 @@ class OfficialStore:
         lister = getattr(self.backend, "list_family", None)
         if not callable(lister):
             return None
-        best: Optional[tuple[str, str, dict]] = None
+        best: Optional[tuple[tuple, str, dict]] = None
         for stored_key, doc in lister(family):
             try:
                 r, t, date, suf = parse_key(stored_key)
@@ -343,16 +354,18 @@ class OfficialStore:
                 continue
             if r != route_id or t != t0:
                 continue
-            if (want_suf or None) != (suf or None):
+            exact = (want_suf or None) == (suf or None)
+            if not exact and not (family == "film" and _film_rev_relaxed()):
                 continue
-            if best is None or date > best[0]:
-                best = (date, stored_key, doc)
+            rank = (1 if exact else 0, date)
+            if best is None or rank > best[0]:
+                best = (rank, stored_key, doc)
         if not best:
             return None
-        date, stored_key, doc = best
+        rank, stored_key, doc = best
         out = dict(doc)
         out["key"] = stored_key
-        out["dataDate"] = date
+        out["dataDate"] = rank[1]
         return out
 
     def get(self, family: str, key: Optional[str] = None) -> Optional[dict]:
