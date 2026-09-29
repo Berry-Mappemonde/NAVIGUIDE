@@ -18,9 +18,11 @@ export function stopMatch(name, query) {
   return n === q || n.includes(q) || q.includes(n.split(" (")[0]);
 }
 
-function etaDayLabel(iso, lang) {
+/** Date courte ; vide si iso absent, invalide ou année ≤ 1970 (`new Date(null)`). */
+export function etaDayLabel(iso, lang) {
+  if (iso == null || iso === "") return "";
   const a = new Date(iso);
-  if (Number.isNaN(a.getTime())) return "";
+  if (Number.isNaN(a.getTime()) || a.getUTCFullYear() <= 1970) return "";
   return a.toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", {
     day: "numeric",
     month: "short",
@@ -85,7 +87,7 @@ export function isEtaPreparing(eta) {
 }
 
 export function etaReasonLabel(eta, t) {
-  if (isEtaPreparing(eta)) return "";
+  if (isEtaPreparing(eta)) return t("etaReasonPreparing");
   const raw = `${eta?.reason || ""} ${eta?.detail || ""}`.toLowerCase();
   if (!raw.trim()) return "";
   if (raw.includes("quota") || raw.includes("429") || raw.includes("limit exceeded")) {
@@ -104,7 +106,7 @@ export function etaReasonLabel(eta, t) {
 }
 
 export function formatEtaUnavailable(eta, t, lang = "fr") {
-  if (!eta || Number(eta.members) > 0 || isEtaPreparing(eta)) return "";
+  if (!eta || Number(eta.members) > 0) return "";
   const reason = etaReasonLabel(eta, t);
   if (!reason) return "";
   const date = etaDayLabel(eta.nextRetry, lang);
@@ -131,11 +133,55 @@ export function formatEtaRangeTitle(eta, t) {
 }
 
 export function nextStopFromMarks(marks, nowMs = Date.now()) {
-  for (const m of marks || []) {
+  const list = marks || [];
+  for (const m of list) {
     const ts = Date.parse(m?.iso || "");
-    if (Number.isFinite(ts) && ts > nowMs) return m.name || "";
+    if (!Number.isFinite(ts) || ts <= nowMs || !m?.name) continue;
+    const film = Number(m.filmNm ?? m.nm) || 0;
+    const laterHomonym = list.some((o) => (
+      o !== m && o?.name === m.name && (Number(o.filmNm ?? o.nm) || 0) > film + 1
+    ));
+    if (laterHomonym) continue;
+    return m.name;
   }
   return "";
+}
+
+/** Dates d'horloge sur les rangées : jamais la date de retour sur le premier homonyme. */
+export function attachClockIso(marks, clockMarks) {
+  const clock = clockMarks || [];
+  const list = marks || [];
+  return list.map((m) => {
+    const film = Number(m.filmNm ?? m.nm) || 0;
+    const byFilm = clock.find((c) => (
+      Math.abs((Number(c.filmNm ?? c.nm) || 0) - film) < 0.6
+      && (!m.name || !c.name || c.name === m.name)
+    ));
+    if (byFilm) return { ...m, iso: byFilm.iso ?? m.iso, holdHours: byFilm.holdHours ?? m.holdHours };
+    const named = clock.filter((c) => c.name && m.name && c.name === m.name);
+    if (!named.length) return m;
+    let best = null;
+    for (const c of named) {
+      const d = Math.abs((Number(c.filmNm ?? c.nm) || 0) - film);
+      if (!best || d < best.d) best = { c, d };
+    }
+    const homonyms = list.filter((x) => x.name && m.name && x.name === m.name).length;
+    if (homonyms <= 1 || best.d <= 400) {
+      return { ...m, iso: best.c.iso ?? m.iso, holdHours: best.c.holdHours ?? m.holdHours };
+    }
+    return m;
+  });
+}
+
+/** Rangée de la prochaine escale (iso > maintenant), jamais le playhead. */
+export function nextStopRowIndex(rows, marks, nowMs = Date.now()) {
+  const next = nextStopFromMarks(marks, nowMs);
+  if (!next) return -1;
+  return (rows || []).findIndex((r) => {
+    if (!stopMatch(r.name, next)) return false;
+    const ts = Date.parse(r.mark?.iso || r.iso || "");
+    return !Number.isFinite(ts) || ts > nowMs;
+  });
 }
 
 export function nextEtaRetryMs(attempt) {
@@ -352,8 +398,8 @@ export function etaDisplayFromResponse(body) {
   const ready = etaFromResponse(body);
   if (ready) return ready;
   if (!body || Number(body.members || 0) > 0) return null;
-  if (isEtaPreparing(body)) return null;
-  if (body.status === "unavailable" || (body.reason && body.nextRetry)) return body;
+  if (isEtaPreparing(body)) return body;
+  if (body.status === "unavailable" || body.reason) return body;
   return null;
 }
 

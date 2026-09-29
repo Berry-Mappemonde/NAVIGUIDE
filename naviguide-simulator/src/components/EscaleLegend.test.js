@@ -45,7 +45,7 @@ describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
     assert.match(src, /formatEtaRangeTitle/);
     assert.match(src, /useOfficialEta/);
     assert.match(src, /nextStopFromMarks/);
-    assert.match(src, /stopMatch/);
+    assert.match(src, /nextStopRowIndex/);
     assert.match(src, /nextIndex/);
     assert.match(src, /title=\{etaTitle/);
   });
@@ -56,6 +56,15 @@ describe("EscaleLegend — fourchette ou raison (lot RG17)", () => {
     assert.match(src, /data-testid="eta-range"/);
     assert.match(src, /formatEtaRange/);
     assert.doesNotMatch(src, /en préparation/);
+  });
+});
+
+describe("EscaleLegend — fourchette sur la prochaine (lot RC24)", () => {
+  it("pose eta-range sur nextStopFromMarks, pas le playhead", () => {
+    assert.match(src, /nextStopRowIndex/);
+    assert.match(src, /nextStopFromMarks/);
+    assert.doesNotMatch(src, /playheadNext/);
+    assert.doesNotMatch(src, /nextIndex = current \+ 1/);
   });
 });
 

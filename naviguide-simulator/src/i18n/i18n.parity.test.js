@@ -57,8 +57,12 @@ describe("i18n parity (lot F5)", () => {
   it("lot RG17 — ligne de raison quand la fourchette manque", () => {
     assert.equal(fr.etaUnavailable, "fourchette indisponible — {reason}, nouvel essai le {date}");
     assert.equal(en.etaUnavailable, "arrival window unavailable — {reason}, retry on {date}");
+    assert.equal(fr.etaUnavailableShort, "fourchette indisponible — {reason}");
+    assert.equal(en.etaUnavailableShort, "arrival window unavailable — {reason}");
     assert.equal(fr.etaReasonQuota, "quota Open-Meteo atteint");
     assert.equal(en.etaReasonQuota, "Open-Meteo quota reached");
+    assert.equal(fr.etaReasonPreparing, "en préparation");
+    assert.equal(en.etaReasonPreparing, "preparing");
   });
 
   it("lot RE6 — bandeau climato : source du repli global", () => {
