@@ -650,6 +650,41 @@ def _coast_port_short(name: str) -> str:
     return short_name(raw)
 
 
+_GALICE_PAIR_RE = re.compile(r"camari[nñ]as|mux[ií]a", re.I)
+
+
+def _coast_port_is_listed(name: str) -> bool:
+    raw = str(name or "").strip()
+    if not raw:
+        return False
+    return any(rx.search(raw) for rx, _spoken in _COAST_PORT_SHORT)
+
+
+def _prefer_coast_ports(ports: list[str], geo: dict | None) -> list[str]:
+    """Au plus deux ports. Groupe Galice : Muxía et Camariñas tiennent ensemble."""
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for p in ports:
+        label = str(p).strip()
+        key = label.casefold()
+        if not label or key in seen:
+            continue
+        seen.add(key)
+        uniq.append(label)
+    if len(uniq) <= 2:
+        return uniq
+    geo_fr = ((geo or {}).get("fr") or "").casefold()
+    if "galice" in geo_fr:
+        pair = [p for p in uniq if _GALICE_PAIR_RE.search(p)]
+        if len(pair) >= 2:
+            return pair[:2]
+        rest = [p for p in uniq if p not in pair]
+        return (pair + rest)[:2]
+    listed = [p for p in uniq if _coast_port_is_listed(p)]
+    other = [p for p in uniq if p not in listed]
+    return (listed + other)[:2]
+
+
 def _is_coast_source(change: dict) -> bool:
     """Jalon de côte : kind coast, port du stock, ou marina dont le titre porte un lieu connu."""
     kind = str(change.get("kind") or "")
@@ -805,8 +840,8 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
                     continue
                 seen.add(k)
                 ports.append(p)
-        ports = ports[:2]
         geo = first.get("geo")
+        ports = _prefer_coast_ports(ports, geo if isinstance(geo, dict) else None)
         merged.append({
             **first,
             "id": first.get("id") or f"coast:{ports[0] if ports else first.get('tMs')}",
@@ -818,8 +853,14 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
             "geo": geo,
         })
     by_day: dict[str, dict] = {}
+    islands: list[dict] = []
     rank = {"strait": 3, "island": 2, "coast": 1}
     for c in merged:
+        # Île (Sardaigne, Corse…) : un jalon par géographie, jamais écrasé
+        # le même jour par un port d'eaux italiennes / françaises.
+        if (c.get("geo") or {}).get("kind") == "island":
+            islands.append(c)
+            continue
         day = _utc_day(c) or f"_{len(by_day)}"
         prev = by_day.get(day)
         if prev is None:
@@ -829,7 +870,10 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
         prev_r = rank.get((prev.get("geo") or {}).get("kind") or "", 0)
         if cur_r > prev_r or (cur_r == prev_r and len(c.get("ports") or []) > len(prev.get("ports") or [])):
             by_day[day] = c
-    return [by_day[k] for k in sorted(by_day)]
+    out = list(islands)
+    out.extend(by_day[k] for k in sorted(by_day))
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return out
 
 
 def _heading_deg_at(
@@ -4429,6 +4473,12 @@ _KEEP_SENT = re.compile(
     re.I,
 )
 
+# RC19 : Galice (Muxía, Camariñas) et Sardaigne ne cèdent pas la place aux eaux.
+_RG2_LANDMARK_SENT = re.compile(
+    r"Galice|Galicia|Mux[ií]a|Camari[nñ]as|Sardaigne|Sardinia|Porto Torres",
+    re.I,
+)
+
 
 def _trim_sentence_rank(sent: str) -> int:
     """0 = ne jamais retirer (AMP, projet, ouverture, escales).
@@ -4436,7 +4486,7 @@ def _trim_sentence_rank(sent: str) -> int:
     2 = P3/P4 (côtes, climo, stations) et le reste — d'abord.
     """
     s = sent or ""
-    if _AMP_OR_PROJECT_SENT.search(s) or _CORE_KEEP_SENT.search(s):
+    if _AMP_OR_PROJECT_SENT.search(s) or _CORE_KEEP_SENT.search(s) or _RG2_LANDMARK_SENT.search(s):
         return 0
     if _WATERS_SENT.search(s):
         return 1

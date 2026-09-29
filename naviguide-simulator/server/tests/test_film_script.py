@@ -1615,6 +1615,42 @@ def test_stock_ports_and_marinas_become_named_coasts():
     assert times == sorted(times)
 
 
+def test_rg2_coast():
+    """RC19 : Muxía+Camariñas ensemble ; île Sardaigne pas écrasée le même jour."""
+    coasts = [
+        {"id": "cor", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T10:00:00Z"),
+         "t": "2026-05-16T10:00:00Z", "title": "La Coruña", "fact": "La Coruña (6 nm)"},
+        {"id": "cam", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T12:00:00Z"),
+         "t": "2026-05-16T12:00:00Z", "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+        {"id": "mux", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T14:00:00Z"),
+         "t": "2026-05-16T14:00:00Z", "title": "Muxía", "fact": "Muxía (3 nm)"},
+        {"id": "cal", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T09:00:00Z"),
+         "t": "2026-05-24T09:00:00Z", "title": "Calvi", "fact": "Calvi (6 nm)"},
+        {"id": "bas", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T09:30:00Z"),
+         "t": "2026-05-24T09:30:00Z", "title": "Bastia", "fact": "Bastia (8 nm)"},
+        {"id": "ptt", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T10:00:00Z"),
+         "t": "2026-05-24T10:00:00Z", "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
+        {"id": "liv", "kind": "port", "score": 2, "tMs": _ms("2026-05-24T11:00:00Z"),
+         "t": "2026-05-24T11:00:00Z", "title": "Livorno", "fact": "Livorno (12 nm)"},
+    ]
+    dosed = dose_coast_changes(coasts, span_ms=11 * 86_400_000)
+    blob = " ".join(coast_sentence(c, "fr") for c in dosed)
+    assert "zone économique exclusive" not in blob
+    assert "Galice" in blob and "Camariñas" in blob and "Muxía" in blob
+    galice = next(
+        c for c in dosed
+        if "Camariñas" in " ".join(c.get("ports") or [])
+        or "Galice" in (c.get("title") or "")
+        or ((c.get("geo") or {}).get("fr") == "la Galice")
+    )
+    ports = galice.get("ports") or []
+    named = [p for p in ports if re.search(r"camari[nñ]as|mux[ií]a", p, re.I)]
+    assert len(named) == 2
+    assert not any(re.search(r"coru[nñ]a", p, re.I) for p in ports)
+    assert "Sardaigne" in blob and "Porto Torres" in blob
+    assert "Corse" in blob or "Calvi" in blob
+
+
 def _utc_day_from(change: dict) -> str:
     from film_script import _utc_day
     return _utc_day(change)
@@ -1634,6 +1670,9 @@ def test_rg2_film_names_route_and_heading():
                 {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
                  "fact": "Spanish Exclusive Economic Zone"},
             ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 35, "t": "2026-05-16T10:00:00Z", "signature": "s35", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "La Coruña", "fact": "La Coruña (6 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
             {"seq": 4, "t": "2026-05-16T12:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
                 {"kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (4 nm)"},
             ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
@@ -1655,6 +1694,8 @@ def test_rg2_film_names_route_and_heading():
             {"seq": 9, "t": "2026-05-24T10:00:00Z", "signature": "s9", "legIdx": 1, "changes": [
                 {"kind": "zee-enter", "score": 2, "title": "Italian Exclusive Economic Zone",
                  "fact": "Italian Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Calvi", "fact": "Calvi (6 nm)"},
+                {"kind": "coast", "score": 2, "title": "Bastia", "fact": "Bastia (8 nm)"},
                 {"kind": "coast", "score": 2, "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
             ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 45}}},
             {"seq": 10, "t": "2026-05-25T08:00:00Z", "signature": "s10", "legIdx": 1, "changes": [
@@ -1674,9 +1715,30 @@ def test_rg2_film_names_route_and_heading():
     assert "zones économiques exclusives" not in blob
     assert blob.find("espagnoles") < blob.find("portugaises") < blob.find("marocaines")
     assert "Galice" in blob
+    assert "Muxía" in blob
+    assert "Camariñas" in blob
     assert "Gibraltar" in blob
-    assert "Sardaigne" in blob or "Corse" in blob
+    assert "Sardaigne" in blob
     assert "cap au sud-ouest" in blob
+
+
+def test_rg2_island_survives_waters_trim():
+    """RC19 : la Sardaigne n'est pas retirée pour garder les eaux italiennes / françaises."""
+    head = "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest."
+    arrival = "Arrivée à Ajaccio le 26 mai."
+    island = "Le 24 mai, la Sardaigne — Porto Torres."
+    galice = "Le 17 mai, le bateau longe la Galice — Camariñas, Muxía."
+    waters = [
+        "Le 24 mai, les eaux italiennes.",
+        "Le 25 mai, les eaux françaises.",
+    ]
+    extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
+    blob = " ".join([head, *waters, galice, island, *extra, arrival])
+    assert len(blob) > 360 * 1.1
+    out = fit_chapter_text(blob, 360, [], "fr")
+    assert "Sardaigne" in out and "Porto Torres" in out
+    assert "Muxía" in out and "Galice" in out
+    assert "Port-39" not in out
 
 
 def test_chaluts_never_spoken_as_amp():

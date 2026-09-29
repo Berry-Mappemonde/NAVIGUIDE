@@ -7,20 +7,24 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
-const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg2");
-mkdirSync(recetteDir, { recursive: true });
+const recetteDirs = [
+  join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg2"),
+  join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc19"),
+];
+for (const dir of recetteDirs) mkdirSync(dir, { recursive: true });
 
-const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`),
+const shot = (page, name) => Promise.all(recetteDirs.map((dir) => page.screenshot({
+  path: join(dir, `${name}.jpg`),
   type: "jpeg",
   quality: 70,
   fullPage: false,
-});
+})));
 
 const JARGON = /zones? économiques? exclusives?|exclusive economic zones?/i;
 const WATERS_ES = /eaux espagnoles|Spanish waters/i;
 const GALICE = /Galice|Galicia/i;
-const GIBRALTAR = /Gibraltar/i;
+const MUXIA = /Muxía|Muxia/i;
+const SARDAIGNE = /Sardaigne|Sardinia|Porto Torres/i;
 const DEPART_AJACCIO = /départ vers Ajaccio|departure for Ajaccio/i;
 
 async function dismissNotForNav(page) {
@@ -93,7 +97,8 @@ test("lot RG2 — eaux, côtes, cap : pas de jargon ZEE", async ({ page }) => {
   if (!apiUp) {
     await expect(start).toBeDisabled();
     await expect(page.getByTestId("film-subtitle")).toHaveCount(0);
-    await shot(page, "01-gibraltar");
+    await shot(page, "01-galice-muxia");
+    await shot(page, "02-sardaigne");
     return;
   }
 
@@ -105,7 +110,8 @@ test("lot RG2 — eaux, côtes, cap : pas de jargon ZEE", async ({ page }) => {
       type: "film vide",
       description: "GET /voyage/official/film sans chapitres — assertions RG2 sautées",
     });
-    await shot(page, "01-gibraltar");
+    await shot(page, "01-galice-muxia");
+    await shot(page, "02-sardaigne");
     return;
   }
 
@@ -117,11 +123,14 @@ test("lot RG2 — eaux, côtes, cap : pas de jargon ZEE", async ({ page }) => {
       type: "stock pré-RG2",
       description: "film servi encore à l'ancienne clé — remplisseur doit recalculer (FILM_SCRIPT_REV=rg2)",
     });
-    await shot(page, "01-gibraltar");
+    await shot(page, "01-galice-muxia");
+    await shot(page, "02-sardaigne");
     return;
   }
 
   expect(blob, "jamais le jargon ZEE").not.toMatch(JARGON);
+  expect(blob, "Muxía dans la phrase Galice si le stock est RG2-prêt").toMatch(MUXIA);
+  expect(blob, "Sardaigne (ou Porto Torres) avant Ajaccio si le stock est RG2-prêt").toMatch(SARDAIGNE);
 
   if (WATERS_ES.test(blob) && /eaux portugaises|Portuguese waters/i.test(blob)) {
     expect(blob.indexOf("espagnoles"), "ZEE dans l'ordre des dates").toBeLessThan(
@@ -142,11 +151,19 @@ test("lot RG2 — eaux, côtes, cap : pas de jargon ZEE", async ({ page }) => {
 
   await page.evaluate((reSrc) => {
     const list = window.__naviguideFilm?.chapters || [];
+    const iMux = list.findIndex((c) => /mux[ií]a|galice|galicia/i.test(c.text || ""));
     const iGib = list.findIndex((c) => /gibraltar|algeciras|tanger/i.test(c.text || ""));
     const re = new RegExp(reSrc, "i");
     const iDep = list.findIndex((c) => re.test(c.text || ""));
-    const i = iGib >= 0 ? iGib : iDep;
+    const i = iMux >= 0 ? iMux : (iGib >= 0 ? iGib : iDep);
     if (i >= 0) window.__naviguideFilm.seekChapter(i);
   }, DEPART_AJACCIO.source);
-  await shot(page, "01-gibraltar");
+  await shot(page, "01-galice-muxia");
+
+  await page.evaluate(() => {
+    const list = window.__naviguideFilm?.chapters || [];
+    const i = list.findIndex((c) => /sardaigne|sardinia|porto torres/i.test(c.text || ""));
+    if (i >= 0) window.__naviguideFilm.seekChapter(i);
+  });
+  await shot(page, "02-sardaigne");
 });
