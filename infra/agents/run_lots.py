@@ -2143,6 +2143,11 @@ def main() -> None:
     # Lots correctifs déjà en file (réviseur d'une tranche précédente, ou ajoutés à la main) : pris dès le départ,
     # y compris quand tous les lots de l'intervalle sont déjà faits (reprise après interruption).
     pending.extend(queued_lots(state, {l.id for l in pending}))
+    # Reprise au milieu d'une revue de nuit (pause du porteur pendant l'attente du bot, 29 sept. 10:06) : la tranche
+    # mémorisée est déjà pleine — on la relit AVANT de lancer le lot suivant, au lieu d'attendre qu'il s'y ajoute.
+    if args.resume and args.review_every and len(since_review) >= args.review_every and not args.dry_run:
+        log(f"reprise : tranche {since_review} pas encore relue — revue de nuit d'abord")
+        night_review()
 
     while True:
         while pending:
