@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { followMinZoom, worldWidthPx } from "./zoomFloor.js";
+import { followMinZoom, worldViewZoom, worldWidthPx } from "./zoomFloor.js";
 
 describe("zoomFloor — plancher de dézoom en Suivre (27 sept.)", () => {
   it("le monde tient au plus une fois dans l'écran, au pas de zoom de la carte", () => {
@@ -17,5 +17,11 @@ describe("zoomFloor — plancher de dézoom en Suivre (27 sept.)", () => {
     assert.equal(followMinZoom({ x: 1024, y: 700 }), 2);
     assert.equal(followMinZoom(null), 0);
     assert.equal(followMinZoom({ x: 0, y: 0 }, 0.25, 1), 1);
+  });
+
+  it("RG15 — vue monde une fois : jamais sous le plancher (1280 px → 2.5)", () => {
+    assert.equal(worldViewZoom({ x: 1280, y: 800 }, 0.25, 2), 2.5);
+    assert.equal(worldViewZoom({ x: 1024, y: 700 }, 0.25, 2), 2);
+    assert.ok(worldWidthPx(worldViewZoom({ x: 1280, y: 800 }, 0.25, 2)) >= 1280);
   });
 });

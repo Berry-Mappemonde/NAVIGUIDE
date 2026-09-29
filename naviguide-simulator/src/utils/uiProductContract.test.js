@@ -30,7 +30,7 @@ describe("contrat UI produit", () => {
     const scene = read("../map/MapSceneController.js");
     assert.match(app, /sceneApiRef\.current\?\.showWorld/);
     assert.match(scene, /showWorld\(/);
-    assert.match(scene, /setView\(WORLD_CENTER, WORLD_ZOOM/);
+    assert.match(scene, /setView\(WORLD_CENTER, worldZ/);
   });
 
   it("lot RE1 : Suivre → Simulation quitte le Cinéma et ouvre les deux panneaux", () => {

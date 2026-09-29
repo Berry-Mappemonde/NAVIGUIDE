@@ -88,8 +88,8 @@ describe("MapSceneController — caméra film (lot F1)", () => {
   });
 });
 
-describe("MapSceneController — zoom (lot U)", () => {
-  it("n'orchestre pas un recalcul d'offsets pendant zoomanim ; attend zoomend + 250 ms", () => {
+describe("MapSceneController — zoom (lot U / RG15)", () => {
+  it("n'orchestre pas un recalcul d'offsets pendant zoomanim ; zoomend recalcule tout de suite", () => {
     assert.match(src, /map\.on\("zoomanim"/);
     assert.match(src, /map\.on\("zoomend"/);
     assert.match(src, /reason: "zoom"/);
@@ -101,9 +101,17 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.doesNotMatch(anim, /scheduleWaypoints\(/);
     const zoomEnd = src.slice(src.indexOf("this.onZoomEnd = "), src.indexOf("this.onMoveEnd = "));
     assert.match(zoomEnd, /scheduleWaypoints\(\{ reason: "zoom" \}\)/);
+    const schedAt = src.indexOf("  scheduleWaypoints({");
+    const schedEnd = src.indexOf("  syncInitialCamera()", schedAt);
+    const sched = src.slice(schedAt, schedEnd);
+    assert.match(sched, /reason === "zoom"/);
+    assert.match(sched, /this\.syncWaypoints\(\)/);
+    assert.doesNotMatch(sched, /markerOffsetDelay\([\s\S]{0,40}zoom/);
     assert.match(src, /preferCanvas:\s*true/);
     assert.match(src, /divIconCache/);
-    assert.match(src, /flagWorldLngsForView/);
+    assert.match(src, /stabilizeWorldLng/);
+    assert.match(src, /worldCopyKey/);
+    assert.match(src, /offsetToIconAnchor/);
     assert.match(src, /zoomControl:\s*false/);
     assert.match(src, /position:\s*"bottomright"/);
   });
@@ -130,6 +138,18 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /drawingPinMetrics\(\)/);
     assert.doesNotMatch(src, /width:10px;height:10px/);
     assert.doesNotMatch(src, /iconSize: \[24, 24\], iconAnchor: \[12, 12\]/);
+  });
+
+  it("RG15 — plancher de dézoom identique hors Suivre (plus de MAP_MIN_ZOOM réservé)", () => {
+    const start = src.indexOf("  applyZoomFloor()");
+    const end = src.indexOf("  liftBoundsForDrawing()");
+    assert.ok(start >= 0 && end > start);
+    const block = src.slice(start, end);
+    assert.match(block, /followMinZoom\(this\.map\.getSize/);
+    assert.doesNotMatch(block, /isSuivre/);
+    assert.doesNotMatch(block, /worldLock/);
+    assert.match(src, /worldViewZoom/);
+    assert.match(src, /sceneWorldZoom/);
   });
 
   it("onMoveEnd ne relance ni /ici ni le récit", () => {
