@@ -10,7 +10,7 @@ const read = (rel) => readFileSync(join(root, rel), "utf8");
 describe("recette A–G (contrats source)", () => {
   it("A — bateau et drapeaux sur la même lon enveloppée que la caméra", () => {
     const scene = read("../map/MapSceneController.js");
-    assert.match(scene, /markerWorldLngs/);
+    assert.match(scene, /stabilizeWorldLng/);
     assert.match(scene, /shouldResnapCamera/);
     assert.match(scene, /cameraLngForBoat/);
     assert.match(scene, /worldCopyJump:\s*false/);

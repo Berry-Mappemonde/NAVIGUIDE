@@ -116,19 +116,45 @@ function flagRect(origin, ox, oy) {
   };
 }
 
+/** Décale l'ancre Leaflet pour que (ox, oy) px restent plantés sur le latlng. */
+export function offsetToIconAnchor(baseAnchor, offset) {
+  const ax = Number(baseAnchor?.[0]) || 0;
+  const ay = Number(baseAnchor?.[1]) || 0;
+  const ox = Number(offset?.[0]) || 0;
+  const oy = Number(offset?.[1]) || 0;
+  return [ax - ox, ay - oy];
+}
+
+/** L'offset précédent reste valable : aucun chevauchement avec les drapeaux déjà posés. */
+export function isOffsetStillClear(origin, offset, placed) {
+  const rect = flagRect(origin, offset[0], offset[1]);
+  for (const other of placed) {
+    if (rectsOverlap(rect, other.rect)) return false;
+  }
+  return true;
+}
+
 /**
  * @param {Array<{lon:number, lat:number, flag?:string}>} points
  * @param {(lon:number, lat:number) => {x:number, y:number}} project
  * @param {Array<{ax:number, ay:number, bx:number, by:number}>} [routeSegs]
+ * @param {Array<[number, number]>} [previous] offsets du zoom précédent (réutilisés s'ils restent clairs)
  * @returns {Array<[number, number]>}
  */
-export function computeMarkerOffsets(points, project, routeSegs = []) {
+export function computeMarkerOffsets(points, project, routeSegs = [], previous = []) {
   const offsets = points.map(() => [0, 0]);
   const placed = [];
 
   for (let i = 0; i < points.length; i++) {
     if (!hasFlag(points[i])) continue;
     const origin = project(points[i].lon, points[i].lat);
+    const prev = Array.isArray(previous[i]) ? capOffset(previous[i][0], previous[i][1]) : null;
+    if (prev && isOffsetStillClear(origin, prev, placed)) {
+      offsets[i] = prev;
+      placed.push({ i, rect: flagRect(origin, prev[0], prev[1]) });
+      continue;
+    }
+
     let best = [0, -36];
     let bestScore = Infinity;
 

@@ -25,6 +25,9 @@ import {
   worldCopyParts,
   worldCopyPolygonCoords,
   WORLD_COPY_LON_BOUND,
+  markerCopyLngs,
+  stabilizeWorldLng,
+  worldCopyKey,
 } from "./geo.js";
 
 /** Officiel Berry (`public/route.geojson`). */
@@ -213,6 +216,31 @@ describe("antimeridian geo", () => {
     assert.equal(copies.length, 3);
     assert.deepEqual(copies[0][0].map(([lon]) => lon), [170, 190, 190, 170, 170]);
     assert.deepEqual(copies[1][0].map(([lon]) => lon), [530, 550, 550, 530, 530]);
+  });
+});
+
+describe("copies monde stables (lot RG15)", () => {
+  it("clé de copie ancrée sur wrap(lon)", () => {
+    assert.equal(worldCopyKey(-176.2036, -176.2036), 0);
+    assert.equal(worldCopyKey(-176.2036, 183.7964), 1);
+    assert.equal(worldCopyKey(166.4572, 166.4572), 0);
+    assert.equal(worldCopyKey(166.4572, -193.5428), -1);
+  });
+
+  it("Wallis : dézoom vers le centre monde ne change pas de copie", () => {
+    const wallis = -176.2036;
+    const atIsland = stabilizeWorldLng(wallis, -176.2, wallis);
+    assert.ok(Math.abs(atIsland - wallis) < 1e-6);
+    const afterOut = stabilizeWorldLng(wallis, 5, atIsland);
+    assert.ok(Math.abs(afterOut - wallis) < 1e-6, `saut vers ${afterOut}`);
+    assert.ok(markerCopyLngs(wallis).some((lng) => Math.abs(lng - 183.7964) < 1e-3));
+  });
+
+  it("Nouméa : dézoom vers le centre monde ne change pas de copie", () => {
+    const noumea = 166.4572;
+    const atIsland = stabilizeWorldLng(noumea, 166.5, noumea);
+    const afterOut = stabilizeWorldLng(noumea, 5, atIsland);
+    assert.ok(Math.abs(afterOut - noumea) < 1e-6, `saut vers ${afterOut}`);
   });
 });
 
