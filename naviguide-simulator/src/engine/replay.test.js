@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
+  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, chapterAnchors, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_VOICE_LOOKAHEAD_CHARS, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
 } from "./replay.js";
 const T0 = "2026-05-15T08:00:00.000Z";
 
@@ -458,5 +458,39 @@ describe("replay — vitesse continue (lot RG12, revue du 28 sept.)", () => {
     }
     assert.equal(ramp, null);
     assert.ok(t >= tQuay - 1, "a rejoint le départ suivant");
+  });
+});
+
+describe("replay — ancres au mot (lot RG14)", () => {
+  it("chapterAnchors garde le charIdx serveur (déjà compensé) et reste monotone", () => {
+    const tA = Date.parse("2026-05-15T12:00:00Z");
+    const tGib = Date.parse("2026-05-21T12:00:00Z");
+    const tB = Date.parse("2026-05-24T12:00:00Z");
+    const text = "Le 21 mai, le détroit de Gibraltar entre Tanger et Algeciras. Arrivée à Ajaccio le 26 mai.";
+    const nameAt = text.indexOf("Gibraltar");
+    const compensated = Math.max(0, nameAt - FILM_VOICE_LOOKAHEAD_CHARS);
+    const lastWord = text.lastIndexOf("mai");
+    const ch = {
+      tA,
+      tB,
+      text,
+      chars: text.length,
+      anchors: [
+        { charIdx: compensated, t: new Date(tGib).toISOString() },
+        { charIdx: Math.max(0, lastWord - FILM_VOICE_LOOKAHEAD_CHARS), t: new Date(tB).toISOString() },
+      ],
+    };
+    const points = chapterAnchors(ch);
+    assert.ok(points.length >= 3);
+    let prev = -1;
+    for (const p of points) {
+      assert.ok(p.charIdx >= prev);
+      prev = p.charIdx;
+    }
+    const atName = points.find((p) => p.charIdx === compensated);
+    assert.ok(atName);
+    assert.equal(atName.t, tGib);
+    const plan = filmPlan({ chapters: [{ ...ch, tA: new Date(tA).toISOString(), tB: new Date(tB).toISOString() }], targetSeconds: 150 });
+    assert.equal(plan.timeAt(0, compensated), tGib);
   });
 });

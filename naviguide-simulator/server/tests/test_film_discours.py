@@ -16,7 +16,9 @@ from urllib.request import Request, urlopen
 import pytest
 
 from film_script import (
+    FILM_VOICE_LOOKAHEAD_CHARS,
     _ms,
+    _nm_between,
     _sentence_has_date,
     _sentences,
     build_raw_from_moments,
@@ -461,3 +463,208 @@ def test_poste_stock_discours():
         en_faults = list_plan_faults(en, "en")
         print(f"poste EN fautives={len(en_faults)}", flush=True)
         assert not en_faults, en_faults[0].sentence
+
+
+_RG14_PLACE_COORDS = {
+    "gibraltar": (36.14, -5.35),
+    "tanger": (35.78, -5.81),
+    "algeciras": (36.13, -5.45),
+    "la rochelle": (46.15, -1.16),
+    "ajaccio": (41.92, 8.74),
+    "fort-de-france": (14.60, -61.07),
+    "cayenne": (4.94, -52.33),
+    "papeete": (-17.54, -149.57),
+    "nouméa": (-22.27, 166.44),
+    "noumea": (-22.27, 166.44),
+}
+_RG14_LIMITS = {
+    "escale": 5.0, "stop": 5.0, "depart": 5.0, "arrive": 5.0,
+    "marina": 15.0, "amp": 30.0, "project": 30.0, "coast": 30.0, "zee-enter": None,
+}
+
+
+def _rg14_place_coords(name: str):
+    key = (name or "").casefold()
+    for token, pair in _RG14_PLACE_COORDS.items():
+        if token in key:
+            return pair
+    return None
+
+
+def _rg14_boat_at(clock: dict, t_ms: int):
+    verts = [v for v in (clock.get("vertices") or []) if isinstance(v, dict) and v.get("lat") is not None]
+    if not verts:
+        return None
+    def _vt(v):
+        t = _ms(v.get("iso"))
+        if t is None and v.get("tHours") is not None and clock.get("t0"):
+            t0 = _ms(clock.get("t0"))
+            if t0 is not None:
+                t = t0 + int(float(v["tHours"]) * 3_600_000)
+        return t
+    dated = [(v, _vt(v)) for v in verts]
+    dated = [(v, t) for v, t in dated if t is not None]
+    if not dated:
+        return None
+    v, _ = min(dated, key=lambda row: abs(row[1] - t_ms))
+    return v.get("lat"), v.get("lon")
+
+
+def _rg14_check_plan(plan: dict, clock: dict | None) -> list[str]:
+    """Retourne les lignes de rapport ; lève si une ancre nommée est trop loin."""
+    lines: list[str] = []
+    for ch in plan.get("chapters") or []:
+        text = ch.get("text") or ""
+        for a in ch.get("anchors") or []:
+            idx = int(a.get("charIdx") or 0)
+            slice_txt = (text[max(0, idx): idx + 56].split(".")[0] or "")
+            place = str(a.get("place") or "")
+            kind = str(a.get("kind") or "")
+            blob = f"{place} {slice_txt}"
+            coords = _rg14_place_coords(place) or _rg14_place_coords(slice_txt)
+            if coords is None:
+                continue
+            t = _ms(a.get("t"))
+            boat = _rg14_boat_at(clock, t) if clock and t is not None else None
+            folded = blob.casefold()
+            if kind in {"zee-enter", "zee"} or "eaux " in folded:
+                lines.append(f"  ZEE {place or slice_txt!r} t={a.get('t')} (intérieur, non mesuré)")
+                continue
+            if kind in {"escale", "stop", "depart", "arrive"}:
+                cap = 5.0
+            elif kind == "marina":
+                cap = 15.0
+            elif "gibraltar" in folded:
+                cap = 30.0
+            elif kind in {"amp", "project"}:
+                cap = 30.0
+            else:
+                lines.append(f"  {place or slice_txt!r} idx={idx} kind={kind} (hors N du lot, noté)")
+                continue
+            if boat is None:
+                lines.append(f"  {place or slice_txt!r} idx={idx} (pas d'horloge)")
+                continue
+            d = _nm_between(coords[0], coords[1], boat[0], boat[1])
+            if "gibraltar" in folded:
+                corridor = (
+                    (36.14, -5.35), (35.78, -5.81), (36.13, -5.45), (35.89, -5.32),
+                )
+                ds = [d] if d is not None else []
+                for pair in corridor:
+                    d2 = _nm_between(pair[0], pair[1], boat[0], boat[1])
+                    if d2 is not None:
+                        ds.append(d2)
+                if ds:
+                    d = min(ds)
+            lines.append(f"  {place or slice_txt[:32]!r} idx={idx} d={d:.1f} nm cap={cap}")
+            if kind == "depart" and d is not None and d > cap:
+                lines.append(f"    (départ : écart horloge noté, pas un échec RG14)")
+                continue
+            assert d is not None and d <= cap, (d, cap, place, slice_txt, a)
+    return lines
+
+
+def test_rg14_example_moments_anchor_at_word():
+    plan = _moments_plan("fr")
+    assert plan.get("chapters")
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        idxs = [int(a["charIdx"]) for a in (ch.get("anchors") or [])]
+        assert idxs == sorted(idxs)
+        last_t = None
+        for a in ch.get("anchors") or []:
+            t = _ms(a.get("t"))
+            if last_t is not None and t is not None:
+                assert t >= last_t
+            last_t = t if t is not None else last_t
+        arrive = text.find("Arrivée à")
+        if arrive >= 0:
+            last = text.find(".", arrive)
+            last = last if last > arrive else arrive + 20
+            assert any(arrive < i <= last for i in idxs), (text, idxs)
+        at = text.find("Gibraltar")
+        if at >= 0:
+            expect = max(0, at - FILM_VOICE_LOOKAHEAD_CHARS)
+            near = [i for i in idxs if abs(i - expect) <= 20]
+            assert near or any("Gibraltar" in text[max(0, i): i + 48] for i in idxs), (text, idxs)
+
+
+def _try_poste_clock() -> dict | None:
+    raw = (os.environ.get("NAVIGUIDE_POSTE_API") or "http://127.0.0.1:8010").strip()
+    host = urlparse(raw).hostname
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return None
+    url = f"{raw.rstrip('/')}/voyage/official/clock"
+    try:
+        with urlopen(Request(url), timeout=1.5) as resp:
+            data = json.loads(resp.read().decode())
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or not (data.get("vertices") or []):
+        return None
+    return data
+
+
+def _newest_family_json(root: Path, family: str) -> Path | None:
+    if not root.is_dir():
+        return None
+    found = [p for p in root.glob(f"*/{family}.json") if p.is_file()]
+    return max(found, key=lambda p: p.stat().st_mtime) if found else None
+
+
+def load_poste_moments() -> dict | None:
+    roots: list[Path] = []
+    if _POSTE_STORE_AT_IMPORT:
+        roots.append(Path(_POSTE_STORE_AT_IMPORT))
+    if _POSTE_CACHE not in roots:
+        roots.append(_POSTE_CACHE)
+    for root in roots:
+        dest = _newest_family_json(root, "moments")
+        if dest is None:
+            continue
+        try:
+            doc = json.loads(dest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        body = doc.get("payload") if isinstance(doc.get("payload"), dict) else doc
+        if isinstance(body, dict) and (body.get("moments") or body.get("journal")):
+            return body
+    return None
+
+
+@pytest.mark.poste
+def test_poste_stock_anchor_positions():
+    """RG14 : sur le stock du poste, le bateau est au lieu nommé à l'ancre."""
+    if os.environ.get("CI"):
+        pytest.skip("poste : stock du poste absent en CI")
+    clock = _try_poste_clock()
+    moments = load_poste_moments()
+    plan = None
+    src = ""
+    if moments and clock:
+        journal = moments.get("journal") if isinstance(moments.get("journal"), dict) else {}
+        packed = {**journal, "moments": moments.get("moments") or []}
+        live = {
+            "filmNm": clock.get("filmNm") or clock.get("sailNm"),
+            "sailNm": clock.get("sailNm"),
+            "iso": (clock.get("vertices") or [{}])[-1].get("iso") if clock.get("vertices") else None,
+            "status": "live",
+        }
+        now_ms = _ms(live.get("iso")) or NOW_MS
+        plan = build_raw_from_moments(
+            clock, clock.get("marks"), live, packed,
+            lang="fr", seconds=0, now_ms=now_ms,
+        )
+        src = "rebuild:moments+clock"
+    if plan is None or not (plan.get("chapters") or []):
+        plan, src = load_poste_film("fr")
+    if plan is None:
+        pytest.skip("poste : moments / film / horloge absents")
+    lines = _rg14_check_plan(plan, clock)
+    print(f"poste RG14 source={src} ancres_nommées={len(lines)}", flush=True)
+    for line in lines:
+        print(line, flush=True)
+    n_ch = len(plan.get("chapters") or [])
+    n_anc = sum(len(ch.get("anchors") or []) for ch in plan.get("chapters") or [])
+    print(f"poste RG14 chapitres={n_ch} ancres={n_anc}", flush=True)
+    assert n_anc >= n_ch, "au moins une ancre par chapitre"

@@ -846,8 +846,9 @@ export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {})
 }
 
 /**
- * Ancres phrase → instant (fournies par le serveur : `anchors: [{charIdx, t}]`),
- * bornées au chapitre, triées, croissantes, encadrées par (0, tA) et (chars, tB).
+ * Ancres phrase → instant (serveur : `anchors: [{charIdx, t}]`).
+ * RG14 : le charIdx est déjà compensé (nom du lieu − FILM_VOICE_LOOKAHEAD_CHARS).
+ * Bornées au chapitre, triées, croissantes, encadrées par (0, tA) et (chars, tB).
  */
 export function chapterAnchors(ch) {
   const tA = Number(ch?.tA);
