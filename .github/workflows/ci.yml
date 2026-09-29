@@ -150,6 +150,15 @@ jobs:
       - name: Résumé d'étape
         if: always()
         run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
+      # Le rapport JSON (quelques dizaines de ko) est toujours conservé : c'est lui qui liste
+      # les « verts avec réserve » (chemins à vide) relus dans docs/SPECS_E2E_TRIAGE_2026-09-29.md.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-json-${{ matrix.shard }}
+          path: naviguide-simulator/test-results/e2e.json
+          retention-days: 3
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
