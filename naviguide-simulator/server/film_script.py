@@ -26,12 +26,15 @@ KIND_GROUP_FRAC = 0.10
 FILM_MIN_EVENTS = 6
 FILM_MAX_EVENTS = 9
 FILM_GAP_FRAC = 0.03
-KIND_RANK = {"wx": 0, "climo": 1, "sci": 2, "amp": 3, "zee": 4, "coast": 4, "poe": 5, "note": 6, "stop": 7}
-SCORED = frozenset({"wx", "climo", "sci", "amp", "zee", "coast", "poe", "note"})
-CANDIDATE_KINDS = frozenset({"stop", "zee", "coast", "amp", "poe", "wx", "climo", "sci", "note"})
-BUBBLE_KINDS = frozenset({"stop", "zee", "coast", "wx", "amp", "sci", "climo"})
+KIND_RANK = {"wx": 0, "climo": 1, "sci": 2, "amp": 3, "project": 3, "zee": 4, "coast": 4, "poe": 5, "note": 6, "stop": 7}
+SCORED = frozenset({"wx", "climo", "sci", "amp", "project", "zee", "coast", "poe", "note"})
+CANDIDATE_KINDS = frozenset({"stop", "zee", "coast", "amp", "project", "poe", "wx", "climo", "sci", "note"})
+BUBBLE_KINDS = frozenset({"stop", "zee", "coast", "wx", "amp", "project", "sci", "climo"})
 ROUTE_NAMING_KINDS = frozenset({"zee-enter", "coast", "port"})
 SHORT_CROSSING_MS = 3 * 86_400_000
+AMP_NEAR_NM = 30.0
+PROJECT_NEAR_NM = 30.0
+LONG_AMP_PROJECT = 3
 CLUSTER_MS = 86_400_000
 SKIPPER_GALE_KT = 34.0
 HS_BUBBLE_M = 3.0
@@ -41,18 +44,19 @@ CONNECTORS = {
 }
 CHANGE_PRIORITY = {
     "escale": 0, "approche": 1, "alert-on": 2, "station": 3,
-    "zee-enter": 4, "coast": 4, "amp": 5, "marina": 6, "cyclone": 7, "culture": 8,
+    "zee-enter": 4, "coast": 4, "amp": 5, "project": 5, "marina": 6, "cyclone": 7, "culture": 8,
     "port": 9, "regime": 10, "alert-off": 11,
 }
 BUBBLE_KIND = {
     "escale": "stop", "approche": "stop", "alert-on": "wx", "alert-off": "wx",
-    "zee-enter": "zee", "coast": "coast", "station": "sci", "amp": "amp", "regime": "climo",
+    "zee-enter": "zee", "coast": "coast", "station": "sci", "amp": "amp",
+    "project": "project", "regime": "climo",
     "marina": "stop", "cyclone": "climo", "culture": "stop", "port": "poe",
 }
 AROUND_TO_KIND = {
     "marina": "marina", "science": "station", "station": "station",
-    "mpa": "amp", "amp": "amp", "cyclone": "cyclone", "culture": "culture",
-    "port": "port",
+    "mpa": "amp", "amp": "amp", "project": "project", "cyclone": "cyclone",
+    "culture": "culture", "port": "port",
 }
 NAMELESS_CYCLONE = re.compile(
     r"traces de cyclone|cyclone tracks|saison cyclonique|cyclone season|ce mois-ci|this month",
@@ -67,7 +71,7 @@ DIST_UNIT_RE = re.compile(
 DECIMAL_RE = re.compile(r"\d+[.,]\d{1,2}(?!\d)")
 GENERIC_CYCLONE = frozenset({"cyclone", "cyclones"})
 COLOR_KINDS = frozenset({
-    "station", "zee-enter", "coast", "amp", "regime", "marina", "cyclone", "culture", "port",
+    "station", "zee-enter", "coast", "amp", "project", "regime", "marina", "cyclone", "culture", "port",
 })
 FILM_CHAPTER_MAX_FREE = 10
 FILM_FREE_MAX_WORDS = 800
@@ -80,6 +84,7 @@ GENERIC_TITLES = frozenset({
     "station croisée", "station", "stations", "croisée", "croisee",
     "marina croisée", "marina", "marinas",
     "aire marine protégée", "amp", "mpa",
+    "projet", "project", "projets",
     "formalités d'entrée", "ports d'entrée", "port d'entrée",
     "autour du bateau", "zee",
 })
@@ -816,6 +821,9 @@ def change_on_route(change: dict) -> bool:
     if kind in ALWAYS_KINDS:
         return True
     nm = change_distance_nm(change)
+    if kind == "project" or _is_amp_change(change):
+        limit = PROJECT_NEAR_NM if kind == "project" else AMP_NEAR_NM
+        return nm is None or nm <= limit
     if nm is not None and nm > ROUTE_NEAR_NM:
         return False
     return True
@@ -845,15 +853,119 @@ def station_name_speakable(name: str) -> bool:
 
 
 def alert_is_amp(change: dict) -> bool:
-    return bool(IUCN_RE.search(f"{change.get('fact') or ''} {change.get('title') or ''}"))
+    """AMP réelle seulement — IUCN / WDPA / parc ; jamais Chaluts / Pétoncles / deposit."""
+    from ici_engine import is_protected_amp  # noqa: PLC0415
+    return is_protected_amp({
+        "name": change.get("title") or change.get("name"),
+        "title": change.get("title"),
+        "fact": change.get("fact"),
+        "iucn_cat": change.get("iucn_cat") or change.get("iucn"),
+        "designation": change.get("designation"),
+        "site_id": change.get("site_id") or change.get("id"),
+    })
 
 
 def alert_amp_name(change: dict) -> str:
     """« Pertuis charentais - Rochebonne (12,2 nm): IUCN Unassigned; » → « Pertuis charentais - Rochebonne »."""
+    from ici_engine import spoken_amp_name  # noqa: PLC0415
     fact = str(change.get("fact") or "")
     head = re.split(r"\s*\(\s*\d", fact, maxsplit=1)[0]
     head = re.split(r":\s*IUCN", head, maxsplit=1, flags=re.I)[0]
-    return clean_spoken_label(head.strip(" ;:-"))
+    raw = spoken_amp_name(head.strip(" ;:-")) or clean_spoken_label(head.strip(" ;:-"))
+    return spoken_amp_name(raw) or raw
+
+
+def _is_amp_change(change: dict) -> bool:
+    kind = str(change.get("kind") or "")
+    if kind == "amp":
+        from ici_engine import is_fishing_amp  # noqa: PLC0415
+        return not is_fishing_amp({
+            "name": change.get("title") or change.get("name"),
+            "title": change.get("title"),
+            "fact": change.get("fact"),
+        })
+    if kind == "alert-on":
+        return alert_is_amp(change)
+    return False
+
+
+_FR_SMALL = (
+    "zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf",
+    "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize",
+    "dix-sept", "dix-huit", "dix-neuf",
+)
+_EN_SMALL = (
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen",
+)
+
+
+def _spoken_int(n: int, lang: str) -> str:
+    if _en(lang):
+        if 0 <= n <= 19:
+            return _EN_SMALL[n]
+        if n == 20:
+            return "twenty"
+        if n == 21:
+            return "twenty-one"
+        if 22 <= n <= 29:
+            return f"twenty-{_EN_SMALL[n - 20]}"
+        if n == 30:
+            return "thirty"
+        return str(n)
+    if 0 <= n <= 19:
+        return _FR_SMALL[n]
+    if n == 20:
+        return "vingt"
+    if n == 21:
+        return "vingt et un"
+    if 22 <= n <= 29:
+        return f"vingt-{_FR_SMALL[n - 20]}"
+    if n == 30:
+        return "trente"
+    return str(n)
+
+
+def spoken_distance(nm: Any, lang: str = "fr") -> str:
+    """« douze milles » / « twelve miles » — chiffres 1–30 en toutes lettres."""
+    try:
+        v = int(round(float(nm)))
+    except (TypeError, ValueError):
+        return ""
+    if v < 0:
+        return ""
+    word = _spoken_int(v, lang)
+    if _en(lang):
+        unit = "mile" if v == 1 else "miles"
+        return f"{word} {unit}"
+    unit = "mille" if v == 1 else "milles"
+    return f"{word} {unit}"
+
+
+def dose_amp_changes(changes: list[dict], span_ms: int) -> list[dict]:
+    """Au plus une AMP par étape courte, trois par traversée longue ; plus proche d'abord."""
+    amps = [c for c in changes if _is_amp_change(c)]
+    amps.sort(key=lambda c: (
+        change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+        c.get("tMs") or 0,
+    ))
+    limit = 1 if span_ms < SHORT_CROSSING_MS else LONG_AMP_PROJECT
+    return amps[:limit]
+
+
+def dose_project_changes(changes: list[dict], span_ms: int) -> list[dict]:
+    """Au plus un projet par étape courte, trois par traversée ; gold_on puis plus proche."""
+    projs = [c for c in changes if str(c.get("kind") or "") == "project"]
+    def gold(c: dict) -> int:
+        return 0 if c.get("gold_on") in (True, 1, "1", "true", "True") else 1
+    projs.sort(key=lambda c: (
+        gold(c),
+        change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+        c.get("tMs") or 0,
+    ))
+    limit = 1 if span_ms < SHORT_CROSSING_MS else LONG_AMP_PROJECT
+    return projs[:limit]
 
 
 def change_is_speakable(change: dict) -> bool:
@@ -867,6 +979,14 @@ def change_is_speakable(change: dict) -> bool:
         if alert_is_amp(change):
             return bool(alert_amp_name(change))
         return True
+    if kind == "amp":
+        from ici_engine import is_fishing_amp, spoken_amp_name  # noqa: PLC0415
+        if is_fishing_amp({"name": change.get("title"), "fact": change.get("fact")}):
+            return False
+        name = spoken_amp_name(change_place_name(change) or change.get("title") or "")
+        return bool(name) and not _is_generic_title(name, "amp") and len(name) > 2
+    if kind == "project":
+        return bool(change_place_name(change))
     if kind == "cyclone":
         return bool(cyclone_name_year(change)[0])
     if kind == "culture":
@@ -1421,7 +1541,7 @@ def score_event(entry: dict) -> float:
         peak = _fact_num(entry, "maxWindKnots", "windKnots") or 0.0
         dur = _fact_num(entry, "hours") or 6.0
         return peak * dur
-    return {"climo": 50, "sci": 40, "amp": 30, "zee": 20, "poe": 10, "note": 5, "stop": 1}.get(kind, 0)
+    return {"climo": 50, "sci": 40, "amp": 30, "project": 30, "zee": 20, "poe": 10, "note": 5, "stop": 1}.get(kind, 0)
 
 
 def is_sea_chapter(ch: dict) -> bool:
@@ -1460,6 +1580,8 @@ def bubble_score(
             return 3
         return None
     if kind == "amp":
+        return 1
+    if kind == "project":
         return 1
     if kind == "sci":
         return 2
@@ -2108,10 +2230,34 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
             f"Le {when}, la route est passée{nm_bit} de {name}."
         )
     if ev.get("kind") == "amp":
+        from ici_engine import spoken_amp_name  # noqa: PLC0415
+        spoken = spoken_amp_name(name) or name
+        nm = _fact_num(e, "nm")
+        dist = spoken_distance(nm, lang) if nm is not None else ""
+        if dist:
+            return (
+                f"On {when}, {dist} away, the marine protected area {spoken}."
+                if en else
+                f"Le {when}, à {dist}, l'aire marine protégée {spoken}."
+            )
         return (
-            f"On {when}, marine protected area within reach: {name}."
+            f"On {when}, marine protected area: {spoken}."
             if en else
-            f"Le {when}, aire marine protégée à portée : {name}."
+            f"Le {when}, aire marine protégée : {spoken}."
+        )
+    if ev.get("kind") == "project":
+        nm = _fact_num(e, "nm")
+        dist = spoken_distance(nm, lang) if nm is not None else ""
+        if dist:
+            return (
+                f"On {when}, {dist} away, project {name}."
+                if en else
+                f"Le {when}, à {dist}, le projet {name}."
+            )
+        return (
+            f"On {when}, project {name}."
+            if en else
+            f"Le {when}, le projet {name}."
         )
     if ev.get("kind") == "zee":
         if not name or NO_DATA_RE.search(name):
@@ -2686,7 +2832,7 @@ def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for kind, group in by_kind.items():
         if len(group) < 3:
             continue
-        if kind in {"alert-on", "marina", "port", "amp", "zee-enter", "coast"}:
+        if kind in {"alert-on", "marina", "port", "amp", "project", "zee-enter", "coast"}:
             # Pas de « 10 alertes » ni « N ZEE » : les ZEE et côtes se dosent par date, jamais un comptage (RG2).
             continue
         first, last = group[0], group[-1]
@@ -2758,9 +2904,14 @@ def select_chapter_changes(
     span = (t_b or 0) - (t_a or 0)
     zee = dose_zee_changes(usable, span)
     coast = dose_coast_changes(usable, span)
+    amp = dose_amp_changes(usable, span)
+    proj = dose_project_changes(usable, span)
     rest_src = [
         c for c in usable
-        if str(c.get("kind") or "") not in ROUTE_NAMING_KINDS and not _is_coast_source(c)
+        if str(c.get("kind") or "") not in ROUTE_NAMING_KINDS
+        and not _is_coast_source(c)
+        and not _is_amp_change(c)
+        and str(c.get("kind") or "") != "project"
     ]
     if not budget:
         rest_src.sort(key=lambda c: (
@@ -2768,8 +2919,11 @@ def select_chapter_changes(
             c.get("tMs") or 0,
         ))
         others = rest_src[:FILM_CHAPTER_MAX_FREE]
-        # ZEE et côtes dosées : toutes (courte) ou une par jour (longue), hors plafond des autres faits.
-        return sorted(zee + coast + others, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+        # ZEE, côtes, AMP et projets dosés : hors plafond des autres faits.
+        return sorted(
+            zee + coast + amp + proj + others,
+            key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")),
+        )
     grouped = _group_changes(rest_src, span)
     must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
     rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
@@ -2802,7 +2956,7 @@ def select_chapter_changes(
     for item in must + rest:
         add(item)
     seen = {str(x.get("id") or "") for x in picked}
-    for item in zee + coast:
+    for item in zee + coast + amp + proj:
         cid = str(item.get("id") or "")
         if cid and cid in seen:
             continue
@@ -2857,11 +3011,26 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
             return f"On {when}, approaching {title}." if en else f"Le {when}, approche {_de(title)}."
         return f"Approaching {title}." if en else f"Approche {_de(title)}."
     if kind == "alert-on":
+        from ici_engine import is_fishing_amp  # noqa: PLC0415
+        if is_fishing_amp({"name": title, "title": title, "fact": fact}):
+            return ""
         if alert_is_amp(change):
             amp = alert_amp_name(change)
             if not amp:
                 return ""
-            return f"On {when}, marine protected area within reach: {amp}." if en else f"Le {when}, aire marine protégée à portée : {amp}."
+            nm = change_distance_nm(change)
+            dist = spoken_distance(nm, lang) if nm is not None else ""
+            if dist:
+                return (
+                    f"On {when}, {dist} away, the marine protected area {amp}."
+                    if en else
+                    f"Le {when}, à {dist}, l'aire marine protégée {amp}."
+                )
+            return (
+                f"On {when}, marine protected area: {amp}."
+                if en else
+                f"Le {when}, aire marine protégée : {amp}."
+            )
         body = IUCN_RE.sub("", fact or title).strip(" ;:")
         if not body or NO_DATA_RE.search(body):
             return ""
@@ -2898,10 +3067,34 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
             return ""
         return f"On {when}, station {name}." if en else f"Le {when}, station {name}."
     if kind == "amp":
+        from ici_engine import is_fishing_amp, spoken_amp_name  # noqa: PLC0415
+        if is_fishing_amp({"name": title, "title": title, "fact": fact}):
+            return ""
+        name = spoken_amp_name(change_place_name(change) or title) or change_place_name(change)
+        if not name:
+            return ""
+        nm = change_distance_nm(change)
+        dist = spoken_distance(nm, lang) if nm is not None else ""
+        if dist:
+            return (
+                f"On {when}, {dist} away, the marine protected area {name}."
+                if en else
+                f"Le {when}, à {dist}, l'aire marine protégée {name}."
+            )
+        return f"On {when}, marine protected area: {name}." if en else f"Le {when}, aire marine protégée : {name}."
+    if kind == "project":
         name = change_place_name(change)
         if not name:
             return ""
-        return f"On {when}, marine protected area: {name}." if en else f"Le {when}, aire marine protégée : {name}."
+        nm = change_distance_nm(change)
+        dist = spoken_distance(nm, lang) if nm is not None else ""
+        if dist:
+            return (
+                f"On {when}, {dist} away, project {name}."
+                if en else
+                f"Le {when}, à {dist}, le projet {name}."
+            )
+        return f"On {when}, project {name}." if en else f"Le {when}, le projet {name}."
     if kind == "marina":
         name = change_place_name(change)
         if not name:

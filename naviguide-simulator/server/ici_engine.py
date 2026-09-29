@@ -48,6 +48,33 @@ MAX_POE = 4
 MAX_AMP = 5
 MAX_PROJECTS = 5
 MAX_NEARBY = 3
+# RG3 : invalide les perles sans couche projects / AMP filtrées.
+PEARL_REV = "rg3"
+AMP_NEAR_NM = 30.0
+PROJECT_NEAR_NM = 30.0
+# Zones de réglementation de pêche — jamais une AMP (D4 / A3).
+_AMP_FISHING_RE = re.compile(
+    r"\b(?:chaluts?|filets?|hu[iî]tres?|p[ée]toncles?|deposit|licence|license|"
+    r"prohibition|zone de p[êe]che)\b",
+    re.I,
+)
+# Aire protégée : IUCN renseignée, ou désignation WDPA / parc / réserve / sanctuaire.
+_AMP_PROTECT_RE = re.compile(
+    r"\b(?:wdpa|iucn|parc naturel marin|parc marin|marine natural park|"
+    r"national park|parc national|r[ée]serve(?: naturelle)?|sanctuaire|sanctuary|"
+    r"aire marine prot[ée]g[ée]e|protected area|\bmpa\b)\b",
+    re.I,
+)
+_AMP_IUCN_RE = re.compile(r"\biucn\b", re.I)
+_AMP_DATASET_TAIL_RE = re.compile(
+    r"\s*[-–—:]\s*(?:center|centre|permanent|deposit|licence|license|"
+    r"prohibition|zone de p[êe]che)\b.*$",
+    re.I,
+)
+_AMP_TECH_PAREN_RE = re.compile(
+    r"\s*\((?:unassigned|wdpa:?\s*\d+|iucn[^)]*|cat(?:egory)?\s*[ivx0-9]+)\)\s*",
+    re.I,
+)
 MAX_ANCHORAGES = 5
 MAX_SCIENCE = 5
 EEZ_ACCEPT_NM = 240
@@ -97,11 +124,12 @@ _WPI_TTL = 86_400.0
 
 # Pearls (the along bags, 12 nm apart) are the same for every visitor and
 # every replay of the film: one lookup per 0.02° cell. Two kinds (lot P):
-# `thin` (ZEE, ports of entry, MPA, harbours — 7 days) and `rich` (every
-# layer without a timestamp: + projects, science, anchorages, aton, EMODnet —
+# `thin` (ZEE, ports of entry, MPA, projects, harbours — 7 days) and `rich`
+# (every layer without a timestamp: + science, anchorages, aton, EMODnet —
 # 30 days). Memory is an L1 in front of the SQLite store (pearl_store); a
 # rich pearl serves a thin request. Without it a fast playback asked
-# MarineRegions + Overpass thousands of times.
+# MarineRegions + Overpass thousands of times. RG3 : projects aussi en thin
+# (parité avec le sac « ici » du panneau).
 _thin_cache: dict[str, dict] = {}
 _THIN_TTL = 7 * 86400.0
 _RICH_TTL = 30 * 86400.0
@@ -112,8 +140,12 @@ PEARL_KINDS = ("thin", "rich")
 def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None = None) -> str:
     # A pearl carries no climatology: the month never changes it, so it is
     # not part of the key (the client sends month=9, the warmer none).
+    # PEARL_REV force le remplisseur à recalculer (RG3 : projects + filtre AMP).
     del month
-    return f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}:{int(radius_nm)}"
+    return (
+        f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}"
+        f":{int(radius_nm)}:{PEARL_REV}"
+    )
 
 
 def _pearl_ttl(kind: str) -> float:
@@ -351,12 +383,63 @@ AMP_KEYS = (
 ANCHORAGE_KEYS = ("anchorage_type", "osm_id", "source", "priority")
 
 
+def _amp_blob(item: dict) -> str:
+    if not isinstance(item, dict):
+        return ""
+    parts = [
+        item.get("name"), item.get("title"), item.get("fact"),
+        item.get("designation"), item.get("iucn_cat"), item.get("iucn"),
+        item.get("site_id"), item.get("id"),
+    ]
+    return " ".join(str(p) for p in parts if p not in (None, ""))
+
+
+def is_fishing_amp(item: dict | None) -> bool:
+    """Zone de réglementation de pêche (Chaluts, Pétoncles, deposit…), pas une AMP."""
+    return bool(isinstance(item, dict) and _AMP_FISHING_RE.search(_amp_blob(item)))
+
+
+def is_protected_amp(item: dict | None) -> bool:
+    """Aire protégée réelle : IUCN renseignée ou désignation WDPA / parc / réserve.
+
+    Une zone de pêche est exclue même si elle porte un « IUCN Unassigned ».
+    """
+    if not isinstance(item, dict):
+        return False
+    if is_fishing_amp(item):
+        return False
+    iucn = item.get("iucn_cat") or item.get("iucn")
+    if iucn not in (None, ""):
+        return True
+    blob = _amp_blob(item)
+    return bool(_AMP_IUCN_RE.search(blob) or _AMP_PROTECT_RE.search(blob))
+
+
+def spoken_amp_name(raw: Any, lang: str = "fr") -> str:
+    """Nom parlé : pas de tiret de jeu de données, pas d'IUCN, pas d'anglais technique."""
+    del lang
+    s = re.sub(r"\s+", " ", str(raw or "")).strip()
+    if not s:
+        return ""
+    s = re.sub(r"\s*\(\s*IUCN[^)]*\)", "", s, flags=re.I)
+    s = re.sub(r"\bIUCN\s+\S+", "", s, flags=re.I)
+    s = _AMP_TECH_PAREN_RE.sub(" ", s)
+    s = _AMP_DATASET_TAIL_RE.sub("", s)
+    s = re.sub(r"\s+", " ", s).strip(" :-—,;(")
+    return s
+
+
 def slim_amp(feat: dict, lat0: float, lon0: float) -> dict | None:
     item = slim_place(feat, lat0, lon0, extra_keys=AMP_KEYS)
     if not item:
         return None
+    if is_fishing_amp(item):
+        return None
     if item.get("visit_url"):
         item["url"] = item["visit_url"]
+    spoken = spoken_amp_name(item.get("name"))
+    if spoken:
+        item["name"] = spoken
     return item
 
 
@@ -804,7 +887,8 @@ async def _fill_dossier(
         data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)
         return _poe_from_fc(data, lat, lon)
 
-    amp_radius = 15.0 if thin else radius_nm
+    # RG3 : AMP et projets à 30 nm (même rayon que le sac « ici » du panneau).
+    amp_radius = radius_nm
     marina_radius = 25.0 if thin else radius_nm
 
     async def amp_task() -> list[dict]:
@@ -814,9 +898,11 @@ async def _fill_dossier(
 
     async def projects_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/geojson")
-        return nearest_places(
+        found = nearest_places(
             feats, lat, lon, radius_nm, MAX_PROJECTS, extra_keys=("gold_on",),
         )
+        found.sort(key=lambda x: (0 if x.get("gold_on") else 1, x.get("nm") or 999))
+        return found[:MAX_PROJECTS]
 
     async def marinas_task() -> list[dict]:
         # /marinas = BI memory cache; the export rebuilds all of Mongo.
@@ -844,7 +930,7 @@ async def _fill_dossier(
         mar_t = asyncio.create_task(marinas_task())
         cap_t = asyncio.create_task(capit_task())
         wpi_t = asyncio.create_task(wpi_task())
-        proj_t = None if lean else asyncio.create_task(projects_task())
+        proj_t = asyncio.create_task(projects_task())
         sci_t = None if lean else asyncio.create_task(science_task())
         anc_t = None if lean else asyncio.create_task(anchorages_task())
         sat_t = None if thin else asyncio.create_task(fetch_satellite_scene(http, lat, lon))
@@ -862,9 +948,9 @@ async def _fill_dossier(
 
         if lean:
             nearby = await asyncio.gather(
-                amp_t, mar_t, cap_t, wpi_t, return_exceptions=True,
+                amp_t, proj_t, mar_t, cap_t, wpi_t, return_exceptions=True,
             )
-            keys = ("amp", "marinas", "capitaineries", "wpi")
+            keys = ("amp", "projects", "marinas", "capitaineries", "wpi")
         else:
             nearby = await asyncio.gather(
                 amp_t, proj_t, mar_t, cap_t, sci_t, wpi_t, anc_t, return_exceptions=True,

@@ -28,9 +28,10 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
-# Clé film / moments : RG2 (eaux nommées, jalons de côte, cap) invalide rg1.
-FILM_SCRIPT_REV = "rg2"
-MOMENTS_REV = "rg2"
+# Clé film / moments / ici : RG3 (AMP réelles, projets BI) invalide rg2.
+FILM_SCRIPT_REV = "rg3"
+MOMENTS_REV = "rg3"
+ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -156,10 +157,10 @@ def worker_enabled() -> bool:
 
 
 def _store_rev_relaxed() -> bool:
-    """Sans remplisseur (CI, stock figé) : une ancienne rev film/moments reste joignable.
+    """Sans remplisseur (CI, stock figé) : une ancienne rev film/moments/ici reste joignable.
 
-    La clé `…:rg2` n'existe pas encore dans l'archive gelée ; sans ça, GET
-    /film et /moments restent « en préparation » et Revoir reste grisé.
+    La clé `…:rg3` n'existe pas encore dans l'archive gelée ; sans ça, GET
+    /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
     Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
     """
     raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
@@ -321,12 +322,14 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : film et moments portent la révision du calcul (RG2)."""
+        """Clé de rangement : film, moments et ici portent la révision du calcul (RG3)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
         if family == "moments":
             return f"{base}:{MOMENTS_REV}"
+        if family == "ici":
+            return f"{base}:{ICI_REV}"
         return base
 
     def _with_date(self, hit: Optional[dict]) -> Optional[dict]:
@@ -358,7 +361,7 @@ class OfficialStore:
             if r != route_id or t != t0:
                 continue
             exact = (want_suf or None) == (suf or None)
-            if not exact and not (family in {"film", "moments"} and _store_rev_relaxed()):
+            if not exact and not (family in {"film", "moments", "ici"} and _store_rev_relaxed()):
                 continue
             rank = (1 if exact else 0, date)
             if best is None or rank > best[0]:

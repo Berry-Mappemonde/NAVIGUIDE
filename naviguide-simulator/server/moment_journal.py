@@ -23,7 +23,9 @@ SCORE_ZEE = 2
 SCORE_STATION = 2
 SCORE_REGIME = 1
 SCORE_AMP = 1
+SCORE_PROJECT = 1
 SCORE_ALERT_OFF = 1
+PROJECT_NEAR_NM = 30.0
 APPROACH_NM_FLOOR = 80.0
 APPROACH_FRAC = 0.10
 _GENERIC_TITLES = frozenset({
@@ -100,12 +102,20 @@ def _entry(moment: dict | None) -> dict:
 def _mpa_keys(moment: dict | None) -> dict[str, dict]:
     here = (moment or {}).get("here") if isinstance((moment or {}).get("here"), dict) else {}
     out: dict[str, dict] = {}
+    try:
+        from ici_engine import is_fishing_amp, spoken_amp_name  # noqa: PLC0415
+    except Exception:
+        is_fishing_amp = lambda _item: False  # noqa: E731
+        spoken_amp_name = lambda raw, **_k: str(raw or "")  # noqa: E731
     for item in here.get("mpa") or []:
         if not isinstance(item, dict):
             continue
+        if is_fishing_amp(item):
+            continue
         key = str(item.get("site_id") or item.get("id") or item.get("name") or "")
         if key:
-            out[key] = item
+            spoken = spoken_amp_name(item.get("name") or key)
+            out[key] = {**item, "name": spoken or item.get("name") or key}
     return out
 
 
@@ -203,8 +213,14 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
         ))
 
     prev_alerts, cur_alerts = _alert_map(prev), _alert_map(cur)
+    try:
+        from ici_engine import is_fishing_amp  # noqa: PLC0415
+    except Exception:
+        is_fishing_amp = lambda _item: False  # noqa: E731
     for aid, alert in cur_alerts.items():
         if aid not in prev_alerts:
+            if is_fishing_amp(alert):
+                continue
             changes.append(_change(
                 "alert-on", SCORE_ALERT_ON,
                 alert.get("title") or aid,
@@ -266,7 +282,10 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
         name = item.get("name") or key
         nm = item.get("nm")
         fact = f"{name} ({nm} nm)" if nm is not None else str(name)
-        changes.append(_change("amp", SCORE_AMP, name, fact))
+        ch = _change("amp", SCORE_AMP, name, fact)
+        if nm is not None:
+            ch["nm"] = nm
+        changes.append(ch)
 
     if not changes:
         prev_titles, cur_titles = _around_titles(prev), _around_titles(cur)
@@ -389,6 +408,39 @@ def _new_places_nearby(pearl: dict, seen: set[tuple[str, str]]) -> list[dict]:
     return out
 
 
+def _gold_rank(item: dict) -> int:
+    return 0 if item.get("gold_on") in (True, 1, "1", "true", "True") else 1
+
+
+def _new_projects_nearby(pearl: dict, seen: set[tuple[str, str]]) -> list[dict]:
+    """Projets Blue Intelligence à ≤ 30 nm, une fois chacun. gold_on puis plus proche."""
+    rows = [p for p in (pearl.get("projects") or []) if isinstance(p, dict) and p.get("name")]
+    rows.sort(key=lambda p: (
+        _gold_rank(p),
+        _as_float(p.get("nm")) if _as_float(p.get("nm")) is not None else 999.0,
+    ))
+    out: list[dict] = []
+    for item in rows:
+        name = str(item.get("name") or "").strip()
+        if not name or _is_generic_title(name, "project"):
+            continue
+        nm = _as_float(item.get("nm"))
+        if nm is not None and nm > PROJECT_NEAR_NM:
+            continue
+        key = ("project", _norm_place(name))
+        if key in seen:
+            continue
+        seen.add(key)
+        fact = f"{name} ({nm:.0f} nm)" if nm is not None else name
+        ch = _change("project", SCORE_PROJECT, name, fact)
+        if nm is not None:
+            ch["nm"] = nm
+        if _gold_rank(item) == 0:
+            ch["gold_on"] = True
+        out.append(ch)
+    return out
+
+
 def _pearls_in_route_order(voy: dict) -> list[dict]:
     embedded = [p for p in (voy.get("pearls") or []) if isinstance(p, dict)]
     if embedded:
@@ -472,16 +524,19 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             and live_rem > 1.0
         )
         # Marinas (15 nm) et jalons de côte (ports / WPI, 25 nm) : une fois chacun (RG2).
+        # Projets BI à ≤ 30 nm (RG3).
         new_places = _new_places_nearby(pearl, seen_places)
+        new_projects = _new_projects_nearby(pearl, seen_places)
         same_sig = prev is not None and sig == (prev.get("signature") or signature(prev))
-        if same_sig and not approach_hit and not new_places:
+        if same_sig and not approach_hit and not new_places and not new_projects:
             if live_rem is not None:
                 prev_rem_live = live_rem
             prev_leg_idx = leg_idx
             continue
         # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas.
-        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port", "coast"}]
+        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port", "coast", "project"}]
         changes.extend(new_places)
+        changes.extend(new_projects)
         if approach_hit:
             title = _stop_title(str(cur_to))
             already = any(
