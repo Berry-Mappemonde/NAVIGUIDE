@@ -208,6 +208,14 @@ export function pickFilmEstimateSeconds(targetSeconds, estimates, fallbackSecond
   return Number.isFinite(fb) && fb > 0 ? fb : 0;
 }
 
+/** Même langue / style / t0 : un changement de budget 2:30↔3:00 ne démonte pas les pilules. */
+export function filmQueryKeepsReady(prev, next) {
+  if (!prev || !next) return false;
+  if (prev === next) return true;
+  const strip = (q) => String(q).replace(/seconds=[^&]*/, "seconds=");
+  return strip(prev) === strip(next);
+}
+
 /** Durée cochée → budget ; aucune → le temps que prend le journal. */
 export function resolveFilmTargetSeconds(selected, chapters) {
   const n = Number(selected);
@@ -556,7 +564,8 @@ export function useReplay({
 
     const load = () => {
       if (cancelled) return;
-      const keepReady = remoteStatusRef.current === "ready" && remotePlanRef.current && remotePlanKeyRef.current === q;
+      const keepReady = remoteStatusRef.current === "ready" && remotePlanRef.current
+        && filmQueryKeepsReady(remotePlanKeyRef.current, q);
       if (!keepReady) {
         setFilmStatus("pending");
         remotePlanRef.current = null;

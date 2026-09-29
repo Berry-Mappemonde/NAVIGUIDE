@@ -145,7 +145,8 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   const pill150 = durations.locator("[data-seconds='150']");
   const pill180 = durations.locator("[data-seconds='180']");
   await pill150.click();
-  await expect(pill150).toHaveAttribute("aria-pressed", "true");
+  await expect(pill150).toBeVisible({ timeout: 20_000 });
+  await expect(pill150).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
 
   const estimate = page.getByTestId("film-duration-estimate");
   const estimateVisible = await estimate.isVisible({ timeout: 8_000 }).catch(() => false);
@@ -154,13 +155,15 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   }
 
   await pill180.click();
-  await expect(pill180).toHaveAttribute("aria-pressed", "true");
+  await expect(pill180).toBeVisible({ timeout: 20_000 });
+  await expect(pill180).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   if (await estimate.isVisible().catch(() => false)) {
     await expect(estimate).toHaveText(/≈\s*\d+:\d{2}/);
   }
 
   await pill180.click();
-  await expect(pill180).toHaveAttribute("aria-pressed", "false");
+  await expect(pill180).toBeVisible({ timeout: 20_000 });
+  await expect(pill180).toHaveAttribute("aria-pressed", "false", { timeout: 20_000 });
 
   await muteVoice(page);
   await start.click();
