@@ -29,6 +29,7 @@ describe("useOfficialExpedition — position officielle", () => {
   });
 
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
+    assert.match(source, /readClock\(\);\s*putOfficial\(\)/);
     assert.match(source, /putOfficial\(\)\s*\.catch\(\(\) => null\)\s*\.then\(\(\) => \{ if \(!cancelled\) return readClock\(\);/);
     assert.match(source, /if \(!putRef\.current \|\| !serverClockRef\.current\) kick\(\);/);
   });
