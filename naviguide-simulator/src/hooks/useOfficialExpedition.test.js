@@ -30,8 +30,8 @@ describe("useOfficialExpedition — position officielle", () => {
 
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
     // RG10 : l'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
-    assert.match(source, /Promise\.all\(\[readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
-    assert.match(source, /gotClock = Boolean\(ck\) \|\| Boolean\(data\?\.clock\?\.t0\);/);
+    assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
+    assert.match(source, /gotClock = haveClock \|\| Boolean\(ck\) \|\| Boolean\(data\?\.clock\?\.t0\);/);
   });
 
   it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
