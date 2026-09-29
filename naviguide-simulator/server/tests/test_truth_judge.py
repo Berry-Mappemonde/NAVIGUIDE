@@ -141,7 +141,15 @@ def test_filter_numbers_on_stale_hint():
     assert truth_judge._filter_hint("Il faudra 99 kn demain.", FICHE) is None
 
 
+def test_maybe_attach_disabled_by_default_returns_dossier_untouched(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_TRUTH_JUDGE", raising=False)
+    bag = {"zee": {"gold": True}, "poe": [{"name": "Fort-de-France", "url": "https://example.org/poe"}]}
+    out = asyncio.run(truth_judge.maybe_attach(dict(bag), client=None))
+    assert "truth" not in (out["poe"][0] or {}), "éteint par défaut (28 sept.) : aucun appel, rien d'attaché"
+
+
 def test_maybe_attach_writes_truth_on_gold_poe(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_TRUTH_JUDGE", "1")
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)

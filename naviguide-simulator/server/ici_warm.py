@@ -68,8 +68,10 @@ def stories_enabled() -> bool:
 
 
 def watch_enabled() -> bool:
-    """Veille Tavily + enrichissement (lot L4) ; off si pas de clé ou drapeau 0."""
-    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip() not in ("0", "false", "no")
+    """Veille Tavily + enrichissement (lots L4 / U10 / U12). ÉTEINTE par défaut depuis le 28 sept. (décision du
+    porteur) : depuis R8c la carte de veille n'est plus rendue, on calculait et payait pour rien de visible.
+    `NAVIGUIDE_TAVILY_WATCH=1` la rallume (les modules sont gardés pour un retour dans le panneau « ici »)."""
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "0").strip() in ("1", "true", "yes", "on")
 
 
 WATCH_LOOP_S = float(os.environ.get("NAVIGUIDE_TAVILY_WATCH_S") or 6 * 3600)
