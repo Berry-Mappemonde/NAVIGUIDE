@@ -205,3 +205,22 @@ export async function waitStoryLang(page, lang, timeout = 20_000) {
     return new RegExp(pattern, flags).test(txt) && names.length >= 3;
   }, [re.source, re.flags], { timeout }).catch(() => null);
 }
+
+/** Recentre la carte sur le drapeau d'une escale : en Suivre la caméra est sur le bateau (Pacifique) et
+ *  un drapeau des Antilles ou de Corse est hors cadre — un clic « force » n'y atteint rien (28 sept.). */
+export async function centerOnFlag(page, namePattern, zoom = 7) {
+  const source = namePattern instanceof RegExp ? namePattern.source : String(namePattern);
+  await page.evaluate(([src, z]) => {
+    const scene = window.__naviguideScene;
+    if (!scene?.map || !scene.waypointMarkers) return false;
+    const re = new RegExp(src, "i");
+    for (const marker of scene.waypointMarkers.values()) {
+      if (re.test(marker._naviguideWaypoint?.name || "")) {
+        scene.map.setView(marker.getLatLng(), z, { animate: false });
+        return true;
+      }
+    }
+    return false;
+  }, [source, zoom]);
+  await page.waitForTimeout(300);
+}

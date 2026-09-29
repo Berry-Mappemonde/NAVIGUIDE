@@ -110,8 +110,11 @@ test("lot R7 — fiche d'escale sur le drapeau, plus dans le panneau", async ({ 
 
   await showToolsPanel(page);
   await expect(page.getByTestId("escale-sheet-open")).toHaveCount(0);
-  // RE2 / RF8 : la liste n'ouvre plus la fiche ; le drapeau oui.
-  await flag.click({ force: true });
+  // RE2 / RF8 : la liste n'ouvre plus la fiche ; le drapeau oui — recentré d'abord (en Suivre la caméra
+  // est sur le bateau, le drapeau d'Ajaccio est hors cadre).
+  const { centerOnFlag } = await import("../helpers.js");
+  await centerOnFlag(page, /Ajaccio/);
+  await flag.click({ force: true, timeout: 5_000 }).catch(() => flag.evaluate((el) => el.click()));
   const sheetAgain = page.getByTestId("escale-sheet");
   await expect(sheetAgain).toBeVisible({ timeout: 10_000 });
   await expect(sheetAgain).toContainText("Ajaccio");
