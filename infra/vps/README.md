@@ -280,6 +280,7 @@ Internet → nginx (443, Let's Encrypt, SAN + simulator.naviguide.fr)
 | nginx frontend | `/var/www/naviguide-simulator` |
 | Optional secrets (Copernicus only) | `~/.config/naviguide/simulator.env` |
 | Simulator Mongo (stock officiel RF2, **base séparée**) | `SIMULATOR_MONGO_URL` in `~/.config/naviguide/simulator.env` — **never** `~/.config/blue-intelligence/mongo.env`, never `MONGO_URL_LOCAL` / `DB_NAME` |
+| Paid LLM calls (Nemotron via Nebius) — **28 Sept. policy: only when the owner says so or when it is useful** | `NAVIGUIDE_LLM_MODE` in `~/.config/naviguide/simulator.env`: `on-demand` (default — chat question, "Rédigé" click; **never** background: story warm-up, film writing, plan-review sentence, store filler), `off` (nothing, ever — lot agents, CI), `all` (everything, set by hand for a full demo). Daily caps: `NAVIGUIDE_LLM_DAILY_TOKENS_FAST` 200k, `_WRITE` 150k, `_JUDGE` 0. Truth judge and Tavily watch are off (`NAVIGUIDE_TRUTH_JUDGE=1`, `NAVIGUIDE_TAVILY_WATCH=1` to re-enable). Check usage: Nebius console → Billing → Usage; Tavily → `GET https://api.tavily.com/usage`; local counters → `/ici/warm/status` (`llm`). |
 | Service | `naviguide-simulator` (systemd, `MemoryMax=1G`) |
 | Reverse proxy | `/etc/nginx/sites-available/naviguide-simulator` |
 

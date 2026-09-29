@@ -3099,11 +3099,14 @@ async def warm_film_story(
         review = None
     now_ms = int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None
     out: dict[str, Any] = {}
-    for lang in langs:
-        plan = await build_film_response(
-            clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
-            style="written", cascade=cascade, want_write=True, now_ms=now_ms,
-            review=review,
-        )
-        out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
+    import llm_budget  # noqa: PLC0415
+    # Écriture LLM du film en ARRIÈRE-PLAN : sous on-demand (défaut, 28 sept.) la cascade rend le brut.
+    with llm_budget.background():
+        for lang in langs:
+            plan = await build_film_response(
+                clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
+                style="written", cascade=cascade, want_write=True, now_ms=now_ms,
+                review=review,
+            )
+            out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
     return {"voyageId": vid, "status": "ready", "langs": out}
