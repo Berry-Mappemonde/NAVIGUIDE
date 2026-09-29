@@ -20,6 +20,7 @@ from film_script import (
     film_char_budget,
     film_estimated_seconds,
     film_priority_tier,
+    fit_chapter_text,
     alert_is_amp,
     bubble_score,
     build_film_response,
@@ -2289,8 +2290,7 @@ def test_rg8_select_chapter_changes_by_tier():
     assert "coast" not in kinds_s
     assert "climo" not in kinds_s
     assert "station" not in kinds_s
-    assert sum(1 for c in short if c["kind"] in {"amp", "project"}) == 1
-    assert next(c["kind"] for c in short if c["kind"] in {"amp", "project"}) == "project"
+    assert {c["kind"] for c in short if c["kind"] in {"amp", "project"}} == {"amp", "project"}
 
     mid = select_chapter_changes(changes, t0, t1, budget=True, tier=3)
     kinds_m = {c["kind"] for c in mid}
@@ -2460,3 +2460,113 @@ def test_rg14_anchor_position_on_example_moments():
         name_at = text.find("Gibraltar")
         expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
         assert any(abs(int(a["charIdx"]) - expect) <= 8 for a in gib_ch.get("anchors") or []), gib_ch.get("anchors")
+
+
+# ── RC22 : budget 2:30, AMP et projet gardés ─────────────────────────────────
+
+
+def test_rc22_fit_chapter_text_keeps_amp_project_drops_p3():
+    amp = "Le 16 mai, à dix milles, l'aire marine protégée Pertuis charentais - Rochebonne."
+    proj = "Le 16 mai, à dix milles, le projet Récif sentinelle."
+    head = "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest."
+    arrival = "Arrivée à Ajaccio le 26 mai."
+    p3 = [
+        "Le 17 mai, longe la Galice — Camariñas, Muxía.",
+        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison.",
+        "Le 19 mai, un flotteur Argo.",
+    ]
+    extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
+    waters = [
+        "Le 16 mai, les eaux espagnoles.",
+        "Le 17 mai, les eaux portugaises.",
+        "Le 18 mai, les eaux marocaines.",
+    ]
+    blob = " ".join([head, *waters, *p3, *extra, amp, proj, arrival])
+    budget = 320
+    assert len(blob) > budget * 1.1
+    out = fit_chapter_text(blob, budget, [], "fr")
+    assert "Rochebonne" in out
+    assert "Récif sentinelle" in out
+    assert "le projet" in out
+    assert "aire marine" in out
+    assert "Arrivée à Ajaccio" in out
+    assert "Berry-Mappemonde quitte" in out
+    assert "Port-39" not in out
+    assert "Port-20" not in out
+    assert len(out) <= max(int(budget * 1.1), budget)
+    en_amp = "On 16 May, ten miles away, the marine protected area Pertuis charentais - Rochebonne."
+    en_proj = "On 16 May, ten miles away, project Récif sentinelle."
+    en_blob = " ".join([
+        "On 15 May, Berry-Mappemonde leaves La Rochelle, heading southwest.",
+        *extra,
+        en_amp, en_proj,
+        "Arrival at Ajaccio on 26 May.",
+    ])
+    en_out = fit_chapter_text(en_blob, budget, [], "en")
+    assert "Rochebonne" in en_out
+    assert "Récif sentinelle" in en_out
+    assert "marine protected area" in en_out
+    assert "project " in en_out
+
+
+def _rc22_rich_journal():
+    zee_names = [
+        n for n in OFFICIAL_ROUTE_ZEE_SOURCES
+        if "Haute" not in n and "High" not in n and "Overlapping" not in n
+    ][:24]
+    start = datetime(2026, 6, 25, tzinfo=timezone.utc)
+    extra = []
+    for i, name in enumerate(zee_names):
+        t = start.timestamp() + i * 86_400
+        iso = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%dT08:00:00Z")
+        extra.append({
+            "seq": 100 + i, "t": iso, "signature": f"zee-rc22-{i}", "legIdx": 3,
+            "changes": [{"kind": "zee-enter", "score": 2, "title": name, "fact": name}],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        })
+    extra.append({
+        "seq": 200, "t": "2026-05-16T10:00:00Z", "signature": "amp-rochebonne", "legIdx": 1,
+        "changes": [{
+            "kind": "amp", "score": 2, "title": "Pertuis charentais - Rochebonne",
+            "fact": "Pertuis charentais - Rochebonne (10 nm)", "nm": 10,
+        }],
+        "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}},
+    })
+    extra.append({
+        "seq": 201, "t": "2026-05-16T14:00:00Z", "signature": "proj-recif", "legIdx": 1,
+        "changes": [{
+            "kind": "project", "score": 2, "title": "Récif sentinelle",
+            "fact": "Récif sentinelle (10 nm)", "nm": 10, "gold_on": True,
+        }],
+        "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}},
+    })
+    extra.append({
+        "seq": 202, "t": "2026-07-02T12:00:00Z", "signature": "coast-p3", "legIdx": 3,
+        "changes": [{
+            "kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (5 nm)",
+        }],
+        "moment": {"leg": {
+            "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+        }},
+    })
+    moments = [m for m in MOMENTS["moments"] if "Cabrera" not in str(m)]
+    return {**JOURNAL, "moments": moments + extra}
+
+
+def test_rc22_rich_plan_150_seconds_keeps_amp_and_project():
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _rc22_rich_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(plan)
+    assert plan["targetSeconds"] == 150
+    assert plan["chars"] / 15 <= 150 * 1.1
+    assert "Rochebonne" in blob
+    assert "Récif sentinelle" in blob
+    assert "le projet" in blob
+    assert "aire marine" in blob
+    assert "Pétoncles" not in blob
+    assert "deposit" not in blob.lower()
+    assert "Chaluts" not in blob

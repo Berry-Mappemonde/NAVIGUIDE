@@ -135,7 +135,7 @@ describe("film bar (lot RE3 / RG8)", () => {
     const durBlock = bar.slice(durationAt, durationAt + 1600);
     assert.match(durBlock, /film-duration-estimate/);
     assert.match(durBlock, /=== sec \? 0 : sec/);
-    assert.match(bar, /replay\.canStart \? \(/);
+    assert.match(bar, /replay\.canStart \|\| replay\.active/);
     assert.match(bar, /disabled=\{!replay\.canStart\}/);
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /disabled:opacity-30 disabled:cursor-not-allowed/);
