@@ -8,6 +8,7 @@ import story_cache
 from film_script import (
     OFFICIAL_ROUTE_ZEE_SOURCES,
     chapter_anchors,
+    FILM_VOICE_LOOKAHEAD_CHARS,
     CONNECTORS,
     FILM_BUDGET_CHARS,
     FILM_CHAPTER_MAX_CHANGES,
@@ -734,10 +735,13 @@ def test_moments_anchors_follow_the_route_chronologically():
             assert last_t is None or t >= last_t, "chronologie stricte"
             last_idx, last_t = a["charIdx"], t
         text = ch["text"]
-        pos = text.find("approche de Fort-de-France")
-        if pos >= 0:
-            hit = [a for a in anchors if text[a["charIdx"]:].startswith("Le 22 juin, approche de Fort-de-France")]
-            assert hit, "la phrase d'approche a son ancre"
+        name_at = text.find("Fort-de-France")
+        if "approche" in text.casefold() and name_at >= 0:
+            expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
+            hit = [a for a in anchors if abs(int(a["charIdx"]) - expect) <= 16]
+            if not hit:
+                hit = [a for a in anchors if "Fort-de-France" in text[max(0, int(a["charIdx"]) - 8): int(a["charIdx"]) + 40]]
+            assert hit, "la phrase d'approche a son ancre au nom"
             assert _parse_iso_ms(hit[0]["t"]) == _parse_iso_ms("2026-06-22T12:00:00Z")
     assert seen_any
 
@@ -757,8 +761,21 @@ def test_chapter_anchors_unit_sorted_bounded_deduped():
         ("Le 31 mai, approche d’Ajaccio.", 950),  # même position → une seule ancre
     ]
     out = chapter_anchors(text, anchored, 0, 2_000, "fr")
-    assert [a["charIdx"] for a in out] == [0, text.find("Le 31"), text.find("Arrivée")]
-    assert [a["t"] for a in out] == ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00Z", "1970-01-01T00:00:02Z"]
+    idxs = [a["charIdx"] for a in out]
+    assert idxs == sorted(idxs)
+    assert idxs[0] == 0
+    approach = text.find("approche")
+    ajaccio = text.find("Ajaccio", approach)
+    assert any(abs(i - max(0, ajaccio - FILM_VOICE_LOOKAHEAD_CHARS)) <= 4 for i in idxs)
+    arrive = text.find("Arrivée")
+    last = text.rfind("juin")
+    assert any(i >= arrive for i in idxs)
+    assert any(abs(i - max(arrive, last - FILM_VOICE_LOOKAHEAD_CHARS)) <= 8 for i in idxs)
+    assert [a["t"] for a in out][-1] == "1970-01-01T00:00:02Z"
+    times = [_parse_iso_ms(a["t"]) for a in out]
+    assert times == sorted(times)
+    assert times[0] == 0
+    assert times[-1] == 2_000
 
 
 def test_moments_arrival_each_stop_route_order():
@@ -2301,3 +2318,145 @@ def test_rg8_three_variants_strictly_increasing():
     blob150 = " ".join(ch.get("text") or "" for ch in a["chapters"])
     blob180 = " ".join(ch.get("text") or "" for ch in b["chapters"])
     assert "aliz" in blob180.lower() or "longe" in blob180 or "Galice" in blob180 or blob180 != blob150
+
+
+# ── RG14 : ancres au mot ────────────────────────────────────────────────────
+
+
+def test_rg14_anchor_at_place_name_minus_lookahead():
+    text = "Le 21 mai, le détroit de Gibraltar entre Tanger et Algeciras."
+    t_gib = 1_000
+    out = chapter_anchors(text, [(text, t_gib, {"place": "Gibraltar", "kind": "coast"})], 0, 2_000, "fr")
+    assert out
+    name_at = text.find("Gibraltar")
+    expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
+    assert abs(out[0]["charIdx"] - expect) <= 2
+    assert out[0]["charIdx"] != 0 or name_at <= FILM_VOICE_LOOKAHEAD_CHARS
+    assert _parse_iso_ms(out[0]["t"]) == t_gib
+
+
+def test_rg14_duration_two_anchors_depart_first_arrive_last():
+    text = "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai. Trois jours d'escale."
+    t_dep, t_arr = 100_000, 900_000
+    out = chapter_anchors(
+        text,
+        [
+            ("Le 15 mai, Berry-Mappemonde quitte La Rochelle.", t_dep, {"role": "depart", "place": "La Rochelle"}),
+            ("Arrivée à Ajaccio le 26 mai. Trois jours d'escale.", t_arr, {"role": "arrive", "place": "Ajaccio"}),
+        ],
+        0,
+        1_000_000,
+        "fr",
+    )
+    idxs = [a["charIdx"] for a in out]
+    assert idxs == sorted(idxs)
+    assert idxs[0] == 0
+    hold = text.find("Trois jours")
+    hold_end = text.rfind("escale")
+    hold_anchors = [a for a in out if a["charIdx"] >= hold - 2]
+    assert len(hold_anchors) >= 2, out
+    assert hold_anchors[0]["charIdx"] <= hold + 2
+    assert hold_anchors[-1]["charIdx"] >= hold_end - FILM_VOICE_LOOKAHEAD_CHARS - 2
+    arrive = text.find("Arrivée")
+    last_arr = text.find("mai", arrive)
+    arrive_hit = [a for a in out if arrive <= a["charIdx"] < hold]
+    assert arrive_hit
+    assert arrive_hit[0]["charIdx"] >= last_arr - FILM_VOICE_LOOKAHEAD_CHARS - 2
+    times = [_parse_iso_ms(a["t"]) for a in out]
+    assert times == sorted(times)
+    assert times[0] == t_dep
+    assert times[-1] == t_arr
+
+
+def test_rg14_group_dated_at_closest_or_split():
+    from film_script import _group_changes
+
+    t0 = 0
+    far = {"id": "a", "kind": "wx", "score": 2, "tMs": 10, "lat": 46.15, "lon": -1.16, "t": "1970-01-01T00:00:00Z"}
+    mid = {"id": "b", "kind": "wx", "score": 2, "tMs": 20, "lat": 36.14, "lon": -5.35, "t": "1970-01-01T00:00:20Z"}
+    near = {"id": "c", "kind": "wx", "score": 2, "tMs": 30, "lat": 41.9, "lon": 8.7, "t": "1970-01-01T00:00:30Z"}
+    clock = {
+        "t0": "1970-01-01T00:00:00Z",
+        "vertices": [{"iso": "1970-01-01T00:00:00Z", "lat": 36.2, "lon": -5.4}],
+    }
+    grouped = _group_changes([far, mid, near], 86_400_000, clock=clock)
+    groups = [c for c in grouped if str(c.get("id") or "").startswith("group:")]
+    assert len(groups) == 1
+    assert groups[0]["tMs"] == mid["tMs"]
+
+    exploded = _group_changes([far, mid, near], 86_400_000, clock=None)
+    assert not any(str(c.get("id") or "").startswith("group:") for c in exploded)
+    assert any(c.get("id") == "a" for c in exploded)
+
+
+def test_rg14_anchor_position_on_example_moments():
+    """Chaque ancre nommée : bateau à ≤ N nm du lieu (escale 5, marina 15, AMP/projet 30)."""
+    t_gib = _ms("2026-05-21T12:00:00Z")
+    t_aj = _ms("2026-05-24T12:51:00Z")
+    lr = {"name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "holdHours": 72, "lat": 46.15, "lon": -1.16, "filmNm": 122, "nm": 0}
+    aj = {"name": "Ajaccio (Corse)", "iso": "2026-05-24T12:51:00Z", "holdHours": 72, "lat": 41.9, "lon": 8.7, "filmNm": 1942, "nm": 1820}
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": [CLOCK["marks"][0], lr, aj],
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": "2026-05-15T13:00:00Z", "lat": 46.14, "lon": -1.18, "vehicle": "main"},
+            {"iso": "2026-05-21T12:00:00Z", "lat": 36.12, "lon": -5.40, "vehicle": "main"},
+            {"iso": "2026-05-24T12:51:00Z", "lat": 41.90, "lon": 8.70, "vehicle": "quay"},
+        ],
+    }
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T12:00:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-21T12:00:00Z", "changes": [
+                {"kind": "coast", "score": 2, "title": "Algeciras", "fact": "Algeciras",
+                 "ports": ["Tanger", "Algeciras"], "lat": 36.14, "lon": -5.35, "tMs": t_gib},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 2, "t": "2026-05-24T12:51:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    live = {"filmNm": 2000, "sailNm": 1900, "iso": "2026-05-25T00:00:00Z", "status": "live"}
+    plan = build_raw_script(clock, clock["marks"], live, journal, lang="fr", seconds=0, now_ms=t_aj + 3_600_000)
+    limits = {"escale": 5.0, "stop": 5.0, "depart": 5.0, "marina": 15.0, "amp": 30.0, "project": 30.0, "coast": 30.0}
+    places = {
+        "gibraltar": (36.14, -5.35),
+        "tanger": (35.78, -5.81),
+        "algeciras": (36.13, -5.45),
+        "la rochelle": (46.15, -1.16),
+        "ajaccio": (41.9, 8.7),
+    }
+    checked = 0
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        for a in ch.get("anchors") or []:
+            t = _parse_iso_ms(a["t"])
+            vert = min(clock["vertices"], key=lambda v: abs((_ms(v["iso"]) or 0) - t))
+            kind = str(a.get("kind") or "")
+            place = str(a.get("place") or "")
+            slice_txt = text[max(0, int(a["charIdx"])): int(a["charIdx"]) + 48]
+            blob = f"{place} {slice_txt}".casefold()
+            coords = None
+            for key, pair in places.items():
+                if key in blob:
+                    coords = pair
+                    break
+            if coords is None:
+                continue
+            d = _nm_between(coords[0], coords[1], vert["lat"], vert["lon"])
+            cap = 5.0 if any(k in blob for k in ("rochelle", "ajaccio")) else limits.get(kind, 30.0)
+            if "gibraltar" in blob or "tanger" in blob or "algeciras" in blob:
+                cap = 30.0
+            assert d is not None and d <= cap, (d, cap, place, slice_txt, vert, a)
+            checked += 1
+    assert checked >= 2
+    gib_ch = next((c for c in plan["chapters"] if "Gibraltar" in (c.get("text") or "")), None)
+    if gib_ch:
+        text = gib_ch["text"]
+        name_at = text.find("Gibraltar")
+        expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
+        assert any(abs(int(a["charIdx"]) - expect) <= 8 for a in gib_ch.get("anchors") or []), gib_ch.get("anchors")

@@ -29,8 +29,8 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RG8 (budgets réels 2:30 / 3:00 / intégral) invalide rg7. moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rg8"
+# Clé film : RG14 (ancres au mot, compensation voix) invalide rg8. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rg14"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"

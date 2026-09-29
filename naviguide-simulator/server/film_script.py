@@ -23,6 +23,9 @@ FILM_WRITE_MIN = 2160
 FILM_WRITE_MAX = 2640
 FILM_CHAPTER_FLOOR = 120
 FILM_CHAPTER_MAX_CHANGES = 4   # arrivée + un fait de mer + la marina de l'escale + approche (27 sept. ; était 3)
+# Client `FILM_VOICE_LOOKAHEAD_CHARS` : le bateau vise 12 caractères devant la voix.
+# L'ancre serveur est déjà compensée (nom du lieu − 12, bornée à 0) — lot RG14.
+FILM_VOICE_LOOKAHEAD_CHARS = 12
 KIND_GROUP_FRAC = 0.10
 FILM_MIN_EVENTS = 6
 FILM_MAX_EVENTS = 9
@@ -2630,7 +2633,13 @@ def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
     return bits
 
 
-def _append_review_sentences(bits: list[str], review: dict | None, window: dict, lang: str) -> None:
+def _append_review_sentences(
+    bits: list[str],
+    review: dict | None,
+    window: dict,
+    lang: str,
+    anchored: list | None = None,
+) -> None:
     """Ajoute les phrases de revue au chapitre. Chiffres via filter_numbers."""
     to = window.get("toName") or window.get("destName") or ""
     leg = review_leg_for_chapter(review, window.get("fromName") or "", to)
@@ -2638,6 +2647,9 @@ def _append_review_sentences(bits: list[str], review: dict | None, window: dict,
         return
     already = " ".join(bits)
     facts = _facts_with_rounded(leg)
+    clock = window.get("clock")
+    marks = (clock or {}).get("marks")
+    t_a, t_b = window.get("tA"), window.get("tB")
     for sentence in review_sentences(leg, lang):
         filtered, _dropped = filter_numbers(sentence, facts)
         sentence = (filtered or "").strip()
@@ -2648,6 +2660,25 @@ def _append_review_sentences(bits: list[str], review: dict | None, window: dict,
             if re.search(r"passe par|goes through", sentence, re.I):
                 continue
         bits.append(sentence)
+        if anchored is None:
+            continue
+        place = ""
+        geo = re.search(
+            r"((?:détroit|strait|golfe|bay)(?: de| of)? [A-ZÀ-Ÿ][\w'’\-]+)",
+            sentence,
+            re.I,
+        )
+        if geo:
+            place = geo.group(1)
+        else:
+            named = re.search(r"\b([A-ZÀ-Ÿ][\w'’\-]{4,})\b", sentence)
+            if named and named.group(1).casefold() not in {"route", "the", "gale", "coup", "then", "puis"}:
+                place = named.group(1)
+        t_ms = _clock_time_near_place(clock, place, t_a, t_b, marks) if place else None
+        if t_ms is None:
+            t_ms = t_a
+        extra = {"place": place, "kind": "coast"} if place else {}
+        anchored.append((sentence, t_ms, extra) if extra else (sentence, t_ms))
 
 
 def cyclone_name_year(change: dict) -> tuple[str, str]:
@@ -3408,7 +3439,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         def finish_chapter() -> None:
             thinned = thin_chapter_dates(bits, lang)
             if len(thinned) == len(bits) and len(anchored) == len(bits):
-                anchored[:] = [(thinned[j], anchored[j][1]) for j in range(len(thinned))]
+                anchored[:] = [_retarget_anchor(anchored[j], thinned[j]) for j in range(len(thinned))]
             bits[:] = thinned
             text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
             if film_opens:
@@ -3416,7 +3447,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
                 if head and head not in text:
                     text = speak_film_text(f"{head} {text}".strip(), lang)
                     for sent in reversed(film_opens):
-                        anchored.insert(0, (sent, w["tA"]))
+                        anchored.insert(0, (sent, w["tA"], {"role": "depart"}))
             if i == len(windows) - 1:
                 close = _close_sentence(w, live, lang, review=review, eta=eta)
                 if close and close not in text:
@@ -3452,7 +3483,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             )
             if head:
                 bits.append(head)
-                anchored.append((head, depart_ms or w["tA"]))
+                anchored.append((head, depart_ms or w["tA"], {"role": "depart"}))
             finish_chapter()
             continue
 
@@ -3506,18 +3537,19 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             )
             if head:
                 bits.append(head)
-                anchored.append((head, depart_ms or w["tA"]))
+                anchored.append((head, depart_ms or w["tA"], {"role": "depart"}))
         for ev in buckets[i]:
             if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
                 continue
             speak_ev(ev)
-        _append_review_sentences(bits, review, w, lang)
+        _append_review_sentences(bits, review, w, lang, anchored)
         if arrived:
             harbor = _arrival_harbor(buckets[i], dest, lang)
             before = len(bits)
             push_arrival(bits, dest, clock=w.get("clock"), harbor=harbor, chapter_i=i)
             if len(bits) > before:
-                anchored.append((bits[-1], w["tB"]))
+                dest_place = short_name((dest or {}).get("name") or "")
+                anchored.append((bits[-1], w["tB"], {"role": "arrive", "place": dest_place, "kind": "escale"}))
         finish_chapter()
     return chapters
 
@@ -3666,7 +3698,7 @@ def _flatten_changes(moments: list[dict], t_a: int, t_b: int, first: bool) -> li
     return out
 
 
-def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
+def _group_changes(changes: list[dict], span_ms: int, clock: dict | None = None) -> list[dict]:
     by_kind: dict[str, list[dict]] = {}
     for change in changes:
         by_kind.setdefault(str(change.get("kind") or ""), []).append(change)
@@ -3678,16 +3710,20 @@ def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
         if kind in {"alert-on", "marina", "port", "amp", "project", "zee-enter", "coast", "climo", "station"}:
             # Pas de « 10 alertes », « N ZEE » ni « N stations » : une station qualifiée, jamais un comptage (RG5).
             continue
-        first, last = group[0], group[-1]
+        # RG14 : dater au membre le plus proche du bateau ; sinon éclater (RG2 a déjà réduit).
+        spoken_ms = group[0].get("tMs")
+        member = _closest_member_to_boat(group, clock, spoken_ms)
+        if member is None:
+            continue
         title = fact = f"{len(group)} {kind}"
         out.append({
-            "id": f"group:{kind}:{first.get('id')}",
+            "id": f"group:{kind}:{member.get('id')}",
             "kind": kind,
             "score": max(int(g.get("score") or 0) for g in group),
             "title": title,
             "fact": fact,
-            "t": first.get("t"),
-            "tMs": first.get("tMs"),
+            "t": member.get("t"),
+            "tMs": member.get("tMs"),
         })
         grouped_ids.update(str(g.get("id")) for g in group)
     gap = span_ms * KIND_GROUP_FRAC if span_ms > 0 else 0
@@ -3739,6 +3775,7 @@ def _usable_changes(changes: list[dict]) -> list[dict]:
 
 def select_chapter_changes(
     changes: list[dict], t_a: int, t_b: int, *, budget: bool = True, tier: Optional[int] = None,
+    clock: dict | None = None,
 ) -> list[dict]:
     usable = _usable_changes(changes)
     span = (t_b or 0) - (t_a or 0)
@@ -3768,7 +3805,7 @@ def select_chapter_changes(
             extras + others if tier is not None else zee + coast + amp + proj + climo + stations + others,
             key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")),
         )
-    grouped = _group_changes(rest_src, span)
+    grouped = _group_changes(rest_src, span, clock=clock)
     must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
     rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
     rest.sort(key=lambda c: (
@@ -4036,6 +4073,248 @@ def _is_arrival_sentence(text: str) -> bool:
     return bool(re.match(r"^(Arrivée à|Arrival at)\b", text or "", re.I))
 
 
+_DEPART_SENT_RE = re.compile(
+    r"\bquitte\b|\bquitté\b|\bdépart vers\b|\bleaves\b|\bleft\b|\bdeparture for\b|"
+    r"\bmet le cap\b|\bsails for\b|\bprend la route\b|\btakes the road\b|\bby road\b",
+    re.I,
+)
+_DURATION_SENT_RE = re.compile(
+    r"d['’]escale|escale de |au port\b|on reste |stopover|at the harbour|"
+    r"alongside|stay of |jours? à quai|days? (?:at |in )?port",
+    re.I,
+)
+# Coordonnées de lieux nommés (faits géographiques, pas un voyage inventé) — recette RG14.
+_NAMED_PLACE_COORDS = {
+    "gibraltar": (36.14, -5.35),
+    "tanger": (35.78, -5.81),
+    "tangier": (35.78, -5.81),
+    "algeciras": (36.13, -5.45),
+    "ceuta": (35.89, -5.32),
+}
+
+
+def _is_depart_sentence(text: str) -> bool:
+    return bool(_DEPART_SENT_RE.search(text or ""))
+
+
+def _is_duration_sentence(text: str) -> bool:
+    return bool(_DURATION_SENT_RE.search(text or ""))
+
+
+def _voice_lookahead_idx(idx: int, floor: int = 0) -> int:
+    return max(int(floor), int(idx) - FILM_VOICE_LOOKAHEAD_CHARS)
+
+
+def _first_word_idx(sentence: str, origin: int) -> int:
+    found = re.search(r"\S", sentence or "")
+    return origin + (found.start() if found else 0)
+
+
+def _last_word_idx(sentence: str, origin: int) -> int:
+    found = re.search(r"(\S+)[.\s]*$", sentence or "")
+    if not found:
+        return origin + max(0, len(sentence or "") - 1)
+    return origin + found.start(1)
+
+
+def _end_idx(sentence: str, origin: int) -> int:
+    body = (sentence or "").rstrip()
+    return origin + max(0, len(body) - 1)
+
+
+def _find_ci(hay: str, needle: str) -> int:
+    if not hay or not needle:
+        return -1
+    return hay.casefold().find(needle.casefold())
+
+
+def _place_idx_in_sentence(sentence: str, origin: int, place: str = "") -> int:
+    """Index du nom du lieu dans la phrase, sinon le milieu."""
+    sent = sentence or ""
+    # Détroit / golfe : le nom géographique, pas le premier port (Tanger ≠ Gibraltar).
+    geo = re.search(
+        r"(?:détroit de |strait of |golfe de |bay of )([A-ZÀ-Ÿ][\w'’\-]+)",
+        sent,
+        re.I,
+    )
+    if geo:
+        return origin + geo.start(1)
+    candidates: list[str] = []
+    if place:
+        candidates.append(place)
+        tail = place.split()[-1] if place.split() else ""
+        if tail and tail.casefold() != place.casefold():
+            candidates.append(tail)
+    for cand in candidates:
+        at = _find_ci(sent, cand)
+        if at >= 0:
+            return origin + at
+    geo = re.search(
+        r"(?:eaux |waters of |port d['’]?|marina |quitte |"
+        r"leaves |longe |skirts |arrivée à |arrival at )"
+        r"([A-ZÀ-Ÿ][\w'’\-]+(?:\s+[A-ZÀ-Ÿ][\w'’\-]+)?)",
+        sent,
+        re.I,
+    )
+    if geo:
+        return origin + geo.start(1)
+    named = re.search(r"\b([A-ZÀ-Ÿ][\w'’\-]{3,}(?:\s+[A-ZÀ-Ÿ][\w'’\-]+)?)\b", sent)
+    if named and not re.match(r"^(Le|La|Les|The|On|Puis|Then|Berry|Arrivée|Arrival)$", named.group(1)):
+        return origin + named.start(1)
+    return origin + max(0, len(sent) // 2)
+
+
+def _locate_spoken(text: str, spoken: str, start: int = 0) -> int:
+    needle = spoken[:28] if len(spoken) > 28 else spoken
+    idx = text.find(needle, start) if needle else -1
+    if idx < 0 and len(needle) > 12:
+        idx = text.find(needle[:12], start)
+    if idx < 0 and len(spoken) > 24:
+        idx = text.find(spoken[-24:], start)
+    return idx
+
+
+def _unpack_anchored(item) -> dict:
+    if isinstance(item, dict):
+        return {
+            "sentence": str(item.get("sentence") or item.get("text") or ""),
+            "t": item.get("t") if item.get("t") is not None else item.get("tMs"),
+            "t_end": item.get("t_end") if item.get("t_end") is not None else item.get("tEnd"),
+            "place": str(item.get("place") or ""),
+            "kind": str(item.get("kind") or ""),
+            "role": str(item.get("role") or ""),
+        }
+    sentence = str(item[0]) if item else ""
+    t_ms = item[1] if len(item) > 1 else None
+    extra = item[2] if len(item) > 2 else {}
+    if not isinstance(extra, dict):
+        extra = {"role": extra} if extra else {}
+    return {
+        "sentence": sentence,
+        "t": t_ms,
+        "t_end": extra.get("t_end") if extra.get("t_end") is not None else extra.get("tEnd"),
+        "place": str(extra.get("place") or ""),
+        "kind": str(extra.get("kind") or ""),
+        "role": str(extra.get("role") or ""),
+    }
+
+
+def _retarget_anchor(item, sentence: str):
+    if isinstance(item, dict):
+        return {**item, "sentence": sentence}
+    t_ms = item[1] if len(item) > 1 else None
+    extra = item[2] if len(item) > 2 else None
+    if extra is None:
+        return (sentence, t_ms)
+    return (sentence, t_ms, extra)
+
+
+def _named_place_coords(name: str, marks: list | None = None) -> Optional[tuple[float, float]]:
+    raw = str(name or "").strip()
+    if not raw:
+        return None
+    key = norm_stop(raw)
+    for mark in marks or []:
+        if not isinstance(mark, dict):
+            continue
+        if key and key in norm_stop(mark.get("name") or ""):
+            try:
+                return float(mark["lat"]), float(mark["lon"])
+            except (TypeError, ValueError, KeyError):
+                continue
+    folded = raw.casefold()
+    for token, pair in _NAMED_PLACE_COORDS.items():
+        if token in folded or token in key:
+            return pair
+    return None
+
+
+def _clock_latlon_at(clock: dict | None, t_ms: Optional[int]) -> Optional[tuple[float, float]]:
+    if clock is None or t_ms is None:
+        return None
+    t0 = _ms(clock.get("t0"))
+    best: Optional[tuple[float, float]] = None
+    best_dt: Optional[int] = None
+    for v in clock.get("vertices") or []:
+        if not isinstance(v, dict):
+            continue
+        t = _ms(v.get("iso"))
+        if t is None and t0 is not None and v.get("tHours") is not None:
+            try:
+                t = t0 + int(float(v["tHours"]) * 3_600_000)
+            except (TypeError, ValueError):
+                t = None
+        if t is None:
+            continue
+        try:
+            lat, lon = float(v["lat"]), float(v["lon"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        dt = abs(int(t) - int(t_ms))
+        if best_dt is None or dt < best_dt:
+            best, best_dt = (lat, lon), dt
+    return best
+
+
+def _clock_time_near_place(
+    clock: dict | None,
+    place: str,
+    t_a: Optional[int],
+    t_b: Optional[int],
+    marks: list | None = None,
+) -> Optional[int]:
+    coords = _named_place_coords(place, marks or (clock or {}).get("marks"))
+    if coords is None or clock is None:
+        return None
+    plat, plon = coords
+    t0 = _ms(clock.get("t0"))
+    best_t: Optional[int] = None
+    best_d: Optional[float] = None
+    for v in clock.get("vertices") or []:
+        if not isinstance(v, dict):
+            continue
+        t = _ms(v.get("iso"))
+        if t is None and t0 is not None and v.get("tHours") is not None:
+            try:
+                t = t0 + int(float(v["tHours"]) * 3_600_000)
+            except (TypeError, ValueError):
+                t = None
+        if t is None:
+            continue
+        if t_a is not None and t < t_a:
+            continue
+        if t_b is not None and t > t_b:
+            continue
+        d = _nm_between(plat, plon, v.get("lat"), v.get("lon"))
+        if d is None:
+            continue
+        if best_d is None or d < best_d:
+            best_d, best_t = d, t
+    return best_t
+
+
+def _closest_member_to_boat(
+    group: list[dict],
+    clock: dict | None,
+    spoken_ms: Optional[int],
+) -> Optional[dict]:
+    """Membre le plus proche du bateau à l'instant où le groupe est dit ; sinon None (éclater)."""
+    if not group:
+        return None
+    boat = _clock_latlon_at(clock, spoken_ms if spoken_ms is not None else group[0].get("tMs"))
+    if boat is None:
+        return None
+    best = None
+    best_d: Optional[float] = None
+    for member in group:
+        d = _nm_between(boat[0], boat[1], member.get("lat"), member.get("lon"))
+        if d is None:
+            continue
+        if best_d is None or d < best_d:
+            best, best_d = member, d
+    return best
+
+
 def _relative_lead(prev: Optional[datetime], cur: Optional[datetime], lang: str) -> str:
     if prev and cur:
         try:
@@ -4147,43 +4426,89 @@ def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> st
     return blob
 
 
-def chapter_anchors(text: str, anchored: list[tuple[str, Optional[int]]], t_a: int, t_b: int, lang: str) -> list[dict]:
-    """[{charIdx, t}] : position dans le texte FINAL de chaque phrase gardée → instant du trajet (ISO).
-    Le client cale le bateau dessus pendant que la phrase est dite. Les phrases coupées par le budget
-    n'ont pas d'ancre ; les instants sont bornés à [tA, tB] et rendus croissants (chronologie stricte)."""
-    out: list[tuple[int, int]] = []
+def chapter_anchors(text: str, anchored: list, t_a: int, t_b: int, lang: str) -> list[dict]:
+    """[{charIdx, t}] : nœud dans le texte FINAL → instant du trajet (ISO).
+
+    RG14 / D1 : l'ancre d'un lieu est l'index du nom (− avance voix 12 car., bornée à 0) ;
+    une phrase de durée a deux ancres (arrivée au début, départ à la fin) ; un départ
+    s'ancre au premier mot, une arrivée au dernier. Instants bornés à [tA, tB],
+    croissants. Les phrases coupées par le budget n'ont pas d'ancre.
+    """
+    out: list[tuple[int, int, str, str]] = []
     if not text or not anchored:
         return []
-    for sentence, t_ms in anchored:
-        if not sentence or t_ms is None:
+    search_from = 0
+    for item in anchored:
+        row = _unpack_anchored(item)
+        raw_sent = (row["sentence"] or "").strip()
+        if not raw_sent or row["t"] is None:
             continue
-        spoken = speak_film_text(str(sentence).strip(), lang)
-        needle = spoken[:28] if len(spoken) > 28 else spoken
-        idx = text.find(needle) if needle else -1
-        if idx < 0 and len(needle) > 12:
-            idx = text.find(needle[:12])
-        if idx < 0 and len(spoken) > 24:
-            tail = spoken[-24:]
-            idx = text.find(tail)
-        if idx < 0:
+        spoken = speak_film_text(raw_sent, lang)
+        blob_idx = _locate_spoken(text, spoken, search_from)
+        if blob_idx < 0:
+            blob_idx = _locate_spoken(text, spoken, 0)
+        if blob_idx < 0:
             continue
-        t = int(t_ms)
+        search_from = blob_idx + 1
+        t = int(row["t"])
+        t_end = int(row["t_end"]) if row["t_end"] is not None else t
         if t_a is not None:
             t = max(int(t_a), t)
+            t_end = max(int(t_a), t_end)
         if t_b is not None:
             t = min(int(t_b), t)
-        out.append((idx, t))
+            t_end = min(int(t_b), t_end)
+        if t_end < t:
+            t_end = t
+        role = (row["role"] or "").strip().lower()
+        place = row["place"]
+        kind = row["kind"]
+        parts = _sentences(spoken) or [spoken]
+        cursor = blob_idx
+        for part in parts:
+            part_idx = text.find(part, cursor)
+            if part_idx < 0:
+                part_idx = _locate_spoken(text, part, cursor)
+            if part_idx < 0:
+                part_idx = cursor
+            cursor = part_idx + max(1, len(part) // 2)
+            if role == "depart" or (not role and _is_depart_sentence(part) and not _is_arrival_sentence(part)):
+                idx = _voice_lookahead_idx(_first_word_idx(part, part_idx))
+                out.append((idx, t, place, kind or "depart"))
+                continue
+            if _is_duration_sentence(part):
+                start = _voice_lookahead_idx(_first_word_idx(part, part_idx), part_idx)
+                end = _voice_lookahead_idx(_end_idx(part, part_idx), part_idx)
+                out.append((start, t, place, kind or "escale"))
+                if end > start:
+                    out.append((end, t_end, place, kind or "escale"))
+                continue
+            if role == "arrive" or _is_arrival_sentence(part):
+                idx = _voice_lookahead_idx(_last_word_idx(part, part_idx), part_idx)
+                out.append((idx, t, place, kind or "escale"))
+                continue
+            idx = _voice_lookahead_idx(_place_idx_in_sentence(part, part_idx, place), part_idx)
+            out.append((idx, t, place, kind))
     out.sort(key=lambda p: p[0])
     result: list[dict] = []
     last_t: Optional[int] = None
-    for idx, t in out:
+    for idx, t, place, kind in out:
         if last_t is not None and t < last_t:
             t = last_t
         last_t = t
         if result and result[-1]["charIdx"] == idx:
             result[-1]["t"] = _iso(t)
+            if place and not result[-1].get("place"):
+                result[-1]["place"] = place
+            if kind and not result[-1].get("kind"):
+                result[-1]["kind"] = kind
             continue
-        result.append({"charIdx": idx, "t": _iso(t)})
+        row_out: dict = {"charIdx": idx, "t": _iso(t)}
+        if place:
+            row_out["place"] = place
+        if kind:
+            row_out["kind"] = kind
+        result.append(row_out)
     return result
 
 
@@ -4396,6 +4721,7 @@ def build_raw_from_moments(
             flat.append(extra)
         selected = select_chapter_changes(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
+            clock=w.get("clock") or clock,
         )
         bits: list[str] = []
         placed: list[dict] = []
@@ -4411,6 +4737,9 @@ def build_raw_from_moments(
             ):
                 return
             place = change_place_name(change) or title
+            geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
+            if geo and (geo.get("fr") or geo.get("en")):
+                place = geo.get("fr") or geo.get("en") or place
             if looks_english_title(place) and change.get("kind") in {
                 "port", "approche", "culture", "project", "amp", "marina",
             }:
@@ -4424,7 +4753,18 @@ def build_raw_from_moments(
                 return
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(sentence)
-            anchored.append((sentence, change.get("tMs")))
+            extra = {"place": place, "kind": str(change.get("kind") or "")}
+            if change.get("lat") is not None:
+                extra["lat"] = change.get("lat")
+                extra["lon"] = change.get("lon")
+            t_ms = change.get("tMs")
+            near = _clock_time_near_place(
+                w.get("clock") or clock, place, w["tA"], w["tB"],
+                (w.get("clock") or clock or {}).get("marks"),
+            )
+            if near is not None:
+                t_ms = near
+            anchored.append((sentence, t_ms, extra))
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)
 
@@ -4446,7 +4786,7 @@ def build_raw_from_moments(
             )
             if head:
                 bits.append(head)
-                anchored.append((head, depart_ms or w["tA"]))
+                anchored.append((head, depart_ms or w["tA"], {"role": "depart"}))
             bits[:] = thin_chapter_dates(bits, lang)
             chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
             text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
@@ -4455,7 +4795,7 @@ def build_raw_from_moments(
                 if head and head not in text:
                     text = speak_film_text(f"{head} {text}".strip(), lang)
                     for sent in reversed(film_opens):
-                        anchored.insert(0, (sent, w["tA"]))
+                        anchored.insert(0, (sent, w["tA"], {"role": "depart"}))
             if i == len(windows) - 1:
                 close = _close_sentence(w, live, lang, review=review, eta=eta)
                 if close and close not in text:
@@ -4484,10 +4824,10 @@ def build_raw_from_moments(
             )
             if head:
                 bits.append(head)
-                anchored.append((head, depart_ms or w["tA"]))
+                anchored.append((head, depart_ms or w["tA"], {"role": "depart"}))
         for change in selected:
             speak_change(change)
-        _append_review_sentences(bits, review, w, lang)
+        _append_review_sentences(bits, review, w, lang, anchored)
         key = norm_stop((dest or {}).get("name") or "")
         harbor = _arrival_harbor(selected, dest, lang) if arrived else ""
         arrival = (
@@ -4499,7 +4839,8 @@ def build_raw_from_moments(
         if arrival and key and key not in cited:
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(arrival)
-            anchored.append((arrival, w["tB"]))
+            dest_place = short_name((dest or {}).get("name") or "")
+            anchored.append((arrival, w["tB"], {"role": "arrive", "place": dest_place, "kind": "escale"}))
             cited.add(key)
             arr_id = f"stop:{dest['name']}:{dest.get('iso')}"
             dest_title = short_name(dest["name"])
@@ -4510,7 +4851,7 @@ def build_raw_from_moments(
             })
         thinned = thin_chapter_dates(bits, lang)
         if len(thinned) == len(bits) and len(anchored) == len(bits):
-            anchored[:] = [(thinned[j], anchored[j][1]) for j in range(len(thinned))]
+            anchored[:] = [_retarget_anchor(anchored[j], thinned[j]) for j in range(len(thinned))]
         bits[:] = thinned
         chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
         text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
@@ -4519,7 +4860,7 @@ def build_raw_from_moments(
             if head and head not in text:
                 text = speak_film_text(f"{head} {text}".strip(), lang)
                 for sent in reversed(film_opens):
-                    anchored.insert(0, (sent, w["tA"]))
+                    anchored.insert(0, (sent, w["tA"], {"role": "depart"}))
         if i == len(windows) - 1:
             close = _close_sentence(w, live, lang, review=review, eta=eta)
             if close and close not in text:
