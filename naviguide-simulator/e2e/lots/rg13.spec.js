@@ -9,7 +9,9 @@ import { expect, test } from "@playwright/test";
 import { dismissNotForNav, leaveCinema, waitBoatUnderWay, waitFilmCanStart } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg13");
+const recetteRc25 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc25");
 mkdirSync(recetteDir, { recursive: true });
+mkdirSync(recetteRc25, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.jpg`),
@@ -17,6 +19,86 @@ const shot = (page, name) => page.screenshot({
   quality: 70,
   fullPage: false,
 });
+const shotRc25 = (page, name) => page.screenshot({
+  path: join(recetteRc25, `${name}.jpg`),
+  type: "jpeg",
+  quality: 70,
+  fullPage: false,
+});
+
+const STILL_NM = 0.5;
+const BOAT_JUMP_PX = 40;
+
+async function measureChapterFlip(page, timeoutMs = 50_000) {
+  return page.evaluate(async (limit) => {
+    const R = 3440.065;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const nmBetween = (a, b) => {
+      if (!a || !b || ![a.lat, a.lon, b.lat, b.lon].every(Number.isFinite)) return Infinity;
+      const dLat = toRad(b.lat - a.lat);
+      let dLonDeg = b.lon - a.lon;
+      while (dLonDeg > 180) dLonDeg -= 360;
+      while (dLonDeg < -180) dLonDeg += 360;
+      const dLon = toRad(dLonDeg);
+      const s = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+    };
+    const read = () => {
+      const f = window.__naviguideFilm || {};
+      const el = document.querySelector(".catamaran-divicon--live");
+      const r = el?.getBoundingClientRect?.();
+      return {
+        ch: Number.isFinite(Number(f.chapterIdx)) ? Number(f.chapterIdx) : 0,
+        lat: Number(f.lat),
+        lon: Number(f.lon),
+        x: r && r.width ? r.left + r.width / 2 : null,
+        y: r && r.height ? r.top + r.height / 2 : null,
+        ended: Boolean(f.ended),
+      };
+    };
+    const log = [];
+    const t0 = performance.now();
+    while (performance.now() - t0 < limit) {
+      const s = read();
+      log.push(s);
+      if (s.ended) break;
+      if (log.length >= 2 && s.ch !== log[log.length - 2].ch) {
+        for (let extra = 0; extra < 12; extra++) {
+          await new Promise((r) => requestAnimationFrame(r));
+          log.push(read());
+        }
+        break;
+      }
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    let idx = -1;
+    for (let i = 1; i < log.length; i++) {
+      if (log[i].ch !== log[i - 1].ch) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx < 0) return { flipped: false, ended: Boolean(log.at(-1)?.ended) };
+    const prev = log[idx - 1];
+    const cur = log[idx];
+    const jumps = [];
+    for (let i = Math.max(1, idx); i < Math.min(log.length, idx + 10); i++) {
+      const a = log[i - 1];
+      const b = log[i];
+      if (a.x == null || b.x == null) continue;
+      jumps.push(Math.hypot(b.x - a.x, b.y - a.y));
+    }
+    return {
+      flipped: true,
+      from: prev.ch,
+      to: cur.ch,
+      nm: nmBetween(prev, cur),
+      dpx: prev.x != null && cur.x != null ? Math.hypot(cur.x - prev.x, cur.y - prev.y) : null,
+      maxJump: jumps.length ? Math.max(...jumps) : null,
+    };
+  }, timeoutMs);
+}
 
 async function probeOfficial(page) {
   const res = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
@@ -52,6 +134,7 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
   if (!apiUp) {
     await expect(start).toBeDisabled();
     await shot(page, "01-cadrage");
+    await shotRc25(page, "01-chapitre-sans-bond");
     return;
   }
 
@@ -62,6 +145,7 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
       description: "film officiel pas prêt — lecture sautée ; barre et Revoir gardés",
     });
     await shot(page, "01-cadrage");
+    await shotRc25(page, "01-chapitre-sans-bond");
     return;
   }
 
@@ -72,6 +156,31 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
   expect((await subtitle.innerText()).trim().length, "sous-titre non vide").toBeGreaterThan(0);
 
   await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 10_000 });
+
+  const flip = await measureChapterFlip(page, 50_000);
+  if (!flip.flipped) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "chapitre 1 pas atteint — assertion |Δpx| au flip sautée",
+    });
+  } else if (!(flip.nm <= STILL_NM)) {
+    test.info().annotations.push({
+      type: "poste",
+      description: `flip ch${flip.from}→ch${flip.to} Δnm=${Number(flip.nm).toFixed(2)} — pas le cas à quai`,
+    });
+  } else if (flip.dpx == null) {
+    test.info().annotations.push({
+      type: "poste",
+      description: `flip ch${flip.from}→ch${flip.to} sans icône bateau — |Δpx| non mesuré`,
+    });
+  } else {
+    expect(flip.dpx, `bateau ${flip.dpx} px au flip ch${flip.from}→ch${flip.to}`).toBeLessThanOrEqual(BOAT_JUMP_PX);
+    if (flip.maxJump != null) {
+      expect(flip.maxJump, `saut max ${flip.maxJump} px autour du flip`).toBeLessThanOrEqual(BOAT_JUMP_PX);
+    }
+  }
+  await shotRc25(page, "01-chapitre-sans-bond");
+
   const underway = await waitBoatUnderWay(page, { timeout: 20_000 });
   if (!underway?.moving) {
     test.info().annotations.push({
