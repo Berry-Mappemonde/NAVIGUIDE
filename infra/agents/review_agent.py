@@ -83,14 +83,23 @@ def parcours_section(state: rl.State, ids: list[str], http: rl.Http | None) -> l
     num = rl.pr_number(((state.done.get(tip) or {}) if tip else {}).get("pr"))
     if not num:
         return []
-    try:
-        comments = (http or rl.Http(None, None)).github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{num}/comments?per_page=100") or []
-    except RuntimeError:
-        comments = []
-    verdicts = [c for c in comments if rl.BOT_PARCOURS_RE.search(c.get("body") or "") and rc.trusted(c)]
+    # La tête d'abord ; sinon les autres PR de la tranche, de la plus récente à la plus ancienne (le porteur
+    # a fait jouer le parcours à la main sur #420 le 29 sept. pendant que la boucle avançait d'un lot).
+    nums = [num] + [n for n in (rl.pr_number((state.done.get(lid) or {}).get("pr")) for lid in reversed(ids[:-1])) if n]
+    verdicts: list[dict] = []
+    for n in nums:
+        try:
+            comments = (http or rl.Http(None, None)).github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{n}/comments?per_page=100") or []
+        except RuntimeError:
+            comments = []
+        verdicts = [c for c in comments if rl.BOT_PARCOURS_RE.search(c.get("body") or "") and rc.trusted(c)]
+        if verdicts:
+            if n != num:
+                num = n
+            break
     if not verdicts:
         return ["## Parcours de référence de Grok Bot (tête de pile)", "",
-                f"- Absent sur #{num} au moment de ta revue — juge la pile sur les PR seules ; dis-le dans ton résumé.", ""]
+                f"- Absent sur #{num} et sur les PR de la tranche au moment de ta revue — juge la pile sur les PR seules ; dis-le dans ton résumé.", ""]
     last = verdicts[-1]
     lines = [ln.strip() for ln in (last.get("body") or "").splitlines()]
     items = [ln for ln in lines if ln.startswith("- [")]
