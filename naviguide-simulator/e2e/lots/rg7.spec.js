@@ -136,6 +136,14 @@ test("lot RG7 — ouverture de l'expédition et fin aujourd'hui", async ({ page 
 
   const first = film.chapters[0]?.text || "";
   const last = film.chapters[film.chapters.length - 1]?.text || "";
+  const hasRgOpening = OPENING.test(first)
+    || /Berry-Mappemonde quitte|Berry-Mappemonde leaves/i.test(
+      film.chapters.map((c) => c.text || "").join(" "),
+    );
+  // RC21 : ouverture RG6/RG7 ⇒ Revoir jouable ; plus de skip « pré-RG » qui cache un bouton grisé.
+  if (hasRgOpening) {
+    await expect(start).toBeEnabled({ timeout: 30_000 });
+  }
   if (!OPENING.test(first) || !ROAD.test(first)) {
     test.info().annotations.push({
       type: "stock pré-RG7",

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, wallClockSpeakSeconds } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, wallClockSpeakSeconds } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -287,7 +287,7 @@ function chapterHasFirstLeg(ch) {
 }
 
 describe("lot RC10 — film officiel, pas la Simulation", () => {
-  it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ ; RG8 relève le plafond mots", () => {
+  it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ ; court sans jargon ready", () => {
     assert.equal(isRe7OfficialFilm({
       chapters: [{ text: "Départ de Saint-Maur. golfe de Gascogne. Aujourd’hui, le bateau est à Nouméa." }],
     }), true);
@@ -295,9 +295,27 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.equal(isRe7OfficialFilm({
       chapters: [{ text: "Aujourd'hui, le bateau est à 19 260 milles nautiques du départ." }],
     }), false);
-    assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(801)}` }] }), true);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(801)}` }] }), false);
     assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(2501)}` }] }), false);
     assert.equal(isRe7OfficialFilm({ chapters: [] }), false);
+  });
+
+  it("lot RC21 — 801 mots : gabarit RG6 ready, Bay of Biscay stale, remplissage stale", () => {
+    const pad = (prefix) => `${prefix} ${"mot ".repeat(801)}`;
+    const rg6 = pad("Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio. 432 milles, 9 jours de mer.");
+    assert.equal(filmHasRg6Rg7Fingerprint(rg6), true);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: rg6 }] }), true);
+    assert.equal(officialFilmStatus({ chapters: [{ text: rg6 }] }), "ready");
+    const biscay = pad("Bay of Biscay");
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: biscay }] }), false);
+    assert.equal(officialFilmStatus({ chapters: [{ text: biscay }] }), "stale");
+    const filler = `${"mot ".repeat(801)}`;
+    assert.equal(filmHasRg6Rg7Fingerprint(filler), false);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: filler }] }), false);
+    assert.equal(officialFilmStatus({ chapters: [{ text: filler }] }), "stale");
+    assert.equal(isRe7OfficialFilm({
+      chapters: [{ text: "Départ de Saint-Maur. golfe de Gascogne. Cap au sud-ouest." }],
+    }), true);
   });
 
   it("officialFilmStatus : absent si fetch échoue, stale si empreinte manquante", () => {
