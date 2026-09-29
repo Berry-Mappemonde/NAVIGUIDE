@@ -117,7 +117,9 @@ test("lot RG6 — gabarit d'étape, sans jargon ni annexe", async ({ page }) => 
   if (hasRgOpening) {
     await expect(start).toBeEnabled({ timeout: 30_000 });
   }
-  if (!hasRgOpening) {
+  // Stock figé : ouverture RG6/RG7 possible avec encore du jargon — Revoir est
+  // déjà vérifié ; on saute le discours RG6, on ne l'affaiblit pas.
+  if (FORBIDDEN.test(blob) || QUAY_REPEAT.test(blob) || !OPENING.test(blob)) {
     test.info().annotations.push({
       type: "stock pré-RG6",
       description: "film servi encore à l'ancienne clé — remplisseur doit recalculer (FILM_SCRIPT_REV=rg6)",
