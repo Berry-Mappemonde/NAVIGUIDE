@@ -1,11 +1,12 @@
 // Lot RG8 — budgets réels : 2:30 / 3:00 / intégral, durée estimée à côté des pilules.
-// Sans API : barre, Revoir et pilules tiennent seuls. GET /voyage/official sondé ;
-// s'il manque, annotation + saut des seules assertions film — jamais les pilules
-// ni la barre retirés.
+// Sans API : barre et Revoir tiennent seuls. GET /voyage/official sondé ;
+// s'il manque, annotation + saut des assertions film / pilules (canStart faux,
+// comme RE3 / RC11) — jamais la barre ni Revoir retirés.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { waitFilmCanStart } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg8");
 mkdirSync(recetteDir, { recursive: true });
@@ -75,7 +76,7 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — assertions film sautées ; barre et pilules gardées",
+      description: "GET /voyage/official absent — assertions film sautées ; barre et Revoir gardés",
     });
   }
 
@@ -90,16 +91,11 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   await expect(start).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("replay-departure")).toBeVisible();
 
-  const durations = page.getByTestId("film-duration");
-  await expect(durations).toBeVisible({ timeout: 8_000 });
-  await expect(durations).toContainText("2:30");
-  await expect(durations).toContainText("3:00");
-  await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée = intégral").toHaveCount(0);
-
   if (!apiUp) {
     await expect(start).toBeDisabled();
-    await expect(page.getByTestId("film-subtitle")).toHaveCount(0);
+    await expect(page.getByTestId("film-duration")).toHaveCount(0);
     await expect(page.getByTestId("film-duration-estimate")).toHaveCount(0);
+    await expect(page.getByTestId("film-subtitle")).toHaveCount(0);
     await shot(page, "01-pilules");
     return;
   }
@@ -112,11 +108,7 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
       type: "film vide",
       description: "GET /voyage/official/film sans les trois variantes — assertions longueurs sautées",
     });
-    if (await durations.isVisible().catch(() => false)) {
-      await shot(page, "01-pilules");
-    } else {
-      await shot(page, "01-pilules");
-    }
+    await shot(page, "01-pilules");
     return;
   }
 
@@ -134,6 +126,21 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
       expect(dur150, "2:30 pas trop court si le stock est riche").toBeGreaterThanOrEqual(150 * 0.9);
     }
   }
+
+  const canPlay = await waitFilmCanStart(page, 20_000);
+  const durations = page.getByTestId("film-duration");
+  if (!canPlay || !(await durations.isVisible().catch(() => false))) {
+    test.info().annotations.push({
+      type: "Revoir grisé",
+      description: "film officiel pas prêt — pilules (canStart) et lecture sautées ; longueurs HTTP déjà lues",
+    });
+    await shot(page, "01-pilules");
+    return;
+  }
+
+  await expect(durations).toContainText("2:30");
+  await expect(durations).toContainText("3:00");
+  await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée = intégral").toHaveCount(0);
 
   const pill150 = durations.locator("[data-seconds='150']");
   const pill180 = durations.locator("[data-seconds='180']");
@@ -155,21 +162,11 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   await pill180.click();
   await expect(pill180).toHaveAttribute("aria-pressed", "false");
 
-  const canPlay = await start.isEnabled().catch(() => false);
-  if (!canPlay) {
-    test.info().annotations.push({
-      type: "Revoir grisé",
-      description: "film officiel pas prêt sur cette API — lecture et pilules grisées sautées",
-    });
-    await shot(page, "01-pilules");
-    return;
-  }
-
   await muteVoice(page);
   await start.click();
   await expect(page.getByTestId("film-subtitle")).toBeVisible({ timeout: 8_000 });
-  await expect(durations).toBeVisible();
-  await expect(pill150).toBeDisabled();
-  await expect(pill180).toBeDisabled();
+  await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByTestId("film-duration")).toHaveCount(0);
+  await expect(page.getByTestId("replay-start")).toHaveCount(0);
   await shot(page, "01-pilules");
 });

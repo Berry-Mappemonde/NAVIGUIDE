@@ -144,13 +144,13 @@ describe("barre film (lot RC1) — libellé météo du point", () => {
 });
 
 describe("barre film (lot RG8) — pilules et durée estimée", () => {
-  it("garde 2:30 / 3:00, affiche l'estimée, grise pendant le film", () => {
+  it("garde 2:30 / 3:00 et l'estimée hors film (RE3 : absentes pendant la lecture)", () => {
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /filmDuration150/);
     assert.match(bar, /filmDuration180/);
     assert.match(bar, /data-testid="film-duration-estimate"/);
-    assert.match(bar, /disabled=\{Boolean\(replay\.active\)\}/);
-    assert.match(bar, /data-testid="film-duration"/);
+    assert.match(bar, /replay\.canStart \? \(/);
+    assert.match(bar, /\{replay\.active \? \(/);
     assert.doesNotMatch(bar, /calibrateRate/);
   });
 });

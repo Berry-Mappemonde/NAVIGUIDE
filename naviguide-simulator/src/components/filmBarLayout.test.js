@@ -122,7 +122,7 @@ describe("film bar (lot RA6)", () => {
 });
 
 describe("film bar (lot RE3 / RG8)", () => {
-  it("garde 2:30 / 3:00 à côté de Revoir, visibles hors film, grisées pendant", () => {
+  it("garde 2:30 / 3:00 à côté de Revoir hors film, avec l'estimée", () => {
     const startAt = firstIndex(bar, /data-testid="replay-start"/);
     const durationAt = firstIndex(bar, /data-testid="film-duration"/);
     const stopAt = firstIndex(bar, /data-testid="replay-stop"/);
@@ -133,10 +133,9 @@ describe("film bar (lot RE3 / RG8)", () => {
     assert.doesNotMatch(beforeStart, /data-testid="film-duration"/);
     assert.match(afterStart, /data-testid="film-duration"/);
     const durBlock = bar.slice(durationAt, durationAt + 1600);
-    assert.match(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
-    assert.match(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
     assert.match(durBlock, /film-duration-estimate/);
     assert.match(durBlock, /=== sec \? 0 : sec/);
+    assert.match(bar, /replay\.canStart \? \(/);
     assert.match(bar, /disabled=\{!replay\.canStart\}/);
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /disabled:opacity-30 disabled:cursor-not-allowed/);
