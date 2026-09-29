@@ -170,6 +170,15 @@ enregistrement d'écran par l'agent : c'est le porteur qui filme) :
 
 **Existing project — what changed since August 26, 2026** :
 
+La réponse commence par le **chiffre**, mesuré dans `git` et régénéré à chaque soumission par
+`python3 infra/agents/devpost_code_share.py` (porteur, 29 sept. ; valeurs du 29 sept., HEAD `4934e16`) :
+
+```
+In numbers (from git, code files only): on August 26, 2026 the repository held 66 code files and 14,349 lines — the Blue Intelligence map and a prototype; the NAVIGUIDE simulator did not exist. Today it holds 977 code files and 220,260 lines, and 90% of those lines (197,874) were written or rewritten since August 26 — 980 commits, 977 files touched. The simulator (98,753 lines) is entirely post-August 26.
+```
+
+Puis le texte (mettre à jour : deux modes Suivre / Tracer, film ancré, ce qui est coupé) :
+
 ```
 NAVIGUIDE existed as a flat map with a route and a polar panel. Since August 26 we rebuilt it around the voyage: a real voyage clock and camera follow, the "bag" of nearby context every 30 nm (EEZ, Gold ports of entry, MPAs, weather, science, harbours) with rule-based NOW/FREE cards, a persistent SQLite memory, a journal of every border, port of entry, protected area and gale, harbour sheets, a logbook chat, plan review by rules, isochrone route advice with skipper limits, and the narrated replay. The LLM layer moved to Nebius Token Factory: Nemotron 3 Super writes every generated paragraph (briefing, harbour sheet, chat, replay script), Nemotron 3.5 Lightning ranks and translates, Nemotron 3 Ultra judges Gold ports of entry against pages re-read by Tavily. All of this is in the repository history (pull requests #189–#2xx).
 ```
