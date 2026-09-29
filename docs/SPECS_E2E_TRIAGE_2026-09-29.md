@@ -72,7 +72,7 @@ pour que l'assertion devienne dure · **POSTE** = par construction hors CI, type
 | `rc12-voyage-sans-horloge-sync` | `horloge figée` · j0 sur le stock figé — jour de mer officiel pas encore servi | horloge du stock figé au jour 0 | **STOCK** — figer une horloge avancée (jour de mer > 0) ; sinon exiger en dur le libellé honnête « j0 » |
 | `rb7-eta-prechauffe` | `poste` · fourchette absente du stock figé (pas d'eta) | famille `eta` absente de la fixture ; `compute_eta` ne sert rien tant que `members = 0` (RG17) | **STOCK après RG17** — ajouter la famille `eta` ; en attendant le type `poste` est le bon |
 | `re5` | `poste` · pas de fourchette (stock sans eta) — aucune date inventée | idem | **STOCK après RG17** |
-| `r10b` | `advice unavailable` · RF1 : /advice honnête (unavailable) sur le stock figé | conseil = isochrone + LLM, jamais en CI | **POSTE** — typer `poste` (le contrat RF1 « unavailable honnête » reste vérifié en dur) |
+| `r10b` → `parcours-nominal` | `advice unavailable` · RF1 : /advice honnête (unavailable) sur le stock figé | conseil = isochrone + LLM, jamais en CI | **POSTE** — fait le 29 sept. dans la spec fusionnée (type `poste`, contrat RF1 « unavailable honnête » vérifié en dur) |
 | `r10c` | `recalcul inactif` · Recalculer présent mais inactif (voyage / prévision) | recalcul = isochrone, jamais en CI | **POSTE** — typer `poste` |
 | `r10d` | `conseil inactif` · Demander conseil présent mais inactif | idem | **POSTE** — typer `poste` |
 | `r7-escale` | `poste` · fiche encore « On rassemble » (stock figé sans /escale enrichi) | `/escale` enrichi vient de `ici_warm`, coupé en CI | **STOCK** si la fiche d'Ajaccio tient dans la fixture (famille `ici`), sinon **POSTE** (déjà typé) |
@@ -101,9 +101,11 @@ même lot que le § 3 :
 - **Types `?`** (annotation sans `type`, invisible dans le résumé) : `r1-nettoyage` l. 125, `r8c` l. 146,
   `ra3-film-rendu` l. 138 et 168, `rc11` l. 112, `rb8` l. 134 → donner un type (`sans API`, `poste` ou `mesure`).
 
-Candidats à **fusionner** (pas à écarter) : `r8a`, `r8b`, `r10a`, `r10b` (« aucun changement visible, trois
-parcours ») rejouent le même parcours nominal — un seul « parcours nominal » spec suffirait ; gain ~1 min de CI
-par tranche concernée. Décision porteur.
+**Fusion faite (29 sept., décision porteur)** : `r8a`, `r8b`, `r10a`, `r10b` (« aucun changement visible, trois
+parcours ») rejouaient le même parcours nominal ; ils sont remplacés par `e2e/lots/parcours-nominal.spec.js`,
+qui garde tout ce qu'ils vérifiaient (encadré Ici seul et en mode clair, trois vues, encadré présent dans
+l'app, `/advice` typé `poste`). La suite passe de 100 à **97 specs** ; les captures des anciens lots restent
+dans `docs/recette/lot-r8a…lot-r10b`.
 
 ## 5. Les 17 specs « dures » (aucun chemin à vide)
 
