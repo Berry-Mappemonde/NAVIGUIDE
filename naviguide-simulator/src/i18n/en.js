@@ -106,7 +106,7 @@ export default {
   expeditionRisk:     "Expedition Risk",
   score:              "Score",
   gettingStarted:     "🧭 Getting Started",
-  gettingStartedText: "Two buttons: Follow the Berry-Mappemonde expedition (the boat now) or Simulation (play a route). Draw a custom route only in Simulation.",
+  gettingStartedText: "Two buttons: Follow the Berry-Mappemonde expedition (the boat now) or Plot (play the Berry-Mappemonde route or your own: departure date, calculations).",
   searouteUnavailable: "Official route (searoute unavailable).",
   searouteDrawFailed: "searoute failed — temporary rhumb line.",
   berryLocalBriefing: "Berry-Mappemonde expedition: departure from La Rochelle on 15 May 2026, 08:00 UTC. The briefing tells the pack around the boat — which EEZ, which ports of entry, what sits inside 30 nm — not the whole chart.", // pragma: allowlist secret
@@ -334,7 +334,7 @@ export default {
   // ── Simulation Mode ────────────────────────────────────────────────────────
   simulationMarkerTitle: "Catamaran — click for metrics",
   simulationDragPrompt:  "Drag the catamaran along the route…",
-  exitSimulation:        "Exit simulation",
+  exitSimulation:        "Exit Plot",
   nmRemaining:           "Remaining",
   nmCovered:             "Covered",
   eta:                   "ETA",
@@ -415,8 +415,8 @@ export default {
   layerBiAmpTitle:           "Marine protected areas",
 
   // ── Simulation button (Sidebar) ────────────────────────────────────────────
-  simulationModeLabel:   "Simulation",
-  exitSimulationShort:   "Simulation",
+  simulationModeLabel:   "Plot",
+  exitSimulationShort:   "Exit Plot",
   simulationModeTooltip: "Simulation — play the expedition (Play, speeds, stops)",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
@@ -500,7 +500,7 @@ export default {
   voyageLocalKnots: "{knots} kt",
   traveledEraSpeed: "{knots} kn",
   escalesQuay:      "{days} d in port",
-  viewModeGroup:    "Follow the expedition or Simulation",
+  viewModeGroup:    "Follow the expedition or Plot",
   followExpeditionButton: "Follow expedition",
   followExpeditionTitle: "Follow the Berry-Mappemonde expedition",
   simulationButton: "Simulation",
@@ -551,7 +551,7 @@ export default {
   skipperComfortNormal:   "Normal",
   skipperComfortHard:     "Hard",
   skipperHorizonAria:     "Lookahead horizon: 24, 36 or 48 hours",
-  skipperHorizonLeg:      "this leg (Simulation)",
+  skipperHorizonLeg:      "this leg (Plot)",
   skipperPearls:          "pearls",
   skipperExpertTitle:     "Numbers",
   skipperExpertReset:     "Back to the profile number",

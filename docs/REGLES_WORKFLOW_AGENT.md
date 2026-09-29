@@ -84,7 +84,7 @@ File:line and explanation (for a fix). "—" for a feature.
 Nouveaux tests : lesquels, ce qu'ils protègent. / New tests: which, what they protect.
 
 ## Recette (à faire par le porteur, 5 min) / What to check (owner, 5 min)
-Écran : Suivre | Simulation | Tracer ma route | Revoir l'expédition | Panneau droit.
+Écran : Suivre | Tracer | Revoir l'expédition | Panneau droit.
 - [ ] Ouvre …, clique … → **tu dois voir** … / Open …, click … → **you must see** …
 - [ ] …
 Captures : https://github.com/<owner>/<repo>/blob/<branche>/docs/recette/<lot>/01-….jpg?raw=true (≤ 4, 1280×800, JPEG q70).
@@ -121,13 +121,13 @@ Ce qu'on n'a pas touché exprès, ce qui pourrait bouger. / Left untouched on pu
   (ce qu'il faut regarder, **écran par écran**, puis l'ordre des merges).
   À la main : `cd naviguide-simulator && bash ensure-dev.sh --prod --open`.
 - Chaque lot donne des **étapes numérotées** rangées par écran (Suivre,
-  Simulation, Tracer ma route, Revoir l'expédition, Panneau droit) et, pour
+  Tracer, Revoir l'expédition, Panneau droit) et, pour
   chacune, **ce qu'on doit voir** : un texte exact, un chiffre, une position à
   l'écran, un bouton présent ou absent. Deux formes seulement :
   - « **Changement visible** » : la liste précise des différences avec `main`.
   - « **Aucun changement visible** » : le lot est interne ; la recette, c'est
     « tout marche comme avant » sur trois parcours fixes (Suivre à Nouméa,
-    Simulation La Rochelle → Ajaccio, Tracer ma route Brisbane → SF).
+    Tracer La Rochelle → Ajaccio, Tracer votre propre route Brisbane → SF).
 - Les captures sont **fixes** (pas de vidéo), rangées dans
   `docs/recette/<lot>/`, nommées `01-…jpg`, `02-…jpg`, et **référencées dans la
   PR par leur URL complète sur la branche** (`…/blob/<branche>/docs/recette/…?raw=true`,
