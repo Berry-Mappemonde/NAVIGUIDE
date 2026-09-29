@@ -70,6 +70,8 @@ def test_story_endpoint_reads_the_cache_then_writes_through_it(monkeypatch):
 
 
 def test_pregeneration_from_pearls_under_budget(monkeypatch):
+    # La pré-génération est de l'ARRIÈRE-PLAN : elle n'écrit qu'en NAVIGUIDE_LLM_MODE=all (28 sept.).
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "all")
     ici_engine.reset_caches()
     monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
@@ -170,3 +172,23 @@ def test_story_through_cache_translates_cached_fr(monkeypatch):
     assert hit["text"] == "Entry into EEZ 5677."
     again = asyncio.run(story_cache.story_through_cache(en, writer=writer))
     assert again["cached"] is True and again["source"] == "cache"
+
+
+def test_pregeneration_spends_nothing_in_default_mode(monkeypatch):
+    """Mode par défaut on-demand (28 sept.) : le préchauffage des récits ne fait aucun appel payant."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    ici_engine.reset_caches()
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
+    monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
+    calls = []
+
+    async def spy(body, client=None):
+        calls.append(body)
+        return "texte", "nemotron-super"
+
+    monkeypatch.setattr(story_cascade, "write_story", spy)
+    voy = {**_official(), "voyageId": OFFICIAL_VOYAGE_ID}
+    voyage_store.save_voyage(voy)
+    out = asyncio.run(story_cache.pregenerate_official(voy["points"], pause_s=0))
+    assert out.get("written", 0) == 0, "arrière-plan en on-demand : rien n'est écrit par le LLM"
+    assert calls == [], "aucun appel au modèle"

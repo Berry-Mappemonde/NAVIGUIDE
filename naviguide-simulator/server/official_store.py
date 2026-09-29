@@ -1105,7 +1105,10 @@ def ensure_fill_process() -> Optional[int]:
         if not FILL_SCRIPT.exists():
             log.warning("stock officiel : %s absent — pas de remplisseur", FILL_SCRIPT)
             return None
-        env = {**os.environ, "NAVIGUIDE_OFFICIAL_STORE_DIR": str(disk_root()), "NAVIGUIDE_OFFICIAL_WORKER": "0"}
+        # Le remplisseur est de l'arrière-plan : sous NAVIGUIDE_LLM_MODE=on-demand (défaut, 28 sept.) il ne fait
+        # aucun appel LLM payant — le stock porte le brut, le « Rédigé » ne vient que sur demande (mode all).
+        env = {**os.environ, "NAVIGUIDE_OFFICIAL_STORE_DIR": str(disk_root()), "NAVIGUIDE_OFFICIAL_WORKER": "0",
+               "NAVIGUIDE_LLM_BACKGROUND": "1"}
         try:
             fill_logfile().parent.mkdir(parents=True, exist_ok=True)
             logf = open(fill_logfile(), "a", encoding="utf-8")   # noqa: SIM115 — hérité par l'enfant
