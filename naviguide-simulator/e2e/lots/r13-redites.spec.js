@@ -97,6 +97,11 @@ async function collectScreen(page) {
     const prev = closed.map((el) => el.style.display);
     closed.forEach((el) => { el.style.display = "none"; });
     const raw = document.body.innerText || "";
+    // La ligne « Sources » de l'encadré Ici liste des producteurs (« zee · GEBCO · climatology · … ») : le mot
+    // « climatology » y est un identifiant de source, pas un libellé d'écran — il ne compte pas comme redite.
+    // (29 sept. : vert ou rouge selon que le sac /ici était arrivé au moment du décompte.)
+    const sourcesText = [...document.querySelectorAll("[data-testid='ici-section-sources']")]
+      .map((el) => el.innerText || "").join("\n");
     closed.forEach((el, i) => { el.style.display = prev[i]; });
     const lines = raw.split(/\n/).map((s) => s.trim()).filter((s) => s.length >= 8);
     const counts = new Map();
@@ -105,13 +110,15 @@ async function collectScreen(page) {
       .filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "fr"))
       .map(([line, n]) => [n, line]);
-    const word = (re) => {
-      const m = raw.match(re);
+    const word = (re, text = raw) => {
+      const m = text.match(re);
       return m ? m.length : 0;
     };
+    const sourceLines = new Set(sourcesText.split(/\n/).map((s) => s.trim()).filter(Boolean));
+    const rawSansSources = raw.split(/\n/).filter((l) => !sourceLines.has(l.trim())).join("\n");
     return {
       duplicates,
-      climatologie: word(/climatolog(?:ie|y)/gi),
+      climatologie: word(/climatolog(?:ie|y)/gi, rawSansSources),
       polaire: word(/polaires?|polars?/gi),
       boat: word(/l[eé]opard\s*46/gi),
     };
