@@ -478,6 +478,16 @@ def prepare_worktree(lot: Lot, ref: str) -> Path:
     elif sh(["git", "rev-parse", "--verify", "-q", ref], cwd=ROOT, check=False).returncode != 0:
         target = f"origin/{ref}"
     sh(["git", "worktree", "add", "--detach", str(path), target], cwd=ROOT, timeout=300)
+    # Une pile vit plusieurs heures pendant que main avance (plans mergés en journée, specs réparées, docs) :
+    # chaque nouveau lot part de la tête de pile PLUS main — sinon l'agent ne trouve pas le plan qu'on lui
+    # demande de lire (DM1 stacké sur la pile film, 29 sept.). En cas de conflit, on repart de la tête seule.
+    if target != "origin/main":
+        m = sh(["git", "merge", "--no-edit", "origin/main"], cwd=path, check=False, timeout=300)
+        if m.returncode != 0:
+            sh(["git", "merge", "--abort"], cwd=path, check=False)
+            log(f"[{lot.id}] main non fusionnable dans la tête de pile ({(m.stderr or m.stdout or '').strip()[:120]}) — on part de {ref} seule")
+        elif "Already up to date" not in (m.stdout or ""):
+            log(f"[{lot.id}] origin/main fusionné dans le worktree ({ref} + main)")
     # Dépendances partagées par lien : les tests et le build tournent sans réinstaller.
     sim = ROOT / "naviguide-simulator"
     linked = []
