@@ -11,6 +11,7 @@ from official_store import (
     DiskBackend,
     FAMILIES,
     FILM_SCRIPT_REV,
+    MOMENTS_REV,
     MongoBackend,
     OfficialStore,
     PREPARING,
@@ -318,6 +319,7 @@ def test_film_key_includes_script_rev(tmp_path):
     film_key = store.family_key("film", voy, NOW)
     base = store.current_key(voy, NOW)
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
+    assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
     assert store.family_key("eta", voy, NOW) == base
 
 

@@ -348,9 +348,14 @@ def _leg_at(legs: list[dict], sail_nm: float) -> tuple[int, dict]:
     return len(legs) - 1, legs[-1]
 
 
-PLACE_NEAR_NM = 15.0          # une marina ou un port « croisé » : à moins de 15 nm de la route
+PLACE_NEAR_NM = 15.0          # une marina « croisée » : à moins de 15 nm de la route
+COAST_NEAR_NM = 25.0          # ports / WPI → jalon de côte (RG2)
 SCORE_PLACE = 2
-_PLACE_LISTS = (("marina", "marinas"), ("port", "wpi"), ("port", "capitaineries"))
+_PLACE_LISTS = (
+    ("marina", "marinas", PLACE_NEAR_NM),
+    ("coast", "wpi", COAST_NEAR_NM),
+    ("coast", "capitaineries", COAST_NEAR_NM),
+)
 
 
 def _norm_place(name: Any) -> str:
@@ -358,21 +363,22 @@ def _norm_place(name: Any) -> str:
 
 
 def _new_places_nearby(pearl: dict, seen: set[tuple[str, str]]) -> list[dict]:
-    """Marinas et ports (WPI, capitaineries) du sac de la perle à moins de PLACE_NEAR_NM, pas encore cités
-    sur le voyage → un changement chacun (kind marina | port). Sans nom, ou trop loin : rien."""
+    """Marinas (15 nm) et ports / WPI (25 nm) du sac, pas encore cités → marina | coast.
+    Sans nom, ou trop loin : rien. Aucun nom inventé."""
     nearby = pearl.get("nearby") if isinstance(pearl.get("nearby"), dict) else {}
     out: list[dict] = []
-    for kind, field in _PLACE_LISTS:
+    for kind, field, limit in _PLACE_LISTS:
+        title_kind = "port" if kind == "coast" else kind
         for item in nearby.get(field) or []:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "").strip()
-            if not name or _is_generic_title(name, kind) or len(name) > 40 or "|" in name:
+            if not name or _is_generic_title(name, title_kind) or len(name) > 40 or "|" in name:
                 continue
             if re.search(r"\b(tour|excursion|activit|autorit[ée]s?|club nautique de plaisance|charter)\b", name, re.I):
                 continue      # une activité ou une administration, pas un port
             nm = _as_float(item.get("nm"))
-            if nm is not None and nm > PLACE_NEAR_NM:
+            if nm is not None and nm > limit:
                 continue
             key = (kind, _norm_place(name))
             if key in seen:
@@ -465,8 +471,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             and live_rem <= thr < prev_rem_live
             and live_rem > 1.0
         )
-        # Marinas et ports croisés (27 sept.) : chacun une fois, à moins de PLACE_NEAR_NM de la route — le
-        # Journal ne les citait que quand « la plus proche » changeait (29 lignes pour 237 marinas connues).
+        # Marinas (15 nm) et jalons de côte (ports / WPI, 25 nm) : une fois chacun (RG2).
         new_places = _new_places_nearby(pearl, seen_places)
         same_sig = prev is not None and sig == (prev.get("signature") or signature(prev))
         if same_sig and not approach_hit and not new_places:
@@ -474,9 +479,8 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
                 prev_rem_live = live_rem
             prev_leg_idx = leg_idx
             continue
-        # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas
-        # (« Porto de Peniche » ×4) : marinas et ports viennent désormais de _new_places_nearby, une fois chacun.
-        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port"}]
+        # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas.
+        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port", "coast"}]
         changes.extend(new_places)
         if approach_hit:
             title = _stop_title(str(cur_to))

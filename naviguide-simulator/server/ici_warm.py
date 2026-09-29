@@ -36,6 +36,7 @@ WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.0)
 WARM_PARALLEL = max(1, int(os.environ.get("NAVIGUIDE_ICI_WARM_PARALLEL") or 2))
 LEGACY_TTL_S = 7 * 86400.0
 POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
+COAST_NEAR_NM = 25.0  # ports / WPI → jalon de côte (RG2)
 SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal, lot F2)
 CLIMO_ROSE_TURN_DEG = 90.0
 CLIMO_CALM_KN = 8.0
@@ -270,7 +271,8 @@ def _pearl_event(pearl: dict, idx: int, kind: str, event: str, name: str | None,
 def route_events_from_pearls(points: list[dict]) -> list[dict]:
     """What the warmed pearls know about the route, in order: ZEE entered /
     left, marine protected areas that come within reach, ports of entry
-    passed (≤ POE_NEARBY_NM), régime climatique (climo) and scientific
+    passed (≤ POE_NEARBY_NM), coast milestones from WPI / capitaineries
+    (≤ COAST_NEAR_NM), régime climatique (climo) and scientific
     stations (sci, ≤ SCI_NEARBY_NM, once per entity). Pearls not cached
     yet are unknown — no event is invented across a gap.
 
@@ -285,6 +287,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     seen_amp: set[str] = set()
     seen_poe: set[str] = set()
     seen_sci: set[str] = set()
+    seen_coast: set[str] = set()
     prev_climo: dict | None = None
     in_calms = False
     for idx, pearl in enumerate(sample_route_nm(points)):
@@ -317,6 +320,27 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
                 "nm": nm, "url": poe.get("url"), "mrgid": cur_id,
                 "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
             })
+        nearby = bag.get("nearby") if isinstance(bag.get("nearby"), dict) else {}
+        for field in ("wpi", "capitaineries"):
+            for item in nearby.get(field) or []:
+                if not isinstance(item, dict) or not item.get("name"):
+                    continue
+                nm = item.get("nm")
+                if not isinstance(nm, (int, float)) or nm > COAST_NEAR_NM:
+                    continue
+                name = str(item["name"]).strip()
+                if not name or len(name) > 40 or "|" in name:
+                    continue
+                key = str(item.get("id") or item.get("site_id") or name)
+                if key in seen_coast:
+                    continue
+                seen_coast.add(key)
+                events.append({
+                    "kind": "coast", "event": "passed", "name": name, "coastId": key,
+                    "nm": nm, "mrgid": cur_id,
+                    "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4),
+                    "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+                })
         if not state_known:
             state, state_known, candidate = cur, True, None
         elif cur_id == state_id:
