@@ -163,6 +163,9 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     };
     assert.equal(etaFromResponse(empty), null);
     assert.equal(etaDisplayFromResponse(empty), empty);
+    const preparing = { members: 0, p10: null, p90: null, status: "preparing", reason: "en préparation" };
+    assert.equal(etaDisplayFromResponse(preparing), null);
+    assert.equal(formatEtaRange(preparing, tFr, "fr"), "");
     assert.equal(etaRetryDue(empty, Date.parse("2026-09-28T12:00:00Z")), false);
     const frLabel = plain(formatEtaRange(empty, tFr, "fr"));
     assert.match(frLabel, /fourchette indisponible/);
