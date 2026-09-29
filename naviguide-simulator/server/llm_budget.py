@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import threading
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,12 +20,56 @@ LAST_SOURCE_KEY = "last-source"
 
 TIERS = ("fast", "write", "judge")
 
-# Tokens / jour — plan § 2.
+# Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
+# Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j, judge 0.
 DEFAULT_CAPS = {
-    "fast": 2_000_000,
-    "write": 500_000,
-    "judge": 100_000,
+    "fast": 200_000,
+    "write": 150_000,
+    "judge": 0,
 }
+
+# Mode LLM (NAVIGUIDE_LLM_MODE) — décision du porteur du 28 sept. : « Nemotron seulement quand je le dis ou
+# quand c'est utile ».
+#   off        : aucun appel payant, jamais (agents de lot, CI, machines de dev).
+#   on-demand  : (défaut) seulement sur une action de l'utilisateur — question au chat, clic « Rédigé » —
+#                jamais en arrière-plan (préchauffage des récits, écriture du film, phrase de la revue,
+#                remplisseur du stock).
+#   all        : tout, comme avant (à poser explicitement sur le poste pour une démo complète).
+_MODES = ("off", "on-demand", "all")
+_BACKGROUND: ContextVar[bool] = ContextVar("naviguide_llm_background", default=False)
+
+
+def mode() -> str:
+    raw = (os.environ.get("NAVIGUIDE_LLM_MODE") or "on-demand").strip().lower().replace("_", "-")
+    return raw if raw in _MODES else "on-demand"
+
+
+def in_background() -> bool:
+    """Vrai dans une tâche d'arrière-plan (préchauffage, remplisseur) — ou dans un processus lancé avec
+    NAVIGUIDE_LLM_BACKGROUND=1 (le remplisseur du stock)."""
+    if (os.environ.get("NAVIGUIDE_LLM_BACKGROUND") or "").strip() in ("1", "true", "yes"):
+        return True
+    return bool(_BACKGROUND.get())
+
+
+@contextmanager
+def background():
+    """À poser autour d'un travail d'arrière-plan : sous le mode on-demand, la cascade n'appelle rien."""
+    token = _BACKGROUND.set(True)
+    try:
+        yield
+    finally:
+        _BACKGROUND.reset(token)
+
+
+def llm_allowed_here() -> bool:
+    """Le mode autorise-t-il un appel payant ICI (avant même le plafond) ?"""
+    m = mode()
+    if m == "off":
+        return False
+    if m == "all":
+        return True
+    return not in_background()
 
 # $/million tokens (entrée, sortie) — plan § 0.
 PRICES_PER_M = {
@@ -137,7 +183,10 @@ def get_usage(tier: str, day: str | None = None) -> dict[str, Any]:
 
 
 def allow(tier: str) -> bool:
-    """False when today's counter is already at/over the cap — no network."""
+    """False si le mode l'interdit ici (off, ou arrière-plan en on-demand), ou si le compteur du jour est au
+    plafond — dans les deux cas : aucun appel réseau, la cascade rend `source=budget`."""
+    if not llm_allowed_here():
+        return False
     used = get_usage(tier)
     return int(used["tokens"]) < daily_cap(tier)
 

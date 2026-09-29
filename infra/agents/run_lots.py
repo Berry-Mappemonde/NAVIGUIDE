@@ -658,7 +658,7 @@ def _agent_outcome(returncode: int, stdout: str, stderr: str) -> tuple[str, str]
 
 
 def _run_agent_cli_once(path: Path, prompt: str, model: str, timeout_s: int, resume: bool = False) -> tuple[str, str]:
-    env = {**os.environ, "PW_PORT": str(PW_PORT)}
+    env = {**os.environ, "PW_PORT": str(PW_PORT), "NAVIGUIDE_LLM_MODE": "off"}   # agents de lot : aucun appel LLM payant (28 sept.)
     try:
         p = subprocess.run(_agent_cmd(path, prompt, model, resume), cwd=str(path), text=True, capture_output=True, timeout=timeout_s, env=env)
     except subprocess.TimeoutExpired:
@@ -673,7 +673,7 @@ def run_agent_cli_watched(path: Path, prompt: str, model: str, timeout_s: int, d
     on l'ARRÊTE et on rend « STOPPED » avec la raison — plutôt que d'attendre qu'il veuille bien finir.
     26 sept. : le correcteur a ouvert la PR GO en 20 min puis a tourné une heure de plus, jusqu'à défaire
     son propre travail dans son worktree, pendant que la boucle attendait sa sortie."""
-    env = {**os.environ, "PW_PORT": str(PW_PORT)}
+    env = {**os.environ, "PW_PORT": str(PW_PORT), "NAVIGUIDE_LLM_MODE": "off"}   # agents de lot : aucun appel LLM payant (28 sept.)
     p = subprocess.Popen(_agent_cmd(path, prompt, model, resume), cwd=str(path), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                          start_new_session=True)
     t0 = time.time()
@@ -1428,6 +1428,7 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
         script = ROOT / "naviguide-simulator" / "ensure-dev.sh"
         cmd = ["bash", str(script), "--prod", f"--dir={sim}"] + ([] if quiet else ["--open"])
         env = dict(os.environ)
+        env.setdefault("NAVIGUIDE_LLM_MODE", "on-demand")   # poste : LLM seulement sur une action (chat, Rédigé) — « all » se pose à la main
         _name, host = tunnel_settings()
         if host:   # le preview doit accepter l'hôte du tunnel nommé (sinon Vite : « Blocked request »)
             env["NAVIGUIDE_PREVIEW_HOST"] = host

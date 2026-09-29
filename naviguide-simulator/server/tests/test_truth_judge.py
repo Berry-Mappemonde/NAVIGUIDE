@@ -7,6 +7,16 @@ from pathlib import Path
 import httpx
 
 import llm_budget
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _judge_budget(monkeypatch):
+    """Depuis le 28 sept. le tier judge est plafonné à 0 par défaut (juge coupé) : ces tests exercent le module
+    avec un faux modèle, ils rouvrent le plafond et sortent de l'arrière-plan pour la durée du test."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "1000000")
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "all")
+    yield
 import pearl_store
 import truth_judge
 from story_cascade import filter_numbers
