@@ -296,7 +296,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     lat, lon, sailNm, idx, title, facts, entity }. The journal dates
     `sailNm`."""
     from ici_engine import (  # noqa: PLC0415
-        is_fishing_amp, spoken_amp_name, thin_cache_get, thin_cache_key,
+        is_fishing_amp, science_type_key, spoken_amp_name, thin_cache_get, thin_cache_key,
     )
 
     events: list[dict] = []
@@ -458,8 +458,10 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
         elif climo is None:
             in_calms = False
         prev_climo = climo
-        # Lot F2 — station / campagne à ≤ 10 nm, une fois par entité.
+        # Lot F2 / RG5 — station qualifiée à ≤ 10 nm, une fois par entité ; titre brut gardé pour la fiche.
         for item in _science_items(bag):
+            if not science_type_key(item):
+                continue
             nm = item.get("nm")
             if not isinstance(nm, (int, float)):
                 ilat, ilon = item.get("lat"), item.get("lon")
@@ -480,10 +482,18 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
                 siteId=key,
                 nm=nm,
                 url=item.get("url") or item.get("visit_url"),
+                source=item.get("source"),
+                sciKind=item.get("kind"),
                 title=_sci_title(),
-                facts={"nm": round(float(nm), 1), "name": item["name"]},
+                facts={
+                    "nm": round(float(nm), 1),
+                    "name": item["name"],
+                    "source": item.get("source"),
+                    "kind": item.get("kind"),
+                },
                 entity={
                     "kind": "science",
+                    "sciKind": item.get("kind"),
                     "name": item["name"],
                     "lat": round(float(slat), 4),
                     "lon": round(float(slon), 4),

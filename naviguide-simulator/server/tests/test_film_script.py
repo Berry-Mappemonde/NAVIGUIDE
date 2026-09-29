@@ -29,6 +29,7 @@ from film_script import (
     dose_climo_changes,
     dose_coast_changes,
     dose_project_changes,
+    dose_station_changes,
     dose_zee_changes,
     film_candidates,
     film_facts,
@@ -47,6 +48,8 @@ from film_script import (
     warm_film_story,
     select_chapter_changes,
     select_film_events,
+    station_name_speakable,
+    station_spoken_label,
     speak_film_text,
     written_is_valid,
     zee_waters_label,
@@ -899,7 +902,9 @@ def test_rich_moments_without_budget_cites_each_type():
     assert re.search(r"à portée de Les Minimes", blob)
     assert re.search(r"longe La Rochelle|devant La Rochelle", blob)
     assert re.search(r"aire marine protégée(?: :| ) Cabrera|l'aire marine protégée Cabrera", blob)
-    assert re.search(r"station PIRATA", blob)
+    assert re.search(r"une bouée", blob)
+    assert "PIRATA" not in blob
+    assert "stations scientifiques croisées" not in blob
     assert "Irma" in blob and "2017" in blob
     assert "Fort Saint-Louis" in blob
     assert "traces de cyclone ce mois-ci" not in blob
@@ -1184,7 +1189,9 @@ def test_re7_discourse_eleven_defects():
     assert re.search(r"le bateau attend à Cayenne", blob)
     assert re.search(r"Aujourd’hui, le bateau est à Nouméa", blob)
     assert "Irma" in blob and "2017" in blob
-    assert "PIRATA" in blob
+    assert "une bouée" in blob
+    assert "PIRATA" not in blob
+    assert "stations scientifiques croisées" not in blob
     assert "Cabrera" in blob
     assert "Fort Saint-Louis" in blob
     assert "golfe de Gascogne" in blob
@@ -1705,3 +1712,107 @@ def test_climo_sentence_and_dosage():
     assert len(dose_climo_changes(many, 20 * 86_400_000)) == 2
     picked = select_chapter_changes(many, 0, 20 * 86_400_000, budget=True)
     assert sum(1 for c in picked if c.get("kind") == "climo") <= 2
+
+
+def test_rg5_dataset_title_never_spoken():
+    assert not station_name_speakable("Bacteria in Rias of Galicia")
+    silent = {
+        "kind": "station",
+        "title": "Bacteria in Rias of Galicia",
+        "fact": "Bacteria in Rias of Galicia (2 nm)",
+        "t": "2026-05-16T12:00:00Z",
+    }
+    assert change_sentence(silent, "fr") == ""
+    assert change_sentence(silent, "en") == ""
+    assert "Bacteria" not in (change_sentence(silent, "fr") or "")
+
+
+def test_rg5_argo_speaks_type_not_wmo():
+    ch = {
+        "kind": "station",
+        "title": "Argo 6904216",
+        "fact": "Argo 6904216 (4 nm)",
+        "t": "2026-05-18T12:00:00Z",
+        "source": "argo",
+    }
+    fr = change_sentence(ch, "fr")
+    en = change_sentence(ch, "en")
+    assert fr == "Le 18 mai, un flotteur Argo."
+    assert en == "On 18 May, an Argo float."
+    assert "6904216" not in fr
+    assert "6904216" not in en
+    assert station_spoken_label(ch, "fr") == "un flotteur Argo"
+    assert station_name_speakable("Argo 6904216")
+
+
+def test_rg5_named_types_from_title_words():
+    assert station_spoken_label({"kind": "station", "title": "PELGAS2025"}, "fr") == "la campagne PELGAS"
+    assert station_spoken_label({"kind": "station", "title": "PELGAS2025"}, "en") == "the PELGAS campaign"
+    assert station_spoken_label({"kind": "station", "title": "Wave buoy 12"}, "fr") == "une bouée"
+    assert station_spoken_label({"kind": "station", "title": "CTD and nutrients sections"}, "fr") == "une station côtière"
+    assert station_spoken_label({"kind": "station", "title": "Coastal observatory Brest"}, "fr") == "un observatoire"
+    assert station_spoken_label({"kind": "station", "title": "Station croisée"}, "fr") == ""
+
+
+def test_rg5_one_station_per_chapter_closest_no_count():
+    from film_script import _group_changes
+
+    bacteria = {
+        "id": "s0", "kind": "station", "score": 2, "tMs": 1, "nm": 1,
+        "title": "Bacteria in Rias of Galicia", "fact": "Bacteria in Rias of Galicia",
+    }
+    far = {
+        "id": "s1", "kind": "station", "score": 2, "tMs": 2, "nm": 8,
+        "title": "Argo 6904216", "fact": "Argo 6904216", "source": "argo",
+    }
+    near = {
+        "id": "s2", "kind": "station", "score": 2, "tMs": 3, "nm": 2,
+        "title": "Argo 6901234", "fact": "Argo 6901234", "source": "argo",
+    }
+    escale = {
+        "id": "e", "kind": "escale", "score": 3, "tMs": 4,
+        "title": "Arrivée à Ajaccio", "fact": "x",
+    }
+    picked = select_chapter_changes([bacteria, far, near, escale], 0, 10, budget=False)
+    stations = [c for c in picked if c.get("kind") == "station"]
+    assert len(stations) == 1
+    assert stations[0]["id"] == "s2"
+    assert dose_station_changes([bacteria, far, near], 99) == [near]
+
+    crowd = [
+        {**far, "id": f"g{i}", "tMs": i, "title": f"Argo {6904216 + i}"}
+        for i in range(6)
+    ]
+    grouped = _group_changes(crowd, 20 * 86_400_000)
+    blob = " ".join(change_sentence(c, "fr") for c in grouped)
+    assert "stations scientifiques croisées" not in blob
+    assert not any(str(c.get("id") or "").startswith("group:station") for c in grouped)
+
+    moments = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+             "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 2, "t": "2026-05-16T09:00:00Z", "signature": "s2", "legIdx": 1, "changes": [
+                {"kind": "station", "score": 2, "title": "Bacteria in Rias of Galicia",
+                 "fact": "Bacteria in Rias of Galicia", "nm": 1},
+                {"kind": "station", "score": 2, "title": "Argo 6904216",
+                 "fact": "Argo 6904216 (8 nm)", "nm": 8, "source": "argo"},
+                {"kind": "station", "score": 2, "title": "Argo 6901234",
+                 "fact": "Argo 6901234 (2 nm)", "nm": 2, "source": "argo"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 3, "t": "2026-05-24T12:51:00Z", "signature": "s3", "legIdx": 1, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, moments, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "Bacteria" not in blob
+    assert "stations scientifiques croisées" not in blob
+    assert blob.count("un flotteur Argo") <= 1
+    assert "6904216" not in blob
+    assert "6901234" not in blob

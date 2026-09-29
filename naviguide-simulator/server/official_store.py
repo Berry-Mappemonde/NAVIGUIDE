@@ -28,8 +28,8 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
-# Clé film / moments : RG4 (climatologie racontée) invalide rg3. ici reste rg3.
-FILM_SCRIPT_REV = "rg4"
+# Clé film : RG5 (stations qualifiées) invalide rg4. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rg5"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
@@ -322,7 +322,7 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : film, moments et ici portent la révision du calcul (RG4)."""
+        """Clé de rangement : film, moments et ici portent la révision du calcul (RG5)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
