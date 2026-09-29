@@ -32,6 +32,63 @@ export function publishClimoRoseStats(partial) {
   return climoRoseStats;
 }
 
+export function emptyClimoPools() {
+  return {
+    wind: new Map(),
+    waveP50: new Map(),
+    waveP90: new Map(),
+    waveMean: new Map(),
+    current: new Map(),
+  };
+}
+
+export function drainClimoPools(pools) {
+  if (!pools) return;
+  for (const pool of Object.values(pools)) pool?.clear?.();
+}
+
+/** Empreinte vue (zoom + cadre) : un moveend sans déplacement garde la même clé. */
+export function climoViewKey(map, { digits = 3 } = {}) {
+  if (!map || typeof map.getZoom !== "function") return "";
+  const z = Math.round(Number(map.getZoom()) || 0);
+  const b = typeof map.getBounds === "function" ? map.getBounds() : null;
+  if (!b || typeof b.getWest !== "function") return `z${z}`;
+  return [
+    z,
+    b.getWest().toFixed(digits),
+    b.getSouth().toFixed(digits),
+    b.getEast().toFixed(digits),
+    b.getNorth().toFixed(digits),
+  ].join(":");
+}
+
+/** Remet les marqueurs du pool sur un groupe neuf (remontage d'effet). */
+export function reattachClimoPool(group, pool) {
+  if (!group || !pool) return 0;
+  let n = 0;
+  for (const lyr of pool.values()) {
+    if (!lyr) continue;
+    if (typeof group.hasLayer === "function" && group.hasLayer(lyr)) continue;
+    if (typeof group.addLayer !== "function") continue;
+    group.addLayer(lyr);
+    n += 1;
+  }
+  return n;
+}
+
+/** 2e passe même vue : incrémente syncs sans recréer. */
+export function publishSameViewWindSync(pool, syncs) {
+  const n = pool?.size || 0;
+  return publishClimoRoseStats({
+    created: 0,
+    reused: n,
+    removed: 0,
+    shown: n,
+    markers: n,
+    syncs,
+  });
+}
+
 export function climoMeshDeg(zoom) {
   const z = Math.max(0, Math.min(6, Math.round(Number(zoom) || 0)));
   return Math.max(1, 16 / 2 ** Math.min(z, CLIMO_MESH_MAX_Z));
@@ -149,6 +206,12 @@ export function syncClimoPointMarkers({
       nextKeys.add(key);
       if (pool.has(key)) {
         reused += 1;
+        const existing = pool.get(key);
+        if (existing && group && typeof group.addLayer === "function") {
+          if (typeof group.hasLayer !== "function" || !group.hasLayer(existing)) {
+            group.addLayer(existing);
+          }
+        }
         continue;
       }
       const lyr = makeLayer([lat, lng], p);
@@ -157,6 +220,15 @@ export function syncClimoPointMarkers({
       group.addLayer(lyr);
       created += 1;
     }
+  }
+  if (nextKeys.size === 0 && pool.size > 0) {
+    return {
+      created: 0,
+      reused: pool.size,
+      removed: 0,
+      shown: shown.length,
+      markers: pool.size,
+    };
   }
   let removed = 0;
   for (const [key, lyr] of [...pool.entries()]) {
