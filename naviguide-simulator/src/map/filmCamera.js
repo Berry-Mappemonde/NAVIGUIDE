@@ -1,6 +1,7 @@
 import {
-  FILM_FLY_SECONDS,
+  FILM_BOAT_KEEP_FRAC,
   FILM_PAN_MAX_SCREEN,
+  FILM_RESET_EVERY,
   FILM_ZOOM_MAX,
   FILM_ZOOM_MIN,
 } from "../engine/replay.js";
@@ -30,25 +31,63 @@ function toLatLngPair(v) {
   return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
 }
 
-/** Borne un déplacement de caméra à 2 % de la largeur d'écran. */
-export function clampFilmPan(from, to, map, { maxFrac = FILM_PAN_MAX_SCREEN } = {}) {
+function mapSize(map) {
+  const size = typeof map?.getSize === "function" ? map.getSize() : { x: 1280, y: 800 };
+  return { x: Number(size?.x) || 1280, y: Number(size?.y) || 800 };
+}
+
+/** Décale le centre pour que le bateau reste dans le cadre `keepFrac` (40 % centraux). */
+export function keepBoatInFrame(center, boat, map, { keepFrac = FILM_BOAT_KEEP_FRAC } = {}) {
+  const c = toLatLngPair(center);
+  const b = toLatLngPair(boat);
+  if (!c || !b || typeof map?.latLngToContainerPoint !== "function" || typeof map?.containerPointToLatLng !== "function") {
+    return center;
+  }
+  const size = mapSize(map);
+  const maxX = size.x * keepFrac * 0.5;
+  const maxY = size.y * keepFrac * 0.5;
+  const boatPt = map.latLngToContainerPoint(b);
+  const centerPt = map.latLngToContainerPoint(c);
+  const dx = (boatPt.x ?? 0) - (centerPt.x ?? 0);
+  const dy = (boatPt.y ?? 0) - (centerPt.y ?? 0);
+  let extraX = 0;
+  let extraY = 0;
+  if (dx > maxX) extraX = dx - maxX;
+  else if (dx < -maxX) extraX = dx + maxX;
+  if (dy > maxY) extraY = dy - maxY;
+  else if (dy < -maxY) extraY = dy + maxY;
+  if (!extraX && !extraY) return c;
+  const ll = map.containerPointToLatLng({ x: (centerPt.x ?? 0) + extraX, y: (centerPt.y ?? 0) + extraY });
+  return [ll.lat, ll.lng ?? ll.lon];
+}
+
+/**
+ * Borne un pas de caméra : assez grand pour suivre le bateau (vitesse),
+ * et toujours assez pour le garder dans les 40 % centraux.
+ */
+export function clampFilmPan(from, to, map, {
+  maxFrac = FILM_PAN_MAX_SCREEN,
+  boat = null,
+  keepFrac = FILM_BOAT_KEEP_FRAC,
+} = {}) {
   const a = toLatLngPair(from);
   const b = toLatLngPair(to);
   if (!a || !b) return to;
-  const size = typeof map?.getSize === "function" ? map.getSize() : { x: 1280, y: 800 };
-  const maxPx = Math.max(1, (Number(size?.x) || 1280) * maxFrac);
+  const size = mapSize(map);
+  const maxPx = Math.max(1, size.x * maxFrac);
+  let limited = b;
   if (typeof map?.latLngToContainerPoint === "function" && typeof map?.containerPointToLatLng === "function") {
     const p0 = map.latLngToContainerPoint(a);
     const p1 = map.latLngToContainerPoint(b);
     const dx = (p1.x ?? 0) - (p0.x ?? 0);
     const dy = (p1.y ?? 0) - (p0.y ?? 0);
     const dist = Math.hypot(dx, dy);
-    if (!(dist > maxPx)) return b;
-    const s = maxPx / dist;
-    const ll = map.containerPointToLatLng({ x: p0.x + dx * s, y: p0.y + dy * s });
-    return [ll.lat, ll.lng ?? ll.lon];
-  }
-  if (typeof map?.getBounds === "function") {
+    if (dist > maxPx) {
+      const s = maxPx / dist;
+      const ll = map.containerPointToLatLng({ x: p0.x + dx * s, y: p0.y + dy * s });
+      limited = [ll.lat, ll.lng ?? ll.lon];
+    }
+  } else if (typeof map?.getBounds === "function") {
     try {
       const bounds = map.getBounds();
       const widthDeg = Math.abs(bounds.getEast() - bounds.getWest()) || 1;
@@ -56,12 +95,13 @@ export function clampFilmPan(from, to, map, { maxFrac = FILM_PAN_MAX_SCREEN } = 
       const dLat = b[0] - a[0];
       const dLon = b[1] - a[1];
       const dist = Math.hypot(dLat, dLon);
-      if (!(dist > maxDeg)) return b;
-      const s = maxDeg / dist;
-      return [a[0] + dLat * s, a[1] + dLon * s];
+      if (dist > maxDeg) {
+        const s = maxDeg / dist;
+        limited = [a[0] + dLat * s, a[1] + dLon * s];
+      }
     } catch { /* fake map */ }
   }
-  return b;
+  return keepBoatInFrame(limited, boat || b, map, { keepFrac });
 }
 
 /** Zoom fixe d'un chapitre : la jambe tient dans ~70 % de la fenêtre, borné [3 ; 7]. */
@@ -111,6 +151,63 @@ export function filmChapterZoom(map, leg, { min = FILM_ZOOM_MIN, max = FILM_ZOOM
   } catch { /* fake map in tests */ }
   if (!Number.isFinite(z)) z = 5;
   return Math.max(min, Math.min(cap, z));
+}
+
+/** Cap lissé de la jambe : moyenne circulaire des derniers échantillons. */
+export function smoothFilmHeading(samples, fallback = 0, { max = 8 } = {}) {
+  const list = samples || [];
+  const used = [];
+  for (let i = list.length - 1; i >= 0 && used.length < max; i--) {
+    const h = Number(list[i]?.heading);
+    if (Number.isFinite(h)) used.push(h);
+  }
+  if (!used.length) return Number.isFinite(Number(fallback)) ? Number(fallback) : 0;
+  let x = 0;
+  let y = 0;
+  for (const h of used) {
+    const r = (h * Math.PI) / 180;
+    x += Math.sin(r);
+    y += Math.cos(r);
+  }
+  return (Math.atan2(x / used.length, y / used.length) * 180) / Math.PI;
+}
+
+/** Avancement 0–1 sur la jambe (distance déjà parcourue / portée). */
+export function filmLegProgress(leg, lat, lon) {
+  const span = filmLegSpanNm(leg);
+  if (!(span > 0.01) || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return 0;
+  const aLat = Number(leg.fromLat);
+  const aLon = Number(leg.fromLon);
+  const done = haversineNm(aLat, aLon, Number(lat), Number(lon));
+  return Math.max(0, Math.min(1, done / span));
+}
+
+/**
+ * Zoom de jambe : un peu plus large au départ, resserré sur les 10 % d'approche.
+ * Les transitions sont petites : l'appelant les applique lentement.
+ */
+export function filmApproachZoom(baseZoom, progress, { min = FILM_ZOOM_MIN, max = FILM_ZOOM_MAX } = {}) {
+  const z = Number(baseZoom);
+  const p = Math.max(0, Math.min(1, Number(progress) || 0));
+  if (!Number.isFinite(z)) return Math.max(min, Math.min(max, 5));
+  let next = z;
+  if (p < 0.12) {
+    next = z - 0.35 * (1 - p / 0.12);
+  } else if (p > 0.9) {
+    next = z + 0.4 * ((p - 0.9) / 0.1);
+  }
+  return Math.max(min, Math.min(max, next));
+}
+
+/** Un pas de zoom lent (~0,08 niveau par frame de commit). */
+export function stepFilmZoom(from, to, { maxStep = 0.08 } = {}) {
+  const a = Number(from);
+  const b = Number(to);
+  if (!Number.isFinite(b)) return a;
+  if (!Number.isFinite(a)) return b;
+  const d = b - a;
+  if (Math.abs(d) <= maxStep) return b;
+  return a + Math.sign(d) * maxStep;
 }
 
 /** Centre carte pour placer le bateau au tiers avant (2/3 d'écran devant le cap). */
@@ -281,15 +378,44 @@ export function filmTilesReady(map, layer) {
   }
 }
 
-export function filmPanMaxFrac(tilesReady = true) {
-  return FILM_PAN_MAX_SCREEN * (tilesReady ? 1 : FILM_TILE_SLOW);
+export function filmPanMaxFrac(tilesReady = true, { boatPx = 0, sizeX = 1280 } = {}) {
+  const ready = tilesReady ? 1 : FILM_TILE_SLOW;
+  const width = Math.max(1, Number(sizeX) || 1280);
+  const speedFrac = Math.max(0, Number(boatPx) || 0) / width;
+  const needed = Math.max(FILM_PAN_MAX_SCREEN, speedFrac * 1.35);
+  return Math.min(FILM_BOAT_KEEP_FRAC, needed) * ready;
 }
 
 /**
- * Caméra du film : premier mouvement = bateau du chapitre 1 (`setView`) ;
- * un seul `flyTo` 1,2 s au changement de chapitre ; sinon `setView` chaque
- * pas de la boucle carte, bateau au tiers avant, déplacement borné à 2 %
- * de l'écran (ralentit si les tuiles ne sont pas prêtes).
+ * Translation du plan (CSS / `_rawPanBy`) sans `_resetView`.
+ * Repli : `panBy` sans animation, puis `setView` si la carte ne sait pas panner.
+ */
+export function filmTranslateBy(map, from, to) {
+  const a = toLatLngPair(from);
+  const b = toLatLngPair(to);
+  if (!a || !b) return "hold";
+  if (typeof map?.latLngToContainerPoint === "function") {
+    const p0 = map.latLngToContainerPoint(a);
+    const p1 = map.latLngToContainerPoint(b);
+    const dx = (p1.x ?? 0) - (p0.x ?? 0);
+    const dy = (p1.y ?? 0) - (p0.y ?? 0);
+    if (Math.hypot(dx, dy) < 0.05) return "hold";
+    if (typeof map._rawPanBy === "function") {
+      map._rawPanBy({ x: dx, y: dy });
+      return "panBy";
+    }
+    if (typeof map.panBy === "function") {
+      map.panBy([dx, dy], { animate: false });
+      return "panBy";
+    }
+  }
+  return null;
+}
+
+/**
+ * Caméra du film (RG13) : premier calage et changement d'étape = un `setView` ;
+ * ensuite translation du plan ; un recalcul complet au plus toutes les
+ * `FILM_RESET_EVERY` frames ou à l'arrêt. Pas de `flyTo` (plus de trou).
  */
 export function applyFilmCamera(map, {
   chapterIdx,
@@ -302,10 +428,18 @@ export function applyFilmCamera(map, {
   lastSetViewAt = 0,
   flyingUntil = 0,
   lastCenter = null,
-  maxFrac = FILM_PAN_MAX_SCREEN,
+  maxFrac,
+  framesSinceReset = 0,
+  idle = false,
+  boatPx = 0,
 } = {}) {
   const desiredBoat = [lat, lon];
   const center = filmViewCenter(lat, lon, heading, map);
+  const size = mapSize(map);
+  const frac = Number.isFinite(Number(maxFrac))
+    ? Number(maxFrac)
+    : filmPanMaxFrac(true, { boatPx, sizeX: size.x });
+
   if (lastChapterIdx == null) {
     map.setView(desiredBoat, zoom, { animate: false });
     return {
@@ -314,32 +448,77 @@ export function applyFilmCamera(map, {
       flyingUntil: 0,
       action: "setView",
       lastCenter: desiredBoat,
+      framesSinceReset: 0,
     };
   }
   if (chapterIdx !== lastChapterIdx) {
-    map.flyTo(center, zoom, { duration: FILM_FLY_SECONDS });
+    map.setView(center, zoom, { animate: false });
     return {
       lastChapterIdx: chapterIdx,
       lastSetViewAt: now,
-      flyingUntil: now + FILM_FLY_SECONDS * 1000,
-      action: "flyTo",
+      flyingUntil: 0,
+      action: "setView",
       lastCenter: center,
+      framesSinceReset: 0,
     };
   }
-  if (flyingUntil && now < flyingUntil) {
-    return { lastChapterIdx, lastSetViewAt, flyingUntil, action: "fly-wait", lastCenter };
-  }
+
   const from = lastCenter || (typeof map.getCenter === "function"
     ? [map.getCenter().lat, map.getCenter().lng]
     : center);
-  const clamped = clampFilmPan(from, center, map, { maxFrac });
+  const clamped = clampFilmPan(from, center, map, {
+    maxFrac: frac,
+    boat: desiredBoat,
+    keepFrac: FILM_BOAT_KEEP_FRAC,
+  });
+
+  const currentZoom = typeof map.getZoom === "function" ? map.getZoom() : zoom;
+  const zoomChanged = Number.isFinite(Number(zoom))
+    && Number.isFinite(Number(currentZoom))
+    && Math.abs(Number(zoom) - Number(currentZoom)) > 0.04;
+  const mustReset = (idle && framesSinceReset > 0) || zoomChanged || framesSinceReset >= FILM_RESET_EVERY;
+
+  if (mustReset) {
+    map.setView(clamped, zoom, { animate: false });
+    return {
+      lastChapterIdx,
+      lastSetViewAt: now,
+      flyingUntil: 0,
+      action: "setView",
+      lastCenter: clamped,
+      framesSinceReset: 0,
+    };
+  }
+
+  const moved = filmTranslateBy(map, from, clamped);
+  if (moved === "panBy") {
+    return {
+      lastChapterIdx,
+      lastSetViewAt,
+      flyingUntil: 0,
+      action: "panBy",
+      lastCenter: clamped,
+      framesSinceReset: framesSinceReset + 1,
+    };
+  }
+  if (moved === "hold") {
+    return {
+      lastChapterIdx,
+      lastSetViewAt,
+      flyingUntil,
+      action: "hold",
+      lastCenter: from,
+      framesSinceReset: framesSinceReset + 1,
+    };
+  }
   map.setView(clamped, zoom, { animate: false });
   return {
-    lastChapterIdx: chapterIdx,
+    lastChapterIdx,
     lastSetViewAt: now,
     flyingUntil: 0,
     action: "setView",
     lastCenter: clamped,
+    framesSinceReset: 0,
   };
 }
 
@@ -355,8 +534,12 @@ export function stepFilmCamera(map, {
   flyingUntil = 0,
   lastCenter = null,
   zoom,
+  baseZoom,
   tilesReady = true,
   chapterIdx: chapterOverride,
+  filmLeg = null,
+  lastBoat = null,
+  framesSinceReset = 0,
 } = {}) {
   const pose = interpolateFilmSamples(samples, Number(now) - FILM_INTERP_DELAY_MS);
   if (!pose || !Number.isFinite(pose.lat) || !Number.isFinite(pose.lon)) {
@@ -367,21 +550,38 @@ export function stepFilmCamera(map, {
       lastCenter,
       action: "idle",
       pose: null,
+      framesSinceReset,
     };
   }
   const chapterIdx = Number.isFinite(Number(chapterOverride)) ? Number(chapterOverride) : pose.chapterIdx;
+  const heading = smoothFilmHeading(samples, pose.heading);
+  const progress = filmLeg ? filmLegProgress(filmLeg, pose.lat, pose.lon) : 0;
+  const cruise = Number.isFinite(Number(baseZoom)) ? Number(baseZoom) : zoom;
+  const targetZoom = filmLeg ? filmApproachZoom(cruise, progress) : cruise;
+  const appliedZoom = stepFilmZoom(zoom, targetZoom);
+  let boatPx = 0;
+  if (lastBoat && typeof map?.latLngToContainerPoint === "function") {
+    const a = map.latLngToContainerPoint([lastBoat.lat, lastBoat.lon]);
+    const b = map.latLngToContainerPoint([pose.lat, pose.lon]);
+    boatPx = Math.hypot((b.x ?? 0) - (a.x ?? 0), (b.y ?? 0) - (a.y ?? 0));
+  }
+  const idle = Boolean(lastBoat) && boatPx < 0.4;
+  const size = mapSize(map);
   const next = applyFilmCamera(map, {
     chapterIdx,
     lastChapterIdx,
     lat: pose.lat,
     lon: pose.lon,
-    heading: pose.heading,
-    zoom,
+    heading,
+    zoom: appliedZoom,
     now,
     lastSetViewAt,
     flyingUntil,
     lastCenter,
-    maxFrac: filmPanMaxFrac(tilesReady),
+    maxFrac: filmPanMaxFrac(tilesReady, { boatPx, sizeX: size.x }),
+    framesSinceReset,
+    idle,
+    boatPx,
   });
-  return { ...next, pose };
+  return { ...next, pose: { ...pose, heading }, boatPx, zoom: appliedZoom };
 }

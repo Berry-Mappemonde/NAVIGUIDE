@@ -34,6 +34,17 @@ describe("MapSceneController — caméra film (lot F1)", () => {
     const map = {
       flyTo() { calls.flyTo += 1; },
       setView() { calls.setView += 1; },
+      panBy() {},
+      _rawPanBy() {},
+      getZoom() { return 5; },
+      getSize() { return { x: 1000, y: 800 }; },
+      getCenter() { return { lat: 46, lng: -1 }; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : ll.lng;
+        return { x: (lng + 1) * 10, y: (50 - lat) * 10 };
+      },
+      containerPointToLatLng(p) { return { lat: 50 - p.y / 10, lng: p.x / 10 - 1 }; },
       getBounds() {
         return { getNorth: () => 10, getSouth: () => 0, getEast: () => 10, getWest: () => 0 };
       },
@@ -63,13 +74,14 @@ describe("MapSceneController — caméra film (lot F1)", () => {
     assert.equal(step(0, 1000).action, "setView");
     assert.equal(calls.flyTo, 0, "premier mouvement = setView, pas de flyTo");
     assert.equal(calls.setView, 1);
-    assert.equal(step(0, 1030).action, "setView", "lot R4 : setView chaque frame, plus de skip 30 Hz");
-    assert.equal(step(0, 1100).action, "setView");
+    const mid = step(0, 1030);
+    assert.ok(mid.action === "panBy" || mid.action === "hold" || mid.action === "setView", "lot RG13 : plus de setView obligatoire par frame");
     assert.equal(calls.flyTo, 0);
-    assert.equal(step(1, 5000).action, "flyTo");
-    assert.equal(calls.flyTo, 1);
-    assert.equal(step(1, 5100).action, "fly-wait");
-    assert.equal(calls.flyTo, 1, "même chapitre pendant le flyTo : pas de second flyTo");
+    assert.equal(step(1, 5000).action, "setView");
+    assert.equal(calls.flyTo, 0, "changement d'étape : un setView, plus de flyTo");
+    const after = step(1, 5100);
+    assert.notEqual(after.action, "fly-wait");
+    assert.equal(calls.flyTo, 0);
     assert.match(src, /if \(cfg\.filmActive\)/);
     assert.match(src, /syncFilmCamera/);
     assert.doesNotMatch(src, /filmActive[\s\S]{0,200}zoomForRemaining/);
