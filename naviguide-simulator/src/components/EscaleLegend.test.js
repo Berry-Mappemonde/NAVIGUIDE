@@ -51,6 +51,14 @@ describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
   });
 });
 
+describe("EscaleLegend — fourchette ou raison (lot RG17)", () => {
+  it("garde eta-range pour la fourchette et la ligne de raison", () => {
+    assert.match(src, /data-testid="eta-range"/);
+    assert.match(src, /formatEtaRange/);
+    assert.doesNotMatch(src, /en préparation/);
+  });
+});
+
 describe("EscaleLegend — ETA gelée pendant le film (lot RF4)", () => {
   it("passe frozen à useOfficialEta", () => {
     assert.match(src, /frozen = false/);

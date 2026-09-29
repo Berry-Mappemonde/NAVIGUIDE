@@ -3,6 +3,9 @@
 Une source en panne manque ; aucune source → champ vide (jamais inventé).
 Cache SQLite `pearl_store.kv` ns `hindcast`, clé (cellule ERA5 0,25°, produit, jour).
 Budget Open-Meteo : ns `om-budget`, plafond NAVIGUIDE_OM_DAILY_BUDGET (défaut 3000).
+Enveloppe unique partagée avec l'ensemble ETA (RG17) : l'hindcast du jour
+a la priorité, une part NAVIGUIDE_OM_ETA_RESERVED (défaut 24) reste pour
+la prochaine escale — l'un n'épuise pas l'autre.
 """
 from __future__ import annotations
 
@@ -30,6 +33,8 @@ FETCH_TIMEOUT_S = 20.0
 ERA5_CELL_DEG = 0.25
 READY_COVERAGE = 0.95
 DEFAULT_OM_DAILY_BUDGET = 3000
+# Prochaine escale : ≤ MAX_PROBES_PER_LEG (12) + marge, hors plafond hindcast.
+DEFAULT_OM_ETA_RESERVED = 24
 
 OM_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 OM_ERA5_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -146,6 +151,34 @@ def om_daily_budget() -> int:
         return DEFAULT_OM_DAILY_BUDGET
 
 
+def om_eta_reserved() -> int:
+    """Appels gardés pour l'ETA de la prochaine escale (ensemble)."""
+    raw = (os.getenv("NAVIGUIDE_OM_ETA_RESERVED") or "").strip()
+    if not raw:
+        n = DEFAULT_OM_ETA_RESERVED
+    else:
+        try:
+            n = max(0, int(raw))
+        except ValueError:
+            n = DEFAULT_OM_ETA_RESERVED
+    return min(n, om_daily_budget())
+
+
+def om_hindcast_ceiling() -> int:
+    """Plafond hindcast : le budget moins la part réservée à l'ETA."""
+    return max(0, om_daily_budget() - om_eta_reserved())
+
+
+def om_can_spend(purpose: str = "hindcast") -> bool:
+    """True s'il reste un appel pour ce rôle. 429 / plafond total → False pour tous."""
+    if om_quota_blocked():
+        return False
+    used = om_calls_today()
+    if purpose == "ensemble":
+        return used < om_daily_budget()
+    return used < om_hindcast_ceiling()
+
+
 def _utc_day() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -195,6 +228,16 @@ def om_quota_reason() -> Optional[str]:
 
 def _mark_om_quota_blocked(reason: str) -> None:
     kv_put(OM_BUDGET_NS, _block_key(), {"reason": reason})
+
+
+def om_record_call() -> None:
+    """Compte un appel Open-Meteo (hindcast ou ensemble) dans l'enveloppe du jour."""
+    _record_om_call()
+
+
+def om_mark_quota(reason: str) -> None:
+    """429 ou plafond : bloque l'enveloppe partagée jusqu'au lendemain UTC."""
+    _mark_om_quota_blocked(reason)
 
 
 def _record_om_call() -> None:
@@ -293,7 +336,7 @@ def _client() -> httpx.Client:
 def _om_get(url: str, params: dict) -> Optional[dict]:
     if _fetch_blocked:
         raise RuntimeError("hindcast network blocked")
-    if om_quota_blocked() or not (om_calls_today() < om_daily_budget()):
+    if not om_can_spend("hindcast"):
         if om_calls_today() >= om_daily_budget() and not kv_get(OM_BUDGET_NS, _block_key()):
             _mark_om_quota_blocked("budget")
         raise OpenMeteoQuotaExceeded(om_quota_reason() or "quota Open-Meteo")
@@ -891,7 +934,7 @@ def fill_era5_along(slots, *, fetch: bool = True) -> int:
             break
         lat, lon = items[0][0], items[0][1]
         for start, end in _contiguous_ranges([it[2] for it in items]):
-            if om_quota_blocked() or om_calls_today() >= om_daily_budget():
+            if om_quota_blocked() or om_calls_today() >= om_hindcast_ceiling():
                 if om_calls_today() >= om_daily_budget():
                     _mark_om_quota_blocked("budget")
                 break
