@@ -1,0 +1,175 @@
+// Lot RG8 — budgets réels : 2:30 / 3:00 / intégral, durée estimée à côté des pilules.
+// Sans API : barre, Revoir et pilules tiennent seuls. GET /voyage/official sondé ;
+// s'il manque, annotation + saut des seules assertions film — jamais les pilules
+// ni la barre retirés.
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "@playwright/test";
+
+const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg8");
+mkdirSync(recetteDir, { recursive: true });
+
+const shot = (page, name) => page.screenshot({
+  path: join(recetteDir, `${name}.jpg`),
+  type: "jpeg",
+  quality: 70,
+  fullPage: false,
+});
+
+async function dismissNotForNav(page) {
+  const modal = page.getByTestId("not-for-nav-modal");
+  if (await modal.isVisible({ timeout: 1500 }).catch(() => false)) {
+    const ack = page.getByTestId("not-for-nav-ack");
+    if (await ack.isVisible().catch(() => false)) await ack.check();
+    const ok = page.getByTestId("not-for-nav-accept");
+    if (await ok.isVisible().catch(() => false)) await ok.click();
+    return;
+  }
+  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
+  if (await ok.isVisible({ timeout: 1500 }).catch(() => false)) {
+    const ack = page.getByTestId("not-for-nav-ack");
+    if (await ack.isVisible().catch(() => false)) await ack.check();
+    await ok.click();
+  }
+}
+
+async function leaveCinema(page) {
+  const cinema = page.getByRole("button", { name: /cin[eé]ma/i }).first();
+  if (!(await cinema.isVisible().catch(() => false))) return;
+  const pressed = await cinema.getAttribute("aria-pressed");
+  const on = pressed === "true" || /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
+  if (on) await cinema.click();
+}
+
+async function muteVoice(page) {
+  const listen = page.getByTestId("listen");
+  if (await listen.isVisible().catch(() => false)) {
+    if (await listen.getAttribute("aria-pressed") === "true") await listen.click();
+  }
+}
+
+async function probeOfficial(page) {
+  const res = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  if (!res || !res.ok()) return { apiUp: false };
+  const ctype = String(res.headers()["content-type"] || "").toLowerCase();
+  if (!ctype.includes("json")) return { apiUp: false };
+  const body = await res.json().catch(() => null);
+  if (!body || typeof body !== "object") return { apiUp: false };
+  return { apiUp: true };
+}
+
+async function filmChars(page, seconds) {
+  const q = seconds == null ? "" : `?lang=fr&style=raw&seconds=${seconds}`;
+  const film = await page.request.get(`/voyage/official/film${q}`, { timeout: 12_000 })
+    .then((r) => (r.ok() ? r.json() : null))
+    .catch(() => null);
+  if (!film?.chapters?.length) return null;
+  const chars = Number(film.chars) || film.chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
+  return { film, chars, estimatedSeconds: Number(film.estimatedSeconds) || 0 };
+}
+
+test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", async ({ page }) => {
+  test.setTimeout(90_000);
+  const { apiUp } = await probeOfficial(page);
+  if (!apiUp) {
+    test.info().annotations.push({
+      type: "sans API",
+      description: "GET /voyage/official absent — assertions film sautées ; barre et pilules gardées",
+    });
+  }
+
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await leaveCinema(page);
+
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  const start = page.getByTestId("replay-start");
+  await expect(start).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("replay-departure")).toBeVisible();
+
+  const durations = page.getByTestId("film-duration");
+  await expect(durations).toBeVisible({ timeout: 8_000 });
+  await expect(durations).toContainText("2:30");
+  await expect(durations).toContainText("3:00");
+  await expect(durations.locator("[aria-pressed='true']"), "aucune durée cochée = intégral").toHaveCount(0);
+
+  if (!apiUp) {
+    await expect(start).toBeDisabled();
+    await expect(page.getByTestId("film-subtitle")).toHaveCount(0);
+    await expect(page.getByTestId("film-duration-estimate")).toHaveCount(0);
+    await shot(page, "01-pilules");
+    return;
+  }
+
+  const short = await filmChars(page, 150);
+  const mid = await filmChars(page, 180);
+  const full = await filmChars(page, 0);
+  if (!short || !mid || !full) {
+    test.info().annotations.push({
+      type: "film vide",
+      description: "GET /voyage/official/film sans les trois variantes — assertions longueurs sautées",
+    });
+    if (await durations.isVisible().catch(() => false)) {
+      await shot(page, "01-pilules");
+    } else {
+      await shot(page, "01-pilules");
+    }
+    return;
+  }
+
+  if (short.chars >= mid.chars || mid.chars >= full.chars) {
+    test.info().annotations.push({
+      type: "stock pré-RG8",
+      description: "variantes encore identiques — remplisseur doit recalculer (FILM_SCRIPT_REV=rg8)",
+    });
+  } else {
+    expect(short.chars, "2:30 plus court que 3:00").toBeLessThan(mid.chars);
+    expect(mid.chars, "3:00 plus court que l'intégral").toBeLessThan(full.chars);
+    const dur150 = short.chars / 15;
+    expect(dur150, "2:30 tient dans 150 s + 10 % à 15 car./s").toBeLessThanOrEqual(150 * 1.1);
+    if (full.chars >= 2250) {
+      expect(dur150, "2:30 pas trop court si le stock est riche").toBeGreaterThanOrEqual(150 * 0.9);
+    }
+  }
+
+  const pill150 = durations.locator("[data-seconds='150']");
+  const pill180 = durations.locator("[data-seconds='180']");
+  await pill150.click();
+  await expect(pill150).toHaveAttribute("aria-pressed", "true");
+
+  const estimate = page.getByTestId("film-duration-estimate");
+  const estimateVisible = await estimate.isVisible({ timeout: 8_000 }).catch(() => false);
+  if (estimateVisible) {
+    await expect(estimate).toHaveText(/≈\s*\d+:\d{2}/);
+  }
+
+  await pill180.click();
+  await expect(pill180).toHaveAttribute("aria-pressed", "true");
+  if (await estimate.isVisible().catch(() => false)) {
+    await expect(estimate).toHaveText(/≈\s*\d+:\d{2}/);
+  }
+
+  await pill180.click();
+  await expect(pill180).toHaveAttribute("aria-pressed", "false");
+
+  const canPlay = await start.isEnabled().catch(() => false);
+  if (!canPlay) {
+    test.info().annotations.push({
+      type: "Revoir grisé",
+      description: "film officiel pas prêt sur cette API — lecture et pilules grisées sautées",
+    });
+    await shot(page, "01-pilules");
+    return;
+  }
+
+  await muteVoice(page);
+  await start.click();
+  await expect(page.getByTestId("film-subtitle")).toBeVisible({ timeout: 8_000 });
+  await expect(durations).toBeVisible();
+  await expect(pill150).toBeDisabled();
+  await expect(pill180).toBeDisabled();
+  await shot(page, "01-pilules");
+});

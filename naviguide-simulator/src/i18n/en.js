@@ -235,6 +235,7 @@ export default {
   filmDuration: "Film duration",
   filmDuration150: "2:30",
   filmDuration180: "3:00",
+  filmDurationEstimate: "≈ {time}",
   filmStorySource: "Story: {source}",
   filmStoryRaw: "Raw",
   filmStoryWritten: "Edited",

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmEstimatedSeconds, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -83,6 +83,20 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /budgetSeconds/);
     assert.match(hook, /resolveFilmTargetSeconds/);
     assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
+  });
+
+  it("lot RG8 — durée estimée = caractères ÷ 15, sans recalibrer la voix", () => {
+    assert.equal(filmEstimatedSeconds(2250), 150);
+    assert.equal(filmEstimatedSeconds(2700), 180);
+    assert.equal(filmEstimatedSeconds(0), 0);
+    assert.equal(formatFilmEstimateClock(160), "2:40");
+    assert.equal(formatFilmEstimateClock(0), "");
+    assert.equal(pickFilmEstimateSeconds(150, { 150: { estimatedSeconds: 160 } }, 0), 160);
+    assert.equal(pickFilmEstimateSeconds(0, { 0: { estimatedSeconds: 240 } }, 99), 240);
+    assert.equal(pickFilmEstimateSeconds(180, null, 195), 195);
+    assert.doesNotMatch(hook, /calibrateRate/);
+    assert.match(hook, /estimatedSeconds/);
+    assert.match(app, /estimatedSeconds: replay\.estimatedSeconds/);
   });
 
   it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
@@ -265,7 +279,7 @@ function chapterHasFirstLeg(ch) {
 }
 
 describe("lot RC10 — film officiel, pas la Simulation", () => {
-  it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ, ≤ 800 mots", () => {
+  it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ ; RG8 relève le plafond mots", () => {
     assert.equal(isRe7OfficialFilm({
       chapters: [{ text: "Départ de Saint-Maur. golfe de Gascogne. Aujourd’hui, le bateau est à Nouméa." }],
     }), true);
@@ -273,7 +287,8 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.equal(isRe7OfficialFilm({
       chapters: [{ text: "Aujourd'hui, le bateau est à 19 260 milles nautiques du départ." }],
     }), false);
-    assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(801)}` }] }), false);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(801)}` }] }), true);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(2501)}` }] }), false);
     assert.equal(isRe7OfficialFilm({ chapters: [] }), false);
   });
 

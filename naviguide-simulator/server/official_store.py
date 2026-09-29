@@ -25,11 +25,11 @@ from typing import Any, Callable, Optional
 log = logging.getLogger("naviguide-simulator.official-store")
 
 FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
-FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
+FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafond ; la première reste le repli
 PREPARING = "preparing"
 READY = "ready"
-# Clé film : RG7 (ouverture + fin) invalide rg6. moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rg7"
+# Clé film : RG8 (budgets réels 2:30 / 3:00 / intégral) invalide rg7. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rg8"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
@@ -587,6 +587,63 @@ def _voy_air_marks(voy: Optional[dict], plan: Optional[dict] = None) -> list:
     return marks
 
 
+def _plan_char_count(plan: Optional[dict]) -> int:
+    if not isinstance(plan, dict):
+        return 0
+    n = plan.get("chars")
+    if isinstance(n, (int, float)) and int(n) > 0:
+        return int(n)
+    return sum(
+        len(str(c.get("text") or ""))
+        for c in (plan.get("chapters") or [])
+        if isinstance(c, dict)
+    )
+
+
+def _with_film_estimate(plan: Optional[dict]) -> dict:
+    from film_script import film_estimated_seconds  # noqa: PLC0415
+
+    if not isinstance(plan, dict):
+        return {}
+    out = dict(plan)
+    chars = _plan_char_count(out)
+    out["chars"] = chars
+    out["estimatedSeconds"] = film_estimated_seconds(chars)
+    return out
+
+
+def _variants_estimates(variants: Optional[dict]) -> dict:
+    out: dict[str, dict[str, dict]] = {}
+    if not isinstance(variants, dict):
+        return out
+    for lang, by_secs in variants.items():
+        if not isinstance(by_secs, dict):
+            continue
+        rows: dict[str, dict] = {}
+        for key, plan in by_secs.items():
+            annotated = _with_film_estimate(plan if isinstance(plan, dict) else None)
+            rows[str(key)] = {
+                "chars": int(annotated.get("chars") or 0),
+                "estimatedSeconds": int(annotated.get("estimatedSeconds") or 0),
+            }
+        if rows:
+            out[str(lang)] = rows
+    return out
+
+
+def _pick_variant_key(keys: list[int], want: int) -> Optional[int]:
+    """0 / absent = intégral (clé 0 si stockée, sinon la plus longue)."""
+    if not keys:
+        return None
+    if want <= 0:
+        return 0 if 0 in keys else max(keys)
+    if want in keys:
+        return want
+    positive = [k for k in keys if k > 0]
+    pool = positive or keys
+    return min(pool, key=lambda k: (abs(k - want), k))
+
+
 def _apply_air_sentences(plan: dict, lang: str, voy: Optional[dict]) -> dict:
     """Garde l'aller/retour avion si la route officielle a la paire — pas d'invention."""
     from film_script import _ensure_air_sentences  # noqa: PLC0415
@@ -802,9 +859,8 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     if not voy.get("clock"):
         return None
 
-    # 27 sept. : calculé en mode LIBRE (seconds=0), le film déversait jusqu'à dix changements bruts par chapitre,
-    # hors chronologie — exactement le « journal déversé » refusé le 26. On range les variantes BUDGET que les
-    # pilules de la barre demandent (2:30 = 150 s, 3:00 = 180 s) ; serve_film sert la plus proche.
+    # RG8 : trois variantes par priorité (2:30 / 3:00 / intégral). Plus les mêmes candidats
+    # sous deux plafonds — les pilules choisissent un texte différent.
     async def _variants():
         out: dict[str, dict[str, dict]] = {}
         for lang in ("fr", "en"):
@@ -831,9 +887,12 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
         return None
     for lang, by_secs in variants.items():
         for secs, plan in list(by_secs.items()):
-            by_secs[secs] = _apply_air_sentences(plan, lang, voy)
+            by_secs[secs] = _with_film_estimate(_apply_air_sentences(plan, lang, voy))
     fr = variants["fr"][str(FILM_VARIANT_SECONDS[0])]
-    out = {"fr": fr, "default": fr, "variants": variants}
+    out = {
+        "fr": fr, "default": fr, "variants": variants,
+        "estimates": _variants_estimates(variants),
+    }
     en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if isinstance(en, dict) and (en.get("chapters") or []):
         out["en"] = en
@@ -1361,17 +1420,23 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
     variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
     by_secs = variants.get(lg) or variants.get("fr") or {}
     if by_secs:
-        # La variante budget la plus proche de la durée demandée (0 = libre → la plus longue).
         want = int(seconds or 0)
-        keys = sorted(int(k) for k in by_secs if str(k).isdigit())
-        if keys:
-            pick = keys[-1] if want <= 0 else min(keys, key=lambda k: (abs(k - want), k))
+        keys = sorted(
+            int(k) for k in by_secs
+            if str(k).lstrip("-").isdigit()
+        )
+        pick = _pick_variant_key(keys, want)
+        if pick is not None:
             plan = by_secs.get(str(pick))
     if plan is None:
         plan = body.get(lg) or body.get("default") or body.get("fr")
     if not isinstance(plan, dict) or not (plan.get("chapters") or []):
         return preparing_payload("film", extra)
-    out = dict(plan)
+    out = _with_film_estimate(plan)
+    stored_est = body.get("estimates") if isinstance(body.get("estimates"), dict) else {}
+    lang_est = stored_est.get(lg) or stored_est.get("fr") or _variants_estimates({lg: by_secs}).get(lg)
+    if isinstance(lang_est, dict) and lang_est:
+        out["estimates"] = lang_est
     out["status"] = READY
     out.update(_stamp(hit))
     return out

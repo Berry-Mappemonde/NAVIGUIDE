@@ -121,8 +121,8 @@ describe("film bar (lot RA6)", () => {
   });
 });
 
-describe("film bar (lot RE3)", () => {
-  it("rend les pilules seulement à côté du lancement, jamais pendant le film", () => {
+describe("film bar (lot RE3 / RG8)", () => {
+  it("garde 2:30 / 3:00 à côté de Revoir, visibles hors film, grisées pendant", () => {
     const startAt = firstIndex(bar, /data-testid="replay-start"/);
     const durationAt = firstIndex(bar, /data-testid="film-duration"/);
     const stopAt = firstIndex(bar, /data-testid="replay-stop"/);
@@ -132,12 +132,13 @@ describe("film bar (lot RE3)", () => {
     const afterStart = bar.slice(startAt);
     assert.doesNotMatch(beforeStart, /data-testid="film-duration"/);
     assert.match(afterStart, /data-testid="film-duration"/);
-    const durBlock = bar.slice(durationAt, durationAt + 900);
-    assert.doesNotMatch(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
-    assert.doesNotMatch(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
+    const durBlock = bar.slice(durationAt, durationAt + 1600);
+    assert.match(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /film-duration-estimate/);
     assert.match(durBlock, /=== sec \? 0 : sec/);
     assert.match(bar, /disabled=\{!replay\.canStart\}/);
-    assert.match(bar, /replay\.canStart \? \(/);
+    assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /disabled:opacity-30 disabled:cursor-not-allowed/);
   });
 });
@@ -168,7 +169,7 @@ describe("film bar (lot RF8)", () => {
     assert.ok(startAt < durationAt, "2:30 / 3:00 à côté ou sous Revoir l'expédition");
     assert.match(
       bar,
-      /flex flex-wrap items-center gap-1 min-w-0">\s*<button[\s\S]*?data-testid="replay-start"/,
+      /flex flex-wrap items-center gap-1 min-w-0">[\s\S]*?data-testid="replay-start"/,
     );
   });
 });
