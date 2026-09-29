@@ -163,9 +163,12 @@ export function useOfficialExpedition({
         // l'UI sur le t0 client (15 mai, 0 nm) puis sautait à la position live. Les deux partent ENSEMBLE,
         // une seule fois par tentative ; l'horloge vient du premier qui la porte (le PUT la rend aussi) —
         // plus de relecture après le PUT : chaque lecture pèse 3,9 Mo (335 ko gzippés) derrière le tunnel.
-        const [ck, data] = await Promise.all([readClock(), putOfficial().catch(() => null)]);
+        // Horloge déjà là (rendu suivant du hook : meta, marques) : on ne la retélécharge pas ; le PUT
+        // ne repart que si l'empreinte de la route a changé (putOfficial rend sinon la réponse mémorisée).
+        const haveClock = Boolean(serverClockRef.current);
+        const [ck, data] = await Promise.all([haveClock ? null : readClock(), putOfficial().catch(() => null)]);
         if (cancelled) return;
-        gotClock = Boolean(ck) || Boolean(data?.clock?.t0);
+        gotClock = haveClock || Boolean(ck) || Boolean(data?.clock?.t0);
       } finally {
         inflightRef.current = false;
       }
