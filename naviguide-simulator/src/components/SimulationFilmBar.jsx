@@ -451,23 +451,23 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     disabled={Boolean(replay.active)}
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-1 min-w-0">
-                  {replay.active ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={replay.onStop}
-                        data-testid="replay-stop"
-                        className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
-                        title={t("replayStopTitle")}
-                      >
-                        ■ {t("replayStop")}
-                      </button>
-                      <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
-                        <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
-                      </div>
-                    </>
-                  ) : (
+                {replay.active ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={replay.onStop}
+                      data-testid="replay-stop"
+                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
+                      title={t("replayStopTitle")}
+                    >
+                      ■ {t("replayStop")}
+                    </button>
+                    <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
+                      <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1 min-w-0">
                     <button
                       type="button"
                       onClick={replay.onStart}
@@ -479,42 +479,40 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     >
                       ↺ {t("replayStart")}
                     </button>
-                  )}
-                  <div
-                      data-testid="film-duration"
-                      className={`flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 ${
-                        replay.active ? "opacity-40" : ""
-                      }`}
-                      title={t("filmDuration")}
-                    >
-                      {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
-                        <button
-                          key={sec}
-                          type="button"
-                          data-seconds={sec}
-                          disabled={Boolean(replay.active)}
-                          aria-disabled={Boolean(replay.active)}
-                          aria-pressed={Number(replay.targetSeconds) === sec}
-                          onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
-                          className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:cursor-not-allowed ${
-                            Number(replay.targetSeconds) === sec
-                              ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
-                              : "text-white/70 hover:text-white border border-transparent"
-                          }`}
-                        >
-                          {t(key)}
-                        </button>
-                      ))}
-                      {filmEstimateLabel(replay, t) ? (
-                        <span
-                          data-testid="film-duration-estimate"
-                          className="px-1 py-0.5 text-[9px] font-semibold text-white/70 whitespace-nowrap"
-                        >
-                          {filmEstimateLabel(replay, t)}
-                        </span>
-                      ) : null}
+                    {replay.canStart ? (
+                      <div
+                        data-testid="film-duration"
+                        className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
+                        title={t("filmDuration")}
+                      >
+                        {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            data-seconds={sec}
+                            aria-pressed={Number(replay.targetSeconds) === sec}
+                            onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
+                            className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
+                              Number(replay.targetSeconds) === sec
+                                ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                                : "text-white/70 hover:text-white border border-transparent"
+                            }`}
+                          >
+                            {t(key)}
+                          </button>
+                        ))}
+                        {filmEstimateLabel(replay, t) ? (
+                          <span
+                            data-testid="film-duration-estimate"
+                            className="px-1 py-0.5 text-[9px] font-semibold text-white/70 whitespace-nowrap"
+                          >
+                            {filmEstimateLabel(replay, t)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                </div>
+                )}
               </div>
             ) : null}
           </div>
