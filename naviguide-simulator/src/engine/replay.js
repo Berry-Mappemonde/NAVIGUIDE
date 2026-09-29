@@ -430,6 +430,22 @@ export function chapterAtElapsed(plan, elapsedSeconds) {
  * Répartit `targetSeconds` au prorata des caractères. `timeAt(i, charIdx)`
  * est monotone : le bateau ne recule jamais.
  */
+/** Index de début de chaque phrase (serveur `sentenceStarts`, sinon découpage client). */
+export function sentenceStartsFromText(text) {
+  const raw = String(text || "");
+  if (!raw) return [];
+  const parts = raw.split(/(?<=[.!?…])\s+/).filter(Boolean);
+  const starts = [];
+  let from = 0;
+  for (const p of parts) {
+    const at = raw.indexOf(p, from);
+    const start = at >= 0 ? at : from;
+    starts.push(start);
+    from = start + p.length;
+  }
+  return starts;
+}
+
 export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {}) {
   const target = Number(targetSeconds);
   const seconds = Number.isFinite(target) && target > 0 ? target : FILM_TARGET_SECONDS;
@@ -458,7 +474,13 @@ export function filmPlan({ chapters, targetSeconds = FILM_TARGET_SECONDS } = {})
     return row;
   });
   const merged = mergeShortChapters(planned, FILM_MIN_CHAPTER_SECONDS)
-    .map((c) => ({ ...c, anchors: chapterAnchors(c) }));
+    .map((c) => ({
+      ...c,
+      anchors: chapterAnchors(c),
+      sentenceStarts: Array.isArray(c.sentenceStarts) && c.sentenceStarts.length
+        ? c.sentenceStarts.map(Number).filter((n) => Number.isFinite(n) && n >= 0)
+        : sentenceStartsFromText(c.text),
+    }));
 
   function timeAt(chapterIdx, charIdx) {
     if (!merged.length) return null;
