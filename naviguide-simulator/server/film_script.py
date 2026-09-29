@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -446,18 +447,31 @@ def change_is_speakable(change: dict) -> bool:
     return bool(change_place_name(change))
 
 
+_EARTH_NM = 3440.065
+_PORT_LEAVE_NM = 2.0
+_PORT_ANCHOR_NM = 5.0
+_AIR_ONLY_KEYS = frozenset({"halifax", "saint-pierre"})
+_AIR_KEYS = frozenset({"cayenne", "halifax", "saint-pierre"})
+
+
 def _air_stop_key(name: str) -> str:
     s = str(name or "").casefold()
     if "cayenne" in s:
         return "cayenne"
     if "halifax" in s:
         return "halifax"
+    if "miquelon" in s or "saint-pierre" in s or "saint pierre" in s:
+        return "saint-pierre"
     return ""
+
+
+def _is_air_only_stop(name: str) -> bool:
+    return _air_stop_key(name) in _AIR_ONLY_KEYS
 
 
 def _is_air_leg(a: str, b: str) -> bool:
     x, y = _air_stop_key(a), _air_stop_key(b)
-    return (x == "cayenne" and y == "halifax") or (x == "halifax" and y == "cayenne")
+    return bool(x and y and x != y and x in _AIR_KEYS and y in _AIR_KEYS)
 
 
 def _is_land_leg(a: str, b: str) -> bool:
@@ -468,18 +482,73 @@ def _is_land_leg(a: str, b: str) -> bool:
     )
 
 
-def _window_vehicle(frm: dict | None, to: dict | None) -> str:
+def _nm_between(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> Optional[float]:
+    try:
+        p1, p2 = math.radians(float(lat1)), math.radians(float(lat2))
+        dphi = math.radians(float(lat2) - float(lat1))
+        dlamb = math.radians(float(lon2) - float(lon1))
+    except (TypeError, ValueError):
+        return None
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlamb / 2.0) ** 2
+    return 2.0 * _EARTH_NM * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _mode_from_vehicle(veh: Any) -> Optional[str]:
+    if veh == "plane":
+        return "air"
+    if veh == "land":
+        return "road"
+    if veh in {"main", "boat"}:
+        return "sail"
+    return None
+
+
+def _window_mode_name(mode: str) -> str:
+    return mode if mode in {"sail", "air", "road"} else "sail"
+
+
+def _classify_window_mode(
+    frm: dict | None,
+    to: dict | None,
+    clock: dict | None,
+    t_a: Optional[int],
+    t_b: Optional[int],
+) -> str:
     a = (frm or {}).get("name") or ""
     b = (to or {}).get("name") or ""
-    if _is_air_leg(a, b):
-        return "plane"
     if _is_land_leg(a, b):
-        return "land"
+        return "road"
+    if _is_air_leg(a, b) or _is_air_only_stop(b):
+        return "air"
+    plat, plon = (frm or {}).get("lat"), (frm or {}).get("lon")
+    for v in ((clock or {}).get("vertices") or []):
+        if not isinstance(v, dict):
+            continue
+        t = _ms(v.get("iso"))
+        if t is None:
+            continue
+        if t_a is not None and t < t_a:
+            continue
+        if t_b is not None and t > t_b:
+            continue
+        if v.get("vehicle") == "quay":
+            continue
+        d = _nm_between(plat, plon, v.get("lat"), v.get("lon"))
+        if d is not None and d <= _PORT_LEAVE_NM:
+            continue
+        found = _mode_from_vehicle(v.get("vehicle"))
+        if found:
+            return found
     for src in (frm, to):
-        veh = (src or {}).get("vehicle")
-        if veh in {"plane", "land", "main"}:
-            return str(veh)
-    return "main"
+        found = _mode_from_vehicle((src or {}).get("vehicle"))
+        if found and found != "sail":
+            return found
+    return "sail"
+
+
+def _window_vehicle(frm: dict | None, to: dict | None, clock: dict | None = None) -> str:
+    mode = _classify_window_mode(frm, to, clock, _ms((frm or {}).get("iso")), _ms((to or {}).get("iso")))
+    return {"air": "plane", "road": "land", "sail": "main"}.get(mode, "main")
 
 
 def _window_dest_name(w: dict) -> str:
@@ -488,9 +557,161 @@ def _window_dest_name(w: dict) -> str:
     )
 
 
+def _is_air_window(w: dict | None) -> bool:
+    w = w or {}
+    if w.get("mode") == "air" or w.get("vehicle") == "plane":
+        return True
+    return _is_air_leg(
+        (w.get("from") or {}).get("name") or w.get("fromName") or "",
+        _window_dest_name(w),
+    )
+
+
+def _is_road_window(w: dict | None) -> bool:
+    w = w or {}
+    if w.get("mode") == "road" or w.get("vehicle") == "land":
+        return True
+    return _is_land_leg(
+        (w.get("from") or {}).get("name") or w.get("fromName") or "",
+        _window_dest_name(w),
+    )
+
+
+def _clock_leave_ms(
+    clock: dict | None,
+    port_lat: Any,
+    port_lon: Any,
+    t_a: Optional[int],
+    t_b: Optional[int] = None,
+    *,
+    mode: str = "sail",
+) -> Optional[int]:
+    """Premier sommet qui quitte le port (d > 2 nm) pour ce mode. Jamais tA + escale."""
+    if t_a is None:
+        return None
+    want = {"air": {"plane"}, "road": {"land"}, "sail": {"main", "boat"}}.get(
+        _window_mode_name(mode), {"main", "boat"},
+    )
+    prev_at = t_a
+    for v in ((clock or {}).get("vertices") or []):
+        if not isinstance(v, dict):
+            continue
+        t = _ms(v.get("iso"))
+        if t is None or t < t_a:
+            continue
+        if t_b is not None and t > t_b:
+            continue
+        veh = v.get("vehicle")
+        if veh == "quay":
+            continue
+        if want and veh not in want:
+            continue
+        d = _nm_between(port_lat, port_lon, v.get("lat"), v.get("lon"))
+        if d is None:
+            continue
+        if d <= _PORT_LEAVE_NM:
+            prev_at = t
+            continue
+        if t == t_a or d <= _PORT_ANCHOR_NM:
+            return t
+        return prev_at
+    return t_a
+
+
 def _window_depart_ms(w: dict) -> Optional[int]:
-    dep = _departure_iso(w["from"]) if w.get("from") else None
-    return _ms(dep) if dep else w.get("tA")
+    """Départ = premier sommet d'horloge qui quitte le port, jamais tA + jours d'escale."""
+    t_a = w.get("tA")
+    frm = w.get("from") or {}
+    clock = w.get("clock")
+    mode = _window_mode_name(str(w.get("mode") or _mode_from_vehicle(w.get("vehicle")) or "sail"))
+    leave = _clock_leave_ms(
+        clock, frm.get("lat"), frm.get("lon"), t_a, w.get("tB"), mode=mode,
+    )
+    if leave is not None:
+        return leave
+    return t_a
+
+
+def _clock_has_quay(clock: dict | None, stop: dict | None) -> bool:
+    if not clock or not stop:
+        return False
+    lat, lon = stop.get("lat"), stop.get("lon")
+    arrived = _ms(stop.get("iso"))
+    for v in (clock.get("vertices") or []):
+        if not isinstance(v, dict) or v.get("vehicle") != "quay":
+            continue
+        d = _nm_between(lat, lon, v.get("lat"), v.get("lon"))
+        if d is not None and d <= _PORT_ANCHOR_NM:
+            return True
+    if arrived is None or lat is None or lon is None:
+        return False
+    leave = _clock_leave_ms(clock, lat, lon, arrived, mode="sail")
+    return leave is not None and leave - arrived >= 12 * 3_600_000
+
+
+def _quay_hours_for_arrival(stop: dict | None, clock: dict | None) -> Any:
+    if not stop:
+        return 0
+    verts = (clock or {}).get("vertices") or []
+    if verts:
+        return stop.get("holdHours") if _clock_has_quay(clock, stop) else 0
+    return stop.get("holdHours")
+
+
+def _air_return_ms(
+    clock: dict | None,
+    stay: dict | None,
+    after_ms: Optional[int],
+    t_end: Optional[int],
+) -> Optional[int]:
+    lat, lon = (stay or {}).get("lat"), (stay or {}).get("lon")
+    if lat is None or lon is None:
+        return None
+    for v in ((clock or {}).get("vertices") or []):
+        if not isinstance(v, dict) or v.get("vehicle") != "plane":
+            continue
+        t = _ms(v.get("iso"))
+        if t is None or (after_ms is not None and t <= after_ms):
+            continue
+        if t_end is not None and t > t_end:
+            continue
+        d = _nm_between(lat, lon, v.get("lat"), v.get("lon"))
+        if d is not None and d <= _PORT_ANCHOR_NM:
+            return t
+    return None
+
+
+def _moment_leg(row: dict) -> dict:
+    moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+    leg = moment.get("leg") if isinstance(moment.get("leg"), dict) else {}
+    return leg if isinstance(leg, dict) else {}
+
+
+def _moment_is_air(row: dict) -> bool:
+    leg = _moment_leg(row)
+    if leg.get("vehicle") == "plane":
+        return True
+    return _is_air_leg(str(leg.get("from") or ""), str(leg.get("to") or ""))
+
+
+def _air_return_from_moments(
+    moments: list | None,
+    stay_name: str,
+    after_ms: Optional[int],
+) -> Optional[int]:
+    stay_key = _air_stop_key(stay_name)
+    for row in moments or []:
+        if not isinstance(row, dict) or not _moment_is_air(row):
+            continue
+        t = _ms(row.get("t"))
+        if t is None or (after_ms is not None and t <= after_ms):
+            continue
+        dest = str(_moment_leg(row).get("to") or "")
+        if stay_key and _air_stop_key(dest) == stay_key:
+            return t
+        if stay_name and same_stop(dest, stay_name):
+            return t
+    return None
 
 
 def _km_label(nm: Any, lang: str) -> str:
@@ -1493,29 +1714,54 @@ def _departure_iso(stop: dict) -> Optional[str]:
     return _iso(t + int(float(stop.get("holdHours") or 0) * 3_600_000))
 
 
-def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
+def _collapse_air_dest(
+    pts: list[dict],
+    dest_i: int,
+) -> tuple[int, int]:
+    """Regroupe Halifax / Saint-Pierre en une destination aérienne (nommée SPM si possible)."""
+    last_i = dest_i
+    named_i = dest_i
+    k = dest_i + 1
+    while k < len(pts) and _is_air_only_stop(pts[k].get("name") or ""):
+        last_i = k
+        key = _air_stop_key(pts[k].get("name") or "")
+        if key == "saint-pierre":
+            named_i = k
+        elif key == "halifax" and _air_stop_key(pts[named_i].get("name") or "") != "saint-pierre":
+            named_i = k
+        k += 1
+    if _air_stop_key(pts[dest_i].get("name") or "") == "saint-pierre":
+        named_i = dest_i
+    return named_i, last_i
+
+
+def _windows(stops: list[dict], t0: int, t_end: int, clock: dict | None = None) -> list[dict]:
     pts = list(stops or [{"name": "Saint-Maur", "iso": _iso(t0), "filmNm": 0}])
     pts.sort(key=lambda s: float(
         s.get("filmNm") if s.get("filmNm") is not None else s.get("nm") or 0
     ))
     out: list[dict] = []
-    for i, frm in enumerate(pts):
-        to = pts[i + 1] if i + 1 < len(pts) else None
-        t_a = _ms(frm.get("iso")) if frm.get("iso") else (t0 if i == 0 else None)
-        if t_a is None or t_a >= t_end:
-            break
-        dest_ms = _ms(to["iso"]) if to else None
-        arrived = dest_ms is not None and dest_ms <= t_end
-        dest_name = (to.get("name") or "") if to else ""
-        raw_b = dest_ms if dest_ms is not None else t_end
-        t_b = min(raw_b if raw_b is not None else t_end, t_end)
-        if t_b <= t_a:
-            # Iso égaux (Saint-Maur forcé à T0, La Rochelle le 15 mai à la même
-            # heure) : plancher 1 s — `_iso` tronque à la seconde ; 1 ms
-            # donnait tA == tB et filmPlan jetait le chapitre 0.
-            t_b = t_a + 1000
-        out.append({
-            "id": f"leg-{i}",
+
+    def boat_stay_idx(idx: int) -> int:
+        for j in range(idx, -1, -1):
+            if not _is_air_only_stop(pts[j].get("name") or ""):
+                return j
+        return idx
+
+    def pack(
+        frm: dict,
+        to: dict | None,
+        t_a: int,
+        t_b: int,
+        dest_name: str,
+        arrived: bool,
+        last: bool,
+        mode: str,
+        return_ms: Optional[int],
+    ) -> dict:
+        vehicle = {"air": "plane", "road": "land", "sail": "main"}.get(mode, "main")
+        return {
+            "id": f"leg-{len(out)}",
             "from": frm,
             "to": to if arrived else None,
             "tA": t_a,
@@ -1525,23 +1771,77 @@ def _windows(stops: list[dict], t0: int, t_end: int) -> list[dict]:
             "destName": dest_name,
             "destNm": (to.get("nm") if isinstance((to or {}).get("nm"), (int, float)) else (to or {}).get("filmNm")) if to else None,
             "arrived": arrived,
-            "last": to is None,
-            "vehicle": _window_vehicle(frm, to),
+            "last": last,
+            "vehicle": vehicle,
+            "mode": mode,
+            "clock": clock,
+            "returnMs": return_ms,
             "fromLat": frm.get("lat"),
             "fromLon": frm.get("lon"),
             "toLat": (to or {}).get("lat"),
             "toLon": (to or {}).get("lon"),
-        })
+        }
+
+    stay_idx = 0
+    dest_i = 1
+    stay_ready_ms: Optional[int] = None
+    while dest_i < len(pts):
+        stay_idx = boat_stay_idx(stay_idx)
+        frm = pts[stay_idx]
+        t_a = _ms(frm.get("iso")) if frm.get("iso") else (t0 if stay_idx == 0 else None)
+        if t_a is None:
+            dest_i += 1
+            continue
+        if stay_ready_ms is not None and stay_ready_ms > t_a:
+            t_a = stay_ready_ms
+        if t_a >= t_end:
+            break
+        probe = pts[dest_i]
+        mode = _classify_window_mode(frm, probe, clock, t_a, _ms(probe.get("iso")) or t_end)
+        last_i = dest_i
+        named_i = dest_i
+        if mode == "air" or _is_air_only_stop(probe.get("name") or ""):
+            mode = "air"
+            named_i, last_i = _collapse_air_dest(pts, dest_i)
+        to = pts[named_i]
+        last_stop = pts[last_i]
+        dest_ms = _ms(to["iso"]) if to else None
+        last_ms = _ms(last_stop.get("iso")) if last_stop else dest_ms
+        arrived = dest_ms is not None and dest_ms <= t_end
+        dest_name = (to.get("name") or "") if to else ""
+        raw_b = last_ms if last_ms is not None else t_end
+        t_b = min(raw_b if raw_b is not None else t_end, t_end)
+        return_ms = None
+        if mode == "air":
+            return_ms = _air_return_ms(clock, frm, t_a, t_end)
+            if return_ms is not None:
+                t_b = min(max(t_b, return_ms), t_end)
+        if t_b <= t_a:
+            # Iso égaux (Saint-Maur forcé à T0, La Rochelle le 15 mai à la même
+            # heure) : plancher 1 s — `_iso` tronque à la seconde ; 1 ms
+            # donnait tA == tB et filmPlan jetait le chapitre 0.
+            t_b = t_a + 1000
+        out.append(pack(
+            frm, to, t_a, t_b, dest_name, arrived,
+            dest_i >= len(pts) - 1 and last_i >= len(pts) - 1,
+            mode, return_ms,
+        ))
+        if mode == "air":
+            stay_ready_ms = return_ms or t_b
+            dest_i = last_i + 1
+        else:
+            stay_idx = dest_i
+            stay_ready_ms = None
+            dest_i += 1
         if not to or (dest_ms is not None and dest_ms >= t_end):
             break
     if not out and t_end > t0:
-        out.append({
-            "id": "leg-0", "from": pts[0], "to": None, "tA": t0, "tB": t_end,
-            "fromName": (pts[0] or {}).get("name") or "Saint-Maur", "toName": "",
-            "destName": "", "arrived": False, "last": True,
-            "vehicle": _window_vehicle(pts[0], None),
-            "fromLat": None, "fromLon": None, "toLat": None, "toLon": None,
-        })
+        mode = _classify_window_mode(pts[0], None, clock, t0, t_end)
+        out.append(pack(
+            pts[0], None, t0, t_end, "", False, True, mode, None,
+        ))
+        out[0]["fromLat"] = None
+        out[0]["fromLon"] = None
     return out
 
 
@@ -1569,23 +1869,38 @@ def _chapter_dest(w: dict) -> dict | None:
     return dest
 
 
-def _air_sentence(w: dict, *, i: int, lang: str, display_t0: str | None = None) -> str:
-    dest_name = _window_dest_name(w)
-    origin = short_name((w.get("from") or {}).get("name") or "")
-    if not dest_name:
+def _air_place_spoken(name: str, lang: str) -> str:
+    key = _air_stop_key(name)
+    if key == "saint-pierre":
+        return "Saint-Pierre and Miquelon" if _en(lang) else "Saint-Pierre-et-Miquelon"
+    if key == "cayenne":
+        return "Cayenne"
+    if key == "halifax":
+        return "Halifax"
+    stripped = re.sub(r"\s*\([^)]*\)\s*", " ", short_name(name))
+    return " ".join(stripped.split())
+
+
+def _air_window_sentence(w: dict, *, lang: str, display_t0: str | None = None) -> str:
+    """Une phrase de vol : l'équipage vole, le bateau reste au port. Aucune date inventée."""
+    origin = _air_place_spoken((w.get("from") or {}).get("name") or w.get("fromName") or "", lang)
+    dest = _air_place_spoken(_window_dest_name(w) or w.get("destName") or "", lang)
+    if not origin or not dest:
         return ""
     en = _en(lang)
-    back = _air_stop_key(origin) == "halifax" and _air_stop_key(dest_name) == "cayenne"
-    if back:
-        head = f"return flight to {dest_name}" if en else f"retour en avion vers {dest_name}"
-    else:
-        head = f"the crew flies to {dest_name}" if en else f"l'équipage prend l'avion pour {dest_name}"
-    if i == 0:
-        return f"{head[0].upper()}{head[1:]}."
-    conn = connector_at(i - 1, lang)
-    dep = _departure_iso(w["from"]) if w.get("from") else None
-    when = day_month(rebase_iso(dep, OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
-    return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
+    ret = w.get("returnMs")
+    when = ""
+    if ret:
+        when = day_month(rebase_iso(_iso(int(ret)), OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
+    if en:
+        head = f"The crew flies from {origin} to {dest}; the boat waits at {origin}."
+        return f"{head} Return on {when}." if when else head
+    head = f"L'équipage s'envole de {origin} pour {dest} ; le bateau attend à {origin}."
+    return f"{head} Retour le {when}." if when else head
+
+
+def _air_sentence(w: dict, *, i: int, lang: str, display_t0: str | None = None) -> str:
+    return _air_window_sentence(w, lang=lang, display_t0=display_t0)
 
 
 def _close_sentence(w: dict, live: dict | None, lang: str) -> str:
@@ -1619,28 +1934,32 @@ def _close_sentence(w: dict, live: dict | None, lang: str) -> str:
 def _depart_towards(w: dict, *, i: int, lang: str, display_t0: str | None = None) -> str:
     """Phrase de départ de CETTE fenêtre : dest de la jambe, jamais un seaName figé."""
     dest_name = _window_dest_name(w)
-    origin = short_name((w.get("from") or {}).get("name") or "")
-    if (w.get("vehicle") == "plane") or _is_air_leg(origin, dest_name):
-        return _air_sentence(w, i=i, lang=lang, display_t0=display_t0)
+    if _is_air_window(w):
+        return _air_window_sentence(w, lang=lang, display_t0=display_t0)
     if not dest_name:
         return ""
     en = _en(lang)
-    head = f"departure for {dest_name}" if en else f"départ vers {dest_name}"
+    if _is_road_window(w):
+        head = f"departure for {dest_name} by road" if en else f"départ vers {dest_name} par la route"
+    else:
+        head = f"departure for {dest_name}" if en else f"départ vers {dest_name}"
     if i == 0:
         return f"{head[0].upper()}{head[1:]}."
     conn = connector_at(i - 1, lang)
-    dep = _departure_iso(w["from"]) if w.get("from") else None
-    when = day_month(rebase_iso(dep, OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
-    return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
+    dep_ms = _window_depart_ms(w)
+    when = day_month(rebase_iso(_iso(dep_ms), OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang) if dep_ms else ""
+    if when:
+        return f"{conn}, on {when}, {head}." if en else f"{conn}, le {when}, {head}."
+    return f"{conn}, {head}." if en else f"{conn}, {head}."
 
 
-def _arrival_sentence(stop: dict | None, lang: str, display_t0: str | None = None) -> str:
+def _arrival_sentence(stop: dict | None, lang: str, display_t0: str | None = None, clock: dict | None = None) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
     en = _en(lang)
     name = short_name(stop["name"])
     when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
-    quay = _days(stop.get("holdHours"))
+    quay = _days(_quay_hours_for_arrival(stop, clock))
     q = f", {_day_word(quay, lang)} {'in port' if en else 'à quai'}" if quay else ""
     return f"Arrival at {name} on {when}{q}." if en else f"Arrivée à {name} le {when}{q}."
 
@@ -1664,9 +1983,9 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
     if live:
         dist = _nm_label(live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm"), lang)
 
-    def push_arrival(bits: list[str], dest: dict | None) -> None:
+    def push_arrival(bits: list[str], dest: dict | None, clock: dict | None = None) -> None:
         key = norm_stop((dest or {}).get("name") or "")
-        sentence = _arrival_sentence(dest, lang, display_t0)
+        sentence = _arrival_sentence(dest, lang, display_t0, clock=clock)
         if not sentence or not key or key in cited:
             return
         bits.append(sentence)
@@ -1675,18 +1994,59 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
     for i, w in enumerate(windows):
         bits: list[str] = []
         placed: list[dict] = []
+        anchored: list[tuple[str, Optional[int]]] = []
         dest = _chapter_dest(w)
         dest_name = _window_dest_name(w)
         arrived = bool(w.get("arrived")) if "arrived" in w else bool(dest)
         depart_ms = _window_depart_ms(w) or 0
+
+        def finish_chapter() -> None:
+            text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
+            chapters.append({
+                "id": w["id"],
+                "tA": _iso(w["tA"]),
+                "tB": _iso(w["tB"]),
+                "text": text,
+                "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "events": placed,
+                "fromName": w.get("fromName") or "",
+                "toName": w.get("toName") or "",
+                "fromLat": w.get("fromLat"),
+                "fromLon": w.get("fromLon"),
+                "toLat": w.get("toLat"),
+                "toLon": w.get("toLon"),
+            })
+
+        if _is_air_window(w):
+            if i == 0:
+                first = event_sentence({
+                    "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
+                    "seaName": "",
+                    "entry": {"t": OFFICIAL_T0, "name": start_name},
+                }, lang, display_t0=display_t0)
+                bits.append(first)
+                anchored.append((first, w["tA"]))
+            head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
+            if head:
+                bits.append(head)
+                anchored.append((head, depart_ms or w["tA"]))
+            if i == len(windows) - 1:
+                close = _close_sentence(w, live, lang)
+                if close and close not in bits:
+                    bits.append(close)
+                    anchored.append((close, w["tB"]))
+            finish_chapter()
+            continue
         # Ch. 0 : Saint-Maur d'abord (ordre de la route), puis la paire de
         # CETTE fenêtre. Plus de seaName figé « La Rochelle ».
         if i == 0:
-            bits.append(event_sentence({
+            first = event_sentence({
                 "role": "depart", "kind": "stop", "t": OFFICIAL_T0, "name": start_name,
                 "seaName": "" if dest_name else sea_name,
                 "entry": {"t": OFFICIAL_T0, "name": start_name},
-            }, lang, display_t0=display_t0))
+            }, lang, display_t0=display_t0)
+            bits.append(first)
+            anchored.append((first, w["tA"]))
 
         def speak_ev(ev: dict) -> None:
             if ev.get("kind") == "stop" and ev.get("role") not in {"depart", "today"}:
@@ -1717,29 +2077,21 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
         if head:
             bits.append(head)
+            anchored.append((head, depart_ms or w["tA"]))
         for ev in sea:
             speak_ev(ev)
         if arrived:
-            push_arrival(bits, dest)
+            before = len(bits)
+            push_arrival(bits, dest, clock=w.get("clock"))
+            if len(bits) > before:
+                anchored.append((bits[-1], w["tB"]))
         _append_review_sentences(bits, review, w, lang)
         if i == len(windows) - 1:
             close = _close_sentence(w, live, lang)
             if close and close not in bits:
                 bits.append(close)
-        text = speak_film_text(re.sub(r"\s{2,}", " ", " ".join(bits)).strip(), lang)
-        chapters.append({
-            "id": w["id"],
-            "tA": _iso(w["tA"]),
-            "tB": _iso(w["tB"]),
-            "text": text,
-            "events": placed,
-            "fromName": w.get("fromName") or "",
-            "toName": w.get("toName") or "",
-            "fromLat": w.get("fromLat"),
-            "fromLon": w.get("fromLon"),
-            "toLat": w.get("toLat"),
-            "toLon": w.get("toLon"),
-        })
+                anchored.append((close, w["tB"]))
+        finish_chapter()
     return chapters
 
 
@@ -2148,7 +2500,8 @@ def _sentences(text: str) -> list[str]:
 
 
 _KEEP_SENT = re.compile(
-    r"arriv|départ|departure|left |quitté|approche|approaching|avion|flies|flight|aujourd|today",
+    r"arriv|départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
+    r"envole|par la route|by road|attend à|waits at|aujourd|today",
     re.I,
 )
 
@@ -2234,13 +2587,19 @@ def _trim_free_script(chapters: list[dict], max_words: int = FILM_FREE_MAX_WORDS
     return chapters
 
 
-_AIR_OUT_RE = re.compile(r"prend l'avion pour|the crew flies to|flies to Halifax", re.I)
-_AIR_BACK_RE = re.compile(r"retour en avion vers|return flight to", re.I)
+_AIR_OUT_RE = re.compile(
+    r"s'envole|prend l'avion pour|the crew flies|flies from|flies to",
+    re.I,
+)
+_AIR_BACK_RE = re.compile(
+    r"le bateau attend|retour le|retour en avion|the boat waits|return on|return flight",
+    re.I,
+)
 
 
 def _route_has_air_pair(marks: list | None, moments: list | None = None) -> bool:
     keys = {_air_stop_key(m.get("name") or "") for m in (marks or []) if isinstance(m, dict)}
-    if "cayenne" in keys and "halifax" in keys:
+    if "cayenne" in keys and ("halifax" in keys or "saint-pierre" in keys):
         return True
     for row in moments or []:
         if not isinstance(row, dict):
@@ -2261,16 +2620,15 @@ def _air_place_name(marks: list | None, key: str, fallback: str) -> str:
 
 def _air_pair_sentences(marks: list | None, lang: str) -> tuple[str, str]:
     cayenne = _air_place_name(marks, "cayenne", "Cayenne (Guyane)")
-    halifax = _air_place_name(marks, "halifax", "Halifax (Nouvelle-Écosse)")
-    outbound = _air_sentence(
-        {"from": {"name": cayenne}, "destName": halifax, "vehicle": "plane"},
-        i=0, lang=lang,
+    dest = (
+        _air_place_name(marks, "saint-pierre", "")
+        or _air_place_name(marks, "halifax", "Halifax (Nouvelle-Écosse)")
     )
-    back = _air_sentence(
-        {"from": {"name": halifax}, "destName": cayenne, "vehicle": "plane"},
-        i=0, lang=lang,
+    full = _air_window_sentence(
+        {"from": {"name": cayenne}, "fromName": cayenne, "destName": dest, "mode": "air", "vehicle": "plane"},
+        lang=lang,
     )
-    return outbound, back
+    return full, ""
 
 
 def _chapter_for_air(chapters: list[dict]) -> dict | None:
@@ -2301,9 +2659,10 @@ def _ensure_air_sentences(
     outbound, back = _air_pair_sentences(marks, lang)
     blob = " ".join(c.get("text") or "" for c in chapters)
     missing: list[str] = []
-    if outbound and not _AIR_OUT_RE.search(blob):
+    has_air = bool(_AIR_OUT_RE.search(blob) and _AIR_BACK_RE.search(blob))
+    if outbound and not has_air:
         missing.append(outbound)
-    if back and not _AIR_BACK_RE.search(blob):
+    if back and back not in (outbound or "") and not _AIR_BACK_RE.search(blob):
         missing.append(back)
     if not missing:
         return chapters
@@ -2333,41 +2692,8 @@ def _air_bits_from_moments(
     display_t0: str | None,
     already: str,
 ) -> list[str]:
-    """Jambes avion portées par les moments, si la fenêtre ne les dit pas déjà."""
-    bits: list[str] = []
-    seen: set[tuple[str, str]] = set()
-    window_key = (
-        norm_stop((w.get("from") or {}).get("name") or w.get("fromName") or ""),
-        norm_stop(_window_dest_name(w)),
-    )
-    for row in moments:
-        t = _change_t(row)
-        if t is None:
-            continue
-        if i == 0:
-            if t < w["tA"] or t > w["tB"]:
-                continue
-        elif t <= w["tA"] or t > w["tB"]:
-            continue
-        moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
-        leg = moment.get("leg") if isinstance(moment.get("leg"), dict) else {}
-        frm = str(leg.get("from") or "")
-        to = str(leg.get("to") or "")
-        if not _is_air_leg(frm, to) and leg.get("vehicle") != "plane":
-            continue
-        key = (norm_stop(frm), norm_stop(to))
-        if not key[0] or not key[1] or key in seen or key == window_key:
-            continue
-        seen.add(key)
-        fake = {
-            "from": {"name": frm, "iso": row.get("t"), "holdHours": 0},
-            "destName": to,
-            "vehicle": "plane",
-        }
-        sentence = _air_sentence(fake, i=max(i, 1), lang=lang, display_t0=display_t0)
-        if sentence and sentence not in already and sentence not in bits:
-            bits.append(sentence)
-    return bits
+    """RG1 : le vol est une fenêtre typée, plus un ajout en queue de chapitre."""
+    return []
 
 
 def build_raw_from_moments(
@@ -2390,7 +2716,7 @@ def build_raw_from_moments(
         return {"chapters": [], "source": "rules", "chars": 0, "targetSeconds": _film_seconds(seconds), "_fromMoments": True}
     start_name = short_name((packed["start"] or {}).get("name") or "Saint-Maur")
     sea_name = short_name((packed["sea"] or {}).get("name") or "La Rochelle")
-    windows = _windows(packed["stops"], t0, t_end)
+    windows = _windows(packed["stops"], t0, t_end, clock)
     has_budget = _film_seconds(seconds) > 0
     budget_s = _film_seconds(seconds)
     if has_budget:
@@ -2410,8 +2736,16 @@ def build_raw_from_moments(
         dest = _chapter_dest(w)
         dest_name = _window_dest_name(w)
         arrived = bool(w.get("arrived")) if "arrived" in w else bool(dest)
+        if _is_air_window(w) and not w.get("returnMs"):
+            w["returnMs"] = _air_return_from_moments(
+                moments, w.get("fromName") or "", w.get("tA"),
+            )
         depart_ms = _window_depart_ms(w) or 0
-        flat = _flatten_changes(moments, w["tA"], w["tB"], first=i == 0)
+        if _is_air_window(w):
+            sail_moments: list[dict] = []
+        else:
+            sail_moments = [m for m in moments if isinstance(m, dict) and not _moment_is_air(m)]
+        flat = _flatten_changes(sail_moments, w["tA"], w["tB"], first=i == 0)
         for extra in _dest_culture_changes(dest):
             extra = {**extra, "t": (dest or {}).get("iso"), "tMs": w["tB"]}
             flat.append(extra)
@@ -2421,6 +2755,8 @@ def build_raw_from_moments(
 
         def speak_change(change: dict) -> None:
             if change.get("kind") == "escale":
+                return
+            if _is_air_only_stop(str(change.get("title") or "")):
                 return
             sentence = change_sentence(change, lang).strip()
             if not sentence:
@@ -2446,6 +2782,33 @@ def build_raw_from_moments(
             }, lang, display_t0=display_t0)
             bits.append(first)
             anchored.append((first, w["tA"]))
+        if _is_air_window(w):
+            head = _depart_towards(w, i=i, lang=lang, display_t0=display_t0)
+            if head:
+                bits.append(head)
+                anchored.append((head, depart_ms or w["tA"]))
+            chapter_budget = budgets[i] if i < len(budgets) else (FILM_CHAPTER_FLOOR if has_budget else 0)
+            text = fit_chapter_text(" ".join(bits), chapter_budget, [], lang)
+            if i == len(windows) - 1:
+                close = _close_sentence(w, live, lang)
+                if close and close not in text:
+                    text = speak_film_text(f"{text} {close}".strip(), lang)
+                    anchored.append((close, w["tB"]))
+            chapters.append({
+                "id": w["id"],
+                "tA": _iso(w["tA"]),
+                "tB": _iso(w["tB"]),
+                "text": text,
+                "anchors": chapter_anchors(text, anchored, w["tA"], w["tB"], lang),
+                "events": placed,
+                "fromName": w.get("fromName") or "",
+                "toName": w.get("toName") or "",
+                "fromLat": w.get("fromLat"),
+                "fromLon": w.get("fromLon"),
+                "toLat": w.get("toLat"),
+                "toLon": w.get("toLon"),
+            })
+            continue
         quay = [c for c in selected if (c.get("tMs") or 0) < depart_ms]
         sea = [c for c in selected if (c.get("tMs") or 0) >= depart_ms]
         for change in quay:
@@ -2454,15 +2817,10 @@ def build_raw_from_moments(
         if head:
             bits.append(head)
             anchored.append((head, depart_ms or w["tA"]))
-        for extra_air in _air_bits_from_moments(
-            moments, w, i=i, lang=lang, display_t0=display_t0, already=" ".join(bits),
-        ):
-            bits.append(extra_air)
-            anchored.append((extra_air, depart_ms or w["tA"]))
         for change in sea:
             speak_change(change)
         key = norm_stop((dest or {}).get("name") or "")
-        arrival = _arrival_sentence(dest, lang, display_t0) if arrived else ""
+        arrival = _arrival_sentence(dest, lang, display_t0, clock=w.get("clock")) if arrived else ""
         if arrival and key and key not in cited:
             char_idx = len(" ".join(bits)) + (1 if bits else 0)
             bits.append(arrival)
@@ -2568,7 +2926,7 @@ def build_raw_script(
     events = selected if selected is not None else select_film_events(packed["candidates"], t0, t_end)
     events = [{**e, "name": start_name} if e.get("role") == "depart" else e for e in events]
     must_ids = {e["id"] for e in events if e.get("role") in {"depart", "today", "stop"}}
-    windows = _windows(packed["stops"], t0, t_end)
+    windows = _windows(packed["stops"], t0, t_end, clock)
 
     def compose(evs: list[dict]) -> list[dict]:
         return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0, review=review)
