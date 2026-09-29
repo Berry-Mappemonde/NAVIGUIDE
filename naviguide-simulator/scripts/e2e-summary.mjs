@@ -20,11 +20,17 @@ function walk(suite) {
       const result = (t.results || [])[0] || {};
       const status = t.status || result.status || "unknown";
       const annotations = (t.annotations || []).map((a) => a.type || a.description || "").join(" ");
+      // Réserves : ce qu'un spec VERT n'a pas pu vérifier (surface absente, API muette…) — un vert avec
+      // réserve n'a rien prouvé sur ce point ; s'il revient à chaque run, la surface a disparu (spec obsolète).
+      const reserves = (t.annotations || [])
+        .filter((a) => a.type !== "skip")
+        .map((a) => `${a.type || "réserve"}${a.description ? ` : ${a.description}` : ""}`);
       tests.push({
         title: spec.title,
         file: spec.file || suite.file || "",
         status,
         annotations,
+        reserves,
       });
     }
   }
@@ -50,4 +56,16 @@ if (poste.length) {
   console.log("");
   console.log("### Specs poste (ignorés en CI)");
   for (const t of poste) console.log(`- \`${t.file}\` — ${t.title}`);
+}
+const otherSkipped = skipped.filter((t) => !poste.includes(t));
+if (otherSkipped.length) {
+  console.log("");
+  console.log("### Specs ignorés (surface disparue — décision à prendre)");
+  for (const t of otherSkipped) console.log(`- \`${t.file}\` — ${t.title}${t.annotations ? ` — ${t.annotations}` : ""}`);
+}
+const withReserve = passed.filter((t) => t.reserves.length);
+if (withReserve.length) {
+  console.log("");
+  console.log(`### Verts avec réserve (${withReserve.length}) — vérifié en partie seulement`);
+  for (const t of withReserve) for (const r of t.reserves) console.log(`- \`${t.file}\` — ${r}`);
 }
