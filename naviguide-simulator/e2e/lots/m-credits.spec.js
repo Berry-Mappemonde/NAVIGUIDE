@@ -36,7 +36,7 @@ test("lot M — attribution Esri une fois, briefing avec lien de source", async 
   const ours = hrefs.filter((a) => /esri\.com|here\.com|garmin\.com|openstreetmap\.org\/copyright/.test(a.href));
   expect(ours, `liens tuiles : ${JSON.stringify(ours)}`).toHaveLength(4);
   expect(ours.filter((a) => a.text === "Esri")).toHaveLength(1);
-  await expect(attr).toContainText("données Esri");
+  await expect(attr).toContainText("Tuiles © Esri");
   await expect(attr).toContainText("HERE");
   await expect(attr).toContainText("Garmin");
   await expect(attr).toContainText("OpenStreetMap");

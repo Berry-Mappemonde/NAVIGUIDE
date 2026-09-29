@@ -82,6 +82,7 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /shouldHoldFilmForBudget/);
     assert.match(hook, /budgetSeconds/);
     assert.match(hook, /resolveFilmTargetSeconds/);
+    assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
   });
 
   it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
@@ -314,6 +315,8 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.match(app, /isSuivre && officialClock \?/);
     assert.doesNotMatch(app, /officialClock && replay\.canStart/);
     assert.match(app, /canStart: replay\.canStart/);
+    assert.match(hook, /keepReady/);
+    assert.match(hook, /remoteStatusRef\.current === "ready"/);
     assert.match(hook, /isRe7OfficialFilm/);
     assert.match(hook, /seekChapter/);
     assert.match(hook, /pinnedIdxRef/);

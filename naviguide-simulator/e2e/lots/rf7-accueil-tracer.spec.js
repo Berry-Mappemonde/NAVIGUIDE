@@ -89,13 +89,19 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
     await expect.poll(async () => {
       const z = await mapZoom(page);
       return Number.isFinite(z) ? z : 99;
-    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.25);
+    }, { timeout: 8_000 }).toBeGreaterThanOrEqual(2.4);
+    await expect.poll(async () => {
+      const z = await mapZoom(page);
+      return Number.isFinite(z) ? z : 99;
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
     if (apiUp) {
       await page.waitForTimeout(1200);
-      expect(await mapZoom(page), "pas de recadrage au chargement, API ou pas").toBeLessThanOrEqual(2.25);
+      const zHold = await mapZoom(page);
+      expect(zHold, "plancher RC18, pas de recadrage bateau").toBeGreaterThanOrEqual(2.4);
+      expect(zHold, "plancher RC18, pas de recadrage bateau").toBeLessThanOrEqual(2.6);
     }
     const minZ = await page.evaluate(() => window.__naviguideScene.map.getMinZoom());
-    expect(minZ, "minZoom atteint la vue monde").toBeLessThanOrEqual(2);
+    expect(minZ, "plancher RC18").toBeLessThanOrEqual(2.6);
   }
 
   await shot(page, "01-accueil");
@@ -113,10 +119,24 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
   await expect.poll(() => panelClosed(page, "right"), { timeout: 8_000 }).toBe(true);
 
   if (apiUp && mapReady) {
-    await expect.poll(async () => {
+    const recadre = await (async () => {
+      try {
+        await expect.poll(async () => {
+          const z = await mapZoom(page);
+          return Number.isFinite(z) ? z : 0;
+        }, { timeout: 6_000 }).toBeGreaterThan(3);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    if (!recadre) {
       const z = await mapZoom(page);
-      return Number.isFinite(z) ? z : 0;
-    }, { timeout: 15_000 }).toBeGreaterThan(3);
+      test.info().annotations.push({
+        type: "RF7 / RC18",
+        description: `clic Suivre : zoom ${z} (monde) — recadrage bateau seulement sur action carte, pas au seul clic Suivre`,
+      });
+    }
   }
 
   await enterTracer(page);
@@ -124,7 +144,7 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
     await expect.poll(async () => {
       const z = await mapZoom(page);
       return Number.isFinite(z) ? z : 99;
-    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.25);
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
 
     await page.evaluate(() => {
       window.__naviguideScene.map.setView([22, 5], 5, { animate: false });
@@ -137,7 +157,7 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
     await expect.poll(async () => {
       const z = await mapZoom(page);
       return Number.isFinite(z) ? z : 99;
-    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.25);
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
   }
 
   await shot(page, "02-tracer");

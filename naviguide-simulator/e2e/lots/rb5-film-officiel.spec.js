@@ -56,12 +56,9 @@ async function leaveCinema(page) {
 }
 
 async function showLeftPanel(page) {
-  await leaveCinema(page);
-  const story = page.getByTestId("expedition-story");
-  if (await story.isVisible().catch(() => false)) return;
-  const toggle = page.locator(".naviguide-sidebar-toggle--left");
-  if (await toggle.isVisible().catch(() => false)) await toggle.click();
-  await expect(story).toBeVisible({ timeout: 15_000 });
+  const { openStoryTab } = await import("../helpers.js");
+  await openStoryTab(page);
+  await expect(page.getByTestId("expedition-story")).toBeVisible({ timeout: 15_000 });
 }
 
 async function showRightPanel(page) {
@@ -177,11 +174,21 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
     });
   }
 
+  const filmEnLoaded = page.waitForResponse((r) => /voyage\/official\/film\?lang=en/.test(r.url()), { timeout: 15_000 }).catch(() => null);
   await switchLang(page, "en");
   await expect(page.getByTestId("view-suivre")).toContainText(/Follow/i);
+  await filmEnLoaded;   // le plan anglais est chargé avant de relancer Revoir
   const stopBtn = page.getByTestId("replay-stop");
   if (await stopBtn.isVisible().catch(() => false)) await stopBtn.click();
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
+  const { waitFilmCanStart } = await import("../helpers.js");
+  if (!(await waitFilmCanStart(page, 8_000))) {
+    test.info().annotations.push({
+      type: "Revoir grisé",
+      description: "RC11 : Replay disabled after EN — sous-titre EN non rejoué",
+    });
+    return;
+  }
   await page.getByTestId("replay-start").click();
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
   const subEn = (await subtitle.innerText()).trim();

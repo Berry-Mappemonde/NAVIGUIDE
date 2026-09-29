@@ -98,15 +98,22 @@ jobs:
           pip install -q pip-audit
           python -m pip_audit -r server/requirements.txt --progress-spinner off
 
-  # Sécurité P1 (lot H) : fumée Playwright sur le build de prod servi par
-  # `vite preview` — ouvrir, les deux panneaux, Suivre / Simulation, un
-  # calque, aucune erreur de page. Sans API : l'app doit tenir debout seule.
+  # Recette automatique des lots (RG16 / D11) : une invocation Playwright
+  # (fumée + lots) sur le build de prod, API hors ligne, stock figé.
+  # Un spec rouge bloque la PR. Specs `poste` (hindcast, LLM, réseau) ignorés en CI.
   simulator-e2e:
-    name: simulateur — fumée Playwright (build de prod)
+    # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en six tranches parallèles (--shard) :
+    # même contenu, même API sur le stock figé, ~1 min de tests chacune + ~1 min 30 de mise en place.
+    # Six jobs verts = recette verte. Dépôt public : les runners Actions sont gratuits et illimités.
+    name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/6
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 12
     needs: changes
     if: needs.changes.outputs.simulator == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: naviguide-simulator
@@ -125,23 +132,28 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: pip install -r server/requirements.txt
-      - run: npx playwright install --with-deps chromium
-      - name: Fumée (ouvrir, panneaux, Suivre / Simulation, calque)
-        run: npx playwright test e2e/smoke.spec.js
-      # Les specs de lots (e2e/lots/*) sont la recette automatique de chaque lot.
-      # Lot RF11 : l'API tourne hors ligne sur le stock disque figé (npm run e2e:store) ;
-      # continue-on-error tant que la suite n'est pas stable deux nuits.
-      # 27 sept. : 4 workers (le runner public a 4 cœurs) ; pas de rejeu (un échec est
-      # déterministe, le rejeu doublait son coût) ; 30 s par test ; butée explicite à 9 min — avant,
-      # la suite butait à 480 s sans jamais aller au bout (« 55 did not run ») et personne ne le voyait.
-      - name: Specs de lots (avec API, stock figé)
-        if: hashFiles('naviguide-simulator/e2e/lots/*.spec.js') != ''
-        continue-on-error: true
-        run: npm run e2e:store -- --workers=4 --retries=0 --timeout=30000 --global-timeout=540000
-      - uses: actions/upload-artifact@v7
-        if: always()
+      - name: Version Playwright (clé de cache)
+        id: pw
+        run: |
+          echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
         with:
-          name: playwright-report
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+      - run: npx playwright install --with-deps chromium
+      - name: Recette automatique (fumée + lots, stock figé) — tranche ${{ matrix.shard }}/6
+        env:
+          PW_WITH_API: "1"
+        run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/6
+      - name: Résumé d'étape
+        if: always()
+        run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.shard }}
           path: naviguide-simulator/playwright-report
           retention-days: 7
           if-no-files-found: ignore

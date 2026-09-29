@@ -137,20 +137,15 @@ function writeReport(screen, rows) {
 async function enterDraw(page) {
   const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Draw your own route/i });
   if (!(await drawBtn.isVisible().catch(() => false))) {
-    await page.locator(".naviguide-sidebar-toggle--left").click();
+    await page.locator(".naviguide-sidebar-toggle--left").evaluate((el) => el.click());
   }
   await expect(drawBtn).toBeAttached({ timeout: 15_000 });
   await drawBtn.evaluate((el) => el.click());
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
-  await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function", { timeout: 10_000 });
-  await page.evaluate(() => window.__naviguideAddDrawnPoint(18.2, -17.8));
-  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, { timeout: 10_000 });
-  await page.evaluate(() => window.__naviguideAddDrawnPoint(17.6, -16.9));
-  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 2, { timeout: 10_000 });
 }
 
 test("lot R13 — aucune redite de libellé ; bateau / climatologie / Polaire une fois", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(60_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -162,7 +157,7 @@ test("lot R13 — aucune redite de libellé ; bateau / climatologie / Polaire un
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
-  await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 30_000 });
+  await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 12_000 });
   await showBothPanels(page);
 
   await page.getByTestId("view-suivre").click();
@@ -184,7 +179,8 @@ test("lot R13 — aucune redite de libellé ; bateau / climatologie / Polaire un
   const tracerSplit = writeReport("tracer", tracer.duplicates);
   await shot(page, "03-tracer");
 
-  await showToolsPanel(page);
+  const { showRightPanel } = await import("../helpers.js");
+  await showRightPanel(page);
   const droit = await collectScreen(page);
   const droitSplit = writeReport("panneau-droit", droit.duplicates);
   await shot(page, "04-panneau-droit");
@@ -211,8 +207,9 @@ test("lot R13 — aucune redite de libellé ; bateau / climatologie / Polaire un
       await expect(boatRow).toBeVisible();
       const outside = await page.evaluate(() => {
         const body = document.body.innerText || "";
-        const box = document.querySelector("[data-testid='skipper-boat']");
-        const inside = box ? (box.innerText || "") : "";
+        const keepEl = document.querySelector("[data-testid='skipper-boat'], [data-testid='polar-box']");
+        const keepBoxes = [...document.querySelectorAll("[data-testid='skipper-boat'], [data-testid='polar-box']")];
+        const inside = keepBoxes.map((el) => el.innerText || "").join("\n");
         const re = /l[eé]opard\s*46/gi;
         const all = body.match(re) || [];
         const keep = inside.match(re) || [];

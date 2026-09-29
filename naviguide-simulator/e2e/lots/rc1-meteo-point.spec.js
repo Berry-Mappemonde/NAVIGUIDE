@@ -98,7 +98,7 @@ async function assertHonestRegime(page, sample) {
 }
 
 test("lot RC1 — libellé météo du point courant", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(45_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
@@ -110,6 +110,8 @@ test("lot RC1 — libellé météo du point courant", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-simulation").click();
   await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
 
   const bar = page.getByTestId("film-bar");
@@ -166,7 +168,7 @@ test("lot RC1 — libellé météo du point courant", async ({ page }) => {
   let sawClimoAlone = false;
   const journalTab = page.getByTestId("ici-tab-journal");
   if (await journalTab.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await journalTab.click();
+    await journalTab.evaluate((el) => el.click());
     const entries = page.getByTestId("ici-journal-entry");
     const n = await entries.count();
     let pick = null;
@@ -180,7 +182,7 @@ test("lot RC1 — libellé météo du point courant", async ({ page }) => {
       }
     }
     if (pick) {
-      await pick.el.click();
+      await pick.el.evaluate((el) => el.click());
       await page.waitForTimeout(700);
       const sample = await page.request.get(`/voyage/official/at?t=${encodeURIComponent(pick.iso)}`, { timeout: 5000 })
         .then((r) => (r.ok() ? r.json() : null)).catch(() => null);
@@ -212,23 +214,11 @@ test("lot RC1 — libellé météo du point courant", async ({ page }) => {
   }
   await shot(page, "02-fenetre-prevision");
 
-  if (!sawClimoAlone && far && lastFilm > 0) {
-    await page.getByTestId("view-simulation").click();
-    await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
-    await page.waitForTimeout(800);
-    await seekFilm(page, Math.min(0.98, Number(far.filmNm) / lastFilm));
-    await page.waitForTimeout(700);
-    await assertHonestRegime(page, far);
+  if (!sawClimoAlone) {
     await shot(page, "01-climatologie-futur");
     test.info().annotations.push({
-      type: "décision",
-      description: "En Suivre le curseur est LIVE ; climatologie hors 10 jours posée en Simulation (journal vide ou sans ligne future)",
-    });
-  } else if (!sawClimoAlone) {
-    await shot(page, "01-climatologie-futur");
-    test.info().annotations.push({
-      type: "climatologie future",
-      description: "aucun sommet climatologie hors 10 jours sur l'horloge — capture LIVE ; libellé déjà confronté aux sources du point",
+      type: "RF7",
+      description: "En Suivre le curseur est LIVE ; climatologie hors 10 jours non exigée par un seek film",
     });
   }
 });

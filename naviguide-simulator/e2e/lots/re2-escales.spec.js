@@ -52,8 +52,14 @@ async function showPanel(page, side) {
   const toggle = side === "left"
     ? ".naviguide-sidebar-toggle--left"
     : ".naviguide-sidebar-toggle--right";
-  await page.locator(toggle).click();
-  await expect.poll(() => panelOnScreen(page, side), { timeout: 10_000 }).toBe(true);
+  await page.locator(toggle).evaluate((el) => el.click());
+  const opened = await expect.poll(() => panelOnScreen(page, side), { timeout: 8_000 }).toBe(true)
+    .then(() => true).catch(() => false);
+  if (!opened) {
+    await page.keyboard.press("Escape");
+    await page.locator(toggle).evaluate((el) => el.click());
+    await expect.poll(() => panelOnScreen(page, side), { timeout: 8_000 }).toBe(true);
+  }
   await page.waitForTimeout(350);
 }
 
@@ -182,12 +188,9 @@ test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async
   const ajaccioRow = rowByName(page, "Ajaccio");
   const hasAjaccio = await ajaccioRow.isVisible().catch(() => false);
   if (hasAjaccio) {
-    await expect(ajaccioRow).toHaveAttribute("data-interactive", "true");
-    await expect(ajaccioRow.getByRole("button")).toHaveCount(1);
-    await ajaccioRow.scrollIntoViewIfNeeded();
-    await ajaccioRow.getByRole("button").click();
-    const bar = page.getByTestId("film-bar");
-    await expect(bar).toContainText(/Ajaccio/i, { timeout: 8_000 });
+    // RF8 : liste informative dans tous les modes — plus de clic.
+    await expect(ajaccioRow).toHaveAttribute("data-interactive", "false");
+    await expect(ajaccioRow.getByRole("button")).toHaveCount(0);
   } else if (apiUp) {
     expect(hasAjaccio, "ligne Ajaccio absente de la liste en Simulation").toBe(true);
   } else {

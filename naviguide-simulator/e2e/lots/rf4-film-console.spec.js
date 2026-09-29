@@ -119,12 +119,9 @@ test("lot RF4 — console vierge pendant le film, sac live après Stop", async (
     return;
   }
 
-  await showLeftPanel(page);
-  filming = true;
   await start.click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
-  await leaveCinema(page);
-  await showLeftPanel(page);
+  filming = true;
   await page.waitForTimeout(4_000);
   filming = false;
 

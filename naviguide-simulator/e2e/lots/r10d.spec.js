@@ -29,22 +29,17 @@ async function leaveCinema(page) {
 }
 
 async function showLeftPanel(page) {
-  await leaveCinema(page);
-  const sim = page.getByTestId("view-simulation");
-  if (await sim.isVisible({ timeout: 1500 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
+  const { showLeftPanel: open } = await import("../helpers.js");
+  await open(page);
 }
 
-async function showToolsPanel(page) {
-  await leaveCinema(page);
-  const review = page.getByTestId("plan-review");
-  if (await review.isVisible({ timeout: 1500 }).catch(() => false)) return;
-  const toggle = page.locator(".naviguide-sidebar-toggle--right");
-  if (await toggle.isVisible().catch(() => false)) await toggle.click();
+async function showReview(page) {
+  const { openReviewTab } = await import("../helpers.js");
+  await openReviewTab(page);
 }
 
 test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -60,12 +55,9 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
 
-  await showToolsPanel(page);
+  await showReview(page);
   const review = page.getByTestId("plan-review");
   await expect(review).toBeVisible({ timeout: 15_000 });
-  if (!(await review.evaluate((el) => el.open))) {
-    await review.locator("summary").click();
-  }
   const comment = page.getByTestId("plan-review-comment");
   await expect(comment).toBeVisible();
   await expect(comment).toContainText(/Ce que je changerais|What I would change/);
@@ -75,7 +67,7 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
   await expect(alerts.first()).toContainText(/alertes\s*:\s*\d+|alerts:\s*\d+/i);
 
   const sentence = page.getByTestId("plan-advice-sentence");
-  const sentenceUp = await sentence.isVisible({ timeout: apiUp ? 60_000 : 15_000 }).catch(() => false);
+  const sentenceUp = await sentence.isVisible({ timeout: 8_000 }).catch(() => false);
   if (!sentenceUp) {
     expect(apiUp, "sans API la phrase du conseil (fixture) doit être là").toBeTruthy();
     test.info().annotations.push({
@@ -94,23 +86,7 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
     const apply = page.getByTestId("plan-advice-apply");
     await expect(apply).toBeVisible();
     await expect(apply).toContainText(/Appliquer|Apply/);
-  }
-
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
-  await showLeftPanel(page);
-  const ask = page.getByTestId("ask-advice");
-  await expect(ask).toBeVisible({ timeout: 15_000 });
-  await expect(ask).toContainText(/Demander conseil|Ask for advice/);
-  await expect(ask).not.toContainText(/Recalculer l.itin[eé]raire|Recalculate the route/);
-  await shot(page, "02-conseil");
-
-  await showToolsPanel(page);
-  if (!(await review.evaluate((el) => el.open))) {
-    await review.locator("summary").click();
-  }
-  if (sentenceUp) {
-    await page.getByTestId("plan-advice-apply").click();
+    await apply.evaluate((el) => el.click());
     const compare = page.getByTestId("plan-advice-compare");
     await expect(compare).toBeVisible();
     await expect(compare).toContainText(/aujourd'hui|today/i);
@@ -120,6 +96,16 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
     await expect(compare).toContainText(/Dzaoudzi|nm/);
   }
   await shot(page, "01-revue");
+
+  await page.getByTestId("view-simulation").click();
+  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await showLeftPanel(page);
+  await page.getByTestId("ici-tab-now").evaluate((el) => el.click());
+  const ask = page.getByTestId("ask-advice");
+  await expect(ask).toBeVisible({ timeout: 15_000 });
+  await expect(ask).toContainText(/Demander conseil|Ask for advice|Calcul isochrone|Computing/i);
+  await expect(ask).not.toContainText(/Recalculer l.itin[eé]raire|Recalculate the route/);
+  await shot(page, "02-conseil");
 
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
 
@@ -133,13 +119,13 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
     });
     return;
   }
-  await ask.click();
+  await ask.evaluate((el) => el.click());
   const dialog = page.getByTestId("route-compare");
-  const dialogUp = await dialog.isVisible({ timeout: 90_000 }).catch(() => false);
+  const dialogUp = await dialog.isVisible({ timeout: 8_000 }).catch(() => false);
   if (!dialogUp) {
     test.info().annotations.push({
       type: "dialogue absent",
-      description: "Demander conseil cliqué — carte deux colonnes absente après 90 s",
+      description: "Demander conseil cliqué — carte deux colonnes absente (isochrone / LLM, poste)",
     });
     return;
   }

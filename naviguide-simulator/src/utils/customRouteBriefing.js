@@ -1,6 +1,27 @@
 import { featuresToSegments, haversineNm, summarizeRoute } from "./geo.js";
 import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
+/** Côte lisible pour un point tracé — pas le voyage Berry. */
+export function coastNameNear(lat, lon, language = "fr") {
+  const y = Number(lat);
+  const x = Number(lon);
+  if (!Number.isFinite(y) || !Number.isFinite(x)) return "";
+  const fr = language !== "en";
+  // Large de Nouadhibou / cap Blanc (lot T).
+  if (y >= 15 && y <= 21.5 && x >= -20 && x <= -16) {
+    return fr ? "Mauritanie" : "Mauritania";
+  }
+  return "";
+}
+
+function coastAlongTrack(points, language = "fr") {
+  for (const p of points || []) {
+    const name = coastNameNear(p.lat, p.lon, language);
+    if (name) return name;
+  }
+  return "";
+}
+
 /**
  * Fallback briefing when the orchestrator is unreachable.
  * Describes only the displayed GeoJSON — never the Berry track.
@@ -9,6 +30,7 @@ export function buildLocalCustomBriefing(geojson, language = "fr") {
   const wps = waypointsFromCollection(geojson);
   const { nm, segments } = summarizeRoute(featuresToSegments(geojson));
   if (wps.length < 2 && segments < 1) return null;
+  const coast = coastAlongTrack(wps, language);
 
   let dist = Math.round(nm);
   if (dist === 0 && wps.length >= 2) {
@@ -34,9 +56,11 @@ export function buildLocalCustomBriefing(geojson, language = "fr") {
     ? `Route personnalisée — ${pts || segs + 1} points, ${segs} segment${segs > 1 ? "s" : ""}, environ ${dist} NM.`
     : `Custom route — ${pts || segs + 1} points, ${segs} segment${segs > 1 ? "s" : ""}, about ${dist} NM.`;
 
+  const whereFr = coast ? ` au large de la ${coast}` : " sur la carte";
+  const whereEn = coast ? ` off ${coast}` : " on the map";
   const narrative = fr
-    ? `Cette route a été tracée à la main sur la carte. Elle ne suit pas le voyage par défaut de l'expédition. Distance estimée ${dist} milles nautiques sur ${segs} segment${segs > 1 ? "s" : ""}.${trail ? ` Waypoints : ${trail}.` : ""}`
-    : `This route was drawn by hand on the map. It is not the default expedition voyage. Estimated distance ${dist} nautical miles over ${segs} segment${segs > 1 ? "s" : ""}.${trail ? ` Waypoints: ${trail}.` : ""}`;
+    ? `Cette route a été tracée à la main${whereFr}. Elle ne suit pas le voyage par défaut de l'expédition. Distance estimée ${dist} milles nautiques sur ${segs} segment${segs > 1 ? "s" : ""}.${trail ? ` Waypoints : ${trail}.` : ""}`
+    : `This route was drawn by hand${whereEn}. It is not the default expedition voyage. Estimated distance ${dist} nautical miles over ${segs} segment${segs > 1 ? "s" : ""}.${trail ? ` Waypoints: ${trail}.` : ""}`;
 
   const note = fr
     ? "Résumé local : l'assistant de briefing n'a pas pu être joint."

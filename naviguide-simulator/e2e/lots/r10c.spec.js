@@ -29,10 +29,8 @@ async function leaveCinema(page) {
 }
 
 async function showLeftPanel(page) {
-  await leaveCinema(page);
-  const sim = page.getByTestId("view-simulation");
-  if (await sim.isVisible({ timeout: 1500 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
+  const { showLeftPanel: open } = await import("../helpers.js");
+  await open(page);
 }
 
 async function showToolsPanel(page) {
@@ -44,7 +42,7 @@ async function showToolsPanel(page) {
 }
 
 test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -74,9 +72,8 @@ test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ 
   await expect(gale).toHaveValue("30");
 
   await showLeftPanel(page);
-  const recalculate = page.getByRole("button", {
-    name: /Recalculer l.itin[eé]raire|Demander conseil|Recalculate the route/i,
-  });
+  await page.getByTestId("ici-tab-now").evaluate((el) => el.click());
+  const recalculate = page.getByTestId("ask-advice");
   await expect(recalculate).toBeVisible({ timeout: 15_000 });
   await shot(page, "01-borne");
 
@@ -95,7 +92,7 @@ test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ 
 
   await recalculate.click();
   const proposed = page.getByText(/Propos[eé]|Proposed/i).first();
-  const dialogUp = await proposed.isVisible({ timeout: 90_000 }).catch(() => false);
+  const dialogUp = await proposed.isVisible({ timeout: 8_000 }).catch(() => false);
   if (!dialogUp) {
     test.info().annotations.push({
       type: "dialogue absent",

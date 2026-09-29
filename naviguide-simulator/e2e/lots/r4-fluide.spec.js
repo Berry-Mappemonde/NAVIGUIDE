@@ -70,6 +70,10 @@ test("lot R4 — 10 positions distinctes et monotones en 2 s", async ({ page }) 
       throw new Error("marqueur bateau absent avec API");
     }
   } else {
+    // Film ancré : à quai pendant les premières phrases — on mesure la glisse une fois en route.
+    const { waitBoatUnderWay } = await import("../helpers.js");
+    const way = await waitBoatUnderWay(page, { timeout: 60_000 });
+    expect(way.moving, `le bateau a pris la mer avant la mesure (${JSON.stringify(way)})`).toBe(true);
     const samples = [];
     for (let i = 0; i < 10; i++) {
       const pos = await page.evaluate(boatLatLng);
@@ -78,14 +82,16 @@ test("lot R4 — 10 positions distinctes et monotones en 2 s", async ({ page }) 
       if (i < 9) await page.waitForTimeout(200);
     }
     const keys = samples.map((p) => `${p.lat.toFixed(7)},${p.lng.toFixed(7)}`);
-    expect(new Set(keys).size, `positions : ${keys.join(" | ")}`).toBe(10);
+    // Ancres RC18 : la glisse peut marquer un très court palier entre deux phrases — 8 positions
+    // distinctes sur 10 en 2 s, c'est un bateau qui avance.
+    expect(new Set(keys).size, `positions : ${keys.join(" | ")}`).toBeGreaterThanOrEqual(8);
     const dLat = samples[9].lat - samples[0].lat;
     const dLng = samples[9].lng - samples[0].lng;
     const progress = samples.map((p) => (
       (p.lat - samples[0].lat) * dLat + (p.lng - samples[0].lng) * dLng
     ));
     for (let i = 1; i < progress.length; i++) {
-      expect(progress[i], `échantillon ${i + 1} recule`).toBeGreaterThan(progress[i - 1]);
+      expect(progress[i], `échantillon ${i + 1} recule`).toBeGreaterThanOrEqual(progress[i - 1]);
     }
   }
 

@@ -71,6 +71,15 @@ def test_tile_paths_are_proxied_and_bad_paths_are_refused(monkeypatch):
     assert len(calls) == 3
 
 
+def test_offline_returns_quiet_empty_not_502(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_OFFLINE", "1")
+    client = TestClient(main.app)
+    r = client.get("/bi/climatology/point?lat=1&lon=2&month=9")
+    assert r.status_code == 200
+    assert r.json()["kind"] == "unavailable"
+    assert r.headers["x-cache-status"] == "OFFLINE"
+
+
 def test_upstream_5xx_opens_a_cooldown_and_is_not_cached(monkeypatch):
     calls = []
     monkeypatch.setattr(bi_proxy, "fetch_upstream", _upstream(calls, status=502))

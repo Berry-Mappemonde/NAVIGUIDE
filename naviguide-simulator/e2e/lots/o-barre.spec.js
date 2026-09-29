@@ -32,7 +32,10 @@ test("lot O — un seul Écouter, pas de replay-voice, barre ≤ 96 px", async (
   const bar = page.getByTestId("film-bar");
   await expect(bar).toBeVisible();
 
-  // Simulation par défaut : panneaux ouverts, barre étroite, commandes de lecture.
+  // RF7 : accueil Suivre ; la barre se vérifie aussi en Simulation.
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await assertOneListen(bar);
+  await page.getByTestId("view-simulation").click();
   await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
   await assertOneListen(bar);
   await shot(page, "02-simulation");

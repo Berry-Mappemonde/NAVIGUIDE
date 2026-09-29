@@ -67,8 +67,9 @@ test("lot RD3 — plus d'encadré jaune, nom une fois, remise 34 → 29 → 34",
 
   const review = page.getByTestId("plan-review");
   if (await review.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    if (!(await review.evaluate((el) => el.open))) {
-      await review.locator("summary").click();
+    const summary = review.locator("summary");
+    if ((await summary.count()) && !(await review.evaluate((el) => el.open))) {
+      await summary.click();
     }
     const lanes = page.getByTestId("plan-review-lanes");
     if (await lanes.count()) {

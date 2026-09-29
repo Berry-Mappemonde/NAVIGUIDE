@@ -51,10 +51,15 @@ test("lot P2 — à quai 0 kn ; en mer la vitesse varie", async ({ page }) => {
   // CI sans API : l’horloge live n’est pas forcément à quai. On pose le
   // playhead sur Ajaccio (3 j de hold) après le seek(0) de prime Simulation.
   await enterSimulation(page);
-  const ajaccio = page.getByRole("button", { name: /Ajaccio/i }).first();
-  await ajaccio.scrollIntoViewIfNeeded();
-  await ajaccio.click();
-  await expect(clock).toContainText("à quai", { timeout: 15_000 });
+  const next = page.getByTestId("next-stop");
+  await expect(next).toBeVisible({ timeout: 15_000 });
+  for (let i = 0; i < 12; i += 1) {
+    const txt = await clock.innerText();
+    if (/à quai|in port/i.test(txt)) break;
+    await next.click();
+    await page.waitForTimeout(400);
+  }
+  await expect(clock).toContainText(/à quai|in port/i, { timeout: 15_000 });
   await expect(clock).not.toContainText(/\d+[.,]\d+\s*kt/);
   await shot(page, "01-quai");
   const seen = new Set();
