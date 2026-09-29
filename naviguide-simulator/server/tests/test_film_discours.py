@@ -668,3 +668,101 @@ def test_poste_stock_anchor_positions():
     n_anc = sum(len(ch.get("anchors") or []) for ch in plan.get("chapters") or [])
     print(f"poste RG14 chapitres={n_ch} ancres={n_anc}", flush=True)
     assert n_anc >= n_ch, "au moins une ancre par chapitre"
+
+
+# ── RC26 : densité du récit (items, blocs figés, trous, doublons) ───────────
+
+
+def _densite_module():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "scripts" / "film-densite.py"
+    spec = importlib.util.spec_from_file_location("film_densite", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _densite_faults(plan: dict, moments: dict, clock: dict | None) -> list[str]:
+    """Les mesures RC26 sur un plan intégral : items par jambe (plancher borné
+    par le stock racontable), part figée sur une même minute ≤ 20 %, trou ≤ 30 %
+    (sauf stock déjà dit ou vide), zéro doublon de site, zéro adjectif orphelin."""
+    d = _densite_module()
+    stock, told = d.collect_stock(moments)
+    departs = d.departures_from_clock(clock or {})
+    faults: list[str] = []
+    chapters = plan.get("chapters") or []
+    for dup in d.duplicate_sites(chapters):
+        faults.append(f"doublon de site : {dup}")
+    for i, ch in enumerate(chapters):
+        text = ch.get("text") or ""
+        for adj in d.orphan_zee_adjectives(text):
+            faults.append(f"ch{i} adjectif ZEE orphelin : {adj}")
+        if d.AIR_RE.search(text):
+            continue
+        days = d.sea_days(ch, departs)
+        if days <= 3:
+            continue
+        lo, hi = d.sea_bounds(ch, departs)
+        # Le plancher est borné par le nombre d'INSTANTS distincts du stock :
+        # un moment unique à six items ne justifie pas six phrases d'un coup.
+        minutes = {
+            t // 60_000 for t, _title in told
+            if lo is not None and hi is not None and lo < t <= hi
+        }
+        floor = min(min(16, max(4, int(days / 1.5))), len(minutes))
+        items = d.chapter_items(ch)
+        if len(items) < floor:
+            faults.append(f"ch{i} : {len(items)} items < plancher {floor} ({days:.1f} j de mer)")
+        run = d.max_same_minute_run(ch)
+        if run > 5:
+            faults.append(f"ch{i} : {run} phrases d'affilée ancrées sur la même minute")
+        gap, g_a, g_b = d.max_gap(ch, departs)
+        if gap > 0.30 and d.gap_has_untold_stock(g_a, g_b, told, text):
+            faults.append(f"ch{i} : trou de {gap:.0%} avec du stock non dit dedans")
+    # L'intégral dit au moins une station et un projet si le stock en contient.
+    said = {}
+    for ch in chapters:
+        for e in ch.get("events") or []:
+            k = str(e.get("kind") or "")
+            said[k] = said.get(k, 0) + 1
+    if stock.get("station") and not said.get("sci"):
+        faults.append("aucune station dite alors que le stock en contient")
+    if stock.get("project") and not said.get("project"):
+        faults.append("aucun projet dit alors que le stock en contient")
+    return faults
+
+
+def test_rc26_densite_fixtures():
+    plan = _moments_plan("fr")
+    faults = _densite_faults(plan, MOMENTS, CLOCK)
+    assert not faults, faults[0]
+
+
+@pytest.mark.poste
+def test_poste_densite_rc26():
+    """Mêmes mesures sur le stock réel du poste, recalculé avec le code de la
+    branche (le film stocké d'une ancienne révision n'est pas jugé)."""
+    if os.environ.get("CI"):
+        pytest.skip("poste : stock du poste absent en CI")
+    clock = _try_poste_clock()
+    moments = load_poste_moments()
+    if not (clock and moments):
+        pytest.skip("poste : moments / horloge absents")
+    journal = moments.get("journal") if isinstance(moments.get("journal"), dict) else {}
+    packed = {**journal, "moments": moments.get("moments") or []}
+    live = {
+        "filmNm": clock.get("filmNm") or clock.get("sailNm"),
+        "sailNm": clock.get("sailNm"),
+        "iso": (clock.get("vertices") or [{}])[-1].get("iso") if clock.get("vertices") else None,
+        "status": "live",
+    }
+    now_ms = _ms(live.get("iso")) or NOW_MS
+    plan = build_raw_from_moments(
+        clock, clock.get("marks"), live, packed,
+        lang="fr", seconds=0, now_ms=now_ms,
+    )
+    faults = _densite_faults(plan, {"moments": packed.get("moments") or []}, clock)
+    for fault in faults:
+        print(f"  [densité] {fault}", flush=True)
+    assert not faults, faults[0]

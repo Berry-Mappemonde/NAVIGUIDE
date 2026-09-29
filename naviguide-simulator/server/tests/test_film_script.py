@@ -1489,7 +1489,10 @@ def test_zee_dosage_short_keeps_all_long_one_per_day():
     clustered = dose_zee_changes(short, span_ms=2 * day)
     assert len(clustered) == 1
     sent = change_sentence(clustered[0], "fr")
-    assert "Antigua" in sent and "Saint-Kitts" in sent and "Sint-Eustatius" in sent
+    # RC26 : groupe grammatical « les eaux X, puis celles de Y » — noms FR.
+    assert "les eaux d'Antigua-et-Barbuda" in sent
+    assert "puis celles de Saint-Christophe-et-Niévès" in sent
+    assert "puis celles de Sint-Eustatius" in sent
     assert "zones économiques exclusives" not in sent
     assert "zone économique exclusive" not in sent
     it_fr = [
@@ -2632,3 +2635,113 @@ def test_rc22_rich_plan_150_seconds_keeps_amp_and_project():
     assert "Pétoncles" not in blob
     assert "deposit" not in blob.lower()
     assert "Chaluts" not in blob
+
+
+# ── RC26 : récit dense et réparti ───────────────────────────────────────────
+
+
+def test_rc26_zee_group_waters_grammar_fr_en():
+    """« les eaux françaises, puis celles de Montserrat » — jamais d'adjectif
+    orphelin ni de minuscule en tête de nom (recette Antilles)."""
+    from film_script import zee_group_waters
+
+    members = [
+        "Zone économique exclusive de la Dominique",
+        "Zone économique exclusive française",
+        "Zone économique exclusive (Montserrat)",
+    ]
+    fr = zee_group_waters(members, "fr")
+    assert "les eaux de la Dominique" in fr
+    assert "les eaux françaises" in fr
+    assert "celles de Montserrat" in fr
+    assert ", puis " in fr
+    # jamais « celles de françaises » ni « les eaux de montserrat » (minuscule)
+    assert "celles de française" not in fr
+    assert "de montserrat" not in fr
+    en = zee_group_waters(members, "en")
+    # EN : toujours « … waters », jamais « those of Montserratian »
+    assert "waters" in en
+    assert ", then " in en
+    assert "those of" not in en
+
+
+def test_rc26_film_free_item_target_floor_and_cap():
+    from film_script import film_free_item_target
+
+    day = 86_400_000
+    assert film_free_item_target(1 * day) == 4      # plancher
+    assert film_free_item_target(9 * day) == 6      # 1 item / 1,5 jour
+    assert film_free_item_target(30 * day) == 16    # plafonné
+    assert film_free_item_target(90 * day) == 16
+
+
+def test_rc26_initial_heading_follows_track_not_port_maneuver():
+    """La Rochelle → Ajaccio : la trace part au sud — jamais « nord-ouest »
+    à cause des manœuvres de port."""
+    from film_script import _initial_route_heading, heading_phrase
+
+    day_h = 24.0
+    vertices = [
+        # manœuvre de port vers le nord-ouest sur le premier mille
+        {"tHours": 0.0, "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+        {"tHours": 0.2, "lat": 46.16, "lon": -1.18, "vehicle": "main"},
+        # puis la vraie route : plein sud sur 60 milles
+        {"tHours": 4.0, "lat": 45.80, "lon": -1.30, "vehicle": "main"},
+        {"tHours": 12.0, "lat": 45.10, "lon": -1.40, "vehicle": "main"},
+        {"tHours": day_h, "lat": 44.40, "lon": -1.50, "vehicle": "main"},
+    ]
+    clock = {"t0": "2026-05-15T08:00:00Z", "vertices": vertices}
+    t0_ms = _ms("2026-05-15T08:00:00Z")
+    deg = _initial_route_heading(clock, t0_ms, nm=30.0)
+    assert deg is not None
+    phrase = heading_phrase(deg, "fr")
+    assert "nord-ouest" not in phrase
+    assert "sud" in phrase
+
+
+def test_rc26_site_dedup_shortest_name_wins():
+    """« Lilleau-des-Niges » et « Lilleau-des-Niges - Zone de Protection » :
+    un seul jalon, le nom le plus court, au temps du premier croisement."""
+    long_first = {
+        "id": "a1", "kind": "amp", "score": 2, "tMs": 1_000,
+        "title": "Lilleau-des-Niges - Zone de Protection",
+        "fact": "Lilleau-des-Niges - Zone de Protection (4,9 nm)",
+    }
+    short_after = {
+        "id": "a2", "kind": "amp", "score": 2, "tMs": 2_000,
+        "title": "Lilleau-des-Niges", "fact": "Lilleau-des-Niges (4.9 nm)",
+    }
+    from film_script import _usable_changes
+
+    rows = _usable_changes([long_first, short_after])
+    hits = [c for c in rows if "Lilleau" in str(c.get("title") or "")]
+    assert len(hits) == 1
+    assert hits[0]["title"] == "Lilleau-des-Niges"
+    assert hits[0]["tMs"] == 1_000  # premier croisement conservé
+
+
+def test_rc26_dock_keeps_at_most_two_items_one_proximity():
+    """Au quai : plus jamais six phrases — au plus deux, dont UNE de proximité."""
+    day = 86_400_000
+    t_a, depart, t_b = 0, day, 11 * day
+    changes = [
+        {"id": f"amp{i}", "kind": "amp", "score": 2, "tMs": 1000 + i,
+         "title": f"Réserve du pertuis {i}", "fact": f"Réserve du pertuis {i} (5 nm)"}
+        for i in range(4)
+    ] + [
+        {"id": "proj", "kind": "project", "score": 2, "tMs": 2000,
+         "title": "Projet balise côtière", "fact": "Projet balise côtière (6 nm)"},
+        {"id": "sta", "kind": "station", "score": 2, "tMs": 3000,
+         "title": "Campagne PELGAS", "fact": "Campagne PELGAS (5 nm)", "source": "campaign"},
+        {"id": "zee1", "kind": "zee-enter", "score": 2, "tMs": 3 * day,
+         "title": "Zone économique exclusive espagnole", "fact": "x"},
+        {"id": "zee2", "kind": "zee-enter", "score": 2, "tMs": 6 * day,
+         "title": "Zone économique exclusive portugaise", "fact": "y"},
+    ]
+    out = select_chapter_changes(changes, t_a, t_b, budget=False, depart_ms=depart)
+    dock = [c for c in out if (c.get("tMs") or 0) <= depart]
+    assert len(dock) <= 2
+    proximity = [c for c in dock if c.get("kind") in {"amp", "alert-on", "project", "marina"}]
+    assert len(proximity) <= 1
+    # la mer n'est pas muette pour autant
+    assert any((c.get("tMs") or 0) > depart for c in out)

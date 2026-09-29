@@ -38,6 +38,7 @@ ROUTE_NAMING_KINDS = frozenset({"zee-enter", "coast", "port"})
 SHORT_CROSSING_MS = 3 * 86_400_000
 AMP_NEAR_NM = 30.0
 PROJECT_NEAR_NM = 30.0
+STATION_NEAR_NM = 30.0  # RC26 : les flotteurs Argo du large (15-30 nm) se disent aussi
 LONG_AMP_PROJECT = 3
 CLUSTER_MS = 86_400_000
 SKIPPER_GALE_KT = 34.0
@@ -97,10 +98,11 @@ _LEAD_DATE_EN_RE = re.compile(
     r"August|September|October|November|December)(?: \d{4})?), ",
     re.I,
 )
+# RC26 : climatologie et projets avant les eaux (gabarit FILM_DISCOURS § 4).
 CHANGE_PRIORITY = {
-    "escale": 0, "approche": 1, "alert-on": 2, "station": 3,
-    "zee-enter": 4, "coast": 4, "amp": 5, "project": 5, "climo": 5, "marina": 6, "cyclone": 7, "culture": 8,
-    "port": 9, "regime": 10, "alert-off": 11,
+    "escale": 0, "approche": 1, "alert-on": 2, "climo": 3, "station": 4,
+    "project": 5, "amp": 5, "zee-enter": 6, "coast": 6, "marina": 7, "cyclone": 8, "culture": 9,
+    "port": 10, "regime": 11, "alert-off": 12,
 }
 BUBBLE_KIND = {
     "escale": "stop", "approche": "stop", "alert-on": "wx", "alert-off": "wx",
@@ -129,6 +131,12 @@ COLOR_KINDS = frozenset({
     "station", "zee-enter", "coast", "amp", "project", "climo", "regime", "marina", "cyclone", "culture", "port",
 })
 FILM_CHAPTER_MAX_FREE = 10
+# RC26 : budget intégral proportionnel à la durée de la jambe — 1 item par
+# 1,5 jour de mer, plancher 4 (une jambe d'un jour garde 3-4 items), plafond 16.
+FILM_FREE_ITEM_DAYS = 1.5
+FILM_FREE_ITEMS_MAX = 16
+# RC26 : le cap annoncé au départ est le relèvement des 30 premiers milles de la trace.
+FILM_INITIAL_HEADING_NM = 30.0
 FILM_FREE_MAX_WORDS = 800
 FILM_ESTIMATE_CPS = 15  # débit constant (27 sept.) : durée = caractères ÷ 15 ; pas de recalibrage
 FILM_TIER_SHORT = 2     # 2:30 — ouverture, eaux, une AMP et un projet, escales
@@ -335,19 +343,8 @@ OFFICIAL_ROUTE_ZEE_SOURCES = (
     "Zone économique exclusive (Madagascan)",
 )
 
-_ZEE_CLUSTER_SHORT = (
-    (re.compile(r"antigua", re.I), ("Antigua", "Antigua")),
-    (re.compile(r"kittitian|saint[- ]kitts|nevis", re.I), ("Saint-Kitts", "Saint Kitts")),
-    (re.compile(r"eustatius", re.I), ("Sint-Eustatius", "Sint-Eustatius")),
-    (re.compile(r"sint[- ]maarten", re.I), ("Sint-Maarten", "Sint-Maarten")),
-    (re.compile(r"saint[- ]martin", re.I), ("Saint-Martin", "Saint-Martin")),
-    (re.compile(r"montserrat", re.I), ("Montserrat", "Montserrat")),
-    (re.compile(r"dominica|dominiquais", re.I), ("la Dominique", "Dominica")),
-    (re.compile(r"vincent", re.I), ("Saint-Vincent", "Saint Vincent")),
-    (re.compile(r"saint[- ]lucia|lucian", re.I), ("Sainte-Lucie", "Saint Lucia")),
-    (re.compile(r"barbad", re.I), ("la Barbade", "Barbados")),
-    (re.compile(r"bonaire", re.I), ("Bonaire", "Bonaire")),
-)
+# RC26 : dans la phrase de groupe, le site entre parenthèses gagne sur la
+# nationalité — « britannique (Montserrat) » se dit « de Montserrat ».
 
 _HEADING_8 = (
     ("nord", "north"),
@@ -577,20 +574,55 @@ def zee_waters_label(name: str, lang: str = "fr") -> str:
     return ""
 
 
-def zee_cluster_short(name: str, lang: str = "fr") -> str:
-    """Nom court pour un groupe de 24 h : Antigua, pas « les eaux d'Antigua-et-Barbuda »."""
+def _zee_member_pair(name: str) -> Optional[tuple[str, str]]:
+    """(fr, en) de _ZEE_NATION pour un membre de groupe — le site entre
+    parenthèses gagne sur la nationalité (« britannique (Montserrat) » →
+    « de Montserrat »), sinon le titre entier."""
     raw = str(name or "")
-    for rx, (fr, en) in _ZEE_CLUSTER_SHORT:
+    inner = ""
+    m = re.search(r"\(([^)]+)\)", raw)
+    if m:
+        inner = m.group(1).strip()
+    if inner:
+        for rx, pair in _ZEE_NATION:
+            if rx.search(inner):
+                return pair
+    for rx, pair in _ZEE_NATION:
         if rx.search(raw):
-            return en if _en(lang) else fr
-    waters = zee_waters_label(raw, lang)
-    if not waters:
+            return pair
+    return None
+
+
+def zee_group_waters(members: list, lang: str = "fr") -> str:
+    """« les eaux françaises, puis celles de Montserrat » (RC26) — jamais un
+    adjectif orphelin (« françaises » sans « eaux ») ni une minuscule en tête
+    de nom propre. EN : « French waters, then Montserrat waters »."""
+    en = _en(lang)
+    parts: list[str] = []
+    seen: set[str] = set()
+    for member in members or []:
+        pair = _zee_member_pair(member)
+        if pair is None:
+            lab = zee_waters_label(str(member or ""), lang)
+            if not lab or lab.casefold() in seen:
+                continue
+            seen.add(lab.casefold())
+            parts.append(lab)
+            continue
+        fr, en_name = pair
+        proper = bool(re.match(r"^(de |du |des |d['’])", fr))
+        full = f"{en_name} waters" if en else f"les eaux {fr}"
+        if full.casefold() in seen:
+            continue
+        seen.add(full.casefold())
+        if en or not parts or not proper:
+            # EN : toujours « … waters » (« Montserratian » seul serait un adjectif orphelin).
+            parts.append(full)
+        else:
+            parts.append(f"celles {fr}")
+    if not parts:
         return ""
-    waters = re.sub(r"^(les eaux|the)\s+", "", waters, flags=re.I)
-    waters = re.sub(r"\s+waters$", "", waters, flags=re.I)
-    waters = re.sub(r"^d['’]", "", waters)
-    waters = re.sub(r"^(de|des|du)\s+", "", waters, flags=re.I)
-    return waters.strip()
+    return ", then ".join(parts) if en else ", puis ".join(parts)
 
 
 def _join_then(parts: list[str], lang: str) -> str:
@@ -854,11 +886,28 @@ def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
         })
     by_day: dict[str, dict] = {}
     islands: list[dict] = []
+    island_at: dict[str, int] = {}
     rank = {"strait": 3, "island": 2, "coast": 1}
     for c in merged:
         # Île (Sardaigne, Corse…) : un jalon par géographie, jamais écrasé
         # le même jour par un port d'eaux italiennes / françaises.
+        # RC26 : la même île sur deux jours ne se dit qu'une fois (ports réunis).
         if (c.get("geo") or {}).get("kind") == "island":
+            geo_key = str((c.get("geo") or {}).get("fr") or "").casefold()
+            if geo_key and geo_key in island_at:
+                prev = islands[island_at[geo_key]]
+                seen_ports = {p.casefold() for p in prev.get("ports") or []}
+                extra = [p for p in c.get("ports") or [] if p.casefold() not in seen_ports]
+                if extra:
+                    ports = list(prev.get("ports") or []) + extra
+                    islands[island_at[geo_key]] = {
+                        **prev,
+                        "ports": ports,
+                        "title": " — ".join([((prev.get("geo") or {}).get("fr") or "")] + ports).strip(" —"),
+                    }
+                continue
+            if geo_key:
+                island_at[geo_key] = len(islands)
             islands.append(c)
             continue
         day = _utc_day(c) or f"_{len(by_day)}"
@@ -917,6 +966,72 @@ def _heading_deg_at(
     return best
 
 
+def _bearing_deg(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> Optional[float]:
+    try:
+        p1, p2 = math.radians(float(lat1)), math.radians(float(lat2))
+        dl = math.radians(float(lon2) - float(lon1))
+    except (TypeError, ValueError):
+        return None
+    y = math.sin(dl) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def _initial_route_heading(
+    clock: dict | None, depart_ms: Optional[int], nm: float = FILM_INITIAL_HEADING_NM,
+) -> Optional[float]:
+    """RC26 : le cap annoncé au départ d'une jambe est le relèvement des ~30
+    premiers milles de la TRACE après l'appareillage — pas le bearing du premier
+    segment (manœuvres de port), ni le relèvement global vers l'arrivée."""
+    if depart_ms is None:
+        return None
+    t0 = _ms((clock or {}).get("t0"))
+    verts: list[dict] = []
+    for v in (clock or {}).get("vertices") or []:
+        if not isinstance(v, dict) or v.get("lat") is None or v.get("lon") is None:
+            continue
+        if v.get("vehicle") in {"plane", "land"}:
+            continue
+        t = _ms(v.get("iso"))
+        if t is None and v.get("tHours") is not None and t0 is not None:
+            try:
+                t = t0 + int(float(v["tHours"]) * 3_600_000)
+            except (TypeError, ValueError):
+                t = None
+        if t is None:
+            continue
+        verts.append({**v, "_t": t})
+    if len(verts) < 2:
+        return None
+    start = next(
+        (i for i, v in enumerate(verts) if v["_t"] >= int(depart_ms) and v.get("vehicle") != "quay"),
+        None,
+    )
+    if start is None or start + 1 >= len(verts):
+        return None
+    acc, j = 0.0, start
+    while j + 1 < len(verts) and acc < nm:
+        d = _nm_between(verts[j]["lat"], verts[j]["lon"], verts[j + 1]["lat"], verts[j + 1]["lon"])
+        if d:
+            acc += d
+        j += 1
+    if acc < nm * 0.5:
+        return None
+    return _bearing_deg(verts[start]["lat"], verts[start]["lon"], verts[j]["lat"], verts[j]["lon"])
+
+
+def _leg_heading_deg(
+    moments: list[dict] | None,
+    depart_ms: Optional[int],
+    clock: dict | None = None,
+) -> Optional[float]:
+    """Cap d'ouverture : la trace d'abord (RC26), sinon l'ancien plus-proche moment."""
+    deg = _initial_route_heading(clock, depart_ms)
+    if deg is not None:
+        return deg
+    return _heading_deg_at(moments, depart_ms, clock=clock)
+
+
 def change_place_name(change: dict) -> str:
     kind = str(change.get("kind") or "")
     title = str(change.get("title") or "")
@@ -961,6 +1076,8 @@ def change_on_route(change: dict) -> bool:
     if kind == "project" or _is_amp_change(change):
         limit = PROJECT_NEAR_NM if kind == "project" else AMP_NEAR_NM
         return nm is None or nm <= limit
+    if kind == "station":
+        return nm is None or nm <= STATION_NEAR_NM
     if nm is not None and nm > ROUTE_NEAR_NM:
         return False
     return True
@@ -1125,18 +1242,46 @@ def dose_project_changes(changes: list[dict], span_ms: int) -> list[dict]:
     return projs[:limit]
 
 
-def dose_station_changes(changes: list[dict], span_ms: int = 0) -> list[dict]:
-    """Une station qualifiée par étape, la plus proche de la route ; pas de comptage (RG5)."""
-    del span_ms
+def dose_station_changes(
+    changes: list[dict], span_ms: int = 0,
+    t_a: Optional[int] = None, t_b: Optional[int] = None,
+) -> list[dict]:
+    """Une station qualifiée par étape (RG5), la plus proche de la route ; pas de
+    comptage. RC26 : une longue traversée en dit jusqu'à trois, réparties dans le
+    temps (une par tranche de la jambe) — le Pacifique ne reste pas muet quinze jours."""
     rows = [
         c for c in changes
         if str(c.get("kind") or "") == "station" and station_spoken_label(c, "fr")
     ]
-    rows.sort(key=lambda c: (
-        change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
-        c.get("tMs") or 0,
-    ))
-    return rows[:1]
+    if not rows:
+        return []
+    days = max(0.0, float(span_ms or 0) / 86_400_000.0)
+    limit = 1 if days < 12 else min(3, math.ceil(days / 10.0))
+    if limit <= 1 or len(rows) <= 1:
+        rows.sort(key=lambda c: (
+            change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+            c.get("tMs") or 0,
+        ))
+        return rows[:1]
+    lo = int(t_a) if t_a is not None else min(int(c.get("tMs") or 0) for c in rows)
+    hi = int(t_b) if t_b is not None else max(int(c.get("tMs") or 0) for c in rows)
+    width = max(1, (hi - lo) // limit + 1)
+    out: list[dict] = []
+    by_slot: dict[int, list[dict]] = {}
+    for c in rows:
+        slot = min(limit - 1, max(0, (int(c.get("tMs") or 0) - lo) // width))
+        by_slot.setdefault(slot, []).append(c)
+    for slot in sorted(by_slot):
+        cands = by_slot[slot]
+        cands.sort(key=lambda c: (
+            change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+            c.get("tMs") or 0,
+        ))
+        out.append(cands[0])
+        if len(out) >= limit:
+            break
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return out
 
 
 def change_is_speakable(change: dict) -> bool:
@@ -1344,8 +1489,35 @@ def _clock_leave_ms(
     return t_a
 
 
+def _first_leg_moment_ms(moments: list | None, w: dict) -> Optional[int]:
+    """Premier moment émis SUR la jambe (leg.from = port de départ de la fenêtre) :
+    la vérité du terrain — si le bateau émet à 13 h, il n'est plus à quai à 13 h."""
+    frm = re.split(r"\s*\(", str(w.get("fromName") or ""))[0].strip().casefold()
+    if not frm:
+        return None
+    t_a, t_b = w.get("tA"), w.get("tB")
+    best: Optional[int] = None
+    for m in moments or []:
+        if not isinstance(m, dict):
+            continue
+        leg = (m.get("moment") or {}).get("leg") or {}
+        mf = re.split(r"\s*\(", str(leg.get("from") or ""))[0].strip().casefold()
+        if mf != frm:
+            continue
+        t = _ms(m.get("t"))
+        if t is None:
+            continue
+        if (t_a is not None and t <= t_a) or (t_b is not None and t > t_b):
+            continue
+        if best is None or t < best:
+            best = t
+    return best
+
+
 def _window_depart_ms(w: dict) -> Optional[int]:
     """Départ = premier sommet d'horloge qui quitte le port, jamais tA + jours d'escale."""
+    if w.get("departMs"):
+        return int(w["departMs"])
     t_a = w.get("tA")
     frm = w.get("from") or {}
     clock = w.get("clock")
@@ -1353,6 +1525,30 @@ def _window_depart_ms(w: dict) -> Optional[int]:
     leave = _clock_leave_ms(
         clock, frm.get("lat"), frm.get("lon"), t_a, w.get("tB"), mode=mode,
     )
+    # RC26 : quand l'horloge répond exactement « départ = tA » (aucune sortie de
+    # port trouvée — Papeete, pas de sommet « quay »), l'escale des marks donne
+    # l'appareillage (arrivée + holdHours) — les trois jours à quai ne comptent
+    # plus comme de la mer dans les fenêtres. Une horloge qui a une vraie trace
+    # de sortie garde son départ.
+    name = re.split(r"\s*\(", str(w.get("fromName") or ""))[0].strip().casefold()
+    t_b = w.get("tB")
+    t0 = _ms((clock or {}).get("t0"))
+    if name and leave is not None and t_a is not None and leave == t_a:
+        for mark in (clock or {}).get("marks") or []:
+            mark_name = re.split(r"\s*\(", str(mark.get("name") or ""))[0].strip().casefold()
+            if mark_name != name:
+                continue
+            arr = _ms(mark.get("iso"))
+            hold = float(mark.get("holdHours") or 0)
+            if arr is not None and t0 is not None and arr <= t0:
+                continue  # port de départ du voyage : t0 EST l'appareillage (RG1)
+            if arr is not None and hold > 0:
+                depart = arr + int(hold * 3_600_000)
+                if (
+                    t_a is not None and t_a <= depart and (not t_b or depart < t_b)
+                    and (leave is None or depart > leave)
+                ):
+                    return depart
     if leave is not None:
         return leave
     return t_a
@@ -2208,10 +2404,12 @@ def _best_named_change(rows: list[dict], *, gold_first: bool) -> Optional[dict]:
 
 
 def _amp_and_project(amp: list[dict], proj: list[dict]) -> list[dict]:
-    """2:30 : une AMP et un projet s'ils existent (plus proche ; projet : gold_on d'abord)."""
+    """2:30 : une AMP et un projet s'ils existent (plus proche ; projet : gold_on
+    d'abord). RC26 : seulement des items qui donneront une phrase — un projet au
+    titre anglais que speak_change refuse gaspillait le créneau de la variante."""
     out: list[dict] = []
-    picked_amp = _best_named_change(amp, gold_first=False)
-    picked_proj = _best_named_change(proj, gold_first=True)
+    picked_amp = _best_named_change([c for c in amp if _would_speak(c)], gold_first=False)
+    picked_proj = _best_named_change([c for c in proj if _would_speak(c)], gold_first=True)
     if picked_amp is not None:
         out.append(picked_amp)
     if picked_proj is not None:
@@ -3585,7 +3783,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         if not skip_depart:
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
-                heading_deg=_heading_deg_at(None, depart_ms, clock=w.get("clock")),
+                heading_deg=_leg_heading_deg(None, depart_ms, clock=w.get("clock")),
                 review=review, n=len(windows), include_date=i != 0,
             )
             if head:
@@ -3797,9 +3995,21 @@ def _group_changes(changes: list[dict], span_ms: int, clock: dict | None = None)
 
 def _place_dedup_key(change: dict) -> str:
     kind = str(change.get("kind") or "")
-    name = norm_stop(change_place_name(change))
+    if kind == "zee-enter":
+        # La parenthèse distingue le territoire : « néerlandaise (Sint-Maarten) »
+        # n'est pas « néerlandaise (Sint-Eustatius) » (RC26).
+        raw = re.sub(r"\s+", " ", str(change.get("title") or change.get("fact") or "")).strip().casefold()
+        return f"zee:{raw}" if raw else ""
+    # Un groupe côte / île porte sa géographie : « l'Andalousie — Cartagena »
+    # et « l'Andalousie — Almería » sont le même site (RC26).
+    geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
+    geo_name = str((geo or {}).get("fr") or (geo or {}).get("en") or "").strip()
+    name = norm_stop(geo_name) if geo_name else norm_stop(change_place_name(change))
     if not name:
         return ""
+    # RC26 : dédoublonnage par SITE — « Lilleau-des-Niges » et « Lilleau-des-Niges
+    # - Zone de Protection » partagent le préfixe significatif (avant « - », « — », « ( »).
+    name = re.split(r"\s+[-—–]\s+|\s*\(", name, maxsplit=1)[0].strip() or name
     if kind in {"escale", "approche"}:
         return f"{kind}:{name}"
     return name
@@ -3807,28 +4017,261 @@ def _place_dedup_key(change: dict) -> str:
 
 def _usable_changes(changes: list[dict]) -> list[dict]:
     seen_ids: set[str] = set()
-    seen_names: set[str] = set()
-    out: list[dict] = []
+    rows: list[dict] = []
     for change in sorted(changes, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))):
         if not change_is_speakable(change) or not change_on_route(change):
             continue
         cid = str(change.get("id") or "")
         if cid and cid in seen_ids:
             continue
-        key = _place_dedup_key(change)
-        if key and key in seen_names:
-            continue
         if cid:
             seen_ids.add(cid)
-        if key:
-            seen_names.add(key)
-        out.append(change)
+        rows.append(change)
+    # Même site dit une fois : le nom le plus court gagne (RC26), à l'instant
+    # du premier croisement.
+    best: dict[str, dict] = {}
+    out: list[dict] = []
+    for change in rows:
+        key = _place_dedup_key(change)
+        if not key:
+            out.append(change)
+            continue
+        prev = best.get(key)
+        if prev is None:
+            best[key] = change
+            out.append(change)
+            continue
+        if len(change_place_name(change)) < len(change_place_name(prev)):
+            merged = {
+                **change,
+                "t": prev.get("t") or change.get("t"),
+                "tMs": prev.get("tMs") if prev.get("tMs") is not None else change.get("tMs"),
+            }
+            best[key] = merged
+            out[out.index(prev)] = merged
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
     return out
+
+
+def film_free_item_target(span_ms: int) -> int:
+    """RC26 : budget d'items du chapitre intégral, proportionnel à la durée —
+    1 item par 1,5 jour de mer, plancher 4, plafond 16."""
+    days = max(0.0, float(span_ms or 0) / 86_400_000.0)
+    return min(FILM_FREE_ITEMS_MAX, max(FILM_CHAPTER_MAX_CHANGES, math.ceil(days / FILM_FREE_ITEM_DAYS)))
+
+
+# Types encore absents du chapitre, dans l'ordre du gabarit (FILM_DISCOURS § 4).
+# L'AMP (8 au stock) passe avant le projet (129) : le type rare ne perd pas
+# toujours la fenêtre contre le type abondant.
+_DIVERSITY_ORDER = ("climo", "station", "amp", "project", "alert-on", "coast", "zee-enter")
+
+
+def _diversity_kind(change: dict) -> str:
+    kind = str(change.get("kind") or "")
+    if kind == "alert-on" and _is_amp_change(change):
+        return "amp"
+    return kind
+
+
+def _diversity_bonus(change: dict) -> int:
+    """Îles et détroits (Sardaigne, Gibraltar…) : jalons rares, jamais sacrifiés
+    en premier (RC19)."""
+    geo = change.get("geo") if isinstance(change.get("geo"), dict) else {}
+    return 1 if (geo.get("kind") in {"island", "strait"}) else 0
+
+
+def _pick_diverse(cands: list[dict], picked: list[dict]) -> Optional[dict]:
+    """Le meilleur item d'une fenêtre : types encore absents d'abord (climato,
+    station, projet, AMP, alerte, côte/eaux), pas deux fois le même type
+    d'affilée quand un autre existe, puis score et priorité."""
+    if not cands:
+        return None
+    seen = {_diversity_kind(p) for p in picked}
+    last = _diversity_kind(picked[-1]) if picked else ""
+    has_other = any(_diversity_kind(c) != last for c in cands)
+
+    def key(c: dict):
+        k = _diversity_kind(c)
+        absent = 0 if k not in seen else 1
+        rank = _DIVERSITY_ORDER.index(k) if (absent == 0 and k in _DIVERSITY_ORDER) else len(_DIVERSITY_ORDER)
+        repeat = 1 if (k == last and has_other) else 0
+        # RC19 : une île / un détroit ne cède jamais sa place aux eaux du jour —
+        # le jalon rare passe AVANT la pénalité de répétition.
+        return (
+            absent, rank, -_diversity_bonus(c), repeat,
+            -int(c.get("score") or 0),
+            CHANGE_PRIORITY.get(str(c.get("kind") or ""), 9),
+            c.get("tMs") or 0, str(c.get("id") or ""),
+        )
+
+    return min(cands, key=key)
+
+
+def _spread_free_changes(
+    cands: list[dict], t_a: int, t_b: int, *, depart_ms: Optional[int] = None,
+    spare: Optional[list[dict]] = None,
+) -> list[dict]:
+    """RC26 : sélection par fenêtres de temps, pas par type puis date.
+
+    - la période à quai [tA, départ] ne garde qu'UN item de proximité
+      (« à cinq milles ») en plus de l'ouverture ;
+    - la mer [départ, tB] est découpée en autant de fenêtres que d'items du
+      budget (1 / 1,5 jour, plancher 4) : le meilleur item par fenêtre
+      (score puis diversité) ; les items non retenus d'une fenêtre comblent
+      une fenêtre vide voisine ; `spare` (stations, projets… hors dose) ne
+      sert QUE dans les fenêtres restées vides — le Pacifique ne se tait pas ;
+    - le tout est plafonné à FILM_FREE_ITEMS_MAX (16).
+    """
+    rows = sorted(cands, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    if not rows and not spare:
+        return []
+    dock_end = int(depart_ms) if depart_ms and int(t_a or 0) < int(depart_ms) < int(t_b or 0) else int(t_a or 0)
+    dock = [c for c in rows if (c.get("tMs") or 0) <= dock_end]
+    sea = [c for c in rows if (c.get("tMs") or 0) > dock_end]
+    picked: list[dict] = []
+    # Au quai : au plus deux phrases après l'ouverture (recette RC26), dont UNE
+    # seule de proximité (« à cinq milles » : AMP, alerte, projet) — plus jamais six.
+    proximity = {"amp", "alert-on", "project", "marina"}
+    if dock:
+        first = _pick_diverse(dock, picked)
+        if first is not None:
+            picked.append(first)
+            first_prox = str(first.get("kind") or "") in proximity
+            other = [
+                c for c in dock
+                if c is not first and (str(c.get("kind") or "") in proximity) != first_prox
+            ]
+            if not other:
+                # Pas d'autre famille au quai : un 2e item de proximité d'un
+                # AUTRE type (le projet ne fait pas taire l'AMP voisine).
+                other = [
+                    c for c in dock
+                    if c is not first and _diversity_kind(c) != _diversity_kind(first)
+                ]
+            second = _pick_diverse(other, picked)
+            if second is not None:
+                picked.append(second)
+    span = max(1, int(t_b or 0) - dock_end)
+    n = max(1, film_free_item_target(span) - len(picked))
+    width = span / n
+    buckets: list[list[dict]] = [[] for _ in range(n)]
+    taken = [0] * n   # au plus 2 items par fenêtre : un amas d'un jour ne mange pas la jambe
+    for c in sea:
+        i = min(n - 1, int(((c.get("tMs") or 0) - dock_end) / width))
+        buckets[max(0, i)].append(c)
+    filled: list[Optional[dict]] = [None] * n
+
+    def _take(j: int, into: int) -> Optional[dict]:
+        choice = _pick_diverse(buckets[j], picked)
+        if choice is None:
+            return None
+        buckets[j] = [c for c in buckets[j] if c is not choice]
+        taken[j] += 1
+        filled[into] = choice
+        picked.append(choice)
+        return choice
+
+    for i in range(n):
+        if buckets[i]:
+            _take(i, i)
+    # Fenêtres vides ← d'abord la réserve DE LA MÊME fenêtre (stations, projets,
+    # AMP, climato au-delà de la dose : mieux vaut un flotteur Argo que dix jours
+    # muets — et son instant tombe vraiment dans le trou), puis les items non
+    # retenus des fenêtres voisines.
+    if spare:
+        spare_buckets: list[list[dict]] = [[] for _ in range(n)]
+        for c in sorted(spare, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))):
+            t = c.get("tMs") or 0
+            if t <= dock_end:
+                continue
+            i = min(n - 1, int((t - dock_end) / width))
+            spare_buckets[max(0, i)].append(c)
+        for i in range(n):
+            if filled[i] is not None or not spare_buckets[i]:
+                continue
+            choice = _pick_diverse(spare_buckets[i], picked)
+            if choice is not None:
+                filled[i] = choice
+                taken[i] += 1
+                picked.append(choice)
+    for i in range(n):
+        if filled[i] is not None:
+            continue
+        for j in (i - 1, i + 1):
+            if 0 <= j < n and buckets[j] and taken[j] < 2:
+                if _take(j, i) is not None:
+                    break
+    # Capacité restante (jusqu'au plafond) : au plus un item de plus par fenêtre —
+    # Sardaigne, Gibraltar et les eaux d'un même jour survivent, sans refaire l'amas.
+    while len(picked) < FILM_FREE_ITEMS_MAX:
+        open_buckets = [j for j in range(n) if buckets[j] and taken[j] < 2]
+        if not open_buckets:
+            break
+        j = min(open_buckets, key=lambda k: (taken[k], k))
+        choice = _pick_diverse(buckets[j], picked)
+        if choice is None:
+            break
+        buckets[j] = [c for c in buckets[j] if c is not choice]
+        taken[j] += 1
+        picked.append(choice)
+    # Quand TOUT le chapitre tient sous le plafond, on ne jette rien : le
+    # quota par fenêtre protège contre l'amas, pas contre un stock clairsemé.
+    # Jamais deux fois le même site (l'Andalousie d'hier ne revient pas demain).
+    leftovers = [c for b in buckets for c in b]
+    if leftovers and len(picked) + len(leftovers) <= FILM_FREE_ITEMS_MAX:
+        keys = {k for k in (_place_dedup_key(p) for p in picked) if k}
+        for c in leftovers:
+            k = _place_dedup_key(c)
+            if k and k in keys:
+                continue
+            picked.append(c)
+            if k:
+                keys.add(k)
+    # Dédoublonnage final par site (RC26) : les jalons quotidiens d'une même
+    # côte (l'Andalousie du 21, l'Andalousie du 22) ne se disent qu'une fois —
+    # le nom le plus court gagne, au temps du premier croisement.
+    by_site: dict[str, dict] = {}
+    out: list[dict] = []
+    for c in sorted(picked, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))):
+        k = _place_dedup_key(c)
+        if not k:
+            out.append(c)
+            continue
+        prev = by_site.get(k)
+        if prev is None:
+            by_site[k] = c
+            out.append(c)
+            continue
+        if len(str(c.get("title") or "")) < len(str(prev.get("title") or "")):
+            merged = {**c, "t": prev.get("t"), "tMs": prev.get("tMs")}
+            out[out.index(prev)] = merged
+            by_site[k] = merged
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return out
+
+
+def _would_speak(change: dict) -> bool:
+    """Un item ne prend une fenêtre que s'il donnera vraiment une phrase
+    (RC26) : mêmes gardes que speak_change — escale d'avion, titre anglais,
+    phrase vide ou interdite."""
+    kind = str(change.get("kind") or "")
+    if _is_air_only_stop(str(change.get("title") or "")):
+        return False
+    place = change_place_name(change) or short_name(str(change.get("title") or ""))
+    geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
+    if geo and (geo.get("fr") or geo.get("en")):
+        place = geo.get("fr") or geo.get("en") or place
+    if looks_english_title(place) and kind in {
+        "port", "approche", "culture", "project", "amp", "marina",
+    }:
+        return False
+    sentence = change_sentence(change, "fr").strip()
+    return bool(sentence) and not film_has_forbidden(sentence)
 
 
 def select_chapter_changes(
     changes: list[dict], t_a: int, t_b: int, *, budget: bool = True, tier: Optional[int] = None,
-    clock: dict | None = None,
+    clock: dict | None = None, depart_ms: Optional[int] = None,
 ) -> list[dict]:
     usable = _usable_changes(changes)
     span = (t_b or 0) - (t_a or 0)
@@ -3837,7 +4280,7 @@ def select_chapter_changes(
     amp = dose_amp_changes(usable, span)
     proj = dose_project_changes(usable, span)
     climo = dose_climo_changes(usable, span)
-    stations = dose_station_changes(usable, span)
+    stations = dose_station_changes(usable, span, t_a=t_a, t_b=t_b)
     extras = _tier_route_extras(zee, coast, amp, proj, climo, stations, tier=tier)
     rest_src = [
         c for c in usable
@@ -3848,16 +4291,36 @@ def select_chapter_changes(
         and _tier_allows_kind(str(c.get("kind") or ""), tier)
     ]
     if not budget:
-        rest_src.sort(key=lambda c: (
-            CHANGE_PRIORITY.get(str(c.get("kind") or ""), 9),
-            c.get("tMs") or 0,
-        ))
-        others = rest_src[:FILM_CHAPTER_MAX_FREE]
-        # ZEE, côtes, AMP, projets, climatologie et une station : hors plafond des autres faits.
-        return sorted(
-            extras + others if tier is not None else zee + coast + amp + proj + climo + stations + others,
-            key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")),
-        )
+        # RC26 : fenêtres de temps sur toute la jambe — plus de « type puis date ».
+        pool_route = extras if tier is not None else zee + coast + amp + proj + climo + stations
+        keep = [c for c in rest_src if str(c.get("kind") or "") in {"escale", "approche"}]
+        marinas = [c for c in rest_src if str(c.get("kind") or "") == "marina"]
+        if marinas:
+            # La marina de l'escale : la dernière à portée (elle nomme le port, pas une phrase).
+            keep.append(max(marinas, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))))
+        pool = [
+            c for c in pool_route + [
+                x for x in rest_src
+                if str(x.get("kind") or "") not in {"escale", "approche", "marina"}
+            ]
+            if _would_speak(c)
+        ]
+        in_pool = {id(c) for c in pool}
+        # Une 2e station au-delà de la dose (RG5) ne se justifie que sur une
+        # longue jambe (le Pacifique muet) — jamais sur une traversée courte.
+        spare_station_ok = span > 5 * 86_400_000
+        spare = [
+            c for c in usable
+            if id(c) not in in_pool
+            and (str(c.get("kind") or "") in {"station", "project", "climo"} or _is_amp_change(c))
+            and (str(c.get("kind") or "") != "station"
+                 or (spare_station_ok and station_spoken_label(c, "fr")))
+            and _would_speak(c)
+        ]
+        picked_free = _spread_free_changes(pool, t_a, t_b, depart_ms=depart_ms, spare=spare)
+        out = picked_free + keep   # escale, approche, marina d'escale : hors fenêtres
+        out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+        return out
     grouped = _group_changes(rest_src, span, clock=clock)
     must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
     rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
@@ -3978,16 +4441,11 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
     if kind == "zee-enter":
         members = change.get("members")
         if isinstance(members, list) and len(members) > 1:
-            shorts = [zee_cluster_short(str(m), lang) for m in members]
-            shorts = [s for s in shorts if s]
-            body = _join_then(shorts, lang)
+            # RC26 : « les eaux françaises, puis celles de Montserrat » — jamais
+            # un adjectif orphelin ni une minuscule en tête de nom propre.
+            body = zee_group_waters(members, lang)
             if not body:
                 return ""
-            # Antigua / Saint-Kitts : noms propres. espagnoles / italiennes : « les eaux … ».
-            if not re.search(r"eaux|waters", body, re.I) and all(
-                re.search(r"(es|ennes|aises|iques)$", s, re.I) for s in shorts
-            ):
-                body = f"the {body} waters" if en else f"les eaux {body}"
             return f"On {when}, {body}." if en else f"Le {when}, {body}."
         raw = title or fact
         waters = zee_waters_label(raw, lang)
@@ -4827,6 +5285,12 @@ def build_raw_from_moments(
                 moments, w.get("fromName") or "", w.get("tA"),
             )
         depart_ms = _window_depart_ms(w) or 0
+        # RC26 : la vérité du terrain borne le plan — si un moment de la jambe
+        # existe avant l'appareillage déduit des marks, le bateau est déjà parti.
+        first_leg = _first_leg_moment_ms(moments, w)
+        if depart_ms and first_leg and (w.get("tA") or 0) < first_leg < depart_ms:
+            depart_ms = first_leg
+        w["departMs"] = depart_ms
         if _is_air_window(w):
             sail_moments: list[dict] = []
         else:
@@ -4841,7 +5305,7 @@ def build_raw_from_moments(
             flat.append(extra)
         selected = select_chapter_changes(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
-            clock=w.get("clock") or clock,
+            clock=w.get("clock") or clock, depart_ms=depart_ms,
         )
         bits: list[str] = []
         placed: list[dict] = []
@@ -4939,7 +5403,7 @@ def build_raw_from_moments(
         if not skip_depart:
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
-                heading_deg=_heading_deg_at(sail_moments, depart_ms, clock=w.get("clock") or clock),
+                heading_deg=_leg_heading_deg(sail_moments, depart_ms, clock=w.get("clock") or clock),
                 review=review, n=len(windows), include_date=i != 0,
             )
             if head:
