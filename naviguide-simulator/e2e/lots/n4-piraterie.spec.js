@@ -122,8 +122,8 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await leaveCinema(page);
 
   const nowCard = page.getByTestId("moment-now");
@@ -159,8 +159,8 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
     }
     await expect(finish).toBeEnabled({ timeout: 20_000 });
     await finish.click();
-    await page.getByTestId("view-simulation").click();
-    await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+    await page.getByTestId("view-tracer").click();
+    await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
     await leaveCinema(page);
     await page.waitForFunction(() => {
       const ll = window.__naviguideScene?.mainBoatMarker?.()?.getLatLng?.();

@@ -26,9 +26,9 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /data-testid="replay-start"/);
     assert.match(bar, /data-testid="replay-stop"/);
     assert.match(bar, /"view-suivre"/);
-    assert.match(bar, /"view-simulation"/);
+    assert.match(bar, /"view-tracer"/);
     assert.match(bar, /"mode-follow"/);
-    assert.match(bar, /"mode-sim"/);
+    assert.match(bar, /"mode-tracer"/);
     assert.match(bar, /data-testid="film-commands"/);
     assert.match(bar, /data-testid="film-subtitle"/);
     assert.match(bar, /data-testid="film-duration"/);

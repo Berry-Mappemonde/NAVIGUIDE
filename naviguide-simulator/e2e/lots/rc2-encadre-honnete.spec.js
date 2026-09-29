@@ -152,8 +152,8 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   }
   await shot(page, "01-suivre");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await assertHonestBox(page);
   await expect(page.getByTestId("ici-leg-line")).not.toContainText(/→\s*Fort-de-France/i);

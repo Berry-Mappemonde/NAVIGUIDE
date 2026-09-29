@@ -109,8 +109,8 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   }
   await shot(page, "01-onglet");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await expect(page.getByTestId("ici-tab-story")).toHaveCount(0);
   await openReviewTab(page);

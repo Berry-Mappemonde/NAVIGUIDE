@@ -50,8 +50,8 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
   const apiUp = await probeOfficial(page);
   if (!apiUp) {
@@ -98,7 +98,7 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
       type: "sans API",
       description: "Revoir absent (pas d'horloge) — Stop / film non joués",
     });
-    await expect(page.getByTestId("view-simulation")).toBeEnabled();
+    await expect(page.getByTestId("view-tracer")).toBeEnabled();
     await expect(listen).toBeEnabled();
     await shot(page, "01-stop");
     return;
@@ -119,7 +119,7 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
   await expect(listen).toHaveAttribute("aria-pressed", pressed0 === "true" ? "true" : "false");
 
   await expect(page.getByTestId("view-suivre")).toBeEnabled();
-  await expect(page.getByTestId("view-simulation")).toBeEnabled();
+  await expect(page.getByTestId("view-tracer")).toBeEnabled();
 
   await page.getByTestId("replay-stop").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
@@ -128,7 +128,7 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
   await expect(page.getByTestId("escale-sheet")).toHaveCount(0);
   await expect(listen).toBeEnabled();
   await expect(page.getByTestId("replay-start")).toBeEnabled();
-  await expect(page.getByTestId("view-simulation")).toBeEnabled();
+  await expect(page.getByTestId("view-tracer")).toBeEnabled();
 
   await shot(page, "01-stop");
 });

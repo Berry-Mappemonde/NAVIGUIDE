@@ -89,8 +89,8 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
     }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
   }
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => cinemaPressed(page), { timeout: 8_000 }).toBe(false);
 
   await page.getByTestId("view-suivre").click();

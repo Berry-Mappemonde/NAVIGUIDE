@@ -99,8 +99,8 @@ test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ 
   }
   await shot(page, "01-suivre");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await expect(box).toBeVisible();
   await expect(page.getByTestId("ici-section-leg")).toBeVisible();

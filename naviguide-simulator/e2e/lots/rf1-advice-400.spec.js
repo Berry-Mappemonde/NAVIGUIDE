@@ -77,8 +77,8 @@ test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => 
   await expect(page.getByTestId("plan-review-leg").first()).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(4000);
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("film-bar")).toBeVisible();
   await showLeftPanel(page);
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();

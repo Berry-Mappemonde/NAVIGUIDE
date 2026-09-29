@@ -85,8 +85,8 @@ test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", 
 
   await shot(page, "01-suivre");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showToolsPanel(page);
   const simField = page.getByTestId("departure-field");
   await expect(simField).toBeVisible({ timeout: 15_000 });
@@ -181,7 +181,7 @@ test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", 
     }
   }
 
-  await page.getByTestId("view-simulation").click();
+  await page.getByTestId("view-tracer").click();
   await showToolsPanel(page);
   await expect(dateInput(page, "departure-field")).toHaveValue("01/06/2026");
   expect(simBefore, "t0 Simulation distinct du replay").not.toBe("15/05/2025");

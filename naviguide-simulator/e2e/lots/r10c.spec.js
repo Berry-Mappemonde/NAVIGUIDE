@@ -57,9 +57,9 @@ test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ 
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("view-simulation")).toBeVisible();
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("view-tracer")).toBeVisible();
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
   await showToolsPanel(page);
   const orders = page.getByTestId("skipper-orders");

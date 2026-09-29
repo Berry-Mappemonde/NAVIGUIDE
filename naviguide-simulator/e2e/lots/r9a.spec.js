@@ -52,7 +52,7 @@ test("lot R9a — aucun changement visible, trois parcours", async ({ page }) =>
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("view-suivre")).toBeVisible();
-  await expect(page.getByTestId("view-simulation")).toBeVisible();
+  await expect(page.getByTestId("view-tracer")).toBeVisible();
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
@@ -62,8 +62,8 @@ test("lot R9a — aucun changement visible, trois parcours", async ({ page }) =>
   }
   await shot(page, "01-suivre");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("film-bar")).toBeVisible();
   await shot(page, "02-simulation");
 

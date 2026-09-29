@@ -34,6 +34,7 @@ function BerryCard({
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw = true,
   onImportRoute, importBusy = false,
+  isTracerView = false,
 }) {
   const { t } = useLang();
   const importRef = useRef(null);
@@ -84,14 +85,29 @@ function BerryCard({
   const pillOn = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-blue-400/60 bg-blue-600/30 text-blue-100";
   const pillOff = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-slate-600/50 bg-slate-800/50 text-slate-400 hover:text-white hover:border-slate-500";
 
-  const switcher = hasCustom ? (
+  // DM1 : les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
+  // Tracer (VIEW_SIMULATION) ou pendant un tracé ; sans route perso, la seconde
+  // pilule fait le même geste que le bouton du bas (draw-mode + onDrawStart).
+  const switcher = (hasCustom || isTracerView || isDrawing) ? (
     <div className="flex gap-1 mb-1.5">
-      <button type="button" onClick={activateBerry} className={customOn ? pillOff : pillOn} title={t("backToBerry")}>
+      <button type="button" data-testid="route-switch-berry" onClick={activateBerry} className={customOn ? pillOff : pillOn} title={t("backToBerry")}>
         {t("berryMappemonde")} {/* pragma: allowlist secret */}
       </button>
-      <button type="button" onClick={activateCustom} className={customOn ? pillOn : pillOff} title={t("showRoute", { name: drawnName })}>
-        {drawnName || t("customRoute")}
-      </button>
+      {hasCustom ? (
+        <button type="button" data-testid="route-switch-custom" onClick={activateCustom} className={customOn ? pillOn : pillOff} title={t("showRoute", { name: drawnName })}>
+          {drawnName || t("customRoute")}
+        </button>
+      ) : (
+        <button
+          type="button"
+          data-testid="route-switch-draw"
+          onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
+          className={pillOff}
+          title={t("drawOwnRoute")}
+        >
+          {t("drawOwnRoute")}
+        </button>
+      )}
     </div>
   ) : null;
 
@@ -156,6 +172,45 @@ function BerryCard({
             <Pencil size={11} /> {t("drawOwnRoute")}
           </button>
         )}
+      </div>
+    );
+  }
+
+  // DM1 : en Tracer sans route perso, la carte montre les pilules et Importer ;
+  // le geste « Tracer votre propre route » est la seconde pilule (le bouton du
+  // bas reste tel quel en Suivre).
+  if (isTracerView && !hasCustom) {
+    return (
+      <div className="rounded-lg px-2 py-1.5 border border-blue-500/70 bg-blue-950/30">
+        {switcher}
+        <button
+          type="button"
+          data-testid="route-import"
+          disabled={importBusy}
+          onClick={() => importRef.current?.click()}
+          className="w-full flex items-center justify-center gap-1.5 bg-slate-700/40 hover:bg-slate-700/70
+            border border-slate-500/50 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 font-semibold
+            disabled:opacity-40 disabled:pointer-events-none"
+        >
+          {t("importRoute")}
+        </button>
+        <input
+          ref={importRef}
+          name="route-import-file"
+          type="file"
+          accept=".geojson,.json,.kml"
+          data-testid="route-import-file"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file) return;
+            // Même chemin qu'aujourd'hui : l'import se joue dans le mode dessin.
+            setCardMode("draw-mode");
+            onDrawStart();
+            onImportRoute?.(file);
+          }}
+        />
       </div>
     );
   }
@@ -353,6 +408,7 @@ export const Sidebar = memo(function Sidebar({
             canFinishDraw={canFinishDraw}
             onImportRoute={onImportRoute}
             importBusy={importBusy}
+            isTracerView={isSimulation}
           />
 
           {!isDrawing && chat ? (
