@@ -29,8 +29,9 @@ describe("useOfficialExpedition — position officielle", () => {
   });
 
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
-    assert.match(source, /const data = await putOfficial\(\)\.catch\(\(\) => null\);/);
-    assert.match(source, /if \(!gotClock\) gotClock = Boolean\(await readClock\(\)\);/);
+    // RG10 : l'horloge part avant / avec le PUT (pas après lui) ; 29 sept. : une seule fois par tentative.
+    assert.match(source, /Promise\.all\(\[haveClock \? null : readClock\(\), putOfficial\(\)\.catch\(\(\) => null\)\]\)/);
+    assert.match(source, /gotClock = haveClock \|\| Boolean\(ck\) \|\| Boolean\(data\?\.clock\?\.t0\);/);
   });
 
   it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
@@ -40,8 +41,8 @@ describe("useOfficialExpedition — position officielle", () => {
     assert.match(source, /inflightRef\.current = false;/);
     assert.doesNotMatch(source, /setInterval\(\(\) => \{\s*if \(!putRef\.current/);
     assert.match(source, /timer = setTimeout\(kick, officialRetryDelayMs\(attemptRef\.current\)\);/);
-    // Le PUT porte déjà l'horloge : pas de second téléchargement.
-    assert.match(source, /gotClock = Boolean\(data\?\.clock\?\.t0\);/);
+    // Plus de relecture de l'horloge après le PUT.
+    assert.doesNotMatch(source, /\.then\(\(\) => \{ if \(!cancelled\) return readClock\(\);/);
   });
 });
 

@@ -167,7 +167,9 @@ test("lot RE5 — fourchette sous la prochaine escale, sinon rien", async ({ pag
   expect(a).not.toMatch(/p10|membres|members/i);
   expect(await legendEta.count(), "une seule fourchette sous la prochaine escale").toBe(1);
   const nextRow = page.locator("[data-testid='escale-legend-row']").filter({ has: legendEta }).first();
-  await nextRow.scrollIntoViewIfNeeded();
-  await legendEta.first().scrollIntoViewIfNeeded();
+  // Cadrage de la capture seulement : la légende peut se re-rendre entre les deux (la fourchette passe de la
+  // rangée de l'horloge client à celle de l'horloge officielle quand celle-ci arrive) — jamais un échec.
+  await nextRow.scrollIntoViewIfNeeded().catch(() => {});
+  await legendEta.first().scrollIntoViewIfNeeded().catch(() => {});
   await shot(page, "01-fourchette");
 });
