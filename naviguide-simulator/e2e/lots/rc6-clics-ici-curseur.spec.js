@@ -73,6 +73,16 @@ async function clickAjaccioFlag(page) {
     return false;
   }, null, { timeout: 30_000 }).then(() => true).catch(() => false);
   if (!found) return false;
+  await centerOnAjaccio(page);
+  const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
+  if (!(await flag.isVisible({ timeout: 12_000 }).catch(() => false))) return false;
+  await flag.click({ force: true });
+  return true;
+}
+
+/** La caméra Suivre est sur le bateau (Pacifique) : le drapeau d'Ajaccio est hors cadre tant qu'on
+ *  ne recentre pas la carte dessus — un clic « force » ne suffit pas hors de la fenêtre (CI, 28 sept.). */
+async function centerOnAjaccio(page) {
   await page.evaluate(() => {
     const scene = window.__naviguideScene;
     if (!scene?.map || !scene.waypointMarkers) return;
@@ -83,10 +93,7 @@ async function clickAjaccioFlag(page) {
       }
     }
   });
-  const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
-  if (!(await flag.isVisible({ timeout: 12_000 }).catch(() => false))) return false;
-  await flag.click({ force: true });
-  return true;
+  await page.waitForTimeout(300);
 }
 
 test("lot RC6 — fiche Ici sur drapeau, curseur qui reste sur l'escale", async ({ page }) => {
@@ -167,7 +174,8 @@ test("lot RC6 — fiche Ici sur drapeau, curseur qui reste sur l'escale", async 
   }
 
   await row.scrollIntoViewIfNeeded();
-  // RE2 : la liste n'est plus cliquable — le curseur se pose depuis le drapeau.
+  // RE2 : la liste n'est plus cliquable — le curseur se pose depuis le drapeau (recentré d'abord).
+  await centerOnAjaccio(page);
   const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
   if (await flag.isVisible().catch(() => false)) {
     await flag.click({ force: true });
