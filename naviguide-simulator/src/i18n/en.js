@@ -279,6 +279,7 @@ export default {
   etaRangeTitle: "p10–p90, {n} members",
   etaUnavailable: "arrival window unavailable — {reason}, retry on {date}",
   etaUnavailableShort: "arrival window unavailable — {reason}",
+  etaReasonPreparing: "preparing",
   etaReasonQuota: "Open-Meteo quota reached",
   etaReasonNetwork: "network",
   etaReasonUnavailable: "ensemble unavailable",

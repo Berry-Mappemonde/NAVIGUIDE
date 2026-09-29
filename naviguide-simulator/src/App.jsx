@@ -92,7 +92,7 @@ import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
-import { usePlanReview } from "./hooks/usePlanReview.js";
+import { attachClockIso, usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -502,16 +502,9 @@ export default function App() {
     };
   }, [hudLeg]);
 
-  const legendMarks = useMemo(() => {
-    const clockMarks = officialClock?.marks || [];
-    return escaleMarks.map((m) => {
-      const film = m.filmNm ?? m.nm;
-      const hit = clockMarks.find((c) => (
-        Math.abs((c.filmNm ?? c.nm) - film) < 0.6 && (!m.name || c.name === m.name)
-      )) || clockMarks.find((c) => c.name === m.name);
-      return hit ? { ...m, iso: hit.iso, holdHours: hit.holdHours } : m;
-    });
-  }, [escaleMarks, officialClock]);
+  const legendMarks = useMemo(() => (
+    attachClockIso(escaleMarks, officialClock?.marks || [])
+  ), [escaleMarks, officialClock]);
 
   const monthLabel = clockSample?.month
     ? formatMonthName(clockSample.month, lang)
@@ -605,7 +598,9 @@ export default function App() {
       lang,
     })
     : "";
-  const sidebarPlaybackNm = playback.nm;
+  const sidebarPlaybackNm = isSuivre && live
+    ? (Number(live.filmNm) || playback.nm)
+    : playback.nm;
   const sidebarHudLeg = hudLeg;
   const sidebarClockSample = clockSample;
   useEffect(() => {

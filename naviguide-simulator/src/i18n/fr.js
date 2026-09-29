@@ -279,6 +279,7 @@ export default {
   etaRangeTitle: "p10–p90, {n} membres",
   etaUnavailable: "fourchette indisponible — {reason}, nouvel essai le {date}",
   etaUnavailableShort: "fourchette indisponible — {reason}",
+  etaReasonPreparing: "en préparation",
   etaReasonQuota: "quota Open-Meteo atteint",
   etaReasonNetwork: "réseau",
   etaReasonUnavailable: "ensemble indisponible",
