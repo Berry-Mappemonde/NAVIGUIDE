@@ -132,9 +132,11 @@ export function useOfficialExpedition({
       })
       .catch(() => { if (!cancelled) setClockStatus("absent"); });
     const kick = () => {
-      // The server clock is the truth for the boat's position: read it even
-      // when the PUT is refused (rate limit, payload rule, 5xx) — a refused
-      // self-repair must never leave the visitor on a client clock.
+      // Horloge serveur d'abord : le PUT de réparation peut durer des
+      // secondes. L'attendre laissait l'UI sur le t0 client (15 mai, 0 nm)
+      // puis sautait à la position live — RF8 voyait ça comme un seek.
+      // On relit après le PUT : un 404 / refus ne doit pas figer le client.
+      readClock();
       putOfficial()
         .catch(() => null)
         .then(() => { if (!cancelled) return readClock(); return undefined; });
