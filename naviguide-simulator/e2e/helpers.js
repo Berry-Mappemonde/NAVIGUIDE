@@ -137,7 +137,9 @@ export async function enterTracer(page) {
   });
   await expect(drawBtn).toBeVisible({ timeout: 10_000 });
   await drawBtn.scrollIntoViewIfNeeded();
-  await drawBtn.click({ force: true });
+  // Sous charge (tranches CI), le bouton peut être hors du cadre de la fenêtre au moment du clic
+  // (panneau en transition) : le clic DOM ne dépend pas de la géométrie.
+  await drawBtn.click({ force: true, timeout: 5_000 }).catch(() => drawBtn.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => window.__naviguideScene?.beginDrawingWorld?.());
 }
