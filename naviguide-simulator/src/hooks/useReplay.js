@@ -443,7 +443,8 @@ export function filmSubtitleAt(text, charIdx, opts = {}) {
 /**
  * Ligne de la barre : une phrase dès charIdx=0 (lot RC23 / revue #413).
  * Seek et pinned : la phrase sous le curseur, jamais le chapitre entier.
- * Extrait avion RC16 : la phrase qui contient « avion » / « flies ».
+ * Extrait avion RC16 : les phrases « avion » / « flies » déjà dans le
+ * chapitre (aller et retour), jamais le reste du chapitre.
  */
 export function filmBarSubtitle({
   chapterText = "",
@@ -456,13 +457,12 @@ export function filmBarSubtitle({
 } = {}) {
   const raw = String(chapterText || "");
   if (!raw) return { text: "", place: "", sentenceMode: false };
+  if (FILM_AIR_PHRASE_RE.test(raw)) {
+    return { text: visibleFilmSubtitle(raw), place: "", sentenceMode: true };
+  }
   const x = Math.max(0, Number(charIdx) || 0);
   const sub = filmSubtitleAt(raw, x, { sentenceStarts, fromName, toName, anchors });
-  let text = sub.sentence;
-  if (FILM_AIR_PHRASE_RE.test(text)) {
-    text = visibleFilmSubtitle(text) || text;
-  }
-  return { text, place: sub.place, sentenceMode: true };
+  return { text: sub.sentence, place: sub.place, sentenceMode: true };
 }
 
 export function filmSubtitleHighlight(text, place) {
