@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from moment import build_moment, load_official_mini
 from moment_journal import (
+    COAST_NEAR_NM,
     SCORE_ALERT_OFF,
     SCORE_ALERT_ON,
     SCORE_AMP,
@@ -15,6 +16,7 @@ from moment_journal import (
     SCORE_REGIME,
     SCORE_STATION,
     SCORE_ZEE,
+    _new_places_nearby,
     diff_moments,
     named_title,
     read_moments,
@@ -113,7 +115,7 @@ def test_fixture_pearls_collapse_to_fewer_moments():
     assert seqs == list(range(m))
     # Première ligne : pas de différence avec un moment précédent — seulement, le cas échéant, les marinas et
     # ports croisés dès la première perle (27 sept. : chaque marina/port à moins de 15 nm, cité une fois).
-    assert all(c["kind"] in {"marina", "port"} for c in rows[0]["changes"])
+    assert all(c["kind"] in {"marina", "port", "coast"} for c in rows[0]["changes"])
     for row in rows[1:]:
         assert row["changes"], f"seq {row['seq']} sans changes"
         for change in row["changes"]:
@@ -253,3 +255,24 @@ def test_diff_moments_silence_without_name():
         "kind": "science", "title": "Station croisée", "fact": "Station croisée",
     }]
     assert not any(c.get("kind") == "station" for c in diff_moments(base, nameless))
+
+
+def test_wpi_within_25nm_becomes_coast():
+    seen: set[tuple[str, str]] = set()
+    pearl = {
+        "nearby": {
+            "wpi": [
+                {"name": "Camariñas", "nm": 20.0},
+                {"name": "Trop loin", "nm": 30.0},
+            ],
+            "capitaineries": [],
+            "marinas": [],
+        },
+    }
+    out = _new_places_nearby(pearl, seen)
+    kinds = {c["kind"] for c in out}
+    titles = {c["title"] for c in out}
+    assert "coast" in kinds
+    assert "Camariñas" in titles
+    assert "Trop loin" not in titles
+    assert COAST_NEAR_NM == 25.0

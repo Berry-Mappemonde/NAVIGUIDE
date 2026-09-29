@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pearl_store
 import story_cache
 from film_script import (
+    OFFICIAL_ROUTE_ZEE_SOURCES,
     chapter_anchors,
     CONNECTORS,
     FILM_BUDGET_CHARS,
@@ -18,11 +19,15 @@ from film_script import (
     build_film_response,
     build_raw_script,
     change_sentence,
+    coast_sentence,
     connector_at,
     cyclone_name_year,
     dated_marks,
+    dose_coast_changes,
+    dose_zee_changes,
     film_candidates,
     film_facts,
+    heading_phrase,
     is_sea_chapter,
     journal_fingerprint,
     last_stop_id,
@@ -39,6 +44,7 @@ from film_script import (
     select_film_events,
     speak_film_text,
     written_is_valid,
+    zee_waters_label,
     _nm_label,
 )
 from tests.test_voyage_journal import PUBLIC, _official
@@ -375,7 +381,9 @@ def _assert_departure_arrival_pairs(text: str, lang: str = "fr") -> None:
         assert key not in seen, f"escale répétée : {name}"
         seen.append(key)
     def _pair_name(name: str) -> str:
-        return re.sub(r"\s+(par la route|by road)\s*$", "", name, flags=re.I).strip()
+        s = re.sub(r"\s+(par la route|by road)\s*$", "", name, flags=re.I)
+        s = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", s, flags=re.I)
+        return s.strip()
 
     for name, i in deps:
         nxt = next(((n, j) for n, j in arrs if j > i), None)
@@ -478,7 +486,8 @@ def test_official_route_order_no_repeat_departure_then_arrival():
             dep = re.search(r"départ vers (.+?)(?:\s*:|\.|$)", text)
             arr = re.search(r"Arrivée à (.+?) le ", text)
             assert dep and arr
-            assert norm_stop(dep.group(1)) == norm_stop(arr.group(1)), ch.get("id")
+            dep_name = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", dep.group(1), flags=re.I)
+            assert norm_stop(dep_name) == norm_stop(arr.group(1)), ch.get("id")
 
     en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
     blob_en = " ".join(c.get("text") or "" for c in en["chapters"])
@@ -599,7 +608,7 @@ MOMENTS = {
         ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
         {"seq": 3, "t": "2026-05-17T15:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
             {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone"},
-        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
         {"seq": 4, "t": "2026-05-22T06:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
             {"kind": "alert-on", "score": 3, "title": "Vent 38 kn", "fact": "Vent 38 kn attendu pendant 6 heures."},
         ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
@@ -673,9 +682,12 @@ def test_moments_chapter_one_sentence_max_three_changes():
         text = (ch.get("text") or "").strip()
         assert text
         assert re.search(r"[.!?]", text)
-        changes = [e for e in (ch.get("events") or []) if e.get("kind") != "stop" or "approach" in str(e.get("id") or "").lower() or e.get("card", {}).get("kind") == "stop"]
-        assert len(ch.get("events") or []) <= FILM_CHAPTER_MAX_CHANGES + 1  # + arrivée de jambe
-        assert len([e for e in (ch.get("events") or []) if e.get("id") and not str(e.get("id")).startswith("stop:")]) <= FILM_CHAPTER_MAX_CHANGES
+        named = {"zee", "coast"}
+        others = [
+            e for e in (ch.get("events") or [])
+            if e.get("kind") not in named and not str(e.get("id") or "").startswith("stop:")
+        ]
+        assert len(others) <= FILM_CHAPTER_MAX_CHANGES
 
 
 def test_moments_anchors_follow_the_route_chronologically():
@@ -880,7 +892,7 @@ def test_rich_moments_without_budget_cites_each_type():
     assert plan["targetSeconds"] == 0
     assert "Les Minimes" in blob
     assert re.search(r"à portée de Les Minimes", blob)
-    assert re.search(r"devant La Rochelle", blob)
+    assert re.search(r"longe La Rochelle|devant La Rochelle", blob)
     assert re.search(r"aire marine protégée : Cabrera", blob)
     assert re.search(r"station PIRATA", blob)
     assert "Irma" in blob and "2017" in blob
@@ -1361,3 +1373,242 @@ def test_rg1_depart_anchor_stays_at_port():
     )
     d = _nm_between(46.15, -1.16, vert["lat"], vert["lon"])
     assert d is not None and d <= 5.0, (d, depart_anchor, vert)
+
+
+def test_official_route_zee_all_have_spoken_names():
+    """Toute ZEE de la route officielle a un nom parlé, sans jargon de source."""
+    for src in OFFICIAL_ROUTE_ZEE_SOURCES:
+        spoken = zee_waters_label(src, "fr")
+        assert spoken, f"pas de nom parlé pour {src!r}"
+        assert "zone économique exclusive" not in spoken.lower(), (src, spoken)
+        assert "exclusive economic" not in spoken.lower(), (src, spoken)
+        en = zee_waters_label(src, "en")
+        assert en, f"no spoken EN name for {src!r}"
+        assert "exclusive economic" not in en.lower(), (src, en)
+
+
+def test_zee_haute_mer_and_sahara_spoken():
+    assert zee_waters_label("Haute mer", "fr") == "haute mer"
+    assert zee_waters_label("High Seas", "en") == "the high seas"
+    assert "disputées du Sahara occidental" in zee_waters_label(
+        "Overlapping claim Western Sahara: Western Sahara / Morocco", "fr",
+    )
+    assert "Barbade" in zee_waters_label("Zone économique exclusive (Barbadian)", "fr") or (
+        "barbadiennes" in zee_waters_label("Zone économique exclusive (Barbadian)", "fr")
+    )
+    assert "vénézuéliennes" in zee_waters_label("Zone économique exclusive vénézuélienne", "fr")
+    assert "indiennes" in zee_waters_label(
+        "Zone économique exclusive indienne (Andaman and Nicobar Islands)", "fr",
+    )
+
+
+def test_heading_phrase_eight_directions():
+    assert heading_phrase(246, "fr") == "cap au sud-ouest"
+    assert heading_phrase(0, "fr") == "cap au nord"
+    assert heading_phrase(90, "en") == "heading east"
+    assert heading_phrase(None, "fr") == ""
+
+
+def test_zee_dosage_short_keeps_all_long_one_per_day():
+    day = 86_400_000
+    short = [
+        {"id": "a", "kind": "zee-enter", "tMs": 1, "t": "2026-07-01T08:00:00Z",
+         "title": "Antiguan and Barbudan Exclusive Economic Zone", "fact": "x", "score": 2},
+        {"id": "b", "kind": "zee-enter", "tMs": 2, "t": "2026-07-01T14:00:00Z",
+         "title": "Kittitian and Nevisian Exclusive Economic Zone", "fact": "y", "score": 2},
+        {"id": "c", "kind": "zee-enter", "tMs": 3, "t": "2026-07-01T20:00:00Z",
+         "title": "Sint-Eustatius Exclusive Economic Zone", "fact": "z", "score": 2},
+    ]
+    for i, c in enumerate(short):
+        c["tMs"] = _ms(c["t"])
+    clustered = dose_zee_changes(short, span_ms=2 * day)
+    assert len(clustered) == 1
+    sent = change_sentence(clustered[0], "fr")
+    assert "Antigua" in sent and "Saint-Kitts" in sent and "Sint-Eustatius" in sent
+    assert "zones économiques exclusives" not in sent
+    assert "zone économique exclusive" not in sent
+    it_fr = [
+        {"id": "it", "kind": "zee-enter", "tMs": _ms("2026-05-24T22:04:29Z"),
+         "t": "2026-05-24T22:04:29Z", "title": "Zone économique exclusive italienne",
+         "fact": "Zone économique exclusive italienne", "score": 2},
+        {"id": "fr", "kind": "zee-enter", "tMs": _ms("2026-05-25T21:27:29Z"),
+         "t": "2026-05-25T21:27:29Z", "title": "Zone économique exclusive française (France métropolitaine)",
+         "fact": "Zone économique exclusive française (France métropolitaine)", "score": 2},
+    ]
+    it_fr_c = dose_zee_changes(it_fr, span_ms=2 * day)
+    assert len(it_fr_c) == 1
+    it_sent = change_sentence(it_fr_c[0], "fr")
+    assert "les eaux" in it_sent and "italiennes" in it_sent and "françaises" in it_sent
+
+    long_span = 10 * day
+    long_zee = [
+        {"id": f"z{i}", "kind": "zee-enter", "score": 2,
+         "title": title, "fact": title,
+         "t": t, "tMs": _ms(t)}
+        for i, (title, t) in enumerate((
+            ("Spanish Exclusive Economic Zone", "2026-05-16T08:00:00Z"),
+            ("Portuguese Exclusive Economic Zone", "2026-05-18T08:00:00Z"),
+            ("Moroccan Exclusive Economic Zone", "2026-05-21T08:00:00Z"),
+            ("Italian Exclusive Economic Zone", "2026-05-24T08:00:00Z"),
+            ("French Exclusive Economic Zone", "2026-05-25T08:00:00Z"),
+        ))
+    ]
+    dosed = dose_zee_changes(long_zee, span_ms=long_span)
+    assert len(dosed) == 5
+    same_day = [
+        {**long_zee[0], "id": "extra", "t": "2026-05-16T20:00:00Z", "tMs": _ms("2026-05-16T20:00:00Z"),
+         "title": "Portuguese Exclusive Economic Zone"},
+    ]
+    one_day = dose_zee_changes([long_zee[0], same_day[0]], span_ms=long_span)
+    assert len(one_day) == 1
+
+
+def test_zee_named_in_date_order_no_count():
+    t0 = _ms("2026-05-15T08:00:00Z")
+    changes = [
+        {"id": "es", "kind": "zee-enter", "score": 2, "tMs": _ms("2026-05-16T08:00:00Z"),
+         "t": "2026-05-16T08:00:00Z", "title": "Spanish Exclusive Economic Zone",
+         "fact": "Spanish Exclusive Economic Zone"},
+        {"id": "pt", "kind": "zee-enter", "score": 2, "tMs": _ms("2026-05-18T08:00:00Z"),
+         "t": "2026-05-18T08:00:00Z", "title": "Portuguese Exclusive Economic Zone",
+         "fact": "Portuguese Exclusive Economic Zone"},
+        {"id": "ma", "kind": "zee-enter", "score": 2, "tMs": _ms("2026-05-21T08:00:00Z"),
+         "t": "2026-05-21T08:00:00Z", "title": "Moroccan Exclusive Economic Zone",
+         "fact": "Moroccan Exclusive Economic Zone"},
+        {"id": "arr", "kind": "escale", "score": 3, "tMs": _ms("2026-05-26T08:00:00Z"),
+         "t": "2026-05-26T08:00:00Z", "title": "Arrivée à Ajaccio", "fact": "x"},
+    ]
+    picked = select_chapter_changes(changes, t0, _ms("2026-05-26T12:00:00Z"), budget=True)
+    kinds = [c["kind"] for c in picked]
+    assert kinds.count("zee-enter") >= 3
+    texts = [change_sentence(c, "fr") for c in picked if c["kind"] == "zee-enter"]
+    blob = " ".join(texts)
+    assert blob.find("espagnoles") < blob.find("portugaises") < blob.find("marocaines")
+    assert "zones économiques exclusives" not in blob
+    assert "zone économique exclusive" not in blob
+
+
+def test_coast_milestones_ordered_by_route():
+    t0 = _ms("2026-05-15T08:00:00Z")
+    coasts = [
+        {"id": "cam", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T12:00:00Z"),
+         "t": "2026-05-16T12:00:00Z", "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+        {"id": "mux", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T14:00:00Z"),
+         "t": "2026-05-16T14:00:00Z", "title": "Muxía", "fact": "Muxía (3 nm)"},
+        {"id": "tan", "kind": "coast", "score": 2, "tMs": _ms("2026-05-21T08:00:00Z"),
+         "t": "2026-05-21T08:00:00Z", "title": "Tanger", "fact": "Tanger (2 nm)"},
+        {"id": "alg", "kind": "coast", "score": 2, "tMs": _ms("2026-05-21T09:00:00Z"),
+         "t": "2026-05-21T09:00:00Z", "title": "Algeciras", "fact": "Algeciras (3 nm)"},
+        {"id": "ptt", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T10:00:00Z"),
+         "t": "2026-05-24T10:00:00Z", "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
+    ]
+    dosed = dose_coast_changes(coasts, span_ms=11 * 86_400_000)
+    assert [ _utc_day_from(c) for c in dosed ] == sorted(_utc_day_from(c) for c in dosed)
+    galice = next(c for c in dosed if "Camariñas" in (c.get("title") or "") or "Galice" in (c.get("title") or ""))
+    sent = coast_sentence(galice, "fr")
+    assert "Galice" in sent
+    assert "Camariñas" in sent and "Muxía" in sent
+    gib = next(c for c in dosed if any(p in (c.get("title") or "") or p in " ".join(c.get("ports") or [])
+                                        for p in ("Tanger", "Algeciras", "Gibraltar")))
+    gsent = coast_sentence(gib, "fr")
+    assert "Gibraltar" in gsent
+    assert "Tanger" in gsent and "Algeciras" in gsent
+    sar = next(c for c in dosed if "Porto Torres" in (c.get("title") or "") or "Sardaigne" in (c.get("title") or ""))
+    assert "Sardaigne" in coast_sentence(sar, "fr")
+    picked = select_chapter_changes(coasts, t0, _ms("2026-05-26T12:00:00Z"), budget=True)
+    coast_picked = [c for c in picked if c.get("kind") == "coast"]
+    assert len(coast_picked) >= 3
+    times = [c.get("tMs") or 0 for c in coast_picked]
+    assert times == sorted(times)
+
+
+def test_stock_ports_and_marinas_become_named_coasts():
+    """Les 44 ports et les marinas du stock (Camariñas, Tanger…) sont des jalons, pas un comptage."""
+    t0 = _ms("2026-05-15T08:00:00Z")
+    changes = [
+        {"id": "cam", "kind": "marina", "score": 2, "tMs": _ms("2026-05-18T11:42:00Z"),
+         "t": "2026-05-18T11:42:00Z", "title": "Club Náutico de Camariñas",
+         "fact": "Club Náutico de Camariñas (4 nm)"},
+        {"id": "mux", "kind": "marina", "score": 2, "tMs": _ms("2026-05-18T12:42:00Z"),
+         "t": "2026-05-18T12:42:00Z", "title": "Porto de Muxía", "fact": "Porto de Muxía (3 nm)"},
+        {"id": "tan", "kind": "port", "score": 2, "tMs": _ms("2026-05-21T14:37:58Z"),
+         "t": "2026-05-21T14:37:58Z", "title": "Tanger", "fact": "Tanger"},
+        {"id": "alg", "kind": "port", "score": 2, "tMs": _ms("2026-05-21T19:05:47Z"),
+         "t": "2026-05-21T19:05:47Z", "title": "Algeciras", "fact": "Algeciras"},
+        {"id": "ptt", "kind": "port", "score": 2, "tMs": _ms("2026-05-25T15:48:38Z"),
+         "t": "2026-05-25T15:48:38Z", "title": "Porto Torres", "fact": "Porto Torres"},
+    ]
+    dosed = dose_coast_changes(changes, span_ms=11 * 86_400_000)
+    blob = " ".join(coast_sentence(c, "fr") for c in dosed)
+    assert "zone économique exclusive" not in blob
+    assert "Galice" in blob and "Camariñas" in blob and "Muxía" in blob
+    assert "Gibraltar" in blob and "Tanger" in blob and "Algeciras" in blob
+    assert "Sardaigne" in blob and "Porto Torres" in blob
+    picked = select_chapter_changes(changes, t0, _ms("2026-05-26T12:00:00Z"), budget=True)
+    assert [c.get("kind") for c in picked if c.get("kind") == "coast"]
+    times = [c.get("tMs") or 0 for c in picked if c.get("kind") == "coast"]
+    assert times == sorted(times)
+
+
+def _utc_day_from(change: dict) -> str:
+    from film_script import _utc_day
+    return _utc_day(change)
+
+
+def test_rg2_film_names_route_and_heading():
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+             "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 2, "t": "2026-05-15T13:00:00Z", "signature": "s2", "legIdx": 1, "changes": [],
+             "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 3, "t": "2026-05-16T08:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+                 "fact": "Spanish Exclusive Economic Zone"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 4, "t": "2026-05-16T12:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
+            {"seq": 5, "t": "2026-05-16T14:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Muxía", "fact": "Muxía (3 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
+            {"seq": 6, "t": "2026-05-18T08:00:00Z", "signature": "s6", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Portuguese Exclusive Economic Zone",
+                 "fact": "Portuguese Exclusive Economic Zone"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 180}}},
+            {"seq": 7, "t": "2026-05-21T08:00:00Z", "signature": "s7", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Moroccan Exclusive Economic Zone",
+                 "fact": "Moroccan Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Tanger", "fact": "Tanger (2 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 90}}},
+            {"seq": 8, "t": "2026-05-21T09:00:00Z", "signature": "s8", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Algeciras", "fact": "Algeciras (3 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 90}}},
+            {"seq": 9, "t": "2026-05-24T10:00:00Z", "signature": "s9", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Italian Exclusive Economic Zone",
+                 "fact": "Italian Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 45}}},
+            {"seq": 10, "t": "2026-05-25T08:00:00Z", "signature": "s10", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "French Exclusive Economic Zone",
+                 "fact": "French Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Calvi", "fact": "Calvi (6 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 20}}},
+            {"seq": 11, "t": "2026-05-24T12:51:00Z", "signature": "s11", "legIdx": 1, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, journal, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "zone économique exclusive" not in blob.lower()
+    assert "zones économiques exclusives" not in blob
+    assert blob.find("espagnoles") < blob.find("portugaises") < blob.find("marocaines")
+    assert "Galice" in blob
+    assert "Gibraltar" in blob
+    assert "Sardaigne" in blob or "Corse" in blob
+    assert "cap au sud-ouest" in blob
