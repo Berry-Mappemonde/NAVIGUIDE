@@ -429,6 +429,36 @@ export function filmSubtitleAt(text, charIdx, opts = {}) {
   };
 }
 
+/**
+ * Ligne de la barre : chapitre entier (extrait avion RC16) au départ et
+ * après un seek ; phrase courante + lieu seulement après la 1re phrase.
+ * Les lots existants lisent encore « La Rochelle » / « avion » au start/seek.
+ */
+export function filmBarSubtitle({
+  chapterText = "",
+  charIdx = 0,
+  pinned = false,
+  sentenceStarts,
+  fromName,
+  toName,
+  anchors,
+} = {}) {
+  const raw = String(chapterText || "");
+  const whole = visibleFilmSubtitle(raw);
+  if (pinned || !raw) {
+    return { text: whole, place: "", sentenceMode: false };
+  }
+  const sentences = splitFilmSentences(raw, sentenceStarts);
+  const first = sentences[0];
+  const firstEnd = first ? first.start + first.text.length : raw.length;
+  const x = Math.max(0, Number(charIdx) || 0);
+  if (x + 1e-9 < firstEnd) {
+    return { text: whole, place: "", sentenceMode: false };
+  }
+  const sub = filmSubtitleAt(raw, x, { sentenceStarts, fromName, toName, anchors });
+  return { text: sub.sentence, place: sub.place, sentenceMode: true };
+}
+
 export function filmSubtitleHighlight(text, place) {
   const raw = String(text || "");
   const name = String(place || "");
@@ -654,15 +684,18 @@ export function useReplay({
     setChapterIdx(ch.idx);
     chapterTextRef.current = ch.text || "";
     setChapterText(ch.text || "");
-    const first = filmSubtitleAt(ch.text || "", 0, {
+    const first = filmBarSubtitle({
+      chapterText: ch.text || "",
+      charIdx: 0,
+      pinned: pinnedIdxRef.current != null,
       sentenceStarts: ch.sentenceStarts,
       fromName: ch.fromName,
       toName: ch.toName,
       anchors: ch.anchors,
     });
-    setSubtitle(first.sentence);
+    setSubtitle(first.text);
     setSubtitlePlace(first.place);
-    lastSubtitleRef.current = first.sentence;
+    lastSubtitleRef.current = first.text;
     setFilmLeg({
       fromLat: ch.fromLat, fromLon: ch.fromLon, toLat: ch.toLat, toLon: ch.toLon,
     });
@@ -1100,15 +1133,18 @@ export function useReplay({
       }
 
       const chapter = plan.chapters[chapterIdxRef.current];
-      const sub = filmSubtitleAt(chapter?.text || "", charIdx, {
+      const sub = filmBarSubtitle({
+        chapterText: chapter?.text || "",
+        charIdx,
+        pinned: pinnedIdxRef.current != null,
         sentenceStarts: chapter?.sentenceStarts,
         fromName: chapter?.fromName,
         toName: chapter?.toName,
         anchors: chapter?.anchors,
       });
-      if (uiDue && sub.sentence !== lastSubtitleRef.current) {
-        lastSubtitleRef.current = sub.sentence;
-        setSubtitle(sub.sentence);
+      if (uiDue && sub.text !== lastSubtitleRef.current) {
+        lastSubtitleRef.current = sub.text;
+        setSubtitle(sub.text);
         setSubtitlePlace(sub.place);
       } else if (uiDue) {
         setSubtitlePlace(sub.place);
