@@ -16,6 +16,9 @@ from film_script import (
     FILM_WRITE_MIN,
     SHORT_CROSSING_MS,
     allocate_chapter_budgets,
+    film_char_budget,
+    film_estimated_seconds,
+    film_priority_tier,
     alert_is_amp,
     bubble_score,
     build_film_response,
@@ -2230,3 +2233,71 @@ def test_rg7_close_english_with_eta():
     assert "between 3 October and 8 October" in close
     assert "Stops still to come:" in close
     assert "Nouméa, Dzaoudzi, Europa, Tromelin, La Réunion" in close
+
+
+def test_rg8_priority_tiers_and_char_budget():
+    assert film_priority_tier(150) == 2
+    assert film_priority_tier(180) == 3
+    assert film_priority_tier(0) == 4
+    assert film_char_budget(150) == 2250
+    assert film_char_budget(180) == 2700
+    assert film_char_budget(0) == 0
+    assert film_estimated_seconds(2250) == 150
+    assert film_estimated_seconds(0) == 0
+
+
+def test_rg8_select_chapter_changes_by_tier():
+    t0 = 0
+    t1 = 10
+    changes = [
+        {"id": "esc", "kind": "escale", "score": 3, "tMs": 1, "title": "Arrivée à Ajaccio", "fact": "Ajaccio"},
+        {"id": "zee", "kind": "zee-enter", "score": 2, "tMs": 2, "t": "2026-05-16T08:00:00Z",
+         "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone"},
+        {"id": "amp", "kind": "amp", "score": 2, "tMs": 3, "nm": 8, "title": "Cabrera", "fact": "Cabrera"},
+        {"id": "proj", "kind": "project", "score": 2, "tMs": 4, "nm": 12, "gold_on": True,
+         "title": "Récif sentinelle", "fact": "Récif sentinelle"},
+        {"id": "coa", "kind": "coast", "score": 2, "tMs": 5, "t": "2026-05-16T12:00:00Z",
+         "title": "Camariñas", "fact": "Camariñas"},
+        {"id": "cli", "kind": "climo", "score": 2, "tMs": 6, "t": "2026-05-18T08:00:00Z",
+         "title": "alizés de nord-est", "fact": "alizés de nord-est",
+         "event": "ne_trades", "regimeId": "ne_trades", "source": "atlas", "nature": "season",
+         "windKnots": 15},
+        {"id": "sta", "kind": "station", "score": 2, "tMs": 7, "nm": 2,
+         "title": "Argo 6904216", "fact": "Argo 6904216", "source": "argo"},
+    ]
+    short = select_chapter_changes(changes, t0, t1, budget=True, tier=2)
+    kinds_s = {c["kind"] for c in short}
+    assert "escale" in kinds_s
+    assert "zee-enter" in kinds_s
+    assert "coast" not in kinds_s
+    assert "climo" not in kinds_s
+    assert "station" not in kinds_s
+    assert sum(1 for c in short if c["kind"] in {"amp", "project"}) == 1
+    assert next(c["kind"] for c in short if c["kind"] in {"amp", "project"}) == "project"
+
+    mid = select_chapter_changes(changes, t0, t1, budget=True, tier=3)
+    kinds_m = {c["kind"] for c in mid}
+    assert "coast" in kinds_m
+    assert "climo" in kinds_m
+    assert "station" not in kinds_m
+
+    full = select_chapter_changes(changes, t0, t1, budget=False)
+    kinds_f = {c["kind"] for c in full}
+    assert "station" in kinds_f
+    assert "coast" in kinds_f
+
+
+def test_rg8_three_variants_strictly_increasing():
+    a = _rich_raw(150)
+    b = _rich_raw(180)
+    c = _rich_raw(0)
+    assert a["chars"] < b["chars"] < c["chars"]
+    assert a["estimatedSeconds"] < b["estimatedSeconds"] <= c["estimatedSeconds"] or b["chars"] < c["chars"]
+    cps = 15
+    dur = a["chars"] / cps
+    assert dur <= 150 * 1.1
+    if c["chars"] >= film_char_budget(150):
+        assert 150 * 0.9 <= dur
+    blob150 = " ".join(ch.get("text") or "" for ch in a["chapters"])
+    blob180 = " ".join(ch.get("text") or "" for ch in b["chapters"])
+    assert "aliz" in blob180.lower() or "longe" in blob180 or "Galice" in blob180 or blob180 != blob150

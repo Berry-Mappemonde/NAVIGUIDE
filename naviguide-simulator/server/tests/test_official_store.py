@@ -692,3 +692,42 @@ def test_filler_from_another_checkout_is_replaced(tmp_path, monkeypatch):
     monkeypatch.setattr(official_store, "_process_command", lambda pid: "python /ailleurs/scripts/prepare_official_store.py --loop")
     assert official_store.fill_process_alive() is None
     assert (31337, 15) in killed
+
+
+def test_rg8_three_variants_stored_and_served(tmp_path, monkeypatch):
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: {
+        "t0": T0, "clock": {"t0": T0, "vertices": [{"lat": 1, "lon": 2, "iso": T0}]}, "marks": [],
+    })
+
+    async def fake_film(*, lang="fr", seconds=150, **_k):
+        n = {0: 40, 150: 10, 180: 20}.get(int(seconds or 0), 10)
+        text = ("Berry-Mappemonde quitte La Rochelle. " * n).strip()
+        return {
+            "chapters": [{"id": "c0", "text": text}],
+            "chars": len(text),
+            "source": "rules",
+            "targetSeconds": int(seconds or 0),
+        }
+
+    monkeypatch.setattr(film_script, "official_film", fake_film)
+    voy = {"t0": T0, "clock": {"t0": T0, "vertices": [{"lat": 1, "lon": 2, "iso": T0}]}, "marks": []}
+    payload = official_store.compute_film(voy, NOW)
+    assert payload is not None
+    fr = (payload.get("variants") or {}).get("fr") or {}
+    assert set(fr) >= {"150", "180", "0"}
+    assert fr["150"]["chars"] < fr["180"]["chars"] < fr["0"]["chars"]
+    assert fr["150"]["estimatedSeconds"] < fr["180"]["estimatedSeconds"]
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    short = official_store.serve_film("fr", 150)
+    mid = official_store.serve_film("fr", 180)
+    full = official_store.serve_film("fr", 0)
+    assert short["status"] == READY
+    assert short["chars"] < mid["chars"] < full["chars"]
+    assert short["estimatedSeconds"] == fr["150"]["estimatedSeconds"]
+    assert "150" in (full.get("estimates") or {})
+    assert full["estimates"]["0"]["chars"] == fr["0"]["chars"]

@@ -873,6 +873,8 @@ export default function App() {
     voice: replay.voice,
     subtitle: visibleFilmSubtitle(replay.chapterText),
     targetSeconds: replay.targetSeconds,
+    estimatedSeconds: replay.estimatedSeconds,
+    variantEstimates: replay.variantEstimates,
     onDuration: replay.setTargetSeconds,
     onStart: () => {
       if (shouldCloseEscaleSheet({ replayStarting: true })) {
@@ -897,7 +899,7 @@ export default function App() {
     onStyle: replay.setFilmStyle,
     t0: replayT0,
     onT0: setReplayT0,
-  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
+  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;

@@ -127,6 +127,10 @@ COLOR_KINDS = frozenset({
 })
 FILM_CHAPTER_MAX_FREE = 10
 FILM_FREE_MAX_WORDS = 800
+FILM_ESTIMATE_CPS = 15  # débit constant (27 sept.) : durée = caractères ÷ 15 ; pas de recalibrage
+FILM_TIER_SHORT = 2     # 2:30 — ouverture, eaux, une AMP ou un projet, escales
+FILM_TIER_MEDIUM = 3    # 3:00 — + côtes et climatologie
+FILM_TIER_FULL = 4      # intégral — tout, sans plafond
 ROUTE_NEAR_NM = 15.0
 NM_TO_KM = 1.852
 ALWAYS_KINDS = frozenset({
@@ -2113,6 +2117,82 @@ def _film_seconds(seconds: Any) -> int:
     return n if n > 0 else 0
 
 
+def film_char_budget(seconds: Any) -> int:
+    """Plafond en caractères à 15 car./s. 0 = intégral, sans plafond."""
+    s = _film_seconds(seconds)
+    if s <= 0:
+        return 0
+    return int(s * FILM_ESTIMATE_CPS)
+
+
+def film_priority_tier(seconds: Any) -> int:
+    """P2 (2:30), P3 (3:00) ou P4 (intégral)."""
+    s = _film_seconds(seconds)
+    if s <= 0:
+        return FILM_TIER_FULL
+    if s <= 150:
+        return FILM_TIER_SHORT
+    return FILM_TIER_MEDIUM
+
+
+def film_estimated_seconds(chars: int, cps: float | None = None) -> int:
+    """Durée parlée = caractères ÷ débit mesuré ou 15 car./s. Jamais un chiffre inventé."""
+    n = int(chars or 0)
+    if n <= 0:
+        return 0
+    rate = float(cps) if cps and float(cps) > 0 else float(FILM_ESTIMATE_CPS)
+    return max(1, int(round(n / rate)))
+
+
+def _one_amp_or_project(amp: list[dict], proj: list[dict]) -> Optional[dict]:
+    """2:30 : une AMP ou un projet, gold_on puis le plus proche."""
+    rows = [c for c in list(amp) + list(proj) if isinstance(c, dict)]
+    if not rows:
+        return None
+
+    def gold(c: dict) -> int:
+        return 0 if c.get("gold_on") in (True, 1, "1", "true", "True") else 1
+
+    rows.sort(key=lambda c: (
+        gold(c),
+        change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+        c.get("tMs") or 0,
+    ))
+    return rows[0]
+
+
+def _tier_route_extras(
+    zee: list[dict],
+    coast: list[dict],
+    amp: list[dict],
+    proj: list[dict],
+    climo: list[dict],
+    stations: list[dict],
+    *,
+    tier: Optional[int],
+) -> list[dict]:
+    if tier is None or tier >= FILM_TIER_FULL:
+        return zee + coast + amp + proj + climo + stations
+    extras = list(zee)
+    if tier <= FILM_TIER_SHORT:
+        one = _one_amp_or_project(amp, proj)
+        if one is not None:
+            extras.append(one)
+        return extras
+    return extras + coast + amp + proj + climo
+
+
+def _tier_allows_kind(kind: str, tier: Optional[int]) -> bool:
+    if tier is None or tier >= FILM_TIER_FULL:
+        return True
+    k = str(kind or "")
+    if k in {"escale", "approche", "zee-enter", "alert-on", "cyclone", "marina", "amp", "project"}:
+        return True
+    if tier >= FILM_TIER_MEDIUM and k in {"coast", "climo"}:
+        return True
+    return False
+
+
 def _facts_with_rounded(change: dict) -> str:
     """Faits + arrondis : filter_numbers accepte le chiffre déclamé."""
     blob = json.dumps(change, ensure_ascii=False, default=str)
@@ -3658,7 +3738,7 @@ def _usable_changes(changes: list[dict]) -> list[dict]:
 
 
 def select_chapter_changes(
-    changes: list[dict], t_a: int, t_b: int, *, budget: bool = True,
+    changes: list[dict], t_a: int, t_b: int, *, budget: bool = True, tier: Optional[int] = None,
 ) -> list[dict]:
     usable = _usable_changes(changes)
     span = (t_b or 0) - (t_a or 0)
@@ -3668,12 +3748,14 @@ def select_chapter_changes(
     proj = dose_project_changes(usable, span)
     climo = dose_climo_changes(usable, span)
     stations = dose_station_changes(usable, span)
+    extras = _tier_route_extras(zee, coast, amp, proj, climo, stations, tier=tier)
     rest_src = [
         c for c in usable
         if str(c.get("kind") or "") not in ROUTE_NAMING_KINDS
         and not _is_coast_source(c)
         and not _is_amp_change(c)
         and str(c.get("kind") or "") not in {"project", "climo", "station"}
+        and _tier_allows_kind(str(c.get("kind") or ""), tier)
     ]
     if not budget:
         rest_src.sort(key=lambda c: (
@@ -3683,7 +3765,7 @@ def select_chapter_changes(
         others = rest_src[:FILM_CHAPTER_MAX_FREE]
         # ZEE, côtes, AMP, projets, climatologie et une station : hors plafond des autres faits.
         return sorted(
-            zee + coast + amp + proj + climo + stations + others,
+            extras + others if tier is not None else zee + coast + amp + proj + climo + stations + others,
             key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")),
         )
     grouped = _group_changes(rest_src, span)
@@ -3695,7 +3777,10 @@ def select_chapter_changes(
     arrival = next((c for c in must if c.get("kind") == "escale"), None)
     approach = next((c for c in must if c.get("kind") == "approche"), None)
     alert = next((c for c in rest if c.get("kind") == "alert-on"), None)
-    color = next((c for c in rest if c.get("kind") in COLOR_KINDS and c.get("kind") not in {"marina", "zee-enter", "coast"}), None)
+    color_skip = {"marina", "zee-enter", "coast"}
+    if tier is not None and tier <= FILM_TIER_SHORT:
+        color_skip = color_skip | {"station", "climo", "culture", "port"}
+    color = next((c for c in rest if c.get("kind") in COLOR_KINDS and c.get("kind") not in color_skip), None)
     # La marina de l'escale (« cultures d'escale », 26 sept.) : la dernière marina à portée de la fenêtre.
     marina = next((c for c in sorted(rest, key=lambda c: -(c.get("tMs") or 0)) if c.get("kind") == "marina"), None)
     picked: list[dict] = []
@@ -3718,7 +3803,7 @@ def select_chapter_changes(
     for item in must + rest:
         add(item)
     seen = {str(x.get("id") or "") for x in picked}
-    for item in zee + coast + amp + proj + climo + stations:
+    for item in extras:
         cid = str(item.get("id") or "")
         if cid and cid in seen:
             continue
@@ -4275,10 +4360,10 @@ def build_raw_from_moments(
     windows = _windows(packed["stops"], t0, t_end, clock)
     has_budget = _film_seconds(seconds) > 0
     budget_s = _film_seconds(seconds)
+    tier = film_priority_tier(seconds)
     if has_budget:
-        target = FILM_BUDGET_CHARS if budget_s == 150 else max(
-            FILM_CHAPTER_FLOOR, int(FILM_BUDGET_CHARS * budget_s / 150),
-        )
+        # RG8 : plafond = durée × 15 car./s (pas FILM_BUDGET_CHARS identique pour 150 et 180).
+        target = film_char_budget(budget_s)
         days = [max(1.0, (w["tB"] - w["tA"]) / 86_400_000.0) for w in windows]
         budgets = allocate_chapter_budgets(days, target)
     else:
@@ -4309,7 +4394,9 @@ def build_raw_from_moments(
         for extra in _dest_culture_changes(dest):
             extra = {**extra, "t": (dest or {}).get("iso"), "tMs": w["tB"]}
             flat.append(extra)
-        selected = select_chapter_changes(flat, w["tA"], w["tB"], budget=has_budget)
+        selected = select_chapter_changes(
+            flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
+        )
         bits: list[str] = []
         placed: list[dict] = []
 
@@ -4452,8 +4539,7 @@ def build_raw_from_moments(
             "toLat": w.get("toLat"),
             "toLon": w.get("toLon"),
         })
-    if not has_budget:
-        _trim_free_script(chapters)
+    # RG8 : intégral sans plafond — on ne coupe plus à FILM_FREE_MAX_WORDS.
     if has_budget and target > 0:
         n = script_chars(chapters)
         hi = int(target * 1.1)
@@ -4466,11 +4552,13 @@ def build_raw_from_moments(
             n = script_chars(chapters)
             guard += 1
     _ensure_air_sentences(chapters, marks=marks, moments=moments, lang=lang)
+    chars = script_chars(chapters)
     return {
         "chapters": chapters,
         "source": "rules",
-        "chars": script_chars(chapters),
+        "chars": chars,
         "targetSeconds": budget_s,
+        "estimatedSeconds": film_estimated_seconds(chars),
         "_events": selected_all,
         "_packed": packed,
         "_fromMoments": True,
@@ -4513,8 +4601,6 @@ def build_raw_script(
 
     chapters = compose(events)
     attach_chapter_events(chapters, packed, journal, lang)
-    if _film_seconds(seconds) <= 0:
-        _trim_free_script(chapters)
     while _film_seconds(seconds) > 0 and script_chars(chapters) > FILM_MAX_CHARS:
         droppable = [e for e in events if e["id"] not in must_ids]
         if not droppable:
@@ -4527,11 +4613,13 @@ def build_raw_script(
     _ensure_air_sentences(
         chapters, marks=marks, moments=_journal_moments(journal), lang=lang,
     )
+    chars = script_chars(chapters)
     return {
         "chapters": chapters,
         "source": "rules",
-        "chars": script_chars(chapters),
+        "chars": chars,
         "targetSeconds": _film_seconds(seconds),
+        "estimatedSeconds": film_estimated_seconds(chars),
         "_events": events,
         "_packed": packed,
     }

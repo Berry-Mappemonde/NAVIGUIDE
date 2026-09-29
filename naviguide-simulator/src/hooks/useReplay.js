@@ -59,7 +59,10 @@ export function filmTextHasT0Year(chapters, t0) {
 
 const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
 
-/** Empreinte RE7 : récit court, pas le journal déversé ni le script Simulation. */
+/** Empreinte RE7 : pas le journal déversé ni le script Simulation.
+ * RG8 : l'intégral n'a plus de plafond 800 mots — le dump se reconnaît à RE7_STALE. */
+export const FILM_READY_MAX_WORDS = 2500;
+
 export function filmWordCount(text) {
   return (String(text || "").match(/\S+/g) || []).length;
 }
@@ -68,7 +71,7 @@ export function isRe7OfficialFilm(data) {
   const chapters = data?.chapters || [];
   if (!chapters.length) return false;
   const blob = chapters.map((c) => c.text || "").join(" ");
-  if (filmWordCount(blob) > 800) return false;
+  if (filmWordCount(blob) > FILM_READY_MAX_WORDS) return false;
   return !RE7_STALE.test(blob);
 }
 
@@ -172,10 +175,37 @@ export function linearFilmAt(elapsed, plan) {
 
 /** ~ FILM_BUDGET_CHARS / 150 s : la voix ne meuble pas, le temps suit le texte. */
 export const FILM_CHARS_PER_SECOND = 16;
+/** Débit d'estimation (RG8) = débit vocal constant depuis le 27 sept. Pas de recalibrage. */
+export const FILM_ESTIMATE_CPS = 15;
 
 export function filmSpeakSeconds(chapters) {
   const chars = (chapters || []).reduce((s, c) => s + String(c?.text || "").length, 0);
   return Math.max(1, Math.round(chars / FILM_CHARS_PER_SECOND));
+}
+
+export function filmEstimatedSeconds(chars, cps = FILM_ESTIMATE_CPS) {
+  const n = Number(chars) || 0;
+  if (n <= 0) return 0;
+  const rate = Number(cps) > 0 ? Number(cps) : FILM_ESTIMATE_CPS;
+  return Math.max(1, Math.round(n / rate));
+}
+
+export function formatFilmEstimateClock(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  if (!s) return "";
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+export function pickFilmEstimateSeconds(targetSeconds, estimates, fallbackSeconds = 0) {
+  const key = String(Number(targetSeconds) || 0);
+  const map = estimates && typeof estimates === "object" ? estimates : null;
+  const row = map?.[key] || map?.fr?.[key];
+  const fromMap = Number(row?.estimatedSeconds);
+  if (Number.isFinite(fromMap) && fromMap > 0) return fromMap;
+  const fb = Number(fallbackSeconds);
+  return Number.isFinite(fb) && fb > 0 ? fb : 0;
 }
 
 /** Durée cochée → budget ; aucune → le temps que prend le journal. */
@@ -355,6 +385,8 @@ export function useReplay({
   const [filmSource, setFilmSource] = useState("rules");
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
+  const [estimatedSeconds, setEstimatedSeconds] = useState(0);
+  const [variantEstimates, setVariantEstimates] = useState(null);
   const remotePlanRef = useRef(null);
   // Langue et budget du plan chargé : on ne garde le plan « prêt » pendant un rechargement que s'il
   // répond à la MÊME demande — sinon un clic Revoir juste après le passage en anglais jouait le film
@@ -472,6 +504,8 @@ export function useReplay({
     if (!enabled) {
       setFilmStatus("pending");
       remotePlanRef.current = null;
+      setEstimatedSeconds(0);
+      setVariantEstimates(null);
       return undefined;
     }
     let cancelled = false;
@@ -480,6 +514,16 @@ export function useReplay({
     const style = filmStyle === "written" ? "written" : "raw";
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
 
+    const applyEstimates = (data) => {
+      const chapters = data?.chapters || [];
+      const chars = Number(data?.chars) || chapters.reduce((n, c) => n + String(c?.text || "").length, 0);
+      const est = Number(data?.estimatedSeconds) > 0
+        ? Number(data.estimatedSeconds)
+        : filmEstimatedSeconds(chars);
+      setEstimatedSeconds(est);
+      setVariantEstimates(data?.estimates && typeof data.estimates === "object" ? data.estimates : null);
+    };
+
     const applyData = (data) => {
       if (cancelled) return true;
       if (isRe7OfficialFilm(data)) {
@@ -487,12 +531,14 @@ export function useReplay({
         remotePlanKeyRef.current = q;
         setHasWritten(Boolean(data.hasWritten));
         setFilmSource(data.source || "rules");
+        applyEstimates(data);
         setFilmStatus("ready");
         return true;
       }
       if (data?.chapters?.length) {
         remotePlanRef.current = data;
         remotePlanKeyRef.current = q;
+        applyEstimates(data);
         setFilmStatus("stale");
         return true;
       }
@@ -503,6 +549,8 @@ export function useReplay({
       remotePlanRef.current = null;
       setHasWritten(false);
       setFilmSource("rules");
+      setEstimatedSeconds(0);
+      setVariantEstimates(null);
       setFilmStatus("absent");
     };
 
@@ -928,5 +976,7 @@ export function useReplay({
     canStart,
     seekChapter,
     remoteStatus,
+    estimatedSeconds,
+    variantEstimates,
   };
 }
