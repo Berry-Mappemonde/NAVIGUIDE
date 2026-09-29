@@ -1438,6 +1438,11 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
     except subprocess.TimeoutExpired:
         log("    ensure-dev.sh --prod : délai dépassé (20 min)")
         launched = False
+    if launched:
+        try:
+            run_poste_specs(state, wt, http, branch)
+        except Exception as e:  # jamais bloquant
+            log(f"    specs « poste » : {e}")
     write_recette_md(state, args, http, branch, wt, launched)
     log(f"recette : {RECETTE_MD}")
     if quiet:
@@ -1450,6 +1455,111 @@ def prepare_recette(state: State, args, http: Http | None, *, quiet: bool = Fals
         log(f"    REVUE_GLOBALE.md non préparé : {e}")
     if sh(["open", "-a", "Cursor", str(RECETTE_MD)], check=False, timeout=30).returncode != 0:
         sh(["open", str(RECETTE_MD)], check=False, timeout=30)
+
+
+POSTE_SKIP_RE = re.compile(r'test\.skip\(\s*!!process\.env\.CI\s*,\s*["\']poste', re.I)
+POSTE_MARK = "## 🧪 Specs « poste »"
+POSTE_TIMEOUT_S = 600
+
+
+def poste_specs(sim: Path) -> list[Path]:
+    """Les specs marqués « poste » (test.skip(!!process.env.CI, "poste : …")) : ils ont besoin de clés ou du
+    réseau que la CI n'a pas ; ils se jouent ici, sur le poste de recette, après chaque reconstruction (28 sept.)."""
+    out = []
+    for f in sorted((sim / "e2e" / "lots").glob("*.spec.js")):
+        try:
+            if POSTE_SKIP_RE.search(f.read_text(encoding="utf-8", errors="replace")):
+                out.append(f)
+        except OSError:
+            continue
+    return out
+
+
+def _poste_results(report: dict) -> list[tuple[str, str, str]]:
+    """(fichier, statut, raison) pour chaque test du rapport JSON Playwright."""
+    rows: list[tuple[str, str, str]] = []
+
+    def walk(suite: dict, file: str = "") -> None:
+        file = suite.get("file") or file
+        for sp in suite.get("specs") or []:
+            for test in sp.get("tests") or []:
+                res = (test.get("results") or [{}])[-1]
+                status = res.get("status") or test.get("status") or "?"
+                note = ""
+                if status == "skipped":
+                    note = "; ".join(a.get("description") or "" for a in (test.get("annotations") or []) if a.get("type") == "skip") or ""
+                elif status != "passed":
+                    err = (res.get("error") or {}).get("message") or ""
+                    note = re.sub(r"\x1b\[[0-9;]*m", "", err).strip().splitlines()[0][:160] if err else ""
+                rows.append((Path(file).name, status, note))
+        for sub in suite.get("suites") or []:
+            walk(sub, file)
+
+    for s in report.get("suites") or []:
+        walk(s)
+    return rows
+
+
+def run_poste_specs(state: State, wt: Path, http: Http | None, branch: str) -> None:
+    """Joue les specs « poste » contre le poste de recette qui vient d'être bâti (5174 / 8010, clés chargées)
+    et écrit le résultat dans la PR de tête — un commentaire 🧪 par PR, mis à jour à chaque reconstruction.
+    Jamais bloquant : un échec ici est une information pour la revue, pas un arrêt du batch."""
+    sim = wt / "naviguide-simulator"
+    specs = poste_specs(sim)
+    if not specs:
+        return
+    rel = [str(s.relative_to(sim)) for s in specs]
+    report_path = sim / "test-results" / "poste-specs.json"
+    env = {k: v for k, v in os.environ.items() if k not in ("CI", "PW_PORT", "PW_WITH_API", "PW_API_PORT")}
+    env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = str(report_path)
+    log(f"    specs « poste » sur le poste ({len(rel)}) : {', '.join(Path(r).name for r in rel)}")
+    try:
+        p = subprocess.run(
+            ["npx", "playwright", "test", *rel, "--workers=1", "--retries=0", "--timeout=60000", "--reporter=json"],
+            cwd=str(sim), text=True, capture_output=True, timeout=POSTE_TIMEOUT_S, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        log(f"    specs « poste » : délai dépassé ({POSTE_TIMEOUT_S // 60} min) — non joués")
+        return
+    except OSError as e:
+        log(f"    specs « poste » : impossible de lancer Playwright ({e})")
+        return
+    rows: list[tuple[str, str, str]] = []
+    try:
+        rows = _poste_results(json.loads(report_path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        try:
+            rows = _poste_results(json.loads(p.stdout[p.stdout.index("{"):]))
+        except (ValueError, json.JSONDecodeError):
+            log(f"    specs « poste » : rapport illisible (code {p.returncode})")
+            return
+    icons = {"passed": "✅", "failed": "❌", "timedOut": "❌", "skipped": "⏭", "flaky": "⚠️", "interrupted": "❌"}
+    lines = [f"- {icons.get(st, '❔')} `{f}` — {st}" + (f" : {note}" if note else "") for f, st, note in rows]
+    n_ok = sum(1 for _, st, _ in rows if st == "passed")
+    n_ko = sum(1 for _, st, _ in rows if st in ("failed", "timedOut", "interrupted"))
+    n_skip = sum(1 for _, st, _ in rows if st == "skipped")
+    for ln in lines:
+        log(f"    {ln}")
+    e = state.done.get(state.last_lot) or {}
+    num = pr_number(e.get("pr"))
+    if not num or not http:
+        return
+    body = (f"{POSTE_MARK} — joués sur le poste de recette (tête `{branch}`, {time.strftime('%d %b %H:%M')}) / "
+            f"« poste » specs played on the recette workstation\n\n"
+            "Ces specs ont besoin de clés (Nemotron, Tavily) ou du réseau que la CI n'a pas : ils sont ignorés en CI "
+            "et joués ici, après chaque reconstruction du poste. / Need API keys or network the CI lacks: skipped in CI, played here.\n\n"
+            + "\n".join(lines) + f"\n\n**{n_ok} vert(s) · {n_ko} rouge(s) · {n_skip} ignoré(s)**")
+    try:
+        comments = http.github(f"/repos/{owner_repo(DEFAULT_REPO)}/issues/{num}/comments?per_page=100") or []
+        mine = [c for c in comments if (c.get("body") or "").startswith(POSTE_MARK)]
+        if mine:
+            http.github(f"/repos/{owner_repo(DEFAULT_REPO)}/issues/comments/{mine[-1]['id']}", "PATCH", {"body": body})
+        else:
+            from post_pr_comment import post as _post  # noqa: PLC0415
+            _post(num, body)
+        log(f"    specs « poste » : {n_ok} vert(s), {n_ko} rouge(s), {n_skip} ignoré(s) — écrit sur la PR #{num}")
+    except Exception as ex:  # jamais bloquant
+        log(f"    specs « poste » : résultat non posté sur #{num} : {ex}")
 
 
 def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Path, launched: bool) -> None:
