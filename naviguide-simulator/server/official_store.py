@@ -29,8 +29,9 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC22 (pilules pendant Revoir, budget 2:30, AMP+projet gardés) invalide rg14. moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rc22"
+# Clé film : RC26 (récit dense et réparti — fenêtres de temps, cap initial de la trace,
+# dédoublonnage par site, phrase de groupe ZEE grammaticale) invalide rc22. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rc26"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
