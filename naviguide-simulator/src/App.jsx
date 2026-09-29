@@ -503,7 +503,11 @@ export default function App() {
   }, [hudLeg]);
 
   const legendMarks = useMemo(() => {
-    const clockMarks = officialClock?.marks || [];
+    // En Suivre, les dates des escales (et donc la « prochaine escale » dont on demande la fourchette) ne viennent
+    // que de l'horloge OFFICIELLE : tant qu'elle n'est pas arrivée, l'horloge client donnait une autre prochaine
+    // escale (Papeete, puis Dzaoudzi au lieu de Nouméa — capture réseau de Grok Bot, 29 sept.) et l'app demandait
+    // des fourchettes pour des escales qui ne sont pas la prochaine.
+    const clockMarks = (isSuivre ? official.clock?.marks : officialClock?.marks) || [];
     return escaleMarks.map((m) => {
       const film = m.filmNm ?? m.nm;
       const hit = clockMarks.find((c) => (
@@ -511,7 +515,7 @@ export default function App() {
       )) || clockMarks.find((c) => c.name === m.name);
       return hit ? { ...m, iso: hit.iso, holdHours: hit.holdHours } : m;
     });
-  }, [escaleMarks, officialClock]);
+  }, [escaleMarks, officialClock, isSuivre, official.clock]);
 
   const monthLabel = clockSample?.month
     ? formatMonthName(clockSample.month, lang)

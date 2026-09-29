@@ -26,6 +26,13 @@ le tunnel nommé et re-poste le lien 🔗 dans chaque PR. Si le bot voit encore 
 403 : dans Cloudflare → Sécurité → WAF → règle personnalisée « hôte =
 recette.blueintelligence.online → Ignorer (Skip) : Bot Fight Mode, niveau de sécurité ».
 
+**Protocole du tunnel** (29 sept.) : `run_lots.py` lance `cloudflared` en **HTTP/2** (`BIM_TUNNEL_PROTOCOL=http2`,
+défaut ; `quic` ou `auto` pour revenir en arrière). À Toronto, en QUIC (UDP), le tunnel ne passait plus que
+~2 ko/s alors que le Mac téléversait à 500 ko/s : l'horloge officielle (3,9 Mo, 335 ko gzippés) n'arrivait
+jamais et le bot voyait le bateau au jour 0. Si le poste paraît « lent » chez le bot : mesurer
+`curl -o /dev/null -w '%{speed_download}\n' https://recette.blueintelligence.online/voyage/official/clock`
+(attendu : > 50 000 o/s) ; sinon `python3 infra/agents/run_lots.py --stop-tunnel` puis `--recette` relance le tunnel.
+
 Option `--publish-tip` : le lien devient le site publié lui-même (la tête de pile est
 déployée sur `simulator.naviguide.fr` via la branche `recette`) — à réserver au
 moment où le dépôt public du simulateur sera la source du déploiement.
