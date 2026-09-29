@@ -23,6 +23,7 @@ from typing import List, Optional, Union
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -87,6 +88,11 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["Content-Type", "X-Naviguide-Admin"],
 )
+# 29 sept. : l'horloge officielle (GET /voyage/official/clock, et le PUT /voyage/official qui la porte) pèse
+# 3,9 Mo de JSON très répétitif — 335 ko une fois gzippés. Derrière le tunnel du poste de recette, ces 3,9 Mo
+# mettaient plus d'une minute et le bateau restait au jour 0 chez Grok Bot. Le client (navigateur, Cloudflare)
+# annonce toujours gzip ; nginx en prod compresse déjà, uvicorn seul ne le faisait pas.
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 app.include_router(polar_router)
 app.include_router(voyage_router)
 app.include_router(escale_router)

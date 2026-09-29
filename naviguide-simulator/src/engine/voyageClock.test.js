@@ -286,6 +286,13 @@ describe("U0 horloge officielle", () => {
     assert.deepEqual(splitDepartureUtc(""), { date: "2026-05-15", time: "08:00" });
   });
 
+  it("en Suivre, les dates d'escale de la légende viennent de l'horloge officielle seule (29 sept.)", () => {
+    // Capture réseau de Grok Bot : sans horloge serveur, l'horloge client donnait Papeete puis Dzaoudzi comme
+    // « prochaine escale » et l'app demandait leur fourchette au lieu de celle de Nouméa.
+    const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../App.jsx"), "utf8");
+    assert.match(app, /const clockMarks = \(isSuivre \? official\.clock\?\.marks : officialClock\?\.marks\) \|\| \[\];/);
+  });
+
   it("escales Bmap = 3 jours à quai (pas 2)", () => {
     assert.equal(DEFAULT_PORT_DAYS.default, 3);
     assert.equal(portHoldHours("Ajaccio"), 72);

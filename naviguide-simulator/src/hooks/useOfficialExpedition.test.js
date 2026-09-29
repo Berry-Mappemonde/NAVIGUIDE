@@ -29,8 +29,28 @@ describe("useOfficialExpedition — position officielle", () => {
   });
 
   it("lit l’horloge serveur même quand le PUT officiel est refusé", () => {
-    assert.match(source, /putOfficial\(\)\s*\.catch\(\(\) => null\)\s*\.then\(\(\) => \{ if \(!cancelled\) return readClock\(\);/);
-    assert.match(source, /if \(!putRef\.current \|\| !serverClockRef\.current\) kick\(\);/);
+    assert.match(source, /const data = await putOfficial\(\)\.catch\(\(\) => null\);/);
+    assert.match(source, /if \(!gotClock\) gotClock = Boolean\(await readClock\(\)\);/);
+  });
+
+  it("une seule lecture de l’horloge à la fois, relance espacée — jamais une pile de requêtes (29 sept.)", () => {
+    // Grok Bot derrière le tunnel : 134 requêtes en 4 min, 50 horloges de 3,9 Mo en vol, bateau au jour 0.
+    assert.match(source, /if \(inflightRef\.current\) \{/);
+    assert.match(source, /inflightRef\.current = true;/);
+    assert.match(source, /inflightRef\.current = false;/);
+    assert.doesNotMatch(source, /setInterval\(\(\) => \{\s*if \(!putRef\.current/);
+    assert.match(source, /timer = setTimeout\(kick, officialRetryDelayMs\(attemptRef\.current\)\);/);
+    // Le PUT porte déjà l'horloge : pas de second téléchargement.
+    assert.match(source, /gotClock = Boolean\(data\?\.clock\?\.t0\);/);
+  });
+});
+
+describe("officialRetryDelayMs", () => {
+  it("espace les relances : 5 s, 10, 20, 40, puis 60 s au plus", async () => {
+    const { officialRetryDelayMs, OFFICIAL_RETRY_MS } = await import("./useOfficialExpedition.js");
+    assert.deepEqual([1, 2, 3, 4, 5, 6, 40].map(officialRetryDelayMs), [5000, 10000, 20000, 40000, 60000, 60000, 60000]);
+    assert.equal(officialRetryDelayMs(0), OFFICIAL_RETRY_MS[0]);
+    assert.equal(officialRetryDelayMs(undefined), OFFICIAL_RETRY_MS[0]);
   });
 });
 

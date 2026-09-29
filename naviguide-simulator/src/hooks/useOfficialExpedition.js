@@ -6,6 +6,14 @@ import { officialGribQuery, officialGribStatus, officialGribWarning } from "./gr
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
+/** Relances de la lecture de l'horloge officielle tant qu'elle n'est pas arrivée : 5 s, 10, 20, 40, puis 60 s. */
+export const OFFICIAL_RETRY_MS = [5000, 10000, 20000, 40000, 60000];
+
+export function officialRetryDelayMs(attempt) {
+  const i = Number.isFinite(attempt) && attempt > 0 ? Math.min(Math.floor(attempt), OFFICIAL_RETRY_MS.length) : 1;
+  return OFFICIAL_RETRY_MS[i - 1];
+}
+
 /** A client clock is "official" when it starts on the expedition's fixed t0. */
 export function isOfficialClock(clock) {
   const t0 = Date.parse(clock?.t0 ?? "");
@@ -115,9 +123,17 @@ export function useOfficialExpedition({
     return data;
   }, [points, marks, expeditionId, meta]);
 
+  // Une seule lecture de l'horloge à la fois. 29 sept. (Grok Bot, poste derrière le tunnel) : la réponse
+  // /voyage/official/clock pèse 3,9 Mo et le PUT /voyage/official la porte aussi ; la relance toutes les 5 s
+  // repartait sans attendre la précédente — 134 requêtes en 4 min, 50 téléchargements de l'horloge en vol,
+  // le tunnel saturé, l'horloge jamais arrivée : le bateau restait au jour 0 et Revoir grisé.
+  const inflightRef = useRef(false);
+  const attemptRef = useRef(0);
+
   useEffect(() => {
     if (!enabled || !points?.length) return undefined;
     let cancelled = false;
+    let timer = null;
     const readClock = () => fetch(`${API}/voyage/official/clock`)
       .then((r) => {
         if (r.ok) return r.json();
@@ -128,24 +144,44 @@ export function useOfficialExpedition({
         if (ck?.t0 && !cancelled) {
           setServerClock(ck);
           setClockStatus("ready");
+          return ck;
         }
+        return null;
       })
-      .catch(() => { if (!cancelled) setClockStatus("absent"); });
-    const kick = () => {
-      // The server clock is the truth for the boat's position: read it even
-      // when the PUT is refused (rate limit, payload rule, 5xx) — a refused
-      // self-repair must never leave the visitor on a client clock.
-      putOfficial()
-        .catch(() => null)
-        .then(() => { if (!cancelled) return readClock(); return undefined; });
+      .catch(() => { if (!cancelled) setClockStatus("absent"); return null; });
+    const kick = async () => {
+      if (cancelled) return;
+      if (inflightRef.current) {
+        // Une paire PUT / GET est déjà en vol (autre rendu du hook) : on repasse plus tard, on n'empile pas.
+        timer = setTimeout(kick, 2000);
+        return;
+      }
+      inflightRef.current = true;
+      let gotClock = false;
+      try {
+        // The server clock is the truth for the boat's position: read it even
+        // when the PUT is refused (rate limit, payload rule, 5xx) — a refused
+        // self-repair must never leave the visitor on a client clock.
+        const data = await putOfficial().catch(() => null);
+        if (cancelled) return;
+        gotClock = Boolean(data?.clock?.t0);
+        // Le PUT porte déjà l'horloge : pas de second téléchargement de 3,9 Mo.
+        if (!gotClock) gotClock = Boolean(await readClock());
+      } finally {
+        inflightRef.current = false;
+      }
+      if (cancelled) return;
+      if (gotClock || serverClockRef.current) {
+        attemptRef.current = 0;
+        return;
+      }
+      attemptRef.current += 1;
+      timer = setTimeout(kick, officialRetryDelayMs(attemptRef.current));
     };
     kick();
-    const retry = setInterval(() => {
-      if (!putRef.current || !serverClockRef.current) kick();
-    }, 5000);
     return () => {
       cancelled = true;
-      clearInterval(retry);
+      clearTimeout(timer);
     };
   }, [enabled, points, putOfficial]);
 
