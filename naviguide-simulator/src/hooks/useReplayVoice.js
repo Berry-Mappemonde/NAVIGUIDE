@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { canSpeak, speak, stopSpeaking, waitForVoices } from "../utils/speak.js";
+import { canLeadWithVoice, canSpeak, speak, stopSpeaking, waitForVoices } from "../utils/speak.js";
 
 /**
  * Replay voice (lot F1 / R3) : un chapitre à la fois, après voiceschanged.
@@ -31,9 +31,12 @@ export function useReplayVoice({
       spokenRef.current = { idx: -1, text: "" };
       return undefined;
     }
-    if (!voice || !chapterText || !canSpeak()) return undefined;
+    if (!voice || !chapterText) return undefined;
     const win = typeof window !== "undefined" ? window : null;
-    if (win?.navigator?.webdriver) return undefined;
+    if (!canSpeak(win) || !canLeadWithVoice(win)) {
+      onLeadFailedRef.current?.();
+      return undefined;
+    }
     if (spokenRef.current.idx === chapterIdx && spokenRef.current.text === chapterText) return undefined;
     spokenRef.current = { idx: chapterIdx, text: chapterText };
     stopSpeaking();

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmEstimatedSeconds, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmEstimatedSeconds, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, wallClockSpeakSeconds } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -608,10 +608,127 @@ describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => 
   });
 
   it("App passe le sous-titre choisi ; la barre ne tronque pas l'avion", () => {
-    assert.match(app, /visibleFilmSubtitle\(replay\.chapterText\)/);
+    assert.match(app, /visibleFilmSubtitle\(replay\.subtitle \|\| replay\.chapterText\)/);
     assert.match(bar, /visibleFilmSubtitle/);
+    assert.match(bar, /filmSubtitleHighlight/);
+    assert.match(bar, /data-testid="film-subtitle-place"/);
     assert.match(bar, /filmSubtitleShowsAir/);
     assert.match(bar, /filmSubtitleAir \? "whitespace-normal" : "truncate"/);
     assert.doesNotMatch(bar, /data-testid="film-subtitle" className="[^"]*truncate/);
+  });
+});
+
+describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
+  const t0 = Date.parse("2026-05-15T08:00:00Z");
+  const hour = 3600000;
+
+  function longChapters(n = 7, chars = 200) {
+    return Array.from({ length: n }, (_, i) => ({
+      tA: t0 + i * 4 * hour,
+      tB: t0 + (i + 1) * 4 * hour,
+      text: `${"Phrase une du chapitre. ".padEnd(80)}Phrase deux vers le lieu ${i}. `.padEnd(chars, "x"),
+      fromLat: 46 - i,
+      fromLon: -1 - i,
+      toLat: 45 - i,
+      toLon: -2 - i,
+      fromName: "La Rochelle",
+      toName: "Ajaccio",
+    }));
+  }
+
+  it("sans voix : durée ≥ 90 % de l'estimée, ended seulement à la dernière phrase", () => {
+    assert.equal(FILM_VOICE_STALL_MS, 2000);
+    assert.equal(FILM_VISIBILITY_CATCHUP_MS, 2000);
+    const chapters = longChapters(7, 200);
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    const speakSec = wallClockSpeakSeconds(plan, FILM_ESTIMATE_CPS);
+    assert.ok(speakSec >= 90, `estimée trop courte: ${speakSec}`);
+    const early = linearFilmAt(53, plan);
+    assert.equal(early.finish, false, "53 s ne termine pas un film de 7 chapitres");
+    assert.ok(early.chapterIdx < plan.chapters.length - 1);
+    assert.equal(linearFilmAt(speakSec * 0.89, plan).finish, false);
+
+    let ended = false;
+    let elapsed = 0;
+    const dt = 0.5;
+    let finishAt = null;
+    while (elapsed <= speakSec + 2) {
+      const at = linearFilmAt(elapsed, plan);
+      if (at.finish) {
+        ended = true;
+        finishAt = elapsed;
+        assert.equal(at.lastReached, true);
+        assert.equal(at.chapterIdx, plan.chapters.length - 1);
+        break;
+      }
+      elapsed += dt;
+    }
+    assert.equal(ended, true);
+    assert.ok(finishAt >= speakSec * 0.9, `fini à ${finishAt} s < 90 % de ${speakSec}`);
+    assert.match(hook, /visibilitychange/);
+    assert.match(hook, /voiceBoundaryAtRef\.current === 0/);
+    assert.match(hook, /voiceCharRef\.current > 0/);
+    assert.match(hook, /filmSubtitleAt/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /onLeadFailedRef\.current/);
+  });
+
+  it("sous-titre : une phrase à la fois, lieu mis en avant quand il est dit", () => {
+    const text = "Départ vers La Rochelle. Ensuite cap sur Ajaccio. Arrivée à Fort-de-France.";
+    const starts = splitFilmSentences(text).map((s) => s.start);
+    assert.ok(starts.length >= 3);
+    const first = filmSubtitleAt(text, text.indexOf("La Rochelle") + 1, {
+      toName: "La Rochelle", sentenceStarts: starts,
+    });
+    const second = filmSubtitleAt(text, text.indexOf("Ajaccio") + 1, {
+      toName: "Ajaccio", sentenceStarts: starts,
+    });
+    const third = filmSubtitleAt(text, text.indexOf("Fort-de-France") + 1, {
+      toName: "Fort-de-France", sentenceStarts: starts,
+    });
+    assert.notEqual(first.sentence, second.sentence);
+    assert.notEqual(second.sentence, third.sentence);
+    assert.match(first.sentence, /La Rochelle/);
+    assert.doesNotMatch(first.sentence, /Ajaccio/);
+    assert.equal(first.place, "La Rochelle");
+    assert.equal(second.place, "Ajaccio");
+    assert.equal(third.place, "Fort-de-France");
+    const beforeName = filmSubtitleAt(text, text.indexOf("Fort-de-France") - 1, {
+      toName: "Fort-de-France", sentenceStarts: starts,
+    });
+    assert.equal(beforeName.place, "");
+    const hi = filmSubtitleHighlight(third.sentence, third.place);
+    assert.equal(hi.place, "Fort-de-France");
+    assert.ok(hi.before.includes("Arrivée"));
+  });
+
+  it("reprise d'onglet : rampe ≤ 2 s, aucun pas égal au saut", () => {
+    const fromT = 1_000;
+    const toT = fromT + 20 * 3600 * 1000;
+    const gap = toT - fromT;
+    const frames = 60;
+    let prev = fromT;
+    let maxStep = 0;
+    for (let i = 1; i <= frames; i += 1) {
+      const stepped = visibilityCatchupStep({
+        fromT,
+        toT,
+        elapsedMs: (i / frames) * FILM_VISIBILITY_CATCHUP_MS,
+        durationMs: FILM_VISIBILITY_CATCHUP_MS,
+      });
+      maxStep = Math.max(maxStep, Math.abs(stepped.t - prev));
+      prev = stepped.t;
+    }
+    assert.ok(maxStep < gap / 2, `pas max ${maxStep} trop proche du saut ${gap}`);
+    assert.ok(Math.abs(prev - toT) < 1);
+    const mid = visibilityCatchupStep({
+      fromT, toT, elapsedMs: 1000, durationMs: 2000,
+    });
+    assert.equal(mid.done, false);
+    assert.ok(mid.t > fromT && mid.t < toT);
+    const end = visibilityCatchupStep({
+      fromT, toT, elapsedMs: 2000, durationMs: 2000,
+    });
+    assert.equal(end.done, true);
+    assert.equal(end.t, toT);
   });
 });

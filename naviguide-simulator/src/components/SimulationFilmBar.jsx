@@ -8,7 +8,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
+import { filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -150,6 +150,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   };
   const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "");
   const filmSubtitleAir = filmSubtitleShowsAir(filmSubtitle);
+  const filmSubtitleParts = filmSubtitleHighlight(filmSubtitle, replay?.subtitlePlace || "");
 
   if (hideBar) {
     return (
@@ -323,7 +324,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               filmSubtitleAir ? "whitespace-normal" : "truncate"
             }`}
           >
-            {filmSubtitle}
+            {filmSubtitleParts.place ? (
+              <>
+                {filmSubtitleParts.before}
+                <strong data-testid="film-subtitle-place" className="text-cyan-200 font-semibold">
+                  {filmSubtitleParts.place}
+                </strong>
+                {filmSubtitleParts.after}
+              </>
+            ) : filmSubtitle}
           </div>
         ) : null}
         {storiesPending > 0 ? (
