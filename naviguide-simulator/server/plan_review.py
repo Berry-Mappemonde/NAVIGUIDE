@@ -579,8 +579,15 @@ async def comment_plan(
     client=None,
     cascade=None,
 ) -> dict[str, Any]:
-    """Nemotron Super (tier write) : ≤ 4 phrases. Cache par hash du tableau."""
+    """Nemotron Super (tier write) : ≤ 4 phrases. Cache par hash du tableau. Calculée en arrière-plan (revue
+    du stock) : sous NAVIGUIDE_LLM_MODE=on-demand (défaut, 28 sept.) la cascade rend la phrase par règles."""
     from story_cascade import cascade_text  # noqa: PLC0415
+    import llm_budget  # noqa: PLC0415
+    with llm_budget.background():
+        return await _comment_plan(legs, client=client, cascade=cascade, cascade_text=cascade_text)
+
+
+async def _comment_plan(legs, *, client, cascade, cascade_text) -> dict[str, Any]:
 
     facts = table_facts(legs)
     key = table_hash(facts)

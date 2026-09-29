@@ -276,7 +276,14 @@ def status() -> dict[str, Any]:
 
 
 async def pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PAUSE_S, client=None) -> dict[str, Any]:
-    """Write ahead the stories of the official route, under today's budget."""
+    """Write ahead the stories of the official route, under today's budget — travail d'ARRIÈRE-PLAN :
+    sous NAVIGUIDE_LLM_MODE=on-demand (défaut, 28 sept.) il ne dépense rien (source=budget partout)."""
+    import llm_budget  # noqa: PLC0415
+    with llm_budget.background():
+        return await _pregenerate_official(points, pause_s=pause_s, client=client)
+
+
+async def _pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PAUSE_S, client=None) -> dict[str, Any]:
     from story_cascade import write_story  # noqa: PLC0415
     bodies = [b for lang in pregen_langs() for b in pregen_bodies(points, lang)]
     _state.update({"status": "running", "planned": len(bodies), "cached": 0, "written": 0, "failed": 0, "skippedBudget": 0,

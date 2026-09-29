@@ -63,3 +63,34 @@ def test_remember_source_skips_cache():
     assert llm_budget.last_source() == "nemotron-super"
     st = llm_budget.status()
     assert st["lastSource"] == "nemotron-super"
+
+
+def test_mode_off_forbids_every_call(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    for tier in ("fast", "write", "judge"):
+        assert llm_budget.allow(tier) is False
+
+
+def test_on_demand_forbids_background_but_allows_request(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")
+    assert llm_budget.mode() == "on-demand"
+    assert llm_budget.allow("write") is True, "une action de l'utilisateur peut appeler"
+    with llm_budget.background():
+        assert llm_budget.allow("write") is False, "l'arrière-plan ne dépense rien"
+    assert llm_budget.allow("write") is True
+    monkeypatch.setenv("NAVIGUIDE_LLM_BACKGROUND", "1")
+    assert llm_budget.allow("write") is False, "processus marqué arrière-plan (remplisseur)"
+
+
+def test_mode_all_allows_background(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "all")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")
+    with llm_budget.background():
+        assert llm_budget.allow("write") is True
+
+
+def test_judge_cap_is_zero_by_default(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    assert llm_budget.daily_cap("judge") == 0
+    assert llm_budget.allow("judge") is False
