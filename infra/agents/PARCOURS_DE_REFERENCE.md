@@ -66,6 +66,9 @@ lieu que le sous-titre nomme).
 - **Stop** arrête net le film : `speechSynthesis.speaking` repasse à `false`, le bateau revient à la vue Suivre ; **Retour au live** le replace sur sa position du jour ; Suivre est de nouveau actif ; dézoomer à la molette fonctionne dès le premier geste.
 - Laisser un film entier : la barre de progression atteint la fin, le film finit sur la position du jour, pas de saut de zoom à l'arrêt.
 - Passer la langue en **anglais** (panneau droit) → relancer : le sous-titre est en anglais, même ordre d'escales (Saint-Maur, La Rochelle, Ajaccio…).
+- **Une étape complète au sous-titre** (RG10) : laisser un chapitre aller jusqu'au suivant (`chapterIdx` + 1). Dans `chapterText` / le sous-titre, l'ordre est ouverture (départ, milles) → faits de route (eaux, côte, détroit) quand le chapitre en a → arrivée (ou « Aujourd'hui » si le bateau est encore en mer). Relever un chapitre atlantique (La Rochelle → Ajaccio ou Ajaccio → Fort-de-France).
+- **Mots interdits absents** du sous-titre et de `chapterText` : « jambe », « zone économique exclusive », « Couloirs », « À surveiller », « à portée de », « de de ». Aucun titre anglais de jeu de données (deposit, licence, Center, fishing, ban). Aucun comptage sans nom (« 9 stations », « 3 zones »).
+- **Ordre chronologique** : dans un même `chapterText`, les dates et les lieux vont dans l'ordre de la route (La Rochelle avant Gibraltar avant Ajaccio ; une date ne recule pas). Les ancres (`anchors`) du chapitre ont des `t` non décroissants.
 - Console : aucune erreur pendant le film.
 
 ## D. Simulation
