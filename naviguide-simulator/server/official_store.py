@@ -28,9 +28,9 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
-# Clé film / moments / ici : RG3 (AMP réelles, projets BI) invalide rg2.
-FILM_SCRIPT_REV = "rg3"
-MOMENTS_REV = "rg3"
+# Clé film / moments : RG4 (climatologie racontée) invalide rg3. ici reste rg3.
+FILM_SCRIPT_REV = "rg4"
+MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
@@ -159,7 +159,7 @@ def worker_enabled() -> bool:
 def _store_rev_relaxed() -> bool:
     """Sans remplisseur (CI, stock figé) : une ancienne rev film/moments/ici reste joignable.
 
-    La clé `…:rg3` n'existe pas encore dans l'archive gelée ; sans ça, GET
+    La clé `…:rg4` n'existe pas encore dans l'archive gelée ; sans ça, GET
     /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
     Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
     """
@@ -322,7 +322,7 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : film, moments et ici portent la révision du calcul (RG3)."""
+        """Clé de rangement : film, moments et ici portent la révision du calcul (RG4)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
@@ -707,6 +707,7 @@ def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:
 # ── calculs (mêmes fonctions que le serveur d'aujourd'hui) ───────────────────
 
 def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
+    from climo_events import notable_climo_changes  # noqa: PLC0415
     from voyage_api import _climo_clock, _regime_portions  # noqa: PLC0415
     from voyage_store import save_voyage  # noqa: PLC0415
 
@@ -727,7 +728,12 @@ def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
             "windKnots": v.get("windKnots"),
             "dirFromDeg": v.get("dirFromDeg"),
         })
-    return {"clock": clock, "regimes": _regime_portions(clock), "fiches": fiches}
+    return {
+        "clock": clock,
+        "regimes": _regime_portions(clock),
+        "fiches": fiches,
+        "events": notable_climo_changes(clock),
+    }
 
 
 RICH_EVENT_KINDS = frozenset({"zee", "sci", "science", "poe", "amp", "climo", "wx", "grib", "marina", "port"})

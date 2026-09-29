@@ -26,6 +26,7 @@ from film_script import (
     cyclone_name_year,
     dated_marks,
     dose_amp_changes,
+    dose_climo_changes,
     dose_coast_changes,
     dose_project_changes,
     dose_zee_changes,
@@ -1671,3 +1672,36 @@ def test_project_sentence_and_dosage():
     assert len(dose_amp_changes(amps, short_span)) == 1
     assert len(dose_amp_changes(amps, long_span)) == 3
     assert dose_amp_changes(amps, short_span)[0]["nm"] == 1
+
+
+def test_climo_sentence_and_dosage():
+    atlas = {
+        "kind": "climo", "id": "climo:ne", "event": "ne_trades", "regimeId": "ne_trades",
+        "t": "2026-06-14T12:00:00Z", "tMs": _ms("2026-06-14T12:00:00Z"),
+        "source": "atlas", "nature": "season", "windKnots": 15,
+        "placeFr": "au sud du Cap-Vert", "placeEn": "south of Cape Verde",
+        "title": "alizés de nord-est", "fact": "alizés de nord-est",
+    }
+    fr = change_sentence(atlas, "fr")
+    en = change_sentence(atlas, "en")
+    assert "alizés de nord-est" in fr
+    assert "quinze nœuds de saison" in fr
+    assert "northeasterly trade winds" in en
+    assert "fifteen seasonal knots" in en
+    zone = {
+        **atlas, "id": "climo:zone", "source": "zone_fallback", "nature": "zone",
+        "windKnots": None, "dirFromDeg": None,
+    }
+    zfr = change_sentence(zone, "fr")
+    assert "vents moyens de saison" in zfr
+    assert "quinze" not in zfr
+    assert not re.search(r"\d+\s*n", zfr)
+    many = [
+        {**atlas, "id": f"c{i}", "tMs": i, "event": "ne_trades" if i < 2 else "force",
+         "regimeId": "ne_trades" if i < 2 else None}
+        for i in range(5)
+    ]
+    assert len(dose_climo_changes(many, SHORT_CROSSING_MS - 1)) == 1
+    assert len(dose_climo_changes(many, 20 * 86_400_000)) == 2
+    picked = select_chapter_changes(many, 0, 20 * 86_400_000, budget=True)
+    assert sum(1 for c in picked if c.get("kind") == "climo") <= 2

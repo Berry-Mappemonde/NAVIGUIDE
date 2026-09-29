@@ -13,6 +13,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+from climo_events import climo_sentence, dose_climo_changes, notable_climo_changes
 from story_cascade import cascade_text, expand_spoken_units, filter_numbers, split_short_sentences
 from voyage_clock import OFFICIAL_T0
 
@@ -44,13 +45,13 @@ CONNECTORS = {
 }
 CHANGE_PRIORITY = {
     "escale": 0, "approche": 1, "alert-on": 2, "station": 3,
-    "zee-enter": 4, "coast": 4, "amp": 5, "project": 5, "marina": 6, "cyclone": 7, "culture": 8,
+    "zee-enter": 4, "coast": 4, "amp": 5, "project": 5, "climo": 5, "marina": 6, "cyclone": 7, "culture": 8,
     "port": 9, "regime": 10, "alert-off": 11,
 }
 BUBBLE_KIND = {
     "escale": "stop", "approche": "stop", "alert-on": "wx", "alert-off": "wx",
     "zee-enter": "zee", "coast": "coast", "station": "sci", "amp": "amp",
-    "project": "project", "regime": "climo",
+    "project": "project", "regime": "climo", "climo": "climo",
     "marina": "stop", "cyclone": "climo", "culture": "stop", "port": "poe",
 }
 AROUND_TO_KIND = {
@@ -71,14 +72,14 @@ DIST_UNIT_RE = re.compile(
 DECIMAL_RE = re.compile(r"\d+[.,]\d{1,2}(?!\d)")
 GENERIC_CYCLONE = frozenset({"cyclone", "cyclones"})
 COLOR_KINDS = frozenset({
-    "station", "zee-enter", "coast", "amp", "project", "regime", "marina", "cyclone", "culture", "port",
+    "station", "zee-enter", "coast", "amp", "project", "climo", "regime", "marina", "cyclone", "culture", "port",
 })
 FILM_CHAPTER_MAX_FREE = 10
 FILM_FREE_MAX_WORDS = 800
 ROUTE_NEAR_NM = 15.0
 NM_TO_KM = 1.852
 ALWAYS_KINDS = frozenset({
-    "escale", "approche", "zee-enter", "coast", "alert-on", "cyclone", "culture",
+    "escale", "approche", "zee-enter", "coast", "alert-on", "cyclone", "culture", "climo",
 })
 GENERIC_TITLES = frozenset({
     "station croisée", "station", "stations", "croisée", "croisee",
@@ -795,6 +796,8 @@ def change_place_name(change: dict) -> str:
         if ports:
             return ports[0]
         title = LIST_PREFIX_RE.sub("", title).strip(" :")
+    if kind == "climo":
+        return str(change.get("title") or change.get("regimeId") or "").strip()
     if kind == "cyclone":
         name, _year = cyclone_name_year(change)
         return name
@@ -987,6 +990,8 @@ def change_is_speakable(change: dict) -> bool:
         return bool(name) and not _is_generic_title(name, "amp") and len(name) > 2
     if kind == "project":
         return bool(change_place_name(change))
+    if kind == "climo":
+        return bool(climo_sentence(change, "fr") or climo_sentence(change, "en"))
     if kind == "cyclone":
         return bool(cyclone_name_year(change)[0])
     if kind == "culture":
@@ -2206,17 +2211,21 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
             f"Le {when}{place}, le vent est monté à {kn} kn{dur}{sea}."
         )
     if ev.get("kind") == "climo":
+        packed = {**e, **ev, "t": e.get("t") or ev.get("t"), "kind": "climo"}
+        spoken = climo_sentence(packed, lang)
+        if spoken:
+            return spoken
         event = e.get("event") or ""
         detail = {
             "calms": " — equatorial calms" if en else " — calmes équatoriaux",
             "cyclone-enter": " — cyclone season" if en else " — saison cyclonique",
-        }.get(event, " — wind regime" if en else " — régime de vent")
-        deg = _fact_num(e, "deltaDeg")
-        deg_bit = f" ({_plain(deg)}°)" if deg is not None else ""
+        }.get(event, "")
+        if not detail:
+            return ""
         return (
-            f"On {when}, the climate regime changed{detail}{deg_bit}."
+            f"On {when}, the climate regime changed{detail}."
             if en else
-            f"Le {when}, le régime climatique a changé{detail}{deg_bit}."
+            f"Le {when}, le régime climatique a changé{detail}."
         )
     if ev.get("kind") == "sci":
         nm = _fact_num(e, "nm")
@@ -2832,7 +2841,7 @@ def _group_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for kind, group in by_kind.items():
         if len(group) < 3:
             continue
-        if kind in {"alert-on", "marina", "port", "amp", "project", "zee-enter", "coast"}:
+        if kind in {"alert-on", "marina", "port", "amp", "project", "zee-enter", "coast", "climo"}:
             # Pas de « 10 alertes » ni « N ZEE » : les ZEE et côtes se dosent par date, jamais un comptage (RG2).
             continue
         first, last = group[0], group[-1]
@@ -2906,12 +2915,13 @@ def select_chapter_changes(
     coast = dose_coast_changes(usable, span)
     amp = dose_amp_changes(usable, span)
     proj = dose_project_changes(usable, span)
+    climo = dose_climo_changes(usable, span)
     rest_src = [
         c for c in usable
         if str(c.get("kind") or "") not in ROUTE_NAMING_KINDS
         and not _is_coast_source(c)
         and not _is_amp_change(c)
-        and str(c.get("kind") or "") != "project"
+        and str(c.get("kind") or "") not in {"project", "climo"}
     ]
     if not budget:
         rest_src.sort(key=lambda c: (
@@ -2919,9 +2929,9 @@ def select_chapter_changes(
             c.get("tMs") or 0,
         ))
         others = rest_src[:FILM_CHAPTER_MAX_FREE]
-        # ZEE, côtes, AMP et projets dosés : hors plafond des autres faits.
+        # ZEE, côtes, AMP, projets et climatologie dosés : hors plafond des autres faits.
         return sorted(
-            zee + coast + amp + proj + others,
+            zee + coast + amp + proj + climo + others,
             key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")),
         )
     grouped = _group_changes(rest_src, span)
@@ -2956,7 +2966,7 @@ def select_chapter_changes(
     for item in must + rest:
         add(item)
     seen = {str(x.get("id") or "") for x in picked}
-    for item in zee + coast + amp + proj:
+    for item in zee + coast + amp + proj + climo:
         cid = str(item.get("id") or "")
         if cid and cid in seen:
             continue
@@ -3095,6 +3105,8 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
                 f"Le {when}, à {dist}, le projet {name}."
             )
         return f"On {when}, project {name}." if en else f"Le {when}, le projet {name}."
+    if kind == "climo":
+        return climo_sentence(change, lang)
     if kind == "marina":
         name = change_place_name(change)
         if not name:
@@ -3161,7 +3173,8 @@ def _sentences(text: str) -> list[str]:
 _KEEP_SENT = re.compile(
     r"arriv|départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
-    r"eaux |waters|longe |skirts |d[ée]troit|strait|cap au |heading |haute mer|high seas",
+    r"eaux |waters|longe |skirts |d[ée]troit|strait|cap au |heading |haute mer|high seas|"
+    r"aliz[ée]|trade wind|calmes|calms|de saison|mesur[ée]|seasonal|westerl|mistral|tramontane",
     re.I,
 )
 
@@ -3356,6 +3369,24 @@ def _air_bits_from_moments(
     return []
 
 
+def _climo_from_clock(clock: dict | None, t_a: int, t_b: int, first: bool) -> list[dict]:
+    """Bascule d'horloge dans la fenêtre du chapitre — source unique pour la voix."""
+    out: list[dict] = []
+    for ev in notable_climo_changes(clock or {}):
+        t = _ms(ev.get("t") or ev.get("iso"))
+        if t is None:
+            continue
+        if first:
+            if t < t_a or t > t_b:
+                continue
+        elif t <= t_a or t > t_b:
+            continue
+        change = {**ev, "tMs": t, "id": str(ev.get("id") or f"climo:{ev.get('event')}:{t}")}
+        if change_is_speakable(change):
+            out.append(change)
+    return out
+
+
 def build_raw_from_moments(
     clock: dict | None,
     marks: list | None,
@@ -3406,6 +3437,10 @@ def build_raw_from_moments(
         else:
             sail_moments = [m for m in moments if isinstance(m, dict) and not _moment_is_air(m)]
         flat = _flatten_changes(sail_moments, w["tA"], w["tB"], first=i == 0)
+        clock_climo = _climo_from_clock(w.get("clock") or clock, w["tA"], w["tB"], first=i == 0)
+        if clock_climo:
+            flat = [c for c in flat if str(c.get("kind") or "") != "climo"]
+            flat.extend(clock_climo)
         for extra in _dest_culture_changes(dest):
             extra = {**extra, "t": (dest or {}).get("iso"), "tMs": w["tB"]}
             flat.append(extra)
