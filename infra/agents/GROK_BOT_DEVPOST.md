@@ -90,7 +90,7 @@ python3 infra/agents/devpost_answers.py --wake-fill        # réveille le bot : 
 python3 infra/agents/devpost_answers.py --dry-run          # affiche le prompt Fable sans rien lancer
 ```
 
-Le prompt Fable exige : langage simple avant technique, options recopiées mot pour mot, une table de
+Le prompt Fable exige : le champ « existing project — how significantly updated since August 26 » commence par le chiffre mesuré dans git (`python3 infra/agents/devpost_code_share.py` : part du code actuel écrite ou réécrite depuis le 26 août, de N à M lignes, commits, fichiers), langage simple avant technique, options recopiées mot pour mot, une table de
 conformité aux règles avec preuve (fichier:ligne, URL), une analyse des critères, et l'honnêteté (aucune
 fonctionnalité annoncée qui ne tourne pas en production — ex. Tavily et le juge Ultra sont coupés par défaut
 depuis le 29 sept. : la réponse « Did you use Tavily? » doit dire ce qui est vrai le jour de la soumission).

@@ -87,10 +87,24 @@ def wake(kind: str) -> bool:
         return False
 
 
-def build_prompt(form_comment: dict, date_tag: str) -> str:
+def code_share(since: str = "2026-08-26") -> dict:
+    """Part du code écrite depuis le début du hackathon (devpost_code_share.py) — exigée par le porteur dans la
+    réponse « existing project : how significantly updated » (29 sept.)."""
+    import subprocess  # noqa: PLC0415
+    p = subprocess.run([sys.executable, str(HERE / "devpost_code_share.py"), "--since", since, "--json"],
+                       cwd=str(rl.ROOT), capture_output=True, text=True, check=False, timeout=900)
+    try:
+        return json.loads(p.stdout)
+    except json.JSONDecodeError:
+        return {"error": (p.stderr or p.stdout)[:200]}
+
+
+def build_prompt(form_comment: dict, date_tag: str, share: dict | None = None) -> str:
     body = form_comment.get("body") or ""
     data = json_block(body)
     n_fields = len((data or {}).get("fields") or [])
+    share = share or {}
+    share_txt = share.get("sentenceEn") or "(mesure indisponible : lance python3 infra/agents/devpost_code_share.py et recopie la phrase)"
     return f"""Tu es l'agent Fable de la soumission Devpost de NAVIGUIDE (dépôt Berry-Mappemonde/Blue-Intelligence, hackathon Nebius × NVIDIA Global AI Hackathon). Tu travailles dans ce worktree (main à jour). Tu ne touches à AUCUN code : tu écris un document et un commentaire.
 
 Lis d'abord, en entier : {SUBMISSION_DOC} (la soumission v1.0 du 20 sept. : textes déjà écrits, réponses déjà tranchées, liste de contrôle § 0, critères § 5), README.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/PLAN_DEUX_MODES_2026-09-29.md (l'application a maintenant deux modes : Suivre et Tracer — le mot « Simulation » ne doit plus apparaître), infra/vps/README.md § politique LLM (depuis le 29 sept. : mode on-demand, juge Ultra et veille Tavily coupés par défaut).
@@ -107,7 +121,9 @@ Ta mission, dans cet ordre :
 
 2) CRITÈRES DE JUGEMENT. Pour chaque critère (avec sa pondération si donnée) : ce que le projet montre, où le juge le verra (écran, URL, minute de la vidéo), la faiblesse honnête, et une phrase que la soumission doit contenir pour marquer le point.
 
-3) RÉPONSES. Pour CHAQUE champ du relevé, propose la valeur finale, en anglais, en respectant la limite de caractères (compte-les et écris le nombre). Langage simple d'abord : une personne du marketing ou de l'UX doit comprendre la première phrase ; le technique vient ensuite, jamais de jargon interne (« perles », « sac », « lot RG6 ») sans le dire en clair. Pour chaque case à cocher, menu déroulant ou choix multiple : recopie l'option choisie MOT POUR MOT depuis la liste relevée (jamais une reformulation), avec une ligne de raison ; si aucune option ne convient, dis-le. Repars des textes de {SUBMISSION_DOC} quand ils sont encore vrais ; corrige ce qui a changé (deux modes Suivre / Tracer ; film narré et ancré ; ce qui est coupé ; ce qui est nouveau depuis le 20 sept. — lis git log --since=2026-09-20 --oneline | head -80 et les PR mergées). Aucun chiffre que tu ne peux pas vérifier (notes 1–10 : propose une note ET la raison, marque-la « à confirmer par le porteur »).
+3) RÉPONSES. Pour CHAQUE champ du relevé, propose la valeur finale, en anglais, en respectant la limite de caractères (compte-les et écris le nombre). Le champ « existing project : how significantly was it updated since August 26, 2026 » (ou son libellé exact dans le relevé) COMMENCE par le chiffre mesuré dans git, tel quel, puis raconte ce qui a été construit — porteur, 29 sept. :
+   « {share_txt} »
+   (mesure : python3 infra/agents/devpost_code_share.py ; tu peux la relancer, jamais l'arrondir vers le haut ni la reformuler en promesse). Langage simple d'abord : une personne du marketing ou de l'UX doit comprendre la première phrase ; le technique vient ensuite, jamais de jargon interne (« perles », « sac », « lot RG6 ») sans le dire en clair. Pour chaque case à cocher, menu déroulant ou choix multiple : recopie l'option choisie MOT POUR MOT depuis la liste relevée (jamais une reformulation), avec une ligne de raison ; si aucune option ne convient, dis-le. Repars des textes de {SUBMISSION_DOC} quand ils sont encore vrais ; corrige ce qui a changé (deux modes Suivre / Tracer ; film narré et ancré ; ce qui est coupé ; ce qui est nouveau depuis le 20 sept. — lis git log --since=2026-09-20 --oneline | head -80 et les PR mergées). Aucun chiffre que tu ne peux pas vérifier (notes 1–10 : propose une note ET la raison, marque-la « à confirmer par le porteur »).
 
 4) LIVRABLES.
    a) Écris docs/DEVPOST_REPONSES_{date_tag}.md avec, dans l'ordre : « À régler avant de soumettre » ; conformité (table règle → état → preuve) ; critères (table) ; réponses champ par champ (onglet, libellé, valeur, nombre de caractères / option choisie + raison) ; « Ce que je n'ai pas pu vérifier ». Français pour les consignes, anglais pour les valeurs.
@@ -141,7 +157,10 @@ def main() -> None:
     if answers and answers.get("created_at", "") > form.get("created_at", ""):
         print(f"Des réponses ✍️ ({answers.get('html_url')}) sont déjà plus récentes que le relevé 📋 : relancer --wake-scrape pour un nouveau relevé, ou --wake-fill pour remplir.")
     date_tag = time.strftime("%Y-%m-%d")
-    prompt = build_prompt(form, date_tag)
+    share = code_share()
+    if share.get("sentenceEn"):
+        print("Part du code depuis le 26 août :", share["sentenceEn"])
+    prompt = build_prompt(form, date_tag, share)
     if args.dry_run:
         print(prompt)
         return
