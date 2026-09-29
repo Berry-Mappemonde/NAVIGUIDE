@@ -83,6 +83,7 @@ describe("filmCamera lot R3 — premier mouvement = chapitre 1", () => {
     assert.match(controller, /if \(!previous\.filmActive && this\.config\.filmActive\)/);
     assert.match(controller, /if \(previous\.filmActive && !this\.config\.filmActive\)/);
     assert.match(controller, /this\.camera\.recapture = this\.config\.cinemaRecapture/);
+    assert.match(controller, /this\.camera\.filmZoomHold/);
     assert.match(controller, /this\.map\.setView\(\s*\[\s*live\.lat,\s*lonCam\s*\]/);
     assert.doesNotMatch(controller, /filmActive[\s\S]{0,80}fitBounds/);
     assert.doesNotMatch(controller, /filmActive[\s\S]{0,200}zoomForRemaining/);

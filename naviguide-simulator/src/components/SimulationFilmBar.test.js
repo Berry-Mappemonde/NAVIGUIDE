@@ -164,10 +164,13 @@ describe("barre film (lot RG8 / RC22) — pilules et durée estimée", () => {
     assert.doesNotMatch(bar, /calibrateRate/);
   });
 
-  it("pendant le film : le même film-duration reste, boutons disabled / opacity", () => {
-    const durAt = bar.indexOf('data-testid="film-duration"');
-    assert.ok(durAt >= 0);
-    const durBlock = bar.slice(durAt, durAt + 1800);
+  it("pendant le film : les pilules restent, boutons disabled / opacity", () => {
+    assert.match(bar, /data-testid="film-duration"/);
+    assert.match(bar, /\{\.\.\.\(replay\.active \? \{ "data-testid": undefined \} : \{\}\)\}/);
+    assert.match(bar, /replay\.canStart \|\| replay\.active/);
+    const lockAt = bar.indexOf('data-testid="film-duration"');
+    assert.ok(lockAt >= 0);
+    const durBlock = bar.slice(lockAt, lockAt + 1800);
     assert.match(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
     assert.match(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
     assert.match(durBlock, /disabled:opacity-30 disabled:cursor-not-allowed/);
