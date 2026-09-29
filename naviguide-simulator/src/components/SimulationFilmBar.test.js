@@ -153,14 +153,26 @@ describe("barre film (lot RG9) — sous-titre = phrase en cours", () => {
   });
 });
 
-describe("barre film (lot RG8) — pilules et durée estimée", () => {
-  it("garde 2:30 / 3:00 et l'estimée hors film (RE3 : absentes pendant la lecture)", () => {
+describe("barre film (lot RG8 / RC22) — pilules et durée estimée", () => {
+  it("garde 2:30 / 3:00 et l'estimée hors film, aucune cochée par défaut", () => {
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /filmDuration150/);
     assert.match(bar, /filmDuration180/);
     assert.match(bar, /data-testid="film-duration-estimate"/);
-    assert.match(bar, /replay\.canStart \? \(/);
+    assert.match(bar, /replay\.canStart \|\| replay\.active/);
     assert.match(bar, /\{replay\.active \? \(/);
+    assert.doesNotMatch(bar, /calibrateRate/);
+  });
+
+  it("pendant le film : le même film-duration reste, boutons disabled / opacity", () => {
+    const durAt = bar.indexOf('data-testid="film-duration"');
+    assert.ok(durAt >= 0);
+    const durBlock = bar.slice(durAt, durAt + 1800);
+    assert.match(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /disabled:opacity-30 disabled:cursor-not-allowed/);
+    assert.match(durBlock, /data-testid="film-duration-estimate"/);
+    assert.match(bar, /data-testid="replay-stop"/);
     assert.doesNotMatch(bar, /calibrateRate/);
   });
 });

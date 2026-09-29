@@ -112,11 +112,17 @@ test("lot RG3 — AMP réelles et projets BI, jamais une zone de pêche", async 
   }
 
   const blob = film.chapters.map((c) => c.text || "").join(" ");
-  const rg3Ready = REAL_AMP.test(blob) || PROJECT.test(blob);
-  if (!rg3Ready) {
+  const hasRg2 = /eaux |cap au |waters |heading /i.test(blob);
+  const hasAmp = REAL_AMP.test(blob);
+  const hasProj = PROJECT.test(blob);
+  if (!hasAmp && !hasProj) {
+    if (hasRg2) {
+      expect(hasAmp, "AMP réelle absente alors que le récit a déjà les eaux/cap RG2").toBeTruthy();
+      expect(hasProj, "projet BI absent alors que le récit a déjà les eaux/cap RG2").toBeTruthy();
+    }
     test.info().annotations.push({
-      type: "stock pré-RG3",
-      description: "film servi encore à l'ancienne clé — remplisseur doit recalculer (FILM_SCRIPT_REV=rg3)",
+      type: "film sans eaux RG2",
+      description: "GET /voyage/official/film sans eaux/cap — assertions AMP/projet sautées",
     });
     await shot(page, "01-amp");
     await shot(page, "02-projet");

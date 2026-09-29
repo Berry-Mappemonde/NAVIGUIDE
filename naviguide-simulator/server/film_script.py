@@ -131,7 +131,7 @@ COLOR_KINDS = frozenset({
 FILM_CHAPTER_MAX_FREE = 10
 FILM_FREE_MAX_WORDS = 800
 FILM_ESTIMATE_CPS = 15  # débit constant (27 sept.) : durée = caractères ÷ 15 ; pas de recalibrage
-FILM_TIER_SHORT = 2     # 2:30 — ouverture, eaux, une AMP ou un projet, escales
+FILM_TIER_SHORT = 2     # 2:30 — ouverture, eaux, une AMP et un projet, escales
 FILM_TIER_MEDIUM = 3    # 3:00 — + côtes et climatologie
 FILM_TIER_FULL = 4      # intégral — tout, sans plafond
 ROUTE_NEAR_NM = 15.0
@@ -2147,21 +2147,32 @@ def film_estimated_seconds(chars: int, cps: float | None = None) -> int:
     return max(1, int(round(n / rate)))
 
 
-def _one_amp_or_project(amp: list[dict], proj: list[dict]) -> Optional[dict]:
-    """2:30 : une AMP ou un projet, gold_on puis le plus proche."""
-    rows = [c for c in list(amp) + list(proj) if isinstance(c, dict)]
-    if not rows:
+def _best_named_change(rows: list[dict], *, gold_first: bool) -> Optional[dict]:
+    usable = [c for c in rows if isinstance(c, dict)]
+    if not usable:
         return None
 
     def gold(c: dict) -> int:
         return 0 if c.get("gold_on") in (True, 1, "1", "true", "True") else 1
 
-    rows.sort(key=lambda c: (
-        gold(c),
+    usable.sort(key=lambda c: (
+        gold(c) if gold_first else 0,
         change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
         c.get("tMs") or 0,
     ))
-    return rows[0]
+    return usable[0]
+
+
+def _amp_and_project(amp: list[dict], proj: list[dict]) -> list[dict]:
+    """2:30 : une AMP et un projet s'ils existent (plus proche ; projet : gold_on d'abord)."""
+    out: list[dict] = []
+    picked_amp = _best_named_change(amp, gold_first=False)
+    picked_proj = _best_named_change(proj, gold_first=True)
+    if picked_amp is not None:
+        out.append(picked_amp)
+    if picked_proj is not None:
+        out.append(picked_proj)
+    return out
 
 
 def _tier_route_extras(
@@ -2178,9 +2189,7 @@ def _tier_route_extras(
         return zee + coast + amp + proj + climo + stations
     extras = list(zee)
     if tier <= FILM_TIER_SHORT:
-        one = _one_amp_or_project(amp, proj)
-        if one is not None:
-            extras.append(one)
+        extras.extend(_amp_and_project(amp, proj))
         return extras
     return extras + coast + amp + proj + climo
 
@@ -4389,21 +4398,93 @@ def date_density_ok(text: str, lang: str = "fr") -> bool:
     return n_dates * 2 <= len(sents) + 1
 
 
-_KEEP_SENT = re.compile(
-    r"arriv|Berry-Mappemonde|quitte|leaves |milles|miles|jours de mer|days at sea|"
+_AMP_OR_PROJECT_SENT = re.compile(
+    r"aire marine|marine protected area|le projet |project ",
+    re.I,
+)
+_WATERS_SENT = re.compile(
+    r"eaux |waters|haute mer|high seas",
+    re.I,
+)
+# P1/P2 : ouverture, escales, cap — pas les côtes / climo / stations, pas les eaux en trop.
+_CORE_KEEP_SENT = re.compile(
+    r"arriv|Berry-Mappemonde|quitte|leaves |jours de mer|days at sea|"
     r"nœuds de moyenne|knots on average|amarré|moored|d'escale|stopover|"
     r"départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
-    r"eaux |waters|longe |skirts |d[ée]troit|strait|cap au |heading |haute mer|high seas|"
-    r"aliz[ée]|trade wind|calmes|calms|de saison|mesur[ée]|seasonal|westerl|mistral|tramontane",
+    r"cap au |heading ",
+    re.I,
+)
+_KEEP_SENT = re.compile(
+    r"aire marine|marine protected area|le projet |project |"
+    r"arriv|Berry-Mappemonde|quitte|leaves |jours de mer|days at sea|"
+    r"nœuds de moyenne|knots on average|amarré|moored|d'escale|stopover|"
+    r"départ|departure|left |quitté|approche|approaching|avion|flies|flight|"
+    r"envole|par la route|by road|attend à|waits at|aujourd|today|"
+    r"expédition|expedition|escales|stops|destination|entre le |between |"
+    r"à venir|still to come|le plan compte|the plan has|"
+    r"cap au |heading ",
     re.I,
 )
 
 
+def _trim_sentence_rank(sent: str) -> int:
+    """0 = ne jamais retirer (AMP, projet, ouverture, escales).
+    1 = eaux (seulement en trop, après P3/P4).
+    2 = P3/P4 (côtes, climo, stations) et le reste — d'abord.
+    """
+    s = sent or ""
+    if _AMP_OR_PROJECT_SENT.search(s) or _CORE_KEEP_SENT.search(s):
+        return 0
+    if _WATERS_SENT.search(s):
+        return 1
+    return 2
+
+
+def _drop_over_budget_sentence(sents: list[str], *, keep_head: int = 0) -> bool:
+    """Retire une phrase entière : P3/P4 d'abord, puis une eau en trop. Jamais au milieu."""
+    if len(sents) <= keep_head:
+        return False
+    best_i: Optional[int] = None
+    best_rank = 0
+    start = min(keep_head, len(sents))
+    for i in range(len(sents) - 1, start - 1, -1):
+        rank = _trim_sentence_rank(sents[i])
+        if rank > best_rank:
+            best_rank = rank
+            best_i = i
+            if rank >= 2:
+                break
+    if best_i is None or best_rank <= 0:
+        return False
+    sents.pop(best_i)
+    return True
+
+
+def _trim_script_to_char_budget(chapters: list[dict], hi: int) -> None:
+    guard = 0
+    while script_chars(chapters) > hi and chapters and guard < 200:
+        dropped = False
+        for ch in reversed(chapters):
+            sents = _sentences(ch.get("text") or "")
+            if _drop_over_budget_sentence(sents, keep_head=2):
+                ch["text"] = " ".join(sents).strip()
+                dropped = True
+                break
+        if not dropped:
+            break
+        guard += 1
+
+
 def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
-    """Assemble le chapitre. Jamais de phrase de remplissage. Budget = plafond, pas un plancher."""
+    """Assemble le chapitre. Jamais de phrase de remplissage. Budget = plafond, pas un plancher.
+
+    Au-dessus du plafond : on retire des phrases entières, P3/P4 d'abord (côtes,
+    climo, stations), puis des eaux en trop — jamais une AMP ni un projet, jamais
+    au milieu d'une phrase.
+    """
     blob = re.sub(r"\s{2,}", " ", (text or "").strip())
     for bit in extras:
         if bit and bit not in blob:
@@ -4413,13 +4494,8 @@ def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> st
         hi = max(int(cap * 1.1), cap)
         while len(blob) > hi:
             sents = _sentences(blob)
-            drop_i = next(
-                (i for i in range(len(sents) - 1, 1, -1) if not _KEEP_SENT.search(sents[i])),
-                None,
-            )
-            if drop_i is None:
+            if not _drop_over_budget_sentence(sents, keep_head=2):
                 break
-            sents.pop(drop_i)
             blob = " ".join(sents).strip()
     blob = speak_film_text(split_short_sentences(blob), lang)
     blob = " ".join(thin_chapter_dates(_sentences(blob), lang))
@@ -4519,16 +4595,10 @@ def _trim_free_script(chapters: list[dict], max_words: int = FILM_FREE_MAX_WORDS
         dropped = False
         for ch in reversed(chapters):
             sents = _sentences(ch.get("text") or "")
-            drop_i = next(
-                (i for i in range(len(sents) - 1, -1, -1) if not _KEEP_SENT.search(sents[i])),
-                None,
-            )
-            if drop_i is None or len(sents) <= 1:
-                continue
-            sents.pop(drop_i)
-            ch["text"] = " ".join(sents).strip()
-            dropped = True
-            break
+            if _drop_over_budget_sentence(sents, keep_head=1):
+                ch["text"] = " ".join(sents).strip()
+                dropped = True
+                break
         if not dropped:
             break
     return chapters
@@ -4880,18 +4950,9 @@ def build_raw_from_moments(
             "toLat": w.get("toLat"),
             "toLon": w.get("toLon"),
         })
-    # RG8 : intégral sans plafond — on ne coupe plus à FILM_FREE_MAX_WORDS.
+    # RG8 / RC22 : intégral sans plafond ; 2:30 / 3:00 : phrases entières, P3/P4 puis eaux.
     if has_budget and target > 0:
-        n = script_chars(chapters)
-        hi = int(target * 1.1)
-        guard = 0
-        while n > hi and chapters and guard < 120:
-            sents = _sentences(chapters[-1]["text"])
-            if len(sents) <= 2 or _KEEP_SENT.search(sents[-1] or ""):
-                break
-            chapters[-1]["text"] = " ".join(sents[:-1]).strip()
-            n = script_chars(chapters)
-            guard += 1
+        _trim_script_to_char_budget(chapters, int(target * 1.1))
     _ensure_air_sentences(chapters, marks=marks, moments=moments, lang=lang)
     chars = script_chars(chapters)
     return {
