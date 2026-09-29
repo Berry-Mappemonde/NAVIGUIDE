@@ -48,4 +48,27 @@ describe("ScenePlaybackController", () => {
     assert.equal(controller.snapshot().playing, false);
     controller.destroy();
   });
+
+  it("émet à la frame en mode film, et reste à 125 ms hors film", () => {
+    const frames = [];
+    const controller = new ScenePlaybackController({
+      onFrame: (snapshot) => frames.push(snapshot),
+      requestFrame: () => 1,
+      cancelFrame: () => {},
+    });
+    controller.configure({ flat, marks: [], boatKnots: 8, enabled: true, filmActive: false });
+    const afterConfig = frames.length;
+    controller.lastFrameAt = 1000;
+    controller.emitFrame(false, 1040);
+    assert.equal(frames.length, afterConfig, "hors film : intervalle 125 ms");
+    controller.emitFrame(false, 1130);
+    assert.ok(frames.length > afterConfig, "hors film : un frame après 125 ms");
+
+    controller.configure({ filmActive: true });
+    const atFilm = frames.length;
+    controller.lastFrameAt = 2000;
+    controller.emitFrame(false, 2008);
+    assert.ok(frames.length > atFilm, "film : un frame dès la frame suivante");
+    controller.destroy();
+  });
 });

@@ -24,6 +24,10 @@ export const FILM_CALIBRATE_SLACK_S = 8;
 export const FILM_ZOOM_MIN = 3;
 export const FILM_ZOOM_MAX = 7;
 export const FILM_FLY_SECONDS = 1.2;
+/** Recalcul Leaflet au plus toutes les N frames pendant le film (RG13). */
+export const FILM_RESET_EVERY = 36;
+/** Le bateau reste dans les 40 % centraux de l'écran. */
+export const FILM_BOAT_KEEP_FRAC = 0.4;
 export const FILM_VIEW_HZ = 30;
 export const FILM_MIN_CHAPTER_SECONDS = 12;
 export const FILM_RECALE_MS = 300;

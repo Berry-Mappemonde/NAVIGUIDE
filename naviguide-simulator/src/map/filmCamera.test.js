@@ -3,18 +3,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FILM_PAN_MAX_SCREEN } from "../engine/replay.js";
+import { FILM_BOAT_KEEP_FRAC, FILM_PAN_MAX_SCREEN } from "../engine/replay.js";
 import {
   applyFilmCamera,
   clampFilmPan,
+  filmApproachZoom,
   filmChapterZoom,
   FILM_INTERP_DELAY_MS,
   FILM_TILE_SLOW,
   FILM_ZOOM_ARCHIPELAGO_MAX,
   filmPanMaxFrac,
   interpolateFilmSamples,
+  keepBoatInFrame,
   preloadFilmTiles,
   pushFilmSample,
+  smoothFilmHeading,
   stepFilmCamera,
   tilesAlongLeg,
 } from "./filmCamera.js";
@@ -71,8 +74,9 @@ describe("filmCamera lot R3 — premier mouvement = chapitre 1", () => {
       lastSetViewAt: first.lastSetViewAt,
       flyingUntil: first.flyingUntil,
     });
-    assert.equal(next.action, "flyTo");
-    assert.equal(calls.filter((c) => c.action === "flyTo").length, 1);
+    assert.equal(next.action, "setView");
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+    assert.equal(calls.filter((c) => c.action === "setView").length, 2);
   });
 
   it("MapSceneController : pas de flyTo / fitBounds sur la route entière au lancement ni au retour live", () => {
@@ -85,15 +89,28 @@ describe("filmCamera lot R3 — premier mouvement = chapitre 1", () => {
   });
 });
 
-describe("filmCamera lot R4 — pan borné, un flyTo par chapitre", () => {
+describe("filmCamera lot R4 / RG13 — pan borné, un setView par chapitre", () => {
   function fakeMap(center = { lat: 46, lng: -1 }) {
     const calls = [];
     let here = { ...center };
     const map = {
       flyTo(c, zoom) { calls.push({ action: "flyTo", center: c, zoom }); here = { lat: c[0], lng: c[1] }; },
       setView(c, zoom, opts) { calls.push({ action: "setView", center: c, zoom, opts }); here = { lat: c[0], lng: c[1] }; },
+      panBy(offset) {
+        calls.push({ action: "panBy", offset });
+        const p0 = map.latLngToContainerPoint([here.lat, here.lng]);
+        const ll = map.containerPointToLatLng({ x: p0.x + offset[0], y: p0.y + offset[1] });
+        here = { lat: ll.lat, lng: ll.lng };
+      },
+      _rawPanBy(offset) {
+        calls.push({ action: "panBy", offset });
+        const p0 = map.latLngToContainerPoint([here.lat, here.lng]);
+        const ll = map.containerPointToLatLng({ x: p0.x + (offset.x ?? 0), y: p0.y + (offset.y ?? 0) });
+        here = { lat: ll.lat, lng: ll.lng };
+      },
       getSize() { return { x: 1000, y: 800 }; },
       getCenter() { return here; },
+      getZoom() { return 5; },
       latLngToContainerPoint(ll) {
         const lat = Array.isArray(ll) ? ll[0] : ll.lat;
         const lng = Array.isArray(ll) ? ll[1] : ll.lng;
@@ -113,28 +130,30 @@ describe("filmCamera lot R4 — pan borné, un flyTo par chapitre", () => {
     return { map, calls };
   }
 
-  it("borne le déplacement par frame à 2 % de la largeur d'écran", () => {
+  it("borne le pas par la vitesse, et garde le bateau dans 40 % du centre", () => {
     const { map } = fakeMap({ lat: 46, lng: -1 });
-    const clamped = clampFilmPan([46, -1], [46, 9], map);
+    const clamped = clampFilmPan([46, -1], [46, 9], map, { maxFrac: FILM_PAN_MAX_SCREEN, boat: [46, -0.5] });
     const movedPx = Math.abs((clamped[1] - (-1)) * 10);
-    assert.ok(movedPx <= 20 + 1e-6, `déplacement ${movedPx} px > 20 px (2 % de 1000)`);
+    assert.ok(movedPx <= 1000 * FILM_BOAT_KEEP_FRAC + 1e-6, `déplacement ${movedPx} px hors cadre`);
 
     const first = applyFilmCamera(map, {
       chapterIdx: 0,
       lastChapterIdx: 0,
       lat: 46,
-      lon: 9,
+      lon: -0.5,
       heading: 90,
       zoom: 5,
       now: 50,
       lastCenter: [46, -1],
+      boatPx: 8,
+      framesSinceReset: 0,
     });
-    assert.equal(first.action, "setView");
+    assert.ok(first.action === "panBy" || first.action === "setView" || first.action === "hold");
     const step = Math.abs(first.lastCenter[1] - (-1));
-    assert.ok(step <= 2 + 1e-6, `lon ${step}° > 2°`);
+    assert.ok(step <= 4 + 1e-6, `lon ${step}° trop grand pour un pas`);
   });
 
-  it("un seul flyTo par changement de chapitre", () => {
+  it("un seul setView au changement de chapitre, puis translation", () => {
     const { map, calls } = fakeMap();
     const a = applyFilmCamera(map, {
       chapterIdx: 0, lastChapterIdx: null, lat: 46, lon: -1, heading: 0, zoom: 5, now: 0,
@@ -143,15 +162,21 @@ describe("filmCamera lot R4 — pan borné, un flyTo par chapitre", () => {
       chapterIdx: 1, lastChapterIdx: a.lastChapterIdx, lat: 40, lon: 8, heading: 0, zoom: 5,
       now: 100, lastSetViewAt: a.lastSetViewAt, flyingUntil: a.flyingUntil, lastCenter: a.lastCenter,
     });
-    assert.equal(b.action, "flyTo");
+    assert.equal(b.action, "setView");
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+    let st = b;
     for (let i = 0; i < 8; i++) {
-      const wait = applyFilmCamera(map, {
-        chapterIdx: 1, lastChapterIdx: b.lastChapterIdx, lat: 40, lon: 8, heading: 0, zoom: 5,
-        now: 200 + i * 50, lastSetViewAt: b.lastSetViewAt, flyingUntil: b.flyingUntil, lastCenter: b.lastCenter,
+      st = applyFilmCamera(map, {
+        chapterIdx: 1, lastChapterIdx: st.lastChapterIdx, lat: 40.01 + i * 0.002, lon: 8.01 + i * 0.002,
+        heading: 0, zoom: 5,
+        now: 200 + i * 16, lastSetViewAt: st.lastSetViewAt, flyingUntil: 0, lastCenter: st.lastCenter,
+        framesSinceReset: st.framesSinceReset, boatPx: 6,
       });
-      assert.equal(wait.action, "fly-wait");
+      assert.notEqual(st.action, "flyTo");
+      assert.notEqual(st.action, "fly-wait");
     }
-    assert.equal(calls.filter((c) => c.action === "flyTo").length, 1);
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+    assert.ok(calls.filter((c) => c.action === "panBy").length >= 1, "pas de translation après le chapitre");
   });
 });
 
@@ -191,6 +216,18 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
     const map = {
       flyTo(c, zoom) { calls.push({ action: "flyTo", center: c, zoom }); here = { lat: c[0], lng: c[1] }; },
       setView(c, zoom, opts) { calls.push({ action: "setView", center: c, zoom, opts }); here = { lat: c[0], lng: c[1] }; },
+      panBy(offset) {
+        calls.push({ action: "panBy", offset });
+        const p0 = map.latLngToContainerPoint([here.lat, here.lng]);
+        const ll = map.containerPointToLatLng({ x: p0.x + offset[0], y: p0.y + offset[1] });
+        here = { lat: ll.lat, lng: ll.lng };
+      },
+      _rawPanBy(offset) {
+        calls.push({ action: "panBy", offset });
+        const p0 = map.latLngToContainerPoint([here.lat, here.lng]);
+        const ll = map.containerPointToLatLng({ x: p0.x + (offset.x ?? 0), y: p0.y + (offset.y ?? 0) });
+        here = { lat: ll.lat, lng: ll.lng };
+      },
       getSize() { return { x: 1000, y: 800 }; },
       getCenter() { return here; },
       getZoom() { return 5; },
@@ -228,8 +265,11 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
     let lastChapterIdx = 0;
     let lastCenter = [46, -1];
     let flyingUntil = 0;
+    let framesSinceReset = 0;
+    let lastBoat = { lat: 46, lon: -1 };
     const centers = [];
-    const maxPx = 1000 * FILM_PAN_MAX_SCREEN + 1e-6;
+    const actions = [];
+    const maxPx = 1000 * FILM_BOAT_KEEP_FRAC + 1e-6;
     for (let now = FILM_INTERP_DELAY_MS; now <= 1000; now += 16) {
       const next = stepFilmCamera(map, {
         samples,
@@ -240,13 +280,19 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
         zoom: 5,
         tilesReady: true,
         chapterIdx: 0,
+        lastBoat,
+        framesSinceReset,
       });
       lastChapterIdx = next.lastChapterIdx;
       lastCenter = next.lastCenter;
       flyingUntil = next.flyingUntil;
-      if (next.action === "setView" && lastCenter) centers.push(lastCenter);
+      framesSinceReset = next.framesSinceReset || 0;
+      if (next.pose) lastBoat = { lat: next.pose.lat, lon: next.pose.lon };
+      actions.push(next.action);
+      if ((next.action === "setView" || next.action === "panBy") && lastCenter) centers.push(lastCenter);
     }
     assert.ok(centers.length >= 8, `pas assez de pas (${centers.length})`);
+    assert.ok(actions.filter((a) => a === "panBy").length >= 4, `pas assez de panBy (${actions.join(",")})`);
     for (let i = 1; i < centers.length; i++) {
       assert.ok(centers[i][1] >= centers[i - 1][1] - 1e-9, `lon recule à ${i}`);
       const stepPx = Math.abs((centers[i][1] - centers[i - 1][1]) * 10);
@@ -255,29 +301,30 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
     assert.equal(filmPanMaxFrac(false), FILM_PAN_MAX_SCREEN * FILM_TILE_SLOW);
   });
 
-  it("zoom invariant dans une jambe", () => {
+  it("zoom de croisière stable au milieu de jambe (hors approche)", () => {
     const { map, calls } = fakeMap();
     const samples = [];
     pushFilmSample(samples, { t: 0, lat: 46, lon: -1, heading: 90, chapterIdx: 0 });
     pushFilmSample(samples, { t: 400, lat: 46.2, lon: 0, heading: 90, chapterIdx: 0 });
-    let st = { lastChapterIdx: 0, lastCenter: [46, -1], flyingUntil: 0 };
+    let st = { lastChapterIdx: 0, lastCenter: [46, -1], flyingUntil: 0, framesSinceReset: 0 };
     for (let now = 80; now <= 400; now += 16) {
       const next = stepFilmCamera(map, {
         samples,
         now,
         ...st,
         zoom: 5,
+        baseZoom: 5,
         chapterIdx: 0,
       });
       st = {
         lastChapterIdx: next.lastChapterIdx,
         lastCenter: next.lastCenter,
         flyingUntil: next.flyingUntil,
+        framesSinceReset: next.framesSinceReset || 0,
       };
     }
     const zooms = calls.filter((c) => c.action === "setView").map((c) => c.zoom);
-    assert.ok(zooms.length > 0);
-    assert.ok(zooms.every((z) => z === 5), `zoom ${zooms.join(",")}`);
+    assert.ok(zooms.every((z) => z == null || Math.abs(z - 5) < 0.4), `zoom ${zooms.join(",")}`);
   });
 
   it("interpole entre deux échantillons espacés", () => {
@@ -308,5 +355,88 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
     assert.match(controller, /stepFilmCamera/);
     assert.match(controller, /preloadFilmTiles/);
     assert.doesNotMatch(controller, /if \(this\.config\.filmActive\) this\.syncFilmCamera\(this\.config\);/);
+  });
+});
+
+describe("filmCamera lot RG13 — 60 Hz, cap lissé, zoom d'approche", () => {
+  it("ne pose pas de setView à chaque frame : translation puis commit", () => {
+    const calls = [];
+    let here = { lat: 46, lng: -1 };
+    const map = {
+      flyTo() { calls.push("flyTo"); },
+      setView(c) { calls.push("setView"); here = { lat: c[0], lng: c[1] }; },
+      _rawPanBy() { calls.push("panBy"); },
+      panBy() { calls.push("panBy"); },
+      getSize() { return { x: 1000, y: 800 }; },
+      getCenter() { return here; },
+      getZoom() { return 5; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : ll.lng;
+        return { x: lng * 10, y: lat * 10 };
+      },
+      containerPointToLatLng(p) { return { lat: p.y / 10, lng: p.x / 10 }; },
+    };
+    applyFilmCamera(map, {
+      chapterIdx: 0, lastChapterIdx: null, lat: 46, lon: -1, heading: 90, zoom: 5, now: 0,
+    });
+    let lastCenter = [46, -1];
+    let framesSinceReset = 0;
+    for (let i = 1; i <= 12; i++) {
+      const next = applyFilmCamera(map, {
+        chapterIdx: 0, lastChapterIdx: 0, lat: 46, lon: -1 + i * 0.05, heading: 90, zoom: 5,
+        now: i * 16, lastCenter, framesSinceReset, boatPx: 5,
+      });
+      lastCenter = next.lastCenter;
+      framesSinceReset = next.framesSinceReset;
+    }
+    const views = calls.filter((c) => c === "setView").length;
+    const pans = calls.filter((c) => c === "panBy").length;
+    assert.ok(pans >= 6, `panBy ${pans}`);
+    assert.ok(views <= 3, `setView trop fréquent : ${views}`);
+    assert.equal(calls.filter((c) => c === "flyTo").length, 0);
+  });
+
+  it("lisse le cap sur la jambe, pas le cap instantané", () => {
+    const samples = [];
+    pushFilmSample(samples, { t: 0, lat: 46, lon: -1, heading: 80, chapterIdx: 0 });
+    pushFilmSample(samples, { t: 80, lat: 46, lon: -0.8, heading: 90, chapterIdx: 0 });
+    pushFilmSample(samples, { t: 160, lat: 46, lon: -0.6, heading: 100, chapterIdx: 0 });
+    const h = smoothFilmHeading(samples, 160);
+    assert.ok(Math.abs(h - 90) < 8, `cap lissé ${h} trop près de l'instantané 160`);
+    assert.ok(h > 80 && h < 120);
+  });
+
+  it("resserre le zoom à l'approche et l'élargit au départ", () => {
+    const mid = filmApproachZoom(5, 0.5);
+    const start = filmApproachZoom(5, 0);
+    const end = filmApproachZoom(5, 1);
+    assert.ok(start < mid, `départ ${start} n'est pas plus large que ${mid}`);
+    assert.ok(end > mid, `approche ${end} n'est pas plus serrée que ${mid}`);
+    assert.equal(mid, 5);
+  });
+
+  it("keepBoatInFrame ramène un bateau trop loin du centre", () => {
+    const map = {
+      getSize() { return { x: 1000, y: 800 }; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : ll.lng;
+        return { x: 500 + lng * 20, y: 400 - lat };
+      },
+      containerPointToLatLng(p) { return { lat: 400 - p.y, lng: (p.x - 500) / 20 }; },
+    };
+    const kept = keepBoatInFrame([0, 0], [0, 20], map);
+    const boat = map.latLngToContainerPoint([0, 20]);
+    const center = map.latLngToContainerPoint(kept);
+    const dx = Math.abs(boat.x - center.x);
+    assert.ok(dx <= 1000 * FILM_BOAT_KEEP_FRAC * 0.5 + 1, `bateau à ${dx} px du centre`);
+  });
+
+  it("MapSceneController : sillage à la frame et bateau posé pendant le film", () => {
+    assert.match(controller, /this\.renderDynamic\(this\.currentPlayback \|\| this\.playback\.snapshot\(\)\)/);
+    assert.match(controller, /zoomAnimating && markers\.length && !this\.config\.filmActive/);
+    assert.match(controller, /filmActive: this\.config\.filmActive/);
+    assert.match(controller, /filmFramesSinceReset/);
   });
 });
