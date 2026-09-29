@@ -16,6 +16,7 @@ from official_store import (
     OfficialStore,
     PREPARING,
     READY,
+    UNAVAILABLE,
     film_snapshot_stale,
     make_key,
     parse_key,
@@ -731,3 +732,112 @@ def test_rg8_three_variants_stored_and_served(tmp_path, monkeypatch):
     assert short["estimatedSeconds"] == fr["150"]["estimatedSeconds"]
     assert "150" in (full.get("estimates") or {})
     assert full["estimates"]["0"]["chars"] == fr["0"]["chars"]
+
+
+def _rg17_voy():
+    return {
+        "t0": T0,
+        "points": [{"lat": -22.27, "lon": 166.44}],
+        "marks": [{"name": "Nouméa", "iso": "2026-10-12T00:00:00Z"}],
+        "clock": {
+            "t0": T0,
+            "marks": [{"name": "Nouméa", "iso": "2026-10-12T00:00:00Z"}],
+        },
+    }
+
+
+def test_rg17_compute_eta_writes_unavailable_and_skips_retry(tmp_path, monkeypatch):
+    import ensemble_eta
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    voy = _rg17_voy()
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    future = "2026-09-27T00:15:00Z"
+    preheats = {"n": 0}
+
+    def fake_preheat(*_a, **_k):
+        preheats["n"] += 1
+        return {
+            "members": 0, "p10": None, "p50": None, "p90": None,
+            "reason": "quota", "nextRetry": future,
+            "detail": "Daily API request limit exceeded",
+            "computedAt": "2026-09-26T12:00:00Z",
+        }
+
+    def fake_peek(*_a, **_k):
+        return {
+            "members": 0, "p10": None, "p50": None, "p90": None,
+            "reason": "quota", "nextRetry": future,
+            "detail": "Daily API request limit exceeded",
+            "computedAt": "2026-09-26T12:00:00Z",
+        }
+
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", fake_preheat)
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
+    monkeypatch.setattr(ensemble_eta, "next_official_stop", lambda *_a, **_k: "Nouméa")
+
+    payload = official_store.compute_eta(voy, NOW)
+    assert payload is not None
+    stop = payload["stops"]["Nouméa"]
+    assert stop["members"] == 0
+    assert stop["status"] == UNAVAILABLE
+    assert stop["p10"] is None and stop["p90"] is None
+    assert stop["reason"] == "quota Open-Meteo atteint"
+    assert stop["nextRetry"] == future
+    assert preheats["n"] == 0
+
+    key = store.family_key("eta", voy, NOW)
+    store.put("eta", payload, key)
+    again = official_store.refresh_family(
+        "eta", compute=official_store.compute_eta, now=NOW, store=store, voy=voy,
+    )
+    assert again == "unchanged"
+    assert preheats["n"] == 0
+
+    served = official_store.serve_eta("Nouméa")
+    assert served["status"] == UNAVAILABLE
+    assert served["members"] == 0
+    assert served.get("p10") is None
+    assert served["reason"] == "quota Open-Meteo atteint"
+    assert served["nextRetry"] == future
+    assert served["status"] != PREPARING
+
+
+def test_rg17_compute_eta_ready_when_members(tmp_path, monkeypatch):
+    import ensemble_eta
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    voy = _rg17_voy()
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+
+    def fake_peek(*_a, **_k):
+        return {
+            "members": 24,
+            "p10": "2026-10-11T00:00:00Z",
+            "p50": "2026-10-12T12:00:00Z",
+            "p90": "2026-10-14T00:00:00Z",
+            "source": "open-meteo-ensemble",
+            "computedAt": "2026-09-26T12:00:00Z",
+            "memberKnots": [8.0, 8.1],
+        }
+
+    monkeypatch.setattr(ensemble_eta, "preheat_official_eta", lambda *_a, **_k: fake_peek())
+    monkeypatch.setattr(ensemble_eta, "peek_official_eta", fake_peek)
+    monkeypatch.setattr(ensemble_eta, "next_official_stop", lambda *_a, **_k: "Nouméa")
+
+    payload = official_store.compute_eta(voy, NOW)
+    stop = payload["stops"]["Nouméa"]
+    assert stop["status"] == READY
+    assert stop["members"] == 24
+    assert stop["p10"] and stop["p90"]
+    assert stop["reason"] is None
+    key = store.family_key("eta", voy, NOW)
+    store.put("eta", payload, key)
+    served = official_store.serve_eta("Nouméa")
+    assert served["status"] == READY
+    assert served["members"] == 24
+    assert served["p10"].startswith("2026-10-11")

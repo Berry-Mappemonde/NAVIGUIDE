@@ -28,6 +28,7 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafond ; la première reste le repli
 PREPARING = "preparing"
 READY = "ready"
+UNAVAILABLE = "unavailable"
 # Clé film : RG8 (budgets réels 2:30 / 3:00 / intégral) invalide rg7. moments reste rg4 ; ici reste rg3.
 FILM_SCRIPT_REV = "rg8"
 MOMENTS_REV = "rg4"
@@ -899,8 +900,62 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     return out
 
 
+def _stored_eta_stop(name: str) -> Optional[dict]:
+    if not (name or "").strip():
+        return None
+    hit = get("eta")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    stops = (body or {}).get("stops") or {}
+    if name in stops and isinstance(stops[name], dict):
+        return dict(stops[name])
+    needle = name.strip().lower()
+    for n, payload in stops.items():
+        if needle and needle in str(n).lower() and isinstance(payload, dict):
+            return dict(payload)
+    return None
+
+
+def _eta_stop_record(raw: Optional[dict], now: datetime) -> dict:
+    """Une escale du stock : ready seulement si des membres ont produit p10–p90."""
+    from ensemble_eta import explain_eta_reason  # noqa: PLC0415
+    from voyage_clock import to_iso  # noqa: PLC0415
+
+    src = raw if isinstance(raw, dict) else {}
+    try:
+        members = int(src.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    p10, p50, p90 = src.get("p10"), src.get("p50"), src.get("p90")
+    ready = members > 0 and bool(p10) and bool(p90)
+    computed = src.get("computedAt") or to_iso(now)
+    out = {
+        "p10": p10 if ready else None,
+        "p50": p50 if ready else None,
+        "p90": p90 if ready else None,
+        "members": members if ready else 0,
+        "status": READY if ready else UNAVAILABLE,
+        "reason": None,
+        "nextRetry": None,
+        "computedAt": computed,
+    }
+    if ready:
+        if src.get("source"):
+            out["source"] = src["source"]
+        if src.get("memberKnots"):
+            out["memberKnots"] = src["memberKnots"]
+        return out
+    out["reason"] = explain_eta_reason(src)
+    out["nextRetry"] = src.get("nextRetry")
+    if src.get("lastAttempt"):
+        out["lastAttempt"] = src["lastAttempt"]
+    if src.get("detail"):
+        out["detail"] = src["detail"]
+    return out
+
+
 def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
     from ensemble_eta import (  # noqa: PLC0415
+        eta_retry_due,
         next_official_stop,
         peek_official_eta,
         preheat_official_eta,
@@ -910,15 +965,23 @@ def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
 
     if not voy.get("clock"):
         return None
-    try:
-        preheat_official_eta(
-            voy, now, polar_raw=_polar_raw(voy.get("expedition_id") or ""),
-        )
-    except Exception as exc:
-        log.warning("préchauffage ETA : %s", exc)
+    nxt = next_official_stop(voy, now)
+    last = _stored_eta_stop(nxt) if nxt else None
+    if last is None and nxt:
+        try:
+            last = peek_official_eta(voy, nxt, now)
+        except Exception as exc:
+            log.warning("peek ETA %s : %s", nxt, exc)
+            last = None
+    if last is None or eta_retry_due(last, now):
+        try:
+            preheat_official_eta(
+                voy, now, polar_raw=_polar_raw(voy.get("expedition_id") or ""),
+            )
+        except Exception as exc:
+            log.warning("préchauffage ETA : %s", exc)
     stops: dict[str, dict] = {}
     names = []
-    nxt = next_official_stop(voy, now)
     if nxt:
         names.append(nxt)
     for m in voy.get("marks") or []:
@@ -928,11 +991,15 @@ def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
     for name in names[:12]:
         try:
             raw = peek_official_eta(voy, name, now)
-            stops[name] = tighten_eta_payload(raw, now)
+            stops[name] = _eta_stop_record(tighten_eta_payload(raw, now), now)
         except Exception as exc:
             log.warning("ETA %s : %s", name, exc)
-    if not any(int((s or {}).get("members") or 0) > 0 for s in stops.values()):
-        return None
+            stored = _stored_eta_stop(name)
+            if stored:
+                stops[name] = _eta_stop_record(stored, now)
+    if nxt and nxt not in stops:
+        fallback = last if isinstance(last, dict) else {}
+        stops[nxt] = _eta_stop_record(tighten_eta_payload(fallback, now), now)
     return {"stops": stops}
 
 
@@ -1027,6 +1094,30 @@ COMPUTE: dict[str, Callable[[dict, datetime], Optional[dict]]] = {
 COMPUTE_ORDER = ("climo", "moments", "plan_review", "eta", "film", "ici")
 
 
+def _eta_progress_detail(store: Optional["OfficialStore"] = None) -> str:
+    """Une ligne pour le remplisseur : membres, ou raison + date de nouvel essai."""
+    st = store or get_store()
+    hit = st.get("eta")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    stops = (body or {}).get("stops") or {}
+    if not stops:
+        return ""
+    stop = next(iter(stops.values()))
+    if not isinstance(stop, dict):
+        return ""
+    try:
+        members = int(stop.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    if members > 0:
+        return f"{members} membres"
+    reason = str(stop.get("reason") or "").strip()
+    retry = str(stop.get("nextRetry") or "")[:10]
+    if reason and retry:
+        return f"{reason}, nouvel essai {retry}"
+    return reason
+
+
 def refresh_family(
     family: str,
     *,
@@ -1046,7 +1137,15 @@ def refresh_family(
     if not force:
         hit = st.get(family, key)
         if hit and hit.get("payload") is not None:
-            if family != "film" or not film_snapshot_stale(hit.get("payload"), current):
+            if family == "film":
+                if not film_snapshot_stale(hit.get("payload"), current):
+                    return "unchanged"
+            elif family == "eta":
+                from ensemble_eta import eta_store_retry_due, next_official_stop  # noqa: PLC0415
+                nxt = next_official_stop(current, when)
+                if not eta_store_retry_due(hit.get("payload"), when, nxt):
+                    return "unchanged"
+            else:
                 return "unchanged"
     fn = compute or COMPUTE[family]
     if family != "climo" and not current.get("clock"):
@@ -1095,7 +1194,8 @@ def refresh_missing(
                     family, force=force, compute=fns.get(family),
                     now=when, store=st, voy=_load_official() or voy,
                 )
-                _log(family, status)
+                detail = _eta_progress_detail(st) if family == "eta" else ""
+                _log(family, status, detail)
             except Exception as exc:
                 log.warning("stock %s : %s", family, exc)
                 _log(family, PREPARING, str(exc)[:160])
@@ -1442,6 +1542,30 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
     return out
 
 
+def _serve_eta_stop(payload: dict, stamp: dict) -> dict:
+    out = dict(payload)
+    try:
+        members = int(out.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    ready = members > 0 and bool(out.get("p10")) and bool(out.get("p90"))
+    if ready:
+        out["status"] = READY
+        out["members"] = members
+    else:
+        out["status"] = out.get("status") if out.get("status") == UNAVAILABLE else UNAVAILABLE
+        if not out.get("reason") or out.get("reason") == "en préparation":
+            from ensemble_eta import explain_eta_reason  # noqa: PLC0415
+            out["reason"] = explain_eta_reason(out)
+        out["p10"] = None if members <= 0 else out.get("p10")
+        out["p50"] = None if members <= 0 else out.get("p50")
+        out["p90"] = None if members <= 0 else out.get("p90")
+        if members <= 0:
+            out["members"] = 0
+    out.update(stamp)
+    return out
+
+
 def serve_eta(stop: str) -> dict:
     from ensemble_eta import empty_eta  # noqa: PLC0415
 
@@ -1453,18 +1577,12 @@ def serve_eta(stop: str) -> dict:
         return empty
     stamp = _stamp(hit)
     stops = body.get("stops") or {}
-    if stop in stops:
-        out = dict(stops[stop])
-        out["status"] = READY
-        out.update(stamp)
-        return out
+    if stop in stops and isinstance(stops[stop], dict):
+        return _serve_eta_stop(stops[stop], stamp)
     needle = (stop or "").strip().lower()
     for name, payload in stops.items():
-        if needle and needle in name.lower():
-            out = dict(payload)
-            out["status"] = READY
-            out.update(stamp)
-            return out
+        if needle and needle in name.lower() and isinstance(payload, dict):
+            return _serve_eta_stop(payload, stamp)
     return empty
 
 

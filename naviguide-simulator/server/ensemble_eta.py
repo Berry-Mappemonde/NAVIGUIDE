@@ -36,6 +36,9 @@ SOURCE = "open-meteo-ensemble"
 STATUS_TTL_S = 36 * 3600
 ETA_BACKOFF_S = (30, 60, 120, 300, 600, 900)
 REASON_UNAVAILABLE = "ensemble_unavailable"
+REASON_QUOTA = "quota"
+REASON_QUOTA_LABEL = "quota Open-Meteo atteint"
+REASON_NETWORK = "réseau"
 REASON_BEYOND_HORIZON = "beyond_horizon"
 REASON_EMPTY = "empty_ensemble"
 REASON_NO_STOP = "no_stop"
@@ -98,7 +101,12 @@ def compute_next_retry(
     """Prochaine relance : quota journalier → lendemain UTC ; sinon repli 30 s → 15 min."""
     when = _as_dt(now)
     text = (detail or "").lower()
-    if "limit exceeded" in text or "try again tomorrow" in text or "429" in text:
+    if (
+        "limit exceeded" in text
+        or "try again tomorrow" in text
+        or "429" in text
+        or "quota" in text
+    ):
         nxt = (when + timedelta(days=1)).replace(hour=0, minute=15, second=0, microsecond=0)
         if nxt <= when:
             nxt += timedelta(days=1)
@@ -118,6 +126,44 @@ def eta_retry_due(peeked: Optional[dict], now: datetime) -> bool:
         return _as_dt(raw) <= _as_dt(now)
     except Exception:
         return True
+
+
+def explain_eta_reason(raw: Optional[dict]) -> str:
+    """Raison honnête pour le stock / l'écran — jamais une date inventée."""
+    if not raw:
+        return REASON_UNAVAILABLE
+    reason = str(raw.get("reason") or "")
+    detail = str(raw.get("detail") or "")
+    blob = f"{reason} {detail}".lower()
+    if (
+        reason in (REASON_QUOTA, REASON_QUOTA_LABEL)
+        or "quota" in blob
+        or "429" in blob
+        or "limit exceeded" in blob
+        or "try again tomorrow" in blob
+    ):
+        return REASON_QUOTA_LABEL
+    if "network" in blob or "blocked" in blob or "réseau" in blob:
+        return REASON_NETWORK
+    return reason or REASON_UNAVAILABLE
+
+
+def eta_store_retry_due(
+    payload: Optional[dict],
+    now: datetime,
+    next_stop: str = "",
+) -> bool:
+    """True si le remplisseur doit recalculer la famille eta."""
+    stops = (payload or {}).get("stops") or {}
+    if not stops:
+        return True
+    if next_stop:
+        for name, stop in stops.items():
+            if match_stop(str(name), next_stop) or name == next_stop:
+                return eta_retry_due(stop, now)
+    if any(_positive_members((s or {}).get("members")) > 0 for s in stops.values()):
+        return False
+    return any(eta_retry_due(s, now) for s in stops.values())
 
 
 def remember_eta_failure(
@@ -384,10 +430,19 @@ def _fetch_ensemble_json(lat: float, lon: float) -> tuple[Optional[dict], Option
     Lot RE5 : on lit le statut HTTP ici (429 quota) au lieu de l'avaler dans
     ``om_get`` (hindcast.py:195-197 → None). Cache par point inchangé.
     """
-    from hindcast import _client, _fetch_blocked  # noqa: PLC0415
+    from hindcast import (  # noqa: PLC0415
+        _client,
+        _fetch_blocked,
+        om_can_spend,
+        om_mark_quota,
+        om_quota_reason,
+        om_record_call,
+    )
 
     if _fetch_blocked:
         return None, REASON_UNAVAILABLE, "hindcast network blocked"
+    if not om_can_spend("ensemble"):
+        return None, REASON_QUOTA, om_quota_reason() or REASON_QUOTA_LABEL
     params = {
         "latitude": f"{float(lat):.4f}",
         "longitude": f"{float(lon):.4f}",
@@ -401,13 +456,15 @@ def _fetch_ensemble_json(lat: float, lon: float) -> tuple[Optional[dict], Option
     try:
         with _client() as client:
             resp = client.get(ENSEMBLE_URL, params=params)
+        om_record_call()
     except Exception as exc:
         log.info("ensemble %s: %s", point_key(lat, lon), exc)
         return None, REASON_UNAVAILABLE, str(exc)[:240]
     if resp.status_code == 429:
         detail = _http_detail(resp) or "Daily API request limit exceeded"
+        om_mark_quota("429")
         log.info("ensemble %s: HTTP 429 %s", point_key(lat, lon), detail)
-        return None, REASON_UNAVAILABLE, detail
+        return None, REASON_QUOTA, detail
     if resp.status_code >= 400:
         detail = _http_detail(resp) or f"HTTP {resp.status_code}"
         log.info("ensemble %s: HTTP %s %s", point_key(lat, lon), resp.status_code, detail)
@@ -685,6 +742,16 @@ def compute_eta(
     cached = kv_get(CACHE_NS, result_key, max_age_s=CACHE_TTL_S)
     if cached and isinstance(cached.get("value"), dict) and cached["value"].get("members"):
         return tighten_eta_payload(cached["value"], now)
+    status_hit = kv_get(CACHE_NS, official_eta_status_key(stop, now), max_age_s=STATUS_TTL_S)
+    raw_status = status_hit.get("value") if status_hit else None
+    if isinstance(raw_status, dict) and not eta_retry_due(raw_status, now):
+        return empty_eta(
+            now,
+            reason=raw_status.get("reason"),
+            last_attempt=raw_status.get("lastAttempt"),
+            next_retry=raw_status.get("nextRetry"),
+            detail=raw_status.get("detail"),
+        )
     end_nm = float(stop_mark.get("nm") or stop_mark.get("filmNm") or 0)
     start_nm = float(sample.get("sailNm") or sample.get("filmNm") or 0)
     if end_nm <= start_nm + 0.5:
@@ -801,4 +868,7 @@ def preheat_official_eta(
     target = (stop or "").strip() or next_official_stop(voy, now)
     if not target:
         return empty_eta(now)
+    peeked = peek_official_eta(voy, target, now)
+    if not eta_retry_due(peeked, now):
+        return tighten_eta_payload(peeked, now)
     return official_eta(voy, target, now, polar_raw=polar_raw)

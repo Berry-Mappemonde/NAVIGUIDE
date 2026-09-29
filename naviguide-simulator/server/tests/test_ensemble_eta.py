@@ -23,9 +23,12 @@ from ensemble_eta import (
     REASON_UNAVAILABLE,
     arrival_quantiles,
     bound_eta_quantiles,
+    REASON_QUOTA,
+    REASON_QUOTA_LABEL,
     compute_eta,
     compute_next_retry,
     empty_eta,
+    explain_eta_reason,
     empirical_quantile,
     eta_retry_due,
     fetch_point_members,
@@ -524,3 +527,43 @@ def test_peek_after_failed_compute_keeps_reason(monkeypatch):
     assert peeked["lastAttempt"]
     assert peeked["nextRetry"]
     assert peeked["p10"] is None and peeked["p90"] is None
+
+
+def test_rg17_429_writes_quota_reason_and_does_not_retry(monkeypatch):
+    import pearl_store
+    from hindcast import om_quota_blocked
+
+    pearl_store.reset()
+    reset_hooks()
+    hits = {"n": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        hits["n"] += 1
+        return httpx.Response(
+            429,
+            text="Daily API request limit exceeded. Please try again tomorrow.",
+        )
+
+    bind_http(lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    points, marks, sample = _leg()
+    out = compute_eta(
+        points=points, marks=marks, stop="Fort-de-France",
+        now=NOW, polar_raw=C4_POLAR, sample=sample,
+    )
+    assert out["members"] == 0
+    assert out["p10"] is None and out["p90"] is None
+    assert out["reason"] == REASON_QUOTA
+    assert explain_eta_reason(out) == REASON_QUOTA_LABEL
+    nxt = datetime.fromisoformat(out["nextRetry"].replace("Z", "+00:00"))
+    assert nxt.date() == (NOW + timedelta(days=1)).date()
+    assert om_quota_blocked()
+    assert hits["n"] == 1
+    out2 = compute_eta(
+        points=points, marks=marks, stop="Fort-de-France",
+        now=NOW, polar_raw=C4_POLAR, sample=sample,
+    )
+    assert hits["n"] == 1
+    assert out2["members"] == 0
+    assert out2["nextRetry"]
+    pearl_store.reset()
+    reset_hooks()

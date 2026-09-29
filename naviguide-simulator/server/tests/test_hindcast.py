@@ -22,6 +22,9 @@ from hindcast import (
     cell_center,
     fill_era5_along,
     hindcast_status_fields,
+    om_can_spend,
+    om_eta_reserved,
+    om_hindcast_ceiling,
     om_http_call_count,
     om_quota_blocked,
     past_passage_slots,
@@ -510,3 +513,23 @@ def test_rf10_voyage_dir_hosts_sqlite(tmp_path, monkeypatch):
     from pearl_store import db_path
     assert db_path() == d / "naviguide.sqlite"
     pearl_store.reset()
+
+
+def test_rg17_hindcast_leaves_reserved_slice_for_eta(monkeypatch):
+    import pearl_store
+
+    pearl_store.reset()
+    reset_hooks()
+    monkeypatch.setenv("NAVIGUIDE_OM_DAILY_BUDGET", "5")
+    monkeypatch.setenv("NAVIGUIDE_OM_ETA_RESERVED", "2")
+    assert om_eta_reserved() == 2
+    assert om_hindcast_ceiling() == 3
+    bind_om(era5_kn=10.0)
+    slots = [(10.0 + i, -20.0 - i, DAY0) for i in range(6)]
+    fill_era5_along(slots)
+    assert om_http_call_count() == 3
+    assert not om_quota_blocked()
+    assert om_can_spend("ensemble")
+    assert not om_can_spend("hindcast")
+    pearl_store.reset()
+    reset_hooks()

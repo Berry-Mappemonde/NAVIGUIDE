@@ -77,14 +77,42 @@ function displayEta(eta) {
   return { ...eta, p10: bound.p10, p90: bound.p90 };
 }
 
-/** Texte de fourchette ; chaîne vide si pas d'ensemble (jamais inventé). */
+export function etaReasonLabel(eta, t) {
+  const raw = `${eta?.reason || ""} ${eta?.detail || ""}`.toLowerCase();
+  if (!raw.trim()) return "";
+  if (raw.includes("quota") || raw.includes("429") || raw.includes("limit exceeded")) {
+    return t("etaReasonQuota");
+  }
+  if (raw.includes("network") || raw.includes("réseau") || raw.includes("blocked")) {
+    return t("etaReasonNetwork");
+  }
+  if (raw.includes("beyond") || raw.includes("horizon")) {
+    return t("etaReasonHorizon");
+  }
+  if (raw.includes("ensemble_unavailable") || raw.includes("unavailable") || raw.includes("indisponible")) {
+    return t("etaReasonUnavailable");
+  }
+  return t("etaReasonUnavailable");
+}
+
+export function formatEtaUnavailable(eta, t, lang = "fr") {
+  if (!eta || Number(eta.members) > 0) return "";
+  const reason = etaReasonLabel(eta, t);
+  if (!reason) return "";
+  const date = etaDayLabel(eta.nextRetry, lang);
+  if (date) return t("etaUnavailable", { reason, date });
+  return t("etaUnavailableShort", { reason });
+}
+
+/** Texte de fourchette, ou une ligne de raison ; jamais une date inventée. */
 export function formatEtaRange(eta, t, lang = "fr") {
   const tight = displayEta(eta);
-  if (!tight) return "";
-  const p10 = etaDayLabel(tight.p10, lang);
-  const p90 = etaDayLabel(tight.p90, lang);
-  if (!p10 || !p90) return "";
-  return t("etaRange", { p10, p90 });
+  if (tight) {
+    const p10 = etaDayLabel(tight.p10, lang);
+    const p90 = etaDayLabel(tight.p90, lang);
+    if (p10 && p90) return t("etaRange", { p10, p90 });
+  }
+  return formatEtaUnavailable(eta, t, lang);
 }
 
 /** Détail p10–p90 / membres — info-bulle uniquement, jamais à l'écran. */
@@ -310,6 +338,24 @@ export function etaFromResponse(body) {
   return null;
 }
 
+/** Fourchette prête, ou état honnête (raison / nextRetry) — jamais une date inventée. */
+export function etaDisplayFromResponse(body) {
+  const ready = etaFromResponse(body);
+  if (ready) return ready;
+  if (!body || Number(body.members || 0) > 0) return null;
+  if (body.reason || body.status === "unavailable") return body;
+  return null;
+}
+
+export function etaRetryDue(body, nowMs = Date.now()) {
+  if (Number(body?.members) > 0) return false;
+  const raw = body?.nextRetry;
+  if (!raw) return true;
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t)) return true;
+  return t <= nowMs;
+}
+
 export function sleepMs(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -338,8 +384,9 @@ async function defaultEtaFetch(stopName, { signal } = {}) {
 }
 
 /**
- * Relance /eta tant que members == 0. Premier appel immédiat, puis recul
- * progressif. `onUpdate(null)` tant que l'ensemble n'est pas prêt.
+ * Relance /eta tant que members == 0 et que nextRetry n'est pas dans le futur.
+ * Premier appel immédiat, puis recul. `onUpdate` reçoit la fourchette ou
+ * la raison honnête — jamais une date inventée.
  */
 export async function pollOfficialEta(stopName, {
   fetchFn = defaultEtaFetch,
@@ -357,8 +404,10 @@ export async function pollOfficialEta(stopName, {
       body = null;
     }
     const ready = etaFromResponse(body);
-    onUpdate?.(ready);
+    const display = etaDisplayFromResponse(body);
+    onUpdate?.(display);
     if (ready) return ready;
+    if (display && !etaRetryDue(body)) return display;
     await sleep(nextEtaRetryMs(attempt), signal);
     attempt += 1;
   }
@@ -490,7 +539,8 @@ export function usePlanReview({ enabled = true, frozen = false, clock, lookup, r
         ? { ...leg, alertCount: before }
         : leg
     ));
-    if (!eta || !eta.members || !nextStop) return base;
+    if (!eta || !nextStop) return base;
+    if (!eta.members && !eta.reason) return base;
     return base.map((leg) => (
       stopMatch(leg.to, nextStop) ? { ...leg, etaRange: eta } : leg
     ));

@@ -9,8 +9,10 @@ import {
   ETA_RETRY_MS,
   boundEtaIso,
   buildAdviceCompare,
+  etaDisplayFromResponse,
   etaFromResponse,
   etaRangeFromMembers,
+  etaRetryDue,
   formatAdvicePills,
   formatAdviceSentence,
   formatEtaRange,
@@ -148,6 +150,57 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(label, /arrivée entre le/);
     const hidden = boundEtaIso("2026-11-13T00:00:00Z", null, "2027-06-10T00:00:00Z");
     assert.equal(hidden.p10, "");
+  });
+
+  it("lot RG17 — ligne de raison quand members = 0, jamais une fourchette", () => {
+    const empty = {
+      members: 0,
+      p10: "2026-10-11T00:00:00Z",
+      p90: "2026-10-14T00:00:00Z",
+      reason: "quota Open-Meteo atteint",
+      nextRetry: "2026-09-29T00:15:00Z",
+      status: "unavailable",
+    };
+    assert.equal(etaFromResponse(empty), null);
+    assert.equal(etaDisplayFromResponse(empty), empty);
+    assert.equal(etaRetryDue(empty, Date.parse("2026-09-28T12:00:00Z")), false);
+    const frLabel = plain(formatEtaRange(empty, tFr, "fr"));
+    assert.match(frLabel, /fourchette indisponible/);
+    assert.match(frLabel, /quota Open-Meteo atteint/);
+    assert.match(frLabel, /29 sept/);
+    assert.doesNotMatch(frLabel, /arrivée entre le/);
+    const enLabel = plain(formatEtaRange(empty, tEn, "en"));
+    assert.match(enLabel, /arrival window unavailable/i);
+    assert.match(enLabel, /Open-Meteo quota reached/);
+    assert.match(enLabel, /29 Sep/i);
+    assert.doesNotMatch(enLabel, /arrival between/i);
+  });
+
+  it("lot RG17 — pollOfficialEta s'arrête quand nextRetry est dans le futur", async () => {
+    const unavailable = {
+      members: 0,
+      p10: null,
+      p90: null,
+      reason: "quota",
+      nextRetry: "2099-01-02T00:15:00Z",
+      status: "unavailable",
+    };
+    let n = 0;
+    const seen = [];
+    const out = await pollOfficialEta("Nouméa", {
+      fetchFn: async () => {
+        n += 1;
+        return unavailable;
+      },
+      sleep: async () => {
+        throw new Error("ne doit pas relancer");
+      },
+      onUpdate: (eta) => seen.push(eta),
+    });
+    assert.equal(n, 1);
+    assert.equal(out.reason, "quota");
+    assert.equal(seen[0].status, "unavailable");
+    assert.match(plain(formatEtaRange(out, tFr, "fr")), /fourchette indisponible/);
   });
 });
 
