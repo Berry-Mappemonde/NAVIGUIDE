@@ -1123,10 +1123,15 @@ def start_tunnel(port: int = 5174, wait_s: int = 40) -> str | None:
     name, host = tunnel_settings()
     TUNNEL_LOG.write_text("", encoding="utf-8")
     origin = ["--url", f"http://127.0.0.1:{port}", "--http-host-header", "localhost"]
+    # Protocole du tunnel (BIM_TUNNEL_PROTOCOL = http2 | quic | auto). Le 29 sept. à Toronto, en QUIC (UDP), le
+    # tunnel ne passait plus que ~2 ko/s alors que le Mac téléversait à 500 ko/s : le réseau étranglait l'UDP,
+    # l'horloge officielle (3,9 Mo) n'arrivait jamais et le bot voyait le bateau au jour 0. En HTTP/2 (TCP) : normal.
+    proto = os.environ.get("BIM_TUNNEL_PROTOCOL") or _env_file_values().get("BIM_TUNNEL_PROTOCOL") or "http2"
+    proto_args = ["--protocol", proto] if proto and proto != "auto" else []
     if name and host:
-        cmd = [exe, "tunnel", "--no-autoupdate", "run", *origin, name]
+        cmd = [exe, "tunnel", "--no-autoupdate", *proto_args, "run", *origin, name]
     else:
-        cmd = [exe, "tunnel", *origin, "--no-autoupdate"]
+        cmd = [exe, "tunnel", *proto_args, *origin, "--no-autoupdate"]
     with TUNNEL_LOG.open("a", encoding="utf-8") as fh:
         p = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
     TUNNEL_PID.write_text(str(p.pid), encoding="utf-8")
