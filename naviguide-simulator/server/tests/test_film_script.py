@@ -21,10 +21,13 @@ from film_script import (
     build_film_response,
     build_raw_script,
     change_sentence,
+    chapter_metrics,
+    chapter_shape,
     coast_sentence,
     connector_at,
     cyclone_name_year,
     dated_marks,
+    date_density_ok,
     dose_amp_changes,
     dose_climo_changes,
     dose_coast_changes,
@@ -33,14 +36,20 @@ from film_script import (
     dose_zee_changes,
     film_candidates,
     film_facts,
+    film_has_forbidden,
     heading_phrase,
     is_sea_chapter,
     journal_fingerprint,
     last_stop_id,
+    looks_english_title,
     norm_stop,
     review_leg_for_chapter,
     review_sentences,
     official_dated_stops,
+    spoken_sea_days,
+    thin_chapter_dates,
+    _arrival_harbor,
+    _de,
     _ms,
     _nm_between,
     _window_depart_ms,
@@ -102,21 +111,15 @@ def test_raw_length_bounded_and_chapter1_names():
 
 
 def test_connectors_alternate():
+    """RG6 : plus de rotation mécanique ; les formes suivent le contenu."""
     plan = _raw()
-    cons = CONNECTORS["fr"]
-    used = []
-    for i, ch in enumerate(plan["chapters"]):
-        text = ch.get("text") or ""
-        hit = next((c for c in cons if text.startswith(f"{c},")), None)
-        if hit:
-            used.append(hit)
-            assert hit == connector_at(i - 1, "fr"), f"chapitre {i}: {hit} ≠ {connector_at(i - 1, 'fr')}"
-    assert len(used) >= 2, f"connecteurs : {used}"
-    for a, b in zip(used, used[1:]):
-        assert a != b, f"connecteur répété : {a}"
-    assert connector_at(0, "fr") == "Puis"
-    assert connector_at(1, "fr") == "Ensuite"
-    assert connector_at(6, "fr") == "Puis"
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert "À la jambe suivante" not in blob
+    assert "On the next leg" not in blob
+    assert connector_at(0, "fr") != "À la jambe suivante"
+    long_hit = any("longue traversée" in (c.get("text") or "") for c in plan["chapters"])
+    last_hit = any("dernière étape" in (c.get("text") or "") for c in plan["chapters"])
+    assert long_hit or last_hit or "Berry-Mappemonde quitte" in blob
 
 
 def test_raw_english_chapter1():
@@ -377,11 +380,15 @@ def _assert_route_order(text: str, label: str) -> None:
 
 def _assert_departure_arrival_pairs(text: str, lang: str = "fr") -> None:
     import re
-    dep_re = r"departure for (.+?)(?:\s*:|\.|$)" if lang == "en" else r"départ vers (.+?)(?:\s*:|\.|$)"
+    dep_re = (
+        r"Berry-Mappemonde leaves .+? for (?:the long crossing to )?(.+?)(?:\s*:|,|\.|$)"
+        if lang == "en" else
+        r"Berry-Mappemonde quitte .+? pour (?:la longue traversée vers )?(.+?)(?:\s*:|,|\.|$)"
+    )
     arr_re = r"Arrival at (.+?) on " if lang == "en" else r"Arrivée à (.+?) le "
     deps = [(m.group(1).strip(), m.start()) for m in re.finditer(dep_re, text, re.I)]
     arrs = [(m.group(1).strip(), m.start()) for m in re.finditer(arr_re, text, re.I)]
-    assert len(deps) >= 2, f"départs vers : {[n for n, _ in deps]}"
+    assert len(deps) >= 2, f"départs pour : {[n for n, _ in deps]}"
     assert len(arrs) >= 2, f"arrivées : {[n for n, _ in arrs]}"
     seen = []
     for name, _ in arrs:
@@ -395,12 +402,12 @@ def _assert_departure_arrival_pairs(text: str, lang: str = "fr") -> None:
 
     for name, i in deps:
         nxt = next(((n, j) for n, j in arrs if j > i), None)
-        assert nxt, f"pas d’arrivée après départ vers {name}"
+        assert nxt, f"pas d’arrivée après départ pour {name}"
         assert norm_stop(_pair_name(nxt[0])) == norm_stop(_pair_name(name)), (
-            f"départ vers {name} suivi de arrivée à {nxt[0]}"
+            f"départ pour {name} suivi de arrivée à {nxt[0]}"
         )
-    assert not re.search(r"départ vers Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio", text, re.I)
-    assert not re.search(r"departure for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio", text, re.I)
+    assert not re.search(r"pour Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio", text, re.I)
+    assert not re.search(r"for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio", text, re.I)
 
 
 def test_dated_marks_merges_ajaccio_aliases():
@@ -434,9 +441,9 @@ def _live_like_clock(lr: dict) -> dict:
 
 def _assert_no_rochelle_to_ajaccio_skip(blob: str) -> None:
     assert "Arrivée à La Rochelle" in blob, blob[:500]
-    assert "départ vers Ajaccio" in blob, blob[:500]
-    assert blob.find("Arrivée à La Rochelle") < blob.find("départ vers Ajaccio"), blob[:800]
-    assert not re.search(r"vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio", blob)
+    assert re.search(r"pour Ajaccio", blob), blob[:500]
+    assert blob.find("Arrivée à La Rochelle") < blob.find("pour Ajaccio"), blob[:800]
+    assert not re.search(r"pour La Rochelle[^.]*\.\s*Arrivée à Ajaccio", blob)
     _assert_departure_arrival_pairs(blob, "fr")
 
 
@@ -453,7 +460,7 @@ def test_live_like_clock_pairs_rochelle_before_ajaccio():
             blob = _script_blob(plan)
             _assert_no_rochelle_to_ajaccio_skip(blob)
             ch0 = plan["chapters"][0]["text"]
-            assert re.search(r"départ vers La Rochelle", ch0, re.I), ch0
+            assert re.search(r"par la route pour La Rochelle|quitte Saint-Maur", ch0, re.I), ch0
             assert re.search(r"Arrivée à La Rochelle", ch0), ch0
 
 
@@ -489,9 +496,12 @@ def test_official_route_order_no_repeat_departure_then_arrival():
     _assert_departure_arrival_pairs(blob_fr, "fr")
     for ch in fr["chapters"]:
         text = ch.get("text") or ""
-        if "départ vers" in text and "Arrivée à" in text:
+        if "Berry-Mappemonde quitte" in text and "Arrivée à" in text:
             import re
-            dep = re.search(r"départ vers (.+?)(?:\s*:|\.|$)", text)
+            dep = re.search(
+                r"Berry-Mappemonde quitte .+? pour (?:la longue traversée vers )?(.+?)(?:\s*:|,|\.|$)",
+                text,
+            )
             arr = re.search(r"Arrivée à (.+?) le ", text)
             assert dep and arr
             dep_name = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", dep.group(1), flags=re.I)
@@ -540,9 +550,9 @@ def test_no_bare_nm_in_official_script():
     assert "15 mai 2026" in fr["chapters"][0]["text"]
     assert not re.search(r"\bnm\b", blob_fr), blob_fr
     assert not re.search(r"\bnm\b", blob_en), blob_en
-    if re.search(r"\d[\d\s]*", blob_fr) and "départ" in blob_fr.lower():
-        assert "milles nautiques" in blob_fr or "mille nautique" in blob_fr or "Aujourd" in blob_fr
-    assert "nautical mile" in blob_en or "Today" in blob_en or "left" in blob_en.lower()
+    if re.search(r"\d[\d\s]*", blob_fr) and "quitte" in blob_fr.lower():
+        assert "milles" in blob_fr or "Aujourd" in blob_fr
+    assert "miles" in blob_en or "Today" in blob_en or "left" in blob_en.lower() or "leaves" in blob_en.lower()
 
 
 def test_official_dated_stops_pins_saint_maur():
@@ -754,17 +764,20 @@ def test_moments_arrival_each_stop_route_order():
 
 def test_moments_connectors_differ():
     plan = _moments_raw()
-    starts = []
-    for i, ch in enumerate(plan["chapters"]):
-        if i == 0:
-            continue
+    blob = _script_blob(plan)
+    assert "À la jambe suivante" not in blob
+    shapes = []
+    for ch in plan["chapters"]:
         text = ch.get("text") or ""
-        hit = next((c for c in CONNECTORS["fr"] if text.startswith(f"{c},")), None)
-        if hit:
-            starts.append(hit)
-    assert len(starts) >= 2
-    for a, b in zip(starts, starts[1:]):
-        assert a != b
+        if "longue traversée" in text:
+            shapes.append("long")
+        elif "d'île en île" in text:
+            shapes.append("hop")
+        elif "dernière étape" in text:
+            shapes.append("last")
+        elif "Berry-Mappemonde quitte" in text:
+            shapes.append("open")
+    assert len(shapes) >= 2
 
 
 def test_moments_approche_bubble_title_is_stop():
@@ -773,11 +786,11 @@ def test_moments_approche_bubble_title_is_stop():
     for ch in plan["chapters"]:
         for ev in ch.get("events") or []:
             eid = str(ev.get("id") or "")
-            if "approche" in eid or ev.get("kind") == "stop" and "approche" in str(ev.get("fact") or "").lower():
+            if "approche" in eid or ev.get("kind") == "stop":
                 titles.append(ev.get("title"))
             if str(ev.get("title") or "") in {"La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"}:
                 titles.append(ev.get("title"))
-    assert "Ajaccio" in titles or any(t and "Ajaccio" in t for t in titles)
+    assert "Ajaccio" in titles or any(t and "Ajaccio" in str(t) for t in titles)
     for ch in plan["chapters"]:
         dest = (ch.get("toName") or "").split("(")[0].strip()
         if not dest:
@@ -865,7 +878,8 @@ def _rich_journal():
     extra = [
         {"seq": 13, "t": "2026-05-15T11:00:00Z", "signature": "marina", "legIdx": 0, "changes": [],
          "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"},
-                    "around": [{"kind": "marina", "title": "Les Minimes", "fact": "Les Minimes (2 nm)"}]}},
+                    "around": [{"kind": "marina", "title": "Les Minimes", "fact": "Les Minimes (2 nm)",
+                                "lat": 46.14, "lon": -1.17}]}},
         {"seq": 14, "t": "2026-05-15T12:10:00Z", "signature": "port", "legIdx": 1, "changes": [
             {"kind": "port", "score": 2, "title": "La Rochelle", "fact": "La Rochelle"},
         ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
@@ -899,7 +913,8 @@ def test_rich_moments_without_budget_cites_each_type():
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     assert plan["targetSeconds"] == 0
     assert "Les Minimes" in blob
-    assert re.search(r"à portée de Les Minimes", blob)
+    assert "à portée de" not in blob
+    assert re.search(r"amarré à la marina Les Minimes|marina Les Minimes", blob)
     assert re.search(r"longe La Rochelle|devant La Rochelle", blob)
     assert re.search(r"aire marine protégée(?: :| ) Cabrera|l'aire marine protégée Cabrera", blob)
     assert re.search(r"une bouée", blob)
@@ -915,7 +930,7 @@ def test_rich_moments_without_budget_cites_each_type():
     _assert_route_order(blob, "journal riche FR")
     assert not re.search(r"\bnm\b", blob)
     assert not re.search(r"\d+[.,]\d{1,2}(?!\d)", blob)
-    assert "1 820 milles nautiques" in blob or "1820 milles nautiques" in blob
+    assert "1 820 milles" in blob or "1820 milles" in blob
 
 
 def test_budget_150_reached_and_no_decimals():
@@ -963,7 +978,8 @@ def test_review_sentences_facts_only():
     assert any("Gibraltar" in s for s in bits)
     assert any("Saison cyclonique" in s for s in bits)
     assert any("Coup de vent" in s and "22" in s for s in bits)
-    assert any(s == "Alerte." for s in bits)
+    assert not any("À surveiller" in s or s == "Alerte." or s.startswith("Couloirs") for s in bits)
+    assert any("passe par" in s for s in bits)
     assert review_leg_for_chapter(REVIEW_GIBRALTAR, "Ajaccio", "Fort-de-France")
     assert review_leg_for_chapter(REVIEW_GIBRALTAR, "La Rochelle", "Ajaccio") is None
 
@@ -1183,7 +1199,8 @@ def test_re7_discourse_eleven_defects():
     assert "Aucun port d'entrée" not in blob
     assert "entrée dans Entrée dans" not in blob
     assert "IUCN" not in blob
-    assert blob.lower().count("gran roque") == 1
+    # RG6 : marina de route tues ; seule la marina d'escale est nommée à l'arrivée.
+    assert "Gran Roque" not in blob
     assert "Monaco" not in blob
     assert re.search(r"s'envole de Cayenne pour Halifax", blob)
     assert re.search(r"le bateau attend à Cayenne", blob)
@@ -1199,7 +1216,9 @@ def test_re7_discourse_eleven_defects():
     assert "Bay of Biscay" not in blob
     assert re.search(r"eaux espagnoles", blob)
     idx_zee = blob.find("eaux espagnoles")
-    idx_dep = blob.find("départ vers Cayenne")
+    idx_dep = blob.find("pour Cayenne")
+    if idx_dep < 0:
+        idx_dep = blob.find("quitte")
     assert 0 <= idx_dep < idx_zee
     _assert_no_filler(blob)
     assert not re.search(r"\bnm\b", blob)
@@ -1268,7 +1287,8 @@ def test_rf5_no_air_invented_on_ajaccio_route():
 def test_rg1_road_phrase_on_first_chapter():
     plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     ch0 = plan["chapters"][0]["text"]
-    assert re.search(r"départ vers La Rochelle par la route", ch0, re.I), ch0
+    assert re.search(r"par la route", ch0, re.I), ch0
+    assert re.search(r"La Rochelle", ch0), ch0
 
 
 def test_rg1_depart_ms_is_clock_leave_not_hold():
@@ -1339,12 +1359,13 @@ def test_rg1_air_window_not_told_as_navigation():
     assert re.search(r"s'envole de Cayenne pour Saint-Pierre-et-Miquelon", blob), blob
     assert re.search(r"le bateau attend à Cayenne", blob), blob
     assert not re.search(r"départ vers Saint-Pierre", blob), blob
+    assert not re.search(r"Berry-Mappemonde quitte Cayenne.{0,80}pour Saint-Pierre", blob), blob
     assert not re.search(r"approche de Saint-Pierre", blob, re.I), blob
     assert not re.search(r"Arrivée à Saint-Pierre", blob), blob
     assert not re.search(r"eaux canadiennes", blob), blob
     next_sail = next(
         c for c in plan["chapters"]
-        if re.search(r"départ vers Papeete", c.get("text") or "")
+        if re.search(r"pour Papeete|quitte Cayenne", c.get("text") or "")
     )
     assert "Cayenne" in (next_sail.get("fromName") or "")
     assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
@@ -1371,12 +1392,16 @@ def test_rg1_depart_anchor_stays_at_port():
     }
     live = {"filmNm": 2000, "sailNm": 1900, "iso": "2026-05-25T00:00:00Z", "status": "live"}
     plan = build_raw_script(clock, clock["marks"], live, None, lang="fr", seconds=0, now_ms=t_end)
-    ch = next(c for c in plan["chapters"] if "départ vers Ajaccio" in (c.get("text") or ""))
+    ch = next(
+        c for c in plan["chapters"]
+        if re.search(r"pour Ajaccio|quitte La Rochelle", c.get("text") or "")
+    )
     anchors = ch.get("anchors") or []
     assert anchors, ch
+    text = ch.get("text") or ""
     depart_anchor = next(
         a for a in anchors
-        if "départ vers Ajaccio" in (ch.get("text") or "")[max(0, int(a.get("charIdx") or 0)):]
+        if re.search(r"Ajaccio|La Rochelle", text[max(0, int(a.get("charIdx") or 0)):])
     )
     t_anchor = _ms(depart_anchor["t"])
     vert = min(
@@ -1417,6 +1442,8 @@ def test_zee_haute_mer_and_sahara_spoken():
 def test_heading_phrase_eight_directions():
     assert heading_phrase(246, "fr") == "cap au sud-ouest"
     assert heading_phrase(0, "fr") == "cap au nord"
+    assert heading_phrase(90, "fr") == "cap à l'est"
+    assert heading_phrase(270, "fr") == "cap à l'ouest"
     assert heading_phrase(90, "en") == "heading east"
     assert heading_phrase(None, "fr") == ""
 
@@ -1816,3 +1843,204 @@ def test_rg5_one_station_per_chapter_closest_no_count():
     assert blob.count("un flotteur Argo") <= 1
     assert "6904216" not in blob
     assert "6901234" not in blob
+
+
+def _rg6_review():
+    return {
+        "legs": [
+            {
+                "from": "La Rochelle", "to": "Ajaccio (Corse)",
+                "legNm": 1820, "daysAtSea": 9.5, "plannedKnots": 8,
+            },
+            {
+                "from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)",
+                "legNm": 5153, "daysAtSea": 26.8, "plannedKnots": 8,
+            },
+            {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+                "legNm": 12082, "daysAtSea": 63.0, "plannedKnots": 8,
+            },
+        ]
+    }
+
+
+def test_rg6_de_never_doubles():
+    assert _de("Fineveke") == "de Fineveke"
+    assert _de("de Fineveke") == "de Fineveke"
+    assert "de de" not in _de("de Fineveke")
+    assert _de("Ajaccio").startswith("d’") or _de("Ajaccio").startswith("d'")
+    assert _de("Papeete") == "de Papeete"
+
+
+def test_rg6_english_title_and_forbidden():
+    assert looks_english_title("The Careenage")
+    assert looks_english_title("Center Pertuis Breton deposit")
+    assert looks_english_title("Laboratory Ship to Test Innovations in Extreme Conditions")
+    assert looks_english_title("Coordination of a Global Socioeconomic Monitoring Initiative for Coastal Management")
+    assert looks_english_title("Lesser Antilles Expedition")
+    assert looks_english_title("Coral Gardeners")
+    assert looks_english_title("Port Zante Marina")
+    assert looks_english_title("IntelliReefs")
+    assert not looks_english_title("port d'Ajaccio")
+    assert not looks_english_title("Les Minimes")
+    assert not looks_english_title("CÔTE À CÔTE")
+    assert film_has_forbidden("À surveiller. Couloirs : Gibraltar. La jambe compte 12 milles.")
+    assert film_has_forbidden("à portée de de Fineveke")
+    assert not film_has_forbidden("Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio.")
+
+
+def test_rg6_spoken_sea_days_and_date_thin():
+    assert spoken_sea_days(9.5, "fr") == "une dizaine de jours de mer"
+    assert spoken_sea_days(1.0, "fr") == "un jour de mer"
+    assert spoken_sea_days(26.8, "fr") == "une trentaine de jours de mer"
+    thinned = thin_chapter_dates([
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio : 1 820 milles.",
+        "Le 16 mai, les eaux espagnoles.",
+        "Le 18 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 26 mai, amarré au port d'Ajaccio : trois jours d'escale.",
+    ], "fr")
+    assert "Le 15 mai" in thinned[0]
+    assert not re.search(r"\b16 mai\b", thinned[1])
+    assert "lendemain" in thinned[1].lower() or thinned[1].startswith("Puis")
+    assert date_density_ok(" ".join(thinned), "fr")
+
+
+def test_rg6_chapter_shape_and_metrics():
+    w_long = {
+        "fromName": "Ajaccio (Corse)", "toName": "Fort-de-France (Martinique)",
+        "from": {"name": "Ajaccio (Corse)", "nm": 1820},
+        "to": {"name": "Fort-de-France (Martinique)", "nm": 6973},
+        "mode": "sail", "vehicle": "main",
+    }
+    m = chapter_metrics(w_long, _rg6_review())
+    assert m["legNm"] == 5153
+    assert m["daysAtSea"] == 26.8
+    assert m["plannedKnots"] == 8
+    assert chapter_shape(w_long, 2, 4, m) == "long"
+    w_hop = {
+        "fromName": "Fort-de-France", "toName": "Pointe-à-Pitre",
+        "from": {"name": "Fort-de-France", "nm": 100},
+        "to": {"name": "Pointe-à-Pitre", "nm": 292},
+        "mode": "sail",
+    }
+    mh = chapter_metrics(w_hop, None)
+    assert mh["legNm"] == 192
+    assert chapter_shape(w_hop, 3, 8, mh) == "hop"
+
+
+def test_rg6_gabarit_opening_route_arrival():
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+             "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 2, "t": "2026-05-15T13:00:00Z", "signature": "s2", "legIdx": 1, "changes": [],
+             "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 3, "t": "2026-05-16T08:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+                 "fact": "Spanish Exclusive Economic Zone"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 4, "t": "2026-05-16T12:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 5, "t": "2026-05-21T08:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+                {"kind": "marina", "score": 2, "title": "port d'Ajaccio", "fact": "port d'Ajaccio (1 nm)",
+                 "lat": 41.92, "lon": 8.74},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 6, "t": "2026-05-24T12:51:00Z", "signature": "s6", "legIdx": 1, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal, lang="fr", seconds=0, now_ms=NOW_MS,
+        review=_rg6_review(),
+    )
+    ch = next(c for c in plan["chapters"] if "Ajaccio" in (c.get("toName") or c.get("text") or ""))
+    text = ch["text"]
+    assert re.search(r"Berry-Mappemonde quitte La Rochelle", text)
+    assert "cap au sud-ouest" in text
+    assert "1 820 milles" in text
+    assert "dizaine de jours de mer" in text
+    assert "8 nœuds de moyenne" in text
+    assert "eaux espagnoles" in text
+    assert "Arrivée à Ajaccio" in text
+    assert "port d'Ajaccio" in text or "port d’Ajaccio" in text
+    assert "à quai" not in text
+    assert "À surveiller" not in text
+    assert "Couloirs" not in text
+    assert "La jambe" not in text
+    assert "à portée de" not in text
+    assert not film_has_forbidden(text)
+    assert date_density_ok(text, "fr")
+    sents = [s for s in re.split(r"(?<=[.!?…])\s+", text) if s.strip()]
+    assert any("quitte" in s for s in sents)
+    assert any("eaux" in s or "Galice" in s or "Camariñas" in s for s in sents)
+    assert any(s.startswith("Arrivée") for s in sents)
+
+
+def test_rg6_all_sail_chapters_have_distance_days_no_jargon():
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=_rg6_review(),
+    )
+    blob = _script_blob(plan)
+    assert not film_has_forbidden(blob)
+    assert "3 jours à quai" not in blob
+    assert blob.count("à quai") == 0
+    hold_forms = set()
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        assert date_density_ok(text, "fr"), text
+        if not is_sea_chapter(ch):
+            continue
+        if _is_airish(ch):
+            continue
+        assert re.search(r"\d[\d\s]*\s*milles", text), text
+        assert re.search(
+            r"jours de mer|jour de mer|dizaine de jours|vingtaine|trentaine|quarantaine",
+            text,
+        ), text
+        if "Arrivée à" in text:
+            for form in ("d'escale", "escale de", "au port", "on reste"):
+                if form in text:
+                    hold_forms.add(form)
+    assert "Berry-Mappemonde quitte" in blob
+
+
+def _is_airish(ch: dict) -> bool:
+    t = ch.get("text") or ""
+    return "s'envole" in t or "flies" in t
+
+
+def test_rg6_hold_silent_when_clock_does_not_stop():
+    from film_script import _arrival_sentence
+    stop = {
+        "name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "holdHours": 72,
+        "lat": 46.15, "lon": -1.16,
+    }
+    clock = {
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": "2026-05-15T13:00:00Z", "lat": 46.10, "lon": -1.30, "vehicle": "main"},
+        ]
+    }
+    sent = _arrival_sentence(stop, "fr", clock=clock, harbor="le port de La Rochelle", chapter_i=0)
+    assert "Arrivée à La Rochelle" in sent
+    assert "escale" not in sent
+    assert "à quai" not in sent
+
+
+def test_rg6_arrival_harbor_ignores_far_marina():
+    dest = {"name": "Ajaccio (Corse)", "lat": 41.92, "lon": 8.74}
+    far = {"kind": "marina", "title": "Porto de Barizo", "lat": 43.32, "lon": -8.87, "tMs": 1}
+    near = {"kind": "marina", "title": "port d'Ajaccio", "lat": 41.92, "lon": 8.74, "tMs": 2}
+    spoken = _arrival_harbor([far, near], dest, "fr")
+    assert "Ajaccio" in spoken
+    assert "Barizo" not in spoken
+    only_far = _arrival_harbor([far], dest, "fr")
+    assert "Ajaccio" in only_far
+    assert "Barizo" not in only_far

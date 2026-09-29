@@ -28,8 +28,8 @@ FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
 FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
 PREPARING = "preparing"
 READY = "ready"
-# Clé film : RG5 (stations qualifiées) invalide rg4. moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rg5"
+# Clé film : RG6 (gabarit d'étape) invalide rg5. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rg6"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
