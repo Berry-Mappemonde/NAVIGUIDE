@@ -100,8 +100,8 @@ test("lot RH1 — chat : repli par les faits, jamais l'échec modèle si le jour
   expect(gas, "gasoil : jamais l'échec modèle").not.toMatch(FAILED);
   expect(gas, "gasoil : pas un prix inventé").not.toMatch(/\d+[.,]\d+\s*€|\d+\s*€\/l/i);
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await askChat(page, "Quel vent au bateau ?");
   await expect.poll(async () => {

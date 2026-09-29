@@ -431,7 +431,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 data-testid="film-view-switch"
                 className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0"
               >
-                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow"], [VIEW_SIMULATION, t("simulationButton"), "view-simulation", "mode-sim"]].map(([id, label, testId, alias]) => (
+                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow", null], [VIEW_SIMULATION, t("tracerButton"), "view-tracer", "mode-tracer", t("tracerModeTooltip")]].map(([id, label, testId, alias, tip]) => (
                   <button
                     key={id}
                     type="button"
@@ -439,6 +439,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     aria-checked={view === id}
                     data-testid={testId}
                     data-mode={alias}
+                    title={tip || undefined}
                     onClick={() => onView(id)}
                     className={`px-1.5 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
                       view === id ? "bg-cyan-700/70 text-cyan-50 border border-cyan-400/50" : "text-white/70 hover:text-white border border-transparent"

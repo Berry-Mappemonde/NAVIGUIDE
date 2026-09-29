@@ -126,9 +126,13 @@ export async function openJournalTab(page) {
 }
 
 export async function enterSimulation(page) {
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 }
+
+// DM1 : la pilule s'appelle Tracer à l'écran ; le mode interne (VIEW_SIMULATION)
+// ne change qu'en DM3. Alias pour les specs à venir.
+export const enterTracerMode = enterSimulation;
 
 export async function enterTracer(page) {
   await showLeftPanel(page);

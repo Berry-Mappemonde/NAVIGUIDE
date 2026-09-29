@@ -504,6 +504,8 @@ export default {
   followExpeditionButton: "Suivre l’expédition",
   followExpeditionTitle: "Suivre l’expédition Berry-Mappemonde",
   simulationButton: "Simulation",
+  tracerButton: "Tracer",
+  tracerModeTooltip: "Tracer — jouer la route Berry-Mappemonde ou la vôtre : date de départ, Play, calculs",
   officialDepartureLocked: "Départ officiel : 15 mai 2026, 08:00 UTC",
   gribMissing:      "dernière prévision absente",
   storiesPending:   "{n} récits en préparation",

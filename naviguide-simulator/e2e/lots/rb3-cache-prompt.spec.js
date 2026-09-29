@@ -99,8 +99,8 @@ test("lot RB3 — fiche et journal sans prompt, même depuis le cache", async ({
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
   await switchToEnglish(page);
   await expect(page.getByTestId("view-suivre")).toContainText(/Follow/i);

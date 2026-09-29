@@ -76,7 +76,7 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
   }
 
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "false");
   await expect(cinemaButton(page)).toBeVisible();
   expect(await cinemaPressed(page), "Cinéma enfoncé au chargement").toBe(true);
   await expect.poll(() => panelClosed(page, "left"), { timeout: 8_000 }).toBe(true);
@@ -106,8 +106,8 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
 
   await shot(page, "01-accueil");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => cinemaPressed(page), { timeout: 8_000 }).toBe(false);
   await expect.poll(() => panelClosed(page, "left"), { timeout: 10_000 }).toBe(false);
   await expect.poll(() => panelClosed(page, "right"), { timeout: 10_000 }).toBe(false);

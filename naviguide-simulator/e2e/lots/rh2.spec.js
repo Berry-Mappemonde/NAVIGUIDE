@@ -61,7 +61,7 @@ test("lot RH2 — parcours nominal sans net::ERR_ABORTED (warm/status, eta)", as
   await leaveCinema(page);
 
   const suivre = page.getByTestId("view-suivre");
-  const simulation = page.getByTestId("view-simulation");
+  const simulation = page.getByTestId("view-tracer");
   await suivre.click();
   await expect(suivre).toHaveAttribute("aria-checked", "true");
 

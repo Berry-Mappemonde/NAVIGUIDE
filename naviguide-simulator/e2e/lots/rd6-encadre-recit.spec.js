@@ -84,8 +84,8 @@ test("lot RD6 — Récit hors Suivre absent, journal nommé, pas de trou", async
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await leaveCinema(page);
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
 
   const box = page.getByTestId("ici-maintenant");

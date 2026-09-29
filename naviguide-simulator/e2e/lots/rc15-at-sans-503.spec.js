@@ -91,8 +91,8 @@ test("lot RC15 — Simulation 30 s sans 503 voyage/ici, Suivre LIVE", async ({ p
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   if (apiUp) {
     await page.waitForTimeout(30_000);
   } else {
