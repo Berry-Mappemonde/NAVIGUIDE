@@ -77,7 +77,15 @@ function displayEta(eta) {
   return { ...eta, p10: bound.p10, p90: bound.p90 };
 }
 
+export function isEtaPreparing(eta) {
+  if (!eta) return false;
+  const status = String(eta.status || "").toLowerCase();
+  const reason = String(eta.reason || "").toLowerCase();
+  return status === "preparing" || reason === "en préparation" || reason === "preparing";
+}
+
 export function etaReasonLabel(eta, t) {
+  if (isEtaPreparing(eta)) return "";
   const raw = `${eta?.reason || ""} ${eta?.detail || ""}`.toLowerCase();
   if (!raw.trim()) return "";
   if (raw.includes("quota") || raw.includes("429") || raw.includes("limit exceeded")) {
@@ -96,7 +104,7 @@ export function etaReasonLabel(eta, t) {
 }
 
 export function formatEtaUnavailable(eta, t, lang = "fr") {
-  if (!eta || Number(eta.members) > 0) return "";
+  if (!eta || Number(eta.members) > 0 || isEtaPreparing(eta)) return "";
   const reason = etaReasonLabel(eta, t);
   if (!reason) return "";
   const date = etaDayLabel(eta.nextRetry, lang);
@@ -343,7 +351,8 @@ export function etaDisplayFromResponse(body) {
   const ready = etaFromResponse(body);
   if (ready) return ready;
   if (!body || Number(body.members || 0) > 0) return null;
-  if (body.reason || body.status === "unavailable") return body;
+  if (isEtaPreparing(body)) return null;
+  if (body.status === "unavailable" || (body.reason && body.nextRetry)) return body;
   return null;
 }
 
@@ -540,7 +549,7 @@ export function usePlanReview({ enabled = true, frozen = false, clock, lookup, r
         : leg
     ));
     if (!eta || !nextStop) return base;
-    if (!eta.members && !eta.reason) return base;
+    if (!eta.members && (isEtaPreparing(eta) || !eta.reason)) return base;
     return base.map((leg) => (
       stopMatch(leg.to, nextStop) ? { ...leg, etaRange: eta } : leg
     ));
