@@ -230,6 +230,12 @@ Vérifier qu'elle sert : `https://simulator.naviguide.fr/ici/warm/status` → `l
 | **9 oct.** | renouvellement Cursor : reprise des nuits complètes | plan des 3 semaines : globe (G3–G7), L4–L6 si non faits, corrections de revue |
 | 16, 23 oct. | mises à jour hebdomadaires de la soumission (vendredi) : changelog, captures, vidéo si le film a changé | chaque vendredi une version soumise |
 | **30 oct. 10:00 PT** | soumission finale | tout ce qui est en prod est décrit, rien de plus |
+
+Chaque mise à jour de la soumission suit la chaîne du 29 sept. (issue #432) : Grok Bot **relève** le formulaire, les
+règles et les critères (📋, routine `infra/agents/GROK_BOT_DEVPOST.md`) → `infra/agents/devpost_answers.py` lance
+un agent **Fable** qui propose les réponses, vérifie la conformité aux règles (preuves) et analyse les critères
+(✍️ + PR `docs/DEVPOST_REPONSES_<date>.md`) → Grok Bot **recopie** dans le brouillon, sans jamais soumettre (📝,
+captures) → le porteur vérifie et clique Submit.
 | 1–15 déc. | jugement : l'app doit répondre, crédits Token Factory valides | clés et crédits vérifiés le 30 nov. |
 
 ## 5. Les lots « workflow » à ajouter à `LOTS_ORDRE_ET_PROMPTS.md`
