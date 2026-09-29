@@ -565,7 +565,52 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
         })
         seq += 1
         prev = cur
+    _attach_climo_changes(rows, voy.get("clock") if isinstance(voy.get("clock"), dict) else {})
     return rows
+
+
+def _climo_row_dist(row: dict, event: dict) -> float:
+    sail = _as_float(event.get("sailNm"))
+    if sail is not None:
+        pos = row.get("pos") if isinstance(row.get("pos"), dict) else {}
+        moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+        here = moment.get("pos") if isinstance(moment.get("pos"), dict) else pos
+        row_sail = _as_float((moment.get("leg") or {}).get("sailNm") if isinstance(moment.get("leg"), dict) else None)
+        if row_sail is None:
+            row_sail = _as_float(row.get("sailNm"))
+        if row_sail is not None:
+            return abs(row_sail - sail)
+        lat, lon = _as_float((here or {}).get("lat")), _as_float((here or {}).get("lon"))
+        ev_lat, ev_lon = _as_float(event.get("lat")), _as_float(event.get("lon"))
+        if None not in (lat, lon, ev_lat, ev_lon):
+            return abs(lat - ev_lat) + abs(lon - ev_lon)
+    ev_t, row_t = _parse_iso(event.get("t") or event.get("iso")), _parse_iso(row.get("t"))
+    if ev_t and row_t:
+        return abs((ev_t - row_t).total_seconds())
+    return 1e12
+
+
+def _attach_climo_changes(rows: list[dict], clock: dict) -> None:
+    """Pose les bascules d'horloge sur le moment le plus proche (date / sailNm)."""
+    if not rows:
+        return
+    try:
+        from climo_events import notable_climo_changes  # noqa: PLC0415
+    except Exception:
+        return
+    seen = {str(c.get("id") or "") for row in rows for c in (row.get("changes") or []) if isinstance(c, dict)}
+    for event in notable_climo_changes(clock):
+        eid = str(event.get("id") or "")
+        if eid and eid in seen:
+            continue
+        best = min(rows, key=lambda row: _climo_row_dist(row, event))
+        changes = list(best.get("changes") or [])
+        changes.append(event)
+        best["changes"] = changes
+        if eid:
+            seen.add(eid)
+        if event.get("t") and not best.get("t"):
+            best["t"] = event["t"]
 
 
 def _with_clock(voy: dict) -> dict:
