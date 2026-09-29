@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -234,8 +235,17 @@ def _poe_url(item: dict[str, Any]) -> str | None:
     return None
 
 
+def judge_enabled() -> bool:
+    """Juge de vérité (Tavily lit la page officielle, Nemotron Ultra juge). ÉTEINT par défaut depuis le 28 sept.
+    (décision du porteur) : depuis R8c le badge n'est plus rendu, on calculait et payait pour rien de visible.
+    `NAVIGUIDE_TRUTH_JUDGE=1` le rallume (le module est gardé pour un retour du badge dans le panneau « ici »)."""
+    return (os.environ.get("NAVIGUIDE_TRUTH_JUDGE") or "0").strip() in ("1", "true", "yes", "on")
+
+
 async def maybe_attach(dossier: dict[str, Any], client: httpx.AsyncClient | None = None) -> dict[str, Any]:
-    """Déclencheur : ZEE Gold / fiche PoE avec URL officielle. Attache `truth` aux PoE."""
+    """Déclencheur : ZEE Gold / fiche PoE avec URL officielle. Attache `truth` aux PoE — si le juge est allumé."""
+    if not judge_enabled():
+        return dossier
     zee = dossier.get("zee") if isinstance(dossier, dict) else None
     poes = list((dossier.get("poe") or []) if isinstance(dossier, dict) else [])
     if not poes:
