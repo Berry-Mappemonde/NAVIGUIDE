@@ -15,6 +15,10 @@ admin est là ; sans clé, la réponse est rendue sans consignation.
 Un chiffre ne passe jamais par le LLM : toute phrase de la réponse qui porte
 un nombre absent du contexte est retirée (`filter_numbers`, inchangé).
 Chaque réponse porte `source`.
+
+Lot RH1 : si la cascade n'a aucun fournisseur, `answer_question` lui passe un
+gabarit construit depuis les faits (`source=rules`). `failed` ne reste que
+si même ce gabarit est impossible.
 """
 from __future__ import annotations
 
@@ -53,6 +57,10 @@ _WX_WORDS = re.compile(
     r"(?i)(n[œoe]uds?|knots?|vent|wind|gale|coup de vent|rafale|hs|vague|mer|sea|houle|force)",
 )
 _SEA_WORDS = re.compile(r"(?i)(hs|vague|mer|sea|houle)")
+_SPEED_WORDS = re.compile(r"(?i)(vitesse|speed|quai|quay)")
+_STOP_WORDS = re.compile(r"(?i)(escale|stopover|prochaine|next\s+stop|destination)")
+_MISSING_FR = "Le journal n’a pas cette information dans ses données."
+_MISSING_EN = "The logbook does not hold that information in its data."
 EMBED_MODEL = "Qwen/Qwen3-Embedding-8B"
 EMBED_MIN_COS = 0.25
 
@@ -413,6 +421,85 @@ def summarize(question: str, answer: str) -> str:
     return f"{q} → {first[:160]}".strip(" →")
 
 
+def _lang_en(lang: str | None) -> bool:
+    return str(lang or "fr").lower().startswith("en")
+
+
+def missing_info(lang: str | None) -> str:
+    return _MISSING_EN if _lang_en(lang) else _MISSING_FR
+
+
+def _fmt_ctx_num(value: Any) -> str | None:
+    """Same digits `filter_numbers` will accept — never a written figure."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(float(value)):
+        return None
+    return format(float(value), "g")
+
+
+def _wind_facts(ctx: dict) -> tuple[str | None, str | None]:
+    official = ctx.get("official") if isinstance(ctx.get("official"), dict) else {}
+    wind = official.get("wind") if isinstance(official.get("wind"), dict) else {}
+    return _fmt_ctx_num(wind.get("windKnots")), _fmt_ctx_num(wind.get("dirFromDeg"))
+
+
+def _speed_facts(ctx: dict) -> tuple[str | None, bool]:
+    boat = ctx.get("boat") if isinstance(ctx.get("boat"), dict) else {}
+    official = ctx.get("official") if isinstance(ctx.get("official"), dict) else {}
+    raw = boat.get("speedKnots")
+    if raw is None:
+        raw = official.get("speedKnots")
+    kn = _fmt_ctx_num(raw)
+    at_quay = bool(boat.get("atQuay") or official.get("atQuay"))
+    if kn is not None and float(raw) == 0:
+        at_quay = True
+    return kn, at_quay
+
+
+def _next_stop_name(ctx: dict) -> str | None:
+    stop = ctx.get("nextStop") if isinstance(ctx.get("nextStop"), dict) else None
+    if not stop:
+        return None
+    name = stop.get("name")
+    if not name:
+        return None
+    text = str(name).strip()
+    return text or None
+
+
+def rules_answer(question: str, ctx: dict | None, lang: str | None) -> str:
+    """Gabarit FR/EN depuis les faits du contexte. Aucun chiffre rédigé."""
+    if not isinstance(ctx, dict):
+        return missing_info(lang)
+    en = _lang_en(lang)
+    q = question or ""
+    parts: list[str] = []
+
+    if _WX_WORDS.search(q):
+        kn, deg = _wind_facts(ctx)
+        if kn and deg:
+            parts.append(f"Wind at the boat: {kn} kn, from {deg}°." if en else f"Vent au bateau : {kn} kn, de {deg}°.")
+        elif kn:
+            parts.append(f"Wind at the boat: {kn} kn." if en else f"Vent au bateau : {kn} kn.")
+        elif deg:
+            parts.append(f"Wind at the boat: from {deg}°." if en else f"Vent au bateau : de {deg}°.")
+
+    if _SPEED_WORDS.search(q):
+        kn, at_quay = _speed_facts(ctx)
+        if at_quay:
+            parts.append("The boat is at the quay." if en else "Le bateau est à quai.")
+        elif kn:
+            parts.append(f"Speed: {kn} kn." if en else f"Vitesse : {kn} kn.")
+
+    if _STOP_WORDS.search(q):
+        name = _next_stop_name(ctx)
+        if name:
+            parts.append(f"Next stop: {name}." if en else f"Prochaine escale : {name}.")
+
+    return " ".join(parts) if parts else missing_info(lang)
+
+
 async def answer_question(question: str, lang: str, client_ctx: dict | None, now: datetime,
                           http: httpx.AsyncClient | None = None) -> dict[str, Any]:
     ctx = await build_context(client_ctx, now, http)
@@ -426,15 +513,22 @@ async def answer_question(question: str, lang: str, client_ctx: dict | None, now
         ctx["memory"] = memory
     system, user = _prompt(question, ctx, lang)
     try:
-        raw, source = await cascade_text(system, user, http, tier=chat_tier(question))
+        fallback = rules_answer(question, ctx, lang)
+    except Exception:
+        fallback = None
+    try:
+        raw, source = await cascade_text(
+            system, user, http, tier=chat_tier(question), fallback=fallback,
+        )
     except Exception as exc:
-        return {"status": "failed", "reason": str(exc)[:160], "answer": None, "engine": None, "source": None, "context": ctx}
+        if fallback is None:
+            return {"status": "failed", "reason": str(exc)[:160], "answer": None, "engine": None, "source": None, "context": ctx}
+        raw, source = fallback, "rules"
     tidy = tidy_story(raw, None, max_sentences=ANSWER_SENTENCES, max_chars=ANSWER_CHARS)
     text, dropped = filter_numbers(tidy, ctx)
     text = _clean_text(text)
     if not text:
-        text = ("Le journal n’a pas cette information dans ses données." if not (lang or "fr").startswith("en")
-                else "The logbook does not hold that information in its data.")
+        text = missing_info(lang)
         source = "rules"
     return {"status": "ready", "answer": text, "engine": source, "source": source, "droppedSentences": dropped, "context": ctx}
 
