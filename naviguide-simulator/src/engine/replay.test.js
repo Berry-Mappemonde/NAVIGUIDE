@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, trimQueue, windFromJournalAt,
+  advance, calibrateRate, cardDwellMs, measuredCps, voiceLedStep, cardFromJournalEntry, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, FILM_RATE_MAX, FILM_RATE_MIN, FILM_V_MAX_PX_S, FILM_V_MIN_PX_S, journalTimeline, positionAt, replayProgress, replaySample, replayScale, replayWindow, stepFilmTime, trimQueue, voiceShouldWait, windFromJournalAt,
 } from "./replay.js";
 const T0 = "2026-05-15T08:00:00.000Z";
 
@@ -292,5 +292,171 @@ describe("replay — le bateau suit la voix, jamais l'inverse (27 sept.)", () =>
     assert.equal(measuredCps(150, 10000), 15);
     assert.equal(measuredCps(400, 10000), 40);
     assert.equal(measuredCps(30, 10000), 6);
+  });
+});
+
+describe("replay — vitesse continue (lot RG12, revue du 28 sept.)", () => {
+  const tA = Date.parse("2026-05-29T00:00:00Z");
+  const tB = tA + 26 * 86400000;
+  const tQuay = tB + 3 * 86400000;
+  const seaText = "À partir du 31 mai, onze stations scientifiques croisées sur la route atlantique.";
+  const quayText = "Arrivée à Fort-de-France le 28 juin, 3 jours à quai.";
+  const text = `${seaText} ${quayText}`;
+  const seaClock = {
+    t0: "2026-05-29T00:00:00.000Z",
+    vertices: [
+      { tHours: 0, filmNm: 0, sailNm: 0, lat: 41.9, lon: 8.7, bearing: 250 },
+      { tHours: 26 * 24, filmNm: 5153, sailNm: 5153, lat: 14.6, lon: -61.07, bearing: 250 },
+      { tHours: 26 * 24 + 72, filmNm: 5153, sailNm: 5153, lat: 14.6, lon: -61.07, bearing: 0 },
+    ],
+  };
+  const chapter = {
+    id: "leg-atl",
+    tA: new Date(tA).toISOString(),
+    tB: new Date(tQuay).toISOString(),
+    text,
+    fromLat: 41.9,
+    fromLon: 8.7,
+    toLat: 14.6,
+    toLon: -61.07,
+    anchors: [
+      { charIdx: 0, t: new Date(tA).toISOString() },
+      { charIdx: seaText.length, t: new Date(tB).toISOString() },
+      { charIdx: text.length, t: new Date(tQuay).toISOString() },
+    ],
+  };
+
+  it("pente continue aux ancres (Fritsch-Carlson) : dérivées gauche et droite proches", () => {
+    const plan = filmPlan({ chapters: [chapter], targetSeconds: 150 });
+    const ch = plan.chapters[0];
+    const x = seaText.length;
+    const left = (plan.timeAt(0, x) - plan.timeAt(0, x - 0.2)) / 0.2;
+    const right = (plan.timeAt(0, x + 0.2) - plan.timeAt(0, x)) / 0.2;
+    const scale = Math.max(1, Math.abs(left), Math.abs(right));
+    assert.ok(Math.abs(left - right) / scale < 0.2, `pentes ${left} vs ${right}`);
+    assert.equal(plan.timeAt(0, 0), tA);
+    assert.equal(plan.timeAt(0, x), tB);
+  });
+
+  it("frontières synthétiques : rapport max/min d'avance ≤ 1,5, aucune frame à l'arrêt hors escale, v dans les bornes", () => {
+    const plan = filmPlan({ chapters: [chapter], targetSeconds: 150 });
+    const ch = plan.chapters[0];
+    const dt = 1 / 60;
+    const wordEvery = 6;
+    const wordS = 0.375;
+    const cps = 16;
+    let t = ch.tA;
+    let charIdx = 0;
+    let lastB = 0;
+    let since = 0;
+    let recale = 0;
+    const advances = [];
+    const speeds = [];
+    const frames = Math.round(5 / dt);
+    for (let i = 0; i < frames; i += 1) {
+      const wall = i * dt;
+      const wordIdx = Math.floor(wall / wordS);
+      const prevWord = Math.floor((wall - dt) / wordS);
+      if (i > 0 && wordIdx !== prevWord) {
+        charIdx = Math.min(seaText.length - 2, wordIdx * wordEvery);
+        lastB = charIdx;
+        since = 0;
+        recale = 300;
+      } else {
+        since += dt;
+      }
+      const step = stepFilmTime({
+        t,
+        dt,
+        chapter: ch,
+        plan,
+        chapterIdx: 0,
+        charIdx,
+        cps,
+        lastBoundaryChar: lastB,
+        sinceBoundaryS: since,
+        recaleRemainMs: recale,
+        clock: seaClock,
+        zoom: 4,
+        lat: 30,
+        voiceLed: true,
+        phraseEnded: false,
+        nowMs: wall * 1000,
+      });
+      recale = step.recaleRemainMs;
+      const dT = step.t - t;
+      if (wall > 0.4 && wall < 4.6 && dT > 1) advances.push(dT);
+      if (wall > 0.4 && wall < 4.6 && Number.isFinite(step.pxPerS) && step.pxPerS > 0.5) {
+        speeds.push(step.pxPerS);
+      }
+      t = step.t;
+    }
+    assert.ok(advances.length > 30, `trop peu d'avances (${advances.length})`);
+    const ratio = Math.max(...advances) / Math.min(...advances);
+    assert.ok(ratio <= 1.5, `rapport ${ratio.toFixed(2)} > 1,5`);
+    assert.ok(advances.every((a) => a > 0), "frame à l'arrêt hors escale");
+    assert.ok(speeds.every((v) => v <= FILM_V_MAX_PX_S + 8), "v_max dépassée");
+    assert.ok(speeds.some((v) => v >= FILM_V_MIN_PX_S - 8), "aucune vitesse dans les bornes");
+    assert.ok(t > tA, "le bateau a avancé");
+  });
+
+  it("l'attente de la voix ne coupe jamais une phrase", () => {
+    const mid = voiceShouldWait({ phraseEnded: false, t: 0, sentenceEndT: 1e12, atQuay: false });
+    assert.equal(mid.wait, false);
+    assert.equal(mid.cut, false);
+    const late = voiceShouldWait({ phraseEnded: true, t: 0, sentenceEndT: 1e12, atQuay: false });
+    assert.equal(late.wait, true);
+    assert.equal(late.cut, false);
+    assert.equal(late.skip, false);
+    const quay = voiceShouldWait({ phraseEnded: true, t: tB, sentenceEndT: tQuay, atQuay: true });
+    assert.equal(quay.wait, true);
+    assert.equal(quay.cut, false);
+    assert.equal(quay.skip, true);
+    const done = voiceShouldWait({ phraseEnded: true, t: tB, sentenceEndT: tB, atQuay: false });
+    assert.equal(done.wait, false);
+    assert.equal(done.cut, false);
+  });
+
+  it("après la phrase d'escale, rampe ≤ 1 s vers le départ suivant, voix en attente", () => {
+    const plan = filmPlan({ chapters: [chapter], targetSeconds: 150 });
+    const ch = plan.chapters[0];
+    const start = stepFilmTime({
+      t: tB,
+      dt: 1 / 60,
+      chapter: ch,
+      plan,
+      chapterIdx: 0,
+      charIdx: seaText.length + 2,
+      clock: seaClock,
+      zoom: 4,
+      voiceLed: false,
+      phraseEnded: true,
+      nowMs: 0,
+    });
+    assert.equal(start.voiceHold, true);
+    assert.ok(start.skipRamp, "rampe d'escale");
+    assert.ok(start.skipRamp.durationMs <= 1000);
+    let t = start.t;
+    let ramp = start.skipRamp;
+    for (let i = 1; i <= 60; i += 1) {
+      const step = stepFilmTime({
+        t,
+        dt: 1 / 60,
+        chapter: ch,
+        plan,
+        chapterIdx: 0,
+        charIdx: seaText.length + 2,
+        clock: seaClock,
+        zoom: 4,
+        voiceLed: false,
+        phraseEnded: true,
+        skipRamp: ramp,
+        nowMs: (i / 60) * 1000,
+      });
+      t = step.t;
+      ramp = step.skipRamp;
+    }
+    assert.equal(ramp, null);
+    assert.ok(t >= tQuay - 1, "a rejoint le départ suivant");
   });
 });

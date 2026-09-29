@@ -33,7 +33,9 @@ describe("useReplay contract (lot E)", () => {
     // The voice lives in hooks/useReplayVoice.js since lot J; App mounts it.
     assert.match(app, /useReplayVoice\(\{/);
     assert.match(app, /chapterText: replay\.chapterText/);
-    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speak\(chapterText, lang/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speakSentence|speak\(/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /isVoiceHeld/);
+    assert.match(app, /onSentenceEnd: replay\.onSentenceEnd/);
     assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
@@ -56,9 +58,10 @@ describe("useReplay contract (lot E)", () => {
   it("le film est chapitré : filmPlan, onboundary, durée cible, sous-titre", () => {
     assert.match(hook, /filmPlan\(/);
     assert.match(hook, /onVoiceBoundary/);
-    // 27 sept. : le pas de temps mené par la voix passe par voiceLedStep (ancres, plafond),
-    // et la voix n'est plus recalibrée (débit constant).
-    assert.match(hook, /voiceLedStep\(/);
+    // 27 sept. / RG12 : le pas de temps mené par la voix passe par stepFilmTime
+    // (prédiction, gouverneur) ; la voix n'est plus recalibrée (débit constant).
+    assert.match(hook, /stepFilmTime\(/);
+    assert.match(hook, /voiceHoldRef/);
     assert.doesNotMatch(hook, /calibrateRate/);
     assert.match(hook, /targetSeconds/);
     assert.match(hook, /if \(done\)/);
