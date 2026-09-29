@@ -256,7 +256,12 @@ def import_legacy_json(path: Path, ttl_s: float) -> int:
         if now - ts > ttl_s:
             continue
         parts = key.split(":")
-        if len(parts) != 3:  # older keys carried the month: dead weight now
+        # 3 parties = lat:lon:radius ; 4 = + PEARL_REV (rg3). Un 4e chiffre = ancien mois.
+        if len(parts) == 3:
+            pass
+        elif len(parts) == 4 and not str(parts[3]).isdigit():
+            pass
+        else:
             continue
         try:
             lat, lon = float(parts[0]), float(parts[1])

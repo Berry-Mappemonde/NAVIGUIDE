@@ -199,7 +199,7 @@ def test_route_events_from_warmed_pearls_dated_by_the_clock(client, monkeypatch)
         if i in (12, 13):
             continue
         zee = None if (i >= 20 or i == 8) else fr
-        amp = [{"name": "Pertuis Charentais - Filets", "site_id": "pc-1", "nm": 3.6}] if i in (5, 6) else []
+        amp = [{"name": "Pertuis charentais - Rochebonne", "site_id": "pc-1", "nm": 3.6, "iucn_cat": "II"}] if i in (5, 6) else []
         ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {"zee": zee, "amp": amp, "sources": {"bi": "ok"}})
 
     events = ici_warm.route_events_from_pearls(voy["points"])

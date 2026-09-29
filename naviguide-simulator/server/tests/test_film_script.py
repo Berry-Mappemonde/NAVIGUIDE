@@ -14,7 +14,9 @@ from film_script import (
     FILM_MAX_CHARS,
     FILM_WRITE_MAX,
     FILM_WRITE_MIN,
+    SHORT_CROSSING_MS,
     allocate_chapter_budgets,
+    alert_is_amp,
     bubble_score,
     build_film_response,
     build_raw_script,
@@ -23,7 +25,9 @@ from film_script import (
     connector_at,
     cyclone_name_year,
     dated_marks,
+    dose_amp_changes,
     dose_coast_changes,
+    dose_project_changes,
     dose_zee_changes,
     film_candidates,
     film_facts,
@@ -893,7 +897,7 @@ def test_rich_moments_without_budget_cites_each_type():
     assert "Les Minimes" in blob
     assert re.search(r"à portée de Les Minimes", blob)
     assert re.search(r"longe La Rochelle|devant La Rochelle", blob)
-    assert re.search(r"aire marine protégée : Cabrera", blob)
+    assert re.search(r"aire marine protégée(?: :| ) Cabrera|l'aire marine protégée Cabrera", blob)
     assert re.search(r"station PIRATA", blob)
     assert "Irma" in blob and "2017" in blob
     assert "Fort Saint-Louis" in blob
@@ -1612,3 +1616,58 @@ def test_rg2_film_names_route_and_heading():
     assert "Gibraltar" in blob
     assert "Sardaigne" in blob or "Corse" in blob
     assert "cap au sud-ouest" in blob
+
+
+def test_chaluts_never_spoken_as_amp():
+    fishing = {
+        "kind": "amp", "score": 1, "title": "Pertuis Charentais - Chaluts",
+        "fact": "Pertuis Charentais - Chaluts (2 nm): IUCN Unassigned.",
+    }
+    alert = {
+        "kind": "alert-on", "score": 3, "title": "Aire marine protégée",
+        "fact": "Pertuis Charentais - Pétoncles - Center Pertuis Breton deposit (3 nm): IUCN Unassigned.",
+    }
+    assert change_sentence(fishing, "fr") == ""
+    assert not alert_is_amp(alert)
+    assert "Pétoncles" not in change_sentence(alert, "fr")
+    assert "deposit" not in change_sentence(alert, "fr").lower()
+    real = {
+        "kind": "amp", "score": 1, "title": "Pertuis charentais - Rochebonne",
+        "fact": "Pertuis charentais - Rochebonne (12 nm)", "nm": 12,
+    }
+    sent = change_sentence(real, "fr")
+    assert "Rochebonne" in sent
+    assert "douze milles" in sent
+    assert "Pétoncles" not in sent
+
+
+def test_project_sentence_and_dosage():
+    near = {
+        "kind": "project", "score": 1, "title": "Récif sentinelle",
+        "fact": "Récif sentinelle (10 nm)", "nm": 10, "gold_on": True,
+    }
+    sent = change_sentence(near, "fr")
+    assert "le projet Récif sentinelle" in sent
+    assert "dix milles" in sent
+    far = {**near, "id": "far", "nm": 60, "title": "Loin", "fact": "Loin (60 nm)"}
+    from film_script import change_is_speakable, change_on_route
+    assert change_on_route(near)
+    assert not change_on_route(far)
+    short_span = SHORT_CROSSING_MS - 1
+    many = [
+        {**near, "id": f"p{i}", "title": f"Projet {i}", "fact": f"Projet {i} (1 nm)",
+         "nm": 1 + i, "gold_on": i == 2, "tMs": i}
+        for i in range(5)
+    ]
+    assert len(dose_project_changes(many, short_span)) == 1
+    assert dose_project_changes(many, short_span)[0]["gold_on"] is True
+    long_span = 12 * 86_400_000
+    assert len(dose_project_changes(many, long_span)) == 3
+    amps = [
+        {"kind": "amp", "id": f"a{i}", "title": f"Réserve {i}", "fact": f"Réserve {i} ({i} nm)",
+         "nm": i + 1, "tMs": i}
+        for i in range(5)
+    ]
+    assert len(dose_amp_changes(amps, short_span)) == 1
+    assert len(dose_amp_changes(amps, long_span)) == 3
+    assert dose_amp_changes(amps, short_span)[0]["nm"] == 1
