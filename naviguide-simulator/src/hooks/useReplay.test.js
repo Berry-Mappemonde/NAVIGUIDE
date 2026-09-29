@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmEstimatedSeconds, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmEstimatedSeconds, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -94,6 +94,11 @@ describe("useReplay contract (lot E)", () => {
     assert.equal(pickFilmEstimateSeconds(150, { 150: { estimatedSeconds: 160 } }, 0), 160);
     assert.equal(pickFilmEstimateSeconds(0, { 0: { estimatedSeconds: 240 } }, 99), 240);
     assert.equal(pickFilmEstimateSeconds(180, null, 195), 195);
+    const q0 = "lang=fr&seconds=0&style=raw&t0=2026-05-15T08%3A00%3A00.000Z";
+    const q150 = "lang=fr&seconds=150&style=raw&t0=2026-05-15T08%3A00%3A00.000Z";
+    assert.equal(filmQueryKeepsReady(q0, q150), true);
+    assert.equal(filmQueryKeepsReady(q150, "lang=en&seconds=150&style=raw&t0=2026-05-15T08%3A00%3A00.000Z"), false);
+    assert.match(hook, /filmQueryKeepsReady/);
     assert.doesNotMatch(hook, /calibrateRate/);
     assert.match(hook, /estimatedSeconds/);
     assert.match(app, /estimatedSeconds: replay\.estimatedSeconds/);
