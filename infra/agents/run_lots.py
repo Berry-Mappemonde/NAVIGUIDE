@@ -73,7 +73,7 @@ AGENT_BIN = os.environ.get("BIM_AGENT_BIN") or shutil.which("agent") or str(Path
 
 LOT_RE = re.compile(
     r'<!--\s*LOT\s+id="(?P<id>[^"]+)"\s+title="(?P<title>[^"]*)"\s+plan="(?P<plan>[^"]*)"'
-    r'\s+size="(?P<size>[^"]*)"\s+deps="(?P<deps>[^"]*)"\s*-->\s*```text\n(?P<prompt>.*?)\n```',
+    r'\s+size="(?P<size>[^"]*)"\s+deps="(?P<deps>[^"]*)"(?:\s+model="(?P<model>[^"]*)")?\s*-->\s*```text\n(?P<prompt>.*?)\n```',
     re.S,
 )
 
@@ -86,6 +86,21 @@ class Lot:
     size: str
     deps: list[str]
     prompt: str
+    # Modèle propre au lot (attribut optionnel model="…" de la balise) : le porteur confie les lots
+    # risqués à un modèle fort (Claude Fable, CLI local) sans changer le modèle du batch (29 sept.).
+    # Vide = modèle du batch (--model). Jamais un modèle Claude sur un worker Cloud (règle du dépôt).
+    model: str = ""
+
+
+def lot_model(lot: "Lot", args) -> str:
+    """Le modèle qui code ce lot : le sien s'il en a un, sinon celui du batch."""
+    m = (lot.model or "").strip()
+    if not m:
+        return args.model
+    if getattr(args, "runtime", "local") == "cloud" and not m.startswith(("composer-", "cursor-", "muse-")):
+        log(f"[{lot.id}] modèle {m!r} refusé sur un worker Cloud (modèles Cursor seulement) — modèle du batch {args.model!r}")
+        return args.model
+    return m
 
 
 @dataclass
@@ -126,7 +141,8 @@ def parse_lots_text(md: str) -> list[Lot]:
     lots = []
     for m in LOT_RE.finditer(md or ""):
         deps = [d.strip() for d in m.group("deps").split(",") if d.strip()]
-        lots.append(Lot(m.group("id"), m.group("title"), m.group("plan"), m.group("size"), deps, m.group("prompt").strip()))
+        lots.append(Lot(m.group("id"), m.group("title"), m.group("plan"), m.group("size"), deps, m.group("prompt").strip(),
+                        (m.group("model") or "").strip()))
     return lots
 
 
@@ -232,12 +248,26 @@ class Http:
     def github(self, path: str, method: str = "GET", body: dict | None = None):
         return self._call(f"{GITHUB_API}{path}", self.github_headers, method, body)
 
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+            return None
+
     def github_text(self, path: str) -> str:
-        """GET qui renvoie du texte (journaux de job : GitHub redirige vers un fichier)."""
+        """GET qui renvoie du texte (journaux de job). GitHub répond 302 vers un fichier sur le stockage
+        Azure : ce fichier doit être lu SANS l'en-tête Authorization, sinon 401 (toute la nuit du 29 sept.,
+        chaque relance de correction partait avec « 0 lignes d'échec transmises » pour cette raison)."""
+        opener = urllib.request.build_opener(self._NoRedirect)
         req = urllib.request.Request(f"{GITHUB_API}{path}", headers=self.github_headers)
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return resp.read().decode(errors="replace")
+            try:
+                with opener.open(req, timeout=60) as resp:
+                    return resp.read().decode(errors="replace")
+            except urllib.error.HTTPError as e:
+                if e.code not in (301, 302, 303, 307, 308) or not e.headers.get("Location"):
+                    raise
+                blob = urllib.request.Request(e.headers["Location"], headers={"User-Agent": "bim-run-lots"})
+                with urllib.request.urlopen(blob, timeout=120) as resp:
+                    return resp.read().decode(errors="replace")
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"HTTP {e.code} GET {path}") from e
         except (urllib.error.URLError, TimeoutError) as e:
@@ -267,7 +297,9 @@ def find_pr(http: Http, repo: str, branch: str, state: str = "open") -> dict | N
     return prs[0] if prs else None
 
 
-FAIL_LINE = re.compile(r"(✘|✖|FAILED|failed|Error:|AssertionError|Expected|Received|\.spec\.js:\d+|test_[a-z_]+\.py::)")
+FAIL_LINE = re.compile(r"(✘|✖|##\[error\]|FAILED|failed|Error:|AssertionError|Expected:|Received:|\.spec\.js:\d+|test_[a-z_]+\.py::)")
+# Bruit du journal GitHub qui contient ces mots sans nommer un échec (téléchargement du cache Playwright).
+FAIL_NOISE = re.compile(r"^\s*(✓|✔|-\s+\[skipped\])|Received \d+ of \d+|Cache (restored|saved)|::(debug|group|endgroup)|\d+ passed \(")
 
 
 def job_failures(http: Http, repo: str, check_run: dict) -> list[str]:
@@ -281,7 +313,7 @@ def job_failures(http: Http, repo: str, check_run: dict) -> list[str]:
     for line in raw.splitlines():
         line = re.sub(r"^\S+T\S+Z\s*", "", line).strip()            # horodatage GitHub
         line = re.sub(r"\x1b\[[0-9;]*m", "", line)                  # couleurs
-        if FAIL_LINE.search(line) and len(line) < 240 and line not in out:
+        if FAIL_LINE.search(line) and not FAIL_NOISE.search(line) and len(line) < 240 and line not in out:
             out.append(line)
         if len(out) >= 25:
             break
@@ -390,7 +422,7 @@ def cloud_branch(run: dict, repo: str) -> str | None:
 
 
 def run_lot_cloud(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
-    agent_id, run_id = cloud_create(http, lot, prompt, args.repo, ref, args.model)
+    agent_id, run_id = cloud_create(http, lot, prompt, args.repo, ref, lot_model(lot, args))
     run = cloud_wait(http, agent_id, run_id, int(args.timeout_hours * 3600), args.poll)
     if run.get("status") != "FINISHED":
         log(f"[{lot.id}] premier passage : {run.get('status')} — une relance")
@@ -773,22 +805,23 @@ def lot_delivered(http: Http, path: Path, repo: str) -> str | None:
 
 def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
     watch = lambda: lot_delivered(http, path, args.repo)  # noqa: E731
+    model = lot_model(lot, args)
     adopted = adoptable_worktree(lot)
     if adopted:
         path, branch = adopted
         log(f"[{lot.id}] worktree {path} déjà poussé sur {branch} — adopté (pas de nouvel agent)")
         ensure_pr(http, args, lot, branch, "(lot adopté après interruption : voir la PR)")
         return {"status": "FINISHED", "branch": branch, "worktree": str(path), "result": "adopté",
-                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True, done=watch)}
+                "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), model, int(args.timeout_hours * 1800), resume=True, done=watch)}
     path = prepare_worktree(lot, ref)
-    log(f"[{lot.id}] worktree {path} depuis {ref} — agent local ({args.model or 'modèle par défaut du compte'})")
-    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, args.model, int(args.timeout_hours * 3600), done=watch)
+    log(f"[{lot.id}] worktree {path} depuis {ref} — agent local ({model or 'modèle par défaut du compte'})")
+    status, result = run_agent_cli(path, local_prefix(path, ref, PW_PORT) + "\n\n" + prompt, model, int(args.timeout_hours * 3600), done=watch)
     log(f"    agent: {status}")
     if status == "STOPPED":
         status = "FINISHED"   # le travail était livré (PR poussée, worktree propre) ; on a juste cessé d'attendre l'agent
     if status != "FINISHED":
         log(f"[{lot.id}] premier passage : {status} — une relance")
-        status, result = run_agent_cli(path, RESUME_TEXT, args.model, int(args.timeout_hours * 1800), resume=True, done=watch)
+        status, result = run_agent_cli(path, RESUME_TEXT, model, int(args.timeout_hours * 1800), resume=True, done=watch)
         if status == "STOPPED":
             status = "FINISHED"
         log(f"    relance: {status}")
@@ -805,7 +838,7 @@ def run_lot_local(http: Http, lot: Lot, prompt: str, ref: str, args) -> dict:
     else:
         status = "ERROR" if status == "FINISHED" else status
     return {"status": status, "branch": branch, "worktree": str(path), "result": result[:500],
-            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), args.model, int(args.timeout_hours * 1800), resume=True, done=watch)}
+            "fix": lambda names, details=None: run_agent_cli(path, fix_text(names, details), model, int(args.timeout_hours * 1800), resume=True, done=watch)}
 
 
 # ---------------------------------------------------------------- boucle commune
@@ -853,7 +886,7 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
         return
     out = run_lot_cloud(http, lot, prompt, ref, args) if args.runtime == "cloud" else run_lot_local(http, lot, prompt, ref, args)
     entry = {k: v for k, v in out.items() if k != "fix"}
-    entry.update({"pr": None, "ci": None})
+    entry.update({"pr": None, "ci": None, "model": lot_model(lot, args) or "défaut du compte"})
     branch = out.get("branch")
     if out.get("status") != "FINISHED" or not branch:
         log(f"[{lot.id}] RATÉ ({out.get('status')}, branche={branch}) — on continue depuis {state.last_branch}")
@@ -2070,6 +2103,11 @@ def main() -> None:
             http = Http(None, tok)
             args.model = resolve_local_model(info["models"], args.model)
             log(f"CLI Cursor {info['agent']} connecté ; modèle : {args.model or 'défaut du compte'}")
+            # Modèles propres à certains lots (model="…" dans la balise) : vérifiés au départ, pas au milieu de la nuit.
+            for l in lots:
+                if l.model:
+                    l.model = resolve_local_model(info["models"], l.model)
+                    log(f"[{l.id}] modèle propre au lot : {l.model}")
 
     if not args.dry_run:
         start_watchdog()
@@ -2127,6 +2165,11 @@ def main() -> None:
     # Lots correctifs déjà en file (réviseur d'une tranche précédente, ou ajoutés à la main) : pris dès le départ,
     # y compris quand tous les lots de l'intervalle sont déjà faits (reprise après interruption).
     pending.extend(queued_lots(state, {l.id for l in pending}))
+    # Reprise au milieu d'une revue de nuit (pause du porteur pendant l'attente du bot, 29 sept. 10:06) : la tranche
+    # mémorisée est déjà pleine — on la relit AVANT de lancer le lot suivant, au lieu d'attendre qu'il s'y ajoute.
+    if args.resume and args.review_every and len(since_review) >= args.review_every and not args.dry_run:
+        log(f"reprise : tranche {since_review} pas encore relue — revue de nuit d'abord")
+        night_review()
 
     while True:
         while pending:

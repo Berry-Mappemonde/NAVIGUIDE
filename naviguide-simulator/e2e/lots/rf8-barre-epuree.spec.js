@@ -116,13 +116,18 @@ async function assertListeInformative(page) {
     expect(innerCursor, `curseur main dans la ligne ${i}`).not.toBe("pointer");
   }
   const clock = page.getByTestId("film-clock-line");
-  const clockBefore = ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
+  // Le gabarit « 0 nm · j0 · 15 mai 2026 » précède l'horloge officielle (minute UTC qui avance) : on attend la
+  // bascule et on compare le jour de mer + LIVE, pas le texte entier (tranche 6/6, 29 sept.).
+  await expect(clock).not.toHaveText(/\bj0\b/, { timeout: 20_000 }).catch(() => {});
+  const readClock = async () => ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
+  const cursorOf = (s) => `${(s.match(/\bj\d+\b/) || [""])[0]} ${/\bLIVE\b/.test(s) ? "LIVE" : ""}`.trim();
+  const clockBefore = await readClock();
   const row = rows.first();
   await row.scrollIntoViewIfNeeded();
   await row.click({ force: true });
   await page.waitForTimeout(400);
-  const clockAfter = ((await clock.textContent().catch(() => "")) || "").replace(/\s+/g, " ");
-  expect(clockAfter, "clic ligne a bougé le curseur").toBe(clockBefore);
+  const clockAfter = await readClock();
+  expect(cursorOf(clockAfter), `clic ligne a bougé le curseur (${clockBefore} → ${clockAfter})`).toBe(cursorOf(clockBefore));
 }
 
 async function assertDateBoxFitsFormat(page) {
