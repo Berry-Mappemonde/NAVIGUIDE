@@ -7,6 +7,7 @@ import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
+import { startWarmStatusWatch } from "../hooks/usePlanReview.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 
@@ -307,20 +308,11 @@ export const Sidebar = memo(function Sidebar({
 
   useEffect(() => {
     if (!showIciBriefing) return undefined;
-    let cancelled = false;
-    const ctrl = new AbortController();
-    fetch(`${API_URL}/ici/warm/status`, { signal: ctrl.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const src = data?.llm?.lastSource;
-        if (!cancelled && typeof src === "string" && src.trim()) setStorySource(src.trim());
-      })
-      .catch(() => { /* sans API : on garde « règles » */ });
-    return () => {
-      cancelled = true;
-      ctrl.abort();
-    };
-  }, [showIciBriefing, briefing]);
+    return startWarmStatusWatch(
+      () => fetch(`${API_URL}/ici/warm/status`).then((r) => (r.ok ? r.json() : null)),
+      setStorySource,
+    );
+  }, [showIciBriefing]);
 
   return (
     <>
