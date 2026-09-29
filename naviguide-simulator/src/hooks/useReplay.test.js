@@ -759,13 +759,19 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.equal(pinned.sentenceMode, true);
     assert.match(pinned.text, /avion/);
     assert.doesNotMatch(pinned.text, /Saint-Maur/);
-    const air = "Mer calme. L’équipage prend l’avion pour Halifax. Retour en avion vers Cayenne.";
-    const airAt = filmBarSubtitle({ chapterText: air, charIdx: air.indexOf("avion") });
-    assert.match(airAt.text, /prend l['’]avion pour Halifax/);
+    const air = [
+      "Mer calme.",
+      "Puis, le 18 août, l'équipage prend l'avion pour Halifax.",
+      "Ensuite, le 22 août, retour en avion vers Cayenne.",
+    ].join(" ");
+    const airAt = filmBarSubtitle({ chapterText: air, charIdx: 0 });
+    assert.match(airAt.text, /prend l'avion pour Halifax/);
+    assert.match(airAt.text, /retour en avion vers Cayenne/);
     assert.doesNotMatch(airAt.text, /Mer calme/);
-    assert.doesNotMatch(airAt.text, /Cayenne/);
+    assert.ok(airAt.text.length < air.length);
     const airPinned = filmBarSubtitle({ chapterText: air, charIdx: air.length, pinned: true });
-    assert.match(airPinned.text, /avion/i);
+    assert.match(airPinned.text, /prend l'avion pour Halifax/);
+    assert.match(airPinned.text, /retour en avion vers Cayenne/);
     assert.ok(airPinned.text.length < air.length);
     assert.doesNotMatch(airPinned.text, /Mer calme/);
     const officialCh1 = "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026. Puis, le 15 mai, départ vers La Rochelle.";
