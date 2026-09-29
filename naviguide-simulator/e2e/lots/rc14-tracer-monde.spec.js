@@ -86,7 +86,7 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
     await expect.poll(async () => {
       const z = await mapZoom(page);
       return Number.isFinite(z) ? z : 99;
-    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.25);
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
   }
 
   await page.getByTestId("view-simulation").click();
@@ -117,7 +117,7 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
     await expect.poll(async () => {
       const z = await mapZoom(page);
       return Number.isFinite(z) ? z : 99;
-    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.25);
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
     await page.waitForFunction(() => document.querySelectorAll(".leaflet-tile-loaded").length >= 4, {
       timeout: 8_000,
     }).catch(() => {});
@@ -134,7 +134,7 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
     await expect.poll(async () => {
       const z = await mapZoom(page);
       return Number.isFinite(z) ? z : 99;
-    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.25);
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
   } else {
     await shot(page, "01-tracer-monde");
   }

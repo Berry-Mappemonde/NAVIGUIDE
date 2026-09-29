@@ -33,8 +33,10 @@ test("lot F3 — chapitre 1 Saint-Maur / La Rochelle, source non vide", async ({
   await expect(subtitle).toContainText("La Rochelle");
   await shot(page, "01-chapitre-1");
 
+  // RF8 : « Récit : règles » retiré de la barre ; la source reste dans le DOM (hidden).
   const source = page.getByTestId("film-source");
-  await expect(source).toBeVisible();
+  await expect(source).toBeAttached();
+  await expect(source).toHaveAttribute("hidden", "");
   const text = (await source.innerText()).trim();
   expect(text, "film-source ne doit pas être vide").not.toBe("");
   await shot(page, "02-source");

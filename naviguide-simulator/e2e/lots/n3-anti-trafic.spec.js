@@ -27,16 +27,13 @@ async function leaveCinema(page) {
   if (on) await cinema.click();
 }
 
-async function showToolsPanel(page) {
-  await leaveCinema(page);
-  const review = page.getByTestId("plan-review");
-  if (await review.isVisible({ timeout: 1500 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--right").click();
-  await expect(review).toBeVisible({ timeout: 10_000 });
+async function showReview(page) {
+  const { openReviewTab } = await import("../helpers.js");
+  await openReviewTab(page);
 }
 
 test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-France", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -53,14 +50,10 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
 
-  await showToolsPanel(page);
+  await showReview(page);
   const review = page.getByTestId("plan-review");
   await expect(review).toBeVisible({ timeout: 15_000 });
-  if (!(await review.evaluate((el) => el.open))) {
-    await review.locator("summary").click();
-  }
 
-  const pill = page.getByTestId("route-anti-shipping");
   const row = page.getByTestId("plan-review-leg").filter({ hasText: /Ajaccio/i }).filter({ hasText: /Fort-de-France/i });
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.scrollIntoViewIfNeeded();
@@ -75,9 +68,9 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
 
   const serverHasN3 = Array.isArray(officialPack?.lanes) && officialPack.lanes.includes("Gibraltar");
   if (!apiUp || serverHasN3) {
-    await expect(pill).toBeVisible({ timeout: 15_000 });
-    await expect(lanes).toBeVisible();
-    await expect(lanes).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar/);
+    // RD9 : plus de pastille route-anti-shipping — les couloirs sont sur la ligne.
+    await expect(lanes).toBeVisible({ timeout: 15_000 });
+    await expect(lanes).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
     if (serverHasN3) {
       expect(Number(officialPack.score)).toBeLessThan(1);
     }

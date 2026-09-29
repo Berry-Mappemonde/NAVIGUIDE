@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SECONDS_PER_DAY, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, voiceLedStep, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
+  DEFAULT_SECONDS_PER_DAY, FILM_TARGET_SECONDS, MIN_CARD_MS, FILM_RECALE_MS, cardDwellMs, measuredCps, voiceLedStep, cardsBetween, chapterAtElapsed, filmChaptersFromStory, filmPlan, journalTimeline, positionAt, publishFilmEnd, publishFilmStart, replayProgress, replaySample, replayWindow, trimQueue,
 } from "../engine/replay.js";
 import { FILM_UI_MS } from "../map/filmCamera.js";
 import { buildFilmScript } from "../engine/expeditionStory.js";
@@ -356,6 +356,10 @@ export function useReplay({
   const [filmStyle, setFilmStyle] = useState("raw");
   const [hasWritten, setHasWritten] = useState(false);
   const remotePlanRef = useRef(null);
+  // Langue et budget du plan chargé : on ne garde le plan « prêt » pendant un rechargement que s'il
+  // répond à la MÊME demande — sinon un clic Revoir juste après le passage en anglais jouait le film
+  // français (spec rb5 / ra2 en CI, 28 sept.).
+  const remotePlanKeyRef = useRef("");
   const [remoteStatus, setRemoteStatus] = useState("pending");
   const remoteStatusRef = useRef("pending");
   const setFilmStatus = useCallback((s) => {
@@ -480,6 +484,7 @@ export function useReplay({
       if (cancelled) return true;
       if (isRe7OfficialFilm(data)) {
         remotePlanRef.current = data;
+        remotePlanKeyRef.current = q;
         setHasWritten(Boolean(data.hasWritten));
         setFilmSource(data.source || "rules");
         setFilmStatus("ready");
@@ -487,6 +492,7 @@ export function useReplay({
       }
       if (data?.chapters?.length) {
         remotePlanRef.current = data;
+        remotePlanKeyRef.current = q;
         setFilmStatus("stale");
         return true;
       }
@@ -502,8 +508,11 @@ export function useReplay({
 
     const load = () => {
       if (cancelled) return;
-      setFilmStatus("pending");
-      remotePlanRef.current = null;
+      const keepReady = remoteStatusRef.current === "ready" && remotePlanRef.current && remotePlanKeyRef.current === q;
+      if (!keepReady) {
+        setFilmStatus("pending");
+        remotePlanRef.current = null;
+      }
       fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
         .then((r) => {
           if (!r.ok) return { fail: true };
@@ -612,7 +621,8 @@ export function useReplay({
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     budgetRef.current = userBudget;
-    const planSeconds = resolveFilmTargetSeconds(userBudget, chapters);
+    // Case décochée : pas de budget imposé (RD7), mais le plan tient 2:30 (F1).
+    const planSeconds = userBudget > 0 ? userBudget : FILM_TARGET_SECONDS;
     const plan = filmPlan({ chapters, targetSeconds: planSeconds });
     if (!plan.chapters.length) return false;
     clockRef.current = clockToUse;

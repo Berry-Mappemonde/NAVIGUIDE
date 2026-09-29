@@ -68,7 +68,7 @@ test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ 
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
 
   await hideLeftPanel(page);
   await noFloatingCards(page);
@@ -103,7 +103,8 @@ test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ 
   await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await expect(box).toBeVisible();
-  await expect(page.getByTestId("ici-leg-line")).toBeVisible();
+  await expect(page.getByTestId("ici-section-leg")).toBeVisible();
+  await expect(page.getByTestId("ici-leg-line")).toBeAttached();
   await noFloatingCards(page);
 
   const hasAjaccio = await page.waitForFunction(() => {

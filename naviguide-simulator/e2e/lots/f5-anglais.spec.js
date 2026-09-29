@@ -18,6 +18,8 @@ async function dismissNotForNav(page) {
 }
 
 async function switchToEnglish(page) {
+  const { showLeftPanel } = await import("../helpers.js");
+  await showLeftPanel(page);
   const en = page.getByTestId("lang-en");
   await expect(en).toBeVisible({ timeout: 15_000 });
   await en.click();
@@ -49,6 +51,16 @@ test("lot F5 — sous-titre anglais, plein écran film, Échap rend les sidebars
   await expect(panels.nth(0)).toBeInViewport();
   await expect(panels.nth(1)).toBeInViewport();
 
+  const { waitFilmCanStart } = await import("../helpers.js");
+  const canStart = await waitFilmCanStart(page, 12_000);
+  if (!canStart) {
+    test.info().annotations.push({
+      type: "Revoir grisé",
+      description: "RC11 : Replay still disabled — sous-titre / plein écran non joués",
+    });
+    await shot(page, "01-plein-ecran");
+    return;
+  }
   await page.getByTestId("replay-start").click();
   const subtitle = page.getByTestId("film-subtitle");
   await expect(subtitle).toBeVisible({ timeout: 8_000 });

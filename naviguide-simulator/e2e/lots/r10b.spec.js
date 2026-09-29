@@ -88,7 +88,14 @@ test("lot R10b — aucun changement visible, trois parcours", async ({ page }) =
     return;
   }
   let body = await adviceRes.json();
-  expect(body.status).toMatch(/^(pending|done)$/);
+  expect(body.status).toMatch(/^(pending|done|unavailable)$/);
+  if (body.status === "unavailable") {
+    test.info().annotations.push({
+      type: "advice unavailable",
+      description: "RF1 : /advice honnête (unavailable) — pas de pending|done sur le stock figé",
+    });
+    return;
+  }
   expect(body.weights.shiftPerDay).toBe(0.3);
   expect(body.weights.extraNm).toBe(0.02);
   for (let i = 0; i < 40 && body.status === "pending"; i += 1) {

@@ -19,11 +19,10 @@ async function dismissNotForNav(page) {
   }
 }
 
-async function showToolsPanel(page) {
-  const review = page.getByTestId("plan-review");
-  if (await review.isVisible({ timeout: 2000 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--right").click();
-  await expect(review).toBeVisible({ timeout: 10_000 });
+async function showReview(page) {
+  const { openReviewTab, showRightPanel } = await import("../helpers.js");
+  await showRightPanel(page);
+  await openReviewTab(page);
 }
 
 test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({ page }) => {
@@ -69,12 +68,9 @@ test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({
     return;
   }
 
-  await showToolsPanel(page);
+  await showReview(page);
   const review = page.getByTestId("plan-review");
   await review.scrollIntoViewIfNeeded();
-  if (!(await review.evaluate((el) => el.open))) {
-    await review.locator("summary").click();
-  }
 
   const reviewBody = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
     .then((r) => (r.ok() ? r.json() : null)).catch(() => null);
@@ -90,7 +86,8 @@ test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({
       expect(days, `jours de mer Nouméa → Dzaoudzi : ${days}`).toBeGreaterThan(30);
     }
     const row = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
-    if (await row.count()) await row.first().scrollIntoViewIfNeeded();
+    // La revue du plan se re-rend pendant le chargement : le scroll est un confort, pas une assertion.
+    if (await row.count()) await row.first().scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
   } else if (noumeaLeg) {
     test.info().annotations.push({
       type: "API autre checkout",

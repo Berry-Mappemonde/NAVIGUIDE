@@ -70,13 +70,8 @@ test("lot T — route dessinée au large de la Mauritanie : pas de Bourgenay", a
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
   await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 30_000 });
 
-  const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route/i });
-  if (!(await drawBtn.isVisible().catch(() => false))) {
-    await page.locator(".naviguide-sidebar-toggle--left").click();
-  }
-  await expect(drawBtn).toBeVisible({ timeout: 15_000 });
-  await drawBtn.click();
-  await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
+  const { enterTracer } = await import("../helpers.js");
+  await enterTracer(page);
 
   const tools = page.getByTestId("drawing-summary");
   if (!(await tools.isVisible().catch(() => false))) {

@@ -34,9 +34,11 @@ test("lot C3 — vitesse unique et légende des régimes", async ({ page }) => {
   await expect(clock).toBeVisible({ timeout: 15_000 });
   const legend = page.getByTestId("regime-legend");
   await expect(legend).toBeVisible({ timeout: 15_000 });
-  await expect(legend).toContainText(/hindcast/i);
-  await expect(legend).toContainText(/prévision|forecast/i);
-  await expect(legend).toContainText(/climatolog/i);
+  // RC18 / RF10 : le libellé visible est la vitesse ; les trois régimes sont dans title / aria-label.
+  await expect(legend).toHaveAttribute("title", /hindcast/i);
+  await expect(legend).toHaveAttribute("title", /prévision|forecast/i);
+  await expect(legend).toHaveAttribute("title", /climatolog/i);
+  await expect(legend).toHaveAttribute("aria-label", /hindcast/i);
 
   const line = await clock.innerText();
   const debug = await page.evaluate(() => window.__naviguideDebug || null);
