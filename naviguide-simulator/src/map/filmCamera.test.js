@@ -441,3 +441,154 @@ describe("filmCamera lot RG13 — 60 Hz, cap lissé, zoom d'approche", () => {
     assert.match(controller, /filmFramesSinceReset/);
   });
 });
+
+describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", () => {
+  function mercatorMap(center = { lat: 46.1541, lng: -1.167 }, zoom = 6) {
+    const size = { x: 1280, y: 800 };
+    let here = { ...center };
+    let z = zoom;
+    const calls = [];
+    function project(lat, lng, zoomLevel = z) {
+      const scale = 256 * (2 ** zoomLevel);
+      const x = ((lng + 180) / 360) * scale;
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale;
+      return { x, y };
+    }
+    const map = {
+      flyTo() { calls.push({ action: "flyTo" }); },
+      setView(c, nextZoom, opts) {
+        calls.push({ action: "setView", center: c, zoom: nextZoom, opts });
+        here = { lat: c[0], lng: c[1] };
+        if (Number.isFinite(Number(nextZoom))) z = Number(nextZoom);
+      },
+      panBy() { calls.push({ action: "panBy" }); },
+      _rawPanBy() { calls.push({ action: "panBy" }); },
+      getSize() { return size; },
+      getCenter() { return here; },
+      getZoom() { return z; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : (ll.lng ?? ll.lon);
+        const p = project(lat, lng);
+        const c = project(here.lat, here.lng);
+        return { x: size.x / 2 + (p.x - c.x), y: size.y / 2 + (p.y - c.y) };
+      },
+      containerPointToLatLng(p) {
+        const c = project(here.lat, here.lng);
+        const scale = 256 * (2 ** z);
+        const wx = c.x + (p.x - size.x / 2);
+        const wy = c.y + (p.y - size.y / 2);
+        const lng = (wx / scale) * 360 - 180;
+        const n = Math.PI - ((2 * Math.PI * wy) / scale);
+        const lat = (180 / Math.PI) * Math.atan(Math.sinh(n));
+        return { lat, lng };
+      },
+      getBounds() {
+        const nw = map.containerPointToLatLng({ x: 0, y: 0 });
+        const se = map.containerPointToLatLng({ x: size.x, y: size.y });
+        return {
+          getNorth: () => nw.lat,
+          getSouth: () => se.lat,
+          getEast: () => se.lng,
+          getWest: () => nw.lng,
+        };
+      },
+    };
+    const boatPx = (lat, lon) => {
+      const p = map.latLngToContainerPoint([lat, lon]);
+      return { x: p.x, y: p.y };
+    };
+    return { map, calls, boatPx };
+  }
+
+  it("même lat/lon, chapterIdx 0→1, zoom 6→4 → |Δpx| ≤ 40, au plus un setView", () => {
+    const lat = 46.1541;
+    const lon = -1.167;
+    const { map, calls, boatPx } = mercatorMap({ lat, lng: lon }, 6);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 0, lastChapterIdx: null, lat, lon, heading: 260, zoom: 6, now: 0,
+    });
+    const p0 = boatPx(lat, lon);
+    const views0 = calls.filter((c) => c.action === "setView").length;
+    const flip = applyFilmCamera(map, {
+      chapterIdx: 1,
+      lastChapterIdx: first.lastChapterIdx,
+      lat,
+      lon,
+      heading: 140,
+      zoom: 4,
+      now: 100,
+      lastSetViewAt: first.lastSetViewAt,
+      lastCenter: first.lastCenter,
+      lastBoat: { lat, lon },
+    });
+    const p1 = boatPx(lat, lon);
+    const dpx = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    assert.ok(dpx <= 40, `bond au flip ${dpx.toFixed(1)} px`);
+    const views1 = calls.filter((c) => c.action === "setView").length;
+    assert.ok(views1 - views0 <= 1, `setView au flip : ${views1 - views0}`);
+    assert.notEqual(flip.action, "flyTo");
+    assert.ok(flip.action === "hold" || flip.action === "setView" || flip.action === "panBy");
+
+    let st = flip;
+    let prev = p1;
+    const extraViews = [];
+    for (let i = 0; i < 8; i++) {
+      const viewsBefore = calls.filter((c) => c.action === "setView").length;
+      st = applyFilmCamera(map, {
+        chapterIdx: 1,
+        lastChapterIdx: st.lastChapterIdx,
+        lat,
+        lon,
+        heading: 140,
+        zoom: 4,
+        now: 200 + i * 16,
+        lastSetViewAt: st.lastSetViewAt,
+        lastCenter: st.lastCenter,
+        lastBoat: { lat, lon },
+        framesSinceReset: st.framesSinceReset,
+        boatPx: 0,
+      });
+      const p = boatPx(lat, lon);
+      const d = Math.hypot(p.x - prev.x, p.y - prev.y);
+      assert.ok(d <= 40, `saut ${i + 2} : ${d.toFixed(1)} px`);
+      extraViews.push(calls.filter((c) => c.action === "setView").length - viewsBefore);
+      prev = p;
+    }
+    const snapped = extraViews.filter((n) => n > 1).length;
+    assert.equal(snapped, 0, "pas un 2e/3e setView sur la même frame");
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+  });
+
+  it("stepFilmCamera : zoom courant gardé, la nouvelle jambe est visée par pas", () => {
+    const lat = 46.1541;
+    const lon = -1.167;
+    const { map, boatPx } = mercatorMap({ lat, lng: lon }, 6);
+    const samples = [];
+    pushFilmSample(samples, { t: 0, lat, lon, heading: 260, chapterIdx: 0 });
+    pushFilmSample(samples, { t: 200, lat, lon, heading: 140, chapterIdx: 1 });
+    const a = stepFilmCamera(map, {
+      samples, now: 80, lastChapterIdx: null, zoom: 6, baseZoom: 6, chapterIdx: 0,
+    });
+    const p0 = boatPx(lat, lon);
+    const b = stepFilmCamera(map, {
+      samples,
+      now: 280,
+      lastChapterIdx: a.lastChapterIdx,
+      lastCenter: a.lastCenter,
+      lastSetViewAt: a.lastSetViewAt,
+      zoom: 6,
+      baseZoom: 4,
+      chapterIdx: 1,
+      lastBoat: { lat, lon },
+      framesSinceReset: a.framesSinceReset,
+    });
+    const p1 = boatPx(lat, lon);
+    const dpx = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    assert.ok(dpx <= 40, `bond stepFilmCamera ${dpx.toFixed(1)} px`);
+    assert.ok(Number(b.zoom) >= 5.8, `zoom snappé ${b.zoom}, attendu ~5.92`);
+    assert.ok(Number(b.zoom) <= 6.01);
+    assert.match(controller, /if \(this\.camera\.filmZoom == null\) this\.camera\.filmZoom = this\.camera\.filmZoomBase/);
+  });
+});

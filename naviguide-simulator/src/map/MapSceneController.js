@@ -1294,7 +1294,7 @@ export class MapSceneController {
     const zoomHeld = Number.isFinite(holdZ);
     if (!zoomHeld && (this.camera.filmZoomBase == null || this.camera.filmChapterIdx !== chapterIdx)) {
       this.camera.filmZoomBase = filmChapterZoom(this.map, cfg.filmLeg);
-      this.camera.filmZoom = this.camera.filmZoomBase;
+      if (this.camera.filmZoom == null) this.camera.filmZoom = this.camera.filmZoomBase;
       this.ensureFilmTiles(cfg.filmLeg, this.camera.filmZoomBase);
     }
     const tilesReady = filmTilesReady(this.map, this.baseLayer);
