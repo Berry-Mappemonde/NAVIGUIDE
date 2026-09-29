@@ -106,7 +106,7 @@ export default {
   expeditionRisk:     "Risque expédition",
   score:              "Score",
   gettingStarted:     "🧭 Démarrage",
-  gettingStartedText: "Deux boutons : Suivre l’expédition Berry-Mappemonde (le bateau maintenant) ou Simulation (jouer une route). Tracez une route perso uniquement en Simulation.",
+  gettingStartedText: "Deux boutons : Suivre l’expédition Berry-Mappemonde (le bateau maintenant) ou Tracer (jouer la route Berry-Mappemonde ou la vôtre : date de départ, calculs).",
   searouteUnavailable: "Route officielle (searoute indisponible).",
   searouteDrawFailed: "searoute a échoué — corde temporaire.",
   berryLocalBriefing: "Expédition Berry-Mappemonde : départ de La Rochelle le 15 mai 2026, 08:00 UTC. Le briefing raconte le sac autour du bateau — quelle ZEE, quels ports d’entrée, ce qu’il y a dans 30 nm — pas toute la carte.", // pragma: allowlist secret
@@ -334,7 +334,7 @@ export default {
   // ── Simulation mode ────────────────────────────────────────────────────────
   simulationMarkerTitle: "Catamaran — cliquez pour les métriques",
   simulationDragPrompt:  "Faites glisser le catamaran sur la route…",
-  exitSimulation:        "Quitter la simulation",
+  exitSimulation:        "Quitter Tracer",
   nmRemaining:           "Restants",
   nmCovered:             "Parcourus",
   eta:                   "ETA",
@@ -415,8 +415,8 @@ export default {
   layerBiAmpTitle:           "Aires marines protégées",
 
   // ── Simulation button (Sidebar) ────────────────────────────────────────────
-  simulationModeLabel:   "Simulation",
-  exitSimulationShort:   "Simulation",
+  simulationModeLabel:   "Tracer",
+  exitSimulationShort:   "Quitter Tracer",
   simulationModeTooltip: "Simulation — jouer l’expédition (Play, vitesses, escales)",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
@@ -500,7 +500,7 @@ export default {
   voyageLocalKnots: "{knots} kt",
   traveledEraSpeed: "{knots} kn",
   escalesQuay:      "{days} j à quai",
-  viewModeGroup:    "Suivre l’expédition ou Simulation",
+  viewModeGroup:    "Suivre l’expédition ou Tracer",
   followExpeditionButton: "Suivre l’expédition",
   followExpeditionTitle: "Suivre l’expédition Berry-Mappemonde",
   simulationButton: "Simulation",
@@ -551,7 +551,7 @@ export default {
   skipperComfortNormal:   "Normal",
   skipperComfortHard:     "Dur",
   skipperHorizonAria:     "Horizon d’anticipation : 24, 36 ou 48 heures",
-  skipperHorizonLeg:      "cette jambe (Simulation)",
+  skipperHorizonLeg:      "cette jambe (Tracer)",
   skipperPearls:          "perles",
   skipperExpertTitle:     "Chiffres",
   skipperExpertReset:     "Remettre le chiffre du profil",
