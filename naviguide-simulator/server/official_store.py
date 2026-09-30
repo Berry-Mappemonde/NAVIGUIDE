@@ -691,7 +691,9 @@ def serve_clock_bytes() -> Optional[bytes]:
     clock = ((hit or {}).get("payload") or {}).get("clock") if hit else None
     if not isinstance(clock, dict) or not clock.get("t0"):
         return None
-    key = (hit or {}).get("key") or st.current_key()
+    # La clé seule ne suffit pas : une horloge recalculée sous la même clé (remplisseur, réparation à la main)
+    # resterait invisible jusqu'au redémarrage — l'empreinte porte aussi le storedAt (29 sept.).
+    key = f"{(hit or {}).get('key') or st.current_key()}@{(hit or {}).get('storedAt') or ''}"
     with _LOCK:
         if st._clock_bytes is not None and st._clock_bytes_key == key:
             return st._clock_bytes
@@ -1168,8 +1170,10 @@ def refresh_missing(
     now: Optional[datetime] = None,
     store: Optional[OfficialStore] = None,
     computes: Optional[dict] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> dict:
-    """Remplit ce qui manque ou a vieilli — hors chemin HTTP."""
+    """Remplit ce qui manque ou a vieilli — hors chemin HTTP. `should_stop` (remplisseur) : vérifié entre deux
+    familles, pour qu'un SIGTERM prenne effet en secondes et non à la fin d'un passage de plusieurs heures."""
     from voyage_api import seed_official_voyage  # noqa: PLC0415
 
     def _log(family: str, status: str, detail: str = "") -> None:
@@ -1190,6 +1194,9 @@ def refresh_missing(
         when = now or st._now()
         fns = computes or COMPUTE
         for family in COMPUTE_ORDER:
+            if should_stop and should_stop():
+                log.warning("stock : arrêt demandé — passage interrompu avant %s", family)
+                break
             try:
                 status = refresh_family(
                     family, force=force, compute=fns.get(family),
@@ -1279,12 +1286,82 @@ def _fill_script_stamp() -> str:
         return ""
 
 
+def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
+    """Les `prepare_official_store.py --loop --store <ce stock>` vivants sur cette machine, sauf `keep` et nous.
+
+    29 sept. : quatre remplisseurs tournaient en même temps (rg7, rg16 ×2, rc28) — le pidfile n'en connaît
+    qu'un, les autres avaient survécu aux rebuilds du poste — et tous écrivaient le même stock et le même
+    fichier voyage : c'est le mélange de deux écritures à 20:07 qui a corrompu le voyage officiel.
+    Le stock est reconnu par l'argument `--store` de la ligne de commande : le remplisseur d'un agent (stock
+    de son worktree) et celui du poste (stock partagé) ne se touchent jamais."""
+    import subprocess  # noqa: PLC0415
+    try:
+        out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return []
+    me = os.getpid()
+    marker = f"--store {store or disk_root()}"
+    found: list[int] = []
+    for line in out.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2 or FILL_SCRIPT.name not in parts[1] or "--loop" not in parts[1] or marker not in parts[1]:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        if pid in (me, keep):
+            continue
+        found.append(pid)
+    return found
+
+
+def stop_other_fill_processes(keep: Optional[int] = None, grace_s: float = 8.0) -> list[int]:
+    """SIGTERM (arrêt propre entre deux familles) puis SIGKILL aux remplisseurs concurrents du MÊME stock.
+    Jamais sous pytest / CI : un test ne touche pas aux processus de la machine."""
+    import signal as _signal  # noqa: PLC0415
+    import time as _time  # noqa: PLC0415
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("CI"):
+        return []
+    pids = other_fill_processes(keep)
+    for pid in pids:
+        try:
+            os.kill(pid, _signal.SIGTERM)
+        except OSError:
+            pass
+    if pids:
+        deadline = _time.monotonic() + grace_s
+        while _time.monotonic() < deadline and any(_alive(p) for p in pids):
+            _time.sleep(0.5)
+        for pid in pids:
+            if _alive(pid):
+                try:
+                    os.kill(pid, _signal.SIGKILL)
+                except OSError:
+                    pass
+        log.warning("stock officiel : %d remplisseur(s) concurrent(s) arrêté(s) : %s", len(pids), pids)
+    return pids
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def ensure_fill_process() -> Optional[int]:
-    """Lance le remplisseur s'il ne tourne pas. Jamais de calcul dans l'API."""
+    """Lance le remplisseur s'il ne tourne pas. Jamais de calcul dans l'API. Un seul remplisseur par machine :
+    les autres (anciens worktrees, doubles) sont arrêtés d'abord."""
     import subprocess  # noqa: PLC0415
     import sys as _sys  # noqa: PLC0415
     with _LOCK:
         pid = fill_process_alive()
+        try:
+            stop_other_fill_processes(keep=pid)
+        except Exception as exc:  # jamais bloquant
+            log.warning("stock officiel : ménage des remplisseurs impossible : %s", exc)
         if pid:
             return pid
         if not FILL_SCRIPT.exists():
@@ -1298,7 +1375,8 @@ def ensure_fill_process() -> Optional[int]:
             fill_logfile().parent.mkdir(parents=True, exist_ok=True)
             logf = open(fill_logfile(), "a", encoding="utf-8")   # noqa: SIM115 — hérité par l'enfant
             p = subprocess.Popen(
-                [_sys.executable, str(FILL_SCRIPT), "--loop", "--period", str(int(max(60.0, PERIOD_S))), "--nice", str(FILL_NICE)],
+                [_sys.executable, str(FILL_SCRIPT), "--loop", "--period", str(int(max(60.0, PERIOD_S))), "--nice", str(FILL_NICE),
+                 "--store", str(disk_root())],
                 cwd=str(FILL_SCRIPT.parents[1]), env=env, stdout=logf, stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL, start_new_session=True,
             )
