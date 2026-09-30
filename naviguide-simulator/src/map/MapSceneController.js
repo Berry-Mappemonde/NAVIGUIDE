@@ -277,6 +277,7 @@ export class MapSceneController {
       filmLastCenter: null,
       filmFramesSinceReset: 0,
       filmLastBoat: null,
+      filmStillAnchor: null,
       filmZoomHold: null,
       exitHold: false,
       exitHoldUntil: null,
@@ -473,6 +474,7 @@ export class MapSceneController {
       this.camera.filmLastCenter = null;
       this.camera.filmFramesSinceReset = 0;
       this.camera.filmLastBoat = null;
+      this.camera.filmStillAnchor = null;
       this.camera.filmZoomHold = null;
       this.filmSamples = [];
       this.filmPose = null;
@@ -492,6 +494,7 @@ export class MapSceneController {
       this.camera.filmLastCenter = null;
       this.camera.filmFramesSinceReset = 0;
       this.camera.filmLastBoat = null;
+      this.camera.filmStillAnchor = null;
       const holdZoom = Number.isFinite(this.camera.filmZoomHold)
         ? this.camera.filmZoomHold
         : this.map?.getZoom?.();
@@ -1179,6 +1182,7 @@ export class MapSceneController {
       filmLastCenter: null,
       filmFramesSinceReset: 0,
       filmLastBoat: null,
+      filmStillAnchor: null,
       filmZoomHold: null,
       exitHold: false,
       exitHoldUntil: null,
@@ -1314,6 +1318,7 @@ export class MapSceneController {
         filmLeg: zoomHeld ? null : cfg.filmLeg,
         lastBoat: this.camera.filmLastBoat,
         framesSinceReset: this.camera.filmFramesSinceReset || 0,
+        stillAnchor: this.camera.filmStillAnchor,
       });
     });
     if (!next || next.action === "idle") return;
@@ -1327,6 +1332,7 @@ export class MapSceneController {
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
     this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
     this.camera.filmFramesSinceReset = next.framesSinceReset ?? 0;
+    this.camera.filmStillAnchor = next.stillAnchor ?? null;
     if (zoomHeld) this.camera.filmZoom = holdZ;
     else if (Number.isFinite(Number(next.zoom))) this.camera.filmZoom = Number(next.zoom);
     else if (pose) this.camera.filmZoom = this.camera.filmZoom;

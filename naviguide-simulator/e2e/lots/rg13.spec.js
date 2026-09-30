@@ -10,8 +10,10 @@ import { dismissNotForNav, leaveCinema, waitBoatUnderWay, waitFilmCanStart } fro
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg13");
 const recetteRc25 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc25");
+const recetteRc29 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc29");
 mkdirSync(recetteDir, { recursive: true });
 mkdirSync(recetteRc25, { recursive: true });
+mkdirSync(recetteRc29, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.jpg`),
@@ -21,6 +23,12 @@ const shot = (page, name) => page.screenshot({
 });
 const shotRc25 = (page, name) => page.screenshot({
   path: join(recetteRc25, `${name}.jpg`),
+  type: "jpeg",
+  quality: 70,
+  fullPage: false,
+});
+const shotRc29 = (page, name) => page.screenshot({
+  path: join(recetteRc29, `${name}.jpg`),
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -64,7 +72,8 @@ async function measureChapterFlip(page, timeoutMs = 50_000) {
       log.push(s);
       if (s.ended) break;
       if (log.length >= 2 && s.ch !== log[log.length - 2].ch) {
-        for (let extra = 0; extra < 12; extra++) {
+        const holdUntil = performance.now() + 2000;
+        while (performance.now() < holdUntil) {
           await new Promise((r) => requestAnimationFrame(r));
           log.push(read());
         }
@@ -79,14 +88,34 @@ async function measureChapterFlip(page, timeoutMs = 50_000) {
         break;
       }
     }
-    if (idx < 0) return { flipped: false, ended: Boolean(log.at(-1)?.ended) };
-    const prev = log[idx - 1];
+    if (idx < 0) {
+      const chs = [...new Set(log.map((s) => s.ch))];
+      return {
+        flipped: false,
+        ended: Boolean(log.at(-1)?.ended),
+        chs,
+        n: log.length,
+        firstCh: log[0]?.ch,
+        lastCh: log.at(-1)?.ch,
+        lastLat: log.at(-1)?.lat,
+      };
+    }
+    let prev = log[idx - 1];
+    for (let i = idx - 1; i >= 0; i--) {
+      if (log[i].x != null && Number.isFinite(log[i].lat)) {
+        prev = log[i];
+        break;
+      }
+    }
     const cur = log[idx];
     const jumps = [];
-    for (let i = Math.max(1, idx); i < Math.min(log.length, idx + 10); i++) {
+    let lastStill = prev.x != null ? prev : null;
+    for (let i = idx; i < log.length; i++) {
       const a = log[i - 1];
       const b = log[i];
-      if (a.x == null || b.x == null) continue;
+      if (nmBetween(prev, b) > 0.5) break;
+      if (b.x != null) lastStill = b;
+      if (a?.x == null || b?.x == null) continue;
       jumps.push(Math.hypot(b.x - a.x, b.y - a.y));
     }
     return {
@@ -95,7 +124,11 @@ async function measureChapterFlip(page, timeoutMs = 50_000) {
       to: cur.ch,
       nm: nmBetween(prev, cur),
       dpx: prev.x != null && cur.x != null ? Math.hypot(cur.x - prev.x, cur.y - prev.y) : null,
+      totalPx: prev.x != null && lastStill?.x != null
+        ? Math.hypot(lastStill.x - prev.x, lastStill.y - prev.y)
+        : null,
       maxJump: jumps.length ? Math.max(...jumps) : null,
+      samplesAfter: jumps.length,
     };
   }, timeoutMs);
 }
@@ -111,7 +144,7 @@ async function probeOfficial(page) {
 }
 
 test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
@@ -135,6 +168,7 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
     await expect(start).toBeDisabled();
     await shot(page, "01-cadrage");
     await shotRc25(page, "01-chapitre-sans-bond");
+    await shotRc29(page, "01-flip-bateau-centre");
     return;
   }
 
@@ -146,9 +180,11 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
     });
     await shot(page, "01-cadrage");
     await shotRc25(page, "01-chapitre-sans-bond");
+    await shotRc29(page, "01-flip-bateau-centre");
     return;
   }
 
+  const flipP = measureChapterFlip(page, 55_000);
   await start.click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
   const subtitle = page.getByTestId("film-subtitle");
@@ -157,7 +193,13 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
 
   await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 10_000 });
 
-  const flip = await measureChapterFlip(page, 50_000);
+  const flip = await flipP;
+  test.info().annotations.push({
+    type: "flip",
+    description: flip.flipped
+      ? `ch${flip.from}→ch${flip.to} Δnm=${Number(flip.nm).toFixed(2)} dpx=${flip.dpx} totalPx=${flip.totalPx} maxJump=${flip.maxJump}`
+      : `pas de flip (${flip.ended ? "film fini" : "timeout"}) chs=${JSON.stringify(flip.chs)} n=${flip.n} last=${flip.lastCh}@${flip.lastLat}`,
+  });
   if (!flip.flipped) {
     test.info().annotations.push({
       type: "poste",
@@ -175,11 +217,18 @@ test("lot RG13 — cadrage film, barre et Revoir présents", async ({ page }) =>
     });
   } else {
     expect(flip.dpx, `bateau ${flip.dpx} px au flip ch${flip.from}→ch${flip.to}`).toBeLessThanOrEqual(BOAT_JUMP_PX);
+    if (flip.totalPx != null) {
+      expect(
+        flip.totalPx,
+        `cumul ${flip.totalPx} px sur ≥2s après flip ch${flip.from}→ch${flip.to}`,
+      ).toBeLessThanOrEqual(BOAT_JUMP_PX);
+    }
     if (flip.maxJump != null) {
       expect(flip.maxJump, `saut max ${flip.maxJump} px autour du flip`).toBeLessThanOrEqual(BOAT_JUMP_PX);
     }
   }
   await shotRc25(page, "01-chapitre-sans-bond");
+  await shotRc29(page, "01-flip-bateau-centre");
 
   const underway = await waitBoatUnderWay(page, { timeout: 20_000 });
   if (!underway?.moving) {
