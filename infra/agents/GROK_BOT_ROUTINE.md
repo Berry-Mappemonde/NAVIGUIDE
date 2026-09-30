@@ -33,6 +33,13 @@ jamais et le bot voyait le bateau au jour 0. Si le poste paraît « lent » chez
 `curl -o /dev/null -w '%{speed_download}\n' https://recette.blueintelligence.online/voyage/official/clock`
 (attendu : > 50 000 o/s) ; sinon `python3 infra/agents/run_lots.py --stop-tunnel` puis `--recette` relance le tunnel.
 
+**Film « preparing » avec `Extra data`, `/voyage/official` en 500** (29 sept. 20:07) : le fichier
+`~/.cache/naviguide/voyage_data/voyage_berry-mappemonde-2026-officiel.json` a été mélangé par deux remplisseurs du
+stock qui écrivaient le même `.tmp` au changement de jour UTC (quatre `prepare_official_store.py --loop` tournaient,
+issus d'anciens worktrees). Depuis : temporaire à nom unique, un seul remplisseur par stock (`--store`), arrêt des
+concurrents au démarrage. Si ça revient : `pgrep -fl prepare_official_store` (attendu : un seul), garder le premier
+objet JSON du fichier, et regarder `~/.cache/naviguide/voyage-store/fill-worker.log`.
+
 Option `--publish-tip` : le lien devient le site publié lui-même (la tête de pile est
 déployée sur `simulator.naviguide.fr` via la branche `recette`) — à réserver au
 moment où le dépôt public du simulateur sera la source du déploiement.

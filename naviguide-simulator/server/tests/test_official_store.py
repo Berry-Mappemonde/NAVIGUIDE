@@ -841,3 +841,53 @@ def test_rg17_compute_eta_ready_when_members(tmp_path, monkeypatch):
     assert served["status"] == READY
     assert served["members"] == 24
     assert served["p10"].startswith("2026-10-11")
+
+
+# ── un seul remplisseur par machine (29 sept. : quatre écrivaient le même stock) ─────────────────────────────
+
+def test_other_fill_processes_lists_every_loop_worker_but_us(monkeypatch):
+    import subprocess
+    import official_store as os_
+
+    fake = (
+        f"  111 python3 /Users/x/bim-lots/rg16/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --loop --period 21600 --store /S\n"
+        f"  222 python3 /Users/x/bim-lots/rc28/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --loop --period 21600 --store /S\n"
+        f"  333 python3 /Users/x/bim-lots/rc28/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --once --store /S\n"
+        f"  555 python3 /Users/x/bim-lots/dm3/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --loop --period 21600 --store /agent\n"
+        "  444 /usr/bin/uvicorn server.main:app\n"
+    )
+
+    class _Out:
+        stdout = fake
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Out())
+    assert os_.other_fill_processes(store=Path("/S")) == [111, 222]
+    assert os_.other_fill_processes(keep=222, store=Path("/S")) == [111]
+    assert os_.other_fill_processes(store=Path("/autre")) == [], "un autre stock : pas touché"
+
+
+def test_stop_other_fill_processes_terms_then_kills(monkeypatch):
+    import signal
+    import official_store as os_
+
+    sent: list[tuple[int, int]] = []
+    alive = {111: True}
+
+    def fake_kill(pid, sig):
+        sent.append((pid, sig))
+        if sig == signal.SIGKILL:
+            alive[pid] = False
+
+    monkeypatch.setattr(os_, "other_fill_processes", lambda keep=None, store=None: [111])
+    monkeypatch.setattr(os_, "_alive", lambda pid: alive.get(pid, False))
+    monkeypatch.setattr(os_.os, "kill", fake_kill)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)   # le garde-fou pytest est testé à part
+    monkeypatch.delenv("CI", raising=False)
+    assert os_.stop_other_fill_processes(keep=999, grace_s=0.2) == [111]
+    assert sent[0] == (111, signal.SIGTERM) and sent[-1] == (111, signal.SIGKILL)
+
+
+def test_stop_other_fill_processes_is_a_noop_under_pytest(monkeypatch):
+    import official_store as os_
+    monkeypatch.setattr(os_, "other_fill_processes", lambda keep=None, store=None: (_ for _ in ()).throw(AssertionError("ps appelé sous pytest")))
+    assert os_.stop_other_fill_processes() == []
