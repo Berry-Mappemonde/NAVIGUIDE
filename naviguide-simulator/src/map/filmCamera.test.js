@@ -522,6 +522,7 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
       lastSetViewAt: first.lastSetViewAt,
       lastCenter: first.lastCenter,
       lastBoat: { lat, lon },
+      stillAnchor: first.stillAnchor,
     });
     const p1 = boatPx(lat, lon);
     const dpx = Math.hypot(p1.x - p0.x, p1.y - p0.y);
@@ -549,6 +550,7 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
         lastBoat: { lat, lon },
         framesSinceReset: st.framesSinceReset,
         boatPx: 0,
+        stillAnchor: st.stillAnchor,
       });
       const p = boatPx(lat, lon);
       const d = Math.hypot(p.x - prev.x, p.y - prev.y);
@@ -559,6 +561,52 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
     const snapped = extraViews.filter((n) => n > 1).length;
     assert.equal(snapped, 0, "pas un 2e/3e setView sur la même frame");
     assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+  });
+
+  it("lot RC29 — 30 frames après ch0→ch1, même lat/lon, zoom 6→4 : cumul |Δpx| ≤ 40", () => {
+    const lat = 46.1541;
+    const lon = -1.167;
+    const { map, calls, boatPx } = mercatorMap({ lat, lng: lon }, 6);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 0, lastChapterIdx: null, lat, lon, heading: 260, zoom: 6, now: 0,
+    });
+    const pBefore = boatPx(lat, lon);
+    const flip = applyFilmCamera(map, {
+      chapterIdx: 1,
+      lastChapterIdx: first.lastChapterIdx,
+      lat,
+      lon,
+      heading: 140,
+      zoom: 4,
+      now: 100,
+      lastSetViewAt: first.lastSetViewAt,
+      lastCenter: first.lastCenter,
+      lastBoat: { lat, lon },
+      stillAnchor: first.stillAnchor,
+    });
+    let st = flip;
+    for (let i = 0; i < 30; i++) {
+      st = applyFilmCamera(map, {
+        chapterIdx: 1,
+        lastChapterIdx: st.lastChapterIdx,
+        lat,
+        lon,
+        heading: 140,
+        zoom: 4,
+        now: 200 + i * 16,
+        lastSetViewAt: st.lastSetViewAt,
+        lastCenter: st.lastCenter,
+        lastBoat: { lat, lon },
+        framesSinceReset: st.framesSinceReset,
+        boatPx: 0,
+        stillAnchor: st.stillAnchor,
+      });
+    }
+    const pFinal = boatPx(lat, lon);
+    const total = Math.hypot(pFinal.x - pBefore.x, pFinal.y - pBefore.y);
+    assert.ok(total <= 40, `cumul après flip ${total.toFixed(1)} px (seuil 40)`);
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+    assert.match(controller, /filmStillAnchor/);
   });
 
   it("stepFilmCamera : zoom courant gardé, la nouvelle jambe est visée par pas", () => {
@@ -583,6 +631,7 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
       chapterIdx: 1,
       lastBoat: { lat, lon },
       framesSinceReset: a.framesSinceReset,
+      stillAnchor: a.stillAnchor,
     });
     const p1 = boatPx(lat, lon);
     const dpx = Math.hypot(p1.x - p0.x, p1.y - p0.y);

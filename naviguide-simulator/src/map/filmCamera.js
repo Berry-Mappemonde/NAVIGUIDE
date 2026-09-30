@@ -426,12 +426,19 @@ export function filmTranslateBy(map, from, to) {
   return null;
 }
 
+function stillNmFromAnchor(anchor, lat, lon) {
+  const a = lastBoatPair(anchor);
+  if (!a) return Infinity;
+  return haversineNm(a[0], a[1], lat, lon);
+}
+
 /**
- * Caméra du film (RG13 / RC25) : premier calage et changement d'étape = un
- * `setView` ; ensuite translation du plan. Au changement d'étape, si le bateau
- * n'a pas bougé (Δnm≈0), un seul mouvement au zoom courant, centré sur le
- * bateau — pas un centre décalé au cap + nouveau zoom. Le zoom visé s'approche
- * par `stepFilmZoom`. Pas de `flyTo` (plus de trou).
+ * Caméra du film (RG13 / RC25 / RC29) : premier calage et changement d'étape
+ * = un `setView` ; ensuite translation du plan. Au changement d'étape, si le
+ * bateau n'a pas bougé (Δnm≤0,5), un hold au zoom courant. Tant que Δnm≤0,5
+ * après ce flip, le centre visé est le bateau — pas `filmViewCenter` (offset
+ * au cap) : le hold n'est pas suivi d'un pan vers l'offset. Le zoom visé
+ * s'approche par `stepFilmZoom`. Pas de `flyTo` (plus de trou).
  */
 export function applyFilmCamera(map, {
   chapterIdx,
@@ -449,9 +456,9 @@ export function applyFilmCamera(map, {
   idle = false,
   boatPx = 0,
   lastBoat = null,
+  stillAnchor = null,
 } = {}) {
   const desiredBoat = [lat, lon];
-  const center = filmViewCenter(lat, lon, heading, map);
   const size = mapSize(map);
   const frac = Number.isFinite(Number(maxFrac))
     ? Number(maxFrac)
@@ -468,6 +475,7 @@ export function applyFilmCamera(map, {
       action: "setView",
       lastCenter: desiredBoat,
       framesSinceReset: 0,
+      stillAnchor: desiredBoat,
     };
   }
 
@@ -489,27 +497,39 @@ export function applyFilmCamera(map, {
         action: "hold",
         lastCenter: target,
         framesSinceReset: 0,
+        stillAnchor: desiredBoat,
       };
     }
-    map.setView(center, appliedZoom, { animate: false });
+    const jumped = filmViewCenter(lat, lon, heading, map);
+    map.setView(jumped, appliedZoom, { animate: false });
     return {
       lastChapterIdx: chapterIdx,
       lastSetViewAt: now,
       flyingUntil: 0,
       action: "setView",
-      lastCenter: center,
+      lastCenter: jumped,
       framesSinceReset: 0,
+      stillAnchor: null,
     };
   }
+
+  const dAnchor = stillNmFromAnchor(stillAnchor, lat, lon);
+  const stayOnBoat = Number.isFinite(dAnchor) && dAnchor <= FILM_CHAPTER_STILL_NM;
+  const center = stayOnBoat
+    ? desiredBoat
+    : filmViewCenter(lat, lon, heading, map);
+  const nextAnchor = stayOnBoat ? (lastBoatPair(stillAnchor) || desiredBoat) : null;
 
   const from = lastCenter || (typeof map.getCenter === "function"
     ? [map.getCenter().lat, map.getCenter().lng]
     : center);
-  const clamped = clampFilmPan(from, center, map, {
-    maxFrac: frac,
-    boat: desiredBoat,
-    keepFrac: FILM_BOAT_KEEP_FRAC,
-  });
+  const clamped = stayOnBoat
+    ? desiredBoat
+    : clampFilmPan(from, center, map, {
+      maxFrac: frac,
+      boat: desiredBoat,
+      keepFrac: FILM_BOAT_KEEP_FRAC,
+    });
 
   const zoomChanged = Number.isFinite(Number(appliedZoom))
     && Number.isFinite(Number(mapZoom))
@@ -525,6 +545,7 @@ export function applyFilmCamera(map, {
       action: "setView",
       lastCenter: clamped,
       framesSinceReset: 0,
+      stillAnchor: nextAnchor,
     };
   }
 
@@ -537,6 +558,7 @@ export function applyFilmCamera(map, {
       action: "panBy",
       lastCenter: clamped,
       framesSinceReset: framesSinceReset + 1,
+      stillAnchor: nextAnchor,
     };
   }
   if (moved === "hold") {
@@ -547,6 +569,7 @@ export function applyFilmCamera(map, {
       action: "hold",
       lastCenter: from,
       framesSinceReset: framesSinceReset + 1,
+      stillAnchor: nextAnchor,
     };
   }
   map.setView(clamped, appliedZoom, { animate: false });
@@ -557,6 +580,7 @@ export function applyFilmCamera(map, {
     action: "setView",
     lastCenter: clamped,
     framesSinceReset: 0,
+    stillAnchor: nextAnchor,
   };
 }
 
@@ -578,6 +602,7 @@ export function stepFilmCamera(map, {
   filmLeg = null,
   lastBoat = null,
   framesSinceReset = 0,
+  stillAnchor = null,
 } = {}) {
   const pose = interpolateFilmSamples(samples, Number(now) - FILM_INTERP_DELAY_MS);
   if (!pose || !Number.isFinite(pose.lat) || !Number.isFinite(pose.lon)) {
@@ -621,6 +646,7 @@ export function stepFilmCamera(map, {
     idle,
     boatPx,
     lastBoat,
+    stillAnchor,
   });
   return { ...next, pose: { ...pose, heading }, boatPx, zoom: appliedZoom };
 }
