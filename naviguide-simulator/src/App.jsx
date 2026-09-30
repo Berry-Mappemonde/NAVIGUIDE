@@ -92,7 +92,7 @@ import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
-import { attachClockIso, usePlanReview } from "./hooks/usePlanReview.js";
+import { attachClockIso, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -313,6 +313,8 @@ export default function App() {
     marks: escaleMarks,
   });
   const officialClock = isSuivre ? (official.clock || voyage.clock) : voyage.clock;
+  const officialEtaReady = Boolean(isSuivre && official.clock);
+  const clockNowMs = officialNowMs(official.clock, official.live);
   // Lot RC10 — le film n'utilise pas le repli voyage.clock (script Simulation).
   const filmClock = isSuivre ? official.clock : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
@@ -1448,6 +1450,9 @@ export default function App() {
     enabled: Boolean(officialClock),
     frozen: replay.active,
     clock: officialClock,
+    nowMs: clockNowMs,
+    liveFilmNm: official.live?.filmNm,
+    officialEta: officialEtaReady,
     lookup: atlas.lookup,
     revision: atlas.revision,
     lang,
@@ -1683,6 +1688,9 @@ export default function App() {
         }}
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
+        nowMs={clockNowMs}
+        liveFilmNm={official.live?.filmNm}
+        officialEta={officialEtaReady}
         onEscaleSheet={openEscaleFromUi}
         frozen={Boolean(replay.active)}
         drawing={drawing}

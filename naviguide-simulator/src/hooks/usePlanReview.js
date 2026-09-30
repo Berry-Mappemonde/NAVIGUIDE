@@ -132,12 +132,40 @@ export function formatEtaRangeTitle(eta, t) {
   return t("etaRangeTitle", { n: String(tight.members) });
 }
 
-export function nextStopFromMarks(marks, nowMs = Date.now()) {
+/** Instant de l'horloge officielle (iso live), jamais le mur `Date.now()`. */
+export function officialNowMs(clock, live) {
+  const iso = live?.iso;
+  const t = Date.parse(iso || "");
+  if (Number.isFinite(t)) return t;
+  const verts = clock?.vertices;
+  if (verts?.length) {
+    const last = verts[verts.length - 1];
+    const lt = Date.parse(last?.iso || "");
+    if (Number.isFinite(lt)) return lt;
+  }
+  return NaN;
+}
+
+/**
+ * Prochaine escale : première marque encore devant le live (`filmNm`),
+ * sinon première iso encore devant l'instant officiel — jamais `Date.now()`.
+ */
+export function nextStopFromMarks(marks, nowMs, liveFilmNm) {
   const list = marks || [];
+  const liveNm = Number(liveFilmNm);
+  const hasLive = Number.isFinite(liveNm);
+  const now = Number(nowMs);
+  const hasNow = Number.isFinite(now);
+
   for (const m of list) {
-    const ts = Date.parse(m?.iso || "");
-    if (!Number.isFinite(ts) || ts <= nowMs || !m?.name) continue;
+    if (!m?.name) continue;
     const film = Number(m.filmNm ?? m.nm) || 0;
+    if (hasLive) {
+      if (film <= liveNm + 0.4) continue;
+      return m.name;
+    }
+    const ts = Date.parse(m?.iso || "");
+    if (!hasNow || !Number.isFinite(ts) || ts <= now) continue;
     const laterHomonym = list.some((o) => (
       o !== m && o?.name === m.name && (Number(o.filmNm ?? o.nm) || 0) > film + 1
     ));
@@ -173,14 +201,21 @@ export function attachClockIso(marks, clockMarks) {
   });
 }
 
-/** Rangée de la prochaine escale (iso > maintenant), jamais le playhead. */
-export function nextStopRowIndex(rows, marks, nowMs = Date.now()) {
-  const next = nextStopFromMarks(marks, nowMs);
+/** Rangée de la prochaine escale (filmNm / iso officiel), jamais le playhead. */
+export function nextStopRowIndex(rows, marks, nowMs, liveFilmNm) {
+  const next = nextStopFromMarks(marks, nowMs, liveFilmNm);
   if (!next) return -1;
+  const liveNm = Number(liveFilmNm);
+  const hasLive = Number.isFinite(liveNm);
+  const now = Number(nowMs);
   return (rows || []).findIndex((r) => {
     if (!stopMatch(r.name, next)) return false;
+    if (hasLive) {
+      const film = Number(r.at ?? r.mark?.filmNm ?? r.nm) || 0;
+      return film > liveNm + 0.4;
+    }
     const ts = Date.parse(r.mark?.iso || r.iso || "");
-    return !Number.isFinite(ts) || ts > nowMs;
+    return !Number.isFinite(now) || !Number.isFinite(ts) || ts > now;
   });
 }
 
@@ -517,29 +552,34 @@ export async function pollOfficialEta(stopName, {
   return null;
 }
 
-/** Lot RF4 — no /eta while the film plays; one poll after Stop. */
-export function shouldPollOfficialEta({ frozen = false, enabled = true, stopName } = {}) {
-  return Boolean(!frozen && enabled && stopName);
+/** Lot RF4 — no /eta while the film plays; lot RC28 — pas de /eta sans horloge officielle. */
+export function shouldPollOfficialEta({
+  frozen = false,
+  enabled = true,
+  stopName,
+  officialClock = false,
+} = {}) {
+  return Boolean(!frozen && enabled && stopName && officialClock);
 }
 
-export function countOfficialEtaPolls(stopNames, { frozen = false, enabled = true } = {}) {
+export function countOfficialEtaPolls(stopNames, { frozen = false, enabled = true, officialClock = false } = {}) {
   let n = 0;
   for (const stopName of stopNames || []) {
-    if (shouldPollOfficialEta({ frozen, enabled, stopName })) n += 1;
+    if (shouldPollOfficialEta({ frozen, enabled, stopName, officialClock })) n += 1;
   }
   return n;
 }
 
-export function useOfficialEta(stopName, { enabled = true, frozen = false } = {}) {
+export function useOfficialEta(stopName, { enabled = true, frozen = false, officialClock = false } = {}) {
   const [eta, setEta] = useState(null);
   useEffect(() => {
-    if (!shouldPollOfficialEta({ frozen, enabled, stopName })) {
-      if (!frozen && (!enabled || !stopName)) setEta(null);
+    if (!shouldPollOfficialEta({ frozen, enabled, stopName, officialClock })) {
+      if (!frozen && (!enabled || !stopName || !officialClock)) setEta(null);
       return undefined;
     }
     const watch = startOfficialEtaWatch(stopName, { onUpdate: setEta });
     return () => watch.stop();
-  }, [enabled, stopName, frozen]);
+  }, [enabled, stopName, frozen, officialClock]);
   return eta;
 }
 
@@ -550,12 +590,30 @@ export function useOfficialEta(stopName, { enabled = true, frozen = false } = {}
  * Read-only; refreshed every 10 min (the pearls keep warming).
  * Lot C6 : fourchette p10–p90 de la prochaine escale, si l'ensemble répond.
  */
-export function usePlanReview({ enabled = true, frozen = false, clock, lookup, revision = 0, lang = "fr", galeLimitPct } = {}) {
+export function usePlanReview({
+  enabled = true,
+  frozen = false,
+  clock,
+  lookup,
+  revision = 0,
+  lang = "fr",
+  galeLimitPct,
+  nowMs,
+  liveFilmNm,
+  officialEta = false,
+} = {}) {
   const [review, setReview] = useState(null);
   const [advice, setAdvice] = useState(null);
   const [error, setError] = useState(null);
-  const nextStop = useMemo(() => nextStopFromMarks(clock?.marks), [clock]);
-  const eta = useOfficialEta(nextStop, { enabled: enabled && Boolean(nextStop), frozen });
+  const nextStop = useMemo(
+    () => nextStopFromMarks(clock?.marks, nowMs, liveFilmNm),
+    [clock, nowMs, liveFilmNm],
+  );
+  const eta = useOfficialEta(nextStop, {
+    enabled: enabled && Boolean(nextStop),
+    frozen,
+    officialClock: officialEta,
+  });
 
   useEffect(() => {
     if (frozen) return undefined;
