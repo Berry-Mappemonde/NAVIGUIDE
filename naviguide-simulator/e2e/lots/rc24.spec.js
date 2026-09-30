@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { nextStopFromMarks } from "../../src/hooks/usePlanReview.js";
 import { dismissNotForNav, leaveCinema, showRightPanel } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc24");
@@ -31,17 +32,19 @@ async function probeOfficial(page) {
     const c = await clockRes.json().catch(() => null);
     if (c && typeof c === "object") clock = c;
   }
-  return { apiUp: true, body, clock };
+  let live = null;
+  const atRes = await page.request.get("/voyage/official/at", { timeout: 5000 }).catch(() => null);
+  if (atRes && atRes.ok()) {
+    const a = await atRes.json().catch(() => null);
+    if (a && typeof a === "object" && a.status !== "preparing") live = a;
+  }
+  return { apiUp: true, body, clock, live };
 }
 
-function nextStopName(official, clock) {
+function nextStopName(official, clock, live) {
   const marks = clock?.marks || official?.clock?.marks || official?.marks || [];
-  const now = Date.now();
-  for (const m of marks) {
-    const ts = Date.parse(m?.iso || "");
-    if (Number.isFinite(ts) && ts > now && m?.name) return String(m.name);
-  }
-  return "";
+  const nowMs = Date.parse(live?.iso || "");
+  return nextStopFromMarks(marks, Number.isFinite(nowMs) ? nowMs : undefined, live?.filmNm);
 }
 
 function stopShort(name) {
@@ -57,7 +60,7 @@ function retryYear(iso) {
 
 test("lot RC24 — fourchette ou raison sous la prochaine, pas sous La Rochelle", async ({ page }) => {
   test.setTimeout(90_000);
-  const { apiUp, body: official, clock } = await probeOfficial(page);
+  const { apiUp, body: official, clock, live } = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
@@ -80,6 +83,7 @@ test("lot RC24 — fourchette ou raison sous la prochaine, pas sous La Rochelle"
 
   const legendEta = page.getByTestId("eta-range");
   const lrRow = legend.locator('[data-testid="escale-legend-row"]').filter({ hasText: /La Rochelle/i }).first();
+  const dzRow = legend.locator('[data-testid="escale-legend-row"]').filter({ hasText: /Dzaoudzi/i }).first();
 
   if (!apiUp) {
     await expect(legendEta).toHaveCount(0);
@@ -92,7 +96,7 @@ test("lot RC24 — fourchette ou raison sous la prochaine, pas sous La Rochelle"
     return;
   }
 
-  const stop = nextStopName(official, clock);
+  const stop = nextStopName(official, clock, live);
   let eta = null;
   if (stop) {
     const etaRes = await page.request.get(
@@ -112,6 +116,9 @@ test("lot RC24 — fourchette ou raison sous la prochaine, pas sous La Rochelle"
     await expect(legendEta).toHaveCount(0);
     if (stop && !/la rochelle/i.test(stop)) {
       await expect(lrRow.getByTestId("eta-range")).toHaveCount(0);
+    }
+    if (stop && /nouméa/i.test(stop)) {
+      await expect(dzRow.getByTestId("eta-range")).toHaveCount(0);
     }
     await shot(page, "01-suivre-prochaine");
     if (await lrRow.count()) {
@@ -149,6 +156,9 @@ test("lot RC24 — fourchette ou raison sous la prochaine, pas sous La Rochelle"
 
   if (stop && !/la rochelle/i.test(stop)) {
     await expect(lrRow.getByTestId("eta-range")).toHaveCount(0);
+  }
+  if (stop && /nouméa/i.test(stop)) {
+    await expect(dzRow.getByTestId("eta-range")).toHaveCount(0);
   }
 
   await shot(page, "01-suivre-prochaine");

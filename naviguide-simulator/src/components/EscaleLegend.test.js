@@ -71,6 +71,17 @@ describe("EscaleLegend — fourchette sur la prochaine (lot RC24)", () => {
 describe("EscaleLegend — ETA gelée pendant le film (lot RF4)", () => {
   it("passe frozen à useOfficialEta", () => {
     assert.match(src, /frozen = false/);
-    assert.match(src, /useOfficialEta\(nextName, \{ enabled: Boolean\(nextName\), frozen \}\)/);
+    assert.match(src, /officialClock: officialEta/);
+    assert.match(src, /useOfficialEta\(nextName,/);
+  });
+});
+
+describe("EscaleLegend — jambe live, pas le mur (lot RC28)", () => {
+  it("prend nowMs / liveFilmNm officiels, jamais Date.now()", () => {
+    assert.doesNotMatch(src, /Date\.now\(\)/);
+    assert.match(src, /nextStopFromMarks\(marks, nowMs, liveFilmNm\)/);
+    assert.match(src, /nextStopRowIndex\(rows, marks, nowMs, liveFilmNm\)/);
+    assert.match(src, /officialEta = false/);
+    assert.match(src, /officialClock: officialEta/);
   });
 });

@@ -25,6 +25,7 @@ import {
   nextEtaRetryMs,
   nextStopFromMarks,
   nextStopRowIndex,
+  officialNowMs,
   countOfficialEtaPolls,
   shouldPollOfficialEta,
   pickHeaviestLegIdx,
@@ -279,6 +280,52 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.notEqual(nextStopRowIndex(rows, attached, now), 0);
     assert.notEqual(nextStopRowIndex(rows, attached, now), 1);
   });
+
+  it("lot RC28 — horloge 19 sept. / 17 nm de Nouméa → Nouméa, pas Dzaoudzi", () => {
+    const officialNow = Date.parse("2026-09-19T12:00:00Z");
+    const wall = Date.parse("2026-09-29T20:00:00Z");
+    const noumeaNm = 19177;
+    const liveNm = noumeaNm - 17;
+    const marks = [
+      { name: "Saint-Maur (Berry, Indre)", iso: "2026-05-15T08:00:00Z", filmNm: 0 },
+      { name: "La Rochelle", iso: "2026-05-15T12:00:00Z", filmNm: 122 },
+      { name: "Nouméa (Nouvelle-Calédonie)", iso: "2026-09-01T00:00:00Z", filmNm: noumeaNm },
+      { name: "Dzaoudzi", iso: "2026-10-12T00:00:00Z", filmNm: 25000 },
+      { name: "Papeete", iso: "2026-12-01T00:00:00Z", filmNm: 30000 },
+    ];
+    assert.equal(nextStopFromMarks(marks, wall), "Dzaoudzi");
+    assert.equal(nextStopFromMarks(marks, officialNow, liveNm), "Nouméa (Nouvelle-Calédonie)");
+    assert.notEqual(nextStopFromMarks(marks, officialNow, liveNm), "Dzaoudzi");
+    assert.notEqual(nextStopFromMarks(marks, officialNow, liveNm), "Papeete");
+    const rows = marks.map((m) => ({ name: m.name, mark: m, at: m.filmNm }));
+    assert.equal(nextStopRowIndex(rows, marks, officialNow, liveNm), 2);
+    assert.notEqual(nextStopRowIndex(rows, marks, officialNow, liveNm), 1);
+    assert.notEqual(nextStopRowIndex(rows, marks, officialNow, liveNm), 3);
+  });
+
+  it("lot RC28 — sans official.clock, aucun GET /eta ni ligne inventée", () => {
+    assert.ok(Number.isNaN(officialNowMs(null, null)));
+    assert.ok(Number.isNaN(officialNowMs({}, {})));
+    assert.equal(
+      officialNowMs({ t0: "2026-05-15T08:00:00Z" }, { iso: "2026-09-19T12:00:00Z" }),
+      Date.parse("2026-09-19T12:00:00Z"),
+    );
+    assert.doesNotMatch(src, /export function nextStopFromMarks\(marks, nowMs = Date\.now\(\)\)/);
+    assert.equal(nextStopFromMarks([
+      { name: "Dzaoudzi", iso: "2026-10-12T00:00:00Z", filmNm: 25000 },
+    ]), "");
+    assert.equal(shouldPollOfficialEta({ enabled: true, stopName: "Nouméa" }), false);
+    assert.equal(shouldPollOfficialEta({ enabled: true, stopName: "Papeete", officialClock: false }), false);
+    assert.equal(shouldPollOfficialEta({
+      enabled: true,
+      stopName: "Nouméa",
+      officialClock: true,
+    }), true);
+    const app = readFileSync(join(here, "../App.jsx"), "utf8");
+    assert.match(app, /officialEtaReady = Boolean\(isSuivre && official\.clock\)/);
+    assert.match(app, /officialNowMs\(official\.clock,\s*official\.live\)/);
+    assert.match(app, /officialEta: officialEtaReady/);
+  });
 });
 
 describe("usePlanReview — conseil (lot R10d)", () => {
@@ -503,10 +550,11 @@ describe("usePlanReview — ETA gelée pendant le film (lot RF4)", () => {
   const stops = ["La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa", "Dzaoudzi"];
 
   it("ne re-sonde pas l'ETA tant que le film tourne, une sonde à l'arrêt", () => {
-    assert.equal(countOfficialEtaPolls(stops, { frozen: true }), 0);
-    assert.equal(shouldPollOfficialEta({ frozen: true, enabled: true, stopName: "Nouméa" }), false);
-    assert.equal(shouldPollOfficialEta({ frozen: false, enabled: true, stopName: "Nouméa" }), true);
-    assert.equal(countOfficialEtaPolls(["Nouméa"], { frozen: false }), 1);
+    assert.equal(countOfficialEtaPolls(stops, { frozen: true, officialClock: true }), 0);
+    assert.equal(shouldPollOfficialEta({ frozen: true, enabled: true, stopName: "Nouméa", officialClock: true }), false);
+    assert.equal(shouldPollOfficialEta({ frozen: false, enabled: true, stopName: "Nouméa", officialClock: true }), true);
+    assert.equal(countOfficialEtaPolls(["Nouméa"], { frozen: false, officialClock: true }), 1);
+    assert.equal(countOfficialEtaPolls(["Nouméa"], { frozen: false, officialClock: false }), 0);
     assert.match(src, /shouldPollOfficialEta/);
     assert.match(src, /frozen = false/);
   });
