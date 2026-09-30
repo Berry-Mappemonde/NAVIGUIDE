@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -25,13 +26,28 @@ def _path(voyage_id: str) -> Path:
 
 
 def save_voyage(voyage: Dict[str, Any]) -> Dict[str, Any]:
+    """Écriture atomique : fichier temporaire à nom UNIQUE puis renommage.
+
+    29 sept. 20:07 : deux remplisseurs (processus distincts, `_LOCK` ne les voit pas) ont écrit le même
+    `voyage_….tmp` au changement de jour ; chacun avait ouvert le fichier avant que l'autre n'écrive, le plus
+    court a recouvert le début du plus long, la fin de l'ancien est restée — « Extra data » à la lecture,
+    /voyage/official en 500 toute la soirée. Avec un nom par écrivain (pid + aléa), le dernier renommage gagne,
+    entier ; jamais un mélange."""
     vid = voyage["voyageId"]
     dest = _path(vid)
-    tmp = dest.with_suffix(".tmp")
     payload = json.dumps(voyage, ensure_ascii=False, indent=2)
     with _LOCK:
-        tmp.write_text(payload, encoding="utf-8")
-        tmp.replace(dest)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.stem}.", suffix=".tmp", dir=str(dest.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            os.replace(tmp_name, dest)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
     return voyage
 
 
