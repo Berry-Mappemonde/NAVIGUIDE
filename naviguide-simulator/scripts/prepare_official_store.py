@@ -68,7 +68,7 @@ def one_pass(*, force_film: bool = False) -> int:
 
     n = len(COMPUTE_ORDER)
     t0 = time.monotonic()
-    out = official_store.refresh_missing(progress=_progress_printer(n))
+    out = official_store.refresh_missing(progress=_progress_printer(n), should_stop=lambda: _STOP)
     if force_film:
         try:
             official_store.refresh_family("film", force=True)
@@ -110,6 +110,12 @@ def loop(period_s: float) -> int:
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    try:   # un seul remplisseur par machine (29 sept. : quatre écrivaient le même stock)
+        gone = official_store.stop_other_fill_processes(keep=os.getpid())
+        if gone:
+            _say(f"remplisseurs concurrents arrêtés : {gone}")
+    except Exception as exc:
+        _say(f"ménage des remplisseurs impossible : {exc}")
     _say(f"remplisseur en boucle (pid {os.getpid()}, période {int(period_s)} s, réveil par {nudge.name})")
     last_nudge = _nudge_stamp(nudge)
     first = True
@@ -139,9 +145,12 @@ def loop(period_s: float) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--loop", action="store_true", help="tourner en continu : une passe, puis toutes les --period s ou au réveil")
+    ap.add_argument("--store", default="", help="dossier du stock (NAVIGUIDE_OFFICIAL_STORE_DIR) — porté sur la ligne de commande pour qu'un seul remplisseur tourne par stock")
     ap.add_argument("--period", type=float, default=float(os.environ.get("NAVIGUIDE_OFFICIAL_STORE_PERIOD_S") or 6 * 3600))
     ap.add_argument("--nice", type=int, default=10, help="priorité basse (os.nice) ; 0 = priorité normale")
     args = ap.parse_args()
+    if args.store:
+        os.environ["NAVIGUIDE_OFFICIAL_STORE_DIR"] = args.store
 
     if args.nice:
         try:
