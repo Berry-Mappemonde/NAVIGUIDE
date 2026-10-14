@@ -145,11 +145,18 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
   const subFr = (await subtitle.innerText()).trim();
   expect(subFr, "sous-titre chapitre 1").not.toBe("");
   assertOfficialDepart(subFr, "fr", { spoken: true });
-  expect(subFr).toMatch(/La Rochelle/);
+  // RC23 : le sous-titre est la phrase en cours (stock figé : « …Saint-Maur le 15 mai 2026. »).
+  // La Rochelle reste exigée dans le chapitre 1, pas dans la 1re phrase.
+  const chapter1 = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    const i = Number.isFinite(Number(f.chapterIdx)) ? Number(f.chapterIdx) : 0;
+    return String(f.chapterText || f.chapters?.[i]?.text || f.chapters?.[0]?.text || "");
+  });
+  expect(chapter1, "La Rochelle dans le chapitre 1").toMatch(/La Rochelle/);
 
   const names = await legendNames(page);
   if (names.length >= 2) {
-    const blob = `${subFr} ${frStory.text}`;
+    const blob = `${subFr} ${chapter1} ${frStory.text}`;
     assertRouteOrder(blob, "sous-titre + récit vs liste");
     const legendHits = ROUTE.filter((n) => names.some((x) => new RegExp(n, "i").test(x)));
     expect(legendHits[0], `liste droite commence par ${names[0]}`).toBe("Saint-Maur");

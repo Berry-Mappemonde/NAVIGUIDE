@@ -122,8 +122,8 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await leaveCinema(page);
 
   const nowCard = page.getByTestId("moment-now");
@@ -138,7 +138,8 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
     await showLeftPanel(page);
     const draw = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Draw your own route/i });
     await expect(draw).toBeVisible({ timeout: 15_000 });
-    await draw.click({ force: true });
+    // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
+  await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
     await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /^(importer|import)$/i })).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("route-import-file").setInputFiles({
@@ -159,8 +160,8 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
     }
     await expect(finish).toBeEnabled({ timeout: 20_000 });
     await finish.click();
-    await page.getByTestId("view-simulation").click();
-    await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+    await page.getByTestId("view-tracer").click();
+    await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
     await leaveCinema(page);
     await page.waitForFunction(() => {
       const ll = window.__naviguideScene?.mainBoatMarker?.()?.getLatLng?.();

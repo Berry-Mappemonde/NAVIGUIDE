@@ -45,15 +45,43 @@ describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
     assert.match(src, /formatEtaRangeTitle/);
     assert.match(src, /useOfficialEta/);
     assert.match(src, /nextStopFromMarks/);
-    assert.match(src, /stopMatch/);
+    assert.match(src, /nextStopRowIndex/);
     assert.match(src, /nextIndex/);
     assert.match(src, /title=\{etaTitle/);
+  });
+});
+
+describe("EscaleLegend — fourchette ou raison (lot RG17)", () => {
+  it("garde eta-range pour la fourchette et la ligne de raison", () => {
+    assert.match(src, /data-testid="eta-range"/);
+    assert.match(src, /formatEtaRange/);
+    assert.doesNotMatch(src, /en préparation/);
+  });
+});
+
+describe("EscaleLegend — fourchette sur la prochaine (lot RC24)", () => {
+  it("pose eta-range sur nextStopFromMarks, pas le playhead", () => {
+    assert.match(src, /nextStopRowIndex/);
+    assert.match(src, /nextStopFromMarks/);
+    assert.doesNotMatch(src, /playheadNext/);
+    assert.doesNotMatch(src, /nextIndex = current \+ 1/);
   });
 });
 
 describe("EscaleLegend — ETA gelée pendant le film (lot RF4)", () => {
   it("passe frozen à useOfficialEta", () => {
     assert.match(src, /frozen = false/);
-    assert.match(src, /useOfficialEta\(nextName, \{ enabled: Boolean\(nextName\), frozen \}\)/);
+    assert.match(src, /officialClock: officialEta/);
+    assert.match(src, /useOfficialEta\(nextName,/);
+  });
+});
+
+describe("EscaleLegend — jambe live, pas le mur (lot RC28)", () => {
+  it("prend nowMs / liveFilmNm officiels, jamais Date.now()", () => {
+    assert.doesNotMatch(src, /Date\.now\(\)/);
+    assert.match(src, /nextStopFromMarks\(marks, nowMs, liveFilmNm\)/);
+    assert.match(src, /nextStopRowIndex\(rows, marks, nowMs, liveFilmNm\)/);
+    assert.match(src, /officialEta = false/);
+    assert.match(src, /officialClock: officialEta/);
   });
 });

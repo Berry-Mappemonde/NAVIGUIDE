@@ -124,8 +124,8 @@ test("lot RE4 — date de la barre pilote la ligne d'état, Simulation inchangé
   }
   await shot(page, "02-retour");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showToolsPanel(page);
   const simDate = dateInput(page, "departure-field");
   await expect(simDate).toBeVisible({ timeout: 15_000 });

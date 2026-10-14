@@ -75,6 +75,7 @@ def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
     out = asyncio.run(logbook_chat.answer_question("Quel vent ?", "fr", {}, datetime.now(timezone.utc)))
     assert seen.get("tier") == "fast"
+    assert seen.get("fallback")
     assert out["source"] == "nemotron-lightning"
     assert out["engine"] == "nemotron-lightning"
     assert "0" in out["answer"]
@@ -142,6 +143,8 @@ def test_summary_is_question_then_first_sentence():
 def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypatch):
     now = T0 + timedelta(days=3)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
+    import llm_budget
+    monkeypatch.setattr(llm_budget, "allow", lambda *_a, **_k: True)
     client.put("/voyage/official", json=_official(), headers=ADMIN)
     monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
     monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
@@ -267,7 +270,7 @@ def test_build_context_follow_uses_clock_speed(monkeypatch):
     assert ctx["boat"]["regime"] == "hindcast"
 
 
-def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):
+def test_chat_without_llm_backend_answers_from_facts(client, monkeypatch):
     now = T0 + timedelta(days=3)
     monkeypatch.setattr(voyage_api, "_now", lambda: now)
     client.put("/voyage/official", json=_official(), headers=ADMIN)
@@ -277,8 +280,101 @@ def test_chat_without_llm_backend_fails_honestly(client, monkeypatch):
     monkeypatch.setattr(story_cascade, "anthropic_key", lambda: "")
     r = client.post("/logbook/chat", json={"question": "Quel vent ?"}, headers=ADMIN)
     body = r.json()
-    assert body["status"] == "failed" and body["answer"] is None and body["logged"] is False
-    assert journal.latest(10, kinds=("chat",)) == []
+    assert body["status"] == "ready"
+    assert body["source"] in {"rules", "budget"}
+    assert body["answer"]
+    assert "aucun modèle" not in body["answer"]
+    assert body["logged"] is True
+    chats = journal.latest(10, kinds=("chat",))
+    assert len(chats) == 1
+
+
+def test_rules_answer_wind_from_context_fr_en():
+    ctx = {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}}
+    fr = logbook_chat.rules_answer("Quel vent au bateau ?", ctx, "fr")
+    assert "14.2" in fr and "250" in fr and "kn" in fr
+    en = logbook_chat.rules_answer("What wind at the boat?", ctx, "en")
+    assert "14.2" in en and "250" in en and "kn" in en
+    kept, dropped = logbook_chat.filter_numbers(fr, ctx)
+    assert dropped == 0 and "14.2" in kept
+
+
+def test_rules_answer_speed_at_quay_and_next_stop():
+    ctx = {
+        "boat": {"speedKnots": 0, "atQuay": True},
+        "nextStop": {"name": "Ajaccio", "eta": "2026-10-03T10:00:00Z"},
+    }
+    speed = logbook_chat.rules_answer("À quelle vitesse va le bateau ?", ctx, "fr")
+    assert "à quai" in speed
+    assert "14" not in speed
+    stop = logbook_chat.rules_answer("Quelle est la prochaine escale ?", ctx, "fr")
+    assert "Ajaccio" in stop
+
+
+def test_rules_answer_unknown_question_stays_honest():
+    ctx = {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}}
+    text = logbook_chat.rules_answer("Quel est le prix du gasoil ?", ctx, "fr")
+    assert "pas cette information" in text
+    assert "14.2" not in text
+    assert "250" not in text
+
+
+def test_answer_cascade_down_cites_exact_wind_from_context(monkeypatch):
+    async def boom(*_a, **_k):
+        raise RuntimeError("no backend")
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", boom)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Quel vent au bateau ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert out["status"] == "ready"
+    assert out["source"] == "rules"
+    assert "14.2" in out["answer"]
+    assert "250" in out["answer"]
+    assert out["answer"] is not None
+
+
+def test_answer_cascade_down_unknown_question_is_honest(monkeypatch):
+    async def boom(*_a, **_k):
+        raise RuntimeError("no backend")
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", boom)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Quel est le prix du gasoil ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert out["status"] == "ready"
+    assert out["source"] == "rules"
+    assert "pas cette information" in out["answer"]
+    assert "14.2" not in out["answer"]
+
+
+def test_answer_failed_only_when_rules_fallback_impossible(monkeypatch):
+    async def boom_cascade(*_a, **_k):
+        raise RuntimeError("no backend")
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"wind": {"windKnots": 12}}}
+
+    def boom_rules(*_a, **_k):
+        raise RuntimeError("unreadable")
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", boom_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    monkeypatch.setattr(logbook_chat, "rules_answer", boom_rules)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Quel vent au bateau ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert out["status"] == "failed"
+    assert out["answer"] is None
+    assert out["source"] is None
 
 
 WX_GALE = {

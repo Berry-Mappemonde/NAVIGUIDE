@@ -6,6 +6,10 @@ import { dwellMsForProfile, shouldPauseAtStop, stepPlayback } from "../engine/st
 const SCENE_INTERVAL_MS = 125;
 const HUD_INTERVAL_MS = 250;
 
+function frameIntervalMs(config) {
+  return config?.filmActive ? 0 : SCENE_INTERVAL_MS;
+}
+
 function playheadLength(flat) {
   return filmLength(flat) || flat?.totalNm || 0;
 }
@@ -45,7 +49,7 @@ export class ScenePlaybackController {
     this.onPublish = onPublish;
     this.requestFrame = requestFrame;
     this.cancelFrame = cancelFrame;
-    this.config = { flat: null, marks: [], boatKnots: 0, enabled: false, stopAuto: false };
+    this.config = { flat: null, marks: [], boatKnots: 0, enabled: false, stopAuto: false, filmActive: false };
     this.state = {
       nm: 0,
       playing: false,
@@ -214,7 +218,7 @@ export class ScenePlaybackController {
   }
 
   emitFrame(force = false, now = performance.now()) {
-    if (!force && now - this.lastFrameAt < SCENE_INTERVAL_MS) return;
+    if (!force && now - this.lastFrameAt < frameIntervalMs(this.config)) return;
     this.lastFrameAt = now;
     this.onFrame(this.snapshot());
   }

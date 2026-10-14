@@ -10,6 +10,8 @@ from ici_engine import (
     feature_latlon,
     fill_dossier,
     haversine_nm,
+    is_fishing_amp,
+    is_protected_amp,
     nearest_places,
     parse_coord,
     pick_eez_record,
@@ -17,6 +19,7 @@ from ici_engine import (
     reset_caches,
     slim_amp,
     slim_science,
+    spoken_amp_name,
     zee_from_record,
 )
 from ici_layers import (
@@ -195,6 +198,8 @@ def test_empty_dossier_contract():
     assert d["version"] == 1
     assert d["zee"] is None
     assert d["poe"] == []
+    assert d["amp"] == []
+    assert d["projects"] == []
     assert d["nearby"]["marinas"] == []
     assert d["polar"] is None
     assert d["science"] is None
@@ -231,9 +236,11 @@ def _handler(request: httpx.Request) -> httpx.Response:
             "features": [feat],
         })
     if url.endswith("/export/geojson"):
+        reef = _point("Récif sentinelle", 46.18, -1.12)
+        reef["properties"]["gold_on"] = True
         return httpx.Response(200, json={
             "type": "FeatureCollection",
-            "features": [_point("Récif sentinelle", 46.18, -1.12)] + [
+            "features": [reef] + [
                 _point(f"Projet loin {i}", 10.0, 10.0) for i in range(20)
             ],
         })
@@ -408,6 +415,7 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["amp"][0]["manager_url"] == "https://parc-marin.fr"
     assert d["amp"][0]["url"] == "https://parc-marin.fr/visite"
     assert d["projects"][0]["name"] == "Récif sentinelle"
+    assert d["projects"][0].get("gold_on") is True
     assert len(d["projects"]) == 1
     assert d["nearby"]["marinas"][0]["name"] == "Port des Minimes"
     assert d["nearby"]["capitaineries"][0]["name"] == "Capitainerie La Rochelle"
@@ -466,6 +474,8 @@ def test_fill_dossier_thin_skips_weather_and_satellite():
     d = asyncio.run(run())
     assert d["zee"]["mrgid"] == 5677
     assert d["amp"]
+    assert d["projects"]
+    assert d["projects"][0]["name"] == "Récif sentinelle"
     assert d["nearby"]["marinas"]
     assert d["weather"]["reason"] == "not_in_along_pearl"
     assert d["satellites"]["reason"] == "not_in_along_pearl"
@@ -473,6 +483,7 @@ def test_fill_dossier_thin_skips_weather_and_satellite():
     assert not any("open-meteo" in url or "dataspace.copernicus" in url for url in seen)
     assert not any("export/science.geojson" in url for url in seen)
     assert any("export/amp.geojson" in url for url in seen)
+    assert any(url.rstrip("/").endswith("/export/geojson") for url in seen)
 
 
 def test_thin_bag_is_cached_per_cell_for_every_visitor():
@@ -681,6 +692,53 @@ def test_fill_dossier_haute_mer():
     assert d["poe"] == []
     assert d["science"] == {"nearby": []}
     assert d["zee"]["gold"] is False
+
+
+def test_chaluts_is_never_a_protected_amp():
+    chaluts = {"name": "Pertuis Charentais - Chaluts", "iucn_cat": "IV", "designation": "licence"}
+    petoncles = {
+        "name": "Pertuis Charentais - Pétoncles - Center Pertuis Breton deposit",
+        "iucn_cat": "Unassigned",
+    }
+    rochebonne = {"name": "Pertuis charentais - Rochebonne", "iucn_cat": "II"}
+    assert is_fishing_amp(chaluts)
+    assert is_fishing_amp(petoncles)
+    assert not is_protected_amp(chaluts)
+    assert not is_protected_amp(petoncles)
+    assert is_protected_amp(rochebonne)
+    feat = {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [-1.20, 46.16]},
+        "properties": {"name": "Chaluts - Permanent prohibition zone"},
+    }
+    assert slim_amp(feat, 46.15, -1.16) is None
+    assert spoken_amp_name(
+        "Pertuis charentais - Rochebonne (IUCN Unassigned)"
+    ) == "Pertuis charentais - Rochebonne"
+
+
+def test_thin_bag_carries_projects_same_keys_as_full():
+    """RG3 : perle thin = mêmes clés + projects (parité avec le sac ici)."""
+    reset_caches()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
+
+    async def run(thin, rich=False):
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await fill_dossier(
+                46.15, -1.16, client=client, month=6, thin=thin, rich=rich,
+            )
+
+    thin = asyncio.run(run(True))
+    reset_caches()
+    full = asyncio.run(run(False))
+    assert "projects" in thin and "amp" in thin
+    assert {p["name"] for p in thin["projects"]} == {p["name"] for p in full["projects"]}
+    assert thin["projects"][0]["name"] == "Récif sentinelle"
+    assert set(empty_dossier(46.15, -1.16)) <= set(thin)
 
 
 def test_slim_amp_keeps_visit_and_manager_apart():
@@ -1029,3 +1087,39 @@ def test_review_high_seas_no_entity_without_fiche():
     assert bag["reason"] == "no_entity"
     assert bag["zee"] is None
     assert not any("review/fiche" in url for url in seen)
+
+
+def test_route_events_project_10nm_not_60nm():
+    """Un projet à 10 nm produit un événement ; à 60 nm aucun. Chaluts n'est pas une AMP."""
+    import ici_engine
+    import ici_warm
+    from ici_engine import thin_cache_key
+
+    reset_caches()
+    points = [
+        {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0},
+        {"lat": 46.15, "lon": -1.40, "cumNm": 12, "filmCum": 12},
+        {"lat": 46.15, "lon": -1.64, "cumNm": 24, "filmCum": 24},
+    ]
+    pearls = ici_warm.sample_route_nm(points)
+    assert pearls
+    p0 = pearls[0]
+    ici_engine.thin_cache_put(thin_cache_key(p0["lat"], p0["lon"], 30.0), {
+        "zee": None,
+        "amp": [
+            {"name": "Chaluts", "site_id": "ch-1", "nm": 2.0},
+            {"name": "Pertuis charentais - Rochebonne", "site_id": "rb-1", "nm": 8.0, "iucn_cat": "II"},
+        ],
+        "projects": [
+            {"name": "Récif sentinelle", "nm": 10.0, "gold_on": True},
+            {"name": "Hors portée", "nm": 60.0, "gold_on": True},
+        ],
+        "sources": {"bi": "ok"},
+    })
+    events = ici_warm.route_events_from_pearls(points)
+    amps = [e for e in events if e["kind"] == "amp"]
+    projs = [e for e in events if e["kind"] == "project"]
+    assert [e["name"] for e in amps] == ["Pertuis charentais - Rochebonne"]
+    assert not any("Chaluts" in (e.get("name") or "") for e in amps)
+    assert [e["name"] for e in projs] == ["Récif sentinelle"]
+    assert not any(e["name"] == "Hors portée" for e in projs)

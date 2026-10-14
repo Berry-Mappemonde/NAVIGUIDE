@@ -43,8 +43,8 @@ test("lot M — attribution Esri une fois, briefing avec lien de source", async 
   await shot(page, "01-attribution");
 
   await cinema.click();
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
   const briefing = page.getByTestId("briefing");
   await expect(briefing).toBeVisible({ timeout: 15_000 });

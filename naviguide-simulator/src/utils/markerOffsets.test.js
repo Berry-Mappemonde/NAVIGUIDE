@@ -8,6 +8,8 @@ import {
   FLAG_W,
   FLAG_H,
   rectHitsRoute,
+  offsetToIconAnchor,
+  isOffsetStillClear,
 } from "./markerOffsets.js";
 
 const identityProject = (lon, lat) => ({ x: lon, y: lat });
@@ -76,5 +78,35 @@ describe("computeMarkerOffsets", () => {
       h: FLAG_H,
     };
     assert.equal(rectHitsRoute(rect, routeSegs, 2), false);
+  });
+
+  it("exprime le décalage dans l'ancre (planté sur le latlng)", () => {
+    assert.deepEqual(offsetToIconAnchor([18, 12], [0, -36]), [18, 48]);
+    assert.deepEqual(offsetToIconAnchor([11, 12], [8, -20]), [3, 32]);
+  });
+
+  it("réutilise l'offset précédent tant que rien ne se chevauche", () => {
+    const points = [
+      { lon: 0, lat: 0, flag: "a" },
+      { lon: 200, lat: 0, flag: "b" },
+    ];
+    const first = computeMarkerOffsets(points, identityProject);
+    const zoomed = (lon, lat) => ({ x: lon * 3, y: lat * 3 });
+    const second = computeMarkerOffsets(points, zoomed, [], first);
+    assert.deepEqual(second, first);
+    assert.equal(isOffsetStillClear({ x: 0, y: 0 }, first[0], []), true);
+  });
+
+  it("recalcule si l'offset précédent chevauche un autre drapeau", () => {
+    const points = [
+      { lon: 0, lat: 0, flag: "a" },
+      { lon: 2, lat: 0, flag: "b" },
+    ];
+    const next = computeMarkerOffsets(points, identityProject, [], [[0, 0], [0, 0]]);
+    const ax = 0 + next[0][0];
+    const ay = 0 + next[0][1];
+    const bx = 2 + next[1][0];
+    const by = 0 + next[1][1];
+    assert.ok(Math.hypot(bx - ax, by - ay) >= 20, "drapeaux toujours séparés après recalcul");
   });
 });

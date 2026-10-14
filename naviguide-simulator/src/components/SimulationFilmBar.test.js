@@ -142,3 +142,40 @@ describe("barre film (lot RC1) — libellé météo du point", () => {
     assert.match(bar, /<span data-testid="weather-line" className="text-cyan-200\/85"><\/span>/);
   });
 });
+
+describe("barre film (lot RG9) — sous-titre = phrase en cours", () => {
+  it("garde le sous-titre et met le lieu en avant, sans rangée ajoutée", () => {
+    assert.match(bar, /data-testid="film-subtitle"/);
+    assert.match(bar, /data-testid="film-subtitle-place"/);
+    assert.match(bar, /filmSubtitleHighlight/);
+    assert.match(bar, /replay\?\.active \|\| replay\?\.subtitle/);
+    assert.equal((bar.match(/data-testid="film-subtitle"/g) || []).length, 1);
+  });
+});
+
+describe("barre film (lot RG8 / RC22) — pilules et durée estimée", () => {
+  it("garde 2:30 / 3:00 et l'estimée hors film, aucune cochée par défaut", () => {
+    assert.match(bar, /data-testid="film-duration"/);
+    assert.match(bar, /filmDuration150/);
+    assert.match(bar, /filmDuration180/);
+    assert.match(bar, /data-testid="film-duration-estimate"/);
+    assert.match(bar, /replay\.canStart \|\| replay\.active/);
+    assert.match(bar, /\{replay\.active \? \(/);
+    assert.doesNotMatch(bar, /calibrateRate/);
+  });
+
+  it("pendant le film : les pilules restent, boutons disabled / opacity", () => {
+    assert.match(bar, /data-testid="film-duration"/);
+    assert.match(bar, /\{\.\.\.\(replay\.active \? \{ "data-testid": undefined \} : \{\}\)\}/);
+    assert.match(bar, /replay\.canStart \|\| replay\.active/);
+    const lockAt = bar.indexOf('data-testid="film-duration"');
+    assert.ok(lockAt >= 0);
+    const durBlock = bar.slice(lockAt, lockAt + 1800);
+    assert.match(durBlock, /disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /aria-disabled=\{Boolean\(replay\.active\)\}/);
+    assert.match(durBlock, /disabled:opacity-30 disabled:cursor-not-allowed/);
+    assert.match(durBlock, /data-testid="film-duration-estimate"/);
+    assert.match(bar, /data-testid="replay-stop"/);
+    assert.doesNotMatch(bar, /calibrateRate/);
+  });
+});

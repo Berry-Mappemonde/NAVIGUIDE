@@ -2,16 +2,24 @@ import L from "leaflet";
 import { catamaranSvg } from "../engine/catamaranIcon.js";
 import { interpolateCast, isAirPhase } from "../engine/filmCast.js";
 import { wakeCursorAt } from "../engine/filmWake.js";
-import { haversineNm, unwrapLon, worldCopyLineCoords, worldCopyLngs, worldCopyOffsets } from "../utils/geo.js";
-import { followMinZoom } from "./zoomFloor.js";
-import { computeMarkerOffsets, projectRouteSegments } from "../utils/markerOffsets.js";
+import {
+  haversineNm,
+  markerCopyLngs,
+  stabilizeWorldLng,
+  unwrapLon,
+  worldCopyKey,
+  worldCopyLineCoords,
+  worldCopyLngs,
+  worldCopyOffsets,
+} from "../utils/geo.js";
+import { followMinZoom, worldViewZoom } from "./zoomFloor.js";
+import { computeMarkerOffsets, offsetToIconAnchor, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
   drawingPinHtml,
   drawingPinMetrics,
   flagIconMetrics,
   flagMarkerHtml,
-  markerWorldLngs,
   waypointFlagSrcs,
   wrapLon,
 } from "../utils/waypointFlags.js";
@@ -21,7 +29,6 @@ import {
 } from "../utils/sceneGate.js";
 import { applyMarkerRotation } from "../utils/markerRotation.js";
 import {
-  flagWorldLngsForView,
   markerOffsetDelay,
 } from "../hooks/useMarkerOffsets.js";
 import { createPanes } from "../layers/layerOrder.js";
@@ -237,6 +244,10 @@ export class MapSceneController {
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
+    this.waypointLastOffsets = [];
+    this.waypointPrimaryLngs = new Map();
+    this.waypointSourceStamp = "";
+    this.markerPrimaryLngs = new Map();
     this.divIconCache = new Map();
     this.currentPlayback = null;
     this.currentCast = null;
@@ -260,12 +271,25 @@ export class MapSceneController {
       focus: null,
       filmChapterIdx: null,
       filmZoom: null,
+      filmZoomBase: null,
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
       filmLastCenter: null,
+      filmFramesSinceReset: 0,
+      filmLastBoat: null,
+      filmStillAnchor: null,
+      filmZoomHold: null,
       exitHold: false,
       exitHoldUntil: null,
       exitHoldZoom: null,
+    };
+    this._mapStop = map.stop.bind(map);
+    map.stop = (...args) => {
+      if (this.config?.filmActive) {
+        const z = map.getZoom?.();
+        if (Number.isFinite(z)) this.camera.filmZoomHold = z;
+      }
+      return this._mapStop(...args);
     };
     this.filmLoopRaf = 0;
     this.filmSamples = [];
@@ -284,6 +308,7 @@ export class MapSceneController {
     this.onZoomEnd = () => {
       this.zoomAnimating = false;
       this.zoomJustEnded = true;
+      this.applyZoomFloor();
       this.scheduleWaypoints({ reason: "zoom" });
       this.waypointZoom = this.map.getZoom();
       if (this.ignoreUserNavigation) {
@@ -324,6 +349,7 @@ export class MapSceneController {
     map.on("dragstart", this.onUserNavigation);
     this.onResize = () => this.applyZoomFloor();
     map.on("resize", this.onResize);
+    this.applyZoomFloor();
     this.eventBubble = attachEventBubble(this, L);
     this.escalePopup = attachEscalePopup(this, L);
     if (this.escalePopup) {
@@ -442,9 +468,14 @@ export class MapSceneController {
     if (!previous.filmActive && this.config.filmActive) {
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
+      this.camera.filmZoomBase = null;
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
       this.camera.filmLastCenter = null;
+      this.camera.filmFramesSinceReset = 0;
+      this.camera.filmLastBoat = null;
+      this.camera.filmStillAnchor = null;
+      this.camera.filmZoomHold = null;
       this.filmSamples = [];
       this.filmPose = null;
       this.filmPreload = { key: "", images: [] };
@@ -457,10 +488,17 @@ export class MapSceneController {
       this.filmPreload = { key: "", images: [] };
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
+      this.camera.filmZoomBase = null;
       this.camera.filmSetViewAt = 0;
       this.camera.filmFlyingUntil = 0;
       this.camera.filmLastCenter = null;
-      const holdZoom = this.map?.getZoom?.();
+      this.camera.filmFramesSinceReset = 0;
+      this.camera.filmLastBoat = null;
+      this.camera.filmStillAnchor = null;
+      const holdZoom = Number.isFinite(this.camera.filmZoomHold)
+        ? this.camera.filmZoomHold
+        : this.map?.getZoom?.();
+      this.camera.filmZoomHold = null;
       this.map?.stop?.();
       this.camera.exitHoldZoom = Number.isFinite(holdZoom) ? holdZoom : this.map?.getZoom?.();
       this.camera.exitHold = true;
@@ -496,7 +534,8 @@ export class MapSceneController {
       || previous.marks !== this.config.marks
       || previous.boatKnots !== this.config.boatKnots
       || previous.routeReady !== this.config.routeReady
-      || previous.stopAuto !== this.config.stopAuto;
+      || previous.stopAuto !== this.config.stopAuto
+      || previous.filmActive !== this.config.filmActive;
     if (playbackChanged) {
       this.playback.configure({
         flat: this.config.flat,
@@ -504,6 +543,7 @@ export class MapSceneController {
         boatKnots: this.config.boatKnots,
         enabled: this.config.routeReady,
         stopAuto: this.config.stopAuto,
+        filmActive: this.config.filmActive,
       });
     } else if (this.currentPlayback) {
       this.renderDynamic(this.currentPlayback);
@@ -534,7 +574,7 @@ export class MapSceneController {
       && Date.now() < this._worldLockUntil
       && !this.userNavigated
       && this.map
-      && this.map.getZoom() - WORLD_ZOOM > 0.05
+      && this.map.getZoom() - this.sceneWorldZoom() > 0.05
     ) {
       this._enforcingWorld = true;
       try {
@@ -725,24 +765,34 @@ export class MapSceneController {
     if (!visible || lat == null || lon == null) {
       markers.forEach((marker) => marker.remove());
       this.markerSets.set(role, []);
+      this.markerPrimaryLngs.delete(role);
       return;
     }
     // Pendant l'animation de zoom, Leaflet transforme les icônes en CSS ; un setLatLng calculé sur
     // l'ancienne projection les fait glisser horizontalement (27 sept.). On garde l'image, la
     // prochaine frame après zoomend repositionne.
-    if (this.zoomAnimating && markers.length) return;
-    const lngs = markerWorldLngs(lon, this.map.getCenter()?.lng);
-    if (markers.length !== lngs.length) {
-      markers.forEach((marker) => marker.remove());
-      markers = lngs.map((lng, index) => {
-        const primary = index === 0;
-        const marker = L.marker([lat, lng], {
+    if (this.zoomAnimating && markers.length && !this.config.filmActive) return;
+    const cam = this.map.getCenter()?.lng;
+    const primary = stabilizeWorldLng(lon, cam, this.markerPrimaryLngs.get(role));
+    this.markerPrimaryLngs.set(role, primary);
+    const lngs = [primary, ...markerCopyLngs(lon).filter((lng) => Math.abs(lng - primary) > 1e-6)];
+    const byKey = new Map();
+    for (const marker of markers) {
+      byKey.set(worldCopyKey(lon, marker.getLatLng()?.lng), marker);
+    }
+    const next = [];
+    for (const [index, lng] of lngs.entries()) {
+      const copyKey = worldCopyKey(lon, lng);
+      const isPrimary = index === 0;
+      let marker = byKey.get(copyKey);
+      if (!marker) {
+        marker = L.marker([lat, lng], {
           icon: markerIcon(className, html),
-          draggable: draggable && primary,
+          draggable: draggable && isPrimary,
           pane: "boat",
-          interactive: draggable && primary,
+          interactive: draggable && isPrimary,
         }).addTo(this.map);
-        if (draggable && primary) {
+        if (draggable && isPrimary) {
           marker.on("dragstart", () => {
             this.playback.pause();
             this.callbacks.onBoatDragStart?.();
@@ -752,14 +802,15 @@ export class MapSceneController {
             this.callbacks.onBoatDrag?.({ lat: point.lat, lon: wrapLon(point.lng) });
           });
         }
-        return marker;
-      });
-      this.markerSets.set(role, markers);
-    }
-    markers.forEach((marker, index) => {
-      marker.setLatLng([lat, lngs[index]]);
+      } else {
+        byKey.delete(copyKey);
+        marker.setLatLng([lat, lng]);
+      }
       applyMarkerRotation(marker, bearing || 0);
-    });
+      next.push(marker);
+    }
+    byKey.forEach((marker) => marker.remove());
+    this.markerSets.set(role, next);
     this.eventBubble?.sync();
   }
 
@@ -878,14 +929,21 @@ export class MapSceneController {
     ) return;
     this.waypointInputs = inputs;
     this.waypointsDirty = false;
+    const sourceStamp = source.map((point) => `${point.lat}:${point.lon}`).join("|");
+    if (this.waypointSourceStamp !== sourceStamp) {
+      this.waypointSourceStamp = sourceStamp;
+      this.waypointLastOffsets = [];
+      this.waypointPrimaryLngs = new Map();
+    }
     const routeCoords = (cfg.segments || []).filter((segment) => !segment.nonMaritime).flatMap((segment) => segment.coords || []);
     const project = (lon, lat) => {
       const point = this.map.latLngToLayerPoint([lat, lon]);
       return { x: point.x, y: point.y };
     };
     const offsets = source.length
-      ? computeMarkerOffsets(source, project, projectRouteSegments(routeCoords, project))
+      ? computeMarkerOffsets(source, project, projectRouteSegments(routeCoords, project), this.waypointLastOffsets)
       : [];
+    this.waypointLastOffsets = offsets;
     const group = this.layers.add("waypoints", () => L.layerGroup().addTo(this.map));
     const expected = new Set();
     const bounds = this.map.getBounds();
@@ -898,9 +956,10 @@ export class MapSceneController {
       const offset = offsets[index] || [0, 0];
       const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
-        ? flagMarkerHtml(srcs, offset).replace("<div ", `<div${stamp} `)
+        ? flagMarkerHtml(srcs, [0, 0]).replace("<div ", `<div${stamp} `)
         : drawingPinHtml(index, stamp);
       const metrics = srcs.length ? flagIconMetrics(srcs) : drawingPinMetrics();
+      const iconAnchor = srcs.length ? offsetToIconAnchor(metrics.iconAnchor, offset) : metrics.iconAnchor;
       const lngs = [];
       const seen = new Set();
       const addLng = (lng) => {
@@ -910,21 +969,26 @@ export class MapSceneController {
         seen.add(key);
         lngs.push(lng);
       };
-      for (const lng of flagWorldLngsForView(point.lon, cameraLng, west, east)) addLng(lng);
+      const primary = stabilizeWorldLng(point.lon, cameraLng, this.waypointPrimaryLngs.get(index));
+      this.waypointPrimaryLngs.set(index, primary);
+      addLng(primary);
+      for (const lng of markerCopyLngs(point.lon)) {
+        if (lng >= west - 60 && lng <= east + 60) addLng(lng);
+      }
       for (const lng of worldCopyLngs(point.lon)) {
         if (lng >= west - 60 && lng <= east + 60) addLng(lng);
       }
-      for (const [copyIndex, lng] of lngs.entries()) {
-        const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${copyIndex}`;
+      for (const lng of lngs) {
+        const key = `${cfg.drawingMode ? "draw" : "route"}:${index}:${worldCopyKey(point.lon, lng)}`;
         expected.add(key);
-        const iconKey = `${html}|${metrics.iconSize.join(",")}|${metrics.iconAnchor.join(",")}`;
+        const iconKey = `${html}|${metrics.iconSize.join(",")}|${iconAnchor.join(",")}`;
         let icon = this.divIconCache.get(iconKey);
         if (!icon) {
           icon = L.divIcon({
             className: "flag-divicon",
             html,
             iconSize: metrics.iconSize,
-            iconAnchor: metrics.iconAnchor,
+            iconAnchor,
           });
           this.divIconCache.set(iconKey, icon);
         }
@@ -974,10 +1038,17 @@ export class MapSceneController {
   }
 
   scheduleWaypoints({ reason = "move" } = {}) {
-    if (this.config?.filmActive) return; // flags stay put for the whole film (lot F1)
     if (!this.config.points?.length && !this.config.drawnPoints?.length) return;
     if (reason === "follow") return; // flags stay put while the camera follows (lot I)
     if (this.zoomAnimating && reason !== "zoom") return;
+    if (reason === "zoom") {
+      window.clearTimeout(this.waypointTimer);
+      this.waypointsDirty = true;
+      this.syncWaypoints();
+      this.syncDynamicWorldCopies();
+      return;
+    }
+    if (this.config?.filmActive) return; // flags stay put for the whole film (lot F1) sauf zoom
     window.clearTimeout(this.waypointTimer);
     this.waypointTimer = window.setTimeout(() => {
       this.waypointsDirty = true;
@@ -1022,16 +1093,17 @@ export class MapSceneController {
     this.setCameraPlaced(true);
   }
 
+  sceneWorldZoom() {
+    return worldViewZoom(this.map?.getSize(), this.map?.options?.zoomSnap, WORLD_ZOOM, MAP_MIN_ZOOM);
+  }
+
   /**
-   * Plancher de dézoom : en Suivre, le monde n'apparaît jamais plusieurs fois d'affilée ;
-   * Tracer, Simulation et accueil gardent la vue monde (MAP_MIN_ZOOM).
+   * Plancher de dézoom (RG15) : un seul monde en Suivre, Simulation, film et Tracer.
+   * Tracer pose la vue à ce plancher (monde entier, une fois).
    */
   applyZoomFloor() {
     if (!this.map?.setMinZoom) return;
-    const cfg = this.config || {};
-    const worldLock = Boolean(this._worldLockUntil && Date.now() < this._worldLockUntil);
-    const follow = Boolean(cfg.isSuivre && !cfg.drawingMode && !worldLock);
-    const floor = follow ? followMinZoom(this.map.getSize(), this.map.options.zoomSnap, MAP_MIN_ZOOM) : MAP_MIN_ZOOM;
+    const floor = followMinZoom(this.map.getSize(), this.map.options.zoomSnap, MAP_MIN_ZOOM);
     if (this.map.options.minZoom === floor) return;
     // setMinZoom remonte la vue si elle est sous le plancher : mouvement de la carte, pas de l'utilisateur.
     this.programmaticMove(() => this.map.setMinZoom(floor));
@@ -1042,7 +1114,7 @@ export class MapSceneController {
     this.camera.exitHoldZoom = null;
     this.camera.exitHold = false;
     this.boundsBeforeDraw = this.map?.options?.maxBounds || MAP_MAX_BOUNDS;
-    this.map?.setMinZoom?.(MAP_MIN_ZOOM);
+    this.map?.setMinZoom?.(followMinZoom(this.map?.getSize(), this.map?.options?.zoomSnap, MAP_MIN_ZOOM));
     this.map?.setMaxBounds?.(null);
   }
 
@@ -1066,23 +1138,25 @@ export class MapSceneController {
       this._worldLockUntil = Date.now() + 2000;
     }
     this.map.invalidateSize();
-    this.map.setMinZoom(MAP_MIN_ZOOM);
+    const floor = followMinZoom(this.map.getSize(), this.map.options.zoomSnap, MAP_MIN_ZOOM);
+    const worldZ = worldViewZoom(this.map.getSize(), this.map.options.zoomSnap, WORLD_ZOOM, MAP_MIN_ZOOM);
+    this.map.setMinZoom(floor);
     this.programmaticMove(() => {
       const bounds = this.map.options.maxBounds;
       if (bounds) this.map.setMaxBounds(null);
-      this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+      this.map.setView(WORLD_CENTER, worldZ, { animate: false });
       const leaveLifted = keepBoundsLifted || this.config.drawingMode;
       if (!leaveLifted && bounds) {
         this.map.setMaxBounds(bounds);
-        if (this.map.getZoom() - WORLD_ZOOM > 0.05) {
+        if (this.map.getZoom() - worldZ > 0.05) {
           this.map.setMaxBounds(null);
-          this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+          this.map.setView(WORLD_CENTER, worldZ, { animate: false });
         }
       }
-      if (this.map.getZoom() - WORLD_ZOOM > 0.05) {
+      if (this.map.getZoom() - worldZ > 0.05) {
         this.map.setMaxBounds(null);
-        this.map.setMinZoom(MAP_MIN_ZOOM);
-        this.map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: false });
+        this.map.setMinZoom(floor);
+        this.map.setView(WORLD_CENTER, worldZ, { animate: false });
       }
     });
   }
@@ -1102,9 +1176,14 @@ export class MapSceneController {
       focus: null,
       filmChapterIdx: null,
       filmZoom: null,
+      filmZoomBase: null,
       filmSetViewAt: 0,
       filmFlyingUntil: 0,
       filmLastCenter: null,
+      filmFramesSinceReset: 0,
+      filmLastBoat: null,
+      filmStillAnchor: null,
+      filmZoomHold: null,
       exitHold: false,
       exitHoldUntil: null,
       exitHoldZoom: null,
@@ -1162,6 +1241,7 @@ export class MapSceneController {
         return;
       }
       this.syncFilmCamera(this.config, now);
+      this.renderDynamic(this.currentPlayback || this.playback.snapshot());
       this.filmLoopRaf = requestAnimationFrame(tick);
     };
     this.filmLoopRaf = requestAnimationFrame(tick);
@@ -1214,9 +1294,12 @@ export class MapSceneController {
         filmNm: Number.isFinite(Number(film?.filmNm)) ? Number(film.filmNm) : Number(cfg.live?.filmNm),
       });
     }
-    if (this.camera.filmZoom == null || this.camera.filmChapterIdx !== chapterIdx) {
-      this.camera.filmZoom = filmChapterZoom(this.map, cfg.filmLeg);
-      this.ensureFilmTiles(cfg.filmLeg, this.camera.filmZoom);
+    const holdZ = this.camera.filmZoomHold;
+    const zoomHeld = Number.isFinite(holdZ);
+    if (!zoomHeld && (this.camera.filmZoomBase == null || this.camera.filmChapterIdx !== chapterIdx)) {
+      this.camera.filmZoomBase = filmChapterZoom(this.map, cfg.filmLeg);
+      if (this.camera.filmZoom == null) this.camera.filmZoom = this.camera.filmZoomBase;
+      this.ensureFilmTiles(cfg.filmLeg, this.camera.filmZoomBase);
     }
     const tilesReady = filmTilesReady(this.map, this.baseLayer);
     let next;
@@ -1228,20 +1311,31 @@ export class MapSceneController {
         lastSetViewAt: this.camera.filmSetViewAt || 0,
         flyingUntil: this.camera.filmFlyingUntil || 0,
         lastCenter: this.camera.filmLastCenter,
-        zoom: this.camera.filmZoom,
+        zoom: zoomHeld ? holdZ : this.camera.filmZoom,
+        baseZoom: zoomHeld ? holdZ : this.camera.filmZoomBase,
         tilesReady,
         chapterIdx,
+        filmLeg: zoomHeld ? null : cfg.filmLeg,
+        lastBoat: this.camera.filmLastBoat,
+        framesSinceReset: this.camera.filmFramesSinceReset || 0,
+        stillAnchor: this.camera.filmStillAnchor,
       });
     });
     if (!next || next.action === "idle") return;
     const pose = next.pose;
     if (pose) {
       this.filmPose = { ...pose, lon: cameraLngForBoat(pose.lon, lonCam), heading: pose.heading };
+      this.camera.filmLastBoat = { lat: pose.lat, lon: pose.lon };
     }
     this.camera.filmChapterIdx = next.lastChapterIdx;
     this.camera.filmSetViewAt = next.lastSetViewAt;
     this.camera.filmFlyingUntil = next.flyingUntil || 0;
     this.camera.filmLastCenter = next.lastCenter ?? this.camera.filmLastCenter;
+    this.camera.filmFramesSinceReset = next.framesSinceReset ?? 0;
+    this.camera.filmStillAnchor = next.stillAnchor ?? null;
+    if (zoomHeld) this.camera.filmZoom = holdZ;
+    else if (Number.isFinite(Number(next.zoom))) this.camera.filmZoom = Number(next.zoom);
+    else if (pose) this.camera.filmZoom = this.camera.filmZoom;
     this.camera.lastFollow = Date.now();
     if (this.filmPose) this.syncFilmBoat(this.filmPose);
   }
@@ -1300,12 +1394,15 @@ export class MapSceneController {
     }
     const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
     this.camera.followLon = lonCam;
-    if (Number.isFinite(this.camera.exitHoldZoom) && cfg.cinemaRecapture === this.camera.recapture) {
+    const holdAlive = Number.isFinite(this.camera.exitHoldZoom)
+      && Number.isFinite(this.camera.exitHoldUntil)
+      && Date.now() <= this.camera.exitHoldUntil;
+    if (holdAlive) {
+      this.camera.recapture = cfg.cinemaRecapture;
       const hold = this.camera.exitHoldZoom;
       this.programmaticMove(() => this.map.setView([subject.lat, lonCam], hold, { animate: false }));
       this.camera.lastPos = { lat: subject.lat, lon: subject.lon };
       this.camera.lastFollow = Date.now();
-      this.camera.exitHold = false;
       return;
     }
     if (Number.isFinite(this.camera.exitHoldZoom) && cfg.cinemaRecapture !== this.camera.recapture) {

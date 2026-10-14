@@ -31,8 +31,8 @@ async function seekFilm(page, ratio) {
 }
 
 async function enterSimulation(page) {
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("button", { name: /prochaine escale/i })).toBeVisible({ timeout: 15_000 });
   // L’effet de prime Simulation fait un seek(0) une fois : on attend qu’il soit passé
   // avant de viser une escale (sinon le seek(0) écrase le clic).

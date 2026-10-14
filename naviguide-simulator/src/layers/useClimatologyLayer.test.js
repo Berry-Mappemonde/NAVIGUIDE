@@ -6,8 +6,12 @@ import { fileURLToPath } from "node:url";
 import {
   CLIMO_WORLD_MAX_FEATURES,
   climoMeshDeg,
+  climoViewKey,
   decimateClimoFeatures,
   naiveRebuildKeys,
+  publishSameViewWindSync,
+  reattachClimoPool,
+  resetClimoRoseStats,
   syncClimoPointMarkers,
   visibleClimoLngs,
 } from "./climoRoseMarkers.js";
@@ -151,5 +155,74 @@ describe("useClimatologyLayer — zoomend débouncé, pas pendant l'animation", 
     assert.match(hookSrc, /syncClimoPointMarkers/);
     assert.doesNotMatch(hookSrc, /addPointMarkers/);
     assert.match(hookSrc, /loadClimoLayerFeatures/);
+    assert.match(hookSrc, /climoViewKey/);
+    assert.match(hookSrc, /publishSameViewWindSync/);
+    assert.match(hookSrc, /SHARED/);
+    assert.match(hookSrc, /reattachClimoPool/);
+    assert.match(hookSrc, /!\(features \|\| \[\]\)\.length && pool\.size/);
+    assert.doesNotMatch(hookSrc, /resetClimoRoseStats\(\);\s*let windSyncs/);
+  });
+});
+
+describe("climoViewKey", () => {
+  it("même cadre → même clé", () => {
+    const bounds = {
+      getWest: () => -60.1234,
+      getSouth: () => 0.1,
+      getEast: () => -20.5,
+      getNorth: () => 40.9,
+    };
+    const map = { getZoom: () => 3.2, getBounds: () => bounds };
+    assert.equal(climoViewKey(map), climoViewKey(map));
+    assert.equal(climoViewKey(map), "3:-60.123:0.100:-20.500:40.900");
+  });
+});
+
+describe("publishSameViewWindSync + reattach — 2e passe / remontage", () => {
+  it("ne crée aucun marqueur et republie created=0", () => {
+    resetClimoRoseStats();
+    const features = [feature(-40, 20), feature(-30, 25)];
+    const pool = new Map();
+    const makeLayer = (ll) => ({ id: ll.join(",") });
+    const bounds = { west: -60, east: -5 };
+    const g1 = fakeGroup();
+    const first = syncClimoPointMarkers({
+      group: g1, pool, features, zoom: 3, bounds, makeLayer,
+      copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+    });
+    assert.equal(first.created, 2);
+    const g2 = fakeGroup();
+    const second = syncClimoPointMarkers({
+      group: g2, pool, features, zoom: 3, bounds, makeLayer,
+      copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+    });
+    assert.equal(second.created, 0);
+    assert.equal(second.reused, 2);
+    assert.equal(g2.layers.size, 2);
+    const published = publishSameViewWindSync(pool, 3);
+    assert.equal(published.created, 0);
+    assert.equal(published.markers, 2);
+    assert.equal(published.syncs, 3);
+  });
+
+  it("ne vide pas le pool si le cadre ne retient aucune copie", () => {
+    const features = [feature(-40, 20)];
+    const group = fakeGroup();
+    const pool = new Map();
+    const makeLayer = (ll) => ({ id: ll.join(",") });
+    const bounds = { west: -60, east: -5 };
+    syncClimoPointMarkers({
+      group, pool, features, zoom: 3, bounds, makeLayer,
+      copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
+    });
+    assert.equal(pool.size, 1);
+    const wiped = syncClimoPointMarkers({
+      group, pool, features, zoom: 3, bounds, makeLayer,
+      copiesFor: () => [],
+    });
+    assert.equal(wiped.created, 0);
+    assert.equal(wiped.removed, 0);
+    assert.equal(wiped.markers, 1);
+    assert.equal(pool.size, 1);
   });
 });

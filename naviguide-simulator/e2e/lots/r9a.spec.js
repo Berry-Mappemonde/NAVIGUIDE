@@ -52,7 +52,7 @@ test("lot R9a — aucun changement visible, trois parcours", async ({ page }) =>
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("view-suivre")).toBeVisible();
-  await expect(page.getByTestId("view-simulation")).toBeVisible();
+  await expect(page.getByTestId("view-tracer")).toBeVisible();
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
@@ -62,8 +62,8 @@ test("lot R9a — aucun changement visible, trois parcours", async ({ page }) =>
   }
   await shot(page, "01-suivre");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("film-bar")).toBeVisible();
   await shot(page, "02-simulation");
 
@@ -71,7 +71,8 @@ test("lot R9a — aucun changement visible, trois parcours", async ({ page }) =>
   const draw = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Draw your own route/i });
   await expect(draw).toBeVisible({ timeout: 15_000 });
   await draw.scrollIntoViewIfNeeded();
-  await draw.click({ force: true });
+  // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
+  await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
   await shot(page, "03-tracer");
 

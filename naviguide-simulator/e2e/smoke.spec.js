@@ -24,8 +24,8 @@ test.describe("simulateur — fumée", () => {
     await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("view-suivre").click();
     await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-    await page.getByTestId("view-simulation").click();
-    await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+    await page.getByTestId("view-tracer").click();
+    await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
     // Suivre ouvre le cinéma : les deux panneaux se ferment. Les calques
     // sont dans le panneau droit — on le rouvre avant ZEE (sans API).
     const drawer = page.getByTestId("layers-drawer");

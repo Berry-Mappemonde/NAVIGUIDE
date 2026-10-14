@@ -8,7 +8,16 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSubtitleShowsAir, visibleFilmSubtitle } from "../hooks/useReplay.js";
+import { filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
+
+function filmEstimateLabel(replay, t) {
+  const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
+    replay?.targetSeconds,
+    replay?.variantEstimates,
+    replay?.estimatedSeconds,
+  ));
+  return clock ? t("filmDurationEstimate", { time: clock }) : "";
+}
 
 function clockSpeedBasis(clock, clockCurrent, barNm) {
   const direct = clockCurrent?.basis;
@@ -141,6 +150,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   };
   const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "");
   const filmSubtitleAir = filmSubtitleShowsAir(filmSubtitle);
+  const filmSubtitleParts = filmSubtitleHighlight(filmSubtitle, replay?.subtitlePlace || "");
 
   if (hideBar) {
     return (
@@ -314,7 +324,15 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               filmSubtitleAir ? "whitespace-normal" : "truncate"
             }`}
           >
-            {filmSubtitle}
+            {filmSubtitleParts.place ? (
+              <>
+                {filmSubtitleParts.before}
+                <strong data-testid="film-subtitle-place" className="text-cyan-200 font-semibold">
+                  {filmSubtitleParts.place}
+                </strong>
+                {filmSubtitleParts.after}
+              </>
+            ) : filmSubtitle}
           </div>
         ) : null}
         {storiesPending > 0 ? (
@@ -413,7 +431,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 data-testid="film-view-switch"
                 className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0"
               >
-                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow"], [VIEW_SIMULATION, t("simulationButton"), "view-simulation", "mode-sim"]].map(([id, label, testId, alias]) => (
+                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow", null], [VIEW_SIMULATION, t("tracerButton"), "view-tracer", "mode-tracer", t("tracerModeTooltip")]].map(([id, label, testId, alias, tip]) => (
                   <button
                     key={id}
                     type="button"
@@ -421,6 +439,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     aria-checked={view === id}
                     data-testid={testId}
                     data-mode={alias}
+                    title={tip || undefined}
                     onClick={() => onView(id)}
                     className={`px-1.5 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
                       view === id ? "bg-cyan-700/70 text-cyan-50 border border-cyan-400/50" : "text-white/70 hover:text-white border border-transparent"
@@ -442,23 +461,23 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     disabled={Boolean(replay.active)}
                   />
                 </div>
-                {replay.active ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={replay.onStop}
-                      data-testid="replay-stop"
-                      className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
-                      title={t("replayStopTitle")}
-                    >
-                      ■ {t("replayStop")}
-                    </button>
-                    <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
-                      <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-1 min-w-0">
+                  {replay.active ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={replay.onStop}
+                        data-testid="replay-stop"
+                        className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-rose-700/70 border-rose-300/40 hover:bg-rose-600/70 whitespace-nowrap"
+                        title={t("replayStopTitle")}
+                      >
+                        ■ {t("replayStop")}
+                      </button>
+                      <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden" title={t("replayProgress", { pct: Math.round((replay.progress || 0) * 100) })}>
+                        <div className="h-full bg-sky-400" style={{ width: `${Math.round((replay.progress || 0) * 100)}%` }} />
+                      </div>
+                    </>
+                  ) : (
                     <button
                       type="button"
                       onClick={replay.onStart}
@@ -470,32 +489,43 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     >
                       ↺ {t("replayStart")}
                     </button>
-                    {replay.canStart ? (
-                      <div
-                        data-testid="film-duration"
-                        className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
-                        title={t("filmDuration")}
-                      >
-                        {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
-                          <button
-                            key={sec}
-                            type="button"
-                            data-seconds={sec}
-                            aria-pressed={Number(replay.targetSeconds) === sec}
-                            onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
-                            className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap ${
-                              Number(replay.targetSeconds) === sec
-                                ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
-                                : "text-white/70 hover:text-white border border-transparent"
-                            }`}
-                          >
-                            {t(key)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                )}
+                  )}
+                  {replay.canStart || replay.active ? (
+                    <div
+                      data-testid="film-duration"
+                      {...(replay.active ? { "data-testid": undefined } : {})}
+                      className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5"
+                      title={t("filmDuration")}
+                    >
+                      {[[150, "filmDuration150"], [180, "filmDuration180"]].map(([sec, key]) => (
+                        <button
+                          key={sec}
+                          type="button"
+                          data-seconds={sec}
+                          aria-pressed={Number(replay.targetSeconds) === sec}
+                          aria-disabled={Boolean(replay.active)}
+                          disabled={Boolean(replay.active)}
+                          onClick={() => replay.onDuration?.(Number(replay.targetSeconds) === sec ? 0 : sec)}
+                          className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
+                            Number(replay.targetSeconds) === sec
+                              ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
+                              : "text-white/70 hover:text-white border border-transparent"
+                          }`}
+                        >
+                          {t(key)}
+                        </button>
+                      ))}
+                      {filmEstimateLabel(replay, t) ? (
+                        <span
+                          data-testid="film-duration-estimate"
+                          className="px-1 py-0.5 text-[9px] font-semibold text-white/70 whitespace-nowrap"
+                        >
+                          {filmEstimateLabel(replay, t)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>

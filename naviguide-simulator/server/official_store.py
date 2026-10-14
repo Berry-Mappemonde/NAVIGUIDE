@@ -25,11 +25,15 @@ from typing import Any, Callable, Optional
 log = logging.getLogger("naviguide-simulator.official-store")
 
 FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
-FILM_VARIANT_SECONDS = (150, 180)   # les pilules 2:30 / 3:00 de la barre ; la première est la variante par défaut
+FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafond ; la première reste le repli
 PREPARING = "preparing"
 READY = "ready"
-# Clé film : un snapshot RF2 (avant phrases avion) ne matche plus.
-FILM_SCRIPT_REV = "rf5"
+UNAVAILABLE = "unavailable"
+# Clé film : RC26 (récit dense et réparti — fenêtres de temps, cap initial de la trace,
+# dédoublonnage par site, phrase de groupe ZEE grammaticale) invalide rc22. moments reste rg4 ; ici reste rg3.
+FILM_SCRIPT_REV = "rc26"
+MOMENTS_REV = "rg4"
+ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -152,6 +156,17 @@ def worker_enabled() -> bool:
     if os.environ.get("PYTEST_CURRENT_TEST") and raw != "force":
         return False
     return True
+
+
+def _store_rev_relaxed() -> bool:
+    """Sans remplisseur (CI, stock figé) : une ancienne rev film/moments/ici reste joignable.
+
+    La clé `…:rg4` n'existe pas encore dans l'archive gelée ; sans ça, GET
+    /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
+    Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
+    """
+    raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
+    return raw in ("0", "false", "no")
 
 
 def disk_root() -> Path:
@@ -309,10 +324,14 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : le film inclut la révision du script (RF5)."""
+        """Clé de rangement : film, moments et ici portent la révision du calcul (RG5)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
+        if family == "moments":
+            return f"{base}:{MOMENTS_REV}"
+        if family == "ici":
+            return f"{base}:{ICI_REV}"
         return base
 
     def _with_date(self, hit: Optional[dict]) -> Optional[dict]:
@@ -335,7 +354,7 @@ class OfficialStore:
         lister = getattr(self.backend, "list_family", None)
         if not callable(lister):
             return None
-        best: Optional[tuple[str, str, dict]] = None
+        best: Optional[tuple[tuple, str, dict]] = None
         for stored_key, doc in lister(family):
             try:
                 r, t, date, suf = parse_key(stored_key)
@@ -343,16 +362,18 @@ class OfficialStore:
                 continue
             if r != route_id or t != t0:
                 continue
-            if (want_suf or None) != (suf or None):
+            exact = (want_suf or None) == (suf or None)
+            if not exact and not (family in {"film", "moments", "ici"} and _store_rev_relaxed()):
                 continue
-            if best is None or date > best[0]:
-                best = (date, stored_key, doc)
+            rank = (1 if exact else 0, date)
+            if best is None or rank > best[0]:
+                best = (rank, stored_key, doc)
         if not best:
             return None
-        date, stored_key, doc = best
+        rank, stored_key, doc = best
         out = dict(doc)
         out["key"] = stored_key
-        out["dataDate"] = date
+        out["dataDate"] = rank[1]
         return out
 
     def get(self, family: str, key: Optional[str] = None) -> Optional[dict]:
@@ -568,6 +589,63 @@ def _voy_air_marks(voy: Optional[dict], plan: Optional[dict] = None) -> list:
     return marks
 
 
+def _plan_char_count(plan: Optional[dict]) -> int:
+    if not isinstance(plan, dict):
+        return 0
+    n = plan.get("chars")
+    if isinstance(n, (int, float)) and int(n) > 0:
+        return int(n)
+    return sum(
+        len(str(c.get("text") or ""))
+        for c in (plan.get("chapters") or [])
+        if isinstance(c, dict)
+    )
+
+
+def _with_film_estimate(plan: Optional[dict]) -> dict:
+    from film_script import film_estimated_seconds  # noqa: PLC0415
+
+    if not isinstance(plan, dict):
+        return {}
+    out = dict(plan)
+    chars = _plan_char_count(out)
+    out["chars"] = chars
+    out["estimatedSeconds"] = film_estimated_seconds(chars)
+    return out
+
+
+def _variants_estimates(variants: Optional[dict]) -> dict:
+    out: dict[str, dict[str, dict]] = {}
+    if not isinstance(variants, dict):
+        return out
+    for lang, by_secs in variants.items():
+        if not isinstance(by_secs, dict):
+            continue
+        rows: dict[str, dict] = {}
+        for key, plan in by_secs.items():
+            annotated = _with_film_estimate(plan if isinstance(plan, dict) else None)
+            rows[str(key)] = {
+                "chars": int(annotated.get("chars") or 0),
+                "estimatedSeconds": int(annotated.get("estimatedSeconds") or 0),
+            }
+        if rows:
+            out[str(lang)] = rows
+    return out
+
+
+def _pick_variant_key(keys: list[int], want: int) -> Optional[int]:
+    """0 / absent = intégral (clé 0 si stockée, sinon la plus longue)."""
+    if not keys:
+        return None
+    if want <= 0:
+        return 0 if 0 in keys else max(keys)
+    if want in keys:
+        return want
+    positive = [k for k in keys if k > 0]
+    pool = positive or keys
+    return min(pool, key=lambda k: (abs(k - want), k))
+
+
 def _apply_air_sentences(plan: dict, lang: str, voy: Optional[dict]) -> dict:
     """Garde l'aller/retour avion si la route officielle a la paire — pas d'invention."""
     from film_script import _ensure_air_sentences  # noqa: PLC0415
@@ -690,6 +768,7 @@ def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:
 # ── calculs (mêmes fonctions que le serveur d'aujourd'hui) ───────────────────
 
 def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
+    from climo_events import notable_climo_changes  # noqa: PLC0415
     from voyage_api import _climo_clock, _regime_portions  # noqa: PLC0415
     from voyage_store import save_voyage  # noqa: PLC0415
 
@@ -710,7 +789,12 @@ def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
             "windKnots": v.get("windKnots"),
             "dirFromDeg": v.get("dirFromDeg"),
         })
-    return {"clock": clock, "regimes": _regime_portions(clock), "fiches": fiches}
+    return {
+        "clock": clock,
+        "regimes": _regime_portions(clock),
+        "fiches": fiches,
+        "events": notable_climo_changes(clock),
+    }
 
 
 RICH_EVENT_KINDS = frozenset({"zee", "sci", "science", "poe", "amp", "climo", "wx", "grib", "marina", "port"})
@@ -779,9 +863,8 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     if not voy.get("clock"):
         return None
 
-    # 27 sept. : calculé en mode LIBRE (seconds=0), le film déversait jusqu'à dix changements bruts par chapitre,
-    # hors chronologie — exactement le « journal déversé » refusé le 26. On range les variantes BUDGET que les
-    # pilules de la barre demandent (2:30 = 150 s, 3:00 = 180 s) ; serve_film sert la plus proche.
+    # RG8 : trois variantes par priorité (2:30 / 3:00 / intégral). Plus les mêmes candidats
+    # sous deux plafonds — les pilules choisissent un texte différent.
     async def _variants():
         out: dict[str, dict[str, dict]] = {}
         for lang in ("fr", "en"):
@@ -808,17 +891,74 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
         return None
     for lang, by_secs in variants.items():
         for secs, plan in list(by_secs.items()):
-            by_secs[secs] = _apply_air_sentences(plan, lang, voy)
+            by_secs[secs] = _with_film_estimate(_apply_air_sentences(plan, lang, voy))
     fr = variants["fr"][str(FILM_VARIANT_SECONDS[0])]
-    out = {"fr": fr, "default": fr, "variants": variants}
+    out = {
+        "fr": fr, "default": fr, "variants": variants,
+        "estimates": _variants_estimates(variants),
+    }
     en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if isinstance(en, dict) and (en.get("chapters") or []):
         out["en"] = en
     return out
 
 
+def _stored_eta_stop(name: str) -> Optional[dict]:
+    if not (name or "").strip():
+        return None
+    hit = get("eta")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    stops = (body or {}).get("stops") or {}
+    if name in stops and isinstance(stops[name], dict):
+        return dict(stops[name])
+    needle = name.strip().lower()
+    for n, payload in stops.items():
+        if needle and needle in str(n).lower() and isinstance(payload, dict):
+            return dict(payload)
+    return None
+
+
+def _eta_stop_record(raw: Optional[dict], now: datetime) -> dict:
+    """Une escale du stock : ready seulement si des membres ont produit p10–p90."""
+    from ensemble_eta import explain_eta_reason  # noqa: PLC0415
+    from voyage_clock import to_iso  # noqa: PLC0415
+
+    src = raw if isinstance(raw, dict) else {}
+    try:
+        members = int(src.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    p10, p50, p90 = src.get("p10"), src.get("p50"), src.get("p90")
+    ready = members > 0 and bool(p10) and bool(p90)
+    computed = src.get("computedAt") or to_iso(now)
+    out = {
+        "p10": p10 if ready else None,
+        "p50": p50 if ready else None,
+        "p90": p90 if ready else None,
+        "members": members if ready else 0,
+        "status": READY if ready else UNAVAILABLE,
+        "reason": None,
+        "nextRetry": None,
+        "computedAt": computed,
+    }
+    if ready:
+        if src.get("source"):
+            out["source"] = src["source"]
+        if src.get("memberKnots"):
+            out["memberKnots"] = src["memberKnots"]
+        return out
+    out["reason"] = explain_eta_reason(src)
+    out["nextRetry"] = src.get("nextRetry")
+    if src.get("lastAttempt"):
+        out["lastAttempt"] = src["lastAttempt"]
+    if src.get("detail"):
+        out["detail"] = src["detail"]
+    return out
+
+
 def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
     from ensemble_eta import (  # noqa: PLC0415
+        eta_retry_due,
         next_official_stop,
         peek_official_eta,
         preheat_official_eta,
@@ -828,15 +968,23 @@ def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
 
     if not voy.get("clock"):
         return None
-    try:
-        preheat_official_eta(
-            voy, now, polar_raw=_polar_raw(voy.get("expedition_id") or ""),
-        )
-    except Exception as exc:
-        log.warning("préchauffage ETA : %s", exc)
+    nxt = next_official_stop(voy, now)
+    last = _stored_eta_stop(nxt) if nxt else None
+    if last is None and nxt:
+        try:
+            last = peek_official_eta(voy, nxt, now)
+        except Exception as exc:
+            log.warning("peek ETA %s : %s", nxt, exc)
+            last = None
+    if last is None or eta_retry_due(last, now):
+        try:
+            preheat_official_eta(
+                voy, now, polar_raw=_polar_raw(voy.get("expedition_id") or ""),
+            )
+        except Exception as exc:
+            log.warning("préchauffage ETA : %s", exc)
     stops: dict[str, dict] = {}
     names = []
-    nxt = next_official_stop(voy, now)
     if nxt:
         names.append(nxt)
     for m in voy.get("marks") or []:
@@ -846,11 +994,15 @@ def compute_eta(voy: dict, now: datetime) -> Optional[dict]:
     for name in names[:12]:
         try:
             raw = peek_official_eta(voy, name, now)
-            stops[name] = tighten_eta_payload(raw, now)
+            stops[name] = _eta_stop_record(tighten_eta_payload(raw, now), now)
         except Exception as exc:
             log.warning("ETA %s : %s", name, exc)
-    if not any(int((s or {}).get("members") or 0) > 0 for s in stops.values()):
-        return None
+            stored = _stored_eta_stop(name)
+            if stored:
+                stops[name] = _eta_stop_record(stored, now)
+    if nxt and nxt not in stops:
+        fallback = last if isinstance(last, dict) else {}
+        stops[nxt] = _eta_stop_record(tighten_eta_payload(fallback, now), now)
     return {"stops": stops}
 
 
@@ -941,8 +1093,32 @@ COMPUTE: dict[str, Callable[[dict, datetime], Optional[dict]]] = {
     "plan_review": compute_plan_review,
 }
 
-# Horloge d'abord : les autres familles s'appuient dessus.
-COMPUTE_ORDER = ("climo", "moments", "film", "eta", "ici", "plan_review")
+# Horloge d'abord. Plan-review et eta avant le film (RG7 : le script les lit).
+COMPUTE_ORDER = ("climo", "moments", "plan_review", "eta", "film", "ici")
+
+
+def _eta_progress_detail(store: Optional["OfficialStore"] = None) -> str:
+    """Une ligne pour le remplisseur : membres, ou raison + date de nouvel essai."""
+    st = store or get_store()
+    hit = st.get("eta")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    stops = (body or {}).get("stops") or {}
+    if not stops:
+        return ""
+    stop = next(iter(stops.values()))
+    if not isinstance(stop, dict):
+        return ""
+    try:
+        members = int(stop.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    if members > 0:
+        return f"{members} membres"
+    reason = str(stop.get("reason") or "").strip()
+    retry = str(stop.get("nextRetry") or "")[:10]
+    if reason and retry:
+        return f"{reason}, nouvel essai {retry}"
+    return reason
 
 
 def refresh_family(
@@ -964,7 +1140,15 @@ def refresh_family(
     if not force:
         hit = st.get(family, key)
         if hit and hit.get("payload") is not None:
-            if family != "film" or not film_snapshot_stale(hit.get("payload"), current):
+            if family == "film":
+                if not film_snapshot_stale(hit.get("payload"), current):
+                    return "unchanged"
+            elif family == "eta":
+                from ensemble_eta import eta_store_retry_due, next_official_stop  # noqa: PLC0415
+                nxt = next_official_stop(current, when)
+                if not eta_store_retry_due(hit.get("payload"), when, nxt):
+                    return "unchanged"
+            else:
                 return "unchanged"
     fn = compute or COMPUTE[family]
     if family != "climo" and not current.get("clock"):
@@ -1018,7 +1202,8 @@ def refresh_missing(
                     family, force=force, compute=fns.get(family),
                     now=when, store=st, voy=_load_official() or voy,
                 )
-                _log(family, status)
+                detail = _eta_progress_detail(st) if family == "eta" else ""
+                _log(family, status, detail)
             except Exception as exc:
                 log.warning("stock %s : %s", family, exc)
                 _log(family, PREPARING, str(exc)[:160])
@@ -1414,19 +1599,49 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
     variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
     by_secs = variants.get(lg) or variants.get("fr") or {}
     if by_secs:
-        # La variante budget la plus proche de la durée demandée (0 = libre → la plus longue).
         want = int(seconds or 0)
-        keys = sorted(int(k) for k in by_secs if str(k).isdigit())
-        if keys:
-            pick = keys[-1] if want <= 0 else min(keys, key=lambda k: (abs(k - want), k))
+        keys = sorted(
+            int(k) for k in by_secs
+            if str(k).lstrip("-").isdigit()
+        )
+        pick = _pick_variant_key(keys, want)
+        if pick is not None:
             plan = by_secs.get(str(pick))
     if plan is None:
         plan = body.get(lg) or body.get("default") or body.get("fr")
     if not isinstance(plan, dict) or not (plan.get("chapters") or []):
         return preparing_payload("film", extra)
-    out = dict(plan)
+    out = _with_film_estimate(plan)
+    stored_est = body.get("estimates") if isinstance(body.get("estimates"), dict) else {}
+    lang_est = stored_est.get(lg) or stored_est.get("fr") or _variants_estimates({lg: by_secs}).get(lg)
+    if isinstance(lang_est, dict) and lang_est:
+        out["estimates"] = lang_est
     out["status"] = READY
     out.update(_stamp(hit))
+    return out
+
+
+def _serve_eta_stop(payload: dict, stamp: dict) -> dict:
+    out = dict(payload)
+    try:
+        members = int(out.get("members") or 0)
+    except (TypeError, ValueError):
+        members = 0
+    ready = members > 0 and bool(out.get("p10")) and bool(out.get("p90"))
+    if ready:
+        out["status"] = READY
+        out["members"] = members
+    else:
+        out["status"] = out.get("status") if out.get("status") == UNAVAILABLE else UNAVAILABLE
+        if not out.get("reason") or out.get("reason") == "en préparation":
+            from ensemble_eta import explain_eta_reason  # noqa: PLC0415
+            out["reason"] = explain_eta_reason(out)
+        out["p10"] = None if members <= 0 else out.get("p10")
+        out["p50"] = None if members <= 0 else out.get("p50")
+        out["p90"] = None if members <= 0 else out.get("p90")
+        if members <= 0:
+            out["members"] = 0
+    out.update(stamp)
     return out
 
 
@@ -1441,18 +1656,12 @@ def serve_eta(stop: str) -> dict:
         return empty
     stamp = _stamp(hit)
     stops = body.get("stops") or {}
-    if stop in stops:
-        out = dict(stops[stop])
-        out["status"] = READY
-        out.update(stamp)
-        return out
+    if stop in stops and isinstance(stops[stop], dict):
+        return _serve_eta_stop(stops[stop], stamp)
     needle = (stop or "").strip().lower()
     for name, payload in stops.items():
-        if needle and needle in name.lower():
-            out = dict(payload)
-            out["status"] = READY
-            out.update(stamp)
-            return out
+        if needle and needle in name.lower() and isinstance(payload, dict):
+            return _serve_eta_stop(payload, stamp)
     return empty
 
 

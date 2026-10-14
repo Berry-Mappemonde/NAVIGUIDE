@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { formatCivilDate } from "../engine/voyageClock.js";
-import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks, stopMatch, useOfficialEta } from "../hooks/usePlanReview.js";
+import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks, nextStopRowIndex, useOfficialEta } from "../hooks/usePlanReview.js";
 
 function markAt(m) {
   return Number(m.filmNm ?? m.nm) || 0;
@@ -51,7 +51,9 @@ const EscaleRow = memo(function EscaleRow({ name, nmLabel, dateLabel, quayLabel,
   );
 });
 
-export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, frozen = false }) {
+export const EscaleLegend = memo(function EscaleLegend({
+  marks, filmNm, frozen = false, nowMs, liveFilmNm, officialEta = false,
+}) {
   const { t, lang } = useLang();
 
   // Labels depend on marks + language only: built once per route / language.
@@ -75,20 +77,13 @@ export const EscaleLegend = memo(function EscaleLegend({ marks, filmNm, frozen =
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].at <= x + 0.4) current = i;
   }
-  const calendarNext = nextStopFromMarks(marks);
-  const playheadNext = current + 1 < rows.length ? rows[current + 1].name : "";
-  const nextName = calendarNext || playheadNext;
-  const nowMs = Date.now();
-  let nextIndex = -1;
-  if (calendarNext) {
-    nextIndex = rows.findIndex((r) => {
-      if (!stopMatch(r.name, calendarNext)) return false;
-      const ts = Date.parse(r.mark?.iso || "");
-      return !Number.isFinite(ts) || ts > nowMs;
-    });
-  }
-  if (nextIndex < 0 && playheadNext) nextIndex = current + 1;
-  const eta = useOfficialEta(nextName, { enabled: Boolean(nextName), frozen });
+  const nextName = nextStopFromMarks(marks, nowMs, liveFilmNm);
+  const nextIndex = nextStopRowIndex(rows, marks, nowMs, liveFilmNm);
+  const eta = useOfficialEta(nextName, {
+    enabled: Boolean(nextName),
+    frozen,
+    officialClock: officialEta,
+  });
   const etaLabel = formatEtaRange(eta, t, lang);
   const etaTitle = formatEtaRangeTitle(eta, t);
 

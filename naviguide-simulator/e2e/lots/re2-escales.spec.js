@@ -186,8 +186,8 @@ test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async
 
   await shot(page, "01-liste");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => panelOnScreen(page, "right"), { timeout: 10_000 }).toBe(true);
   await expect(legend(page)).toBeVisible({ timeout: 10_000 });
 

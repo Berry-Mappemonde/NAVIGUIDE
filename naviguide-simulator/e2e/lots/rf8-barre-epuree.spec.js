@@ -206,8 +206,8 @@ test("lot RF8 — liste informative, barre dans le cadre, sans Récit", async ({
   await page.getByTestId("escale-legend").scrollIntoViewIfNeeded();
   await assertListeInformative(page);
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => panelOnScreen(page, "right"), { timeout: 10_000 }).toBe(true);
   await expect(page.getByTestId("escale-legend")).toBeVisible({ timeout: 10_000 });
   await assertListeInformative(page);

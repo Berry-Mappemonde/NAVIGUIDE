@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, filmSpeakSeconds, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, stepAlongPlan, toggleFilmDuration, visibleFilmSubtitle, voiceLeadPolicy } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, wallClockSpeakSeconds } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,9 @@ describe("useReplay contract (lot E)", () => {
     // The voice lives in hooks/useReplayVoice.js since lot J; App mounts it.
     assert.match(app, /useReplayVoice\(\{/);
     assert.match(app, /chapterText: replay\.chapterText/);
-    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speak\(chapterText, lang/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /speakSentence|speak\(/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /isVoiceHeld/);
+    assert.match(app, /onSentenceEnd: replay\.onSentenceEnd/);
     assert.match(app, /momentNow=\{replay\.active \? replay\.card/);
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
@@ -56,9 +58,10 @@ describe("useReplay contract (lot E)", () => {
   it("le film est chapitré : filmPlan, onboundary, durée cible, sous-titre", () => {
     assert.match(hook, /filmPlan\(/);
     assert.match(hook, /onVoiceBoundary/);
-    // 27 sept. : le pas de temps mené par la voix passe par voiceLedStep (ancres, plafond),
-    // et la voix n'est plus recalibrée (débit constant).
-    assert.match(hook, /voiceLedStep\(/);
+    // 27 sept. / RG12 : le pas de temps mené par la voix passe par stepFilmTime
+    // (prédiction, gouverneur) ; la voix n'est plus recalibrée (débit constant).
+    assert.match(hook, /stepFilmTime\(/);
+    assert.match(hook, /voiceHoldRef/);
     assert.doesNotMatch(hook, /calibrateRate/);
     assert.match(hook, /targetSeconds/);
     assert.match(hook, /if \(done\)/);
@@ -83,6 +86,25 @@ describe("useReplay contract (lot E)", () => {
     assert.match(hook, /budgetSeconds/);
     assert.match(hook, /resolveFilmTargetSeconds/);
     assert.match(hook, /userBudget > 0 \? userBudget : FILM_TARGET_SECONDS/);
+  });
+
+  it("lot RG8 — durée estimée = caractères ÷ 15, sans recalibrer la voix", () => {
+    assert.equal(filmEstimatedSeconds(2250), 150);
+    assert.equal(filmEstimatedSeconds(2700), 180);
+    assert.equal(filmEstimatedSeconds(0), 0);
+    assert.equal(formatFilmEstimateClock(160), "2:40");
+    assert.equal(formatFilmEstimateClock(0), "");
+    assert.equal(pickFilmEstimateSeconds(150, { 150: { estimatedSeconds: 160 } }, 0), 160);
+    assert.equal(pickFilmEstimateSeconds(0, { 0: { estimatedSeconds: 240 } }, 99), 240);
+    assert.equal(pickFilmEstimateSeconds(180, null, 195), 195);
+    const q0 = "lang=fr&seconds=0&style=raw&t0=2026-05-15T08%3A00%3A00.000Z";
+    const q150 = "lang=fr&seconds=150&style=raw&t0=2026-05-15T08%3A00%3A00.000Z";
+    assert.equal(filmQueryKeepsReady(q0, q150), true);
+    assert.equal(filmQueryKeepsReady(q150, "lang=en&seconds=150&style=raw&t0=2026-05-15T08%3A00%3A00.000Z"), false);
+    assert.match(hook, /filmQueryKeepsReady/);
+    assert.doesNotMatch(hook, /calibrateRate/);
+    assert.match(hook, /estimatedSeconds/);
+    assert.match(app, /estimatedSeconds: replay\.estimatedSeconds/);
   });
 
   it("lot F4 : les événements du chapitre ouvrent la bulle (même texte que la carte NOW)", () => {
@@ -265,7 +287,7 @@ function chapterHasFirstLeg(ch) {
 }
 
 describe("lot RC10 — film officiel, pas la Simulation", () => {
-  it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ, ≤ 800 mots", () => {
+  it("empreinte RE7 : pas Bay of Biscay, pas milles nautiques du départ ; court sans jargon ready", () => {
     assert.equal(isRe7OfficialFilm({
       chapters: [{ text: "Départ de Saint-Maur. golfe de Gascogne. Aujourd’hui, le bateau est à Nouméa." }],
     }), true);
@@ -274,7 +296,26 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
       chapters: [{ text: "Aujourd'hui, le bateau est à 19 260 milles nautiques du départ." }],
     }), false);
     assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(801)}` }] }), false);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: `${"mot ".repeat(2501)}` }] }), false);
     assert.equal(isRe7OfficialFilm({ chapters: [] }), false);
+  });
+
+  it("lot RC21 — 801 mots : gabarit RG6 ready, Bay of Biscay stale, remplissage stale", () => {
+    const pad = (prefix) => `${prefix} ${"mot ".repeat(801)}`;
+    const rg6 = pad("Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio. 432 milles, 9 jours de mer.");
+    assert.equal(filmHasRg6Rg7Fingerprint(rg6), true);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: rg6 }] }), true);
+    assert.equal(officialFilmStatus({ chapters: [{ text: rg6 }] }), "ready");
+    const biscay = pad("Bay of Biscay");
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: biscay }] }), false);
+    assert.equal(officialFilmStatus({ chapters: [{ text: biscay }] }), "stale");
+    const filler = `${"mot ".repeat(801)}`;
+    assert.equal(filmHasRg6Rg7Fingerprint(filler), false);
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: filler }] }), false);
+    assert.equal(officialFilmStatus({ chapters: [{ text: filler }] }), "stale");
+    assert.equal(isRe7OfficialFilm({
+      chapters: [{ text: "Départ de Saint-Maur. golfe de Gascogne. Cap au sud-ouest." }],
+    }), true);
   });
 
   it("officialFilmStatus : absent si fetch échoue, stale si empreinte manquante", () => {
@@ -588,10 +629,188 @@ describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => 
   });
 
   it("App passe le sous-titre choisi ; la barre ne tronque pas l'avion", () => {
-    assert.match(app, /visibleFilmSubtitle\(replay\.chapterText\)/);
+    assert.match(app, /visibleFilmSubtitle\(replay\.subtitle \|\| replay\.chapterText\)/);
     assert.match(bar, /visibleFilmSubtitle/);
+    assert.match(bar, /filmSubtitleHighlight/);
+    assert.match(bar, /data-testid="film-subtitle-place"/);
     assert.match(bar, /filmSubtitleShowsAir/);
     assert.match(bar, /filmSubtitleAir \? "whitespace-normal" : "truncate"/);
     assert.doesNotMatch(bar, /data-testid="film-subtitle" className="[^"]*truncate/);
+  });
+});
+
+describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
+  const t0 = Date.parse("2026-05-15T08:00:00Z");
+  const hour = 3600000;
+
+  function longChapters(n = 7, chars = 200) {
+    return Array.from({ length: n }, (_, i) => ({
+      tA: t0 + i * 4 * hour,
+      tB: t0 + (i + 1) * 4 * hour,
+      text: `${"Phrase une du chapitre. ".padEnd(80)}Phrase deux vers le lieu ${i}. `.padEnd(chars, "x"),
+      fromLat: 46 - i,
+      fromLon: -1 - i,
+      toLat: 45 - i,
+      toLon: -2 - i,
+      fromName: "La Rochelle",
+      toName: "Ajaccio",
+    }));
+  }
+
+  it("sans voix : durée ≥ 90 % de l'estimée, ended seulement à la dernière phrase", () => {
+    assert.equal(FILM_VOICE_STALL_MS, 2000);
+    assert.equal(FILM_VISIBILITY_CATCHUP_MS, 2000);
+    const chapters = longChapters(7, 200);
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    const speakSec = wallClockSpeakSeconds(plan, FILM_ESTIMATE_CPS);
+    assert.ok(speakSec >= 90, `estimée trop courte: ${speakSec}`);
+    const early = linearFilmAt(53, plan);
+    assert.equal(early.finish, false, "53 s ne termine pas un film de 7 chapitres");
+    assert.ok(early.chapterIdx < plan.chapters.length - 1);
+    assert.equal(linearFilmAt(speakSec * 0.89, plan).finish, false);
+
+    let ended = false;
+    let elapsed = 0;
+    const dt = 0.5;
+    let finishAt = null;
+    while (elapsed <= speakSec + 2) {
+      const at = linearFilmAt(elapsed, plan);
+      if (at.finish) {
+        ended = true;
+        finishAt = elapsed;
+        assert.equal(at.lastReached, true);
+        assert.equal(at.chapterIdx, plan.chapters.length - 1);
+        break;
+      }
+      elapsed += dt;
+    }
+    assert.equal(ended, true);
+    assert.ok(finishAt >= speakSec * 0.9, `fini à ${finishAt} s < 90 % de ${speakSec}`);
+    assert.match(hook, /visibilitychange/);
+    assert.match(hook, /voiceBoundaryAtRef\.current === 0/);
+    assert.match(hook, /voiceCharRef\.current > 0/);
+    assert.match(hook, /filmBarSubtitle/);
+    assert.match(hook, /filmSubtitleAt/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /onLeadFailedRef\.current/);
+  });
+
+  it("sous-titre : une phrase à la fois, lieu mis en avant quand il est dit", () => {
+    const text = "Départ vers La Rochelle. Ensuite cap sur Ajaccio. Arrivée à Fort-de-France.";
+    const starts = splitFilmSentences(text).map((s) => s.start);
+    assert.ok(starts.length >= 3);
+    const first = filmSubtitleAt(text, text.indexOf("La Rochelle") + 1, {
+      toName: "La Rochelle", sentenceStarts: starts,
+    });
+    const second = filmSubtitleAt(text, text.indexOf("Ajaccio") + 1, {
+      toName: "Ajaccio", sentenceStarts: starts,
+    });
+    const third = filmSubtitleAt(text, text.indexOf("Fort-de-France") + 1, {
+      toName: "Fort-de-France", sentenceStarts: starts,
+    });
+    assert.notEqual(first.sentence, second.sentence);
+    assert.notEqual(second.sentence, third.sentence);
+    assert.match(first.sentence, /La Rochelle/);
+    assert.doesNotMatch(first.sentence, /Ajaccio/);
+    assert.equal(first.place, "La Rochelle");
+    assert.equal(second.place, "Ajaccio");
+    assert.equal(third.place, "Fort-de-France");
+    const beforeName = filmSubtitleAt(text, text.indexOf("Fort-de-France") - 1, {
+      toName: "Fort-de-France", sentenceStarts: starts,
+    });
+    assert.equal(beforeName.place, "");
+    const hi = filmSubtitleHighlight(third.sentence, third.place);
+    assert.equal(hi.place, "Fort-de-France");
+    assert.ok(hi.before.includes("Arrivée"));
+  });
+
+  it("barre : charIdx=0 = 1re phrase, pas le chapitre ; lieu seulement une fois dit", () => {
+    const text = "L’expédition a quitté Saint-Maur. Puis La Rochelle. Ensuite l’avion pour Halifax.";
+    const starts = splitFilmSentences(text).map((s) => s.start);
+    const atStart = filmBarSubtitle({ chapterText: text, charIdx: 0, sentenceStarts: starts, toName: "Saint-Maur" });
+    assert.equal(atStart.sentenceMode, true);
+    assert.match(atStart.text, /Saint-Maur/);
+    assert.doesNotMatch(atStart.text, /La Rochelle/);
+    assert.doesNotMatch(atStart.text, /avion/);
+    assert.equal(atStart.place, "");
+    const named = filmBarSubtitle({
+      chapterText: text,
+      charIdx: text.indexOf("Saint-Maur") + 1,
+      sentenceStarts: starts,
+      toName: "Saint-Maur",
+    });
+    assert.equal(named.place, "Saint-Maur");
+    const later = filmBarSubtitle({
+      chapterText: text,
+      charIdx: text.indexOf("La Rochelle"),
+      sentenceStarts: starts,
+      toName: "La Rochelle",
+    });
+    assert.equal(later.sentenceMode, true);
+    assert.match(later.text, /La Rochelle/);
+    assert.doesNotMatch(later.text, /avion/);
+    assert.doesNotMatch(later.text, /Saint-Maur/);
+    assert.equal(later.place, "La Rochelle");
+    const pinned = filmBarSubtitle({
+      chapterText: text,
+      charIdx: text.length,
+      pinned: true,
+      sentenceStarts: starts,
+    });
+    assert.equal(pinned.sentenceMode, true);
+    assert.match(pinned.text, /avion/);
+    assert.doesNotMatch(pinned.text, /Saint-Maur/);
+    const air = [
+      "Mer calme.",
+      "Puis, le 18 août, l'équipage prend l'avion pour Halifax.",
+      "Ensuite, le 22 août, retour en avion vers Cayenne.",
+    ].join(" ");
+    const airAt = filmBarSubtitle({ chapterText: air, charIdx: 0 });
+    assert.match(airAt.text, /prend l'avion pour Halifax/);
+    assert.match(airAt.text, /retour en avion vers Cayenne/);
+    assert.doesNotMatch(airAt.text, /Mer calme/);
+    assert.ok(airAt.text.length < air.length);
+    const airPinned = filmBarSubtitle({ chapterText: air, charIdx: air.length, pinned: true });
+    assert.match(airPinned.text, /prend l'avion pour Halifax/);
+    assert.match(airPinned.text, /retour en avion vers Cayenne/);
+    assert.ok(airPinned.text.length < air.length);
+    assert.doesNotMatch(airPinned.text, /Mer calme/);
+    const officialCh1 = "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026. Puis, le 15 mai, départ vers La Rochelle.";
+    const rb5 = filmBarSubtitle({ chapterText: officialCh1, charIdx: 0 });
+    assert.match(rb5.text, /Saint-Maur/);
+    assert.doesNotMatch(rb5.text, /La Rochelle/);
+    assert.ok(rb5.text.length < officialCh1.length);
+    assert.match(filmSubtitleAt(officialCh1, 0).sentence, /Saint-Maur/);
+    assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
+  });
+
+  it("reprise d'onglet : rampe ≤ 2 s, aucun pas égal au saut", () => {
+    const fromT = 1_000;
+    const toT = fromT + 20 * 3600 * 1000;
+    const gap = toT - fromT;
+    const frames = 60;
+    let prev = fromT;
+    let maxStep = 0;
+    for (let i = 1; i <= frames; i += 1) {
+      const stepped = visibilityCatchupStep({
+        fromT,
+        toT,
+        elapsedMs: (i / frames) * FILM_VISIBILITY_CATCHUP_MS,
+        durationMs: FILM_VISIBILITY_CATCHUP_MS,
+      });
+      maxStep = Math.max(maxStep, Math.abs(stepped.t - prev));
+      prev = stepped.t;
+    }
+    assert.ok(maxStep < gap / 2, `pas max ${maxStep} trop proche du saut ${gap}`);
+    assert.ok(Math.abs(prev - toT) < 1);
+    const mid = visibilityCatchupStep({
+      fromT, toT, elapsedMs: 1000, durationMs: 2000,
+    });
+    assert.equal(mid.done, false);
+    assert.ok(mid.t > fromT && mid.t < toT);
+    const end = visibilityCatchupStep({
+      fromT, toT, elapsedMs: 2000, durationMs: 2000,
+    });
+    assert.equal(end.done, true);
+    assert.equal(end.t, toT);
   });
 });

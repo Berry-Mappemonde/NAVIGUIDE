@@ -7,14 +7,19 @@ from fastapi.testclient import TestClient
 
 from moment import build_moment, load_official_mini
 from moment_journal import (
+    COAST_NEAR_NM,
+    PROJECT_NEAR_NM,
     SCORE_ALERT_OFF,
     SCORE_ALERT_ON,
     SCORE_AMP,
     SCORE_APPROCHE,
     SCORE_ESCALE,
+    SCORE_PROJECT,
     SCORE_REGIME,
     SCORE_STATION,
     SCORE_ZEE,
+    _new_places_nearby,
+    _new_projects_nearby,
     diff_moments,
     named_title,
     read_moments,
@@ -113,7 +118,7 @@ def test_fixture_pearls_collapse_to_fewer_moments():
     assert seqs == list(range(m))
     # Première ligne : pas de différence avec un moment précédent — seulement, le cas échéant, les marinas et
     # ports croisés dès la première perle (27 sept. : chaque marina/port à moins de 15 nm, cité une fois).
-    assert all(c["kind"] in {"marina", "port"} for c in rows[0]["changes"])
+    assert all(c["kind"] in {"marina", "port", "coast"} for c in rows[0]["changes"])
     for row in rows[1:]:
         assert row["changes"], f"seq {row['seq']} sans changes"
         for change in row["changes"]:
@@ -253,3 +258,66 @@ def test_diff_moments_silence_without_name():
         "kind": "science", "title": "Station croisée", "fact": "Station croisée",
     }]
     assert not any(c.get("kind") == "station" for c in diff_moments(base, nameless))
+
+
+def test_wpi_within_25nm_becomes_coast():
+    seen: set[tuple[str, str]] = set()
+    pearl = {
+        "nearby": {
+            "wpi": [
+                {"name": "Camariñas", "nm": 20.0},
+                {"name": "Trop loin", "nm": 30.0},
+            ],
+            "capitaineries": [],
+            "marinas": [],
+        },
+    }
+    out = _new_places_nearby(pearl, seen)
+    kinds = {c["kind"] for c in out}
+    titles = {c["title"] for c in out}
+    assert "coast" in kinds
+    assert "Camariñas" in titles
+    assert "Trop loin" not in titles
+    assert COAST_NEAR_NM == 25.0
+
+
+def test_chaluts_never_becomes_amp_change():
+    voy = load_official_mini()
+    base = _moment(voy, 0)
+    fishing = copy.deepcopy(base)
+    fishing["here"] = copy.deepcopy(base["here"])
+    fishing["here"]["mpa"] = list(base["here"].get("mpa") or []) + [{
+        "name": "Pertuis Charentais - Chaluts", "nm": 2.0, "site_id": "fish-1",
+    }]
+    kinds = {c["kind"] for c in diff_moments(base, fishing)}
+    assert "amp" not in kinds
+    alert = copy.deepcopy(base)
+    alert["alerts"] = list(base.get("alerts") or []) + [{
+        "id": "mpa-chaluts", "kind": "mpa",
+        "title": "Aire marine protégée",
+        "fact": "Pertuis Charentais - Chaluts (2 nm): IUCN Unassigned.",
+    }]
+    kinds = {c["kind"] for c in diff_moments(base, alert)}
+    assert "alert-on" not in kinds
+
+
+def test_project_at_10nm_emits_at_60nm_silent():
+    seen: set[tuple[str, str]] = set()
+    near = _new_projects_nearby({
+        "projects": [
+            {"name": "Récif sentinelle", "nm": 10.0, "gold_on": True},
+            {"name": "Trop loin", "nm": 60.0, "gold_on": True},
+        ],
+    }, seen)
+    titles = {c["title"] for c in near}
+    assert any(c["kind"] == "project" and c["score"] == SCORE_PROJECT for c in near)
+    assert "Récif sentinelle" in titles
+    assert "Trop loin" not in titles
+    assert PROJECT_NEAR_NM == 30.0
+    gold_first = _new_projects_nearby({
+        "projects": [
+            {"name": "Argent", "nm": 5.0, "gold_on": False},
+            {"name": "Or", "nm": 12.0, "gold_on": True},
+        ],
+    }, set())
+    assert [c["title"] for c in gold_first] == ["Or", "Argent"]
