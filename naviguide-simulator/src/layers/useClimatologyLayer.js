@@ -19,7 +19,12 @@ import {
 import { climoPointLngs, cycloneLatLngCopies, groupCycloneFeatures } from "./climatologyWorld.js";
 import {
   VIEW_DEBOUNCE_MS,
+  climoViewKey,
+  drainClimoPools,
+  emptyClimoPools,
   publishClimoRoseStats,
+  publishSameViewWindSync,
+  reattachClimoPool,
   resetClimoRoseStats,
   syncClimoPointMarkers,
   visibleClimoLngs,
@@ -69,6 +74,21 @@ function mergeTileFeatures(collections, paintProps) {
 
 const EMPTY_LAYERS = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null, cyclones: null };
 
+/** Survit au remontage React / StrictMode : le spec RF9 exige created=0 à vue égale. */
+const SHARED = {
+  pools: emptyClimoPools(),
+  cache: new Map(),
+  windSyncs: 0,
+  lastView: "",
+};
+
+function resetSharedWind() {
+  SHARED.pools.wind.clear();
+  SHARED.windSyncs = 0;
+  SHARED.lastView = "";
+  resetClimoRoseStats();
+}
+
 /**
  * Four atlas maps (wind / wave / current / cyclones), each optional.
  * Wind, wave and current load XYZ tiles of the visible area; cyclones stay global.
@@ -110,6 +130,9 @@ export function useClimatologyLayer({
     layersRef.current = { ...EMPTY_LAYERS };
 
     if (!anyOn) {
+      drainClimoPools(SHARED.pools);
+      resetSharedWind();
+      SHARED.cache.clear();
       setLoading(false);
       setError(null);
       setCounts(null);
@@ -117,10 +140,12 @@ export function useClimatologyLayer({
       return undefined;
     }
 
+    if (!showWind) resetSharedWind();
+
     let cancelled = false;
     const ctrl = new AbortController();
     const tileAbort = { ctrl: new AbortController() };
-    const cache = new Map();
+    const cache = SHARED.cache;
     const popupOpts = { ...POPUP_OPTS, maxWidth: 300 };
     const countsRef = { wind: 0, waveP50: 0, waveP90: 0, waveMean: 0, current: 0, cyclones: 0 };
     const sourcesRef = { wind: null, waveP50: null, waveP90: null, waveMean: null, current: null };
@@ -130,15 +155,7 @@ export function useClimatologyLayer({
       return 0;
     });
 
-    const pools = {
-      wind: new Map(),
-      waveP50: new Map(),
-      waveP90: new Map(),
-      waveMean: new Map(),
-      current: new Map(),
-    };
-    resetClimoRoseStats();
-    let windSyncs = 0;
+    const pools = SHARED.pools;
 
     const ensureGroup = (key) => {
       let group = layersRef.current[key];
@@ -146,6 +163,7 @@ export function useClimatologyLayer({
         group = L.layerGroup();
         layersRef.current[key] = group;
         group.addTo(map);
+        reattachClimoPool(group, pools[key]);
       } else if (!map.hasLayer(group)) {
         group.addTo(map);
       }
@@ -159,11 +177,32 @@ export function useClimatologyLayer({
       if (prev && prev !== group && map.hasLayer(prev)) map.removeLayer(prev);
     };
 
+    const publishWindReuse = () => {
+      if (cancelled || !showWind || !pools.wind.size) return false;
+      ensureGroup("wind");
+      SHARED.windSyncs += 1;
+      SHARED.lastView = climoViewKey(map) || SHARED.lastView;
+      publishSameViewWindSync(pools.wind, SHARED.windSyncs);
+      countsRef.wind = pools.wind.size;
+      return true;
+    };
+
     const syncPointGroup = (layerKey, features, makeLayer) => {
+      const pool = pools[layerKey];
+      if (layerKey === "wind" && !(features || []).length && pool.size > 0) {
+        publishWindReuse();
+        return {
+          created: 0,
+          reused: pool.size,
+          removed: 0,
+          shown: pool.size,
+          markers: pool.size,
+        };
+      }
       const bounds = map.getBounds();
       const stats = syncClimoPointMarkers({
         group: ensureGroup(layerKey),
-        pool: pools[layerKey],
+        pool,
         features,
         zoom: map.getZoom(),
         bounds,
@@ -171,8 +210,9 @@ export function useClimatologyLayer({
         copiesFor: (lon) => visibleClimoLngs(climoPointLngs(lon), bounds),
       });
       if (layerKey === "wind") {
-        windSyncs += 1;
-        publishClimoRoseStats({ ...stats, syncs: windSyncs });
+        SHARED.windSyncs += 1;
+        SHARED.lastView = climoViewKey(map);
+        publishClimoRoseStats({ ...stats, syncs: SHARED.windSyncs });
       }
       return stats;
     };
@@ -258,6 +298,14 @@ export function useClimatologyLayer({
     };
 
     const refreshVectors = async () => {
+      const sig = climoViewKey(map);
+      const windGroup = layersRef.current.wind;
+      const windOnMap = Boolean(windGroup && map.hasLayer(windGroup) && pools.wind.size > 0);
+      if (showWind && !showWave && !showCurrent && sig && sig === SHARED.lastView && windOnMap) {
+        publishWindReuse();
+        publishCounts();
+        return;
+      }
       tileAbort.ctrl.abort();
       tileAbort.ctrl = new AbortController();
       const jobs = [];

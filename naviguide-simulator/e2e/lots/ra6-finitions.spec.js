@@ -90,8 +90,8 @@ test("lot RA6 — skipper, crédits, info-bulle, km terre, cadre chat", async ({
   const pillTip = await page.getByTestId("speed-regime-pill").getAttribute("title");
   expect(pillTip).toMatch(/hindcast/i);
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   const land = page.getByTestId("film-land-leg");
   const landVisible = await land.isVisible({ timeout: 8000 }).catch(() => false);
   if (landVisible) {

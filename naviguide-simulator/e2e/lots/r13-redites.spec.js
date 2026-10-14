@@ -174,8 +174,8 @@ test("lot R13 — aucune redite de libellé ; bateau / climatologie / Polaire un
   const suivreSplit = writeReport("suivre", suivre.duplicates);
   await shot(page, "01-suivre");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showBothPanels(page);
   const simulation = await collectScreen(page);
   const simulationSplit = writeReport("simulation", simulation.duplicates);

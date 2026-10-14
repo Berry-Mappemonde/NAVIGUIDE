@@ -15,7 +15,8 @@ Avant de modifier le JSX/CSS, comparer :
 ## Surfaces à garder joignables (si présentes sur `main` ou déjà sur la branche)
 
 - Carte + overlays (GRIB, ZEE, ports, balisage, couches BI, bathy, fonds, câbles, climo)
-- Sidebar gauche : logos, Berry / route dessin, départ, calques, **Suivre / Simulation**
+- Sidebar gauche : logos, Berry / route dessin, départ, calques, **Suivre / Tracer**
+- Carte route : pilules **Berry-Mappemonde | \<ma route\>**, Tracer votre propre route, Importer
 - Tools droite : polar / VMG, export, **ordres skipper**
 - Barre film, horloge, playhead, légende escales
 - Popup satellite : onglets **Vent / Vagues / Courants** + chiffres
@@ -25,7 +26,7 @@ Avant de modifier le JSX/CSS, comparer :
 
 ```text
 # BAD — « simplifier » en coupant l’UI
-retirer un onglet satellite, le switch Suivre/Simulation, la film bar
+retirer un onglet satellite, le switch Suivre/Tracer, la film bar
 conditionner tout un panneau à un nouveau status (pending) au point qu’il disparaisse
 refaire le layout d’un composant main pour coller à un chantier backend
 ```

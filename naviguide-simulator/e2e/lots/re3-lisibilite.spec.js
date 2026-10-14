@@ -236,8 +236,8 @@ test("lot RE3 — journal lisible, pilules seulement hors film", async ({ page, 
   await expect(page.getByTestId("film-duration")).toBeVisible();
   await expect(page.getByTestId("film-duration")).toContainText("2:30");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("replay-start")).toHaveCount(0);
   await expect(page.getByTestId("film-duration")).toHaveCount(0);
 

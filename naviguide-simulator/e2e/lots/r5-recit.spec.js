@@ -52,8 +52,8 @@ test("lot R5 — connecteurs variés, Escale Saint-Maur en km", async ({ page })
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
 
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   const bar = page.getByTestId("film-bar");
   await expect(bar).toBeVisible();
   const prev = page.getByTestId("prev-stop");

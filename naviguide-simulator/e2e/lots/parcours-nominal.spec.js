@@ -63,7 +63,7 @@ test("parcours nominal — encadré Ici seul, trois vues, /advice (R8a · R8b ·
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("view-suivre")).toBeVisible();
-  await expect(page.getByTestId("view-simulation")).toBeVisible();
+  await expect(page.getByTestId("view-tracer")).toBeVisible();
   await expect(page.getByTestId("ici-maintenant")).toHaveCount(1);
 
   await page.getByTestId("view-suivre").click();

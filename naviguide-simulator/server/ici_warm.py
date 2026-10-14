@@ -36,7 +36,10 @@ WARM_PAUSE_S = float(os.environ.get("NAVIGUIDE_ICI_WARM_PAUSE_S") or 1.0)
 WARM_PARALLEL = max(1, int(os.environ.get("NAVIGUIDE_ICI_WARM_PARALLEL") or 2))
 LEGACY_TTL_S = 7 * 86400.0
 POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
+COAST_NEAR_NM = 25.0  # ports / WPI → jalon de côte (RG2)
 SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal, lot F2)
+AMP_NEAR_NM = 30.0    # AMP réelle à portée (RG3)
+PROJECT_NEAR_NM = 30.0  # projet Blue Intelligence à portée (RG3)
 CLIMO_ROSE_TURN_DEG = 90.0
 CLIMO_CALM_KN = 8.0
 
@@ -243,6 +246,19 @@ def _science_items(bag: dict) -> list[dict]:
     return [it for it in items if isinstance(it, dict) and it.get("name")]
 
 
+def _project_items(bag: dict) -> list[dict]:
+    rows = bag.get("projects") if isinstance(bag.get("projects"), list) else []
+    return [p for p in rows if isinstance(p, dict) and p.get("name")]
+
+
+def _gold_first(item: dict) -> tuple:
+    gold = item.get("gold_on")
+    rank = 0 if gold in (True, 1, "1", "true", "True") else 1
+    nm = item.get("nm")
+    dist = float(nm) if isinstance(nm, (int, float)) else 999.0
+    return (rank, dist)
+
+
 def _climo_title() -> dict:
     return {"fr": "Changement de régime", "en": "Regime change"}
 
@@ -269,14 +285,19 @@ def _pearl_event(pearl: dict, idx: int, kind: str, event: str, name: str | None,
 
 def route_events_from_pearls(points: list[dict]) -> list[dict]:
     """What the warmed pearls know about the route, in order: ZEE entered /
-    left, marine protected areas that come within reach, ports of entry
-    passed (≤ POE_NEARBY_NM), régime climatique (climo) and scientific
-    stations (sci, ≤ SCI_NEARBY_NM, once per entity). Pearls not cached
-    yet are unknown — no event is invented across a gap.
+    left, marine protected areas that come within reach (AMP réelles, RG3),
+    projets Blue Intelligence (≤ PROJECT_NEAR_NM, gold_on d'abord), ports
+    of entry passed (≤ POE_NEARBY_NM), coast milestones from WPI /
+    capitaineries (≤ COAST_NEAR_NM), régime climatique (climo) and
+    scientific stations (sci, ≤ SCI_NEARBY_NM, once per entity). Pearls
+    not cached yet are unknown — no event is invented across a gap.
 
-    Each event: { kind, event, name, mrgid | siteId | poeId, lat, lon,
-    sailNm, idx, title, facts, entity }. The journal dates `sailNm`."""
-    from ici_engine import thin_cache_get, thin_cache_key  # noqa: PLC0415
+    Each event: { kind, event, name, mrgid | siteId | poeId | projectId,
+    lat, lon, sailNm, idx, title, facts, entity }. The journal dates
+    `sailNm`."""
+    from ici_engine import (  # noqa: PLC0415
+        is_fishing_amp, science_type_key, spoken_amp_name, thin_cache_get, thin_cache_key,
+    )
 
     events: list[dict] = []
     state: dict | None = None      # confirmed ZEE (None = high seas)
@@ -285,6 +306,8 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     seen_amp: set[str] = set()
     seen_poe: set[str] = set()
     seen_sci: set[str] = set()
+    seen_coast: set[str] = set()
+    seen_project: set[str] = set()
     prev_climo: dict | None = None
     in_calms = False
     for idx, pearl in enumerate(sample_route_nm(points)):
@@ -317,6 +340,27 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
                 "nm": nm, "url": poe.get("url"), "mrgid": cur_id,
                 "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
             })
+        nearby = bag.get("nearby") if isinstance(bag.get("nearby"), dict) else {}
+        for field in ("wpi", "capitaineries"):
+            for item in nearby.get(field) or []:
+                if not isinstance(item, dict) or not item.get("name"):
+                    continue
+                nm = item.get("nm")
+                if not isinstance(nm, (int, float)) or nm > COAST_NEAR_NM:
+                    continue
+                name = str(item["name"]).strip()
+                if not name or len(name) > 40 or "|" in name:
+                    continue
+                key = str(item.get("id") or item.get("site_id") or name)
+                if key in seen_coast:
+                    continue
+                seen_coast.add(key)
+                events.append({
+                    "kind": "coast", "event": "passed", "name": name, "coastId": key,
+                    "nm": nm, "mrgid": cur_id,
+                    "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4),
+                    "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+                })
         if not state_known:
             state, state_known, candidate = cur, True, None
         elif cur_id == state_id:
@@ -333,17 +377,42 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
             state, candidate = cur, None
         else:
             candidate = (cur, pearl, idx)
-        for amp in (bag.get("amp") or [])[:2]:
-            if not isinstance(amp, dict) or not amp.get("name"):
+        amps = [
+            a for a in (bag.get("amp") or [])
+            if isinstance(a, dict) and a.get("name") and not is_fishing_amp(a)
+        ]
+        amps.sort(key=lambda a: a.get("nm") if isinstance(a.get("nm"), (int, float)) else 999)
+        for amp in amps:
+            nm = amp.get("nm")
+            if isinstance(nm, (int, float)) and nm > AMP_NEAR_NM:
                 continue
             key = str(amp.get("site_id") or amp.get("id") or amp["name"])
             if key in seen_amp:
                 continue
             seen_amp.add(key)
+            name = spoken_amp_name(amp["name"]) or str(amp["name"])
             events.append({
-                "kind": "amp", "event": "nearby", "name": amp["name"], "siteId": key,
-                "nm": amp.get("nm"), "visitUrl": amp.get("visit_url") or amp.get("url"),
+                "kind": "amp", "event": "nearby", "name": name, "siteId": key,
+                "nm": nm, "visitUrl": amp.get("visit_url") or amp.get("url"),
                 "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+            })
+        projects = _project_items(bag)
+        projects.sort(key=_gold_first)
+        for proj in projects:
+            nm = proj.get("nm")
+            if not isinstance(nm, (int, float)) or nm > PROJECT_NEAR_NM:
+                continue
+            key = str(proj.get("id") or proj.get("site_id") or proj["name"])
+            if key in seen_project:
+                continue
+            seen_project.add(key)
+            events.append({
+                "kind": "project", "event": "nearby", "name": str(proj["name"]).strip(),
+                "projectId": key, "nm": nm,
+                "gold_on": bool(proj.get("gold_on") in (True, 1, "1", "true", "True")),
+                "url": proj.get("url"),
+                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4),
+                "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
             })
         # Lot F2 — régime climatique (deux perles consécutives connues).
         climo = _pearl_climo(bag)
@@ -389,8 +458,10 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
         elif climo is None:
             in_calms = False
         prev_climo = climo
-        # Lot F2 — station / campagne à ≤ 10 nm, une fois par entité.
+        # Lot F2 / RG5 — station qualifiée à ≤ 10 nm, une fois par entité ; titre brut gardé pour la fiche.
         for item in _science_items(bag):
+            if not science_type_key(item):
+                continue
             nm = item.get("nm")
             if not isinstance(nm, (int, float)):
                 ilat, ilon = item.get("lat"), item.get("lon")
@@ -411,10 +482,18 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
                 siteId=key,
                 nm=nm,
                 url=item.get("url") or item.get("visit_url"),
+                source=item.get("source"),
+                sciKind=item.get("kind"),
                 title=_sci_title(),
-                facts={"nm": round(float(nm), 1), "name": item["name"]},
+                facts={
+                    "nm": round(float(nm), 1),
+                    "name": item["name"],
+                    "source": item.get("source"),
+                    "kind": item.get("kind"),
+                },
                 entity={
                     "kind": "science",
+                    "sciKind": item.get("kind"),
                     "name": item["name"],
                     "lat": round(float(slat), 4),
                     "lon": round(float(slon), 4),

@@ -164,6 +164,55 @@ export function worldCopyLngs(lon, lonBound = WORLD_COPY_LON_BOUND) {
   return worldCopyOffsets([[value, 0], [value, 0]], lonBound).map((offset) => value + offset);
 }
 
+function uniqLngs(lngs) {
+  const out = [];
+  for (const lng of lngs) {
+    if (!Number.isFinite(lng)) continue;
+    if (out.every((x) => Math.abs(x - lng) > 1e-6)) out.push(lng);
+  }
+  return out;
+}
+
+/** Copies ±360° d'un point (lon brute + wrap), pour bateaux et drapeaux. */
+export function markerCopyLngs(lon) {
+  const x = Number(lon);
+  if (!Number.isFinite(x)) return [];
+  const wrapped = wrapLon(x);
+  return uniqLngs([x, wrapped, x + 360, x - 360, wrapped + 360, wrapped - 360]);
+}
+
+/** Indice de copie monde, ancré sur wrap(lon) — stable si la lon source se déplie. */
+export function worldCopyKey(lon, lng) {
+  const base = wrapLon(lon);
+  const x = Number(lng);
+  if (!Number.isFinite(base) || !Number.isFinite(x)) return 0;
+  return Math.round((x - base) / 360);
+}
+
+/** Écart (°) au-delà duquel on accepte de changer de copie (antiméridien). */
+export const WORLD_COPY_HYSTERESIS_DEG = 80;
+
+function nearestLng(copies, value) {
+  return copies.reduce((best, v) => (Math.abs(v - value) < Math.abs(best - value) ? v : best));
+}
+
+/**
+ * Copie monde sans saut : on garde la précédente tant que la caméra n'est pas
+ * franchement plus proche d'une autre (Wallis / Nouméa au dézoom vers le centre).
+ */
+export function stabilizeWorldLng(lon, cameraLng, prevLng = null, hysteresisDeg = WORLD_COPY_HYSTERESIS_DEG) {
+  const copies = markerCopyLngs(lon);
+  if (!copies.length) return Number(lon);
+  const cam = Number(cameraLng);
+  const closest = Number.isFinite(cam) ? nearestLng(copies, cam) : copies[0];
+  if (!Number.isFinite(Number(prevLng))) return closest;
+  const prev = nearestLng(copies, Number(prevLng));
+  if (!Number.isFinite(cam)) return prev;
+  const hold = Number.isFinite(Number(hysteresisDeg)) ? Number(hysteresisDeg) : WORLD_COPY_HYSTERESIS_DEG;
+  if (Math.abs(prev - cam) <= Math.abs(closest - cam) + hold) return prev;
+  return closest;
+}
+
 /** Copies monde de chaque polyligne (décalages d'après l'étendue). */
 export function worldCopyParts(parts) {
   const out = [];

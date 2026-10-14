@@ -66,17 +66,22 @@ lieu que le sous-titre nomme).
 - **Stop** arrête net le film : `speechSynthesis.speaking` repasse à `false`, le bateau revient à la vue Suivre ; **Retour au live** le replace sur sa position du jour ; Suivre est de nouveau actif ; dézoomer à la molette fonctionne dès le premier geste.
 - Laisser un film entier : la barre de progression atteint la fin, le film finit sur la position du jour, pas de saut de zoom à l'arrêt.
 - Passer la langue en **anglais** (panneau droit) → relancer : le sous-titre est en anglais, même ordre d'escales (Saint-Maur, La Rochelle, Ajaccio…).
+- **Une étape complète au sous-titre** (RG10) : laisser un chapitre aller jusqu'au suivant (`chapterIdx` + 1). Dans `chapterText` / le sous-titre, l'ordre est ouverture (départ, milles) → faits de route (eaux, côte, détroit) quand le chapitre en a → arrivée (ou « Aujourd'hui » si le bateau est encore en mer). Relever un chapitre atlantique (La Rochelle → Ajaccio ou Ajaccio → Fort-de-France).
+- **Mots interdits absents** du sous-titre et de `chapterText` : « jambe », « zone économique exclusive », « Couloirs », « À surveiller », « à portée de », « de de ». Aucun titre anglais de jeu de données (deposit, licence, Center, fishing, ban). Aucun comptage sans nom (« 9 stations », « 3 zones »).
+- **Ordre chronologique** : dans un même `chapterText`, les dates et les lieux vont dans l'ordre de la route (La Rochelle avant Gibraltar avant Ajaccio ; une date ne recule pas). Les ancres (`anchors`) du chapitre ont des `t` non décroissants.
 - Console : aucune erreur pendant le film.
 
-## D. Simulation
+## D. Tracer
 
-- Cliquer **Simulation** → la barre montre Saint-Maur → La Rochelle ; **Escale précédente** est grisé, **Prochaine escale** actif.
+- Cliquer **Tracer** → la barre montre Saint-Maur → La Rochelle ; **Escale précédente** est grisé, **Prochaine escale** actif ; le champ **date de départ** est visible.
+- Carte route (panneau gauche) : la pilule **Berry-Mappemonde** est active ; **Tracer votre propre route** et **Importer** sont présents.
 - **Prochaine escale** → la barre passe à La Rochelle → Ajaccio ; **Escale précédente** ramène à Saint-Maur.
 - Cliquer deux points en mer sur la barre → une vitesse en kn qui **change** d'un point à l'autre ; sur une escale : « à quai 3 j ».
 - Curseur sur Saint-Maur : la carte « Escale » compte en **km par la route**, pas en milles.
-- **Lecture / pause**, **Stop auto**, vitesses de lecture (réelle / normale / accélérer) : chaque bouton fait ce qu'il dit.
+- **Lecture / pause**, **Stop auto**, vitesses de lecture (réelle / normale / accélérer) : chaque bouton fait ce qu'il dit ; **Recalculer l'itinéraire** et **Demander conseil** restent accessibles (panneau droit).
 - Cliquer le **drapeau d'Ajaccio** → la fiche d'escale s'ouvre (sur la carte ou dans l'encadré selon le lot en cours), en **vraies phrases** (jamais « Analyze User Input / Task / Wait, let me… »), sans bouton Écouter ; la croix la ferme ; passer en Suivre la ferme aussi.
 - Popup satellite (clic sur l'icône) : onglets **Vent / Vagues / Courants** avec des chiffres.
+- Aucun mot « Simulation » à l'écran (barre, panneaux, info-bulles), en français comme en anglais.
 - Console : aucune erreur.
 
 ## E. Tracer ma route

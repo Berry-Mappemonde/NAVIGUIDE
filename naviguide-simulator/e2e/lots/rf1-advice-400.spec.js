@@ -77,8 +77,8 @@ test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => 
   await expect(page.getByTestId("plan-review-leg").first()).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(4000);
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("film-bar")).toBeVisible();
   await showLeftPanel(page);
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();
@@ -91,7 +91,8 @@ test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => 
   });
   await expect(draw).toBeVisible({ timeout: 15_000 });
   await draw.scrollIntoViewIfNeeded();
-  await draw.click({ force: true });
+  // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
+  await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("ici-tab-review")).toHaveCount(0);
   await page.waitForTimeout(1500);

@@ -34,6 +34,17 @@ describe("MapSceneController — caméra film (lot F1)", () => {
     const map = {
       flyTo() { calls.flyTo += 1; },
       setView() { calls.setView += 1; },
+      panBy() {},
+      _rawPanBy() {},
+      getZoom() { return 5; },
+      getSize() { return { x: 1000, y: 800 }; },
+      getCenter() { return { lat: 46, lng: -1 }; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : ll.lng;
+        return { x: (lng + 1) * 10, y: (50 - lat) * 10 };
+      },
+      containerPointToLatLng(p) { return { lat: 50 - p.y / 10, lng: p.x / 10 - 1 }; },
       getBounds() {
         return { getNorth: () => 10, getSouth: () => 0, getEast: () => 10, getWest: () => 0 };
       },
@@ -63,21 +74,22 @@ describe("MapSceneController — caméra film (lot F1)", () => {
     assert.equal(step(0, 1000).action, "setView");
     assert.equal(calls.flyTo, 0, "premier mouvement = setView, pas de flyTo");
     assert.equal(calls.setView, 1);
-    assert.equal(step(0, 1030).action, "setView", "lot R4 : setView chaque frame, plus de skip 30 Hz");
-    assert.equal(step(0, 1100).action, "setView");
+    const mid = step(0, 1030);
+    assert.ok(mid.action === "panBy" || mid.action === "hold" || mid.action === "setView", "lot RG13 : plus de setView obligatoire par frame");
     assert.equal(calls.flyTo, 0);
-    assert.equal(step(1, 5000).action, "flyTo");
-    assert.equal(calls.flyTo, 1);
-    assert.equal(step(1, 5100).action, "fly-wait");
-    assert.equal(calls.flyTo, 1, "même chapitre pendant le flyTo : pas de second flyTo");
+    assert.equal(step(1, 5000).action, "setView");
+    assert.equal(calls.flyTo, 0, "changement d'étape : un setView, plus de flyTo");
+    const after = step(1, 5100);
+    assert.notEqual(after.action, "fly-wait");
+    assert.equal(calls.flyTo, 0);
     assert.match(src, /if \(cfg\.filmActive\)/);
     assert.match(src, /syncFilmCamera/);
     assert.doesNotMatch(src, /filmActive[\s\S]{0,200}zoomForRemaining/);
   });
 });
 
-describe("MapSceneController — zoom (lot U)", () => {
-  it("n'orchestre pas un recalcul d'offsets pendant zoomanim ; attend zoomend + 250 ms", () => {
+describe("MapSceneController — zoom (lot U / RG15)", () => {
+  it("n'orchestre pas un recalcul d'offsets pendant zoomanim ; zoomend recalcule tout de suite", () => {
     assert.match(src, /map\.on\("zoomanim"/);
     assert.match(src, /map\.on\("zoomend"/);
     assert.match(src, /reason: "zoom"/);
@@ -89,9 +101,17 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.doesNotMatch(anim, /scheduleWaypoints\(/);
     const zoomEnd = src.slice(src.indexOf("this.onZoomEnd = "), src.indexOf("this.onMoveEnd = "));
     assert.match(zoomEnd, /scheduleWaypoints\(\{ reason: "zoom" \}\)/);
+    const schedAt = src.indexOf("  scheduleWaypoints({");
+    const schedEnd = src.indexOf("  syncInitialCamera()", schedAt);
+    const sched = src.slice(schedAt, schedEnd);
+    assert.match(sched, /reason === "zoom"/);
+    assert.match(sched, /this\.syncWaypoints\(\)/);
+    assert.doesNotMatch(sched, /markerOffsetDelay\([\s\S]{0,40}zoom/);
     assert.match(src, /preferCanvas:\s*true/);
     assert.match(src, /divIconCache/);
-    assert.match(src, /flagWorldLngsForView/);
+    assert.match(src, /stabilizeWorldLng/);
+    assert.match(src, /worldCopyKey/);
+    assert.match(src, /offsetToIconAnchor/);
     assert.match(src, /zoomControl:\s*false/);
     assert.match(src, /position:\s*"bottomright"/);
   });
@@ -118,6 +138,18 @@ describe("MapSceneController — zoom (lot U)", () => {
     assert.match(src, /drawingPinMetrics\(\)/);
     assert.doesNotMatch(src, /width:10px;height:10px/);
     assert.doesNotMatch(src, /iconSize: \[24, 24\], iconAnchor: \[12, 12\]/);
+  });
+
+  it("RG15 — plancher de dézoom identique hors Suivre (plus de MAP_MIN_ZOOM réservé)", () => {
+    const start = src.indexOf("  applyZoomFloor()");
+    const end = src.indexOf("  liftBoundsForDrawing()");
+    assert.ok(start >= 0 && end > start);
+    const block = src.slice(start, end);
+    assert.match(block, /followMinZoom\(this\.map\.getSize/);
+    assert.doesNotMatch(block, /isSuivre/);
+    assert.doesNotMatch(block, /worldLock/);
+    assert.match(src, /worldViewZoom/);
+    assert.match(src, /sceneWorldZoom/);
   });
 
   it("onMoveEnd ne relance ni /ici ni le récit", () => {

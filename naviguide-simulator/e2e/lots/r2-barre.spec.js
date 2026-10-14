@@ -39,8 +39,8 @@ test("lot R2 — une rangée, Masquer partout, Escale précédente", async ({ pa
   const bar = page.getByTestId("film-bar");
   await expect(bar).toBeVisible();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
   await expect(bar.locator("[data-testid='regime-legend'] .w-2.h-2")).toHaveCount(0);
   const height = await bar.evaluate((el) => el.getBoundingClientRect().height);

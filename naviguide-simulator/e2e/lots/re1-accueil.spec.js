@@ -80,7 +80,7 @@ test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre
 
   // RF7 remplace RE1 : accueil Suivre + Cinéma + monde (plus Simulation).
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "false");
   await expect(cinemaButton(page)).toBeVisible();
   expect(await cinemaPressed(page), "Cinéma enfoncé au chargement").toBe(true);
   await expect.poll(() => panelOnScreen(page, "left"), { timeout: 8_000 }).toBe(false);
@@ -110,8 +110,8 @@ test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre
     }, { timeout: 15_000 }).toBeGreaterThan(3);
   }
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect.poll(async () => cinemaPressed(page), { timeout: 8_000 }).toBe(false);
   await expect.poll(() => panelOnScreen(page, "left"), { timeout: 10_000 }).toBe(true);
   await expect.poll(() => panelOnScreen(page, "right"), { timeout: 10_000 }).toBe(true);

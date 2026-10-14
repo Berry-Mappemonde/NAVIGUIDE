@@ -53,15 +53,15 @@ test("lot RB4 — barre compacte, vitesse cyclique, flèches, haut-parleur", asy
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
   const bar = page.getByTestId("film-bar");
   await expect(bar.getByTestId("hide-film-bar")).toBeVisible();
   await expect(bar.getByRole("button", { name: /^(cinéma|cinema)$/i })).toBeVisible();
   await expect(bar.getByTestId("stop-auto")).toBeVisible();
   await expect(bar.getByTestId("view-suivre")).toBeVisible();
-  await expect(bar.getByTestId("view-simulation")).toBeVisible();
+  await expect(bar.getByTestId("view-tracer")).toBeVisible();
 
   const speed = bar.getByTestId("film-speed");
   await expect(speed).toBeVisible();

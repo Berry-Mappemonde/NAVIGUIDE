@@ -6,35 +6,72 @@ from datetime import datetime, timezone
 import pearl_store
 import story_cache
 from film_script import (
+    OFFICIAL_ROUTE_ZEE_SOURCES,
     chapter_anchors,
+    FILM_VOICE_LOOKAHEAD_CHARS,
     CONNECTORS,
     FILM_BUDGET_CHARS,
     FILM_CHAPTER_MAX_CHANGES,
     FILM_MAX_CHARS,
     FILM_WRITE_MAX,
     FILM_WRITE_MIN,
+    SHORT_CROSSING_MS,
     allocate_chapter_budgets,
+    film_char_budget,
+    film_estimated_seconds,
+    film_priority_tier,
+    fit_chapter_text,
+    alert_is_amp,
     bubble_score,
     build_film_response,
     build_raw_script,
     change_sentence,
+    chapter_metrics,
+    chapter_shape,
+    coast_sentence,
     connector_at,
     cyclone_name_year,
     dated_marks,
+    date_density_ok,
+    dose_amp_changes,
+    dose_climo_changes,
+    dose_coast_changes,
+    dose_project_changes,
+    dose_station_changes,
+    dose_zee_changes,
     film_candidates,
     film_facts,
+    film_has_forbidden,
+    heading_phrase,
     is_sea_chapter,
     journal_fingerprint,
     last_stop_id,
+    looks_english_title,
     norm_stop,
     review_leg_for_chapter,
+    review_plan_stats,
     review_sentences,
+    upcoming_stop_names,
+    eta_payload_for_stop,
     official_dated_stops,
+    spoken_sea_days,
+    thin_chapter_dates,
+    _arrival_harbor,
+    _close_sentence,
+    _de,
+    _film_open_sentences,
+    _ms,
+    _nm_between,
+    _window_depart_ms,
+    _windows,
     warm_film_story,
     select_chapter_changes,
     select_film_events,
+    station_name_speakable,
+    station_spoken_label,
     speak_film_text,
     written_is_valid,
+    zee_waters_label,
     _nm_label,
 )
 from tests.test_voyage_journal import PUBLIC, _official
@@ -84,21 +121,15 @@ def test_raw_length_bounded_and_chapter1_names():
 
 
 def test_connectors_alternate():
+    """RG6 : plus de rotation mécanique ; les formes suivent le contenu."""
     plan = _raw()
-    cons = CONNECTORS["fr"]
-    used = []
-    for i, ch in enumerate(plan["chapters"]):
-        text = ch.get("text") or ""
-        hit = next((c for c in cons if text.startswith(f"{c},")), None)
-        if hit:
-            used.append(hit)
-            assert hit == connector_at(i - 1, "fr"), f"chapitre {i}: {hit} ≠ {connector_at(i - 1, 'fr')}"
-    assert len(used) >= 2, f"connecteurs : {used}"
-    for a, b in zip(used, used[1:]):
-        assert a != b, f"connecteur répété : {a}"
-    assert connector_at(0, "fr") == "Puis"
-    assert connector_at(1, "fr") == "Ensuite"
-    assert connector_at(6, "fr") == "Puis"
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    assert "À la jambe suivante" not in blob
+    assert "On the next leg" not in blob
+    assert connector_at(0, "fr") != "À la jambe suivante"
+    long_hit = any("longue traversée" in (c.get("text") or "") for c in plan["chapters"])
+    last_hit = any("dernière étape" in (c.get("text") or "") for c in plan["chapters"])
+    assert long_hit or last_hit or "Berry-Mappemonde quitte" in blob
 
 
 def test_raw_english_chapter1():
@@ -106,7 +137,7 @@ def test_raw_english_chapter1():
     text = plan["chapters"][0]["text"]
     assert "Saint-Maur" in text
     assert "La Rochelle" in text
-    assert ("left" in text.lower() or "departed" in text.lower())
+    assert ("left" in text.lower() or "departed" in text.lower() or "leaves" in text.lower())
     assert "quitté" not in text
 
 
@@ -359,23 +390,34 @@ def _assert_route_order(text: str, label: str) -> None:
 
 def _assert_departure_arrival_pairs(text: str, lang: str = "fr") -> None:
     import re
-    dep_re = r"departure for (.+?)(?:\s*:|\.|$)" if lang == "en" else r"départ vers (.+?)(?:\s*:|\.|$)"
+    dep_re = (
+        r"Berry-Mappemonde leaves .+? for (?:the long crossing to )?(.+?)(?:\s*:|,|\.|$)"
+        if lang == "en" else
+        r"Berry-Mappemonde quitte .+? pour (?:la longue traversée vers )?(.+?)(?:\s*:|,|\.|$)"
+    )
     arr_re = r"Arrival at (.+?) on " if lang == "en" else r"Arrivée à (.+?) le "
     deps = [(m.group(1).strip(), m.start()) for m in re.finditer(dep_re, text, re.I)]
     arrs = [(m.group(1).strip(), m.start()) for m in re.finditer(arr_re, text, re.I)]
-    assert len(deps) >= 2, f"départs vers : {[n for n, _ in deps]}"
+    assert len(deps) >= 2, f"départs pour : {[n for n, _ in deps]}"
     assert len(arrs) >= 2, f"arrivées : {[n for n, _ in arrs]}"
     seen = []
     for name, _ in arrs:
         key = norm_stop(name)
         assert key not in seen, f"escale répétée : {name}"
         seen.append(key)
+    def _pair_name(name: str) -> str:
+        s = re.sub(r"\s+(par la route|by road)\s*$", "", name, flags=re.I)
+        s = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", s, flags=re.I)
+        return s.strip()
+
     for name, i in deps:
         nxt = next(((n, j) for n, j in arrs if j > i), None)
-        assert nxt, f"pas d’arrivée après départ vers {name}"
-        assert norm_stop(nxt[0]) == norm_stop(name), f"départ vers {name} suivi de arrivée à {nxt[0]}"
-    assert not re.search(r"départ vers Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio", text, re.I)
-    assert not re.search(r"departure for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio", text, re.I)
+        assert nxt, f"pas d’arrivée après départ pour {name}"
+        assert norm_stop(_pair_name(nxt[0])) == norm_stop(_pair_name(name)), (
+            f"départ pour {name} suivi de arrivée à {nxt[0]}"
+        )
+    assert not re.search(r"pour Fort-de-France[\s\S]{0,240}(?:Escale à|Arrivée à) Ajaccio", text, re.I)
+    assert not re.search(r"for Fort-de-France[\s\S]{0,240}(?:Stopover in|Arrival at) Ajaccio", text, re.I)
 
 
 def test_dated_marks_merges_ajaccio_aliases():
@@ -409,9 +451,9 @@ def _live_like_clock(lr: dict) -> dict:
 
 def _assert_no_rochelle_to_ajaccio_skip(blob: str) -> None:
     assert "Arrivée à La Rochelle" in blob, blob[:500]
-    assert "départ vers Ajaccio" in blob, blob[:500]
-    assert blob.find("Arrivée à La Rochelle") < blob.find("départ vers Ajaccio"), blob[:800]
-    assert not re.search(r"vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio", blob)
+    assert re.search(r"pour Ajaccio", blob), blob[:500]
+    assert blob.find("Arrivée à La Rochelle") < blob.find("pour Ajaccio"), blob[:800]
+    assert not re.search(r"pour La Rochelle[^.]*\.\s*Arrivée à Ajaccio", blob)
     _assert_departure_arrival_pairs(blob, "fr")
 
 
@@ -428,7 +470,7 @@ def test_live_like_clock_pairs_rochelle_before_ajaccio():
             blob = _script_blob(plan)
             _assert_no_rochelle_to_ajaccio_skip(blob)
             ch0 = plan["chapters"][0]["text"]
-            assert re.search(r"départ vers La Rochelle", ch0, re.I), ch0
+            assert re.search(r"par la route jusqu|quitte Saint-Maur|quitté Saint-Maur", ch0, re.I), ch0
             assert re.search(r"Arrivée à La Rochelle", ch0), ch0
 
 
@@ -464,12 +506,16 @@ def test_official_route_order_no_repeat_departure_then_arrival():
     _assert_departure_arrival_pairs(blob_fr, "fr")
     for ch in fr["chapters"]:
         text = ch.get("text") or ""
-        if "départ vers" in text and "Arrivée à" in text:
+        if "Berry-Mappemonde quitte" in text and "Arrivée à" in text:
             import re
-            dep = re.search(r"départ vers (.+?)(?:\s*:|\.|$)", text)
+            dep = re.search(
+                r"Berry-Mappemonde quitte .+? pour (?:la longue traversée vers )?(.+?)(?:\s*:|,|\.|$)",
+                text,
+            )
             arr = re.search(r"Arrivée à (.+?) le ", text)
             assert dep and arr
-            assert norm_stop(dep.group(1)) == norm_stop(arr.group(1)), ch.get("id")
+            dep_name = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", dep.group(1), flags=re.I)
+            assert norm_stop(dep_name) == norm_stop(arr.group(1)), ch.get("id")
 
     en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
     blob_en = " ".join(c.get("text") or "" for c in en["chapters"])
@@ -514,9 +560,9 @@ def test_no_bare_nm_in_official_script():
     assert "15 mai 2026" in fr["chapters"][0]["text"]
     assert not re.search(r"\bnm\b", blob_fr), blob_fr
     assert not re.search(r"\bnm\b", blob_en), blob_en
-    if re.search(r"\d[\d\s]*", blob_fr) and "départ" in blob_fr.lower():
-        assert "milles nautiques" in blob_fr or "mille nautique" in blob_fr or "Aujourd" in blob_fr
-    assert "nautical mile" in blob_en or "Today" in blob_en or "left" in blob_en.lower()
+    if re.search(r"\d[\d\s]*", blob_fr) and "quitte" in blob_fr.lower():
+        assert "milles" in blob_fr or "Aujourd" in blob_fr
+    assert "miles" in blob_en or "Today" in blob_en or "left" in blob_en.lower() or "leaves" in blob_en.lower()
 
 
 def test_official_dated_stops_pins_saint_maur():
@@ -569,7 +615,7 @@ def test_http_film_route_en(monkeypatch):
     text = data["chapters"][0]["text"]
     blob = _script_blob(data)
     if "Saint-Maur" in text:
-        assert ("left" in text.lower() or "departed" in text.lower())
+        assert ("left" in text.lower() or "departed" in text.lower() or "leaves" in text.lower())
     deps = list(re.finditer(r"departure for (.+?)(?:\s*:|\.|$)", blob, re.I))
     arrs = list(re.finditer(r"Arrival at (.+?) on ", blob, re.I))
     if len(deps) >= 2:
@@ -590,7 +636,7 @@ MOMENTS = {
         ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
         {"seq": 3, "t": "2026-05-17T15:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
             {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone"},
-        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
         {"seq": 4, "t": "2026-05-22T06:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
             {"kind": "alert-on", "score": 3, "title": "Vent 38 kn", "fact": "Vent 38 kn attendu pendant 6 heures."},
         ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
@@ -664,9 +710,12 @@ def test_moments_chapter_one_sentence_max_three_changes():
         text = (ch.get("text") or "").strip()
         assert text
         assert re.search(r"[.!?]", text)
-        changes = [e for e in (ch.get("events") or []) if e.get("kind") != "stop" or "approach" in str(e.get("id") or "").lower() or e.get("card", {}).get("kind") == "stop"]
-        assert len(ch.get("events") or []) <= FILM_CHAPTER_MAX_CHANGES + 1  # + arrivée de jambe
-        assert len([e for e in (ch.get("events") or []) if e.get("id") and not str(e.get("id")).startswith("stop:")]) <= FILM_CHAPTER_MAX_CHANGES
+        named = {"zee", "coast"}
+        others = [
+            e for e in (ch.get("events") or [])
+            if e.get("kind") not in named and not str(e.get("id") or "").startswith("stop:")
+        ]
+        assert len(others) <= FILM_CHAPTER_MAX_CHANGES
 
 
 def test_moments_anchors_follow_the_route_chronologically():
@@ -687,10 +736,13 @@ def test_moments_anchors_follow_the_route_chronologically():
             assert last_t is None or t >= last_t, "chronologie stricte"
             last_idx, last_t = a["charIdx"], t
         text = ch["text"]
-        pos = text.find("approche de Fort-de-France")
-        if pos >= 0:
-            hit = [a for a in anchors if text[a["charIdx"]:].startswith("Le 22 juin, approche de Fort-de-France")]
-            assert hit, "la phrase d'approche a son ancre"
+        name_at = text.find("Fort-de-France")
+        if "approche" in text.casefold() and name_at >= 0:
+            expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
+            hit = [a for a in anchors if abs(int(a["charIdx"]) - expect) <= 16]
+            if not hit:
+                hit = [a for a in anchors if "Fort-de-France" in text[max(0, int(a["charIdx"]) - 8): int(a["charIdx"]) + 40]]
+            assert hit, "la phrase d'approche a son ancre au nom"
             assert _parse_iso_ms(hit[0]["t"]) == _parse_iso_ms("2026-06-22T12:00:00Z")
     assert seen_any
 
@@ -710,8 +762,21 @@ def test_chapter_anchors_unit_sorted_bounded_deduped():
         ("Le 31 mai, approche d’Ajaccio.", 950),  # même position → une seule ancre
     ]
     out = chapter_anchors(text, anchored, 0, 2_000, "fr")
-    assert [a["charIdx"] for a in out] == [0, text.find("Le 31"), text.find("Arrivée")]
-    assert [a["t"] for a in out] == ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00Z", "1970-01-01T00:00:02Z"]
+    idxs = [a["charIdx"] for a in out]
+    assert idxs == sorted(idxs)
+    assert idxs[0] == 0
+    approach = text.find("approche")
+    ajaccio = text.find("Ajaccio", approach)
+    assert any(abs(i - max(0, ajaccio - FILM_VOICE_LOOKAHEAD_CHARS)) <= 4 for i in idxs)
+    arrive = text.find("Arrivée")
+    last = text.rfind("juin")
+    assert any(i >= arrive for i in idxs)
+    assert any(abs(i - max(arrive, last - FILM_VOICE_LOOKAHEAD_CHARS)) <= 8 for i in idxs)
+    assert [a["t"] for a in out][-1] == "1970-01-01T00:00:02Z"
+    times = [_parse_iso_ms(a["t"]) for a in out]
+    assert times == sorted(times)
+    assert times[0] == 0
+    assert times[-1] == 2_000
 
 
 def test_moments_arrival_each_stop_route_order():
@@ -725,17 +790,20 @@ def test_moments_arrival_each_stop_route_order():
 
 def test_moments_connectors_differ():
     plan = _moments_raw()
-    starts = []
-    for i, ch in enumerate(plan["chapters"]):
-        if i == 0:
-            continue
+    blob = _script_blob(plan)
+    assert "À la jambe suivante" not in blob
+    shapes = []
+    for ch in plan["chapters"]:
         text = ch.get("text") or ""
-        hit = next((c for c in CONNECTORS["fr"] if text.startswith(f"{c},")), None)
-        if hit:
-            starts.append(hit)
-    assert len(starts) >= 2
-    for a, b in zip(starts, starts[1:]):
-        assert a != b
+        if "longue traversée" in text:
+            shapes.append("long")
+        elif "d'île en île" in text:
+            shapes.append("hop")
+        elif "dernière étape" in text:
+            shapes.append("last")
+        elif "Berry-Mappemonde quitte" in text:
+            shapes.append("open")
+    assert len(shapes) >= 2
 
 
 def test_moments_approche_bubble_title_is_stop():
@@ -744,11 +812,11 @@ def test_moments_approche_bubble_title_is_stop():
     for ch in plan["chapters"]:
         for ev in ch.get("events") or []:
             eid = str(ev.get("id") or "")
-            if "approche" in eid or ev.get("kind") == "stop" and "approche" in str(ev.get("fact") or "").lower():
+            if "approche" in eid or ev.get("kind") == "stop":
                 titles.append(ev.get("title"))
             if str(ev.get("title") or "") in {"La Rochelle", "Ajaccio", "Fort-de-France", "Nouméa"}:
                 titles.append(ev.get("title"))
-    assert "Ajaccio" in titles or any(t and "Ajaccio" in t for t in titles)
+    assert "Ajaccio" in titles or any(t and "Ajaccio" in str(t) for t in titles)
     for ch in plan["chapters"]:
         dest = (ch.get("toName") or "").split("(")[0].strip()
         if not dest:
@@ -836,7 +904,8 @@ def _rich_journal():
     extra = [
         {"seq": 13, "t": "2026-05-15T11:00:00Z", "signature": "marina", "legIdx": 0, "changes": [],
          "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"},
-                    "around": [{"kind": "marina", "title": "Les Minimes", "fact": "Les Minimes (2 nm)"}]}},
+                    "around": [{"kind": "marina", "title": "Les Minimes", "fact": "Les Minimes (2 nm)",
+                                "lat": 46.14, "lon": -1.17}]}},
         {"seq": 14, "t": "2026-05-15T12:10:00Z", "signature": "port", "legIdx": 1, "changes": [
             {"kind": "port", "score": 2, "title": "La Rochelle", "fact": "La Rochelle"},
         ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
@@ -870,10 +939,13 @@ def test_rich_moments_without_budget_cites_each_type():
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     assert plan["targetSeconds"] == 0
     assert "Les Minimes" in blob
-    assert re.search(r"à portée de Les Minimes", blob)
-    assert re.search(r"devant La Rochelle", blob)
-    assert re.search(r"aire marine protégée : Cabrera", blob)
-    assert re.search(r"station PIRATA", blob)
+    assert "à portée de" not in blob
+    assert re.search(r"amarré à la marina Les Minimes|marina Les Minimes", blob)
+    assert re.search(r"longe La Rochelle|devant La Rochelle", blob)
+    assert re.search(r"aire marine protégée(?: :| ) Cabrera|l'aire marine protégée Cabrera", blob)
+    assert re.search(r"une bouée", blob)
+    assert "PIRATA" not in blob
+    assert "stations scientifiques croisées" not in blob
     assert "Irma" in blob and "2017" in blob
     assert "Fort Saint-Louis" in blob
     assert "traces de cyclone ce mois-ci" not in blob
@@ -884,7 +956,7 @@ def test_rich_moments_without_budget_cites_each_type():
     _assert_route_order(blob, "journal riche FR")
     assert not re.search(r"\bnm\b", blob)
     assert not re.search(r"\d+[.,]\d{1,2}(?!\d)", blob)
-    assert "1 820 milles nautiques" in blob or "1820 milles nautiques" in blob
+    assert "1 820 milles" in blob or "1820 milles" in blob
 
 
 def test_budget_150_reached_and_no_decimals():
@@ -932,7 +1004,8 @@ def test_review_sentences_facts_only():
     assert any("Gibraltar" in s for s in bits)
     assert any("Saison cyclonique" in s for s in bits)
     assert any("Coup de vent" in s and "22" in s for s in bits)
-    assert any(s == "Alerte." for s in bits)
+    assert not any("À surveiller" in s or s == "Alerte." or s.startswith("Couloirs") for s in bits)
+    assert any("passe par" in s for s in bits)
     assert review_leg_for_chapter(REVIEW_GIBRALTAR, "Ajaccio", "Fort-de-France")
     assert review_leg_for_chapter(REVIEW_GIBRALTAR, "La Rochelle", "Ajaccio") is None
 
@@ -1152,13 +1225,16 @@ def test_re7_discourse_eleven_defects():
     assert "Aucun port d'entrée" not in blob
     assert "entrée dans Entrée dans" not in blob
     assert "IUCN" not in blob
-    assert blob.lower().count("gran roque") == 1
+    # RG6 : marina de route tues ; seule la marina d'escale est nommée à l'arrivée.
+    assert "Gran Roque" not in blob
     assert "Monaco" not in blob
-    assert re.search(r"prend l'avion pour Halifax", blob)
-    assert re.search(r"retour en avion vers Cayenne", blob)
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob)
+    assert re.search(r"le bateau attend à Cayenne", blob)
     assert re.search(r"Aujourd’hui, le bateau est à Nouméa", blob)
     assert "Irma" in blob and "2017" in blob
-    assert "PIRATA" in blob
+    assert "une bouée" in blob
+    assert "PIRATA" not in blob
+    assert "stations scientifiques croisées" not in blob
     assert "Cabrera" in blob
     assert "Fort Saint-Louis" in blob
     assert "golfe de Gascogne" in blob
@@ -1166,8 +1242,10 @@ def test_re7_discourse_eleven_defects():
     assert "Bay of Biscay" not in blob
     assert re.search(r"eaux espagnoles", blob)
     idx_zee = blob.find("eaux espagnoles")
-    idx_dep = blob.find("départ vers Cayenne")
-    assert 0 <= idx_zee < idx_dep
+    idx_dep = blob.find("pour Cayenne")
+    if idx_dep < 0:
+        idx_dep = blob.find("quitte")
+    assert 0 <= idx_dep < idx_zee
     _assert_no_filler(blob)
     assert not re.search(r"\bnm\b", blob)
 
@@ -1192,8 +1270,8 @@ def test_rf5_air_survives_tight_budget():
         )
         blob = _script_blob(plan)
         assert plan["targetSeconds"] == seconds
-        assert re.search(r"prend l'avion pour Halifax", blob), blob
-        assert re.search(r"retour en avion vers Cayenne", blob), blob
+        assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+        assert re.search(r"le bateau attend à Cayenne", blob), blob
         _assert_no_filler(blob)
 
 
@@ -1204,8 +1282,8 @@ def test_rf5_air_when_halifax_has_no_iso():
     plan = build_raw_script(clock, marks, RE7_LIVE, None, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = _script_blob(plan)
     assert "Cayenne" in blob
-    assert re.search(r"prend l'avion pour Halifax", blob), blob
-    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+    assert re.search(r"le bateau attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1217,8 +1295,8 @@ def test_rf5_air_return_without_moments():
         lang="fr", seconds=150, now_ms=NOW_MS,
     )
     blob = _script_blob(plan)
-    assert re.search(r"prend l'avion pour Halifax", blob), blob
-    assert re.search(r"[Rr]etour en avion vers Cayenne", blob), blob
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+    assert re.search(r"le bateau attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1229,4 +1307,1441 @@ def test_rf5_no_air_invented_on_ajaccio_route():
     blob = _script_blob(plan)
     assert "Cayenne" not in blob
     assert "Halifax" not in blob
-    assert not re.search(r"prend l'avion|retour en avion|flies to|return flight", blob)
+    assert not re.search(r"prend l'avion|retour en avion|s'envole|flies to|return flight|the boat waits", blob)
+
+
+def test_rg1_road_phrase_on_first_chapter():
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
+    ch0 = plan["chapters"][0]["text"]
+    assert re.search(r"par la route", ch0, re.I), ch0
+    assert re.search(r"La Rochelle", ch0), ch0
+
+
+def test_rg1_depart_ms_is_clock_leave_not_hold():
+    """Écart nul quand l'horloge quitte à tA — jamais tA + 3 jours d'escale."""
+    t_a = _ms(OFFICIAL_T0)
+    t_end = _ms("2026-09-19T02:00:00Z")
+    lr = {
+        "name": "La Rochelle", "iso": OFFICIAL_T0, "holdHours": 72,
+        "lat": 46.15, "lon": -1.16, "filmNm": 122, "nm": 0,
+    }
+    aj = {
+        "name": "Ajaccio (Corse)", "iso": "2026-05-24T12:00:00Z", "holdHours": 72,
+        "lat": 41.9, "lon": 8.7, "filmNm": 1942, "nm": 1820,
+    }
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": [lr, aj],
+        "vertices": [
+            {"iso": OFFICIAL_T0, "lat": 46.20, "lon": -1.16, "vehicle": "main"},
+        ],
+    }
+    windows = _windows([lr, aj], t_a, t_end, clock)
+    sail = next(w for w in windows if "ajaccio" in (w.get("destName") or "").lower())
+    assert _window_depart_ms(sail) == t_a
+    bare = _windows([lr, aj], t_a, t_end, {"t0": OFFICIAL_T0, "vertices": [], "marks": [lr, aj]})
+    sail_bare = next(w for w in bare if "ajaccio" in (w.get("destName") or "").lower())
+    assert _window_depart_ms(sail_bare) == t_a
+    hold_ms = 72 * 3_600_000
+    assert _window_depart_ms(sail_bare) != t_a + hold_ms
+
+
+def test_rg1_air_window_not_told_as_navigation():
+    marks = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z", "holdHours": 0, "lat": 46.15, "lon": -1.16},
+        {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "iso": "2026-07-19T08:00:00Z", "holdHours": 72, "lat": 4.93, "lon": -52.33},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4100, "filmNm": 4100, "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Papeete (Polynésie française)", "nm": 11000, "filmNm": 11100, "iso": "2026-09-08T08:00:00Z", "holdHours": 72, "lat": -17.5, "lon": -149.5},
+    ]
+    clock = {"t0": OFFICIAL_T0, "marks": marks, "vertices": [
+        {"iso": "2026-07-19T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "quay"},
+        {"iso": "2026-07-22T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "plane"},
+        {"iso": "2026-07-25T18:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
+        {"iso": "2026-07-28T08:00:00Z", "lat": 4.80, "lon": -52.50, "vehicle": "main"},
+    ]}
+    live = {"filmNm": 12000, "sailNm": 11800, "iso": "2026-09-19T02:00:00Z", "status": "live"}
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-07-23T08:00:00Z", "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive canadienne",
+                 "fact": "Entrée dans Zone économique exclusive canadienne"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
+            {"seq": 1, "t": "2026-07-25T06:00:00Z", "changes": [
+                {"kind": "approche", "score": 3, "title": "Saint-Pierre", "fact": "Approche de Saint-Pierre"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
+            {"seq": 2, "t": "2026-07-25T08:00:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Saint-Pierre", "fact": "Cayenne → Saint-Pierre"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
+            {"seq": 3, "t": "2026-07-28T09:00:00Z", "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive du Panama",
+                 "fact": "Entrée dans Zone économique exclusive du Panama"},
+            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(clock, marks, live, journal, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert re.search(r"s'envole de Cayenne pour Saint-Pierre-et-Miquelon", blob), blob
+    assert re.search(r"le bateau attend à Cayenne", blob), blob
+    assert not re.search(r"départ vers Saint-Pierre", blob), blob
+    assert not re.search(r"Berry-Mappemonde quitte Cayenne.{0,80}pour Saint-Pierre", blob), blob
+    assert not re.search(r"approche de Saint-Pierre", blob, re.I), blob
+    assert not re.search(r"Arrivée à Saint-Pierre", blob), blob
+    assert not re.search(r"eaux canadiennes", blob), blob
+    next_sail = next(
+        c for c in plan["chapters"]
+        if re.search(r"pour Papeete|quitte Cayenne", c.get("text") or "")
+    )
+    assert "Cayenne" in (next_sail.get("fromName") or "")
+    assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
+
+
+def test_rg1_depart_anchor_stays_at_port():
+    t_end = _ms("2026-09-19T02:00:00Z")
+    lr = {
+        "name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "holdHours": 72,
+        "lat": 46.15, "lon": -1.16, "filmNm": 122, "nm": 0,
+    }
+    aj = {
+        "name": "Ajaccio (Corse)", "iso": "2026-05-24T12:00:00Z", "holdHours": 72,
+        "lat": 41.9, "lon": 8.7, "filmNm": 1942, "nm": 1820,
+    }
+    leave_iso = "2026-05-15T13:00:00Z"
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": [CLOCK["marks"][0], lr, aj],
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": leave_iso, "lat": 46.15, "lon": -1.24, "vehicle": "main"},
+        ],
+    }
+    live = {"filmNm": 2000, "sailNm": 1900, "iso": "2026-05-25T00:00:00Z", "status": "live"}
+    plan = build_raw_script(clock, clock["marks"], live, None, lang="fr", seconds=0, now_ms=t_end)
+    ch = next(
+        c for c in plan["chapters"]
+        if re.search(r"pour Ajaccio|quitte La Rochelle", c.get("text") or "")
+    )
+    anchors = ch.get("anchors") or []
+    assert anchors, ch
+    text = ch.get("text") or ""
+    depart_anchor = next(
+        a for a in anchors
+        if re.search(r"Ajaccio|La Rochelle", text[max(0, int(a.get("charIdx") or 0)):])
+    )
+    t_anchor = _ms(depart_anchor["t"])
+    vert = min(
+        clock["vertices"],
+        key=lambda v: abs((_ms(v["iso"]) or 0) - (t_anchor or 0)),
+    )
+    d = _nm_between(46.15, -1.16, vert["lat"], vert["lon"])
+    assert d is not None and d <= 5.0, (d, depart_anchor, vert)
+
+
+def test_official_route_zee_all_have_spoken_names():
+    """Toute ZEE de la route officielle a un nom parlé, sans jargon de source."""
+    for src in OFFICIAL_ROUTE_ZEE_SOURCES:
+        spoken = zee_waters_label(src, "fr")
+        assert spoken, f"pas de nom parlé pour {src!r}"
+        assert "zone économique exclusive" not in spoken.lower(), (src, spoken)
+        assert "exclusive economic" not in spoken.lower(), (src, spoken)
+        en = zee_waters_label(src, "en")
+        assert en, f"no spoken EN name for {src!r}"
+        assert "exclusive economic" not in en.lower(), (src, en)
+
+
+def test_zee_haute_mer_and_sahara_spoken():
+    assert zee_waters_label("Haute mer", "fr") == "haute mer"
+    assert zee_waters_label("High Seas", "en") == "the high seas"
+    assert "disputées du Sahara occidental" in zee_waters_label(
+        "Overlapping claim Western Sahara: Western Sahara / Morocco", "fr",
+    )
+    assert "Barbade" in zee_waters_label("Zone économique exclusive (Barbadian)", "fr") or (
+        "barbadiennes" in zee_waters_label("Zone économique exclusive (Barbadian)", "fr")
+    )
+    assert "vénézuéliennes" in zee_waters_label("Zone économique exclusive vénézuélienne", "fr")
+    assert "indiennes" in zee_waters_label(
+        "Zone économique exclusive indienne (Andaman and Nicobar Islands)", "fr",
+    )
+
+
+def test_heading_phrase_eight_directions():
+    assert heading_phrase(246, "fr") == "cap au sud-ouest"
+    assert heading_phrase(0, "fr") == "cap au nord"
+    assert heading_phrase(90, "fr") == "cap à l'est"
+    assert heading_phrase(270, "fr") == "cap à l'ouest"
+    assert heading_phrase(90, "en") == "heading east"
+    assert heading_phrase(None, "fr") == ""
+
+
+def test_zee_dosage_short_keeps_all_long_one_per_day():
+    day = 86_400_000
+    short = [
+        {"id": "a", "kind": "zee-enter", "tMs": 1, "t": "2026-07-01T08:00:00Z",
+         "title": "Antiguan and Barbudan Exclusive Economic Zone", "fact": "x", "score": 2},
+        {"id": "b", "kind": "zee-enter", "tMs": 2, "t": "2026-07-01T14:00:00Z",
+         "title": "Kittitian and Nevisian Exclusive Economic Zone", "fact": "y", "score": 2},
+        {"id": "c", "kind": "zee-enter", "tMs": 3, "t": "2026-07-01T20:00:00Z",
+         "title": "Sint-Eustatius Exclusive Economic Zone", "fact": "z", "score": 2},
+    ]
+    for i, c in enumerate(short):
+        c["tMs"] = _ms(c["t"])
+    clustered = dose_zee_changes(short, span_ms=2 * day)
+    assert len(clustered) == 1
+    sent = change_sentence(clustered[0], "fr")
+    # RC26 : groupe grammatical « les eaux X, puis celles de Y » — noms FR.
+    assert "les eaux d'Antigua-et-Barbuda" in sent
+    assert "puis celles de Saint-Christophe-et-Niévès" in sent
+    assert "puis celles de Sint-Eustatius" in sent
+    assert "zones économiques exclusives" not in sent
+    assert "zone économique exclusive" not in sent
+    it_fr = [
+        {"id": "it", "kind": "zee-enter", "tMs": _ms("2026-05-24T22:04:29Z"),
+         "t": "2026-05-24T22:04:29Z", "title": "Zone économique exclusive italienne",
+         "fact": "Zone économique exclusive italienne", "score": 2},
+        {"id": "fr", "kind": "zee-enter", "tMs": _ms("2026-05-25T21:27:29Z"),
+         "t": "2026-05-25T21:27:29Z", "title": "Zone économique exclusive française (France métropolitaine)",
+         "fact": "Zone économique exclusive française (France métropolitaine)", "score": 2},
+    ]
+    it_fr_c = dose_zee_changes(it_fr, span_ms=2 * day)
+    assert len(it_fr_c) == 1
+    it_sent = change_sentence(it_fr_c[0], "fr")
+    assert "les eaux" in it_sent and "italiennes" in it_sent and "françaises" in it_sent
+
+    long_span = 10 * day
+    long_zee = [
+        {"id": f"z{i}", "kind": "zee-enter", "score": 2,
+         "title": title, "fact": title,
+         "t": t, "tMs": _ms(t)}
+        for i, (title, t) in enumerate((
+            ("Spanish Exclusive Economic Zone", "2026-05-16T08:00:00Z"),
+            ("Portuguese Exclusive Economic Zone", "2026-05-18T08:00:00Z"),
+            ("Moroccan Exclusive Economic Zone", "2026-05-21T08:00:00Z"),
+            ("Italian Exclusive Economic Zone", "2026-05-24T08:00:00Z"),
+            ("French Exclusive Economic Zone", "2026-05-25T08:00:00Z"),
+        ))
+    ]
+    dosed = dose_zee_changes(long_zee, span_ms=long_span)
+    assert len(dosed) == 5
+    same_day = [
+        {**long_zee[0], "id": "extra", "t": "2026-05-16T20:00:00Z", "tMs": _ms("2026-05-16T20:00:00Z"),
+         "title": "Portuguese Exclusive Economic Zone"},
+    ]
+    one_day = dose_zee_changes([long_zee[0], same_day[0]], span_ms=long_span)
+    assert len(one_day) == 1
+
+
+def test_zee_named_in_date_order_no_count():
+    t0 = _ms("2026-05-15T08:00:00Z")
+    changes = [
+        {"id": "es", "kind": "zee-enter", "score": 2, "tMs": _ms("2026-05-16T08:00:00Z"),
+         "t": "2026-05-16T08:00:00Z", "title": "Spanish Exclusive Economic Zone",
+         "fact": "Spanish Exclusive Economic Zone"},
+        {"id": "pt", "kind": "zee-enter", "score": 2, "tMs": _ms("2026-05-18T08:00:00Z"),
+         "t": "2026-05-18T08:00:00Z", "title": "Portuguese Exclusive Economic Zone",
+         "fact": "Portuguese Exclusive Economic Zone"},
+        {"id": "ma", "kind": "zee-enter", "score": 2, "tMs": _ms("2026-05-21T08:00:00Z"),
+         "t": "2026-05-21T08:00:00Z", "title": "Moroccan Exclusive Economic Zone",
+         "fact": "Moroccan Exclusive Economic Zone"},
+        {"id": "arr", "kind": "escale", "score": 3, "tMs": _ms("2026-05-26T08:00:00Z"),
+         "t": "2026-05-26T08:00:00Z", "title": "Arrivée à Ajaccio", "fact": "x"},
+    ]
+    picked = select_chapter_changes(changes, t0, _ms("2026-05-26T12:00:00Z"), budget=True)
+    kinds = [c["kind"] for c in picked]
+    assert kinds.count("zee-enter") >= 3
+    texts = [change_sentence(c, "fr") for c in picked if c["kind"] == "zee-enter"]
+    blob = " ".join(texts)
+    assert blob.find("espagnoles") < blob.find("portugaises") < blob.find("marocaines")
+    assert "zones économiques exclusives" not in blob
+    assert "zone économique exclusive" not in blob
+
+
+def test_coast_milestones_ordered_by_route():
+    t0 = _ms("2026-05-15T08:00:00Z")
+    coasts = [
+        {"id": "cam", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T12:00:00Z"),
+         "t": "2026-05-16T12:00:00Z", "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+        {"id": "mux", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T14:00:00Z"),
+         "t": "2026-05-16T14:00:00Z", "title": "Muxía", "fact": "Muxía (3 nm)"},
+        {"id": "tan", "kind": "coast", "score": 2, "tMs": _ms("2026-05-21T08:00:00Z"),
+         "t": "2026-05-21T08:00:00Z", "title": "Tanger", "fact": "Tanger (2 nm)"},
+        {"id": "alg", "kind": "coast", "score": 2, "tMs": _ms("2026-05-21T09:00:00Z"),
+         "t": "2026-05-21T09:00:00Z", "title": "Algeciras", "fact": "Algeciras (3 nm)"},
+        {"id": "ptt", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T10:00:00Z"),
+         "t": "2026-05-24T10:00:00Z", "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
+    ]
+    dosed = dose_coast_changes(coasts, span_ms=11 * 86_400_000)
+    assert [ _utc_day_from(c) for c in dosed ] == sorted(_utc_day_from(c) for c in dosed)
+    galice = next(c for c in dosed if "Camariñas" in (c.get("title") or "") or "Galice" in (c.get("title") or ""))
+    sent = coast_sentence(galice, "fr")
+    assert "Galice" in sent
+    assert "Camariñas" in sent and "Muxía" in sent
+    gib = next(c for c in dosed if any(p in (c.get("title") or "") or p in " ".join(c.get("ports") or [])
+                                        for p in ("Tanger", "Algeciras", "Gibraltar")))
+    gsent = coast_sentence(gib, "fr")
+    assert "Gibraltar" in gsent
+    assert "Tanger" in gsent and "Algeciras" in gsent
+    sar = next(c for c in dosed if "Porto Torres" in (c.get("title") or "") or "Sardaigne" in (c.get("title") or ""))
+    assert "Sardaigne" in coast_sentence(sar, "fr")
+    picked = select_chapter_changes(coasts, t0, _ms("2026-05-26T12:00:00Z"), budget=True)
+    coast_picked = [c for c in picked if c.get("kind") == "coast"]
+    assert len(coast_picked) >= 3
+    times = [c.get("tMs") or 0 for c in coast_picked]
+    assert times == sorted(times)
+
+
+def test_stock_ports_and_marinas_become_named_coasts():
+    """Les 44 ports et les marinas du stock (Camariñas, Tanger…) sont des jalons, pas un comptage."""
+    t0 = _ms("2026-05-15T08:00:00Z")
+    changes = [
+        {"id": "cam", "kind": "marina", "score": 2, "tMs": _ms("2026-05-18T11:42:00Z"),
+         "t": "2026-05-18T11:42:00Z", "title": "Club Náutico de Camariñas",
+         "fact": "Club Náutico de Camariñas (4 nm)"},
+        {"id": "mux", "kind": "marina", "score": 2, "tMs": _ms("2026-05-18T12:42:00Z"),
+         "t": "2026-05-18T12:42:00Z", "title": "Porto de Muxía", "fact": "Porto de Muxía (3 nm)"},
+        {"id": "tan", "kind": "port", "score": 2, "tMs": _ms("2026-05-21T14:37:58Z"),
+         "t": "2026-05-21T14:37:58Z", "title": "Tanger", "fact": "Tanger"},
+        {"id": "alg", "kind": "port", "score": 2, "tMs": _ms("2026-05-21T19:05:47Z"),
+         "t": "2026-05-21T19:05:47Z", "title": "Algeciras", "fact": "Algeciras"},
+        {"id": "ptt", "kind": "port", "score": 2, "tMs": _ms("2026-05-25T15:48:38Z"),
+         "t": "2026-05-25T15:48:38Z", "title": "Porto Torres", "fact": "Porto Torres"},
+    ]
+    dosed = dose_coast_changes(changes, span_ms=11 * 86_400_000)
+    blob = " ".join(coast_sentence(c, "fr") for c in dosed)
+    assert "zone économique exclusive" not in blob
+    assert "Galice" in blob and "Camariñas" in blob and "Muxía" in blob
+    assert "Gibraltar" in blob and "Tanger" in blob and "Algeciras" in blob
+    assert "Sardaigne" in blob and "Porto Torres" in blob
+    picked = select_chapter_changes(changes, t0, _ms("2026-05-26T12:00:00Z"), budget=True)
+    assert [c.get("kind") for c in picked if c.get("kind") == "coast"]
+    times = [c.get("tMs") or 0 for c in picked if c.get("kind") == "coast"]
+    assert times == sorted(times)
+
+
+def test_rg2_coast():
+    """RC19 : Muxía+Camariñas ensemble ; île Sardaigne pas écrasée le même jour."""
+    coasts = [
+        {"id": "cor", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T10:00:00Z"),
+         "t": "2026-05-16T10:00:00Z", "title": "La Coruña", "fact": "La Coruña (6 nm)"},
+        {"id": "cam", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T12:00:00Z"),
+         "t": "2026-05-16T12:00:00Z", "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+        {"id": "mux", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T14:00:00Z"),
+         "t": "2026-05-16T14:00:00Z", "title": "Muxía", "fact": "Muxía (3 nm)"},
+        {"id": "cal", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T09:00:00Z"),
+         "t": "2026-05-24T09:00:00Z", "title": "Calvi", "fact": "Calvi (6 nm)"},
+        {"id": "bas", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T09:30:00Z"),
+         "t": "2026-05-24T09:30:00Z", "title": "Bastia", "fact": "Bastia (8 nm)"},
+        {"id": "ptt", "kind": "coast", "score": 2, "tMs": _ms("2026-05-24T10:00:00Z"),
+         "t": "2026-05-24T10:00:00Z", "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
+        {"id": "liv", "kind": "port", "score": 2, "tMs": _ms("2026-05-24T11:00:00Z"),
+         "t": "2026-05-24T11:00:00Z", "title": "Livorno", "fact": "Livorno (12 nm)"},
+    ]
+    dosed = dose_coast_changes(coasts, span_ms=11 * 86_400_000)
+    blob = " ".join(coast_sentence(c, "fr") for c in dosed)
+    assert "zone économique exclusive" not in blob
+    assert "Galice" in blob and "Camariñas" in blob and "Muxía" in blob
+    galice = next(
+        c for c in dosed
+        if "Camariñas" in " ".join(c.get("ports") or [])
+        or "Galice" in (c.get("title") or "")
+        or ((c.get("geo") or {}).get("fr") == "la Galice")
+    )
+    ports = galice.get("ports") or []
+    named = [p for p in ports if re.search(r"camari[nñ]as|mux[ií]a", p, re.I)]
+    assert len(named) == 2
+    assert not any(re.search(r"coru[nñ]a", p, re.I) for p in ports)
+    assert "Sardaigne" in blob and "Porto Torres" in blob
+    assert "Corse" in blob or "Calvi" in blob
+
+
+def _utc_day_from(change: dict) -> str:
+    from film_script import _utc_day
+    return _utc_day(change)
+
+
+def test_rg2_film_names_route_and_heading():
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+             "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 2, "t": "2026-05-15T13:00:00Z", "signature": "s2", "legIdx": 1, "changes": [],
+             "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 3, "t": "2026-05-16T08:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+                 "fact": "Spanish Exclusive Economic Zone"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 35, "t": "2026-05-16T10:00:00Z", "signature": "s35", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "La Coruña", "fact": "La Coruña (6 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
+            {"seq": 4, "t": "2026-05-16T12:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
+            {"seq": 5, "t": "2026-05-16T14:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Muxía", "fact": "Muxía (3 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 240}}},
+            {"seq": 6, "t": "2026-05-18T08:00:00Z", "signature": "s6", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Portuguese Exclusive Economic Zone",
+                 "fact": "Portuguese Exclusive Economic Zone"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 180}}},
+            {"seq": 7, "t": "2026-05-21T08:00:00Z", "signature": "s7", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Moroccan Exclusive Economic Zone",
+                 "fact": "Moroccan Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Tanger", "fact": "Tanger (2 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 90}}},
+            {"seq": 8, "t": "2026-05-21T09:00:00Z", "signature": "s8", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Algeciras", "fact": "Algeciras (3 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 90}}},
+            {"seq": 9, "t": "2026-05-24T10:00:00Z", "signature": "s9", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Italian Exclusive Economic Zone",
+                 "fact": "Italian Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Calvi", "fact": "Calvi (6 nm)"},
+                {"kind": "coast", "score": 2, "title": "Bastia", "fact": "Bastia (8 nm)"},
+                {"kind": "coast", "score": 2, "title": "Porto Torres", "fact": "Porto Torres (5 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 45}}},
+            {"seq": 10, "t": "2026-05-25T08:00:00Z", "signature": "s10", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "French Exclusive Economic Zone",
+                 "fact": "French Exclusive Economic Zone"},
+                {"kind": "coast", "score": 2, "title": "Calvi", "fact": "Calvi (6 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 20}}},
+            {"seq": 11, "t": "2026-05-24T12:51:00Z", "signature": "s11", "legIdx": 1, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, journal, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "zone économique exclusive" not in blob.lower()
+    assert "zones économiques exclusives" not in blob
+    assert blob.find("espagnoles") < blob.find("portugaises") < blob.find("marocaines")
+    assert "Galice" in blob
+    assert "Muxía" in blob
+    assert "Camariñas" in blob
+    assert "Gibraltar" in blob
+    assert "Sardaigne" in blob
+    assert "cap au sud-ouest" in blob
+
+
+def test_rg2_island_survives_waters_trim():
+    """RC19 : la Sardaigne n'est pas retirée pour garder les eaux italiennes / françaises."""
+    head = "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest."
+    arrival = "Arrivée à Ajaccio le 26 mai."
+    island = "Le 24 mai, la Sardaigne — Porto Torres."
+    galice = "Le 17 mai, le bateau longe la Galice — Camariñas, Muxía."
+    waters = [
+        "Le 24 mai, les eaux italiennes.",
+        "Le 25 mai, les eaux françaises.",
+    ]
+    extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
+    blob = " ".join([head, *waters, galice, island, *extra, arrival])
+    assert len(blob) > 360 * 1.1
+    out = fit_chapter_text(blob, 360, [], "fr")
+    assert "Sardaigne" in out and "Porto Torres" in out
+    assert "Muxía" in out and "Galice" in out
+    assert "Port-39" not in out
+
+
+def test_chaluts_never_spoken_as_amp():
+    fishing = {
+        "kind": "amp", "score": 1, "title": "Pertuis Charentais - Chaluts",
+        "fact": "Pertuis Charentais - Chaluts (2 nm): IUCN Unassigned.",
+    }
+    alert = {
+        "kind": "alert-on", "score": 3, "title": "Aire marine protégée",
+        "fact": "Pertuis Charentais - Pétoncles - Center Pertuis Breton deposit (3 nm): IUCN Unassigned.",
+    }
+    assert change_sentence(fishing, "fr") == ""
+    assert not alert_is_amp(alert)
+    assert "Pétoncles" not in change_sentence(alert, "fr")
+    assert "deposit" not in change_sentence(alert, "fr").lower()
+    real = {
+        "kind": "amp", "score": 1, "title": "Pertuis charentais - Rochebonne",
+        "fact": "Pertuis charentais - Rochebonne (12 nm)", "nm": 12,
+    }
+    sent = change_sentence(real, "fr")
+    assert "Rochebonne" in sent
+    assert "douze milles" in sent
+    assert "Pétoncles" not in sent
+
+
+def test_project_sentence_and_dosage():
+    near = {
+        "kind": "project", "score": 1, "title": "Récif sentinelle",
+        "fact": "Récif sentinelle (10 nm)", "nm": 10, "gold_on": True,
+    }
+    sent = change_sentence(near, "fr")
+    assert "le projet Récif sentinelle" in sent
+    assert "dix milles" in sent
+    far = {**near, "id": "far", "nm": 60, "title": "Loin", "fact": "Loin (60 nm)"}
+    from film_script import change_is_speakable, change_on_route
+    assert change_on_route(near)
+    assert not change_on_route(far)
+    short_span = SHORT_CROSSING_MS - 1
+    many = [
+        {**near, "id": f"p{i}", "title": f"Projet {i}", "fact": f"Projet {i} (1 nm)",
+         "nm": 1 + i, "gold_on": i == 2, "tMs": i}
+        for i in range(5)
+    ]
+    assert len(dose_project_changes(many, short_span)) == 1
+    assert dose_project_changes(many, short_span)[0]["gold_on"] is True
+    long_span = 12 * 86_400_000
+    assert len(dose_project_changes(many, long_span)) == 3
+    amps = [
+        {"kind": "amp", "id": f"a{i}", "title": f"Réserve {i}", "fact": f"Réserve {i} ({i} nm)",
+         "nm": i + 1, "tMs": i}
+        for i in range(5)
+    ]
+    assert len(dose_amp_changes(amps, short_span)) == 1
+    assert len(dose_amp_changes(amps, long_span)) == 3
+    assert dose_amp_changes(amps, short_span)[0]["nm"] == 1
+
+
+def test_climo_sentence_and_dosage():
+    atlas = {
+        "kind": "climo", "id": "climo:ne", "event": "ne_trades", "regimeId": "ne_trades",
+        "t": "2026-06-14T12:00:00Z", "tMs": _ms("2026-06-14T12:00:00Z"),
+        "source": "atlas", "nature": "season", "windKnots": 15,
+        "placeFr": "au sud du Cap-Vert", "placeEn": "south of Cape Verde",
+        "title": "alizés de nord-est", "fact": "alizés de nord-est",
+    }
+    fr = change_sentence(atlas, "fr")
+    en = change_sentence(atlas, "en")
+    assert "alizés de nord-est" in fr
+    assert "quinze nœuds de saison" in fr
+    assert "northeasterly trade winds" in en
+    assert "fifteen seasonal knots" in en
+    zone = {
+        **atlas, "id": "climo:zone", "source": "zone_fallback", "nature": "zone",
+        "windKnots": None, "dirFromDeg": None,
+    }
+    zfr = change_sentence(zone, "fr")
+    assert "vents moyens de saison" in zfr
+    assert "quinze" not in zfr
+    assert not re.search(r"\d+\s*n", zfr)
+    many = [
+        {**atlas, "id": f"c{i}", "tMs": i, "event": "ne_trades" if i < 2 else "force",
+         "regimeId": "ne_trades" if i < 2 else None}
+        for i in range(5)
+    ]
+    assert len(dose_climo_changes(many, SHORT_CROSSING_MS - 1)) == 1
+    assert len(dose_climo_changes(many, 20 * 86_400_000)) == 2
+    picked = select_chapter_changes(many, 0, 20 * 86_400_000, budget=True)
+    assert sum(1 for c in picked if c.get("kind") == "climo") <= 2
+
+
+def test_rg5_dataset_title_never_spoken():
+    assert not station_name_speakable("Bacteria in Rias of Galicia")
+    silent = {
+        "kind": "station",
+        "title": "Bacteria in Rias of Galicia",
+        "fact": "Bacteria in Rias of Galicia (2 nm)",
+        "t": "2026-05-16T12:00:00Z",
+    }
+    assert change_sentence(silent, "fr") == ""
+    assert change_sentence(silent, "en") == ""
+    assert "Bacteria" not in (change_sentence(silent, "fr") or "")
+
+
+def test_rg5_argo_speaks_type_not_wmo():
+    ch = {
+        "kind": "station",
+        "title": "Argo 6904216",
+        "fact": "Argo 6904216 (4 nm)",
+        "t": "2026-05-18T12:00:00Z",
+        "source": "argo",
+    }
+    fr = change_sentence(ch, "fr")
+    en = change_sentence(ch, "en")
+    assert fr == "Le 18 mai, un flotteur Argo."
+    assert en == "On 18 May, an Argo float."
+    assert "6904216" not in fr
+    assert "6904216" not in en
+    assert station_spoken_label(ch, "fr") == "un flotteur Argo"
+    assert station_name_speakable("Argo 6904216")
+
+
+def test_rg5_named_types_from_title_words():
+    assert station_spoken_label({"kind": "station", "title": "PELGAS2025"}, "fr") == "la campagne PELGAS"
+    assert station_spoken_label({"kind": "station", "title": "PELGAS2025"}, "en") == "the PELGAS campaign"
+    assert station_spoken_label({"kind": "station", "title": "Wave buoy 12"}, "fr") == "une bouée"
+    assert station_spoken_label({"kind": "station", "title": "CTD and nutrients sections"}, "fr") == "une station côtière"
+    assert station_spoken_label({"kind": "station", "title": "Coastal observatory Brest"}, "fr") == "un observatoire"
+    assert station_spoken_label({"kind": "station", "title": "Station croisée"}, "fr") == ""
+
+
+def test_rg5_one_station_per_chapter_closest_no_count():
+    from film_script import _group_changes
+
+    bacteria = {
+        "id": "s0", "kind": "station", "score": 2, "tMs": 1, "nm": 1,
+        "title": "Bacteria in Rias of Galicia", "fact": "Bacteria in Rias of Galicia",
+    }
+    far = {
+        "id": "s1", "kind": "station", "score": 2, "tMs": 2, "nm": 8,
+        "title": "Argo 6904216", "fact": "Argo 6904216", "source": "argo",
+    }
+    near = {
+        "id": "s2", "kind": "station", "score": 2, "tMs": 3, "nm": 2,
+        "title": "Argo 6901234", "fact": "Argo 6901234", "source": "argo",
+    }
+    escale = {
+        "id": "e", "kind": "escale", "score": 3, "tMs": 4,
+        "title": "Arrivée à Ajaccio", "fact": "x",
+    }
+    picked = select_chapter_changes([bacteria, far, near, escale], 0, 10, budget=False)
+    stations = [c for c in picked if c.get("kind") == "station"]
+    assert len(stations) == 1
+    assert stations[0]["id"] == "s2"
+    assert dose_station_changes([bacteria, far, near], 99) == [near]
+
+    crowd = [
+        {**far, "id": f"g{i}", "tMs": i, "title": f"Argo {6904216 + i}"}
+        for i in range(6)
+    ]
+    grouped = _group_changes(crowd, 20 * 86_400_000)
+    blob = " ".join(change_sentence(c, "fr") for c in grouped)
+    assert "stations scientifiques croisées" not in blob
+    assert not any(str(c.get("id") or "").startswith("group:station") for c in grouped)
+
+    moments = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+             "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 2, "t": "2026-05-16T09:00:00Z", "signature": "s2", "legIdx": 1, "changes": [
+                {"kind": "station", "score": 2, "title": "Bacteria in Rias of Galicia",
+                 "fact": "Bacteria in Rias of Galicia", "nm": 1},
+                {"kind": "station", "score": 2, "title": "Argo 6904216",
+                 "fact": "Argo 6904216 (8 nm)", "nm": 8, "source": "argo"},
+                {"kind": "station", "score": 2, "title": "Argo 6901234",
+                 "fact": "Argo 6901234 (2 nm)", "nm": 2, "source": "argo"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 3, "t": "2026-05-24T12:51:00Z", "signature": "s3", "legIdx": 1, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, moments, lang="fr", seconds=0, now_ms=NOW_MS)
+    blob = _script_blob(plan)
+    assert "Bacteria" not in blob
+    assert "stations scientifiques croisées" not in blob
+    assert blob.count("un flotteur Argo") <= 1
+    assert "6904216" not in blob
+    assert "6901234" not in blob
+
+
+def _rg6_review():
+    return {
+        "legs": [
+            {
+                "from": "La Rochelle", "to": "Ajaccio (Corse)",
+                "legNm": 1820, "daysAtSea": 9.5, "plannedKnots": 8,
+            },
+            {
+                "from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)",
+                "legNm": 5153, "daysAtSea": 26.8, "plannedKnots": 8,
+            },
+            {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+                "legNm": 12082, "daysAtSea": 63.0, "plannedKnots": 8,
+            },
+        ]
+    }
+
+
+def test_rg6_de_never_doubles():
+    assert _de("Fineveke") == "de Fineveke"
+    assert _de("de Fineveke") == "de Fineveke"
+    assert "de de" not in _de("de Fineveke")
+    assert _de("Ajaccio").startswith("d’") or _de("Ajaccio").startswith("d'")
+    assert _de("Papeete") == "de Papeete"
+
+
+def test_rg6_english_title_and_forbidden():
+    assert looks_english_title("The Careenage")
+    assert looks_english_title("Center Pertuis Breton deposit")
+    assert looks_english_title("Laboratory Ship to Test Innovations in Extreme Conditions")
+    assert looks_english_title("Coordination of a Global Socioeconomic Monitoring Initiative for Coastal Management")
+    assert looks_english_title("Lesser Antilles Expedition")
+    assert looks_english_title("Coral Gardeners")
+    assert looks_english_title("Port Zante Marina")
+    assert looks_english_title("IntelliReefs")
+    assert not looks_english_title("port d'Ajaccio")
+    assert not looks_english_title("Les Minimes")
+    assert not looks_english_title("CÔTE À CÔTE")
+    assert film_has_forbidden("À surveiller. Couloirs : Gibraltar. La jambe compte 12 milles.")
+    assert film_has_forbidden("à portée de de Fineveke")
+    assert not film_has_forbidden("Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio.")
+
+
+def test_rg6_spoken_sea_days_and_date_thin():
+    assert spoken_sea_days(9.5, "fr") == "une dizaine de jours de mer"
+    assert spoken_sea_days(1.0, "fr") == "un jour de mer"
+    assert spoken_sea_days(26.8, "fr") == "une trentaine de jours de mer"
+    thinned = thin_chapter_dates([
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle pour Ajaccio : 1 820 milles.",
+        "Le 16 mai, les eaux espagnoles.",
+        "Le 18 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 26 mai, amarré au port d'Ajaccio : trois jours d'escale.",
+    ], "fr")
+    assert "Le 15 mai" in thinned[0]
+    assert not re.search(r"\b16 mai\b", thinned[1])
+    assert "lendemain" in thinned[1].lower() or thinned[1].startswith("Puis")
+    assert date_density_ok(" ".join(thinned), "fr")
+
+
+def test_rg6_chapter_shape_and_metrics():
+    w_long = {
+        "fromName": "Ajaccio (Corse)", "toName": "Fort-de-France (Martinique)",
+        "from": {"name": "Ajaccio (Corse)", "nm": 1820},
+        "to": {"name": "Fort-de-France (Martinique)", "nm": 6973},
+        "mode": "sail", "vehicle": "main",
+    }
+    m = chapter_metrics(w_long, _rg6_review())
+    assert m["legNm"] == 5153
+    assert m["daysAtSea"] == 26.8
+    assert m["plannedKnots"] == 8
+    assert chapter_shape(w_long, 2, 4, m) == "long"
+    w_hop = {
+        "fromName": "Fort-de-France", "toName": "Pointe-à-Pitre",
+        "from": {"name": "Fort-de-France", "nm": 100},
+        "to": {"name": "Pointe-à-Pitre", "nm": 292},
+        "mode": "sail",
+    }
+    mh = chapter_metrics(w_hop, None)
+    assert mh["legNm"] == 192
+    assert chapter_shape(w_hop, 3, 8, mh) == "hop"
+
+
+def test_rg6_gabarit_opening_route_arrival():
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0, "changes": [],
+             "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-15T12:00:00Z", "signature": "s1", "legIdx": 0, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 2, "t": "2026-05-15T13:00:00Z", "signature": "s2", "legIdx": 1, "changes": [],
+             "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 3, "t": "2026-05-16T08:00:00Z", "signature": "s3", "legIdx": 1, "changes": [
+                {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+                 "fact": "Spanish Exclusive Economic Zone"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 246}}},
+            {"seq": 4, "t": "2026-05-16T12:00:00Z", "signature": "s4", "legIdx": 1, "changes": [
+                {"kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (4 nm)"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 5, "t": "2026-05-21T08:00:00Z", "signature": "s5", "legIdx": 1, "changes": [
+                {"kind": "marina", "score": 2, "title": "port d'Ajaccio", "fact": "port d'Ajaccio (1 nm)",
+                 "lat": 41.92, "lon": 8.74},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 6, "t": "2026-05-24T12:51:00Z", "signature": "s6", "legIdx": 1, "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal, lang="fr", seconds=0, now_ms=NOW_MS,
+        review=_rg6_review(),
+    )
+    ch = next(c for c in plan["chapters"] if "Ajaccio" in (c.get("toName") or c.get("text") or ""))
+    text = ch["text"]
+    assert re.search(r"Berry-Mappemonde quitte La Rochelle", text)
+    assert "cap au sud-ouest" in text
+    assert "1 820 milles" in text
+    assert "dizaine de jours de mer" in text
+    assert "8 nœuds de moyenne" in text
+    assert "eaux espagnoles" in text
+    assert "Arrivée à Ajaccio" in text
+    assert "port d'Ajaccio" in text or "port d’Ajaccio" in text
+    assert "à quai" not in text
+    assert "À surveiller" not in text
+    assert "Couloirs" not in text
+    assert "La jambe" not in text
+    assert "à portée de" not in text
+    assert not film_has_forbidden(text)
+    assert date_density_ok(text, "fr")
+    sents = [s for s in re.split(r"(?<=[.!?…])\s+", text) if s.strip()]
+    assert any("quitte" in s for s in sents)
+    assert any("eaux" in s or "Galice" in s or "Camariñas" in s for s in sents)
+    assert any(s.startswith("Arrivée") for s in sents)
+
+
+def test_rg6_all_sail_chapters_have_distance_days_no_jargon():
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=_rg6_review(),
+    )
+    blob = _script_blob(plan)
+    assert not film_has_forbidden(blob)
+    assert "3 jours à quai" not in blob
+    assert blob.count("à quai") == 0
+    hold_forms = set()
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        assert date_density_ok(text, "fr"), text
+        if not is_sea_chapter(ch):
+            continue
+        if _is_airish(ch):
+            continue
+        assert re.search(r"\d[\d\s]*\s*milles", text), text
+        assert re.search(
+            r"jours de mer|jour de mer|dizaine de jours|vingtaine|trentaine|quarantaine",
+            text,
+        ), text
+        if "Arrivée à" in text:
+            for form in ("d'escale", "escale de", "au port", "on reste"):
+                if form in text:
+                    hold_forms.add(form)
+    assert "Berry-Mappemonde quitte" in blob
+
+
+def _is_airish(ch: dict) -> bool:
+    t = ch.get("text") or ""
+    return "s'envole" in t or "flies" in t
+
+
+def test_rg6_hold_silent_when_clock_does_not_stop():
+    from film_script import _arrival_sentence
+    stop = {
+        "name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "holdHours": 72,
+        "lat": 46.15, "lon": -1.16,
+    }
+    clock = {
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": "2026-05-15T13:00:00Z", "lat": 46.10, "lon": -1.30, "vehicle": "main"},
+        ]
+    }
+    sent = _arrival_sentence(stop, "fr", clock=clock, harbor="le port de La Rochelle", chapter_i=0)
+    assert "Arrivée à La Rochelle" in sent
+    assert "escale" not in sent
+    assert "à quai" not in sent
+
+
+def test_rg6_arrival_harbor_ignores_far_marina():
+    dest = {"name": "Ajaccio (Corse)", "lat": 41.92, "lon": 8.74}
+    far = {"kind": "marina", "title": "Porto de Barizo", "lat": 43.32, "lon": -8.87, "tMs": 1}
+    near = {"kind": "marina", "title": "port d'Ajaccio", "lat": 41.92, "lon": 8.74, "tMs": 2}
+    spoken = _arrival_harbor([far, near], dest, "fr")
+    assert "Ajaccio" in spoken
+    assert "Barizo" not in spoken
+    only_far = _arrival_harbor([far], dest, "fr")
+    assert "Ajaccio" in only_far
+    assert "Barizo" not in only_far
+
+
+def _rg7_review():
+    """Plan-review de test : chiffres lus tels quels, jamais servis au poste."""
+    return {
+        "legs": [
+            {"from": "Saint-Maur", "to": "La Rochelle", "legNm": 0},
+            {"from": "La Rochelle", "to": "Ajaccio (Corse)", "legNm": 1820},
+            {"from": "Ajaccio (Corse)", "to": "Fort-de-France (Martinique)", "legNm": 5153},
+            {"from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)", "legNm": 12082},
+            {"from": "Nouméa (Nouvelle-Calédonie)", "to": "Dzaoudzi (Mayotte)", "legNm": 9152},
+            {"from": "Dzaoudzi (Mayotte)", "to": "Europa", "legNm": 400},
+            {"from": "Europa", "to": "Tromelin", "legNm": 300},
+            {"from": "Tromelin", "to": "La Réunion", "legNm": 250},
+        ]
+    }
+
+
+def _rg7_eta():
+    return {
+        "stops": {
+            "Nouméa (Nouvelle-Calédonie)": {
+                "members": 24,
+                "p10": "2026-10-03T00:00:00Z",
+                "p50": "2026-10-05T00:00:00Z",
+                "p90": "2026-10-08T00:00:00Z",
+            }
+        }
+    }
+
+
+def test_rg7_plan_stats_sum_and_count():
+    stats = review_plan_stats(_rg7_review())
+    assert stats["nStops"] == 8
+    assert stats["totalNm"] == 1820 + 5153 + 12082 + 9152 + 400 + 300 + 250
+    assert stats["finalDest"] == "La Réunion"
+    assert review_plan_stats(None)["nStops"] is None
+    assert review_plan_stats({"legs": []})["totalNm"] is None
+
+
+def test_rg7_upcoming_from_current_and_air_skipped():
+    review = _rg7_review()
+    names = upcoming_stop_names(review, "Nouméa (Nouvelle-Calédonie)", arrived=False)
+    assert names == ["Nouméa", "Dzaoudzi", "Europa", "Tromelin", "La Réunion"]
+    after = upcoming_stop_names(review, "Nouméa", arrived=True)
+    assert after == ["Dzaoudzi", "Europa", "Tromelin", "La Réunion"]
+    assert upcoming_stop_names(review, "Inconnu") == []
+    with_air = {
+        "legs": [
+            {"from": "Cayenne", "to": "Halifax (Nouvelle-Écosse)", "legNm": 10},
+            {"from": "Cayenne", "to": "Nouméa (Nouvelle-Calédonie)", "legNm": 100},
+        ]
+    }
+    assert upcoming_stop_names(with_air, "Nouméa") == ["Nouméa"]
+
+
+def test_rg7_eta_payload_requires_members():
+    assert eta_payload_for_stop(_rg7_eta(), "Nouméa")["p10"].startswith("2026-10-03")
+    empty = {"stops": {"Nouméa": {"members": 0, "p10": "2026-10-01T00:00:00Z", "p90": "2026-10-02T00:00:00Z"}}}
+    assert eta_payload_for_stop(empty, "Nouméa") is None
+    assert eta_payload_for_stop(None, "Nouméa") is None
+
+
+def test_rg7_opening_uses_plan_review_totals():
+    review = _rg7_review()
+    stats = review_plan_stats(review)
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="fr", review=review,
+    )
+    blob = " ".join(opens)
+    assert "Berry-Mappemonde" in blob
+    assert "Saint-Maur" in blob
+    assert "La Rochelle" in blob
+    assert "par la route" in blob
+    assert "15 mai 2026" in blob
+    assert "huit escales" in blob
+    assert "29 157 milles" in blob
+    assert "La Réunion" in blob
+    assert stats["totalNm"] == 29157
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review,
+    )
+    text0 = plan["chapters"][0]["text"]
+    assert "L’expédition Berry-Mappemonde a quitté Saint-Maur" in text0 or "L'expédition Berry-Mappemonde a quitté Saint-Maur" in text0
+    assert "par la route jusqu" in text0
+    assert "huit escales" in text0
+    assert "29 157 milles" in text0
+    assert "La Réunion" in text0
+
+
+def test_rg7_opening_silent_on_missing_review_numbers():
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="fr", review=None,
+    )
+    blob = " ".join(opens)
+    assert "Berry-Mappemonde" in blob
+    assert "Saint-Maur" in blob
+    assert "par la route" in blob
+    assert "Le plan compte" not in blob
+    assert "escales" not in blob
+    assert "milles" not in blob
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    text0 = plan["chapters"][0]["text"]
+    assert "Le plan compte" not in text0
+
+
+def test_rg7_opening_english():
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="en", review=_rg7_review(),
+    )
+    blob = " ".join(opens)
+    assert "Berry-Mappemonde expedition left Saint-Maur" in blob
+    assert "15 May 2026" in blob
+    assert "by road to La Rochelle" in blob
+    assert "eight stops" in blob
+    assert "29,157 miles" in blob
+    assert "La Réunion" in blob
+    assert "quitté" not in blob
+
+
+def test_rg7_close_eta_range_and_upcoming():
+    review = _rg7_review()
+    eta = _rg7_eta()
+    w = {
+        "destName": "Nouméa (Nouvelle-Calédonie)", "toName": "Nouméa (Nouvelle-Calédonie)",
+        "destNm": 19055, "arrived": False,
+    }
+    live = {"sailNm": 18000, "filmNm": 18000, "status": "live"}
+    close = _close_sentence(w, live, "fr", review=review, eta=eta)
+    assert "Aujourd’hui" in close or "Aujourd'hui" in close
+    assert "Nouméa" in close
+    assert "entre le 3 octobre et le 8 octobre" in close
+    assert "Les escales à venir :" in close
+    assert close.index("Nouméa") < close.index("Dzaoudzi")
+    assert "Dzaoudzi" in close and "Europa" in close and "Tromelin" in close and "La Réunion" in close
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], live, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review, eta=eta,
+    )
+    last = plan["chapters"][-1]["text"]
+    assert "entre le 3 octobre et le 8 octobre" in last
+    assert "Les escales à venir :" in last
+    assert "Dzaoudzi" in last
+
+
+def test_rg7_close_no_invented_eta_when_missing():
+    review = _rg7_review()
+    w = {
+        "destName": "Nouméa (Nouvelle-Calédonie)", "toName": "Nouméa (Nouvelle-Calédonie)",
+        "destNm": 19055, "arrived": False,
+    }
+    live = {"sailNm": 18000, "filmNm": 18000}
+    close = _close_sentence(w, live, "fr", review=review, eta=None)
+    assert "entre le" not in close
+    assert "octobre" not in close
+    empty = {"stops": {"Nouméa": {"members": 0, "p10": "2026-11-01T00:00:00Z", "p90": "2026-11-04T00:00:00Z"}}}
+    silent = _close_sentence(w, live, "fr", review=review, eta=empty)
+    assert "novembre" not in silent
+    assert "entre le" not in silent
+    en_empty = _close_sentence(w, live, "en", review=review, eta=None)
+    assert "between" not in en_empty.lower()
+    assert "October" not in en_empty
+
+
+def test_rg7_close_english_with_eta():
+    close = _close_sentence(
+        {
+            "destName": "Nouméa (Nouvelle-Calédonie)",
+            "toName": "Nouméa (Nouvelle-Calédonie)",
+            "destNm": 19055, "arrived": False,
+        },
+        {"sailNm": 18000},
+        "en",
+        review=_rg7_review(),
+        eta=_rg7_eta(),
+    )
+    assert "Today" in close
+    assert "between 3 October and 8 October" in close
+    assert "Stops still to come:" in close
+    assert "Nouméa, Dzaoudzi, Europa, Tromelin, La Réunion" in close
+
+
+def test_rg8_priority_tiers_and_char_budget():
+    assert film_priority_tier(150) == 2
+    assert film_priority_tier(180) == 3
+    assert film_priority_tier(0) == 4
+    assert film_char_budget(150) == 2250
+    assert film_char_budget(180) == 2700
+    assert film_char_budget(0) == 0
+    assert film_estimated_seconds(2250) == 150
+    assert film_estimated_seconds(0) == 0
+
+
+def test_rg8_select_chapter_changes_by_tier():
+    t0 = 0
+    t1 = 10
+    changes = [
+        {"id": "esc", "kind": "escale", "score": 3, "tMs": 1, "title": "Arrivée à Ajaccio", "fact": "Ajaccio"},
+        {"id": "zee", "kind": "zee-enter", "score": 2, "tMs": 2, "t": "2026-05-16T08:00:00Z",
+         "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone"},
+        {"id": "amp", "kind": "amp", "score": 2, "tMs": 3, "nm": 8, "title": "Cabrera", "fact": "Cabrera"},
+        {"id": "proj", "kind": "project", "score": 2, "tMs": 4, "nm": 12, "gold_on": True,
+         "title": "Récif sentinelle", "fact": "Récif sentinelle"},
+        {"id": "coa", "kind": "coast", "score": 2, "tMs": 5, "t": "2026-05-16T12:00:00Z",
+         "title": "Camariñas", "fact": "Camariñas"},
+        {"id": "cli", "kind": "climo", "score": 2, "tMs": 6, "t": "2026-05-18T08:00:00Z",
+         "title": "alizés de nord-est", "fact": "alizés de nord-est",
+         "event": "ne_trades", "regimeId": "ne_trades", "source": "atlas", "nature": "season",
+         "windKnots": 15},
+        {"id": "sta", "kind": "station", "score": 2, "tMs": 7, "nm": 2,
+         "title": "Argo 6904216", "fact": "Argo 6904216", "source": "argo"},
+    ]
+    short = select_chapter_changes(changes, t0, t1, budget=True, tier=2)
+    kinds_s = {c["kind"] for c in short}
+    assert "escale" in kinds_s
+    assert "zee-enter" in kinds_s
+    assert "coast" not in kinds_s
+    assert "climo" not in kinds_s
+    assert "station" not in kinds_s
+    assert {c["kind"] for c in short if c["kind"] in {"amp", "project"}} == {"amp", "project"}
+
+    mid = select_chapter_changes(changes, t0, t1, budget=True, tier=3)
+    kinds_m = {c["kind"] for c in mid}
+    assert "coast" in kinds_m
+    assert "climo" in kinds_m
+    assert "station" not in kinds_m
+
+    full = select_chapter_changes(changes, t0, t1, budget=False)
+    kinds_f = {c["kind"] for c in full}
+    assert "station" in kinds_f
+    assert "coast" in kinds_f
+
+
+def test_rg8_three_variants_strictly_increasing():
+    a = _rich_raw(150)
+    b = _rich_raw(180)
+    c = _rich_raw(0)
+    assert a["chars"] < b["chars"] < c["chars"]
+    assert a["estimatedSeconds"] < b["estimatedSeconds"] <= c["estimatedSeconds"] or b["chars"] < c["chars"]
+    cps = 15
+    dur = a["chars"] / cps
+    assert dur <= 150 * 1.1
+    if c["chars"] >= film_char_budget(150):
+        assert 150 * 0.9 <= dur
+    blob150 = " ".join(ch.get("text") or "" for ch in a["chapters"])
+    blob180 = " ".join(ch.get("text") or "" for ch in b["chapters"])
+    assert "aliz" in blob180.lower() or "longe" in blob180 or "Galice" in blob180 or blob180 != blob150
+
+
+# ── RG14 : ancres au mot ────────────────────────────────────────────────────
+
+
+def test_rg14_anchor_at_place_name_minus_lookahead():
+    text = "Le 21 mai, le détroit de Gibraltar entre Tanger et Algeciras."
+    t_gib = 1_000
+    out = chapter_anchors(text, [(text, t_gib, {"place": "Gibraltar", "kind": "coast"})], 0, 2_000, "fr")
+    assert out
+    name_at = text.find("Gibraltar")
+    expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
+    assert abs(out[0]["charIdx"] - expect) <= 2
+    assert out[0]["charIdx"] != 0 or name_at <= FILM_VOICE_LOOKAHEAD_CHARS
+    assert _parse_iso_ms(out[0]["t"]) == t_gib
+
+
+def test_rg14_duration_two_anchors_depart_first_arrive_last():
+    text = "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai. Trois jours d'escale."
+    t_dep, t_arr = 100_000, 900_000
+    out = chapter_anchors(
+        text,
+        [
+            ("Le 15 mai, Berry-Mappemonde quitte La Rochelle.", t_dep, {"role": "depart", "place": "La Rochelle"}),
+            ("Arrivée à Ajaccio le 26 mai. Trois jours d'escale.", t_arr, {"role": "arrive", "place": "Ajaccio"}),
+        ],
+        0,
+        1_000_000,
+        "fr",
+    )
+    idxs = [a["charIdx"] for a in out]
+    assert idxs == sorted(idxs)
+    assert idxs[0] == 0
+    hold = text.find("Trois jours")
+    hold_end = text.rfind("escale")
+    hold_anchors = [a for a in out if a["charIdx"] >= hold - 2]
+    assert len(hold_anchors) >= 2, out
+    assert hold_anchors[0]["charIdx"] <= hold + 2
+    assert hold_anchors[-1]["charIdx"] >= hold_end - FILM_VOICE_LOOKAHEAD_CHARS - 2
+    arrive = text.find("Arrivée")
+    last_arr = text.find("mai", arrive)
+    arrive_hit = [a for a in out if arrive <= a["charIdx"] < hold]
+    assert arrive_hit
+    assert arrive_hit[0]["charIdx"] >= last_arr - FILM_VOICE_LOOKAHEAD_CHARS - 2
+    times = [_parse_iso_ms(a["t"]) for a in out]
+    assert times == sorted(times)
+    assert times[0] == t_dep
+    assert times[-1] == t_arr
+
+
+def test_rg14_group_dated_at_closest_or_split():
+    from film_script import _group_changes
+
+    t0 = 0
+    far = {"id": "a", "kind": "wx", "score": 2, "tMs": 10, "lat": 46.15, "lon": -1.16, "t": "1970-01-01T00:00:00Z"}
+    mid = {"id": "b", "kind": "wx", "score": 2, "tMs": 20, "lat": 36.14, "lon": -5.35, "t": "1970-01-01T00:00:20Z"}
+    near = {"id": "c", "kind": "wx", "score": 2, "tMs": 30, "lat": 41.9, "lon": 8.7, "t": "1970-01-01T00:00:30Z"}
+    clock = {
+        "t0": "1970-01-01T00:00:00Z",
+        "vertices": [{"iso": "1970-01-01T00:00:00Z", "lat": 36.2, "lon": -5.4}],
+    }
+    grouped = _group_changes([far, mid, near], 86_400_000, clock=clock)
+    groups = [c for c in grouped if str(c.get("id") or "").startswith("group:")]
+    assert len(groups) == 1
+    assert groups[0]["tMs"] == mid["tMs"]
+
+    exploded = _group_changes([far, mid, near], 86_400_000, clock=None)
+    assert not any(str(c.get("id") or "").startswith("group:") for c in exploded)
+    assert any(c.get("id") == "a" for c in exploded)
+
+
+def test_rg14_anchor_position_on_example_moments():
+    """Chaque ancre nommée : bateau à ≤ N nm du lieu (escale 5, marina 15, AMP/projet 30)."""
+    t_gib = _ms("2026-05-21T12:00:00Z")
+    t_aj = _ms("2026-05-24T12:51:00Z")
+    lr = {"name": "La Rochelle", "iso": "2026-05-15T12:00:00Z", "holdHours": 72, "lat": 46.15, "lon": -1.16, "filmNm": 122, "nm": 0}
+    aj = {"name": "Ajaccio (Corse)", "iso": "2026-05-24T12:51:00Z", "holdHours": 72, "lat": 41.9, "lon": 8.7, "filmNm": 1942, "nm": 1820}
+    clock = {
+        "t0": OFFICIAL_T0,
+        "marks": [CLOCK["marks"][0], lr, aj],
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": "2026-05-15T13:00:00Z", "lat": 46.14, "lon": -1.18, "vehicle": "main"},
+            {"iso": "2026-05-21T12:00:00Z", "lat": 36.12, "lon": -5.40, "vehicle": "main"},
+            {"iso": "2026-05-24T12:51:00Z", "lat": 41.90, "lon": 8.70, "vehicle": "quay"},
+        ],
+    }
+    journal = {
+        "moments": [
+            {"seq": 0, "t": "2026-05-15T12:00:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"},
+            ], "moment": {"leg": {"from": "Saint-Maur", "to": "La Rochelle"}}},
+            {"seq": 1, "t": "2026-05-21T12:00:00Z", "changes": [
+                {"kind": "coast", "score": 2, "title": "Algeciras", "fact": "Algeciras",
+                 "ports": ["Tanger", "Algeciras"], "lat": 36.14, "lon": -5.35, "tMs": t_gib},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+            {"seq": 2, "t": "2026-05-24T12:51:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+            ], "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}}},
+        ],
+        "latest": [],
+    }
+    live = {"filmNm": 2000, "sailNm": 1900, "iso": "2026-05-25T00:00:00Z", "status": "live"}
+    plan = build_raw_script(clock, clock["marks"], live, journal, lang="fr", seconds=0, now_ms=t_aj + 3_600_000)
+    limits = {"escale": 5.0, "stop": 5.0, "depart": 5.0, "marina": 15.0, "amp": 30.0, "project": 30.0, "coast": 30.0}
+    places = {
+        "gibraltar": (36.14, -5.35),
+        "tanger": (35.78, -5.81),
+        "algeciras": (36.13, -5.45),
+        "la rochelle": (46.15, -1.16),
+        "ajaccio": (41.9, 8.7),
+    }
+    checked = 0
+    for ch in plan["chapters"]:
+        text = ch.get("text") or ""
+        for a in ch.get("anchors") or []:
+            t = _parse_iso_ms(a["t"])
+            vert = min(clock["vertices"], key=lambda v: abs((_ms(v["iso"]) or 0) - t))
+            kind = str(a.get("kind") or "")
+            place = str(a.get("place") or "")
+            slice_txt = text[max(0, int(a["charIdx"])): int(a["charIdx"]) + 48]
+            blob = f"{place} {slice_txt}".casefold()
+            coords = None
+            for key, pair in places.items():
+                if key in blob:
+                    coords = pair
+                    break
+            if coords is None:
+                continue
+            d = _nm_between(coords[0], coords[1], vert["lat"], vert["lon"])
+            cap = 5.0 if any(k in blob for k in ("rochelle", "ajaccio")) else limits.get(kind, 30.0)
+            if "gibraltar" in blob or "tanger" in blob or "algeciras" in blob:
+                cap = 30.0
+            assert d is not None and d <= cap, (d, cap, place, slice_txt, vert, a)
+            checked += 1
+    assert checked >= 2
+    gib_ch = next((c for c in plan["chapters"] if "Gibraltar" in (c.get("text") or "")), None)
+    if gib_ch:
+        text = gib_ch["text"]
+        name_at = text.find("Gibraltar")
+        expect = max(0, name_at - FILM_VOICE_LOOKAHEAD_CHARS)
+        assert any(abs(int(a["charIdx"]) - expect) <= 8 for a in gib_ch.get("anchors") or []), gib_ch.get("anchors")
+
+
+# ── RC22 : budget 2:30, AMP et projet gardés ─────────────────────────────────
+
+
+def test_rc22_fit_chapter_text_keeps_amp_project_drops_p3():
+    amp = "Le 16 mai, à dix milles, l'aire marine protégée Pertuis charentais - Rochebonne."
+    proj = "Le 16 mai, à dix milles, le projet Récif sentinelle."
+    head = "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest."
+    arrival = "Arrivée à Ajaccio le 26 mai."
+    p3 = [
+        "Le 17 mai, longe la Galice — Camariñas, Muxía.",
+        "Le 18 mai, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison.",
+        "Le 19 mai, un flotteur Argo.",
+    ]
+    extra = [f"Le {20 + i} mai, longe la côte — Port-{i}." for i in range(40)]
+    waters = [
+        "Le 16 mai, les eaux espagnoles.",
+        "Le 17 mai, les eaux portugaises.",
+        "Le 18 mai, les eaux marocaines.",
+    ]
+    blob = " ".join([head, *waters, *p3, *extra, amp, proj, arrival])
+    budget = 320
+    assert len(blob) > budget * 1.1
+    out = fit_chapter_text(blob, budget, [], "fr")
+    assert "Rochebonne" in out
+    assert "Récif sentinelle" in out
+    assert "le projet" in out
+    assert "aire marine" in out
+    assert "Arrivée à Ajaccio" in out
+    assert "Berry-Mappemonde quitte" in out
+    assert "Port-39" not in out
+    assert "Port-20" not in out
+    assert len(out) <= max(int(budget * 1.1), budget)
+    en_amp = "On 16 May, ten miles away, the marine protected area Pertuis charentais - Rochebonne."
+    en_proj = "On 16 May, ten miles away, project Récif sentinelle."
+    en_blob = " ".join([
+        "On 15 May, Berry-Mappemonde leaves La Rochelle, heading southwest.",
+        *extra,
+        en_amp, en_proj,
+        "Arrival at Ajaccio on 26 May.",
+    ])
+    en_out = fit_chapter_text(en_blob, budget, [], "en")
+    assert "Rochebonne" in en_out
+    assert "Récif sentinelle" in en_out
+    assert "marine protected area" in en_out
+    assert "project " in en_out
+
+
+def _rc22_rich_journal():
+    zee_names = [
+        n for n in OFFICIAL_ROUTE_ZEE_SOURCES
+        if "Haute" not in n and "High" not in n and "Overlapping" not in n
+    ][:24]
+    start = datetime(2026, 6, 25, tzinfo=timezone.utc)
+    extra = []
+    for i, name in enumerate(zee_names):
+        t = start.timestamp() + i * 86_400
+        iso = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%dT08:00:00Z")
+        extra.append({
+            "seq": 100 + i, "t": iso, "signature": f"zee-rc22-{i}", "legIdx": 3,
+            "changes": [{"kind": "zee-enter", "score": 2, "title": name, "fact": name}],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        })
+    extra.append({
+        "seq": 200, "t": "2026-05-16T10:00:00Z", "signature": "amp-rochebonne", "legIdx": 1,
+        "changes": [{
+            "kind": "amp", "score": 2, "title": "Pertuis charentais - Rochebonne",
+            "fact": "Pertuis charentais - Rochebonne (10 nm)", "nm": 10,
+        }],
+        "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}},
+    })
+    extra.append({
+        "seq": 201, "t": "2026-05-16T14:00:00Z", "signature": "proj-recif", "legIdx": 1,
+        "changes": [{
+            "kind": "project", "score": 2, "title": "Récif sentinelle",
+            "fact": "Récif sentinelle (10 nm)", "nm": 10, "gold_on": True,
+        }],
+        "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}},
+    })
+    extra.append({
+        "seq": 202, "t": "2026-07-02T12:00:00Z", "signature": "coast-p3", "legIdx": 3,
+        "changes": [{
+            "kind": "coast", "score": 2, "title": "Camariñas", "fact": "Camariñas (5 nm)",
+        }],
+        "moment": {"leg": {
+            "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+        }},
+    })
+    moments = [m for m in MOMENTS["moments"] if "Cabrera" not in str(m)]
+    return {**JOURNAL, "moments": moments + extra}
+
+
+def test_rc22_rich_plan_150_seconds_keeps_amp_and_project():
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _rc22_rich_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(plan)
+    assert plan["targetSeconds"] == 150
+    assert plan["chars"] / 15 <= 150 * 1.1
+    assert "Rochebonne" in blob
+    assert "Récif sentinelle" in blob
+    assert "le projet" in blob
+    assert "aire marine" in blob
+    assert "Pétoncles" not in blob
+    assert "deposit" not in blob.lower()
+    assert "Chaluts" not in blob
+
+
+# ── RC26 : récit dense et réparti ───────────────────────────────────────────
+
+
+def test_rc26_zee_group_waters_grammar_fr_en():
+    """« les eaux françaises, puis celles de Montserrat » — jamais d'adjectif
+    orphelin ni de minuscule en tête de nom (recette Antilles)."""
+    from film_script import zee_group_waters
+
+    members = [
+        "Zone économique exclusive de la Dominique",
+        "Zone économique exclusive française",
+        "Zone économique exclusive (Montserrat)",
+    ]
+    fr = zee_group_waters(members, "fr")
+    assert "les eaux de la Dominique" in fr
+    assert "les eaux françaises" in fr
+    assert "celles de Montserrat" in fr
+    assert ", puis " in fr
+    # jamais « celles de françaises » ni « les eaux de montserrat » (minuscule)
+    assert "celles de française" not in fr
+    assert "de montserrat" not in fr
+    en = zee_group_waters(members, "en")
+    # EN : toujours « … waters », jamais « those of Montserratian »
+    assert "waters" in en
+    assert ", then " in en
+    assert "those of" not in en
+
+
+def test_rc26_film_free_item_target_floor_and_cap():
+    from film_script import film_free_item_target
+
+    day = 86_400_000
+    assert film_free_item_target(1 * day) == 4      # plancher
+    assert film_free_item_target(9 * day) == 6      # 1 item / 1,5 jour
+    assert film_free_item_target(30 * day) == 16    # plafonné
+    assert film_free_item_target(90 * day) == 16
+
+
+def test_rc26_initial_heading_follows_track_not_port_maneuver():
+    """La Rochelle → Ajaccio : la trace part au sud — jamais « nord-ouest »
+    à cause des manœuvres de port."""
+    from film_script import _initial_route_heading, heading_phrase
+
+    day_h = 24.0
+    vertices = [
+        # manœuvre de port vers le nord-ouest sur le premier mille
+        {"tHours": 0.0, "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+        {"tHours": 0.2, "lat": 46.16, "lon": -1.18, "vehicle": "main"},
+        # puis la vraie route : plein sud sur 60 milles
+        {"tHours": 4.0, "lat": 45.80, "lon": -1.30, "vehicle": "main"},
+        {"tHours": 12.0, "lat": 45.10, "lon": -1.40, "vehicle": "main"},
+        {"tHours": day_h, "lat": 44.40, "lon": -1.50, "vehicle": "main"},
+    ]
+    clock = {"t0": "2026-05-15T08:00:00Z", "vertices": vertices}
+    t0_ms = _ms("2026-05-15T08:00:00Z")
+    deg = _initial_route_heading(clock, t0_ms, nm=30.0)
+    assert deg is not None
+    phrase = heading_phrase(deg, "fr")
+    assert "nord-ouest" not in phrase
+    assert "sud" in phrase
+
+
+def test_rc26_site_dedup_shortest_name_wins():
+    """« Lilleau-des-Niges » et « Lilleau-des-Niges - Zone de Protection » :
+    un seul jalon, le nom le plus court, au temps du premier croisement."""
+    long_first = {
+        "id": "a1", "kind": "amp", "score": 2, "tMs": 1_000,
+        "title": "Lilleau-des-Niges - Zone de Protection",
+        "fact": "Lilleau-des-Niges - Zone de Protection (4,9 nm)",
+    }
+    short_after = {
+        "id": "a2", "kind": "amp", "score": 2, "tMs": 2_000,
+        "title": "Lilleau-des-Niges", "fact": "Lilleau-des-Niges (4.9 nm)",
+    }
+    from film_script import _usable_changes
+
+    rows = _usable_changes([long_first, short_after])
+    hits = [c for c in rows if "Lilleau" in str(c.get("title") or "")]
+    assert len(hits) == 1
+    assert hits[0]["title"] == "Lilleau-des-Niges"
+    assert hits[0]["tMs"] == 1_000  # premier croisement conservé
+
+
+def test_rc26_dock_keeps_at_most_two_items_one_proximity():
+    """Au quai : plus jamais six phrases — au plus deux, dont UNE de proximité."""
+    day = 86_400_000
+    t_a, depart, t_b = 0, day, 11 * day
+    changes = [
+        {"id": f"amp{i}", "kind": "amp", "score": 2, "tMs": 1000 + i,
+         "title": f"Réserve du pertuis {i}", "fact": f"Réserve du pertuis {i} (5 nm)"}
+        for i in range(4)
+    ] + [
+        {"id": "proj", "kind": "project", "score": 2, "tMs": 2000,
+         "title": "Projet balise côtière", "fact": "Projet balise côtière (6 nm)"},
+        {"id": "sta", "kind": "station", "score": 2, "tMs": 3000,
+         "title": "Campagne PELGAS", "fact": "Campagne PELGAS (5 nm)", "source": "campaign"},
+        {"id": "zee1", "kind": "zee-enter", "score": 2, "tMs": 3 * day,
+         "title": "Zone économique exclusive espagnole", "fact": "x"},
+        {"id": "zee2", "kind": "zee-enter", "score": 2, "tMs": 6 * day,
+         "title": "Zone économique exclusive portugaise", "fact": "y"},
+    ]
+    out = select_chapter_changes(changes, t_a, t_b, budget=False, depart_ms=depart)
+    dock = [c for c in out if (c.get("tMs") or 0) <= depart]
+    assert len(dock) <= 2
+    proximity = [c for c in dock if c.get("kind") in {"amp", "alert-on", "project", "marina"}]
+    assert len(proximity) <= 1
+    # la mer n'est pas muette pour autant
+    assert any((c.get("tMs") or 0) > depart for c in out)

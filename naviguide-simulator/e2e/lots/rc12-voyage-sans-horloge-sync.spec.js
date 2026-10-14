@@ -90,8 +90,8 @@ test("lot RC12 — POST /voyage immédiat, pas de 524, LIVE et Journal", async (
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await page.waitForTimeout(3000);
   await shot(page, "01-simulation");
 

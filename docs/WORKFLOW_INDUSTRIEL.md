@@ -139,7 +139,7 @@ l'API et l'interface du même checkout, ouvert Chrome sur
 chaque lot, avec les cases déjà cochées et les KO déjà écrits). S'il ne l'est
 pas : `python3 infra/agents/run_lots.py --recette`.
 
-Trois passes, dans l'ordre, **par écran** (Suivre, Simulation, Tracer ma route,
+Trois passes, dans l'ordre, **par écran** (Suivre, Tracer,
 Revoir l'expédition, panneau droit) et non par PR :
 
 1. **Regarder** : `RECETTE_DU_BATCH.md` § 1 dit, écran par écran, quoi cliquer

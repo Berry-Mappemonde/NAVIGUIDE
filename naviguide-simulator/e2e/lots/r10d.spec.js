@@ -97,8 +97,8 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
   }
   await shot(page, "01-revue");
 
-  await page.getByTestId("view-simulation").click();
-  await expect(page.getByTestId("view-simulation")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await page.getByTestId("ici-tab-now").evaluate((el) => el.click());
   const ask = page.getByTestId("ask-advice");
