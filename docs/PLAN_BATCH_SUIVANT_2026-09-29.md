@@ -1,4 +1,6 @@
-# Prochain batch — plan du 29 septembre 2026 (après la pile « film 1 + deux modes » mergée)
+# Prochain batch — plan du 29 septembre 2026
+
+> **Remplacé le 14 octobre par `docs/PLAN_BATCH_2026-10-14.md`** (revue du porteur : HC1 et les deux modes passent devant ; AM1, RG18, RG19, RG20, DM3 y sont repris). (après la pile « film 1 + deux modes » mergée)
 
 Le porteur a noté « dans le désordre » : DM3 (Fable obligatoire), les lots mis en attente (RG18, RG19, RG20), le lot
 AMP. Ce document met de l'ordre, ajoute ce que le chat de pilotage a relevé dans la journée, et dit comment lancer.
