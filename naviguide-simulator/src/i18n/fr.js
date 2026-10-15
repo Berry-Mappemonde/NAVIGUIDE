@@ -241,6 +241,7 @@ export default {
   filmStorySource: "Récit : {source}",
   filmStoryRaw: "Brut",
   filmStoryWritten: "Rédigé",
+  filmStoryWrittenSoon: "pas encore rédigé pour cette durée",
   recomputeConstraintsSkipper: "Sous les ordres du skipper : vent < {wind}, mer < {hs} — aucun pas de route dans ces conditions.",
   recomputeConstraintsDefault: "Sans ordre du skipper : seule la mer ≥ {hs} est évitée.",
   drawingInProgress: "Tracé en cours",

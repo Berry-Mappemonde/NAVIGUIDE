@@ -8,7 +8,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
+import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -383,19 +383,26 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
-                <span data-testid="film-source" hidden>
+                <span data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-[9px] text-white/70 whitespace-nowrap">
                   {filmSourceLabel(replay.source, t)}
                 </span>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
-                  {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
+                  {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
+                    const writtenSoon = id === "written" && !replay.hasWritten;
+                    const locked = Boolean(replay.active) || writtenSoon;
+                    return (
                     <button
                       key={id}
                       type="button"
                       data-testid={`film-style-${id}`}
                       aria-pressed={(replay.style || "raw") === id}
-                      aria-disabled={Boolean(replay.active)}
-                      disabled={Boolean(replay.active)}
-                      onClick={() => replay.onStyle?.(id)}
+                      aria-disabled={locked}
+                      disabled={locked}
+                      title={writtenSoon ? t("filmStoryWrittenSoon") : undefined}
+                      onClick={() => {
+                        if (writtenSoon) return;
+                        replay.onStyle?.(id);
+                      }}
                       className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
                         (replay.style || "raw") === id
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
@@ -404,7 +411,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     >
                       {t(key)}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : null}
@@ -599,20 +607,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   );
 });
 
-const FILM_SOURCE_I18N = Object.freeze({
-  "nemotron-lightning": "storySourceLightning",
-  "nemotron-super": "storySourceSuper",
-  "nemotron-ultra": "storySourceUltra",
-  nemotron: "storySourceSuper",
-  openrouter: "storySourceOpenrouter",
-  claude: "storySourceClaude",
-  rules: "storySourceRules",
-  budget: "storySourceBudget",
-  cache: "storySourceCache",
-});
-
 function filmSourceLabel(source, t) {
-  return t(FILM_SOURCE_I18N[source] || "storySourceRules");
+  return t(filmSourceKey(source));
 }
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */
