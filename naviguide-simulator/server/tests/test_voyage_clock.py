@@ -465,3 +465,48 @@ def test_ra8_past_vertex_hindcast_era5_speed_not_climatology():
     assert clock["kind"] in {"hindcast", "mixed"}
     stw = polar_boat_speed(C4_POLAR, sea["twa"], 24.0) * polar_efficiency()
     assert abs(sea["speedKnots"] - stw) < 0.3
+
+
+# ── Lot HC1 — troncature propre quand le vent RÉEL s'épuise ──────────────────
+
+
+def test_hc1_wind_exhausted_truncates_cleanly():
+    """Plus de vent réel → l'horloge s'arrête au dernier pas complet, dit où
+    et pourquoi — aucun sommet au vent inventé après la frontière."""
+    from voyage_clock import WindExhausted
+
+    era5 = {
+        "speedKnots": 20.0, "dirFromDeg": 0.0,
+        "kind": "hindcast", "regime": "hindcast", "sources": ["om-era5"],
+    }
+    t0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+    frontier = t0 + timedelta(hours=24)
+
+    def wind_fn(lat, lon, t):
+        if t >= frontier:
+            raise WindExhausted("pas encore publié")
+        return dict(era5)
+
+    points = [
+        {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+        {"lat": 46.15, "lon": -13.5, "cumNm": 500, "filmCum": 500, "jump": False},
+    ]
+    clock = build_voyage_clock(points, [], t0, polar_raw=None,
+                               start_at="saint-maur", wind_fn=wind_fn)
+    trunc = clock.get("truncated")
+    assert trunc is not None
+    assert trunc["reason"] == "pas encore publié"
+    assert trunc["pointIndex"] == 0
+    last = clock["vertices"][-1]
+    assert last["regime"] == "hindcast"
+    # ~24 h à 9 kn : la troncature tombe au pas en cours, pas plus loin.
+    assert last["tHours"] <= 24.0 + 1e-6
+    assert last["tHours"] >= 23.0
+    assert abs(trunc["pointCumNm"] - last["sailNm"]) < 1e-6
+    sea = [v for v in clock["vertices"] if (v.get("speedKnots") or 0) > 0]
+    assert all(v["regime"] == "hindcast" for v in sea)
+
+    # Sans troncature : pas de clé `truncated` (contrat d'hier inchangé).
+    full = build_voyage_clock(points, [], t0, polar_raw=None,
+                              start_at="saint-maur", wind_fn=lambda *a: dict(era5))
+    assert "truncated" not in full

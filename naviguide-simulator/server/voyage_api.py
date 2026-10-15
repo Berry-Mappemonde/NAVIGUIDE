@@ -1020,12 +1020,15 @@ def _kick_official_film_story(*, force: bool = False) -> bool:
 
 
 def _kick_official_hindcast(*, force: bool = False) -> bool:
+    """Lot HC1 : l'ERA5 officiel appartient au remplisseur (trajet réel figé,
+    cellules demandées par l'intégration — jamais par les dates de l'horloge
+    climatologique du jour). Ici on ne fait que le réveiller."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         return False
 
     def _load():
-        _fill_hindcast_then_forecast(OFFICIAL_VOYAGE_ID)
+        official_store.kick_worker()
         return {}
 
     return get_pipeline().kick(
