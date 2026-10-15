@@ -2172,7 +2172,7 @@ Branche fix/lot-rc30-ordre-et-phrases-entieres depuis la base indiquée. PR vers
 Interdits : un nombre, un nom, une date absents du stock ; toucher au budget 2:30 (RC27 est parqué) ; retirer une surface ; recalibrer la vitesse de la voix ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (phrases hors ordre avant/après, coupures), captures, reste à faire.
 ```
 
-<!-- LOT id="RC31" title="Film : l'aller-retour Halifax ↔ Saint-Pierre-et-Miquelon — deux vols, un second bateau, le catamaran qui attend à Cayenne" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="RC31" title="Film : l'aller-retour Halifax ↔ Saint-Pierre-et-Miquelon — deux vols, un second bateau, le catamaran qui attend à Cayenne" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E (E4) et docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
 
@@ -2204,7 +2204,7 @@ Branche fix/lot-rc32-toponymes depuis la base indiquée. PR vers main, gabarit R
 Interdits : traduire un nom de port, d'aire ou de projet ; un exonyme sans source ; retirer une surface ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="DM8" title="Suivre sur ma route : Revoir et le récit de la route que j'ai tracée" plan="docs/PLAN_BATCH_2026-10-14.md" size="L" deps="RC30" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="DM8" title="Suivre sur ma route : Revoir et le récit de la route que j'ai tracée" plan="docs/PLAN_BATCH_2026-10-14.md" size="L" deps="RC30" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 3 et § 4 (décisions du 14 oct. : encadré option A, IA = règles décident / Super rédige sur demande), docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
 
@@ -2240,7 +2240,7 @@ Branche fix/lot-rc27-plafond-230 depuis la base indiquée. PR vers main, gabarit
 Interdits : toucher au gabarit de l'intégral et du 3:00 ; retirer une surface visible ; retirer les pilules ; inventer une AMP ou un projet dans le stock ; recalibrer la voix ; texte d'aide ; chiffre LLM ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="RG11" title="« Rédigé » : le film réécrit par Nemotron 3 Super depuis les faits, vérifié, servi par le stock — l'objet du hackathon" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC27" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="RG11" title="« Rédigé » : le film réécrit par Nemotron 3 Super depuis les faits, vérifié, servi par le stock — l'objet du hackathon" plan="docs/PLAN_BATCH_2026-10-14.md" size="M" deps="RC27" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4, puis docs/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D8) et le « RG11 » (texte intégral). Tu travailles dans naviguide-simulator/. Décision du porteur du 14 oct. : « on le fait bien évidemment, c'est l'objet du hackathon » — les règles Devpost exigent un appel Nebius Token Factory à l'exécution, visible par les juges.
 
@@ -2256,7 +2256,7 @@ Branche fix/lot-rg11-redige-verifie depuis la base indiquée. PR vers main, gaba
 Interdits : un fait absent du JSON dans le texte rédigé ; un appel LLM depuis le chemin HTTP ou sans plafond ; retirer la pilule Brut ; afficher « Rédigé » quand c'est le brut ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, captures, reste à faire.
 ```
 
-<!-- LOT id="AM1" title="AMP croisées par polygone : entrées et proximité à la limite, partout sur la route" plan="docs/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="AM1" title="AMP croisées par polygone : entrées et proximité à la limite, partout sur la route" plan="docs/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_SUIVANT_2026-09-29.md § 1-2 et docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4 (gabarit d'étape). Tu travailles dans naviguide-simulator/ (le backend BI, backend/, est en LECTURE seulement).
 
@@ -2346,7 +2346,7 @@ Branche fix/lot-rg20-specs-verite depuis la base indiquée. PR vers main, gabari
 Interdits : modifier src/ ou server/*.py (hors fixture) — si une assertion dure révèle un vrai défaut d'application, note-le dans la PR (« reste à faire ») au lieu de la ramollir ; supprimer une spec ou un test entier ; ré-ajouter continue-on-error ; une fixture > 5 Mo ou contenant une clé ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (réserves avant/après par tranche), reste à faire.
 ```
 
-<!-- LOT id="DM3" title="Deux modes : le ménage — VIEW_TRACER, isTracer, branches mortes, ViewModeSwitch, helpers e2e" plan="docs/PLAN_DEUX_MODES_2026-09-29.md" size="M" deps="DM2" model="claude-fable-5-thinking-xhigh" -->
+<!-- LOT id="DM3" title="Deux modes : le ménage — VIEW_TRACER, isTracer, branches mortes, ViewModeSwitch, helpers e2e" plan="docs/PLAN_DEUX_MODES_2026-09-29.md" size="M" deps="DM2" -->
 ```text
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_DEUX_MODES_2026-09-29.md en entier (§ 0 liste ce qui est propre au mode et ce qui est moteur). Tu travailles dans naviguide-simulator/. Ce lot se lance SEUL, DM1 et DM2 mergés : ta base est main.
 
