@@ -46,6 +46,7 @@ OR_MODEL = os.environ.get("OPENROUTER_MODEL") or "openai/gpt-4o-mini"
 CLAUDE_MODEL = "claude-haiku-4-5"
 MAX_TOKENS = 400
 TIMEOUT = httpx.Timeout(25.0, connect=8.0)
+TIMEOUT_ULTRA = httpx.Timeout(45.0, connect=8.0)
 DEFAULT_PROVIDERS = ("tokenfactory", "nim", "openrouter", "claude")
 CACHE_NS = "llm-cache"
 CACHE_TTL_S = 24 * 3600.0
@@ -94,7 +95,11 @@ _PROMPT_LEAK_RE = re.compile(
     r"|ONLY the JSON of facts"
     r"|SEUL JSON de faits"
     r"|I need to answer using ONLY"
-    r"|using ONLY the JSON",
+    r"|using ONLY the JSON"
+    r"|The JSON does not"
+    r"|JSON does not contain"
+    r"|JSON does not hold"
+    r"|It lists:",
     re.IGNORECASE,
 )
 _PREAMBLE_LEAD_RES = (
@@ -563,13 +568,15 @@ def _http_error(provider: str, response: httpx.Response) -> RuntimeError:
 
 
 def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None) -> dict[str, Any]:
-    """Token Factory body. Nemotron 3 thinks by default unless we send the
-    official off switches: TF `reasoning_effort=none` and NVIDIA
-    `chat_template_kwargs.enable_thinking=false`. The old `{thinking: false}`
-    key is ignored; omitting flags (Lightning) also leaves thinking ON."""
+    """Token Factory HTTP body — not the Python SDK.
+
+    `extra_body` is an OpenAI *client* argument that the SDK flattens. Sending
+    it as a JSON field made Lightning 3.5 return empty content (tokenfactory
+    empty → NIM). Lightning is not a reasoning model: omit thinking flags.
+    Super / Ultra keep the official off switches at the top level only.
+    """
     t = llm_budget.normalize_tier(tier)
-    thinking_off = {"enable_thinking": False}
-    return {
+    payload = {
         "model": llm_budget.model_for(t),
         "messages": [
             {"role": "system", "content": system},
@@ -578,10 +585,11 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
         "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
         "temperature": 0.4,
         "stream": False,
-        "reasoning_effort": "none",
-        "chat_template_kwargs": thinking_off,
-        "extra_body": {"chat_template_kwargs": thinking_off},
     }
+    if t != "fast":
+        payload["reasoning_effort"] = "none"
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+    return payload
 
 
 async def _call_tokenfactory(
@@ -594,11 +602,13 @@ async def _call_tokenfactory(
         raise RuntimeError("NEBIUS_API_KEY missing")
     t = llm_budget.normalize_tier(tier)
     payload = _tf_payload(system, user, t, max_tokens)
+    timeout = TIMEOUT_ULTRA if t in {"deep", "judge"} else None
     async with _tf_limiter():
         r = await client.post(
             _tf_url(t),
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json=payload,
+            timeout=timeout,
         )
     if r.status_code >= 400:
         raise _http_error("tokenfactory", r)

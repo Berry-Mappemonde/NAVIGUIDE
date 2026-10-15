@@ -185,7 +185,54 @@ def journal_for_chat(limit: int = JOURNAL_TAIL) -> list[dict]:
     return merged[:limit]
 
 
-async def build_context(client_ctx: dict | None, now: datetime, http: httpx.AsyncClient | None = None) -> dict[str, Any]:
+_AROUND_WORDS = re.compile(
+    r"(?i)(amp|mpa|aire marine|protected area|zee|eez|port|marina|around|"
+    r"autour|pr[eè]s|near|nearby|formalit)",
+)
+
+
+def _mark_short_name(name: str) -> str:
+    return str(name or "").split("(")[0].strip()
+
+
+def stop_in_question(question: str, clock: dict | None) -> dict | None:
+    """Longest official-stop name that appears in the question, if any."""
+    q = (question or "").casefold()
+    if not q or not isinstance(clock, dict):
+        return None
+    best: tuple[int, dict] | None = None
+    for mark in clock.get("marks") or []:
+        if not isinstance(mark, dict):
+            continue
+        short = _mark_short_name(str(mark.get("name") or ""))
+        if len(short) < 4 or short.casefold() not in q:
+            continue
+        lat, lon = mark.get("lat"), mark.get("lon")
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            continue
+        if best is None or len(short) > best[0]:
+            best = (len(short), mark)
+    return None if best is None else best[1]
+
+
+def _around_point(question: str, clock: dict | None, boat_lat, boat_lon):
+    """Named stop first (Papeete AMP while the boat is at Mata-Utu). Else the boat."""
+    hit = stop_in_question(question, clock)
+    if hit is not None:
+        return float(hit["lat"]), float(hit["lon"]), "stop"
+    if boat_lat is not None and boat_lon is not None and _AROUND_WORDS.search(question or ""):
+        return float(boat_lat), float(boat_lon), "boat"
+    if boat_lat is not None and boat_lon is not None:
+        return float(boat_lat), float(boat_lon), "boat"
+    return None
+
+
+async def build_context(
+    client_ctx: dict | None,
+    now: datetime,
+    http: httpx.AsyncClient | None = None,
+    question: str | None = None,
+) -> dict[str, Any]:
     """The facts the bot may cite. Nothing here comes from the model."""
     from voyage_api import _grib_around_from_live, _latest_official_grib, _now  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
@@ -276,13 +323,16 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
         boat_out["atQuay"] = bool(live.get("atQuay"))
         ctx["boat"] = boat_out
 
-    if lat is not None:
+    point = _around_point(question or "", clock, lat, lon)
+    if point is not None:
+        around_lat, around_lon, around_basis = point
         try:
             from ici_engine import fill_dossier  # noqa: PLC0415
-            bag = await fill_dossier(lat, lon, 30.0, client=http, thin=True, rich=True)
+            bag = await fill_dossier(around_lat, around_lon, 30.0, client=http, thin=True, rich=True)
             nearby = bag.get("nearby") or {}
             science = bag.get("science")
             ctx["around"] = {
+                "at": {"lat": round(around_lat, 3), "lon": round(around_lon, 3), "basis": around_basis},
                 "zee": {k: (bag.get("zee") or {}).get(k) for k in ("name", "mrgid", "gold") if (bag.get("zee") or {}).get(k) is not None} or None,
                 "portsOfEntry": _slim_places(bag.get("poe")),
                 "protectedAreas": _slim_places(bag.get("amp")),
@@ -458,43 +508,63 @@ def chat_tier(question: str) -> str:
 
 def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
     en = (lang or "fr").lower().startswith("en")
+    missing = missing_info("en" if en else "fr")
     system = (
         "You are the logbook of the Berry-Mappemonde sailing expedition. Answer the skipper's question in at most "
-        "THREE plain sentences, using ONLY the JSON of facts provided (positions, wind, zones, ports, areas, "
+        "THREE plain sentences, from the facts provided (positions, wind, zones, ports, areas, "
         "the official logbook in journal — stops, EEZ, protected areas, weather, science, news — "
-        "polar, skipper's orders). Every figure you write must appear in the JSON, with its unit. If the JSON does not "
-        "hold the answer, say so in one sentence. Never write JSON key names such as atQuay or speedKnots; "
+        "polar, skipper's orders). Every figure you write must appear in the facts, with its unit. "
+        f"If a fact is missing, say exactly: {missing} "
+        "Never mention JSON, field names or keys such as atQuay or speedKnots; "
         "say the fact in words. No title, no list, no bold, nothing about tools or models. Thinking OFF."
         if en else
         "Tu es le journal de bord de l’expédition à la voile Berry-Mappemonde. Réponds à la question du skipper en "
-        "TROIS phrases simples au plus, à partir du SEUL JSON de faits fourni (positions, vent, zones, ports, aires, "
+        "TROIS phrases simples au plus, à partir des faits fournis (positions, vent, zones, ports, aires, "
         "le journal officiel dans journal — escales, ZEE, AMP, météo, science, veilles —, "
-        "polaire, ordres du skipper). Chaque chiffre que tu écris doit figurer dans le JSON, avec son unité. "
-        "Si le JSON ne contient pas la réponse, dis-le en une phrase. N’écris jamais les noms de champs JSON "
+        "polaire, ordres du skipper). Chaque chiffre que tu écris doit figurer dans les faits, avec son unité. "
+        f"Si un fait manque, dis exactement : {missing} "
+        "N’écris jamais JSON ni les noms de champs "
         "(atQuay, speedKnots…) : dis le fait en mots. Ni titre, ni liste, ni gras, rien sur les outils "
         "ou les modèles. Thinking OFF."
     )
-    user = f"{'Question' if en else 'Question'} : {question}\nJSON :\n{json.dumps(ctx, ensure_ascii=False, default=str)}"
+    user = f"{'Question' if en else 'Question'} : {question}\n{'Facts' if en else 'Faits'} :\n{json.dumps(ctx, ensure_ascii=False, default=str)}"
     return system, user
 
 
+_RAW_LINE_RE = re.compile(
+    r"\b(?:formalities|protectedAreas|portsOfEntry|around)\s*:\s*[^\n.]+(?:\.)?",
+    re.I,
+)
 _RAW_FIELD_RE = re.compile(
     r"\(?\b(?:"
     r"atQuay|speedKnots|windKnots|dirFromDeg|filmNm|sailNm|holdHours|"
     r"plannedKnots|remainingNm|fromStop|toStop|seaHours|eventId|stableKey|"
-    r"gold_pack|mrgid"
-    r")\s*:\s*[^)\s,;.]+\)?",
+    r"gold_pack|mrgid|zee|amp|poe"
+    r")\s*:\s*(?:\([^)]*\)|[^)\n;,(]+(?:,\s*)?)+\)?",
+    re.I,
+)
+_JSON_EXCUSE_RE = re.compile(
+    r"(?:the\s+)?JSON\s+does\s+not\b|JSON\s+ne\s+(?:contient|tient)\b|"
+    r"le\s+JSON\s+ne\s+(?:contient|tient)\b",
     re.I,
 )
 
 
 def strip_raw_fields(text: str) -> str:
-    """Drop leaked JSON keys such as « (atQuay: true) » from a chat answer."""
-    out = _RAW_FIELD_RE.sub("", text or "")
+    """Drop leaked JSON keys such as « (atQuay: true) » or « formalities: zee, amp »."""
+    out = _RAW_LINE_RE.sub("", text or "")
+    prev = None
+    while prev != out:
+        prev = out
+        out = _RAW_FIELD_RE.sub("", out)
     out = re.sub(r"\(\s*\)", "", out)
     out = re.sub(r"\s{2,}", " ", out)
     out = re.sub(r"\s+([,.;])", r"\1", out)
     return out.strip()
+
+
+def excuse_is_json_missing(text: str) -> bool:
+    return bool(_JSON_EXCUSE_RE.search(text or ""))
 
 
 def _numbers(text: str) -> set[str]:
@@ -612,7 +682,7 @@ def rules_answer(question: str, ctx: dict | None, lang: str | None) -> str:
 
 async def answer_question(question: str, lang: str, client_ctx: dict | None, now: datetime,
                           http: httpx.AsyncClient | None = None) -> dict[str, Any]:
-    ctx = await build_context(client_ctx, now, http)
+    ctx = await build_context(client_ctx, now, http, question=question)
     from toponyms import localize_ctx_places  # noqa: PLC0415
     localize_ctx_places(ctx, lang)
     try:
@@ -639,7 +709,7 @@ async def answer_question(question: str, lang: str, client_ctx: dict | None, now
     tidy = tidy_story(raw, None, max_sentences=ANSWER_SENTENCES, max_chars=ANSWER_CHARS)
     text, dropped = filter_numbers(tidy, ctx)
     text = strip_raw_fields(_clean_text(text))
-    if not text:
+    if not text or excuse_is_json_missing(text):
         text = missing_info(lang)
         source = "rules"
     return {"status": "ready", "answer": text, "engine": source, "source": source, "droppedSentences": dropped, "context": ctx}

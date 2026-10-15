@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -39,6 +40,8 @@ log = logging.getLogger("naviguide-simulator.escale")
 router = APIRouter()
 
 ESCALE_TTL_S = 7 * 86400.0
+ESCALE_CACHE_REV = "tf3"
+_NIM_SOURCE_RE = re.compile(r"nvidia|gpt-oss|\bnim\b", re.I)
 OSM_RADIUS_M = 6000          # ~3.2 nm around the stop: the town, not the coast
 BAG_RADIUS_NM = 15.0
 MAX_PER_SECTION = 6
@@ -253,11 +256,20 @@ async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.As
     tidy = _clean_text(tidy)
     if not tidy:
         return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "prompt leak"}
+    from logbook_chat import strip_raw_fields  # noqa: PLC0415
+    tidy = strip_raw_fields(tidy)
+    if not tidy:
+        return {"status": "failed", "text": None, "engine": source, "source": source, "reason": "prompt leak"}
     return {"status": "ready", "text": tidy, "engine": source, "source": source}
 
 
 def escale_key(name: str, lat: float, lon: float, lang: str) -> str:
-    return f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}"
+    return f"{name.strip().lower()[:60]}|{lat:.2f}|{lon:.2f}|{(lang or 'fr')[:2]}|{ESCALE_CACHE_REV}"
+
+
+def nim_paragraph(fiche: dict | None) -> bool:
+    src = str(((fiche or {}).get("paragraph") or {}).get("source") or "")
+    return bool(_NIM_SOURCE_RE.search(src))
 
 
 def _sanitize_item_text(item: dict) -> dict:
@@ -309,7 +321,8 @@ def sanitize_fiche(val: dict) -> dict | None:
     out = dict(val)
     para = out.get("paragraph")
     if isinstance(para, dict) and isinstance(para.get("text"), str) and para["text"].strip():
-        cleaned = _clean_text(para["text"])
+        from logbook_chat import strip_raw_fields  # noqa: PLC0415
+        cleaned = strip_raw_fields(_clean_text(para["text"]))
         if not cleaned:
             return None
         out["paragraph"] = {**para, "text": cleaned}
@@ -429,9 +442,13 @@ async def get_escale(
                 pearl_store.kv_delete("escale", key)
                 hit = None
             elif sanitized:
-                if sanitized != val:
-                    pearl_store.kv_put("escale", key, sanitized)
-                return {**sanitized, "cached": True}
+                if nim_paragraph(sanitized):
+                    pearl_store.kv_delete("escale", key)
+                    hit = None
+                else:
+                    if sanitized != val:
+                        pearl_store.kv_put("escale", key, sanitized)
+                    return {**sanitized, "cached": True}
     else:
         # A refresh also re-collects the stop's own pearl (its ZEE, its layers).
         from ici_engine import thin_cache_drop, thin_cache_key  # noqa: PLC0415
