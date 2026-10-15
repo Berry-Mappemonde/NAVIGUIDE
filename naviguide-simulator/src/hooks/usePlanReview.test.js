@@ -332,7 +332,8 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
     assert.match(app, /liveFilmNm: legendLiveFilmNm/);
     assert.match(app, /liveFilmNm=\{legendLiveFilmNm\}/);
     assert.doesNotMatch(app, /liveFilmNm=\{official\.live\?\.filmNm\}/);
-    assert.match(app, /suivreBerry \? \(official\.clock\?\.marks \|\| \[\]\) : \(voyage\.clock\?\.marks \|\| \[\]\)/);
+    assert.match(app, /\(suivreBerry \? official\.clock\?\.marks : null\) \|\| voyage\.clock\?\.marks \|\| \[\]/);
+    assert.match(app, /datedLegend \? legendMarks : \(officialClock\.marks \|\| legendMarks\)/);
   });
 
   it("lot DM7 — legendNowAndLive : Tracer ignore official.live (Papeete)", () => {
