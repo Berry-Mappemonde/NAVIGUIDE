@@ -3244,3 +3244,64 @@ def test_am1b_two_inside_pearls_one_amp_sentence():
     hits = [c for c in rows if "Cabrera" in str(c.get("title") or "")]
     assert len(hits) == 1
     assert change_sentence(hits[0], "fr").count("entre dans") == 1
+
+
+def test_phrase_for_ici_event_matches_film_zee():
+    from film_script import event_sentence, phrase_for_ici_event
+
+    t = "2026-05-26T08:00:00Z"
+    film = event_sentence({
+        "kind": "zee",
+        "name": "Spanish Exclusive Economic Zone",
+        "t": t,
+        "entry": {"t": t, "name": "Spanish Exclusive Economic Zone"},
+    }, "fr")
+    ici = phrase_for_ici_event({
+        "type": "zee-enter",
+        "name": "Spanish Exclusive Economic Zone",
+        "t": t,
+        "payload": {"zee": {"name": "Spanish Exclusive Economic Zone", "mrgid": 5693}},
+    }, "fr")
+    assert ici == film
+    assert ici
+    assert "eaux" in ici.lower() or "espagn" in ici.lower()
+
+
+def test_phrase_for_ici_event_matches_film_amp_enter():
+    from film_script import event_sentence, phrase_for_ici_event
+
+    t = "2026-06-02T08:00:00Z"
+    film = event_sentence({
+        "kind": "amp",
+        "name": "Cabrera",
+        "t": t,
+        "entry": {"t": t, "name": "Cabrera", "event": "enter", "inside": True, "nm": 0, "facts": {"nm": 0}},
+    }, "fr")
+    ici = phrase_for_ici_event({
+        "type": "amp-enter",
+        "name": "Cabrera",
+        "t": t,
+        "payload": {"amp": {"name": "Cabrera", "site_id": "ES-CAB", "nm": 0}},
+    }, "fr")
+    assert ici == film
+    assert "entre dans l'aire marine protégée" in ici
+    assert "Cabrera" in ici
+
+
+def test_attach_ici_film_phrases_does_not_mutate_cache():
+    from film_script import attach_ici_film_phrases
+
+    bag = {
+        "at": {"lat": 46.15, "lon": -1.16},
+        "zee": {"name": "French Exclusive Economic Zone", "mrgid": 5677},
+        "amp": [{"name": "Pertuis charentais", "site_id": "fr-pertuis", "nm": 8}],
+        "poe": [{"name": "La Rochelle", "nm": 1.2}],
+    }
+    out = attach_ici_film_phrases(bag, t="2026-05-15T08:00:00Z")
+    assert bag.get("filmPhrases") is None
+    assert out is not bag
+    assert out["filmPhrases"]["zee-enter"]["fr"]
+    assert out["filmPhrases"]["zee-enter"]["en"]
+    amp_fr = out["filmPhrases"]["amp-enter:fr-pertuis"]["fr"]
+    assert "aire marine" in amp_fr.lower() or "Pertuis" in amp_fr
+    assert out["filmPhrases"]["poe-ahead:La Rochelle"]["fr"]

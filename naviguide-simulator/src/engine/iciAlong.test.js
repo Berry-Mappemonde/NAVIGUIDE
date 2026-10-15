@@ -322,7 +322,7 @@ describe("iciAlong events + ledger", () => {
     }]);
     assert.equal(afterSwitch.length, 1, "no second pill, no rewind");
     assert.equal(afterSwitch[0].story.status, "ready");
-    assert.equal(afterSwitch[0].phrase, told.story.text, "the ready text stays");
+    assert.equal(afterSwitch[0].story.text, told.story.text, "the ready story stays");
     assert.equal(afterSwitch[0].skipper.profile, "cruise", "the story keeps the orders it was written under");
     assert.equal(afterSwitch[0].skipper.used[0].value, 3.5);
 
