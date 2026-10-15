@@ -923,7 +923,11 @@ export class MapSceneController {
       this.waypointsDirty = true;
       return;
     }
-    const source = cfg.drawingMode
+    // DM6 — brouillon vide : drapeaux Berry (Ajaccio, lot R7). Dès le
+    // premier point, seuls les ronds de tracé. Le clic fiche n'est un
+    // clic « dessin » que s'il y a déjà un point.
+    const drawingHasPoints = Boolean(cfg.drawingMode && (cfg.drawnPoints || []).length);
+    const source = drawingHasPoints
       ? (cfg.drawnPoints || []).map((point, index) => ({ ...point, name: point.name || `${index + 1}`, flag: "", flags: [] }))
       : (cfg.customRoute ? [] : (cfg.points || []));
     const inputs = {
@@ -968,7 +972,7 @@ export class MapSceneController {
     const cameraLng = this.map.getCenter()?.lng;
     source.forEach((point, index) => {
       const srcs = waypointFlagSrcs(point);
-      if (!srcs.length && !cfg.drawingMode) return;
+      if (!srcs.length && !drawingHasPoints) return;
       const offset = offsets[index] || [0, 0];
       const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
@@ -1027,7 +1031,7 @@ export class MapSceneController {
           this.waypointMarkers.set(key, marker);
         }
         marker._naviguideWaypoint = point;
-        marker._naviguideDrawing = cfg.drawingMode;
+        marker._naviguideDrawing = drawingHasPoints;
         marker._naviguideIndex = index;
         marker.setLatLng([point.lat, lng]);
         if (marker._naviguideIconKey !== iconKey) {

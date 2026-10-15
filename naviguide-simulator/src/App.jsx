@@ -1250,10 +1250,9 @@ export default function App() {
     setCameraFollow(false);
     setDrawingMode(true);
     berryFetchIdRef.current += 1;
-    setExpeditionPlan(null);
-    setBriefingLoading(false);
-    // Lot I: nothing of the official route lingers on the map while drawing —
-    // no briefing pin, no escale sheet, no replay.
+    // DM6 — un brouillon vide garde le briefing Berry (lot M). On ne le
+    // vide plus à l'ouverture du dessin ; le pin carte et la fiche d'escale
+    // restent coupés (lot I).
     sceneApiRef.current?.briefing?.clear?.();
     setEscaleStop(null);
     if (replay.active) replay.stop();
@@ -1520,7 +1519,9 @@ export default function App() {
   }, [officialClock, isSuivre, sceneApi]);
   // Revue de plan par règles (lot K): legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
-    enabled: Boolean(officialClock),
+    // DM5 — GET /voyage/official/plan-review (et /eta) seulement en
+    // Suivre × Berry. Tracer et Suivre × ma route gardent le repli local.
+    enabled: Boolean(suivreBerry && officialClock),
     frozen: replay.active,
     clock: officialClock,
     nowMs: clockNowMs,

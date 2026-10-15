@@ -131,6 +131,8 @@ describe("MapSceneController — zoom (lot U / RG15)", () => {
     assert.equal(calls.sheet.length, 1, "le clic dessin n'ouvre pas la fiche");
     assert.match(src, /onWaypointClick\?\.\(marker\._naviguideWaypoint, marker\._naviguideIndex\)/);
     assert.match(src, /if \(marker\._naviguideDrawing\) \{\s*this\.callbacks\.onDrawingWaypointClick/);
+    assert.match(src, /const drawingHasPoints = Boolean\(cfg\.drawingMode && \(cfg\.drawnPoints \|\| \[\]\)\.length\)/);
+    assert.match(src, /marker\._naviguideDrawing = drawingHasPoints/);
   });
 
   it("lot RD2 — rond de tracé via drawingPinMetrics, plus d'icône 24×24 décalée", () => {
