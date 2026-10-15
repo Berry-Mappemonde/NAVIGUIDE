@@ -60,6 +60,13 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   await expect(page.getByTestId("route-import")).toBeVisible();
   await shot(page, "02-tracer-berry");
 
+  // DM9 — Tracer : Revue du plan + Récit seulement (Maintenant / Journal masqués).
+  await showLeftPanel(page);
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+
   // (c) Recalculer / Demander conseil : présents (actifs ou non, comme aujourd'hui).
   await expect(page.getByTestId("ask-advice")).toBeAttached();
 

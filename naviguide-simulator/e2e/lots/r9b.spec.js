@@ -163,8 +163,9 @@ test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
   if (!apiUp) {
     await page.getByTestId("view-tracer").click();
     await showLeftPanel(page);
-    await page.getByTestId("ici-tab-journal").evaluate((el) => el.click());
-    await expect(page.getByTestId("ici-journal-entry").first()).toBeAttached({ timeout: 10_000 });
+    await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+    await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+    await expect(page.getByTestId("ici-tab-story")).toBeVisible();
   }
   await shot(page, "01-journal");
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
