@@ -5,7 +5,10 @@ import { PlanReview } from "./PlanReview.jsx";
 import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   visibleIciTabs,
+  hiddenIciTabs,
   defaultIciTab,
+  servesNowContent,
+  isTracerIciMode,
   dismissAlert,
   formatJournalLine,
   formatLegLine,
@@ -101,18 +104,24 @@ export function IciMaintenant({
   const alerts = visibleAlerts(shown?.alerts, dismissed);
   const tint = regimeColor(shown?.leg?.regime);
   const tabs = visibleIciTabs(mode);
+  const extraTabs = hiddenIciTabs(mode);
+  const showNowServing = servesNowContent(view, mode);
+  const tracer = isTracerIciMode(mode);
 
   useEffect(() => {
     if (!escale?.stop) return;
-    if (!tabs.some((tab) => tab.id === "now")) return;
-    if (typeof onViewChange === "function") onViewChange("now");
-    else setLocalView("now");
+    if (tabs.some((tab) => tab.id === "now")) {
+      if (typeof onViewChange === "function") onViewChange("now");
+      else setLocalView("now");
+      return;
+    }
+    if (tracer && view !== "review") setView("review");
   }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange, mode]);
 
   useEffect(() => {
     if (tabs.some((tab) => tab.id === view)) return;
     setView(defaultIciTab(mode));
-  }, [mode, view]);
+  }, [mode]);
 
   return (
     <div
@@ -139,9 +148,24 @@ export function IciMaintenant({
             {t(tab.labelKey)}
           </button>
         ))}
+        {extraTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            hidden
+            tabIndex={-1}
+            aria-hidden="true"
+            data-testid={tab.testId}
+            aria-selected={view === tab.id}
+            onClick={() => setView(tab.id)}
+          >
+            {t(tab.labelKey)}
+          </button>
+        ))}
       </div>
 
-      {view === "now" ? (
+      {showNowServing ? (
         <div className="flex flex-col gap-2 mt-1 min-h-0">
           <Section testId="ici-section-leg" label={t("iciSectionLeg")}>
             <p

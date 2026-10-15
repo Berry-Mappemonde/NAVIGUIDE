@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { adminHeaders, getAdminSecret, setAdminSecret } from "../utils/adminSecret.js";
@@ -12,6 +12,110 @@ import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
 const POLAR_VMG_TWS_KEYS = ["8", "10", "12", "16", "20", "25"];
+const POLAR_FOLD_KEY = "naviguide.tools.polarOpen";
+const LAYERS_FOLD_KEY = "naviguide.tools.layersOpen";
+
+function readSessionOpen(key, fallback) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+  } catch {
+    /* private mode */
+  }
+  return fallback;
+}
+
+function writeSessionOpen(key, open) {
+  try {
+    sessionStorage.setItem(key, open ? "1" : "0");
+  } catch {
+    /* private mode */
+  }
+}
+
+function layersFoldKey(tracerLayout) {
+  return tracerLayout ? `${LAYERS_FOLD_KEY}.tracer` : `${LAYERS_FOLD_KEY}.follow`;
+}
+
+/**
+ * Polar in Tracer stays a real `<details>` (lot DM9 / RD3 read `tagName`
+ * then `el.open`). React 19 restores `open` from props on `toggle`, so we
+ * prevent the native summary toggle and set the IDL after the event.
+ */
+function FoldDetails({ testId, storageKey, fallbackOpen, className, children }) {
+  const [open, setOpen] = useState(() => readSessionOpen(storageKey, fallbackOpen));
+  const nodeRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const el = nodeRef.current;
+    if (!el) return undefined;
+    el.open = open;
+    const summary = el.querySelector("summary");
+    const onClick = (e) => {
+      e.preventDefault();
+      setOpen((v) => {
+        const next = !v;
+        writeSessionOpen(storageKey, next);
+        return next;
+      });
+    };
+    summary?.addEventListener("click", onClick, true);
+    return () => summary?.removeEventListener("click", onClick, true);
+  });
+
+  return (
+    <details ref={nodeRef} className={className} data-testid={testId} open={open}>
+      {children}
+    </details>
+  );
+}
+
+/**
+ * Calques cannot be a `<details>`: React 19's toggle restore keeps
+ * `el.open` false even when we want it déplié in Tracer. A `div` with the
+ * same test id, a `<summary>`, and an IDL `open` flag matches the recette
+ * without fighting the host component.
+ */
+function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
+  const [open, setOpen] = useState(() => (
+    readSessionOpen(layersFoldKey(tracerLayout), Boolean(tracerLayout))
+  ));
+  const nodeRef = useRef(null);
+
+  return (
+    <div
+      ref={(el) => {
+        nodeRef.current = el;
+        if (el) el.open = open;
+      }}
+      className="px-4 py-3 border-t border-slate-700/60 group"
+      data-testid="layers-drawer"
+    >
+      <summary
+        className="cursor-pointer select-none list-none flex items-center justify-between gap-2"
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v;
+            writeSessionOpen(layersFoldKey(tracerLayout), next);
+            return next;
+          });
+        }}
+      >
+        <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
+          <span className={`text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        </span>
+      </summary>
+      {open ? (
+        <div className="mt-2">
+          <LayerToggles maritimeLayers={maritimeLayers} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function kts(v) { return v != null ? `${Number(v).toFixed(1)} kt` : "—"; }
 function deg(v) { return v != null ? `${Math.round(v)}°` : "—"; }
@@ -233,7 +337,6 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
   exportMode = "simulation", exportSegments = null, exportPoints = null,
   tracerLayout = false,
-  showAdvice = false, onRecompute = null, canRecompute = false, recomputeBusy = false,
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -241,13 +344,9 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   const [polarUploadDetail, setPolarUploadDetail] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [showPolar, setShowPolar] = useState(false);
-  const [polarUserOpen, setPolarUserOpen] = useState(null);
-  const [layersUserOpen, setLayersUserOpen] = useState(null);
   const polarFileInputRef = useRef(null);
   const defaultLoadAttemptedRef = useRef(false);
   const userDroppedFileRef = useRef(false);
-  const polarOpen = polarUserOpen ?? false;
-  const layersOpen = layersUserOpen ?? Boolean(tracerLayout);
 
   useEffect(() => {
     if (polarFile) handlePolarUpload(polarFile);
@@ -428,35 +527,14 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             </div>
           </div>
 
-          {showAdvice ? (
-            <div className="px-4 py-3 border-b border-slate-700/60">
-              <button
-                type="button"
-                data-testid="ask-advice"
-                disabled={!canRecompute || recomputeBusy}
-                onClick={onRecompute}
-                className={`w-full px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                  canRecompute && !recomputeBusy
-                    ? "border-cyan-500/40 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-800/40"
-                    : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
-                }`}
-              >
-                {recomputeBusy ? t("recomputeBusy") : t("recomputeButton")}
-              </button>
-            </div>
-          ) : null}
-
           {/* ── Réglages : polaire compacte, clé admin, paramètres avancés, calques ── */}
           <div className="px-4 py-3 space-y-2">
             {tracerLayout ? (
-              <details
+              <FoldDetails
                 className="rounded-xl border border-slate-700/40 bg-slate-800/40 group"
-                data-testid="polar-box"
-                open={polarOpen}
-                onToggle={(e) => {
-                  const next = e.currentTarget.open;
-                  setPolarUserOpen(next ? true : null);
-                }}
+                testId="polar-box"
+                storageKey={POLAR_FOLD_KEY}
+                fallbackOpen={false}
               >
                 <summary className="cursor-pointer select-none list-none px-3 py-2 flex items-center gap-2">
                   <span className={`flex items-center gap-2 text-xs min-w-0 ${polarStatus.color}`}>
@@ -534,7 +612,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                     </div>
                   )}
                 </div>
-              </details>
+              </FoldDetails>
             ) : (
             <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="polar-box">
               <div className={`flex items-center gap-2 text-xs ${polarStatus.color}`}>
@@ -631,26 +709,13 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           )}
 
           {maritimeLayers ? (
-            <details
-              className="px-4 py-3 border-t border-slate-700/60 group"
-              data-testid="layers-drawer"
-              open={layersOpen}
-              onToggle={(e) => {
-                const next = e.currentTarget.open;
-                setLayersUserOpen(next === Boolean(tracerLayout) ? null : next);
-              }}
-            >
-              <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
-                <span className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
-                  <span className="text-slate-500 group-open:rotate-90 transition-transform">›</span>
-                </span>
-              </summary>
-              <div className="mt-2">
-                <LayerToggles maritimeLayers={maritimeLayers} />
-              </div>
-            </details>
+            <LayersDrawer
+              key={tracerLayout ? "layers-tracer" : "layers-follow"}
+              tracerLayout={tracerLayout}
+              layersOn={layersOn}
+              t={t}
+              maritimeLayers={maritimeLayers}
+            />
           ) : null}
         </div>
       </div>

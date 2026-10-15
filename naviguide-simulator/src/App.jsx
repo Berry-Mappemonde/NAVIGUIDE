@@ -1819,10 +1819,6 @@ export default function App() {
         exportSegments={drawingMode ? drawnSegments : activeSegments}
         exportPoints={drawingMode ? drawnPoints : legendMarks}
         tracerLayout={!isSuivre}
-        showAdvice={!isSuivre}
-        onRecompute={handleRecompute}
-        canRecompute={canRecompute}
-        recomputeBusy={vessel.busy}
       />
 
       {!sceneReady && !drawingMode && (

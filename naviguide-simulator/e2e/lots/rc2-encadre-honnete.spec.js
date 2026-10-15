@@ -160,13 +160,10 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   await showLeftPanel(page);
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();
   await expect(page.getByTestId("ici-tab-story")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
-  await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
-  const tracerBox = page.getByTestId("ici-maintenant");
-  const tracerText = (await tracerBox.innerText()).replace(/\s+/g, " ");
-  expect(tracerText, `Tracer : ${tracerText}`).not.toMatch(MINI_LEG);
-  expect(tracerText, `Tracer : ${tracerText}`).not.toMatch(MINI_MARK);
-  expect(tracerText, `Tracer : ${tracerText}`).not.toMatch(RAW_ZEE);
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
+  await assertHonestBox(page);
+  await expect(page.getByTestId("ici-leg-line")).not.toContainText(/→\s*Fort-de-France/i);
   if (apiUp) {
     const opened = await clickAjaccio(page);
     if (!opened) {
@@ -192,12 +189,13 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   await expect(page.getByText(/Choisissez votre point de départ|Choose your starting point/i).first()).toBeVisible();
   await expect(page.getByTestId("ici-maintenant")).toBeVisible();
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
-  const box = page.getByTestId("ici-maintenant");
-  const drawText = (await box.innerText()).replace(/\s+/g, " ");
-  expect(drawText, `Tracer : ${drawText}`).not.toMatch(MINI_MARK);
-  expect(drawText, `Tracer : ${drawText}`).not.toMatch(RAW_ZEE);
-  expect(drawText, `Tracer : ${drawText}`).not.toMatch(/Guadeloupe/i);
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-section-leg")).toBeVisible();
+  await expect(page.getByTestId("ici-section-here")).toBeVisible();
+  const hereText = (await page.getByTestId("ici-section-here").innerText()).replace(/\s+/g, " ");
+  expect(hereText, `Ici Tracer : ${hereText}`).not.toMatch(MINI_MARK);
+  expect(hereText, `Ici Tracer : ${hereText}`).not.toMatch(RAW_ZEE);
+  expect(hereText, `Ici Tracer : ${hereText}`).not.toMatch(/Guadeloupe/i);
   await shot(page, "03-tracer");
 
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);

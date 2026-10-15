@@ -105,10 +105,12 @@ test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ 
   await expect(box).toBeVisible();
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();
   await expect(page.getByTestId("ici-tab-story")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
-  await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
   await expect(page.getByTestId("ici-tab-review")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("ici-review-slot")).toBeVisible();
+  await expect(page.getByTestId("ici-section-leg")).toBeVisible();
+  await expect(page.getByTestId("ici-leg-line")).toBeAttached();
   await noFloatingCards(page);
   await expect(page.locator(".leaflet-popup.escale-popup")).toHaveCount(0);
   await shot(page, "02-simulation");

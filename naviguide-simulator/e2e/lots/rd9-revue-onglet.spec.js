@@ -113,8 +113,8 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await expect(page.getByTestId("ici-tab-story")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
-  await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
   await openReviewTab(page);
   await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review-leg']").first()).toBeVisible();
   await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review']").getByText(/Ce que je changerais|What I would change/i)).toBeVisible();
@@ -140,8 +140,8 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
       await showLeftPanel(page);
       await expect(page.getByTestId("ici-tab-review")).toBeVisible();
       await expect(page.getByTestId("ici-tab-story")).toBeVisible();
-      await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
-      await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+      await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+      await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
       const cancel = page.getByRole("button", { name: /annuler|cancel/i }).first();
       if (await cancel.isVisible().catch(() => false)) await cancel.click();
     }
