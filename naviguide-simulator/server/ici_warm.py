@@ -618,6 +618,17 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["finishedAt"] = time.time()
         return status()
     month = None
+    try:
+        import httpx as _httpx  # noqa: PLC0415
+        from ici_engine import refresh_amp_layer_sig  # noqa: PLC0415
+        async with _httpx.AsyncClient(timeout=2.0) as _http:
+            await refresh_amp_layer_sig(_http)
+    except Exception:
+        try:
+            from ici_engine import load_amp_layer_sig  # noqa: PLC0415
+            load_amp_layer_sig()
+        except Exception:
+            pass
 
     async def one(lat: float, lon: float) -> None:
         key = thin_cache_key(lat, lon, 30.0)
