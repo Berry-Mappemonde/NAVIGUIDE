@@ -1,8 +1,10 @@
 """Veille Tavily par escale (U10) + enrichissement science / projet (U12).
 
-Lot L4. Un `search` par escale et par jour (J-10 → J+2), résumé Nano
-(`tier=fast`) sans chiffre nouveau. Un `extract` par entité, cache
-définitif ns `enrich`. Jamais d'appel depuis le navigateur.
+Lot L4. Un `search` par escale — UNE FOIS, quand l'escale entre dans la
+fenêtre J-10 → J+2 (décision du porteur, 15 oct. : plus une recherche par
+jour ni toutes les 6 h) — résumé Nano (`tier=fast`) sans chiffre nouveau.
+Cache définitif ns `watch` (`<slug>` et `done:<slug>`). Un `extract` par
+entité, cache définitif ns `enrich`. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
 
@@ -118,7 +120,11 @@ def _day_start(now: datetime) -> datetime:
 
 
 def expires_at(now: datetime) -> datetime:
-    """Fin exclusive de J+2 (visible le jour J, J+1 et J+2)."""
+    """Fin exclusive de J+2 (visible le jour J, J+1 et J+2) — J = le jour donné.
+
+    Une veille faite une fois par escale expire par rapport à l'ARRIVÉE à
+    l'escale (`news_entry` passe `stop["arrival"]`), pas au jour de la recherche :
+    cherchée à J-10, elle reste lisible jusqu'à deux jours après l'arrivée."""
     return _day_start(now) + timedelta(days=WATCH_EXPIRE_DAYS + 1)
 
 
@@ -229,10 +235,25 @@ def _index_put(day: str, entry: dict[str, Any]) -> None:
     rows = [e for e in _index_get(day) if e.get("id") != entry.get("id")]
     rows.append(entry)
     _cache_put(WATCH_NS, _index_key(day), rows)
+    # Index « toutes escales » : une veille faite à J-10 doit rester rattachée au sac
+    # jusqu'à l'arrivée, pas seulement trois jours (index par jour, hérité).
+    rows_all = [e for e in _index_get("all") if e.get("id") != entry.get("id")]
+    rows_all.append(entry)
+    _cache_put(WATCH_NS, _index_key("all"), rows_all)
 
 
-def watch_cache_key(name: str, now: datetime) -> str:
-    return f"{slug(name)}:{_day(now)}"
+def watch_cache_key(name: str, now: datetime | None = None) -> str:
+    """Une clé par escale : la recherche se fait une fois (plus par jour)."""
+    return slug(name)
+
+
+def _done_key(name: str) -> str:
+    return f"done:{slug(name)}"
+
+
+def watch_done(name: str) -> bool:
+    """L'escale a déjà eu sa veille (entrée écrite, ou recherche sans résultat)."""
+    return _cache_get(WATCH_NS, _done_key(name)) is not None
 
 
 def _first_url(results: list[Any]) -> str | None:
@@ -299,7 +320,7 @@ async def search_watch(
     now: datetime | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Un search Tavily par (escale, jour). Cache ns `watch`."""
+    """Un search Tavily par escale, une seule fois. Cache définitif ns `watch`."""
     when = _utc(now)
     key = watch_cache_key(port, when)
     hit = _cache_get(WATCH_NS, key)
@@ -339,10 +360,11 @@ def news_entry(
     when = _utc(now)
     day = _day(when)
     name = str(stop.get("name") or "").strip()
-    exp = expires_at(when)
+    arrival = stop.get("arrival")
+    exp = expires_at(arrival if isinstance(arrival, datetime) and _utc(arrival) > when else when)
     host = _host_of(url)
     entry: dict[str, Any] = {
-        "id": f"news:{slug(name)}:{day}",
+        "id": f"news:{slug(name)}",
         "kind": "news",
         "t": to_iso(when.replace(hour=12, minute=0, second=0, microsecond=0)),
         "event": "watch",
@@ -376,9 +398,11 @@ async def watch_stop(
     include_domains: Iterable[str] | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any] | None:
-    """Veille d'une escale : search (1 crédit / jour) + phrase + journal."""
+    """Veille d'une escale : search (1 crédit, une fois par escale) + phrase + journal.
+
+    Déjà faite (`done:<slug>`) → rien : ni recherche, ni résumé, ni nouvelle entrée."""
     name = str(stop.get("name") or "").strip()
-    if not name:
+    if not name or watch_done(name):
         return None
     domains = list(include_domains) if include_domains is not None else official_domains(
         name, [stop.get("url")] if stop.get("url") else None,
@@ -391,8 +415,9 @@ async def watch_stop(
     fallback = _fallback_sentence(results, facts)
     url = _first_url(results)
     if not results and not fallback:
-        # Journée sans résultat : on mémorise le search (déjà en cache) sans
+        # Recherche sans résultat : l'escale est faite (search en cache), sans
         # inventer une entrée journal.
+        _cache_put(WATCH_NS, _done_key(name), {"day": _day(_utc(now)), "results": 0})
         return None
     user = (
         f"Escale : {name}\n"
@@ -413,6 +438,7 @@ async def watch_stop(
     except Exception as exc:
         log.debug("journal news : %s", exc)
     _index_put(_day(now), entry)
+    _cache_put(WATCH_NS, _done_key(name), {"day": _day(_utc(now)), "results": len(results), "id": entry["id"]})
     return entry
 
 
@@ -422,7 +448,8 @@ async def run_daily_watch(
     *,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Tâche quotidienne : une veille par escale dans la fenêtre J-10 → J+2."""
+    """Passe quotidienne : une veille par escale entrée dans la fenêtre J-10 → J+2,
+    faite UNE fois (les escales déjà veillées ne coûtent rien)."""
     when = _utc(now)
     clock = (voy or {}).get("clock") if isinstance(voy, dict) else None
     stops = stops_in_window(clock, when)
@@ -556,8 +583,8 @@ def attach_cached_news(bag: dict[str, Any], now: datetime | None = None) -> dict
     when = _utc(now)
     seen = {n.get("id") for n in (bag.get("news") or []) if isinstance(n, dict)}
     extra: list[dict[str, Any]] = []
-    for delta in (0, 1, 2):
-        day = (when - timedelta(days=delta)).strftime("%Y-%m-%d")
+    days = ["all"] + [(when - timedelta(days=delta)).strftime("%Y-%m-%d") for delta in (0, 1, 2)]
+    for day in days:
         for entry in _index_get(day):
             if expired(entry, when) or entry.get("id") in seen:
                 continue

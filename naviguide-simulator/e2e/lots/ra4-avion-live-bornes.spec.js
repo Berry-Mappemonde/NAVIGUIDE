@@ -2,6 +2,7 @@
 // Sans API : trait avion (geojson local) et maxBounds se vérifient seuls.
 // Position live / rechargement : seulement si GET /voyage/official répond.
 import { expect, test } from "@playwright/test";
+import { lngDelta, wrapLng } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-ra4/${name}.jpg`,
@@ -151,7 +152,10 @@ test("lot RA4 — avion noir pointillé, live stable, longitude bornée", async 
     return { lat: ll.lat, lng: ll.lng };
   });
   const dLat = Math.abs(second.lat - first.lat);
-  const dLng = Math.abs(second.lng - first.lng);
+  // Écart de longitude modulo 360 : avant le rechargement la caméra a été promenée à lng 700 puis 0,
+  // le marqueur principal peut rester sur la copie +360 ; après rechargement il est sur la copie 0.
+  // Même point sur Terre → écart ~0, pas 360 (faux rouge « 3/6 » vu sur #459, #471, #472).
+  const dLng = lngDelta(first.lng, second.lng);
   expect(dLat, `saut lat ${first.lat} → ${second.lat}`).toBeLessThan(0.35);
-  expect(dLng, `saut lng ${first.lng} → ${second.lng}`).toBeLessThan(0.35);
+  expect(dLng, `saut lng ${wrapLng(first.lng).toFixed(4)} → ${wrapLng(second.lng).toFixed(4)} (brut ${first.lng} → ${second.lng})`).toBeLessThan(0.35);
 });
