@@ -94,7 +94,9 @@ test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => 
   // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
   await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("ici-tab-review")).toHaveCount(0);
+  // DM6 (revue du porteur du 14 oct., § 4.1 option A) : à brouillon vide, la Revue du plan reste
+  // dans l'encadré — c'est la vitrine Berry en Tracer. Avant DM6, l'onglet disparaissait au dessin.
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
   await page.waitForTimeout(1500);
 
   const cancel = page.getByRole("button", { name: /annuler|cancel/i }).first();
