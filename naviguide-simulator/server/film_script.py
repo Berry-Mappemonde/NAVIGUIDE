@@ -15,6 +15,7 @@ from typing import Any, Callable, Optional
 
 from climo_events import climo_sentence, dose_climo_changes, notable_climo_changes
 from story_cascade import cascade_text, expand_spoken_units, filter_numbers, split_short_sentences
+import toponyms
 from voyage_clock import OFFICIAL_T0
 
 FILM_MAX_CHARS = 2400
@@ -204,93 +205,7 @@ LANE_LABELS = {
         "bay of biscay": "Bay of Biscay",
     },
 }
-# Plus spécifique d'abord : Samoa américaines avant American, Canaries avant Spanish, etc.
-_ZEE_NATION = (
-    (re.compile(r"american samoa|samoa am[ée]ricain", re.I), ("des Samoa américaines", "American Samoa")),
-    (re.compile(r"canary|canaries", re.I), ("des Canaries", "Canary Islands")),
-    (re.compile(r"madeira|mad[èe]re", re.I), ("de Madère", "Madeira")),
-    (re.compile(r"sint[- ]eustatius|eustatius", re.I), ("de Sint-Eustatius", "Sint-Eustatius")),
-    (re.compile(r"sint[- ]maarten", re.I), ("de Sint-Maarten", "Sint-Maarten")),
-    (re.compile(r"wallis", re.I), ("de Wallis-et-Futuna", "Wallis and Futuna")),
-    (re.compile(r"matthew|hunter", re.I), ("de Matthew-et-Hunter", "Matthew and Hunter")),
-    (re.compile(r"new caledonia|nouvelle-cal[ée]donie", re.I), ("de Nouvelle-Calédonie", "New Caledonia")),
-    (re.compile(r"bonaire", re.I), ("de Bonaire", "Bonaire")),
-    (re.compile(r"spanish|espagn", re.I), ("espagnoles", "Spanish")),
-    (re.compile(r"french|fran[cç]ais", re.I), ("françaises", "French")),
-    (re.compile(r"italian|italien", re.I), ("italiennes", "Italian")),
-    (re.compile(r"portuguese|portugai", re.I), ("portugaises", "Portuguese")),
-    (re.compile(r"british|britann", re.I), ("britanniques", "British")),
-    (re.compile(r"american|am[ée]ricain|united states", re.I), ("américaines", "American")),
-    (re.compile(r"canadian|canadien", re.I), ("canadiennes", "Canadian")),
-    (re.compile(r"brazilian|br[ée]sil", re.I), ("brésiliennes", "Brazilian")),
-    (re.compile(r"australian|australien", re.I), ("australiennes", "Australian")),
-    (re.compile(r"new zealand|n[ée]o-z[ée]land", re.I), ("néo-zélandaises", "New Zealand")),
-    (re.compile(r"moroccan|maroc", re.I), ("marocaines", "Moroccan")),
-    (re.compile(r"algerian|alg[ée]rien", re.I), ("algériennes", "Algerian")),
-    (re.compile(r"venezuel|v[ée]n[ée]zu[ée]l", re.I), ("vénézuéliennes", "Venezuelan")),
-    (re.compile(r"cuban|cubain", re.I), ("cubaines", "Cuban")),
-    (re.compile(r"fijian|fidj", re.I), ("fidjiennes", "Fijian")),
-    (re.compile(r"indonesian|indon[ée]sien", re.I), ("indonésiennes", "Indonesian")),
-    (re.compile(r"indian|indien", re.I), ("indiennes", "Indian")),
-    (re.compile(r"mexican|mexic", re.I), ("mexicaines", "Mexican")),
-    (re.compile(r"colombian|colombien", re.I), ("colombiennes", "Colombian")),
-    (re.compile(r"dutch|n[ée]erland", re.I), ("néerlandaises", "Dutch")),
-    (re.compile(r"irish|irland", re.I), ("irlandaises", "Irish")),
-    (re.compile(r"norwegian|norv[ée]gien", re.I), ("norvégiennes", "Norwegian")),
-    (re.compile(r"japanese|japon", re.I), ("japonaises", "Japanese")),
-    (re.compile(r"chinese|chinoi", re.I), ("chinoises", "Chinese")),
-    (re.compile(r"south african|sud-africain", re.I), ("sud-africaines", "South African")),
-    (re.compile(r"argentine", re.I), ("argentines", "Argentine")),
-    (re.compile(r"chilean|chilien", re.I), ("chiliennes", "Chilean")),
-    (re.compile(r"senegalese|s[ée]n[ée]gal", re.I), ("sénégalaises", "Senegalese")),
-    (re.compile(r"maltese|maltais", re.I), ("maltaises", "Maltese")),
-    (re.compile(r"greek|grec", re.I), ("grecques", "Greek")),
-    (re.compile(r"tunisian|tunisien", re.I), ("tunisiennes", "Tunisian")),
-    (re.compile(r"mauritan", re.I), ("mauritaniennes", "Mauritanian")),
-    (re.compile(r"papua|papou", re.I), ("papouanes", "Papua New Guinean")),
-    (re.compile(r"philippine", re.I), ("philippines", "Philippine")),
-    # Route Berry-Mappemonde (27 sept.) : le film disait « les eaux Antiguan and Barbudan », « dominicaine ».
-    (re.compile(r"antigua", re.I), ("d'Antigua-et-Barbuda", "Antiguan")),
-    (re.compile(r"dominican republic|r[ée]publique dominicaine", re.I), ("de la République dominicaine", "Dominican Republic")),
-    (re.compile(r"dominica|dominiquais", re.I), ("de la Dominique", "Dominican")),
-    (re.compile(r"kittitian|saint[- ]kitts|nevis", re.I), ("de Saint-Christophe-et-Niévès", "Kittitian")),
-    (re.compile(r"montserrat", re.I), ("de Montserrat", "Montserratian")),
-    (re.compile(r"anguill", re.I), ("d'Anguilla", "Anguillan")),
-    (re.compile(r"saint[- ]martin", re.I), ("de Saint-Martin", "Saint-Martin")),
-    (re.compile(r"surinam", re.I), ("surinamaises", "Surinamese")),
-    (re.compile(r"guyanese|guyana\b", re.I), ("du Guyana", "Guyanese")),
-    (re.compile(r"trinidad|tobag", re.I), ("de Trinité-et-Tobago", "Trinidadian")),
-    (re.compile(r"barbad", re.I), ("barbadiennes", "Barbadian")),
-    (re.compile(r"saint[- ]lucia|lucian", re.I), ("de Sainte-Lucie", "Saint Lucian")),
-    (re.compile(r"grenad", re.I), ("grenadiennes", "Grenadian")),
-    (re.compile(r"vincent", re.I), ("de Saint-Vincent-et-les-Grenadines", "Vincentian")),
-    (re.compile(r"panama|panam[ée]", re.I), ("panaméennes", "Panamanian")),
-    (re.compile(r"costa ric", re.I), ("costariciennes", "Costa Rican")),
-    (re.compile(r"ecuador|[ée]quatorien", re.I), ("équatoriennes", "Ecuadorian")),
-    (re.compile(r"peru|p[ée]rou|peruvian", re.I), ("péruviennes", "Peruvian")),
-    (re.compile(r"kiribati|gilbert", re.I), ("des Kiribati", "Kiribati")),
-    (re.compile(r"cook island", re.I), ("des Îles Cook", "Cook Islands")),
-    (re.compile(r"tonga", re.I), ("tongiennes", "Tongan")),
-    (re.compile(r"samoa", re.I), ("samoanes", "Samoan")),
-    (re.compile(r"tuvalu", re.I), ("des Tuvalu", "Tuvaluan")),
-    (re.compile(r"vanuatu|vanuatuan", re.I), ("du Vanuatu", "Vanuatuan")),
-    (re.compile(r"solomon", re.I), ("des Îles Salomon", "Solomon Islands")),
-    (re.compile(r"comor", re.I), ("comoriennes", "Comorian")),
-    (re.compile(r"mauriti|mauricien", re.I), ("mauriciennes", "Mauritian")),
-    (re.compile(r"madagas|malgache", re.I), ("malgaches", "Malagasy")),
-    (re.compile(r"mozambi", re.I), ("mozambicaines", "Mozambican")),
-    (re.compile(r"seychell", re.I), ("seychelloises", "Seychellois")),
-    (re.compile(r"tanzan", re.I), ("tanzaniennes", "Tanzanian")),
-    (re.compile(r"kenya", re.I), ("kényanes", "Kenyan")),
-    (re.compile(r"cape verd|cap-vert|capverd", re.I), ("capverdiennes", "Cape Verdean")),
-    (re.compile(r"gibraltar", re.I), ("de Gibraltar", "Gibraltar")),
-    (re.compile(r"bermud", re.I), ("des Bermudes", "Bermudian")),
-    (re.compile(r"bahamas|bahamian", re.I), ("bahaméennes", "Bahamian")),
-    (re.compile(r"haiti|ha[ïi]tien", re.I), ("haïtiennes", "Haitian")),
-    (re.compile(r"jamaic", re.I), ("jamaïcaines", "Jamaican")),
-    (re.compile(r"honduran|honduras", re.I), ("honduriennes", "Honduran")),
-    (re.compile(r"nicaragua", re.I), ("nicaraguayennes", "Nicaraguan")),
-)
+# RC32 : adjectifs / exonymes ZEE — table unique `toponyms` (JO / Marine Regions).
 
 # Titres de source tels qu'ils apparaissent sur la route officielle (Marine Regions / stock).
 # Un test échoue si l'un d'eux n'a pas de nom parlé.
@@ -343,8 +258,8 @@ OFFICIAL_ROUTE_ZEE_SOURCES = (
     "Zone économique exclusive (Madagascan)",
 )
 
-# RC26 : dans la phrase de groupe, le site entre parenthèses gagne sur la
-# nationalité — « britannique (Montserrat) » se dit « de Montserrat ».
+# RC26 / RC32 : dans la phrase de groupe, le site entre parenthèses gagne
+# sur la nationalité — « britannique (Montserrat) » se dit « de Montserrat ».
 
 _HEADING_8 = (
     ("nord", "north"),
@@ -539,101 +454,16 @@ def clean_spoken_label(raw: str, lang: str = "fr") -> str:
 
 
 def zee_waters_label(name: str, lang: str = "fr") -> str:
+    """Exonyme de la langue du récit (RC32) — table `toponyms`, jamais une traduction."""
     raw_in = str(name or "")
-    if re.search(r"western sahara|sahara occidental", raw_in, re.I):
-        return (
-            "disputed waters of Western Sahara"
-            if _en(lang) else
-            "les eaux disputées du Sahara occidental"
-        )
     raw = clean_spoken_label(name, lang) or raw_in
-    if not raw.strip():
-        return ""
-    if re.search(r"haute mer|high seas", f"{raw_in} {raw}", re.I):
-        return "the high seas" if _en(lang) else "haute mer"
-    for rx, (fr, en) in _ZEE_NATION:
-        if rx.search(raw) or rx.search(raw_in):
-            return f"{en} waters" if _en(lang) else f"les eaux {fr}"
-    rest = re.sub(
-        r"zone économique exclusive|exclusive economic zone|eez|zee",
-        "",
-        raw,
-        flags=re.I,
-    )
-    rest = rest.strip(" ()-")
-    rest = re.sub(r"\s*\([^)]*$", "", rest).strip(" ()-")
-    if re.search(r"zone économique exclusive|exclusive economic zone", rest, re.I):
-        return ""
-    had_zee = bool(re.search(
-        r"zone économique|exclusive economic|eez|\bzee\b|eaux",
-        raw,
-        re.I,
-    ))
-    if rest and had_zee and not _is_generic_title(rest, "zee"):
-        return f"{rest} waters" if _en(lang) else f"les eaux {rest}"
-    return ""
-
-
-def _zee_member_pair(name: str) -> Optional[tuple[str, str]]:
-    """(fr, en) de _ZEE_NATION pour un membre de groupe — le site entre
-    parenthèses gagne sur la nationalité (« britannique (Montserrat) » →
-    « de Montserrat »), sinon le titre entier."""
-    raw = str(name or "")
-    inner = ""
-    m = re.search(r"\(([^)]+)\)", raw)
-    if m:
-        inner = m.group(1).strip()
-    if inner:
-        for rx, pair in _ZEE_NATION:
-            if rx.search(inner):
-                return pair
-    for rx, pair in _ZEE_NATION:
-        if rx.search(raw):
-            return pair
-    return None
-
-
-def _waters_spoken_key(label: str) -> str:
-    """Clé de dédoublonnage À L'OREILLE (RC30) : « Saint-Martin » et
-    « Sint-Maarten » sonnent pareil en français — un seul des deux se dit
-    (« les eaux de Saint-Martin, puis celles de Saint-Martin » : jamais)."""
-    s = str(label or "").casefold()
-    s = re.sub(r"\bsint\b|sint-", "saint-", s)
-    s = re.sub(r"\bmaarten\b", "martin", s)
-    s = re.sub(r"[\s-]+", " ", s).strip()
-    return s
+    return toponyms.waters_label(raw_in, lang) or toponyms.waters_label(raw, lang)
 
 
 def zee_group_waters(members: list, lang: str = "fr") -> str:
-    """« les eaux françaises, puis celles de Montserrat » (RC26) — jamais un
-    adjectif orphelin (« françaises » sans « eaux ») ni une minuscule en tête
-    de nom propre. EN : « French waters, then Montserrat waters »."""
-    en = _en(lang)
-    parts: list[str] = []
-    seen: set[str] = set()
-    for member in members or []:
-        pair = _zee_member_pair(member)
-        if pair is None:
-            lab = zee_waters_label(str(member or ""), lang)
-            if not lab or _waters_spoken_key(lab) in seen:
-                continue
-            seen.add(_waters_spoken_key(lab))
-            parts.append(lab)
-            continue
-        fr, en_name = pair
-        proper = bool(re.match(r"^(de |du |des |d['’])", fr))
-        full = f"{en_name} waters" if en else f"les eaux {fr}"
-        if _waters_spoken_key(full) in seen:
-            continue
-        seen.add(_waters_spoken_key(full))
-        if en or not parts or not proper:
-            # EN : toujours « … waters » (« Montserratian » seul serait un adjectif orphelin).
-            parts.append(full)
-        else:
-            parts.append(f"celles {fr}")
-    if not parts:
-        return ""
-    return ", then ".join(parts) if en else ", puis ".join(parts)
+    """« les eaux françaises, puis celles de Montserrat » (RC26) — Saint-Martin
+    et Sint Maarten restent deux eaux distinctes (RC32)."""
+    return toponyms.group_waters(members, lang)
 
 
 def _join_then(parts: list[str], lang: str) -> str:
@@ -1058,7 +888,7 @@ def change_place_name(change: dict) -> str:
     if kind == "coast":
         ports = [str(p).strip() for p in (change.get("ports") or []) if str(p).strip()]
         if ports:
-            return ports[0]
+            return toponyms.origin_name(ports[0])
         title = LIST_PREFIX_RE.sub("", title).strip(" :")
     if kind == "climo":
         return str(change.get("title") or change.get("regimeId") or "").strip()
@@ -1066,8 +896,11 @@ def change_place_name(change: dict) -> str:
         name, _year = cyclone_name_year(change)
         return name
     if kind == "alert-on" and alert_is_amp(change):
-        return alert_amp_name(change)   # même clé qu'un changement « amp » : une AMP n'est dite qu'une fois
-    return clean_spoken_label(extract_named(title, fact, kind))
+        return toponyms.origin_name(alert_amp_name(change))
+    named = clean_spoken_label(extract_named(title, fact, kind))
+    if kind == "zee-enter":
+        return named
+    return toponyms.origin_name(named)
 
 
 def change_distance_nm(change: dict) -> Optional[float]:

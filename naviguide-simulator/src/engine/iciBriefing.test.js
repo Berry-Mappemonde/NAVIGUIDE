@@ -187,7 +187,7 @@ describe("narrateIci", () => {
       sources: { zee: "marineregions", bi: "unavailable" },
     }, "fr");
     assert.match(text, /Blue Intelligence n’ont pas répondu/);
-    assert.match(text, /LA ROCHELLE/);
+    assert.match(text, /La Rochelle/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -577,10 +577,11 @@ describe("narrateIci", () => {
       type: "zee-ahead",
       whenNm: 40,
       name: "Spanish Exclusive Economic Zone",
-      payload: { zee: { name: "Spanish Exclusive Economic Zone", mrgid: 8462 }, whenNm: 40 },
+      payload: { zee: { name: "Spanish Exclusive Economic Zone", mrgid: 5693 }, whenNm: 40 },
     }, "fr");
     assert.match(text, /Devant dans 40 nm/);
-    assert.match(text, /Spanish Exclusive Economic Zone/);
+    assert.match(text, /les eaux espagnoles/);
+    assert.doesNotMatch(text, /Exclusive Economic Zone/i);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 

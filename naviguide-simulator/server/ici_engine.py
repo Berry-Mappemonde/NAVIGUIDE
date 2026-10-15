@@ -358,7 +358,8 @@ def slim_place(feat: dict, lat0: float, lon0: float, extra_keys: tuple[str, ...]
     if not ll:
         return None
     lat, lon = ll
-    name = feature_name(feat)
+    from toponyms import origin_name  # noqa: PLC0415
+    name = origin_name(feature_name(feat))
     if not name:
         return None
     item = {
@@ -437,7 +438,8 @@ def slim_amp(feat: dict, lat0: float, lon0: float) -> dict | None:
         return None
     if item.get("visit_url"):
         item["url"] = item["visit_url"]
-    spoken = spoken_amp_name(item.get("name"))
+    from toponyms import origin_name  # noqa: PLC0415
+    spoken = origin_name(spoken_amp_name(item.get("name")))
     if spoken:
         item["name"] = spoken
     return item
@@ -590,12 +592,17 @@ def zee_from_record(rec: dict | None) -> dict:
     except (TypeError, ValueError):
         mrgid = None
     territory = FRENCH_EEZ_MRGID.get(mrgid) if mrgid is not None else None
-    return {
+    from toponyms import names_for  # noqa: PLC0415
+    spoken = names_for(name, mrgid=mrgid, territory=territory)
+    out = {
         "name": name,
         "mrgid": mrgid,
         "territory": territory,
         "gold": False,
     }
+    if spoken:
+        out["names"] = spoken
+    return out
 
 
 async def _gazetteer_list(client: httpx.AsyncClient, lat: float, lon: float) -> list:

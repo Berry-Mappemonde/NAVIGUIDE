@@ -1508,7 +1508,7 @@ def test_zee_dosage_short_keeps_all_long_one_per_day():
     # RC26 : groupe grammatical « les eaux X, puis celles de Y » — noms FR.
     assert "les eaux d'Antigua-et-Barbuda" in sent
     assert "puis celles de Saint-Christophe-et-Niévès" in sent
-    assert "puis celles de Sint-Eustatius" in sent
+    assert "puis celles de Saint-Eustache" in sent
     assert "zones économiques exclusives" not in sent
     assert "zone économique exclusive" not in sent
     it_fr = [
@@ -2947,22 +2947,37 @@ def test_rc30_heading_ignores_plane_vertices_cayenne_papeete():
     assert "nord-ouest" in heading_phrase(deg, "fr")
 
 
-def test_rc30_saint_martin_sint_maarten_once():
-    """« les eaux de Saint-Martin, puis celles de Saint-Martin » : jamais —
-    deux noms qui sonnent pareil ne se disent qu'une fois."""
+def test_rc32_saint_martin_sint_maarten_distinguished():
+    """Île partagée : les deux eaux se disent, distinguées (RC32) —
+    plus jamais « les eaux de Saint-Martin, puis celles de Saint-Martin »."""
     from film_script import zee_group_waters
+    from toponyms import consecutive_homonyms
 
     members = [
+        "Kittitian and Nevisian Exclusive Economic Zone",
+        "Sint-Eustatius Exclusive Economic Zone",
+        "Sint-Maarten Exclusive Economic Zone",
         "Saint-Martin Exclusive Economic Zone",
-        "Zone économique exclusive (Sint Maarten)",
     ]
     fr = zee_group_waters(members, "fr")
-    assert fr == "les eaux de Saint-Martin"
+    assert "Saint-Christophe-et-Niévès" in fr
+    assert "Saint-Eustache" in fr
+    assert "Sint Maarten (partie néerlandaise)" in fr
+    assert "Saint-Martin (partie française)" in fr
+    assert consecutive_homonyms(fr) == []
     en = zee_group_waters(members, "en")
-    assert en == "Saint-Martin waters"
-    # l'inverse aussi : Sint Maarten croisé d'abord → un seul nom
-    fr2 = zee_group_waters(list(reversed(members)), "fr")
-    assert fr2 == "les eaux de Sint-Maarten"
+    assert "Saint Kitts and Nevis" in en
+    assert "Sint Eustatius" in en
+    assert "Sint Maarten (Dutch side)" in en
+    assert "Saint-Martin (French side)" in en
+    assert consecutive_homonyms(en) == []
+    # l'inverse : partie française puis néerlandaise, toujours deux formes
+    fr2 = zee_group_waters(list(reversed(members[-2:])), "fr")
+    assert "partie française" in fr2 and "partie néerlandaise" in fr2
+    assert consecutive_homonyms(fr2) == []
+    assert consecutive_homonyms(
+        "les eaux de Saint-Martin, puis celles de Saint-Martin",
+    )
 
 
 def test_rc30_one_named_argo_per_leg():
