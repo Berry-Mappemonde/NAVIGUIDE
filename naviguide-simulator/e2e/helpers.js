@@ -165,6 +165,47 @@ export async function mapZoom(page) {
 /** Plancher RC18 sur le viewport Playwright 1280×800 : 2.5. */
 export const FOLLOW_ZOOM_FLOOR = 2.5;
 
+/** Cadrage Suivre (lot DM4) : zoom plancher + distance pixel bateau → centre. */
+export async function mapFollowCadrage(page) {
+  return page.evaluate(() => {
+    const scene = window.__naviguideScene;
+    const map = scene?.map;
+    if (!map) return null;
+    const center = map.getCenter();
+    const live = scene.config?.live;
+    const marker = scene.mainBoatMarker?.()?.getLatLng?.();
+    const lat = Number(marker?.lat ?? live?.lat);
+    const lng = Number(marker?.lng ?? live?.lon);
+    const boat = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lon: lng } : null;
+    let boatPx = null;
+    if (boat) {
+      const c = map.latLngToContainerPoint(center);
+      const b = map.latLngToContainerPoint([boat.lat, boat.lon]);
+      boatPx = Math.hypot(b.x - c.x, b.y - c.y);
+    }
+    const box = map.getContainer().getBoundingClientRect();
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    let iconPx = null;
+    for (const el of document.querySelectorAll(".catamaran-divicon--live, .catamaran-divicon")) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy);
+      if (iconPx == null || d < iconPx) iconPx = d;
+    }
+    const px = Number.isFinite(boatPx) ? boatPx : iconPx;
+    return {
+      zoom: map.getZoom(),
+      minZoom: map.getMinZoom(),
+      cx: center.lat,
+      cy: center.lng,
+      boat,
+      boatPx: Number.isFinite(px) ? px : boatPx,
+      iconPx,
+    };
+  });
+}
+
 export async function waitFilmCanStart(page, timeout = 25_000) {
   const start = page.getByTestId("replay-start");
   await expect(start).toBeVisible({ timeout: 15_000 });
