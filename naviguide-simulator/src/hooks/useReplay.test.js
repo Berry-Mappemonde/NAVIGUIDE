@@ -280,7 +280,7 @@ describe("lot RE4 — ligne d'état pilotée par le t0 de la barre", () => {
     // t0 de son propre voyage (date de départ choisie).
     assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.doesNotMatch(app, /iso: isSuivre && replay\.active/);
-    assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
+    assert.match(app, /onDepartureT0=\{suivreBerry \? setReplayT0 : voyage\.setT0\}/);
     assert.match(app, /onT0: setReplayT0/);
     assert.doesNotMatch(app, /voyage\.setT0\(replayT0\)/);
     assert.doesNotMatch(app, /voyage\.setT0\(DEFAULT_T0_ISO\)/);

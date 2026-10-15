@@ -45,6 +45,7 @@ import {
   canPrevEscale,
   filmLegContext,
   chapterAtNm,
+  playheadOnPlay,
 } from "./engine/routePlayhead.js";
 import { detectAirEpisodes, mergeEpisodeMarks, sailNmToFilmNm } from "./engine/filmCast.js";
 import { expeditionBoatKnots } from "./engine/playSpeeds.js";
@@ -93,7 +94,7 @@ import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
 import { parseRouteFile } from "./utils/routeImport.js";
 import { viewExportMode } from "./utils/routeExport.js";
-import { attachClockIso, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
+import { attachClockIso, legendNowAndLive, officialNowMs, usePlanReview } from "./hooks/usePlanReview.js";
 import { MapScene } from "./map/MapScene.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -330,7 +331,7 @@ export default function App() {
   });
   const officialClock = suivreBerry ? (official.clock || voyage.clock) : voyage.clock;
   const officialEtaReady = Boolean(suivreBerry && official.clock);
-  const clockNowMs = officialNowMs(official.clock, official.live);
+  const officialLiveNowMs = suivreBerry ? officialNowMs(official.clock, official.live) : NaN;
   // Lot RC10 — le film n'utilise pas le repli voyage.clock (script Simulation).
   const filmClock = suivreBerry ? official.clock : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
@@ -530,8 +531,16 @@ export default function App() {
   }, [hudLeg]);
 
   const legendMarks = useMemo(() => (
-    attachClockIso(escaleMarks, officialClock?.marks || [])
-  ), [escaleMarks, officialClock]);
+    attachClockIso(escaleMarks, suivreBerry ? (official.clock?.marks || []) : (voyage.clock?.marks || []))
+  ), [escaleMarks, suivreBerry, official.clock, voyage.clock]);
+  const { nowMs: clockNowMs, liveFilmNm: legendLiveFilmNm } = legendNowAndLive({
+    suivreBerry,
+    officialNowMs: officialLiveNowMs,
+    officialLiveNm: official.live?.filmNm,
+    sampleIso: clockSample?.iso,
+    sampleFilmNm: clockSample?.filmNm,
+    playbackNm: playback.nm,
+  });
 
   const monthLabel = clockSample?.month
     ? formatMonthName(clockSample.month, lang)
@@ -714,10 +723,11 @@ export default function App() {
     if (!routeReady || simPrimedRef.current) return;
     simPrimedRef.current = true;
     voyage.setStartAt("saint-maur");
+    voyage.resetToToday();
     sceneApiRef.current?.playback.setProfile("normal");
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
-  }, [isSimulation, routeReady, voyage.setStartAt, sceneApi]);
+  }, [isSimulation, routeReady, voyage.setStartAt, voyage.resetToToday, sceneApi]);
 
   // Playing the film follows the boat; a manual drag lets go (onManualNavigation).
   useEffect(() => {
@@ -955,10 +965,13 @@ export default function App() {
       isSimulation,
       playing: playback.playing,
     });
+    const target = prevEscaleNm(escaleMarks, playheadNmRef.current);
+    const origin = Number(escaleMarks?.[0]?.filmNm ?? escaleMarks?.[0]?.nm) || 0;
+    if (isSimulation && target <= origin + 1) voyage.resetToToday();
     sceneApiRef.current?.playback.pause();
-    sceneApiRef.current?.playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
+    sceneApiRef.current?.playback.seek(target, { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isSimulation, playControlsActive, isSuivre, sceneApi]);
+  }, [playback.playing, escaleMarks, isSimulation, playControlsActive, isSuivre, sceneApi, voyage.resetToToday]);
 
   const handleCatamaranDrag = useCallback((pos) => {
     sceneApiRef.current?.playback.pause();
@@ -1102,6 +1115,7 @@ export default function App() {
   useEffect(() => {
     if (!isSimulation) return;
     simNmRef.current = 0;
+    voyage.resetToToday();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1525,7 +1539,7 @@ export default function App() {
     frozen: replay.active,
     clock: officialClock,
     nowMs: clockNowMs,
-    liveFilmNm: official.live?.filmNm,
+    liveFilmNm: legendLiveFilmNm,
     officialEta: officialEtaReady,
     lookup: atlas.lookup,
     revision: atlas.revision,
@@ -1766,14 +1780,14 @@ export default function App() {
         escaleMarks={legendMarks}
         filmNm={sidebarPlaybackNm}
         nowMs={clockNowMs}
-        liveFilmNm={official.live?.filmNm}
+        liveFilmNm={legendLiveFilmNm}
         officialEta={officialEtaReady}
         onEscaleSheet={openEscaleFromUi}
         frozen={Boolean(replay.active)}
         drawing={drawing}
-        showDeparture={playControlsActive}
-        departureT0={voyage.t0}
-        onDepartureT0={voyage.setT0}
+        showDeparture={isSuivre}
+        departureT0={suivreBerry ? replayT0 : voyage.t0}
+        onDepartureT0={suivreBerry ? setReplayT0 : voyage.setT0}
         skipperOrders={skipper.orders}
         skipperProfile={skipper.profile}
         onSkipperProfile={skipper.setProfile}
@@ -1892,6 +1906,13 @@ export default function App() {
         onTogglePlay={() => {
           if (!playControlsActive) return;
           if (isSuivre) setUserPreview(true);
+          if (
+            isSimulation
+            && playheadOnPlay(playback.nm, playback.totalNm) === 0
+            && (Number(playback.nm) || 0) > 1
+          ) {
+            voyage.resetToToday();
+          }
           sceneApiRef.current?.playback.toggle();
         }}
         marks={escaleMarks}
