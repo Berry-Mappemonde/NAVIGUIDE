@@ -6,13 +6,9 @@
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 import { originName, watersLabel } from "./toponyms.js";
 
-const EN_CARDINAL = { O: "W", NO: "NW", SO: "SW", ONO: "WNW", OSO: "WSW", NNO: "NNW", SSO: "SSW" };
-
 function cardinal(deg, lang) {
   if (!Number.isFinite(deg)) return "";
-  const fr = getCardinalDirection(deg);
-  if (lang === "en") return EN_CARDINAL[fr] || fr;
-  return fr;
+  return getCardinalDirection(deg, lang);
 }
 
 function num(v, lang, digits = 0, { grouping = true } = {}) {

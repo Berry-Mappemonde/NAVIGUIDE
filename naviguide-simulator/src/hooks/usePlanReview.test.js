@@ -508,8 +508,9 @@ describe("lot RH2 — plus d'abort en vol", () => {
 
   it("briefing ICI : source règles locale, pas de warm/status global", () => {
     assert.match(sidebarSrc, /LlmSourceBadge/);
-    assert.match(sidebarSrc, /source="rules"/);
+    assert.match(sidebarSrc, /ICI_BRIEFING_SOURCE/);
     assert.doesNotMatch(sidebarSrc, /startWarmStatusWatch/);
+    assert.doesNotMatch(sidebarSrc, /lastSource/);
     assert.doesNotMatch(sidebarSrc, /\/ici\/warm\/status/);
   });
 

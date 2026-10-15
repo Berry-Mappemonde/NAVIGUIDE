@@ -658,8 +658,9 @@ export function formatMonthName(month, lang = "fr") {
   return months[m - 1];
 }
 
-function clockDayLabel(seaHours) {
-  return `j${Math.max(0, Math.floor((Number(seaHours) || 0) / 24))}`;
+function clockDayLabel(seaHours, lang = "fr") {
+  const prefix = lang === "en" ? "d" : "j";
+  return `${prefix}${Math.max(0, Math.floor((Number(seaHours) || 0) / 24))}`;
 }
 
 function clockNmLabel(sailNm, lang = "fr") {
@@ -686,7 +687,7 @@ export function clockTickLabelsFromClock(clock, lang = "fr", current = null) {
       : lookupVoyageClock(clock, curFilm);
     ticks.push({
       filmNm: curFilm,
-      label: `${clockNmLabel(sample?.sailNm, lang)} · ${clockDayLabel(sample?.seaHours)}`,
+      label: `${clockNmLabel(sample?.sailNm, lang)} · ${clockDayLabel(sample?.seaHours, lang)}`,
     });
   }
   ticks.push({

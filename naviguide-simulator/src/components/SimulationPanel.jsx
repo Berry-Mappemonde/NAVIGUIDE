@@ -12,30 +12,29 @@
 
 import { Navigation, Clock, Compass, Map as MapIcon } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { getCardinalDirection, numberLocale } from "../utils/getCardinalDirection.js";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
-function formatEta(hours) {
+function formatEta(hours, lang = "fr") {
   if (hours == null || Number.isNaN(hours)) return "—";
   if (hours < 1 / 60) return "0 min";
   if (hours < 1) return `${Math.round(hours * 60)} min`;
-  if (hours >= 48) return `${Math.round(hours / 24)} j`;
+  if (hours >= 48) return `${Math.round(hours / 24)} ${lang === "en" ? "d" : "j"}`;
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
   if (m === 0) return `${h} h`;
   return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
-function formatNm(nm) {
+function formatNm(nm, lang = "fr") {
   if (nm == null) return "—";
-  return `${nm.toLocaleString()} nm`;
+  return `${nm.toLocaleString(numberLocale(lang))} nm`;
 }
 
-function formatBearing(deg) {
+function formatBearing(deg, lang = "fr") {
   if (deg == null) return "—";
-  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"];
-  const idx = Math.round(deg / 22.5) % 16;
-  return `${Math.round(deg)}° ${dirs[idx]}`;
+  return `${Math.round(deg)}° ${getCardinalDirection(deg, lang)}`;
 }
 
 // ── Main component ──────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ export function SimulationPanel({
   recomputeBusy = false,
   onGoLive,
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
 
   if (!legContext) {
     return (
@@ -103,7 +102,7 @@ export function SimulationPanel({
               {t("nmRemaining")}
             </span>
           </div>
-          <span className="text-xs font-bold text-white leading-tight">{formatNm(nmRemainingToStop)}</span>
+          <span className="text-xs font-bold text-white leading-tight">{formatNm(nmRemainingToStop, lang)}</span>
         </div>
 
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
@@ -113,7 +112,7 @@ export function SimulationPanel({
               {t("eta")}
             </span>
           </div>
-          <span className="text-xs font-bold text-white leading-tight">{formatEta(etaHours)}</span>
+          <span className="text-xs font-bold text-white leading-tight">{formatEta(etaHours, lang)}</span>
           <span className="text-[8px] text-slate-500 leading-tight">
             {clockSample?.vehicle === "plane"
               ? t("filmAirVehicle")
@@ -132,7 +131,7 @@ export function SimulationPanel({
               {t("nmCovered")}
             </span>
           </div>
-          <span className="text-xs font-bold text-white leading-tight">{formatNm(nmCovered)}</span>
+          <span className="text-xs font-bold text-white leading-tight">{formatNm(nmCovered, lang)}</span>
         </div>
 
         <div className="bg-slate-800/60 px-2 py-1 flex flex-col">
@@ -142,7 +141,7 @@ export function SimulationPanel({
               {t("bearing")}
             </span>
           </div>
-          <span className="text-xs font-bold text-white leading-tight">{formatBearing(bearing)}</span>
+          <span className="text-xs font-bold text-white leading-tight">{formatBearing(bearing, lang)}</span>
         </div>
 
       </div>
@@ -167,7 +166,7 @@ export function SimulationPanel({
         <div className="px-2 py-1 border-t border-white/5 flex items-center justify-between gap-2">
           {clockSample?.status === "waiting" && clockSample.countdownHours != null ? (
             <span className="text-[9px] text-amber-200/90">
-              {t("departsIn", { hours: formatEta(clockSample.countdownHours) })}
+              {t("departsIn", { hours: formatEta(clockSample.countdownHours, lang) })}
             </span>
           ) : null}
           {previewing && onGoLive ? (

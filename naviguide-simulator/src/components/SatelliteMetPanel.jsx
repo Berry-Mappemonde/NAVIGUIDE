@@ -17,16 +17,17 @@ function Row({ label, value }) {
   );
 }
 
-function CardinalRows({ degrees, dirLabel, t }) {
-  const card = formatCardinal(degrees);
-  const spelled = card ? t(`cardinal${card}`) : "";
+function CardinalRows({ degrees, dirLabel, t, lang = "fr" }) {
+  const cardFr = formatCardinal(degrees, "fr");
+  const card = formatCardinal(degrees, lang);
+  const spelled = cardFr ? t(`cardinal${cardFr}`) : "";
   return (
     <>
       <Row
         label={t("satelliteCardinal")}
         value={card ? `${card} — ${spelled}` : null}
       />
-      <Row label={dirLabel} value={formatBearingCardinal(degrees)} />
+      <Row label={dirLabel} value={formatBearingCardinal(degrees, lang)} />
     </>
   );
 }
@@ -55,7 +56,7 @@ function sharedRows(product, t) {
   );
 }
 
-export function SatelliteMetPanel({ kind, product, t }) {
+export function SatelliteMetPanel({ kind, product, t, lang = "fr" }) {
   if (kind === "wind") {
     return (
       <div className="space-y-1">
@@ -65,7 +66,7 @@ export function SatelliteMetPanel({ kind, product, t }) {
         </div>
         <Row label={t("windSpeedKmh")} value={formatMetNumber(product.wind_speed_kmh, 1) && `${formatMetNumber(product.wind_speed_kmh, 1)} km/h`} />
         <Row label={t("windSpeedMs")} value={formatMetNumber(product.wind_speed, 2) && `${formatMetNumber(product.wind_speed, 2)} m/s`} />
-        <CardinalRows degrees={product.wind_direction} dirLabel={t("windDirection")} t={t} />
+        <CardinalRows degrees={product.wind_direction} dirLabel={t("windDirection")} t={t} lang={lang} />
         <Row label={t("currentEast")} value={formatMetNumber(product.u_component, 3) && `${formatMetNumber(product.u_component, 3)} m/s`} />
         <Row label={t("currentNorth")} value={formatMetNumber(product.v_component, 3) && `${formatMetNumber(product.v_component, 3)} m/s`} />
         {sharedRows(product, t)}
@@ -84,7 +85,7 @@ export function SatelliteMetPanel({ kind, product, t }) {
           label={t("wavePeriod")}
           value={formatMetNumber(product.mean_wave_period, 1) && `${formatMetNumber(product.mean_wave_period, 1)} s`}
         />
-        <CardinalRows degrees={product.mean_wave_direction} dirLabel={t("waveDirection")} t={t} />
+        <CardinalRows degrees={product.mean_wave_direction} dirLabel={t("waveDirection")} t={t} lang={lang} />
         {sharedRows(product, t)}
       </div>
     );
@@ -98,7 +99,7 @@ export function SatelliteMetPanel({ kind, product, t }) {
       </div>
       <Row label={t("currentSpeedKmh")} value={formatMetNumber(product.speed_kmh, 2) && `${formatMetNumber(product.speed_kmh, 2)} km/h`} />
       <Row label={t("currentSpeedMs")} value={formatMetNumber(product.speed_ms, 3) && `${formatMetNumber(product.speed_ms, 3)} m/s`} />
-      <CardinalRows degrees={product.direction_deg} dirLabel={t("currentDirection")} t={t} />
+      <CardinalRows degrees={product.direction_deg} dirLabel={t("currentDirection")} t={t} lang={lang} />
       <Row label={t("currentEast")} value={formatMetNumber(product.u_component, 4) && `${formatMetNumber(product.u_component, 4)} m/s`} />
       <Row label={t("currentNorth")} value={formatMetNumber(product.v_component, 4) && `${formatMetNumber(product.v_component, 4)} m/s`} />
       {sharedRows(product, t)}
