@@ -61,11 +61,32 @@ règles, pas sur un modèle.
 
 ### Nemotron, Token Factory, Tavily
 
-Les textes rédigés (récit, fiche d’escale, journal, film) passent par
-**NVIDIA Nemotron** sur **[Nebius Token Factory](https://tokenfactory.nebius.com/)**.
-Un filtre refuse tout nombre absent des faits. Quand le bateau entre dans
-les eaux d’un pays, **Tavily** relit la page officielle du port d’entrée ;
-Nemotron 3 Ultra barre ce qui n’est plus prouvé.
+Textes générés (briefing, journal, film, fiches) : cascade côté serveur —
+**[Nebius Token Factory](https://tokenfactory.nebius.com/)** (Nemotron), puis
+**NVIDIA NIM** (`gpt-oss-20b`), puis **OpenRouter** (`gpt-4o-mini`), puis
+**Anthropic Claude Haiku 4.5**, puis un texte **uniquement par règles** si
+tout échoue ou si le budget du jour est épuisé. Par défaut le mode est
+**on-demand** (appel payant seulement quand vous posez une question ou
+demandez un « Rédigé », pas en tâche de fond). Les prompts identiques sont
+mis en **cache** (environ 24 h). Un **filtre serveur** retire tout chiffre que
+le modèle n’a pas reçu dans les faits (`filter_numbers`).
+
+Plafonds journaliers de tokens (défauts) : **200 000** (Lightning), **150 000**
+(Super), **40 000** (Ultra). L’interface affiche la source réelle (ex.
+« Nemotron 3 Ultra · Token Factory », avec les marques NVIDIA / Nebius /
+Token Factory sous les réponses Nemotron).
+
+| Modèle | Usages principaux |
+|--------|-------------------|
+| **Nemotron 3.5 Lightning** | Fiche d’escale, résumés **Tavily**, choix des moments du film, traduction FR→EN, conseil de route, questions courtes au chat (&lt; 80 caractères). |
+| **Nemotron 3 Super** | Briefing courant, chat journal (questions longues), revue de plan, script du film. |
+| **Nemotron 3 Ultra** (`nvidia/Nemotron-3-Ultra-550b-a55b`) | Chat avec *pourquoi / comment* ou mots de route ; récit des **moments clés** (arrivée au port, grain, cyclone, alerte profondeur, marina refuge, tout événement de sévérité `alert`). |
+
+Pour chaque escale à venir, **Tavily** cherche une fois des nouvelles récentes
+et datées ; Lightning les résume sans chiffre nouveau (en production sur
+[simulator.naviguide.fr](https://simulator.naviguide.fr)). La mémoire des
+sources reste sur
+[blueintelligence.online](https://blueintelligence.online).
 
 ### Licence
 
@@ -123,11 +144,29 @@ Without keys the app still runs: the story falls back to rules, not a model.
 
 ### Nemotron, Token Factory, Tavily
 
-Written text (story, harbour sheet, logbook, film) goes through
-**NVIDIA Nemotron** on **[Nebius Token Factory](https://tokenfactory.nebius.com/)**.
-A filter rejects any number missing from the facts. When the boat enters
-a country’s waters, **Tavily** re-reads the official port-of-entry page;
-Nemotron 3 Ultra strikes out what is no longer supported.
+Generated copy (briefing, logbook, film, sheets): server-side cascade —
+**[Nebius Token Factory](https://tokenfactory.nebius.com/)** (Nemotron), then
+**NVIDIA NIM** (`gpt-oss-20b`), then **OpenRouter** (`gpt-4o-mini`), then
+**Anthropic Claude Haiku 4.5**, then **rules-only** text if everything fails
+or the daily budget is spent. Default mode is **on-demand** (paid calls only
+when you ask a question or click “Write”, not in background warm-up). Identical
+prompts are **cached** (~24 h). A **server filter** drops any number the model
+was not given in the facts (`filter_numbers`).
+
+Default daily token caps: **200k** (Lightning), **150k** (Super), **40k**
+(Ultra). The UI shows the actual source (e.g. “Nemotron 3 Ultra · Token
+Factory”, with NVIDIA / Nebius / Token Factory marks under Nemotron answers).
+
+| Model | Main uses |
+|-------|-----------|
+| **Nemotron 3.5 Lightning** | Port-of-call sheet, **Tavily** summaries, picking film moments, FR→EN translation, route advice, short chat questions (&lt; 80 characters). |
+| **Nemotron 3 Super** | Everyday briefing, logbook chat (longer questions), plan review, film script. |
+| **Nemotron 3 Ultra** (`nvidia/Nemotron-3-Ultra-550b-a55b`) | Chat with *why/how* or route-plan wording; narrative of **key moments** (port arrival, gale, cyclone, depth alert, marina refuge, any `alert` severity event). |
+
+For each coming stopover, **Tavily** searches once for recent, dated news;
+Lightning summarises it without new numbers (live on
+[simulator.naviguide.fr](https://simulator.naviguide.fr)). Source memory lives
+on [blueintelligence.online](https://blueintelligence.online).
 
 ### Licence
 
