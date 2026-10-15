@@ -42,7 +42,17 @@ ANSWER_SENTENCES = 3
 ULTRA_SENTENCES = 5
 ANSWER_CHARS = 480
 ULTRA_CHARS = 720
-JOURNAL_TAIL = 20
+JOURNAL_TAIL = 40
+JOURNAL_EVENT_KINDS = (
+    "stop", "grib", "note", "zee", "amp", "poe", "wx", "chat",
+    "climo", "sci", "news", "project",
+)
+JOURNAL_SLIM_KEYS = (
+    "kind", "t", "event", "name", "text", "summary",
+    "windKnots", "dirFromDeg", "hs", "holdHours", "daysAtQuay",
+    "level", "model", "nm", "inside", "source",
+)
+JOURNAL_PER_KIND = 8
 FACT_TOKEN_CAP = 6_000
 PARSE_MAX_TOKENS = 60
 PLAN_LEGS_MAX = 12
@@ -152,13 +162,88 @@ def _next_stop(clock: dict | None, now: datetime) -> Optional[dict]:
     return None
 
 
+def _spoken_title(title: Any) -> str | None:
+    if isinstance(title, dict):
+        text = title.get("fr") or title.get("en")
+        return str(text).strip() if text else None
+    if title:
+        text = str(title).strip()
+        return text or None
+    return None
+
+
+def _slim_journal_entry(entry: Any) -> dict[str, Any] | None:
+    if not isinstance(entry, dict) or not entry.get("kind"):
+        return None
+    row: dict[str, Any] = {}
+    for key in JOURNAL_SLIM_KEYS:
+        value = entry.get(key)
+        if value is not None and value != "":
+            row[key] = value
+    title = _spoken_title(entry.get("title"))
+    if title and not row.get("name"):
+        row["name"] = title
+    facts = entry.get("facts")
+    if isinstance(facts, dict) and facts:
+        row["facts"] = facts
+    return row
+
+
+def _journal_sig(entry: dict) -> str:
+    return str(entry.get("id") or f"{entry.get('kind')}:{entry.get('t')}:{entry.get('name') or ''}")
+
+
+def _per_kind_tail(rows: list[dict], n: int = JOURNAL_PER_KIND) -> list[dict]:
+    buckets: dict[str, list[dict]] = {}
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        buckets.setdefault(str(entry.get("kind") or "?"), []).append(entry)
+    out: list[dict] = []
+    for items in buckets.values():
+        out.extend(items[-n:])
+    return out
+
+
+def _official_journal_rows(kinds: tuple[str, ...]) -> list[dict]:
+    """Same logbook the UI reads (official_store), not the thin file journal."""
+    try:
+        import official_store  # noqa: PLC0415
+        payload = official_store.serve_journal(max(JOURNAL_TAIL, 80), kinds)
+    except Exception:
+        return []
+    if not isinstance(payload, dict) or payload.get("status") != "ready":
+        return []
+    latest = [e for e in (payload.get("latest") or []) if isinstance(e, dict)]
+    events = [e for e in (payload.get("events") or []) if isinstance(e, dict)]
+    return _per_kind_tail(events) + [e for e in latest if e.get("kind") != "position"]
+
+
+def journal_for_chat(limit: int = JOURNAL_TAIL) -> list[dict]:
+    """Official voyage logbook for Ultra / Super — AMP, ZEE, stops, news, chats."""
+    import voyage_journal as journal  # noqa: PLC0415
+
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for entry in _official_journal_rows(JOURNAL_EVENT_KINDS) + journal.latest(limit, kinds=JOURNAL_EVENT_KINDS):
+        slim = _slim_journal_entry(entry)
+        if not slim:
+            continue
+        sig = _journal_sig(entry)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        merged.append(slim)
+    merged.sort(key=lambda row: str(row.get("t") or ""), reverse=True)
+    return merged[:limit]
+
+
 async def build_context(client_ctx: dict | None, now: datetime, http: httpx.AsyncClient | None = None) -> dict[str, Any]:
     """The facts the bot may cite. Nothing here comes from the model."""
     from voyage_api import _grib_around_from_live, _latest_official_grib, _now  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
     from saildocs import wind_at_daily  # noqa: PLC0415
-    import voyage_journal as journal  # noqa: PLC0415
 
     ctx: dict[str, Any] = {"now": now.isoformat().replace("+00:00", "Z")}
     client_ctx = client_ctx if isinstance(client_ctx, dict) else {}
@@ -267,11 +352,7 @@ async def build_context(client_ctx: dict | None, now: datetime, http: httpx.Asyn
             ctx["around"] = {"reason": f"unavailable:{type(exc).__name__}"}
             bag = None
 
-    tail = journal.latest(JOURNAL_TAIL, kinds=("stop", "grib", "note", "zee", "amp", "poe", "wx", "chat"))
-    ctx["journal"] = [
-        {k: e.get(k) for k in ("kind", "t", "event", "name", "text", "windKnots", "dirFromDeg", "hs", "summary") if e.get(k) is not None}
-        for e in tail
-    ]
+    ctx["journal"] = journal_for_chat()
 
     # What only the client knows: its polar, its skipper's orders, its view.
     for key in ("polar", "orders", "leg"):
