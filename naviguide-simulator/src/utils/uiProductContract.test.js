@@ -40,6 +40,17 @@ describe("contrat UI produit", () => {
     assert.match(sidebar, /drawingOn \? pillOn : pillOff/);
   });
 
+  it("lot DM7 / R13 : clic Tracer votre propre route ouvre drawing-box à 0 point", () => {
+    const app = read("../App.jsx");
+    const tools = read("../components/ToolsSidebar.jsx");
+    const startAt = app.indexOf("const handleDrawStart = ");
+    const armAt = app.indexOf("armDrawingWorldRef.current = ");
+    assert.ok(startAt >= 0 && armAt >= 0 && startAt > armAt, "handleDrawStart et armDrawingWorld présents");
+    assert.match(app.slice(startAt, startAt + 500), /setDrawBoxOpen\(true\)/);
+    assert.doesNotMatch(app.slice(armAt, startAt), /setDrawBoxOpen\(true\)/);
+    assert.match(tools, /drawing\?\.showBox \|\| drawing\?\.points\?\.length/);
+  });
+
   it("lot RF7 : entrée Tracer pose la vue monde", () => {
     const app = read("../App.jsx");
     const scene = read("../map/MapSceneController.js");
