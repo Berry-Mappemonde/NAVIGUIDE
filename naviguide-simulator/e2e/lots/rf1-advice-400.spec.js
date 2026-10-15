@@ -1,7 +1,7 @@
 // Lot RF1 — plus de 400 /advice au parcours nominal. Sans API : Suivre,
-// Simulation, Tracer et l'onglet Revue tiennent seuls. GET /voyage/official
-// sondé ; s'il manque, annotation + saut des seules assertions /advice —
-// jamais les trois modes ni la revue.
+// Simulation, Tracer et l'onglet Revue tiennent seuls (DM9 : Revue aussi
+// pendant le dessin). GET /voyage/official sondé ; s'il manque, annotation
+// + saut des seules assertions /advice — jamais les trois modes ni la revue.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,7 +94,8 @@ test("lot RF1 — aucun 4xx/5xx advice, revue comme avant", async ({ page }) => 
   // Panneau gauche encore en transition (tranches CI) : le clic DOM ne dépend pas de la géométrie (même repli que enterTracer).
   await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
   await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("ici-tab-review")).toHaveCount(0);
+  // DM9 : en Tracer / dessin, Revue du plan reste (option A). Plus « 0 onglet ».
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
   await page.waitForTimeout(1500);
 
   const cancel = page.getByRole("button", { name: /annuler|cancel/i }).first();
