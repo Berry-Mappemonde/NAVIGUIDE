@@ -322,7 +322,8 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
       officialClock: true,
     }), true);
     const app = readFileSync(join(here, "../App.jsx"), "utf8");
-    assert.match(app, /officialEtaReady = Boolean\(isSuivre && official\.clock\)/);
+    // DM5 : l'ETA officielle n'existe qu'en Suivre × Berry.
+    assert.match(app, /officialEtaReady = Boolean\(suivreBerry && official\.clock\)/);
     assert.match(app, /officialNowMs\(official\.clock,\s*official\.live\)/);
     assert.match(app, /officialEta: officialEtaReady/);
   });

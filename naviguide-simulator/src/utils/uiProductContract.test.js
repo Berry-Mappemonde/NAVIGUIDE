@@ -55,13 +55,16 @@ describe("contrat UI produit", () => {
     assert.ok(existsSync(join(src, "../../public/favicon-n-bl.png")));
   });
 
-  it("réserve les contrôles de lecture et les sauts à Simulation", () => {
+  it("réserve les contrôles de lecture à Tracer et à Suivre × ma route (DM5)", () => {
     const app = read("../App.jsx");
     const filmBar = read("../components/SimulationFilmBar.jsx");
     const sidebar = read("../components/Sidebar.jsx");
     const simulationPanel = read("../components/SimulationPanel.jsx");
-    assert.match(app, /showPlaybackControls=\{isSimulation\}/);
-    assert.match(app, /if \(!isSimulation\) return;/);
+    // DM5 : Play / vitesses vivent aussi en Suivre sur ma route — jamais en
+    // Suivre × Berry (le live officiel commande).
+    assert.match(app, /const playControlsActive = isSimulation \|\| suivreCustom;/);
+    assert.match(app, /showPlaybackControls=\{playControlsActive\}/);
+    assert.match(app, /if \(!playControlsActive\) return;/);
     assert.match(filmBar, /disabled=\{!showPlaybackControls\}/);
     assert.match(filmBar, /goToNextStop/);
     assert.doesNotMatch(sidebar, /onNext=\{handleSimNext\}/);
@@ -152,11 +155,13 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(tools, /<PlanReview/);
     assert.doesNotMatch(tools, /planReview && !drawing/);
     assert.match(ici, /<PlanReview/);
-    assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
+    // DM5 : l'horloge officielle ne porte que Suivre × Berry ; ma route lit
+    // le voyage serveur perso (voyage.clock) dans les deux modes.
+    assert.match(app, /suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
     assert.match(app, /t0: replayT0/);
     assert.match(app, /followClockLineFromT0/);
-    assert.match(app, /t0: isSuivre \? replayT0/);
+    assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.match(app, /departureT0=\{voyage\.t0\}/);
     assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
     assert.match(bar, /data-testid="replay-departure"/);

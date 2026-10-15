@@ -30,7 +30,7 @@ const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
 
 function BerryCard({
-  onCustomRoute, onRouteSwitchToBerry, isDrawing,
+  onCustomRoute, onRouteSwitchToBerry, onRouteSwitchToCustom, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw = true,
   onImportRoute, importBusy = false,
@@ -58,7 +58,8 @@ function BerryCard({
   const activateCustom = () => {
     if (!drawnRoute) return;
     setCardMode("file-active");
-    onCustomRoute(drawnRoute);
+    // DM5 — la pilule bascule la source sans changer de mode (Suivre ou Tracer).
+    (onRouteSwitchToCustom || onCustomRoute)(drawnRoute);
   };
 
   const handleFinishDrawing = () => {
@@ -326,7 +327,7 @@ function BriefingText({ segments, onFocus, t }) {
 }
 
 export const Sidebar = memo(function Sidebar({
-  plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
+  plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, onRouteSwitchToCustom, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw, drawing = null, onDrawUndo, onImportRoute, importBusy = false,
   isCockpit, polarData, view = VIEW_SUIVRE,
@@ -401,6 +402,7 @@ export const Sidebar = memo(function Sidebar({
           <BerryCard
             onCustomRoute={onCustomRoute}
             onRouteSwitchToBerry={onRouteSwitchToBerry}
+            onRouteSwitchToCustom={onRouteSwitchToCustom}
             isDrawing={isDrawing}
             onDrawStart={onDrawStart}
             onDrawContinue={onDrawContinue}

@@ -47,6 +47,7 @@ import {
   WAKE_REST_COLOR,
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
+import { routeDrawPlan } from "./routeDrawPlan.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
 import {
   filmChapterZoom,
@@ -639,9 +640,10 @@ export class MapSceneController {
     ) return;
     this.routeInputs = input;
     const group = this.layers.update("route", () => L.layerGroup().addTo(this.map), (layer) => layer.clearLayers());
-    const visible = input.sceneReady || input.drawingMode;
-    if (!visible) return;
-    if (input.drawingMode) {
+    // DM5 — une seule route à la fois : tracé en cours, perso ou Berry.
+    const plan = routeDrawPlan(input);
+    if (!plan.visible) return;
+    if (plan.kind === "drawing") {
       (input.drawnSegments || []).forEach((segment) => {
         addRouteLine(group, segment.coords, {
           color: segment.failed ? "#f97316" : "#22c55e",
@@ -651,7 +653,7 @@ export class MapSceneController {
       });
       return;
     }
-    if (input.customRoute?.features) {
+    if (plan.kind === "custom") {
       input.customRoute.features
         .filter((feature) => feature.geometry?.type === "LineString")
         .forEach((feature) => addRouteLine(group, feature.geometry.coordinates, {

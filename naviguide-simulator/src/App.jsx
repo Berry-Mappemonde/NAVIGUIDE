@@ -59,6 +59,7 @@ import {
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
 import { isRouteReady } from "./utils/routeReady.js";
+import { resolveRouteSource, routeForSource } from "./utils/routeSource.js";
 import {
   isSceneReady,
   playheadAligned,
@@ -263,7 +264,13 @@ export default function App() {
   });
   gateRef.current.allowed = notForNavOk;
 
-  const routeForView = isSuivre ? null : customRoute;
+  // Lot DM5 — la source de route (Berry | ma route) est indépendante du mode :
+  // Suivre peut suivre la route perso, Tracer peut montrer la Berry.
+  const routeSource = resolveRouteSource(routeKind, customRoute);
+  const suivreBerry = isSuivre && routeSource === "berry";
+  const suivreCustom = isSuivre && routeSource === "custom";
+  const playControlsActive = isSimulation || suivreCustom;
+  const routeForView = routeForSource(routeSource, customRoute);
   const routeReady = isRouteReady(segProgress) || (officialFallback && segments.length > 0);
   const activeStops = useMemo(() => activeSimulationStops(routeForView, points.length ? points : ITINERARY_POINTS), [routeForView, points]);
   const activeSegments = useMemo(() => activeSimulationSegments(routeForView, segments), [routeForView, segments]);
@@ -290,21 +297,25 @@ export default function App() {
     stops: activeStops,
     windAt: atlasWindAt,
     atlasRev,
-    mode: isSuivre ? "suivre" : "simulation",
+    mode: suivreBerry ? "suivre" : "simulation",
   });
+  // Lot DM5 — l'horloge officielle ne sert que Suivre × Berry : jamais un
+  // PUT /voyage/official avec les points d'une route perso.
   const official = useOfficialExpedition({
-    enabled: isSuivre,
+    enabled: suivreBerry,
     points: routeReady ? flatRoute.points : undefined,
     marks: routeReady ? escaleMarks : [],
     expeditionId: polarData?.expedition_id,
     clock: voyage.clock,
   });
-  // Mémoire du voyage officiel (journal serveur) — lecture seule, Suivre.
-  const officialJournal = useOfficialJournal({ enabled: isSuivre });
+  // Mémoire du voyage officiel (journal serveur) — lecture seule, Suivre × Berry.
+  const officialJournal = useOfficialJournal({ enabled: suivreBerry });
+  // Suivre × ma route (DM5) : le même voyage serveur que Tracer (POST /voyage,
+  // t0 = date de départ choisie, défaut aujourd'hui 08:00 UTC) donne l'horloge.
   const vessel = useVirtualVessel({
-    enabled: isSimulation && routeReady,
+    enabled: (isSimulation || suivreCustom) && routeReady,
     forecast: false,
-    follow: false,
+    follow: suivreCustom,
     t0: voyage.t0,
     startAt: voyage.startAt,
     expeditionId: polarData?.expedition_id,
@@ -312,11 +323,11 @@ export default function App() {
     points: flatRoute.points,
     marks: escaleMarks,
   });
-  const officialClock = isSuivre ? (official.clock || voyage.clock) : voyage.clock;
-  const officialEtaReady = Boolean(isSuivre && official.clock);
+  const officialClock = suivreBerry ? (official.clock || voyage.clock) : voyage.clock;
+  const officialEtaReady = Boolean(suivreBerry && official.clock);
   const clockNowMs = officialNowMs(official.clock, official.live);
   // Lot RC10 — le film n'utilise pas le repli voyage.clock (script Simulation).
-  const filmClock = isSuivre ? official.clock : voyage.clock;
+  const filmClock = suivreBerry ? official.clock : voyage.clock;
   const boatKnots = liveKnots > 0 ? liveKnots : cruiseKnots;
 
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
@@ -327,13 +338,22 @@ export default function App() {
     fallbackClock: voyage.clock,
     requireOfficialFilm: isSuivre,
     journal: officialJournal.journal,
-    enabled: isSuivre,
+    enabled: suivreBerry,
     lang,
     marks: escaleMarks,
     destination: official.live,
     t0: replayT0,
   });
-  const live = isSuivre ? (replay.active && replay.live ? replay.live : official.live) : vessel.live;
+  // DM5 — en Suivre, la position vit sur la source : horloge officielle pour
+  // Berry, voyage serveur de ma route pour la perso. Tant que le serveur n'a
+  // pas répondu, la position « à maintenant » se lit sur l'horloge client
+  // (mêmes calculs : polaire + climatologie) — jamais une position inventée.
+  const customClientLive = useMemo(() => {
+    if (!suivreCustom || !voyage.clock) return null;
+    return sampleClockAtTime(voyage.clock, new Date());
+  }, [suivreCustom, voyage.clock]);
+  const sourceLive = suivreCustom ? (vessel.live || customClientLive) : official.live;
+  const live = isSuivre ? (replay.active && replay.live ? replay.live : sourceLive) : vessel.live;
   const previewing = Boolean(isSuivre && live && userPreview);
   const playheadReady = playheadAligned({
     isSuivre,
@@ -395,7 +415,7 @@ export default function App() {
   // Skipper orders: one character, boat read from the polar, saved in this tab.
   // Cinema keeps them active. The planning speed reads the polar at the wind
   // of the moment: GRIB at the boat in Suivre, climatology of the clock in Simulation.
-  const skipperWind = isSuivre
+  const skipperWind = suivreBerry
     ? (live?.kind === "forecast" && Number.isFinite(live.windKnots)
       ? { tws: live.windKnots, twd: live.dirFromDeg, heading: live.bearing ?? sample?.bearing, kind: "grib" }
       : null)
@@ -404,7 +424,7 @@ export default function App() {
       : null);
   const skipper = useSkipperOrders({
     polar: polarData,
-    mode: isSuivre ? "suivre" : "simulation",
+    mode: suivreBerry ? "suivre" : "simulation",
     lang,
     wind: skipperWind,
   });
@@ -487,9 +507,9 @@ export default function App() {
       speedKnots: sailing ? Math.round(local * 10) / 10 : (officialClock ? null : legContext.speedKnots),
         kind: clockSample?.kind === "forecast"
           ? "forecast"
-          : (isSuivre ? "absent" : (clockSample?.kind || (officialClock ? "climatology" : legContext.kind))),
+          : (suivreBerry ? "absent" : (clockSample?.kind || (officialClock ? "climatology" : legContext.kind))),
     };
-  }, [legContext, clockSample, officialClock, clockEtaHours, isSuivre]);
+  }, [legContext, clockSample, officialClock, clockEtaHours, suivreBerry]);
 
   const jambe = useMemo(() => {
     if (!hudLeg) return null;
@@ -554,11 +574,14 @@ export default function App() {
     frozen: replay.active,
   });
   const momentMode = drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation");
-  const journalRouteId = momentMode === "drawn"
+  // DM5 — Suivre × ma route n'écrit ni ne lit la mémoire officielle
+  // (GET /voyage/official/moments) : journal local, même clé qu'en Tracer.
+  const momentJournalMode = momentMode === "follow" && routeSource === "custom" ? "simulation" : momentMode;
+  const journalRouteId = momentJournalMode === "drawn"
     ? "drawn"
-    : (momentMode === "follow" ? "official" : (routeKind === "custom" ? "simulation:custom" : "simulation:official"));
+    : (momentJournalMode === "follow" ? "official" : (routeSource === "custom" ? "simulation:custom" : "simulation:official"));
   const momentJournal = useMomentJournal({
-    mode: momentMode,
+    mode: momentJournalMode,
     routeId: journalRouteId,
     incomingMoment: iciMoment.moment,
     until: momentIso,
@@ -596,7 +619,7 @@ export default function App() {
       seaHours: clockSample.seaHours,
       iso: clockSample.iso,
       fromT0: officialClock.t0 || DEFAULT_T0_ISO,
-      t0: isSuivre ? replayT0 : (officialClock.t0 || DEFAULT_T0_ISO),
+      t0: suivreBerry ? replayT0 : (officialClock.t0 || DEFAULT_T0_ISO),
       lang,
     })
     : "";
@@ -716,7 +739,7 @@ export default function App() {
     month: climoMonth,
     orders: skipper.orders,
     // The Berry route has canonical pearls warmed on the server; a drawn route samples itself.
-    canonical: routeKind === "berry",
+    canonical: routeSource === "berry",
   });
 
   const iciPack = useIciDossier({
@@ -748,13 +771,13 @@ export default function App() {
     cumNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
     filmCum: isSuivre && live && !previewing ? (Number(live.filmNm) || playback.nm) : playback.nm,
     clockMin: Number.isFinite(clockSample?.seaHours) ? clockSample.seaHours * 60 : null,
-    rainMm: isSuivre ? official.live?.rainMm ?? null : null,
-    rain3hMm: isSuivre ? sumRainHours(official.grib?.samples, official.live?.iso, 3) : null,
-    gribWindKnots: isSuivre ? official.live?.windKnots ?? null : null,
-    gribDirFromDeg: isSuivre ? official.live?.dirFromDeg ?? null : null,
-    gribHs: isSuivre ? official.live?.hs ?? null : null,
-    gribModel: isSuivre ? official.live?.model ?? official.gribModel ?? null : null,
-    gribStatus: isSuivre ? official.gribStatus : null,
+    rainMm: suivreBerry ? official.live?.rainMm ?? null : null,
+    rain3hMm: suivreBerry ? sumRainHours(official.grib?.samples, official.live?.iso, 3) : null,
+    gribWindKnots: suivreBerry ? official.live?.windKnots ?? null : null,
+    gribDirFromDeg: suivreBerry ? official.live?.dirFromDeg ?? null : null,
+    gribHs: suivreBerry ? official.live?.hs ?? null : null,
+    gribModel: suivreBerry ? official.live?.model ?? official.gribModel ?? null : null,
+    gribStatus: suivreBerry ? official.gribStatus : null,
     along: alongPack.index,
     nearestBag: alongPack.nearestBag,
     skipperClickId,
@@ -818,10 +841,11 @@ export default function App() {
     if (newNow || newFree) sceneApiRef.current?.playback.pause();
   }, [moments.now?.key, moments.free?.key, moments.free?.loop, isSimulation, stopAuto, playback.playing]);
 
-  // Le récit de la traversée (Suivre) : de Saint-Maur à la position du jour,
-  // d'après l'horloge officielle et le journal. Zéro LLM.
+  // Le récit de la traversée (Suivre × Berry) : de Saint-Maur à la position du
+  // jour, d'après l'horloge officielle et le journal. Zéro LLM. Le récit de
+  // MA route est le lot DM8 — rien n'est servi comme prêt d'ici là.
   const storyParagraphs = useMemo(() => {
-    if (!isSuivre || !officialClock) return [];
+    if (!suivreBerry || !officialClock) return [];
     return expeditionStory({
       clock: officialClock,
       marks: legendMarks,
@@ -832,7 +856,7 @@ export default function App() {
       lang,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuivre, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang]);
+  }, [suivreBerry, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang]);
   // Lot O — during a replay, Écouter / useReplayVoice read the current
   // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
   const speechText = replay.active
@@ -866,7 +890,9 @@ export default function App() {
     openEscaleSheet(next);
   }, [replay.active, openEscaleSheet]);
 
-  const replayControls = useMemo(() => (isSuivre && officialClock ? {
+  // DM5 — Suivre × ma route : Revoir reste visible mais grisé, avec un libellé
+  // honnête (le film officiel ne sait rejouer que la route Berry ; DM8 suivra).
+  const replayControls = useMemo(() => (isSuivre && officialClock ? (routeSource === "custom" ? { unavailable: true } : {
     active: replay.active,
     canStart: replay.canStart,
     progress: replay.progress,
@@ -900,13 +926,14 @@ export default function App() {
     onStyle: replay.setFilmStyle,
     t0: replayT0,
     onT0: setReplayT0,
-  } : null), [isSuivre, officialClock, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
+  }) : null), [isSuivre, officialClock, routeSource, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
 
   const handleSimNext = useCallback(() => {
-    if (!isSimulation) return;
+    if (!playControlsActive) return;
+    if (isSuivre) setUserPreview(true);
     const focusBoat = shouldFocusSimulationJump({
       isSimulation,
       playing: playback.playing,
@@ -914,10 +941,11 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isSimulation, sceneApi]);
+  }, [playback.playing, escaleMarks, isSimulation, playControlsActive, isSuivre, sceneApi]);
 
   const handleSimPrev = useCallback(() => {
-    if (!isSimulation) return;
+    if (!playControlsActive) return;
+    if (isSuivre) setUserPreview(true);
     const focusBoat = shouldFocusSimulationJump({
       isSimulation,
       playing: playback.playing,
@@ -925,7 +953,7 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(prevEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isSimulation, sceneApi]);
+  }, [playback.playing, escaleMarks, isSimulation, playControlsActive, isSuivre, sceneApi]);
 
   const handleCatamaranDrag = useCallback((pos) => {
     sceneApiRef.current?.playback.pause();
@@ -1002,7 +1030,9 @@ export default function App() {
     if (next === VIEW_SUIVRE && view === VIEW_SIMULATION) simNmRef.current = playheadNmRef.current;
     setView(next);
     if (next === VIEW_SUIVRE) {
-      voyage.setStartAt(DEFAULT_START_AT);
+      // DM5 — Suivre × ma route garde le départ du tracé (même voyage serveur
+      // que Tracer) ; Suivre × Berry repart de La Rochelle, comme avant.
+      voyage.setStartAt(routeKindRef.current === "custom" ? "saint-maur" : DEFAULT_START_AT);
       sceneApiRef.current?.playback.pause();
       setUserPreview(false);
       if (!cinemaMode) {
@@ -1038,16 +1068,18 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (isSuivre) voyage.setStartAt(DEFAULT_START_AT);
-  }, [isSuivre, voyage.setStartAt]);
+    if (isSuivre) voyage.setStartAt(routeSource === "custom" ? "saint-maur" : DEFAULT_START_AT);
+  }, [isSuivre, routeSource, voyage.setStartAt]);
 
   useEffect(() => {
     if (!isSuivre) setFilmFullscreen(false);
   }, [isSuivre]);
 
   useEffect(() => {
-    if (isSuivre) sceneApiRef.current?.playback.setProfile("real");
-  }, [isSuivre, sceneApi]);
+    // DM5 — Suivre × ma route garde une lecture jouable (Play / vitesses) ;
+    // Suivre × Berry reste au temps réel (1 s = 1 s), comme avant.
+    if (isSuivre) sceneApiRef.current?.playback.setProfile(suivreCustom ? "normal" : "real");
+  }, [isSuivre, suivreCustom, sceneApi]);
 
   // A new route (drawn or Berry again) starts its film at 0 — a mode switch does not.
   useEffect(() => {
@@ -1121,6 +1153,9 @@ export default function App() {
     setCustomRoute(null);
     setRouteKind("berry");
     setVoyageFlat(null);
+    // DM5 — en Suivre, le bateau se recale sur le live de la nouvelle source.
+    setUserPreview(false);
+    sceneApiRef.current?.playback.pause();
     applyBerryBriefing();
   }, [applyBerryBriefing]);
 
@@ -1159,6 +1194,21 @@ export default function App() {
     setCustomRoute(geojson);
     setRouteKind("custom");
     setVoyageFlat(null);
+    setBriefingLoading(true);
+    fetchCustomPlan(geojson);
+  }, [fetchCustomPlan]);
+
+  // DM5 — la pilule <ma route> bascule la SOURCE sans changer de mode :
+  // en Suivre comme en Tracer, la route perso redevient celle qu'on dessine.
+  const handleRouteSwitchToCustom = useCallback((geojson) => {
+    if (!geojson) return;
+    berryFetchIdRef.current += 1;
+    routeKindRef.current = "custom";
+    setCustomRoute(geojson);
+    setRouteKind("custom");
+    setVoyageFlat(null);
+    setUserPreview(false);
+    sceneApiRef.current?.playback.pause();
     setBriefingLoading(true);
     fetchCustomPlan(geojson);
   }, [fetchCustomPlan]);
@@ -1418,17 +1468,17 @@ export default function App() {
     };
   }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, t]);
   const statsSegs = useMemo(
-    () => (customRoute ? featuresToSegments(customRoute) : segments),
-    [customRoute, segments],
+    () => (routeForView ? featuresToSegments(routeForView) : segments),
+    [routeForView, segments],
   );
   const stats = useMemo(() => summarizeRoute(statsSegs), [statsSegs]);
   const statsPoints = useMemo(
-    () => (customRoute
-      ? (customRoute.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
+    () => (routeForView
+      ? (routeForView.features || []).filter((f) => f.geometry?.type === "Point").map((f) => ({
         name: f.properties?.name || "", lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], flag: "",
       }))
       : points),
-    [customRoute, points],
+    [routeForView, points],
   );
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
@@ -1486,7 +1536,9 @@ export default function App() {
     sceneReady,
     segments,
     points,
-    customRoute,
+    // DM5 — la scène dessine la source courante et seulement elle : la route
+    // perso quand elle est choisie (dans les deux modes), la Berry sinon.
+    customRoute: routeForView,
     drawingMode,
     drawnPoints,
     drawnSegments,
@@ -1524,7 +1576,7 @@ export default function App() {
     sceneReady,
     segments,
     points,
-    customRoute,
+    routeForView,
     drawingMode,
     drawnPoints,
     drawnSegments,
@@ -1611,6 +1663,7 @@ export default function App() {
         onToggle={toggleSidebar}
         onCustomRoute={handleCustomRoute}
         onRouteSwitchToBerry={handleRouteSwitchToBerry}
+        onRouteSwitchToCustom={handleRouteSwitchToCustom}
         isDrawing={drawingMode}
         onDrawStart={handleDrawStart}
         onDrawContinue={handleDrawContinue}
@@ -1694,7 +1747,7 @@ export default function App() {
         onEscaleSheet={openEscaleFromUi}
         frozen={Boolean(replay.active)}
         drawing={drawing}
-        showDeparture={isSimulation}
+        showDeparture={playControlsActive}
         departureT0={voyage.t0}
         onDepartureT0={voyage.setT0}
         skipperOrders={skipper.orders}
@@ -1813,12 +1866,14 @@ export default function App() {
         onProfile={(profile) => sceneApiRef.current?.playback.setProfile(profile)}
         playing={playback.playing}
         onTogglePlay={() => {
-          if (!isSimulation) return;
+          if (!playControlsActive) return;
+          if (isSuivre) setUserPreview(true);
           sceneApiRef.current?.playback.toggle();
         }}
         marks={escaleMarks}
         onSeekNm={(nm) => {
-          if (!isSimulation) return;
+          if (!playControlsActive) return;
+          if (isSuivre) setUserPreview(true);
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(nm, { jump: true });
         }}
@@ -1826,7 +1881,7 @@ export default function App() {
         canPrev={canPrevEscale(escaleMarks, playback.nm)}
         onNext={handleSimNext}
         canNext={canNextEscale(escaleMarks, playback.nm)}
-        showPlaybackControls={isSimulation}
+        showPlaybackControls={playControlsActive}
         cinema={cinemaMode}
         onCinema={toggleCinema}
         hideBar={hideFilmBar}
@@ -1840,9 +1895,9 @@ export default function App() {
         quayDays={quayDays}
         twa={clockSample?.twa}
         liveStatus={isSuivre ? (previewing ? t("previewBadge") : "LIVE") : null}
-        windKind={clockSample?.kind === "forecast" ? "forecast" : (isSuivre ? null : (clockSample?.kind || expeditionSpeed.kind))}
+        windKind={clockSample?.kind === "forecast" ? "forecast" : (suivreBerry ? null : (clockSample?.kind || expeditionSpeed.kind))}
         weatherLine={weatherLine}
-        showSpeeds={isSimulation}
+        showSpeeds={playControlsActive}
         showWindProfile={false}
         stopAuto={stopAuto}
         onStopAuto={setStopAuto}
@@ -1864,7 +1919,7 @@ export default function App() {
         drawing={drawing}
         view={view}
         onView={drawingMode ? undefined : selectView}
-        gribLine={isSuivre && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
+        gribLine={suivreBerry && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
         clock={officialClock}
         clockCurrent={clockSample ? {
           filmNm: isSuivre && live && !previewing ? (Number(live.filmNm) || 0) : playback.nm,
