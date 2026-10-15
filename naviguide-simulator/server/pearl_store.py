@@ -256,10 +256,13 @@ def import_legacy_json(path: Path, ttl_s: float) -> int:
         if now - ts > ttl_s:
             continue
         parts = key.split(":")
-        # 3 parties = lat:lon:radius ; 4 = + PEARL_REV (rg3). Un 4e chiffre = ancien mois.
+        # 3 = lat:lon:radius ; 4 = + PEARL_REV (rg3) ; 5 = + a{sig} (AM1A).
+        # Un 4e segment numérique = ancien mois, ignoré.
         if len(parts) == 3:
             pass
         elif len(parts) == 4 and not str(parts[3]).isdigit():
+            pass
+        elif len(parts) == 5 and str(parts[4]).startswith("a"):
             pass
         else:
             continue
