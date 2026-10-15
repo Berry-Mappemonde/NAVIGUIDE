@@ -123,7 +123,7 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   await expect(right.getByTestId("plan-review")).toHaveCount(0);
   await expect(right.getByTestId("polar-box")).toBeVisible();
   await expect(right.getByTestId("skipper-orders")).toBeVisible();
-  await expect(right.getByTestId("departure-field")).toBeVisible();
+  await expect(right.getByTestId("departure-field")).toHaveCount(0);
   await shot(page, "03-panneau-droit");
 
   const draw = page.getByRole("button", {

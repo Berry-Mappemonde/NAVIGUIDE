@@ -41,12 +41,13 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   expect(await page.getByText("Simulation", { exact: true }).count(), "surface nommée « Simulation »").toBe(0);
   await shot(page, "01-deux-pilules");
 
-  // (b) Clic Tracer → aria-checked ; date de départ ; Play / vitesses ; carte
-  // route avec pilules Berry-Mappemonde | « Tracer votre propre route » et Importer.
+  // (b) Clic Tracer → aria-checked ; Play / vitesses ; carte route avec
+  // pilules Berry-Mappemonde | « Tracer votre propre route » et Importer.
   // DM6 : le dessin est ouvert tout de suite (la pilule de tracé est active).
+  // DM7 : plus de champ Date de départ en Tracer (il reste en Suivre).
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("departure-field")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("departure-field")).toHaveCount(0);
   await expect(page.getByTestId("film-bar").getByTitle(/^(Lecture|Play)$/)).toBeVisible();
   await expect(page.getByTestId("film-speed")).toBeVisible();
   const berryPill = page.getByTestId("route-switch-berry");

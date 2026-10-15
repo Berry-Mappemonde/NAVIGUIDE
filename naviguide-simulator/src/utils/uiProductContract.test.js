@@ -177,8 +177,9 @@ describe("contrat UI produit", () => {
     assert.match(app, /t0: replayT0/);
     assert.match(app, /followClockLineFromT0/);
     assert.match(app, /t0: suivreBerry \? replayT0/);
-    assert.match(app, /departureT0=\{voyage\.t0\}/);
-    assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
+    assert.match(app, /showDeparture=\{isSuivre\}/);
+    assert.match(app, /departureT0=\{suivreBerry \? replayT0 : voyage\.t0\}/);
+    assert.match(app, /onDepartureT0=\{suivreBerry \? setReplayT0 : voyage\.setT0\}/);
     assert.match(bar, /data-testid="replay-departure"/);
     assert.match(bar, /<DepartureField/);
     assert.match(clock, /getUTCFullYear\(\)/);
