@@ -32,6 +32,14 @@ async function showReview(page) {
   await openReviewTab(page);
 }
 
+/** L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant (RC2). */
+async function keepReviewOpen(page) {
+  const tab = page.getByTestId("ici-tab-review");
+  if ((await tab.getAttribute("aria-selected")) !== "true") {
+    await tab.evaluate((el) => el.click());
+  }
+}
+
 test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-France", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
@@ -51,12 +59,16 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
 
   await showReview(page);
-  const review = page.getByTestId("plan-review");
+  await keepReviewOpen(page);
+  const review = page.getByTestId("ici-review-slot").getByTestId("plan-review");
   await expect(review).toBeVisible({ timeout: 15_000 });
 
-  const row = page.getByTestId("plan-review-leg").filter({ hasText: /Ajaccio/i }).filter({ hasText: /Fort-de-France/i });
-  await expect(row).toBeVisible({ timeout: 20_000 });
-  await row.scrollIntoViewIfNeeded();
+  const row = review.getByTestId("plan-review-leg").filter({ hasText: /Ajaccio/i }).filter({ hasText: /Fort-de-France/i });
+  await expect.poll(async () => {
+    await keepReviewOpen(page);
+    return row.count();
+  }, { timeout: 20_000 }).toBeGreaterThan(0);
+  await row.first().scrollIntoViewIfNeeded();
   const lanes = row.getByTestId("plan-review-lanes");
 
   let officialPack = null;
@@ -66,8 +78,12 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
     officialPack = (body?.legs || []).find((l) => /Ajaccio/i.test(l.from || "") && /Fort-de-France/i.test(l.to || ""))?.antiShipping || null;
   }
 
-  await expect(lanes).toBeVisible({ timeout: 15_000 });
-  await expect(lanes).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
+  await expect.poll(async () => {
+    await keepReviewOpen(page);
+    return lanes.count();
+  }, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect(lanes.first()).toBeVisible();
+  await expect(lanes.first()).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
   if (apiUp) {
     expect(Array.isArray(officialPack?.lanes) && officialPack.lanes.includes("Gibraltar"), "antiShipping Gibraltar du stock").toBeTruthy();
     expect(Number(officialPack.score)).toBeLessThan(1);
