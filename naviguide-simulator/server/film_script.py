@@ -2264,6 +2264,12 @@ def _film_seconds(seconds: Any) -> int:
     return n if n > 0 else 0
 
 
+def _film_compact_template(seconds: Any) -> bool:
+    """Variante 2:30 : ouvertures et arrivées courtes. 3:00 et intégral = gabarit RG6."""
+    s = _film_seconds(seconds)
+    return 0 < s <= 150
+
+
 def film_char_budget(seconds: Any) -> int:
     """Plafond en caractères à 15 car./s. 0 = intégral, sans plafond."""
     s = _film_seconds(seconds)
@@ -2636,8 +2642,12 @@ def _film_open_sentences(
     lang: str,
     display_t0: str | None = None,
     review: dict | None = None,
+    compact: bool = False,
 ) -> list[str]:
-    """Ouverture du film (2 phrases) : qui, d'où, par la route, totaux du plan-review."""
+    """Ouverture du film (2 phrases) : qui, d'où, par la route, totaux du plan-review.
+
+    Variante 2:30 (`compact`) : UNE phrase (chapitre 0, Saint-Maur → La Rochelle).
+    """
     en = _en(lang)
     shown = display_t0 or OFFICIAL_T0
     when = day_month(rebase_iso(OFFICIAL_T0, OFFICIAL_T0, shown), lang, year=True)
@@ -2691,6 +2701,8 @@ def _film_open_sentences(
         spoken = _honest_bookend(raw, facts, lang)
         if spoken:
             out.append(spoken)
+    if compact:
+        return out[:1]
     return out
 
 
@@ -3594,6 +3606,30 @@ def _close_sentence(
     return _honest_bookend(raw, facts, lang)
 
 
+def _harbor_differs_from_city(harbor: str, dest_name: str) -> bool:
+    """True si le port / la marina a un nom distinct de la ville d'escale."""
+    if not (harbor or "").strip() or not (dest_name or "").strip():
+        return False
+    city = _stop_spoken(dest_name)
+    core = re.sub(r"^(le |la |l['’]|the )", "", harbor.strip(), flags=re.I)
+    core = re.sub(
+        r"^(port |marina |harbour |harbor )(d['’]|de |of )?",
+        "",
+        core,
+        flags=re.I,
+    )
+    core = re.sub(r" marina$", "", core, flags=re.I).strip()
+    if not core:
+        return False
+    if same_stop(core, city):
+        return False
+    city_cf = city.casefold()
+    core_cf = core.casefold()
+    if city_cf and (city_cf in core_cf or core_cf in city_cf):
+        return False
+    return True
+
+
 def _harbor_spoken(name: str, dest: str, kind: str, lang: str) -> str:
     """« le port d'Ajaccio » / « la marina Les Minimes ». Titre anglais → port de l'escale."""
     en = _en(lang)
@@ -3687,6 +3723,58 @@ def _arrival_harbor(items: list | None, dest: dict | None, lang: str) -> str:
     return ""
 
 
+def _compact_sea_opening(
+    w: dict,
+    *,
+    lang: str,
+    display_t0: str | None = None,
+    review: dict | None = None,
+    include_date: bool = True,
+) -> str:
+    """Ouverture 2:30 : une phrase — date, destination, milles, jours. Sans redite."""
+    dest_name = _stop_spoken(_window_dest_name(w))
+    if not dest_name:
+        return ""
+    en = _en(lang)
+    metrics = chapter_metrics(w, review)
+    nm_val = metrics.get("legNm")
+    days_val = metrics.get("daysAtSea")
+    nm = _opening_nm_label(nm_val, lang) if nm_val is not None else ""
+    days = spoken_sea_days(days_val, lang) if days_val is not None else ""
+    dep_ms = _window_depart_ms(w)
+    when = ""
+    if include_date and dep_ms:
+        when = day_month(rebase_iso(_iso(dep_ms), OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
+    stats = ", ".join(x for x in (nm, days) if x)
+    if en:
+        if when and stats:
+            raw = f"On {when}, heading for {dest_name}: {stats}."
+        elif when:
+            raw = f"On {when}, heading for {dest_name}."
+        elif stats:
+            raw = f"Heading for {dest_name}: {stats}."
+        else:
+            raw = f"Heading for {dest_name}."
+    elif when and stats:
+        raw = f"Le {when}, cap sur {dest_name} : {stats}."
+    elif when:
+        raw = f"Le {when}, cap sur {dest_name}."
+    elif stats:
+        raw = f"Cap sur {dest_name} : {stats}."
+    else:
+        raw = f"Cap sur {dest_name}."
+    facts = _facts_with_rounded({
+        "iso": _iso(dep_ms) if dep_ms else None,
+        "when": when,
+        "dest": dest_name,
+        "legNm": int(round(float(nm_val))) if isinstance(nm_val, (int, float)) else None,
+        "nmLabel": nm,
+        "daysAtSea": days_val,
+        "daysLabel": days,
+    })
+    return _honest_bookend(raw, facts, lang)
+
+
 def _opening_sentence(
     w: dict,
     *,
@@ -3697,8 +3785,12 @@ def _opening_sentence(
     review: dict | None = None,
     n: int = 0,
     include_date: bool = True,
+    compact: bool = False,
 ) -> str:
-    """Ouverture d'étape : date, port, cap, dest, milles, jours, vitesse — gabarit § 4."""
+    """Ouverture d'étape : date, port, cap, dest, milles, jours, vitesse — gabarit § 4.
+
+    `compact` (2:30) : une phrase, sans quitte / nœuds / longue traversée.
+    """
     dest_name = _window_dest_name(w)
     if _is_air_window(w):
         return _air_window_sentence(w, lang=lang, display_t0=display_t0)
@@ -3708,6 +3800,10 @@ def _opening_sentence(
         return _resume_after_episode(w, lang=lang, display_t0=display_t0)
     if not dest_name:
         return ""
+    if compact and not _is_road_window(w):
+        return _compact_sea_opening(
+            w, lang=lang, display_t0=display_t0, review=review, include_date=include_date,
+        )
     en = _en(lang)
     origin = short_name(
         w.get("fromName") or (w.get("from") or {}).get("name") or ""
@@ -3728,7 +3824,7 @@ def _opening_sentence(
     if _is_road_window(w):
         km = ""
         gap = metrics.get("legNm")
-        if gap:
+        if gap and not compact:
             km = _km_label(gap, lang)
         if en:
             body = f"{boat} leaves {origin} by road for {dest_name}" if origin else f"{boat} takes the road to {dest_name}"
@@ -3795,10 +3891,11 @@ def _depart_towards(
     review: dict | None = None,
     n: int = 0,
     include_date: bool = True,
+    compact: bool = False,
 ) -> str:
     return _opening_sentence(
         w, i=i, lang=lang, display_t0=display_t0, heading_deg=heading_deg,
-        review=review, n=n, include_date=include_date,
+        review=review, n=n, include_date=include_date, compact=compact,
     )
 
 
@@ -3809,10 +3906,30 @@ def _arrival_sentence(
     clock: dict | None = None,
     harbor: str = "",
     chapter_i: int = 0,
+    compact: bool = False,
 ) -> str:
     if not stop or not stop.get("name") or _ms(stop.get("iso")) is None:
         return ""
     en = _en(lang)
+    if compact:
+        when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
+        dest = _stop_spoken(stop.get("name") or "")
+        extra = ""
+        if harbor and _harbor_differs_from_city(harbor, dest):
+            extra = f", at {harbor}" if en else f", à {harbor}"
+        if en:
+            raw = f"Arrival on {when}{extra}." if when else (f"Arrival{extra}." if extra else "")
+        else:
+            raw = f"Arrivée le {when}{extra}." if when else (f"Arrivée{extra}." if extra else "")
+        if not raw:
+            return ""
+        facts = _facts_with_rounded({
+            "iso": stop.get("iso"),
+            "when": when,
+            "dest": dest,
+            "harbor": harbor,
+        })
+        return _honest_bookend(raw, facts, lang)
     name = short_name(stop["name"])
     when = day_month(rebase_iso(stop["iso"], OFFICIAL_T0, display_t0 or OFFICIAL_T0), lang)
     quay = _days(_quay_hours_for_arrival(stop, clock))
@@ -3845,9 +3962,10 @@ def _card(entry: dict) -> dict:
     }
 
 
-def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None, eta: dict | None = None) -> list[dict]:
+def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_name: str, start_name: str, live: dict | None, display_t0: str | None = None, review: dict | None = None, eta: dict | None = None, seconds: int = 0) -> list[dict]:
     chapters: list[dict] = []
     cited: set[str] = set()
+    compact = _film_compact_template(seconds)
     dist = ""
     if live:
         dist = _nm_label(live.get("sailNm") if live.get("sailNm") is not None else live.get("filmNm"), lang)
@@ -3862,6 +3980,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         key = norm_stop((dest or {}).get("name") or "")
         sentence = _arrival_sentence(
             dest, lang, display_t0, clock=clock, harbor=harbor, chapter_i=chapter_i,
+            compact=compact,
         )
         if not sentence or not key or key in cited:
             return
@@ -3914,13 +4033,13 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
         if i == 0:
             film_opens = _film_open_sentences(
                 start_name=start_name, sea_name=sea_name, lang=lang,
-                display_t0=display_t0, review=review,
+                display_t0=display_t0, review=review, compact=compact,
             )
             skip_depart = _is_road_window(w) and bool(film_opens)
         if _is_air_window(w):
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
-                review=review, n=len(windows),
+                review=review, n=len(windows), compact=compact,
             )
             if head:
                 bits.append(head)
@@ -3974,7 +4093,7 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
                 heading_deg=_leg_heading_deg(None, depart_ms, clock=w.get("clock")),
-                review=review, n=len(windows), include_date=i != 0,
+                review=review, n=len(windows), include_date=i != 0, compact=compact,
             )
             if head:
                 bits.append(head)
@@ -4839,12 +4958,13 @@ def _parse_spoken_date(text: str, lang: str) -> Optional[datetime]:
 
 
 def _is_arrival_sentence(text: str) -> bool:
-    return bool(re.match(r"^(Arrivée à|Arrival at)\b", text or "", re.I))
+    return bool(re.match(r"^(Arrivée à|Arrivée le|Arrival at|Arrival on)\b", text or "", re.I))
 
 
 _DEPART_SENT_RE = re.compile(
     r"\bquitte\b|\bquitté\b|\bdépart vers\b|\bleaves\b|\bleft\b|\bdeparture for\b|"
-    r"\bmet le cap\b|\bsails for\b|\bprend la route\b|\btakes the road\b|\bby road\b",
+    r"\bmet le cap\b|\bsails for\b|\bprend la route\b|\btakes the road\b|\bby road\b|"
+    r"\bcap sur\b|\bheading for\b",
     re.I,
 )
 _DURATION_SENT_RE = re.compile(
@@ -5223,7 +5343,7 @@ _CORE_KEEP_SENT = re.compile(
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
-    r"cap au |heading ",
+    r"cap au |cap sur |heading ",
     re.I,
 )
 _KEEP_SENT = re.compile(
@@ -5234,7 +5354,7 @@ _KEEP_SENT = re.compile(
     r"envole|par la route|by road|attend à|waits at|aujourd|today|"
     r"expédition|expedition|escales|stops|destination|entre le |between |"
     r"à venir|still to come|le plan compte|the plan has|"
-    r"cap au |heading ",
+    r"cap au |cap sur |heading ",
     re.I,
 )
 
@@ -5278,19 +5398,70 @@ def _drop_over_budget_sentence(sents: list[str], *, keep_head: int = 0) -> bool:
     return True
 
 
-def _trim_script_to_char_budget(chapters: list[dict], hi: int) -> None:
+def _count_amp_project(chapters: list[dict]) -> tuple[int, int]:
+    amp = proj = 0
+    for ch in chapters:
+        for s in _sentences(ch.get("text") or ""):
+            if re.search(r"aire marine|marine protected area", s or "", re.I):
+                amp += 1
+            if re.search(r"le projet |project ", s or "", re.I):
+                proj += 1
+    return amp, proj
+
+
+def _drop_extra_amp_or_project(
+    sents: list[str], amp_n: int, proj_n: int, *, keep_head: int = 0,
+) -> bool:
+    """Retire une AMP ou un projet en trop — jamais l'unique, jamais au milieu."""
+    if len(sents) <= keep_head:
+        return False
+    start = min(keep_head, len(sents))
+    for i in range(len(sents) - 1, start - 1, -1):
+        s = sents[i] or ""
+        is_amp = bool(re.search(r"aire marine|marine protected area", s, re.I))
+        is_proj = bool(re.search(r"le projet |project ", s, re.I))
+        if is_amp and amp_n > 1:
+            sents.pop(i)
+            return True
+        if is_proj and proj_n > 1 and not is_amp:
+            sents.pop(i)
+            return True
+    return False
+
+
+def _trim_script_to_char_budget(
+    chapters: list[dict], hi: int, *, keep_head: int = 2,
+) -> None:
+    """P3/P4 d'abord, puis eaux en trop ; AMP/projet uniques jamais retirés."""
     guard = 0
     while script_chars(chapters) > hi and chapters and guard < 200:
         dropped = False
         for ch in reversed(chapters):
             sents = _sentences(ch.get("text") or "")
-            if _drop_over_budget_sentence(sents, keep_head=2):
+            if _drop_over_budget_sentence(sents, keep_head=keep_head):
                 ch["text"] = " ".join(sents).strip()
                 dropped = True
                 break
         if not dropped:
+            amp_n, proj_n = _count_amp_project(chapters)
+            for ch in reversed(chapters):
+                sents = _sentences(ch.get("text") or "")
+                if _drop_extra_amp_or_project(sents, amp_n, proj_n, keep_head=keep_head):
+                    ch["text"] = " ".join(sents).strip()
+                    dropped = True
+                    break
+        if not dropped:
             break
         guard += 1
+
+
+def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
+    """Plafond 150 s ± 10 % à 15 car./s. 2:30 : keep_head=1 (ouverture d'une phrase)."""
+    target = film_char_budget(seconds)
+    if target <= 0 or not chapters:
+        return
+    keep = 1 if _film_compact_template(seconds) else 2
+    _trim_script_to_char_budget(chapters, int(target * 1.1), keep_head=keep)
 
 
 def fit_chapter_text(text: str, budget: int, extras: list[str], lang: str) -> str:
@@ -5580,6 +5751,7 @@ def build_raw_from_moments(
     )
     has_budget = _film_seconds(seconds) > 0
     budget_s = _film_seconds(seconds)
+    compact = _film_compact_template(seconds)
     tier = film_priority_tier(seconds)
     if has_budget:
         # RG8 : plafond = durée × 15 car./s (pas FILM_BUDGET_CHARS identique pour 150 et 180).
@@ -5677,13 +5849,13 @@ def build_raw_from_moments(
         if i == 0:
             film_opens = _film_open_sentences(
                 start_name=start_name, sea_name=sea_name, lang=lang,
-                display_t0=display_t0, review=review,
+                display_t0=display_t0, review=review, compact=compact,
             )
             skip_depart = _is_road_window(w) and bool(film_opens)
         if _is_air_window(w):
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
-                review=review, n=len(windows),
+                review=review, n=len(windows), compact=compact,
             )
             if head:
                 bits.append(head)
@@ -5721,7 +5893,7 @@ def build_raw_from_moments(
             head = _depart_towards(
                 w, i=i, lang=lang, display_t0=display_t0,
                 heading_deg=_leg_heading_deg(sail_moments, depart_ms, clock=w.get("clock") or clock),
-                review=review, n=len(windows), include_date=i != 0,
+                review=review, n=len(windows), include_date=i != 0, compact=compact,
             )
             if head:
                 bits.append(head)
@@ -5734,7 +5906,7 @@ def build_raw_from_moments(
         arrival = (
             _arrival_sentence(
                 dest, lang, display_t0, clock=w.get("clock"),
-                harbor=harbor, chapter_i=i,
+                harbor=harbor, chapter_i=i, compact=compact,
             ) if arrived else ""
         )
         if arrival and key and key not in cited:
@@ -5785,10 +5957,12 @@ def build_raw_from_moments(
             "toLat": w.get("toLat"),
             "toLon": w.get("toLon"),
         })
-    # RG8 / RC22 : intégral sans plafond ; 2:30 / 3:00 : phrases entières, P3/P4 puis eaux.
+    # RG8 / RC22 / RC27 : après opens recollés, puis après l'avion recollé.
     if has_budget and target > 0:
-        _trim_script_to_char_budget(chapters, int(target * 1.1))
+        _film_apply_char_budget(chapters, seconds)
     _ensure_air_sentences(chapters, marks=marks, moments=moments, lang=lang)
+    if has_budget and target > 0:
+        _film_apply_char_budget(chapters, seconds)
     chars = script_chars(chapters)
     return {
         "chapters": chapters,
@@ -5837,7 +6011,11 @@ def build_raw_script(
     )
 
     def compose(evs: list[dict]) -> list[dict]:
-        return _compose(windows, _assign(evs, windows), lang=lang, sea_name=sea_name, start_name=start_name, live=live, display_t0=display_t0, review=review, eta=eta)
+        return _compose(
+            windows, _assign(evs, windows), lang=lang, sea_name=sea_name,
+            start_name=start_name, live=live, display_t0=display_t0,
+            review=review, eta=eta, seconds=seconds,
+        )
 
     chapters = compose(events)
     attach_chapter_events(chapters, packed, journal, lang)
@@ -5850,9 +6028,13 @@ def build_raw_script(
         events = [e for e in events if e["id"] != drop["id"]]
         chapters = compose(events)
         attach_chapter_events(chapters, packed, journal, lang)
+    if _film_seconds(seconds) > 0:
+        _film_apply_char_budget(chapters, seconds)
     _ensure_air_sentences(
         chapters, marks=marks, moments=_journal_moments(journal), lang=lang,
     )
+    if _film_seconds(seconds) > 0:
+        _film_apply_char_budget(chapters, seconds)
     chars = script_chars(chapters)
     return {
         "chapters": chapters,

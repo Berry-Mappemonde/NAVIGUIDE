@@ -29,9 +29,9 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC32 (toponymes sourcés, Saint-Martin / Sint Maarten distingués) invalide rc31.
+# Clé film : RC27 (gabarit compact 2:30) invalide rc32.
 # moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rc32"
+FILM_SCRIPT_REV = "rc27"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"

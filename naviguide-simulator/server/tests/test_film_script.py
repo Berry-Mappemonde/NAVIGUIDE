@@ -121,8 +121,11 @@ def test_raw_length_bounded_and_chapter1_names():
 
 
 def test_connectors_alternate():
-    """RG6 : plus de rotation mécanique ; les formes suivent le contenu."""
-    plan = _raw()
+    """RG6 : plus de rotation mécanique ; les formes suivent le contenu.
+
+    RC27 : le gabarit complet (quitte / longue traversée) est l'intégral, pas le 2:30.
+    """
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     assert "À la jambe suivante" not in blob
     assert "On the next leg" not in blob
@@ -466,7 +469,7 @@ def test_live_like_clock_pairs_rochelle_before_ajaccio():
     for lr in variants:
         clock = _live_like_clock(lr)
         for journal in (JOURNAL, {**JOURNAL, **MOMENTS}):
-            plan = build_raw_script(clock, clock["marks"], LIVE, journal, lang="fr", seconds=150, now_ms=NOW_MS)
+            plan = build_raw_script(clock, clock["marks"], LIVE, journal, lang="fr", seconds=0, now_ms=NOW_MS)
             blob = _script_blob(plan)
             _assert_no_rochelle_to_ajaccio_skip(blob)
             ch0 = plan["chapters"][0]["text"]
@@ -500,7 +503,7 @@ def test_chapter_iso_tb_after_ta():
 
 
 def test_official_route_order_no_repeat_departure_then_arrival():
-    fr = _raw()
+    fr = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob_fr = " ".join(c.get("text") or "" for c in fr["chapters"])
     _assert_route_order(blob_fr, "film FR")
     _assert_departure_arrival_pairs(blob_fr, "fr")
@@ -517,7 +520,7 @@ def test_official_route_order_no_repeat_departure_then_arrival():
             dep_name = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", dep.group(1), flags=re.I)
             assert norm_stop(dep_name) == norm_stop(arr.group(1)), ch.get("id")
 
-    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
+    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=0, now_ms=NOW_MS)
     blob_en = " ".join(c.get("text") or "" for c in en["chapters"])
     _assert_route_order(blob_en, "film EN")
     _assert_departure_arrival_pairs(blob_en, "en")
@@ -585,7 +588,7 @@ def test_official_dated_stops_pins_first_rochelle_not_return():
     assert stops[1]["iso"].startswith("2026-05-15")
     assert "ajaccio" in stops[2]["name"].lower()
     clock = {"t0": OFFICIAL_T0, "marks": marks}
-    plan = build_raw_script(clock, marks, LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    plan = build_raw_script(clock, marks, LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = _script_blob(plan)
     _assert_no_rochelle_to_ajaccio_skip(blob)
 
@@ -780,7 +783,10 @@ def test_chapter_anchors_unit_sorted_bounded_deduped():
 
 
 def test_moments_arrival_each_stop_route_order():
-    plan = _moments_raw()
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     _assert_route_order(blob, "journal FR")
     _assert_departure_arrival_pairs(blob, "fr")
@@ -789,7 +795,10 @@ def test_moments_arrival_each_stop_route_order():
 
 
 def test_moments_connectors_differ():
-    plan = _moments_raw()
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
     blob = _script_blob(plan)
     assert "À la jambe suivante" not in blob
     shapes = []
@@ -2666,6 +2675,85 @@ def test_rc22_rich_plan_150_seconds_keeps_amp_and_project():
     assert "Pétoncles" not in blob
     assert "deposit" not in blob.lower()
     assert "Chaluts" not in blob
+
+
+# ── RC27 : gabarit compact 2:30, intégral inchangé ───────────────────────────
+
+
+def test_rc27_compact_150_vs_full_integral():
+    """2:30 : une phrase d'ouverture, arrivée courte ; l'intégral garde RG6."""
+    review = _rg6_review()
+    journal = {**JOURNAL, **MOMENTS}
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS, review=review,
+    )
+    full = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review,
+    )
+    blob150 = _script_blob(short)
+    blob0 = _script_blob(full)
+    assert short["chars"] / 15 <= 150 * 1.1
+    assert re.search(r"cap sur Fort-de-France : .+ milles", blob150)
+    assert "jours de mer" in blob150
+    assert "Berry-Mappemonde quitte Ajaccio" not in blob150
+    assert "longue traversée vers" not in blob150
+    assert "nœuds de moyenne" not in blob150
+    assert not re.search(r"escale de |d['’]escale", blob150)
+    assert re.search(r"Arrivée le \d+", blob150)
+    assert "Berry-Mappemonde quitte" in blob0
+    assert "nœuds de moyenne" in blob0
+    assert "Arrivée à" in blob0
+    for ch in short["chapters"]:
+        for sent in re.split(r"(?<=[.!?…])\s+", ch.get("text") or ""):
+            for name in ("Fort-de-France", "Ajaccio", "Nouméa"):
+                assert sent.lower().count(name.lower()) <= 1, sent
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="fr",
+        review=review, compact=True,
+    )
+    assert len(opens) == 1
+    assert "par la route" in opens[0]
+    assert "Le plan compte" not in opens[0]
+    en = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="en", seconds=150, now_ms=NOW_MS, review=review,
+    )
+    blob_en = _script_blob(en)
+    assert "heading for Fort-de-France" in blob_en
+    assert "long crossing to" not in blob_en
+    assert "knots on average" not in blob_en
+    assert re.search(r"Arrival on ", blob_en)
+    assert en["chars"] / 15 <= 150 * 1.1
+
+
+def test_rc27_rich_150_keeps_amp_project_integral_gabarit_intact():
+    journal = _rc22_rich_journal()
+    review = _rg6_review()
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS, review=review,
+    )
+    full = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review,
+    )
+    blob = _script_blob(short)
+    blob0 = _script_blob(full)
+    assert short["targetSeconds"] == 150
+    assert short["chars"] / 15 <= 150 * 1.1
+    assert "Rochebonne" in blob
+    assert "Récif sentinelle" in blob
+    assert "le projet" in blob
+    assert "aire marine" in blob
+    assert "Pétoncles" not in blob
+    assert "deposit" not in blob.lower()
+    assert "Chaluts" not in blob
+    assert "Berry-Mappemonde quitte" in blob0
+    assert "nœuds de moyenne" in blob0
+    assert "Arrivée à" in blob0
+    assert full["chars"] > short["chars"]
 
 
 # ── RC26 : récit dense et réparti ───────────────────────────────────────────
