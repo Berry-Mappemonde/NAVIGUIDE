@@ -573,12 +573,12 @@ export default function App() {
     lat: Number.isFinite(momentLat) ? Math.round(momentLat * 1000) / 1000 : null,
     lon: Number.isFinite(momentLon) ? Math.round(momentLon * 1000) / 1000 : null,
     t: momentIso ? String(momentIso).slice(0, 16) : undefined,
-    mode: drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation"),
+    mode: drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : "simulation"),
     lang,
     enabled: sceneReady,
     frozen: replay.active,
   });
-  const momentMode = drawingMode ? "drawn" : (isSuivre ? "follow" : "simulation");
+  const momentMode = drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : "simulation");
   // DM5 — Suivre × ma route n'écrit ni ne lit la mémoire officielle
   // (GET /voyage/official/moments) : journal local, même clé qu'en Tracer.
   const momentJournalMode = momentMode === "follow" && routeSource === "custom" ? "simulation" : momentMode;

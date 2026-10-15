@@ -200,7 +200,9 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
     waypoints: Number(routerWaypoints).toLocaleString(locale),
     points: Number(vertexCount).toLocaleString(locale),
   });
-  if (drawing) return <DrawingBox drawing={drawing} />;
+  // DM6 — brouillon vide : la légende d'escales reste (lot RE2). Le cadre
+  // de tracé ne remplace l'expédition qu'à partir du premier point.
+  if (drawing?.points?.length) return <DrawingBox drawing={drawing} />;
   return (
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
       <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>

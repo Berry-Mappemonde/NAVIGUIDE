@@ -426,7 +426,7 @@ export const Sidebar = memo(function Sidebar({
             isTracerView={isSimulation}
           />
 
-          {!isDrawing && chat ? (
+          {!drawingHidesBerry && chat ? (
             <div className="mt-1.5">
               <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
             </div>
