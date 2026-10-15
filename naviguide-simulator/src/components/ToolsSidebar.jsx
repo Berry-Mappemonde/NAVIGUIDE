@@ -304,11 +304,15 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
     waypoints: Number(routerWaypoints).toLocaleString(locale),
     points: Number(vertexCount).toLocaleString(locale),
   });
-  // DM6 — brouillon vide auto (entrée Tracer) : la légende d'escales reste
-  // (lot RE2). Un clic « Tracer votre propre route » (R13 / R9a) pose
-  // drawing.showBox : le cadre s'ouvre même à 0 point.
-  if (drawing?.showBox || drawing?.points?.length) return <DrawingBox drawing={drawing} />;
+  // Dessin ouvert : le cadre « Tracé en cours » est toujours là (c'est le retour
+  // visuel « vous dessinez, cliquez sur la carte » — surface de main, specs RH2 /
+  // R9a / R13 / RF1 / S). DM6 ouvre le dessin dès l'entrée en Tracer : à brouillon
+  // vide, la légende des escales reste DESSOUS (vitrine Berry, lot RE2) ; dès le
+  // premier point, le cadre remplace l'expédition comme avant DM6.
+  if (drawing?.points?.length) return <DrawingBox drawing={drawing} />;
   return (
+    <div className="space-y-2">
+    {drawing ? <DrawingBox drawing={drawing} /> : null}
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
       <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
         <span className="font-semibold text-white cursor-help border-b border-dotted border-white/30" title={distanceHint}>{nm}</span>
@@ -319,6 +323,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
         </span>
       </div>
       <EscaleLegend marks={escaleMarks} filmNm={filmNm} frozen={frozen} nowMs={nowMs} liveFilmNm={liveFilmNm} officialEta={officialEta} />
+    </div>
     </div>
   );
 }

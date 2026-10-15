@@ -196,9 +196,6 @@ export default function App() {
   const drawingModeRef = useRef(false);
   const customRouteRef = useRef(null);
   const armDrawingWorldRef = useRef(() => {});
-  // R13 / R9a : le clic « Tracer votre propre route » ouvre drawing-box même
-  // à 0 point. L'entrée auto Tracer (DM6) laisse la légende d'escales.
-  const [drawBoxOpen, setDrawBoxOpen] = useState(false);
 
   // The drawn route: points, searoute segments, undo / redo (lot J: hooks/useRouteDrawing.js).
   const drawingState = useRouteDrawing();
@@ -209,10 +206,6 @@ export default function App() {
   } = drawingState;
   drawingModeRef.current = drawingMode;
   customRouteRef.current = customRoute;
-
-  useEffect(() => {
-    if (!drawingMode) setDrawBoxOpen(false);
-  }, [drawingMode]);
 
   const [layerPopup, setLayerPopup] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -1293,7 +1286,6 @@ export default function App() {
       setToolsOpen(cinemaSavedRef.current.tools);
       setHideFilmBar(false);
     }
-    setDrawBoxOpen(true);
     armDrawingWorldRef.current(view);
   };
 
@@ -1360,7 +1352,6 @@ export default function App() {
   }, [drawNotice]);
 
   const handleDrawContinue = () => {
-    setDrawBoxOpen(true);
     armDrawingWorldRef.current(view);
   };
 
@@ -1516,9 +1507,8 @@ export default function App() {
       failed,
       loading: drawingLoading,
       message: drawingMessage,
-      showBox: drawBoxOpen || drawnPoints.length > 0,
     };
-  }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, drawBoxOpen, t]);
+  }, [drawingMode, drawnPoints, drawnSegments, drawingLoading, drawingMessage, t]);
   const statsSegs = useMemo(
     () => (routeForView ? featuresToSegments(routeForView) : segments),
     [routeForView, segments],
