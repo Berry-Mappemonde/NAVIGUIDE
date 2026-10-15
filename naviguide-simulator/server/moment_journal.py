@@ -112,7 +112,7 @@ def _mpa_keys(moment: dict | None) -> dict[str, dict]:
             continue
         if is_fishing_amp(item):
             continue
-        key = str(item.get("site_id") or item.get("id") or item.get("name") or "")
+        key = str(item.get("siteId") or item.get("site_id") or item.get("id") or item.get("name") or "")
         if key:
             spoken = spoken_amp_name(item.get("name") or key)
             out[key] = {**item, "name": spoken or item.get("name") or key}
@@ -276,16 +276,38 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
         ))
 
     prev_mpa = _mpa_keys(prev)
-    for key, item in _mpa_keys(cur).items():
-        if key in prev_mpa:
-            continue
+    cur_mpa = _mpa_keys(cur)
+
+    def _amp_change(item: dict, key: str, event: str, *, nm: Any, inside: bool) -> dict:
         name = item.get("name") or key
-        nm = item.get("nm")
         fact = f"{name} ({nm} nm)" if nm is not None else str(name)
         ch = _change("amp", SCORE_AMP, name, fact)
         if nm is not None:
             ch["nm"] = nm
-        changes.append(ch)
+        ch["event"] = event
+        ch["inside"] = inside
+        site = item.get("siteId") or item.get("site_id") or item.get("id")
+        if site:
+            ch["siteId"] = site
+            ch["site_id"] = site
+        return ch
+
+    for key, item in cur_mpa.items():
+        prev_item = prev_mpa.get(key)
+        inside = bool(item.get("inside"))
+        was_inside = bool(prev_item.get("inside")) if prev_item else False
+        if inside and not was_inside:
+            changes.append(_amp_change(item, key, "enter", nm=0, inside=True))
+        elif prev_item is None and not inside:
+            nm = item.get("nm")
+            changes.append(_amp_change(item, key, "nearby", nm=nm, inside=False))
+    for key, item in prev_mpa.items():
+        cur_item = cur_mpa.get(key)
+        if not item.get("inside"):
+            continue
+        if cur_item is not None and cur_item.get("inside"):
+            continue
+        changes.append(_amp_change(item, key, "exit", nm=0, inside=False))
 
     if not changes:
         prev_titles, cur_titles = _around_titles(prev), _around_titles(cur)
@@ -625,6 +647,11 @@ def _with_clock(voy: dict) -> dict:
     except Exception:
         clock = None
     return {**voy, "clock": clock} if clock else voy
+
+
+def rows_from_voyage(voyage_id: str, voy: dict) -> list[dict]:
+    """Moments datés, même forme que le journal officiel. `voy['pearls']` si déjà chargées."""
+    return _build_rows(voyage_id, voy)
 
 
 def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:

@@ -388,7 +388,7 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     let s = advanceMoments(emptyMoments(), { events: [gale], filmCum: 100, nowMs: 0, playing: false, legId: "A" });
     assert.match(s.now.text, /Coup de vent : 36 kn/);
     const withStory = { ...gale, story: { status: "ready", text: "Le vent monte à 36 nœuds : on réduit la toile." } };
-    s = advanceMoments(s, { events: [withStory], filmCum: 100, nowMs: 1, playing: false, legId: "A" });
+    s = advanceMoments(s, { events: [withStory], filmCum: 100, nowMs: 1, playing: false, legId: "A", written: true });
     assert.equal(s.now.text, "Le vent monte à 36 nœuds : on réduit la toile.");
     assert.equal(s.now.storyStatus, "ready");
   });

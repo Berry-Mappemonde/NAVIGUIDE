@@ -18,9 +18,9 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-const AIR_OUT = /prend l'avion pour|the crew flies to/i;
-const AIR_BACK = /retour en avion vers|return flight to/i;
-const AIR_ANY = /prend l'avion|retour en avion|the crew flies|return flight/i;
+const AIR_OUT = /prend l'avion pour|s'envole de Cayenne|the crew flies (?:to|from)/i;
+const AIR_BACK = /retour en avion vers|return flight to|s'envole de Halifax|flies from Halifax/i;
+const AIR_ANY = /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i;
 
 async function dismissNotForNav(page) {
   const modal = page.getByTestId("not-for-nav-modal");
@@ -174,9 +174,10 @@ test("lot RC16 — sous-titre visible : avion aller et retour à la Guyane", asy
     const list = window.__naviguideFilm?.chapters || [];
     const both = list.findIndex((c) => {
       const t = c.text || "";
-      return /prend l'avion|the crew flies/i.test(t) && /retour en avion|return flight/i.test(t);
+      return /prend l'avion|s'envole de Cayenne|the crew flies/i.test(t)
+        && /retour en avion|return flight|s'envole de Halifax|flies from Halifax/i.test(t);
     });
-    const any = list.findIndex((c) => /prend l'avion|retour en avion|the crew flies|return flight/i.test(c.text || "")
+    const any = list.findIndex((c) => /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i.test(c.text || "")
       || /cayenne|guyane/i.test(c.fromName || "")
       || /cayenne|guyane/i.test(c.toName || ""));
     const i = both >= 0 ? both : any;
@@ -208,7 +209,7 @@ test("lot RC16 — sous-titre visible : avion aller et retour à la Guyane", asy
     const otherIdx = await page.evaluate(() => {
       const list = window.__naviguideFilm?.chapters || [];
       const cur = window.__naviguideFilm?.chapterIdx ?? -1;
-      const i = list.findIndex((c, idx) => idx !== cur && /prend l'avion|retour en avion|the crew flies|return flight/i.test(c.text || ""));
+      const i = list.findIndex((c, idx) => idx !== cur && /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i.test(c.text || ""));
       if (i >= 0) window.__naviguideFilm.seekChapter(i);
       return i;
     });

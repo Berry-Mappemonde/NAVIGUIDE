@@ -256,10 +256,13 @@ def import_legacy_json(path: Path, ttl_s: float) -> int:
         if now - ts > ttl_s:
             continue
         parts = key.split(":")
-        # 3 parties = lat:lon:radius ; 4 = + PEARL_REV (rg3). Un 4e chiffre = ancien mois.
+        # 3 = lat:lon:radius ; 4 = + PEARL_REV (rg3) ; 5 = + a{sig} (AM1A).
+        # Un 4e segment numérique = ancien mois, ignoré.
         if len(parts) == 3:
             pass
         elif len(parts) == 4 and not str(parts[3]).isdigit():
+            pass
+        elif len(parts) == 5 and str(parts[4]).startswith("a"):
             pass
         else:
             continue
@@ -321,6 +324,17 @@ def kv_delete(ns: str, key: str) -> bool:
     except Exception as exc:
         log.warning("store kv (suppression) : %s", exc)
         return False
+
+
+def kv_keys(ns: str) -> list[str]:
+    """Toutes les clés d'un namespace (migration HC1). Vide si store cassé."""
+    try:
+        with _LOCK:
+            rows = _connect().execute("SELECT key FROM kv WHERE ns = ?", (ns,)).fetchall()
+        return [str(r[0]) for r in rows]
+    except Exception as exc:
+        log.warning("store kv (clés) : %s", exc)
+        return []
 
 
 def kv_count(ns: str) -> int:

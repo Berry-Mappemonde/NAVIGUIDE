@@ -421,6 +421,20 @@ def _split_hours_by_day(hours: Dict[str, dict]) -> Dict[str, dict]:
     return by_day
 
 
+# ERA5 répond des null pour les jours pas encore publiés (~5 j de retard) :
+# un jour avec moins de 20 heures de vent n'est PAS mis en cache — il sera
+# redemandé quand l'archive l'aura publié (HC1 : le cache est immuable).
+ERA5_MIN_PUBLISHED_HOURS = 20
+
+
+def _era5_published_day(day_hours: dict) -> Optional[dict]:
+    kept = {iso: row for iso, row in (day_hours or {}).items()
+            if row.get("speedKnots") is not None}
+    if len(kept) < ERA5_MIN_PUBLISHED_HOURS:
+        return None
+    return kept
+
+
 def _fetch_om_era5(lat: float, lon: float, day: str, end_date: Optional[str] = None) -> Optional[dict]:
     clat, clon = cell_center(lat, lon)
     start = _day_str(day)
@@ -439,7 +453,11 @@ def _fetch_om_era5(lat: float, lon: float, day: str, end_date: Optional[str] = N
     hours = {}
     for iso, row in _hours_from_om(data).items():
         hours[iso] = _era5_hour_row(row)
-    extra = {d: {"hours": h} for d, h in _split_hours_by_day(hours).items()}
+    extra = {}
+    for d, pack in _split_hours_by_day(hours).items():
+        kept = _era5_published_day(pack)
+        if kept:
+            extra[d] = {"hours": kept}
     packed = extra.get(start) or {"hours": {}}
     return {"hours": packed.get("hours") or {}, "source": SRC_OM_ERA5, "extraDays": extra}
 
@@ -949,6 +967,96 @@ def fill_era5_along(slots, *, fetch: bool = True) -> int:
         if om_quota_blocked():
             break
     return n
+
+
+ERA5_WINDOW_PAD_DAYS = 3
+_MIGRATION_KEY = "migration:v1"
+
+
+def era5_day_cached(lat: float, lon: float, day: str | datetime) -> bool:
+    """Vrai si la série ERA5 de (cellule, jour) est en cache — jamais de réseau."""
+    hit = kv_get(CACHE_NS, cache_key(lat, lon, SRC_OM_ERA5, _day_str(day)))
+    return bool(_cached_hours(hit))
+
+
+def fill_era5_window(lat: float, lon: float, day: str | datetime,
+                     *, pad_days: int = ERA5_WINDOW_PAD_DAYS) -> Optional[int]:
+    """UN appel archive pour la cellule : la plage contiguë de jours NON cachés
+    autour de `day` dans [jour−pad, jour+pad] (lot HC1 : le besoin vient du
+    trajet réel intégré, jamais de l'horloge climatologique).
+
+    Un jour déjà en cache n'est JAMAIS redemandé. Retourne le nombre de jours
+    stockés, `None` si l'appel a échoué (panne — rien n'est mis en cache).
+    Lève `OpenMeteoQuotaExceeded` au 429 / plafond.
+    """
+    clat, clon = cell_center(lat, lon)
+    target = _day_str(day)
+    if era5_day_cached(clat, clon, target):
+        return 0
+    lo = target
+    while _shift_day(lo, -1) >= _shift_day(target, -pad_days) and not era5_day_cached(clat, clon, _shift_day(lo, -1)):
+        lo = _shift_day(lo, -1)
+    hi = target
+    while _shift_day(hi, 1) <= _shift_day(target, pad_days) and not era5_day_cached(clat, clon, _shift_day(hi, 1)):
+        hi = _shift_day(hi, 1)
+    raw = _fetch_om_era5(clat, clon, lo, end_date=hi)
+    if raw is None:
+        return None
+    extra = raw.get("extraDays") or {}
+    if raw.get("hours"):
+        extra = {**extra, lo: {"hours": raw["hours"]}}
+    stored = 0
+    for d, pack in extra.items():
+        if _store_product_day(clat, clon, SRC_OM_ERA5, d, pack.get("hours") or {}):
+            stored += 1
+    return stored
+
+
+def migrate_orphan_cache_keys() -> dict:
+    """Re-clé les séries d'avant RF10 (coordonnées brutes) sur leur cellule 0,25°.
+
+    Sans ambiguïté seulement : si la clé cellule existe déjà, l'orpheline est
+    abandonnée (on ne remplace jamais une série immuable). Les clés composites
+    (blend) sont laissées telles quelles.
+    """
+    from pearl_store import kv_delete, kv_keys  # noqa: PLC0415
+
+    out = {"scanned": 0, "migrated": 0, "abandoned": 0}
+    for key in kv_keys(CACHE_NS):
+        parts = str(key).split(":")
+        if len(parts) != 4:
+            continue
+        lat_s, lon_s, product, day = parts
+        if product not in PRODUCTS:
+            continue
+        try:
+            lat, lon = float(lat_s), float(lon_s)
+        except ValueError:
+            continue
+        canonical = cache_key(lat, lon, product, day)
+        if canonical == key:
+            continue
+        out["scanned"] += 1
+        hit = kv_get(CACHE_NS, key)
+        if not _cached_hours(hit) or kv_get(CACHE_NS, canonical) is not None:
+            out["abandoned"] += 1
+            continue
+        kv_put(CACHE_NS, canonical, hit["value"])
+        kv_delete(CACHE_NS, key)
+        out["migrated"] += 1
+    return out
+
+
+def migrate_orphans_once() -> Optional[dict]:
+    """Migration une seule fois par store (marqueur dans le cache)."""
+    if kv_get(CACHE_NS, _MIGRATION_KEY):
+        return None
+    out = migrate_orphan_cache_keys()
+    kv_put(CACHE_NS, _MIGRATION_KEY, out)
+    if out["scanned"]:
+        log.info("hindcast: migration des clés orphelines — %(migrated)s re-clées, "
+                 "%(abandoned)s abandonnées sur %(scanned)s", out)
+    return out
 
 
 def era5_coverage(clock: dict, now: datetime | str) -> tuple[int, int]:

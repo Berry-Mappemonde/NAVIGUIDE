@@ -7,19 +7,19 @@ export function formatMetNumber(value, digits = 2) {
 }
 
 /** Code 16 rumbs (N, ENE, SSE, …). Vide si pas d’angle. */
-export function formatCardinal(degrees) {
+export function formatCardinal(degrees, lang = "fr") {
   const n = Number(degrees);
   if (!Number.isFinite(n)) return "";
-  return getCardinalDirection(((n % 360) + 360) % 360);
+  return getCardinalDirection(((n % 360) + 360) % 360, lang);
 }
 
 /** Cardinale d’abord, puis degrés : « SSE · 162.5° ». */
-export function formatBearingCardinal(degrees) {
+export function formatBearingCardinal(degrees, lang = "fr") {
   const n = Number(degrees);
   if (!Number.isFinite(n)) return "";
   const wrapped = ((n % 360) + 360) % 360;
   const shown = formatMetNumber(wrapped, 1);
-  const card = formatCardinal(wrapped);
+  const card = formatCardinal(wrapped, lang);
   return card ? `${card} · ${shown}°` : `${shown}°`;
 }
 

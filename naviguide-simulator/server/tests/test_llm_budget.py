@@ -38,8 +38,10 @@ def test_allow_false_at_cap(monkeypatch):
 def test_models_and_sources_are_overridable(monkeypatch):
     assert llm_budget.model_for("fast") == "nvidia/Nemotron-3_5-Lightning"
     assert llm_budget.model_for("write") == "nvidia/nemotron-3-super-120b-a12b"
+    assert llm_budget.model_for("deep") == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert llm_budget.model_for("judge") == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert llm_budget.source_for("write") == "nemotron-super"
+    assert llm_budget.source_for("deep") == "nemotron-ultra"
     monkeypatch.setenv("NAVIGUIDE_TF_MODEL_WRITE", "nvidia/nemotron-3-nano-30b-a3b")
     assert llm_budget.model_for("write") == "nvidia/nemotron-3-nano-30b-a3b"
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -65,9 +67,22 @@ def test_remember_source_skips_cache():
     assert st["lastSource"] == "nemotron-super"
 
 
+def test_remember_cascade_error_is_in_status():
+    llm_budget.remember_cascade_errors([
+        {"provider": "tokenfactory", "reason": "tokenfactory HTTP 422 {\"error\":\"empty\"}"},
+        {"provider": "nim", "reason": "NVIDIA_API_KEY missing"},
+    ])
+    err = llm_budget.last_error()
+    assert err["provider"] == "tokenfactory"
+    assert "422" in err["reason"]
+    st = llm_budget.status()
+    assert st["lastError"]["provider"] == "tokenfactory"
+    assert [h["provider"] for h in st["lastErrors"]] == ["tokenfactory", "nim"]
+
+
 def test_mode_off_forbids_every_call(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
-    for tier in ("fast", "write", "judge"):
+    for tier in ("fast", "write", "deep", "judge"):
         assert llm_budget.allow(tier) is False
 
 
@@ -94,3 +109,18 @@ def test_judge_cap_is_zero_by_default(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
     assert llm_budget.daily_cap("judge") == 0
     assert llm_budget.allow("judge") is False
+
+
+def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")
+    monkeypatch.setenv("NAVIGUIDE_LLM_BACKGROUND", "1")
+    assert llm_budget.allow("write") is False
+    assert llm_budget.allow("fast") is False
+    with llm_budget.deferred_demand():
+        assert llm_budget.allow("write") is True
+        assert llm_budget.allow("fast") is False
+    assert llm_budget.allow("write") is False
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    with llm_budget.deferred_demand():
+        assert llm_budget.allow("write") is False

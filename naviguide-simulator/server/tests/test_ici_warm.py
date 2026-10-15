@@ -108,6 +108,46 @@ def test_status_exposes_llm_budget_counters():
         assert set(st["llm"][tier]) >= {"tokens", "calls", "usd"}
         assert st["llm"][tier]["tokens"] == 0
         assert st["llm"][tier]["calls"] == 0
+    assert st["stories"]["skipped"] == "on-demand"
+
+
+def test_warm_skips_stories_and_does_not_call_llm(tmp_path, monkeypatch):
+    """RG18 : un warm complet n'appelle pas cascade_text ; le compteur write ne bouge pas."""
+    import llm_budget
+    import story_cascade
+    import voyage_store
+    reset_caches()
+    voyage_store.save_voyage({
+        "voyageId": "berry-mappemonde-2026-officiel",
+        "points": _route()[:6],
+        "marks": [],
+        "t0": "2026-05-15T08:00:00Z",
+    })
+    calls = []
+
+    async def boom(*_a, **_k):
+        calls.append(1)
+        raise RuntimeError("cascade_text forbidden during warm")
+
+    monkeypatch.setattr(story_cascade, "cascade_text", boom)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
+    real_fill = ici_engine.fill_dossier
+
+    async def patched(lat, lon, radius_nm=30.0, client=None, **kw):
+        async with httpx.AsyncClient(transport=transport) as c:
+            return await real_fill(lat, lon, radius_nm, client=c, **kw)
+
+    monkeypatch.setattr(ici_engine, "fill_dossier", patched)
+    before = llm_budget.get_usage("write")["tokens"]
+    out = asyncio.run(ici_warm.warm_official_route(pause_s=0))
+    assert out["stories"]["skipped"] == "on-demand"
+    assert calls == []
+    assert llm_budget.get_usage("write")["tokens"] == before
+    assert ici_warm.stories_enabled() is False
 
 
 def test_warmer_is_disabled_by_env(monkeypatch):
@@ -137,3 +177,72 @@ def test_pearls_carry_the_clocks_sail_scale_including_the_land_leg():
     # Without cumNm the old accumulation still works (0 at the first sea point).
     bare = ici_warm.sample_route_nm([{k: v for k, v in p.items() if k != "cumNm"} for p in pts])
     assert bare[0]["sailNm"] == 0
+
+
+def _put_amp_pearls(pearls, bags):
+    import ici_engine
+    from ici_engine import thin_cache_key
+
+    ici_engine.reset_caches()
+    for p, bag in zip(pearls, bags):
+        ici_engine.thin_cache_put(
+            thin_cache_key(p["lat"], p["lon"], 30.0),
+            bag,
+            "rich",
+            p["lat"],
+            p["lon"],
+        )
+
+
+def test_am1b_amp_enter_exit_and_nearby(monkeypatch):
+    """Trois perles, la 2e dedans → enter puis exit ; 10 nm du bord → nearby."""
+    pearls = [
+        {"lat": 41.00, "lon": 9.00, "sailNm": 0},
+        {"lat": 41.20, "lon": 9.20, "sailNm": 12},
+        {"lat": 41.40, "lon": 9.40, "sailNm": 24},
+    ]
+    park = "Réserve des Bouches de Bonifacio"
+    bags = [
+        {"amp": [{"name": park, "siteId": "AIFRA7", "inside": False, "nm": 22.0, "source": "polygon"}], "sources": {"bi": "ok"}},
+        {"amp": [{"name": park, "siteId": "AIFRA7", "inside": True, "nm": 0.0, "source": "polygon"}], "sources": {"bi": "ok"}},
+        {"amp": [{"name": park, "siteId": "AIFRA7", "inside": False, "nm": 18.0, "source": "polygon"}], "sources": {"bi": "ok"}},
+    ]
+    monkeypatch.setattr(ici_warm, "sample_route_nm", lambda points, step_nm=12.0: pearls)
+    _put_amp_pearls(pearls, bags)
+    events = ici_warm.route_events_from_pearls([{"lat": p["lat"], "lon": p["lon"], "cumNm": p["sailNm"]} for p in pearls])
+    amps = [e for e in events if e["kind"] == "amp"]
+    assert [(e["event"], e["idx"]) for e in amps] == [("enter", 1), ("exit", 2)]
+    assert amps[0]["name"] == park and amps[0]["inside"] is True
+
+    near_pearls = [{"lat": 39.10, "lon": 3.00, "sailNm": 0}]
+    near_bags = [{"amp": [{"name": "Parc de Cabrera", "siteId": "ES-CAB", "inside": False, "nm": 10.0, "source": "polygon"}], "sources": {"bi": "ok"}}]
+    monkeypatch.setattr(ici_warm, "sample_route_nm", lambda points, step_nm=12.0: near_pearls)
+    _put_amp_pearls(near_pearls, near_bags)
+    near = [e for e in ici_warm.route_events_from_pearls(near_pearls) if e["kind"] == "amp"]
+    assert len(near) == 1 and near[0]["event"] == "nearby" and near[0]["nm"] == 10.0
+
+
+def test_am1b_amp_dedup_prefix_and_export_fallback(monkeypatch):
+    """Lilleau ×2 = un événement ; sac export sans inside = nearby d'avant, jamais rouge."""
+    pearls = [{"lat": 46.15, "lon": -1.40, "sailNm": 0}]
+    monkeypatch.setattr(ici_warm, "sample_route_nm", lambda points, step_nm=12.0: pearls)
+    bags = [{
+        "amp": [
+            {"name": "Lilleau-des-Niges", "siteId": "a1", "inside": False, "nm": 4.9, "source": "polygon"},
+            {"name": "Lilleau-des-Niges - Zone de Protection", "siteId": "a2", "inside": False, "nm": 4.9, "source": "polygon"},
+        ],
+        "sources": {"bi": "ok"},
+    }]
+    _put_amp_pearls(pearls, bags)
+    amps = [e for e in ici_warm.route_events_from_pearls(pearls) if e["kind"] == "amp"]
+    assert len(amps) == 1 and amps[0]["event"] == "nearby"
+
+    export_bags = [{
+        "amp": [{"name": "Pertuis charentais - Rochebonne", "site_id": "rb-1", "nm": 8.0, "source": "export", "iucn_cat": "II"}],
+        "sources": {"bi": "ok"},
+    }]
+    _put_amp_pearls(pearls, export_bags)
+    exp = [e for e in ici_warm.route_events_from_pearls(pearls) if e["kind"] == "amp"]
+    assert len(exp) == 1 and exp[0]["event"] == "nearby" and "inside" in exp[0]
+    assert exp[0]["inside"] is False
+    assert exp[0].get("source") == "export"

@@ -17,6 +17,7 @@ from story_cascade import (
     need_page,
     providers,
     slim_event,
+    story_tier,
     translate,
     write_story,
 )
@@ -27,6 +28,13 @@ CAPTURE_LEAK = (
     "- Task: Present a scale stop to a sailing crew arriving at Pointe-à-Pitre.\n"
     "What's for the boat, what's for the crew, what to know for formalities."
 )
+
+
+def test_story_tier_ultra_for_escales_and_alerts():
+    assert story_tier({"type": "stop"}) == "deep"
+    assert story_tier({"type": "wind-gale"}) == "deep"
+    assert story_tier({"type": "zee-enter", "severity": "info"}) == "write"
+    assert story_tier({"type": "zee-enter", "severity": "alert"}) == "deep"
 
 
 def test_default_cascade_is_token_factory_not_tavily():
@@ -730,3 +738,90 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
     assert source == "nemotron-super"
     assert seen["chat_template_kwargs"]["thinking"] is False
     assert seen["reasoning_effort"] == "low"
+
+
+def test_lightning_payload_omits_thinking():
+    import llm_budget
+    import story_cascade
+
+    payload = story_cascade._tf_payload("sys", "user", "fast")
+    assert "reasoning_effort" not in payload
+    assert "chat_template_kwargs" not in payload
+    assert payload["max_tokens"] == llm_budget.max_tokens_for("fast")
+    assert payload["max_tokens"] == 512
+
+
+def test_tokenfactory_http_error_includes_body():
+    import story_cascade
+
+    class Fake:
+        status_code = 400
+        text = '{"error":"max_tokens too small for thinking"}'
+
+    err = story_cascade._http_error("tokenfactory", Fake())
+    assert "400" in str(err)
+    assert "max_tokens too small" in str(err)
+
+
+def test_cascade_records_tokenfactory_failure(monkeypatch, caplog):
+    import llm_budget
+    import story_cascade
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "tokenfactory" in str(request.url):
+            return httpx.Response(422, text='{"error":"empty completion"}')
+        return httpx.Response(500)
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    caplog.set_level("WARNING", logger="naviguide-simulator.story-cascade")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text("sys", "user", client, fallback="Phrase locale.", facts="user")
+
+    text, source = asyncio.run(run())
+    assert source == "rules"
+    assert text == "Phrase locale."
+    hops = llm_budget.last_errors()
+    assert hops and hops[0]["provider"] == "tokenfactory"
+    assert "422" in hops[0]["reason"]
+    assert "empty completion" in hops[0]["reason"]
+    err = llm_budget.last_error()
+    assert err["provider"] == "tokenfactory"
+    assert any("tokenfactory" in r.message for r in caplog.records)
+    assert {h["provider"] for h in hops} >= {"tokenfactory", "nim", "openrouter", "claude"}
+    assert llm_budget.status()["lastError"]["reason"] == err["reason"]
+
+
+def test_cascade_keeps_tokenfactory_error_when_nim_answers(monkeypatch):
+    import llm_budget
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "tokenfactory" in url:
+            return httpx.Response(400, text='{"error":"thinking not allowed"}')
+        if "integrate.api.nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok("The boat is at the quay."))
+        return httpx.Response(500)
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text("sys", "The boat.", client, fallback="x", facts="The boat")
+
+    text, source = asyncio.run(run())
+    assert "quay" in text
+    assert source.startswith("nvidia-")
+    err = llm_budget.last_error()
+    assert err["provider"] == "tokenfactory"
+    assert "400" in err["reason"]
+    assert "thinking not allowed" in err["reason"]

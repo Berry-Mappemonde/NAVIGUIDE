@@ -4,7 +4,9 @@
  */
 
 import { briefingEntities, placeLabel, segmentBriefingWithSources } from "./briefingLinks.js";
+import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+import { localizePlaceName } from "../utils/placeNames.js";
 
 const TERRITORY = {
   fr: {
@@ -13,7 +15,7 @@ const TERRITORY = {
     martinique: "Martinique",
     guadeloupe: "Guadeloupe",
     saint_barthelemy: "Saint-Barthélemy",
-    saint_martin: "Saint-Martin",
+    saint_martin: "Saint-Martin (partie française)",
     saint_pierre_et_miquelon: "Saint-Pierre-et-Miquelon",
     polynesie_francaise: "Polynésie française",
     nouvelle_caledonie: "Nouvelle-Calédonie",
@@ -28,7 +30,7 @@ const TERRITORY = {
     martinique: "Martinique",
     guadeloupe: "Guadeloupe",
     saint_barthelemy: "Saint Barthélemy",
-    saint_martin: "Saint Martin",
+    saint_martin: "Saint-Martin (French side)",
     saint_pierre_et_miquelon: "Saint Pierre and Miquelon",
     polynesie_francaise: "French Polynesia",
     nouvelle_caledonie: "New Caledonia",
@@ -72,8 +74,7 @@ function num(n, lang, digits = null) {
 function heading(deg, lang) {
   const d = Number(deg);
   if (!Number.isFinite(d)) return "";
-  let card = getCardinalDirection(d);
-  if (isEn(lang)) card = card.replace(/O/g, "W");
+  const card = getCardinalDirection(d, lang);
   return `${card} (${Math.round(d)}°)`;
 }
 
@@ -165,9 +166,11 @@ function zeeSentence(dossier, lang) {
       ? `The boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
       : `Le bateau est à terre${extra ? ` ${extra}` : ""}, hors de toute ZEE.`;
   }
-  if (!zee.mrgid || zee.name === "Haute mer") return highSeas;
+  if (!zee.mrgid || zee.name === "Haute mer" || zee.name === "High seas") return highSeas;
+  const spoken = spokenZeeName(zee, lang);
   const territory = TERRITORY[en ? "en" : "fr"][zee.territory];
-  const where = territory ? `${zee.name} (${territory})` : zee.name;
+  const zeeLabel = localizePlaceName(zee.name, lang);
+  const where = spoken || (territory ? `${zeeLabel} (${territory})` : zeeLabel);
   let formalities;
   if (zee.gold) {
     formalities = en
@@ -203,12 +206,29 @@ function poeSentence(dossier, lang) {
 }
 
 function ampSentence(dossier, lang) {
-  const items = dossier?.amp || [];
+  const items = (dossier?.amp || []).filter((x) => x && x.name);
   if (!items.length) return "";
-  const listed = listPlaces(items, lang, 3, "amp");
-  return isEn(lang)
-    ? `Marine protected areas within 30 nm: ${listed}.`
-    : `Aires marines protégées à moins de 30 milles : ${listed}.`;
+  const en = isEn(lang);
+  const inside = items.find((x) => x.inside === true);
+  if (inside) {
+    const name = placeLabel("amp", inside, lang);
+    return en
+      ? `In the marine protected area ${name}.`
+      : `Dans l'aire marine protégée ${name}.`;
+  }
+  const nearest = items[0];
+  const name = placeLabel("amp", nearest, lang);
+  const nm = Number.isFinite(Number(nearest.nm)) ? Number(nearest.nm) : null;
+  if (nm == null) {
+    const listed = listPlaces(items, lang, 3, "amp");
+    return en
+      ? `Marine protected areas nearby: ${listed}.`
+      : `Aires marines protégées à proximité : ${listed}.`;
+  }
+  const dist = num(nm, lang);
+  return en
+    ? `${dist} miles from ${name}.`
+    : `À ${dist} milles de ${name}.`;
 }
 
 function projectsSentence(dossier, lang) {
@@ -458,30 +478,79 @@ export function cleanStoryText(text) {
   return kept.slice(0, 2).join(" ").trim();
 }
 
-export function phraseForEvent(ev, lang = "fr") {
+function eventWaters(ev, lang) {
+  const p = ev.payload || {};
+  const zee = p.zee || {};
+  const raw = ev.name || zee.name;
+  const mrgid = Number.isInteger(zee.mrgid) ? zee.mrgid : (Number.isInteger(ev.mrgid) ? ev.mrgid : null);
+  return watersLabel(raw, lang, { mrgid, territory: zee.territory || null }) || raw;
+}
+
+function eventOrigin(ev) {
+  const p = ev.payload || {};
+  const raw = ev.name || p.amp?.name || p.harbour?.name || p.poe?.name;
+  return originName(raw) || raw;
+}
+
+/** Film-script sentence attached to the GET /ici bag (RG18). */
+export function pickFilmPhrase(ev, bag, lang = "fr") {
+  if (typeof ev?.filmPhrase === "string" && ev.filmPhrase.trim()) return ev.filmPhrase.trim();
+  const phrases = bag?.filmPhrases;
+  if (!phrases || !ev?.type) return "";
+  const loc = isEn(lang) ? "en" : "fr";
+  const take = (row) => {
+    if (!row) return "";
+    if (typeof row === "string") return row.trim();
+    return String(row[loc] || row.fr || "").trim();
+  };
+  const type = ev.type;
+  if (type === "zee-enter" || type === "zee-exit" || type === "zee-ahead") {
+    return take(phrases[type]);
+  }
+  if (type === "amp-enter" || type === "amp-ahead") {
+    const id = ev.payload?.amp?.site_id
+      || ev.payload?.amp?.id
+      || ev.payload?.amp?.wdpaid
+      || ev.payload?.amp?.name
+      || ev.name;
+    return take(phrases[`${type}:${id}`]) || take(phrases[type]);
+  }
+  if (type === "poe-ahead") {
+    const name = ev.payload?.poe?.name || ev.name;
+    return take(phrases[`poe-ahead:${name}`]) || take(phrases["poe-ahead"]);
+  }
+  return take(phrases[type]);
+}
+
+export function phraseForEvent(ev, lang = "fr", { written = false } = {}) {
   if (!ev) return "";
-  if (ev.story?.status === "ready" && ev.story.text) {
+  if (written && ev.story?.status === "ready" && ev.story.text) {
     const tidy = cleanStoryText(ev.story.text);
     if (tidy) return tidy;
   }
+  const film = typeof ev.filmPhrase === "string" ? ev.filmPhrase.trim() : "";
+  if (film) return film;
   if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
   const en = isEn(lang);
   const p = ev.payload || {};
-  const name = ev.name || p.zee?.name || p.amp?.name || p.harbour?.name;
+  const name = eventOrigin(ev);
   switch (ev.type) {
-    case "zee-enter":
+    case "zee-enter": {
+      const waters = eventWaters(ev, lang) || (en ? "this EEZ" : "cette ZEE");
       return en
-        ? `We have just entered ${name || "this EEZ"}.`
-        : `On vient d’entrer dans ${name || "cette ZEE"}.`;
+        ? `We have just entered ${waters}.`
+        : `On vient d’entrer dans ${waters}.`;
+    }
     case "zee-exit":
       return en
         ? "The boat is back on the high seas — no EEZ to clear."
         : "Retour en haute mer — plus de ZEE à déclarer.";
     case "zee-ahead": {
       const when = p.whenNm ?? ev.whenNm;
+      const waters = eventWaters(ev, lang) || (en ? "another EEZ" : "une autre ZEE");
       return en
-        ? `Ahead${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${name || "another EEZ"}.`
-        : `Devant${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${name || "une autre ZEE"}.`;
+        ? `Ahead${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${waters}.`
+        : `Devant${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${waters}.`;
     }
     case "amp-ahead": {
       const when = p.whenNm ?? ev.whenNm;
@@ -492,8 +561,8 @@ export function phraseForEvent(ev, lang = "fr") {
     }
     case "poe-ahead":
       return en
-        ? `Official port of entry ahead: ${p.poe?.name || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`
-        : `Port d’entrée officiel devant : ${p.poe?.name || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`;
+        ? `Official port of entry ahead: ${originName(p.poe?.name) || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`
+        : `Port d’entrée officiel devant : ${originName(p.poe?.name) || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`;
     case "amp-enter": {
       const visit = p.amp?.visitable || p.visitable;
       return en
@@ -571,10 +640,10 @@ export function phraseForEvent(ev, lang = "fr") {
   }
 }
 
-function eventSentence(dossier, lang) {
+function eventSentence(dossier, lang, written = false) {
   const ev = dossier?.event;
   if (!ev) return "";
-  return phraseForEvent(ev, lang);
+  return phraseForEvent(ev, lang, { written });
 }
 
 function legSentence(dossier, lang) {
@@ -592,7 +661,6 @@ function legSentence(dossier, lang) {
   const overland = isOverlandLeg(dossier, mark);
   const speed = !overland && Number.isFinite(polar.speedKnots) ? polar.speedKnots : null;
   const eta = formatEta(polar.etaHours, lang);
-  const boat = polar.boat;
   const bits = [];
   if (to && (speed != null || eta || overland)) {
     if (overland) {
@@ -607,9 +675,8 @@ function legSentence(dossier, lang) {
   } else if (speed != null) {
     bits.push(en ? `Boat speed on this leg: ${num(speed, lang)} knots.` : `Vitesse sur cette jambe : ${num(speed, lang)} nœuds.`);
   }
-  if (boat) {
-    bits.push(en ? `Polar loaded: ${boat}.` : `Polaire chargée : ${boat}.`);
-  }
+  // R13 : « Polaire » une fois — déjà sur polar-box (« Polaires chargées »).
+  // Le nom du bateau reste sous Polaires / Paramètres avancés, pas ici.
   return bits.join(" ");
 }
 
@@ -734,7 +801,10 @@ export function pearlKind(dossier) {
   return dossier.thin ? "thin" : null;
 }
 
-export function narrateIci(dossier, lang = "fr") {
+/** Source of `narrateIci` — deterministic rules, never `llm.lastSource`. */
+export const ICI_BRIEFING_SOURCE = "rules";
+
+export function narrateIci(dossier, lang = "fr", { written = false } = {}) {
   if (!dossier) return "";
   // A pearl (the along bag standing in while the full bag is on its way)
   // never collected weather, satellite or the sheet — those only make sense
@@ -751,7 +821,7 @@ export function narrateIci(dossier, lang = "fr") {
     live ? weatherSentence(dossier, lang) : "",
     thin ? "" : emodnetSentence(dossier, lang),
     live ? reviewSentence(dossier, lang) : "",
-    eventSentence(dossier, lang),
+    eventSentence(dossier, lang, written),
     thin ? "" : depthSentence(dossier, lang),
     climatologyShownOnBanner(dossier) ? "" : climatologySentence(dossier, lang),
     legSentence(dossier, lang),
@@ -778,8 +848,8 @@ export function climatologyShownOnBanner(dossier) {
  * (map focus + official sheet / Google Maps). Plain text is unchanged:
  * `segments.map((s) => s.text).join("")` === `narrateIci(dossier, lang)`.
  */
-export function narrateIciSegments(dossier, lang = "fr") {
-  const text = narrateIci(dossier, lang);
+export function narrateIciSegments(dossier, lang = "fr", opts = {}) {
+  const text = narrateIci(dossier, lang, opts);
   if (!text) return [];
   return segmentBriefingWithSources(text, briefingEntities(dossier, lang));
 }

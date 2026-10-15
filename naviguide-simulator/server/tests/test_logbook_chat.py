@@ -53,11 +53,15 @@ def test_chat_tier_fast_for_short_factual_question():
     assert logbook_chat.chat_tier("x" * 79) == "fast"
 
 
-def test_chat_tier_write_for_why_how_or_long_question():
-    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "write"
-    assert logbook_chat.chat_tier("Comment lire le vent ?") == "write"
-    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "write"
-    assert logbook_chat.chat_tier("How is the wind?") == "write"
+def test_chat_tier_deep_for_why_how_or_route_plan():
+    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "deep"
+    assert logbook_chat.chat_tier("Comment lire le vent ?") == "deep"
+    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "deep"
+    assert logbook_chat.chat_tier("How is the wind?") == "deep"
+    assert logbook_chat.chat_tier("Planifier la route vers les Antilles") == "deep"
+
+
+def test_chat_tier_write_for_long_non_analytical_question():
     assert logbook_chat.chat_tier("x" * 80) == "write"
 
 
@@ -79,6 +83,27 @@ def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
     assert out["source"] == "nemotron-lightning"
     assert out["engine"] == "nemotron-lightning"
     assert "0" in out["answer"]
+
+
+def test_strip_raw_fields_drops_at_quay_leak():
+    assert "atQuay" not in logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.")
+    assert logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.") == "The boat is still at 0 kn."
+
+
+def test_answer_strips_raw_json_field_names(monkeypatch):
+    async def fake_cascade(system, user, client=None, **kw):
+        return "The boat is still (atQuay: true) at 0 kn.", "nemotron-lightning"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 0, "atQuay": True}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Why is the boat slowing down?", "en", {}, datetime.now(timezone.utc),
+    ))
+    assert "atQuay" not in (out["answer"] or "")
+    assert "(atQuay" not in (out["answer"] or "")
 
 
 def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
@@ -108,12 +133,12 @@ def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
     assert "n’a pas cette information" in out["answer"] or "n'a pas cette information" in out["answer"]
 
 
-def test_answer_question_write_tier_for_pourquoi(monkeypatch):
+def test_answer_question_deep_tier_for_pourquoi(monkeypatch):
     seen = {}
 
     async def fake_cascade(system, user, client=None, **kw):
         seen["tier"] = kw.get("tier")
-        return "Parce que l'horloge dit à quai.", "nemotron-super"
+        return "Parce que l'horloge dit à quai.", "nemotron-ultra"
 
     async def fake_ctx(*_a, **_k):
         return {"official": {"atQuay": True}}
@@ -123,8 +148,8 @@ def test_answer_question_write_tier_for_pourquoi(monkeypatch):
     out = asyncio.run(logbook_chat.answer_question(
         "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc),
     ))
-    assert seen["tier"] == "write"
-    assert out["source"] == "nemotron-super"
+    assert seen["tier"] == "deep"
+    assert out["source"] == "nemotron-ultra"
 
 
 def test_filter_numbers_drops_sentences_with_figures_absent_from_the_facts():

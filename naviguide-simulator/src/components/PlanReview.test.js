@@ -15,17 +15,18 @@ describe("PlanReview — commentaire (lot L5)", () => {
   it("affiche le paragraphe sous le tableau avec source i18n", () => {
     assert.match(src, /data-testid="plan-review-comment"/);
     assert.match(src, /planReviewCommentTitle/);
-    assert.match(src, /storySourceRules/);
+    assert.match(src, /LlmSourceBadge/);
+    assert.match(src, /plan-review-source/);
     assert.match(src, /commentSource/);
     assert.doesNotMatch(src, /Nemotron|Tavily|Nebius/);
   });
 
   it("reçoit le commentaire depuis la revue serveur, sans retirer le tableau", () => {
-    assert.match(app, /comment: planReviewState\.review\?\.comment\?\.text/);
-    assert.match(app, /commentSource: planReviewState\.review\?\.comment\?\.source/);
+    assert.match(app, /planReviewState\.review\?\.comment\?\.text/);
+    assert.match(app, /planReviewState\.review\?\.comment\?\.source/);
     assert.match(ici, /comment=\{planReview\.comment\}/);
     assert.match(ici, /<PlanReview[\s\S]*legs=\{planReview\.legs\}/);
-    assert.match(sidebar, /planReview=\{!isDrawing \? planReview : null\}/);
+    assert.match(sidebar, /planReview=\{!drawingHidesBerry \? planReview : null\}/);
     assert.match(app, /planReview=\{planReview\}/);
     assert.doesNotMatch(tools, /<PlanReview/);
     assert.doesNotMatch(tools, /planReview && !drawing/);

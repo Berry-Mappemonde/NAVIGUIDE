@@ -201,7 +201,7 @@ describe("filmCamera lot RA3 — dézoom archipels, tuiles gardées", () => {
   it("pas de switch de base layer pendant filmActive", () => {
     assert.match(controller, /switchBaseLayer\(/);
     assert.match(controller, /if \(this\.config\.filmActive\)/);
-    assert.match(controller, /if \(!this\.baseLayer\) this\.switchBaseLayer\(url\)/);
+    assert.match(controller, /if \(!this\.baseLayer\) this\.switchBaseLayer\(url, attr\)/);
     assert.match(controller, /next\.addTo\(this\.map\)/);
     assert.match(controller, /if \(prev && prev !== next\) prev\.remove\(\)/);
     assert.match(controller, /exitHoldZoom/);
@@ -436,7 +436,9 @@ describe("filmCamera lot RG13 — 60 Hz, cap lissé, zoom d'approche", () => {
 
   it("MapSceneController : sillage à la frame et bateau posé pendant le film", () => {
     assert.match(controller, /this\.renderDynamic\(this\.currentPlayback \|\| this\.playback\.snapshot\(\)\)/);
-    assert.match(controller, /zoomAnimating && markers\.length && !this\.config\.filmActive/);
+    assert.match(controller, /if \(this\.zoomAnimating && markers\.length\) return/);
+    assert.doesNotMatch(controller, /zoomAnimating && markers\.length && !this\.config\.filmActive/);
+    assert.match(controller, /stabilizeWorldLng\(subject\.lon/);
     assert.match(controller, /filmActive: this\.config\.filmActive/);
     assert.match(controller, /filmFramesSinceReset/);
   });

@@ -25,7 +25,7 @@ TERRITORY = {
         "martinique": "Martinique",
         "guadeloupe": "Guadeloupe",
         "saint_barthelemy": "Saint-Barthélemy",
-        "saint_martin": "Saint-Martin",
+        "saint_martin": "Saint-Martin (partie française)",
         "saint_pierre_et_miquelon": "Saint-Pierre-et-Miquelon",
         "polynesie_francaise": "Polynésie française",
         "nouvelle_caledonie": "Nouvelle-Calédonie",
@@ -40,7 +40,7 @@ TERRITORY = {
         "martinique": "Martinique",
         "guadeloupe": "Guadeloupe",
         "saint_barthelemy": "Saint Barthélemy",
-        "saint_martin": "Saint Martin",
+        "saint_martin": "Saint-Martin (French side)",
         "saint_pierre_et_miquelon": "Saint Pierre and Miquelon",
         "polynesie_francaise": "French Polynesia",
         "nouvelle_caledonie": "New Caledonia",
@@ -100,6 +100,8 @@ _EEZ_RE = re.compile(
     r"^(?P<nation>.+?)\s+Exclusive Economic Zone\s*$",
     re.IGNORECASE,
 )
+_FR_ZEE_RE = re.compile(r"^Zone économique exclusive\s+(?P<adj>.+?)\s*$", re.IGNORECASE)
+_FR_ADJ_EN = {v["fr"]: v["en"] for v in _NATION_ADJ.values()}
 _PAREN_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
 _DUP_PAREN_RE = re.compile(r"\s*\(([^)]+)\)\s*\(\1\)", re.IGNORECASE)
 
@@ -174,7 +176,8 @@ def _nation_adj(nation: str) -> dict[str, str] | None:
 
 def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
     """Gabarit : « Zone économique exclusive française (Guadeloupe) » /
-    « French EEZ (Guadeloupe) ». Jamais de parenthèses doublées."""
+    « French EEZ (Guadeloupe) ». Jamais de parenthèses doublées. RC32 : table
+    `toponyms` (exonyme de la langue du récit, îles partagées distinguées)."""
     en = _en(lang)
     table = TERRITORY["en" if en else "fr"]
     if not isinstance(zee, dict):
@@ -189,9 +192,28 @@ def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
     if not zee.get("mrgid") or raw in {"", "Haute mer", "High seas"}:
         return "High seas" if en else "Haute mer"
 
+    from toponyms import sheet_label  # noqa: PLC0415
+    mrgid = zee.get("mrgid")
+    try:
+        mrgid = int(mrgid) if mrgid is not None else None
+    except (TypeError, ValueError):
+        mrgid = None
+    spoken = sheet_label(raw, lang, mrgid=mrgid, territory=zee.get("territory"))
+    if spoken:
+        return _dedupe_parens(spoken)
+
     base, paren = _split_paren(raw)
     territory = table.get(str(zee.get("territory") or ""))
     extra = territory or paren
+
+    fr_match = _FR_ZEE_RE.match(base)
+    if fr_match and en:
+        adj_fr = fr_match.group("adj").strip().lower()
+        en_adj = _FR_ADJ_EN.get(adj_fr) or adj_fr
+        label = f"{en_adj} EEZ"
+        if extra and extra.lower() not in label.lower():
+            label = f"{label} ({extra})"
+        return _dedupe_parens(label)
 
     match = _EEZ_RE.match(base)
     adj = _nation_adj(match.group("nation")) if match else None
@@ -210,13 +232,35 @@ def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
     return _dedupe_parens(label)
 
 
+_PLACE_EN = {
+    "nouvelle-calédonie": "New Caledonia",
+    "nouvelle-caledonie": "New Caledonia",
+    "wallis-et-futuna": "Wallis and Futuna",
+    "polynésie française": "French Polynesia",
+    "polynesie francaise": "French Polynesia",
+    "la réunion": "Réunion",
+    "la reunion": "Réunion",
+    "la sardaigne": "Sardinia",
+    "corse": "Corsica",
+    "(corse)": "(Corsica)",
+}
+
+
 def localize_place_name(name: str | None, lang: str = "fr") -> str:
-    text = str(name or "").strip()
+    from toponyms import origin_name  # noqa: PLC0415
+    text = origin_name(str(name or "").strip())
     if not text:
         return ""
     if _en(lang):
         text = re.sub(r"Marine Protected Area", "Marine protected area", text, flags=re.I)
         text = re.sub(r"Exclusive Economic Zone", "EEZ", text, flags=re.I)
+        text = re.sub(r"Aire marine protégée", "Marine protected area", text, flags=re.I)
+        low = text.lower()
+        for fr, en_name in _PLACE_EN.items():
+            if fr in low:
+                text = re.sub(re.escape(fr), en_name, text, flags=re.I)
+        if re.search(r"Zone économique exclusive", text, re.I):
+            text = localize_zee_name({"name": text, "mrgid": 1}, lang)
     else:
         text = re.sub(r"Marine Protected Area", "Aire marine protégée", text, flags=re.I)
         if re.search(r"Exclusive Economic Zone", text, re.I):
@@ -481,12 +525,18 @@ def _here(pearl: dict, clock: dict, lang: str) -> dict:
         item = {
             "name": localize_place_name(amp.get("name"), lang),
             "nm": _as_float(amp.get("nm")),
-            "url": amp.get("visit_url") or amp.get("url"),
-            "site_id": amp.get("site_id") or amp.get("id"),
+            "url": amp.get("visit_url") or amp.get("url") or amp.get("visitUrl"),
+            "site_id": amp.get("siteId") or amp.get("site_id") or amp.get("id"),
             "iucn_cat": amp.get("iucn_cat") or amp.get("iucn"),
             "designation": amp.get("designation"),
+            "source": amp.get("source"),
         }
-        amps.append({k: v for k, v in item.items() if v not in (None, "")})
+        slim = {k: v for k, v in item.items() if v not in (None, "")}
+        if "inside" in amp:
+            slim["inside"] = bool(amp.get("inside"))
+        if slim.get("site_id"):
+            slim["siteId"] = slim["site_id"]
+        amps.append(slim)
     aton = pearl.get("aton") if isinstance(pearl.get("aton"), dict) else {}
     seamarks = []
     for mark in aton.get("nearby") or []:
@@ -580,12 +630,31 @@ def _sentences(
                 "Aucun port d’entrée officiel n’est connu pour cette ZEE."
             )
     if amps:
-        listed = _list_places(amps, lang)
-        out.append(
-            f"Marine protected areas within 30 nm: {listed}."
-            if en else
-            f"Aires marines protégées à moins de 30 milles : {listed}."
-        )
+        inside = next((a for a in amps if a.get("inside") is True), None)
+        if inside:
+            name = localize_place_name(inside.get("name"), lang)
+            out.append(
+                f"In the marine protected area {name}."
+                if en else
+                f"Dans l'aire marine protégée {name}."
+            )
+        else:
+            nearest = amps[0]
+            name = localize_place_name(nearest.get("name"), lang)
+            nm = _num(nearest.get("nm"), lang)
+            if nm is not None:
+                out.append(
+                    f"{nm} miles from {name}."
+                    if en else
+                    f"À {nm} milles de {name}."
+                )
+            else:
+                listed = _list_places(amps, lang)
+                out.append(
+                    f"Marine protected areas nearby: {listed}."
+                    if en else
+                    f"Aires marines protégées à proximité : {listed}."
+                )
     wind = (weather.get("wind") or {}) if isinstance(weather.get("wind"), dict) else {}
     wave = (weather.get("wave") or {}) if isinstance(weather.get("wave"), dict) else {}
     bits: list[str] = []

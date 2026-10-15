@@ -7,30 +7,14 @@ import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
-import { startWarmStatusWatch } from "../hooks/usePlanReview.js";
-
-const API_URL = import.meta.env?.VITE_API_URL ?? "";
-
-const STORY_SOURCE_I18N = Object.freeze({
-  "nemotron-lightning": "storySourceLightning",
-  "nemotron-super": "storySourceSuper",
-  "nemotron-ultra": "storySourceUltra",
-  openrouter: "storySourceOpenrouter",
-  claude: "storySourceClaude",
-  rules: "storySourceRules",
-  budget: "storySourceBudget",
-  cache: "storySourceCache",
-});
-
-function storySourceLabel(source, t) {
-  return t(STORY_SOURCE_I18N[source] || "storySourceRules");
-}
+import { ICI_BRIEFING_SOURCE } from "../engine/iciBriefing.js";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
 
 function BerryCard({
-  onCustomRoute, onRouteSwitchToBerry, isDrawing,
+  onCustomRoute, onRouteSwitchToBerry, onRouteSwitchToCustom, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw = true,
   onImportRoute, importBusy = false,
@@ -42,7 +26,13 @@ function BerryCard({
   const [drawnRoute, setDrawnRoute] = useState(null);
   const [drawnName, setDrawnName] = useState(null);
   const hasCustom = Boolean(drawnRoute);
-  const customOn = cardMode === "file-active";
+  const drawingOn = isDrawing || cardMode === "draw-mode";
+  const customOn = cardMode === "file-active" && !drawingOn;
+
+  const startOrResumeDraw = () => {
+    setCardMode("draw-mode");
+    (canContinueDraw ? onDrawContinue : onDrawStart)?.();
+  };
 
   useEffect(() => {
     if (!isDrawing && cardMode === "draw-mode") {
@@ -58,7 +48,8 @@ function BerryCard({
   const activateCustom = () => {
     if (!drawnRoute) return;
     setCardMode("file-active");
-    onCustomRoute(drawnRoute);
+    // DM5 — la pilule bascule la source sans changer de mode (Suivre ou Tracer).
+    (onRouteSwitchToCustom || onCustomRoute)(drawnRoute);
   };
 
   const handleFinishDrawing = () => {
@@ -87,14 +78,14 @@ function BerryCard({
 
   // DM1 : les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
   // Tracer (VIEW_SIMULATION) ou pendant un tracé ; sans route perso, la seconde
-  // pilule fait le même geste que le bouton du bas (draw-mode + onDrawStart).
+  // pilule reprend le brouillon (DM6) ou ouvre un dessin vide.
   const switcher = (hasCustom || isTracerView || isDrawing) ? (
     <div className="flex gap-1 mb-1.5">
-      <button type="button" data-testid="route-switch-berry" onClick={activateBerry} className={customOn ? pillOff : pillOn} title={t("backToBerry")}>
+      <button type="button" data-testid="route-switch-berry" onClick={activateBerry} className={(customOn || drawingOn) ? pillOff : pillOn} title={t("backToBerry")}>
         {t("berryMappemonde")} {/* pragma: allowlist secret */}
       </button>
       {hasCustom ? (
-        <button type="button" data-testid="route-switch-custom" onClick={activateCustom} className={customOn ? pillOn : pillOff} title={t("showRoute", { name: drawnName })}>
+        <button type="button" data-testid="route-switch-custom" onClick={activateCustom} className={(customOn || drawingOn) ? pillOn : pillOff} title={t("showRoute", { name: drawnName })}>
           {drawnName || t("customRoute")}
         </button>
       ) : (
@@ -104,8 +95,8 @@ function BerryCard({
           // Même nom accessible que le bouton du bas qu'elle remplace en Tracer
           // (les specs des lots N4/R9a/R13 le cherchent par ce nom).
           aria-label={`${t("berryMappemonde")} · ${t("drawOwnRoute")}`}
-          onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
-          className={pillOff}
+          onClick={startOrResumeDraw}
+          className={drawingOn ? pillOn : pillOff}
           title={t("drawOwnRoute")}
         >
           {t("drawOwnRoute")}
@@ -168,7 +159,7 @@ function BerryCard({
           </div>
         ) : (
           <button
-            onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
+            onClick={startOrResumeDraw}
             className="w-full flex items-center justify-center gap-1.5 bg-violet-600/20 hover:bg-violet-600/40
               border border-violet-500/40 rounded-lg px-2 py-1.5 text-[10px] text-violet-300 font-medium"
           >
@@ -225,7 +216,7 @@ function BerryCard({
         <div className="flex gap-1">
           <button
             type="button"
-            onClick={() => { setCardMode("draw-mode"); (canContinueDraw ? onDrawContinue : onDrawStart)?.(); }}
+            onClick={startOrResumeDraw}
             className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-lg text-[10px]
               font-medium border border-violet-500/40 text-violet-300 hover:bg-violet-600/20"
           >
@@ -326,7 +317,7 @@ function BriefingText({ segments, onFocus, t }) {
 }
 
 export const Sidebar = memo(function Sidebar({
-  plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, isDrawing,
+  plan, open, onToggle, onCustomRoute, onRouteSwitchToBerry, onRouteSwitchToCustom, isDrawing,
   onDrawStart, onDrawContinue, onDrawFinish, onDrawCancel, onCustomDelete, canContinueDraw,
   canFinishDraw, drawing = null, onDrawUndo, onImportRoute, importBusy = false,
   isCockpit, polarData, view = VIEW_SUIVRE,
@@ -346,6 +337,7 @@ export const Sidebar = memo(function Sidebar({
   journalEntries = null,
   onSeek = null,
   momentMode = "follow",
+  routeSource = "berry",
   planReview = null,
   escaleStop = null,
   escaleFiche = null,
@@ -353,8 +345,7 @@ export const Sidebar = memo(function Sidebar({
   escaleError = null,
   onEscaleClose,
 }) {
-  const { t } = useLang();
-  const [storySource, setStorySource] = useState("rules");
+  const { t, lang } = useLang();
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -362,15 +353,11 @@ export const Sidebar = memo(function Sidebar({
   const briefingTitle = !iciBriefing && typeof plan?.briefing_title === "string"
     ? plan.briefing_title.trim()
     : "";
-  const showIciBriefing = !isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice);
-
-  useEffect(() => {
-    if (!showIciBriefing) return undefined;
-    return startWarmStatusWatch(
-      () => fetch(`${API_URL}/ici/warm/status`).then((r) => (r.ok ? r.json() : null)),
-      setStorySource,
-    );
-  }, [showIciBriefing]);
+  // DM6 — Tracer ouvre le dessin, mais un brouillon vide garde la vitrine
+  // Berry (briefing, revue, fiche d'escale). Les lots M et R7 cliquent
+  // Tracer sans poser de point : le briefing et Ajaccio restent là.
+  const drawingHidesBerry = Boolean(isDrawing && drawing?.points?.length);
+  const showIciBriefing = !drawingHidesBerry && (isCockpit || briefing || briefingLoading || skipperNotice);
 
   return (
     <>
@@ -401,6 +388,7 @@ export const Sidebar = memo(function Sidebar({
           <BerryCard
             onCustomRoute={onCustomRoute}
             onRouteSwitchToBerry={onRouteSwitchToBerry}
+            onRouteSwitchToCustom={onRouteSwitchToCustom}
             isDrawing={isDrawing}
             onDrawStart={onDrawStart}
             onDrawContinue={onDrawContinue}
@@ -414,7 +402,7 @@ export const Sidebar = memo(function Sidebar({
             isTracerView={isSimulation}
           />
 
-          {!isDrawing && chat ? (
+          {!drawingHidesBerry && chat ? (
             <div className="mt-1.5">
               <LogbookChat messages={chat.messages} pending={chat.pending} error={chat.error} onAsk={onChatAsk} />
             </div>
@@ -438,7 +426,7 @@ export const Sidebar = memo(function Sidebar({
             <div data-testid="drawing-points" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0 shrink-0">
               <div className="flex items-center gap-2 mb-1">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug flex-1">
-                  {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString()} nm
+                  {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm
                 </div>
                 {drawing.points.length && onDrawUndo ? (
                   <button type="button" onClick={onDrawUndo} className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-white/80" title={t("drawingUndoLast")}>
@@ -473,9 +461,10 @@ export const Sidebar = memo(function Sidebar({
             journalEntries={journalEntries}
             onSeek={onSeek}
             mode={momentMode}
+            routeSource={routeSource}
             momentNow={!isDrawing ? momentNow : null}
             momentFree={!isDrawing ? momentFree : null}
-            simulation={!isDrawing ? (
+            simulation={(
               <SimulationPanel
                 legContext={legContext}
                 clockSample={clockSample}
@@ -491,8 +480,8 @@ export const Sidebar = memo(function Sidebar({
                 recomputeBusy={recomputeBusy}
                 onGoLive={onGoLive}
               />
-            ) : null}
-            hereBody={!isDrawing ? (
+            )}
+            hereBody={!drawingHidesBerry ? (
               <div data-testid="here-product">
                 <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">
                   {briefingTitle ? (
@@ -515,16 +504,11 @@ export const Sidebar = memo(function Sidebar({
                         ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
                         : (briefingLoading && !(moment?.here?.sentences || []).length ? t("iciBriefingLoading") : (briefing || null))}
                   </p>
-                  <p
-                    data-testid="story-source"
-                    className="text-[9px] text-slate-500 leading-snug mt-1"
-                  >
-                    {storySourceLabel(storySource, t)}
-                  </p>
+                  <LlmSourceBadge source={ICI_BRIEFING_SOURCE} testId="story-source" className="mt-1" />
                 </div>
               </div>
             ) : null}
-            story={isSuivre && !isDrawing && (Array.isArray(story) ? story : []).some(Boolean) ? (
+            story={(Array.isArray(story) ? story : []).some(Boolean) ? (
               <div data-testid="expedition-story" data-replay={storyReplay ? "1" : "0"} className={`sim-box-story !h-auto rounded-lg border p-2 min-w-0 ${storyReplay ? "border-sky-400/60 bg-sky-900/40" : "border-sky-500/25 bg-sky-950/30"}`}>
                 <div className="text-[10px] font-semibold text-sky-200 leading-snug">
                   {t("storyTitle")}{storyReplay ? <span className="ml-1 text-[9px] font-normal text-sky-100/80">· {t("replayBadge")}</span> : null}
@@ -547,8 +531,8 @@ export const Sidebar = memo(function Sidebar({
             journal={isSuivre && !isDrawing ? (
               <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
             ) : null}
-            planReview={!isDrawing ? planReview : null}
-            escale={!isDrawing && escaleStop ? {
+            planReview={!drawingHidesBerry ? planReview : null}
+            escale={!drawingHidesBerry && escaleStop ? {
               stop: escaleStop,
               fiche: escaleFiche,
               loading: escaleLoading,

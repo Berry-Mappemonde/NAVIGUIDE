@@ -142,7 +142,7 @@ describe("EscalePopup lot RA5 — croix, Échap, pas de fiche en Suivre/Revoir",
     assert.equal(shouldCloseEscaleSheet({ nextView: "suivre" }), true);
     assert.equal(shouldCloseEscaleSheet({ replayStarting: true }), true);
     assert.equal(shouldCloseEscaleSheet({ replayActive: true }), true);
-    assert.equal(shouldCloseEscaleSheet({ nextView: "simulation" }), false);
+    assert.equal(shouldCloseEscaleSheet({ nextView: "simulation" }), true);
     assert.match(app, /shouldCloseEscaleSheet/);
     assert.match(app, /if \(replay\.active\) return/);
     const prev = globalThis.__naviguideIgnoreEscaleOpen;

@@ -35,6 +35,8 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /data-testid="film-source"/);
     assert.match(bar, /data-testid="film-style"/);
     assert.match(bar, /data-testid="film-fullscreen"/);
+    assert.match(bar, /data-drawing=\{drawing \? "1" : undefined\}/);
+    assert.doesNotMatch(bar, /no playback, no speeds, no Suivre/);
   });
 
   it("range les commandes : Masquer · Cinéma · Écouter · Suivre/Simulation · Revoir, lecture à droite", () => {
@@ -170,6 +172,18 @@ describe("film bar (lot RF8)", () => {
       bar,
       /flex flex-wrap items-center gap-1 min-w-0">[\s\S]*?data-testid="replay-start"/,
     );
+  });
+});
+
+describe("crédits au-dessus de la barre (lot UI1)", () => {
+  it("App mesure la barre film et SimulationFilmBar expose la racine", () => {
+    assert.match(app, /ref=\{filmBarRef\}/);
+    assert.match(app, /ResizeObserver/);
+    assert.match(app, /filmBarMeasuredPx/);
+    assert.match(app, /measureFilmBarOccupiedPx/);
+    assert.match(bar, /ref=\{rootRef\}/);
+    assert.match(bar, /barRef/);
+    assert.match(bar, /data-testid="film-bar"/);
   });
 });
 

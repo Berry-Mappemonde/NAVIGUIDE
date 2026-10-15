@@ -29,6 +29,8 @@ describe("satelliteMet", () => {
     assert.equal(formatCardinal(34.5), "NE");
     assert.equal(formatBearingCardinal(67.5), "ENE · 67.5°");
     assert.equal(formatBearingCardinal(202.9), "SSO · 202.9°");
+    assert.equal(formatBearingCardinal(202.9, "en"), "SSW · 202.9°");
+    assert.equal(formatCardinal(312, "en"), "NW");
     assert.equal(formatBearingCardinal(undefined), "");
   });
 

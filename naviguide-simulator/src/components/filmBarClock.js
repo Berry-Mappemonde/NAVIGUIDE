@@ -20,13 +20,24 @@ export function weatherUsesGfs({ regime, sources }) {
   return (Array.isArray(sources) ? sources : []).some((s) => GFS_SOURCE_RE.test(String(s || "")));
 }
 
-export function clockRegimeText({ regime, sources, spread, t, lang = "fr" }) {
+/** « réel jusqu'au 9 oct. » — date courte localisée, ou null sans realUntil. */
+export function realUntilLabel(realUntil, t, lang = "fr") {
+  if (!realUntil) return null;
+  const d = new Date(`${realUntil}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const loc = lang === "en" ? "en-US" : "fr-FR";
+  const date = d.toLocaleDateString(loc, { day: "numeric", month: "short", timeZone: "UTC" });
+  return t("clockRegimeRealUntil", { date });
+}
+
+export function clockRegimeText({ regime, sources, spread, realUntil, t, lang = "fr" }) {
   const climo = regime === "climatology";
   const gfs = weatherUsesGfs({ regime, sources });
-  if (climo && gfs) return t("clockWeatherClimoGfs");
-  if (climo) return t("clockRegimeClimatology");
+  const real = realUntilLabel(realUntil, t, lang);
+  if (climo && gfs) return real ? `${t("clockWeatherClimoGfs")} · ${real}` : t("clockWeatherClimoGfs");
+  if (climo) return real ? `${t("clockRegimeClimatology")} · ${real}` : t("clockRegimeClimatology");
   if (regime === "hindcast") {
-    const name = t("clockRegimeHindcast");
+    const name = real || t("clockRegimeHindcast");
     const n = Array.isArray(sources) ? sources.length : 0;
     const loc = lang === "en" ? "en-US" : "fr-FR";
     if (n > 0 && Number.isFinite(Number(spread))) {

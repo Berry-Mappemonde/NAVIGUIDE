@@ -15,6 +15,7 @@ from voyage_clock import (
     OFFICIAL_VOYAGE_ID,
     PLANNING_MIN_KN,
     build_voyage_clock,
+    detect_air_episodes,
     find_start_index,
     official_clock_params,
     planning_speed_for,
@@ -413,10 +414,12 @@ def test_sail_nm_includes_halifax_spm_excludes_cayenne_halifax():
     assert planes[0]["tHours"] == AIR_CALENDAR_HOURS
     assert planes[1]["sailNm"] == 1800
     assert planes[1]["tHours"] > planes[0]["tHours"] + AIR_CALENDAR_HOURS - 1e-6
-    sea = [v for v in c["vertices"] if v.get("vehicle") == "main" and v["sailNm"] > 1000]
+    side = [v for v in c["vertices"] if v.get("vehicle") == "side"]
+    assert side
+    assert any(abs(v["lat"] - 46.78) < 0.05 for v in side)
+    sea = [v for v in c["vertices"] if v.get("vehicle") in {"main", "side"} and v["sailNm"] > 1000]
     assert sea
     assert max(v["sailNm"] for v in sea) == 1830
-    assert any(abs(v["lat"] - 46.78) < 0.05 for v in sea)
     assert c["seaHours"] > 0
 
 
@@ -465,3 +468,96 @@ def test_ra8_past_vertex_hindcast_era5_speed_not_climatology():
     assert clock["kind"] in {"hindcast", "mixed"}
     stw = polar_boat_speed(C4_POLAR, sea["twa"], 24.0) * polar_efficiency()
     assert abs(sea["speedKnots"] - stw) < 0.3
+
+
+# ── Lot HC1 — troncature propre quand le vent RÉEL s'épuise ──────────────────
+
+
+def test_hc1_wind_exhausted_truncates_cleanly():
+    """Plus de vent réel → l'horloge s'arrête au dernier pas complet, dit où
+    et pourquoi — aucun sommet au vent inventé après la frontière."""
+    from voyage_clock import WindExhausted
+
+    era5 = {
+        "speedKnots": 20.0, "dirFromDeg": 0.0,
+        "kind": "hindcast", "regime": "hindcast", "sources": ["om-era5"],
+    }
+    t0 = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+    frontier = t0 + timedelta(hours=24)
+
+    def wind_fn(lat, lon, t):
+        if t >= frontier:
+            raise WindExhausted("pas encore publié")
+        return dict(era5)
+
+    points = [
+        {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+        {"lat": 46.15, "lon": -13.5, "cumNm": 500, "filmCum": 500, "jump": False},
+    ]
+    clock = build_voyage_clock(points, [], t0, polar_raw=None,
+                               start_at="saint-maur", wind_fn=wind_fn)
+    trunc = clock.get("truncated")
+    assert trunc is not None
+    assert trunc["reason"] == "pas encore publié"
+    assert trunc["pointIndex"] == 0
+    last = clock["vertices"][-1]
+    assert last["regime"] == "hindcast"
+    # ~24 h à 9 kn : la troncature tombe au pas en cours, pas plus loin.
+    assert last["tHours"] <= 24.0 + 1e-6
+    assert last["tHours"] >= 23.0
+    assert abs(trunc["pointCumNm"] - last["sailNm"]) < 1e-6
+    sea = [v for v in clock["vertices"] if (v.get("speedKnots") or 0) > 0]
+    assert all(v["regime"] == "hindcast" for v in sea)
+
+    # Sans troncature : pas de clé `truncated` (contrat d'hier inchangé).
+    full = build_voyage_clock(points, [], t0, polar_raw=None,
+                              start_at="saint-maur", wind_fn=lambda *a: dict(era5))
+    assert "truncated" not in full
+
+
+def test_rc31_episode_side_halifax_quay():
+    """Lot RC31 : véhicule side entre les vols, marques Halifax, quay Cayenne."""
+
+    def wind_fn(lat, lon, t):
+        return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}
+
+    points = [
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1000, "filmCum": 1000, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1000, "filmCum": 1080, "jump": True},
+        {"lat": 46.78, "lon": -56.16, "cumNm": 1400, "filmCum": 1480, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1800, "filmCum": 1880, "jump": False},
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1800, "filmCum": 1960, "jump": True},
+        {"lat": 4.80, "lon": -52.50, "cumNm": 1830, "filmCum": 1990, "jump": False},
+    ]
+    marks = [
+        {"name": "Cayenne (Guyane)", "nm": 1000, "filmNm": 1000, "lat": 4.93, "lon": -52.35},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 1400, "filmNm": 1480,
+         "lat": 46.78, "lon": -56.16},
+    ]
+    eps = detect_air_episodes(points)
+    assert len(eps) == 1
+    assert abs(eps[0]["park"]["lat"] - 4.93) < 0.05
+    assert abs(eps[0]["hub"]["lat"] - 44.65) < 0.05
+    assert abs(eps[0]["via"]["lat"] - 46.78) < 0.05
+    c = build_voyage_clock(
+        points, marks, "2026-07-19T08:00:00Z", start_at="saint-maur", wind_fn=wind_fn,
+    )
+    planes = [v for v in c["vertices"] if v.get("vehicle") == "plane"]
+    assert len(planes) == 2
+    side = [v for v in c["vertices"] if v.get("vehicle") == "side"]
+    assert side
+    assert min(v["tHours"] for v in side) > planes[0]["tHours"] - 1e-6
+    assert max(v["tHours"] for v in side) < planes[1]["tHours"] + 1e-6
+    halifax = [m for m in c["marks"] if "Halifax" in (m.get("name") or "")]
+    assert len(halifax) >= 2
+    assert all(abs(float(m.get("holdHours") or 0) - 24) < 1e-6 for m in halifax)
+    quay_cay = [
+        v for v in c["vertices"]
+        if v.get("vehicle") == "quay" and abs(float(v.get("lat") or 0) - 4.93) < 0.2
+    ]
+    assert quay_cay
+    mid = (min(v["tHours"] for v in side) + max(v["tHours"] for v in side)) / 2
+    sample = sample_clock_at_hours(c, mid)
+    assert sample["vehicle"] == "side"
+    assert sample["lat"] > 43
+    assert sample.get("parkLat") is None or abs(sample["parkLat"] - 4.93) < 0.2

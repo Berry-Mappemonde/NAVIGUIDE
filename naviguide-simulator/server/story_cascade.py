@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -19,6 +20,8 @@ import httpx
 from dotenv import load_dotenv
 
 import llm_budget
+
+log = logging.getLogger("naviguide-simulator.story-cascade")
 
 _DIR = Path(__file__).resolve().parent
 _BACKEND_ENV = _DIR.parents[1] / "backend" / ".env"
@@ -248,9 +251,15 @@ def split_short_sentences(text: str, max_len: int = 160) -> str:
             continue
         bits = [b.strip() for b in re.split(r"(?<=[;:])\s+", chunk) if b.strip()]
         if len(bits) > 1:
-            out.extend(split_short_sentences(" ".join(
+            rejoined = " ".join(
                 b if b.endswith((".", "!", "?", "…", ";", ":")) else f"{b}." for b in bits
-            ), max_len))
+            )
+            # RC27 : « cap sur X : N milles » — sans progrès le recollage reboucle (film_script
+            # évitait le « : » pour ça). On garde la phrase entière.
+            if rejoined.strip() == chunk.strip():
+                out.append(chunk)
+                continue
+            out.extend(split_short_sentences(rejoined, max_len))
             continue
         out.append(chunk)
     return " ".join(out)
@@ -522,6 +531,36 @@ def _claude_text(data: dict[str, Any] | None) -> str:
     return _clean_text("\n".join(parts))
 
 
+def _http_error(provider: str, response: httpx.Response) -> RuntimeError:
+    """Keep the exact HTTP status and a short body — never swallow a 4xx/5xx."""
+    body = " ".join((response.text or "").split())[:180]
+    msg = f"{provider} HTTP {response.status_code}"
+    if body:
+        msg = f"{msg} {body}"
+    return RuntimeError(msg)
+
+
+def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None) -> dict[str, Any]:
+    """Token Factory body. Lightning (fast) omits thinking flags: with
+    reasoning_effort / thinking=false and 256 tokens, TF returned empty content.
+    Super / Ultra keep Thinking OFF."""
+    t = llm_budget.normalize_tier(tier)
+    payload: dict[str, Any] = {
+        "model": llm_budget.model_for(t),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
+        "temperature": 0.4,
+        "stream": False,
+    }
+    if t != "fast":
+        payload["reasoning_effort"] = "low"
+        payload["chat_template_kwargs"] = {"thinking": False}
+    return payload
+
+
 async def _call_tokenfactory(
     system: str, user: str, tier: str, client: httpx.AsyncClient,
     *,
@@ -531,19 +570,7 @@ async def _call_tokenfactory(
     if not key:
         raise RuntimeError("NEBIUS_API_KEY missing")
     t = llm_budget.normalize_tier(tier)
-    model = llm_budget.model_for(t)
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
-        "temperature": 0.4,
-        "stream": False,
-        "reasoning_effort": "low",
-        "chat_template_kwargs": {"thinking": False},
-    }
+    payload = _tf_payload(system, user, t, max_tokens)
     async with _tf_limiter():
         r = await client.post(
             TOKENFACTORY_URL,
@@ -551,7 +578,7 @@ async def _call_tokenfactory(
             json=payload,
         )
     if r.status_code >= 400:
-        raise RuntimeError(f"tokenfactory HTTP {r.status_code}")
+        raise _http_error("tokenfactory", r)
     data = r.json()
     text = _openai_text(data)
     if not text:
@@ -586,7 +613,7 @@ async def _call_nim(system: str, user: str, client: httpx.AsyncClient) -> tuple[
         json=payload,
     )
     if r.status_code >= 400:
-        raise RuntimeError(f"nvidia HTTP {r.status_code}")
+        raise _http_error("nvidia", r)
     text = _openai_text(r.json())
     if not text:
         raise RuntimeError("nvidia empty")
@@ -619,7 +646,7 @@ async def _call_openrouter(
         json=payload,
     )
     if r.status_code >= 400:
-        raise RuntimeError(f"openrouter HTTP {r.status_code}")
+        raise _http_error("openrouter", r)
     text = _openai_text(r.json())
     if not text:
         raise RuntimeError("openrouter empty")
@@ -650,7 +677,7 @@ async def _call_claude(
         json=payload,
     )
     if r.status_code >= 400:
-        raise RuntimeError(f"claude HTTP {r.status_code}")
+        raise _http_error("claude", r)
     text = _claude_text(r.json())
     if not text:
         raise RuntimeError("claude empty")
@@ -708,30 +735,40 @@ async def _cascade_once(
         return text, "budget"
 
     last = "no_llm_backend"
-    steps: list[Any] = []
+    hops: list[tuple[str, Any]] = []
     for name in providers():
         if name == "tokenfactory":
-            steps.append(lambda: _call_tokenfactory(system, user, tier, http, max_tokens=max_tokens))
+            hops.append((name, lambda: _call_tokenfactory(system, user, tier, http, max_tokens=max_tokens)))
         elif name == "openrouter":
-            steps.append(lambda: _call_openrouter(system, user, http, online=online, max_tokens=max_tokens))
+            hops.append((name, lambda: _call_openrouter(system, user, http, online=online, max_tokens=max_tokens)))
         elif name == "claude":
-            steps.append(lambda: _call_claude(system, user, http, max_tokens=max_tokens))
+            hops.append((name, lambda: _call_claude(system, user, http, max_tokens=max_tokens)))
         elif name == "nim":
-            steps.append(lambda: _call_nim(system, user, http))
+            hops.append((name, lambda: _call_nim(system, user, http)))
 
-    for step in steps:
+    failures: list[dict[str, str]] = []
+    for name, step in hops:
         try:
             text, source = await step()
             text = _apply_filter(text, facts if facts is not None else user)
             if _clean_text(text):
+                if failures:
+                    llm_budget.remember_cascade_errors(failures)
                 if source in KNOWN_SOURCES:
                     _cache_put(cache_key, text, source)
                 return text, source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source
                 )
-            last = f"{source} empty"
+            last = f"{name} empty"
+            log.warning("cascade %s: empty after filter", name)
+            failures.append({"provider": name, "reason": last})
         except Exception as exc:
-            last = str(exc)[:160]
+            last = str(exc)[:240]
+            log.warning("cascade %s: %s", name, last)
+            failures.append({"provider": name, "reason": last})
+
+    if failures:
+        llm_budget.remember_cascade_errors(failures)
 
     if fallback is not None:
         text = _apply_filter(fallback, facts if facts is not None else user, keep_if_empty=True)
@@ -798,6 +835,24 @@ async def cascade_text(
             await http.aclose()
 
 
+_DEEP_STORY_TYPES = frozenset({
+    "stop", "stop-arrival", "arrival", "escale", "wind-gale", "cyclone-nearby",
+    "depth-alert", "marina-refuge", "cyclone",
+})
+
+
+def story_tier(body: dict[str, Any] | None) -> str:
+    """Ultra for stopovers and major alerts; Super for the rest of the narrative."""
+    if not isinstance(body, dict):
+        return "write"
+    typ = str(body.get("type") or body.get("event") or "").strip().lower()
+    if typ in _DEEP_STORY_TYPES:
+        return "deep"
+    if str(body.get("severity") or "").strip().lower() == "alert":
+        return "deep"
+    return "write"
+
+
 async def write_story(
     body: dict[str, Any] | None,
     client: httpx.AsyncClient | None = None,
@@ -816,7 +871,7 @@ async def write_story(
     fallback = (body or {}).get("phrase") if isinstance((body or {}).get("phrase"), str) else None
     try:
         text, source = await cascade_text(
-            system, user, client, online=page, tier="write",
+            system, user, client, online=page, tier=story_tier(body),
             fallback=fallback if fallback is not None else "",
             facts=event,
         )

@@ -1,3 +1,5 @@
+import { localizePlaceName } from "../utils/placeNames.js";
+
 /**
  * Briefing links — every place the ICI briefing names becomes clickable.
  * Pure functions. No HTTP. No chat.
@@ -11,6 +13,7 @@
  * `segmentBriefing` never rewrites the text: it splits `narrateIci()` around
  * the names the bag already wrote, in order. Plain text stays identical.
  */
+import { originName } from "./toponyms.js";
 
 /** listPlaces() caps, mirrored from iciBriefing.js so we only link what is written. */
 const WRITTEN = Object.freeze({
@@ -112,8 +115,8 @@ export function displayName(name, max = DISPLAY_NAME_MAX) {
 
 /** The name as the briefing writes it (same function on both sides, so links match). */
 export function placeLabel(kind, item, lang = "fr") {
-  const base = kind === "aton" ? humanAtonName(item?.name, lang) : String(item?.name || "");
-  return displayName(base);
+  const raw = kind === "aton" ? humanAtonName(item?.name, lang) : originName(item?.name);
+  return displayName(localizePlaceName(raw, lang));
 }
 
 function entity(kind, item, index, lang) {

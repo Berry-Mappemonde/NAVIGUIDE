@@ -4,14 +4,11 @@
  * n'est inventé : ce qui manque reste absent.
  */
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
-
-const EN_CARDINAL = { O: "W", NO: "NW", SO: "SW", ONO: "WNW", OSO: "WSW", NNO: "NNW", SSO: "SSW" };
+import { originName, watersLabel } from "./toponyms.js";
 
 function cardinal(deg, lang) {
   if (!Number.isFinite(deg)) return "";
-  const fr = getCardinalDirection(deg);
-  if (lang === "en") return EN_CARDINAL[fr] || fr;
-  return fr;
+  return getCardinalDirection(deg, lang);
 }
 
 function num(v, lang, digits = 0, { grouping = true } = {}) {
@@ -105,20 +102,34 @@ export function formatJournalEntry(entry, lang = "fr") {
       text = e.author ? `${e.author} : ${e.text || ""}` : (e.text || "");
       break;
     case "zee": {
-      const name = e.name || (en ? "EEZ" : "ZEE");
+      const name = watersLabel(e.name, lang, { mrgid: Number.isInteger(e.mrgid) ? e.mrgid : null })
+        || e.name
+        || (en ? "EEZ" : "ZEE");
       text = e.event === "exit"
         ? (en ? `Left ${name} — high seas` : `${name} quittée — haute mer`)
         : (en ? `Entered ${name}` : `Entrée dans ${name}`);
       break;
     }
     case "amp": {
-      const name = e.name || (en ? "marine protected area" : "aire marine protégée");
+      const name = originName(e.name) || (en ? "marine protected area" : "aire marine protégée");
       const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
-      text = en ? `Marine protected area within reach: ${name}${nm}` : `Aire marine protégée à portée : ${name}${nm}`;
+      if (e.event === "enter") {
+        text = en
+          ? `Entered the marine protected area ${name}`
+          : `Entrée dans l'aire marine protégée ${name}`;
+      } else if (e.event === "exit") {
+        text = en
+          ? `Left the marine protected area ${name}`
+          : `Sortie de l'aire marine protégée ${name}`;
+      } else {
+        text = en
+          ? `Skirting the marine protected area ${name}${nm}`
+          : `Longe l'aire marine protégée ${name}${nm}`;
+      }
       break;
     }
     case "poe": {
-      const name = e.name || (en ? "port of entry" : "port d’entrée");
+      const name = originName(e.name) || (en ? "port of entry" : "port d’entrée");
       const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
       text = en ? `Port of entry passed: ${name}${nm}` : `Port d’entrée passé : ${name}${nm}`;
       break;
