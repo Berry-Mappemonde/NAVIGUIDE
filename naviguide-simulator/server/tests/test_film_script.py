@@ -1845,7 +1845,9 @@ def test_rg5_dataset_title_never_spoken():
     assert "Bacteria" not in (change_sentence(silent, "fr") or "")
 
 
-def test_rg5_argo_speaks_type_not_wmo():
+def test_rg5_argo_speaks_type_and_rc30_identifier():
+    """RC30 (revue du 14 oct.) : le flotteur Argo se dit AVEC son identifiant —
+    jamais six « un flotteur Argo » anonymes ; sans identifiant, silence."""
     ch = {
         "kind": "station",
         "title": "Argo 6904216",
@@ -1855,12 +1857,22 @@ def test_rg5_argo_speaks_type_not_wmo():
     }
     fr = change_sentence(ch, "fr")
     en = change_sentence(ch, "en")
-    assert fr == "Le 18 mai, un flotteur Argo."
-    assert en == "On 18 May, an Argo float."
-    assert "6904216" not in fr
-    assert "6904216" not in en
-    assert station_spoken_label(ch, "fr") == "un flotteur Argo"
+    assert fr == "Le 18 mai, le flotteur Argo 6904216."
+    assert en == "On 18 May, Argo float 6904216."
+    assert station_spoken_label(ch, "fr") == "le flotteur Argo 6904216"
     assert station_name_speakable("Argo 6904216")
+    nameless = {
+        "kind": "station",
+        "title": "Argo",
+        "fact": "Argo (4 nm)",
+        "t": "2026-05-18T12:00:00Z",
+        "source": "argo",
+    }
+    assert station_spoken_label(nameless, "fr") == ""
+    assert change_sentence(nameless, "fr") == ""
+    # Le titre du jeu de données reste interdit : le type + l'identifiant, rien d'autre.
+    wmo_only = {**nameless, "title": "Flotteur dérivant", "wmo": "6904216"}
+    assert station_spoken_label(wmo_only, "fr") == "le flotteur Argo 6904216"
 
 
 def test_rg5_named_types_from_title_words():
@@ -1931,9 +1943,12 @@ def test_rg5_one_station_per_chapter_closest_no_count():
     blob = _script_blob(plan)
     assert "Bacteria" not in blob
     assert "stations scientifiques croisées" not in blob
-    assert blob.count("un flotteur Argo") <= 1
+    # RC30 : au plus UN flotteur par jambe, dit avec son identifiant.
+    assert "un flotteur Argo" not in blob
+    assert blob.count("flotteur Argo") <= 1
+    if "flotteur Argo" in blob:
+        assert "le flotteur Argo 6901234" in blob
     assert "6904216" not in blob
-    assert "6901234" not in blob
 
 
 def _rg6_review():
@@ -2745,3 +2760,210 @@ def test_rc26_dock_keeps_at_most_two_items_one_proximity():
     assert len(proximity) <= 1
     # la mer n'est pas muette pour autant
     assert any((c.get("tMs") or 0) > depart for c in out)
+
+
+# ---------------------------------------------------------------------------
+# Lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases
+# (revue du porteur, 14 oct.).
+# ---------------------------------------------------------------------------
+
+def test_rc30_order_chapter_sentences_sorts_by_anchor():
+    """Un chapitre riche : les phrases se disent dans l'ordre STRICT des ancres —
+    l'ouverture reste en tête, l'arrivée en queue, les bulles suivent."""
+    from film_script import _bits_offsets, _order_chapter_sentences
+
+    day = 86_400_000
+    bits = [
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest.",
+        "Le 19 mai, le vent tourne au nord.",
+        "Le 18 mai, les eaux portugaises.",
+        "La route passe par golfe de Gascogne.",
+        "Arrivée à Ajaccio le 26 mai.",
+    ]
+    anchored = [
+        (bits[0], 0, {"role": "depart"}),
+        (bits[1], 4 * day, {"kind": "climo"}),
+        (bits[2], 3 * day, {"kind": "zee-enter", "place": "les eaux portugaises"}),
+        (bits[3], 1 * day, {"kind": "coast"}),
+        (bits[4], 11 * day, {"role": "arrive", "place": "Ajaccio", "kind": "escale"}),
+    ]
+    offsets = _bits_offsets(bits)
+    placed = [
+        {"id": "climo", "charIdx": offsets[1]},
+        {"id": "zee", "charIdx": offsets[2]},
+    ]
+    _order_chapter_sentences(bits, anchored, placed)
+    assert bits[0].startswith("Le 15 mai, Berry-Mappemonde quitte")
+    assert bits[-1].startswith("Arrivée à Ajaccio")
+    assert bits[1] == "La route passe par golfe de Gascogne."
+    assert bits[2] == "Le 18 mai, les eaux portugaises."
+    assert bits[3] == "Le 19 mai, le vent tourne au nord."
+    # les ancres suivent leurs phrases, et leurs instants sont croissants
+    times = [a[1] for a in anchored]
+    assert times == sorted(times)
+    # les bulles pointent toujours le premier caractère de LEUR phrase
+    new_off = _bits_offsets(bits)
+    assert placed[0]["charIdx"] == new_off[3]
+    assert placed[1]["charIdx"] == new_off[2]
+
+
+def test_rc30_lendemain_only_when_day_changes_by_one():
+    """« Le lendemain » seulement si le jour change bien de +1 — jamais en
+    première phrase, jamais mesuré contre l'arrivée qui suit."""
+    # avant l'arrivée : la phrase amincie se mesure contre la date dite AVANT elle
+    out = thin_chapter_dates([
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle.",
+        "Le 19 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 20 mai.",
+    ], "fr")
+    assert not any(s.startswith("Le lendemain") for s in out)
+    # le vrai lendemain, lui, se dit
+    out = thin_chapter_dates([
+        "Le 18 mai, les eaux espagnoles.",
+        "Le 19 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 26 mai.",
+    ], "fr")
+    assert any(s.startswith("Le lendemain") for s in out)
+    # sans date dite avant elle, une phrase ne devient jamais « Le lendemain »
+    out = thin_chapter_dates([
+        "Le 19 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 20 mai.",
+    ], "fr")
+    assert not out[0].startswith("Le lendemain")
+
+
+def test_rc30_lane_crossings_filter_and_order():
+    """« La route passe par … » : seuls les bassins que la TRACE du chapitre
+    croise, dans l'ordre de la route — Papeete n'entend plus « Atlantique
+    nord » hérité de la jambe de revue."""
+    from film_script import _lane_crossings
+
+    clock = {
+        "t0": "2026-07-28T08:00:00Z",
+        "vertices": [
+            {"iso": "2026-07-28T08:00:00Z", "lat": 4.9, "lon": -52.3, "vehicle": "main"},
+            {"iso": "2026-08-02T08:00:00Z", "lat": 9.5, "lon": -79.9, "vehicle": "main"},
+            {"iso": "2026-08-20T08:00:00Z", "lat": -17.5, "lon": -149.6, "vehicle": "main"},
+        ],
+    }
+    t_a = _ms("2026-07-28T00:00:00Z")
+    t_b = _ms("2026-08-25T00:00:00Z")
+    crossings = _lane_crossings(clock, t_a, t_b)
+    assert crossings is not None
+    assert "caribbean w" in crossings
+    assert "n atlantic main" not in crossings
+    leg = {
+        "from": "Cayenne", "to": "Papeete",
+        "antiShipping": {"score": 0.7, "lanes": ["N Atlantic main", "Caribbean W"]},
+    }
+    bits = review_sentences(leg, "fr", crossings=crossings)
+    lane_sent = next(s for s in bits if "passe par" in s)
+    assert "Caraïbe ouest" in lane_sent
+    assert "Atlantique nord" not in lane_sent
+    # sans trace (horloge muette), la revue reste entière — rien n'est perdu
+    bits_all = review_sentences(leg, "fr", crossings=None)
+    lane_all = next(s for s in bits_all if "passe par" in s)
+    assert "Atlantique nord" in lane_all
+
+
+def test_rc30_lane_sentence_anchored_at_crossing_not_arrival():
+    """La phrase des bassins est ancrée au premier croisement : triée par
+    ancre, elle se dit en route, jamais collée à l'arrivée."""
+    from film_script import _append_review_sentences, _order_chapter_sentences
+
+    clock = {
+        "t0": "2026-07-28T08:00:00Z",
+        "vertices": [
+            {"iso": "2026-07-28T08:00:00Z", "lat": 4.9, "lon": -52.3, "vehicle": "main"},
+            {"iso": "2026-08-02T08:00:00Z", "lat": 9.5, "lon": -79.9, "vehicle": "main"},
+            {"iso": "2026-08-20T08:00:00Z", "lat": -17.5, "lon": -149.6, "vehicle": "main"},
+        ],
+    }
+    t_a = _ms("2026-07-28T00:00:00Z")
+    t_b = _ms("2026-08-25T00:00:00Z")
+    window = {"clock": clock, "tA": t_a, "tB": t_b, "fromName": "Cayenne", "toName": "Papeete"}
+    review = {"legs": [{
+        "from": "Cayenne", "to": "Papeete",
+        "antiShipping": {"score": 0.7, "lanes": ["Caribbean W"]},
+    }]}
+    bits = [
+        "Le 28 juillet, Berry-Mappemonde quitte Cayenne.",
+        "Le 15 août, les eaux de la Polynésie française.",
+    ]
+    anchored = [
+        (bits[0], t_a, {"role": "depart"}),
+        (bits[1], _ms("2026-08-15T08:00:00Z"), {"kind": "zee-enter"}),
+    ]
+    _append_review_sentences(bits, review, window, "fr", anchored)
+    lane_idx = next(i for i, s in enumerate(bits) if "passe par" in s)
+    assert anchored[lane_idx][1] == _ms("2026-08-02T08:00:00Z")
+    _order_chapter_sentences(bits, anchored, [])
+    lane_idx = next(i for i, s in enumerate(bits) if "passe par" in s)
+    poly_idx = next(i for i, s in enumerate(bits) if "Polynésie" in s)
+    assert lane_idx < poly_idx
+
+
+def test_rc30_heading_ignores_plane_vertices_cayenne_papeete():
+    """Le cap annoncé au départ d'une jambe est le cap initial de la TRACE —
+    jamais celui du vol (Cayenne → Halifax plein nord)."""
+    from film_script import _heading_deg_at, _leg_heading_deg
+
+    depart = _ms("2026-07-28T08:00:00Z")
+    clock = {
+        "t0": "2026-07-10T08:00:00Z",
+        "vertices": [
+            # le vol, plein nord — jamais un cap de mer
+            {"iso": "2026-07-12T08:00:00Z", "lat": 10.0, "lon": -53.0,
+             "vehicle": "plane", "headingDeg": 356.0},
+            {"iso": "2026-07-28T09:00:00Z", "lat": 4.94, "lon": -52.33,
+             "vehicle": "main", "bearing": 300.0},
+        ],
+    }
+    deg = _heading_deg_at(None, depart, clock=clock)
+    assert deg == 300.0
+    air_moment = {
+        "t": "2026-07-28T07:00:00Z",
+        "moment": {"leg": {"from": "Cayenne", "to": "Papeete",
+                           "vehicle": "plane", "headingDeg": 356.0}},
+    }
+    deg = _leg_heading_deg([air_moment], depart, clock=clock)
+    assert deg == 300.0
+    assert "nord-ouest" in heading_phrase(deg, "fr")
+
+
+def test_rc30_saint_martin_sint_maarten_once():
+    """« les eaux de Saint-Martin, puis celles de Saint-Martin » : jamais —
+    deux noms qui sonnent pareil ne se disent qu'une fois."""
+    from film_script import zee_group_waters
+
+    members = [
+        "Saint-Martin Exclusive Economic Zone",
+        "Zone économique exclusive (Sint Maarten)",
+    ]
+    fr = zee_group_waters(members, "fr")
+    assert fr == "les eaux de Saint-Martin"
+    en = zee_group_waters(members, "en")
+    assert en == "Saint-Martin waters"
+    # l'inverse aussi : Sint Maarten croisé d'abord → un seul nom
+    fr2 = zee_group_waters(list(reversed(members)), "fr")
+    assert fr2 == "les eaux de Sint-Maarten"
+
+
+def test_rc30_one_named_argo_per_leg():
+    """Au plus un flotteur Argo par jambe, avec son identifiant — jamais six
+    anonymes (transcription du porteur, 14 oct.)."""
+    day = 86_400_000
+    argos = [
+        {"id": f"a{i}", "kind": "station", "score": 2, "tMs": (2 + 3 * i) * day,
+         "title": f"Argo {6904210 + i}", "fact": f"Argo {6904210 + i} (4 nm)",
+         "source": "argo", "nm": 4}
+        for i in range(6)
+    ]
+    escale = {"id": "e", "kind": "escale", "score": 3, "tMs": 20 * day,
+              "title": "Arrivée à Papeete", "fact": "x"}
+    out = select_chapter_changes(argos + [escale], 0, 20 * day, budget=False, depart_ms=day)
+    stations = [c for c in out if c.get("kind") == "station"]
+    assert len(stations) == 1
+    label = station_spoken_label(stations[0], "fr")
+    assert label.startswith("le flotteur Argo ")
+    assert re.search(r"\d{5,9}", label)

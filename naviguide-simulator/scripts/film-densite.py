@@ -171,6 +171,72 @@ def max_gap(ch: dict, departs: dict[str, int]) -> tuple[float, int | None, int |
     return worst / (hi - lo), w_a, w_b
 
 
+DATE_FR_RE = re.compile(
+    r"\b(1er|\d{1,2}) (janvier|février|mars|avril|mai|juin|juillet|août|"
+    r"septembre|octobre|novembre|décembre)\b",
+    re.I,
+)
+MONTHS_FR = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
+LENDEMAIN_RE = re.compile(r"^(le lendemain|the next day)\b", re.I)
+ARGO_ANON_RE = re.compile(r"\b(un flotteur Argo|an Argo float)\b(?!\s*\d)")
+
+
+def _day_of_year(m: re.Match) -> int:
+    day = 1 if m.group(1).lower() == "1er" else int(m.group(1))
+    month = MONTHS_FR.index(m.group(2).lower()) + 1
+    return month * 31 + day
+
+
+YEAR_UNITS = 12 * 31 + 31   # la toise mois*31+jour boucle ici (fin décembre)
+
+
+def out_of_order_dates(text: str) -> list[str]:
+    """RC30 : dans un chapitre, les dates explicites vont en avant — une date
+    qui recule (« Le 19 mai … Le 18 mai ») est une phrase dite hors ordre.
+    Décembre → janvier est un passage d'année, pas un recul."""
+    out = []
+    last = None
+    offset = 0
+    for m in DATE_FR_RE.finditer(text or ""):
+        cur = _day_of_year(m) + offset
+        if last is not None and cur < last and last - cur > YEAR_UNITS // 2:
+            offset += YEAR_UNITS
+            cur += YEAR_UNITS
+        if last is not None and cur < last:
+            out.append(m.group(0))
+        last = max(cur, last) if last is not None else cur
+    return out
+
+
+def bad_lendemain(text: str) -> list[str]:
+    """« Le lendemain » : il faut une date dite avant, et la date suivante ne
+    doit pas contredire le +1 (RC30). Passage d'année = en avant."""
+    out = []
+    last = None
+    offset = 0
+    for sent in SENT_SPLIT_RE.split(text or ""):
+        if LENDEMAIN_RE.match(sent.strip()):
+            if last is None:
+                out.append(sent.strip()[:60])
+            else:
+                last = last + 1
+            continue
+        found = DATE_FR_RE.search(sent)
+        if found:
+            cur = _day_of_year(found) + offset
+            if last is not None and cur < last and last - cur > YEAR_UNITS // 2:
+                offset += YEAR_UNITS
+                cur += YEAR_UNITS
+            if last is not None and cur < last:
+                out.append(sent.strip()[:60])
+            last = cur
+    return out
+
+
 def orphan_zee_adjectives(text: str) -> list[str]:
     out = []
     for m in ADJ_RE.finditer(text):
@@ -209,6 +275,7 @@ def _fmt_t(t: int | None) -> str:
 
 
 TELLABLE_KINDS = {"station", "project", "amp", "climo", "coast", "zee-enter", "alert-on"}
+ARGO_TITLE_RE = re.compile(r"\bargo\b", re.I)
 
 
 def collect_stock(moments: dict) -> tuple[Counter, list[tuple[int, str]]]:
@@ -226,6 +293,24 @@ def collect_stock(moments: dict) -> tuple[Counter, list[tuple[int, str]]]:
                 told.append((t_row, str(c.get("title") or "")))
     told.sort()
     return stock, told
+
+
+def cap_argo_told(
+    told: list[tuple[int, str]], lo: int | None, hi: int | None,
+) -> list[tuple[int, str]]:
+    """RC30 : au plus UN flotteur Argo par jambe — au-delà, le stock Argo de la
+    fenêtre n'est plus « racontable » : il ne gonfle ni le plancher d'items ni
+    les trous « avec du stock non dit »."""
+    out: list[tuple[int, str]] = []
+    argo_kept = False
+    for t, title in told:
+        inside = (lo is None or t > lo) and (hi is None or t <= hi)
+        if inside and ARGO_TITLE_RE.search(title):
+            if argo_kept:
+                continue
+            argo_kept = True
+        out.append((t, title))
+    return out
 
 
 def gap_has_untold_stock(
@@ -280,6 +365,9 @@ def main() -> int:
     chapters = film.get("chapters") or []
     said: Counter = Counter()
     orphans: list[str] = []
+    misordered: list[str] = []
+    false_leads: list[str] = []
+    anon_argo: list[str] = []
     print(f"film : {len(chapters)} chapitres, {film.get('chars')} caractères")
     print(f"stock : {sum(stock.values())} changements {dict(stock)}")
     print()
@@ -304,7 +392,10 @@ def main() -> int:
             # Un trou n'est un défaut que si le stock avait quelque chose à y
             # dire qui n'est PAS déjà dans le texte (un groupe « puis les eaux
             # fidjiennes » couvre l'entrée fidjienne, même ancrée plus tôt).
-            missing = gap_has_untold_stock(g_a, g_b, stock_told, ch.get("text") or "")
+            # RC30 : les Argo au-delà d'un par jambe ne comptent pas.
+            lo_ch, hi_ch = sea_bounds(ch, departs)
+            told_ch = cap_argo_told(stock_told, lo_ch, hi_ch)
+            missing = gap_has_untold_stock(g_a, g_b, told_ch, ch.get("text") or "")
             flags.append("TROU>30%" if missing else "(trou, stock déjà dit ou vide)")
         fails += len([f for f in flags if f not in {"AVION", "(trou, stock déjà dit ou vide)"}])
         print(f"{label:44.44}  {days:5.1f}  {len(ch.get('text') or ''):4d}   {len(items):4d}  "
@@ -316,6 +407,9 @@ def main() -> int:
             if g_a is not None:
                 print(f"      pire trou   : {_fmt_t(g_a)} → {_fmt_t(g_b)}")
         orphans.extend(orphan_zee_adjectives(ch.get("text") or ""))
+        misordered.extend(out_of_order_dates(ch.get("text") or ""))
+        false_leads.extend(bad_lendemain(ch.get("text") or ""))
+        anon_argo.extend(m.group(0) for m in ARGO_ANON_RE.finditer(ch.get("text") or ""))
     dups = duplicate_sites(chapters)
     print()
     print(f"dits  : {dict(said)}")
@@ -326,7 +420,13 @@ def main() -> int:
           f"climo dites {said.get('climo', 0)} / stock {stock.get('climo', 0)}")
     print(f"doublons de site : {dups or 'aucun'}")
     print(f"adjectifs ZEE orphelins : {orphans or 'aucun'}")
+    # RC30 : l'ordre du récit et les phrases entières.
+    print(f"phrases hors ordre (dates qui reculent, 0 attendu) : {misordered or 'aucune'}")
+    print(f"connecteurs de date faux (« Le lendemain » sans veille) : {false_leads or 'aucun'}")
+    print(f"Argo anonymes (sans identifiant, 0 attendu) : {anon_argo or 'aucun'}")
     if dups or orphans:
+        fails += 1
+    if misordered or false_leads or anon_argo:
         fails += 1
     print(f"\n{'KO' if fails else 'OK'} ({fails} défaut(s))")
     return 1 if fails else 0

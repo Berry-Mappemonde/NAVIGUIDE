@@ -593,6 +593,17 @@ def _zee_member_pair(name: str) -> Optional[tuple[str, str]]:
     return None
 
 
+def _waters_spoken_key(label: str) -> str:
+    """Clé de dédoublonnage À L'OREILLE (RC30) : « Saint-Martin » et
+    « Sint-Maarten » sonnent pareil en français — un seul des deux se dit
+    (« les eaux de Saint-Martin, puis celles de Saint-Martin » : jamais)."""
+    s = str(label or "").casefold()
+    s = re.sub(r"\bsint\b|sint-", "saint-", s)
+    s = re.sub(r"\bmaarten\b", "martin", s)
+    s = re.sub(r"[\s-]+", " ", s).strip()
+    return s
+
+
 def zee_group_waters(members: list, lang: str = "fr") -> str:
     """« les eaux françaises, puis celles de Montserrat » (RC26) — jamais un
     adjectif orphelin (« françaises » sans « eaux ») ni une minuscule en tête
@@ -604,17 +615,17 @@ def zee_group_waters(members: list, lang: str = "fr") -> str:
         pair = _zee_member_pair(member)
         if pair is None:
             lab = zee_waters_label(str(member or ""), lang)
-            if not lab or lab.casefold() in seen:
+            if not lab or _waters_spoken_key(lab) in seen:
                 continue
-            seen.add(lab.casefold())
+            seen.add(_waters_spoken_key(lab))
             parts.append(lab)
             continue
         fr, en_name = pair
         proper = bool(re.match(r"^(de |du |des |d['’])", fr))
         full = f"{en_name} waters" if en else f"les eaux {fr}"
-        if full.casefold() in seen:
+        if _waters_spoken_key(full) in seen:
             continue
-        seen.add(full.casefold())
+        seen.add(_waters_spoken_key(full))
         if en or not parts or not proper:
             # EN : toujours « … waters » (« Montserratian » seul serait un adjectif orphelin).
             parts.append(full)
@@ -936,6 +947,8 @@ def _heading_deg_at(
     for row in moments or []:
         if not isinstance(row, dict):
             continue
+        if _moment_is_air(row):
+            continue  # RC30 : le cap d'une jambe de MER — jamais celui du vol (Cayenne → « cap au nord »)
         t = _ms(row.get("t"))
         if t is None:
             continue
@@ -954,6 +967,8 @@ def _heading_deg_at(
     for v in ((clock or {}).get("vertices") or []):
         if not isinstance(v, dict):
             continue
+        if v.get("vehicle") in {"plane", "land"}:
+            continue  # RC30 : un sommet d'avion (plein nord vers Halifax) n'est pas un cap de mer
         t = _ms(v.get("iso"))
         if t is None:
             continue
@@ -1106,15 +1121,41 @@ def _station_item(change: dict) -> dict:
         "source": change.get("source") or entity.get("source") or facts.get("source") or "",
         "kind": sci_kind,
         "type": change.get("sciType") or facts.get("type") or entity.get("type") or "",
+        "wmo": change.get("wmo") or entity.get("wmo") or facts.get("wmo") or "",
         "entity": entity,
         "facts": facts,
     }
 
 
+def _argo_identifier(item: dict) -> str:
+    """Identifiant WMO du flotteur (stock : wmo, nom « Argo 6904216 ») — vide sinon."""
+    entity = item.get("entity") if isinstance(item.get("entity"), dict) else {}
+    facts = item.get("facts") if isinstance(item.get("facts"), dict) else {}
+    blob = " ".join(
+        str(v) for v in (
+            item.get("wmo"), entity.get("wmo"), facts.get("wmo"),
+            item.get("name"), item.get("title"), item.get("fact"),
+        ) if v
+    )
+    found = re.search(r"\b(\d{5,9})\b", blob)
+    return found.group(1) if found else ""
+
+
 def station_spoken_label(change: dict, lang: str = "fr") -> str:
-    """Type parlé seulement — jamais le titre de jeu de données (RG5)."""
-    from ici_engine import spoken_science_type  # noqa: PLC0415
-    return spoken_science_type(_station_item(change), lang)
+    """Type parlé — jamais le titre de jeu de données (RG5). RC30 : un flotteur
+    Argo se dit avec son identifiant (« le flotteur Argo 6904216 ») ; un
+    flotteur anonyme ne se dit pas."""
+    from ici_engine import science_type_key, spoken_science_type  # noqa: PLC0415
+    item = _station_item(change)
+    spoken = spoken_science_type(item, lang)
+    if not spoken:
+        return ""
+    if science_type_key(item) == "argo":
+        ident = _argo_identifier(item)
+        if not ident:
+            return ""
+        return f"Argo float {ident}" if _en(lang) else f"le flotteur Argo {ident}"
+    return spoken
 
 
 def station_name_speakable(name: str) -> bool:
@@ -2837,8 +2878,54 @@ def _stored_review_and_eta() -> tuple[dict | None, dict | None]:
     return review, eta
 
 
-def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
-    """Faits de revue fondus dans la route : plus d'annexe « À surveiller / Couloirs »."""
+def _lane_crossings(clock: dict | None, t_a: Optional[int], t_b: Optional[int]) -> dict[str, int] | None:
+    """{nom de couloir (SHIPPING_LANES, casefold) : premier instant du chapitre
+    dans la boîte} — None si l'horloge n'a pas de sommet daté dans la fenêtre
+    (on ne filtre pas : les tests et le chemin sans trace gardent la revue)."""
+    from shipping_lanes import SHIPPING_LANES  # noqa: PLC0415
+    if not isinstance(clock, dict):
+        return None
+    t0 = _ms(clock.get("t0"))
+    out: dict[str, int] = {}
+    saw = False
+    for v in clock.get("vertices") or []:
+        if not isinstance(v, dict) or v.get("vehicle") in {"plane", "land"}:
+            continue
+        t = _ms(v.get("iso"))
+        if t is None and t0 is not None and v.get("tHours") is not None:
+            try:
+                t = t0 + int(float(v["tHours"]) * 3_600_000)
+            except (TypeError, ValueError):
+                t = None
+        if t is None:
+            continue
+        if t_a is not None and t < t_a:
+            continue
+        if t_b is not None and t > t_b:
+            continue
+        try:
+            lat, lon = float(v["lat"]), float(v["lon"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        saw = True
+        for lon_min, lat_min, lon_max, lat_max, _w, name in SHIPPING_LANES:
+            key = name.casefold()
+            if key in out:
+                continue
+            if lon_min <= lon <= lon_max and lat_min <= lat <= lat_max:
+                out[key] = t
+    return out if saw else None
+
+
+def review_sentences(
+    leg: dict | None, lang: str = "fr", crossings: dict[str, int] | None = None,
+) -> list[str]:
+    """Faits de revue fondus dans la route : plus d'annexe « À surveiller / Couloirs ».
+
+    RC30 : `crossings` (couloir → instant du premier croisement dans le
+    chapitre) filtre « La route passe par … » aux seuls bassins que la TRACE du
+    chapitre traverse, dans l'ordre de la route — Papeete n'entend plus
+    « Atlantique nord » hérité d'une autre portion de la jambe de revue."""
     if not isinstance(leg, dict):
         return []
     en = _en(lang)
@@ -2847,11 +2934,14 @@ def review_sentences(leg: dict | None, lang: str = "fr") -> list[str]:
     gale = season.get("galePct") if season else None
     cyclones = season.get("cyclones") if season else None
     pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else None
-    lanes = [
-        clean_spoken_label(n.strip(), lang)
-        for n in ((pack or {}).get("lanes") or [])
+    raw_lanes = [
+        n.strip() for n in ((pack or {}).get("lanes") or [])
         if isinstance(n, str) and n.strip()
     ] if pack else []
+    if crossings is not None:
+        raw_lanes = [n for n in raw_lanes if n.casefold() in crossings]
+        raw_lanes.sort(key=lambda n: crossings[n.casefold()])
+    lanes = [clean_spoken_label(n, lang) for n in raw_lanes]
     lanes = [n for n in lanes if n and not looks_english_title(n)]
 
     if lanes:
@@ -2901,7 +2991,15 @@ def _append_review_sentences(
     clock = window.get("clock")
     marks = (clock or {}).get("marks")
     t_a, t_b = window.get("tA"), window.get("tB")
-    for sentence in review_sentences(leg, lang):
+    crossings = _lane_crossings(clock, t_a, t_b)
+    pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else None
+    lane_ts = [
+        crossings[str(n).strip().casefold()]
+        for n in ((pack or {}).get("lanes") or [])
+        if isinstance(n, str) and crossings and str(n).strip().casefold() in crossings
+    ] if crossings else []
+    lane_anchor = min(lane_ts) if lane_ts else None
+    for sentence in review_sentences(leg, lang, crossings=crossings):
         filtered, _dropped = filter_numbers(sentence, facts)
         sentence = (filtered or "").strip()
         if not sentence:
@@ -2912,6 +3010,11 @@ def _append_review_sentences(
                 continue
         bits.append(sentence)
         if anchored is None:
+            continue
+        if lane_anchor is not None and re.search(r"passe par|goes through", sentence, re.I):
+            # RC30 : la phrase des bassins se dit QUAND la route les croise —
+            # jamais collée à l'arrivée (tri des phrases par ancre ensuite).
+            anchored.append((sentence, lane_anchor, {"kind": "coast"}))
             continue
         place = ""
         geo = re.search(
@@ -4178,22 +4281,22 @@ def _spread_free_changes(
     # AMP, climato au-delà de la dose : mieux vaut un flotteur Argo que dix jours
     # muets — et son instant tombe vraiment dans le trou), puis les items non
     # retenus des fenêtres voisines.
-    if spare:
-        spare_buckets: list[list[dict]] = [[] for _ in range(n)]
-        for c in sorted(spare, key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))):
-            t = c.get("tMs") or 0
-            if t <= dock_end:
-                continue
-            i = min(n - 1, int((t - dock_end) / width))
-            spare_buckets[max(0, i)].append(c)
-        for i in range(n):
-            if filled[i] is not None or not spare_buckets[i]:
-                continue
-            choice = _pick_diverse(spare_buckets[i], picked)
-            if choice is not None:
-                filled[i] = choice
-                taken[i] += 1
-                picked.append(choice)
+    spare_buckets: list[list[dict]] = [[] for _ in range(n)]
+    for c in sorted(spare or [], key=lambda c: (c.get("tMs") or 0, str(c.get("id") or ""))):
+        t = c.get("tMs") or 0
+        if t <= dock_end:
+            continue
+        i = min(n - 1, int((t - dock_end) / width))
+        spare_buckets[max(0, i)].append(c)
+    for i in range(n):
+        if filled[i] is not None or not spare_buckets[i]:
+            continue
+        choice = _pick_diverse(spare_buckets[i], picked)
+        if choice is not None:
+            filled[i] = choice
+            taken[i] += 1
+            picked.append(choice)
+            spare_buckets[i] = [c for c in spare_buckets[i] if c is not choice]
     for i in range(n):
         if filled[i] is not None:
             continue
@@ -4210,8 +4313,25 @@ def _spread_free_changes(
         j = min(open_buckets, key=lambda k: (taken[k], k))
         choice = _pick_diverse(buckets[j], picked)
         if choice is None:
-            break
+            # RC30 : cette fenêtre n'a que des doublons de site — elle ne doit
+            # pas faire taire les fenêtres suivantes (la Seychelloise attend).
+            buckets[j] = []
+            continue
         buckets[j] = [c for c in buckets[j] if c is not choice]
+        taken[j] += 1
+        picked.append(choice)
+    # RC30 : la réserve complète jusqu'au plafond (même quota ≤ 2 par fenêtre) —
+    # le flotteur Argo unique par jambe ne laisse plus la traversée muette.
+    while len(picked) < FILM_FREE_ITEMS_MAX:
+        open_spare = [j for j in range(n) if spare_buckets[j] and taken[j] < 2]
+        if not open_spare:
+            break
+        j = min(open_spare, key=lambda k: (taken[k], k))
+        choice = _pick_diverse(spare_buckets[j], picked)
+        if choice is None:
+            spare_buckets[j] = []
+            continue
+        spare_buckets[j] = [c for c in spare_buckets[j] if c is not choice]
         taken[j] += 1
         picked.append(choice)
     # Quand TOUT le chapitre tient sous le plafond, on ne jette rien : le
@@ -4269,6 +4389,58 @@ def _would_speak(change: dict) -> bool:
     return bool(sentence) and not film_has_forbidden(sentence)
 
 
+def _is_argo_station(change: dict) -> bool:
+    from ici_engine import science_type_key  # noqa: PLC0415
+    return (
+        str(change.get("kind") or "") == "station"
+        and science_type_key(_station_item(change)) == "argo"
+    )
+
+
+def _limit_argo_once(rows: list[dict]) -> list[dict]:
+    """RC30 : au plus UN flotteur Argo par chapitre — le premier croisé ;
+    jamais six « un flotteur Argo » anonymes (transcription du 14 oct.)."""
+    out: list[dict] = []
+    seen = False
+    for c in rows:
+        if _is_argo_station(c):
+            if seen:
+                continue
+            seen = True
+        out.append(c)
+    return out
+
+
+def _cap_argo_candidates(pool: list[dict], spare: list[dict]) -> tuple[list[dict], list[dict]]:
+    """RC30 : un seul flotteur Argo candidat AVANT la répartition par fenêtres.
+    On garde celui du passage le plus SILENCIEUX (le plus loin, dans le temps,
+    de tout autre stock racontable) : c'est lui qui remplissait le trou de la
+    traversée que les Argo surnuméraires comblaient avant — la jambe ne perd
+    pas sa densité (RC26)."""
+    argos = [c for c in pool if _is_argo_station(c)] + [c for c in spare if _is_argo_station(c)]
+    if len(argos) <= 1:
+        return pool, spare
+    others = [
+        c.get("tMs") or 0
+        for c in pool + (spare or [])
+        if not _is_argo_station(c) and c.get("tMs")
+    ]
+
+    def quietness(c: dict) -> float:
+        t = c.get("tMs") or 0
+        return min((abs(t - o) for o in others), default=0.0)
+
+    best = max(argos, key=lambda c: (
+        quietness(c),
+        -(change_distance_nm(c) if change_distance_nm(c) is not None else 999.0),
+        -(c.get("tMs") or 0),
+    ))
+    return (
+        [c for c in pool if not _is_argo_station(c) or c is best],
+        [c for c in spare if not _is_argo_station(c) or c is best],
+    )
+
+
 def select_chapter_changes(
     changes: list[dict], t_a: int, t_b: int, *, budget: bool = True, tier: Optional[int] = None,
     clock: dict | None = None, depart_ms: Optional[int] = None,
@@ -4317,10 +4489,11 @@ def select_chapter_changes(
                  or (spare_station_ok and station_spoken_label(c, "fr")))
             and _would_speak(c)
         ]
+        pool, spare = _cap_argo_candidates(pool, spare)
         picked_free = _spread_free_changes(pool, t_a, t_b, depart_ms=depart_ms, spare=spare)
         out = picked_free + keep   # escale, approche, marina d'escale : hors fenêtres
         out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
-        return out
+        return _limit_argo_once(out)
     grouped = _group_changes(rest_src, span, clock=clock)
     must = [c for c in grouped if c.get("kind") in {"escale", "approche"}]
     rest = [c for c in grouped if c.get("kind") not in {"escale", "approche"}]
@@ -4364,7 +4537,7 @@ def select_chapter_changes(
         if cid:
             seen.add(cid)
     picked.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
-    return picked
+    return _limit_argo_once(picked)
 
 
 def _de(name: str) -> str:
@@ -4720,6 +4893,52 @@ def _retarget_anchor(item, sentence: str):
     return (sentence, t_ms, extra)
 
 
+def _bits_offsets(bits: list[str]) -> list[int]:
+    """Index du premier caractère de chaque phrase dans « " ".join(bits) »."""
+    out: list[int] = []
+    acc = 0
+    for k, b in enumerate(bits):
+        if k:
+            acc += 1
+        out.append(acc)
+        acc += len(b)
+    return out
+
+
+def _order_chapter_sentences(bits: list[str], anchored: list, placed: list[dict]) -> None:
+    """RC30 : les phrases d'un chapitre se disent dans l'ordre STRICT du temps
+    du voyage — tri stable par instant d'ancre, l'ouverture (role depart) reste
+    en tête, l'arrivée (role arrive) en queue. Les connecteurs de date sont
+    recalculés APRÈS, par thin_chapter_dates. Les charIdx des bulles (`placed`)
+    suivent leurs phrases. Ne fait rien si bits et ancres ne sont pas alignés
+    (chemin sans ancres)."""
+    if len(bits) != len(anchored) or len(bits) < 3:
+        return
+    keys: list[tuple[int, int, int]] = []
+    last_t = 0
+    for i, item in enumerate(anchored):
+        row = _unpack_anchored(item)
+        role = (row.get("role") or "").strip().lower()
+        cls = 0 if role == "depart" else (2 if role == "arrive" else 1)
+        t = row.get("t")
+        if t is not None:
+            last_t = int(t)
+        keys.append((cls, last_t if cls == 1 else 0, i))
+    order = sorted(range(len(bits)), key=lambda i: keys[i])
+    if order == list(range(len(bits))):
+        return
+    old_off = _bits_offsets(bits)
+    new_bits = [bits[i] for i in order]
+    new_off = _bits_offsets(new_bits)
+    remap = {old_off[i]: new_off[pos] for pos, i in enumerate(order)}
+    for bubble in placed:
+        old_idx = bubble.get("charIdx")
+        if isinstance(old_idx, int) and old_idx in remap:
+            bubble["charIdx"] = remap[old_idx]
+    anchored[:] = [anchored[i] for i in order]
+    bits[:] = new_bits
+
+
 def _named_place_coords(name: str, marks: list | None = None) -> Optional[tuple[float, float]]:
     raw = str(name or "").strip()
     if not raw:
@@ -4849,8 +5068,11 @@ def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
     while i < len(out):
         if dated[i] and dated[i - 1]:
             if _is_arrival_sentence(out[i]):
-                prev_d = _parse_spoken_date(out[i - 1], lang)
-                cur_d = _parse_spoken_date(out[i], lang)
+                # RC30 : la phrase i-1 perd SA date — « Le lendemain » se mesure
+                # contre la dernière date dite AVANT elle, pas contre l'arrivée.
+                prev_j = next((j for j in range(i - 2, -1, -1) if dated[j]), None)
+                prev_d = _parse_spoken_date(out[prev_j], lang) if prev_j is not None else None
+                cur_d = _parse_spoken_date(out[i - 1], lang)
                 body = _strip_lead_date(out[i - 1], lang)
                 if body == out[i - 1]:
                     body = (_DATE_EN_RE if _en(lang) else _DATE_FR_RE).sub("", out[i - 1], count=1)
@@ -5433,6 +5655,10 @@ def build_raw_from_moments(
                 "fact": arrival, "score": 3,
                 "card": {"id": arr_id, "kind": "stop", "title": dest_title, "text": arrival, "at": dest.get("iso"), "score": 3},
             })
+        # RC30 : tri strict par instant d'ancre AVANT les connecteurs de date —
+        # un item déplacé entre fenêtres ou une phrase de revue ancrée tôt ne
+        # se dit plus hors de son ordre ; « le lendemain » est recalculé après.
+        _order_chapter_sentences(bits, anchored, placed)
         thinned = thin_chapter_dates(bits, lang)
         if len(thinned) == len(bits) and len(anchored) == len(bits):
             anchored[:] = [_retarget_anchor(anchored[j], thinned[j]) for j in range(len(thinned))]
