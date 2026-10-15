@@ -48,7 +48,7 @@ describe("narrateIci", () => {
     assert.match(text, /Ports d’entrée officiels les plus proches : La Rochelle \(1,2 nm\)/);
     assert.match(text, /Fiches d’entrée : douane\.gouv\.fr/);
     assert.doesNotMatch(text, /https:\/\/www\.douane\.gouv\.fr\/la-rochelle/);
-    assert.match(text, /30 milles/);
+    assert.match(text, /À 8 milles de Pertuis charentais/);
     assert.match(text, /Pertuis/);
     assert.match(text, /On vient d’entrer/);
     assert.match(text, /Cap sur Fort-de-France[^.]*depuis La Rochelle/);
@@ -372,7 +372,7 @@ describe("narrateIci", () => {
       },
       sources: { zee: "marineregions", bi: "ok" },
     }, "fr");
-    assert.match(text, /Aires marines protégées à moins de 30 milles : Pertuis charentais/);
+    assert.match(text, /À 8 milles de Pertuis charentais/);
     assert.doesNotMatch(text, /parc-marin\.fr/); // visit / manager pages are links now
     assert.match(text, /Mouillage des Minimes/);
     assert.match(text, /Balisage \(OpenStreetMap\) : Feu des Minimes/);
@@ -697,6 +697,34 @@ describe("lot M — sources liées, pas de redite", () => {
     }, "fr");
     assert.match(silent, /atlas de climatologie n’a pas répondu/);
     assert.equal((silent.match(/atlas de climatologie n’a pas répondu/g) || []).length, 1);
+  });
+});
+
+describe("lot AM1B — ampSentence dans / à N milles", () => {
+  it("dit « dans l'aire marine protégée » quand inside", () => {
+    const text = narrateIci({
+      zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
+      amp: [{ name: "Strait of Bonifacio", inside: true, nm: 0, source: "polygon", siteId: "AIFRA7" }],
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /Dans l'aire marine protégée Strait of Bonifacio/);
+    assert.doesNotMatch(text, /À 0 milles/);
+  });
+
+  it("dit « à N milles de » hors de l'aire, y compris le sac export", () => {
+    const nearby = narrateIci({
+      zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
+      amp: [{ name: "Parc de Cabrera", inside: false, nm: 6, source: "polygon" }],
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(nearby, /À 6 milles de Parc de Cabrera/);
+    const exported = narrateIci({
+      zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },
+      amp: [{ name: "Pertuis charentais", nm: 8, source: "export" }],
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(exported, /À 8 milles de Pertuis charentais/);
+    assert.doesNotMatch(exported, /Dans l'aire marine/);
   });
 });
 

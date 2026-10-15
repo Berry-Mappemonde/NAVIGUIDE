@@ -25,6 +25,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -41,7 +42,9 @@ LEGACY_TTL_S = 7 * 86400.0
 POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
 COAST_NEAR_NM = 25.0  # ports / WPI → jalon de côte (RG2)
 SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal, lot F2)
-AMP_NEAR_NM = 30.0    # AMP réelle à portée (RG3)
+AMP_NEAR_NM = 30.0    # AMP réelle à portée — repli export (centroïde, RG3)
+AMP_NEARBY_NM = 15.0  # polygone : proximité à la limite, hors inside (AM1B)
+_AMP_NAME_SPLIT = re.compile(r"\s+[-—–]\s+|\s*\(")
 PROJECT_NEAR_NM = 30.0  # projet Blue Intelligence à portée (RG3)
 CLIMO_ROSE_TURN_DEG = 90.0
 CLIMO_CALM_KN = 8.0
@@ -352,6 +355,39 @@ def _pearl_event(pearl: dict, idx: int, kind: str, event: str, name: str | None,
     return out
 
 
+def _amp_dedup_keys(amp: dict, spoken: str = "") -> tuple[str, ...]:
+    """siteId et préfixe de nom (« Lilleau-des-Niges » ×2) — AM1B."""
+    keys: list[str] = []
+    site = str(amp.get("siteId") or amp.get("site_id") or amp.get("id") or "").strip()
+    if site:
+        keys.append(f"id:{site.casefold()}")
+    raw = spoken or str(amp.get("name") or "")
+    prefix = _AMP_NAME_SPLIT.split(raw, maxsplit=1)[0].strip().casefold()
+    if prefix:
+        keys.append(f"name:{prefix}")
+    return tuple(keys)
+
+
+def _amp_is_export_fallback(amp: dict) -> bool:
+    """Repli centroïde (source export, pas d'inside) : comportement d'avant."""
+    src = str(amp.get("source") or "")
+    if src == "export":
+        return True
+    if src == "polygon":
+        return False
+    return "inside" not in amp
+
+
+def _amp_is_inside(amp: dict) -> bool:
+    if _amp_is_export_fallback(amp):
+        return False
+    return bool(amp.get("inside"))
+
+
+def _amp_keys_hit(keys: tuple[str, ...], pool: set[str]) -> bool:
+    return bool(keys) and any(k in pool for k in keys)
+
+
 def route_events_from_pearls(points: list[dict]) -> list[dict]:
     """What the warmed pearls know about the route, in order: ZEE entered /
     left, marine protected areas that come within reach (AMP réelles, RG3),
@@ -373,6 +409,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     state_known = False
     candidate: tuple | None = None  # (zee_or_None, pearl, idx) seen once, waiting for a second pearl
     seen_amp: set[str] = set()
+    inside_amp_rows: list[tuple[tuple[str, ...], dict, str]] = []
     seen_poe: set[str] = set()
     seen_sci: set[str] = set()
     seen_coast: set[str] = set()
@@ -386,6 +423,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
             candidate = None
             prev_climo = None
             in_calms = False
+            inside_amp_rows = []
             continue
         zee = bag.get("zee") or None
         mrgid = zee.get("mrgid") if isinstance(zee, dict) else None
@@ -450,21 +488,60 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
             a for a in (bag.get("amp") or [])
             if isinstance(a, dict) and a.get("name") and not is_fishing_amp(a)
         ]
-        amps.sort(key=lambda a: a.get("nm") if isinstance(a.get("nm"), (int, float)) else 999)
+        amps.sort(key=lambda a: (
+            0 if a.get("inside") else 1,
+            a.get("nm") if isinstance(a.get("nm"), (int, float)) else 999,
+        ))
+        current_inside: list[tuple[tuple[str, ...], dict, str]] = []
         for amp in amps:
-            nm = amp.get("nm")
-            if isinstance(nm, (int, float)) and nm > AMP_NEAR_NM:
+            if not _amp_is_inside(amp):
                 continue
-            key = str(amp.get("site_id") or amp.get("id") or amp["name"])
-            if key in seen_amp:
-                continue
-            seen_amp.add(key)
             name = spoken_amp_name(amp["name"]) or str(amp["name"])
-            events.append({
-                "kind": "amp", "event": "nearby", "name": name, "siteId": key,
-                "nm": nm, "visitUrl": amp.get("visit_url") or amp.get("url"),
-                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
-            })
+            keys = _amp_dedup_keys(amp, name)
+            if keys:
+                current_inside.append((keys, amp, name))
+        current_keyset = {k for keys, _amp, _n in current_inside for k in keys}
+        prev_keyset = {k for keys, _amp, _n in inside_amp_rows for k in keys}
+
+        def _amp_row(event: str, amp: dict, name: str, keys: tuple[str, ...], *, nm: Any, inside: bool) -> dict:
+            site = str(amp.get("siteId") or amp.get("site_id") or amp.get("id") or (keys[0] if keys else name))
+            row = {
+                "kind": "amp", "event": event, "name": name, "siteId": site,
+                "nm": nm, "inside": inside,
+                "visitUrl": amp.get("visitUrl") or amp.get("visit_url") or amp.get("url"),
+                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4),
+                "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+            }
+            src = amp.get("source")
+            if src:
+                row["source"] = src
+            return row
+
+        for keys, amp, name in inside_amp_rows:
+            if _amp_keys_hit(keys, current_keyset):
+                continue
+            events.append(_amp_row("exit", amp, name, keys, nm=amp.get("nm") if isinstance(amp.get("nm"), (int, float)) else 0, inside=False))
+        for keys, amp, name in current_inside:
+            if _amp_keys_hit(keys, prev_keyset):
+                continue
+            events.append(_amp_row("enter", amp, name, keys, nm=0, inside=True))
+            seen_amp.update(keys)
+        inside_amp_rows = current_inside
+        for amp in amps:
+            if _amp_is_inside(amp):
+                continue
+            nm = amp.get("nm")
+            if not isinstance(nm, (int, float)):
+                continue
+            limit = AMP_NEAR_NM if _amp_is_export_fallback(amp) else AMP_NEARBY_NM
+            if nm > limit:
+                continue
+            name = spoken_amp_name(amp["name"]) or str(amp["name"])
+            keys = _amp_dedup_keys(amp, name)
+            if not keys or _amp_keys_hit(keys, seen_amp) or _amp_keys_hit(keys, current_keyset):
+                continue
+            seen_amp.update(keys)
+            events.append(_amp_row("nearby", amp, name, keys, nm=nm, inside=False))
         projects = _project_items(bag)
         projects.sort(key=_gold_first)
         for proj in projects:

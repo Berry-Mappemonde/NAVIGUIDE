@@ -100,9 +100,10 @@ _LEAD_DATE_EN_RE = re.compile(
     re.I,
 )
 # RC26 : climatologie et projets avant les eaux (gabarit FILM_DISCOURS § 4).
+# AM1B : AMP devant les eaux, dans les mêmes fenêtres (on ne réécrit pas la sélection).
 CHANGE_PRIORITY = {
-    "escale": 0, "approche": 1, "alert-on": 2, "climo": 3, "station": 4,
-    "project": 5, "amp": 5, "zee-enter": 6, "coast": 6, "marina": 7, "cyclone": 8, "culture": 9,
+    "escale": 0, "approche": 1, "alert-on": 2, "climo": 3, "amp": 4, "station": 4,
+    "project": 5, "zee-enter": 6, "coast": 6, "marina": 7, "cyclone": 8, "culture": 9,
     "port": 10, "regime": 11, "alert-off": 12,
 }
 BUBBLE_KIND = {
@@ -1038,6 +1039,25 @@ def _is_amp_change(change: dict) -> bool:
     return False
 
 
+def _amp_speak_event(change: dict) -> str:
+    """enter | nearby | exit | '' — champ event, sinon inside / nm 0."""
+    event = str(change.get("event") or "")
+    if event in {"enter", "exit", "nearby"}:
+        return event
+    nested = change.get("entry") if isinstance(change.get("entry"), dict) else {}
+    nested_ev = str(nested.get("event") or "")
+    if nested_ev in {"enter", "exit", "nearby"}:
+        return nested_ev
+    if change.get("inside") is True or nested.get("inside") is True:
+        return "enter"
+    nm = change_distance_nm(change)
+    if nm is not None and nm <= 0:
+        return "enter"
+    if nm is not None and nm > 0:
+        return "nearby"
+    return ""
+
+
 _FR_SMALL = (
     "zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf",
     "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize",
@@ -1172,6 +1192,8 @@ def change_is_speakable(change: dict) -> bool:
         return True
     if kind == "amp":
         from ici_engine import is_fishing_amp, spoken_amp_name  # noqa: PLC0415
+        if str(change.get("event") or "") == "exit":
+            return False
         if is_fishing_amp({"name": change.get("title"), "fact": change.get("fact")}):
             return False
         name = spoken_amp_name(change_place_name(change) or change.get("title") or "")
@@ -1874,6 +1896,8 @@ def bubble_score(
             return 3
         return None
     if kind == "amp":
+        if event == "exit":
+            return None
         return 1
     if kind == "project":
         return 1
@@ -2126,6 +2150,8 @@ def film_candidates(
             if not key or key in seen_zee:
                 continue
             seen_zee.add(key)
+        if e.get("kind") == "amp" and e.get("event") == "exit":
+            continue
         if e.get("kind") == "poe":
             key = e.get("poeId") or e.get("name")
             if not key or key in seen_poe:
@@ -3072,13 +3098,24 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
     if ev.get("kind") == "amp":
         from ici_engine import spoken_amp_name  # noqa: PLC0415
         spoken = spoken_amp_name(name) or name
-        nm = _fact_num(e, "nm")
-        dist = spoken_distance(nm, lang) if nm is not None else ""
+        if not spoken:
+            return ""
+        ev_kind = _amp_speak_event(e if isinstance(e, dict) else ev)
+        if ev_kind == "exit":
+            return ""
+        if ev_kind == "enter":
+            return (
+                f"On {when}, the boat enters the marine protected area {spoken}."
+                if en else
+                f"Le {when}, le bateau entre dans l'aire marine protégée {spoken}."
+            )
+        nm = _fact_num(e, "nm") if isinstance(e, dict) else _fact_num(ev, "nm")
+        dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
         if dist:
             return (
-                f"On {when}, {dist} away, the marine protected area {spoken}."
+                f"On {when}, the boat skirts the marine protected area {spoken} at {dist}."
                 if en else
-                f"Le {when}, à {dist}, l'aire marine protégée {spoken}."
+                f"Le {when}, le bateau longe l'aire marine protégée {spoken} à {dist}."
             )
         return (
             f"On {when}, marine protected area: {spoken}."
@@ -4351,6 +4388,16 @@ def _usable_changes(changes: list[dict]) -> list[dict]:
             best[key] = change
             out.append(change)
             continue
+        if _is_amp_change(change) or _is_amp_change(prev):
+            rank = {"enter": 0, "nearby": 1, "exit": 2}
+            prev_r = rank.get(_amp_speak_event(prev), 9)
+            cur_r = rank.get(_amp_speak_event(change), 9)
+            if cur_r < prev_r:
+                best[key] = change
+                out[out.index(prev)] = change
+                continue
+            if cur_r > prev_r:
+                continue
         if len(change_place_name(change)) < len(change_place_name(prev)):
             merged = {
                 **change,
@@ -4569,6 +4616,16 @@ def _spread_free_changes(
             by_site[k] = c
             out.append(c)
             continue
+        if _is_amp_change(c) or _is_amp_change(prev):
+            rank = {"enter": 0, "nearby": 1, "exit": 2}
+            prev_r = rank.get(_amp_speak_event(prev), 9)
+            cur_r = rank.get(_amp_speak_event(c), 9)
+            if cur_r < prev_r:
+                out[out.index(prev)] = c
+                by_site[k] = c
+                continue
+            if cur_r > prev_r:
+                continue
         if len(str(c.get("title") or "")) < len(str(prev.get("title") or "")):
             merged = {**c, "t": prev.get("t"), "tMs": prev.get("tMs")}
             out[out.index(prev)] = merged
@@ -4846,13 +4903,22 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         name = spoken_amp_name(change_place_name(change) or title) or change_place_name(change)
         if not name or looks_english_title(name):
             return ""
+        ev_kind = _amp_speak_event(change)
+        if ev_kind == "exit":
+            return ""
+        if ev_kind == "enter":
+            return (
+                f"On {when}, the boat enters the marine protected area {name}."
+                if en else
+                f"Le {when}, le bateau entre dans l'aire marine protégée {name}."
+            )
         nm = change_distance_nm(change)
-        dist = spoken_distance(nm, lang) if nm is not None else ""
+        dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
         if dist:
             return (
-                f"On {when}, {dist} away, the marine protected area {name}."
+                f"On {when}, the boat skirts the marine protected area {name} at {dist}."
                 if en else
-                f"Le {when}, à {dist}, l'aire marine protégée {name}."
+                f"Le {when}, le bateau longe l'aire marine protégée {name} à {dist}."
             )
         return f"On {when}, marine protected area: {name}." if en else f"Le {when}, aire marine protégée : {name}."
     if kind == "project":

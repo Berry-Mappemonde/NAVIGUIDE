@@ -525,12 +525,18 @@ def _here(pearl: dict, clock: dict, lang: str) -> dict:
         item = {
             "name": localize_place_name(amp.get("name"), lang),
             "nm": _as_float(amp.get("nm")),
-            "url": amp.get("visit_url") or amp.get("url"),
-            "site_id": amp.get("site_id") or amp.get("id"),
+            "url": amp.get("visit_url") or amp.get("url") or amp.get("visitUrl"),
+            "site_id": amp.get("siteId") or amp.get("site_id") or amp.get("id"),
             "iucn_cat": amp.get("iucn_cat") or amp.get("iucn"),
             "designation": amp.get("designation"),
+            "source": amp.get("source"),
         }
-        amps.append({k: v for k, v in item.items() if v not in (None, "")})
+        slim = {k: v for k, v in item.items() if v not in (None, "")}
+        if "inside" in amp:
+            slim["inside"] = bool(amp.get("inside"))
+        if slim.get("site_id"):
+            slim["siteId"] = slim["site_id"]
+        amps.append(slim)
     aton = pearl.get("aton") if isinstance(pearl.get("aton"), dict) else {}
     seamarks = []
     for mark in aton.get("nearby") or []:
@@ -624,12 +630,31 @@ def _sentences(
                 "Aucun port d’entrée officiel n’est connu pour cette ZEE."
             )
     if amps:
-        listed = _list_places(amps, lang)
-        out.append(
-            f"Marine protected areas within 30 nm: {listed}."
-            if en else
-            f"Aires marines protégées à moins de 30 milles : {listed}."
-        )
+        inside = next((a for a in amps if a.get("inside") is True), None)
+        if inside:
+            name = localize_place_name(inside.get("name"), lang)
+            out.append(
+                f"In the marine protected area {name}."
+                if en else
+                f"Dans l'aire marine protégée {name}."
+            )
+        else:
+            nearest = amps[0]
+            name = localize_place_name(nearest.get("name"), lang)
+            nm = _num(nearest.get("nm"), lang)
+            if nm is not None:
+                out.append(
+                    f"{nm} miles from {name}."
+                    if en else
+                    f"À {nm} milles de {name}."
+                )
+            else:
+                listed = _list_places(amps, lang)
+                out.append(
+                    f"Marine protected areas nearby: {listed}."
+                    if en else
+                    f"Aires marines protégées à proximité : {listed}."
+                )
     wind = (weather.get("wind") or {}) if isinstance(weather.get("wind"), dict) else {}
     wave = (weather.get("wave") or {}) if isinstance(weather.get("wave"), dict) else {}
     bits: list[str] = []
