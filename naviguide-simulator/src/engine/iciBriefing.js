@@ -608,7 +608,9 @@ function legSentence(dossier, lang) {
     bits.push(en ? `Boat speed on this leg: ${num(speed, lang)} knots.` : `Vitesse sur cette jambe : ${num(speed, lang)} nœuds.`);
   }
   if (boat) {
-    bits.push(en ? `Polar loaded: ${boat}.` : `Polaire chargée : ${boat}.`);
+    // RC30 (CI r13) : le nom du bateau ne se dit qu'une fois, dans Paramètres
+    // avancés (lot R13) — le briefing confirme la polaire sans le redire.
+    bits.push(en ? "Polar loaded." : "Polaire chargée.");
   }
   return bits.join(" ");
 }
