@@ -706,8 +706,11 @@ def _densite_faults(plan: dict, moments: dict, clock: dict | None) -> list[str]:
         lo, hi = d.sea_bounds(ch, departs)
         # Le plancher est borné par le nombre d'INSTANTS distincts du stock :
         # un moment unique à six items ne justifie pas six phrases d'un coup.
+        # RC30 : au plus un flotteur Argo par jambe — les Argo surnuméraires ne
+        # comptent ni dans le plancher ni dans les trous.
+        told_ch = d.cap_argo_told(told, lo, hi)
         minutes = {
-            t // 60_000 for t, _title in told
+            t // 60_000 for t, _title in told_ch
             if lo is not None and hi is not None and lo < t <= hi
         }
         floor = min(min(16, max(4, int(days / 1.5))), len(minutes))
@@ -718,7 +721,7 @@ def _densite_faults(plan: dict, moments: dict, clock: dict | None) -> list[str]:
         if run > 5:
             faults.append(f"ch{i} : {run} phrases d'affilée ancrées sur la même minute")
         gap, g_a, g_b = d.max_gap(ch, departs)
-        if gap > 0.30 and d.gap_has_untold_stock(g_a, g_b, told, text):
+        if gap > 0.30 and d.gap_has_untold_stock(g_a, g_b, told_ch, text):
             faults.append(f"ch{i} : trou de {gap:.0%} avec du stock non dit dedans")
     # L'intégral dit au moins une station et un projet si le stock en contient.
     said = {}

@@ -10,7 +10,7 @@ import {
   formatFilmClockLine,
   rebaseIso,
 } from "../engine/voyageClock.js";
-import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
+import { canLeadWithVoice, isSpeaking, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -162,6 +162,41 @@ export function shouldReturnToLive({ userStopped = false, filmFinished = false, 
 export const FILM_VOICE_STALL_MS = 2000;
 /** Onglet caché → reprise : le bateau rejoint la voix en au plus 2 s, sans saut (RG9 / E3). */
 export const FILM_VISIBILITY_CATCHUP_MS = 2000;
+
+/**
+ * RC30 : la synthèse qui PARLE n'est jamais « absente » — les frontières de
+ * mot peuvent se taire (longue phrase, voix système) sans que la bascule
+ * linéaire ne vienne couper l'énoncé en changeant de chapitre.
+ */
+export function voiceStalled({
+  chapterAgeMs = 0,
+  sinceBoundaryMs = Infinity,
+  speaking = false,
+  hold = false,
+  stallMs = FILM_VOICE_STALL_MS,
+} = {}) {
+  if (hold || speaking) return false;
+  return chapterAgeMs >= stallMs && sinceBoundaryMs > stallMs;
+}
+
+/**
+ * RC30 : fin du film — quand la voix mène (ou parle encore), seul
+ * voiceSpokenAll termine ; le budget n'arrête jamais la clôture au milieu
+ * (« Aujourd'hui, le » coupé, transcription du 14 oct.).
+ */
+export function filmShouldFinish({
+  voiceClock = false,
+  speaking = false,
+  voiceAllDone = false,
+  linearFinish = false,
+  lastReached = false,
+  stopping = false,
+} = {}) {
+  if (stopping) return false;
+  if (voiceAllDone) return true;
+  if (voiceClock || speaking) return false;
+  return Boolean(linearFinish && lastReached);
+}
 
 /** Part du récit déjà dite (0..1) : caractères prononcés / caractères du film. */
 export function spokenProgress(plan, chapterIdx, charIdx) {
@@ -1105,14 +1140,17 @@ export function useReplay({
         voiceFailedRef.current = true;
       }
       const chapterAge = chapterStartedAtRef.current ? now - chapterStartedAtRef.current : 0;
+      const speaking = Boolean(voiceRef.current) && isSpeaking();
       if (
         voiceRef.current && !voiceFailedRef.current && !voiceSpokenAllRef.current
-        && !voiceHoldRef.current
-        && chapterAge >= FILM_VOICE_STALL_MS
-        && (
-          voiceBoundaryAtRef.current === 0
-          || now - voiceBoundaryAtRef.current > FILM_VOICE_STALL_MS
-        )
+        && voiceStalled({
+          chapterAgeMs: chapterAge,
+          sinceBoundaryMs: voiceBoundaryAtRef.current === 0
+            ? Infinity
+            : now - voiceBoundaryAtRef.current,
+          speaking,
+          hold: voiceHoldRef.current,
+        })
       ) {
         voiceFailedRef.current = true;
       }
@@ -1146,10 +1184,15 @@ export function useReplay({
       const voiceAllDone = Boolean(voiceSpokenAllRef.current) && (
         budgetRef.current <= 0 || wallElapsed >= plan.targetSeconds
       );
-      const done = !stoppingRef.current && (
-        voiceAllDone
-        || (!voiceClock && linear.finish && linear.lastReached)
-      );
+      // RC30 : la clôture se finit — tant que la voix parle, pas de finish().
+      const done = filmShouldFinish({
+        voiceClock,
+        speaking,
+        voiceAllDone,
+        linearFinish: linear.finish,
+        lastReached: linear.lastReached,
+        stopping: stoppingRef.current,
+      });
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);
@@ -1170,7 +1213,9 @@ export function useReplay({
           const ch = pinnedIdxRef.current != null
             ? plan.chapters[pinnedIdxRef.current]
             : plan.chapters[linear.chapterIdx];
-          if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
+          // RC30 : changer de chapitre couperait la voix (stopSpeaking) — on
+          // attend la fin de l'énoncé.
+          if (ch && ch.idx !== chapterIdxRef.current && !speaking) applyChapter(ch);
           charIdx = pinnedIdxRef.current != null ? (ch?.chars || 1) : linear.charIdx;
         }
         if (stepped.done) {
@@ -1180,7 +1225,8 @@ export function useReplay({
       } else if (!voiceClock) {
         const pinned = pinnedIdxRef.current;
         const ch = pinned != null ? plan.chapters[pinned] : plan.chapters[linear.chapterIdx];
-        if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
+        // RC30 : la voix finit sa phrase avant tout changement de chapitre.
+        if (ch && ch.idx !== chapterIdxRef.current && !speaking) applyChapter(ch);
         if (pinned != null && ch) {
           charIdx = ch.chars || 1;
           ingest(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));

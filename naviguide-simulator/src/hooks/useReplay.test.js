@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, wallClockSpeakSeconds } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmShouldFinish, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -787,6 +787,54 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.ok(rb5.text.length < officialCh1.length);
     assert.match(filmSubtitleAt(officialCh1, 0).sentence, /Saint-Maur/);
     assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
+  });
+
+  it("RC30 : un énoncé qui finit après tB n'est pas coupé — pas de stopSpeaking avant onEnd", () => {
+    // La synthèse parle encore (frontières muettes) : jamais « voix absente »,
+    // donc pas de bascule linéaire qui changerait de chapitre et couperait la phrase.
+    assert.equal(voiceStalled({
+      chapterAgeMs: 5000, sinceBoundaryMs: 5000, speaking: true, hold: false,
+    }), false);
+    // Voix tenue en fin de phrase (attente d'ancre) : pas un décrochage non plus.
+    assert.equal(voiceStalled({
+      chapterAgeMs: 5000, sinceBoundaryMs: 5000, speaking: false, hold: true,
+    }), false);
+    // Synthèse vraiment morte : le décrochage joue comme avant (RG9 / E2).
+    assert.equal(voiceStalled({
+      chapterAgeMs: FILM_VOICE_STALL_MS, sinceBoundaryMs: Infinity, speaking: false, hold: false,
+    }), true);
+    assert.equal(voiceStalled({
+      chapterAgeMs: 500, sinceBoundaryMs: Infinity, speaking: false, hold: false,
+    }), false);
+  });
+
+  it("RC30 : la fin du film attend la fin de la clôture — budgetDone ne précède jamais voiceSpokenAll", () => {
+    // Le temps-film a atteint la fin (linear.finish) mais la voix dit encore
+    // « Aujourd'hui, le bateau est… » : pas de finish().
+    assert.equal(filmShouldFinish({
+      voiceClock: true, speaking: true, voiceAllDone: false,
+      linearFinish: true, lastReached: true,
+    }), false);
+    // Même la voix « décrochée » qui parle encore n'est pas coupée.
+    assert.equal(filmShouldFinish({
+      voiceClock: false, speaking: true, voiceAllDone: false,
+      linearFinish: true, lastReached: true,
+    }), false);
+    // La clôture dite en entier : le film finit.
+    assert.equal(filmShouldFinish({
+      voiceClock: true, speaking: false, voiceAllDone: true,
+      linearFinish: false, lastReached: true,
+    }), true);
+    // Sans voix (mode linéaire), la fin linéaire garde la main.
+    assert.equal(filmShouldFinish({
+      voiceClock: false, speaking: false, voiceAllDone: false,
+      linearFinish: true, lastReached: true,
+    }), true);
+    // Stop demandé : rien ne finit tout seul.
+    assert.equal(filmShouldFinish({
+      voiceClock: false, speaking: false, voiceAllDone: true,
+      linearFinish: true, lastReached: true, stopping: true,
+    }), false);
   });
 
   it("reprise d'onglet : rampe ≤ 2 s, aucun pas égal au saut", () => {

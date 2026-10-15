@@ -89,6 +89,9 @@ _MONTHS = {
     ],
 }
 # Jalons climatiques : le nom vient d'ici, la position du sommet décide « au sud de ».
+# RC30 : un jalon à plus de PLACE_MAX_NM ne nomme pas le lieu — le 19 mai au
+# large de la Galice, le bateau n'est pas « au nord de Gibraltar » (445 nm).
+PLACE_MAX_NM = 240.0
 _LANDMARKS = (
     (16.0, -24.0, "Cap-Vert", "Cape Verde", "du", "of"),
     (28.5, -15.5, "Canaries", "the Canary Islands", "des", "of"),
@@ -181,7 +184,13 @@ def named_belt(
         return "mistral"
     if knots is not None and knots < CALM_KN and abs(lat) <= 10.0:
         return "equatorial_calms"
-    if source == "atlas" and _in_med(lat, lon) and knots is not None and knots >= 12.0 and dir_deg is not None:
+    # RC30 : mistral / tramontane seulement dans la Méditerranée vraie (lon ≥ 0) —
+    # la boîte _in_med englobe la côte atlantique ibérique, où un vent de nord
+    # n'est pas le mistral (transcription du 14 oct., bateau au large de la Galice).
+    if (
+        source == "atlas" and _in_med(lat, lon) and lon >= 0.0
+        and knots is not None and knots >= 12.0 and dir_deg is not None
+    ):
         d = dir_deg % 360.0
         if lon <= 6.0 and 300.0 <= d <= 340.0:
             return "tramontane"
@@ -237,10 +246,13 @@ def _compass(deg: float, lang: str) -> str:
 
 
 def _place_phrase(lat: float, lon: float, lang: str) -> str:
+    """Lieu de la phrase climato = position du bateau à cet instant (RC30) :
+    un jalon trop loin (> PLACE_MAX_NM) ne se dit pas — mieux vaut le silence
+    qu'un « au nord de Gibraltar » quand le bateau longe la Galice."""
     if abs(lat) <= 5.0:
         return "at the equator" if _en(lang) else "à l'équateur"
     best = None
-    best_d = 450.0
+    best_d = PLACE_MAX_NM
     for mlat, mlon, fr, en, art_fr, art_en in _LANDMARKS:
         d = _haversine_nm(lat, lon, mlat, mlon)
         if d < best_d:
