@@ -137,6 +137,12 @@ def test_chat_ultra_cap_default_ten_eleventh_refused(monkeypatch):
     assert st["chatUltra"]["cap"] == 10
 
 
+def test_ultra_daily_cap_is_eighty_thousand(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_DEEP", raising=False)
+    assert llm_budget.DEFAULT_CAPS["deep"] == 80_000
+    assert llm_budget.daily_cap("deep") == 80_000
+
+
 def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")

@@ -28,7 +28,7 @@ TIERS = ("fast", "write", "deep", "judge")
 DEFAULT_CAPS = {
     "fast": 200_000,
     "write": 150_000,
-    "deep": 40_000,
+    "deep": 80_000,
     "judge": 60_000,
 }
 

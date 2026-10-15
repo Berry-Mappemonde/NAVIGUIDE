@@ -32,9 +32,10 @@ export const FILM_VIEW_HZ = 30;
 export const FILM_MIN_CHAPTER_SECONDS = 12;
 export const FILM_RECALE_MS = 300;
 export const FILM_BEHIND_SPEED = 0.7;
-/** Voix : le bateau vise ce qui va être dit dans ~1 s (12 caractères), jamais plus loin. */
+/** Compensation serveur RG14 (nom du lieu − 12). Le client ne la rajoute plus. */
 export const FILM_VOICE_LOOKAHEAD_CHARS = 12;
-export const FILM_VOICE_CPS_DEFAULT = 15;
+/** Prédiction entre deux mots : plutôt lent (EN / voix macOS) pour ne pas lâcher le bateau devant. */
+export const FILM_VOICE_CPS_DEFAULT = 12;
 export const FILM_VOICE_CPS_MIN = 6;
 export const FILM_VOICE_CPS_MAX = 40;
 export const FILM_PAN_MAX_SCREEN = 0.02;
@@ -238,13 +239,13 @@ export function predictVoiceChar({
  */
 export function voiceLedStep({
   t, dt, chapter, plan, chapterIdx, charIdx, cps = FILM_VOICE_CPS_DEFAULT,
-  lookahead = FILM_VOICE_LOOKAHEAD_CHARS,
+  lookahead = 0,
   lastBoundaryChar,
   sinceBoundaryS = 0,
   recaleRemainMs = 0,
 } = {}) {
   const rate = Math.max(FILM_VOICE_CPS_MIN, Math.min(FILM_VOICE_CPS_MAX, Number(cps) || FILM_VOICE_CPS_DEFAULT));
-  const ahead = Math.max(1, Number(lookahead) || FILM_VOICE_LOOKAHEAD_CHARS);
+  const ahead = Math.max(0, Number(lookahead) || 0);
   const lastB = lastBoundaryChar != null ? Number(lastBoundaryChar) : (Number(charIdx) || 0);
   const sent = sentenceSpan(chapter, lastB);
   const pred = predictVoiceChar({
@@ -555,7 +556,8 @@ export function stepFilmTime({
     zoom: z,
     lat: phi,
     atQuay: atQuay && !phraseEnded,
-    tCap: sent.endT,
+    // Voice-led: never let v_min pull the boat past what is being said.
+    tCap: voiceLed ? desired : sent.endT,
   });
   const wait = voiceShouldWait({
     t: gov.t,

@@ -133,6 +133,23 @@ describe("cartes", () => {
     assert.equal(sci.entity.kind, "science");
     assert.equal(sci.entity.url, "https://www.pmel.noaa.gov/pirata/");
     assert.equal(cardFromJournalEntry({ kind: "grib", t: "2026-05-15T12:00:00Z" }), null);
+    const zeeEn = cardFromJournalEntry({
+      id: "zee:es",
+      kind: "zee",
+      t: "2026-05-16T10:00:00Z",
+      title: "Zone économique exclusive espagnole",
+    }, "en");
+    assert.match(zeeEn.title, /Spanish EEZ/);
+    assert.doesNotMatch(zeeEn.title, /Zone économique|espagnole/);
+    const ampEn = cardFromJournalEntry({
+      id: "amp:taaone",
+      kind: "amp",
+      t: "2026-05-16T10:00:00Z",
+      title: "Aire marine protégée",
+      name: "Taaone",
+    }, "en");
+    assert.match(ampEn.title, /Marine protected area/);
+    assert.doesNotMatch(ampEn.title, /Aire marine|\bAMP\b/);
   });
 
   it("lot L4: carte FREE news datée, lien, expire à J+2 ; phrase science sourcée", () => {
