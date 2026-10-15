@@ -1028,3 +1028,158 @@ def test_hc1_atlas_degraded_serves_yesterday_clock(monkeypatch):
     assert again is not None
     assert again["clock"]["realUntil"] == frontier
     reset_hooks()
+
+
+def _rg11a_raw_plan(text=None):
+    body = text or (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": body,
+            "tA": T0,
+            "tB": T0,
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": T0}, {"charIdx": 60, "t": T0}],
+        }],
+        "source": "rules",
+        "chars": len(body),
+        "targetSeconds": 150,
+        "hasWritten": False,
+    }
+
+
+def _rg11a_payload(plan=None):
+    plan = plan or _rg11a_raw_plan()
+    return {
+        "fr": plan, "default": plan,
+        "variants": {"fr": {"150": plan, "180": plan, "0": plan}},
+        "estimates": {"fr": {"150": {"chars": plan["chars"], "estimatedSeconds": 10}}},
+    }
+
+
+async def _rg11a_honest_cascade(system, user, **kw):
+    import json
+    import re
+    match = re.search(r"sentences=(\[.*\])", user or "", re.S)
+    sents = json.loads(match.group(1)) if match else ["ok."]
+    return " ".join(
+        s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+    ), "nemotron-super"
+
+
+def _rg11a_voy():
+    return {
+        "t0": T0, "clock": {"t0": T0, "vertices": [{"lat": 1, "lon": 2, "iso": T0}]}, "marks": [],
+        "points": [{"lat": 1, "lon": 2}],
+    }
+
+
+def test_rg11a_serve_written_when_present(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    official_store.fill_written_film(force=True, cascade=_rg11a_honest_cascade, now=NOW)
+    written = official_store.serve_film("fr", 150, style="written")
+    assert written["status"] == READY
+    assert written["hasWritten"] is True
+    assert written["source"] == official_store.WRITTEN_SOURCE
+    assert written.get("writtenAt")
+    assert "laisse" in (written["chapters"][0]["text"] or "")
+    raw = official_store.serve_film("fr", 150, style="raw")
+    assert raw["hasWritten"] is False
+    assert raw["source"] == "rules"
+    assert "quitte" in (raw["chapters"][0]["text"] or "")
+
+
+def test_rg11a_missing_written_is_raw_not_preparing(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    out = official_store.serve_film("fr", 150, style="written")
+    assert out["status"] == READY
+    assert out["hasWritten"] is False
+    assert out["source"] == "rules"
+    assert out["chapters"]
+    missing_variant = official_store.serve_film("en", 180, style="written")
+    assert missing_variant["status"] == READY
+    assert missing_variant["hasWritten"] is False
+
+
+def test_rg11a_mode_off_does_not_call_llm(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM en mode off")
+
+    out = official_store.fill_written_film(force=True, cascade=boom, now=NOW)
+    assert out["status"] == "off"
+    assert calls["n"] == 0
+    served = official_store.serve_film("fr", 150, style="written")
+    assert served["hasWritten"] is False
+    assert served["status"] == READY
+
+
+def test_rg11a_write_cap_serves_raw(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "50")
+    import llm_budget
+    llm_budget.record("write", 50, 0)
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM au plafond")
+
+    out = official_store.fill_written_film(force=True, cascade=boom, now=NOW)
+    assert out["status"] == "budget"
+    assert calls["n"] == 0
+    served = official_store.serve_film("fr", 150, style="written")
+    assert served["hasWritten"] is False
+    assert served["status"] == READY
+
+
+def test_rg11a_http_style_written(client, tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "http-film"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    payload = _rg11a_payload()
+    store.put("film", payload, store.family_key("film", voy, NOW))
+    official_store.fill_written_film(force=True, cascade=_rg11a_honest_cascade, now=NOW)
+    written = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert written.status_code == 200
+    data = written.json()
+    assert data["hasWritten"] is True
+    assert data["source"] == official_store.WRITTEN_SOURCE
+    assert data.get("writtenAt")
+    raw = client.get("/voyage/official/film?lang=fr&seconds=150&style=raw")
+    assert raw.json()["hasWritten"] is False

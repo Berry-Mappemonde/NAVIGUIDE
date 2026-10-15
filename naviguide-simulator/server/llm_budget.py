@@ -37,6 +37,9 @@ DEFAULT_CAPS = {
 #   all        : tout, comme avant (à poser explicitement sur le poste pour une démo complète).
 _MODES = ("off", "on-demand", "all")
 _BACKGROUND: ContextVar[bool] = ContextVar("naviguide_llm_background", default=False)
+# RG11A : le remplisseur écrit le rédigé comme une étape « sur demande différée »
+# (on-demand + processus arrière-plan). Mode off reste interdit.
+_DEFERRED: ContextVar[bool] = ContextVar("naviguide_llm_deferred", default=False)
 
 
 def mode() -> str:
@@ -62,12 +65,28 @@ def background():
         _BACKGROUND.reset(token)
 
 
-def llm_allowed_here() -> bool:
+@contextmanager
+def deferred_demand():
+    """Écriture du rédigé par le remplisseur : étape « sur demande différée ».
+
+    Autorise le palier *write* même si le processus est marqué arrière-plan,
+    tant que le mode n'est pas `off`. Les paliers fast / judge restent bloqués.
+    """
+    token = _DEFERRED.set(True)
+    try:
+        yield
+    finally:
+        _DEFERRED.reset(token)
+
+
+def llm_allowed_here(tier: str | None = None) -> bool:
     """Le mode autorise-t-il un appel payant ICI (avant même le plafond) ?"""
     m = mode()
     if m == "off":
         return False
     if m == "all":
+        return True
+    if _DEFERRED.get() and (tier is None or normalize_tier(tier) == "write"):
         return True
     return not in_background()
 
@@ -185,7 +204,7 @@ def get_usage(tier: str, day: str | None = None) -> dict[str, Any]:
 def allow(tier: str) -> bool:
     """False si le mode l'interdit ici (off, ou arrière-plan en on-demand), ou si le compteur du jour est au
     plafond — dans les deux cas : aucun appel réseau, la cascade rend `source=budget`."""
-    if not llm_allowed_here():
+    if not llm_allowed_here(tier):
         return False
     used = get_usage(tier)
     return int(used["tokens"]) < daily_cap(tier)

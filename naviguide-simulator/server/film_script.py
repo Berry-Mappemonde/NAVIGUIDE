@@ -346,6 +346,7 @@ MONTHS = {
 EV_TAG = re.compile(r"\[\[ev:([^\]]+)\]\]")
 TAG_STRIP = re.compile(r"\[\[(?:ev|ch):[^\]]+\]\]\s*")
 WRITE_MAX_TOKENS = 1200
+WRITTEN_SOURCE = "nemotron-super-token-factory"
 
 
 def _en(lang: str) -> bool:
@@ -6079,6 +6080,294 @@ def film_facts(raw: dict, events: list[dict]) -> dict[str, Any]:
     return blob
 
 
+def _uniq_facts(rows: list[Any]) -> list[Any]:
+    seen: set[str] = set()
+    out: list[Any] = []
+    for row in rows:
+        if row is None:
+            continue
+        key = str(row).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(row if not isinstance(row, str) else key)
+    return out
+
+
+def chapter_structured_facts(chapter: dict, *, lang: str = "fr") -> dict[str, Any]:
+    """Faits JSON d'une étape (RG6 / RC26 / RC30) : dates, lieux, eaux, AMP, projets, stations, climo, distances, cap."""
+    text = chapter.get("text") or ""
+    events = [e for e in (chapter.get("events") or []) if isinstance(e, dict)]
+    dates: list[str] = []
+    for iso in (chapter.get("tA"), chapter.get("tB")):
+        spoken = day_month(iso, lang, year=True)
+        if spoken:
+            dates.append(spoken)
+            bare = day_month(iso, lang, year=False)
+            if bare:
+                dates.append(bare)
+    rx = _DATE_EN_RE if _en(lang) else _DATE_FR_RE
+    dates.extend(m.group(0) for m in rx.finditer(text))
+
+    places: list[str] = []
+    for key in ("fromName", "toName"):
+        name = chapter.get(key)
+        if name:
+            places.append(str(name))
+            places.append(short_name(name))
+
+    waters: list[str] = []
+    amp: list[str] = []
+    projects: list[str] = []
+    stations: list[str] = []
+    climo: list[str] = []
+    for ev in events:
+        kind = str(ev.get("kind") or "").lower()
+        card = ev.get("card") if isinstance(ev.get("card"), dict) else {}
+        title = str(ev.get("title") or card.get("title") or "")
+        fact = str(ev.get("fact") or card.get("text") or "")
+        name = title or fact
+        if kind in {"zee", "zee-enter"}:
+            waters.append(name)
+        elif kind == "amp":
+            amp.append(name)
+        elif kind == "project":
+            projects.append(name)
+        elif kind in {"sci", "station"}:
+            stations.append(name)
+        elif kind == "climo":
+            climo.append(name)
+        elif kind in {"coast", "port", "marina", "stop", "escale", "approche"}:
+            places.append(name)
+
+    distances: list[str] = []
+    for m in re.finditer(
+        r"\d+(?:[.,]\d+)?\s*(?:milles nautiques|milles|nautical miles|nœuds|noeuds|knots|jours|days)",
+        text,
+        re.I,
+    ):
+        distances.append(m.group(0))
+
+    heading: list[str] = []
+    for m in re.finditer(r"cap au [\w\-]+|heading [\w\-]+|cap sur [\w'’\- ]+", text, re.I):
+        heading.append(m.group(0).strip())
+
+    return {
+        "dates": _uniq_facts(dates),
+        "places": _uniq_facts(places),
+        "waters": _uniq_facts(waters),
+        "amp": _uniq_facts(amp),
+        "projects": _uniq_facts(projects),
+        "stations": _uniq_facts(stations),
+        "climatology": _uniq_facts(climo),
+        "distances": _uniq_facts(distances),
+        "heading": _uniq_facts(heading),
+        "raw": text,
+    }
+
+
+_NAME_STOP = frozenset({
+    "le", "la", "les", "un", "une", "des", "du", "de", "d", "au", "aux", "et", "ou", "en",
+    "sur", "dans", "par", "pour", "avec", "sans", "sous", "vers", "chez", "entre",
+    "puis", "ensuite", "plus", "loin", "arrivée", "arrivé", "arrivée", "départ",
+    "aujourd", "hui", "aujourd'hui", "the", "a", "an", "and", "or", "then", "next",
+    "after", "from", "into", "on", "at", "by", "for", "with", "cap", "heading",
+    "milles", "nautiques", "nautical", "miles", "jours", "days", "nœuds", "noeuds",
+    "knots", "janvier", "février", "fevrier", "mars", "avril", "mai", "juin",
+    "juillet", "août", "aout", "septembre", "octobre", "novembre", "décembre",
+    "decembre", "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december", "l", "expédition",
+    "expedition", "catamaran", "bateau", "boat", "équipage", "equipage", "crew",
+    "approche", "approach", "quitte", "leaves", "left", "departed", "today",
+    "aujourd’hui",
+})
+_NAME_TOKEN_RE = re.compile(
+    r"[A-ZÉÈÊÀÂÙÛÎÔÇ][A-Za-zÀ-ÿ'’]*(?:-[A-ZÉÈÊÀÂÙÛÎÔÇ]?[A-Za-zÀ-ÿ'’]*)*"
+)
+
+
+def _name_tokens(text: str) -> set[str]:
+    out: set[str] = set()
+    for m in _NAME_TOKEN_RE.finditer(text or ""):
+        tok = m.group(0)
+        folded = tok.casefold()
+        if folded in _NAME_STOP or len(tok) <= 1:
+            continue
+        out.add(folded)
+        for part in tok.split("-"):
+            pf = part.casefold()
+            if len(part) > 2 and pf not in _NAME_STOP:
+                out.add(pf)
+    return out
+
+
+def written_names_subset(written: str, facts: Any) -> bool:
+    """Chaque nom propre du rédigé doit déjà figurer dans les faits (y compris le brut)."""
+    blob = facts if isinstance(facts, str) else json.dumps(facts, ensure_ascii=False, default=str)
+    return _name_tokens(written) <= _name_tokens(blob)
+
+
+def written_source_label(src: str) -> str:
+    s = str(src or "")
+    if s.startswith("nemotron") or s == "cache":
+        return WRITTEN_SOURCE
+    return s
+
+
+def _sentence_starts(text: str, sents: list[str]) -> list[int]:
+    starts: list[int] = []
+    pos = 0
+    for sent in sents:
+        idx = (text or "").find(sent, pos)
+        if idx < 0:
+            idx = pos
+        starts.append(idx)
+        pos = idx + max(1, len(sent))
+    return starts
+
+
+def apply_written_guard(
+    raw_text: str, written_text: str, facts: Any, *, lang: str = "fr",
+) -> tuple[str, int, int]:
+    """Une phrase rédigée par phrase du brut ; nombre ou nom inventé → phrase du brut."""
+    raw_sents = _sentences(raw_text)
+    if not raw_sents:
+        return raw_text or "", 0, 0
+    written_sents = _sentences(speak_film_text(written_text or "", lang))
+    rewritten = 0
+    fallen = 0
+    kept: list[str] = []
+    for i, raw_s in enumerate(raw_sents):
+        cand = written_sents[i] if i < len(written_sents) else raw_s
+        filtered, dropped = filter_numbers(cand, facts)
+        ok = (
+            not dropped
+            and bool((filtered or "").strip())
+            and written_names_subset(cand, facts)
+        )
+        if ok:
+            kept.append(cand if cand.endswith((".", "!", "?", "…")) else f"{cand}.")
+            rewritten += 1
+        else:
+            kept.append(raw_s)
+            fallen += 1
+    return " ".join(kept), rewritten, fallen
+
+
+def _trim_written_to_budget(raw_text: str, written_text: str, cap: int) -> tuple[str, int]:
+    """Si le rédigé dépasse le budget RC27, on remet des phrases du brut depuis la fin."""
+    if cap <= 0 or len(written_text or "") <= cap:
+        return written_text, 0
+    raw_sents = _sentences(raw_text)
+    wr_sents = _sentences(written_text)
+    if len(wr_sents) != len(raw_sents):
+        wr_sents = (wr_sents + raw_sents)[: len(raw_sents)]
+    fallen = 0
+    kept = list(wr_sents)
+    while kept and len(" ".join(kept)) > cap:
+        reverted = False
+        for i in range(len(kept) - 1, -1, -1):
+            if i < len(raw_sents) and kept[i] != raw_sents[i]:
+                kept[i] = raw_sents[i]
+                fallen += 1
+                reverted = True
+                break
+        if not reverted:
+            break
+    return " ".join(kept), fallen
+
+
+def reanchor_written_chapter(chapter: dict, written_text: str, lang: str) -> list[dict]:
+    """Ancres du brut reportées phrase à phrase, puis recalculées sur le rédigé."""
+    raw = chapter.get("text") or ""
+    raw_sents = _sentences(raw)
+    wr_sents = _sentences(written_text)
+    raw_starts = _sentence_starts(raw, raw_sents)
+    old = [a for a in (chapter.get("anchors") or []) if isinstance(a, dict)]
+    t_a, t_b = _ms(chapter.get("tA")), _ms(chapter.get("tB"))
+    anchored: list = []
+    if old and raw_starts:
+        for a in old:
+            try:
+                idx = int(a.get("charIdx") or 0)
+            except (TypeError, ValueError):
+                idx = 0
+            sent_i = 0
+            for i, start in enumerate(raw_starts):
+                end = start + (len(raw_sents[i]) if i < len(raw_sents) else 0)
+                if start <= idx < max(end, start + 1) or i == len(raw_starts) - 1:
+                    sent_i = i
+                    if start <= idx < max(end, start + 1):
+                        break
+            sent = wr_sents[sent_i] if sent_i < len(wr_sents) else (wr_sents[-1] if wr_sents else "")
+            t = a.get("t")
+            t_ms = t if isinstance(t, int) else _ms(t)
+            extra = {
+                "place": a.get("place") or "",
+                "kind": a.get("kind") or "",
+                "role": a.get("role") or "",
+            }
+            anchored.append((sent, t_ms, extra))
+    elif wr_sents:
+        anchored = [(sent, t_a, {}) for sent in wr_sents]
+    out = chapter_anchors(written_text, anchored, t_a, t_b, lang) if written_text and anchored else []
+    if out:
+        return _strict_increasing_anchors(out)
+    return _strict_increasing_anchors(_fallback_anchors(written_text, wr_sents, old, t_a))
+
+
+def _fallback_anchors(
+    written_text: str, wr_sents: list[str], old: list[dict], t_a: Optional[int],
+) -> list[dict]:
+    starts = _sentence_starts(written_text, wr_sents)
+    if not old:
+        return [
+            {"charIdx": starts[i] if i < len(starts) else 0, "t": _iso(t_a) or ""}
+            for i in range(len(wr_sents))
+        ]
+    out: list[dict] = []
+    for i, a in enumerate(old):
+        idx = starts[i] if i < len(starts) else (starts[-1] if starts else 0)
+        row = {"charIdx": idx, "t": a.get("t")}
+        if a.get("place"):
+            row["place"] = a["place"]
+        out.append(row)
+    return out
+
+
+def _strict_increasing_anchors(anchors: list[dict]) -> list[dict]:
+    ordered = sorted(
+        [a for a in anchors if isinstance(a, dict)],
+        key=lambda a: int(a.get("charIdx") or 0),
+    )
+    out: list[dict] = []
+    last = -1
+    last_t: Optional[int] = None
+    for a in ordered:
+        try:
+            idx = int(a.get("charIdx") or 0)
+        except (TypeError, ValueError):
+            idx = 0
+        if idx <= last:
+            idx = last + 1
+        last = idx
+        t_raw = a.get("t")
+        t_ms = t_raw if isinstance(t_raw, int) else _ms(t_raw)
+        if last_t is not None and t_ms is not None and t_ms < last_t:
+            t_ms = last_t
+        if t_ms is not None:
+            last_t = t_ms
+        row = {**a, "charIdx": idx}
+        if t_ms is not None:
+            row["t"] = _iso(t_ms) if not isinstance(t_raw, str) else (t_raw or _iso(t_ms))
+            if isinstance(t_raw, str) and t_ms == _ms(t_raw):
+                row["t"] = t_raw
+            elif t_ms is not None:
+                row["t"] = _iso(t_ms)
+        out.append(row)
+    return out
+
+
 def strip_tags(text: str) -> str:
     return TAG_STRIP.sub("", text or "")
 
@@ -6191,12 +6480,13 @@ SELECT_SYSTEM = (
     "Do not invent numbers. Do not write narrative."
 )
 WRITE_SYSTEM = (
-    "You rewrite ONE film chapter from structured facts. "
-    "Keep EVERY number, name and date exactly as given. "
-    "Write short complete sentences. Never cut a sentence. "
-    "Write units in full words (milles nautiques / nautical miles), never nm. "
-    "Start every event sentence with [[ev:<id>]] using the provided ids. "
-    "Stay chronological. Thinking OFF. No new figure."
+    "You rewrite ONE film chapter from structured facts, sentence by sentence. "
+    "Output EXACTLY one sentence per raw sentence, in the same order. "
+    "Keep EVERY number, proper name and date exactly as given. "
+    "Do not add a fact. Do not invent a figure, a place or a date. "
+    "Write for the ear: spoken French or English as requested. "
+    "Units in full words (milles nautiques / nautical miles), never nm. "
+    "Thinking OFF. No tags. No new figure."
 )
 
 
@@ -6244,6 +6534,74 @@ def _pad_tagged(text: str, budget: int) -> str:
     return body
 
 
+async def write_stored_plan(
+    plan: dict,
+    *,
+    lang: str = "fr",
+    cascade: Callable = cascade_text,
+    seconds: Any = None,
+) -> tuple[Optional[dict], dict[str, Any]]:
+    """Réécrit un plan public (stock) phrase par phrase. Aucun appel si la cascade rend rules/budget."""
+    raw_chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
+    stats = {"rewritten": 0, "fallen": 0, "source": "rules"}
+    if not raw_chapters:
+        return None, stats
+    secs = seconds if seconds is not None else plan.get("targetSeconds")
+    budget_total = film_char_budget(secs)
+    raw_lens = [max(1.0, len(c.get("text") or "") or 1) for c in raw_chapters]
+    budgets = allocate_chapter_budgets(raw_lens, budget_total) if budget_total else [0] * len(raw_chapters)
+    chapters_out: list[dict] = []
+    source_last = "rules"
+    any_llm = False
+    for i, ch in enumerate(raw_chapters):
+        raw = ch.get("text") or ""
+        raw_sents = _sentences(raw)
+        facts = chapter_structured_facts(ch, lang=lang)
+        if not raw_sents:
+            chapters_out.append(ch)
+            continue
+        user = (
+            f"lang={'en' if _en(lang) else 'fr'}\n"
+            f"facts={json.dumps(facts, ensure_ascii=False, default=str)}\n"
+            f"sentences={json.dumps(raw_sents, ensure_ascii=False)}"
+        )
+        max_tok = min(WRITE_MAX_TOKENS, max(400, 80 * len(raw_sents)))
+        text, source = await cascade(
+            WRITE_SYSTEM, user, tier="write", fallback="", facts=facts, max_tokens=max_tok,
+        )
+        if not (text or "").strip() or source in {"rules", "budget"}:
+            chapters_out.append(ch)
+            stats["fallen"] += len(raw_sents)
+            if source == "budget":
+                source_last = "budget"
+            continue
+        any_llm = True
+        source_last = source
+        guarded, rw, fb = apply_written_guard(raw, text, facts, lang=lang)
+        cap = budgets[i] if i < len(budgets) else 0
+        if cap:
+            hi = max(int(cap * 1.1), cap, len(raw))
+            guarded, extra_fb = _trim_written_to_budget(raw, guarded, hi)
+            if extra_fb:
+                fb += extra_fb
+                rw = max(0, rw - extra_fb)
+        anchors = reanchor_written_chapter(ch, guarded, lang)
+        chapters_out.append({**ch, "text": guarded, "anchors": anchors})
+        stats["rewritten"] += rw
+        stats["fallen"] += fb
+    stats["source"] = source_last
+    if not any_llm or stats["rewritten"] <= 0:
+        return None, stats
+    n = script_chars(chapters_out)
+    return {
+        "chapters": chapters_out,
+        "source": written_source_label(source_last),
+        "chars": n,
+        "targetSeconds": _film_seconds(plan.get("targetSeconds") if secs is None else secs),
+        "hasWritten": True,
+    }, stats
+
+
 async def write_with_llm(
     raw: dict,
     events: list[dict],
@@ -6251,82 +6609,12 @@ async def write_with_llm(
     lang: str = "fr",
     cascade: Callable = cascade_text,
 ) -> tuple[Optional[dict], str]:
-    event_ids = [e["id"] for e in events if e.get("id")]
-    facts = film_facts(raw, events)
-    raw_chapters = list(raw.get("chapters") or [])
-    if not raw_chapters:
-        return None, "rules"
-    budgets = allocate_chapter_budgets(
-        [max(1.0, len(c.get("text") or "") or 1) for c in raw_chapters],
-        int(raw.get("targetSeconds") or 150) and FILM_BUDGET_CHARS,
-    )
-    chapters_out: list[dict] = []
-    source_last = "rules"
-    any_dropped = 0
-    tagged_all: list[str] = []
-    by_id = {e["id"]: e for e in events if e.get("id")}
-    for i, ch in enumerate(raw_chapters):
-        ch_ids = [str(e.get("id")) for e in (ch.get("events") or []) if e.get("id")]
-        if not ch_ids:
-            ch_ids = [eid for eid in event_ids if eid in (ch.get("text") or "")]
-        next_sum = _chapter_next_summary(raw_chapters, i, lang)
-        budget = budgets[i] if i < len(budgets) else FILM_CHAPTER_FLOOR
-        user = (
-            f"lang={('en' if _en(lang) else 'fr')}\n"
-            f"next={next_sum}\n"
-            f"budget={budget}\n"
-            f"ids={json.dumps(ch_ids)}\n"
-            f"facts={json.dumps(facts, ensure_ascii=False, default=str)[:2500]}\n"
-            f"raw:\n{ch.get('text') or ''}"
-        )
-        text, source = await cascade(
-            WRITE_SYSTEM, user, tier="write", fallback="", facts=None, max_tokens=min(WRITE_MAX_TOKENS, 400),
-        )
-        source_last = source
-        text = speak_film_text(text or "", lang)
-        filtered, dropped = filter_numbers(text, facts)
-        any_dropped += dropped
-        if dropped or not filtered.strip():
-            filtered = ch.get("text") or ""
-        for eid in ch_ids:
-            if f"[[ev:{eid}]]" not in filtered:
-                filtered = f"[[ev:{eid}]] {filtered}"
-        filtered = split_short_sentences(filtered)
-        hi = max(int(budget * 1.1), budget)
-        if len(strip_tags(filtered)) > hi:
-            kept: list[str] = []
-            for sent in _sentences(filtered):
-                trial = " ".join(kept + [sent])
-                if kept and len(strip_tags(trial)) > hi:
-                    break
-                kept.append(sent)
-            filtered = " ".join(kept) or filtered
-            for eid in ch_ids:
-                if f"[[ev:{eid}]]" not in filtered:
-                    filtered = f"[[ev:{eid}]] {filtered}"
-        filtered = _pad_tagged(filtered, budget)
-        tagged_all.append(filtered)
-        ch_events = [by_id[eid] for eid in ch_ids if eid in by_id] or [
-            e for e in (ch.get("events") or []) if e.get("id")
-        ]
-        display, located = locate_events(filtered, ch_events or events)
-        display = speak_film_text(split_short_sentences(display), lang)
-        chapters_out.append({**ch, "text": display, "events": located or ch.get("events") or []})
-    if any_dropped:
-        return None, "rules"
-    joined = " ".join(tagged_all)
-    ok, _, dropped = written_is_valid(joined, facts, event_ids)
-    if event_ids and not ok and dropped:
-        return None, "rules"
-    n = script_chars(chapters_out)
-    if n < FILM_WRITE_MIN or n > FILM_WRITE_MAX:
-        return None, "rules"
-    return {
-        "chapters": chapters_out,
-        "source": "nemotron" if str(source_last).startswith("nemotron") else source_last,
-        "chars": n,
-        "targetSeconds": _film_seconds(raw.get("targetSeconds")),
-    }, source_last
+    """RG11A : rédigé phrase par phrase depuis les faits. Repli local, jamais un échec global."""
+    _ = events
+    plan, stats = await write_stored_plan(raw, lang=lang, cascade=cascade)
+    if plan is None:
+        return None, stats.get("source") or "rules"
+    return plan, stats.get("source") or plan.get("source") or "rules"
 
 
 def _public_plan(plan: dict, source: str) -> dict:

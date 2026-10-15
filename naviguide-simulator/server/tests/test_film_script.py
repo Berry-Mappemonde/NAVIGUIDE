@@ -71,6 +71,10 @@ from film_script import (
     station_spoken_label,
     speak_film_text,
     written_is_valid,
+    write_stored_plan,
+    WRITTEN_SOURCE,
+    apply_written_guard,
+    chapter_structured_facts,
     zee_waters_label,
     _nm_label,
 )
@@ -200,6 +204,20 @@ def test_written_valid_when_tags_and_length_and_no_new_number():
     assert ok, f"len={len(text)} stripped invalid"
 
 
+def _sentences_from_user(user: str) -> list[str]:
+    import json
+    match = re.search(r"sentences=(\[.*\])\s*$", user or "", re.S)
+    if not match:
+        match = re.search(r"sentences=(\[.*\])", user or "", re.S)
+    if not match:
+        return []
+    try:
+        rows = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+    return [str(s) for s in rows] if isinstance(rows, list) else []
+
+
 def test_cheating_llm_falls_back_to_raw():
     raw = _raw()
     events = raw["_events"]
@@ -210,9 +228,14 @@ def test_cheating_llm_falls_back_to_raw():
     assert ok is False
 
     async def fake_cascade(system, user, **kw):
-        if "JSON only" in system or "ids" in system.lower() and "select" in system.lower():
+        if "JSON only" in system or ("ids" in system.lower() and "select" in system.lower()):
             return '{"ids":["depart"],"reason":"too few"}', "nemotron-lightning"
-        return cheat, "nemotron-super"
+        sents = _sentences_from_user(user)
+        if not sents:
+            return cheat, "nemotron-super"
+        sents = list(sents)
+        sents[0] = sents[0].rstrip(".!?…") + " 99 nœuds."
+        return " ".join(sents), "nemotron-super"
 
     async def run():
         return await build_film_response(
@@ -221,22 +244,31 @@ def test_cheating_llm_falls_back_to_raw():
         )
 
     out = asyncio.run(run())
-    assert out["source"] == "rules"
-    assert out["style"] == "raw"
+    raw_sents = []
+    for ch in raw["chapters"]:
+        raw_sents.extend([s for s in re.split(r"(?<=[.!?…])\s+", ch.get("text") or "") if s.strip()])
+    out_sents = []
+    for ch in out["chapters"]:
+        out_sents.extend([s for s in re.split(r"(?<=[.!?…])\s+", ch.get("text") or "") if s.strip()])
     assert "99" not in " ".join(c["text"] for c in out["chapters"])
-    assert out["hasWritten"] is False
+    assert len(out_sents) == len(raw_sents)
 
 
 def test_honest_llm_keeps_tags_and_length():
     raw = _raw()
     events = raw["_events"]
-    honest = _honest_written(raw, events)
 
     async def fake_cascade(system, user, **kw):
         if "select" in system.lower() or "JSON only" in system:
             ids = [e["id"] for e in events]
             return json_ids(ids), "nemotron-lightning"
-        return honest, "nemotron-super"
+        sents = _sentences_from_user(user)
+        if not sents:
+            return _honest_written(raw, events), "nemotron-super"
+        out = []
+        for sent in sents:
+            out.append(sent.replace("quitte", "laisse", 1) if "quitte" in sent else sent)
+        return " ".join(out), "nemotron-super"
 
     async def run():
         return await build_film_response(
@@ -245,9 +277,11 @@ def test_honest_llm_keeps_tags_and_length():
         )
 
     out = asyncio.run(run())
-    assert out["source"] in {"nemotron", "nemotron-super"}
-    assert FILM_WRITE_MIN <= out["chars"] <= FILM_WRITE_MAX
+    assert out["source"] in {"nemotron", "nemotron-super", WRITTEN_SOURCE}
     assert out["hasWritten"] is True
+    raw_n = sum(len([s for s in re.split(r"(?<=[.!?…])\s+", c.get("text") or "") if s.strip()]) for c in raw["chapters"])
+    out_n = sum(len([s for s in re.split(r"(?<=[.!?…])\s+", c.get("text") or "") if s.strip()]) for c in out["chapters"])
+    assert out_n == raw_n
 
 
 def json_ids(ids):
@@ -265,6 +299,9 @@ def test_film_cache_hit_skips_second_write():
         calls["n"] += 1
         if "JSON only" in system:
             return json_ids([e["id"] for e in events]), "nemotron-lightning"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(sents), "nemotron-super"
         return honest, "nemotron-super"
 
     async def run():
@@ -884,6 +921,9 @@ def test_film_written_served_from_cache_without_llm():
         calls["n"] += 1
         if "JSON only" in system:
             return json_ids([e["id"] for e in events]), "nemotron-lightning"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents), "nemotron-super"
         return honest, "nemotron-super"
 
     async def boom(*_a, **_k):
@@ -3086,3 +3126,80 @@ def test_rc30_one_named_argo_per_leg():
     label = station_spoken_label(stations[0], "fr")
     assert label.startswith("le flotteur Argo ")
     assert re.search(r"\d{5,9}", label)
+
+
+def test_rg11a_invented_number_falls_back_sentence_by_sentence():
+    raw_text = (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    chapter = {
+        "id": "c0",
+        "text": raw_text,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-26T12:00:00Z",
+        "fromName": "La Rochelle",
+        "toName": "Ajaccio (Corse)",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T08:00:00Z"},
+            {"charIdx": 70, "t": "2026-05-26T12:00:00Z"},
+        ],
+    }
+    facts = chapter_structured_facts(chapter, lang="fr")
+    written = (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest, 99 nœuds. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    guarded, rewritten, fallen = apply_written_guard(raw_text, written, facts, lang="fr")
+    sents = [s for s in re.split(r"(?<=[.!?…])\s+", guarded) if s.strip()]
+    raw_sents = [s for s in re.split(r"(?<=[.!?…])\s+", raw_text) if s.strip()]
+    assert len(sents) == len(raw_sents)
+    assert "99" not in guarded
+    assert fallen >= 1
+    assert rewritten >= 1
+    assert sents[0] == raw_sents[0]
+
+
+def test_rg11a_honest_write_has_increasing_anchors():
+    raw_text = (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": raw_text,
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [
+                {"charIdx": 0, "t": "2026-05-15T08:00:00Z"},
+                {"charIdx": 70, "t": "2026-05-26T12:00:00Z"},
+            ],
+        }],
+        "targetSeconds": 150,
+        "source": "rules",
+    }
+
+    async def fake_cascade(system, user, **kw):
+        sents = _sentences_from_user(user)
+        return " ".join(
+            s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+        ), "nemotron-super"
+
+    written, stats = asyncio.run(write_stored_plan(plan, lang="fr", cascade=fake_cascade))
+    assert written is not None
+    assert written["hasWritten"] is True
+    assert written["source"] == WRITTEN_SOURCE
+    assert stats["rewritten"] >= 1
+    text = written["chapters"][0]["text"]
+    raw_n = len([s for s in re.split(r"(?<=[.!?…])\s+", raw_text) if s.strip()])
+    out_n = len([s for s in re.split(r"(?<=[.!?…])\s+", text) if s.strip()])
+    assert out_n == raw_n
+    assert "99" not in text
+    anchors = written["chapters"][0]["anchors"]
+    idxs = [int(a["charIdx"]) for a in anchors]
+    assert idxs == sorted(idxs)
+    assert len(set(idxs)) == len(idxs)
+    assert "laisse" in text or "quitte" in text
