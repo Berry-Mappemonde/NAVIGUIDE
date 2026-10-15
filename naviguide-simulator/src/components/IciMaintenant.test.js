@@ -13,6 +13,8 @@ import {
   formatJournalLine,
   hiddenIciTabs,
   journalChangeLabel,
+  displayIciFrame,
+  localizeStoredTitle,
   legsFromClockMarks,
   seekJournalEntry,
   servesNowContent,
@@ -154,7 +156,7 @@ describe("IciMaintenant — lot R9b : journal chronologique, clic → onSeek(t)"
     seekJournalEntry((t) => seen.push(t), { t: "2026-05-15T08:00:00Z" });
     assert.deepEqual(seen, ["2026-06-02T08:00:00Z", "2026-05-15T08:00:00Z"]);
     assert.match(src, /seekJournalEntry\(onSeek, entry\)/);
-    assert.match(src, /momentAtOrBefore\(journalEntries, moment\?\.t\)/);
+    assert.match(src, /displayIciFrame\(moment, journalEntries, mode\)/);
   });
 });
 
@@ -261,6 +263,26 @@ describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
     }, "fr");
     assert.match(line, /Aire marine protégée — Iroise/);
     assert.doesNotMatch(line, /Iroise Iroise/);
+    assert.equal(localizeStoredTitle("Formalités d’entrée", "en"), "Entry formalities");
+    assert.equal(localizeStoredTitle("Aire marine protégée", "en"), "Marine protected area");
+    assert.equal(localizeStoredTitle("Station croisée", "en"), "Station passed");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "entry", score: 2, title: "Formalités d’entrée", fact: "" }],
+    }, "en"), "Entry formalities");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "amp", score: 1, title: "Aire marine protégée", fact: "Iroise (4 nm)" }],
+    }, "en"), "Marine protected area — Iroise");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "stop", score: 3, title: "Escale Saint-Maur", fact: "" }],
+    }, "en"), "Stopover — Saint-Maur");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "sci", score: 2, title: "Station croisée", fact: "" }],
+    }, "en"), "Station passed");
+    const live = { t: "2026-05-16T10:00:00Z", alerts: [{ id: "entry-1", title: "Entry formalities" }], here: { sentences: ["English waters."] } };
+    const journalFr = [{ t: "2026-05-16T09:00:00Z", alerts: [{ id: "entry-1", title: "Formalités d’entrée" }], here: { sentences: ["Eaux françaises."] } }];
+    const frame = displayIciFrame(live, journalFr, "follow");
+    assert.equal(frame.here.sentences[0], "English waters.");
+    assert.equal(frame.alerts[0].title, "Entry formalities");
   });
 });
 

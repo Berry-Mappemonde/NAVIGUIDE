@@ -85,6 +85,27 @@ def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
     assert "0" in out["answer"]
 
 
+def test_strip_raw_fields_drops_at_quay_leak():
+    assert "atQuay" not in logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.")
+    assert logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.") == "The boat is still at 0 kn."
+
+
+def test_answer_strips_raw_json_field_names(monkeypatch):
+    async def fake_cascade(system, user, client=None, **kw):
+        return "The boat is still (atQuay: true) at 0 kn.", "nemotron-lightning"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"speedKnots": 0, "atQuay": True}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Why is the boat slowing down?", "en", {}, datetime.now(timezone.utc),
+    ))
+    assert "atQuay" not in (out["answer"] or "")
+    assert "(atQuay" not in (out["answer"] or "")
+
+
 def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
     """Lot RB3 : une réponse-prompt du modèle (ou du cache) → phrase honnête, jamais le prompt."""
 

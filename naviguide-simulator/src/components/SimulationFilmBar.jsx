@@ -217,11 +217,11 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
 
         <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
           <span data-testid="clock-line">
-            {clockLine || `${Math.round(nm).toLocaleString()} nm`}
+            {clockLine || `${Math.round(nm).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`}
             {!landClock && remainingNm > 0.5 && !finished && vehicle !== "plane"
-              ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString()} nm`
+              ? ` · ${t("nmRemaining")} ${Math.round(remainingNm).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`
               : ""}
-            {!landClock && etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours)}` : ""}
+            {!landClock && etaHours != null && etaHours > 0 && !finished && vehicle !== "plane" ? ` · ${t("eta")} ${formatEta(etaHours, lang)}` : ""}
             {vehicle === "plane"
               ? ` · ${t("filmAirVehicle")}`
               : (
@@ -619,13 +619,13 @@ export function formatLandLegClock(nm, hours, t, lang = "fr") {
   return `${km.toLocaleString(loc)} ${t("unitKm")} ${t("byRoad")} · ${Number(hours)} ${t("unitRoadHours")}`;
 }
 
-function formatEta(hours) {
+function formatEta(hours, lang = "fr") {
   if (hours == null || Number.isNaN(hours)) return "—";
   if (hours < 1 / 60) return "0 min";
   if (hours < 1) return `${Math.round(hours * 60)} min`;
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
-  if (hours >= 48) return `${Math.round(hours / 24)} j`;
+  if (hours >= 48) return `${Math.round(hours / 24)} ${lang === "en" ? "d" : "j"}`;
   if (m === 0) return `${h} h`;
   return `${h} h ${String(m).padStart(2, "0")}`;
 }

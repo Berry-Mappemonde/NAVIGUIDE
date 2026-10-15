@@ -8,6 +8,9 @@ describe("getCardinalDirection", () => {
     assert.equal(getCardinalDirection(90), "E");
     assert.equal(getCardinalDirection(180), "S");
     assert.equal(getCardinalDirection(255), "OSO");
+    assert.equal(getCardinalDirection(255, "en"), "WSW");
+    assert.equal(getCardinalDirection(312, "en"), "NW");
+    assert.equal(getCardinalDirection(312, "fr"), "NO");
     assert.equal(getCardinalDirection(360), "N");
   });
 
