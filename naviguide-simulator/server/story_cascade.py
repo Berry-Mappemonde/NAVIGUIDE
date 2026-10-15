@@ -798,6 +798,24 @@ async def cascade_text(
             await http.aclose()
 
 
+_DEEP_STORY_TYPES = frozenset({
+    "stop", "stop-arrival", "arrival", "escale", "wind-gale", "cyclone-nearby",
+    "depth-alert", "marina-refuge", "cyclone",
+})
+
+
+def story_tier(body: dict[str, Any] | None) -> str:
+    """Ultra for stopovers and major alerts; Super for the rest of the narrative."""
+    if not isinstance(body, dict):
+        return "write"
+    typ = str(body.get("type") or body.get("event") or "").strip().lower()
+    if typ in _DEEP_STORY_TYPES:
+        return "deep"
+    if str(body.get("severity") or "").strip().lower() == "alert":
+        return "deep"
+    return "write"
+
+
 async def write_story(
     body: dict[str, Any] | None,
     client: httpx.AsyncClient | None = None,
@@ -816,7 +834,7 @@ async def write_story(
     fallback = (body or {}).get("phrase") if isinstance((body or {}).get("phrase"), str) else None
     try:
         text, source = await cascade_text(
-            system, user, client, online=page, tier="write",
+            system, user, client, online=page, tier=story_tier(body),
             fallback=fallback if fallback is not None else "",
             facts=event,
         )
