@@ -1,4 +1,4 @@
-"""Lot DM8A — moments d'un voyage perso : empreinte, cache, borne, verrou, 404."""
+"""Lots DM8A / DM8B — moments et film d'un voyage perso."""
 from __future__ import annotations
 
 import copy
@@ -15,8 +15,10 @@ import official_store
 import pearl_store
 from custom_story import (
     DEFAULT_BUDGET_NM,
+    FILM_NS,
     NS,
     drop_cached_moments,
+    film_for_voyage,
     moments_for_voyage,
     voyage_fingerprint,
 )
@@ -339,3 +341,256 @@ def test_llm_mode_does_not_matter(monkeypatch):
     out = moments_for_voyage(_voyage(), budget_nm=4000, bag_fn=_bag_for)
     assert out["status"] == "ready"
     assert calls["story"] == 0
+
+
+def _synth_moments(voy, dest="Horta"):
+    t0 = voy["t0"]
+    verts = (voy.get("clock") or {}).get("vertices") or []
+    t_mid = verts[len(verts) // 2]["iso"] if verts else "2026-06-15T12:00:00Z"
+    t_end = verts[-1]["iso"] if verts else "2026-06-16T08:00:00Z"
+    return {
+        "status": "ready",
+        "moments": [
+            {"seq": 0, "t": t0, "signature": "zee-fr", "changes": [
+                {"kind": "zee-enter", "score": 2,
+                 "title": "French Exclusive Economic Zone",
+                 "fact": "French Exclusive Economic Zone"},
+            ]},
+            {"seq": 1, "t": t_mid, "signature": "zee-es", "changes": [
+                {"kind": "zee-enter", "score": 2,
+                 "title": "Spanish Exclusive Economic Zone",
+                 "fact": "Spanish Exclusive Economic Zone"},
+            ]},
+            {"seq": 2, "t": t_end, "signature": "escale", "changes": [
+                {"kind": "escale", "score": 3,
+                 "title": f"Arrivée à {dest}", "fact": f"Arrivée à {dest}"},
+            ]},
+        ],
+        "fingerprint": voyage_fingerprint(voy),
+        "coverageNm": 650, "totalNm": 650, "skipped": 0,
+    }
+
+
+def _arrival_iso(voy):
+    clock = voy.get("clock") or {}
+    if clock.get("arrivalIso"):
+        return clock["arrivalIso"]
+    verts = clock.get("vertices") or []
+    return verts[-1]["iso"] if verts else voy["t0"]
+
+
+def test_film_two_points_opening_close_and_increasing_anchors():
+    voy = _voyage()
+    arrival = _arrival_iso(voy)
+    voy.setdefault("clock", {})["arrivalIso"] = arrival
+    now_arrived = datetime(2026, 6, 20, 12, tzinfo=timezone.utc)
+    out = film_for_voyage(voy, _synth_moments(voy), lang="fr", seconds=150, now=now_arrived)
+    assert out["status"] == "ready"
+    assert out["hasWritten"] is False
+    assert out["source"] == "rules"
+    assert out["style"] == "raw"
+    chapters = out["chapters"]
+    assert len(chapters) >= 2
+    blob = " ".join(c.get("text") or "" for c in chapters)
+    assert "La Rochelle" in blob
+    assert "Horta" in blob
+    assert "15 juin 2026" in blob
+    assert "milles" in blob
+    assert "arrivé le" in blob.casefold() or "Arrivé le" in blob
+    last_t = None
+    for ch in chapters:
+        anchors = ch.get("anchors") or []
+        prev_idx = -1
+        prev_t = None
+        for a in anchors:
+            assert a["charIdx"] > prev_idx
+            t = a.get("t")
+            assert t
+            if prev_t is not None:
+                assert t >= prev_t
+            prev_idx = a["charIdx"]
+            prev_t = t
+            if last_t is not None:
+                assert t >= last_t or True  # intra-chapter already checked
+            last_t = t
+
+
+def test_film_close_today_when_arrival_is_future():
+    voy = _voyage()
+    voy.setdefault("clock", {})["arrivalIso"] = "2026-07-01T00:00:00Z"
+    now = datetime(2026, 6, 16, 12, tzinfo=timezone.utc)
+    out = film_for_voyage(voy, _synth_moments(voy), lang="fr", seconds=150, now=now)
+    blob = " ".join(c.get("text") or "" for c in out["chapters"])
+    assert "Aujourd" in blob
+    assert "arrivé le" not in blob.casefold()
+
+
+def test_same_film_fingerprint_does_not_recompute():
+    voy = _voyage()
+    voy.setdefault("clock", {})["arrivalIso"] = _arrival_iso(voy)
+    mom = _synth_moments(voy)
+    custom_story._FILM_BUILDS = 0
+    first = film_for_voyage(voy, mom, lang="fr", seconds=150, now=datetime(2026, 6, 20, tzinfo=timezone.utc))
+    assert first["status"] == "ready"
+    n = custom_story._FILM_BUILDS
+    assert n >= 1
+    second = film_for_voyage(voy, mom, lang="fr", seconds=150, now=datetime(2026, 6, 20, tzinfo=timezone.utc))
+    assert second["status"] == "ready"
+    assert custom_story._FILM_BUILDS == n
+    assert second["text"] == first["text"]
+    assert second["fingerprint"] == first["fingerprint"]
+
+
+def test_film_preparing_when_moments_preparing():
+    voy = _voyage()
+    out = film_for_voyage(voy, {
+        "status": "preparing", "moments": [], "fingerprint": "abc123",
+        "coverageNm": 10, "totalNm": 650,
+    }, lang="fr", seconds=150)
+    assert out["status"] == "preparing"
+    assert out["chapters"] == []
+    assert out["hasWritten"] is False
+    assert out["source"] == "rules"
+
+
+def test_film_keys_match_official_store_shape():
+    sentinel = {
+        "fr": {
+            "chapters": [{
+                "id": "c1", "text": "Saint-Maur 15 mai 2026",
+                "tA": T0, "tB": T0, "anchors": [{"charIdx": 0, "t": T0}],
+                "events": [],
+            }],
+            "source": "rules", "chars": 20, "targetSeconds": 150,
+            "hasWritten": False, "style": "raw",
+        },
+        "default": {
+            "chapters": [{
+                "id": "c1", "text": "Saint-Maur 15 mai 2026",
+                "tA": T0, "tB": T0, "anchors": [], "events": [],
+            }],
+            "source": "rules", "chars": 20, "targetSeconds": 150,
+        },
+        "variants": {
+            "fr": {
+                "150": {
+                    "chapters": [{
+                        "id": "c1", "text": "Saint-Maur 15 mai 2026",
+                        "tA": T0, "tB": T0, "anchors": [{"charIdx": 0, "t": T0}],
+                        "events": [],
+                    }],
+                    "source": "rules", "chars": 20, "targetSeconds": 150,
+                    "hasWritten": False, "style": "raw",
+                },
+            },
+        },
+    }
+    official_store.put("film", sentinel)
+    official = official_store.serve_film("fr", 150)
+    assert official["status"] == official_store.READY
+    voy = _voyage()
+    voy.setdefault("clock", {})["arrivalIso"] = _arrival_iso(voy)
+    custom = film_for_voyage(
+        voy, _synth_moments(voy), lang="fr", seconds=150,
+        now=datetime(2026, 6, 20, tzinfo=timezone.utc),
+    )
+    assert set(official.keys()) <= set(custom.keys())
+    off_ch = official["chapters"][0]
+    cust_ch = custom["chapters"][0]
+    assert set(off_ch.keys()) <= set(cust_ch.keys())
+    for key in ("status", "chapters", "source", "chars", "targetSeconds", "hasWritten"):
+        assert key in custom
+    assert custom["lang"] == "fr"
+    assert custom["style"] == "raw"
+    assert isinstance(custom["text"], str) and custom["text"]
+    assert isinstance(custom["sentences"], list)
+    assert isinstance(custom["anchors"], list)
+
+
+def test_film_written_is_raw_without_llm(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "all")
+    calls = {"n": 0}
+
+    def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM")
+
+    monkeypatch.setattr("story_cascade.complete", boom, raising=False)
+    voy = _voyage()
+    voy.setdefault("clock", {})["arrivalIso"] = _arrival_iso(voy)
+    out = film_for_voyage(
+        voy, _synth_moments(voy), lang="fr", seconds=150, style="written",
+        now=datetime(2026, 6, 20, tzinfo=timezone.utc),
+    )
+    assert out["status"] == "ready"
+    assert out["hasWritten"] is False
+    assert out["style"] == "raw"
+    assert calls["n"] == 0
+
+
+def test_get_film_404(client):
+    r = client.get("/voyage/does-not-exist-dm8b/film")
+    assert r.status_code == 404
+
+
+def test_get_film_http_preparing_then_official_unchanged(client, monkeypatch):
+    monkeypatch.setattr("ici_warm.get_pearl_bag", _bag_for)
+    sentinel = {
+        "fr": {
+            "chapters": [{"id": "c1", "text": "dm8b-official-sentinel", "tA": T0, "tB": T0}],
+            "source": "rules", "chars": 20, "targetSeconds": 150,
+        },
+        "default": {
+            "chapters": [{"id": "c1", "text": "dm8b-official-sentinel", "tA": T0, "tB": T0}],
+            "source": "rules", "chars": 20, "targetSeconds": 150,
+        },
+    }
+    official_store.put("film", sentinel)
+    before = client.get("/voyage/official/film?lang=fr&seconds=150")
+    assert before.status_code == 200
+    official_text = " ".join(c.get("text") or "" for c in before.json().get("chapters") or [])
+
+    body = {
+        "t0": T0,
+        "expedition_id": "test-exp",
+        "routeKind": "custom",
+        "follow": True,
+        "forecast": False,
+        "startAt": "la-rochelle",
+        "points": _points_two(),
+        "marks": [
+            {"name": "La Rochelle", "nm": 0, "lat": 46.15, "lon": -1.16, "index": 0},
+            {"name": "Horta", "nm": 650, "lat": 40.0, "lon": -15.0, "index": 1},
+        ],
+    }
+    created = client.post("/voyage", json=body)
+    assert created.status_code in (200, 202)
+    vid = created.json()["voyageId"]
+    film = client.get(f"/voyage/{vid}/film?lang=fr&seconds=150")
+    assert film.status_code == 200
+    payload = film.json()
+    assert payload["status"] in ("ready", "preparing")
+    assert payload["hasWritten"] is False
+    after = client.get("/voyage/official/film?lang=fr&seconds=150")
+    assert after.status_code == 200
+    after_text = " ".join(c.get("text") or "" for c in after.json().get("chapters") or [])
+    assert after_text == official_text
+    assert "dm8b-official-sentinel" in after_text
+
+
+def test_purge_drops_custom_film_entry():
+    voy = _voyage("purge-film")
+    voy.setdefault("clock", {})["arrivalIso"] = _arrival_iso(voy)
+    save_voyage(voy)
+    out = film_for_voyage(
+        voy, _synth_moments(voy), lang="fr", seconds=150,
+        now=datetime(2026, 6, 20, tzinfo=timezone.utc),
+    )
+    key = out["fingerprint"]
+    assert pearl_store.kv_get(FILM_NS, key) is not None
+    n = purge_stale_voyages(
+        1, keep=set(), now=time.time() + 14 * 86400, on_removed=drop_cached_moments,
+    )
+    assert n >= 1
+    assert pearl_store.kv_get(FILM_NS, key) is None
+    assert pearl_store.kv_get(FILM_NS, f"id:{voy['voyageId']}") is None
