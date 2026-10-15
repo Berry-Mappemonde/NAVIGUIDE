@@ -1,36 +1,22 @@
-"""Récits pré-générés (lot F, bascule L2 / U1).
+"""Cache de lecture des récits d'événements (lot F, RG18).
 
-Le récit LLM d'une carte est prêt **avant** que le bateau y arrive :
+`POST /ici/story` (geste « Rédigé » seulement) lit le cache SQLite
+(`pearl_store.kv`, ns « story », 7 jours) indexé par `(type, stableKey, lang)`,
+puis `write_story` → `cascade_text(tier="write")` (Token Factory Super →
+OpenRouter → Claude → règles) et garde le résultat, **avec `source`**.
 
-- cache SQLite (`pearl_store.kv`, ns « story », 7 jours) indexé par
-  `(type, stableKey, lang)` — pour les seuls événements dont le texte ne
-  dépend pas de l'instant du bateau (entrer dans une ZEE, quitter une ZEE,
-  aire marine protégée, port d'entrée devant) ; un coup de vent, une alerte
-  de profondeur ou un repli restent rédigés à chaud ;
-- `POST /ici/story` lit le cache d'abord, puis `write_story` →
-  `cascade_text(tier="write")` (Token Factory Super → OpenRouter → Claude
-  → règles) et garde le résultat, **avec `source`** ;
-- après les perles, le chauffeur **pré-génère** les récits des événements
-  que le film lèvera sur la route officielle (ZEE entrées, ports d'entrée),
-  trois en vol, sous un budget journalier (`NAVIGUIDE_STORY_BUDGET_PER_DAY`,
-  300) — jamais sans cache, le crédit ne brûle pas deux fois.
+Plus de pré-génération en fond (RG18) : un récit ne s'écrit que sur la
+pilule Rédigé.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import logging
 import os
-import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-log = logging.getLogger("naviguide-simulator.story-cache")
-
 STORY_TTL_S = 7 * 86400.0
 CACHEABLE_TYPES = frozenset({"zee-enter", "zee-exit", "amp-enter", "amp-ahead", "poe-ahead"})
-PREGEN_PARALLEL = 3
-PREGEN_PAUSE_S = 0.5
 
 
 def budget_per_day() -> int:
@@ -38,11 +24,6 @@ def budget_per_day() -> int:
         return max(0, int(os.environ.get("NAVIGUIDE_STORY_BUDGET_PER_DAY") or 300))
     except ValueError:
         return 300
-
-
-def pregen_langs() -> tuple[str, ...]:
-    raw = (os.environ.get("NAVIGUIDE_STORY_LANGS") or "fr").strip()
-    return tuple(l.strip()[:2] for l in raw.split(",") if l.strip()) or ("fr",)
 
 
 # ── key / lookup ────────────────────────────────────────────────────────────
@@ -227,98 +208,14 @@ async def story_through_cache(body: dict, client=None, writer=None) -> dict[str,
     return result
 
 
-# ── pre-generation from the pearls ──────────────────────────────────────────
-
-def pregen_bodies(points: list[dict], lang: str = "fr") -> list[dict]:
-    """The story requests a film will make on the official route, from the
-    warmed pearls: ZEE entered (with its official ports of entry, no boat
-    distance — the text must serve at any position) and ports of entry
-    passed. Same `type` / `stableKey` as the client's events."""
-    from ici_engine import thin_cache_get, thin_cache_key  # noqa: PLC0415
-    from ici_warm import route_events_from_pearls, sample_route_nm  # noqa: PLC0415
-
-    bodies: dict[str, dict] = {}
-    pearls = sample_route_nm(points)
-    for ev in route_events_from_pearls(points):
-        if ev["kind"] == "zee" and ev["event"] == "enter" and ev.get("mrgid"):
-            mrgid = ev["mrgid"]
-            pearl = pearls[ev["idx"]] if 0 <= ev["idx"] < len(pearls) else None
-            bag = thin_cache_get(thin_cache_key(pearl["lat"], pearl["lon"], 30.0)) if pearl else None
-            poe = [{"name": p.get("name"), "url": p.get("url")} for p in ((bag or {}).get("poe") or [])[:4] if isinstance(p, dict) and p.get("name")]
-            gold = bool(((bag or {}).get("zee") or {}).get("gold"))
-            body = {
-                "event": "zee-enter", "type": "zee-enter", "stableKey": f"zee-enter:{mrgid}", "lang": lang,
-                "severity": "watch", "judge": "now", "name": ev.get("name"),
-                "payload": {"zee": {"name": ev.get("name"), "mrgid": mrgid, "gold_pack": gold}, "poe": poe,
-                            "weather": None, "weather_reason": "not_in_this_event", "rain": None, "rain_reason": "not_in_this_event",
-                            "tavily": None, "nvidia": None},
-                "tavily": None, "nvidia": None,
-            }
-            bodies.setdefault(story_key(body), body)
-        elif ev["kind"] == "poe" and ev.get("name"):
-            mrgid = ev.get("mrgid") or "x"
-            body = {
-                "event": "poe-ahead", "type": "poe-ahead", "stableKey": f"poe-ahead:{mrgid}:{ev['name']}", "lang": lang,
-                "severity": "info", "judge": "now", "name": ev["name"],
-                "payload": {"poe": {"name": ev["name"], "url": ev.get("url")}, "zee": {"mrgid": ev.get("mrgid")}, "tavily": None, "nvidia": None},
-                "tavily": None, "nvidia": None,
-            }
-            bodies.setdefault(story_key(body), body)
-    return list(bodies.values())
-
-
-_state: dict[str, Any] = {"status": "idle", "planned": 0, "cached": 0, "written": 0, "failed": 0, "skippedBudget": 0, "startedAt": None, "finishedAt": None}
-
-
 def status() -> dict[str, Any]:
+    """Lecture du cache seulement — plus d'étape de pré-génération (RG18)."""
     import pearl_store  # noqa: PLC0415
-    return {**_state, "stored": pearl_store.kv_count("story"), "budgetLeftToday": budget_left()}
-
-
-async def pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PAUSE_S, client=None) -> dict[str, Any]:
-    """Write ahead the stories of the official route, under today's budget — travail d'ARRIÈRE-PLAN :
-    sous NAVIGUIDE_LLM_MODE=on-demand (défaut, 28 sept.) il ne dépense rien (source=budget partout)."""
-    import llm_budget  # noqa: PLC0415
-    with llm_budget.background():
-        return await _pregenerate_official(points, pause_s=pause_s, client=client)
-
-
-async def _pregenerate_official(points: list[dict], *, pause_s: float = PREGEN_PAUSE_S, client=None) -> dict[str, Any]:
-    from story_cascade import write_story  # noqa: PLC0415
-    bodies = [b for lang in pregen_langs() for b in pregen_bodies(points, lang)]
-    _state.update({"status": "running", "planned": len(bodies), "cached": 0, "written": 0, "failed": 0, "skippedBudget": 0,
-                   "startedAt": time.time(), "finishedAt": None})
-    todo = []
-    for body in bodies:
-        if get_cached(body):
-            _state["cached"] += 1
-        else:
-            todo.append(body)
-
-    async def one(body: dict) -> None:
-        if budget_left() <= 0:
-            _state["skippedBudget"] += 1
-            return
-        try:
-            out = await write_story(body, client)
-        except Exception as exc:
-            _state["failed"] += 1
-            log.debug("pré-génération %s : %s", body.get("stableKey"), exc)
-            return
-        if put_cached(body, out):
-            _spend(1)
-            _state["written"] += 1
-        else:
-            _state["failed"] += 1
-        await asyncio.sleep(pause_s)
-
-    for i in range(0, len(todo), PREGEN_PARALLEL):
-        await asyncio.gather(*(one(b) for b in todo[i:i + PREGEN_PARALLEL]))
-    _state["status"] = "done"
-    _state["finishedAt"] = time.time()
-    log.info("récits pré-générés : %d écrits, %d déjà là, %d échecs, %d hors budget",
-             _state["written"], _state["cached"], _state["failed"], _state["skippedBudget"])
-    return status()
+    return {
+        "skipped": "on-demand",
+        "stored": pearl_store.kv_count("story"),
+        "budgetLeftToday": budget_left(),
+    }
 
 
 # ── film script (lot F3 / R9c, ns « film-story ») ───────────────────────────

@@ -39,11 +39,13 @@ function notify(job) {
   }
 }
 
-export function shouldEnqueueStory(ev) {
+export function shouldEnqueueStory(ev, { written = false } = {}) {
+  // RG18 : never by itself — only the Brut/Rédigé switch (written) buys Super.
+  if (!written) return false;
   if (!ev || ev.judge === "hide") return false;
   const st = ev.story?.status;
   if (st === "pending" || st === "ready") return false;
-  return ev.judge === "now" || ev.judge === "group";
+  return ev.judge === "now";
 }
 
 /**

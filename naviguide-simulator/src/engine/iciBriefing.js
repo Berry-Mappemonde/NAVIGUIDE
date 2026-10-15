@@ -493,12 +493,44 @@ function eventOrigin(ev) {
   return originName(raw) || raw;
 }
 
-export function phraseForEvent(ev, lang = "fr") {
+/** Film-script sentence attached to the GET /ici bag (RG18). */
+export function pickFilmPhrase(ev, bag, lang = "fr") {
+  if (typeof ev?.filmPhrase === "string" && ev.filmPhrase.trim()) return ev.filmPhrase.trim();
+  const phrases = bag?.filmPhrases;
+  if (!phrases || !ev?.type) return "";
+  const loc = isEn(lang) ? "en" : "fr";
+  const take = (row) => {
+    if (!row) return "";
+    if (typeof row === "string") return row.trim();
+    return String(row[loc] || row.fr || "").trim();
+  };
+  const type = ev.type;
+  if (type === "zee-enter" || type === "zee-exit" || type === "zee-ahead") {
+    return take(phrases[type]);
+  }
+  if (type === "amp-enter" || type === "amp-ahead") {
+    const id = ev.payload?.amp?.site_id
+      || ev.payload?.amp?.id
+      || ev.payload?.amp?.wdpaid
+      || ev.payload?.amp?.name
+      || ev.name;
+    return take(phrases[`${type}:${id}`]) || take(phrases[type]);
+  }
+  if (type === "poe-ahead") {
+    const name = ev.payload?.poe?.name || ev.name;
+    return take(phrases[`poe-ahead:${name}`]) || take(phrases["poe-ahead"]);
+  }
+  return take(phrases[type]);
+}
+
+export function phraseForEvent(ev, lang = "fr", { written = false } = {}) {
   if (!ev) return "";
-  if (ev.story?.status === "ready" && ev.story.text) {
+  if (written && ev.story?.status === "ready" && ev.story.text) {
     const tidy = cleanStoryText(ev.story.text);
     if (tidy) return tidy;
   }
+  const film = typeof ev.filmPhrase === "string" ? ev.filmPhrase.trim() : "";
+  if (film) return film;
   if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
   const en = isEn(lang);
   const p = ev.payload || {};
@@ -609,10 +641,10 @@ export function phraseForEvent(ev, lang = "fr") {
   }
 }
 
-function eventSentence(dossier, lang) {
+function eventSentence(dossier, lang, written = false) {
   const ev = dossier?.event;
   if (!ev) return "";
-  return phraseForEvent(ev, lang);
+  return phraseForEvent(ev, lang, { written });
 }
 
 function legSentence(dossier, lang) {
@@ -770,7 +802,7 @@ export function pearlKind(dossier) {
   return dossier.thin ? "thin" : null;
 }
 
-export function narrateIci(dossier, lang = "fr") {
+export function narrateIci(dossier, lang = "fr", { written = false } = {}) {
   if (!dossier) return "";
   // A pearl (the along bag standing in while the full bag is on its way)
   // never collected weather, satellite or the sheet — those only make sense
@@ -787,7 +819,7 @@ export function narrateIci(dossier, lang = "fr") {
     live ? weatherSentence(dossier, lang) : "",
     thin ? "" : emodnetSentence(dossier, lang),
     live ? reviewSentence(dossier, lang) : "",
-    eventSentence(dossier, lang),
+    eventSentence(dossier, lang, written),
     thin ? "" : depthSentence(dossier, lang),
     climatologyShownOnBanner(dossier) ? "" : climatologySentence(dossier, lang),
     legSentence(dossier, lang),
@@ -814,8 +846,8 @@ export function climatologyShownOnBanner(dossier) {
  * (map focus + official sheet / Google Maps). Plain text is unchanged:
  * `segments.map((s) => s.text).join("")` === `narrateIci(dossier, lang)`.
  */
-export function narrateIciSegments(dossier, lang = "fr") {
-  const text = narrateIci(dossier, lang);
+export function narrateIciSegments(dossier, lang = "fr", opts = {}) {
+  const text = narrateIci(dossier, lang, opts);
   if (!text) return [];
   return segmentBriefingWithSources(text, briefingEntities(dossier, lang));
 }
