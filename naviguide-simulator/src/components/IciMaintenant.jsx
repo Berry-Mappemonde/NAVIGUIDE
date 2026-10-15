@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { EscaleSheet } from "./EscaleSheet.jsx";
 import { PlanReview } from "./PlanReview.jsx";
-import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
+import { sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   visibleIciTabs,
   hiddenIciTabs,
@@ -15,6 +15,8 @@ import {
   regimeColor,
   seekJournalEntry,
   visibleAlerts,
+  displayIciFrame,
+  localizeStoredTitle,
 } from "./iciMaintenant.js";
 
 function Section({ testId, label, children }) {
@@ -26,9 +28,10 @@ function Section({ testId, label, children }) {
   );
 }
 
-function CardAlias({ card, testId }) {
+function CardAlias({ card, testId, lang = "fr" }) {
   if (!card) return null;
   const url = card.entity?.url || card.entity?.visit_url || null;
+  const title = localizeStoredTitle(card.title, lang);
   return (
     <div
       data-testid={testId}
@@ -37,7 +40,7 @@ function CardAlias({ card, testId }) {
       data-inline="1"
       className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
     >
-      {card.title ? <div className="text-[10px] font-semibold text-sky-200">{card.title}</div> : null}
+      {title ? <div className="text-[10px] font-semibold text-sky-200">{title}</div> : null}
       {card.text ? <p>{card.text}</p> : null}
       {url ? (
         <a
@@ -100,9 +103,10 @@ export function IciMaintenant({
     if (typeof onViewChange === "function") onViewChange(id);
     else setLocalView(id);
   };
-  const shown = (mode === "follow" && moment && momentAtOrBefore(journalEntries, moment?.t)) || moment;
-  const here = shown?.here?.sentences?.length ? shown.here : (moment?.here || shown?.here);
-  const alerts = visibleAlerts(shown?.alerts, dismissed);
+  const frame = displayIciFrame(moment, journalEntries, mode);
+  const shown = frame.shown;
+  const here = frame.here;
+  const alerts = visibleAlerts(frame.alerts, dismissed);
   const tint = regimeColor(shown?.leg?.regime);
   const tabs = visibleIciTabs(mode, { routeSource });
   const extraTabs = hiddenIciTabs(mode, { routeSource });
@@ -204,7 +208,7 @@ export function IciMaintenant({
                         : "border-amber-400/50 bg-amber-950/40 text-amber-100"
                     }`}
                   >
-                    <span className="truncate">{alert.title}</span>
+                    <span className="truncate">{localizeStoredTitle(alert.title, lang)}</span>
                     {alert.fact ? <span className="truncate text-white/70">· {alert.fact}</span> : null}
                     <button
                       type="button"
@@ -220,7 +224,7 @@ export function IciMaintenant({
                 );
               })}
             </div>
-            <CardAlias card={momentNow} testId="moment-now" />
+            <CardAlias card={momentNow} testId="moment-now" lang={lang} />
           </Section>
 
           <Section testId="ici-section-here" label={t("iciSectionHere")}>
@@ -266,8 +270,8 @@ export function IciMaintenant({
 
           <Section testId="ici-section-around" label={t("iciSectionAround")}>
             <div className="flex flex-col gap-0.5">
-              <CardAlias card={momentFree} testId="moment-free" />
-              {(shown?.around || []).map((item, i) => (
+              <CardAlias card={momentFree} testId="moment-free" lang={lang} />
+              {(frame.around || []).map((item, i) => (
                 <details
                   key={`${item.kind || "around"}-${item.title || i}`}
                   data-testid="ici-around"
@@ -275,7 +279,7 @@ export function IciMaintenant({
                   className="text-[11px] leading-snug text-slate-200"
                 >
                   <summary className="cursor-pointer list-inside">
-                    {item.title}
+                    {localizeStoredTitle(item.title, lang)}
                     {item.fact ? <span className="text-slate-400"> · {item.fact}</span> : null}
                   </summary>
                   {item.url ? (
@@ -296,7 +300,7 @@ export function IciMaintenant({
 
           <Section testId="ici-section-sources" label={t("iciSectionSources")}>
             <p data-testid="ici-sources-line" className="text-[10px] leading-snug text-slate-400">
-              {(shown?.sources || []).filter(Boolean).join(" · ")}
+              {(frame.sources || []).filter(Boolean).join(" · ")}
             </p>
           </Section>
         </div>

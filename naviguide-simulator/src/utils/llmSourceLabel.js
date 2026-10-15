@@ -13,6 +13,7 @@ export function llmSourceI18nKey(source) {
   if (s.endsWith("-lightning")) return "storySourceLightning";
   if (s.endsWith("-super")) return "storySourceSuper";
   if (s.endsWith("-ultra")) return "storySourceUltra";
+  if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s)) return "storySourceNim";
   return "storySourceRules";
 }
 

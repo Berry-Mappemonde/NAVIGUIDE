@@ -67,6 +67,19 @@ def test_remember_source_skips_cache():
     assert st["lastSource"] == "nemotron-super"
 
 
+def test_remember_cascade_error_is_in_status():
+    llm_budget.remember_cascade_errors([
+        {"provider": "tokenfactory", "reason": "tokenfactory HTTP 422 {\"error\":\"empty\"}"},
+        {"provider": "nim", "reason": "NVIDIA_API_KEY missing"},
+    ])
+    err = llm_budget.last_error()
+    assert err["provider"] == "tokenfactory"
+    assert "422" in err["reason"]
+    st = llm_budget.status()
+    assert st["lastError"]["provider"] == "tokenfactory"
+    assert [h["provider"] for h in st["lastErrors"]] == ["tokenfactory", "nim"]
+
+
 def test_mode_off_forbids_every_call(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
     for tier in ("fast", "write", "deep", "judge"):

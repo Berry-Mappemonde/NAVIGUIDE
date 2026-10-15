@@ -1,4 +1,5 @@
 import { reviewLeg } from "../engine/planReview.js";
+import { momentAtOrBefore } from "../hooks/useMomentJournal.js";
 
 const MONTHS_SHORT = {
   fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
@@ -82,6 +83,12 @@ const EVENT_TYPE_LABEL = {
     port: "Port",
     station: "Station croisée",
     science: "Station croisée",
+    sci: "Station croisée",
+    stop: "Escale",
+    escale: "Escale",
+    entry: "Formalités d’entrée",
+    poe: "Ports d’entrée",
+    zee: "ZEE",
   },
   en: {
     amp: "Marine protected area",
@@ -91,6 +98,12 @@ const EVENT_TYPE_LABEL = {
     port: "Port",
     station: "Station passed",
     science: "Station passed",
+    sci: "Station passed",
+    stop: "Stopover",
+    escale: "Stopover",
+    entry: "Entry formalities",
+    poe: "Ports of entry",
+    zee: "EEZ",
   },
 };
 
@@ -104,19 +117,74 @@ const TYPE_ONLY_TITLES = new Set([
   "Station passed",
   "Fiche science",
   "Science sheet",
+  "Formalités d'entrée",
+  "Formalités d’entrée",
+  "Entry formalities",
+  "Escale",
+  "Stopover",
 ]);
 
-const NAMED_EVENT_KINDS = new Set(["amp", "mpa", "cyclone", "marina", "port", "station", "science"]);
+const NAMED_EVENT_KINDS = new Set([
+  "amp", "mpa", "cyclone", "marina", "port", "station", "science", "sci", "stop", "escale", "entry", "poe", "zee",
+]);
+
+const TITLE_EN = {
+  "Formalités d'entrée": "Entry formalities",
+  "Formalités d’entrée": "Entry formalities",
+  "Aire marine protégée": "Marine protected area",
+  "Station croisée": "Station passed",
+  "Escale": "Stopover",
+};
 
 const NAMELESS_FACT = /traces de cyclone|cyclone tracks|saison cyclonique|cyclone season|ce mois-ci|this month/i;
 
 function inferKindFromTitle(title) {
   const raw = String(title || "").trim().toLowerCase();
   if (/aire marine|marine protected/.test(raw)) return "amp";
+  if (/formalit|entry formalit|ports? d['’]entr|ports? of entry/.test(raw)) return "entry";
+  if (/^escale\b|^stopover\b/.test(raw)) return "stop";
   if (raw === "cyclone") return "cyclone";
   if (raw === "marina") return "marina";
   if (/station/.test(raw)) return "station";
   return "";
+}
+
+export function localizeStoredTitle(title, lang) {
+  const raw = String(title || "").trim();
+  if (!raw || lang !== "en") return raw;
+  if (TITLE_EN[raw]) return TITLE_EN[raw];
+  const escale = /^(?:Escale|Stopover)\s+(.+)$/i.exec(raw);
+  if (escale) return `Stopover ${escale[1]}`;
+  return raw;
+}
+
+function stripTypePrefix(name, type) {
+  const n = String(name || "").trim();
+  if (!n) return "";
+  const exact = [type, "Escale", "Stopover", "Station croisée", "Station passed",
+    "Formalités d'entrée", "Formalités d’entrée", "Entry formalities",
+    "Aire marine protégée", "Marine protected area"];
+  if (exact.some((p) => p && n.toLowerCase() === String(p).toLowerCase())) return "";
+  const escale = /^(?:Escale|Stopover)\s+(.+)$/i.exec(n);
+  return escale ? escale[1].trim() : n;
+}
+
+/**
+ * The official journal is built in French. Live GET /ici/moment follows `lang`.
+ * Prefer the live moment for alerts / here / around so EN is not a FR leftover.
+ */
+export function displayIciFrame(moment, journalEntries, mode) {
+  const journalHit = mode === "follow" && moment
+    ? momentAtOrBefore(journalEntries, moment?.t)
+    : null;
+  const timeline = journalHit || moment;
+  return {
+    shown: timeline,
+    alerts: (moment?.alerts?.length ? moment.alerts : timeline?.alerts) || [],
+    here: moment?.here?.sentences?.length ? moment.here : (timeline?.here || moment?.here),
+    around: moment?.around?.length ? moment.around : (timeline?.around || []),
+    sources: moment?.sources?.length ? moment.sources : (timeline?.sources || []),
+  };
 }
 
 function yearIn(text) {
@@ -253,22 +321,36 @@ export function journalChangeLabel(entry, lang = "fr") {
     .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
   const change = changes[0];
   if (!change) return "";
-  const title = String(change.title || "").trim();
-  if (!title) return "";
-  if (title.includes(" — ")) return title;
-  if (/^Ports d['’]entrée\s*:/i.test(title) || /^Ports? of entry\s*:/i.test(title)) return title;
+  const stored = String(change.title || "").trim();
+  if (!stored) return "";
+  const title = localizeStoredTitle(stored, lang);
+  if (stored.includes(" — ")) {
+    const [left, ...rest] = stored.split(" — ");
+    const right = rest.join(" — ");
+    const loc = localizeStoredTitle(left, lang);
+    return right ? `${loc} — ${right}` : loc;
+  }
+  if (/^Ports d['’]entrée\s*:/i.test(stored)) {
+    return lang === "en"
+      ? stored.replace(/^Ports d['’]entrée\s*:/i, "Ports of entry:")
+      : stored;
+  }
+  if (/^Ports? of entry\s*:/i.test(stored)) return stored;
 
   const rawKind = String(change.kind || "");
+  const inferred = inferKindFromTitle(stored) || inferKindFromTitle(title);
   const kind = NAMED_EVENT_KINDS.has(rawKind)
     ? rawKind
-    : (rawKind === "alert-on" || rawKind === "alert-off" ? inferKindFromTitle(title) : rawKind);
+    : (rawKind === "alert-on" || rawKind === "alert-off" || !rawKind ? inferred : rawKind);
   const labels = EVENT_TYPE_LABEL[lang] || EVENT_TYPE_LABEL.fr;
-  const type = labels[kind] || (TYPE_ONLY_TITLES.has(title) ? title : "");
+  const type = labels[kind] || (TYPE_ONLY_TITLES.has(stored) || TYPE_ONLY_TITLES.has(title) ? title : "");
   if (!type) return title;
 
-  let name = TYPE_ONLY_TITLES.has(title) ? "" : title;
+  let name = (TYPE_ONLY_TITLES.has(stored) || TYPE_ONLY_TITLES.has(title)) ? "" : title;
+  name = stripTypePrefix(name, type);
   if (name && name.toLowerCase() === type.toLowerCase()) name = "";
   if (!name) name = nameFromJournalFact(change.fact);
+  name = stripTypePrefix(name, type);
   if (name && name.toLowerCase() === type.toLowerCase()) name = "";
 
   if (kind === "cyclone") {

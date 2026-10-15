@@ -66,7 +66,7 @@ export const EscaleLegend = memo(function EscaleLegend({
         name: m.name,
         at,
         mark: m,
-        nmLabel: `${Math.round(Number(m.nm) || 0).toLocaleString()} nm`,
+        nmLabel: `${Math.round(Number(m.nm) || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm`,
         dateLabel: m.iso ? ` · ${formatCivilDate(m.iso, lang)}` : "",
         quayLabel: m.holdHours > 0 ? ` · ${t("escalesQuay", { days: Math.round(m.holdHours / 24) })}` : "",
       };

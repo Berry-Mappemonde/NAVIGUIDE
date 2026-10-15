@@ -74,8 +74,7 @@ function num(n, lang, digits = null) {
 function heading(deg, lang) {
   const d = Number(deg);
   if (!Number.isFinite(d)) return "";
-  let card = getCardinalDirection(d);
-  if (isEn(lang)) card = card.replace(/O/g, "W");
+  const card = getCardinalDirection(d, lang);
   return `${card} (${Math.round(d)}°)`;
 }
 
@@ -801,6 +800,9 @@ export function pearlKind(dossier) {
   if (dossier.pearl === "rich" || dossier.pearl === "thin") return dossier.pearl;
   return dossier.thin ? "thin" : null;
 }
+
+/** Source of `narrateIci` — deterministic rules, never `llm.lastSource`. */
+export const ICI_BRIEFING_SOURCE = "rules";
 
 export function narrateIci(dossier, lang = "fr", { written = false } = {}) {
   if (!dossier) return "";

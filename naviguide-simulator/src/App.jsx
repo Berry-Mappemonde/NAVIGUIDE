@@ -2057,17 +2057,17 @@ export default function App() {
           </div>
           {satelliteTab === "wind" && (
             productHasData(selectedSatellite.wind, "wind")
-              ? <SatelliteMetPanel kind="wind" product={selectedSatellite.wind} t={t} />
+              ? <SatelliteMetPanel kind="wind" product={selectedSatellite.wind} t={t} lang={lang} />
               : <p>{satelliteLoading || selectedSatellite.wind?.status === "pending" ? t("fetchingSatellite") : t("noWindData")}</p>
           )}
           {satelliteTab === "waves" && (
             productHasData(selectedSatellite.wave, "wave")
-              ? <SatelliteMetPanel kind="wave" product={selectedSatellite.wave} t={t} />
+              ? <SatelliteMetPanel kind="wave" product={selectedSatellite.wave} t={t} lang={lang} />
               : <p>{satelliteLoading || selectedSatellite.wave?.status === "pending" ? t("fetchingSatellite") : t("noWaveData")}</p>
           )}
           {satelliteTab === "currents" && (
             productHasData(selectedSatellite.current, "current")
-              ? <SatelliteMetPanel kind="current" product={selectedSatellite.current} t={t} />
+              ? <SatelliteMetPanel kind="current" product={selectedSatellite.current} t={t} lang={lang} />
               : <p>{satelliteLoading || selectedSatellite.current?.status === "pending" ? t("fetchingSatellite") : t("noCurrentData")}</p>
           )}
           {selectedSatellite.drawPointIndex != null && (
