@@ -3203,3 +3203,44 @@ def test_rg11a_honest_write_has_increasing_anchors():
     assert idxs == sorted(idxs)
     assert len(set(idxs)) == len(idxs)
     assert "laisse" in text or "quitte" in text
+
+
+def test_am1b_amp_enter_and_nearby_sentences():
+    """Entrée → « le bateau entre dans l'aire marine protégée X » ; nearby → longe à N milles."""
+    enter = {
+        "kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+        "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
+    }
+    fr = change_sentence(enter, "fr")
+    en = change_sentence(enter, "en")
+    assert "le bateau entre dans l'aire marine protégée Cabrera" in fr
+    assert "the boat enters the marine protected area Cabrera" in en
+    near = {
+        "kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
+        "t": "2026-05-25T12:00:00Z", "nm": 6,
+    }
+    nfr = change_sentence(near, "fr")
+    nen = change_sentence(near, "en")
+    assert "longe l'aire marine protégée Cabrera à six milles" in nfr
+    assert "skirts the marine protected area Cabrera at six miles" in nen
+    from film_script import CHANGE_PRIORITY
+    assert CHANGE_PRIORITY["amp"] < CHANGE_PRIORITY["zee-enter"]
+
+
+def test_am1b_two_inside_pearls_one_amp_sentence():
+    """Deux perles dedans (même AMP) : une seule phrase."""
+    from film_script import _usable_changes
+
+    rows = _usable_changes([
+        {
+            "id": "a1", "kind": "amp", "event": "enter", "score": 2, "tMs": 1_000,
+            "title": "Cabrera", "fact": "Cabrera", "siteId": "ES-CAB", "nm": 0, "inside": True,
+        },
+        {
+            "id": "a2", "kind": "amp", "event": "enter", "score": 2, "tMs": 2_000,
+            "title": "Cabrera", "fact": "Cabrera", "siteId": "ES-CAB", "nm": 0, "inside": True,
+        },
+    ])
+    hits = [c for c in rows if "Cabrera" in str(c.get("title") or "")]
+    assert len(hits) == 1
+    assert change_sentence(hits[0], "fr").count("entre dans") == 1

@@ -117,7 +117,19 @@ export function formatJournalEntry(entry, lang = "fr") {
     case "amp": {
       const name = originName(e.name) || (en ? "marine protected area" : "aire marine protégée");
       const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
-      text = en ? `Marine protected area within reach: ${name}${nm}` : `Aire marine protégée à portée : ${name}${nm}`;
+      if (e.event === "enter") {
+        text = en
+          ? `Entered the marine protected area ${name}`
+          : `Entrée dans l'aire marine protégée ${name}`;
+      } else if (e.event === "exit") {
+        text = en
+          ? `Left the marine protected area ${name}`
+          : `Sortie de l'aire marine protégée ${name}`;
+      } else {
+        text = en
+          ? `Skirting the marine protected area ${name}${nm}`
+          : `Longe l'aire marine protégée ${name}${nm}`;
+      }
       break;
     }
     case "poe": {
