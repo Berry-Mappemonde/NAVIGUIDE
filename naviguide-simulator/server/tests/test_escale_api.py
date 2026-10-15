@@ -35,7 +35,7 @@ def _transport(calls=None, osm_fail=False):
             if osm_fail:
                 return httpx.Response(503, text="busy")
             return httpx.Response(200, json={"elements": _osm_elements()})
-        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             return httpx.Response(200, json={"choices": [{"message": {"content": "La Rochelle offre le Port des Minimes et une capitainerie. Carburant à la Station du port, courses au Carrefour Market. Port d’entrée officiel : La Rochelle - La Pallice."}}]})
         return _handler(request)
     return httpx.MockTransport(handler)
@@ -159,6 +159,48 @@ def test_endpoint_rebuilds_when_cached_paragraph_is_prompt(monkeypatch):
     assert body["cached"] is False
     assert body["paragraph"]["text"] == "La Rochelle has the Minimes marina."
     assert "Request:" not in (body["paragraph"]["text"] or "")
+
+
+def test_endpoint_rebuilds_when_cached_paragraph_is_nim(monkeypatch):
+    """A NIM / tokenfactory-empty harbour paragraph must not stay 7 days."""
+    key = escale_api.escale_key("Papeete", -17.54, -149.57, "en")
+    assert key.endswith("|tf3")
+    pearl_store.kv_put("escale", key, {
+        "name": "Papeete", "lat": -17.54, "lon": -149.57, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Marina Taina"}]}},
+        "paragraph": {
+            "status": "ready",
+            "text": "Papeete has a marina.",
+            "source": "nvidia-nim",
+        },
+        "sources": {},
+    })
+    calls = []
+    rebuilt = {
+        "name": "Papeete", "lat": -17.54, "lon": -149.57, "lang": "en",
+        "sections": {"mooring": {"marinas": [{"name": "Marina Taina"}]}},
+        "paragraph": {
+            "status": "ready",
+            "text": "Papeete has the Marina Taina.",
+            "source": "nemotron-lightning",
+        },
+        "sources": {},
+    }
+
+    async def patched(*_a, **_k):
+        calls.append(1)
+        return rebuilt
+
+    monkeypatch.setattr(escale_api, "build_escale", patched)
+    from main import app
+    client = TestClient(app)
+    body = client.get("/escale?name=Papeete&lat=-17.54&lon=-149.57&lang=en").json()
+    assert calls == [1]
+    assert body["cached"] is False
+    assert body["paragraph"]["source"] == "nemotron-lightning"
+    assert body["paragraph"]["text"] == "Papeete has the Marina Taina."
+    assert escale_api.nim_paragraph({"paragraph": {"source": "nvidia-nim"}}) is True
+    assert escale_api.nim_paragraph({"paragraph": {"source": "nemotron-lightning"}}) is False
 
 
 def test_endpoint_strips_leaked_enrich_from_cache():

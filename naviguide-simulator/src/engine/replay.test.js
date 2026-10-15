@@ -270,25 +270,26 @@ describe("replay — le bateau suit la voix, jamais l'inverse (27 sept.)", () =>
     for (let i = 0; i < 360; i += 1) {
       t = voiceLedStep({ t, dt: 1 / 60, chapter: ch, plan, chapterIdx: 0, charIdx: 10, cps: 15 }).t;
     }
-    assert.ok(t <= plan.timeAt(0, 10 + 12) + 1, "jamais plus loin que ce qui va être dit");
+    assert.ok(t <= plan.timeAt(0, 10) + 1, "jamais plus loin que le caractère dit");
     assert.ok(t < depart, "toujours avant le départ du 18 mai");
   });
 
-  it("la voix avance : le bateau rejoint la cible en ~lookahead/cps secondes, sans la dépasser", () => {
+  it("RG14 : le bateau suit le caractère dit, sans second lookahead de 12", () => {
     const plan = filmPlan({ chapters: [chapter], targetSeconds: 150 });
     const ch = plan.chapters[0];
     const c = text.indexOf("Puis") + 5;
     let t = plan.timeAt(0, text.indexOf("Puis"));
-    for (let i = 0; i < 120; i += 1) { // 2 s
+    for (let i = 0; i < 120; i += 1) {
       t = voiceLedStep({ t, dt: 1 / 60, chapter: ch, plan, chapterIdx: 0, charIdx: c, cps: 15 }).t;
     }
-    const target = plan.timeAt(0, c + 12);
-    assert.ok(t <= target + 1, "plafonné à la cible");
-    assert.ok(t > plan.timeAt(0, c), "a avancé vers la cible");
+    const spoken = plan.timeAt(0, c);
+    const oldLead = plan.timeAt(0, c + FILM_VOICE_LOOKAHEAD_CHARS);
+    assert.ok(t <= spoken + 1, "plafonné à la voix");
+    assert.ok(t < oldLead, "ne reprend pas le double décalage");
   });
 
   it("measuredCps : défaut au début, puis mesuré et borné", () => {
-    assert.equal(measuredCps(5, 500), 15);
+    assert.equal(measuredCps(5, 500), 12);
     assert.equal(measuredCps(150, 10000), 15);
     assert.equal(measuredCps(400, 10000), 40);
     assert.equal(measuredCps(30, 10000), 6);
@@ -373,6 +374,7 @@ describe("replay — vitesse continue (lot RG12, revue du 28 sept.)", () => {
         chapterIdx: 0,
         charIdx,
         cps,
+        lookahead: FILM_VOICE_LOOKAHEAD_CHARS,
         lastBoundaryChar: lastB,
         sinceBoundaryS: since,
         recaleRemainMs: recale,
