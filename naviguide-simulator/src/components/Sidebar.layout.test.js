@@ -66,7 +66,8 @@ describe("Sidebar layout (lot R8c)", () => {
   it("réserve le sac ici à hauteur fixe avec le placeholder de remplissage", () => {
     assert.match(sidebar, /iciBriefingLoading/);
     assert.match(sidebar, /Le sac se remplit|iciBriefingLoading/);
-    assert.match(sidebar, /\{!isDrawing \? \(/);
+    assert.match(sidebar, /drawingHidesBerry/);
+    assert.match(sidebar, /hereBody=\{!drawingHidesBerry \? \(/);
   });
 
   it("lot DM6 — Berry ne jette pas le brouillon ; reprendre le tracé si points", () => {

@@ -25,7 +25,7 @@ describe("PlanReview — commentaire (lot L5)", () => {
     assert.match(app, /commentSource: planReviewState\.review\?\.comment\?\.source/);
     assert.match(ici, /comment=\{planReview\.comment\}/);
     assert.match(ici, /<PlanReview[\s\S]*legs=\{planReview\.legs\}/);
-    assert.match(sidebar, /planReview=\{!isDrawing \? planReview : null\}/);
+    assert.match(sidebar, /planReview=\{!drawingHidesBerry \? planReview : null\}/);
     assert.match(app, /planReview=\{planReview\}/);
     assert.doesNotMatch(tools, /<PlanReview/);
     assert.doesNotMatch(tools, /planReview && !drawing/);

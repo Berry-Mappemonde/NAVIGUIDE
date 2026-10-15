@@ -90,6 +90,7 @@ describe("routeDrawPlan (lot DM5) — une seule route à l'écran", () => {
     const app = read("../App.jsx");
     // L'horloge officielle (PUT/GET /voyage/official) ne sert que Suivre × Berry.
     assert.match(app, /const official = useOfficialExpedition\(\{\s*enabled: suivreBerry,/);
+    assert.match(app, /enabled: Boolean\(suivreBerry && officialClock\)/);
     assert.match(app, /useOfficialJournal\(\{ enabled: suivreBerry \}\)/);
     // Le voyage serveur de la route perso porte Suivre × custom comme Tracer.
     assert.match(app, /enabled: \(isSimulation \|\| suivreCustom\) && routeReady,/);

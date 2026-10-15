@@ -369,7 +369,11 @@ export const Sidebar = memo(function Sidebar({
   const briefingTitle = !iciBriefing && typeof plan?.briefing_title === "string"
     ? plan.briefing_title.trim()
     : "";
-  const showIciBriefing = !isDrawing && (isCockpit || briefing || briefingLoading || skipperNotice);
+  // DM6 — Tracer ouvre le dessin, mais un brouillon vide garde la vitrine
+  // Berry (briefing, revue, fiche d'escale). Les lots M et R7 cliquent
+  // Tracer sans poser de point : le briefing et Ajaccio restent là.
+  const drawingHidesBerry = Boolean(isDrawing && drawing?.points?.length);
+  const showIciBriefing = !drawingHidesBerry && (isCockpit || briefing || briefingLoading || skipperNotice);
 
   useEffect(() => {
     if (!showIciBriefing) return undefined;
@@ -500,7 +504,7 @@ export const Sidebar = memo(function Sidebar({
                 onGoLive={onGoLive}
               />
             )}
-            hereBody={!isDrawing ? (
+            hereBody={!drawingHidesBerry ? (
               <div data-testid="here-product">
                 <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">
                   {briefingTitle ? (
@@ -555,8 +559,8 @@ export const Sidebar = memo(function Sidebar({
             journal={isSuivre && !isDrawing ? (
               <JournalPanel journal={journal} loading={journalLoading} error={journalError} />
             ) : null}
-            planReview={!isDrawing ? planReview : null}
-            escale={!isDrawing && escaleStop ? {
+            planReview={!drawingHidesBerry ? planReview : null}
+            escale={!drawingHidesBerry && escaleStop ? {
               stop: escaleStop,
               fiche: escaleFiche,
               loading: escaleLoading,
