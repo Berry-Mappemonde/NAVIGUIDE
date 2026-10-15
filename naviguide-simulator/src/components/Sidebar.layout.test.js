@@ -106,7 +106,7 @@ describe("contrat pop-up hors film (lot R8c)", () => {
     assert.match(app, /<EscalePopupHost/);
     assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
     assert.match(app, /useMoment\(/);
-    assert.match(app, /mode: drawingMode \? "drawn"/);
+    assert.match(app, /mode: drawingMode && drawnPoints\.length \? "drawn"/);
     assert.match(scene, /escalePopup\.setSheet = \(\) => \{\}/);
     assert.match(scene, /escalePopup\.sync = \(\) => \{\}/);
     assert.doesNotMatch(ici, /ListenButton/);

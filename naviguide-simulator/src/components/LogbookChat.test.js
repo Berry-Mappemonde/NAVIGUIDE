@@ -12,7 +12,7 @@ const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 describe("LogbookChat contract (lot D)", () => {
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
-    assert.match(sidebar, /\{!isDrawing && chat \? \(/, "any view, not while drawing");
+    assert.match(sidebar, /\{!drawingHidesBerry && chat \? \(/, "any view, not once a drawn point hides Berry");
     assert.match(src, /hasAdminSecret\(\)/);
     assert.match(src, /logbookChatSaved|logbookChatUnsaved/);
   });
