@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useLang } from "../i18n/LangContext.jsx";
 
 function hostLabel(url) {
   try {
@@ -19,6 +20,7 @@ function Row({ label, children }) {
 }
 
 export function LayerFichePopup({ popup, onClose }) {
+  const { lang } = useLang();
   if (!popup) return null;
   const { kind, props = {} } = popup;
   let title = props.name || props.title || props.GEONAME || props.geoname || props.portName || "—";
@@ -26,7 +28,7 @@ export function LayerFichePopup({ popup, onClose }) {
   let extra = null;
 
   if (kind === "zee") {
-    title = props.GEONAME || props.geoname || props.name || "ZEE";
+    title = props.GEONAME || props.geoname || props.name || (lang === "en" ? "EEZ" : "ZEE");
     subtitle = [props.TERRITORY1 || props.territory1, props.POL_TYPE || props.pol_type, props.ISO_TER1].filter(Boolean).join(" · ");
   } else if (kind === "marina") {
     subtitle = props.country || "";
@@ -54,13 +56,13 @@ export function LayerFichePopup({ popup, onClose }) {
       </>
     );
   } else if (kind === "poe") {
-    title = props.name || "Port d'entrée";
+    title = props.name || (lang === "en" ? "Port of entry" : "Port d'entrée");
     subtitle = [props.country, props.spatial_kind].filter(Boolean).join(" · ");
     extra = props.source_urls?.[0]
       ? <a href={props.source_urls[0]} target="_blank" rel="noreferrer">{hostLabel(props.source_urls[0])}</a>
       : null;
   } else if (kind === "amp") {
-    title = props.name || props.site_id || "AMP";
+    title = props.name || props.site_id || (lang === "en" ? "Marine protected area" : "Aire marine protégée");
     subtitle = [props.designation, props.country].filter(Boolean).join(" · ");
     extra = (
       <>
