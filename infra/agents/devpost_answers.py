@@ -8,6 +8,7 @@ soumet lui-même.
     python3 infra/agents/devpost_answers.py --wake-scrape   # webhook → Grok Bot, tâche A (relever)
     python3 infra/agents/devpost_answers.py                 # lit le dernier 📋, lance Fable, poste ✍️ + PR docs
     python3 infra/agents/devpost_answers.py --wake-fill     # webhook → Grok Bot, tâche B (remplir le brouillon)
+    python3 infra/agents/devpost_answers.py --wake-demo     # webhook → Grok Bot, tâche C (anglais, Rédigé, Revoir, vidéo)
     python3 infra/agents/devpost_answers.py --dry-run       # affiche le prompt Fable, ne lance rien
 
 Ce que Fable doit produire (docs/DEVPOST_REPONSES_<date>.md + commentaire ✍️) : langage simple avant
@@ -68,14 +69,17 @@ def json_block(body: str) -> dict | None:
 
 
 def wake(kind: str) -> bool:
-    """Réveil du bot : même webhook que la pré-revue, `event` devpost_scrape | devpost_fill (routine GROK_BOT_DEVPOST.md)."""
+    """Réveil du bot : même webhook que la pré-revue, `event` devpost_scrape | devpost_fill | devpost_demo."""
     hook, headers = rl.webhook_settings()
     if not hook:
         print("BIM_BOT_WEBHOOK absent : coller la routine et l'URL du webhook (voir GROK_BOT_ROUTINE.md)")
         return False
     url = f"{rl.DEFAULT_REPO}/issues/{ISSUE}"
-    text = {"devpost_scrape": "Relever le formulaire Devpost, les règles et les critères (tâche A)",
-            "devpost_fill": "Recopier les réponses ✍️ dans le brouillon Devpost, sans soumettre (tâche B)"}[kind]
+    text = {
+        "devpost_scrape": "Relever le formulaire Devpost, les règles et les critères (tâche A)",
+        "devpost_fill": "Recopier les réponses ✍️ dans le brouillon Devpost, sans soumettre (tâche B)",
+        "devpost_demo": "Tâche C : app EN, Rédigé, Revoir, 5 captures, vidéo < 3 min (pas Submit)",
+    }[kind]
     body = json.dumps({"event": kind, "repo": repo_path(), "pr": ISSUE, "url": url, "text": f"{text} — issue #{ISSUE} : {url}"}).encode()
     req = urllib.request.Request(hook, data=body, method="POST", headers=headers)
     try:
@@ -107,7 +111,7 @@ def build_prompt(form_comment: dict, date_tag: str, share: dict | None = None) -
     share_txt = share.get("sentenceEn") or "(mesure indisponible : lance python3 infra/agents/devpost_code_share.py et recopie la phrase)"
     return f"""Tu es l'agent Fable de la soumission Devpost de NAVIGUIDE (dépôt Berry-Mappemonde/Blue-Intelligence, hackathon Nebius × NVIDIA Global AI Hackathon). Tu travailles dans ce worktree (main à jour). Tu ne touches à AUCUN code : tu écris un document et un commentaire.
 
-Lis d'abord, en entier : {SUBMISSION_DOC} (la soumission v1.0 du 20 sept. : textes déjà écrits, réponses déjà tranchées, liste de contrôle § 0, critères § 5), README.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/PLAN_DEUX_MODES_2026-09-29.md (l'application a maintenant deux modes : Suivre et Tracer — le mot « Simulation » ne doit plus apparaître), infra/vps/README.md § politique LLM (depuis le 29 sept. : mode on-demand, juge Ultra et veille Tavily coupés par défaut).
+Lis d'abord, en entier : {SUBMISSION_DOC} (la soumission v1.0 du 20 sept. : textes déjà écrits, réponses déjà tranchées, liste de contrôle § 0, critères § 5), README.md, docs/ESPRIT_DE_L_APPLICATION.md, docs/PLAN_DEUX_MODES_2026-09-29.md (l'application a maintenant deux modes : Suivre et Tracer — le mot « Simulation » ne doit plus apparaître), infra/vps/README.md § politique LLM (on-demand ; juge Ultra coupé ; veille Tavily rallumée le 15 oct. : une recherche par escale).
 
 Puis lis le relevé de Grok Bot ci-dessous : le formulaire Devpost tel qu'il est AUJOURD'HUI ({n_fields} champs relevés), les règles, les critères de jugement. C'est la seule source pour les libellés, les options et les limites de caractères : ne suppose aucun champ qui n'y est pas.
 
@@ -117,7 +121,7 @@ Puis lis le relevé de Grok Bot ci-dessous : le formulaire Devpost tel qu'il est
 
 Ta mission, dans cet ordre :
 
-1) RÈGLES ET CONFORMITÉ. Pour chaque règle relevée (éligibilité, exigences techniques, livrables, dates, vidéo, licence, dépôt, langue…), dis si le projet est conforme AUJOURD'HUI, avec une preuve vérifiable : un fichier et une ligne du dépôt (ex. server/story_cascade.py : l'appel Token Factory), une URL publique (le site, le dépôt, la licence), ou « non vérifié ». Cherche vraiment dans le code (rg). Points sensibles : l'appel runtime à Nebius Token Factory avec un modèle NVIDIA open source doit tourner en production ; Tavily et le juge Ultra sont COUPÉS par défaut depuis le 29 sept. (NAVIGUIDE_TRUTH_JUDGE=0, NAVIGUIDE_TAVILY_WATCH=0) — si la soumission dit « Yes » à Tavily ou montre un badge « Verified · Tavily », c'est faux le jour de la soumission : dis-le, propose la réponse honnête, et note ce qu'il faudrait réactiver (et son coût) si le porteur veut cocher « Yes ». Toute non-conformité ou promesse non tenue va dans une section « À régler avant de soumettre », en tête du document.
+1) RÈGLES ET CONFORMITÉ. Pour chaque règle relevée (éligibilité, exigences techniques, livrables, dates, vidéo, licence, dépôt, langue…), dis si le projet est conforme AUJOURD'HUI, avec une preuve vérifiable : un fichier et une ligne du dépôt (ex. server/story_cascade.py : l'appel Token Factory), une URL publique (le site, le dépôt, la licence), ou « non vérifié ». Cherche vraiment dans le code (rg). Points sensibles : l'appel runtime à Nebius Token Factory avec un modèle NVIDIA open source doit tourner en production ; la veille Tavily est rallumée le 15 oct. (une recherche par escale, `NAVIGUIDE_TAVILY_WATCH` défaut 1) — « Did you use Tavily? » = Yes seulement si `/ici/warm/status` en prod montre `llm.tavily.calls` > 0 après le déploiement ; le juge Ultra reste coupé (`NAVIGUIDE_TRUTH_JUDGE=0`) : ne pas afficher un badge « Verified · Tavily + Ultra ». Toute non-conformité ou promesse non tenue va dans une section « À régler avant de soumettre », en tête du document.
 
 2) CRITÈRES DE JUGEMENT. Pour chaque critère (avec sa pondération si donnée) : ce que le projet montre, où le juge le verra (écran, URL, minute de la vidéo), la faiblesse honnête, et une phrase que la soumission doit contenir pour marquer le point.
 
@@ -138,6 +142,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--wake-scrape", action="store_true", help="réveiller Grok Bot pour relever le formulaire (tâche A)")
     ap.add_argument("--wake-fill", action="store_true", help="réveiller Grok Bot pour recopier les réponses (tâche B)")
+    ap.add_argument("--wake-demo", action="store_true", help="réveiller Grok Bot pour la démo (tâche C : EN, Rédigé, Revoir, vidéo)")
     ap.add_argument("--dry-run", action="store_true", help="afficher le prompt Fable sans lancer d'agent")
     ap.add_argument("--model", default=MODEL)
     ap.add_argument("--timeout-hours", type=float, default=1.5)
@@ -147,6 +152,8 @@ def main() -> None:
         sys.exit(0 if wake("devpost_scrape") else 1)
     if args.wake_fill:
         sys.exit(0 if wake("devpost_fill") else 1)
+    if args.wake_demo:
+        sys.exit(0 if wake("devpost_demo") else 1)
 
     http = rl.Http(None, rl.github_token_from_git())
     comments = issue_comments(http)
