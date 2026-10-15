@@ -278,6 +278,17 @@ describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
     assert.equal(journalChangeLabel({
       changes: [{ kind: "sci", score: 2, title: "Station croisée", fact: "" }],
     }, "en"), "Station passed");
+    assert.equal(localizeStoredTitle("AMP", "en"), "Marine protected area");
+    assert.equal(localizeStoredTitle("AMP Taaone", "en"), "Marine protected area Taaone");
+    assert.equal(localizeStoredTitle("Aire marine protégée Matavai", "en"), "Marine protected area Matavai");
+    assert.equal(localizeStoredTitle("Zone économique exclusive espagnole", "en"), "Spanish EEZ");
+    assert.equal(localizeStoredTitle("Entrée dans Zone économique exclusive française (France métropolitaine)", "en"), "Entering French EEZ (France métropolitaine)");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "zee-enter", score: 2, title: "Zone économique exclusive espagnole", fact: "" }],
+    }, "en"), "Spanish EEZ");
+    assert.doesNotMatch(journalChangeLabel({
+      changes: [{ kind: "zee", score: 2, title: "Zone économique exclusive espagnole", fact: "" }],
+    }, "en"), /Zone économique|Aire marine|\bAMP\b|\bZEE\b/);
     const live = { t: "2026-05-16T10:00:00Z", alerts: [{ id: "entry-1", title: "Entry formalities" }], here: { sentences: ["English waters."] } };
     const journalFr = [{ t: "2026-05-16T09:00:00Z", alerts: [{ id: "entry-1", title: "Formalités d’entrée" }], here: { sentences: ["Eaux françaises."] } }];
     const frame = displayIciFrame(live, journalFr, "follow");

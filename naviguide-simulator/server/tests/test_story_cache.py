@@ -15,7 +15,7 @@ def _llm(answer="Le bateau entre dans la ZEE espagnole ; ports d’entrée offic
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             calls.append(url)
             return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
         return httpx.Response(404)
