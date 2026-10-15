@@ -24,8 +24,8 @@ FILM_WRITE_MIN = 2160
 FILM_WRITE_MAX = 2640
 FILM_CHAPTER_FLOOR = 120
 FILM_CHAPTER_MAX_CHANGES = 4   # arrivée + un fait de mer + la marina de l'escale + approche (27 sept. ; était 3)
-# Client `FILM_VOICE_LOOKAHEAD_CHARS` : le bateau vise 12 caractères devant la voix.
-# L'ancre serveur est déjà compensée (nom du lieu − 12, bornée à 0) — lot RG14.
+# Ancre au nom du lieu − 12 caractères (lot RG14). Le client ne rajoute plus
+# ce décalage : sinon le bateau est ~2 s devant la voix.
 FILM_VOICE_LOOKAHEAD_CHARS = 12
 KIND_GROUP_FRAC = 0.10
 FILM_MIN_EVENTS = 6

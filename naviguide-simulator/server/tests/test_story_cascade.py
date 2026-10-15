@@ -645,6 +645,8 @@ def test_prompt_leak_re_covers_22_sept_forms():
         "You are the logbook of the Berry-Mappemonde sailing expedition.",
         "Tu es le journal de bord de l'expédition à la voile.",
         "I need to answer using ONLY the JSON. It lists:",
+        "The JSON does not contain any information about Cape Horn.",
+        "JSON does not hold the answer.",
         CAPTURE_LEAK,
     )
     for form in forms:
@@ -754,16 +756,17 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
     assert seen["chat_template_kwargs"]["enable_thinking"] is False
     assert "thinking" not in seen["chat_template_kwargs"]
     assert seen["reasoning_effort"] == "none"
-    assert seen["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    assert "extra_body" not in seen
 
 
-def test_lightning_payload_disables_thinking_officially():
+def test_lightning_payload_omits_thinking_flags():
     import llm_budget
     import story_cascade
 
     payload = story_cascade._tf_payload("sys", "user", "fast")
-    assert payload["reasoning_effort"] == "none"
-    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert "reasoning_effort" not in payload
+    assert "chat_template_kwargs" not in payload
+    assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("fast")
     assert payload["max_tokens"] == 512
 
@@ -775,6 +778,7 @@ def test_ultra_payload_uses_cookbook_host_and_budget():
     payload = story_cascade._tf_payload("sys", "user", "deep")
     assert payload["reasoning_effort"] == "none"
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("deep")
     assert payload["max_tokens"] == 2048
     assert "us-central1" in story_cascade._tf_url("deep")

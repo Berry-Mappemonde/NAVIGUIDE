@@ -41,7 +41,7 @@ def client(tmp_path, monkeypatch):
 def _llm_transport(answer: str):
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "tokenfactory.nebius.com" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
+        if "tokenfactory" in url or "integrate.api.nvidia.com" in url or "openrouter.ai" in url or "api.anthropic.com" in url:
             return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
         return _handler(request)
     return httpx.MockTransport(handler)
@@ -99,6 +99,56 @@ def test_strip_raw_fields_drops_at_quay_leak():
     assert "atQuay" not in logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.")
     assert logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.") == "The boat is still at 0 kn."
     assert "atQuay" not in logbook_chat.strip_raw_fields("already underway (atQuay false, speed 0.5 knots).")
+
+
+def test_strip_raw_fields_drops_formalities_zee_amp_line():
+    raw = "Papeete is a port of entry. formalities: zee (zone), amp (protected)."
+    out = logbook_chat.strip_raw_fields(raw)
+    assert "formalities" not in out.lower()
+    assert "zee" not in out.lower()
+    assert "amp" not in out.lower()
+    assert "Papeete is a port of entry." in out
+
+
+def test_json_excuse_falls_back_to_missing_info(monkeypatch):
+    async def fake_cascade(system, user, client=None, **kw):
+        return "The JSON does not contain any information about Cape Horn.", "nemotron-ultra"
+
+    async def fake_ctx(*_a, **_k):
+        return {"journal": [{"kind": "zee", "name": "French EEZ"}]}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    out = asyncio.run(logbook_chat.answer_question(
+        "Why Panama instead of Cape Horn?", "en", {}, datetime.now(timezone.utc),
+    ))
+    assert out["source"] == "rules"
+    assert "JSON" not in (out["answer"] or "")
+    assert out["answer"] == logbook_chat.missing_info("en")
+
+
+def test_prompt_never_teaches_json_excuse():
+    system, user = logbook_chat._prompt("Why Panama?", {"journal": []}, "en")
+    assert "If the JSON does not" not in system
+    assert "JSON does not" not in system
+    assert "Never mention JSON" in system
+    assert "Facts :" in user
+    assert "JSON :" not in user
+
+
+def test_stop_in_question_picks_named_official_mark():
+    clock = {
+        "marks": [
+            {"name": "Mata-Utu (Wallis-et-Futuna)", "lat": -13.28, "lon": -176.17},
+            {"name": "Papeete (Polynésie française)", "lat": -17.54, "lon": -149.57},
+        ],
+    }
+    hit = logbook_chat.stop_in_question("Which AMP near Papeete?", clock)
+    assert hit["name"].startswith("Papeete")
+    lat, lon, basis = logbook_chat._around_point("Which AMP near Papeete?", clock, -13.28, -176.17)
+    assert basis == "stop"
+    assert lat == pytest.approx(-17.54)
+    assert lon == pytest.approx(-149.57)
 
 
 def test_answer_strips_raw_json_field_names(monkeypatch):
