@@ -23,6 +23,7 @@ import json
 import logging
 import math
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -159,6 +160,70 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
 def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[float, float]]:
     """Positions only (warmer, GET /ici/pearls)."""
     return [(p["lat"], p["lon"]) for p in sample_route_nm(points, step_nm)]
+
+
+def _run_coro(factory):
+    """Run `factory()` → coroutine from a sync handler.
+
+    `factory` is called in the thread that owns the event loop, so the
+    coroutine is never started on one loop and awaited on another.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(factory())
+
+    result: dict[str, Any] = {}
+
+    def _in_thread() -> None:
+        try:
+            result["value"] = asyncio.run(factory())
+        except Exception as exc:  # noqa: BLE001 — caller skips the pearl
+            result["error"] = exc
+
+    thread = threading.Thread(target=_in_thread, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
+def get_pearl_bag(lat: float, lon: float, *, rich: bool = True) -> dict | None:
+    """Sac `/ici` d'une perle : cache d'abord, sinon fill **sans LLM**.
+
+    None si le fill lève — l'appelant saute la perle (DM8A). Ne passe pas par
+    `fill_dossier` (juge de vérité / veille) : `NAVIGUIDE_LLM_MODE` indifférent.
+    Le chauffeur officiel (`warm_official_route`) n'est pas modifié.
+    """
+    from ici_engine import (  # noqa: PLC0415
+        _fill_dossier,
+        thin_cache_get,
+        thin_cache_key,
+        thin_cache_put,
+    )
+
+    key = thin_cache_key(lat, lon, 30.0)
+    cached = thin_cache_get(key, rich=False)
+    if cached is not None:
+        if not rich:
+            return cached
+        rich_hit = thin_cache_get(key, rich=True)
+        return rich_hit if rich_hit is not None else cached
+    try:
+        bag = _run_coro(lambda: _fill_dossier(
+            lat, lon, 30.0, None, None, None, None, True, rich,
+        ))
+    except Exception as exc:
+        log.debug("sac /ici %.4f,%.4f : %s", lat, lon, exc)
+        return None
+    if not isinstance(bag, dict):
+        return None
+    try:
+        thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
+    except Exception:
+        pass
+    return bag
 
 
 def _angle_delta_deg(a: float, b: float) -> float:

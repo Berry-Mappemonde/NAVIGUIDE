@@ -552,6 +552,11 @@ def _drop_cube(voyage_id: str) -> None:
     import shutil
     from forecast_cube import CACHE_DIR
     shutil.rmtree(CACHE_DIR / voyage_id, ignore_errors=True)
+    try:
+        from custom_story import drop_cached_moments  # noqa: PLC0415
+        drop_cached_moments(voyage_id)
+    except Exception as exc:
+        log.warning("purge custom-moments %s: %s", voyage_id, exc)
 
 
 def _check_voyage_size(body: VoyageCreate) -> None:
@@ -1633,6 +1638,25 @@ def get_voyage(voyage_id: str):
         "points": voy.get("points"),
         "marks": voy.get("marks"),
     }
+
+
+@router.get("/voyage/{voyage_id}/moments")
+def get_voyage_moments(voyage_id: str):
+    """Moments de MA route (DM8A) : calcul à la demande, cache kv, jamais le stock officiel."""
+    if _is_official(voyage_id):
+        return get_official_moments()
+    voy = load_voyage(voyage_id)
+    if voy is None:
+        raise HTTPException(404, "voyage inconnu")
+    try:
+        from custom_story import moments_for_voyage  # noqa: PLC0415
+        return moments_for_voyage(voy)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("GET /voyage/%s/moments", voyage_id)
+        from custom_story import preparing_payload  # noqa: PLC0415
+        return preparing_payload(voy, reason=str(exc))
 
 
 @router.get("/voyage/{voyage_id}/clock")
