@@ -791,12 +791,15 @@ def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
     en = (lang or "fr").lower().startswith("en")
     system = (
         "You are the logbook of the Berry-Mappemonde sailing expedition. Reason in at most "
-        "FIVE plain sentences, using ONLY the JSON of facts provided. Every figure you write must appear in the JSON, "
+        "FIVE plain sentences, using ONLY the JSON of facts provided (including the official "
+        "logbook in journal — stops, EEZ, protected areas, weather, science, news). "
+        "Every figure you write must appear in the JSON, "
         "with its unit. If the JSON does not hold the answer, say so in one sentence. Never write JSON key names. "
         "No title, no list, no bold, nothing about tools or models. Thinking OFF."
         if en else
         "Tu es le journal de bord de l’expédition à la voile Berry-Mappemonde. Raisonne en "
-        "CINQ phrases simples au plus, à partir du SEUL JSON de faits fourni. Chaque chiffre que tu écris doit "
+        "CINQ phrases simples au plus, à partir du SEUL JSON de faits fourni (dont le journal "
+        "officiel — escales, ZEE, AMP, météo, science, veilles). Chaque chiffre que tu écris doit "
         "figurer dans le JSON, avec son unité. Si le JSON ne contient pas la réponse, dis-le en une phrase. "
         "N’écris jamais les noms de champs JSON. Ni titre, ni liste, ni gras, rien sur les outils ou les modèles. "
         "Thinking OFF."
@@ -1478,7 +1481,7 @@ _chat_limited = rate_limited("logbook-chat", 6, 60.0, global_limit=60)
 
 def _facts_view(ctx: dict | None) -> dict[str, Any]:
     ctx = ctx if isinstance(ctx, dict) else {}
-    keys = ("official", "boat", "nextStop", "memory", "polar", "orders", "plan", "climo", "layers", "around")
+    keys = ("official", "boat", "nextStop", "memory", "journal", "polar", "orders", "plan", "climo", "layers", "around")
     return {k: ctx.get(k) for k in keys if ctx.get(k) is not None}
 
 
