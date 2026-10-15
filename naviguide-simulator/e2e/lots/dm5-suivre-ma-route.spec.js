@@ -182,7 +182,7 @@ test("lot DM5 — Tracer → Terminer → Suivre : ma route, seule ; pilules Ber
   await expect(replayStart).toBeDisabled();
   await expect(replayStart).toHaveAttribute(
     "title",
-    /Revoir : route Berry-Mappemonde seulement — bientôt pour votre route|Replay: Berry-Mappemonde route only — coming soon for your route/,
+    /en préparation|preparing/,
   );
 
   // Date de départ = aujourd'hui (08:00 UTC par défaut), éditable en Suivre × ma route.

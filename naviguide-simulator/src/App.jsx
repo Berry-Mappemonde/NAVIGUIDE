@@ -59,6 +59,7 @@ import {
   sampleClockAtTime,
 } from "./engine/voyageClock.js";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
+import { legsFromClockMarks } from "./components/iciMaintenant.js";
 import { isRouteReady } from "./utils/routeReady.js";
 import { resolveRouteSource, routeForSource } from "./utils/routeSource.js";
 import {
@@ -344,16 +345,18 @@ export default function App() {
   // « Revoir l'expédition » (lot E): while it runs, the boat of the replay
   // stands in for the live one — the scene, the clock line, the story and
   // the cards all read `live`. Suivre only; Stop or the end hands back.
+  const customVoyageId = suivreCustom ? (vessel.voyage?.voyageId || "") : "";
   const replay = useReplay({
     clock: filmClock,
     fallbackClock: voyage.clock,
     requireOfficialFilm: isSuivre,
-    journal: officialJournal.journal,
-    enabled: suivreBerry,
+    journal: suivreBerry ? officialJournal.journal : null,
+    enabled: isSuivre && (suivreBerry || Boolean(customVoyageId)),
+    voyageId: suivreCustom ? customVoyageId : "official",
     lang,
     marks: escaleMarks,
-    destination: official.live,
-    t0: replayT0,
+    destination: suivreBerry ? official.live : vessel.live,
+    t0: suivreBerry ? replayT0 : (voyage.t0 || DEFAULT_T0_ISO),
   });
   // DM5 — en Suivre, la position vit sur la source : horloge officielle pour
   // Berry, voyage serveur de ma route pour la perso. Tant que le serveur n'a
@@ -598,18 +601,22 @@ export default function App() {
     frozen: replay.active,
   });
   const momentMode = drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : "simulation");
-  // DM5 — Suivre × ma route n'écrit ni ne lit la mémoire officielle
-  // (GET /voyage/official/moments) : journal local, même clé qu'en Tracer.
-  const momentJournalMode = momentMode === "follow" && routeSource === "custom" ? "simulation" : momentMode;
+  // DM8C — Suivre × ma route lit GET /voyage/{id}/moments (pas le stock Berry,
+  // pas le journal local de Tracer). Sans voyageId : rien n'est servi comme prêt.
+  const momentJournalMode = (suivreCustom && !customVoyageId)
+    ? "simulation"
+    : momentMode;
   const journalRouteId = momentJournalMode === "drawn"
     ? "drawn"
-    : (momentJournalMode === "follow" ? "official" : (routeSource === "custom" ? "simulation:custom" : "simulation:official"));
+    : (momentJournalMode === "follow"
+      ? (suivreCustom ? customVoyageId : "official")
+      : (routeSource === "custom" ? "simulation:custom" : "simulation:official"));
   const momentJournal = useMomentJournal({
     mode: momentJournalMode,
     routeId: journalRouteId,
     incomingMoment: iciMoment.moment,
     until: momentIso,
-    enabled: sceneReady,
+    enabled: sceneReady && !(suivreCustom && !customVoyageId),
   });
   const displayKnots = isSuivre
     ? (atQuay ? 0 : (Number.isFinite(Number(clockSample?.speedKnots)) ? Number(clockSample.speedKnots) : null))
@@ -866,10 +873,10 @@ export default function App() {
     if (newNow || newFree) sceneApiRef.current?.playback.pause();
   }, [moments.now?.key, moments.free?.key, moments.free?.loop, isSimulation, stopAuto, playback.playing]);
 
-  // Le récit de la traversée (Suivre × Berry) : de Saint-Maur à la position du
-  // jour, d'après l'horloge officielle et le journal. Zéro LLM. Le récit de
-  // MA route est le lot DM8 — rien n'est servi comme prêt d'ici là.
+  // Récit : film serveur (Berry = horloge officielle + journal ; ma route =
+  // chapitres de GET /voyage/{id}/film). Jamais le brut local servi comme prêt.
   const storyParagraphs = useMemo(() => {
+    if (suivreCustom) return replay.filmParagraphs || [];
     if (!suivreBerry || !officialClock) return [];
     const datedLegend = (legendMarks || []).some((m) => m?.iso);
     return expeditionStory({
@@ -882,7 +889,7 @@ export default function App() {
       lang,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suivreBerry, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang]);
+  }, [suivreCustom, suivreBerry, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang, replay.filmParagraphs]);
   // Lot O — during a replay, Écouter / useReplayVoice read the current
   // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
   const speechText = replay.active
@@ -916,9 +923,9 @@ export default function App() {
     openEscaleSheet(next);
   }, [replay.active, openEscaleSheet]);
 
-  // DM5 — Suivre × ma route : Revoir reste visible mais grisé, avec un libellé
-  // honnête (le film officiel ne sait rejouer que la route Berry ; DM8 suivra).
-  const replayControls = useMemo(() => (isSuivre && officialClock ? (routeSource === "custom" ? { unavailable: true } : {
+  // DM8C — Suivre × ma route : même barre que Berry ; Revoir actif quand
+  // GET /voyage/{id}/film est ready, sinon grisé « en préparation ».
+  const replayControls = useMemo(() => (isSuivre && officialClock ? {
     active: replay.active,
     canStart: replay.canStart,
     progress: replay.progress,
@@ -950,9 +957,11 @@ export default function App() {
     style: replay.filmStyle,
     hasWritten: replay.hasWritten,
     onStyle: replay.setFilmStyle,
-    t0: replayT0,
-    onT0: setReplayT0,
-  }) : null), [isSuivre, officialClock, routeSource, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replayT0]);
+    t0: suivreBerry ? replayT0 : voyage.t0,
+    onT0: suivreBerry ? setReplayT0 : voyage.setT0,
+    remoteStatus: replay.remoteStatus,
+    customFilm: suivreCustom,
+  } : null), [isSuivre, officialClock, suivreBerry, suivreCustom, view, closeEscaleSheet, replay.active, replay.canStart, replay.progress, replay.voice, replay.chapterText, replay.subtitle, replay.subtitlePlace, replay.targetSeconds, replay.estimatedSeconds, replay.variantEstimates, replay.setTargetSeconds, replay.start, replay.stop, replay.setVoice, replay.filmSource, replay.filmStyle, replay.hasWritten, replay.setFilmStyle, replay.remoteStatus, replayT0, voyage.t0, voyage.setT0]);
 
   const playheadNmRef = useRef(0);
   playheadNmRef.current = playback.nm;
@@ -1566,16 +1575,20 @@ export default function App() {
     }),
     [vessel.recompute, clockSample?.iso, skipper.orders?.values?.galeKt, skipper.orders?.values?.hsAlertM],
   );
+  const customReviewLegs = useMemo(
+    () => (suivreCustom ? legsFromClockMarks(voyage.clock, lang) : []),
+    [suivreCustom, voyage.clock, lang],
+  );
   const planReview = useMemo(() => ({
-    legs: planReviewState.legs,
-    loading: planReviewState.loading,
+    legs: suivreCustom ? customReviewLegs : planReviewState.legs,
+    loading: suivreCustom ? false : planReviewState.loading,
     error: planReviewState.error,
     summary: null,
-    comment: planReviewState.review?.comment?.text || null,
-    commentSource: planReviewState.review?.comment?.source || null,
-    advice: planReviewState.advice,
+    comment: suivreCustom ? null : (planReviewState.review?.comment?.text || null),
+    commentSource: suivreCustom ? null : (planReviewState.review?.comment?.source || null),
+    advice: suivreCustom ? null : planReviewState.advice,
     onApply: handleRecompute,
-  }), [planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, planReviewState.advice, handleRecompute]);
+  }), [suivreCustom, customReviewLegs, planReviewState.legs, planReviewState.loading, planReviewState.error, planReviewState.review, planReviewState.advice, handleRecompute]);
   const mapScene = useMemo(() => ({
     isLightMode,
     view,
@@ -1780,6 +1793,7 @@ export default function App() {
         journalEntries={momentJournal.entries}
         onSeek={handleSeekJournal}
         momentMode={momentMode}
+        routeSource={routeSource}
         planReview={planReview}
         escaleStop={replay.active ? null : escaleStop}
         escaleFiche={escaleSheet?.fiche}

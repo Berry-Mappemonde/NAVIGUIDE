@@ -469,7 +469,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       aria-disabled={!replay.canStart}
                       data-testid="replay-start"
                       className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
-                      title={t("replayStartTitle")}
+                      title={replay.canStart ? t("replayStartTitle") : t("replayPreparing")}
                     >
                       ↺ {t("replayStart")}
                     </button>
@@ -512,8 +512,6 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 </div>
               </div>
             ) : replay?.unavailable ? (
-              // DM5 — Suivre sur ma route : Revoir ne sait rejouer que la route
-              // Berry-Mappemonde (DM8 apportera le récit de la route perso).
               <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
                 <button
                   type="button"
@@ -521,7 +519,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                   aria-disabled="true"
                   data-testid="replay-start"
                   className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("replayBerryOnly")}
+                  title={t("replayPreparing")}
                 >
                   ↺ {t("replayStart")}
                 </button>

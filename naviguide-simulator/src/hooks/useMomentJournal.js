@@ -172,8 +172,14 @@ export function appendLocalMoment(entries, moment, { voyageId = "local" } = {}) 
   return ordered.concat(next).slice(-MOMENT_JOURNAL_CAP);
 }
 
-async function defaultMomentsFetch({ signal } = {}) {
-  const res = await fetch(`${API_URL}/voyage/official/moments`, { signal });
+export function momentsRequestPath(voyageId) {
+  const id = String(voyageId || "").trim();
+  if (id && id !== "official") return `/voyage/${encodeURIComponent(id)}/moments`;
+  return "/voyage/official/moments";
+}
+
+async function defaultMomentsFetch({ signal, voyageId = "official" } = {}) {
+  const res = await fetch(`${API_URL}${momentsRequestPath(voyageId)}`, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -249,6 +255,7 @@ export function useMomentJournal({
     let alive = true;
     setState({ entries: [], loading: true, error: null, source: "none" });
     pollOfficialMoments({
+      fetchFn: (opts) => defaultMomentsFetch({ ...opts, voyageId: routeId }),
       signal: controller.signal,
       onUpdate: (next) => {
         if (!alive) return;

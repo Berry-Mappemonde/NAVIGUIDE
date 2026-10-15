@@ -13,6 +13,7 @@ import {
   formatJournalLine,
   hiddenIciTabs,
   journalChangeLabel,
+  legsFromClockMarks,
   seekJournalEntry,
   servesNowContent,
   visibleAlerts,
@@ -42,7 +43,7 @@ describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
     assert.match(src, /data-testid="ici-tabs"/);
     assert.match(src, /data-testid=\{testId\}/);
     assert.match(src, /data-testid=\{tab\.testId\}/);
-    assert.match(src, /visibleIciTabs\(mode\)/);
+    assert.match(src, /visibleIciTabs\(mode/);
     assert.match(src, /tabs\.map\(\(tab\) =>/);
     assert.doesNotMatch(src, /ICI_TABS\.map/);
     for (const id of [
@@ -219,7 +220,7 @@ describe("IciMaintenant — lot RC2 : encadré honnête", () => {
 describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
   it("garde les quatre onglets en Suivre (DM9 élargit Récit à Tracer)", () => {
     assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
-    assert.match(src, /visibleIciTabs\(mode\)/);
+    assert.match(src, /visibleIciTabs\(mode/);
     assert.doesNotMatch(src, /className="mt-1\.5 min-h-0 flex-1"/);
     assert.doesNotMatch(src, /placeholder|journalHint|récit vide|onglet vide/i);
   });
@@ -319,12 +320,35 @@ describe("IciMaintenant — lot DM9 : Tracer sert le tracé", () => {
     assert.equal(servesNowContent("now", "follow"), true);
     assert.equal(visibleIciTabs("simulation").some((t) => t.id === "now"), false);
     assert.equal(visibleIciTabs("simulation").some((t) => t.id === "journal"), false);
-    assert.match(src, /defaultIciTab\(mode\)/);
-    assert.match(src, /servesNowContent\(view, mode\)/);
-    assert.match(src, /hiddenIciTabs\(mode\)/);
+    assert.match(src, /defaultIciTab\(mode/);
+    assert.match(src, /servesNowContent\(view, mode/);
+    assert.match(src, /hiddenIciTabs\(mode/);
     assert.match(src, /extraTabs\.some\(\(tab\) => tab\.id === "now"\)/);
     assert.match(helpers, /ici-tab-now/);
     assert.match(helpers, /ici-tab-journal/);
     assert.doesNotMatch(src, /placeholder|aide|hint|onglet vide/i);
+  });
+});
+
+describe("IciMaintenant — lot DM8C : Suivre × ma route", () => {
+  it("masque Maintenant, garde Revue · Journal · Récit ; jambes depuis l'horloge", () => {
+    assert.deepEqual(
+      visibleIciTabs("follow", { routeSource: "custom" }).map((t) => t.id),
+      ["review", "journal", "story"],
+    );
+    assert.deepEqual(hiddenIciTabs("follow", { routeSource: "custom" }).map((t) => t.id), ["now"]);
+    assert.equal(defaultIciTab("follow", { routeSource: "custom" }), "review");
+    assert.equal(servesNowContent("now", "follow", { routeSource: "custom" }), false);
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
+    const legs = legsFromClockMarks({
+      marks: [
+        { name: "La Rochelle", filmNm: 0, tHours: 0, iso: "2026-06-15T08:00:00Z" },
+        { name: "Antilles", filmNm: 3350, tHours: 720, iso: "2026-07-15T08:00:00Z" },
+      ],
+    }, "fr");
+    assert.equal(legs.length, 1);
+    assert.match(legs[0].title, /La Rochelle/);
+    assert.match(legs[0].title, /Antilles/);
+    assert.equal(legsFromClockMarks({ marks: [{ name: "Seul" }] }).length, 0);
   });
 });

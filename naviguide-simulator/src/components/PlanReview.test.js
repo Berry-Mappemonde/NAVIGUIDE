@@ -21,8 +21,8 @@ describe("PlanReview — commentaire (lot L5)", () => {
   });
 
   it("reçoit le commentaire depuis la revue serveur, sans retirer le tableau", () => {
-    assert.match(app, /comment: planReviewState\.review\?\.comment\?\.text/);
-    assert.match(app, /commentSource: planReviewState\.review\?\.comment\?\.source/);
+    assert.match(app, /planReviewState\.review\?\.comment\?\.text/);
+    assert.match(app, /planReviewState\.review\?\.comment\?\.source/);
     assert.match(ici, /comment=\{planReview\.comment\}/);
     assert.match(ici, /<PlanReview[\s\S]*legs=\{planReview\.legs\}/);
     assert.match(sidebar, /planReview=\{!drawingHidesBerry \? planReview : null\}/);

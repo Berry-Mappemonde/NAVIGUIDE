@@ -185,7 +185,7 @@ describe("contrat UI produit", () => {
     // le voyage serveur perso (voyage.clock) dans les deux modes.
     assert.match(app, /suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
-    assert.match(app, /t0: replayT0/);
+    assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.match(app, /followClockLineFromT0/);
     assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.match(app, /showDeparture=\{isSuivre\}/);
