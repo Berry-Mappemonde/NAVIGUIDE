@@ -358,6 +358,67 @@ def new_failures(details: list[str], inherited: list[str]) -> list[str]:
     return [d for d in details if re.sub(r"^\[[^\]]*\]\s*", "", d) not in base]
 
 
+# 15 oct. (nuit DM6 → DM7 → DM9 → UI1 : quatre PR rouges empilées sur la même cause) — la boucle de correction
+# a maintenant trois garde-fous : (1) les jobs en échec sont REJOUÉS une fois avant d'appeler un agent quand
+# l'empreinte est petite (≤ 2 tranches : un faux positif comme RA4 ne coûte plus un passage d'agent) ;
+# (2) si une correction laisse EXACTEMENT les mêmes specs rouges, on n'insiste pas ; (3) une tête qui reste
+# rouge ARRÊTE la pile (code de sortie 4, commentaire sur la PR) : jamais de lot suivant sur une base rouge.
+RED_HEAD_EXIT = 4
+RERUN_MAX_JOBS = 2
+SPEC_KEY = re.compile(r"(e2e/[\w./-]+\.spec\.js|\btest_[a-z0-9_]+\.py(?:::\w+)?)")
+
+
+def failure_keys(details: list[str], names: list[str]) -> frozenset:
+    """Empreinte d'un échec CI : les fichiers de spec / tests nommés dans les lignes d'échec (sans numéro de
+    ligne — une correction qui décale le code ne doit pas passer pour un progrès) ; à défaut, les noms des jobs."""
+    keys = {m.group(1) for d in details for m in [SPEC_KEY.search(d)] if m}
+    return frozenset(keys) if keys else frozenset(f"job:{n}" for n in names)
+
+
+def rerun_failed_jobs(branch: str) -> bool:
+    """Rejoue les jobs en échec du dernier run GitHub Actions de la branche (gh CLI). False si impossible."""
+    p = sh(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId,status", "--jq", ".[0] | \"\\(.databaseId) \\(.status)\""],
+           cwd=ROOT, check=False, timeout=60)
+    parts = p.stdout.strip().split()
+    if p.returncode != 0 or len(parts) != 2 or parts[1] != "completed":
+        return False
+    q = sh(["gh", "run", "rerun", parts[0], "--failed"], cwd=ROOT, check=False, timeout=60)
+    return q.returncode == 0
+
+
+def head_is_red(http: Http, repo: str, branch: str) -> tuple[bool, str]:
+    """La PR de la branche a-t-elle une CI rouge ? → (rouge, détail court). Pas de PR / CI en cours → pas rouge."""
+    try:
+        pr = find_pr(http, repo, branch)
+        if not pr:
+            return False, "pas de PR"
+        status, names, _ = ci_status(http, repo, pr["head"]["sha"])
+    except RuntimeError as e:
+        return False, f"CI illisible ({e})"
+    return status == "failure", f"PR #{pr['number']} — {status} {names or ''}"
+
+
+def stop_on_red_head(state: "State", lot: "Lot", pr: dict | None, names: list[str], details: list[str], rounds: int, stalled: bool) -> None:
+    """La tête de pile reste rouge : on prévient sur la PR et on arrête run_lots (code 4). loop.py pose un
+    `hold` que le chien de garde respecte ; le porteur corrige la PR puis relance infra/agents/batch-resume.sh."""
+    keys = sorted(failure_keys(details, names))
+    why = "mêmes échecs avant et après la dernière correction" if stalled else f"encore rouge après {rounds} correction(s)"
+    log(f"[{lot.id}] TÊTE ROUGE — {why} : {keys} — la pile s'arrête ici (code {RED_HEAD_EXIT}) ; au porteur : corriger la PR "
+        f"(ou relancer avec --ignore-red-head) puis infra/agents/batch-resume.sh")
+    num = pr_number((pr or {}).get("html_url")) if pr else None
+    if num:
+        try:
+            from post_pr_comment import post as _post  # noqa: PLC0415
+            lines = "\n".join(f"- `{k}`" for k in keys) or "- (voir les journaux GitHub Actions)"
+            _post(num, f"## 🔴 Tête de pile rouge — la pile s'arrête ici\n\n{why.capitalize()}. Specs / tests encore en échec :\n{lines}\n\n"
+                       f"Aucun lot suivant ne sera empilé sur cette base (règle du 15 oct.). Pour reprendre : corriger cette PR "
+                       f"(ou `run_lots.py --ignore-red-head` en connaissance de cause), puis `infra/agents/batch-resume.sh`.")
+        except Exception as ex:  # jamais bloquant
+            log(f"    commentaire tête rouge non posté sur #{num} : {ex}")
+    state.save()
+    sys.exit(RED_HEAD_EXIT)
+
+
 # ---------------------------------------------------------------- cloud runtime
 
 def cloud_check_model(http: Http, model: str) -> list[str]:
@@ -913,17 +974,39 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
     else:
         log(f"[{lot.id}] aucune PR trouvée pour {branch} — à ouvrir à la main")
     rounds = 0
+    prev_keys: frozenset | None = None   # empreinte des échecs avant la dernière correction
+    same_streak = 0                       # corrections consécutives qui n'ont pas changé l'empreinte
+    stalled = False                       # deux corrections sans effet : on n'insiste pas
+    rerun_done = False                    # un seul rejeu des jobs par état de la branche (remis à zéro après chaque correction)
     while status == "failure" and rounds < args.fix_rounds:
         fresh = new_failures(details, inherited)
         if details and not fresh:
             log(f"[{lot.id}] CI rouge mais tous les échecs sont hérités du lot précédent ({len(details)} lignes) — pas de relance")
             status = "failure-inherited"
             break
+        # Petite empreinte (≤ 2 tranches) : rejouer les jobs en échec avant d'appeler un agent — un faux positif
+        # (RA4 : la même longitude sur deux copies monde) ne doit pas coûter un passage de correction.
+        if not rerun_done and 0 < len(names) <= RERUN_MAX_JOBS and args.runtime == "local" and rerun_failed_jobs(branch):
+            rerun_done = True
+            log(f"[{lot.id}] CI rouge sur {len(names)} tranche(s) — jobs en échec rejoués d'abord (faux positif ?)")
+            time.sleep(45)   # le temps que GitHub remette les jobs en file (sinon on relirait l'ancien échec)
+            status, names, details, pr = wait_ci(http, args.repo, branch, args.ci_wait_min)
+            log(f"[{lot.id}] CI après rejeu des jobs : {status} {names or ''}")
+            continue
+        keys = failure_keys(fresh or details, names)
+        same_streak = same_streak + 1 if keys == prev_keys else 0
+        if same_streak >= 2:
+            # Deux corrections de suite sans changer l'empreinte des échecs : une troisième ne fera pas mieux.
+            log(f"[{lot.id}] mêmes échecs après les corrections {rounds - 1} et {rounds} ({sorted(keys)}) — on n'insiste pas")
+            stalled = True
+            break
+        prev_keys = keys
         rounds += 1
         log(f"[{lot.id}] CI rouge — relance de correction {rounds}/{args.fix_rounds} ({len(fresh or details)} lignes d'échec transmises)")
         out["fix"](names, fresh or details)
         if args.runtime == "local":
             ensure_pushed(Path(out["worktree"]), branch)
+        rerun_done = False
         status, names, details, pr = wait_ci(http, args.repo, branch, args.ci_wait_min)
         log(f"[{lot.id}] CI après correction {rounds} : {status} {names or ''}")
     entry["ci"] = status
@@ -938,6 +1021,8 @@ def run_lot(http: Http | None, lot: Lot, state: State, args) -> None:
         if lot.id not in slice_:
             slice_.append(lot.id)
     state.save()
+    if status == "failure" and not getattr(args, "ignore_red_head", False):
+        stop_on_red_head(state, lot, pr, names, details, rounds, stalled)   # sys.exit(4) : jamais de lot suivant sur une base rouge
     # Lot W1 : le poste de recette suit la tête de pile — le porteur (et le bot, par le tunnel) recettent à la volée.
     # Mais pas avant que le bot ait rendu son verdict sur la PR précédente (--bot-gate-min) : il la recette sur CE poste.
     if pr and not getattr(args, "no_recette", False) and not getattr(args, "no_recette_each", False):
@@ -2046,7 +2131,8 @@ def main() -> None:
     ap.add_argument("--timeout-hours", type=float, default=3.0)
     ap.add_argument("--poll", type=int, default=60, help="secondes entre deux lectures d'état (cloud)")
     ap.add_argument("--ci-wait-min", type=int, default=25)
-    ap.add_argument("--fix-rounds", type=int, default=2, help="relances de correction quand la CI est rouge sur des échecs nouveaux (défaut 2)")
+    ap.add_argument("--fix-rounds", type=int, default=4, help="relances de correction quand la CI est rouge sur des échecs nouveaux (défaut 4 depuis le 15 oct. ; arrêt anticipé si une correction ne change rien)")
+    ap.add_argument("--ignore-red-head", action="store_true", help="continuer la pile même si une PR reste rouge après les corrections (défaut : la pile s'arrête, code 4)")
     ap.add_argument("--recette", action="store_true", help="ne lance aucun lot : prépare le poste de recette (build de prod, clés, API, navigateur, RECETTE_DU_BATCH.md) sur la dernière branche du state ou --branch")
     ap.add_argument("--branch", help="avec --recette : branche à recetter (défaut : dernière branche de state.json, sinon main)")
     ap.add_argument("--no-recette", action="store_true", help="ne prépare pas le poste de recette (ni par lot, ni en fin de batch)")
@@ -2133,6 +2219,13 @@ def main() -> None:
     if not args.dry_run:
         start_watchdog()
     log(f"lots : {[l.id for l in lots]} — runtime {args.runtime} — pile {args.stack}" + (f" — revue de nuit toutes les {args.review_every} PR ({args.review_model})" if args.review_every else ""))
+    # Reprise sur une tête rouge (15 oct.) : on ne repart pas empiler dessus — le porteur corrige la PR d'abord.
+    if args.resume and args.stack == "linear" and state.last_branch and not args.dry_run and not args.ignore_red_head:
+        red, what = head_is_red(http, args.repo, state.last_branch)
+        if red:
+            log(f"tête de pile `{state.last_branch}` ROUGE ({what}) — reprise refusée : corriger la PR puis relancer, ou --ignore-red-head")
+            sys.exit(RED_HEAD_EXIT)
+        log(f"tête de pile `{state.last_branch}` : {what}")
     pending = list(lots)
     # Lots FINISHED pas encore relus par le réviseur de nuit. Mémorisé dans state.json : une reprise
     # (--resume après une veille, un arrêt, une relance par le chien de garde) relit quand même la

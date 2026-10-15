@@ -162,6 +162,12 @@ def check_processes(st: dict, phase: str | None) -> None:
         return
     if loop_alive or (phase == "batch" and batch_alive):
         return
+    hold = loop_state().get("hold")
+    if hold:
+        # 15 oct. : la pile s'est arrêtée sur une tête rouge — c'est voulu, on ne relance pas ; au porteur.
+        incident(st, "pile en attente du porteur", f"{hold.get('reason')} (PR #{hold.get('tip_pr')}, {hold.get('at')})",
+                 "rien relancé (volontaire) — au porteur : corriger la PR puis `infra/agents/batch-resume.sh`", fixed=None, key=f"hold:{hold.get('at')}")
+        return
     # Personne ne tient la barre alors qu'une phase est en cours (22 sept. 01:03 : `--cycles 1`).
     kind = "boucle absente"
     if not can_remedy(st, kind):
