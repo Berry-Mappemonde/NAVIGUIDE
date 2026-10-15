@@ -1659,6 +1659,34 @@ def get_voyage_moments(voyage_id: str):
         return preparing_payload(voy, reason=str(exc))
 
 
+@router.get("/voyage/{voyage_id}/film")
+def get_voyage_film(
+    voyage_id: str,
+    lang: str = Query("fr"),
+    seconds: int = Query(150, ge=0, le=300),
+    style: str = Query("raw"),
+):
+    """Film de MA route (DM8B) : même forme que l'officiel, brut seulement, jamais de LLM."""
+    # Le chemin /voyage/official/film est aussi sur main.py ; ce paramètre le
+    # capte si la route générique est enregistrée avant — on délègue, on ne
+    # recalcule pas.
+    if _is_official(voyage_id) or voyage_id == "official":
+        return official_store.serve_film(lang=lang, seconds=seconds)
+    voy = load_voyage(voyage_id)
+    if voy is None:
+        raise HTTPException(404, "voyage inconnu")
+    try:
+        from custom_story import film_for_voyage, moments_for_voyage  # noqa: PLC0415
+        mom = moments_for_voyage(voy)
+        return film_for_voyage(voy, mom, lang=lang, seconds=seconds, style=style)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("GET /voyage/%s/film", voyage_id)
+        from custom_story import preparing_film_payload  # noqa: PLC0415
+        return preparing_film_payload(voy, lang=lang, seconds=seconds, style=style, reason=str(exc))
+
+
 @router.get("/voyage/{voyage_id}/clock")
 def get_clock(voyage_id: str):
     voy = load_voyage(voyage_id)
