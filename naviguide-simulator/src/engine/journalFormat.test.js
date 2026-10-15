@@ -58,7 +58,9 @@ describe("journalFormat", () => {
     assert.equal(z.icon, "🛂");
     assert.equal(z.text, "Entrée dans les eaux espagnoles");
     assert.equal(formatJournalEntry({ kind: "zee", t: "2026-05-20T07:00:00Z", event: "exit", name: "Spanish Exclusive Economic Zone" }, "en").text, "Left Spanish waters — high seas");
-    assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-16T07:00:00Z", event: "nearby", name: "Pertuis Charentais", nm: 3.6 }, "fr").text, "Aire marine protégée à portée : Pertuis Charentais (3,6 nm)");
+    assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-16T07:00:00Z", event: "nearby", name: "Pertuis Charentais", nm: 3.6 }, "fr").text, "Longe l'aire marine protégée Pertuis Charentais (3,6 nm)");
+    assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-25T12:00:00Z", event: "enter", name: "Cabrera" }, "fr").text, "Entrée dans l'aire marine protégée Cabrera");
+    assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-26T08:00:00Z", event: "exit", name: "Cabrera" }, "en").text, "Left the marine protected area Cabrera");
   });
 
   it("lot D: a logbook chat exchange shows its summary", () => {

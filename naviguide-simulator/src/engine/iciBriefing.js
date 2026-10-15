@@ -207,12 +207,29 @@ function poeSentence(dossier, lang) {
 }
 
 function ampSentence(dossier, lang) {
-  const items = dossier?.amp || [];
+  const items = (dossier?.amp || []).filter((x) => x && x.name);
   if (!items.length) return "";
-  const listed = listPlaces(items, lang, 3, "amp");
-  return isEn(lang)
-    ? `Marine protected areas within 30 nm: ${listed}.`
-    : `Aires marines protégées à moins de 30 milles : ${listed}.`;
+  const en = isEn(lang);
+  const inside = items.find((x) => x.inside === true);
+  if (inside) {
+    const name = placeLabel("amp", inside, lang);
+    return en
+      ? `In the marine protected area ${name}.`
+      : `Dans l'aire marine protégée ${name}.`;
+  }
+  const nearest = items[0];
+  const name = placeLabel("amp", nearest, lang);
+  const nm = Number.isFinite(Number(nearest.nm)) ? Number(nearest.nm) : null;
+  if (nm == null) {
+    const listed = listPlaces(items, lang, 3, "amp");
+    return en
+      ? `Marine protected areas nearby: ${listed}.`
+      : `Aires marines protégées à proximité : ${listed}.`;
+  }
+  const dist = num(nm, lang);
+  return en
+    ? `${dist} miles from ${name}.`
+    : `À ${dist} milles de ${name}.`;
 }
 
 function projectsSentence(dossier, lang) {
