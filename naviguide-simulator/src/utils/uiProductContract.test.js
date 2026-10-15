@@ -40,15 +40,15 @@ describe("contrat UI produit", () => {
     assert.match(sidebar, /drawingOn \? pillOn : pillOff/);
   });
 
-  it("lot DM7 / R13 : clic Tracer votre propre route ouvre drawing-box à 0 point", () => {
+  it("lot DM6 (correctif du 15 oct.) : dessin ouvert = cadre « Tracé en cours » toujours là, légende dessous à brouillon vide", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
-    const startAt = app.indexOf("const handleDrawStart = ");
-    const armAt = app.indexOf("armDrawingWorldRef.current = ");
-    assert.ok(startAt >= 0 && armAt >= 0 && startAt > armAt, "handleDrawStart et armDrawingWorld présents");
-    assert.match(app.slice(startAt, startAt + 500), /setDrawBoxOpen\(true\)/);
-    assert.doesNotMatch(app.slice(armAt, startAt), /setDrawBoxOpen\(true\)/);
-    assert.match(tools, /drawing\?\.showBox \|\| drawing\?\.points\?\.length/);
+    // Plus de contournement showBox : le cadre dépend du seul état du dessin.
+    assert.doesNotMatch(app, /drawBoxOpen|showBox/);
+    assert.doesNotMatch(tools, /showBox/);
+    // Dès le premier point, le cadre remplace l'expédition ; à 0 point il la précède (RE2 gardée).
+    assert.match(tools, /if \(drawing\?\.points\?\.length\) return <DrawingBox drawing=\{drawing\} \/>;/);
+    assert.match(tools, /\{drawing \? <DrawingBox drawing=\{drawing\} \/> : null\}\s*<div[^>]*data-testid="expedition-box"/);
   });
 
   it("lot RF7 : entrée Tracer pose la vue monde", () => {

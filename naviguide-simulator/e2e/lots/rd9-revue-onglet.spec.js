@@ -136,7 +136,9 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
     const drawing = await page.getByTestId("drawing-box").isVisible({ timeout: 8_000 }).catch(() => false);
     if (drawing) {
       await showLeftPanel(page);
-      await expect(page.getByTestId("ici-tab-review")).toHaveCount(0);
+      // DM6 (revue du porteur du 14 oct., § 4.1 option A) : à brouillon vide, la Revue du plan reste
+      // dans l'encadré (vitrine Berry en Tracer) ; avant DM6 l'onglet disparaissait au dessin.
+      await expect(page.getByTestId("ici-tab-review")).toBeVisible();
       await expect(page.getByTestId("ici-tab-now")).toBeVisible();
       await expect(page.getByTestId("ici-tab-journal")).toBeVisible();
       const cancel = page.getByRole("button", { name: /annuler|cancel/i }).first();
