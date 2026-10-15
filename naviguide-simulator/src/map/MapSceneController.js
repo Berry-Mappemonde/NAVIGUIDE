@@ -785,9 +785,9 @@ export class MapSceneController {
       return;
     }
     // Pendant l'animation de zoom, Leaflet transforme les icônes en CSS ; un setLatLng calculé sur
-    // l'ancienne projection les fait glisser horizontalement (27 sept.). On garde l'image, la
-    // prochaine frame après zoomend repositionne.
-    if (this.zoomAnimating && markers.length && !this.config.filmActive) return;
+    // l'ancienne projection les fait glisser (et, en film, sauter de copie monde — RG15).
+    // On garde l'image ; zoomend + la boucle film reposent le bateau.
+    if (this.zoomAnimating && markers.length) return;
     const cam = this.map.getCenter()?.lng;
     const primary = stabilizeWorldLng(lon, cam, this.markerPrimaryLngs.get(role));
     this.markerPrimaryLngs.set(role, primary);
@@ -1316,7 +1316,7 @@ export class MapSceneController {
       heading: film?.heading ?? film?.bearing ?? follow?.bearing ?? cfg.live?.bearing,
     };
     if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
-    const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
+    const lonCam = stabilizeWorldLng(subject.lon, this.map.getCenter()?.lng, this.camera.followLon);
     this.camera.followLon = lonCam;
     const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx))
       ? Number(cfg.filmChapterIdx)
@@ -1366,7 +1366,11 @@ export class MapSceneController {
     if (!next || next.action === "idle") return;
     const pose = next.pose;
     if (pose) {
-      this.filmPose = { ...pose, lon: cameraLngForBoat(pose.lon, lonCam), heading: pose.heading };
+      this.filmPose = {
+        ...pose,
+        lon: stabilizeWorldLng(pose.lon, lonCam, this.markerPrimaryLngs.get("live") ?? lonCam),
+        heading: pose.heading,
+      };
       this.camera.filmLastBoat = { lat: pose.lat, lon: pose.lon };
     }
     this.camera.filmChapterIdx = next.lastChapterIdx;
