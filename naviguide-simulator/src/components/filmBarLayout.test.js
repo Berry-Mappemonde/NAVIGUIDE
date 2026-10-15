@@ -35,6 +35,8 @@ describe("film bar layout (lot O)", () => {
     assert.match(bar, /data-testid="film-source"/);
     assert.match(bar, /data-testid="film-style"/);
     assert.match(bar, /data-testid="film-fullscreen"/);
+    assert.match(bar, /data-drawing=\{drawing \? "1" : undefined\}/);
+    assert.doesNotMatch(bar, /no playback, no speeds, no Suivre/);
   });
 
   it("range les commandes : Masquer · Cinéma · Écouter · Suivre/Simulation · Revoir, lecture à droite", () => {

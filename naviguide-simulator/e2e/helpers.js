@@ -135,16 +135,31 @@ export async function enterSimulation(page) {
 export const enterTracerMode = enterSimulation;
 
 export async function enterTracer(page) {
+  // DM6 : entrer en Tracer ouvre le dessin (brouillon vide ou déjà là).
   await showLeftPanel(page);
-  const drawBtn = page.getByRole("button", {
-    name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i,
-  });
-  await expect(drawBtn).toBeVisible({ timeout: 10_000 });
-  await drawBtn.scrollIntoViewIfNeeded();
-  // Sous charge (tranches CI), le bouton peut être hors du cadre de la fenêtre au moment du clic
-  // (panneau en transition) : le clic DOM ne dépend pas de la géométrie.
-  await drawBtn.click({ force: true, timeout: 5_000 }).catch(() => drawBtn.evaluate((el) => el.click()));
-  await expect(page.getByTestId("drawing-box")).toBeVisible({ timeout: 15_000 });
+  const tracer = page.getByTestId("view-tracer");
+  if ((await tracer.getAttribute("aria-checked")) !== "true") {
+    await tracer.click();
+  }
+  await expect(tracer).toHaveAttribute("aria-checked", "true");
+  const box = page.getByTestId("drawing-box");
+  const points = page.getByTestId("drawing-points");
+  const drawingOpen = (await box.isVisible().catch(() => false))
+    || (await points.isVisible().catch(() => false));
+  if (!drawingOpen) {
+    const drawBtn = page.getByRole("button", {
+      name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i,
+    });
+    await expect(drawBtn).toBeVisible({ timeout: 10_000 });
+    await drawBtn.scrollIntoViewIfNeeded();
+    // Sous charge (tranches CI), le bouton peut être hors du cadre de la fenêtre au moment du clic
+    // (panneau en transition) : le clic DOM ne dépend pas de la géométrie.
+    await drawBtn.click({ force: true, timeout: 5_000 }).catch(() => drawBtn.evaluate((el) => el.click()));
+  }
+  await expect.poll(async () => (
+    (await box.isVisible().catch(() => false))
+    || (await points.isVisible().catch(() => false))
+  ), { timeout: 15_000 }).toBe(true);
   await page.evaluate(() => window.__naviguideScene?.beginDrawingWorld?.());
 }
 

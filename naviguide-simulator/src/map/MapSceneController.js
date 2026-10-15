@@ -387,6 +387,7 @@ export class MapSceneController {
       setView: (center, zoom, options) => this.programmaticMove(() => this.map.setView(center, zoom, options)),
       showWorld: (opts) => this.showWorld(opts),
       beginDrawingWorld: () => this.beginDrawingWorld(),
+      endDrawingWorld: () => this.endDrawingWorld(),
       playback: {
         play: () => this.playback.play(),
         pause: () => this.playback.pause(),
@@ -1159,6 +1160,12 @@ export class MapSceneController {
     this.config = { ...this.config, drawingMode: true };
     this.liftBoundsForDrawing();
     this.showWorld({ keepBoundsLifted: true });
+  }
+
+  /** DM6 — Berry / Annuler : lever le verrou 2 s pour afficher tout de suite la route Berry. */
+  endDrawingWorld() {
+    this._pendingDrawUntil = 0;
+    this._worldLockUntil = 0;
   }
 
   /** Tracer / accueil : monde entier, même si maxBounds a relevé le plancher. */

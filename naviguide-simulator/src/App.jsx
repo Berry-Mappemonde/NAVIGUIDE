@@ -192,6 +192,9 @@ export default function App() {
   const routeKindRef = useRef("berry");
   const berryFetchIdRef = useRef(0);
   const customFetchIdRef = useRef(0);
+  const drawingModeRef = useRef(false);
+  const customRouteRef = useRef(null);
+  const armDrawingWorldRef = useRef(() => {});
 
   // The drawn route: points, searoute segments, undo / redo (lot J: hooks/useRouteDrawing.js).
   const drawingState = useRouteDrawing();
@@ -200,6 +203,8 @@ export default function App() {
     reset: _resetDrawState, addPoint: handleDrawingClick, undo: handleDrawUndo, redo: handleDrawRedo,
     importPoints: handleImportPoints,
   } = drawingState;
+  drawingModeRef.current = drawingMode;
+  customRouteRef.current = customRoute;
 
   const [layerPopup, setLayerPopup] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -1028,6 +1033,12 @@ export default function App() {
     }
     if (next === VIEW_SUIVRE && replay.active) replay.stop();
     if (next === VIEW_SUIVRE && view === VIEW_SIMULATION) simNmRef.current = playheadNmRef.current;
+    // DM6 — quitter Tracer pendant un dessin met le brouillon de côté, sans Annuler.
+    if (drawingModeRef.current && next !== VIEW_SIMULATION) {
+      setDrawingMode(false);
+      closeSatellite();
+      sceneApiRef.current?.endDrawingWorld?.();
+    }
     setView(next);
     if (next === VIEW_SUIVRE) {
       // DM5 — Suivre × ma route garde le départ du tracé (même voyage serveur
@@ -1052,10 +1063,16 @@ export default function App() {
         setSidebarOpen(true);
         setToolsOpen(true);
       }
+      // DM6 — entrée en Tracer = dessin ouvert (brouillon vide ou déjà là).
+      // Une route perso terminée reste affichée (DM5) ; Annuler est le seul abandon.
+      if (!(routeKindRef.current === "custom" && customRouteRef.current)) {
+        armDrawingWorldRef.current(VIEW_SIMULATION);
+      }
     }
   }, [
     cinemaMode,
     closeEscaleSheet,
+    closeSatellite,
     leaveCinema,
     recaptureBoat,
     replay.active,
@@ -1148,6 +1165,12 @@ export default function App() {
   }, [lang, t]);
 
   const handleRouteSwitchToBerry = useCallback(() => {
+    // DM6 — la pilule Berry affiche la vitrine, sans Annuler et sans jeter le brouillon.
+    if (drawingModeRef.current) {
+      setDrawingMode(false);
+      closeSatellite();
+      sceneApiRef.current?.endDrawingWorld?.();
+    }
     customFetchIdRef.current += 1;
     routeKindRef.current = "berry";
     setCustomRoute(null);
@@ -1157,7 +1180,7 @@ export default function App() {
     setUserPreview(false);
     sceneApiRef.current?.playback.pause();
     applyBerryBriefing();
-  }, [applyBerryBriefing]);
+  }, [applyBerryBriefing, closeSatellite]);
 
   const fetchCustomPlan = useCallback((geojson) => {
     const applyFallback = () => setExpeditionPlan(buildLocalCustomBriefing(geojson, lang));
@@ -1213,23 +1236,19 @@ export default function App() {
     fetchCustomPlan(geojson);
   }, [fetchCustomPlan]);
 
-  const handleDrawStart = () => {
+  // DM6 — ouvrir le dessin ne vide jamais le brouillon (points / segments).
+  // Seuls Annuler et la suppression d'une route perso appellent reset.
+  armDrawingWorldRef.current = (restoreView) => {
     const mapView = sceneApiRef.current?.getView();
     drawRestoreRef.current = {
-      view,
+      view: restoreView ?? view,
       center: mapView?.center || null,
       zoom: mapView?.zoom ?? null,
     };
     sceneApiRef.current?.playback.pause();
-    if (cinemaMode) {
-      setSidebarOpen(cinemaSavedRef.current.sidebar);
-      setToolsOpen(cinemaSavedRef.current.tools);
-      setHideFilmBar(false);
-    }
     setCinemaMode(false);
     setCameraFollow(false);
     setDrawingMode(true);
-    _resetDrawState();
     berryFetchIdRef.current += 1;
     setExpeditionPlan(null);
     setBriefingLoading(false);
@@ -1242,10 +1261,26 @@ export default function App() {
     requestAnimationFrame(() => sceneApiRef.current?.showWorld?.({ keepBoundsLifted: true }));
   };
 
+  const handleDrawStart = () => {
+    if (cinemaMode) {
+      setSidebarOpen(cinemaSavedRef.current.sidebar);
+      setToolsOpen(cinemaSavedRef.current.tools);
+      setHideFilmBar(false);
+    }
+    armDrawingWorldRef.current(view);
+  };
+
   const handleDrawCancel = () => {
     setDrawingMode(false);
     _resetDrawState();
     closeSatellite();
+    sceneApiRef.current?.endDrawingWorld?.();
+    customFetchIdRef.current += 1;
+    routeKindRef.current = "berry";
+    setCustomRoute(null);
+    setRouteKind("berry");
+    setVoyageFlat(null);
+    applyBerryBriefing();
     const prev = drawRestoreRef.current;
     if (prev.view && prev.view !== view) setView(prev.view);
     const mapView = sceneApiRef.current?.getView();
@@ -1256,6 +1291,7 @@ export default function App() {
 
   const handleDrawFinish = () => {
     setDrawingMode(false);
+    sceneApiRef.current?.endDrawingWorld?.();
     return drawingState.toGeoJson();
   };
 
@@ -1297,20 +1333,7 @@ export default function App() {
   }, [drawNotice]);
 
   const handleDrawContinue = () => {
-    const mapView = sceneApiRef.current?.getView();
-    drawRestoreRef.current = {
-      view,
-      center: mapView?.center || null,
-      zoom: mapView?.zoom ?? null,
-    };
-    sceneApiRef.current?.playback.pause();
-    setCinemaMode(false);
-    setCameraFollow(false);
-    setDrawingMode(true);
-    setExpeditionPlan(null);
-    setBriefingLoading(false);
-    sceneApiRef.current?.beginDrawingWorld?.();
-    requestAnimationFrame(() => sceneApiRef.current?.showWorld?.({ keepBoundsLifted: true }));
+    armDrawingWorldRef.current(view);
   };
 
   const handleCustomDelete = () => {
@@ -1918,7 +1941,7 @@ export default function App() {
         replay={replayControls}
         drawing={drawing}
         view={view}
-        onView={drawingMode ? undefined : selectView}
+        onView={selectView}
         gribLine={suivreBerry && official.gribStatus !== "ready" && official.gribStatus !== "pending" ? t("gribMissing") : ""}
         clock={officialClock}
         clockCurrent={clockSample ? {
