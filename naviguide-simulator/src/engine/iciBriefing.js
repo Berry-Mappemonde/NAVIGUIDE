@@ -611,7 +611,6 @@ function legSentence(dossier, lang) {
   const overland = isOverlandLeg(dossier, mark);
   const speed = !overland && Number.isFinite(polar.speedKnots) ? polar.speedKnots : null;
   const eta = formatEta(polar.etaHours, lang);
-  const boat = polar.boat;
   const bits = [];
   if (to && (speed != null || eta || overland)) {
     if (overland) {
@@ -626,11 +625,8 @@ function legSentence(dossier, lang) {
   } else if (speed != null) {
     bits.push(en ? `Boat speed on this leg: ${num(speed, lang)} knots.` : `Vitesse sur cette jambe : ${num(speed, lang)} nœuds.`);
   }
-  if (boat) {
-    // RC30 (CI r13) : le nom du bateau ne se dit qu'une fois, dans Paramètres
-    // avancés (lot R13) — le briefing confirme la polaire sans le redire.
-    bits.push(en ? "Polar loaded." : "Polaire chargée.");
-  }
+  // R13 : « Polaire » une fois — déjà sur polar-box (« Polaires chargées »).
+  // Le nom du bateau reste sous Polaires / Paramètres avancés, pas ici.
   return bits.join(" ");
 }
 
