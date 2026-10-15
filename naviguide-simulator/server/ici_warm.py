@@ -13,8 +13,10 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
-La veille Tavily (lot L4) tourne après le chauffage, puis toutes les
-6 h (`NAVIGUIDE_TAVILY_WATCH=0` pour l'éteindre).
+La veille Tavily (lot L4) tourne après le chauffage, puis une passe par
+jour ; chaque escale n'est cherchée qu'UNE fois (cache définitif, 15 oct.).
+`NAVIGUIDE_TAVILY_WATCH=1` l'allume, `NAVIGUIDE_TAVILY_WATCH_S` change la
+période de la passe (défaut 86 400 s).
 """
 from __future__ import annotations
 
@@ -71,13 +73,15 @@ def stories_enabled() -> bool:
 
 
 def watch_enabled() -> bool:
-    """Veille Tavily + enrichissement (lots L4 / U10 / U12). ÉTEINTE par défaut depuis le 28 sept. (décision du
-    porteur) : depuis R8c la carte de veille n'est plus rendue, on calculait et payait pour rien de visible.
-    `NAVIGUIDE_TAVILY_WATCH=1` la rallume (les modules sont gardés pour un retour dans le panneau « ici »)."""
-    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "0").strip() in ("1", "true", "yes", "on")
+    """Veille Tavily + enrichissement (lots L4 / U10 / U12). Rallumée par défaut le 15 oct. (porteur) :
+    une recherche par escale, une fois (plus toutes les 6 h). `NAVIGUIDE_TAVILY_WATCH=0` l'éteint
+    (tests : conftest ; agents de lot)."""
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip() in ("1", "true", "yes", "on")
 
 
-WATCH_LOOP_S = float(os.environ.get("NAVIGUIDE_TAVILY_WATCH_S") or 6 * 3600)
+# 15 oct. (porteur) : une passe par jour suffit — une escale n'est cherchée qu'une fois (escale_watch, `done:<slug>`),
+# la passe ne sert qu'à attraper les escales qui ENTRENT dans la fenêtre J-10 → J+2. Avant : toutes les 6 h.
+WATCH_LOOP_S = float(os.environ.get("NAVIGUIDE_TAVILY_WATCH_S") or 24 * 3600)
 
 
 def status() -> dict[str, Any]:
@@ -713,7 +717,7 @@ def start_background(loop: asyncio.AbstractEventLoop | None = None) -> bool:
 
 
 async def _watch_loop(pause_s: float = WATCH_LOOP_S) -> None:
-    """Relance la veille toutes les `pause_s` (cache = 1 search / escale / jour)."""
+    """Relance la passe de veille toutes les `pause_s` (24 h) ; 1 search par escale, une fois pour toutes."""
     await asyncio.sleep(min(120.0, max(5.0, pause_s / 30)))
     while True:
         try:
