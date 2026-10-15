@@ -63,9 +63,13 @@ règles, pas sur un modèle.
 
 Les textes rédigés (récit, fiche d’escale, journal, film) passent par
 **NVIDIA Nemotron** sur **[Nebius Token Factory](https://tokenfactory.nebius.com/)**.
-Un filtre refuse tout nombre absent des faits. Quand le bateau entre dans
-les eaux d’un pays, **Tavily** relit la page officielle du port d’entrée ;
-Nemotron 3 Ultra barre ce qui n’est plus prouvé.
+Un filtre refuse tout nombre absent des faits. Nemotron 3.5 Lightning extrait,
+classe et traduit ; Nemotron 3 Super rédige. Pour chaque escale à venir,
+**Tavily** cherche une fois les nouvelles récentes et datées (avis de port,
+événements locaux) et Lightning les résume, sans chiffre nouveau (en
+production). Le juge de vérité (Tavily relit la page officielle d’un port
+d’entrée, Nemotron 3 Ultra barre ce qui n’est plus prouvé) existe dans le
+code mais est **éteint par défaut** : `NAVIGUIDE_TRUTH_JUDGE=1` le rallume.
 
 ### Licence
 
@@ -125,9 +129,13 @@ Without keys the app still runs: the story falls back to rules, not a model.
 
 Written text (story, harbour sheet, logbook, film) goes through
 **NVIDIA Nemotron** on **[Nebius Token Factory](https://tokenfactory.nebius.com/)**.
-A filter rejects any number missing from the facts. When the boat enters
-a country’s waters, **Tavily** re-reads the official port-of-entry page;
-Nemotron 3 Ultra strikes out what is no longer supported.
+A filter rejects any number missing from the facts. Nemotron 3.5 Lightning
+extracts, ranks and translates; Nemotron 3 Super writes. For each coming
+stopover, **Tavily** searches once for recent, dated news (harbour notices,
+local events) and Lightning summarises it without adding any number (live in
+production). The truth judge (Tavily re-reads an official port-of-entry page,
+Nemotron 3 Ultra strikes out what is no longer supported) is in the code but
+**off by default**: set `NAVIGUIDE_TRUTH_JUDGE=1` to turn it on.
 
 ### Licence
 
