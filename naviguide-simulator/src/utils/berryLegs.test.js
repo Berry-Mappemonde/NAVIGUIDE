@@ -10,6 +10,9 @@ import {
   nmToRoundedKm,
   officialAirRouteStyles,
   officialRouteLineStyle,
+  isSideLegNames,
+  isSideSegment,
+  SIDE_ROUTE_COLOR,
   NM_TO_KM,
   orientCoords,
 } from "./berryLegs.js";
@@ -62,17 +65,24 @@ describe("berryLegs", () => {
     assert.equal(air.color, "#111111");
     assert.equal(air.dash, "7 7");
     assert.equal(air.interactive, false);
+    assert.equal(isSideLegNames("Halifax (Nouvelle-Écosse)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"), true);
+    assert.equal(isSideSegment({
+      from: { name: "Halifax (Nouvelle-Écosse)" },
+      to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
+    }), true);
     const seaOut = officialRouteLineStyle({
       from: { name: "Halifax (Nouvelle-Écosse)" },
       to: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
       coords: [[-63.6, 44.6], [-56.2, 46.8]],
     });
-    assert.equal(seaOut, null);
+    assert.equal(seaOut.color, SIDE_ROUTE_COLOR);
+    assert.equal(seaOut.weight, 2.5);
+    assert.equal(seaOut.dash, null);
     const seaBack = officialRouteLineStyle({
       from: { name: "Saint-Pierre (Saint-Pierre-et-Miquelon)" },
       to: { name: "Halifax (Nouvelle-Écosse)" },
     });
-    assert.equal(seaBack, null);
+    assert.equal(seaBack.color, SIDE_ROUTE_COLOR);
     const layered = officialAirRouteStyles({ air: true });
     assert.equal(layered.length, 2);
     assert.equal(layered[0].color, "#e5e7eb");

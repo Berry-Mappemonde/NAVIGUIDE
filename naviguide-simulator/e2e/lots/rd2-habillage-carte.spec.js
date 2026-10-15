@@ -73,6 +73,41 @@ function parseRgba(value) {
   return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] == null ? 1 : Number(m[4]) };
 }
 
+async function creditGeometry(page) {
+  return page.evaluate(() => {
+    const attr = document.querySelector(".leaflet-control-attribution");
+    const zoom = document.querySelector(".leaflet-bottom.leaflet-right .leaflet-control-zoom");
+    const chrome = document.querySelector("[data-testid='film-bar']")
+      || document.querySelector("[data-testid='show-film-bar']");
+    if (!attr || !zoom || !chrome) return { ok: false };
+    const a = attr.getBoundingClientRect();
+    const z = zoom.getBoundingClientRect();
+    const b = chrome.getBoundingClientRect();
+    return {
+      ok: true,
+      attrH: a.height,
+      zoomH: z.height,
+      attrBottom: a.bottom,
+      barTop: b.top,
+      gap: b.top - a.bottom,
+    };
+  });
+}
+
+async function assertAttributionOnBar(page, label) {
+  await expect.poll(async () => {
+    const g = await creditGeometry(page);
+    if (!g.ok) return `absent (${label})`;
+    const heightOk = Math.abs(g.attrH - g.zoomH) <= 0.5;
+    const gapOk = g.attrBottom <= g.barTop - 2 && g.attrBottom >= g.barTop - 8;
+    return heightOk && gapOk ? "ok" : `h=${g.attrH}/${g.zoomH} gap=${g.gap.toFixed(2)} (${label})`;
+  }, { timeout: 8_000 }).toBe("ok");
+  const g = await creditGeometry(page);
+  expect(Math.abs(g.attrH - g.zoomH), `hauteur attribution ${g.attrH} vs zoom ${g.zoomH} (${label})`).toBeLessThanOrEqual(0.5);
+  expect(g.attrBottom, `attribution sous la barre (${label})`).toBeLessThanOrEqual(g.barTop - 2);
+  expect(g.attrBottom, `attribution trop loin (${label})`).toBeGreaterThanOrEqual(g.barTop - 8);
+}
+
 async function creditBand(page) {
   return page.evaluate(() => {
     const attr = document.querySelector(".leaflet-control-attribution");
@@ -197,6 +232,15 @@ test("lot RD2 — crédits translucides, chevrons alignés, pin sous le clic", a
   expectTranslucentSlate(parseRgba(lightBand.zoomBg), "zoom clair");
 
   await closed();
+  await assertAttributionOnBar(page, "clair, barre dépliée");
+  const hide = page.getByTestId("hide-film-bar");
+  await expect(hide).toBeVisible();
+  await hide.click();
+  await expect(page.getByTestId("show-film-bar")).toBeVisible({ timeout: 5_000 });
+  await assertAttributionOnBar(page, "clair, barre repliée");
+  await page.getByTestId("show-film-bar").click();
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 5_000 });
+  await assertAttributionOnBar(page, "clair, barre dépliée après repli");
   await shot(page, "01-credits");
 
   const drawBtn = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i });

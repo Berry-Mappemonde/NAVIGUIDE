@@ -1,3 +1,5 @@
+import { reviewLeg } from "../engine/planReview.js";
+
 const MONTHS_SHORT = {
   fr: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
   en: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
@@ -10,16 +12,65 @@ export const ICI_TABS = [
   { id: "review", testId: "ici-tab-review", labelKey: "planReviewTitle" },
 ];
 
+const TRACER_TAB_IDS = ["review", "story"];
+const FOLLOW_CUSTOM_TAB_IDS = ["review", "journal", "story"];
+
+/** Tracer = simulation (Berry) ou drawn (brouillon / ma route). */
+export function isTracerIciMode(mode) {
+  return mode === "simulation" || mode === "drawn";
+}
+
+export function isFollowCustomIci(mode, { routeSource } = {}) {
+  return mode === "follow" && routeSource === "custom";
+}
+
 /**
- * Récit seulement en Suivre (lot RD6). Revue du plan en Suivre et Simulation
- * (horloge officielle, lot RD9), jamais en Tracer — un onglet marche ou n'existe pas.
+ * Suivre × Berry : Maintenant · Récit · Journal · Revue du plan.
+ * Suivre × ma route (DM8C, option A) : Revue du plan · Journal · Récit ;
+ * Maintenant masqué (pas de « maintenant » sur une horloge que je choisis).
+ * Tracer : Revue du plan · Récit seulement (lot DM9).
+ * Les onglets masqués restent dans ICI_TABS : hidden, pas supprimés.
  */
-export function visibleIciTabs(mode) {
-  return ICI_TABS.filter((tab) => {
-    if (tab.id === "story") return mode === "follow";
-    if (tab.id === "review") return mode === "follow" || mode === "simulation";
-    return true;
-  });
+export function visibleIciTabs(mode, { routeSource } = {}) {
+  if (isTracerIciMode(mode)) {
+    return TRACER_TAB_IDS.map((id) => ICI_TABS.find((tab) => tab.id === id)).filter(Boolean);
+  }
+  if (isFollowCustomIci(mode, { routeSource })) {
+    return FOLLOW_CUSTOM_TAB_IDS.map((id) => ICI_TABS.find((tab) => tab.id === id)).filter(Boolean);
+  }
+  return ICI_TABS;
+}
+
+/**
+ * Onglets masqués mais encore dans le DOM (hidden), pour les specs qui
+ * cliquent par testid sans les montrer à l'écran.
+ */
+export function hiddenIciTabs(mode, { routeSource } = {}) {
+  if (isTracerIciMode(mode)) {
+    return ICI_TABS.filter((tab) => tab.id === "now" || tab.id === "journal");
+  }
+  if (isFollowCustomIci(mode, { routeSource })) {
+    return ICI_TABS.filter((tab) => tab.id === "now");
+  }
+  return [];
+}
+
+/** Onglet ouvert à l'entrée du mode : Revue en Tracer et Suivre × ma route. */
+export function defaultIciTab(mode, { routeSource } = {}) {
+  if (isTracerIciMode(mode) || isFollowCustomIci(mode, { routeSource })) return "review";
+  return "now";
+}
+
+/**
+ * En Tracer, la Revue du plan sert aussi le contenu de Maintenant
+ * (briefing, jambe, escale, Demander conseil) : les onglets sont masqués,
+ * pas les surfaces (anti-régression visuelle).
+ * En Suivre × ma route : Maintenant n'est pas servi (option A).
+ */
+export function servesNowContent(view, mode, { routeSource } = {}) {
+  if (isFollowCustomIci(mode, { routeSource })) return false;
+  if (view === "now") return true;
+  return isTracerIciMode(mode) && view === "review";
 }
 
 const EVENT_TYPE_LABEL = {
@@ -120,6 +171,40 @@ export function formatNumber(value, lang, digits) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+}
+
+/**
+ * Revue du plan de MA route : une jambe entre chaque couple de points
+ * (milles, jours). Pas de fourchette inventée — seulement si l'horloge
+ * porte déjà des dates. Jamais le fixture Berry.
+ */
+export function legsFromClockMarks(clock, lang = "fr") {
+  const marks = (clock?.marks || []).filter((m) => m && String(m.name || "").trim());
+  if (marks.length < 2) return [];
+  const legs = [];
+  for (let i = 0; i < marks.length - 1; i += 1) {
+    const a = marks[i];
+    const b = marks[i + 1];
+    const fromNm = Number(a.filmNm ?? a.nm) || 0;
+    const toNm = Number(b.filmNm ?? b.nm) || 0;
+    const nm = Math.max(0, toNm - fromNm);
+    const hours = Number(b.tHours) - Number(a.tHours);
+    const days = Number.isFinite(hours) && hours > 0 ? hours / 24 : 0;
+    const depart = Date.parse(a.iso || "");
+    const month = Number.isFinite(depart) ? new Date(depart).getUTCMonth() + 1 : null;
+    legs.push(reviewLeg({
+      from: a.name,
+      to: b.name,
+      legNm: Math.round(nm) || 0,
+      daysAtSea: days > 0 ? Math.max(1, Math.round(days)) : 0,
+      departIso: a.iso || "",
+      arriveIso: b.iso || "",
+      month,
+      fromNm,
+      toNm,
+    }, null, lang));
+  }
+  return legs;
 }
 
 export function formatLegLine(leg, t, lang = "fr") {

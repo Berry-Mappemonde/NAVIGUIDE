@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Loader2, Moon, Sun, TriangleAlert, Upload } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { adminHeaders, getAdminSecret, setAdminSecret } from "../utils/adminSecret.js";
@@ -12,6 +12,110 @@ import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
 const POLAR_VMG_TWS_KEYS = ["8", "10", "12", "16", "20", "25"];
+const POLAR_FOLD_KEY = "naviguide.tools.polarOpen";
+const LAYERS_FOLD_KEY = "naviguide.tools.layersOpen";
+
+function readSessionOpen(key, fallback) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+  } catch {
+    /* private mode */
+  }
+  return fallback;
+}
+
+function writeSessionOpen(key, open) {
+  try {
+    sessionStorage.setItem(key, open ? "1" : "0");
+  } catch {
+    /* private mode */
+  }
+}
+
+function layersFoldKey(tracerLayout) {
+  return tracerLayout ? `${LAYERS_FOLD_KEY}.tracer` : `${LAYERS_FOLD_KEY}.follow`;
+}
+
+/**
+ * Polar in Tracer stays a real `<details>` (lot DM9 / RD3 read `tagName`
+ * then `el.open`). React 19 restores `open` from props on `toggle`, so we
+ * prevent the native summary toggle and set the IDL after the event.
+ */
+function FoldDetails({ testId, storageKey, fallbackOpen, className, children }) {
+  const [open, setOpen] = useState(() => readSessionOpen(storageKey, fallbackOpen));
+  const nodeRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const el = nodeRef.current;
+    if (!el) return undefined;
+    el.open = open;
+    const summary = el.querySelector("summary");
+    const onClick = (e) => {
+      e.preventDefault();
+      setOpen((v) => {
+        const next = !v;
+        writeSessionOpen(storageKey, next);
+        return next;
+      });
+    };
+    summary?.addEventListener("click", onClick, true);
+    return () => summary?.removeEventListener("click", onClick, true);
+  });
+
+  return (
+    <details ref={nodeRef} className={className} data-testid={testId} open={open}>
+      {children}
+    </details>
+  );
+}
+
+/**
+ * Calques cannot be a `<details>`: React 19's toggle restore keeps
+ * `el.open` false even when we want it déplié in Tracer. A `div` with the
+ * same test id, a `<summary>`, and an IDL `open` flag matches the recette
+ * without fighting the host component.
+ */
+function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
+  const [open, setOpen] = useState(() => (
+    readSessionOpen(layersFoldKey(tracerLayout), Boolean(tracerLayout))
+  ));
+  const nodeRef = useRef(null);
+
+  return (
+    <div
+      ref={(el) => {
+        nodeRef.current = el;
+        if (el) el.open = open;
+      }}
+      className="px-4 py-3 border-t border-slate-700/60 group"
+      data-testid="layers-drawer"
+    >
+      <summary
+        className="cursor-pointer select-none list-none flex items-center justify-between gap-2"
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v;
+            writeSessionOpen(layersFoldKey(tracerLayout), next);
+            return next;
+          });
+        }}
+      >
+        <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
+          <span className={`text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        </span>
+      </summary>
+      {open ? (
+        <div className="mt-2">
+          <LayerToggles maritimeLayers={maritimeLayers} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function kts(v) { return v != null ? `${Number(v).toFixed(1)} kt` : "—"; }
 function deg(v) { return v != null ? `${Math.round(v)}°` : "—"; }
@@ -200,8 +304,15 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
     waypoints: Number(routerWaypoints).toLocaleString(locale),
     points: Number(vertexCount).toLocaleString(locale),
   });
-  if (drawing) return <DrawingBox drawing={drawing} />;
+  // Dessin ouvert : le cadre « Tracé en cours » est toujours là (c'est le retour
+  // visuel « vous dessinez, cliquez sur la carte » — surface de main, specs RH2 /
+  // R9a / R13 / RF1 / S). DM6 ouvre le dessin dès l'entrée en Tracer : à brouillon
+  // vide, la légende des escales reste DESSOUS (vitrine Berry, lot RE2) ; dès le
+  // premier point, le cadre remplace l'expédition comme avant DM6.
+  if (drawing?.points?.length) return <DrawingBox drawing={drawing} />;
   return (
+    <div className="space-y-2">
+    {drawing ? <DrawingBox drawing={drawing} /> : null}
     <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 overflow-hidden" data-testid="expedition-box">
       <div className="px-3 py-1.5 text-[10px] text-slate-300 leading-snug flex flex-wrap gap-x-2 gap-y-0.5" data-testid="route-summary" title={distanceHint}>
         <span className="font-semibold text-white cursor-help border-b border-dotted border-white/30" title={distanceHint}>{nm}</span>
@@ -212,6 +323,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
         </span>
       </div>
       <EscaleLegend marks={escaleMarks} filmNm={filmNm} frozen={frozen} nowMs={nowMs} liveFilmNm={liveFilmNm} officialEta={officialEta} />
+    </div>
     </div>
   );
 }
@@ -229,6 +341,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
   skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
   exportMode = "simulation", exportSegments = null, exportPoints = null,
+  tracerLayout = false,
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -421,6 +534,91 @@ export const ToolsSidebar = memo(function ToolsSidebar({
 
           {/* ── Réglages : polaire compacte, clé admin, paramètres avancés, calques ── */}
           <div className="px-4 py-3 space-y-2">
+            {tracerLayout ? (
+              <FoldDetails
+                className="rounded-xl border border-slate-700/40 bg-slate-800/40 group"
+                testId="polar-box"
+                storageKey={POLAR_FOLD_KEY}
+                fallbackOpen={false}
+              >
+                <summary className="cursor-pointer select-none list-none px-3 py-2 flex items-center gap-2">
+                  <span className={`flex items-center gap-2 text-xs min-w-0 ${polarStatus.color}`}>
+                    {polarStatus.icon}
+                    <span className="font-medium min-w-0 truncate" data-testid="polar-status">{polarStatus.text}</span>
+                  </span>
+                  <span className="ml-auto text-slate-500 group-open:rotate-90 transition-transform">›</span>
+                </summary>
+                <div className="px-3 pb-2">
+                  {(polarData?.boat_name || polarData?.name) ? (
+                    <div className="mt-1 text-[11px] text-slate-200 truncate" data-testid="polar-boat">
+                      {polarData.boat_name || polarData.name}
+                    </div>
+                  ) : null}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault(); setIsDragging(false);
+                      const f = e.dataTransfer.files?.[0];
+                      const ok = [".pdf", ".csv", ".xlsx", ".xls"];
+                      if (f && ok.some((ext) => f.name.toLowerCase().endsWith(ext))) {
+                        userDroppedFileRef.current = true;
+                        setPolarFile(f);
+                      }
+                    }}
+                    onClick={() => polarFileInputRef.current?.click()}
+                    data-testid="polar-drop"
+                    className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[10px]
+                      ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
+                  >
+                    <input
+                      ref={polarFileInputRef}
+                      name="polar-file"
+                      type="file"
+                      accept=".pdf,.csv,.xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) { userDroppedFileRef.current = true; setPolarFile(f); } }}
+                    />
+                    <Upload size={11} />
+                    <span>{polarData ? t("polarDropToReplace") : t("polarDropZone")}</span>
+                  </div>
+                  {polarData?.vmg_summary ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowPolar((v) => !v)}
+                      aria-expanded={showPolar}
+                      data-testid="polar-show"
+                      className="mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    >
+                      {showPolar ? t("polarHide") : t("polarShow")}
+                    </button>
+                  ) : null}
+                  {showPolar && polarData?.vmg_summary && (
+                    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-800/80 border-b border-slate-700/60">
+                            <th rowSpan={2} className="py-1.5 px-1.5 text-center text-blue-300 font-bold">TWS</th>
+                            <th colSpan={3} className="py-1 text-center text-green-400">{t("polarUpwind")}</th>
+                            <th colSpan={3} className="py-1 text-center text-amber-400">{t("polarDownwind")}</th>
+                          </tr>
+                          <tr className="bg-slate-800/60 border-b border-slate-700/60">
+                            {["TWA", "BS", "VMG", "TWA", "BS", "VMG"].map((h, i) => (
+                              <th key={i} className="py-1 px-1 font-medium text-slate-400">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {POLAR_VMG_TWS_KEYS.map((tws) => (
+                            <PolarVmgRow key={tws} tws={tws} entry={polarData.vmg_summary[tws]} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </FoldDetails>
+            ) : (
             <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="polar-box">
               <div className={`flex items-center gap-2 text-xs ${polarStatus.color}`}>
                 {polarStatus.icon}
@@ -494,6 +692,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 </div>
               )}
             </div>
+            )}
 
             <AdminKeyField />
           </div>
@@ -515,18 +714,13 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           )}
 
           {maritimeLayers ? (
-            <details className="px-4 py-3 border-t border-slate-700/60 group" data-testid="layers-drawer">
-              <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
-                <span className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-500">{layersOn ? t("layersOn", { n: layersOn }) : t("layersNone")}</span>
-                  <span className="text-slate-500 group-open:rotate-90 transition-transform">›</span>
-                </span>
-              </summary>
-              <div className="mt-2">
-                <LayerToggles maritimeLayers={maritimeLayers} />
-              </div>
-            </details>
+            <LayersDrawer
+              key={tracerLayout ? "layers-tracer" : "layers-follow"}
+              tracerLayout={tracerLayout}
+              layersOn={layersOn}
+              t={t}
+              maritimeLayers={maritimeLayers}
+            />
           ) : null}
         </div>
       </div>

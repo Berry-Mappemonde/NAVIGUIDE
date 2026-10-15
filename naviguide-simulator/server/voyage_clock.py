@@ -18,6 +18,11 @@ _PORT_DAYS_CACHE: Optional[dict] = None
 AIR_CALENDAR_HOURS = 8.0
 LAND_CALENDAR_HOURS = 4.0
 MIN_KNOTS = 0.5
+# Paire de sauts aller / retour : le second atterrit près du départ du premier (filmCast.js).
+AIR_HOP_RETURN_NM = 80.0
+HUB_STOP_NAME = "Halifax (Nouvelle-Écosse)"
+VIA_STOP_NAME = "Saint-Pierre (Saint-Pierre-et-Miquelon)"
+PARK_STOP_NAME = "Cayenne (Guyane)"
 WAVE_NOGO_M = 2.5
 # WAVE_NOGO_DT_FACTOR (×3 dès 2,5 m) retiré lot C4 — voir wave_polar_factor.
 MAX_STEP_NM = 30.0
@@ -36,6 +41,17 @@ TWA_CLOSE_HAULED_MIN = 40.0
 TWA_RUNNING_MAX = 170.0
 
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
+
+
+class WindExhausted(Exception):
+    """Levée par un wind_fn strict (lot HC1) : plus de vent RÉEL à cette date.
+
+    `build_voyage_clock` s'arrête proprement au dernier pas complet et pose
+    `truncated` sur l'horloge — jamais un vent inventé à la place."""
+
+    def __init__(self, reason: Optional[str] = None):
+        super().__init__(reason or "vent réel épuisé")
+        self.reason = reason
 
 
 def _norm_stop(name: str) -> str:
@@ -337,8 +353,148 @@ def _mark_indices(marks: List[dict], points: List[dict]) -> List[dict]:
     return out
 
 
+def _nm_apart(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> Optional[float]:
+    try:
+        p1, p2 = math.radians(float(lat1)), math.radians(float(lat2))
+        dphi = math.radians(float(lat2) - float(lat1))
+        dlamb = math.radians(float(lon2) - float(lon1))
+    except (TypeError, ValueError):
+        return None
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlamb / 2.0) ** 2
+    return 2.0 * 3440.065 * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _farthest_point(points: List[dict], from_idx: int, to_idx: int, origin: dict) -> tuple[dict, int]:
+    best_i = from_idx
+    best_d = -1.0
+    for i in range(from_idx, to_idx + 1):
+        d = _nm_apart(origin.get("lat"), origin.get("lon"), points[i].get("lat"), points[i].get("lon"))
+        if d is not None and d > best_d:
+            best_d = d
+            best_i = i
+    return points[best_i], best_i
+
+
+def detect_air_episodes(points: Optional[List[dict]]) -> List[dict]:
+    """Paire de sauts aller / retour (park = Cayenne, hub = Halifax, via = Saint-Pierre)."""
+    pts = list(points or [])
+    jump_idx = [i for i in range(1, len(pts)) if pts[i].get("jump")]
+    episodes: List[dict] = []
+    used: set[int] = set()
+    for a, ja in enumerate(jump_idx):
+        if ja in used or ja < 1:
+            continue
+        origin = pts[ja - 1]
+        for jb in jump_idx[a + 1:]:
+            if jb in used:
+                continue
+            dest = pts[jb]
+            gap = _nm_apart(origin.get("lat"), origin.get("lon"), dest.get("lat"), dest.get("lon"))
+            if gap is None or gap > AIR_HOP_RETURN_NM:
+                continue
+            hub = pts[ja]
+            via_from = min(ja + 1, jb - 1)
+            via_to = max(ja, jb - 1)
+            if via_to >= via_from:
+                via, via_idx = _farthest_point(pts, via_from, via_to, hub)
+            else:
+                via, via_idx = hub, ja
+            park_brg = bearing_deg(
+                pts[ja - 2]["lat"], pts[ja - 2]["lon"], origin["lat"], origin["lon"],
+            ) if ja >= 2 else bearing_deg(origin["lat"], origin["lon"], hub["lat"], hub["lon"])
+            episodes.append({
+                "ja": ja,
+                "jb": jb,
+                "viaIdx": via_idx,
+                "park": {
+                    "lat": origin["lat"],
+                    "lon": origin["lon"],
+                    "bearing": park_brg,
+                    "cumNm": origin.get("cumNm") or 0,
+                    "filmCum": origin.get("filmCum", origin.get("cumNm", 0)) or 0,
+                },
+                "hub": {"lat": hub["lat"], "lon": hub["lon"]},
+                "via": {"lat": via["lat"], "lon": via["lon"]},
+            })
+            used.add(ja)
+            used.add(jb)
+            break
+    return episodes
+
+
+def _nearest_mark_name(marks: List[dict], lat: Any, lon: Any, fallback: str) -> str:
+    best = fallback
+    best_d = 80.0
+    for m in marks or []:
+        name = str(m.get("name") or "").strip()
+        if not name:
+            continue
+        d = _nm_apart(lat, lon, m.get("lat"), m.get("lon"))
+        if d is not None and d < best_d:
+            best_d = d
+            best = name
+    return best
+
+
+def with_hub_marks(marks: List[dict], points: List[dict], episodes: List[dict]) -> List[dict]:
+    """Halifax (hub, aller et retour) + via Saint-Pierre si absents des marques."""
+    out = [dict(m) for m in (marks or []) if isinstance(m, dict)]
+    have_idx = {m["index"] for m in out if isinstance(m.get("index"), int)}
+
+    def push(index: int, name: str, point: dict, kind: str) -> None:
+        if index in have_idx or not (0 <= index < len(points)):
+            return
+        have_idx.add(index)
+        out.append({
+            "name": name,
+            "index": index,
+            "lat": point.get("lat"),
+            "lon": point.get("lon"),
+            "nm": point.get("cumNm") or 0,
+            "filmNm": point.get("filmCum", point.get("cumNm", 0)) or 0,
+            "kind": kind,
+        })
+
+    for ep in episodes or []:
+        ja, jb = int(ep["ja"]), int(ep["jb"])
+        hub_name = _nearest_mark_name(out, ep["hub"]["lat"], ep["hub"]["lon"], HUB_STOP_NAME)
+        via_name = _nearest_mark_name(out, ep["via"]["lat"], ep["via"]["lon"], VIA_STOP_NAME)
+        push(ja, hub_name, points[ja], "hub")
+        ret_hub = jb - 1
+        if ret_hub != ja and ret_hub > ja:
+            push(ret_hub, hub_name, points[ret_hub], "hub")
+        via_idx = int(ep.get("viaIdx") or ja)
+        if via_idx != ja and via_idx != jb:
+            push(via_idx, via_name, points[via_idx], "via")
+    return out
+
+
+def vehicle_at(points: List[dict], index: int, episodes: Optional[List[dict]] = None) -> str:
+    if index < 0 or index >= len(points):
+        return "main"
+    p = points[index]
+    if p.get("jump"):
+        return "plane"
+    if p.get("nonMaritime"):
+        return "land"
+    for ep in episodes or []:
+        if int(ep["ja"]) < index < int(ep["jb"]):
+            return "side"
+    return "main"
+
+
+def _episode_covering(episodes: List[dict], index: int) -> Optional[dict]:
+    for ep in episodes or []:
+        if int(ep["ja"]) <= index <= int(ep["jb"]):
+            return ep
+    return None
+
+
 def find_start_index(points: List[dict], marks: List[dict], start_at: str = "la-rochelle") -> int:
-    if start_at == "saint-maur" or not points:
+    # "seam" : la route commence déjà au bon endroit (reprise mi-parcours,
+    # lot HC1) — ne PAS pivoter sur la marque La Rochelle (l'arrivée de la
+    # boucle matcherait et sauterait tout l'avenir).
+    if start_at in ("saint-maur", "seam") or not points:
         return 0
     for m in _mark_indices(marks, points):
         if re.search(r"la rochelle", str(m.get("name") or ""), re.I):
@@ -483,6 +639,8 @@ def build_voyage_clock(
         prefetch_points(pts, months)
     wind_at = wind_fn or _default_wind
     marks = marks or []
+    episodes = detect_air_episodes(pts)
+    marks = with_hub_marks(marks, pts, episodes)
     start_idx = find_start_index(pts, marks, start_at)
     tagged = _mark_indices(marks, pts)
     mark_by_index = {m["index"]: m for m in tagged}
@@ -536,110 +694,148 @@ def build_voyage_clock(
                 break
 
     sail_nm = float(start.get("cumNm") or 0)
+    truncated: Optional[dict] = None
+    a = b = start
+    span_nm = pos_nm = 0.0
 
-    for i in range(start_idx, len(pts) - 1):
-        a, b = pts[i], pts[i + 1]
-        brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
-        span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
-        vehicle = "main"
-        speed_knots: Optional[float] = None
-        wind_pack: Dict[str, Any] = {"kind": "climatology"}
-        air_edge = bool(b.get("jump"))
-        if not air_edge and b.get("air"):
-            continue
-
-        if air_edge:
-            t_hours += AIR_CALENDAR_HOURS
-            vehicle = "plane"
-            vertices.append(_emit(
-                {**b, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
-                (t0d + timedelta(hours=t_hours)).month,
-                sea_hours,
-                basis=clock_basis,
-            ))
-        elif a.get("nonMaritime") and b.get("nonMaritime"):
-            vehicle = "land"
-            if start_at == "saint-maur" and land_end_idx >= 0 and i + 1 == land_end_idx:
-                t_hours += LAND_CALENDAR_HOURS
-            sail_nm = float(b.get("cumNm") or sail_nm)
-            vertices.append(_emit(
-                b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
-                (t0d + timedelta(hours=t_hours)).month,
-                sea_hours,
-                basis=clock_basis,
-            ))
-        else:
+    try:
+        for i in range(start_idx, len(pts) - 1):
+            a, b = pts[i], pts[i + 1]
+            brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
+            span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
             pos_nm = 0.0
-            while pos_nm < span_nm - 1e-9:
-                rem = span_nm - pos_nm
-                guess = min(MAX_STEP_NM, rem)
-                mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
-                mid = _point_along(a, b, mid_frac)
-                w0 = wind_at(mid["lat"], mid["lon"], t0d + timedelta(hours=t_hours))
-                speed0, _twa0, _basis0 = _speed_from_wind(polar_raw, brg, w0)
-                dt0 = guess / speed0
-                if dt0 > MAX_STEP_H:
-                    guess = speed0 * MAX_STEP_H
-                    dt0 = MAX_STEP_H
+            dest_vehicle = vehicle_at(pts, i + 1, episodes)
+            vehicle = dest_vehicle
+            speed_knots: Optional[float] = None
+            wind_pack: Dict[str, Any] = {"kind": "climatology"}
+            air_edge = bool(b.get("jump") or dest_vehicle == "plane")
+            if not air_edge and b.get("air") and dest_vehicle != "plane":
+                continue
+
+            if air_edge:
+                t_hours += AIR_CALENDAR_HOURS
+                vehicle = "plane"
+                vertices.append(_emit(
+                    {**b, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
+                    (t0d + timedelta(hours=t_hours)).month,
+                    sea_hours,
+                    basis=clock_basis,
+                ))
+                ep_land = _episode_covering(episodes, i + 1)
+                if ep_land and i + 1 == int(ep_land["jb"]):
+                    park = ep_land["park"]
+                    vertices.append(_emit(
+                        {**park, "cumNm": sail_nm, "filmCum": park.get("filmCum") or 0},
+                        t_hours, t0d, float(park.get("bearing") or brg), 0.0,
+                        {"kind": "climatology"}, "quay",
+                        (t0d + timedelta(hours=t_hours)).month,
+                        sea_hours,
+                        basis=last_speed_basis,
+                    ))
+            elif a.get("nonMaritime") and b.get("nonMaritime"):
+                vehicle = "land"
+                if start_at == "saint-maur" and land_end_idx >= 0 and i + 1 == land_end_idx:
+                    t_hours += LAND_CALENDAR_HOURS
+                sail_nm = float(b.get("cumNm") or sail_nm)
+                vertices.append(_emit(
+                    b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
+                    (t0d + timedelta(hours=t_hours)).month,
+                    sea_hours,
+                    basis=clock_basis,
+                ))
+            else:
+                while pos_nm < span_nm - 1e-9:
+                    rem = span_nm - pos_nm
+                    guess = min(MAX_STEP_NM, rem)
                     mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
                     mid = _point_along(a, b, mid_frac)
-                when_mid = t0d + timedelta(hours=t_hours + dt0 / 2.0)
-                w = wind_at(mid["lat"], mid["lon"], when_mid)
-                speed_knots, twa, last_speed_basis = _speed_from_wind(polar_raw, brg, w)
-                dt = guess / speed_knots
-                if dt > MAX_STEP_H + 1e-6:
-                    guess = speed_knots * MAX_STEP_H
-                    dt = MAX_STEP_H
-                t_hours += dt
-                sea_hours += dt
-                pos_nm += guess
-                sail_nm += guess
-                wind_pack = _wind_pack_from(w, twa)
-                pt = b if pos_nm >= span_nm - 1e-6 else _point_along(a, b, pos_nm / span_nm)
-                vertices.append(_emit(
-                    {**pt, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, "main",
-                    (t0d + timedelta(hours=t_hours)).month,
-                    sea_hours,
-                    basis=last_speed_basis,
-                ))
+                    w0 = wind_at(mid["lat"], mid["lon"], t0d + timedelta(hours=t_hours))
+                    speed0, _twa0, _basis0 = _speed_from_wind(polar_raw, brg, w0)
+                    dt0 = guess / speed0
+                    if dt0 > MAX_STEP_H:
+                        guess = speed0 * MAX_STEP_H
+                        dt0 = MAX_STEP_H
+                        mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
+                        mid = _point_along(a, b, mid_frac)
+                    when_mid = t0d + timedelta(hours=t_hours + dt0 / 2.0)
+                    w = wind_at(mid["lat"], mid["lon"], when_mid)
+                    speed_knots, twa, last_speed_basis = _speed_from_wind(polar_raw, brg, w)
+                    dt = guess / speed_knots
+                    if dt > MAX_STEP_H + 1e-6:
+                        guess = speed_knots * MAX_STEP_H
+                        dt = MAX_STEP_H
+                    t_hours += dt
+                    sea_hours += dt
+                    pos_nm += guess
+                    sail_nm += guess
+                    wind_pack = _wind_pack_from(w, twa)
+                    pt = b if pos_nm >= span_nm - 1e-6 else _point_along(a, b, pos_nm / span_nm)
+                    vertices.append(_emit(
+                        {**pt, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack,
+                        dest_vehicle if dest_vehicle in {"main", "side"} else "main",
+                        (t0d + timedelta(hours=t_hours)).month,
+                        sea_hours,
+                        basis=last_speed_basis,
+                    ))
 
-        arrived = mark_by_index.get(i + 1)
-        if arrived and i + 1 != start_idx and vehicle != "plane":
-            hold = port_days_for(str(arrived.get("name") or "")) * 24
-            clock_marks.append({
-                "name": arrived.get("name"),
-                "filmNm": _r4(b.get("filmCum", b.get("cumNm", 0)) or 0),
-                "tHours": _r4(t_hours),
-                "iso": to_iso(t0d + timedelta(hours=t_hours)),
-                "holdHours": hold,
-            })
-            if hold > 0:
-                t_hours += hold
-                quay_hours += hold
-                vertices.append(_emit(
-                    {**b, "cumNm": sail_nm}, t_hours, t0d, brg, 0.0,
-                    {"kind": wind_pack.get("kind") or "climatology",
-                     "regime": wind_pack.get("regime") or wind_pack.get("kind") or "climatology",
-                     "sources": list(wind_pack.get("sources") or []),
-                     "spread": wind_pack.get("spread"),
-                     "speedKnots": wind_pack.get("speedKnots")},
-                    "quay",
-                    (t0d + timedelta(hours=t_hours)).month,
-                    sea_hours,
-                    basis=last_speed_basis,
-                ))
+            arrived = mark_by_index.get(i + 1)
+            hub_hold = bool(arrived and arrived.get("kind") == "hub")
+            if arrived and i + 1 != start_idx and (vehicle != "plane" or hub_hold):
+                hold = port_days_for(str(arrived.get("name") or "")) * 24
+                clock_marks.append({
+                    "name": arrived.get("name"),
+                    "filmNm": _r4(b.get("filmCum", b.get("cumNm", 0)) or 0),
+                    "tHours": _r4(t_hours),
+                    "iso": to_iso(t0d + timedelta(hours=t_hours)),
+                    "holdHours": hold,
+                    "lat": b.get("lat") if isinstance(b.get("lat"), (int, float)) else arrived.get("lat"),
+                    "lon": b.get("lon") if isinstance(b.get("lon"), (int, float)) else arrived.get("lon"),
+                    "kind": arrived.get("kind"),
+                    "vehicle": "quay" if hold > 0 else vehicle,
+                })
+                if hold > 0:
+                    t_hours += hold
+                    quay_hours += hold
+                    vertices.append(_emit(
+                        {**b, "cumNm": sail_nm}, t_hours, t0d, brg, 0.0,
+                        {"kind": wind_pack.get("kind") or "climatology",
+                         "regime": wind_pack.get("regime") or wind_pack.get("kind") or "climatology",
+                         "sources": list(wind_pack.get("sources") or []),
+                         "spread": wind_pack.get("spread"),
+                         "speedKnots": wind_pack.get("speedKnots")},
+                        "quay",
+                        (t0d + timedelta(hours=t_hours)).month,
+                        sea_hours,
+                        basis=last_speed_basis,
+                    ))
+    except WindExhausted as exc:
+        # Fin du vent RÉEL (lot HC1) : on garde le dernier pas complet, on dit
+        # où et pourquoi — jamais un vent de remplacement non étiqueté.
+        frac = (pos_nm / span_nm) if span_nm else 0.0
+        seam = _point_along(a, b, frac)
+        truncated = {
+            "reason": exc.reason,
+            "iso": to_iso(t0d + timedelta(hours=t_hours)),
+            "pointIndex": i,
+            "pointCumNm": _r4(seam.get("cumNm") or 0),
+            "pointFilmCum": _r4(seam.get("filmCum") or 0),
+        }
 
     last = vertices[-1]
-    return {
+    out = {
         "t0": to_iso(t0d),
         "kind": _clock_kind(vertices),
         "vertices": vertices,
         "marks": clock_marks,
+        "episodes": episodes,
         "seaHours": _r4(sea_hours),
         "quayHours": _r4(quay_hours),
         "arrivalIso": last.get("iso") or to_iso(t0d),
         "startAt": start_at,
     }
+    if truncated is not None:
+        out["truncated"] = truncated
+    return out
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -675,18 +871,29 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
                 if abs((m.get("filmNm") or 0) - (a.get("filmNm") or 0)) < 1e-4:
                     hold = float(m.get("holdHours") or 0)
                     break
-            return {
+            park = _park_at_hours(clock, x)
+            veh = "side" if park else "quay"
+            out_hold = {
                 **a,
                 "tHours": x,
                 "atQuay": True,
                 "status": "live",
-                "vehicle": "quay",
+                "vehicle": veh,
                 "speedKnots": 0,
                 "plannedKnots": a.get("speedKnots"),
                 "holdHours": hold,
             }
+            if park:
+                out_hold["parkLat"] = park.get("lat")
+                out_hold["parkLon"] = park.get("lon")
+            return out_hold
         t0 = parse_iso(clock["t0"])
-        return {
+        veh = a.get("vehicle")
+        if b.get("vehicle") == "plane":
+            veh = "plane"
+        elif a.get("vehicle") == "side" or b.get("vehicle") == "side":
+            veh = "side"
+        out = {
             **a,
             "lat": _lerp(a["lat"], b["lat"], t),
             "lon": _lerp(a["lon"], b["lon"], t),
@@ -696,6 +903,7 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
             "iso": to_iso(t0 + timedelta(hours=x)),
             "atQuay": False,
             "status": "live",
+            "vehicle": veh,
             "kind": a["kind"] if t < 0.5 else b["kind"],
             "regime": (a.get("regime") or a.get("kind")) if t < 0.5 else (b.get("regime") or b.get("kind")),
             "sources": (a.get("sources") if t < 0.5 else b.get("sources")) or [],
@@ -706,7 +914,40 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
             "leadHours": b.get("leadHours") if b.get("leadHours") is not None else a.get("leadHours"),
             "seaHours": _lerp(float(a.get("seaHours") or 0), float(b.get("seaHours") or 0), t),
         }
+        park = _park_at_hours(clock, x)
+        if park and veh in {"plane", "side"}:
+            out["parkLat"] = park.get("lat")
+            out["parkLon"] = park.get("lon")
+        return out
     return {**last, "atQuay": False, "status": "arrived"}
+
+
+def _park_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
+    """Position du catamaran (Cayenne) pendant l'épisode — le sample suit l'équipage."""
+    verts = clock.get("vertices") or []
+    for ep in clock.get("episodes") or []:
+        park = ep.get("park") if isinstance(ep.get("park"), dict) else None
+        if not park:
+            continue
+        hub = ep.get("hub") or {}
+        out_t = None
+        back_t = None
+        for v in verts:
+            if not isinstance(v, dict) or v.get("vehicle") != "plane":
+                continue
+            d_hub = _nm_apart(v.get("lat"), v.get("lon"), hub.get("lat"), hub.get("lon"))
+            d_park = _nm_apart(v.get("lat"), v.get("lon"), park.get("lat"), park.get("lon"))
+            if out_t is None and d_hub is not None and d_hub <= 80:
+                out_t = float(v.get("tHours") or 0)
+            elif out_t is not None and d_park is not None and d_park <= 80:
+                back_t = float(v.get("tHours") or 0)
+                break
+        if out_t is None:
+            continue
+        end = back_t if back_t is not None else out_t + 24 * 14
+        if out_t - AIR_CALENDAR_HOURS <= float(t_hours) <= end:
+            return park
+    return None
 
 
 def sample_clock_at_time(clock: dict, when: datetime | str) -> Optional[dict]:

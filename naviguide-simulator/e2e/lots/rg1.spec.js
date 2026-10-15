@@ -18,7 +18,7 @@ const shot = (page, name) => page.screenshot({
 });
 
 const ROAD = /par la route|by road/i;
-const AIR = /s'envole|the crew flies from|le bateau attend|the boat waits/i;
+const AIR = /s'envole|the crew flies from|le bateau attend|le catamaran attend|the boat waits|the catamaran waits/i;
 const NEXT_PAPEETE = /départ vers Papeete|departure for Papeete/i;
 const DEPART_AJACCIO = /départ vers Ajaccio|departure for Ajaccio/i;
 const OLD_FALSE_DEPART = /le 18 mai, départ vers Ajaccio|on 18 May, departure for Ajaccio/i;
@@ -135,7 +135,7 @@ test("lot RG1 — départ horloge, vol, par la route", async ({ page }) => {
 
   expect(blob, "premier chapitre par la route").toMatch(ROAD);
   expect(blob, "vol raconté comme un vol").toMatch(AIR);
-  expect(blob, "bateau reste à Cayenne").toMatch(/le bateau attend à Cayenne|the boat waits at Cayenne/i);
+  expect(blob, "bateau reste à Cayenne").toMatch(/le bateau attend à Cayenne|le catamaran attend à Cayenne|the boat waits at Cayenne|the catamaran waits at Cayenne/i);
   expect(blob, "pas de traversée vers Saint-Pierre").not.toMatch(/départ vers Saint-Pierre|departure for Saint-Pierre/i);
   expect(blob, "pas d'approche Saint-Pierre").not.toMatch(/approche de Saint-Pierre|approaching Saint-Pierre/i);
   expect(blob, "départ Papeete depuis Cayenne").toMatch(NEXT_PAPEETE);

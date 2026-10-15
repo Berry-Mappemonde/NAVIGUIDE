@@ -22,6 +22,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 import { cardFromJournalEntry } from "./momentCard.js";
+import { originName, watersLabel } from "./toponyms.js";
 import { DEFAULT_T0_ISO, rebaseIso, resolveStoryT0 } from "./voyageClock.js";
 
 const MONTHS = {
@@ -294,12 +295,15 @@ function routeEventsSentence(events, lang) {
   const amp = events.filter((e) => e.kind === "amp");
   const bits = [];
   if (zee.length) {
-    const parts = zee.slice(0, 6).map((e) => (en ? `${e.name} on ${dayMonth(e.t, lang)}` : `${e.name} le ${dayMonth(e.t, lang)}`));
+    const parts = zee.slice(0, 6).map((e) => {
+      const spoken = watersLabel(e.name, lang, { mrgid: Number.isInteger(e.mrgid) ? e.mrgid : null }) || e.name;
+      return en ? `${spoken} on ${dayMonth(e.t, lang)}` : `${spoken} le ${dayMonth(e.t, lang)}`;
+    });
     const more = zee.length > 6 ? (en ? ` and ${zee.length - 6} more` : ` et ${zee.length - 6} autres`) : "";
     bits.push(en ? `entered: ${parts.join(", ")}${more}` : `entré dans : ${parts.join(", ")}${more}`);
   }
   if (amp.length) {
-    const names = amp.slice(0, 3).map((e) => e.name);
+    const names = amp.slice(0, 3).map((e) => originName(e.name) || e.name);
     const more = amp.length > 3 ? (en ? ` and ${amp.length - 3} more` : ` et ${amp.length - 3} autres`) : "";
     bits.push(en
       ? `marine protected area${amp.length > 1 ? "s" : ""} within reach: ${joinList(names, lang)}${more}`
@@ -315,7 +319,7 @@ function routeEventsSentence(events, lang) {
     return true;
   });
   if (poe.length) {
-    const names = poe.slice(0, 4).map((e) => e.name);
+    const names = poe.slice(0, 4).map((e) => originName(e.name) || e.name);
     const more = poe.length > 4 ? (en ? ` and ${poe.length - 4} more` : ` et ${poe.length - 4} autres`) : "";
     bits.push(en
       ? `port${poe.length > 1 ? "s" : ""} of entry passed: ${joinList(names, lang)}${more}`
@@ -811,7 +815,11 @@ export function filmEventSentence(ev, lang = "fr") {
   const en = isEn(lang);
   const e = ev?.entry || ev;
   const when = dayMonth(e.t || ev.t, lang);
-  const name = shortName(e.name || ev.name || "");
+  const rawName = e.name || ev.name || "";
+  const kind = e.kind || ev.kind;
+  const name = kind === "zee"
+    ? (watersLabel(rawName, lang, { mrgid: Number.isInteger(e.mrgid) ? e.mrgid : Number.isInteger(ev.mrgid) ? ev.mrgid : null }) || shortName(rawName))
+    : originName(shortName(rawName));
   if (ev.role === "depart") {
     const sea = shortName(ev.seaName || ev.toName || "");
     const from = name || "Saint-Maur";

@@ -42,7 +42,7 @@ describe("expeditionStory — chronologique, jambe par jambe", () => {
     assert.equal(paras[0], "L’expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026.");
     assert.equal(paras[1], `Puis, le 15 mai, départ vers La Rochelle : ${landKm} km par la route en 4 h de route. Arrivée à La Rochelle le 15 mai, 3 jours à quai.`);
     assert.equal(paras[2], "Le 15 mai, le bateau a pris la mer à La Rochelle, vers Ajaccio (Corse) : 1 820 nm en 9 jours. "
-      + "Entre-temps — entré dans : Spanish Exclusive Economic Zone le 17 mai ; aire marine protégée à portée : Cabrera ; port d’entrée passé : La Rochelle - La Pallice. "
+      + "Entre-temps — entré dans : les eaux espagnoles le 17 mai ; aire marine protégée à portée : Cabrera ; port d’entrée passé : La Rochelle - La Pallice. "
       + "Météo au bateau : coup de vent le 22 mai (37 kn, Hs 2,4 m) (GFS). "
       + "Vent au bateau : 14 kn en moyenne, 18 kn au plus fort (GFS, 2 relevés). "
       + "Le skipper a noté : « Première nuit au large, belle étoile. » "

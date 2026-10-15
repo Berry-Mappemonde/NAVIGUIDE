@@ -323,6 +323,17 @@ def kv_delete(ns: str, key: str) -> bool:
         return False
 
 
+def kv_keys(ns: str) -> list[str]:
+    """Toutes les clés d'un namespace (migration HC1). Vide si store cassé."""
+    try:
+        with _LOCK:
+            rows = _connect().execute("SELECT key FROM kv WHERE ns = ?", (ns,)).fetchall()
+        return [str(r[0]) for r in rows]
+    except Exception as exc:
+        log.warning("store kv (clés) : %s", exc)
+        return []
+
+
 def kv_count(ns: str) -> int:
     try:
         with _LOCK:

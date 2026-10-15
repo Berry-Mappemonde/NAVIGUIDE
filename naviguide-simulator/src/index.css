@@ -3,7 +3,7 @@
 
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
-.leaflet-container { background: #0f172a; font: inherit; z-index: 0; }
+.leaflet-container { background: #0f172a; font: inherit; z-index: 0; --map-control-h: 20px; }
 
 /*
  * Map credits stay inside the visible map: right of the tools panel's edge
@@ -31,10 +31,15 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   background-color: rgba(15, 23, 42, 0.72);
   color: rgba(226, 232, 240, 0.85);
   font-size: 10px;
-  line-height: 1.3;
-  padding: 1px 6px;
+  height: var(--map-control-h);
+  line-height: var(--map-control-h);
+  padding: 0 6px;
   margin: 0;
   border-radius: 6px 0 0 0;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
 
@@ -51,10 +56,10 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom a,
 .leaflet-container.leaflet-touch .leaflet-bottom.leaflet-right .leaflet-control-zoom a {
-  width: 20px;
-  height: 20px;
-  line-height: 20px;
-  font: 700 14px/20px ui-monospace, "Lucida Console", Monaco, monospace;
+  width: var(--map-control-h);
+  height: var(--map-control-h);
+  line-height: var(--map-control-h);
+  font: 700 14px/var(--map-control-h) ui-monospace, "Lucida Console", Monaco, monospace;
   background: transparent;
   background-color: transparent;
   color: rgba(226, 232, 240, 0.95);
