@@ -32,6 +32,7 @@ UNAVAILABLE = "unavailable"
 # Clé film : RC27 (gabarit compact 2:30) invalide rc32.
 # moments reste rg4 ; ici reste rg3.
 FILM_SCRIPT_REV = "rc27"
+WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"
@@ -1270,6 +1271,17 @@ def refresh_missing(
             except Exception as exc:
                 log.warning("stock %s : %s", family, exc)
                 _log(family, PREPARING, str(exc)[:160])
+        if not (should_stop and should_stop()):
+            try:
+                written = fill_written_film()
+                detail = (written or {}).get("status") or ""
+                extra = ""
+                if (written or {}).get("rewritten") is not None:
+                    extra = f"{written.get('rewritten', 0)} réécrites / {written.get('fallen', 0)} repliées"
+                _log("film", "written", f"{detail} {extra}".strip())
+            except Exception as exc:
+                log.warning("stock film written : %s", exc)
+                _log("film", "written", str(exc)[:160])
         return st.status()
     finally:
         _REFRESH_LOCK.release()
@@ -1430,8 +1442,8 @@ def ensure_fill_process() -> Optional[int]:
         if not FILL_SCRIPT.exists():
             log.warning("stock officiel : %s absent — pas de remplisseur", FILL_SCRIPT)
             return None
-        # Le remplisseur est de l'arrière-plan : sous NAVIGUIDE_LLM_MODE=on-demand (défaut, 28 sept.) il ne fait
-        # aucun appel LLM payant — le stock porte le brut, le « Rédigé » ne vient que sur demande (mode all).
+        # Le remplisseur est de l'arrière-plan (NAVIGUIDE_LLM_BACKGROUND=1). En on-demand le chat / le
+        # préchauffage restent muets ; le rédigé du film (RG11A) passe par deferred_demand().
         env = {**os.environ, "NAVIGUIDE_OFFICIAL_STORE_DIR": str(disk_root()), "NAVIGUIDE_OFFICIAL_WORKER": "0",
                "NAVIGUIDE_LLM_BACKGROUND": "1"}
         try:
@@ -1646,7 +1658,191 @@ def serve_moments(until: Optional[str] = None) -> dict:
     }
 
 
-def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
+def _is_written_style(style: str) -> bool:
+    return str(style or "raw").strip().lower() in {"written", "nemotron", "rédigé", "redige"}
+
+
+def _pick_written_plan(body: dict, lang: str, seconds: int) -> Optional[dict]:
+    """Variante written exacte pour (lang, seconds) — pas de voisin, sinon le brut."""
+    written = body.get("written") if isinstance(body.get("written"), dict) else {}
+    by = written.get(lang) or {}
+    if not isinstance(by, dict):
+        return None
+    want = str(int(seconds or 0))
+    plan = by.get(want)
+    if isinstance(plan, dict) and (plan.get("chapters") or []):
+        return plan
+    return None
+
+
+def _iter_raw_film_variants(body: dict):
+    variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
+    yielded = False
+    if variants:
+        for lang, by_secs in variants.items():
+            if not isinstance(by_secs, dict):
+                continue
+            for secs, plan in by_secs.items():
+                if isinstance(plan, dict) and (plan.get("chapters") or []):
+                    yielded = True
+                    yield str(lang), str(secs), plan
+    if yielded:
+        return
+    for lang in ("fr", "en"):
+        plan = body.get(lang) or body.get("default")
+        if isinstance(plan, dict) and (plan.get("chapters") or []):
+            yield lang, str(int(plan.get("targetSeconds") or 0)), plan
+
+
+def _stored_last_stop() -> str:
+    body = payload_of("moments") or {}
+    journal = body.get("journal") if isinstance(body.get("journal"), dict) else {}
+    latest = list(journal.get("latest") or [])
+    for row in reversed(latest):
+        if not isinstance(row, dict):
+            continue
+        if row.get("kind") == "stop" or row.get("event") == "arrival":
+            name = str(row.get("name") or row.get("title") or "").strip()
+            if name:
+                return name
+    for row in reversed(list(body.get("moments") or [])):
+        if not isinstance(row, dict):
+            continue
+        moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+        leg = moment.get("leg") if isinstance(moment.get("leg"), dict) else {}
+        name = str(row.get("name") or leg.get("to") or "").strip()
+        if name:
+            return name
+    film = payload_of("film") or {}
+    plan = film.get("fr") or film.get("default") or {}
+    chapters = plan.get("chapters") or []
+    if chapters and isinstance(chapters[-1], dict):
+        return str(chapters[-1].get("toName") or "")
+    return ""
+
+
+def _written_is_fresh(entry: Any, day: str, last_stop: str) -> bool:
+    if not isinstance(entry, dict) or not (entry.get("chapters") or []):
+        return False
+    if str(entry.get("writtenDay") or "") != day:
+        return False
+    return str(entry.get("lastStop") or "") == str(last_stop or "")
+
+
+def _log_fill_written(msg: str) -> None:
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    log.info("%s", msg)
+    try:
+        path = fill_logfile()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+
+def fill_written_film(
+    *,
+    force: bool = False,
+    cascade=None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """RG11A : rédigé Super, étape « sur demande différée ». Jamais depuis le chemin HTTP."""
+    import asyncio  # noqa: PLC0415
+    import llm_budget  # noqa: PLC0415
+    from film_script import write_stored_plan  # noqa: PLC0415
+
+    if llm_budget.mode() == "off":
+        _log_fill_written("written : mode off — aucun appel, brut servi")
+        return {"status": "off", "written": 0, "rewritten": 0, "fallen": 0}
+
+    hit = get("film")
+    body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not isinstance(body, dict):
+        return {"status": "no-film", "written": 0, "rewritten": 0, "fallen": 0}
+
+    when = now or _utc_now()
+    day = _data_date(when)
+    last_stop = _stored_last_stop()
+    written_map = dict(body.get("written") or {}) if isinstance(body.get("written"), dict) else {}
+    cascade_fn = cascade
+    if cascade_fn is None:
+        from story_cascade import cascade_text  # noqa: PLC0415
+        cascade_fn = cascade_text
+
+    async def _one(plan: dict, lang: str, secs: str) -> tuple[Optional[dict], dict]:
+        return await write_stored_plan(plan, lang=lang, cascade=cascade_fn, seconds=int(secs or 0))
+
+    filled = 0
+    rewritten = 0
+    fallen = 0
+
+    with llm_budget.deferred_demand():
+        if not llm_budget.allow("write"):
+            _log_fill_written("written : plafond write atteint — brut servi")
+            return {"status": "budget", "written": 0, "rewritten": 0, "fallen": 0}
+
+        async def _run():
+            nonlocal filled, rewritten, fallen, written_map
+            for lang, secs, plan in _iter_raw_film_variants(body):
+                if not llm_budget.allow("write"):
+                    _log_fill_written(f"written {lang} {secs}s : plafond write — stop")
+                    break
+                by_lang = written_map.get(lang) if isinstance(written_map.get(lang), dict) else {}
+                if not force and _written_is_fresh(by_lang.get(secs), day, last_stop):
+                    continue
+                before = llm_budget.get_usage("write")
+                try:
+                    wplan, stats = await _one(plan, lang, secs)
+                except Exception as exc:
+                    _log_fill_written(f"written {lang} {secs}s : erreur {exc}")
+                    continue
+                after = llm_budget.get_usage("write")
+                pt = max(0, int(after["prompt_tokens"]) - int(before["prompt_tokens"]))
+                ct = max(0, int(after["completion_tokens"]) - int(before["completion_tokens"]))
+                usd = llm_budget.estimate_usd("write", pt, ct)
+                rw = int((stats or {}).get("rewritten") or 0)
+                fb = int((stats or {}).get("fallen") or 0)
+                rewritten += rw
+                fallen += fb
+                if not isinstance(wplan, dict) or not (wplan.get("chapters") or []) or rw <= 0:
+                    _log_fill_written(
+                        f"written {lang} {secs}s : pas de rédigé ({(stats or {}).get('source')}), "
+                        f"{rw} réécrites / {fb} repliées, tokens in={pt} out={ct}, ~{usd} $"
+                    )
+                    continue
+                stamped = dict(wplan)
+                stamped["hasWritten"] = True
+                stamped["source"] = stamped.get("source") or WRITTEN_SOURCE
+                stamped["writtenAt"] = _iso(when)
+                stamped["writtenDay"] = day
+                stamped["lastStop"] = last_stop
+                stamped["rewritten"] = rw
+                stamped["fallen"] = fb
+                lang_map = dict(written_map.get(lang) or {}) if isinstance(written_map.get(lang), dict) else {}
+                lang_map[str(secs)] = stamped
+                written_map[lang] = lang_map
+                filled += 1
+                _log_fill_written(
+                    f"written {lang} {secs}s : {rw} réécrites, {fb} repliées, "
+                    f"tokens in={pt} out={ct}, ~{usd} $, source={stamped['source']}"
+                )
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_run())
+        else:
+            return {"status": "busy", "written": 0, "rewritten": 0, "fallen": 0}
+
+    if filled:
+        new_body = dict(body)
+        new_body["written"] = written_map
+        put("film", new_body, hit.get("key"))
+    return {"status": "ready" if filled else "unchanged", "written": filled, "rewritten": rewritten, "fallen": fallen}
+
+
+def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     extra = {
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,
@@ -1674,12 +1870,28 @@ def serve_film(lang: str = "fr", seconds: int = 0) -> dict:
         plan = body.get(lg) or body.get("default") or body.get("fr")
     if not isinstance(plan, dict) or not (plan.get("chapters") or []):
         return preparing_payload("film", extra)
-    out = _with_film_estimate(plan)
     stored_est = body.get("estimates") if isinstance(body.get("estimates"), dict) else {}
     lang_est = stored_est.get(lg) or stored_est.get("fr") or _variants_estimates({lg: by_secs}).get(lg)
+    if _is_written_style(style):
+        wplan = _pick_written_plan(body, lg, int(seconds or 0))
+        if isinstance(wplan, dict) and (wplan.get("chapters") or []):
+            out = _with_film_estimate(wplan)
+            if isinstance(lang_est, dict) and lang_est:
+                out["estimates"] = lang_est
+            out["status"] = READY
+            out["hasWritten"] = True
+            out["source"] = wplan.get("source") or WRITTEN_SOURCE
+            out["writtenAt"] = wplan.get("writtenAt")
+            out["style"] = "written"
+            out.update(_stamp(hit))
+            return out
+    out = _with_film_estimate(plan)
     if isinstance(lang_est, dict) and lang_est:
         out["estimates"] = lang_est
     out["status"] = READY
+    out["hasWritten"] = False
+    out["source"] = out.get("source") or "rules"
+    out["style"] = "raw"
     out.update(_stamp(hit))
     return out
 

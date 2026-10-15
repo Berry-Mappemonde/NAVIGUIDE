@@ -148,6 +148,11 @@ def main() -> int:
     ap.add_argument("--store", default="", help="dossier du stock (NAVIGUIDE_OFFICIAL_STORE_DIR) — porté sur la ligne de commande pour qu'un seul remplisseur tourne par stock")
     ap.add_argument("--period", type=float, default=float(os.environ.get("NAVIGUIDE_OFFICIAL_STORE_PERIOD_S") or 6 * 3600))
     ap.add_argument("--nice", type=int, default=10, help="priorité basse (os.nice) ; 0 = priorité normale")
+    ap.add_argument(
+        "--write-film",
+        action="store_true",
+        help="RG11A : forcer le rédigé Nemotron 3 Super (sans recalculer le brut)",
+    )
     args = ap.parse_args()
     if args.store:
         os.environ["NAVIGUIDE_OFFICIAL_STORE_DIR"] = args.store
@@ -164,6 +169,10 @@ def main() -> int:
 
     import official_store
     official_store.reset_store()
+    if args.write_film and not args.loop:
+        out = official_store.fill_written_film(force=True)
+        _say(f"rédigé : {out}")
+        return 0
     if args.loop:
         return loop(args.period)
     one_pass()

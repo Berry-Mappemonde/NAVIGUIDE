@@ -1671,7 +1671,7 @@ def get_voyage_film(
     # capte si la route générique est enregistrée avant — on délègue, on ne
     # recalcule pas.
     if _is_official(voyage_id) or voyage_id == "official":
-        return official_store.serve_film(lang=lang, seconds=seconds)
+        return official_store.serve_film(lang=lang, seconds=seconds, style=style)
     voy = load_voyage(voyage_id)
     if voy is None:
         raise HTTPException(404, "voyage inconnu")

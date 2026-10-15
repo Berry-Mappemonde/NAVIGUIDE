@@ -94,3 +94,18 @@ def test_judge_cap_is_zero_by_default(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
     assert llm_budget.daily_cap("judge") == 0
     assert llm_budget.allow("judge") is False
+
+
+def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")
+    monkeypatch.setenv("NAVIGUIDE_LLM_BACKGROUND", "1")
+    assert llm_budget.allow("write") is False
+    assert llm_budget.allow("fast") is False
+    with llm_budget.deferred_demand():
+        assert llm_budget.allow("write") is True
+        assert llm_budget.allow("fast") is False
+    assert llm_budget.allow("write") is False
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    with llm_budget.deferred_demand():
+        assert llm_budget.allow("write") is False
