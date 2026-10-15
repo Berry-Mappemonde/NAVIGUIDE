@@ -107,16 +107,23 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
       if (typeof film.hasWritten === "boolean" && film.style === "written") {
         expect(film.hasWritten, "rédigé déjà en cache").toBe(true);
       }
-      await expect(subtitle, "sous-titre : Saint-Maur puis La Rochelle").toContainText(
-        /Saint-Maur/,
+      // Une phrase de sous-titre à la fois (RF5 : « quitté Saint-Maur » puis
+      // « Départ vers La Rochelle ») : l'ordre se lit sur le chapitre ouvert.
+      await page.evaluate(() => window.__naviguideFilm?.seekChapter?.(0));
+      await expect.poll(
+        async () => page.evaluate(() => String(window.__naviguideFilm?.chapterText || "")),
         { timeout: 12_000 },
-      );
-      await expect(subtitle).toContainText(/La Rochelle/);
-      const sub = (await subtitle.innerText()).trim();
-      const iSmSub = sub.toLowerCase().indexOf("saint-maur");
-      const iLrSub = sub.toLowerCase().indexOf("la rochelle");
+      ).toMatch(/Saint-Maur/i);
+      const opening = await page.evaluate(() => {
+        const live = String(window.__naviguideFilm?.chapterText || "");
+        return live;
+      });
+      const chapterText = opening || film.chapters[0]?.text || "";
+      const iSmSub = String(chapterText).toLowerCase().indexOf("saint-maur");
+      const iLrSub = String(chapterText).toLowerCase().indexOf("la rochelle");
       expect(iSmSub, "Saint-Maur dans le sous-titre").toBeGreaterThanOrEqual(0);
       expect(iLrSub, "La Rochelle après Saint-Maur dans le sous-titre").toBeGreaterThan(iSmSub);
+      await expect(subtitle).toBeVisible();
     }
   }
 

@@ -94,8 +94,20 @@ test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
   await expect(box.getByText(/Le journal commence|Écrit par le serveur|cliquez pour/i)).toHaveCount(0);
 
   const simEntries = page.getByTestId("ici-journal-entry");
+  const keepJournalOpen = async () => {
+    const tab = page.getByTestId("ici-tab-journal");
+    if ((await tab.getAttribute("aria-selected")) !== "true") {
+      await tab.evaluate((el) => el.click());
+    }
+  };
   if (apiUp) {
-    await expect.poll(async () => simEntries.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+    // L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant (RC2).
+    // On refrappe Journal tant que la liste n'a pas de lignes.
+    await expect(page.getByTestId("film-clock-line")).not.toHaveText(/\bj0\b/, { timeout: 25_000 }).catch(() => {});
+    await expect.poll(async () => {
+      await keepJournalOpen();
+      return simEntries.count();
+    }, { timeout: 20_000 }).toBeGreaterThan(0);
   }
   const hasEntry = await simEntries.first().isVisible({ timeout: 5_000 }).catch(() => false)
     || (await simEntries.count()) > 0;
@@ -115,6 +127,7 @@ test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
   expect(firstSim.length).toBeGreaterThan(0);
   expect(lastSim.length).toBeGreaterThan(0);
 
+  await keepJournalOpen();
   const clockBefore = (await page.getByTestId("film-clock-line").innerText().catch(() => "")) || "";
   const nmBefore = await page.evaluate(() => window.__naviguideScene?.playback?.state?.nm ?? null);
   const seekTarget = page.getByTestId("ici-journal-entry").filter({ hasText: /Ajaccio/i }).first();
