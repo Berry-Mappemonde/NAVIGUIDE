@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmShouldFinish, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -895,5 +895,53 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     });
     assert.equal(end.done, true);
     assert.equal(end.t, toT);
+  });
+});
+
+describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
+  it("hasWritten true → pilule active, étiquette Nemotron ; false → désactivée, règles", () => {
+    const on = resolveServedFilm({
+      hasWritten: true,
+      source: WRITTEN_FILM_SOURCE,
+      chapters: [{ text: "Le 15 mai, Berry-Mappemonde quitte La Rochelle.", anchors: [{ t: 0, i: 0 }] }],
+    }, "written");
+    assert.equal(on.hasWritten, true);
+    assert.equal(on.effectiveStyle, "written");
+    assert.equal(on.source, WRITTEN_FILM_SOURCE);
+    assert.equal(writtenPillEnabled(on.hasWritten), true);
+    assert.equal(filmSourceKey(on.source), "storySourceSuper");
+    assert.equal(isWrittenFilmSource(on.source), true);
+
+    const off = resolveServedFilm({ hasWritten: false, source: "rules" }, "written");
+    assert.equal(off.hasWritten, false);
+    assert.equal(off.effectiveStyle, "raw");
+    assert.equal(off.source, "rules");
+    assert.equal(writtenPillEnabled(off.hasWritten), false);
+    assert.equal(filmSourceKey(off.source), "storySourceRules");
+
+    const raw = resolveServedFilm({ hasWritten: false, source: "rules" }, "raw");
+    assert.equal(raw.updateHasWritten, false);
+    assert.equal(raw.effectiveStyle, "raw");
+    assert.equal(filmRequestStyle("written"), "written");
+    assert.equal(filmRequestStyle("raw"), "raw");
+  });
+
+  it("demande style=written, lit hasWritten / source / ancres, aucun LLM navigateur", () => {
+    assert.match(hook, /filmRequestStyle\(filmStyle\)/);
+    assert.match(hook, /style=\$\{style\}/);
+    assert.match(hook, /style=written/);
+    assert.match(hook, /resolveServedFilm/);
+    assert.match(hook, /probeWritten/);
+    assert.match(hook, /applyResolvedMeta/);
+    assert.match(hook, /data\?\.hasWritten/);
+    assert.match(hook, /anchors du stock/);
+    assert.doesNotMatch(hook, /Tavily|Nebius/i);
+    assert.doesNotMatch(hook, /https?:\/\/\S*tokenfactory/i);
+    assert.match(bar, /nemotron-super-token-factory|filmSourceKey/);
+    assert.match(bar, /filmStoryWrittenSoon/);
+    assert.match(bar, /replay\.hasWritten/);
+    assert.match(bar, /film-style-\$\{id\}/);
+    assert.match(bar, /\["raw", "filmStoryRaw"\], \["written", "filmStoryWritten"\]/);
+    assert.match(bar, /data-testid="film-source" hidden/);
   });
 });

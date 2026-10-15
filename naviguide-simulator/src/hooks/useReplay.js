@@ -103,6 +103,77 @@ export function filmRequestPath(voyageId) {
   return "/voyage/official/film";
 }
 
+/** Contrat RG11A : source du rédigé Super servi par le stock. */
+export const WRITTEN_FILM_SOURCE = "nemotron-super-token-factory";
+
+export function filmRequestStyle(filmStyle) {
+  return filmStyle === "written" ? "written" : "raw";
+}
+
+export function isWrittenFilmSource(source) {
+  const s = String(source || "").toLowerCase();
+  if (s === WRITTEN_FILM_SOURCE || s === "nemotron-super" || s === "nemotron") return true;
+  return s.includes("nemotron") && (s.includes("super") || s.includes("token-factory"));
+}
+
+const FILM_SOURCE_I18N = Object.freeze({
+  "nemotron-lightning": "storySourceLightning",
+  "nemotron-super": "storySourceSuper",
+  "nemotron-super-token-factory": "storySourceSuper",
+  "nemotron-ultra": "storySourceUltra",
+  nemotron: "storySourceSuper",
+  openrouter: "storySourceOpenrouter",
+  claude: "storySourceClaude",
+  rules: "storySourceRules",
+  budget: "storySourceBudget",
+  cache: "storySourceCache",
+});
+
+export function filmSourceKey(source) {
+  if (isWrittenFilmSource(source)) return "storySourceSuper";
+  return FILM_SOURCE_I18N[source] || "storySourceRules";
+}
+
+/**
+ * Contrat RG11A : style=written + hasWritten → rédigé (source Super, ancres
+ * du plan servi) ; style=written + !hasWritten → brut, et on le dit ;
+ * style=raw → brut, le hasWritten du payload est ignoré (le brut le pose
+ * toujours à false).
+ */
+export function resolveServedFilm(data, requestedStyle) {
+  const askedWritten = requestedStyle === "written";
+  if (askedWritten) {
+    const hasWritten = Boolean(data?.hasWritten);
+    if (hasWritten) {
+      return {
+        updateHasWritten: true,
+        hasWritten: true,
+        effectiveStyle: "written",
+        source: data?.source || WRITTEN_FILM_SOURCE,
+        applyPlan: true,
+      };
+    }
+    return {
+      updateHasWritten: true,
+      hasWritten: false,
+      effectiveStyle: "raw",
+      source: "rules",
+      applyPlan: true,
+    };
+  }
+  return {
+    updateHasWritten: false,
+    hasWritten: null,
+    effectiveStyle: "raw",
+    source: data?.source || "rules",
+    applyPlan: true,
+  };
+}
+
+export function writtenPillEnabled(hasWritten) {
+  return Boolean(hasWritten);
+}
+
 export function isOfficialFilmVoyage(voyageId) {
   const id = String(voyageId || "").trim();
   return !id || id === "official";
@@ -826,7 +897,7 @@ export function useReplay({
     const ac = new AbortController();
     const official = isOfficialFilmVoyage(voyageId);
     const path = filmRequestPath(voyageId);
-    const style = filmStyle === "written" ? "written" : "raw";
+    const style = filmRequestStyle(filmStyle);
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
     let prepareStarted = 0;
 
@@ -845,7 +916,25 @@ export function useReplay({
       setFilmParagraphs(texts);
     };
 
-    const applyData = (data) => {
+    const applyResolvedMeta = (data, requestedStyle) => {
+      const resolved = resolveServedFilm(data, requestedStyle);
+      if (resolved.updateHasWritten) setHasWritten(resolved.hasWritten);
+      if (requestedStyle === "written" && filmStyle === "written" && !resolved.hasWritten) {
+        setFilmStyle("raw");
+      }
+      return resolved;
+    };
+
+    const applyPlan = (data, resolved) => {
+      // Texte + anchors du stock (RG11A) : pas de réécriture navigateur.
+      remotePlanRef.current = data;
+      remotePlanKeyRef.current = q;
+      setFilmSource(resolved.source);
+      applyEstimates(data);
+      applyStory(data);
+    };
+
+    const applyData = (data, requestedStyle = style) => {
       if (cancelled) return true;
       if (isPreparingFilm(data)) {
         remotePlanRef.current = null;
@@ -853,23 +942,19 @@ export function useReplay({
         setFilmStatus("preparing");
         return "preparing";
       }
+      const resolved = applyResolvedMeta(data, requestedStyle);
+      const isProbe = requestedStyle === "written" && filmStyle !== "written";
       if (isReadyRemoteFilm(data, { official })) {
-        remotePlanRef.current = data;
-        remotePlanKeyRef.current = q;
-        setHasWritten(Boolean(data.hasWritten));
-        setFilmSource(data.source || "rules");
-        applyEstimates(data);
-        applyStory(data);
-        setFilmStatus("ready");
-        return true;
+        if (!isProbe) applyPlan(data, resolved);
+        if (!isProbe) setFilmStatus("ready");
+        return isProbe ? "probed" : true;
       }
       if (data?.chapters?.length) {
-        remotePlanRef.current = data;
-        remotePlanKeyRef.current = q;
-        applyEstimates(data);
-        applyStory(data);
-        setFilmStatus("stale");
-        return true;
+        if (!isProbe) {
+          applyPlan(data, resolved);
+          setFilmStatus("stale");
+        }
+        return isProbe ? "probed" : true;
       }
       return false;
     };
@@ -882,6 +967,20 @@ export function useReplay({
       setVariantEstimates(null);
       setFilmParagraphs([]);
       setFilmStatus("absent");
+    };
+
+    const probeWritten = () => {
+      if (style !== "raw") return;
+      const pq = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+      fetch(`${API}${path}?${pq}`, { signal: ac.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (cancelled || ac.signal.aborted || !data) return;
+          applyResolvedMeta(data, "written");
+        })
+        .catch((err) => {
+          if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
+        });
     };
 
     const load = () => {
@@ -912,7 +1011,10 @@ export function useReplay({
             }
             return;
           }
-          if (applied) return;
+          if (applied) {
+            probeWritten();
+            return;
+          }
           setFilmStatus("empty");
           retryTimer = setTimeout(load, 2000);
         })
@@ -1506,6 +1608,11 @@ export function useReplay({
     cardSinceRef.current = 0;
   }, []);
 
+  const chooseFilmStyle = useCallback((next) => {
+    if (next === "written" && !hasWritten) return;
+    setFilmStyle(next === "written" ? "written" : "raw");
+  }, [hasWritten]);
+
   return {
     active,
     tMs,
@@ -1534,7 +1641,7 @@ export function useReplay({
     isVoiceHeld,
     filmSource,
     filmStyle,
-    setFilmStyle,
+    setFilmStyle: chooseFilmStyle,
     hasWritten,
     canStart,
     seekChapter,

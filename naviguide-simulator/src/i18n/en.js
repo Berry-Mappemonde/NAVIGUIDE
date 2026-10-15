@@ -241,6 +241,7 @@ export default {
   filmStorySource: "Story: {source}",
   filmStoryRaw: "Raw",
   filmStoryWritten: "Edited",
+  filmStoryWrittenSoon: "not yet written for this duration",
   recomputeConstraintsSkipper: "Under the skipper's orders: wind < {wind}, sea < {hs} — no step of the route in those conditions.",
   recomputeConstraintsDefault: "Without skipper's orders: only a sea ≥ {hs} is avoided.",
   drawingInProgress: "Drawing in progress",
