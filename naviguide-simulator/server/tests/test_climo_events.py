@@ -150,6 +150,50 @@ def test_sentence_hindcast_says_measured():
     assert "seasonal" not in en
 
 
+def test_rc30_place_is_boat_position_galice_not_gibraltar():
+    """RC30 : le lieu d'une phrase climato est la position du bateau à cet
+    instant — au large de la Galice, le bateau n'est pas « au nord de
+    Gibraltar » (445 nm) ; un jalon trop loin ne se dit pas."""
+    from climo_events import _place_phrase
+
+    galice = _place_phrase(43.2, -9.3, "fr")
+    assert "Gibraltar" not in galice
+    assert galice == ""
+    assert _place_phrase(43.2, -9.3, "en") == ""
+    # à portée, le jalon se dit toujours
+    assert _place_phrase(36.5, -5.5, "fr") == "au large de Gibraltar"
+    assert _place_phrase(13.0, -24.0, "fr") == "au sud du Cap-Vert"
+
+
+def test_rc30_no_mistral_outside_mediterranean():
+    """Le mistral / la tramontane : Méditerranée vraie seulement — un vent de
+    nord au large de la Galice n'est pas le mistral (transcription du 14 oct.)."""
+    from climo_events import named_belt
+
+    assert named_belt(43.2, -9.3, 0.0, 16.0, "atlas") is None
+    assert named_belt(42.0, 5.0, 350.0, 16.0, "atlas") == "mistral"
+    assert named_belt(42.5, 3.5, 320.0, 15.0, "atlas") == "tramontane"
+    # l'atlas qui NOMME le régime garde la main, où que soit le bateau
+    assert named_belt(43.2, -9.3, 0.0, 16.0, "atlas", {"atlasName": "mistral"}) == "mistral"
+
+
+def test_rc30_event_place_empty_when_landmark_far():
+    """_make_event au large de la Galice : placeFr / placeEn vides — la phrase
+    se dit sans lieu plutôt qu'avec un lieu faux."""
+    t0 = datetime(2026, 5, 17, tzinfo=timezone.utc)
+    calm = _series(t0, 48, 6, lat=43.4, lon=-9.2, kn=6.0, direc=20.0, source="atlas")
+    windy = _series(
+        t0 + timedelta(hours=48), 72, 6,
+        lat=43.0, lon=-9.4, kn=16.0, direc=20.0, source="atlas",
+    )
+    events = notable_climo_changes(_clock(calm + windy))
+    assert events
+    for ev in events:
+        assert ev["placeFr"] == ""
+        assert ev["placeEn"] == ""
+        assert "Gibraltar" not in climo_sentence(ev, "fr")
+
+
 def test_dosage_one_short_two_long():
     many = [
         {

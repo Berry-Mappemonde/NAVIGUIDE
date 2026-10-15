@@ -17,9 +17,8 @@
  *
  * Fonctions pures (jamais de mutation de l’état précédent : StrictMode peut
  * rejouer un updater). Pas de HTTP, pas de timer : le hook passe `nowMs`.
- * Le texte vient de `phraseForEvent` (récit LLM quand il est prêt, phrase
- * locale sinon) ou des mêmes phrases que le briefing — jamais un chiffre
- * inventé ici.
+ * Le texte vient de `phraseForEvent` (phrase de règles du film, récit LLM
+ * seulement sur Rédigé) — jamais un chiffre inventé ici.
  */
 
 import { phraseForEvent, satelliteSentence, climatologySentence } from "./iciBriefing.js";
@@ -548,7 +547,7 @@ function eventKey(ev) {
   return `ev:${ev.stableKey || ev.id}`;
 }
 
-export function cardFromEvent(ev, lang = "fr") {
+export function cardFromEvent(ev, lang = "fr", { written = false } = {}) {
   const lane = ev.promoted || INFO_TYPES.has(ev.type) || ev.judge !== "now" ? LANE_FREE : LANE_NOW;
   return {
     key: eventKey(ev),
@@ -558,7 +557,7 @@ export function cardFromEvent(ev, lang = "fr") {
     type: ev.type,
     severity: ev.severity || "info",
     title: null,
-    text: phraseForEvent(ev, lang),
+    text: phraseForEvent(ev, lang, { written }),
     entity: entityForEvent(ev),
     whenNm: ev.whenNm ?? null,
     filmCum: ev.filmCum ?? null,
@@ -691,6 +690,7 @@ export function advanceMoments(prev, {
   playing = false,
   mode = "simulation",
   lang = "fr",
+  written = false,
   legId = null,
   leg = null,
 } = {}) {
@@ -730,7 +730,7 @@ export function advanceMoments(prev, {
   for (const ev of events || []) {
     const lane = classifyMoment(ev, { filmCum, mode });
     if (!lane) continue;
-    const card = cardFromEvent(ev, lang);
+    const card = cardFromEvent(ev, lang, { written });
     const truth = card.truth || truthForCard(card, bag);
     if (truth) card.truth = truth;
     if (!card.text) continue;

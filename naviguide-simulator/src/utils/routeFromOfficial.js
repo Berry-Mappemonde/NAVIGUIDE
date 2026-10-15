@@ -1,6 +1,6 @@
 /** Convertit public/route.geojson (source officielle Berry) en segments + stops. */
 
-import { isAirLegNames } from "./berryLegs.js";
+import { isAirLegNames, isSideLegNames } from "./berryLegs.js";
 
 export function routeFromOfficial(fc) {
   const segments = [];
@@ -19,6 +19,7 @@ export function routeFromOfficial(fc) {
         coords: g.coordinates,
         nonMaritime: p.type === "overland",
         air: p.type === "air" || isAirLegNames(p.from, p.to),
+        side: p.type === "side" || isSideLegNames(p.from, p.to),
         officialFallback: true,
       });
     } else if (g?.type === "Point") {

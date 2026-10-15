@@ -56,6 +56,7 @@ describe("buildLocalCustomBriefing", () => {
     const plan = buildLocalCustomBriefing(laRochelleBrest, "en");
     assert.ok(plan.executive_briefing.includes("Custom route"));
     assert.ok(plan.executive_briefing.includes("La Teste"));
+    assert.doesNotMatch(plan.executive_briefing, /could not be reached|assistant de briefing/i);
   });
 
   it("lot T — au large de Nouadhibou, le sac nomme la Mauritanie", () => {

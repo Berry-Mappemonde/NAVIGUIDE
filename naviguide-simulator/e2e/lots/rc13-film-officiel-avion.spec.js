@@ -17,8 +17,8 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-const AIR_OUT = /prend l'avion pour|the crew flies to/i;
-const AIR_BACK = /retour en avion vers|return flight to/i;
+const AIR_OUT = /prend l'avion pour|s'envole de Cayenne|the crew flies (?:to|from)/i;
+const AIR_BACK = /retour en avion vers|return flight to|s'envole de Halifax|flies from Halifax/i;
 
 async function dismissNotForNav(page) {
   const modal = page.getByTestId("not-for-nav-modal");
@@ -133,14 +133,14 @@ test("lot RC13 — GET /film dit l'avion aller et retour si Cayenne et Halifax",
       return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
     }, null, { timeout: 8_000 }).catch(() => null);
     const airIdx = await page.evaluate(() => {
-      const re = /prend l'avion|retour en avion|the crew flies|return flight/i;
+      const re = /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i;
       const list = window.__naviguideFilm?.chapters || [];
       const i = list.findIndex((c) => re.test(c.text || ""));
       if (i >= 0) window.__naviguideFilm.seekChapter(i);
       return i;
     });
     if (airIdx >= 0) {
-      await expect(subtitle).toContainText(/avion/i, { timeout: 8_000 });
+      await expect(subtitle).toContainText(/avion|s'envole|flies/i, { timeout: 8_000 });
     }
   }
   await shot(page, "01-avion");

@@ -12,7 +12,7 @@ const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 describe("LogbookChat contract (lot D)", () => {
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
-    assert.match(sidebar, /\{!isDrawing && chat \? \(/, "any view, not while drawing");
+    assert.match(sidebar, /\{!drawingHidesBerry && chat \? \(/, "any view, not once a drawn point hides Berry");
     assert.match(src, /hasAdminSecret\(\)/);
     assert.match(src, /logbookChatSaved|logbookChatUnsaved/);
   });
@@ -28,8 +28,8 @@ describe("LogbookChat contract (lot D)", () => {
   });
 
   it("shows the cascade source under the answer and does not fetch on render", () => {
-    assert.match(src, /data-testid="chat-source"/);
-    assert.match(src, /storySourceLightning|storySourceSuper|storySourceRules/);
+    assert.match(src, /testId="chat-source"/);
+    assert.match(src, /LlmSourceBadge/);
     assert.doesNotMatch(src, /\/logbook\/chat/);
     const effects = src.match(/useEffect\(/g) || [];
     assert.equal(effects.length, 1, "only the scroll-to-bottom effect");

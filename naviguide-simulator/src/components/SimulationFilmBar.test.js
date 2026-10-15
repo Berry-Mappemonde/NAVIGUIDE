@@ -16,6 +16,7 @@ const bar = readFileSync(join(here, "SimulationFilmBar.jsx"), "utf8");
 
 const DICT = {
   clockRegimeHindcast: "hindcast",
+  clockRegimeRealUntil: "réel jusqu'au {date}",
   clockRegimeForecast: "prévision",
   clockRegimeClimatology: "climatologie",
   clockWeatherGfs: "GFS",
@@ -177,5 +178,39 @@ describe("barre film (lot RG8 / RC22) — pilules et durée estimée", () => {
     assert.match(durBlock, /data-testid="film-duration-estimate"/);
     assert.match(bar, /data-testid="replay-stop"/);
     assert.doesNotMatch(bar, /calibrateRate/);
+  });
+});
+
+describe("barre film (lot HC1) — réel jusqu'au <date>", () => {
+  it("hindcast + realUntil → « réel jusqu'au 9 oct. », sources conservées", () => {
+    const label = clockRegimeText({
+      regime: "hindcast",
+      sources: ["om-era5"],
+      realUntil: "2026-10-09",
+      t,
+      lang: "fr",
+    });
+    assert.match(label, /^réel jusqu'au 9 oct\./);
+    assert.match(label, /1 sources?/);
+  });
+
+  it("hindcast sans realUntil → « hindcast » comme avant ; sans realUntil rien ne change", () => {
+    const label = clockRegimeText({ regime: "hindcast", sources: [], t, lang: "fr" });
+    assert.equal(label, "hindcast");
+    assert.equal(
+      clockRegimeText({ regime: "climatology", sources: [], t }),
+      "climatologie",
+    );
+  });
+
+  it("climatologie d'une horloge à part réelle → suffixe « réel jusqu'au … »", () => {
+    assert.equal(
+      clockRegimeText({ regime: "climatology", sources: [], realUntil: "2026-10-09", t, lang: "fr" }),
+      "climatologie · réel jusqu'au 9 oct.",
+    );
+  });
+
+  it("la barre passe clock.realUntil au libellé", () => {
+    assert.match(bar, /realUntil: clock\?\.realUntil/);
   });
 });

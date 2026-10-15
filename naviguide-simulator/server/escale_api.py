@@ -380,7 +380,7 @@ async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
     own = client is None
     http = client or httpx.AsyncClient()
     try:
-        bag_t = asyncio.create_task(fill_dossier(lat, lon, BAG_RADIUS_NM, client=http, thin=True, rich=True))
+        bag_t = asyncio.create_task(fill_dossier(lat, lon, BAG_RADIUS_NM, client=http, thin=True, rich=False))
         osm_t = asyncio.create_task(_overpass_elements(http, osm_query(lat, lon)))
         bag, (elements, osm_err) = await asyncio.gather(bag_t, osm_t)
         sections = merge_sections(sections_from_bag(bag), classify_osm(elements, lat, lon))

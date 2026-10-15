@@ -17,14 +17,16 @@ from typing import Any
 NS = "llm-budget"
 LAST_SOURCE_NS = "llm"
 LAST_SOURCE_KEY = "last-source"
+LAST_ERROR_KEY = "last-error"
 
-TIERS = ("fast", "write", "judge")
+TIERS = ("fast", "write", "deep", "judge")
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
 # Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j, judge 0.
 DEFAULT_CAPS = {
     "fast": 200_000,
     "write": 150_000,
+    "deep": 40_000,
     "judge": 0,
 }
 
@@ -37,6 +39,9 @@ DEFAULT_CAPS = {
 #   all        : tout, comme avant (à poser explicitement sur le poste pour une démo complète).
 _MODES = ("off", "on-demand", "all")
 _BACKGROUND: ContextVar[bool] = ContextVar("naviguide_llm_background", default=False)
+# RG11A : le remplisseur écrit le rédigé comme une étape « sur demande différée »
+# (on-demand + processus arrière-plan). Mode off reste interdit.
+_DEFERRED: ContextVar[bool] = ContextVar("naviguide_llm_deferred", default=False)
 
 
 def mode() -> str:
@@ -62,12 +67,28 @@ def background():
         _BACKGROUND.reset(token)
 
 
-def llm_allowed_here() -> bool:
+@contextmanager
+def deferred_demand():
+    """Écriture du rédigé par le remplisseur : étape « sur demande différée ».
+
+    Autorise le palier *write* même si le processus est marqué arrière-plan,
+    tant que le mode n'est pas `off`. Les paliers fast / judge restent bloqués.
+    """
+    token = _DEFERRED.set(True)
+    try:
+        yield
+    finally:
+        _DEFERRED.reset(token)
+
+
+def llm_allowed_here(tier: str | None = None) -> bool:
     """Le mode autorise-t-il un appel payant ICI (avant même le plafond) ?"""
     m = mode()
     if m == "off":
         return False
     if m == "all":
+        return True
+    if _DEFERRED.get() and (tier is None or normalize_tier(tier) == "write"):
         return True
     return not in_background()
 
@@ -75,35 +96,41 @@ def llm_allowed_here() -> bool:
 PRICES_PER_M = {
     "fast": (0.06, 0.24),
     "write": (0.30, 0.90),
+    "deep": (1.00, 3.00),
     "judge": (1.00, 3.00),
 }
 
 DEFAULT_MODELS = {
     "fast": "nvidia/Nemotron-3_5-Lightning",
     "write": "nvidia/nemotron-3-super-120b-a12b",
+    "deep": "nvidia/Nemotron-3-Ultra-550b-a55b",
     "judge": "nvidia/Nemotron-3-Ultra-550b-a55b",
 }
 
 DEFAULT_MAX_TOKENS = {
-    "fast": 256,
+    "fast": 512,
     "write": 400,
+    "deep": 512,
     "judge": 512,
 }
 
 SOURCE_FOR_TIER = {
     "fast": "nemotron-lightning",
     "write": "nemotron-super",
+    "deep": "nemotron-ultra",
     "judge": "nemotron-ultra",
 }
 
 _ENV_CAP = {
     "fast": "NAVIGUIDE_LLM_DAILY_TOKENS_FAST",
     "write": "NAVIGUIDE_LLM_DAILY_TOKENS_WRITE",
+    "deep": "NAVIGUIDE_LLM_DAILY_TOKENS_DEEP",
     "judge": "NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE",
 }
 _ENV_MODEL = {
     "fast": "NAVIGUIDE_TF_MODEL_FAST",
     "write": "NAVIGUIDE_TF_MODEL_WRITE",
+    "deep": "NAVIGUIDE_TF_MODEL_DEEP",
     "judge": "NAVIGUIDE_TF_MODEL_JUDGE",
 }
 
@@ -185,7 +212,7 @@ def get_usage(tier: str, day: str | None = None) -> dict[str, Any]:
 def allow(tier: str) -> bool:
     """False si le mode l'interdit ici (off, ou arrière-plan en on-demand), ou si le compteur du jour est au
     plafond — dans les deux cas : aucun appel réseau, la cascade rend `source=budget`."""
-    if not llm_allowed_here():
+    if not llm_allowed_here(tier):
         return False
     used = get_usage(tier)
     return int(used["tokens"]) < daily_cap(tier)
@@ -226,6 +253,51 @@ def last_source() -> str | None:
     hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_SOURCE_KEY)
     val = (hit or {}).get("value")
     return val if isinstance(val, str) and val.strip() else None
+
+
+def remember_cascade_errors(hops: list[dict[str, str]]) -> None:
+    """Every hop that failed in the last cascade (TF HTTP body first)."""
+    import pearl_store  # noqa: PLC0415
+
+    clean: list[dict[str, str]] = []
+    for hop in hops or []:
+        if not isinstance(hop, dict):
+            continue
+        prov = str(hop.get("provider") or "").strip()
+        why = " ".join(str(hop.get("reason") or "").split())[:240]
+        if prov or why:
+            clean.append({"provider": prov, "reason": why})
+    if not clean:
+        return
+    pearl_store.kv_put(LAST_SOURCE_NS, LAST_ERROR_KEY, clean)
+
+
+def remember_cascade_error(provider: str, reason: str) -> None:
+    remember_cascade_errors([{"provider": provider, "reason": reason}])
+
+
+def last_errors() -> list[dict[str, str]] | None:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_ERROR_KEY)
+    val = (hit or {}).get("value")
+    if isinstance(val, list):
+        out = [x for x in val if isinstance(x, dict) and (x.get("provider") or x.get("reason"))]
+        return out or None
+    if isinstance(val, dict) and (val.get("provider") or val.get("reason")):
+        return [{"provider": str(val.get("provider") or ""), "reason": str(val.get("reason") or "")}]
+    return None
+
+
+def last_error() -> dict[str, str] | None:
+    """Prefer Token Factory so a Lightning HTTP body stays visible after NIM."""
+    errs = last_errors()
+    if not errs:
+        return None
+    for item in errs:
+        if item.get("provider") == "tokenfactory":
+            return item
+    return errs[0]
 
 
 def _tavily_empty() -> dict[str, Any]:
@@ -293,4 +365,8 @@ def status() -> dict[str, Any]:
     src = last_source()
     if src:
         out["lastSource"] = src
+    errs = last_errors()
+    if errs:
+        out["lastErrors"] = errs
+        out["lastError"] = last_error()
     return out

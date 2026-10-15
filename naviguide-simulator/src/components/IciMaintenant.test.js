@@ -9,9 +9,15 @@ import { wrapLon } from "../utils/geo.js";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   dismissAlert,
+  defaultIciTab,
   formatJournalLine,
+  hiddenIciTabs,
   journalChangeLabel,
+  displayIciFrame,
+  localizeStoredTitle,
+  legsFromClockMarks,
   seekJournalEntry,
+  servesNowContent,
   visibleAlerts,
   visibleIciTabs,
   formatLegLine,
@@ -39,7 +45,7 @@ describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
     assert.match(src, /data-testid="ici-tabs"/);
     assert.match(src, /data-testid=\{testId\}/);
     assert.match(src, /data-testid=\{tab\.testId\}/);
-    assert.match(src, /visibleIciTabs\(mode\)/);
+    assert.match(src, /visibleIciTabs\(mode/);
     assert.match(src, /tabs\.map\(\(tab\) =>/);
     assert.doesNotMatch(src, /ICI_TABS\.map/);
     for (const id of [
@@ -150,7 +156,7 @@ describe("IciMaintenant — lot R9b : journal chronologique, clic → onSeek(t)"
     seekJournalEntry((t) => seen.push(t), { t: "2026-05-15T08:00:00Z" });
     assert.deepEqual(seen, ["2026-06-02T08:00:00Z", "2026-05-15T08:00:00Z"]);
     assert.match(src, /seekJournalEntry\(onSeek, entry\)/);
-    assert.match(src, /momentAtOrBefore\(journalEntries, moment\?\.t\)/);
+    assert.match(src, /displayIciFrame\(moment, journalEntries, mode\)/);
   });
 });
 
@@ -214,11 +220,9 @@ describe("IciMaintenant — lot RC2 : encadré honnête", () => {
 });
 
 describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
-  it("n'expose Récit qu'en Suivre", () => {
+  it("garde les quatre onglets en Suivre (DM9 élargit Récit à Tracer)", () => {
     assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
-    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["now", "journal", "review"]);
-    assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["now", "journal"]);
-    assert.match(src, /visibleIciTabs\(mode\)/);
+    assert.match(src, /visibleIciTabs\(mode/);
     assert.doesNotMatch(src, /className="mt-1\.5 min-h-0 flex-1"/);
     assert.doesNotMatch(src, /placeholder|journalHint|récit vide|onglet vide/i);
   });
@@ -259,6 +263,26 @@ describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
     }, "fr");
     assert.match(line, /Aire marine protégée — Iroise/);
     assert.doesNotMatch(line, /Iroise Iroise/);
+    assert.equal(localizeStoredTitle("Formalités d’entrée", "en"), "Entry formalities");
+    assert.equal(localizeStoredTitle("Aire marine protégée", "en"), "Marine protected area");
+    assert.equal(localizeStoredTitle("Station croisée", "en"), "Station passed");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "entry", score: 2, title: "Formalités d’entrée", fact: "" }],
+    }, "en"), "Entry formalities");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "amp", score: 1, title: "Aire marine protégée", fact: "Iroise (4 nm)" }],
+    }, "en"), "Marine protected area — Iroise");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "stop", score: 3, title: "Escale Saint-Maur", fact: "" }],
+    }, "en"), "Stopover — Saint-Maur");
+    assert.equal(journalChangeLabel({
+      changes: [{ kind: "sci", score: 2, title: "Station croisée", fact: "" }],
+    }, "en"), "Station passed");
+    const live = { t: "2026-05-16T10:00:00Z", alerts: [{ id: "entry-1", title: "Entry formalities" }], here: { sentences: ["English waters."] } };
+    const journalFr = [{ t: "2026-05-16T09:00:00Z", alerts: [{ id: "entry-1", title: "Formalités d’entrée" }], here: { sentences: ["Eaux françaises."] } }];
+    const frame = displayIciFrame(live, journalFr, "follow");
+    assert.equal(frame.here.sentences[0], "English waters.");
+    assert.equal(frame.alerts[0].title, "Entry formalities");
   });
 });
 
@@ -289,10 +313,10 @@ describe("IciMaintenant — lot RE3 : journal lisible dans les deux thèmes", ()
 });
 
 describe("IciMaintenant — lot RD9 : onglet Revue du plan", () => {
-  it("rend l'onglet Revue en Suivre et Simulation, jamais en Tracer", () => {
+  it("rend l'onglet Revue en Suivre et en Tracer (DM9 : aussi le brouillon)", () => {
     assert.ok(visibleIciTabs("follow").some((t) => t.id === "review"));
     assert.ok(visibleIciTabs("simulation").some((t) => t.id === "review"));
-    assert.equal(visibleIciTabs("drawn").some((t) => t.id === "review"), false);
+    assert.ok(visibleIciTabs("drawn").some((t) => t.id === "review"));
     assert.match(helpers, /ici-tab-review/);
     assert.match(helpers, /planReviewTitle/);
     assert.match(src, /data-testid="ici-review-slot"/);
@@ -300,5 +324,53 @@ describe("IciMaintenant — lot RD9 : onglet Revue du plan", () => {
     assert.match(src, /planReview\.legs/);
     assert.match(src, /startOpen/);
     assert.doesNotMatch(src, /placeholder|onglet vide|aide|hint/i);
+  });
+});
+
+describe("IciMaintenant — lot DM9 : Tracer sert le tracé", () => {
+  it("Tracer : Revue du plan et Récit seulement, Revue ouverte par défaut ; Suivre : 4 onglets", () => {
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
+    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["review", "story"]);
+    assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["review", "story"]);
+    assert.deepEqual(hiddenIciTabs("simulation").map((t) => t.id), ["now", "journal"]);
+    assert.deepEqual(hiddenIciTabs("follow"), []);
+    assert.equal(defaultIciTab("follow"), "now");
+    assert.equal(defaultIciTab("simulation"), "review");
+    assert.equal(defaultIciTab("drawn"), "review");
+    assert.equal(servesNowContent("review", "simulation"), true);
+    assert.equal(servesNowContent("review", "follow"), false);
+    assert.equal(servesNowContent("now", "follow"), true);
+    assert.equal(visibleIciTabs("simulation").some((t) => t.id === "now"), false);
+    assert.equal(visibleIciTabs("simulation").some((t) => t.id === "journal"), false);
+    assert.match(src, /defaultIciTab\(mode/);
+    assert.match(src, /servesNowContent\(view, mode/);
+    assert.match(src, /hiddenIciTabs\(mode/);
+    assert.match(src, /extraTabs\.some\(\(tab\) => tab\.id === "now"\)/);
+    assert.match(helpers, /ici-tab-now/);
+    assert.match(helpers, /ici-tab-journal/);
+    assert.doesNotMatch(src, /placeholder|aide|hint|onglet vide/i);
+  });
+});
+
+describe("IciMaintenant — lot DM8C : Suivre × ma route", () => {
+  it("masque Maintenant, garde Revue · Journal · Récit ; jambes depuis l'horloge", () => {
+    assert.deepEqual(
+      visibleIciTabs("follow", { routeSource: "custom" }).map((t) => t.id),
+      ["review", "journal", "story"],
+    );
+    assert.deepEqual(hiddenIciTabs("follow", { routeSource: "custom" }).map((t) => t.id), ["now"]);
+    assert.equal(defaultIciTab("follow", { routeSource: "custom" }), "review");
+    assert.equal(servesNowContent("now", "follow", { routeSource: "custom" }), false);
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
+    const legs = legsFromClockMarks({
+      marks: [
+        { name: "La Rochelle", filmNm: 0, tHours: 0, iso: "2026-06-15T08:00:00Z" },
+        { name: "Antilles", filmNm: 3350, tHours: 720, iso: "2026-07-15T08:00:00Z" },
+      ],
+    }, "fr");
+    assert.equal(legs.length, 1);
+    assert.match(legs[0].title, /La Rochelle/);
+    assert.match(legs[0].title, /Antilles/);
+    assert.equal(legsFromClockMarks({ marks: [{ name: "Seul" }] }).length, 0);
   });
 });

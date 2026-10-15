@@ -71,13 +71,19 @@ test("lot RD6 — Récit hors Suivre absent, journal nommé, pas de trou", async
     });
   }
 
-  await page.addInitScript(({ key, seed }) => {
+  await page.addInitScript(({ keys, seed }) => {
     try {
-      localStorage.setItem(key, JSON.stringify(seed));
+      for (const key of keys) localStorage.setItem(key, JSON.stringify(seed));
     } catch {
       /* ignore */
     }
-  }, { key: "naviguide.moment-journal.v1.simulation:official", seed: localJournalSeed() });
+  }, {
+    keys: [
+      "naviguide.moment-journal.v1.simulation:official",
+      "naviguide.moment-journal.v1.official",
+    ],
+    seed: localJournalSeed(),
+  });
 
   await page.goto("/");
   await dismissNotForNav(page);
@@ -90,14 +96,14 @@ test("lot RD6 — Récit hors Suivre absent, journal nommé, pas de trou", async
 
   const box = page.getByTestId("ici-maintenant");
   await expect(box).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("ici-tab-now")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-journal")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-story")).toHaveCount(0);
-  await expect(page.getByTestId("ici-story-slot")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
   await expect(page.getByText(/Récit est toujours vide|le récit se remplit|onglet vide/i)).toHaveCount(0);
   await shot(page, "01-simulation");
 
-  await page.getByTestId("ici-tab-journal").click();
+  await page.getByTestId("ici-tab-journal").evaluate((el) => el.click());
   await expect(page.getByTestId("ici-journal-slot")).toBeVisible();
   const ampLine = page.getByTestId("ici-journal-entry").filter({ hasText: /Iroise/i }).first();
   await expect(ampLine).toBeVisible({ timeout: 10_000 });
@@ -114,9 +120,10 @@ test("lot RD6 — Récit hors Suivre absent, journal nommé, pas de trou", async
   await draw.click({ force: true, timeout: 5_000 }).catch(() => draw.evaluate((el) => el.click()));
     const drawing = await page.getByTestId("drawing-box").isVisible({ timeout: 8_000 }).catch(() => false);
     if (drawing) {
-      await expect(page.getByTestId("ici-tab-story")).toHaveCount(0);
-      await expect(page.getByTestId("ici-tab-now")).toBeVisible();
-      await expect(page.getByTestId("ici-tab-journal")).toBeVisible();
+      await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+      await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+      await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+      await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
       const cancel = page.getByRole("button", { name: /annuler|cancel/i }).first();
       if (await cancel.isVisible().catch(() => false)) await cancel.click();
     }

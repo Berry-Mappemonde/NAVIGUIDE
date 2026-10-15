@@ -132,6 +132,29 @@ export function formatEtaRangeTitle(eta, t) {
   return t("etaRangeTitle", { n: String(tight.members) });
 }
 
+/**
+ * Instant et playhead de la légende / fiche : horloge officielle seulement
+ * en Suivre × Berry. Hors Suivre, le sample du tracé — jamais official.live
+ * (lot DM7 : Papeete ne doit pas gouverner Tracer à Saint-Maur).
+ */
+export function legendNowAndLive({
+  suivreBerry = false,
+  officialNowMs: officialNow = NaN,
+  officialLiveNm,
+  sampleIso,
+  sampleFilmNm,
+  playbackNm,
+} = {}) {
+  if (suivreBerry) {
+    return { nowMs: officialNow, liveFilmNm: officialLiveNm };
+  }
+  const fromSample = Number(sampleFilmNm);
+  return {
+    nowMs: Date.parse(sampleIso || ""),
+    liveFilmNm: Number.isFinite(fromSample) ? fromSample : playbackNm,
+  };
+}
+
 /** Instant de l'horloge officielle (iso live), jamais le mur `Date.now()`. */
 export function officialNowMs(clock, live) {
   const iso = live?.iso;

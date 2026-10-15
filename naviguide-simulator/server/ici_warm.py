@@ -25,6 +25,8 @@ import json
 import logging
 import math
 import os
+import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -40,7 +42,9 @@ LEGACY_TTL_S = 7 * 86400.0
 POE_NEARBY_NM = 15.0  # a port of entry this close to a pearl was "passed" (journal, lot A)
 COAST_NEAR_NM = 25.0  # ports / WPI → jalon de côte (RG2)
 SCI_NEARBY_NM = 10.0  # station / campagne scientifique « croisée » (journal, lot F2)
-AMP_NEAR_NM = 30.0    # AMP réelle à portée (RG3)
+AMP_NEAR_NM = 30.0    # AMP réelle à portée — repli export (centroïde, RG3)
+AMP_NEARBY_NM = 15.0  # polygone : proximité à la limite, hors inside (AM1B)
+_AMP_NAME_SPLIT = re.compile(r"\s+[-—–]\s+|\s*\(")
 PROJECT_NEAR_NM = 30.0  # projet Blue Intelligence à portée (RG3)
 CLIMO_ROSE_TURN_DEG = 90.0
 CLIMO_CALM_KN = 8.0
@@ -68,8 +72,9 @@ def warm_enabled() -> bool:
 
 
 def stories_enabled() -> bool:
-    """Pre-generation of the LLM stories after the pearls (lot F); off in tests."""
-    return (os.environ.get("NAVIGUIDE_STORY_PREGEN") or "1").strip() not in ("0", "false", "no")
+    """RG18 : plus de pré-génération de récits d'événements. Toujours faux —
+    un réglage NAVIGUIDE_STORY_PREGEN ne peut plus rallumer ~177 appels Super."""
+    return False
 
 
 def watch_enabled() -> bool:
@@ -88,12 +93,14 @@ def status() -> dict[str, Any]:
     import llm_budget  # noqa: PLC0415
     import pearl_store  # noqa: PLC0415
     info = pearl_store.info()
-    return {
+    out = {
         **_state,
         "store": info,
         "llm": llm_budget.status(),
         "moments": info.get("moments", 0),
     }
+    out.setdefault("stories", {"skipped": "on-demand"})
+    return out
 
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -163,6 +170,70 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
 def sample_route(points: list[dict], step_nm: float = SAMPLE_NM) -> list[tuple[float, float]]:
     """Positions only (warmer, GET /ici/pearls)."""
     return [(p["lat"], p["lon"]) for p in sample_route_nm(points, step_nm)]
+
+
+def _run_coro(factory):
+    """Run `factory()` → coroutine from a sync handler.
+
+    `factory` is called in the thread that owns the event loop, so the
+    coroutine is never started on one loop and awaited on another.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(factory())
+
+    result: dict[str, Any] = {}
+
+    def _in_thread() -> None:
+        try:
+            result["value"] = asyncio.run(factory())
+        except Exception as exc:  # noqa: BLE001 — caller skips the pearl
+            result["error"] = exc
+
+    thread = threading.Thread(target=_in_thread, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
+def get_pearl_bag(lat: float, lon: float, *, rich: bool = True) -> dict | None:
+    """Sac `/ici` d'une perle : cache d'abord, sinon fill **sans LLM**.
+
+    None si le fill lève — l'appelant saute la perle (DM8A). Ne passe pas par
+    `fill_dossier` (juge de vérité / veille) : `NAVIGUIDE_LLM_MODE` indifférent.
+    Le chauffeur officiel (`warm_official_route`) n'est pas modifié.
+    """
+    from ici_engine import (  # noqa: PLC0415
+        _fill_dossier,
+        thin_cache_get,
+        thin_cache_key,
+        thin_cache_put,
+    )
+
+    key = thin_cache_key(lat, lon, 30.0)
+    cached = thin_cache_get(key, rich=False)
+    if cached is not None:
+        if not rich:
+            return cached
+        rich_hit = thin_cache_get(key, rich=True)
+        return rich_hit if rich_hit is not None else cached
+    try:
+        bag = _run_coro(lambda: _fill_dossier(
+            lat, lon, 30.0, None, None, None, None, True, rich,
+        ))
+    except Exception as exc:
+        log.debug("sac /ici %.4f,%.4f : %s", lat, lon, exc)
+        return None
+    if not isinstance(bag, dict):
+        return None
+    try:
+        thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
+    except Exception:
+        pass
+    return bag
 
 
 def _angle_delta_deg(a: float, b: float) -> float:
@@ -287,6 +358,39 @@ def _pearl_event(pearl: dict, idx: int, kind: str, event: str, name: str | None,
     return out
 
 
+def _amp_dedup_keys(amp: dict, spoken: str = "") -> tuple[str, ...]:
+    """siteId et préfixe de nom (« Lilleau-des-Niges » ×2) — AM1B."""
+    keys: list[str] = []
+    site = str(amp.get("siteId") or amp.get("site_id") or amp.get("id") or "").strip()
+    if site:
+        keys.append(f"id:{site.casefold()}")
+    raw = spoken or str(amp.get("name") or "")
+    prefix = _AMP_NAME_SPLIT.split(raw, maxsplit=1)[0].strip().casefold()
+    if prefix:
+        keys.append(f"name:{prefix}")
+    return tuple(keys)
+
+
+def _amp_is_export_fallback(amp: dict) -> bool:
+    """Repli centroïde (source export, pas d'inside) : comportement d'avant."""
+    src = str(amp.get("source") or "")
+    if src == "export":
+        return True
+    if src == "polygon":
+        return False
+    return "inside" not in amp
+
+
+def _amp_is_inside(amp: dict) -> bool:
+    if _amp_is_export_fallback(amp):
+        return False
+    return bool(amp.get("inside"))
+
+
+def _amp_keys_hit(keys: tuple[str, ...], pool: set[str]) -> bool:
+    return bool(keys) and any(k in pool for k in keys)
+
+
 def route_events_from_pearls(points: list[dict]) -> list[dict]:
     """What the warmed pearls know about the route, in order: ZEE entered /
     left, marine protected areas that come within reach (AMP réelles, RG3),
@@ -308,6 +412,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
     state_known = False
     candidate: tuple | None = None  # (zee_or_None, pearl, idx) seen once, waiting for a second pearl
     seen_amp: set[str] = set()
+    inside_amp_rows: list[tuple[tuple[str, ...], dict, str]] = []
     seen_poe: set[str] = set()
     seen_sci: set[str] = set()
     seen_coast: set[str] = set()
@@ -321,6 +426,7 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
             candidate = None
             prev_climo = None
             in_calms = False
+            inside_amp_rows = []
             continue
         zee = bag.get("zee") or None
         mrgid = zee.get("mrgid") if isinstance(zee, dict) else None
@@ -385,21 +491,60 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
             a for a in (bag.get("amp") or [])
             if isinstance(a, dict) and a.get("name") and not is_fishing_amp(a)
         ]
-        amps.sort(key=lambda a: a.get("nm") if isinstance(a.get("nm"), (int, float)) else 999)
+        amps.sort(key=lambda a: (
+            0 if a.get("inside") else 1,
+            a.get("nm") if isinstance(a.get("nm"), (int, float)) else 999,
+        ))
+        current_inside: list[tuple[tuple[str, ...], dict, str]] = []
         for amp in amps:
-            nm = amp.get("nm")
-            if isinstance(nm, (int, float)) and nm > AMP_NEAR_NM:
+            if not _amp_is_inside(amp):
                 continue
-            key = str(amp.get("site_id") or amp.get("id") or amp["name"])
-            if key in seen_amp:
-                continue
-            seen_amp.add(key)
             name = spoken_amp_name(amp["name"]) or str(amp["name"])
-            events.append({
-                "kind": "amp", "event": "nearby", "name": name, "siteId": key,
-                "nm": nm, "visitUrl": amp.get("visit_url") or amp.get("url"),
-                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4), "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
-            })
+            keys = _amp_dedup_keys(amp, name)
+            if keys:
+                current_inside.append((keys, amp, name))
+        current_keyset = {k for keys, _amp, _n in current_inside for k in keys}
+        prev_keyset = {k for keys, _amp, _n in inside_amp_rows for k in keys}
+
+        def _amp_row(event: str, amp: dict, name: str, keys: tuple[str, ...], *, nm: Any, inside: bool) -> dict:
+            site = str(amp.get("siteId") or amp.get("site_id") or amp.get("id") or (keys[0] if keys else name))
+            row = {
+                "kind": "amp", "event": event, "name": name, "siteId": site,
+                "nm": nm, "inside": inside,
+                "visitUrl": amp.get("visitUrl") or amp.get("visit_url") or amp.get("url"),
+                "lat": round(pearl["lat"], 4), "lon": round(pearl["lon"], 4),
+                "sailNm": pearl["sailNm"], "idx": idx, "basis": "pearl",
+            }
+            src = amp.get("source")
+            if src:
+                row["source"] = src
+            return row
+
+        for keys, amp, name in inside_amp_rows:
+            if _amp_keys_hit(keys, current_keyset):
+                continue
+            events.append(_amp_row("exit", amp, name, keys, nm=amp.get("nm") if isinstance(amp.get("nm"), (int, float)) else 0, inside=False))
+        for keys, amp, name in current_inside:
+            if _amp_keys_hit(keys, prev_keyset):
+                continue
+            events.append(_amp_row("enter", amp, name, keys, nm=0, inside=True))
+            seen_amp.update(keys)
+        inside_amp_rows = current_inside
+        for amp in amps:
+            if _amp_is_inside(amp):
+                continue
+            nm = amp.get("nm")
+            if not isinstance(nm, (int, float)):
+                continue
+            limit = AMP_NEAR_NM if _amp_is_export_fallback(amp) else AMP_NEARBY_NM
+            if nm > limit:
+                continue
+            name = spoken_amp_name(amp["name"]) or str(amp["name"])
+            keys = _amp_dedup_keys(amp, name)
+            if not keys or _amp_keys_hit(keys, seen_amp) or _amp_keys_hit(keys, current_keyset):
+                continue
+            seen_amp.update(keys)
+            events.append(_amp_row("nearby", amp, name, keys, nm=nm, inside=False))
         projects = _project_items(bag)
         projects.sort(key=_gold_first)
         for proj in projects:
@@ -547,12 +692,25 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
     _state.update({
         "status": "running", "kind": "rich" if rich else "thin", "total": len(pearls),
         "done": 0, "cached": 0, "errors": 0, "startedAt": time.time(), "finishedAt": None,
+        "stories": {"skipped": "on-demand"},
     })
     if not pearls:
         _state["status"] = "done"
         _state["finishedAt"] = time.time()
+        _state["stories"] = {"skipped": "on-demand"}
         return status()
     month = None
+    try:
+        import httpx as _httpx  # noqa: PLC0415
+        from ici_engine import refresh_amp_layer_sig  # noqa: PLC0415
+        async with _httpx.AsyncClient(timeout=2.0) as _http:
+            await refresh_amp_layer_sig(_http)
+    except Exception:
+        try:
+            from ici_engine import load_amp_layer_sig  # noqa: PLC0415
+            load_amp_layer_sig()
+        except Exception:
+            pass
 
     async def one(lat: float, lon: float) -> None:
         key = thin_cache_key(lat, lon, 30.0)
@@ -586,13 +744,8 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["zeeRefreshed"] = await refresh_zee_local()
     except Exception as exc:
         log.debug("relecture ZEE locale : %s", exc)
-    # Lot F: the stories of the route's events, written ahead of the film.
-    if stories_enabled():
-        try:
-            import story_cache  # noqa: PLC0415
-            _state["stories"] = await story_cache.pregenerate_official(points)
-        except Exception as exc:
-            log.debug("pré-génération des récits : %s", exc)
+    # RG18 : plus de pré-génération de récits — le statut garde la clé stories.
+    _state["stories"] = {"skipped": "on-demand"}
     if watch_enabled():
         try:
             import escale_watch  # noqa: PLC0415

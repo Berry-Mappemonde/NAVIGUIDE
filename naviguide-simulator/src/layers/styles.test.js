@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LEAFLET_ATTRIBUTION_BOTTOM_MIN_PX, TILE_ATTRIBUTION } from "./styles.js";
+import { LEAFLET_ATTRIBUTION_BOTTOM_MIN_PX, TILE_ATTRIBUTION, tileAttribution } from "./styles.js";
 import { FILM_BAR_BOTTOM_GAP_PX, FILM_BAR_HEIGHT_PX, mapInsetVars } from "../utils/filmBarLayout.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +22,8 @@ describe("TILE_ATTRIBUTION", () => {
     const esriHits = TILE_ATTRIBUTION.match(/Esri/g) || [];
     assert.equal(esriHits.length, 1, "le mot Esri une seule fois dans toute la chaîne");
     assert.match(TILE_ATTRIBUTION, /Tuiles/);
+    assert.match(tileAttribution("en"), /Tiles/);
+    assert.doesNotMatch(tileAttribution("en"), /Tuiles/);
     assert.match(anchors[0][0], /href="https:\/\/www\.esri\.com\/"/);
     assert.match(TILE_ATTRIBUTION, /href="https:\/\/www\.here\.com\/"/);
     assert.match(TILE_ATTRIBUTION, /href="https:\/\/www\.garmin\.com\/"/);

@@ -6,6 +6,7 @@
 import { alongTrackSpeed } from "./alongTrackSpeed.js";
 import { nameAirEpisodes } from "./filmCast.js";
 import { bearingDeg } from "./routeWindProfile.js";
+import { haversineNm } from "../utils/geo.js";
 
 export const AIR_CALENDAR_HOURS = 8;
 export const SAINT_MAUR_LAND_HOURS = 4;
@@ -363,6 +364,7 @@ export function buildVoyageClock({
       : (sources.has("atlas") ? "atlas" : (sources.has("zone_fallback") ? "zone_fallback" : null)),
     vertices,
     marks: outMarks,
+    episodes,
     seaHours,
     quayHours,
     arrivalIso: lastNonQuay?.iso || isoFromT0(t0, tHours),
@@ -466,6 +468,33 @@ export function lookupVoyageClock(clock, filmNm, { atQuay = false } = {}) {
 /**
  * Horloge murale → position (mode Suivre, repli hors ligne).
  */
+function parkAtHours(clock, tHours) {
+  const verts = clock?.vertices || [];
+  const x = Number(tHours);
+  for (const ep of clock?.episodes || []) {
+    const park = ep?.park;
+    if (!park || !Number.isFinite(park.lat) || !Number.isFinite(park.lon)) continue;
+    const hub = ep.hub || {};
+    let outT = null;
+    let backT = null;
+    for (const v of verts) {
+      if (v?.vehicle !== "plane") continue;
+      const dHub = haversineNm(v.lat, v.lon, hub.lat, hub.lon);
+      const dPark = haversineNm(v.lat, v.lon, park.lat, park.lon);
+      if (outT == null && Number.isFinite(dHub) && dHub <= 80) {
+        outT = Number(v.tHours) || 0;
+      } else if (outT != null && Number.isFinite(dPark) && dPark <= 80) {
+        backT = Number(v.tHours) || 0;
+        break;
+      }
+    }
+    if (outT == null) continue;
+    const end = backT != null ? backT : outT + 24 * 14;
+    if (outT - AIR_CALENDAR_HOURS <= x && x <= end) return park;
+  }
+  return null;
+}
+
 export function sampleClockAtHours(clock, tHours) {
   const verts = clock?.vertices || [];
   if (!verts.length) return null;
@@ -506,18 +535,23 @@ export function sampleClockAtHours(clock, tHours) {
       const mark = (clock.marks || []).find((m) => (
         Math.abs((m.filmNm ?? m.nm) - (a.filmNm ?? 0)) <= 0.45
       ));
+      const park = parkAtHours(clock, x);
       return sampleFromVertex(clock, a, {
         tHours: x,
         iso: isoFromT0(clock.t0, x),
         atQuay: true,
         status: "live",
-        vehicle: "quay",
+        vehicle: park ? "side" : "quay",
         speedKnots: 0,
         plannedKnots: a.speedKnots ?? null,
         holdHours: mark?.holdHours || 0,
+        ...(park ? { parkLat: park.lat, parkLon: park.lon } : {}),
       });
     }
-    return {
+    let veh = a.vehicle;
+    if (b.vehicle === "plane") veh = "plane";
+    else if (a.vehicle === "side" || b.vehicle === "side") veh = "side";
+    const out = {
       ...sampleFromVertex(clock, a, { status: "live" }),
       lat: lerpNum(a.lat, b.lat, t),
       lon: lerpNum(a.lon, b.lon, t),
@@ -532,10 +566,17 @@ export function sampleClockAtHours(clock, tHours) {
       spread: t < 0.5 ? (a.spread ?? null) : (b.spread ?? null),
       model: b.model || a.model || null,
       leadHours: b.leadHours ?? a.leadHours ?? null,
+      vehicle: veh,
       // Pas courant a→b : la vitesse d'intégration est posée sur b (lot C3).
       speedKnots: b.speedKnots ?? a.speedKnots,
       windKnots: b.windKnots ?? a.windKnots,
     };
+    const park = parkAtHours(clock, x);
+    if (park && (veh === "plane" || veh === "side")) {
+      out.parkLat = park.lat;
+      out.parkLon = park.lon;
+    }
+    return out;
   }
   return sampleFromVertex(clock, last, { status: "arrived" });
 }
@@ -617,8 +658,9 @@ export function formatMonthName(month, lang = "fr") {
   return months[m - 1];
 }
 
-function clockDayLabel(seaHours) {
-  return `j${Math.max(0, Math.floor((Number(seaHours) || 0) / 24))}`;
+function clockDayLabel(seaHours, lang = "fr") {
+  const prefix = lang === "en" ? "d" : "j";
+  return `${prefix}${Math.max(0, Math.floor((Number(seaHours) || 0) / 24))}`;
 }
 
 function clockNmLabel(sailNm, lang = "fr") {
@@ -645,7 +687,7 @@ export function clockTickLabelsFromClock(clock, lang = "fr", current = null) {
       : lookupVoyageClock(clock, curFilm);
     ticks.push({
       filmNm: curFilm,
-      label: `${clockNmLabel(sample?.sailNm, lang)} · ${clockDayLabel(sample?.seaHours)}`,
+      label: `${clockNmLabel(sample?.sailNm, lang)} · ${clockDayLabel(sample?.seaHours, lang)}`,
     });
   }
   ticks.push({

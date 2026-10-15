@@ -9,8 +9,7 @@ import { expect, test } from "@playwright/test";
 import { waitFilmCanStart } from "../helpers.js";
 
 const recetteDirs = [
-  join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc22"),
-  join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg8"),
+  join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc27"),
 ];
 for (const dir of recetteDirs) mkdirSync(dir, { recursive: true });
 
@@ -118,23 +117,16 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   if (short.chars >= mid.chars || mid.chars >= full.chars) {
     test.info().annotations.push({
       type: "stock pré-RG8",
-      description: "variantes encore identiques — remplisseur doit recalculer (FILM_SCRIPT_REV=rg8)",
+      description: "variantes encore identiques — remplisseur doit recalculer (FILM_SCRIPT_REV=rc27)",
     });
   } else {
     expect(short.chars, "2:30 plus court que 3:00").toBeLessThan(mid.chars);
     expect(mid.chars, "3:00 plus court que l'intégral").toBeLessThan(full.chars);
-    const dur150 = short.chars / 15;
-    if (dur150 > 150 * 1.1) {
-      test.info().annotations.push({
-        type: "stock pré-RC22",
-        description: "2:30 encore trop long (fit_chapter_text d'avant) — remplisseur FILM_SCRIPT_REV=rc22",
-      });
-    } else {
-      expect(dur150, "2:30 tient dans 150 s + 10 % à 15 car./s").toBeLessThanOrEqual(150 * 1.1);
-      if (full.chars >= 2250) {
-        expect(dur150, "2:30 pas trop court si le stock est riche").toBeGreaterThanOrEqual(150 * 0.9);
-      }
-    }
+  }
+  const dur150 = short.chars / 15;
+  expect(dur150, "2:30 tient dans 150 s + 10 % à 15 car./s").toBeLessThanOrEqual(150 * 1.1);
+  if (full.chars >= 2250) {
+    expect(dur150, "2:30 pas trop court si le stock est riche").toBeGreaterThanOrEqual(150 * 0.9);
   }
 
   const canPlay = await waitFilmCanStart(page, 20_000);
@@ -163,6 +155,7 @@ test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", 
   if (estimateVisible) {
     await expect(estimate).toHaveText(/≈\s*\d+:\d{2}/);
   }
+  await shot(page, "01-230-estimee");
 
   await pill180.click();
   await expect(pill180).toBeVisible({ timeout: 20_000 });

@@ -1,10 +1,12 @@
 import asyncio
+import math
 
 import httpx
 
 from ici_engine import (
     BI_LIVE_API,
     FRENCH_EEZ_MRGID,
+    amp_layer_sig,
     eez_plausible,
     empty_dossier,
     feature_latlon,
@@ -12,14 +14,19 @@ from ici_engine import (
     haversine_nm,
     is_fishing_amp,
     is_protected_amp,
+    nearest_amp,
     nearest_places,
     parse_coord,
     pick_eez_record,
+    polygon_inside_and_nm,
     radius_bbox,
     reset_caches,
+    set_amp_layer_sig,
     slim_amp,
     slim_science,
     spoken_amp_name,
+    thin_cache_key,
+    wrap_lon,
     zee_from_record,
 )
 from ici_layers import (
@@ -402,7 +409,8 @@ def test_fill_dossier_la_rochelle_mocked():
             )
 
     d = _settle_weather(asyncio.run(run()))
-    assert not any("amp?bbox" in url or "/export/marinas" in url for url in seen)
+    assert any("/amp?" in url and "bbox=" in url for url in seen)
+    assert not any("/export/marinas" in url for url in seen)
     assert any("export/amp.geojson" in url for url in seen)
     assert any("export/science.geojson" in url for url in seen)
     assert any(url.rstrip("/").endswith("/marinas") for url in seen)
@@ -414,12 +422,15 @@ def test_fill_dossier_la_rochelle_mocked():
     assert d["amp"][0]["visit_url"] == "https://parc-marin.fr/visite"
     assert d["amp"][0]["manager_url"] == "https://parc-marin.fr"
     assert d["amp"][0]["url"] == "https://parc-marin.fr/visite"
+    assert d["amp"][0]["source"] == "export"
+    assert d["amp"][0]["inside"] is False
+    assert d["amp"][0]["siteId"] == "PS-1"
     assert d["projects"][0]["name"] == "Récif sentinelle"
     assert d["projects"][0].get("gold_on") is True
     assert len(d["projects"]) == 1
     assert d["nearby"]["marinas"][0]["name"] == "Port des Minimes"
     assert d["nearby"]["capitaineries"][0]["name"] == "Capitainerie La Rochelle"
-    assert d["nearby"]["wpi"][0]["name"] == "LA ROCHELLE"
+    assert d["nearby"]["wpi"][0]["name"] == "La Rochelle"
     assert d["science"]["nearby"][0]["name"] == "Pertuis bathymétrie"
     assert d["science"]["nearby"][0]["source"] == "sextant"
     assert len(d["science"]["nearby"]) == 1
@@ -1123,3 +1134,222 @@ def test_route_events_project_10nm_not_60nm():
     assert not any("Chaluts" in (e.get("name") or "") for e in amps)
     assert [e["name"] for e in projs] == ["Récif sentinelle"]
     assert not any(e["name"] == "Hors portée" for e in projs)
+
+
+def _square_poly(lat_c, lon_c, half_nm):
+    dlat = half_nm / 60.0
+    dlon = half_nm / (60.0 * math.cos(math.radians(lat_c)))
+    ring = [
+        [lon_c - dlon, lat_c - dlat],
+        [lon_c + dlon, lat_c - dlat],
+        [lon_c + dlon, lat_c + dlat],
+        [lon_c - dlon, lat_c + dlat],
+        [lon_c - dlon, lat_c - dlat],
+    ]
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
+def _amp_poly_feat(name, geom, lat, lon, site_id="PS-x"):
+    return {
+        "type": "Feature",
+        "id": site_id,
+        "geometry": geom,
+        "properties": {"name": name, "lat": lat, "lon": lon, "site_id": site_id},
+    }
+
+
+def test_amp_polygon_inside_nm_zero():
+    lat, lon = 41.31, 9.19
+    geom = _square_poly(lat, lon, 20)
+    inside, nm, _area = polygon_inside_and_nm(geom, lat, lon)
+    assert inside is True
+    assert nm == 0.0
+    feat = _amp_poly_feat("Bouches de Bonifacio", geom, lat, lon, "boni-1")
+    found = nearest_amp([feat], lat, lon, 30, source="polygon")
+    assert len(found) == 1
+    assert found[0]["inside"] is True
+    assert found[0]["nm"] == 0.0
+    assert found[0]["source"] == "polygon"
+    assert found[0]["siteId"] == "boni-1"
+
+
+def test_amp_polygon_10nm_from_edge_60nm_from_centroid():
+    """Parc ~100 nm : le bateau est à 10 nm du bord, 60 nm du centroïde."""
+    lat_c, lon_c = 46.0, 0.0
+    geom = _square_poly(lat_c, lon_c, 50)
+    dlon_10 = 10.0 / (60.0 * math.cos(math.radians(lat_c)))
+    dlon_50 = 50.0 / (60.0 * math.cos(math.radians(lat_c)))
+    lat, lon = lat_c, lon_c - dlon_50 - dlon_10
+    to_c = haversine_nm(lat, lon, lat_c, lon_c)
+    assert 58 < to_c < 62
+    inside, nm, _area = polygon_inside_and_nm(geom, lat, lon)
+    assert inside is False
+    assert 8.5 <= nm <= 11.5
+    feat = _amp_poly_feat("Grand parc", geom, lat_c, lon_c, "gp-1")
+    found = nearest_amp([feat], lat, lon, 15, source="polygon")
+    assert found and found[0]["inside"] is False
+    assert 8.5 <= found[0]["nm"] <= 11.5
+    assert found[0]["source"] == "polygon"
+    old = nearest_places([feat], lat, lon, 15, 5, slim=slim_amp)
+    assert old == []
+
+
+def test_amp_polygon_centroid_10nm_edge_30nm():
+    """Le centroïde exporté est à 10 nm ; le bord du polygone est à 30 nm."""
+    lat0, lon0 = 46.0, 0.0
+    k = 60.0 * math.cos(math.radians(lat0))
+    lon_cent = lon0 + 10.0 / k
+    lon_poly = lon0 + 35.0 / k
+    geom = _square_poly(lat0, lon_poly, 5)
+    inside, nm, _area = polygon_inside_and_nm(geom, lat0, lon0)
+    assert inside is False
+    assert 28.5 <= nm <= 31.5
+    feat = _amp_poly_feat("Parc décalé", geom, lat0, lon_cent, "dec-1")
+    found = nearest_amp([feat], lat0, lon0, 40, source="polygon")
+    assert found[0]["nm"] >= 28.5
+    old = slim_amp(feat, lat0, lon0)
+    assert 8.5 <= old["nm"] <= 11.5
+
+
+def test_amp_sort_inside_then_nm():
+    lat, lon = 46.15, -1.16
+    inside_a = _amp_poly_feat("Dedans A", _square_poly(lat, lon, 8), lat, lon, "in-a")
+    inside_b = _amp_poly_feat("Dedans B", _square_poly(lat, lon, 12), lat, lon, "in-b")
+    dlon_2 = 2.0 / (60.0 * math.cos(math.radians(lat)))
+    dlon_8 = 8.0 / (60.0 * math.cos(math.radians(lat)))
+    near = _amp_poly_feat(
+        "Proche", _square_poly(lat, lon + dlon_2 + 0.5 / (60.0 * math.cos(math.radians(lat))), 0.5),
+        lat, lon + dlon_2, "out-2",
+    )
+    far = _amp_poly_feat(
+        "Loin", _square_poly(lat, lon + dlon_8 + 0.5 / (60.0 * math.cos(math.radians(lat))), 0.5),
+        lat, lon + dlon_8, "out-8",
+    )
+    found = nearest_amp([far, inside_b, near, inside_a], lat, lon, 30, source="polygon")
+    names = [x["name"] for x in found]
+    assert names[:2] == ["Dedans A", "Dedans B"]  # plus petit polygone d'abord
+    assert found[0]["inside"] and found[1]["inside"]
+    assert found[2]["name"] == "Proche"
+    assert found[3]["name"] == "Loin"
+    assert found[2]["nm"] < found[3]["nm"]
+
+
+def test_amp_jurisdiction_layers_are_dropped():
+    lat, lon = 41.31, 9.19
+    sea = _amp_poly_feat("France Territorial Sea", _square_poly(lat, lon, 80), lat, lon, "ts-1")
+    iccat = _amp_poly_feat(
+        "International Commission for the Conservation of Atlantic Tunas",
+        _square_poly(lat, lon, 90), lat, lon, "iccat-1",
+    )
+    iotc = _amp_poly_feat(
+        "Indian Ocean Tuna Commission",
+        _square_poly(lat, lon, 85), lat, lon, "iotc-1",
+    )
+    park = _amp_poly_feat("Strait of Bonifacio", _square_poly(lat, lon, 8), lat, lon, "boni-strait")
+    found = nearest_amp([sea, iccat, iotc, park], lat, lon, 30, source="polygon")
+    assert [x["name"] for x in found] == ["Strait of Bonifacio"]
+    assert found[0]["inside"] is True
+
+
+def test_amp_polygon_unwraps_voyage_longitude():
+    lat, lon_w = -22.30, 166.46
+    geom = _square_poly(lat, lon_w, 20)
+    assert abs(wrap_lon(lon_w - 360.0) - lon_w) < 0.01
+    inside, nm, _area = polygon_inside_and_nm(geom, lat, lon_w - 360.0)
+    assert inside is True
+    assert nm == 0.0
+    feat = _amp_poly_feat("Natural Park of the Coral Sea", geom, lat, lon_w, "nc-1")
+    found = nearest_amp([feat], lat, lon_w - 360.0, 30, source="polygon")
+    assert found and found[0]["inside"] is True
+
+
+def test_amp_fallback_export_when_get_amp_errors():
+    reset_caches()
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        url = str(request.url)
+        if "/amp?" in url and "bbox=" in url:
+            return httpx.Response(503, json={"detail": "amp down"})
+        return _handler(request)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(46.15, -1.16, client=client, thin=True)
+
+    d = asyncio.run(run())
+    assert any("/amp?" in url and "bbox=" in url for url in seen)
+    assert any("export/amp.geojson" in url for url in seen)
+    assert d["amp"][0]["name"] == "Pertuis charentais"
+    assert d["amp"][0]["source"] == "export"
+    assert d["amp"][0]["inside"] is False
+    assert d["amp"][0]["siteId"] == "PS-1"
+    assert d["amp"][0].get("visitUrl") == "https://parc-marin.fr/visite"
+
+
+def test_amp_empty_get_amp_does_not_fallback_to_export():
+    reset_caches()
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        url = str(request.url)
+        if "/amp?" in url and "bbox=" in url:
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+        if "/amp/stats" in url:
+            return httpx.Response(200, json={"total": 3769})
+        return _handler(request)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(46.15, -1.16, client=client, thin=True)
+
+    d = asyncio.run(run())
+    assert d["amp"] == []
+    assert not any("export/amp.geojson" in url for url in seen)
+
+
+def test_amp_polygon_from_get_amp_fill_dossier():
+    reset_caches()
+    lat, lon = 41.31, 9.19
+    geom = _square_poly(lat, lon, 15)
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        url = str(request.url)
+        if "/amp/stats" in url:
+            return httpx.Response(200, json={"total": 3769})
+        if "/amp?" in url and "bbox=" in url:
+            feat = _amp_poly_feat("Réserve naturelle des Bouches de Bonifacio", geom, lat, lon, "boni-1")
+            feat["properties"]["visit_url"] = "https://www.bonifacio.fr"
+            return httpx.Response(200, json={"type": "FeatureCollection", "features": [feat]})
+        return _handler(request)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fill_dossier(lat, lon, client=client, thin=True)
+
+    d = asyncio.run(run())
+    assert d["amp"][0]["inside"] is True
+    assert d["amp"][0]["nm"] == 0.0
+    assert d["amp"][0]["source"] == "polygon"
+    assert "Bonifacio" in d["amp"][0]["name"]
+    assert not any("export/amp.geojson" in url for url in seen)
+
+
+def test_thin_cache_key_changes_with_amp_signature():
+    reset_caches()
+    assert amp_layer_sig() == "0"
+    k0 = thin_cache_key(46.15, -1.16, 30)
+    set_amp_layer_sig(3769)
+    k1 = thin_cache_key(46.15, -1.16, 30)
+    set_amp_layer_sig(4000)
+    k2 = thin_cache_key(46.15, -1.16, 30)
+    assert k0 != k1 != k2
+    assert k0.endswith(":a0")
+    assert k1.endswith(":a3769")
+    assert k2.endswith(":a4000")
+    assert k0.rsplit(":a", 1)[0] == k1.rsplit(":a", 1)[0]
+    reset_caches()

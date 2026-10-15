@@ -64,3 +64,23 @@ describe("useRouteDrawing importPoints (lot N1)", () => {
     assert.equal(session.points.some((p) => p.name === "Ancien"), false);
   });
 });
+
+describe("brouillon DM6 — reset seulement à l'abandon", () => {
+  it("handleDrawStart ne vide plus le brouillon ; Annuler et supprimer le font", () => {
+    const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
+    const startAt = app.indexOf("const handleDrawStart = ");
+    const cancelAt = app.indexOf("const handleDrawCancel = ");
+    const finishAt = app.indexOf("const handleDrawFinish = ");
+    const deleteAt = app.indexOf("const handleCustomDelete = ");
+    assert.ok(startAt >= 0 && cancelAt > startAt && finishAt > cancelAt && deleteAt > finishAt);
+    assert.doesNotMatch(app.slice(startAt, cancelAt), /_resetDrawState\(\)/);
+    assert.match(app.slice(cancelAt, finishAt), /_resetDrawState\(\)/);
+    assert.match(app.slice(deleteAt, deleteAt + 400), /_resetDrawState\(\)/);
+    assert.match(app, /endDrawingWorld/);
+    assert.match(app, /armDrawingWorldRef/);
+    const berryAt = app.indexOf("const handleRouteSwitchToBerry");
+    assert.ok(berryAt >= 0);
+    assert.match(app.slice(berryAt, berryAt + 700), /drawingModeRef\.current/);
+    assert.doesNotMatch(app.slice(berryAt, berryAt + 700), /_resetDrawState\(\)/);
+  });
+});

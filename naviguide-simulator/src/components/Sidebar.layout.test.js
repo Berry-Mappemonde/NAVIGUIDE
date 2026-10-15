@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultIciTab, visibleIciTabs } from "./iciMaintenant.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
@@ -66,7 +67,17 @@ describe("Sidebar layout (lot R8c)", () => {
   it("réserve le sac ici à hauteur fixe avec le placeholder de remplissage", () => {
     assert.match(sidebar, /iciBriefingLoading/);
     assert.match(sidebar, /Le sac se remplit|iciBriefingLoading/);
-    assert.match(sidebar, /\{!isDrawing \? \(/);
+    assert.match(sidebar, /drawingHidesBerry/);
+    assert.match(sidebar, /hereBody=\{!drawingHidesBerry \? \(/);
+  });
+
+  it("lot DM6 — Berry ne jette pas le brouillon ; reprendre le tracé si points", () => {
+    assert.match(sidebar, /const activateBerry = \(\) => \{/);
+    const berryAt = sidebar.indexOf("const activateBerry = () => {");
+    const berryChunk = sidebar.slice(berryAt, berryAt + 220);
+    assert.doesNotMatch(berryChunk, /onDrawCancel/);
+    assert.match(sidebar, /startOrResumeDraw/);
+    assert.match(sidebar, /canContinueDraw \? onDrawContinue : onDrawStart/);
   });
 
   it("lot N1 — Importer à côté de Terminer, sans texte d'aide", () => {
@@ -89,6 +100,21 @@ describe("Sidebar layout (lot R8c)", () => {
   });
 });
 
+describe("Sidebar — lot DM9 : Tracer 2 onglets, Suivre 4", () => {
+  it("masque Maintenant et Journal en Tracer, sans les retirer du source", () => {
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
+    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["review", "story"]);
+    assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["review", "story"]);
+    assert.equal(defaultIciTab("simulation"), "review");
+    assert.match(sidebar, /<IciMaintenant/);
+    assert.match(sidebar, /ici-tab-now|JournalPanel|ici-tab-journal|<JournalPanel /);
+    assert.match(sidebar, /<JournalPanel /);
+    assert.match(sidebar, /data-testid="expedition-story"/);
+    assert.match(sidebar, /story=\{\(Array\.isArray\(story\)/);
+    assert.doesNotMatch(sidebar, /story=\{isSuivre && !isDrawing &&/);
+  });
+});
+
 describe("contrat pop-up hors film (lot R8c)", () => {
   it("ne rend plus les cartes flottantes ni la popup d'escale sur la carte", () => {
     assert.doesNotMatch(app, /<MomentNowCard/);
@@ -96,7 +122,7 @@ describe("contrat pop-up hors film (lot R8c)", () => {
     assert.match(app, /<EscalePopupHost/);
     assert.match(app, /stop=\{replay\.active \? null : escaleStop\}/);
     assert.match(app, /useMoment\(/);
-    assert.match(app, /mode: drawingMode \? "drawn"/);
+    assert.match(app, /mode: drawingMode && drawnPoints\.length \? "drawn"/);
     assert.match(scene, /escalePopup\.setSheet = \(\) => \{\}/);
     assert.match(scene, /escalePopup\.sync = \(\) => \{\}/);
     assert.doesNotMatch(ici, /ListenButton/);

@@ -17,12 +17,13 @@ export function useMomentCards({
   playing = false,
   mode = "simulation",
   lang = "fr",
+  written = false,
   legId = null,
   leg = null,
 }) {
   const [state, setState] = useState(() => emptyMoments());
-  const inputRef = useRef({ events, bag, filmCum, playing, mode, lang, legId, leg });
-  inputRef.current = { events, bag, filmCum, playing, mode, lang, legId, leg };
+  const inputRef = useRef({ events, bag, filmCum, playing, mode, lang, written, legId, leg });
+  inputRef.current = { events, bag, filmCum, playing, mode, lang, written, legId, leg };
 
   const step = useCallback((nowMs = Date.now()) => {
     setState((prev) => advanceMoments(prev, { ...inputRef.current, nowMs }));
@@ -32,7 +33,7 @@ export function useMomentCards({
   useEffect(() => {
     if (!enabled) return;
     step();
-  }, [enabled, events, bag, filmCum, playing, mode, lang, legId, leg, step]);
+  }, [enabled, events, bag, filmCum, playing, mode, lang, written, legId, leg, step]);
 
   useEffect(() => {
     if (!enabled) return undefined;

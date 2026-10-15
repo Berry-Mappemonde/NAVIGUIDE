@@ -26,6 +26,7 @@ import {
   nextStopFromMarks,
   nextStopRowIndex,
   officialNowMs,
+  legendNowAndLive,
   countOfficialEtaPolls,
   shouldPollOfficialEta,
   pickHeaviestLegIdx,
@@ -322,9 +323,49 @@ describe("usePlanReview — fourchette ETA (lot R11)", () => {
       officialClock: true,
     }), true);
     const app = readFileSync(join(here, "../App.jsx"), "utf8");
-    assert.match(app, /officialEtaReady = Boolean\(isSuivre && official\.clock\)/);
+    // DM5 : l'ETA officielle n'existe qu'en Suivre × Berry.
+    assert.match(app, /officialEtaReady = Boolean\(suivreBerry && official\.clock\)/);
     assert.match(app, /officialNowMs\(official\.clock,\s*official\.live\)/);
     assert.match(app, /officialEta: officialEtaReady/);
+    // DM7 : hors Suivre × Berry, nowMs / liveFilmNm viennent du tracé.
+    assert.match(app, /legendNowAndLive\(/);
+    assert.match(app, /liveFilmNm: legendLiveFilmNm/);
+    assert.match(app, /liveFilmNm=\{legendLiveFilmNm\}/);
+    assert.doesNotMatch(app, /liveFilmNm=\{official\.live\?\.filmNm\}/);
+    assert.match(app, /\(suivreBerry \? official\.clock\?\.marks : null\) \|\| voyage\.clock\?\.marks \|\| \[\]/);
+    assert.match(app, /datedLegend \? legendMarks : \(officialClock\.marks \|\| legendMarks\)/);
+  });
+
+  it("lot DM7 — legendNowAndLive : Tracer ignore official.live (Papeete)", () => {
+    const today = "2026-10-14T08:00:00.000Z";
+    const officialNow = Date.parse("2026-09-19T12:00:00Z");
+    const officialNm = 22000;
+    const marks = [
+      { name: "Saint-Maur (Berry, Indre)", iso: today, filmNm: 0 },
+      { name: "La Rochelle", iso: "2026-10-14T12:00:00.000Z", filmNm: 122 },
+      { name: "Papeete (Polynésie française)", iso: "2026-09-01T00:00:00Z", filmNm: officialNm },
+      { name: "Nouméa (Nouvelle-Calédonie)", iso: "2026-11-01T00:00:00Z", filmNm: 30000 },
+    ];
+    const official = legendNowAndLive({
+      suivreBerry: true,
+      officialNowMs: officialNow,
+      officialLiveNm: officialNm,
+      sampleIso: today,
+      sampleFilmNm: 0,
+      playbackNm: 0,
+    });
+    assert.equal(nextStopFromMarks(marks, official.nowMs, official.liveFilmNm), "Nouméa (Nouvelle-Calédonie)");
+    const trace = legendNowAndLive({
+      suivreBerry: false,
+      officialNowMs: officialNow,
+      officialLiveNm: officialNm,
+      sampleIso: today,
+      sampleFilmNm: 0,
+      playbackNm: 0,
+    });
+    assert.equal(nextStopFromMarks(marks, trace.nowMs, trace.liveFilmNm), "La Rochelle");
+    assert.notEqual(nextStopFromMarks(marks, trace.nowMs, trace.liveFilmNm), "Papeete (Polynésie française)");
+    assert.notEqual(nextStopFromMarks(marks, trace.nowMs, trace.liveFilmNm), "Nouméa (Nouvelle-Calédonie)");
   });
 });
 
@@ -465,26 +506,12 @@ describe("lot RH2 — plus d'abort en vol", () => {
     assert.equal(watch.alive, false);
   });
 
-  it("changement de briefing : pas de nouvelle requête warm/status", async () => {
-    let n = 0;
-    let resolve;
-    const hang = new Promise((r) => { resolve = r; });
-    const seen = [];
-    const stop = startWarmStatusWatch(async () => {
-      n += 1;
-      await hang;
-      return { llm: { lastSource: "claude" } };
-    }, (src) => seen.push(src));
-    assert.equal(n, 1);
-    stop();
-    resolve();
-    await tick();
-    assert.equal(n, 1);
-    assert.equal(seen.length, 0);
-    assert.match(sidebarSrc, /startWarmStatusWatch/);
-    assert.match(sidebarSrc, /\}, \[showIciBriefing\]\);/);
-    assert.doesNotMatch(sidebarSrc, /\[showIciBriefing,\s*briefing\]/);
-    assert.doesNotMatch(sidebarSrc, /\/ici\/warm\/status[\s\S]{0,220}abort\(/);
+  it("briefing ICI : source règles locale, pas de warm/status global", () => {
+    assert.match(sidebarSrc, /LlmSourceBadge/);
+    assert.match(sidebarSrc, /ICI_BRIEFING_SOURCE/);
+    assert.doesNotMatch(sidebarSrc, /startWarmStatusWatch/);
+    assert.doesNotMatch(sidebarSrc, /lastSource/);
+    assert.doesNotMatch(sidebarSrc, /\/ici\/warm\/status/);
   });
 
   it("changement de stopName : une seule boucle active", async () => {

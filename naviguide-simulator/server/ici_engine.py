@@ -49,13 +49,35 @@ MAX_AMP = 5
 MAX_PROJECTS = 5
 MAX_NEARBY = 3
 # RG3 : invalide les perles sans couche projects / AMP filtrées.
+# AM1A : la clé y ajoute aussi la signature de la couche AMP (`a{total}`).
 PEARL_REV = "rg3"
 AMP_NEAR_NM = 30.0
 PROJECT_NEAR_NM = 30.0
+# Cellule 1° + GET /amp (AM1A). TTL 1 jour (mémoire + kv).
+AMP_CELL_TTL_S = 86_400.0
+AMP_SIG_TTL_S = 86_400.0
+# Juste au-dessus du plafond backend (8°) : Mongo cache, pas ProtectedSeas.
+# Une boîte de ±1° (2°) passerait par ArcGIS si la tuile n'est pas enregistrée.
+AMP_BBOX_SPAN_DEG = 8.1
+AMP_KV_NS = "amp-bbox"
+AMP_SIG_NS = "amp"
+AMP_SIG_KEY = "layer_sig"
 # Zones de réglementation de pêche — jamais une AMP (D4 / A3).
 _AMP_FISHING_RE = re.compile(
     r"\b(?:chaluts?|filets?|hu[iî]tres?|p[ée]toncles?|deposit|licence|license|"
     r"prohibition|zone de p[êe]che)\b",
+    re.I,
+)
+# Juridiction / ORGP servies comme « AMP » par ProtectedSeas : pas un parc.
+_AMP_JURISDICTION_RE = re.compile(
+    r"\b(?:territorial sea|national waters|exclusive economic zone|\beez\b|"
+    r"international commission for the conservation of atlantic tunas|\biccat\b|\biotc\b|"
+    r"gfcm fisheries|"
+    r"tuna commission|"
+    r"fisher(?:y|ies) (?:commission|committee|organization|organisation|agreement)|"
+    r"regional fisheries|"
+    r"salmon conservation|"
+    r"south pacific regional fisheries)\b",
     re.I,
 )
 # Aire protégée : IUCN renseignée, ou désignation WDPA / parc / réserve / sanctuaire.
@@ -121,6 +143,8 @@ _fc_cache: dict[str, dict] = {}
 _FC_TTL = 3600.0
 _wpi_cache: dict = {"data": None, "ts": 0.0}
 _WPI_TTL = 86_400.0
+_amp_cell_cache: dict[str, dict] = {}
+_amp_sig: dict[str, Any] = {"value": "0", "ts": 0.0, "ok": False}
 
 # Pearls (the along bags, 12 nm apart) are the same for every visitor and
 # every replay of the film: one lookup per 0.02° cell. Two kinds (lot P):
@@ -137,14 +161,43 @@ _THIN_MAX = 20_000
 PEARL_KINDS = ("thin", "rich")
 
 
+def amp_layer_sig() -> str:
+    """Signature de la couche AMP (total GET /amp/stats), pour la clé des perles."""
+    return str(_amp_sig.get("value") or "0")
+
+
+def set_amp_layer_sig(value: Any, *, ok: bool = True) -> None:
+    _amp_sig["value"] = str(int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else (value or "0"))
+    _amp_sig["ts"] = time.time()
+    _amp_sig["ok"] = bool(ok)
+
+
+def load_amp_layer_sig() -> str:
+    """Lit la signature depuis la mémoire ou le kv (pas d'HTTP)."""
+    now = time.time()
+    if _amp_sig["ok"] and now - float(_amp_sig["ts"] or 0) < AMP_SIG_TTL_S:
+        return amp_layer_sig()
+    try:
+        import pearl_store  # noqa: PLC0415
+        row = pearl_store.kv_get(AMP_SIG_NS, AMP_SIG_KEY, max_age_s=AMP_SIG_TTL_S)
+        val = (row or {}).get("value")
+        total = val.get("total") if isinstance(val, dict) else val
+        if total is not None and str(total) not in ("", "0"):
+            set_amp_layer_sig(total, ok=True)
+    except Exception:
+        pass
+    return amp_layer_sig()
+
+
 def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None = None) -> str:
     # A pearl carries no climatology: the month never changes it, so it is
     # not part of the key (the client sends month=9, the warmer none).
     # PEARL_REV force le remplisseur à recalculer (RG3 : projects + filtre AMP).
+    # AM1A : `a{sig}` invalide le stock quand la couche AMP change.
     del month
     return (
         f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}"
-        f":{int(radius_nm)}:{PEARL_REV}"
+        f":{int(radius_nm)}:{PEARL_REV}:a{amp_layer_sig()}"
     )
 
 
@@ -205,6 +258,8 @@ def thin_cache_drop(key: str) -> None:
 def reset_caches() -> None:
     _fc_cache.clear()
     _thin_cache.clear()
+    _amp_cell_cache.clear()
+    _amp_sig.update({"value": "0", "ts": 0.0, "ok": False})
     _wpi_cache["data"] = None
     _wpi_cache["ts"] = 0.0
     reset_gebco_cache()
@@ -276,6 +331,11 @@ def parse_coord(value: Any) -> float | None:
     if hemi and hemi.upper() in ("S", "W"):
         decimal = -decimal
     return decimal
+
+
+def wrap_lon(lon: float) -> float:
+    """Ramène une longitude déroulée (ex. -314) dans ]-180, 180]."""
+    return ((float(lon) + 180.0) % 360.0) - 180.0
 
 
 def haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -358,7 +418,8 @@ def slim_place(feat: dict, lat0: float, lon0: float, extra_keys: tuple[str, ...]
     if not ll:
         return None
     lat, lon = ll
-    name = feature_name(feat)
+    from toponyms import origin_name  # noqa: PLC0415
+    name = origin_name(feature_name(feat))
     if not name:
         return None
     item = {
@@ -399,6 +460,11 @@ def is_fishing_amp(item: dict | None) -> bool:
     return bool(isinstance(item, dict) and _AMP_FISHING_RE.search(_amp_blob(item)))
 
 
+def is_jurisdiction_amp(item: dict | None) -> bool:
+    """Mer territoriale, ZEE, ICCAT… : une juridiction, pas un parc."""
+    return bool(isinstance(item, dict) and _AMP_JURISDICTION_RE.search(_amp_blob(item)))
+
+
 def is_protected_amp(item: dict | None) -> bool:
     """Aire protégée réelle : IUCN renseignée ou désignation WDPA / parc / réserve.
 
@@ -437,10 +503,220 @@ def slim_amp(feat: dict, lat0: float, lon0: float) -> dict | None:
         return None
     if item.get("visit_url"):
         item["url"] = item["visit_url"]
-    spoken = spoken_amp_name(item.get("name"))
+    from toponyms import origin_name  # noqa: PLC0415
+    spoken = origin_name(spoken_amp_name(item.get("name")))
     if spoken:
         item["name"] = spoken
     return item
+
+
+def amp_cell_key(lat: float, lon: float) -> str:
+    """Cellule 1° (coin SW) pour le cache GET /amp."""
+    lon = wrap_lon(lon)
+    return f"{int(math.floor(lat))}:{int(math.floor(lon))}"
+
+
+def amp_cell_bbox(lat: float, lon: float) -> str:
+    """Boîte centrée sur la cellule, span 8,1° (cache Mongo, pas ArcGIS).
+
+    Le lot demandait ±1° autour du point. Une telle boîte (2° < 8°) passe par
+    `sites_in_bbox` et, tuile inconnue, chez ProtectedSeas (timeout observé).
+    8,1° prend la branche cache du backend ; le filtre de portée reste shapely.
+    """
+    lon = wrap_lon(lon)
+    clat = math.floor(lat) + 0.5
+    clon = math.floor(lon) + 0.5
+    half = AMP_BBOX_SPAN_DEG / 2.0
+    minx, maxx = clon - half, clon + half
+    miny, maxy = max(-90.0, clat - half), min(90.0, clat + half)
+    minx = max(-180.0, minx)
+    maxx = min(180.0, maxx)
+    if maxx - minx <= 8.0:
+        if minx <= -180.0 + 1e-9:
+            maxx = min(180.0, minx + AMP_BBOX_SPAN_DEG)
+        else:
+            minx = max(-180.0, maxx - AMP_BBOX_SPAN_DEG)
+    return f"{minx},{miny},{maxx},{maxy}"
+
+
+def polygon_inside_and_nm(geom: dict, lat: float, lon: float) -> tuple[bool, float, float] | None:
+    """Dedans / distance à la limite (milles) / aire (nm²), projection locale.
+
+    x = Δlon × 60 × cos φ0, y = Δlat × 60 (même convention que `radius_bbox`).
+    Précision : < 2 % à 1° du point, négligeable à 15–30 nm. Sphère, pas WGS84.
+    """
+    if not isinstance(geom, dict) or geom.get("type") not in ("Polygon", "MultiPolygon"):
+        return None
+    try:
+        from shapely.geometry import Point, shape  # noqa: PLC0415
+        from shapely.ops import transform  # noqa: PLC0415
+    except Exception:
+        return None
+    try:
+        g = shape(geom)
+    except Exception:
+        return None
+    if g.is_empty:
+        return None
+    if not g.is_valid:
+        try:
+            g = g.buffer(0)
+        except Exception:
+            return None
+        if g.is_empty:
+            return None
+    lon0 = wrap_lon(lon)
+    k = 60.0 * math.cos(math.radians(lat))
+
+    def _proj(x, y, z=None):
+        del z
+        return (wrap_lon(float(x) - lon0) * k, (float(y) - lat) * 60.0)
+
+    try:
+        g_nm = transform(_proj, g)
+        origin = Point(0.0, 0.0)
+        area = abs(float(g_nm.area))
+        if g_nm.covers(origin):
+            return True, 0.0, area
+        return False, round(float(g_nm.distance(origin)), 1), area
+    except Exception:
+        return None
+
+
+def slim_amp_entry(feat: dict, lat0: float, lon0: float, *, source: str) -> dict | None:
+    """Entrée du sac amp : {name, siteId, inside, nm, source, visitUrl…}."""
+    item = slim_amp(feat, lat0, lon0)
+    if not item:
+        return None
+    if is_jurisdiction_amp(item):
+        return None
+    geom = feat.get("geometry") or {}
+    entry_source = "export"
+    inside = False
+    nm = item.get("nm")
+    area = None
+    if source == "polygon":
+        got = polygon_inside_and_nm(geom, lat0, lon0)
+        if got is not None:
+            inside, nm, area = got
+            entry_source = "polygon"
+    item["inside"] = bool(inside)
+    item["nm"] = 0.0 if inside else round(float(nm if nm is not None else 0.0), 1)
+    item["source"] = entry_source
+    if area is not None:
+        item["_area_nm2"] = area
+    site = item.get("site_id") or item.get("id") or feat.get("id")
+    if site not in (None, ""):
+        item["siteId"] = site
+        item.setdefault("site_id", site)
+    visit = item.get("visit_url")
+    if visit:
+        item["visitUrl"] = visit
+    return item
+
+
+def nearest_amp(
+    features: list,
+    lat: float,
+    lon: float,
+    radius_nm: float,
+    limit: int = MAX_AMP,
+    source: str = "export",
+) -> list[dict]:
+    """AMP à portée : dedans d'abord, puis nm croissant. Plafond MAX_AMP."""
+    found: list[dict] = []
+    for feat in features or []:
+        item = slim_amp_entry(feat, lat, lon, source=source)
+        if not item:
+            continue
+        if item.get("inside") or float(item.get("nm") or 0) <= radius_nm + 0.05:
+            found.append(item)
+    found.sort(key=lambda x: (
+        0 if x.get("inside") else 1,
+        float(x.get("_area_nm2") or 0) if x.get("inside") else float(x.get("nm") if x.get("nm") is not None else 999),
+        str(x.get("name") or ""),
+    ))
+    out = found[:limit]
+    for item in out:
+        item.pop("_area_nm2", None)
+    return out
+
+
+async def refresh_amp_layer_sig(client: httpx.AsyncClient) -> str:
+    """GET /amp/stats → total, mémoire + kv. Échec : on garde l'ancienne signature."""
+    load_amp_layer_sig()
+    now = time.time()
+    if _amp_sig["ok"] and now - float(_amp_sig["ts"] or 0) < AMP_SIG_TTL_S:
+        return amp_layer_sig()
+    if (not _amp_sig["ok"]) and _amp_sig["ts"] and now - float(_amp_sig["ts"] or 0) < 60.0:
+        return amp_layer_sig()
+    try:
+        data = await _get_json(client, f"{bi_base()}/amp/stats", timeout=4.0)
+        total = data.get("total") if isinstance(data, dict) else None
+        if total is None:
+            raise ValueError("amp/stats sans total")
+        set_amp_layer_sig(int(total), ok=True)
+        try:
+            import pearl_store  # noqa: PLC0415
+            pearl_store.kv_put(AMP_SIG_NS, AMP_SIG_KEY, {"total": int(total)})
+        except Exception:
+            pass
+        return amp_layer_sig()
+    except Exception as exc:
+        log.debug("signature AMP indisponible : %s", exc)
+        if not _amp_sig["ok"]:
+            _amp_sig["ts"] = now
+        return amp_layer_sig()
+
+
+async def _amp_cell_features(client: httpx.AsyncClient, lat: float, lon: float) -> list:
+    """Features GET /amp pour la cellule 1° (mémoire, puis kv, puis réseau)."""
+    key = amp_cell_key(lat, lon)
+    now = time.time()
+    hit = _amp_cell_cache.get(key)
+    if hit and now - float(hit.get("ts") or 0) < AMP_CELL_TTL_S:
+        return hit["features"]
+    try:
+        import pearl_store  # noqa: PLC0415
+        row = pearl_store.kv_get(AMP_KV_NS, key, max_age_s=AMP_CELL_TTL_S)
+        val = (row or {}).get("value")
+        feats = val.get("features") if isinstance(val, dict) else None
+        if isinstance(feats, list):
+            _amp_cell_cache[key] = {"ts": row["ts"], "features": feats}
+            return feats
+    except Exception:
+        pass
+    bbox = amp_cell_bbox(lat, lon)
+    data = await _get_json(client, f"{bi_base()}/amp", params={"bbox": bbox}, timeout=20.0)
+    feats = data.get("features") if isinstance(data, dict) else []
+    if not isinstance(feats, list):
+        feats = []
+    _amp_cell_cache[key] = {"ts": now, "features": feats}
+    try:
+        import pearl_store  # noqa: PLC0415
+        pearl_store.kv_put(AMP_KV_NS, key, {"features": feats, "bbox": bbox})
+    except Exception:
+        pass
+    return feats
+
+
+async def fetch_amp_features(client: httpx.AsyncClient, lat: float, lon: float) -> tuple[list, str]:
+    """Polygones GET /amp, sinon export centroïdes. Lève seulement si les deux tombent."""
+    amp_err: Exception | None = None
+    try:
+        feats = await _amp_cell_features(client, lat, lon)
+        return feats, "polygon"
+    except Exception as exc:
+        amp_err = exc
+        log.debug("GET /amp indisponible, repli export : %s", exc)
+    try:
+        feats = await _cached_fc(client, f"{bi_base()}/export/amp.geojson")
+        return feats, "export"
+    except Exception as exc:
+        log.debug("export AMP indisponible : %s", exc)
+        if amp_err is not None:
+            raise amp_err from exc
+        raise
 
 
 def slim_anchorage(feat: dict, lat0: float, lon0: float) -> dict | None:
@@ -590,12 +866,17 @@ def zee_from_record(rec: dict | None) -> dict:
     except (TypeError, ValueError):
         mrgid = None
     territory = FRENCH_EEZ_MRGID.get(mrgid) if mrgid is not None else None
-    return {
+    from toponyms import names_for  # noqa: PLC0415
+    spoken = names_for(name, mrgid=mrgid, territory=territory)
+    out = {
         "name": name,
         "mrgid": mrgid,
         "territory": territory,
         "gold": False,
     }
+    if spoken:
+        out["names"] = spoken
+    return out
 
 
 async def _gazetteer_list(client: httpx.AsyncClient, lat: float, lon: float) -> list:
@@ -907,6 +1188,10 @@ async def fill_dossier(
         bag["reason"] = "hors ligne"
         return _with_piracy(bag, lat, lon)
     if thin:
+        if client is not None:
+            await refresh_amp_layer_sig(client)
+        else:
+            load_amp_layer_sig()
         key = thin_cache_key(lat, lon, radius_nm, month)
         cached = thin_cache_get(key, rich=rich)
         if cached is not None:
@@ -924,6 +1209,7 @@ async def fill_dossier(
             return _with_piracy(bag, lat, lon)
         bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True, rich=rich)
         if (bag.get("sources") or {}).get("bi") != "unavailable":
+            key = thin_cache_key(lat, lon, radius_nm, month)
             thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
         return _with_piracy(bag, lat, lon)
     return _with_piracy(
@@ -964,9 +1250,10 @@ async def _fill_dossier(
     marina_radius = 25.0 if thin else radius_nm
 
     async def amp_task() -> list[dict]:
-        # Mongo cache (centroids). A small GET /amp?bbox= triggers ProtectedSeas.
-        feats = await _cached_fc(http, f"{bi}/export/amp.geojson")
-        return nearest_places(feats, lat, lon, amp_radius, MAX_AMP, slim=slim_amp)
+        # AM1A : polygones GET /amp (cache 1°), repli centroïdes si absent.
+        await refresh_amp_layer_sig(http)
+        feats, source = await fetch_amp_features(http, lat, lon)
+        return nearest_amp(feats, lat, lon, amp_radius, MAX_AMP, source=source)
 
     async def projects_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/geojson")

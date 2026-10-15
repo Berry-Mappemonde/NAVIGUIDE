@@ -18,7 +18,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-const AIR = /prend l'avion pour Halifax|retour en avion vers Cayenne|the crew flies to Halifax|return flight to Cayenne/i;
+const AIR = /prend l'avion pour Halifax|s'envole de Cayenne pour Halifax|retour en avion vers Cayenne|s'envole de Halifax pour Cayenne|the crew flies from Cayenne to Halifax|the crew flies to Halifax|return flight to Cayenne|flies from Halifax/i;
 const CLOSE = /Aujourd[’']hui, le bateau est (à|en mer)/i;
 
 async function dismissNotForNav(page) {
@@ -101,8 +101,8 @@ test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", asy
   const blob = film.chapters.map((c) => c.text || "").join(" ");
   expect(film.targetSeconds, "sans case : pas de budget serveur").toBe(0);
   if (routeHasAir) {
-    expect(blob, "avion aller").toMatch(/prend l'avion pour Halifax|the crew flies to Halifax/i);
-    expect(blob, "avion retour").toMatch(/retour en avion vers Cayenne|return flight to Cayenne/i);
+    expect(blob, "avion aller").toMatch(/prend l'avion pour Halifax|s'envole de Cayenne pour Halifax|the crew flies from Cayenne to Halifax|the crew flies to Halifax/i);
+    expect(blob, "avion retour").toMatch(/retour en avion vers Cayenne|s'envole de Halifax pour Cayenne|return flight to Cayenne|flies from Halifax/i);
   }
   expect(blob, "clôture dans le script").toMatch(CLOSE);
   expect(blob, "pas le seul départ Ajaccio").not.toMatch(/^[^.]*(départ vers Ajaccio)[^.]*$/i);

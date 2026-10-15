@@ -33,8 +33,8 @@ describe("EscaleSheet contract (lot C)", () => {
   });
 
   it("shows the paragraph source under the text and does not fetch /escale itself", () => {
-    assert.match(src, /data-testid="escale-source"/);
-    assert.match(src, /storySourceLightning|storySourceSuper|storySourceRules/);
+    assert.match(src, /testId="escale-source"/);
+    assert.match(src, /LlmSourceBadge/);
     assert.doesNotMatch(src, /useEffect/);
     assert.doesNotMatch(src, /\/escale/);
   });
