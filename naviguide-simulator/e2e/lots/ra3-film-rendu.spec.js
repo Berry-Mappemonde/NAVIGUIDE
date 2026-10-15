@@ -136,7 +136,7 @@ test("lot RA3 — fond gardé, bateau glisse, zoom stable, bulle fermable", asyn
   const appeared = await bubble.isVisible({ timeout: 28_000 }).catch(() => false);
   if (!appeared) {
     test.info().annotations.push({
-      type: apiUp ? "bulle" : "sans API",
+      type: apiUp ? "poste" : "sans API",
       description: "bulle d'approche absente — assertions croix / Échap sautées",
     });
   } else {
@@ -166,7 +166,7 @@ test("lot RA3 — fond gardé, bateau glisse, zoom stable, bulle fermable", asyn
     await shot(page, "02-caraibes");
   } else {
     test.info().annotations.push({
-      type: apiUp ? "caraibes" : "sans API",
+      type: apiUp ? "poste" : "sans API",
       description: "chapitre Caraïbes non atteint — capture du plan courant",
     });
     await shot(page, "02-caraibes");

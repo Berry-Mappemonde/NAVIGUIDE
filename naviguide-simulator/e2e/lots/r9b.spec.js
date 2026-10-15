@@ -94,16 +94,20 @@ test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
   await expect(box.getByText(/Le journal commence|Écrit par le serveur|cliquez pour/i)).toHaveCount(0);
 
   const simEntries = page.getByTestId("ici-journal-entry");
+  if (apiUp) {
+    await expect.poll(async () => simEntries.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+  }
   const hasEntry = await simEntries.first().isVisible({ timeout: 5_000 }).catch(() => false)
     || (await simEntries.count()) > 0;
-  if (!hasEntry) {
+  if (!hasEntry && !apiUp) {
     test.info().annotations.push({
-      type: "RF2",
-      description: "journal du stock figé pas encore listé — clic curseur sauté",
+      type: "sans API",
+      description: "journal local vide — clic curseur sauté",
     });
     await shot(page, "01-journal");
     return;
   }
+  expect(hasEntry, "journal listable (stock figé / seed local)").toBeTruthy();
   const simCount = await simEntries.count();
   expect(simCount).toBeGreaterThanOrEqual(1);
   const firstSim = (await simEntries.first().innerText()).trim();
@@ -138,25 +142,19 @@ test("lot R9b — Journal : liste, clic place le curseur", async ({ page }) => {
     const official = await page.request.get("/voyage/official/moments", { timeout: 8_000 })
       .then((r) => (r.ok() ? r.json() : null))
       .catch(() => null);
-    if (official && Array.isArray(official.moments) && official.moments.length) {
-      const officialEntries = page.getByTestId("ici-journal-entry");
-      await expect(officialEntries.first()).toBeAttached({ timeout: 20_000 });
-      await expect(officialEntries.first()).not.toContainText("Marina Bas-du-Fort", { timeout: 15_000 });
-      const n = await officialEntries.count();
-      expect(n).toBeGreaterThanOrEqual(1);
-      const firstText = await officialEntries.first().innerText();
-      expect(firstText).toMatch(/\d+ (janv|févr|mars|avr|mai|juin|juil|août|sept|oct|nov|déc|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
-      const mid = officialEntries.nth(Math.min(Math.max(n - 1, 0), 3));
-      const clock0 = (await page.getByTestId("film-clock-line").innerText().catch(() => "")) || "";
-      await mid.click();
-      if (clock0.trim()) {
-        await expect(page.getByTestId("film-clock-line")).not.toHaveText(clock0, { timeout: 10_000 });
-      }
-    } else {
-      test.info().annotations.push({
-        type: "journal vide",
-        description: "GET /voyage/official/moments sans lignes — liste officielle non exigée",
-      });
+    expect(official && Array.isArray(official.moments) && official.moments.length, "moments du stock figé listables").toBeTruthy();
+    const officialEntries = page.getByTestId("ici-journal-entry");
+    await expect(officialEntries.first()).toBeAttached({ timeout: 20_000 });
+    await expect(officialEntries.first()).not.toContainText("Marina Bas-du-Fort", { timeout: 15_000 });
+    const n = await officialEntries.count();
+    expect(n).toBeGreaterThanOrEqual(1);
+    const firstText = await officialEntries.first().innerText();
+    expect(firstText).toMatch(/\d+ (janv|févr|mars|avr|mai|juin|juil|août|sept|oct|nov|déc|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
+    const mid = officialEntries.nth(Math.min(Math.max(n - 1, 0), 3));
+    const clock0 = (await page.getByTestId("film-clock-line").innerText().catch(() => "")) || "";
+    await mid.click();
+    if (clock0.trim()) {
+      await expect(page.getByTestId("film-clock-line")).not.toHaveText(clock0, { timeout: 10_000 });
     }
   }
 

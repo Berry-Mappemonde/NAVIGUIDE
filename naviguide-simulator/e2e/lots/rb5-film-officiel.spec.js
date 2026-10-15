@@ -131,14 +131,21 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
     assertOfficialDepart(frStory.text, "fr");
     assertRouteOrder(frStory.text, "récit FR");
   } else {
+    if (apiUp) throw new Error("récit sidebar vide alors que l'API répond");
     test.info().annotations.push({
-      type: "sans récit",
+      type: "sans API",
       description: "récit sidebar vide — tête Saint-Maur non vérifiée à l'écran",
     });
   }
 
   await muteVoice(page);
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
+  if (!apiUp) {
+    await shot(page, "01-depart");
+    return;
+  }
+  const { waitFilmReady } = await import("../helpers.js");
+  await waitFilmReady(page);
   await page.getByTestId("replay-start").click();
   const subtitle = page.getByTestId("film-subtitle");
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
@@ -188,14 +195,7 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
   const stopBtn = page.getByTestId("replay-stop");
   if (await stopBtn.isVisible().catch(() => false)) await stopBtn.click();
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
-  const { waitFilmCanStart } = await import("../helpers.js");
-  if (!(await waitFilmCanStart(page, 8_000))) {
-    test.info().annotations.push({
-      type: "Revoir grisé",
-      description: "RC11 : Replay disabled after EN — sous-titre EN non rejoué",
-    });
-    return;
-  }
+  await waitFilmReady(page);
   await page.getByTestId("replay-start").click();
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
   const subEn = (await subtitle.innerText()).trim();

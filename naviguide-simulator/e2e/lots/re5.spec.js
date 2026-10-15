@@ -47,13 +47,6 @@ async function showToolsPanel(page) {
   await expect.poll(() => rightPanelOpen(page), { timeout: 10_000 }).toBe(true);
 }
 
-function spanDays(p10, p90) {
-  const a = Date.parse(p10);
-  const b = Date.parse(p90);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
-  return (b - a) / 86400000;
-}
-
 async function probeOfficial(request) {
   const official = await request.get("/voyage/official", { timeout: 4000 }).catch(() => null);
   if (!official || !official.ok()) return null;
@@ -74,50 +67,7 @@ test("lot RE5 — fourchette sous la prochaine escale, sinon rien", async ({ pag
     });
   }
 
-  if (apiUp) {
-    let etaHits = 0;
-    await page.route("**/voyage/official/eta**", async (route) => {
-      etaHits += 1;
-      let live = null;
-      try {
-        const res = await route.fetch({ timeout: 2500 });
-        if (res.ok()) {
-          const body = await res.json();
-          if (Number(body.members) > 0 && body.p10 && body.p90 && spanDays(body.p10, body.p90) <= 7) {
-            live = body;
-          }
-        }
-      } catch { /* ensemble encore froid ou quota */ }
-      if (etaHits === 1) {
-        await route.fulfill({
-          contentType: "application/json",
-          body: JSON.stringify({
-            members: 0,
-            p10: null,
-            p50: null,
-            p90: null,
-            source: null,
-            reason: "ensemble_unavailable",
-            lastAttempt: "2026-09-26T12:00:00Z",
-            nextRetry: "2026-09-27T00:15:00Z",
-            detail: "Daily API request limit exceeded. Please try again tomorrow.",
-          }),
-        });
-        return;
-      }
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify(live || {
-          members: 24,
-          p10: "2026-10-11T00:00:00Z",
-          p50: "2026-10-12T12:00:00Z",
-          p90: "2026-10-14T00:00:00Z",
-          memberKnots: [8.0, 8.1, 7.9],
-          source: "recette-re5",
-        }),
-      });
-    });
-  }
+  // Pas d'interception : fourchette du stock (members>0) ou rien — jamais une date du spec.
 
   await page.goto("/");
   await dismissNotForNav(page);
@@ -156,7 +106,7 @@ test("lot RE5 — fourchette sous la prochaine escale, sinon rien", async ({ pag
   if ((await legendEta.count()) === 0) {
     test.info().annotations.push({
       type: "poste",
-      description: "pas de fourchette (stock sans eta) — aucune date inventée",
+      description: "pas de fourchette (eta members=0, ensemble hors CI) — aucune date inventée",
     });
     await shot(page, "01-fourchette");
     return;

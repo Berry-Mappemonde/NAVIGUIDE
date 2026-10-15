@@ -216,9 +216,6 @@ test("lot RC1 — libellé météo du point courant", async ({ page }) => {
 
   if (!sawClimoAlone) {
     await shot(page, "01-climatologie-futur");
-    test.info().annotations.push({
-      type: "RF7",
-      description: "En Suivre le curseur est LIVE ; climatologie hors 10 jours non exigée par un seek film",
-    });
+    await expect(page.getByTestId("film-clock-line")).toContainText(/LIVE/i);
   }
 });

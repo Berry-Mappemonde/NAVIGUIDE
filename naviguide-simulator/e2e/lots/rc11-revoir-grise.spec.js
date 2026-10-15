@@ -46,13 +46,23 @@ function wordCount(text) {
   return (String(text || "").match(/\S+/g) || []).length;
 }
 
+const RG6_OPENING = /Berry-Mappemonde quitte|L['’]expédition Berry-Mappemonde|Berry-Mappemonde leaves|The Berry-Mappemonde expedition/i;
+const RG6_MILES_DAYS = /milles|jours de mer|days at sea|\bmiles\b/i;
+const RG7_CLOSE = /Aujourd['’]hui, le bateau|Today, the boat/i;
+
+function hasRg6Rg7Fingerprint(blob) {
+  if (RG7_CLOSE.test(blob)) return true;
+  return RG6_OPENING.test(blob) && RG6_MILES_DAYS.test(blob);
+}
+
 function isRe7Film(free) {
   const chapters = free?.chapters || [];
   if (!chapters.length) return false;
   const blob = chapters.map((c) => c.text || "").join(" ");
-  if (wordCount(blob) > 800) return false;
   if (FORBIDDEN.test(blob)) return false;
   if (/milles nautiques du départ|Bay of Biscay/.test(blob)) return false;
+  // Film RG6+ long (stock figé) : pas stale pour le seul plafond 800.
+  if (wordCount(blob) > 800 && !hasRg6Rg7Fingerprint(blob)) return false;
   return true;
 }
 
@@ -108,17 +118,8 @@ test("lot RC11 — Revoir grisé tant que /film n'est pas prêt, date toujours l
   }
 
   const probed = await waitRe7Film(page);
-  if (!probed?.film?.chapters?.length || probed.stale) {
-    test.info().annotations.push({
-      type: probed?.stale ? "API hors checkout" : "film vide",
-      description: "GET /film pas encore RE7 — Revoir reste grisé, date visible",
-    });
-    await expect(start).toBeDisabled();
-    await expect(page.getByTestId("replay-departure")).toBeVisible();
-    await expect(page.getByTestId("film-duration")).toHaveCount(0);
-    await shot(page, "01-revoir-grise");
-    return;
-  }
+  expect(probed?.film?.chapters?.length, "GET /film a des chapitres").toBeGreaterThan(0);
+  expect(probed.stale, "film figé RE7 (même checkout)").toBe(false);
 
   await expect(start).toBeEnabled({ timeout: 30_000 });
   await expect(page.getByTestId("replay-departure")).toBeVisible();

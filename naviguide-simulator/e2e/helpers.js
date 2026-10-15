@@ -231,6 +231,23 @@ export async function waitFilmCanStart(page, timeout = 25_000) {
 }
 
 /**
+ * Lot RG20 : le film officiel est prêt — télémétrie `window.__naviguideFilm.status`
+ * (si le client la publie) ou bouton Revoir actif (`remoteStatus === "ready"`).
+ * Ne pas avaler le timeout : si l'API est là, un échec est une régression.
+ */
+export async function waitFilmReady(page, timeout = 45_000) {
+  const start = page.getByTestId("replay-start");
+  await expect(start).toBeVisible({ timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const st = window.__naviguideFilm?.status;
+    const b = document.querySelector("[data-testid='replay-start']");
+    const enabled = Boolean(b && !b.disabled && b.getAttribute("aria-disabled") !== "true");
+    return st === "ready" || enabled;
+  }, null, { timeout });
+  await expect(start).toBeEnabled();
+}
+
+/**
  * Le film ancré (RC18) laisse le bateau à quai pendant les premières phrases (Saint-Maur → La Rochelle
  * par la route — comptée dans filmNm —, puis l'escale) : on ne mesure sa glisse qu'une fois qu'il BOUGE
  * vraiment (plus de `minDeg` degrés entre deux lectures à 500 ms), pas sur les milles déjà au compteur.

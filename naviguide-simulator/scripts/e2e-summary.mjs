@@ -22,15 +22,27 @@ function walk(suite) {
       const annotations = (t.annotations || []).map((a) => a.type || a.description || "").join(" ");
       // Réserves : ce qu'un spec VERT n'a pas pu vérifier (surface absente, API muette…) — un vert avec
       // réserve n'a rien prouvé sur ce point ; s'il revient à chaque run, la surface a disparu (spec obsolète).
-      const reserves = (t.annotations || [])
-        .filter((a) => a.type !== "skip")
+      const allNotes = (t.annotations || []).filter((a) => a.type !== "skip");
+      const isPoste = (a) => /^poste$/i.test(a.type || "");
+      const isMesure = (a) => /^mesure$/i.test(a.type || "") || /^(zoom-ms|zoom-ms-avant)$/i.test(a.type || "");
+      const isSansApi = (a) => /^sans API$/i.test(a.type || "");
+      const reserves = allNotes
+        .filter((a) => !isPoste(a) && !isMesure(a) && !isSansApi(a))
         .map((a) => `${a.type || "réserve"}${a.description ? ` : ${a.description}` : ""}`);
+      const postes = allNotes
+        .filter(isPoste)
+        .map((a) => `${a.type}${a.description ? ` : ${a.description}` : ""}`);
+      const mesures = allNotes
+        .filter(isMesure)
+        .map((a) => `${a.type}${a.description ? ` : ${a.description}` : ""}`);
       tests.push({
         title: spec.title,
         file: spec.file || suite.file || "",
         status,
         annotations,
         reserves,
+        postes,
+        mesures,
       });
     }
   }
@@ -68,4 +80,20 @@ if (withReserve.length) {
   console.log("");
   console.log(`### Verts avec réserve (${withReserve.length}) — vérifié en partie seulement`);
   for (const t of withReserve) for (const r of t.reserves) console.log(`- \`${t.file}\` — ${r}`);
+} else {
+  console.log("");
+  console.log("### Verts avec réserve (0) — vérifié en partie seulement");
+  console.log("0. Les chemins poste / mesure sont rangés à part (lot RG20).");
+}
+const withPoste = passed.filter((t) => (t.postes || []).length);
+if (withPoste.length) {
+  console.log("");
+  console.log(`### Poste (${withPoste.length}) — attendu hors CI (atlas, hindcast, isochrone, LLM)`);
+  for (const t of withPoste) for (const r of t.postes) console.log(`- \`${t.file}\` — ${r}`);
+}
+const withMesure = passed.filter((t) => (t.mesures || []).length);
+if (withMesure.length) {
+  console.log("");
+  console.log(`### Mesure (${withMesure.length}) — perf, pas une réserve`);
+  for (const t of withMesure) for (const r of t.mesures) console.log(`- \`${t.file}\` — ${r}`);
 }

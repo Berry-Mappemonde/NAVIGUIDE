@@ -204,16 +204,19 @@ test("lot RE3 — journal lisible, pilules seulement hors film", async ({ page, 
 
   const start = page.getByTestId("replay-start");
   await expect(start).toBeVisible({ timeout: 15_000 });
-  const { waitFilmCanStart } = await import("../helpers.js");
-  await waitFilmCanStart(page, 15_000);
+  const { waitFilmReady } = await import("../helpers.js");
+  if (apiUp) await waitFilmReady(page);
   const durations = page.getByTestId("film-duration");
   if (!(await durations.isVisible().catch(() => false))) {
-    test.info().annotations.push({
-      type: "RE3 / RF8",
-      description: "pilules 2:30 / 3:00 absentes tant que Revoir ne peut pas partir",
-    });
-    await shot(page, "02-pilules");
-    return;
+    if (!apiUp) {
+      test.info().annotations.push({
+        type: "sans API",
+        description: "pilules 2:30 / 3:00 absentes tant que Revoir ne peut pas partir",
+      });
+      await shot(page, "02-pilules");
+      return;
+    }
+    throw new Error("film prêt mais pilules 2:30 / 3:00 absentes");
   }
   await expect(durations).toContainText("2:30");
   await expect(durations).toContainText("3:00");

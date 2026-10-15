@@ -149,8 +149,8 @@ test("lot RF10 — route hindcast, journal, statut honnête", async ({ page }) =
     }
   } else {
     test.info().annotations.push({
-      type: "hindcast incomplet",
-      description: `hindcastStatus=${status} coverage=${coverage || "—"} — repli climatologie visible, jamais inventé`,
+      type: "poste",
+      description: `hindcast incomplet — hindcastStatus=${status} coverage=${coverage || "—"} ; repli climatologie visible, jamais inventé`,
     });
   }
 

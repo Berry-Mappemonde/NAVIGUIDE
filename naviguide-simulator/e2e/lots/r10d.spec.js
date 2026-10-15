@@ -71,8 +71,8 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
   if (!sentenceUp) {
     expect(apiUp, "sans API la phrase du conseil (fixture) doit être là").toBeTruthy();
     test.info().annotations.push({
-      type: "conseil pending",
-      description: "GET /voyage/official/advice encore pending — pastilles / Appliquer non joués",
+      type: "poste",
+      description: "GET /voyage/official/advice encore pending — pastilles / Appliquer non joués (LLM, poste)",
     });
   } else {
     const sentenceText = (await sentence.innerText()).trim();
@@ -114,8 +114,8 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
   const enabled = await ask.isEnabled().catch(() => false);
   if (!enabled) {
     test.info().annotations.push({
-      type: "conseil inactif",
-      description: "Demander conseil présent mais inactif (voyage / prévision) — dialogue non joué",
+      type: "poste",
+      description: "conseil inactif — Demander conseil présent mais inactif (isochrone / LLM, jamais en CI)",
     });
     return;
   }
@@ -124,7 +124,7 @@ test("lot R10d — revue du plan conseillée, Demander conseil", async ({ page }
   const dialogUp = await dialog.isVisible({ timeout: 8_000 }).catch(() => false);
   if (!dialogUp) {
     test.info().annotations.push({
-      type: "dialogue absent",
+      type: "poste",
       description: "Demander conseil cliqué — carte deux colonnes absente (isochrone / LLM, poste)",
     });
     return;

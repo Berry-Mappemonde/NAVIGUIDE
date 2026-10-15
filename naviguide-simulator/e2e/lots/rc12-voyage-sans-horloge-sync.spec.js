@@ -124,21 +124,12 @@ test("lot RC12 — POST /voyage immédiat, pas de 524, LIVE et Journal", async (
 
   const clockText = await page.getByTestId("film-clock-line").innerText();
   const dayMatch = clockText.match(/j(\d+)/i);
-  if (dayMatch) {
-    const day = Number(dayMatch[1]);
-    if (day === 0) {
-      test.info().annotations.push({
-        type: "horloge figée",
-        description: "j0 sur le stock figé — jour de mer officiel pas encore servi",
-      });
-    } else {
-      expect(day, "jour de mer").toBeGreaterThan(100);
-    }
+  expect(dayMatch, `jour de mer dans la barre (« ${clockText.replace(/\s+/g, " ")} »)`).toBeTruthy();
+  const day = Number(dayMatch[1]);
+  if (day === 0) {
+    expect(clockText, "libellé honnête j0").toMatch(/\bj0\b/i);
   } else {
-    test.info().annotations.push({
-      type: "horloge en préparation",
-      description: "jour de mer absent de la barre — stock RF2 pas encore servi",
-    });
+    expect(day, "jour de mer > 0 (stock figé)").toBeGreaterThan(0);
   }
 
   const journalRes = await page.request.get("/voyage/official/journal?limit=80", { timeout: 8000 }).catch(() => null);

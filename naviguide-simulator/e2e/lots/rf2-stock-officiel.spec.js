@@ -140,11 +140,8 @@ test("lot RF2 — stock officiel : Journal et film depuis le stock", async ({ pa
   await expect(page.getByTestId("clock-line")).toContainText(/LIVE/i, { timeout: 20_000 });
 
   if (film.status === "ready") {
-    const { waitFilmCanStart } = await import("../helpers.js");
-    if (!(await waitFilmCanStart(page, 15_000))) {
-      test.info().annotations.push({ type: "RE3", description: "stock ready mais Revoir encore grisé" });
-      return;
-    }
+    const { waitFilmReady } = await import("../helpers.js");
+    await waitFilmReady(page);
     await page.getByTestId("replay-start").click();
     await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
     await expect(page.getByTestId("film-subtitle")).toBeVisible();
