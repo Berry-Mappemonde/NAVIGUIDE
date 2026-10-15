@@ -406,7 +406,7 @@ def test_stale_film_refreshed_when_marks_have_air_pair(tmp_path):
     )
     low = blob.lower()
     assert "s'envole" in low
-    assert "bateau attend" in low
+    assert "bateau attend" in low or "catamaran attend" in low
 
     again = official_store.refresh_family(
         "film", compute=compute, now=NOW, store=store, voy=voy, force=False,
@@ -485,7 +485,7 @@ def test_cayenne_voyage_uses_itinerary_halifax_for_air(tmp_path):
     blob = store.get("film", store.family_key("film", voy, NOW))["payload"]["fr"]["chapters"][0]["text"]
     low = blob.lower()
     assert "s'envole" in low
-    assert "bateau attend" in low
+    assert "bateau attend" in low or "catamaran attend" in low
 
 
 def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeypatch):
@@ -532,7 +532,7 @@ def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeyp
     blob = " ".join(c.get("text") or "" for c in film.json().get("chapters") or [])
     low = blob.lower()
     assert "s'envole" in low
-    assert "bateau attend" in low
+    assert "bateau attend" in low or "catamaran attend" in low
 
 
 YESTERDAY = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)

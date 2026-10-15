@@ -26,8 +26,13 @@ function latLngs(coords, worldOffset = 0) {
   return coords.map(([lon, lat]) => [lat, lon + worldOffset]);
 }
 
+function isSidePointIndex(episodes, index) {
+  return (episodes || []).some((ep) => index > ep.ja && index < ep.jb);
+}
+
 function staticWakeParts(flat) {
   const points = flat?.points || [];
+  const episodes = flat?.episodes || [];
   const parts = [];
   const partByPoint = new Array(points.length);
   const linePointByIndex = new Array(points.length);
@@ -35,6 +40,10 @@ function staticWakeParts(flat) {
 
   points.forEach((point, index) => {
     if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
+    if (isSidePointIndex(episodes, index)) {
+      current = null;
+      return;
+    }
     if (!current || point.jump) {
       current = [];
       parts.push(current);

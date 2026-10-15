@@ -25,7 +25,11 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 DAY_MS = 86_400_000
-AIR_RE = re.compile(r"s'envole|s’envole|flies (?:from|to)|attend à|awaits", re.I)
+AIR_RE = re.compile(
+    r"s'envole|s’envole|flies (?:from|to)|attend à|awaits|"
+    r"second voilier|second sailing boat|embarque sur",
+    re.I,
+)
 # Adjectifs de nationalité des phrases ZEE : orphelins si le mot d'avant n'est
 # ni « eaux », ni « les », ni un nom propre (« Samoa américaines »).
 NATION_ADJ = (

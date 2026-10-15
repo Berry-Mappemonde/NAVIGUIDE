@@ -31,7 +31,7 @@ READY = "ready"
 UNAVAILABLE = "unavailable"
 # Clé film : RC26 (récit dense et réparti — fenêtres de temps, cap initial de la trace,
 # dédoublonnage par site, phrase de groupe ZEE grammaticale) invalide rc22. moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rc26"
+FILM_SCRIPT_REV = "rc31"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"
 DB_NAME = "naviguide_simulator"

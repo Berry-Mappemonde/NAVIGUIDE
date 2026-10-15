@@ -359,7 +359,7 @@ export function closingSubtitle(text) {
 
 /** Phrases avion RF5 déjà présentes dans le chapitre — on ne les invente pas. */
 export const FILM_AIR_PHRASE_RE =
-  /prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to/i;
+  /prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
 
 /**
  * Ligne visible du sous-titre (lot RC16) : si le chapitre contient les
@@ -369,7 +369,7 @@ export function visibleFilmSubtitle(text) {
   const raw = String(text || "").trim();
   if (!raw) return "";
   if (!FILM_AIR_PHRASE_RE.test(raw)) return raw;
-  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
   const found = raw.match(airSentence) || [];
   const parts = [];
   const seen = new Set();

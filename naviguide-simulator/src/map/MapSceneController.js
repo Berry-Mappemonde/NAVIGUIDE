@@ -128,8 +128,13 @@ function addWorldLine(group, coords, style) {
   });
 }
 
+function isSidePointIndex(episodes, index) {
+  return (episodes || []).some((ep) => index > ep.ja && index < ep.jb);
+}
+
 function staticWakeParts(flat) {
   const points = flat?.points || [];
+  const episodes = flat?.episodes || [];
   const parts = [];
   const partByPoint = new Array(points.length);
   const linePointByIndex = new Array(points.length);
@@ -137,6 +142,10 @@ function staticWakeParts(flat) {
   points.forEach((point, index) => {
     if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
     if (point.air && !point.jump) {
+      current = null;
+      return;
+    }
+    if (isSidePointIndex(episodes, index)) {
       current = null;
       return;
     }
@@ -679,6 +688,20 @@ export class MapSceneController {
       ];
       airStyles.forEach((style) => addRouteLine(group, coords, style));
     }
+    const sideStyles = officialAirRouteStyles({ side: true });
+    for (const ep of input.flat?.episodes || []) {
+      const coords = [];
+      const hub = pts[ep.ja];
+      if (hub) coords.push([hub.lon, hub.lat]);
+      for (let i = ep.ja + 1; i < ep.jb; i += 1) {
+        const p = pts[i];
+        if (!p || p.jump) continue;
+        coords.push([p.lon, p.lat]);
+      }
+      if (coords.length >= 2) {
+        sideStyles.forEach((style) => addRouteLine(group, coords, style));
+      }
+    }
   }
 
   syncAltRoute() {
@@ -845,11 +868,17 @@ export class MapSceneController {
       draggable: true,
     });
     const filmFollow = cfg.filmActive ? (this.filmPose || cast?.follow) : null;
+    const episodeParked = cast?.vehicle === "plane" || cast?.vehicle === "side"
+      || cfg.live?.vehicle === "side" || cfg.live?.vehicle === "plane";
+    const parkLat = cast?.main?.lat ?? cfg.live?.parkLat;
+    const parkLon = cast?.main?.lon ?? cfg.live?.parkLon;
     this.syncMarker("live", {
-      visible: ready && liveMode && cast?.vehicle !== "plane",
-      lat: filmFollow?.lat ?? cfg.live?.lat,
-      lon: filmFollow?.lon ?? cfg.live?.lon,
-      bearing: filmFollow?.heading ?? filmFollow?.bearing ?? cfg.live?.bearing ?? 0,
+      visible: ready && liveMode && (episodeParked ? Number.isFinite(parkLat) : cast?.vehicle !== "plane"),
+      lat: episodeParked ? parkLat : (filmFollow?.lat ?? cfg.live?.lat),
+      lon: episodeParked ? parkLon : (filmFollow?.lon ?? cfg.live?.lon),
+      bearing: episodeParked
+        ? (cast?.main?.bearing ?? cfg.live?.bearing ?? 0)
+        : (filmFollow?.heading ?? filmFollow?.bearing ?? cfg.live?.bearing ?? 0),
       className: "catamaran-divicon catamaran-divicon--live",
       html: catamaranSvg(0),
     });
@@ -859,9 +888,13 @@ export class MapSceneController {
       className: "catamaran-divicon catamaran-divicon--ghost",
       html: catamaranSvg(0),
     });
+    const liveIsSide = cfg.live?.vehicle === "side";
     this.syncMarker("side", {
       ...cast?.side,
-      visible: ready && Boolean(cast?.side?.visible),
+      visible: ready && (Boolean(cast?.side?.visible) || (liveMode && liveIsSide && !cfg.filmActive)),
+      lat: cast?.side?.visible ? cast.side.lat : (liveIsSide ? cfg.live?.lat : cast?.side?.lat),
+      lon: cast?.side?.visible ? cast.side.lon : (liveIsSide ? cfg.live?.lon : cast?.side?.lon),
+      bearing: cast?.side?.visible ? cast.side.bearing : (liveIsSide ? cfg.live?.bearing : cast?.side?.bearing),
       className: "catamaran-divicon catamaran-divicon--side",
       html: catamaranSvg(0),
     });
@@ -1389,10 +1422,12 @@ export class MapSceneController {
   syncFilmBoat(pose) {
     const cfg = this.config;
     if (!cfg.filmActive || !pose) return;
+    const veh = this.currentCast?.vehicle;
+    if (veh === "plane" || veh === "side") return;
     const ready = Boolean(cfg.sceneReady && !cfg.drawingMode);
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     this.syncMarker("live", {
-      visible: ready && liveMode && this.currentCast?.vehicle !== "plane",
+      visible: ready && liveMode && veh !== "plane",
       lat: pose.lat,
       lon: pose.lon,
       bearing: pose.heading || 0,
