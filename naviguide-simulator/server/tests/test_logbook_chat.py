@@ -481,3 +481,71 @@ def test_answer_cites_wx_memory_without_invented_figure(monkeypatch):
     assert "36,5" in out["answer"] or "36.5" in out["answer"]
     assert "99" not in out["answer"]
     assert out["context"]["memory"][0]["windKnots"] == 36.5
+
+
+def test_slim_journal_entry_uses_spoken_title_when_name_missing():
+    row = logbook_chat._slim_journal_entry({
+        "kind": "stop",
+        "t": "2026-10-01T16:00:00Z",
+        "event": "arrival",
+        "title": {"fr": "arrivée à Papeete", "en": "arrival in Papeete"},
+    })
+    assert row["name"] == "arrivée à Papeete"
+    assert row["event"] == "arrival"
+
+
+def test_per_kind_tail_keeps_last_n_per_kind():
+    rows = [{"kind": "amp", "t": f"2026-10-01T{i:02d}:00:00Z", "id": f"amp:{i}"} for i in range(20)]
+    out = logbook_chat._per_kind_tail(rows, n=8)
+    assert [r["id"] for r in out] == [f"amp:{i}" for i in range(12, 20)]
+
+
+def test_journal_for_chat_reads_official_store_not_file_journal(monkeypatch):
+    journal.reset()
+    payload = {
+        "status": "ready",
+        "latest": [
+            {"id": "pos:1", "kind": "position", "t": "2026-10-15T12:00:00Z"},
+            {
+                "id": "amp:ahi", "kind": "amp", "t": "2026-10-15T11:00:00Z",
+                "name": "Ahi Marine Protected Area", "nm": 9.7,
+            },
+        ],
+        "events": [
+            {
+                "id": "amp:ahi", "kind": "amp", "t": "2026-10-15T11:00:00Z",
+                "name": "Ahi Marine Protected Area", "nm": 9.7,
+            },
+            {
+                "id": "zee:pf", "kind": "zee", "t": "2026-10-10T08:00:00Z",
+                "name": "French Polynesia", "event": "enter",
+            },
+            {
+                "id": "stop:ppt", "kind": "stop", "t": "2026-10-01T16:00:00Z",
+                "name": "Papeete", "event": "arrival",
+            },
+        ],
+    }
+    import official_store
+    monkeypatch.setattr(official_store, "serve_journal", lambda *_a, **_k: payload)
+    rows = logbook_chat.journal_for_chat()
+    kinds = {r["kind"] for r in rows}
+    assert kinds >= {"amp", "zee", "stop"}
+    assert "position" not in kinds
+    ahi = next(r for r in rows if r["kind"] == "amp")
+    assert ahi["name"] == "Ahi Marine Protected Area"
+    assert ahi["nm"] == 9.7
+
+
+def test_journal_for_chat_falls_back_to_file_when_store_preparing(monkeypatch):
+    journal.reset()
+    journal._append([{
+        "id": "stop:file",
+        "kind": "stop",
+        "t": "2026-05-16T12:00:00Z",
+        "name": "La Rochelle",
+        "event": "arrival",
+    }])
+    monkeypatch.setattr(logbook_chat, "_official_journal_rows", lambda *_a, **_k: [])
+    rows = logbook_chat.journal_for_chat()
+    assert any(r.get("name") == "La Rochelle" for r in rows)
