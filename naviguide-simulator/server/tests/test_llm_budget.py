@@ -105,10 +105,36 @@ def test_mode_all_allows_background(monkeypatch):
         assert llm_budget.allow("write") is True
 
 
-def test_judge_cap_is_zero_by_default(monkeypatch):
+def test_judge_cap_default_is_sixty_thousand(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
-    assert llm_budget.daily_cap("judge") == 0
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    assert llm_budget.daily_cap("judge") == 60_000
+    assert llm_budget.allow("judge") is True
+
+
+def test_judge_stays_off_when_mode_off(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    assert llm_budget.daily_cap("judge") == 60_000
     assert llm_budget.allow("judge") is False
+    assert llm_budget.allow_chat_ultra() is False
+
+
+def test_chat_ultra_cap_default_ten_eleventh_refused(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_CHAT_ULTRA_PER_DAY", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    assert llm_budget.chat_ultra_cap() == 10
+    assert llm_budget.allow_chat_ultra() is True
+    for _ in range(10):
+        llm_budget.record_chat_ultra()
+    assert llm_budget.chat_ultra_usage()["calls"] == 10
+    assert llm_budget.allow_chat_ultra() is False
+    st = llm_budget.status()
+    assert st["chatUltra"]["calls"] == 10
+    assert st["chatUltra"]["cap"] == 10
 
 
 def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
