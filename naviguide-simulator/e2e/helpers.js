@@ -283,3 +283,15 @@ export async function centerOnFlag(page, namePattern, zoom = 7) {
   }, [source, zoom]);
   await page.waitForTimeout(300);
 }
+
+// Leaflet dessine le monde sur plusieurs copies côte à côte : le marqueur « principal » est celui de la
+// copie la plus proche de la caméra. Deux lectures du même point peuvent donc différer de 360°
+// (210,43 et −149,57 : le bateau n'a pas bougé). Comparer des longitudes brutes donne un faux « saut ».
+export function wrapLng(lng) {
+  return ((((lng + 180) % 360) + 360) % 360) - 180;
+}
+
+export function lngDelta(a, b) {
+  const x = ((((b - a) % 360) + 360) % 360);
+  return Math.min(x, 360 - x);
+}
