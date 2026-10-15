@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Redo2, Undo2, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ToolsSidebar } from "./components/ToolsSidebar.jsx";
@@ -88,7 +88,7 @@ import {
 import { loadOfficialBerryRoute } from "./utils/routeFromOfficial.js";
 import { isCinemaKey } from "./utils/cinemaHotkey.js";
 import { weatherLine as buildWeatherLine } from "./utils/weatherLine.js";
-import { mapInsetVars } from "./utils/filmBarLayout.js";
+import { mapInsetVars, measureFilmBarOccupiedPx } from "./utils/filmBarLayout.js";
 import { productHasData } from "./hooks/weatherSnapshot.js";
 import { useSatellitePopup } from "./hooks/useSatellitePopup.js";
 import { useRouteDrawing } from "./hooks/useRouteDrawing.js";
@@ -173,6 +173,11 @@ export default function App() {
   const [cinemaMode, setCinemaMode] = useState(true);
   const [filmFullscreen, setFilmFullscreen] = useState(false);
   const [hideFilmBar, setHideFilmBar] = useState(false);
+  const [filmBarNode, setFilmBarNode] = useState(null);
+  const [filmBarMeasuredPx, setFilmBarMeasuredPx] = useState(null);
+  const filmBarRef = useCallback((node) => {
+    setFilmBarNode(node);
+  }, []);
   const [stopAuto, setStopAuto] = useState(false);
   const [escaleClear, setEscaleClear] = useState(0);
   const [cameraFollow, setCameraFollow] = useState(false);
@@ -1667,11 +1672,30 @@ export default function App() {
     if (kind === "cables") maritimeLayers.setShowCables(true);
   };
 
+  useLayoutEffect(() => {
+    if (!filmBarNode) {
+      setFilmBarMeasuredPx(null);
+      return undefined;
+    }
+    const publish = () => {
+      setFilmBarMeasuredPx(measureFilmBarOccupiedPx(filmBarNode));
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(filmBarNode);
+    window.addEventListener("resize", publish);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", publish);
+    };
+  }, [filmBarNode]);
+
   const rootInsetVars = mapInsetVars({
     sidebarOpen: sidebarOpen && !filmFullscreen,
     toolsOpen: toolsOpen && !filmFullscreen,
-    filmBarVisible: !hideFilmBar,
+    filmBarVisible: true,
     filmBarControls: isSimulation,
+    filmBarMeasuredPx,
   });
 
   return (
@@ -1905,6 +1929,8 @@ export default function App() {
       )}
 
       <SimulationFilmBar
+        ref={filmBarRef}
+        barRef={filmBarRef}
         fromName={hudLeg?.fromStop}
         toName={hudLeg?.toStop}
         finished={Boolean(hudLeg?.finished)}

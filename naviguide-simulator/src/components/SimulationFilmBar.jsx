@@ -99,7 +99,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   speechText = null,
   view = null,
   onView,
+  ref,
+  barRef,
 }) {
+  const rootRef = ref || barRef;
   const { t, lang } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
   const regimeTitle = [
@@ -156,6 +159,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   if (hideBar) {
     return (
       <div
+        ref={rootRef}
         className="absolute bottom-5 z-[2020] pointer-events-auto"
         style={{ left: insets.left, right: insets.right }}
       >
@@ -175,6 +179,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   // Play et le départ (plus de barre allégée qui les retirait).
   return (
     <div
+      ref={rootRef}
       data-testid="film-bar"
       data-drawing={drawing ? "1" : undefined}
       className="absolute bottom-5 z-[2020] pointer-events-auto"

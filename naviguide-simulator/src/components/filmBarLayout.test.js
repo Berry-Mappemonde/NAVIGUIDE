@@ -175,6 +175,18 @@ describe("film bar (lot RF8)", () => {
   });
 });
 
+describe("crédits au-dessus de la barre (lot UI1)", () => {
+  it("App mesure la barre film et SimulationFilmBar expose la racine", () => {
+    assert.match(app, /ref=\{filmBarRef\}/);
+    assert.match(app, /ResizeObserver/);
+    assert.match(app, /filmBarMeasuredPx/);
+    assert.match(app, /measureFilmBarOccupiedPx/);
+    assert.match(bar, /ref=\{rootRef\}/);
+    assert.match(bar, /barRef/);
+    assert.match(bar, /data-testid="film-bar"/);
+  });
+});
+
 describe("plein écran film (lot F5) — sidebars masquées, pas démontées", () => {
   it("App pose .film-fullscreen et garde <Sidebar> / <ToolsSidebar> montés", () => {
     assert.match(app, /film-fullscreen/);
