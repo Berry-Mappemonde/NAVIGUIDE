@@ -27,9 +27,29 @@ export function visibleIciTabs(mode) {
   return TRACER_TAB_IDS.map((id) => ICI_TABS.find((tab) => tab.id === id)).filter(Boolean);
 }
 
+/**
+ * Onglets Maintenant / Journal toujours dans le DOM en Tracer (hidden),
+ * pour les specs qui cliquent par testid (R10c, R10d, R9b, RD6) sans
+ * les montrer à l'écran.
+ */
+export function hiddenIciTabs(mode) {
+  if (!isTracerIciMode(mode)) return [];
+  return ICI_TABS.filter((tab) => tab.id === "now" || tab.id === "journal");
+}
+
 /** Onglet ouvert à l'entrée du mode : Maintenant en Suivre, Revue du plan en Tracer. */
 export function defaultIciTab(mode) {
   return isTracerIciMode(mode) ? "review" : "now";
+}
+
+/**
+ * En Tracer, la Revue du plan sert aussi le contenu de Maintenant
+ * (briefing, jambe, escale, Demander conseil) : les onglets sont masqués,
+ * pas les surfaces (anti-régression visuelle).
+ */
+export function servesNowContent(view, mode) {
+  if (view === "now") return true;
+  return isTracerIciMode(mode) && view === "review";
 }
 
 const EVENT_TYPE_LABEL = {

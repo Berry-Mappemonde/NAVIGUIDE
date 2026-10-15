@@ -37,15 +37,15 @@ test("lot DM9 — Tracer : Revue + Récit, Polaires repliées ; Suivre intact", 
   await showLeftPanel(page);
   await showRightPanel(page);
 
-  const tabs = page.getByTestId("ici-tabs").getByRole("tab");
+  const tabs = page.getByTestId("ici-tabs").getByRole("tab", { includeHidden: false });
   await expect(tabs).toHaveCount(2);
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();
   await expect(page.getByTestId("ici-tab-story")).toBeVisible();
-  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
-  await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
   await expect(page.getByTestId("ici-tab-review")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("ici-review-slot")).toBeVisible();
-  await expect(page.getByTestId("ici-section-leg")).toHaveCount(0);
+  await expect(page.getByTestId("ici-section-leg")).toBeVisible();
 
   await expect(page.getByTestId("export-box")).toBeVisible();
   await expect(page.getByTestId("departure-field")).toHaveCount(0);

@@ -201,20 +201,22 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const tools = read("../components/ToolsSidebar.jsx");
     const skipper = read("../components/SkipperOrdersPanel.jsx");
+    const sim = read("../components/SimulationPanel.jsx");
     assert.match(app, /tracerLayout=\{!isSuivre\}/);
-    assert.match(app, /showAdvice=\{!isSuivre\}/);
+    assert.doesNotMatch(app, /showAdvice=/);
     assert.match(tools, /tracerLayout = false/);
-    assert.match(tools, /polarUserOpen/);
-    assert.match(tools, /layersUserOpen/);
-    assert.match(tools, /layersOpen = layersUserOpen \?\? Boolean\(tracerLayout\)/);
-    assert.match(tools, /polarOpen = polarUserOpen \?\? false/);
-    assert.match(tools, /showAdvice \?/);
-    assert.match(tools, /data-testid="ask-advice"/);
+    assert.match(tools, /function FoldDetails/);
+    assert.match(tools, /function LayersDrawer/);
+    assert.match(tools, /data-testid="layers-drawer"/);
+    assert.match(tools, /readSessionOpen\(layersFoldKey\(tracerLayout\), Boolean\(tracerLayout\)\)/);
+    assert.doesNotMatch(tools, /open=\{polarOpen\}/);
+    assert.doesNotMatch(tools, /open=\{layersOpen\}/);
+    assert.doesNotMatch(tools, /data-testid="ask-advice"/);
+    assert.match(sim, /data-testid="ask-advice"/);
     assert.match(skipper, /data-testid="skipper-orders"/);
     assert.doesNotMatch(skipper, /<details open/);
     assert.match(tools, /data-testid="polar-box"/);
     assert.match(tools, /data-testid="export-box"/);
-    assert.match(tools, /data-testid="layers-drawer"/);
   });
 
   it("lot C3 : barre film et contexte du chat lisent la même source", () => {

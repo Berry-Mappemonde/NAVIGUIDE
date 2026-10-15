@@ -11,8 +11,10 @@ import {
   dismissAlert,
   defaultIciTab,
   formatJournalLine,
+  hiddenIciTabs,
   journalChangeLabel,
   seekJournalEntry,
+  servesNowContent,
   visibleAlerts,
   visibleIciTabs,
   formatLegLine,
@@ -307,12 +309,19 @@ describe("IciMaintenant — lot DM9 : Tracer sert le tracé", () => {
     assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
     assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["review", "story"]);
     assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["review", "story"]);
+    assert.deepEqual(hiddenIciTabs("simulation").map((t) => t.id), ["now", "journal"]);
+    assert.deepEqual(hiddenIciTabs("follow"), []);
     assert.equal(defaultIciTab("follow"), "now");
     assert.equal(defaultIciTab("simulation"), "review");
     assert.equal(defaultIciTab("drawn"), "review");
+    assert.equal(servesNowContent("review", "simulation"), true);
+    assert.equal(servesNowContent("review", "follow"), false);
+    assert.equal(servesNowContent("now", "follow"), true);
     assert.equal(visibleIciTabs("simulation").some((t) => t.id === "now"), false);
     assert.equal(visibleIciTabs("simulation").some((t) => t.id === "journal"), false);
     assert.match(src, /defaultIciTab\(mode\)/);
+    assert.match(src, /servesNowContent\(view, mode\)/);
+    assert.match(src, /hiddenIciTabs\(mode\)/);
     assert.match(helpers, /ici-tab-now/);
     assert.match(helpers, /ici-tab-journal/);
     assert.doesNotMatch(src, /placeholder|aide|hint|onglet vide/i);

@@ -136,6 +136,8 @@ export const enterTracerMode = enterSimulation;
 
 export async function enterTracer(page) {
   // DM6 : entrer en Tracer ouvre le dessin (brouillon vide ou déjà là).
+  // Le cadre droit (drawing-box) n'apparaît qu'après « Tracer votre propre
+  // route » (R13) : drawing-points à gauche ne suffit pas (RH2 / lot S).
   await showLeftPanel(page);
   const tracer = page.getByTestId("view-tracer");
   if ((await tracer.getAttribute("aria-checked")) !== "true") {
@@ -143,10 +145,7 @@ export async function enterTracer(page) {
   }
   await expect(tracer).toHaveAttribute("aria-checked", "true");
   const box = page.getByTestId("drawing-box");
-  const points = page.getByTestId("drawing-points");
-  const drawingOpen = (await box.isVisible().catch(() => false))
-    || (await points.isVisible().catch(() => false));
-  if (!drawingOpen) {
+  if (!(await box.isVisible().catch(() => false))) {
     const drawBtn = page.getByRole("button", {
       name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i,
     });
@@ -156,10 +155,10 @@ export async function enterTracer(page) {
     // (panneau en transition) : le clic DOM ne dépend pas de la géométrie.
     await drawBtn.click({ force: true, timeout: 5_000 }).catch(() => drawBtn.evaluate((el) => el.click()));
   }
-  await expect.poll(async () => (
-    (await box.isVisible().catch(() => false))
-    || (await points.isVisible().catch(() => false))
-  ), { timeout: 15_000 }).toBe(true);
+  if (!(await box.isVisible().catch(() => false))) {
+    await showRightPanel(page);
+  }
+  await expect(box).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => window.__naviguideScene?.beginDrawingWorld?.());
 }
 
