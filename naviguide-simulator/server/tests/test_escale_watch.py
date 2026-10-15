@@ -103,8 +103,9 @@ def test_one_watch_writes_news_with_url(monkeypatch):
     assert entry["url"] == TAVILY_HIT["url"]
     assert "Travaux" in entry["text"]
     assert "42" not in entry["text"]
-    assert entry["id"] == "news:noumea:2026-09-20"
+    assert entry["id"] == "news:noumea"
     assert parse_iso(entry["expires"]) > NOW
+    assert escale_watch.watch_done("Nouméa")
     logged = journal.latest(5, kinds=("news",))
     assert len(logged) == 1
     assert logged[0]["url"] == TAVILY_HIT["url"]
@@ -115,7 +116,8 @@ def test_one_watch_writes_news_with_url(monkeypatch):
     assert llm_budget.tavily_usage()["credits"] == 1
 
 
-def test_two_days_one_search_per_day(monkeypatch):
+def test_one_search_per_stop_even_across_days(monkeypatch):
+    """15 oct. : une escale n'est cherchée qu'UNE fois — pas une fois par jour, pas toutes les 6 h."""
     _keys(monkeypatch)
     journal.reset()
     seen = []
@@ -129,13 +131,36 @@ def test_two_days_one_search_per_day(monkeypatch):
             return a, b
 
     first, again = asyncio.run(once(day1))
-    assert first and again and first["id"] == again["id"]
+    assert first and first["id"] == "news:noumea"
+    assert again is None, "la seconde passe du même jour ne refait rien"
     searches = [u for u in seen if u.endswith("/search")]
     assert len(searches) == 1
-    asyncio.run(once(day2))
+    third, fourth = asyncio.run(once(day2))
+    assert third is None and fourth is None, "le lendemain non plus : l'escale est faite"
     searches = [u for u in seen if u.endswith("/search")]
-    assert len(searches) == 2
-    assert llm_budget.tavily_usage()["credits"] == 2
+    assert len(searches) == 1
+    assert llm_budget.tavily_usage()["credits"] == 1
+    assert len(journal.latest(5, kinds=("news",))) == 1
+
+
+def test_news_expires_after_arrival_not_after_search(monkeypatch):
+    """Cherchée à J-10, la veille reste lisible jusqu'à J+2 après l'ARRIVÉE."""
+    _keys(monkeypatch)
+    journal.reset()
+    arrival = NOW + timedelta(days=9)
+    stop = {**PORT, "arrival": arrival}
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler([]))) as client:
+            return await escale_watch.watch_stop(stop, NOW, client=client)
+
+    entry = asyncio.run(run())
+    assert entry
+    assert parse_iso(entry["expires"]) > arrival + timedelta(days=2)
+    assert not escale_watch.expired(entry, arrival + timedelta(days=1))
+    assert escale_watch.expired(entry, arrival + timedelta(days=4))
+    bag = escale_watch.attach_cached_news({"news": []}, NOW + timedelta(days=8))
+    assert [n["id"] for n in bag["news"]] == ["news:noumea"], "rattachée au sac bien après trois jours"
 
 
 def test_science_extract_attached_once(monkeypatch):
