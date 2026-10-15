@@ -112,7 +112,9 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
-  await expect(page.getByTestId("ici-tab-story")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
   await openReviewTab(page);
   await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review-leg']").first()).toBeVisible();
   await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review']").getByText(/Ce que je changerais|What I would change/i)).toBeVisible();
@@ -123,7 +125,7 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   await expect(right.getByTestId("plan-review")).toHaveCount(0);
   await expect(right.getByTestId("polar-box")).toBeVisible();
   await expect(right.getByTestId("skipper-orders")).toBeVisible();
-  await expect(right.getByTestId("departure-field")).toBeVisible();
+  await expect(right.getByTestId("departure-field")).toHaveCount(0);
   await shot(page, "03-panneau-droit");
 
   const draw = page.getByRole("button", {
@@ -136,9 +138,12 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
     const drawing = await page.getByTestId("drawing-box").isVisible({ timeout: 8_000 }).catch(() => false);
     if (drawing) {
       await showLeftPanel(page);
-      await expect(page.getByTestId("ici-tab-review")).toHaveCount(0);
-      await expect(page.getByTestId("ici-tab-now")).toBeVisible();
-      await expect(page.getByTestId("ici-tab-journal")).toBeVisible();
+      // DM9 (revue du porteur du 14 oct., § 4.1 option A) : en Tracer, Revue du plan et Récit ;
+      // Maintenant et Journal n'ont pas d'objet.
+      await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+      await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+      await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+      await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
       const cancel = page.getByRole("button", { name: /annuler|cancel/i }).first();
       if (await cancel.isVisible().catch(() => false)) await cancel.click();
     }

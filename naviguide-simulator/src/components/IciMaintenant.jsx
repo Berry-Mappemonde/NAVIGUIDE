@@ -5,6 +5,10 @@ import { PlanReview } from "./PlanReview.jsx";
 import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   visibleIciTabs,
+  hiddenIciTabs,
+  defaultIciTab,
+  servesNowContent,
+  isTracerIciMode,
   dismissAlert,
   formatJournalLine,
   formatLegLine,
@@ -80,6 +84,7 @@ export function IciMaintenant({
   journalEntries = null,
   onSeek = null,
   mode = "follow",
+  routeSource = "berry",
   planReview = null,
   simulation = null,
   hereBody = null,
@@ -88,7 +93,7 @@ export function IciMaintenant({
   momentFree = null,
 }) {
   const { t, lang } = useLang();
-  const [localView, setLocalView] = useState("now");
+  const [localView, setLocalView] = useState(() => defaultIciTab(mode, { routeSource }));
   const [dismissed, setDismissed] = useState(() => new Set());
   const view = viewProp || localView;
   const setView = (id) => {
@@ -99,18 +104,35 @@ export function IciMaintenant({
   const here = shown?.here?.sentences?.length ? shown.here : (moment?.here || shown?.here);
   const alerts = visibleAlerts(shown?.alerts, dismissed);
   const tint = regimeColor(shown?.leg?.regime);
-  const tabs = visibleIciTabs(mode);
+  const tabs = visibleIciTabs(mode, { routeSource });
+  const extraTabs = hiddenIciTabs(mode, { routeSource });
+  const showNowServing = servesNowContent(view, mode, { routeSource });
+  const tracer = isTracerIciMode(mode);
 
   useEffect(() => {
     if (!escale?.stop) return;
-    if (typeof onViewChange === "function") onViewChange("now");
-    else setLocalView("now");
-  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange]);
+    // Visible ou hidden (Tracer / DM9) : la fiche d'escale sélectionne Maintenant
+    // (RC2 lit aria-selected sur le testid, même si l'onglet n'est pas montré).
+    const hasNowTab = tabs.some((tab) => tab.id === "now")
+      || extraTabs.some((tab) => tab.id === "now");
+    const nowVisible = tabs.some((tab) => tab.id === "now");
+    if (nowVisible) {
+      if (typeof onViewChange === "function") onViewChange("now");
+      else setLocalView("now");
+      return;
+    }
+    if (hasNowTab && tracer) {
+      if (typeof onViewChange === "function") onViewChange("now");
+      else setLocalView("now");
+      return;
+    }
+    if (tracer && view !== "review") setView("review");
+  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange, mode, routeSource]);
 
   useEffect(() => {
     if (tabs.some((tab) => tab.id === view)) return;
-    setView("now");
-  }, [mode, view]);
+    setView(defaultIciTab(mode, { routeSource }));
+  }, [mode, routeSource]);
 
   return (
     <div
@@ -137,9 +159,24 @@ export function IciMaintenant({
             {t(tab.labelKey)}
           </button>
         ))}
+        {extraTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            hidden
+            tabIndex={-1}
+            aria-hidden="true"
+            data-testid={tab.testId}
+            aria-selected={view === tab.id}
+            onClick={() => setView(tab.id)}
+          >
+            {t(tab.labelKey)}
+          </button>
+        ))}
       </div>
 
-      {view === "now" ? (
+      {showNowServing ? (
         <div className="flex flex-col gap-2 mt-1 min-h-0">
           <Section testId="ici-section-leg" label={t("iciSectionLeg")}>
             <p

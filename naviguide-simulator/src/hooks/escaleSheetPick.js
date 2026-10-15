@@ -21,7 +21,9 @@ export function nearestAlongside(clockSample, marks) {
 }
 
 /**
- * Auto-open only the nearest alongside stop in Suivre.
+ * Auto-open the nearest alongside stop of the clock sample that the
+ * caller passed — Suivre (live officiel) or Tracer (playhead du tracé).
+ * Lot DM7 : plus de garde isSuivre ; c'est le sample qui cloisonne.
  * A user-opened sheet (flag) is never replaced by another stop
  * (KO #309: list click left clockSample on the live alongside stop,
  * so the effect overwrote the designated name with Fort-de-France).
@@ -30,11 +32,11 @@ export function pickAutoEscaleStop({
   filmActive = false,
   hold = false,
   userPicked = false,
-  isSuivre = false,
+  isSuivre: _isSuivre = false,
   atQuay = false,
   clockSample = null,
   marks = [],
 } = {}) {
-  if (filmActive || hold || userPicked || !isSuivre || !atQuay) return null;
+  if (filmActive || hold || userPicked || !atQuay) return null;
   return nearestAlongside(clockSample, marks);
 }

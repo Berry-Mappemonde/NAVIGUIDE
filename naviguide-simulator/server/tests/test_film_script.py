@@ -71,6 +71,10 @@ from film_script import (
     station_spoken_label,
     speak_film_text,
     written_is_valid,
+    write_stored_plan,
+    WRITTEN_SOURCE,
+    apply_written_guard,
+    chapter_structured_facts,
     zee_waters_label,
     _nm_label,
 )
@@ -121,8 +125,11 @@ def test_raw_length_bounded_and_chapter1_names():
 
 
 def test_connectors_alternate():
-    """RG6 : plus de rotation mécanique ; les formes suivent le contenu."""
-    plan = _raw()
+    """RG6 : plus de rotation mécanique ; les formes suivent le contenu.
+
+    RC27 : le gabarit complet (quitte / longue traversée) est l'intégral, pas le 2:30.
+    """
+    plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     assert "À la jambe suivante" not in blob
     assert "On the next leg" not in blob
@@ -197,6 +204,20 @@ def test_written_valid_when_tags_and_length_and_no_new_number():
     assert ok, f"len={len(text)} stripped invalid"
 
 
+def _sentences_from_user(user: str) -> list[str]:
+    import json
+    match = re.search(r"sentences=(\[.*\])\s*$", user or "", re.S)
+    if not match:
+        match = re.search(r"sentences=(\[.*\])", user or "", re.S)
+    if not match:
+        return []
+    try:
+        rows = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return []
+    return [str(s) for s in rows] if isinstance(rows, list) else []
+
+
 def test_cheating_llm_falls_back_to_raw():
     raw = _raw()
     events = raw["_events"]
@@ -207,9 +228,14 @@ def test_cheating_llm_falls_back_to_raw():
     assert ok is False
 
     async def fake_cascade(system, user, **kw):
-        if "JSON only" in system or "ids" in system.lower() and "select" in system.lower():
+        if "JSON only" in system or ("ids" in system.lower() and "select" in system.lower()):
             return '{"ids":["depart"],"reason":"too few"}', "nemotron-lightning"
-        return cheat, "nemotron-super"
+        sents = _sentences_from_user(user)
+        if not sents:
+            return cheat, "nemotron-super"
+        sents = list(sents)
+        sents[0] = sents[0].rstrip(".!?…") + " 99 nœuds."
+        return " ".join(sents), "nemotron-super"
 
     async def run():
         return await build_film_response(
@@ -218,22 +244,31 @@ def test_cheating_llm_falls_back_to_raw():
         )
 
     out = asyncio.run(run())
-    assert out["source"] == "rules"
-    assert out["style"] == "raw"
+    raw_sents = []
+    for ch in raw["chapters"]:
+        raw_sents.extend([s for s in re.split(r"(?<=[.!?…])\s+", ch.get("text") or "") if s.strip()])
+    out_sents = []
+    for ch in out["chapters"]:
+        out_sents.extend([s for s in re.split(r"(?<=[.!?…])\s+", ch.get("text") or "") if s.strip()])
     assert "99" not in " ".join(c["text"] for c in out["chapters"])
-    assert out["hasWritten"] is False
+    assert len(out_sents) == len(raw_sents)
 
 
 def test_honest_llm_keeps_tags_and_length():
     raw = _raw()
     events = raw["_events"]
-    honest = _honest_written(raw, events)
 
     async def fake_cascade(system, user, **kw):
         if "select" in system.lower() or "JSON only" in system:
             ids = [e["id"] for e in events]
             return json_ids(ids), "nemotron-lightning"
-        return honest, "nemotron-super"
+        sents = _sentences_from_user(user)
+        if not sents:
+            return _honest_written(raw, events), "nemotron-super"
+        out = []
+        for sent in sents:
+            out.append(sent.replace("quitte", "laisse", 1) if "quitte" in sent else sent)
+        return " ".join(out), "nemotron-super"
 
     async def run():
         return await build_film_response(
@@ -242,9 +277,11 @@ def test_honest_llm_keeps_tags_and_length():
         )
 
     out = asyncio.run(run())
-    assert out["source"] in {"nemotron", "nemotron-super"}
-    assert FILM_WRITE_MIN <= out["chars"] <= FILM_WRITE_MAX
+    assert out["source"] in {"nemotron", "nemotron-super", WRITTEN_SOURCE}
     assert out["hasWritten"] is True
+    raw_n = sum(len([s for s in re.split(r"(?<=[.!?…])\s+", c.get("text") or "") if s.strip()]) for c in raw["chapters"])
+    out_n = sum(len([s for s in re.split(r"(?<=[.!?…])\s+", c.get("text") or "") if s.strip()]) for c in out["chapters"])
+    assert out_n == raw_n
 
 
 def json_ids(ids):
@@ -262,6 +299,9 @@ def test_film_cache_hit_skips_second_write():
         calls["n"] += 1
         if "JSON only" in system:
             return json_ids([e["id"] for e in events]), "nemotron-lightning"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(sents), "nemotron-super"
         return honest, "nemotron-super"
 
     async def run():
@@ -466,7 +506,7 @@ def test_live_like_clock_pairs_rochelle_before_ajaccio():
     for lr in variants:
         clock = _live_like_clock(lr)
         for journal in (JOURNAL, {**JOURNAL, **MOMENTS}):
-            plan = build_raw_script(clock, clock["marks"], LIVE, journal, lang="fr", seconds=150, now_ms=NOW_MS)
+            plan = build_raw_script(clock, clock["marks"], LIVE, journal, lang="fr", seconds=0, now_ms=NOW_MS)
             blob = _script_blob(plan)
             _assert_no_rochelle_to_ajaccio_skip(blob)
             ch0 = plan["chapters"][0]["text"]
@@ -500,7 +540,7 @@ def test_chapter_iso_tb_after_ta():
 
 
 def test_official_route_order_no_repeat_departure_then_arrival():
-    fr = _raw()
+    fr = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob_fr = " ".join(c.get("text") or "" for c in fr["chapters"])
     _assert_route_order(blob_fr, "film FR")
     _assert_departure_arrival_pairs(blob_fr, "fr")
@@ -517,7 +557,7 @@ def test_official_route_order_no_repeat_departure_then_arrival():
             dep_name = re.sub(r",\s+(cap au [\w'-]+|heading [\w-]+)\s*$", "", dep.group(1), flags=re.I)
             assert norm_stop(dep_name) == norm_stop(arr.group(1)), ch.get("id")
 
-    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=150, now_ms=NOW_MS)
+    en = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="en", seconds=0, now_ms=NOW_MS)
     blob_en = " ".join(c.get("text") or "" for c in en["chapters"])
     _assert_route_order(blob_en, "film EN")
     _assert_departure_arrival_pairs(blob_en, "en")
@@ -585,7 +625,7 @@ def test_official_dated_stops_pins_first_rochelle_not_return():
     assert stops[1]["iso"].startswith("2026-05-15")
     assert "ajaccio" in stops[2]["name"].lower()
     clock = {"t0": OFFICIAL_T0, "marks": marks}
-    plan = build_raw_script(clock, marks, LIVE, JOURNAL, lang="fr", seconds=150, now_ms=NOW_MS)
+    plan = build_raw_script(clock, marks, LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = _script_blob(plan)
     _assert_no_rochelle_to_ajaccio_skip(blob)
 
@@ -780,7 +820,10 @@ def test_chapter_anchors_unit_sorted_bounded_deduped():
 
 
 def test_moments_arrival_each_stop_route_order():
-    plan = _moments_raw()
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
     _assert_route_order(blob, "journal FR")
     _assert_departure_arrival_pairs(blob, "fr")
@@ -789,7 +832,10 @@ def test_moments_arrival_each_stop_route_order():
 
 
 def test_moments_connectors_differ():
-    plan = _moments_raw()
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, {**JOURNAL, **MOMENTS},
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
     blob = _script_blob(plan)
     assert "À la jambe suivante" not in blob
     shapes = []
@@ -875,6 +921,9 @@ def test_film_written_served_from_cache_without_llm():
         calls["n"] += 1
         if "JSON only" in system:
             return json_ids([e["id"] for e in events]), "nemotron-lightning"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents), "nemotron-super"
         return honest, "nemotron-super"
 
     async def boom(*_a, **_k):
@@ -1229,7 +1278,7 @@ def test_re7_discourse_eleven_defects():
     assert "Gran Roque" not in blob
     assert "Monaco" not in blob
     assert re.search(r"s'envole de Cayenne pour Halifax", blob)
-    assert re.search(r"le bateau attend à Cayenne", blob)
+    assert re.search(r"le catamaran attend à Cayenne", blob)
     assert re.search(r"Aujourd’hui, le bateau est à Nouméa", blob)
     assert "Irma" in blob and "2017" in blob
     assert "une bouée" in blob
@@ -1242,9 +1291,8 @@ def test_re7_discourse_eleven_defects():
     assert "Bay of Biscay" not in blob
     assert re.search(r"eaux espagnoles", blob)
     idx_zee = blob.find("eaux espagnoles")
-    idx_dep = blob.find("pour Cayenne")
-    if idx_dep < 0:
-        idx_dep = blob.find("quitte")
+    m_dep = re.search(r"La Rochelle.{0,120}Cayenne|quitte La Rochelle", blob)
+    idx_dep = m_dep.start() if m_dep else blob.find("quitte")
     assert 0 <= idx_dep < idx_zee
     _assert_no_filler(blob)
     assert not re.search(r"\bnm\b", blob)
@@ -1271,7 +1319,7 @@ def test_rf5_air_survives_tight_budget():
         blob = _script_blob(plan)
         assert plan["targetSeconds"] == seconds
         assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
-        assert re.search(r"le bateau attend à Cayenne", blob), blob
+        assert re.search(r"le catamaran attend à Cayenne", blob), blob
         _assert_no_filler(blob)
 
 
@@ -1283,7 +1331,7 @@ def test_rf5_air_when_halifax_has_no_iso():
     blob = _script_blob(plan)
     assert "Cayenne" in blob
     assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
-    assert re.search(r"le bateau attend à Cayenne", blob), blob
+    assert re.search(r"le catamaran attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1296,7 +1344,7 @@ def test_rf5_air_return_without_moments():
     )
     blob = _script_blob(plan)
     assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
-    assert re.search(r"le bateau attend à Cayenne", blob), blob
+    assert re.search(r"le catamaran attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1347,18 +1395,25 @@ def test_rg1_depart_ms_is_clock_leave_not_hold():
 
 
 def test_rg1_air_window_not_told_as_navigation():
+    """RC31 : le catamaran ne navigue pas Cayenne → Saint-Pierre ; vol vers Halifax."""
     marks = [
         {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 0, "lat": 46.8, "lon": 1.6},
         {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z", "holdHours": 0, "lat": 46.15, "lon": -1.16},
         {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "iso": "2026-07-19T08:00:00Z", "holdHours": 72, "lat": 4.93, "lon": -52.33},
-        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4100, "filmNm": 4100, "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4000, "filmNm": 4080, "iso": "2026-07-22T08:00:00Z", "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4400, "filmNm": 4480, "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4800, "filmNm": 4880, "iso": "2026-07-29T08:00:00Z", "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Cayenne (Guyane)", "nm": 4800, "filmNm": 4960, "iso": "2026-07-30T08:00:00Z", "holdHours": 0, "lat": 4.93, "lon": -52.33},
         {"name": "Papeete (Polynésie française)", "nm": 11000, "filmNm": 11100, "iso": "2026-09-08T08:00:00Z", "holdHours": 72, "lat": -17.5, "lon": -149.5},
     ]
     clock = {"t0": OFFICIAL_T0, "marks": marks, "vertices": [
         {"iso": "2026-07-19T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "quay"},
-        {"iso": "2026-07-22T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "plane"},
-        {"iso": "2026-07-25T18:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
-        {"iso": "2026-07-28T08:00:00Z", "lat": 4.80, "lon": -52.50, "vehicle": "main"},
+        {"iso": "2026-07-22T08:00:00Z", "lat": 44.65, "lon": -63.57, "vehicle": "plane"},
+        {"iso": "2026-07-23T08:00:00Z", "lat": 45.7, "lon": -60.0, "vehicle": "side"},
+        {"iso": "2026-07-25T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "side"},
+        {"iso": "2026-07-29T08:00:00Z", "lat": 44.65, "lon": -63.57, "vehicle": "side"},
+        {"iso": "2026-07-30T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
+        {"iso": "2026-08-02T08:00:00Z", "lat": 4.80, "lon": -52.50, "vehicle": "main"},
     ]}
     live = {"filmNm": 12000, "sailNm": 11800, "iso": "2026-09-19T02:00:00Z", "status": "live"}
     journal = {
@@ -1366,14 +1421,13 @@ def test_rg1_air_window_not_told_as_navigation():
             {"seq": 0, "t": "2026-07-23T08:00:00Z", "changes": [
                 {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive canadienne",
                  "fact": "Entrée dans Zone économique exclusive canadienne"},
-            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
-            {"seq": 1, "t": "2026-07-25T06:00:00Z", "changes": [
-                {"kind": "approche", "score": 3, "title": "Saint-Pierre", "fact": "Approche de Saint-Pierre"},
-            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
-            {"seq": 2, "t": "2026-07-25T08:00:00Z", "changes": [
-                {"kind": "escale", "score": 3, "title": "Arrivée à Saint-Pierre", "fact": "Cayenne → Saint-Pierre"},
-            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
-            {"seq": 3, "t": "2026-07-28T09:00:00Z", "changes": [
+            ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                                  "vehicle": "side"}}},
+            {"seq": 1, "t": "2026-07-25T08:00:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Saint-Pierre", "fact": "Halifax → Saint-Pierre"},
+            ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                                  "vehicle": "side"}}},
+            {"seq": 2, "t": "2026-08-02T09:00:00Z", "changes": [
                 {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive du Panama",
                  "fact": "Entrée dans Zone économique exclusive du Panama"},
             ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}}},
@@ -1382,16 +1436,27 @@ def test_rg1_air_window_not_told_as_navigation():
     }
     plan = build_raw_script(clock, marks, live, journal, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = _script_blob(plan)
-    assert re.search(r"s'envole de Cayenne pour Saint-Pierre-et-Miquelon", blob), blob
-    assert re.search(r"le bateau attend à Cayenne", blob), blob
-    assert not re.search(r"départ vers Saint-Pierre", blob), blob
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+    assert re.search(r"le catamaran attend à Cayenne", blob), blob
+    assert blob.lower().count("catamaran attend à cayenne") == 1
+    assert re.search(r"second voilier", blob), blob
+    assert re.search(r"s'envole de Halifax pour Cayenne", blob), blob
+    assert not re.search(r"s'envole de Cayenne pour Saint-Pierre", blob), blob
     assert not re.search(r"Berry-Mappemonde quitte Cayenne.{0,80}pour Saint-Pierre", blob), blob
-    assert not re.search(r"approche de Saint-Pierre", blob, re.I), blob
-    assert not re.search(r"Arrivée à Saint-Pierre", blob), blob
-    assert not re.search(r"eaux canadiennes", blob), blob
+    names = [(c.get("fromName") or "", c.get("toName") or "") for c in plan["chapters"]]
+    air_out = next(i for i, (a, b) in enumerate(names) if "Cayenne" in a and "Halifax" in b)
+    side_out = next(i for i, (a, b) in enumerate(names) if "Halifax" in a and "Saint-Pierre" in b)
+    side_back = next(i for i, (a, b) in enumerate(names) if "Saint-Pierre" in a and "Halifax" in b)
+    air_back = next(i for i, (a, b) in enumerate(names) if "Halifax" in a and "Cayenne" in b)
+    assert air_out < side_out < side_back < air_back
+    chs = plan["chapters"]
+    assert re.search(r"19 juillet|22 juillet", chs[air_out]["text"] or "")
+    assert re.search(r"22 juillet|23 juillet", chs[side_out]["text"] or "")
+    assert re.search(r"25 juillet|29 juillet", chs[side_back]["text"] or "")
+    assert re.search(r"29 juillet|30 juillet", chs[air_back]["text"] or "")
     next_sail = next(
         c for c in plan["chapters"]
-        if re.search(r"pour Papeete|quitte Cayenne", c.get("text") or "")
+        if re.search(r"pour Papeete|reprend la mer|départ vers Papeete|quitte Cayenne", c.get("text") or "")
     )
     assert "Cayenne" in (next_sail.get("fromName") or "")
     assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
@@ -1492,7 +1557,7 @@ def test_zee_dosage_short_keeps_all_long_one_per_day():
     # RC26 : groupe grammatical « les eaux X, puis celles de Y » — noms FR.
     assert "les eaux d'Antigua-et-Barbuda" in sent
     assert "puis celles de Saint-Christophe-et-Niévès" in sent
-    assert "puis celles de Sint-Eustatius" in sent
+    assert "puis celles de Saint-Eustache" in sent
     assert "zones économiques exclusives" not in sent
     assert "zone économique exclusive" not in sent
     it_fr = [
@@ -1845,7 +1910,9 @@ def test_rg5_dataset_title_never_spoken():
     assert "Bacteria" not in (change_sentence(silent, "fr") or "")
 
 
-def test_rg5_argo_speaks_type_not_wmo():
+def test_rg5_argo_speaks_type_and_rc30_identifier():
+    """RC30 (revue du 14 oct.) : le flotteur Argo se dit AVEC son identifiant —
+    jamais six « un flotteur Argo » anonymes ; sans identifiant, silence."""
     ch = {
         "kind": "station",
         "title": "Argo 6904216",
@@ -1855,12 +1922,22 @@ def test_rg5_argo_speaks_type_not_wmo():
     }
     fr = change_sentence(ch, "fr")
     en = change_sentence(ch, "en")
-    assert fr == "Le 18 mai, un flotteur Argo."
-    assert en == "On 18 May, an Argo float."
-    assert "6904216" not in fr
-    assert "6904216" not in en
-    assert station_spoken_label(ch, "fr") == "un flotteur Argo"
+    assert fr == "Le 18 mai, le flotteur Argo 6904216."
+    assert en == "On 18 May, Argo float 6904216."
+    assert station_spoken_label(ch, "fr") == "le flotteur Argo 6904216"
     assert station_name_speakable("Argo 6904216")
+    nameless = {
+        "kind": "station",
+        "title": "Argo",
+        "fact": "Argo (4 nm)",
+        "t": "2026-05-18T12:00:00Z",
+        "source": "argo",
+    }
+    assert station_spoken_label(nameless, "fr") == ""
+    assert change_sentence(nameless, "fr") == ""
+    # Le titre du jeu de données reste interdit : le type + l'identifiant, rien d'autre.
+    wmo_only = {**nameless, "title": "Flotteur dérivant", "wmo": "6904216"}
+    assert station_spoken_label(wmo_only, "fr") == "le flotteur Argo 6904216"
 
 
 def test_rg5_named_types_from_title_words():
@@ -1931,9 +2008,12 @@ def test_rg5_one_station_per_chapter_closest_no_count():
     blob = _script_blob(plan)
     assert "Bacteria" not in blob
     assert "stations scientifiques croisées" not in blob
-    assert blob.count("un flotteur Argo") <= 1
+    # RC30 : au plus UN flotteur par jambe, dit avec son identifiant.
+    assert "un flotteur Argo" not in blob
+    assert blob.count("flotteur Argo") <= 1
+    if "flotteur Argo" in blob:
+        assert "le flotteur Argo 6901234" in blob
     assert "6904216" not in blob
-    assert "6901234" not in blob
 
 
 def _rg6_review():
@@ -2637,6 +2717,85 @@ def test_rc22_rich_plan_150_seconds_keeps_amp_and_project():
     assert "Chaluts" not in blob
 
 
+# ── RC27 : gabarit compact 2:30, intégral inchangé ───────────────────────────
+
+
+def test_rc27_compact_150_vs_full_integral():
+    """2:30 : une phrase d'ouverture, arrivée courte ; l'intégral garde RG6."""
+    review = _rg6_review()
+    journal = {**JOURNAL, **MOMENTS}
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS, review=review,
+    )
+    full = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review,
+    )
+    blob150 = _script_blob(short)
+    blob0 = _script_blob(full)
+    assert short["chars"] / 15 <= 150 * 1.1
+    assert re.search(r"cap sur Fort-de-France : .+ milles", blob150)
+    assert "jours de mer" in blob150
+    assert "Berry-Mappemonde quitte Ajaccio" not in blob150
+    assert "longue traversée vers" not in blob150
+    assert "nœuds de moyenne" not in blob150
+    assert not re.search(r"escale de |d['’]escale", blob150)
+    assert re.search(r"Arrivée le \d+", blob150)
+    assert "Berry-Mappemonde quitte" in blob0
+    assert "nœuds de moyenne" in blob0
+    assert "Arrivée à" in blob0
+    for ch in short["chapters"]:
+        for sent in re.split(r"(?<=[.!?…])\s+", ch.get("text") or ""):
+            for name in ("Fort-de-France", "Ajaccio", "Nouméa"):
+                assert sent.lower().count(name.lower()) <= 1, sent
+    opens = _film_open_sentences(
+        start_name="Saint-Maur", sea_name="La Rochelle", lang="fr",
+        review=review, compact=True,
+    )
+    assert len(opens) == 1
+    assert "par la route" in opens[0]
+    assert "Le plan compte" not in opens[0]
+    en = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="en", seconds=150, now_ms=NOW_MS, review=review,
+    )
+    blob_en = _script_blob(en)
+    assert "heading for Fort-de-France" in blob_en
+    assert "long crossing to" not in blob_en
+    assert "knots on average" not in blob_en
+    assert re.search(r"Arrival on ", blob_en)
+    assert en["chars"] / 15 <= 150 * 1.1
+
+
+def test_rc27_rich_150_keeps_amp_project_integral_gabarit_intact():
+    journal = _rc22_rich_journal()
+    review = _rg6_review()
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS, review=review,
+    )
+    full = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=0, now_ms=NOW_MS, review=review,
+    )
+    blob = _script_blob(short)
+    blob0 = _script_blob(full)
+    assert short["targetSeconds"] == 150
+    assert short["chars"] / 15 <= 150 * 1.1
+    assert "Rochebonne" in blob
+    assert "Récif sentinelle" in blob
+    assert "le projet" in blob
+    assert "aire marine" in blob
+    assert "Pétoncles" not in blob
+    assert "deposit" not in blob.lower()
+    assert "Chaluts" not in blob
+    assert "Berry-Mappemonde quitte" in blob0
+    assert "nœuds de moyenne" in blob0
+    assert "Arrivée à" in blob0
+    assert full["chars"] > short["chars"]
+
+
 # ── RC26 : récit dense et réparti ───────────────────────────────────────────
 
 
@@ -2745,3 +2904,302 @@ def test_rc26_dock_keeps_at_most_two_items_one_proximity():
     assert len(proximity) <= 1
     # la mer n'est pas muette pour autant
     assert any((c.get("tMs") or 0) > depart for c in out)
+
+
+# ---------------------------------------------------------------------------
+# Lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases
+# (revue du porteur, 14 oct.).
+# ---------------------------------------------------------------------------
+
+def test_rc30_order_chapter_sentences_sorts_by_anchor():
+    """Un chapitre riche : les phrases se disent dans l'ordre STRICT des ancres —
+    l'ouverture reste en tête, l'arrivée en queue, les bulles suivent."""
+    from film_script import _bits_offsets, _order_chapter_sentences
+
+    day = 86_400_000
+    bits = [
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest.",
+        "Le 19 mai, le vent tourne au nord.",
+        "Le 18 mai, les eaux portugaises.",
+        "La route passe par golfe de Gascogne.",
+        "Arrivée à Ajaccio le 26 mai.",
+    ]
+    anchored = [
+        (bits[0], 0, {"role": "depart"}),
+        (bits[1], 4 * day, {"kind": "climo"}),
+        (bits[2], 3 * day, {"kind": "zee-enter", "place": "les eaux portugaises"}),
+        (bits[3], 1 * day, {"kind": "coast"}),
+        (bits[4], 11 * day, {"role": "arrive", "place": "Ajaccio", "kind": "escale"}),
+    ]
+    offsets = _bits_offsets(bits)
+    placed = [
+        {"id": "climo", "charIdx": offsets[1]},
+        {"id": "zee", "charIdx": offsets[2]},
+    ]
+    _order_chapter_sentences(bits, anchored, placed)
+    assert bits[0].startswith("Le 15 mai, Berry-Mappemonde quitte")
+    assert bits[-1].startswith("Arrivée à Ajaccio")
+    assert bits[1] == "La route passe par golfe de Gascogne."
+    assert bits[2] == "Le 18 mai, les eaux portugaises."
+    assert bits[3] == "Le 19 mai, le vent tourne au nord."
+    # les ancres suivent leurs phrases, et leurs instants sont croissants
+    times = [a[1] for a in anchored]
+    assert times == sorted(times)
+    # les bulles pointent toujours le premier caractère de LEUR phrase
+    new_off = _bits_offsets(bits)
+    assert placed[0]["charIdx"] == new_off[3]
+    assert placed[1]["charIdx"] == new_off[2]
+
+
+def test_rc30_lendemain_only_when_day_changes_by_one():
+    """« Le lendemain » seulement si le jour change bien de +1 — jamais en
+    première phrase, jamais mesuré contre l'arrivée qui suit."""
+    # avant l'arrivée : la phrase amincie se mesure contre la date dite AVANT elle
+    out = thin_chapter_dates([
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle.",
+        "Le 19 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 20 mai.",
+    ], "fr")
+    assert not any(s.startswith("Le lendemain") for s in out)
+    # le vrai lendemain, lui, se dit
+    out = thin_chapter_dates([
+        "Le 18 mai, les eaux espagnoles.",
+        "Le 19 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 26 mai.",
+    ], "fr")
+    assert any(s.startswith("Le lendemain") for s in out)
+    # sans date dite avant elle, une phrase ne devient jamais « Le lendemain »
+    out = thin_chapter_dates([
+        "Le 19 mai, les eaux portugaises.",
+        "Arrivée à Ajaccio le 20 mai.",
+    ], "fr")
+    assert not out[0].startswith("Le lendemain")
+
+
+def test_rc30_lane_crossings_filter_and_order():
+    """« La route passe par … » : seuls les bassins que la TRACE du chapitre
+    croise, dans l'ordre de la route — Papeete n'entend plus « Atlantique
+    nord » hérité de la jambe de revue."""
+    from film_script import _lane_crossings
+
+    clock = {
+        "t0": "2026-07-28T08:00:00Z",
+        "vertices": [
+            {"iso": "2026-07-28T08:00:00Z", "lat": 4.9, "lon": -52.3, "vehicle": "main"},
+            {"iso": "2026-08-02T08:00:00Z", "lat": 9.5, "lon": -79.9, "vehicle": "main"},
+            {"iso": "2026-08-20T08:00:00Z", "lat": -17.5, "lon": -149.6, "vehicle": "main"},
+        ],
+    }
+    t_a = _ms("2026-07-28T00:00:00Z")
+    t_b = _ms("2026-08-25T00:00:00Z")
+    crossings = _lane_crossings(clock, t_a, t_b)
+    assert crossings is not None
+    assert "caribbean w" in crossings
+    assert "n atlantic main" not in crossings
+    leg = {
+        "from": "Cayenne", "to": "Papeete",
+        "antiShipping": {"score": 0.7, "lanes": ["N Atlantic main", "Caribbean W"]},
+    }
+    bits = review_sentences(leg, "fr", crossings=crossings)
+    lane_sent = next(s for s in bits if "passe par" in s)
+    assert "Caraïbe ouest" in lane_sent
+    assert "Atlantique nord" not in lane_sent
+    # sans trace (horloge muette), la revue reste entière — rien n'est perdu
+    bits_all = review_sentences(leg, "fr", crossings=None)
+    lane_all = next(s for s in bits_all if "passe par" in s)
+    assert "Atlantique nord" in lane_all
+
+
+def test_rc30_lane_sentence_anchored_at_crossing_not_arrival():
+    """La phrase des bassins est ancrée au premier croisement : triée par
+    ancre, elle se dit en route, jamais collée à l'arrivée."""
+    from film_script import _append_review_sentences, _order_chapter_sentences
+
+    clock = {
+        "t0": "2026-07-28T08:00:00Z",
+        "vertices": [
+            {"iso": "2026-07-28T08:00:00Z", "lat": 4.9, "lon": -52.3, "vehicle": "main"},
+            {"iso": "2026-08-02T08:00:00Z", "lat": 9.5, "lon": -79.9, "vehicle": "main"},
+            {"iso": "2026-08-20T08:00:00Z", "lat": -17.5, "lon": -149.6, "vehicle": "main"},
+        ],
+    }
+    t_a = _ms("2026-07-28T00:00:00Z")
+    t_b = _ms("2026-08-25T00:00:00Z")
+    window = {"clock": clock, "tA": t_a, "tB": t_b, "fromName": "Cayenne", "toName": "Papeete"}
+    review = {"legs": [{
+        "from": "Cayenne", "to": "Papeete",
+        "antiShipping": {"score": 0.7, "lanes": ["Caribbean W"]},
+    }]}
+    bits = [
+        "Le 28 juillet, Berry-Mappemonde quitte Cayenne.",
+        "Le 15 août, les eaux de la Polynésie française.",
+    ]
+    anchored = [
+        (bits[0], t_a, {"role": "depart"}),
+        (bits[1], _ms("2026-08-15T08:00:00Z"), {"kind": "zee-enter"}),
+    ]
+    _append_review_sentences(bits, review, window, "fr", anchored)
+    lane_idx = next(i for i, s in enumerate(bits) if "passe par" in s)
+    assert anchored[lane_idx][1] == _ms("2026-08-02T08:00:00Z")
+    _order_chapter_sentences(bits, anchored, [])
+    lane_idx = next(i for i, s in enumerate(bits) if "passe par" in s)
+    poly_idx = next(i for i, s in enumerate(bits) if "Polynésie" in s)
+    assert lane_idx < poly_idx
+
+
+def test_rc30_heading_ignores_plane_vertices_cayenne_papeete():
+    """Le cap annoncé au départ d'une jambe est le cap initial de la TRACE —
+    jamais celui du vol (Cayenne → Halifax plein nord)."""
+    from film_script import _heading_deg_at, _leg_heading_deg
+
+    depart = _ms("2026-07-28T08:00:00Z")
+    clock = {
+        "t0": "2026-07-10T08:00:00Z",
+        "vertices": [
+            # le vol, plein nord — jamais un cap de mer
+            {"iso": "2026-07-12T08:00:00Z", "lat": 10.0, "lon": -53.0,
+             "vehicle": "plane", "headingDeg": 356.0},
+            {"iso": "2026-07-28T09:00:00Z", "lat": 4.94, "lon": -52.33,
+             "vehicle": "main", "bearing": 300.0},
+        ],
+    }
+    deg = _heading_deg_at(None, depart, clock=clock)
+    assert deg == 300.0
+    air_moment = {
+        "t": "2026-07-28T07:00:00Z",
+        "moment": {"leg": {"from": "Cayenne", "to": "Papeete",
+                           "vehicle": "plane", "headingDeg": 356.0}},
+    }
+    deg = _leg_heading_deg([air_moment], depart, clock=clock)
+    assert deg == 300.0
+    assert "nord-ouest" in heading_phrase(deg, "fr")
+
+
+def test_rc32_saint_martin_sint_maarten_distinguished():
+    """Île partagée : les deux eaux se disent, distinguées (RC32) —
+    plus jamais « les eaux de Saint-Martin, puis celles de Saint-Martin »."""
+    from film_script import zee_group_waters
+    from toponyms import consecutive_homonyms
+
+    members = [
+        "Kittitian and Nevisian Exclusive Economic Zone",
+        "Sint-Eustatius Exclusive Economic Zone",
+        "Sint-Maarten Exclusive Economic Zone",
+        "Saint-Martin Exclusive Economic Zone",
+    ]
+    fr = zee_group_waters(members, "fr")
+    assert "Saint-Christophe-et-Niévès" in fr
+    assert "Saint-Eustache" in fr
+    assert "Sint Maarten (partie néerlandaise)" in fr
+    assert "Saint-Martin (partie française)" in fr
+    assert consecutive_homonyms(fr) == []
+    en = zee_group_waters(members, "en")
+    assert "Saint Kitts and Nevis" in en
+    assert "Sint Eustatius" in en
+    assert "Sint Maarten (Dutch side)" in en
+    assert "Saint-Martin (French side)" in en
+    assert consecutive_homonyms(en) == []
+    # l'inverse : partie française puis néerlandaise, toujours deux formes
+    fr2 = zee_group_waters(list(reversed(members[-2:])), "fr")
+    assert "partie française" in fr2 and "partie néerlandaise" in fr2
+    assert consecutive_homonyms(fr2) == []
+    assert consecutive_homonyms(
+        "les eaux de Saint-Martin, puis celles de Saint-Martin",
+    )
+
+
+def test_rc30_one_named_argo_per_leg():
+    """Au plus un flotteur Argo par jambe, avec son identifiant — jamais six
+    anonymes (transcription du porteur, 14 oct.)."""
+    day = 86_400_000
+    argos = [
+        {"id": f"a{i}", "kind": "station", "score": 2, "tMs": (2 + 3 * i) * day,
+         "title": f"Argo {6904210 + i}", "fact": f"Argo {6904210 + i} (4 nm)",
+         "source": "argo", "nm": 4}
+        for i in range(6)
+    ]
+    escale = {"id": "e", "kind": "escale", "score": 3, "tMs": 20 * day,
+              "title": "Arrivée à Papeete", "fact": "x"}
+    out = select_chapter_changes(argos + [escale], 0, 20 * day, budget=False, depart_ms=day)
+    stations = [c for c in out if c.get("kind") == "station"]
+    assert len(stations) == 1
+    label = station_spoken_label(stations[0], "fr")
+    assert label.startswith("le flotteur Argo ")
+    assert re.search(r"\d{5,9}", label)
+
+
+def test_rg11a_invented_number_falls_back_sentence_by_sentence():
+    raw_text = (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    chapter = {
+        "id": "c0",
+        "text": raw_text,
+        "tA": "2026-05-15T08:00:00Z",
+        "tB": "2026-05-26T12:00:00Z",
+        "fromName": "La Rochelle",
+        "toName": "Ajaccio (Corse)",
+        "anchors": [
+            {"charIdx": 0, "t": "2026-05-15T08:00:00Z"},
+            {"charIdx": 70, "t": "2026-05-26T12:00:00Z"},
+        ],
+    }
+    facts = chapter_structured_facts(chapter, lang="fr")
+    written = (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest, 99 nœuds. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    guarded, rewritten, fallen = apply_written_guard(raw_text, written, facts, lang="fr")
+    sents = [s for s in re.split(r"(?<=[.!?…])\s+", guarded) if s.strip()]
+    raw_sents = [s for s in re.split(r"(?<=[.!?…])\s+", raw_text) if s.strip()]
+    assert len(sents) == len(raw_sents)
+    assert "99" not in guarded
+    assert fallen >= 1
+    assert rewritten >= 1
+    assert sents[0] == raw_sents[0]
+
+
+def test_rg11a_honest_write_has_increasing_anchors():
+    raw_text = (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": raw_text,
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [
+                {"charIdx": 0, "t": "2026-05-15T08:00:00Z"},
+                {"charIdx": 70, "t": "2026-05-26T12:00:00Z"},
+            ],
+        }],
+        "targetSeconds": 150,
+        "source": "rules",
+    }
+
+    async def fake_cascade(system, user, **kw):
+        sents = _sentences_from_user(user)
+        return " ".join(
+            s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+        ), "nemotron-super"
+
+    written, stats = asyncio.run(write_stored_plan(plan, lang="fr", cascade=fake_cascade))
+    assert written is not None
+    assert written["hasWritten"] is True
+    assert written["source"] == WRITTEN_SOURCE
+    assert stats["rewritten"] >= 1
+    text = written["chapters"][0]["text"]
+    raw_n = len([s for s in re.split(r"(?<=[.!?…])\s+", raw_text) if s.strip()])
+    out_n = len([s for s in re.split(r"(?<=[.!?…])\s+", text) if s.strip()])
+    assert out_n == raw_n
+    assert "99" not in text
+    anchors = written["chapters"][0]["anchors"]
+    idxs = [int(a["charIdx"]) for a in anchors]
+    assert idxs == sorted(idxs)
+    assert len(set(idxs)) == len(idxs)
+    assert "laisse" in text or "quitte" in text

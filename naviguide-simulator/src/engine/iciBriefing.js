@@ -4,6 +4,7 @@
  */
 
 import { briefingEntities, placeLabel, segmentBriefingWithSources } from "./briefingLinks.js";
+import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 
 const TERRITORY = {
@@ -13,7 +14,7 @@ const TERRITORY = {
     martinique: "Martinique",
     guadeloupe: "Guadeloupe",
     saint_barthelemy: "Saint-Barthélemy",
-    saint_martin: "Saint-Martin",
+    saint_martin: "Saint-Martin (partie française)",
     saint_pierre_et_miquelon: "Saint-Pierre-et-Miquelon",
     polynesie_francaise: "Polynésie française",
     nouvelle_caledonie: "Nouvelle-Calédonie",
@@ -28,7 +29,7 @@ const TERRITORY = {
     martinique: "Martinique",
     guadeloupe: "Guadeloupe",
     saint_barthelemy: "Saint Barthélemy",
-    saint_martin: "Saint Martin",
+    saint_martin: "Saint-Martin (French side)",
     saint_pierre_et_miquelon: "Saint Pierre and Miquelon",
     polynesie_francaise: "French Polynesia",
     nouvelle_caledonie: "New Caledonia",
@@ -166,8 +167,9 @@ function zeeSentence(dossier, lang) {
       : `Le bateau est à terre${extra ? ` ${extra}` : ""}, hors de toute ZEE.`;
   }
   if (!zee.mrgid || zee.name === "Haute mer") return highSeas;
+  const spoken = spokenZeeName(zee, lang);
   const territory = TERRITORY[en ? "en" : "fr"][zee.territory];
-  const where = territory ? `${zee.name} (${territory})` : zee.name;
+  const where = spoken || (territory ? `${zee.name} (${territory})` : zee.name);
   let formalities;
   if (zee.gold) {
     formalities = en
@@ -458,6 +460,20 @@ export function cleanStoryText(text) {
   return kept.slice(0, 2).join(" ").trim();
 }
 
+function eventWaters(ev, lang) {
+  const p = ev.payload || {};
+  const zee = p.zee || {};
+  const raw = ev.name || zee.name;
+  const mrgid = Number.isInteger(zee.mrgid) ? zee.mrgid : (Number.isInteger(ev.mrgid) ? ev.mrgid : null);
+  return watersLabel(raw, lang, { mrgid, territory: zee.territory || null }) || raw;
+}
+
+function eventOrigin(ev) {
+  const p = ev.payload || {};
+  const raw = ev.name || p.amp?.name || p.harbour?.name || p.poe?.name;
+  return originName(raw) || raw;
+}
+
 export function phraseForEvent(ev, lang = "fr") {
   if (!ev) return "";
   if (ev.story?.status === "ready" && ev.story.text) {
@@ -467,21 +483,24 @@ export function phraseForEvent(ev, lang = "fr") {
   if (typeof ev.phrase === "string" && ev.phrase.trim()) return ev.phrase;
   const en = isEn(lang);
   const p = ev.payload || {};
-  const name = ev.name || p.zee?.name || p.amp?.name || p.harbour?.name;
+  const name = eventOrigin(ev);
   switch (ev.type) {
-    case "zee-enter":
+    case "zee-enter": {
+      const waters = eventWaters(ev, lang) || (en ? "this EEZ" : "cette ZEE");
       return en
-        ? `We have just entered ${name || "this EEZ"}.`
-        : `On vient d’entrer dans ${name || "cette ZEE"}.`;
+        ? `We have just entered ${waters}.`
+        : `On vient d’entrer dans ${waters}.`;
+    }
     case "zee-exit":
       return en
         ? "The boat is back on the high seas — no EEZ to clear."
         : "Retour en haute mer — plus de ZEE à déclarer.";
     case "zee-ahead": {
       const when = p.whenNm ?? ev.whenNm;
+      const waters = eventWaters(ev, lang) || (en ? "another EEZ" : "une autre ZEE");
       return en
-        ? `Ahead${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${name || "another EEZ"}.`
-        : `Devant${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${name || "une autre ZEE"}.`;
+        ? `Ahead${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${waters}.`
+        : `Devant${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${waters}.`;
     }
     case "amp-ahead": {
       const when = p.whenNm ?? ev.whenNm;
@@ -492,8 +511,8 @@ export function phraseForEvent(ev, lang = "fr") {
     }
     case "poe-ahead":
       return en
-        ? `Official port of entry ahead: ${p.poe?.name || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`
-        : `Port d’entrée officiel devant : ${p.poe?.name || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`;
+        ? `Official port of entry ahead: ${originName(p.poe?.name) || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`
+        : `Port d’entrée officiel devant : ${originName(p.poe?.name) || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`;
     case "amp-enter": {
       const visit = p.amp?.visitable || p.visitable;
       return en
@@ -592,7 +611,6 @@ function legSentence(dossier, lang) {
   const overland = isOverlandLeg(dossier, mark);
   const speed = !overland && Number.isFinite(polar.speedKnots) ? polar.speedKnots : null;
   const eta = formatEta(polar.etaHours, lang);
-  const boat = polar.boat;
   const bits = [];
   if (to && (speed != null || eta || overland)) {
     if (overland) {
@@ -607,9 +625,8 @@ function legSentence(dossier, lang) {
   } else if (speed != null) {
     bits.push(en ? `Boat speed on this leg: ${num(speed, lang)} knots.` : `Vitesse sur cette jambe : ${num(speed, lang)} nœuds.`);
   }
-  if (boat) {
-    bits.push(en ? `Polar loaded: ${boat}.` : `Polaire chargée : ${boat}.`);
-  }
+  // R13 : « Polaire » une fois — déjà sur polar-box (« Polaires chargées »).
+  // Le nom du bateau reste sous Polaires / Paramètres avancés, pas ici.
   return bits.join(" ");
 }
 

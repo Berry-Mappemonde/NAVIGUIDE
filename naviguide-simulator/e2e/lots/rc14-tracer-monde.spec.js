@@ -1,13 +1,14 @@
 // Lot RC14 — Tracer ouvre le monde (zoom 2), pas les Amériques (zoom 3).
+// Lot DM4 : après clic Suivre le zoom reste le plancher (bateau au centre) ;
+// on pose alors un zoom > 3 pour prouver que Tracer dézoome quand même.
 // Sans API : accueil monde, molette, et le geste Tracer après un zoom > 3
-// tiennent seuls (le zoom bateau est posé sur la carte, pas une donnée
-// d'expédition). GET /voyage/official sondé ; s'il manque, annotation +
-// saut du seul recadrage caméra réel après clic Suivre — jamais le
-// dézoom Tracer, ni l'accueil, ni la molette.
+// tiennent seuls. GET /voyage/official sondé ; s'il manque, annotation +
+// saut du bateau au centre — jamais le dézoom Tracer, ni l'accueil, ni la molette.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { mapFollowCadrage } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc14");
 mkdirSync(recetteDir, { recursive: true });
@@ -49,13 +50,13 @@ async function mapZoom(page) {
 }
 
 async function enterTracer(page) {
+  // DM6 : la pilule Tracer ouvre le dessin (vue monde).
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   if (await panelClosed(page, "left")) {
     await page.locator(".naviguide-sidebar-toggle--left").click();
     await expect.poll(() => panelClosed(page, "left"), { timeout: 8_000 }).toBe(false);
   }
-  const drawBtn = page.getByRole("button", { name: /Tracer votre propre route|Draw your own route/i });
-  await expect(drawBtn).toBeVisible({ timeout: 10_000 });
-  await drawBtn.click();
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 10_000 });
 }
 
@@ -71,7 +72,7 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — recadrage caméra réel après clic Suivre sauté ; zoom > 3 posé sur la carte pour le geste Tracer",
+      description: "GET /voyage/official absent — bateau au centre sauté ; zoom > 3 posé sur la carte pour le geste Tracer",
     });
   }
 
@@ -99,10 +100,19 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
 
   if (mapReady && apiUp) {
     await expect.poll(async () => {
-      const z = await mapZoom(page);
-      return Number.isFinite(z) ? z : 0;
-    }, { timeout: 15_000 }).toBeGreaterThan(3);
-  } else if (mapReady) {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.zoom) ? s.zoom : 99;
+    }, { timeout: 15_000 }).toBeGreaterThanOrEqual(2.4);
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.zoom) ? s.zoom : 99;
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.boatPx) ? s.boatPx : 9999;
+    }, { timeout: 15_000 }).toBeLessThan(80);
+  }
+  if (mapReady) {
     await page.evaluate(() => {
       window.__naviguideScene.map.setView([16, -40], 6, { animate: false });
     });

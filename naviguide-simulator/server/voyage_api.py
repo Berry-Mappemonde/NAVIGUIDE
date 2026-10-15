@@ -552,6 +552,11 @@ def _drop_cube(voyage_id: str) -> None:
     import shutil
     from forecast_cube import CACHE_DIR
     shutil.rmtree(CACHE_DIR / voyage_id, ignore_errors=True)
+    try:
+        from custom_story import drop_cached_moments  # noqa: PLC0415
+        drop_cached_moments(voyage_id)
+    except Exception as exc:
+        log.warning("purge custom-moments %s: %s", voyage_id, exc)
 
 
 def _check_voyage_size(body: VoyageCreate) -> None:
@@ -1020,12 +1025,15 @@ def _kick_official_film_story(*, force: bool = False) -> bool:
 
 
 def _kick_official_hindcast(*, force: bool = False) -> bool:
+    """Lot HC1 : l'ERA5 officiel appartient au remplisseur (trajet réel figé,
+    cellules demandées par l'intégration — jamais par les dates de l'horloge
+    climatologique du jour). Ici on ne fait que le réveiller."""
     voy = load_voyage(OFFICIAL_VOYAGE_ID)
     if voy is None:
         return False
 
     def _load():
-        _fill_hindcast_then_forecast(OFFICIAL_VOYAGE_ID)
+        official_store.kick_worker()
         return {}
 
     return get_pipeline().kick(
@@ -1630,6 +1638,53 @@ def get_voyage(voyage_id: str):
         "points": voy.get("points"),
         "marks": voy.get("marks"),
     }
+
+
+@router.get("/voyage/{voyage_id}/moments")
+def get_voyage_moments(voyage_id: str):
+    """Moments de MA route (DM8A) : calcul à la demande, cache kv, jamais le stock officiel."""
+    if _is_official(voyage_id):
+        return get_official_moments()
+    voy = load_voyage(voyage_id)
+    if voy is None:
+        raise HTTPException(404, "voyage inconnu")
+    try:
+        from custom_story import moments_for_voyage  # noqa: PLC0415
+        return moments_for_voyage(voy)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("GET /voyage/%s/moments", voyage_id)
+        from custom_story import preparing_payload  # noqa: PLC0415
+        return preparing_payload(voy, reason=str(exc))
+
+
+@router.get("/voyage/{voyage_id}/film")
+def get_voyage_film(
+    voyage_id: str,
+    lang: str = Query("fr"),
+    seconds: int = Query(150, ge=0, le=300),
+    style: str = Query("raw"),
+):
+    """Film de MA route (DM8B) : même forme que l'officiel, brut seulement, jamais de LLM."""
+    # Le chemin /voyage/official/film est aussi sur main.py ; ce paramètre le
+    # capte si la route générique est enregistrée avant — on délègue, on ne
+    # recalcule pas.
+    if _is_official(voyage_id) or voyage_id == "official":
+        return official_store.serve_film(lang=lang, seconds=seconds, style=style)
+    voy = load_voyage(voyage_id)
+    if voy is None:
+        raise HTTPException(404, "voyage inconnu")
+    try:
+        from custom_story import film_for_voyage, moments_for_voyage  # noqa: PLC0415
+        mom = moments_for_voyage(voy)
+        return film_for_voyage(voy, mom, lang=lang, seconds=seconds, style=style)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("GET /voyage/%s/film", voyage_id)
+        from custom_story import preparing_film_payload  # noqa: PLC0415
+        return preparing_film_payload(voy, lang=lang, seconds=seconds, style=style, reason=str(exc))
 
 
 @router.get("/voyage/{voyage_id}/clock")

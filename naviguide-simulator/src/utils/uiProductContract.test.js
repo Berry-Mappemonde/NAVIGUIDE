@@ -25,6 +25,32 @@ describe("contrat UI produit", () => {
     assert.match(tools, /visibility: open \? "visible" : "hidden"/, "Cinéma : le panneau droit n'est pas peint fermé");
   });
 
+  it("lot DM6 : entrée Tracer ouvre le dessin sans vider le brouillon", () => {
+    const app = read("../App.jsx");
+    const sidebar = read("../components/Sidebar.jsx");
+    const selectAt = app.indexOf("const selectView = useCallback");
+    assert.ok(selectAt >= 0, "selectView présent");
+    const selectChunk = app.slice(selectAt, selectAt + 2800);
+    assert.match(selectChunk, /armDrawingWorldRef\.current\(VIEW_SIMULATION\)/);
+    assert.match(selectChunk, /endDrawingWorld/);
+    assert.match(app, /onView=\{selectView\}/);
+    assert.doesNotMatch(app, /onView=\{drawingMode \? undefined/);
+    assert.match(sidebar, /startOrResumeDraw/);
+    assert.match(sidebar, /canContinueDraw \? onDrawContinue : onDrawStart/);
+    assert.match(sidebar, /drawingOn \? pillOn : pillOff/);
+  });
+
+  it("lot DM6 (correctif du 15 oct.) : dessin ouvert = cadre « Tracé en cours » toujours là, légende dessous à brouillon vide", () => {
+    const app = read("../App.jsx");
+    const tools = read("../components/ToolsSidebar.jsx");
+    // Plus de contournement showBox : le cadre dépend du seul état du dessin.
+    assert.doesNotMatch(app, /drawBoxOpen|showBox/);
+    assert.doesNotMatch(tools, /showBox/);
+    // Dès le premier point, le cadre remplace l'expédition ; à 0 point il la précède (RE2 gardée).
+    assert.match(tools, /if \(drawing\?\.points\?\.length\) return <DrawingBox drawing=\{drawing\} \/>;/);
+    assert.match(tools, /\{drawing \? <DrawingBox drawing=\{drawing\} \/> : null\}\s*<div[^>]*data-testid="expedition-box"/);
+  });
+
   it("lot RF7 : entrée Tracer pose la vue monde", () => {
     const app = read("../App.jsx");
     const scene = read("../map/MapSceneController.js");
@@ -37,7 +63,7 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const selectAt = app.indexOf("const selectView = useCallback");
     assert.ok(selectAt >= 0, "selectView présent");
-    const selectChunk = app.slice(selectAt, selectAt + 1800);
+    const selectChunk = app.slice(selectAt, selectAt + 2800);
     assert.match(selectChunk, /if \(view === VIEW_SUIVRE\) \{/);
     assert.match(selectChunk, /leaveCinema\(\)/);
     assert.match(selectChunk, /setSidebarOpen\(true\)/);
@@ -55,13 +81,16 @@ describe("contrat UI produit", () => {
     assert.ok(existsSync(join(src, "../../public/favicon-n-bl.png")));
   });
 
-  it("réserve les contrôles de lecture et les sauts à Simulation", () => {
+  it("réserve les contrôles de lecture à Tracer et à Suivre × ma route (DM5)", () => {
     const app = read("../App.jsx");
     const filmBar = read("../components/SimulationFilmBar.jsx");
     const sidebar = read("../components/Sidebar.jsx");
     const simulationPanel = read("../components/SimulationPanel.jsx");
-    assert.match(app, /showPlaybackControls=\{isSimulation\}/);
-    assert.match(app, /if \(!isSimulation\) return;/);
+    // DM5 : Play / vitesses vivent aussi en Suivre sur ma route — jamais en
+    // Suivre × Berry (le live officiel commande).
+    assert.match(app, /const playControlsActive = isSimulation \|\| suivreCustom;/);
+    assert.match(app, /showPlaybackControls=\{playControlsActive\}/);
+    assert.match(app, /if \(!playControlsActive\) return;/);
     assert.match(filmBar, /disabled=\{!showPlaybackControls\}/);
     assert.match(filmBar, /goToNextStop/);
     assert.doesNotMatch(sidebar, /onNext=\{handleSimNext\}/);
@@ -152,17 +181,42 @@ describe("contrat UI produit", () => {
     assert.doesNotMatch(tools, /<PlanReview/);
     assert.doesNotMatch(tools, /planReview && !drawing/);
     assert.match(ici, /<PlanReview/);
-    assert.match(app, /isSuivre \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
+    // DM5 : l'horloge officielle ne porte que Suivre × Berry ; ma route lit
+    // le voyage serveur perso (voyage.clock) dans les deux modes.
+    assert.match(app, /suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock/);
     assert.match(app, /const \[replayT0, setReplayT0\] = useState\(DEFAULT_T0_ISO\)/);
-    assert.match(app, /t0: replayT0/);
+    assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.match(app, /followClockLineFromT0/);
-    assert.match(app, /t0: isSuivre \? replayT0/);
-    assert.match(app, /departureT0=\{voyage\.t0\}/);
-    assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
+    assert.match(app, /t0: suivreBerry \? replayT0/);
+    assert.match(app, /showDeparture=\{isSuivre\}/);
+    assert.match(app, /departureT0=\{suivreBerry \? replayT0 : voyage\.t0\}/);
+    assert.match(app, /onDepartureT0=\{suivreBerry \? setReplayT0 : voyage\.setT0\}/);
     assert.match(bar, /data-testid="replay-departure"/);
     assert.match(bar, /<DepartureField/);
     assert.match(clock, /getUTCFullYear\(\)/);
     assert.match(clock, / · \$\{hh\}:\$\{mm\} UTC/);
+  });
+
+  it("lot DM9 : panneau droit Tracer replie Polaires, déplie Calques, Demander conseil reste", () => {
+    const app = read("../App.jsx");
+    const tools = read("../components/ToolsSidebar.jsx");
+    const skipper = read("../components/SkipperOrdersPanel.jsx");
+    const sim = read("../components/SimulationPanel.jsx");
+    assert.match(app, /tracerLayout=\{!isSuivre\}/);
+    assert.doesNotMatch(app, /showAdvice=/);
+    assert.match(tools, /tracerLayout = false/);
+    assert.match(tools, /function FoldDetails/);
+    assert.match(tools, /function LayersDrawer/);
+    assert.match(tools, /data-testid="layers-drawer"/);
+    assert.match(tools, /readSessionOpen\(layersFoldKey\(tracerLayout\), Boolean\(tracerLayout\)\)/);
+    assert.doesNotMatch(tools, /open=\{polarOpen\}/);
+    assert.doesNotMatch(tools, /open=\{layersOpen\}/);
+    assert.doesNotMatch(tools, /data-testid="ask-advice"/);
+    assert.match(sim, /data-testid="ask-advice"/);
+    assert.match(skipper, /data-testid="skipper-orders"/);
+    assert.doesNotMatch(skipper, /<details open/);
+    assert.match(tools, /data-testid="polar-box"/);
+    assert.match(tools, /data-testid="export-box"/);
   });
 
   it("lot C3 : barre film et contexte du chat lisent la même source", () => {

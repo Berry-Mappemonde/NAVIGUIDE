@@ -1,4 +1,8 @@
+import { ROUTE_MAIN_WEIGHT } from "../layers/styles.js";
+
 export const SEGMENT_BATCH_SIZE = 4;
+/** Trace du second bateau : plus claire que le sillage, même épaisseur. */
+export const SIDE_ROUTE_COLOR = "#67e8f9";
 
 /** 1 mille nautique = 1,852 km (étape terrestre, lot R5). */
 export const NM_TO_KM = 1.852;
@@ -79,16 +83,39 @@ export function isAirSegment(segment) {
   return isAirLegNames(segment.from?.name, segment.to?.name);
 }
 
+function sideStopKey(name) {
+  const s = String(name || "");
+  if (/halifax/i.test(s)) return "halifax";
+  if (/miquelon|saint-pierre|saint pierre/i.test(s)) return "saint-pierre";
+  return "";
+}
+
+/** Halifax ↔ Saint-Pierre : mer, mais à bord du second bateau. */
+export function isSideLegNames(fromName, toName) {
+  const a = sideStopKey(fromName);
+  const b = sideStopKey(toName);
+  return (a === "halifax" && b === "saint-pierre") || (a === "saint-pierre" && b === "halifax");
+}
+
+export function isSideSegment(segment) {
+  if (!segment) return false;
+  if (segment.side || segment.vehicle === "side" || segment.kind === "side") return true;
+  return isSideLegNames(segment.from?.name, segment.to?.name);
+}
+
 export function legKind(fromName, toName) {
   if (isAirLegNames(fromName, toName)) return "air";
   if (isLandLegNames(fromName, toName)) return "land";
   return "sea";
 }
 
-/** Style du trait officiel : mer = sillage ; terre = orange ; air = noir pointillé. */
+/** Style du trait officiel : mer = sillage ; terre = orange ; air = noir pointillé ; side = cyan. */
 export function officialRouteLineStyle(segment) {
   if (isAirSegment(segment)) {
     return { color: "#111111", weight: 2.5, dash: "7 7", interactive: false };
+  }
+  if (isSideSegment(segment)) {
+    return { color: SIDE_ROUTE_COLOR, weight: ROUTE_MAIN_WEIGHT, dash: null, interactive: false };
   }
   if (segment?.nonMaritime) {
     return { color: "orange", weight: 4, dash: "6 6", interactive: true };
@@ -96,10 +123,12 @@ export function officialRouteLineStyle(segment) {
   return null;
 }
 
-/** Liseré clair sous le noir : le dash reste visible sur le fond sombre. */
+/** Liseré clair sous le noir : le dash reste visible sur le fond sombre. Side : un seul trait. */
 export function officialAirRouteStyles(segment) {
   const main = officialRouteLineStyle(segment);
-  if (!main || main.color !== "#111111") return main ? [main] : [];
+  if (!main) return [];
+  if (main.color === SIDE_ROUTE_COLOR) return [main];
+  if (main.color !== "#111111") return [main];
   return [
     { ...main, color: "#e5e7eb", weight: 4.5 },
     main,

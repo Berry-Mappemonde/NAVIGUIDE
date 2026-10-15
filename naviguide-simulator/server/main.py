@@ -185,7 +185,7 @@ async def get_official_film(
     """Script du film — snapshot du stock RF2, jamais un calcul sur la requête."""
     import official_store
     try:
-        out = official_store.serve_film(lang=lang, seconds=seconds)
+        out = official_store.serve_film(lang=lang, seconds=seconds, style=style)
     except Exception as exc:
         log.exception("GET /voyage/official/film")
         official_store.kick_worker()

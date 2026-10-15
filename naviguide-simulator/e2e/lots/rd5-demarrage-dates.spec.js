@@ -1,7 +1,8 @@
-// Lot RD5 — démarrage Suivre, Date de départ visible, horloge avec année,
-// date de Revoir réglable (2025) et distincte de la Simulation.
-// Sans API : vue initiale, champ Simulation, horloge, champ replay et
-// décalage du script local tiennent seuls.
+// Lot RD5 — démarrage Suivre, Date de départ visible (Revoir), horloge avec
+// année, date de Revoir réglable (2025) et distincte de Tracer (DM7 : plus
+// de champ Date de départ en Tracer ; horloge = aujourd'hui).
+// Sans API : vue initiale, horloge, champ replay et décalage du script
+// local tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions qui en dépendent (200 du film serveur) — jamais Suivre,
 // ni le champ, ni l'année, ni le texte local « 15 mai 2025 ».
@@ -88,25 +89,14 @@ test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", 
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showToolsPanel(page);
-  const simField = page.getByTestId("departure-field");
-  await expect(simField).toBeVisible({ timeout: 15_000 });
-  await expect(simField).toContainText(/Date de départ|Departure date/);
-  const simDate = dateInput(page, "departure-field");
-  await expect(simDate).toBeVisible();
-  const simBefore = await simDate.inputValue();
+  await expect(page.getByTestId("departure-field")).toHaveCount(0);
 
   if (await clock.isVisible().catch(() => false)) {
     const simClock = await clock.innerText();
     if (/\d{1,2}\s+\S+\s+\d{4}/.test(simClock)) {
-      expect(simClock, "horloge Simulation avec année").toMatch(/\d{4} · \d{2}:\d{2} UTC/);
+      expect(simClock, "horloge Tracer avec année").toMatch(/\d{4} · \d{2}:\d{2} UTC/);
     }
-  }
-
-  await simDate.fill("01/06/2026");
-  await expect(simDate).toHaveValue("01/06/2026");
-  if (await clock.isVisible().catch(() => false)) {
-    await expect.poll(async () => (await clock.innerText()), { timeout: 8_000 })
-      .toMatch(/1 juin 2026 · 08:00 UTC|1 Jun 2026 · 08:00 UTC/);
+    expect(simClock, "horloge Tracer ≠ replay 15 mai 2026").not.toMatch(/15 mai 2026 · 08:00 UTC|15 May 2026 · 08:00 UTC/);
   }
 
   await shot(page, "02-dates");
@@ -183,6 +173,5 @@ test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", 
 
   await page.getByTestId("view-tracer").click();
   await showToolsPanel(page);
-  await expect(dateInput(page, "departure-field")).toHaveValue("01/06/2026");
-  expect(simBefore, "t0 Simulation distinct du replay").not.toBe("15/05/2025");
+  await expect(page.getByTestId("departure-field")).toHaveCount(0);
 });

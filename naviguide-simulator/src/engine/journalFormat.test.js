@@ -56,8 +56,8 @@ describe("journalFormat", () => {
   it("v2: ZEE crossings and MPA neighbourhoods read on the pearls", () => {
     const z = formatJournalEntry({ kind: "zee", t: "2026-05-17T07:00:00Z", event: "enter", name: "Spanish Exclusive Economic Zone" }, "fr");
     assert.equal(z.icon, "🛂");
-    assert.equal(z.text, "Entrée dans Spanish Exclusive Economic Zone");
-    assert.equal(formatJournalEntry({ kind: "zee", t: "2026-05-20T07:00:00Z", event: "exit", name: "Spanish Exclusive Economic Zone" }, "en").text, "Left Spanish Exclusive Economic Zone — high seas");
+    assert.equal(z.text, "Entrée dans les eaux espagnoles");
+    assert.equal(formatJournalEntry({ kind: "zee", t: "2026-05-20T07:00:00Z", event: "exit", name: "Spanish Exclusive Economic Zone" }, "en").text, "Left Spanish waters — high seas");
     assert.equal(formatJournalEntry({ kind: "amp", t: "2026-05-16T07:00:00Z", event: "nearby", name: "Pertuis Charentais", nm: 3.6 }, "fr").text, "Aire marine protégée à portée : Pertuis Charentais (3,6 nm)");
   });
 

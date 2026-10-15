@@ -9,7 +9,10 @@ import {
 } from "../engine/voyageClock.js";
 
 /**
- * Deux t0 : Suivre = 15 mai 2026 figé ; Simulation = aujourd’hui, éditable.
+ * Deux t0 : Suivre × Berry = 15 mai 2026 figé ; Tracer (et Suivre × ma
+ * route) = aujourd’hui 08:00 UTC. En Tracer, resetToToday force ce t0 à
+ * chaque entrée et à chaque « repartir au début » (lot DM7) — le champ
+ * Date de départ n’y agit plus.
  */
 export function useVoyageClock({
   flat,
@@ -24,6 +27,10 @@ export function useVoyageClock({
   const [simT0, setSimT0] = useState(() => simulationT0Iso());
   const [startAt, setStartAt] = useState(DEFAULT_START_AT);
   const t0 = mode === "suivre" ? DEFAULT_T0_ISO : simT0;
+
+  const resetToToday = useCallback(() => {
+    setSimT0(simulationT0Iso());
+  }, []);
 
   const clock = useMemo(() => {
     if (!enabled || !flat?.points?.length) return null;
@@ -44,5 +51,5 @@ export function useVoyageClock({
     [clock],
   );
 
-  return { clock, t0, setT0: setSimT0, startAt, setStartAt, sampleAt };
+  return { clock, t0, setT0: setSimT0, resetToToday, startAt, setStartAt, sampleAt };
 }

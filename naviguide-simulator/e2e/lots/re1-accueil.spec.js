@@ -1,14 +1,16 @@
-// Lot RE1 — accueil Simulation + Cinéma + monde dézoomé ;
-// Suivre → Simulation décoche le Cinéma et ouvre les deux panneaux.
-// Sans API : montage (Simulation, Cinéma, zoom monde, panneaux fermés)
-// et la bascule tiennent seuls.
+// Lot RE1 — accueil Suivre + Cinéma + monde dézoomé (plancher) ;
+// Suivre → Tracer décoche le Cinéma et ouvre les deux panneaux.
+// Lot DM4 : accueil et clic Suivre = bateau au centre, zoom = plancher
+// (plus de zoom > 3). Sans API : montage (Suivre, Cinéma, zoom plancher,
+// panneaux fermés) et la bascule tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
-// assertions qui en dépendent (recadrage caméra sur le bateau en Suivre)
-// — jamais le mode initial, ni le Cinéma, ni l'ouverture des panneaux.
+// assertions qui en dépendent (bateau au centre) — jamais le mode initial,
+// ni le Cinéma, ni le plancher, ni l'ouverture des panneaux.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { mapFollowCadrage } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-re1");
 mkdirSync(recetteDir, { recursive: true });
@@ -69,7 +71,7 @@ test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — recadrage caméra Suivre sauté",
+      description: "GET /voyage/official absent — bateau au centre sauté ; zoom plancher et mode conservés",
     });
   }
 
@@ -104,10 +106,22 @@ test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre
   await expect.poll(() => panelOnScreen(page, "right"), { timeout: 8_000 }).toBe(false);
 
   if (apiUp && mapReady) {
+    await page.waitForFunction(() => (
+      Boolean(window.__naviguideScene?.config?.live?.lat)
+      || Boolean(document.querySelector(".catamaran-divicon--live"))
+    ), null, { timeout: 25_000 }).catch(() => {});
     await expect.poll(async () => {
-      const z = await mapZoom(page);
-      return Number.isFinite(z) ? z : 0;
-    }, { timeout: 15_000 }).toBeGreaterThan(3);
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.zoom) ? s.zoom : 99;
+    }, { timeout: 15_000 }).toBeGreaterThanOrEqual(2.4);
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.zoom) ? s.zoom : 99;
+    }, { timeout: 15_000 }).toBeLessThanOrEqual(2.6);
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.boatPx) ? s.boatPx : 9999;
+    }, { timeout: 25_000 }).toBeLessThan(80);
   }
 
   await page.getByTestId("view-tracer").click();
