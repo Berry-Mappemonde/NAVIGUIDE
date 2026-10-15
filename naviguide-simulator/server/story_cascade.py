@@ -248,9 +248,15 @@ def split_short_sentences(text: str, max_len: int = 160) -> str:
             continue
         bits = [b.strip() for b in re.split(r"(?<=[;:])\s+", chunk) if b.strip()]
         if len(bits) > 1:
-            out.extend(split_short_sentences(" ".join(
+            rejoined = " ".join(
                 b if b.endswith((".", "!", "?", "…", ";", ":")) else f"{b}." for b in bits
-            ), max_len))
+            )
+            # RC27 : « cap sur X : N milles » — sans progrès le recollage reboucle (film_script
+            # évitait le « : » pour ça). On garde la phrase entière.
+            if rejoined.strip() == chunk.strip():
+                out.append(chunk)
+                continue
+            out.extend(split_short_sentences(rejoined, max_len))
             continue
         out.append(chunk)
     return " ".join(out)
