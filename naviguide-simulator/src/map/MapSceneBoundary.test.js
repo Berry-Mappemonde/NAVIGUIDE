@@ -92,6 +92,8 @@ describe("MapScene boundary", () => {
     assert.match(app, /showWorld\?\.\(\{ keepBoundsLifted: true \}\)/);
     assert.match(src, /_pendingDrawUntil/);
     assert.match(src, /_worldLockUntil/);
+    assert.match(src, /endDrawingWorld\(\)/);
+    assert.match(app, /endDrawingWorld/);
   });
 
   it("désactive le zoom haut-gauche et le pose en bas à droite (lot RB2)", () => {

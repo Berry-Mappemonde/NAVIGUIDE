@@ -51,13 +51,13 @@ async function mapZoom(page) {
 }
 
 async function enterTracer(page) {
+  // DM6 : la pilule Tracer ouvre le dessin (vue monde).
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   if (await panelClosed(page, "left")) {
     await page.locator(".naviguide-sidebar-toggle--left").click();
     await expect.poll(() => panelClosed(page, "left"), { timeout: 8_000 }).toBe(false);
   }
-  const drawBtn = page.getByRole("button", { name: /Tracer votre propre route|Draw your own route/i });
-  await expect(drawBtn).toBeVisible({ timeout: 10_000 });
-  await drawBtn.click();
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 10_000 });
 }
 

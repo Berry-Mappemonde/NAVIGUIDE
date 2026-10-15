@@ -42,7 +42,13 @@ function BerryCard({
   const [drawnRoute, setDrawnRoute] = useState(null);
   const [drawnName, setDrawnName] = useState(null);
   const hasCustom = Boolean(drawnRoute);
-  const customOn = cardMode === "file-active";
+  const drawingOn = isDrawing || cardMode === "draw-mode";
+  const customOn = cardMode === "file-active" && !drawingOn;
+
+  const startOrResumeDraw = () => {
+    setCardMode("draw-mode");
+    (canContinueDraw ? onDrawContinue : onDrawStart)?.();
+  };
 
   useEffect(() => {
     if (!isDrawing && cardMode === "draw-mode") {
@@ -88,14 +94,14 @@ function BerryCard({
 
   // DM1 : les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
   // Tracer (VIEW_SIMULATION) ou pendant un tracé ; sans route perso, la seconde
-  // pilule fait le même geste que le bouton du bas (draw-mode + onDrawStart).
+  // pilule reprend le brouillon (DM6) ou ouvre un dessin vide.
   const switcher = (hasCustom || isTracerView || isDrawing) ? (
     <div className="flex gap-1 mb-1.5">
-      <button type="button" data-testid="route-switch-berry" onClick={activateBerry} className={customOn ? pillOff : pillOn} title={t("backToBerry")}>
+      <button type="button" data-testid="route-switch-berry" onClick={activateBerry} className={(customOn || drawingOn) ? pillOff : pillOn} title={t("backToBerry")}>
         {t("berryMappemonde")} {/* pragma: allowlist secret */}
       </button>
       {hasCustom ? (
-        <button type="button" data-testid="route-switch-custom" onClick={activateCustom} className={customOn ? pillOn : pillOff} title={t("showRoute", { name: drawnName })}>
+        <button type="button" data-testid="route-switch-custom" onClick={activateCustom} className={(customOn || drawingOn) ? pillOn : pillOff} title={t("showRoute", { name: drawnName })}>
           {drawnName || t("customRoute")}
         </button>
       ) : (
@@ -105,8 +111,8 @@ function BerryCard({
           // Même nom accessible que le bouton du bas qu'elle remplace en Tracer
           // (les specs des lots N4/R9a/R13 le cherchent par ce nom).
           aria-label={`${t("berryMappemonde")} · ${t("drawOwnRoute")}`}
-          onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
-          className={pillOff}
+          onClick={startOrResumeDraw}
+          className={drawingOn ? pillOn : pillOff}
           title={t("drawOwnRoute")}
         >
           {t("drawOwnRoute")}
@@ -169,7 +175,7 @@ function BerryCard({
           </div>
         ) : (
           <button
-            onClick={() => { setCardMode("draw-mode"); onDrawStart(); }}
+            onClick={startOrResumeDraw}
             className="w-full flex items-center justify-center gap-1.5 bg-violet-600/20 hover:bg-violet-600/40
               border border-violet-500/40 rounded-lg px-2 py-1.5 text-[10px] text-violet-300 font-medium"
           >
@@ -226,7 +232,7 @@ function BerryCard({
         <div className="flex gap-1">
           <button
             type="button"
-            onClick={() => { setCardMode("draw-mode"); (canContinueDraw ? onDrawContinue : onDrawStart)?.(); }}
+            onClick={startOrResumeDraw}
             className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-lg text-[10px]
               font-medium border border-violet-500/40 text-violet-300 hover:bg-violet-600/20"
           >
@@ -477,7 +483,7 @@ export const Sidebar = memo(function Sidebar({
             mode={momentMode}
             momentNow={!isDrawing ? momentNow : null}
             momentFree={!isDrawing ? momentFree : null}
-            simulation={!isDrawing ? (
+            simulation={(
               <SimulationPanel
                 legContext={legContext}
                 clockSample={clockSample}
@@ -493,7 +499,7 @@ export const Sidebar = memo(function Sidebar({
                 recomputeBusy={recomputeBusy}
                 onGoLive={onGoLive}
               />
-            ) : null}
+            )}
             hereBody={!isDrawing ? (
               <div data-testid="here-product">
                 <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">

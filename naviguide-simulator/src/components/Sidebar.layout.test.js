@@ -69,6 +69,15 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.match(sidebar, /\{!isDrawing \? \(/);
   });
 
+  it("lot DM6 — Berry ne jette pas le brouillon ; reprendre le tracé si points", () => {
+    assert.match(sidebar, /const activateBerry = \(\) => \{/);
+    const berryAt = sidebar.indexOf("const activateBerry = () => {");
+    const berryChunk = sidebar.slice(berryAt, berryAt + 220);
+    assert.doesNotMatch(berryChunk, /onDrawCancel/);
+    assert.match(sidebar, /startOrResumeDraw/);
+    assert.match(sidebar, /canContinueDraw \? onDrawContinue : onDrawStart/);
+  });
+
   it("lot N1 — Importer à côté de Terminer, sans texte d'aide", () => {
     assert.match(sidebar, /data-testid="route-import"/);
     assert.match(sidebar, /data-testid="route-import-file"/);

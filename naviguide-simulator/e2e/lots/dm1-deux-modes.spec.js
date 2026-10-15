@@ -42,8 +42,8 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   await shot(page, "01-deux-pilules");
 
   // (b) Clic Tracer → aria-checked ; date de départ ; Play / vitesses ; carte
-  // route avec pilule Berry-Mappemonde active, « Tracer votre propre route »
-  // et Importer.
+  // route avec pilules Berry-Mappemonde | « Tracer votre propre route » et Importer.
+  // DM6 : le dessin est ouvert tout de suite (la pilule de tracé est active).
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("departure-field")).toBeVisible({ timeout: 10_000 });
@@ -51,8 +51,11 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   await expect(page.getByTestId("film-speed")).toBeVisible();
   const berryPill = page.getByTestId("route-switch-berry");
   await expect(berryPill).toBeVisible({ timeout: 10_000 });
-  expect((await berryPill.getAttribute("class")) || "", "pilule Berry active").toMatch(PILL_ON);
-  await expect(page.getByTestId("route-switch-draw")).toHaveText(/Tracer votre propre route|Draw your own route/);
+  const drawPill = page.getByTestId("route-switch-draw");
+  await expect(drawPill).toHaveText(/Tracer votre propre route|Draw your own route/);
+  expect((await drawPill.getAttribute("class")) || "", "pilule Tracer votre propre route active").toMatch(PILL_ON);
+  expect((await berryPill.getAttribute("class")) || "", "pilule Berry visible, pas le dessin").not.toMatch(PILL_ON);
+  await expect(page.getByText(/Choisissez votre point de départ|Choose your starting point/).first()).toBeVisible();
   await expect(page.getByTestId("route-import")).toBeVisible();
   await shot(page, "02-tracer-berry");
 

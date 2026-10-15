@@ -25,6 +25,21 @@ describe("contrat UI produit", () => {
     assert.match(tools, /visibility: open \? "visible" : "hidden"/, "Cinéma : le panneau droit n'est pas peint fermé");
   });
 
+  it("lot DM6 : entrée Tracer ouvre le dessin sans vider le brouillon", () => {
+    const app = read("../App.jsx");
+    const sidebar = read("../components/Sidebar.jsx");
+    const selectAt = app.indexOf("const selectView = useCallback");
+    assert.ok(selectAt >= 0, "selectView présent");
+    const selectChunk = app.slice(selectAt, selectAt + 2800);
+    assert.match(selectChunk, /armDrawingWorldRef\.current\(VIEW_SIMULATION\)/);
+    assert.match(selectChunk, /endDrawingWorld/);
+    assert.match(app, /onView=\{selectView\}/);
+    assert.doesNotMatch(app, /onView=\{drawingMode \? undefined/);
+    assert.match(sidebar, /startOrResumeDraw/);
+    assert.match(sidebar, /canContinueDraw \? onDrawContinue : onDrawStart/);
+    assert.match(sidebar, /drawingOn \? pillOn : pillOff/);
+  });
+
   it("lot RF7 : entrée Tracer pose la vue monde", () => {
     const app = read("../App.jsx");
     const scene = read("../map/MapSceneController.js");
@@ -37,7 +52,7 @@ describe("contrat UI produit", () => {
     const app = read("../App.jsx");
     const selectAt = app.indexOf("const selectView = useCallback");
     assert.ok(selectAt >= 0, "selectView présent");
-    const selectChunk = app.slice(selectAt, selectAt + 1800);
+    const selectChunk = app.slice(selectAt, selectAt + 2800);
     assert.match(selectChunk, /if \(view === VIEW_SUIVRE\) \{/);
     assert.match(selectChunk, /leaveCinema\(\)/);
     assert.match(selectChunk, /setSidebarOpen\(true\)/);

@@ -171,46 +171,24 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     );
   }
 
-  // Lot I — while drawing, the bar speaks of the drawn route (not the official leg);
-  // no playback, no speeds, no Suivre / Simulation switch: drawing is its own mode.
-  if (drawing) {
-    return (
-      <div
-        data-testid="film-bar"
-        data-drawing="1"
-        className="absolute bottom-5 z-[2020] pointer-events-auto"
-        style={{ left: insets.left, right: insets.right }}
-      >
-        <div className="naviguide-film-bar rounded-xl border border-emerald-400/30 bg-slate-950/92 shadow-2xl px-2.5 pt-1.5 pb-1.5 text-white backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
-              <span className="text-emerald-200">{t("drawingInProgress")}</span>
-              <span className="text-white/60 font-normal ml-2">{drawing.message}</span>
-            </div>
-            {disclaimer ? (
-              <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right">{disclaimer}</span>
-            ) : null}
-          </div>
-          <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
-            {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString()} nm
-            {drawing.failed ? ` · ${drawing.failed} ${t("drawingFailedSegments")}` : ""}
-            {drawing.loading ? ` · ${t("drawingRouting")}` : ""}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // DM6 — le dessin est le défaut de Tracer : la barre garde Suivre | Tracer,
+  // Play et le départ (plus de barre allégée qui les retirait).
   return (
     <div
       data-testid="film-bar"
+      data-drawing={drawing ? "1" : undefined}
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={{ left: insets.left, right: insets.right }}
     >
-        <div className="naviguide-film-bar overflow-hidden rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
+        <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
-            {finished
+            {drawing ? (
+              <>
+                <span className="text-emerald-200">{t("drawingInProgress")}</span>
+                <span className="text-white/60 font-normal ml-2">{drawing.message}</span>
+              </>
+            ) : finished
               ? t("filmArrived", { name: fromName || "—" })
               : (
                 <>
