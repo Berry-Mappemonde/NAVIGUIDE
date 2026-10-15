@@ -6,6 +6,7 @@
 import { briefingEntities, placeLabel, segmentBriefingWithSources } from "./briefingLinks.js";
 import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+import { localizePlaceName } from "../utils/placeNames.js";
 
 const TERRITORY = {
   fr: {
@@ -166,10 +167,11 @@ function zeeSentence(dossier, lang) {
       ? `The boat is ashore${extra ? ` ${extra}` : ""}, outside any EEZ.`
       : `Le bateau est à terre${extra ? ` ${extra}` : ""}, hors de toute ZEE.`;
   }
-  if (!zee.mrgid || zee.name === "Haute mer") return highSeas;
+  if (!zee.mrgid || zee.name === "Haute mer" || zee.name === "High seas") return highSeas;
   const spoken = spokenZeeName(zee, lang);
   const territory = TERRITORY[en ? "en" : "fr"][zee.territory];
-  const where = spoken || (territory ? `${zee.name} (${territory})` : zee.name);
+  const zeeLabel = localizePlaceName(zee.name, lang);
+  const where = spoken || (territory ? `${zeeLabel} (${territory})` : zeeLabel);
   let formalities;
   if (zee.gold) {
     formalities = en

@@ -38,8 +38,10 @@ def test_allow_false_at_cap(monkeypatch):
 def test_models_and_sources_are_overridable(monkeypatch):
     assert llm_budget.model_for("fast") == "nvidia/Nemotron-3_5-Lightning"
     assert llm_budget.model_for("write") == "nvidia/nemotron-3-super-120b-a12b"
+    assert llm_budget.model_for("deep") == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert llm_budget.model_for("judge") == "nvidia/Nemotron-3-Ultra-550b-a55b"
     assert llm_budget.source_for("write") == "nemotron-super"
+    assert llm_budget.source_for("deep") == "nemotron-ultra"
     monkeypatch.setenv("NAVIGUIDE_TF_MODEL_WRITE", "nvidia/nemotron-3-nano-30b-a3b")
     assert llm_budget.model_for("write") == "nvidia/nemotron-3-nano-30b-a3b"
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -67,7 +69,7 @@ def test_remember_source_skips_cache():
 
 def test_mode_off_forbids_every_call(monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
-    for tier in ("fast", "write", "judge"):
+    for tier in ("fast", "write", "deep", "judge"):
         assert llm_budget.allow(tier) is False
 
 

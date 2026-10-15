@@ -7,24 +7,7 @@ import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
-import { startWarmStatusWatch } from "../hooks/usePlanReview.js";
-
-const API_URL = import.meta.env?.VITE_API_URL ?? "";
-
-const STORY_SOURCE_I18N = Object.freeze({
-  "nemotron-lightning": "storySourceLightning",
-  "nemotron-super": "storySourceSuper",
-  "nemotron-ultra": "storySourceUltra",
-  openrouter: "storySourceOpenrouter",
-  claude: "storySourceClaude",
-  rules: "storySourceRules",
-  budget: "storySourceBudget",
-  cache: "storySourceCache",
-});
-
-function storySourceLabel(source, t) {
-  return t(STORY_SOURCE_I18N[source] || "storySourceRules");
-}
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
@@ -362,7 +345,6 @@ export const Sidebar = memo(function Sidebar({
   onEscaleClose,
 }) {
   const { t } = useLang();
-  const [storySource, setStorySource] = useState("rules");
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -375,14 +357,6 @@ export const Sidebar = memo(function Sidebar({
   // Tracer sans poser de point : le briefing et Ajaccio restent là.
   const drawingHidesBerry = Boolean(isDrawing && drawing?.points?.length);
   const showIciBriefing = !drawingHidesBerry && (isCockpit || briefing || briefingLoading || skipperNotice);
-
-  useEffect(() => {
-    if (!showIciBriefing) return undefined;
-    return startWarmStatusWatch(
-      () => fetch(`${API_URL}/ici/warm/status`).then((r) => (r.ok ? r.json() : null)),
-      setStorySource,
-    );
-  }, [showIciBriefing]);
 
   return (
     <>
@@ -529,12 +503,7 @@ export const Sidebar = memo(function Sidebar({
                         ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
                         : (briefingLoading && !(moment?.here?.sentences || []).length ? t("iciBriefingLoading") : (briefing || null))}
                   </p>
-                  <p
-                    data-testid="story-source"
-                    className="text-[9px] text-slate-500 leading-snug mt-1"
-                  >
-                    {storySourceLabel(storySource, t)}
-                  </p>
+                  <LlmSourceBadge source="rules" testId="story-source" className="mt-1" />
                 </div>
               </div>
             ) : null}

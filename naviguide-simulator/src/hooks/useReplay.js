@@ -414,7 +414,7 @@ export function pickFilmEstimateSeconds(targetSeconds, estimates, fallbackSecond
   return Number.isFinite(fb) && fb > 0 ? fb : 0;
 }
 
-/** Même langue / style / t0 : un changement de budget 2:30↔3:00 ne démonte pas les pilules. */
+/** Même langue / t0 / style : garder le plan ready si seule la durée change. */
 export function filmQueryKeepsReady(prev, next) {
   if (!prev || !next) return false;
   if (prev === next) return true;

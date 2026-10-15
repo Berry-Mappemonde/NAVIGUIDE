@@ -17,6 +17,7 @@ from story_cascade import (
     need_page,
     providers,
     slim_event,
+    story_tier,
     translate,
     write_story,
 )
@@ -27,6 +28,13 @@ CAPTURE_LEAK = (
     "- Task: Present a scale stop to a sailing crew arriving at Pointe-à-Pitre.\n"
     "What's for the boat, what's for the crew, what to know for formalities."
 )
+
+
+def test_story_tier_ultra_for_escales_and_alerts():
+    assert story_tier({"type": "stop"}) == "deep"
+    assert story_tier({"type": "wind-gale"}) == "deep"
+    assert story_tier({"type": "zee-enter", "severity": "info"}) == "write"
+    assert story_tier({"type": "zee-enter", "severity": "alert"}) == "deep"
 
 
 def test_default_cascade_is_token_factory_not_tavily():
