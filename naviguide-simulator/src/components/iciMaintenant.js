@@ -134,13 +134,49 @@ const TITLE_EN = {
   "Aire marine protégée": "Marine protected area",
   "Station croisée": "Station passed",
   "Escale": "Stopover",
+  AMP: "Marine protected area",
+  ZEE: "EEZ",
+};
+
+const ZEE_ADJ_EN = {
+  espagnole: "Spanish",
+  française: "French",
+  portugaise: "Portuguese",
+  italienne: "Italian",
+  marocaine: "Moroccan",
+  britannique: "British",
+  canadienne: "Canadian",
+  américaine: "American",
+  mexicaine: "Mexican",
+  chilienne: "Chilean",
+  argentine: "Argentine",
+  brésilienne: "Brazilian",
+  australienne: "Australian",
+  japonaise: "Japanese",
+  chinoise: "Chinese",
+  indienne: "Indian",
+  norvégienne: "Norwegian",
+  russe: "Russian",
+  turque: "Turkish",
+  grecque: "Greek",
+  tunisienne: "Tunisian",
+  algérienne: "Algerian",
+  cubaine: "Cuban",
+  colombienne: "Colombian",
+  péruvienne: "Peruvian",
+  panaméenne: "Panamanian",
+  vénézuélienne: "Venezuelan",
+  sénégalaise: "Senegalese",
+  madagascane: "Malagasy",
+  "néo-zélandaise": "New Zealand",
 };
 
 const NAMELESS_FACT = /traces de cyclone|cyclone tracks|saison cyclonique|cyclone season|ce mois-ci|this month/i;
 
 function inferKindFromTitle(title) {
   const raw = String(title || "").trim().toLowerCase();
-  if (/aire marine|marine protected/.test(raw)) return "amp";
+  if (/aire marine|marine protected|^amp\b/.test(raw)) return "amp";
+  if (/zone économique|exclusive economic|\beez\b|\bzee\b/.test(raw)) return "zee";
   if (/formalit|entry formalit|ports? d['’]entr|ports? of entry/.test(raw)) return "entry";
   if (/^escale\b|^stopover\b/.test(raw)) return "stop";
   if (raw === "cyclone") return "cyclone";
@@ -153,6 +189,30 @@ export function localizeStoredTitle(title, lang) {
   const raw = String(title || "").trim();
   if (!raw || lang !== "en") return raw;
   if (TITLE_EN[raw]) return TITLE_EN[raw];
+  if (/^AMP\b/i.test(raw)) return raw.replace(/^AMP\b/i, "Marine protected area");
+  if (/aire marine/i.test(raw)) {
+    return raw
+      .replace(/aire marine protégée/gi, "Marine protected area")
+      .replace(/\baire marine\b/gi, "Marine protected area");
+  }
+  const zee = /^(?:Entrée dans\s+)?Zone économique exclusive\s+(.+)$/i.exec(raw);
+  if (zee) {
+    const prefix = /^Entrée dans/i.test(raw) ? "Entering " : "";
+    let rest = zee[1].trim();
+    const paren = /^(.*?)\s*(\([^)]+\))\s*$/.exec(rest);
+    let adj = rest;
+    let extra = "";
+    if (paren) {
+      adj = paren[1].trim();
+      extra = ` ${paren[2]}`;
+    }
+    const enAdj = ZEE_ADJ_EN[adj.toLowerCase()];
+    if (enAdj) return `${prefix}${enAdj} EEZ${extra}`;
+    return `${prefix}Exclusive economic zone ${adj}${extra}`;
+  }
+  if (/zone économique exclusive/i.test(raw)) {
+    return raw.replace(/zone économique exclusive/gi, "Exclusive economic zone").replace(/\bZEE\b/g, "EEZ");
+  }
   const escale = /^(?:Escale|Stopover)\s+(.+)$/i.exec(raw);
   if (escale) return `Stopover ${escale[1]}`;
   return raw;
@@ -344,6 +404,7 @@ export function journalChangeLabel(entry, lang = "fr") {
     : (rawKind === "alert-on" || rawKind === "alert-off" || !rawKind ? inferred : rawKind);
   const labels = EVENT_TYPE_LABEL[lang] || EVENT_TYPE_LABEL.fr;
   const type = labels[kind] || (TYPE_ONLY_TITLES.has(stored) || TYPE_ONLY_TITLES.has(title) ? title : "");
+  if (kind === "zee" && /EEZ|exclusive economic/i.test(title)) return title;
   if (!type) return title;
 
   let name = (TYPE_ONLY_TITLES.has(stored) || TYPE_ONLY_TITLES.has(title)) ? "" : title;

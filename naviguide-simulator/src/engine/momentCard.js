@@ -26,6 +26,7 @@ import { placeLabel } from "./briefingLinks.js";
 import { formatJournalEntry } from "./journalFormat.js";
 import { haversineNm, wrapLon } from "../utils/geo.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
+import { localizeStoredTitle } from "../components/iciMaintenant.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 
@@ -219,7 +220,9 @@ function journalTitleOf(entry, lang) {
     const picked = isEn(lang) ? (entry.title.en || entry.title.fr) : (entry.title.fr || entry.title.en);
     if (picked) return picked;
   }
-  if (typeof entry?.title === "string" && entry.title) return entry.title;
+  if (typeof entry?.title === "string" && entry.title) {
+    return localizeStoredTitle(entry.title, isEn(lang) ? "en" : "fr");
+  }
   return words[entry?.kind] || entry?.kind || "";
 }
 
