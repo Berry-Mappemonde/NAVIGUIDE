@@ -8,7 +8,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
+import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -99,7 +99,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   speechText = null,
   view = null,
   onView,
+  ref,
+  barRef,
 }) {
+  const rootRef = ref || barRef;
   const { t, lang } = useLang();
   const insets = filmBarInsets({ sidebarOpen, toolsOpen });
   const regimeTitle = [
@@ -111,6 +114,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     regime: clockCurrent?.regime || clockCurrent?.kind,
     sources: clockCurrent?.sources,
     spread: clockCurrent?.spread,
+    realUntil: clock?.realUntil,
     weatherLine,
     t,
     lang,
@@ -155,6 +159,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   if (hideBar) {
     return (
       <div
+        ref={rootRef}
         className="absolute bottom-5 z-[2020] pointer-events-auto"
         style={{ left: insets.left, right: insets.right }}
       >
@@ -170,46 +175,25 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     );
   }
 
-  // Lot I — while drawing, the bar speaks of the drawn route (not the official leg);
-  // no playback, no speeds, no Suivre / Simulation switch: drawing is its own mode.
-  if (drawing) {
-    return (
-      <div
-        data-testid="film-bar"
-        data-drawing="1"
-        className="absolute bottom-5 z-[2020] pointer-events-auto"
-        style={{ left: insets.left, right: insets.right }}
-      >
-        <div className="naviguide-film-bar rounded-xl border border-emerald-400/30 bg-slate-950/92 shadow-2xl px-2.5 pt-1.5 pb-1.5 text-white backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
-              <span className="text-emerald-200">{t("drawingInProgress")}</span>
-              <span className="text-white/60 font-normal ml-2">{drawing.message}</span>
-            </div>
-            {disclaimer ? (
-              <span data-testid="nav-disclaimer" className="text-[9px] text-amber-100/80 leading-tight max-w-[9rem] text-right">{disclaimer}</span>
-            ) : null}
-          </div>
-          <div data-testid="film-clock-line" className="text-[11px] text-white/75 tabular-nums leading-tight mt-0.5 truncate">
-            {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString()} nm
-            {drawing.failed ? ` · ${drawing.failed} ${t("drawingFailedSegments")}` : ""}
-            {drawing.loading ? ` · ${t("drawingRouting")}` : ""}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // DM6 — le dessin est le défaut de Tracer : la barre garde Suivre | Tracer,
+  // Play et le départ (plus de barre allégée qui les retirait).
   return (
     <div
+      ref={rootRef}
       data-testid="film-bar"
+      data-drawing={drawing ? "1" : undefined}
       className="absolute bottom-5 z-[2020] pointer-events-auto"
       style={{ left: insets.left, right: insets.right }}
     >
-        <div className="naviguide-film-bar overflow-hidden rounded-xl border border-white/15 bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm">
+        <div className={`naviguide-film-bar overflow-hidden rounded-xl border ${drawing ? "border-emerald-400/30" : "border-white/15"} bg-slate-950/92 shadow-2xl px-2.5 pt-1 pb-1 text-white backdrop-blur-sm`}>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 text-[12px] font-semibold leading-tight truncate">
-            {finished
+            {drawing ? (
+              <>
+                <span className="text-emerald-200">{t("drawingInProgress")}</span>
+                <span className="text-white/60 font-normal ml-2">{drawing.message}</span>
+              </>
+            ) : finished
               ? t("filmArrived", { name: fromName || "—" })
               : (
                 <>
@@ -397,21 +381,28 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               deferSpeak={Boolean(replay?.active)}
               className="!rounded-md"
             />
-            {replay ? (
+            {replay && !replay.unavailable ? (
               <>
-                <span data-testid="film-source" hidden>
+                <span data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-[9px] text-white/70 whitespace-nowrap">
                   {filmSourceLabel(replay.source, t)}
                 </span>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
-                  {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => (
+                  {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
+                    const writtenSoon = id === "written" && !replay.hasWritten;
+                    const locked = Boolean(replay.active) || writtenSoon;
+                    return (
                     <button
                       key={id}
                       type="button"
                       data-testid={`film-style-${id}`}
                       aria-pressed={(replay.style || "raw") === id}
-                      aria-disabled={Boolean(replay.active)}
-                      disabled={Boolean(replay.active)}
-                      onClick={() => replay.onStyle?.(id)}
+                      aria-disabled={locked}
+                      disabled={locked}
+                      title={writtenSoon ? t("filmStoryWrittenSoon") : undefined}
+                      onClick={() => {
+                        if (writtenSoon) return;
+                        replay.onStyle?.(id);
+                      }}
                       className={`px-1 py-0.5 rounded text-[9px] font-semibold whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed ${
                         (replay.style || "raw") === id
                           ? "bg-sky-700/70 text-sky-50 border border-sky-300/40"
@@ -420,7 +411,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     >
                       {t(key)}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : null}
@@ -450,7 +442,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 ))}
               </div>
             ) : null}
-            {replay ? (
+            {replay && !replay.unavailable ? (
               <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
                 <div data-testid="replay-departure" className="w-max shrink-0">
                   <DepartureField
@@ -485,7 +477,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                       aria-disabled={!replay.canStart}
                       data-testid="replay-start"
                       className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 hover:bg-sky-600/70 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
-                      title={t("replayStartTitle")}
+                      title={replay.canStart ? t("replayStartTitle") : t("replayPreparing")}
                     >
                       ↺ {t("replayStart")}
                     </button>
@@ -526,6 +518,19 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     </div>
                   ) : null}
                 </div>
+              </div>
+            ) : replay?.unavailable ? (
+              <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  data-testid="replay-start"
+                  className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={t("replayPreparing")}
+                >
+                  ↺ {t("replayStart")}
+                </button>
               </div>
             ) : null}
           </div>
@@ -602,20 +607,8 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
   );
 });
 
-const FILM_SOURCE_I18N = Object.freeze({
-  "nemotron-lightning": "storySourceLightning",
-  "nemotron-super": "storySourceSuper",
-  "nemotron-ultra": "storySourceUltra",
-  nemotron: "storySourceSuper",
-  openrouter: "storySourceOpenrouter",
-  claude: "storySourceClaude",
-  rules: "storySourceRules",
-  budget: "storySourceBudget",
-  cache: "storySourceCache",
-});
-
 function filmSourceLabel(source, t) {
-  return t(FILM_SOURCE_I18N[source] || "storySourceRules");
+  return t(filmSourceKey(source));
 }
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */

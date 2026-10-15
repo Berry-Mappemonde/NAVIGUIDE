@@ -54,7 +54,7 @@ describe("narrateIci", () => {
     assert.match(text, /Cap sur Fort-de-France[^.]*depuis La Rochelle/);
     assert.match(text, /7,2 nœuds/);
     assert.match(text, /de mer/);
-    assert.equal((text.match(/Polaire chargée/g) || []).length, 1);
+    assert.doesNotMatch(text, /Polaire chargée|Polar loaded/);
     assert.match(text, /Données scientifiques disponibles autour du bateau/);
     assert.match(text, /Pertuis charentais bathymétrie \(6 nm\)/);
     assert.match(text, /6901234 \(18 nm\)/);
@@ -187,7 +187,7 @@ describe("narrateIci", () => {
       sources: { zee: "marineregions", bi: "unavailable" },
     }, "fr");
     assert.match(text, /Blue Intelligence n’ont pas répondu/);
-    assert.match(text, /LA ROCHELLE/);
+    assert.match(text, /La Rochelle/);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -577,10 +577,11 @@ describe("narrateIci", () => {
       type: "zee-ahead",
       whenNm: 40,
       name: "Spanish Exclusive Economic Zone",
-      payload: { zee: { name: "Spanish Exclusive Economic Zone", mrgid: 8462 }, whenNm: 40 },
+      payload: { zee: { name: "Spanish Exclusive Economic Zone", mrgid: 5693 }, whenNm: 40 },
     }, "fr");
     assert.match(text, /Devant dans 40 nm/);
-    assert.match(text, /Spanish Exclusive Economic Zone/);
+    assert.match(text, /les eaux espagnoles/);
+    assert.doesNotMatch(text, /Exclusive Economic Zone/i);
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
@@ -683,12 +684,11 @@ describe("lot M — sources liées, pas de redite", () => {
     }
   });
 
-  it("aucune phrase dupliquée dans un briefing complet ; polaire une fois, climatologie hors briefing", () => {
+  it("aucune phrase dupliquée dans un briefing complet ; polaire hors briefing, climatologie hors briefing", () => {
     const text = narrateIci(FULL_BAG, "fr");
     const sentences = briefingSentences(text);
     assert.equal(new Set(sentences).size, sentences.length, `doublon : ${sentences.join(" | ")}`);
-    assert.equal((text.match(/Polaire chargée/g) || []).length, 1);
-    assert.doesNotMatch(text, /Polaire chargée[\s\S]*Polaire chargée/);
+    assert.doesNotMatch(text, /Polaire chargée|Polar loaded/);
     assert.equal(climatologyShownOnBanner(FULL_BAG), true);
     assert.doesNotMatch(text, /Climatologie de/);
     const silent = narrateIci({

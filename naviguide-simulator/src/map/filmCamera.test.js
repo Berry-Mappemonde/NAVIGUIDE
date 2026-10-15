@@ -436,7 +436,9 @@ describe("filmCamera lot RG13 — 60 Hz, cap lissé, zoom d'approche", () => {
 
   it("MapSceneController : sillage à la frame et bateau posé pendant le film", () => {
     assert.match(controller, /this\.renderDynamic\(this\.currentPlayback \|\| this\.playback\.snapshot\(\)\)/);
-    assert.match(controller, /zoomAnimating && markers\.length && !this\.config\.filmActive/);
+    assert.match(controller, /if \(this\.zoomAnimating && markers\.length\) return/);
+    assert.doesNotMatch(controller, /zoomAnimating && markers\.length && !this\.config\.filmActive/);
+    assert.match(controller, /stabilizeWorldLng\(subject\.lon/);
     assert.match(controller, /filmActive: this\.config\.filmActive/);
     assert.match(controller, /filmFramesSinceReset/);
   });

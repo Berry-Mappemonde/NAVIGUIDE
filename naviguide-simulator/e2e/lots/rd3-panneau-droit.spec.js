@@ -48,7 +48,7 @@ async function showToolsPanel(page) {
 }
 
 test("lot RD3 — plus d'encadré jaune, nom une fois, remise 34 → 29 → 34", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
@@ -103,6 +103,32 @@ test("lot RD3 — plus d'encadré jaune, nom une fois, remise 34 → 29 → 34",
 
   const orders = page.getByTestId("skipper-orders");
   await expect(orders).toBeVisible({ timeout: 15_000 });
+
+  // DM9 — Tracer : Polaires / Paramètres repliés, Calques dépliés ; Suivre inchangé.
+  await page.getByTestId("view-tracer").click();
+  await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
+  await showToolsPanel(page);
+  const tracerPolar = page.getByTestId("polar-box");
+  await expect(tracerPolar).toBeVisible();
+  await expect.poll(async () => tracerPolar.evaluate((el) => (
+    el.tagName.toLowerCase() === "details" ? el.open : true
+  )), { timeout: 8_000 }).toBe(false);
+  await expect.poll(async () => page.getByTestId("skipper-orders").evaluate((el) => el.open), {
+    timeout: 8_000,
+  }).toBe(false);
+  await expect(page.getByTestId("export-box")).toBeVisible();
+  await expect.poll(async () => page.getByTestId("layers-drawer").evaluate((el) => el.open), {
+    timeout: 8_000,
+  }).toBe(true);
+
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  await leaveCinema(page);
+  await showToolsPanel(page);
+  const followPolar = page.getByTestId("polar-box");
+  await expect(followPolar).toBeVisible();
+  expect(await followPolar.evaluate((el) => el.tagName.toLowerCase() === "details")).toBe(false);
+
   if (!(await orders.evaluate((el) => el.open))) {
     await orders.locator("summary").first().click();
   }

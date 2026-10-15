@@ -151,6 +151,20 @@ def test_localized_zee_names_on_fixture_no_double_parens():
     assert localize_zee_name(pearl["zee"], "fr") == fr["here"]["zee"]["name"]
 
 
+def test_rc32_saint_martin_sheet_distinguished():
+    name = localize_zee_name(
+        {"name": "Saint-Martin Exclusive Economic Zone", "mrgid": 8495, "territory": "saint_martin"},
+        "fr",
+    )
+    assert "Saint-Martin (partie française)" in name
+    assert "(Saint-Martin) (Saint-Martin)" not in name
+    en = localize_zee_name(
+        {"name": "Sint-Maarten Exclusive Economic Zone", "mrgid": 8433},
+        "en",
+    )
+    assert "Sint Maarten (Dutch side)" in en
+
+
 def test_guadeloupe_sources_have_no_ok():
     """Lot RC3 — bi=ok dans la perle ne doit pas apparaître comme libellé « ok »."""
     pearl, clock, leg, th, lang = _inputs(mrgid=33177)

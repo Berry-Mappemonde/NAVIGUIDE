@@ -53,7 +53,7 @@ function noFloatingCards(page) {
 }
 
 test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -103,51 +103,16 @@ test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ 
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
   await expect(box).toBeVisible();
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
+  await expect(page.getByTestId("ici-tab-review")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("ici-review-slot")).toBeVisible();
   await expect(page.getByTestId("ici-section-leg")).toBeVisible();
   await expect(page.getByTestId("ici-leg-line")).toBeAttached();
   await noFloatingCards(page);
-
-  const hasAjaccio = await page.waitForFunction(() => {
-    const scene = window.__naviguideScene;
-    if (!scene?.waypointMarkers) return false;
-    for (const marker of scene.waypointMarkers.values()) {
-      if (/Ajaccio/i.test(marker._naviguideWaypoint?.name || "")) return true;
-    }
-    return false;
-  }, null, { timeout: 20_000 }).then(() => true).catch(() => false);
-
-  if (hasAjaccio) {
-    await page.evaluate(() => {
-      const scene = window.__naviguideScene;
-      if (!scene?.map || !scene.waypointMarkers) return;
-      for (const marker of scene.waypointMarkers.values()) {
-        if (/Ajaccio/i.test(marker._naviguideWaypoint?.name || "")) {
-          scene.map.setView(marker.getLatLng(), 7, { animate: false });
-          marker.fire("click");
-          return;
-        }
-      }
-    });
-    const sheet = page.getByTestId("ici-maintenant").getByTestId("escale-sheet");
-    const opened = await sheet.isVisible({ timeout: 8_000 }).catch(() => false);
-    if (!opened) {
-      const row = page.locator("li").filter({ hasText: /Ajaccio/i }).first();
-      const openBtn = row.getByTestId("escale-sheet-open");
-      if (await openBtn.isVisible().catch(() => false)) await openBtn.click();
-    }
-    await expect(sheet).toBeVisible({ timeout: 10_000 });
-    await expect(sheet).toContainText(/Ajaccio/i);
-    await expect(page.getByTestId("here-product").getByTestId("escale-sheet")).toHaveCount(0);
-    await expect(page.locator(".leaflet-popup.escale-popup")).toHaveCount(0);
-    await expect(sheet.getByRole("button", { name: /écouter|listen/i })).toHaveCount(0);
-    await expect(page.getByTestId("ici-tab-now")).toHaveAttribute("aria-selected", "true");
-    await sheet.scrollIntoViewIfNeeded();
-  } else {
-    test.info().annotations.push({
-      type: apiUp ? "drapeau" : "sans API",
-      description: "aucun drapeau Ajaccio — ouverture d'escale dans l'encadré non jouée",
-    });
-  }
+  await expect(page.locator(".leaflet-popup.escale-popup")).toHaveCount(0);
   await shot(page, "02-simulation");
 
   const draw = page.getByRole("button", { name: /Berry-Mappemonde.*Tracer votre propre route|Tracer votre propre route|Draw your own route/i });

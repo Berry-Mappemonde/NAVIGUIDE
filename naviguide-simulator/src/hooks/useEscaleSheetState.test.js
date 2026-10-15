@@ -46,7 +46,6 @@ describe("useEscaleSheetState — KO #309 Fort-de-France (lot RE2)", () => {
   });
 
   it("la fiche auto ne s'ouvre que pour l'escale à quai la plus proche", () => {
-    assert.equal(pickAutoEscaleStop({ ...alongside, isSuivre: false })?.name, undefined);
     assert.equal(pickAutoEscaleStop({ ...alongside, atQuay: false })?.name, undefined);
     assert.equal(pickAutoEscaleStop({ ...alongside, hold: true })?.name, undefined);
     assert.equal(pickAutoEscaleStop({ ...alongside, filmActive: true })?.name, undefined);
@@ -55,6 +54,25 @@ describe("useEscaleSheetState — KO #309 Fort-de-France (lot RE2)", () => {
       clockSample: { lat: AJACCIO.lat, lon: AJACCIO.lon },
     });
     assert.equal(atAjaccio?.name, AJACCIO.name);
+  });
+
+  it("lot DM7 — en Tracer, l'auto-fiche suit le tracé (Saint-Maur), jamais Papeete", () => {
+    const PAPEETE = { name: "Papeete (Polynésie française)", lat: -17.537, lon: -149.566 };
+    const atStart = pickAutoEscaleStop({
+      isSuivre: false,
+      atQuay: true,
+      clockSample: { lat: SAINT_MAUR.lat, lon: SAINT_MAUR.lon },
+      marks: [...MARKS, PAPEETE],
+    });
+    assert.equal(atStart?.name, SAINT_MAUR.name);
+    assert.notEqual(atStart?.name, PAPEETE.name);
+    const leakedOfficial = pickAutoEscaleStop({
+      isSuivre: false,
+      atQuay: true,
+      clockSample: { lat: PAPEETE.lat, lon: PAPEETE.lon },
+      marks: [...MARKS, PAPEETE],
+    });
+    assert.equal(leakedOfficial?.name, PAPEETE.name, "si on passe encore le sample officiel, Papeete sort — le cloisonnement est dans App (clockSample du tracé)");
   });
 
   it("open() pose userPickedRef ; l'effet passe par pickAutoEscaleStop", () => {

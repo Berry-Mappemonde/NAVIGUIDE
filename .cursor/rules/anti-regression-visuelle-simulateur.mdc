@@ -22,6 +22,16 @@ Avant de modifier le JSX/CSS, comparer :
 - Popup satellite : onglets **Vent / Vagues / Courants** + chiffres
 - Marqueurs (catamaran, avion), fiches couche, dialogue recomput, modal not-for-nav
 
+## Décision porteur (14 oct. 2026) — lot DM9
+
+En **Tracer**, masquer (pas supprimer) les onglets **Maintenant** et **Journal** ;
+garder **Revue du plan** (ouvert par défaut) et **Récit**. En **Suivre**, les
+quatre onglets restent intacts. Panneau droit Tracer : Calques et Exporter
+dépliés ; **Polaires** et **Paramètres avancés** repliés par défaut (un clic
+les ouvre, état mémorisé) — repliées ≠ retirées. Date de départ déjà masquée
+(DM7). Option A + recommandation panneau droit
+(`docs/REVUE_PORTEUR_2026-10-14.md` § 4.1 et § 4.2).
+
 ## Interdit (sauf demande explicite de l’utilisateur)
 
 ```text

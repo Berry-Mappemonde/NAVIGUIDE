@@ -13,6 +13,11 @@ import {
   worldCopyOffsets,
 } from "../utils/geo.js";
 import { followMinZoom, worldViewZoom } from "./zoomFloor.js";
+import {
+  applyFollowCadrage,
+  followCadrageZoom as cadrageZoom,
+  shouldFrameFollowLive,
+} from "./followCadrage.js";
 import { computeMarkerOffsets, offsetToIconAnchor, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
@@ -42,6 +47,7 @@ import {
   WAKE_REST_COLOR,
 } from "../layers/styles.js";
 import { SceneLayerRegistry } from "./SceneLayerRegistry.js";
+import { routeDrawPlan } from "./routeDrawPlan.js";
 import { ScenePlaybackController } from "./ScenePlaybackController.js";
 import {
   filmChapterZoom,
@@ -61,7 +67,7 @@ const EXIT_HOLD_MS = 1500;   // zoom de sortie du film tenu 1,5 s au plus, puis 
 export const MAP_LON_BOUND = 540;
 export const MAP_LAT_BOUND = 85;
 export const MAP_MAX_BOUNDS = [[-MAP_LAT_BOUND, -MAP_LON_BOUND], [MAP_LAT_BOUND, MAP_LON_BOUND]];
-/** Vue monde (accueil RF7, entrée Tracer) : centre historique, zoom 2. */
+/** Vue monde (accueil provisoire sans live, entrée Tracer) : centre historique, zoom 2. */
 export const WORLD_CENTER = [22, 5];
 export const WORLD_ZOOM = 2;
 /**
@@ -122,8 +128,13 @@ function addWorldLine(group, coords, style) {
   });
 }
 
+function isSidePointIndex(episodes, index) {
+  return (episodes || []).some((ep) => index > ep.ja && index < ep.jb);
+}
+
 function staticWakeParts(flat) {
   const points = flat?.points || [];
+  const episodes = flat?.episodes || [];
   const parts = [];
   const partByPoint = new Array(points.length);
   const linePointByIndex = new Array(points.length);
@@ -131,6 +142,10 @@ function staticWakeParts(flat) {
   points.forEach((point, index) => {
     if (!Number.isFinite(point?.lon) || !Number.isFinite(point?.lat)) return;
     if (point.air && !point.jump) {
+      current = null;
+      return;
+    }
+    if (isSidePointIndex(episodes, index)) {
       current = null;
       return;
     }
@@ -259,6 +274,7 @@ export class MapSceneController {
     this.waypointTimer = null;
     this.cameraPlaced = false;
     this.userNavigated = false;
+    this._pendingFollowCadrage = false;
     this.ignoreUserNavigation = false;
     this.ignoreUserNavigationTimer = 0;
     this.camera = {
@@ -381,6 +397,7 @@ export class MapSceneController {
       setView: (center, zoom, options) => this.programmaticMove(() => this.map.setView(center, zoom, options)),
       showWorld: (opts) => this.showWorld(opts),
       beginDrawingWorld: () => this.beginDrawingWorld(),
+      endDrawingWorld: () => this.endDrawingWorld(),
       playback: {
         play: () => this.playback.play(),
         pause: () => this.playback.pause(),
@@ -466,6 +483,13 @@ export class MapSceneController {
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
+    if (
+      this.config.isSuivre
+      && Number.isFinite(Number(previous.cinemaRecapture))
+      && this.config.cinemaRecapture !== previous.cinemaRecapture
+    ) {
+      this._pendingFollowCadrage = true;
+    }
     if (!previous.filmActive && this.config.filmActive) {
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
@@ -632,9 +656,10 @@ export class MapSceneController {
     ) return;
     this.routeInputs = input;
     const group = this.layers.update("route", () => L.layerGroup().addTo(this.map), (layer) => layer.clearLayers());
-    const visible = input.sceneReady || input.drawingMode;
-    if (!visible) return;
-    if (input.drawingMode) {
+    // DM5 — une seule route à la fois : tracé en cours, perso ou Berry.
+    const plan = routeDrawPlan(input);
+    if (!plan.visible) return;
+    if (plan.kind === "drawing") {
       (input.drawnSegments || []).forEach((segment) => {
         addRouteLine(group, segment.coords, {
           color: segment.failed ? "#f97316" : "#22c55e",
@@ -644,7 +669,7 @@ export class MapSceneController {
       });
       return;
     }
-    if (input.customRoute?.features) {
+    if (plan.kind === "custom") {
       input.customRoute.features
         .filter((feature) => feature.geometry?.type === "LineString")
         .forEach((feature) => addRouteLine(group, feature.geometry.coordinates, {
@@ -668,6 +693,20 @@ export class MapSceneController {
         [pts[i + 1].lon, pts[i + 1].lat],
       ];
       airStyles.forEach((style) => addRouteLine(group, coords, style));
+    }
+    const sideStyles = officialAirRouteStyles({ side: true });
+    for (const ep of input.flat?.episodes || []) {
+      const coords = [];
+      const hub = pts[ep.ja];
+      if (hub) coords.push([hub.lon, hub.lat]);
+      for (let i = ep.ja + 1; i < ep.jb; i += 1) {
+        const p = pts[i];
+        if (!p || p.jump) continue;
+        coords.push([p.lon, p.lat]);
+      }
+      if (coords.length >= 2) {
+        sideStyles.forEach((style) => addRouteLine(group, coords, style));
+      }
     }
   }
 
@@ -775,9 +814,9 @@ export class MapSceneController {
       return;
     }
     // Pendant l'animation de zoom, Leaflet transforme les icônes en CSS ; un setLatLng calculé sur
-    // l'ancienne projection les fait glisser horizontalement (27 sept.). On garde l'image, la
-    // prochaine frame après zoomend repositionne.
-    if (this.zoomAnimating && markers.length && !this.config.filmActive) return;
+    // l'ancienne projection les fait glisser (et, en film, sauter de copie monde — RG15).
+    // On garde l'image ; zoomend + la boucle film reposent le bateau.
+    if (this.zoomAnimating && markers.length) return;
     const cam = this.map.getCenter()?.lng;
     const primary = stabilizeWorldLng(lon, cam, this.markerPrimaryLngs.get(role));
     this.markerPrimaryLngs.set(role, primary);
@@ -835,11 +874,17 @@ export class MapSceneController {
       draggable: true,
     });
     const filmFollow = cfg.filmActive ? (this.filmPose || cast?.follow) : null;
+    const episodeParked = cast?.vehicle === "plane" || cast?.vehicle === "side"
+      || cfg.live?.vehicle === "side" || cfg.live?.vehicle === "plane";
+    const parkLat = cast?.main?.lat ?? cfg.live?.parkLat;
+    const parkLon = cast?.main?.lon ?? cfg.live?.parkLon;
     this.syncMarker("live", {
-      visible: ready && liveMode && cast?.vehicle !== "plane",
-      lat: filmFollow?.lat ?? cfg.live?.lat,
-      lon: filmFollow?.lon ?? cfg.live?.lon,
-      bearing: filmFollow?.heading ?? filmFollow?.bearing ?? cfg.live?.bearing ?? 0,
+      visible: ready && liveMode && (episodeParked ? Number.isFinite(parkLat) : cast?.vehicle !== "plane"),
+      lat: episodeParked ? parkLat : (filmFollow?.lat ?? cfg.live?.lat),
+      lon: episodeParked ? parkLon : (filmFollow?.lon ?? cfg.live?.lon),
+      bearing: episodeParked
+        ? (cast?.main?.bearing ?? cfg.live?.bearing ?? 0)
+        : (filmFollow?.heading ?? filmFollow?.bearing ?? cfg.live?.bearing ?? 0),
       className: "catamaran-divicon catamaran-divicon--live",
       html: catamaranSvg(0),
     });
@@ -849,9 +894,13 @@ export class MapSceneController {
       className: "catamaran-divicon catamaran-divicon--ghost",
       html: catamaranSvg(0),
     });
+    const liveIsSide = cfg.live?.vehicle === "side";
     this.syncMarker("side", {
       ...cast?.side,
-      visible: ready && Boolean(cast?.side?.visible),
+      visible: ready && (Boolean(cast?.side?.visible) || (liveMode && liveIsSide && !cfg.filmActive)),
+      lat: cast?.side?.visible ? cast.side.lat : (liveIsSide ? cfg.live?.lat : cast?.side?.lat),
+      lon: cast?.side?.visible ? cast.side.lon : (liveIsSide ? cfg.live?.lon : cast?.side?.lon),
+      bearing: cast?.side?.visible ? cast.side.bearing : (liveIsSide ? cfg.live?.bearing : cast?.side?.bearing),
       className: "catamaran-divicon catamaran-divicon--side",
       html: catamaranSvg(0),
     });
@@ -913,7 +962,11 @@ export class MapSceneController {
       this.waypointsDirty = true;
       return;
     }
-    const source = cfg.drawingMode
+    // DM6 — brouillon vide : drapeaux Berry (Ajaccio, lot R7). Dès le
+    // premier point, seuls les ronds de tracé. Le clic fiche n'est un
+    // clic « dessin » que s'il y a déjà un point.
+    const drawingHasPoints = Boolean(cfg.drawingMode && (cfg.drawnPoints || []).length);
+    const source = drawingHasPoints
       ? (cfg.drawnPoints || []).map((point, index) => ({ ...point, name: point.name || `${index + 1}`, flag: "", flags: [] }))
       : (cfg.customRoute ? [] : (cfg.points || []));
     const inputs = {
@@ -958,7 +1011,7 @@ export class MapSceneController {
     const cameraLng = this.map.getCenter()?.lng;
     source.forEach((point, index) => {
       const srcs = waypointFlagSrcs(point);
-      if (!srcs.length && !cfg.drawingMode) return;
+      if (!srcs.length && !drawingHasPoints) return;
       const offset = offsets[index] || [0, 0];
       const stamp = ` data-testid="waypoint-flag" data-escale="${String(point.name || "").replace(/"/g, "&quot;")}"`;
       const html = srcs.length
@@ -1017,7 +1070,7 @@ export class MapSceneController {
           this.waypointMarkers.set(key, marker);
         }
         marker._naviguideWaypoint = point;
-        marker._naviguideDrawing = cfg.drawingMode;
+        marker._naviguideDrawing = drawingHasPoints;
         marker._naviguideIndex = index;
         marker.setLatLng([point.lat, lng]);
         if (marker._naviguideIconKey !== iconKey) {
@@ -1062,6 +1115,19 @@ export class MapSceneController {
     }, markerOffsetDelay(this.config.cameraFollow, reason));
   }
 
+  /** Lot DM4 : bateau au centre, zoom = plancher de Suivre. */
+  frameFollowLive(live) {
+    const applied = applyFollowCadrage(this.map, live, {
+      followLon: this.camera.followLon,
+      minZoom: MAP_MIN_ZOOM,
+      move: (fn) => this.programmaticMove(fn),
+    });
+    if (!applied) return;
+    this.camera.followLon = applied.followLon;
+    this.initialLive = { lat: live.lat, lon: live.lon };
+    this._pendingFollowCadrage = false;
+  }
+
   syncInitialCamera() {
     const cfg = this.config;
     if (!cfg.routeReady || !cfg.flat?.points?.length) {
@@ -1085,16 +1151,18 @@ export class MapSceneController {
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre && cfg.live && Number.isFinite(cfg.live.lat) && Number.isFinite(cfg.live.lon)) {
-      if (!this.initialLive || shouldResnapCamera(this.initialLive, cfg.live)) {
-        this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
-      }
-    }
-    // RF7 / D1' : le premier calage reste la vue monde du mount. Le recadrage
-    // bateau n'existe que sur le clic Suivre (cinemaRecapture / syncCamera).
-    if (!shouldPlaceInitialCamera({ userNavigated: this.userNavigated })) {
-      this.setCameraPlaced(true);
-      return;
+    const mayPlace = shouldPlaceInitialCamera({ userNavigated: this.userNavigated })
+      || this._pendingFollowCadrage;
+    if (mayPlace && shouldFrameFollowLive({
+      isSuivre: cfg.isSuivre,
+      filmActive: cfg.filmActive,
+      drawingMode: cfg.drawingMode,
+      live: cfg.live,
+      userNavigated: this.userNavigated,
+      initialLive: this.initialLive,
+      pending: this._pendingFollowCadrage,
+    })) {
+      this.frameFollowLive(cfg.live);
     }
     this.setCameraPlaced(true);
   }
@@ -1137,6 +1205,12 @@ export class MapSceneController {
     this.showWorld({ keepBoundsLifted: true });
   }
 
+  /** DM6 — Berry / Annuler : lever le verrou 2 s pour afficher tout de suite la route Berry. */
+  endDrawingWorld() {
+    this._pendingDrawUntil = 0;
+    this._worldLockUntil = 0;
+  }
+
   /** Tracer / accueil : monde entier, même si maxBounds a relevé le plancher. */
   showWorld({ keepBoundsLifted = false } = {}) {
     if (!this.map) return;
@@ -1170,6 +1244,7 @@ export class MapSceneController {
   resetCameraForView() {
     this.initialLive = null;
     this.userNavigated = false;
+    this._pendingFollowCadrage = Boolean(this.config.isSuivre);
     this.cameraPlaced = false;
     this.camera = {
       lastFollow: 0,
@@ -1280,7 +1355,7 @@ export class MapSceneController {
       heading: film?.heading ?? film?.bearing ?? follow?.bearing ?? cfg.live?.bearing,
     };
     if (!subject || !Number.isFinite(subject.lat) || !Number.isFinite(subject.lon)) return;
-    const lonCam = cameraLngForBoat(subject.lon, this.camera.followLon);
+    const lonCam = stabilizeWorldLng(subject.lon, this.map.getCenter()?.lng, this.camera.followLon);
     this.camera.followLon = lonCam;
     const chapterIdx = Number.isFinite(Number(cfg.filmChapterIdx))
       ? Number(cfg.filmChapterIdx)
@@ -1330,7 +1405,11 @@ export class MapSceneController {
     if (!next || next.action === "idle") return;
     const pose = next.pose;
     if (pose) {
-      this.filmPose = { ...pose, lon: cameraLngForBoat(pose.lon, lonCam), heading: pose.heading };
+      this.filmPose = {
+        ...pose,
+        lon: stabilizeWorldLng(pose.lon, lonCam, this.markerPrimaryLngs.get("live") ?? lonCam),
+        heading: pose.heading,
+      };
       this.camera.filmLastBoat = { lat: pose.lat, lon: pose.lon };
     }
     this.camera.filmChapterIdx = next.lastChapterIdx;
@@ -1349,10 +1428,12 @@ export class MapSceneController {
   syncFilmBoat(pose) {
     const cfg = this.config;
     if (!cfg.filmActive || !pose) return;
+    const veh = this.currentCast?.vehicle;
+    if (veh === "plane" || veh === "side") return;
     const ready = Boolean(cfg.sceneReady && !cfg.drawingMode);
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     this.syncMarker("live", {
-      visible: ready && liveMode && this.currentCast?.vehicle !== "plane",
+      visible: ready && liveMode && veh !== "plane",
       lat: pose.lat,
       lon: pose.lon,
       bearing: pose.heading || 0,
@@ -1418,7 +1499,9 @@ export class MapSceneController {
     const previous = this.camera.lastPos;
     const movedNm = previous ? haversineNm(previous.lat, previous.lon, subject.lat, subject.lon) : 0;
     this.camera.lastPos = { lat: subject.lat, lon: subject.lon };
-    const zoom = zoomForRemaining(cfg.remainingNm ?? snapshot.sailTotalNm);
+    const zoom = liveMode
+      ? cadrageZoom(this.map?.getSize(), this.map?.options?.zoomSnap, MAP_MIN_ZOOM)
+      : zoomForRemaining(cfg.remainingNm ?? snapshot.sailTotalNm);
     const tokenJump = !liveMode && snapshot.jumpToken && snapshot.jumpToken !== this.camera.lastJump;
     if (tokenJump) this.camera.lastJump = snapshot.jumpToken;
     const phaseChanged = cast?.phase && cast.phase !== this.camera.lastPhase;
@@ -1447,7 +1530,18 @@ export class MapSceneController {
       return;
     }
     if (recapture || previous == null) {
-      this.programmaticMove(() => this.map.setView([subject.lat, lonCam], zoom, { animate: false }));
+      if (cfg.isSuivre) {
+        this._pendingFollowCadrage = true;
+        if (liveMode) {
+          this.frameFollowLive(subject);
+        } else {
+          const z = cadrageZoom(this.map?.getSize(), this.map?.options?.zoomSnap, MAP_MIN_ZOOM);
+          const here = this.map.getCenter();
+          this.programmaticMove(() => this.map.setView([here.lat, here.lng], z, { animate: false }));
+        }
+      } else {
+        this.programmaticMove(() => this.map.setView([subject.lat, lonCam], zoom, { animate: false }));
+      }
       this.camera.lastFollow = Date.now();
       return;
     }

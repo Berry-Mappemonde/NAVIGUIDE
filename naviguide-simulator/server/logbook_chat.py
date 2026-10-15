@@ -509,6 +509,8 @@ def rules_answer(question: str, ctx: dict | None, lang: str | None) -> str:
 async def answer_question(question: str, lang: str, client_ctx: dict | None, now: datetime,
                           http: httpx.AsyncClient | None = None) -> dict[str, Any]:
     ctx = await build_context(client_ctx, now, http)
+    from toponyms import localize_ctx_places  # noqa: PLC0415
+    localize_ctx_places(ctx, lang)
     try:
         import voyage_journal as journal  # noqa: PLC0415
         wx_all = journal.latest(WX_MEMORY, kinds=("wx",))

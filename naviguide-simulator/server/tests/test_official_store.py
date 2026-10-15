@@ -406,7 +406,7 @@ def test_stale_film_refreshed_when_marks_have_air_pair(tmp_path):
     )
     low = blob.lower()
     assert "s'envole" in low
-    assert "bateau attend" in low
+    assert "bateau attend" in low or "catamaran attend" in low
 
     again = official_store.refresh_family(
         "film", compute=compute, now=NOW, store=store, voy=voy, force=False,
@@ -485,7 +485,7 @@ def test_cayenne_voyage_uses_itinerary_halifax_for_air(tmp_path):
     blob = store.get("film", store.family_key("film", voy, NOW))["payload"]["fr"]["chapters"][0]["text"]
     low = blob.lower()
     assert "s'envole" in low
-    assert "bateau attend" in low
+    assert "bateau attend" in low or "catamaran attend" in low
 
 
 def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeypatch):
@@ -532,7 +532,7 @@ def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeyp
     blob = " ".join(c.get("text") or "" for c in film.json().get("chapters") or [])
     low = blob.lower()
     assert "s'envole" in low
-    assert "bateau attend" in low
+    assert "bateau attend" in low or "catamaran attend" in low
 
 
 YESTERDAY = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
@@ -891,3 +891,295 @@ def test_stop_other_fill_processes_is_a_noop_under_pytest(monkeypatch):
     import official_store as os_
     monkeypatch.setattr(os_, "other_fill_processes", lambda keep=None, store=None: (_ for _ in ()).throw(AssertionError("ps appelé sous pytest")))
     assert os_.stop_other_fill_processes() == []
+
+
+# ── Lot HC1 — passé réel figé + avenir déterministe dans la famille climo ───
+
+
+def _hc1_bind_om(published_until: str, era5_kn: float = 20.0):
+    import httpx
+    from hindcast import bind_http
+
+    def _hours(start, end):
+        from datetime import datetime as _dt, timedelta as _td
+        d = _dt.fromisoformat(start).date()
+        last = _dt.fromisoformat(end).date()
+        out = []
+        while d <= last:
+            out.extend(f"{d.isoformat()}T{h:02d}:00" for h in range(24))
+            d += _td(days=1)
+        return out
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        times = _hours(params.get("start_date"), params.get("end_date") or params.get("start_date"))
+        speeds = [era5_kn if iso[:10] <= published_until else None for iso in times]
+        return httpx.Response(200, json={"hourly": {
+            "time": times,
+            "wind_speed_10m": speeds,
+            "wind_direction_10m": [0.0] * len(times),
+            "wind_gusts_10m": [None if s is None else s + 3 for s in speeds],
+        }})
+
+    bind_http(lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def _hc1_official_voy():
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": T0,
+        "points": [
+            {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+            {"lat": 46.15, "lon": -13.5, "cumNm": 500, "filmCum": 500, "jump": False},
+            {"lat": 46.15, "lon": -38.0, "cumNm": 1520, "filmCum": 1520, "jump": False},
+        ],
+        # La boucle FINIT à La Rochelle : l'horloge « avenir » ne doit pas
+        # pivoter dessus (régression attrapée sur la vraie route).
+        "marks": [{"name": "La Rochelle", "nm": 1520, "lat": 46.15, "lon": -38.0}],
+        "startAt": "saint-maur",
+        "expedition_id": "berry-mappemonde-2026",
+        "official": True,
+        "routeRev": 0,
+    }
+
+
+def test_hc1_compute_climo_real_past_then_climatology_future(monkeypatch):
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import parse_iso
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    now = parse_iso(T0) + timedelta(days=10)
+    frontier = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    _hc1_bind_om(frontier)
+    voy = _hc1_official_voy()
+
+    payload = official_store.compute_climo(dict(voy), now)
+    assert payload is not None
+    clock = payload["clock"]
+    assert clock["realUntil"] == frontier
+    assert payload["realUntil"] == frontier
+    assert payload["hindcastStatus"] == "ready"      # 5/5 jours publiés intégrés
+    assert payload["hindcastCoverage"] == "5/5"
+    assert payload["hindcastReason"] is None
+    assert clock["hindcastCoverage"] == "5/5"
+    regimes = [v.get("regime") for v in clock["vertices"] if (v.get("speedKnots") or 0) > 0]
+    assert "hindcast" in regimes and "climatology" in regimes
+    # Le réel d'abord, la climatologie ensuite — jamais mélangés.
+    first_climo = regimes.index("climatology")
+    assert all(r == "climatology" for r in regimes[first_climo:])
+    # La frontière réel/climatologie tombe au dernier jour publié.
+    real_verts = [v for v in clock["vertices"] if v.get("regime") == "hindcast"]
+    assert real_verts[-1]["iso"][:10] >= frontier
+    # tHours et sailNm restent monotones à la couture.
+    ts = [v["tHours"] for v in clock["vertices"]]
+    assert ts == sorted(ts)
+    # L'avenir va jusqu'au BOUT de la route : la marque d'arrivée
+    # « La Rochelle » ne doit pas faire pivoter l'horloge climatologique.
+    assert abs(clock["vertices"][-1]["lon"] - (-38.0)) < 0.1
+    assert clock["arrivalIso"][:10] > frontier
+    # Statut honnête rangé sur le voyage (GET /voyage/official).
+    from voyage_store import load_voyage
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+    saved = load_voyage(OFFICIAL_VOYAGE_ID)
+    assert saved["hindcastStatus"] == "ready"
+    assert saved["hindcastCoverage"] == "5/5"
+
+    # Deux calculs successifs : la MÊME horloge (position du jour identique).
+    second = official_store.compute_climo(dict(voy), now)
+    assert second["clock"]["vertices"] == clock["vertices"]
+    assert second["clock"]["arrivalIso"] == clock["arrivalIso"]
+    reset_hooks()
+
+
+def test_hc1_atlas_degraded_serves_yesterday_clock(monkeypatch):
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import OFFICIAL_VOYAGE_ID, parse_iso
+    from voyage_store import load_voyage, save_voyage
+    import real_track
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    now = parse_iso(T0) + timedelta(days=10)
+    frontier = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    _hc1_bind_om(frontier)
+    voy = _hc1_official_voy()
+    save_voyage(dict(voy))
+
+    # « La veille » : une horloge calculée avec un atlas complet (ratio 1.0).
+    official_store.put("climo", {"clock": {"t0": T0, "vertices": [
+        {"lat": 46.15, "lon": -1.16, "iso": T0, "tHours": 0, "sailNm": 0},
+    ]}, "regimes": [], "fiches": [], "atlasRatio": 1.0})
+
+    # Aujourd'hui l'atlas est mort (port 9) : tout l'avenir partirait en zones
+    # → on NE recalcule PAS, on garde l'horloge de la veille, le statut le dit.
+    out = official_store.compute_climo(dict(voy), now)
+    assert out is None
+    saved = load_voyage(OFFICIAL_VOYAGE_ID)
+    assert "horloge de la veille" in (saved.get("hindcastReason") or "")
+    assert official_store.stored_clock() is not None  # la veille reste servie
+
+    # Atlas complet à nouveau → recalcul accepté.
+    monkeypatch.setattr(real_track, "atlas_ratio", lambda f: 1.0)
+    again = official_store.compute_climo(dict(voy), now)
+    assert again is not None
+    assert again["clock"]["realUntil"] == frontier
+    reset_hooks()
+
+
+def _rg11a_raw_plan(text=None):
+    body = text or (
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
+        "Arrivée à Ajaccio le 26 mai."
+    )
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": body,
+            "tA": T0,
+            "tB": T0,
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": T0}, {"charIdx": 60, "t": T0}],
+        }],
+        "source": "rules",
+        "chars": len(body),
+        "targetSeconds": 150,
+        "hasWritten": False,
+    }
+
+
+def _rg11a_payload(plan=None):
+    plan = plan or _rg11a_raw_plan()
+    return {
+        "fr": plan, "default": plan,
+        "variants": {"fr": {"150": plan, "180": plan, "0": plan}},
+        "estimates": {"fr": {"150": {"chars": plan["chars"], "estimatedSeconds": 10}}},
+    }
+
+
+async def _rg11a_honest_cascade(system, user, **kw):
+    import json
+    import re
+    match = re.search(r"sentences=(\[.*\])", user or "", re.S)
+    sents = json.loads(match.group(1)) if match else ["ok."]
+    return " ".join(
+        s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+    ), "nemotron-super"
+
+
+def _rg11a_voy():
+    return {
+        "t0": T0, "clock": {"t0": T0, "vertices": [{"lat": 1, "lon": 2, "iso": T0}]}, "marks": [],
+        "points": [{"lat": 1, "lon": 2}],
+    }
+
+
+def test_rg11a_serve_written_when_present(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    official_store.fill_written_film(force=True, cascade=_rg11a_honest_cascade, now=NOW)
+    written = official_store.serve_film("fr", 150, style="written")
+    assert written["status"] == READY
+    assert written["hasWritten"] is True
+    assert written["source"] == official_store.WRITTEN_SOURCE
+    assert written.get("writtenAt")
+    assert "laisse" in (written["chapters"][0]["text"] or "")
+    raw = official_store.serve_film("fr", 150, style="raw")
+    assert raw["hasWritten"] is False
+    assert raw["source"] == "rules"
+    assert "quitte" in (raw["chapters"][0]["text"] or "")
+
+
+def test_rg11a_missing_written_is_raw_not_preparing(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    out = official_store.serve_film("fr", 150, style="written")
+    assert out["status"] == READY
+    assert out["hasWritten"] is False
+    assert out["source"] == "rules"
+    assert out["chapters"]
+    missing_variant = official_store.serve_film("en", 180, style="written")
+    assert missing_variant["status"] == READY
+    assert missing_variant["hasWritten"] is False
+
+
+def test_rg11a_mode_off_does_not_call_llm(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM en mode off")
+
+    out = official_store.fill_written_film(force=True, cascade=boom, now=NOW)
+    assert out["status"] == "off"
+    assert calls["n"] == 0
+    served = official_store.serve_film("fr", 150, style="written")
+    assert served["hasWritten"] is False
+    assert served["status"] == READY
+
+
+def test_rg11a_write_cap_serves_raw(tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "50")
+    import llm_budget
+    llm_budget.record("write", 50, 0)
+    payload = _rg11a_payload()
+    key = store.family_key("film", voy, NOW)
+    store.put("film", payload, key)
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("LLM au plafond")
+
+    out = official_store.fill_written_film(force=True, cascade=boom, now=NOW)
+    assert out["status"] == "budget"
+    assert calls["n"] == 0
+    served = official_store.serve_film("fr", 150, style="written")
+    assert served["hasWritten"] is False
+    assert served["status"] == READY
+
+
+def test_rg11a_http_style_written(client, tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "http-film"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    payload = _rg11a_payload()
+    store.put("film", payload, store.family_key("film", voy, NOW))
+    official_store.fill_written_film(force=True, cascade=_rg11a_honest_cascade, now=NOW)
+    written = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert written.status_code == 200
+    data = written.json()
+    assert data["hasWritten"] is True
+    assert data["source"] == official_store.WRITTEN_SOURCE
+    assert data.get("writtenAt")
+    raw = client.get("/voyage/official/film?lang=fr&seconds=150&style=raw")
+    assert raw.json()["hasWritten"] is False

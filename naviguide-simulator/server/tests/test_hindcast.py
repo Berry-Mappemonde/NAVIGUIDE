@@ -515,6 +515,152 @@ def test_rf10_voyage_dir_hosts_sqlite(tmp_path, monkeypatch):
     pearl_store.reset()
 
 
+# ── Lot HC1 — cache immuable par cellule, fenêtre, migration, trajet réel ────
+
+
+def _bind_om_frontier(published_until: str, *, era5_kn=20.0, calls=None):
+    """Archive ERA5 : vent pour les jours ≤ published_until, null ensuite
+    (comme la vraie API pour les jours pas encore publiés)."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        start = params.get("start_date")
+        end = params.get("end_date") or start
+        if calls is not None:
+            calls.append((start, end))
+        times = _hours(start, end)
+        n = len(times)
+        speeds = [era5_kn if iso[:10] <= published_until else None for iso in times]
+        return httpx.Response(200, json={"hourly": {
+            "time": times,
+            "wind_speed_10m": speeds,
+            "wind_direction_10m": [0.0] * n,
+            "wind_gusts_10m": [None if s is None else s + 3 for s in speeds],
+        }})
+
+    bind_http(lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_hc1_fill_window_one_call_never_refetches_cached_days():
+    from hindcast import fill_era5_window
+    calls: list = []
+    _bind_om_frontier("2026-12-31", calls=calls)
+    assert fill_era5_window(*SAME_CELL_A, DAY1) == 7          # [DAY1−3, DAY1+3]
+    assert om_http_call_count() == 1
+    assert calls[0] == ("2026-05-13", "2026-05-19")
+    # Jour déjà en cache : zéro appel.
+    assert fill_era5_window(*SAME_CELL_A, DAY0) == 0
+    assert om_http_call_count() == 1
+    # Jour au-delà de la fenêtre : l'appel suivant NE redemande pas les jours
+    # cachés — la plage commence après le dernier jour en cache.
+    assert fill_era5_window(*SAME_CELL_A, "2026-05-21") == 5  # 20..24 (pad +3), 19 déjà là
+    assert om_http_call_count() == 2
+    assert calls[1] == ("2026-05-20", "2026-05-24")
+
+
+def test_hc1_unpublished_days_never_cached_then_filled_when_published():
+    from hindcast import fill_era5_window
+    _bind_om_frontier(DAY1)  # publié jusqu'au 16 mai seulement
+    got = fill_era5_window(*SAME_CELL_A, DAY1)
+    assert got == 4  # 13..16 mai ; 17..19 mai répondus null → PAS mis en cache
+    assert kv_get("hindcast", cache_key(*SAME_CELL_A, SRC_OM_ERA5, DAY1)) is not None
+    assert kv_get("hindcast", cache_key(*SAME_CELL_A, SRC_OM_ERA5, DAY2)) is None
+    # Le lendemain, l'archive publie : le jour manquant est rempli, les jours
+    # déjà téléchargés ne sont pas redemandés.
+    reset_hooks()
+    calls: list = []
+    _bind_om_frontier("2026-12-31", era5_kn=30.0, calls=calls)
+    assert fill_era5_window(*SAME_CELL_A, DAY2) >= 1
+    assert calls[0][0] == DAY2  # commence après le 16 mai déjà en cache
+    hit = kv_get("hindcast", cache_key(*SAME_CELL_A, SRC_OM_ERA5, DAY1))
+    hour = next(iter(hit["value"]["hours"].values()))
+    assert hour["speedKnots"] == 20.0  # le jour figé n'a pas bougé
+
+
+def test_hc1_migration_rekeys_raw_coordinates_on_cell():
+    from hindcast import migrate_orphan_cache_keys
+    hours = {f"{DAY0}T{h:02d}:00:00Z": {"speedKnots": 14.0, "dirFromDeg": 0.0, "gustKnots": 17.0}
+             for h in range(24)}
+    raw_key = f"-0.344:-100.566:{SRC_OM_ERA5}:{DAY0}"
+    kv_put("hindcast", raw_key, {"hours": hours, "source": SRC_OM_ERA5})
+    # Une orpheline ambiguë : la clé cellule existe déjà → abandon, sans écraser.
+    _put_era5_hours(10.07, -20.06, DAY0, kn=9.0)
+    kv_put("hindcast", f"10.070:-20.060:{SRC_OM_ERA5}:{DAY0}", {"hours": hours, "source": SRC_OM_ERA5})
+    out = migrate_orphan_cache_keys()
+    assert out["migrated"] == 1
+    assert out["abandoned"] == 1
+    assert kv_get("hindcast", raw_key) is None
+    moved = kv_get("hindcast", cache_key(-0.344, -100.566, SRC_OM_ERA5, DAY0))
+    assert moved and moved["value"]["hours"]
+    kept = kv_get("hindcast", cache_key(10.07, -20.06, SRC_OM_ERA5, DAY0))
+    assert next(iter(kept["value"]["hours"].values()))["speedKnots"] == 9.0
+
+
+HC1_POINTS = [
+    {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+    {"lat": 46.15, "lon": -13.5, "cumNm": 500, "filmCum": 500, "jump": False},
+    {"lat": 46.15, "lon": -38.0, "cumNm": 1520, "filmCum": 1520, "jump": False},
+]
+
+
+def _hc1_voy():
+    return {
+        "voyageId": "hc1-test", "t0": to_iso(T0), "points": [dict(p) for p in HC1_POINTS],
+        "marks": [], "startAt": "saint-maur", "expedition_id": "berry-mappemonde-2026",
+    }
+
+
+def test_hc1_track_era5_keys_do_not_depend_on_climatology(monkeypatch):
+    """Zones ou atlas pour l'avenir : les MÊMES clés ERA5 sont demandées —
+    le besoin vient du trajet réel, pas de l'horloge climatologique."""
+    import real_track
+    from pearl_store import kv_keys
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    now = T0 + timedelta(days=10)
+    _bind_om_frontier((now - timedelta(days=6)).strftime("%Y-%m-%d"))
+    assert real_track.ensure_track(_hc1_voy(), now, None) is not None
+    keys_a = sorted(k for k in kv_keys("hindcast") if f":{SRC_OM_ERA5}:" in k)
+
+    import pearl_store
+    pearl_store.reset()
+    import climatology_zones
+    real_zone = climatology_zones.zone_wind_at
+    monkeypatch.setattr(climatology_zones, "zone_wind_at",
+                        lambda lat, lon, m: {**real_zone(lat, lon, m), "speedKnots": 5.0})
+    assert real_track.ensure_track(_hc1_voy(), now, None) is not None
+    keys_b = sorted(k for k in kv_keys("hindcast") if f":{SRC_OM_ERA5}:" in k)
+    assert keys_a == keys_b
+    pearl_store.reset()
+
+
+def test_hc1_quota_stops_track_cleanly_then_resumes(monkeypatch):
+    import real_track
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    monkeypatch.setenv("NAVIGUIDE_OM_DAILY_BUDGET", "3")
+    monkeypatch.setenv("NAVIGUIDE_OM_ETA_RESERVED", "0")
+    now = T0 + timedelta(days=10)
+    _bind_om_frontier("2026-12-31")
+    track = real_track.ensure_track(_hc1_voy(), now, None)
+    assert track is not None
+    trunc = track["clock"].get("truncated")
+    assert trunc and trunc["reason"] == "quota Open-Meteo"
+    n_before = len(track["clock"]["vertices"])
+    assert om_http_call_count() == 3  # arrêt propre au plafond
+
+    # « Le lendemain » : budget rendu, la reprise AJOUTE des sommets sans
+    # toucher aux anciens ni redemander un jour en cache.
+    monkeypatch.setenv("NAVIGUIDE_OM_DAILY_BUDGET", "3000")
+    import pearl_store
+    from hindcast import OM_BUDGET_NS, _block_key, _budget_key
+    pearl_store.kv_delete(OM_BUDGET_NS, _block_key())
+    pearl_store.kv_delete(OM_BUDGET_NS, _budget_key())
+    again = real_track.ensure_track(_hc1_voy(), now, None)
+    verts = again["clock"]["vertices"]
+    assert verts[:n_before] == track["clock"]["vertices"]
+    assert len(verts) > n_before
+    assert again["appended"] == len(verts) - n_before
+    assert again["recomputed"] is False
+
+
 def test_rg17_hindcast_leaves_reserved_slice_for_eta(monkeypatch):
     import pearl_store
 

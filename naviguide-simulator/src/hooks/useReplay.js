@@ -10,7 +10,7 @@ import {
   formatFilmClockLine,
   rebaseIso,
 } from "../engine/voyageClock.js";
-import { canLeadWithVoice, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
+import { canLeadWithVoice, isSpeaking, stopSpeaking, waitForVoices, voiceEndKind } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -86,14 +86,116 @@ export function isRe7OfficialFilm(data) {
   return filmHasRg6Rg7Fingerprint(blob);
 }
 
-/** pending | ready | stale | empty | absent */
+/** pending | ready | stale | empty | absent | preparing */
 export function officialFilmStatus(data, { fetchFailed = false } = {}) {
   if (fetchFailed) return "absent";
+  if (isPreparingFilm(data)) return "preparing";
   if (isRe7OfficialFilm(data)) return "ready";
   if (data?.chapters?.length) return "stale";
   if (data == null) return "pending";
   return "empty";
 }
+
+/** Officiel : /voyage/official/film. Suivre × ma route : /voyage/{id}/film. */
+export function filmRequestPath(voyageId) {
+  const id = String(voyageId || "").trim();
+  if (id && id !== "official") return `/voyage/${encodeURIComponent(id)}/film`;
+  return "/voyage/official/film";
+}
+
+/** Contrat RG11A : source du rédigé Super servi par le stock. */
+export const WRITTEN_FILM_SOURCE = "nemotron-super-token-factory";
+
+export function filmRequestStyle(filmStyle) {
+  return filmStyle === "written" ? "written" : "raw";
+}
+
+export function isWrittenFilmSource(source) {
+  const s = String(source || "").toLowerCase();
+  if (s === WRITTEN_FILM_SOURCE || s === "nemotron-super" || s === "nemotron") return true;
+  return s.includes("nemotron") && (s.includes("super") || s.includes("token-factory"));
+}
+
+const FILM_SOURCE_I18N = Object.freeze({
+  "nemotron-lightning": "storySourceLightning",
+  "nemotron-super": "storySourceSuper",
+  "nemotron-super-token-factory": "storySourceSuper",
+  "nemotron-ultra": "storySourceUltra",
+  nemotron: "storySourceSuper",
+  openrouter: "storySourceOpenrouter",
+  claude: "storySourceClaude",
+  rules: "storySourceRules",
+  budget: "storySourceBudget",
+  cache: "storySourceCache",
+});
+
+export function filmSourceKey(source) {
+  if (isWrittenFilmSource(source)) return "storySourceSuper";
+  return FILM_SOURCE_I18N[source] || "storySourceRules";
+}
+
+/**
+ * Contrat RG11A : style=written + hasWritten → rédigé (source Super, ancres
+ * du plan servi) ; style=written + !hasWritten → brut, et on le dit ;
+ * style=raw → brut, le hasWritten du payload est ignoré (le brut le pose
+ * toujours à false).
+ */
+export function resolveServedFilm(data, requestedStyle) {
+  const askedWritten = requestedStyle === "written";
+  if (askedWritten) {
+    const hasWritten = Boolean(data?.hasWritten);
+    if (hasWritten) {
+      return {
+        updateHasWritten: true,
+        hasWritten: true,
+        effectiveStyle: "written",
+        source: data?.source || WRITTEN_FILM_SOURCE,
+        applyPlan: true,
+      };
+    }
+    return {
+      updateHasWritten: true,
+      hasWritten: false,
+      effectiveStyle: "raw",
+      source: "rules",
+      applyPlan: true,
+    };
+  }
+  return {
+    updateHasWritten: false,
+    hasWritten: null,
+    effectiveStyle: "raw",
+    source: data?.source || "rules",
+    applyPlan: true,
+  };
+}
+
+export function writtenPillEnabled(hasWritten) {
+  return Boolean(hasWritten);
+}
+
+export function isOfficialFilmVoyage(voyageId) {
+  const id = String(voyageId || "").trim();
+  return !id || id === "official";
+}
+
+export function isPreparingFilm(data) {
+  return String(data?.status || "").toLowerCase() === "preparing";
+}
+
+/**
+ * Film jouable : empreinte RE7 pour Berry ; pour ma route, le status
+ * serveur `ready` + des chapitres (jamais le brut local).
+ */
+export function isReadyRemoteFilm(data, { official = true } = {}) {
+  if (!data || isPreparingFilm(data)) return false;
+  if (official) return isRe7OfficialFilm(data);
+  return String(data.status || "").toLowerCase() === "ready" && Boolean(data.chapters?.length);
+}
+
+/** preparing : relire toutes les 10 s, au plus 2 min, puis arrêt poli. */
+export const FILM_PREPARE_POLL_MS = 10_000;
+export const FILM_PREPARE_MAX_MS = 120_000;
 
 /**
  * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
@@ -162,6 +264,41 @@ export function shouldReturnToLive({ userStopped = false, filmFinished = false, 
 export const FILM_VOICE_STALL_MS = 2000;
 /** Onglet caché → reprise : le bateau rejoint la voix en au plus 2 s, sans saut (RG9 / E3). */
 export const FILM_VISIBILITY_CATCHUP_MS = 2000;
+
+/**
+ * RC30 : la synthèse qui PARLE n'est jamais « absente » — les frontières de
+ * mot peuvent se taire (longue phrase, voix système) sans que la bascule
+ * linéaire ne vienne couper l'énoncé en changeant de chapitre.
+ */
+export function voiceStalled({
+  chapterAgeMs = 0,
+  sinceBoundaryMs = Infinity,
+  speaking = false,
+  hold = false,
+  stallMs = FILM_VOICE_STALL_MS,
+} = {}) {
+  if (hold || speaking) return false;
+  return chapterAgeMs >= stallMs && sinceBoundaryMs > stallMs;
+}
+
+/**
+ * RC30 : fin du film — quand la voix mène (ou parle encore), seul
+ * voiceSpokenAll termine ; le budget n'arrête jamais la clôture au milieu
+ * (« Aujourd'hui, le » coupé, transcription du 14 oct.).
+ */
+export function filmShouldFinish({
+  voiceClock = false,
+  speaking = false,
+  voiceAllDone = false,
+  linearFinish = false,
+  lastReached = false,
+  stopping = false,
+} = {}) {
+  if (stopping) return false;
+  if (voiceAllDone) return true;
+  if (voiceClock || speaking) return false;
+  return Boolean(linearFinish && lastReached);
+}
 
 /** Part du récit déjà dite (0..1) : caractères prononcés / caractères du film. */
 export function spokenProgress(plan, chapterIdx, charIdx) {
@@ -277,21 +414,12 @@ export function pickFilmEstimateSeconds(targetSeconds, estimates, fallbackSecond
   return Number.isFinite(fb) && fb > 0 ? fb : 0;
 }
 
-/** Même langue / t0 : bascule 2:30↔3:00 seulement (pas 0↔150, qui change le script servi). */
+/** Même langue / t0 / style : garder le plan ready si seule la durée change. */
 export function filmQueryKeepsReady(prev, next) {
   if (!prev || !next) return false;
   if (prev === next) return true;
-  const sec = (q) => {
-    const m = String(q).match(/seconds=([^&]*)/);
-    return m ? Number(m[1]) : 0;
-  };
-  const sp = sec(prev);
-  const sn = sec(next);
-  if (sp > 0 && sn > 0) {
-    const strip = (q) => String(q).replace(/seconds=[^&]*/, "seconds=");
-    return strip(prev) === strip(next);
-  }
-  return false;
+  const strip = (q) => String(q).replace(/seconds=[^&]*/, "seconds=");
+  return strip(prev) === strip(next);
 }
 
 /** Durée cochée → budget ; aucune → le temps que prend le journal. */
@@ -333,7 +461,7 @@ export function closingSubtitle(text) {
 
 /** Phrases avion RF5 déjà présentes dans le chapitre — on ne les invente pas. */
 export const FILM_AIR_PHRASE_RE =
-  /prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to/i;
+  /prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
 
 /**
  * Ligne visible du sous-titre (lot RC16) : si le chapitre contient les
@@ -343,7 +471,7 @@ export function visibleFilmSubtitle(text) {
   const raw = String(text || "").trim();
   if (!raw) return "";
   if (!FILM_AIR_PHRASE_RE.test(raw)) return raw;
-  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|the crew flies to|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
   const found = raw.match(airSentence) || [];
   const parts = [];
   const seen = new Set();
@@ -577,6 +705,7 @@ export function useReplay({
   marks = [],
   destination = null,
   t0 = DEFAULT_T0_ISO,
+  voyageId = "official",
 } = {}) {
   const [active, setActive] = useState(false);
   const [tMs, setTMs] = useState(null);
@@ -596,6 +725,7 @@ export function useReplay({
   const [hasWritten, setHasWritten] = useState(false);
   const [estimatedSeconds, setEstimatedSeconds] = useState(0);
   const [variantEstimates, setVariantEstimates] = useState(null);
+  const [filmParagraphs, setFilmParagraphs] = useState([]);
   const remotePlanRef = useRef(null);
   // Langue et budget du plan chargé : on ne garde le plan « prêt » pendant un rechargement que s'il
   // répond à la MÊME demande — sinon un clic Revoir juste après le passage en anglais jouait le film
@@ -759,12 +889,17 @@ export function useReplay({
       remotePlanRef.current = null;
       setEstimatedSeconds(0);
       setVariantEstimates(null);
+      setFilmParagraphs([]);
       return undefined;
     }
     let cancelled = false;
     let retryTimer = 0;
     const ac = new AbortController();
-    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    const official = isOfficialFilmVoyage(voyageId);
+    const path = filmRequestPath(voyageId);
+    const style = filmRequestStyle(filmStyle);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
+    let prepareStarted = 0;
 
     const applyEstimates = (data) => {
       const chapters = data?.chapters || [];
@@ -776,28 +911,50 @@ export function useReplay({
       setVariantEstimates(data?.estimates && typeof data.estimates === "object" ? data.estimates : null);
     };
 
-    const applyData = (data) => {
-      if (cancelled) return true;
-      if (data?.status === "preparing") {
-        setFilmStatus("pending");
-        remotePlanRef.current = null;
-        return false;
+    const applyStory = (data) => {
+      const texts = (data?.chapters || []).map((c) => String(c?.text || "").trim()).filter(Boolean);
+      setFilmParagraphs(texts);
+    };
+
+    const applyResolvedMeta = (data, requestedStyle) => {
+      const resolved = resolveServedFilm(data, requestedStyle);
+      if (resolved.updateHasWritten) setHasWritten(resolved.hasWritten);
+      if (requestedStyle === "written" && filmStyle === "written" && !resolved.hasWritten) {
+        setFilmStyle("raw");
       }
-      if (isRe7OfficialFilm(data)) {
-        remotePlanRef.current = data;
-        remotePlanKeyRef.current = q;
-        setHasWritten(Boolean(data.hasWritten));
-        setFilmSource(data.source || "rules");
-        applyEstimates(data);
-        setFilmStatus("ready");
-        return true;
+      return resolved;
+    };
+
+    const applyPlan = (data, resolved) => {
+      // Texte + anchors du stock (RG11A) : pas de réécriture navigateur.
+      remotePlanRef.current = data;
+      remotePlanKeyRef.current = q;
+      setFilmSource(resolved.source);
+      applyEstimates(data);
+      applyStory(data);
+    };
+
+    const applyData = (data, requestedStyle = style) => {
+      if (cancelled) return true;
+      if (isPreparingFilm(data)) {
+        remotePlanRef.current = null;
+        setFilmParagraphs([]);
+        setFilmStatus("preparing");
+        return "preparing";
+      }
+      const resolved = applyResolvedMeta(data, requestedStyle);
+      const isProbe = requestedStyle === "written" && filmStyle !== "written";
+      if (isReadyRemoteFilm(data, { official })) {
+        if (!isProbe) applyPlan(data, resolved);
+        if (!isProbe) setFilmStatus("ready");
+        return isProbe ? "probed" : true;
       }
       if (data?.chapters?.length) {
-        remotePlanRef.current = data;
-        remotePlanKeyRef.current = q;
-        applyEstimates(data);
-        setFilmStatus("stale");
-        return true;
+        if (!isProbe) {
+          applyPlan(data, resolved);
+          setFilmStatus("stale");
+        }
+        return isProbe ? "probed" : true;
       }
       return false;
     };
@@ -808,7 +965,22 @@ export function useReplay({
       setFilmSource("rules");
       setEstimatedSeconds(0);
       setVariantEstimates(null);
+      setFilmParagraphs([]);
       setFilmStatus("absent");
+    };
+
+    const probeWritten = () => {
+      if (style !== "raw") return;
+      const pq = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=written&t0=${encodeURIComponent(t0)}`;
+      fetch(`${API}${path}?${pq}`, { signal: ac.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (cancelled || ac.signal.aborted || !data) return;
+          applyResolvedMeta(data, "written");
+        })
+        .catch((err) => {
+          if (err?.name === "AbortError" || cancelled || ac.signal.aborted) return;
+        });
     };
 
     const load = () => {
@@ -819,7 +991,7 @@ export function useReplay({
         setFilmStatus("pending");
         remotePlanRef.current = null;
       }
-      fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
+      fetch(`${API}${path}?${q}`, { signal: ac.signal })
         .then((r) => {
           if (!r.ok) return { fail: true };
           return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
@@ -830,13 +1002,19 @@ export function useReplay({
             markAbsent();
             return;
           }
-          if (pack.data?.status === "preparing") {
-            setFilmStatus("pending");
-            remotePlanRef.current = null;
-            retryTimer = setTimeout(load, 2000);
+          const applied = applyData(pack.data);
+          if (applied === "preparing") {
+            const now = Date.now();
+            if (!prepareStarted) prepareStarted = now;
+            if (now - prepareStarted < FILM_PREPARE_MAX_MS) {
+              retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
+            }
             return;
           }
-          if (applyData(pack.data)) return;
+          if (applied) {
+            probeWritten();
+            return;
+          }
           setFilmStatus("empty");
           retryTimer = setTimeout(load, 2000);
         })
@@ -852,7 +1030,7 @@ export function useReplay({
       ac.abort();
       clearTimeout(retryTimer);
     };
-  }, [enabled, lang, targetSeconds, t0, setFilmStatus]);
+  }, [enabled, lang, targetSeconds, filmStyle, t0, voyageId, setFilmStatus]);
 
   const canStart = canStartOfficialReplay({
     requireOfficialFilm,
@@ -893,10 +1071,11 @@ export function useReplay({
   const start = useCallback(() => {
     const status = remoteStatusRef.current;
     const remote = remotePlanRef.current;
+    const official = isOfficialFilmVoyage(voyageId);
     let clockToUse = clock;
     let remoteToUse = remote;
     if (requireOfficialFilm) {
-      if (status === "ready" && isRe7OfficialFilm(remote) && clock) {
+      if (status === "ready" && isReadyRemoteFilm(remote, { official }) && clock) {
         clockToUse = clock;
         remoteToUse = remote;
       } else {
@@ -905,7 +1084,8 @@ export function useReplay({
     }
     const w = replayWindow(clockToUse, Date.now());
     if (!w) return false;
-    const local = buildFilmScript({
+    // Suivre : jamais le brut local (expeditionStory) servi comme film serveur.
+    const local = requireOfficialFilm ? { chapters: [], source: "rules" } : buildFilmScript({
       clock: clockToUse,
       marks,
       live: destination,
@@ -915,7 +1095,7 @@ export function useReplay({
       seconds: targetSeconds,
       t0,
     });
-    const fallback = filmChaptersFromStory({
+    const fallback = requireOfficialFilm ? [] : filmChaptersFromStory({
       clock: clockToUse,
       marks,
       live: destination,
@@ -926,9 +1106,17 @@ export function useReplay({
     });
     const remoteOk = Boolean(
       remoteToUse?.chapters?.length
-      && (isRe7OfficialFilm(remoteToUse) || filmTextHasT0Year(remoteToUse.chapters, t0)),
+      && (
+        isReadyRemoteFilm(remoteToUse, { official })
+        || isRe7OfficialFilm(remoteToUse)
+        || filmTextHasT0Year(remoteToUse.chapters, t0)
+      ),
     );
-    const picked = pickFilmChapters(remoteOk ? remoteToUse : null, local, fallback);
+    const picked = pickFilmChapters(
+      remoteOk ? remoteToUse : null,
+      requireOfficialFilm ? null : local,
+      requireOfficialFilm ? [] : fallback,
+    );
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
@@ -995,11 +1183,17 @@ export function useReplay({
       };
     }
     return true;
-  }, [clock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
+  }, [clock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0, voyageId]);
 
   useEffect(() => {
     if (!enabled && active) stop();
   }, [enabled, active, stop]);
+
+  useEffect(() => {
+    if (active) stop();
+    // Berry ↔ ma route : on ne continue pas le film de l'autre source.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voyageId]);
 
   const onVoiceBoundary = useCallback((charIdx) => {
     const plan = planRef.current;
@@ -1124,14 +1318,17 @@ export function useReplay({
         voiceFailedRef.current = true;
       }
       const chapterAge = chapterStartedAtRef.current ? now - chapterStartedAtRef.current : 0;
+      const speaking = Boolean(voiceRef.current) && isSpeaking();
       if (
         voiceRef.current && !voiceFailedRef.current && !voiceSpokenAllRef.current
-        && !voiceHoldRef.current
-        && chapterAge >= FILM_VOICE_STALL_MS
-        && (
-          voiceBoundaryAtRef.current === 0
-          || now - voiceBoundaryAtRef.current > FILM_VOICE_STALL_MS
-        )
+        && voiceStalled({
+          chapterAgeMs: chapterAge,
+          sinceBoundaryMs: voiceBoundaryAtRef.current === 0
+            ? Infinity
+            : now - voiceBoundaryAtRef.current,
+          speaking,
+          hold: voiceHoldRef.current,
+        })
       ) {
         voiceFailedRef.current = true;
       }
@@ -1165,10 +1362,15 @@ export function useReplay({
       const voiceAllDone = Boolean(voiceSpokenAllRef.current) && (
         budgetRef.current <= 0 || wallElapsed >= plan.targetSeconds
       );
-      const done = !stoppingRef.current && (
-        voiceAllDone
-        || (!voiceClock && linear.finish && linear.lastReached)
-      );
+      // RC30 : la clôture se finit — tant que la voix parle, pas de finish().
+      const done = filmShouldFinish({
+        voiceClock,
+        speaking,
+        voiceAllDone,
+        linearFinish: linear.finish,
+        lastReached: linear.lastReached,
+        stopping: stoppingRef.current,
+      });
       if (done) {
         const last = plan.chapters[plan.chapters.length - 1];
         ingest(last?.tB ?? w.endMs);
@@ -1189,7 +1391,9 @@ export function useReplay({
           const ch = pinnedIdxRef.current != null
             ? plan.chapters[pinnedIdxRef.current]
             : plan.chapters[linear.chapterIdx];
-          if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
+          // RC30 : changer de chapitre couperait la voix (stopSpeaking) — on
+          // attend la fin de l'énoncé.
+          if (ch && ch.idx !== chapterIdxRef.current && !speaking) applyChapter(ch);
           charIdx = pinnedIdxRef.current != null ? (ch?.chars || 1) : linear.charIdx;
         }
         if (stepped.done) {
@@ -1199,7 +1403,8 @@ export function useReplay({
       } else if (!voiceClock) {
         const pinned = pinnedIdxRef.current;
         const ch = pinned != null ? plan.chapters[pinned] : plan.chapters[linear.chapterIdx];
-        if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
+        // RC30 : la voix finit sa phrase avant tout changement de chapitre.
+        if (ch && ch.idx !== chapterIdxRef.current && !speaking) applyChapter(ch);
         if (pinned != null && ch) {
           charIdx = ch.chars || 1;
           ingest(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));
@@ -1403,6 +1608,11 @@ export function useReplay({
     cardSinceRef.current = 0;
   }, []);
 
+  const chooseFilmStyle = useCallback((next) => {
+    if (next === "written" && !hasWritten) return;
+    setFilmStyle(next === "written" ? "written" : "raw");
+  }, [hasWritten]);
+
   return {
     active,
     tMs,
@@ -1431,12 +1641,14 @@ export function useReplay({
     isVoiceHeld,
     filmSource,
     filmStyle,
-    setFilmStyle,
+    setFilmStyle: chooseFilmStyle,
     hasWritten,
     canStart,
     seekChapter,
     remoteStatus,
     estimatedSeconds,
     variantEstimates,
+    filmParagraphs,
+    voyageId,
   };
 }
