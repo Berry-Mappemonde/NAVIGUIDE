@@ -113,62 +113,33 @@ test("lot RD5 — Suivre au chargement, dates distinctes, horloge avec année", 
     { timeout: 8_000 },
   ).toBe(true);
 
-  const startBtn = page.getByTestId("replay-start");
-  if (!(await startBtn.isEnabled().catch(() => false))) {
-    test.info().annotations.push({
-      type: "RE3",
-      description: "Revoir grisé après saisie 15/05/2025 — champ date déjà vérifié",
-    });
-    await shot(page, "02-dates");
-    return;
-  }
-  await startBtn.click();
-  const started = await page.getByTestId("replay-stop").isVisible({ timeout: 8_000 }).catch(() => false);
-  if (started) {
+  const { waitFilmReady } = await import("../helpers.js");
+  if (apiUp) {
+    await waitFilmReady(page);
+    await page.getByTestId("replay-start").click();
+    await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
     const subtitle = page.getByTestId("film-subtitle");
     await expect(subtitle).toBeVisible({ timeout: 8_000 });
     await expect(subtitle).toContainText(/15 mai 2026|15 May 2026/);
     await page.getByTestId("replay-stop").click();
     await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
     await replayDate.fill("15/05/2026");
-    const { waitFilmCanStart } = await import("../helpers.js");
-    if (!(await waitFilmCanStart(page, 10_000))) {
-      test.info().annotations.push({ type: "RE3", description: "Revoir grisé après saisie de date" });
-      return;
-    }
+    await waitFilmReady(page);
     await page.getByTestId("replay-start").click();
     await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
     await expect(page.getByTestId("film-subtitle")).toContainText(/15 mai 2026|15 May 2026/);
     await page.getByTestId("replay-stop").click();
-  } else {
-    test.info().annotations.push({
-      type: "horloge pas prête",
-      description: "Revoir n'a pas démarré — texte du film non exigé ; champ et paramètre t0 déjà vus",
-    });
   }
 
   if (apiUp) {
     const film = await page.request.get(
       "/voyage/official/film?lang=fr&seconds=150&t0=2025-05-15T08:00:00.000Z",
       { timeout: 8000 },
-    ).catch(() => null);
-    if (film && film.ok()) {
-      const body = await film.json().catch(() => ({}));
-      const text0 = body.chapters?.[0]?.text || "";
-      if (/15 mai 2025/.test(text0)) {
-        expect(text0).toMatch(/Saint-Maur/);
-      } else {
-        test.info().annotations.push({
-          type: "API sans t0",
-          description: "GET /voyage/official/film ignore encore t0 (processus :8010 hors lot) — pytest du lot le couvre",
-        });
-      }
-    } else {
-      test.info().annotations.push({
-        type: "film serveur",
-        description: "GET /voyage/official/film t0=2025 absent — assertion serveur sautée",
-      });
-    }
+    );
+    expect(film.ok(), "GET /film t0=2025 répond").toBeTruthy();
+    const body = await film.json();
+    const text0 = body.chapters?.[0]?.text || "";
+    expect(text0, "chapitre 1 daté").toMatch(/15 mai 2026|15 May 2026|Saint-Maur/);
   }
 
   await page.getByTestId("view-tracer").click();

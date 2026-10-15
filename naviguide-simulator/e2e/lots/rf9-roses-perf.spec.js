@@ -199,8 +199,8 @@ test("lot RF9 — Vent allumé : zoom borné, roses réutilisées", async ({ pag
   });
   console.log(`[rf9] proxy avant 5043 SVG : ${Math.round(beforeProxyMs)} ms`);
   test.info().annotations.push({
-    type: "zoom-ms-avant",
-    description: `proxy avant (5043 SVG créés+détruits, ancien ×3) : ${Math.round(beforeProxyMs)} ms`,
+    type: "mesure",
+    description: `zoom-ms-avant — proxy avant (5043 SVG créés+détruits, ancien ×3) : ${Math.round(beforeProxyMs)} ms`,
   });
 
   const roses0 = await page.locator(".bi-climo-rose").count();
@@ -255,8 +255,8 @@ test("lot RF9 — Vent allumé : zoom borné, roses réutilisées", async ({ pag
   }
   console.log(`[rf9] cran de zoom après : ${Math.round(zoomMs)} ms (plafond ${ZOOM_MS_MAX})`);
   test.info().annotations.push({
-    type: "zoom-ms",
-    description: `après : ${Math.round(zoomMs)} ms (plafond ${ZOOM_MS_MAX})`,
+    type: "mesure",
+    description: `zoom-ms — après : ${Math.round(zoomMs)} ms (plafond ${ZOOM_MS_MAX})`,
   });
 
   await expect.poll(async () => page.locator(".bi-climo-rose").count(), { timeout: 10_000 }).toBeGreaterThan(0);

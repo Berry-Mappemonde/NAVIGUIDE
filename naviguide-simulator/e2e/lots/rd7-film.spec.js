@@ -61,11 +61,12 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
-  if (apiUp) {
-    await expect(page.getByTestId("film-duration")).toBeVisible({ timeout: 25_000 });
-  } else {
+  if (!apiUp) {
     test.info().annotations.push({ type: "sans API", description: "pilules 2:30 / 3:00 seulement si Revoir peut partir" });
+    await shot(page, "01-durees");
+    return;
   }
+  await expect(page.getByTestId("film-duration")).toBeVisible({ timeout: 25_000 });
 
   const btn150 = durationBtn(page, 150);
   const btn180 = durationBtn(page, 180);
@@ -75,11 +76,16 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
   await expect(btn180).toHaveAttribute("aria-pressed", "false");
 
   // D'abord Revoir sans pilule (RD7) : budget 0. Les bascules 2:30 / 3:00 ensuite.
-  const { waitFilmCanStart } = await import("../helpers.js");
-  if (!(await waitFilmCanStart(page, 15_000))) {
-    test.info().annotations.push({ type: "RE3", description: "Revoir encore grisé — film non parti" });
-    await shot(page, "01-durees");
-    return;
+  const { waitFilmReady } = await import("../helpers.js");
+  if (apiUp) {
+    await waitFilmReady(page);
+  } else {
+    const { waitFilmCanStart } = await import("../helpers.js");
+    if (!(await waitFilmCanStart(page, 15_000))) {
+      test.info().annotations.push({ type: "sans API", description: "Revoir encore grisé — film non parti" });
+      await shot(page, "01-durees");
+      return;
+    }
   }
   await muteVoice(page);
   await page.getByTestId("replay-start").click();
@@ -97,18 +103,12 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
     const free = await page.request.get("/voyage/official/film?lang=fr&seconds=0", { timeout: 8000 })
       .then((r) => (r.ok() ? r.json() : null))
       .catch(() => null);
-    if (!free?.chapters?.length) {
-      test.info().annotations.push({
-        type: "film vide",
-        description: "GET /voyage/official/film?seconds=0 sans chapitres",
-      });
-    } else {
-      const blob = free.chapters.map((c) => c.text || "").join(" ");
-      expect(free.targetSeconds, "sans case : pas de budget serveur").toBe(0);
-      expect(blob, "pas de phrase ATMOS côté serveur").not.toMatch(FILLER);
-      expect(blob, "pas de nm nu").not.toMatch(/\bnm\b/);
-      expect(blob, "pas de décimale déclamée").not.toMatch(/\d+[.,]\d{1,2}(?!\d)/);
-    }
+    expect(free?.chapters?.length, "GET /voyage/official/film?seconds=0 a des chapitres").toBeGreaterThan(0);
+    const blob = free.chapters.map((c) => c.text || "").join(" ");
+    expect(free.targetSeconds, "sans case : pas de budget serveur").toBe(0);
+    expect(blob, "pas de phrase ATMOS côté serveur").not.toMatch(FILLER);
+    expect(blob, "pas de nm nu").not.toMatch(/\bnm\b/);
+    expect(blob, "pas de décimale déclamée").not.toMatch(/\d+[.,]\d{1,2}(?!\d)/);
   }
 
   const stopBtn = page.getByTestId("replay-stop");
@@ -120,9 +120,14 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
   await expect(btn150).toBeVisible({ timeout: 20_000 });
   await expect(btn150).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   await muteVoice(page);
-  if (!(await waitFilmCanStart(page, 10_000))) {
-    test.info().annotations.push({ type: "RE3", description: "Revoir grisé après 2:30 — budget client déjà vu" });
-    return;
+  if (apiUp) {
+    await waitFilmReady(page);
+  } else {
+    const { waitFilmCanStart } = await import("../helpers.js");
+    if (!(await waitFilmCanStart(page, 10_000))) {
+      test.info().annotations.push({ type: "sans API", description: "Revoir grisé après 2:30 — budget client déjà vu" });
+      return;
+    }
   }
   await page.getByTestId("replay-start").click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
@@ -139,17 +144,10 @@ test("lot RD7 — durées décochées, récit du journal, budget tenu", async ({
     const timed = await page.request.get("/voyage/official/film?lang=fr&seconds=150", { timeout: 8000 })
       .then((r) => (r.ok() ? r.json() : null))
       .catch(() => null);
-    if (timed?.chapters?.length) {
-      if (timed.targetSeconds === 150) {
-        expect(timed.targetSeconds, "budget 150 s").toBe(150);
-      } else {
-        test.info().annotations.push({
-          type: "RF8",
-          description: "stock figé : /film?seconds=150 sert le script libre (targetSeconds=0) — budget 150 tenu côté client",
-        });
-      }
-      const blob = timed.chapters.map((c) => c.text || "").join(" ");
-      expect(blob).not.toMatch(FILLER);
-    }
+    expect(timed?.chapters?.length, "GET /film?seconds=150 a des chapitres").toBeGreaterThan(0);
+    expect([0, 150], "stock : 150 demandé, 0 ou 150 servi").toContain(Number(timed.targetSeconds));
+    expect(await page.evaluate(() => window.__naviguideFilm?.budgetSeconds), "budget 150 tenu côté client").toBe(150);
+    const blob = timed.chapters.map((c) => c.text || "").join(" ");
+    expect(blob).not.toMatch(FILLER);
   }
 });

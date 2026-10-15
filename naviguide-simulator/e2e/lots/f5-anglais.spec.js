@@ -26,6 +26,7 @@ async function switchToEnglish(page) {
 }
 
 test("lot F5 — sous-titre anglais, plein écran film, Échap rend les sidebars", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -51,16 +52,18 @@ test("lot F5 — sous-titre anglais, plein écran film, Échap rend les sidebars
   await expect(panels.nth(0)).toBeInViewport();
   await expect(panels.nth(1)).toBeInViewport();
 
-  const { waitFilmCanStart } = await import("../helpers.js");
-  const canStart = await waitFilmCanStart(page, 12_000);
-  if (!canStart) {
+  const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  const apiUp = Boolean(official && official.ok());
+  if (!apiUp) {
     test.info().annotations.push({
-      type: "Revoir grisé",
-      description: "RC11 : Replay still disabled — sous-titre / plein écran non joués",
+      type: "sans API",
+      description: "GET /voyage/official absent — sous-titre / plein écran film sautés",
     });
     await shot(page, "01-plein-ecran");
     return;
   }
+  const { waitFilmReady } = await import("../helpers.js");
+  await waitFilmReady(page);
   await page.getByTestId("replay-start").click();
   const subtitle = page.getByTestId("film-subtitle");
   await expect(subtitle).toBeVisible({ timeout: 8_000 });

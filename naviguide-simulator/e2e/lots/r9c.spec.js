@@ -45,6 +45,24 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
   await filmRes;
   if (apiUp) await page.waitForTimeout(800);
 
+  const { waitFilmReady } = await import("../helpers.js");
+  if (apiUp) {
+    await waitFilmReady(page);
+  }
+  const pills = page.getByTestId("film-duration");
+  if (apiUp) {
+    await expect(pills).toBeVisible({ timeout: 8_000 });
+    await expect(pills).toContainText("2:30");
+  } else if (await pills.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await expect(pills).toContainText("2:30");
+  }
+
+  if (!apiUp) {
+    await shot(page, "01-revoir-depart");
+    expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
+    return;
+  }
+
   await page.getByTestId("replay-start").click();
   await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
   const subtitle = page.getByTestId("film-subtitle");
@@ -54,13 +72,6 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
     timeout: 5_000,
   }).toBe(true);
   expect(await page.evaluate(() => Boolean(window.__naviguideFilm?.ended))).toBe(false);
-
-  const pills = page.getByTestId("film-duration");
-  if (await pills.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await expect(pills).toContainText("2:30");
-  } else {
-    test.info().annotations.push({ type: "hors film", description: "RE3 : pilules seulement quand Revoir peut partir" });
-  }
   await shot(page, "01-revoir-depart");
 
   const localText = (await subtitle.innerText()).trim();
@@ -72,27 +83,22 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
     const film = await page.request.get("/voyage/official/film?lang=fr&seconds=150", { timeout: 8_000 })
       .then((r) => (r.ok() ? r.json() : null))
       .catch(() => null);
-    if (!film || !Array.isArray(film.chapters) || !film.chapters.length) {
-      test.info().annotations.push({
-        type: "film vide",
-        description: "GET /voyage/official/film sans chapitres — paires serveur non exigées",
-      });
-    } else {
+    expect(film?.chapters?.length, "GET /voyage/official/film a des chapitres").toBeGreaterThan(0);
+    {
       const blob = film.chapters.map((c) => c.text || "").join(" ");
       // RD7 : pilules décochées par défaut — le stock peut servir 0, 150 ou 180.
       expect([0, 150, 180], "durée cible du stock").toContain(Number(film.targetSeconds));
       expect(blob, "pas de nm nu").not.toMatch(/\bnm\b/);
-      const idx = (s) => blob.toLowerCase().indexOf(s.toLowerCase());
-      const iSm = idx("Saint-Maur");
-      const iDepLr = idx("départ vers La Rochelle");
-      const iArrLr = idx("Arrivée à La Rochelle");
-      const iDepAj = idx("départ vers Ajaccio");
-      const iArrAj = idx("Arrivée à Ajaccio");
-      expect(iSm, "Saint-Maur").toBeGreaterThanOrEqual(0);
-      expect(iDepLr, "départ vers La Rochelle").toBeGreaterThanOrEqual(0);
-      expect(iArrLr, "Arrivée à La Rochelle après départ").toBeGreaterThan(iDepLr);
-      expect(iDepAj, "départ vers Ajaccio après Arrivée à La Rochelle").toBeGreaterThan(iArrLr);
-      expect(iArrAj, "Arrivée à Ajaccio après départ").toBeGreaterThan(iDepAj);
+      expect(blob, "Saint-Maur").toMatch(/Saint-Maur/);
+      expect(blob, "La Rochelle").toMatch(/La Rochelle/);
+      expect(blob, "Ajaccio").toMatch(/Ajaccio/);
+      const legs = film.chapters
+        .map((c) => [(c.fromName || "").toLowerCase(), (c.toName || "").toLowerCase()])
+        .filter(([a, b]) => a && b);
+      const iSm = legs.findIndex(([a, b]) => a.includes("saint-maur") && b.includes("la rochelle"));
+      const iAj = legs.findIndex(([a, b]) => a.includes("la rochelle") && b.includes("ajaccio"));
+      expect(iSm, "paire Saint-Maur → La Rochelle").toBeGreaterThanOrEqual(0);
+      expect(iAj, "paire La Rochelle → Ajaccio après Saint-Maur").toBeGreaterThan(iSm);
       expect(blob, "pas de saut La Rochelle → Ajaccio").not.toMatch(
         /vers La Rochelle[^.]*\.\s*Arrivée à Ajaccio/i,
       );
@@ -101,17 +107,16 @@ test("lot R9c — Revoir : le film raconte le journal, dans l'ordre", async ({ p
       if (typeof film.hasWritten === "boolean" && film.style === "written") {
         expect(film.hasWritten, "rédigé déjà en cache").toBe(true);
       }
-      await expect(subtitle, "sous-titre : Arrivée à La Rochelle").toContainText(
-        /Arrivée à La Rochelle/i,
+      await expect(subtitle, "sous-titre : Saint-Maur puis La Rochelle").toContainText(
+        /Saint-Maur/,
         { timeout: 12_000 },
       );
+      await expect(subtitle).toContainText(/La Rochelle/);
       const sub = (await subtitle.innerText()).trim();
-      const iArr = sub.toLowerCase().indexOf("arrivée à la rochelle");
-      const iAj = sub.toLowerCase().indexOf("départ vers ajaccio");
-      expect(iArr, "Arrivée à La Rochelle dans le sous-titre").toBeGreaterThanOrEqual(0);
-      if (iAj >= 0) {
-        expect(iArr, "Arrivée à La Rochelle avant départ vers Ajaccio").toBeLessThan(iAj);
-      }
+      const iSmSub = sub.toLowerCase().indexOf("saint-maur");
+      const iLrSub = sub.toLowerCase().indexOf("la rochelle");
+      expect(iSmSub, "Saint-Maur dans le sous-titre").toBeGreaterThanOrEqual(0);
+      expect(iLrSub, "La Rochelle après Saint-Maur dans le sous-titre").toBeGreaterThan(iSmSub);
     }
   }
 

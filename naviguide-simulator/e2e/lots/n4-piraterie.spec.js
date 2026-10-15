@@ -70,7 +70,7 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
   const officialUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!officialUp) {
     test.info().annotations.push({
-      type: "sans voyage officiel",
+      type: "sans API",
       description: "GET /voyage/official absent — horloge Berry non exigée ; le sac /ici reste sondé",
     });
   }
@@ -92,8 +92,8 @@ test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", 
   const serverHasN4 = Boolean(iciAden?.piracy?.name) && iciAden.piracy.level === "HIGH";
   if ((iciAden || iciHome) && !serverHasN4) {
     test.info().annotations.push({
-      type: "API sans N4",
-      description: "GET /ici sans piracy HIGH à Aden (API d'un autre checkout) — carte Aden non exigée",
+      type: "poste",
+      description: "GET /ici sans piracy HIGH à Aden (Overpass / sac ici, jamais en CI) — carte Aden non exigée",
     });
   }
 

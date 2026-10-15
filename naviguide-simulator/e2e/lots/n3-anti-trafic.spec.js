@@ -66,21 +66,13 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
     officialPack = (body?.legs || []).find((l) => /Ajaccio/i.test(l.from || "") && /Fort-de-France/i.test(l.to || ""))?.antiShipping || null;
   }
 
-  const serverHasN3 = Array.isArray(officialPack?.lanes) && officialPack.lanes.includes("Gibraltar");
-  if (!apiUp || serverHasN3) {
-    // RD9 : plus de pastille route-anti-shipping — les couloirs sont sur la ligne.
-    await expect(lanes).toBeVisible({ timeout: 15_000 });
-    await expect(lanes).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
-    if (serverHasN3) {
-      expect(Number(officialPack.score)).toBeLessThan(1);
-    }
-    await shot(page, "01-couloirs");
-  } else {
-    test.info().annotations.push({
-      type: "API sans N3",
-      description: "GET /voyage/official/plan-review sans antiShipping (API d'un autre checkout) — pastille non exigée",
-    });
+  await expect(lanes).toBeVisible({ timeout: 15_000 });
+  await expect(lanes).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
+  if (apiUp) {
+    expect(Array.isArray(officialPack?.lanes) && officialPack.lanes.includes("Gibraltar"), "antiShipping Gibraltar du stock").toBeTruthy();
+    expect(Number(officialPack.score)).toBeLessThan(1);
   }
+  await shot(page, "01-couloirs");
 
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
 });

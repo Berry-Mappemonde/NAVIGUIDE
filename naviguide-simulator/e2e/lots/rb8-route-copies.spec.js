@@ -132,8 +132,8 @@ test("lot RB8 — copie droite du trajet et survol du parcouru", async ({ page }
 
   if (!mid.hover) {
     test.info().annotations.push({
-      type: apiUp ? "hindcast en cours" : "sans API",
-      description: "aucun trait parcouru avec vitesse d'époque — info-bulle non forcée",
+      type: apiUp ? "poste" : "sans API",
+      description: "hindcast en cours — aucun trait parcouru avec vitesse d'époque, info-bulle non forcée",
     });
     await shot(page, "02-survol");
     return;

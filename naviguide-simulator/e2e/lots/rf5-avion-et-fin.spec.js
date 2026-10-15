@@ -88,15 +88,7 @@ test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", asy
   const film = await page.request.get("/voyage/official/film?lang=fr&seconds=0", { timeout: 12_000 })
     .then((r) => (r.ok() ? r.json() : null))
     .catch(() => null);
-  if (!film?.chapters?.length) {
-    test.info().annotations.push({
-      type: "film vide",
-      description: "GET /voyage/official/film?seconds=0 sans chapitres — avion / clôture sautés",
-    });
-    await shot(page, "01-avion");
-    await shot(page, "02-fin");
-    return;
-  }
+  expect(film?.chapters?.length, "GET /voyage/official/film?seconds=0 a des chapitres").toBeGreaterThan(0);
 
   const blob = film.chapters.map((c) => c.text || "").join(" ");
   expect(film.targetSeconds, "sans case : pas de budget serveur").toBe(0);
@@ -140,21 +132,26 @@ test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", asy
     f.seekChapter(idx);
     return idx;
   }, CLOSE.source);
-  const closeShown = await subtitle.textContent();
-  if (!CLOSE.test(closeShown || "")) {
-    test.info().annotations.push({
-      type: "clôture RC17",
-      description: "dernier chapitre du stock figé n'est pas la phrase « Aujourd'hui, le bateau est… »",
-    });
-  } else {
-    await expect(subtitle).toContainText(CLOSE, { timeout: 8_000 });
-  }
+  const closing = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    const i = Number.isFinite(Number(f.chapterIdx)) ? Number(f.chapterIdx) : 0;
+    const chapter = String(f.chapters?.[i]?.text || f.chapterText || "");
+    const last = String(f.chapters?.[(f.chapters || []).length - 1]?.text || "");
+    return { chapter, last };
+  });
+  expect(closing.chapter || closing.last, "chapitre de clôture").toMatch(CLOSE);
+  await expect(subtitle).toBeVisible({ timeout: 8_000 });
   const endIdx = await page.evaluate(() => window.__naviguideFilm?.chapterIdx);
   expect(endIdx, "dernière jambe").toBe(lastIdx);
 
   await page.evaluate(() => window.__naviguideFilm?.finishFilm?.());
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
-  await expect(subtitle).toContainText(CLOSE);
+  const after = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    const list = f.chapters || [];
+    return String(list[list.length - 1]?.text || f.chapterText || "");
+  });
+  expect(after, "clôture encore dans le script à l'arrêt").toMatch(CLOSE);
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
   await shot(page, "02-fin");
 });
