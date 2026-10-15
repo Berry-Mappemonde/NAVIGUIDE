@@ -53,11 +53,15 @@ def test_chat_tier_fast_for_short_factual_question():
     assert logbook_chat.chat_tier("x" * 79) == "fast"
 
 
-def test_chat_tier_write_for_why_how_or_long_question():
-    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "write"
-    assert logbook_chat.chat_tier("Comment lire le vent ?") == "write"
-    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "write"
-    assert logbook_chat.chat_tier("How is the wind?") == "write"
+def test_chat_tier_deep_for_why_how_or_route_plan():
+    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "deep"
+    assert logbook_chat.chat_tier("Comment lire le vent ?") == "deep"
+    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "deep"
+    assert logbook_chat.chat_tier("How is the wind?") == "deep"
+    assert logbook_chat.chat_tier("Planifier la route vers les Antilles") == "deep"
+
+
+def test_chat_tier_write_for_long_non_analytical_question():
     assert logbook_chat.chat_tier("x" * 80) == "write"
 
 

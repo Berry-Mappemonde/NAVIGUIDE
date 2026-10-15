@@ -18,13 +18,14 @@ NS = "llm-budget"
 LAST_SOURCE_NS = "llm"
 LAST_SOURCE_KEY = "last-source"
 
-TIERS = ("fast", "write", "judge")
+TIERS = ("fast", "write", "deep", "judge")
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
 # Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j, judge 0.
 DEFAULT_CAPS = {
     "fast": 200_000,
     "write": 150_000,
+    "deep": 40_000,
     "judge": 0,
 }
 
@@ -75,35 +76,41 @@ def llm_allowed_here() -> bool:
 PRICES_PER_M = {
     "fast": (0.06, 0.24),
     "write": (0.30, 0.90),
+    "deep": (1.00, 3.00),
     "judge": (1.00, 3.00),
 }
 
 DEFAULT_MODELS = {
     "fast": "nvidia/Nemotron-3_5-Lightning",
     "write": "nvidia/nemotron-3-super-120b-a12b",
+    "deep": "nvidia/Nemotron-3-Ultra-550b-a55b",
     "judge": "nvidia/Nemotron-3-Ultra-550b-a55b",
 }
 
 DEFAULT_MAX_TOKENS = {
     "fast": 256,
     "write": 400,
+    "deep": 512,
     "judge": 512,
 }
 
 SOURCE_FOR_TIER = {
     "fast": "nemotron-lightning",
     "write": "nemotron-super",
+    "deep": "nemotron-ultra",
     "judge": "nemotron-ultra",
 }
 
 _ENV_CAP = {
     "fast": "NAVIGUIDE_LLM_DAILY_TOKENS_FAST",
     "write": "NAVIGUIDE_LLM_DAILY_TOKENS_WRITE",
+    "deep": "NAVIGUIDE_LLM_DAILY_TOKENS_DEEP",
     "judge": "NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE",
 }
 _ENV_MODEL = {
     "fast": "NAVIGUIDE_TF_MODEL_FAST",
     "write": "NAVIGUIDE_TF_MODEL_WRITE",
+    "deep": "NAVIGUIDE_TF_MODEL_DEEP",
     "judge": "NAVIGUIDE_TF_MODEL_JUDGE",
 }
 
