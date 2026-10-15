@@ -33,6 +33,11 @@ TOKENFACTORY_BASE = (
     os.environ.get("NAVIGUIDE_TF_BASE") or "https://api.tokenfactory.nebius.com/v1"
 ).rstrip("/")
 TOKENFACTORY_URL = f"{TOKENFACTORY_BASE}/chat/completions"
+# Cookbook Ultra: https://api.tokenfactory.us-central1.nebius.com/v1/
+TOKENFACTORY_ULTRA_BASE = (
+    os.environ.get("NAVIGUIDE_TF_BASE_ULTRA")
+    or "https://api.tokenfactory.us-central1.nebius.com/v1"
+).rstrip("/")
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -87,7 +92,9 @@ _PROMPT_LEAK_RE = re.compile(
     r"|You are the logbook"
     r"|Tu es le journal de bord"
     r"|ONLY the JSON of facts"
-    r"|SEUL JSON de faits",
+    r"|SEUL JSON de faits"
+    r"|I need to answer using ONLY"
+    r"|using ONLY the JSON",
     re.IGNORECASE,
 )
 _PREAMBLE_LEAD_RES = (
@@ -110,6 +117,8 @@ _PREAMBLE_LEAD_RES = (
     re.compile(r"^\s*let\s+me\s+[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
     re.compile(r"^\s*the\s+user\s+says\s+[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
     re.compile(r"^\s*here'?s a thinking process\s*:?\s*[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
+    re.compile(r"^\s*I need to answer using ONLY[^.!?…\n]*[.!?…]?\s*", re.IGNORECASE),
+    re.compile(r"^\s*It lists:\s*", re.IGNORECASE),
 )
 
 
@@ -502,8 +511,21 @@ def tidy_story(
     return out or (fallback or "").strip()
 
 
+def _tf_url(tier: str) -> str:
+    """Lightning / Super stay on the default TF host. Ultra uses us-central1
+    (Nebius cookbook) unless NAVIGUIDE_TF_BASE_ULTRA is set."""
+    t = llm_budget.normalize_tier(tier)
+    if t in {"deep", "judge"}:
+        base = (
+            _env("NAVIGUIDE_TF_BASE_ULTRA") or TOKENFACTORY_ULTRA_BASE
+        ).rstrip("/")
+        return f"{base}/chat/completions"
+    return TOKENFACTORY_URL
+
+
 def _openai_text(data: dict[str, Any] | None) -> str:
-    """Read message.content only — never reasoning_content (Nemotron thinking)."""
+    """Read message.content only — never reasoning / reasoning_content
+    (NVIDIA Nemotron 3 Ultra Day-0: message.reasoning)."""
     msg = ((data or {}).get("choices") or [{}])[0].get("message") or {}
     content = msg.get("content")
     if isinstance(content, str):
@@ -541,11 +563,13 @@ def _http_error(provider: str, response: httpx.Response) -> RuntimeError:
 
 
 def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None) -> dict[str, Any]:
-    """Token Factory body. Lightning (fast) omits thinking flags: with
-    reasoning_effort / thinking=false and 256 tokens, TF returned empty content.
-    Super / Ultra keep Thinking OFF."""
+    """Token Factory body. Nemotron 3 thinks by default unless we send the
+    official off switches: TF `reasoning_effort=none` and NVIDIA
+    `chat_template_kwargs.enable_thinking=false`. The old `{thinking: false}`
+    key is ignored; omitting flags (Lightning) also leaves thinking ON."""
     t = llm_budget.normalize_tier(tier)
-    payload: dict[str, Any] = {
+    thinking_off = {"enable_thinking": False}
+    return {
         "model": llm_budget.model_for(t),
         "messages": [
             {"role": "system", "content": system},
@@ -554,11 +578,10 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
         "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
         "temperature": 0.4,
         "stream": False,
+        "reasoning_effort": "none",
+        "chat_template_kwargs": thinking_off,
+        "extra_body": {"chat_template_kwargs": thinking_off},
     }
-    if t != "fast":
-        payload["reasoning_effort"] = "low"
-        payload["chat_template_kwargs"] = {"thinking": False}
-    return payload
 
 
 async def _call_tokenfactory(
@@ -573,7 +596,7 @@ async def _call_tokenfactory(
     payload = _tf_payload(system, user, t, max_tokens)
     async with _tf_limiter():
         r = await client.post(
-            TOKENFACTORY_URL,
+            _tf_url(t),
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json=payload,
         )

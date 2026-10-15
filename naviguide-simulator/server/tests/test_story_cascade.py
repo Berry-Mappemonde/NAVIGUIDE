@@ -40,6 +40,7 @@ def test_story_tier_ultra_for_escales_and_alerts():
 def test_default_cascade_is_token_factory_not_tavily():
     src = Path(__file__).resolve().parents[1].joinpath("story_cascade.py").read_text()
     assert "api.tokenfactory.nebius.com" in src
+    assert "api.tokenfactory.us-central1.nebius.com" in src
     assert "NAVIGUIDE_LLM_PROVIDERS" in src
     assert "integrate.api.nvidia.com" in src  # NIM : 2e maillon
     assert "openrouter.ai" in src
@@ -583,10 +584,23 @@ def test_openai_text_strips_think_keeps_sentence():
             "message": {
                 "content": "<think>raisonnement…</think> La Rochelle est un port.",
                 "reasoning_content": "Analyze User Input: Task: Translate…",
+                "reasoning": "I need to answer using ONLY the JSON.",
             },
         }],
     }
     assert _openai_text(data) == "La Rochelle est un port."
+
+
+def test_openai_text_ignores_nvidia_reasoning_field():
+    data = {
+        "choices": [{
+            "message": {
+                "content": "",
+                "reasoning": "I need to answer using ONLY the JSON. It lists:",
+            },
+        }],
+    }
+    assert _openai_text(data) == ""
 
 
 def test_openai_text_unclosed_think_is_cut():
@@ -630,6 +644,7 @@ def test_prompt_leak_re_covers_22_sept_forms():
         "- Tâche : Présente une escale à Pointe-à-Pitre.",
         "You are the logbook of the Berry-Mappemonde sailing expedition.",
         "Tu es le journal de bord de l'expédition à la voile.",
+        "I need to answer using ONLY the JSON. It lists:",
         CAPTURE_LEAK,
     )
     for form in forms:
@@ -736,19 +751,35 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
     text, source = asyncio.run(run())
     assert "port" in text
     assert source == "nemotron-super"
-    assert seen["chat_template_kwargs"]["thinking"] is False
-    assert seen["reasoning_effort"] == "low"
+    assert seen["chat_template_kwargs"]["enable_thinking"] is False
+    assert "thinking" not in seen["chat_template_kwargs"]
+    assert seen["reasoning_effort"] == "none"
+    assert seen["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
 
-def test_lightning_payload_omits_thinking():
+def test_lightning_payload_disables_thinking_officially():
     import llm_budget
     import story_cascade
 
     payload = story_cascade._tf_payload("sys", "user", "fast")
-    assert "reasoning_effort" not in payload
-    assert "chat_template_kwargs" not in payload
+    assert payload["reasoning_effort"] == "none"
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
     assert payload["max_tokens"] == llm_budget.max_tokens_for("fast")
     assert payload["max_tokens"] == 512
+
+
+def test_ultra_payload_uses_cookbook_host_and_budget():
+    import llm_budget
+    import story_cascade
+
+    payload = story_cascade._tf_payload("sys", "user", "deep")
+    assert payload["reasoning_effort"] == "none"
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert payload["max_tokens"] == llm_budget.max_tokens_for("deep")
+    assert payload["max_tokens"] == 2048
+    assert "us-central1" in story_cascade._tf_url("deep")
+    assert "us-central1" not in story_cascade._tf_url("fast")
+    assert "us-central1" not in story_cascade._tf_url("write")
 
 
 def test_tokenfactory_http_error_includes_body():
