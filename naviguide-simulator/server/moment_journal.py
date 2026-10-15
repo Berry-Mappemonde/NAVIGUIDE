@@ -627,6 +627,11 @@ def _with_clock(voy: dict) -> dict:
     return {**voy, "clock": clock} if clock else voy
 
 
+def rows_from_voyage(voyage_id: str, voy: dict) -> list[dict]:
+    """Moments datés, même forme que le journal officiel. `voy['pearls']` si déjà chargées."""
+    return _build_rows(voyage_id, voy)
+
+
 def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
     """Parcourt les perles, n'écrit que les changements de signature. Idempotent.
     `voy` : le voyage déjà chargé (avec son horloge) ; sinon relu du disque, horloge du stock si besoin."""
