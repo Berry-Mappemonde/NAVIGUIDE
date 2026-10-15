@@ -25,7 +25,7 @@ TERRITORY = {
         "martinique": "Martinique",
         "guadeloupe": "Guadeloupe",
         "saint_barthelemy": "Saint-Barthélemy",
-        "saint_martin": "Saint-Martin",
+        "saint_martin": "Saint-Martin (partie française)",
         "saint_pierre_et_miquelon": "Saint-Pierre-et-Miquelon",
         "polynesie_francaise": "Polynésie française",
         "nouvelle_caledonie": "Nouvelle-Calédonie",
@@ -40,7 +40,7 @@ TERRITORY = {
         "martinique": "Martinique",
         "guadeloupe": "Guadeloupe",
         "saint_barthelemy": "Saint Barthélemy",
-        "saint_martin": "Saint Martin",
+        "saint_martin": "Saint-Martin (French side)",
         "saint_pierre_et_miquelon": "Saint Pierre and Miquelon",
         "polynesie_francaise": "French Polynesia",
         "nouvelle_caledonie": "New Caledonia",
@@ -176,7 +176,8 @@ def _nation_adj(nation: str) -> dict[str, str] | None:
 
 def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
     """Gabarit : « Zone économique exclusive française (Guadeloupe) » /
-    « French EEZ (Guadeloupe) ». Jamais de parenthèses doublées."""
+    « French EEZ (Guadeloupe) ». Jamais de parenthèses doublées. RC32 : table
+    `toponyms` (exonyme de la langue du récit, îles partagées distinguées)."""
     en = _en(lang)
     table = TERRITORY["en" if en else "fr"]
     if not isinstance(zee, dict):
@@ -190,6 +191,16 @@ def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
         return "Ashore" if en else "À terre"
     if not zee.get("mrgid") or raw in {"", "Haute mer", "High seas"}:
         return "High seas" if en else "Haute mer"
+
+    from toponyms import sheet_label  # noqa: PLC0415
+    mrgid = zee.get("mrgid")
+    try:
+        mrgid = int(mrgid) if mrgid is not None else None
+    except (TypeError, ValueError):
+        mrgid = None
+    spoken = sheet_label(raw, lang, mrgid=mrgid, territory=zee.get("territory"))
+    if spoken:
+        return _dedupe_parens(spoken)
 
     base, paren = _split_paren(raw)
     territory = table.get(str(zee.get("territory") or ""))
@@ -236,7 +247,8 @@ _PLACE_EN = {
 
 
 def localize_place_name(name: str | None, lang: str = "fr") -> str:
-    text = str(name or "").strip()
+    from toponyms import origin_name  # noqa: PLC0415
+    text = origin_name(str(name or "").strip())
     if not text:
         return ""
     if _en(lang):

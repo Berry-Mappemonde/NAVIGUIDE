@@ -42,6 +42,8 @@ export function useRouteDrawing() {
   const undoneSegmentsRef = useRef([]);
   const fetchIdRef = useRef(0);
 
+  // DM6 — reset n'est appelé que pour un abandon explicite (Annuler / supprimer).
+  // Mettre le brouillon de côté (pilule Berry, Suivre) laisse points et segments.
   const reset = useCallback(() => {
     setDrawnPoints([]);
     setDrawnSegments([]);

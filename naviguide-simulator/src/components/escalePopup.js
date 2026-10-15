@@ -3,14 +3,15 @@ export const ESCALE_POPUP_MAX_HEIGHT = 260;
 
 const ESCALE_CLOSE_SEL = "[data-testid='escale-close']";
 
-/** Suivre, Revoir, ou film en cours : la fiche d'escale doit disparaître (RA5). */
+/** Changement de vue, Revoir, ou film en cours : la fiche d'escale disparaît
+ * (RA5 + DM7 : Suivre → Tracer ne doit pas garder la fiche de Papeete). */
 export function shouldCloseEscaleSheet({
   nextView,
   replayActive = false,
   replayStarting = false,
 } = {}) {
   if (replayActive || replayStarting) return true;
-  return nextView === "suivre";
+  return nextView === "suivre" || nextView === "simulation";
 }
 
 export function isEscaleCloseClick(event) {

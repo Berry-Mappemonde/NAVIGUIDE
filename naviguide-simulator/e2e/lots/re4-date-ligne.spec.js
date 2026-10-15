@@ -1,10 +1,10 @@
 // Lot RE4 — changer la date de la barre (Suivre) recalcule la ligne d'état
 // (année, jour de voyage) ; remettre le défaut restaure la ligne LIVE ;
-// le départ de la Simulation ne bouge pas.
-// Sans API : champ date, ligne d'état (horloge locale) et départ Simulation
-// tiennent seuls. GET /voyage/official sondé ; s'il manque, annotation +
-// saut des seules assertions qui en dépendent — jamais le champ, ni le
-// décalage d'année, ni l'indépendance du départ Simulation.
+// le départ de Tracer (aujourd'hui, plus de champ — DM7) ne bouge pas.
+// Sans API : champ date et ligne d'état (horloge locale) tiennent seuls.
+// GET /voyage/official sondé ; s'il manque, annotation + saut des seules
+// assertions qui en dépendent — jamais le champ, ni le décalage d'année,
+// ni l'absence du champ Date de départ en Tracer.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,8 +127,9 @@ test("lot RE4 — date de la barre pilote la ligne d'état, Simulation inchangé
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showToolsPanel(page);
-  const simDate = dateInput(page, "departure-field");
-  await expect(simDate).toBeVisible({ timeout: 15_000 });
-  const simValue = await simDate.inputValue();
-  expect(simValue, "départ Simulation distinct du replay 2025").not.toBe("15/05/2025");
+  await expect(page.getByTestId("departure-field")).toHaveCount(0);
+  if (await clock.isVisible().catch(() => false)) {
+    const tracerLine = (await clock.innerText()).trim();
+    expect(tracerLine, "horloge Tracer distincte du replay 2025").not.toMatch(/2025/);
+  }
 });

@@ -220,6 +220,9 @@ export function useVirtualVessel({
       if (!shouldFetchAt(clockRef.current)) return;
       refreshLive(voyage.voyageId).catch(() => {});
     };
+    // DM5 — Suivre sur ma route : la position « à maintenant » se lit dès
+    // l'entrée en suivi, pas seulement au premier tic de 60 s.
+    tick();
     const id = setInterval(tick, 60_000);
     const onFocus = () => tick();
     window.addEventListener("focus", onFocus);

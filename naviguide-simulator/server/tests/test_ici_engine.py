@@ -419,7 +419,7 @@ def test_fill_dossier_la_rochelle_mocked():
     assert len(d["projects"]) == 1
     assert d["nearby"]["marinas"][0]["name"] == "Port des Minimes"
     assert d["nearby"]["capitaineries"][0]["name"] == "Capitainerie La Rochelle"
-    assert d["nearby"]["wpi"][0]["name"] == "LA ROCHELLE"
+    assert d["nearby"]["wpi"][0]["name"] == "La Rochelle"
     assert d["science"]["nearby"][0]["name"] == "Pertuis bathymétrie"
     assert d["science"]["nearby"][0]["source"] == "sextant"
     assert len(d["science"]["nearby"]) == 1

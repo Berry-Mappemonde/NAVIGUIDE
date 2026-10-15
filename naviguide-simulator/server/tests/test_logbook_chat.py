@@ -112,12 +112,12 @@ def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
     assert "n’a pas cette information" in out["answer"] or "n'a pas cette information" in out["answer"]
 
 
-def test_answer_question_write_tier_for_pourquoi(monkeypatch):
+def test_answer_question_deep_tier_for_pourquoi(monkeypatch):
     seen = {}
 
     async def fake_cascade(system, user, client=None, **kw):
         seen["tier"] = kw.get("tier")
-        return "Parce que l'horloge dit à quai.", "nemotron-super"
+        return "Parce que l'horloge dit à quai.", "nemotron-ultra"
 
     async def fake_ctx(*_a, **_k):
         return {"official": {"atQuay": True}}
@@ -127,8 +127,8 @@ def test_answer_question_write_tier_for_pourquoi(monkeypatch):
     out = asyncio.run(logbook_chat.answer_question(
         "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc),
     ))
-    assert seen["tier"] == "write"
-    assert out["source"] == "nemotron-super"
+    assert seen["tier"] == "deep"
+    assert out["source"] == "nemotron-ultra"
 
 
 def test_filter_numbers_drops_sentences_with_figures_absent_from_the_facts():

@@ -131,6 +131,8 @@ describe("MapSceneController — zoom (lot U / RG15)", () => {
     assert.equal(calls.sheet.length, 1, "le clic dessin n'ouvre pas la fiche");
     assert.match(src, /onWaypointClick\?\.\(marker\._naviguideWaypoint, marker\._naviguideIndex\)/);
     assert.match(src, /if \(marker\._naviguideDrawing\) \{\s*this\.callbacks\.onDrawingWaypointClick/);
+    assert.match(src, /const drawingHasPoints = Boolean\(cfg\.drawingMode && \(cfg\.drawnPoints \|\| \[\]\)\.length\)/);
+    assert.match(src, /marker\._naviguideDrawing = drawingHasPoints/);
   });
 
   it("lot RD2 — rond de tracé via drawingPinMetrics, plus d'icône 24×24 décalée", () => {
@@ -157,5 +159,19 @@ describe("MapSceneController — zoom (lot U / RG15)", () => {
     const end = src.indexOf("this.onUserNavigation = ");
     const block = src.slice(start, end);
     assert.doesNotMatch(block, /\/ici|narrateIci|enqueueStory|fetch\(/);
+  });
+
+  it("lot DM4 — cadrage Suivre au plancher, pas zoomForRemaining", () => {
+    const camAt = src.indexOf("  syncCamera(cast, snapshot)");
+    const camEnd = src.indexOf("  renderDynamic(snapshot)", camAt);
+    assert.ok(camAt >= 0 && camEnd > camAt);
+    const cam = src.slice(camAt, camEnd);
+    assert.match(cam, /liveMode\s*\n\s*\? cadrageZoom/);
+    assert.match(cam, /if \(cfg\.isSuivre\)/);
+    assert.match(cam, /this\.frameFollowLive\(subject\)/);
+    assert.match(cam, /_pendingFollowCadrage/);
+    assert.match(src, /if \(cfg\.filmActive \|\| cfg\.drawingMode\) return/);
+    assert.match(src, /showWorld\(/);
+    assert.match(src, /setView\(WORLD_CENTER, worldZ/);
   });
 });
