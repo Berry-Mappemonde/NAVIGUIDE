@@ -636,7 +636,15 @@ export default function App() {
     polar: polarData ? { boat: polarData.boat_name || polarData.name || null, loaM: skipper.orders?.boat?.loaM, draftM: skipper.orders?.boat?.draftM, planningKn: skipper.orders?.values?.planningKn } : null,
     orders: !skipper.orders
       ? null
-      : { profile: skipper.orders.profile, comfort: skipper.orders.comfort, horizonH: skipper.orders.knobs?.horizonH, values: skipper.orders.values },
+      : {
+        profile: skipper.orders.profile,
+        comfort: skipper.orders.comfort,
+        knobs: skipper.orders.knobs,
+        values: skipper.orders.values,
+        expert: skipper.orders.expert,
+        boat: skipper.orders.boat,
+        budget: skipper.orders.budget,
+      },
     leg: hudLeg ? { from: hudLeg.fromStop, to: hudLeg.toStop, remainingNm: hudLeg.remainingNm, etaHours: hudLeg.etaHours, speedKnots: hudLeg.speedKnots } : null,
   };
   const chatContextFn = useCallback(() => chatContextRef.current, []);

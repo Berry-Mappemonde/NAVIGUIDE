@@ -23,6 +23,7 @@ describe("LogbookChat contract (lot D)", () => {
     assert.match(hook, /inFlight\.current/);
     assert.match(hook, /contextFn\(\)/);
     assert.match(hook, /source: body\.source \|\| body\.engine \|\| null/);
+    assert.match(hook, /reason/);
     assert.doesNotMatch(hook, /Nemotron|Tavily|Nebius/i);
     assert.doesNotMatch(hook, /useEffect/);
   });
@@ -44,5 +45,7 @@ describe("LogbookChat contract (lot D)", () => {
     assert.ok(replyAt > 0 && listAt > replyAt, "la liste est dans le cadre");
     assert.ok(inputAt > listAt, "le champ reste sous le cadre");
     assert.doesNotMatch(src, /logbookChatHint/);
+    assert.match(src, /data-testid="logbook-chat-reason"/);
+    assert.match(src, /logbookChatReason/);
   });
 });
