@@ -322,6 +322,7 @@ describe("IciMaintenant — lot DM9 : Tracer sert le tracé", () => {
     assert.match(src, /defaultIciTab\(mode\)/);
     assert.match(src, /servesNowContent\(view, mode\)/);
     assert.match(src, /hiddenIciTabs\(mode\)/);
+    assert.match(src, /extraTabs\.some\(\(tab\) => tab\.id === "now"\)/);
     assert.match(helpers, /ici-tab-now/);
     assert.match(helpers, /ici-tab-journal/);
     assert.doesNotMatch(src, /placeholder|aide|hint|onglet vide/i);
