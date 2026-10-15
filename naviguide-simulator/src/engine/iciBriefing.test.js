@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanStoryText, climatologySentence, climatologyShownOnBanner, narrateIci, narrateIciSegments, phraseForEvent } from "./iciBriefing.js";
+import { cleanStoryText, climatologySentence, climatologyShownOnBanner, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
 import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -539,15 +539,49 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, FORBIDDEN);
   });
 
-  it("prefers a ready story over the local template", () => {
+  it("pickFilmPhrase reads the bag filmPhrases in the UI language", () => {
+    const bag = {
+      filmPhrases: {
+        "zee-enter": { fr: "Le 15 mai, les eaux espagnoles.", en: "On 15 May, Spanish waters." },
+        "amp-enter:Cabrera": { fr: "Le 16 mai, le bateau entre dans l'aire marine protégée Cabrera." },
+      },
+    };
+    assert.equal(
+      pickFilmPhrase({ type: "zee-enter" }, bag, "fr"),
+      "Le 15 mai, les eaux espagnoles.",
+    );
+    assert.equal(
+      pickFilmPhrase({ type: "zee-enter" }, bag, "en"),
+      "On 15 May, Spanish waters.",
+    );
+    assert.match(
+      pickFilmPhrase({ type: "amp-enter", name: "Cabrera", payload: { amp: { name: "Cabrera" } } }, bag, "fr"),
+      /Cabrera/,
+    );
+  });
+
+  it("prefers the server film phrase over the local template", () => {
     const text = phraseForEvent({
       type: "zee-enter",
       name: "Spain",
-      phrase: "On vient d’entrer dans Spain.",
-      story: { status: "ready", text: "Récit NIM : entrée dans la ZEE espagnole." },
+      filmPhrase: "Le 15 mai, les eaux espagnoles.",
     }, "fr");
-    assert.equal(text, "Récit NIM : entrée dans la ZEE espagnole.");
+    assert.equal(text, "Le 15 mai, les eaux espagnoles.");
     assert.doesNotMatch(text, FORBIDDEN);
+  });
+
+  it("uses a ready story only on Rédigé; Brut keeps the film phrase", () => {
+    const ev = {
+      type: "zee-enter",
+      name: "Spain",
+      filmPhrase: "Le 15 mai, les eaux espagnoles.",
+      phrase: "On vient d’entrer dans Spain.",
+      story: { status: "ready", text: "Récit Super : on entre dans les eaux espagnoles." },
+    };
+    assert.equal(phraseForEvent(ev, "fr"), "Le 15 mai, les eaux espagnoles.");
+    assert.equal(phraseForEvent(ev, "fr", { written: false }), "Le 15 mai, les eaux espagnoles.");
+    assert.equal(phraseForEvent(ev, "fr", { written: true }), "Récit Super : on entre dans les eaux espagnoles.");
+    assert.doesNotMatch(phraseForEvent(ev, "fr", { written: true }), FORBIDDEN);
   });
 
   it("a story about the machinery is cleaned, or replaced by the local phrase (revue du 19 sept.)", () => {
@@ -561,13 +595,13 @@ describe("narrateIci", () => {
           + "Il a été jugé now avec la raison playhead. Le navire, un Leopard 46 de 14 m et 1,4 m de tirant d’eau, est en croisière. "
           + "Aucune information supplémentaire sur la période ou un DOI n’est disponible.",
       },
-    }, "fr");
+    }, "fr", { written: true });
     assert.equal(verbose, "Le port d’entrée officiel se situe à Porto-Vecchio, à 292,3 nm.");
     const onlyMeta = phraseForEvent({
       type: "zee-exit",
       phrase: "Retour en haute mer — plus de ZEE à déclarer.",
       story: { status: "ready", text: "L’événement zee-exit est classé info. La décision a été prise immédiatement (juge)." },
-    }, "fr");
+    }, "fr", { written: true });
     assert.equal(onlyMeta, "Retour en haute mer — plus de ZEE à déclarer.");
     assert.equal(cleanStoryText(null), "");
   });

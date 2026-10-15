@@ -41,13 +41,19 @@ describe("storyQueue contract", () => {
 });
 
 describe("shouldEnqueueStory + payload", () => {
-  it("enqueues now/group, skips hide/later/already pending", () => {
-    assert.equal(shouldEnqueueStory({ judge: "now", story: { status: "template" } }), true);
-    assert.equal(shouldEnqueueStory({ judge: "group", story: { status: "template" } }), true);
-    assert.equal(shouldEnqueueStory({ judge: "later", story: { status: "template" } }), false);
-    assert.equal(shouldEnqueueStory({ judge: "hide" }), false);
-    assert.equal(shouldEnqueueStory({ judge: "now", story: { status: "pending" } }), false);
-    assert.equal(shouldEnqueueStory({ judge: "now", story: { status: "ready" } }), false);
+  it("Brut: never enqueues, whatever the judge", () => {
+    const now = { judge: "now", story: { status: "template" } };
+    assert.equal(shouldEnqueueStory(now), false);
+    assert.equal(shouldEnqueueStory(now, { written: false }), false);
+    assert.equal(shouldEnqueueStory({ judge: "group", story: { status: "template" } }, { written: true }), false);
+    assert.equal(shouldEnqueueStory({ judge: "later", story: { status: "template" } }, { written: true }), false);
+    assert.equal(shouldEnqueueStory({ judge: "hide" }, { written: true }), false);
+  });
+
+  it("Rédigé: one now event, skips pending/ready/group", () => {
+    assert.equal(shouldEnqueueStory({ judge: "now", story: { status: "template" } }, { written: true }), true);
+    assert.equal(shouldEnqueueStory({ judge: "now", story: { status: "pending" } }, { written: true }), false);
+    assert.equal(shouldEnqueueStory({ judge: "now", story: { status: "ready" } }, { written: true }), false);
   });
 
   it("asks for :online only when a pack URL + gold/alert/click", () => {
@@ -157,6 +163,48 @@ describe("enqueueStory fire-and-forget", () => {
     assert.match(ready.text, /ZEE/);
     assert.equal(ready.tavily, null);
     assert.equal(ready.nvidia, "nvidia-gpt-oss-20b");
+  });
+
+  it("Rédigé: one fetch per now event and only once; Brut: none", async () => {
+    const urls = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify({
+        status: "ready",
+        text: "Entrée dans les eaux espagnoles.",
+        engine: "nemotron-super",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const nowA = { judge: "now", id: "now-a", type: "zee-enter", story: { status: "template" } };
+    const nowB = { judge: "now", id: "now-b", type: "amp-enter", story: { status: "template" } };
+    const group = { judge: "group", id: "grp", type: "zee-enter", story: { status: "template" } };
+    const later = { judge: "later", id: "lat", type: "zee-ahead", story: { status: "template" } };
+    for (const ev of [nowA, nowB, group, later]) {
+      if (shouldEnqueueStory(ev, { written: false })) {
+        enqueueStory({ event: ev.type, eventId: ev.id, type: ev.type });
+      }
+    }
+    assert.equal(urls.length, 0);
+    const waiting = Promise.all([
+      waitJob("now-a", "ready", 2000),
+      waitJob("now-b", "ready", 2000),
+    ]);
+    for (const ev of [nowA, nowB, group, later]) {
+      if (shouldEnqueueStory(ev, { written: true })) {
+        enqueueStory({ event: ev.type, eventId: ev.id, type: ev.type });
+      }
+    }
+    await waiting;
+    assert.equal(urls.filter((u) => u.includes("/ici/story")).length, 2);
+    const n = urls.length;
+    nowA.story = { status: "ready" };
+    nowB.story = { status: "ready" };
+    for (const ev of [nowA, nowB, group, later]) {
+      if (shouldEnqueueStory(ev, { written: true })) {
+        enqueueStory({ event: ev.type, eventId: ev.id, type: ev.type });
+      }
+    }
+    assert.equal(urls.length, n);
   });
 
   it("does not open a fourth later job when three are pending", () => {

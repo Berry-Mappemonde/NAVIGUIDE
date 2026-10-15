@@ -125,4 +125,4 @@ lieu que le sous-titre nomme).
 - La voix garde le même rythme du début à la fin ; aucune accélération après le premier chapitre.
 - Le récit se comprend : escales dans l'ordre, pas de jargon (« jambe », « zone économique exclusive », « Couloirs »), pas de titre de jeu de données, pas de « de de ».
 - En anglais, la voix est anglaise et compréhensible.
-- **Rédigé** (dernier passage seulement : coûte des appels Super) : le texte change de plume, chaque nombre identique au Brut, étiquette Nemotron.
+- **Rédigé** (dernier passage seulement : coûte un appel Super) : Simulation, film en cours, cliquer « Rédigé », attendre ≤ 30 s → le texte change de plume (source affichée Nemotron Super) et chaque nombre reste celui du Brut ; puis revenir sur Brut.

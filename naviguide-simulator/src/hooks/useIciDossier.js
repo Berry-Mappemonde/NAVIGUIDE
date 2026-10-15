@@ -7,7 +7,7 @@ import {
 } from "../engine/ici.js";
 import { detectEvents, emptyEventMemory } from "../engine/eventRules.js";
 import { judgeEvents } from "../engine/displayJudge.js";
-import { narrateIci, narrateIciSegments, phraseForEvent } from "../engine/iciBriefing.js";
+import { narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "../engine/iciBriefing.js";
 import { promoteLaterAtPlayhead, upsertLedger } from "../engine/iciAlong.js";
 import { enqueueStory, shouldEnqueueStory, storyPayload, subscribeStories } from "../engine/storyQueue.js";
 import { WEATHER_POLL_MS, fetchWeatherForecast } from "./weatherSnapshot.js";
@@ -131,7 +131,7 @@ export function countIciFetchesAlongTrack(points, {
  * Fill the `ici()` bag around the boat and turn it into a story.
  * One step = one GET /ici. No chat, no Tavily.
  * Detectors + judge run on the bag already collected. Never await a model.
- * enqueueStory is fire-and-forget (NIM → OR → Claude).
+ * enqueueStory is fire-and-forget, only when `stories` (pilule Rédigé).
  * `orders` (skipper) feed detectors + judge locally, without a new GET /ici.
  * Changing orders never rewinds: pastilles already in the ledger stay as judged.
  */
@@ -163,7 +163,7 @@ export function useIciDossier({
   along = null,
   nearestBag = null,
   orders = null,
-  stories = true,
+  stories = false,
   frozen = false,
 }) {
   const [remote, setRemote] = useState(null);
@@ -437,10 +437,14 @@ export function useIciDossier({
       prevBagRef.current = remote;
       lastRemoteRef.current = remote;
     }
-    const withPhrase = found.map((ev) => ({
-      ...ev,
-      phrase: phraseForEvent(ev, lang),
-    }));
+    const withPhrase = found.map((ev) => {
+      const filmPhrase = pickFilmPhrase(ev, remote, lang);
+      const next = { ...ev, filmPhrase };
+      return {
+        ...next,
+        phrase: phraseForEvent(next, lang, { written: stories }),
+      };
+    });
     const judged = judgeEvents(withPhrase, {
       cinema,
       profile: playbackProfile,
@@ -451,7 +455,7 @@ export function useIciDossier({
     ledgerRef.current = promoteLaterAtPlayhead(
       upsertLedger(ledgerRef.current, judged.judged.map((ev) => ({
         ...ev,
-        phrase: ev.phrase || phraseForEvent(ev, lang),
+        phrase: ev.phrase || phraseForEvent(ev, lang, { written: stories }),
       }))),
       playheadRef.current.filmCum,
     );
@@ -459,10 +463,10 @@ export function useIciDossier({
       ? ledgerRef.current.find((e) => e.id === skipperClickId || e.stableKey === skipperClickId)
       : null;
     let nextBrief = judged.briefing
-      ? { ...judged.briefing, phrase: phraseForEvent(judged.briefing, lang) }
+      ? { ...judged.briefing, phrase: phraseForEvent(judged.briefing, lang, { written: stories }) }
       : lastNowRef.current;
     if (clicked) {
-      nextBrief = { ...clicked, judge: "now", judgeReason: "skipper-click", phrase: phraseForEvent(clicked, lang) };
+      nextBrief = { ...clicked, judge: "now", judgeReason: "skipper-click", phrase: phraseForEvent(clicked, lang, { written: stories }) };
       ledgerRef.current = ledgerRef.current.map((e) => (
         e === clicked || e.id === clicked.id
           ? { ...e, judge: "now", seenNow: true, judgeReason: "skipper-click" }
@@ -471,12 +475,12 @@ export function useIciDossier({
     }
     const promotedNow = ledgerRef.current.find((e) => e.promoted && e.judge === "now");
     if (!clicked && promotedNow && !judged.briefing) {
-      nextBrief = { ...promotedNow, phrase: phraseForEvent(promotedNow, lang) };
+      nextBrief = { ...promotedNow, phrase: phraseForEvent(promotedNow, lang, { written: stories }) };
     }
     if (nextBrief) lastNowRef.current = nextBrief;
     for (const ev of ledgerRef.current) {
       // A replay (lot E) reads the journal: no LLM story is bought for its events.
-      if (!stories || !shouldEnqueueStory(ev)) continue;
+      if (!stories || !shouldEnqueueStory(ev, { written: stories })) continue;
       ev.story = enqueueStory(storyPayload(ev, lang));
     }
     const ledger = ledgerRef.current;
@@ -513,6 +517,7 @@ export function useIciDossier({
     jambe?.phase,
     orders,
     frozen,
+    stories,
   ]);
 
   const dossier = useMemo(() => {
@@ -533,13 +538,13 @@ export function useIciDossier({
   }, [enabled, boat, effective, polarMeta, jambe, climatology, tick.briefing]);
 
   const briefing = useMemo(
-    () => (dossier ? narrateIci(dossier, lang) : ""),
-    [dossier, lang],
+    () => (dossier ? narrateIci(dossier, lang, { written: stories }) : ""),
+    [dossier, lang, stories],
   );
   // Same text, split around the places it names (links: map focus + sheet).
   const briefingSegments = useMemo(
-    () => (dossier ? narrateIciSegments(dossier, lang) : []),
-    [dossier, lang],
+    () => (dossier ? narrateIciSegments(dossier, lang, { written: stories }) : []),
+    [dossier, lang, stories],
   );
 
   const pack = {

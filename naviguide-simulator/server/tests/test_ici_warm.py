@@ -108,6 +108,46 @@ def test_status_exposes_llm_budget_counters():
         assert set(st["llm"][tier]) >= {"tokens", "calls", "usd"}
         assert st["llm"][tier]["tokens"] == 0
         assert st["llm"][tier]["calls"] == 0
+    assert st["stories"]["skipped"] == "on-demand"
+
+
+def test_warm_skips_stories_and_does_not_call_llm(tmp_path, monkeypatch):
+    """RG18 : un warm complet n'appelle pas cascade_text ; le compteur write ne bouge pas."""
+    import llm_budget
+    import story_cascade
+    import voyage_store
+    reset_caches()
+    voyage_store.save_voyage({
+        "voyageId": "berry-mappemonde-2026-officiel",
+        "points": _route()[:6],
+        "marks": [],
+        "t0": "2026-05-15T08:00:00Z",
+    })
+    calls = []
+
+    async def boom(*_a, **_k):
+        calls.append(1)
+        raise RuntimeError("cascade_text forbidden during warm")
+
+    monkeypatch.setattr(story_cascade, "cascade_text", boom)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
+    real_fill = ici_engine.fill_dossier
+
+    async def patched(lat, lon, radius_nm=30.0, client=None, **kw):
+        async with httpx.AsyncClient(transport=transport) as c:
+            return await real_fill(lat, lon, radius_nm, client=c, **kw)
+
+    monkeypatch.setattr(ici_engine, "fill_dossier", patched)
+    before = llm_budget.get_usage("write")["tokens"]
+    out = asyncio.run(ici_warm.warm_official_route(pause_s=0))
+    assert out["stories"]["skipped"] == "on-demand"
+    assert calls == []
+    assert llm_budget.get_usage("write")["tokens"] == before
+    assert ici_warm.stories_enabled() is False
 
 
 def test_warmer_is_disabled_by_env(monkeypatch):

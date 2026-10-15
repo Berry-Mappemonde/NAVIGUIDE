@@ -777,7 +777,7 @@ export default function App() {
   const iciPack = useIciDossier({
     enabled: Boolean(cast),
     frozen: replay.active,
-    stories: !replay.active,
+    stories: !replay.active && replay.filmStyle === "written",
     cast,
     snappedPosition: legContext?.snappedPosition,
     polarMeta: polarData,
@@ -855,6 +855,7 @@ export default function App() {
     playing: playback.playing,
     mode: isSuivre ? "suivre" : "simulation",
     lang,
+    written: !replay.active && replay.filmStyle === "written",
     legId: momentLegId,
     leg: momentLeg,
   });
