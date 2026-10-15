@@ -7,7 +7,8 @@ Imprime, depuis GET /voyage/official/film et GET /voyage/official/moments :
     caractères ancrés sur une même minute, plus grand trou sans phrase
     ancrée (en % de la mer) ;
   - pour le film : stations / projets / AMP / climato dits vs stock,
-    doublons de site, adjectifs ZEE orphelins (« françaises » sans « eaux »).
+    doublons de site, adjectifs ZEE orphelins (« françaises » sans « eaux »),
+    homonymes consécutifs (Saint-Martin / Sint Maarten sans distinguo).
 
 Usage :
   python3 scripts/film-densite.py                     # API du poste (127.0.0.1:8010)
@@ -22,7 +23,13 @@ import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.request import Request, urlopen
+
+_SERVER = Path(__file__).resolve().parent.parent / "server"
+if str(_SERVER) not in sys.path:
+    sys.path.insert(0, str(_SERVER))
+from toponyms import consecutive_homonyms  # noqa: E402
 
 DAY_MS = 86_400_000
 AIR_RE = re.compile(
@@ -241,6 +248,13 @@ def bad_lendemain(text: str) -> list[str]:
     return out
 
 
+# Adjectif qui fait partie d'un exonyme sourcé, pas d'une ZEE (« Terres
+# australes et antarctiques françaises », « Samoa américaines »).
+_TOPONYM_ADJ_PREV = {
+    "antarctiques", "australes", "samoa", "polynésie", "polynesie",
+}
+
+
 def orphan_zee_adjectives(text: str) -> list[str]:
     out = []
     for m in ADJ_RE.finditer(text):
@@ -248,6 +262,8 @@ def orphan_zee_adjectives(text: str) -> list[str]:
         prev = re.findall(r"[A-Za-zÀ-ÿ’'-]+", before[-30:])
         prev_word = prev[-1] if prev else ""
         if prev_word in {"eaux", "les"} or (prev_word[:1].isupper() and prev_word != ""):
+            continue
+        if prev_word.casefold() in _TOPONYM_ADJ_PREV:
             continue
         out.append(m.group(1))
     return out
@@ -321,20 +337,27 @@ def gap_has_untold_stock(
     g_a: int | None, g_b: int | None, stock_told: list[tuple[int, str]], text: str,
 ) -> bool:
     """Vrai si le stock a, dans le trou, un item racontable PAS déjà dans le
-    texte (un groupe « puis les eaux fidjiennes » couvre l'entrée fidjienne)."""
+    texte (un groupe « puis les eaux fidjiennes » couvre l'entrée fidjienne).
+    RC32 : le titre Marine Regions (« Madagascan ») se dit « malgaches »."""
     if g_a is None or g_b is None:
         return False
     margin = 6 * 3_600_000
     text_cf = (text or "").casefold()
-    stop_words = {"économique", "exclusive", "overlapping", "protégée", "aucun"}
+    stop_words = {
+        "économique", "exclusive", "overlapping", "protégée", "aucun",
+        "zone", "waters", "eaux", "celles", "claim",
+    }
+    from toponyms import origin_name, waters_label  # noqa: PLC0415
     for t, title in stock_told:
         if not (g_a + margin < t < g_b - margin):
             continue
+        spoken = waters_label(title, "fr") or origin_name(title)
+        blob = f"{title} {spoken}"
         words = [
-            w for w in re.findall(r"[a-zà-ÿ-]{5,}", title.casefold())
+            w for w in re.findall(r"[a-zà-ÿ-]{5,}", blob.casefold())
             if w not in stop_words
         ]
-        if not any(w in text_cf for w in words):
+        if words and not any(w in text_cf for w in words):
             return True
     return False
 
@@ -372,6 +395,7 @@ def main() -> int:
     misordered: list[str] = []
     false_leads: list[str] = []
     anon_argo: list[str] = []
+    homonyms: list[str] = []
     print(f"film : {len(chapters)} chapitres, {film.get('chars')} caractères")
     print(f"stock : {sum(stock.values())} changements {dict(stock)}")
     print()
@@ -414,6 +438,7 @@ def main() -> int:
         misordered.extend(out_of_order_dates(ch.get("text") or ""))
         false_leads.extend(bad_lendemain(ch.get("text") or ""))
         anon_argo.extend(m.group(0) for m in ARGO_ANON_RE.finditer(ch.get("text") or ""))
+        homonyms.extend(consecutive_homonyms(ch.get("text") or ""))
     dups = duplicate_sites(chapters)
     print()
     print(f"dits  : {dict(said)}")
@@ -428,9 +453,10 @@ def main() -> int:
     print(f"phrases hors ordre (dates qui reculent, 0 attendu) : {misordered or 'aucune'}")
     print(f"connecteurs de date faux (« Le lendemain » sans veille) : {false_leads or 'aucun'}")
     print(f"Argo anonymes (sans identifiant, 0 attendu) : {anon_argo or 'aucun'}")
+    print(f"homonymes consécutifs (0 attendu) : {homonyms or 'aucun'}")
     if dups or orphans:
         fails += 1
-    if misordered or false_leads or anon_argo:
+    if misordered or false_leads or anon_argo or homonyms:
         fails += 1
     print(f"\n{'KO' if fails else 'OK'} ({fails} défaut(s))")
     return 1 if fails else 0
