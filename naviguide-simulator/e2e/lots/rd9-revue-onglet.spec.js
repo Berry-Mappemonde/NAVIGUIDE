@@ -138,6 +138,8 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
     const drawing = await page.getByTestId("drawing-box").isVisible({ timeout: 8_000 }).catch(() => false);
     if (drawing) {
       await showLeftPanel(page);
+      // DM9 (revue du porteur du 14 oct., § 4.1 option A) : en Tracer, Revue du plan et Récit ;
+      // Maintenant et Journal n'ont pas d'objet.
       await expect(page.getByTestId("ici-tab-review")).toBeVisible();
       await expect(page.getByTestId("ici-tab-story")).toBeVisible();
       await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
