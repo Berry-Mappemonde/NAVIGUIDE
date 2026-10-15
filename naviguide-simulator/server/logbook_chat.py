@@ -376,6 +376,7 @@ async def build_context(
         boat_out["atQuay"] = bool(live.get("atQuay"))
         ctx["boat"] = boat_out
 
+    bag = None
     point = _around_point(question or "", clock, lat, lon)
     if point is not None:
         around_lat, around_lon, around_basis = point
@@ -882,6 +883,11 @@ _RAW_FIELD_RE = re.compile(
     r")\s*:\s*(?:\([^)]*\)|[^)\n;,(]+(?:,\s*)?)+\)?",
     re.I,
 )
+# Lightning sometimes leaks `(atQuay false, speed 0.5 knots)` — no colon.
+_RAW_PAREN_KEY_RE = re.compile(
+    r"\([^)]*\b(?:atQuay|speedKnots|windKnots|dirFromDeg|filmNm|sailNm)\b[^)]*\)",
+    re.I,
+)
 _JSON_EXCUSE_RE = re.compile(
     r"(?:the\s+)?JSON\s+does\s+not\b|JSON\s+ne\s+(?:contient|tient)\b|"
     r"le\s+JSON\s+ne\s+(?:contient|tient)\b",
@@ -896,6 +902,7 @@ def strip_raw_fields(text: str) -> str:
     while prev != out:
         prev = out
         out = _RAW_FIELD_RE.sub("", out)
+    out = _RAW_PAREN_KEY_RE.sub("", out)
     out = re.sub(r"\(\s*\)", "", out)
     out = re.sub(r"\s{2,}", " ", out)
     out = re.sub(r"\s+([,.;])", r"\1", out)
@@ -1519,7 +1526,12 @@ async def answer_question(
 
     if parsed.get("intent") == "reason":
         base = fact_text if fact_text else missing_info(lang)
-        text = f"{base} {reason_invite(lang)}".strip()
+        # Invite Ultra only when the rules already have a fact. A missing-info
+        # answer must stay exactly `missing_info` (JSON-excuse fallback).
+        if fact_text and fact_text != missing_info(lang):
+            text = f"{base} {reason_invite(lang)}".strip()
+        else:
+            text = base
         return _finish_answer(text, ctx, lang, "rules", sentences=ANSWER_SENTENCES + 1, chars=ANSWER_CHARS + 160)
 
     if fact_text is None:

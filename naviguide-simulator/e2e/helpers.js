@@ -250,25 +250,51 @@ export async function waitFilmReady(page, timeout = 45_000) {
 /**
  * Le film ancré (RC18) laisse le bateau à quai pendant les premières phrases (Saint-Maur → La Rochelle
  * par la route — comptée dans filmNm —, puis l'escale) : on ne mesure sa glisse qu'une fois qu'il BOUGE
- * vraiment (plus de `minDeg` degrés entre deux lectures à 500 ms), pas sur les milles déjà au compteur.
+ * vraiment, après le premier quai (un premier épisode de route, un palier, puis la mer). Un seul saut
+ * d'arrivée à quai n'est pas « en route » : la glisse y recule ou s'arrête.
  */
-export async function waitBoatUnderWay(page, { minDeg = 0.01, timeout = 60_000 } = {}) {
-  return page.evaluate(async ([min, limit]) => {
+export async function waitBoatUnderWay(page, { minDeg = 0.01, timeout = 60_000, stableMs = 1_500 } = {}) {
+  return page.evaluate(async ([min, limit, hold]) => {
     const read = () => {
       const f = window.__naviguideFilm || {};
       return Number.isFinite(f.lat) && Number.isFinite(f.lon) ? { lat: f.lat, lon: f.lon, nm: Number(f.filmNm) || 0, ended: Boolean(f.ended) } : null;
     };
+    const twitch = min * 0.05;
     const t0 = performance.now();
     let prev = read();
+    let seenMove = false;
+    let afterQuay = false;
+    let quietMs = 0;
+    let seaMs = 0;
+    let lastTick = t0;
     while (performance.now() - t0 < limit) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 400));
+      const now = performance.now();
+      const dt = now - lastTick;
+      lastTick = now;
       const cur = read();
       if (cur?.ended) return { moving: false, ended: true, nm: cur.nm };
-      if (prev && cur && Math.abs(cur.lat - prev.lat) + Math.abs(cur.lon - prev.lon) > min) return { moving: true, ended: false, nm: cur.nm };
+      const dist = prev && cur
+        ? Math.abs(cur.lat - prev.lat) + Math.abs(cur.lon - prev.lon)
+        : 0;
       prev = cur || prev;
+      if (dist > twitch) {
+        seenMove = true;
+        quietMs = 0;
+        if (afterQuay) {
+          seaMs += dt;
+          if (seaMs >= hold) return { moving: true, ended: false, nm: cur?.nm || 0 };
+        }
+      } else {
+        seaMs = 0;
+        if (seenMove) {
+          quietMs += dt;
+          if (quietMs >= 800) afterQuay = true;
+        }
+      }
     }
     return { moving: false, ended: false, nm: prev?.nm || 0 };
-  }, [minDeg, timeout]);
+  }, [minDeg, timeout, stableMs]);
 }
 
 /** Le récit du panneau gauche dans la langue demandée (après une bascule FR/EN, il se recharge). */
