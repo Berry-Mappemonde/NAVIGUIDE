@@ -11,6 +11,7 @@ import {
   localChanges,
   momentAtOrBefore,
   momentJournalStorageKey,
+  momentsRequestPath,
   parseOfficialMoments,
   pollOfficialMoments,
   readLocalJournal,
@@ -97,6 +98,14 @@ describe("useMomentJournal — lot R9b : repli localStorage, plafond 2 000", () 
     assert.equal(body.length, 2);
     assert.equal(body[0].signature, "a");
     assert.equal(parseOfficialMoments({}).length, 0);
+  });
+
+  it("lot DM8C — GET /voyage/{id}/moments pour ma route, officiel inchangé", () => {
+    assert.equal(momentsRequestPath("official"), "/voyage/official/moments");
+    assert.equal(momentsRequestPath(""), "/voyage/official/moments");
+    assert.equal(momentsRequestPath("abc-123"), "/voyage/abc-123/moments");
+    assert.match(src, /momentsRequestPath\(voyageId\)/);
+    assert.match(src, /voyageId: routeId/);
   });
 });
 

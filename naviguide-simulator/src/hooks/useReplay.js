@@ -86,14 +86,45 @@ export function isRe7OfficialFilm(data) {
   return filmHasRg6Rg7Fingerprint(blob);
 }
 
-/** pending | ready | stale | empty | absent */
+/** pending | ready | stale | empty | absent | preparing */
 export function officialFilmStatus(data, { fetchFailed = false } = {}) {
   if (fetchFailed) return "absent";
+  if (isPreparingFilm(data)) return "preparing";
   if (isRe7OfficialFilm(data)) return "ready";
   if (data?.chapters?.length) return "stale";
   if (data == null) return "pending";
   return "empty";
 }
+
+/** Officiel : /voyage/official/film. Suivre × ma route : /voyage/{id}/film. */
+export function filmRequestPath(voyageId) {
+  const id = String(voyageId || "").trim();
+  if (id && id !== "official") return `/voyage/${encodeURIComponent(id)}/film`;
+  return "/voyage/official/film";
+}
+
+export function isOfficialFilmVoyage(voyageId) {
+  const id = String(voyageId || "").trim();
+  return !id || id === "official";
+}
+
+export function isPreparingFilm(data) {
+  return String(data?.status || "").toLowerCase() === "preparing";
+}
+
+/**
+ * Film jouable : empreinte RE7 pour Berry ; pour ma route, le status
+ * serveur `ready` + des chapitres (jamais le brut local).
+ */
+export function isReadyRemoteFilm(data, { official = true } = {}) {
+  if (!data || isPreparingFilm(data)) return false;
+  if (official) return isRe7OfficialFilm(data);
+  return String(data.status || "").toLowerCase() === "ready" && Boolean(data.chapters?.length);
+}
+
+/** preparing : relire toutes les 10 s, au plus 2 min, puis arrêt poli. */
+export const FILM_PREPARE_POLL_MS = 10_000;
+export const FILM_PREPARE_MAX_MS = 120_000;
 
 /**
  * Revoir en Suivre : horloge officielle + /film RE7 de ce checkout.
@@ -603,6 +634,7 @@ export function useReplay({
   marks = [],
   destination = null,
   t0 = DEFAULT_T0_ISO,
+  voyageId = "official",
 } = {}) {
   const [active, setActive] = useState(false);
   const [tMs, setTMs] = useState(null);
@@ -622,6 +654,7 @@ export function useReplay({
   const [hasWritten, setHasWritten] = useState(false);
   const [estimatedSeconds, setEstimatedSeconds] = useState(0);
   const [variantEstimates, setVariantEstimates] = useState(null);
+  const [filmParagraphs, setFilmParagraphs] = useState([]);
   const remotePlanRef = useRef(null);
   // Langue et budget du plan chargé : on ne garde le plan « prêt » pendant un rechargement que s'il
   // répond à la MÊME demande — sinon un clic Revoir juste après le passage en anglais jouait le film
@@ -785,13 +818,17 @@ export function useReplay({
       remotePlanRef.current = null;
       setEstimatedSeconds(0);
       setVariantEstimates(null);
+      setFilmParagraphs([]);
       return undefined;
     }
     let cancelled = false;
     let retryTimer = 0;
     const ac = new AbortController();
+    const official = isOfficialFilmVoyage(voyageId);
+    const path = filmRequestPath(voyageId);
     const style = filmStyle === "written" ? "written" : "raw";
     const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
+    let prepareStarted = 0;
 
     const applyEstimates = (data) => {
       const chapters = data?.chapters || [];
@@ -803,14 +840,26 @@ export function useReplay({
       setVariantEstimates(data?.estimates && typeof data.estimates === "object" ? data.estimates : null);
     };
 
+    const applyStory = (data) => {
+      const texts = (data?.chapters || []).map((c) => String(c?.text || "").trim()).filter(Boolean);
+      setFilmParagraphs(texts);
+    };
+
     const applyData = (data) => {
       if (cancelled) return true;
-      if (isRe7OfficialFilm(data)) {
+      if (isPreparingFilm(data)) {
+        remotePlanRef.current = null;
+        setFilmParagraphs([]);
+        setFilmStatus("preparing");
+        return "preparing";
+      }
+      if (isReadyRemoteFilm(data, { official })) {
         remotePlanRef.current = data;
         remotePlanKeyRef.current = q;
         setHasWritten(Boolean(data.hasWritten));
         setFilmSource(data.source || "rules");
         applyEstimates(data);
+        applyStory(data);
         setFilmStatus("ready");
         return true;
       }
@@ -818,6 +867,7 @@ export function useReplay({
         remotePlanRef.current = data;
         remotePlanKeyRef.current = q;
         applyEstimates(data);
+        applyStory(data);
         setFilmStatus("stale");
         return true;
       }
@@ -830,6 +880,7 @@ export function useReplay({
       setFilmSource("rules");
       setEstimatedSeconds(0);
       setVariantEstimates(null);
+      setFilmParagraphs([]);
       setFilmStatus("absent");
     };
 
@@ -841,7 +892,7 @@ export function useReplay({
         setFilmStatus("pending");
         remotePlanRef.current = null;
       }
-      fetch(`${API}/voyage/official/film?${q}`, { signal: ac.signal })
+      fetch(`${API}${path}?${q}`, { signal: ac.signal })
         .then((r) => {
           if (!r.ok) return { fail: true };
           return r.json().then((data) => ({ data })).catch(() => ({ fail: true }));
@@ -852,7 +903,16 @@ export function useReplay({
             markAbsent();
             return;
           }
-          if (applyData(pack.data)) return;
+          const applied = applyData(pack.data);
+          if (applied === "preparing") {
+            const now = Date.now();
+            if (!prepareStarted) prepareStarted = now;
+            if (now - prepareStarted < FILM_PREPARE_MAX_MS) {
+              retryTimer = setTimeout(load, FILM_PREPARE_POLL_MS);
+            }
+            return;
+          }
+          if (applied) return;
           setFilmStatus("empty");
           retryTimer = setTimeout(load, 2000);
         })
@@ -868,7 +928,7 @@ export function useReplay({
       ac.abort();
       clearTimeout(retryTimer);
     };
-  }, [enabled, lang, targetSeconds, filmStyle, t0, setFilmStatus]);
+  }, [enabled, lang, targetSeconds, filmStyle, t0, voyageId, setFilmStatus]);
 
   const canStart = canStartOfficialReplay({
     requireOfficialFilm,
@@ -909,10 +969,11 @@ export function useReplay({
   const start = useCallback(() => {
     const status = remoteStatusRef.current;
     const remote = remotePlanRef.current;
+    const official = isOfficialFilmVoyage(voyageId);
     let clockToUse = clock;
     let remoteToUse = remote;
     if (requireOfficialFilm) {
-      if (status === "ready" && isRe7OfficialFilm(remote) && clock) {
+      if (status === "ready" && isReadyRemoteFilm(remote, { official }) && clock) {
         clockToUse = clock;
         remoteToUse = remote;
       } else {
@@ -921,7 +982,8 @@ export function useReplay({
     }
     const w = replayWindow(clockToUse, Date.now());
     if (!w) return false;
-    const local = buildFilmScript({
+    // Suivre : jamais le brut local (expeditionStory) servi comme film serveur.
+    const local = requireOfficialFilm ? { chapters: [], source: "rules" } : buildFilmScript({
       clock: clockToUse,
       marks,
       live: destination,
@@ -931,7 +993,7 @@ export function useReplay({
       seconds: targetSeconds,
       t0,
     });
-    const fallback = filmChaptersFromStory({
+    const fallback = requireOfficialFilm ? [] : filmChaptersFromStory({
       clock: clockToUse,
       marks,
       live: destination,
@@ -942,9 +1004,17 @@ export function useReplay({
     });
     const remoteOk = Boolean(
       remoteToUse?.chapters?.length
-      && (isRe7OfficialFilm(remoteToUse) || filmTextHasT0Year(remoteToUse.chapters, t0)),
+      && (
+        isReadyRemoteFilm(remoteToUse, { official })
+        || isRe7OfficialFilm(remoteToUse)
+        || filmTextHasT0Year(remoteToUse.chapters, t0)
+      ),
     );
-    const picked = pickFilmChapters(remoteOk ? remoteToUse : null, local, fallback);
+    const picked = pickFilmChapters(
+      remoteOk ? remoteToUse : null,
+      requireOfficialFilm ? null : local,
+      requireOfficialFilm ? [] : fallback,
+    );
     const chapters = picked.chapters;
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
@@ -1011,11 +1081,17 @@ export function useReplay({
       };
     }
     return true;
-  }, [clock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0]);
+  }, [clock, requireOfficialFilm, marks, destination, journal, lang, targetSeconds, applyChapter, t0, voyageId]);
 
   useEffect(() => {
     if (!enabled && active) stop();
   }, [enabled, active, stop]);
+
+  useEffect(() => {
+    if (active) stop();
+    // Berry ↔ ma route : on ne continue pas le film de l'autre source.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voyageId]);
 
   const onVoiceBoundary = useCallback((charIdx) => {
     const plan = planRef.current;
@@ -1465,5 +1541,7 @@ export function useReplay({
     remoteStatus,
     estimatedSeconds,
     variantEstimates,
+    filmParagraphs,
+    voyageId,
   };
 }

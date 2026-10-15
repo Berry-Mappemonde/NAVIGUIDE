@@ -98,10 +98,12 @@ describe("routeDrawPlan (lot DM5) — une seule route à l'écran", () => {
     assert.match(app, /const officialClock = suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock;/);
     // La position live vient de la source : vessel.live pour ma route.
     assert.match(app, /const sourceLive = suivreCustom \? \(vessel\.live \|\| customClientLive\) : official\.live;/);
-    // Revoir est grisé (libellé honnête) sur ma route — jamais retiré.
-    assert.match(app, /routeSource === "custom" \? \{ unavailable: true \}/);
+    // DM8C : Revoir sur ma route — même bouton, actif quand le film perso est ready.
+    assert.doesNotMatch(app, /unavailable: true/);
+    assert.match(app, /enabled: isSuivre && \(suivreBerry \|\| Boolean\(customVoyageId\)\)/);
+    assert.match(app, /voyageId: suivreCustom \? customVoyageId : "official"/);
     const bar = read("../components/SimulationFilmBar.jsx");
-    assert.match(bar, /replay\?\.unavailable/);
-    assert.match(bar, /t\("replayBerryOnly"\)/);
+    assert.match(bar, /replayPreparing/);
+    assert.match(bar, /data-testid="replay-start"/);
   });
 });

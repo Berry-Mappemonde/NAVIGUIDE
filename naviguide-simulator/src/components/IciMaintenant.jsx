@@ -84,6 +84,7 @@ export function IciMaintenant({
   journalEntries = null,
   onSeek = null,
   mode = "follow",
+  routeSource = "berry",
   planReview = null,
   simulation = null,
   hereBody = null,
@@ -92,7 +93,7 @@ export function IciMaintenant({
   momentFree = null,
 }) {
   const { t, lang } = useLang();
-  const [localView, setLocalView] = useState(() => defaultIciTab(mode));
+  const [localView, setLocalView] = useState(() => defaultIciTab(mode, { routeSource }));
   const [dismissed, setDismissed] = useState(() => new Set());
   const view = viewProp || localView;
   const setView = (id) => {
@@ -103,9 +104,9 @@ export function IciMaintenant({
   const here = shown?.here?.sentences?.length ? shown.here : (moment?.here || shown?.here);
   const alerts = visibleAlerts(shown?.alerts, dismissed);
   const tint = regimeColor(shown?.leg?.regime);
-  const tabs = visibleIciTabs(mode);
-  const extraTabs = hiddenIciTabs(mode);
-  const showNowServing = servesNowContent(view, mode);
+  const tabs = visibleIciTabs(mode, { routeSource });
+  const extraTabs = hiddenIciTabs(mode, { routeSource });
+  const showNowServing = servesNowContent(view, mode, { routeSource });
   const tracer = isTracerIciMode(mode);
 
   useEffect(() => {
@@ -114,18 +115,24 @@ export function IciMaintenant({
     // (RC2 lit aria-selected sur le testid, même si l'onglet n'est pas montré).
     const hasNowTab = tabs.some((tab) => tab.id === "now")
       || extraTabs.some((tab) => tab.id === "now");
-    if (hasNowTab) {
+    const nowVisible = tabs.some((tab) => tab.id === "now");
+    if (nowVisible) {
+      if (typeof onViewChange === "function") onViewChange("now");
+      else setLocalView("now");
+      return;
+    }
+    if (hasNowTab && tracer) {
       if (typeof onViewChange === "function") onViewChange("now");
       else setLocalView("now");
       return;
     }
     if (tracer && view !== "review") setView("review");
-  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange, mode]);
+  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange, mode, routeSource]);
 
   useEffect(() => {
     if (tabs.some((tab) => tab.id === view)) return;
-    setView(defaultIciTab(mode));
-  }, [mode]);
+    setView(defaultIciTab(mode, { routeSource }));
+  }, [mode, routeSource]);
 
   return (
     <div

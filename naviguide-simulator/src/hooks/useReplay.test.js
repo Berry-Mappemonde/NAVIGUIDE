@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmShouldFinish, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isRe7OfficialFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmShouldFinish, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds } from "./useReplay.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -281,7 +281,7 @@ describe("lot RE4 — ligne d'état pilotée par le t0 de la barre", () => {
     assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.doesNotMatch(app, /iso: isSuivre && replay\.active/);
     assert.match(app, /onDepartureT0=\{suivreBerry \? setReplayT0 : voyage\.setT0\}/);
-    assert.match(app, /onT0: setReplayT0/);
+    assert.match(app, /onT0: suivreBerry \? setReplayT0/);
     assert.doesNotMatch(app, /voyage\.setT0\(replayT0\)/);
     assert.doesNotMatch(app, /voyage\.setT0\(DEFAULT_T0_ISO\)/);
   });
@@ -354,7 +354,6 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
   });
 
   it("App : replayControls dès officialClock, canStart passé à la barre", () => {
-    // DM5 : le film officiel ne joue qu'en Suivre × Berry.
     assert.match(app, /const filmClock = suivreBerry \? official\.clock : voyage\.clock/);
     assert.match(app, /clock: filmClock/);
     assert.match(app, /fallbackClock: voyage\.clock/);
@@ -364,16 +363,46 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.match(app, /canStart: replay\.canStart/);
     assert.match(hook, /keepReady/);
     assert.match(hook, /remoteStatusRef\.current === "ready"/);
-    assert.match(hook, /isRe7OfficialFilm/);
+    assert.match(hook, /isReadyRemoteFilm/);
     assert.match(hook, /seekChapter/);
     assert.match(hook, /pinnedIdxRef/);
     const replayCall = app.slice(app.indexOf("const replay = useReplay"), app.indexOf("const live = isSuivre"));
     assert.match(replayCall, /clock: filmClock/);
     assert.doesNotMatch(replayCall, /clock: officialClock/);
+    assert.match(replayCall, /voyageId: suivreCustom \? customVoyageId : "official"/);
     const startFn = hook.slice(hook.indexOf("const start = useCallback"), hook.indexOf("const onVoiceBoundary"));
-    assert.match(startFn, /status === "ready" && isRe7OfficialFilm/);
+    assert.match(startFn, /status === "ready"/);
+    assert.match(startFn, /isReadyRemoteFilm/);
+    assert.match(startFn, /jamais le brut local/);
     assert.doesNotMatch(startFn, /fallbackClock \|\| clock/);
     assert.doesNotMatch(startFn, /status === "absent"/);
+  });
+
+  it("lot DM8C — l'URL du film suit le mode ; preparing n'est pas un film", () => {
+    assert.equal(filmRequestPath("official"), "/voyage/official/film");
+    assert.equal(filmRequestPath(""), "/voyage/official/film");
+    assert.equal(filmRequestPath(null), "/voyage/official/film");
+    assert.equal(filmRequestPath("abc-123"), "/voyage/abc-123/film");
+    assert.equal(isOfficialFilmVoyage("official"), true);
+    assert.equal(isOfficialFilmVoyage("abc-123"), false);
+    assert.equal(isPreparingFilm({ status: "preparing", chapters: [] }), true);
+    assert.equal(isPreparingFilm({ status: "ready", chapters: [{ text: "x" }] }), false);
+    assert.equal(officialFilmStatus({ status: "preparing", chapters: [] }), "preparing");
+    const customReady = {
+      status: "ready",
+      chapters: [{ text: `${"La Rochelle vers les Antilles. ".repeat(250)}` }],
+    };
+    assert.equal(isRe7OfficialFilm(customReady), false);
+    assert.equal(isReadyRemoteFilm(customReady, { official: true }), false);
+    assert.equal(isReadyRemoteFilm(customReady, { official: false }), true);
+    assert.equal(isReadyRemoteFilm({ status: "preparing", chapters: [] }, { official: false }), false);
+    assert.equal(isReadyRemoteFilm({ status: "ready", chapters: [] }, { official: false }), false);
+    assert.equal(canStartOfficialReplay({ officialClock: { t0: "x" }, remoteStatus: "preparing" }), false);
+    assert.equal(FILM_PREPARE_POLL_MS, 10_000);
+    assert.equal(FILM_PREPARE_MAX_MS, 120_000);
+    assert.match(hook, /FILM_PREPARE_POLL_MS/);
+    assert.match(hook, /filmRequestPath\(voyageId\)/);
+    assert.doesNotMatch(hook, /fetch\(`\$\{API\}\/voyage\/official\/film\?\$\{q\}`/);
   });
 });
 

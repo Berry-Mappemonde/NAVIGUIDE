@@ -227,6 +227,7 @@ export default {
   replayStart: "Replay the expedition",
   replayStartTitle: "Replay the route from Saint-Maur to today, told day by day",
   replayBerryOnly: "Replay: Berry-Mappemonde route only — coming soon for your route",
+  replayPreparing: "preparing",
   replayStop: "Stop",
   replayStopTitle: "Stop the film and return to Follow",
   replayProgress: "Replay: {pct} %",
