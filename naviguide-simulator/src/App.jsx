@@ -538,7 +538,12 @@ export default function App() {
   }, [hudLeg]);
 
   const legendMarks = useMemo(() => (
-    attachClockIso(escaleMarks, suivreBerry ? (official.clock?.marks || []) : (voyage.clock?.marks || []))
+    attachClockIso(
+      escaleMarks,
+      // Suivre × Berry : horloge officielle ; sans API, horloge locale
+      // (RA2 / R5). Tracer : horloge du tracé seulement — pas official.live.
+      (suivreBerry ? official.clock?.marks : null) || voyage.clock?.marks || [],
+    )
   ), [escaleMarks, suivreBerry, official.clock, voyage.clock]);
   const { nowMs: clockNowMs, liveFilmNm: legendLiveFilmNm } = legendNowAndLive({
     suivreBerry,
@@ -868,9 +873,10 @@ export default function App() {
   // MA route est le lot DM8 — rien n'est servi comme prêt d'ici là.
   const storyParagraphs = useMemo(() => {
     if (!suivreBerry || !officialClock) return [];
+    const datedLegend = (legendMarks || []).some((m) => m?.iso);
     return expeditionStory({
       clock: officialClock,
-      marks: legendMarks,
+      marks: datedLegend ? legendMarks : (officialClock.marks || legendMarks),
       live,
       leg: hudLeg,
       journal: officialJournal.journal,
