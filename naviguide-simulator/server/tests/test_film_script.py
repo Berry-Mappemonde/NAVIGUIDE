@@ -1229,7 +1229,7 @@ def test_re7_discourse_eleven_defects():
     assert "Gran Roque" not in blob
     assert "Monaco" not in blob
     assert re.search(r"s'envole de Cayenne pour Halifax", blob)
-    assert re.search(r"le bateau attend à Cayenne", blob)
+    assert re.search(r"le catamaran attend à Cayenne", blob)
     assert re.search(r"Aujourd’hui, le bateau est à Nouméa", blob)
     assert "Irma" in blob and "2017" in blob
     assert "une bouée" in blob
@@ -1242,9 +1242,8 @@ def test_re7_discourse_eleven_defects():
     assert "Bay of Biscay" not in blob
     assert re.search(r"eaux espagnoles", blob)
     idx_zee = blob.find("eaux espagnoles")
-    idx_dep = blob.find("pour Cayenne")
-    if idx_dep < 0:
-        idx_dep = blob.find("quitte")
+    m_dep = re.search(r"La Rochelle.{0,120}Cayenne|quitte La Rochelle", blob)
+    idx_dep = m_dep.start() if m_dep else blob.find("quitte")
     assert 0 <= idx_dep < idx_zee
     _assert_no_filler(blob)
     assert not re.search(r"\bnm\b", blob)
@@ -1271,7 +1270,7 @@ def test_rf5_air_survives_tight_budget():
         blob = _script_blob(plan)
         assert plan["targetSeconds"] == seconds
         assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
-        assert re.search(r"le bateau attend à Cayenne", blob), blob
+        assert re.search(r"le catamaran attend à Cayenne", blob), blob
         _assert_no_filler(blob)
 
 
@@ -1283,7 +1282,7 @@ def test_rf5_air_when_halifax_has_no_iso():
     blob = _script_blob(plan)
     assert "Cayenne" in blob
     assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
-    assert re.search(r"le bateau attend à Cayenne", blob), blob
+    assert re.search(r"le catamaran attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1296,7 +1295,7 @@ def test_rf5_air_return_without_moments():
     )
     blob = _script_blob(plan)
     assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
-    assert re.search(r"le bateau attend à Cayenne", blob), blob
+    assert re.search(r"le catamaran attend à Cayenne", blob), blob
     assert "avion pour Nouméa" not in blob
     _assert_no_filler(blob)
 
@@ -1347,18 +1346,25 @@ def test_rg1_depart_ms_is_clock_leave_not_hold():
 
 
 def test_rg1_air_window_not_told_as_navigation():
+    """RC31 : le catamaran ne navigue pas Cayenne → Saint-Pierre ; vol vers Halifax."""
     marks = [
         {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 0, "lat": 46.8, "lon": 1.6},
         {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z", "holdHours": 0, "lat": 46.15, "lon": -1.16},
         {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "iso": "2026-07-19T08:00:00Z", "holdHours": 72, "lat": 4.93, "lon": -52.33},
-        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4100, "filmNm": 4100, "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4000, "filmNm": 4080, "iso": "2026-07-22T08:00:00Z", "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4400, "filmNm": 4480, "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4800, "filmNm": 4880, "iso": "2026-07-29T08:00:00Z", "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Cayenne (Guyane)", "nm": 4800, "filmNm": 4960, "iso": "2026-07-30T08:00:00Z", "holdHours": 0, "lat": 4.93, "lon": -52.33},
         {"name": "Papeete (Polynésie française)", "nm": 11000, "filmNm": 11100, "iso": "2026-09-08T08:00:00Z", "holdHours": 72, "lat": -17.5, "lon": -149.5},
     ]
     clock = {"t0": OFFICIAL_T0, "marks": marks, "vertices": [
         {"iso": "2026-07-19T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "quay"},
-        {"iso": "2026-07-22T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "plane"},
-        {"iso": "2026-07-25T18:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
-        {"iso": "2026-07-28T08:00:00Z", "lat": 4.80, "lon": -52.50, "vehicle": "main"},
+        {"iso": "2026-07-22T08:00:00Z", "lat": 44.65, "lon": -63.57, "vehicle": "plane"},
+        {"iso": "2026-07-23T08:00:00Z", "lat": 45.7, "lon": -60.0, "vehicle": "side"},
+        {"iso": "2026-07-25T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "side"},
+        {"iso": "2026-07-29T08:00:00Z", "lat": 44.65, "lon": -63.57, "vehicle": "side"},
+        {"iso": "2026-07-30T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
+        {"iso": "2026-08-02T08:00:00Z", "lat": 4.80, "lon": -52.50, "vehicle": "main"},
     ]}
     live = {"filmNm": 12000, "sailNm": 11800, "iso": "2026-09-19T02:00:00Z", "status": "live"}
     journal = {
@@ -1366,14 +1372,13 @@ def test_rg1_air_window_not_told_as_navigation():
             {"seq": 0, "t": "2026-07-23T08:00:00Z", "changes": [
                 {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive canadienne",
                  "fact": "Entrée dans Zone économique exclusive canadienne"},
-            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
-            {"seq": 1, "t": "2026-07-25T06:00:00Z", "changes": [
-                {"kind": "approche", "score": 3, "title": "Saint-Pierre", "fact": "Approche de Saint-Pierre"},
-            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
-            {"seq": 2, "t": "2026-07-25T08:00:00Z", "changes": [
-                {"kind": "escale", "score": 3, "title": "Arrivée à Saint-Pierre", "fact": "Cayenne → Saint-Pierre"},
-            ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"}}},
-            {"seq": 3, "t": "2026-07-28T09:00:00Z", "changes": [
+            ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                                  "vehicle": "side"}}},
+            {"seq": 1, "t": "2026-07-25T08:00:00Z", "changes": [
+                {"kind": "escale", "score": 3, "title": "Arrivée à Saint-Pierre", "fact": "Halifax → Saint-Pierre"},
+            ], "moment": {"leg": {"from": "Halifax (Nouvelle-Écosse)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                                  "vehicle": "side"}}},
+            {"seq": 2, "t": "2026-08-02T09:00:00Z", "changes": [
                 {"kind": "zee-enter", "score": 2, "title": "Entrée dans Zone économique exclusive du Panama",
                  "fact": "Entrée dans Zone économique exclusive du Panama"},
             ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"}}},
@@ -1382,16 +1387,27 @@ def test_rg1_air_window_not_told_as_navigation():
     }
     plan = build_raw_script(clock, marks, live, journal, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = _script_blob(plan)
-    assert re.search(r"s'envole de Cayenne pour Saint-Pierre-et-Miquelon", blob), blob
-    assert re.search(r"le bateau attend à Cayenne", blob), blob
-    assert not re.search(r"départ vers Saint-Pierre", blob), blob
+    assert re.search(r"s'envole de Cayenne pour Halifax", blob), blob
+    assert re.search(r"le catamaran attend à Cayenne", blob), blob
+    assert blob.lower().count("catamaran attend à cayenne") == 1
+    assert re.search(r"second voilier", blob), blob
+    assert re.search(r"s'envole de Halifax pour Cayenne", blob), blob
+    assert not re.search(r"s'envole de Cayenne pour Saint-Pierre", blob), blob
     assert not re.search(r"Berry-Mappemonde quitte Cayenne.{0,80}pour Saint-Pierre", blob), blob
-    assert not re.search(r"approche de Saint-Pierre", blob, re.I), blob
-    assert not re.search(r"Arrivée à Saint-Pierre", blob), blob
-    assert not re.search(r"eaux canadiennes", blob), blob
+    names = [(c.get("fromName") or "", c.get("toName") or "") for c in plan["chapters"]]
+    air_out = next(i for i, (a, b) in enumerate(names) if "Cayenne" in a and "Halifax" in b)
+    side_out = next(i for i, (a, b) in enumerate(names) if "Halifax" in a and "Saint-Pierre" in b)
+    side_back = next(i for i, (a, b) in enumerate(names) if "Saint-Pierre" in a and "Halifax" in b)
+    air_back = next(i for i, (a, b) in enumerate(names) if "Halifax" in a and "Cayenne" in b)
+    assert air_out < side_out < side_back < air_back
+    chs = plan["chapters"]
+    assert re.search(r"19 juillet|22 juillet", chs[air_out]["text"] or "")
+    assert re.search(r"22 juillet|23 juillet", chs[side_out]["text"] or "")
+    assert re.search(r"25 juillet|29 juillet", chs[side_back]["text"] or "")
+    assert re.search(r"29 juillet|30 juillet", chs[air_back]["text"] or "")
     next_sail = next(
         c for c in plan["chapters"]
-        if re.search(r"pour Papeete|quitte Cayenne", c.get("text") or "")
+        if re.search(r"pour Papeete|reprend la mer|départ vers Papeete|quitte Cayenne", c.get("text") or "")
     )
     assert "Cayenne" in (next_sail.get("fromName") or "")
     assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
