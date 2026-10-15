@@ -9,6 +9,7 @@ import {
   localizeAdviceSentence,
 } from "../hooks/usePlanReview.js";
 import { REGIME_COLORS } from "../layers/regimeRoute.js";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 const LEVEL_DOT = {
   ok: "bg-emerald-400",
@@ -25,20 +26,6 @@ const BADGE = {
   alert: "border-rose-400/60 text-rose-200",
   muted: "border-white/10 text-white/40",
 };
-
-/** Libellé de source (clés i18n L1). Pas de nom de modèle en dur. */
-function llmSourceLabel(source, t) {
-  const s = String(source || "");
-  if (s === "openrouter") return t("storySourceOpenrouter");
-  if (s === "claude") return t("storySourceClaude");
-  if (s === "rules") return t("storySourceRules");
-  if (s === "budget") return t("storySourceBudget");
-  if (s === "cache") return t("storySourceCache");
-  if (s.endsWith("-lightning")) return t("storySourceLightning");
-  if (s.endsWith("-super")) return t("storySourceSuper");
-  if (s.endsWith("-ultra")) return t("storySourceUltra");
-  return s || t("storySourceRules");
-}
 
 /**
  * « Revue du plan » (lot K): one row per leg — dates, badges (sea days, rest,
@@ -88,7 +75,6 @@ export const PlanReview = memo(function PlanReview({
     : null;
   const compare = applied && best ? buildAdviceCompare(best, advisedLeg, t, lang) : null;
   const source = (best && (advice?.best?.sentenceSource || commentSource)) || commentSource || "rules";
-  const sourceLabel = llmSourceLabel(source, t);
   const body = (
       <div className={startOpen ? "" : "border-t border-white/5"}>
         {summary ? (
@@ -174,7 +160,7 @@ export const PlanReview = memo(function PlanReview({
             </button>
           ) : null}
           <AdviceCompare compare={compare} todayLabel={t("planCompareToday")} advisedLabel={t("planCompareAdvised")} />
-          <p className="text-[9px] text-white/40 mt-1">{sourceLabel}</p>
+          <LlmSourceBadge source={source} testId="plan-review-source" className="mt-1 [&_span]:text-white/40" />
         </div>
       </div>
   );

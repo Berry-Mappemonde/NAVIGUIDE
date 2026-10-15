@@ -10,9 +10,16 @@ function parseCoordTuples(text) {
     .map((tuple) => {
       const parts = tuple.split(",");
       if (parts.length < 2) return null;
-      const lon = Number(parts[0]);
-      const lat = Number(parts[1]);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const a = Number(parts[0]);
+      const b = Number(parts[1]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      let lat = b;
+      let lon = a;
+      // GeoJSON/KML = lon,lat ; copier-coller carte = lat,lon (|lat| souvent > |lon| en Atlantique/Europe).
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 90 && Math.abs(a) > Math.abs(b)) {
+        lat = a;
+        lon = b;
+      }
       if (lat < -90 || lat > 90) return null;
       return { lat, lon };
     })
@@ -210,5 +217,9 @@ export function parseRouteFile(text, name = "") {
     return kml;
   }
   if (looksJson(raw)) return parseGeojson(raw);
-  return parseKml(raw);
+  const kml = parseKml(raw);
+  if (!kml.error) return kml;
+  const tuples = parseCoordTuples(raw);
+  if (tuples.length) return finalize(tuples, "coords");
+  return kml;
 }

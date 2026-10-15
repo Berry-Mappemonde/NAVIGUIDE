@@ -15,7 +15,8 @@ describe("PlanReview — commentaire (lot L5)", () => {
   it("affiche le paragraphe sous le tableau avec source i18n", () => {
     assert.match(src, /data-testid="plan-review-comment"/);
     assert.match(src, /planReviewCommentTitle/);
-    assert.match(src, /storySourceRules/);
+    assert.match(src, /LlmSourceBadge/);
+    assert.match(src, /plan-review-source/);
     assert.match(src, /commentSource/);
     assert.doesNotMatch(src, /Nemotron|Tavily|Nebius/);
   });

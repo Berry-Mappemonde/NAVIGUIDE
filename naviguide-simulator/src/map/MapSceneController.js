@@ -41,7 +41,7 @@ import {
   ROUTE_CASING_COLOR,
   ROUTE_CASING_WEIGHT,
   ROUTE_MAIN_WEIGHT,
-  TILE_ATTRIBUTION,
+  tileAttribution,
   TILE_URLS,
   WAKE_DONE_COLOR,
   WAKE_REST_COLOR,
@@ -77,9 +77,9 @@ export const WORLD_ZOOM = 2;
  */
 export const MAP_MIN_ZOOM = 0;
 
-function baseTileOptions() {
+function baseTileOptions(lang = "fr") {
   return {
-    attribution: TILE_ATTRIBUTION,
+    attribution: tileAttribution(lang),
     updateWhenZooming: false,
     updateWhenIdle: false,
     keepBuffer: 6,
@@ -254,8 +254,9 @@ export class MapSceneController {
     this.callbacks = callbacks;
     this.layers = new SceneLayerRegistry();
     this.config = {};
-    this.baseLayer = L.tileLayer(TILE_URLS.dark, baseTileOptions()).addTo(map);
+    this.baseLayer = L.tileLayer(TILE_URLS.dark, baseTileOptions("fr")).addTo(map);
     this.baseLayer._naviguideUrl = TILE_URLS.dark;
+    this.baseLayer._naviguideAttr = tileAttribution("fr");
     this.wakeGeometry = null;
     this.markerSets = new Map();
     this.waypointMarkers = new Map();
@@ -611,18 +612,23 @@ export class MapSceneController {
 
   syncBaseLayer() {
     const url = this.config.isLightMode ? TILE_URLS.light : TILE_URLS.dark;
+    const lang = this.config.lang === "en" ? "en" : "fr";
+    const attr = tileAttribution(lang);
     if (this.config.filmActive) {
-      if (!this.baseLayer) this.switchBaseLayer(url);
+      if (!this.baseLayer) this.switchBaseLayer(url, attr);
+      else if (this.baseLayer._naviguideAttr !== attr) this.switchBaseLayer(url, attr);
       return;
     }
-    this.switchBaseLayer(url);
+    this.switchBaseLayer(url, attr);
   }
 
   /** Ré-ajoute avant de retirer : jamais une carte sans tuiles. */
-  switchBaseLayer(url) {
-    if (this.baseLayer?._naviguideUrl === url) return;
-    const next = L.tileLayer(url, baseTileOptions());
+  switchBaseLayer(url, attr) {
+    const credit = attr || tileAttribution(this.config.lang === "en" ? "en" : "fr");
+    if (this.baseLayer?._naviguideUrl === url && this.baseLayer?._naviguideAttr === credit) return;
+    const next = L.tileLayer(url, baseTileOptions(this.config.lang === "en" ? "en" : "fr"));
     next._naviguideUrl = url;
+    next._naviguideAttr = credit;
     next.addTo(this.map);
     next.bringToBack();
     const prev = this.baseLayer;

@@ -51,6 +51,10 @@ JOURNAL_TAIL = 20
 _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
 _WHY_RE = re.compile(r"(?i)(?<!\w)(pourquoi|comment|why|how)(?!\w)")
+_ROUTE_RE = re.compile(
+    r"(?i)(?<!\w)(route|itinéraire|itineraire|trajet|leg|jambe|waypoint|waypoints|"
+    r"plan de route|route plan|course|routing)(?!\w)",
+)
 FAST_QUESTION_MAX = 80
 WX_MEMORY = 200
 _WX_WORDS = re.compile(
@@ -362,9 +366,11 @@ async def similar_wx(
 # ── answer ──────────────────────────────────────────────────────────────────
 
 def chat_tier(question: str) -> str:
-    """write by default; Lightning (`fast`) for a short factual question (lot L2)."""
+    """Lightning for short factual; Ultra (`deep`) for why/how/route-plan; else Super (`write`)."""
     q = " ".join((question or "").split())
-    if len(q) < FAST_QUESTION_MAX and not _WHY_RE.search(q):
+    if _WHY_RE.search(q) or _ROUTE_RE.search(q):
+        return "deep"
+    if len(q) < FAST_QUESTION_MAX:
         return "fast"
     return "write"
 

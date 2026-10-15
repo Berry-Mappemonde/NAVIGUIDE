@@ -100,6 +100,8 @@ _EEZ_RE = re.compile(
     r"^(?P<nation>.+?)\s+Exclusive Economic Zone\s*$",
     re.IGNORECASE,
 )
+_FR_ZEE_RE = re.compile(r"^Zone économique exclusive\s+(?P<adj>.+?)\s*$", re.IGNORECASE)
+_FR_ADJ_EN = {v["fr"]: v["en"] for v in _NATION_ADJ.values()}
 _PAREN_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
 _DUP_PAREN_RE = re.compile(r"\s*\(([^)]+)\)\s*\(\1\)", re.IGNORECASE)
 
@@ -204,6 +206,15 @@ def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
     territory = table.get(str(zee.get("territory") or ""))
     extra = territory or paren
 
+    fr_match = _FR_ZEE_RE.match(base)
+    if fr_match and en:
+        adj_fr = fr_match.group("adj").strip().lower()
+        en_adj = _FR_ADJ_EN.get(adj_fr) or adj_fr
+        label = f"{en_adj} EEZ"
+        if extra and extra.lower() not in label.lower():
+            label = f"{label} ({extra})"
+        return _dedupe_parens(label)
+
     match = _EEZ_RE.match(base)
     adj = _nation_adj(match.group("nation")) if match else None
     if adj:
@@ -221,6 +232,20 @@ def localize_zee_name(zee: dict | None, lang: str = "fr") -> str:
     return _dedupe_parens(label)
 
 
+_PLACE_EN = {
+    "nouvelle-calédonie": "New Caledonia",
+    "nouvelle-caledonie": "New Caledonia",
+    "wallis-et-futuna": "Wallis and Futuna",
+    "polynésie française": "French Polynesia",
+    "polynesie francaise": "French Polynesia",
+    "la réunion": "Réunion",
+    "la reunion": "Réunion",
+    "la sardaigne": "Sardinia",
+    "corse": "Corsica",
+    "(corse)": "(Corsica)",
+}
+
+
 def localize_place_name(name: str | None, lang: str = "fr") -> str:
     from toponyms import origin_name  # noqa: PLC0415
     text = origin_name(str(name or "").strip())
@@ -229,6 +254,13 @@ def localize_place_name(name: str | None, lang: str = "fr") -> str:
     if _en(lang):
         text = re.sub(r"Marine Protected Area", "Marine protected area", text, flags=re.I)
         text = re.sub(r"Exclusive Economic Zone", "EEZ", text, flags=re.I)
+        text = re.sub(r"Aire marine protégée", "Marine protected area", text, flags=re.I)
+        low = text.lower()
+        for fr, en_name in _PLACE_EN.items():
+            if fr in low:
+                text = re.sub(re.escape(fr), en_name, text, flags=re.I)
+        if re.search(r"Zone économique exclusive", text, re.I):
+            text = localize_zee_name({"name": text, "mrgid": 1}, lang)
     else:
         text = re.sub(r"Marine Protected Area", "Aire marine protégée", text, flags=re.I)
         if re.search(r"Exclusive Economic Zone", text, re.I):
