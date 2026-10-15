@@ -72,8 +72,9 @@ def warm_enabled() -> bool:
 
 
 def stories_enabled() -> bool:
-    """Pre-generation of the LLM stories after the pearls (lot F); off in tests."""
-    return (os.environ.get("NAVIGUIDE_STORY_PREGEN") or "1").strip() not in ("0", "false", "no")
+    """RG18 : plus de pré-génération de récits d'événements. Toujours faux —
+    un réglage NAVIGUIDE_STORY_PREGEN ne peut plus rallumer ~177 appels Super."""
+    return False
 
 
 def watch_enabled() -> bool:
@@ -92,12 +93,14 @@ def status() -> dict[str, Any]:
     import llm_budget  # noqa: PLC0415
     import pearl_store  # noqa: PLC0415
     info = pearl_store.info()
-    return {
+    out = {
         **_state,
         "store": info,
         "llm": llm_budget.status(),
         "moments": info.get("moments", 0),
     }
+    out.setdefault("stories", {"skipped": "on-demand"})
+    return out
 
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -689,10 +692,12 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
     _state.update({
         "status": "running", "kind": "rich" if rich else "thin", "total": len(pearls),
         "done": 0, "cached": 0, "errors": 0, "startedAt": time.time(), "finishedAt": None,
+        "stories": {"skipped": "on-demand"},
     })
     if not pearls:
         _state["status"] = "done"
         _state["finishedAt"] = time.time()
+        _state["stories"] = {"skipped": "on-demand"}
         return status()
     month = None
     try:
@@ -739,13 +744,8 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         _state["zeeRefreshed"] = await refresh_zee_local()
     except Exception as exc:
         log.debug("relecture ZEE locale : %s", exc)
-    # Lot F: the stories of the route's events, written ahead of the film.
-    if stories_enabled():
-        try:
-            import story_cache  # noqa: PLC0415
-            _state["stories"] = await story_cache.pregenerate_official(points)
-        except Exception as exc:
-            log.debug("pré-génération des récits : %s", exc)
+    # RG18 : plus de pré-génération de récits — le statut garde la clé stories.
+    _state["stories"] = {"skipped": "on-demand"}
     if watch_enabled():
         try:
             import escale_watch  # noqa: PLC0415

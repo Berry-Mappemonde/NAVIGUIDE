@@ -1,18 +1,13 @@
-"""Récits pré-générés (lot F) : cache par (type, stableKey, lang), cascade habituelle, budget."""
+"""Cache de lecture des récits (lot F, RG18) : (type, stableKey, lang), cascade, budget. Plus de pré-génération."""
 import asyncio
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
-import ici_engine
 import pearl_store
 import story_cache
 import story_cascade
-import voyage_store
-from ici_engine import thin_cache_key
-from tests.test_voyage_journal import PUBLIC, _official
-from voyage_clock import OFFICIAL_VOYAGE_ID
+from tests.test_voyage_journal import PUBLIC
 
 
 def _llm(answer="Le bateau entre dans la ZEE espagnole ; ports d’entrée officiels : Bilbao, Santander."):
@@ -69,47 +64,13 @@ def test_story_endpoint_reads_the_cache_then_writes_through_it(monkeypatch):
     assert pearl_store.kv_count("story") == 1
 
 
-def test_pregeneration_from_pearls_under_budget(monkeypatch):
-    # La pré-génération est de l'ARRIÈRE-PLAN : elle n'écrit qu'en NAVIGUIDE_LLM_MODE=all (28 sept.).
-    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "all")
-    ici_engine.reset_caches()
-    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
-    monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
-    transport, calls = _llm()
-    real = story_cascade.write_story
-
-    async def patched(body, client=None):
-        async with httpx.AsyncClient(transport=transport) as c:
-            return await real(body, c)
-
-    monkeypatch.setattr(story_cascade, "write_story", patched)
-    voy = {**_official(), "voyageId": OFFICIAL_VOYAGE_ID}
-    voyage_store.save_voyage(voy)
-    import ici_warm
-    pearls = ici_warm.sample_route_nm(voy["points"])
-    fr = {"name": "French Exclusive Economic Zone", "mrgid": 5677, "gold": True}
-    es = {"name": "Spanish Exclusive Economic Zone", "mrgid": 5693}
-    for i, p in enumerate(pearls[:30]):
-        zee = fr if i < 12 else es
-        poe = [{"name": "La Rochelle - La Pallice", "id": "lr", "nm": 1.0, "url": "https://douane.gouv.fr"}] if i == 0 else [{"name": "Bilbao", "nm": 60}]
-        ici_engine.thin_cache_put(thin_cache_key(p["lat"], p["lon"], 30.0), {"zee": zee, "amp": [], "poe": poe, "sources": {"bi": "ok"}})
-    bodies = story_cache.pregen_bodies(voy["points"], "fr")
-    keys = sorted(story_cache.story_key(b) for b in bodies)
-    assert "zee-enter|zee-enter:5693|fr" in keys, keys
-    assert any(k.startswith("poe-ahead|poe-ahead:5677:La Rochelle") for k in keys)
-    zee_body = next(b for b in bodies if b["type"] == "zee-enter")
-    assert zee_body["payload"]["poe"][0]["name"] == "Bilbao" and "nm" not in zee_body["payload"]["poe"][0], "no boat distance in a pre-generated text"
-
-    monkeypatch.setenv("NAVIGUIDE_STORY_BUDGET_PER_DAY", "1")
-    out = asyncio.run(story_cache.pregenerate_official(voy["points"], pause_s=0))
-    assert out["planned"] == len(bodies) >= 2
-    assert out["written"] == 1 and out["skippedBudget"] == len(bodies) - 1, out
-    assert out["budgetLeftToday"] == 0
-    # Second run: the written one is cached, nothing spent beyond the budget.
-    monkeypatch.setenv("NAVIGUIDE_STORY_BUDGET_PER_DAY", "10")
-    out2 = asyncio.run(story_cache.pregenerate_official(voy["points"], pause_s=0))
-    assert out2["cached"] == 1 and out2["written"] == len(bodies) - 1
-    assert out2["stored"] == len(bodies)
+def test_pregeneration_removed():
+    assert not hasattr(story_cache, "pregenerate_official")
+    assert not hasattr(story_cache, "_pregenerate_official")
+    assert not hasattr(story_cache, "pregen_bodies")
+    st = story_cache.status()
+    assert st.get("skipped") == "on-demand"
+    assert "status" not in st or st.get("status") != "running"
 
 
 def test_story_through_cache_keeps_writer_source():
@@ -174,21 +135,8 @@ def test_story_through_cache_translates_cached_fr(monkeypatch):
     assert again["cached"] is True and again["source"] == "cache"
 
 
-def test_pregeneration_spends_nothing_in_default_mode(monkeypatch):
-    """Mode par défaut on-demand (28 sept.) : le préchauffage des récits ne fait aucun appel payant."""
-    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
-    ici_engine.reset_caches()
-    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
-    monkeypatch.setattr(story_cascade, "nvidia_key", lambda: "test")
-    calls = []
-
-    async def spy(body, client=None):
-        calls.append(body)
-        return "texte", "nemotron-super"
-
-    monkeypatch.setattr(story_cascade, "write_story", spy)
-    voy = {**_official(), "voyageId": OFFICIAL_VOYAGE_ID}
-    voyage_store.save_voyage(voy)
-    out = asyncio.run(story_cache.pregenerate_official(voy["points"], pause_s=0))
-    assert out.get("written", 0) == 0, "arrière-plan en on-demand : rien n'est écrit par le LLM"
-    assert calls == [], "aucun appel au modèle"
+def test_pregenerate_route_gone():
+    from main import app
+    client = TestClient(app)
+    r = client.post("/ici/story/pregenerate", headers=PUBLIC)
+    assert r.status_code in (404, 405)

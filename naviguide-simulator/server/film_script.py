@@ -3161,6 +3161,237 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
     return ""
 
 
+_EMPTY_WHEN_RE = re.compile(r"^(Le|On) ,\s*")
+
+
+def _tidy_empty_when(text: str) -> str:
+    """event_sentence prefixes « Le {when}, » — drop the comma if the date is missing."""
+    s = str(text or "").strip()
+    s = _EMPTY_WHEN_RE.sub("", s).strip()
+    if s and s[0].islower():
+        return s[0].upper() + s[1:]
+    return s
+
+
+def _ici_event_iso(ev: dict) -> str | None:
+    payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+    for raw in (ev.get("t"), ev.get("iso"), payload.get("t"), payload.get("iso")):
+        if raw:
+            return str(raw)
+    return None
+
+
+def phrase_for_ici_event(ev: dict | None, lang: str = "fr") -> str:
+    """Same film-script sentence the film would say for this ici() event.
+
+    Maps zee-enter / amp-enter / poe-ahead / … onto event_sentence,
+    change_sentence or _arrival_sentence. Empty when the film would stay silent
+    (the client template remains the fallback).
+    """
+    if not isinstance(ev, dict):
+        return ""
+    typ = str(ev.get("type") or ev.get("event") or "")
+    payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+    t = _ici_event_iso(ev)
+    name = ev.get("name")
+
+    if typ in {"zee-enter", "zee-ahead"}:
+        zee = payload.get("zee") if isinstance(payload.get("zee"), dict) else {}
+        spoken = name or zee.get("name")
+        film_ev = {
+            "kind": "zee",
+            "name": spoken,
+            "t": t,
+            "entry": {"t": t, "name": spoken},
+        }
+        return _tidy_empty_when(event_sentence(film_ev, lang))
+
+    if typ == "zee-exit":
+        return ""
+
+    if typ in {"amp-enter", "amp-ahead"}:
+        amp = payload.get("amp") if isinstance(payload.get("amp"), dict) else {}
+        spoken = name or amp.get("name")
+        try:
+            from ici_engine import is_fishing_amp  # noqa: PLC0415
+            if is_fishing_amp({"name": spoken, "title": spoken}):
+                return ""
+        except Exception:
+            pass
+        nm = amp.get("nm")
+        if nm is None:
+            nm = payload.get("whenNm") if payload.get("whenNm") is not None else ev.get("whenNm")
+        ev_kind = "enter" if typ == "amp-enter" else "nearby"
+        film_ev = {
+            "kind": "amp",
+            "name": spoken,
+            "t": t,
+            "entry": {
+                "t": t,
+                "name": spoken,
+                "event": ev_kind,
+                "inside": typ == "amp-enter",
+                "facts": {"nm": nm},
+                "nm": nm,
+            },
+        }
+        raw = event_sentence(film_ev, lang)
+        if not raw:
+            raw = change_sentence({
+                "kind": "amp",
+                "t": t,
+                "title": spoken or "",
+                "event": ev_kind,
+                "inside": typ == "amp-enter",
+                "nm": nm,
+                "fact": spoken or "",
+            }, lang)
+        return _tidy_empty_when(raw)
+
+    if typ == "poe-ahead":
+        poe = payload.get("poe") if isinstance(payload.get("poe"), dict) else {}
+        spoken = name or poe.get("name")
+        raw = event_sentence({
+            "kind": "poe",
+            "name": spoken,
+            "t": t,
+            "entry": {"t": t, "name": spoken},
+        }, lang)
+        return _tidy_empty_when(raw)
+
+    if typ in {"wind-shift", "wind-gale", "wx-alert"}:
+        kn = payload.get("tws")
+        if kn is None:
+            kn = payload.get("maxWindKnots")
+        hs = payload.get("hs")
+        raw = event_sentence({
+            "kind": "wx",
+            "t": t,
+            "entry": {
+                "t": t,
+                "facts": {"maxWindKnots": kn, "hs": hs},
+                "maxWindKnots": kn,
+            },
+        }, lang)
+        return _tidy_empty_when(raw)
+
+    if typ in {"stop", "escale", "arrival"}:
+        spoken = name or (payload.get("harbour") or {}).get("name") or payload.get("stop") or ""
+        stop = {"name": spoken, "iso": t, "holdHours": payload.get("holdHours") or 0}
+        raw = _arrival_sentence(stop, lang)
+        if not raw:
+            raw = change_sentence({"kind": "escale", "t": t, "title": spoken}, lang)
+        return _tidy_empty_when(raw)
+
+    return ""
+
+
+def _iso_for_ici_bag(bag: dict) -> str | None:
+    if not isinstance(bag, dict):
+        return None
+    for key in ("t", "iso"):
+        if bag.get(key):
+            return str(bag[key])
+    at = bag.get("at") if isinstance(bag.get("at"), dict) else {}
+    if at.get("iso") or at.get("t"):
+        return str(at.get("iso") or at.get("t"))
+    lat, lon = at.get("lat"), at.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    try:
+        from official_store import payload_of  # noqa: PLC0415
+        from ici_engine import haversine_nm  # noqa: PLC0415
+        body = payload_of("climo") or {}
+        best, best_d = None, 40.0
+        for f in body.get("fiches") or []:
+            if not isinstance(f, dict) or f.get("lat") is None or not f.get("iso"):
+                continue
+            d = haversine_nm(float(lat), float(lon), float(f["lat"]), float(f["lon"]))
+            if d < best_d:
+                best, best_d = f, d
+        if best:
+            return str(best["iso"])
+        clock = body.get("clock") if isinstance(body.get("clock"), dict) else {}
+        live = clock.get("live") if isinstance(clock.get("live"), dict) else {}
+        return live.get("iso") or clock.get("nowIso") or clock.get("iso")
+    except Exception:
+        return None
+
+
+def _amp_phrase_key(amp: dict, kind: str) -> str:
+    ident = amp.get("site_id") or amp.get("id") or amp.get("wdpaid") or amp.get("name")
+    if ident:
+        return f"{kind}:{ident}"
+    return kind
+
+
+def _poe_phrase_key(poe: dict) -> str:
+    name = poe.get("name")
+    return f"poe-ahead:{name}" if name else "poe-ahead"
+
+
+def _bilingual_ici_phrase(ev: dict) -> dict[str, str]:
+    return {
+        "fr": phrase_for_ici_event(ev, "fr"),
+        "en": phrase_for_ici_event(ev, "en"),
+    }
+
+
+def attach_ici_film_phrases(bag: dict | None, *, t: str | None = None) -> dict | None:
+    """Copy of the ici bag plus filmPhrases { key: {fr, en} } from film_script.
+
+    Served on GET /ici (no new route). Does not mutate the cached pearl.
+    """
+    if not isinstance(bag, dict):
+        return bag
+    out = dict(bag)
+    iso = t or _iso_for_ici_bag(out)
+    phrases: dict[str, dict[str, str]] = {}
+
+    zee = out.get("zee") if isinstance(out.get("zee"), dict) else None
+    if zee and (zee.get("name") or zee.get("mrgid")):
+        ev = {"type": "zee-enter", "name": zee.get("name"), "t": iso, "payload": {"zee": zee}}
+        pair = _bilingual_ici_phrase(ev)
+        if pair["fr"] or pair["en"]:
+            phrases["zee-enter"] = pair
+        ahead = {"type": "zee-ahead", "name": zee.get("name"), "t": iso, "payload": {"zee": zee}}
+        ahead_pair = _bilingual_ici_phrase(ahead)
+        if ahead_pair["fr"] or ahead_pair["en"]:
+            phrases["zee-ahead"] = ahead_pair
+
+    for amp in out.get("amp") or []:
+        if not isinstance(amp, dict):
+            continue
+        for kind in ("amp-enter", "amp-ahead"):
+            ev = {
+                "type": kind,
+                "name": amp.get("name"),
+                "t": iso,
+                "whenNm": amp.get("nm"),
+                "payload": {"amp": amp, "whenNm": amp.get("nm")},
+            }
+            pair = _bilingual_ici_phrase(ev)
+            if pair["fr"] or pair["en"]:
+                phrases[_amp_phrase_key(amp, kind)] = pair
+
+    for poe in out.get("poe") or []:
+        if not isinstance(poe, dict) or not poe.get("name"):
+            continue
+        ev = {
+            "type": "poe-ahead",
+            "name": poe.get("name"),
+            "t": iso,
+            "whenNm": poe.get("nm"),
+            "payload": {"poe": poe},
+        }
+        pair = _bilingual_ici_phrase(ev)
+        if pair["fr"] or pair["en"]:
+            phrases[_poe_phrase_key(poe)] = pair
+
+    out["filmPhrases"] = phrases
+    return out
+
+
 def _departure_iso(stop: dict) -> Optional[str]:
     t = _ms(stop.get("iso"))
     if t is None:

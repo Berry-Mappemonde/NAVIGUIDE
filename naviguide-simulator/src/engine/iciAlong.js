@@ -286,7 +286,7 @@ export function upsertLedger(ledger, incoming) {
         // The story was written under the orders of that time: keep them together.
         next.story = prev.story;
         if (prev.skipper) next.skipper = prev.skipper;
-        if (prev.story.status === "ready" && prev.story.text) next.phrase = prev.story.text;
+        if (prev.filmPhrase && !next.filmPhrase) next.filmPhrase = prev.filmPhrase;
       }
       out[idx] = next;
     } else out.push(ev);
