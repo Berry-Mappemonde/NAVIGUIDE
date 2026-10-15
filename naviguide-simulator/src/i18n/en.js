@@ -226,6 +226,7 @@ export default {
   logbookChatNotLogged: "no admin key: not logged",
   replayStart: "Replay the expedition",
   replayStartTitle: "Replay the route from Saint-Maur to today, told day by day",
+  replayBerryOnly: "Replay: Berry-Mappemonde route only — coming soon for your route",
   replayStop: "Stop",
   replayStopTitle: "Stop the film and return to Follow",
   replayProgress: "Replay: {pct} %",

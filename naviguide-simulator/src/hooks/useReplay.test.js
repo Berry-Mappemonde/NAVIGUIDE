@@ -28,7 +28,10 @@ describe("useReplay contract (lot E)", () => {
   });
 
   it("App swaps the live boat for the replayed one in Suivre, jumps the playhead each frame, reads each new leg aloud", () => {
-    assert.match(app, /replay\.active && replay\.live \? replay\.live : official\.live/);
+    // DM5 : la position live vient de la source (official.live en Berry,
+    // vessel.live sur ma route) — le replay la remplace pareil.
+    assert.match(app, /replay\.active && replay\.live \? replay\.live : sourceLive/);
+    assert.match(app, /const sourceLive = suivreCustom \? \(vessel\.live \|\| customClientLive\) : official\.live;/);
     assert.match(app, /jump: Boolean\(live\.replay\)/);
     // The voice lives in hooks/useReplayVoice.js since lot J; App mounts it.
     assert.match(app, /useReplayVoice\(\{/);
@@ -273,7 +276,9 @@ describe("lot RE4 — ligne d'état pilotée par le t0 de la barre", () => {
 
   it("App décale la ligne dès le champ date, sans toucher au t0 Simulation", () => {
     assert.match(app, /followClockLineFromT0/);
-    assert.match(app, /t0: isSuivre \? replayT0/);
+    // DM5 : replayT0 ne décale que la ligne Suivre × Berry ; ma route lit le
+    // t0 de son propre voyage (date de départ choisie).
+    assert.match(app, /t0: suivreBerry \? replayT0/);
     assert.doesNotMatch(app, /iso: isSuivre && replay\.active/);
     assert.match(app, /onDepartureT0=\{voyage\.setT0\}/);
     assert.match(app, /onT0: setReplayT0/);
@@ -349,7 +354,8 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
   });
 
   it("App : replayControls dès officialClock, canStart passé à la barre", () => {
-    assert.match(app, /const filmClock = isSuivre \? official\.clock : voyage\.clock/);
+    // DM5 : le film officiel ne joue qu'en Suivre × Berry.
+    assert.match(app, /const filmClock = suivreBerry \? official\.clock : voyage\.clock/);
     assert.match(app, /clock: filmClock/);
     assert.match(app, /fallbackClock: voyage\.clock/);
     assert.match(app, /requireOfficialFilm: isSuivre/);

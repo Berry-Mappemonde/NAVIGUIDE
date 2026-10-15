@@ -398,7 +398,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
               deferSpeak={Boolean(replay?.active)}
               className="!rounded-md"
             />
-            {replay ? (
+            {replay && !replay.unavailable ? (
               <>
                 <span data-testid="film-source" hidden>
                   {filmSourceLabel(replay.source, t)}
@@ -451,7 +451,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 ))}
               </div>
             ) : null}
-            {replay ? (
+            {replay && !replay.unavailable ? (
               <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
                 <div data-testid="replay-departure" className="w-max shrink-0">
                   <DepartureField
@@ -527,6 +527,21 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                     </div>
                   ) : null}
                 </div>
+              </div>
+            ) : replay?.unavailable ? (
+              // DM5 — Suivre sur ma route : Revoir ne sait rejouer que la route
+              // Berry-Mappemonde (DM8 apportera le récit de la route perso).
+              <div className="flex items-center gap-1 flex-wrap min-w-0" data-testid="replay-controls">
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  data-testid="replay-start"
+                  className="h-6 px-1.5 rounded-md text-[9px] font-semibold border bg-sky-700/60 border-sky-300/40 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={t("replayBerryOnly")}
+                >
+                  ↺ {t("replayStart")}
+                </button>
               </div>
             ) : null}
           </div>

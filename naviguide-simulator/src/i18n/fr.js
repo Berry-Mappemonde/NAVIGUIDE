@@ -226,6 +226,7 @@ export default {
   logbookChatNotLogged: "sans clé admin : non consigné",
   replayStart: "Revoir l’expédition",
   replayStartTitle: "Rejouer la route de Saint-Maur à aujourd’hui, racontée jour par jour",
+  replayBerryOnly: "Revoir : route Berry-Mappemonde seulement — bientôt pour votre route",
   replayStop: "Stop",
   replayStopTitle: "Arrêter le film et revenir à Suivre",
   replayProgress: "Replay : {pct} %",
