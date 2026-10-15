@@ -110,7 +110,11 @@ export function IciMaintenant({
 
   useEffect(() => {
     if (!escale?.stop) return;
-    if (tabs.some((tab) => tab.id === "now")) {
+    // Visible ou hidden (Tracer / DM9) : la fiche d'escale sélectionne Maintenant
+    // (RC2 lit aria-selected sur le testid, même si l'onglet n'est pas montré).
+    const hasNowTab = tabs.some((tab) => tab.id === "now")
+      || extraTabs.some((tab) => tab.id === "now");
+    if (hasNowTab) {
       if (typeof onViewChange === "function") onViewChange("now");
       else setLocalView("now");
       return;
