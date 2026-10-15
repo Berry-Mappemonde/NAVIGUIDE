@@ -1082,6 +1082,8 @@ export default function App() {
       if (!cinemaMode) {
         cinemaSavedRef.current = { sidebar: sidebarOpen, tools: toolsOpen };
       }
+      setSidebarOpen(false);
+      setToolsOpen(false);
       setCinemaMode(true);
       recaptureBoat();
     } else {
