@@ -46,6 +46,11 @@ figé ; DM3 renomme ce que tout le monde touche → en dernier.
 
 Plus rien n'est hors batch. 18 lots : deux nuits et demie environ.
 
+**Nuit du 15 oct. (03:25–03:50), décisions du porteur :**
+- **Fin des crédits Anthropic** : les lots restants quittent Fable pour le modèle par défaut de la chaîne (Grok 4.6 xHigh Fast) ; le correcteur du matin aussi (`BIM_CORRECTOR_MODEL` sur le poste). HC1, DM5 et RC30 ont été faits avec Fable.
+- **Découpage pour Grok** : DM8 → **DM8A** (moments de ma route, serveur) → **DM8B** (film de ma route, serveur) → **DM8C** (client) ; RG11 → **RG11A** (serveur : faits, Super, vérification, stock) → **RG11B** (client, parcours, coût) ; AM1 → **AM1A** (sac : polygones, limite, cache, mesure) → **AM1B** (événements, film, encadré). Chaque sous-lot livre un contrat écrit que le suivant consomme. RC31 et DM3 restent entiers. Tranche : 22 lots.
+- **Chaîne** (#469) : CI rouge → rejeu des jobs avant un agent, jusqu'à 4 corrections, arrêt si deux corrections sans effet, jamais de lot sur une tête rouge (la pile s'arrête, commentaire 🔴 sur la PR, `batch-resume.sh` après correction).
+
 ## 3. Lancer
 
 La boucle (`infra/agents/loop.py`) est en phase **`await_go`** sur la PR GO de ce plan : **merger la PR GO lance le batch**
