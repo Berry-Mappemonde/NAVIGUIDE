@@ -13,6 +13,11 @@ import {
   worldCopyOffsets,
 } from "../utils/geo.js";
 import { followMinZoom, worldViewZoom } from "./zoomFloor.js";
+import {
+  applyFollowCadrage,
+  followCadrageZoom as cadrageZoom,
+  shouldFrameFollowLive,
+} from "./followCadrage.js";
 import { computeMarkerOffsets, offsetToIconAnchor, projectRouteSegments } from "../utils/markerOffsets.js";
 import {
   cameraLngForBoat,
@@ -61,7 +66,7 @@ const EXIT_HOLD_MS = 1500;   // zoom de sortie du film tenu 1,5 s au plus, puis 
 export const MAP_LON_BOUND = 540;
 export const MAP_LAT_BOUND = 85;
 export const MAP_MAX_BOUNDS = [[-MAP_LAT_BOUND, -MAP_LON_BOUND], [MAP_LAT_BOUND, MAP_LON_BOUND]];
-/** Vue monde (accueil RF7, entrée Tracer) : centre historique, zoom 2. */
+/** Vue monde (accueil provisoire sans live, entrée Tracer) : centre historique, zoom 2. */
 export const WORLD_CENTER = [22, 5];
 export const WORLD_ZOOM = 2;
 /**
@@ -258,6 +263,7 @@ export class MapSceneController {
     this.waypointTimer = null;
     this.cameraPlaced = false;
     this.userNavigated = false;
+    this._pendingFollowCadrage = false;
     this.ignoreUserNavigation = false;
     this.ignoreUserNavigationTimer = 0;
     this.camera = {
@@ -465,6 +471,13 @@ export class MapSceneController {
     const previous = this.config;
     const previousView = previous.view;
     this.config = { ...this.config, ...next };
+    if (
+      this.config.isSuivre
+      && Number.isFinite(Number(previous.cinemaRecapture))
+      && this.config.cinemaRecapture !== previous.cinemaRecapture
+    ) {
+      this._pendingFollowCadrage = true;
+    }
     if (!previous.filmActive && this.config.filmActive) {
       this.camera.filmChapterIdx = null;
       this.camera.filmZoom = null;
@@ -1056,6 +1069,19 @@ export class MapSceneController {
     }, markerOffsetDelay(this.config.cameraFollow, reason));
   }
 
+  /** Lot DM4 : bateau au centre, zoom = plancher de Suivre. */
+  frameFollowLive(live) {
+    const applied = applyFollowCadrage(this.map, live, {
+      followLon: this.camera.followLon,
+      minZoom: MAP_MIN_ZOOM,
+      move: (fn) => this.programmaticMove(fn),
+    });
+    if (!applied) return;
+    this.camera.followLon = applied.followLon;
+    this.initialLive = { lat: live.lat, lon: live.lon };
+    this._pendingFollowCadrage = false;
+  }
+
   syncInitialCamera() {
     const cfg = this.config;
     if (!cfg.routeReady || !cfg.flat?.points?.length) {
@@ -1079,16 +1105,18 @@ export class MapSceneController {
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre && cfg.live && Number.isFinite(cfg.live.lat) && Number.isFinite(cfg.live.lon)) {
-      if (!this.initialLive || shouldResnapCamera(this.initialLive, cfg.live)) {
-        this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
-      }
-    }
-    // RF7 / D1' : le premier calage reste la vue monde du mount. Le recadrage
-    // bateau n'existe que sur le clic Suivre (cinemaRecapture / syncCamera).
-    if (!shouldPlaceInitialCamera({ userNavigated: this.userNavigated })) {
-      this.setCameraPlaced(true);
-      return;
+    const mayPlace = shouldPlaceInitialCamera({ userNavigated: this.userNavigated })
+      || this._pendingFollowCadrage;
+    if (mayPlace && shouldFrameFollowLive({
+      isSuivre: cfg.isSuivre,
+      filmActive: cfg.filmActive,
+      drawingMode: cfg.drawingMode,
+      live: cfg.live,
+      userNavigated: this.userNavigated,
+      initialLive: this.initialLive,
+      pending: this._pendingFollowCadrage,
+    })) {
+      this.frameFollowLive(cfg.live);
     }
     this.setCameraPlaced(true);
   }
@@ -1164,6 +1192,7 @@ export class MapSceneController {
   resetCameraForView() {
     this.initialLive = null;
     this.userNavigated = false;
+    this._pendingFollowCadrage = Boolean(this.config.isSuivre);
     this.cameraPlaced = false;
     this.camera = {
       lastFollow: 0,
@@ -1412,7 +1441,9 @@ export class MapSceneController {
     const previous = this.camera.lastPos;
     const movedNm = previous ? haversineNm(previous.lat, previous.lon, subject.lat, subject.lon) : 0;
     this.camera.lastPos = { lat: subject.lat, lon: subject.lon };
-    const zoom = zoomForRemaining(cfg.remainingNm ?? snapshot.sailTotalNm);
+    const zoom = liveMode
+      ? cadrageZoom(this.map?.getSize(), this.map?.options?.zoomSnap, MAP_MIN_ZOOM)
+      : zoomForRemaining(cfg.remainingNm ?? snapshot.sailTotalNm);
     const tokenJump = !liveMode && snapshot.jumpToken && snapshot.jumpToken !== this.camera.lastJump;
     if (tokenJump) this.camera.lastJump = snapshot.jumpToken;
     const phaseChanged = cast?.phase && cast.phase !== this.camera.lastPhase;
@@ -1441,7 +1472,18 @@ export class MapSceneController {
       return;
     }
     if (recapture || previous == null) {
-      this.programmaticMove(() => this.map.setView([subject.lat, lonCam], zoom, { animate: false }));
+      if (cfg.isSuivre) {
+        this._pendingFollowCadrage = true;
+        if (liveMode) {
+          this.frameFollowLive(subject);
+        } else {
+          const z = cadrageZoom(this.map?.getSize(), this.map?.options?.zoomSnap, MAP_MIN_ZOOM);
+          const here = this.map.getCenter();
+          this.programmaticMove(() => this.map.setView([here.lat, here.lng], z, { animate: false }));
+        }
+      } else {
+        this.programmaticMove(() => this.map.setView([subject.lat, lonCam], zoom, { animate: false }));
+      }
       this.camera.lastFollow = Date.now();
       return;
     }

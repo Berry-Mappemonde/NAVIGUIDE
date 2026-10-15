@@ -1,13 +1,15 @@
 // Lot RF7 — accueil Suivre + Cinéma + monde dézoomé ; Tracer monde + dézoom libre.
-// Sans API : montage (Suivre, Cinéma, zoom monde, panneaux fermés, pas de
-// recadrage) et Tracer (vue monde, dézoom jusqu'au monde) tiennent seuls.
+// Lot DM4 : accueil et clic Suivre = bateau au centre, zoom = plancher
+// (plus de zoom > 3). Sans API : montage (Suivre, Cinéma, zoom plancher,
+// panneaux fermés) et Tracer (vue monde, dézoom jusqu'au monde) tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
-// assertions qui en dépendent (recadrage caméra après clic Suivre)
-// — jamais le mode initial, ni le Cinéma, ni les panneaux, ni le dézoom Tracer.
+// assertions qui en dépendent (bateau au centre) — jamais le mode initial,
+// ni le Cinéma, ni les panneaux, ni le dézoom Tracer.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { mapFollowCadrage } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rf7");
 mkdirSync(recetteDir, { recursive: true });
@@ -71,7 +73,7 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — recadrage caméra après clic Suivre sauté",
+      description: "GET /voyage/official absent — bateau au centre sauté ; zoom plancher et Tracer conservés",
     });
   }
 
@@ -97,8 +99,12 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
     if (apiUp) {
       await page.waitForTimeout(1200);
       const zHold = await mapZoom(page);
-      expect(zHold, "plancher RC18, pas de recadrage bateau").toBeGreaterThanOrEqual(2.4);
-      expect(zHold, "plancher RC18, pas de recadrage bateau").toBeLessThanOrEqual(2.6);
+      expect(zHold, "plancher RC18 (monde une fois), cadrage bateau sans zoom-in").toBeGreaterThanOrEqual(2.4);
+      expect(zHold, "plancher RC18 (monde une fois), cadrage bateau sans zoom-in").toBeLessThanOrEqual(2.6);
+      await expect.poll(async () => {
+        const s = await mapFollowCadrage(page);
+        return Number.isFinite(s?.boatPx) ? s.boatPx : 9999;
+      }, { timeout: 15_000 }).toBeLessThan(80);
     }
     const minZ = await page.evaluate(() => window.__naviguideScene.map.getMinZoom());
     expect(minZ, "plancher RC18").toBeLessThanOrEqual(2.6);
@@ -119,24 +125,18 @@ test("lot RF7 — accueil Suivre cinéma monde ; clic Suivre recadre ; Tracer d�
   await expect.poll(() => panelClosed(page, "right"), { timeout: 8_000 }).toBe(true);
 
   if (apiUp && mapReady) {
-    const recadre = await (async () => {
-      try {
-        await expect.poll(async () => {
-          const z = await mapZoom(page);
-          return Number.isFinite(z) ? z : 0;
-        }, { timeout: 6_000 }).toBeGreaterThan(3);
-        return true;
-      } catch {
-        return false;
-      }
-    })();
-    if (!recadre) {
-      const z = await mapZoom(page);
-      test.info().annotations.push({
-        type: "RF7 / RC18",
-        description: `clic Suivre : zoom ${z} (monde) — recadrage bateau seulement sur action carte, pas au seul clic Suivre`,
-      });
-    }
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.zoom) ? s.zoom : 99;
+    }, { timeout: 8_000 }).toBeGreaterThanOrEqual(2.4);
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.zoom) ? s.zoom : 99;
+    }, { timeout: 8_000 }).toBeLessThanOrEqual(2.6);
+    await expect.poll(async () => {
+      const s = await mapFollowCadrage(page);
+      return Number.isFinite(s?.boatPx) ? s.boatPx : 9999;
+    }, { timeout: 15_000 }).toBeLessThan(80);
   }
 
   await enterTracer(page);

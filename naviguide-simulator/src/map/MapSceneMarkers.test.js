@@ -158,4 +158,18 @@ describe("MapSceneController — zoom (lot U / RG15)", () => {
     const block = src.slice(start, end);
     assert.doesNotMatch(block, /\/ici|narrateIci|enqueueStory|fetch\(/);
   });
+
+  it("lot DM4 — cadrage Suivre au plancher, pas zoomForRemaining", () => {
+    const camAt = src.indexOf("  syncCamera(cast, snapshot)");
+    const camEnd = src.indexOf("  renderDynamic(snapshot)", camAt);
+    assert.ok(camAt >= 0 && camEnd > camAt);
+    const cam = src.slice(camAt, camEnd);
+    assert.match(cam, /liveMode\s*\n\s*\? cadrageZoom/);
+    assert.match(cam, /if \(cfg\.isSuivre\)/);
+    assert.match(cam, /this\.frameFollowLive\(subject\)/);
+    assert.match(cam, /_pendingFollowCadrage/);
+    assert.match(src, /if \(cfg\.filmActive \|\| cfg\.drawingMode\) return/);
+    assert.match(src, /showWorld\(/);
+    assert.match(src, /setView\(WORLD_CENTER, worldZ/);
+  });
 });
