@@ -338,6 +338,11 @@ NAVIGUIDE_VOYAGE_DIR=/var/lib/naviguide/voyage_data
 The recette station already uses `~/.cache/naviguide/voyage_data` (26 sept.).
 Also `NAVIGUIDE_OM_DAILY_BUDGET` (default 3000): max Open-Meteo HTTP calls per
 UTC day. The first 429 or the cap stops the hindcast fill until the next UTC day.
+Lot HC1: the ERA5 archive in `naviguide.sqlite` is immutable (one call per 0.25°
+cell and 7-day window, driven by the frozen real track; a cached day is never
+re-requested) — the filler migrates pre-RF10 raw-coordinate keys to their cell
+once (`fill-worker.log` says how many) and resumes the fill the next UTC day
+where the budget stopped it.
 
 On a Mac or in CI the variable is unset: the same module writes files
 under `~/.cache/naviguide/voyage-store/` (or a temp dir). First boot with

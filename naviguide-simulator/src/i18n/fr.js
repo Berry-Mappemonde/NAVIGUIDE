@@ -487,6 +487,7 @@ export default {
   voyageAtQuay:     "à quai {days} j",
   filmAtQuay:       "à quai",
   clockRegimeHindcast: "hindcast",
+  clockRegimeRealUntil: "réel jusqu'au {date}",
   clockRegimeForecast: "prévision",
   clockRegimeClimatology: "climatologie",
   clockWeatherGfs: "GFS",

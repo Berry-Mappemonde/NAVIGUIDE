@@ -891,3 +891,140 @@ def test_stop_other_fill_processes_is_a_noop_under_pytest(monkeypatch):
     import official_store as os_
     monkeypatch.setattr(os_, "other_fill_processes", lambda keep=None, store=None: (_ for _ in ()).throw(AssertionError("ps appelé sous pytest")))
     assert os_.stop_other_fill_processes() == []
+
+
+# ── Lot HC1 — passé réel figé + avenir déterministe dans la famille climo ───
+
+
+def _hc1_bind_om(published_until: str, era5_kn: float = 20.0):
+    import httpx
+    from hindcast import bind_http
+
+    def _hours(start, end):
+        from datetime import datetime as _dt, timedelta as _td
+        d = _dt.fromisoformat(start).date()
+        last = _dt.fromisoformat(end).date()
+        out = []
+        while d <= last:
+            out.extend(f"{d.isoformat()}T{h:02d}:00" for h in range(24))
+            d += _td(days=1)
+        return out
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        times = _hours(params.get("start_date"), params.get("end_date") or params.get("start_date"))
+        speeds = [era5_kn if iso[:10] <= published_until else None for iso in times]
+        return httpx.Response(200, json={"hourly": {
+            "time": times,
+            "wind_speed_10m": speeds,
+            "wind_direction_10m": [0.0] * len(times),
+            "wind_gusts_10m": [None if s is None else s + 3 for s in speeds],
+        }})
+
+    bind_http(lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def _hc1_official_voy():
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+    return {
+        "voyageId": OFFICIAL_VOYAGE_ID,
+        "t0": T0,
+        "points": [
+            {"lat": 46.15, "lon": -1.16, "cumNm": 0, "filmCum": 0, "jump": False},
+            {"lat": 46.15, "lon": -13.5, "cumNm": 500, "filmCum": 500, "jump": False},
+            {"lat": 46.15, "lon": -38.0, "cumNm": 1520, "filmCum": 1520, "jump": False},
+        ],
+        # La boucle FINIT à La Rochelle : l'horloge « avenir » ne doit pas
+        # pivoter dessus (régression attrapée sur la vraie route).
+        "marks": [{"name": "La Rochelle", "nm": 1520, "lat": 46.15, "lon": -38.0}],
+        "startAt": "saint-maur",
+        "expedition_id": "berry-mappemonde-2026",
+        "official": True,
+        "routeRev": 0,
+    }
+
+
+def test_hc1_compute_climo_real_past_then_climatology_future(monkeypatch):
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import parse_iso
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    now = parse_iso(T0) + timedelta(days=10)
+    frontier = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    _hc1_bind_om(frontier)
+    voy = _hc1_official_voy()
+
+    payload = official_store.compute_climo(dict(voy), now)
+    assert payload is not None
+    clock = payload["clock"]
+    assert clock["realUntil"] == frontier
+    assert payload["realUntil"] == frontier
+    assert payload["hindcastStatus"] == "ready"      # 5/5 jours publiés intégrés
+    assert payload["hindcastCoverage"] == "5/5"
+    assert payload["hindcastReason"] is None
+    assert clock["hindcastCoverage"] == "5/5"
+    regimes = [v.get("regime") for v in clock["vertices"] if (v.get("speedKnots") or 0) > 0]
+    assert "hindcast" in regimes and "climatology" in regimes
+    # Le réel d'abord, la climatologie ensuite — jamais mélangés.
+    first_climo = regimes.index("climatology")
+    assert all(r == "climatology" for r in regimes[first_climo:])
+    # La frontière réel/climatologie tombe au dernier jour publié.
+    real_verts = [v for v in clock["vertices"] if v.get("regime") == "hindcast"]
+    assert real_verts[-1]["iso"][:10] >= frontier
+    # tHours et sailNm restent monotones à la couture.
+    ts = [v["tHours"] for v in clock["vertices"]]
+    assert ts == sorted(ts)
+    # L'avenir va jusqu'au BOUT de la route : la marque d'arrivée
+    # « La Rochelle » ne doit pas faire pivoter l'horloge climatologique.
+    assert abs(clock["vertices"][-1]["lon"] - (-38.0)) < 0.1
+    assert clock["arrivalIso"][:10] > frontier
+    # Statut honnête rangé sur le voyage (GET /voyage/official).
+    from voyage_store import load_voyage
+    from voyage_clock import OFFICIAL_VOYAGE_ID
+    saved = load_voyage(OFFICIAL_VOYAGE_ID)
+    assert saved["hindcastStatus"] == "ready"
+    assert saved["hindcastCoverage"] == "5/5"
+
+    # Deux calculs successifs : la MÊME horloge (position du jour identique).
+    second = official_store.compute_climo(dict(voy), now)
+    assert second["clock"]["vertices"] == clock["vertices"]
+    assert second["clock"]["arrivalIso"] == clock["arrivalIso"]
+    reset_hooks()
+
+
+def test_hc1_atlas_degraded_serves_yesterday_clock(monkeypatch):
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import OFFICIAL_VOYAGE_ID, parse_iso
+    from voyage_store import load_voyage, save_voyage
+    import real_track
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    now = parse_iso(T0) + timedelta(days=10)
+    frontier = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    _hc1_bind_om(frontier)
+    voy = _hc1_official_voy()
+    save_voyage(dict(voy))
+
+    # « La veille » : une horloge calculée avec un atlas complet (ratio 1.0).
+    official_store.put("climo", {"clock": {"t0": T0, "vertices": [
+        {"lat": 46.15, "lon": -1.16, "iso": T0, "tHours": 0, "sailNm": 0},
+    ]}, "regimes": [], "fiches": [], "atlasRatio": 1.0})
+
+    # Aujourd'hui l'atlas est mort (port 9) : tout l'avenir partirait en zones
+    # → on NE recalcule PAS, on garde l'horloge de la veille, le statut le dit.
+    out = official_store.compute_climo(dict(voy), now)
+    assert out is None
+    saved = load_voyage(OFFICIAL_VOYAGE_ID)
+    assert "horloge de la veille" in (saved.get("hindcastReason") or "")
+    assert official_store.stored_clock() is not None  # la veille reste servie
+
+    # Atlas complet à nouveau → recalcul accepté.
+    monkeypatch.setattr(real_track, "atlas_ratio", lambda f: 1.0)
+    again = official_store.compute_climo(dict(voy), now)
+    assert again is not None
+    assert again["clock"]["realUntil"] == frontier
+    reset_hooks()

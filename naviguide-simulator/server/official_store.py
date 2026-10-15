@@ -768,15 +768,61 @@ def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:
 # ── calculs (mêmes fonctions que le serveur d'aujourd'hui) ───────────────────
 
 def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
+    """Horloge officielle (lot HC1) : passé RÉEL figé (ERA5) + avenir
+    climatologique déterministe. Sans vent réel (hindcast coupé, quota, CI) :
+    horloge climatologique comme avant. Si l'atlas a reculé depuis la veille,
+    on NE recalcule PAS l'avenir : on garde l'horloge de la veille et le
+    statut le dit."""
     from climo_events import notable_climo_changes  # noqa: PLC0415
-    from voyage_api import _climo_clock, _regime_portions  # noqa: PLC0415
+    from voyage_api import _climo_clock, _polar_raw, _regime_portions  # noqa: PLC0415
     from voyage_store import save_voyage  # noqa: PLC0415
+    import real_track  # noqa: PLC0415
 
-    clock = _climo_clock(voy)
+    try:
+        polar_raw = _polar_raw(voy.get("expedition_id") or "")
+    except Exception:
+        polar_raw = None
+    track = None
+    try:
+        track = real_track.ensure_track(voy, now, polar_raw)
+    except Exception as exc:
+        log.warning("trajet réel : %s", exc)
+
+    extra: dict = {}
+    fields: dict = {}
+    if track is not None:
+        fields = real_track.status_fields(track, voy, now)
+        future = real_track.future_clock(voy, track, polar_raw)
+        ratio = real_track.atlas_ratio(future)
+        prev = payload_of("climo")
+        prev_ratio = (prev or {}).get("atlasRatio")
+        if future is not None and not real_track.accept_future(ratio, prev_ratio):
+            reason = "atlas incomplet — horloge de la veille"
+            fields["hindcastReason"] = (
+                f"{fields.get('hindcastReason')} · {reason}" if fields.get("hindcastReason") else reason
+            )
+            _save_official_status(voy, fields)
+            log.warning(
+                "horloge avenir NON recalculée : atlas %.1f %% (veille %.1f %%) — horloge de la veille servie",
+                ratio * 100.0, float(prev_ratio) * 100.0,
+            )
+            return None
+        clock = real_track.assemble_clock(track, future)
+        extra["atlasRatio"] = round(ratio, 4)
+    else:
+        clock = _climo_clock(voy)
+        if hindcast_enabled_for_status():
+            fields = real_track.status_fields(None, voy, now)
+
     if not clock or not clock.get("t0"):
         return None
+    if fields:
+        clock["realUntil"] = fields.get("realUntil")
+        clock["hindcastCoverage"] = fields.get("hindcastCoverage")
+        extra.update(fields)
     voy = dict(voy)
     voy["clock"] = clock
+    voy.update({k: v for k, v in fields.items() if k != "realUntil"})
     save_voyage(voy)
     fiches = []
     for v in clock.get("vertices") or []:
@@ -794,7 +840,24 @@ def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
         "regimes": _regime_portions(clock),
         "fiches": fiches,
         "events": notable_climo_changes(clock),
+        **extra,
     }
+
+
+def hindcast_enabled_for_status() -> bool:
+    from hindcast import hindcast_enabled  # noqa: PLC0415
+    return hindcast_enabled()
+
+
+def _save_official_status(voy: dict, fields: dict) -> None:
+    """Statut hindcast honnête sur le voyage officiel — via save_voyage, rien d'autre."""
+    from voyage_store import save_voyage  # noqa: PLC0415
+    out = dict(voy)
+    out.update({k: v for k, v in fields.items() if k != "realUntil"})
+    try:
+        save_voyage(out)
+    except Exception as exc:
+        log.warning("statut hindcast non rangé : %s", exc)
 
 
 RICH_EVENT_KINDS = frozenset({"zee", "sci", "science", "poe", "amp", "climo", "wx", "grib", "marina", "port"})

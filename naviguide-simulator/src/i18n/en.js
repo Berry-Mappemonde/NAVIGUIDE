@@ -487,6 +487,7 @@ export default {
   voyageAtQuay:     "{days} d in port",
   filmAtQuay:       "in port",
   clockRegimeHindcast: "hindcast",
+  clockRegimeRealUntil: "real until {date}",
   clockRegimeForecast: "forecast",
   clockRegimeClimatology: "climatology",
   clockWeatherGfs: "GFS",

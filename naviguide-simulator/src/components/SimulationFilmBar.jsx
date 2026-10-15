@@ -111,6 +111,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     regime: clockCurrent?.regime || clockCurrent?.kind,
     sources: clockCurrent?.sources,
     spread: clockCurrent?.spread,
+    realUntil: clock?.realUntil,
     weatherLine,
     t,
     lang,

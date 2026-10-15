@@ -38,6 +38,17 @@ TWA_RUNNING_MAX = 170.0
 WindFn = Callable[[float, float, datetime], Dict[str, Any]]
 
 
+class WindExhausted(Exception):
+    """Levée par un wind_fn strict (lot HC1) : plus de vent RÉEL à cette date.
+
+    `build_voyage_clock` s'arrête proprement au dernier pas complet et pose
+    `truncated` sur l'horloge — jamais un vent inventé à la place."""
+
+    def __init__(self, reason: Optional[str] = None):
+        super().__init__(reason or "vent réel épuisé")
+        self.reason = reason
+
+
 def _norm_stop(name: str) -> str:
     return re.sub(r"[\s\-]+", "-", (name or "").strip().lower())
 
@@ -338,7 +349,10 @@ def _mark_indices(marks: List[dict], points: List[dict]) -> List[dict]:
 
 
 def find_start_index(points: List[dict], marks: List[dict], start_at: str = "la-rochelle") -> int:
-    if start_at == "saint-maur" or not points:
+    # "seam" : la route commence déjà au bon endroit (reprise mi-parcours,
+    # lot HC1) — ne PAS pivoter sur la marque La Rochelle (l'arrivée de la
+    # boucle matcherait et sauterait tout l'avenir).
+    if start_at in ("saint-maur", "seam") or not points:
         return 0
     for m in _mark_indices(marks, points):
         if re.search(r"la rochelle", str(m.get("name") or ""), re.I):
@@ -536,101 +550,117 @@ def build_voyage_clock(
                 break
 
     sail_nm = float(start.get("cumNm") or 0)
+    truncated: Optional[dict] = None
+    a = b = start
+    span_nm = pos_nm = 0.0
 
-    for i in range(start_idx, len(pts) - 1):
-        a, b = pts[i], pts[i + 1]
-        brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
-        span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
-        vehicle = "main"
-        speed_knots: Optional[float] = None
-        wind_pack: Dict[str, Any] = {"kind": "climatology"}
-        air_edge = bool(b.get("jump"))
-        if not air_edge and b.get("air"):
-            continue
-
-        if air_edge:
-            t_hours += AIR_CALENDAR_HOURS
-            vehicle = "plane"
-            vertices.append(_emit(
-                {**b, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
-                (t0d + timedelta(hours=t_hours)).month,
-                sea_hours,
-                basis=clock_basis,
-            ))
-        elif a.get("nonMaritime") and b.get("nonMaritime"):
-            vehicle = "land"
-            if start_at == "saint-maur" and land_end_idx >= 0 and i + 1 == land_end_idx:
-                t_hours += LAND_CALENDAR_HOURS
-            sail_nm = float(b.get("cumNm") or sail_nm)
-            vertices.append(_emit(
-                b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
-                (t0d + timedelta(hours=t_hours)).month,
-                sea_hours,
-                basis=clock_basis,
-            ))
-        else:
+    try:
+        for i in range(start_idx, len(pts) - 1):
+            a, b = pts[i], pts[i + 1]
+            brg = bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
+            span_nm = max(0.0, float(b.get("cumNm") or 0) - float(a.get("cumNm") or 0))
             pos_nm = 0.0
-            while pos_nm < span_nm - 1e-9:
-                rem = span_nm - pos_nm
-                guess = min(MAX_STEP_NM, rem)
-                mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
-                mid = _point_along(a, b, mid_frac)
-                w0 = wind_at(mid["lat"], mid["lon"], t0d + timedelta(hours=t_hours))
-                speed0, _twa0, _basis0 = _speed_from_wind(polar_raw, brg, w0)
-                dt0 = guess / speed0
-                if dt0 > MAX_STEP_H:
-                    guess = speed0 * MAX_STEP_H
-                    dt0 = MAX_STEP_H
+            vehicle = "main"
+            speed_knots: Optional[float] = None
+            wind_pack: Dict[str, Any] = {"kind": "climatology"}
+            air_edge = bool(b.get("jump"))
+            if not air_edge and b.get("air"):
+                continue
+
+            if air_edge:
+                t_hours += AIR_CALENDAR_HOURS
+                vehicle = "plane"
+                vertices.append(_emit(
+                    {**b, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
+                    (t0d + timedelta(hours=t_hours)).month,
+                    sea_hours,
+                    basis=clock_basis,
+                ))
+            elif a.get("nonMaritime") and b.get("nonMaritime"):
+                vehicle = "land"
+                if start_at == "saint-maur" and land_end_idx >= 0 and i + 1 == land_end_idx:
+                    t_hours += LAND_CALENDAR_HOURS
+                sail_nm = float(b.get("cumNm") or sail_nm)
+                vertices.append(_emit(
+                    b, t_hours, t0d, brg, speed_knots, wind_pack, vehicle,
+                    (t0d + timedelta(hours=t_hours)).month,
+                    sea_hours,
+                    basis=clock_basis,
+                ))
+            else:
+                while pos_nm < span_nm - 1e-9:
+                    rem = span_nm - pos_nm
+                    guess = min(MAX_STEP_NM, rem)
                     mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
                     mid = _point_along(a, b, mid_frac)
-                when_mid = t0d + timedelta(hours=t_hours + dt0 / 2.0)
-                w = wind_at(mid["lat"], mid["lon"], when_mid)
-                speed_knots, twa, last_speed_basis = _speed_from_wind(polar_raw, brg, w)
-                dt = guess / speed_knots
-                if dt > MAX_STEP_H + 1e-6:
-                    guess = speed_knots * MAX_STEP_H
-                    dt = MAX_STEP_H
-                t_hours += dt
-                sea_hours += dt
-                pos_nm += guess
-                sail_nm += guess
-                wind_pack = _wind_pack_from(w, twa)
-                pt = b if pos_nm >= span_nm - 1e-6 else _point_along(a, b, pos_nm / span_nm)
-                vertices.append(_emit(
-                    {**pt, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, "main",
-                    (t0d + timedelta(hours=t_hours)).month,
-                    sea_hours,
-                    basis=last_speed_basis,
-                ))
+                    w0 = wind_at(mid["lat"], mid["lon"], t0d + timedelta(hours=t_hours))
+                    speed0, _twa0, _basis0 = _speed_from_wind(polar_raw, brg, w0)
+                    dt0 = guess / speed0
+                    if dt0 > MAX_STEP_H:
+                        guess = speed0 * MAX_STEP_H
+                        dt0 = MAX_STEP_H
+                        mid_frac = (pos_nm + guess / 2.0) / span_nm if span_nm else 0.5
+                        mid = _point_along(a, b, mid_frac)
+                    when_mid = t0d + timedelta(hours=t_hours + dt0 / 2.0)
+                    w = wind_at(mid["lat"], mid["lon"], when_mid)
+                    speed_knots, twa, last_speed_basis = _speed_from_wind(polar_raw, brg, w)
+                    dt = guess / speed_knots
+                    if dt > MAX_STEP_H + 1e-6:
+                        guess = speed_knots * MAX_STEP_H
+                        dt = MAX_STEP_H
+                    t_hours += dt
+                    sea_hours += dt
+                    pos_nm += guess
+                    sail_nm += guess
+                    wind_pack = _wind_pack_from(w, twa)
+                    pt = b if pos_nm >= span_nm - 1e-6 else _point_along(a, b, pos_nm / span_nm)
+                    vertices.append(_emit(
+                        {**pt, "cumNm": sail_nm}, t_hours, t0d, brg, speed_knots, wind_pack, "main",
+                        (t0d + timedelta(hours=t_hours)).month,
+                        sea_hours,
+                        basis=last_speed_basis,
+                    ))
 
-        arrived = mark_by_index.get(i + 1)
-        if arrived and i + 1 != start_idx and vehicle != "plane":
-            hold = port_days_for(str(arrived.get("name") or "")) * 24
-            clock_marks.append({
-                "name": arrived.get("name"),
-                "filmNm": _r4(b.get("filmCum", b.get("cumNm", 0)) or 0),
-                "tHours": _r4(t_hours),
-                "iso": to_iso(t0d + timedelta(hours=t_hours)),
-                "holdHours": hold,
-            })
-            if hold > 0:
-                t_hours += hold
-                quay_hours += hold
-                vertices.append(_emit(
-                    {**b, "cumNm": sail_nm}, t_hours, t0d, brg, 0.0,
-                    {"kind": wind_pack.get("kind") or "climatology",
-                     "regime": wind_pack.get("regime") or wind_pack.get("kind") or "climatology",
-                     "sources": list(wind_pack.get("sources") or []),
-                     "spread": wind_pack.get("spread"),
-                     "speedKnots": wind_pack.get("speedKnots")},
-                    "quay",
-                    (t0d + timedelta(hours=t_hours)).month,
-                    sea_hours,
-                    basis=last_speed_basis,
-                ))
+            arrived = mark_by_index.get(i + 1)
+            if arrived and i + 1 != start_idx and vehicle != "plane":
+                hold = port_days_for(str(arrived.get("name") or "")) * 24
+                clock_marks.append({
+                    "name": arrived.get("name"),
+                    "filmNm": _r4(b.get("filmCum", b.get("cumNm", 0)) or 0),
+                    "tHours": _r4(t_hours),
+                    "iso": to_iso(t0d + timedelta(hours=t_hours)),
+                    "holdHours": hold,
+                })
+                if hold > 0:
+                    t_hours += hold
+                    quay_hours += hold
+                    vertices.append(_emit(
+                        {**b, "cumNm": sail_nm}, t_hours, t0d, brg, 0.0,
+                        {"kind": wind_pack.get("kind") or "climatology",
+                         "regime": wind_pack.get("regime") or wind_pack.get("kind") or "climatology",
+                         "sources": list(wind_pack.get("sources") or []),
+                         "spread": wind_pack.get("spread"),
+                         "speedKnots": wind_pack.get("speedKnots")},
+                        "quay",
+                        (t0d + timedelta(hours=t_hours)).month,
+                        sea_hours,
+                        basis=last_speed_basis,
+                    ))
+    except WindExhausted as exc:
+        # Fin du vent RÉEL (lot HC1) : on garde le dernier pas complet, on dit
+        # où et pourquoi — jamais un vent de remplacement non étiqueté.
+        frac = (pos_nm / span_nm) if span_nm else 0.0
+        seam = _point_along(a, b, frac)
+        truncated = {
+            "reason": exc.reason,
+            "iso": to_iso(t0d + timedelta(hours=t_hours)),
+            "pointIndex": i,
+            "pointCumNm": _r4(seam.get("cumNm") or 0),
+            "pointFilmCum": _r4(seam.get("filmCum") or 0),
+        }
 
     last = vertices[-1]
-    return {
+    out = {
         "t0": to_iso(t0d),
         "kind": _clock_kind(vertices),
         "vertices": vertices,
@@ -640,6 +670,9 @@ def build_voyage_clock(
         "arrivalIso": last.get("iso") or to_iso(t0d),
         "startAt": start_at,
     }
+    if truncated is not None:
+        out["truncated"] = truncated
+    return out
 
 
 def _lerp(a: float, b: float, t: float) -> float:
