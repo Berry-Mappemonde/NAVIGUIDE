@@ -62,12 +62,8 @@ export function buildLocalCustomBriefing(geojson, language = "fr") {
     ? `Cette route a été tracée à la main${whereFr}. Elle ne suit pas le voyage par défaut de l'expédition. Distance estimée ${dist} milles nautiques sur ${segs} segment${segs > 1 ? "s" : ""}.${trail ? ` Waypoints : ${trail}.` : ""}`
     : `This route was drawn by hand${whereEn}. It is not the default expedition voyage. Estimated distance ${dist} nautical miles over ${segs} segment${segs > 1 ? "s" : ""}.${trail ? ` Waypoints: ${trail}.` : ""}`;
 
-  const note = fr
-    ? "Résumé local : l'assistant de briefing n'a pas pu être joint."
-    : "Local summary: the briefing assistant could not be reached.";
-
   return {
-    executive_briefing: `${summary}\n\n${narrative}\n\n${note}`,
+    executive_briefing: `${summary}\n\n${narrative}`,
     summary,
     narrative,
     legs: [],

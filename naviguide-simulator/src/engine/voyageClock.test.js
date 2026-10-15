@@ -325,6 +325,20 @@ describe("clockTickLabelsFromClock", () => {
       assert.equal(ticks[1].label.includes(midJ), false);
     }
   });
+
+  it("EN : le J du HUD s'écrit dN, pas jN", () => {
+    const { clock } = clockFor(DEFAULT_T0_ISO);
+    const last = lookupVoyageClock(clock, clock.vertices.at(-1).filmNm);
+    const live = lookupVoyageClock(clock, last.filmNm * 0.47);
+    const ticks = clockTickLabelsFromClock(clock, "en", {
+      filmNm: live.filmNm,
+      sailNm: live.sailNm,
+      seaHours: live.seaHours,
+    });
+    const hudD = `d${Math.floor(live.seaHours / 24)}`;
+    assert.match(ticks[1].label, new RegExp(hudD));
+    assert.equal(ticks[1].label.includes(`j${Math.floor(live.seaHours / 24)}`), false);
+  });
 });
 
 describe("filmBarTicks", () => {

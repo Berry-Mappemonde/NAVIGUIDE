@@ -381,16 +381,37 @@ def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
         "You are the logbook of the Berry-Mappemonde sailing expedition. Answer the skipper's question in at most "
         "THREE plain sentences, using ONLY the JSON of facts provided (positions, wind, zones, ports, areas, journal, "
         "polar, skipper's orders). Every figure you write must appear in the JSON, with its unit. If the JSON does not "
-        "hold the answer, say so in one sentence. No title, no list, no bold, nothing about tools or models. Thinking OFF."
+        "hold the answer, say so in one sentence. Never write JSON key names such as atQuay or speedKnots; "
+        "say the fact in words. No title, no list, no bold, nothing about tools or models. Thinking OFF."
         if en else
         "Tu es le journal de bord de l’expédition à la voile Berry-Mappemonde. Réponds à la question du skipper en "
         "TROIS phrases simples au plus, à partir du SEUL JSON de faits fourni (positions, vent, zones, ports, aires, "
         "journal, polaire, ordres du skipper). Chaque chiffre que tu écris doit figurer dans le JSON, avec son unité. "
-        "Si le JSON ne contient pas la réponse, dis-le en une phrase. Ni titre, ni liste, ni gras, rien sur les outils "
+        "Si le JSON ne contient pas la réponse, dis-le en une phrase. N’écris jamais les noms de champs JSON "
+        "(atQuay, speedKnots…) : dis le fait en mots. Ni titre, ni liste, ni gras, rien sur les outils "
         "ou les modèles. Thinking OFF."
     )
     user = f"{'Question' if en else 'Question'} : {question}\nJSON :\n{json.dumps(ctx, ensure_ascii=False, default=str)}"
     return system, user
+
+
+_RAW_FIELD_RE = re.compile(
+    r"\(?\b(?:"
+    r"atQuay|speedKnots|windKnots|dirFromDeg|filmNm|sailNm|holdHours|"
+    r"plannedKnots|remainingNm|fromStop|toStop|seaHours|eventId|stableKey|"
+    r"gold_pack|mrgid"
+    r")\s*:\s*[^)\s,;.]+\)?",
+    re.I,
+)
+
+
+def strip_raw_fields(text: str) -> str:
+    """Drop leaked JSON keys such as « (atQuay: true) » from a chat answer."""
+    out = _RAW_FIELD_RE.sub("", text or "")
+    out = re.sub(r"\(\s*\)", "", out)
+    out = re.sub(r"\s{2,}", " ", out)
+    out = re.sub(r"\s+([,.;])", r"\1", out)
+    return out.strip()
 
 
 def _numbers(text: str) -> set[str]:
@@ -534,7 +555,7 @@ async def answer_question(question: str, lang: str, client_ctx: dict | None, now
         raw, source = fallback, "rules"
     tidy = tidy_story(raw, None, max_sentences=ANSWER_SENTENCES, max_chars=ANSWER_CHARS)
     text, dropped = filter_numbers(tidy, ctx)
-    text = _clean_text(text)
+    text = strip_raw_fields(_clean_text(text))
     if not text:
         text = missing_info(lang)
         source = "rules"

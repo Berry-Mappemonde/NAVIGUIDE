@@ -17,6 +17,7 @@ from typing import Any
 NS = "llm-budget"
 LAST_SOURCE_NS = "llm"
 LAST_SOURCE_KEY = "last-source"
+LAST_ERROR_KEY = "last-error"
 
 TIERS = ("fast", "write", "deep", "judge")
 
@@ -107,7 +108,7 @@ DEFAULT_MODELS = {
 }
 
 DEFAULT_MAX_TOKENS = {
-    "fast": 256,
+    "fast": 512,
     "write": 400,
     "deep": 512,
     "judge": 512,
@@ -254,6 +255,51 @@ def last_source() -> str | None:
     return val if isinstance(val, str) and val.strip() else None
 
 
+def remember_cascade_errors(hops: list[dict[str, str]]) -> None:
+    """Every hop that failed in the last cascade (TF HTTP body first)."""
+    import pearl_store  # noqa: PLC0415
+
+    clean: list[dict[str, str]] = []
+    for hop in hops or []:
+        if not isinstance(hop, dict):
+            continue
+        prov = str(hop.get("provider") or "").strip()
+        why = " ".join(str(hop.get("reason") or "").split())[:240]
+        if prov or why:
+            clean.append({"provider": prov, "reason": why})
+    if not clean:
+        return
+    pearl_store.kv_put(LAST_SOURCE_NS, LAST_ERROR_KEY, clean)
+
+
+def remember_cascade_error(provider: str, reason: str) -> None:
+    remember_cascade_errors([{"provider": provider, "reason": reason}])
+
+
+def last_errors() -> list[dict[str, str]] | None:
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(LAST_SOURCE_NS, LAST_ERROR_KEY)
+    val = (hit or {}).get("value")
+    if isinstance(val, list):
+        out = [x for x in val if isinstance(x, dict) and (x.get("provider") or x.get("reason"))]
+        return out or None
+    if isinstance(val, dict) and (val.get("provider") or val.get("reason")):
+        return [{"provider": str(val.get("provider") or ""), "reason": str(val.get("reason") or "")}]
+    return None
+
+
+def last_error() -> dict[str, str] | None:
+    """Prefer Token Factory so a Lightning HTTP body stays visible after NIM."""
+    errs = last_errors()
+    if not errs:
+        return None
+    for item in errs:
+        if item.get("provider") == "tokenfactory":
+            return item
+    return errs[0]
+
+
 def _tavily_empty() -> dict[str, Any]:
     return {"credits": 0, "calls": 0}
 
@@ -319,4 +365,8 @@ def status() -> dict[str, Any]:
     src = last_source()
     if src:
         out["lastSource"] = src
+    errs = last_errors()
+    if errs:
+        out["lastErrors"] = errs
+        out["lastError"] = last_error()
     return out

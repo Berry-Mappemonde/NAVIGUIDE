@@ -7,6 +7,7 @@ import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
 import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
+import { ICI_BRIEFING_SOURCE } from "../engine/iciBriefing.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
@@ -344,7 +345,7 @@ export const Sidebar = memo(function Sidebar({
   escaleError = null,
   onEscaleClose,
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const isSimulation = view === VIEW_SIMULATION;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
@@ -425,7 +426,7 @@ export const Sidebar = memo(function Sidebar({
             <div data-testid="drawing-points" className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-2 min-w-0 shrink-0">
               <div className="flex items-center gap-2 mb-1">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug flex-1">
-                  {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString()} nm
+                  {t("drawingInProgress")} · {drawing.points.length} {t("drawingPoints")} · {Number(drawing.distanceNm || 0).toLocaleString(lang === "en" ? "en-US" : "fr-FR")} nm
                 </div>
                 {drawing.points.length && onDrawUndo ? (
                   <button type="button" onClick={onDrawUndo} className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-white/80" title={t("drawingUndoLast")}>
@@ -503,7 +504,7 @@ export const Sidebar = memo(function Sidebar({
                         ? <BriefingText segments={iciBriefingSegments} onFocus={onBriefingFocus} t={t} />
                         : (briefingLoading && !(moment?.here?.sentences || []).length ? t("iciBriefingLoading") : (briefing || null))}
                   </p>
-                  <LlmSourceBadge source="rules" testId="story-source" className="mt-1" />
+                  <LlmSourceBadge source={ICI_BRIEFING_SOURCE} testId="story-source" className="mt-1" />
                 </div>
               </div>
             ) : null}
