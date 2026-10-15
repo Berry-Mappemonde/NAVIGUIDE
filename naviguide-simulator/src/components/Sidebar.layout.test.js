@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultIciTab, visibleIciTabs } from "./iciMaintenant.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
@@ -96,6 +97,21 @@ describe("Sidebar layout (lot R8c)", () => {
     assert.doesNotMatch(css, /\.light-mode \.leaflet-container \.leaflet-control-zoom/);
     assert.doesNotMatch(css, /leaflet-control-attribution[\s\S]{0,220}rgba\(255,\s*255,\s*255/);
     assert.doesNotMatch(css, /leaflet-control-zoom\.leaflet-bar[\s\S]{0,220}rgba\(255,\s*255,\s*255/);
+  });
+});
+
+describe("Sidebar — lot DM9 : Tracer 2 onglets, Suivre 4", () => {
+  it("masque Maintenant et Journal en Tracer, sans les retirer du source", () => {
+    assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
+    assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["review", "story"]);
+    assert.deepEqual(visibleIciTabs("drawn").map((t) => t.id), ["review", "story"]);
+    assert.equal(defaultIciTab("simulation"), "review");
+    assert.match(sidebar, /<IciMaintenant/);
+    assert.match(sidebar, /ici-tab-now|JournalPanel|ici-tab-journal|<JournalPanel /);
+    assert.match(sidebar, /<JournalPanel /);
+    assert.match(sidebar, /data-testid="expedition-story"/);
+    assert.match(sidebar, /story=\{\(Array\.isArray\(story\)/);
+    assert.doesNotMatch(sidebar, /story=\{isSuivre && !isDrawing &&/);
   });
 });
 

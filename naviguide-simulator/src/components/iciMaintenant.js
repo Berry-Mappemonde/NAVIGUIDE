@@ -10,16 +10,26 @@ export const ICI_TABS = [
   { id: "review", testId: "ici-tab-review", labelKey: "planReviewTitle" },
 ];
 
+const TRACER_TAB_IDS = ["review", "story"];
+
+/** Tracer = simulation (Berry) ou drawn (brouillon / ma route). */
+export function isTracerIciMode(mode) {
+  return mode === "simulation" || mode === "drawn";
+}
+
 /**
- * Récit seulement en Suivre (lot RD6). Revue du plan en Suivre et Simulation
- * (horloge officielle, lot RD9), jamais en Tracer — un onglet marche ou n'existe pas.
+ * Suivre : Maintenant · Récit · Journal · Revue du plan (inchangé).
+ * Tracer : Revue du plan · Récit seulement (lot DM9, option A, revue du 14 oct.).
+ * Maintenant et Journal restent dans ICI_TABS : masqués en Tracer, pas supprimés.
  */
 export function visibleIciTabs(mode) {
-  return ICI_TABS.filter((tab) => {
-    if (tab.id === "story") return mode === "follow";
-    if (tab.id === "review") return mode === "follow" || mode === "simulation";
-    return true;
-  });
+  if (!isTracerIciMode(mode)) return ICI_TABS;
+  return TRACER_TAB_IDS.map((id) => ICI_TABS.find((tab) => tab.id === id)).filter(Boolean);
+}
+
+/** Onglet ouvert à l'entrée du mode : Maintenant en Suivre, Revue du plan en Tracer. */
+export function defaultIciTab(mode) {
+  return isTracerIciMode(mode) ? "review" : "now";
 }
 
 const EVENT_TYPE_LABEL = {

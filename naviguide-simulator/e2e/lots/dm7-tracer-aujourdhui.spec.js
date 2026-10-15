@@ -75,11 +75,12 @@ test("lot DM7 — Tracer : horloge aujourd'hui, pas de date, pas de Papeete", as
 
   if (apiUp) {
     await expect(page.getByText(/Saint-Maur/i).first()).toBeVisible({ timeout: 20_000 });
-    const leg = page.getByTestId("ici-section-leg");
-    await expect(leg).toBeVisible({ timeout: 10_000 });
-    await expect(leg).toContainText(/Saint-Maur/i);
-    await expect(leg).toContainText(/La Rochelle/i);
-    await expect(leg).not.toContainText(/Papeete/i);
+    await expect(page.getByTestId("ici-tab-review")).toHaveAttribute("aria-selected", "true");
+    const review = page.getByTestId("plan-review");
+    await expect(review).toBeVisible({ timeout: 10_000 });
+    await expect(review).toContainText(/Saint-Maur/i);
+    await expect(review).toContainText(/La Rochelle/i);
+    await expect(review).not.toContainText(/Papeete/i);
   }
 
   await shot(page, "01-tracer-aujourdhui");

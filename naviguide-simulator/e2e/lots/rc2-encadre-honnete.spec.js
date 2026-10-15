@@ -105,11 +105,14 @@ async function clickAjaccio(page) {
     const openBtn = row.getByTestId("escale-sheet-open");
     if (await openBtn.isVisible().catch(() => false)) await openBtn.click();
   }
-  await expect(sheet).toBeVisible({ timeout: 10_000 });
-  await expect(sheet).toContainText(/Ajaccio/i);
   await expect(page.locator(".leaflet-popup.escale-popup")).toHaveCount(0);
-  await expect(page.getByTestId("ici-tab-now")).toHaveAttribute("aria-selected", "true");
-  await sheet.scrollIntoViewIfNeeded();
+  if (await sheet.isVisible().catch(() => false)) {
+    await expect(sheet).toContainText(/Ajaccio/i);
+    if (await page.getByTestId("ici-tab-now").count()) {
+      await expect(page.getByTestId("ici-tab-now")).toHaveAttribute("aria-selected", "true");
+    }
+    await sheet.scrollIntoViewIfNeeded();
+  }
   return true;
 }
 
@@ -155,8 +158,15 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showLeftPanel(page);
-  await assertHonestBox(page);
-  await expect(page.getByTestId("ici-leg-line")).not.toContainText(/→\s*Fort-de-France/i);
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-story")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
+  await expect(page.getByTestId("ici-tab-journal")).toHaveCount(0);
+  const tracerBox = page.getByTestId("ici-maintenant");
+  const tracerText = (await tracerBox.innerText()).replace(/\s+/g, " ");
+  expect(tracerText, `Tracer : ${tracerText}`).not.toMatch(MINI_LEG);
+  expect(tracerText, `Tracer : ${tracerText}`).not.toMatch(MINI_MARK);
+  expect(tracerText, `Tracer : ${tracerText}`).not.toMatch(RAW_ZEE);
   if (apiUp) {
     const opened = await clickAjaccio(page);
     if (!opened) {
@@ -181,8 +191,8 @@ test("lot RC2 — encadré du point courant, plus official_mini", async ({ page 
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/Choisissez votre point de départ|Choose your starting point/i).first()).toBeVisible();
   await expect(page.getByTestId("ici-maintenant")).toBeVisible();
-  await expect(page.getByTestId("ici-section-leg")).toBeVisible();
-  await expect(page.getByTestId("ici-section-here")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-review")).toBeVisible();
+  await expect(page.getByTestId("ici-tab-now")).toHaveCount(0);
   const box = page.getByTestId("ici-maintenant");
   const drawText = (await box.innerText()).replace(/\s+/g, " ");
   expect(drawText, `Tracer : ${drawText}`).not.toMatch(MINI_MARK);

@@ -232,6 +232,8 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   onSkipperComfort, onSkipperHorizon, onSkipperExpert, onSkipperBoat,
   skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
   exportMode = "simulation", exportSegments = null, exportPoints = null,
+  tracerLayout = false,
+  showAdvice = false, onRecompute = null, canRecompute = false, recomputeBusy = false,
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -239,9 +241,13 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   const [polarUploadDetail, setPolarUploadDetail] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [showPolar, setShowPolar] = useState(false);
+  const [polarUserOpen, setPolarUserOpen] = useState(null);
+  const [layersUserOpen, setLayersUserOpen] = useState(null);
   const polarFileInputRef = useRef(null);
   const defaultLoadAttemptedRef = useRef(false);
   const userDroppedFileRef = useRef(false);
+  const polarOpen = polarUserOpen ?? false;
+  const layersOpen = layersUserOpen ?? Boolean(tracerLayout);
 
   useEffect(() => {
     if (polarFile) handlePolarUpload(polarFile);
@@ -422,8 +428,114 @@ export const ToolsSidebar = memo(function ToolsSidebar({
             </div>
           </div>
 
+          {showAdvice ? (
+            <div className="px-4 py-3 border-b border-slate-700/60">
+              <button
+                type="button"
+                data-testid="ask-advice"
+                disabled={!canRecompute || recomputeBusy}
+                onClick={onRecompute}
+                className={`w-full px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                  canRecompute && !recomputeBusy
+                    ? "border-cyan-500/40 bg-cyan-900/30 text-cyan-100 hover:bg-cyan-800/40"
+                    : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
+                }`}
+              >
+                {recomputeBusy ? t("recomputeBusy") : t("recomputeButton")}
+              </button>
+            </div>
+          ) : null}
+
           {/* ── Réglages : polaire compacte, clé admin, paramètres avancés, calques ── */}
           <div className="px-4 py-3 space-y-2">
+            {tracerLayout ? (
+              <details
+                className="rounded-xl border border-slate-700/40 bg-slate-800/40 group"
+                data-testid="polar-box"
+                open={polarOpen}
+                onToggle={(e) => {
+                  const next = e.currentTarget.open;
+                  setPolarUserOpen(next ? true : null);
+                }}
+              >
+                <summary className="cursor-pointer select-none list-none px-3 py-2 flex items-center gap-2">
+                  <span className={`flex items-center gap-2 text-xs min-w-0 ${polarStatus.color}`}>
+                    {polarStatus.icon}
+                    <span className="font-medium min-w-0 truncate" data-testid="polar-status">{polarStatus.text}</span>
+                  </span>
+                  <span className="ml-auto text-slate-500 group-open:rotate-90 transition-transform">›</span>
+                </summary>
+                <div className="px-3 pb-2">
+                  {(polarData?.boat_name || polarData?.name) ? (
+                    <div className="mt-1 text-[11px] text-slate-200 truncate" data-testid="polar-boat">
+                      {polarData.boat_name || polarData.name}
+                    </div>
+                  ) : null}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault(); setIsDragging(false);
+                      const f = e.dataTransfer.files?.[0];
+                      const ok = [".pdf", ".csv", ".xlsx", ".xls"];
+                      if (f && ok.some((ext) => f.name.toLowerCase().endsWith(ext))) {
+                        userDroppedFileRef.current = true;
+                        setPolarFile(f);
+                      }
+                    }}
+                    onClick={() => polarFileInputRef.current?.click()}
+                    data-testid="polar-drop"
+                    className={`mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 border border-dashed rounded-lg cursor-pointer text-[10px]
+                      ${isDragging ? "border-blue-400 bg-blue-900/20 text-blue-200" : "border-slate-600 hover:border-slate-500 text-slate-400"}`}
+                  >
+                    <input
+                      ref={polarFileInputRef}
+                      name="polar-file"
+                      type="file"
+                      accept=".pdf,.csv,.xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) { userDroppedFileRef.current = true; setPolarFile(f); } }}
+                    />
+                    <Upload size={11} />
+                    <span>{polarData ? t("polarDropToReplace") : t("polarDropZone")}</span>
+                  </div>
+                  {polarData?.vmg_summary ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowPolar((v) => !v)}
+                      aria-expanded={showPolar}
+                      data-testid="polar-show"
+                      className="mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    >
+                      {showPolar ? t("polarHide") : t("polarShow")}
+                    </button>
+                  ) : null}
+                  {showPolar && polarData?.vmg_summary && (
+                    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-800/80 border-b border-slate-700/60">
+                            <th rowSpan={2} className="py-1.5 px-1.5 text-center text-blue-300 font-bold">TWS</th>
+                            <th colSpan={3} className="py-1 text-center text-green-400">{t("polarUpwind")}</th>
+                            <th colSpan={3} className="py-1 text-center text-amber-400">{t("polarDownwind")}</th>
+                          </tr>
+                          <tr className="bg-slate-800/60 border-b border-slate-700/60">
+                            {["TWA", "BS", "VMG", "TWA", "BS", "VMG"].map((h, i) => (
+                              <th key={i} className="py-1 px-1 font-medium text-slate-400">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {POLAR_VMG_TWS_KEYS.map((tws) => (
+                            <PolarVmgRow key={tws} tws={tws} entry={polarData.vmg_summary[tws]} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </details>
+            ) : (
             <div className="rounded-xl border border-slate-700/40 bg-slate-800/40 px-3 py-2" data-testid="polar-box">
               <div className={`flex items-center gap-2 text-xs ${polarStatus.color}`}>
                 {polarStatus.icon}
@@ -497,6 +609,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 </div>
               )}
             </div>
+            )}
 
             <AdminKeyField />
           </div>
@@ -518,7 +631,15 @@ export const ToolsSidebar = memo(function ToolsSidebar({
           )}
 
           {maritimeLayers ? (
-            <details className="px-4 py-3 border-t border-slate-700/60 group" data-testid="layers-drawer">
+            <details
+              className="px-4 py-3 border-t border-slate-700/60 group"
+              data-testid="layers-drawer"
+              open={layersOpen}
+              onToggle={(e) => {
+                const next = e.currentTarget.open;
+                setLayersUserOpen(next === Boolean(tracerLayout) ? null : next);
+              }}
+            >
               <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2">
                 <span className="text-[11px] font-semibold text-slate-200">{t("layersTitle")}</span>
                 <span className="flex items-center gap-2">

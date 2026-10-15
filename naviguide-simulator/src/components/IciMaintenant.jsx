@@ -5,6 +5,7 @@ import { PlanReview } from "./PlanReview.jsx";
 import { momentAtOrBefore, sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
   visibleIciTabs,
+  defaultIciTab,
   dismissAlert,
   formatJournalLine,
   formatLegLine,
@@ -88,7 +89,7 @@ export function IciMaintenant({
   momentFree = null,
 }) {
   const { t, lang } = useLang();
-  const [localView, setLocalView] = useState("now");
+  const [localView, setLocalView] = useState(() => defaultIciTab(mode));
   const [dismissed, setDismissed] = useState(() => new Set());
   const view = viewProp || localView;
   const setView = (id) => {
@@ -103,13 +104,14 @@ export function IciMaintenant({
 
   useEffect(() => {
     if (!escale?.stop) return;
+    if (!tabs.some((tab) => tab.id === "now")) return;
     if (typeof onViewChange === "function") onViewChange("now");
     else setLocalView("now");
-  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange]);
+  }, [escale?.stop?.name, escale?.stop?.lat, escale?.stop?.lon, onViewChange, mode]);
 
   useEffect(() => {
     if (tabs.some((tab) => tab.id === view)) return;
-    setView("now");
+    setView(defaultIciTab(mode));
   }, [mode, view]);
 
   return (
