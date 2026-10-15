@@ -69,9 +69,10 @@ classe et traduit ; Nemotron 3 Super rédige. Pour chaque escale à venir,
 événements locaux) et Lightning les résume, sans chiffre nouveau (en
 production). Le juge de vérité (Tavily relit la page officielle d’un port
 d’entrée, Nemotron 3 Ultra barre ce qui n’est plus prouvé) existe dans le
-code mais est **éteint par défaut** (décision coût, 28 sept.) : posez
-`NAVIGUIDE_TRUTH_JUDGE=1` et un plafond journalier
-`NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` non nul pour le rallumer.
+code mais reste **éteint pour l’instant** : pas encore assez de ports Gold
+vérifiés (on le rallumera quand la couverture le permettra). Pour un essai
+en local ou en démo : `NAVIGUIDE_TRUTH_JUDGE=1` et un plafond journalier
+`NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` non nul.
 
 ### Licence
 
@@ -137,8 +138,9 @@ stopover, **Tavily** searches once for recent, dated news (harbour notices,
 local events) and Lightning summarises it without adding any number (live in
 production). The truth judge (Tavily re-reads an official port-of-entry page,
 Nemotron 3 Ultra strikes out what is no longer supported) is in the code but
-**off by default** (cost decision, 28 Sept): set `NAVIGUIDE_TRUTH_JUDGE=1` and a
-non-zero daily cap `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE` to turn it on.
+**off for now**: not enough verified Gold ports yet (we will turn it on when
+coverage allows). For a local or demo trial: set `NAVIGUIDE_TRUTH_JUDGE=1` and a
+non-zero daily cap `NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE`.
 
 ### Licence
 
