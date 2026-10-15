@@ -277,12 +277,21 @@ export function pickFilmEstimateSeconds(targetSeconds, estimates, fallbackSecond
   return Number.isFinite(fb) && fb > 0 ? fb : 0;
 }
 
-/** Même langue / style / t0 : un changement de budget 2:30↔3:00 ne démonte pas les pilules. */
+/** Même langue / t0 : bascule 2:30↔3:00 seulement (pas 0↔150, qui change le script servi). */
 export function filmQueryKeepsReady(prev, next) {
   if (!prev || !next) return false;
   if (prev === next) return true;
-  const strip = (q) => String(q).replace(/seconds=[^&]*/, "seconds=");
-  return strip(prev) === strip(next);
+  const sec = (q) => {
+    const m = String(q).match(/seconds=([^&]*)/);
+    return m ? Number(m[1]) : 0;
+  };
+  const sp = sec(prev);
+  const sn = sec(next);
+  if (sp > 0 && sn > 0) {
+    const strip = (q) => String(q).replace(/seconds=[^&]*/, "seconds=");
+    return strip(prev) === strip(next);
+  }
+  return false;
 }
 
 /** Durée cochée → budget ; aucune → le temps que prend le journal. */
@@ -755,8 +764,7 @@ export function useReplay({
     let cancelled = false;
     let retryTimer = 0;
     const ac = new AbortController();
-    const style = filmStyle === "written" ? "written" : "raw";
-    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&style=${style}&t0=${encodeURIComponent(t0)}`;
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
 
     const applyEstimates = (data) => {
       const chapters = data?.chapters || [];
@@ -770,6 +778,11 @@ export function useReplay({
 
     const applyData = (data) => {
       if (cancelled) return true;
+      if (data?.status === "preparing") {
+        setFilmStatus("pending");
+        remotePlanRef.current = null;
+        return false;
+      }
       if (isRe7OfficialFilm(data)) {
         remotePlanRef.current = data;
         remotePlanKeyRef.current = q;
@@ -817,6 +830,12 @@ export function useReplay({
             markAbsent();
             return;
           }
+          if (pack.data?.status === "preparing") {
+            setFilmStatus("pending");
+            remotePlanRef.current = null;
+            retryTimer = setTimeout(load, 2000);
+            return;
+          }
           if (applyData(pack.data)) return;
           setFilmStatus("empty");
           retryTimer = setTimeout(load, 2000);
@@ -833,7 +852,7 @@ export function useReplay({
       ac.abort();
       clearTimeout(retryTimer);
     };
-  }, [enabled, lang, targetSeconds, filmStyle, t0, setFilmStatus]);
+  }, [enabled, lang, targetSeconds, t0, setFilmStatus]);
 
   const canStart = canStartOfficialReplay({
     requireOfficialFilm,

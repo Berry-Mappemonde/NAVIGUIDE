@@ -465,26 +465,11 @@ describe("lot RH2 — plus d'abort en vol", () => {
     assert.equal(watch.alive, false);
   });
 
-  it("changement de briefing : pas de nouvelle requête warm/status", async () => {
-    let n = 0;
-    let resolve;
-    const hang = new Promise((r) => { resolve = r; });
-    const seen = [];
-    const stop = startWarmStatusWatch(async () => {
-      n += 1;
-      await hang;
-      return { llm: { lastSource: "claude" } };
-    }, (src) => seen.push(src));
-    assert.equal(n, 1);
-    stop();
-    resolve();
-    await tick();
-    assert.equal(n, 1);
-    assert.equal(seen.length, 0);
-    assert.match(sidebarSrc, /startWarmStatusWatch/);
-    assert.match(sidebarSrc, /\}, \[showIciBriefing\]\);/);
-    assert.doesNotMatch(sidebarSrc, /\[showIciBriefing,\s*briefing\]/);
-    assert.doesNotMatch(sidebarSrc, /\/ici\/warm\/status[\s\S]{0,220}abort\(/);
+  it("briefing ICI : source règles locale, pas de warm/status global", () => {
+    assert.match(sidebarSrc, /LlmSourceBadge/);
+    assert.match(sidebarSrc, /source="rules"/);
+    assert.doesNotMatch(sidebarSrc, /startWarmStatusWatch/);
+    assert.doesNotMatch(sidebarSrc, /\/ici\/warm\/status/);
   });
 
   it("changement de stopName : une seule boucle active", async () => {

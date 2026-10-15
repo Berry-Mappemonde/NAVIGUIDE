@@ -119,6 +119,13 @@ describe("parseRouteFile (lot N1)", () => {
     assert.equal(parsed.points[1].name, "B");
   });
 
+  it("accepte lat,lon dans l'ordre carte (copier-coller)", () => {
+    const parsed = parseRouteFile("46.157,-1.151 43.545,-5.662", "points.txt");
+    assert.equal(parsed.error, undefined);
+    assert.equal(parsed.points[0].lat, 46.157);
+    assert.equal(parsed.points[0].lon, -1.151);
+  });
+
   it("tronque au-delà de 60 points", () => {
     const features = Array.from({ length: ROUTE_IMPORT_MAX_POINTS + 1 }, (_, i) => ({
       type: "Feature",

@@ -28,8 +28,8 @@ describe("LogbookChat contract (lot D)", () => {
   });
 
   it("shows the cascade source under the answer and does not fetch on render", () => {
-    assert.match(src, /data-testid="chat-source"/);
-    assert.match(src, /storySourceLightning|storySourceSuper|storySourceRules/);
+    assert.match(src, /testId="chat-source"/);
+    assert.match(src, /LlmSourceBadge/);
     assert.doesNotMatch(src, /\/logbook\/chat/);
     const effects = src.match(/useEffect\(/g) || [];
     assert.equal(effects.length, 1, "only the scroll-to-bottom effect");

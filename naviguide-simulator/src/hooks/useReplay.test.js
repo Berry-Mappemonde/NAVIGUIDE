@@ -99,8 +99,10 @@ describe("useReplay contract (lot E)", () => {
     assert.equal(pickFilmEstimateSeconds(180, null, 195), 195);
     const q0 = "lang=fr&seconds=0&style=raw&t0=2026-05-15T08%3A00%3A00.000Z";
     const q150 = "lang=fr&seconds=150&style=raw&t0=2026-05-15T08%3A00%3A00.000Z";
-    assert.equal(filmQueryKeepsReady(q0, q150), true);
+    assert.equal(filmQueryKeepsReady(q0, q150), false);
+    assert.equal(filmQueryKeepsReady(q150, "lang=fr&seconds=180&t0=2026-05-15T08%3A00%3A00.000Z"), true);
     assert.equal(filmQueryKeepsReady(q150, "lang=en&seconds=150&style=raw&t0=2026-05-15T08%3A00%3A00.000Z"), false);
+    assert.match(hook, /pack\.data\?\.status === "preparing"/);
     assert.match(hook, /filmQueryKeepsReady/);
     assert.doesNotMatch(hook, /calibrateRate/);
     assert.match(hook, /estimatedSeconds/);

@@ -121,6 +121,7 @@ export default {
   storySourceRules: "rules",
   storySourceBudget: "budget",
   storySourceCache: "cache",
+  llmBuiltWith: "Built with",
   briefingListen:     "Listen",
   briefingListenStop: "Stop",
 
