@@ -265,6 +265,14 @@ def phase_batch(st: dict, args) -> None:
                      f"{len(new)} lot(s) codé(s), {len(reviews)} revue(s) de nuit")
     except Exception:
         pass
+    if code == rl.RED_HEAD_EXIT:
+        # 15 oct. : une PR reste rouge après les corrections — run_lots a prévenu sur la PR et s'est arrêté.
+        # On reste en phase `batch` avec un `hold` : le chien de garde ne relance pas, le porteur corrige la PR
+        # puis infra/agents/batch-resume.sh (loop.py --resume lève le hold).
+        st["hold"] = {"reason": "tête de pile rouge après corrections", "tip_pr": tip_pr_number(), "at": time.strftime("%Y-%m-%d %H:%M")}
+        rl.log(f"tête de pile ROUGE (PR #{st['hold']['tip_pr']}) — la pile s'arrête ; au porteur : corriger la PR puis infra/agents/batch-resume.sh")
+        save(st)
+        sys.exit(code)
     if code != 0 and not new:
         # Rien n'est parti (pré-vol en échec, CLI, jeton…) : on reste en phase batch, on s'arrête ;
         # le chien de garde relance `--resume` après ses remèdes (au plus 3 fois par jour).
@@ -414,6 +422,11 @@ def main() -> None:
         st.update({"phase": "batch", "from": args.from_, "until": args.until, "stack_on_state": bool(args.stack_on_state)})
     elif not args.resume or not st.get("phase"):
         sys.exit("Donner --from/--until pour démarrer, --start-at <phase>, ou --resume.")
+    if st.get("hold"):
+        # Un relancement À LA MAIN (batch-resume.sh) lève le hold posé par une tête rouge ; run_lots re-vérifie
+        # la tête de toute façon (reprise refusée si elle est encore rouge).
+        rl.log(f"hold levé par la reprise du porteur ({st['hold'].get('reason')}, posé le {st['hold'].get('at')})")
+        st.pop("hold", None)
     save(st)
 
     while st.get("phase"):
