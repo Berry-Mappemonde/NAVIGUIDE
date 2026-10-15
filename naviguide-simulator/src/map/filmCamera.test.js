@@ -201,7 +201,7 @@ describe("filmCamera lot RA3 — dézoom archipels, tuiles gardées", () => {
   it("pas de switch de base layer pendant filmActive", () => {
     assert.match(controller, /switchBaseLayer\(/);
     assert.match(controller, /if \(this\.config\.filmActive\)/);
-    assert.match(controller, /if \(!this\.baseLayer\) this\.switchBaseLayer\(url\)/);
+    assert.match(controller, /if \(!this\.baseLayer\) this\.switchBaseLayer\(url, attr\)/);
     assert.match(controller, /next\.addTo\(this\.map\)/);
     assert.match(controller, /if \(prev && prev !== next\) prev\.remove\(\)/);
     assert.match(controller, /exitHoldZoom/);

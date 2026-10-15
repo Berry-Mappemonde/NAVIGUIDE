@@ -1008,8 +1008,6 @@ export default function App() {
       if (!cinemaMode) {
         cinemaSavedRef.current = { sidebar: sidebarOpen, tools: toolsOpen };
       }
-      setSidebarOpen(false);
-      setToolsOpen(false);
       setCinemaMode(true);
       recaptureBoat();
     } else {
@@ -1506,6 +1504,7 @@ export default function App() {
       ? (Number(live.sailNm) || Number(live.filmNm) || 0)
       : (cast?.sailNm ?? playback.nm),
     climoMonth,
+    lang,
     t,
     cameraFollow,
     cinemaRecapture,
@@ -1543,6 +1542,7 @@ export default function App() {
     cast?.sailNm,
     playback.nm,
     climoMonth,
+    lang,
     t,
     cameraFollow,
     cinemaRecapture,

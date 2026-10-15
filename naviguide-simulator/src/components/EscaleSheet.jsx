@@ -2,6 +2,8 @@ import { memo } from "react";
 import { X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { googleMapsUrl } from "../engine/briefingLinks.js";
+import { localizePlaceName } from "../utils/placeNames.js";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 
 /** Section / subsection labels; anything unknown falls back to the raw key. */
 const LABELS = {
@@ -35,20 +37,6 @@ const SUB_KIND = {
 
 function label(key, lang) {
   return (LABELS[lang === "en" ? "en" : "fr"][key]) || key;
-}
-
-/** Libellé de source (clés i18n L1). Pas de nom de modèle en dur (contrat lot C). */
-function llmSourceLabel(source, t) {
-  const s = String(source || "");
-  if (s === "openrouter") return t("storySourceOpenrouter");
-  if (s === "claude") return t("storySourceClaude");
-  if (s === "rules") return t("storySourceRules");
-  if (s === "budget") return t("storySourceBudget");
-  if (s === "cache") return t("storySourceCache");
-  if (s.endsWith("-lightning")) return t("storySourceLightning");
-  if (s.endsWith("-super")) return t("storySourceSuper");
-  if (s.endsWith("-ultra")) return t("storySourceUltra");
-  return s || t("storySourceRules");
 }
 
 function nm(v, lang) {
@@ -93,7 +81,8 @@ const Item = memo(function Item({ item, sub, lang, onFocus, t }) {
 function ZeeLine({ zee, lang }) {
   if (!zee?.name) return null;
   const gold = zee.gold ? (lang === "en" ? " · Gold formalities" : " · formalités Gold") : "";
-  return <li className="text-[11px] text-slate-200 leading-snug">{zee.name}{gold}</li>;
+  const name = localizePlaceName(zee.name, lang);
+  return <li className="text-[11px] text-slate-200 leading-snug">{name}{gold}</li>;
 }
 
 /**
@@ -144,9 +133,11 @@ export const EscaleSheet = memo(function EscaleSheet({ stop, fiche, loading, err
         <p className="text-[11px] text-slate-100 leading-snug mb-1.5 break-words [overflow-wrap:anywhere]">{paragraph}</p>
       ) : null}
       {paragraph && (fiche?.paragraph?.source || fiche?.paragraph?.engine) ? (
-        <p data-testid="escale-source" className="text-[9px] text-slate-500 leading-snug -mt-1 mb-1.5">
-          {llmSourceLabel(fiche.paragraph.source || fiche.paragraph.engine, t)}
-        </p>
+        <LlmSourceBadge
+          source={fiche.paragraph.source || fiche.paragraph.engine}
+          testId="escale-source"
+          className="-mt-1 mb-1.5"
+        />
       ) : null}
 
       {!loading && fiche && !keys.length ? (
