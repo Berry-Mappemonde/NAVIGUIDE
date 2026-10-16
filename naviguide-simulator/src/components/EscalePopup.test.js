@@ -8,6 +8,7 @@ import {
   ESCALE_POPUP_MAX_WIDTH,
   createEscalePopupOptions,
   ensureEscalePopup,
+  findParkedBoatMarker,
   findWaypointMarker,
   handleWaypointMarkerClick,
   isEscaleCloseClick,
@@ -99,6 +100,23 @@ describe("EscalePopup — contrat (lot R7)", () => {
     const found = findWaypointMarker(scene, ajaccio);
     assert.equal(found.getLatLng().lng, 8.7386);
     assert.equal(findWaypointMarker(scene, { name: "Nouméa", lat: -22, lon: 166 }), null);
+  });
+
+  it("lot RC44 — fiche du catamaran parqué à Cayenne, pas le drapeau Halifax", () => {
+    const cayenne = { name: "Cayenne (Guyane)", lat: 4.93, lon: -52.35 };
+    const halifax = { name: "Halifax (Nouvelle-Écosse)", lat: 44.65, lon: -63.57 };
+    const boat = fakeMarker(4.93, -52.35, cayenne);
+    const scene = {
+      map: { getCenter: () => ({ lng: -52.3 }) },
+      waypointMarkers: new Map([
+        ["route:h:0", fakeMarker(44.65, -63.57, halifax)],
+        ["route:c:0", fakeMarker(4.93, -52.35, cayenne)],
+      ]),
+      markerSets: new Map([["live", [boat]]]),
+    };
+    assert.equal(findParkedBoatMarker(scene, cayenne), boat);
+    assert.equal(findWaypointMarker(scene, cayenne), boat);
+    assert.notEqual(findWaypointMarker(scene, cayenne), scene.waypointMarkers.get("route:h:0"));
   });
 
   it("App relie le clic drapeau et la légende au même état ; plus dans le panneau", () => {

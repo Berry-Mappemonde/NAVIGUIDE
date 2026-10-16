@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useEscaleSheet } from "./useEscaleSheet.js";
-import { nearestAlongside, pickAutoEscaleStop } from "./escaleSheetPick.js";
+import { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop } from "./escaleSheetPick.js";
 
-export { nearestAlongside, pickAutoEscaleStop };
+export { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop };
 
 /**
  * Which stop's sheet is open (lot C, moved out of App.jsx in lot J): opened
