@@ -63,8 +63,8 @@ case "$SITE" in
       --exclude "*.pyc" \
       --exclude .pytest_cache \
       "$ROOT/naviguide/" "$VPS:$REMOTE/naviguide/"
+    rsync_to "$ROOT/infra/vps/sync-public-nginx.sh" "$VPS:$REMOTE/infra/vps/"
     rsync_to \
-      "$ROOT/infra/vps/sync-public-nginx.sh" \
       "$ROOT/infra/vps/naviguide/deploy-naviguide.sh" \
       "$ROOT/infra/vps/naviguide/nginx-naviguide.conf" \
       "$ROOT/infra/vps/naviguide/naviguide-api.service" \
