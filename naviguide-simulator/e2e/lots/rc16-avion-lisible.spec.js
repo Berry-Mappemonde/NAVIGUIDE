@@ -20,7 +20,6 @@ const shot = (page, name) => page.screenshot({
 
 const AIR_OUT = /prend l'avion pour|s'envole de Cayenne|the crew flies (?:to|from)/i;
 const AIR_BACK = /retour en avion vers|return flight to|s'envole de Halifax|flies from Halifax/i;
-const AIR_ANY = /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i;
 
 async function dismissNotForNav(page) {
   const modal = page.getByTestId("not-for-nav-modal");
@@ -170,22 +169,32 @@ test("lot RC16 — sous-titre visible : avion aller et retour à la Guyane", asy
     return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
   }, null, { timeout: 8_000 }).catch(() => null);
 
-  const airIdx = await page.evaluate(() => {
-    const list = window.__naviguideFilm?.chapters || [];
-    const both = list.findIndex((c) => {
-      const t = c.text || "";
-      return /prend l'avion|s'envole de Cayenne|the crew flies/i.test(t)
-        && /retour en avion|return flight|s'envole de Halifax|flies from Halifax/i.test(t);
-    });
-    const any = list.findIndex((c) => /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i.test(c.text || "")
-      || /cayenne|guyane/i.test(c.fromName || "")
-      || /cayenne|guyane/i.test(c.toName || ""));
-    const i = both >= 0 ? both : any;
-    if (i >= 0) window.__naviguideFilm.seekChapter(i);
-    return { i, both };
-  });
+  async function seekAirPhrase(re) {
+    const idx = await page.evaluate((src) => {
+      const rx = new RegExp(src, "i");
+      const list = window.__naviguideFilm?.chapters || [];
+      for (const chapter of list) {
+        const text = chapter.text || "";
+        const at = text.search(rx);
+        if (at < 0) continue;
+        const i = Number.isFinite(Number(chapter.idx)) ? Number(chapter.idx) : list.indexOf(chapter);
+        window.speechSynthesis?.cancel?.();
+        window.__naviguideFilm?.seekChapter?.(i, at);
+        return i;
+      }
+      return -1;
+    }, re.source);
+    if (idx >= 0) {
+      await page.waitForFunction((i) => Number(window.__naviguideFilm?.chapterIdx) === i, idx, {
+        timeout: 8_000,
+      }).catch(() => null);
+    }
+    return idx;
+  }
 
-  if (airIdx.i < 0) {
+  const outIdx = await seekAirPhrase(AIR_OUT);
+  const backIdx = await seekAirPhrase(AIR_BACK);
+  if (outIdx < 0 && backIdx < 0) {
     test.info().annotations.push({
       type: "chapitre avion absent",
       description: "aucun chapitre Guyane / avion dans le film chargé — assertions visibles sautées",
@@ -195,28 +204,15 @@ test("lot RC16 — sous-titre visible : avion aller et retour à la Guyane", asy
   }
 
   await expect(subtitle).toBeVisible();
-  if (airIdx.both >= 0) {
+  if (outIdx >= 0) {
+    await seekAirPhrase(AIR_OUT);
     await expect.poll(async () => subtitle.innerText(), { timeout: 8_000 }).toMatch(AIR_OUT);
-    await expect.poll(async () => subtitle.innerText(), { timeout: 8_000 }).toMatch(AIR_BACK);
     await expectVisibleAir(subtitle, AIR_OUT, "avion aller");
+  }
+  if (backIdx >= 0) {
+    await seekAirPhrase(AIR_BACK);
+    await expect.poll(async () => subtitle.innerText(), { timeout: 8_000 }).toMatch(AIR_BACK);
     await expectVisibleAir(subtitle, AIR_BACK, "avion retour");
-  } else {
-    const first = await visiblePhrase(subtitle, AIR_ANY);
-    if (first.found) {
-      expect(first.clips, "avion sans overflow clip").toBeFalsy();
-      expect(first.inBox, "avion dans la boîte visible").toBeTruthy();
-    }
-    const otherIdx = await page.evaluate(() => {
-      const list = window.__naviguideFilm?.chapters || [];
-      const cur = window.__naviguideFilm?.chapterIdx ?? -1;
-      const i = list.findIndex((c, idx) => idx !== cur && /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i.test(c.text || ""));
-      if (i >= 0) window.__naviguideFilm.seekChapter(i);
-      return i;
-    });
-    if (otherIdx >= 0) {
-      await expect.poll(async () => subtitle.innerText(), { timeout: 8_000 }).toMatch(AIR_ANY);
-      await expectVisibleAir(subtitle, AIR_ANY, "autre phrase avion");
-    }
   }
   await shot(page, "02-guyane-avion");
 });
