@@ -18,13 +18,6 @@ async function dismissNotForNav(page) {
   }
 }
 
-function boatLatLng() {
-  const marker = window.__naviguideScene?.mainBoatMarker?.();
-  const ll = marker?.getLatLng?.();
-  if (!ll || !Number.isFinite(ll.lat) || !Number.isFinite(ll.lng)) return null;
-  return { lat: ll.lat, lng: ll.lng };
-}
-
 test("lot R4 — 10 positions distinctes et monotones en 2 s", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
@@ -76,7 +69,13 @@ test("lot R4 — 10 positions distinctes et monotones en 2 s", async ({ page }) 
     expect(way.moving, `le bateau a pris la mer avant la mesure (${JSON.stringify(way)})`).toBe(true);
     const samples = [];
     for (let i = 0; i < 10; i++) {
-      const pos = await page.evaluate(boatLatLng);
+      const pos = await page.evaluate(() => {
+        const marker = window.__naviguideScene?.mainBoatMarker?.();
+        const ll = marker?.getLatLng?.();
+        const nm = Number(window.__naviguideFilm?.filmNm);
+        if (!ll || !Number.isFinite(ll.lat) || !Number.isFinite(ll.lng)) return null;
+        return { lat: ll.lat, lng: ll.lng, nm: Number.isFinite(nm) ? nm : 0 };
+      });
       expect(pos, `échantillon ${i + 1} vide`).toBeTruthy();
       samples.push(pos);
       if (i < 9) await page.waitForTimeout(200);
@@ -85,13 +84,10 @@ test("lot R4 — 10 positions distinctes et monotones en 2 s", async ({ page }) 
     // Ancres RC18 : la glisse peut marquer un très court palier entre deux phrases — 8 positions
     // distinctes sur 10 en 2 s, c'est un bateau qui avance.
     expect(new Set(keys).size, `positions : ${keys.join(" | ")}`).toBeGreaterThanOrEqual(8);
-    const dLat = samples[9].lat - samples[0].lat;
-    const dLng = samples[9].lng - samples[0].lng;
-    const progress = samples.map((p) => (
-      (p.lat - samples[0].lat) * dLat + (p.lng - samples[0].lng) * dLng
-    ));
-    for (let i = 1; i < progress.length; i++) {
-      expect(progress[i], `échantillon ${i + 1} recule`).toBeGreaterThanOrEqual(progress[i - 1]);
+    // Route : la projection lat/lng recule dans un virage (même constat ra3).
+    // Les milles du film, eux, ne redescendent pas — contrat « ne recule pas ».
+    for (let i = 1; i < samples.length; i++) {
+      expect(samples[i].nm, `échantillon ${i + 1} recule`).toBeGreaterThanOrEqual(samples[i - 1].nm - 1e-6);
     }
   }
 

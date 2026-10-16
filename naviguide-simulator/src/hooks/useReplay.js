@@ -1894,8 +1894,16 @@ export function useReplay({
     setTargetSeconds,
     chapterIdx,
     chapterText,
-    fromName: planRef.current?.chapters?.[chapterIdx]?.fromName || "",
-    toName: planRef.current?.chapters?.[chapterIdx]?.toName || "",
+    fromName: (
+      planRef.current?.chapters?.find((c) => c.idx === chapterIdx)
+      || planRef.current?.chapters?.[chapterIdx]
+      || {}
+    ).fromName || "",
+    toName: (
+      planRef.current?.chapters?.find((c) => c.idx === chapterIdx)
+      || planRef.current?.chapters?.[chapterIdx]
+      || {}
+    ).toName || "",
     subtitle,
     subtitlePlace,
     filmLeg,
