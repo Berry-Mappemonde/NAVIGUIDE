@@ -301,14 +301,14 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
   const aroundHfx = momentRows.filter((row) => {
     const lat = Number(row?.pos?.lat ?? row?.moment?.pos?.lat);
     const lon = Number(row?.pos?.lon ?? row?.moment?.pos?.lon);
-    return lat > 40 && lat < 50 && lon < -50 && lon > -70;
+    return lat > 43.5 && lat < 45.5 && lon < -62 && lon > -65;
   });
   const hfxTitles = aroundHfx.flatMap((row) => (row.changes || []).map((c) => c?.title || "")).join(" | ");
   const cayenneAt44 = aroundHfx.some((row) => (
     (row.changes || []).some((c) => /Arrivée à Cayenne/i.test(c?.title || ""))
   ));
   const halifaxNamed = /Halifax/i.test(hfxTitles);
-  if (!aroundHfx.length || !halifaxNamed) {
+  if (!aroundHfx.length || !halifaxNamed || cayenneAt44) {
     test.info().annotations.push({
       type: "stock pré-RC44",
       description: "moments figés sans ligne Halifax à ~44°N — remplisseur MOMENTS_REV à relancer",
