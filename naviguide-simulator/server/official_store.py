@@ -29,11 +29,11 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC48 (eaux FR du journal, Gibraltar avant le Maroc) invalide rc41.
+# Clé film : RC55 (Saint-Pierre → Halifax sans Guyane ni équateur) invalide rc48.
 # moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
-FILM_SCRIPT_REV = "rc48"
+FILM_SCRIPT_REV = "rc55"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "am1a"
