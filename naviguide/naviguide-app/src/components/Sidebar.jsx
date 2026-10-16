@@ -619,7 +619,10 @@ export function Sidebar({
                 <Shield size={12} className="text-blue-400" />
                 {t("briefing")}
               </div>
-              <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+              <div
+                className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50"
+                style={{ contentVisibility: "auto", containIntrinsicSize: "0 8rem" }}
+              >
                 <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
                   {briefingLoading ? t("briefingLoading") : (briefing || t("briefingPlaceholder"))}
                 </p>
