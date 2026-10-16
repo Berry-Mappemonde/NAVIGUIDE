@@ -483,11 +483,10 @@ export default function App() {
   // Berry briefing only on the Berry route — never after a custom track.
   useEffect(() => {
     if (routeKind !== "berry" || drawingMode) return;
-    const cached = getCachedPlan(lang);
-    setExpeditionPlan(cached);
-    if (!ORCHESTRATOR_URL) return;
     const requestId = ++berryFetchIdRef.current;
     const cancelIdle = scheduleIdle(() => {
+      setExpeditionPlan(getCachedPlan(lang));
+      if (!ORCHESTRATOR_URL) return;
       fetch(`${ORCHESTRATOR_URL}/api/v1/expedition/plan/berry-mappemonde`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
