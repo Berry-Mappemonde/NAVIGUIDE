@@ -4,6 +4,7 @@
  */
 
 import { briefingEntities, placeLabel, segmentBriefingWithSources } from "./briefingLinks.js";
+import { trafficKind } from "./ampRules.js";
 import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
 import { localizePlaceName } from "../utils/placeNames.js";
@@ -205,6 +206,13 @@ function poeSentence(dossier, lang) {
     : `Ports d’entrée officiels les plus proches : ${listed}.`;
 }
 
+function ampTrafficTag(item, lang) {
+  const kind = item?.traffic || trafficKind(item?.entry, item?.speed);
+  if (kind === "forbidden") return isEn(lang) ? "no transit" : "circulation interdite";
+  if (kind === "regulated") return isEn(lang) ? "regulated transit" : "circulation régulée";
+  return "";
+}
+
 function ampSentence(dossier, lang) {
   const items = (dossier?.amp || []).filter((x) => x && x.name);
   if (!items.length) return "";
@@ -212,9 +220,11 @@ function ampSentence(dossier, lang) {
   const inside = items.find((x) => x.inside === true);
   if (inside) {
     const name = placeLabel("amp", inside, lang);
+    const tag = ampTrafficTag(inside, lang);
+    const extra = tag ? ` (${tag})` : "";
     return en
-      ? `In the marine protected area ${name}.`
-      : `Dans l'aire marine protégée ${name}.`;
+      ? `In the marine protected area ${name}${extra}.`
+      : `Dans l'aire marine protégée ${name}${extra}.`;
   }
   const nearest = items[0];
   const name = placeLabel("amp", nearest, lang);
@@ -555,9 +565,11 @@ export function phraseForEvent(ev, lang = "fr", { written = false } = {}) {
     case "amp-ahead": {
       const when = p.whenNm ?? ev.whenNm;
       const visit = p.amp?.visitable || p.visitable;
+      const tag = ampTrafficTag(p.amp || p, lang);
+      const extra = tag ? ` (${tag})` : (visit ? (en ? " (visit page in the pack)" : " (page visite dans le sac)") : "");
       return en
-        ? `MPA on the track${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${name || "MPA"}${visit ? " (visit page in the pack)" : ""}.`
-        : `AMP sur le trait${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${name || "AMP"}${visit ? " (page visite dans le sac)" : ""}.`;
+        ? `MPA on the track${Number.isFinite(when) ? ` in ${Math.round(when)} nm` : ""}: ${name || "MPA"}${extra}.`
+        : `AMP sur le trait${Number.isFinite(when) ? ` dans ${Math.round(when)} nm` : ""} : ${name || "AMP"}${extra}.`;
     }
     case "poe-ahead":
       return en
@@ -565,9 +577,17 @@ export function phraseForEvent(ev, lang = "fr", { written = false } = {}) {
         : `Port d’entrée officiel devant : ${originName(p.poe?.name) || name || "PoE"}${p.poe?.nm != null ? ` (${p.poe.nm} nm)` : ""}.`;
     case "amp-enter": {
       const visit = p.amp?.visitable || p.visitable;
+      const inside = p.amp?.inside || p.inside;
+      const tag = ampTrafficTag(p.amp || p, lang);
+      if (inside && tag) {
+        return en
+          ? `The boat is crossing ${name || "this MPA"} (${tag}).`
+          : `On traverse ${name || "cette AMP"} (${tag}).`;
+      }
+      const extra = tag ? ` (${tag})` : (visit ? (en ? " (visit page in the pack)" : " (page visite dans le sac)") : "");
       return en
-        ? `A marine protected area is now inside 30 nm: ${name || "MPA"}${visit ? " (visit page in the pack)" : ""}.`
-        : `Une aire marine entre dans les 30 milles : ${name || "AMP"}${visit ? " (page visite dans le sac)" : ""}.`;
+        ? `A marine protected area is now inside 30 nm: ${name || "MPA"}${extra}.`
+        : `Une aire marine entre dans les 30 milles : ${name || "AMP"}${extra}.`;
     }
     case "wind-shift": {
       const kind = p.kind || ev.kind || "forecast";

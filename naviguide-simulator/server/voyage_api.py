@@ -30,7 +30,8 @@ from forecast_cube import (
     load_cube,
     save_cube,
 )
-from isochrone import WAVE_NOGO_M, haversine, run_leg_isochrone, skipper_nogo
+from amp_nogo import amp_nogo_fn, load_forbidden_nogo
+from isochrone import WAVE_NOGO_M, combine_nogo, haversine, run_leg_isochrone, skipper_nogo
 from grib_fetch import is_stale, maybe_refresh_official
 from saildocs import (
     DAILY_RADIUS_NM,
@@ -1876,7 +1877,16 @@ def recompute(voyage_id: str, body: Optional[RecomputeBody] = None):
         corridor_coords=searoute or chosen,
         corridor_max_nm=CORRIDOR_MAX_NM if searoute else None,
         max_distance_nm=max_nm,
-        wave_nogo_fn=skipper_nogo(wind_fn, wind_max_kt=wind_max, hs_max_m=hs_max),
+        wave_nogo_fn=combine_nogo(
+            skipper_nogo(wind_fn, wind_max_kt=wind_max, hs_max_m=hs_max),
+            amp_nogo_fn(
+                load_forbidden_nogo(),
+                escape_points=[
+                    (float(live["lat"]), float(live["lon"])),
+                    (dst_lat, dst_lon),
+                ],
+            ),
+        ),
     )
     old_coords = [[lon, lat] for lat, lon in searoute]
     draft = {

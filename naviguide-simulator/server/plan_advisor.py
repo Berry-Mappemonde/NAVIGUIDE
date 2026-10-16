@@ -17,7 +17,9 @@ import threading
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
+from amp_nogo import amp_nogo_fn, load_forbidden_nogo
 from isochrone import (
+    combine_nogo,
     distance_to_track_nm,
     haversine,
     move_position,
@@ -401,7 +403,13 @@ def bounded_isochrone(
         dep_lat, dep_lon, dst_lat, dst_lon, departure_time,
         wind_fn=wind_fn,
         polar_raw=polar_raw,
-        wave_nogo_fn=skipper_nogo(wind_fn, wind_max_kt=wind_max_kt, hs_max_m=hs_max_m),
+        wave_nogo_fn=combine_nogo(
+            skipper_nogo(wind_fn, wind_max_kt=wind_max_kt, hs_max_m=hs_max_m),
+            amp_nogo_fn(
+                load_forbidden_nogo(),
+                escape_points=[(dep_lat, dep_lon), (dst_lat, dst_lon)],
+            ),
+        ),
         searoute_coords=chosen or ref,
         corridor_coords=ref or chosen,
         corridor_max_nm=CORRIDOR_MAX_NM,

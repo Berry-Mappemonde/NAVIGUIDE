@@ -1881,6 +1881,7 @@ export default function App() {
         exportSegments={drawingMode ? drawnSegments : activeSegments}
         exportPoints={drawingMode ? drawnPoints : legendMarks}
         tracerLayout={!isSuivre}
+        ampNearby={iciPack.dossier?.amp || []}
       />
 
       {!sceneReady && !drawingMode && (

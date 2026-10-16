@@ -447,6 +447,7 @@ def slim_place(feat: dict, lat0: float, lon0: float, extra_keys: tuple[str, ...]
 AMP_KEYS = (
     "visit_url", "manager_url", "visit_url_status", "designation",
     "iucn_cat", "site_id", "id", "gold_on",
+    "entry", "speed",
 )
 ANCHORAGE_KEYS = ("anchorage_type", "osm_id", "source", "priority")
 
@@ -511,9 +512,18 @@ def slim_amp(feat: dict, lat0: float, lon0: float) -> dict | None:
     if item.get("visit_url"):
         item["url"] = item["visit_url"]
     from toponyms import origin_name  # noqa: PLC0415
+    from amp_traffic import as_activity, traffic_kind  # noqa: PLC0415
     spoken = origin_name(spoken_amp_name(item.get("name")))
     if spoken:
         item["name"] = spoken
+    props = feat.get("properties") or {}
+    entry = as_activity(item.get("entry") if "entry" in item else props.get("entry"))
+    speed = as_activity(item.get("speed") if "speed" in item else props.get("speed"))
+    if entry is not None:
+        item["entry"] = entry
+    if speed is not None:
+        item["speed"] = speed
+    item["traffic"] = traffic_kind(entry, speed)
     return item
 
 

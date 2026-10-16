@@ -1205,6 +1205,18 @@ def _amp_speak_event(change: dict) -> str:
     return ""
 
 
+def _amp_traffic_paren(item: dict | None, lang: str) -> str:
+    from amp_traffic import traffic_kind  # noqa: PLC0415
+    if not isinstance(item, dict):
+        return ""
+    kind = item.get("traffic") or traffic_kind(item.get("entry"), item.get("speed"))
+    if kind == "forbidden":
+        return " (no transit)" if _en(lang) else " (circulation interdite)"
+    if kind == "regulated":
+        return " (regulated transit)" if _en(lang) else " (circulation régulée)"
+    return ""
+
+
 _FR_SMALL = (
     "zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf",
     "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize",
@@ -3288,10 +3300,11 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
         if ev_kind == "exit":
             return ""
         if ev_kind == "enter":
+            tag = _amp_traffic_paren(e if isinstance(e, dict) else ev, lang)
             return (
-                f"On {when}, the boat enters the marine protected area {spoken}."
+                f"On {when}, the boat enters the marine protected area {spoken}{tag}."
                 if en else
-                f"Le {when}, le bateau entre dans l'aire marine protégée {spoken}."
+                f"Le {when}, le bateau entre dans l'aire marine protégée {spoken}{tag}."
             )
         nm = _fact_num(e, "nm") if isinstance(e, dict) else _fact_num(ev, "nm")
         dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
@@ -5481,10 +5494,11 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         if ev_kind == "exit":
             return ""
         if ev_kind == "enter":
+            tag = _amp_traffic_paren(change, lang)
             return (
-                f"On {when}, the boat enters the marine protected area {name}."
+                f"On {when}, the boat enters the marine protected area {name}{tag}."
                 if en else
-                f"Le {when}, le bateau entre dans l'aire marine protégée {name}."
+                f"Le {when}, le bateau entre dans l'aire marine protégée {name}{tag}."
             )
         nm = change_distance_nm(change)
         dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
