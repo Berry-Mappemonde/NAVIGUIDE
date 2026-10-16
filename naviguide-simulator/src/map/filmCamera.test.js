@@ -13,6 +13,7 @@ import {
   filmIntraChapterCenter,
   filmLegIsArchipelago,
   FILM_ARCHIPELAGO_NM,
+  FILM_FLIP_HOLD_MS,
   FILM_INTERP_DELAY_MS,
   FILM_TILE_SLOW,
   FILM_ZOOM_ARCHIPELAGO_MAX,
@@ -158,7 +159,7 @@ describe("filmCamera lot R4 / RG13 — pan borné, un setView par chapitre", () 
     assert.ok(step <= 4 + 1e-6, `lon ${step}° trop grand pour un pas`);
   });
 
-  it("un seul setView au changement de chapitre, puis translation", () => {
+  it("un seul setView au changement de chapitre, hold 1 s, puis translation", () => {
     const { map, calls } = fakeMap();
     const a = applyFilmCamera(map, {
       chapterIdx: 0, lastChapterIdx: null, lat: 46, lon: -1, heading: 0, zoom: 5, now: 0,
@@ -166,22 +167,38 @@ describe("filmCamera lot R4 / RG13 — pan borné, un setView par chapitre", () 
     const b = applyFilmCamera(map, {
       chapterIdx: 1, lastChapterIdx: a.lastChapterIdx, lat: 40, lon: 8, heading: 0, zoom: 5,
       now: 100, lastSetViewAt: a.lastSetViewAt, flyingUntil: a.flyingUntil, lastCenter: a.lastCenter,
+      lastBoat: { lat: 46, lon: -1 },
     });
     assert.equal(b.action, "setView");
+    assert.deepEqual(b.lastCenter, [40, 8], "bateau au centre, pas le milieu de jambe");
     assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+    const viewsAtFlip = calls.filter((c) => c.action === "setView").length;
     let st = b;
     for (let i = 0; i < 8; i++) {
       st = applyFilmCamera(map, {
         chapterIdx: 1, lastChapterIdx: st.lastChapterIdx, lat: 40.01 + i * 0.002, lon: 8.01 + i * 0.002,
         heading: 0, zoom: 5,
-        now: 200 + i * 16, lastSetViewAt: st.lastSetViewAt, flyingUntil: 0, lastCenter: st.lastCenter,
-        framesSinceReset: st.framesSinceReset, boatPx: 6,
+        now: 200 + i * 16, lastSetViewAt: st.lastSetViewAt, flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter, framesSinceReset: st.framesSinceReset, boatPx: 6,
+        stillAnchor: st.stillAnchor, lastBoat: { lat: 40.01 + i * 0.002, lon: 8.01 + i * 0.002 },
+      });
+      assert.equal(st.action, "hold", `pan/setView pendant le hold (${st.action} à ${i})`);
+    }
+    assert.equal(calls.filter((c) => c.action === "setView").length, viewsAtFlip);
+    assert.equal(calls.filter((c) => c.action === "panBy").length, 0);
+    const afterHold = 100 + FILM_FLIP_HOLD_MS + 16;
+    for (let i = 0; i < 8; i++) {
+      st = applyFilmCamera(map, {
+        chapterIdx: 1, lastChapterIdx: st.lastChapterIdx, lat: 40.05 + i * 0.01, lon: 8.05 + i * 0.01,
+        heading: 0, zoom: 5,
+        now: afterHold + i * 16, lastSetViewAt: st.lastSetViewAt, flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter, framesSinceReset: st.framesSinceReset, boatPx: 6,
+        stillAnchor: st.stillAnchor, lastBoat: { lat: 40.04 + i * 0.01, lon: 8.04 + i * 0.01 },
       });
       assert.notEqual(st.action, "flyTo");
-      assert.notEqual(st.action, "fly-wait");
     }
+    assert.ok(calls.filter((c) => c.action === "panBy").length >= 1, "pas de translation après le hold");
     assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
-    assert.ok(calls.filter((c) => c.action === "panBy").length >= 1, "pas de translation après le chapitre");
   });
 });
 
@@ -339,6 +356,26 @@ describe("filmCamera lot RF6 — interpolation hors React, zoom figé, tuiles", 
     const mid = interpolateFilmSamples(samples, 100);
     assert.ok(Math.abs(mid.lon - 0) < 1e-9, `lon milieu ${mid.lon}`);
     assert.ok(Math.abs(mid.filmNm - 5) < 1e-9);
+  });
+
+  it("ne lisse pas un flip de chapitre (Ajaccio → Fort-de-France)", () => {
+    const samples = [];
+    pushFilmSample(samples, { t: 0, lat: 41.9192, lon: 8.7386, heading: 250, chapterIdx: 4 });
+    pushFilmSample(samples, { t: 80, lat: 14.6036, lon: -61.0668, heading: 280, chapterIdx: 5 });
+    const mid = interpolateFilmSamples(samples, 40);
+    assert.ok(Math.abs(mid.lat - 41.9192) < 1e-9, `lerp transat lat ${mid.lat}`);
+    assert.equal(mid.chapterIdx, 4);
+    const after = interpolateFilmSamples(samples, 80);
+    assert.ok(Math.abs(after.lat - 14.6036) < 1e-9, `snap FDF lat ${after.lat}`);
+    assert.equal(after.chapterIdx, 5);
+  });
+
+  it("ne lisse pas un téléport transat dans le même chapitre", () => {
+    const samples = [];
+    pushFilmSample(samples, { t: 0, lat: 41.9192, lon: 8.7386, heading: 250, chapterIdx: 5 });
+    pushFilmSample(samples, { t: 80, lat: 14.6036, lon: -61.0668, heading: 280, chapterIdx: 5 });
+    const mid = interpolateFilmSamples(samples, 40);
+    assert.ok(Math.abs(mid.lat - 41.9192) < 1e-9, `lerp transat même ch lat ${mid.lat}`);
   });
 
   it("précharge les tuiles d'une jambe au zoom du chapitre", () => {
@@ -809,5 +846,243 @@ describe("filmCamera lot RC40 — pleine jambe, pas de saut d'ancre", () => {
     const dLat = Math.abs(held[0] - FDF[0]);
     const dLon = Math.abs(held[1] - FDF[1]);
     assert.ok(dLat < 0.5 && dLon < 0.5, `cadre Caraïbes déplacé ${dLat},${dLon}`);
+  });
+});
+
+describe("filmCamera lot RC49 — un mouvement au flip, bateau au centre", () => {
+  function mercatorMap(center = { lat: 41.9192, lng: 8.7386 }, zoom = 5) {
+    const size = { x: 1280, y: 800 };
+    let here = { ...center };
+    let z = zoom;
+    const calls = [];
+    function project(lat, lng, zoomLevel = z) {
+      const scale = 256 * (2 ** zoomLevel);
+      const x = ((lng + 180) / 360) * scale;
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale;
+      return { x, y };
+    }
+    const map = {
+      flyTo() { calls.push({ action: "flyTo" }); },
+      setView(c, nextZoom, opts) {
+        calls.push({ action: "setView", center: c, zoom: nextZoom, opts });
+        here = { lat: c[0], lng: c[1] };
+        if (Number.isFinite(Number(nextZoom))) z = Number(nextZoom);
+      },
+      panBy(offset) { calls.push({ action: "panBy", offset }); },
+      _rawPanBy(offset) { calls.push({ action: "panBy", offset }); },
+      getSize() { return size; },
+      getCenter() { return here; },
+      getZoom() { return z; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : (ll.lng ?? ll.lon);
+        const p = project(lat, lng);
+        const c = project(here.lat, here.lng);
+        return { x: size.x / 2 + (p.x - c.x), y: size.y / 2 + (p.y - c.y) };
+      },
+      containerPointToLatLng(p) {
+        const c = project(here.lat, here.lng);
+        const scale = 256 * (2 ** z);
+        const wx = c.x + (p.x - size.x / 2);
+        const wy = c.y + (p.y - size.y / 2);
+        const lng = (wx / scale) * 360 - 180;
+        const n = Math.PI - ((2 * Math.PI * wy) / scale);
+        const lat = (180 / Math.PI) * Math.atan(Math.sinh(n));
+        return { lat, lng };
+      },
+      getBounds() {
+        const nw = map.containerPointToLatLng({ x: 0, y: 0 });
+        const se = map.containerPointToLatLng({ x: size.x, y: size.y });
+        return {
+          getNorth: () => nw.lat,
+          getSouth: () => se.lat,
+          getEast: () => se.lng,
+          getWest: () => nw.lng,
+        };
+      },
+    };
+    const boatPx = (lat, lon) => map.latLngToContainerPoint([lat, lon]);
+    return { map, calls, boatPx, size };
+  }
+
+  const AJACCIO = [41.9192, 8.7386];
+  const FDF = [14.6036, -61.0668];
+  const PAP = [16.241, -61.533];
+  const TRANSAT = {
+    fromLat: AJACCIO[0], fromLon: AJACCIO[1], toLat: FDF[0], toLon: FDF[1],
+  };
+  const CARAIBE = {
+    fromLat: FDF[0], fromLon: FDF[1], toLat: PAP[0], toLon: PAP[1],
+  };
+
+  function inCentral40(map, lat, lon, size) {
+    const p = map.latLngToContainerPoint([lat, lon]);
+    const dx = Math.abs(p.x - size.x / 2) / size.x;
+    const dy = Math.abs(p.y - size.y / 2) / size.y;
+    return dx <= 0.2 && dy <= 0.2;
+  }
+
+  it("flip transat : un setView, bateau au centre, pas le milieu de jambe", () => {
+    const { map, calls, boatPx, size } = mercatorMap({ lat: AJACCIO[0], lng: AJACCIO[1] }, 5);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 4, lastChapterIdx: null, lat: AJACCIO[0], lon: AJACCIO[1],
+      heading: 250, zoom: 5, now: 0, filmLeg: TRANSAT,
+    });
+    const views0 = calls.filter((c) => c.action === "setView").length;
+    const flip = applyFilmCamera(map, {
+      chapterIdx: 5,
+      lastChapterIdx: first.lastChapterIdx,
+      lat: FDF[0],
+      lon: FDF[1],
+      heading: 280,
+      zoom: 5,
+      now: 100,
+      lastSetViewAt: first.lastSetViewAt,
+      lastCenter: first.lastCenter,
+      lastBoat: { lat: AJACCIO[0], lon: AJACCIO[1] },
+      stillAnchor: first.stillAnchor,
+      filmLeg: TRANSAT,
+    });
+    assert.equal(flip.action, "setView");
+    const views1 = calls.filter((c) => c.action === "setView").length;
+    assert.equal(views1 - views0, 1, `setView au flip transat : ${views1 - views0}`);
+    assert.deepEqual(flip.lastCenter, FDF);
+    const mid = filmChapterCenter(TRANSAT);
+    assert.ok(Math.hypot(flip.lastCenter[0] - mid[0], flip.lastCenter[1] - mid[1]) > 5,
+      "centre = milieu de jambe (bateau encore à l'origine hors cadre)");
+    const p = boatPx(FDF[0], FDF[1]);
+    assert.ok(inCentral40(map, FDF[0], FDF[1], size), `bateau (${p.x.toFixed(0)},${p.y.toFixed(0)}) hors 40 %`);
+    assert.ok(flip.flyingUntil > 100);
+    assert.ok(flip.stillAnchor);
+  });
+
+  it("après le flip transat : pas de panBy/setView pendant 1 s, FILM_RESET_EVERY ne fait pas (0,0)", () => {
+    const { map, calls } = mercatorMap({ lat: AJACCIO[0], lng: AJACCIO[1] }, 5);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 4, lastChapterIdx: null, lat: AJACCIO[0], lon: AJACCIO[1],
+      heading: 250, zoom: 5, now: 0, filmLeg: TRANSAT,
+    });
+    let st = applyFilmCamera(map, {
+      chapterIdx: 5, lastChapterIdx: first.lastChapterIdx, lat: FDF[0], lon: FDF[1],
+      heading: 280, zoom: 5, now: 100,
+      lastSetViewAt: first.lastSetViewAt, lastCenter: first.lastCenter,
+      lastBoat: { lat: AJACCIO[0], lon: AJACCIO[1] }, stillAnchor: first.stillAnchor,
+      filmLeg: TRANSAT,
+    });
+    const viewsAtFlip = calls.filter((c) => c.action === "setView").length;
+    const pansAtFlip = calls.filter((c) => c.action === "panBy").length;
+    for (let i = 0; i < 60; i++) {
+      const now = 116 + i * 16;
+      st = applyFilmCamera(map, {
+        chapterIdx: 5, lastChapterIdx: st.lastChapterIdx, lat: FDF[0], lon: FDF[1],
+        heading: 280, zoom: 5, now,
+        lastSetViewAt: st.lastSetViewAt, flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter, lastBoat: { lat: FDF[0], lon: FDF[1] },
+        framesSinceReset: st.framesSinceReset, stillAnchor: st.stillAnchor,
+        filmLeg: TRANSAT, boatPx: 0, idle: true,
+      });
+      assert.equal(st.action, "hold", `mouvement à t=${now} : ${st.action}`);
+      const lastPan = calls.filter((c) => c.action === "panBy").at(-1);
+      if (lastPan?.offset) {
+        const dx = lastPan.offset.x ?? lastPan.offset[0] ?? 0;
+        const dy = lastPan.offset.y ?? lastPan.offset[1] ?? 0;
+        assert.ok(Math.hypot(dx, dy) > 0.05 || calls.filter((c) => c.action === "panBy").length === pansAtFlip,
+          `panBy (${dx},${dy}) pendant le hold`);
+      }
+    }
+    assert.equal(calls.filter((c) => c.action === "setView").length, viewsAtFlip);
+    assert.equal(calls.filter((c) => c.action === "panBy").length, pansAtFlip);
+  });
+
+  it("hop Caraïbes après le transat : au plus un setView, bateau au centre", () => {
+    const { map, calls, boatPx, size } = mercatorMap({ lat: FDF[0], lng: FDF[1] }, 5);
+    const atFdf = applyFilmCamera(map, {
+      chapterIdx: 5, lastChapterIdx: null, lat: FDF[0], lon: FDF[1],
+      heading: 280, zoom: 5, now: 0, filmLeg: TRANSAT,
+    });
+    const hop = applyFilmCamera(map, {
+      chapterIdx: 6, lastChapterIdx: atFdf.lastChapterIdx,
+      lat: FDF[0], lon: FDF[1], heading: 310, zoom: 5, now: 100,
+      lastSetViewAt: atFdf.lastSetViewAt, lastCenter: atFdf.lastCenter,
+      lastBoat: { lat: FDF[0], lon: FDF[1] }, stillAnchor: atFdf.stillAnchor,
+      filmLeg: CARAIBE,
+    });
+    assert.equal(hop.action, "hold", "Fort-de-France → Pointe-à-Pitre, même lat/lon : hold RC25");
+    const views0 = calls.filter((c) => c.action === "setView").length;
+    let st = hop;
+    st = applyFilmCamera(map, {
+      chapterIdx: 6, lastChapterIdx: st.lastChapterIdx,
+      lat: PAP[0], lon: PAP[1], heading: 310, zoom: 5,
+      now: 100 + FILM_FLIP_HOLD_MS + 16,
+      lastSetViewAt: st.lastSetViewAt, flyingUntil: st.flyingUntil,
+      lastCenter: st.lastCenter, lastBoat: { lat: FDF[0], lon: FDF[1] },
+      framesSinceReset: st.framesSinceReset, stillAnchor: st.stillAnchor,
+      filmLeg: CARAIBE,
+    });
+    const views1 = calls.filter((c) => c.action === "setView").length;
+    assert.ok(views1 - views0 <= 1, `setView au hop Caraïbes : ${views1 - views0}`);
+    const p = boatPx(PAP[0], PAP[1]);
+    const dx = Math.abs(p.x - size.x / 2) / size.x;
+    const dy = Math.abs(p.y - size.y / 2) / size.y;
+    assert.ok(dx <= 0.4 && dy <= 0.4, `bateau hop (${p.x.toFixed(0)},${p.y.toFixed(0)}) hors cadre`);
+  });
+
+  it("même chapterIdx, bateau Ajaccio → Fort-de-France : un setView (flip retardé)", () => {
+    const { map, calls, boatPx, size } = mercatorMap({ lat: AJACCIO[0], lng: AJACCIO[1] }, 5);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 5, lastChapterIdx: null, lat: AJACCIO[0], lon: AJACCIO[1],
+      heading: 250, zoom: 5, now: 0, filmLeg: TRANSAT,
+    });
+    const views0 = calls.filter((c) => c.action === "setView").length;
+    const teleport = applyFilmCamera(map, {
+      chapterIdx: 5, lastChapterIdx: first.lastChapterIdx,
+      lat: FDF[0], lon: FDF[1], heading: 280, zoom: 5, now: 80,
+      lastSetViewAt: first.lastSetViewAt, flyingUntil: first.flyingUntil,
+      lastCenter: first.lastCenter, lastBoat: { lat: AJACCIO[0], lon: AJACCIO[1] },
+      stillAnchor: first.stillAnchor, filmLeg: TRANSAT,
+    });
+    assert.equal(teleport.action, "setView");
+    assert.equal(calls.filter((c) => c.action === "setView").length - views0, 1);
+    assert.deepEqual(teleport.lastCenter, FDF);
+    const p = boatPx(FDF[0], FDF[1]);
+    assert.ok(inCentral40(map, FDF[0], FDF[1], size), `bateau (${p.x.toFixed(0)},${p.y.toFixed(0)}) hors 40 %`);
+    let st = teleport;
+    const views1 = calls.filter((c) => c.action === "setView").length;
+    for (let i = 0; i < 20; i++) {
+      st = applyFilmCamera(map, {
+        chapterIdx: 5, lastChapterIdx: st.lastChapterIdx, lat: FDF[0], lon: FDF[1],
+        heading: 280, zoom: 5, now: 96 + i * 16,
+        lastSetViewAt: st.lastSetViewAt, flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter, lastBoat: { lat: FDF[0], lon: FDF[1] },
+        framesSinceReset: st.framesSinceReset, stillAnchor: st.stillAnchor,
+        filmLeg: TRANSAT,
+      });
+      assert.equal(st.action, "hold");
+    }
+    assert.equal(calls.filter((c) => c.action === "setView").length, views1);
+  });
+
+  it("stepFilmCamera : seek transat saute à Fort-de-France, pas un lerp océan", () => {
+    const { map, calls, boatPx, size } = mercatorMap({ lat: AJACCIO[0], lng: AJACCIO[1] }, 5);
+    const samples = [];
+    pushFilmSample(samples, {
+      t: 1000, lat: AJACCIO[0], lon: AJACCIO[1], heading: 250, chapterIdx: 4,
+    });
+    pushFilmSample(samples, {
+      t: 1080, lat: FDF[0], lon: FDF[1], heading: 280, chapterIdx: 5,
+    });
+    const a = stepFilmCamera(map, {
+      samples, now: 1080, lastChapterIdx: 4, zoom: 5, baseZoom: 5, chapterIdx: 5,
+      lastCenter: AJACCIO, lastBoat: { lat: AJACCIO[0], lon: AJACCIO[1] },
+      filmLeg: TRANSAT,
+    });
+    assert.equal(a.action, "setView");
+    assert.ok(Math.abs(a.pose.lat - FDF[0]) < 1e-6, `pose lerp transat ${a.pose.lat}`);
+    const p = boatPx(a.pose.lat, a.pose.lon);
+    assert.ok(inCentral40(map, a.pose.lat, a.pose.lon, size),
+      `bateau step (${p.x.toFixed(0)},${p.y.toFixed(0)}) hors 40 %`);
+    const views = calls.filter((c) => c.action === "setView").length;
+    assert.equal(views, 1);
   });
 });
