@@ -3611,3 +3611,51 @@ def test_rc35_papeete_names_pacific_not_north_atlantic():
         if re.search(r"papeete", (c.get("toName") or "") + (c.get("fromName") or ""), re.I)
     )
     assert re.search(r"Pacific", en_ch["text"] or ""), en_ch["text"]
+
+
+# ---------------------------------------------------------------------------
+# Lot RC41 — phrase mer lisible : pas de « ≥ », le seuil n'est pas répété
+# ---------------------------------------------------------------------------
+
+_DUP_METERS_RE = re.compile(r"(\d+)\s*m.+\1\s*m")
+
+
+def test_rc41_sea_alert_sentence_no_ge_no_repeat():
+    sea = {
+        "kind": "alert-on",
+        "title": "Mer",
+        "fact": "Hs 3 m ≥ 3 m.",
+        "t": "2026-05-18T12:00:00Z",
+        "hs": 3.0,
+    }
+    fr = change_sentence(sea, "fr")
+    en = change_sentence(sea, "en")
+    assert "≥" not in fr and "≥" not in en
+    assert "mer formée" in fr
+    assert re.search(r"\b3\s*m\b", fr)
+    assert not _DUP_METERS_RE.search(fr), fr
+    assert "Hs" in en and re.search(r"\b3\s*m\b", en)
+    assert not _DUP_METERS_RE.search(en), en
+    assert "≥" not in change_sentence({**sea, "kind": "sea"}, "fr")
+
+
+def test_rc41_chapter_with_hs_alert_is_readable():
+    """Un chapitre qui porte l'alerte Hs : ni ≥, ni le même nombre de mètres deux fois."""
+    from film_script import _sentences
+
+    sea = {
+        "kind": "alert-on",
+        "title": "Mer",
+        "fact": "Hs 3,4 m ≥ 3,0 m.",
+        "t": "2026-05-18T12:00:00Z",
+        "hs": 3.4,
+    }
+    text = " ".join((
+        "Le 15 mai, départ vers Ajaccio.",
+        change_sentence(sea, "fr"),
+        "Arrivée à Ajaccio le 26 mai.",
+    ))
+    assert "≥" not in text
+    assert not re.search(r"Hs \d+ m ≥", text)
+    for sent in _sentences(text):
+        assert not _DUP_METERS_RE.search(sent), sent

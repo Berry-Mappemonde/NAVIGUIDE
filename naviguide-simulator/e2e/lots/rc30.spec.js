@@ -18,8 +18,10 @@ import { dismissNotForNav, leaveCinema, waitFilmCanStart } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc30");
 const recetteRc36 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc36");
+const recetteRc41 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc41");
 mkdirSync(recetteDir, { recursive: true });
 mkdirSync(recetteRc36, { recursive: true });
+mkdirSync(recetteRc41, { recursive: true });
 
 const shot = async (page, name) => {
   const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
@@ -28,6 +30,10 @@ const shot = async (page, name) => {
 const shotRc36 = async (page, name) => {
   const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
   writeFileSync(join(recetteRc36, `${name}.jpg`), buf);
+};
+const shotRc41 = async (page, name) => {
+  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
+  writeFileSync(join(recetteRc41, `${name}.jpg`), buf);
 };
 
 const MONTHS_FR = [
@@ -148,6 +154,7 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
   };
   if (lrAj) {
     const t = lrAj.text || "";
+    expect(t, "RC41 : plus de « Hs N m ≥ »").not.toMatch(/Hs \d+ m ≥/);
     const iFr = orderIdx(t, /eaux françaises|French waters/i);
     const iGas = orderIdx(t, /Gascogne/i);
     const iEs = orderIdx(t, /eaux espagnoles|Spanish waters/i);
@@ -195,6 +202,7 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
     )),
     { timeout: 20_000 },
   ).toBeTruthy();
+  await shotRc41(page, "01-revoir-hs");
 
   const charsUntilSecondSea = (film.chapters || []).slice(0, 3)
     .reduce((n, c) => n + String(c.text || "").length, 0);

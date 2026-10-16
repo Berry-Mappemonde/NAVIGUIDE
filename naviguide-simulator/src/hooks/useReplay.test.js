@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
@@ -1004,5 +1004,52 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /film-style-\$\{id\}/);
     assert.match(bar, /\["raw", "filmStoryRaw"\], \["written", "filmStoryWritten"\]/);
     assert.match(bar, /data-testid="film-source" hidden/);
+  });
+});
+
+describe("lot RC41 — débit écrit stable, pas de sprint puis calage", () => {
+  it("voix : charIdx dès la 1re phrase à FILM_ESTIMATE_CPS, jamais le budget", () => {
+    assert.equal(filmScriptCharIdx({
+      voiceClock: true, phraseOn: false, linearChar: 203,
+    }), 0, "avant la 1re phrase : pas le sprint linéaire");
+    const at10 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 10,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 203,
+    });
+    const at20 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 20,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 406,
+    });
+    const at30 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 30,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 609,
+    });
+    const at40 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 40,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 812,
+    });
+    assert.equal(at10, FILM_ESTIMATE_CPS * 10);
+    assert.equal(at20, FILM_ESTIMATE_CPS * 20);
+    const early = (at20 - at10) / 10;
+    const late = (at40 - at30) / 10;
+    assert.equal(filmCharRatesStable(early, late), true);
+    assert.equal(filmCharRatesStable(20.3, 15.0), false);
+    assert.match(hook, /filmScriptCharIdx/);
+    assert.match(hook, /voiceMayLead/);
+    assert.match(hook, /voiceFailedRef\.current = !voiceMayLead\(\)/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /RC41/);
+  });
+
+  it("sans voix : un seul régime — FILM_ESTIMATE_CPS", () => {
+    const a = filmScriptCharIdx({ voiceClock: false, linearChar: 150 });
+    const b = filmScriptCharIdx({ voiceClock: false, linearChar: 300 });
+    assert.equal(a, 150);
+    assert.equal(b, 300);
+    assert.equal(filmCharRatesStable(15, 15), true);
+    const ended = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseEnded: true,
+      phraseChar0: 0, phraseElapsedS: 40, sentenceEndChar: 120, linearChar: 600,
+    });
+    assert.equal(ended, 120, "fin de phrase : on tient l'ancre, on ne sprinte pas");
   });
 });
