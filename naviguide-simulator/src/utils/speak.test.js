@@ -4,12 +4,15 @@ import {
   canLeadWithVoice,
   canSpeak,
   pickVoice,
+  sentenceTimeLimitMs,
   speak,
   splitUtterances,
   spokenText,
   stopSpeaking,
   utteranceRate,
   voiceEndKind,
+  VOICE_LEAD_MS,
+  VOICE_MS_PER_CHAR,
   waitForVoices,
   voiceMayLead,
 } from "./speak.js";
@@ -198,5 +201,120 @@ describe("speak lot R3", () => {
     const win = { speechSynthesis: { getVoices: () => [{ name: "Thomas", lang: "fr-FR" }] } };
     const voices = await waitForVoices(win, 50);
     assert.equal(voices[0].name, "Thomas");
+  });
+
+  it("liste de voix vide après voiceschanged : onLeadFailed, pas d'énoncé", async () => {
+    let failed = 0;
+    let ended = 0;
+    const spoken = [];
+    class Utter { constructor(text) { this.text = text; } }
+    const win = {
+      SpeechSynthesisUtterance: Utter,
+      speechSynthesis: {
+        speaking: false,
+        cancel() {},
+        getVoices: () => [],
+        addEventListener(ev, fn) { if (ev === "voiceschanged") queueMicrotask(fn); },
+        removeEventListener() {},
+        speak(u) { spoken.push(u); },
+      },
+    };
+    speak("Bonjour La Rochelle.", "fr", {
+      win,
+      onLeadFailed: () => { failed += 1; },
+      onEnd: () => { ended += 1; },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(spoken.length, 0, "aucun énoncé si pas de voix");
+    assert.equal(failed, 1);
+    assert.equal(ended, 0, "le film ne se termine pas");
+    stopSpeaking(win);
+  });
+
+  it("sans onstart ni onboundary en VOICE_LEAD_MS : cancel et onLeadFailed", async () => {
+    let cancelled = 0;
+    let failed = 0;
+    let ended = 0;
+    class Utter { constructor(text) { this.text = text; } }
+    const win = {
+      SpeechSynthesisUtterance: Utter,
+      speechSynthesis: {
+        speaking: true,
+        cancel() { cancelled += 1; this.speaking = false; },
+        getVoices: () => [{ lang: "fr-FR", name: "Thomas" }],
+        speak() { this.speaking = true; },
+      },
+    };
+    speak("Phrase sans frontière.", "fr", {
+      win,
+      leadMs: 25,
+      onLeadFailed: () => { failed += 1; },
+      onEnd: () => { ended += 1; },
+    });
+    await new Promise((r) => setTimeout(r, 80));
+    assert.ok(cancelled >= 1);
+    assert.equal(failed, 1);
+    assert.equal(ended, 0, "le chapitre ne se termine pas sur l'incident");
+    stopSpeaking(win);
+  });
+
+  it("onstart ou une frontière récente : on ne coupe pas une phrase dont les mots tombent", async () => {
+    let failed = 0;
+    const spoken = [];
+    class Utter { constructor(text) { this.text = text; } }
+    const win = {
+      SpeechSynthesisUtterance: Utter,
+      speechSynthesis: {
+        speaking: true,
+        cancel() {},
+        getVoices: () => [{ lang: "fr-FR", name: "Thomas" }],
+        speak(u) { spoken.push(u); this.speaking = true; },
+      },
+    };
+    speak("Les mots tombent encore.", "fr", {
+      win,
+      leadMs: 30,
+      sentenceLimitMs: 10_000,
+      onLeadFailed: () => { failed += 1; },
+    });
+    assert.equal(spoken.length, 1);
+    spoken[0].onstart?.();
+    spoken[0].onboundary?.({ charIndex: 4 });
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(failed, 0, "une frontière récente ne lâche pas la voix");
+    assert.equal(spoken.length, 1);
+    stopSpeaking(win);
+  });
+
+  it("si onend n'arrive jamais, sentenceTimeLimitMs annule aussi", async () => {
+    assert.equal(VOICE_LEAD_MS, 2500);
+    assert.equal(VOICE_MS_PER_CHAR, 60);
+    const longLimit = sentenceTimeLimitMs("x".repeat(200));
+    assert.ok(longLimit > 13_000, "une phrase de 200 car. lue vraiment n'est pas coupée");
+    let failed = 0;
+    let ended = 0;
+    const spoken = [];
+    class Utter { constructor(text) { this.text = text; } }
+    const win = {
+      SpeechSynthesisUtterance: Utter,
+      speechSynthesis: {
+        speaking: true,
+        cancel() { this.speaking = false; },
+        getVoices: () => [{ lang: "fr-FR", name: "Thomas" }],
+        speak(u) { spoken.push(u); this.speaking = true; },
+      },
+    };
+    speak("Hi", "fr", {
+      win,
+      leadMs: 5_000,
+      sentenceLimitMs: 25,
+      onLeadFailed: () => { failed += 1; },
+      onEnd: () => { ended += 1; },
+    });
+    spoken[0].onstart?.();
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(failed, 1);
+    assert.equal(ended, 0);
+    stopSpeaking(win);
   });
 });
