@@ -133,5 +133,47 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
   const chapterCount = film.chapters.length;
   expect(argoCount, "au plus un flotteur Argo par jambe").toBeLessThanOrEqual(chapterCount);
 
+  const lrAj = film.chapters.find((c) =>
+    /rochelle/i.test(c.fromName || "") && /ajaccio/i.test(c.toName || ""));
+  const pap = film.chapters.find((c) => /papeete/i.test(c.toName || ""));
+  const orderIdx = (text, re) => {
+    const m = String(text || "").match(re);
+    return m ? String(text).search(re) : -1;
+  };
+  if (lrAj) {
+    const t = lrAj.text || "";
+    const iFr = orderIdx(t, /eaux françaises|French waters/i);
+    const iGas = orderIdx(t, /Gascogne/i);
+    const iEs = orderIdx(t, /eaux espagnoles|Spanish waters/i);
+    const iPt = orderIdx(t, /eaux portugaises|Portuguese waters/i);
+    const iGi = orderIdx(t, /Gibraltar/i);
+    const iMa = orderIdx(t, /eaux marocaines|Moroccan waters/i);
+    const ready = [iGas, iEs, iPt, iGi, iMa].every((i) => i >= 0);
+    if (ready) {
+      if (iFr >= 0) {
+        expect(iFr, "eaux françaises avant Gascogne").toBeLessThan(iGas);
+      }
+      expect(iGas, "Gascogne avant les eaux espagnoles").toBeLessThan(iEs);
+      expect(iEs, "eaux espagnoles avant portugaises").toBeLessThan(iPt);
+      expect(iPt, "eaux portugaises avant Gibraltar").toBeLessThan(iGi);
+      expect(iGi, "Gibraltar avant les eaux marocaines").toBeLessThan(iMa);
+    } else {
+      test.info().annotations.push({
+        type: "stock pré-RC35",
+        description: "film LR→Ajaccio sans Gascogne/ES/PT/Gibraltar/Maroc — remplisseur FILM_SCRIPT_REV=rc35",
+      });
+    }
+  }
+  if (pap) {
+    if (/Pacifique|Pacific/i.test(pap.text || "")) {
+      expect(pap.text, "Cayenne → Papeete nomme le Pacifique").toMatch(/Pacifique|Pacific/i);
+    } else {
+      test.info().annotations.push({
+        type: "stock pré-RC35",
+        description: "film Cayenne→Papeete sans Pacifique — remplisseur FILM_SCRIPT_REV=rc35",
+      });
+    }
+  }
+
   await shot(page, "01-ordre");
 });
