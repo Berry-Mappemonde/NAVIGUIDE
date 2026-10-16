@@ -130,6 +130,12 @@ _QTY_ALIASES = {
     "position": "position", "lieu": "position",
     "couche": "layer", "layer": "layer", "cable": "layer", "câble": "layer",
 }
+# Capitalized leftovers that are not a toponym (« Arrivée prévue ? »).
+_PLACE_SKIP = frozenset({
+    "quel", "quelle", "quels", "quelles", "what", "the",
+    "arrivee", "arrival", "expected", "prevue", "eta",
+    "fourchette", "window",
+})
 
 
 # ── context ─────────────────────────────────────────────────────────────────
@@ -1086,7 +1092,11 @@ def keyword_intent(question: str) -> dict[str, Any]:
         place = m_at.group(1).strip()
     if not place:
         for token in re.findall(r"[A-ZÀ-Ÿ][\wÀ-ÿ'’\-]{2,}", q):
-            if _fold(token) in _MONTH_NAMES or _fold(token) in {"quel", "quelle", "what", "the"}:
+            # À-Ÿ includes lowercase é — « prévue » is not a toponym.
+            if not token[:1].isupper():
+                continue
+            folded_tok = _fold(token)
+            if folded_tok in _MONTH_NAMES or folded_tok in _PLACE_SKIP:
                 continue
             place = token
             break
@@ -1151,6 +1161,16 @@ def _place_match(needle: str | None, name: str | None) -> bool:
     return a in b or b in a
 
 
+def _eta_named_place(place: str | None) -> str | None:
+    """Keep only a real toponym. « Arrivée » / « Expected » are not a stop."""
+    if not place:
+        return None
+    folded = _fold(place)
+    if folded in _PLACE_SKIP or folded in _MONTH_NAMES:
+        return None
+    return str(place).strip() or None
+
+
 def _leg_for_place(ctx: dict, place: str | None) -> dict | None:
     plan = ctx.get("plan") if isinstance(ctx.get("plan"), dict) else {}
     legs = [lg for lg in (plan.get("legs") or []) if isinstance(lg, dict)]
@@ -1158,6 +1178,11 @@ def _leg_for_place(ctx: dict, place: str | None) -> dict | None:
         for lg in legs:
             if _place_match(place, lg.get("to")) or _place_match(place, lg.get("from")):
                 return lg
+        nxt = _next_stop_name(ctx)
+        if nxt and _place_match(place, nxt):
+            stop = ctx.get("nextStop") if isinstance(ctx.get("nextStop"), dict) else {}
+            return {"to": nxt, "arriveIso": stop.get("eta")}
+        return None
     nxt = _next_stop_name(ctx)
     if nxt:
         for lg in legs:
@@ -1244,8 +1269,11 @@ def _polar_template(ctx: dict, question: str, en: bool) -> str | None:
 
 
 def _eta_template(ctx: dict, place: str | None, en: bool) -> str | None:
-    lg = _leg_for_place(ctx, place)
+    named = _eta_named_place(place)
+    lg = _leg_for_place(ctx, named)
     if not lg:
+        if named:
+            return None
         name = _next_stop_name(ctx)
         stop = ctx.get("nextStop") if isinstance(ctx.get("nextStop"), dict) else {}
         day = _fmt_iso_day(stop.get("eta"))
