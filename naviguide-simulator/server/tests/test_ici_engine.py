@@ -767,6 +767,28 @@ def test_slim_amp_keeps_visit_and_manager_apart():
     item = slim_amp(feat, 46.15, -1.16)
     assert item["visit_url"] != item["manager_url"]
     assert item["url"] == item["visit_url"]
+    assert item["traffic"] == "unknown"
+
+
+def test_slim_amp_marks_regulated():
+    feat = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+                [-1.25, 46.10], [-1.10, 46.10], [-1.10, 46.20], [-1.25, 46.20], [-1.25, 46.10],
+            ]],
+        },
+        "properties": {
+            "name": "Cabrera",
+            "site_id": "AIESP1",
+            "entry": 2,
+            "speed": 3,
+        },
+    }
+    item = slim_amp(feat, 46.15, -1.16)
+    assert item["traffic"] == "regulated"
+    assert item["entry"] == 2
 
 
 def test_stac_scene_is_observation_not_forecast():

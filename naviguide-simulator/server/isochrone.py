@@ -331,6 +331,20 @@ def default_wave_nogo(wind_fn: Callable, hs_limit: float = WAVE_NOGO_M):
     return fn
 
 
+def combine_nogo(*fns: Optional[Callable]) -> Optional[Callable]:
+    """OR of several no-go predicates. None if nothing to refuse."""
+    active = [fn for fn in fns if fn is not None]
+    if not active:
+        return None
+    if len(active) == 1:
+        return active[0]
+
+    def fn(lat: float, lon: float, t: datetime) -> bool:
+        return any(item(lat, lon, t) for item in active)
+
+    return fn
+
+
 def skipper_nogo(wind_fn: Callable, *, wind_max_kt: Optional[float] = None,
                  hs_max_m: Optional[float] = None) -> Callable:
     """Lot G : les ordres du skipper comme zones interdites du routage — un

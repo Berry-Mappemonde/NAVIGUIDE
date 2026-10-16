@@ -745,6 +745,21 @@ describe("lot AM1B — ampSentence dans / à N milles", () => {
     assert.doesNotMatch(text, /À 0 milles/);
   });
 
+  it("ajoute la circulation régulée quand le bateau traverse", () => {
+    const text = narrateIci({
+      zee: { name: "Spanish Exclusive Economic Zone", mrgid: 8462, gold: true },
+      amp: [{ name: "Cabrera", inside: true, nm: 0, traffic: "regulated", entry: 2, speed: 3, source: "polygon" }],
+      sources: { zee: "marineregions", bi: "ok" },
+    }, "fr");
+    assert.match(text, /Dans l'aire marine protégée Cabrera \(circulation régulée\)/);
+    const ev = phraseForEvent({
+      type: "amp-enter",
+      name: "Cabrera",
+      payload: { amp: { name: "Cabrera", traffic: "regulated", inside: true }, inside: true },
+    }, "fr");
+    assert.match(ev, /On traverse Cabrera \(circulation régulée\)/);
+  });
+
   it("dit « à N milles de » hors de l'aire, y compris le sac export", () => {
     const nearby = narrateIci({
       zee: { name: "French Exclusive Economic Zone", mrgid: 5677, gold: true },

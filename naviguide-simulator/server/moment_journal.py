@@ -290,6 +290,12 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
         if site:
             ch["siteId"] = site
             ch["site_id"] = site
+        if item.get("traffic"):
+            ch["traffic"] = item.get("traffic")
+        if item.get("entry") is not None:
+            ch["entry"] = item.get("entry")
+        if item.get("speed") is not None:
+            ch["speed"] = item.get("speed")
         return ch
 
     for key, item in cur_mpa.items():

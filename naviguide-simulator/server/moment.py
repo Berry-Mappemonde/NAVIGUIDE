@@ -489,7 +489,13 @@ def _in_cyclone_season(cyc: dict | None) -> bool | None:
     return False if known else None
 
 
-def _amp_restriction(amp: dict) -> str | None:
+def _amp_restriction(amp: dict, lang: str = "fr") -> str | None:
+    from amp_traffic import traffic_kind
+    kind = amp.get("traffic") or traffic_kind(amp.get("entry"), amp.get("speed"))
+    if kind == "forbidden":
+        return "no transit" if lang == "en" else "circulation interdite"
+    if kind == "regulated":
+        return "regulated transit" if lang == "en" else "circulation régulée"
     if amp.get("restricted") is True or amp.get("restriction") is True:
         return str(amp.get("restriction") if isinstance(amp.get("restriction"), str) else "restricted")
     if isinstance(amp.get("restriction"), str) and amp["restriction"].strip():
@@ -530,6 +536,9 @@ def _here(pearl: dict, clock: dict, lang: str) -> dict:
             "iucn_cat": amp.get("iucn_cat") or amp.get("iucn"),
             "designation": amp.get("designation"),
             "source": amp.get("source"),
+            "entry": amp.get("entry"),
+            "speed": amp.get("speed"),
+            "traffic": amp.get("traffic"),
         }
         slim = {k: v for k, v in item.items() if v not in (None, "")}
         if "inside" in amp:
@@ -633,10 +642,17 @@ def _sentences(
         inside = next((a for a in amps if a.get("inside") is True), None)
         if inside:
             name = localize_place_name(inside.get("name"), lang)
+            kind = inside.get("traffic")
+            if kind == "forbidden":
+                tag = " (no transit)" if en else " (circulation interdite)"
+            elif kind == "regulated":
+                tag = " (regulated transit)" if en else " (circulation régulée)"
+            else:
+                tag = ""
             out.append(
-                f"In the marine protected area {name}."
+                f"In the marine protected area {name}{tag}."
                 if en else
-                f"Dans l'aire marine protégée {name}."
+                f"Dans l'aire marine protégée {name}{tag}."
             )
         else:
             nearest = amps[0]
@@ -928,7 +944,7 @@ def _alerts(
         })
 
     for amp in _amp_list(pearl):
-        restriction = _amp_restriction(amp)
+        restriction = _amp_restriction(amp, lang)
         if not restriction:
             continue
         name = localize_place_name(amp.get("name"), lang)
