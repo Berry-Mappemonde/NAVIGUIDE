@@ -47,6 +47,7 @@ case "$SITE" in
     rsync_to --delete "$ROOT/frontend/build/" "$VPS:$REMOTE/frontend/build/"
     rsync_to \
       "$ROOT/infra/vps/deploy-app.sh" \
+      "$ROOT/infra/vps/sync-public-nginx.sh" \
       "$ROOT/infra/vps/blue-intelligence.service" \
       "$ROOT/infra/vps/blue-intelligence-backup.cron" \
       "$ROOT/infra/vps/nginx-blue-intelligence.conf" \
@@ -62,6 +63,7 @@ case "$SITE" in
       --exclude "*.pyc" \
       --exclude .pytest_cache \
       "$ROOT/naviguide/" "$VPS:$REMOTE/naviguide/"
+    rsync_to "$ROOT/infra/vps/sync-public-nginx.sh" "$VPS:$REMOTE/infra/vps/"
     rsync_to \
       "$ROOT/infra/vps/naviguide/deploy-naviguide.sh" \
       "$ROOT/infra/vps/naviguide/nginx-naviguide.conf" \

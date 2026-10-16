@@ -1,13 +1,86 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="./favicon-n-bl.png" />
     <link rel="apple-touch-icon" href="./favicon-n-bl.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>naviguide</title>
+    <meta name="google-site-verification" content="wcHxYluJ5vTNo2dOGMj1T9A-dEfHXzaCTwMGM8OlAT0" />
+    <title>NAVIGUIDE — Routage voilier et intelligence maritime | Berry-Mappemonde</title>
+    <meta
+      name="description"
+      content="NAVIGUIDE : planifiez vos itinéraires à la voile avec météo, courants et couches maritimes. Application web de l’association Berry-Mappemonde pour l’expédition et le routage."
+    />
+    <link rel="canonical" href="https://www.naviguide.fr/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:site_name" content="NAVIGUIDE" />
+    <meta property="og:title" content="NAVIGUIDE — Routage voilier et intelligence maritime" />
+    <meta
+      property="og:description"
+      content="Planifiez vos traversées, analysez vent et courants, explorez les couches maritimes. Projet Berry-Mappemonde."
+    />
+    <meta property="og:url" content="https://www.naviguide.fr/" />
+    <meta property="og:image" content="https://www.naviguide.fr/logo-naviguide.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="NAVIGUIDE — Routage voilier | Berry-Mappemonde" />
+    <meta
+      name="twitter:description"
+      content="Application web de routage météo pour voiliers et expéditions maritime."
+    />
+    <meta name="twitter:image" content="https://www.naviguide.fr/logo-naviguide.png" />
+    <link rel="preconnect" href="https://demotiles.maplibre.org" crossorigin />
+    <link rel="dns-prefetch" href="https://tiles.openseamap.org" />
+    <link rel="dns-prefetch" href="https://www.naviguide.fr" />
+    <link rel="preload" href="./favicon-n-bl.png" as="image" type="image/png" fetchpriority="high" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "NGO",
+            "@id": "https://berrymappemonde.org/#organization",
+            "name": "Berry-Mappemonde",
+            "url": "https://berrymappemonde.org/fr/"
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://www.naviguide.fr/#webapp",
+            "name": "NAVIGUIDE",
+            "url": "https://www.naviguide.fr/",
+            "applicationCategory": "NavigationApplication",
+            "operatingSystem": "Web",
+            "inLanguage": "fr",
+            "description": "Routage voilier, météo marine et couches cartographiques pour expéditions.",
+            "publisher": { "@id": "https://berrymappemonde.org/#organization" }
+          }
+        ]
+      }
+    </script>
+    <style>
+      .seo-fallback {
+        max-width: 42rem;
+        margin: 1.25rem auto;
+        padding: 0 1rem;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        color: #0f172a;
+      }
+      body:has(#root:not(:empty)) .seo-fallback {
+        display: none;
+      }
+    </style>
   </head>
   <body>
+    <main class="seo-fallback" id="seo-fallback">
+      <h1>NAVIGUIDE — routage voilier et cartographie maritime</h1>
+      <p>
+        NAVIGUIDE est l’application web de routage et d’exploration maritime de
+        <a href="https://berrymappemonde.org/fr/">l’association Berry-Mappemonde</a> :
+        itinéraires à la voile, données météo et couches nautiques sur une carte interactive.
+      </p>
+      <p>Activez JavaScript pour utiliser la carte et les outils de simulation.</p>
+    </main>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
