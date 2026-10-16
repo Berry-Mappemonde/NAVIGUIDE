@@ -78,9 +78,20 @@
       }
     </script>
     <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #root {
+        min-height: 100vh;
+      }
       .lcp-hero {
         box-sizing: border-box;
-        min-height: 42vh;
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        min-height: 100vh;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -109,11 +120,14 @@
         color: #334155;
       }
       html.app-ready #lcp-hero {
-        display: none;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
       }
     </style>
   </head>
   <body>
+    <div id="root"></div>
     <main class="lcp-hero" id="lcp-hero">
       <img
         src="./logo-naviguide.png"
@@ -129,7 +143,6 @@
         <a href="https://berrymappemonde.org/fr/">Berry-Mappemonde</a>.
       </p>
     </main>
-    <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
