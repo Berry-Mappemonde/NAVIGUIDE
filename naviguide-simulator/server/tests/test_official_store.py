@@ -11,7 +11,9 @@ from official_store import (
     DiskBackend,
     FAMILIES,
     FILM_SCRIPT_REV,
+    ICI_REV,
     MOMENTS_REV,
+    PLAN_REVIEW_REV,
     MongoBackend,
     OfficialStore,
     PREPARING,
@@ -96,7 +98,12 @@ def _payload(family, tag="A"):
     if family == "climo":
         return {"clock": {"t0": T0, "vertices": [{"lat": 46.15, "lon": -1.16, "iso": T0}]}, "regimes": [], "fiches": []}
     if family == "ici":
-        return {"points": [{"lat": 46.15, "lon": -1.16, "nm": 0, "bag": {"zee": {"name": "FR"}, "at": {"lat": 46.15, "lon": -1.16}}}]}
+        return {"points": [{"lat": 46.15, "lon": -1.16, "nm": 0, "bag": {
+            "zee": {"name": "FR"},
+            "amp": [{"name": "Pertuis charentais", "source": "polygon", "inside": False, "nm": 8.0, "siteId": "PS-1"}],
+            "at": {"lat": 46.15, "lon": -1.16},
+            "sources": {"bi": "ok"},
+        }}]}
     if family == "plan_review":
         return {"legs": [{"from": "La Rochelle", "to": "Fort-de-France (Martinique)"}]}
     return {"moments": [{"t": T0, "signature": tag}], "journal": {"count": 2, "latest": [{"t": T0, "kind": "stop", "name": "La Rochelle"}], "events": [], "days": []}}
@@ -271,6 +278,71 @@ def test_http_ici_official_point_from_store_not_fill(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body.get("cached") is True or (body.get("zee") or {}).get("name") == "FR"
+    assert body["amp"][0]["source"] == "polygon"
+
+
+def test_ici_bag_near_rejects_amp_without_source():
+    official_store.put("ici", {"points": [{
+        "lat": 41.31,
+        "lon": 9.19,
+        "nm": 0,
+        "bag": {
+            "amp": [{"name": "Strait of Bonifacio", "nm": 2.0}],
+            "sources": {"bi": "ok"},
+            "pearl": "rich",
+        },
+    }]})
+    assert official_store.ici_bag_near(41.31, 9.19) is None
+
+
+def test_ici_bag_near_accepts_amp_with_source():
+    bag = {
+        "amp": [{"name": "Strait of Bonifacio", "source": "polygon", "inside": True, "nm": 0.0, "siteId": "AIFRA7"}],
+        "sources": {"bi": "ok"},
+    }
+    official_store.put("ici", {"points": [{"lat": 41.31, "lon": 9.19, "nm": 0, "bag": bag}]})
+    got = official_store.ici_bag_near(41.31, 9.19)
+    assert got is not None
+    assert got["amp"][0]["source"] == "polygon"
+    assert got["amp"][0]["inside"] is True
+
+
+def test_ici_bag_near_accepts_empty_amp_list():
+    official_store.put("ici", {"points": [{
+        "lat": 0.0,
+        "lon": -30.0,
+        "nm": 1000,
+        "bag": {"amp": [], "sources": {"bi": "ok"}, "zee": None},
+    }]})
+    got = official_store.ici_bag_near(0.0, -30.0)
+    assert got is not None
+    assert got["amp"] == []
+
+
+def test_http_ici_pre_am1a_snapshot_is_not_served_cached(client, monkeypatch):
+    import voyage_api
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+    official_store.put("ici", {"points": [{
+        "lat": 46.15,
+        "lon": -1.16,
+        "nm": 0,
+        "bag": {
+            "amp": [{"name": "Old park", "nm": 3.0}],
+            "sources": {"bi": "ok"},
+            "pearl": "rich",
+        },
+    }]})
+    assert official_store.ici_bag_near(46.15, -1.16) is None
+    r = client.get("/ici", params={"lat": 46.15, "lon": -1.16})
+    assert r.status_code == 200
+    body = r.json()
+    amps = body.get("amp") or []
+    has_source = any(isinstance(x, dict) and "source" in x for x in amps)
+    assert body.get("status") == PREPARING or has_source
+    if not has_source:
+        assert body.get("cached") is not True
 
 
 AIR_MARKS = [
@@ -321,7 +393,107 @@ def test_film_key_includes_script_rev(tmp_path):
     base = store.current_key(voy, NOW)
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
     assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
+    assert store.family_key("ici", voy, NOW) == f"{base}:{ICI_REV}"
+    assert store.family_key("plan_review", voy, NOW) == f"{base}:{PLAN_REVIEW_REV}"
     assert store.family_key("eta", voy, NOW) == base
+
+
+def test_plan_review_key_changes_with_rev(tmp_path, monkeypatch):
+    """Lot RC50 : bumper PLAN_REVIEW_REV change la clé."""
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    base = store.current_key(voy, NOW)
+    before = store.family_key("plan_review", voy, NOW)
+    assert before == f"{base}:{PLAN_REVIEW_REV}"
+    monkeypatch.setattr(official_store, "PLAN_REVIEW_REV", "rc50-test")
+    after = store.family_key("plan_review", voy, NOW)
+    assert after == f"{base}:rc50-test"
+    assert after != before
+
+
+def test_plan_review_pre_rev_snapshot_is_preparing_even_when_worker_off(tmp_path, monkeypatch):
+    """Lot RC50 : snapshot Halifax → Papeete à la clé sans rev n'est jamais ready.
+
+    Contrairement à film/moments/ici, plan_review n'a pas de repli WORKER=0 :
+    GET sans entrée à `…:PLAN_REVIEW_REV` reste en préparation.
+    """
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "0")
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    stale = {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Papeete (Polynésie française)",
+        }],
+        "generatedAt": "2026-10-16T00:28:46Z",
+    }
+    old_key = store.current_key(voy, NOW)
+    store.put("plan_review", stale, old_key)
+    new_key = store.family_key("plan_review", voy, NOW)
+    assert new_key == f"{old_key}:{PLAN_REVIEW_REV}"
+    assert store.get("plan_review", new_key) is None
+    served = official_store.serve_plan_review()
+    assert served["status"] == PREPARING
+    assert served["legs"] == []
+    blob = str(served)
+    assert "Halifax" not in blob
+    assert "Papeete" not in blob
+
+
+def test_plan_review_refresh_misses_old_key(tmp_path, monkeypatch):
+    """Lot RC50 : refresh_family ne rend pas unchanged sur l'ancien snapshot."""
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    stale = {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Papeete (Polynésie française)",
+        }],
+    }
+    store.put("plan_review", stale, store.current_key(voy, NOW))
+    calls = {"n": 0}
+
+    def compute(_voy, _now):
+        calls["n"] += 1
+        return {"legs": [{"from": "computed", "to": "computed"}]}
+
+    status = official_store.refresh_family(
+        "plan_review", compute=compute, now=NOW, store=store, voy=voy, force=False,
+    )
+    assert status == READY
+    assert calls["n"] == 1
+    hit = store.get("plan_review", store.family_key("plan_review", voy, NOW))
+    assert hit["payload"]["legs"][0]["from"] == "computed"
+    again = official_store.refresh_family(
+        "plan_review", compute=compute, now=NOW, store=store, voy=voy, force=False,
+    )
+    assert again == "unchanged"
+    assert calls["n"] == 1
+
+
+def test_plan_review_http_old_key_is_preparing_and_kicks(client, monkeypatch):
+    """GET /plan-review sans snapshot à la nouvelle clé : preparing + kick."""
+    kicks = {"n": 0}
+    monkeypatch.setattr(official_store, "kick_worker", lambda: kicks.__setitem__("n", kicks["n"] + 1))
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    store = official_store.get_store()
+    store.put("plan_review", {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Papeete (Polynésie française)",
+        }],
+        "generatedAt": "2026-10-16T00:28:46Z",
+    }, store.current_key(voy))
+    r = client.get("/voyage/official/plan-review")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == PREPARING
+    assert body["legs"] == []
+    assert "Halifax" not in str(body)
+    assert kicks["n"] >= 1
 
 
 def test_film_get_falls_back_to_previous_rev_when_worker_off(tmp_path, monkeypatch):
@@ -1027,6 +1199,121 @@ def test_hc1_atlas_degraded_serves_yesterday_clock(monkeypatch):
     again = official_store.compute_climo(dict(voy), now)
     assert again is not None
     assert again["clock"]["realUntil"] == frontier
+    reset_hooks()
+
+
+def test_rc34_stale_climo_without_real_until_is_recomputed(tmp_path, monkeypatch):
+    """Lot RC34 : un climo du jour sans realUntil n'est pas `unchanged` —
+    compute_climo tourne (faux ERA5 HC1), le payload rangé a realUntil ;
+    un second refresh avec realUntil → unchanged. L'ancienne horloge reste
+    servie tant que put n'a pas eu lieu."""
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import parse_iso
+    from voyage_store import save_voyage
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    now = parse_iso(T0) + timedelta(days=10)
+    frontier = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    _hc1_bind_om(frontier)
+    voy = _hc1_official_voy()
+    save_voyage(dict(voy))
+
+    store = OfficialStore(DiskBackend(tmp_path / "climo-rc34"), now=lambda: now)
+    key = store.family_key("climo", voy, now)
+    stale = {
+        "clock": {
+            "t0": T0,
+            "kind": "climatology",
+            "vertices": [
+                {"lat": 46.15, "lon": -1.16, "iso": T0, "regime": "climatology"},
+            ],
+        },
+        "regimes": [],
+        "fiches": [],
+    }
+    store.put("climo", stale, key)
+    before = store.get("climo", key)
+    assert "realUntil" not in (before["payload"].get("clock") or {})
+    assert "realUntil" not in before["payload"]
+    stale_n = len((before["payload"].get("clock") or {}).get("vertices") or [])
+
+    status = official_store.refresh_family(
+        "climo", now=now, store=store, voy=voy, force=False,
+    )
+    assert status != "unchanged"
+    assert status == READY
+    hit = store.get("climo", key)
+    payload = hit["payload"]
+    assert payload["clock"]["realUntil"] == frontier
+    assert payload["realUntil"] == frontier
+    assert len(payload["clock"]["vertices"]) > stale_n
+
+    again = official_store.refresh_family(
+        "climo", now=now, store=store, voy=voy, force=False,
+    )
+    assert again == "unchanged"
+    reset_hooks()
+
+
+def test_rc34_clock_get_nudges_when_climo_lacks_real_until(client, monkeypatch):
+    """GET /voyage/official/clock sert l'horloge déjà rangée et nudge le
+    remplisseur si realUntil manque (hindcast actif) — jamais de recalcul HTTP."""
+    kicks = {"n": 0}
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    monkeypatch.delenv("NAVIGUIDE_FORECAST_BACKEND", raising=False)
+    monkeypatch.setattr(official_store, "kick_worker", lambda: kicks.__setitem__("n", kicks["n"] + 1))
+
+    official_store.put("climo", _payload("climo"))
+    r = client.get("/voyage/official/clock")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["t0"].startswith("2026-05-15")
+    assert "realUntil" not in body
+    assert kicks["n"] >= 1
+
+    kicks["n"] = 0
+    official_store.put("climo", {
+        "clock": {
+            "t0": T0,
+            "vertices": [{"lat": 46.15, "lon": -1.16, "iso": T0}],
+            "realUntil": "2026-10-09",
+        },
+        "regimes": [],
+        "fiches": [],
+        "realUntil": "2026-10-09",
+    })
+    r2 = client.get("/voyage/official/clock")
+    assert r2.status_code == 200
+    assert r2.json().get("realUntil") == "2026-10-09"
+    assert kicks["n"] == 0
+
+
+def test_rc34_ensure_track_none_keeps_climatology_empty(monkeypatch):
+    """Pas de vent réel → horloge climatologique + statut empty, jamais ready à vide."""
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import parse_iso
+    import real_track
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    monkeypatch.setattr(real_track, "ensure_track", lambda *a, **k: None)
+    now = parse_iso(T0) + timedelta(days=10)
+    voy = _hc1_official_voy()
+    payload = official_store.compute_climo(dict(voy), now)
+    assert payload is not None
+    clock = payload["clock"]
+    regimes = {(v.get("regime") or v.get("kind")) for v in clock.get("vertices") or []}
+    assert "hindcast" not in regimes
+    assert payload["hindcastStatus"] == "empty"
+    assert payload["hindcastStatus"] != "ready"
+    assert payload.get("realUntil") is None
+    assert "realUntil" in payload
+    assert "realUntil" in clock
+    cov = str(payload.get("hindcastCoverage") or "")
+    assert cov.startswith("0/")
     reset_hooks()
 
 

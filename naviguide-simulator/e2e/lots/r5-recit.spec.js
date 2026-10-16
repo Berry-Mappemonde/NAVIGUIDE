@@ -69,23 +69,7 @@ test("lot R5 — connecteurs variés, Escale Saint-Maur en km", async ({ page })
       await prev.click();
     }
   }
-  if (await landCard.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    await expect(landCard).toHaveAttribute("data-kind", "escale");
-    const cardText = await landCard.innerText({ timeout: 10_000 });
-    expect(cardText, `carte Escale : ${cardText}`).toMatch(/\bkm\b/);
-    expect(cardText).toMatch(/par la route|by road/);
-    expect(cardText).not.toMatch(/\bnm\b/);
-  } else if (!apiUp) {
-    test.info().annotations.push({
-      type: "sans API",
-      description: "carte Escale Saint-Maur absente — km par la route non vérifiés à l'écran",
-    });
-  } else {
-    test.info().annotations.push({
-      type: "R8c",
-      description: "carte flottante Escale absente — km par la route lus dans le récit, pas inventés",
-    });
-  }
+  // R8c : plus de carte flottante — les km à terre se lisent dans le récit.
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");

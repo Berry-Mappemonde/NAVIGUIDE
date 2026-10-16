@@ -98,14 +98,26 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   await openReviewTab(page);
   const followReview = page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review']");
   await expect(followReview).toBeVisible();
-  await expect(followReview.getByTestId("plan-review-leg").first()).toBeVisible({ timeout: 10_000 });
   await expect(followReview.getByText(/Ce que je changerais|What I would change/i)).toBeVisible();
-  await expect(followReview.getByText(/Aucune jambe à revoir|No leg to review/i)).toHaveCount(0);
-  if (hasPoints) {
-    await expect(followReview.getByText(/La Rochelle|Ajaccio/i).first()).toBeVisible({ timeout: 20_000 });
-    await expect(followReview.getByTestId("plan-review-lanes").first()).toBeVisible();
-  } else if (!apiUp) {
-    await expect(followReview.getByTestId("plan-review-lanes").first()).toBeVisible();
+  const reviewProbe = apiUp
+    ? await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
+      .then((r) => (r.ok() ? r.json() : null)).catch(() => null)
+    : null;
+  const reviewReady = reviewProbe?.status === "ready" && Array.isArray(reviewProbe?.legs) && reviewProbe.legs.length > 0;
+  if (!apiUp || reviewReady) {
+    await expect(followReview.getByTestId("plan-review-leg").first()).toBeVisible({ timeout: 10_000 });
+    await expect(followReview.getByText(/Aucune jambe à revoir|No leg to review/i)).toHaveCount(0);
+    if (hasPoints) {
+      await expect(followReview.getByText(/La Rochelle|Ajaccio/i).first()).toBeVisible({ timeout: 20_000 });
+      await expect(followReview.getByTestId("plan-review-lanes").first()).toBeVisible();
+    } else if (!apiUp) {
+      await expect(followReview.getByTestId("plan-review-lanes").first()).toBeVisible();
+    }
+  } else {
+    test.info().annotations.push({
+      type: "revue en préparation",
+      description: "GET /plan-review pas ready — PLAN_REVIEW_REV, jambes / couloirs sautés ; onglet et retrait à droite gardés",
+    });
   }
   await shot(page, "01-onglet");
 
@@ -116,8 +128,10 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
   await expect(page.getByTestId("ici-tab-now")).not.toBeVisible();
   await expect(page.getByTestId("ici-tab-journal")).not.toBeVisible();
   await openReviewTab(page);
-  await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review-leg']").first()).toBeVisible();
   await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review']").getByText(/Ce que je changerais|What I would change/i)).toBeVisible();
+  if (!apiUp || reviewReady) {
+    await expect(page.locator("[data-testid='ici-maintenant'] [data-testid='plan-review-leg']").first()).toBeVisible();
+  }
   await shot(page, "02-simulation");
 
   await showToolsPanel(page);
@@ -149,7 +163,7 @@ test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page
     }
   }
 
-  if (hasPoints) {
+  if (hasPoints && reviewReady) {
     const reviewRes = await page.request.get("/voyage/official/plan-review", { timeout: 12_000 })
       .catch(() => null);
     expect(reviewRes && reviewRes.ok(), "GET /plan-review 200").toBeTruthy();

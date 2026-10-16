@@ -1,8 +1,11 @@
 // Lot N3 — Score anti-trafic (pastille « couloirs : Gibraltar »).
 // Sans API : fixture usePlanReview (Ajaccio → Fort-de-France, Gibraltar).
 // GET /voyage/official : sondé ; s'il manque, annotation seulement —
-// les pastilles fixture ne sont pas affaiblies.
+// les pastilles fixture ne sont pas affaiblies. Si l'API répond mais
+// /plan-review n'est pas ready (RC50, PLAN_REVIEW_REV), annotation +
+// saut des pastilles — le contrat Gibraltar reste dur dès que ready.
 import { expect, test } from "@playwright/test";
+import { probeOfficialPlanReview } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-n3/${name}.jpg`,
@@ -32,13 +35,26 @@ async function showReview(page) {
   await openReviewTab(page);
 }
 
+/** L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant (RC2). */
+async function keepReviewOpen(page) {
+  const tab = page.getByTestId("ici-tab-review");
+  if ((await tab.getAttribute("aria-selected")) !== "true") {
+    await tab.evaluate((el) => el.click());
+  }
+}
+
 test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-France", async ({ page }) => {
   test.setTimeout(45_000);
-  const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
+  const { apiUp, reviewReady, legs } = await probeOfficialPlanReview(page);
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
       description: "GET /voyage/official absent — pastilles servies par la fixture (jamais affaiblies)",
+    });
+  } else if (!reviewReady) {
+    test.info().annotations.push({
+      type: "revue en préparation",
+      description: "GET /plan-review pas ready — PLAN_REVIEW_REV, pastilles Gibraltar sautées",
     });
   }
 
@@ -51,36 +67,37 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
 
   await showReview(page);
-  const review = page.getByTestId("plan-review");
+  await keepReviewOpen(page);
+  const review = page.getByTestId("ici-review-slot").getByTestId("plan-review");
   await expect(review).toBeVisible({ timeout: 15_000 });
 
-  const row = page.getByTestId("plan-review-leg").filter({ hasText: /Ajaccio/i }).filter({ hasText: /Fort-de-France/i });
-  await expect(row).toBeVisible({ timeout: 20_000 });
-  await row.scrollIntoViewIfNeeded();
+  if (apiUp && !reviewReady) {
+    await shot(page, "01-couloirs");
+    expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
+    return;
+  }
+
+  const row = review.getByTestId("plan-review-leg").filter({ hasText: /Ajaccio/i }).filter({ hasText: /Fort-de-France/i });
+  await expect.poll(async () => {
+    await keepReviewOpen(page);
+    return row.count();
+  }, { timeout: 20_000 }).toBeGreaterThan(0);
+  await row.first().scrollIntoViewIfNeeded();
   const lanes = row.getByTestId("plan-review-lanes");
 
-  let officialPack = null;
-  if (apiUp) {
-    const body = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
-      .then((r) => (r.ok() ? r.json() : null)).catch(() => null);
-    officialPack = (body?.legs || []).find((l) => /Ajaccio/i.test(l.from || "") && /Fort-de-France/i.test(l.to || ""))?.antiShipping || null;
-  }
+  const officialPack = (legs || []).find((l) => /Ajaccio/i.test(l.from || "") && /Fort-de-France/i.test(l.to || ""))?.antiShipping || null;
 
-  const serverHasN3 = Array.isArray(officialPack?.lanes) && officialPack.lanes.includes("Gibraltar");
-  if (!apiUp || serverHasN3) {
-    // RD9 : plus de pastille route-anti-shipping — les couloirs sont sur la ligne.
-    await expect(lanes).toBeVisible({ timeout: 15_000 });
-    await expect(lanes).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
-    if (serverHasN3) {
-      expect(Number(officialPack.score)).toBeLessThan(1);
-    }
-    await shot(page, "01-couloirs");
-  } else {
-    test.info().annotations.push({
-      type: "API sans N3",
-      description: "GET /voyage/official/plan-review sans antiShipping (API d'un autre checkout) — pastille non exigée",
-    });
+  await expect.poll(async () => {
+    await keepReviewOpen(page);
+    return lanes.count();
+  }, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect(lanes.first()).toBeVisible();
+  await expect(lanes.first()).toContainText(/couloirs\s*:\s*Gibraltar|lanes\s*:\s*Gibraltar|Gibraltar/);
+  if (apiUp) {
+    expect(Array.isArray(officialPack?.lanes) && officialPack.lanes.includes("Gibraltar"), "antiShipping Gibraltar du stock").toBeTruthy();
+    expect(Number(officialPack.score)).toBeLessThan(1);
   }
+  await shot(page, "01-couloirs");
 
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
 });

@@ -125,20 +125,8 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
   }
 
   const probed = await waitRe7Film(page);
-  if (!probed?.film?.chapters?.length) {
-    test.info().annotations.push({
-      type: "film vide",
-      description: "GET /voyage/official/film?seconds=0 sans chapitres — discours sauté",
-    });
-    return;
-  }
-  if (probed.stale) {
-    test.info().annotations.push({
-      type: "API hors checkout",
-      description: "GET /film du processus :8010 n'est pas encore RE7 — assertions discours sautées",
-    });
-    return;
-  }
+  expect(probed?.film?.chapters?.length, "GET /film?seconds=0 a des chapitres").toBeGreaterThan(0);
+  expect(probed.stale, "film figé RE7 / RC17 (même checkout)").toBe(false);
 
   const free = probed.film;
   const blob = free.chapters.map((c) => c.text || "").join(" ");
@@ -148,16 +136,9 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
   expect(blob, "pas d'entrée doublée").not.toMatch(/entrée dans Entrée dans/i);
   expect(blob, "géographie officielle").toMatch(GEO);
   const last = free.chapters[free.chapters.length - 1]?.text || "";
-  if (LAST_LEG.test(last)) {
-    expect(last, "dernière jambe fermée").toMatch(LAST_LEG);
-  } else {
-    test.info().annotations.push({
-      type: "RC17",
-      description: "dernière jambe du stock figé n'est pas encore « Aujourd'hui, le bateau est… »",
-    });
-  }
+  expect(last, "dernière jambe fermée").toMatch(LAST_LEG);
   if (/halifax/i.test(blob) && /cayenne|guyane/i.test(blob)) {
-    expect(blob, "avion dit").toMatch(/avion|équipage prend/i);
+    expect(blob, "avion dit").toMatch(/avion|équipage prend|s['’]envole|flies/i);
   }
 
   const start = page.getByTestId("replay-start");
@@ -189,15 +170,14 @@ test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée"
     f.seekChapter(idx);
     return idx;
   });
-  const lastSub = (await subtitle.innerText()).trim();
-  if (LAST_LEG.test(lastSub)) {
-    await expect(subtitle).toContainText(LAST_LEG);
-  } else {
-    test.info().annotations.push({
-      type: "RC17",
-      description: "sous-titre de fin du stock figé : pas encore la phrase de clôture",
-    });
-  }
+  const lastChapter = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    const list = f.chapters || [];
+    const i = Number.isFinite(Number(f.chapterIdx)) ? Number(f.chapterIdx) : list.length - 1;
+    return String(list[i]?.text || list[list.length - 1]?.text || f.chapterText || "");
+  });
+  expect(lastChapter, "dernière jambe fermée à l'écran").toMatch(LAST_LEG);
+  await expect(subtitle).toBeVisible();
   const endIdx = await page.evaluate(() => window.__naviguideFilm?.chapterIdx);
   expect(endIdx, "02-fin à la dernière jambe").toBe(lastIdx);
   await shot(page, "02-fin");

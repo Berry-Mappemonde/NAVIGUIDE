@@ -284,6 +284,12 @@ def _optional_extras(lat: float, lon: float, when: datetime) -> list[dict]:
 
 
 def _amp_restriction(amp: dict) -> str | None:
+    from amp_traffic import traffic_kind
+    kind = amp.get("traffic") or traffic_kind(amp.get("entry"), amp.get("speed"))
+    if kind == "forbidden":
+        return "circulation interdite"
+    if kind == "regulated":
+        return "circulation régulée"
     if amp.get("restricted") is True or amp.get("restriction") is True:
         return str(amp["restriction"] if isinstance(amp.get("restriction"), str) else "restriction")
     if isinstance(amp.get("restriction"), str) and amp["restriction"].strip():

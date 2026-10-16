@@ -108,16 +108,7 @@ test("lot RA7 — fourchette sous la prochaine escale, quelques jours", async ({
   const legendVisible = (await legendEta.count()) > 0;
   const reviewVisible = (await reviewEta.count()) > 0;
   expect(await legendEta.count(), "une seule fourchette sous la prochaine escale").toBeLessThanOrEqual(1);
-  if (legendVisible) {
-    const stillThere = await legendEta.first().isVisible().catch(() => false);
-    if (!stillThere) {
-      test.info().annotations.push({
-        type: "RE5",
-        description: "fourchette détachée (eta en préparation, stock figé sans famille eta)",
-      });
-      await shot(page, "01-fourchette");
-      return;
-    }
+  if (legendVisible && await legendEta.first().isVisible().catch(() => false)) {
     await legendEta.first().scrollIntoViewIfNeeded().catch(() => {});
     const a = (await legendEta.first().innerText()).trim();
     expect(a).toMatch(/arrivée entre le|arrival between/i);
@@ -130,7 +121,7 @@ test("lot RA7 — fourchette sous la prochaine escale, quelques jours", async ({
     if (await row.count()) await row.first().scrollIntoViewIfNeeded();
   } else {
     test.info().annotations.push({
-      type: "sans ensembles",
+      type: "poste",
       description: "fourchette absente (members=0) — jamais inventée",
     });
   }

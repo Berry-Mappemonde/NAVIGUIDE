@@ -73,9 +73,9 @@ describe("brouillon DM6 — reset seulement à l'abandon", () => {
     const finishAt = app.indexOf("const handleDrawFinish = ");
     const deleteAt = app.indexOf("const handleCustomDelete = ");
     assert.ok(startAt >= 0 && cancelAt > startAt && finishAt > cancelAt && deleteAt > finishAt);
-    assert.doesNotMatch(app.slice(startAt, cancelAt), /_resetDrawState\(\)/);
-    assert.match(app.slice(cancelAt, finishAt), /_resetDrawState\(\)/);
-    assert.match(app.slice(deleteAt, deleteAt + 400), /_resetDrawState\(\)/);
+    assert.doesNotMatch(app.slice(startAt, cancelAt), /resetDrawState\(\)/);
+    assert.match(app.slice(cancelAt, finishAt), /resetDrawState\(\)/);
+    assert.match(app.slice(deleteAt, deleteAt + 400), /resetDrawState\(\)/);
     assert.match(app, /endDrawingWorld/);
     assert.match(app, /armDrawingWorldRef/);
     const berryAt = app.indexOf("const handleRouteSwitchToBerry");

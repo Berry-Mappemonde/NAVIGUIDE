@@ -123,12 +123,8 @@ test("lot RC6 — fiche Ici sur drapeau, curseur qui reste sur l'escale", async 
   let sheetShown = false;
   if (apiUp) {
     const flagged = await clickAjaccioFlag(page);
-    if (!flagged) {
-      test.info().annotations.push({
-        type: "drapeau",
-        description: "aucun drapeau Ajaccio — clic drapeau / fiche Ici non joués",
-      });
-    } else {
+    expect(flagged, "drapeau Ajaccio présent").toBeTruthy();
+    {
       await expect(page.getByTestId("ici-tab-now")).toHaveAttribute("aria-selected", "true");
       const sheet = page.getByTestId("ici-maintenant").getByTestId("escale-sheet");
       await expect(sheet).toBeVisible({ timeout: 10_000 });
@@ -174,38 +170,18 @@ test("lot RC6 — fiche Ici sur drapeau, curseur qui reste sur l'escale", async 
   }
 
   await row.scrollIntoViewIfNeeded();
-  // RE2 : la liste n'est plus cliquable — le curseur se pose depuis le drapeau (recentré d'abord).
+  // RE2 : la liste n'est plus cliquable — le curseur reste LIVE ; la fiche Ici porte l'escale.
   await centerOnAjaccio(page);
   const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
-  if (await flag.isVisible().catch(() => false)) {
-    await flag.click({ force: true });
-  } else {
-    test.info().annotations.push({
-      type: "RE2",
-      description: "liste informative — clic ligne d'escale retiré, drapeau Ajaccio absent",
-    });
-    await shot(page, "02-curseur-ajaccio");
-    return;
-  }
+  await expect(flag, "drapeau Ajaccio").toBeVisible({ timeout: 12_000 });
+  await flag.click({ force: true });
   const bar = page.getByTestId("film-bar");
+  await expect(bar).toContainText(/LIVE/i, { timeout: 8_000 });
   const barText = ((await bar.innerText().catch(() => "")) || "").replace(/\s+/g, " ");
-  if (!/Ajaccio/i.test(barText)) {
-    // RE2 / RF7 : en Suivre le curseur reste LIVE ; la fiche Ici porte l'escale.
-    test.info().annotations.push({
-      type: "RE2",
-      description: "Suivre LIVE — le curseur ne saute pas sur l'escale au clic drapeau",
-    });
-    if (sheetShown) {
-      await expect(page.getByTestId("ici-maintenant").getByTestId("escale-sheet")).toContainText(/Ajaccio/i);
-    }
-    await shot(page, "02-curseur-ajaccio");
-    return;
-  }
-  await page.waitForTimeout(2000);
-  await expect(bar).toContainText(/Ajaccio/i);
-  expect(barText, `barre : ${barText}`).not.toMatch(/Cayenne\s*→\s*Papeete/i);
+  expect(barText, `curseur LIVE, pas un saut sur Ajaccio : ${barText}`).not.toMatch(/\bAjaccio\b/i);
   if (sheetShown) {
     await expect(page.getByTestId("ici-maintenant").getByTestId("escale-sheet")).toBeVisible();
+    await expect(page.getByTestId("ici-maintenant").getByTestId("escale-sheet")).toContainText(/Ajaccio/i);
   }
   await shot(page, "02-curseur-ajaccio");
 });

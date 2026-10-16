@@ -11,6 +11,7 @@ import {
   utteranceRate,
   voiceEndKind,
   waitForVoices,
+  voiceMayLead,
 } from "./speak.js";
 
 describe("speak", () => {
@@ -50,11 +51,23 @@ describe("speak", () => {
     assert.equal(spoken[1].voice.name, "Daniel");
     assert.equal(speak("   ", "fr", { win }), false);
     assert.equal(canLeadWithVoice(win), true);
+    assert.equal(voiceMayLead(win), true);
     assert.equal(canLeadWithVoice({}), false);
+    assert.equal(voiceMayLead({}), false);
     assert.equal(canLeadWithVoice({
       ...win,
       navigator: { webdriver: true },
     }), false);
+    assert.equal(voiceMayLead({
+      ...win,
+      navigator: { webdriver: true },
+    }), false);
+    const noVoicesYet = {
+      speechSynthesis: { getVoices: () => [] },
+      SpeechSynthesisUtterance: function Utterance() {},
+    };
+    assert.equal(voiceMayLead(noVoicesYet), true, "voix pas encore chargées : on attend, on ne sprinte pas");
+    assert.equal(canLeadWithVoice(noVoicesYet), false);
     const heard = [];
     speak("Cap au large", "fr", {
       win,

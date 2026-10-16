@@ -417,19 +417,24 @@ function detectAmp(at, prev, memory, ctx, events) {
       filmCum: ctx.filmCum ?? null,
       legId: ctx.legId,
       name: amp.name || id,
-      payload: {
-        amp: {
-          name: amp.name || id,
-          site_id: id,
-          nm: amp.nm ?? null,
-          visit_url: amp.visit_url || null,
-          manager_url: amp.manager_url || null,
+        payload: {
+          amp: {
+            name: amp.name || id,
+            site_id: id,
+            nm: amp.nm ?? null,
+            visit_url: amp.visit_url || null,
+            manager_url: amp.manager_url || null,
+            visitable,
+            entry: amp.entry ?? null,
+            speed: amp.speed ?? null,
+            traffic: amp.traffic || null,
+            inside: Boolean(amp.inside),
+          },
           visitable,
+          inside: Boolean(amp.inside),
+          weather: null,
+          weather_reason: "not_in_this_event",
         },
-        visitable,
-        weather: null,
-        weather_reason: "not_in_this_event",
-      },
     }));
   }
   memory.lastAmpIds = nowIds;
@@ -747,6 +752,10 @@ function detectAhead(at, along, memory, ctx, events) {
             site_id: id,
             visit_url: amp.visit_url || null,
             visitable,
+            entry: amp.entry ?? null,
+            speed: amp.speed ?? null,
+            traffic: amp.traffic || null,
+            inside: Boolean(amp.inside),
           },
           visitable,
           whenNm: pearl.whenNm,

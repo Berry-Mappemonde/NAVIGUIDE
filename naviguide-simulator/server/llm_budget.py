@@ -22,13 +22,19 @@ LAST_ERROR_KEY = "last-error"
 TIERS = ("fast", "write", "deep", "judge")
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
-# Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j, judge 0.
+# Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j.
+# Lot RG19 : Ultra (palier judge) a 60 000 tokens/jour dans les défauts ; le mode
+# `NAVIGUIDE_LLM_MODE=off` (agents, CI) bloque encore tout appel, plafond ou pas.
 DEFAULT_CAPS = {
     "fast": 200_000,
     "write": 150_000,
     "deep": 80_000,
-    "judge": 0,
+    "judge": 60_000,
 }
+
+# Appels Ultra du chat / jour (geste explicite seulement). En plus du plafond tokens judge.
+DEFAULT_CHAT_ULTRA_PER_DAY = 10
+_ENV_CHAT_ULTRA = "NAVIGUIDE_CHAT_ULTRA_PER_DAY"
 
 # Mode LLM (NAVIGUIDE_LLM_MODE) — décision du porteur du 28 sept. : « Nemotron seulement quand je le dis ou
 # quand c'est utile ».
@@ -220,6 +226,46 @@ def allow(tier: str) -> bool:
     return int(used["tokens"]) < daily_cap(tier)
 
 
+def chat_ultra_cap() -> int:
+    return _env_int(_ENV_CHAT_ULTRA, DEFAULT_CHAT_ULTRA_PER_DAY)
+
+
+def _chat_ultra_key(day: str | None = None) -> str:
+    return f"{day or today()}:chat-ultra"
+
+
+def chat_ultra_usage(day: str | None = None) -> dict[str, Any]:
+    """Compteur d'appels Ultra du chat (geste explicite), distinct des tokens judge."""
+    import pearl_store  # noqa: PLC0415
+
+    hit = pearl_store.kv_get(NS, _chat_ultra_key(day))
+    val = (hit or {}).get("value")
+    if not isinstance(val, dict):
+        return {"calls": 0}
+    try:
+        return {"calls": max(0, int(val.get("calls") or 0))}
+    except (TypeError, ValueError):
+        return {"calls": 0}
+
+
+def allow_chat_ultra() -> bool:
+    """Ultra du chat : mode + tokens judge + plafond d'appels NAVIGUIDE_CHAT_ULTRA_PER_DAY."""
+    if not allow("judge"):
+        return False
+    return int(chat_ultra_usage()["calls"]) < chat_ultra_cap()
+
+
+def record_chat_ultra() -> dict[str, Any]:
+    """Compte un appel Ultra du chat (avant ou après l'aller-retour réseau)."""
+    import pearl_store  # noqa: PLC0415
+
+    with _LOCK:
+        cur = chat_ultra_usage()
+        cur["calls"] = int(cur["calls"]) + 1
+        pearl_store.kv_put(NS, _chat_ultra_key(), cur)
+        return dict(cur)
+
+
 def record(tier: str, prompt_tokens: int, completion_tokens: int) -> dict[str, Any]:
     """Add one successful Token Factory call to today's counter."""
     import pearl_store  # noqa: PLC0415
@@ -364,6 +410,8 @@ def status() -> dict[str, Any]:
         }
     tv = tavily_usage()
     out["tavily"] = {"credits": int(tv["credits"]), "calls": int(tv["calls"])}
+    ultra = chat_ultra_usage()
+    out["chatUltra"] = {"calls": int(ultra["calls"]), "cap": chat_ultra_cap()}
     src = last_source()
     if src:
         out["lastSource"] = src

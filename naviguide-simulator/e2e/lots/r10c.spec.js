@@ -84,8 +84,8 @@ test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ 
   const enabled = await recalculate.isEnabled().catch(() => false);
   if (!enabled) {
     test.info().annotations.push({
-      type: "recalcul inactif",
-      description: "bouton Recalculer présent mais inactif (voyage / prévision) — ≤ 1 650 nm non joué",
+      type: "poste",
+      description: "recalcul inactif — Recalculer présent mais inactif (isochrone, jamais en CI)",
     });
     return;
   }
@@ -95,8 +95,8 @@ test("lot R10c — Simulation, vent 30 kn, Recalculer, route bornée", async ({ 
   const dialogUp = await proposed.isVisible({ timeout: 8_000 }).catch(() => false);
   if (!dialogUp) {
     test.info().annotations.push({
-      type: "dialogue absent",
-      description: "Recalculer cliqué — dialogue de proposition absent après 90 s",
+      type: "poste",
+      description: "Recalculer cliqué — dialogue de proposition absent (isochrone, poste)",
     });
     return;
   }

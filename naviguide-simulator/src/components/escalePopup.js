@@ -1,3 +1,6 @@
+import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
+import { haversineNm } from "../utils/geo.js";
+
 export const ESCALE_POPUP_MAX_WIDTH = 340;
 export const ESCALE_POPUP_MAX_HEIGHT = 260;
 
@@ -5,13 +8,14 @@ const ESCALE_CLOSE_SEL = "[data-testid='escale-close']";
 
 /** Changement de vue, Revoir, ou film en cours : la fiche d'escale disparaît
  * (RA5 + DM7 : Suivre → Tracer ne doit pas garder la fiche de Papeete). */
+
 export function shouldCloseEscaleSheet({
   nextView,
   replayActive = false,
   replayStarting = false,
 } = {}) {
   if (replayActive || replayStarting) return true;
-  return nextView === "suivre" || nextView === "simulation";
+  return nextView === VIEW_SUIVRE || nextView === VIEW_TRACER;
 }
 
 export function isEscaleCloseClick(event) {
@@ -67,14 +71,7 @@ function sameStop(point, stop) {
   return Math.abs(((a - b + 540) % 360) - 180) < 1e-3;
 }
 
-/** Copie monde du drapeau la plus proche du centre carte. */
-export function findWaypointMarker(scene, stop) {
-  const markers = scene?.waypointMarkers;
-  if (!markers || !stop) return null;
-  const matches = [];
-  for (const marker of markers.values()) {
-    if (sameStop(marker._naviguideWaypoint, stop)) matches.push(marker);
-  }
+function closestToCamera(scene, matches) {
   if (!matches.length) return null;
   const cam = scene.map?.getCenter?.()?.lng;
   if (!Number.isFinite(cam)) return matches[0];
@@ -85,4 +82,40 @@ export function findWaypointMarker(scene, stop) {
     if (!Number.isFinite(bl)) return marker;
     return Math.abs(lng - cam) < Math.abs(bl - cam) ? marker : best;
   });
+}
+
+function markerMatchesStop(marker, stop, maxNm = 5) {
+  if (!marker || !stop) return false;
+  const point = marker._naviguideWaypoint;
+  if (point && sameStop(point, stop)) return true;
+  const ll = marker.getLatLng?.();
+  if (!ll || !Number.isFinite(stop.lat) || !Number.isFinite(ll.lat)) return false;
+  const lon = Number.isFinite(Number(stop.lon)) ? Number(stop.lon) : Number(stop.lng);
+  if (!Number.isFinite(lon) || !Number.isFinite(ll.lng)) return false;
+  return haversineNm(stop.lat, lon, ll.lat, ll.lng) <= maxNm;
+}
+
+/** Catamaran live parqué (Cayenne pendant l'épisode) — ancre de la fiche. */
+export function findParkedBoatMarker(scene, stop) {
+  const markers = scene?.markerSets?.get?.("live");
+  if (!markers || !stop) return null;
+  const matches = [];
+  for (const marker of markers) {
+    if (markerMatchesStop(marker, stop)) matches.push(marker);
+  }
+  return closestToCamera(scene, matches);
+}
+
+/** Copie monde du drapeau la plus proche du centre carte ; sinon le bateau parqué. */
+export function findWaypointMarker(scene, stop) {
+  const markers = scene?.waypointMarkers;
+  const matches = [];
+  if (markers && stop) {
+    for (const marker of markers.values()) {
+      if (sameStop(marker._naviguideWaypoint, stop)) matches.push(marker);
+    }
+  }
+  const flag = closestToCamera(scene, matches);
+  const boat = findParkedBoatMarker(scene, stop);
+  return boat || flag;
 }

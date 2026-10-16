@@ -107,6 +107,22 @@ export async function openReviewTab(page) {
   await ensureReviewOpen(page);
 }
 
+/**
+ * RC50 : GET /plan-review peut être `preparing` (nouvelle clé PLAN_REVIEW_REV).
+ * Les assertions sur les jambes ne tiennent que si le GET est `ready`.
+ */
+export async function probeOfficialPlanReview(page) {
+  const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  const apiUp = Boolean(official && official.ok());
+  if (!apiUp) return { apiUp: false, reviewReady: false, legs: [], body: null };
+  const body = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
+    .then((r) => (r.ok() ? r.json() : null))
+    .catch(() => null);
+  const legs = Array.isArray(body?.legs) ? body.legs : [];
+  const reviewReady = body?.status === "ready" && legs.length > 0;
+  return { apiUp, reviewReady, legs, body };
+}
+
 /** RD9 : dans l'onglet, PlanReview est un `div` (startOpen), plus un `<details>`. */
 export async function ensureReviewOpen(page) {
   const review = page.getByTestId("plan-review");
@@ -125,14 +141,17 @@ export async function openJournalTab(page) {
   await openIciTab(page, "ici-tab-journal", "ici-journal-slot");
 }
 
-export async function enterSimulation(page) {
+/** Clique la pilule Tracer (la vue), sans ouvrir le dessin. */
+export async function enterTracerView(page) {
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 }
 
-// DM1 : la pilule s'appelle Tracer à l'écran ; le mode interne (VIEW_SIMULATION)
-// ne change qu'en DM3. Alias pour les specs à venir.
-export const enterTracerMode = enterSimulation;
+/** @deprecated alias à retirer — même geste que enterTracerView.
+ *  Ne pas confondre avec enterTracer (DM6), qui ouvre aussi le dessin. */
+export const enterSimulation = enterTracerView;
+
+export const enterTracerMode = enterTracerView;
 
 export async function enterTracer(page) {
   // DM6 : entrer en Tracer ouvre le dessin (brouillon vide ou déjà là).
@@ -231,27 +250,70 @@ export async function waitFilmCanStart(page, timeout = 25_000) {
 }
 
 /**
+ * Lot RG20 : le film officiel est prêt — télémétrie `window.__naviguideFilm.status`
+ * (si le client la publie) ou bouton Revoir actif (`remoteStatus === "ready"`).
+ * Ne pas avaler le timeout : si l'API est là, un échec est une régression.
+ */
+export async function waitFilmReady(page, timeout = 45_000) {
+  const start = page.getByTestId("replay-start");
+  await expect(start).toBeVisible({ timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const st = window.__naviguideFilm?.status;
+    const b = document.querySelector("[data-testid='replay-start']");
+    const enabled = Boolean(b && !b.disabled && b.getAttribute("aria-disabled") !== "true");
+    return st === "ready" || enabled;
+  }, null, { timeout });
+  await expect(start).toBeEnabled();
+}
+
+/**
  * Le film ancré (RC18) laisse le bateau à quai pendant les premières phrases (Saint-Maur → La Rochelle
  * par la route — comptée dans filmNm —, puis l'escale) : on ne mesure sa glisse qu'une fois qu'il BOUGE
- * vraiment (plus de `minDeg` degrés entre deux lectures à 500 ms), pas sur les milles déjà au compteur.
+ * vraiment, après le premier quai (un premier épisode de route, un palier, puis la mer). Un seul saut
+ * d'arrivée à quai n'est pas « en route » : la glisse y recule ou s'arrête.
  */
-export async function waitBoatUnderWay(page, { minDeg = 0.01, timeout = 60_000 } = {}) {
-  return page.evaluate(async ([min, limit]) => {
+export async function waitBoatUnderWay(page, { minDeg = 0.01, timeout = 60_000, stableMs = 1_500 } = {}) {
+  return page.evaluate(async ([min, limit, hold]) => {
     const read = () => {
       const f = window.__naviguideFilm || {};
       return Number.isFinite(f.lat) && Number.isFinite(f.lon) ? { lat: f.lat, lon: f.lon, nm: Number(f.filmNm) || 0, ended: Boolean(f.ended) } : null;
     };
+    const twitch = min * 0.05;
     const t0 = performance.now();
     let prev = read();
+    let seenMove = false;
+    let afterQuay = false;
+    let quietMs = 0;
+    let seaMs = 0;
+    let lastTick = t0;
     while (performance.now() - t0 < limit) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 400));
+      const now = performance.now();
+      const dt = now - lastTick;
+      lastTick = now;
       const cur = read();
       if (cur?.ended) return { moving: false, ended: true, nm: cur.nm };
-      if (prev && cur && Math.abs(cur.lat - prev.lat) + Math.abs(cur.lon - prev.lon) > min) return { moving: true, ended: false, nm: cur.nm };
+      const dist = prev && cur
+        ? Math.abs(cur.lat - prev.lat) + Math.abs(cur.lon - prev.lon)
+        : 0;
       prev = cur || prev;
+      if (dist > twitch) {
+        seenMove = true;
+        quietMs = 0;
+        if (afterQuay) {
+          seaMs += dt;
+          if (seaMs >= hold) return { moving: true, ended: false, nm: cur?.nm || 0 };
+        }
+      } else {
+        seaMs = 0;
+        if (seenMove) {
+          quietMs += dt;
+          if (quietMs >= 800) afterQuay = true;
+        }
+      }
     }
     return { moving: false, ended: false, nm: prev?.nm || 0 };
-  }, [minDeg, timeout]);
+  }, [minDeg, timeout, stableMs]);
 }
 
 /** Le récit du panneau gauche dans la langue demandée (après une bascule FR/EN, il se recharge). */
@@ -265,13 +327,17 @@ export async function waitStoryLang(page, lang, timeout = 20_000) {
   }, [re.source, re.flags], { timeout }).catch(() => null);
 }
 
-/** Recentre la carte sur le drapeau d'une escale : en Suivre la caméra est sur le bateau (Pacifique) et
- *  un drapeau des Antilles ou de Corse est hors cadre — un clic « force » n'y atteint rien (28 sept.). */
+/** Recentre la carte sur le drapeau d'une escale : en Suivre la caméra LIVE
+ *  (Pacifique) et le cadrage pending (DM4) ramènent le bateau — sans lâcher
+ *  le suivi, setView ne tient pas et un clic « force » n'atteint rien. */
 export async function centerOnFlag(page, namePattern, zoom = 7) {
   const source = namePattern instanceof RegExp ? namePattern.source : String(namePattern);
-  await page.evaluate(([src, z]) => {
+  return page.evaluate(([src, z]) => {
     const scene = window.__naviguideScene;
     if (!scene?.map || !scene.waypointMarkers) return false;
+    scene._pendingFollowCadrage = false;
+    scene.userNavigated = true;
+    try { scene.callbacks?.onManualNavigation?.(); } catch { /* tests */ }
     const re = new RegExp(src, "i");
     for (const marker of scene.waypointMarkers.values()) {
       if (re.test(marker._naviguideWaypoint?.name || "")) {
@@ -280,8 +346,10 @@ export async function centerOnFlag(page, namePattern, zoom = 7) {
       }
     }
     return false;
-  }, [source, zoom]);
-  await page.waitForTimeout(300);
+  }, [source, zoom]).then(async (ok) => {
+    await page.waitForTimeout(300);
+    return Boolean(ok);
+  });
 }
 
 // Leaflet dessine le monde sur plusieurs copies côte à côte : le marqueur « principal » est celui de la

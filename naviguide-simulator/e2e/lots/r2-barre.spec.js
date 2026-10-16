@@ -78,21 +78,16 @@ test("lot R2 — une rangée, Masquer partout, Escale précédente", async ({ pa
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (await next.isEnabled()) {
     await next.click();
-    const back = await expect(prev).toBeEnabled({ timeout: 4_000 }).then(() => true).catch(() => false);
-    if (back) {
-      await prev.click();
-      await expect(prev).toBeDisabled({ timeout: 4_000 });
-    } else {
-      test.info().annotations.push({
-        type: "RE3",
-        description: "Escale suivante cliquée — Escale précédente encore inactive (film non parti)",
-      });
-    }
+    await expect(prev).toBeEnabled({ timeout: 4_000 });
+    await prev.click();
+    await expect(prev).toBeDisabled({ timeout: 4_000 });
   } else if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
       description: "Prochaine escale inactive — aller-retour d'escale non vérifié",
     });
+  } else {
+    throw new Error("Prochaine escale inactive alors que l'API répond");
   }
 
   await hide.click();

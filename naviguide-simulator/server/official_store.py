@@ -29,12 +29,15 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC27 (gabarit compact 2:30) invalide rc32.
-# moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rc27"
+# Clé film : RC48 (eaux FR du journal, Gibraltar avant le Maroc) invalide rc41.
+# moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
+# plan_review : rc44 — origine mer après l'épisode (Cayenne). Pas de repli
+# sur l'ancienne clé : un snapshot Halifax / Saint-Pierre → Papeete ne sort plus ready.
+FILM_SCRIPT_REV = "rc48"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
-ICI_REV = "rg3"
+ICI_REV = "am1a"
+PLAN_REVIEW_REV = "rc44"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -165,6 +168,8 @@ def _store_rev_relaxed() -> bool:
     La clé `…:rg4` n'existe pas encore dans l'archive gelée ; sans ça, GET
     /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
     Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
+    plan_review (RC50) n'est pas dans ce repli : un snapshot Halifax /
+    Saint-Pierre → Papeete ne doit plus sortir ready.
     """
     raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
     return raw in ("0", "false", "no")
@@ -325,7 +330,7 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : film, moments et ici portent la révision du calcul (RG5)."""
+        """Clé de rangement : film, moments, ici et plan_review portent la révision du calcul (RG5)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
@@ -333,6 +338,8 @@ class OfficialStore:
             return f"{base}:{MOMENTS_REV}"
         if family == "ici":
             return f"{base}:{ICI_REV}"
+        if family == "plan_review":
+            return f"{base}:{PLAN_REVIEW_REV}"
         return base
 
     def _with_date(self, hit: Optional[dict]) -> Optional[dict]:
@@ -499,6 +506,64 @@ def payload_of(family: str) -> Optional[dict]:
         return None
     body = hit.get("payload")
     return body if isinstance(body, dict) else None
+
+
+def _zee_enter_count(moments: list | None) -> int:
+    n = 0
+    for row in moments or []:
+        if not isinstance(row, dict):
+            continue
+        for change in row.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            kind = str(change.get("kind") or "")
+            title = str(change.get("title") or "")
+            if kind == "zee-enter" or "économique exclusive" in title.lower() or "exclusive economic" in title.lower():
+                n += 1
+        moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+        here = moment.get("here") if isinstance(moment.get("here"), dict) else {}
+        zee = here.get("zee") if isinstance(here.get("zee"), dict) else {}
+        name = str((zee or {}).get("name") or "")
+        if "économique exclusive" in name.lower() or "exclusive economic" in name.lower():
+            n += 1
+    return n
+
+
+def official_journal_moments() -> list[dict]:
+    """Journal officiel pour le film — lecture seule, jamais un seed.
+
+    L'entrée du jour peut être une grille horloge (grib / chat) sans zee-enter.
+    On relit alors la dernière entrée riche, même route et même t0, qui porte
+    les titres FR du journal (Zone économique exclusive espagnole / …).
+    """
+    current = payload_of("moments")
+    rows = list((current or {}).get("moments") or []) if isinstance(current, dict) else []
+    if _zee_enter_count(rows) > 0:
+        return rows
+    st = get_store()
+    try:
+        dest = st.family_key("moments")
+        route_id, t0, _, _ = parse_key(dest)
+    except Exception:
+        return rows
+    lister = getattr(st.backend, "list_family", None)
+    if not callable(lister):
+        return rows
+    best, best_date = rows, ""
+    for stored_key, doc in lister("moments"):
+        try:
+            r, t, date, _suf = parse_key(stored_key)
+        except ValueError:
+            continue
+        if r != route_id or t != t0:
+            continue
+        payload = doc.get("payload") if isinstance(doc, dict) else None
+        cand = list((payload or {}).get("moments") or []) if isinstance(payload, dict) else []
+        if _zee_enter_count(cand) <= 0:
+            continue
+        if date > best_date:
+            best, best_date = cand, date
+    return best
 
 
 def _film_chapters_blob(payload: Optional[dict]) -> str:
@@ -739,6 +804,21 @@ def on_official_route(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> 
     return False
 
 
+def _ici_bag_is_am1a(bag: dict) -> bool:
+    """Le sac porte le contrat AM1A (clé `source` sur les AMP), pas un snapshot pré-polygone.
+
+    Une liste `amp` vide est acceptée : un point océanique recalculé ne doit pas
+    relancer le remplisseur en boucle. Un sac sans clé `amp`, ou dont une entrée
+    n'a pas `source`, est pré-AM1A : on le laisse recalculer. On n'invente aucune AMP.
+    """
+    amps = bag.get("amp")
+    if not isinstance(amps, list):
+        return False
+    if not amps:
+        return True
+    return all(isinstance(item, dict) and "source" in item for item in amps)
+
+
 def ici_bag_near(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> Optional[dict]:
     body = payload_of("ici")
     if not body:
@@ -755,7 +835,11 @@ def ici_bag_near(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> Optio
         if d < best_d:
             best_d = d
             best = row.get("bag")
-    return best if isinstance(best, dict) else None
+    if not isinstance(best, dict):
+        return None
+    if not _ici_bag_is_am1a(best):
+        return None
+    return best
 
 
 def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:
@@ -848,6 +932,40 @@ def compute_climo(voy: dict, now: datetime) -> Optional[dict]:
 def hindcast_enabled_for_status() -> bool:
     from hindcast import hindcast_enabled  # noqa: PLC0415
     return hindcast_enabled()
+
+
+def payload_has_real_until(payload: Optional[dict]) -> bool:
+    """True si le climo a déjà le champ HC1 (date réelle ou null honnête).
+
+    Un climo pré-HC1 n'a ni `clock.realUntil` ni `realUntil` au sommet : le
+    remplisseur doit alors relancer `compute_climo` (lot RC34). La présence
+    de la clé, même à `null`, compte : `ensure_track` a déjà rendu None et
+    le statut `empty` est rangé — on ne recalcule pas en boucle.
+    """
+    if not isinstance(payload, dict):
+        return False
+    clock = payload.get("clock")
+    if isinstance(clock, dict) and "realUntil" in clock:
+        return True
+    return "realUntil" in payload
+
+
+def _climo_should_recompute(payload: Optional[dict]) -> bool:
+    """Climo du jour sans frontière HC1, hindcast actif → ne pas figer `unchanged`."""
+    if not hindcast_enabled_for_status():
+        return False
+    return not payload_has_real_until(payload)
+
+
+def nudge_climo_if_missing_real_until() -> None:
+    """GET /clock : si l'horloge servie n'a pas `realUntil` et que le hindcast
+    est actif, réveiller le remplisseur — sans recalculer dans le processus HTTP.
+    L'horloge déjà rangée reste servie (pas de trou « preparing »)."""
+    if not hindcast_enabled_for_status():
+        return
+    if payload_has_real_until(payload_of("climo")):
+        return
+    kick_worker()
 
 
 def _save_official_status(voy: dict, fields: dict) -> None:
@@ -1212,6 +1330,8 @@ def refresh_family(
                 nxt = next_official_stop(current, when)
                 if not eta_store_retry_due(hit.get("payload"), when, nxt):
                     return "unchanged"
+            elif family == "climo" and _climo_should_recompute(hit.get("payload")):
+                pass
             else:
                 return "unchanged"
     fn = compute or COMPUTE[family]

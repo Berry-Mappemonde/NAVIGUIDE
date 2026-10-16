@@ -171,15 +171,18 @@ test("lot RF8 — liste informative, barre dans le cadre, sans Récit", async ({
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
 
-  let pillsReady = await page.getByTestId("film-duration").isVisible().catch(() => false);
-  if (!pillsReady && apiUp) {
-    pillsReady = await page.getByTestId("film-duration").isVisible({ timeout: 10_000 }).catch(() => false);
+  if (apiUp) {
+    const { waitFilmReady } = await import("../helpers.js");
+    await waitFilmReady(page);
   }
-  if (!pillsReady) {
+  const pillsReady = await page.getByTestId("film-duration").isVisible().catch(() => false);
+  if (!pillsReady && !apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent ou /film pas prêt — pilules et lancement non exigés",
+      description: "GET /voyage/official absent — pilules et lancement non exigés",
     });
+  } else if (!pillsReady) {
+    throw new Error("film prêt mais pilules 2:30 / 3:00 absentes");
   }
 
   const btn150 = durationBtn(page, 150);

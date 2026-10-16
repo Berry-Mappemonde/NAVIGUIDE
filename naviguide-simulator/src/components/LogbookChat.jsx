@@ -13,6 +13,7 @@ import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 export const LogbookChat = memo(function LogbookChat({ messages = [], pending = false, error = null, onAsk }) {
   const { t } = useLang();
   const [draft, setDraft] = useState("");
+  const [reason, setReason] = useState(false);
   const listRef = useRef(null);
   const admin = hasAdminSecret();
 
@@ -26,7 +27,7 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
     const q = draft.trim();
     if (!q || pending) return;
     setDraft("");
-    onAsk?.(q);
+    onAsk?.(q, { reason });
   };
 
   return (
@@ -79,6 +80,16 @@ export const LogbookChat = memo(function LogbookChat({ messages = [], pending = 
         >
           <Send size={12} />
         </button>
+        <label className="flex items-center gap-1 shrink-0 text-[9px] text-violet-100/80 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={reason}
+            onChange={(e) => setReason(e.target.checked)}
+            data-testid="logbook-chat-reason"
+            className="rounded border-white/20 bg-slate-900"
+          />
+          {t("logbookChatReason")}
+        </label>
       </form>
     </div>
   );

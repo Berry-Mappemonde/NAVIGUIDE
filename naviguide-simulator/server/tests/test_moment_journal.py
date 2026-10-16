@@ -23,6 +23,7 @@ from moment_journal import (
     diff_moments,
     named_title,
     read_moments,
+    rows_from_voyage,
     warm_moments,
 )
 from voyage_clock import OFFICIAL_VOYAGE_ID
@@ -321,3 +322,69 @@ def test_project_at_10nm_emits_at_60nm_silent():
         ],
     }, set())
     assert [c["title"] for c in gold_first] == ["Or", "Argent"]
+
+
+_RC44_MARKS = [
+    {"name": "Cayenne (Guyane)", "lat": 4.93, "lon": -52.35, "iso": "2026-07-19T08:00:00Z"},
+    {"name": "Halifax (Nouvelle-Écosse)", "lat": 44.65, "lon": -63.57, "iso": "2026-07-22T08:00:00Z"},
+    {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "lat": 46.78, "lon": -56.16,
+     "iso": "2026-07-25T08:00:00Z"},
+]
+
+
+def test_diff_moments_halifax_pearl_is_not_cayenne():
+    """Lot RC44 : perle 44,65/−63,57 → titre Halifax, pas Arrivée à Cayenne."""
+    prev = {"leg": {"to": "Cayenne (Guyane)"}, "pos": {"lat": 4.93, "lon": -52.35}}
+    cur = {
+        "leg": {"to": "Saint-Pierre (Saint-Pierre-et-Miquelon)"},
+        "pos": {"lat": 44.65, "lon": -63.57},
+    }
+    kinds = {c["kind"]: c for c in diff_moments(prev, cur, marks=_RC44_MARKS)}
+    assert kinds["escale"]["score"] == SCORE_ESCALE
+    assert "Halifax" in kinds["escale"]["title"]
+    assert "Cayenne" not in kinds["escale"]["title"]
+
+
+def test_rows_from_voyage_halifax_line_uses_mark_date():
+    voy = {
+        "legs": [
+            {"from": "Fort-de-France", "to": "Cayenne (Guyane)", "fromNm": 0, "toNm": 1000},
+            {"from": "Cayenne (Guyane)", "to": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+             "fromNm": 1000, "toNm": 1400},
+        ],
+        "marks": _RC44_MARKS,
+        "clock": {
+            "t0": "2026-07-19T08:00:00Z",
+            "marks": [
+                {**_RC44_MARKS[0], "tHours": 0},
+                {**_RC44_MARKS[1], "tHours": 72},
+            ],
+            "vertices": [
+                {"sailNm": 999, "lat": 4.93, "lon": -52.35, "iso": "2026-07-19T08:00:00Z",
+                 "tHours": 0, "vehicle": "quay"},
+                {"sailNm": 1000, "lat": 44.65, "lon": -63.57, "iso": "2026-07-22T17:25:00Z",
+                 "tHours": 81.4, "vehicle": "side"},
+            ],
+        },
+        "pearls": [
+            {"lat": 4.93, "lon": -52.35, "sailNm": 500, "here": {}, "alerts": [], "around": []},
+            {"lat": 44.65, "lon": -63.57, "sailNm": 1000, "here": {}, "alerts": [], "around": []},
+        ],
+        "skipper_thresholds": {"galeKt": 34.0, "hsAlertM": 3.0},
+    }
+    rows = rows_from_voyage("rc44", voy)
+    escale_at_hfx = [
+        row for row in rows
+        if abs(float((row.get("pos") or {}).get("lat") or 0) - 44.65) < 1
+        and any(c.get("kind") == "escale" for c in (row.get("changes") or []))
+    ]
+    assert escale_at_hfx, [r.get("changes") for r in rows]
+    titles = " ".join(
+        c.get("title") or ""
+        for row in escale_at_hfx
+        for c in (row.get("changes") or [])
+        if c.get("kind") == "escale"
+    )
+    assert "Halifax" in titles
+    assert "Cayenne" not in titles
+    assert escale_at_hfx[0]["t"].startswith("2026-07-22")

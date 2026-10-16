@@ -518,6 +518,12 @@ def route_events_from_pearls(points: list[dict]) -> list[dict]:
             src = amp.get("source")
             if src:
                 row["source"] = src
+            if amp.get("traffic"):
+                row["traffic"] = amp.get("traffic")
+            if amp.get("entry") is not None:
+                row["entry"] = amp.get("entry")
+            if amp.get("speed") is not None:
+                row["speed"] = amp.get("speed")
             return row
 
         for keys, amp, name in inside_amp_rows:

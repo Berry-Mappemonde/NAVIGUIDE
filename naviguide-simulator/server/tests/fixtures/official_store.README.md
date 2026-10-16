@@ -1,13 +1,15 @@
 # Stock officiel figé (lot RF11)
 
-Date du gel : 2026-09-27 (UTC).
-Archive : `server/tests/fixtures/official_store.tar.gz` (703104 octets).
-Familles présentes : climo, film, ici, moments, plan_review.
-Familles absentes du poste (restent « en préparation ») : eta.
+Date du gel : 2026-10-15 (UTC).
+Archive : `server/tests/fixtures/official_store.tar.gz` (903436 octets).
+Familles présentes : climo, eta, film, ici, moments, plan_review.
+Familles absentes du poste (restent « en préparation ») : aucune.
 Clés :
 
 - `c4a0d2dc06cea61b:2026-05-15T08:00:00Z:2026-09-27`
 - `c4a0d2dc06cea61b:2026-05-15T08:00:00Z:2026-09-27:rf5`
+- `c4a0d2dc06cea61b:2026-05-15T08:00:00Z:2026-10-15`
+- `c4a0d2dc06cea61b:2026-05-15T08:00:00Z:2026-10-15:rg4`
 
 Commande pour régénérer (après un vrai calcul, si la route ou t0 change) :
 

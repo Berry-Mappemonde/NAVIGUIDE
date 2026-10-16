@@ -47,47 +47,58 @@ def _llm_transport(answer: str):
     return httpx.MockTransport(handler)
 
 
-def test_chat_tier_fast_for_short_factual_question():
-    assert logbook_chat.chat_tier("Quel vent ?") == "fast"
-    assert logbook_chat.chat_tier("Où est le bateau ?") == "fast"
-    assert logbook_chat.chat_tier("x" * 79) == "fast"
+KEYWORD_CASES = [
+    ("Quel vent au bateau ?", "fact", "wind"),
+    ("What wind at the boat?", "fact", "wind"),
+    ("Quelle vitesse polaire par 15 nœuds ?", "fact", "polar"),
+    ("Polar speed in 15 knots?", "fact", "polar"),
+    ("Arrivée prévue à Madère ?", "fact", "eta"),
+    ("Expected arrival in Madeira?", "fact", "eta"),
+    ("Quel réglage de confort ?", "fact", "setting"),
+    ("What comfort setting?", "fact", "setting"),
+    ("Climatologie de septembre ici ?", "fact", "climo"),
+    ("September climatology here?", "fact", "climo"),
+    ("Faut-il partir demain ou attendre ?", "reason", None),
+    ("Should we leave tomorrow or wait?", "reason", None),
+]
 
 
-def test_chat_tier_deep_for_why_how_or_route_plan():
-    assert logbook_chat.chat_tier("Pourquoi le bateau est à quai ?") == "deep"
-    assert logbook_chat.chat_tier("Comment lire le vent ?") == "deep"
-    assert logbook_chat.chat_tier("Why is the boat at the quay?") == "deep"
-    assert logbook_chat.chat_tier("How is the wind?") == "deep"
-    assert logbook_chat.chat_tier("Planifier la route vers les Antilles") == "deep"
+def test_keyword_intent_twelve_fr_en_questions():
+    for question, intent, quantity in KEYWORD_CASES:
+        parsed = logbook_chat.keyword_intent(question)
+        assert parsed["intent"] == intent, question
+        if quantity:
+            assert parsed["quantity"] == quantity, question
+        if "madère" in question.lower() or "madeira" in question.lower():
+            assert parsed.get("place")
+        if "septembre" in question.lower() or "september" in question.lower():
+            assert parsed.get("when") in {"9", "septembre", "September"}
 
 
-def test_chat_tier_write_for_long_non_analytical_question():
-    assert logbook_chat.chat_tier("x" * 80) == "write"
-
-
-def test_answer_question_passes_tier_and_keeps_source(monkeypatch):
-    seen = {}
+def test_answer_fact_uses_rules_zero_write(monkeypatch):
+    seen = []
 
     async def fake_cascade(system, user, client=None, **kw):
-        seen.update(kw)
-        return "Le bateau est à quai, 0 kn.", "nemotron-lightning"
+        seen.append(kw.get("tier"))
+        return '{"intent":"fact","quantity":"wind","place":null,"when":null,"layer":null}', "nemotron-lightning"
 
     async def fake_ctx(*_a, **_k):
-        return {"official": {"speedKnots": 0, "atQuay": True}}
+        return {"official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}}}
 
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
     out = asyncio.run(logbook_chat.answer_question("Quel vent ?", "fr", {}, datetime.now(timezone.utc)))
-    assert seen.get("tier") == "fast"
-    assert seen.get("fallback")
-    assert out["source"] == "nemotron-lightning"
-    assert out["engine"] == "nemotron-lightning"
-    assert "0" in out["answer"]
+    assert "write" not in seen
+    assert "judge" not in seen
+    assert out["source"] == "rules"
+    assert "14.2" in out["answer"]
+    assert "250" in out["answer"]
 
 
 def test_strip_raw_fields_drops_at_quay_leak():
     assert "atQuay" not in logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.")
     assert logbook_chat.strip_raw_fields("The boat is still (atQuay: true) at 0 kn.") == "The boat is still at 0 kn."
+    assert "atQuay" not in logbook_chat.strip_raw_fields("already underway (atQuay false, speed 0.5 knots).")
 
 
 def test_strip_raw_fields_drops_formalities_zee_amp_line():
@@ -142,7 +153,7 @@ def test_stop_in_question_picks_named_official_mark():
 
 def test_answer_strips_raw_json_field_names(monkeypatch):
     async def fake_cascade(system, user, client=None, **kw):
-        return "The boat is still (atQuay: true) at 0 kn.", "nemotron-lightning"
+        return "The boat is still (atQuay: true) at 0 kn.", "nemotron-ultra"
 
     async def fake_ctx(*_a, **_k):
         return {"official": {"speedKnots": 0, "atQuay": True}}
@@ -150,7 +161,7 @@ def test_answer_strips_raw_json_field_names(monkeypatch):
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
     out = asyncio.run(logbook_chat.answer_question(
-        "Why is the boat slowing down?", "en", {}, datetime.now(timezone.utc),
+        "Why is the boat slowing down?", "en", {}, datetime.now(timezone.utc), reason=True,
     ))
     assert "atQuay" not in (out["answer"] or "")
     assert "(atQuay" not in (out["answer"] or "")
@@ -179,27 +190,53 @@ def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
     assert "Input:" not in out["answer"]
     assert "Task:" not in out["answer"]
     assert "JSON" not in out["answer"]
-    assert "logbook" not in out["answer"].lower()
-    assert "n’a pas cette information" in out["answer"] or "n'a pas cette information" in out["answer"]
+    assert "7.4" in out["answer"]
 
 
-def test_answer_question_deep_tier_for_pourquoi(monkeypatch):
-    seen = {}
+def test_reason_without_gesture_does_not_call_judge(monkeypatch):
+    seen = []
 
     async def fake_cascade(system, user, client=None, **kw):
-        seen["tier"] = kw.get("tier")
-        return "Parce que l'horloge dit à quai.", "nemotron-ultra"
+        seen.append(kw.get("tier"))
+        return '{"intent":"reason","quantity":null,"place":null,"when":null,"layer":null}', "nemotron-lightning"
 
     async def fake_ctx(*_a, **_k):
-        return {"official": {"atQuay": True}}
+        return {"official": {"atQuay": True, "speedKnots": 0}}
 
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
     out = asyncio.run(logbook_chat.answer_question(
         "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc),
     ))
-    assert seen["tier"] == "deep"
+    assert "judge" not in seen
+    assert out["source"] == "rules"
+    assert "raisonnement" in out["answer"]
+
+
+def test_reason_with_gesture_calls_judge_once(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(kw.get("tier"))
+        if kw.get("tier") == "fast":
+            return '{"intent":"reason","quantity":null,"place":null,"when":null,"layer":null}', "nemotron-lightning"
+        return "Stay at the quay: speed is 0 kn.", "nemotron-ultra"
+
+    async def fake_ctx(*_a, **_k):
+        return {"official": {"atQuay": True, "speedKnots": 0}}
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    import llm_budget
+    monkeypatch.setattr(llm_budget, "allow_chat_ultra", lambda: True)
+    monkeypatch.setattr(llm_budget, "record_chat_ultra", lambda: {"calls": 1})
+    out = asyncio.run(logbook_chat.answer_question(
+        "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc), reason=True,
+    ))
+    assert seen.count("judge") == 1
+    assert "write" not in seen
     assert out["source"] == "nemotron-ultra"
+    assert "0" in out["answer"]
 
 
 def test_filter_numbers_drops_sentences_with_figures_absent_from_the_facts():
@@ -226,21 +263,20 @@ def test_chat_answers_from_server_facts_and_logs_only_for_admin(client, monkeypa
     transport = _llm_transport("Le bateau est en mer, dans French Exclusive Economic Zone. Le vent au bateau est de 99 kn. Prochaine escale Fort-de-France (Martinique).")
     real = logbook_chat.answer_question
 
-    async def patched(question, lang, client_ctx, when, http=None):
+    async def patched(question, lang, client_ctx, when, http=None, reason=False):
         async with httpx.AsyncClient(transport=transport) as c:
-            return await real(question, lang, client_ctx, when, c)
+            return await real(question, lang, client_ctx, when, c, reason=reason)
 
     monkeypatch.setattr(logbook_chat, "answer_question", patched)
 
-    # Public: an answer, not logged.
+    # Public: an answer, not logged. Facts come from rules, never Super/Lightning prose.
     r = client.post("/logbook/chat", json={"question": "Où est le bateau ?", "lang": "fr", "context": {"view": "suivre"}}, headers=PUBLIC)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "ready" and body["logged"] is False
     assert "99 kn" not in body["answer"], "a figure absent from the facts is dropped"
-    assert "Fort-de-France" in body["answer"]
-    assert body["source"] == "nemotron-lightning"
-    assert body["engine"] == "nemotron-lightning"
+    assert body["source"] == "rules"
+    assert body["engine"] == "rules"
     assert body["facts"]["official"]["basis"] == "clock"
     assert journal.latest(10, kinds=("chat",)) == []
 
@@ -510,11 +546,8 @@ def test_embeddings_only_when_flag_and_no_keyword(monkeypatch):
 
 
 def test_answer_cites_wx_memory_without_invented_figure(monkeypatch):
-    seen = {}
-
     async def fake_cascade(system, user, client=None, **kw):
-        seen["user"] = user
-        return "Oui : le journal note 36,5 kn le 21 mai 2026. Demain 99 kn.", "nemotron-lightning"
+        return '{"intent":"fact","quantity":"wind","place":null,"when":null,"layer":null}', "nemotron-lightning"
 
     async def fake_ctx(*_a, **_k):
         return {"official": {"speedKnots": 0}, "journal": []}
@@ -525,12 +558,223 @@ def test_answer_cites_wx_memory_without_invented_figure(monkeypatch):
     out = asyncio.run(logbook_chat.answer_question(
         "avons-nous déjà eu plus de 35 nœuds ?", "fr", {}, datetime.now(timezone.utc),
     ))
-    assert "36.5" in seen["user"] or "36,5" in seen["user"]
-    assert '"memory"' in seen["user"]
-    assert out["source"] == "nemotron-lightning"
+    assert out["source"] == "rules"
     assert "36,5" in out["answer"] or "36.5" in out["answer"]
     assert "99" not in out["answer"]
     assert out["context"]["memory"][0]["windKnots"] == 36.5
+
+
+FACT_PACK = {
+    "official": {"wind": {"windKnots": 14.2, "dirFromDeg": 250}, "lat": 32.7, "lon": -17.0, "speedKnots": 7.4},
+    "boat": {"lat": 32.7, "lon": -17.0, "speedKnots": 7.4},
+    "nextStop": {"name": "Madère", "eta": "2026-09-20T10:00:00Z"},
+    "polar": {
+        "unit": "kn", "source": "polar",
+        "speedAtTws": {"10": 6.2, "15": 8.1, "20": 9.0, "25": 9.4},
+        "vmgUpwind": {"twsKn": 15, "twaDeg": 42, "speedKn": 8.1, "vmgKn": 6.2},
+    },
+    "orders": {
+        "source": "skipper", "profile": "cruise", "comfort": "normal",
+        "knobs": {"horizonH": 36, "comfort": "normal"},
+        "values": {"hsAlertM": 3.5, "planningKn": 7, "galeKt": 34},
+    },
+    "plan": {
+        "source": "plan_review", "status": "ready", "n": 1, "unit": "ISO-8601",
+        "legs": [{
+            "from": "La Rochelle", "to": "Madère",
+            "arriveIso": "2026-09-20T10:00:00Z",
+            "p10": "2026-09-19T00:00:00Z", "p90": "2026-09-21T00:00:00Z",
+            "flags": [{"kind": "formalities", "names": ["Portugal"]}],
+        }],
+    },
+    "climo": {
+        "unit": "kn", "hsUnit": "m", "month": 9, "source": "atlas", "status": "ready",
+        "windMeanKn": 12.0, "dirFromDeg": 40, "gustKn": 18.0, "hsM": 1.4,
+    },
+    "layers": {"unit": "m", "source": "ici", "bathyM": 42.0, "cables": {"nearby": False}},
+    "around": {"zee": {"name": "Portuguese Exclusive Economic Zone"}, "depthM": 42.0, "projects": []},
+    "journal": [],
+}
+
+
+def test_fact_pack_sections_present_and_bounded():
+    ctx = logbook_chat.bound_facts(dict(FACT_PACK))
+    for key in ("polar", "orders", "plan", "climo", "layers"):
+        assert key in ctx and isinstance(ctx[key], dict)
+    assert ctx["polar"]["speedAtTws"]["15"] == 8.1
+    assert ctx["orders"]["comfort"] == "normal"
+    assert ctx["plan"]["legs"][0]["to"] == "Madère"
+    assert ctx["climo"]["month"] == 9
+    assert logbook_chat.estimate_tokens(ctx) <= logbook_chat.FACT_TOKEN_CAP
+    fat = dict(FACT_PACK)
+    fat["journal"] = [{"kind": "note", "text": "x" * 80, "n": i} for i in range(200)]
+    bounded = logbook_chat.bound_facts(fat)
+    assert logbook_chat.estimate_tokens(bounded) <= logbook_chat.FACT_TOKEN_CAP
+    assert bounded["polar"]["speedAtTws"]["15"] == 8.1
+
+
+def test_rules_answer_copies_pack_numbers():
+    polar = logbook_chat.rules_answer("Quelle vitesse polaire par 15 nœuds ?", FACT_PACK, "fr")
+    assert "8.1" in polar and "15" in polar
+    kept, dropped = logbook_chat.filter_numbers(polar, FACT_PACK)
+    assert dropped == 0 and "8.1" in kept
+    eta = logbook_chat.rules_answer("Arrivée prévue à Madère ?", FACT_PACK, "fr")
+    assert "Madère" in eta
+    assert "2026-09-20" in eta
+    comfort = logbook_chat.rules_answer("Quel réglage de confort ?", FACT_PACK, "fr")
+    assert "normal" in comfort
+    climo = logbook_chat.rules_answer("Climatologie de septembre ici ?", FACT_PACK, "fr")
+    assert "12" in climo and "9" in climo
+
+
+OFFICIAL_12_PAIRS = [
+    ("Saint-Maur (Berry, Indre)", "La Rochelle"),
+    ("La Rochelle", "Ajaccio (Corse)"),
+    ("Ajaccio (Corse)", "Fort-de-France (Martinique)"),
+    ("Fort-de-France (Martinique)", "Pointe-à-Pitre (Guadeloupe)"),
+    ("Pointe-à-Pitre (Guadeloupe)", "Gustavia (Saint-Barthélemy)"),
+    ("Gustavia (Saint-Barthélemy)", "Marigot (Saint-Martin)"),
+    ("Marigot (Saint-Martin)", "Cayenne (Guyane)"),
+    ("Cayenne (Guyane)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"),
+    ("Saint-Pierre (Saint-Pierre-et-Miquelon)", "Papeete (Polynésie française)"),
+    ("Papeete (Polynésie française)", "Mata-Utu (Wallis-et-Futuna)"),
+    ("Mata-Utu (Wallis-et-Futuna)", "Nouméa (Nouvelle-Calédonie)"),
+    ("Nouméa (Nouvelle-Calédonie)", "Dzaoudzi (Mayotte)"),
+]
+
+
+def _official_12_pack():
+    """Itinéraire officiel (12 jambes, PLAN_LEGS_MAX) : pas de Madère."""
+    assert len(OFFICIAL_12_PAIRS) == 12
+    legs = []
+    for i, (frm, to) in enumerate(OFFICIAL_12_PAIRS):
+        if "Ajaccio" in to:
+            arrive = "2026-09-01T10:00:00Z"
+        elif "Nouméa" in to:
+            arrive = "2026-10-16T10:00:00Z"
+        else:
+            arrive = f"2026-08-{i + 1:02d}T10:00:00Z"
+        legs.append({"from": frm, "to": to, "arriveIso": arrive})
+    pack = {
+        **FACT_PACK,
+        "nextStop": {"name": "Nouméa (Nouvelle-Calédonie)", "eta": "2026-10-16T10:00:00Z"},
+        "plan": {
+            "source": "plan_review", "status": "ready", "n": 12, "unit": "ISO-8601",
+            "legs": legs,
+        },
+    }
+    return pack
+
+
+def test_eta_named_place_absent_is_missing_info():
+    pack = _official_12_pack()
+    blob = " ".join(f"{lg.get('from')} {lg.get('to')}" for lg in pack["plan"]["legs"])
+    assert "Madère" not in blob and "Madeira" not in blob
+    parsed = logbook_chat.keyword_intent("Arrivée prévue à Madère ?")
+    assert parsed["quantity"] == "eta" and parsed.get("place")
+    assert logbook_chat._leg_for_place(pack, parsed["place"]) is None
+    fr = logbook_chat.rules_answer("Arrivée prévue à Madère ?", pack, "fr")
+    assert fr == logbook_chat.missing_info("fr")
+    assert "Nouméa" not in fr and "Noumea" not in fr
+    assert "2026-10-16" not in fr
+    en = logbook_chat.rules_answer("Expected arrival in Madeira?", pack, "en")
+    assert en == logbook_chat.missing_info("en")
+    assert "Nouméa" not in en and "Noumea" not in en
+    assert "2026-10-16" not in en
+
+
+def test_eta_unnamed_keeps_next_stop():
+    pack = _official_12_pack()
+    parsed = logbook_chat.keyword_intent("Arrivée prévue ?")
+    assert parsed["quantity"] == "eta"
+    assert not parsed.get("place")
+    fr = logbook_chat.rules_answer("Arrivée prévue ?", pack, "fr")
+    assert fr != logbook_chat.missing_info("fr")
+    assert "Nouméa" in fr
+    assert "2026-10-16" in fr
+
+
+def test_eta_named_place_on_a_leg():
+    pack = _official_12_pack()
+    parsed = logbook_chat.keyword_intent("Arrivée prévue à Ajaccio ?")
+    assert parsed["quantity"] == "eta" and parsed.get("place")
+    fr = logbook_chat.rules_answer("Arrivée prévue à Ajaccio ?", pack, "fr")
+    assert "Ajaccio" in fr
+    assert "2026-09-01" in fr
+    assert "Nouméa" not in fr
+    assert "2026-10-16" not in fr
+    assert fr != logbook_chat.missing_info("fr")
+
+
+def test_reason_eleventh_call_refused(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(kw.get("tier"))
+        return "Stay. Speed is 7.4 kn.", "nemotron-ultra"
+
+    async def fake_ctx(*_a, **_k):
+        return dict(FACT_PACK)
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    import llm_budget
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_CHAT_ULTRA_PER_DAY", raising=False)
+    for _ in range(10):
+        llm_budget.record_chat_ultra()
+    out = asyncio.run(logbook_chat.answer_question(
+        "Faut-il partir demain ou attendre ?", "fr", {}, datetime.now(timezone.utc), reason=True,
+    ))
+    assert "judge" not in seen
+    assert out["source"] == "rules"
+    assert "plafond" in out["answer"]
+
+
+def test_mode_off_answers_by_rules(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(kw.get("tier"))
+        raise AssertionError("no LLM when mode off")
+
+    async def fake_ctx(*_a, **_k):
+        return dict(FACT_PACK)
+
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    fact = asyncio.run(logbook_chat.answer_question(
+        "Quel vent au bateau ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert fact["source"] == "rules"
+    assert "14.2" in fact["answer"]
+    reason = asyncio.run(logbook_chat.answer_question(
+        "Faut-il partir demain ou attendre ?", "fr", {}, datetime.now(timezone.utc),
+    ))
+    assert reason["source"] == "rules"
+    assert "raisonnement" in reason["answer"]
+    ultra = asyncio.run(logbook_chat.answer_question(
+        "Faut-il partir demain ou attendre ?", "fr", {}, datetime.now(timezone.utc), reason=True,
+    ))
+    assert ultra["source"] == "rules"
+    assert "plafond" in ultra["answer"]
+    assert seen == []
+
+
+def test_get_logbook_facts_endpoint(client, monkeypatch):
+    async def fake_ctx(*_a, **_k):
+        return dict(FACT_PACK)
+
+    monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    r = client.get("/logbook/facts", headers=PUBLIC)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "ready"
+    for key in ("polar", "orders", "plan", "climo", "layers"):
+        assert key in body["facts"]
+    assert body["tokens"] <= logbook_chat.FACT_TOKEN_CAP
 
 
 def test_slim_journal_entry_uses_spoken_title_when_name_missing():

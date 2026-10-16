@@ -226,6 +226,7 @@ export default {
   logbookChatUnsaved: "reply not saved to the logbook",
   logbookChatLogged: "exchanges logged",
   logbookChatNotLogged: "replies are not saved to the logbook",
+  logbookChatReason: "Reasoning",
   replayStart: "Replay the expedition",
   replayStartTitle: "Replay the route from Saint-Maur to today, told day by day",
   replayBerryOnly: "Replay: Berry-Mappemonde route only — coming soon for your route",
@@ -337,10 +338,10 @@ export default {
   noAlerts:           "✅ No critical alerts — route appears safe.",
   dominantRisk:       "Dominant",
 
-  // ── Simulation Mode ────────────────────────────────────────────────────────
-  simulationMarkerTitle: "Catamaran — click for metrics",
-  simulationDragPrompt:  "Drag the catamaran along the route…",
-  exitSimulation:        "Exit Plot",
+  // ── Tracer Mode ────────────────────────────────────────────────────────────
+  tracerMarkerTitle: "Catamaran — click for metrics",
+  tracerDragPrompt:  "Drag the catamaran along the route…",
+  exitTracer:        "Exit Plot",
   nmRemaining:           "Remaining",
   nmCovered:             "Covered",
   eta:                   "ETA",
@@ -420,10 +421,9 @@ export default {
   layerBiAmp:                "MPA",
   layerBiAmpTitle:           "Marine protected areas",
 
-  // ── Simulation button (Sidebar) ────────────────────────────────────────────
-  simulationModeLabel:   "Plot",
-  exitSimulationShort:   "Exit Plot",
-  simulationModeTooltip: "Simulation — play the expedition (Play, speeds, stops)",
+  // ── Tracer button (Sidebar) ────────────────────────────────────────────────
+  tracerModeLabel:   "Plot",
+  exitTracerShort:   "Exit Plot",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
   previous: "Previous",
@@ -510,7 +510,6 @@ export default {
   viewModeGroup:    "Follow the expedition or Plot",
   followExpeditionButton: "Follow expedition",
   followExpeditionTitle: "Follow the Berry-Mappemonde expedition",
-  simulationButton: "Simulation",
   tracerButton: "Plot",
   tracerModeTooltip: "Plot — play the Berry-Mappemonde route or your own: departure date, Play, calculations",
   officialDepartureLocked: "Official departure: 15 May 2026, 08:00 UTC",

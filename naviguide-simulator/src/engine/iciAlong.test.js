@@ -53,6 +53,19 @@ describe("iciAlong sample", () => {
     assert.equal(flatFromCustomRoute({ type: "FeatureCollection", features: [] }), null);
   });
 
+  it("lot LY2 : sampleLeg sur drawnSegments pendant le dessin, cap MAX_PEARLS_SIM", async () => {
+    const { geojsonFromDrawn } = await import("./layerWarm.js");
+    const drawnSegments = [{ coords: [[-1.16, 46.15], [-1.16, 45.15], [-1.16, 44.15]] }];
+    const drawnPoints = [{ lat: 46.15, lon: -1.16 }, { lat: 44.15, lon: -1.16 }];
+    const flat = flatFromCustomRoute(geojsonFromDrawn(drawnPoints, drawnSegments));
+    assert.ok(flat?.points?.length >= 2);
+    const pearls = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 0, maxPearls: MAX_PEARLS_SIM });
+    assert.ok(pearls.length >= 2);
+    assert.ok(pearls.length <= MAX_PEARLS_SIM);
+    assert.ok(pearls.every((p) => p.lat > 43 && p.lat < 47 && p.lon < 0));
+    assert.ok(pearls.every((p) => p.lat < 46.2));
+  });
+
   it("behindNm keeps the pearl just passed; nearestPearlBag re-centres its thin bag on the boat", () => {
     const flat = lineFlat();
     const ahead = sampleLeg(flat, { fromNm: 0, toNm: flat.totalNm, boatNm: 50, maxPearls: 20 });

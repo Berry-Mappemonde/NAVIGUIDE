@@ -37,7 +37,7 @@ async function showToolsPanel(page) {
 }
 
 test("lot R1 — Esri une fois, plus d'aide, remise du chiffre, pilules grisées", async ({ page }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 20_000 });
@@ -115,18 +115,27 @@ test("lot R1 — Esri une fois, plus d'aide, remise du chiffre, pilules grisées
   if (!(await start.isVisible().catch(() => false))) {
     if (!apiUp) {
       test.info().annotations.push({ type: "sans API", description: "Revoir absent — pilules grisées en live non vérifiées" });
+    } else {
+      throw new Error("Revoir absent alors que l'API répond");
     }
     return;
+  }
+  if (apiUp) {
+    const { waitFilmReady } = await import("../helpers.js");
+    await waitFilmReady(page);
   }
   await start.click();
   const stop = page.getByTestId("replay-stop");
   const filmOn = await stop.isVisible({ timeout: 8000 }).catch(() => false);
   if (!filmOn) {
-    test.info().annotations.push({
-      type: apiUp ? "film" : "sans API",
-      description: "Revoir n'a pas démarré — aria-disabled en live non vérifié",
-    });
-    return;
+    if (!apiUp) {
+      test.info().annotations.push({
+        type: "sans API",
+        description: "Revoir n'a pas démarré — aria-disabled en live non vérifié",
+      });
+      return;
+    }
+    throw new Error("Revoir n'a pas démarré alors que le film est prêt");
   }
   await expect(raw).toBeDisabled();
   await expect(written).toBeDisabled();
