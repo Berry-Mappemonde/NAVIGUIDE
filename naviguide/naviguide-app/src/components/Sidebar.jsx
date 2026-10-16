@@ -12,22 +12,6 @@ import { ALL_LAYER_CONFIG } from "./MaritimeLayers";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
 
-function useAppReady() {
-  const [ready, setReady] = useState(
-    () => document.documentElement.classList.contains("app-ready"),
-  );
-  useEffect(() => {
-    if (ready) return undefined;
-    const el = document.documentElement;
-    const sync = () => setReady(el.classList.contains("app-ready"));
-    const obs = new MutationObserver(sync);
-    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
-    sync();
-    return () => obs.disconnect();
-  }, [ready]);
-  return ready;
-}
-
 /* ── Polar Chat bubble ───────────────────────────────────────────────────── */
 function PolarChatBubble({ role, content }) {
   const isUser = role === "user";
@@ -467,8 +451,8 @@ export function Sidebar({
   simulationMonth, onSimulationMonth,
 }) {
   const { t } = useLang();
-  const appReady = useAppReady();
-  const briefing = appReady ? (plan?.executive_briefing || "") : "";
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const briefing = plan?.executive_briefing || "";
 
   return (
     <>
@@ -630,20 +614,29 @@ export function Sidebar({
             </div>
           )}
 
-          {!isDrawing && appReady && (isCockpit || briefing || briefingLoading) && (
+          {!isDrawing && (isCockpit || briefing || briefingLoading) && (
             <div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <button
+                type="button"
+                className="w-full text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 hover:text-slate-200"
+                onClick={() => setBriefingOpen((o) => !o)}
+                aria-expanded={briefingOpen}
+                title={briefingOpen ? t("briefingCollapse") : t("briefingExpand")}
+              >
                 <Shield size={12} className="text-blue-400" />
                 {t("briefing")}
-              </div>
-              <div
-                className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50"
-                style={{ contentVisibility: "auto", containIntrinsicSize: "0 8rem" }}
-              >
-                <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-                  {briefingLoading ? t("briefingLoading") : (briefing || t("briefingPlaceholder"))}
-                </p>
-              </div>
+                <ChevronRight
+                  size={14}
+                  className={`ml-auto transition-transform ${briefingOpen ? "rotate-90" : ""}`}
+                />
+              </button>
+              {briefingOpen && (
+                <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+                  <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
+                    {briefingLoading ? t("briefingLoading") : (briefing || t("briefingPlaceholder"))}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
