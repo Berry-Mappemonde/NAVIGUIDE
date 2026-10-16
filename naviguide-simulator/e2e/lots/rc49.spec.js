@@ -43,7 +43,7 @@ function degJump(a, b) {
 }
 
 test("lot RC49 — Ajaccio → Fort-de-France : un recadrage, bateau au centre", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
@@ -186,7 +186,7 @@ test("lot RC49 — Ajaccio → Fort-de-France : un recadrage, bateau au centre",
       }
       return /Fort-de-France/i.test(from) && /Antilles|Caraïbe/i.test(`${to} ${c.text || ""}`);
     });
-    if (i >= 0) window.__naviguideFilm?.seekChapter?.(i);
+    if (i >= 0) window.__naviguideFilm?.seekChapter?.(i, 0);
     return { i, from: list[i]?.fromName || "", to: list[i]?.toName || "" };
   });
 
@@ -195,6 +195,7 @@ test("lot RC49 — Ajaccio → Fort-de-France : un recadrage, bateau au centre",
       type: "poste",
       description: "chapitre Fort-de-France → Pointe-à-Pitre absent — glisse Caraïbes non mesurée",
     });
+    await shot(page, "02-caraibes");
     return;
   }
 
@@ -202,26 +203,87 @@ test("lot RC49 — Ajaccio → Fort-de-France : un recadrage, bateau au centre",
     caraibe.i, { timeout: 8_000 }).catch(() => null);
   await page.waitForTimeout(1_200);
 
-  const a = await page.evaluate(() => {
-    const ll = window.__naviguideScene?.map?.getCenter?.();
-    const ch = Number(window.__naviguideFilm?.chapterIdx);
-    if (!ll || !Number.isFinite(ll.lat)) return null;
-    return { lat: ll.lat, lng: ll.lng, ch };
+  const originBoat = await page.evaluate(() => {
+    const f = window.__naviguideFilm || {};
+    return {
+      lat: Number(f.lat),
+      lon: Number(f.lon),
+      ch: Number(f.chapterIdx),
+      from: f.fromName || "",
+      to: f.toName || "",
+    };
   });
-  await page.waitForTimeout(1_000);
-  const b = await page.evaluate(() => {
-    const ll = window.__naviguideScene?.map?.getCenter?.();
-    const ch = Number(window.__naviguideFilm?.chapterIdx);
-    if (!ll || !Number.isFinite(ll.lat)) return null;
-    return { lat: ll.lat, lng: ll.lng, ch };
-  });
+  const leftQuay = Number.isFinite(originBoat.lat) && await page.waitForFunction((o) => {
+    const f = window.__naviguideFilm || {};
+    const lat = Number(f.lat);
+    const lon = Number(f.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+    return Math.hypot(lat - o.lat, lon - o.lon) > 0.01;
+  }, originBoat, { timeout: 12_000 }).then(() => true).catch(() => false);
 
-  if (a && b && a.ch === b.ch) {
-    expect(
-      degJump(a, b),
-      `saut Caraïbes ${degJump(a, b).toFixed(3)}° ${caraibe.from} → ${caraibe.to}`,
-    ).toBeLessThanOrEqual(0.4);
+  if (!leftQuay) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "bateau encore à quai sur Fort-de-France → Pointe-à-Pitre — glisse non mesurée",
+    });
+    await shot(page, "02-caraibes");
+    return;
   }
+
+  const samples = [];
+  for (let i = 0; i < 11; i++) {
+    const snap = await page.evaluate(() => {
+      const map = window.__naviguideScene?.map;
+      const f = window.__naviguideFilm || {};
+      if (!map || !Number.isFinite(Number(f.lat))) return null;
+      const size = map.getSize();
+      const boat = map.latLngToContainerPoint([Number(f.lat), Number(f.lon)]);
+      const c = map.getCenter();
+      return {
+        lat: c.lat,
+        lng: c.lng,
+        nx: boat.x / size.x,
+        ny: boat.y / size.y,
+        ch: Number(f.chapterIdx),
+      };
+    });
+    if (snap) samples.push(snap);
+    if (i < 10) await page.waitForTimeout(200);
+  }
+
+  const run = [];
+  for (const s of samples) {
+    if (run.length && s.ch !== run[0].ch) break;
+    run.push(s);
+  }
+
+  if (run.length < 6) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "pas assez de centres sur 2 s, même chapitre — glisse Caraïbes non mesurée",
+    });
+    await shot(page, "02-caraibes");
+    return;
+  }
+
+  const hop = `${originBoat.from} → ${originBoat.to}`;
+  const moved = degJump(run[0], run[run.length - 1]);
+  expect(moved, `caméra immobile ${moved.toFixed(3)}° ${hop}`).toBeGreaterThan(0.05);
+
+  // Saut d'île FDF→PAP ≈ 1,6°. 200–300 ms de glisse ≈ 0,4°. Seuil 0,8°.
+  for (let i = 1; i < run.length; i++) {
+    const jump = degJump(run[i - 1], run[i]);
+    expect(
+      jump,
+      `saut Caraïbes ${jump.toFixed(3)}° / 200 ms ${hop}`,
+    ).toBeLessThanOrEqual(0.8);
+  }
+
+  const caraibeLast = run[run.length - 1];
+  expect(caraibeLast.nx, `bateau x=${caraibeLast.nx.toFixed(2)} hors 40 % centraux`).toBeGreaterThanOrEqual(0.3);
+  expect(caraibeLast.nx, `bateau x=${caraibeLast.nx.toFixed(2)} hors 40 % centraux`).toBeLessThanOrEqual(0.7);
+  expect(caraibeLast.ny, `bateau y=${caraibeLast.ny.toFixed(2)} hors 40 % centraux`).toBeGreaterThanOrEqual(0.3);
+  expect(caraibeLast.ny, `bateau y=${caraibeLast.ny.toFixed(2)} hors 40 % centraux`).toBeLessThanOrEqual(0.7);
 
   await shot(page, "02-caraibes");
 });

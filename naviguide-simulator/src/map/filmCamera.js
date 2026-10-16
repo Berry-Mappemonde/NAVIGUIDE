@@ -139,24 +139,23 @@ export function filmChapterCenter(leg) {
 }
 
 /**
- * En pleine jambe (RC40) : la caméra traduit avec le bateau.
+ * En pleine jambe (RC40 / RC51) : la caméra traduit avec le bateau
+ * (`clampFilmPan` / delta bateau), y compris une jambe archipel (≤ 280 nm).
  * Un saut d'ancre (bouée, île, événement) déplace le bateau, pas le centre,
- * sauf si le bateau sortirait de l'écran. Archipel : un seul cadre (bbox).
+ * sauf si le bateau sortirait de l'écran (`FILM_INTRA_JUMP_PX`).
+ * `filmLeg` sert au seuil d'archipel ailleurs (zoom) ; ici plus de cadre figé.
  */
 export function filmIntraChapterCenter(map, {
   from,
   boat,
   lastBoat = null,
-  filmLeg = null,
+  filmLeg: _filmLeg = null,
   maxFrac = FILM_PAN_MAX_SCREEN,
   boatPx = 0,
 } = {}) {
   const origin = toLatLngPair(from) || toLatLngPair(boat);
   const here = toLatLngPair(boat);
   if (!origin || !here) return boat;
-  if (filmLegIsArchipelago(filmLeg)) {
-    return keepBoatInFrame(origin, here, map, { keepFrac: FILM_VIEWPORT_KEEP_FRAC });
-  }
   let stepPx = Number(boatPx) || 0;
   const prev = lastBoatPair(lastBoat);
   if (prev && typeof map?.latLngToContainerPoint === "function") {
@@ -520,10 +519,10 @@ function stillNmFromAnchor(anchor, lat, lon) {
  * bougé (Δnm≤0,5), un hold au zoom courant (RC25). Sinon un seul `setView`,
  * bateau au centre, puis `FILM_FLIP_HOLD_MS` sans panBy / setView (RC49) —
  * `FILM_RESET_EVERY` ne produit pas de (0,0) dans cette seconde. En pleine
- * jambe, la caméra suit le bateau par translation ; une ancre (bouée, île,
- * événement) déplace le bateau, pas le centre, sauf sortie d'écran. Archipel :
- * un cadre (bbox) pour tout le chapitre. Le zoom visé s'approche par
- * `stepFilmZoom`. Pas de `flyTo` (plus de trou).
+ * jambe, la caméra suit le bateau par translation (aussi Caraïbes, RC51) ;
+ * une ancre (bouée, île, événement) déplace le bateau, pas le centre, sauf
+ * sortie d'écran. `stillAnchor` ne tient que le quai (Δnm≤0,5), pas toute
+ * la jambe. Le zoom visé s'approche par `stepFilmZoom`. Pas de `flyTo`.
  */
 export function applyFilmCamera(map, {
   chapterIdx,

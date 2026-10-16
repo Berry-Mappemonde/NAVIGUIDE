@@ -367,6 +367,13 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.match(hook, /isReadyRemoteFilm/);
     assert.match(hook, /seekChapter/);
     assert.match(hook, /pinnedIdxRef/);
+    const seekFn = hook.slice(
+      hook.indexOf("const seekChapter = useCallback"),
+      hook.indexOf("seekChapterRef.current = seekChapter"),
+    );
+    assert.match(seekFn, /Number\(charIdx\) === 0/, "seekChapter(i, 0) = départ de jambe (RC51)");
+    assert.match(seekFn, /filmElapsedRef\.current/, "seekChapter(i, 0) recale l'horloge linéaire");
+    assert.match(seekFn, /pinnedIdxRef\.current = null/);
     const replayCall = app.slice(app.indexOf("const replay = useReplay"), app.indexOf("const live = isSuivre"));
     assert.match(replayCall, /clock: filmClock/);
     assert.doesNotMatch(replayCall, /clock: officialClock/);

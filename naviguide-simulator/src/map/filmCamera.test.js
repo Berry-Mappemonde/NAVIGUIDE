@@ -838,14 +838,66 @@ describe("filmCamera lot RC40 — pleine jambe, pas de saut d'ancre", () => {
     assert.ok(dLat + dLon > 0.05, "caméra figée en pleine mer");
   });
 
-  it("filmIntraChapterCenter : bbox tenue, bateau hors cadre ramené", () => {
+  it("filmIntraChapterCenter : glisse avec le bateau, pas de saut", () => {
     const { map } = mercatorMap({ lat: FDF[0], lng: FDF[1] }, 6.75);
-    const held = filmIntraChapterCenter(map, {
-      from: FDF, boat: GUADELOUPE, lastBoat: { lat: FDF[0], lon: FDF[1] }, filmLeg: CARAIBE,
+    const pap = GUADELOUPE;
+    const n = 24;
+    let center = FDF;
+    let lastBoat = { lat: FDF[0], lon: FDF[1] };
+    let maxJump = 0;
+    for (let i = 1; i <= n; i++) {
+      const u = i / n;
+      const boat = [
+        FDF[0] + (pap[0] - FDF[0]) * u,
+        FDF[1] + (pap[1] - FDF[1]) * u,
+      ];
+      const next = filmIntraChapterCenter(map, {
+        from: center, boat, lastBoat, filmLeg: CARAIBE,
+      });
+      maxJump = Math.max(maxJump, Math.hypot(next[0] - center[0], next[1] - center[1]));
+      center = next;
+      lastBoat = { lat: boat[0], lon: boat[1] };
+    }
+    const moved = Math.abs(center[0] - FDF[0]) + Math.abs(center[1] - FDF[1]);
+    assert.ok(moved > 0.05, "caméra figée sur Fort-de-France → Pointe-à-Pitre");
+    assert.ok(maxJump <= 0.4, `saut ${maxJump.toFixed(3)}°`);
+  });
+
+  it("hop FDF → PAP, N frames : le centre glisse, aucun saut > 0,4°, stillAnchor lâché", () => {
+    const pap = GUADELOUPE;
+    const { map, calls } = mercatorMap({ lat: FDF[0], lng: FDF[1] }, 6.75);
+    let st = applyFilmCamera(map, {
+      chapterIdx: 6, lastChapterIdx: null, lat: FDF[0], lon: FDF[1],
+      heading: 310, zoom: 6.75, now: 0, filmLeg: CARAIBE,
     });
-    const dLat = Math.abs(held[0] - FDF[0]);
-    const dLon = Math.abs(held[1] - FDF[1]);
-    assert.ok(dLat < 0.5 && dLon < 0.5, `cadre Caraïbes déplacé ${dLat},${dLon}`);
+    const views0 = calls.filter((c) => c.action === "setView").length;
+    let prev = { lat: FDF[0], lon: FDF[1] };
+    let maxJump = 0;
+    const n = 24;
+    for (let i = 1; i <= n; i++) {
+      const u = i / n;
+      const lat = FDF[0] + (pap[0] - FDF[0]) * u;
+      const lon = FDF[1] + (pap[1] - FDF[1]) * u;
+      const before = st.lastCenter;
+      st = applyFilmCamera(map, {
+        chapterIdx: 6, lastChapterIdx: 6, lat, lon, heading: 310, zoom: 6.75,
+        now: i * 16, lastCenter: st.lastCenter, lastBoat: prev,
+        framesSinceReset: st.framesSinceReset, stillAnchor: st.stillAnchor,
+        filmLeg: CARAIBE, boatPx: 8,
+      });
+      maxJump = Math.max(
+        maxJump,
+        Math.hypot(st.lastCenter[0] - before[0], st.lastCenter[1] - before[1]),
+      );
+      prev = { lat, lon };
+    }
+    const dLat = Math.abs(st.lastCenter[0] - FDF[0]);
+    const dLon = Math.abs(st.lastCenter[1] - FDF[1]);
+    assert.ok(dLat + dLon > 0.05, "caméra figée sur Fort-de-France → Pointe-à-Pitre");
+    assert.ok(maxJump <= 0.4, `saut ${maxJump.toFixed(3)}°`);
+    assert.equal(st.stillAnchor, null, "stillAnchor encore sur le point de flip");
+    const views1 = calls.filter((c) => c.action === "setView").length;
+    assert.ok(views1 - views0 <= 1, `setView île en île : ${views1 - views0}`);
   });
 });
 
