@@ -152,7 +152,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     const t0 = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     onSeekNm(t0 * barTotal);
   };
-  const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "");
+  const filmSubtitle = visibleFilmSubtitle(replay?.subtitle || "", {
+    fromName: replay?.fromName || fromName,
+    toName: replay?.toName || toName,
+  });
   const filmSubtitleAir = filmSubtitleShowsAir(filmSubtitle);
   const filmSubtitleParts = filmSubtitleHighlight(filmSubtitle, replay?.subtitlePlace || "");
 
