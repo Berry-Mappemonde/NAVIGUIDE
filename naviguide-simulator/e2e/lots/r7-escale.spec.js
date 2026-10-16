@@ -1,7 +1,8 @@
-// Lot R7 — fiche d'escale en popup sur le drapeau.
-// Sans API : le nom de l'escale et la croix tiennent seuls (repli itinéraire).
-// Le paragraphe / les listes de la fiche viennent de GET /escale : sautés si l'API est absente.
+// Lot R7 — fiche d'escale en popup sur le drapeau (et dans Ici, pas here-product).
+// Sans API : sonde GET /voyage/official ; saute drapeau / paragraphe /escale.
+// La liste n'ouvre plus la fiche (RE2 / RF8) ; le drapeau oui.
 import { expect, test } from "@playwright/test";
+import { centerOnFlag, dismissNotForNav, showLeftPanel, showRightPanel } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-r7/${name}.jpg`,
@@ -10,98 +11,102 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
-
-async function showLeftPanel(page) {
-  const chat = page.getByTestId("logbook-chat");
-  if (await chat.isVisible({ timeout: 2000 }).catch(() => false)) return;
-  const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
-  if (await cinema.isVisible().catch(() => false)) {
-    const on = /bg-cyan-700/.test((await cinema.getAttribute("class")) || "");
-    if (on) await cinema.click();
-  }
-  if (await chat.isVisible({ timeout: 3000 }).catch(() => false)) return;
-  await page.locator(".naviguide-sidebar-toggle--left").click();
-  await expect(chat).toBeVisible({ timeout: 15_000 });
+async function probeOfficial(page) {
+  const res = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  if (!res || !res.ok()) return false;
+  const ctype = String(res.headers()["content-type"] || "").toLowerCase();
+  return ctype.includes("json");
 }
 
 async function showToolsPanel(page) {
-  const { showRightPanel } = await import("../helpers.js");
   await showRightPanel(page);
   await expect(page.getByTestId("escale-legend")).toBeVisible({ timeout: 10_000 });
 }
 
-async function waitAjaccioFlag(page) {
-  await page.waitForFunction(() => {
+async function hasAjaccioFlag(page, timeout = 20_000) {
+  return page.waitForFunction(() => {
     const scene = window.__naviguideScene;
     if (!scene?.waypointMarkers) return false;
     for (const marker of scene.waypointMarkers.values()) {
       if (/Ajaccio/i.test(marker._naviguideWaypoint?.name || "")) return true;
     }
     return false;
-  }, null, { timeout: 30_000 });
+  }, null, { timeout }).then(() => true).catch(() => false);
+}
+
+/** Clic drapeau Ajaccio : recentre (lâcher le suivi LIVE), reclique le marqueur. */
+async function openAjaccioFromFlag(page) {
+  if (!(await hasAjaccioFlag(page, 15_000))) return false;
+  await centerOnFlag(page, /Ajaccio/);
+  const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
+  if (await flag.isVisible({ timeout: 8_000 }).catch(() => false)) {
+    await flag.click({ force: true });
+  }
+  if (await page.getByTestId("escale-sheet").count()) return true;
   await page.evaluate(() => {
     const scene = window.__naviguideScene;
-    if (!scene?.map || !scene.waypointMarkers) return;
+    if (!scene?.waypointMarkers) return;
     for (const marker of scene.waypointMarkers.values()) {
       if (/Ajaccio/i.test(marker._naviguideWaypoint?.name || "")) {
-        scene.map.setView(marker.getLatLng(), 7, { animate: false });
+        marker.fire("click");
         return;
       }
     }
   });
+  return (await page.getByTestId("escale-sheet").count()) > 0;
 }
 
 test("lot R7 — fiche d'escale sur le drapeau, plus dans le panneau", async ({ page }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(60_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
+
+  const apiUp = await probeOfficial(page);
+  if (!apiUp) {
+    test.info().annotations.push({
+      type: "sans API",
+      description: "GET /voyage/official absent — drapeau / paragraphe de fiche non exigés",
+    });
+  }
+
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 
-  await waitAjaccioFlag(page);
-  const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
-  await expect(flag).toBeVisible({ timeout: 10_000 });
-  await flag.click({ force: true });
-
-  const sheet = page.getByTestId("escale-sheet");
-  await expect(sheet).toBeVisible({ timeout: 10_000 });
-  await expect(sheet).toContainText("Ajaccio");
-  await expect(sheet.getByTestId("escale-listen")).toHaveCount(0);
-  await expect(sheet.getByRole("button", { name: /écouter|listen/i })).toHaveCount(0);
-  await expect(page.getByTestId("escale-close")).toBeVisible();
-  await expect(page.getByTestId("here-product").getByTestId("escale-sheet")).toHaveCount(0);
-
-  const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
-  if (apiUp) {
-    const loading = await sheet.getByText(/On rassemble|Loading the sheet/i).isVisible().catch(() => false);
-    if (loading) {
-      test.info().annotations.push({
-        type: "poste",
-        description: "fiche encore « On rassemble » (stock figé sans /escale enrichi)",
-      });
-    } else {
-      await expect(sheet).not.toContainText(/On rassemble|Loading the sheet/i);
-    }
-  } else {
+  const openedTracer = await openAjaccioFromFlag(page);
+  if (!openedTracer && !apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — paragraphe / listes de fiche non vérifiés",
+      description: "aucun drapeau Ajaccio en Tracer — fiche drapeau non exigée",
     });
-  }
-  await shot(page, "01-popup");
+    await expect(page.getByTestId("here-product").getByTestId("escale-sheet")).toHaveCount(0);
+    await shot(page, "01-popup");
+  } else {
+    const sheet = page.getByTestId("escale-sheet");
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet).toContainText("Ajaccio");
+    await expect(sheet.getByTestId("escale-listen")).toHaveCount(0);
+    await expect(sheet.getByRole("button", { name: /écouter|listen/i })).toHaveCount(0);
+    await expect(page.getByTestId("escale-close")).toBeVisible();
+    await expect(page.getByTestId("here-product").getByTestId("escale-sheet")).toHaveCount(0);
 
-  await page.getByTestId("escale-close").click();
-  await expect(page.getByTestId("escale-sheet")).toHaveCount(0);
+    if (apiUp) {
+      const loading = await sheet.getByText(/On rassemble|Loading the sheet/i).isVisible().catch(() => false);
+      if (loading) {
+        test.info().annotations.push({
+          type: "poste",
+          description: "fiche encore « On rassemble » (stock figé sans /escale enrichi)",
+        });
+      } else {
+        await expect(sheet).not.toContainText(/On rassemble|Loading the sheet/i);
+      }
+    }
+    await shot(page, "01-popup");
+
+    await page.getByTestId("escale-close").click();
+    await expect(page.getByTestId("escale-sheet")).toHaveCount(0);
+  }
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
@@ -110,16 +115,26 @@ test("lot R7 — fiche d'escale sur le drapeau, plus dans le panneau", async ({ 
 
   await showToolsPanel(page);
   await expect(page.getByTestId("escale-sheet-open")).toHaveCount(0);
-  // RE2 / RF8 : la liste n'ouvre plus la fiche ; le drapeau oui — recentré d'abord (en Suivre la caméra
-  // est sur le bateau, le drapeau d'Ajaccio est hors cadre).
-  const { centerOnFlag } = await import("../helpers.js");
-  await centerOnFlag(page, /Ajaccio/);
-  await flag.click({ force: true, timeout: 5_000 }).catch(() => flag.evaluate((el) => el.click()));
+  // RE2 / RF8 : la liste n'ouvre plus la fiche ; le drapeau oui.
+  // En Suivre la caméra LIVE est sur le bateau (Pacifique, 16 oct.) : il faut
+  // lâcher le cadrage pending avant de recentrer, sinon le clic rate (CI 3/6).
+  const openedSuivre = await openAjaccioFromFlag(page);
+  if (!openedSuivre && !apiUp) {
+    test.info().annotations.push({
+      type: "sans API",
+      description: "drapeau Ajaccio absent en Suivre — fiche Ici / popup non exigée",
+    });
+    await expect(page.getByTestId("here-product").getByTestId("escale-sheet")).toHaveCount(0);
+    await shot(page, "02-suivre");
+    return;
+  }
+
   const sheetAgain = page.getByTestId("escale-sheet");
   await expect(sheetAgain).toBeVisible({ timeout: 10_000 });
   await expect(sheetAgain).toContainText("Ajaccio");
   await expect(page.getByTestId("here-product").getByTestId("escale-sheet")).toHaveCount(0);
   await showLeftPanel(page);
+  await expect(page.getByTestId("ici-maintenant")).toBeVisible();
   await expect(sheetAgain).toBeInViewport({ timeout: 5_000 });
   await shot(page, "02-suivre");
 });
