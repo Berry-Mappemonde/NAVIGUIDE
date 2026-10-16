@@ -4,10 +4,11 @@ import { scheduleIdle } from "../utils/scheduleIdle.js";
 
 const DEMO = "https://demotiles.maplibre.org/style.json";
 
-export function useSeamapStyle() {
+export function useSeamapStyle(armed = true) {
   const [mapStyle, setMapStyle] = useState(DEMO);
 
   useEffect(() => {
+    if (!armed) return undefined;
     let cancelled = false;
     const unique = [...new Set(SEAMAP_STYLE_CANDIDATES)];
 
@@ -33,7 +34,7 @@ export function useSeamapStyle() {
       cancelled = true;
       cancelIdle();
     };
-  }, []);
+  }, [armed]);
 
   return mapStyle;
 }
