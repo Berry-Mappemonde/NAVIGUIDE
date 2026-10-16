@@ -30,9 +30,11 @@
     />
     <meta name="twitter:image" content="https://www.naviguide.fr/logo-naviguide.png" />
     <link rel="preconnect" href="https://demotiles.maplibre.org" crossorigin />
+    <link rel="preconnect" href="https://www.naviguide.fr" crossorigin />
     <link rel="dns-prefetch" href="https://tiles.openseamap.org" />
-    <link rel="dns-prefetch" href="https://www.naviguide.fr" />
-    <link rel="preload" href="./favicon-n-bl.png" as="image" type="image/png" fetchpriority="high" />
+    <link rel="dns-prefetch" href="https://blueintelligence.online" />
+    <link rel="dns-prefetch" href="https://tiles.openwaters.io" />
+    <link rel="preload" href="./logo-naviguide.png" as="image" type="image/png" fetchpriority="high" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -76,30 +78,71 @@
       }
     </script>
     <style>
-      .seo-fallback {
-        max-width: 42rem;
-        margin: 1.25rem auto;
-        padding: 0 1rem;
-        font-family: system-ui, sans-serif;
-        line-height: 1.5;
-        color: #0f172a;
+      html,
+      body {
+        margin: 0;
+        height: 100%;
       }
-      body:has(#root:not(:empty)) .seo-fallback {
-        display: none;
+      #root {
+        min-height: 100vh;
+      }
+      .lcp-hero {
+        box-sizing: border-box;
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 1.25rem 1rem 2rem;
+        font-family: system-ui, sans-serif;
+        line-height: 1.45;
+        color: #0f172a;
+        background: linear-gradient(180deg, #e0f2fe 0%, #f8fafc 55%, #fff 100%);
+        text-align: center;
+      }
+      .lcp-hero img {
+        width: 7.5rem;
+        height: auto;
+      }
+      .lcp-hero h1 {
+        font-size: clamp(1.25rem, 4vw, 1.65rem);
+        margin: 0;
+        max-width: 22rem;
+      }
+      .lcp-hero p {
+        margin: 0;
+        max-width: 28rem;
+        font-size: 0.95rem;
+        color: #334155;
+      }
+      html.app-ready #lcp-hero {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
       }
     </style>
   </head>
   <body>
-    <main class="seo-fallback" id="seo-fallback">
+    <div id="root"></div>
+    <main class="lcp-hero" id="lcp-hero">
+      <img
+        src="./logo-naviguide.png"
+        width="120"
+        height="120"
+        alt="NAVIGUIDE"
+        fetchpriority="high"
+        decoding="async"
+      />
       <h1>NAVIGUIDE — routage voilier et cartographie maritime</h1>
       <p>
-        NAVIGUIDE est l’application web de routage et d’exploration maritime de
-        <a href="https://berrymappemonde.org/fr/">l’association Berry-Mappemonde</a> :
-        itinéraires à la voile, données météo et couches nautiques sur une carte interactive.
+        Itinéraires à la voile, météo et couches nautiques —
+        <a href="https://berrymappemonde.org/fr/">Berry-Mappemonde</a>.
       </p>
-      <p>Activez JavaScript pour utiliser la carte et les outils de simulation.</p>
     </main>
-    <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
