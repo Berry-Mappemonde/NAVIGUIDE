@@ -868,7 +868,7 @@ export class MapSceneController {
     // left on the map while drawing — revue du 19 sept., lot I).
     this.syncMarker("simulation", {
       ...cast?.main,
-      visible: ready && cfg.isSimulation && Boolean(cast?.main),
+      visible: ready && cfg.isTracer && Boolean(cast?.main),
       className: "catamaran-divicon",
       html: catamaranSvg(0),
       draggable: true,
@@ -1463,7 +1463,7 @@ export class MapSceneController {
       cfg.sceneReady
       && (
         (cfg.cameraFollow && (cast?.follow || liveMode))
-        || (cfg.isSimulation && cfg.cameraFocusToken > 0 && cast?.follow)
+        || (cfg.isTracer && cfg.cameraFocusToken > 0 && cast?.follow)
       )
       && subject?.lat != null
       && subject?.lon != null,

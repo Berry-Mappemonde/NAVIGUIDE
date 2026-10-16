@@ -312,13 +312,17 @@ export function IciMaintenant({
         </div>
       ) : null}
 
-      {view === "journal" ? (
-        <div data-testid="ici-journal-slot" className="mt-1 min-h-0 overflow-auto">
-          {Array.isArray(journalEntries) ? (
-            <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
-          ) : journal}
-        </div>
-      ) : null}
+      {/* Liste toujours au DOM (hidden hors onglet) : RC2 peut voler
+          Maintenant sans démonter les lignes — R9b compte ici-journal-entry. */}
+      <div
+        data-testid="ici-journal-slot"
+        hidden={view !== "journal"}
+        className="mt-1 min-h-0 overflow-auto"
+      >
+        {Array.isArray(journalEntries) ? (
+          <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
+        ) : journal}
+      </div>
 
       {view === "review" ? (
         <div data-testid="ici-review-slot" className="mt-1 min-h-0 overflow-auto">

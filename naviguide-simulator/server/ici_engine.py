@@ -50,7 +50,8 @@ MAX_PROJECTS = 5
 MAX_NEARBY = 3
 # RG3 : invalide les perles sans couche projects / AMP filtrées.
 # AM1A : la clé y ajoute aussi la signature de la couche AMP (`a{total}`).
-PEARL_REV = "rg3"
+# RC45 : bumper pour recalculer les perles figées avec amp: [] (revue #482).
+PEARL_REV = "am1a"
 AMP_NEAR_NM = 30.0
 PROJECT_NEAR_NM = 30.0
 # Cellule 1° + GET /amp (AM1A). TTL 1 jour (mémoire + kv).
@@ -260,6 +261,13 @@ def reset_caches() -> None:
     _thin_cache.clear()
     _amp_cell_cache.clear()
     _amp_sig.update({"value": "0", "ts": 0.0, "ok": False})
+    _layer_warm.update({
+        "status": "idle",
+        "cellsTotal": 0,
+        "cellsDone": 0,
+        "cellsCached": 0,
+        "errors": 0,
+    })
     _wpi_cache["data"] = None
     _wpi_cache["ts"] = 0.0
     reset_gebco_cache()
@@ -440,6 +448,7 @@ def slim_place(feat: dict, lat0: float, lon0: float, extra_keys: tuple[str, ...]
 AMP_KEYS = (
     "visit_url", "manager_url", "visit_url_status", "designation",
     "iucn_cat", "site_id", "id", "gold_on",
+    "entry", "speed",
 )
 ANCHORAGE_KEYS = ("anchorage_type", "osm_id", "source", "priority")
 
@@ -504,9 +513,18 @@ def slim_amp(feat: dict, lat0: float, lon0: float) -> dict | None:
     if item.get("visit_url"):
         item["url"] = item["visit_url"]
     from toponyms import origin_name  # noqa: PLC0415
+    from amp_traffic import as_activity, traffic_kind  # noqa: PLC0415
     spoken = origin_name(spoken_amp_name(item.get("name")))
     if spoken:
         item["name"] = spoken
+    props = feat.get("properties") or {}
+    entry = as_activity(item.get("entry") if "entry" in item else props.get("entry"))
+    speed = as_activity(item.get("speed") if "speed" in item else props.get("speed"))
+    if entry is not None:
+        item["entry"] = entry
+    if speed is not None:
+        item["speed"] = speed
+    item["traffic"] = traffic_kind(entry, speed)
     return item
 
 
@@ -670,18 +688,27 @@ async def refresh_amp_layer_sig(client: httpx.AsyncClient) -> str:
 
 
 async def _amp_cell_features(client: httpx.AsyncClient, lat: float, lon: float) -> list:
-    """Features GET /amp pour la cellule 1° (mémoire, puis kv, puis réseau)."""
+    """Features GET /amp pour la cellule 1° (mémoire, puis kv, puis réseau).
+
+    Une liste vide n'est pas un succès : on ne la grave ni en mémoire ni en kv
+    (un 200 froid empoisonnerait la cellule un jour). Le caller bascule alors
+    sur l'export, comme pour un 5xx.
+    """
     key = amp_cell_key(lat, lon)
     now = time.time()
     hit = _amp_cell_cache.get(key)
     if hit and now - float(hit.get("ts") or 0) < AMP_CELL_TTL_S:
-        return hit["features"]
+        cached = hit.get("features")
+        if isinstance(cached, list) and cached:
+            return cached
     try:
         import pearl_store  # noqa: PLC0415
         row = pearl_store.kv_get(AMP_KV_NS, key, max_age_s=AMP_CELL_TTL_S)
         val = (row or {}).get("value")
         feats = val.get("features") if isinstance(val, dict) else None
-        if isinstance(feats, list):
+        # Un GET vide ne se grave pas : sinon une API encore froide
+        # empoisonne la cellule pour un jour.
+        if isinstance(feats, list) and feats:
             _amp_cell_cache[key] = {"ts": row["ts"], "features": feats}
             return feats
     except Exception:
@@ -691,6 +718,8 @@ async def _amp_cell_features(client: httpx.AsyncClient, lat: float, lon: float) 
     feats = data.get("features") if isinstance(data, dict) else []
     if not isinstance(feats, list):
         feats = []
+    if not feats:
+        raise ValueError("GET /amp vide")
     _amp_cell_cache[key] = {"ts": now, "features": feats}
     try:
         import pearl_store  # noqa: PLC0415
@@ -701,11 +730,17 @@ async def _amp_cell_features(client: httpx.AsyncClient, lat: float, lon: float) 
 
 
 async def fetch_amp_features(client: httpx.AsyncClient, lat: float, lon: float) -> tuple[list, str]:
-    """Polygones GET /amp, sinon export centroïdes. Lève seulement si les deux tombent."""
+    """Polygones GET /amp, sinon export centroïdes. Lève seulement si les deux tombent.
+
+    Un 200 vide est traité comme un 5xx : on bascule sur l'export (`source: export`).
+    """
     amp_err: Exception | None = None
     try:
         feats = await _amp_cell_features(client, lat, lon)
-        return feats, "polygon"
+        if feats:
+            return feats, "polygon"
+        amp_err = ValueError("GET /amp vide")
+        log.debug("GET /amp vide, repli export")
     except Exception as exc:
         amp_err = exc
         log.debug("GET /amp indisponible, repli export : %s", exc)
@@ -717,6 +752,94 @@ async def fetch_amp_features(client: httpx.AsyncClient, lat: float, lon: float) 
         if amp_err is not None:
             raise amp_err from exc
         raise
+
+
+# Couches le long d'un trait (lot LY1) : pas le monde, pas les perles Berry.
+LAYER_WARM_MAX_CELLS = 80
+LAYER_WARM_PAUSE_S = 0.2
+_layer_warm: dict[str, Any] = {
+    "status": "idle",
+    "cellsTotal": 0,
+    "cellsDone": 0,
+    "cellsCached": 0,
+    "errors": 0,
+}
+
+
+def layer_warm_status() -> dict[str, Any]:
+    return dict(_layer_warm)
+
+
+def accept_layer_warm(points: list) -> dict[str, Any]:
+    """Accepte un trait si aucun chauffage de couches n'est déjà en cours."""
+    if _layer_warm.get("status") in ("running", "queued"):
+        return {**layer_warm_status(), "accepted": False}
+    cells = amp_cells_from_points(points)
+    _layer_warm.update({
+        "status": "queued",
+        "cellsTotal": len(cells),
+        "cellsDone": 0,
+        "cellsCached": 0,
+        "errors": 0,
+    })
+    return {**layer_warm_status(), "accepted": True}
+
+
+def amp_cells_from_points(points: list) -> list[tuple[float, float]]:
+    """Centres des cellules 1° uniques touchées par le trait, dans l'ordre."""
+    seen: dict[str, tuple[float, float]] = {}
+    order: list[str] = []
+    for item in points or []:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        try:
+            lat, lon = float(item[0]), wrap_lon(float(item[1]))
+        except (TypeError, ValueError):
+            continue
+        if not (-90.0 <= lat <= 90.0):
+            continue
+        key = amp_cell_key(lat, lon)
+        if key in seen:
+            continue
+        seen[key] = (math.floor(lat) + 0.5, math.floor(lon) + 0.5)
+        order.append(key)
+        if len(order) >= LAYER_WARM_MAX_CELLS:
+            break
+    return [seen[k] for k in order]
+
+
+async def warm_amp_cells_along(points: list) -> dict[str, Any]:
+    """Remplit le cache GET /amp (mémoire + kv) pour les cellules du trait."""
+    cells = amp_cells_from_points(points)
+    _layer_warm.update({
+        "status": "running",
+        "cellsTotal": len(cells),
+        "cellsDone": 0,
+        "cellsCached": 0,
+        "errors": 0,
+    })
+    if not cells:
+        _layer_warm["status"] = "done"
+        return layer_warm_status()
+    async with httpx.AsyncClient() as http:
+        await refresh_amp_layer_sig(http)
+        for lat, lon in cells:
+            key = amp_cell_key(lat, lon)
+            try:
+                hit = _amp_cell_cache.get(key)
+                already = bool(hit and (hit.get("features") or []))
+                if not already:
+                    feats = await _amp_cell_features(http, lat, lon)
+                    already = bool(feats)
+                if already:
+                    _layer_warm["cellsCached"] = int(_layer_warm["cellsCached"]) + 1
+            except Exception as exc:
+                _layer_warm["errors"] = int(_layer_warm["errors"]) + 1
+                log.debug("couche AMP %.1f,%.1f : %s", lat, lon, exc)
+            _layer_warm["cellsDone"] = int(_layer_warm["cellsDone"]) + 1
+            await asyncio.sleep(LAYER_WARM_PAUSE_S)
+    _layer_warm["status"] = "done"
+    return layer_warm_status()
 
 
 def slim_anchorage(feat: dict, lat0: float, lon0: float) -> dict | None:

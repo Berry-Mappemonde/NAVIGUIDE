@@ -73,6 +73,8 @@ AIR_RE = re.compile(
     re.I,
 )
 MAX_WORDS = 30
+HS_GE_RE = re.compile(r"Hs\s+\d+[.,]?\d*\s*m\s*≥", re.I)
+DUP_METERS_RE = re.compile(r"(\d+)\s*m.+\1\s*m")
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,10 @@ def list_faults(text: str, lang: str = "fr") -> list[Fault]:
             out.append(Fault("titre anglais", sent))
         if COUNT_RE.search(sent):
             out.append(Fault("comptage", sent))
+        if HS_GE_RE.search(sent) or ("≥" in sent and re.search(r"\bHs\b", sent)):
+            out.append(Fault("hs seuil", sent))
+        if DUP_METERS_RE.search(sent) and re.search(r"\bHs\b", sent):
+            out.append(Fault("hs répété", sent))
         if len(_words(sent)) > MAX_WORDS:
             out.append(Fault("trop longue", sent))
     burst = _date_burst_sentence(text, lang)
@@ -389,6 +395,23 @@ def test_phrase_propre_passe():
         "Puis, les eaux espagnoles. Arrivée à Ajaccio le 26 mai.",
         "fr",
     )
+
+
+def test_rc41_ancienne_phrase_hs_est_une_faute():
+    faults = list_faults("Le 18 mai, Hs 3 m ≥ 3 m.", "fr")
+    assert any(f.rule in {"hs seuil", "hs répété"} for f in faults)
+
+
+def test_rc41_alerte_hs_lisible():
+    from film_script import change_sentence
+
+    sent = change_sentence({
+        "kind": "alert-on", "title": "Mer", "fact": "Hs 3 m ≥ 3 m.",
+        "t": "2026-05-18T12:00:00Z", "hs": 3,
+    }, "fr")
+    assert "≥" not in sent
+    assert not DUP_METERS_RE.search(sent)
+    assert_discours_ok(sent, "fr")
 
 
 # ── film du 28 sept. (§ 1) : les règles le refusent ─────────────────────────

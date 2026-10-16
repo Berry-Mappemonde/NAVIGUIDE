@@ -17,7 +17,7 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
   const [error, setError] = useState(null);
   const inFlight = useRef(false);
 
-  const ask = useCallback(async (question) => {
+  const ask = useCallback(async (question, opts = {}) => {
     const q = String(question || "").trim();
     if (!q || inFlight.current) return null;
     inFlight.current = true;
@@ -31,11 +31,12 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
     } catch {
       context = null;
     }
+    const reason = Boolean(opts?.reason);
     try {
       const r = await fetch(`${API_URL}/logbook/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ question: q, lang, context }),
+        body: JSON.stringify({ question: q, lang, context, reason }),
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body?.detail || `HTTP ${r.status}`);

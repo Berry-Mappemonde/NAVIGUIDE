@@ -4,6 +4,7 @@
  * n'est inventé : ce qui manque reste absent.
  */
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+import { trafficKind } from "./ampRules.js";
 import { originName, watersLabel } from "./toponyms.js";
 
 function cardinal(deg, lang) {
@@ -113,18 +114,25 @@ export function formatJournalEntry(entry, lang = "fr") {
     case "amp": {
       const name = originName(e.name) || (en ? "marine protected area" : "aire marine protégée");
       const nm = Number.isFinite(e.nm) ? ` (${num(e.nm, lang, 1)} nm)` : "";
+      const traffic = e.traffic || trafficKind(e.entry, e.speed);
+      const tag = traffic === "forbidden"
+        ? (en ? "no transit" : "circulation interdite")
+        : traffic === "regulated"
+          ? (en ? "regulated transit" : "circulation régulée")
+          : "";
+      const extra = tag ? ` — ${tag}` : "";
       if (e.event === "enter") {
         text = en
-          ? `Entered the marine protected area ${name}`
-          : `Entrée dans l'aire marine protégée ${name}`;
+          ? `Entered the marine protected area ${name}${extra}`
+          : `Entrée dans l'aire marine protégée ${name}${extra}`;
       } else if (e.event === "exit") {
         text = en
-          ? `Left the marine protected area ${name}`
-          : `Sortie de l'aire marine protégée ${name}`;
+          ? `Left the marine protected area ${name}${extra}`
+          : `Sortie de l'aire marine protégée ${name}${extra}`;
       } else {
         text = en
-          ? `Skirting the marine protected area ${name}${nm}`
-          : `Longe l'aire marine protégée ${name}${nm}`;
+          ? `Skirting the marine protected area ${name}${nm}${extra}`
+          : `Longe l'aire marine protégée ${name}${nm}${extra}`;
       }
       break;
     }

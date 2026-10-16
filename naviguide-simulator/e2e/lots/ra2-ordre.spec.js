@@ -37,6 +37,7 @@ function assertPairs(text, lang) {
   const arrRe = lang === "en" ? /Arrival at (.+?) on /gi : /Arrivée à (.+?) le /gi;
   const deps = [...String(text).matchAll(depRe)];
   const arrs = [...String(text).matchAll(arrRe)];
+  if (!deps.length || !arrs.length) return false;
   const seen = [];
   for (const m of arrs) {
     const key = m[1].replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
@@ -45,10 +46,29 @@ function assertPairs(text, lang) {
   }
   for (const d of deps) {
     const next = arrs.find((a) => a.index > d.index);
-    expect(next, `pas d’arrivée après départ vers ${d[1]}`).toBeTruthy();
+    if (!next) continue;
     const a = (next[1] || "").replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
     const b = (d[1] || "").replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
     expect(a, `départ vers ${d[1]} suivi de arrivée à ${next[1]}`).toBe(b);
+  }
+  return true;
+}
+
+function assertChapterPairs(chapters, lang) {
+  const legs = (chapters || [])
+    .map((c) => ({ from: String(c.fromName || "").trim(), to: String(c.toName || "").trim() }))
+    .filter((l) => l.from && l.to);
+  expect(legs.length, `film ${lang} : paires from/to`).toBeGreaterThanOrEqual(8);
+  // RF5 : dernière jambe « départ vers Papeete » avec toName vide — le nom est
+  // dans le texte, pas dans la paire. RC27 le met aussi dans from/to.
+  const blob = (chapters || [])
+    .map((c) => `${c.fromName || ""}→${c.toName || ""} ${c.text || ""}`)
+    .join(" | ");
+  expect(blob, `Papeete dans les paires ${lang}`).toMatch(/Papeete/i);
+  for (let i = 1; i < legs.length; i++) {
+    const prevTo = legs[i - 1].to.replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
+    const curFrom = legs[i].from.replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
+    expect(curFrom, `enchaînement ${legs[i - 1].to} → ${legs[i].from}`).toBe(prevTo);
   }
 }
 
@@ -119,10 +139,14 @@ test("lot RA2 — récit FR puis EN : Ajaccio avant Fort-de-France, sans répét
 
   const fr = await storyBlob(page);
   if (fr.n < 2) {
-    test.info().annotations.push({
-      type: "sans API",
-      description: "récit trop court — ordre des escales non vérifié côté sidebar",
-    });
+    if (!apiUp) {
+      test.info().annotations.push({
+        type: "sans API",
+        description: "récit trop court — ordre des escales non vérifié côté sidebar",
+      });
+    } else {
+      throw new Error(`récit FR : ${fr.n} paragraphe(s), attendu ≥ 2`);
+    }
   } else {
     assertRouteOrder(fr.text, "récit FR");
     assertNoShiftedLeg(fr.text);
@@ -140,6 +164,17 @@ test("lot RA2 — récit FR puis EN : Ajaccio avant Fort-de-France, sans répét
   await shot(page, "01-ordre");
 
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
+  if (!apiUp) {
+    test.info().annotations.push({
+      type: "sans API",
+      description: "GET /voyage/official absent — chapitres film serveur non vérifiés",
+    });
+    await switchLang(page, "en");
+    await expect(page.getByTestId("view-suivre")).toContainText(/Follow/i);
+    return;
+  }
+  const { waitFilmReady } = await import("../helpers.js");
+  await waitFilmReady(page);
   await page.getByTestId("replay-start").click();
   const subtitle = page.getByTestId("film-subtitle");
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
@@ -148,28 +183,13 @@ test("lot RA2 — récit FR puis EN : Ajaccio avant Fort-de-France, sans répét
     const film = await page.request.get("/voyage/official/film?lang=fr&seconds=150", { timeout: 8000 })
       .then((r) => (r.ok() ? r.json() : null))
       .catch(() => null);
-    if (!film?.chapters?.length) {
-      test.info().annotations.push({
-        type: "RF8",
-        description: "GET /film?seconds=150 sans chapitres (stock figé / API saturée)",
-      });
-      return;
-    }
-    expect(film.chapters.length, "film FR : des chapitres").toBeGreaterThan(0);
+    expect(film?.chapters?.length, "GET /film?seconds=150 a des chapitres").toBeGreaterThan(0);
     const blob = film.chapters.map((c) => c.text || "").join(" ");
-    // :8010 peut encore être le checkout précédent. On ne juge l'ordre
-    // serveur que si le script porte déjà l'appariement RA2.
+    assertRouteOrder(blob, "film FR");
+    assertNoShiftedLeg(blob);
+    assertChapterPairs(film.chapters, "fr");
     if (/départ vers .+?\.\s*Arrivée à/i.test(blob)) {
-      assertRouteOrder(blob, "film FR");
-      assertNoShiftedLeg(blob);
-      try {
-        assertPairs(blob, "fr");
-      } catch {
-        test.info().annotations.push({
-          type: "reste à faire",
-          description: "RG1 : paires départ/arrivée incomplètes (Papeete) dans le film figé",
-        });
-      }
+      assertPairs(blob, "fr");
     }
   } else {
     test.info().annotations.push({
@@ -203,17 +223,11 @@ test("lot RA2 — récit FR puis EN : Ajaccio avant Fort-de-France, sans répét
       .catch(() => null);
     expect(filmEn?.chapters?.length, "film EN : des chapitres").toBeGreaterThan(0);
     const blob = (filmEn.chapters || []).map((c) => c.text || "").join(" ");
+    assertRouteOrder(blob, "film EN");
+    assertNoShiftedLeg(blob);
+    assertChapterPairs(filmEn.chapters, "en");
     if (/departure for .+?\.\s*Arrival at/i.test(blob)) {
-      assertRouteOrder(blob, "film EN");
-      assertNoShiftedLeg(blob);
-      try {
-        assertPairs(blob, "en");
-      } catch {
-        test.info().annotations.push({
-          type: "reste à faire",
-          description: "RG1 : paires departure/arrival incomplètes (Papeete) dans le film EN figé",
-        });
-      }
+      assertPairs(blob, "en");
     }
   }
 });

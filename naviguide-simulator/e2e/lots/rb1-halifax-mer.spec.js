@@ -161,17 +161,9 @@ test("lot RB1 — Halifax ↔ Saint-Pierre mer, chorégraphie Guyane", async ({ 
       const seaNearSpm = clock.vertices.filter((v) => (
         v.vehicle === "main" && Math.abs((v.lat || 0) - 46.78) < 1.5 && Math.abs((v.lon || 0) + 56.2) < 3
       ));
-      if (!seaNearSpm.length) {
-        test.info().annotations.push({
-          type: "horloge stockée",
-          description: "sommets Halifax ↔ SPM absents du voyage officiel en base — flatten antérieur à RB1, milles voile après un client à jour",
-        });
-      }
+      expect(seaNearSpm.length, "sommets mer Halifax ↔ Saint-Pierre dans l'horloge figée").toBeGreaterThan(0);
     } else {
-      test.info().annotations.push({
-        type: "sans horloge",
-        description: "GET /voyage/official/clock vide — milles voile non relus",
-      });
+      throw new Error("GET /voyage/official/clock vide — milles voile non relus");
     }
   }
 

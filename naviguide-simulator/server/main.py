@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -45,7 +45,15 @@ from mem_limits import (
     too_large,
 )
 from weather_pipeline import get_pipeline
-from ici_engine import ICI_RADIUS_NM, empty_dossier, fetch_wpi_features, fill_dossier
+from ici_engine import (
+    ICI_RADIUS_NM,
+    accept_layer_warm,
+    empty_dossier,
+    fetch_wpi_features,
+    fill_dossier,
+    layer_warm_status,
+    warm_amp_cells_along,
+)
 from story_cascade import write_story
 from polar_api import router as polar_router
 from escale_api import router as escale_router
@@ -172,7 +180,12 @@ def ici_warm_status():
         import zee_local
         warm = ici_warm.status()
         stories = warm.get("stories") or {"skipped": "on-demand"}
-        return {**warm, "zeeLocal": zee_local.status(), "stories": stories}
+        return {
+            **warm,
+            "zeeLocal": zee_local.status(),
+            "stories": stories,
+            "layers": layer_warm_status(),
+        }
     except Exception as exc:
         log.exception("GET /ici/warm/status")
         return _dated_ici(f"préchauffage indisponible: {exc}")
@@ -188,6 +201,32 @@ def ici_pearls():
     except Exception as exc:
         log.exception("GET /ici/pearls")
         return {"voyageId": None, "pearls": [], "count": 0, **_dated_ici(f"perles indisponibles: {exc}")}
+
+
+class LayerWarmBody(BaseModel):
+    points: list[list[float]] = []
+
+
+_layer_warm_limited = rate_limited("layer-warm", 8, 60.0)
+
+
+@app.get("/ici/layers/warm/status")
+def ici_layers_warm_status():
+    """Où en est le préchauffage des cellules AMP d'un trait dessiné."""
+    return layer_warm_status()
+
+
+@app.post("/ici/layers/warm", dependencies=[Depends(_layer_warm_limited)])
+async def post_ici_layers_warm(body: LayerWarmBody, background: BackgroundTasks):
+    """Chauffe les cellules AMP 1° le long d'une route perso. Ne bloque pas Terminer."""
+    raw = [p for p in (body.points or []) if isinstance(p, (list, tuple)) and len(p) >= 2]
+    if len(raw) > 2000:
+        step = max(1, math.ceil(len(raw) / 2000))
+        raw = raw[::step][:2000]
+    out = accept_layer_warm(raw)
+    if out.get("accepted"):
+        background.add_task(warm_amp_cells_along, raw)
+    return out
 
 
 @app.get("/voyage/official/film")

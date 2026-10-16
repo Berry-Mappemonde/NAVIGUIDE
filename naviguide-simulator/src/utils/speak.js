@@ -46,10 +46,16 @@ export function canSpeak(win = typeof window !== "undefined" ? window : null) {
   return Boolean(win?.speechSynthesis && typeof win.SpeechSynthesisUtterance === "function");
 }
 
-/** Voix réellement disponible (Playwright / headless : on reste en mode linéaire). */
-export function canLeadWithVoice(win = typeof window !== "undefined" ? window : null) {
+/** Synthèse présente, pas un bot — les voix peuvent encore charger. */
+export function voiceMayLead(win = typeof window !== "undefined" ? window : null) {
   if (!canSpeak(win)) return false;
   if (win.navigator?.webdriver) return false;
+  return true;
+}
+
+/** Voix réellement disponible (Playwright / headless : on reste en mode linéaire). */
+export function canLeadWithVoice(win = typeof window !== "undefined" ? window : null) {
+  if (!voiceMayLead(win)) return false;
   try {
     return (win.speechSynthesis.getVoices() || []).length > 0;
   } catch {

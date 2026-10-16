@@ -94,8 +94,8 @@ test("lot RA8 — tronçon parcouru teinté hindcast", async ({ page }) => {
     }
   } else {
     test.info().annotations.push({
-      type: "hindcast en cours",
-      description: "clock encore climatologie — remplissage ERA5 en fond, jamais inventé",
+      type: "poste",
+      description: "hindcast en cours — clock encore climatologie, remplissage ERA5 en fond, jamais inventé",
     });
   }
 

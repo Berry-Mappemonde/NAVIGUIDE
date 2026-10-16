@@ -5,7 +5,7 @@ import { SimulationPanel } from "./SimulationPanel";
 import { JournalPanel } from "./JournalPanel.jsx";
 import { IciMaintenant } from "./IciMaintenant.jsx";
 import { LogbookChat } from "./LogbookChat.jsx";
-import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
+import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { ICI_BRIEFING_SOURCE } from "../engine/iciBriefing.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
@@ -77,7 +77,7 @@ function BerryCard({
   const pillOff = "flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[10px] font-semibold leading-tight border border-slate-600/50 bg-slate-800/50 text-slate-400 hover:text-white hover:border-slate-500";
 
   // DM1 : les pilules Berry-Mappemonde | <ma route> sont toujours rendues en
-  // Tracer (VIEW_SIMULATION) ou pendant un tracé ; sans route perso, la seconde
+  // Tracer (VIEW_TRACER) ou pendant un tracé ; sans route perso, la seconde
   // pilule reprend le brouillon (DM6) ou ouvre un dessin vide.
   const switcher = (hasCustom || isTracerView || isDrawing) ? (
     <div className="flex gap-1 mb-1.5">
@@ -346,7 +346,7 @@ export const Sidebar = memo(function Sidebar({
   onEscaleClose,
 }) {
   const { t, lang } = useLang();
-  const isSimulation = view === VIEW_SIMULATION;
+  const isTracer = view === VIEW_TRACER;
   const isSuivre = view === VIEW_SUIVRE;
   const expeditionBriefing = plan?.executive_briefing || "";
   const briefing = iciBriefing || expeditionBriefing;
@@ -399,7 +399,7 @@ export const Sidebar = memo(function Sidebar({
             canFinishDraw={canFinishDraw}
             onImportRoute={onImportRoute}
             importBusy={importBusy}
-            isTracerView={isSimulation}
+            isTracerView={isTracer}
           />
 
           {!drawingHidesBerry && chat ? (
@@ -476,7 +476,7 @@ export const Sidebar = memo(function Sidebar({
                 forecastStatus={isSuivre ? forecastStatus : null}
                 onRecompute={onRecompute}
                 canRecompute={canRecompute}
-                showRecompute={isSimulation}
+                showRecompute={isTracer}
                 recomputeBusy={recomputeBusy}
                 onGoLive={onGoLive}
               />

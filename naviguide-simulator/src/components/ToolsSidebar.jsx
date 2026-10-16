@@ -7,6 +7,7 @@ import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
 import { summarizeLegs } from "../utils/geo.js";
+import { summarizeAmpTraffic } from "../engine/ampRules.js";
 import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } from "../utils/routeExport.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
@@ -285,9 +286,10 @@ function DrawingBox({ drawing }) {
   );
 }
 
-function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null, segments = [], frozen = false, nowMs, liveFilmNm, officialEta = false }) {
+function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypointCount, escaleMarks, filmNm, onSeekEscale, onEscaleSheet, drawing = null, segments = [], frozen = false, nowMs, liveFilmNm, officialEta = false, ampNearby = [] }) {
   const { t, lang } = useLang();
   const locale = lang === "fr" ? "fr-FR" : "en-US";
+  const ampTraffic = summarizeAmpTraffic(ampNearby, lang);
   const nm = routeDistanceNm != null ? `${Number(routeDistanceNm).toLocaleString(locale)} nm` : "—";
   const lastMark = escaleMarks?.length ? escaleMarks[escaleMarks.length - 1] : null;
   const filmAxis = lastMark != null ? Number(lastMark.filmNm ?? lastMark.nm) : null;
@@ -322,6 +324,18 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
           · {vertexCount.toLocaleString(locale)} {t("routePointsShort")}
         </span>
       </div>
+      {ampTraffic.line ? (
+        <div
+          data-testid="amp-traffic-line"
+          className={`px-3 py-1 text-[10px] leading-snug border-t ${
+            ampTraffic.kind === "forbidden-inside"
+              ? "border-rose-500/30 text-rose-200 bg-rose-950/30"
+              : "border-amber-500/30 text-amber-100 bg-amber-950/20"
+          }`}
+        >
+          {ampTraffic.line}
+        </div>
+      ) : null}
       <EscaleLegend marks={escaleMarks} filmNm={filmNm} frozen={frozen} nowMs={nowMs} liveFilmNm={liveFilmNm} officialEta={officialEta} />
     </div>
     </div>
@@ -342,6 +356,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   skipperSuggest = null, onSkipperSuggestAccept, onSkipperSuggestDismiss,
   exportMode = "simulation", exportSegments = null, exportPoints = null,
   tracerLayout = false,
+  ampNearby = [],
 }) {
   const { lang, switchLang, t } = useLang();
   const [polarFile, setPolarFile] = useState(null);
@@ -492,6 +507,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               onEscaleSheet={onEscaleSheet}
               drawing={drawing}
               frozen={frozen}
+              ampNearby={ampNearby}
             />
             {showDeparture ? (
               <div className="mt-2">

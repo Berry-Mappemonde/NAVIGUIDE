@@ -93,7 +93,7 @@ describe("routeDrawPlan (lot DM5) — une seule route à l'écran", () => {
     assert.match(app, /enabled: Boolean\(suivreBerry && officialClock\)/);
     assert.match(app, /useOfficialJournal\(\{ enabled: suivreBerry \}\)/);
     // Le voyage serveur de la route perso porte Suivre × custom comme Tracer.
-    assert.match(app, /enabled: \(isSimulation \|\| suivreCustom\) && routeReady,/);
+    assert.match(app, /enabled: \(isTracer \|\| suivreCustom\) && routeReady,/);
     assert.match(app, /follow: suivreCustom,/);
     assert.match(app, /const officialClock = suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock;/);
     // La position live vient de la source : vessel.live pour ma route.

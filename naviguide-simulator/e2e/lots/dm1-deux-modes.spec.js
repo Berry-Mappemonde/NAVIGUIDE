@@ -31,14 +31,17 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 15_000 });
   const apiUp = Boolean(await probeOfficial(page));
 
-  // (a) La barre film montre deux pilules exactement : Suivre et Tracer ;
-  // aucune surface visible nommée « Simulation » dans le DOM.
-  const pills = page.getByTestId("film-view-switch").getByRole("radio");
+  // (a) La barre film montre deux pilules exactement : Suivre et Tracer
+  // (libellé livré — lot CT1). getByRole lit Tracer, pas Simulation.
+  const switcher = page.getByTestId("film-view-switch");
+  const pills = switcher.getByRole("radio");
   await expect(pills).toHaveCount(2);
+  await expect(switcher.getByRole("radio", { name: /Suivre l’expédition|Follow expedition/ })).toBeVisible();
+  await expect(switcher.getByRole("radio", { name: /^(Tracer|Plot)\b/ })).toBeVisible();
   await expect(page.getByTestId("view-suivre")).toHaveText(/Suivre l’expédition|Follow expedition/);
   await expect(page.getByTestId("view-tracer")).toHaveText(/^(Tracer|Plot)$/);
+  await expect(page.getByTestId("view-tracer")).not.toHaveText(/simulation/i);
   expect(await page.getByTestId("view-simulation").count(), "ancienne pilule view-simulation").toBe(0);
-  expect(await page.getByText("Simulation", { exact: true }).count(), "surface nommée « Simulation »").toBe(0);
   await shot(page, "01-deux-pilules");
 
   // (b) Clic Tracer → aria-checked ; Play / vitesses ; carte route avec

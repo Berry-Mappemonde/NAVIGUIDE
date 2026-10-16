@@ -131,14 +131,21 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
     assertOfficialDepart(frStory.text, "fr");
     assertRouteOrder(frStory.text, "récit FR");
   } else {
+    if (apiUp) throw new Error("récit sidebar vide alors que l'API répond");
     test.info().annotations.push({
-      type: "sans récit",
+      type: "sans API",
       description: "récit sidebar vide — tête Saint-Maur non vérifiée à l'écran",
     });
   }
 
   await muteVoice(page);
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 15_000 });
+  if (!apiUp) {
+    await shot(page, "01-depart");
+    return;
+  }
+  const { waitFilmReady } = await import("../helpers.js");
+  await waitFilmReady(page);
   await page.getByTestId("replay-start").click();
   const subtitle = page.getByTestId("film-subtitle");
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
@@ -184,32 +191,43 @@ test("lot RB5 — film officiel : Saint-Maur le 15 mai 2026, milles nautiques", 
   const filmEnLoaded = page.waitForResponse((r) => /voyage\/official\/film\?lang=en/.test(r.url()), { timeout: 15_000 }).catch(() => null);
   await switchLang(page, "en");
   await expect(page.getByTestId("view-suivre")).toContainText(/Follow/i);
-  await filmEnLoaded;   // le plan anglais est chargé avant de relancer Revoir
+  await filmEnLoaded;
   const stopBtn = page.getByTestId("replay-stop");
   if (await stopBtn.isVisible().catch(() => false)) await stopBtn.click();
   await expect(page.getByTestId("replay-start")).toBeVisible({ timeout: 8_000 });
-  const { waitFilmCanStart } = await import("../helpers.js");
-  if (!(await waitFilmCanStart(page, 8_000))) {
+
+  const filmEn = apiUp
+    ? await page.request.get("/voyage/official/film?lang=en&seconds=150", { timeout: 8000 })
+      .then((r) => (r.ok() ? r.json() : null))
+      .catch(() => null)
+    : null;
+  expect(filmEn?.chapters?.length, "film EN : des chapitres").toBeGreaterThan(0);
+  const enOpening = filmEn.chapters[0].text || "";
+  const blobEn = (filmEn.chapters || []).map((c) => c.text || "").join(" ");
+  assertOfficialDepart(enOpening, "en", { spoken: true });
+  expect(blobEn, "nm nu dans le film EN").not.toMatch(/\bnm\b/);
+
+  // Stock rf5 : le blob EN contient « Bay of Biscay » → empreinte RE7 stale,
+  // Revoir reste grisé. On n'attend pas 45 s un bouton qui ne s'activera pas.
+  const enReady = await page.waitForFunction(() => {
+    const st = window.__naviguideFilm?.status;
+    const b = document.querySelector("[data-testid='replay-start']");
+    const enabled = Boolean(b && !b.disabled && b.getAttribute("aria-disabled") !== "true");
+    return st === "ready" || enabled;
+  }, null, { timeout: 8_000 }).then(() => true).catch(() => false);
+  if (!enReady) {
     test.info().annotations.push({
-      type: "Revoir grisé",
-      description: "RC11 : Replay disabled after EN — sous-titre EN non rejoué",
+      type: "stock EN stale",
+      description: "film EN présent (15 May 2026) mais Revoir grisé (RE7 stale) — sous-titre EN sauté",
     });
     return;
   }
+
+  await waitFilmReady(page);
   await page.getByTestId("replay-start").click();
   await expect(subtitle).toBeVisible({ timeout: 8_000 });
   const subEn = (await subtitle.innerText()).trim();
   if (subEn) {
     assertOfficialDepart(subEn, "en", { spoken: true });
-  }
-
-  if (apiUp) {
-    const filmEn = await page.request.get("/voyage/official/film?lang=en&seconds=150", { timeout: 8000 })
-      .then((r) => (r.ok() ? r.json() : null))
-      .catch(() => null);
-    expect(filmEn?.chapters?.length, "film EN : des chapitres").toBeGreaterThan(0);
-    const blob = (filmEn.chapters || []).map((c) => c.text || "").join(" ");
-    assertOfficialDepart(filmEn.chapters[0].text || "", "en", { spoken: true });
-    expect(blob, "nm nu dans le film EN").not.toMatch(/\bnm\b/);
   }
 });

@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -366,6 +367,13 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.match(hook, /isReadyRemoteFilm/);
     assert.match(hook, /seekChapter/);
     assert.match(hook, /pinnedIdxRef/);
+    const seekFn = hook.slice(
+      hook.indexOf("const seekChapter = useCallback"),
+      hook.indexOf("seekChapterRef.current = seekChapter"),
+    );
+    assert.match(seekFn, /Number\(charIdx\) === 0/, "seekChapter(i, 0) = départ de jambe (RC51)");
+    assert.match(seekFn, /filmElapsedRef\.current/, "seekChapter(i, 0) recale l'horloge linéaire");
+    assert.match(seekFn, /pinnedIdxRef\.current = null/);
     const replayCall = app.slice(app.indexOf("const replay = useReplay"), app.indexOf("const live = isSuivre"));
     assert.match(replayCall, /clock: filmClock/);
     assert.doesNotMatch(replayCall, /clock: officialClock/);
@@ -664,7 +672,9 @@ describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => 
   });
 
   it("App passe le sous-titre choisi ; la barre ne tronque pas l'avion", () => {
-    assert.match(app, /visibleFilmSubtitle\(replay\.subtitle \|\| replay\.chapterText\)/);
+    assert.match(app, /visibleFilmSubtitle\(replay\.subtitle \|\| replay\.chapterText/);
+    assert.match(app, /fromName:\s*replay\.fromName/);
+    assert.match(app, /toName:\s*replay\.toName/);
     assert.match(bar, /visibleFilmSubtitle/);
     assert.match(bar, /filmSubtitleHighlight/);
     assert.match(bar, /data-testid="film-subtitle-place"/);
@@ -818,6 +828,146 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
   });
 
+  it("RC43 : chapitre side « second voilier » — pas le s'envole d'un autre chapitre", () => {
+    const side = "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.";
+    const airElsewhere = "Le 19 juillet, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.";
+    const glued = `${side} ${airElsewhere}`;
+    const fromSide = filmBarSubtitle({
+      chapterText: glued,
+      charIdx: 0,
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    });
+    assert.match(fromSide.text, /second voilier/);
+    assert.doesNotMatch(fromSide.text, /s'envole/);
+    const clean = filmBarSubtitle({
+      chapterText: side,
+      charIdx: 0,
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    });
+    assert.match(clean.text, /second voilier/);
+    assert.doesNotMatch(clean.text, /s'envole/);
+    assert.equal(visibleFilmSubtitle(glued, {
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    }), glued);
+  });
+
+  it("RC43 : un chapitre vol n'extrait que CE vol ; reprise sans s'envole", () => {
+    const glued = [
+      "Le 19 juillet, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
+      "Le 30 juillet, l'équipage s'envole de Halifax pour Cayenne.",
+    ].join(" ");
+    const out = filmBarSubtitle({
+      chapterText: glued,
+      charIdx: 0,
+      fromName: "Cayenne (Guyane)",
+      toName: "Halifax (Nouvelle-Écosse)",
+    });
+    assert.match(out.text, /s'envole de Cayenne pour Halifax/);
+    assert.doesNotMatch(out.text, /s'envole de Halifax pour Cayenne/);
+    const back = filmBarSubtitle({
+      chapterText: glued,
+      charIdx: glued.indexOf("s'envole de Halifax"),
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.match(back.text, /s'envole de Halifax pour Cayenne/);
+    assert.doesNotMatch(back.text, /s'envole de Cayenne pour Halifax/);
+    const resume = filmBarSubtitle({
+      chapterText: "Le 2 août, le catamaran reprend la mer, départ vers Papeete. L'équipage s'envole de Cayenne pour Halifax.",
+      charIdx: 0,
+      fromName: "Cayenne (Guyane)",
+      toName: "Papeete (Polynésie française)",
+    });
+    assert.match(resume.text, /reprend la mer|départ vers Papeete/);
+    assert.doesNotMatch(resume.text, /s'envole/);
+  });
+
+  it("RC43 : phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
+    const merged = [
+      "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.",
+      "Le 26 août, l'équipage s'envole de Halifax pour Cayenne.",
+    ].join(" ");
+    const atSide = filmBarSubtitle({
+      chapterText: merged,
+      charIdx: merged.indexOf("second voilier"),
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.match(atSide.text, /second voilier/);
+    assert.doesNotMatch(atSide.text, /s'envole/);
+    const atAir = filmBarSubtitle({
+      chapterText: merged,
+      charIdx: merged.indexOf("s'envole"),
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.match(atAir.text, /s'envole de Halifax pour Cayenne/);
+    assert.doesNotMatch(atAir.text, /second voilier/);
+  });
+
+  it("RC36 : un énoncé qui finit après tB — pas d'applyChapter / pas de stopSpeaking avant onEnd, tMs dans [tA, tB]", () => {
+    const tA = Date.parse("2026-06-02T08:00:00Z");
+    const tB = tA + 4 * 3600 * 1000;
+    const ch = {
+      tA,
+      tB,
+      fromName: "Ajaccio",
+      toName: "Fort-de-France",
+    };
+    // Voix encore en train de dire la dernière phrase : le playhead linéaire
+    // a déjà dépassé tB — on le retient.
+    const held = filmTimeWhileChapterSpeaks({ t: tB + 60_000, chapter: ch, hold: true });
+    assert.ok(held >= tA && held <= tB, `tMs ${held} hors [tA, tB]`);
+    assert.equal(held, tB - FILM_CHAPTER_HOLD_EPS_MS);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: true, speaking: true }), false);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: true, speaking: false }), false);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: false, speaking: true }), false);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: false, speaking: false }), true);
+    assert.equal(shouldStopSpeakingOnChapterChange({
+      spokenText: "Le 2 juin, le bateau quitte Ajaccio.",
+      chapterText: "Le 2 juin, le bateau quitte Ajaccio.",
+    }), false);
+    assert.equal(shouldStopSpeakingOnChapterChange({
+      spokenText: "Le 2 juin, le bateau quitte Ajaccio.",
+      chapterText: "Cap sur Pointe-à-Pitre.",
+    }), true);
+    assert.equal(shouldStopSpeakingOnChapterChange({
+      spokenText: "",
+      chapterText: "Cap sur Pointe-à-Pitre.",
+    }), false);
+    const clock = {
+      t0: "2026-06-02T08:00:00Z",
+      vertices: [
+        { lat: 41.9, lon: 8.7, tHours: 0, sailNm: 0, filmNm: 0 },
+        { lat: 14.6, lon: -61.0, tHours: 4, sailNm: 100, filmNm: 100 },
+      ],
+    };
+    const nearMark = filmTimeWhileChapterSpeaks({ t: tB, chapter: ch, hold: true, clock });
+    const nm = positionAt(clock, nearMark)?.sailNm;
+    assert.ok(nearMark >= tA && nearMark <= tB);
+    assert.ok(nm <= 100 - 0.06, `sailNm ${nm} trop près de la marque d'arrivée`);
+    const capped = filmChapterPlayheadCapped({ t: tB + 60_000, chapter: ch, clock });
+    assert.equal(capped.atCap, true);
+    assert.ok(capped.t >= tA && capped.t <= tB);
+    assert.match(hook, /filmTimeWhileChapterSpeaks/);
+    assert.match(hook, /shouldApplyChapterFromClock/);
+    assert.match(hook, /ingestHeld/);
+    assert.match(hook, /isSpeaking\(\) && canLeadWithVoice\(\)/);
+    const isoHeld = filmTimeWhileChapterSpeaks({
+      t: tB + 60_000,
+      chapter: { tA: new Date(tA).toISOString(), tB: new Date(tB).toISOString() },
+      hold: true,
+    });
+    assert.equal(isoHeld, tB - FILM_CHAPTER_HOLD_EPS_MS);
+    const voiceSrc = readFileSync(join(here, "useReplayVoice.js"), "utf8");
+    assert.match(voiceSrc, /shouldStopSpeakingOnChapterChange/);
+    assert.match(voiceSrc, /\[active, voice, chapterText, rate, lang\]/);
+    assert.doesNotMatch(voiceSrc, /\[active, voice, chapterText, chapterIdx/);
+  });
+
   it("RC30 : un énoncé qui finit après tB n'est pas coupé — pas de stopSpeaking avant onEnd", () => {
     // La synthèse parle encore (frontières muettes) : jamais « voix absente »,
     // donc pas de bascule linéaire qui changerait de chapitre et couperait la phrase.
@@ -943,5 +1093,52 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(bar, /film-style-\$\{id\}/);
     assert.match(bar, /\["raw", "filmStoryRaw"\], \["written", "filmStoryWritten"\]/);
     assert.match(bar, /data-testid="film-source" hidden/);
+  });
+});
+
+describe("lot RC41 — débit écrit stable, pas de sprint puis calage", () => {
+  it("voix : charIdx dès la 1re phrase à FILM_ESTIMATE_CPS, jamais le budget", () => {
+    assert.equal(filmScriptCharIdx({
+      voiceClock: true, phraseOn: false, linearChar: 203,
+    }), 0, "avant la 1re phrase : pas le sprint linéaire");
+    const at10 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 10,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 203,
+    });
+    const at20 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 20,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 406,
+    });
+    const at30 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 30,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 609,
+    });
+    const at40 = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseChar0: 0, phraseElapsedS: 40,
+      sentenceEndChar: 800, chapterChars: 800, linearChar: 812,
+    });
+    assert.equal(at10, FILM_ESTIMATE_CPS * 10);
+    assert.equal(at20, FILM_ESTIMATE_CPS * 20);
+    const early = (at20 - at10) / 10;
+    const late = (at40 - at30) / 10;
+    assert.equal(filmCharRatesStable(early, late), true);
+    assert.equal(filmCharRatesStable(20.3, 15.0), false);
+    assert.match(hook, /filmScriptCharIdx/);
+    assert.match(hook, /voiceMayLead/);
+    assert.match(hook, /voiceFailedRef\.current = !voiceMayLead\(\)/);
+    assert.match(readFileSync(join(here, "useReplayVoice.js"), "utf8"), /RC41/);
+  });
+
+  it("sans voix : un seul régime — FILM_ESTIMATE_CPS", () => {
+    const a = filmScriptCharIdx({ voiceClock: false, linearChar: 150 });
+    const b = filmScriptCharIdx({ voiceClock: false, linearChar: 300 });
+    assert.equal(a, 150);
+    assert.equal(b, 300);
+    assert.equal(filmCharRatesStable(15, 15), true);
+    const ended = filmScriptCharIdx({
+      voiceClock: true, phraseOn: true, phraseEnded: true,
+      phraseChar0: 0, phraseElapsedS: 40, sentenceEndChar: 120, linearChar: 600,
+    });
+    assert.equal(ended, 120, "fin de phrase : on tient l'ancre, on ne sprinte pas");
   });
 });

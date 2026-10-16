@@ -787,7 +787,10 @@ async def _cascade_once(
             if _clean_text(text):
                 if failures:
                     llm_budget.remember_cascade_errors(failures)
-                if source in KNOWN_SOURCES:
+                # NIM returns `nvidia-<model>` (not in KNOWN_SOURCES). Cache it
+                # anyway: a gale is written live to the story store, but the
+                # same prompt must not re-hit the GPU (RG18 + RG19 deep tier).
+                if source in KNOWN_SOURCES or source.startswith("nvidia-"):
                     _cache_put(cache_key, text, source)
                 return text, source if source in KNOWN_SOURCES else (
                     "openrouter" if source.startswith("openrouter") else source

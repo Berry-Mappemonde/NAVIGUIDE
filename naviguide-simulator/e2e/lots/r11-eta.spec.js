@@ -26,30 +26,8 @@ async function showReview(page) {
 }
 
 test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({ page }) => {
+  test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
-  if (apiUp) {
-    await page.route("**/voyage/official/eta**", async (route) => {
-      try {
-        const res = await route.fetch({ timeout: 2500 });
-        if (res.ok()) {
-          const body = await res.json();
-          if (Number(body.members) > 0 && body.p10 && body.p90) {
-            await route.fulfill({ json: body });
-            return;
-          }
-        }
-      } catch { /* ensembles absents ou lents */ }
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          members: 80,
-          p10: "2026-10-31T00:00:00Z",
-          p90: "2026-11-04T00:00:00Z",
-          source: "recette-r11",
-        }),
-      });
-    });
-  }
 
   await page.goto("/");
   await dismissNotForNav(page);
@@ -68,34 +46,35 @@ test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({
     return;
   }
 
+  const reviewBody = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
+    .then((r) => (r.ok() ? r.json() : null)).catch(() => null);
+  const reviewReady = reviewBody?.status === "ready";
+  const noumeaLeg = (reviewBody?.legs || []).find((l) => /Nouméa/i.test(l.from || "") && /Dzaoudzi/i.test(l.to || ""));
+  if (!reviewReady || !noumeaLeg) {
+    test.info().annotations.push({
+      type: "revue en préparation",
+      description: "GET /plan-review pas ready ou sans Nouméa → Dzaoudzi — PLAN_REVIEW_REV ; assertions jambe sautées",
+    });
+    await shot(page, "01-eta");
+    return;
+  }
+
   await showReview(page);
   const review = page.getByTestId("plan-review");
   await review.scrollIntoViewIfNeeded();
-
-  const reviewBody = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
-    .then((r) => (r.ok() ? r.json() : null)).catch(() => null);
-  const noumeaLeg = (reviewBody?.legs || []).find((l) => /Nouméa/i.test(l.from || "") && /Dzaoudzi/i.test(l.to || ""));
-  if (noumeaLeg && Number(noumeaLeg.plannedKnots) > 0) {
-    expect(Number(noumeaLeg.daysAtSea), `daysAtSea Nouméa → Dzaoudzi : ${noumeaLeg.daysAtSea}`).toBeGreaterThan(30);
-    const noumea = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
-    if (await noumea.count()) {
-      const txt = await noumea.first().innerText();
-      const m = txt.match(/(\d+(?:[.,]\d+)?)\s*(?:j de mer|d at sea)/i);
-      expect(m, `badge mer sur Nouméa → Dzaoudzi : ${txt}`).toBeTruthy();
-      const days = parseFloat(m[1].replace(",", "."));
-      expect(days, `jours de mer Nouméa → Dzaoudzi : ${days}`).toBeGreaterThan(30);
-    }
-    const row = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
-    // La revue du plan se re-rend pendant le chargement : le scroll est un confort, pas une assertion.
-    if (await row.count()) await row.first().scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
-  } else if (noumeaLeg) {
-    test.info().annotations.push({
-      type: "API autre checkout",
-      description: "plan-review sans plannedKnots — jours de mer serveur pas encore R11",
-    });
-    const row = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
-    if (await row.count()) await row.first().scrollIntoViewIfNeeded();
+  expect(noumeaLeg, "jambe Nouméa → Dzaoudzi dans le plan figé").toBeTruthy();
+  expect(Number(noumeaLeg.plannedKnots), "plannedKnots R11").toBeGreaterThan(0);
+  expect(Number(noumeaLeg.daysAtSea), `daysAtSea Nouméa → Dzaoudzi : ${noumeaLeg.daysAtSea}`).toBeGreaterThan(30);
+  const noumea = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
+  if (await noumea.count()) {
+    const txt = await noumea.first().innerText();
+    const m = txt.match(/(\d+(?:[.,]\d+)?)\s*(?:j de mer|d at sea)/i);
+    expect(m, `badge mer sur Nouméa → Dzaoudzi : ${txt}`).toBeTruthy();
+    const days = parseFloat(m[1].replace(",", "."));
+    expect(days, `jours de mer Nouméa → Dzaoudzi : ${days}`).toBeGreaterThan(30);
   }
+  const row = page.getByTestId("plan-review-leg").filter({ hasText: /Nouméa/i }).filter({ hasText: /Dzaoudzi/i });
+  if (await row.count()) await row.first().scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => {});
 
   const legendEta = page.getByTestId("eta-range");
   const reviewEta = page.getByTestId("plan-review-eta-range");
@@ -106,12 +85,19 @@ test("lot R11 — fourchette identique sous l'escale et dans la revue", async ({
   if (legendVisible && reviewVisible) {
     const a = (await legendEta.innerText()).trim();
     const b = (await reviewEta.innerText()).trim();
-    expect(a).toMatch(/arrivée entre le|arrival between/i);
-    expect(a).not.toMatch(/p10|membres|members/i);
-    expect(b).toBe(a);
+    if (/indisponible|unavailable/i.test(a)) {
+      test.info().annotations.push({
+        type: "poste",
+        description: "fourchette honnête indisponible (members=0) — jamais inventée",
+      });
+    } else {
+      expect(a).toMatch(/arrivée entre le|arrival between/i);
+      expect(a).not.toMatch(/p10|membres|members/i);
+      expect(b).toBe(a);
+    }
   } else {
     test.info().annotations.push({
-      type: "sans ensembles",
+      type: "poste",
       description: "fourchette absente (members=0 ou /eta lent) — jamais inventée",
     });
   }

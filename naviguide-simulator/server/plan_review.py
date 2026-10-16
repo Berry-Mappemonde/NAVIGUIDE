@@ -22,11 +22,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any
 
 from shipping_lanes import anti_shipping_of
-from voyage_clock import parse_iso, to_iso
+from voyage_clock import PARK_STOP_NAME, parse_iso, to_iso
 
 log = logging.getLogger("naviguide-simulator.plan-review")
 
@@ -112,6 +113,73 @@ def _attach_itinerary_nm(clock_marks: list[dict], voy_marks: list) -> None:
             cm["nm"] = float(vm["nm"])
 
 
+def _nm_apart(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> float | None:
+    try:
+        p1, p2 = math.radians(float(lat1)), math.radians(float(lat2))
+        dphi = math.radians(float(lat2) - float(lat1))
+        dlamb = math.radians(float(lon2) - float(lon1))
+    except (TypeError, ValueError):
+        return None
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlamb / 2.0) ** 2
+    return 2.0 * 3440.065 * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _nearest_mark_name(marks: list, lat: Any, lon: Any, limit_nm: float = 80.0) -> str | None:
+    best, best_d = None, float(limit_nm)
+    for mark in marks or []:
+        name = (mark or {}).get("name") if isinstance(mark, dict) else None
+        if not name:
+            continue
+        dist = _nm_apart(lat, lon, mark.get("lat"), mark.get("lon"))
+        if dist is not None and dist < best_d:
+            best_d = dist
+            best = str(name)
+    return best
+
+
+def _marks_with_park(clock: dict) -> list[dict]:
+    """Marques d'horloge + park de l'épisode (Cayenne n'est pas toujours une marque)."""
+    marks = [m for m in (clock.get("marks") or []) if isinstance(m, dict)]
+    for ep in clock.get("episodes") or []:
+        park = ep.get("park") if isinstance(ep.get("park"), dict) else None
+        if not park or park.get("lat") is None:
+            continue
+        marks.append({
+            "name": PARK_STOP_NAME,
+            "lat": park.get("lat"),
+            "lon": park.get("lon"),
+        })
+    return marks
+
+
+def _sea_origin_after(clock: dict, a: dict, b: dict) -> tuple[str, float | None, float | None]:
+    """Quai / park où les milles de mer de a→b commencent vraiment (Cayenne après l'épisode)."""
+    fallback = str(a.get("name") or "")
+    t_a = float(a.get("tHours") or 0)
+    t_b = float(b.get("tHours") or 0)
+    from_nm = a["_sailNm"] if "_sailNm" in a else _sail_nm_at(clock, t_a)
+    last_quay = None
+    for vertex in clock.get("vertices") or []:
+        if not isinstance(vertex, dict) or vertex.get("tHours") is None:
+            continue
+        t = float(vertex.get("tHours") or 0)
+        if t < t_a - 1e-6 or t > t_b + 1e-6:
+            continue
+        nm = float(vertex.get("sailNm") or 0)
+        if vertex.get("vehicle") in ("main", "side") and nm > from_nm + 0.5:
+            break
+        if vertex.get("vehicle") == "quay":
+            last_quay = vertex
+    if not last_quay:
+        return fallback, None, None
+    name = _nearest_mark_name(
+        _marks_with_park(clock), last_quay.get("lat"), last_quay.get("lon"),
+    ) or fallback
+    t_hours = float(last_quay.get("tHours") or t_a)
+    sail = float(last_quay.get("sailNm") or from_nm)
+    return name, t_hours, sail
+
+
 def _leg_distance_nm(a: dict, b: dict, from_nm: float, to_nm: float) -> float:
     """Mille nautiques de la jambe : horloge, sinon nm / filmNm de l'itinéraire.
 
@@ -158,12 +226,17 @@ def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
             itinerary_nm = float(b["nm"]) - float(a["nm"])
         if to_nm <= from_nm + 0.5 and itinerary_nm <= 0.5:
             continue  # an air hop or a land leg: nothing to sail
+        origin_name, origin_t, origin_nm = _sea_origin_after(clock, a, b)
+        if origin_t is not None:
+            dep = t0 + timedelta(hours=float(origin_t))
+        if origin_nm is not None:
+            from_nm = origin_nm
         leg_nm = round(_leg_distance_nm(a, b, from_nm, to_nm))
         if leg_nm <= 0:
             continue
         to_nm_out = from_nm + leg_nm if to_nm <= from_nm + 0.5 else to_nm
         legs.append({
-            "from": a["name"], "to": b["name"],
+            "from": origin_name, "to": b["name"],
             "departIso": to_iso(dep), "arriveIso": to_iso(arr),
             "daysAtSea": planned_sea_days(leg_nm),
             "plannedKnots": PLANNED_KNOTS,

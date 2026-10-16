@@ -10,13 +10,6 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-function spanDays(p10, p90) {
-  const a = Date.parse(p10);
-  const b = Date.parse(p90);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
-  return (b - a) / 86400000;
-}
-
 async function dismissNotForNav(page) {
   const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
   if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -36,40 +29,8 @@ test("lot RB7 — fourchette dès que l'ensemble est prêt, sans recharger", asy
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
 
-  if (apiUp) {
-    let etaHits = 0;
-    await page.route("**/voyage/official/eta**", async (route) => {
-      etaHits += 1;
-      let live = null;
-      try {
-        const res = await route.fetch({ timeout: 2500 });
-        if (res.ok()) {
-          const body = await res.json();
-          if (Number(body.members) > 0 && body.p10 && body.p90 && spanDays(body.p10, body.p90) <= 7) {
-            live = body;
-          }
-        }
-      } catch { /* ensembles absents ou encore froids */ }
-      if (etaHits === 1) {
-        await route.fulfill({
-          contentType: "application/json",
-          body: JSON.stringify({ members: 0, p10: null, p50: null, p90: null, source: null }),
-        });
-        return;
-      }
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify(live || {
-          members: 40,
-          p10: "2026-11-13T00:00:00Z",
-          p50: "2026-11-15T00:00:00Z",
-          p90: "2026-11-18T00:00:00Z",
-          memberKnots: [8.1, 7.9, 8.0],
-          source: "recette-rb7",
-        }),
-      });
-    });
-  }
+  // Pas d'interception : on lit le stock figé (members=0 tant que l'ensemble
+  // Open-Meteo n'a pas été calculé — jamais une fourchette écrite par le spec).
 
   await page.goto("/");
   await dismissNotForNav(page);
@@ -99,7 +60,7 @@ test("lot RB7 — fourchette dès que l'ensemble est prêt, sans recharger", asy
   if (!(await legendEta.first().isVisible({ timeout: 8_000 }).catch(() => false))) {
     test.info().annotations.push({
       type: "poste",
-      description: "fourchette absente du stock figé (pas d'eta) — jamais inventée",
+      description: "fourchette absente (eta members=0, ensemble Open-Meteo hors CI) — jamais inventée",
     });
     await shot(page, "01-fourchette");
     return;

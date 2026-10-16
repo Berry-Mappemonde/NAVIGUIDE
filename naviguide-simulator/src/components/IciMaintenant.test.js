@@ -144,6 +144,7 @@ describe("IciMaintenant — lot R9b : journal chronologique, clic → onSeek(t)"
     assert.match(lines[1], /ZEE du Maroc/);
     assert.match(src, /data-testid="ici-journal-entry"/);
     assert.match(src, /data-testid="ici-journal-list"/);
+    assert.match(src, /hidden=\{view !== "journal"\}/);
     assert.match(src, /sortJournalEntries\(entries\)/);
     assert.match(src, /formatJournalLine\(entry, lang\)/);
     assert.doesNotMatch(src, /journalHint|Le journal commence|cliquez|aide/i);

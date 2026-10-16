@@ -336,3 +336,61 @@ def test_noumea_dzaoudzi_eta_interval_is_a_few_days():
     assert span <= plan_review.ETA_MAX_SPAN_DAYS + 1e-6
     assert plan_review.eta_span_days(p10.isoformat(), p90.isoformat()) <= 7.01
     assert plan_review.eta_span_days(None, p90.isoformat()) is None
+
+
+def test_pacific_leg_origin_is_cayenne_after_episode():
+    """Lot RC44 : après l'épisode, la jambe Pacifique part de Cayenne, pas de Saint-Pierre."""
+    from voyage_clock import build_voyage_clock
+
+    def wind_fn(lat, lon, t):
+        return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}
+
+    points = [
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1000, "filmCum": 1000, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1000, "filmCum": 1080, "jump": True},
+        {"lat": 46.78, "lon": -56.16, "cumNm": 1400, "filmCum": 1480, "jump": False},
+        {"lat": 44.65, "lon": -63.57, "cumNm": 1800, "filmCum": 1880, "jump": False},
+        {"lat": 4.93, "lon": -52.35, "cumNm": 1800, "filmCum": 1960, "jump": True},
+        {"lat": 4.80, "lon": -52.50, "cumNm": 1830, "filmCum": 1990, "jump": False},
+        {"lat": -17.54, "lon": -149.57, "cumNm": 5800, "filmCum": 6200, "jump": False},
+    ]
+    marks = [
+        {"name": "Cayenne (Guyane)", "nm": 1000, "filmNm": 1000, "lat": 4.93, "lon": -52.35},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 1400, "filmNm": 1480,
+         "lat": 46.78, "lon": -56.16},
+        {"name": "Papeete (Polynésie française)", "nm": 5800, "filmNm": 6200,
+         "lat": -17.54, "lon": -149.57},
+    ]
+    clock = build_voyage_clock(
+        points, marks, "2026-07-19T08:00:00Z", start_at="saint-maur", wind_fn=wind_fn,
+    )
+    legs = plan_review.legs_from_clock(clock, "Cayenne (Guyane)")
+    pacific = [
+        leg for leg in legs
+        if "Papeete" in str(leg.get("to") or "") and "Papeete" not in str(leg.get("from") or "")
+    ]
+    assert pacific, [(leg["from"], leg["to"]) for leg in legs]
+    assert "Cayenne" in str(pacific[0]["from"])
+    assert "Saint-Pierre" not in str(pacific[0]["from"])
+    assert "Miquelon" not in str(pacific[0]["from"])
+
+
+def test_noumea_dzaoudzi_leg_unchanged_rc37():
+    """RC37 : Nouméa → Dzaoudzi reste 9 151 nm ; l'épisode SPM ne le touche pas."""
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 0, "sailNm": 19055},
+            {"tHours": 108, "sailNm": 19938},
+        ],
+        "marks": [
+            {"name": "Nouméa (Nouvelle-Calédonie)", "tHours": 0, "holdHours": 0,
+             "nm": 19055, "filmNm": 19177},
+            {"name": "Dzaoudzi (Mayotte)", "tHours": 108, "holdHours": 72,
+             "nm": 28206, "filmNm": 28328},
+        ],
+    }
+    legs = plan_review.legs_from_clock(clock, "Nouméa (Nouvelle-Calédonie)")
+    assert len(legs) == 1
+    assert "Nouméa" in legs[0]["from"] and "Dzaoudzi" in legs[0]["to"]
+    assert legs[0]["legNm"] == 9151
