@@ -60,9 +60,9 @@ export function shouldPlaceInitialCamera({ userNavigated = false } = {}) {
   return !userNavigated;
 }
 
-/** Un saut manuel arrêté en Simulation recentre une fois, sans suivi cinéma. */
-export function shouldFocusSimulationJump({ isSimulation, playing } = {}) {
-  return Boolean(isSimulation && !playing);
+/** Un saut manuel arrêté en Tracer recentre une fois, sans suivi cinéma. */
+export function shouldFocusTracerJump({ isTracer, playing } = {}) {
+  return Boolean(isTracer && !playing);
 }
 
 /** Premier snap, ou téléport (horloge serveur wrappée → horloge client dépliée). */

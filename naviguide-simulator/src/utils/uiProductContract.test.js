@@ -13,7 +13,7 @@ describe("contrat UI produit", () => {
     const map = read("../hooks/useSimulatorMap.js");
     const scene = read("../map/MapSceneController.js");
     assert.match(app, /const \[view, setView\] = useState\(VIEW_SUIVRE\)/);
-    assert.doesNotMatch(app, /const \[view, setView\] = useState\(VIEW_SIMULATION\)/);
+    assert.doesNotMatch(app, /const \[view, setView\] = useState\(VIEW_TRACER\)/);
     assert.match(app, /const \[cinemaMode, setCinemaMode\] = useState\(true\)/);
     assert.match(app, /const \[sidebarOpen, setSidebarOpen\] = useState\(false\)/);
     assert.match(app, /const \[toolsOpen, setToolsOpen\] = useState\(false\)/);
@@ -31,7 +31,7 @@ describe("contrat UI produit", () => {
     const selectAt = app.indexOf("const selectView = useCallback");
     assert.ok(selectAt >= 0, "selectView présent");
     const selectChunk = app.slice(selectAt, selectAt + 2800);
-    assert.match(selectChunk, /armDrawingWorldRef\.current\(VIEW_SIMULATION\)/);
+    assert.match(selectChunk, /armDrawingWorldRef\.current\(VIEW_TRACER\)/);
     assert.match(selectChunk, /endDrawingWorld/);
     assert.match(app, /onView=\{selectView\}/);
     assert.doesNotMatch(app, /onView=\{drawingMode \? undefined/);
@@ -88,7 +88,7 @@ describe("contrat UI produit", () => {
     const simulationPanel = read("../components/SimulationPanel.jsx");
     // DM5 : Play / vitesses vivent aussi en Suivre sur ma route — jamais en
     // Suivre × Berry (le live officiel commande).
-    assert.match(app, /const playControlsActive = isSimulation \|\| suivreCustom;/);
+    assert.match(app, /const playControlsActive = isTracer \|\| suivreCustom;/);
     assert.match(app, /showPlaybackControls=\{playControlsActive\}/);
     assert.match(app, /if \(!playControlsActive\) return;/);
     assert.match(filmBar, /disabled=\{!showPlaybackControls\}/);

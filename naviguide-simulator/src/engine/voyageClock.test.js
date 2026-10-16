@@ -279,7 +279,7 @@ describe("U0 horloge officielle", () => {
     assert.match(clockHook, /mode === "suivre" \? DEFAULT_T0_ISO : simT0/);
     assert.match(clockHook, /setT0: setSimT0/);
     assert.match(clockHook, /resetToToday/);
-    assert.match(app, /mode: suivreBerry \? "suivre" : "simulation"/);
+    assert.match(app, /mode: suivreBerry \? "suivre" : SERVER_MODE_TRACER/);
     assert.match(app, /voyage\.resetToToday\(\)/);
     assert.doesNotMatch(app, /voyage\.setT0\(simulationT0Iso\(\)\)/);
     assert.doesNotMatch(app, /voyage\.setT0\(DEFAULT_T0_ISO\)/);

@@ -338,10 +338,10 @@ export default {
   noAlerts:           "✅ Aucune alerte critique — la route semble sûre.",
   dominantRisk:       "Dominant",
 
-  // ── Simulation mode ────────────────────────────────────────────────────────
-  simulationMarkerTitle: "Catamaran — cliquez pour les métriques",
-  simulationDragPrompt:  "Faites glisser le catamaran sur la route…",
-  exitSimulation:        "Quitter Tracer",
+  // ── Tracer mode ────────────────────────────────────────────────────────────
+  tracerMarkerTitle: "Catamaran — cliquez pour les métriques",
+  tracerDragPrompt:  "Faites glisser le catamaran sur la route…",
+  exitTracer:        "Quitter Tracer",
   nmRemaining:           "Restants",
   nmCovered:             "Parcourus",
   eta:                   "ETA",
@@ -421,10 +421,9 @@ export default {
   layerBiAmp:                "AMP",
   layerBiAmpTitle:           "Aires marines protégées",
 
-  // ── Simulation button (Sidebar) ────────────────────────────────────────────
-  simulationModeLabel:   "Tracer",
-  exitSimulationShort:   "Quitter Tracer",
-  simulationModeTooltip: "Simulation — jouer l’expédition (Play, vitesses, escales)",
+  // ── Tracer button (Sidebar) ────────────────────────────────────────────────
+  tracerModeLabel:   "Tracer",
+  exitTracerShort:   "Quitter Tracer",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────
   previous: "Précédent",
@@ -511,7 +510,6 @@ export default {
   viewModeGroup:    "Suivre l’expédition ou Tracer",
   followExpeditionButton: "Suivre l’expédition",
   followExpeditionTitle: "Suivre l’expédition Berry-Mappemonde",
-  simulationButton: "Simulation",
   tracerButton: "Tracer",
   tracerModeTooltip: "Tracer — jouer la route Berry-Mappemonde ou la vôtre : date de départ, Play, calculs",
   officialDepartureLocked: "Départ officiel : 15 mai 2026, 08:00 UTC",

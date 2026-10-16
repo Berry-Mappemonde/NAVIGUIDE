@@ -125,14 +125,17 @@ export async function openJournalTab(page) {
   await openIciTab(page, "ici-tab-journal", "ici-journal-slot");
 }
 
-export async function enterSimulation(page) {
+/** Clique la pilule Tracer (la vue), sans ouvrir le dessin. */
+export async function enterTracerView(page) {
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
 }
 
-// DM1 : la pilule s'appelle Tracer à l'écran ; le mode interne (VIEW_SIMULATION)
-// ne change qu'en DM3. Alias pour les specs à venir.
-export const enterTracerMode = enterSimulation;
+/** @deprecated alias à retirer — même geste que enterTracerView.
+ *  Ne pas confondre avec enterTracer (DM6), qui ouvre aussi le dessin. */
+export const enterSimulation = enterTracerView;
+
+export const enterTracerMode = enterTracerView;
 
 export async function enterTracer(page) {
   // DM6 : entrer en Tracer ouvre le dessin (brouillon vide ou déjà là).

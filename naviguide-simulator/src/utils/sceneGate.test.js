@@ -8,7 +8,7 @@ import {
   pickOfficialLiveClock,
   playheadAligned,
   sceneMaskKey,
-  shouldFocusSimulationJump,
+  shouldFocusTracerJump,
   shouldKeepSceneVisible,
   shouldPlaceInitialCamera,
   shouldResnapCamera,
@@ -134,11 +134,11 @@ describe("shouldPlaceInitialCamera", () => {
   });
 });
 
-describe("shouldFocusSimulationJump", () => {
-  it("recentre seulement un saut arrêté en Simulation", () => {
-    assert.equal(shouldFocusSimulationJump({ isSimulation: true, playing: false }), true);
-    assert.equal(shouldFocusSimulationJump({ isSimulation: true, playing: true }), false);
-    assert.equal(shouldFocusSimulationJump({ isSimulation: false, playing: false }), false);
+describe("shouldFocusTracerJump", () => {
+  it("recentre seulement un saut arrêté en Tracer", () => {
+    assert.equal(shouldFocusTracerJump({ isTracer: true, playing: false }), true);
+    assert.equal(shouldFocusTracerJump({ isTracer: true, playing: true }), false);
+    assert.equal(shouldFocusTracerJump({ isTracer: false, playing: false }), false);
   });
 });
 

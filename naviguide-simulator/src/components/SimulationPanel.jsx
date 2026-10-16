@@ -60,7 +60,7 @@ export function SimulationPanel({
     return (
       <div className="bg-slate-800/60 rounded-lg p-2 border border-blue-700/30">
         <div className="text-[10px] text-slate-400 text-center">
-          {t("simulationDragPrompt")}
+          {t("tracerDragPrompt")}
         </div>
       </div>
     );
