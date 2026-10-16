@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { abandonVoiceToLinear, applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmCharRatesStable, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmScriptCharIdx, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, spokenCharsSoFar, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceContinueElapsed, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { VOICE_LEAD_MS, VOICE_MS_PER_CHAR } from "../utils/speak.js";
 import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
@@ -968,23 +969,65 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.doesNotMatch(voiceSrc, /\[active, voice, chapterText, chapterIdx/);
   });
 
-  it("RC30 : un énoncé qui finit après tB n'est pas coupé — pas de stopSpeaking avant onEnd", () => {
-    // La synthèse parle encore (frontières muettes) : jamais « voix absente »,
-    // donc pas de bascule linéaire qui changerait de chapitre et couperait la phrase.
+  it("VF1 : speaking vrai sans mot depuis > 2 s = voix coincée ; une frontière récente mène encore", () => {
+    assert.equal(VOICE_LEAD_MS, 2500);
+    assert.equal(VOICE_MS_PER_CHAR, 60);
+    // Chrome laisse speaking à vrai alors que les frontières se sont tues.
     assert.equal(voiceStalled({
       chapterAgeMs: 5000, sinceBoundaryMs: 5000, speaking: true, hold: false,
-    }), false);
-    // Voix tenue en fin de phrase (attente d'ancre) : pas un décrochage non plus.
+    }), true);
+    // Un hold sans mot nouveau n'est pas une voix vivante non plus.
     assert.equal(voiceStalled({
       chapterAgeMs: 5000, sinceBoundaryMs: 5000, speaking: false, hold: true,
-    }), false);
-    // Synthèse vraiment morte : le décrochage joue comme avant (RG9 / E2).
+    }), true);
+    // Une frontière récente : la voix mène, silence court OK.
     assert.equal(voiceStalled({
-      chapterAgeMs: FILM_VOICE_STALL_MS, sinceBoundaryMs: Infinity, speaking: false, hold: false,
+      chapterAgeMs: 5000, sinceBoundaryMs: 200, speaking: true, hold: false,
+    }), false);
+    assert.equal(voiceStalled({
+      chapterAgeMs: 5000, sinceBoundaryMs: 400, speaking: false, hold: true,
+    }), false);
+    // Avant le premier mot : attendre VOICE_LEAD_MS, pas couper à 2 s.
+    assert.equal(voiceStalled({
+      chapterAgeMs: FILM_VOICE_STALL_MS, sinceBoundaryMs: Infinity, speaking: true, hold: false,
+    }), false);
+    assert.equal(voiceStalled({
+      chapterAgeMs: VOICE_LEAD_MS, sinceBoundaryMs: Infinity, speaking: true, hold: false,
     }), true);
     assert.equal(voiceStalled({
       chapterAgeMs: 500, sinceBoundaryMs: Infinity, speaking: false, hold: false,
     }), false);
+  });
+
+  it("VF1 : après abandon, le pas suivant avance charIdx et le film ne se termine pas", () => {
+    const chapters = Array.from({ length: 7 }, (_, i) => ({
+      tA: Date.parse("2026-05-15T08:00:00Z") + i * 4 * 3600000,
+      tB: Date.parse("2026-05-15T08:00:00Z") + (i + 1) * 4 * 3600000,
+      text: `${"Phrase une du chapitre. ".padEnd(80)}Phrase deux vers le lieu ${i}. `.padEnd(400, "x"),
+      fromLat: 46 - i,
+      fromLon: -1 - i,
+      toLat: 45 - i,
+      toLon: -2 - i,
+      fromName: "La Rochelle",
+      toName: "Ajaccio",
+    }));
+    const plan = filmPlan({ chapters, targetSeconds: 150 });
+    assert.equal(spokenCharsSoFar(plan, 0, 231), 231);
+    const stuck = abandonVoiceToLinear({ plan, chapterIdx: 0, charIdx: 231 });
+    assert.equal(stuck.reached, 231);
+    assert.ok(Math.abs(stuck.elapsed - voiceContinueElapsed(231)) < 1e-9);
+    const a = linearFilmAt(stuck.elapsed, plan, stuck.cps);
+    assert.ok(Math.abs(a.charIdx - 231) < 1.5, `reprise à ${a.charIdx}, pas un saut`);
+    assert.equal(a.chapterIdx, 0);
+    assert.equal(a.finish, false);
+    const b = linearFilmAt(stuck.elapsed + 0.5, plan, stuck.cps);
+    assert.ok(b.charIdx > a.charIdx || b.chapterIdx > a.chapterIdx, "le pas suivant avance charIdx");
+    assert.equal(filmShouldFinish({
+      voiceClock: false, speaking: false, voiceAllDone: false,
+      linearFinish: a.finish, lastReached: a.lastReached,
+    }), false);
+    assert.equal(shouldReturnToLive({ voiceIncident: true }), false);
+    assert.equal(shouldReturnToLive({ voiceIncident: true, filmFinished: true }), true);
   });
 
   it("RC30 : la fin du film attend la fin de la clôture — budgetDone ne précède jamais voiceSpokenAll", () => {

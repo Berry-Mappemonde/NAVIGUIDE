@@ -8,6 +8,12 @@ export const VOICES_WAIT_MS = 1000;
 export const VOICE_IMMEDIATE_END_MS = 500;
 export const UTTERANCE_KEEPALIVE_MS = 10_000;
 export const SENTENCE_MAX_CHARS = 200;
+/** Après speak() : ni onstart ni onboundary → on lâche la voix (lot VF1). */
+export const VOICE_LEAD_MS = 2500;
+/** Horloge de repli et toise d'énoncé : ~60 ms / caractère (lot VF1). */
+export const VOICE_MS_PER_CHAR = 60;
+/** Marge pour ne pas couper une phrase longue dont les mots tombent encore. */
+export const SENTENCE_TIME_SLACK = 4;
 
 export const VOICE_PREFS = {
   en: [
@@ -27,8 +33,30 @@ export const VOICE_PREFS = {
 };
 
 let keepAliveTimer = null;
+/** Timers d'énoncé (lead + limite) : un `cancel()` ne doit pas les laisser tirer. */
+let speakTimers = [];
 /** Incrémenté à chaque `stopSpeaking` : un `onend` de `cancel()` ne relance rien. */
 let speakGeneration = 0;
+
+/**
+ * Limite d'un énoncé : assez large pour une phrase de 200 car. lue vraiment
+ * (~13 s à 15 car./s), assez courte pour un `onend` qui ne vient jamais.
+ */
+export function sentenceTimeLimitMs(text, {
+  leadMs = VOICE_LEAD_MS,
+  msPerChar = VOICE_MS_PER_CHAR,
+  slack = SENTENCE_TIME_SLACK,
+} = {}) {
+  const n = Math.max(1, String(text || "").length);
+  const lead = Number.isFinite(Number(leadMs)) ? Math.max(0, Number(leadMs)) : VOICE_LEAD_MS;
+  const ms = Number.isFinite(Number(msPerChar)) && Number(msPerChar) > 0
+    ? Number(msPerChar)
+    : VOICE_MS_PER_CHAR;
+  const factor = Number.isFinite(Number(slack)) && Number(slack) > 0
+    ? Number(slack)
+    : SENTENCE_TIME_SLACK;
+  return lead + n * ms * factor;
+}
 
 /** Briefing text as spoken: no URLs, no arrows/glyphs, tidy spaces. */
 export function spokenText(text) {
@@ -74,9 +102,29 @@ function clearKeepAlive() {
   keepAliveTimer = null;
 }
 
+function clearSpeakTimers(win) {
+  const clearFn = win?.clearTimeout?.bind(win)
+    || (typeof clearTimeout === "function" ? clearTimeout : null);
+  for (const id of speakTimers) {
+    try { clearFn?.(id); } catch { /* ignore */ }
+  }
+  speakTimers = [];
+}
+
+function scheduleSpeakTimer(win, fn, ms) {
+  const start = win?.setTimeout?.bind(win)
+    || (typeof setTimeout === "function" ? setTimeout : null);
+  if (!start) return null;
+  const id = start(fn, Math.max(0, Number(ms) || 0));
+  if (id && typeof id.unref === "function") id.unref();
+  speakTimers.push(id);
+  return id;
+}
+
 export function stopSpeaking(win = typeof window !== "undefined" ? window : null) {
   speakGeneration += 1;
   clearKeepAlive();
+  clearSpeakTimers(win);
   try {
     win?.speechSynthesis?.cancel();
   } catch {
@@ -228,6 +276,14 @@ function armKeepAlive(win) {
   if (keepAliveTimer && typeof keepAliveTimer.unref === "function") keepAliveTimer.unref();
 }
 
+function abandonUtterance(opts, win) {
+  clearKeepAlive();
+  clearSpeakTimers(win);
+  try { win?.speechSynthesis?.cancel(); } catch { /* ignore */ }
+  if (opts.onLeadFailed) opts.onLeadFailed();
+  else opts.onEnd?.();
+}
+
 function beginUtterances(body, lang, opts, voices) {
   const win = opts.win;
   const generation = speakGeneration;
@@ -242,11 +298,13 @@ function beginUtterances(body, lang, opts, voices) {
   const utterLang = lang === "en" ? "en-GB" : "fr-FR";
   let chunkIdx = 0;
   let retried = false;
+  const leadMs = Number.isFinite(Number(opts.leadMs)) ? Number(opts.leadMs) : VOICE_LEAD_MS;
 
   const speakChunk = () => {
     if (!stillThisSpeak()) return;
     if (chunkIdx >= chunks.length) {
       clearKeepAlive();
+      clearSpeakTimers(win);
       if (stillThisSpeak()) opts.onEnd?.();
       return;
     }
@@ -256,9 +314,17 @@ function beginUtterances(body, lang, opts, voices) {
     utter.rate = rate;
     if (voice) utter.voice = voice;
     let hadBoundary = false;
+    let heardStart = false;
     let settled = false;
     const started = nowMs(win);
+    const limitMs = Number.isFinite(Number(opts.sentenceLimitMs))
+      ? Number(opts.sentenceLimitMs)
+      : sentenceTimeLimitMs(chunk.text, { leadMs });
+    utter.onstart = () => {
+      heardStart = true;
+    };
     utter.onboundary = (ev) => {
+      heardStart = true;
       hadBoundary = true;
       const idx = Number(ev?.charIndex);
       if (Number.isFinite(idx)) opts.onBoundary?.(chunk.start + idx);
@@ -266,6 +332,7 @@ function beginUtterances(body, lang, opts, voices) {
     const finishUtter = () => {
       if (!stillThisSpeak() || settled) return;
       settled = true;
+      clearSpeakTimers(win);
       const hasMoreChunks = chunkIdx < chunks.length - 1;
       const kind = voiceEndKind({
         hadBoundary,
@@ -290,6 +357,19 @@ function beginUtterances(body, lang, opts, voices) {
     };
     utter.onend = finishUtter;
     utter.onerror = finishUtter;
+    clearSpeakTimers(win);
+    scheduleSpeakTimer(win, () => {
+      if (!stillThisSpeak() || settled || heardStart) return;
+      settled = true;
+      speakGeneration += 1;
+      abandonUtterance(opts, win);
+    }, leadMs);
+    scheduleSpeakTimer(win, () => {
+      if (!stillThisSpeak() || settled) return;
+      settled = true;
+      speakGeneration += 1;
+      abandonUtterance(opts, win);
+    }, limitMs);
     armKeepAlive(win);
     win.speechSynthesis.speak(utter);
   };
@@ -307,19 +387,28 @@ export function speak(text, lang = "fr", {
   onBoundary,
   onLeadFailed,
   rate = 1,
+  leadMs = VOICE_LEAD_MS,
+  sentenceLimitMs,
   win = typeof window !== "undefined" ? window : null,
 } = {}) {
   if (!canSpeak(win)) return false;
   const body = spokenText(text);
   if (!body) return false;
   stopSpeaking(win);
-  const opts = { onEnd, onBoundary, onLeadFailed, rate, win };
+  const opts = { onEnd, onBoundary, onLeadFailed, rate, leadMs, sentenceLimitMs, win };
+  const generation = speakGeneration;
   const voices = getVoices(win);
   if (voices.length) {
     beginUtterances(body, lang, opts, voices);
     return true;
   }
   waitForVoices(win, VOICES_WAIT_MS).then((ready) => {
+    if (generation !== speakGeneration) return;
+    if (!ready.length) {
+      if (opts.onLeadFailed) opts.onLeadFailed();
+      else opts.onEnd?.();
+      return;
+    }
     beginUtterances(body, lang, opts, ready);
   });
   return true;
