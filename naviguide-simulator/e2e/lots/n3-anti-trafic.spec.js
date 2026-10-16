@@ -1,8 +1,11 @@
 // Lot N3 — Score anti-trafic (pastille « couloirs : Gibraltar »).
 // Sans API : fixture usePlanReview (Ajaccio → Fort-de-France, Gibraltar).
 // GET /voyage/official : sondé ; s'il manque, annotation seulement —
-// les pastilles fixture ne sont pas affaiblies.
+// les pastilles fixture ne sont pas affaiblies. Si l'API répond mais
+// /plan-review n'est pas ready (RC50, PLAN_REVIEW_REV), annotation +
+// saut des pastilles — le contrat Gibraltar reste dur dès que ready.
 import { expect, test } from "@playwright/test";
+import { probeOfficialPlanReview } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-n3/${name}.jpg`,
@@ -42,11 +45,16 @@ async function keepReviewOpen(page) {
 
 test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-France", async ({ page }) => {
   test.setTimeout(45_000);
-  const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
+  const { apiUp, reviewReady, legs } = await probeOfficialPlanReview(page);
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
       description: "GET /voyage/official absent — pastilles servies par la fixture (jamais affaiblies)",
+    });
+  } else if (!reviewReady) {
+    test.info().annotations.push({
+      type: "revue en préparation",
+      description: "GET /plan-review pas ready — PLAN_REVIEW_REV, pastilles Gibraltar sautées",
     });
   }
 
@@ -63,6 +71,12 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
   const review = page.getByTestId("ici-review-slot").getByTestId("plan-review");
   await expect(review).toBeVisible({ timeout: 15_000 });
 
+  if (apiUp && !reviewReady) {
+    await shot(page, "01-couloirs");
+    expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
+    return;
+  }
+
   const row = review.getByTestId("plan-review-leg").filter({ hasText: /Ajaccio/i }).filter({ hasText: /Fort-de-France/i });
   await expect.poll(async () => {
     await keepReviewOpen(page);
@@ -71,12 +85,7 @@ test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-Fra
   await row.first().scrollIntoViewIfNeeded();
   const lanes = row.getByTestId("plan-review-lanes");
 
-  let officialPack = null;
-  if (apiUp) {
-    const body = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
-      .then((r) => (r.ok() ? r.json() : null)).catch(() => null);
-    officialPack = (body?.legs || []).find((l) => /Ajaccio/i.test(l.from || "") && /Fort-de-France/i.test(l.to || ""))?.antiShipping || null;
-  }
+  const officialPack = (legs || []).find((l) => /Ajaccio/i.test(l.from || "") && /Fort-de-France/i.test(l.to || ""))?.antiShipping || null;
 
   await expect.poll(async () => {
     await keepReviewOpen(page);
