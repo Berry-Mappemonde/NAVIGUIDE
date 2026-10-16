@@ -777,6 +777,7 @@ def test_nominal_path_has_no_500(client, tmp_path, monkeypatch):
         ("GET", "/ici/moment", {"lat": 46.15, "lon": -1.16}),
         ("GET", "/ici/pearls", {}),
         ("GET", "/ici/warm/status", {}),
+        ("GET", "/ici/layers/warm/status", {}),
         ("GET", f"/api/v1/polar/{polar_api.DEFAULT_POLAR_EXPEDITION}/client", {}),
     ]
     for method, path, params in paths:

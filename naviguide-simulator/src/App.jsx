@@ -32,6 +32,7 @@ import { sumRainHours } from "./engine/eventRules.js";
 import { layerForEntity } from "./engine/briefingLinks.js";
 import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
 import { filmEventMarks } from "./engine/iciAlong.js";
+import { kickLayerWarm } from "./engine/layerWarm.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
 import { recetteMapView, recetteMonth } from "./utils/recetteQuery.js";
 import {
@@ -1262,6 +1263,7 @@ export default function App() {
     setVoyageFlat(null);
     setBriefingLoading(true);
     fetchCustomPlan(geojson);
+    kickLayerWarm(geojson);
   }, [fetchCustomPlan]);
 
   // DM5 — la pilule <ma route> bascule la SOURCE sans changer de mode :
@@ -1277,6 +1279,7 @@ export default function App() {
     sceneApiRef.current?.playback.pause();
     setBriefingLoading(true);
     fetchCustomPlan(geojson);
+    kickLayerWarm(geojson);
   }, [fetchCustomPlan]);
 
   // DM6 — ouvrir le dessin ne vide jamais le brouillon (points / segments).

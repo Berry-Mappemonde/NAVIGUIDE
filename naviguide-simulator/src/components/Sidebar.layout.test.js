@@ -115,6 +115,14 @@ describe("Sidebar — lot DM9 : Tracer 2 onglets, Suivre 4", () => {
   });
 });
 
+describe("App — lot LY1 : couches le long d'une route perso", () => {
+  it("lance le chauffage AMP au Terminer, sans nouveau libellé", () => {
+    assert.match(app, /import \{ kickLayerWarm \} from "\.\/engine\/layerWarm\.js"/);
+    assert.match(app, /kickLayerWarm\(geojson\)/);
+    assert.doesNotMatch(app, /préchauff|prechauff|chauffe des couches/i);
+  });
+});
+
 describe("contrat pop-up hors film (lot R8c)", () => {
   it("ne rend plus les cartes flottantes ni la popup d'escale sur la carte", () => {
     assert.doesNotMatch(app, /<MomentNowCard/);
