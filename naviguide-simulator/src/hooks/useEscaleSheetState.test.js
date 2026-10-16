@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nearestAlongside, pickAutoEscaleStop } from "./escaleSheetPick.js";
+import { nearestAlongside, parkedCatamaranSample, pickAutoEscaleStop } from "./escaleSheetPick.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "useEscaleSheetState.js"), "utf8");
@@ -73,6 +73,30 @@ describe("useEscaleSheetState — KO #309 Fort-de-France (lot RE2)", () => {
       marks: [...MARKS, PAPEETE],
     });
     assert.equal(leakedOfficial?.name, PAPEETE.name, "si on passe encore le sample officiel, Papeete sort — le cloisonnement est dans App (clockSample du tracé)");
+  });
+
+  it("lot RC44 — catamaran parqué à Cayenne : fiche Cayenne, pas Halifax", () => {
+    const CAYENNE = { name: "Cayenne (Guyane)", lat: 4.93, lon: -52.35 };
+    const HALIFAX = { name: "Halifax (Nouvelle-Écosse)", lat: 44.65, lon: -63.57 };
+    const marks = [...MARKS, CAYENNE, HALIFAX];
+    for (const vehicle of ["plane", "side", "quay"]) {
+      const sample = {
+        lat: HALIFAX.lat,
+        lon: HALIFAX.lon,
+        vehicle,
+        parkLat: CAYENNE.lat,
+        parkLon: CAYENNE.lon,
+      };
+      assert.equal(parkedCatamaranSample(sample)?.lat, CAYENNE.lat, vehicle);
+      const stop = pickAutoEscaleStop({
+        isSuivre: true,
+        atQuay: vehicle === "quay",
+        clockSample: sample,
+        marks,
+      });
+      assert.equal(stop?.name, CAYENNE.name, vehicle);
+      assert.notEqual(stop?.name, HALIFAX.name);
+    }
   });
 
   it("open() pose userPickedRef ; l'effet passe par pickAutoEscaleStop", () => {

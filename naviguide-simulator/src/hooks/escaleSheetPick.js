@@ -1,6 +1,20 @@
 import { haversineNm } from "../utils/geo.js";
 
 const ALONGSIDE_NM = 5;
+const PARKED_VEHICLES = new Set(["plane", "side", "quay"]);
+
+/**
+ * Catamaran parked at Cayenne during the SPM episode (vehicle plane|side|quay).
+ * The crew sample may sit at Halifax; the boat the skipper clicks is at park.
+ */
+export function parkedCatamaranSample(clockSample) {
+  if (!clockSample) return null;
+  if (!PARKED_VEHICLES.has(clockSample.vehicle)) return null;
+  const lat = Number(clockSample.parkLat);
+  const lon = Number(clockSample.parkLon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
 
 /**
  * Nearest stop ≤ 5 nm of the clock sample (lot C / RE2).
@@ -37,6 +51,9 @@ export function pickAutoEscaleStop({
   clockSample = null,
   marks = [],
 } = {}) {
-  if (filmActive || hold || userPicked || !atQuay) return null;
+  if (filmActive || hold || userPicked) return null;
+  const parked = parkedCatamaranSample(clockSample);
+  if (parked) return nearestAlongside(parked, marks);
+  if (!atQuay) return null;
   return nearestAlongside(clockSample, marks);
 }

@@ -8,6 +8,7 @@ tâche de fond après le réchauffage des perles, jamais au démarrage.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -178,12 +179,61 @@ def _stop_title(name: str) -> str:
     return re.sub(r"\s*\([^)]*\)\s*", " ", str(name or "")).strip()
 
 
+ESCALE_MARK_NEAR_NM = 80.0
+
+
+def _nm(lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> float | None:
+    try:
+        p1, p2 = math.radians(float(lat1)), math.radians(float(lat2))
+        dphi = math.radians(float(lat2) - float(lat1))
+        dlamb = math.radians(float(lon2) - float(lon1))
+    except (TypeError, ValueError):
+        return None
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlamb / 2.0) ** 2
+    return 2.0 * 3440.065 * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _place_key(name: Any) -> str:
+    return _stop_title(str(name or "")).casefold()
+
+
+def _pos_of(moment: dict | None) -> tuple[float | None, float | None]:
+    pos = (moment or {}).get("pos") if isinstance((moment or {}).get("pos"), dict) else {}
+    return _as_float(pos.get("lat")), _as_float(pos.get("lon"))
+
+
+def nearest_mark_name(
+    marks: list | None, lat: Any, lon: Any, *, limit_nm: float = ESCALE_MARK_NEAR_NM,
+) -> str | None:
+    """Marque la plus proche des coords, ou None si trop loin. Jamais un nom inventé."""
+    if lat is None or lon is None:
+        return None
+    best_name, best_d = None, float(limit_nm)
+    for mark in marks or []:
+        if not isinstance(mark, dict) or not mark.get("name"):
+            continue
+        dist = _nm(lat, lon, mark.get("lat"), mark.get("lon"))
+        if dist is not None and dist < best_d:
+            best_d = dist
+            best_name = str(mark.get("name"))
+    return best_name
+
+
+def _escale_place(cur: dict | None, fallback: Any, marks: list | None) -> str:
+    """Nom d'escale : marque sous les coords, sinon le `to` atteint — jamais un prev_to déjà quitté."""
+    lat, lon = _pos_of(cur)
+    near = nearest_mark_name(marks, lat, lon)
+    if near:
+        return _stop_title(near)
+    return _stop_title(str(fallback or ""))
+
+
 def _approach_threshold(leg_nm: float | None) -> float:
     span = float(leg_nm) if leg_nm and leg_nm > 0 else APPROACH_NM_FLOOR
     return max(APPROACH_NM_FLOOR, APPROACH_FRAC * span)
 
 
-def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
+def diff_moments(prev: dict | None, cur: dict | None, *, marks: list | None = None) -> list[dict]:
     """Différence entre deux Moments. Première ligne (prev vide) → []."""
     if not isinstance(cur, dict) or not prev:
         return []
@@ -193,11 +243,13 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
     cur_leg = cur.get("leg") if isinstance(cur.get("leg"), dict) else {}
     prev_to, cur_to = prev_leg.get("to"), cur_leg.get("to")
     if prev_to and cur_to and prev_to != cur_to:
-        changes.append(_change(
-            "escale", SCORE_ESCALE,
-            f"Arrivée à {prev_to}",
-            f"{prev_to} → {cur_to}",
-        ))
+        arrived = _escale_place(cur, None, marks) or _stop_title(str(prev_to))
+        if arrived:
+            changes.append(_change(
+                "escale", SCORE_ESCALE,
+                f"Arrivée à {arrived}",
+                f"{prev_to} → {cur_to}",
+            ))
     rem = _as_float(cur_leg.get("remainingNm"))
     prev_rem = _as_float(prev_leg.get("remainingNm"))
     if (
@@ -206,11 +258,13 @@ def diff_moments(prev: dict | None, cur: dict | None) -> list[dict]:
         and cur_to
         and not any(c.get("kind") == "escale" for c in changes)
     ):
-        changes.append(_change(
-            "escale", SCORE_ESCALE,
-            f"Arrivée à {cur_to}",
-            f"Reste {rem} nm.",
-        ))
+        place = _escale_place(cur, cur_to, marks)
+        if place:
+            changes.append(_change(
+                "escale", SCORE_ESCALE,
+                f"Arrivée à {place}",
+                f"Reste {rem} nm.",
+            ))
 
     prev_alerts, cur_alerts = _alert_map(prev), _alert_map(cur)
     try:
@@ -341,27 +395,48 @@ class _ClockIndex:
 
     def __init__(self, vertices: list):
         import bisect  # noqa: PLC0415
+        from collections import defaultdict  # noqa: PLC0415
         self._bisect = bisect
         rows = [v for v in (vertices or []) if isinstance(v, dict)]
         rows.sort(key=lambda v: float(v.get("sailNm") or 0))
         self.rows = rows
         self.keys = [float(v.get("sailNm") or 0) for v in rows]
+        buckets: dict[int, list] = defaultdict(list)
+        for vertex, key in zip(rows, self.keys):
+            buckets[int(round(key))].append(vertex)
+        self._buckets = buckets
 
-    def near(self, sail_nm: float) -> dict:
+    def near(self, sail_nm: float, lat: float | None = None, lon: float | None = None) -> dict:
         if not self.rows:
             return {}
         i = self._bisect.bisect_left(self.keys, sail_nm)
         cands = [j for j in (i - 1, i) if 0 <= j < len(self.rows)]
         best = min(cands, key=lambda j: abs(self.keys[j] - sail_nm))
-        return self.rows[best]
+        row = self.rows[best]
+        if lat is None or lon is None:
+            return row
+        geo: list[dict] = []
+        center = int(round(sail_nm))
+        for key in (center - 1, center, center + 1):
+            geo.extend(self._buckets.get(key) or [])
+        if not geo:
+            return row
+
+        def dist(vertex: dict) -> float:
+            d = _nm(lat, lon, vertex.get("lat"), vertex.get("lon"))
+            return d if d is not None else 1e12
+
+        return min(geo, key=dist)
 
 
-def _clock_near(vertices: list, sail_nm: float) -> dict:
+def _clock_near(
+    vertices: list, sail_nm: float, lat: float | None = None, lon: float | None = None,
+) -> dict:
     if not vertices:
         return {}
     if isinstance(vertices, _ClockIndex):
-        return vertices.near(sail_nm)
-    return _ClockIndex(vertices).near(sail_nm)
+        return vertices.near(sail_nm, lat, lon)
+    return _ClockIndex(vertices).near(sail_nm, lat, lon)
 
 
 def _legs_from_voyage(voy: dict) -> list[dict]:
@@ -382,11 +457,43 @@ def _legs_from_voyage(voy: dict) -> list[dict]:
     return out
 
 
-def _leg_at(legs: list[dict], sail_nm: float) -> tuple[int, dict]:
+def _leg_at(
+    legs: list[dict],
+    sail_nm: float,
+    pos: dict | None = None,
+    marks: list | None = None,
+) -> tuple[int, dict]:
+    hits: list[tuple[int, dict]] = []
     for idx, jambe in enumerate(legs):
         lo, hi = _as_float(jambe.get("fromNm")), _as_float(jambe.get("toNm"))
         if lo is not None and hi is not None and lo <= sail_nm <= hi:
-            return idx, jambe
+            hits.append((idx, jambe))
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        lat = _as_float((pos or {}).get("lat")) if isinstance(pos, dict) else None
+        lon = _as_float((pos or {}).get("lon")) if isinstance(pos, dict) else None
+        place = nearest_mark_name(marks, lat, lon)
+        key = _place_key(place) if place else ""
+        if key:
+            named = [
+                pair for pair in hits
+                if key == _place_key(pair[1].get("to"))
+                or key == _place_key(pair[1].get("from"))
+                or key in str(pair[1].get("to") or "").casefold()
+                or key in str(pair[1].get("from") or "").casefold()
+            ]
+            to_hits = [
+                pair for pair in named
+                if key == _place_key(pair[1].get("to"))
+                or key in str(pair[1].get("to") or "").casefold()
+            ]
+            if to_hits or named:
+                return (to_hits or named)[0]
+            earlier_to = _place_key(hits[0][1].get("to"))
+            if key != earlier_to and key not in str(hits[0][1].get("to") or "").casefold():
+                return hits[-1]
+        return hits[0]
     if not legs:
         return 0, {}
     first_lo = _as_float(legs[0].get("fromNm"))
@@ -469,6 +576,73 @@ def _new_projects_nearby(pearl: dict, seen: set[tuple[str, str]]) -> list[dict]:
     return out
 
 
+def _voyage_marks(voy: dict) -> list[dict]:
+    """Marques d'horloge (datées) puis d'itinéraire — pas de doublon exact."""
+    out: list[dict] = []
+    seen: set[tuple] = set()
+    clock = voy.get("clock") if isinstance(voy.get("clock"), dict) else {}
+    for mark in list(clock.get("marks") or []) + list(voy.get("marks") or []):
+        if not isinstance(mark, dict) or not mark.get("name"):
+            continue
+        key = (
+            str(mark.get("name")),
+            round(float(mark.get("lat") or 0), 3),
+            round(float(mark.get("lon") or 0), 3),
+            str(mark.get("iso") or mark.get("tHours") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(mark)
+    return out
+
+
+def _iso_from_matching_mark(marks: list | None, title: Any, t: Any) -> str | None:
+    """ISO de la marque au même nom, la plus proche de t. Rien d'inventé."""
+    place = re.sub(r"^arrivée à\s+", "", str(title or "").strip(), flags=re.I)
+    key = _place_key(place)
+    if not key:
+        return None
+    cands = []
+    for mark in marks or []:
+        if not isinstance(mark, dict) or not mark.get("iso"):
+            continue
+        name = str(mark.get("name") or "")
+        if key != _place_key(name) and key not in name.casefold():
+            continue
+        cands.append(mark)
+    if not cands:
+        return None
+    target = _parse_iso(t)
+
+    def closeness(mark: dict) -> float:
+        when = _parse_iso(mark.get("iso"))
+        if target and when:
+            return abs((when - target).total_seconds())
+        return 1e18
+
+    return str((min(cands, key=closeness) if target else cands[0]).get("iso") or "") or None
+
+
+def _escale_duplicate_same_day(rows: list[dict], title: Any, t: Any) -> bool:
+    day = str(t or "")[:10]
+    if len(day) < 10:
+        return False
+    key = _place_key(re.sub(r"^arrivée à\s+", "", str(title or ""), flags=re.I))
+    if not key:
+        return False
+    for row in rows:
+        if str(row.get("t") or "")[:10] != day:
+            continue
+        for change in row.get("changes") or []:
+            if not isinstance(change, dict) or change.get("kind") != "escale":
+                continue
+            other = _place_key(re.sub(r"^arrivée à\s+", "", str(change.get("title") or ""), flags=re.I))
+            if other == key:
+                return True
+    return False
+
+
 def _pearls_in_route_order(voy: dict) -> list[dict]:
     embedded = [p for p in (voy.get("pearls") or []) if isinstance(p, dict)]
     if embedded:
@@ -508,6 +682,7 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
         vertices = []
     vertices = _ClockIndex(vertices)   # indexé une fois, interrogé 3 272 fois
     legs = _legs_from_voyage(voy)
+    marks = _voyage_marks(voy)
     thresholds = voy.get("skipper_thresholds") if isinstance(voy.get("skipper_thresholds"), dict) else {
         "galeKt": 34.0,
         "hsAlertM": 3.0,
@@ -520,20 +695,25 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
     seen_places: set[tuple[str, str]] = set()
     for pearl in pearls:
         sail = _as_float(pearl.get("sailNm"))
+        at = pearl.get("at") if isinstance(pearl.get("at"), dict) else {}
+        pearl_lat = _as_float(at.get("lat")) or _as_float(pearl.get("lat"))
+        pearl_lon = _as_float(at.get("lon")) or _as_float(pearl.get("lon"))
         if sail is None:
-            at = pearl.get("at") if isinstance(pearl.get("at"), dict) else {}
             sail = 0.0
-            clock_guess = {"lat": at.get("lat") or pearl.get("lat"), "lon": at.get("lon") or pearl.get("lon")}
+            clock_guess = {"lat": pearl_lat, "lon": pearl_lon}
         else:
             clock_guess = None
-        clock = _clock_near(vertices, sail if sail is not None else 0.0)
+        clock = _clock_near(vertices, sail if sail is not None else 0.0, pearl_lat, pearl_lon)
         if clock_guess and not clock:
             clock = clock_guess
         if not isinstance(clock, dict):
             clock = {}
         if clock.get("mode") is None:
             clock = {**clock, "mode": voy.get("mode") or "follow"}
-        leg_idx, jambe = _leg_at(legs, sail if sail is not None else 0.0)
+        pos = {"lat": pearl_lat, "lon": pearl_lon} if pearl_lat is not None else None
+        leg_idx, jambe = _leg_at(
+            legs, sail if sail is not None else 0.0, pos=pos, marks=marks,
+        )
         cur = build_moment(pearl, clock, jambe, thresholds, lang="fr")
         sig = cur.get("signature") or signature(cur)
         to_nm = _as_float(jambe.get("toNm"))
@@ -562,7 +742,10 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             prev_leg_idx = leg_idx
             continue
         # L'ancien « le port / la marina la plus proche a changé » répétait le même nom à chaque pas.
-        changes = [c for c in diff_moments(prev, cur) if c.get("kind") not in {"marina", "port", "coast", "project"}]
+        changes = [
+            c for c in diff_moments(prev, cur, marks=marks)
+            if c.get("kind") not in {"marina", "port", "coast", "project"}
+        ]
         changes.extend(new_places)
         changes.extend(new_projects)
         if approach_hit:
@@ -581,11 +764,19 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
         if live_rem is not None:
             prev_rem_live = live_rem
         prev_leg_idx = leg_idx
+        t = cur.get("t")
+        escale = next((c for c in changes if c.get("kind") == "escale"), None)
+        if escale:
+            snapped = _iso_from_matching_mark(marks, escale.get("title"), t)
+            if snapped:
+                t = snapped
+            if _escale_duplicate_same_day(rows, escale.get("title"), t):
+                changes = [c for c in changes if c.get("kind") != "escale"]
         rows.append({
             "voyageId": voyage_id,
             "seq": seq,
-            "t": cur.get("t"),
-            "pos": cur.get("pos") or {"lat": pearl.get("lat"), "lon": pearl.get("lon")},
+            "t": t,
+            "pos": cur.get("pos") or {"lat": pearl_lat, "lon": pearl_lon},
             "legIdx": leg_idx,
             "signature": sig,
             "changes": changes,

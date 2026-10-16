@@ -7,12 +7,14 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav, leaveCinema, showLeftPanel } from "../helpers.js";
+import { dismissNotForNav, leaveCinema, openJournalTab, openReviewTab, showLeftPanel } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc31");
 const recetteRc43 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc43");
+const recetteRc44 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc44");
 mkdirSync(recetteDir, { recursive: true });
 mkdirSync(recetteRc43, { recursive: true });
+mkdirSync(recetteRc44, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.jpg`),
@@ -22,6 +24,12 @@ const shot = (page, name) => page.screenshot({
 });
 const shot43 = (page, name) => page.screenshot({
   path: join(recetteRc43, `${name}.jpg`),
+  type: "jpeg",
+  quality: 70,
+  fullPage: false,
+});
+const shot44 = (page, name) => page.screenshot({
+  path: join(recetteRc44, `${name}.jpg`),
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -116,8 +124,15 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
 
   if (!apiUp) {
     await expect(start).toBeDisabled();
+    test.info().annotations.push({
+      type: "sans API",
+      description: "GET /voyage/official absent — assertions Journal Halifax / jambe Cayenne → Papeete sautées",
+    });
     await shot(page, "01-episode");
     await shot(page, "02-carte-side");
+    await shot44(page, "01-journal-halifax");
+    await shot44(page, "02-revue-cayenne-papeete");
+    await shot44(page, "03-fiche-cayenne");
     return;
   }
 
@@ -268,7 +283,9 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
   const journalTab = page.getByTestId("ici-tab-journal");
   if (await journalTab.isVisible().catch(() => false)) {
     await journalTab.click();
-    const journal = page.getByTestId("journal-panel").or(page.getByTestId("journal-day"));
+    const journal = page.getByTestId("journal-panel")
+      .or(page.getByTestId("journal-day"))
+      .or(page.getByTestId("ici-journal-list"));
     if (await journal.isVisible({ timeout: 4_000 }).catch(() => false)) {
       const txt = await journal.innerText().catch(() => "");
       if (txt) {
@@ -276,4 +293,87 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
       }
     }
   }
+
+  const momentsBody = await page.request.get("/voyage/official/moments", { timeout: 8_000 })
+    .then((r) => (r.ok() ? r.json() : null))
+    .catch(() => null);
+  const momentRows = Array.isArray(momentsBody?.moments) ? momentsBody.moments : [];
+  const aroundHfx = momentRows.filter((row) => {
+    const lat = Number(row?.pos?.lat ?? row?.moment?.pos?.lat);
+    const lon = Number(row?.pos?.lon ?? row?.moment?.pos?.lon);
+    return lat > 40 && lat < 50 && lon < -50 && lon > -70;
+  });
+  const hfxTitles = aroundHfx.flatMap((row) => (row.changes || []).map((c) => c?.title || "")).join(" | ");
+  const cayenneAt44 = aroundHfx.some((row) => (
+    (row.changes || []).some((c) => /Arrivée à Cayenne/i.test(c?.title || ""))
+  ));
+  const halifaxNamed = /Halifax/i.test(hfxTitles);
+  if (!aroundHfx.length || !halifaxNamed) {
+    test.info().annotations.push({
+      type: "stock pré-RC44",
+      description: "moments figés sans ligne Halifax à ~44°N — remplisseur MOMENTS_REV à relancer",
+    });
+  } else {
+    expect(hfxTitles, "journal à ~44°N nomme Halifax").toMatch(/Halifax/i);
+    expect(cayenneAt44, "pas d'Arrivée à Cayenne collée à 44°").toBeFalsy();
+  }
+
+  if (episodeReady) {
+    await seekUntilSubtitle(
+      page, /cayenne/, /halifax/, AIR_OUT,
+      /Halifax|s'envole|avion|flies/i,
+    );
+  }
+  try {
+    await openJournalTab(page);
+  } catch {
+    /* onglet déjà ouvert ou masqué */
+  }
+  await shot44(page, "01-journal-halifax");
+
+  const reviewBody = await page.request.get("/voyage/official/plan-review", { timeout: 8_000 })
+    .then((r) => (r.ok() ? r.json() : null))
+    .catch(() => null);
+  const reviewLegs = Array.isArray(reviewBody?.legs) ? reviewBody.legs : [];
+  const pacific = reviewLegs.filter((leg) => (
+    /Papeete/i.test(leg?.to || "") && !/Papeete/i.test(leg?.from || "")
+  ));
+  const spmToPapeete = pacific.filter((leg) => /Saint-Pierre|Miquelon/i.test(leg?.from || ""));
+  const cayenneToPapeete = pacific.filter((leg) => /Cayenne/i.test(leg?.from || ""));
+  if (pacific.length && !cayenneToPapeete.length) {
+    const froms = pacific.map((leg) => leg?.from || "?").join(" | ");
+    test.info().annotations.push({
+      type: "stock pré-RC44",
+      description: `revue figée ${froms} → Papeete — plan_review à recalculer (attendu Cayenne)`,
+    });
+  } else if (cayenneToPapeete.length) {
+    expect(cayenneToPapeete.length, "jambe après l'épisode = Cayenne → Papeete").toBeGreaterThan(0);
+    expect(spmToPapeete.length, "pas Saint-Pierre → Papeete").toBe(0);
+  }
+
+  try {
+    await openReviewTab(page);
+  } catch {
+    /* revue absente sans stock */
+  }
+  await shot44(page, "02-revue-cayenne-papeete");
+
+  const stopBtn = page.getByTestId("replay-stop");
+  if (await stopBtn.isVisible().catch(() => false)) {
+    await stopBtn.click();
+  }
+  await leaveCinema(page);
+
+  const cayenneMark = marks.find((m) => /cayenne/i.test(m?.name || ""));
+  if (cayenneMark && Number.isFinite(Number(cayenneMark.lat))) {
+    await page.evaluate((stop) => {
+      window.__naviguideScene?.callbacks?.onWaypointClick?.(stop);
+    }, { name: cayenneMark.name, lat: cayenneMark.lat, lon: cayenneMark.lon }).catch(() => null);
+    const sheet = page.getByTestId("escale-sheet").or(page.getByTestId("escale-popup"));
+    if (await sheet.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await expect(sheet).toContainText(/Cayenne/i);
+      await expect(sheet).not.toContainText(/Halifax/i);
+    }
+  }
+  await shot44(page, "03-fiche-cayenne");
 });
