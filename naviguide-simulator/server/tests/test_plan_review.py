@@ -394,3 +394,118 @@ def test_noumea_dzaoudzi_leg_unchanged_rc37():
     assert len(legs) == 1
     assert "Nouméa" in legs[0]["from"] and "Dzaoudzi" in legs[0]["to"]
     assert legs[0]["legNm"] == 9151
+
+
+def _rc54_scrambled_pacific_voy():
+    """Marques Mata-Utu / Nouméa collées sur le retour atlantique (tHours faux),
+    sommets justes aux milles d'itinéraire — bug vu le 16 oct. en Revue du plan."""
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 0, "sailNm": 122, "lat": 46.15, "lon": -1.17, "vehicle": "main"},
+            {"tHours": 200, "sailNm": 800, "lat": 44.5, "lon": -5.0, "vehicle": "main"},
+            {"tHours": 400, "sailNm": 2000, "lat": 40.0, "lon": -30.0, "vehicle": "main"},
+            {"tHours": 3422, "sailNm": 16205, "lat": -17.51, "lon": -149.57, "vehicle": "main"},
+            {"tHours": 3680, "sailNm": 17847, "lat": -13.27, "lon": -176.20, "vehicle": "main"},
+            {"tHours": 3750, "sailNm": 18500, "lat": -18.0, "lon": 178.0, "vehicle": "main"},
+            {"tHours": 3858, "sailNm": 19177, "lat": -22.30, "lon": 166.46, "vehicle": "main"},
+            {"tHours": 8406, "sailNm": 38024, "lat": 28.12, "lon": -16.16, "vehicle": "main"},
+            {"tHours": 8600, "sailNm": 38500, "lat": 44.0, "lon": -40.0, "vehicle": "main"},
+            {"tHours": 8800, "sailNm": 38800, "lat": 45.0, "lon": -5.0, "vehicle": "main"},
+            {"tHours": 8924, "sailNm": 38993, "lat": 42.93, "lon": -9.77, "vehicle": "main"},
+            {"tHours": 9162, "sailNm": 39426, "lat": 46.15, "lon": -1.17, "vehicle": "main"},
+        ],
+        "marks": [
+            {"name": "Papeete (Polynésie française)", "tHours": 3422, "holdHours": 72,
+             "lat": -17.51, "lon": -149.57},
+            {"name": "Mata-Utu (Wallis-et-Futuna)", "tHours": 8406, "holdHours": 72,
+             "lat": 28.12, "lon": -376.16},
+            {"name": "Nouméa (Nouvelle-Calédonie)", "tHours": 8924, "holdHours": 72,
+             "lat": 42.93, "lon": -369.77},
+            {"name": "La Rochelle", "tHours": 9162, "holdHours": 72,
+             "lat": 46.15, "lon": -361.17},
+        ],
+    }
+    return {
+        "voyageId": "rc54",
+        "t0": clock["t0"],
+        "clock": clock,
+        "marks": [
+            {"name": "Papeete (Polynésie française)", "nm": 16205, "filmNm": 16365,
+             "lat": -17.51, "lon": -149.57},
+            {"name": "Mata-Utu (Wallis-et-Futuna)", "nm": 17847, "filmNm": 18007,
+             "lat": -13.27, "lon": -176.20},
+            {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 19177, "filmNm": 19337,
+             "lat": -22.30, "lon": 166.46},
+            {"name": "La Rochelle", "nm": 39426, "filmNm": 39586,
+             "lat": 46.15, "lon": -1.17},
+        ],
+        "points": [
+            {"lat": 46.15, "lon": -1.17, "cumNm": 122},
+            {"lat": 44.5, "lon": -5.0, "cumNm": 800},
+            {"lat": 40.0, "lon": -30.0, "cumNm": 2000},
+            {"lat": -17.51, "lon": -149.57, "cumNm": 16205},
+            {"lat": -13.27, "lon": -176.20, "cumNm": 17847},
+            {"lat": -18.0, "lon": 178.0, "cumNm": 18500},
+            {"lat": -22.30, "lon": 166.46, "cumNm": 19177},
+            {"lat": 28.12, "lon": -16.16, "cumNm": 38024},
+            {"lat": 44.0, "lon": -40.0, "cumNm": 38500},
+            {"lat": 45.0, "lon": -5.0, "cumNm": 38800},
+            {"lat": 46.15, "lon": -1.17, "cumNm": 39426},
+        ],
+    }
+
+
+def test_mata_utu_noumea_has_no_atlantic_lanes():
+    """RC54 : Mata-Utu → Nouméa n'a ni Bay of Biscay ni N Atlantic."""
+    out = plan_review.review_official(_rc54_scrambled_pacific_voy(), season=False)
+    pacific = [
+        lg for lg in out["legs"]
+        if "Mata-Utu" in str(lg.get("from") or "") and "Nouméa" in str(lg.get("to") or "")
+    ]
+    assert pacific, [(lg["from"], lg["to"]) for lg in out["legs"]]
+    leg = pacific[0]
+    lanes = ((leg.get("antiShipping") or {}).get("lanes") or [])
+    blob = " ".join(lanes)
+    assert "Bay of Biscay" not in blob, lanes
+    assert "N Atlantic" not in blob, lanes
+    assert leg["legNm"] == 1330
+
+
+def test_noumea_la_rochelle_dates_match_sea_days():
+    """RC54 : Nouméa → La Rochelle, jours de mer et (arrivée − départ) sans facteur dix."""
+    from datetime import datetime, timezone
+
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "vertices": [
+            {"tHours": 288, "sailNm": 38993, "lat": 42.93, "lon": -9.77, "vehicle": "main"},
+            {"tHours": 360, "sailNm": 39426, "lat": 46.15, "lon": -1.17, "vehicle": "main"},
+        ],
+        "marks": [
+            {"name": "Nouméa (Nouvelle-Calédonie)", "tHours": 288, "holdHours": 0,
+             "nm": 19177, "filmNm": 19337},
+            {"name": "La Rochelle", "tHours": 360, "holdHours": 0,
+             "nm": 39426, "filmNm": 39586},
+        ],
+    }
+    legs = plan_review.legs_from_clock(clock, "Nouméa (Nouvelle-Calédonie)")
+    row = [
+        lg for lg in legs
+        if "Nouméa" in str(lg.get("from") or "") and "La Rochelle" in str(lg.get("to") or "")
+    ]
+    assert row, [(lg["from"], lg["to"]) for lg in legs]
+    leg = row[0]
+    dep = datetime.fromisoformat(leg["departIso"].replace("Z", "+00:00"))
+    arr = datetime.fromisoformat(leg["arriveIso"].replace("Z", "+00:00"))
+    if dep.tzinfo is None:
+        dep = dep.replace(tzinfo=timezone.utc)
+    if arr.tzinfo is None:
+        arr = arr.replace(tzinfo=timezone.utc)
+    span = (arr - dep).total_seconds() / 86400.0
+    days = float(leg["daysAtSea"])
+    lo, hi = (span, days) if span < days else (days, span)
+    assert hi / max(lo, 1e-9) < 10.0, (
+        f"{leg['departIso'][:10]} → {leg['arriveIso'][:10]} = {span:.1f} j "
+        f"contre {days} j de mer ({leg['legNm']} nm)"
+    )

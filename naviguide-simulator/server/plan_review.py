@@ -194,10 +194,98 @@ def _leg_distance_nm(a: dict, b: dict, from_nm: float, to_nm: float) -> float:
     return span
 
 
+# Lot RC54 : une marque d'horloge peut porter le nom d'une escale pacifique
+# et l'instant d'un sommet du retour atlantique (longitudes dépliées). On
+# recale tHours / sailNm sur les milles d'itinéraire, qui sont justes.
+SNAP_SAIL_NM_EXACT = 1.0
+SNAP_SAIL_NM_NEAR = 50.0
+# Jours de mer (milles ÷ 8 kn) vs écart d'horloge : au-delà de ce rapport,
+# on aligne l'arrivée sur les jours de mer (Nouméa → La Rochelle : 3 j
+# affichés contre 105,5 j de mer).
+DATE_SEA_DAYS_FACTOR = 10.0
+
+
+def _t_hours_at_sail_nm(clock: dict, sail_nm: float) -> tuple[float, float] | None:
+    """Premier (tHours, sailNm) de l'horloge où les milles de mer atteignent `sail_nm`."""
+    try:
+        target = float(sail_nm)
+    except (TypeError, ValueError):
+        return None
+    verts: list[dict] = []
+    for vertex in clock.get("vertices") or []:
+        if not isinstance(vertex, dict) or vertex.get("tHours") is None:
+            continue
+        if vertex.get("sailNm") is None:
+            continue
+        if vertex.get("vehicle") == "plane":
+            continue
+        verts.append(vertex)
+    if not verts:
+        return None
+    verts = sorted(verts, key=lambda v: (float(v.get("tHours") or 0), float(v.get("sailNm") or 0)))
+
+    def _close(vertex: dict) -> float:
+        return abs(float(vertex["sailNm"]) - target)
+
+    best = min(verts, key=_close)
+    if _close(best) <= SNAP_SAIL_NM_EXACT:
+        return float(best["tHours"]), float(best["sailNm"])
+    for a, b in zip(verts, verts[1:]):
+        sa, sb = float(a["sailNm"]), float(b["sailNm"])
+        if sa == sb:
+            continue
+        lo, hi = (sa, sb) if sa < sb else (sb, sa)
+        if lo - 0.5 <= target <= hi + 0.5:
+            frac = (target - sa) / (sb - sa)
+            t = float(a["tHours"]) + frac * (float(b["tHours"]) - float(a["tHours"]))
+            return t, target
+    if _close(best) <= SNAP_SAIL_NM_NEAR:
+        return float(best["tHours"]), float(best["sailNm"])
+    return None
+
+
+def _snap_mark_to_itinerary_nm(clock: dict, mark: dict) -> dict:
+    """Recopie la marque ; si `nm` d'itinéraire est là, tHours suit le sommet correspondant."""
+    out = dict(mark)
+    if out.get("nm") is None:
+        return out
+    hit = _t_hours_at_sail_nm(clock, float(out["nm"]))
+    if hit is None:
+        return out
+    t_hours, sail = hit
+    out["tHours"] = t_hours
+    out["_sailNm"] = sail
+    return out
+
+
+def _align_dates_to_sea_days(dep: datetime, arr: datetime, days_at_sea: float) -> tuple[datetime, datetime]:
+    """Si l'écart d'horloge et les jours de mer se contredisent d'un facteur dix, l'arrivée suit les jours de mer."""
+    try:
+        days = float(days_at_sea)
+    except (TypeError, ValueError):
+        return dep, arr
+    if days <= 0:
+        return dep, arr
+    span = (arr - dep).total_seconds() / 86400.0
+    if span <= 0:
+        return dep, dep + timedelta(days=days)
+    lo, hi = (span, days) if span < days else (days, span)
+    if hi / max(lo, 1e-9) >= DATE_SEA_DAYS_FACTOR:
+        return dep, dep + timedelta(days=days)
+    return dep, arr
+
+
 def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
     """Consecutive stops → legs with sea-mile bounds and dates. The clock's
     marks are the arrivals; the departure is the first vertex."""
-    marks = [m for m in (clock.get("marks") or []) if m.get("name") and m.get("tHours") is not None]
+    marks = []
+    for raw in clock.get("marks") or []:
+        if not isinstance(raw, dict) or not raw.get("name"):
+            continue
+        mark = _snap_mark_to_itinerary_nm(clock, raw)
+        if mark.get("tHours") is None:
+            continue
+        marks.append(mark)
     marks.sort(key=lambda m: float(m.get("tHours") or 0))
     verts = clock.get("vertices") or []
     if not verts:
@@ -220,7 +308,7 @@ def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
         arr = t0 + timedelta(hours=float(b["tHours"]))
         from_nm = a["_sailNm"] if "_sailNm" in a else (
             _sail_nm_at(clock, float(a["tHours"]) + float(a.get("holdHours") or 0)) or _sail_nm_at(clock, float(a["tHours"])))
-        to_nm = _sail_nm_at(clock, float(b["tHours"]))
+        to_nm = b["_sailNm"] if "_sailNm" in b else _sail_nm_at(clock, float(b["tHours"]))
         itinerary_nm = 0.0
         if a.get("nm") is not None and b.get("nm") is not None:
             itinerary_nm = float(b["nm"]) - float(a["nm"])
@@ -234,11 +322,13 @@ def legs_from_clock(clock: dict, start_name: str | None = None) -> list[dict]:
         leg_nm = round(_leg_distance_nm(a, b, from_nm, to_nm))
         if leg_nm <= 0:
             continue
+        days = planned_sea_days(leg_nm)
+        dep, arr = _align_dates_to_sea_days(dep, arr, days)
         to_nm_out = from_nm + leg_nm if to_nm <= from_nm + 0.5 else to_nm
         legs.append({
             "from": origin_name, "to": b["name"],
             "departIso": to_iso(dep), "arriveIso": to_iso(arr),
-            "daysAtSea": planned_sea_days(leg_nm),
+            "daysAtSea": days,
             "plannedKnots": PLANNED_KNOTS,
             "holdDays": round(float(b.get("holdHours") or 0) / 24),
             "fromNm": from_nm, "toNm": to_nm_out, "legNm": leg_nm,
@@ -379,10 +469,12 @@ def legs_from_voyage(voy: dict) -> list[dict]:
             elapsed_h = (arr - t0).total_seconds() / 3600.0 + hold_b
         if dep is None or arr is None:
             continue
+        days = planned_sea_days(leg_nm)
+        dep, arr = _align_dates_to_sea_days(dep, arr, days)
         legs.append({
             "from": a["name"], "to": b["name"],
             "departIso": to_iso(dep), "arriveIso": to_iso(arr),
-            "daysAtSea": planned_sea_days(leg_nm),
+            "daysAtSea": days,
             "plannedKnots": PLANNED_KNOTS,
             "holdDays": round(hold_b / 24),
             "fromNm": from_nm, "toNm": to_nm_out, "legNm": leg_nm,
