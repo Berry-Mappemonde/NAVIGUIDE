@@ -8,7 +8,8 @@ PR ne couvrent pas**.
 
 **L'interface affichée est la source de vérité.** Ce fichier décrit l'écran du 15–16 oct. 2026
 (Suivre / Tracer / film après DM6–DM9, UI1, RF7, RG11, RG19). Un item qui parle d'un contrat
-retiré (Simulation comme mode, « Croisière · 36 h » d'un seul tenant, Tracer = vitrine Berry,
+retiré (Simulation comme mode — la pilule livrée se lit **Suivre / Tracer**, cliquer
+« Simulation » n'est plus un item ; « Croisière · 36 h » d'un seul tenant, Tracer = vitrine Berry,
 Cinéma qui masque les panneaux) est une case à ignorer, pas un KO produit.
 
 **Tout ce qui suit se voit** — à l'écran, dans la console, ou dans la télémétrie du film
