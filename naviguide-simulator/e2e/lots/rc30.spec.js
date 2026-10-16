@@ -8,21 +8,27 @@
 //     (Sint Maarten / Saint-Martin : un seul nom à l'oreille).
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film — la barre et Revoir restent vérifiés.
-import { mkdirSync } from "node:fs";
+// RC36 : avec API, à un changement de chapterIdx la jambe barre contient
+// encore le fromName du chapitre qui finit, pas déjà le toName du suivant.
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav, leaveCinema } from "../helpers.js";
+import { dismissNotForNav, leaveCinema, waitFilmCanStart } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc30");
+const recetteRc36 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc36");
 mkdirSync(recetteDir, { recursive: true });
+mkdirSync(recetteRc36, { recursive: true });
 
-const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
-  fullPage: false,
-});
+const shot = async (page, name) => {
+  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
+  writeFileSync(join(recetteDir, `${name}.jpg`), buf);
+};
+const shotRc36 = async (page, name) => {
+  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
+  writeFileSync(join(recetteRc36, `${name}.jpg`), buf);
+};
 
 const MONTHS_FR = [
   "janvier", "février", "mars", "avril", "mai", "juin",
@@ -72,7 +78,7 @@ function lendemainWithoutEve(text) {
 }
 
 async function probeOfficial(page) {
-  const res = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  const res = await page.request.get("/voyage/official", { timeout: 12_000 }).catch(() => null);
   if (!res || !res.ok()) return { apiUp: false };
   const ctype = String(res.headers()["content-type"] || "").toLowerCase();
   if (!ctype.includes("json")) return { apiUp: false };
@@ -82,7 +88,7 @@ async function probeOfficial(page) {
 }
 
 test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
@@ -176,4 +182,129 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
   }
 
   await shot(page, "01-ordre");
+
+  // RC36 — à la bascule de chapitre, la barre est encore sur la jambe qui finit.
+  expect(await waitFilmCanStart(page, 20_000), "Revoir actif (API présente)").toBe(true);
+  await start.click();
+  await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 12_000 });
+  await expect.poll(
+    () => page.evaluate(() => (
+      Number(window.__naviguideFilm?.chapterCount) > 1
+      && Number.isFinite(Number(window.__naviguideFilm?.tMs))
+      && Number.isFinite(Number(window.__naviguideFilm?.chapterIdx))
+    )),
+    { timeout: 20_000 },
+  ).toBeTruthy();
+
+  const charsUntilSecondSea = (film.chapters || []).slice(0, 3)
+    .reduce((n, c) => n + String(c.text || "").length, 0);
+  const flipWaitMs = Math.min(120_000, Math.max(70_000, Math.ceil(charsUntilSecondSea / 12) * 1000 + 25_000));
+  const flip = await page.evaluate(async ({ limit }) => {
+    const chapterMs = (v) => {
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      const p = Date.parse(v || "");
+      return Number.isFinite(p) ? p : NaN;
+    };
+    const spanOf = (ch) => {
+      const a = chapterMs(ch?.tA);
+      const b = chapterMs(ch?.tB);
+      return Number.isFinite(a) && Number.isFinite(b) && b > a ? b - a : 0;
+    };
+    const planChapters = () => window.__naviguideFilm?.chapters || [];
+    const read = () => {
+      const f = window.__naviguideFilm || {};
+      const bar = document.querySelector("[data-testid='film-bar']");
+      const clock = document.querySelector("[data-testid='clock-line']");
+      const jambe = (bar?.innerText || "").split("\n")[0] || "";
+      const idx = Number(f.chapterIdx);
+      return {
+        idx: Number.isFinite(idx) ? idx : 0,
+        tMs: Number(f.tMs),
+        jambe,
+        clock: clock?.innerText || "",
+        fromName: f.fromName || "",
+        toName: f.toName || "",
+        subtitle: f.subtitle || "",
+        count: Number(f.chapterCount) || 0,
+      };
+    };
+    let last = read();
+    const seen = [];
+    const t0 = performance.now();
+    while (performance.now() - t0 < limit) {
+      const s = read();
+      if (s.idx !== last.idx) {
+        seen.push({
+          from: last.idx,
+          to: s.idx,
+          jambe: last.jambe,
+          fromName: last.fromName,
+          tMs: last.tMs,
+          span: spanOf(planChapters()[last.idx]),
+        });
+      }
+      if (s.idx > last.idx) {
+        const prevCh = planChapters()[last.idx];
+        if (spanOf(prevCh) > 3600_000) {
+          return {
+            lastGood: last,
+            atFlip: s,
+            startIdx: last.idx,
+            nextIdx: s.idx,
+            chapters: planChapters(),
+            seen,
+          };
+        }
+        last = s;
+      } else {
+        last = s;
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    return {
+      lastGood: last,
+      atFlip: null,
+      startIdx: last.idx,
+      nextIdx: null,
+      chapters: planChapters(),
+      seen,
+    };
+  }, { limit: flipWaitMs });
+
+  await shotRc36(page, "01-jambe-sous-titre");
+  expect(
+    flip?.atFlip,
+    `bascule de chapterIdx en ${Math.round(flipWaitMs / 1000)} s (seen=${JSON.stringify(flip?.seen || [])} last=${JSON.stringify({
+      idx: flip?.lastGood?.idx,
+      jambe: flip?.lastGood?.jambe,
+      fromName: flip?.lastGood?.fromName,
+      count: flip?.lastGood?.count,
+    })})`,
+  ).toBeTruthy();
+
+  const prev = (flip.chapters || [])[flip.startIdx] || {};
+  const next = (flip.chapters || [])[flip.nextIdx] || {};
+  const nameCore = (s) => String(s || "").replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  const prevFrom = nameCore(prev.fromName || flip.lastGood?.fromName || "");
+  const prevTo = nameCore(prev.toName || flip.lastGood?.toName || "");
+  const nextTo = nameCore(next.toName || "");
+  const lastT = Number(flip.lastGood?.tMs);
+  const lastA = Number(prev.tA);
+  const lastB = Number(prev.tB);
+  expect(Number.isFinite(lastT) && Number.isFinite(lastA) && Number.isFinite(lastB) && lastB > lastA, "chapitre de bascule borné").toBe(true);
+  expect(lastT, "tMs encore dans [tA, tB] du chapitre qui finit").toBeGreaterThanOrEqual(lastA);
+  expect(lastT, "tMs encore dans [tA, tB] du chapitre qui finit").toBeLessThanOrEqual(lastB);
+  expect(lastT, "bascule en fin de jambe, pas au départ").toBeGreaterThan(lastA + (lastB - lastA) * 0.3);
+  const jambe = flip.lastGood?.jambe || "";
+  const surface = `${jambe}\n${flip.lastGood?.clock || ""}`;
+  const onFinishingLeg = [prevFrom, prevTo].filter((n) => n.length >= 2).some((n) => (
+    new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(surface)
+  ));
+  expect(onFinishingLeg, `barre encore sur la jambe qui finit (${prevFrom} → ${prevTo}) : ${jambe}`).toBe(true);
+  if (nextTo.length >= 2 && nextTo.toLowerCase() !== prevFrom.toLowerCase() && nextTo.toLowerCase() !== prevTo.toLowerCase()) {
+    expect(jambe, "pas déjà le toName du chapitre suivant").not.toMatch(
+      new RegExp(nextTo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+    );
+  }
+  await shotRc36(page, "01-jambe-sous-titre");
 });
