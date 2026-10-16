@@ -11,6 +11,7 @@ from official_store import (
     DiskBackend,
     FAMILIES,
     FILM_SCRIPT_REV,
+    ICI_REV,
     MOMENTS_REV,
     MongoBackend,
     OfficialStore,
@@ -96,7 +97,12 @@ def _payload(family, tag="A"):
     if family == "climo":
         return {"clock": {"t0": T0, "vertices": [{"lat": 46.15, "lon": -1.16, "iso": T0}]}, "regimes": [], "fiches": []}
     if family == "ici":
-        return {"points": [{"lat": 46.15, "lon": -1.16, "nm": 0, "bag": {"zee": {"name": "FR"}, "at": {"lat": 46.15, "lon": -1.16}}}]}
+        return {"points": [{"lat": 46.15, "lon": -1.16, "nm": 0, "bag": {
+            "zee": {"name": "FR"},
+            "amp": [{"name": "Pertuis charentais", "source": "polygon", "inside": False, "nm": 8.0, "siteId": "PS-1"}],
+            "at": {"lat": 46.15, "lon": -1.16},
+            "sources": {"bi": "ok"},
+        }}]}
     if family == "plan_review":
         return {"legs": [{"from": "La Rochelle", "to": "Fort-de-France (Martinique)"}]}
     return {"moments": [{"t": T0, "signature": tag}], "journal": {"count": 2, "latest": [{"t": T0, "kind": "stop", "name": "La Rochelle"}], "events": [], "days": []}}
@@ -271,6 +277,71 @@ def test_http_ici_official_point_from_store_not_fill(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body.get("cached") is True or (body.get("zee") or {}).get("name") == "FR"
+    assert body["amp"][0]["source"] == "polygon"
+
+
+def test_ici_bag_near_rejects_amp_without_source():
+    official_store.put("ici", {"points": [{
+        "lat": 41.31,
+        "lon": 9.19,
+        "nm": 0,
+        "bag": {
+            "amp": [{"name": "Strait of Bonifacio", "nm": 2.0}],
+            "sources": {"bi": "ok"},
+            "pearl": "rich",
+        },
+    }]})
+    assert official_store.ici_bag_near(41.31, 9.19) is None
+
+
+def test_ici_bag_near_accepts_amp_with_source():
+    bag = {
+        "amp": [{"name": "Strait of Bonifacio", "source": "polygon", "inside": True, "nm": 0.0, "siteId": "AIFRA7"}],
+        "sources": {"bi": "ok"},
+    }
+    official_store.put("ici", {"points": [{"lat": 41.31, "lon": 9.19, "nm": 0, "bag": bag}]})
+    got = official_store.ici_bag_near(41.31, 9.19)
+    assert got is not None
+    assert got["amp"][0]["source"] == "polygon"
+    assert got["amp"][0]["inside"] is True
+
+
+def test_ici_bag_near_accepts_empty_amp_list():
+    official_store.put("ici", {"points": [{
+        "lat": 0.0,
+        "lon": -30.0,
+        "nm": 1000,
+        "bag": {"amp": [], "sources": {"bi": "ok"}, "zee": None},
+    }]})
+    got = official_store.ici_bag_near(0.0, -30.0)
+    assert got is not None
+    assert got["amp"] == []
+
+
+def test_http_ici_pre_am1a_snapshot_is_not_served_cached(client, monkeypatch):
+    import voyage_api
+
+    voy = voyage_api.seed_official_voyage()
+    assert voy and voy.get("points")
+    official_store.put("ici", {"points": [{
+        "lat": 46.15,
+        "lon": -1.16,
+        "nm": 0,
+        "bag": {
+            "amp": [{"name": "Old park", "nm": 3.0}],
+            "sources": {"bi": "ok"},
+            "pearl": "rich",
+        },
+    }]})
+    assert official_store.ici_bag_near(46.15, -1.16) is None
+    r = client.get("/ici", params={"lat": 46.15, "lon": -1.16})
+    assert r.status_code == 200
+    body = r.json()
+    amps = body.get("amp") or []
+    has_source = any(isinstance(x, dict) and "source" in x for x in amps)
+    assert body.get("status") == PREPARING or has_source
+    if not has_source:
+        assert body.get("cached") is not True
 
 
 AIR_MARKS = [
@@ -321,6 +392,7 @@ def test_film_key_includes_script_rev(tmp_path):
     base = store.current_key(voy, NOW)
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
     assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
+    assert store.family_key("ici", voy, NOW) == f"{base}:{ICI_REV}"
     assert store.family_key("eta", voy, NOW) == base
 
 

@@ -30,11 +30,11 @@ PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
 # Clé film : RC41 (phrase mer sans ≥) invalide rc35.
-# moments reste rg4 ; ici reste rg3.
+# moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 FILM_SCRIPT_REV = "rc41"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
-ICI_REV = "rg3"
+ICI_REV = "am1a"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -739,6 +739,21 @@ def on_official_route(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> 
     return False
 
 
+def _ici_bag_is_am1a(bag: dict) -> bool:
+    """Le sac porte le contrat AM1A (clé `source` sur les AMP), pas un snapshot pré-polygone.
+
+    Une liste `amp` vide est acceptée : un point océanique recalculé ne doit pas
+    relancer le remplisseur en boucle. Un sac sans clé `amp`, ou dont une entrée
+    n'a pas `source`, est pré-AM1A : on le laisse recalculer. On n'invente aucune AMP.
+    """
+    amps = bag.get("amp")
+    if not isinstance(amps, list):
+        return False
+    if not amps:
+        return True
+    return all(isinstance(item, dict) and "source" in item for item in amps)
+
+
 def ici_bag_near(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> Optional[dict]:
     body = payload_of("ici")
     if not body:
@@ -755,7 +770,11 @@ def ici_bag_near(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> Optio
         if d < best_d:
             best_d = d
             best = row.get("bag")
-    return best if isinstance(best, dict) else None
+    if not isinstance(best, dict):
+        return None
+    if not _ici_bag_is_am1a(best):
+        return None
+    return best
 
 
 def preparing_ici(lat: float, lon: float, radius_nm: float = 30.0) -> dict:

@@ -6,6 +6,7 @@ import httpx
 from ici_engine import (
     BI_LIVE_API,
     FRENCH_EEZ_MRGID,
+    PEARL_REV,
     amp_layer_sig,
     eez_plausible,
     empty_dossier,
@@ -1310,7 +1311,8 @@ def test_amp_fallback_export_when_get_amp_errors():
     assert d["amp"][0].get("visitUrl") == "https://parc-marin.fr/visite"
 
 
-def test_amp_empty_get_amp_does_not_fallback_to_export():
+def test_amp_empty_get_amp_falls_back_to_export():
+    """RC45 : un 200 /amp vide n'est plus figé — repli export, comme un 5xx."""
     reset_caches()
     seen = []
 
@@ -1328,8 +1330,12 @@ def test_amp_empty_get_amp_does_not_fallback_to_export():
             return await fill_dossier(46.15, -1.16, client=client, thin=True)
 
     d = asyncio.run(run())
-    assert d["amp"] == []
-    assert not any("export/amp.geojson" in url for url in seen)
+    assert any("/amp?" in url and "bbox=" in url for url in seen)
+    assert any("export/amp.geojson" in url for url in seen)
+    assert d["amp"][0]["name"] == "Pertuis charentais"
+    assert d["amp"][0]["source"] == "export"
+    assert d["amp"][0]["inside"] is False
+    assert d["amp"][0]["siteId"] == "PS-1"
 
 
 def test_amp_polygon_from_get_amp_fill_dossier():
@@ -1374,4 +1380,17 @@ def test_thin_cache_key_changes_with_amp_signature():
     assert k1.endswith(":a3769")
     assert k2.endswith(":a4000")
     assert k0.rsplit(":a", 1)[0] == k1.rsplit(":a", 1)[0]
+    assert f":{PEARL_REV}:" in k0
+    reset_caches()
+
+
+def test_thin_cache_key_changes_with_pearl_rev(monkeypatch):
+    import ici_engine
+    reset_caches()
+    k0 = thin_cache_key(46.15, -1.16, 30)
+    assert PEARL_REV in k0.split(":")
+    monkeypatch.setattr(ici_engine, "PEARL_REV", "am1a-x")
+    k1 = thin_cache_key(46.15, -1.16, 30)
+    assert k0 != k1
+    assert "am1a-x" in k1.split(":")
     reset_caches()
