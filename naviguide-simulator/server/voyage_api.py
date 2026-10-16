@@ -1203,6 +1203,9 @@ def get_official_clock():
     try:
         raw = official_store.serve_clock_bytes()
         if raw:
+            # Lot RC34 : climo du jour sans realUntil → nudge le remplisseur,
+            # sans recalculer ici. L'horloge déjà rangée est servie telle quelle.
+            official_store.nudge_climo_if_missing_real_until()
             return Response(content=raw, media_type="application/json")
         voy = load_voyage(OFFICIAL_VOYAGE_ID)
         clock = _official_clock_from_store(voy)

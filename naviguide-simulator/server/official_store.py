@@ -850,6 +850,40 @@ def hindcast_enabled_for_status() -> bool:
     return hindcast_enabled()
 
 
+def payload_has_real_until(payload: Optional[dict]) -> bool:
+    """True si le climo a déjà le champ HC1 (date réelle ou null honnête).
+
+    Un climo pré-HC1 n'a ni `clock.realUntil` ni `realUntil` au sommet : le
+    remplisseur doit alors relancer `compute_climo` (lot RC34). La présence
+    de la clé, même à `null`, compte : `ensure_track` a déjà rendu None et
+    le statut `empty` est rangé — on ne recalcule pas en boucle.
+    """
+    if not isinstance(payload, dict):
+        return False
+    clock = payload.get("clock")
+    if isinstance(clock, dict) and "realUntil" in clock:
+        return True
+    return "realUntil" in payload
+
+
+def _climo_should_recompute(payload: Optional[dict]) -> bool:
+    """Climo du jour sans frontière HC1, hindcast actif → ne pas figer `unchanged`."""
+    if not hindcast_enabled_for_status():
+        return False
+    return not payload_has_real_until(payload)
+
+
+def nudge_climo_if_missing_real_until() -> None:
+    """GET /clock : si l'horloge servie n'a pas `realUntil` et que le hindcast
+    est actif, réveiller le remplisseur — sans recalculer dans le processus HTTP.
+    L'horloge déjà rangée reste servie (pas de trou « preparing »)."""
+    if not hindcast_enabled_for_status():
+        return
+    if payload_has_real_until(payload_of("climo")):
+        return
+    kick_worker()
+
+
 def _save_official_status(voy: dict, fields: dict) -> None:
     """Statut hindcast honnête sur le voyage officiel — via save_voyage, rien d'autre."""
     from voyage_store import save_voyage  # noqa: PLC0415
@@ -1212,6 +1246,8 @@ def refresh_family(
                 nxt = next_official_stop(current, when)
                 if not eta_store_retry_due(hit.get("payload"), when, nxt):
                     return "unchanged"
+            elif family == "climo" and _climo_should_recompute(hit.get("payload")):
+                pass
             else:
                 return "unchanged"
     fn = compute or COMPUTE[family]

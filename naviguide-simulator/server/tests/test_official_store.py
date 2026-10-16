@@ -1030,6 +1030,121 @@ def test_hc1_atlas_degraded_serves_yesterday_clock(monkeypatch):
     reset_hooks()
 
 
+def test_rc34_stale_climo_without_real_until_is_recomputed(tmp_path, monkeypatch):
+    """Lot RC34 : un climo du jour sans realUntil n'est pas `unchanged` —
+    compute_climo tourne (faux ERA5 HC1), le payload rangé a realUntil ;
+    un second refresh avec realUntil → unchanged. L'ancienne horloge reste
+    servie tant que put n'a pas eu lieu."""
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import parse_iso
+    from voyage_store import save_voyage
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    now = parse_iso(T0) + timedelta(days=10)
+    frontier = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    _hc1_bind_om(frontier)
+    voy = _hc1_official_voy()
+    save_voyage(dict(voy))
+
+    store = OfficialStore(DiskBackend(tmp_path / "climo-rc34"), now=lambda: now)
+    key = store.family_key("climo", voy, now)
+    stale = {
+        "clock": {
+            "t0": T0,
+            "kind": "climatology",
+            "vertices": [
+                {"lat": 46.15, "lon": -1.16, "iso": T0, "regime": "climatology"},
+            ],
+        },
+        "regimes": [],
+        "fiches": [],
+    }
+    store.put("climo", stale, key)
+    before = store.get("climo", key)
+    assert "realUntil" not in (before["payload"].get("clock") or {})
+    assert "realUntil" not in before["payload"]
+    stale_n = len((before["payload"].get("clock") or {}).get("vertices") or [])
+
+    status = official_store.refresh_family(
+        "climo", now=now, store=store, voy=voy, force=False,
+    )
+    assert status != "unchanged"
+    assert status == READY
+    hit = store.get("climo", key)
+    payload = hit["payload"]
+    assert payload["clock"]["realUntil"] == frontier
+    assert payload["realUntil"] == frontier
+    assert len(payload["clock"]["vertices"]) > stale_n
+
+    again = official_store.refresh_family(
+        "climo", now=now, store=store, voy=voy, force=False,
+    )
+    assert again == "unchanged"
+    reset_hooks()
+
+
+def test_rc34_clock_get_nudges_when_climo_lacks_real_until(client, monkeypatch):
+    """GET /voyage/official/clock sert l'horloge déjà rangée et nudge le
+    remplisseur si realUntil manque (hindcast actif) — jamais de recalcul HTTP."""
+    kicks = {"n": 0}
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    monkeypatch.delenv("NAVIGUIDE_FORECAST_BACKEND", raising=False)
+    monkeypatch.setattr(official_store, "kick_worker", lambda: kicks.__setitem__("n", kicks["n"] + 1))
+
+    official_store.put("climo", _payload("climo"))
+    r = client.get("/voyage/official/clock")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["t0"].startswith("2026-05-15")
+    assert "realUntil" not in body
+    assert kicks["n"] >= 1
+
+    kicks["n"] = 0
+    official_store.put("climo", {
+        "clock": {
+            "t0": T0,
+            "vertices": [{"lat": 46.15, "lon": -1.16, "iso": T0}],
+            "realUntil": "2026-10-09",
+        },
+        "regimes": [],
+        "fiches": [],
+        "realUntil": "2026-10-09",
+    })
+    r2 = client.get("/voyage/official/clock")
+    assert r2.status_code == 200
+    assert r2.json().get("realUntil") == "2026-10-09"
+    assert kicks["n"] == 0
+
+
+def test_rc34_ensure_track_none_keeps_climatology_empty(monkeypatch):
+    """Pas de vent réel → horloge climatologique + statut empty, jamais ready à vide."""
+    from datetime import timedelta
+    from hindcast import reset_hooks
+    from voyage_clock import parse_iso
+    import real_track
+
+    monkeypatch.setenv("NAVIGUIDE_HINDCAST", "1")
+    reset_hooks()
+    monkeypatch.setattr(real_track, "ensure_track", lambda *a, **k: None)
+    now = parse_iso(T0) + timedelta(days=10)
+    voy = _hc1_official_voy()
+    payload = official_store.compute_climo(dict(voy), now)
+    assert payload is not None
+    clock = payload["clock"]
+    regimes = {(v.get("regime") or v.get("kind")) for v in clock.get("vertices") or []}
+    assert "hindcast" not in regimes
+    assert payload["hindcastStatus"] == "empty"
+    assert payload["hindcastStatus"] != "ready"
+    assert payload.get("realUntil") is None
+    assert "realUntil" in payload
+    assert "realUntil" in clock
+    cov = str(payload.get("hindcastCoverage") or "")
+    assert cov.startswith("0/")
+    reset_hooks()
+
+
 def _rg11a_raw_plan(text=None):
     body = text or (
         "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest. "
