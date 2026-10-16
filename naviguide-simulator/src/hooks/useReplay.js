@@ -1223,29 +1223,48 @@ export function useReplay({
     const n = Math.max(0, Math.min(last, Number(idx)));
     const ch = plan.chapters[n];
     if (!ch) return false;
-    pinnedIdxRef.current = ch.idx;
-    const pinChar = Number.isFinite(Number(charIdx)) ? Math.max(0, Number(charIdx)) : null;
-    pinnedCharRef.current = pinChar;
+    const fromStart = Number(charIdx) === 0;
     applyChapter(ch);
-    if (pinChar != null) {
-      const sub = filmBarSubtitle({
-        chapterText: ch.text || "",
-        charIdx: pinChar,
-        pinned: true,
-        sentenceStarts: ch.sentenceStarts,
-        fromName: ch.fromName,
-        toName: ch.toName,
-        anchors: ch.anchors,
-      });
-      setSubtitle(sub.text);
-      setSubtitlePlace(sub.place);
-      lastSubtitleRef.current = sub.text;
-    }
-    const at = Number.isFinite(ch.tB) ? ch.tB : ch.tA;
-    if (Number.isFinite(at)) {
-      tMsRef.current = at;
-      lastTRef.current = at;
-      setTMs(at);
+    if (fromStart) {
+      // RC51 : jouer la jambe depuis tA (Fort-de-France → Pointe-à-Pitre),
+      // sans épingler tB — sinon le bateau reste à quai et la caméra ne glisse pas.
+      pinnedIdxRef.current = null;
+      pinnedCharRef.current = null;
+      let chars = 0;
+      for (let i = 0; i < n; i++) chars += Number(plan.chapters[i].chars) || 0;
+      const elapsed = chars / FILM_ESTIMATE_CPS;
+      filmElapsedRef.current = elapsed;
+      displayElapsedRef.current = elapsed;
+      const at = Number.isFinite(ch.tA) ? ch.tA : ch.tB;
+      if (Number.isFinite(at)) {
+        tMsRef.current = at;
+        lastTRef.current = at;
+        setTMs(at);
+      }
+    } else {
+      pinnedIdxRef.current = ch.idx;
+      const pinChar = Number.isFinite(Number(charIdx)) ? Math.max(0, Number(charIdx)) : null;
+      pinnedCharRef.current = pinChar;
+      if (pinChar != null) {
+        const sub = filmBarSubtitle({
+          chapterText: ch.text || "",
+          charIdx: pinChar,
+          pinned: true,
+          sentenceStarts: ch.sentenceStarts,
+          fromName: ch.fromName,
+          toName: ch.toName,
+          anchors: ch.anchors,
+        });
+        setSubtitle(sub.text);
+        setSubtitlePlace(sub.place);
+        lastSubtitleRef.current = sub.text;
+      }
+      const at = Number.isFinite(ch.tB) ? ch.tB : ch.tA;
+      if (Number.isFinite(at)) {
+        tMsRef.current = at;
+        lastTRef.current = at;
+        setTMs(at);
+      }
     }
     if (ch.idx >= last) setProgress(1);
     if (typeof window !== "undefined") {
