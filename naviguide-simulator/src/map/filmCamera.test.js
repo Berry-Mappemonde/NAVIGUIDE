@@ -8,7 +8,11 @@ import {
   applyFilmCamera,
   clampFilmPan,
   filmApproachZoom,
+  filmChapterCenter,
   filmChapterZoom,
+  filmIntraChapterCenter,
+  filmLegIsArchipelago,
+  FILM_ARCHIPELAGO_NM,
   FILM_INTERP_DELAY_MS,
   FILM_TILE_SLOW,
   FILM_ZOOM_ARCHIPELAGO_MAX,
@@ -641,5 +645,169 @@ describe("filmCamera lot RC25 — chapitre sans bond (Δnm≈0, zoom 6→4)", ()
     assert.ok(Number(b.zoom) >= 5.8, `zoom snappé ${b.zoom}, attendu ~5.92`);
     assert.ok(Number(b.zoom) <= 6.01);
     assert.match(controller, /if \(this\.camera\.filmZoom == null\) this\.camera\.filmZoom = this\.camera\.filmZoomBase/);
+  });
+});
+
+describe("filmCamera lot RC40 — pleine jambe, pas de saut d'ancre", () => {
+  function mercatorMap(center = { lat: 14.6, lng: -61.07 }, zoom = 6.75) {
+    const size = { x: 1280, y: 800 };
+    let here = { ...center };
+    let z = zoom;
+    const calls = [];
+    function project(lat, lng, zoomLevel = z) {
+      const scale = 256 * (2 ** zoomLevel);
+      const x = ((lng + 180) / 360) * scale;
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale;
+      return { x, y };
+    }
+    const map = {
+      flyTo() { calls.push({ action: "flyTo" }); },
+      setView(c, nextZoom, opts) {
+        calls.push({ action: "setView", center: c, zoom: nextZoom, opts });
+        here = { lat: c[0], lng: c[1] };
+        if (Number.isFinite(Number(nextZoom))) z = Number(nextZoom);
+      },
+      panBy() { calls.push({ action: "panBy" }); },
+      _rawPanBy() { calls.push({ action: "panBy" }); },
+      getSize() { return size; },
+      getCenter() { return here; },
+      getZoom() { return z; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : (ll.lng ?? ll.lon);
+        const p = project(lat, lng);
+        const c = project(here.lat, here.lng);
+        return { x: size.x / 2 + (p.x - c.x), y: size.y / 2 + (p.y - c.y) };
+      },
+      containerPointToLatLng(p) {
+        const c = project(here.lat, here.lng);
+        const scale = 256 * (2 ** z);
+        const wx = c.x + (p.x - size.x / 2);
+        const wy = c.y + (p.y - size.y / 2);
+        const lng = (wx / scale) * 360 - 180;
+        const n = Math.PI - ((2 * Math.PI * wy) / scale);
+        const lat = (180 / Math.PI) * Math.atan(Math.sinh(n));
+        return { lat, lng };
+      },
+      getBounds() {
+        const nw = map.containerPointToLatLng({ x: 0, y: 0 });
+        const se = map.containerPointToLatLng({ x: size.x, y: size.y });
+        return {
+          getNorth: () => nw.lat,
+          getSouth: () => se.lat,
+          getEast: () => se.lng,
+          getWest: () => nw.lng,
+        };
+      },
+    };
+    const centerPx = () => map.latLngToContainerPoint([here.lat, here.lng]);
+    return { map, calls, centerPx };
+  }
+
+  const FDF = [14.6036, -61.0668];
+  const GUADELOUPE = [16.241, -61.533];
+  const MARIGOT = [18.0731, -63.0822];
+  const CARAIBE = {
+    fromLat: FDF[0], fromLon: FDF[1], toLat: MARIGOT[0], toLon: MARIGOT[1],
+  };
+
+  it("Fort-de-France → Marigot est un archipel (un cadre pour le chapitre)", () => {
+    assert.ok(filmLegIsArchipelago(CARAIBE), "jambe Caraïbes hors seuil archipel");
+    assert.ok(FILM_ARCHIPELAGO_NM >= 238);
+    const mid = filmChapterCenter(CARAIBE);
+    assert.ok(mid);
+    assert.ok(Math.abs(mid[0] - (FDF[0] + MARIGOT[0]) / 2) < 1e-9);
+  });
+
+  it("Caraïbes : île en île, même chapterIdx, centre < 80 px en 1 s", () => {
+    const hops = [FDF, GUADELOUPE, MARIGOT];
+    const { map, calls, centerPx } = mercatorMap({ lat: FDF[0], lng: FDF[1] }, 6.75);
+    let st = applyFilmCamera(map, {
+      chapterIdx: 7, lastChapterIdx: null, lat: FDF[0], lon: FDF[1],
+      heading: 310, zoom: 6.75, now: 0, filmLeg: CARAIBE,
+    });
+    const p0 = centerPx();
+    let prev = { lat: FDF[0], lon: FDF[1] };
+    for (let i = 0; i < 60; i++) {
+      const hop = i < 20 ? 0 : i < 40 ? 1 : 2;
+      const [lat, lon] = hops[hop];
+      st = applyFilmCamera(map, {
+        chapterIdx: 7,
+        lastChapterIdx: 7,
+        lat,
+        lon,
+        heading: 310 + hop * 8,
+        zoom: 6.75,
+        now: 16 * (i + 1),
+        lastCenter: st.lastCenter,
+        lastBoat: prev,
+        framesSinceReset: st.framesSinceReset,
+        stillAnchor: null,
+        filmLeg: CARAIBE,
+      });
+      prev = { lat, lon };
+    }
+    const p1 = centerPx();
+    const dpx = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    assert.ok(dpx < 80, `centre Caraïbes ${dpx.toFixed(1)} px en 1 s`);
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+  });
+
+  it("ancre (bouée / Sardaigne) : le centre ne saute pas avec le bateau", () => {
+    const { map, centerPx } = mercatorMap({ lat: 41.2, lng: 9.4 }, 6.75);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 2, lastChapterIdx: null, lat: 41.2, lon: 9.4,
+      heading: 140, zoom: 6.75, now: 0,
+    });
+    let st = applyFilmCamera(map, {
+      chapterIdx: 2, lastChapterIdx: 2, lat: 41.21, lon: 9.41,
+      heading: 140, zoom: 6.75, now: 16,
+      lastCenter: first.lastCenter, lastBoat: { lat: 41.2, lon: 9.4 },
+      framesSinceReset: first.framesSinceReset,
+    });
+    const p0 = centerPx();
+    st = applyFilmCamera(map, {
+      chapterIdx: 2, lastChapterIdx: 2, lat: 39.2, lon: 9.1,
+      heading: 200, zoom: 6.75, now: 32,
+      lastCenter: st.lastCenter, lastBoat: { lat: 41.21, lon: 9.41 },
+      framesSinceReset: st.framesSinceReset,
+    });
+    const p1 = centerPx();
+    const dpx = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    assert.ok(dpx < 80, `saut d'ancre ${dpx.toFixed(1)} px`);
+  });
+
+  it("pleine mer : la caméra traduit avec le bateau (pas figée)", () => {
+    const { map } = mercatorMap({ lat: 46.15, lng: -1.17 }, 5);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 1, lastChapterIdx: null, lat: 46.15, lon: -1.17,
+      heading: 140, zoom: 5, now: 0,
+    });
+    let st = first;
+    let prev = { lat: 46.15, lon: -1.17 };
+    for (let i = 1; i <= 24; i++) {
+      const lat = 46.15 - i * 0.02;
+      const lon = -1.17 + i * 0.03;
+      st = applyFilmCamera(map, {
+        chapterIdx: 1, lastChapterIdx: 1, lat, lon, heading: 140, zoom: 5,
+        now: i * 16, lastCenter: st.lastCenter, lastBoat: prev,
+        framesSinceReset: st.framesSinceReset, boatPx: 8,
+      });
+      prev = { lat, lon };
+    }
+    const dLat = Math.abs(st.lastCenter[0] - 46.15);
+    const dLon = Math.abs(st.lastCenter[1] - (-1.17));
+    assert.ok(dLat + dLon > 0.05, "caméra figée en pleine mer");
+  });
+
+  it("filmIntraChapterCenter : bbox tenue, bateau hors cadre ramené", () => {
+    const { map } = mercatorMap({ lat: FDF[0], lng: FDF[1] }, 6.75);
+    const held = filmIntraChapterCenter(map, {
+      from: FDF, boat: GUADELOUPE, lastBoat: { lat: FDF[0], lon: FDF[1] }, filmLeg: CARAIBE,
+    });
+    const dLat = Math.abs(held[0] - FDF[0]);
+    const dLon = Math.abs(held[1] - FDF[1]);
+    assert.ok(dLat < 0.5 && dLon < 0.5, `cadre Caraïbes déplacé ${dLat},${dLon}`);
   });
 });
