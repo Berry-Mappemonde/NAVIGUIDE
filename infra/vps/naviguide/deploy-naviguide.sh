@@ -73,20 +73,8 @@ sudo rsync -a --delete "$NAV/naviguide-app/dist/" "$WWW_ROOT/"
 sudo chown -R ubuntu:ubuntu "$WWW_ROOT"
 sudo chmod -R a+rX "$WWW_ROOT"
 
-# ── nginx: installed on the first pass only (certbot edits the file) ─
-if [ ! -f /etc/nginx/sites-available/naviguide ]; then
-  sudo cp "$APP/infra/vps/naviguide/nginx-naviguide.conf" /etc/nginx/sites-available/naviguide
-  sudo ln -sf /etc/nginx/sites-available/naviguide /etc/nginx/sites-enabled/naviguide
-fi
-# Existing deploys: move the root out of the repo if it still uses the old path
-if grep -q 'root /home/ubuntu/blue-intelligence-map/naviguide/naviguide-app/dist;' \
-     /etc/nginx/sites-available/naviguide 2>/dev/null; then
-  sudo sed -i 's|root /home/ubuntu/blue-intelligence-map/naviguide/naviguide-app/dist;|root /var/www/naviguide;|' \
-    /etc/nginx/sites-available/naviguide
-fi
-# Execute bit on the repo path: useful if an nginx root still points at dist/
-chmod o+x "$HOME" "$APP"
-sudo nginx -t && sudo systemctl reload nginx
+# ── nginx: copie les vhosts de référence (NAVIGUIDE + BI), test puis reload ─
+bash "$APP/infra/vps/sync-public-nginx.sh"
 
 # ── Health (naviguide-api loads xarray/copernicusmarine: ~10 s at startup) ──
 for svc in "9000:naviguide-api" "9008:orchestrator" "9004:polar-api"; do
