@@ -12,9 +12,11 @@ import { dismissNotForNav, leaveCinema, openJournalTab, openReviewTab, showLeftP
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc31");
 const recetteRc43 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc43");
 const recetteRc44 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc44");
+const recetteRc50 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc50");
 mkdirSync(recetteDir, { recursive: true });
 mkdirSync(recetteRc43, { recursive: true });
 mkdirSync(recetteRc44, { recursive: true });
+mkdirSync(recetteRc50, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.jpg`),
@@ -30,6 +32,12 @@ const shot43 = (page, name) => page.screenshot({
 });
 const shot44 = (page, name) => page.screenshot({
   path: join(recetteRc44, `${name}.jpg`),
+  type: "jpeg",
+  quality: 70,
+  fullPage: false,
+});
+const shot50 = (page, name) => page.screenshot({
+  path: join(recetteRc50, `${name}.jpg`),
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -133,6 +141,7 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
     await shot44(page, "01-journal-halifax");
     await shot44(page, "02-revue-cayenne-papeete");
     await shot44(page, "03-fiche-cayenne");
+    await shot50(page, "01-cayenne-papeete");
     return;
   }
 
@@ -334,21 +343,24 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
   const reviewBody = await page.request.get("/voyage/official/plan-review", { timeout: 8_000 })
     .then((r) => (r.ok() ? r.json() : null))
     .catch(() => null);
+  const reviewReady = reviewBody?.status === "ready";
   const reviewLegs = Array.isArray(reviewBody?.legs) ? reviewBody.legs : [];
   const pacific = reviewLegs.filter((leg) => (
     /Papeete/i.test(leg?.to || "") && !/Papeete/i.test(leg?.from || "")
   ));
-  const spmToPapeete = pacific.filter((leg) => /Saint-Pierre|Miquelon/i.test(leg?.from || ""));
+  const staleToPapeete = pacific.filter((leg) => /Halifax|Saint-Pierre|Miquelon/i.test(leg?.from || ""));
   const cayenneToPapeete = pacific.filter((leg) => /Cayenne/i.test(leg?.from || ""));
-  if (pacific.length && !cayenneToPapeete.length) {
-    const froms = pacific.map((leg) => leg?.from || "?").join(" | ");
-    test.info().annotations.push({
-      type: "stock pré-RC44",
-      description: `revue figée ${froms} → Papeete — plan_review à recalculer (attendu Cayenne)`,
-    });
-  } else if (cayenneToPapeete.length) {
+  // RC50 : un GET ready ne peut plus porter Halifax / Saint-Pierre → Papeete
+  // (plus d'annotation « stock pré-RC44 » sur un ready). Sans snapshot à la
+  // nouvelle clé : preparing, annotation, assertions jambe sautées.
+  if (reviewReady) {
     expect(cayenneToPapeete.length, "jambe après l'épisode = Cayenne → Papeete").toBeGreaterThan(0);
-    expect(spmToPapeete.length, "pas Saint-Pierre → Papeete").toBe(0);
+    expect(staleToPapeete.length, "plus jamais Halifax ni Saint-Pierre → Papeete").toBe(0);
+  } else {
+    test.info().annotations.push({
+      type: "revue en préparation",
+      description: "GET /plan-review pas ready — PLAN_REVIEW_REV, remplisseur à relancer ; assertions jambe sautées",
+    });
   }
 
   try {
@@ -356,7 +368,13 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
   } catch {
     /* revue absente sans stock */
   }
+  if (reviewReady) {
+    const row = page.getByTestId("plan-review-leg").filter({ hasText: /Cayenne/i }).filter({ hasText: /Papeete/i });
+    await expect(row.first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId("plan-review")).not.toContainText(/Halifax \(Nouvelle-Écosse\) → Papeete|Saint-Pierre \(Saint-Pierre-et-Miquelon\) → Papeete/i);
+  }
   await shot44(page, "02-revue-cayenne-papeete");
+  await shot50(page, "01-cayenne-papeete");
 
   const stopBtn = page.getByTestId("replay-stop");
   if (await stopBtn.isVisible().catch(() => false)) {
