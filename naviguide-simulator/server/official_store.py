@@ -31,10 +31,13 @@ READY = "ready"
 UNAVAILABLE = "unavailable"
 # Clé film : RC48 (eaux FR du journal, Gibraltar avant le Maroc) invalide rc41.
 # moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
+# plan_review : rc44 — origine mer après l'épisode (Cayenne). Pas de repli
+# sur l'ancienne clé : un snapshot Halifax / Saint-Pierre → Papeete ne sort plus ready.
 FILM_SCRIPT_REV = "rc48"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "am1a"
+PLAN_REVIEW_REV = "rc44"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -165,6 +168,8 @@ def _store_rev_relaxed() -> bool:
     La clé `…:rg4` n'existe pas encore dans l'archive gelée ; sans ça, GET
     /film, /moments et /ici restent « en préparation » et Revoir reste grisé.
     Sur le poste le remplisseur tourne (WORKER≠0) : pas de repli, il recalcule.
+    plan_review (RC50) n'est pas dans ce repli : un snapshot Halifax /
+    Saint-Pierre → Papeete ne doit plus sortir ready.
     """
     raw = (os.environ.get("NAVIGUIDE_OFFICIAL_WORKER") or "1").strip().lower()
     return raw in ("0", "false", "no")
@@ -325,7 +330,7 @@ class OfficialStore:
         voy: Optional[dict] = None,
         now: Optional[datetime] = None,
     ) -> str:
-        """Clé de rangement : film, moments et ici portent la révision du calcul (RG5)."""
+        """Clé de rangement : film, moments, ici et plan_review portent la révision du calcul (RG5)."""
         base = self.current_key(voy, now)
         if family == "film":
             return f"{base}:{FILM_SCRIPT_REV}"
@@ -333,6 +338,8 @@ class OfficialStore:
             return f"{base}:{MOMENTS_REV}"
         if family == "ici":
             return f"{base}:{ICI_REV}"
+        if family == "plan_review":
+            return f"{base}:{PLAN_REVIEW_REV}"
         return base
 
     def _with_date(self, hit: Optional[dict]) -> Optional[dict]:

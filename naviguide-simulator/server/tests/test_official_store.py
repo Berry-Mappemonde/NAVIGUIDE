@@ -13,6 +13,7 @@ from official_store import (
     FILM_SCRIPT_REV,
     ICI_REV,
     MOMENTS_REV,
+    PLAN_REVIEW_REV,
     MongoBackend,
     OfficialStore,
     PREPARING,
@@ -393,7 +394,106 @@ def test_film_key_includes_script_rev(tmp_path):
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
     assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
     assert store.family_key("ici", voy, NOW) == f"{base}:{ICI_REV}"
+    assert store.family_key("plan_review", voy, NOW) == f"{base}:{PLAN_REVIEW_REV}"
     assert store.family_key("eta", voy, NOW) == base
+
+
+def test_plan_review_key_changes_with_rev(tmp_path, monkeypatch):
+    """Lot RC50 : bumper PLAN_REVIEW_REV change la clé."""
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    base = store.current_key(voy, NOW)
+    before = store.family_key("plan_review", voy, NOW)
+    assert before == f"{base}:{PLAN_REVIEW_REV}"
+    monkeypatch.setattr(official_store, "PLAN_REVIEW_REV", "rc50-test")
+    after = store.family_key("plan_review", voy, NOW)
+    assert after == f"{base}:rc50-test"
+    assert after != before
+
+
+def test_plan_review_pre_rev_snapshot_is_preparing_even_when_worker_off(tmp_path, monkeypatch):
+    """Lot RC50 : snapshot Halifax → Papeete à la clé sans rev n'est jamais ready.
+
+    Contrairement à film/moments/ici, plan_review n'a pas de repli WORKER=0 :
+    GET sans entrée à `…:PLAN_REVIEW_REV` reste en préparation.
+    """
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "0")
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    stale = {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Papeete (Polynésie française)",
+        }],
+        "generatedAt": "2026-10-16T00:28:46Z",
+    }
+    old_key = store.current_key(voy, NOW)
+    store.put("plan_review", stale, old_key)
+    new_key = store.family_key("plan_review", voy, NOW)
+    assert new_key == f"{old_key}:{PLAN_REVIEW_REV}"
+    assert store.get("plan_review", new_key) is None
+    served = official_store.serve_plan_review()
+    assert served["status"] == PREPARING
+    assert served["legs"] == []
+    blob = str(served)
+    assert "Halifax" not in blob
+    assert "Papeete" not in blob
+
+
+def test_plan_review_refresh_misses_old_key(tmp_path, monkeypatch):
+    """Lot RC50 : refresh_family ne rend pas unchanged sur l'ancien snapshot."""
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    stale = {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Papeete (Polynésie française)",
+        }],
+    }
+    store.put("plan_review", stale, store.current_key(voy, NOW))
+    calls = {"n": 0}
+
+    def compute(_voy, _now):
+        calls["n"] += 1
+        return {"legs": [{"from": "computed", "to": "computed"}]}
+
+    status = official_store.refresh_family(
+        "plan_review", compute=compute, now=NOW, store=store, voy=voy, force=False,
+    )
+    assert status == READY
+    assert calls["n"] == 1
+    hit = store.get("plan_review", store.family_key("plan_review", voy, NOW))
+    assert hit["payload"]["legs"][0]["from"] == "computed"
+    again = official_store.refresh_family(
+        "plan_review", compute=compute, now=NOW, store=store, voy=voy, force=False,
+    )
+    assert again == "unchanged"
+    assert calls["n"] == 1
+
+
+def test_plan_review_http_old_key_is_preparing_and_kicks(client, monkeypatch):
+    """GET /plan-review sans snapshot à la nouvelle clé : preparing + kick."""
+    kicks = {"n": 0}
+    monkeypatch.setattr(official_store, "kick_worker", lambda: kicks.__setitem__("n", kicks["n"] + 1))
+    voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    store = official_store.get_store()
+    store.put("plan_review", {
+        "legs": [{
+            "from": "Halifax (Nouvelle-Écosse)",
+            "to": "Papeete (Polynésie française)",
+        }],
+        "generatedAt": "2026-10-16T00:28:46Z",
+    }, store.current_key(voy))
+    r = client.get("/voyage/official/plan-review")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == PREPARING
+    assert body["legs"] == []
+    assert "Halifax" not in str(body)
+    assert kicks["n"] >= 1
 
 
 def test_film_get_falls_back_to_previous_rev_when_worker_off(tmp_path, monkeypatch):
