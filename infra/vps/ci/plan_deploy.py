@@ -24,6 +24,7 @@ def site_for_path(path: str) -> str | None:
         return "blue-intelligence"
     if path in (
         "infra/vps/deploy-app.sh",
+        "infra/vps/sync-public-nginx.sh",
         "infra/vps/blue-intelligence.service",
         "infra/vps/blue-intelligence-backup.cron",
         "infra/vps/nginx-blue-intelligence.conf",
@@ -38,6 +39,8 @@ def site_for_path(path: str) -> str | None:
         # Installés par deploy-simulator.sh (cache nginx climatologie BI).
         return "simulator"
     if path.startswith("naviguide/"):
+        return "naviguide"
+    if path == "infra/vps/sync-public-nginx.sh":
         return "naviguide"
     if path.startswith("infra/vps/naviguide/"):
         name = Path(path).name
