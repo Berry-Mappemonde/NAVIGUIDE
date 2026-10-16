@@ -50,7 +50,8 @@ MAX_PROJECTS = 5
 MAX_NEARBY = 3
 # RG3 : invalide les perles sans couche projects / AMP filtrées.
 # AM1A : la clé y ajoute aussi la signature de la couche AMP (`a{total}`).
-PEARL_REV = "rg3"
+# RC45 : bumper pour recalculer les perles figées avec amp: [] (revue #482).
+PEARL_REV = "am1a"
 AMP_NEAR_NM = 30.0
 PROJECT_NEAR_NM = 30.0
 # Cellule 1° + GET /amp (AM1A). TTL 1 jour (mémoire + kv).
@@ -687,12 +688,19 @@ async def refresh_amp_layer_sig(client: httpx.AsyncClient) -> str:
 
 
 async def _amp_cell_features(client: httpx.AsyncClient, lat: float, lon: float) -> list:
-    """Features GET /amp pour la cellule 1° (mémoire, puis kv, puis réseau)."""
+    """Features GET /amp pour la cellule 1° (mémoire, puis kv, puis réseau).
+
+    Une liste vide n'est pas un succès : on ne la grave ni en mémoire ni en kv
+    (un 200 froid empoisonnerait la cellule un jour). Le caller bascule alors
+    sur l'export, comme pour un 5xx.
+    """
     key = amp_cell_key(lat, lon)
     now = time.time()
     hit = _amp_cell_cache.get(key)
     if hit and now - float(hit.get("ts") or 0) < AMP_CELL_TTL_S:
-        return hit["features"]
+        cached = hit.get("features")
+        if isinstance(cached, list) and cached:
+            return cached
     try:
         import pearl_store  # noqa: PLC0415
         row = pearl_store.kv_get(AMP_KV_NS, key, max_age_s=AMP_CELL_TTL_S)
@@ -710,22 +718,29 @@ async def _amp_cell_features(client: httpx.AsyncClient, lat: float, lon: float) 
     feats = data.get("features") if isinstance(data, dict) else []
     if not isinstance(feats, list):
         feats = []
+    if not feats:
+        raise ValueError("GET /amp vide")
     _amp_cell_cache[key] = {"ts": now, "features": feats}
-    if feats:
-        try:
-            import pearl_store  # noqa: PLC0415
-            pearl_store.kv_put(AMP_KV_NS, key, {"features": feats, "bbox": bbox})
-        except Exception:
-            pass
+    try:
+        import pearl_store  # noqa: PLC0415
+        pearl_store.kv_put(AMP_KV_NS, key, {"features": feats, "bbox": bbox})
+    except Exception:
+        pass
     return feats
 
 
 async def fetch_amp_features(client: httpx.AsyncClient, lat: float, lon: float) -> tuple[list, str]:
-    """Polygones GET /amp, sinon export centroïdes. Lève seulement si les deux tombent."""
+    """Polygones GET /amp, sinon export centroïdes. Lève seulement si les deux tombent.
+
+    Un 200 vide est traité comme un 5xx : on bascule sur l'export (`source: export`).
+    """
     amp_err: Exception | None = None
     try:
         feats = await _amp_cell_features(client, lat, lon)
-        return feats, "polygon"
+        if feats:
+            return feats, "polygon"
+        amp_err = ValueError("GET /amp vide")
+        log.debug("GET /amp vide, repli export")
     except Exception as exc:
         amp_err = exc
         log.debug("GET /amp indisponible, repli export : %s", exc)
