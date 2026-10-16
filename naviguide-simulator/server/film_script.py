@@ -1330,6 +1330,8 @@ def change_is_speakable(change: dict) -> bool:
     kind = str(change.get("kind") or "")
     if kind in {"regime", "alert-off"}:
         return False
+    if is_sea_hs_alert(change):
+        return True
     if kind == "alert-on":
         body = str(change.get("fact") or change.get("title") or "").strip()
         if not body or NO_DATA_RE.search(body):
@@ -5338,6 +5340,58 @@ def _group_sentence(change: dict, lang: str) -> str:
     return ""
 
 
+_HS_VALUE_RE = re.compile(r"Hs\s+(\d+(?:[.,]\d+)?)\s*m", re.I)
+_SEA_TITLE_RE = re.compile(r"^(mer|sea)$", re.I)
+
+
+def sea_alert_hs_m(change: dict) -> Optional[float]:
+    """Hs observée (pas le seuil) : champ structuré, sinon le premier « Hs N m » du fait."""
+    n = _fact_num(change, "hs", "maxHs")
+    if n is not None:
+        return n
+    blob = f"{change.get('fact') or ''} {change.get('title') or ''}"
+    found = _HS_VALUE_RE.search(blob)
+    if not found:
+        return None
+    try:
+        return float(found.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def is_sea_hs_alert(change: dict) -> bool:
+    """Alerte mer (kind sea / alert-on « Hs … m ≥ ») — pas une AMP."""
+    if not isinstance(change, dict):
+        return False
+    kind = str(change.get("kind") or "")
+    title = str(change.get("title") or "")
+    fact = str(change.get("fact") or "")
+    if kind == "alert-on" and alert_is_amp(change):
+        return False
+    if kind == "sea":
+        return True
+    if kind == "wx" and str(change.get("event") or "") == "sea":
+        return True
+    if kind == "alert-on" and (_SEA_TITLE_RE.match(title.strip()) or _HS_VALUE_RE.search(fact + " " + title)):
+        return True
+    return False
+
+
+def sea_alert_sentence(change: dict, lang: str = "fr") -> str:
+    """« mer formée (3 m) » / « Hs 3 m » — jamais ≥, jamais le seuil répété."""
+    en = _en(lang)
+    when = day_month(change.get("t"), lang)
+    hs = sea_alert_hs_m(change)
+    hs_s = _plain(hs, 0) if hs is not None else ""
+    if hs_s:
+        body = f"Hs {hs_s} m" if en else f"mer formée ({hs_s} m)"
+    else:
+        body = "Hs" if en else "mer formée"
+    if when:
+        return f"On {when}, {body}." if en else f"Le {when}, {body}."
+    return f"{body[0].upper()}{body[1:]}."
+
+
 def change_sentence(change: dict, lang: str = "fr") -> str:
     en = _en(lang)
     if str(change.get("id") or "").startswith("group:"):
@@ -5347,6 +5401,8 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
     fact = expand_spoken_units(str(change.get("fact") or "").rstrip("."), lang)
     kind = change.get("kind")
     name = title.replace("Arrivée à ", "").replace("Arrival at ", "").strip()
+    if is_sea_hs_alert(change):
+        return sea_alert_sentence(change, lang)
     if kind == "escale":
         if when:
             return f"Arrival at {name} on {when}." if en else f"Arrivée à {name} le {when}."
