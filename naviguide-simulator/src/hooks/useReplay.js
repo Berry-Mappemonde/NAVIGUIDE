@@ -383,6 +383,57 @@ export function filmChapterPlayheadCapped({ t, chapter, clock = null } = {}) {
   return { t: published, atCap };
 }
 
+/**
+ * RC52 : instant du bateau pour un charIdx de phrase.
+ * Tant que la phrase n'est pas finie : `timeAt(charIdx)`, jamais tB
+ * (ancre de fin de chapitre) ni un t déjà à l'arrivée / « aujourd'hui ».
+ */
+export function filmBoatTimeAtPhrase({
+  chapter,
+  charIdx = 0,
+  plan = null,
+  chapterIdx = 0,
+  phraseEnded = false,
+  t = null,
+} = {}) {
+  const sent = sentenceSpan(chapter, charIdx);
+  const idx = Number.isFinite(Number(chapterIdx)) ? Number(chapterIdx) : (chapter?.idx ?? 0);
+  const phraseT = plan?.timeAt ? plan.timeAt(idx, charIdx) : sent.startT;
+  const tB = chapterTimeMs(chapter?.tB);
+  const lastSentence = !chapter
+    || sent.end + 1e-6 >= (Number(chapter.chars) || sent.end);
+  if (!phraseEnded) {
+    let next = Number.isFinite(phraseT) ? phraseT : sent.startT;
+    if (Number.isFinite(sent.endT)) next = Math.min(next, sent.endT);
+    if (!lastSentence && Number.isFinite(tB) && Number.isFinite(next)) {
+      next = Math.min(next, tB - FILM_CHAPTER_HOLD_EPS_MS);
+    }
+    return next;
+  }
+  let next = Number.isFinite(Number(t)) ? Number(t) : (Number.isFinite(phraseT) ? phraseT : sent.endT);
+  if (Number.isFinite(sent.endT) && Number.isFinite(next) && next < sent.endT) {
+    next = sent.endT;
+  }
+  if (Number.isFinite(tB) && Number.isFinite(next)) next = Math.min(next, tB);
+  return next;
+}
+
+/** Position rendue : `positionAt(clock, instant de la phrase)`. */
+export function filmBoatAtPhrase({
+  clock,
+  chapter,
+  charIdx,
+  plan,
+  chapterIdx,
+  phraseEnded,
+  t,
+} = {}) {
+  const when = filmBoatTimeAtPhrase({
+    chapter, charIdx, plan, chapterIdx, phraseEnded, t,
+  });
+  return { t: when, pos: positionAt(clock, when) };
+}
+
 /** Playhead publié tant que la voix / le sous-titre finit la phrase. */
 function chapterTimeMs(v) {
   if (v == null || v === "") return NaN;
@@ -1308,7 +1359,11 @@ export function useReplay({
         setSubtitlePlace(sub.place);
         lastSubtitleRef.current = sub.text;
       }
-      const at = Number.isFinite(ch.tB) ? ch.tB : ch.tA;
+      const at = pinChar != null
+        ? filmBoatTimeAtPhrase({
+            chapter: ch, charIdx: pinChar, plan, chapterIdx: n, phraseEnded: false,
+          })
+        : (Number.isFinite(ch.tB) ? ch.tB : ch.tA);
       if (Number.isFinite(at)) {
         tMsRef.current = at;
         lastTRef.current = at;
@@ -1736,10 +1791,24 @@ export function useReplay({
         const ch = plan.chapters[chapterIdxRef.current];
         if (pinned != null && ch) {
           charIdx = pinnedCharRef.current != null ? pinnedCharRef.current : (ch.chars || 1);
-          ingestHeld(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0), ch, { hold: false });
+          const pinT = pinnedCharRef.current != null
+            ? filmBoatTimeAtPhrase({
+                chapter: ch,
+                charIdx: pinnedCharRef.current,
+                plan,
+                chapterIdx: ch.idx ?? pinned,
+                phraseEnded: false,
+              })
+            : (Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));
+          ingestHeld(Number.isFinite(pinT) ? pinT : ch.tA, ch, { hold: false });
         } else {
           if (ch && linear.chapterIdx > ch.idx) {
-            charIdx = ch.chars || 1;
+            // RC52 : elapsed a fini le chapitre, la phrase pas — pas tB.
+            const keep = Math.max(0, Number(voiceCharRef.current) || 0);
+            const sentHold = sentenceSpan(ch, keep);
+            const atLast = keep + 1e-6 >= (ch.chars || 1) - 1e-6
+              || (phraseEndedRef.current && sentHold.end + 1e-6 >= (ch.chars || 1));
+            charIdx = atLast ? (ch.chars || 1) : keep;
           } else {
             charIdx = linear.charIdx;
           }
@@ -1821,6 +1890,29 @@ export function useReplay({
           chapterChars: chapter?.chars,
           linearChar: linear.charIdx,
         });
+      }
+      // RC52 : le bateau publié suit charIdx, pas elapsed / tB.
+      const sentPub = chapter ? sentenceSpan(chapter, charIdx) : null;
+      const phraseDone = Boolean(
+        phraseEndedRef.current
+        || (sentPub && charIdx + 1e-6 >= sentPub.end),
+      );
+      const boatT = filmBoatTimeAtPhrase({
+        chapter,
+        charIdx,
+        plan,
+        chapterIdx: chapterIdxRef.current,
+        phraseEnded: phraseDone,
+        t: lastTRef.current,
+      });
+      const curBoat = lastTRef.current;
+      const tBpub = chapterTimeMs(chapter?.tB);
+      const pastPhrase = sentPub && Number.isFinite(sentPub.endT)
+        && Number.isFinite(curBoat) && curBoat > sentPub.endT + 1;
+      const atChapterEnd = Number.isFinite(tBpub) && Number.isFinite(curBoat)
+        && curBoat + 2 >= tBpub;
+      if (!phraseDone && Number.isFinite(boatT) && (pastPhrase || atChapterEnd)) {
+        ingestHeld(boatT, chapter);
       }
       const sub = filmBarSubtitle({
         chapterText: chapter?.text || "",
