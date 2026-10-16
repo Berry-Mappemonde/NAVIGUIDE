@@ -12,6 +12,10 @@ describe("contrat SEO naviguide.fr", () => {
     const html = read("index.html");
     assert.match(html, /<html lang="fr"/);
     assert.match(html, /rel="canonical" href="https:\/\/www\.naviguide\.fr\/"/);
+    assert.match(
+      html,
+      /name="google-site-verification" content="wcHxYluJ5vTNo2dOGMj1T9A-dEfHXzaCTwMGM8OlAT0"/
+    );
     assert.match(html, /property="og:title"/);
     assert.match(html, /name="twitter:card"/);
     assert.match(html, /"@type":\s*"WebApplication"/);
