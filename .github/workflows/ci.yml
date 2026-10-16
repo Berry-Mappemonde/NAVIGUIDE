@@ -183,6 +183,7 @@ jobs:
       - name: Syntaxe bash des scripts VPS
         run: |
           bash -n infra/vps/deploy-app.sh
+          bash -n infra/vps/sync-public-nginx.sh
           bash -n infra/vps/naviguide/deploy-naviguide.sh
           bash -n infra/vps/naviguide/deploy-simulator.sh
           bash -n infra/vps/ci/prepare-ssh.sh
