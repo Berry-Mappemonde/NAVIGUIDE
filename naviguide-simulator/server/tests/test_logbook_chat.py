@@ -627,6 +627,85 @@ def test_rules_answer_copies_pack_numbers():
     assert "12" in climo and "9" in climo
 
 
+OFFICIAL_12_PAIRS = [
+    ("Saint-Maur (Berry, Indre)", "La Rochelle"),
+    ("La Rochelle", "Ajaccio (Corse)"),
+    ("Ajaccio (Corse)", "Fort-de-France (Martinique)"),
+    ("Fort-de-France (Martinique)", "Pointe-à-Pitre (Guadeloupe)"),
+    ("Pointe-à-Pitre (Guadeloupe)", "Gustavia (Saint-Barthélemy)"),
+    ("Gustavia (Saint-Barthélemy)", "Marigot (Saint-Martin)"),
+    ("Marigot (Saint-Martin)", "Cayenne (Guyane)"),
+    ("Cayenne (Guyane)", "Saint-Pierre (Saint-Pierre-et-Miquelon)"),
+    ("Saint-Pierre (Saint-Pierre-et-Miquelon)", "Papeete (Polynésie française)"),
+    ("Papeete (Polynésie française)", "Mata-Utu (Wallis-et-Futuna)"),
+    ("Mata-Utu (Wallis-et-Futuna)", "Nouméa (Nouvelle-Calédonie)"),
+    ("Nouméa (Nouvelle-Calédonie)", "Dzaoudzi (Mayotte)"),
+]
+
+
+def _official_12_pack():
+    """Itinéraire officiel (12 jambes, PLAN_LEGS_MAX) : pas de Madère."""
+    assert len(OFFICIAL_12_PAIRS) == 12
+    legs = []
+    for i, (frm, to) in enumerate(OFFICIAL_12_PAIRS):
+        if "Ajaccio" in to:
+            arrive = "2026-09-01T10:00:00Z"
+        elif "Nouméa" in to:
+            arrive = "2026-10-16T10:00:00Z"
+        else:
+            arrive = f"2026-08-{i + 1:02d}T10:00:00Z"
+        legs.append({"from": frm, "to": to, "arriveIso": arrive})
+    pack = {
+        **FACT_PACK,
+        "nextStop": {"name": "Nouméa (Nouvelle-Calédonie)", "eta": "2026-10-16T10:00:00Z"},
+        "plan": {
+            "source": "plan_review", "status": "ready", "n": 12, "unit": "ISO-8601",
+            "legs": legs,
+        },
+    }
+    return pack
+
+
+def test_eta_named_place_absent_is_missing_info():
+    pack = _official_12_pack()
+    blob = " ".join(f"{lg.get('from')} {lg.get('to')}" for lg in pack["plan"]["legs"])
+    assert "Madère" not in blob and "Madeira" not in blob
+    parsed = logbook_chat.keyword_intent("Arrivée prévue à Madère ?")
+    assert parsed["quantity"] == "eta" and parsed.get("place")
+    assert logbook_chat._leg_for_place(pack, parsed["place"]) is None
+    fr = logbook_chat.rules_answer("Arrivée prévue à Madère ?", pack, "fr")
+    assert fr == logbook_chat.missing_info("fr")
+    assert "Nouméa" not in fr and "Noumea" not in fr
+    assert "2026-10-16" not in fr
+    en = logbook_chat.rules_answer("Expected arrival in Madeira?", pack, "en")
+    assert en == logbook_chat.missing_info("en")
+    assert "Nouméa" not in en and "Noumea" not in en
+    assert "2026-10-16" not in en
+
+
+def test_eta_unnamed_keeps_next_stop():
+    pack = _official_12_pack()
+    parsed = logbook_chat.keyword_intent("Arrivée prévue ?")
+    assert parsed["quantity"] == "eta"
+    assert not parsed.get("place")
+    fr = logbook_chat.rules_answer("Arrivée prévue ?", pack, "fr")
+    assert fr != logbook_chat.missing_info("fr")
+    assert "Nouméa" in fr
+    assert "2026-10-16" in fr
+
+
+def test_eta_named_place_on_a_leg():
+    pack = _official_12_pack()
+    parsed = logbook_chat.keyword_intent("Arrivée prévue à Ajaccio ?")
+    assert parsed["quantity"] == "eta" and parsed.get("place")
+    fr = logbook_chat.rules_answer("Arrivée prévue à Ajaccio ?", pack, "fr")
+    assert "Ajaccio" in fr
+    assert "2026-09-01" in fr
+    assert "Nouméa" not in fr
+    assert "2026-10-16" not in fr
+    assert fr != logbook_chat.missing_info("fr")
+
+
 def test_reason_eleventh_call_refused(monkeypatch):
     seen = []
 

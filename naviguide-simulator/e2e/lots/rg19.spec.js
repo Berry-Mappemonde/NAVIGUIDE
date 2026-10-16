@@ -12,10 +12,18 @@ import { expect, test } from "@playwright/test";
 import { dismissNotForNav, leaveCinema, probeOfficial, showLeftPanel } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rg19");
+const recetteRc47 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc47");
 mkdirSync(recetteDir, { recursive: true });
+mkdirSync(recetteRc47, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.jpg`),
+  type: "jpeg",
+  quality: 70,
+  fullPage: false,
+});
+const shotRc47 = (page, name) => page.screenshot({
+  path: join(recetteRc47, `${name}.jpg`),
   type: "jpeg",
   quality: 70,
   fullPage: false,
@@ -121,6 +129,16 @@ test("lot RG19 — chat trois paliers : faits par les règles, Ultra sur geste",
   const etaText = await waitReply(page, { sourcesBefore: sources });
   sources = await page.getByTestId("chat-source").count();
   expect(etaText).not.toMatch(FAILED);
+  const etaLast = await page.getByTestId("logbook-chat-list").locator(":scope > div").last().innerText();
+  const legs = factsOk ? (factsBody.facts?.plan?.legs || []) : [];
+  const hasMadere = /mad[eèê]re|madeira/i.test(JSON.stringify(legs));
+  if (factsOk && !hasMadere) {
+    expect(etaLast, "Madère hors plan → phrase d'absence, pas une autre escale").toMatch(MISSING);
+    expect(etaLast).not.toMatch(/Noum[eé]a/i);
+    expect(etaLast).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  }
+  await page.getByTestId("logbook-chat-list").locator(":scope > div").last().scrollIntoViewIfNeeded();
+  await shotRc47(page, "01-madere");
 
   await askChat(page, "Quel réglage de confort ?");
   const comfortText = await waitReply(page, { sourcesBefore: sources });
