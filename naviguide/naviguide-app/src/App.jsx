@@ -77,6 +77,7 @@ export default function App() {
   // Sidebar + orchestrator plan
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expeditionPlan, setExpeditionPlan] = useState(null);
+  const [mapReady, setMapReady] = useState(false);
 
   // Export sidebar (right) — closed by default
   const [exportSidebarOpen, setExportSidebarOpen] = useState(false);
@@ -482,7 +483,7 @@ export default function App() {
 
   // Berry briefing only on the Berry route — never after a custom track.
   useEffect(() => {
-    if (routeKind !== "berry" || drawingMode) return;
+    if (!mapReady || routeKind !== "berry" || drawingMode) return;
     const requestId = ++berryFetchIdRef.current;
     const cancelIdle = scheduleIdle(() => {
       setExpeditionPlan(getCachedPlan(lang));
@@ -512,7 +513,7 @@ export default function App() {
         .catch((err) => console.warn("Orchestrator unavailable:", err));
     }, { timeout: 5000 });
     return () => cancelIdle();
-  }, [lang, routeKind, drawingMode]);
+  }, [mapReady, lang, routeKind, drawingMode]);
 
   // Recalculate the custom briefing if the language changes (import already calls fetchCustomPlan).
   useEffect(() => {
@@ -985,6 +986,7 @@ export default function App() {
         onMouseLeave={() => { if (!drawingMode) setRouteCursor("crosshair"); }}
         onLoad={(event) => {
           markAppReady();
+          setMapReady(true);
           const map = event.target;
           const arrowSvg = `
             <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0077ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>          `;
