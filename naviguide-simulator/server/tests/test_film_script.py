@@ -3847,3 +3847,107 @@ def test_rc41_chapter_with_hs_alert_is_readable():
     assert not re.search(r"Hs \d+ m ≥", text)
     for sent in _sentences(text):
         assert not _DUP_METERS_RE.search(sent), sent
+
+
+# ---------------------------------------------------------------------------
+# Lot RC53 — casse des noms d'eaux en anglais (pas de rebuild du film)
+# ---------------------------------------------------------------------------
+
+_RC53_LOWER_WATERS = (
+    "french waters",
+    "italian waters",
+    "moroccan waters",
+    "madeira waters",
+    "martinique waters",
+    "guadeloupe waters",
+)
+
+
+def _rc53_assert_en_waters_cased(blob: str) -> None:
+    for low in _RC53_LOWER_WATERS:
+        assert low not in blob, blob
+    assert "French waters" in blob
+    assert "Italian waters" in blob
+    assert "Moroccan waters" in blob
+    assert "Madeira waters" in blob
+    assert "Martinique waters" in blob
+    assert "Guadeloupe waters" in blob
+
+
+def test_rc53_en_waters_title_case_on_ready_script():
+    """Script anglais ready : plus de minuscule en tête de nom d'eau ;
+    la forme capitale reste. Filet à la lecture, pas un bumper de rev."""
+    from film_script import fix_en_waters_casing, speak_film_text
+
+    mixed = (
+        "On 15 May, French waters. Then, french waters. "
+        "Then, italian waters. Then, moroccan waters. "
+        "Then, madeira waters. Then, martinique waters. Then, guadeloupe waters."
+    )
+    fixed = fix_en_waters_casing(mixed)
+    _rc53_assert_en_waters_cased(fixed)
+    spoken = speak_film_text(mixed, "en")
+    _rc53_assert_en_waters_cased(spoken)
+    # FR inchangé (eaux françaises, pas « french waters »)
+    assert "french waters" not in speak_film_text("Le 15 mai, les eaux françaises.", "fr")
+
+    thinned = thin_chapter_dates([
+        "On 15 May, French waters.",
+        "On 16 May, Italian waters.",
+        "On 18 May, Moroccan waters.",
+        "On 20 May, Madeira waters.",
+        "On 22 May, Martinique waters.",
+        "On 24 May, Guadeloupe waters.",
+        "Arrival at Ajaccio on 26 May.",
+    ], "en")
+    _rc53_assert_en_waters_cased(" ".join(thinned))
+
+    clock = _rc35_lr_clock()
+
+    def mom(seq, iso, lat, lon, changes, **here_zee):
+        here = {"zee": here_zee} if here_zee.get("name") else {}
+        return {
+            "seq": seq, "t": iso, "signature": f"s{seq}", "legIdx": 0,
+            "pos": {"lat": lat, "lon": lon},
+            "changes": changes,
+            "moment": {
+                "leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 200.0},
+                "here": here,
+                "pos": {"lat": lat, "lon": lon},
+            },
+        }
+
+    journal = {"moments": [
+        mom(0, "2026-05-15T12:00:00Z", 46.15, -1.16, [
+            {"kind": "zee-enter", "score": 2, "title": "French Exclusive Economic Zone",
+             "fact": "French Exclusive Economic Zone"},
+        ], name="French Exclusive Economic Zone", mrgid=5677),
+        mom(1, "2026-05-16T12:00:00Z", 43.2, -9.0, [
+            {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+             "fact": "Spanish Exclusive Economic Zone"},
+        ]),
+        mom(2, "2026-05-21T14:00:00Z", 35.7, -6.0, [
+            {"kind": "zee-enter", "score": 2, "title": "Moroccan Exclusive Economic Zone",
+             "fact": "Moroccan Exclusive Economic Zone"},
+        ]),
+        mom(3, "2026-05-24T12:00:00Z", 41.0, 8.4, [
+            {"kind": "zee-enter", "score": 2, "title": "Italian Exclusive Economic Zone",
+             "fact": "Italian Exclusive Economic Zone"},
+        ]),
+        mom(4, "2026-05-26T12:00:00Z", 41.9, 8.7, [
+            {"kind": "escale", "score": 3, "title": "Arrival at Ajaccio", "fact": "x"},
+        ]),
+    ], "latest": []}
+    live = {"filmNm": 1820, "sailNm": 1820, "iso": "2026-05-26T12:00:00Z",
+            "status": "live", "atStop": "Ajaccio"}
+    plan = build_raw_script(
+        clock, clock["marks"], live, journal,
+        lang="en", seconds=0, now_ms=_ms("2026-05-27T08:00:00Z"),
+    )
+    assert plan.get("source") == "rules"
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    for low in _RC53_LOWER_WATERS:
+        assert low not in blob, blob
+    assert "French waters" in blob, blob
+    assert "Italian waters" in blob, blob
+    assert "Moroccan waters" in blob, blob

@@ -669,11 +669,19 @@ def _plan_char_count(plan: Optional[dict]) -> int:
 
 
 def _with_film_estimate(plan: Optional[dict]) -> dict:
-    from film_script import film_estimated_seconds  # noqa: PLC0415
+    from film_script import film_estimated_seconds, fix_en_waters_casing  # noqa: PLC0415
 
     if not isinstance(plan, dict):
         return {}
     out = dict(plan)
+    chapters = []
+    for ch in out.get("chapters") or []:
+        if not isinstance(ch, dict):
+            chapters.append(ch)
+            continue
+        chapters.append({**ch, "text": fix_en_waters_casing(ch.get("text") or "")})
+    if chapters:
+        out["chapters"] = chapters
     chars = _plan_char_count(out)
     out["chars"] = chars
     out["estimatedSeconds"] = film_estimated_seconds(chars)
