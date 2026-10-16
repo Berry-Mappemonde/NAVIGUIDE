@@ -24,6 +24,8 @@ describe("contrat SEO naviguide.fr", () => {
     assert.match(html, /https:\/\/github\.com\/Berry-Mappemonde/);
     assert.match(html, /"@type":\s*"VideoObject"/);
     assert.match(html, /KFl2-WEmVX4/);
+    assert.match(html, /Demo: tracking a sailboat from La Rochelle to Mayotte/);
+    assert.match(html, /"inLanguage":\s*"en"/);
     assert.match(html, /<h1>NAVIGUIDE/);
     assert.doesNotMatch(html, /<html lang="en"/);
   });
