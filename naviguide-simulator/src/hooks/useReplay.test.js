@@ -665,7 +665,9 @@ describe("useReplay lot RC16 — sous-titre visible : phrases avion RF5", () => 
   });
 
   it("App passe le sous-titre choisi ; la barre ne tronque pas l'avion", () => {
-    assert.match(app, /visibleFilmSubtitle\(replay\.subtitle \|\| replay\.chapterText\)/);
+    assert.match(app, /visibleFilmSubtitle\(replay\.subtitle \|\| replay\.chapterText/);
+    assert.match(app, /fromName:\s*replay\.fromName/);
+    assert.match(app, /toName:\s*replay\.toName/);
     assert.match(bar, /visibleFilmSubtitle/);
     assert.match(bar, /filmSubtitleHighlight/);
     assert.match(bar, /data-testid="film-subtitle-place"/);
@@ -817,6 +819,86 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.ok(rb5.text.length < officialCh1.length);
     assert.match(filmSubtitleAt(officialCh1, 0).sentence, /Saint-Maur/);
     assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
+  });
+
+  it("RC43 : chapitre side « second voilier » — pas le s'envole d'un autre chapitre", () => {
+    const side = "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.";
+    const airElsewhere = "Le 19 juillet, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.";
+    const glued = `${side} ${airElsewhere}`;
+    const fromSide = filmBarSubtitle({
+      chapterText: glued,
+      charIdx: 0,
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    });
+    assert.match(fromSide.text, /second voilier/);
+    assert.doesNotMatch(fromSide.text, /s'envole/);
+    const clean = filmBarSubtitle({
+      chapterText: side,
+      charIdx: 0,
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    });
+    assert.match(clean.text, /second voilier/);
+    assert.doesNotMatch(clean.text, /s'envole/);
+    assert.equal(visibleFilmSubtitle(glued, {
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    }), glued);
+  });
+
+  it("RC43 : un chapitre vol n'extrait que CE vol ; reprise sans s'envole", () => {
+    const glued = [
+      "Le 19 juillet, l'équipage s'envole de Cayenne pour Halifax ; le catamaran attend à Cayenne.",
+      "Le 30 juillet, l'équipage s'envole de Halifax pour Cayenne.",
+    ].join(" ");
+    const out = filmBarSubtitle({
+      chapterText: glued,
+      charIdx: 0,
+      fromName: "Cayenne (Guyane)",
+      toName: "Halifax (Nouvelle-Écosse)",
+    });
+    assert.match(out.text, /s'envole de Cayenne pour Halifax/);
+    assert.doesNotMatch(out.text, /s'envole de Halifax pour Cayenne/);
+    const back = filmBarSubtitle({
+      chapterText: glued,
+      charIdx: glued.indexOf("s'envole de Halifax"),
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.match(back.text, /s'envole de Halifax pour Cayenne/);
+    assert.doesNotMatch(back.text, /s'envole de Cayenne pour Halifax/);
+    const resume = filmBarSubtitle({
+      chapterText: "Le 2 août, le catamaran reprend la mer, départ vers Papeete. L'équipage s'envole de Cayenne pour Halifax.",
+      charIdx: 0,
+      fromName: "Cayenne (Guyane)",
+      toName: "Papeete (Polynésie française)",
+    });
+    assert.match(resume.text, /reprend la mer|départ vers Papeete/);
+    assert.doesNotMatch(resume.text, /s'envole/);
+  });
+
+  it("RC43 : phrase side sous le curseur même si le chapitre fusionné est étiqueté vol", () => {
+    const merged = [
+      "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre.",
+      "Le 26 août, l'équipage s'envole de Halifax pour Cayenne.",
+    ].join(" ");
+    const atSide = filmBarSubtitle({
+      chapterText: merged,
+      charIdx: merged.indexOf("second voilier"),
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.match(atSide.text, /second voilier/);
+    assert.doesNotMatch(atSide.text, /s'envole/);
+    const atAir = filmBarSubtitle({
+      chapterText: merged,
+      charIdx: merged.indexOf("s'envole"),
+      fromName: "Halifax (Nouvelle-Écosse)",
+      toName: "Cayenne (Guyane)",
+    });
+    assert.match(atAir.text, /s'envole de Halifax pour Cayenne/);
+    assert.doesNotMatch(atAir.text, /second voilier/);
   });
 
   it("RC36 : un énoncé qui finit après tB — pas d'applyChapter / pas de stopSpeaking avant onEnd, tMs dans [tA, tB]", () => {

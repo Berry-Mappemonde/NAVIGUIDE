@@ -1460,6 +1460,45 @@ def test_rg1_air_window_not_told_as_navigation():
     )
     assert "Cayenne" in (next_sail.get("fromName") or "")
     assert "Saint-Pierre" not in (next_sail.get("fromName") or "")
+    assert not re.search(r"s'envole de Halifax", chs[air_out]["text"] or ""), chs[air_out]["text"]
+    assert not re.search(r"s'envole de Cayenne pour Halifax", chs[air_back]["text"] or ""), chs[air_back]["text"]
+    assert not re.search(r"s'envole", chs[side_out]["text"] or ""), chs[side_out]["text"]
+    assert re.search(r"second voilier", chs[side_out]["text"] or ""), chs[side_out]["text"]
+    assert re.search(r"reprend la mer|départ vers Papeete", next_sail.get("text") or ""), next_sail.get("text")
+    assert not re.search(r"s'envole", next_sail.get("text") or ""), next_sail.get("text")
+
+
+def test_rg1_ensure_air_sentences_stay_on_matching_chapter():
+    """RC43 : une phrase manquante n'est injectée que dans le chapitre from/to du vol."""
+    from film_script import _ensure_air_sentences
+
+    chapters = [
+        {"fromName": "Cayenne (Guyane)", "toName": "Halifax (Nouvelle-Écosse)",
+         "text": "Vol aller sans phrase."},
+        {"fromName": "Halifax (Nouvelle-Écosse)",
+         "toName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+         "text": "À Halifax, l'équipage embarque sur un second voilier pour Saint-Pierre."},
+        {"fromName": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+         "toName": "Halifax (Nouvelle-Écosse)", "text": "Retour mer."},
+        {"fromName": "Halifax (Nouvelle-Écosse)", "toName": "Cayenne (Guyane)",
+         "text": "Vol retour sans phrase."},
+        {"fromName": "Cayenne (Guyane)", "toName": "Papeete (Polynésie française)",
+         "text": "Le catamaran reprend la mer, départ vers Papeete."},
+    ]
+    marks = [
+        {"name": "Cayenne (Guyane)"},
+        {"name": "Halifax (Nouvelle-Écosse)"},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)"},
+    ]
+    out = _ensure_air_sentences(chapters, marks=marks, moments=None, lang="fr")
+    assert re.search(r"s'envole de Cayenne pour Halifax", out[0]["text"] or ""), out[0]["text"]
+    assert not re.search(r"s'envole de Halifax", out[0]["text"] or ""), out[0]["text"]
+    assert not re.search(r"s'envole", out[1]["text"] or ""), out[1]["text"]
+    assert re.search(r"second voilier", out[1]["text"] or ""), out[1]["text"]
+    assert re.search(r"s'envole de Halifax pour Cayenne", out[3]["text"] or ""), out[3]["text"]
+    assert not re.search(r"s'envole de Cayenne pour Halifax", out[3]["text"] or ""), out[3]["text"]
+    assert not re.search(r"s'envole", out[4]["text"] or ""), out[4]["text"]
+    assert re.search(r"reprend la mer", out[4]["text"] or ""), out[4]["text"]
 
 
 def test_rg1_depart_anchor_stays_at_port():

@@ -6283,19 +6283,54 @@ def _air_pair_sentences(marks: list | None, lang: str) -> tuple[str, str]:
     return outbound, back
 
 
-def _chapter_for_air(chapters: list[dict]) -> dict | None:
+def _chapter_for_air_leg(chapters: list[dict], origin: str, dest: str) -> dict | None:
+    """Chapitre vol dont from/to correspond à cette jambe — jamais le premier Cayenne par défaut."""
     for ch in chapters:
-        if _air_stop_key(ch.get("fromName") or "") == "cayenne":
+        if (
+            _air_stop_key(ch.get("fromName") or "") == origin
+            and _air_stop_key(ch.get("toName") or "") == dest
+        ):
+            return ch
+    return None
+
+
+def _chapter_for_air_fallback(chapters: list[dict]) -> dict | None:
+    """RF5 : pas de jambe vol (Halifax sans iso) — un seul chapitre Cayenne, jamais la reprise."""
+    for ch in chapters:
+        frm = _air_stop_key(ch.get("fromName") or "")
+        to = _air_stop_key(ch.get("toName") or "")
+        if frm == "cayenne" and to != "papeete":
             return ch
     for ch in chapters:
         if _air_stop_key(ch.get("toName") or "") == "cayenne":
             return ch
     for ch in chapters:
-        if re.search(r"cayenne", (ch.get("text") or "") + " " + (ch.get("fromName") or "") + " " + (ch.get("toName") or ""), re.I):
+        blob = f"{ch.get('text') or ''} {ch.get('fromName') or ''} {ch.get('toName') or ''}"
+        if re.search(r"cayenne", blob, re.I) and _air_stop_key(ch.get("toName") or "") != "papeete":
             return ch
-    if len(chapters) >= 2:
-        return chapters[-2]
-    return chapters[-1] if chapters else None
+    return None
+
+
+def _chapter_for_air(chapters: list[dict]) -> dict | None:
+    """Aller Cayenne→Halifax s'il existe ; sinon un seul repli Cayenne (pas les deux vols)."""
+    return _chapter_for_air_leg(chapters, "cayenne", "halifax") or _chapter_for_air_fallback(chapters)
+
+
+def _inject_sentence_before_close(chapter: dict | None, sentence: str, lang: str) -> None:
+    if not chapter or not sentence:
+        return
+    text = chapter.get("text") or ""
+    if sentence in text:
+        return
+    sents = _sentences(text)
+    close = ""
+    if sents and re.search(r"aujourd|today", sents[-1] or "", re.I):
+        close = sents.pop()
+        text = " ".join(sents).strip()
+    blob = f"{text} {sentence}".strip()
+    if close:
+        blob = f"{blob} {close}".strip()
+    chapter["text"] = speak_film_text(blob, lang)
 
 
 def _ensure_air_sentences(
@@ -6305,32 +6340,26 @@ def _ensure_air_sentences(
     moments: list | None,
     lang: str,
 ) -> list[dict]:
-    """Après fusion / budget : l'aller et le retour avion restent dits s'ils existent sur la route."""
+    """Après fusion / budget : chaque phrase avion manquante va dans SON chapitre from/to."""
     if not chapters or not _route_has_air_pair(marks, moments):
         return chapters
     outbound, back = _air_pair_sentences(marks, lang)
+    out_ch = _chapter_for_air_leg(chapters, "cayenne", "halifax")
+    back_ch = _chapter_for_air_leg(chapters, "halifax", "cayenne")
     blob = " ".join(c.get("text") or "" for c in chapters)
-    missing: list[str] = []
-    if outbound and not _AIR_OUT_RE.search(blob):
-        missing.append(outbound)
-    if back and back not in (outbound or "") and not _AIR_BACK_RE.search(blob):
-        missing.append(back)
-    if not missing:
-        return chapters
-    target = _chapter_for_air(chapters)
-    if target is None:
-        return chapters
-    text = target.get("text") or ""
-    sents = _sentences(text)
-    close = ""
-    if sents and re.search(r"aujourd|today", sents[-1] or "", re.I):
-        close = sents.pop()
-        text = " ".join(sents).strip()
-    extra = " ".join(s for s in missing if s not in text)
-    blob = f"{text} {extra}".strip()
-    if close:
-        blob = f"{blob} {close}".strip()
-    target["text"] = speak_film_text(blob, lang)
+    if outbound and out_ch and not _AIR_OUT_RE.search(out_ch.get("text") or ""):
+        _inject_sentence_before_close(out_ch, outbound, lang)
+    elif outbound and not out_ch and not _AIR_OUT_RE.search(blob):
+        fallback = _chapter_for_air_fallback(chapters)
+        if fallback is not None and fallback is not back_ch:
+            _inject_sentence_before_close(fallback, outbound, lang)
+    if (
+        back
+        and back_ch
+        and back_ch is not out_ch
+        and not _AIR_BACK_RE.search(back_ch.get("text") or "")
+    ):
+        _inject_sentence_before_close(back_ch, back, lang)
     return chapters
 
 

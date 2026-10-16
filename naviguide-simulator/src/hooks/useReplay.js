@@ -12,6 +12,7 @@ import {
 } from "../engine/voyageClock.js";
 import { canLeadWithVoice, isSpeaking, stopSpeaking, waitForVoices, voiceEndKind, voiceMayLead } from "../utils/speak.js";
 import { EventBubbleGate, FilmEventScoreGate, filmEventCard, pickFilmEvent, publishEventBubble } from "../components/eventBubble.js";
+import { isAirLegNames } from "../utils/berryLegs.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
 
@@ -588,16 +589,17 @@ export function closingSubtitle(text) {
 export const FILM_AIR_PHRASE_RE =
   /prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to/i;
 
-/**
- * Ligne visible du sous-titre (lot RC16) : si le chapitre contient les
- * phrases avion RF5, on les montre ; sinon le texte du chapitre inchangé.
- */
-export function visibleFilmSubtitle(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return "";
-  if (!FILM_AIR_PHRASE_RE.test(raw)) return raw;
-  const airSentence = /[^.!?…\n]*?(?:prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
-  const found = raw.match(airSentence) || [];
+const FILM_AIR_SENTENCE_RE =
+  /[^.!?…\n]*?(?:prend l[''']avion pour|s'envole|the crew flies(?: to| from)|retour en avion vers|return flight to)[^.!?…]*(?:[.!?…]|$)/gi;
+
+const FILM_AIR_OUT_PHRASE_RE =
+  /s'envole de Cayenne|prend l[''']avion pour Halifax|flies from Cayenne|the crew flies to Halifax/i;
+
+const FILM_AIR_BACK_PHRASE_RE =
+  /s'envole de Halifax|prend l[''']avion pour Cayenne|flies from Halifax|retour en avion vers Cayenne|return flight to Cayenne/i;
+
+function collectAirSentences(text) {
+  const found = String(text || "").match(FILM_AIR_SENTENCE_RE) || [];
   const parts = [];
   const seen = new Set();
   for (const piece of found) {
@@ -608,7 +610,35 @@ export function visibleFilmSubtitle(text) {
     seen.add(key);
     parts.push(s);
   }
-  return parts.length ? parts.join(" ") : raw;
+  return parts;
+}
+
+function airPhraseMatchesLeg(sentence, fromName, toName) {
+  const outbound = /cayenne/i.test(String(fromName || "")) && /halifax/i.test(String(toName || ""));
+  if (outbound) return FILM_AIR_OUT_PHRASE_RE.test(sentence) && !FILM_AIR_BACK_PHRASE_RE.test(sentence);
+  return FILM_AIR_BACK_PHRASE_RE.test(sentence) && !FILM_AIR_OUT_PHRASE_RE.test(sentence);
+}
+
+/**
+ * Ligne visible du sous-titre (lot RC16 / RC43) : phrases avion du chapitre
+ * vol Cayenne↔Halifax seulement. Un chapitre side / reprise n'est jamais
+ * remplacé par le bloc des deux vols.
+ */
+export function visibleFilmSubtitle(text, opts = {}) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const fromName = opts.fromName;
+  const toName = opts.toName;
+  const named = (fromName != null && fromName !== "") || (toName != null && toName !== "");
+  if (named && !isAirLegNames(fromName, toName)) return raw;
+  if (!FILM_AIR_PHRASE_RE.test(raw)) return raw;
+  const parts = collectAirSentences(raw);
+  if (!parts.length) return raw;
+  if (named && isAirLegNames(fromName, toName)) {
+    const kept = parts.filter((s) => airPhraseMatchesLeg(s, fromName, toName));
+    return kept.length ? kept.join(" ") : "";
+  }
+  return parts.join(" ");
 }
 
 export function filmSubtitleShowsAir(text) {
@@ -705,8 +735,9 @@ export function filmSubtitleAt(text, charIdx, opts = {}) {
 /**
  * Ligne de la barre : une phrase dès charIdx=0 (lot RC23 / revue #413).
  * Seek et pinned : la phrase sous le curseur, jamais le chapitre entier.
- * Extrait avion RC16 : les phrases « avion » / « flies » déjà dans le
- * chapitre (aller et retour), jamais le reste du chapitre.
+ * Chapitre side / reprise : jamais le bloc avion. Chapitre vol : seulement
+ * la phrase avion sous le curseur (un vol). Phrase mer recollée dans un
+ * chapitre vol (fusion 2:30) : on la garde.
  */
 export function filmBarSubtitle({
   chapterText = "",
@@ -719,11 +750,24 @@ export function filmBarSubtitle({
 } = {}) {
   const raw = String(chapterText || "");
   if (!raw) return { text: "", place: "", sentenceMode: false };
-  if (FILM_AIR_PHRASE_RE.test(raw)) {
-    return { text: visibleFilmSubtitle(raw), place: "", sentenceMode: true };
-  }
   const x = Math.max(0, Number(charIdx) || 0);
   const sub = filmSubtitleAt(raw, x, { sentenceStarts, fromName, toName, anchors });
+  const named = Boolean(fromName || toName);
+  const airChapter = named && isAirLegNames(fromName, toName);
+  if (named && !airChapter) {
+    return { text: sub.sentence, place: sub.place, sentenceMode: true };
+  }
+  if (airChapter && !FILM_AIR_PHRASE_RE.test(sub.sentence)) {
+    return { text: sub.sentence, place: sub.place, sentenceMode: true };
+  }
+  if (airChapter && FILM_AIR_PHRASE_RE.test(sub.sentence)) {
+    const one = visibleFilmSubtitle(sub.sentence, { fromName, toName });
+    return { text: one || sub.sentence, place: "", sentenceMode: true };
+  }
+  if (FILM_AIR_PHRASE_RE.test(raw)) {
+    const extracted = visibleFilmSubtitle(raw, { fromName, toName });
+    if (extracted) return { text: extracted, place: "", sentenceMode: true };
+  }
   return { text: sub.sentence, place: sub.place, sentenceMode: true };
 }
 
@@ -863,6 +907,7 @@ export function useReplay({
     setRemoteStatus(s);
   }, []);
   const pinnedIdxRef = useRef(null);
+  const pinnedCharRef = useRef(null);
   const seekChapterRef = useRef(null);
   const queueRef = useRef([]);
   const cardSinceRef = useRef(0);
@@ -918,6 +963,7 @@ export function useReplay({
     stoppingRef.current = true;
     finishedRef.current = true;
     pinnedIdxRef.current = null;
+    pinnedCharRef.current = null;
     filmBubbleRef.current.reset();
     filmScoreRef.current.reset();
     publishedBubbleRef.current = null;
@@ -1170,7 +1216,7 @@ export function useReplay({
     remoteStatus,
   });
 
-  const seekChapter = useCallback((idx) => {
+  const seekChapter = useCallback((idx, charIdx) => {
     const plan = planRef.current;
     if (!plan?.chapters?.length) return false;
     const last = plan.chapters.length - 1;
@@ -1178,7 +1224,23 @@ export function useReplay({
     const ch = plan.chapters[n];
     if (!ch) return false;
     pinnedIdxRef.current = ch.idx;
+    const pinChar = Number.isFinite(Number(charIdx)) ? Math.max(0, Number(charIdx)) : null;
+    pinnedCharRef.current = pinChar;
     applyChapter(ch);
+    if (pinChar != null) {
+      const sub = filmBarSubtitle({
+        chapterText: ch.text || "",
+        charIdx: pinChar,
+        pinned: true,
+        sentenceStarts: ch.sentenceStarts,
+        fromName: ch.fromName,
+        toName: ch.toName,
+        anchors: ch.anchors,
+      });
+      setSubtitle(sub.text);
+      setSubtitlePlace(sub.place);
+      lastSubtitleRef.current = sub.text;
+    }
     const at = Number.isFinite(ch.tB) ? ch.tB : ch.tA;
     if (Number.isFinite(at)) {
       tMsRef.current = at;
@@ -1258,6 +1320,7 @@ export function useReplay({
     if (!plan.chapters.length) return false;
     clockRef.current = clockToUse;
     pinnedIdxRef.current = null;
+    pinnedCharRef.current = null;
     windowRef.current = w;
     planRef.current = plan;
     queueRef.current = [];
@@ -1314,7 +1377,7 @@ export function useReplay({
           tA: c.tA,
           tB: c.tB,
         })),
-        seekChapter: (idx) => seekChapterRef.current?.(idx),
+        seekChapter: (idx, charIdx) => seekChapterRef.current?.(idx, charIdx),
         finishFilm: () => finishRef.current?.(),
       };
     }
@@ -1584,7 +1647,7 @@ export function useReplay({
         }
         const ch = plan.chapters[chapterIdxRef.current];
         if (pinned != null && ch) {
-          charIdx = ch.chars || 1;
+          charIdx = pinnedCharRef.current != null ? pinnedCharRef.current : (ch.chars || 1);
           ingestHeld(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0), ch, { hold: false });
         } else {
           if (ch && linear.chapterIdx > ch.idx) {
@@ -1735,7 +1798,7 @@ export function useReplay({
           filmNm: pos?.filmNm ?? sample?.filmNm ?? null,
           bubbleId: shown ? (shown.key || shown.id || null) : null,
           bubbleKind: shown?.kind || null,
-          seekChapter: prevFilm.seekChapter || ((idx) => seekChapterRef.current?.(idx)),
+          seekChapter: prevFilm.seekChapter || ((idx, charIdx) => seekChapterRef.current?.(idx, charIdx)),
           finishFilm: prevFilm.finishFilm || (() => finishRef.current?.()),
         };
       }
@@ -1831,6 +1894,8 @@ export function useReplay({
     setTargetSeconds,
     chapterIdx,
     chapterText,
+    fromName: planRef.current?.chapters?.[chapterIdx]?.fromName || "",
+    toName: planRef.current?.chapters?.[chapterIdx]?.toName || "",
     subtitle,
     subtitlePlace,
     filmLeg,
