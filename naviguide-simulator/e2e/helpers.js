@@ -107,6 +107,22 @@ export async function openReviewTab(page) {
   await ensureReviewOpen(page);
 }
 
+/**
+ * RC50 : GET /plan-review peut être `preparing` (nouvelle clé PLAN_REVIEW_REV).
+ * Les assertions sur les jambes ne tiennent que si le GET est `ready`.
+ */
+export async function probeOfficialPlanReview(page) {
+  const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
+  const apiUp = Boolean(official && official.ok());
+  if (!apiUp) return { apiUp: false, reviewReady: false, legs: [], body: null };
+  const body = await page.request.get("/voyage/official/plan-review", { timeout: 8000 })
+    .then((r) => (r.ok() ? r.json() : null))
+    .catch(() => null);
+  const legs = Array.isArray(body?.legs) ? body.legs : [];
+  const reviewReady = body?.status === "ready" && legs.length > 0;
+  return { apiUp, reviewReady, legs, body };
+}
+
 /** RD9 : dans l'onglet, PlanReview est un `div` (startOpen), plus un `<details>`. */
 export async function ensureReviewOpen(page) {
   const review = page.getByTestId("plan-review");
