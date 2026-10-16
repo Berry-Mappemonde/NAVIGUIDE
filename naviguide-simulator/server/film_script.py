@@ -3238,12 +3238,64 @@ def round_spoken_decimals(text: str) -> str:
     return DECIMAL_RE.sub(repl, text or "")
 
 
+_EN_WATERS_CANON: Optional[dict[str, str]] = None
+_EN_WATERS_RE: Optional[re.Pattern[str]] = None
+_RC53_EN_WATERS = (
+    "French", "Italian", "Moroccan", "Madeira", "Martinique", "Guadeloupe",
+)
+
+
+def _en_waters_canon() -> dict[str, str]:
+    """Exonymes EN de la table (adj / nom) → casse canonique. RC53."""
+    global _EN_WATERS_CANON, _EN_WATERS_RE
+    if _EN_WATERS_CANON is None:
+        canon: dict[str, str] = {}
+        for row in toponyms.territories():
+            for key in ("adj_en", "en"):
+                val = str(row.get(key) or "").strip()
+                if val and "water" not in val.casefold():
+                    canon[val.casefold()] = val
+        for extra in _RC53_EN_WATERS:
+            canon.setdefault(extra.casefold(), extra)
+        names = sorted((n for n in canon if n), key=len, reverse=True)
+        alt = "|".join(re.escape(n) for n in names)
+        _EN_WATERS_CANON = canon
+        _EN_WATERS_RE = re.compile(rf"\b(?:{alt})\s+waters\b", re.I) if alt else re.compile(r"(?!x)x")
+    return _EN_WATERS_CANON
+
+
+def fix_en_waters_casing(text: str) -> str:
+    """« french waters » → « French waters ». La forme déjà capitale ne bouge pas.
+
+    Filet à la lecture (RC53) : `thin_chapter_dates` mettait en minuscule la
+    tête de phrase après « Then, » — on rétablit le nom propre sans rebuild.
+    """
+    blob = text or ""
+    if not blob:
+        return blob
+    _en_waters_canon()
+    rx = _EN_WATERS_RE
+    if rx is None:
+        return blob
+
+    def repl(m: re.Match) -> str:
+        raw = m.group(0)
+        head = re.sub(r"\s+waters$", "", raw, flags=re.I)
+        canon = (_EN_WATERS_CANON or {}).get(head.casefold())
+        return f"{canon} waters" if canon else raw
+
+    return rx.sub(repl, blob)
+
+
 def speak_film_text(text: str, lang: str = "fr") -> str:
     """Texte du film : distances arrondies, unités parlées, pas de décimale."""
     spoken = round_spoken_distances(text or "", lang)
     spoken = expand_spoken_units(spoken, lang)
     spoken = round_spoken_decimals(spoken)
-    return scrub_spoken(spoken)
+    spoken = scrub_spoken(spoken)
+    if _en(lang):
+        spoken = fix_en_waters_casing(spoken)
+    return spoken
 
 
 def _nm_label(nm: Any, lang: str) -> str:
@@ -6065,7 +6117,10 @@ def thin_chapter_dates(sentences: list[str], lang: str = "fr") -> list[str]:
             break
         lead = "Puis, " if not _en(lang) else "Then, "
         out[drop] = lead + (body[0].lower() + body[1:] if body else "")
-    return [s for s in out if s]
+    kept = [s for s in out if s]
+    if _en(lang):
+        return [fix_en_waters_casing(s) for s in kept]
+    return kept
 
 
 def date_density_ok(text: str, lang: str = "fr") -> bool:
@@ -7402,7 +7457,7 @@ def _public_plan(plan: dict, source: str) -> dict:
             "id": c.get("id"),
             "tA": c.get("tA"),
             "tB": c.get("tB"),
-            "text": c.get("text") or "",
+            "text": fix_en_waters_casing(c.get("text") or ""),
             "anchors": [
                 {"charIdx": a.get("charIdx"), "t": a.get("t")}
                 for a in (c.get("anchors") or [])
