@@ -199,11 +199,13 @@ LANE_LABELS = {
         "n atlantic main": "Atlantique nord",
         "coral sea lane": "mer de Corail",
         "torres commercial": "détroit de Torrès",
+        "pacific": "Pacifique",
     },
     "en": {
         "gibraltar": "Strait of Gibraltar",
         "strait of gibraltar": "Strait of Gibraltar",
         "bay of biscay": "Bay of Biscay",
+        "pacific": "Pacific",
     },
 }
 # RC32 : adjectifs / exonymes ZEE — table unique `toponyms` (JO / Marine Regions).
@@ -468,6 +470,134 @@ def zee_group_waters(members: list, lang: str = "fr") -> str:
     return toponyms.group_waters(members, lang)
 
 
+def _as_latlon(lat: Any, lon: Any) -> Optional[tuple[float, float]]:
+    try:
+        la, lo = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None
+    if la != la or lo != lo:
+        return None
+    return la, lo
+
+
+def _row_latlon(row: dict | None) -> Optional[tuple[float, float]]:
+    """Position du moment (pos / here / at) — jamais une coordonnée inventée."""
+    if not isinstance(row, dict):
+        return None
+    sources: list[dict] = [row]
+    pos = row.get("pos") if isinstance(row.get("pos"), dict) else None
+    if pos:
+        sources.append(pos)
+    moment = row.get("moment") if isinstance(row.get("moment"), dict) else None
+    if moment:
+        sources.append(moment)
+        here = moment.get("here") if isinstance(moment.get("here"), dict) else None
+        if here:
+            sources.append(here)
+            at = here.get("at") if isinstance(here.get("at"), dict) else None
+            if at:
+                sources.append(at)
+        mom_pos = moment.get("pos") if isinstance(moment.get("pos"), dict) else None
+        if mom_pos:
+            sources.append(mom_pos)
+    for src in sources:
+        pair = _as_latlon(src.get("lat"), src.get("lon"))
+        if pair:
+            return pair
+    return None
+
+
+def _zee_basin_from_lonlat(lat: float, lon: float) -> str:
+    """Bassin de la ZEE : Gascogne/Pertuis ≠ Corse/Sardaigne ≠ Pacifique (RC35)."""
+    if lon <= -80.0:
+        return "pacific"
+    if lon >= 5.0 and 36.0 <= lat <= 45.0:
+        return "med"
+    if lon < 1.0 and lat >= 43.0:
+        return "biscay"
+    if lon < -30.0:
+        return "west_atlantic"
+    return "east_atlantic"
+
+
+def _zee_basin_from_change(change: dict | None) -> str:
+    pair = _as_latlon((change or {}).get("lat"), (change or {}).get("lon"))
+    if pair:
+        return _zee_basin_from_lonlat(pair[0], pair[1])
+    return ""
+
+
+def _zee_same_basin(a: dict | None, b: dict | None) -> bool:
+    ba, bb = _zee_basin_from_change(a), _zee_basin_from_change(b)
+    if ba and bb:
+        return ba == bb
+    return True
+
+
+_SPINE_WATERS_RE = re.compile(
+    r"spanish|espagnol|portuguese|portugai|moroccan|marocain|"
+    r"french|fran[cç]ais|gibraltar|gascogne|biscay",
+    re.I,
+)
+
+
+def _is_spine_route_item(change: dict | None) -> bool:
+    """Eaux de la route LR→Ajaccio : ne cèdent pas à un Argo ou une AMP de trop (RC35)."""
+    if not isinstance(change, dict):
+        return False
+    kind = str(change.get("kind") or "")
+    blob = " ".join(
+        str(x) for x in (
+            change.get("title"), change.get("fact"),
+            *(change.get("members") or []),
+        ) if x
+    )
+    if kind == "zee-enter" and _SPINE_WATERS_RE.search(blob):
+        return True
+    geo = change.get("geo") if isinstance(change.get("geo"), dict) else {}
+    return kind == "coast" and geo.get("kind") == "strait"
+
+
+def _pacific_arrival_ms(
+    clock: dict | None, t_a: Optional[int], t_b: Optional[int],
+) -> Optional[int]:
+    """Premier instant où la TRACE de mer est dans le Pacifique (lon ≤ −80) ;
+    l'arrivée n'est dite que si le bateau y est encore (Papeete). Pas une boîte AIS."""
+    if not isinstance(clock, dict):
+        return None
+    t0 = _ms(clock.get("t0"))
+    first: Optional[int] = None
+    last_lon: Optional[float] = None
+    last_t: Optional[int] = None
+    for v in clock.get("vertices") or []:
+        if not isinstance(v, dict) or v.get("vehicle") in {"plane", "land"}:
+            continue
+        t = _ms(v.get("iso"))
+        if t is None and t0 is not None and v.get("tHours") is not None:
+            try:
+                t = t0 + int(float(v["tHours"]) * 3_600_000)
+            except (TypeError, ValueError):
+                t = None
+        if t is None:
+            continue
+        if t_a is not None and t < t_a:
+            continue
+        if t_b is not None and t > t_b:
+            continue
+        pair = _as_latlon(v.get("lat"), v.get("lon"))
+        if pair is None:
+            continue
+        _lat, lon = pair
+        last_lon, last_t = lon, t
+        if lon <= -80.0 and first is None:
+            first = t
+    if first is None or last_lon is None or last_lon > -80.0:
+        return None
+    if t_b is not None:
+        return int(t_b)
+    return int(last_t or first)
+
+
 def _join_then(parts: list[str], lang: str) -> str:
     names = [p for p in parts if p]
     if not names:
@@ -634,7 +764,7 @@ def _zee_cluster_change(cluster: list[dict]) -> dict:
     if len(cluster) == 1:
         return first
     names = [str(c.get("title") or c.get("fact") or "") for c in cluster]
-    return {
+    out = {
         "id": f"zee-cluster:{first.get('id')}",
         "kind": "zee-enter",
         "score": max(int(c.get("score") or 0) for c in cluster),
@@ -645,6 +775,10 @@ def _zee_cluster_change(cluster: list[dict]) -> dict:
         "tMs": first.get("tMs"),
         "cluster": cluster,
     }
+    if first.get("lat") is not None and first.get("lon") is not None:
+        out["lat"] = first.get("lat")
+        out["lon"] = first.get("lon")
+    return out
 
 
 def _is_zee_waters_change(change: dict) -> bool:
@@ -672,21 +806,34 @@ def dose_zee_changes(changes: list[dict], span_ms: int) -> list[dict]:
     for c in zee:
         prev = clusters[-1][-1] if clusters else None
         dt = (c.get("tMs") or 0) - (prev.get("tMs") or 0) if prev else CLUSTER_MS
-        if clusters and dt < CLUSTER_MS and not _zee_high_seas(c) and not _zee_high_seas(prev):
+        # RC35 : Gascogne/Pertuis FR ≠ Corse FR (bassins) ; ES/PT/MA restent
+        # des phrases distinctes (Gascogne peut s'intercaler) — on ne colle
+        # pas deux eaux de la route dans le même groupe.
+        both_spine = bool(prev) and _is_spine_route_item(prev) and _is_spine_route_item(c)
+        if (
+            clusters and dt < CLUSTER_MS
+            and not _zee_high_seas(c) and not _zee_high_seas(prev)
+            and _zee_same_basin(c, prev)
+            and not both_spine
+        ):
             clusters[-1].append(c)
         else:
             clusters.append([c])
     grouped = [_zee_cluster_change(cl) for cl in clusters]
     if span_ms < SHORT_CROSSING_MS:
         return grouped
-    by_day: dict[str, dict] = {}
+    kept: list[dict] = []
+    days_used: set[str] = set()
     for c in grouped:
-        day = _utc_day(c)
-        if day and day not in by_day:
-            by_day[day] = c
-        elif not day:
-            by_day[f"_{len(by_day)}"] = c
-    return [by_day[k] for k in sorted(by_day)]
+        if _is_spine_route_item(c):
+            kept.append(c)
+            continue
+        day = _utc_day(c) or f"_{len(days_used)}"
+        if day in days_used:
+            continue
+        days_used.add(day)
+        kept.append(c)
+    return kept
 
 
 def dose_coast_changes(changes: list[dict], span_ms: int) -> list[dict]:
@@ -2819,15 +2966,30 @@ def _lane_crossings(clock: dict | None, t_a: Optional[int], t_b: Optional[int]) 
     return out if saw else None
 
 
+def _lane_named_in_chapter(name: str, already: str) -> bool:
+    """Un couloir déjà dit (Gibraltar en côte) : on le retire, on ne jette pas Gascogne."""
+    blob = str(already or "")
+    if not blob:
+        return False
+    for part in re.findall(r"[A-ZÀ-Ÿ][\w'’\-]{3,}", str(name or "")):
+        if part and part in blob:
+            return True
+    return False
+
+
 def review_sentences(
     leg: dict | None, lang: str = "fr", crossings: dict[str, int] | None = None,
+    already: str = "",
 ) -> list[str]:
     """Faits de revue fondus dans la route : plus d'annexe « À surveiller / Couloirs ».
 
     RC30 : `crossings` (couloir → instant du premier croisement dans le
     chapitre) filtre « La route passe par … » aux seuls bassins que la TRACE du
     chapitre traverse, dans l'ordre de la route — Papeete n'entend plus
-    « Atlantique nord » hérité d'une autre portion de la jambe de revue."""
+    « Atlantique nord » hérité d'une autre portion de la jambe de revue.
+    RC35 : un nom déjà dit (Gibraltar) est retiré de la liste, les autres
+    (Gascogne) restent ; le Pacifique n'est pas une boîte AIS (voir
+    `_append_review_sentences`)."""
     if not isinstance(leg, dict):
         return []
     en = _en(lang)
@@ -2845,6 +3007,8 @@ def review_sentences(
         raw_lanes.sort(key=lambda n: crossings[n.casefold()])
     lanes = [clean_spoken_label(n, lang) for n in raw_lanes]
     lanes = [n for n in lanes if n and not looks_english_title(n)]
+    if already:
+        lanes = [n for n in lanes if not _lane_named_in_chapter(n, already)]
 
     if lanes:
         def _lane(n: str) -> str:
@@ -2895,22 +3059,30 @@ def _append_review_sentences(
     t_a, t_b = window.get("tA"), window.get("tB")
     crossings = _lane_crossings(clock, t_a, t_b)
     pack = leg.get("antiShipping") if isinstance(leg.get("antiShipping"), dict) else None
+    spoken_lanes = [
+        n for n in ((pack or {}).get("lanes") or [])
+        if isinstance(n, str) and n.strip()
+        and (crossings is None or n.strip().casefold() in crossings)
+        and not _lane_named_in_chapter(clean_spoken_label(n, lang), already)
+    ]
     lane_ts = [
         crossings[str(n).strip().casefold()]
-        for n in ((pack or {}).get("lanes") or [])
-        if isinstance(n, str) and crossings and str(n).strip().casefold() in crossings
-    ] if crossings else []
+        for n in spoken_lanes
+        if crossings and str(n).strip().casefold() in crossings
+    ]
     lane_anchor = min(lane_ts) if lane_ts else None
-    for sentence in review_sentences(leg, lang, crossings=crossings):
+    for sentence in review_sentences(leg, lang, crossings=crossings, already=already):
         filtered, _dropped = filter_numbers(sentence, facts)
         sentence = (filtered or "").strip()
         if not sentence:
             continue
-        if any(part and part in already for part in re.findall(r"[A-ZÀ-Ý][\w'-]{3,}", sentence)):
-            # Le détroit / la mer est déjà nommé dans la route.
-            if re.search(r"passe par|goes through", sentence, re.I):
-                continue
+        if (
+            not re.search(r"passe par|goes through", sentence, re.I)
+            and any(part and part in already for part in re.findall(r"[A-ZÀ-Ý][\w'-]{3,}", sentence))
+        ):
+            continue
         bits.append(sentence)
+        already = " ".join(bits)
         if anchored is None:
             continue
         if lane_anchor is not None and re.search(r"passe par|goes through", sentence, re.I):
@@ -2935,6 +3107,16 @@ def _append_review_sentences(
             t_ms = t_a
         extra = {"place": place, "kind": "coast"} if place else {}
         anchored.append((sentence, t_ms, extra) if extra else (sentence, t_ms))
+    pacific_ms = _pacific_arrival_ms(clock, t_a, t_b)
+    if pacific_ms is not None and not re.search(r"\b(pacifique|pacific)\b", already, re.I):
+        sentence = "The Pacific." if _en(lang) else "Pacifique."
+        bits.append(sentence)
+        if anchored is not None:
+            anchored.append((
+                sentence,
+                t_b if t_b is not None else pacific_ms,
+                {"kind": "coast", "place": "Pacifique"},
+            ))
 
 
 def cyclone_name_year(change: dict) -> tuple[str, str]:
@@ -4491,6 +4673,45 @@ def _dest_culture_changes(dest: dict | None) -> list[dict]:
     return out
 
 
+def _starting_zee_from_moments(
+    moments: list[dict], t_a: int, t_b: int, first: bool,
+) -> Optional[dict]:
+    """ZEE déjà occupée au départ de la jambe (pas un enter) — Gascogne / Pertuis.
+
+    Calculée depuis le premier moment de mer de la fenêtre, jamais une constante."""
+    for row in moments:
+        if not isinstance(row, dict) or _moment_is_air(row):
+            continue
+        t = _change_t(row)
+        if t is None:
+            continue
+        # Y compris tA : l'appareillage de la jambe (non-première) est à tA,
+        # alors que flatten laisse ce moment au chapitre précédent.
+        if t < t_a or t > t_b:
+            continue
+        if first and t >= t_b:
+            continue
+        moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+        here = moment.get("here") if isinstance(moment.get("here"), dict) else {}
+        zee = here.get("zee") if isinstance(here.get("zee"), dict) else {}
+        name = str(zee.get("name") or "").strip()
+        if not name or re.search(r"haute mer|high seas", name, re.I):
+            continue
+        pair = _row_latlon(row)
+        extra = {"lat": pair[0], "lon": pair[1]} if pair else {}
+        return {
+            "id": f"zee-start:{row.get('seq')}:{zee.get('mrgid') or name}",
+            "kind": "zee-enter",
+            "score": 2,
+            "title": name,
+            "fact": name,
+            "t": row.get("t"),
+            "tMs": t,
+            **extra,
+        }
+    return None
+
+
 def _flatten_changes(moments: list[dict], t_a: int, t_b: int, first: bool) -> list[dict]:
     out: list[dict] = []
     seen: set[tuple] = set()
@@ -4516,13 +4737,32 @@ def _flatten_changes(moments: list[dict], t_a: int, t_b: int, first: bool) -> li
                 "tMs": t,
                 "legIdx": row.get("legIdx"),
             }
+            pair = _row_latlon(row)
+            if pair and row_change.get("lat") is None:
+                row_change["lat"], row_change["lon"] = pair
             if not change_is_speakable(row_change):
                 continue
-            key = (str(change.get("kind")), norm_stop(change_place_name(row_change) or title), fact)
+            key = (
+                str(change.get("kind")),
+                norm_stop(change_place_name(row_change) or title),
+                fact,
+                _zee_basin_from_change(row_change) if str(change.get("kind") or "") == "zee-enter" else "",
+            )
             if key in seen:
                 continue
             seen.add(key)
             out.append(row_change)
+    start_zee = _starting_zee_from_moments(moments, t_a, t_b, first)
+    if start_zee:
+        key = (
+            "zee-enter",
+            norm_stop(change_place_name(start_zee) or start_zee.get("title") or ""),
+            str(start_zee.get("fact") or ""),
+            _zee_basin_from_change(start_zee),
+        )
+        if key not in seen:
+            seen.add(key)
+            out.append(start_zee)
     out.sort(key=lambda c: (c["tMs"], str(c.get("id") or "")))
     return out
 
@@ -4574,10 +4814,15 @@ def _group_changes(changes: list[dict], span_ms: int, clock: dict | None = None)
 def _place_dedup_key(change: dict) -> str:
     kind = str(change.get("kind") or "")
     if kind == "zee-enter":
-        # La parenthèse distingue le territoire : « néerlandaise (Sint-Maarten) »
-        # n'est pas « néerlandaise (Sint-Eustatius) » (RC26).
-        raw = re.sub(r"\s+", " ", str(change.get("title") or change.get("fact") or "")).strip().casefold()
-        return f"zee:{raw}" if raw else ""
+        # Identité + bassin : les eaux françaises de Gascogne/Pertuis ne sont
+        # pas celles de Corse/Sardaigne ni du Pacifique (RC35). Sans coordonnées,
+        # le titre brut reste le repli (RC26 : parenthèse = territoire).
+        raw = re.sub(r"\s+", " ", str(change.get("title") or change.get("fact") or "")).strip()
+        if not raw:
+            return ""
+        ident = toponyms.identity_key(raw) or raw.casefold()
+        basin = _zee_basin_from_change(change)
+        return f"zee:{ident}:{basin}" if basin else f"zee:{ident}"
     # Un groupe côte / île porte sa géographie : « l'Andalousie — Cartagena »
     # et « l'Andalousie — Almería » sont le même site (RC26).
     geo = change.get("geo") if isinstance(change.get("geo"), dict) else None
@@ -4686,6 +4931,7 @@ def _pick_diverse(cands: list[dict], picked: list[dict]) -> Optional[dict]:
         # RC19 : une île / un détroit ne cède jamais sa place aux eaux du jour —
         # le jalon rare passe AVANT la pénalité de répétition.
         return (
+            0 if _is_spine_route_item(c) else 1,
             absent, rank, -_diversity_bonus(c), repeat,
             -int(c.get("score") or 0),
             CHANGE_PRIORITY.get(str(c.get("kind") or ""), 9),
@@ -4693,6 +4939,47 @@ def _pick_diverse(cands: list[dict], picked: list[dict]) -> Optional[dict]:
         )
 
     return min(cands, key=key)
+
+
+def _pin_spine_waters(picked: list[dict], pool: list[dict]) -> list[dict]:
+    """RC35 : ES/PT/MA/FR/Gibraltar restent dans le chapitre — un Argo ou une
+    AMP de trop cède sa place, la première AMP (Lilleau) est gardée."""
+    have = {k for k in (_place_dedup_key(c) for c in picked) if k}
+    missing: list[dict] = []
+    for c in pool:
+        if not _is_spine_route_item(c):
+            continue
+        k = _place_dedup_key(c)
+        if k and k in have:
+            continue
+        missing.append(c)
+        if k:
+            have.add(k)
+    if not missing:
+        return picked
+    extras = [
+        c for c in picked
+        if _diversity_kind(c) in {"amp", "station"} and not _is_spine_route_item(c)
+    ]
+    drop_ids = {id(c) for c in extras[1:]}
+    out = [c for c in picked if id(c) not in drop_ids]
+    keep_extra_ids = {id(c) for c in extras[:1]}
+    for c in missing:
+        if len(out) < FILM_FREE_ITEMS_MAX:
+            out.append(c)
+            continue
+        replaced = False
+        for i in range(len(out) - 1, -1, -1):
+            if id(out[i]) in keep_extra_ids:
+                continue
+            if _diversity_kind(out[i]) in {"amp", "station"} and not _is_spine_route_item(out[i]):
+                out[i] = c
+                replaced = True
+                break
+        if not replaced:
+            continue
+    out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
+    return out
 
 
 def _spread_free_changes(
@@ -4862,7 +5149,7 @@ def _spread_free_changes(
             out[out.index(prev)] = merged
             by_site[k] = merged
     out.sort(key=lambda c: (c.get("tMs") or 0, str(c.get("id") or "")))
-    return out
+    return _pin_spine_waters(out, rows)
 
 
 def _would_speak(change: dict) -> bool:
@@ -6129,12 +6416,15 @@ def build_raw_from_moments(
                 extra["lat"] = change.get("lat")
                 extra["lon"] = change.get("lon")
             t_ms = change.get("tMs")
-            near = _clock_time_near_place(
-                w.get("clock") or clock, place, w["tA"], w["tB"],
-                (w.get("clock") or clock or {}).get("marks"),
-            )
-            if near is not None:
-                t_ms = near
+            # RC35 : les eaux se disent à LEUR premier croisement — « eaux
+            # françaises » de Gascogne n'est pas recollé sur la Corse.
+            if str(change.get("kind") or "") != "zee-enter":
+                near = _clock_time_near_place(
+                    w.get("clock") or clock, place, w["tA"], w["tB"],
+                    (w.get("clock") or clock or {}).get("marks"),
+                )
+                if near is not None:
+                    t_ms = near
             anchored.append((sentence, t_ms, extra))
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)

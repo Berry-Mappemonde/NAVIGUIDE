@@ -29,9 +29,9 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC27 (gabarit compact 2:30) invalide rc32.
+# Clé film : RC35 (eaux Gascogne/Maroc dans l'ordre, Pacifique à Papeete) invalide rc27.
 # moments reste rg4 ; ici reste rg3.
-FILM_SCRIPT_REV = "rc27"
+FILM_SCRIPT_REV = "rc35"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "rg3"

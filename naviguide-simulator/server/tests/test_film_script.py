@@ -1593,7 +1593,11 @@ def test_zee_dosage_short_keeps_all_long_one_per_day():
          "title": "Portuguese Exclusive Economic Zone"},
     ]
     one_day = dose_zee_changes([long_zee[0], same_day[0]], span_ms=long_span)
-    assert len(one_day) == 1
+    # RC35 : ES et PT sont des eaux de la route — deux phrases, pas un groupe du jour.
+    assert len(one_day) == 2
+    assert {c["title"] for c in one_day} == {
+        "Spanish Exclusive Economic Zone", "Portuguese Exclusive Economic Zone",
+    }
 
 
 def test_zee_named_in_date_order_no_count():
@@ -3305,3 +3309,305 @@ def test_attach_ici_film_phrases_does_not_mutate_cache():
     amp_fr = out["filmPhrases"]["amp-enter:fr-pertuis"]["fr"]
     assert "aire marine" in amp_fr.lower() or "Pertuis" in amp_fr
     assert out["filmPhrases"]["poe-ahead:La Rochelle"]["fr"]
+
+
+# ---------------------------------------------------------------------------
+# Lot RC35 — eaux LR→Ajaccio dans l'ordre du voyage ; Papeete nomme le Pacifique
+# (revue de nuit 15 oct. : Gascogne/Maroc absents, FR collé à la Corse).
+# ---------------------------------------------------------------------------
+
+
+def test_rc35_french_waters_biscay_not_merged_with_corsica():
+    """Gascogne/Pertuis et Corse : deux phrases, deux ancres — pas une identité FR."""
+    from film_script import _place_dedup_key, _usable_changes
+
+    biscay = {
+        "id": "fr-bis", "kind": "zee-enter", "score": 2,
+        "title": "French Exclusive Economic Zone",
+        "fact": "French Exclusive Economic Zone",
+        "t": "2026-05-15T12:00:00Z", "tMs": _ms("2026-05-15T12:00:00Z"),
+        "lat": 46.15, "lon": -1.16,
+    }
+    corse = {
+        "id": "fr-med", "kind": "zee-enter", "score": 2,
+        "title": "French Exclusive Economic Zone",
+        "fact": "French Exclusive Economic Zone",
+        "t": "2026-05-25T12:00:00Z", "tMs": _ms("2026-05-25T12:00:00Z"),
+        "lat": 41.9, "lon": 8.7,
+    }
+    assert _place_dedup_key(biscay) != _place_dedup_key(corse)
+    rows = _usable_changes([biscay, corse])
+    assert len(rows) == 2
+    assert {c["id"] for c in rows} == {"fr-bis", "fr-med"}
+
+
+def test_rc35_spine_waters_kept_before_extra_amp_argo():
+    """LR→Ajaccio : ES/PT/MA restent quand des AMP et des Argo surnuméraires
+    se battent pour les fenêtres — horloge de jambe, pas un seed de stock."""
+    t0 = _ms("2026-05-15T12:00:00Z")
+    t_b = _ms("2026-05-26T12:00:00Z")
+    day = 86_400_000
+    waters = [
+        {"id": "fr1", "kind": "zee-enter", "score": 2, "tMs": t0, "t": "2026-05-15T12:00:00Z",
+         "title": "French Exclusive Economic Zone", "fact": "French Exclusive Economic Zone",
+         "lat": 46.15, "lon": -1.16},
+        {"id": "es", "kind": "zee-enter", "score": 2, "tMs": t0 + 1 * day, "t": "2026-05-16T12:00:00Z",
+         "title": "Spanish Exclusive Economic Zone", "fact": "Spanish Exclusive Economic Zone",
+         "lat": 43.0, "lon": -9.0},
+        {"id": "pt", "kind": "zee-enter", "score": 2, "tMs": t0 + 3 * day, "t": "2026-05-18T12:00:00Z",
+         "title": "Portuguese Exclusive Economic Zone", "fact": "Portuguese Exclusive Economic Zone",
+         "lat": 39.0, "lon": -9.5},
+        {"id": "ma", "kind": "zee-enter", "score": 2, "tMs": t0 + 6 * day, "t": "2026-05-21T12:00:00Z",
+         "title": "Moroccan Exclusive Economic Zone", "fact": "Moroccan Exclusive Economic Zone",
+         "lat": 35.6, "lon": -6.0},
+        {"id": "fr2", "kind": "zee-enter", "score": 2, "tMs": t0 + 10 * day, "t": "2026-05-25T12:00:00Z",
+         "title": "French Exclusive Economic Zone", "fact": "French Exclusive Economic Zone",
+         "lat": 41.9, "lon": 8.7},
+    ]
+    extras = [
+        {"id": f"amp{i}", "kind": "amp", "score": 2, "tMs": t0 + int(0.4 * i * day),
+         "t": "2026-05-16T00:00:00Z", "title": f"Réserve {i}", "fact": f"Réserve {i} (4 nm)", "nm": 4}
+        for i in range(8)
+    ] + [
+        {"id": f"a{i}", "kind": "station", "score": 2, "tMs": t0 + (2 + 2 * i) * day,
+         "title": f"Argo {6904210 + i}", "fact": f"Argo {6904210 + i} (4 nm)",
+         "source": "argo", "nm": 4}
+        for i in range(4)
+    ]
+    picked = select_chapter_changes(
+        waters + extras, t0, t_b, budget=False, depart_ms=t0 + 3_600_000,
+    )
+    blob = " ".join(change_sentence(c, "fr") for c in picked if c.get("kind") == "zee-enter")
+    assert "françaises" in blob
+    assert "espagnoles" in blob
+    assert "portugaises" in blob
+    assert "marocaines" in blob
+    assert blob.find("espagnoles") < blob.find("portugaises") < blob.find("marocaines")
+
+
+def test_rc35_gascogne_kept_when_gibraltar_already_named():
+    """« La route passe par … » : Gibraltar déjà dit en côte n'efface pas Gascogne."""
+    from film_script import _append_review_sentences, _order_chapter_sentences
+
+    clock = {
+        "t0": "2026-05-15T12:00:00Z",
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": "2026-05-16T12:00:00Z", "lat": 43.2, "lon": -9.0, "vehicle": "main"},
+            {"iso": "2026-05-21T12:00:00Z", "lat": 36.14, "lon": -5.35, "vehicle": "main"},
+            {"iso": "2026-05-26T12:00:00Z", "lat": 41.9, "lon": 8.7, "vehicle": "main"},
+        ],
+    }
+    t_a, t_b = _ms("2026-05-15T12:00:00Z"), _ms("2026-05-26T12:00:00Z")
+    window = {"clock": clock, "tA": t_a, "tB": t_b, "fromName": "La Rochelle", "toName": "Ajaccio (Corse)"}
+    review = {"legs": [{
+        "from": "La Rochelle", "to": "Ajaccio (Corse)",
+        "antiShipping": {"score": 0.4, "lanes": ["Bay of Biscay", "Gibraltar"]},
+    }]}
+    bits = [
+        "Le 15 mai, Berry-Mappemonde quitte La Rochelle.",
+        "Le 21 mai, le détroit de Gibraltar — Tanger, Algeciras.",
+        "Arrivée à Ajaccio le 26 mai.",
+    ]
+    anchored = [
+        (bits[0], t_a, {"role": "depart"}),
+        (bits[1], _ms("2026-05-21T12:00:00Z"), {"kind": "coast", "place": "Gibraltar"}),
+        (bits[2], t_b, {"role": "arrive", "place": "Ajaccio", "kind": "escale"}),
+    ]
+    _append_review_sentences(bits, review, window, "fr", anchored)
+    lane = next(s for s in bits if "passe par" in s)
+    assert "Gascogne" in lane
+    assert "Gibraltar" not in lane
+    _order_chapter_sentences(bits, anchored, [])
+    blob = " ".join(bits)
+    assert blob.find("Gascogne") < blob.find("Gibraltar")
+
+
+def _rc35_lr_clock():
+    return {
+        "t0": "2026-05-15T08:00:00Z",
+        "marks": [
+            {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": "2026-05-15T08:00:00Z",
+             "holdHours": 0, "lat": 46.8, "lon": 1.6},
+            {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z",
+             "holdHours": 0, "lat": 46.15, "lon": -1.16},
+            {"name": "Ajaccio (Corse)", "nm": 1820, "filmNm": 1942, "iso": "2026-05-26T12:00:00Z",
+             "holdHours": 24, "lat": 41.9, "lon": 8.7},
+        ],
+        "vertices": [
+            {"iso": "2026-05-15T12:00:00Z", "lat": 46.15, "lon": -1.16, "vehicle": "main"},
+            {"iso": "2026-05-15T18:00:00Z", "lat": 45.5, "lon": -1.4, "vehicle": "main"},
+            {"iso": "2026-05-16T12:00:00Z", "lat": 43.2, "lon": -9.0, "vehicle": "main"},
+            {"iso": "2026-05-18T12:00:00Z", "lat": 38.7, "lon": -9.5, "vehicle": "main"},
+            {"iso": "2026-05-21T08:00:00Z", "lat": 36.14, "lon": -5.35, "vehicle": "main"},
+            {"iso": "2026-05-21T14:00:00Z", "lat": 35.7, "lon": -6.0, "vehicle": "main"},
+            {"iso": "2026-05-24T12:00:00Z", "lat": 41.0, "lon": 8.4, "vehicle": "main"},
+            {"iso": "2026-05-26T12:00:00Z", "lat": 41.9, "lon": 8.7, "vehicle": "main"},
+        ],
+    }
+
+
+def test_rc35_lr_ajaccio_waters_in_voyage_order():
+    """Moments + horloge de jambe : FR, Gascogne, ES, PT, Gibraltar, MA dans l'ordre."""
+    clock = _rc35_lr_clock()
+
+    def mom(seq, iso, lat, lon, changes, **here_zee):
+        here = {"zee": here_zee} if here_zee.get("name") else {}
+        return {
+            "seq": seq, "t": iso, "signature": f"s{seq}", "legIdx": 0,
+            "pos": {"lat": lat, "lon": lon},
+            "changes": changes,
+            "moment": {
+                "leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 200.0},
+                "here": here,
+                "pos": {"lat": lat, "lon": lon},
+            },
+        }
+
+    journal = {"moments": [
+        mom(0, "2026-05-15T12:00:00Z", 46.15, -1.16, [
+            {"kind": "amp", "score": 2, "title": "Lilleau-des-Niges",
+             "fact": "Lilleau-des-Niges (4 nm)", "nm": 4},
+        ], name="French Exclusive Economic Zone", mrgid=5677),
+        mom(1, "2026-05-16T12:00:00Z", 43.2, -9.0, [
+            {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+             "fact": "Spanish Exclusive Economic Zone"},
+            {"kind": "amp", "score": 2, "title": "Réserve de Galice",
+             "fact": "Réserve de Galice (5 nm)", "nm": 5},
+        ]),
+        mom(2, "2026-05-18T12:00:00Z", 38.7, -9.5, [
+            {"kind": "zee-enter", "score": 2, "title": "Portuguese Exclusive Economic Zone",
+             "fact": "Portuguese Exclusive Economic Zone"},
+            {"kind": "station", "score": 2, "title": "Argo 6904210",
+             "fact": "Argo 6904210 (4 nm)", "source": "argo", "nm": 4},
+        ]),
+        mom(3, "2026-05-21T08:00:00Z", 36.14, -5.35, [
+            {"kind": "coast", "score": 2, "title": "Tanger", "fact": "Tanger (2 nm)"},
+            {"kind": "coast", "score": 2, "title": "Algeciras", "fact": "Algeciras (3 nm)"},
+        ]),
+        mom(4, "2026-05-21T14:00:00Z", 35.7, -6.0, [
+            {"kind": "zee-enter", "score": 2, "title": "Moroccan Exclusive Economic Zone",
+             "fact": "Moroccan Exclusive Economic Zone"},
+            {"kind": "amp", "score": 2, "title": "Parc du Détroit",
+             "fact": "Parc du Détroit (6 nm)", "nm": 6},
+            {"kind": "station", "score": 2, "title": "Argo 6904211",
+             "fact": "Argo 6904211 (5 nm)", "source": "argo", "nm": 5},
+        ]),
+        mom(5, "2026-05-24T12:00:00Z", 41.0, 8.4, [
+            {"kind": "zee-enter", "score": 2, "title": "Italian Exclusive Economic Zone",
+             "fact": "Italian Exclusive Economic Zone"},
+        ]),
+        mom(6, "2026-05-25T12:00:00Z", 41.9, 8.7, [
+            {"kind": "zee-enter", "score": 2, "title": "French Exclusive Economic Zone",
+             "fact": "French Exclusive Economic Zone"},
+        ]),
+        mom(7, "2026-05-26T12:00:00Z", 41.9, 8.7, [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+        ]),
+    ], "latest": []}
+    review = {"legs": [{
+        "from": "La Rochelle", "to": "Ajaccio (Corse)",
+        "antiShipping": {"score": 0.4, "lanes": ["Bay of Biscay", "Gibraltar"]},
+    }]}
+    live = {"filmNm": 1820, "sailNm": 1820, "iso": "2026-05-26T12:00:00Z",
+            "status": "live", "atStop": "Ajaccio"}
+    plan = build_raw_script(
+        clock, clock["marks"], live, journal,
+        lang="fr", seconds=0, now_ms=_ms("2026-05-27T08:00:00Z"), review=review,
+    )
+    ch = next(
+        c for c in plan["chapters"]
+        if re.search(r"rochelle", c.get("fromName") or "", re.I)
+        and re.search(r"ajaccio", c.get("toName") or "", re.I)
+    )
+    text = ch["text"] or ""
+    def at(pat):
+        m = re.search(pat, text)
+        assert m, f"{pat!r} absent de {text[:400]}"
+        return m.start()
+    i_fr = at(r"eaux françaises")
+    i_gas = at(r"Gascogne")
+    i_es = at(r"eaux espagnoles")
+    i_pt = at(r"eaux portugaises")
+    i_gi = at(r"Gibraltar")
+    i_ma = at(r"eaux marocaines")
+    assert i_fr < i_gas < i_es < i_pt < i_gi < i_ma, text
+    # la Corse reste une seconde phrase d'eaux françaises, plus tard
+    rest = text[i_ma + 1:]
+    assert re.search(r"eaux françaises", rest) or "Corse" in text or "Ajaccio" in text
+
+
+def test_rc35_papeete_names_pacific_not_north_atlantic():
+    """Cayenne → Papeete : le bassin Pacifique vient de la TRACE (lon ≤ −80),
+    pas d'une boîte AIS ; Atlantique nord n'est pas recollé."""
+    clock = {
+        "t0": "2026-05-15T08:00:00Z",
+        "marks": [
+            {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": "2026-05-15T08:00:00Z",
+             "holdHours": 0, "lat": 46.8, "lon": 1.6},
+            {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z",
+             "holdHours": 0, "lat": 46.15, "lon": -1.16},
+            {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000, "iso": "2026-07-28T08:00:00Z",
+             "holdHours": 0, "lat": 4.9, "lon": -52.3},
+            {"name": "Papeete", "nm": 9000, "filmNm": 9000, "iso": "2026-08-25T08:00:00Z",
+             "holdHours": 0, "lat": -17.5, "lon": -149.6},
+        ],
+        "vertices": [
+            {"iso": "2026-07-28T08:00:00Z", "lat": 4.9, "lon": -52.3, "vehicle": "main"},
+            {"iso": "2026-08-02T08:00:00Z", "lat": 9.5, "lon": -79.9, "vehicle": "main"},
+            {"iso": "2026-08-10T08:00:00Z", "lat": 5.0, "lon": -95.0, "vehicle": "main"},
+            {"iso": "2026-08-25T08:00:00Z", "lat": -17.5, "lon": -149.6, "vehicle": "main"},
+        ],
+    }
+
+    def mom(seq, iso, lat, lon, changes, **zee):
+        here = {"zee": zee} if zee.get("name") else {}
+        return {
+            "seq": seq, "t": iso, "signature": f"s{seq}", "legIdx": 0,
+            "pos": {"lat": lat, "lon": lon},
+            "changes": changes,
+            "moment": {
+                "leg": {"from": "Cayenne (Guyane)", "to": "Papeete", "headingDeg": 250.0},
+                "here": here,
+                "pos": {"lat": lat, "lon": lon},
+            },
+        }
+
+    journal = {"moments": [
+        mom(0, "2026-07-28T08:00:00Z", 4.9, -52.3, [],
+            name="French Exclusive Economic Zone", mrgid=4890),
+        mom(1, "2026-08-15T08:00:00Z", -10.0, -140.0, [
+            {"kind": "zee-enter", "score": 2,
+             "title": "French Exclusive Economic Zone (French Polynesia)",
+             "fact": "French Exclusive Economic Zone (French Polynesia)"},
+        ]),
+        mom(2, "2026-08-25T08:00:00Z", -17.5, -149.6, [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Papeete", "fact": "x"},
+        ]),
+    ], "latest": []}
+    review = {"legs": [{
+        "from": "Cayenne (Guyane)", "to": "Papeete",
+        "antiShipping": {"score": 0.7, "lanes": ["N Atlantic main", "Caribbean W"]},
+    }]}
+    live = {"filmNm": 5000, "sailNm": 5000, "iso": "2026-08-25T08:00:00Z",
+            "status": "live", "atStop": "Papeete"}
+    plan = build_raw_script(
+        clock, clock["marks"], live, journal,
+        lang="fr", seconds=0, now_ms=_ms("2026-08-26T08:00:00Z"), review=review,
+    )
+    ch = next(
+        c for c in plan["chapters"]
+        if re.search(r"papeete", (c.get("toName") or "") + (c.get("fromName") or ""), re.I)
+    )
+    text = ch["text"] or ""
+    assert re.search(r"Pacifique", text), text
+    assert "Atlantique nord" not in text
+    en = build_raw_script(
+        clock, clock["marks"], live, journal,
+        lang="en", seconds=0, now_ms=_ms("2026-08-26T08:00:00Z"), review=review,
+    )
+    en_ch = next(
+        c for c in en["chapters"]
+        if re.search(r"papeete", (c.get("toName") or "") + (c.get("fromName") or ""), re.I)
+    )
+    assert re.search(r"Pacific", en_ch["text"] or ""), en_ch["text"]
