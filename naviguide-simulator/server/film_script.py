@@ -1558,6 +1558,49 @@ def _is_side_window(w: dict | None) -> bool:
     )
 
 
+# RC55 : Saint-Pierre → Halifax est dans l'Atlantique nord (~45–47° N).
+# Cayenne / l'équateur / la Guyane (~5° N) n'y ont pas leur place — ces
+# phrases restent sur Marigot → Cayenne et Cayenne → Papeete.
+_GUYANA_EQUATOR_RE = re.compile(
+    r"french guiana|guyane|guyanese|\bequator\b|[\ée]quateur|\bequatorial\b",
+    re.I,
+)
+_SPM_NORTH_LAT = 35.0
+
+
+def _is_saint_pierre_depart(w: dict | None) -> bool:
+    w = w or {}
+    frm = w.get("fromName") or (w.get("from") or {}).get("name") or ""
+    return _air_stop_key(frm) == "saint-pierre"
+
+
+def _change_is_guiana_or_equator(change: dict | None) -> bool:
+    """Événement de Guyane / d'équateur (titre, lieu dit, ou latitude trop sud)."""
+    if not isinstance(change, dict):
+        return False
+    blob = " ".join(
+        str(x) for x in (
+            change.get("title"), change.get("fact"), change.get("name"),
+            change.get("placeFr"), change.get("placeEn"),
+            change.get("event"), change.get("regimeId"),
+            *(change.get("members") or []),
+        ) if x
+    )
+    if _GUYANA_EQUATOR_RE.search(blob):
+        return True
+    lat = None
+    try:
+        lat = float(change["lat"])
+    except (TypeError, ValueError, KeyError):
+        pair = _row_latlon(change)
+        lat = pair[0] if pair else None
+    return lat is not None and lat < _SPM_NORTH_LAT
+
+
+def _drop_guiana_equator_changes(changes: list[dict]) -> list[dict]:
+    return [c for c in changes if not _change_is_guiana_or_equator(c)]
+
+
 def _is_road_window(w: dict | None) -> bool:
     w = w or {}
     if w.get("mode") == "road" or w.get("vehicle") == "land":
@@ -4656,7 +4699,11 @@ def _compose(windows: list[dict], buckets: list[list[dict]], *, lang: str, sea_n
             if head:
                 bits.append(head)
                 anchored.append((head, depart_ms or w["tA"], {"role": "depart"}))
-        for ev in buckets[i]:
+        spoken_evs = (
+            _drop_guiana_equator_changes(buckets[i])
+            if _is_saint_pierre_depart(w) else buckets[i]
+        )
+        for ev in spoken_evs:
             if ev.get("kind") == "sci" and str(ev.get("id") or "") != sci_keep_id:
                 continue
             speak_ev(ev)
@@ -6625,6 +6672,11 @@ def build_raw_from_moments(
         for extra in _dest_culture_changes(dest):
             extra = {**extra, "t": (dest or {}).get("iso"), "tMs": w["tB"]}
             flat.append(extra)
+        # RC55 : le second bateau (Saint-Pierre → Halifax, ou Saint-Pierre →
+        # Cayenne si le titre n'a pas encore Halifax) ne reprend pas les eaux
+        # de Guyane ni l'équateur du catamaran resté à quai.
+        if _is_saint_pierre_depart(w):
+            flat = _drop_guiana_equator_changes(flat)
         selected = select_chapter_changes(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
             clock=w.get("clock") or clock, depart_ms=depart_ms,
