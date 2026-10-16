@@ -1,3 +1,5 @@
+import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
+
 export const ESCALE_POPUP_MAX_WIDTH = 340;
 export const ESCALE_POPUP_MAX_HEIGHT = 260;
 
@@ -5,13 +7,14 @@ const ESCALE_CLOSE_SEL = "[data-testid='escale-close']";
 
 /** Changement de vue, Revoir, ou film en cours : la fiche d'escale disparaît
  * (RA5 + DM7 : Suivre → Tracer ne doit pas garder la fiche de Papeete). */
+
 export function shouldCloseEscaleSheet({
   nextView,
   replayActive = false,
   replayStarting = false,
 } = {}) {
   if (replayActive || replayStarting) return true;
-  return nextView === "suivre" || nextView === "simulation";
+  return nextView === VIEW_SUIVRE || nextView === VIEW_TRACER;
 }
 
 export function isEscaleCloseClick(event) {

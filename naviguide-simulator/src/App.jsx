@@ -58,7 +58,7 @@ import {
   monthOfT0,
   sampleClockAtTime,
 } from "./engine/voyageClock.js";
-import { VIEW_SIMULATION, VIEW_SUIVRE } from "./constants/viewMode.js";
+import { SERVER_MODE_TRACER, VIEW_SUIVRE, VIEW_TRACER } from "./constants/viewMode.js";
 import { legsFromClockMarks } from "./components/iciMaintenant.js";
 import { isRouteReady } from "./utils/routeReady.js";
 import { resolveRouteSource, routeForSource } from "./utils/routeSource.js";
@@ -66,7 +66,7 @@ import {
   isSceneReady,
   playheadAligned,
   sceneMaskKey,
-  shouldFocusSimulationJump,
+  shouldFocusTracerJump,
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
 import { summarizeRoute, featuresToSegments, haversineNm } from "./utils/geo.js";
@@ -187,7 +187,7 @@ export default function App() {
   const [userPreview, setUserPreview] = useState(false);
   const [skipperClickId, setSkipperClickId] = useState(null);
   const isSuivre = view === VIEW_SUIVRE;
-  const isSimulation = view === VIEW_SIMULATION;
+  const isTracer = view === VIEW_TRACER;
   const [voyageFlat, setVoyageFlat] = useState(null);
   const [cameraPlaced, setCameraPlaced] = useState(false);
   const [sceneRevealed, setSceneRevealed] = useState(false);
@@ -281,7 +281,7 @@ export default function App() {
   const routeSource = resolveRouteSource(routeKind, customRoute);
   const suivreBerry = isSuivre && routeSource === "berry";
   const suivreCustom = isSuivre && routeSource === "custom";
-  const playControlsActive = isSimulation || suivreCustom;
+  const playControlsActive = isTracer || suivreCustom;
   const routeForView = routeForSource(routeSource, customRoute);
   const routeReady = isRouteReady(segProgress) || (officialFallback && segments.length > 0);
   const activeStops = useMemo(() => activeSimulationStops(routeForView, points.length ? points : ITINERARY_POINTS), [routeForView, points]);
@@ -309,7 +309,7 @@ export default function App() {
     stops: activeStops,
     windAt: atlasWindAt,
     atlasRev,
-    mode: suivreBerry ? "suivre" : "simulation",
+    mode: suivreBerry ? "suivre" : SERVER_MODE_TRACER,
   });
   // Lot DM5 — l'horloge officielle ne sert que Suivre × Berry : jamais un
   // PUT /voyage/official avec les points d'une route perso.
@@ -325,7 +325,7 @@ export default function App() {
   // Suivre × ma route (DM5) : le même voyage serveur que Tracer (POST /voyage,
   // t0 = date de départ choisie, défaut aujourd'hui 08:00 UTC) donne l'horloge.
   const vessel = useVirtualVessel({
-    enabled: (isSimulation || suivreCustom) && routeReady,
+    enabled: (isTracer || suivreCustom) && routeReady,
     forecast: false,
     follow: suivreCustom,
     t0: voyage.t0,
@@ -438,7 +438,7 @@ export default function App() {
       : null);
   const skipper = useSkipperOrders({
     polar: polarData,
-    mode: suivreBerry ? "suivre" : "simulation",
+    mode: suivreBerry ? "suivre" : SERVER_MODE_TRACER,
     lang,
     wind: skipperWind,
   });
@@ -595,16 +595,16 @@ export default function App() {
     lat: Number.isFinite(momentLat) ? Math.round(momentLat * 1000) / 1000 : null,
     lon: Number.isFinite(momentLon) ? Math.round(momentLon * 1000) / 1000 : null,
     t: momentIso ? String(momentIso).slice(0, 16) : undefined,
-    mode: drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : "simulation"),
+    mode: drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : SERVER_MODE_TRACER),
     lang,
     enabled: sceneReady,
     frozen: replay.active,
   });
-  const momentMode = drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : "simulation");
+  const momentMode = drawingMode && drawnPoints.length ? "drawn" : (isSuivre ? "follow" : SERVER_MODE_TRACER);
   // DM8C — Suivre × ma route lit GET /voyage/{id}/moments (pas le stock Berry,
   // pas le journal local de Tracer). Sans voyageId : rien n'est servi comme prêt.
   const momentJournalMode = (suivreCustom && !customVoyageId)
-    ? "simulation"
+    ? SERVER_MODE_TRACER
     : momentMode;
   const journalRouteId = momentJournalMode === "drawn"
     ? "drawn"
@@ -624,7 +624,7 @@ export default function App() {
   const displayRegime = clockSample?.regime || clockSample?.kind || null;
   const chatContextRef = useRef(null);
   chatContextRef.current = {
-    view: isSuivre ? "suivre" : "simulation",
+    view: isSuivre ? "suivre" : SERVER_MODE_TRACER,
     boat: chatBoatPos
       ? {
         ...chatBoatPos,
@@ -734,33 +734,33 @@ export default function App() {
     if (!routeReady) setSceneRevealed(false);
   }, [routeReady]);
 
-  // The Simulation keeps its playhead across a visit to Suivre: coming back
+  // Tracer keeps its playhead across a visit to Suivre: coming back
   // resumes where the film was, not at Saint-Maur (revue du 19 sept.).
-  // Captured when leaving Simulation (selectView), read when coming back.
-  const simNmRef = useRef(0);
+  // Captured when leaving Tracer (selectView), read when coming back.
+  const tracerNmRef = useRef(0);
 
-  const simPrimedRef = useRef(false);
+  const tracerPrimedRef = useRef(false);
   useEffect(() => {
-    if (!isSimulation) {
-      simPrimedRef.current = false;
+    if (!isTracer) {
+      tracerPrimedRef.current = false;
       return;
     }
-    if (!routeReady || simPrimedRef.current) return;
-    simPrimedRef.current = true;
+    if (!routeReady || tracerPrimedRef.current) return;
+    tracerPrimedRef.current = true;
     voyage.setStartAt("saint-maur");
     voyage.resetToToday();
     sceneApiRef.current?.playback.setProfile("normal");
     sceneApiRef.current?.playback.pause();
-    sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
-  }, [isSimulation, routeReady, voyage.setStartAt, voyage.resetToToday, sceneApi]);
+    sceneApiRef.current?.playback.seek(tracerNmRef.current || 0, { jump: true });
+  }, [isTracer, routeReady, voyage.setStartAt, voyage.resetToToday, sceneApi]);
 
   // Playing the film follows the boat; a manual drag lets go (onManualNavigation).
   useEffect(() => {
-    if (isSimulation && playback.playing) setCameraFollow(true);
-  }, [isSimulation, playback.playing]);
+    if (isTracer && playback.playing) setCameraFollow(true);
+  }, [isTracer, playback.playing]);
 
   const canRecompute = Boolean(
-    isSimulation
+    isTracer
     && cast?.vehicle === "main"
     && vessel.voyage?.voyageId,
   );
@@ -775,7 +775,7 @@ export default function App() {
     boatNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
     boatLat: sample?.lat,
     boatLon: sample?.lon,
-    mode: isSuivre ? "suivre" : "simulation",
+    mode: isSuivre ? "suivre" : SERVER_MODE_TRACER,
     month: climoMonth,
     orders: skipper.orders,
     // The Berry route has canonical pearls warmed on the server; a drawn route samples itself.
@@ -805,7 +805,7 @@ export default function App() {
         crossings: atlas.boatPoint.crossings || atlas.boatPoint.cyclone?.crossings_if_leg,
       }
       : null,
-    mode: isSuivre ? "suivre" : "simulation",
+    mode: isSuivre ? "suivre" : SERVER_MODE_TRACER,
     cinema: cinemaMode,
     playbackProfile: playback.profile,
     cumNm: cast?.sailNm ?? clockSample?.sailNm ?? playback.nm,
@@ -861,7 +861,7 @@ export default function App() {
     bag: iciPack.dossier,
     filmCum: momentFilmCum,
     playing: playback.playing,
-    mode: isSuivre ? "suivre" : "simulation",
+    mode: isSuivre ? "suivre" : SERVER_MODE_TRACER,
     lang,
     written: !replay.active && replay.filmStyle === "written",
     legId: momentLegId,
@@ -878,9 +878,9 @@ export default function App() {
     const newNow = Boolean(nowKey && nowKey !== prevKeys.now);
     const newFree = Boolean(freeKey && freeKey !== prevKeys.free && !moments.free?.loop);
     lastCardKeysRef.current = { now: nowKey, free: freeKey };
-    if (!isSimulation || !stopAuto || !playback.playing) return;
+    if (!isTracer || !stopAuto || !playback.playing) return;
     if (newNow || newFree) sceneApiRef.current?.playback.pause();
-  }, [moments.now?.key, moments.free?.key, moments.free?.loop, isSimulation, stopAuto, playback.playing]);
+  }, [moments.now?.key, moments.free?.key, moments.free?.loop, isTracer, stopAuto, playback.playing]);
 
   // Récit : film serveur (Berry = horloge officielle + journal ; ma route =
   // chapitres de GET /voyage/{id}/film). Jamais le brut local servi comme prêt.
@@ -978,29 +978,29 @@ export default function App() {
   const handleSimNext = useCallback(() => {
     if (!playControlsActive) return;
     if (isSuivre) setUserPreview(true);
-    const focusBoat = shouldFocusSimulationJump({
-      isSimulation,
+    const focusBoat = shouldFocusTracerJump({
+      isTracer,
       playing: playback.playing,
     });
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isSimulation, playControlsActive, isSuivre, sceneApi]);
+  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi]);
 
   const handleSimPrev = useCallback(() => {
     if (!playControlsActive) return;
     if (isSuivre) setUserPreview(true);
-    const focusBoat = shouldFocusSimulationJump({
-      isSimulation,
+    const focusBoat = shouldFocusTracerJump({
+      isTracer,
       playing: playback.playing,
     });
     const target = prevEscaleNm(escaleMarks, playheadNmRef.current);
     const origin = Number(escaleMarks?.[0]?.filmNm ?? escaleMarks?.[0]?.nm) || 0;
-    if (isSimulation && target <= origin + 1) voyage.resetToToday();
+    if (isTracer && target <= origin + 1) voyage.resetToToday();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(target, { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isSimulation, playControlsActive, isSuivre, sceneApi, voyage.resetToToday]);
+  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, voyage.resetToToday]);
 
   const handleCatamaranDrag = useCallback((pos) => {
     sceneApiRef.current?.playback.pause();
@@ -1074,9 +1074,9 @@ export default function App() {
       setEscaleClear((n) => n + 1);
     }
     if (next === VIEW_SUIVRE && replay.active) replay.stop();
-    if (next === VIEW_SUIVRE && view === VIEW_SIMULATION) simNmRef.current = playheadNmRef.current;
+    if (next === VIEW_SUIVRE && view === VIEW_TRACER) tracerNmRef.current = playheadNmRef.current;
     // DM6 — quitter Tracer pendant un dessin met le brouillon de côté, sans Annuler.
-    if (drawingModeRef.current && next !== VIEW_SIMULATION) {
+    if (drawingModeRef.current && next !== VIEW_TRACER) {
       setDrawingMode(false);
       closeSatellite();
       sceneApiRef.current?.endDrawingWorld?.();
@@ -1099,7 +1099,7 @@ export default function App() {
       voyage.setStartAt("saint-maur");
       sceneApiRef.current?.playback.setProfile("normal");
       sceneApiRef.current?.playback.pause();
-      sceneApiRef.current?.playback.seek(simNmRef.current || 0, { jump: true });
+      sceneApiRef.current?.playback.seek(tracerNmRef.current || 0, { jump: true });
       if (view === VIEW_SUIVRE) {
         leaveCinema();
         setSidebarOpen(true);
@@ -1108,7 +1108,7 @@ export default function App() {
       // DM6 — entrée en Tracer = dessin ouvert (brouillon vide ou déjà là).
       // Une route perso terminée reste affichée (DM5) ; Annuler est le seul abandon.
       if (!(routeKindRef.current === "custom" && customRouteRef.current)) {
-        armDrawingWorldRef.current(VIEW_SIMULATION);
+        armDrawingWorldRef.current(VIEW_TRACER);
       }
     }
   }, [
@@ -1142,8 +1142,8 @@ export default function App() {
 
   // A new route (drawn or Berry again) starts its film at 0 — a mode switch does not.
   useEffect(() => {
-    if (!isSimulation) return;
-    simNmRef.current = 0;
+    if (!isTracer) return;
+    tracerNmRef.current = 0;
     voyage.resetToToday();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(0);
@@ -1154,13 +1154,13 @@ export default function App() {
     const onKey = (e) => {
       if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (e.target?.closest?.("button") && e.code === "Space") return;
-      if (isSimulation && e.code === "Space") {
+      if (isTracer && e.code === "Space") {
         e.preventDefault();
         sceneApiRef.current?.playback.toggle();
-      } else if (isSimulation && e.code === "ArrowRight") {
+      } else if (isTracer && e.code === "ArrowRight") {
         e.preventDefault();
         handleSimNext();
-      } else if (isSimulation && e.code === "ArrowLeft") {
+      } else if (isTracer && e.code === "ArrowLeft") {
         e.preventDefault();
         handleSimPrev();
       } else if (isCinemaKey(e)) {
@@ -1175,19 +1175,19 @@ export default function App() {
       } else if (e.code === "Escape" && cinemaMode && !drawingMode) {
         e.preventDefault();
         leaveCinema();
-      } else if (isSimulation && e.code === "Digit1") {
+      } else if (isTracer && e.code === "Digit1") {
         sceneApiRef.current?.playback.setProfile("real");
-      } else if (isSimulation && e.code === "Digit2") {
+      } else if (isTracer && e.code === "Digit2") {
         sceneApiRef.current?.playback.setProfile("read");
-      } else if (isSimulation && e.code === "Digit3") {
+      } else if (isTracer && e.code === "Digit3") {
         sceneApiRef.current?.playback.setProfile("normal");
-      } else if (isSimulation && e.code === "Digit4") {
+      } else if (isTracer && e.code === "Digit4") {
         sceneApiRef.current?.playback.setProfile("fast");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cinemaMode, drawingMode, filmFullscreen, goLive, handleSimNext, handleSimPrev, isSimulation, isSuivre, leaveCinema, sceneApi, toggleCinema]);
+  }, [cinemaMode, drawingMode, filmFullscreen, goLive, handleSimNext, handleSimPrev, isTracer, isSuivre, leaveCinema, sceneApi, toggleCinema]);
 
   // Capture : la bulle événement (lot F4) coupe Échap en phase bulle.
   useEffect(() => {
@@ -1256,7 +1256,7 @@ export default function App() {
   const handleCustomRoute = useCallback((geojson) => {
     berryFetchIdRef.current += 1;
     routeKindRef.current = "custom";
-    setView(VIEW_SIMULATION);
+    setView(VIEW_TRACER);
     setCustomRoute(geojson);
     setRouteKind("custom");
     setVoyageFlat(null);
@@ -1601,7 +1601,7 @@ export default function App() {
   const mapScene = useMemo(() => ({
     isLightMode,
     view,
-    isSimulation,
+    isTracer,
     isSuivre,
     routeReady,
     sceneReady,
@@ -1617,7 +1617,7 @@ export default function App() {
     marks: escaleMarks,
     stops: activeStops,
     boatKnots,
-    stopAuto: isSimulation && stopAuto,
+    stopAuto: isTracer && stopAuto,
     live,
     previewing,
     draft: vessel.draft,
@@ -1633,7 +1633,7 @@ export default function App() {
     t,
     cameraFollow,
     cinemaRecapture,
-    cameraFocusToken: isSimulation ? cameraFocusToken : 0,
+    cameraFocusToken: isTracer ? cameraFocusToken : 0,
     remainingNm: hudLeg?.remainingNm ?? playback.sailTotalNm,
     recetteMap: recetteMapView(),
     filmActive: Boolean(replay.active),
@@ -1642,7 +1642,7 @@ export default function App() {
   }), [
     isLightMode,
     view,
-    isSimulation,
+    isTracer,
     isSuivre,
     routeReady,
     sceneReady,
@@ -1708,7 +1708,7 @@ export default function App() {
     sidebarOpen: sidebarOpen && !filmFullscreen,
     toolsOpen: toolsOpen && !filmFullscreen,
     filmBarVisible: true,
-    filmBarControls: isSimulation,
+    filmBarControls: isTracer,
     filmBarMeasuredPx,
   });
 
@@ -1965,7 +1965,7 @@ export default function App() {
           if (!playControlsActive) return;
           if (isSuivre) setUserPreview(true);
           if (
-            isSimulation
+            isTracer
             && playheadOnPlay(playback.nm, playback.totalNm) === 0
             && (Number(playback.nm) || 0) > 1
           ) {
@@ -2004,15 +2004,15 @@ export default function App() {
         showWindProfile={false}
         stopAuto={stopAuto}
         onStopAuto={setStopAuto}
-        showStopAuto={isSimulation}
+        showStopAuto={isTracer}
         sidebarOpen={sidebarOpen && !filmFullscreen}
         toolsOpen={toolsOpen && !filmFullscreen}
         filmFullscreen={filmFullscreen}
         onFilmFullscreen={setFilmFullscreen}
-        eventMarks={filmEventMarks(iciPack.events, { mode: isSuivre ? "suivre" : "simulation" })}
+        eventMarks={filmEventMarks(iciPack.events, { mode: isSuivre ? "suivre" : SERVER_MODE_TRACER })}
         onEventClick={(ev) => {
           setSkipperClickId(ev.id || ev.stableKey);
-          if (!isSimulation || !Number.isFinite(ev.filmCum)) return;
+          if (!isTracer || !Number.isFinite(ev.filmCum)) return;
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(ev.filmCum, { jump: true });
         }}

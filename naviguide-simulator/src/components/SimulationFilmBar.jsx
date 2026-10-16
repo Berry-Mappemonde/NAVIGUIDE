@@ -2,7 +2,7 @@ import { memo } from "react";
 import { Clapperboard, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { filmBarInsets } from "../utils/filmBarLayout.js";
-import { VIEW_SIMULATION, VIEW_SUIVRE } from "../constants/viewMode.js";
+import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
@@ -423,7 +423,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 data-testid="film-view-switch"
                 className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0"
               >
-                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow", null], [VIEW_SIMULATION, t("tracerButton"), "view-tracer", "mode-tracer", t("tracerModeTooltip")]].map(([id, label, testId, alias, tip]) => (
+                {[[VIEW_SUIVRE, t("followExpeditionButton"), "view-suivre", "mode-follow", null], [VIEW_TRACER, t("tracerButton"), "view-tracer", "mode-tracer", t("tracerModeTooltip")]].map(([id, label, testId, alias, tip]) => (
                   <button
                     key={id}
                     type="button"
