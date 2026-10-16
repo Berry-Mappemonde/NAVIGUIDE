@@ -54,6 +54,7 @@ from film_script import (
     upcoming_stop_names,
     eta_payload_for_stop,
     official_dated_stops,
+    prefer_journal_moments,
     spoken_sea_days,
     thin_chapter_dates,
     _arrival_harbor,
@@ -3650,6 +3651,154 @@ def test_rc35_papeete_names_pacific_not_north_atlantic():
         if re.search(r"papeete", (c.get("toName") or "") + (c.get("fromName") or ""), re.I)
     )
     assert re.search(r"Pacific", en_ch["text"] or ""), en_ch["text"]
+
+
+# ---------------------------------------------------------------------------
+# Lot RC48 — titres FR du journal (mai), pas les titres EN de RC35
+# ---------------------------------------------------------------------------
+
+
+def _rc48_official_lr_clock():
+    """Horloge de jambe : marks et sommets aux coords du journal officiel."""
+    return {
+        "t0": "2026-05-15T08:00:00Z",
+        "marks": [
+            {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": "2026-05-15T08:00:00Z",
+             "holdHours": 0, "lat": 46.8075, "lon": 1.6358},
+            {"name": "La Rochelle", "nm": 122.33, "filmNm": 122.33, "iso": "2026-05-15T08:00:00Z",
+             "holdHours": 0, "lat": 46.1541, "lon": -1.167},
+            {"name": "Ajaccio (Corse)", "nm": 1942.18, "filmNm": 1942.18, "iso": "2026-06-06T07:16:14Z",
+             "holdHours": 72, "lat": 41.9192, "lon": 8.7386},
+        ],
+        "vertices": [
+            {"iso": "2026-05-15T08:00:00Z", "lat": 46.1541, "lon": -1.167, "vehicle": "main"},
+            {"iso": "2026-05-15T10:18:26Z", "lat": 46.239161, "lon": -1.261231, "vehicle": "main"},
+            {"iso": "2026-05-17T00:00:00Z", "lat": 45.3181, "lon": -4.1169, "vehicle": "main"},
+            {"iso": "2026-05-17T01:04:53Z", "lat": 45.11464017881787, "lon": -4.750805408333942, "vehicle": "main"},
+            {"iso": "2026-05-19T12:00:00Z", "lat": 43.3921, "lon": -9.0658, "vehicle": "main"},
+            {"iso": "2026-05-19T14:40:58Z", "lat": 41.707791602781406, "lon": -9.78584142520486, "vehicle": "main"},
+            {"iso": "2026-05-22T04:34:29Z", "lat": 36.341937339755944, "lon": -7.362956453052497, "vehicle": "main"},
+            {"iso": "2026-05-22T23:00:47Z", "lat": 36.0379444528699, "lon": -6.106613485343016, "vehicle": "main"},
+            {"iso": "2026-05-23T03:00:47Z", "lat": 35.98357666916796, "lon": -5.8861529081988575, "vehicle": "main"},
+            {"iso": "2026-05-23T06:29:00Z", "lat": 35.95662867435303, "lon": -5.610821085969859, "vehicle": "main"},
+            {"iso": "2026-05-23T09:56:13Z", "lat": 36.02837986763812, "lon": -5.141219304185524, "vehicle": "main"},
+            {"iso": "2026-05-30T05:23:46Z", "lat": 41.56043957568277, "lon": 8.42299638523112, "vehicle": "main"},
+            {"iso": "2026-06-06T07:16:14Z", "lat": 41.9192, "lon": 8.7386, "vehicle": "main"},
+        ],
+    }
+
+
+def test_rc48_official_journal_waters_in_voyage_order():
+    """Moments au format officiel : titres FR des zee-enter de mai, coords du
+    journal — FR, Gascogne, ES, PT, Gibraltar, MA dans cet ordre. Pas un seed
+    de stock, pas les titres EN de RC35."""
+    clock = _rc48_official_lr_clock()
+
+    def mom(seq, iso, lat, lon, changes, **here_zee):
+        here = {"zee": here_zee} if here_zee.get("name") else {}
+        return {
+            "seq": seq, "t": iso, "signature": f"s{seq}", "legIdx": 1,
+            "pos": {"lat": lat, "lon": lon},
+            "changes": changes,
+            "moment": {
+                "leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 200.0},
+                "here": here,
+                "pos": {"lat": lat, "lon": lon},
+            },
+        }
+
+    journal = {"moments": [
+        {"seq": 0, "t": "2026-05-15T08:00:00Z", "signature": "s0", "legIdx": 0,
+         "pos": {"lat": 46.8075, "lon": 1.6358}, "changes": [],
+         "moment": {"leg": {"from": "Saint-Maur (Berry, Indre)", "to": "La Rochelle", "vehicle": "land"}}},
+        {"seq": 1, "t": "2026-05-15T08:00:00Z", "signature": "s1", "legIdx": 0,
+         "pos": {"lat": 46.1541, "lon": -1.167},
+         "changes": [{"kind": "escale", "score": 3, "title": "Arrivée à La Rochelle", "fact": "x"}],
+         "moment": {"leg": {"from": "Saint-Maur (Berry, Indre)", "to": "La Rochelle", "vehicle": "land"}}},
+        mom(2, "2026-05-15T10:18:26Z", 46.239161, -1.261231, [
+            {"kind": "amp", "score": 2, "title": "Lilleau-des-Niges",
+             "fact": "Lilleau-des-Niges (4.6 nm)", "nm": 4.6},
+            {"kind": "station", "score": 2, "title": "Argo 6904210",
+             "fact": "Argo 6904210 (4 nm)", "source": "argo", "nm": 4},
+        ], name="Zone économique exclusive française (France métropolitaine)", mrgid=5677),
+        mom(3, "2026-05-17T01:04:53Z", 45.11464017881787, -4.750805408333942, [
+            {"kind": "zee-enter", "score": 2,
+             "title": "Zone économique exclusive espagnole",
+             "fact": "Zone économique exclusive espagnole"},
+            {"kind": "station", "score": 2, "title": "Suivi stationnel Sabellaria",
+             "fact": "Suivi stationnel Sabellaria (7 nm)", "nm": 7},
+        ]),
+        mom(4, "2026-05-19T14:40:58Z", 41.707791602781406, -9.78584142520486, [
+            {"kind": "zee-enter", "score": 2,
+             "title": "Zone économique exclusive portugaise",
+             "fact": "Zone économique exclusive portugaise"},
+            {"kind": "amp", "score": 2, "title": "Réserve de Galice",
+             "fact": "Réserve de Galice (5 nm)", "nm": 5},
+        ]),
+        mom(5, "2026-05-22T23:00:47Z", 36.0379444528699, -6.106613485343016, [
+            {"kind": "coast", "score": 2, "title": "Tanger", "fact": "Tanger (2 nm)"},
+        ]),
+        mom(6, "2026-05-23T03:00:47Z", 35.98357666916796, -5.8861529081988575, [
+            {"kind": "coast", "score": 2, "title": "Algeciras", "fact": "Algeciras (3 nm)"},
+        ]),
+        mom(7, "2026-05-23T06:29:00Z", 35.95662867435303, -5.610821085969859, [
+            {"kind": "zee-enter", "score": 2,
+             "title": "Zone économique exclusive marocaine",
+             "fact": "Zone économique exclusive marocaine"},
+            {"kind": "station", "score": 2, "title": "Argo 6904211",
+             "fact": "Argo 6904211 (5 nm)", "source": "argo", "nm": 5},
+        ]),
+        mom(8, "2026-06-06T07:16:14Z", 41.9192, 8.7386, [
+            {"kind": "escale", "score": 3, "title": "Arrivée à Ajaccio", "fact": "x"},
+        ]),
+    ], "latest": []}
+    review = {"legs": [{
+        "from": "La Rochelle", "to": "Ajaccio (Corse)",
+        "antiShipping": {"score": 0.4, "lanes": ["Bay of Biscay", "Gibraltar", "Western Med"]},
+        "legNm": 1820,
+    }]}
+    live = {"filmNm": 1942, "sailNm": 1820, "iso": "2026-06-06T07:16:14Z",
+            "status": "live", "atStop": "Ajaccio"}
+    plan = build_raw_script(
+        clock, clock["marks"], live, journal,
+        lang="fr", seconds=0, now_ms=_ms("2026-06-07T08:00:00Z"), review=review,
+    )
+    ch = next(
+        c for c in plan["chapters"]
+        if re.search(r"rochelle", c.get("fromName") or "", re.I)
+        and re.search(r"ajaccio", c.get("toName") or "", re.I)
+    )
+    text = ch["text"] or ""
+    assert "Spanish Exclusive Economic Zone" not in text
+    assert "Zone économique exclusive" not in text
+
+    def at(pat):
+        m = re.search(pat, text)
+        assert m, f"{pat!r} absent de {text[:500]}"
+        return m.start()
+
+    i_fr = at(r"eaux françaises")
+    i_gas = at(r"Gascogne")
+    i_es = at(r"eaux espagnoles")
+    i_pt = at(r"eaux portugaises")
+    i_gi = at(r"Gibraltar")
+    i_ma = at(r"eaux marocaines")
+    assert i_fr < i_gas < i_es < i_pt < i_gi < i_ma, text
+
+
+def test_rc48_prefer_journal_moments_keeps_fr_zee_enter():
+    """Grille horloge du jour (grib) ne remplace pas le journal à zee-enter FR."""
+    clock_grid = [{
+        "seq": 0, "t": "2026-05-15T12:00:00Z", "changes": [{"kind": "grib", "title": "vent"}],
+    }]
+    journal = [{
+        "seq": 1, "t": "2026-05-17T01:04:53Z",
+        "changes": [{"kind": "zee-enter", "title": "Zone économique exclusive espagnole"}],
+    }]
+    picked = prefer_journal_moments(clock_grid, journal)
+    assert picked == journal
+    assert prefer_journal_moments(journal, clock_grid) == journal
+    assert prefer_journal_moments([], clock_grid) == clock_grid
 
 
 # ---------------------------------------------------------------------------

@@ -541,8 +541,48 @@ _SPINE_WATERS_RE = re.compile(
 )
 
 
+def prefer_journal_moments(primary: list | None, stored: list | None) -> list[dict]:
+    """RC48 : le journal avec zee-enter FR l'emporte sur une grille horloge."""
+    a = [m for m in (primary or []) if isinstance(m, dict)]
+    b = [m for m in (stored or []) if isinstance(m, dict)]
+
+    def zee_n(rows: list[dict]) -> int:
+        n = 0
+        for row in rows:
+            for change in row.get("changes") or []:
+                if not isinstance(change, dict):
+                    continue
+                kind = str(change.get("kind") or "")
+                title = str(change.get("title") or "")
+                if kind == "zee-enter" or "économique exclusive" in title.lower():
+                    n += 1
+        return n
+
+    if zee_n(b) > zee_n(a):
+        return b
+    return a or b
+
+
+def _official_moments_for_film(voyage_id: str) -> list[dict]:
+    moments: list[dict] = []
+    try:
+        from moment_journal import read_moments  # noqa: PLC0415
+        moments = list(read_moments(voyage_id) or [])
+    except Exception:
+        moments = []
+    stored: list[dict] = []
+    try:
+        from official_store import official_journal_moments  # noqa: PLC0415
+        stored = list(official_journal_moments() or [])
+    except Exception:
+        stored = []
+    return prefer_journal_moments(moments, stored)
+
+
 def _is_spine_route_item(change: dict | None) -> bool:
-    """Eaux de la route LR→Ajaccio : ne cèdent pas à un Argo ou une AMP de trop (RC35)."""
+    """Eaux de la route LR→Ajaccio : ne cèdent pas à un Argo ou une AMP de trop
+    (RC35). Titres FR du journal (« Zone économique exclusive espagnole »)
+    comme titres EN (RC48)."""
     if not isinstance(change, dict):
         return False
     kind = str(change.get("kind") or "")
@@ -5765,13 +5805,62 @@ def _bits_offsets(bits: list[str]) -> list[int]:
     return out
 
 
-def _order_chapter_sentences(bits: list[str], anchored: list, placed: list[dict]) -> None:
+_SPINE_SPOKEN_RE = (
+    re.compile(r"eaux françaises|French waters", re.I),
+    re.compile(r"Gascogne|Biscay", re.I),
+    re.compile(r"eaux espagnoles|Spanish waters", re.I),
+    re.compile(r"eaux portugaises|Portuguese waters", re.I),
+    re.compile(r"Gibraltar", re.I),
+    re.compile(r"eaux marocaines|Moroccan waters", re.I),
+)
+
+
+def _apply_spine_first_order(bits: list[str], order: list[int]) -> list[int]:
+    """RC48 : premières mentions FR, Gascogne, ES, PT, Gibraltar, MA dans cet ordre."""
+    seq = list(order)
+
+    def first_pos(pat: re.Pattern) -> Optional[int]:
+        for pos, i in enumerate(seq):
+            if 0 <= i < len(bits) and pat.search(bits[i] or ""):
+                return pos
+        return None
+
+    for _ in range(len(_SPINE_SPOKEN_RE)):
+        ranks = [(r, first_pos(p)) for r, p in enumerate(_SPINE_SPOKEN_RE)]
+        ranks = [(r, p) for r, p in ranks if p is not None]
+        swapped = False
+        for a, b in zip(ranks, ranks[1:]):
+            if a[1] > b[1]:
+                seq[a[1]], seq[b[1]] = seq[b[1]], seq[a[1]]
+                swapped = True
+                break
+        if not swapped:
+            break
+    return seq
+
+
+def _is_lr_ajaccio_chapter(from_name: str = "", to_name: str = "") -> bool:
+    return bool(
+        re.search(r"rochelle", from_name or "", re.I)
+        and re.search(r"ajaccio", to_name or "", re.I)
+    )
+
+
+def _order_chapter_sentences(
+    bits: list[str],
+    anchored: list,
+    placed: list[dict],
+    *,
+    from_name: str = "",
+    to_name: str = "",
+) -> None:
     """RC30 : les phrases d'un chapitre se disent dans l'ordre STRICT du temps
     du voyage — tri stable par instant d'ancre, l'ouverture (role depart) reste
     en tête, l'arrivée (role arrive) en queue. Les connecteurs de date sont
     recalculés APRÈS, par thin_chapter_dates. Les charIdx des bulles (`placed`)
     suivent leurs phrases. Ne fait rien si bits et ancres ne sont pas alignés
-    (chemin sans ancres)."""
+    (chemin sans ancres). RC48 : la colonne d'eaux LR→Ajaccio (premières
+    mentions) reste FR → Gascogne → ES → PT → Gibraltar → MA."""
     if len(bits) != len(anchored) or len(bits) < 3:
         return
     keys: list[tuple[int, int, int]] = []
@@ -5784,7 +5873,12 @@ def _order_chapter_sentences(bits: list[str], anchored: list, placed: list[dict]
         if t is not None:
             last_t = int(t)
         keys.append((cls, last_t if cls == 1 else 0, i))
-    order = sorted(range(len(bits)), key=lambda i: keys[i])
+    timed = sorted(range(len(bits)), key=lambda i: keys[i])
+    order = (
+        _apply_spine_first_order(bits, timed)
+        if _is_lr_ajaccio_chapter(from_name, to_name)
+        else timed
+    )
     if order == list(range(len(bits))):
         return
     old_off = _bits_offsets(bits)
@@ -6515,15 +6609,9 @@ def build_raw_from_moments(
                 extra["lat"] = change.get("lat")
                 extra["lon"] = change.get("lon")
             t_ms = change.get("tMs")
-            # RC35 : les eaux se disent à LEUR premier croisement — « eaux
-            # françaises » de Gascogne n'est pas recollé sur la Corse.
-            if str(change.get("kind") or "") != "zee-enter":
-                near = _clock_time_near_place(
-                    w.get("clock") or clock, place, w["tA"], w["tB"],
-                    (w.get("clock") or clock or {}).get("marks"),
-                )
-                if near is not None:
-                    t_ms = near
+            # RC35 / RC48 : l'instant du jalon, pas le plus proche homonyme plus
+            # loin sur l'horloge (Gibraltar recollé après le Maroc ; Mata-Utu /
+            # Nouméa recollés en octobre au milieu d'août–septembre).
             anchored.append((sentence, t_ms, extra))
             placed.append(_bubble_from_change(change, w, lang, char_idx))
             selected_all.append(change)
@@ -6612,7 +6700,11 @@ def build_raw_from_moments(
         # RC30 : tri strict par instant d'ancre AVANT les connecteurs de date —
         # un item déplacé entre fenêtres ou une phrase de revue ancrée tôt ne
         # se dit plus hors de son ordre ; « le lendemain » est recalculé après.
-        _order_chapter_sentences(bits, anchored, placed)
+        _order_chapter_sentences(
+            bits, anchored, placed,
+            from_name=str(w.get("fromName") or ""),
+            to_name=str(w.get("toName") or w.get("destName") or ""),
+        )
         thinned = thin_chapter_dates(bits, lang)
         if len(thinned) == len(bits) and len(anchored) == len(bits):
             anchored[:] = [_retarget_anchor(anchored[j], thinned[j]) for j in range(len(thinned))]
@@ -7461,11 +7553,7 @@ async def official_film(
     _journal_safely(lambda: journal.tick(voy, when))
     live = sample_clock_at_time(raw_clock, when) or {}
     payload = journal.summary(500)
-    try:
-        from moment_journal import read_moments  # noqa: PLC0415
-        moments = read_moments(OFFICIAL_VOYAGE_ID)
-    except Exception:
-        moments = []
+    moments = _official_moments_for_film(OFFICIAL_VOYAGE_ID)
     if moments:
         payload = {**payload, "moments": moments}
     review, eta = _stored_review_and_eta()
@@ -7497,7 +7585,6 @@ async def warm_film_story(
     from voyage_api import _climo_clock, _now  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
-    from moment_journal import read_moments  # noqa: PLC0415
     import voyage_journal as journal  # noqa: PLC0415
 
     vid = voyage_id or OFFICIAL_VOYAGE_ID
@@ -7513,10 +7600,7 @@ async def warm_film_story(
         payload = journal.summary(500)
     except Exception:
         payload = {}
-    try:
-        moments = read_moments(vid)
-    except Exception:
-        moments = []
+    moments = _official_moments_for_film(vid)
     if moments:
         payload = {**payload, "moments": moments}
     review, eta = _stored_review_and_eta()

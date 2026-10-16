@@ -29,9 +29,9 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC41 (phrase mer sans ≥) invalide rc35.
+# Clé film : RC48 (eaux FR du journal, Gibraltar avant le Maroc) invalide rc41.
 # moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
-FILM_SCRIPT_REV = "rc41"
+FILM_SCRIPT_REV = "rc48"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "am1a"
@@ -499,6 +499,64 @@ def payload_of(family: str) -> Optional[dict]:
         return None
     body = hit.get("payload")
     return body if isinstance(body, dict) else None
+
+
+def _zee_enter_count(moments: list | None) -> int:
+    n = 0
+    for row in moments or []:
+        if not isinstance(row, dict):
+            continue
+        for change in row.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            kind = str(change.get("kind") or "")
+            title = str(change.get("title") or "")
+            if kind == "zee-enter" or "économique exclusive" in title.lower() or "exclusive economic" in title.lower():
+                n += 1
+        moment = row.get("moment") if isinstance(row.get("moment"), dict) else {}
+        here = moment.get("here") if isinstance(moment.get("here"), dict) else {}
+        zee = here.get("zee") if isinstance(here.get("zee"), dict) else {}
+        name = str((zee or {}).get("name") or "")
+        if "économique exclusive" in name.lower() or "exclusive economic" in name.lower():
+            n += 1
+    return n
+
+
+def official_journal_moments() -> list[dict]:
+    """Journal officiel pour le film — lecture seule, jamais un seed.
+
+    L'entrée du jour peut être une grille horloge (grib / chat) sans zee-enter.
+    On relit alors la dernière entrée riche, même route et même t0, qui porte
+    les titres FR du journal (Zone économique exclusive espagnole / …).
+    """
+    current = payload_of("moments")
+    rows = list((current or {}).get("moments") or []) if isinstance(current, dict) else []
+    if _zee_enter_count(rows) > 0:
+        return rows
+    st = get_store()
+    try:
+        dest = st.family_key("moments")
+        route_id, t0, _, _ = parse_key(dest)
+    except Exception:
+        return rows
+    lister = getattr(st.backend, "list_family", None)
+    if not callable(lister):
+        return rows
+    best, best_date = rows, ""
+    for stored_key, doc in lister("moments"):
+        try:
+            r, t, date, _suf = parse_key(stored_key)
+        except ValueError:
+            continue
+        if r != route_id or t != t0:
+            continue
+        payload = doc.get("payload") if isinstance(doc, dict) else None
+        cand = list((payload or {}).get("moments") or []) if isinstance(payload, dict) else []
+        if _zee_enter_count(cand) <= 0:
+            continue
+        if date > best_date:
+            best, best_date = cand, date
+    return best
 
 
 def _film_chapters_blob(payload: Optional[dict]) -> str:

@@ -19,9 +19,11 @@ import { dismissNotForNav, leaveCinema, waitFilmCanStart } from "../helpers.js";
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc30");
 const recetteRc36 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc36");
 const recetteRc41 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc41");
+const recetteRc48 = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc48");
 mkdirSync(recetteDir, { recursive: true });
 mkdirSync(recetteRc36, { recursive: true });
 mkdirSync(recetteRc41, { recursive: true });
+mkdirSync(recetteRc48, { recursive: true });
 
 const shot = async (page, name) => {
   const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
@@ -34,6 +36,10 @@ const shotRc36 = async (page, name) => {
 const shotRc41 = async (page, name) => {
   const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
   writeFileSync(join(recetteRc41, `${name}.jpg`), buf);
+};
+const shotRc48 = async (page, name) => {
+  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
+  writeFileSync(join(recetteRc48, `${name}.jpg`), buf);
 };
 
 const MONTHS_FR = [
@@ -94,7 +100,7 @@ async function probeOfficial(page) {
 }
 
 test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(210_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
     test.info().annotations.push({
@@ -123,10 +129,11 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
   const film = await page.request.get("/voyage/official/film?lang=fr&seconds=0&style=raw", { timeout: 12_000 })
     .then((r) => (r.ok() ? r.json() : null))
     .catch(() => null);
-  if (!film?.chapters?.length) {
+  const filmReady = film?.status === "ready" && Array.isArray(film?.chapters) && film.chapters.length > 0;
+  if (!filmReady) {
     test.info().annotations.push({
-      type: "film vide",
-      description: "GET /voyage/official/film sans chapitres — assertions discours sautées",
+      type: "film pas prêt",
+      description: "GET /voyage/official/film pas ready — assertions discours sautées",
     });
     await shot(page, "01-ordre");
     return;
@@ -161,31 +168,20 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
     const iPt = orderIdx(t, /eaux portugaises|Portuguese waters/i);
     const iGi = orderIdx(t, /Gibraltar/i);
     const iMa = orderIdx(t, /eaux marocaines|Moroccan waters/i);
-    const ready = [iGas, iEs, iPt, iGi, iMa].every((i) => i >= 0);
-    if (ready) {
-      if (iFr >= 0) {
-        expect(iFr, "eaux françaises avant Gascogne").toBeLessThan(iGas);
-      }
-      expect(iGas, "Gascogne avant les eaux espagnoles").toBeLessThan(iEs);
-      expect(iEs, "eaux espagnoles avant portugaises").toBeLessThan(iPt);
-      expect(iPt, "eaux portugaises avant Gibraltar").toBeLessThan(iGi);
-      expect(iGi, "Gibraltar avant les eaux marocaines").toBeLessThan(iMa);
-    } else {
-      test.info().annotations.push({
-        type: "stock pré-RC35",
-        description: "film LR→Ajaccio sans Gascogne/ES/PT/Gibraltar/Maroc — remplisseur FILM_SCRIPT_REV=rc35",
-      });
-    }
+    expect(iFr, "RC48 : eaux françaises dans LR→Ajaccio ready").toBeGreaterThanOrEqual(0);
+    expect(iGas, "RC48 : Gascogne dans LR→Ajaccio ready").toBeGreaterThanOrEqual(0);
+    expect(iEs, "RC48 : eaux espagnoles dans LR→Ajaccio ready").toBeGreaterThanOrEqual(0);
+    expect(iPt, "RC48 : eaux portugaises dans LR→Ajaccio ready").toBeGreaterThanOrEqual(0);
+    expect(iGi, "RC48 : Gibraltar dans LR→Ajaccio ready").toBeGreaterThanOrEqual(0);
+    expect(iMa, "RC48 : eaux marocaines dans LR→Ajaccio ready").toBeGreaterThanOrEqual(0);
+    expect(iFr, "eaux françaises avant Gascogne").toBeLessThan(iGas);
+    expect(iGas, "Gascogne avant les eaux espagnoles").toBeLessThan(iEs);
+    expect(iEs, "eaux espagnoles avant portugaises").toBeLessThan(iPt);
+    expect(iPt, "eaux portugaises avant Gibraltar").toBeLessThan(iGi);
+    expect(iGi, "Gibraltar avant les eaux marocaines").toBeLessThan(iMa);
   }
   if (pap) {
-    if (/Pacifique|Pacific/i.test(pap.text || "")) {
-      expect(pap.text, "Cayenne → Papeete nomme le Pacifique").toMatch(/Pacifique|Pacific/i);
-    } else {
-      test.info().annotations.push({
-        type: "stock pré-RC35",
-        description: "film Cayenne→Papeete sans Pacifique — remplisseur FILM_SCRIPT_REV=rc35",
-      });
-    }
+    expect(pap.text, "Cayenne → Papeete nomme le Pacifique").toMatch(/Pacifique|Pacific/i);
   }
 
   await shot(page, "01-ordre");
@@ -202,6 +198,19 @@ test("lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases", a
     )),
     { timeout: 20_000 },
   ).toBeTruthy();
+
+  await expect.poll(
+    async () => {
+      const bar = await page.getByTestId("film-bar").innerText();
+      const sub = await page.getByTestId("film-subtitle").innerText().catch(() => "");
+      return /rochelle/i.test(bar) && /ajaccio/i.test(bar)
+        && /eaux françaises|Gascogne|espagnol|portugai|Gibraltar|marocain/i.test(sub);
+    },
+    { timeout: 90_000 },
+  ).toBeTruthy();
+  await expect(page.getByTestId("film-subtitle")).toBeVisible({ timeout: 8_000 });
+  await shotRc48(page, "01-ordre");
+  await shot(page, "01-ordre");
   await shotRc41(page, "01-revoir-hs");
 
   const charsUntilSecondSea = (film.chapters || []).slice(0, 3)
