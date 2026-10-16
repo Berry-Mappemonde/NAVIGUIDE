@@ -117,9 +117,27 @@ describe("Sidebar — lot DM9 : Tracer 2 onglets, Suivre 4", () => {
 
 describe("App — lot LY1 : couches le long d'une route perso", () => {
   it("lance le chauffage AMP au Terminer, sans nouveau libellé", () => {
-    assert.match(app, /import \{ kickLayerWarm \} from "\.\/engine\/layerWarm\.js"/);
+    assert.match(app, /import \{[^}]*kickLayerWarm[^}]*\} from "\.\/engine\/layerWarm\.js"/);
     assert.match(app, /kickLayerWarm\(geojson\)/);
     assert.doesNotMatch(app, /préchauff|prechauff|chauffe des couches/i);
+  });
+});
+
+describe("App — lot LY2 : chauffage pendant le tracé", () => {
+  it("chauffe le brouillon dès un segment, coupe à l'Annuler, pas à la pilule Berry", () => {
+    assert.match(app, /createDraftWarmer/);
+    assert.match(app, /draftWarmerRef\.current\.schedule\(toGeoJson\(\)\)/);
+    assert.match(app, /drawnPoints\.length < 2/);
+    assert.match(app, /enabled: Boolean\(cast && routeReady\) && !replay\.active && !drawingMode/);
+    const cancelAt = app.indexOf("const handleDrawCancel = ");
+    const finishAt = app.indexOf("const handleDrawFinish = ");
+    const deleteAt = app.indexOf("const handleCustomDelete = ");
+    assert.match(app.slice(cancelAt, finishAt), /resetDrawState\(\)/);
+    assert.match(app.slice(deleteAt, deleteAt + 400), /resetDrawState\(\)/);
+    const berryAt = app.indexOf("const handleRouteSwitchToBerry");
+    assert.ok(berryAt >= 0);
+    assert.doesNotMatch(app.slice(berryAt, berryAt + 700), /draftWarmerRef|resetDrawState|cancel\(\)/);
+    assert.doesNotMatch(app, /préchauff|prechauff|chauffe des couches|perles en cours/i);
   });
 });
 

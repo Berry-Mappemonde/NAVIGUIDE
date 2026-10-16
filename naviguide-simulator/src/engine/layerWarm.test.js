@@ -1,6 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { kickLayerWarm, pointsFromCustomRoute } from "./layerWarm.js";
+import { MAX_PEARLS_SIM, flatFromCustomRoute, sampleLeg } from "./iciAlong.js";
+import {
+  createDraftWarmer,
+  geojsonFromDrawn,
+  kickDraftPearls,
+  kickLayerWarm,
+  pointsFromCustomRoute,
+} from "./layerWarm.js";
 
 const line = {
   type: "FeatureCollection",
@@ -13,6 +20,33 @@ const line = {
     },
   }],
 };
+
+const DRAFT_POINTS = [
+  { lat: 46.15, lon: -1.16, name: "La Rochelle" },
+  { lat: 45.15, lon: -1.16 },
+];
+const DRAFT_SEGS = [{ coords: [[-1.16, 46.15], [-1.16, 45.15]] }];
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function recorder() {
+  const calls = [];
+  const fake = (url, opts) => {
+    calls.push({ url: String(url), opts: opts || {} });
+    return Promise.resolve({ ok: true });
+  };
+  return { calls, fake };
+}
+
+function warmPosts(calls) {
+  return calls.filter((c) => /\/ici\/layers\/warm$/.test(c.url));
+}
+
+function thinGets(calls) {
+  return calls.filter((c) => /\/ici\?/.test(c.url) && /thin=1/.test(c.url));
+}
 
 describe("layerWarm (lot LY1)", () => {
   it("extrait les sommets [lat, lon] d'une LineString", () => {
@@ -45,11 +79,7 @@ describe("layerWarm (lot LY1)", () => {
   });
 
   it("POST /ici/layers/warm sans bloquer, et ne lance rien sans points", () => {
-    const calls = [];
-    const fake = (url, opts) => {
-      calls.push({ url, opts });
-      return Promise.resolve({ ok: true });
-    };
+    const { calls, fake } = recorder();
     assert.equal(kickLayerWarm({ type: "FeatureCollection", features: [] }, fake), false);
     assert.equal(calls.length, 0);
     assert.equal(kickLayerWarm(line, fake), true);
@@ -58,5 +88,95 @@ describe("layerWarm (lot LY1)", () => {
     assert.equal(calls[0].opts.method, "POST");
     const body = JSON.parse(calls[0].opts.body);
     assert.deepEqual(body.points, [[46.15, -1.16], [41.31, 9.19]]);
+  });
+});
+
+describe("layerWarm (lot LY2) — brouillon pendant le tracé", () => {
+  it("construit un GeoJSON LineString depuis drawnPoints / drawnSegments", () => {
+    const geo = geojsonFromDrawn(DRAFT_POINTS, DRAFT_SEGS);
+    assert.equal(geo.type, "FeatureCollection");
+    assert.equal(geo.features[0].geometry.type, "LineString");
+    assert.deepEqual(pointsFromCustomRoute(geo).slice(0, 2), [[46.15, -1.16], [45.15, -1.16]]);
+    assert.equal(kickLayerWarm(geo, recorder().fake), true);
+  });
+
+  it("debounce : trois clics rapides → un seul POST /ici/layers/warm", async () => {
+    const { calls, fake } = recorder();
+    const warmer = createDraftWarmer({ fetchImpl: fake, debounceMs: 20 });
+    warmer.schedule(line);
+    warmer.schedule(line);
+    warmer.schedule(line);
+    await sleep(8);
+    assert.equal(warmPosts(calls).length, 0);
+    await sleep(30);
+    assert.equal(warmPosts(calls).length, 1);
+  });
+
+  it("Annuler avant le debounce : le mock n'est plus appelé ; pas de vidage de cache", async () => {
+    const { calls, fake } = recorder();
+    const warmer = createDraftWarmer({ fetchImpl: fake, debounceMs: 20 });
+    warmer.schedule(line);
+    warmer.cancel();
+    await sleep(40);
+    assert.equal(calls.length, 0);
+    assert.equal(calls.some((c) => /flush|clear|invalidate|purge|\/kv/i.test(c.url)), false);
+    assert.equal(calls.some((c) => c.opts.method === "DELETE"), false);
+  });
+
+  it("Annuler après le départ coupe les vols suivants", async () => {
+    let calls = 0;
+    const fake = () => {
+      calls += 1;
+      return new Promise(() => {});
+    };
+    const warmer = createDraftWarmer({ fetchImpl: fake, debounceMs: 10 });
+    warmer.schedule(line);
+    await sleep(25);
+    assert.ok(calls >= 1);
+    const n = calls;
+    warmer.cancel();
+    await sleep(30);
+    assert.equal(calls, n);
+  });
+
+  it("ne renvoie pas les cellules déjà envoyées ; le cache serveur n'est pas vidé", async () => {
+    const { calls, fake } = recorder();
+    const warmer = createDraftWarmer({ fetchImpl: fake, debounceMs: 10 });
+    warmer.schedule(line);
+    await sleep(25);
+    assert.equal(warmPosts(calls).length, 1);
+    warmer.schedule(line);
+    await sleep(25);
+    assert.equal(warmPosts(calls).length, 1);
+    assert.equal(calls.some((c) => /flush|clear|invalidate|purge/i.test(c.url)), false);
+  });
+
+  it("GET /ici?thin=1 sur le brouillon, cap MAX_PEARLS_SIM, pas les perles Berry", async () => {
+    const { calls, fake } = recorder();
+    const geo = geojsonFromDrawn(DRAFT_POINTS, DRAFT_SEGS);
+    const warmer = createDraftWarmer({ fetchImpl: fake, debounceMs: 10 });
+    warmer.schedule(geo);
+    await sleep(25);
+    assert.ok(thinGets(calls).length >= 1, "au moins une perle mince du trait");
+    assert.equal(calls.some((c) => /\/ici\/pearls/.test(c.url)), false);
+    assert.ok(thinGets(calls).length <= MAX_PEARLS_SIM);
+    const long = {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: Array.from({ length: 90 }, (_, i) => [-1.16 - i, 46.15]),
+        },
+      }],
+    };
+    const { calls: longCalls, fake: longFake } = recorder();
+    assert.equal(kickDraftPearls(long, longFake, { maxPearls: MAX_PEARLS_SIM }), true);
+    await sleep(15);
+    assert.ok(thinGets(longCalls).length <= MAX_PEARLS_SIM);
+    const flat = flatFromCustomRoute(geo);
+    const pearls = sampleLeg(flat, { maxPearls: MAX_PEARLS_SIM });
+    assert.ok(pearls.length >= 1 && pearls.length <= MAX_PEARLS_SIM);
+    assert.ok(pearls.every((p) => p.lat > 44 && p.lat < 47 && p.lon < 0));
   });
 });
