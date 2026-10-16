@@ -1,13 +1,34 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { visualizer } from "rollup-plugin-visualizer";
 
 // Detect local development vs deployed environment
 const isLocal = !process.env.VITE_DEPLOY_HOST;
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    react(),
+    tailwindcss(),
+    mode === "analyze"
+      && visualizer({
+        filename: "dist/bundle-stats.html",
+        gzipSize: true,
+        open: false,
+      }),
+  ].filter(Boolean),
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/maplibre-gl")) return "maplibre";
+          if (id.includes("node_modules/react-map-gl")) return "maplibre-react";
+          if (id.includes("node_modules/lucide-react")) return "icons";
+        },
+      },
+    },
+  },
   server: {
     host: "0.0.0.0",
     port: 5173,
@@ -36,4 +57,4 @@ export default defineConfig({
     port: 5173,
     allowedHosts: ["j19hah46.run.complete.dev", "all"],
   },
-});
+}));
