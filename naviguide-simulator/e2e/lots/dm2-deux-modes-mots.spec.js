@@ -1,7 +1,6 @@
 // Lot DM2 — les mots des deux modes (après DM1, docs/PLAN_DEUX_MODES_2026-09-29.md) :
-// chaque texte visible ou lu dit Suivre / Tracer (FR) et Follow / Plot (EN) ;
-// aucun mot « Simulation » à l'écran, ni dans les title / aria-label.
-// Le comportement ne change pas ; le mode interne (VIEW_SIMULATION) est renommé par DM3.
+// chaque texte visible ou lu dit Suivre / Tracer (FR) et Follow / Plot (EN).
+// Lot CT1 : getByRole lit Tracer|Plot (libellé livré), pas Simulation comme mode.
 // Sans API : tout tient seul (textes, commutateur, ordres skipper, langue) —
 // GET /voyage/official est sondé mais aucune assertion n'en dépend.
 import { mkdirSync } from "node:fs";
@@ -16,14 +15,25 @@ const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.jpg`), type: "jpeg", quality: 70, fullPage: false,
 });
 
-// Aucun élément dont le texte, le title ou l'aria-label contient « simulation »
-// (insensible à la casse : couvre « Quitter la simulation », « Exit simulation »…).
-async function expectNoSimulationWord(page, where) {
-  expect(await page.getByText(/simulation/i).count(), `texte « Simulation » (${where})`).toBe(0);
-  expect(
-    await page.locator('[title*="simulation" i], [aria-label*="simulation" i]').count(),
-    `title/aria-label « Simulation » (${where})`,
-  ).toBe(0);
+// Pilule et textes visibles : Suivre / Tracer (FR) ou Follow / Plot (EN).
+// Lot CT1 : on lit le libellé livré (getByRole Tracer|Plot), on ne cherche
+// plus « Simulation » comme mot à l'écran. Casse si la pilule redevient Simulation.
+async function expectModePills(page, where) {
+  const switcher = page.getByTestId("film-view-switch");
+  await expect(
+    switcher.getByRole("radio", { name: /Suivre l’expédition|Follow expedition/ }),
+    `pilule Suivre (${where})`,
+  ).toBeVisible();
+  await expect(
+    switcher.getByRole("radio", { name: /^(Tracer|Plot)\b/ }),
+    `pilule Tracer (${where})`,
+  ).toBeVisible();
+  await expect(page.getByTestId("view-tracer"), `pilule ≠ Simulation (${where})`).toHaveText(/^(Tracer|Plot)$/);
+  await expect(page.getByTestId("view-tracer")).not.toHaveText(/simulation/i);
+  const titled = await page.locator("[title], [aria-label]").evaluateAll((els) =>
+    els.some((el) => /simulation/i.test(`${el.getAttribute("title") || ""} ${el.getAttribute("aria-label") || ""}`)),
+  );
+  expect(titled, `title/aria-label sans Simulation (${where})`).toBe(false);
 }
 
 async function showToolsPanel(page) {
@@ -54,18 +64,18 @@ test("lot DM2 — Suivre / Tracer dans chaque texte, aucun « Simulation » à l
     "title", "Tracer — jouer la route Berry-Mappemonde ou la vôtre : date de départ, Play, calculs",
   );
 
-  // (b) Panneaux ouverts, accueil FR : aucun mot « Simulation » nulle part.
+  // (b) Panneaux ouverts, accueil FR : pilules Suivre / Tracer.
   await showLeftPanel(page);
-  await expectNoSimulationWord(page, "accueil FR");
+  await expectModePills(page, "accueil FR");
   await shot(page, "01-accueil");
 
   // (c) Tracer + panneau droit : les ordres skipper disent « cette jambe (Tracer) ».
-  await page.getByTestId("view-tracer").click();
+  await page.getByRole("radio", { name: /^(Tracer|Plot)\b/ }).click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showToolsPanel(page);
   await page.getByTestId("skipper-orders").evaluate((el) => { el.open = true; });
   await expect(page.getByTestId("skipper-horizon")).toContainText("cette jambe (Tracer)");
-  await expectNoSimulationWord(page, "Tracer FR, panneaux ouverts");
+  await expectModePills(page, "Tracer FR, panneaux ouverts");
 
   // (d) Anglais : Follow / Plot partout, toujours aucun « Simulation ».
   const en = page.getByTestId("lang-en");
@@ -77,14 +87,14 @@ test("lot DM2 — Suivre / Tracer dans chaque texte, aucun « Simulation » à l
   );
   await expect(page.getByTestId("view-tracer")).toHaveText("Plot");
   await expect(page.getByTestId("skipper-horizon")).toContainText("this leg (Plot)");
-  await expectNoSimulationWord(page, "Tracer EN");
+  await expectModePills(page, "Tracer EN");
 
   // (e) Retour à l'accueil (Suivre) en anglais pour la capture.
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
   await leaveCinema(page); // Suivre rouvre le cinéma (RF7)
   await showLeftPanel(page);
-  await expectNoSimulationWord(page, "accueil EN");
+  await expectModePills(page, "accueil EN");
   await shot(page, "02-en");
 
   expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);

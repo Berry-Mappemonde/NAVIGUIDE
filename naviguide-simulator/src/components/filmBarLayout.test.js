@@ -39,7 +39,16 @@ describe("film bar layout (lot O)", () => {
     assert.doesNotMatch(bar, /no playback, no speeds, no Suivre/);
   });
 
-  it("range les commandes : Masquer · Cinéma · Écouter · Suivre/Simulation · Revoir, lecture à droite", () => {
+  it("lot CT1 : la pilule de mode lit tracerButton, pas le libellé Simulation", () => {
+    assert.match(bar, /t\("tracerButton"\)/);
+    assert.match(bar, /t\("followExpeditionButton"\)/);
+    assert.match(bar, /"view-tracer"/);
+    assert.doesNotMatch(bar, />Simulation</);
+    assert.doesNotMatch(bar, /["']Simulation["']/);
+    assert.doesNotMatch(bar, /name:\s*["']Simulation["']/);
+  });
+
+  it("range les commandes : Masquer · Cinéma · Écouter · Suivre/Tracer · Revoir, lecture à droite", () => {
     const hideAt = firstIndex(bar, /t\("hideFilmBar"\)/);
     const cinemaAt = firstIndex(bar, /t\("cinema"\)/);
     const listenAt = firstIndex(bar, /testId="listen"/);

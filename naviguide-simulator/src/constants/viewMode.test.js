@@ -11,7 +11,7 @@ import {
 import fr from "../i18n/fr.js";
 import en from "../i18n/en.js";
 
-const FORBIDDEN = /mode suivre|Mode Suivre|Follow mode|bateau virtuel|virtual boat/i;
+const FORBIDDEN = /mode suivre|Mode Suivre|Follow mode|bateau virtuel|virtual boat|simulation/i;
 
 describe("viewMode U2", () => {
   it("deux vues exclusives", () => {
@@ -31,6 +31,21 @@ describe("viewMode U2", () => {
     assert.doesNotMatch(fr.tracerButton, FORBIDDEN);
     assert.doesNotMatch(en.followExpeditionButton, FORBIDDEN);
     assert.doesNotMatch(en.tracerButton, FORBIDDEN);
+  });
+
+  it("lot CT1 : la pilule n'est plus Simulation — casse si on remet le libellé retiré", () => {
+    assert.equal(fr.tracerButton, "Tracer");
+    assert.equal(en.tracerButton, "Plot");
+    assert.notEqual(fr.tracerButton, "Simulation");
+    assert.notEqual(en.tracerButton, "Simulation");
+    assert.doesNotMatch(fr.tracerButton, /simulation/i);
+    assert.doesNotMatch(en.tracerButton, /simulation/i);
+    assert.doesNotMatch(fr.viewModeGroup, /simulation/i);
+    assert.doesNotMatch(en.viewModeGroup, /simulation/i);
+    assert.doesNotMatch(fr.tracerModeTooltip, /simulation/i);
+    assert.doesNotMatch(en.tracerModeTooltip, /simulation/i);
+    assert.doesNotMatch(fr.followExpeditionButton, /simulation/i);
+    assert.doesNotMatch(en.followExpeditionButton, /simulation/i);
   });
 
   it("réserve les contrôles du film à Tracer", () => {

@@ -17,7 +17,7 @@ test.describe("simulateur — fumée", () => {
     expect(errors, `erreurs de page : ${errors.join(" | ")}`).toEqual([]);
   });
 
-  test("Suivre / Simulation se commutent, un calque s'allume", async ({ page }) => {
+  test("Suivre / Tracer se commutent, un calque s'allume", async ({ page }) => {
     const errors = [];
     page.on("pageerror", (err) => errors.push(String(err)));
     await page.goto("/");
