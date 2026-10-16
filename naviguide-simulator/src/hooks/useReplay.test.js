@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { advanceReplayTime, filmPlan, positionAt } from "../engine/replay.js";
-import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { applyReplayStop, approachStopEvent, canStartOfficialReplay, closingSubtitle, FILM_CHAPTER_HOLD_EPS_MS, FILM_ESTIMATE_CPS, FILM_PREPARE_MAX_MS, FILM_PREPARE_POLL_MS, FILM_VISIBILITY_CATCHUP_MS, FILM_VOICE_STALL_MS, filmBarSubtitle, filmChapterPlayheadCapped, filmEstimatedSeconds, filmHasRg6Rg7Fingerprint, filmQueryKeepsReady, filmRequestPath, filmRequestStyle, filmShouldFinish, filmSourceKey, filmSpeakSeconds, filmSubtitleAt, filmSubtitleHighlight, filmSubtitleShowsAir, filmTextHasT0Year, filmTimeWhileChapterSpeaks, followClockLineFromT0, followEtaFromClock, formatFilmEstimateClock, isOfficialFilmVoyage, isPreparingFilm, isRe7OfficialFilm, isReadyRemoteFilm, isWrittenFilmSource, linearFilmAt, officialFilmStatus, pickFilmChapters, pickFilmEstimateSeconds, resolveFilmTargetSeconds, resolveServedFilm, shouldApplyChapterFromClock, shouldHoldFilmForBudget, shouldReturnToLive, splitFilmSentences, stepAlongPlan, toggleFilmDuration, visibilityCatchupStep, visibleFilmSubtitle, voiceLeadPolicy, voiceStalled, wallClockSpeakSeconds, WRITTEN_FILM_SOURCE, writtenPillEnabled } from "./useReplay.js";
+import { shouldStopSpeakingOnChapterChange } from "./useReplayVoice.js";
 import { DEFAULT_T0_ISO, simulationT0Iso } from "../engine/voyageClock.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -816,6 +817,66 @@ describe("useReplay lot RG9 — client robuste (E2, E3, E4)", () => {
     assert.ok(rb5.text.length < officialCh1.length);
     assert.match(filmSubtitleAt(officialCh1, 0).sentence, /Saint-Maur/);
     assert.doesNotMatch(filmSubtitleAt(officialCh1, 0).sentence, /La Rochelle/);
+  });
+
+  it("RC36 : un énoncé qui finit après tB — pas d'applyChapter / pas de stopSpeaking avant onEnd, tMs dans [tA, tB]", () => {
+    const tA = Date.parse("2026-06-02T08:00:00Z");
+    const tB = tA + 4 * 3600 * 1000;
+    const ch = {
+      tA,
+      tB,
+      fromName: "Ajaccio",
+      toName: "Fort-de-France",
+    };
+    // Voix encore en train de dire la dernière phrase : le playhead linéaire
+    // a déjà dépassé tB — on le retient.
+    const held = filmTimeWhileChapterSpeaks({ t: tB + 60_000, chapter: ch, hold: true });
+    assert.ok(held >= tA && held <= tB, `tMs ${held} hors [tA, tB]`);
+    assert.equal(held, tB - FILM_CHAPTER_HOLD_EPS_MS);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: true, speaking: true }), false);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: true, speaking: false }), false);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: false, speaking: true }), false);
+    assert.equal(shouldApplyChapterFromClock({ voiceClock: false, speaking: false }), true);
+    assert.equal(shouldStopSpeakingOnChapterChange({
+      spokenText: "Le 2 juin, le bateau quitte Ajaccio.",
+      chapterText: "Le 2 juin, le bateau quitte Ajaccio.",
+    }), false);
+    assert.equal(shouldStopSpeakingOnChapterChange({
+      spokenText: "Le 2 juin, le bateau quitte Ajaccio.",
+      chapterText: "Cap sur Pointe-à-Pitre.",
+    }), true);
+    assert.equal(shouldStopSpeakingOnChapterChange({
+      spokenText: "",
+      chapterText: "Cap sur Pointe-à-Pitre.",
+    }), false);
+    const clock = {
+      t0: "2026-06-02T08:00:00Z",
+      vertices: [
+        { lat: 41.9, lon: 8.7, tHours: 0, sailNm: 0, filmNm: 0 },
+        { lat: 14.6, lon: -61.0, tHours: 4, sailNm: 100, filmNm: 100 },
+      ],
+    };
+    const nearMark = filmTimeWhileChapterSpeaks({ t: tB, chapter: ch, hold: true, clock });
+    const nm = positionAt(clock, nearMark)?.sailNm;
+    assert.ok(nearMark >= tA && nearMark <= tB);
+    assert.ok(nm <= 100 - 0.06, `sailNm ${nm} trop près de la marque d'arrivée`);
+    const capped = filmChapterPlayheadCapped({ t: tB + 60_000, chapter: ch, clock });
+    assert.equal(capped.atCap, true);
+    assert.ok(capped.t >= tA && capped.t <= tB);
+    assert.match(hook, /filmTimeWhileChapterSpeaks/);
+    assert.match(hook, /shouldApplyChapterFromClock/);
+    assert.match(hook, /ingestHeld/);
+    assert.match(hook, /isSpeaking\(\) && canLeadWithVoice\(\)/);
+    const isoHeld = filmTimeWhileChapterSpeaks({
+      t: tB + 60_000,
+      chapter: { tA: new Date(tA).toISOString(), tB: new Date(tB).toISOString() },
+      hold: true,
+    });
+    assert.equal(isoHeld, tB - FILM_CHAPTER_HOLD_EPS_MS);
+    const voiceSrc = readFileSync(join(here, "useReplayVoice.js"), "utf8");
+    assert.match(voiceSrc, /shouldStopSpeakingOnChapterChange/);
+    assert.match(voiceSrc, /\[active, voice, chapterText, rate, lang\]/);
+    assert.doesNotMatch(voiceSrc, /\[active, voice, chapterText, chapterIdx/);
   });
 
   it("RC30 : un énoncé qui finit après tB n'est pas coupé — pas de stopSpeaking avant onEnd", () => {

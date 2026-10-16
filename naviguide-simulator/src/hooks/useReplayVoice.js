@@ -26,6 +26,22 @@ function waitWhile(held, cancelled, intervalMs = 40) {
   });
 }
 
+/**
+ * RC36 : ne pas couper une phrase en cours si le texte n'a fait qu'être
+ * retenu (chapterIdx a bougé côté horloge, mêmes mots). Un vrai nouveau
+ * énoncé (texte différent) autorise stopSpeaking.
+ */
+export function shouldStopSpeakingOnChapterChange({
+  spokenText = "",
+  chapterText = "",
+} = {}) {
+  const prev = String(spokenText || "");
+  const next = String(chapterText || "");
+  if (!prev) return false;
+  if (prev === next) return false;
+  return true;
+}
+
 function speakSentence(text, lang, { rate, win, onBoundary, onLeadFailed }) {
   return new Promise((resolve) => {
     let settled = false;
@@ -81,6 +97,20 @@ export function useReplayVoice({
   onSentenceStartRef.current = onSentenceStart;
   onSentenceEndRef.current = onSentenceEnd;
   isVoiceHeldRef.current = isVoiceHeld;
+  const chapterIdxLiveRef = useRef(chapterIdx);
+  const chapterTextLiveRef = useRef(chapterText);
+  const activeLiveRef = useRef(active);
+  const voiceLiveRef = useRef(voice);
+  chapterIdxLiveRef.current = chapterIdx;
+  chapterTextLiveRef.current = chapterText;
+  activeLiveRef.current = active;
+  voiceLiveRef.current = voice;
+
+  useEffect(() => {
+    if (spokenRef.current.text === chapterText) {
+      spokenRef.current = { idx: chapterIdx, text: chapterText };
+    }
+  }, [chapterIdx, chapterText]);
 
   useEffect(() => {
     if (!active) {
@@ -94,9 +124,25 @@ export function useReplayVoice({
       onLeadFailedRef.current?.();
       return undefined;
     }
-    if (spokenRef.current.idx === chapterIdx && spokenRef.current.text === chapterText) return undefined;
-    spokenRef.current = { idx: chapterIdx, text: chapterText };
-    stopSpeaking();
+    if (
+      spokenRef.current.idx === chapterIdxLiveRef.current
+      && spokenRef.current.text === chapterText
+    ) return undefined;
+    // RC36 : même énoncé retenu — chapterIdx a pu bouger, on ne coupe pas.
+    if (!shouldStopSpeakingOnChapterChange({
+      spokenText: spokenRef.current.text,
+      chapterText,
+    }) && spokenRef.current.text) {
+      spokenRef.current = { idx: chapterIdxLiveRef.current, text: chapterText };
+      return undefined;
+    }
+    if (shouldStopSpeakingOnChapterChange({
+      spokenText: spokenRef.current.text,
+      chapterText,
+    })) {
+      stopSpeaking();
+    }
+    spokenRef.current = { idx: chapterIdxLiveRef.current, text: chapterText };
     let cancelled = false;
     const sentences = sentencesOf(chapterText);
     waitForVoices(win, 1000).then(async (voices) => {
@@ -128,7 +174,16 @@ export function useReplayVoice({
     });
     return () => {
       cancelled = true;
-      stopSpeaking();
+      const held = Boolean(spokenRef.current.text)
+        && !shouldStopSpeakingOnChapterChange({
+          spokenText: spokenRef.current.text,
+          chapterText: chapterTextLiveRef.current,
+        })
+        && activeLiveRef.current
+        && voiceLiveRef.current;
+      if (!held) stopSpeaking();
     };
-  }, [active, voice, chapterText, chapterIdx, rate, lang]);
+    // chapterIdx volontairement absent : un idx retenu ne doit pas relancer
+    // l'effet ni poser cancelled=true sur la phrase en cours.
+  }, [active, voice, chapterText, rate, lang]);
 }

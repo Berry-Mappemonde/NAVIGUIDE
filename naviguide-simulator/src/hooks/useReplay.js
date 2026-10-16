@@ -300,6 +300,93 @@ export function filmShouldFinish({
   return Boolean(linearFinish && lastReached);
 }
 
+/**
+ * RC36 : tant que l'énoncé du chapitre courant n'est pas fini, le playhead
+ * reste dans [tA, tB − ε]. La barre lit les marques à tMs, pas chapterIdx :
+ * un ingest linéaire au-delà de tB affiche déjà la jambe suivante.
+ */
+export const FILM_CHAPTER_HOLD_EPS_MS = 1;
+/** Marge sous le seuil 0.05 nm de chapterAtNm : la barre reste sur cette jambe. */
+export const FILM_CHAPTER_HOLD_NM = 0.08;
+
+function holdPlayheadBeforeNm(clock, tA, t, capNm) {
+  const at = positionAt(clock, t);
+  const nm = at?.sailNm ?? at?.filmNm;
+  if (!Number.isFinite(nm) || nm <= capNm) return t;
+  let lo = Number.isFinite(tA) ? tA : t;
+  let hi = t;
+  for (let i = 0; i < 20; i += 1) {
+    const mid = (lo + hi) / 2;
+    const m = positionAt(clock, mid)?.sailNm ?? positionAt(clock, mid)?.filmNm;
+    if (!Number.isFinite(m) || m > capNm) hi = mid;
+    else lo = mid;
+  }
+  return lo;
+}
+
+/** Playhead au plafond de jambe : l'horloge des caractères ne doit plus attendre tB. */
+export function filmChapterPlayheadCapped({ t, chapter, clock = null } = {}) {
+  const published = filmTimeWhileChapterSpeaks({ t, chapter, hold: true, clock });
+  const cap = filmTimeWhileChapterSpeaks({
+    t: Number(chapter?.tB),
+    chapter,
+    hold: true,
+    clock,
+  });
+  const atCap = Number.isFinite(published) && Number.isFinite(cap) && published + 1 >= cap;
+  return { t: published, atCap };
+}
+
+/** Playhead publié tant que la voix / le sous-titre finit la phrase. */
+function chapterTimeMs(v) {
+  if (v == null || v === "") return NaN;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  const parsed = Date.parse(v);
+  if (Number.isFinite(parsed)) return parsed;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+export function filmTimeWhileChapterSpeaks({
+  t,
+  chapter,
+  hold = false,
+  clock = null,
+} = {}) {
+  const tA = chapterTimeMs(chapter?.tA);
+  const tB = chapterTimeMs(chapter?.tB);
+  let next = Number(t);
+  if (!Number.isFinite(next)) next = Number.isFinite(tA) ? tA : 0;
+  if (Number.isFinite(tA)) next = Math.max(tA, next);
+  if (Number.isFinite(tB)) next = Math.min(tB, next);
+  if (!hold) return next;
+  if (Number.isFinite(tA) && Number.isFinite(tB) && tB > tA) {
+    next = Math.min(next, Math.max(tA, tB - FILM_CHAPTER_HOLD_EPS_MS));
+  }
+  if (clock && Number.isFinite(tB)) {
+    const dest = positionAt(clock, tB);
+    const destNm = dest?.sailNm ?? dest?.filmNm;
+    if (Number.isFinite(destNm) && Number.isFinite(tA)) {
+      next = holdPlayheadBeforeNm(clock, tA, next, destNm - FILM_CHAPTER_HOLD_NM);
+      if (Number.isFinite(tA)) next = Math.max(tA, next);
+      if (Number.isFinite(tB)) next = Math.min(tB, next);
+    }
+  }
+  return next;
+}
+
+/**
+ * RC36 : applyChapter depuis l'horloge linéaire seulement si la voix
+ * ne mène pas et ne parle pas (y compris entre deux phrases). Le chemin
+ * voix applique le chapitre suivant depuis onEnd.
+ */
+export function shouldApplyChapterFromClock({
+  voiceClock = false,
+  speaking = false,
+} = {}) {
+  return !voiceClock && !speaking;
+}
+
 /** Part du récit déjà dite (0..1) : caractères prononcés / caractères du film. */
 export function spokenProgress(plan, chapterIdx, charIdx) {
   const list = plan?.chapters || [];
@@ -1177,6 +1264,8 @@ export function useReplay({
           text: c.text || "",
           fromName: c.fromName || "",
           toName: c.toName || "",
+          tA: c.tA,
+          tB: c.tB,
         })),
         seekChapter: (idx) => seekChapterRef.current?.(idx),
         finishFilm: () => finishRef.current?.(),
@@ -1227,8 +1316,14 @@ export function useReplay({
     const cur = tMsRef.current ?? sent.endT;
     const atQuay = Boolean(clockRef.current)
       && sentenceIsStationary(clockRef.current, sent.startT, sent.endT);
+    const cap = filmTimeWhileChapterSpeaks({
+      t: sent.endT, chapter: ch, hold: true, clock: clockRef.current,
+    });
+    const arrived = Number.isFinite(cur) && (
+      cur + 80 >= sent.endT || (Number.isFinite(cap) && cur + 1 >= cap)
+    );
     const wait = voiceShouldWait({
-      t: cur, sentenceEndT: sent.endT, phraseEnded: true, atQuay,
+      t: arrived ? sent.endT : cur, sentenceEndT: sent.endT, phraseEnded: true, atQuay,
     });
     voiceHoldRef.current = Boolean(wait.wait);
     if (wait.skip && clockRef.current) {
@@ -1318,7 +1413,9 @@ export function useReplay({
         voiceFailedRef.current = true;
       }
       const chapterAge = chapterStartedAtRef.current ? now - chapterStartedAtRef.current : 0;
-      const speaking = Boolean(voiceRef.current) && isSpeaking();
+      // Playwright / voix absente : speechSynthesis.speaking peut rester
+      // collé sans onEnd — ça ne doit pas geler applyChapter ni chapterIdx.
+      const speaking = Boolean(voiceRef.current) && isSpeaking() && canLeadWithVoice();
       if (
         voiceRef.current && !voiceFailedRef.current && !voiceSpokenAllRef.current
         && voiceStalled({
@@ -1354,6 +1451,19 @@ export function useReplay({
         tMsRef.current = next;
         if (uiDue) setTMs(next);
       };
+      const ingestHeld = (raw, chapter, { hold = true } = {}) => {
+        if (!hold) {
+          ingest(filmTimeWhileChapterSpeaks({
+            t: raw, chapter, hold: false, clock: clockRef.current,
+          }));
+          return false;
+        }
+        const capped = filmChapterPlayheadCapped({
+          t: raw, chapter, clock: clockRef.current,
+        });
+        ingest(capped.t);
+        return capped.atCap;
+      };
 
       let charIdx = voiceCharRef.current;
       const linear = linearFilmAt(elapsed, plan);
@@ -1376,8 +1486,14 @@ export function useReplay({
         ingest(last?.tB ?? w.endMs);
         finish();
       } else if (catchup) {
-        const liveTarget = voiceClock && voiceCharRef.current > 0
-          ? plan.timeAt(chapterIdxRef.current, voiceCharRef.current)
+        const spokenCh = plan.chapters[chapterIdxRef.current];
+        const liveTarget = (voiceClock || speaking)
+          ? filmTimeWhileChapterSpeaks({
+            t: plan.timeAt(chapterIdxRef.current, voiceCharRef.current),
+            chapter: spokenCh,
+            hold: true,
+            clock: clockRef.current,
+          })
           : plan.timeAt(linear.chapterIdx, linear.charIdx);
         if (liveTarget != null) catchup.toT = liveTarget;
         const stepped = visibilityCatchupStep({
@@ -1386,15 +1502,19 @@ export function useReplay({
           elapsedMs: now - catchup.startedAt,
           durationMs: catchup.durationMs,
         });
-        ingest(stepped.t);
-        if (!voiceClock) {
+        if (shouldApplyChapterFromClock({ voiceClock, speaking })) {
           const ch = pinnedIdxRef.current != null
             ? plan.chapters[pinnedIdxRef.current]
             : plan.chapters[linear.chapterIdx];
-          // RC30 : changer de chapitre couperait la voix (stopSpeaking) — on
-          // attend la fin de l'énoncé.
-          if (ch && ch.idx !== chapterIdxRef.current && !speaking) applyChapter(ch);
+          if (ch && ch.idx !== chapterIdxRef.current) applyChapter(ch);
           charIdx = pinnedIdxRef.current != null ? (ch?.chars || 1) : linear.charIdx;
+        } else {
+          charIdx = voiceCharRef.current;
+        }
+        const atCap = ingestHeld(stepped.t, plan.chapters[chapterIdxRef.current]);
+        if (atCap) {
+          linearHoldRef.current = false;
+          voiceHoldRef.current = false;
         }
         if (stepped.done) {
           catchupRef.current = null;
@@ -1402,14 +1522,26 @@ export function useReplay({
         }
       } else if (!voiceClock) {
         const pinned = pinnedIdxRef.current;
-        const ch = pinned != null ? plan.chapters[pinned] : plan.chapters[linear.chapterIdx];
-        // RC30 : la voix finit sa phrase avant tout changement de chapitre.
-        if (ch && ch.idx !== chapterIdxRef.current && !speaking) applyChapter(ch);
+        const linearCh = pinned != null ? plan.chapters[pinned] : plan.chapters[linear.chapterIdx];
+        // RC36 : applyChapter seulement à onEnd si la voix mène ou parle encore
+        // (isSpeaking est faux entre deux phrases — ne pas basculer là).
+        if (
+          linearCh
+          && linearCh.idx !== chapterIdxRef.current
+          && shouldApplyChapterFromClock({ voiceClock, speaking })
+        ) {
+          applyChapter(linearCh);
+        }
+        const ch = plan.chapters[chapterIdxRef.current];
         if (pinned != null && ch) {
           charIdx = ch.chars || 1;
-          ingest(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0));
+          ingestHeld(Number.isFinite(ch.tB) ? ch.tB : plan.timeAt(0, 0), ch, { hold: false });
         } else {
-          charIdx = linear.charIdx;
+          if (ch && linear.chapterIdx > ch.idx) {
+            charIdx = ch.chars || 1;
+          } else {
+            charIdx = linear.charIdx;
+          }
           const sent = sentenceSpan(ch, charIdx);
           const phraseEnded = Boolean(ch) && charIdx + 1e-6 >= sent.end;
           const cur = tMsRef.current ?? lastTRef.current ?? ch?.tA;
@@ -1432,9 +1564,11 @@ export function useReplay({
             nowMs: now,
           });
           skipRampRef.current = stepped.skipRamp;
-          linearHoldRef.current = Boolean(stepped.voiceHold);
-          voiceHoldRef.current = Boolean(stepped.voiceHold);
-          ingest(stepped.t);
+          const atCap = ingestHeld(stepped.t, ch);
+          // RC36 : en linéaire, geler filmElapsed à une frontière de phrase
+          // bloque charIdx → plus jamais de chapitre suivant.
+          linearHoldRef.current = Boolean(voiceClock && stepped.voiceHold && !atCap);
+          voiceHoldRef.current = Boolean(stepped.voiceHold) && !atCap;
         }
       } else {
         const ch = plan.chapters[chapterIdxRef.current];
@@ -1466,8 +1600,8 @@ export function useReplay({
         });
         recaleRemainRef.current = stepped.recaleRemainMs;
         skipRampRef.current = stepped.skipRamp;
-        voiceHoldRef.current = Boolean(stepped.voiceHold);
-        ingest(stepped.t);
+        const atCap = ingestHeld(stepped.t, ch);
+        voiceHoldRef.current = Boolean(stepped.voiceHold) && !atCap;
       }
 
       const chapter = plan.chapters[chapterIdxRef.current];
@@ -1521,6 +1655,8 @@ export function useReplay({
           ...prevFilm,
           chapterIdx: chapterIdxRef.current,
           chapterText: chapter?.text || prevFilm.chapterText || "",
+          fromName: chapter?.fromName || "",
+          toName: chapter?.toName || "",
           subtitle: sub.text,
           subtitlePlace: sub.place,
           chapterCount: plan.chapters.length,
