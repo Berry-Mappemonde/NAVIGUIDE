@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "analyze": "vite build --mode analyze",
     "lint": "eslint .",
     "test": "node --test src/utils/*.test.js src/i18n/*.test.js src/seo.contract.test.js",
     "preview": "vite preview"
@@ -29,6 +30,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^16.4.0",
+    "rollup-plugin-visualizer": "^5.14.0",
     "vite": "^7.1.7"
   }
 }

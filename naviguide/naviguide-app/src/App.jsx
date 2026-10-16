@@ -29,6 +29,8 @@ import {
   buildSimTargets,
   simulationStartPos,
 } from "./utils/simulationRoute.js";
+import { scheduleIdle } from "./utils/scheduleIdle.js";
+import { markAppReady } from "./utils/markAppReady.js";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
@@ -485,29 +487,32 @@ export default function App() {
     setExpeditionPlan(cached);
     if (!ORCHESTRATOR_URL) return;
     const requestId = ++berryFetchIdRef.current;
-    fetch(`${ORCHESTRATOR_URL}/api/v1/expedition/plan/berry-mappemonde`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        language: lang,
-        waypoints: ITINERARY_POINTS.map(p => ({
-          name: p.name,
-          lat:  p.lat,
-          lon:  p.lon,
-          type: p.flag ? "escale_obligatoire" : "point_intermediaire",
-        })),
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (routeKindRef.current !== "berry") return;
-        if (berryFetchIdRef.current !== requestId) return;
-        if (data?.expedition_plan) {
-          setExpeditionPlan(data.expedition_plan);
-          setCachedPlan(lang, data.expedition_plan);
-        }
+    const cancelIdle = scheduleIdle(() => {
+      fetch(`${ORCHESTRATOR_URL}/api/v1/expedition/plan/berry-mappemonde`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          language: lang,
+          waypoints: ITINERARY_POINTS.map(p => ({
+            name: p.name,
+            lat:  p.lat,
+            lon:  p.lon,
+            type: p.flag ? "escale_obligatoire" : "point_intermediaire",
+          })),
+        }),
       })
-      .catch((err) => console.warn("Orchestrator unavailable:", err));
+        .then((r) => r.json())
+        .then((data) => {
+          if (routeKindRef.current !== "berry") return;
+          if (berryFetchIdRef.current !== requestId) return;
+          if (data?.expedition_plan) {
+            setExpeditionPlan(data.expedition_plan);
+            setCachedPlan(lang, data.expedition_plan);
+          }
+        })
+        .catch((err) => console.warn("Orchestrator unavailable:", err));
+    }, { timeout: 5000 });
+    return () => cancelIdle();
   }, [lang, routeKind, drawingMode]);
 
   // Recalculate the custom briefing if the language changes (import already calls fetchCustomPlan).
@@ -653,28 +658,37 @@ export default function App() {
       }
     };
 
-    (async () => {
-      boundsApplied.current = false;
-      setLoading(true);
-      setSegProgress({ done: 0, total: legs.length });
+    let cancelled = false;
+    const cancelIdle = scheduleIdle(() => {
+      (async () => {
+        if (cancelled) return;
+        boundsApplied.current = false;
+        setLoading(true);
+        setSegProgress({ done: 0, total: legs.length });
 
-      const accumulated = [];
+        const accumulated = [];
 
-      for (let i = 0; i < legs.length; i += SEGMENT_BATCH_SIZE) {
-        const batch = legs.slice(i, i + SEGMENT_BATCH_SIZE);
-        const batchResults = await Promise.all(batch.map(fetchLeg));
-        accumulated.push(...batchResults);
+        for (let i = 0; i < legs.length; i += SEGMENT_BATCH_SIZE) {
+          if (cancelled) return;
+          const batch = legs.slice(i, i + SEGMENT_BATCH_SIZE);
+          const batchResults = await Promise.all(batch.map(fetchLeg));
+          accumulated.push(...batchResults);
 
-        const valid = accumulated.filter((r) => r && r.coords && r.coords.length > 0);
-        setSegments([...valid]);
-        setSegProgress({ done: Math.min(i + SEGMENT_BATCH_SIZE, legs.length), total: legs.length });
+          const valid = accumulated.filter((r) => r && r.coords && r.coords.length > 0);
+          setSegments([...valid]);
+          setSegProgress({ done: Math.min(i + SEGMENT_BATCH_SIZE, legs.length), total: legs.length });
 
-        // Reveal the map after the first batch so the screen unlocks immediately
-        if (i === 0) setLoading(false);
-      }
+          if (i === 0) setLoading(false);
+        }
 
-      setLoading(false);
-    })();
+        setLoading(false);
+      })();
+    }, { timeout: 2500 });
+
+    return () => {
+      cancelled = true;
+      cancelIdle();
+    };
   }, [points]);
 
   // Fit bounds — once, when all segments have arrived
@@ -971,6 +985,7 @@ export default function App() {
         onMouseEnter={() => { if (!drawingMode) setRouteCursor("pointer"); }}
         onMouseLeave={() => { if (!drawingMode) setRouteCursor("crosshair"); }}
         onLoad={(event) => {
+          markAppReady();
           const map = event.target;
           const arrowSvg = `
             <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0077ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>          `;
