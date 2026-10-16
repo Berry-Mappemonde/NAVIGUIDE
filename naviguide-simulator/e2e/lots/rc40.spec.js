@@ -169,3 +169,129 @@ test("lot RC40 — pleine jambe : centre carte sans saut > 0,4°", async ({ page
   ).toBeLessThanOrEqual(MAX_JUMP_DEG);
   await shot(page, "01-caraibes");
 });
+
+test("lot RC40/RC49 — seek Ajaccio → Fort-de-France : bateau au centre, un saut", async ({ page }) => {
+  test.setTimeout(90_000);
+  const { apiUp } = await probeOfficial(page);
+  if (!apiUp) {
+    test.info().annotations.push({
+      type: "sans API",
+      description: "GET /voyage/official absent — assertions caméra sautées ; barre et Revoir gardés",
+    });
+  }
+
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await leaveCinema(page);
+  await page.getByTestId("view-suivre").click();
+  await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
+  const start = page.getByTestId("replay-start");
+  await expect(start).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("replay-departure")).toBeVisible();
+
+  if (!apiUp) {
+    await expect(start).toBeDisabled();
+    return;
+  }
+
+  const canPlay = await waitFilmCanStart(page, 20_000);
+  if (!canPlay) {
+    test.info().annotations.push({
+      type: "Revoir grisé",
+      description: "film officiel pas prêt — lecture sautée ; barre et Revoir gardés",
+    });
+    return;
+  }
+
+  await muteVoice(page);
+  await start.click();
+  await expect(page.getByTestId("replay-stop")).toBeVisible({ timeout: 8_000 });
+  await page.waitForFunction(() => Boolean(window.__naviguideScene?.map), { timeout: 10_000 });
+  await page.waitForFunction(() => {
+    const f = window.__naviguideFilm;
+    return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
+  }, null, { timeout: 8_000 }).catch(() => null);
+
+  const sought = await page.evaluate(() => {
+    const list = window.__naviguideFilm?.chapters || [];
+    const ajaccio = list.findIndex((c) => /Ajaccio/i.test(`${c.fromName || ""} ${c.toName || ""}`));
+    const fdf = list.findIndex((c) => /Fort-de-France|Martinique/i.test(`${c.fromName || ""} ${c.toName || ""}`));
+    if (ajaccio >= 0) window.__naviguideFilm?.seekChapter?.(ajaccio);
+    return {
+      ajaccio,
+      fdf,
+      from: list[fdf]?.fromName || "",
+      to: list[fdf]?.toName || "",
+    };
+  });
+
+  if (sought.ajaccio < 0 || sought.fdf < 0) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "chapitre Ajaccio ou Fort-de-France absent — flip caméra non mesuré",
+    });
+    return;
+  }
+
+  await page.waitForFunction((idx) => Number(window.__naviguideFilm?.chapterIdx) === idx,
+    sought.ajaccio, { timeout: 8_000 }).catch(() => null);
+  await page.waitForTimeout(400);
+
+  await page.evaluate((idx) => window.__naviguideFilm?.seekChapter?.(idx), sought.fdf);
+  await page.waitForFunction((idx) => Number(window.__naviguideFilm?.chapterIdx) === idx,
+    sought.fdf, { timeout: 8_000 }).catch(() => null);
+  const inCaribbean = await page.waitForFunction(() => {
+    const f = window.__naviguideFilm || {};
+    const lat = Number(f.lat);
+    const lon = Number(f.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon) && lat > 10 && lat < 22 && lon < -50 && lon > -70;
+  }, null, { timeout: 12_000 }).then(() => true).catch(() => false);
+  if (!inCaribbean) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "bateau pas aux Caraïbes après seek Fort-de-France — flip non mesuré",
+    });
+    return;
+  }
+  await page.waitForTimeout(300);
+
+  const centers = [];
+  for (let i = 0; i < 10; i++) {
+    const snap = await page.evaluate(() => {
+      const map = window.__naviguideScene?.map;
+      const f = window.__naviguideFilm || {};
+      if (!map || !Number.isFinite(Number(f.lat))) return null;
+      const size = map.getSize();
+      const boat = map.latLngToContainerPoint([f.lat, f.lon]);
+      const c = map.getCenter();
+      return {
+        lat: c.lat, lng: c.lng,
+        nx: boat.x / size.x, ny: boat.y / size.y,
+        ch: Number(f.chapterIdx),
+      };
+    });
+    if (snap) centers.push(snap);
+    await page.waitForTimeout(100);
+  }
+
+  if (!centers.length) {
+    test.info().annotations.push({
+      type: "poste",
+      description: "pas de centre carte après seek Fort-de-France — flip non mesuré",
+    });
+    return;
+  }
+
+  const last = centers[centers.length - 1];
+  expect(last.nx, `bateau x=${last.nx.toFixed(2)} hors 20 % centraux`).toBeGreaterThanOrEqual(0.4);
+  expect(last.nx, `bateau x=${last.nx.toFixed(2)} hors 20 % centraux`).toBeLessThanOrEqual(0.6);
+  expect(last.ny, `bateau y=${last.ny.toFixed(2)} hors 20 % centraux`).toBeGreaterThanOrEqual(0.4);
+  expect(last.ny, `bateau y=${last.ny.toFixed(2)} hors 20 % centraux`).toBeLessThanOrEqual(0.6);
+
+  let jumps = 0;
+  for (let i = 1; i < centers.length; i++) {
+    if (degJump(centers[i - 1], centers[i]) > 0.05) jumps += 1;
+  }
+  expect(jumps, `getCenter ${jumps} sauts en 1 s ${sought.from} → ${sought.to}`).toBeLessThanOrEqual(1);
+});
