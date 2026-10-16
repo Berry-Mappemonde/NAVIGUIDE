@@ -131,6 +131,7 @@ export function useIciAlong({
     // chunking made the fast ones wait for the slow ones).
     let next = 0;
     let publishTimer = null;
+    const inflight = [];
     const publish = () => {
       if (cancelled || publishTimer) return;
       publishTimer = setTimeout(() => {
@@ -142,6 +143,7 @@ export function useIciAlong({
       const key = pearlKey(p.lat, p.lon, month);
       if (cacheRef.current.has(key)) return;
       const ctrl = new AbortController();
+      inflight.push(ctrl);
       const kill = setTimeout(() => ctrl.abort(), FETCH_MS);
       try {
         const q = new URLSearchParams({
@@ -170,6 +172,7 @@ export function useIciAlong({
     Promise.all(Array.from({ length: Math.min(PARALLEL, missing.length) }, worker)).catch(() => {});
     return () => {
       cancelled = true;
+      for (const c of inflight) c.abort();
       clearTimeout(publishTimer);
     };
   }, [enabled, pearlsSig, month]);

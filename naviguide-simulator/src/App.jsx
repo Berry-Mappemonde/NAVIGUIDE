@@ -32,7 +32,7 @@ import { sumRainHours } from "./engine/eventRules.js";
 import { layerForEntity } from "./engine/briefingLinks.js";
 import { useSkipperOrders } from "./hooks/useSkipperOrders.js";
 import { filmEventMarks } from "./engine/iciAlong.js";
-import { kickLayerWarm } from "./engine/layerWarm.js";
+import { kickLayerWarm, createDraftWarmer } from "./engine/layerWarm.js";
 import { useAtlasLookup } from "./hooks/useAtlasLookup.js";
 import { recetteMapView, recetteMonth } from "./utils/recetteQuery.js";
 import {
@@ -210,9 +210,16 @@ export default function App() {
     drawingMode, setDrawingMode, drawnPoints, drawnSegments, drawingLoading, canRedo,
     reset: _resetDrawState, addPoint: handleDrawingClick, undo: handleDrawUndo, redo: handleDrawRedo,
     importPoints: handleImportPoints,
+    toGeoJson,
   } = drawingState;
   drawingModeRef.current = drawingMode;
   customRouteRef.current = customRoute;
+  const draftWarmerRef = useRef(null);
+  if (draftWarmerRef.current == null) draftWarmerRef.current = createDraftWarmer();
+  const resetDrawState = useCallback(() => {
+    draftWarmerRef.current.cancel();
+    _resetDrawState();
+  }, [_resetDrawState]);
 
   const [layerPopup, setLayerPopup] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -767,7 +774,7 @@ export default function App() {
   );
 
   const alongPack = useIciAlong({
-    enabled: Boolean(cast && routeReady) && !replay.active,
+    enabled: Boolean(cast && routeReady) && !replay.active && !drawingMode,
     flat: flatRoute,
     // Lot T: when a route is drawn, sample that track — never GET /ici/pearls (Berry).
     customRoute: routeForView,
@@ -1317,7 +1324,7 @@ export default function App() {
 
   const handleDrawCancel = () => {
     setDrawingMode(false);
-    _resetDrawState();
+    resetDrawState();
     closeSatellite();
     sceneApiRef.current?.endDrawingWorld?.();
     customFetchIdRef.current += 1;
@@ -1377,6 +1384,14 @@ export default function App() {
     return () => clearTimeout(id);
   }, [drawNotice]);
 
+  // Lot LY2 — dès un segment posé, chauffer AMP + perles minces du brouillon.
+  // Debounce dans le warmer ; Annuler / supprimer (resetDrawState) coupent les vols.
+  useEffect(() => {
+    if (drawnPoints.length < 2) return undefined;
+    draftWarmerRef.current.schedule(toGeoJson());
+    return undefined;
+  }, [drawnPoints, drawnSegments, toGeoJson]);
+
   const handleDrawContinue = () => {
     armDrawingWorldRef.current(view);
   };
@@ -1387,7 +1402,7 @@ export default function App() {
     setCustomRoute(null);
     setRouteKind("berry");
     setVoyageFlat(null);
-    _resetDrawState();
+    resetDrawState();
     applyBerryBriefing();
   };
 
