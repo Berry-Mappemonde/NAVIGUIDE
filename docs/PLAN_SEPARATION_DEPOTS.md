@@ -104,8 +104,12 @@ où ces lignes sont remplies :
 Les commandes des sections 5 et 6 utilisent ces deux noms recommandés.
 Si le choix est autre, remplacer les URL **avant** de créer les dépôts.
 
-Les autres **DÉCISION PROPRIÉTAIRE** sont en section 10. Aucune n'empêche
-la sauvegarde (section 1).
+Le 17 octobre 2026 au soir, le propriétaire a tranché le nom public, la
+recette, la CI et les archives (section 10.1). Les deux lignes ci-dessus
+restent à remplir : ce sont les noms GitHub des dépôts neufs.
+
+Les autres **DÉCISION PROPRIÉTAIRE** sont en section 10.2. Aucune
+n'empêche la sauvegarde (section 1).
 
 ## 1. Sauvegarder et compter, avant toute autre action
 
@@ -472,7 +476,7 @@ fusionne pas la #553.
 | `README.md` | décrit les deux produits | Les deux, puis réécrit dans le premier commit de chaque dépôt. |
 | `LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE` | présents | Les deux. |
 | `naviguide-simulator/` | 604 fichiers | NAVIGUIDE. |
-| `naviguide/` | 182 fichiers | NAVIGUIDE. `naviguide/naviguide-app/.env` et `.env.production` sont suivis : seulement des `VITE_*` (localhost, ou `https://www.naviguide.fr`). Pas une clé. |
+| `naviguide/` | 182 fichiers | NAVIGUIDE, par le filtre, pour ne rien perdre. C'est l'ancien planificateur (`www.naviguide.fr`, `csw6hpki.run.complete.dev`). Le premier commit du dépôt filtré le déplace sous `Archives/naviguide-planificateur/` (section 6.4). Il n'est plus déployé. `naviguide/naviguide-app/.env` et `.env.production` sont suivis : seulement des `VITE_*` (localhost, ou `https://www.naviguide.fr`). Pas une clé. |
 | `Archives/` | `Blue-Intelligence/`, `naviguide-nova/`, `naviguide-navsecops/`, `README.md` | Découpé en 4.5. |
 | `.cursor/` | 19 fichiers | Découpé en 4.6. |
 
@@ -483,7 +487,7 @@ Absents de ces deux listes, et présents sur `main` :
 | `.github/` | Découpé fichier par fichier (4.7). Un bloc unique aurait mis le ZAP du simulateur dans Blue Intelligence et le build hebdo des données dans NAVIGUIDE. |
 | `.gitignore` | Les deux. C'est lui qui ignore `.env*`, `node_modules/`, `build/`, `.venv/`. Sans lui, un `backend/.env` neuf ne serait plus ignoré. |
 | `.nvmrc` | Les deux. Contient `24`. `ci.yml` et `deploy.yml` font `node-version-file: .nvmrc`. |
-| `.zap/rules.tsv` | NAVIGUIDE. Le workflow ZAP vise `https://simulator.naviguide.fr`. |
+| `.zap/rules.tsv` | NAVIGUIDE. Le workflow ZAP vise aujourd'hui `https://simulator.naviguide.fr`. Après la bascule, la cible est `https://naviguide.fr` (section 6.4). On n'active pas ce workflow avant que la liste de la section 9 soit verte. |
 | `.vscode/tasks.json` | NAVIGUIDE. Une tâche « Simulateur NAVIGUIDE (Mac) ». |
 | `.gitconfig` | **Aucun des deux.** Il fixe `user.name` à `emergent-agent-e1`. Il reste dans l'archive. |
 
@@ -558,7 +562,7 @@ Le fichier de chemins mélange deux formes, et il ne faut pas les
 | `infra/vps/blue-intelligence.service`, `deploy-app.sh`, `nginx-blue-intelligence.conf`, `install-mongodb.sh`, `setup-memory.sh`, `sync-public-nginx.sh`, `blue-intelligence-backup.cron`, `sync-from-atlas.sh` | Blue Intelligence | Services, nginx et Mongo de `blueintelligence.online`. `sync-from-atlas.sh` est conservé et **ne s'exécute pas** (verrou `FORCE_RESYNC`). |
 | `infra/vps/seamap/` | Blue Intelligence | Tuiles servies par l'OVH. Le simulateur les lit en HTTPS, il n'a pas le script. |
 | `infra/searxng/` | Blue Intelligence | Recherche des ports d'entrée. L'environnement Cursor BI ouvre le port 8888. |
-| `infra/vps/naviguide/` | NAVIGUIDE | Unités, nginx et scripts de `www.naviguide.fr` et `simulator.naviguide.fr`. |
+| `infra/vps/naviguide/` | NAVIGUIDE | Unités, nginx et scripts. Après la section 6.4, seul le simulateur (renommé NAVIGUIDE) est installé, sur `naviguide.fr`. Les trois unités de l'ancien planificateur ne sont pas démarrées. |
 | `infra/vps/ci/` sauf `README.md` | Les deux | `plan_deploy.py`, `rsync-to-vps.sh`, `prepare-ssh.sh`, `apply-site.sh`, `apply-pending.sh`, `prod_jobs_busy.py`, `test_prod_jobs_busy.py` déploient aujourd'hui les trois sites. Chaque dépôt réécrit sa copie (section 6). `prod_jobs_busy.py` ne sert qu'à Blue Intelligence : la copie NAVIGUIDE le laisse en place et ne l'appelle plus. Le fichier Blue Intelligence porte le dossier en une ligne `infra/vps/ci/`. Le fichier NAVIGUIDE porte chaque script, sans le `README.md`. |
 | `infra/vps/ci/README.md` | Blue Intelligence | La sonde de deploy et le User-Agent qui passe Cloudflare. La classification #553 le range (b). Une ligne `infra/vps/ci/` dans le fichier NAVIGUIDE l'emporterait avec les scripts. |
 | `infra/vps/nginx-bi-climatology-cache.conf` et `nginx-snippet-bi-climatology.conf` | Les deux | `deploy-simulator.sh` les installe, et les trois vhosts les incluent (incident du 21 septembre 2026). |
@@ -589,7 +593,7 @@ la copie qui n'est pas l'original (section 6.0) :
   Nebius ; la ligne GenAI devient un lien vers l'autre dépôt.
 - `docs/PLAN_SEPARATION_DEPOTS.md` — original Blue Intelligence (ce
   fichier, en entier). La copie NAVIGUIDE garde les sections qui nomment
-  son dépôt, la preuve d'historique et les neuf contrôles.
+  son dépôt, la preuve d'historique et les dix contrôles.
 - `docs/check_md_links.py` — outil, hors des 132 documents. Les deux
   index en ont besoin. Il reste entier dans les deux dépôts.
 
@@ -631,7 +635,7 @@ elle reprend la #553 fichier par fichier (section 4.9).
 | `Archives/Blue-Intelligence/` | Blue Intelligence, en une ligne de dossier. Manuels, extraction, notes VPS. |
 | `Archives/naviguide-navsecops/` | NAVIGUIDE, en une ligne de dossier. Les copies canoniques de `docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` sont ici. |
 | `Archives/naviguide-nova/README.md`, `llm/llm_utils.py`, `orchestrator/graph.py`, `orchestrator/nodes.py` | NAVIGUIDE, quatre lignes exactes. |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` | Aucun des deux dépôts neufs. Mêmes octets que les copies navsecops (3 063 et 8 072). Ils restent dans le monodépôt. Le premier commit NAVIGUIDE ajoute, dans `Archives/naviguide-nova/README.md`, une phrase qui pointe vers les copies navsecops. |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` | Aucun des deux dépôts neufs. Mêmes octets que les copies navsecops (3 063 et 8 072). Le propriétaire a décidé de les supprimer (section 5.0) : un commit sur l'archive, avant le clone nu, les retire de la tête et ajoute le renvoi dans `Archives/naviguide-nova/README.md`. L'historique git de l'archive les garde. Cette PR ne les supprime pas. |
 | `Archives/README.md` | Les deux. Original NAVIGUIDE. La copie Blue Intelligence ne garde que les paragraphes `Archives/Blue-Intelligence/`. |
 
 ### 4.6 `.cursor/`
@@ -652,7 +656,7 @@ elle reprend la #553 fichier par fichier (section 4.9).
 | `.github/workflows/ci.yml` | Les deux | Blue Intelligence garde `frontend`, `audit-tags`, et un `deploy-gate` limité à ses scripts. NAVIGUIDE garde `simulator` et `simulator-e2e`. |
 | `.github/workflows/deploy.yml` | Les deux | Un site (ou deux vhosts NAVIGUIDE) par dépôt, un `VPS_HOST` par dépôt. Voir section 6. |
 | `.github/workflows/weekly-data-build.yml` | Blue Intelligence seul | L'URL reste `https://blueintelligence.online`. |
-| `.github/workflows/zap-baseline.yml` | NAVIGUIDE seul | La cible reste `https://simulator.naviguide.fr`. |
+| `.github/workflows/zap-baseline.yml` | NAVIGUIDE seul | La cible devient `https://naviguide.fr`. On n'active le workflow qu'après le vert de la section 9. |
 | `.github/dependabot.yml` | Les deux | Blue Intelligence : npm `/frontend`, pip `/backend`, github-actions. NAVIGUIDE : npm `/naviguide-simulator`, pip `/naviguide-simulator/server`, github-actions. |
 
 `.gitignore`, `.nvmrc`, `.github/` et `.zap/` ne font pas partie des
@@ -716,8 +720,8 @@ fichiers de chemins :
 | Chemin | Raison |
 |---|---|
 | `.gitconfig` | Encore suivi. Identité `emergent-agent-e1`. |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` | Encore suivi. Doublon de la copie navsecops. La classification #553 le range (e). Il reste dans le monodépôt. |
-| `Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md` | Encore suivi. Même traitement, 8 072 octets. |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` | Encore suivi aujourd'hui. Doublon de la copie navsecops. La section 5.0 le retire de la tête de l'archive. Tant que ce commit n'est pas fait, le filtre l'exclut déjà. |
+| `Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md` | Encore suivi aujourd'hui. Même traitement, 8 072 octets. |
 | `.env.example` | Retiré le 28 août 2026. Il contenait une valeur de clé API. La recopier dans un dépôt neuf la republierait. |
 | `memory/test_credentials.md` | Noms de clés et URL locale. Le nom du fichier dit « credentials ». |
 | `.emergent/` | Outillage de l'ancienne plateforme, pas un des deux produits. |
@@ -758,19 +762,33 @@ Ils sont alignés :
 | `docs/ETAT_DES_LIEUX_DOCS.md` | Les deux | Blue Intelligence seul, chemin actuel. |
 | `docs/archives/nvidia-llm-audit.md` et l'ancien chemin `docs/nvidia-llm-audit.md` | Blue Intelligence | NAVIGUIDE. |
 | `infra/vps/ci/README.md` | Les deux, parce que le dossier `infra/vps/ci/` l'emportait | Blue Intelligence seul. Les scripts du même dossier restent dans les deux. |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` | NAVIGUIDE, parce que le dossier entier partait | Aucun des deux dépôts neufs. Les copies canoniques sous `Archives/naviguide-navsecops/docs/` partent dans NAVIGUIDE. |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` | NAVIGUIDE, parce que le dossier entier partait | Aucun des deux dépôts neufs. Les copies canoniques sous `Archives/naviguide-navsecops/docs/` partent dans NAVIGUIDE. La suppression sur l'archive est la section 5.0. |
 
 `.github/`, `.gitignore`, `.nvmrc` et `.zap/` sont hors de ces 132.
 Leur place est celle des sections 4.1 et 4.7. `docs/check_md_links.py`
 est un outil, hors des 132, présent dans les deux dépôts.
 
-Les documents hors de `main` gardent la destination écrite dans la #553,
-le jour où leur texte arrive sur `main` : `docs/PLAN_BATCH_2026-10-16.md`
-et `.cursor/rules/specs-suivent-l-interface.mdc` (PR #545) vers
-NAVIGUIDE ; `docs/PLAN_CORRECTIONS_2026-10-16-s7.md` (PR #510, fermée)
-vers NAVIGUIDE si on le récupère ; `docs/VERIFY_FICHE_URLS.md` (PR #227,
-fermée) vers Blue Intelligence si on le récupère. Aucun n'est sur `main`
-aujourd'hui. Le filtre ne les invente pas.
+Les documents hors de `main` gardent la destination écrite dans la #553.
+`docs/PLAN_BATCH_2026-10-16.md` et
+`.cursor/rules/specs-suivent-l-interface.mdc` (PR #545, encore ouverte)
+vont dans NAVIGUIDE le jour où cette PR est sur `main`. Les PR fermées
+#510 et #227 sont récupérées après le filtre, section 6.4 : le plan
+s7 sous `docs/archives/` de NAVIGUIDE, l'outil de fiches sous
+`docs/archives/` de Blue Intelligence. Le filtre ne les invente pas.
+Cette PR ne les copie pas.
+
+Le 17 octobre au soir, le propriétaire suit les recommandations de la
+#553 qui restaient ouvertes : le dossier d'archive est `docs/archives/`
+(pas un second dossier `docs/archive/`) ; les quatre reçus
+`redites-*.txt` restent ; `docs/FILM_DISCOURS_ETAT_2026-09-28.md` reste
+entier dans NAVIGUIDE, à son chemin ; `docs/LOTS_ORDRE_ET_PROMPTS.md`
+reste à ce chemin ; l'original de `docs/REGLES_PARAMETRES.md` reste
+dans Blue Intelligence ; l'index et les manuels sont réécrits après le
+filtre, dans chaque dépôt ; chaque dépôt a sa copie des règles Cursor
+communes ; l'archive s'appelle `Blue-Intelligence-Map`. Le déplacement
+des 19 documents (d) encore à la racine de `docs/` se fait dans les
+dépôts filtrés, avant leur premier push (section 6.4). Cette PR ne
+déplace rien.
 
 ## 5. Filtrer une copie nue, puis pousser `main` et les tags
 
@@ -803,6 +821,34 @@ Le plus gros blob de toutes les références fait 17,9 Mo
 fichier. Pas de LFS dans cette procédure. Si un push est refusé pour
 taille, s'arrêter : ne pas inventer un passage LFS au milieu.
 
+### 5.0 Commit sur l'archive, avant le clone nu
+
+Le renommage de la section 3 est fait. Le clone nu n'est pas encore
+créé. Un seul commit, sur cette archive, retire les deux doublons nova.
+On ne déplace aucun autre document dans ce commit.
+
+Les fichiers ont les mêmes octets que
+`Archives/naviguide-navsecops/docs/PLAN_DEV_NOVA.md` (3 063) et
+`Archives/naviguide-navsecops/docs/SETUP_NOVA_CREDITS.md` (8 072). Les
+copies navsecops restent. L'historique git de l'archive garde les
+doublons : on les retire de la tête, on ne réécrit pas le passé.
+
+```bash
+git rm Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md \
+       Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md
+```
+
+Dans `Archives/naviguide-nova/README.md`, les deux lignes du tableau
+qui citent `docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md`
+deviennent un renvoi : ces textes sont dans
+`../naviguide-navsecops/docs/PLAN_DEV_NOVA.md` et
+`../naviguide-navsecops/docs/SETUP_NOVA_CREDITS.md`.
+
+Commit, push sur `main` de `Blue-Intelligence-Map`. Le classeur doit
+encore finir par `non classés : 0`. Les deux chemins ne sont plus dans
+`git ls-files` ; ils restent dans la liste des exclus, donc un trou
+d'historique ne se déclenche pas.
+
 ### 5.1 Créer les dépôts vides
 
 Les noms de la section 0 sont écrits. Les `git remote -v` des clones
@@ -812,7 +858,7 @@ montrent déjà `Blue-Intelligence-Map`.
 gh repo create Berry-Mappemonde/Blue-Intelligence --public --disable-wiki \
   --description "Blue Intelligence — mémoire des sources maritimes"
 gh repo create Berry-Mappemonde/NAVIGUIDE --public --disable-wiki \
-  --description "NAVIGUIDE — simulateur et ancien planificateur"
+  --description "NAVIGUIDE — voyage en direct sur naviguide.fr"
 ```
 
 Dépôts **sans** README généré, sinon le premier push est refusé. Ne pas
@@ -963,7 +1009,8 @@ branches. Le filtre ne les transporte pas (les SHA changent). Numéros :
 #529, #530, #533, #534, #536, #540, #541, #542, #543, #544, #545, #546,
 #547, #548, #549, #551. #550 est déjà sur `main`. #146, #227, #510, #537
 et #552 sont fermées et ne sont pas sur `main`. Rien de tout cela n'est
-effacé de l'archive.
+effacé de l'archive. Les textes de #510 et #227 sont recopiés dans les
+dépôts neufs après le filtre (section 6.4), depuis les SHA d'origine.
 
 ## 6. Ce que le premier commit change dans chaque dépôt
 
@@ -980,20 +1027,21 @@ monodépôt : seulement dans la copie filtrée, avant le premier push.
 | `.cursor/rules/modeles-cursor-uniquement.mdc` | Blue Intelligence | NAVIGUIDE : fichier entier. La règle vaut pour les deux produits. |
 | `.cursor/rules/reparations-sur-github.mdc` | Blue Intelligence | NAVIGUIDE : fichier entier. La règle vaut pour les deux produits. |
 | `.cursor/rules/pas-de-verification-video.mdc` | NAVIGUIDE, fichier entier | Blue Intelligence : les trois interdictions (pas de vidéo ; preuve par tests, `curl` ou capture fixe). |
-| `README.md` | Blue Intelligence | NAVIGUIDE : page du simulateur. L'API Blue Intelligence reste `https://blueintelligence.online/api`. |
+| `README.md` | Blue Intelligence | NAVIGUIDE : page du produit. Il s'appelle NAVIGUIDE, il est en ligne sur `https://naviguide.fr`, et chaque merge sur `main` déploie cette version. L'API Blue Intelligence reste `https://blueintelligence.online/api`. |
 | `docs/HACKATHON_PLAN.md` | Blue Intelligence | NAVIGUIDE : lignes séparation et Nebius. La ligne GenAI devient un lien vers le dépôt Blue Intelligence. |
-| `docs/PLAN_SEPARATION_DEPOTS.md` | Blue Intelligence, ce fichier entier | NAVIGUIDE : les sections qui nomment son dépôt, la preuve d'historique (`poe_pipeline.py` en août 2026) et les neuf contrôles. La procédure Mongo de l'OVH devient un renvoi vers la copie Blue Intelligence. |
+| `docs/PLAN_SEPARATION_DEPOTS.md` | Blue Intelligence, ce fichier entier | NAVIGUIDE : les sections qui nomment son dépôt, la preuve d'historique (`poe_pipeline.py` en août 2026) et les dix contrôles. La procédure Mongo de l'OVH devient un renvoi vers la copie Blue Intelligence. |
 | `docs/REGLES_PARAMETRES.md` | Blue Intelligence, fichier entier | NAVIGUIDE : le principe et les sections 3.7 à 3.10. Les sections 3.1 à 3.6 deviennent un renvoi vers `backend/data/run_rules.json` dans l'autre dépôt. |
 | `docs/README.md` | NAVIGUIDE, fichier entier | Blue Intelligence : index court des cahiers, de l'audit PoE et du plan GenAI. |
-| `infra/vps/README.md` | Blue Intelligence | NAVIGUIDE : unités `naviguide` et `simulator`, et les lignes DNS `naviguide.fr`. La restauration Mongo devient un renvoi. Le dossier d'application devient `/home/naviguide/naviguide`. |
+| `infra/vps/README.md` | Blue Intelligence | NAVIGUIDE : le site live est `naviguide.fr` (le voyage, port 8010). `www` et `simulator` sont des `301`. Les unités de l'ancien planificateur sont nommées comme archives, pas comme services à lancer. La restauration Mongo devient un renvoi. Le dossier d'application devient `/home/naviguide/naviguide`. |
 | `Archives/README.md` | NAVIGUIDE | Blue Intelligence : paragraphes de `Archives/Blue-Intelligence/` seulement. |
 
-`Archives/naviguide-nova/README.md` (NAVIGUIDE seul) cite aujourd'hui
-`docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` à côté de lui.
-Ces deux fichiers ne sont pas dans le dépôt filtré. Ce commit remplace
-ces deux lignes du tableau par un renvoi vers
+`Archives/naviguide-nova/README.md` reçoit son renvoi dans le commit
+de la section 5.0, sur l'archive, avant le clone. Le filtre emporte
+cette version. On vérifie que les deux lignes pointent vers
 `Archives/naviguide-navsecops/docs/PLAN_DEV_NOVA.md` et
-`Archives/naviguide-navsecops/docs/SETUP_NOVA_CREDITS.md`.
+`SETUP_NOVA_CREDITS.md`. Si le commit 5.0 a été oublié, on écrit le
+renvoi ici : les deux fichiers ne sont de toute façon pas dans le
+fichier de chemins NAVIGUIDE.
 
 Chemins codés en dur aujourd'hui : `~/blue-intelligence-map` et
 `/home/ubuntu/blue-intelligence-map`. Cibles :
@@ -1032,7 +1080,8 @@ déployer sur l'OVH.
 - `.github/workflows/ci.yml` : jobs `frontend`, `audit-tags`, `deploy-gate`
   sur `deploy-app.sh`, `sync-public-nginx.sh`, `prepare-ssh.sh`,
   `rsync-to-vps.sh`, `apply-site.sh`, `apply-pending.sh` et
-  `test_prod_jobs_busy.py`.
+  `test_prod_jobs_busy.py`. Dans cette copie, le test ne garde que les
+  cas Blue Intelligence.
 - `.github/dependabot.yml` : retirer les blocs `naviguide-simulator`.
   Ajouter pip sur `/backend`.
 - `infra/agents/gh_token.py`, `open_pr.py`, `post_pr_comment.py`,
@@ -1056,45 +1105,54 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
 
 ### 6.2 Dépôt NAVIGUIDE
 
-- Les quatre unités `infra/vps/naviguide/*.service` : `User=naviguide`
-  (aujourd'hui `User=ubuntu`), `WorkingDirectory` et `ExecStart` sous
-  `/home/naviguide/naviguide/...`, `EnvironmentFile` vers
-  `/home/naviguide/.config/naviguide/simulator.env`.
-- `deploy-naviguide.sh`, `deploy-simulator.sh`,
-  `publish-simulator-from-mac.sh` : `APP` et `REMOTE_APP` =
-  `/home/naviguide/naviguide`. Le défaut `ubuntu@135.125.226.16` de
-  `publish-simulator-from-mac.sh` est retiré.
+- `naviguide-simulator.service` : `User=naviguide` (aujourd'hui
+  `User=ubuntu`), `WorkingDirectory` et `ExecStart` sous
+  `/home/naviguide/naviguide/naviguide-simulator`, `EnvironmentFile` vers
+  `/home/naviguide/.config/naviguide/simulator.env`. Les trois autres
+  unités (`naviguide-api`, `naviguide-polar`, `naviguide-orchestrator`)
+  suivent le code de l'ancien planificateur sous
+  `Archives/naviguide-planificateur/` (section 6.4). On ne les installe
+  pas sur Contabo.
+- `deploy-simulator.sh` et `publish-simulator-from-mac.sh` : `APP` et
+  `REMOTE_APP` = `/home/naviguide/naviguide`. Le défaut
+  `ubuntu@135.125.226.16` de `publish-simulator-from-mac.sh` est retiré.
+  `deploy-naviguide.sh` n'est plus le déploiement live : il reste à
+  côté de l'ancien planificateur et n'est pas appelé.
 - `polar_api.py` n'a pas de variable : il écrit dans
   `server/polar_data/` à côté du code. Dans cette copie, lire
   `NAVIGUIDE_POLAR_DIR` quand elle est posée, sinon garder ce dossier.
   Même forme que `NAVIGUIDE_GRIB_DIR` dans `saildocs.py`.
 - `infra/vps/ci/` (les scripts ; `README.md` n'est pas dans cette copie) :
   même dossier, hôte sans défaut OVH. `rsync-to-vps.sh`
-  ne garde que les cas `naviguide` et `simulator`. Le cas `simulator`
-  utilise `--delete` et n'exclut aujourd'hui que `server/voyage_data/` et
-  `server/polar_data/*.json`. Ajouter les exclusions
-  `server/grib_data/`, `server/forecast_cache/`, `server/saildocs_inbox/`.
-  `forecast_cache/` n'existait pas le 17 octobre : l'exclusion empêche
-  un déploiement futur de l'effacer le jour où le code le crée. La
-  section 8 place les données **hors** du checkout, dans
-  `/home/naviguide/naviguide-data/`.
-- `plan_deploy.py` : `www.naviguide.fr` et `simulator.naviguide.fr`.
-  La branche `recette` ne déploie que le simulateur, comme aujourd'hui.
-  Pas de cron de rattrapage des files Blue Intelligence.
-- `.github/workflows/deploy.yml` : ces deux jobs, poussée sur `main` et
-  `recette`, `workflow_dispatch`. Pas de cron `*/20`.
+  ne garde que le cas du site live (le dossier `naviguide-simulator/`).
+  Ce cas utilise `--delete` et n'exclut aujourd'hui que
+  `server/voyage_data/` et `server/polar_data/*.json`. Ajouter les
+  exclusions `server/grib_data/`, `server/forecast_cache/`,
+  `server/saildocs_inbox/`. `forecast_cache/` n'existait pas le
+  17 octobre : l'exclusion empêche un déploiement futur de l'effacer le
+  jour où le code le crée. La section 8 place les données **hors** du
+  checkout, dans `/home/naviguide/naviguide-data/`.
+- `plan_deploy.py` : un push sur `main` qui touche
+  `naviguide-simulator/` ou les fichiers nginx du site déploie
+  `naviguide.fr`. Un chemin sous l'ancien `naviguide/` ne déploie rien.
+  La branche `recette` ne déploie plus vers le VPS : le poste de recette
+  est le tunnel du Mac (section 6.4). Pas de cron `*/20`.
+  `test_prod_jobs_busy.py` suit ces règles.
+- `.github/workflows/deploy.yml` : un job, poussée sur `main`,
+  `workflow_dispatch`. Pas de cron `*/20`. Pas de branche `recette`.
+  Pas de job qui construit `naviguide/naviguide-app`.
 - `.github/workflows/ci.yml` : jobs `simulator`, `simulator-e2e`, et un
   `deploy-gate` sur les scripts NAVIGUIDE.
 - `.github/dependabot.yml` : retirer le bloc `/frontend`.
-- `nginx-naviguide.conf` et `nginx-simulator.conf` : les `location /bi/`
-  et `/bi/climatology/` font aujourd'hui
-  `proxy_pass http://127.0.0.1:8001/api/…` parce que les trois sites
-  étaient sur la même machine. Sur Contabo, l'amont est
+- nginx, détail en section 6.4. En bref : `naviguide.fr` sert le
+  simulateur (port `8010`). `www.naviguide.fr` et
+  `simulator.naviguide.fr` répondent `301` vers `https://naviguide.fr`.
+  Les `location /bi/` et `/bi/climatology/` du vhost live font
+  aujourd'hui `proxy_pass http://127.0.0.1:8001/api/…` parce que les
+  trois sites étaient sur la même machine. Sur Contabo, l'amont est
   `https://blueintelligence.online/api/…`, avec
   `proxy_ssl_server_name on;` et
-  `proxy_set_header Host blueintelligence.online;`. Le navigateur
-  continue de parler à `naviguide.fr` : le proxy nginx évite un appel
-  direct du navigateur vers l'autre domaine.
+  `proxy_set_header Host blueintelligence.online;`.
 - `simulator.env` (sur le serveur, pas dans git) : si `BI_API_URL` vaut
   `http://127.0.0.1:8001/api`, le remplacer par
   `https://blueintelligence.online/api`. Le défaut du code
@@ -1107,8 +1165,11 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
   `Berry-Mappemonde/NAVIGUIDE`. Même dépôt dans les prompts de
   `review_agent.py`, `plan_corrections.py`, `devpost_answers.py`,
   `GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md`.
-- `README.md` : le produit est NAVIGUIDE. L'API Blue Intelligence reste
-  `https://blueintelligence.online/api`.
+- `README.md` et `naviguide-simulator/README.md` : le produit s'appelle
+  NAVIGUIDE. Il est en ligne sur `https://naviguide.fr`. Chaque merge
+  sur `main` déploie cette version. La première phrase ne dit plus
+  « hors production », « Off-production » ni « publication prévue ».
+  L'API Blue Intelligence reste `https://blueintelligence.online/api`.
 - Copies communes dont l'original est Blue Intelligence : les raccourcir
   selon le tableau 6.0. `environnement-utilisateur.mdc` gagne la ligne
   Contabo. `modeles-cursor-uniquement.mdc` et
@@ -1116,17 +1177,211 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
 - `Archives/naviguide-nova/README.md` : le renvoi vers les copies
   navsecops, comme en 6.0.
 
-`vite.config.js` proxy `/bi` vers le serveur local du simulateur, et
-connaît `BI_PROXY_TARGET` plus l'hôte `recette.blueintelligence.online`
-(`.blueintelligence.online` dans `allowedHosts`). On ne change pas ce
-proxy de développement dans le commit de séparation : il parle au
-poste local, pas au Mongo de l'OVH.
+`vite.config.js` proxy `/bi` vers le serveur local du simulateur. On
+ne change pas ce proxy : il parle au poste local. On ajoute
+`.naviguide.fr` à `allowedHosts` (server et preview), à côté de
+`.blueintelligence.online`, pour le tunnel `recette.naviguide.fr`.
+
+### 6.4 Nom public, CI, archives, textes récupérés
+
+Décisions du 17 octobre 2026 au soir. Tout ce qui suit se fait dans les
+copies filtrées, avant leur premier push, ou sur l'archive au moment
+dit. Cette PR ne déplace aucun fichier.
+
+**Le produit s'appelle NAVIGUIDE et il est sur `naviguide.fr`.**
+L'ancien planificateur (`naviguide/`, `www.naviguide.fr`,
+`csw6hpki.run.complete.dev`) n'est plus le site. Dans la copie
+NAVIGUIDE :
+
+```bash
+git mv naviguide Archives/naviguide-planificateur
+```
+
+Le README de ce dossier dit que c'est l'ancien planificateur, et que
+l'adresse `https://csw6hpki.run.complete.dev` est celle de l'époque.
+Le site public ne le sert plus.
+
+**Redirection.** On garde les trois noms dans le certificat, et un seul
+sert le site. `https://naviguide.fr` est l'adresse canonique (aujourd'hui
+l'apex renvoie vers `www` : on inverse). `https://www.naviguide.fr` et
+`https://simulator.naviguide.fr` répondent `301` vers
+`https://naviguide.fr` en gardant le chemin (`$request_uri`). Un `301`
+laisse vivants les liens déjà publiés (Devpost, ZAP, marque-pages).
+Retirer le nom `simulator` du DNS casserait ces liens.
+
+`nginx-simulator.conf` devient le vhost de `naviguide.fr` : `server_name
+naviguide.fr`, proxy vers `127.0.0.1:8010`, `/bi/` vers l'API publique
+comme ci-dessus. `nginx-naviguide.conf` ne proxy plus vers les ports
+`9000`, `9004` et `9008`. Il ne contient que les `301`. Le port 80 des
+trois noms renvoie aussi vers `https://naviguide.fr`.
+
+**DNS et TLS, le jour de la bascule** (après la section 8, détail en
+section 9). Zone `naviguide.fr` chez OVH, sans Cloudflare sur l'apex.
+
+1. Lire le TTL. Le baisser la veille.
+2. Quand Contabo répond en HTTP sur le port 80, passer les A de
+   l'apex, de `www` et de `simulator` de `135.125.226.16` à
+   `13.140.164.185`. Ne pas toucher la zone Cloudflare de
+   `blueintelligence.online`.
+3. Sur Contabo : `certbot` pour les trois noms
+   (`naviguide.fr`, `www.naviguide.fr`, `simulator.naviguide.fr`).
+   Le certificat OVH reste en place : c'est le retour arrière.
+4. Recharger nginx. Vérifier : `naviguide.fr` répond 200 et montre le
+   voyage ; `www` et `simulator` répondent 301 vers
+   `https://naviguide.fr/`.
+
+**Recette.** Le poste de recette n'est pas un vhost Contabo. C'est le
+tunnel Cloudflare nommé `recette`, lancé sur le Mac par
+`run_lots.py`, vers le Vite du port 5174. Aujourd'hui l'hôte est
+`recette.blueintelligence.online`. Il devient
+`recette.naviguide.fr`.
+
+La zone `naviguide.fr` n'est pas chez Cloudflare, donc
+`cloudflared tunnel route dns` ne peut pas y écrire. Sur le Mac :
+
+1. `cloudflared tunnel info recette` donne l'UUID du tunnel.
+2. Dans le tableau de bord du tunnel, ajouter le nom public
+   `recette.naviguide.fr` vers `http://localhost:5174`.
+3. Dans le DNS OVH, un CNAME `recette` vers
+   `<UUID>.cfargotunnel.com`. Ne pas mettre l'apex derrière Cloudflare.
+4. Dans `~/.config/naviguide/simulator.env` du Mac :
+   `BIM_TUNNEL_HOST=recette.naviguide.fr`. On n'affiche pas les autres
+   clés.
+5. `python3 infra/agents/run_lots.py --recette`, puis
+   `curl -fsS -o /dev/null -w '%{http_code}\n' https://recette.naviguide.fr`.
+   Attendu : `200`. Si Cloudflare répond une erreur, on s'arrête. On ne
+   ramène pas le tunnel sur `blueintelligence.online`, et on ne déplace
+   pas la zone `naviguide.fr` chez Cloudflare : le site public doit
+   rester un A vers Contabo.
+6. Quand le nouveau lien répond, retirer
+   `recette.blueintelligence.online` du tunnel.
+
+**CI.** Principe : chaque merge sur `main` déploie la dernière version
+en live. Blue Intelligence le fait déjà vers `blueintelligence.online`,
+avec le cron de rattrapage des files uvicorn. NAVIGUIDE le fait vers
+`naviguide.fr`, sans cron et sans la branche `recette`.
+
+**URL à changer dans la copie NAVIGUIDE**, là où le texte dit où aller
+aujourd'hui. On ne réécrit pas les plans déjà sous `docs/archives/`, ni
+`docs/REVUE_PORTEUR_2026-10-14.md` : ces pages citent l'adresse de leur
+jour.
+
+| Fichier | Changement |
+|---|---|
+| `naviguide-simulator/README.md`, `README.md` | Produit NAVIGUIDE, live `https://naviguide.fr`, merge sur `main` = déploiement. Plus de « hors production ». |
+| `naviguide-simulator/server/admin_guard.py` | La liste CORS par défaut commence par `https://naviguide.fr`. On garde `www` et `simulator` le temps des `301`. |
+| `naviguide-simulator/server/tests/test_admin_guard.py` | L'assertion suit cette liste. |
+| `naviguide-simulator/src/utils/adminSecret.test.js` | L'URL d'exemple devient `https://naviguide.fr`. |
+| `naviguide-simulator/scripts/amp-route.py` | `FALLBACK_API` = `https://naviguide.fr`. |
+| `naviguide-simulator/vite.config.js` | `allowedHosts` contient `.naviguide.fr`. |
+| `infra/agents/run_lots.py` | `PROD_URL` = `https://naviguide.fr`. Le commentaire du tunnel dit `recette.naviguide.fr`. |
+| `infra/agents/GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md` | Même hôte de recette. |
+| `docs/MANUEL_UTILISATEUR.md`, `docs/USER_MANUAL.md`, `docs/README.md` | L'adresse live est `https://naviguide.fr`. L'écran s'appelle comme aujourd'hui (Suivre / Tracer). |
+| `docs/HACKATHON_DEVPOST_SOUMISSION.md`, `docs/PLAN_HACKATHON_NEBIUS_NAVIGUIDE.md` | Les liens à coller ou à vérifier pointent vers `https://naviguide.fr`. |
+| `docs/REGLES_WORKFLOW_AGENT.md` | Le contrôle « dans les 10 minutes » ouvre `https://naviguide.fr`. |
+| `docs/WORKFLOW_INDUSTRIEL.md` | Le contrôle `/ici/warm/status` utilise `https://naviguide.fr`. |
+| `.github/workflows/zap-baseline.yml` | `target` = `https://naviguide.fr`. |
+| `.github/workflows/deploy.yml`, `infra/vps/ci/plan_deploy.py` | Un job, `main` seulement, construit `naviguide-simulator/`. |
+
+Les e2e Playwright (`naviguide-simulator/playwright.config.js`) parlent
+au poste local. On ne les pointe pas vers `naviguide.fr`.
+
+**Calendrier.** `docs/WORKFLOW_INDUSTRIEL.md` reste un document vivant.
+La section 4 (le tableau des dates) est remplacée par une seule ligne,
+sans autre date :
+
+```text
+| à dater par le propriétaire | | |
+```
+
+On n'invente pas de date. Les anciennes lignes (21 septembre, 30 octobre,
+et les autres) restent dans l'historique git. On ne les recopie pas
+comme si elles étaient encore le calendrier.
+
+**Documents (d) encore à la racine de `docs/`.** `git mv` vers
+`docs/archives/` du dépôt qui les possède. Les liens internes qui
+cassent sont réécrits dans le même commit. On ne les déplace pas dans
+le monodépôt.
+
+Blue Intelligence :
+
+- `docs/ETAT_DES_LIEUX_DOCS.md`
+- `docs/PRD.md`
+
+NAVIGUIDE :
+
+- `docs/PLAN_AUDIT_CALCULS.md`
+- `docs/PLAN_BATCH_2026-10-14.md`
+- `docs/PLAN_BATCH_SUIVANT_2026-09-29.md`
+- `docs/PLAN_CORRECTIONS_2026-09-22.md`
+- `docs/PLAN_CORRECTIONS_2026-09-23.md`
+- `docs/PLAN_CORRECTIONS_2026-09-26-s2.md`
+- `docs/PLAN_CORRECTIONS_2026-09-26-s4.md`
+- `docs/PLAN_CORRECTIONS_2026-09-27-s5.md`
+- `docs/PLAN_CORRECTIONS_2026-09-28-film.md`
+- `docs/PLAN_CORRECTIONS_REVUE_21_SEPT.md`
+- `docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md`
+- `docs/PLAN_DEUX_MODES_2026-09-29.md`
+- `docs/PLAN_FILM_REVOIR_EXPEDITION.md`
+- `docs/PLAN_ICI_JOURNAL_EXPERT.md`
+- `docs/PLAN_LOTS_COMPLEMENTAIRE_SIMULATEUR.md`
+- `docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`
+- `docs/SPECS_E2E_TRIAGE_2026-09-29.md`
+
+`docs/FILM_DISCOURS_ETAT_2026-09-28.md` reste entier, à son chemin, dans
+NAVIGUIDE. `docs/LOTS_ORDRE_ET_PROMPTS.md` reste à son chemin. Les
+quatre `docs/recette/lot-r13/redites-*.txt` restent. Les règles Cursor
+communes sont déjà dans les deux dépôts (section 6.0).
+
+**PR fermées, pour ne rien perdre.** Les SHA d'origine sont sur
+l'archive. Le filtre les réécrit : on copie le contenu depuis l'archive,
+on ne cherry-pick pas dans le dépôt filtré.
+
+#510, tête `15e41b4e546955b9d65a773cab5f4a2c63e7f5c2`, vers NAVIGUIDE :
+
+```bash
+git -C /chemin/vers/Blue-Intelligence-Map \
+  show 15e41b4e546955b9d65a773cab5f4a2c63e7f5c2:docs/PLAN_CORRECTIONS_2026-10-16-s7.md \
+  > docs/archives/PLAN_CORRECTIONS_2026-10-16-s7.md
+```
+
+Le même commit ajoute 31 lignes à `docs/LOTS_ORDRE_ET_PROMPTS.md`
+(deux lignes de tableau RJ1 et RJ2, puis deux blocs `<!-- LOT id="RJ1"`
+et `RJ2`). On les reporte à la fin du fichier vivant, si ces id n'y
+sont pas déjà. Dans ces blocs, le chemin du plan devient
+`docs/archives/PLAN_CORRECTIONS_2026-10-16-s7.md`. On ne remplace pas
+le fichier entier : `main` a bougé depuis le 16 octobre.
+
+#227, tête `bef9f0f34c0bcdfdd93d3b7c26f1c93b095613d5`, vers Blue
+Intelligence, sous `docs/archives/verify-fiche-urls/` :
+
+- `docs/VERIFY_FICHE_URLS.md`
+- `scripts/verify_fiche_urls.py`
+- `scripts/fiche_url_extract.py`
+- `backend/tests/test_verify_fiche_urls.py`
+
+Même `git show <sha>:<chemin>`. Un `README.md` d'une demi-page dans ce
+dossier rappelle les quatre chemins d'origine et le SHA. On ne rejoue
+pas les hunks de `ci.yml`, `weekly-data-build.yml` et `README.md` de
+ce commit : ils visaient la CI du monodépôt. Le commit reste lisible
+sur l'archive. Brancher l'outil dans la CI Blue Intelligence est un
+commit plus tard, pas celui de la séparation.
+
+**Houle, après le split.** Le bandeau de
+`docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` dit « swell not
+shipped ». On ne retire pas cette phrase dans le commit de séparation.
+Tâche d'après-bascule : ouvrir l'écran climatologie sur
+`https://naviguide.fr` et regarder la couche houle. Si elle s'affiche,
+un commit suivant retire la phrase. Si elle ne s'affiche pas, la phrase
+reste.
 
 Issues ouvertes au 17 octobre 2026, toutes deux NAVIGUIDE : **#432**
 (Devpost, citée par `GROK_BOT_DEVPOST.md`) et **#446** (ouverte par le
 workflow ZAP). Les transférer vers le dépôt NAVIGUIDE (même propriétaire,
 action Transfer d'une issue) ou les recréer, puis corriger l'URL dans
-`GROK_BOT_DEVPOST.md`. Les issues fermées restent sur l'archive.
+`GROK_BOT_DEVPOST.md` : l'adresse live est `https://naviguide.fr`.
+Les issues fermées restent sur l'archive. Les textes des PR #510 et
+#227 sont copiés à part (section 6.4).
 
 ### 6.3 Secrets GitHub, après ce commit
 
@@ -1150,10 +1405,15 @@ sites. `infra/vps/README.md` décrit le DNS :
 - `blueintelligence.online` est derrière Cloudflare, enregistrement A vers
   `135.125.226.16`. On n'y touche pas.
 - `www.naviguide.fr` est un A vers `135.125.226.16`, **sans** Cloudflare,
-  zone DNS chez OVH.
-- `simulator` est un A de la même zone vers `135.125.226.16`.
+  zone DNS chez OVH. Après la bascule, ce nom répond `301` vers
+  `https://naviguide.fr`.
+- `simulator` est un A de la même zone vers `135.125.226.16`. Après la
+  bascule, même `301`.
+- L'apex `naviguide.fr` est aujourd'hui un `301` vers `www`. Après la
+  bascule, c'est l'adresse du produit.
 - Le certificat Let's Encrypt `naviguide.fr` (apex + www, puis
-  `simulator` ajouté) est sur l'OVH.
+  `simulator` ajouté) est sur l'OVH. Un certificat neuf, trois noms,
+  est émis sur Contabo le jour J. L'ancien reste.
 
 | | Blue Intelligence | NAVIGUIDE |
 |---|---|---|
@@ -1161,7 +1421,7 @@ sites. `infra/vps/README.md` décrit le DNS :
 | Code aujourd'hui | `~/blue-intelligence-map` | pas encore là |
 | Code après la séparation | `~/blue-intelligence` | `~/naviguide` |
 | Données runtime | Mongo `blueintel_db` sur `127.0.0.1:27017` | fichiers dans `~/naviguide-data/`. Pas de Mongo. |
-| Sites | `blueintelligence.online` | `www.naviguide.fr`, `simulator.naviguide.fr` |
+| Sites | `blueintelligence.online` | `naviguide.fr` (le produit). `www` et `simulator` répondent `301`. Recette : `recette.naviguide.fr` (tunnel du Mac, pas Contabo). |
 
 Le dossier OVH `~/blue-intelligence-map` et son `voyage_data/` restent
 sur le disque. En cas d'échec, les services OVH sont encore là : on remet
@@ -1390,10 +1650,10 @@ décrite en section 6.2. Tant que cette ligne de code n'est pas dans le
 dépôt déployé, les polaires restent introuvables : on ne démarre pas le
 service public Contabo avant ce commit.
 
-`naviguide.env` (clés de l'ancien site) va dans
-`/home/naviguide/.config/naviguide/naviguide.env`, chmod 600, copié
-depuis la sauvegarde de la section 1 s'il y était. On n'affiche pas le
-fichier.
+`naviguide.env` (clés de l'ancien planificateur) reste dans la
+sauvegarde de la section 1. On ne l'installe pas sur Contabo : les
+unités `naviguide-api`, `naviguide-polar` et `naviguide-orchestrator`
+ne sont pas démarrées. On n'affiche pas le fichier.
 
 Sur l'OVH, recompter `blueintel_db` avec la commande `mongosh` de la
 section 1.1. Le TSV doit être identique à `comptes-mongo-avant.tsv`
@@ -1411,11 +1671,16 @@ dépôt ne sauve que `blueintel_db`, et il reste sur l'OVH.
 
 ## 9. DNS, puis la liste qui autorise l'archivage
 
+L'ordre des noms, des `301` et du certificat est en section 6.4. Ici,
+le jour J.
+
 Baisser le TTL des A de la zone `naviguide.fr` avant le jour J (valeur
 actuelle : **non vérifiée**, la lire dans le panneau OVH). Le jour J,
-chaque A qui vaut `135.125.226.16` pour `www`, `simulator` et l'apex
-`naviguide.fr` passe à `13.140.164.185`. Ne pas modifier la zone
-Cloudflare de `blueintelligence.online`.
+chaque A qui vaut `135.125.226.16` pour l'apex, `www` et `simulator`
+passe à `13.140.164.185`. Ajouter le CNAME `recette` vers
+`<UUID>.cfargotunnel.com` (section 6.4). Ne pas modifier la zone
+Cloudflare de `blueintelligence.online`, et ne pas y laisser l'apex
+`naviguide.fr`.
 
 Émettre le certificat sur Contabo à ce moment (`certbot`), pour
 `naviguide.fr`, `www.naviguide.fr` et `simulator.naviguide.fr`. Le
@@ -1425,7 +1690,8 @@ Déployer depuis chaque dépôt neuf (workflow_dispatch) seulement après
 les secrets de la section 6.3. Le dépôt NAVIGUIDE doit rsync vers
 `/home/naviguide/naviguide` sur Contabo, compte `naviguide`. Le dépôt
 Blue Intelligence doit rsync vers `~/blue-intelligence` sur l'OVH,
-compte `ubuntu`.
+compte `ubuntu`. Un merge sur `main` de chaque dépôt neuf déploie
+ensuite la dernière version, sans action manuelle.
 
 Juste avant de changer les A, refaire la section 8.1 et 8.2 (arrêt,
 `.backup`, `rsync`, comptes, SHA-256, redémarrage OVH). La première
@@ -1436,34 +1702,41 @@ Liste. Tout est vert avant d'archiver `Blue-Intelligence-Map` :
 
 1. Sur l'OVH, `GET http://127.0.0.1:8001/api/` répond 200.
 2. `https://blueintelligence.online/api/` répond 200.
-3. `https://www.naviguide.fr` répond 200, et le serveur qui répond est
-   Contabo (le dossier `~/naviguide` y est servi).
-4. `https://simulator.naviguide.fr` répond 200, même contrôle.
-5. Le simulateur lit Blue Intelligence par l'URL publique : une couche
+3. `https://naviguide.fr` répond 200. La page est le voyage (le
+   simulateur renommé NAVIGUIDE), servie par Contabo
+   (`~/naviguide`). Ce n'est pas l'ancien planificateur.
+4. `https://www.naviguide.fr` et `https://simulator.naviguide.fr`
+   répondent `301` vers `https://naviguide.fr/`.
+5. Le site lit Blue Intelligence par l'URL publique : une couche
    ports, PoE ou AMP s'affiche, et `BI_API_URL` sur Contabo est
    `https://blueintelligence.online/api`.
 6. `systemctl is-active` : `blue-intelligence` est `active` sur l'OVH ;
-   `naviguide-simulator` et les services NAVIGUIDE qui tournaient
-   (`naviguide-api`, `naviguide-polar`, `naviguide-orchestrator`) sont
-   `active` sur Contabo.
+   `naviguide-simulator` est `active` sur Contabo. `naviguide-api`,
+   `naviguide-polar` et `naviguide-orchestrator` n'y sont pas installés.
 7. Les comptes du manifeste sont égaux : collections `blueintel_db`
    sur l'OVH toujours présentes, tables `pearls`, `kv`, `moments` du
    dernier `.backup` égales sur Contabo, et `sha256sum` de
    `naviguide-data/` sans ligne `ECHEC`. Le dossier
    `voyage_data/` est encore sur l'OVH.
 8. Un déploiement part de chaque dépôt neuf vers le bon hôte. Une
-   poussée sur `Blue-Intelligence-Map` ne déploie plus (workflows
-   disabled). Le workflow NAVIGUIDE ne contient pas `135.125.226.16`
-   ni `ubuntu@`.
+   poussée sur `main` déploie le site live. Une poussée sur
+   `Blue-Intelligence-Map` ne déploie plus (workflows disabled). Le
+   workflow NAVIGUIDE ne contient pas `135.125.226.16` ni `ubuntu@`,
+   ni la branche `recette`.
 9. Sur l'OVH, `ss -ltn` montre `27017` sur `127.0.0.1` seulement. Sur
    Contabo, rien n'écoute sur `27017`. Depuis le Mac, les deux `nc` de
    la section 7.1 échouent toujours.
+10. Avec le tunnel du Mac démarré, `https://recette.naviguide.fr`
+    répond 200. `BIM_TUNNEL_HOST` sur le Mac vaut
+    `recette.naviguide.fr`.
 
 Tant qu'une ligne est rouge, l'archive reste la référence et les
-services OVH restent capables de reprendre le DNS. Quand les neuf lignes
+services OVH restent capables de reprendre le DNS. Quand les dix lignes
 sont vertes, l'archivage GitHub de `Blue-Intelligence-Map` est possible.
 L'arrêter des unités NAVIGUIDE sur l'OVH est un geste séparé, après un
-mot du propriétaire : ce plan ne donne pas la commande.
+mot du propriétaire : ce plan ne donne pas la commande. La tâche houle
+de la section 6.4 se fait après ce vert, et elle ne bloque pas
+l'archivage.
 
 Retour arrière DNS, si une ligne 3, 4 ou 5 est rouge : remettre les A de
 `naviguide.fr` sur `135.125.226.16`. Les données OVH sont encore là.
@@ -1473,13 +1746,26 @@ dans l'archive avant cette heure. Après cette heure, une branche
 `agent-poe` dans l'archive, déclarée dans le README du hackathon GenAI,
 en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 
-## 10. Décisions qui restent au propriétaire
+## 10. Décisions
+
+### 10.1 Décidées le 17 octobre 2026 au soir
+
+| Sujet | Décision |
+|---|---|
+| Nom public | Le simulateur est déployé sur `naviguide.fr` (Contabo) et s'appelle NAVIGUIDE. `www.naviguide.fr` et `simulator.naviguide.fr` répondent `301` vers `https://naviguide.fr`. L'ancien planificateur (`naviguide/`, `csw6hpki.run.complete.dev`) passe sous `Archives/naviguide-planificateur/` dans le dépôt filtré. Étapes DNS, nginx, TLS, CI et URL : section 6.4 et section 9. |
+| CI | Chaque merge sur `main` déploie la dernière version en live. Le README du produit le dit, et ne dit plus « hors production ». |
+| `docs/WORKFLOW_INDUSTRIEL.md` | Reste vivant. Le calendrier de la section 4 devient une ligne `à dater par le propriétaire`. Aucune date n'est inventée. |
+| Doublons nova | `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` sont supprimés de la tête de l'archive (section 5.0), avec un renvoi dans le README nova vers `Archives/naviguide-navsecops/docs/`. L'historique git les garde. Cette PR ne les supprime pas. |
+| PR fermées | #510 (`15e41b4e`) : le plan s7 sous `docs/archives/` de NAVIGUIDE, et les lots RJ1/RJ2 ajoutés à `docs/LOTS_ORDRE_ET_PROMPTS.md`. #227 (`bef9f0f3`) : la notice et l'outil sous `docs/archives/verify-fiche-urls/` de Blue Intelligence. Section 6.4. |
+| Recommandations #553 | Dossier `docs/archives/` (pas `docs/archive/`). Reçus `redites-*.txt` gardés. `FILM_DISCOURS_ETAT_2026-09-28.md` entier dans NAVIGUIDE. `LOTS_ORDRE_ET_PROMPTS.md` au même chemin. `REGLES_PARAMETRES.md` : original dans Blue Intelligence, copie du principe et des § 3.7 à 3.10 dans NAVIGUIDE. Index et manuels mis à jour après le filtre, dans chaque dépôt. Copie des règles Cursor communes dans chaque dépôt. Renommage de l'archive en `Blue-Intelligence-Map`. |
+| Houle | Le bandeau « swell not shipped » n'est pas retiré au split. Après la bascule, on vérifie la couche à l'écran. On retire la phrase seulement si la houle s'affiche. |
+
+### 10.2 Qui restent ouvertes
 
 | Sujet | État dans ce plan |
 |---|---|
-| Noms exacts des deux dépôts neufs | **DÉCISION PROPRIÉTAIRE.** Recommandation en section 0. Stop avant `gh repo create` si les lignes sont vides. |
+| Noms exacts des deux dépôts neufs | **DÉCISION PROPRIÉTAIRE.** Recommandation en section 0. Stop avant `gh repo create` si les lignes sont vides. Le renommage de l'archive en `Blue-Intelligence-Map` est décidé (10.1). |
 | Fusionner les 16 PR ouvertes avant le filtre | **DÉCISION PROPRIÉTAIRE.** Elles restent sur l'archive dans tous les cas. Les fusionner avant le filtre les fait entrer dans le `main` filtré. Les reprendre après demande un rebase, parce que les SHA ont changé. Ce plan ne fusionne rien. #545 porte le plan de batch du 16 octobre, absent de `main`. |
-| `recette.blueintelligence.online` | **DÉCISION PROPRIÉTAIRE**, non bloquante. Le tunnel de recette des lots est dans la zone Cloudflare de Blue Intelligence. Le laisser là jusqu'après les hackathons évite de casser la nuit des lots. Le déplacer est un autre chantier. |
 | Pièces jointes des Releases `data-*` | **DÉCISION PROPRIÉTAIRE**, non bloquante. Les tags git vont dans Blue Intelligence. Les fichiers attachés restent sur l'archive. L'API et `backend/data/` suffisent à reconstruire. |
 | Fichiers non commités sur le Mac | **DÉCISION PROPRIÉTAIRE** au vu de `git status --short` (section 2). Non vérifiés ici. |
 | Autres secrets GitHub, rulesets, wiki | **Non vérifié.** `gh secret list` sur l'archive, et un coup d'œil au wiki, avant d'archiver. |
@@ -1494,8 +1780,11 @@ de route : découpage de `infra/`, `docs/`, `.cursor/`, `Archives/`,
 `.github/` ; les 132 documents de la PR #553, fichier par fichier
 (section 4.9), sans les déplacer ; les 12 communs copiés en entier
 puis raccourcis au premier commit (section 6.0) ; les deux doublons
-nova absents des deux dépôts neufs et encore présents dans le
-monodépôt ; dossiers purs en une ligne `dossier/` et dossiers mixtes
+nova retirés de la tête de l'archive avant le clone (section 5.0) et
+absents des dépôts neufs ; le produit public sur `naviguide.fr` avec
+`301` depuis `www` et `simulator` ; l'ancien planificateur sous
+`Archives/naviguide-planificateur/` après le filtre ; dossiers purs
+en une ligne `dossier/` et dossiers mixtes
 en fichiers exacts ; historique des renommages (`backend/poe.py`,
 `memory/PRD.md`, anciens `docs/` déplacés, dont
 `docs/nvidia-llm-audit.md` vers NAVIGUIDE) ; `.env.example`,
@@ -1559,7 +1848,7 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Les 16 PR ouvertes restent sur l'archive. #550 est sur `main`. Les PR fermées #146, #227, #510, #537, #552 n'y sont pas. `pr-archive/` n'est pas dans git. | `gh pr list` ; Arbre |
 | Gros fichiers : max 17,9 Mo, pas de LFS dans la procédure. | `git cat-file` sur toutes les refs ; Fusion B.6 ; Inventaire 4.4 |
 | Pytest backend reporté. Les cinq tags `data-*` ne vont pas dans NAVIGUIDE. Les assets de Release ne suivent pas le push. | Outillage §3.3 et §4.3 ; `git for-each-ref refs/tags` |
-| Neuf contrôles remplacent les huit de l'ancien §6. Le septième compare le SQLite et les SHA-256, pas une base Mongo absente. | Ancien §6 ; relevé OVH du 17 oct. |
+| Dix contrôles remplacent les huit de l'ancien §6. Le septième compare le SQLite et les SHA-256. Le quatrième attend un `301`, pas un second site. | Ancien §6 ; relevé OVH du 17 oct. ; décisions du 17 oct. au soir |
 | `docs/PLAN_BATCH_2026-10-16.md` et la règle Cursor des specs ne sont pas sur `main` (PR #545). | Arbre ; Outillage §1.3 ; Inventaire 4.5 |
 | Les 132 documents de la PR #553 suivent le classeur, chemin par chemin : 46 NAVIGUIDE, 35 Blue Intelligence, 12 les deux, 37 dans le dépôt nommé par la #553 en gardant leur chemin actuel, 2 doublons nova hors des dépôts neufs. 0 écart. Cette PR ne les déplace pas et ne fusionne pas la #553. | PR #553, `docs/MENAGE_DOCUMENTAIRE_PROPOSITION.md`, commit `9c6f6e0d` |
 | `.cursor/rules/base-de-donnees-vps.mdc` va dans les deux. Original Blue Intelligence. La copie NAVIGUIDE dit que le simulateur n'a pas de Mongo. | #553 §1 et §11 ; relevé OVH du 17 oct. |
@@ -1568,3 +1857,12 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | `infra/vps/ci/README.md` va dans Blue Intelligence seul. Les scripts de `infra/vps/ci/` restent dans les deux. | #553 §7 |
 | `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` ne vont dans aucun dépôt neuf. Les copies navsecops vont dans NAVIGUIDE. Le README nova du dépôt filtré pointe vers elles. | #553 §10 et §12 |
 | `.github/`, `.gitignore`, `.nvmrc`, `.zap/` restent au découpage des sections 4.1 et 4.7. Ils sont hors des 132. | #553 §11 ; arbre |
+| Le produit public est NAVIGUIDE sur `https://naviguide.fr`. `www` et `simulator` répondent `301` vers cette adresse. Certificat Contabo pour les trois noms. L'apex n'est pas mis derrière Cloudflare. | Décisions du propriétaire, 17 oct. 2026 au soir ; `nginx-naviguide.conf` ; `nginx-simulator.conf` |
+| L'ancien planificateur (`naviguide/`) est filtré vers NAVIGUIDE puis déplacé sous `Archives/naviguide-planificateur/` avant le premier push. Ses trois unités systemd ne sont pas installées. `naviguide.env` reste dans la sauvegarde. | Décisions du 17 oct. au soir ; `naviguide-api.service` |
+| Chaque merge sur `main` déploie le site live. Le README ne dit plus « hors production ». La branche `recette` ne déploie plus le VPS. | Décisions du 17 oct. au soir ; `deploy.yml` ; `naviguide-simulator/README.md` |
+| Le poste de recette passe de `recette.blueintelligence.online` à `recette.naviguide.fr` (tunnel Cloudflare du Mac, CNAME OVH vers `cfargotunnel.com`). | Décisions du 17 oct. au soir ; `GROK_BOT_ROUTINE.md` ; `vite.config.js` |
+| `docs/WORKFLOW_INDUSTRIEL.md` reste vivant. Son calendrier devient la ligne `à dater par le propriétaire`. | Décisions du 17 oct. au soir ; #553 décision 8 |
+| Les deux doublons nova sont retirés de la tête de l'archive avant le clone nu, avec le renvoi dans le README nova. | Décisions du 17 oct. au soir ; #553 §12 |
+| #510 (`15e41b4e`) est copiée dans NAVIGUIDE : plan sous `docs/archives/`, lots RJ1/RJ2 ajoutés au fichier `LOTS` vivant. #227 (`bef9f0f3`) est copiée dans Blue Intelligence sous `docs/archives/verify-fiche-urls/`. Pas de cherry-pick : les SHA d'origine restent sur l'archive. | Décisions du 17 oct. au soir ; `git diff-tree` de ces deux commits |
+| Les 19 documents (d) encore à la racine de `docs/` sont déplacés vers `docs/archives/` dans le dépôt filtré, avant le premier push. Les reçus `redites`, `FILM_DISCOURS` et `LOTS_ORDRE_ET_PROMPTS.md` restent à leur chemin. | Décisions du 17 oct. au soir ; #553 §11 |
+| La phrase « swell not shipped » reste. La vérifier à l'écran après la bascule, avant de la retirer. | Décisions du 17 oct. au soir ; bandeau de `docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` |
