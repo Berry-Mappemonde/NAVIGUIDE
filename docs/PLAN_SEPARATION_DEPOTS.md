@@ -3,10 +3,10 @@
 Plan à exécuter à la lettre. Il remplace la version du 17 octobre 2026 qui
 décrivait encore un seul VPS et un `git push --mirror`.
 
-Lecture de l'arbre le **17 octobre 2026** : `main` = `0ad99920`
-(« Merge pull request #550 », 1 403 commits). Le classeur
-`scripts/check_split_coverage.py` a été passé sur cet arbre : **0 fichier
-suivi non classé**.
+Lecture de l'arbre le **17 octobre 2026 au soir** : `main` = `6dabfb84`
+(« Merge pull request #544 », 1 429 commits). Le classeur
+`scripts/check_split_coverage.py` de cette PR a été passé sur cet arbre,
+copié à côté (il n'y est pas encore suivi) : **0 fichier suivi non classé**.
 
 Chaque hackathon nomme **son** dépôt :
 
@@ -406,11 +406,8 @@ git status --short
 
 Tout fichier affiché n'est pas dans le filtre. Le commiter sur `main`
 (hors de ce plan) ou le copier à part. Cette session n'a pas vu le Mac :
-les fichiers locaux restent **non vérifiés**. La PR #545, encore ouverte,
-contient deux des fichiers cités plus tôt
-(`docs/PLAN_BATCH_2026-10-16.md`,
-`.cursor/rules/specs-suivent-l-interface.mdc`) ; ils ne sont pas sur
-`main`.
+les fichiers locaux restent **non vérifiés**. La PR #545 est sur `main`
+(`7d1f8d14`). Ses deux fichiers sont classés NAVIGUIDE (section 4.2).
 
 ## 3. Renommer, puis fixer les remotes
 
@@ -493,9 +490,7 @@ Absents de ces deux listes, et présents sur `main` :
 
 Fichiers qu'on ne cherchera pas dans le filtre, parce qu'ils ne sont pas
 sur `main` : `AGENTS.md`, `backend/.gitignore`, `frontend/.gitignore`,
-`docs/PLAN_BATCH_2026-10-16.md` (PR #545),
 `docs/PLAN_CORRECTIONS_2026-10-16-s7.md` (PR #510 fermée, non fusionnée),
-`.cursor/rules/specs-suivent-l-interface.mdc` (PR #545),
 `infra/agents/batch-pause.sh`, `batch-resume.sh`, `export_transcript.py`,
 `review_lots.py`, `pr-archive/`.
 
@@ -504,41 +499,61 @@ sur `main` : `AGENTS.md`, `backend/.gitignore`, `frontend/.gitignore`,
 `scripts/check_split_coverage.py` est la liste exécutable. Il lit
 `git ls-files`, les fichiers supprimés et les renommages. Il s'arrête
 si un fichier suivi n'a pas de classe, ou si un ancien chemin n'est
-couvert par aucun des deux fichiers de filtre. On le lance sur le
-`main` qui contient déjà ce plan (cette PR fusionnée, ou cette branche
-checkoutée au-dessus de `0ad99920`).
+couvert par aucun des deux fichiers de filtre.
+
+On le lance sur la tête de `main`, pas seulement sur la branche de
+cette PR. Le 17 octobre 2026 au soir, cette tête est `6dabfb84`. Le
+script n'y est pas encore suivi : on copie celui de cette PR, puis on
+mesure. Le résumé de `--emit` va sur la sortie d'erreur. Le fichier de
+chemins ne reçoit que la sortie standard.
 
 ```bash
+git fetch origin main
+git worktree add --detach /tmp/split-main origin/main
+cp scripts/check_split_coverage.py /tmp/split-main/scripts/check_split_coverage.py
+cd /tmp/split-main
 python3 scripts/check_split_coverage.py --self-test
 python3 scripts/check_split_coverage.py
 python3 scripts/check_split_coverage.py --emit bi > /tmp/bi-paths.txt
 python3 scripts/check_split_coverage.py --emit ng > /tmp/ng-paths.txt
 ```
 
-La première commande tient 62 cas fixes. La deuxième doit finir par
-`non classés : 0` et `écarts d'historique : 0`. Le résumé va sur le
-terminal ; les fichiers `/tmp/*-paths.txt` ne contiennent qu'un chemin
-par ligne. Si l'historique a un trou, `--emit` n'écrit pas le fichier.
+La première commande tient 64 cas fixes. La deuxième doit finir par
+`non classés : 0` et `écarts d'historique : 0`, et son code de sortie
+est 0. Si l'historique a un trou, `--emit` n'écrit pas le fichier et
+le code de sortie est 1.
 
-Lecture du 17 octobre 2026, **ce commit compris** (le script lui-même est
-classé Blue Intelligence, il n'était pas dans les 1 834 fichiers de
-`0ad99920`) :
+Lecture du 17 octobre 2026 au soir, script copié et non suivi, sur
+`6dabfb84` :
 
 | Classe | Nombre |
 |---|---|
-| Fichiers suivis | 1 835 |
-| Blue Intelligence seul | 575 |
-| NAVIGUIDE seul | 1 222 |
+| Fichiers suivis | 1 853 |
+| Blue Intelligence seul | 574 |
+| NAVIGUIDE seul | 1 241 |
 | Les deux | 35 |
 | Exclus (`.gitconfig` et deux doublons nova, encore suivis) | 3 |
 | Non classé | 0 |
 | Écarts d'historique | 0 |
 | Lignes de `/tmp/bi-paths.txt` | 91 |
-| Lignes de `/tmp/ng-paths.txt` | 114 |
+| Lignes de `/tmp/ng-paths.txt` | 116 |
 
-Si un chiffre diffère, s'arrêter et lire les lignes « non classés » ou
-« historique non couvert ». Un fichier arrivé sur `main` après cette PR
-n'a pas encore de classe.
+`/tmp/ng-paths.txt` contient `docs/PLAN_BATCH_2026-10-16.md` et
+`.cursor/rules/specs-suivent-l-interface.mdc`. `/tmp/bi-paths.txt` ne
+les contient pas.
+
+Le jour où cette PR est sur `main`, le script devient un fichier suivi
+de plus, classé Blue Intelligence par la ligne de dossier `scripts/`.
+Les comptes passent à 1 854 fichiers suivis et 575 pour Blue
+Intelligence seul. Les lignes de chemins restent 91 et 116.
+
+On s'arrête si `non classés` n'est pas 0, si `écarts d'historique`
+n'est pas 0, si l'un des deux fichiers de la #545 manque dans le
+fichier NAVIGUIDE, ou s'il apparaît dans le fichier Blue Intelligence.
+Un fichier arrivé sur `main` après `6dabfb84` n'a pas encore de classe :
+le script s'arrête, et on le classe avant de filtrer. Les comptes de
+la branche de cette PR ne servent pas de seuil : elle part de
+`0ad99920`, et le script y est déjà suivi.
 
 Le fichier de chemins mélange deux formes, et il ne faut pas les
 échanger :
@@ -645,7 +660,7 @@ elle reprend la #553 fichier par fichier (section 4.9).
 | `environment.json`, `install.sh`, `start.sh`, `preview.sh` | Blue Intelligence. L'environnement s'appelle « Blue Intelligence » et lance l'API 8001 plus le frontend 3000. |
 | `rules/base-de-donnees-vps.mdc` | Les deux. Original Blue Intelligence : Mongo vivant sur l'OVH, Atlas gelé, `sync-from-atlas.sh` interdit. La copie NAVIGUIDE, au premier commit, tient en trois phrases : le simulateur n'a pas de Mongo, `blueintel_db` reste sur l'OVH, on ne lance pas `sync-from-atlas.sh`. |
 | `hooks.json` et `hooks/simulator-*` | NAVIGUIDE. |
-| `rules/anti-regression-visuelle-simulateur.mdc`, `rules/naviguide-simulator-preview.mdc` | NAVIGUIDE. |
+| `rules/anti-regression-visuelle-simulateur.mdc`, `rules/naviguide-simulator-preview.mdc`, `rules/specs-suivent-l-interface.mdc` | NAVIGUIDE. La troisième est sur `main` depuis la #545. |
 | `rules/environnement-utilisateur.mdc`, `modeles-cursor-uniquement.mdc`, `reparations-sur-github.mdc` | Les deux. Original Blue Intelligence. Dans la copie NAVIGUIDE, la règle d'environnement gagne une ligne : le simulateur est sur Contabo, Blue Intelligence reste sur l'OVH. `modeles-cursor-uniquement.mdc` et `reparations-sur-github.mdc` restent entiers dans les deux dépôts. |
 | `rules/pas-de-verification-video.mdc` | Les deux. Original NAVIGUIDE. La copie Blue Intelligence garde les trois interdictions : pas de vidéo, preuve par tests, `curl` ou capture fixe. |
 
@@ -653,8 +668,8 @@ elle reprend la #553 fichier par fichier (section 4.9).
 
 | Fichier | Dépôt | Après le filtre, avant le premier push |
 |---|---|---|
-| `.github/workflows/ci.yml` | Les deux | Blue Intelligence garde `frontend`, `audit-tags`, et un `deploy-gate` limité à ses scripts. NAVIGUIDE garde `simulator` et `simulator-e2e`. |
-| `.github/workflows/deploy.yml` | Les deux | Un site (ou deux vhosts NAVIGUIDE) par dépôt, un `VPS_HOST` par dépôt. Voir section 6. |
+| `.github/workflows/ci.yml` | Les deux | Blue Intelligence garde `frontend`, `audit-tags`, et un `deploy-gate` limité à ses scripts. NAVIGUIDE garde `changes`, `simulator`, `simulator-e2e`, et un `deploy-gate` limité aux siens. Diff en section 6.6. |
+| `.github/workflows/deploy.yml` | Les deux | Blue Intelligence garde le cron OVH. NAVIGUIDE déploie `naviguide.fr` sur Contabo à chaque poussée sur `main`. Diff en section 6.6. |
 | `.github/workflows/weekly-data-build.yml` | Blue Intelligence seul | L'URL reste `https://blueintelligence.online`. |
 | `.github/workflows/zap-baseline.yml` | NAVIGUIDE seul | La cible devient `https://naviguide.fr`. On n'active le workflow qu'après le vert de la section 9. |
 | `.github/dependabot.yml` | Les deux | Blue Intelligence : npm `/frontend`, pip `/backend`, github-actions. NAVIGUIDE : npm `/naviguide-simulator`, pip `/naviguide-simulator/server`, github-actions. |
@@ -768,10 +783,10 @@ Ils sont alignés :
 Leur place est celle des sections 4.1 et 4.7. `docs/check_md_links.py`
 est un outil, hors des 132, présent dans les deux dépôts.
 
-Les documents hors de `main` gardent la destination écrite dans la #553.
 `docs/PLAN_BATCH_2026-10-16.md` et
-`.cursor/rules/specs-suivent-l-interface.mdc` (PR #545, encore ouverte)
-vont dans NAVIGUIDE le jour où cette PR est sur `main`. Les PR fermées
+`.cursor/rules/specs-suivent-l-interface.mdc` sont sur `main` depuis
+la fusion de la PR #545 (`7d1f8d14`, 17 octobre 2026). Le classeur les
+envoie dans NAVIGUIDE. Les PR fermées
 #510 et #227 sont récupérées après le filtre, section 6.4 : le plan
 s7 sous `docs/archives/` de NAVIGUIDE, l'outil de fiches sous
 `docs/archives/` de Blue Intelligence. Le filtre ne les invente pas.
@@ -795,10 +810,16 @@ déplace rien.
 ## 5. Filtrer une copie nue, puis pousser `main` et les tags
 
 `git clone --mirror` ramène aussi les références cachées. Mesure du
-17 octobre 2026 : **550** `refs/pull/*/head`, **16** `refs/pull/*/merge`,
-**42** branches. GitHub refuse un push de `refs/pull/*`. `--mirror`
-pousserait en plus les 42 branches, dont d'anciennes branches des deux
-produits. On ne l'utilise pas.
+17 octobre 2026 au soir, `git ls-remote origin`, au moment où `main`
+vaut `6dabfb84` : **37** branches (`refs/heads/*`), **553**
+`refs/pull/*/head`, **11** `refs/pull/*/merge`, **5** tags. GitHub
+refuse un push de `refs/pull/*`. `--mirror` pousserait en plus les 37
+branches, dont d'anciennes branches des deux produits. On ne l'utilise
+pas.
+
+`git clone --bare --single-branch --branch main` ne ramène pas ces
+références. La mesure ancienne (550 têtes de pull, 16 fusions de pull,
+42 branches) ne décrit plus cette tête.
 
 `git-filter-repo` n'est pas installé sur la machine qui a servi à écrire
 ce plan. Sur le Mac :
@@ -947,13 +968,25 @@ adapté. Les secrets GitHub ne sont pas encore posés : un workflow qui
 partirait quand même s'arrêterait dans `prepare-ssh.sh`, faute de
 `VPS_SSH_KEY`.
 
+Plusieurs commits, dans la copie de travail, avant le premier push.
+Les diffs exacts sont en 6.6, 6.7 et 6.8. On ne les réécrit pas à la
+main. Les quatre fichiers du commit 6.6 restent tels que le filtre les
+a copiés jusqu'au `git apply`.
+
 ```bash
 git clone /tmp/bi-bare /tmp/bi-work
-# section 6, dépôt Blue Intelligence, puis :
 cd /tmp/bi-work
+# 1. Édition à la main : sections 6.0 et 6.1, sans toucher
+#    .github/workflows/ci.yml, .github/workflows/deploy.yml,
+#    .github/dependabot.yml, infra/vps/ci/prepare-ssh.sh.
+# 2. Les quatre git apply Blue Intelligence de la section 6.6, puis :
 git add -A
 git status
-git commit -m "chore: adapter CI et déploiement au dépôt Blue Intelligence"
+git commit -m "chore: limiter la CI Blue Intelligence à son déploiement OVH"
+# 3. Le git apply de la section 6.8 (retrait du test), puis :
+git add -A
+git status
+git commit -m "test: retirer l'import de climatology_query du dépôt Blue Intelligence"
 git remote add origin git@github.com:Berry-Mappemonde/Blue-Intelligence.git
 git push origin refs/heads/main:refs/heads/main
 git push origin refs/tags/data-2026-09-14:refs/tags/data-2026-09-14
@@ -965,32 +998,51 @@ git push origin refs/tags/data-2026-10-12:refs/tags/data-2026-10-12
 
 ```bash
 git clone /tmp/ng-bare /tmp/ng-work
-# section 6, dépôt NAVIGUIDE, puis :
 cd /tmp/ng-work
+# 1. Édition à la main : sections 6.0, 6.2 et 6.4, sans toucher les
+#    quatre fichiers du commit 6.6.
+# 2. Les quatre git apply NAVIGUIDE de la section 6.6, puis :
 git add -A
 git status
-git commit -m "chore: adapter CI et déploiement au dépôt NAVIGUIDE"
+git commit -m "chore: limiter la CI NAVIGUIDE au déploiement de naviguide.fr"
+# 3. Section 6.7, puis :
+git add -A
+git status
+git commit -m "test: figer la parité climatologie du simulateur hors de frontend"
+# 4. Section 6.8, le fichier de test à côté de climatology_query, puis :
+git add -A
+git status
+git commit -m "test: placer test_naviguide_query_not_painted à côté de climatology_query"
+# 5. Les deux commits de la section 6.5, puis :
 git remote add origin git@github.com:Berry-Mappemonde/NAVIGUIDE.git
 git push origin refs/heads/main:refs/heads/main
 ```
 
 Pas de `--mirror`, pas de `--all`, pas de `--tags` global, pas de
-`refs/pull`. `git status` avant le commit ne doit montrer que les
-fichiers de la section 6.
+`refs/pull`. `git status` avant chaque commit ne montre que les
+fichiers de ce commit. Ces commandes restent dans `/tmp/bi-work` et
+`/tmp/ng-work`. On ne les lance pas dans le clone du monodépôt.
 
-Les 16 PR ouvertes au 17 octobre 2026 restent sur l'archive, avec leurs
-branches. Le filtre ne les transporte pas (les SHA changent). Numéros :
-#529, #530, #533, #534, #536, #540, #541, #542, #543, #544, #545, #546,
-#547, #548, #549, #551. #550 est déjà sur `main`. #146, #227, #510, #537
-et #552 sont fermées et ne sont pas sur `main`. Rien de tout cela n'est
-effacé de l'archive. Les textes de #510 et #227 sont recopiés dans les
-dépôts neufs après le filtre (section 6.4), depuis les SHA d'origine.
+Les PR ouvertes au 17 octobre 2026 au soir restent sur l'archive, avec
+leurs branches. Le filtre ne les transporte pas (les SHA changent).
+Il y en a **11** : #541, #542, #543, #546, #547, #548, #549, #551,
+#553, #554, #555. Depuis la liste qui en comptait 16, sont sur `main` :
+#529, #530, #533, #534, #536, #540, #544, #545, #550. #146, #227, #510,
+#537 et #552 sont fermées et ne sont pas sur `main`. Rien de tout cela
+n'est effacé de l'archive. Les textes de #510 et #227 sont recopiés
+dans les dépôts neufs après le filtre (section 6.4), depuis les SHA
+d'origine.
 
 ## 6. Ce que le premier commit change dans chaque dépôt
 
 Le filtre a copié chaque document commun en entier. Ce commit raccourcit
 la copie qui n'est pas l'original. On n'édite pas ces fichiers dans le
 monodépôt : seulement dans la copie filtrée, avant le premier push.
+
+`ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ne se
+réécrivent pas en prose. Leur diff est en section 6.6, un commit par
+dépôt. Les commits des tests sont en 6.7 et 6.8. Les sections 6.0,
+6.4 et 6.5 restent : elles ne sont pas ces quatre fichiers.
 
 ### 6.0 Copies communes
 
@@ -1026,9 +1078,11 @@ Chemins codés en dur aujourd'hui : `~/blue-intelligence-map` et
 | NAVIGUIDE | `/home/naviguide/naviguide` | `naviguide@13.140.164.185` |
 
 `prepare-ssh.sh` écrit aujourd'hui `REMOTE_APP=/home/ubuntu/blue-intelligence-map`
-et, si `VPS_HOST` est vide, `ubuntu@135.125.226.16`. Dans la copie
-NAVIGUIDE, retirer ce défaut : un secret oublié doit arrêter le job, pas
-déployer sur l'OVH.
+et, si `VPS_HOST` est vide, `ubuntu@135.125.226.16`. Le diff de la
+section 6.6 fait le changement. Blue Intelligence reçoit
+`REMOTE_APP=/home/ubuntu/blue-intelligence` et garde le défaut OVH.
+NAVIGUIDE reçoit `REMOTE_APP=/home/naviguide/naviguide` et n'a plus de
+défaut : un secret `VPS_HOST` vide arrête le job.
 
 ### 6.1 Dépôt Blue Intelligence
 
@@ -1044,20 +1098,14 @@ déployer sur l'OVH.
 - `infra/vps/ci/apply-pending.sh`, `apply-site.sh`, `prod_jobs_busy.py`,
   `rsync-to-vps.sh` : même dossier. `rsync-to-vps.sh` ne garde que le cas
   `blue-intelligence`.
-- `infra/vps/ci/prepare-ssh.sh` : `REMOTE_APP=/home/ubuntu/blue-intelligence`.
-  Le défaut d'hôte OVH peut rester.
-- `infra/vps/ci/plan_deploy.py` : un seul site. Plus de branche `recette`
-  (elle appartient à NAVIGUIDE). Garder le cron de rattrapage et la sonde
-  des files uvicorn.
-- `.github/workflows/deploy.yml` : un job, cron `*/20 * * * *` conservé,
-  plus de jobs `naviguide` ni `simulator`.
-- `.github/workflows/ci.yml` : jobs `frontend`, `audit-tags`, `deploy-gate`
-  sur `deploy-app.sh`, `sync-public-nginx.sh`, `prepare-ssh.sh`,
-  `rsync-to-vps.sh`, `apply-site.sh`, `apply-pending.sh` et
-  `test_prod_jobs_busy.py`. Dans cette copie, le test ne garde que les
-  cas Blue Intelligence.
-- `.github/dependabot.yml` : retirer les blocs `naviguide-simulator`.
-  Ajouter pip sur `/backend`.
+- `infra/vps/ci/prepare-ssh.sh`, `.github/workflows/ci.yml`,
+  `.github/workflows/deploy.yml`, `.github/dependabot.yml` : le diff
+  exact est en section 6.6. On ne les édite pas à la main.
+- `infra/vps/ci/plan_deploy.py` et `test_prod_jobs_busy.py` restent tels
+  que le filtre les a copiés. Leurs 31 tests décrivent encore trois
+  sites et restent verts. Le workflow ne lance plus les jobs
+  `naviguide` ni `simulator`. On ne réécrit pas ces deux fichiers dans
+  le commit 6.6.
 - `infra/agents/gh_token.py`, `open_pr.py`, `post_pr_comment.py`,
   `review_collect.py` : `BIM_REPO` par défaut
   `Berry-Mappemonde/Blue-Intelligence`.
@@ -1096,28 +1144,25 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
   `server/polar_data/` à côté du code. Dans cette copie, lire
   `NAVIGUIDE_POLAR_DIR` quand elle est posée, sinon garder ce dossier.
   Même forme que `NAVIGUIDE_GRIB_DIR` dans `saildocs.py`.
-- `infra/vps/ci/` (les scripts ; `README.md` n'est pas dans cette copie) :
-  même dossier, hôte sans défaut OVH. `rsync-to-vps.sh`
-  ne garde que le cas du site live (le dossier `naviguide-simulator/`).
+- `infra/vps/ci/prepare-ssh.sh`, `.github/workflows/ci.yml`,
+  `.github/workflows/deploy.yml`, `.github/dependabot.yml` : le diff
+  exact est en section 6.6. On ne les édite pas à la main.
+  `prepare-ssh.sh` n'a plus de défaut OVH.
+  `REMOTE_APP=/home/naviguide/naviguide`.
+- `rsync-to-vps.sh` reste une édition à la main, hors du diff 6.6.
+  Ne garder que le cas du site live (le dossier `naviguide-simulator/`).
   Ce cas utilise `--delete` et n'exclut aujourd'hui que
   `server/voyage_data/` et `server/polar_data/*.json`. Ajouter les
   exclusions `server/grib_data/`, `server/forecast_cache/`,
   `server/saildocs_inbox/`. `forecast_cache/` n'existait pas le
   17 octobre : l'exclusion empêche un déploiement futur de l'effacer le
   jour où le code le crée. La section 8 place les données **hors** du
-  checkout, dans `/home/naviguide/naviguide-data/`.
-- `plan_deploy.py` : un push sur `main` qui touche
-  `naviguide-simulator/` ou les fichiers nginx du site déploie
-  `naviguide.fr`. Un chemin sous l'ancien `naviguide/` ne déploie rien.
-  La branche `recette` ne déploie plus vers le VPS : le poste de recette
-  est le tunnel du Mac (section 6.4). Pas de cron `*/20`.
-  `test_prod_jobs_busy.py` suit ces règles.
-- `.github/workflows/deploy.yml` : un job, poussée sur `main`,
-  `workflow_dispatch`. Pas de cron `*/20`. Pas de branche `recette`.
-  Pas de job qui construit `naviguide/naviguide-app`.
-- `.github/workflows/ci.yml` : jobs `simulator`, `simulator-e2e`, et un
-  `deploy-gate` sur les scripts NAVIGUIDE.
-- `.github/dependabot.yml` : retirer le bloc `/frontend`.
+  checkout, dans `/home/naviguide/naviguide-data/`. Le `deploy-gate`
+  est vert sans cette édition.
+- `plan_deploy.py` et `test_prod_jobs_busy.py` restent tels que le
+  filtre les a copiés. Le workflow 6.6 ne les appelle plus : chaque
+  poussée sur `main` déploie `naviguide.fr`. Leurs 31 tests restent
+  verts. On ne les réécrit pas dans ce commit.
 - nginx, détail en section 6.4. En bref : `naviguide.fr` sert le
   simulateur (port `8010`). `www.naviguide.fr` et
   `simulator.naviguide.fr` répondent `301` vers `https://naviguide.fr`.
@@ -1366,8 +1411,9 @@ Les issues fermées restent sur l'archive. Les textes des PR #510 et
 
 Correction du 17 octobre au soir. Ces deux travaux sont écrits ici.
 Cette PR ne les fait pas : aucun fichier n'est déplacé, aucun script
-n'est réécrit. Ils ne font pas partie du commit de la section 6. Ils
-arrivent après, dans la copie filtrée NAVIGUIDE.
+n'est réécrit. Ils ne font pas partie des commits 6.6, 6.7 et 6.8. Ils
+arrivent après ces trois commits, dans la copie filtrée NAVIGUIDE,
+avant le premier push. L'ordre est en section 5.4.
 
 #### Les deux façons
 
@@ -1382,7 +1428,7 @@ filtre copie encore les anciens chemins. Le classeur
 ce plan nomment `docs/FILM_DISCOURS_ETAT_2026-09-28.md`. Un déplacement
 avant le filtre demande de réécrire le classeur, de réécrire la
 section 4, puis de revérifier les 132 documents. Le propriétaire a
-demandé de ne rien déplacer dans cette PR. Les 16 PR ouvertes restent
+demandé de ne rien déplacer dans cette PR. Les 11 PR ouvertes restent
 une décision à part (section 10.2) : la PR préparatoire en serait une
 de plus à fusionner d'abord.
 
@@ -1601,6 +1647,913 @@ lu via le module. Si `--only C1` n'existe plus dans le fichier de lots
 filtré, prendre le premier id que `--dry-run` affiche sans `--only`,
 et relancer avec cet id. Un échec de réseau ou de clé API n'est pas un
 échec de ce commit : `--dry-run` ne lance pas d'agent.
+
+### 6.6 Diffs de CI, un commit par dépôt
+
+Ces commandes s'exécutent dans `/tmp/bi-work` ou `/tmp/ng-work`, sur les
+fichiers tels que le filtre les a laissés. `git apply` refuse le diff
+si le fichier a déjà été édité à la main : on s'arrête, on remet le
+fichier du filtre, on relance le `git apply`. On ne lance pas ces
+diffs dans le monodépôt.
+
+Contrôle du 17 octobre 2026 au soir : `git apply --check` accepte les
+huit diffs sur `6dabfb84`. Les six fichiers YAML obtenus se lisent.
+`bash -n` accepte les deux `prepare-ssh.sh`.
+`python3 infra/vps/ci/test_prod_jobs_busy.py` finit par 31 tests, OK.
+Ce fichier Python n'est pas dans le diff.
+
+Chaque dépôt ne garde que ses jobs. Blue Intelligence déploie vers
+l'OVH (`ubuntu@135.125.226.16`, dossier
+`/home/ubuntu/blue-intelligence`). NAVIGUIDE déploie vers Contabo
+(`naviguide@13.140.164.185`, dossier `/home/naviguide/naviguide`),
+et le nom public du job est `naviguide.fr`. La clé de site passée à
+`apply-site.sh` reste `simulator` : c'est le nom que le script connaît
+pour l'unité `naviguide-simulator`.
+
+Les quotes autour de `END_…` sont obligatoires : le diff contient des
+`${{ }}` que le shell ne doit pas développer.
+
+#### Blue Intelligence
+
+Jobs de `ci.yml` après le diff : `frontend`, `audit-tags`,
+`deploy-gate`. Jobs de `deploy.yml` : `plan`, `blue-intelligence`,
+`catch-up`. Branches : `main` seulement. Le cron `*/20` reste.
+`dependabot.yml` garde npm `/frontend` et github-actions, retire npm
+`/naviguide-simulator` et pip `/naviguide-simulator/server`, ajoute
+pip `/backend` (groupe `backend-mineures-et-patchs`).
+`prepare-ssh.sh` écrit `REMOTE_APP=/home/ubuntu/blue-intelligence`.
+Le défaut `ubuntu@135.125.226.16` reste.
+
+```bash
+cd /tmp/bi-work
+git apply <<'END_BI_CI'
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -4,9 +4,7 @@
+ #   - jest verrouille l'ordre des couches carte et le registre des fonds ;
+ #   - le build CRA attrape les régressions de bundling (maplibre chargé à la demande) ;
+ #   - le script d'audit des tags tourne en mode GeoJSON sur les seeds (stdlib pur) ;
+-#   - simulateur : si la PR touche naviguide-simulator/, `npm test` (node --test),
+-#     `vite build` et `pytest` (fetch mocké) — une croix rouge sur la PR avant
+-#     qu'un lot casse S1–S7, le juge ou le sac ici() sans qu'on le voie.
++# Copie Blue Intelligence. Les jobs simulateur ne sont pas dans ce dépôt.
+ 
+ on:
+   pull_request:
+@@ -40,133 +38,6 @@
+         env:
+           CI: "true"
+ 
+-  # Le simulateur n'est testé que si la PR (ou le push) le touche : les PR
+-  # Blue Intelligence / NAVIGUIDE restent aussi rapides qu'avant.
+-  changes:
+-    runs-on: ubuntu-latest
+-    outputs:
+-      simulator: ${{ steps.filter.outputs.simulator }}
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: dorny/paths-filter@v4
+-        id: filter
+-        with:
+-          filters: |
+-            simulator:
+-              - 'naviguide-simulator/**'
+-              - '.github/workflows/ci.yml'
+-
+-  simulator:
+-    name: simulateur — tests JS, build, pytest
+-    runs-on: ubuntu-latest
+-    # Un test qui ne rend pas la main doit échouer vite, pas bloquer 6 h.
+-    timeout-minutes: 20
+-    needs: changes
+-    if: needs.changes.outputs.simulator == 'true'
+-    defaults:
+-      run:
+-        working-directory: naviguide-simulator
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide-simulator/package-lock.json
+-      - run: npm ci
+-      - name: Tests JS (moteur, juge, skipper, briefing, contrats UI)
+-        run: npm test
+-      - name: Build Vite
+-        run: npm run build
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-          cache: pip
+-          cache-dependency-path: naviguide-simulator/server/requirements.txt
+-      - run: pip install -r server/requirements.txt
+-      - name: Tests Python (API 8010, sac ici(), pipeline météo, récit)
+-        run: python -m pytest -q
+-        env:
+-          # Aucun secret : Copernicus et les LLM restent en repli / mock.
+-          PYTHONDONTWRITEBYTECODE: "1"
+-      # Sécurité P1 (lot H) : une dépendance avec une faille connue bloque la
+-      # PR — critique côté npm (prod seulement), toute faille côté pip.
+-      - name: Audit npm (dépendances de prod, critique = bloquant)
+-        run: npm audit --omit=dev --audit-level=critical
+-      - name: Audit pip (server/requirements.txt)
+-        run: |
+-          pip install -q pip-audit
+-          python -m pip_audit -r server/requirements.txt --progress-spinner off
+-
+-  # Recette automatique des lots (RG16 / D11) : une invocation Playwright
+-  # (fumée + lots) sur le build de prod, API hors ligne, stock figé.
+-  # Un spec rouge bloque la PR. Specs `poste` (hindcast, LLM, réseau) ignorés en CI.
+-  simulator-e2e:
+-    # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en six tranches parallèles (--shard) :
+-    # même contenu, même API sur le stock figé, ~1 min de tests chacune + ~1 min 30 de mise en place.
+-    # Six jobs verts = recette verte. Dépôt public : les runners Actions sont gratuits et illimités.
+-    name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/6
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 12
+-    needs: changes
+-    if: needs.changes.outputs.simulator == 'true'
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        shard: [1, 2, 3, 4, 5, 6]
+-    defaults:
+-      run:
+-        working-directory: naviguide-simulator
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide-simulator/package-lock.json
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-          cache: pip
+-          cache-dependency-path: naviguide-simulator/server/requirements.txt
+-      - run: npm ci
+-      - run: npm run build
+-      - run: pip install -r server/requirements.txt
+-      - name: Version Playwright (clé de cache)
+-        id: pw
+-        run: |
+-          echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
+-      - uses: actions/cache@v6
+-        with:
+-          path: ~/.cache/ms-playwright
+-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+-          restore-keys: |
+-            playwright-${{ runner.os }}-
+-      - run: npx playwright install --with-deps chromium
+-      - name: Recette automatique (fumée + lots, stock figé) — tranche ${{ matrix.shard }}/6
+-        env:
+-          PW_WITH_API: "1"
+-        run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/6
+-      - name: Résumé d'étape
+-        if: always()
+-        run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
+-      # Le rapport JSON (quelques dizaines de ko) est toujours conservé : c'est lui qui liste
+-      # les « verts avec réserve » (chemins à vide) relus dans docs/SPECS_E2E_TRIAGE_2026-09-29.md.
+-      - uses: actions/upload-artifact@v7
+-        if: always()
+-        with:
+-          name: e2e-json-${{ matrix.shard }}
+-          path: naviguide-simulator/test-results/e2e.json
+-          retention-days: 3
+-          if-no-files-found: ignore
+-      - uses: actions/upload-artifact@v7
+-        if: failure()
+-        with:
+-          name: playwright-report-${{ matrix.shard }}
+-          path: naviguide-simulator/playwright-report
+-          retention-days: 7
+-          if-no-files-found: ignore
+-
+   audit-tags:
+     runs-on: ubuntu-latest
+     steps:
+@@ -184,8 +55,6 @@
+         run: |
+           bash -n infra/vps/deploy-app.sh
+           bash -n infra/vps/sync-public-nginx.sh
+-          bash -n infra/vps/naviguide/deploy-naviguide.sh
+-          bash -n infra/vps/naviguide/deploy-simulator.sh
+           bash -n infra/vps/ci/prepare-ssh.sh
+           bash -n infra/vps/ci/rsync-to-vps.sh
+           bash -n infra/vps/ci/apply-site.sh
+END_BI_CI
+git apply <<'END_BI_DEPLOY'
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -1,14 +1,13 @@
+ name: Déploiement VPS
+ 
+-# Trois sites, un job chacun. Build sur GitHub (pas de npm/pip sur le VPS
+-# 8 Go). Blue Intelligence attend qu'aucun run d'enrichissement / Complet
+-# n'occupe uvicorn ; le rattrapage toutes les 20 min reprend la file.
++# Blue Intelligence seul, vers l'OVH. Secret VPS_HOST (le défaut de
++# prepare-ssh.sh reste ubuntu@135.125.226.16). Dossier distant :
++# /home/ubuntu/blue-intelligence. Le cron */20 reprend les runs uvicorn
++# reportés. Pas de branche recette, pas de job naviguide ni simulator.
+ 
+ on:
+   push:
+-    # `recette` = tête de pile poussée par infra/agents/run_lots.py --publish-tip :
+-    # simulateur seulement (plan_deploy.py), jamais BI ni l'ancien NAVIGUIDE.
+-    branches: [main, recette]
++    branches: [main]
+   schedule:
+     - cron: "*/20 * * * *"
+   workflow_dispatch:
+@@ -16,8 +15,8 @@
+       site:
+         description: "Site à déployer"
+         type: choice
+-        options: [all, blue-intelligence, naviguide, simulator]
+-        default: all
++        options: [blue-intelligence]
++        default: blue-intelligence
+       force:
+         description: "Forcer Blue Intelligence même si un run est en cours"
+         type: boolean
+@@ -93,79 +92,6 @@
+             "$VPS_HOST" \
+             "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh blue-intelligence"
+ 
+-  naviguide:
+-    name: www.naviguide.fr
+-    needs: plan
+-    if: needs.plan.outputs.naviguide == 'true'
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 40
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide/naviguide-app/package-lock.json
+-      - name: Env production Vite
+-        run: |
+-          printf '%s\n' \
+-            'VITE_API_URL=https://www.naviguide.fr' \
+-            'VITE_ORCHESTRATOR_URL=https://www.naviguide.fr' \
+-            'VITE_WEATHER_ROUTING_URL=https://www.naviguide.fr' \
+-            'VITE_POLAR_API_URL=https://www.naviguide.fr' \
+-            'VITE_SEAMAP_STYLE_URL=https://www.naviguide.fr/tiles/seamap/style.json' \
+-            > naviguide/naviguide-app/.env.production
+-      - working-directory: naviguide/naviguide-app
+-        run: npm ci
+-      - working-directory: naviguide/naviguide-app
+-        run: npm run build
+-      - run: test -f naviguide/naviguide-app/dist/index.html
+-      - name: SSH
+-        env:
+-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+-          VPS_HOST: ${{ secrets.VPS_HOST }}
+-        run: bash infra/vps/ci/prepare-ssh.sh
+-      - name: Rsync + apply
+-        env:
+-          SHA: ${{ github.sha }}
+-        run: |
+-          bash infra/vps/ci/rsync-to-vps.sh naviguide
+-          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+-            "$VPS_HOST" \
+-            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh naviguide"
+-
+-  simulator:
+-    name: simulator.naviguide.fr
+-    needs: plan
+-    if: needs.plan.outputs.simulator == 'true'
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 40
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide-simulator/package-lock.json
+-      - working-directory: naviguide-simulator
+-        run: npm ci
+-      - working-directory: naviguide-simulator
+-        run: npm run build
+-      - run: test -f naviguide-simulator/dist/index.html
+-      - name: SSH
+-        env:
+-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+-          VPS_HOST: ${{ secrets.VPS_HOST }}
+-        run: bash infra/vps/ci/prepare-ssh.sh
+-      - name: Rsync + apply
+-        env:
+-          SHA: ${{ github.sha }}
+-        run: |
+-          bash infra/vps/ci/rsync-to-vps.sh simulator
+-          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+-            "$VPS_HOST" \
+-            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh simulator"
+-
+   catch-up:
+     name: Rattrapage (runs reportés)
+     needs: plan
+END_BI_DEPLOY
+git apply <<'END_BI_DEPENDABOT'
+--- a/.github/dependabot.yml
++++ b/.github/dependabot.yml
+@@ -4,19 +4,6 @@
+ version: 2
+ updates:
+   - package-ecosystem: npm
+-    directory: /naviguide-simulator
+-    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+-    open-pull-requests-limit: 5
+-    groups:
+-      # Vite et ses plugins avancent ensemble (27 sept. : plugin-react 6 seul → rouge, il exige Vite 8).
+-      vite:
+-        patterns: ["vite", "@vitejs/*"]
+-        update-types: [major, minor, patch]
+-      simulateur-mineures-et-patchs:
+-        update-types: [minor, patch]
+-    commit-message: { prefix: "chore(deps)" }
+-    labels: [dependances]
+-  - package-ecosystem: npm
+     directory: /frontend
+     schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+     open-pull-requests-limit: 5
+@@ -35,11 +22,11 @@
+     commit-message: { prefix: "chore(deps)" }
+     labels: [dependances]
+   - package-ecosystem: pip
+-    directory: /naviguide-simulator/server
++    directory: /backend
+     schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+     open-pull-requests-limit: 5
+     groups:
+-      serveur-mineures-et-patchs:
++      backend-mineures-et-patchs:
+         update-types: [minor, patch]
+     commit-message: { prefix: "chore(deps)" }
+     labels: [dependances]
+END_BI_DEPENDABOT
+git apply <<'END_BI_PREPARE'
+--- a/infra/vps/ci/prepare-ssh.sh
++++ b/infra/vps/ci/prepare-ssh.sh
+@@ -28,7 +28,7 @@
+ {
+   echo "VPS_HOST=$VPS_HOST"
+   echo "VPS_SSH_IDENTITY=$KEY_FILE"
+-  echo "REMOTE_APP=/home/ubuntu/blue-intelligence-map"
++  echo "REMOTE_APP=/home/ubuntu/blue-intelligence"
+ } >> "${GITHUB_ENV:-/dev/stdout}"
+ 
+ echo "SSH prêt pour $VPS_HOST"
+END_BI_PREPARE
+bash -n infra/vps/deploy-app.sh
+bash -n infra/vps/sync-public-nginx.sh
+bash -n infra/vps/ci/prepare-ssh.sh
+bash -n infra/vps/ci/rsync-to-vps.sh
+bash -n infra/vps/ci/apply-site.sh
+bash -n infra/vps/ci/apply-pending.sh
+python3 infra/vps/ci/test_prod_jobs_busy.py
+git add .github/workflows/ci.yml .github/workflows/deploy.yml .github/dependabot.yml infra/vps/ci/prepare-ssh.sh
+git commit -m "chore: limiter la CI Blue Intelligence à son déploiement OVH"
+```
+
+Le `deploy-gate` de cette copie ne nomme plus
+`infra/vps/naviguide/deploy-naviguide.sh` ni `deploy-simulator.sh`.
+Ces deux fichiers ne sont pas dans le dépôt filtré. Les six `bash -n`
+et les 31 tests doivent finir sans erreur. C'est le vert du
+`deploy-gate` côté Blue Intelligence.
+
+#### NAVIGUIDE
+
+Jobs de `ci.yml` après le diff : `changes`, `simulator`,
+`simulator-e2e`, `deploy-gate`. `deploy.yml` n'a qu'un job,
+`naviguide`, affiché `naviguide.fr`. Déclencheurs : poussée sur `main`,
+et `workflow_dispatch`. Pas de cron, pas de branche `recette`, pas de
+job `plan`. Chaque poussée sur `main` déploie. `FORCE_DEPLOY=0`.
+`dependabot.yml` garde npm `/naviguide-simulator`, pip
+`/naviguide-simulator/server` et github-actions. Le bloc npm
+`/frontend` est retiré. `prepare-ssh.sh` exige `VPS_HOST`. La valeur
+attendue est `naviguide@13.140.164.185`.
+`REMOTE_APP=/home/naviguide/naviguide`.
+
+```bash
+cd /tmp/ng-work
+git apply <<'END_NG_CI'
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1,12 +1,7 @@
+ name: CI
+ 
+-# Tests rapides et hermétiques (aucun secret, aucun service) :
+-#   - jest verrouille l'ordre des couches carte et le registre des fonds ;
+-#   - le build CRA attrape les régressions de bundling (maplibre chargé à la demande) ;
+-#   - le script d'audit des tags tourne en mode GeoJSON sur les seeds (stdlib pur) ;
+-#   - simulateur : si la PR touche naviguide-simulator/, `npm test` (node --test),
+-#     `vite build` et `pytest` (fetch mocké) — une croix rouge sur la PR avant
+-#     qu'un lot casse S1–S7, le juge ou le sac ici() sans qu'on le voie.
++# Copie NAVIGUIDE. Frontend Blue Intelligence et audit des tags ne sont pas
++# dans ce dépôt. Le simulateur est testé si la PR le touche.
+ 
+ on:
+   pull_request:
+@@ -17,29 +12,6 @@
+   contents: read
+ 
+ jobs:
+-  frontend:
+-    runs-on: ubuntu-latest
+-    defaults:
+-      run:
+-        working-directory: frontend
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: frontend/package-lock.json
+-      - run: npm ci
+-      - run: npm test
+-        env:
+-          CI: "true"
+-      # frontend/scripts/build.js ignore uniquement le warning webpack de
+-      # maplibre-gl (workers via new URL dynamique). Les autres warnings
+-      # restent des erreurs. Le worker est copié dans public/maplibre/.
+-      - run: npm run build
+-        env:
+-          CI: "true"
+-
+   # Le simulateur n'est testé que si la PR (ou le push) le touche : les PR
+   # Blue Intelligence / NAVIGUIDE restent aussi rapides qu'avant.
+   changes:
+@@ -167,13 +139,6 @@
+           retention-days: 7
+           if-no-files-found: ignore
+ 
+-  audit-tags:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v7
+-      - name: Audit des tags (mode GeoJSON, sans Mongo)
+-        run: python3 scripts/audit_tags.py --geojson seed/projects.geojson seed/ports_of_entry.geojson
+-
+   deploy-gate:
+     runs-on: ubuntu-latest
+     steps:
+@@ -182,8 +147,6 @@
+         run: python3 infra/vps/ci/test_prod_jobs_busy.py
+       - name: Syntaxe bash des scripts VPS
+         run: |
+-          bash -n infra/vps/deploy-app.sh
+-          bash -n infra/vps/sync-public-nginx.sh
+           bash -n infra/vps/naviguide/deploy-naviguide.sh
+           bash -n infra/vps/naviguide/deploy-simulator.sh
+           bash -n infra/vps/ci/prepare-ssh.sh
+END_NG_CI
+git apply <<'END_NG_DEPLOY'
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -1,143 +1,27 @@
+ name: Déploiement VPS
+ 
+-# Trois sites, un job chacun. Build sur GitHub (pas de npm/pip sur le VPS
+-# 8 Go). Blue Intelligence attend qu'aucun run d'enrichissement / Complet
+-# n'occupe uvicorn ; le rattrapage toutes les 20 min reprend la file.
++# NAVIGUIDE seul, vers Contabo. Secret VPS_HOST = naviguide@13.140.164.185.
++# prepare-ssh.sh de cette copie n'a pas de défaut OVH. Dossier distant :
++# /home/naviguide/naviguide. Chaque poussée sur main déploie https://naviguide.fr.
++# Pas de cron, pas de branche recette (la recette est le tunnel du Mac).
++# La clé de site `simulator` est celle de apply-site.sh : c'est l'unité
++# naviguide-simulator, qui sert le nom public naviguide.fr.
+ 
+ on:
+   push:
+-    # `recette` = tête de pile poussée par infra/agents/run_lots.py --publish-tip :
+-    # simulateur seulement (plan_deploy.py), jamais BI ni l'ancien NAVIGUIDE.
+-    branches: [main, recette]
+-  schedule:
+-    - cron: "*/20 * * * *"
++    branches: [main]
+   workflow_dispatch:
+-    inputs:
+-      site:
+-        description: "Site à déployer"
+-        type: choice
+-        options: [all, blue-intelligence, naviguide, simulator]
+-        default: all
+-      force:
+-        description: "Forcer Blue Intelligence même si un run est en cours"
+-        type: boolean
+-        default: false
+ 
+ concurrency:
+-  group: deploy-vps
++  group: deploy-naviguide
+   cancel-in-progress: false
+ 
+ permissions:
+   contents: read
+ 
+-env:
+-  FORCE_DEPLOY: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+-
+ jobs:
+-  plan:
+-    name: Plan
+-    runs-on: ubuntu-latest
+-    outputs:
+-      bi: ${{ steps.plan.outputs.bi }}
+-      naviguide: ${{ steps.plan.outputs.naviguide }}
+-      simulator: ${{ steps.plan.outputs.simulator }}
+-      catch_up: ${{ steps.plan.outputs.catch_up }}
+-    steps:
+-      - uses: actions/checkout@v7
+-        with:
+-          fetch-depth: 0
+-      - id: plan
+-        env:
+-          EVENT_NAME: ${{ github.event_name }}
+-          EVENT_BEFORE: ${{ github.event.before }}
+-          INPUT_SITE: ${{ github.event.inputs.site }}
+-          GITHUB_SHA: ${{ github.sha }}
+-          REF_NAME: ${{ github.ref_name }}
+-        run: python3 infra/vps/ci/plan_deploy.py >> "$GITHUB_OUTPUT"
+-
+-  blue-intelligence:
+-    name: blueintelligence.online
+-    needs: plan
+-    if: needs.plan.outputs.bi == 'true'
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 40
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: frontend/package-lock.json
+-      - working-directory: frontend
+-        run: npm ci
+-      - name: Build production
+-        working-directory: frontend
+-        env:
+-          CI: "true"
+-          REACT_APP_BACKEND_URL: ""
+-          REACT_APP_SEAMAP_STYLE_URL: https://blueintelligence.online/tiles/seamap/style.json
+-        run: npm run build
+-      - name: Vérifier le bundle
+-        run: test -f frontend/build/index.html
+-      - name: SSH
+-        env:
+-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+-          VPS_HOST: ${{ secrets.VPS_HOST }}
+-        run: bash infra/vps/ci/prepare-ssh.sh
+-      - name: Rsync + apply
+-        env:
+-          SHA: ${{ github.sha }}
+-        run: |
+-          bash infra/vps/ci/rsync-to-vps.sh blue-intelligence
+-          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+-            "$VPS_HOST" \
+-            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh blue-intelligence"
+-
+   naviguide:
+-    name: www.naviguide.fr
+-    needs: plan
+-    if: needs.plan.outputs.naviguide == 'true'
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 40
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide/naviguide-app/package-lock.json
+-      - name: Env production Vite
+-        run: |
+-          printf '%s\n' \
+-            'VITE_API_URL=https://www.naviguide.fr' \
+-            'VITE_ORCHESTRATOR_URL=https://www.naviguide.fr' \
+-            'VITE_WEATHER_ROUTING_URL=https://www.naviguide.fr' \
+-            'VITE_POLAR_API_URL=https://www.naviguide.fr' \
+-            'VITE_SEAMAP_STYLE_URL=https://www.naviguide.fr/tiles/seamap/style.json' \
+-            > naviguide/naviguide-app/.env.production
+-      - working-directory: naviguide/naviguide-app
+-        run: npm ci
+-      - working-directory: naviguide/naviguide-app
+-        run: npm run build
+-      - run: test -f naviguide/naviguide-app/dist/index.html
+-      - name: SSH
+-        env:
+-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+-          VPS_HOST: ${{ secrets.VPS_HOST }}
+-        run: bash infra/vps/ci/prepare-ssh.sh
+-      - name: Rsync + apply
+-        env:
+-          SHA: ${{ github.sha }}
+-        run: |
+-          bash infra/vps/ci/rsync-to-vps.sh naviguide
+-          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+-            "$VPS_HOST" \
+-            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh naviguide"
+-
+-  simulator:
+-    name: simulator.naviguide.fr
+-    needs: plan
+-    if: needs.plan.outputs.simulator == 'true'
++    name: naviguide.fr
+     runs-on: ubuntu-latest
+     timeout-minutes: 40
+     steps:
+@@ -164,27 +48,4 @@
+           bash infra/vps/ci/rsync-to-vps.sh simulator
+           ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+             "$VPS_HOST" \
+-            "SHA=$SHA FORCE_DEPLOY=$FORCE_DEPLOY SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh simulator"
+-
+-  catch-up:
+-    name: Rattrapage (runs reportés)
+-    needs: plan
+-    if: needs.plan.outputs.catch_up == 'true'
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 20
+-    steps:
+-      - uses: actions/checkout@v7
+-      - name: SSH
+-        env:
+-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+-          VPS_HOST: ${{ secrets.VPS_HOST }}
+-        run: bash infra/vps/ci/prepare-ssh.sh
+-      - name: Synchroniser la sonde puis apply-pending
+-        run: |
+-          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+-            "$VPS_HOST" "mkdir -p $REMOTE_APP/infra/vps/ci"
+-          rsync -az -e "ssh -i $VPS_SSH_IDENTITY -o BatchMode=yes -o IdentitiesOnly=yes" \
+-            infra/vps/ci/ "$VPS_HOST:$REMOTE_APP/infra/vps/ci/"
+-          ssh -i "$VPS_SSH_IDENTITY" -o BatchMode=yes -o IdentitiesOnly=yes \
+-            "$VPS_HOST" \
+-            "chmod +x $REMOTE_APP/infra/vps/ci/*.sh $REMOTE_APP/infra/vps/ci/*.py && bash $REMOTE_APP/infra/vps/ci/apply-pending.sh"
++            "SHA=$SHA FORCE_DEPLOY=0 SKIP_FRONTEND_BUILD=1 bash $REMOTE_APP/infra/vps/ci/apply-site.sh simulator"
+END_NG_DEPLOY
+git apply <<'END_NG_DEPENDABOT'
+--- a/.github/dependabot.yml
++++ b/.github/dependabot.yml
+@@ -16,24 +16,6 @@
+         update-types: [minor, patch]
+     commit-message: { prefix: "chore(deps)" }
+     labels: [dependances]
+-  - package-ecosystem: npm
+-    directory: /frontend
+-    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+-    open-pull-requests-limit: 5
+-    # Le frontend est un CRA 5 (react-scripts) : React 19 et Tailwind 4 sont des migrations, pas des bumps
+-    # (27 sept. : PR rouges #376 #378 #379). On garde les mineures/patchs, on ignore ces majeures.
+-    ignore:
+-      - dependency-name: react
+-        update-types: ["version-update:semver-major"]
+-      - dependency-name: react-dom
+-        update-types: ["version-update:semver-major"]
+-      - dependency-name: tailwindcss
+-        update-types: ["version-update:semver-major"]
+-    groups:
+-      frontend-mineures-et-patchs:
+-        update-types: [minor, patch]
+-    commit-message: { prefix: "chore(deps)" }
+-    labels: [dependances]
+   - package-ecosystem: pip
+     directory: /naviguide-simulator/server
+     schedule: { interval: weekly, day: monday, time: "07:00", timezone: Europe/Paris }
+END_NG_DEPENDABOT
+git apply <<'END_NG_PREPARE'
+--- a/infra/vps/ci/prepare-ssh.sh
++++ b/infra/vps/ci/prepare-ssh.sh
+@@ -1,6 +1,8 @@
+ #!/usr/bin/env bash
+ # Prépare la clé SSH du secret GitHub (à lancer sur le runner).
+-# Variables : VPS_SSH_KEY (obligatoire), VPS_HOST (défaut ubuntu@135.125.226.16)
++# Variables : VPS_SSH_KEY et VPS_HOST, tous deux obligatoires.
++# VPS_HOST = naviguide@13.140.164.185. Pas de défaut : un secret vide
++# ne doit pas déployer sur l'OVH.
+ set -euo pipefail
+ 
+ if [ -z "${VPS_SSH_KEY:-}" ]; then
+@@ -8,7 +10,10 @@
+   exit 1
+ fi
+ 
+-VPS_HOST="${VPS_HOST:-ubuntu@135.125.226.16}"
++if [ -z "${VPS_HOST:-}" ]; then
++  echo "Secret VPS_HOST manquant. Valeur attendue : naviguide@13.140.164.185." >&2
++  exit 1
++fi
+ HOST="${VPS_HOST##*@}"
+ KEY_FILE="${HOME}/.ssh/github-deploy-vps"
+ 
+@@ -28,7 +33,7 @@
+ {
+   echo "VPS_HOST=$VPS_HOST"
+   echo "VPS_SSH_IDENTITY=$KEY_FILE"
+-  echo "REMOTE_APP=/home/ubuntu/blue-intelligence-map"
++  echo "REMOTE_APP=/home/naviguide/naviguide"
+ } >> "${GITHUB_ENV:-/dev/stdout}"
+ 
+ echo "SSH prêt pour $VPS_HOST"
+END_NG_PREPARE
+bash -n infra/vps/naviguide/deploy-naviguide.sh
+bash -n infra/vps/naviguide/deploy-simulator.sh
+bash -n infra/vps/ci/prepare-ssh.sh
+bash -n infra/vps/ci/rsync-to-vps.sh
+bash -n infra/vps/ci/apply-site.sh
+bash -n infra/vps/ci/apply-pending.sh
+python3 infra/vps/ci/test_prod_jobs_busy.py
+git add .github/workflows/ci.yml .github/workflows/deploy.yml .github/dependabot.yml infra/vps/ci/prepare-ssh.sh
+git commit -m "chore: limiter la CI NAVIGUIDE au déploiement de naviguide.fr"
+```
+
+Le `deploy-gate` de cette copie ne nomme plus `infra/vps/deploy-app.sh`
+ni `infra/vps/sync-public-nginx.sh`. Ces deux fichiers ne sont pas
+dans le dépôt filtré. Les six `bash -n` et les 31 tests doivent finir
+sans erreur. C'est le vert du `deploy-gate` côté NAVIGUIDE.
+
+### 6.7 Parité climatologie du simulateur, commit NAVIGUIDE
+
+`naviguide-simulator/src/utils/recetteAg.test.js` lit quatre fois un
+fichier sous `frontend/src/components/map/`. Après le filtre, ce
+dossier n'est pas dans NAVIGUIDE. Le test I (« atlas climatologie »)
+échoue. Les deux lectures de `cycloneTracks.js` sont celles que la
+répétition a nommées. Les deux lectures suivantes visent
+`useClimatologyLayer.js`, dans le même dossier. Le même commit copie
+les deux fichiers.
+
+Les quatre assertions ne changent pas. Ce sont toujours
+`unwrapCycloneCoords`, l'absence de `splitCycloneAtMeridian`,
+`cycloneLatLngCopies` et `groupCycloneFeatures`. Le test lit aussi,
+sans changement, `../layers/climatologyWorld.js` et
+`../layers/useClimatologyLayer.js` : la copie locale du simulateur
+reste contrôlée, et la copie figée vient de Blue Intelligence.
+
+La copie se fait depuis le bare Blue Intelligence, qui a encore
+`frontend/`. Dans `/tmp/ng-work` :
+
+```bash
+cd /tmp/ng-work
+mkdir -p naviguide-simulator/src/utils/fixtures/climatology-bi
+git --git-dir=/tmp/bi-bare show HEAD:frontend/src/components/map/cycloneTracks.js \
+  > naviguide-simulator/src/utils/fixtures/climatology-bi/cycloneTracks.js
+git --git-dir=/tmp/bi-bare show HEAD:frontend/src/components/map/useClimatologyLayer.js \
+  > naviguide-simulator/src/utils/fixtures/climatology-bi/useClimatologyLayer.js
+test "$(wc -c < naviguide-simulator/src/utils/fixtures/climatology-bi/cycloneTracks.js)" -eq 1870
+test "$(wc -c < naviguide-simulator/src/utils/fixtures/climatology-bi/useClimatologyLayer.js)" -eq 10513
+git apply <<'END_RECETTE_AG'
+--- a/naviguide-simulator/src/utils/recetteAg.test.js
++++ b/naviguide-simulator/src/utils/recetteAg.test.js
+@@ -93,10 +93,10 @@
+     assert.match(read("../layers/useClimatologyLayer.js"), /groupCycloneFeatures/);
+     assert.match(read("../layers/climatologyWorld.js"), /unwrapCycloneCoords/);
+     assert.doesNotMatch(read("../layers/climatologyWorld.js"), /splitCycloneAtMeridian/);
+-    assert.match(read("../../../frontend/src/components/map/cycloneTracks.js"), /unwrapCycloneCoords/);
+-    assert.doesNotMatch(read("../../../frontend/src/components/map/cycloneTracks.js"), /splitCycloneAtMeridian/);
+-    assert.match(read("../../../frontend/src/components/map/useClimatologyLayer.js"), /cycloneLatLngCopies/);
+-    assert.match(read("../../../frontend/src/components/map/useClimatologyLayer.js"), /groupCycloneFeatures/);
++    assert.match(read("./fixtures/climatology-bi/cycloneTracks.js"), /unwrapCycloneCoords/);
++    assert.doesNotMatch(read("./fixtures/climatology-bi/cycloneTracks.js"), /splitCycloneAtMeridian/);
++    assert.match(read("./fixtures/climatology-bi/useClimatologyLayer.js"), /cycloneLatLngCopies/);
++    assert.match(read("./fixtures/climatology-bi/useClimatologyLayer.js"), /groupCycloneFeatures/);
+     assert.match(read("../layers/layerOrder.js"), /climatology-raster/);
+     assert.match(read("../utils/atlasPoint.js"), /kind !== "climatology"/);
+     assert.match(read("../engine/voyageClock.js"), /windAt/);
+END_RECETTE_AG
+node --test naviguide-simulator/src/utils/recetteAg.test.js
+git add naviguide-simulator/src/utils/recetteAg.test.js naviguide-simulator/src/utils/fixtures/climatology-bi
+git commit -m "test: figer la parité climatologie du simulateur hors de frontend"
+```
+
+`node --test` sur ce seul fichier doit afficher 8 tests et 0 échec.
+Contrôle du 17 octobre 2026 au soir, sur une copie de travail de
+`6dabfb84` : 8 tests, 0 échec. Le test ne charge pas les fichiers, il
+les lit. Les tailles 1 870 et 10 513 octets sont celles de `main`.
+
+### 6.8 `climatology_query`, deux commits
+
+`backend/tests/test_climatology.py` contient
+`test_naviguide_query_not_painted`. La fonction ajoute
+`naviguide/naviguide-api` au `sys.path` et importe `climatology_query`.
+Ce module est dans NAVIGUIDE. Après le filtre Blue Intelligence,
+l'import lève `ModuleNotFoundError: No module named 'climatology_query'`.
+
+La consigne est de ne modifier un test que s'il contredit une
+instruction du propriétaire. Celui-ci ne la contredit pas : il vérifie
+le module qui vit dans l'autre dépôt. On ne l'affaiblit pas et on ne
+le marque pas `skip`. On le déplace vers le dépôt qui possède le
+module. Les nombres 14,6 / −61,0 vers 38,7 / −27,2, le compte de
+septembre supérieur à 0 et le compte de mars égal à 0, restent couverts
+dans Blue Intelligence par `test_crossings_martinique_azores` (mêmes
+coordonnées, via l'API du dépôt). Les deux `painted is False` partent
+avec la fonction, parce que seul `climatology_query` les pose.
+
+#### Commit Blue Intelligence
+
+Dans `/tmp/bi-work`, sur le fichier tel que le filtre l'a copié :
+
+```bash
+cd /tmp/bi-work
+git apply <<'END_BI_CLIMATO'
+--- a/backend/tests/test_climatology.py
++++ b/backend/tests/test_climatology.py
+@@ -497,20 +497,6 @@
+     assert r.status_code == 422
+ 
+ 
+-def test_naviguide_query_not_painted():
+-    ng_api = Path(__file__).resolve().parents[2] / "naviguide" / "naviguide-api"
+-    sys.path.insert(0, str(ng_api))
+-    import climatology_query as nq
+-    meta = nq.meta(9)
+-    assert meta["kind"] == KIND
+-    assert meta["painted"] is False
+-    pt = nq.point(14.6, -61.0, 9, dest_lat=38.7, dest_lon=-27.2)
+-    assert pt["painted"] is False
+-    assert pt["cyclone"]["crossings_if_leg"]["count"] > 0
+-    mar = nq.crossings(14.6, -61.0, 38.7, -27.2, 3)
+-    assert mar["count"] == 0
+-
+-
+ def test_live_cmems_snapshots_are_honest():
+     """Recipe A on committed grids — skip if generation has not run."""
+     if not (wind_mod.has_snapshot(3) and wave_mod.has_snapshot(7) and current_mod.has_snapshot(2)):
+END_BI_CLIMATO
+git add backend/tests/test_climatology.py
+git commit -m "test: retirer l'import de climatology_query du dépôt Blue Intelligence"
+```
+
+`pytest backend/tests/test_climatology.py -k test_naviguide_query_not_painted`
+ne collecte plus cette fonction.
+
+`test_meteo_agent_cites_ibtracs_integer`, plus bas dans le même
+fichier, fait le même détour par `naviguide/naviguide-api` puis importe
+`agents.meteo_agent`. `pytest.importorskip("langgraph")` le saute :
+`langgraph` n'est pas dans les requirements du backend. La répétition
+ne l'a pas vu échouer. Ce commit ne le déplace pas.
+
+#### Commit NAVIGUIDE
+
+Dans `/tmp/ng-work`. Le fichier est nouveau. Les cinq assertions sont
+celles du monodépôt. `KIND` est la constante que le test d'origine
+importait de `app.services.climatology_common`. Le module la lit au
+même endroit (`climatology_query._services`). L'import
+`climatology_query` se fait dans le dossier du module : pytest ajoute
+ce dossier au chemin, le `sys.path` vers `naviguide/naviguide-api`
+n'est plus utile.
+
+```bash
+cd /tmp/ng-work
+mkdir -p naviguide/naviguide-api
+cat > naviguide/naviguide-api/test_climatology_query.py <<'END_NG_CLIMATO'
+"""test_naviguide_query_not_painted, repris de backend/tests/test_climatology.py.
+
+Le module est dans ce dossier. Les cinq assertions sont celles du monodépôt.
+"""
+import climatology_query as nq
+
+
+def test_naviguide_query_not_painted():
+    KIND = nq._services()["KIND"]
+    meta = nq.meta(9)
+    assert meta["kind"] == KIND
+    assert meta["painted"] is False
+    pt = nq.point(14.6, -61.0, 9, dest_lat=38.7, dest_lon=-27.2)
+    assert pt["painted"] is False
+    assert pt["cyclone"]["crossings_if_leg"]["count"] > 0
+    mar = nq.crossings(14.6, -61.0, 38.7, -27.2, 3)
+    assert mar["count"] == 0
+END_NG_CLIMATO
+git add naviguide/naviguide-api/test_climatology_query.py
+git commit -m "test: placer test_naviguide_query_not_painted à côté de climatology_query"
+```
+
+Limite, à lire avant de lancer ce fichier. `climatology_query._services`
+importe encore `app.services` depuis `backend/`, que le filtre
+NAVIGUIDE n'a pas. L'exécution de ce test lève donc
+`ModuleNotFoundError` sur `app` tant que cette frontière n'est pas un
+appel HTTP. La collecte du fichier, elle, passe : l'import backend est
+dans la fonction, pas au chargement du module. Le pytest de la
+répétition est celui de `backend/tests/`. Il ne collecte pas
+`naviguide/`. Ce commit rend ce pytest-là libre de l'import
+`climatology_query`. Il ne prétend pas que le test NAVIGUIDE passe
+sans le backend.
+
+#### L'autre échec backend, déjà sur le monodépôt
+
+`backend/tests/test_poe_v2_pipeline.py::TestFindSourcesTinyfish::test_serper_google_style_merged`
+échoue déjà avant le filtre. L'assertion (ligne 1045) attend une
+requête serper qui contient « Ports of Entry » ou « port d'entrée ».
+La répétition l'a revue après le filtre, même échec. Ce plan ne
+modifie ni ce test ni le code qu'il appelle.
 
 ### 6.3 Secrets GitHub, après ce commit
 
@@ -1985,7 +2938,7 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Sujet | État dans ce plan |
 |---|---|
 | Noms exacts des deux dépôts neufs | **DÉCISION PROPRIÉTAIRE.** Recommandation en section 0. Stop avant `gh repo create` si les lignes sont vides. Le renommage de l'archive en `Blue-Intelligence-Map` est décidé (10.1). |
-| Fusionner les 16 PR ouvertes avant le filtre | **DÉCISION PROPRIÉTAIRE.** Elles restent sur l'archive dans tous les cas. Les fusionner avant le filtre les fait entrer dans le `main` filtré. Les reprendre après demande un rebase, parce que les SHA ont changé. Ce plan ne fusionne rien. #545 porte le plan de batch du 16 octobre, absent de `main`. |
+| Fusionner les 11 PR ouvertes avant le filtre | **DÉCISION PROPRIÉTAIRE.** Elles restent sur l'archive dans tous les cas. Les fusionner avant le filtre les fait entrer dans le `main` filtré. Les reprendre après demande un rebase, parce que les SHA ont changé. Ce plan ne fusionne rien. La liste du soir est en section 5. #545 est déjà sur `main`. |
 | Pièces jointes des Releases `data-*` | **DÉCISION PROPRIÉTAIRE**, non bloquante. Les tags git vont dans Blue Intelligence. Les fichiers attachés restent sur l'archive. L'API et `backend/data/` suffisent à reconstruire. |
 | Fichiers non commités sur le Mac | **DÉCISION PROPRIÉTAIRE** au vu de `git status --short` (section 2). Non vérifiés ici. |
 | Autres secrets GitHub, rulesets, wiki | **Non vérifié.** `gh secret list` sur l'archive, et un coup d'œil au wiki, avant d'archiver. |
@@ -2056,7 +3009,7 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | `.cursor/environment.json`, `install.sh`, `start.sh`, `preview.sh` vont dans Blue Intelligence. Les hooks simulateur et les deux règles d'écran vont dans NAVIGUIDE. Les cinq règles communes vont dans les deux, original indiqué en 4.9. | `.cursor/environment.json` ; #553 §1 ; Inventaire 4.2 |
 | `infra/agents/` va dans NAVIGUIDE. Quatre scripts GitHub vont aussi dans Blue Intelligence. `run_lots.py` n'y va pas. | Inventaire 4.2 et 4.7 ; Outillage §2 et lot O4 |
 | Les scripts de `infra/vps/ci/` et les deux fichiers de cache nginx climatologie vont dans les deux dépôts. `infra/vps/ci/README.md` va dans Blue Intelligence seul. `infra/searxng/` et `infra/vps/seamap/` restent dans Blue Intelligence. | `deploy-simulator.sh` ; `rsync-to-vps.sh` ; #553 §7 ; Inventaire 4.3 |
-| `git clone --bare --single-branch`, puis push de `refs/heads/main` et, pour Blue Intelligence, des cinq tags `data-*`. Pas de `--mirror`. | Fusion B.5 ; mesure 550 + 16 refs pull et 42 branches |
+| `git clone --bare --single-branch`, puis push de `refs/heads/main` et, pour Blue Intelligence, des cinq tags `data-*`. Pas de `--mirror`. | Fusion B.5 ; mesure du soir sur `6dabfb84` : 37 branches, 553 `refs/pull/*/head`, 11 `refs/pull/*/merge` |
 | Les workflows de l'archive, cron compris, sont désactivés avant le renommage. `batch-pause.sh` est signalé absent. | `deploy.yml`, `weekly-data-build.yml`, `zap-baseline.yml` ; Fusion B.1 point 5 ; Outillage §2.1 |
 | Premier commit d'adaptation **avant** le premier push. Liste des fichiers à `blue-intelligence-map` et de `BIM_REPO`. | Fusion B.4 ; Outillage §4 et §5 ; grep sur l'arbre |
 | Le défaut OVH de `prepare-ssh.sh` est retiré dans la copie NAVIGUIDE. | `prepare-ssh.sh` lignes 11 et 31 |
@@ -2066,11 +3019,11 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Preuve GenAI : le `log` de `poe_pipeline.py` doit rester en août 2026 après le filtre. `backend/` est gardé en entier. | Arbre (`b4fae8c7`, `--follow` jusqu'au 26 août) ; Fusion B.8 |
 | Balayage de motifs de secrets avant push, sans afficher les valeurs. gitleaks non vérifié. | Fusion B.8 |
 | Issues #432 et #446 à transférer vers NAVIGUIDE. | `gh issue list` ; Fusion B.7 |
-| Les 16 PR ouvertes restent sur l'archive. #550 est sur `main`. Les PR fermées #146, #227, #510, #537, #552 n'y sont pas. `pr-archive/` n'est pas dans git. | `gh pr list` ; Arbre |
+| Les 11 PR ouvertes au soir du 17 octobre restent sur l'archive (#541, #542, #543, #546, #547, #548, #549, #551, #553, #554, #555). #529, #530, #533, #534, #536, #540, #544, #545 et #550 sont sur `main`. Les PR fermées #146, #227, #510, #537, #552 n'y sont pas. `pr-archive/` n'est pas dans git. | `gh pr list` ; `git ls-remote` |
 | Gros fichiers : max 17,9 Mo, pas de LFS dans la procédure. | `git cat-file` sur toutes les refs ; Fusion B.6 ; Inventaire 4.4 |
 | Pytest backend reporté. Les cinq tags `data-*` ne vont pas dans NAVIGUIDE. Les assets de Release ne suivent pas le push. | Outillage §3.3 et §4.3 ; `git for-each-ref refs/tags` |
 | Dix contrôles remplacent les huit de l'ancien §6. Le septième compare le SQLite et les SHA-256. Le quatrième attend un `301`, pas un second site. | Ancien §6 ; relevé OVH du 17 oct. ; décisions du 17 oct. au soir |
-| `docs/PLAN_BATCH_2026-10-16.md` et la règle Cursor des specs ne sont pas sur `main` (PR #545). | Arbre ; Outillage §1.3 ; Inventaire 4.5 |
+| `docs/PLAN_BATCH_2026-10-16.md` et `.cursor/rules/specs-suivent-l-interface.mdc` sont sur `main` (`7d1f8d14`, PR #545 fusionnée). Le classeur les envoie dans NAVIGUIDE. | Arbre `6dabfb84` ; `--emit ng` |
 | Les 132 documents de la PR #553 suivent le classeur, chemin par chemin : 46 NAVIGUIDE, 35 Blue Intelligence, 12 les deux, 37 dans le dépôt nommé par la #553 en gardant leur chemin actuel, 2 doublons nova hors des dépôts neufs. 0 écart. Cette PR ne les déplace pas et ne fusionne pas la #553. | PR #553, `docs/MENAGE_DOCUMENTAIRE_PROPOSITION.md`, commit `9c6f6e0d` |
 | `.cursor/rules/base-de-donnees-vps.mdc` va dans les deux. Original Blue Intelligence. La copie NAVIGUIDE dit que le simulateur n'a pas de Mongo. | #553 §1 et §11 ; relevé OVH du 17 oct. |
 | `docs/ETAT_DES_LIEUX_DOCS.md` et `docs/PRD.md` restent dans Blue Intelligence, à leur chemin actuel. | #553 §3 et §11 |
@@ -2090,3 +3043,8 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Les chemins en dur de la boucle (`FIXED_DOCS`, `PROMPTS_MD`, `DEFAULT_REPO`, `PROD_URL`, arbre `naviguide-simulator/`, `docs/recette/`, documents Devpost, et la liste de la section 6.5.2) passent dans `infra/agents/repo_paths.py`. Les fichiers d'exécution (`state.json`, `queue.md`, `COUTS.md`, …) restent à côté des scripts. | Correction du propriétaire, 17 oct. au soir ; lecture de `infra/agents/*.py` |
 | Ces deux travaux se font en deux commits dans la copie filtrée NAVIGUIDE, après la section 6 et avant le premier push. Une PR préparatoire sur le monodépôt est décrite, puis écartée : elle demanderait une fusion avant le filtre et une réécriture du classeur. | Correction du propriétaire, 17 oct. au soir |
 | La phrase « swell not shipped » reste. La vérifier à l'écran après la bascule, avant de la retirer. | Décisions du 17 oct. au soir ; bandeau de `docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` |
+| La répétition #555, sur `main` `6dabfb84`, s'arrêtait : deux fichiers de la #545 non classés, workflows recopiés tels quels, `recetteAg.test.js` lit `frontend/`, `test_naviguide_query_not_painted` importe `climatology_query`, décompte 550 / 16 / 42. | `docs/REPETITION_SPLIT_RAPPORT.md`, commit `f5c26ed6` |
+| Le classeur envoie les deux fichiers de la #545 dans NAVIGUIDE. `--emit` sur `6dabfb84` (script copié, non suivi) : 1 853 suivis, 574 / 1 241 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Self-test : 64 cas. | `scripts/check_split_coverage.py` ; sortie du 17 oct. au soir |
+| `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ont un diff exact par dépôt (section 6.6), appliqué tel quel après le filtre. `plan_deploy.py` et `test_prod_jobs_busy.py` ne sont pas réécrits : 31 tests verts. | `git apply --check` sur `6dabfb84` |
+| Le commit NAVIGUIDE 6.7 copie `cycloneTracks.js` et `useClimatologyLayer.js` dans le simulateur. Les quatre assertions de `recetteAg.test.js` restent. `node --test` : 8 tests, 0 échec. | Lecture du test, lignes 96–99 ; exécution du 17 oct. au soir |
+| Le commit Blue Intelligence 6.8 retire `test_naviguide_query_not_painted`. Le commit NAVIGUIDE le place à côté de `climatology_query.py`, assertions gardées. `test_serper_google_style_merged` échoue déjà sur le monodépôt : on n'y touche pas. | `backend/tests/test_climatology.py` ; `test_poe_v2_pipeline.py` ligne 1045 ; consigne du propriétaire |
