@@ -57,9 +57,11 @@ serveur.
 
 Décisions déjà prises :
 
-- Le mono-dépôt `Berry-Mappemonde/Blue-Intelligence` est d'abord renommé
-  `Berry-Mappemonde/Blue-Intelligence-Map`. C'est l'archive. On ne
-  l'archive sur GitHub que lorsque la section 9 est verte.
+- Le mono-dépôt `Berry-Mappemonde/Blue-Intelligence` est renommé
+  `Berry-Mappemonde/Blue-Intelligence-Map`. C'est l'archive. Elle
+  passe en lecture seule dans la section 3, après les vérifications
+  et les clones nus. On ne la supprime pas. La section 9 ne la
+  réouvre pas et ne la détruit pas.
 - Blue Intelligence **reste** sur le VPS OVH `vps-52ba6d62.vps.ovh.net`
   (`135.125.226.16`). Sa base Mongo ne bouge pas.
 - NAVIGUIDE **part** sur le VPS Contabo noté le 17 octobre 2026 :
@@ -83,30 +85,23 @@ faits, pas des chemins à deviner :
 | `polar_data/`, `grib_data/`, `saildocs_inbox/` à côté de `voyage_data/` | présents. |
 | `forecast_cache/`, `/var/lib/naviguide`, `~/.cache/naviguide` | absents. On ne les crée pas pour la copie. |
 
-**DÉCISION PROPRIÉTAIRE — noms des deux dépôts neufs.** Les écrire ici
-avant la section 5. Tant que les deux lignes sont vides, on s'arrête avant
-`gh repo create`.
+**Noms GitHub, décidés.** Le propriétaire les a fixés. On ne les
+redemande pas.
 
-```text
-Dépôt Blue Intelligence : ____________________
-Dépôt NAVIGUIDE        : ____________________
-```
-
-Recommandation, pour que les commandes plus bas soient complètes le jour
-où ces lignes sont remplies :
-
-| Rôle | Nom recommandé | Effet |
+| Rôle | Nom | Effet |
 |---|---|---|
-| Archive | `Berry-Mappemonde/Blue-Intelligence-Map` | déjà décidé (le renommage) |
-| Blue Intelligence | `Berry-Mappemonde/Blue-Intelligence` | reprend le nom libéré. La redirection GitHub de l'ancien nom disparaît le jour de la création. Les URL `github.com/Berry-Mappemonde/Blue-Intelligence/...` mènent alors à ce dépôt neuf, y compris les anciens liens `/pull/N` et le formulaire Devpost s'il n'a pas été changé le même jour. |
-| NAVIGUIDE | `Berry-Mappemonde/NAVIGUIDE` | ce dépôt n'existe pas sur le compte au 17 octobre 2026. |
+| Archive, lecture seule, jamais supprimée | `Berry-Mappemonde/Blue-Intelligence-Map` | le monodépôt actuel, après renommage. Identifiant GitHub mesuré le 17 octobre 2026 au soir : `1174883638`. |
+| Blue Intelligence, dépôt neuf | `Berry-Mappemonde/Blue-Intelligence` | reprend le nom libéré. **Créer ce dépôt efface la redirection** de l'ancien nom. On le crée en dernier (section 3). |
+| NAVIGUIDE, dépôt neuf | `Berry-Mappemonde/NAVIGUIDE` | ce nom n'existe pas au 17 octobre 2026 au soir. Le créer ne touche pas la redirection. |
 
-Les commandes des sections 5 et 6 utilisent ces deux noms recommandés.
-Si le choix est autre, remplacer les URL **avant** de créer les dépôts.
+Ce soir-là, `https://github.com/Berry-Mappemonde/Blue-Intelligence-Map`
+répond déjà `301` vers `Blue-Intelligence`, et l'API renvoie le même
+identifiant `1174883638`. Ce n'est pas un second dépôt. Le renommage
+reprend ce nom. Après le renommage, c'est l'URL `Blue-Intelligence` qui
+redirige vers `Blue-Intelligence-Map`, jusqu'au `gh repo create` du
+dépôt neuf.
 
-Le 17 octobre 2026 au soir, le propriétaire a tranché le nom public, la
-recette, la CI et les archives (section 10.1). Les deux lignes ci-dessus
-restent à remplir : ce sont les noms GitHub des dépôts neufs.
+Les commandes des sections 3, 5 et 6 utilisent ces trois noms.
 
 Les autres **DÉCISION PROPRIÉTAIRE** sont en section 10.2. Aucune
 n'empêche la sauvegarde (section 1).
@@ -409,43 +404,180 @@ Tout fichier affiché n'est pas dans le filtre. Le commiter sur `main`
 les fichiers locaux restent **non vérifiés**. La PR #545 est sur `main`
 (`7d1f8d14`). Ses deux fichiers sont classés NAVIGUIDE (section 4.2).
 
-## 3. Renommer, puis fixer les remotes
+## 3. Renommer, vérifier, puis créer
 
-1. GitHub → Settings du dépôt → Rename → `Blue-Intelligence-Map`.
-2. Tout de suite, **avant** de créer un dépôt qui reprend le nom
-   `Blue-Intelligence`, sur chaque clone connu (Mac, VPS, autre machine) :
+Cette PR est sur `main` avant ces commandes. L'ordre est fixe. On ne
+crée pas `Berry-Mappemonde/Blue-Intelligence` tant que la vérification
+n'a pas réussi : ce `gh repo create` efface la redirection, et toute
+URL encore écrite avec l'ancien nom parle alors au dépôt neuf, vide.
+
+On ne lance pas `gh repo delete`. Ni sur l'archive, ni sur un dépôt
+neuf.
+
+### 3.1 Renommer
+
+Les workflows de la section 2 sont déjà `disabled`.
+
+```bash
+gh repo rename Blue-Intelligence-Map --repo Berry-Mappemonde/Blue-Intelligence --yes
+```
+
+### 3.2 Vérifier, avant toute création
+
+Les deux URL doivent montrer le même commit et le même identifiant
+`1174883638`. Si un chiffre diffère, on s'arrête. On ne crée rien.
+
+```bash
+gh api repos/Berry-Mappemonde/Blue-Intelligence-Map --jq '{name,id}'
+gh api repos/Berry-Mappemonde/Blue-Intelligence --jq '{name,id}'
+git ls-remote git@github.com:Berry-Mappemonde/Blue-Intelligence-Map.git HEAD
+git ls-remote git@github.com:Berry-Mappemonde/Blue-Intelligence.git HEAD
+gh workflow list --repo Berry-Mappemonde/Blue-Intelligence-Map
+```
+
+Lecture attendue : les deux `id` valent `1174883638`, les deux `HEAD`
+sont le même SHA, les cinq workflows sont `disabled` sous le nouveau
+nom. `curl -sI https://github.com/Berry-Mappemonde/Blue-Intelligence`
+contient `location: https://github.com/Berry-Mappemonde/Blue-Intelligence-Map`.
+
+### 3.3 URL qui ne doivent plus dépendre de la redirection
+
+On les règle ici, pendant que l'ancienne URL redirige encore vers
+l'archive. Mesure du 17 octobre 2026 au soir sur le dépôt encore nommé
+`Blue-Intelligence` : secrets Actions `VPS_HOST` et `VPS_SSH_KEY`
+seulement ; aucune deploy key ; aucun webhook de dépôt ; aucun
+environnement ; aucun secret Dependabot ni Codespaces ; pas de GitHub
+Pages. Deux rulesets restent sur l'archive parce qu'ils appartiennent
+à l'identifiant `1174883638` : « Protect main » (`23007218`) et
+« Protect main — PR and restrict merge » (`23419570`). Les dépôts neufs
+ne les reçoivent pas. On les ajoute après le premier push, sinon ils
+peuvent refuser ce push.
+
+Remotes. Chaque clone connu, sur le Mac :
 
 ```bash
 git remote set-url origin git@github.com:Berry-Mappemonde/Blue-Intelligence-Map.git
 git remote -v
+git ls-remote origin HEAD
 ```
 
-Le VPS, s'il a un clone :
+Le `ls-remote` doit afficher le même SHA que la section 3.2. Dans
+`~/.zshrc`, `~/.zprofile` et `~/.bash_profile`, une ligne `BIM_REPO` ou
+`DEFAULT_REPO` qui vaut encore l'ancien nom est réécrite vers
+`Berry-Mappemonde/Blue-Intelligence-Map` le temps de la fenêtre. Les
+dépôts neufs recevront leur propre valeur au commit de la section 6.
+
+Sur l'OVH, le clone du code :
 
 ```bash
 ssh ubuntu@135.125.226.16
 git -C "$HOME/blue-intelligence-map" remote set-url origin \
   git@github.com:Berry-Mappemonde/Blue-Intelligence-Map.git
+git -C "$HOME/blue-intelligence-map" remote -v
+git -C "$HOME/blue-intelligence-map" ls-remote origin HEAD
 ```
 
-3. Vérifier que les workflows sont toujours disabled sous le nouveau nom :
+Sur Contabo, aucun clone n'est attendu. S'il y en a un, même commande
+avec `naviguide@13.140.164.185`, puis le même contrôle de SHA.
+
+Deploy keys. La liste était vide. Le déploiement passe par le secret
+`VPS_SSH_KEY`, pas par une clé posée sur le dépôt. Ce secret reste sur
+l'archive (même identifiant). On ne le copie pas dans un terminal :
+`gh secret list` montre le nom, pas la valeur. Les dépôts neufs le
+reçoivent à la section 6.3, depuis le fichier de clé déjà sur le Mac.
+
+Webhooks. La liste du dépôt était vide. Le réveil du bot Grok est
+`BIM_BOT_WEBHOOK`, une variable du Mac, pas un webhook GitHub. Le champ
+`repo` du message vient de `DEFAULT_REPO` (section 6). On ne change pas
+l'URL du webhook. L'application GitHub de Cursor n'apparaît pas dans
+cette liste : après les créations, GitHub → Settings → Applications →
+Cursor → Repository access, et cocher les deux dépôts neufs. Pendant
+la fenêtre, on ne lance pas d'agent Cursor sur le nom
+`Blue-Intelligence`.
+
+Cursor, sur le Mac. Le dossier ouvert a le remote de la section 3.3.
+`.cursor/environment.json` ne contient pas d'URL GitHub : il n'y a rien
+à y changer. Les agents Cloud suivent le dépôt branché. Après le
+renommage ils doivent voir `Blue-Intelligence-Map`. On ne leur donne
+pas le nom `Blue-Intelligence` tant que le dépôt neuf n'a pas reçu son
+`main` filtré.
+
+Badges. Les quatre images en tête de `README.md` pointent vers les
+licences, NVIDIA et Nebius. Aucune ne contient le nom du dépôt. On ne
+les réécrit pas. `frontend/public/index.html` et
+`naviguide/naviguide-app/index.html` citent
+`https://github.com/Berry-Mappemonde` (le compte), pas un dépôt.
+
+Formulaire Devpost. Avant le `gh repo create` de Blue Intelligence, le
+dépôt public du formulaire Nebius devient
+`https://github.com/Berry-Mappemonde/NAVIGUIDE`. Le formulaire GenAI,
+s'il cite l'ancienne URL, devient
+`https://github.com/Berry-Mappemonde/Blue-Intelligence-Map` jusqu'au
+premier push du dépôt neuf, puis
+`https://github.com/Berry-Mappemonde/Blue-Intelligence`. Laissé sur
+l'ancienne URL, il bascule sur le dépôt vide à la seconde de la
+création.
+
+Wiki. `has_wiki` est vrai. Les pages, s'il y en a, restent sur
+l'archive : elles ne sont pas dans git. On ne les recopiera pas ici.
+Le fork `dileep53matrix/Blue-Intelligence-Map` reste attaché à
+l'archive. On ne l'extrait pas.
+
+Anciens liens `/pull/N`. Après la création du dépôt neuf, ils ne
+montrent plus l'archive. Les deux citations historiques de la PR #177
+sont réécrites vers l'archive dans le commit NAVIGUIDE de la section
+6.2. Les issues fermées restent sur l'archive.
+
+### 3.4 Créer NAVIGUIDE, transférer deux issues, figer l'archive
+
+`NAVIGUIDE` d'abord. Ce nom ne retire pas la redirection.
 
 ```bash
-gh workflow list --repo Berry-Mappemonde/Blue-Intelligence-Map
+gh repo create Berry-Mappemonde/NAVIGUIDE --public --disable-wiki \
+  --description "NAVIGUIDE — voyage en direct sur naviguide.fr"
+gh issue transfer 432 Berry-Mappemonde/NAVIGUIDE \
+  --repo Berry-Mappemonde/Blue-Intelligence-Map
+gh issue transfer 446 Berry-Mappemonde/NAVIGUIDE \
+  --repo Berry-Mappemonde/Blue-Intelligence-Map
 ```
 
-Pendant cette fenêtre, `github.com/Berry-Mappemonde/Blue-Intelligence`
-redirige encore vers l'archive. La redirection tombe au moment où le
-dépôt neuf prend ce nom (section 5). Le formulaire Devpost
-(`docs/HACKATHON_DEVPOST_SOUMISSION.md`, lignes 23, 128 et 157) et
-l'issue #432 citent cette URL : les mettre à jour le jour de la création
-du dépôt NAVIGUIDE, pas le lendemain.
+Dépôt sans README généré. Pas de secret tant que la section 6 n'est
+pas le commit de tête. Les issues #432 et #446 sont les deux issues
+ouvertes NAVIGUIDE. Après le transfert, leur URL est
+`https://github.com/Berry-Mappemonde/NAVIGUIDE/issues/432` et
+`/issues/446`.
 
-Le wiki GitHub, s'il a des pages, n'est pas dans l'arbre git. Il reste
-sur l'archive. **Non vérifié** ici : s'il contient des pages.
+L'archive passe en lecture seule maintenant. Les clones nus de la
+section 5 lisent cette URL, et un dépôt en lecture seule se clone.
+On ne la supprime pas.
 
-Le fork `dileep53matrix/Blue-Intelligence-Map` reste attaché à l'archive.
-On ne l'extrait pas.
+```bash
+gh repo archive Berry-Mappemonde/Blue-Intelligence-Map --yes
+gh repo view Berry-Mappemonde/Blue-Intelligence-Map --json isArchived,id
+```
+
+`isArchived` vaut `true`. `id` vaut encore `R_kgDORgdNNg` (le même
+dépôt que `1174883638`). Un `git push` vers cette URL doit être refusé.
+La section 9 ne fait pas l'opération inverse.
+
+### 3.5 Créer Blue Intelligence en dernier
+
+Seulement ici. Cette commande retire la redirection.
+
+```bash
+gh repo create Berry-Mappemonde/Blue-Intelligence --public --disable-wiki \
+  --description "Blue Intelligence — mémoire des sources maritimes"
+gh api repos/Berry-Mappemonde/Blue-Intelligence --jq '{name,id}'
+gh api repos/Berry-Mappemonde/Blue-Intelligence-Map --jq '{name,id,archived}'
+```
+
+Le premier `id` ne doit pas être `1174883638`. Le second reste
+`1174883638`. `curl -sI https://github.com/Berry-Mappemonde/Blue-Intelligence`
+ne contient plus `location:` vers `Blue-Intelligence-Map`. Si l'id est
+encore `1174883638`, la création n'a pas eu lieu : on s'arrête, on ne
+pousse pas l'historique filtré.
+
+Les rulesets de l'archive ne sont pas recopiés avant ce premier push.
 
 ## 4. Ce que chaque dépôt garde
 
@@ -844,20 +976,20 @@ Le plus gros blob de toutes les références fait 17,9 Mo
 fichier. Pas de LFS dans cette procédure. Si un push est refusé pour
 taille, s'arrêter : ne pas inventer un passage LFS au milieu.
 
-### 5.1 Créer les dépôts vides
+### 5.1 Les dépôts neufs existent déjà
 
-Les noms de la section 0 sont écrits. Les `git remote -v` des clones
-montrent déjà `Blue-Intelligence-Map`.
+La section 3 les a créés : `NAVIGUIDE` d'abord, `Blue-Intelligence`
+en dernier, après la lecture seule de l'archive. On ne relance pas
+`gh repo create`. Un README généré ferait échouer le premier push.
+Pas de secret tant que la section 6 n'est pas le commit de tête.
 
 ```bash
-gh repo create Berry-Mappemonde/Blue-Intelligence --public --disable-wiki \
-  --description "Blue Intelligence — mémoire des sources maritimes"
-gh repo create Berry-Mappemonde/NAVIGUIDE --public --disable-wiki \
-  --description "NAVIGUIDE — voyage en direct sur naviguide.fr"
+gh api repos/Berry-Mappemonde/Blue-Intelligence --jq .id
+gh api repos/Berry-Mappemonde/Blue-Intelligence-Map --jq .id
 ```
 
-Dépôts **sans** README généré, sinon le premier push est refusé. Ne pas
-y ajouter de secret tant que la section 6 n'est pas le commit de tête.
+Le premier nombre n'est pas `1174883638`. Le second l'est. Si c'est
+l'inverse, on s'arrête : le push partirait vers l'archive.
 
 ### 5.2 Copie Blue Intelligence
 
@@ -1107,8 +1239,9 @@ défaut : un secret `VPS_HOST` vide arrête le job.
   `naviguide` ni `simulator`. On ne réécrit pas ces deux fichiers dans
   le commit 6.6.
 - `infra/agents/gh_token.py`, `open_pr.py`, `post_pr_comment.py`,
-  `review_collect.py` : `BIM_REPO` par défaut
-  `Berry-Mappemonde/Blue-Intelligence`.
+  `review_collect.py` : on ne change pas le défaut
+  `BIM_REPO=Berry-Mappemonde/Blue-Intelligence`. Après la section 3.5,
+  cette chaîne est le dépôt neuf, pas l'archive.
 - `README.md` : le produit est Blue Intelligence. Lien vers le dépôt
   NAVIGUIDE. Tableau préexistant / nouveau pour le jury GenAI : le seul
   paquet nouveau prévu est `backend/app/agent_poe/` (pas encore dans
@@ -1179,14 +1312,66 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
   `climatology_atlas.py`, `main.py`) est déjà l'URL publique. L'exemple
   `simulator.env.example` documente le loopback « même VPS » : le commenter
   comme valable seulement quand l'API est sur la même machine.
-- `infra/agents/gh_token.py`, `open_pr.py`, `post_pr_comment.py`,
-  `review_collect.py`, et `run_lots.py` (`DEFAULT_REPO`) :
-  `Berry-Mappemonde/NAVIGUIDE`. Même dépôt dans les prompts de
-  `review_agent.py`, `plan_corrections.py`, `devpost_answers.py`,
-  `GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md`. Le commit de la
-  section 6.5 range ensuite ces noms dans `infra/agents/repo_paths.py`.
-  Ce commit-ci les écrit encore à leur place actuelle, pour que le
-  dépôt démarre même si 6.5 suit juste après.
+- `DEFAULT_REPO` et `BIM_REPO` : la commande ci-dessous, dans
+  `/tmp/ng-work`, avant le commit 6.5. Elle remplace
+  `Berry-Mappemonde/Blue-Intelligence` par
+  `Berry-Mappemonde/NAVIGUIDE` dans les fichiers qui pilotent le
+  dépôt. `run_lots.py` porte l'URL complète : le même texte la
+  couvre. Les deux liens de la PR #177, dans
+  `docs/archives/`, partent vers l'archive et non vers NAVIGUIDE.
+  Le commit 6.5 range ensuite ces noms dans
+  `infra/agents/repo_paths.py`.
+
+```bash
+cd /tmp/ng-work
+python3 << 'PY'
+from pathlib import Path
+old = "Berry-Mappemonde/Blue-Intelligence"
+new = "Berry-Mappemonde/NAVIGUIDE"
+files = {
+    "infra/agents/gh_token.py": 1,
+    "infra/agents/open_pr.py": 2,
+    "infra/agents/post_pr_comment.py": 1,
+    "infra/agents/review_collect.py": 1,
+    "infra/agents/devpost_answers.py": 1,
+    "infra/agents/plan_corrections.py": 1,
+    "infra/agents/review_agent.py": 1,
+    "infra/agents/GROK_BOT_ROUTINE.md": 1,
+    "infra/agents/GROK_BOT_DEVPOST.md": 1,
+    "infra/agents/run_lots.py": 1,
+    "infra/agents/test_vl_film_review.py": 2,
+    "docs/HACKATHON_DEVPOST_SOUMISSION.md": 3,
+}
+total = 0
+for rel, expected in files.items():
+    path = Path(rel)
+    text = path.read_text()
+    found = text.count(old)
+    if found != expected:
+        raise SystemExit(f"{rel}: {found} occurrence(s), attendu {expected}")
+    path.write_text(text.replace(old, new))
+    total += found
+archive = "Berry-Mappemonde/Blue-Intelligence-Map"
+for rel in (
+    "docs/archives/PLAN_CHANTIERS_STRUCTURANTS_SIMULATEUR.md",
+    "docs/archives/PLAN_IMPLEMENTATION_SKIPPER_VIRTUEL.md",
+):
+    path = Path(rel)
+    text = path.read_text()
+    needle = "https://github.com/Berry-Mappemonde/Blue-Intelligence/pull/"
+    found = text.count(needle)
+    if found != 1:
+        raise SystemExit(f"{rel}: {found} lien(s) /pull/")
+    path.write_text(text.replace(needle, f"https://github.com/{archive}/pull/"))
+print(f"dépôt neuf: {total} remplacements")
+PY
+git add infra/agents docs/HACKATHON_DEVPOST_SOUMISSION.md docs/archives/PLAN_CHANTIERS_STRUCTURANTS_SIMULATEUR.md docs/archives/PLAN_IMPLEMENTATION_SKIPPER_VIRTUEL.md
+git commit -m "chore: pointer NAVIGUIDE vers son dépôt et l'archive vers ses anciennes PR"
+```
+
+Les deux URL de `test_vl_film_review.py` sont des fixtures (`/pull/1`
+et `/pull/999`), pas des PR réelles. Le compte attendu est 16
+remplacements, plus un lien `#177` dans chacun des deux plans.
 - `README.md` et `naviguide-simulator/README.md` : le produit s'appelle
   NAVIGUIDE. Il est en ligne sur `https://naviguide.fr`. Chaque merge
   sur `main` déploie cette version. La première phrase ne dit plus
@@ -1401,11 +1586,11 @@ reste.
 
 Issues ouvertes au 17 octobre 2026, toutes deux NAVIGUIDE : **#432**
 (Devpost, citée par `GROK_BOT_DEVPOST.md`) et **#446** (ouverte par le
-workflow ZAP). Les transférer vers le dépôt NAVIGUIDE (même propriétaire,
-action Transfer d'une issue) ou les recréer, puis corriger l'URL dans
-`GROK_BOT_DEVPOST.md` : l'adresse live est `https://naviguide.fr`.
-Les issues fermées restent sur l'archive. Les textes des PR #510 et
-#227 sont copiés à part (section 6.4).
+workflow ZAP). Le transfert est la commande de la section 3.4, avant
+la lecture seule. Le commit de la section 6.2 réécrit ensuite l'URL
+dans `GROK_BOT_DEVPOST.md`. L'adresse du site, dans ce même fichier,
+est `https://naviguide.fr`. Les issues fermées restent sur l'archive.
+Les textes des PR #510 et #227 sont copiés à part (section 6.4).
 
 ### 6.5 Deux commits dans NAVIGUIDE, après le filtre
 
@@ -2870,7 +3055,8 @@ Juste avant de changer les A, refaire la section 8.1 et 8.2 (arrêt,
 copie a vieilli dès que le simulateur OVH a repris. Cette deuxième
 copie est celle que le DNS doit servir. L'original OVH reste en place.
 
-Liste. Tout est vert avant d'archiver `Blue-Intelligence-Map` :
+Liste. L'archive est déjà en lecture seule depuis la section 3.4.
+Tout est vert avant de considérer la bascule finie :
 
 1. Sur l'OVH, `GET http://127.0.0.1:8001/api/` répond 200.
 2. `https://blueintelligence.online/api/` répond 200.
@@ -2902,13 +3088,12 @@ Liste. Tout est vert avant d'archiver `Blue-Intelligence-Map` :
     répond 200. `BIM_TUNNEL_HOST` sur le Mac vaut
     `recette.naviguide.fr`.
 
-Tant qu'une ligne est rouge, l'archive reste la référence et les
-services OVH restent capables de reprendre le DNS. Quand les dix lignes
-sont vertes, l'archivage GitHub de `Blue-Intelligence-Map` est possible.
-L'arrêter des unités NAVIGUIDE sur l'OVH est un geste séparé, après un
-mot du propriétaire : ce plan ne donne pas la commande. La tâche houle
-de la section 6.4 se fait après ce vert, et elle ne bloque pas
-l'archivage.
+Tant qu'une ligne est rouge, les services OVH restent capables de
+reprendre le DNS. L'archive `Blue-Intelligence-Map` reste en lecture
+seule. On ne la supprime pas et on ne la réouvre pas. L'arrêt des
+unités NAVIGUIDE sur l'OVH est un geste séparé, après un mot du
+propriétaire : ce plan ne donne pas la commande. La tâche houle de la
+section 6.4 se fait après ce vert.
 
 Retour arrière DNS, si une ligne 3, 4 ou 5 est rouge : remettre les A de
 `naviguide.fr` sur `135.125.226.16`. Les données OVH sont encore là.
@@ -2930,6 +3115,7 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Doublons nova | Annulé. On ne touche pas à `Archives/naviguide-nova/`. `PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` restent dans le monodépôt, exclus des deux fichiers de chemins. Rien n'est supprimé. Le README nova n'est pas réécrit. Les copies navsecops vont dans NAVIGUIDE. C'est le traitement d'avant la décision de suppression, sans le renvoi qui aurait modifié le dossier. |
 | PR fermées | Confirmé. #510 (`15e41b4e`) : le plan s7 sous `docs/archives/` de NAVIGUIDE, et les lots RJ1/RJ2 ajoutés à `docs/LOTS_ORDRE_ET_PROMPTS.md`. #227 (`bef9f0f3`) : la notice et l'outil sous `docs/archives/verify-fiche-urls/` de Blue Intelligence. Section 6.4. |
 | Recommandations #553 | Dossier `docs/archives/` (pas `docs/archive/`). Reçus `redites-*.txt` gardés. `FILM_DISCOURS_ETAT_2026-09-28.md` entier dans NAVIGUIDE : le filtre le copie à son chemin, puis la section 6.5 le déplace dans `naviguide-simulator/`. `LOTS_ORDRE_ET_PROMPTS.md` au même chemin. `REGLES_PARAMETRES.md` : original dans Blue Intelligence, copie du principe et des § 3.7 à 3.10 dans NAVIGUIDE. Index et manuels mis à jour après le filtre, dans chaque dépôt. Copie des règles Cursor communes dans chaque dépôt. Renommage de l'archive en `Blue-Intelligence-Map`. |
+| Noms GitHub | Décidés. L'archive est `Berry-Mappemonde/Blue-Intelligence-Map`, lecture seule, jamais supprimée. Les dépôts neufs sont `Berry-Mappemonde/Blue-Intelligence` et `Berry-Mappemonde/NAVIGUIDE`. Ordre : renommer, vérifier, créer NAVIGUIDE, puis créer Blue Intelligence en dernier. Cette dernière création efface la redirection de l'ancien nom. Section 3. |
 | Discours du film et réglages de la boucle | Décidés comme travaux d'après-filtre, pas faits dans cette PR. Deux commits dans la copie NAVIGUIDE (section 6.5), recommandés avant le premier push. Le discours va dans `naviguide-simulator/server/tests/fixtures/`, avec un renvoi dans `docs/`. Les chemins en dur de `infra/agents/` passent dans `infra/agents/repo_paths.py`. |
 | Houle | Le bandeau « swell not shipped » n'est pas retiré au split. Après la bascule, on vérifie la couche à l'écran. On retire la phrase seulement si la houle s'affiche. |
 
@@ -2937,11 +3123,10 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 
 | Sujet | État dans ce plan |
 |---|---|
-| Noms exacts des deux dépôts neufs | **DÉCISION PROPRIÉTAIRE.** Recommandation en section 0. Stop avant `gh repo create` si les lignes sont vides. Le renommage de l'archive en `Blue-Intelligence-Map` est décidé (10.1). |
 | Fusionner les 11 PR ouvertes avant le filtre | **DÉCISION PROPRIÉTAIRE.** Elles restent sur l'archive dans tous les cas. Les fusionner avant le filtre les fait entrer dans le `main` filtré. Les reprendre après demande un rebase, parce que les SHA ont changé. Ce plan ne fusionne rien. La liste du soir est en section 5. #545 est déjà sur `main`. |
 | Pièces jointes des Releases `data-*` | **DÉCISION PROPRIÉTAIRE**, non bloquante. Les tags git vont dans Blue Intelligence. Les fichiers attachés restent sur l'archive. L'API et `backend/data/` suffisent à reconstruire. |
 | Fichiers non commités sur le Mac | **DÉCISION PROPRIÉTAIRE** au vu de `git status --short` (section 2). Non vérifiés ici. |
-| Autres secrets GitHub, rulesets, wiki | **Non vérifié.** `gh secret list` sur l'archive, et un coup d'œil au wiki, avant d'archiver. |
+| Pages du wiki | **Non vérifié.** Le dépôt a le wiki activé. Les pages, s'il y en a, restent sur l'archive. Les secrets, deploy keys, webhooks et rulesets sont mesurés en section 3. |
 | Ancienne valeur de clé dans `.env.example` | **DÉCISION PROPRIÉTAIRE**, non bloquante pour le filtre. Le fichier (retiré le 28 août 2026) n'est recopié dans aucun dépôt neuf. La valeur reste dans l'historique de l'archive. La faire tourner, si elle a servi, est un geste à part : ce plan n'affiche pas la valeur et ne la renouvelle pas. |
 | Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande d'arrêt définitif dans ce plan. Les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. Les fichiers OVH restent jusqu'à un accord explicite, et après : les supprimer n'est pas une étape écrite ici. |
 | Mettre le stock `official-store/` dans Mongo | **DÉCISION PROPRIÉTAIRE.** Aujourd'hui `SIMULATOR_MONGO_URL` est absent et la base n'existe pas. Ce plan copie les fichiers. Y passer demanderait un autre plan, après la copie disque vérifiée. |
@@ -3048,3 +3233,4 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ont un diff exact par dépôt (section 6.6), appliqué tel quel après le filtre. `plan_deploy.py` et `test_prod_jobs_busy.py` ne sont pas réécrits : 31 tests verts. | `git apply --check` sur `6dabfb84` |
 | Le commit NAVIGUIDE 6.7 copie `cycloneTracks.js` et `useClimatologyLayer.js` dans le simulateur. Les quatre assertions de `recetteAg.test.js` restent. `node --test` : 8 tests, 0 échec. | Lecture du test, lignes 96–99 ; exécution du 17 oct. au soir |
 | Le commit Blue Intelligence 6.8 retire `test_naviguide_query_not_painted`. Le commit NAVIGUIDE le place à côté de `climatology_query.py`, assertions gardées. `test_serper_google_style_merged` échoue déjà sur le monodépôt : on n'y touche pas. | `backend/tests/test_climatology.py` ; `test_poe_v2_pipeline.py` ligne 1045 ; consigne du propriétaire |
+| Noms GitHub décidés. Archive `Blue-Intelligence-Map` (id `1174883638`), lecture seule, jamais supprimée. Dépôts neufs `Blue-Intelligence` et `NAVIGUIDE`. Créer le premier efface la redirection : ordre renommer, vérifier, créer NAVIGUIDE, créer Blue Intelligence en dernier. | Décision du propriétaire, 17 oct. au soir ; `gh api` du même soir (secrets `VPS_HOST` et `VPS_SSH_KEY`, aucune deploy key, aucun webhook) |
