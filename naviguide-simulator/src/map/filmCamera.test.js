@@ -7,6 +7,7 @@ import { FILM_BOAT_KEEP_FRAC, FILM_PAN_MAX_SCREEN } from "../engine/replay.js";
 import {
   applyFilmCamera,
   clampFilmPan,
+  clampFilmScreenStep,
   filmApproachZoom,
   filmChapterCenter,
   filmChapterZoom,
@@ -14,7 +15,9 @@ import {
   filmLegIsArchipelago,
   FILM_ARCHIPELAGO_NM,
   FILM_FLIP_HOLD_MS,
+  FILM_INTRA_JUMP_PX,
   FILM_INTERP_DELAY_MS,
+  FILM_SCREEN_STEP_MAX_PX,
   FILM_TILE_SLOW,
   FILM_ZOOM_ARCHIPELAGO_MAX,
   filmPanMaxFrac,
@@ -1136,5 +1139,173 @@ describe("filmCamera lot RC49 — un mouvement au flip, bateau au centre", () =>
       `bateau step (${p.x.toFixed(0)},${p.y.toFixed(0)}) hors 40 %`);
     const views = calls.filter((c) => c.action === "setView").length;
     assert.equal(views, 1);
+  });
+});
+
+describe("filmCamera lot RC56 — pas écran ≤ 30 px hors zoom/flip", () => {
+  function mercatorMap(center = { lat: 46.1541, lng: -1.167 }, zoom = 5) {
+    const size = { x: 1440, y: 860 };
+    let here = { ...center };
+    let z = zoom;
+    const calls = [];
+    function project(lat, lng, zoomLevel = z) {
+      const scale = 256 * (2 ** zoomLevel);
+      const x = ((lng + 180) / 360) * scale;
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale;
+      return { x, y };
+    }
+    const map = {
+      flyTo() { calls.push({ action: "flyTo" }); },
+      setView(c, nextZoom, opts) {
+        calls.push({ action: "setView", center: c, zoom: nextZoom, opts });
+        here = { lat: c[0], lng: c[1] };
+        if (Number.isFinite(Number(nextZoom))) z = Number(nextZoom);
+      },
+      panBy(offset) { calls.push({ action: "panBy", offset }); },
+      _rawPanBy(offset) { calls.push({ action: "panBy", offset }); },
+      getSize() { return size; },
+      getCenter() { return here; },
+      getZoom() { return z; },
+      latLngToContainerPoint(ll) {
+        const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+        const lng = Array.isArray(ll) ? ll[1] : (ll.lng ?? ll.lon);
+        const p = project(lat, lng);
+        const c = project(here.lat, here.lng);
+        return { x: size.x / 2 + (p.x - c.x), y: size.y / 2 + (p.y - c.y) };
+      },
+      containerPointToLatLng(p) {
+        const c = project(here.lat, here.lng);
+        const scale = 256 * (2 ** z);
+        const wx = c.x + (p.x - size.x / 2);
+        const wy = c.y + (p.y - size.y / 2);
+        const lng = (wx / scale) * 360 - 180;
+        const n = Math.PI - ((2 * Math.PI * wy) / scale);
+        const lat = (180 / Math.PI) * Math.atan(Math.sinh(n));
+        return { lat, lng };
+      },
+    };
+    const pxBetween = (a, b) => {
+      const p0 = map.latLngToContainerPoint(a);
+      const p1 = map.latLngToContainerPoint(b);
+      return Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    };
+    return { map, calls, size, pxBetween };
+  }
+
+  it("clampFilmScreenStep refuse un pas de 54 px", () => {
+    const { map, pxBetween } = mercatorMap();
+    const from = [46.1541, -1.167];
+    const to = [46.1541, 1.3];
+    assert.ok(pxBetween(from, to) > 50, "le pas synthétique n'atteint pas 54 px");
+    const limited = clampFilmScreenStep(map, from, to, FILM_SCREEN_STEP_MAX_PX);
+    const step = pxBetween(from, limited);
+    assert.ok(step <= FILM_SCREEN_STEP_MAX_PX + 0.6, `pas ${step.toFixed(1)} px non rejeté`);
+    assert.ok(step > 20, `clamp trop petit ${step.toFixed(1)}`);
+  });
+
+  it("applyFilmCamera : pas synthétique > 30 px rejeté (même chapitre)", () => {
+    const { map, calls, pxBetween } = mercatorMap({ lat: 46.1541, lng: -1.167 }, 5);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 1, lastChapterIdx: null, lat: 46.1541, lon: -1.167,
+      heading: 140, zoom: 5, now: 0,
+    });
+    const target = [46.1541, 1.3];
+    const before = first.lastCenter;
+    assert.ok(pxBetween(before, target) > 50);
+    const next = applyFilmCamera(map, {
+      chapterIdx: 1, lastChapterIdx: first.lastChapterIdx, lat: target[0], lon: target[1],
+      heading: 140, zoom: 5, now: 16,
+      lastSetViewAt: first.lastSetViewAt, flyingUntil: first.flyingUntil,
+      lastCenter: first.lastCenter, lastBoat: { lat: 46.1541, lon: -1.167 },
+      framesSinceReset: first.framesSinceReset, stillAnchor: null,
+      boatPx: 54,
+    });
+    const step = pxBetween(before, next.lastCenter);
+    assert.ok(step <= FILM_SCREEN_STEP_MAX_PX + 0.6, `caméra ${step.toFixed(1)} px`);
+    assert.notEqual(next.action, "flyTo");
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+  });
+
+  it("stepFilmCamera : pose bateau bornée à 30 px hors flip", () => {
+    const { map, pxBetween } = mercatorMap({ lat: 46.1541, lng: -1.167 }, 5);
+    const samples = [];
+    pushFilmSample(samples, {
+      t: 0, lat: 46.1541, lon: -1.167, heading: 140, chapterIdx: 1,
+    });
+    pushFilmSample(samples, {
+      t: 16, lat: 46.1541, lon: 1.3, heading: 140, chapterIdx: 1,
+    });
+    const next = stepFilmCamera(map, {
+      samples,
+      now: 16 + FILM_INTERP_DELAY_MS,
+      lastChapterIdx: 1,
+      zoom: 5,
+      baseZoom: 5,
+      chapterIdx: 1,
+      lastCenter: [46.1541, -1.167],
+      lastBoat: { lat: 46.1541, lon: -1.167 },
+    });
+    const step = pxBetween([46.1541, -1.167], [next.pose.lat, next.pose.lon]);
+    assert.ok(step <= FILM_SCREEN_STEP_MAX_PX + 0.6, `bateau ${step.toFixed(1)} px`);
+    assert.ok(next.boatPx <= FILM_SCREEN_STEP_MAX_PX + 0.6, `boatPx ${next.boatPx}`);
+  });
+
+  it("flip : au plus une action setView, pas un second flyTo", () => {
+    const { map, calls } = mercatorMap({ lat: 41.9192, lng: 8.7386 }, 5);
+    const first = applyFilmCamera(map, {
+      chapterIdx: 4, lastChapterIdx: null, lat: 41.9192, lon: 8.7386,
+      heading: 250, zoom: 5, now: 0,
+    });
+    const views0 = calls.filter((c) => c.action === "setView").length;
+    const flip = applyFilmCamera(map, {
+      chapterIdx: 5, lastChapterIdx: first.lastChapterIdx,
+      lat: 14.6036, lon: -61.0668, heading: 280, zoom: 5, now: 80,
+      lastSetViewAt: first.lastSetViewAt, lastCenter: first.lastCenter,
+      lastBoat: { lat: 41.9192, lon: 8.7386 },
+    });
+    assert.equal(flip.action, "setView");
+    assert.equal(calls.filter((c) => c.action === "setView").length - views0, 1);
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
+    let st = flip;
+    for (let i = 0; i < 8; i++) {
+      st = applyFilmCamera(map, {
+        chapterIdx: 5, lastChapterIdx: st.lastChapterIdx,
+        lat: 14.6036, lon: -61.0668, heading: 280, zoom: 5,
+        now: 96 + i * 16,
+        lastSetViewAt: st.lastSetViewAt, flyingUntil: st.flyingUntil,
+        lastCenter: st.lastCenter, lastBoat: { lat: 14.6036, lon: -61.0668 },
+        framesSinceReset: st.framesSinceReset, stillAnchor: st.stillAnchor,
+      });
+      assert.equal(st.action, "hold");
+    }
+    assert.equal(calls.filter((c) => c.action === "setView").length - views0, 1);
+  });
+
+  it("filmPanMaxFrac ne dépasse plus 30 px même si boatPx = 54", () => {
+    const frac = filmPanMaxFrac(true, { boatPx: 54, sizeX: 1440 });
+    assert.ok(frac * 1440 <= FILM_SCREEN_STEP_MAX_PX + 1e-9, `frac ${frac} → ${(frac * 1440).toFixed(1)} px`);
+    assert.ok(FILM_INTRA_JUMP_PX > 54, "un hitch 54 px ne doit plus être une ancre");
+  });
+
+  it("setView de reset : lastCenter dérivé 200 px → au plus 30 px depuis le centre visuel", () => {
+    const { map, calls, pxBetween } = mercatorMap({ lat: 46.1541, lng: -1.167 }, 5);
+    applyFilmCamera(map, {
+      chapterIdx: 1, lastChapterIdx: null, lat: 46.1541, lon: -1.167,
+      heading: 140, zoom: 5, now: 0,
+    });
+    const visual = [46.1541, -1.167];
+    const drifted = [46.1541, 8.8];
+    assert.ok(pxBetween(visual, drifted) > 150);
+    const reset = applyFilmCamera(map, {
+      chapterIdx: 1, lastChapterIdx: 1, lat: 46.1541, lon: -1.167,
+      heading: 140, zoom: 5, now: 600,
+      lastCenter: drifted, lastBoat: { lat: 46.1541, lon: -1.167 },
+      framesSinceReset: 36, stillAnchor: null, boatPx: 0,
+    });
+    assert.equal(reset.action, "setView");
+    const step = pxBetween(visual, reset.lastCenter);
+    assert.ok(step <= FILM_SCREEN_STEP_MAX_PX + 0.6, `reset ${step.toFixed(1)} px`);
+    assert.equal(calls.filter((c) => c.action === "flyTo").length, 0);
   });
 });
