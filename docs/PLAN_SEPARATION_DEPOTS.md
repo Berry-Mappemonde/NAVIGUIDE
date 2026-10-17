@@ -635,7 +635,7 @@ elle reprend la #553 fichier par fichier (section 4.9).
 | `Archives/Blue-Intelligence/` | Blue Intelligence, en une ligne de dossier. Manuels, extraction, notes VPS. |
 | `Archives/naviguide-navsecops/` | NAVIGUIDE, en une ligne de dossier. Les copies canoniques de `docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` sont ici. |
 | `Archives/naviguide-nova/README.md`, `llm/llm_utils.py`, `orchestrator/graph.py`, `orchestrator/nodes.py` | NAVIGUIDE, quatre lignes exactes. |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` | Aucun des deux dépôts neufs. Mêmes octets que les copies navsecops (3 063 et 8 072). Le propriétaire a décidé de les supprimer (section 5.0) : un commit sur l'archive, avant le clone nu, les retire de la tête et ajoute le renvoi dans `Archives/naviguide-nova/README.md`. L'historique git de l'archive les garde. Cette PR ne les supprime pas. |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md` | Aucun des deux dépôts neufs. Mêmes octets que les copies navsecops (3 063 et 8 072). Ils restent dans le monodépôt. On ne les supprime pas. On ne réécrit aucun fichier de `Archives/naviguide-nova/` : ni ces deux markdown, ni le README, ni le code. La décision de les retirer de la tête est annulée. |
 | `Archives/README.md` | Les deux. Original NAVIGUIDE. La copie Blue Intelligence ne garde que les paragraphes `Archives/Blue-Intelligence/`. |
 
 ### 4.6 `.cursor/`
@@ -720,8 +720,8 @@ fichiers de chemins :
 | Chemin | Raison |
 |---|---|
 | `.gitconfig` | Encore suivi. Identité `emergent-agent-e1`. |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` | Encore suivi aujourd'hui. Doublon de la copie navsecops. La section 5.0 le retire de la tête de l'archive. Tant que ce commit n'est pas fait, le filtre l'exclut déjà. |
-| `Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md` | Encore suivi aujourd'hui. Même traitement, 8 072 octets. |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` | Encore suivi. Doublon de la copie navsecops. La classification #553 le range (e). Il reste dans le monodépôt. Le filtre l'exclut. On ne le supprime pas. |
+| `Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md` | Encore suivi. Même traitement, 8 072 octets. |
 | `.env.example` | Retiré le 28 août 2026. Il contenait une valeur de clé API. La recopier dans un dépôt neuf la republierait. |
 | `memory/test_credentials.md` | Noms de clés et URL locale. Le nom du fichier dit « credentials ». |
 | `.emergent/` | Outillage de l'ancienne plateforme, pas un des deux produits. |
@@ -762,7 +762,7 @@ Ils sont alignés :
 | `docs/ETAT_DES_LIEUX_DOCS.md` | Les deux | Blue Intelligence seul, chemin actuel. |
 | `docs/archives/nvidia-llm-audit.md` et l'ancien chemin `docs/nvidia-llm-audit.md` | Blue Intelligence | NAVIGUIDE. |
 | `infra/vps/ci/README.md` | Les deux, parce que le dossier `infra/vps/ci/` l'emportait | Blue Intelligence seul. Les scripts du même dossier restent dans les deux. |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` | NAVIGUIDE, parce que le dossier entier partait | Aucun des deux dépôts neufs. Les copies canoniques sous `Archives/naviguide-navsecops/docs/` partent dans NAVIGUIDE. La suppression sur l'archive est la section 5.0. |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` | NAVIGUIDE, parce que le dossier entier partait | Aucun des deux dépôts neufs. Les copies canoniques sous `Archives/naviguide-navsecops/docs/` partent dans NAVIGUIDE. Le dossier nova n'est pas modifié. |
 
 `.github/`, `.gitignore`, `.nvmrc` et `.zap/` sont hors de ces 132.
 Leur place est celle des sections 4.1 et 4.7. `docs/check_md_links.py`
@@ -781,8 +781,10 @@ Le 17 octobre au soir, le propriétaire suit les recommandations de la
 #553 qui restaient ouvertes : le dossier d'archive est `docs/archives/`
 (pas un second dossier `docs/archive/`) ; les quatre reçus
 `redites-*.txt` restent ; `docs/FILM_DISCOURS_ETAT_2026-09-28.md` reste
-entier dans NAVIGUIDE, à son chemin ; `docs/LOTS_ORDRE_ET_PROMPTS.md`
-reste à ce chemin ; l'original de `docs/REGLES_PARAMETRES.md` reste
+entier dans NAVIGUIDE. Le filtre le copie à ce chemin. Le commit de la
+section 6.5 le déplace ensuite dans `naviguide-simulator/`.
+`docs/LOTS_ORDRE_ET_PROMPTS.md` reste à ce chemin ; l'original de
+`docs/REGLES_PARAMETRES.md` reste
 dans Blue Intelligence ; l'index et les manuels sont réécrits après le
 filtre, dans chaque dépôt ; chaque dépôt a sa copie des règles Cursor
 communes ; l'archive s'appelle `Blue-Intelligence-Map`. Le déplacement
@@ -820,34 +822,6 @@ Le plus gros blob de toutes les références fait 17,9 Mo
 12,6 Mo. Aucun blob au-dessus de 50 Mo. La limite GitHub est 100 Mo par
 fichier. Pas de LFS dans cette procédure. Si un push est refusé pour
 taille, s'arrêter : ne pas inventer un passage LFS au milieu.
-
-### 5.0 Commit sur l'archive, avant le clone nu
-
-Le renommage de la section 3 est fait. Le clone nu n'est pas encore
-créé. Un seul commit, sur cette archive, retire les deux doublons nova.
-On ne déplace aucun autre document dans ce commit.
-
-Les fichiers ont les mêmes octets que
-`Archives/naviguide-navsecops/docs/PLAN_DEV_NOVA.md` (3 063) et
-`Archives/naviguide-navsecops/docs/SETUP_NOVA_CREDITS.md` (8 072). Les
-copies navsecops restent. L'historique git de l'archive garde les
-doublons : on les retire de la tête, on ne réécrit pas le passé.
-
-```bash
-git rm Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md \
-       Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md
-```
-
-Dans `Archives/naviguide-nova/README.md`, les deux lignes du tableau
-qui citent `docs/PLAN_DEV_NOVA.md` et `docs/SETUP_NOVA_CREDITS.md`
-deviennent un renvoi : ces textes sont dans
-`../naviguide-navsecops/docs/PLAN_DEV_NOVA.md` et
-`../naviguide-navsecops/docs/SETUP_NOVA_CREDITS.md`.
-
-Commit, push sur `main` de `Blue-Intelligence-Map`. Le classeur doit
-encore finir par `non classés : 0`. Les deux chemins ne sont plus dans
-`git ls-files` ; ils restent dans la liste des exclus, donc un trou
-d'historique ne se déclenche pas.
 
 ### 5.1 Créer les dépôts vides
 
@@ -1035,13 +1009,13 @@ monodépôt : seulement dans la copie filtrée, avant le premier push.
 | `infra/vps/README.md` | Blue Intelligence | NAVIGUIDE : le site live est `naviguide.fr` (le voyage, port 8010). `www` et `simulator` sont des `301`. Les unités de l'ancien planificateur sont nommées comme archives, pas comme services à lancer. La restauration Mongo devient un renvoi. Le dossier d'application devient `/home/naviguide/naviguide`. |
 | `Archives/README.md` | NAVIGUIDE | Blue Intelligence : paragraphes de `Archives/Blue-Intelligence/` seulement. |
 
-`Archives/naviguide-nova/README.md` reçoit son renvoi dans le commit
-de la section 5.0, sur l'archive, avant le clone. Le filtre emporte
-cette version. On vérifie que les deux lignes pointent vers
-`Archives/naviguide-navsecops/docs/PLAN_DEV_NOVA.md` et
-`SETUP_NOVA_CREDITS.md`. Si le commit 5.0 a été oublié, on écrit le
-renvoi ici : les deux fichiers ne sont de toute façon pas dans le
-fichier de chemins NAVIGUIDE.
+`Archives/naviguide-nova/README.md` part dans NAVIGUIDE tel qu'il est
+aujourd'hui. Il cite `docs/PLAN_DEV_NOVA.md` et
+`docs/SETUP_NOVA_CREDITS.md` à côté de lui. Ces deux fichiers ne sont
+pas dans le dépôt filtré : ils restent dans le monodépôt. Les mêmes
+textes sont dans `Archives/naviguide-navsecops/docs/`, qui part dans
+NAVIGUIDE. On ne réécrit pas le README nova. La décision de le modifier,
+puis de supprimer les doublons, est annulée.
 
 Chemins codés en dur aujourd'hui : `~/blue-intelligence-map` et
 `/home/ubuntu/blue-intelligence-map`. Cibles :
@@ -1164,7 +1138,10 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
   `review_collect.py`, et `run_lots.py` (`DEFAULT_REPO`) :
   `Berry-Mappemonde/NAVIGUIDE`. Même dépôt dans les prompts de
   `review_agent.py`, `plan_corrections.py`, `devpost_answers.py`,
-  `GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md`.
+  `GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md`. Le commit de la
+  section 6.5 range ensuite ces noms dans `infra/agents/repo_paths.py`.
+  Ce commit-ci les écrit encore à leur place actuelle, pour que le
+  dépôt démarre même si 6.5 suit juste après.
 - `README.md` et `naviguide-simulator/README.md` : le produit s'appelle
   NAVIGUIDE. Il est en ligne sur `https://naviguide.fr`. Chaque merge
   sur `main` déploie cette version. La première phrase ne dit plus
@@ -1174,8 +1151,8 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
   selon le tableau 6.0. `environnement-utilisateur.mdc` gagne la ligne
   Contabo. `modeles-cursor-uniquement.mdc` et
   `reparations-sur-github.mdc` restent entiers.
-- `Archives/naviguide-nova/README.md` : le renvoi vers les copies
-  navsecops, comme en 6.0.
+- `Archives/naviguide-nova/` : aucun fichier de ce dossier n'est
+  réécrit. Les deux doublons markdown ne sont pas dans l'arbre filtré.
 
 `vite.config.js` proxy `/bi` vers le serveur local du simulateur. On
 ne change pas ce proxy : il parle au poste local. On ajoute
@@ -1274,7 +1251,7 @@ jour.
 | `naviguide-simulator/src/utils/adminSecret.test.js` | L'URL d'exemple devient `https://naviguide.fr`. |
 | `naviguide-simulator/scripts/amp-route.py` | `FALLBACK_API` = `https://naviguide.fr`. |
 | `naviguide-simulator/vite.config.js` | `allowedHosts` contient `.naviguide.fr`. |
-| `infra/agents/run_lots.py` | `PROD_URL` = `https://naviguide.fr`. Le commentaire du tunnel dit `recette.naviguide.fr`. |
+| `infra/agents/run_lots.py` | `PROD_URL` = `https://naviguide.fr`. Le commentaire du tunnel dit `recette.naviguide.fr`. La section 6.5 déplace ensuite cette constante dans `infra/agents/repo_paths.py`. |
 | `infra/agents/GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md` | Même hôte de recette. |
 | `docs/MANUEL_UTILISATEUR.md`, `docs/USER_MANUAL.md`, `docs/README.md` | L'adresse live est `https://naviguide.fr`. L'écran s'appelle comme aujourd'hui (Suivre / Tracer). |
 | `docs/HACKATHON_DEVPOST_SOUMISSION.md`, `docs/PLAN_HACKATHON_NEBIUS_NAVIGUIDE.md` | Les liens à coller ou à vérifier pointent vers `https://naviguide.fr`. |
@@ -1328,8 +1305,10 @@ NAVIGUIDE :
 - `docs/PLAN_MIGRATION_ANCIEN_NAVIGUIDE.md`
 - `docs/SPECS_E2E_TRIAGE_2026-09-29.md`
 
-`docs/FILM_DISCOURS_ETAT_2026-09-28.md` reste entier, à son chemin, dans
-NAVIGUIDE. `docs/LOTS_ORDRE_ET_PROMPTS.md` reste à son chemin. Les
+`docs/FILM_DISCOURS_ETAT_2026-09-28.md` traverse le filtre entier, à
+son chemin, dans NAVIGUIDE. Le commit de la section 6.5 le déplace
+dans `naviguide-simulator/` et laisse un renvoi à l'ancien chemin.
+`docs/LOTS_ORDRE_ET_PROMPTS.md` reste à son chemin. Les
 quatre `docs/recette/lot-r13/redites-*.txt` restent. Les règles Cursor
 communes sont déjà dans les deux dépôts (section 6.0).
 
@@ -1382,6 +1361,246 @@ action Transfer d'une issue) ou les recréer, puis corriger l'URL dans
 `GROK_BOT_DEVPOST.md` : l'adresse live est `https://naviguide.fr`.
 Les issues fermées restent sur l'archive. Les textes des PR #510 et
 #227 sont copiés à part (section 6.4).
+
+### 6.5 Deux commits dans NAVIGUIDE, après le filtre
+
+Correction du 17 octobre au soir. Ces deux travaux sont écrits ici.
+Cette PR ne les fait pas : aucun fichier n'est déplacé, aucun script
+n'est réécrit. Ils ne font pas partie du commit de la section 6. Ils
+arrivent après, dans la copie filtrée NAVIGUIDE.
+
+#### Les deux façons
+
+**Façon 1 — une PR préparatoire sur le monodépôt, avant le filtre.**
+On ouvre une PR pendant que l'arbre est encore unique. Elle déplace le
+discours du film et elle ajoute le fichier de réglages. La CI actuelle
+peut tourner avant la séparation.
+
+Cette PR doit être fusionnée sur `main` avant le clone nu. Sinon le
+filtre copie encore les anciens chemins. Le classeur
+(`scripts/check_split_coverage.py`, liste `DOC_NG`) et la section 4 de
+ce plan nomment `docs/FILM_DISCOURS_ETAT_2026-09-28.md`. Un déplacement
+avant le filtre demande de réécrire le classeur, de réécrire la
+section 4, puis de revérifier les 132 documents. Le propriétaire a
+demandé de ne rien déplacer dans cette PR. Les 16 PR ouvertes restent
+une décision à part (section 10.2) : la PR préparatoire en serait une
+de plus à fusionner d'abord.
+
+`naviguide-simulator/server/tests/test_film_discours.py` n'ouvre pas le
+markdown. La transcription est la constante `REVUE_28_SEPT`, collée
+dans le test (lignes 37 à 49). `film_script.py` ne le lit pas non plus :
+les lignes 102 et 5050 sont des commentaires (« gabarit FILM_DISCOURS
+§ 4 »). Une CI verte sur le monodépôt ne voit donc pas un chemin de
+lecture cassé : il n'y a pas de lecture.
+
+**Façon 2 — deux commits dans la copie filtrée NAVIGUIDE.**
+Le filtre copie le discours à `docs/FILM_DISCOURS_ETAT_2026-09-28.md`
+et laisse les chemins en dur dans `infra/agents/`. Le classeur reste
+juste. On lance `--verify ng` sur le résultat du filtre, puis le commit
+de la section 6, puis ces deux commits, puis le premier push.
+
+Un commit faux se corrige dans cette copie. On ne relance pas
+`git filter-repo`.
+
+**Recommandation : la façon 2.** Le discours et la boucle de nuit sont
+le produit NAVIGUIDE. Les faire avant le filtre change la liste de
+chemins que ce plan vient de figer, et demande une fusion que la
+section 10.2 laisse ouverte. Les faire dans `/tmp/ng-work`, après le
+commit de la section 6 et avant le premier push, publie un `main`
+NAVIGUIDE déjà à jour. La façon 1 ne protège pas un test qui ne lit pas
+le fichier.
+
+Même façon 2, autre moment : pousser d'abord le filtre et le commit de
+la section 6, puis ouvrir ces deux commits en PR sur le dépôt
+NAVIGUIDE neuf. À retenir seulement si l'on veut que le premier push
+soit uniquement le filtre plus la section 6. Le moment recommandé reste
+avant ce push : la copie de travail est là, les tests du film tournent
+dessus, et le `main` publié n'a pas une fenêtre avec l'ancien chemin.
+
+Ordre, dans `/tmp/ng-work` :
+
+1. Déplacer le discours du film.
+2. Remplacer les chemins en dur de la boucle par le fichier de réglages.
+
+#### 6.5.1 Déplacer le discours du film
+
+```bash
+mkdir -p naviguide-simulator/server/tests/fixtures
+git mv docs/FILM_DISCOURS_ETAT_2026-09-28.md \
+  naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md
+```
+
+À l'ancien chemin, un court fichier
+`docs/FILM_DISCOURS_ETAT_2026-09-28.md` dit seulement où le texte est
+passé. Un marque-page et un ancien prompt retrouvent le document. Le
+fichier entier, lui, vit à côté du test qui le cite.
+
+Chemins à réécrire dans le même commit. Lecture du 17 octobre 2026 :
+
+- `naviguide-simulator/server/tests/test_film_discours.py`, le
+  commentaire de la ligne 35. Il cite
+  `docs/FILM_DISCOURS_ETAT_2026-09-28.md`. On le fait citer le nouveau
+  chemin. `REVUE_28_SEPT` reste dans le test.
+- `naviguide-simulator/server/film_script.py`, commentaires des
+  lignes 102 et 5050. On y ajoute le nouveau chemin, à côté de
+  « gabarit FILM_DISCOURS § 4 ».
+- `docs/LOTS_ORDRE_ET_PROMPTS.md` : 21 occurrences
+  (`FILM_DISCOURS_ETAT_2026-09-28.md`), lues sur le monodépôt aux
+  lignes 141, 1697, 1720, 1735, 1750, 1765, 1780, 1795, 1810, 1825,
+  1840, 1855, 1885, 1900, 1930, 2161, 2177, 2209, 2232, 2281 et 2331.
+  L'ajout RJ1/RJ2 de la section 6.4 décale les lignes : on cherche la
+  chaîne, on ne se fie pas au numéro. Chacune prend le nouveau chemin.
+  Après le commit, chercher l'ancien chemin dans ce fichier ne doit
+  plus rien trouver.
+- `docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md`. Le `git mv` de
+  la section 6.4 a déjà rangé ce plan. Sa ligne 6 cite
+  `docs/FILM_DISCOURS_ETAT_2026-09-28.md` : elle prend le nouveau
+  chemin. Les mentions « FILM_DISCOURS_ETAT § … » sans chemin restent
+  des renvois de section.
+- Le renvoi laissé dans `docs/` est le seul fichier de `docs/` qui
+  garde l'ancien nom. Il pointe vers
+  `naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md`.
+
+`docs/README.md` ne cite pas ce fichier aujourd'hui. Si le commit de
+la section 6 l'a ajouté à l'index, l'index pointe vers le nouveau
+chemin.
+
+Le classeur n'est pas modifié. Il décrit l'arbre avant ce déplacement.
+`--verify ng` a déjà été lancé sur le résultat du filtre.
+
+Vérification de ce commit, dans la copie filtrée. Le contrôle est le
+`grep` : il ne doit rien afficher.
+
+```bash
+grep -n "docs/FILM_DISCOURS_ETAT_2026-09-28.md" \
+  docs/LOTS_ORDRE_ET_PROMPTS.md \
+  docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md \
+  naviguide-simulator/server/tests/test_film_discours.py \
+  naviguide-simulator/server/film_script.py
+```
+
+Si `naviguide-simulator/server/.venv` existe déjà, lancer aussi le
+test. Un clone filtré tout neuf n'a pas ce dossier : il n'est pas dans
+git. L'absence de pytest n'arrête pas le commit. Le test ne lit pas le
+markdown, il doit passer comme avant le déplacement.
+
+```bash
+naviguide-simulator/server/.venv/bin/python -m pytest \
+  naviguide-simulator/server/tests/test_film_discours.py -q
+```
+
+#### 6.5.2 Un fichier de réglages pour la boucle
+
+Les scripts de `infra/agents/` portent les chemins du monodépôt en dur.
+Blue Intelligence pourra réutiliser la boucle le jour où ces chemins
+vivent dans un seul fichier, avec d'autres valeurs. Ce plan ne copie
+pas `run_lots.py` dans Blue Intelligence. Le fichier de réglages est
+la condition de cette copie, plus tard (section 10.2).
+
+Fichier : `infra/agents/repo_paths.py`. Un module Python, bibliothèque
+standard seulement : `run_lots.py` n'ajoute pas de dépendance. Les
+scripts l'importent. Les prompts sont construits avec ces noms. La
+même chaîne n'est pas recopiée dans le texte du prompt.
+
+Un `infra/agents/paths.toml` lu seulement par ce module revient au
+même. On ne tient pas la liste à la fois dans le toml et dans des
+constantes à côté. Le module est le fichier de réglages.
+
+Les valeurs NAVIGUIDE sont celles d'après la section 6 : dépôt
+`Berry-Mappemonde/NAVIGUIDE`, site `https://naviguide.fr`. Le commit
+6.5 les retire de leur place actuelle et les met dans le module.
+
+Chemins et adresses à couvrir. Lecture des scripts le 17 octobre 2026.
+
+Dépôt, site, branche :
+
+| Nom aujourd'hui | Valeur lue | Fichiers |
+|---|---|---|
+| `DEFAULT_REPO` | `https://github.com/Berry-Mappemonde/Blue-Intelligence` | `run_lots.py` (ligne 69). `loop.py`, `plan_corrections.py`, `review_agent.py`, `vl_film_review.py`, `devpost_answers.py`, `watchdog.py` passent par ce nom. |
+| `BIM_REPO`, défaut | `Berry-Mappemonde/Blue-Intelligence` | `gh_token.py`, `open_pr.py`, `post_pr_comment.py`, `review_collect.py`. L'environnement peut encore écraser le défaut. |
+| `PROD_URL` | `https://simulator.naviguide.fr` (la section 6 l'a déjà mise à `https://naviguide.fr`) | `run_lots.py` (ligne 1049). |
+| `RECETTE_BRANCH` | `recette` | `run_lots.py` (ligne 1266). |
+| Hôte du tunnel, dans les commentaires | `recette.blueintelligence.online` | `run_lots.py` (docstring vers les lignes 1198 et 1204). `GROK_BOT_ROUTINE.md`, `GROK_BOT_DEVPOST.md`. La section 6 les réécrit déjà en `recette.naviguide.fr`. Le module porte la valeur ; les commentaires citent le module. |
+
+Documents que le code ouvre ou que les prompts disent de lire :
+
+| Chemin | Où il est écrit en dur |
+|---|---|
+| `docs/LOTS_ORDRE_ET_PROMPTS.md` | `run_lots.py` `PROMPTS_MD` (ligne 59). `plan_corrections.py` `FIXED_DOCS` (ligne 70) et les prompts (lignes 10, 13, 208, 235, 272, 276). `review_agent.py` (lignes 129, 130, 203). `loop.py` lit `rl.PROMPTS_MD`, sans second chemin. |
+| `docs/REGLES_WORKFLOW_AGENT.md` | `FIXED_DOCS`. Prompts de `plan_corrections.py` (207, 276), `review_agent.py` (129, 203), `run_lots.py` (643–644). |
+| `docs/PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md` | `FIXED_DOCS`. Prompt `plan_corrections.py` ligne 211. |
+| `docs/PLAN_CORRECTIONS_{date}*.md` | `plan_corrections.py` `previous_plans` (glob sous `docs/`). |
+| `docs/PLAN_CORRECTIONS_{tag}.md` | Sortie demandée par les prompts de `plan_corrections.py`, et attribut `plan=` des balises `<!-- LOT -->`. |
+| Branche `docs/plan-corrections-{tag}` | `plan_corrections.py` (checkout, push, recherche de la PR). |
+| `docs/PLAN_*.md` | Phrase du prompt `run_lots.py` (ligne 643) : « le plan ». |
+| `docs/WORKFLOW_INDUSTRIEL.md` | Prompt `review_agent.py` ligne 129. |
+| `docs/recette/` | Captures. `run_lots.py` (lignes 653, 1756–1759). `review_collect.py` `CAPTURE_RE` (ligne 101) et le filtre de ligne 199. `open_pr.py` ligne 61. `review_agent.py` : `git diff` avec `:!docs/recette` (ligne 153). |
+| `docs/HACKATHON_DEVPOST_SOUMISSION.md` | `devpost_answers.py` `SUBMISSION_DOC` (ligne 38) et le prompt ligne 114. |
+| `README.md` | Prompt `devpost_answers.py` ligne 114. |
+| `docs/ESPRIT_DE_L_APPLICATION.md` | Même prompt. |
+| `docs/PLAN_DEUX_MODES_2026-09-29.md` | Même prompt. |
+| `infra/vps/README.md` | Même prompt, section « politique LLM ». |
+| `docs/DEVPOST_REPONSES_{date}.md` | Sortie demandée par `devpost_answers.py` (ligne 133). |
+| Branche `docs/devpost-reponses-{date}` | Même script, ligne 135. |
+| `infra/agents/PARCOURS_DE_REFERENCE.md` | `run_lots.py` `PARCOURS_MD` (ligne 1264) et le commentaire de PR ligne 1489. |
+
+Arbre du produit :
+
+| Chemin | Où |
+|---|---|
+| `naviguide-simulator/` | Racine de travail. `run_lots.py` (553, 1563, 1647, 1811, 1850). `review_agent.py` (127, 203). `vl_film_review.py` (ligne 302 : `parents[2] / "naviguide-simulator"`). |
+| `naviguide-simulator/ensure-dev.sh` | `run_lots.py` ligne 1567. Prompts `review_agent.py` ligne 127 et `run_lots.py` lignes 1811 et 1850. |
+| `naviguide-simulator/server/.env` | Copie vers le worktree, `run_lots.py` lignes 571–573. |
+| `naviguide-simulator/node_modules`, `naviguide-simulator/.venv` | Liens de worktree, `run_lots.py` lignes 555 et 1879. |
+| `frontend/node_modules` et `node_modules` à la racine | Même liste, ligne 555. |
+| `naviguide-simulator/.gitignore` | Commentaire `run_lots.py` ligne 591. |
+| `NPM_PROJECTS` = `naviguide-simulator`, `frontend` | `run_lots.py` ligne 1918. Chacun : `package-lock.json` et `node_modules`. |
+| `PIP_PROJECT` = `naviguide-simulator`, `server/requirements.txt`, `.venv/bin/python` | `run_lots.py` ligne 1919. |
+| `naviguide-simulator/src/App.jsx`, `src/components`, `src/map` | `review_agent.py` ligne 56, `git diff` du plancher `main`. |
+| `naviguide-simulator/e2e/lots/*.spec.js` | `run_lots.py` ligne 1609, et les prompts lignes 647–650 et 925 (`e2e/lots/<lot>.spec.js`). |
+| `naviguide-simulator/scripts/film-cinematique.mjs` | `vl_film_review.py` ligne 303. |
+| Préfixes de `devpost_code_share.py` `area()` | `naviguide-simulator/`, `backend/`, `frontend/`, `infra/`, `.github/`, `scripts/`, et l'exclusion `Archives/` (lignes 29 et 37–44). |
+| Caches liés au poste | `run_lots.py` `SHARED_CACHE_DIRS` (ligne 581) : `voyage_data`, `forecast_cache`, `grib_data`, sous le serveur du simulateur. `VOYAGE_DATA_FILES` (ligne 582) : `eez_vliz_v12.geojson`, `ici_thin_cache.json`, `official_journal`, `voyage_{id}.json`. L'id `berry-mappemonde-2026-officiel` (ligne 578) va dans le même module : ce n'est pas un chemin, c'est l'identité du voyage que ces fichiers nomment. |
+
+Hors du fichier de réglages. Ce sont des fichiers d'exécution, à côté
+des scripts, ou des chemins de machine déjà remplaçables par une
+variable :
+
+- `infra/agents/state.json`, `state.*.json`, `queue.md`,
+  `loop-state.json`, `watchdog-state.json`, `loop.log`, `run_lots.log`
+- `infra/agents/COUTS.md`, `RECETTE_DU_BATCH.md`, `REVUE_GLOBALE.md`,
+  `RAPPORT_DE_NUIT.md`, `review-<date>.json`, `tunnel.pid`,
+  `tunnel.url`, `tunnel.log`, `watchdog.pid`
+- `infra/agents/batch-resume.sh` : cité par `loop.py` et `run_lots.py`,
+  absent du dépôt. On ne l'invente pas dans le module.
+- `~/.config/naviguide/simulator.env` (`NAVIGUIDE_ENV_FILE`),
+  `~/bim-lots` (`BIM_LOTS_DIR`), `BIM_STATE_DIR`,
+  `/tmp/film-cinematique.png`
+- Les lignes d'usage `python3 infra/agents/run_lots.py` (et les autres
+  scripts du même dossier). C'est l'emplacement de l'outil. Il reste
+  `infra/agents/` dans les deux dépôts le jour où on copie la boucle.
+
+`GROK_BOT_ROUTINE.md` et `GROK_BOT_DEVPOST.md` sont des textes lus par
+une personne. Ils n'importent pas le module. La section 6 y réécrit
+déjà l'hôte de recette et le nom du dépôt. Le commit 6.5 ajoute en tête
+de chacun une ligne : les chemins exécutables sont dans
+`infra/agents/repo_paths.py`.
+
+Vérification de ce commit :
+
+```bash
+python3 -c "import ast, pathlib; ast.parse(pathlib.Path('infra/agents/repo_paths.py').read_text())"
+python3 infra/agents/run_lots.py --dry-run --only C1
+grep -nE "LOTS_ORDRE_ET_PROMPTS|REGLES_WORKFLOW_AGENT|Berry-Mappemonde/Blue-Intelligence|simulator.naviguide.fr" \
+  infra/agents/*.py | grep -v "repo_paths.py:"
+```
+
+Le `grep` ne doit plus trouver ces chaînes dans les scripts. Elles
+vivent dans `repo_paths.py`. `--dry-run` doit encore lister le lot,
+lu via le module. Si `--only C1` n'existe plus dans le fichier de lots
+filtré, prendre le premier id que `--dry-run` affiche sans `--only`,
+et relancer avec cet id. Un échec de réseau ou de clé API n'est pas un
+échec de ce commit : `--dry-run` ne lance pas d'agent.
 
 ### 6.3 Secrets GitHub, après ce commit
 
@@ -1755,9 +1974,10 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Nom public | Le simulateur est déployé sur `naviguide.fr` (Contabo) et s'appelle NAVIGUIDE. `www.naviguide.fr` et `simulator.naviguide.fr` répondent `301` vers `https://naviguide.fr`. L'ancien planificateur (`naviguide/`, `csw6hpki.run.complete.dev`) passe sous `Archives/naviguide-planificateur/` dans le dépôt filtré. Étapes DNS, nginx, TLS, CI et URL : section 6.4 et section 9. |
 | CI | Chaque merge sur `main` déploie la dernière version en live. Le README du produit le dit, et ne dit plus « hors production ». |
 | `docs/WORKFLOW_INDUSTRIEL.md` | Reste vivant. Le calendrier de la section 4 devient une ligne `à dater par le propriétaire`. Aucune date n'est inventée. |
-| Doublons nova | `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` sont supprimés de la tête de l'archive (section 5.0), avec un renvoi dans le README nova vers `Archives/naviguide-navsecops/docs/`. L'historique git les garde. Cette PR ne les supprime pas. |
-| PR fermées | #510 (`15e41b4e`) : le plan s7 sous `docs/archives/` de NAVIGUIDE, et les lots RJ1/RJ2 ajoutés à `docs/LOTS_ORDRE_ET_PROMPTS.md`. #227 (`bef9f0f3`) : la notice et l'outil sous `docs/archives/verify-fiche-urls/` de Blue Intelligence. Section 6.4. |
-| Recommandations #553 | Dossier `docs/archives/` (pas `docs/archive/`). Reçus `redites-*.txt` gardés. `FILM_DISCOURS_ETAT_2026-09-28.md` entier dans NAVIGUIDE. `LOTS_ORDRE_ET_PROMPTS.md` au même chemin. `REGLES_PARAMETRES.md` : original dans Blue Intelligence, copie du principe et des § 3.7 à 3.10 dans NAVIGUIDE. Index et manuels mis à jour après le filtre, dans chaque dépôt. Copie des règles Cursor communes dans chaque dépôt. Renommage de l'archive en `Blue-Intelligence-Map`. |
+| Doublons nova | Annulé. On ne touche pas à `Archives/naviguide-nova/`. `PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` restent dans le monodépôt, exclus des deux fichiers de chemins. Rien n'est supprimé. Le README nova n'est pas réécrit. Les copies navsecops vont dans NAVIGUIDE. C'est le traitement d'avant la décision de suppression, sans le renvoi qui aurait modifié le dossier. |
+| PR fermées | Confirmé. #510 (`15e41b4e`) : le plan s7 sous `docs/archives/` de NAVIGUIDE, et les lots RJ1/RJ2 ajoutés à `docs/LOTS_ORDRE_ET_PROMPTS.md`. #227 (`bef9f0f3`) : la notice et l'outil sous `docs/archives/verify-fiche-urls/` de Blue Intelligence. Section 6.4. |
+| Recommandations #553 | Dossier `docs/archives/` (pas `docs/archive/`). Reçus `redites-*.txt` gardés. `FILM_DISCOURS_ETAT_2026-09-28.md` entier dans NAVIGUIDE : le filtre le copie à son chemin, puis la section 6.5 le déplace dans `naviguide-simulator/`. `LOTS_ORDRE_ET_PROMPTS.md` au même chemin. `REGLES_PARAMETRES.md` : original dans Blue Intelligence, copie du principe et des § 3.7 à 3.10 dans NAVIGUIDE. Index et manuels mis à jour après le filtre, dans chaque dépôt. Copie des règles Cursor communes dans chaque dépôt. Renommage de l'archive en `Blue-Intelligence-Map`. |
+| Discours du film et réglages de la boucle | Décidés comme travaux d'après-filtre, pas faits dans cette PR. Deux commits dans la copie NAVIGUIDE (section 6.5), recommandés avant le premier push. Le discours va dans `naviguide-simulator/server/tests/fixtures/`, avec un renvoi dans `docs/`. Les chemins en dur de `infra/agents/` passent dans `infra/agents/repo_paths.py`. |
 | Houle | Le bandeau « swell not shipped » n'est pas retiré au split. Après la bascule, on vérifie la couche à l'écran. On retire la phrase seulement si la houle s'affiche. |
 
 ### 10.2 Qui restent ouvertes
@@ -1773,15 +1993,16 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande d'arrêt définitif dans ce plan. Les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. Les fichiers OVH restent jusqu'à un accord explicite, et après : les supprimer n'est pas une étape écrite ici. |
 | Mettre le stock `official-store/` dans Mongo | **DÉCISION PROPRIÉTAIRE.** Aujourd'hui `SIMULATOR_MONGO_URL` est absent et la base n'existe pas. Ce plan copie les fichiers. Y passer demanderait un autre plan, après la copie disque vérifiée. |
 | Pytest backend dans la CI Blue Intelligence | Reporté au commit d'après le tri hermétique. Pas un bloquant du 27 octobre. |
-| Profil « lots de nuit » pour Blue Intelligence | Plus tard. `run_lots.py` n'est pas dans ce dépôt. Les quatre scripts GitHub génériques y sont, avec `BIM_REPO` à changer. |
+| Profil « lots de nuit » pour Blue Intelligence | Plus tard. `run_lots.py` n'est pas dans ce dépôt au moment du filtre. La section 6.5 prépare le fichier de réglages qui rend la copie possible. Les quatre scripts GitHub génériques y sont déjà. |
 
 Tranché dans ce plan, pour qu'un exécutant n'ait pas à choisir en cours
 de route : découpage de `infra/`, `docs/`, `.cursor/`, `Archives/`,
 `.github/` ; les 132 documents de la PR #553, fichier par fichier
 (section 4.9), sans les déplacer ; les 12 communs copiés en entier
 puis raccourcis au premier commit (section 6.0) ; les deux doublons
-nova retirés de la tête de l'archive avant le clone (section 5.0) et
-absents des dépôts neufs ; le produit public sur `naviguide.fr` avec
+nova absents des deux dépôts neufs et encore présents dans le
+monodépôt, dossier `Archives/naviguide-nova/` non modifié ; le produit
+public sur `naviguide.fr` avec
 `301` depuis `www` et `simulator` ; l'ancien planificateur sous
 `Archives/naviguide-planificateur/` après le filtre ; dossiers purs
 en une ligne `dossier/` et dossiers mixtes
@@ -1855,14 +2076,17 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | `docs/ETAT_DES_LIEUX_DOCS.md` et `docs/PRD.md` restent dans Blue Intelligence, à leur chemin actuel. | #553 §3 et §11 |
 | `docs/archives/nvidia-llm-audit.md` et l'ancien chemin `docs/nvidia-llm-audit.md` vont dans NAVIGUIDE. | #553 §4 |
 | `infra/vps/ci/README.md` va dans Blue Intelligence seul. Les scripts de `infra/vps/ci/` restent dans les deux. | #553 §7 |
-| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` ne vont dans aucun dépôt neuf. Les copies navsecops vont dans NAVIGUIDE. Le README nova du dépôt filtré pointe vers elles. | #553 §10 et §12 |
+| `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md` et `SETUP_NOVA_CREDITS.md` ne vont dans aucun dépôt neuf. Les copies navsecops vont dans NAVIGUIDE. Le dossier nova n'est pas réécrit. | #553 §10 et §12 ; correction du propriétaire, 17 oct. au soir |
 | `.github/`, `.gitignore`, `.nvmrc`, `.zap/` restent au découpage des sections 4.1 et 4.7. Ils sont hors des 132. | #553 §11 ; arbre |
 | Le produit public est NAVIGUIDE sur `https://naviguide.fr`. `www` et `simulator` répondent `301` vers cette adresse. Certificat Contabo pour les trois noms. L'apex n'est pas mis derrière Cloudflare. | Décisions du propriétaire, 17 oct. 2026 au soir ; `nginx-naviguide.conf` ; `nginx-simulator.conf` |
 | L'ancien planificateur (`naviguide/`) est filtré vers NAVIGUIDE puis déplacé sous `Archives/naviguide-planificateur/` avant le premier push. Ses trois unités systemd ne sont pas installées. `naviguide.env` reste dans la sauvegarde. | Décisions du 17 oct. au soir ; `naviguide-api.service` |
 | Chaque merge sur `main` déploie le site live. Le README ne dit plus « hors production ». La branche `recette` ne déploie plus le VPS. | Décisions du 17 oct. au soir ; `deploy.yml` ; `naviguide-simulator/README.md` |
 | Le poste de recette passe de `recette.blueintelligence.online` à `recette.naviguide.fr` (tunnel Cloudflare du Mac, CNAME OVH vers `cfargotunnel.com`). | Décisions du 17 oct. au soir ; `GROK_BOT_ROUTINE.md` ; `vite.config.js` |
 | `docs/WORKFLOW_INDUSTRIEL.md` reste vivant. Son calendrier devient la ligne `à dater par le propriétaire`. | Décisions du 17 oct. au soir ; #553 décision 8 |
-| Les deux doublons nova sont retirés de la tête de l'archive avant le clone nu, avec le renvoi dans le README nova. | Décisions du 17 oct. au soir ; #553 §12 |
-| #510 (`15e41b4e`) est copiée dans NAVIGUIDE : plan sous `docs/archives/`, lots RJ1/RJ2 ajoutés au fichier `LOTS` vivant. #227 (`bef9f0f3`) est copiée dans Blue Intelligence sous `docs/archives/verify-fiche-urls/`. Pas de cherry-pick : les SHA d'origine restent sur l'archive. | Décisions du 17 oct. au soir ; `git diff-tree` de ces deux commits |
-| Les 19 documents (d) encore à la racine de `docs/` sont déplacés vers `docs/archives/` dans le dépôt filtré, avant le premier push. Les reçus `redites`, `FILM_DISCOURS` et `LOTS_ORDRE_ET_PROMPTS.md` restent à leur chemin. | Décisions du 17 oct. au soir ; #553 §11 |
+| La suppression des deux doublons nova est annulée. Ils restent dans le monodépôt, exclus des deux fichiers de chemins. `Archives/naviguide-nova/` n'est ni vidé ni réécrit. | Correction du propriétaire, 17 oct. au soir ; retour au traitement du commit `7a859ed8`, sans le renvoi de README |
+| #510 (`15e41b4e`) est copiée dans NAVIGUIDE : plan sous `docs/archives/`, lots RJ1/RJ2 ajoutés au fichier `LOTS` vivant. #227 (`bef9f0f3`) est copiée dans Blue Intelligence sous `docs/archives/verify-fiche-urls/`. Pas de cherry-pick : les SHA d'origine restent sur l'archive. Confirmé de nouveau le même soir. | Décisions du 17 oct. au soir ; `git diff-tree` de ces deux commits |
+| Les 19 documents (d) encore à la racine de `docs/` sont déplacés vers `docs/archives/` dans le dépôt filtré, avant le premier push. Les reçus `redites` et `LOTS_ORDRE_ET_PROMPTS.md` restent à leur chemin. `FILM_DISCOURS` traverse le filtre à son chemin, puis la section 6.5 le déplace. | Décisions du 17 oct. au soir ; #553 §11 ; correction du même soir |
+| Le discours du film est déplacé, après le filtre, vers `naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md`. Un renvoi reste dans `docs/`. Les 21 citations de `docs/LOTS_ORDRE_ET_PROMPTS.md`, le plan film, le commentaire du test et les deux commentaires de `film_script.py` suivent le nouveau chemin. Le test ne lit pas le fichier (`REVUE_28_SEPT` est une constante). | Correction du propriétaire, 17 oct. au soir ; `test_film_discours.py` ligne 35 ; `film_script.py` lignes 102 et 5050 |
+| Les chemins en dur de la boucle (`FIXED_DOCS`, `PROMPTS_MD`, `DEFAULT_REPO`, `PROD_URL`, arbre `naviguide-simulator/`, `docs/recette/`, documents Devpost, et la liste de la section 6.5.2) passent dans `infra/agents/repo_paths.py`. Les fichiers d'exécution (`state.json`, `queue.md`, `COUTS.md`, …) restent à côté des scripts. | Correction du propriétaire, 17 oct. au soir ; lecture de `infra/agents/*.py` |
+| Ces deux travaux se font en deux commits dans la copie filtrée NAVIGUIDE, après la section 6 et avant le premier push. Une PR préparatoire sur le monodépôt est décrite, puis écartée : elle demanderait une fusion avant le filtre et une réécriture du classeur. | Correction du propriétaire, 17 oct. au soir |
 | La phrase « swell not shipped » reste. La vérifier à l'écran après la bascule, avant de la retirer. | Décisions du 17 oct. au soir ; bandeau de `docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` |
