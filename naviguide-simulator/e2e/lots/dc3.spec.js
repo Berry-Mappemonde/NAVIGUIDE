@@ -2,8 +2,9 @@
 // pas empilés au 2:30. Satellite sans légende jouable : silence.
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions film — barre, Suivre et Revoir restent.
-// Avec API : le 2:30 n'a pas les familles DC3, ≤ 2250 ; l'intégral au plus
-// une phrase par famille là où le stock répond, pas de phrase satellite inventée.
+// Avec API : le 2:30 a 0 hit famille ; l'intégral compte par chapitre
+// (une phrase par famille et par longue jambe), pas sur le blob entier ;
+// 0 phrase satellite inventée. ≤ 2250 si film_script_rev est dc3/ed1/vs1.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,7 +56,37 @@ function familyHits(blob) {
   };
 }
 
-test("lot DC3 — 2:30 sans familles carte, intégral au plus une fois, ≤ 2250", async ({ page }) => {
+function chapterWhere(ch, i) {
+  const from = ch?.fromName || "?";
+  const to = ch?.toName || "?";
+  return `chapitre ${i} ${from} → ${to}`;
+}
+
+function assertZeroFamilyHits(hits, where) {
+  expect(hits.aton, `${where} : 0 balise`).toBe(0);
+  expect(hits.cable, `${where} : 0 câble`).toBe(0);
+  expect(hits.depth, `${where} : 0 profondeur`).toBe(0);
+  expect(hits.piracy, `${where} : 0 piraterie`).toBe(0);
+  expect(hits.satInvented, `${where} : pas de phrase satellite inventée`).toBe(0);
+}
+
+function assertAtMostOnePerFamilyOnChapters(chapters, label) {
+  const list = chapters || [];
+  const blob = list.map((c) => c.text || "").join(" ");
+  expect(familyHits(blob).satInvented, `${label} : pas de phrase satellite inventée`).toBe(0);
+  for (let i = 0; i < list.length; i += 1) {
+    const ch = list[i];
+    const hits = familyHits(ch?.text || "");
+    const where = `${label} ${chapterWhere(ch, i)}`;
+    expect(hits.aton, `${where} : au plus une balise`).toBeLessThanOrEqual(1);
+    expect(hits.cable, `${where} : au plus un câble`).toBeLessThanOrEqual(1);
+    expect(hits.depth, `${where} : au plus une profondeur`).toBeLessThanOrEqual(1);
+    expect(hits.piracy, `${where} : au plus une piraterie`).toBeLessThanOrEqual(1);
+    expect(hits.satInvented, `${where} : pas de phrase satellite inventée`).toBe(0);
+  }
+}
+
+test("lot DC3 — 2:30 sans familles carte, intégral une fois par chapitre, ≤ 2250", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
@@ -100,15 +131,7 @@ test("lot DC3 — 2:30 sans familles carte, intégral au plus une fois, ≤ 2250
     return;
   }
 
-  expect(hits150.aton, "pas de balise empilée dans le 2:30").toBeLessThanOrEqual(1);
-  expect(hits150.cable, "pas de câble empilé dans le 2:30").toBeLessThanOrEqual(1);
-  expect(hits150.depth, "pas de profondeur empilée dans le 2:30").toBeLessThanOrEqual(1);
-  expect(hits150.piracy, "pas de piraterie empilée dans le 2:30").toBeLessThanOrEqual(1);
-  expect(hits150.satInvented, "pas de phrase satellite inventée dans le 2:30").toBe(0);
-  expect(
-    hits150.aton + hits150.cable + hits150.depth + hits150.piracy,
-    "pas les quatre familles DC3 empilées",
-  ).toBeLessThan(4);
+  assertZeroFamilyHits(hits150, "2:30");
   expect(chars / 15, "2:30 tient dans 150 s + 10 % à 15 car./s").toBeLessThanOrEqual(150 * 1.1);
   const rev = String(film150.film_script_rev || "");
   if (rev === "dc3" || rev === "ed1" || rev === "vs1") {
@@ -123,24 +146,7 @@ test("lot DC3 — 2:30 sans familles carte, intégral au plus une fois, ≤ 2250
   const film0 = await page.request.get("/voyage/official/film?lang=fr&seconds=0", { timeout: 12_000 })
     .then((r) => (r.ok() ? r.json() : null))
     .catch(() => null);
-  const blob0 = (film0?.chapters || []).map((c) => c.text || "").join(" ");
-  const hits0 = familyHits(blob0);
-  expect(hits0.aton, "intégral : au plus une balise").toBeLessThanOrEqual(1);
-  expect(hits0.cable, "intégral : au plus un câble").toBeLessThanOrEqual(1);
-  expect(hits0.depth, "intégral : au plus une profondeur").toBeLessThanOrEqual(1);
-  expect(hits0.piracy, "intégral : au plus une piraterie").toBeLessThanOrEqual(1);
-  expect(hits0.satInvented, "intégral : pas de phrase satellite inventée").toBe(0);
-
-  const pill150 = page.getByTestId("film-duration").locator("[data-seconds='150']");
-  if (await pill150.isVisible().catch(() => false)) {
-    if (await pill150.getAttribute("aria-pressed") === "true") {
-      await pill150.click();
-    } else {
-      await pill150.click();
-      await expect(pill150).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
-      await pill150.click();
-    }
-  }
+  assertAtMostOnePerFamilyOnChapters(film0?.chapters || [], "intégral");
 
   if (await start.isEnabled().catch(() => false)) {
     await muteVoice(page);
@@ -149,6 +155,15 @@ test("lot DC3 — 2:30 sans familles carte, intégral au plus une fois, ≤ 2250
       const f = window.__naviguideFilm;
       return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
     }, null, { timeout: 8_000 }).catch(() => null);
+  }
+
+  const pill150 = page.getByTestId("film-duration").locator("[data-seconds='150']");
+  if (await pill150.isVisible().catch(() => false)) {
+    if (await pill150.getAttribute("aria-pressed") !== "true") {
+      await pill150.click();
+      await expect(pill150).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+    }
+    await pill150.click();
   }
   await shot(page, "01-integral");
 });
