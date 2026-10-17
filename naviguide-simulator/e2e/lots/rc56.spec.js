@@ -1,7 +1,11 @@
 // Lot RC56 — pendant Revoir, le bateau glisse (pas écran ≤ 30 px hors
-// zoom / changement de chapterIdx). Sans API : GET /voyage/official sondé ;
-// s'il manque, annotation + saut des assertions de glisse — barre et Revoir
-// gardés. Aucune donnée factice : on lit le poste tel quel.
+// zoom / changement de chapitre / resize du conteneur carte).
+// Le pas est mesuré dans le cadre de la carte (pas la fenêtre : un panneau
+// qui s'ouvre n'est pas un bond du bateau). Le chapitre qui compte pour le
+// saut caméra est `camera.filmChapterIdx` : React publie `__naviguideFilm`
+// un cran trop tôt, le `setView` du flip arrive à chapterIdx déjà nouveau.
+// Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut
+// des assertions de glisse — barre et Revoir gardés. Aucune donnée factice.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,20 +91,45 @@ test("lot RC56 — Revoir 2:30, le bateau glisse sans bond", async ({ page }) =>
     if (!map) return { ok: false };
     const out = [];
     const t0 = performance.now();
+    let prevT = t0;
     await new Promise((resolve) => {
       const tick = (now) => {
         const f = window.__naviguideFilm || {};
-        const boat = document.querySelector(".catamaran-divicon--live");
+        const scene = window.__naviguideScene;
+        const box = map.getContainer?.()?.getBoundingClientRect?.();
         let bx = null;
         let by = null;
-        if (boat) {
-          const r = boat.getBoundingClientRect();
-          bx = r.left + r.width / 2;
-          by = r.top + r.height / 2;
+        if (box) {
+          let best = null;
+          let bestIn = Infinity;
+          for (const el of document.querySelectorAll(".catamaran-divicon--live")) {
+            const r = el.getBoundingClientRect();
+            if (!r.width || !r.height) continue;
+            const x = (r.left + r.width / 2) - box.left;
+            const y = (r.top + r.height / 2) - box.top;
+            const inside = x >= 0 && y >= 0 && x <= box.width && y <= box.height;
+            const d = Math.hypot(x - box.width / 2, y - box.height / 2);
+            if (inside && d < bestIn) {
+              bestIn = d;
+              best = { x, y };
+            }
+          }
+          if (best) {
+            bx = best.x;
+            by = best.y;
+          }
         }
+        const camCh = scene?.camera?.filmChapterIdx;
+        const filmCh = f.chapterIdx;
         out.push({
-          bx, by, zoom: map.getZoom(), ch: f.chapterIdx ?? null,
+          t: now, dt: now - prevT,
+          bx, by, zoom: map.getZoom(),
+          ch: Number.isFinite(Number(camCh)) ? Number(camCh)
+            : (Number.isFinite(Number(filmCh)) ? Number(filmCh) : null),
+          zoomAnim: Boolean(scene?.zoomAnimating),
+          mw: box?.width ?? null, mh: box?.height ?? null,
         });
+        prevT = now;
         if (now - t0 < 8000) requestAnimationFrame(tick);
         else resolve();
       };
@@ -111,7 +140,9 @@ test("lot RC56 — Revoir 2:30, le bateau glisse sans bond", async ({ page }) =>
       const a = out[i - 1];
       const b = out[i];
       if (a.bx == null || b.bx == null || a.zoom !== b.zoom) continue;
+      if (a.zoomAnim || b.zoomAnim) continue;
       if (a.ch != null && b.ch != null && a.ch !== b.ch) continue;
+      if (a.mw != null && b.mw != null && (Math.abs(a.mw - b.mw) > 1 || Math.abs(a.mh - b.mh) > 1)) continue;
       moves.push(Math.hypot(b.bx - a.bx, b.by - a.by));
     }
     const max = moves.length ? Math.max(...moves) : 0;
@@ -130,6 +161,10 @@ test("lot RC56 — Revoir 2:30, le bateau glisse sans bond", async ({ page }) =>
       description: "bateau encore à quai — pas nuls hors mer, comme RG12",
     });
   } else if (stats.n > 0) {
+    test.info().annotations.push({
+      type: "glisse",
+      description: `n=${stats.n} max=${Number(stats.max).toFixed(1)} (carte, hors zoom / chapitre / resize)`,
+    });
     expect(stats.max, `pas bateau ${stats.max.toFixed(1)} px`).toBeLessThanOrEqual(SCREEN_STEP_MAX_PX);
   }
 
