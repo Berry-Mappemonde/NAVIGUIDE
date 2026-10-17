@@ -3,8 +3,8 @@
 Plan à exécuter à la lettre. Il remplace la version du 17 octobre 2026 qui
 décrivait encore un seul VPS et un `git push --mirror`.
 
-Lecture de l'arbre le **17 octobre 2026 au soir** : `main` = `6dabfb84`
-(« Merge pull request #544 », 1 429 commits). Le classeur
+Lecture de l'arbre le **17 octobre 2026 au soir** : `main` = `23be7ba8`
+(« Merge pull request #551 », après la #544 `6dabfb84`). Le classeur
 `scripts/check_split_coverage.py` de cette PR a été passé sur cet arbre,
 copié à côté (il n'y est pas encore suivi) : **0 fichier suivi non classé**.
 
@@ -634,10 +634,11 @@ si un fichier suivi n'a pas de classe, ou si un ancien chemin n'est
 couvert par aucun des deux fichiers de filtre.
 
 On le lance sur la tête de `main`, pas seulement sur la branche de
-cette PR. Le 17 octobre 2026 au soir, cette tête est `6dabfb84`. Le
-script n'y est pas encore suivi : on copie celui de cette PR, puis on
-mesure. Le résumé de `--emit` va sur la sortie d'erreur. Le fichier de
-chemins ne reçoit que la sortie standard.
+cette PR. Le 17 octobre 2026 au soir, cette tête est `23be7ba8`
+(fusion de la #551). Le script n'y est pas encore suivi : on copie
+celui de cette PR, puis on mesure. Le résumé de `--emit` va sur la
+sortie d'erreur. Le fichier de chemins ne reçoit que la sortie
+standard.
 
 ```bash
 git fetch origin main
@@ -656,13 +657,13 @@ est 0. Si l'historique a un trou, `--emit` n'écrit pas le fichier et
 le code de sortie est 1.
 
 Lecture du 17 octobre 2026 au soir, script copié et non suivi, sur
-`6dabfb84` :
+`23be7ba8` :
 
 | Classe | Nombre |
 |---|---|
-| Fichiers suivis | 1 853 |
+| Fichiers suivis | 1 857 |
 | Blue Intelligence seul | 574 |
-| NAVIGUIDE seul | 1 241 |
+| NAVIGUIDE seul | 1 245 |
 | Les deux | 35 |
 | Exclus (`.gitconfig` et deux doublons nova, encore suivis) | 3 |
 | Non classé | 0 |
@@ -672,20 +673,27 @@ Lecture du 17 octobre 2026 au soir, script copié et non suivi, sur
 
 `/tmp/ng-paths.txt` contient `docs/PLAN_BATCH_2026-10-16.md` et
 `.cursor/rules/specs-suivent-l-interface.mdc`. `/tmp/bi-paths.txt` ne
-les contient pas.
+les contient pas. La lecture précédente, sur `6dabfb84`, comptait
+1 853 suivis et 1 241 NAVIGUIDE seul. La #551 a ajouté quatre fichiers
+(`docs/recette/lot-rc57/01-integral.jpg`,
+`naviguide-simulator/e2e/global-setup.js`,
+`naviguide-simulator/e2e/lots/ouverture-langue.spec.js`,
+`naviguide-simulator/e2e/lots/rc57.spec.js`). Ils tombent sous des
+préfixes déjà classés. Les lignes de chemins restent 91 et 116.
+`--emit` sort 0.
 
 Le jour où cette PR est sur `main`, le script devient un fichier suivi
 de plus, classé Blue Intelligence par la ligne de dossier `scripts/`.
-Les comptes passent à 1 854 fichiers suivis et 575 pour Blue
+Les comptes passent à 1 858 fichiers suivis et 575 pour Blue
 Intelligence seul. Les lignes de chemins restent 91 et 116.
 
 On s'arrête si `non classés` n'est pas 0, si `écarts d'historique`
 n'est pas 0, si l'un des deux fichiers de la #545 manque dans le
 fichier NAVIGUIDE, ou s'il apparaît dans le fichier Blue Intelligence.
-Un fichier arrivé sur `main` après `6dabfb84` n'a pas encore de classe :
-le script s'arrête, et on le classe avant de filtrer. Les comptes de
-la branche de cette PR ne servent pas de seuil : elle part de
-`0ad99920`, et le script y est déjà suivi.
+Un fichier arrivé ensuite et qui n'entre dans aucune classe arrête le
+script : on le classe avant de filtrer. Les comptes de la branche de
+cette PR ne servent pas de seuil : elle part de `0ad99920`, et le
+script y est déjà suivi.
 
 Le fichier de chemins mélange deux formes, et il ne faut pas les
 échanger :
@@ -943,11 +951,14 @@ déplace rien.
 
 `git clone --mirror` ramène aussi les références cachées. Mesure du
 17 octobre 2026 au soir, `git ls-remote origin`, au moment où `main`
-vaut `6dabfb84` : **37** branches (`refs/heads/*`), **553**
-`refs/pull/*/head`, **11** `refs/pull/*/merge`, **5** tags. GitHub
-refuse un push de `refs/pull/*`. `--mirror` pousserait en plus les 37
+vaut `23be7ba8` : **36** branches (`refs/heads/*`), **553**
+`refs/pull/*/head`, **9** `refs/pull/*/merge`, **5** tags. GitHub
+refuse un push de `refs/pull/*`. `--mirror` pousserait en plus les 36
 branches, dont d'anciennes branches des deux produits. On ne l'utilise
-pas.
+pas. La lecture précédente, sur `6dabfb84`, comptait 37 branches et
+11 `refs/pull/*/merge` : la branche `fix/lot-rc57-dc3-spec-par-jambe`
+a disparu avec la fusion de la #551, et les refs `refs/pull/548/merge`
+et `refs/pull/551/merge` ne sont plus là.
 
 `git clone --bare --single-branch --branch main` ne ramène pas ces
 références. La mesure ancienne (550 têtes de pull, 16 fusions de pull,
@@ -1101,9 +1112,10 @@ partirait quand même s'arrêterait dans `prepare-ssh.sh`, faute de
 `VPS_SSH_KEY`.
 
 Plusieurs commits, dans la copie de travail, avant le premier push.
-Les diffs exacts sont en 6.6, 6.7 et 6.8. On ne les réécrit pas à la
-main. Les quatre fichiers du commit 6.6 restent tels que le filtre les
-a copiés jusqu'au `git apply`.
+Les diffs exacts de la CI et de `recetteAg.test.js` sont en 6.6 et
+6.7. La copie de `climatology_query.py` est en 6.8. On ne les réécrit
+pas à la main. Les quatre fichiers du commit 6.6 restent tels que le
+filtre les a copiés jusqu'au `git apply`.
 
 ```bash
 git clone /tmp/bi-bare /tmp/bi-work
@@ -1115,10 +1127,11 @@ cd /tmp/bi-work
 git add -A
 git status
 git commit -m "chore: limiter la CI Blue Intelligence à son déploiement OVH"
-# 3. Le git apply de la section 6.8 (retrait du test), puis :
-git add -A
+# 3. Section 6.8 : copier climatology_query.py depuis /tmp/ng-bare.
+#    Ne pas modifier backend/tests/test_climatology.py. Puis :
+git add naviguide/naviguide-api/climatology_query.py
 git status
-git commit -m "test: retirer l'import de climatology_query du dépôt Blue Intelligence"
+git commit -m "test: copier climatology_query pour garder test_naviguide_query_not_painted"
 git remote add origin git@github.com:Berry-Mappemonde/Blue-Intelligence.git
 git push origin refs/heads/main:refs/heads/main
 git push origin refs/tags/data-2026-09-14:refs/tags/data-2026-09-14
@@ -1141,11 +1154,7 @@ git commit -m "chore: limiter la CI NAVIGUIDE au déploiement de naviguide.fr"
 git add -A
 git status
 git commit -m "test: figer la parité climatologie du simulateur hors de frontend"
-# 4. Section 6.8, le fichier de test à côté de climatology_query, puis :
-git add -A
-git status
-git commit -m "test: placer test_naviguide_query_not_painted à côté de climatology_query"
-# 5. Les deux commits de la section 6.5, puis :
+# 4. Les deux commits de la section 6.5, puis :
 git remote add origin git@github.com:Berry-Mappemonde/NAVIGUIDE.git
 git push origin refs/heads/main:refs/heads/main
 ```
@@ -1157,13 +1166,13 @@ fichiers de ce commit. Ces commandes restent dans `/tmp/bi-work` et
 
 Les PR ouvertes au 17 octobre 2026 au soir restent sur l'archive, avec
 leurs branches. Le filtre ne les transporte pas (les SHA changent).
-Il y en a **11** : #541, #542, #543, #546, #547, #548, #549, #551,
-#553, #554, #555. Depuis la liste qui en comptait 16, sont sur `main` :
-#529, #530, #533, #534, #536, #540, #544, #545, #550. #146, #227, #510,
-#537 et #552 sont fermées et ne sont pas sur `main`. Rien de tout cela
-n'est effacé de l'archive. Les textes de #510 et #227 sont recopiés
-dans les dépôts neufs après le filtre (section 6.4), depuis les SHA
-d'origine.
+Après la fusion de la #551 et la fermeture sans fusion de la #548, il
+y en a **9** : #541, #542, #543, #546, #547, #549, #553, #554, #555.
+Sont sur `main` : #529, #530, #533, #534, #536, #540, #544, #545, #550,
+#551. #146, #227, #510, #537, #548 et #552 sont fermées et ne sont pas
+sur `main`. Rien de tout cela n'est effacé de l'archive. Les textes de
+#510 et #227 sont recopiés dans les dépôts neufs après le filtre
+(section 6.4), depuis les SHA d'origine.
 
 ## 6. Ce que le premier commit change dans chaque dépôt
 
@@ -1597,8 +1606,9 @@ Les textes des PR #510 et #227 sont copiés à part (section 6.4).
 Correction du 17 octobre au soir. Ces deux travaux sont écrits ici.
 Cette PR ne les fait pas : aucun fichier n'est déplacé, aucun script
 n'est réécrit. Ils ne font pas partie des commits 6.6, 6.7 et 6.8. Ils
-arrivent après ces trois commits, dans la copie filtrée NAVIGUIDE,
-avant le premier push. L'ordre est en section 5.4.
+arrivent après 6.6 et 6.7, dans la copie filtrée NAVIGUIDE, avant le
+premier push. Le commit 6.8 est dans la copie Blue Intelligence.
+L'ordre est en section 5.4.
 
 #### Les deux façons
 
@@ -1613,7 +1623,7 @@ filtre copie encore les anciens chemins. Le classeur
 ce plan nomment `docs/FILM_DISCOURS_ETAT_2026-09-28.md`. Un déplacement
 avant le filtre demande de réécrire le classeur, de réécrire la
 section 4, puis de revérifier les 132 documents. Le propriétaire a
-demandé de ne rien déplacer dans cette PR. Les 11 PR ouvertes restent
+demandé de ne rien déplacer dans cette PR. Les 9 PR ouvertes restent
 une décision à part (section 10.2) : la PR préparatoire en serait une
 de plus à fusionner d'abord.
 
@@ -1842,10 +1852,11 @@ fichier du filtre, on relance le `git apply`. On ne lance pas ces
 diffs dans le monodépôt.
 
 Contrôle du 17 octobre 2026 au soir : `git apply --check` accepte les
-huit diffs sur `6dabfb84`. Les six fichiers YAML obtenus se lisent.
-`bash -n` accepte les deux `prepare-ssh.sh`.
-`python3 infra/vps/ci/test_prod_jobs_busy.py` finit par 31 tests, OK.
-Ce fichier Python n'est pas dans le diff.
+huit diffs sur `6dabfb84` et sur `23be7ba8`. Les six fichiers YAML
+obtenus se lisent. `bash -n` accepte les deux `prepare-ssh.sh` et les
+scripts que chaque `deploy-gate` nomme encore. `python3
+infra/vps/ci/test_prod_jobs_busy.py` finit par 31 tests, OK, dans les
+deux copies. Ce fichier Python n'est pas dans le diff.
 
 Chaque dépôt ne garde que ses jobs. Blue Intelligence déploie vers
 l'OVH (`ubuntu@135.125.226.16`, dossier
@@ -2620,117 +2631,68 @@ git commit -m "test: figer la parité climatologie du simulateur hors de fronten
 
 `node --test` sur ce seul fichier doit afficher 8 tests et 0 échec.
 Contrôle du 17 octobre 2026 au soir, sur une copie de travail de
-`6dabfb84` : 8 tests, 0 échec. Le test ne charge pas les fichiers, il
-les lit. Les tailles 1 870 et 10 513 octets sont celles de `main`.
+`6dabfb84`, puis de nouveau sur `23be7ba8` : 8 tests, 0 échec. Le test
+ne charge pas les fichiers, il les lit. Les tailles 1 870 et 10 513
+octets sont celles de `main`.
 
-### 6.8 `climatology_query`, deux commits
+### 6.8 `climatology_query`, un commit Blue Intelligence
 
 `backend/tests/test_climatology.py` contient
-`test_naviguide_query_not_painted`. La fonction ajoute
-`naviguide/naviguide-api` au `sys.path` et importe `climatology_query`.
-Ce module est dans NAVIGUIDE. Après le filtre Blue Intelligence,
+`test_naviguide_query_not_painted`. Les cinq assertions restent dans
+ce fichier, sans une ligne changée : `kind` égal à `KIND`, deux
+`painted is False`, le compte de septembre supérieur à 0, le compte de
+mars égal à 0, coordonnées 14,6 / −61,0 vers 38,7 / −27,2. La fonction
+ajoute `naviguide/naviguide-api` au `sys.path` et importe
+`climatology_query`.
+
+Ce module vit dans NAVIGUIDE. Après le filtre Blue Intelligence,
 l'import lève `ModuleNotFoundError: No module named 'climatology_query'`.
+Retirer la fonction du fichier de test ferait disparaître les cinq
+assertions du seul endroit où elles s'exécutent. Les recopier dans un
+`test_climatology_query.py` à côté du module, dans la copie NAVIGUIDE,
+lève `ModuleNotFoundError: No module named 'app'` : `_services` importe
+`app.services`, et les snapshots (`backend/data`, dont
+`ibtracs_since1980.json`) restent dans Blue Intelligence. Ce second
+fichier n'est pas créé. Le test n'est pas marqué `skip`.
 
-La consigne est de ne modifier un test que s'il contredit une
-instruction du propriétaire. Celui-ci ne la contredit pas : il vérifie
-le module qui vit dans l'autre dépôt. On ne l'affaiblit pas et on ne
-le marque pas `skip`. On le déplace vers le dépôt qui possède le
-module. Les nombres 14,6 / −61,0 vers 38,7 / −27,2, le compte de
-septembre supérieur à 0 et le compte de mars égal à 0, restent couverts
-dans Blue Intelligence par `test_crossings_martinique_azores` (mêmes
-coordonnées, via l'API du dépôt). Les deux `painted is False` partent
-avec la fonction, parce que seul `climatology_query` les pose.
-
-#### Commit Blue Intelligence
-
-Dans `/tmp/bi-work`, sur le fichier tel que le filtre l'a copié :
+Le commit Blue Intelligence copie le module, et seulement ce fichier,
+depuis la copie nue NAVIGUIDE. Le test n'est pas édité.
+`Path(__file__).parents[2] / "backend"` pointe alors vers le backend
+de ce dépôt, qui a les snapshots. `--verify bi` a déjà tourné avant
+ce commit : il ne revoit pas le fichier ajouté.
 
 ```bash
 cd /tmp/bi-work
-git apply <<'END_BI_CLIMATO'
---- a/backend/tests/test_climatology.py
-+++ b/backend/tests/test_climatology.py
-@@ -497,20 +497,6 @@
-     assert r.status_code == 422
- 
- 
--def test_naviguide_query_not_painted():
--    ng_api = Path(__file__).resolve().parents[2] / "naviguide" / "naviguide-api"
--    sys.path.insert(0, str(ng_api))
--    import climatology_query as nq
--    meta = nq.meta(9)
--    assert meta["kind"] == KIND
--    assert meta["painted"] is False
--    pt = nq.point(14.6, -61.0, 9, dest_lat=38.7, dest_lon=-27.2)
--    assert pt["painted"] is False
--    assert pt["cyclone"]["crossings_if_leg"]["count"] > 0
--    mar = nq.crossings(14.6, -61.0, 38.7, -27.2, 3)
--    assert mar["count"] == 0
--
--
- def test_live_cmems_snapshots_are_honest():
-     """Recipe A on committed grids — skip if generation has not run."""
-     if not (wind_mod.has_snapshot(3) and wave_mod.has_snapshot(7) and current_mod.has_snapshot(2)):
-END_BI_CLIMATO
-git add backend/tests/test_climatology.py
-git commit -m "test: retirer l'import de climatology_query du dépôt Blue Intelligence"
+mkdir -p naviguide/naviguide-api
+git --git-dir=/tmp/ng-bare show HEAD:naviguide/naviguide-api/climatology_query.py \
+  > naviguide/naviguide-api/climatology_query.py
+test "$(wc -c < naviguide/naviguide-api/climatology_query.py)" -eq 3671
+git diff --exit-code -- backend/tests/test_climatology.py
+git add naviguide/naviguide-api/climatology_query.py
+git status
+git commit -m "test: copier climatology_query pour garder test_naviguide_query_not_painted"
 ```
 
-`pytest backend/tests/test_climatology.py -k test_naviguide_query_not_painted`
-ne collecte plus cette fonction.
+`git status` avant le commit ne montre que
+`naviguide/naviguide-api/climatology_query.py`. Puis :
+
+```bash
+pytest backend/tests/test_climatology.py -k test_naviguide_query_not_painted -q
+```
+
+La ligne attendue est `1 passed`. Contrôle du 17 octobre 2026 au soir,
+sur la copie filtrée de `23be7ba8` : 1 passed. Le fichier de test est
+identique à celui de `main`. `climatology_query.py` fait 3 671 octets,
+les mêmes que dans la copie nue NAVIGUIDE.
 
 `test_meteo_agent_cites_ibtracs_integer`, plus bas dans le même
 fichier, fait le même détour par `naviguide/naviguide-api` puis importe
 `agents.meteo_agent`. `pytest.importorskip("langgraph")` le saute :
 `langgraph` n'est pas dans les requirements du backend. La répétition
-ne l'a pas vu échouer. Ce commit ne le déplace pas.
-
-#### Commit NAVIGUIDE
-
-Dans `/tmp/ng-work`. Le fichier est nouveau. Les cinq assertions sont
-celles du monodépôt. `KIND` est la constante que le test d'origine
-importait de `app.services.climatology_common`. Le module la lit au
-même endroit (`climatology_query._services`). L'import
-`climatology_query` se fait dans le dossier du module : pytest ajoute
-ce dossier au chemin, le `sys.path` vers `naviguide/naviguide-api`
-n'est plus utile.
-
-```bash
-cd /tmp/ng-work
-mkdir -p naviguide/naviguide-api
-cat > naviguide/naviguide-api/test_climatology_query.py <<'END_NG_CLIMATO'
-"""test_naviguide_query_not_painted, repris de backend/tests/test_climatology.py.
-
-Le module est dans ce dossier. Les cinq assertions sont celles du monodépôt.
-"""
-import climatology_query as nq
-
-
-def test_naviguide_query_not_painted():
-    KIND = nq._services()["KIND"]
-    meta = nq.meta(9)
-    assert meta["kind"] == KIND
-    assert meta["painted"] is False
-    pt = nq.point(14.6, -61.0, 9, dest_lat=38.7, dest_lon=-27.2)
-    assert pt["painted"] is False
-    assert pt["cyclone"]["crossings_if_leg"]["count"] > 0
-    mar = nq.crossings(14.6, -61.0, 38.7, -27.2, 3)
-    assert mar["count"] == 0
-END_NG_CLIMATO
-git add naviguide/naviguide-api/test_climatology_query.py
-git commit -m "test: placer test_naviguide_query_not_painted à côté de climatology_query"
-```
-
-Limite, à lire avant de lancer ce fichier. `climatology_query._services`
-importe encore `app.services` depuis `backend/`, que le filtre
-NAVIGUIDE n'a pas. L'exécution de ce test lève donc
-`ModuleNotFoundError` sur `app` tant que cette frontière n'est pas un
-appel HTTP. La collecte du fichier, elle, passe : l'import backend est
-dans la fonction, pas au chargement du module. Le pytest de la
-répétition est celui de `backend/tests/`. Il ne collecte pas
-`naviguide/`. Ce commit rend ce pytest-là libre de l'import
-`climatology_query`. Il ne prétend pas que le test NAVIGUIDE passe
-sans le backend.
+ne l'a pas vu échouer. Ce commit ne le déplace pas. Il ne copie pas
+`agents/`. Le jour où `langgraph` est installé, ce second import
+demandera le même traitement : copier le module manquant, garder le
+test.
 
 #### L'autre échec backend, déjà sur le monodépôt
 
@@ -3123,7 +3085,7 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 
 | Sujet | État dans ce plan |
 |---|---|
-| Fusionner les 11 PR ouvertes avant le filtre | **DÉCISION PROPRIÉTAIRE.** Elles restent sur l'archive dans tous les cas. Les fusionner avant le filtre les fait entrer dans le `main` filtré. Les reprendre après demande un rebase, parce que les SHA ont changé. Ce plan ne fusionne rien. La liste du soir est en section 5. #545 est déjà sur `main`. |
+| Fusionner les 9 PR ouvertes avant le filtre | **DÉCISION PROPRIÉTAIRE.** Elles restent sur l'archive dans tous les cas. Les fusionner avant le filtre les fait entrer dans le `main` filtré. Les reprendre après demande un rebase, parce que les SHA ont changé. Ce plan ne fusionne rien. La liste du soir est en section 5. #545 et #551 sont déjà sur `main`. #548 est fermée sans fusion. |
 | Pièces jointes des Releases `data-*` | **DÉCISION PROPRIÉTAIRE**, non bloquante. Les tags git vont dans Blue Intelligence. Les fichiers attachés restent sur l'archive. L'API et `backend/data/` suffisent à reconstruire. |
 | Fichiers non commités sur le Mac | **DÉCISION PROPRIÉTAIRE** au vu de `git status --short` (section 2). Non vérifiés ici. |
 | Pages du wiki | **Non vérifié.** Le dépôt a le wiki activé. Les pages, s'il y en a, restent sur l'archive. Les secrets, deploy keys, webhooks et rulesets sont mesurés en section 3. |
@@ -3194,7 +3156,7 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | `.cursor/environment.json`, `install.sh`, `start.sh`, `preview.sh` vont dans Blue Intelligence. Les hooks simulateur et les deux règles d'écran vont dans NAVIGUIDE. Les cinq règles communes vont dans les deux, original indiqué en 4.9. | `.cursor/environment.json` ; #553 §1 ; Inventaire 4.2 |
 | `infra/agents/` va dans NAVIGUIDE. Quatre scripts GitHub vont aussi dans Blue Intelligence. `run_lots.py` n'y va pas. | Inventaire 4.2 et 4.7 ; Outillage §2 et lot O4 |
 | Les scripts de `infra/vps/ci/` et les deux fichiers de cache nginx climatologie vont dans les deux dépôts. `infra/vps/ci/README.md` va dans Blue Intelligence seul. `infra/searxng/` et `infra/vps/seamap/` restent dans Blue Intelligence. | `deploy-simulator.sh` ; `rsync-to-vps.sh` ; #553 §7 ; Inventaire 4.3 |
-| `git clone --bare --single-branch`, puis push de `refs/heads/main` et, pour Blue Intelligence, des cinq tags `data-*`. Pas de `--mirror`. | Fusion B.5 ; mesure du soir sur `6dabfb84` : 37 branches, 553 `refs/pull/*/head`, 11 `refs/pull/*/merge` |
+| `git clone --bare --single-branch`, puis push de `refs/heads/main` et, pour Blue Intelligence, des cinq tags `data-*`. Pas de `--mirror`. | Fusion B.5 ; mesure du soir sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge` |
 | Les workflows de l'archive, cron compris, sont désactivés avant le renommage. `batch-pause.sh` est signalé absent. | `deploy.yml`, `weekly-data-build.yml`, `zap-baseline.yml` ; Fusion B.1 point 5 ; Outillage §2.1 |
 | Premier commit d'adaptation **avant** le premier push. Liste des fichiers à `blue-intelligence-map` et de `BIM_REPO`. | Fusion B.4 ; Outillage §4 et §5 ; grep sur l'arbre |
 | Le défaut OVH de `prepare-ssh.sh` est retiré dans la copie NAVIGUIDE. | `prepare-ssh.sh` lignes 11 et 31 |
@@ -3204,7 +3166,7 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Preuve GenAI : le `log` de `poe_pipeline.py` doit rester en août 2026 après le filtre. `backend/` est gardé en entier. | Arbre (`b4fae8c7`, `--follow` jusqu'au 26 août) ; Fusion B.8 |
 | Balayage de motifs de secrets avant push, sans afficher les valeurs. gitleaks non vérifié. | Fusion B.8 |
 | Issues #432 et #446 à transférer vers NAVIGUIDE. | `gh issue list` ; Fusion B.7 |
-| Les 11 PR ouvertes au soir du 17 octobre restent sur l'archive (#541, #542, #543, #546, #547, #548, #549, #551, #553, #554, #555). #529, #530, #533, #534, #536, #540, #544, #545 et #550 sont sur `main`. Les PR fermées #146, #227, #510, #537, #552 n'y sont pas. `pr-archive/` n'est pas dans git. | `gh pr list` ; `git ls-remote` |
+| Les 9 PR ouvertes au soir du 17 octobre, après la fusion de la #551, restent sur l'archive (#541, #542, #543, #546, #547, #549, #553, #554, #555). #529, #530, #533, #534, #536, #540, #544, #545, #550 et #551 sont sur `main`. #548 est fermée sans fusion. Les PR fermées #146, #227, #510, #537, #552 n'y sont pas non plus. `pr-archive/` n'est pas dans git. | `gh pr list` ; `git ls-remote` |
 | Gros fichiers : max 17,9 Mo, pas de LFS dans la procédure. | `git cat-file` sur toutes les refs ; Fusion B.6 ; Inventaire 4.4 |
 | Pytest backend reporté. Les cinq tags `data-*` ne vont pas dans NAVIGUIDE. Les assets de Release ne suivent pas le push. | Outillage §3.3 et §4.3 ; `git for-each-ref refs/tags` |
 | Dix contrôles remplacent les huit de l'ancien §6. Le septième compare le SQLite et les SHA-256. Le quatrième attend un `301`, pas un second site. | Ancien §6 ; relevé OVH du 17 oct. ; décisions du 17 oct. au soir |
@@ -3232,5 +3194,8 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Le classeur envoie les deux fichiers de la #545 dans NAVIGUIDE. `--emit` sur `6dabfb84` (script copié, non suivi) : 1 853 suivis, 574 / 1 241 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Self-test : 64 cas. | `scripts/check_split_coverage.py` ; sortie du 17 oct. au soir |
 | `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ont un diff exact par dépôt (section 6.6), appliqué tel quel après le filtre. `plan_deploy.py` et `test_prod_jobs_busy.py` ne sont pas réécrits : 31 tests verts. | `git apply --check` sur `6dabfb84` |
 | Le commit NAVIGUIDE 6.7 copie `cycloneTracks.js` et `useClimatologyLayer.js` dans le simulateur. Les quatre assertions de `recetteAg.test.js` restent. `node --test` : 8 tests, 0 échec. | Lecture du test, lignes 96–99 ; exécution du 17 oct. au soir |
-| Le commit Blue Intelligence 6.8 retire `test_naviguide_query_not_painted`. Le commit NAVIGUIDE le place à côté de `climatology_query.py`, assertions gardées. `test_serper_google_style_merged` échoue déjà sur le monodépôt : on n'y touche pas. | `backend/tests/test_climatology.py` ; `test_poe_v2_pipeline.py` ligne 1045 ; consigne du propriétaire |
+| Le commit Blue Intelligence 6.8 copie `climatology_query.py` (3 671 octets) vers `naviguide/naviguide-api/`. `test_naviguide_query_not_painted` n'est pas modifié : 1 passed sur la copie filtrée de `23be7ba8`. On ne crée pas le test NAVIGUIDE qui lève `No module named 'app'`. `test_serper_google_style_merged` échoue déjà sur le monodépôt : on n'y touche pas. | Répétition du 17 oct. au soir sur `23be7ba8` ; `backend/tests/test_climatology.py` ; `test_poe_v2_pipeline.py` ligne 1045 |
 | Noms GitHub décidés. Archive `Blue-Intelligence-Map` (id `1174883638`), lecture seule, jamais supprimée. Dépôts neufs `Blue-Intelligence` et `NAVIGUIDE`. Créer le premier efface la redirection : ordre renommer, vérifier, créer NAVIGUIDE, créer Blue Intelligence en dernier. | Décision du propriétaire, 17 oct. au soir ; `gh api` du même soir (secrets `VPS_HOST` et `VPS_SSH_KEY`, aucune deploy key, aucun webhook) |
+| Lecture du classeur sur `23be7ba8` (script copié, non suivi) : 1 857 suivis, 574 / 1 245 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Les quatre fichiers de la #551 sont classés par préfixe. Self-test : 64 cas. | Répétition du 17 oct. au soir |
+| Décompte §5 aligné sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge`, 5 tags. 9 PR ouvertes. #551 est sur `main`. #548 est fermée sans fusion. | `git ls-remote` ; `gh pr list` |
+| Section 6.8 : on copie `climatology_query.py` dans Blue Intelligence et on garde `test_naviguide_query_not_painted` intact (1 passed). On n'ajoute pas le test NAVIGUIDE qui échoue sur `app`. | Répétition ; consigne de ne pas affaiblir les tests |
