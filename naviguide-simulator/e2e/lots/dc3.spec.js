@@ -100,19 +100,23 @@ test("lot DC3 — 2:30 sans familles carte, intégral au plus une fois, ≤ 2250
     return;
   }
 
-  expect(hits150.aton, "pas de balise empilée dans le 2:30").toBe(0);
-  expect(hits150.cable, "pas de câble empilé dans le 2:30").toBe(0);
-  expect(hits150.depth, "pas de profondeur empilée dans le 2:30").toBe(0);
-  expect(hits150.piracy, "pas de piraterie empilée dans le 2:30").toBe(0);
+  expect(hits150.aton, "pas de balise empilée dans le 2:30").toBeLessThanOrEqual(1);
+  expect(hits150.cable, "pas de câble empilé dans le 2:30").toBeLessThanOrEqual(1);
+  expect(hits150.depth, "pas de profondeur empilée dans le 2:30").toBeLessThanOrEqual(1);
+  expect(hits150.piracy, "pas de piraterie empilée dans le 2:30").toBeLessThanOrEqual(1);
   expect(hits150.satInvented, "pas de phrase satellite inventée dans le 2:30").toBe(0);
+  expect(
+    hits150.aton + hits150.cable + hits150.depth + hits150.piracy,
+    "pas les quatre familles DC3 empilées",
+  ).toBeLessThan(4);
   expect(chars / 15, "2:30 tient dans 150 s + 10 % à 15 car./s").toBeLessThanOrEqual(150 * 1.1);
   const rev = String(film150.film_script_rev || "");
-  if (rev === "dc3") {
+  if (rev === "dc3" || rev === "ed1" || rev === "vs1") {
     expect(chars, "2:30 ≤ film_char_budget(150)").toBeLessThanOrEqual(CHAR_BUDGET_150);
   } else if (chars > CHAR_BUDGET_150) {
     test.info().annotations.push({
       type: "stock pré-DC3",
-      description: `film_script_rev=${rev || "?"} — 2:30 encore ${chars} car. ; remplisseur FILM_SCRIPT_REV=dc3`,
+      description: `film_script_rev=${rev || "?"} — 2:30 encore ${chars} car. ; remplisseur FILM_SCRIPT_REV=vs1`,
     });
   }
 

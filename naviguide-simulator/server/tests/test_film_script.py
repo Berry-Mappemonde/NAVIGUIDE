@@ -1,5 +1,6 @@
 """Lot F3 — script du film : longueur, balises, aucun nombre nouveau, cache, sélection."""
 import asyncio
+import json
 import re
 from datetime import datetime, timezone
 
@@ -37,6 +38,17 @@ from film_script import (
     dated_marks,
     date_density_ok,
     dc_subject_candidates,
+    film_choice_bag,
+    tour_snapshot,
+    parse_choice_ids,
+    fallback_choose_ids,
+    apply_chosen_subjects,
+    choose_film_ids,
+    select_ids_with_vl,
+    trim_ids_with_lightning,
+    TV1_WATCH_ID,
+    TV1_WATCH_KIND,
+    DC_FAMILY_KINDS,
     dose_amp_changes,
     dose_dc2_leg_changes,
     dose_dc3_leg_changes,
@@ -4923,3 +4935,191 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
     assert stats2["reviewed"] is False
     assert fr2["source"] == WRITTEN_SOURCE
     assert "laisse" in (fr2["chapters"][0]["text"] or "")
+
+
+# ── VS1 : VL propose des ids, Lightning retire, le repli s'arrête au budget ──
+
+
+def _vs1_full_bag():
+    """Neuf familles DC + id d'avis réservé (TV1)."""
+    return film_choice_bag(dc_subject_candidates([
+        {"kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+         "nm": 0, "inside": True, "t": "2026-05-25T12:00:00Z"},
+        {"kind": "station", "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)",
+         "nm": 4, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "poe", "title": "Papeete", "fact": "Papeete",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "anchorage", "title": "Mouillage des Minimes",
+         "fact": "Mouillage des Minimes", "t": "2026-07-14T10:00:00Z"},
+        {"kind": "aton", "title": "Feu des Minimes", "name": "Feu des Minimes",
+         "nm": 2, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "cable", "title": "Honotua", "name": "Honotua",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "depth", "depth_m": 18.4, "t": "2026-07-14T10:00:00Z"},
+        {"kind": "piracy", "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+         "source": "IMB/UKMTO", "t": "2026-07-16T10:00:00Z"},
+        {"kind": "satellite", "caption": "Panache sédimentaire au large de Cayenne",
+         "t": "2026-07-20T10:00:00Z"},
+    ], "fr"))
+
+
+def _vs1_dc_kinds(ids, bag):
+    by_id = {c["id"]: c for c in bag}
+    return [by_id[i]["kind"] for i in ids if i in by_id and by_id[i]["kind"] in DC_FAMILY_KINDS]
+
+
+def test_vs1_bag_is_the_input_and_reserves_watch():
+    bag = _vs1_full_bag()
+    kinds = [c["kind"] for c in bag]
+    assert kinds.count(TV1_WATCH_KIND) == 1
+    assert {c["id"] for c in bag if c["kind"] == TV1_WATCH_KIND} == {TV1_WATCH_ID}
+    for kind in DC_FAMILY_KINDS:
+        assert kinds.count(kind) == 1, kind
+    packed = film_candidates(JOURNAL, CLOCK["marks"], CLOCK, LIVE, NOW_MS)
+    snap = tour_snapshot(packed)
+    assert snap["image"].startswith("<svg")
+    assert snap["legs"]
+
+
+def test_vs1_vl_keeps_only_bag_ids_drops_prose():
+    bag = _vs1_full_bag()
+    allowed = {c["id"] for c in bag}
+
+    async def fake(system, user, **_kw):
+        assert "tour" in user or "image" in user
+        return json.dumps({
+            "ids": ["dc:buoy", "invented-id", "dc:watch"],
+            "reason": "a whole paragraph of free text",
+            "script": "Berry-Mappemonde quitte La Rochelle sous 99 nœuds.",
+        }), "nemotron-lightning"
+
+    ids, _src = asyncio.run(select_ids_with_vl(bag, {"legs": [], "image": "<svg/>"}, cascade=fake))
+    assert ids == ["dc:buoy", TV1_WATCH_ID]
+    assert "invented-id" not in ids
+    kept = parse_choice_ids(
+        json.dumps({"ids": ["dc:poe"], "script": "texte libre"}), allowed,
+    )
+    assert kept == ["dc:poe"]
+    assert parse_choice_ids("Berry leaves La Rochelle.", allowed) is None
+
+
+def test_vs1_lightning_can_only_remove():
+    bag = _vs1_full_bag()
+    proposed = ["dc:amp", "dc:buoy", "dc:poe", TV1_WATCH_ID]
+
+    async def fake(system, user, **_kw):
+        assert "remove" in system.lower() or "Do not add" in system
+        return json.dumps({
+            "ids": ["dc:amp", "dc:buoy", "dc:aton", "invented"],
+        }), "nemotron-lightning"
+
+    ids, _src = asyncio.run(trim_ids_with_lightning(proposed, bag, 150, cascade=fake))
+    assert "dc:aton" not in ids
+    assert "invented" not in ids
+    assert set(ids) <= set(proposed)
+    assert "dc:amp" in ids
+    assert "dc:buoy" in ids
+
+
+def test_vs1_fallback_full_bag_stays_in_150_budget():
+    """Sac avec les neuf familles DC : 2:30 ≤ 2250, pas l'avis, pas neuf phrases."""
+    assert film_char_budget(150) == 2250
+    bag = _vs1_full_bag()
+    assert len([c for c in bag if c["kind"] in DC_FAMILY_KINDS]) == 9
+    ids = fallback_choose_ids(bag, 150)
+    assert TV1_WATCH_ID not in ids
+    assert TV1_WATCH_KIND not in _vs1_dc_kinds(ids, bag)
+    assert len(_vs1_dc_kinds(ids, bag)) < 9
+    journal = _dc3_journal()
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    out = apply_chosen_subjects(plan, ids, bag, 150)
+    assert out["chars"] <= film_char_budget(150)
+    blob = _script_blob(out)
+    hits = _dc2_family_hits(blob)
+    hits3 = _dc3_family_hits(blob)
+    spoken = sum(1 for n in (*hits.values(), hits3["aton"], hits3["cable"], hits3["depth"], hits3["piracy"]) if n)
+    assert spoken < 9, blob
+    assert hits3["sat_invented"] == 0
+
+
+def test_vs1_fallback_180_stays_in_budget():
+    assert film_char_budget(180) == 2700
+    bag = _vs1_full_bag()
+    ids = fallback_choose_ids(bag, 180)
+    assert TV1_WATCH_ID not in ids
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=180, now_ms=NOW_MS,
+    )
+    out = apply_chosen_subjects(plan, ids, bag, 180)
+    assert out["chars"] <= film_char_budget(180)
+    assert len(_vs1_dc_kinds(ids, bag)) < 9
+
+
+def test_vs1_mode_off_does_not_call_cascade(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    bag = _vs1_full_bag()
+    calls = []
+
+    async def boom(*_a, **_k):
+        calls.append(1)
+        raise AssertionError("appel Nebius en mode off")
+
+    ids, src = asyncio.run(choose_film_ids(bag, {"legs": []}, 150, cascade=boom))
+    assert calls == []
+    assert src == "rules"
+    assert TV1_WATCH_ID not in ids
+    assert ids == fallback_choose_ids(bag, 150)
+
+
+def test_vs1_choice_cached_once_per_film_not_per_visit():
+    bag = _vs1_full_bag()
+    tour = {"legs": [{"name": "La Rochelle", "iso": "2026-05-15T12:00:00Z"}]}
+    calls = {"n": 0}
+
+    async def fake(system, user, **_kw):
+        calls["n"] += 1
+        if "remove" in system.lower() or "Do not add" in system:
+            return json.dumps({"ids": ["dc:buoy"]}), "nemotron-lightning"
+        return json.dumps({"ids": ["dc:buoy", "dc:poe"]}), "nemotron-lightning"
+
+    a, _ = asyncio.run(choose_film_ids(bag, tour, 150, cascade=fake, allow_llm=True))
+    n1 = calls["n"]
+    b, src = asyncio.run(choose_film_ids(bag, tour, 150, cascade=fake, allow_llm=True))
+    assert a == b
+    assert calls["n"] == n1
+    assert src == "cache"
+    assert set(a) <= {"dc:buoy", "dc:poe"}
+
+
+def test_vs1_serve_film_does_not_choose(tmp_path, monkeypatch):
+    """Ouvrir Suivre lit le stock : zéro appel de choix."""
+    import official_store
+    from official_store import DiskBackend, OfficialStore, FILM_SCRIPT_REV
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc))
+    voy = {"t0": OFFICIAL_T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("choix au chargement de Suivre")
+
+    monkeypatch.setattr("film_script.choose_film_ids", boom)
+    plan = {
+        "chapters": [{"id": "c0", "text": "Berry-Mappemonde quitte La Rochelle.", "tA": OFFICIAL_T0, "tB": OFFICIAL_T0}],
+        "source": "rules",
+        "chars": 40,
+        "targetSeconds": 150,
+    }
+    payload = {"fr": plan, "default": plan, "variants": {"fr": {"150": plan}}, "film_script_rev": FILM_SCRIPT_REV}
+    store.put("film", payload, store.family_key("film", voy, datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc)))
+    out = official_store.serve_film("fr", 150)
+    assert out.get("status") == "ready"
+    assert calls["n"] == 0
+    assert "La Rochelle" in (out.get("chapters") or [{}])[0].get("text") or ""

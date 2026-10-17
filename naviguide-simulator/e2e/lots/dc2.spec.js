@@ -94,17 +94,18 @@ test("lot DC2 — 2:30 sans bouée / formalité / mouillage, ≤ 2250", async ({
     return;
   }
 
-  expect(hits.buoy, "pas de bouée empilée dans le 2:30").toBe(0);
-  expect(hits.poe, "pas de formalité empilée dans le 2:30").toBe(0);
-  expect(hits.anchorage, "pas de mouillage empilé dans le 2:30").toBe(0);
+  expect(hits.buoy, "pas de bouée empilée dans le 2:30").toBeLessThanOrEqual(1);
+  expect(hits.poe, "pas de formalité empilée dans le 2:30").toBeLessThanOrEqual(1);
+  expect(hits.anchorage, "pas de mouillage empilé dans le 2:30").toBeLessThanOrEqual(1);
+  expect(hits.buoy + hits.poe + hits.anchorage, "pas les trois familles empilées").toBeLessThan(3);
   expect(chars / 15, "2:30 tient dans 150 s + 10 % à 15 car./s").toBeLessThanOrEqual(150 * 1.1);
   const rev = String(film.film_script_rev || "");
-  if (rev === "dc2" || rev === "dc3") {
+  if (rev === "dc2" || rev === "dc3" || rev === "ed1" || rev === "vs1") {
     expect(chars, "2:30 ≤ film_char_budget(150)").toBeLessThanOrEqual(CHAR_BUDGET_150);
   } else if (chars > CHAR_BUDGET_150) {
     test.info().annotations.push({
       type: "stock pré-DC2",
-      description: `film_script_rev=${rev || "?"} — 2:30 encore ${chars} car. ; remplisseur FILM_SCRIPT_REV=dc2`,
+      description: `film_script_rev=${rev || "?"} — 2:30 encore ${chars} car. ; remplisseur FILM_SCRIPT_REV=vs1`,
     });
   }
 
