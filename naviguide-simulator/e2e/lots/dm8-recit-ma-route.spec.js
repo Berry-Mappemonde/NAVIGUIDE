@@ -20,7 +20,7 @@ import {
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-dm8");
 mkdirSync(recetteDir, { recursive: true });
 const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`), type: "jpeg", quality: 70, fullPage: false,
+  path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
 const PILL_ON = /bg-blue-600\/30/;
