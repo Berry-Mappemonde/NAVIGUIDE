@@ -1535,25 +1535,47 @@ def _fill_script_stamp() -> str:
         return ""
 
 
-def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
-    """Les `prepare_official_store.py --loop --store <ce stock>` vivants sur cette machine, sauf `keep` et nous.
+def command_store(command: str, default: Optional[Path] = None) -> Optional[Path]:
+    """Dossier de stock visé par une ligne `ps`.
 
-    29 sept. : quatre remplisseurs tournaient en même temps (rg7, rg16 ×2, rc28) — le pidfile n'en connaît
-    qu'un, les autres avaient survécu aux rebuilds du poste — et tous écrivaient le même stock et le même
-    fichier voyage : c'est le mélange de deux écritures à 20:07 qui a corrompu le voyage officiel.
-    Le stock est reconnu par l'argument `--store` de la ligne de commande : le remplisseur d'un agent (stock
-    de son worktree) et celui du poste (stock partagé) ne se touchent jamais."""
+    `--store <chemin>` est explicite. Sans cet argument, le script écrit le stock par
+    défaut (`~/.cache/naviguide/voyage-store`) : c'est le passage orphelin du 17 oct.,
+    lancé sans `--loop` ni `--store`, que le filtre « --loop » laissait vivre.
+    """
+    if FILL_SCRIPT.name not in command:
+        return None
+    parts = command.split()
+    try:
+        i = parts.index("--store")
+    except ValueError:
+        return Path(default) if default is not None else Path.home() / ".cache" / "naviguide" / "voyage-store"
+    if i + 1 >= len(parts):
+        return None
+    return Path(parts[i + 1])
+
+
+def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
+    """Les `prepare_official_store.py` vivants qui écrivent CE stock, sauf `keep` et nous.
+
+    Boucle ou passage unique : les deux écrivent le même fichier. 29 sept. : quatre boucles
+    en même temps ont corrompu le voyage officiel. 17 oct. : trois passages sans `--loop`
+    ont survécu au timeout et au filtre qui ne voyait que `--loop`.
+    Un `--store` différent (stock d'un worktree d'agent) n'est pas touché."""
     import subprocess  # noqa: PLC0415
     try:
         out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5).stdout
     except Exception:
         return []
     me = os.getpid()
-    marker = f"--store {store or disk_root()}"
+    want = Path(store or disk_root())
+    default = Path.home() / ".cache" / "naviguide" / "voyage-store"
     found: list[int] = []
     for line in out.splitlines():
         parts = line.strip().split(None, 1)
-        if len(parts) != 2 or FILL_SCRIPT.name not in parts[1] or "--loop" not in parts[1] or marker not in parts[1]:
+        if len(parts) != 2:
+            continue
+        got = command_store(parts[1], default)
+        if got is None or got != want:
             continue
         try:
             pid = int(parts[0])

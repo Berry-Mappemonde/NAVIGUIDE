@@ -1047,8 +1047,9 @@ def test_other_fill_processes_lists_every_loop_worker_but_us(monkeypatch):
     fake = (
         f"  111 python3 /Users/x/bim-lots/rg16/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --loop --period 21600 --store /S\n"
         f"  222 python3 /Users/x/bim-lots/rc28/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --loop --period 21600 --store /S\n"
-        f"  333 python3 /Users/x/bim-lots/rc28/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --once --store /S\n"
+        f"  333 python3 /Users/x/bim-lots/dc3/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --store /S\n"
         f"  555 python3 /Users/x/bim-lots/dm3/naviguide-simulator/scripts/{os_.FILL_SCRIPT.name} --loop --period 21600 --store /agent\n"
+        f"  666 .venv/bin/python scripts/{os_.FILL_SCRIPT.name}\n"
         "  444 /usr/bin/uvicorn server.main:app\n"
     )
 
@@ -1056,9 +1057,11 @@ def test_other_fill_processes_lists_every_loop_worker_but_us(monkeypatch):
         stdout = fake
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Out())
-    assert os_.other_fill_processes(store=Path("/S")) == [111, 222]
-    assert os_.other_fill_processes(keep=222, store=Path("/S")) == [111]
+    assert os_.other_fill_processes(store=Path("/S")) == [111, 222, 333]
+    assert os_.other_fill_processes(keep=222, store=Path("/S")) == [111, 333]
     assert os_.other_fill_processes(store=Path("/autre")) == [], "un autre stock : pas touché"
+    home = Path.home() / ".cache" / "naviguide" / "voyage-store"
+    assert os_.other_fill_processes(store=home) == [666]
 
 
 def test_stop_other_fill_processes_terms_then_kills(monkeypatch):

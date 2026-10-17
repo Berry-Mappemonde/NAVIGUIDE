@@ -129,13 +129,15 @@ start_api() {
 }
 
 if [[ "$PROD" -eq 1 ]]; then
-  # Recette RF2 : remplir le stock DISQUE par le vrai calcul avant d'ouvrir Chrome.
-  log "==> stock officiel (calcul réel, disque)…"
+  # Pas de passage complet du stock avant d'échanger l'API. Ce passage lit la base
+  # sqlite (~5 Go) : au-delà de 20 min le timeout tue le bash et le python reste
+  # orphelin. Plusieurs orphelins écrivent le même stock, l'API ne change pas de
+  # checkout, et le poste ressert l'ancien film (17 oct. : DC1 encore servi pour DC2/DC3).
+  # L'API de CE checkout démarre son remplisseur (--loop). Il remplace celui d'un
+  # autre checkout et recalcule le film (FILM_SCRIPT_REV) à sa première passe.
   export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
   unset SIMULATOR_MONGO_URL
-  if ! .venv/bin/python scripts/prepare_official_store.py; then
-    log "!! stock officiel : calcul incomplet — l'API répondra « en préparation » pour les familles manquantes"
-  fi
+  log "==> stock officiel : remplisseur de ce checkout (pas un second passage bloquant)"
   # Recette : l’API doit être celle de CE checkout, avec les clés d’aujourd’hui.
   stop_listener 8010 "API"
   start_api ""
@@ -202,6 +204,27 @@ health() {
 API_OK=0; UI_OK=0
 health "http://127.0.0.1:8010/ici/warm/status" 60 && API_OK=1
 health "http://127.0.0.1:5174/" 30 && UI_OK=1
+FILM_OK=1
+FILM_REV=""
+if [[ "$PROD" -eq 1 ]]; then
+  FILM_OK=0
+  FILM_REV="$(sed -n 's/^FILM_SCRIPT_REV = "\([^"]*\)".*/\1/p' "$ROOT/server/official_store.py" | head -1)"
+  if [[ "$API_OK" -eq 1 && -n "$FILM_REV" ]]; then
+    log "==> attente du film scriptRev=${FILM_REV} (un seul remplisseur, 15 min au plus)…"
+    for _ in $(seq 1 90); do
+      body="$(curl -fsS -m 20 "http://127.0.0.1:8010/voyage/official/film?lang=fr&seconds=150" 2>/dev/null || true)"
+      if [[ "$body" == *"\"scriptRev\":\"${FILM_REV}\""* || "$body" == *"\"scriptRev\": \"${FILM_REV}\""* ]]; then
+        FILM_OK=1
+        log "==> film prêt (scriptRev=${FILM_REV})"
+        break
+      fi
+      sleep 10
+    done
+  fi
+  if [[ "$FILM_OK" -ne 1 ]]; then
+    log "!! film pas encore à la révision ${FILM_REV:-?} — le poste répond peut-être, aucune pré-revue ne doit partir sur l'ancien film"
+  fi
+fi
 BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
 [[ "$BRANCH" == "HEAD" ]] && BRANCH="$(git -C "$ROOT" describe --all --always 2>/dev/null || echo '?')"
 if [[ "$QUIET" -eq 0 ]]; then
@@ -209,6 +232,9 @@ if [[ "$QUIET" -eq 0 ]]; then
   echo "checkout   : $ROOT ($BRANCH)"
   echo "API :8010  : $([[ $API_OK -eq 1 ]] && echo OK || echo "PAS DE RÉPONSE — voir .dev/api.log") — clés :${KEY_NAMES:- aucune}"
   echo "UI  :5174  : $([[ $UI_OK -eq 1 ]] && echo OK || echo "PAS DE RÉPONSE — voir .dev/vite.log") — $([[ $PROD -eq 1 ]] && echo 'build de prod (vite preview)' || echo 'mode dev (vite)')"
+  if [[ "$PROD" -eq 1 ]]; then
+    echo "film       : $([[ $FILM_OK -eq 1 ]] && echo "scriptRev=${FILM_REV}" || echo "PAS ENCORE ${FILM_REV:-?}")"
+  fi
   echo "────────────────────────────────────────────────────────"
 fi
 
@@ -230,4 +256,4 @@ if [[ "$OPEN" -eq 1 ]] && port_up 5174; then
   fi
 fi
 
-[[ "$API_OK" -eq 1 && "$UI_OK" -eq 1 ]] || [[ "$PROD" -eq 0 ]]
+[[ "$PROD" -eq 0 ]] || [[ "$API_OK" -eq 1 && "$UI_OK" -eq 1 && "$FILM_OK" -eq 1 ]]
