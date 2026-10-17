@@ -31,10 +31,19 @@ commit `agent_poe`.
 - On ne fusionne aucune PR dans ce plan.
 - On n'ouvre pas le port 27017, on ne change pas `bindIp`, on ne lance pas
   `infra/vps/sync-from-atlas.sh`.
-- On ne fait pas `mongorestore --drop`, ni `drop`, ni `delete`, ni
-  `dropDatabase` sur une base. On ne supprime rien sur l'OVH : ni base, ni
-  fichier, ni vhost nginx, ni certificat, ni le dossier
-  `~/blue-intelligence-map`.
+- On n'installe pas MongoDB sur Contabo, on n'y crée pas la base
+  `naviguide_simulator`, on n'y crée pas l'utilisateur `naviguide_sim`,
+  et on ne pose pas `SIMULATOR_MONGO_URL`. Le relevé du 17 octobre 2026
+  montre que cette base n'existe pas sur l'OVH : le simulateur lit le
+  disque.
+- On ne fait pas `mongodump` ni `mongorestore` pour NAVIGUIDE, ni
+  `mongorestore --drop`, ni `drop`, ni `delete`, ni `dropDatabase`.
+  On ne supprime rien sur l'OVH : ni base, ni fichier, ni vhost nginx,
+  ni certificat, ni le dossier `~/blue-intelligence-map`, ni
+  `voyage_data/`. Un arrêt de `naviguide-simulator` ne sert qu'à copier
+  un SQLite cohérent, et la commande de redémarrage est dans la même
+  section. L'arrêt définitif sur l'OVH reste la décision du propriétaire
+  (section 10).
 - On ne modifie pas les workflows **de ce** dépôt. Les adaptations de la
   section 6 se font dans les copies filtrées, avant leur premier push.
 - On n'affiche pas un mot de passe, une URI Mongo, ni un fichier `.env`
@@ -54,10 +63,25 @@ Décisions déjà prises :
 - Blue Intelligence **reste** sur le VPS OVH `vps-52ba6d62.vps.ovh.net`
   (`135.125.226.16`). Sa base Mongo ne bouge pas.
 - NAVIGUIDE **part** sur le VPS Contabo noté le 17 octobre 2026 :
-  `13.140.164.185` (Cloud VPS 6). Avant le premier `ssh`, confirmer dans
-  le panneau Contabo que cette adresse est bien la machine reçue. Si ce
-  n'est pas elle, on s'arrête et on corrige l'adresse partout dans les
-  commandes ci-dessous.
+  `13.140.164.185` (Cloud VPS 6). La machine est déjà en Ubuntu 24.04,
+  utilisateur `naviguide`, pare-feu `ufw` ouvert sur 22, 80 et 443
+  seulement. L'accès SSH est `naviguide@13.140.164.185`, pas `ubuntu@`.
+  Avant le premier `ssh`, confirmer dans le panneau Contabo que cette
+  adresse est bien la machine reçue. Si ce n'est pas elle, on s'arrête
+  et on corrige l'adresse partout dans les commandes ci-dessous.
+- Sur l'OVH, le code tourne dans `~/blue-intelligence-map` et l'accès
+  SSH est `ubuntu@135.125.226.16`.
+
+Données NAVIGUIDE, relevé sur l'OVH le 17 octobre 2026. Ce sont des
+faits, pas des chemins à deviner :
+
+| Élément | État ce jour-là |
+|---|---|
+| Bases du `mongod` | `admin`, `blueintel_db`, `config`, `local`. Rien d'autre. |
+| Base `naviguide_simulator`, utilisateur `naviguide_sim`, variable `SIMULATOR_MONGO_URL` | absents. Le stock officiel est le dossier disque `official-store/` (`DiskBackend` dans `official_store.py`). |
+| `~/blue-intelligence-map/naviguide-simulator/server/voyage_data/` | présent, 5,5 Go. Dedans : `naviguide.sqlite` (`pearls` 11 159, `kv` 95 136, `moments` 1) et `official-store/` (690 Mo, stock RF2). |
+| `polar_data/`, `grib_data/`, `saildocs_inbox/` à côté de `voyage_data/` | présents. |
+| `forecast_cache/`, `/var/lib/naviguide`, `~/.cache/naviguide` | absents. On ne les crée pas pour la copie. |
 
 **DÉCISION PROPRIÉTAIRE — noms des deux dépôts neufs.** Les écrire ici
 avant la section 5. Tant que les deux lignes sont vides, on s'arrête avant
@@ -85,31 +109,24 @@ la sauvegarde (section 1).
 
 ## 1. Sauvegarder et compter, avant toute autre action
 
-But : une copie des données NAVIGUIDE hors de l'OVH, avec les nombres de
-documents, avant le renommage, le filtre, le DNS et la restauration.
+But : une copie des fichiers NAVIGUIDE hors de l'OVH, avec les comptes
+SQLite et les SHA-256, avant le renommage, le filtre et le DNS. Ce n'est
+pas une migration Mongo. La base `naviguide_simulator` n'est pas sur le
+serveur : il n'y a rien à dumper.
 
-La base Blue Intelligence n'est pas migrée. On la compte quand même, pour
-voir qu'elle n'a pas bougé. Le cron quotidien
-(`infra/vps/blue-intelligence-backup.cron`) ne sauve que cette base
-(`--db "$DB_NAME"`). Il ne sauve pas `naviguide_simulator`, ni SQLite, ni
-les dossiers du simulateur.
+La base Blue Intelligence (`blueintel_db`) n'est pas migrée. On la compte
+quand même, pour voir qu'elle n'a pas bougé. Le cron quotidien
+(`infra/vps/blue-intelligence-backup.cron`) ne sauve que cette base. Il
+ne sauve ni le SQLite ni les dossiers du simulateur. On ne le lance pas
+ici, et on n'écrit rien dans `~/backups/mongodb/` : ce cron y efface les
+`blue-*.archive.gz` de plus de 14 jours.
 
-Le nom de la base Blue Intelligence n'est pas dans git. Il est dans
-`~/.config/blue-intelligence/mongo.env`, variable `DB_NAME`. Le compte
-`blue` de cette URI n'a pas le droit de lire `naviguide_simulator`. Le
-compte `naviguide_sim` n'a pas le droit de lire la base Blue Intelligence.
-Les comptages passent par le compte `admin` du même fichier
-(`MONGO_ADMIN_USER`, `MONGO_ADMIN_PWD`), créé par
-`infra/vps/install-mongodb.sh`.
+Le mot de passe admin est dans
+`~/.config/blue-intelligence/mongo.env` (`MONGO_ADMIN_USER`,
+`MONGO_ADMIN_PWD`), créé par `infra/vps/install-mongodb.sh`. On ne
+l'affiche pas.
 
-`SIMULATOR_MONGO_URL` peut être absent de `simulator.env` : le fichier
-exemple ne le contient pas, et `deploy-simulator.sh` ne crée ni l'utilisateur
-ni l'URI. S'il est absent, le stock officiel est sur disque
-(`DiskBackend`, dossier `official-store/`). On copie le disque dans tous
-les cas. Une base Mongo absente est un résultat valide : on l'écrit dans
-le manifeste, on ne l'invente pas.
-
-### 1.1 Sur l'OVH — compter sans rien modifier
+### 1.1 Sur l'OVH — vérifier le relevé, compter `blueintel_db`
 
 ```bash
 ssh ubuntu@135.125.226.16
@@ -117,12 +134,17 @@ ssh ubuntu@135.125.226.16
 
 ```bash
 set +x
+whoami
 STAMP=$(date -u +%F)
 DEST="$HOME/backups/naviguide-split-$STAMP"
+APP="$HOME/blue-intelligence-map"
+SIM="$APP/naviguide-simulator/server"
 mkdir -p "$DEST"
-# Hors du dossier du cron BI : ce cron efface les fichiers
-# ~/backups/mongodb/blue-*.archive.gz de plus de 14 jours.
+test "$(whoami)" = ubuntu || { echo "STOP compte inattendu"; exit 1; }
+test -d "$APP" || { echo "STOP dossier $APP absent"; exit 1; }
+
 . "$HOME/.config/blue-intelligence/mongo.env"
+test "$DB_NAME" = blueintel_db || { echo "STOP DB_NAME n'est pas blueintel_db"; exit 1; }
 MONGO_URI="mongodb://${MONGO_ADMIN_USER}:${MONGO_ADMIN_PWD}@127.0.0.1:27017/?authSource=admin"
 
 ENV_FILE="$HOME/.config/naviguide/simulator.env"
@@ -134,144 +156,180 @@ ENV_FILE="$HOME/.config/naviguide/simulator.env"
   else
     echo "SIMULATOR_MONGO_URL=absent"
   fi
-  # Ces clés sont des chemins ou une URL, pas des mots de passe.
   grep -E '^(NAVIGUIDE_VOYAGE_DIR|NAVIGUIDE_GRIB_DIR|NAVIGUIDE_FORECAST_CACHE|NAVIGUIDE_SAILDOCS_INBOX|NAVIGUIDE_OFFICIAL_STORE_DIR|BI_API_URL)=' \
     "$ENV_FILE" 2>/dev/null || true
 } > "$DEST/etat-env.txt"
+grep -q '^SIMULATOR_MONGO_URL=absent$' "$DEST/etat-env.txt" || { echo "STOP SIMULATOR_MONGO_URL est posé : ne pas continuer ce plan"; exit 1; }
 
-mongosh --quiet "$MONGO_URI" --eval "
-function dump(name) {
-  const d = db.getSiblingDB(name);
-  const names = d.getCollectionNames().filter(c => !c.startsWith('system.')).sort();
-  if (!names.length) { print(name + '\t(aucune collection)\t0'); return; }
-  names.forEach(c => print(name + '\t' + c + '\t' + d.getCollection(c).countDocuments()));
-}
-dump('${DB_NAME}');
-dump('naviguide_simulator');
-" | tee "$DEST/comptes-mongo-avant.tsv"
+mongosh --quiet "$MONGO_URI" --eval '
+const names = db.adminCommand({listDatabases:1}).databases.map(d => d.name).sort();
+print("DBS " + names.join(","));
+const users = db.getSiblingDB("admin").system.users.distinct("user");
+print("SIM_USER " + (users.indexOf("naviguide_sim") >= 0 ? "présent" : "absent"));
+' | tee "$DEST/etat-mongo.txt"
+grep -q 'DBS admin,blueintel_db,config,local$' "$DEST/etat-mongo.txt" || { echo "STOP liste de bases différente du 17 oct."; exit 1; }
+grep -q 'SIM_USER absent$' "$DEST/etat-mongo.txt" || { echo "STOP utilisateur naviguide_sim apparu"; exit 1; }
 
+mongosh --quiet "$MONGO_URI" --eval '
+const d = db.getSiblingDB("blueintel_db");
+d.getCollectionNames().filter(c => !c.startsWith("system.")).sort()
+  .forEach(c => print("blueintel_db\t" + c + "\t" + d.getCollection(c).countDocuments()));
+' | tee "$DEST/comptes-mongo-avant.tsv"
 unset MONGO_URI
 ```
 
-`etat-env.txt` dit seulement si `SIMULATOR_MONGO_URL` est posé. Il ne
-contient pas l'URI : elle porte le mot de passe. Les autres lignes sont
-des chemins ou l'URL de l'API.
+`etat-env.txt` ne contient pas l'URI : elle porte le mot de passe. Une
+ligne `STOP` : on ne passe pas à la copie. Une base `naviguide_simulator`
+apparue après le 17 octobre changerait la nature de la migration. Ce
+plan ne la dump pas « pour voir ».
 
-Le code ne connaît qu'une collection simulateur : `official_voyage`, dans
-la base `naviguide_simulator` (`naviguide-simulator/server/official_store.py`).
-Le manifeste garde **toutes** les collections réellement listées, pas
-seulement celle-là. Côté Blue Intelligence, le code ouvre notamment
-`poe_ports`, `poe_seed_ports`, `poe_runs`, `eez_zones`, `projects`,
-`marinas`, `capitaineries`, `amp_sites`, `review_gold`. Là aussi, le
-tableau réel fait foi.
+Le code Blue Intelligence ouvre notamment `poe_ports`, `poe_seed_ports`,
+`poe_runs`, `eez_zones`, `projects`, `marinas`, `capitaineries`,
+`amp_sites`, `review_gold`. Le tableau réel de `blueintel_db` fait foi.
+Il n'y a pas de collection simulateur à compter : le stock RF2 est le
+dossier `official-store/`.
 
-Repérer les fichiers, sans supposer le chemin :
+Contrôle des chemins. Un dossier obligatoire absent, ou un dossier
+absent le 17 octobre devenu présent : `STOP`. On ne le copie pas en
+silence.
 
 ```bash
+for d in "$SIM/voyage_data" "$SIM/polar_data" "$SIM/grib_data" "$SIM/saildocs_inbox"; do
+  test -d "$d" || { echo "STOP absent $d"; exit 1; }
+  echo "présent $d"
+done
+test -f "$SIM/voyage_data/naviguide.sqlite" || { echo "STOP sqlite absent"; exit 1; }
+test -d "$SIM/voyage_data/official-store" || { echo "STOP official-store absent"; exit 1; }
+for ghost in "$SIM/forecast_cache" /var/lib/naviguide "$HOME/.cache/naviguide"; do
+  if [ -e "$ghost" ]; then echo "STOP apparu depuis le 17 oct. : $ghost"; exit 1; fi
+  echo "toujours absent $ghost"
+done
 {
-  echo "chemin taille_octets"
-  for f in \
-    "$HOME/blue-intelligence-map/naviguide-simulator/server/voyage_data/naviguide.sqlite" \
-    /var/lib/naviguide/voyage_data/naviguide.sqlite \
-    "$HOME/.cache/naviguide/voyage_data/naviguide.sqlite"
-  do
-    if [ -f "$f" ]; then stat -c '%n %s' "$f"; fi
-  done
-} | tee "$DEST/sqlite-trouves.txt"
-
-python3 - << 'PY' | tee "$DEST/comptes-sqlite-avant.tsv"
-import sqlite3, pathlib
-candidates = [
-    pathlib.Path.home() / "blue-intelligence-map/naviguide-simulator/server/voyage_data/naviguide.sqlite",
-    pathlib.Path("/var/lib/naviguide/voyage_data/naviguide.sqlite"),
-    pathlib.Path.home() / ".cache/naviguide/voyage_data/naviguide.sqlite",
-]
-for path in candidates:
-    if not path.is_file():
-        continue
-    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    print(f"# {path}")
-    query = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY 1"
-    for (name,) in con.execute(query):
-        if name.startswith("sqlite_"):
-            continue
-        ident = '"' + name.replace('"', '""') + '"'
-        n = con.execute(f"SELECT COUNT(*) FROM {ident}").fetchone()[0]
-        print(f"{path}\t{name}\t{n}")
-    con.close()
-PY
+  echo "chemin octets"
+  du -sb "$SIM/voyage_data" "$SIM/voyage_data/official-store" \
+    "$SIM/polar_data" "$SIM/grib_data" "$SIM/saildocs_inbox"
+} | tee "$DEST/etat-tailles-source.txt"
 ```
 
-Les tables attendues si le fichier existe : `pearls`, `kv`, `moments`
-(`pearl_store.py`, `voyage_store.py`). Imprimer aussi les autres tables.
-
-### 1.2 Sur l'OVH — copier les fichiers
-
-Dossiers à mettre dans `$DEST`, chacun seulement s'il existe :
-
-| Quoi | Chemin le plus probable | Variable si le fichier a été déplacé |
-|---|---|---|
-| SQLite, `voyage_*.json`, `official_journal/`, `official-store/` | `~/blue-intelligence-map/naviguide-simulator/server/voyage_data/` | `NAVIGUIDE_VOYAGE_DIR`, souvent cité : `/var/lib/naviguide/voyage_data` |
-| Polaires du simulateur | `…/naviguide-simulator/server/polar_data/` | aucun réglage : le code écrit dans ce dossier (`polar_api.py`) |
-| GRIB | `…/server/grib_data/` | `NAVIGUIDE_GRIB_DIR` |
-| Cache prévision | `…/server/forecast_cache/` | `NAVIGUIDE_FORECAST_CACHE` |
-| Inbox Saildocs | `…/server/saildocs_inbox/` | `NAVIGUIDE_SAILDOCS_INBOX` |
-| Polaires de l'ancien site | `~/blue-intelligence-map/naviguide/naviguide_workspace/polar_data/` | — |
-| Poste de recette, s'il est sur cette machine | `~/.cache/naviguide/voyage_data` et `~/.cache/naviguide/voyage-store` | — |
-| Secrets simulateur et ancien site | `~/.config/naviguide/simulator.env` et `naviguide.env` | chmod 600, jamais dans git |
+Place libre : la copie locale pèse la taille de `voyage_data` (5,5 Go
+le 17 octobre) plus les trois autres dossiers. On exige 8 Go libres.
+S'il en manque, on s'arrête. On ne supprime rien pour faire de la place.
 
 ```bash
-copy_if() {
-  if [ -e "$1" ]; then
-    mkdir -p "$DEST/fichiers/$(dirname "$1")"
-    cp -a "$1" "$DEST/fichiers/$1"
-    echo "copié $1"
-  else
-    echo "absent $1"
-  fi
-}
-copy_if "$HOME/blue-intelligence-map/naviguide-simulator/server/voyage_data"
-copy_if "$HOME/blue-intelligence-map/naviguide-simulator/server/polar_data"
-copy_if "$HOME/blue-intelligence-map/naviguide-simulator/server/grib_data"
-copy_if "$HOME/blue-intelligence-map/naviguide-simulator/server/forecast_cache"
-copy_if "$HOME/blue-intelligence-map/naviguide-simulator/server/saildocs_inbox"
-copy_if "$HOME/blue-intelligence-map/naviguide/naviguide_workspace/polar_data"
-copy_if /var/lib/naviguide/voyage_data
-copy_if "$HOME/.cache/naviguide/voyage_data"
-copy_if "$HOME/.cache/naviguide/voyage-store"
+free=$(df -B1 --output=avail "$HOME" | tail -1)
+echo "libre_octets $free" | tee "$DEST/etat-disque.txt"
+test "$free" -ge 8000000000 || { echo "STOP moins de 8 Go libres"; exit 1; }
+```
+
+### 1.2 Sur l'OVH — copie cohérente, puis redémarrage
+
+`naviguide-simulator` est arrêté le temps de la copie, puis relancé
+avant la section 2. `systemctl stop` ne désinstalle pas l'unité et ne
+touche pas aux fichiers. On n'arrête pas `blue-intelligence`.
+
+```bash
+sudo systemctl stop naviguide-simulator
+test "$(systemctl is-active naviguide-simulator)" = inactive || { echo "STOP le simulateur tourne encore"; exit 1; }
+command -v fuser >/dev/null || { echo "STOP fuser absent (paquet psmisc) — relancer le service avant d'installer quoi que ce soit"; sudo systemctl start naviguide-simulator; exit 1; }
+if sudo fuser "$SIM/voyage_data/naviguide.sqlite"; then
+  echo "STOP un processus tient encore le sqlite"
+  sudo systemctl start naviguide-simulator
+  exit 1
+fi
+echo "sqlite libre"
+
+mkdir -p "$DEST/fichiers/voyage_data"
+sqlite3 "$SIM/voyage_data/naviguide.sqlite" ".backup $DEST/fichiers/voyage_data/naviguide.sqlite"
+test -s "$DEST/fichiers/voyage_data/naviguide.sqlite" || { echo "STOP backup sqlite vide"; sudo systemctl start naviguide-simulator; exit 1; }
+
+rsync -a \
+  --exclude 'naviguide.sqlite' \
+  --exclude 'naviguide.sqlite-wal' \
+  --exclude 'naviguide.sqlite-shm' \
+  "$SIM/voyage_data/" "$DEST/fichiers/voyage_data/"
+rsync -a "$SIM/polar_data/" "$DEST/fichiers/polar_data/"
+rsync -a "$SIM/grib_data/" "$DEST/fichiers/grib_data/"
+rsync -a "$SIM/saildocs_inbox/" "$DEST/fichiers/saildocs_inbox/"
+
+sudo systemctl start naviguide-simulator
+test "$(systemctl is-active naviguide-simulator)" = active || { echo "STOP redémarrage échoué — ne rien faire d'autre avant que ce service soit active"; exit 1; }
+```
+
+Le fichier copié est celui de `.backup`, pas une copie brute du SQLite
+ouvert. `.backup` est la commande retenue. On ne fait `.dump` en plus :
+cela doublerait l'espace. Si `.backup` échoue, on relance le service
+comme la ligne `STOP backup sqlite vide`, et on s'arrête.
+
+`.dump` n'est le recours que si `sqlite3` refuse `.backup`. Dans ce cas
+seulement, service toujours arrêté :
+
+```bash
+sqlite3 "$SIM/voyage_data/naviguide.sqlite" .dump > "$DEST/fichiers/voyage_data/naviguide.sql"
+```
+
+Puis on note `format=sql` dans le manifeste. La section 8 restaure alors
+avec `sqlite3 naviguide.sqlite < naviguide.sql` au lieu de copier le
+fichier `.backup`. On ne mélange pas les deux formats.
+
+Comptes sur **le fichier de sauvegarde** (le service a déjà repris, le
+fichier vivant peut avoir bougé) :
+
+```bash
+python3 - << PY | tee "$DEST/comptes-sqlite-avant.tsv"
+import sqlite3
+path = "$DEST/fichiers/voyage_data/naviguide.sqlite"
+con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY 1"
+for (name,) in con.execute(query):
+    ident = '"' + name.replace('"', '""') + '"'
+    n = con.execute(f"SELECT COUNT(*) FROM {ident}").fetchone()[0]
+    print(f"{name}\t{n}")
+con.close()
+PY
+grep -q '^pearls	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table pearls absente"; exit 1; }
+grep -q '^kv	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table kv absente"; exit 1; }
+grep -q '^moments	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table moments absente"; exit 1; }
+```
+
+Le 17 octobre les comptes étaient `pearls` 11 159, `kv` 95 136,
+`moments` 1. Le site a pu écrire depuis : le chiffre du jour est le
+contrat de la copie, pas une erreur. Un compte à 0, ou une table
+manquante, est un `STOP`.
+
+Secrets, s'ils sont là. On ne les affiche pas.
+
+```bash
 mkdir -p "$DEST/secrets"
 cp -a "$HOME/.config/naviguide/simulator.env" "$DEST/secrets/" 2>/dev/null || echo "simulator.env absent"
 cp -a "$HOME/.config/naviguide/naviguide.env" "$DEST/secrets/" 2>/dev/null || echo "naviguide.env absent"
 chmod 700 "$DEST/secrets"
 ```
 
-Dump Mongo de **`naviguide_simulator` seulement**, avec le compte admin.
-Pas la base Blue Intelligence : elle reste sur l'OVH, et ses archives
-`blue-*.archive.gz` y sont déjà.
+Sommes, après le redémarrage (la sauvegarde ne change plus) :
 
 ```bash
-. "$HOME/.config/blue-intelligence/mongo.env"
-MONGO_URI="mongodb://${MONGO_ADMIN_USER}:${MONGO_ADMIN_PWD}@127.0.0.1:27017/?authSource=admin"
-mongodump --uri "$MONGO_URI" --db naviguide_simulator --gzip \
-  --archive="$DEST/naviguide_simulator-$STAMP.archive.gz"
-unset MONGO_URI
 (
   cd "$DEST"
-  sha256sum "naviguide_simulator-$STAMP.archive.gz" \
-    comptes-mongo-avant.tsv comptes-sqlite-avant.tsv etat-env.txt > SHA256SUMS
-  find fichiers secrets -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum >> SHA256SUMS
+  find fichiers -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+  sha256sum comptes-mongo-avant.tsv comptes-sqlite-avant.tsv etat-env.txt \
+    etat-mongo.txt etat-tailles-source.txt etat-disque.txt >> SHA256SUMS
 )
 ```
 
 On ne copie pas vers Contabo : `~/backups/mongodb/blue-*.archive.gz`,
-`backend/data/`, `~/.config/blue-intelligence/mongo.env`, `backend/.env`.
+`backend/data/`, `~/.config/blue-intelligence/mongo.env`, `backend/.env`,
+ni la base `blueintel_db`.
 
 ### 1.3 Sur le Mac — la copie qui quitte le serveur
 
+`voyage_data` pesait 5,5 Go. `rsync` reprend si la liaison coupe.
+`scp -r` ne reprend pas : on ne l'utilise pas pour ce dossier.
+
 ```bash
 STAMP=$(date -u +%F)
-mkdir -p "$HOME/Backups"
-scp -r ubuntu@135.125.226.16:backups/naviguide-split-$STAMP "$HOME/Backups/"
+mkdir -p "$HOME/Backups/naviguide-split-$STAMP"
+rsync -a --partial ubuntu@135.125.226.16:backups/naviguide-split-$STAMP/ \
+  "$HOME/Backups/naviguide-split-$STAMP/"
 cd "$HOME/Backups/naviguide-split-$STAMP"
 python3 - << 'PY'
 import hashlib, pathlib
@@ -282,25 +340,27 @@ for line in pathlib.Path("SHA256SUMS").read_text().splitlines():
     digest, rel = line.split(None, 1)
     rel = rel.lstrip("*").strip()
     got = hashlib.sha256(pathlib.Path(rel).read_bytes()).hexdigest()
-    if got == digest:
-        print("OK", rel)
-    else:
+    if got != digest:
         print("ECHEC", rel)
         bad += 1
+print("fichiers", sum(1 for line in pathlib.Path("SHA256SUMS").read_text().splitlines() if line.strip()), "echecs", bad)
 raise SystemExit(bad)
 PY
 ```
 
-Le chemin distant de `scp` est relatif au dossier personnel du compte
-`ubuntu` : les guillemets autour de `~/...` empêcheraient le `~` d'être
-lu. Chaque ligne doit afficher `OK`. Écrire à côté, sur le Mac seulement,
-un `MANIFESTE.md` : date, chemins, tableau des comptes (base, collection,
-nombre), et la phrase lue dans `etat-env.txt`. Ne pas commiter ce
-manifeste.
+Le chemin distant est relatif au dossier personnel du compte `ubuntu`.
+La dernière ligne doit finir par `echecs 0`. Une ligne `ECHEC` : on s'arrête,
+on ne supprime pas la copie OVH, on relance le `rsync`. Écrire à côté,
+sur le Mac seulement,
+un `MANIFESTE.md` : date, les quatre dossiers, les comptes `blueintel_db`,
+les comptes `pearls` / `kv` / `moments`, la phrase
+`SIMULATOR_MONGO_URL=absent`, et la comparaison avec le relevé du
+17 octobre. Ne pas commiter ce manifeste.
 
-La section 8 recopiera cette sauvegarde vers Contabo et comparera les
-nombres. Tant que le manifeste n'existe pas sur le Mac, on ne passe pas
-à la section 2.
+La section 8 refait une copie cohérente le jour du transfert (les
+fichiers auront vécu entre-temps) et compare les SHA-256 de **cette**
+copie-là. Tant que le manifeste de la section 1 n'existe pas sur le Mac,
+on ne passe pas à la section 2.
 
 ## 2. Geler les automatismes
 
@@ -819,7 +879,7 @@ Chemins codés en dur aujourd'hui : `~/blue-intelligence-map` et
 | Dépôt | Dossier sur le serveur | Hôte du secret `VPS_HOST` |
 |---|---|---|
 | Blue Intelligence | `/home/ubuntu/blue-intelligence` | `ubuntu@135.125.226.16` |
-| NAVIGUIDE | `/home/ubuntu/naviguide` | `ubuntu@13.140.164.185` |
+| NAVIGUIDE | `/home/naviguide/naviguide` | `naviguide@13.140.164.185` |
 
 `prepare-ssh.sh` écrit aujourd'hui `REMOTE_APP=/home/ubuntu/blue-intelligence-map`
 et, si `VPS_HOST` est vide, `ubuntu@135.125.226.16`. Dans la copie
@@ -872,18 +932,27 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
 
 ### 6.2 Dépôt NAVIGUIDE
 
-- Les quatre unités `infra/vps/naviguide/*.service` :
-  `WorkingDirectory` et `ExecStart` sous `/home/ubuntu/naviguide/...`.
+- Les quatre unités `infra/vps/naviguide/*.service` : `User=naviguide`
+  (aujourd'hui `User=ubuntu`), `WorkingDirectory` et `ExecStart` sous
+  `/home/naviguide/naviguide/...`, `EnvironmentFile` vers
+  `/home/naviguide/.config/naviguide/simulator.env`.
 - `deploy-naviguide.sh`, `deploy-simulator.sh`,
   `publish-simulator-from-mac.sh` : `APP` et `REMOTE_APP` =
-  `/home/ubuntu/naviguide`.
+  `/home/naviguide/naviguide`. Le défaut `ubuntu@135.125.226.16` de
+  `publish-simulator-from-mac.sh` est retiré.
+- `polar_api.py` n'a pas de variable : il écrit dans
+  `server/polar_data/` à côté du code. Dans cette copie, lire
+  `NAVIGUIDE_POLAR_DIR` quand elle est posée, sinon garder ce dossier.
+  Même forme que `NAVIGUIDE_GRIB_DIR` dans `saildocs.py`.
 - `infra/vps/ci/*` : même dossier, hôte sans défaut OVH. `rsync-to-vps.sh`
   ne garde que les cas `naviguide` et `simulator`. Le cas `simulator`
   utilise `--delete` et n'exclut aujourd'hui que `server/voyage_data/` et
   `server/polar_data/*.json`. Ajouter les exclusions
-  `server/grib_data/`, `server/forecast_cache/`, `server/saildocs_inbox/`,
-  pour qu'un déploiement ne les efface pas s'ils sont encore dans le
-  checkout. La section 8 les place de préférence **hors** du checkout.
+  `server/grib_data/`, `server/forecast_cache/`, `server/saildocs_inbox/`.
+  `forecast_cache/` n'existait pas le 17 octobre : l'exclusion empêche
+  un déploiement futur de l'effacer le jour où le code le crée. La
+  section 8 place les données **hors** du checkout, dans
+  `/home/naviguide/naviguide-data/`.
 - `plan_deploy.py` : `www.naviguide.fr` et `simulator.naviguide.fr`.
   La branche `recette` ne déploie que le simulateur, comme aujourd'hui.
   Pas de cron de rattrapage des files Blue Intelligence.
@@ -959,148 +1028,257 @@ sites. `infra/vps/README.md` décrit le DNS :
 
 | | Blue Intelligence | NAVIGUIDE |
 |---|---|---|
-| Machine | OVH `135.125.226.16` | Contabo `13.140.164.185` |
-| Dossier | `~/blue-intelligence` | `~/naviguide` |
-| Mongo | le `mongod` déjà en place, `127.0.0.1:27017`, base `$DB_NAME` | un `mongod` **neuf**, `127.0.0.1:27017`, base `naviguide_simulator` seulement |
+| Machine | OVH `135.125.226.16`, compte `ubuntu` | Contabo `13.140.164.185`, compte `naviguide`, Ubuntu 24.04 |
+| Code aujourd'hui | `~/blue-intelligence-map` | pas encore là |
+| Code après la séparation | `~/blue-intelligence` | `~/naviguide` |
+| Données runtime | Mongo `blueintel_db` sur `127.0.0.1:27017` | fichiers dans `~/naviguide-data/`. Pas de Mongo. |
 | Sites | `blueintelligence.online` | `www.naviguide.fr`, `simulator.naviguide.fr` |
 
-Le dossier OVH `~/blue-intelligence-map` reste sur le disque. En cas
-d'échec, les services OVH sont encore là : on remet les unités systemd
-vers ce dossier, et les enregistrements A de `naviguide.fr` vers
-`135.125.226.16`.
+Le dossier OVH `~/blue-intelligence-map` et son `voyage_data/` restent
+sur le disque. En cas d'échec, les services OVH sont encore là : on remet
+les unités systemd vers ce dossier, et les enregistrements A de
+`naviguide.fr` vers `135.125.226.16`.
 
-### 7.1 Préparer Contabo, sans y mettre les données
+### 7.1 Vérifier Contabo, sans y installer Mongo
 
-Utilisateur non root pour la suite, clé SSH, mises à jour. Pare-feu :
-22, 80 et 443 seulement. Dans le panneau Contabo, le groupe de sécurité
-ne doit pas non plus exposer 27017.
+La machine est déjà sécurisée. On vérifie. On ne réécrit pas `ufw`
+(une règle fausse peut fermer le SSH). On n'installe pas `mongod`.
 
-MongoDB 8, canal `noble` comme `install-mongodb.sh`, **sans** lancer ce
-script : il exige `DB_NAME` depuis `atlas.env` et crée l'utilisateur
-`blue` de Blue Intelligence.
-
-- `bindIp: 127.0.0.1` dans `/etc/mongod.conf`. Si la ligne est autre, ne
-  pas continuer.
-- `security.authorization: enabled`.
-- Compte `admin` (rôle `root` sur `admin`) et compte `naviguide_sim`
-  (`readWrite` sur `naviguide_simulator` seulement). Pas de rôle sur une
-  base Blue Intelligence : cette base n'existe pas ici.
-- Mot de passe nouveau, dans `~/.config/naviguide/simulator.env` sur
-  Contabo, clé `SIMULATOR_MONGO_URL`, hôte `127.0.0.1`.
-
-```javascript
-use naviguide_simulator
-db.createUser({
-  user: "naviguide_sim",
-  pwd: passwordPrompt(),
-  roles: [ { role: "readWrite", db: "naviguide_simulator" } ]
-})
+```bash
+ssh naviguide@13.140.164.185
 ```
 
-`passwordPrompt()` évite de laisser le mot de passe dans l'historique
-du shell.
+```bash
+whoami
+. /etc/os-release
+echo "$PRETTY_NAME"
+sudo ufw status verbose
+ss -ltn | grep 27017 || echo "rien n'écoute sur 27017"
+```
 
-Vérifier depuis le Mac que le port n'est pas joignable :
+Résultats attendus : `naviguide`, une ligne `Ubuntu 24.04`, `ufw` actif,
+entrées 22, 80 et 443, pas d'autre port public, et « rien n'écoute sur
+27017 ». Un écart : on s'arrête, on ne « corrige » pas le pare-feu dans
+cette procédure.
+
+Depuis le Mac, le port Mongo n'est pas joignable. L'échec est le
+résultat attendu, sur les deux machines :
 
 ```bash
 nc -vz -G 5 13.140.164.185 27017
+nc -vz -G 5 135.125.226.16 27017
 ```
 
-L'échec de connexion est le résultat attendu. Le même contrôle sur
-`135.125.226.16` doit échouer aussi (le script d'install l'exige déjà
-sur l'OVH).
-
-## 8. Migrer les données NAVIGUIDE
-
-Le transport est SSH, port 22. Le fichier d'archive voyage dans `scp`.
-On ne fait pas `ssh -L 27017`, on ne pointe pas `SIMULATOR_MONGO_URL`
-vers l'IP de l'OVH, on n'ouvre pas 27017. Le simulateur n'a pas besoin
-du Mongo Blue Intelligence : ports, AMP et climatologie passent par
-`https://blueintelligence.online/api`.
-
-### 8.1 Copier la sauvegarde de la section 1
-
-Sur le Mac, une fois Contabo joignable en SSH :
+Place libre sur Contabo, avant la copie de 5,5 Go et plus. On ne
+supprime rien pour la faire :
 
 ```bash
-STAMP=LA_DATE_DE_LA_SECTION_1
-ssh ubuntu@13.140.164.185 "mkdir -p backups"
-scp -r "$HOME/Backups/naviguide-split-$STAMP" ubuntu@13.140.164.185:backups/
-ssh ubuntu@13.140.164.185 "cd backups/naviguide-split-$STAMP && sha256sum -c SHA256SUMS"
+df -B1 --output=avail "$HOME"
 ```
 
-Les sommes doivent coïncider avec le Mac et avec l'OVH.
+Il faut au moins 8 Go. Sinon, stop.
 
-### 8.2 Restaurer, sans `--drop`
+## 8. Copier les fichiers NAVIGUIDE vers Contabo
 
-Sur Contabo, base encore vide. Si `comptes-mongo-avant.tsv` dit
-« aucune collection », il n'y a rien à restaurer en Mongo : le stock
-est sur disque, et on passe au paragraphe suivant.
+Le transfert est une copie de fichiers sur le port 22. Pas de tunnel
+`ssh -L` vers Mongo, pas d'URI vers l'IP de l'OVH, pas de
+`mongodump`. Le simulateur n'a pas besoin du Mongo Blue Intelligence :
+ports, AMP et climatologie passent par
+`https://blueintelligence.online/api`. Passer le stock `official-store/`
+sur Mongo serait un autre chantier (section 10). Ce plan ne le fait pas.
+
+La copie de la section 1 est la sauvegarde d'avant les opérations git.
+Le jour du transfert, on en refait une : le SQLite a pu recevoir des
+perles depuis. Les deux restent. On ne supprime pas celle de l'OVH.
+
+### 8.1 Arrêt bref, export, rsync
+
+Sur l'OVH, compte `ubuntu` :
 
 ```bash
-. ~/.config/naviguide/simulator.env
-# SIMULATOR_MONGO_URL pointe vers 127.0.0.1. Ne pas l'afficher.
-mongorestore --uri "$SIMULATOR_MONGO_URL" --gzip \
-  --archive="$HOME/backups/naviguide-split-$STAMP/naviguide_simulator-$STAMP.archive.gz" \
-  --nsInclude='naviguide_simulator.*'
+set +x
+STAMP=$(date -u +%F)
+SRC="$HOME/blue-intelligence-map/naviguide-simulator/server"
+DEST="$HOME/backups/naviguide-move-$STAMP"
+mkdir -p "$DEST/fichiers"
+sudo systemctl stop naviguide-simulator
+test "$(systemctl is-active naviguide-simulator)" = inactive || { echo "STOP"; exit 1; }
+if sudo fuser "$SRC/voyage_data/naviguide.sqlite"; then
+  echo "STOP sqlite encore ouvert"
+  sudo systemctl start naviguide-simulator
+  exit 1
+fi
+
+mkdir -p "$DEST/fichiers/voyage_data"
+sqlite3 "$SRC/voyage_data/naviguide.sqlite" ".backup $DEST/fichiers/voyage_data/naviguide.sqlite"
+rsync -a \
+  --exclude 'naviguide.sqlite' --exclude 'naviguide.sqlite-wal' --exclude 'naviguide.sqlite-shm' \
+  "$SRC/voyage_data/" "$DEST/fichiers/voyage_data/"
+rsync -a "$SRC/polar_data/" "$DEST/fichiers/polar_data/"
+rsync -a "$SRC/grib_data/" "$DEST/fichiers/grib_data/"
+rsync -a "$SRC/saildocs_inbox/" "$DEST/fichiers/saildocs_inbox/"
+
+sudo systemctl start naviguide-simulator
+test "$(systemctl is-active naviguide-simulator)" = active || { echo "STOP redémarrage OVH échoué"; exit 1; }
 ```
 
-Pas de `--drop`. Si `mongorestore` signale que la cible n'est pas vide,
-s'arrêter et regarder le manifeste. Ne pas relancer avec `--drop`.
+Le service OVH est de nouveau `active` avant le long transfert. Les
+fichiers d'origine n'ont pas été effacés. La sauvegarde dans `$DEST`
+ne change plus : c'est elle qu'on envoie.
 
-Replacer les dossiers. Hors du checkout, pour qu'un `rsync --delete`
-ne soit pas leur seul exemplaire :
+Comptes et sommes de cette sauvegarde :
 
-```text
-/var/lib/naviguide/voyage_data/     ← voyage_data (sqlite, json, official-store, official_journal)
-/var/lib/naviguide/grib_data/
-/var/lib/naviguide/forecast_cache/
-/var/lib/naviguide/saildocs_inbox/
+```bash
+python3 - << PY | tee "$DEST/comptes-sqlite-move.tsv"
+import sqlite3
+path = "$DEST/fichiers/voyage_data/naviguide.sqlite"
+con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY 1"
+for (name,) in con.execute(query):
+    ident = '"' + name.replace('"', '""') + '"'
+    n = con.execute(f"SELECT COUNT(*) FROM {ident}").fetchone()[0]
+    print(f"{name}\t{n}")
+con.close()
+PY
+(
+  cd "$DEST"
+  find fichiers -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+  sha256sum comptes-sqlite-move.tsv >> SHA256SUMS
+)
 ```
 
-Dans `simulator.env` sur Contabo :
+Depuis l'OVH, essai de liaison vers Contabo. `BatchMode` évite d'attendre
+un mot de passe :
+
+```bash
+ssh -o BatchMode=yes naviguide@13.140.164.185 echo ok
+```
+
+Si la ligne est `ok` :
+
+```bash
+ssh naviguide@13.140.164.185 "mkdir -p naviguide-data"
+rsync -a --partial -e ssh "$DEST/fichiers/" naviguide@13.140.164.185:naviguide-data/
+rsync -a -e ssh "$DEST/SHA256SUMS" "$DEST/comptes-sqlite-move.tsv" \
+  naviguide@13.140.164.185:naviguide-data/
+```
+
+Si l'essai échoue, on ne fabrique pas une clé à la va-vite. On passe par
+le Mac, qui a déjà les deux accès :
+
+```bash
+mkdir -p "$HOME/Backups/naviguide-move-$STAMP"
+rsync -a --partial ubuntu@135.125.226.16:backups/naviguide-move-$STAMP/ \
+  "$HOME/Backups/naviguide-move-$STAMP/"
+rsync -a --partial "$HOME/Backups/naviguide-move-$STAMP/fichiers/" \
+  naviguide@13.140.164.185:naviguide-data/
+rsync -a "$HOME/Backups/naviguide-move-$STAMP/SHA256SUMS" \
+  "$HOME/Backups/naviguide-move-$STAMP/comptes-sqlite-move.tsv" \
+  naviguide@13.140.164.185:naviguide-data/
+```
+
+### 8.2 Vérifier les comptes et les SHA-256
+
+Sur Contabo, compte `naviguide`. Les chemins du fichier `SHA256SUMS`
+commencent par `fichiers/` parce qu'il a été calculé dans `$DEST` sur
+l'OVH. Sur Contabo, ce contenu est directement dans `~/naviguide-data/`.
+On ne lance pas `sha256sum -c` : le préfixe ne correspondrait pas.
+
+```bash
+python3 - << 'PY'
+import hashlib, pathlib
+root = pathlib.Path.home() / "naviguide-data"
+listed = (root / "SHA256SUMS").read_text().splitlines()
+bad = 0
+seen = set()
+for line in listed:
+    if not line.strip() or line.endswith("comptes-sqlite-move.tsv"):
+        continue
+    digest, rel = line.split(None, 1)
+    rel = rel.lstrip("*").strip()
+    if not rel.startswith("fichiers/"):
+        print("ECHEC préfixe", rel)
+        bad += 1
+        continue
+    path = root / rel[len("fichiers/"):]
+    seen.add(path)
+    if not path.is_file():
+        print("ECHEC absent", path)
+        bad += 1
+        continue
+    got = hashlib.sha256(path.read_bytes()).hexdigest()
+    if got != digest:
+        print("ECHEC", path)
+        bad += 1
+print("fichiers", len(seen), "echecs", bad)
+raise SystemExit(bad)
+PY
+```
+
+Puis les comptes, sur le SQLite reçu :
+
+```bash
+python3 - << 'PY' | tee "$HOME/naviguide-data/comptes-sqlite-apres.tsv"
+import sqlite3, pathlib
+path = pathlib.Path.home() / "naviguide-data/voyage_data/naviguide.sqlite"
+con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY 1"
+for (name,) in con.execute(query):
+    ident = '"' + name.replace('"', '""') + '"'
+    n = con.execute(f"SELECT COUNT(*) FROM {ident}").fetchone()[0]
+    print(f"{name}\t{n}")
+con.close()
+PY
+diff -u "$HOME/naviguide-data/comptes-sqlite-move.tsv" "$HOME/naviguide-data/comptes-sqlite-apres.tsv"
+```
+
+`diff` ne doit rien afficher. `pearls`, `kv` et `moments` sont les trois
+tables du contrat. `official-store/` est dans les SHA-256 : un fichier
+manquant ou différent est un `ECHEC` du script Python.
+
+On ne déclare pas la copie faite tant qu'une somme ou un compte diffère.
+On ne supprime pas l'original OVH pour « recommencer propre ». On
+recommence le `rsync` par-dessus.
+
+### 8.3 Dire au simulateur où sont les fichiers
+
+Dans `/home/naviguide/.config/naviguide/simulator.env`, chmod 600. Ne
+pas y mettre `SIMULATOR_MONGO_URL`. Ne pas y mettre
+`NAVIGUIDE_FORECAST_CACHE` : le dossier n'existe pas, le code le créera
+dans le checkout le jour où il en a besoin, et le `rsync` du déploiement
+l'exclut.
 
 ```text
-NAVIGUIDE_VOYAGE_DIR=/var/lib/naviguide/voyage_data
-NAVIGUIDE_GRIB_DIR=/var/lib/naviguide/grib_data
-NAVIGUIDE_FORECAST_CACHE=/var/lib/naviguide/forecast_cache
-NAVIGUIDE_SAILDOCS_INBOX=/var/lib/naviguide/saildocs_inbox
+NAVIGUIDE_VOYAGE_DIR=/home/naviguide/naviguide-data/voyage_data
+NAVIGUIDE_GRIB_DIR=/home/naviguide/naviguide-data/grib_data
+NAVIGUIDE_SAILDOCS_INBOX=/home/naviguide/naviguide-data/saildocs_inbox
+NAVIGUIDE_POLAR_DIR=/home/naviguide/naviguide-data/polar_data
 BI_API_URL=https://blueintelligence.online/api
-SIMULATOR_MONGO_URL=mongodb://naviguide_sim:…@127.0.0.1:27017/naviguide_simulator?authSource=naviguide_simulator
 ```
 
-`polar_data/` du simulateur n'a pas de variable : le poser dans
-`~/naviguide/naviguide-simulator/server/polar_data/` **après** le premier
-`rsync` du code, ou avant si le déploiement exclut déjà
-`server/polar_data/*.json`. Les polaires de l'ancien site vont dans
-`~/naviguide/naviguide/naviguide_workspace/polar_data/`.
+`NAVIGUIDE_POLAR_DIR` ne marche qu'après la modification de `polar_api.py`
+décrite en section 6.2. Tant que cette ligne de code n'est pas dans le
+dépôt déployé, les polaires restent introuvables : on ne démarre pas le
+service public Contabo avant ce commit.
 
-`naviguide.env` (clés LLM / Copernicus de l'ancien site) va dans
-`~/.config/naviguide/naviguide.env`, chmod 600.
+`naviguide.env` (clés de l'ancien site) va dans
+`/home/naviguide/.config/naviguide/naviguide.env`, chmod 600, copié
+depuis la sauvegarde de la section 1 s'il y était. On n'affiche pas le
+fichier.
 
-### 8.3 Recompter
+Sur l'OVH, recompter `blueintel_db` avec la commande `mongosh` de la
+section 1.1. Le TSV doit être identique à `comptes-mongo-avant.tsv`
+de la section 1 (les écritures Blue Intelligence du jour peuvent avoir
+augmenté un compte : le noter dans le manifeste, ce n'est pas une perte).
+Il n'y a toujours pas de base `naviguide_simulator` à recompter. Les
+fichiers `voyage_data/` de l'OVH sont encore là : `du -sb` le montre.
+On n'y supprime toujours rien.
 
-Même commande `mongosh` qu'en section 1, sur Contabo, avec le compte
-admin de **cette** machine. Écrire `comptes-mongo-apres.tsv`. Même
-script Python pour SQLite, en lecture seule, sur
-`/var/lib/naviguide/voyage_data/naviguide.sqlite`.
-
-Le tableau du manifeste, une ligne par collection et par table, a trois
-colonnes : nombre OVH avant, nombre Contabo après, égalité. Les deux
-premières colonnes viennent des fichiers TSV. On ne déclare pas la
-migration faite tant qu'une ligne diffère, ou tant qu'un dossier copié
-en section 1.2 n'est pas au chemin prévu.
-
-Sur l'OVH, refaire le comptage Blue Intelligence (`$DB_NAME`, dont
-`poe_ports`) et le comptage `naviguide_simulator`. Ils doivent être
-identiques au TSV d'avant. L'OVH n'a rien perdu. On n'y supprime toujours
-rien.
-
-Ajouter ensuite sur Contabo un cron quotidien qui archive
-`naviguide_simulator` et le dossier `/var/lib/naviguide`, sur 14 jours,
-dans `~/backups/naviguide/` — pas sous le nom `blue-*.archive.gz`. Ce
-cron n'existe pas encore : le cron du dépôt ne sauve que la base Blue
-Intelligence, et il reste sur l'OVH.
+Cron Contabo, ensuite : une fois par jour, `sqlite3 .backup` de
+`naviguide.sqlite` et une archive du dossier `~/naviguide-data`, 14 jours,
+dans `~/backups/naviguide/`. Pas de `mongodump`, pas du nom
+`blue-*.archive.gz`. Ce cron n'existe pas dans le dépôt : le cron du
+dépôt ne sauve que `blueintel_db`, et il reste sur l'OVH.
 
 ## 9. DNS, puis la liste qui autorise l'archivage
 
@@ -1116,8 +1294,14 @@ certificat de l'OVH reste en place : c'est le retour arrière.
 
 Déployer depuis chaque dépôt neuf (workflow_dispatch) seulement après
 les secrets de la section 6.3. Le dépôt NAVIGUIDE doit rsync vers
-`~/naviguide` sur Contabo. Le dépôt Blue Intelligence doit rsync vers
-`~/blue-intelligence` sur l'OVH.
+`/home/naviguide/naviguide` sur Contabo, compte `naviguide`. Le dépôt
+Blue Intelligence doit rsync vers `~/blue-intelligence` sur l'OVH,
+compte `ubuntu`.
+
+Juste avant de changer les A, refaire la section 8.1 et 8.2 (arrêt,
+`.backup`, `rsync`, comptes, SHA-256, redémarrage OVH). La première
+copie a vieilli dès que le simulateur OVH a repris. Cette deuxième
+copie est celle que le DNS doit servir. L'original OVH reste en place.
 
 Liste. Tout est vert avant d'archiver `Blue-Intelligence-Map` :
 
@@ -1133,14 +1317,18 @@ Liste. Tout est vert avant d'archiver `Blue-Intelligence-Map` :
    `naviguide-simulator` et les services NAVIGUIDE qui tournaient
    (`naviguide-api`, `naviguide-polar`, `naviguide-orchestrator`) sont
    `active` sur Contabo.
-7. Les comptes du manifeste sont égaux : collections Blue Intelligence
-   sur l'OVH (avant = après), collections `naviguide_simulator`
-   (OVH = Contabo), tables SQLite (OVH = Contabo).
+7. Les comptes du manifeste sont égaux : collections `blueintel_db`
+   sur l'OVH toujours présentes, tables `pearls`, `kv`, `moments` du
+   dernier `.backup` égales sur Contabo, et `sha256sum` de
+   `naviguide-data/` sans ligne `ECHEC`. Le dossier
+   `voyage_data/` est encore sur l'OVH.
 8. Un déploiement part de chaque dépôt neuf vers le bon hôte. Une
    poussée sur `Blue-Intelligence-Map` ne déploie plus (workflows
-   disabled). Le workflow NAVIGUIDE ne contient pas `135.125.226.16`.
-9. `ss -ltn` sur les deux machines montre `27017` sur `127.0.0.1`
-   seulement. Depuis le Mac, le `nc` de la section 7.1 échoue toujours.
+   disabled). Le workflow NAVIGUIDE ne contient pas `135.125.226.16`
+   ni `ubuntu@`.
+9. Sur l'OVH, `ss -ltn` montre `27017` sur `127.0.0.1` seulement. Sur
+   Contabo, rien n'écoute sur `27017`. Depuis le Mac, les deux `nc` de
+   la section 7.1 échouent toujours.
 
 Tant qu'une ligne est rouge, l'archive reste la référence et les
 services OVH restent capables de reprendre le DNS. Quand les neuf lignes
@@ -1167,7 +1355,8 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Fichiers non commités sur le Mac | **DÉCISION PROPRIÉTAIRE** au vu de `git status --short` (section 2). Non vérifiés ici. |
 | Autres secrets GitHub, rulesets, wiki | **Non vérifié.** `gh secret list` sur l'archive, et un coup d'œil au wiki, avant d'archiver. |
 | Ancienne valeur de clé dans `.env.example` | **DÉCISION PROPRIÉTAIRE**, non bloquante pour le filtre. Le fichier (retiré le 28 août 2026) n'est recopié dans aucun dépôt neuf. La valeur reste dans l'historique de l'archive. La faire tourner, si elle a servi, est un geste à part : ce plan n'affiche pas la valeur et ne la renouvelle pas. |
-| Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande dans ce plan. Les données OVH restent jusqu'à ce mot, et après : les supprimer n'est pas une étape écrite ici. |
+| Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande d'arrêt définitif dans ce plan. Les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. Les fichiers OVH restent jusqu'à un accord explicite, et après : les supprimer n'est pas une étape écrite ici. |
+| Mettre le stock `official-store/` dans Mongo | **DÉCISION PROPRIÉTAIRE.** Aujourd'hui `SIMULATOR_MONGO_URL` est absent et la base n'existe pas. Ce plan copie les fichiers. Y passer demanderait un autre plan, après la copie disque vérifiée. |
 | Pytest backend dans la CI Blue Intelligence | Reporté au commit d'après le tri hermétique. Pas un bloquant du 27 octobre. |
 | Profil « lots de nuit » pour Blue Intelligence | Plus tard. `run_lots.py` n'est pas dans ce dépôt. Les quatre scripts GitHub génériques y sont, avec `BIM_REPO` à changer. |
 
@@ -1182,8 +1371,11 @@ dépôts ; `.gitignore` et `.nvmrc` dans les deux ; cache nginx
 climatologie dans les deux ;
 `infra/agents/` dans NAVIGUIDE avec les quatre scripts génériques aussi
 dans Blue Intelligence ; push de `main` et des cinq tags, jamais
-`--mirror` ; NAVIGUIDE sur Contabo, Blue Intelligence et sa base sur
-l'OVH ; copie SSH sans exposer 27017 ; pas de suppression OVH.
+`--mirror` ; NAVIGUIDE sur Contabo (compte `naviguide`, Ubuntu 24.04,
+ufw 22/80/443), Blue Intelligence et `blueintel_db` sur l'OVH (compte
+`ubuntu`, dossier `~/blue-intelligence-map`) ; copie de fichiers du
+simulateur, pas de transfert Mongo ; pas de suppression OVH sans accord
+explicite.
 
 ## 11. Journal des modifications
 
@@ -1198,13 +1390,13 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Changement | Source |
 |---|---|
 | Le dépôt réel est `Berry-Mappemonde/Blue-Intelligence`, 1 403 commits à `0ad99920`, pas « Blue-Intelligence-Map, 1 249 commits au 16 octobre ». `Blue-Intelligence-Map` est le nom d'**après** le renommage. | Arbre ; Fusion B.1 |
-| Section 1 ajoutée en tête : sauvegarde de `naviguide_simulator`, SQLite et dossiers, copies hors OVH, comptes par collection avant et après. | Demande ; Base §1 et §4 ; Avant-split phase 1 ; Fusion B, ajouts du 17 oct. |
-| Le cron BI ne sauve pas la base du simulateur. Le compte `blue` ne peut pas la dumper. Dump avec `admin`, base `naviguide_simulator` seulement. | `blue-intelligence-backup.cron` ; `install-mongodb.sh` ; `infra/vps/README.md` ; Base §1.2 et §1.4 |
-| `SIMULATOR_MONGO_URL` peut être absent : on copie le disque même si le dump Mongo est vide, et on l'écrit dans le manifeste. | `simulator.env.example` ; `official_store.py` ; Base §1.2 |
-| Dossiers en plus de la liste demandée, s'ils existent : `saildocs_inbox/`, `official-store/`, `official_journal/`, `/var/lib/naviguide/voyage_data`, polaires de l'ancien site, `simulator.env`, `naviguide.env`. | `voyage_store.py`, `saildocs.py`, `forecast_cube.py`, `polar_api.py` ; Base §3 et §4.1 |
-| Restauration sans `--drop`. Rien n'est supprimé sur l'OVH. Pas de commande d'arrêt des services NAVIGUIDE sur l'OVH. | Demande ; Avant-split (pas de drop en production) |
-| Transport par `scp` sur le port 22. 27017 reste sur `127.0.0.1`. Pas de tunnel `ssh -L` vers Mongo, pas d'URI vers l'IP OVH. | Demande ; `install-mongodb.sh` ; Base §4.2 |
-| NAVIGUIDE sur Contabo `13.140.164.185`, Blue Intelligence sur l'OVH. Deux `VPS_HOST`, deux dossiers. | Décision du 17 oct. ; Avant-split ; Fusion B.8 et ajouts |
+| Section 1 en tête : sauvegarde des fichiers du simulateur et comptes de `blueintel_db`, avant le reste. Pas de dump d'une base simulateur. | Demande ; relevé OVH du 17 oct. 2026 |
+| Le cron BI ne sauve que `blueintel_db`. On ne l'utilise pas pour NAVIGUIDE, et on n'écrit pas dans `~/backups/mongodb/`. | `blue-intelligence-backup.cron` ; relevé OVH |
+| `SIMULATOR_MONGO_URL` est absent, l'utilisateur `naviguide_sim` n'existe pas, et `mongod` n'a que `admin`, `blueintel_db`, `config`, `local`. Le stock officiel est `official-store/` sur disque. Si l'un de ces faits a changé le jour J, stop. | Relevé OVH du 17 oct. 2026 ; `official_store.py` |
+| Données présentes : `voyage_data/` (5,5 Go, dont `naviguide.sqlite` et `official-store/` 690 Mo), `polar_data/`, `grib_data/`, `saildocs_inbox/`, sous `~/blue-intelligence-map/naviguide-simulator/server/`. Absents : `forecast_cache/`, `/var/lib/naviguide`, `~/.cache/naviguide`. | Relevé OVH du 17 oct. 2026 |
+| Copie cohérente : `systemctl stop`, `sqlite3 .backup` (`.dump` seulement si `.backup` échoue), `rsync` des quatre dossiers, SHA-256, comptes `pearls` / `kv` / `moments`, puis `systemctl start`. L'original n'est pas supprimé. | Demande du 17 oct. au soir ; `pearl_store.py` |
+| Transport par `rsync` sur le port 22 vers `naviguide@` Contabo, ou par le Mac si l'OVH n'a pas la clé. Pas de tunnel Mongo. | Demande du 17 oct. au soir |
+| NAVIGUIDE sur Contabo `13.140.164.185`, compte `naviguide`, Ubuntu 24.04, ufw 22/80/443, dossier `/home/naviguide/naviguide`. Blue Intelligence sur l'OVH, compte `ubuntu`, code dans `~/blue-intelligence-map`. Pas de Mongo sur Contabo. | Décision du 17 oct. ; relevé OVH et état Contabo du même jour |
 | DNS : A `www` et `simulator` (et l'apex s'il pointe vers l'OVH) vers Contabo. `blueintelligence.online` reste sur Cloudflare / OVH. Certificat neuf sur Contabo, certificat OVH conservé. | `infra/vps/README.md` lignes 217–220 et 362 |
 | `proxy_pass` de `/bi/` vers `127.0.0.1:8001` réécrit vers `https://blueintelligence.online` avec le bon en-tête `Host`. `BI_API_URL` de production aligné sur l'URL publique. | `nginx-simulator.conf`, `nginx-naviguide.conf` ; `simulator.env.example` ; Fusion B.4 ; Inventaire 4.3 |
 | Le classeur remplace les `--path` de dossiers mixtes. 0 fichier non classé sur l'arbre lu. 0 écart d'historique. | Arbre ; Fusion B.5 ; Inventaire 4.1 et 4.2 |
@@ -1224,12 +1416,14 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Les workflows de l'archive, cron compris, sont désactivés avant le renommage. `batch-pause.sh` est signalé absent. | `deploy.yml`, `weekly-data-build.yml`, `zap-baseline.yml` ; Fusion B.1 point 5 ; Outillage §2.1 |
 | Premier commit d'adaptation **avant** le premier push. Liste des fichiers à `blue-intelligence-map` et de `BIM_REPO`. | Fusion B.4 ; Outillage §4 et §5 ; grep sur l'arbre |
 | Le défaut OVH de `prepare-ssh.sh` est retiré dans la copie NAVIGUIDE. | `prepare-ssh.sh` lignes 11 et 31 |
-| Exclusions `rsync` à ajouter pour `grib_data`, `forecast_cache`, `saildocs_inbox`. | `rsync-to-vps.sh` lignes 77–84 |
+| Exclusions `rsync` à ajouter pour `grib_data`, `forecast_cache`, `saildocs_inbox`. Les données vivent dans `/home/naviguide/naviguide-data/`. `polar_api.py` de la copie NAVIGUIDE lit `NAVIGUIDE_POLAR_DIR`. `forecast_cache/` n'est pas migré : il était absent. | `rsync-to-vps.sh` lignes 77–84 ; `polar_api.py` ; relevé OVH |
+| Les unités systemd NAVIGUIDE passent de `User=ubuntu` et `/home/ubuntu/...` à `User=naviguide` et `/home/naviguide/naviguide`. | `naviguide-simulator.service` ; état Contabo du 17 oct. |
+| Contrôle final : SHA-256 et comptes SQLite, `blueintel_db` toujours sur l'OVH, rien à l'écoute sur 27017 chez Contabo. Pas d'égalité de collections `naviguide_simulator`. | Relevé OVH du 17 oct. ; demande du soir |
 | Preuve GenAI : le `log` de `poe_pipeline.py` doit rester en août 2026 après le filtre. `backend/` est gardé en entier. | Arbre (`b4fae8c7`, `--follow` jusqu'au 26 août) ; Fusion B.8 |
 | Balayage de motifs de secrets avant push, sans afficher les valeurs. gitleaks non vérifié. | Fusion B.8 |
 | Issues #432 et #446 à transférer vers NAVIGUIDE. | `gh issue list` ; Fusion B.7 |
 | Les 16 PR ouvertes restent sur l'archive. #550 est sur `main`. Les PR fermées #146, #227, #510, #537, #552 n'y sont pas. `pr-archive/` n'est pas dans git. | `gh pr list` ; Arbre |
 | Gros fichiers : max 17,9 Mo, pas de LFS dans la procédure. | `git cat-file` sur toutes les refs ; Fusion B.6 ; Inventaire 4.4 |
 | Pytest backend reporté. Les cinq tags `data-*` ne vont pas dans NAVIGUIDE. Les assets de Release ne suivent pas le push. | Outillage §3.3 et §4.3 ; `git for-each-ref refs/tags` |
-| Neuf contrôles remplacent les huit de l'ancien §6 (deux machines, comptes simulateur, port 27017 fermé). | Ancien §6 ; Base §4 ; décision serveurs |
+| Neuf contrôles remplacent les huit de l'ancien §6. Le septième compare le SQLite et les SHA-256, pas une base Mongo absente. | Ancien §6 ; relevé OVH du 17 oct. |
 | `docs/PLAN_BATCH_2026-10-16.md` et la règle Cursor des specs ne sont pas sur `main` (PR #545). | Arbre ; Outillage §1.3 ; Inventaire 4.5 |
