@@ -826,6 +826,8 @@ def test_process_mode_spawns_filler_once_and_never_computes_in_api(tmp_path, mon
 
     monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "force")      # pytest coupe le worker sinon
     monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setenv("NAVIGUIDE_FILL_NUDGE_MIN_S", "0")         # ce test compte les lancements, pas le plafond
+    monkeypatch.setattr(official_store, "_LAST_NUDGE_AT", 0.0)
     monkeypatch.setattr(official_store, "WORKER_MODE", "process")
     calls: list[list[str]] = []
 
@@ -853,6 +855,27 @@ def test_process_mode_spawns_filler_once_and_never_computes_in_api(tmp_path, mon
     assert official_store.fill_pidfile().read_text(encoding="utf-8").splitlines()[0] == "424242"
     assert official_store.fill_nudgefile().exists()
     assert official_store.fill_process_alive() == 424242
+
+
+def test_process_mode_wakes_the_filler_once_per_window(tmp_path, monkeypatch):
+    """Trois kicks rapprochés ne relancent pas `ps -ax` ni le remplisseur."""
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "force")
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setenv("NAVIGUIDE_FILL_NUDGE_MIN_S", "180")
+    monkeypatch.setattr(official_store, "WORKER_MODE", "process")
+    monkeypatch.setattr(official_store, "_LAST_NUDGE_AT", 0.0)
+    wakes = {"n": 0}
+
+    def count():
+        wakes["n"] += 1
+        return 1
+
+    monkeypatch.setattr(official_store, "ensure_fill_process", count)
+    monkeypatch.setattr(official_store, "nudge_fill_process", count)
+    official_store.kick_worker()
+    official_store.kick_worker()
+    official_store.kick_worker()
+    assert wakes["n"] == 2
 
 
 def test_filler_from_another_checkout_is_replaced(tmp_path, monkeypatch):
