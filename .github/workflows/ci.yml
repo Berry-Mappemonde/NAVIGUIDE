@@ -213,11 +213,12 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Dépendances (backend/requirements.txt)
+        # pip 26 n'a plus --index-strategy : il consulte déjà tous les
+        # index. L'extra-index CPU est celui qui publie torch==2.13.0+cpu.
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt \
-            --extra-index-url https://download.pytorch.org/whl/cpu \
-            --index-strategy unsafe-best-match
+            --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Modèle d'embeddings local (cache disque, pas d'appel pendant les tests)
         run: |
           python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
