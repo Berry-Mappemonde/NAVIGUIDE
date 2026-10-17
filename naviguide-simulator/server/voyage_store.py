@@ -13,6 +13,11 @@ _DIR = Path(os.environ.get(
     str(Path(__file__).resolve().parent / "voyage_data"),
 ))
 _LOCK = threading.Lock()
+# Une lecture du voyage officiel fait ~7 Mo de JSON. /ici/moment le relisait à
+# chaque position : le processus montait au-delà de 2 Go et le ramasse-miettes
+# figeait /clock et /film (524 chez Cloudflare). On garde l'objet tant que le
+# fichier n'a pas changé.
+_CACHE: Dict[str, tuple[int, int, Dict[str, Any]]] = {}
 
 
 def voyage_dir() -> Path:
@@ -42,6 +47,7 @@ def save_voyage(voyage: Dict[str, Any]) -> Dict[str, Any]:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(payload)
             os.replace(tmp_name, dest)
+            _remember(dest, voyage)
         except BaseException:
             try:
                 os.unlink(tmp_name)
@@ -51,12 +57,33 @@ def save_voyage(voyage: Dict[str, Any]) -> Dict[str, Any]:
     return voyage
 
 
+def _remember(dest: Path, voyage: Dict[str, Any]) -> None:
+    try:
+        st = dest.stat()
+    except OSError:
+        _CACHE.pop(str(dest), None)
+        return
+    _CACHE[str(dest)] = (st.st_mtime_ns, st.st_size, voyage)
+
+
 def load_voyage(voyage_id: str) -> Optional[Dict[str, Any]]:
     dest = _path(voyage_id)
-    if not dest.exists():
-        return None
+    key = str(dest)
     with _LOCK:
-        return json.loads(dest.read_text(encoding="utf-8"))
+        if not dest.exists():
+            _CACHE.pop(key, None)
+            return None
+        try:
+            st = dest.stat()
+        except OSError:
+            _CACHE.pop(key, None)
+            return None
+        hit = _CACHE.get(key)
+        if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+            return hit[2]
+        data = json.loads(dest.read_text(encoding="utf-8"))
+        _CACHE[key] = (st.st_mtime_ns, st.st_size, data)
+        return data
 
 
 def update_voyage(voyage_id: str, **fields: Any) -> Optional[Dict[str, Any]]:

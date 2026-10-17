@@ -23,6 +23,10 @@ from typing import Any, Iterator, Optional
 
 log = logging.getLogger("naviguide-simulator.store")
 
+# Une tuile AMP GeoJSON (7–40 Mo) gravée dans kv `amp-bbox` a fait gonfler
+# le sqlite de recette à 5 Go. json.loads de ces lignes saturait l'API.
+KV_MAX_BYTES = 2_000_000
+
 _LOCK = threading.RLock()
 _conn: Optional[sqlite3.Connection] = None
 _path: Optional[Path] = None
@@ -304,6 +308,9 @@ def kv_get(ns: str, key: str, max_age_s: float | None = None) -> Optional[dict]:
 def kv_put(ns: str, key: str, value: Any) -> bool:
     try:
         payload = json.dumps(value, ensure_ascii=False, default=str)
+        if len(payload.encode("utf-8")) > KV_MAX_BYTES:
+            log.warning("store kv (écriture) : %s/%s trop gros (%s octets) — ignoré", ns, key, len(payload))
+            return False
         with _LOCK:
             _connect().execute(
                 "INSERT OR REPLACE INTO kv (ns, key, value, ts) VALUES (?, ?, ?, ?)",

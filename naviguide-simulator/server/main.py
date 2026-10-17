@@ -158,6 +158,29 @@ def _dated_ici(reason: str, status: str = "unavailable") -> dict:
     return {"status": status, "reason": str(reason), "at": _now_iso()}
 
 
+def _live_ici_fill() -> bool:
+    """True seulement si le chauffeur de perles est allumé (VPS).
+
+    Le poste de recette a NAVIGUIDE_ICI_WARM=0. Un fill_dossier sur /ici ou
+    /ici/moment y lisait des tuiles AMP de 7 à 40 Mo dans sqlite : le
+    processus dépassait 2 Go, le ramasse-miettes figeait /clock et /film,
+    Cloudflare renvoyait 524. Les sacs viennent des perles déjà en stock.
+    """
+    try:
+        import ici_warm
+        return ici_warm.warm_enabled()
+    except Exception:
+        return True
+
+
+def _bag_ready(bag: dict, lat: float, lon: float) -> dict:
+    out = dict(bag)
+    out.setdefault("at", {"lat": lat, "lon": lon})
+    out["cached"] = True
+    out["status"] = out.get("status") or "ready"
+    return out
+
+
 def _serve_ici_bag(bag: dict | None) -> dict | None:
     """RG18 : the film-script phrase travels on the existing GET /ici bag."""
     if not isinstance(bag, dict):
@@ -316,20 +339,26 @@ async def get_ici(
         raise HTTPException(400, "dest_lat hors limites")
     if dest_lon is not None and not (-180 <= dest_lon <= 180):
         raise HTTPException(400, "dest_lon hors limites")
+    # Perle d'abord. Le snapshot officiel (ici_bag_near) est lent, et un
+    # fill_dossier sur le poste (WARM=0) chargeait des tuiles AMP de plusieurs Mo.
+    pearl = _nearest_warmed_pearl(lat, lon, max_nm=radius_nm)
+    if pearl:
+        return _serve_ici_bag(_bag_ready(pearl, lat, lon))
     import official_store
     try:
         stored = official_store.ici_bag_near(lat, lon)
         if stored:
-            bag = dict(stored)
-            bag.setdefault("at", {"lat": lat, "lon": lon})
-            bag["cached"] = True
-            bag["status"] = bag.get("status") or "ready"
-            return _serve_ici_bag(bag)
+            return _serve_ici_bag(_bag_ready(stored, lat, lon))
         if official_store.on_official_route(lat, lon):
-            official_store.kick_worker()
+            if _live_ici_fill():
+                official_store.kick_worker()
             return _serve_ici_bag(official_store.preparing_ici(lat, lon, radius_nm))
     except Exception as exc:
         log.warning("stock /ici: %s", exc)
+    if not _live_ici_fill():
+        bag = empty_dossier(lat, lon, radius_nm)
+        bag.update(_dated_ici("sac en préparation", "preparing"))
+        return _serve_ici_bag(bag)
     try:
         return _serve_ici_bag(await fill_dossier(
             lat, lon, radius_nm, month=month, dest_lat=dest_lat, dest_lon=dest_lon, thin=thin,
@@ -427,14 +456,15 @@ async def get_ici_moment(
     import official_store
     pearl = None
     try:
-        pearl = official_store.ici_bag_near(lat, lon) or _nearest_warmed_pearl(lat, lon)
+        pearl = _nearest_warmed_pearl(lat, lon) or official_store.ici_bag_near(lat, lon)
         if pearl is None and official_store.on_official_route(lat, lon):
-            official_store.kick_worker()
+            if _live_ici_fill():
+                official_store.kick_worker()
             pearl = official_store.preparing_ici(lat, lon, ICI_RADIUS_NM)
     except Exception as exc:
         log.warning("stock /ici/moment: %s", exc)
         pearl = None
-    if pearl is None:
+    if pearl is None and _live_ici_fill():
         try:
             pearl = await fill_dossier(
                 lat, lon, ICI_RADIUS_NM, month=_month_from_t(t), dest_lat=None, dest_lon=None, thin=False,
@@ -449,6 +479,8 @@ async def get_ici_moment(
                 "alerts": [],
                 "around": [],
             }
+    if pearl is None:
+        pearl = official_store.preparing_ici(lat, lon, ICI_RADIUS_NM)
     try:
         from piracy import attach_piracy  # noqa: PLC0415
         attach_piracy(pearl, lat, lon)
