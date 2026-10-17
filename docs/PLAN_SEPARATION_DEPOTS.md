@@ -1172,6 +1172,11 @@ python3 "$PLAN/scripts/split_post_filter.py" repo-paths --root /tmp/ng-work
 git add -A
 git status
 git commit -m "chore: réglages de la boucle de nuit dans repo_paths.py"
+python3 "$PLAN/scripts/split_post_filter.py" cross-imports \
+  --root /tmp/ng-work --bi /tmp/bi-bare
+git add -A
+git status
+git commit -m "test: route officielle et modules vent lisibles sans le backend"
 python3 infra/agents/run_lots.py --dry-run --only C1
 git remote add origin git@github.com:Berry-Mappemonde/NAVIGUIDE.git
 git push origin refs/heads/main:refs/heads/main
@@ -2691,6 +2696,28 @@ git commit -m "test: figer la parité climatologie du simulateur hors de fronten
 ```
 
 `node --test` sur ce seul fichier doit afficher 8 tests et 0 échec.
+
+Depuis la fusion de la #558, `naviguide-simulator/public/route.geojson`
+est un lien vers `../../backend/data/route.geojson`. Depuis la #560,
+`server/tests/test_wind_float16.py` importe
+`app.services.climatology_wind` à la racine du dépôt. Ces deux
+lectures cassent dans la copie NAVIGUIDE, où `backend/` n'est pas
+filtré. On ne change pas les tests.
+
+```bash
+python3 "$PLAN/scripts/split_post_filter.py" cross-imports \
+  --root /tmp/ng-work --bi /tmp/bi-bare
+```
+
+La commande remplace le lien par les octets de
+`backend/data/route.geojson` (lus dans la copie Blue Intelligence) et
+copie `climatology_common.py`, `climatology_wind.py` et les douze
+`backend/data/climatology/wind/wind-MM.npz`. Le test lit ces roses
+pour vérifier le dtype float16. Les `__init__.py` de `backend/app/`
+et `backend/app/services/` sont vides. `officialRouteSource.test.js`
+ne vérifie le lien que si `backend/data/route.geojson` est présent à
+côté du simulateur : ce n'est pas le cas ici, l'assertion reste dans
+le fichier.
 Contrôle du 17 octobre 2026 au soir, sur une copie de travail de
 `6dabfb84`, puis de nouveau sur `23be7ba8` : 8 tests, 0 échec. Le test
 ne charge pas les fichiers, il les lit. Les tailles 1 870 et 10 513
