@@ -164,6 +164,17 @@ testent avec de faux serveurs).
 | 119 | DM2 | deux modes | S | DM1 | les mots : accueil, info-bulles, « cette jambe (Tracer) », parcours de référence, docs — plus aucun « Simulation » à l'écran FR/EN |
 | 120 | DM3 | deux modes | M | DM2 | le ménage : `VIEW_TRACER`, `isTracer`, `ViewModeSwitch` mort supprimé, helpers e2e, clés i18n renommées ; protocole serveur (`"simulation"`) intact ; **suite Playwright complète verte** comme preuve ; lancé seul |
 | 117 | RG11 | film 1 (hors batch) | M | RG10 | *(optionnel)* « Rédigé » depuis les faits structurés, réécriture LLM vérifiée (zéro invention), repli sur le brut |
+| **batch 3** | | **16 oct. — voix une fois, puis les modèles** | | | `PLAN_BATCH_2026-10-16.md` — VF1 d'abord (gel La Rochelle) ; on merge VR1 avant tout lot qui touche le film ; tête sans #486, #489, #492 |
+| 122 | VF1 | batch 3 | S | — | la voix coincée ne fige plus le film ; deuxième Revoir sans rechargement quitte La Rochelle |
+| 123 | NB1 | batch 3 | S | VF1 | frein dollars estimés ; défaut absent = pas de coupure ; juge reste à 0 ; ligne documentée sans montant |
+| 124 | VR1 | batch 3 | M | NB1 | VL juge le mouvement d'une PR film ; **mergé avant** DC1, DC2, DC3, VS1, ED1, TV1 |
+| 125 | DC1 | batch 3 | S | VR1 | candidat aire (près / traversée / circulation) ; le 2:30 ne gagne pas une phrase ; bumper film |
+| 126 | DC2 | batch 3 | M | DC1 | candidats bouée, formalité, mouillage, une fois par longue jambe ; 2:30 ≤ 2 250 car. |
+| 127 | DC3 | batch 3 | M | DC2 | candidats balise, câble, profondeur, piraterie, satellite ou silence ; bumper film et moments |
+| 128 | VS1 | batch 3 | M | DC3 | choisit dans le sac et s'arrête à `film_char_budget`, repli compris |
+| 129 | ED1 | batch 3 | M | VS1 | clic Rédigé seulement ; fenêtre selon la pilule ; Super, Ultra édite, Ultra juge, Lightning traduit |
+| 130 | CH1 | batch 3 | M | DC3 | chat simple par les règles (mots-clés si Lightning est off) ; difficile par Ultra, sinon les règles ; pas de case |
+| 131 | TV1 | batch 3 | M | VS1 | deux tours Tavily ; fiche ou chat ; le 2:30 seulement si VS1 a gardé l'id |
 
 Les lots C couvrent **toutes** les lignes de l'audit (`PLAN_AUDIT_CALCULS.md`
 § 3 donne la correspondance ligne → lot) ; avec P2, S, F1 et F2 pour les
@@ -2425,7 +2436,167 @@ Branche fix/lot-dm3-deux-modes-menage depuis la base indiquée. PR vers main, ga
 Interdits : renommer un fichier ; toucher au moteur (playback, useVirtualVessel, useReplay, film) ; changer la valeur "simulation" du protocole serveur ; supprimer une branche sans preuve qu'elle est morte ; une spec supprimée ou affaiblie ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs (identifiants renommés, branches supprimées avec preuve), captures, reste à faire.
 ```
 
+### Batch 3 — voix une fois, puis les modèles (16 octobre)
 
+Plan : `docs/PLAN_BATCH_2026-10-16.md`. Deux tranches. D'abord **VF1**, puis **NB1**, puis **VR1** : dès que VR1 est codé et vert, on **merge** cette tête. Ensuite seulement les lots qui modifient le film — **DC1, DC2, DC3, VS1, ED1, TV1** — plus **CH1**, depuis ce `main`. Pas une seule ligne `LOTS:` pour les dix. Lancement plus tard, après la revue du porteur, depuis une tête **sans** #486, #489, #492. Agents en `NAVIGUIDE_LLM_MODE=off`. Tests avec des modèles simulés. On ne merge pas #486 (RG19), #489 (RG20), #492 (RC34) et on n'en reprend pas les branches.
+
+<!-- LOT id="VF1" title="La voix coincée ne fige plus le film : deuxième lecture sans rechargement, le bateau quitte La Rochelle" plan="docs/PLAN_BATCH_2026-10-16.md" size="S" deps="" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 1 (VF1). Tu travailles dans naviguide-simulator/. Tu ne changes pas le texte du film, ni la caméra, ni le budget du 2:30.
+
+Lot VF1 — La voix peut se taire. Le bateau continue.
+Constat (16 oct. 2026, pré-revue PR #509, cinquième fois de la nuit) : sur https://recette.blueintelligence.online, deux lectures sur trois se figent à La Rochelle. window.__naviguideFilm reste à chapterIdx 0, charIdx 231, lat 46.154, lon -1.167, bulle kind stop. elapsed continue (90 s, puis 217 s). Le bateau et le sous-titre ne bougent pas. Seule la lecture lancée juste après un rechargement complet (Ctrl+Shift+R) dépasse La Rochelle. Console propre : aucun 4xx/5xx sur /film. La bulle stop est la carte d'arrivée, pas le bouton Stop.
+Cause à vérifier dans le code, pas à réinventer : le film est mené par la voix (src/hooks/useReplay.js). Le bateau et charIdx suivent les frontières de mot. src/utils/speak.js découpe en énoncés d'au plus SENTENCE_MAX_CHARS (200) et, toutes les 10 s, n'appelle que speechSynthesis.resume(). Chrome laisse speaking à vrai alors que les frontières et onend se sont tus (énoncé long, ou énoncé suivant qui ne part pas). voiceStalled retourne false dès que speaking ou hold est vrai (RC30), donc l'horloge linéaire ne reprend jamais. filmElapsed continue : d'où un elapsed qui monte sur une image fixe. Un rechargement remet le moteur vocal à zéro, d'où la seule lecture qui passe.
+Objectif : si aucun mot nouveau n'arrive, le film lâche cette voix et continue tout seul, depuis le caractère déjà atteint. Un deuxième Revoir dans la même page, sans rechargement, quitte La Rochelle. Le film ne se termine pas. On ne revient pas à la vue live (Polynésie) pour ça.
+Fichiers à ouvrir (seulement) : src/hooks/useReplay.js PAR EXTRAIT (rg -n "voiceStalled|FILM_VOICE_STALL_MS|isSpeaking|voiceHold"), src/utils/speak.js, src/engine/replay.js PAR EXTRAIT (rg -n "voiceShouldWait|FILM_QUAY_SKIP_MS"), src/hooks/useReplay.test.js, src/utils/speak.test.js.
+Étapes : 1) une frontière de mot qui arrive encore = la voix mène, comme aujourd'hui ; on ne coupe pas une phrase dont les mots tombent ; 2) si speechSynthesis.getVoices() revient vide (après l'attente voiceschanged déjà là), on joue sans voix ; 3) après le lancement de la phrase, si ni onstart ni onboundary en 2 à 3 s (VOICE_LEAD_MS = 2500), speechSynthesis.cancel() et le film continue sans voix, délai d'environ 60 ms par caractère (VOICE_MS_PER_CHAR), depuis le caractère déjà atteint, sans finish() et sans retour au live ; 4) si onend n'arrive jamais, une limite de temps par phrase (sentenceTimeLimitMs) annule aussi ; speaking vrai ou un hold ne comptent pas comme une voix vivante ; 5) le même Revoir lancé une deuxième fois dans la page, sans rechargement, ne reste pas au caractère 231 ; 6) un silence court pendant que les frontières arrivent encore ne bascule pas.
+Tests : cd naviguide-simulator && npm test. Au moins : speaking vrai et aucune frontière depuis bien plus que 2 s → la voix est coincée et le pas suivant avance charIdx ; speaking vrai et une frontière récente → la voix mène encore ; le film ne se termine pas sur cet incident. pytest du serveur inchangé si tu n'y touches pas : .venv/bin/python -m pytest -q && npx vite build.
+Recette (visuelle) : Suivre, Revoir, laisser dépasser La Rochelle. Stop. Revoir une deuxième fois sans recharger la page. Les deux lectures ont chapterIdx > 0. Colle dans la PR deux relevés JSON.stringify(window.__naviguideFilm) de la deuxième lecture, à ~10 s d'écart, avec charIdx qui a augmenté. Capture docs/recette/lot-vf1/01-deuxieme-lecture.jpg (URL complète sur ta branche), bateau parti de La Rochelle.
+Branche fix/lot-vf1-voix-figee depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : couper la voix dès qu'une phrase est longue ; exiger un rechargement ; terminer le film ou sauter en Polynésie quand la voix se tait ; changer le script, la caméra RC49/RC51, ou FILM_SCRIPT_REV ; vidéo ; secret. Décide seul et note-le. Fin : PR, les deux relevés, capture, reste à faire.
+```
+
+<!-- LOT id="NB1" title="Frein en dollars estimés : absent = pas de coupure, juge reste à 0, ligne documentée sans montant" plan="docs/PLAN_BATCH_2026-10-16.md" size="S" deps="VF1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 (verrou inutile ici) et § 7. Tu travailles dans naviguide-simulator/ et dans infra/vps/ (documentation seulement).
+
+Lot NB1 — Le frein en dollars est chez nous. Nebius n'arrête pas la dépense.
+Objectif : llm_budget refuse aussi quand le coût estimé du jour dépasse NAVIGUIDE_LLM_DAILY_USD. Variable absente ou vide = pas de coupure en dollars (c'est voulu, le temps de mesurer). Aucun montant n'est écrit dans le dépôt. Le palier juge reste à 0. Le mode par défaut reste on-demand. GET /ici/warm/status continue d'exposer les compteurs déjà là (tokens, appels, usd, tavily) — pas un second tableau.
+Constat (vérifie, tête de pile) : server/llm_budget.py DEFAULT_CAPS["judge"] = 0 ; allow() compare les tokens ; estimate_usd existe déjà ; pas de plafond dollar ; server/main.py GET /ici/warm/status renvoie ici_warm.status() dont llm.
+Fichiers à ouvrir (seulement) : server/llm_budget.py, server/tests/test_llm_budget.py, infra/vps/naviguide/simulator.env.example, infra/vps/README.md (une phrase, section politique LLM s'il y en a une).
+Étapes : 1) si NAVIGUIDE_LLM_DAILY_USD est un nombre > 0, allow() refuse quand l'usd estimé du jour + le coût de l'appel dépasseraient ce nombre ; valeur absente, vide ou non numérique = pas de coupure dollar ; 2) le dépôt ne change pas DEFAULT_CAPS (juge 0, fast et write inchangés) ni le mode par défaut ; 3) simulator.env.example : une ligne commentée NAVIGUIDE_LLM_DAILY_USD= sans chiffre, avec la phrase « à poser sur le poste après la mesure, pas une valeur par défaut » ; README : une phrase, où lire le coût (GET /ici/warm/status), et que l'alerte e-mail Nebius n'arrête rien ; 4) tests : absent → allow ne refuse pas pour les dollars ; "8" avec usd déjà au-dessus → refus ; "0" ou "abc" → pas de coupure dollar ; juge reste 0 sans la variable de tokens.
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_llm_budget.py && .venv/bin/python -m pytest -q && npm test && npx vite build.
+Recette : pas d'écran. Dans la PR, colle la ligne commentée et le résultat de GET /ici/warm/status (les clés, pas un secret).
+Branche fix/lot-nb1-plafond-dollars depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : un montant en dur ; changer le plafond juge ; passer le mode à all ; un appel Nebius ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
+```
+
+<!-- LOT id="VR1" title="VL juge le mouvement d'une PR film ; le réviseur lit la ligne KO ; éteint dans la boucle" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="NB1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 4 (VL) et § 5. Tu travailles dans infra/agents/ et, si tu ajoutes un script de capture, dans naviguide-simulator/scripts/.
+
+Lot VR1 — VL regarde le mouvement du film, pas la mer.
+Objectif : sur une PR qui touche le script, la voix, la caméra, le bateau ou le sous-titre, un commentaire GitHub peut être produit par VL à partir de captures, de la télémétrie de scripts/film-cinematique.mjs et du sous-titre. VL juge seulement saccade, décrochage, zoom, calage, fluidité. Il n'écrit aucun fait de mer, aucun nom, aucun nombre qui ne soit pas dans la télémétrie. Le réviseur de nuit lit ces lignes et c'est lui qui pose les lots. La boucle ne l'appelle pas.
+Constat (vérifie) : infra/agents/review_agent.py parcours_section ne garde que les lignes qui commencent par « - [ » et contiennent « — KO » ou « - KO », et seulement dans un commentaire dont le titre matche BOT_PARCOURS_RE (🤖 Parcours de référence). Une ligne « - [ ] KO : … » seule ne passe pas. build_prompt ne la met donc pas sous les yeux du réviseur.
+Fichiers à ouvrir (seulement) : infra/agents/review_agent.py, infra/agents/review_collect.py (lecture), infra/agents/run_lots.py PAR EXTRAIT (rg -n "review_agent|NAVIGUIDE"), naviguide-simulator/scripts/film-cinematique.mjs (lecture), un test nouveau infra/agents/test_vl_film_review.py.
+Étapes : 1) une fonction qui, sur les commentaires d'une PR, collecte les lignes « - [ ] KO : … » même hors du parcours du bot, et build_prompt les ajoute au réviseur avec la consigne : ce sont des KO de mouvement, à transformer en lot RC s'ils tiennent, pas un canal à part ; 2) un script ou une fonction appelable à la main qui n'appelle VL que si NAVIGUIDE_VL_REVIEW=1 et si le diff touche film_script.py, replay.js, filmCamera.js, la voix ou le sous-titre ; l'entrée est des images + un JSON de télémétrie + le texte du sous-titre ; la sortie est un commentaire dont chaque défaut est une ligne « - [ ] KO : … » et rien d'autre sur la mer ; 3) run_lots.py ne lance pas ce script (variable absente = éteint) ; 4) test : un commentaire sans titre 🤖, avec une ligne « - [ ] KO : la caméra décroche », est bien extrait ; une ligne sans ce préfixe ne l'est pas ; le prompt VL simulé qui invente un nom de port est rejeté (le commentaire posté ne le contient pas).
+Tests : cd infra/agents && python3 -m pytest -q test_vl_film_review.py (ou le chemin de tests déjà utilisé par test_contrat_tete.py — suis-le).
+Recette : pas d'écran applicatif. Dans la PR, un exemple de commentaire produit avec un VL simulé, et la phrase « la boucle ne l'appelle pas ». Le premier essai payant est au porteur, sur le poste, plus tard.
+Branche fix/lot-vr1-vl-revue-film depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : appeler Token Factory dans la CI ou dans run_lots ; un commentaire qui invente un lieu, une distance ou une météo ; un second canal de lots qui court-circuite le réviseur ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs, reste à faire.
+```
+
+<!-- LOT id="DC1" title="Candidat aire marine : près ou traversée, circulation si le stock l'a, sans allonger le 2:30" plan="docs/PLAN_BATCH_2026-10-16.md" size="S" deps="VR1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrou 1 et verrou 4, et § 6. Tu travailles dans naviguide-simulator/. Ta base est main **après le merge de VR1**. Tu ne pars pas d'une PR VR1 encore ouverte.
+
+Lot DC1 — Une aire, déjà dite, mieux dite. Pas une aire de plus dans le 2:30.
+Verrou : tu enregistres le kind, la phrase possible et « une fois par famille sur une longue jambe ». Tu n'ajoutes pas une phrase au 2:30. film_char_budget(150) = 2250. Un test l'affirme.
+Objectif : la phrase d'aire déjà sélectionnée distingue la proximité et la traversée, et dit la circulation (interdit / régulé) seulement si le champ est dans le stock. Une seule fois : on n'explique pas une seconde fois. Chiffre et nom viennent du stock.
+Constat (vérifie) : server/amp_traffic.py sait entry/speed → interdit, régulé, inconnu ; server/film_script.py change_sentence dit déjà l'aire (près / nom) et ne lit pas traffic ; le dosage 2:30 ne garde qu'une AMP.
+Fichiers à ouvrir (seulement) : server/film_script.py PAR EXTRAIT (rg -n "change_sentence|dose_amp|traffic|amp"), server/amp_traffic.py, server/official_store.py (FILM_SCRIPT_REV seulement), server/tests/test_film_script.py, et toute spec e2e qui cite le libellé d'aire (rg -n "aire marine" e2e naviguide-simulator).
+Étapes : 1) la phrase d'une aire déjà retenue dit près ou traversée, et la circulation si traffic est là ; sans le champ, on ne l'invente pas ; 2) une seconde aire dans le même 2:30 est refusée par le test ; 3) FILM_SCRIPT_REV passe à "dc1" pour que le remplisseur recalcule la famille film — pas un WARM de toutes les perles ; 4) si un libellé cité par une spec change, aligne la spec dans cette PR (pas de test.skip).
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_film_script.py server/tests/test_official_store.py && .venv/bin/python -m pytest -q && npm test && npx vite build.
+Recette (visuelle) : Suivre, Revoir, 2:30, La Rochelle → Ajaccio → au plus une phrase d'aire, avec près ou traversée si les données l'ont. Le compteur de caractères du 2:30 reste ≤ 2250. Capture docs/recette/lot-dc1/01-une-aire.jpg (URL complète sur ta branche).
+Branche fix/lot-dc1-amp-candidat depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : une deuxième phrase d'aire dans le 2:30 ; un nom ou un nombre absent du stock ; un WARM monde ; retirer la phrase d'aire déjà là ; vidéo ; secret. Décide seul et note-le. Fin : PR, caractères du 2:30 avant/après, capture, reste à faire.
+```
+
+<!-- LOT id="DC2" title="Candidats bouée, formalité de port d'entrée et mouillage, une fois, sans allonger le 2:30" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="DC1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrous 1 et 4. Tu travailles dans naviguide-simulator/.
+
+Lot DC2 — Trois phrases possibles. Le film court ne les empile pas.
+Verrou : kind, phrase possible, une fois par famille sur une longue jambe. Le 2:30 reste ≤ film_char_budget(150) = 2250. Ces kinds sont dans le sac. Ils n'entrent pas dans le dosage du 2:30 (c'est VS1 qui choisira). L'intégral peut les dire, une fois par famille et par longue jambe, sans redite pédagogique.
+Objectif : une bouée (type de station déjà qualifié, aujourd'hui tu à l'intégral seulement), une formalité de port d'entrée (aujourd'hui au mieux « devant {nom} »), un mouillage. Chacun seulement si le stock a un fait. Sinon silence.
+Constat (vérifie) : film_script.py kinds parlables et dose_station_changes (intégral) ; les ports sont dits « devant » ; les mouillages sont dans le sac ici, pas dans change_sentence.
+Fichiers à ouvrir (seulement) : server/film_script.py PAR EXTRAIT (rg -n "change_sentence|dose_station|kind == |port"), server/moment_journal.py ou ici_engine.py PAR EXTRAIT (rg -n "anchorage|formalit|poe|buoy|bouee"), server/official_store.py (FILM_SCRIPT_REV), server/tests/test_film_script.py, specs e2e qui citent un de ces libellés.
+Étapes : 1) trois phrases FR/EN, faits du stock seulement, une fois par famille et par longue jambe sur l'intégral ; 2) le palier 2:30 (film_priority_tier court) ne les ajoute pas — test : caractères ≤ 2250 et ces trois kinds absents du texte 2:30 ; 3) ils sont présents dans le sac de candidats que VS1 pourra lire (liste ou fonction nommée, documentée dans la PR) ; 4) FILM_SCRIPT_REV = "dc2" ; le remplisseur recalcule la famille film, pas les perles du monde ; 5) spec de libellé alignée dans la même PR si le texte visible change.
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_film_script.py && .venv/bin/python -m pytest -q && npm test && npx vite build.
+Recette (visuelle) : Revoir, pilule 2:30 → le texte n'a pas gagné une bouée, une formalité et un mouillage en plus. Pilule intégral → au plus une de chaque sur une longue jambe, et seulement si le stock les a. Note les caractères. Capture docs/recette/lot-dc2/01-deux-trente.jpg (URL complète sur ta branche).
+Branche fix/lot-dc2-bouee-formalite-mouillage depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : allonger le 2:30 ; inventer une formalité, un mouillage ou une bouée ; dire deux fois la même leçon ; un WARM monde ; vidéo ; secret. Décide seul et note-le. Fin : PR, caractères 2:30, capture, reste à faire.
+```
+
+<!-- LOT id="DC3" title="Candidats balise, câble, profondeur, piraterie, satellite — ou le silence" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="DC2" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrous 1 et 4, et § 5 (satellite). Tu travailles dans naviguide-simulator/.
+
+Lot DC3 — Ce que la carte sait et que la voix ne dit pas encore. Candidats seulement.
+Verrou : le 2:30 reste ≤ 2250 caractères. Ces familles n'entrent pas dans son dosage. L'intégral : une fois par famille et par longue jambe, ou le silence.
+Objectif : balise, câble, profondeur, zone de piraterie, scène satellite. Une recherche le long de la route officielle. Rien de jouable dans le stock : pas de phrase. Le satellite est le plus faible à l'oral : sans une phrase déjà dans le stock, on se tait. On n'invente pas « image satellite au-dessus du bateau ».
+Constat (vérifie) : les kinds du film sont escale, approche, alerte, climo, station, project, amp, zee, coast, marina, cyclone, culture, port, regime. La bathy, les câbles, le balisage, la piraterie et le satellite existent côté carte ou sac (gebco, eventRules, piracy.py, fetch_satellite_scene) et pas dans change_sentence.
+Fichiers à ouvrir (seulement) : server/film_script.py PAR EXTRAIT, server/ici_engine.py ou ici_layers.py PAR EXTRAIT (rg -n "aton|cable|depth|satellite"), server/piracy.py (lecture), server/official_store.py (FILM_SCRIPT_REV et MOMENTS_REV), server/tests/test_film_script.py, specs e2e concernées.
+Étapes : 1) un candidat par famille, phrase FR/EN copiée des champs du stock, zéro si le champ manque ; 2) absents du texte 2:30, test de budget ; présents au plus une fois par famille et par longue jambe à l'intégral ; 3) satellite : si la seule chose disponible est une image sans légende jouable, aucun candidat ; 4) FILM_SCRIPT_REV = "dc3" ; si tu crées un kind de moment, MOMENTS_REV = "dc3" aussi ; le remplisseur recalcule ces familles, pas un WARM monde ; 5) specs de libellé dans la même PR.
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_film_script.py server/tests/test_official_store.py && .venv/bin/python -m pytest -q && npm test && npx vite build.
+Recette (visuelle) : 2:30 inchangé en longueur (≤ 2250). Intégral : au plus une phrase par famille nouvelle, là où le stock répond, et pas de phrase satellite inventée. Capture docs/recette/lot-dc3/01-integral.jpg (URL complète sur ta branche).
+Branche fix/lot-dc3-familles-carte depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : allonger le 2:30 ; inventer un nom, une profondeur ou une image ; un WARM monde ; vidéo ; secret. Décide seul et note-le. Fin : PR, caractères 2:30, quelles familles ont un candidat sur la route officielle, capture, reste à faire.
+```
+
+<!-- LOT id="VS1" title="Quoi dire : VL propose des ids, Lightning retire, le repli s'arrête au budget" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="DC3" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrous 2 et 4, et § 4. Tu travailles dans naviguide-simulator/.
+
+Lot VS1 — Choisir ce qui entre, sans catalogue.
+Verrou : le texte dit du 2:30 reste ≤ film_char_budget(150) = 2250, et celui du 3:00 ≤ film_char_budget(180) = 2700. L'intégral (budget 0) peut être plus riche, une fois par famille et par longue jambe. Le repli sans modèle obéit au même plafond : il remplace des redites et s'arrête. Il ne dit pas une phrase par famille pour montrer.
+Objectif : au recalcul du stock film (pas à l'ouverture de Suivre), VL reçoit une image du tour entier et la liste d'ids déjà dans le sac (DC1–DC3 compris). Il renvoie des ids. Un id absent est jeté. Il n'écrit pas de prose. Lightning, sur cette liste seulement, retire ce qui ne tient pas dans le budget. Il n'ajoute rien. Modèles éteints : repli déterministe, ordre de priorité fixe, remplacement de redites, arrêt au budget. Cache avec l'empreinte du stock, un choix par film, pas par chapitre et pas par visite.
+Constat (vérifie) : server/film_script.py select_with_llm et SELECT_SYSTEM demandent déjà 6 à 9 ids au palier fast, sans image et sans les familles DC. Ne le transforme pas en auteur. film_char_budget et film_priority_tier sont le frein. Ne les contourne pas.
+Fichiers à ouvrir (seulement) : server/film_script.py PAR EXTRAIT (rg -n "select_with_llm|SELECT_SYSTEM|film_char_budget|film_priority_tier"), server/official_store.py (FILM_SCRIPT_REV, compute_film), server/llm_budget.py (lecture : mode off), server/tests/test_film_script.py.
+Étapes : 1) le sac de candidats DC est l'entrée ; 2) VL simulé : JSON d'ids seulement, ids hors sac ignorés, aucun texte libre gardé ; 3) Lightning simulé ne peut que retirer ; 4) repli : priorité fixe, le 2:30 et le 3:00 ne dépassent pas leur budget même si les neuf familles sont dans le sac ; la phrase Tavily (kind à réserver, lot TV1) n'est pas prise par le repli ; 5) l'appel réel n'a lieu que si le mode l'autorise, au remplissage du stock, mis en cache ; ouvrir Suivre ne l'appelle pas ; 6) FILM_SCRIPT_REV = "vs1".
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_film_script.py && .venv/bin/python -m pytest -q && npm test && npx vite build. Le test de budget utilise un sac qui contient toutes les familles DC et affirme caractères ≤ 2250 sur seconds=150.
+Recette (visuelle) : Revoir, 2:30 → le film tient, quelques sujets à la place de redites, pas neuf phrases nouvelles. Recharge la page : aucun appel Nebius dans la console réseau. Capture docs/recette/lot-vs1/01-deux-trente.jpg (URL complète sur ta branche).
+Branche fix/lot-vs1-quoi-dire depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : empiler les familles ; un id inventé ; VL qui écrit le script ; un appel au chargement de Suivre ; un WARM monde ; vidéo ; secret. Décide seul et note-le. Fin : PR, caractères 2:30 avec le sac complet, capture, reste à faire.
+```
+
+<!-- LOT id="ED1" title="Clic Rédigé : Super écrit le français, Ultra édite, un autre appel juge, Lightning traduit" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="VS1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrous 3 et 4, et § 4. Tu travailles dans naviguide-simulator/. RG11 reste l'auteur Super : tu ne le réécris pas, tu branches le clic et tu casses la fenêtre fixe.
+
+Lot ED1 — Le bouton Rédigé marche pour la pilule choisie, et seulement au clic.
+Verrou : FILM_WRITE_MIN / FILM_WRITE_MAX (2160–2640) ne rejettent plus le 3:00 ni l'intégral. Pour une pilule minutée, la longueur acceptée suit film_char_budget(seconds). L'intégral (budget 0) n'est pas jeté parce qu'il est plus long que le 2:30. La chaîne ne part pas à l'ouverture de Suivre ni dans warm_film_story.
+Objectif : au clic sur Rédigé, pas au chargement : Super écrit le français depuis les faits ; Ultra édite (mêmes noms, mêmes chiffres) ; filter_numbers ; un AUTRE appel Ultra juge ce texte déjà écrit. S'il refuse, on sert Super ou le brut. Lightning traduit le français accepté vers l'anglais, puis le filtre. Cache par langue et par durée. Juge à 0 dans le dépôt : sans plafond ouvert, on sert Super et on n'appelle pas Ultra. L'étiquette dit qui a écrit et, si Ultra a édité, qui a relu.
+Constat (vérifie) : GET /voyage/official/film accepte style puis appelle official_store.serve_film(lang, seconds) sans style. warm_film_story écrit en fond (want_write=True) sous llm_budget.background(), refusé en on-demand. written_is_valid refuse hors 2160–2640. Le client (useReplay.js) envoie déjà style=written.
+Fichiers à ouvrir (seulement) : server/main.py PAR EXTRAIT (rg -n "official/film|serve_film"), server/official_store.py (serve_film, FILM_SCRIPT_REV), server/film_script.py PAR EXTRAIT (rg -n "FILM_WRITE_|written_is_valid|warm_film_story|write_with_llm|WRITE_SYSTEM"), server/llm_budget.py (lecture), src/hooks/useReplay.js PAR EXTRAIT (rg -n "filmStyle|style="), src/i18n/fr.js, src/i18n/en.js, server/tests/test_film_script.py, specs e2e qui citent « Nemotron 3 Super » ou « Rédigé ».
+Étapes : 1) style=written sert la variante en cache, sinon le brut, sans lancer de modèle ; 2) le clic (geste explicite, pas le rechargement avec la pilule mémorisée) lance la chaîne une fois par (langue, durée) si les plafonds le permettent ; 3) deux appels Ultra distincts (éditer, puis juger) ; juge en échec ou plafond juge à 0 → Super servi, Ultra non appelé pour juger ni pour éditer ; 4) fenêtre de longueur dérivée de film_char_budget(seconds) ; intégral accepté ; 5) étiquette : Super seul, ou Super relu par Ultra ; les specs qui citaient l'ancienne source sont alignées dans cette PR ; 6) warm_film_story ne lance plus cette chaîne ; 7) FILM_SCRIPT_REV = "ed1" ; le remplisseur recalcule la famille film et ne paie pas Super ni Ultra.
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_film_script.py server/tests/test_official_store.py && .venv/bin/python -m pytest -q && npm test && npx vite build. Faux modèles. Un texte de 4000 caractères pour l'intégral n'est pas rejeté pour la fenêtre du 2:30. Ouvrir le GET ne compte aucun appel.
+Recette (visuelle) : Suivre, film prêt, la console réseau n'a aucun appel Nebius. Clic Rédigé sur le 2:30, puis sur le 3:00 si la pilule existe : le texte change, les nombres restent ceux du brut, l'étiquette dit la plume. Recharger : pas un nouvel appel si le cache est là. Captures docs/recette/lot-ed1/01-clic.jpg, 02-etiquette.jpg (URL complète sur ta branche).
+Branche fix/lot-ed1-redige-clic depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : générer à l'ouverture ou en fond ; Ultra qui écrit le film à partir de zéro ; un seul appel qui édite et juge ; laisser 2160–2640 rejeter le 3:00 ou l'intégral ; un WARM monde ; vidéo ; secret. Décide seul et note-le. Fin : PR, quels appels partent au clic et lesquels ne partent pas au chargement, captures, reste à faire.
+```
+
+<!-- LOT id="CH1" title="Chat : Lightning ou les mots-clés, les règles répondent, Ultra écrit le difficile sinon les règles" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="DC3" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrou 5 et § 4. Tu travailles dans naviguide-simulator/. Ne reprends pas la branche #486. Pas de case Raisonnement.
+
+Lot CH1 — Le chat répond même quand les modèles sont éteints.
+Verrou : si Lightning est éteint ou au plafond, un analyseur par mots-clés (pourquoi / comment / longueur, FR et EN) classe la question, puis les règles répondent. Si Ultra est coupé (plafond juge à 0, c'est le défaut du dépôt), la question difficile reste sur cette réponse de règles. Jamais Super.
+Objectif : question simple — Lightning classe (intention, lieu, date), les règles répondent depuis le paquet, les nombres sont copiés, filter_numbers. Lieu absent : la phrase d'absence déjà livrée par RC47 (« Le journal n'a pas cette information dans ses données. »). Question difficile (pourquoi, comment, ou assez longue) : Ultra rédige depuis le même paquet, un appel, puis filter_numbers. Ultra ne juge pas sa propre réponse. Super ne rédige plus le chat.
+Constat (vérifie) : server/logbook_chat.py chat_tier envoie le long vers le palier write (Super) qui rédige ; build_context n'a pas la revue du plan, la polaire utile, les câbles, ni les familles DC ; PARCOURS_DE_REFERENCE.md § G attend une case Raisonnement « s'il s'agit de RG19 » — cette case ne doit pas exister.
+Fichiers à ouvrir (seulement) : server/logbook_chat.py, server/llm_budget.py (lecture), server/tests/test_logbook_chat.py, src/components/LogbookChat.jsx (lecture : ne pas ajouter de case), infra/agents/PARCOURS_DE_REFERENCE.md § G, src/i18n/fr.js et en.js si une source affichée change, specs e2e du chat.
+Étapes : 1) le paquet gagne revue du plan, polaire utile, ordres, câbles, et les familles DC si elles sont dans le sac — listes tronquées, jamais un nombre coupé ; 2) classement Lightning simulé, et le même classement par mots-clés quand allow("fast") est faux ; 3) faits → gabarits, source rules ; 4) difficile et allow("judge") vrai → un appel judge, filter_numbers, source Ultra ; allow("judge") faux → la réponse de règles, zéro appel write ; 5) parcours de référence : retire la case Raisonnement, décris la question simple (source règles) et la question difficile (Ultra si le plafond est ouvert, règles sinon).
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_logbook_chat.py && .venv/bin/python -m pytest -q && npm test && npx vite build. Mode off : zéro appel, une réponse de règles à « Quel vent au bateau ? » et à « Pourquoi ralentir ? ».
+Recette (visuelle) : Suivre, chat, « Quel vent au bateau ? » → un vent en kn, source règles. « Arrivée prévue à Madère ? » → la phrase d'absence si Madère n'est pas une escale. « Pourquoi ralentir ? » avec juge à 0 → réponse de règles, pas Super. Aucune case Raisonnement. Capture docs/recette/lot-ch1/01-chat.jpg (URL complète sur ta branche).
+Branche fix/lot-ch1-chat-ultra depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : une case Raisonnement ; Super auteur du chat ; un nombre absent du paquet ; monter le plafond juge dans le dépôt ; reprendre la branche RG19 ; vidéo ; secret. Décide seul et note-le. Fin : PR, compteurs d'appels en mode off (zéro), capture, reste à faire.
+```
+
+<!-- LOT id="TV1" title="Tavily en deux tours : liste pré-écrite, une phrase et une URL, fiche ou chat par défaut" plan="docs/PLAN_BATCH_2026-10-16.md" size="M" deps="VS1" -->
+```text
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_BATCH_2026-10-16.md § 3 verrou 5 et § 4 (Tavily). Tu travailles dans naviguide-simulator/. Ce n'est pas Blue Intelligence et ce n'est pas le fond actuel de escale_watch.py.
+
+Lot TV1 — Une question d'escale déjà écrite, deux tours au plus, une phrase.
+Verrou : défaut = la fiche ou le chat. La phrase n'entre dans le 2:30 que si VS1 a gardé son id dans le budget. Le repli de VS1 ne la prend pas. On ne la dit pas à la fois dans le film et dans le chat. On ne la colle pas en plus des 2250 caractères.
+Objectif : une liste de questions est dans le code (avis, travaux, fermeture). On y met le nom du port et la date. Tavily cherche, prochaines escales seulement. Lightning lit. S'il manque une réponse, une seconde série, plus ciblée, choisie dans la même liste — Lightning n'invente pas la question. Sortie : une phrase, une URL, filter_numbers. Au plus deux tours, peu de recherches par escale et par jour. Éteint tant que le drapeau de veille n'est pas ouvert.
+Constat (vérifie) : server/escale_watch.py fait une recherche générique « marina OR port … notice OR avis » par escale, une fois, Lightning résume, et c'est éteint (NAVIGUIDE_TAVILY_WATCH défaut 0). Ne transforme pas cette requête unique en moisson. Le sac de VS1 a un trou prévu pour un id d'avis : s'il n'existe pas encore, ajoute le kind sans le forcer dans le 2:30.
+Fichiers à ouvrir (seulement) : server/escale_watch.py, server/tavily_client.py (lecture), server/llm_budget.py (allow_tavily, lecture), server/film_script.py PAR EXTRAIT (le sac VS1, pour l'id — ne change le dosage du 2:30 que pour respecter le verrou), server/tests/test_escale_watch.py ou le test le plus proche, server/tests/test_film_script.py si tu touches le sac.
+Étapes : 1) liste pré-écrite, trois questions, nom et date substitués ; 2) tour 1 simulé, Lightning simulé décide s'il faut le tour 2 en choisissant une question de la liste ; un troisième tour n'existe pas ; 3) phrase + URL, nombres filtrés ; 4) la phrase est servie à la fiche ou au chat ; le film ne la contient que si l'id est dans la sélection VS1 ; avec modèles éteints, le 2:30 ne la contient pas ; 5) drapeau fermé → zéro recherche ; 6) plafond : peu d'appels par escale et par jour (fixe un petit nombre, note-le, teste le dépassement).
+Tests : cd naviguide-simulator && .venv/bin/python -m pytest -q server/tests/test_film_script.py && .venv/bin/python -m pytest -q && npm test && npx vite build. Ajoute ou étends le test d'escale_watch : deux tours max, question hors liste refusée, film 2:30 sans l'id → phrase absente du script et présente pour la fiche.
+Recette : drapeau fermé, Suivre, aucune recherche Tavily dans la console. Avec le drapeau ouvert sur le poste seulement (pas dans la CI), une prochaine escale peut montrer la phrase et l'adresse dans la fiche. Le 2:30 ne la montre pas tant que VS1 ne l'a pas gardée. Capture docs/recette/lot-tv1/01-fiche.jpg si la fiche change, sinon décris le JSON dans la PR.
+Branche fix/lot-tv1-tavily-deux-tours depuis la base indiquée. PR vers main, gabarit REGLES § 3. Ne merge pas.
+Interdits : inventer la liste de questions ; un troisième tour ; coller la phrase dans le 2:30 par défaut ; moissonner des ports d'entrée ; allumer le fond pour la CI ; vidéo ; secret. Décide seul et note-le. Fin : PR, nombre de recherches max par escale, reste à faire.
+```
 
 ## 3. Enchaîner les lots la nuit (`infra/agents/run_lots.py`)
 
