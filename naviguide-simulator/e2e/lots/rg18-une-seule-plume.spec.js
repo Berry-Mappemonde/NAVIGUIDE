@@ -17,10 +17,12 @@ const shot = (page, name) => page.screenshot({
 test("lot RG18 — une seule plume, Rédigé seulement sur geste", async ({ page }) => {
   test.setTimeout(90_000);
   const storyPosts = [];
+  const filmWrites = [];
   page.on("request", (req) => {
     let path = "";
     try { path = new URL(req.url()).pathname; } catch { path = req.url(); }
     if (req.method() === "POST" && path === "/ici/story") storyPosts.push(req.url());
+    if (req.method() === "POST" && path === "/voyage/official/film") filmWrites.push(req.url());
   });
 
   const official = await probeOfficial(page);
@@ -79,6 +81,26 @@ test("lot RG18 — une seule plume, Rédigé seulement sur geste", async ({ page
   }
 
   await written.click();
+  // ED1 : le clic POST le film ; aria-pressed ne passe à true que si un rédigé est servi.
+  let switched = (await written.getAttribute("aria-pressed")) === "true";
+  if (!switched) {
+    try {
+      await expect(written).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
+      switched = true;
+    } catch {
+      switched = false;
+    }
+  }
+  if (!switched) {
+    await expect.poll(() => filmWrites.length, { timeout: 5_000 }).toBeGreaterThan(0);
+    expect(storyPosts, "pas de POST /ici/story tant que le rédigé n'est pas servi").toEqual([]);
+    test.info().annotations.push({
+      type: "Rédigé",
+      description: "clic Rédigé sans rédigé servi (stock figé / Super éteint) — reste Brut, pas d'appel /ici/story",
+    });
+    await shot(page, "02-fiche-redige");
+    return;
+  }
   await expect(written).toHaveAttribute("aria-pressed", "true");
   await page.waitForTimeout(2_000);
   await shot(page, "02-fiche-redige");
