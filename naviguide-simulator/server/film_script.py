@@ -112,12 +112,15 @@ BUBBLE_KIND = {
     "project": "project", "regime": "climo", "climo": "climo",
     "marina": "stop", "cyclone": "climo", "culture": "stop", "port": "poe",
     "buoy": "sci", "poe": "poe", "anchorage": "stop",
+    "aton": "sci", "cable": "note", "depth": "note", "piracy": "wx", "satellite": "sci",
 }
 AROUND_TO_KIND = {
     "marina": "marina", "science": "station", "station": "station",
     "mpa": "amp", "amp": "amp", "project": "project", "cyclone": "cyclone",
     "culture": "culture", "port": "port",
     "anchorage": "anchorage", "poe": "poe", "buoy": "buoy",
+    "aton": "aton", "balise": "aton", "beacon": "aton", "seamark": "aton",
+    "cable": "cable", "depth": "depth", "piracy": "piracy", "satellite": "satellite",
 }
 NAMELESS_CYCLONE = re.compile(
     r"traces de cyclone|cyclone tracks|saison cyclonique|cyclone season|ce mois-ci|this month",
@@ -149,7 +152,49 @@ FILM_TIER_FULL = 4      # intégral — tout, sans plafond
 # DC2 : bouée, formalité de port d'entrée, mouillage. Sac VS1 ; intégral
 # seulement, une fois par famille sur une longue jambe. Pas le 2:30.
 DC2_KINDS = frozenset({"buoy", "poe", "anchorage"})
+# DC3 : balise, câble, profondeur, piraterie, satellite. Même verrou : sac
+# et intégral (une fois par famille / longue jambe). Pas le 2:30.
+# Satellite : légende déjà dans le stock, sinon silence — on n'invente pas
+# « image satellite au-dessus du bateau ».
+DC3_KINDS = frozenset({"aton", "cable", "depth", "piracy", "satellite"})
+DC_DOSAGE_KINDS = DC2_KINDS | DC3_KINDS
+DC3_KIND_ALIASES = {
+    "balise": "aton", "beacon": "aton", "seamark": "aton",
+    "cable-alert": "cable", "câble": "cable",
+    "profondeur": "depth", "bathy": "depth", "gebco": "depth",
+    "piraterie": "piracy",
+    "satellite-scene": "satellite",
+}
 GENERIC_ANCHORAGE_NAMES = frozenset({"anchorage", "anchor_berth", "mooring", "mouillage"})
+GENERIC_ATON_NAMES = frozenset({
+    "aton", "balise", "beacon", "lighthouse", "light", "feu", "phare",
+    "seamark", "balisage", "aid to navigation", "aids to navigation",
+    "light_major", "light_minor", "light_vessel",
+    "buoy_lateral", "buoy_cardinal", "buoy_special_purpose",
+    "buoy_safe_water", "buoy_isolated_danger", "buoy_installation",
+    "beacon_lateral", "beacon_cardinal", "beacon_special_purpose",
+    "beacon_isolated_danger", "beacon_safe_water",
+    "landmark", "daymark", "fog_signal", "radar_reflector", "mooring",
+})
+GENERIC_CABLE_NAMES = frozenset({
+    "cable", "câble", "submarine cable", "câble sous-marin",
+    "active", "inactive", "planned", "operational", "unknown", "status",
+    "in service", "out of service", "en service",
+})
+GENERIC_CABLE_LABEL_RE = re.compile(
+    r"cables?\s+de\s+tel[eé]fono|telephone\s+cables?|power\s+cables?|"
+    r"cables?\s+sous-marins?|submarine\s+cables?",
+    re.I,
+)
+GENERIC_SATELLITE_TITLES = frozenset({
+    "image satellite", "satellite image", "satellite", "sentinel",
+    "sentinel-2", "sentinel-2-l2a", "observation", "cdse", "scene",
+})
+ATON_TYPE_KEY_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)+$")
+SATELLITE_PRODUCT_RE = re.compile(
+    r"^(?:s2[ab]_|sentinel|l2a|l1c|cdse|msil)",
+    re.I,
+)
 ROUTE_NEAR_NM = 15.0
 NM_TO_KM = 1.852
 ALWAYS_KINDS = frozenset({
@@ -163,6 +208,9 @@ GENERIC_TITLES = frozenset({
     "formalités d'entrée", "ports d'entrée", "port d'entrée",
     "autour du bateau", "zee",
     "mouillage", "anchorage", "bouée", "buoy",
+    "balise", "aton", "beacon", "câble", "cable",
+    "profondeur", "depth", "piraterie", "piracy",
+    "image satellite", "satellite image", "satellite",
 })
 NO_DATA_RE = re.compile(
     # Les deux apostrophes : droite « ' » et typographique « ’ » — le journal écrit « d’entrée », « n’est connu »
@@ -1120,7 +1168,7 @@ def change_on_route(change: dict) -> bool:
     if kind == "project" or _is_amp_change(change):
         limit = PROJECT_NEAR_NM if kind == "project" else AMP_NEAR_NM
         return nm is None or nm <= limit
-    if kind in {"station", "buoy", "poe", "anchorage"}:
+    if kind in {"station", "buoy", "poe", "anchorage"} | DC3_KINDS:
         return nm is None or nm <= STATION_NEAR_NM
     if nm is not None and nm > ROUTE_NEAR_NM:
         return False
@@ -1444,7 +1492,7 @@ def _as_dc2_change(change: dict) -> Optional[dict]:
 
 def dc_subject_record(change: dict, lang: str = "fr") -> Optional[dict]:
     """Candidat DC : kind, phrase possible, une fois par famille sur une longue jambe."""
-    packed = _as_dc2_change(change)
+    packed = _as_dc_change(change)
     if not packed:
         return None
     phrase = change_sentence(packed, lang).strip()
@@ -1467,9 +1515,9 @@ def dc_subject_record(change: dict, lang: str = "fr") -> Optional[dict]:
 
 
 def dc_subject_candidates(changes: list[dict] | None, lang: str = "fr") -> list[dict]:
-    """Sac DC1–DC2 (amp, buoy, poe, anchorage). Une entrée par famille.
+    """Sac DC1–DC3 (amp, buoy, poe, anchorage, aton, cable, depth, piracy, satellite).
 
-    VS1 lira cette liste ; le palier 2:30 n'empile pas ces kinds.
+    Une entrée par famille. VS1 lira cette liste ; le palier 2:30 n'empile pas ces kinds.
     """
     recs: list[dict] = []
     for change in changes or []:
@@ -1477,7 +1525,10 @@ def dc_subject_candidates(changes: list[dict] | None, lang: str = "fr") -> list[
         if rec:
             recs.append(rec)
     rank = {"crossing": 0, "near": 1, "": 2}
-    kind_order = {"amp": 0, "buoy": 1, "poe": 2, "anchorage": 3}
+    kind_order = {
+        "amp": 0, "buoy": 1, "poe": 2, "anchorage": 3,
+        "aton": 4, "cable": 5, "depth": 6, "piracy": 7, "satellite": 8,
+    }
     recs.sort(key=lambda r: (
         kind_order.get(str(r.get("kind") or ""), 9),
         rank.get(str(r.get("relation") or ""), 9),
@@ -1521,6 +1572,376 @@ def dose_dc2_leg_changes(changes: list[dict], span_ms: int = 0) -> list[dict]:
     return out
 
 
+def _dc3_kind(change: dict) -> str:
+    raw = str((change or {}).get("kind") or "").strip().casefold()
+    return DC3_KIND_ALIASES.get(raw, raw)
+
+
+def _aton_name(change: dict) -> str:
+    """Nom de balise du stock. Un type OSM (buoy_lateral) n'est pas un fait."""
+    if not isinstance(change, dict):
+        return ""
+    raw = (
+        change.get("name")
+        or change_place_name(change)
+        or extract_named(change.get("title"), change.get("fact"), "aton")
+        or short_name(str(change.get("title") or ""))
+    )
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    key = s.casefold()
+    if key in GENERIC_ATON_NAMES or _is_generic_title(s, "aton"):
+        return ""
+    if ATON_TYPE_KEY_RE.match(key):
+        return ""
+    return s
+
+
+def _is_aton_change(change: dict) -> bool:
+    if not isinstance(change, dict):
+        return False
+    if _dc3_kind(change) != "aton":
+        return False
+    return bool(_aton_name(change))
+
+
+def _cable_name(change: dict) -> str:
+    """Nom de câble du stock. nearby=true sans nom → silence."""
+    if not isinstance(change, dict):
+        return ""
+    raw = (
+        change.get("name")
+        or extract_named(change.get("title"), change.get("fact"), "cable")
+        or short_name(str(change.get("title") or ""))
+    )
+    s = str(raw or "").strip()
+    if not s or s.casefold() in GENERIC_CABLE_NAMES or _is_generic_title(s, "cable"):
+        return ""
+    if len(s) < 3 or re.fullmatch(r"\d+", s) or GENERIC_CABLE_LABEL_RE.search(s):
+        return ""
+    return s
+
+
+def _is_cable_change(change: dict) -> bool:
+    if not isinstance(change, dict):
+        return False
+    if _dc3_kind(change) != "cable":
+        return False
+    return bool(_cable_name(change))
+
+
+def _as_depth_m(raw: Any) -> Optional[float]:
+    if not isinstance(raw, (int, float)):
+        return None
+    value = abs(float(raw))
+    if value != value or value < 1.0:
+        return None
+    return value
+
+
+def _depth_m(change: dict) -> Optional[float]:
+    """Sonde du stock (emodnet.depth_m ou gebco depthOffshore). Jamais inventée."""
+    if not isinstance(change, dict):
+        return None
+    facts = change.get("facts") if isinstance(change.get("facts"), dict) else {}
+    for raw in (
+        change.get("depth_m"), change.get("depthM"), change.get("depthOffshore"),
+        facts.get("depth_m"), facts.get("depthM"), facts.get("depthOffshore"),
+    ):
+        hit = _as_depth_m(raw)
+        if hit is not None:
+            return hit
+    return None
+
+
+def _is_depth_change(change: dict) -> bool:
+    if not isinstance(change, dict):
+        return False
+    if _dc3_kind(change) != "depth":
+        return False
+    return _depth_m(change) is not None
+
+
+def _piracy_name(change: dict) -> str:
+    if not isinstance(change, dict):
+        return ""
+    raw = str(change.get("name") or change.get("title") or "").strip()
+    if not raw or raw.casefold() in {"piracy", "piraterie", "piraterie —", "piracy —"}:
+        return ""
+    if _is_generic_title(raw, "piracy"):
+        return ""
+    return raw
+
+
+def _piracy_level(change: dict) -> str:
+    if not isinstance(change, dict):
+        return ""
+    token = str(change.get("level") or "").strip().upper()
+    if token in {"CRITICAL", "CRIT"}:
+        return "HIGH"
+    if token in {"MODERATE", "MED"}:
+        return "MEDIUM"
+    if token in {"HIGH", "MEDIUM", "LOW"}:
+        return token
+    return token
+
+
+def _is_piracy_change(change: dict) -> bool:
+    if not isinstance(change, dict):
+        return False
+    if _dc3_kind(change) != "piracy":
+        return False
+    return bool(_piracy_name(change))
+
+
+def _satellite_field_playable(raw: Any) -> str:
+    """Légende déjà écrite. Produit STAC / « Image satellite » → vide."""
+    s = str(raw or "").strip()
+    if not s or len(s) < 8:
+        return ""
+    key = s.casefold()
+    if key in GENERIC_SATELLITE_TITLES or _is_generic_title(s, "satellite"):
+        return ""
+    if SATELLITE_PRODUCT_RE.search(s):
+        return ""
+    if re.fullmatch(r"[A-Za-z0-9._:-]+", s) and ("sentinel" in key or "l2a" in key or "l1c" in key):
+        return ""
+    return s
+
+
+def _satellite_caption(change: dict) -> str:
+    """Phrase satellite déjà dans le stock. Image seule → silence."""
+    if not isinstance(change, dict):
+        return ""
+    scene = change.get("scene") if isinstance(change.get("scene"), dict) else {}
+    sat = change.get("satellites") if isinstance(change.get("satellites"), dict) else {}
+    sat_scene = sat.get("scene") if isinstance(sat.get("scene"), dict) else {}
+    derived = (
+        sat.get("derived") if isinstance(sat.get("derived"), dict)
+        else change.get("derived") if isinstance(change.get("derived"), dict)
+        else {}
+    )
+    for raw in (
+        change.get("caption"), change.get("description"), change.get("legend"),
+        scene.get("caption"), scene.get("description"), scene.get("legend"),
+        sat.get("caption"), sat.get("description"), sat.get("legend"),
+        sat_scene.get("caption"), sat_scene.get("description"), sat_scene.get("legend"),
+        change.get("title"), scene.get("title"), sat_scene.get("title"),
+    ):
+        hit = _satellite_field_playable(raw)
+        if hit:
+            return hit
+    for key in ("sdb", "coastline", "intertidal"):
+        block = derived.get(key) if isinstance(derived.get(key), dict) else {}
+        value = block.get("value") if isinstance(block.get("value"), dict) else {}
+        hit = _satellite_field_playable(value.get("name"))
+        if hit:
+            return hit
+    return ""
+
+
+def _is_satellite_change(change: dict) -> bool:
+    if not isinstance(change, dict):
+        return False
+    if _dc3_kind(change) != "satellite":
+        return False
+    return bool(_satellite_caption(change))
+
+
+def _as_dc3_change(change: dict) -> Optional[dict]:
+    """Copie parlable DC3. None si le champ du stock manque."""
+    if not isinstance(change, dict):
+        return None
+    if _is_aton_change(change):
+        name = _aton_name(change)
+        packed = dict(change)
+        packed["kind"] = "aton"
+        packed["title"] = name
+        packed["fact"] = packed.get("fact") or name
+        packed["id"] = f"dc3:aton:{change.get('id') or name}"
+        return packed
+    if _is_cable_change(change):
+        name = _cable_name(change)
+        packed = dict(change)
+        packed["kind"] = "cable"
+        packed["title"] = name
+        packed["fact"] = packed.get("fact") or name
+        packed["id"] = f"dc3:cable:{change.get('id') or name}"
+        return packed
+    if _is_depth_change(change):
+        metres = _depth_m(change)
+        packed = dict(change)
+        packed["kind"] = "depth"
+        packed["depth_m"] = metres
+        packed["id"] = f"dc3:depth:{change.get('id') or change.get('tMs') or metres}"
+        return packed
+    if _is_piracy_change(change):
+        name = _piracy_name(change)
+        packed = dict(change)
+        packed["kind"] = "piracy"
+        packed["title"] = name
+        packed["name"] = name
+        packed["level"] = _piracy_level(change) or packed.get("level")
+        packed["id"] = f"dc3:piracy:{change.get('id') or name}"
+        return packed
+    if _is_satellite_change(change):
+        caption = _satellite_caption(change)
+        packed = dict(change)
+        packed["kind"] = "satellite"
+        packed["caption"] = caption
+        packed["title"] = caption
+        packed["fact"] = caption
+        packed["id"] = f"dc3:satellite:{change.get('id') or caption[:40]}"
+        return packed
+    return None
+
+
+def _as_dc_change(change: dict) -> Optional[dict]:
+    packed = _as_dc2_change(change)
+    if packed:
+        return packed
+    return _as_dc3_change(change)
+
+
+def dose_dc3_leg_changes(changes: list[dict], span_ms: int = 0) -> list[dict]:
+    """Intégral, jambe longue : au plus une phrase par famille DC3."""
+    if span_ms < SHORT_CROSSING_MS:
+        return []
+    by_kind: dict[str, list[dict]] = {k: [] for k in ("aton", "cable", "depth", "piracy", "satellite")}
+    for change in changes or []:
+        packed = _as_dc3_change(change)
+        if not packed:
+            continue
+        kind = str(packed.get("kind") or "")
+        if kind not in by_kind:
+            continue
+        if not _would_speak(packed):
+            continue
+        by_kind[kind].append(packed)
+    out: list[dict] = []
+    for kind in ("aton", "cable", "depth", "piracy", "satellite"):
+        rows = by_kind[kind]
+        if not rows:
+            continue
+        rows.sort(key=lambda c: (
+            change_distance_nm(c) if change_distance_nm(c) is not None else 999.0,
+            c.get("tMs") or 0,
+        ))
+        out.append(rows[0])
+    return out
+
+
+def _dc3_from_ici_bag(bag: dict | None, *, seq: Any = 0) -> list[dict]:
+    """Candidats DC3 déjà dans un sac ici — copie, jamais inventée."""
+    if not isinstance(bag, dict):
+        return []
+    extras: list[dict] = []
+    aton = bag.get("aton") if isinstance(bag.get("aton"), dict) else {}
+    for i, mark in enumerate(aton.get("nearby") or []):
+        if not isinstance(mark, dict):
+            continue
+        name = _aton_name({"kind": "aton", "title": mark.get("name"), "name": mark.get("name")})
+        if not name:
+            continue
+        extra = {
+            "kind": "aton",
+            "title": name,
+            "fact": name,
+            "name": name,
+            "score": 2,
+            "id": f"ici:aton:{seq}:{i}",
+            "nm": mark.get("nm") if isinstance(mark.get("nm"), (int, float)) else None,
+        }
+        extras.append(extra)
+        break
+    emo = bag.get("emodnet") if isinstance(bag.get("emodnet"), dict) else {}
+    cables = emo.get("cables") if isinstance(emo.get("cables"), dict) else {}
+    cable_name = _cable_name({
+        "kind": "cable",
+        "title": cables.get("name"),
+        "name": cables.get("name"),
+        "fact": cables.get("name"),
+    })
+    if cable_name:
+        extras.append({
+            "kind": "cable",
+            "title": cable_name,
+            "fact": cable_name,
+            "name": cable_name,
+            "score": 2,
+            "id": f"ici:cable:{seq}",
+        })
+    depth = None
+    source = ""
+    bathy = emo.get("bathy") if isinstance(emo.get("bathy"), dict) else {}
+    depth = _as_depth_m(bathy.get("depth_m"))
+    if depth is not None:
+        source = "emodnet"
+    else:
+        depth = _as_depth_m(bag.get("depthOffshore"))
+        if depth is not None:
+            source = "gebco"
+    if depth is not None:
+        extras.append({
+            "kind": "depth",
+            "title": source,
+            "fact": source,
+            "depth_m": depth,
+            "source": source,
+            "score": 2,
+            "id": f"ici:depth:{seq}:{source}",
+        })
+    pir = bag.get("piracy") if isinstance(bag.get("piracy"), dict) else None
+    if isinstance(pir, dict) and pir.get("name"):
+        extras.append({
+            "kind": "piracy",
+            "title": pir.get("name"),
+            "fact": pir.get("name"),
+            "name": pir.get("name"),
+            "level": pir.get("level"),
+            "source": pir.get("source"),
+            "score": 2,
+            "id": f"ici:piracy:{seq}:{pir.get('name')}",
+        })
+    sat = bag.get("satellites") if isinstance(bag.get("satellites"), dict) else {}
+    caption = _satellite_caption({"kind": "satellite", "satellites": sat, "scene": sat.get("scene")})
+    if caption:
+        extras.append({
+            "kind": "satellite",
+            "title": caption,
+            "fact": caption,
+            "caption": caption,
+            "score": 2,
+            "id": f"ici:satellite:{seq}",
+        })
+    return extras
+
+
+def _dc_changes_from_ici_route() -> list[dict]:
+    """Recherche le long de la route officielle : sacs ici déjà calculés."""
+    try:
+        from official_store import payload_of  # noqa: PLC0415
+        body = payload_of("ici")
+    except Exception:
+        return []
+    if not isinstance(body, dict):
+        return []
+    rows: list[dict] = []
+    for i, point in enumerate(body.get("points") or []):
+        if not isinstance(point, dict):
+            continue
+        bag = point.get("bag")
+        if not isinstance(bag, dict) or "amp" not in bag:
+            continue
+        for extra in _dc3_from_ici_bag(bag, seq=point.get("sailNm") or point.get("nm") or i):
+            pair = _as_latlon(point.get("lat"), point.get("lon"))
+            if pair:
+                extra["lat"], extra["lon"] = pair
+            rows.append(extra)
+    return rows
+
+
 def _dc_amp_changes_from_journal(journal: dict | None) -> list[dict]:
     rows: list[dict] = []
     for moment in _journal_moments(journal):
@@ -1543,8 +1964,9 @@ def _dc_amp_changes_from_journal(journal: dict | None) -> list[dict]:
 
 
 def _dc_changes_from_journal(journal: dict | None) -> list[dict]:
-    """Faits DC du journal (amp DC1 + bouée / formalité / mouillage DC2)."""
+    """Faits DC du journal (DC1–DC3) et des sacs ici le long de la route."""
     rows = _dc_amp_changes_from_journal(journal)
+    dc3_kinds = DC2_KINDS | DC3_KINDS
     for moment in _journal_moments(journal):
         t = moment.get("t")
         for change in moment.get("changes") or []:
@@ -1554,6 +1976,11 @@ def _dc_changes_from_journal(journal: dict | None) -> list[dict]:
                 _is_buoy_change(change)
                 or _is_poe_formality_change(change)
                 or _is_anchorage_change(change)
+                or _is_aton_change(change)
+                or _is_cable_change(change)
+                or _is_depth_change(change)
+                or _is_piracy_change(change)
+                or _is_satellite_change(change)
             ):
                 packed = dict(change)
                 if not packed.get("t"):
@@ -1565,22 +1992,40 @@ def _dc_changes_from_journal(journal: dict | None) -> list[dict]:
                 continue
             mapped = AROUND_TO_KIND.get(str(item.get("kind") or ""))
             kind = mapped or str(item.get("kind") or "")
-            if kind not in DC2_KINDS:
+            if kind not in dc3_kinds:
                 continue
             packed = dict(item)
             packed["kind"] = kind
             if not packed.get("t"):
                 packed["t"] = t
             rows.append(packed)
+        here = mom.get("here") if isinstance(mom.get("here"), dict) else {}
+        for i, mark in enumerate(here.get("seamarks") or []):
+            if not isinstance(mark, dict) or not mark.get("name"):
+                continue
+            packed = {
+                "kind": "aton",
+                "title": mark.get("name"),
+                "fact": mark.get("name"),
+                "name": mark.get("name"),
+                "nm": mark.get("nm") if isinstance(mark.get("nm"), (int, float)) else None,
+                "id": f"here:aton:{moment.get('seq')}:{i}",
+            }
+            if not packed.get("t"):
+                packed["t"] = t
+            rows.append(packed)
     for entry in journal_entries(journal):
         kind = str(entry.get("kind") or "")
-        if kind not in {"poe", "sci", "station", "anchorage", "buoy"}:
+        mapped = DC3_KIND_ALIASES.get(kind.casefold(), kind)
+        if mapped not in {"poe", "sci", "station", "anchorage", "buoy"} | DC3_KINDS:
             continue
         rows.append({
             **entry,
+            "kind": mapped if mapped in DC3_KINDS else kind,
             "title": entry.get("title") or entry.get("name") or "",
             "fact": entry.get("fact") or entry.get("name") or "",
         })
+    rows.extend(_dc_changes_from_ici_route())
     return rows
 
 
@@ -1749,6 +2194,16 @@ def change_is_speakable(change: dict) -> bool:
         return bool(_poe_place_name(change))
     if kind == "anchorage":
         return bool(_anchorage_name(change))
+    if kind == "aton":
+        return bool(_aton_name(change))
+    if kind == "cable":
+        return bool(_cable_name(change))
+    if kind == "depth":
+        return _depth_m(change) is not None
+    if kind == "piracy":
+        return bool(_piracy_name(change))
+    if kind == "satellite":
+        return bool(_satellite_caption(change))
     return bool(change_place_name(change))
 
 
@@ -5180,6 +5635,29 @@ def _ici_dc2_extras(row: dict) -> list[dict]:
         if change_is_speakable(extra):
             extras.append(extra)
             break
+    extras.extend(_ici_dc3_extras(row, bag))
+    return extras
+
+
+def _ici_dc3_extras(row: dict, bag: dict | None = None) -> list[dict]:
+    """Balise / câble / profondeur / piraterie / satellite du sac ici — copie."""
+    if bag is None:
+        pair = _row_latlon(row)
+        if not pair:
+            return []
+        try:
+            from official_store import ici_bag_near  # noqa: PLC0415
+            bag = ici_bag_near(pair[0], pair[1])
+        except Exception:
+            return []
+    extras: list[dict] = []
+    for extra in _dc3_from_ici_bag(bag, seq=row.get("seq")):
+        extra = {
+            **extra,
+            "id": extra.get("id") or f"ici:{extra.get('kind')}:{row.get('seq')}",
+        }
+        if change_is_speakable(extra):
+            extras.append(extra)
     return extras
 
 
@@ -5316,6 +5794,7 @@ def _group_changes(changes: list[dict], span_ms: int, clock: dict | None = None)
         if kind in {
             "alert-on", "marina", "port", "amp", "project", "zee-enter", "coast",
             "climo", "station", "buoy", "poe", "anchorage",
+            "aton", "cable", "depth", "piracy", "satellite",
         }:
             # Pas de « 10 alertes », « N ZEE » ni « N stations » : une station qualifiée, jamais un comptage (RG5).
             continue
@@ -5703,7 +6182,7 @@ def _would_speak(change: dict) -> bool:
         place = geo.get("fr") or geo.get("en") or place
     if looks_english_title(place) and kind in {
         "port", "approche", "culture", "project", "amp", "marina",
-        "poe", "anchorage",
+        "poe", "anchorage", "aton",
     }:
         return False
     sentence = change_sentence(change, "fr").strip()
@@ -5780,7 +6259,7 @@ def select_chapter_changes(
         if str(c.get("kind") or "") not in ROUTE_NAMING_KINDS
         and not _is_coast_source(c)
         and not _is_amp_change(c)
-        and str(c.get("kind") or "") not in ({"project", "climo", "station"} | DC2_KINDS)
+        and str(c.get("kind") or "") not in ({"project", "climo", "station"} | DC_DOSAGE_KINDS)
         and _tier_allows_kind(str(c.get("kind") or ""), tier)
     ]
     if not budget:
@@ -5814,7 +6293,8 @@ def select_chapter_changes(
         pool, spare = _cap_argo_candidates(pool, spare)
         picked_free = _spread_free_changes(pool, t_a, t_b, depart_ms=depart_ms, spare=spare)
         dc2 = dose_dc2_leg_changes(usable, span)
-        out = picked_free + keep + dc2  # escale, approche, marina ; DC2 hors fenêtres
+        dc3 = dose_dc3_leg_changes(usable, span)
+        out = picked_free + keep + dc2 + dc3  # escale, approche, marina ; DC hors fenêtres
         seen_ids: set[str] = set()
         uniq: list[dict] = []
         for c in out:
@@ -5837,7 +6317,7 @@ def select_chapter_changes(
     alert = next((c for c in rest if c.get("kind") == "alert-on"), None)
     color_skip = {"marina", "zee-enter", "coast"}
     if tier is not None and tier <= FILM_TIER_SHORT:
-        color_skip = color_skip | {"station", "climo", "culture", "port"} | DC2_KINDS
+        color_skip = color_skip | {"station", "climo", "culture", "port"} | DC_DOSAGE_KINDS
     color = next((c for c in rest if c.get("kind") in COLOR_KINDS and c.get("kind") not in color_skip), None)
     # La marina de l'escale (« cultures d'escale », 26 sept.) : la dernière marina à portée de la fenêtre.
     marina = next((c for c in sorted(rest, key=lambda c: -(c.get("tMs") or 0)) if c.get("kind") == "marina"), None)
@@ -6038,6 +6518,59 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
                 f"Le {when}, mouillage {name}."
             )
         return f"Anchorage {name}." if en else f"Mouillage {name}."
+    if kind == "aton":
+        name = _aton_name(change)
+        if not name or looks_english_title(name):
+            return ""
+        body = f"beacon {name}" if en else f"balise {name}"
+        if when:
+            return f"On {when}, {body}." if en else f"Le {when}, {body}."
+        return f"{body[0].upper()}{body[1:]}."
+    if kind == "cable":
+        name = _cable_name(change)
+        if not name:
+            return ""
+        body = f"cable {name}" if en else f"câble {name}"
+        if when:
+            return f"On {when}, {body}." if en else f"Le {when}, {body}."
+        return f"{body[0].upper()}{body[1:]}."
+    if kind == "depth":
+        metres = _depth_m(change)
+        if metres is None:
+            return ""
+        if abs(metres - round(metres)) < 0.05:
+            spoken = str(int(round(metres)))
+        else:
+            spoken = f"{metres:.1f}".rstrip("0").rstrip(".")
+            if not en:
+                spoken = spoken.replace(".", ",")
+        body = f"Depth: {spoken} m" if en else f"Profondeur : {spoken} m"
+        if when:
+            return f"On {when}, {body}." if en else f"Le {when}, {body}."
+        return f"{body}."
+    if kind == "piracy":
+        name = _piracy_name(change)
+        if not name:
+            return ""
+        level = _piracy_level(change)
+        source = str(change.get("source") or "").strip()
+        label = "Piracy" if en else "Piraterie"
+        body = f"{label} — {name}"
+        if level:
+            body += f" · {level}"
+        if source:
+            body += f" · {source}"
+        if when:
+            return f"On {when}, {body}." if en else f"Le {when}, {body}."
+        return f"{body}."
+    if kind == "satellite":
+        caption = _satellite_caption(change)
+        if not caption:
+            return ""
+        body = caption.rstrip(".")
+        if when:
+            return f"On {when}, {body}." if en else f"Le {when}, {body}."
+        return caption if caption.endswith((".", "!", "?", "…")) else f"{caption}."
     if kind == "amp":
         from ici_engine import is_fishing_amp, spoken_amp_name  # noqa: PLC0415
         if is_fishing_amp({"name": title, "title": title, "fact": fact}):
@@ -7124,7 +7657,7 @@ def build_raw_from_moments(
                 place = geo.get("fr") or geo.get("en") or place
             if looks_english_title(place) and change.get("kind") in {
                 "port", "approche", "culture", "project", "amp", "marina",
-                "poe", "anchorage",
+                "poe", "anchorage", "aton",
             }:
                 return
             sentence = change_sentence(change, lang).strip()
