@@ -8,7 +8,7 @@ import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle } from "../hooks/useReplay.js";
+import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -391,7 +391,13 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
                 </span>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
-                    const writtenSoon = id === "written" && !replay.hasWritten;
+                    const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";
+                    const canWrite = writtenPillEnabled({
+                      hasWritten: replay.hasWritten,
+                      filmReady,
+                      customFilm: replay.customFilm,
+                    });
+                    const writtenSoon = id === "written" && !canWrite;
                     const locked = Boolean(replay.active) || writtenSoon;
                     return (
                     <button

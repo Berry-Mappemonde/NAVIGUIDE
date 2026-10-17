@@ -892,6 +892,11 @@ export default function App() {
 
   // Récit : film serveur (Berry = horloge officielle + journal ; ma route =
   // chapitres de GET /voyage/{id}/film). Jamais le brut local servi comme prêt.
+  // Revoir place le bateau au jour 0. Le texte du panneau reste celui de
+  // l'horloge officielle : le playhead ne doit pas effacer les escales déjà
+  // franchies (RA2 lit ce texte pendant que le film joue).
+  const storyLive = replay.active && sourceLive ? sourceLive : live;
+  const storyLeg = replay.active ? null : hudLeg;
   const storyParagraphs = useMemo(() => {
     if (suivreCustom) return replay.filmParagraphs || [];
     if (!suivreBerry || !officialClock) return [];
@@ -899,14 +904,14 @@ export default function App() {
     return expeditionStory({
       clock: officialClock,
       marks: datedLegend ? legendMarks : (officialClock.marks || legendMarks),
-      live,
-      leg: hudLeg,
+      live: storyLive,
+      leg: storyLeg,
       journal: officialJournal.journal,
-      now: live?.iso || Date.now(),
+      now: storyLive?.iso || Date.now(),
       lang,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suivreCustom, suivreBerry, officialClock, legendMarks, live?.iso, live?.status, live?.atQuay, live?.windKnots, hudLeg?.toStop, hudLeg?.fromStop, Math.round(hudLeg?.remainingNm || 0), officialJournal.journal, lang, replay.filmParagraphs]);
+  }, [suivreCustom, suivreBerry, officialClock, legendMarks, storyLive?.iso, storyLive?.status, storyLive?.atQuay, storyLive?.windKnots, storyLive?.filmNm, storyLeg?.toStop, storyLeg?.fromStop, Math.round(storyLeg?.remainingNm || 0), officialJournal.journal, lang, replay.filmParagraphs]);
   // Lot O — during a replay, Écouter / useReplayVoice read the current
   // paragraph; otherwise the story + briefing (Suivre) or the briefing alone.
   const speechText = replay.active

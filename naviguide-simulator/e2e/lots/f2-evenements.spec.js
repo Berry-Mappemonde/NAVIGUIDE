@@ -4,9 +4,9 @@ import { expect, test } from "@playwright/test";
 import { cardFromJournalEntry } from "../../src/engine/momentCard.js";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-f2/${name}.jpg`,
-  type: "jpeg",
-  quality: 70,
+  path: `../docs/recette/lot-f2/${name}.webp`,
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

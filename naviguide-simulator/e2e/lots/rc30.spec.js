@@ -26,20 +26,20 @@ mkdirSync(recetteRc41, { recursive: true });
 mkdirSync(recetteRc48, { recursive: true });
 
 const shot = async (page, name) => {
-  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
-  writeFileSync(join(recetteDir, `${name}.jpg`), buf);
+  const buf = await page.screenshot({ type: "webp", quality: 85, fullPage: false });
+  writeFileSync(join(recetteDir, `${name}.webp`), buf);
 };
 const shotRc36 = async (page, name) => {
-  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
-  writeFileSync(join(recetteRc36, `${name}.jpg`), buf);
+  const buf = await page.screenshot({ type: "webp", quality: 85, fullPage: false });
+  writeFileSync(join(recetteRc36, `${name}.webp`), buf);
 };
 const shotRc41 = async (page, name) => {
-  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
-  writeFileSync(join(recetteRc41, `${name}.jpg`), buf);
+  const buf = await page.screenshot({ type: "webp", quality: 85, fullPage: false });
+  writeFileSync(join(recetteRc41, `${name}.webp`), buf);
 };
 const shotRc48 = async (page, name) => {
-  const buf = await page.screenshot({ type: "jpeg", quality: 70, fullPage: false });
-  writeFileSync(join(recetteRc48, `${name}.jpg`), buf);
+  const buf = await page.screenshot({ type: "webp", quality: 85, fullPage: false });
+  writeFileSync(join(recetteRc48, `${name}.webp`), buf);
 };
 
 const MONTHS_FR = [

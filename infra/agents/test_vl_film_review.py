@@ -113,14 +113,15 @@ def test_ci_nappelle_pas_meme_si_allume(monkeypatch):
     assert called == []
 
 
-def test_call_vl_refuse_token_factory(monkeypatch):
-    monkeypatch.setenv(vl.ENV_URL, "https://api.tokenfactory.example/v1/chat/completions")
+def test_call_vl_exige_token_factory(monkeypatch):
+    monkeypatch.setenv(vl.ENV_URL, "https://integrate.api.nvidia.com/v1/chat/completions")
     try:
         vl.call_vl("prompt", [])
     except RuntimeError as e:
         assert "Token Factory" in str(e)
     else:
-        raise AssertionError("Token Factory aurait dû être refusé")
+        raise AssertionError("NIM aurait dû être refusé")
+    assert "tokenfactory.nebius.com" in vl.TF_URL
 
 
 def test_run_lots_nappelle_pas_vl():

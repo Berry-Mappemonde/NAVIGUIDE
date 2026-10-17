@@ -59,6 +59,8 @@ export function filmTextHasT0Year(chapters, t0) {
 }
 
 const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
+/** Ces tournures sont un script cassé, même s'il a l'ouverture du voyage. */
+const RE7_HARD_STALE = /milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
 
 /** Au-delà : ready seulement avec l'empreinte RG6/RG7 (intégral long, lot RC21). */
 export const FILM_READY_MAX_WORDS = 800;
@@ -82,7 +84,11 @@ export function isRe7OfficialFilm(data) {
   const chapters = data?.chapters || [];
   if (!chapters.length) return false;
   const blob = chapters.map((c) => c.text || "").join(" ");
-  if (RE7_STALE.test(blob)) return false;
+  if (RE7_HARD_STALE.test(blob)) return false;
+  // « Bay of Biscay » tout seul est un vieux script. Dans le film actuel,
+  // le golfe est une étape réelle, à côté de l'ouverture et de « Today, the boat ».
+  if (/Bay of Biscay/i.test(blob) && !filmHasRg6Rg7Fingerprint(blob)) return false;
+  if (RE7_STALE.test(blob) && !filmHasRg6Rg7Fingerprint(blob)) return false;
   if (filmWordCount(blob) <= FILM_READY_MAX_WORDS) return true;
   return filmHasRg6Rg7Fingerprint(blob);
 }
@@ -130,7 +136,12 @@ const FILM_SOURCE_I18N = Object.freeze({
   cache: "storySourceCache",
 });
 
-export function filmSourceKey(source) {
+export function filmSourceKey(source, reviewedBy) {
+  const s = String(source || "").toLowerCase();
+  const reviewed = String(reviewedBy || "").toLowerCase();
+  if ((s.includes("reviewed") && s.includes("ultra")) || (reviewed.includes("ultra") && isWrittenFilmSource(source))) {
+    return "storySourceSuperReviewed";
+  }
   if (isWrittenFilmSource(source)) return "storySourceSuper";
   return FILM_SOURCE_I18N[source] || "storySourceRules";
 }
@@ -171,8 +182,11 @@ export function resolveServedFilm(data, requestedStyle) {
   };
 }
 
-export function writtenPillEnabled(hasWritten) {
-  return Boolean(hasWritten);
+export function writtenPillEnabled(hasWritten, opts) {
+  const flags = hasWritten && typeof hasWritten === "object" ? hasWritten : { ...(opts || {}), hasWritten };
+  if (flags.customFilm) return Boolean(flags.hasWritten);
+  if (flags.filmReady) return true;
+  return Boolean(flags.hasWritten);
 }
 
 export function isOfficialFilmVoyage(voyageId) {
@@ -2058,9 +2072,30 @@ export function useReplay({
   }, []);
 
   const chooseFilmStyle = useCallback((next) => {
-    if (next === "written" && !hasWritten) return;
-    setFilmStyle(next === "written" ? "written" : "raw");
-  }, [hasWritten]);
+    if (next !== "written") {
+      setFilmStyle("raw");
+      return;
+    }
+    if (hasWritten) {
+      setFilmStyle("written");
+      return;
+    }
+    if (!isOfficialFilmVoyage(voyageId)) return;
+    const path = filmRequestPath(voyageId);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    fetch(`${API}${path}?${q}`, { method: "POST" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        const resolved = resolveServedFilm(data, "written");
+        if (resolved.hasWritten) {
+          setHasWritten(true);
+          setFilmStyle("written");
+          setFilmSource(resolved.source);
+        }
+      })
+      .catch(() => {});
+  }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
   return {
     active,

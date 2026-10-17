@@ -161,7 +161,7 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
             body[:8000],
             "```",
         ]
-        caps = [str(p) for p in sorted((review_dir / f"pr-{num}").glob("*")) if p.suffix.lower() in (".jpg", ".jpeg", ".png")] if num else []
+        caps = [str(p) for p in sorted((review_dir / f"pr-{num}").glob("*")) if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")] if num else []
         parts.append("- Captures de l'agent (à ouvrir avec l'outil de lecture d'image) : " + (", ".join(f"`{c}`" for c in caps) if caps else "aucune téléchargée"))
         # Pré-revue visuelle de Grok Bot (passée AVANT toi) : ce que l'écran a montré.
         bot: dict = {}
