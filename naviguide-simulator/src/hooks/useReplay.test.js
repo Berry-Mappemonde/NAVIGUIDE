@@ -45,6 +45,12 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
 
+  it("le récit du panneau pendant Revoir reste sur l'horloge officielle", () => {
+    assert.match(app, /const storyLive = replay\.active && sourceLive \? sourceLive : live/);
+    assert.match(app, /live: storyLive/);
+    assert.match(app, /now: storyLive\?\.iso \|\| Date\.now\(\)/);
+  });
+
   it("the film bar offers Revoir / Stop ; voice follows Écouter (no 🔊)", () => {
     assert.match(bar, /data-testid="replay-start"/);
     assert.match(bar, /data-testid="replay-stop"/);
