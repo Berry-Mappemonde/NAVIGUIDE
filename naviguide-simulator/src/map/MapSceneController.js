@@ -1163,7 +1163,10 @@ export class MapSceneController {
       this.setCameraPlaced(true);
       return;
     }
-    if (cfg.isSuivre && !cfg.drawingMode && !this._followFramed) {
+    if (this.userNavigated) {
+      // Un geste a déjà choisi la vue : on ne la reprend pas pour centrer le bateau.
+      this._pendingFollowCadrage = false;
+    } else if (cfg.isSuivre && !cfg.drawingMode && !this._followFramed) {
       this._pendingFollowCadrage = true;
     }
     const mayPlace = shouldPlaceInitialCamera({ userNavigated: this.userNavigated })
@@ -1179,9 +1182,9 @@ export class MapSceneController {
     })) {
       this.frameFollowLive(cfg.live);
     }
-    // Suivre : tant que le bateau n'est pas au centre, on garde le masque.
+    // Suivre, sans geste : tant que le bateau n'est pas au centre, on garde le masque.
     // Sinon l'accueil montre le monde entier, sans bateau, jusqu'à un aller-retour Tracer.
-    if (cfg.isSuivre && !cfg.drawingMode && !this._followFramed) {
+    if (cfg.isSuivre && !cfg.drawingMode && !this._followFramed && !this.userNavigated) {
       this.setCameraPlaced(false);
       return;
     }
