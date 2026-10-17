@@ -14,3 +14,4 @@ server/saildocs_inbox/
 .DS_Store
 test-results/
 playwright-report/
+e2e/.auth/
