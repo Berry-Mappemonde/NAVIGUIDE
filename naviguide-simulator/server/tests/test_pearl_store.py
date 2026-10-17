@@ -23,6 +23,14 @@ def test_put_get_count_and_rich_never_downgraded():
     assert info["path"].endswith("naviguide.sqlite") and info["bytes"] > 0
 
 
+def test_kv_put_rejects_a_payload_bigger_than_two_megabytes():
+    huge = {"features": ["x" * 3_000_000]}
+    assert pearl_store.kv_put("amp-bbox", "cell-0", huge) is False
+    assert pearl_store.kv_get("amp-bbox", "cell-0") is None
+    assert pearl_store.kv_put("amp-bbox", "cell-0", {"features": [{"id": 1}]}) is True
+    assert pearl_store.kv_get("amp-bbox", "cell-0")["value"]["features"][0]["id"] == 1
+
+
 def test_purge_by_age():
     old = time.time() - 40 * 86400
     pearl_store.put_pearl("a", {"x": 1}, "rich", ts=old)

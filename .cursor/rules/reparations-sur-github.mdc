@@ -1,0 +1,22 @@
+---
+description: Une réparation demandée va sur GitHub dans la même session
+alwaysApply: true
+---
+
+# Réparations sur GitHub
+
+Quand le porteur demande de réparer un bug (API recette, 502/524, film, VPS, poste) :
+
+- Committer le correctif **et** ses tests sur la branche de la PR concernée
+  (tête de pile si c’est le poste de recette).
+- Pousser sur GitHub **dans la même session**. Ne pas laisser le correctif
+  seulement sur le disque local.
+- Donner l’URL de la PR.
+
+```text
+# BAD
+réparer, relancer uvicorn, dire « rien n'est commité »
+
+# GOOD
+réparer + tests, git commit, git push, URL de la PR
+```

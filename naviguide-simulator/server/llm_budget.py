@@ -35,6 +35,9 @@ DEFAULT_CAPS = {
 # Appels Ultra du chat / jour (geste explicite seulement). En plus du plafond tokens judge.
 DEFAULT_CHAT_ULTRA_PER_DAY = 10
 _ENV_CHAT_ULTRA = "NAVIGUIDE_CHAT_ULTRA_PER_DAY"
+# Frein en dollars estimés (lot NB1). Absent, vide, non numérique ou ≤ 0 = pas de coupure
+# (voulu, le temps de mesurer). Aucun montant n'est écrit dans le dépôt.
+_ENV_DAILY_USD = "NAVIGUIDE_LLM_DAILY_USD"
 
 # Mode LLM (NAVIGUIDE_LLM_MODE) — décision du porteur du 28 sept. : « Nemotron seulement quand je le dis ou
 # quand c'est utile ».
@@ -217,13 +220,44 @@ def get_usage(tier: str, day: str | None = None) -> dict[str, Any]:
     return out
 
 
+def daily_usd_cap() -> float | None:
+    """Plafond dollar du jour. None = pas de coupure (absent, vide, non numérique, ≤ 0)."""
+    raw = (os.environ.get(_ENV_DAILY_USD) or "").strip()
+    if not raw:
+        return None
+    try:
+        val = float(raw)
+    except ValueError:
+        return None
+    if val <= 0 or val != val:
+        return None
+    return val
+
+
+def today_usd(day: str | None = None) -> float:
+    """USD estimé du jour, tous paliers LLM confondus (pas Tavily)."""
+    return round(sum(float(get_usage(t, day)["usd"]) for t in TIERS), 8)
+
+
+def _upcoming_call_usd(tier: str) -> float:
+    """Coût estimé d'un appel au palier (sortie = max_tokens). Sans montant en dur."""
+    return estimate_usd(tier, 0, max_tokens_for(tier))
+
+
 def allow(tier: str) -> bool:
-    """False si le mode l'interdit ici (off, ou arrière-plan en on-demand), ou si le compteur du jour est au
-    plafond — dans les deux cas : aucun appel réseau, la cascade rend `source=budget`."""
+    """False si le mode l'interdit ici (off, ou arrière-plan en on-demand), si le compteur
+    tokens du jour est au plafond, ou si l'USD estimé du jour + le coût de l'appel
+    dépasseraient NAVIGUIDE_LLM_DAILY_USD — dans tous les cas : aucun appel réseau,
+    la cascade rend `source=budget`."""
     if not llm_allowed_here(tier):
         return False
     used = get_usage(tier)
-    return int(used["tokens"]) < daily_cap(tier)
+    if int(used["tokens"]) >= daily_cap(tier):
+        return False
+    cap = daily_usd_cap()
+    if cap is not None and today_usd() + _upcoming_call_usd(tier) > cap:
+        return False
+    return True
 
 
 def chat_ultra_cap() -> int:

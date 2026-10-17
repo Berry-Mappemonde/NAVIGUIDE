@@ -157,13 +157,17 @@ export function useReplayVoice({
         const s = list[i];
         // RC41 : le débit écrit (charIdx) part de cet instant — pas un sprint au budget.
         onSentenceStartRef.current?.(s.start);
+        let failed = false;
         await speakSentence(s.text, lang, {
           rate,
           win,
           onBoundary: (charIdx) => onBoundaryRef.current?.(s.start + (Number(charIdx) || 0)),
-          onLeadFailed: () => onLeadFailedRef.current?.(),
+          onLeadFailed: () => {
+            failed = true;
+            onLeadFailedRef.current?.();
+          },
         });
-        if (cancelled) return;
+        if (cancelled || failed) return;
         onSentenceEndRef.current?.(s.start + s.text.length);
         const ok = await waitWhile(
           () => Boolean(isVoiceHeldRef.current?.()),

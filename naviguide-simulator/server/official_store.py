@@ -29,15 +29,15 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC48 (eaux FR du journal, Gibraltar avant le Maroc) invalide rc41.
+# Clé film : RC55 (Saint-Pierre → Halifax sans Guyane ni équateur) invalide rc48.
 # moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
-# plan_review : rc44 — origine mer après l'épisode (Cayenne). Pas de repli
-# sur l'ancienne clé : un snapshot Halifax / Saint-Pierre → Papeete ne sort plus ready.
-FILM_SCRIPT_REV = "rc48"
+# plan_review : rc54 — marques recollées sur les milles d'itinéraire
+# (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
+FILM_SCRIPT_REV = "rc55"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "am1a"
-PLAN_REVIEW_REV = "rc44"
+PLAN_REVIEW_REV = "rc54"
 DB_NAME = "naviguide_simulator"
 COLLECTION = "official_voyage"
 # Par défaut, le stock disque vit DANS le checkout (server/voyage_data/, ignoré par git) : un agent qui teste
@@ -669,11 +669,19 @@ def _plan_char_count(plan: Optional[dict]) -> int:
 
 
 def _with_film_estimate(plan: Optional[dict]) -> dict:
-    from film_script import film_estimated_seconds  # noqa: PLC0415
+    from film_script import film_estimated_seconds, fix_en_waters_casing  # noqa: PLC0415
 
     if not isinstance(plan, dict):
         return {}
     out = dict(plan)
+    chapters = []
+    for ch in out.get("chapters") or []:
+        if not isinstance(ch, dict):
+            chapters.append(ch)
+            continue
+        chapters.append({**ch, "text": fix_en_waters_casing(ch.get("text") or "")})
+    if chapters:
+        out["chapters"] = chapters
     chars = _plan_char_count(out)
     out["chars"] = chars
     out["estimatedSeconds"] = film_estimated_seconds(chars)
@@ -789,18 +797,34 @@ def _load_official() -> Optional[dict]:
     return load_voyage(OFFICIAL_VOYAGE_ID)
 
 
+_ROUTE_SAMPLE: tuple[int, list[tuple[float, float]]] | None = None
+
+
+def _route_sample(voy: dict, points: list) -> list[tuple[float, float]]:
+    """Échantillon lat/lon du voyage déjà en mémoire. Reconstruit seulement si le voyage change."""
+    global _ROUTE_SAMPLE
+    key = id(voy)
+    if _ROUTE_SAMPLE is not None and _ROUTE_SAMPLE[0] == key:
+        return _ROUTE_SAMPLE[1]
+    step = max(1, len(points) // 400)
+    sample: list[tuple[float, float]] = []
+    for p in points[::step]:
+        try:
+            sample.append((float(p["lat"]), float(p["lon"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    _ROUTE_SAMPLE = (key, sample)
+    return sample
+
+
 def on_official_route(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> bool:
     voy = _load_official()
     points = (voy or {}).get("points") or []
     if not points:
         return False
-    step = max(1, len(points) // 400)
-    for p in points[::step]:
-        try:
-            if _haversine_nm(lat, lon, float(p["lat"]), float(p["lon"])) <= max_nm:
-                return True
-        except (KeyError, TypeError, ValueError):
-            continue
+    for plat, plon in _route_sample(voy, points):
+        if _haversine_nm(lat, lon, plat, plon) <= max_nm:
+            return True
     return False
 
 
@@ -819,22 +843,52 @@ def _ici_bag_is_am1a(bag: dict) -> bool:
     return all(isinstance(item, dict) and "source" in item for item in amps)
 
 
+_ICI_BUCKETS: tuple[int, dict[tuple[int, int], list[tuple[float, float, dict]]]] | None = None
+_ICI_CELL = 4.0  # 0,25° : une case. La fenêtre de recherche s'élargit avec max_nm.
+
+
+def _ici_buckets(body: dict) -> dict[tuple[int, int], list[tuple[float, float, dict]]]:
+    global _ICI_BUCKETS
+    key = id(body)
+    if _ICI_BUCKETS is not None and _ICI_BUCKETS[0] == key:
+        return _ICI_BUCKETS[1]
+    buckets: dict[tuple[int, int], list[tuple[float, float, dict]]] = {}
+    for row in body.get("points") or []:
+        if not isinstance(row, dict):
+            continue
+        bag = row.get("bag")
+        if not isinstance(bag, dict):
+            continue
+        try:
+            plat = float(row["lat"])
+            plon = float(row["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        buckets.setdefault((int(plat * _ICI_CELL), int(plon * _ICI_CELL)), []).append((plat, plon, bag))
+    _ICI_BUCKETS = (key, buckets)
+    return buckets
+
+
 def ici_bag_near(lat: float, lon: float, max_nm: float = ROUTE_NEAR_NM) -> Optional[dict]:
     body = payload_of("ici")
     if not body:
         return None
+    import math  # noqa: PLC0415
+    buckets = _ici_buckets(body)
+    cos = max(0.2, math.cos(math.radians(float(lat))))
+    pad_lat = int((max_nm / 60.0) * _ICI_CELL) + 2
+    pad_lon = int((max_nm / (60.0 * cos)) * _ICI_CELL) + 2
+    lat_i = int(float(lat) * _ICI_CELL)
+    lon_i = int(float(lon) * _ICI_CELL)
     best = None
     best_d = max_nm
-    for row in body.get("points") or []:
-        if not isinstance(row, dict):
-            continue
-        try:
-            d = _haversine_nm(lat, lon, float(row["lat"]), float(row["lon"]))
-        except (KeyError, TypeError, ValueError):
-            continue
-        if d < best_d:
-            best_d = d
-            best = row.get("bag")
+    for di in range(-pad_lat, pad_lat + 1):
+        for dj in range(-pad_lon, pad_lon + 1):
+            for plat, plon, bag in buckets.get((lat_i + di, lon_i + dj), ()):
+                d = _haversine_nm(lat, lon, plat, plon)
+                if d < best_d:
+                    best_d = d
+                    best = bag
     if not isinstance(best, dict):
         return None
     if not _ici_bag_is_am1a(best):
@@ -1587,8 +1641,38 @@ def ensure_fill_process() -> Optional[int]:
         return p.pid
 
 
+_LAST_NUDGE_AT = None
+
+
+def _nudge_min_s() -> float:
+    """Plancher entre deux réveils. 0 = chaque kick écrit le fichier (tests)."""
+    try:
+        return max(0.0, float(os.environ.get("NAVIGUIDE_FILL_NUDGE_MIN_S") or 180))
+    except ValueError:
+        return 180.0
+
+
+def _nudge_due() -> bool:
+    """True une fois par fenêtre. /ici/moment rate souvent une perle (une toutes les 12 nm,
+    recherche à 8 nm) et appelait kick_worker à chaque position : `ps -ax` sous le verrou,
+    plus un passage du remplisseur de 12 à 30 s. L'API ne répondait plus, Cloudflare renvoyait 524."""
+    global _LAST_NUDGE_AT
+    gap = _nudge_min_s()
+    now = time.monotonic()
+    with _LOCK:
+        # None = jamais réveillé. 0.0 ferait `now - 0 < 180` tant que le
+        # processus a moins de 3 min (pytest CI ~90 s) : aucun réveil.
+        if gap and _LAST_NUDGE_AT is not None and now - _LAST_NUDGE_AT < gap:
+            return False
+        _LAST_NUDGE_AT = now
+        return True
+
+
 def nudge_fill_process() -> None:
-    """Demande un passage tout de suite : le remplisseur surveille la date de ce fichier."""
+    """Demande un passage tout de suite : le remplisseur surveille la date de ce fichier.
+
+    Le plafond est dans kick_worker, pas ici : un appel direct écrit toujours.
+    """
     try:
         f = fill_nudgefile()
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -1628,10 +1712,17 @@ def _force_film_once() -> None:
 
 
 def kick_worker() -> None:
-    """Relance un passage en fond — le client n'attend pas, et l'API ne calcule pas (mode process)."""
+    """Relance un passage en fond — le client n'attend pas, et l'API ne calcule pas (mode process).
+
+    En mode process, un seul réveil toutes les NAVIGUIDE_FILL_NUDGE_MIN_S secondes :
+    ensure_fill_process fait un `ps -ax` sous le verrou, et le remplisseur tient le disque
+    12 à 30 s même quand le stock est déjà prêt.
+    """
     if not worker_enabled():
         return
     if WORKER_MODE != "thread":
+        if not _nudge_due():
+            return
         ensure_fill_process()
         nudge_fill_process()
         return
@@ -1663,9 +1754,10 @@ def _worker_loop() -> None:
 
 
 def reset_worker_flag() -> None:
-    global _WORKER_STARTED, _FILM_FORCED
+    global _WORKER_STARTED, _FILM_FORCED, _LAST_NUDGE_AT
     _WORKER_STARTED = False
     _FILM_FORCED = False
+    _LAST_NUDGE_AT = None
 
 
 # ── lecture pour les routes ──────────────────────────────────────────────────

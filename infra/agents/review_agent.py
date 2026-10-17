@@ -43,6 +43,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import run_lots as rl  # noqa: E402  (mêmes helpers : worktree, CLI, GitHub, state)
 import review_collect as rc  # noqa: E402
+import vl_film_review as vl  # noqa: E402  (lot VR1 : lignes « - [ ] KO : » hors parcours 🤖)
 
 QUEUE_MD = rl.STATE_DIR / "queue.md"
 REVIEW_DIR = rl.STATE_DIR / "reviews"
@@ -139,6 +140,7 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         "",
     ]
     prev_branch = "origin/main"
+    movement_comments: list[dict] = []
     for lid in ids:
         e = state.done.get(lid) or {}
         lot = texts.get(lid)
@@ -163,10 +165,12 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         parts.append("- Captures de l'agent (à ouvrir avec l'outil de lecture d'image) : " + (", ".join(f"`{c}`" for c in caps) if caps else "aucune téléchargée"))
         # Pré-revue visuelle de Grok Bot (passée AVANT toi) : ce que l'écran a montré.
         bot: dict = {}
+        comments: list[dict] = []
         if num:
             try:
                 comments = (http or rl.Http(None, None)).github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/issues/{num}/comments?per_page=100") or []
                 bot = rc.bot_verdicts(comments)
+                movement_comments.extend(comments)
             except RuntimeError:
                 bot = {}
         if bot:
@@ -179,6 +183,8 @@ def build_prompt(state: rl.State, ids: list[str], wt: Path, review_dir: Path, mo
         parts.append("")
         prev_branch = f"origin/{branch}" if branch else prev_branch
     parts += parcours_section(state, ids, http)
+    # Lot VR1 : lignes « - [ ] KO : … » même hors du parcours 🤖 — le réviseur en fait des RC s'ils tiennent.
+    parts += vl.movement_kos_section(movement_comments)
     parts += [
         "## Ce que tu produis",
         "",

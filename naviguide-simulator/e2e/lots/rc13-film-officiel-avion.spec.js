@@ -126,18 +126,29 @@ test("lot RC13 — GET /film dit l'avion aller et retour si Cayenne et Halifax",
   if (await start.isEnabled().catch(() => false)) {
     await muteVoice(page);
     await start.click();
+    await muteVoice(page);
     const subtitle = page.getByTestId("film-subtitle");
     await expect(subtitle).toBeVisible({ timeout: 8_000 });
     await page.waitForFunction(() => {
       const f = window.__naviguideFilm;
       return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
     }, null, { timeout: 8_000 }).catch(() => null);
+    // RC16 : seekChapter(i) sans caractère épinglé va en fin de jambe, puis
+    // le tick passe au chapitre « Aujourd'hui ». L'avion est au milieu de
+    // Cayenne → Saint-Pierre — viser la phrase, pas seulement l'index.
     const airIdx = await page.evaluate(() => {
       const re = /prend l'avion|s'envole|retour en avion|the crew flies|return flight/i;
       const list = window.__naviguideFilm?.chapters || [];
-      const i = list.findIndex((c) => re.test(c.text || ""));
-      if (i >= 0) window.__naviguideFilm.seekChapter(i);
-      return i;
+      for (const chapter of list) {
+        const text = chapter.text || "";
+        const at = text.search(re);
+        if (at < 0) continue;
+        const i = Number.isFinite(Number(chapter.idx)) ? Number(chapter.idx) : list.indexOf(chapter);
+        window.speechSynthesis?.cancel?.();
+        window.__naviguideFilm?.seekChapter?.(i, at);
+        return i;
+      }
+      return -1;
     });
     if (airIdx >= 0) {
       await expect(subtitle).toContainText(/avion|s'envole|flies/i, { timeout: 8_000 });
