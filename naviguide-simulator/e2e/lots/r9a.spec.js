@@ -5,9 +5,9 @@
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-r9a/${name}.jpg`,
-  type: "jpeg",
-  quality: 70,
+  path: `../docs/recette/lot-r9a/${name}.webp`,
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 
