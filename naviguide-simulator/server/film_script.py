@@ -1245,16 +1245,170 @@ def _amp_speak_event(change: dict) -> str:
     return ""
 
 
-def _amp_traffic_paren(item: dict | None, lang: str) -> str:
-    from amp_traffic import traffic_kind  # noqa: PLC0415
+def _amp_activity_codes(item: dict) -> tuple[Any, Any]:
+    """Codes ProtectedSeas (0–3). Jamais le dict d'événement imbriqué `entry`."""
+    from amp_traffic import as_activity  # noqa: PLC0415
+    raw_entry = item.get("entry")
+    speed = as_activity(item.get("speed"))
+    if isinstance(raw_entry, dict):
+        nested_e = as_activity(raw_entry.get("entry"))
+        nested_s = as_activity(raw_entry.get("speed"))
+        if nested_s is not None:
+            speed = nested_s
+        return nested_e, speed
+    return as_activity(raw_entry), speed
+
+
+def _amp_stock_traffic(item: dict | None) -> str:
+    """interdit / régulé seulement si le stock le porte. Pas inventé."""
     if not isinstance(item, dict):
         return ""
-    kind = item.get("traffic") or traffic_kind(item.get("entry"), item.get("speed"))
+    stored = item.get("traffic")
+    if stored in {"forbidden", "regulated"}:
+        return stored
+    nested = item.get("entry") if isinstance(item.get("entry"), dict) else None
+    if isinstance(nested, dict) and nested.get("traffic") in {"forbidden", "regulated"}:
+        return nested["traffic"]
+    from amp_traffic import traffic_kind  # noqa: PLC0415
+    entry, speed = _amp_activity_codes(item)
+    if entry is None and speed is None:
+        return ""
+    kind = traffic_kind(entry, speed)
+    return kind if kind in {"forbidden", "regulated"} else ""
+
+
+def _amp_traffic_paren(item: dict | None, lang: str) -> str:
+    kind = _amp_stock_traffic(item)
     if kind == "forbidden":
         return " (no transit)" if _en(lang) else " (circulation interdite)"
     if kind == "regulated":
         return " (regulated transit)" if _en(lang) else " (circulation régulée)"
     return ""
+
+
+def _amp_relation(change: dict) -> str:
+    """crossing | near | '' — champ event / inside / nm du stock."""
+    ev = _amp_speak_event(change)
+    if ev == "enter":
+        return "crossing"
+    if ev == "nearby":
+        return "near"
+    return ""
+
+
+def _amp_distance_nm(change: dict) -> Optional[float]:
+    nm = change_distance_nm(change)
+    if nm is not None:
+        return nm
+    nested = change.get("entry") if isinstance(change.get("entry"), dict) else {}
+    return _fact_num(change, "nm") or (_fact_num(nested, "nm") if nested else None)
+
+
+def _amp_film_sentence(name: str, change: dict, lang: str, when: str) -> str:
+    """Phrase d'aire déjà retenue : près ou traversée ; circulation si le stock l'a."""
+    en = _en(lang)
+    if not name:
+        return ""
+    if _amp_speak_event(change) == "exit":
+        return ""
+    tag = _amp_traffic_paren(change, lang)
+    rel = _amp_relation(change)
+    nm = _amp_distance_nm(change)
+    dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
+    if rel == "crossing":
+        text = (
+            f"On {when}, the boat crosses the marine protected area {name}{tag}."
+            if en else
+            f"Le {when}, le bateau traverse l'aire marine protégée {name}{tag}."
+        )
+    elif rel == "near" and dist:
+        text = (
+            f"On {when}, the boat passes near the marine protected area {name}, at {dist}{tag}."
+            if en else
+            f"Le {when}, le bateau passe près de l'aire marine protégée {name}, à {dist}{tag}."
+        )
+    elif rel == "near":
+        text = (
+            f"On {when}, the boat passes near the marine protected area {name}{tag}."
+            if en else
+            f"Le {when}, le bateau passe près de l'aire marine protégée {name}{tag}."
+        )
+    elif dist:
+        text = (
+            f"On {when}, {dist} away, the marine protected area {name}{tag}."
+            if en else
+            f"Le {when}, à {dist}, l'aire marine protégée {name}{tag}."
+        )
+    else:
+        text = (
+            f"On {when}, marine protected area: {name}{tag}."
+            if en else
+            f"Le {when}, aire marine protégée : {name}{tag}."
+        )
+    return _tidy_empty_when(text) if not when else text
+
+
+def dc_subject_record(change: dict, lang: str = "fr") -> Optional[dict]:
+    """Candidat DC : kind, phrase possible, une fois par famille sur une longue jambe."""
+    if not isinstance(change, dict) or not _is_amp_change(change):
+        return None
+    phrase = change_sentence(change, lang).strip()
+    if not phrase:
+        return None
+    name = change_place_name(change) or short_name(change.get("title") or change.get("name") or "")
+    return {
+        "kind": "amp",
+        "phrase": phrase,
+        "oncePerFamilyOnLongLeg": True,
+        "relation": _amp_relation(change),
+        "name": name,
+    }
+
+
+def dc_subject_candidates(changes: list[dict] | None, lang: str = "fr") -> list[dict]:
+    """Sac DC1 (amp). Une entrée par famille. VS1 lira ; le 2:30 n'empile pas."""
+    recs: list[dict] = []
+    for change in changes or []:
+        rec = dc_subject_record(change, lang)
+        if rec:
+            recs.append(rec)
+    rank = {"crossing": 0, "near": 1, "": 2}
+    recs.sort(key=lambda r: rank.get(str(r.get("relation") or ""), 9))
+    out: list[dict] = []
+    seen: set[str] = set()
+    for rec in recs:
+        kind = str(rec.get("kind") or "")
+        if not kind or kind in seen:
+            continue
+        seen.add(kind)
+        out.append(rec)
+    return out
+
+
+def _dc_amp_changes_from_journal(journal: dict | None) -> list[dict]:
+    rows: list[dict] = []
+    for moment in _journal_moments(journal):
+        for change in moment.get("changes") or []:
+            if isinstance(change, dict) and _is_amp_change(change):
+                packed = dict(change)
+                if not packed.get("t"):
+                    packed["t"] = moment.get("t")
+                rows.append(packed)
+    for entry in journal_entries(journal):
+        if str(entry.get("kind") or "") != "amp":
+            continue
+        rows.append({
+            **entry,
+            "kind": "amp",
+            "title": entry.get("title") or entry.get("name") or "",
+            "fact": entry.get("fact") or entry.get("name") or "",
+        })
+    return rows
+
+
+def _with_dc_subjects(plan: dict, journal: dict | None, lang: str) -> dict:
+    plan["dcSubjects"] = dc_subject_candidates(_dc_amp_changes_from_journal(journal), lang)
+    return plan
 
 
 _FR_SMALL = (
@@ -3431,29 +3585,12 @@ def event_sentence(ev: dict, lang: str = "fr", display_t0: str | None = None) ->
         spoken = spoken_amp_name(name) or name
         if not spoken:
             return ""
-        ev_kind = _amp_speak_event(e if isinstance(e, dict) else ev)
-        if ev_kind == "exit":
-            return ""
-        if ev_kind == "enter":
-            tag = _amp_traffic_paren(e if isinstance(e, dict) else ev, lang)
-            return (
-                f"On {when}, the boat enters the marine protected area {spoken}{tag}."
-                if en else
-                f"Le {when}, le bateau entre dans l'aire marine protégée {spoken}{tag}."
-            )
-        nm = _fact_num(e, "nm") if isinstance(e, dict) else _fact_num(ev, "nm")
-        dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
-        if dist:
-            return (
-                f"On {when}, the boat skirts the marine protected area {spoken} at {dist}."
-                if en else
-                f"Le {when}, le bateau longe l'aire marine protégée {spoken} à {dist}."
-            )
-        return (
-            f"On {when}, marine protected area: {spoken}."
-            if en else
-            f"Le {when}, aire marine protégée : {spoken}."
-        )
+        packed = dict(ev)
+        if isinstance(e, dict) and e is not ev:
+            for key in ("event", "inside", "nm", "traffic", "speed", "facts", "name"):
+                if e.get(key) not in (None, ""):
+                    packed.setdefault(key, e[key])
+        return _amp_film_sentence(spoken, packed, lang, when)
     if ev.get("kind") == "project":
         nm = _fact_num(e, "nm")
         dist = spoken_distance(nm, lang) if nm is not None else ""
@@ -3554,10 +3691,13 @@ def phrase_for_ici_event(ev: dict | None, lang: str = "fr") -> str:
         if nm is None:
             nm = payload.get("whenNm") if payload.get("whenNm") is not None else ev.get("whenNm")
         ev_kind = "enter" if typ == "amp-enter" else "nearby"
+        entry_code = amp.get("entry") if not isinstance(amp.get("entry"), dict) else None
         film_ev = {
             "kind": "amp",
             "name": spoken,
             "t": t,
+            "traffic": amp.get("traffic"),
+            "speed": amp.get("speed"),
             "entry": {
                 "t": t,
                 "name": spoken,
@@ -3565,6 +3705,9 @@ def phrase_for_ici_event(ev: dict | None, lang: str = "fr") -> str:
                 "inside": typ == "amp-enter",
                 "facts": {"nm": nm},
                 "nm": nm,
+                "traffic": amp.get("traffic"),
+                "speed": amp.get("speed"),
+                "entry": entry_code,
             },
         }
         raw = event_sentence(film_ev, lang)
@@ -3577,6 +3720,9 @@ def phrase_for_ici_event(ev: dict | None, lang: str = "fr") -> str:
                 "inside": typ == "amp-enter",
                 "nm": nm,
                 "fact": spoken or "",
+                "traffic": amp.get("traffic"),
+                "speed": amp.get("speed"),
+                "entry": entry_code,
             }, lang)
         return _tidy_empty_when(raw)
 
@@ -5577,19 +5723,7 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
             amp = alert_amp_name(change)
             if not amp:
                 return ""
-            nm = change_distance_nm(change)
-            dist = spoken_distance(nm, lang) if nm is not None else ""
-            if dist:
-                return (
-                    f"On {when}, {dist} away, the marine protected area {amp}."
-                    if en else
-                    f"Le {when}, à {dist}, l'aire marine protégée {amp}."
-                )
-            return (
-                f"On {when}, marine protected area: {amp}."
-                if en else
-                f"Le {when}, aire marine protégée : {amp}."
-            )
+            return _amp_film_sentence(amp, change, lang, when)
         body = IUCN_RE.sub("", fact or title).strip(" ;:")
         if not body or NO_DATA_RE.search(body):
             return ""
@@ -5629,25 +5763,9 @@ def change_sentence(change: dict, lang: str = "fr") -> str:
         name = spoken_amp_name(change_place_name(change) or title) or change_place_name(change)
         if not name or looks_english_title(name):
             return ""
-        ev_kind = _amp_speak_event(change)
-        if ev_kind == "exit":
+        if _amp_speak_event(change) == "exit":
             return ""
-        if ev_kind == "enter":
-            tag = _amp_traffic_paren(change, lang)
-            return (
-                f"On {when}, the boat enters the marine protected area {name}{tag}."
-                if en else
-                f"Le {when}, le bateau entre dans l'aire marine protégée {name}{tag}."
-            )
-        nm = change_distance_nm(change)
-        dist = spoken_distance(nm, lang) if nm is not None and nm > 0 else ""
-        if dist:
-            return (
-                f"On {when}, the boat skirts the marine protected area {name} at {dist}."
-                if en else
-                f"Le {when}, le bateau longe l'aire marine protégée {name} à {dist}."
-            )
-        return f"On {when}, marine protected area: {name}." if en else f"Le {when}, aire marine protégée : {name}."
+        return _amp_film_sentence(name, change, lang, when)
     if kind == "project":
         name = change_place_name(change)
         if not name or looks_english_title(name):
@@ -6306,12 +6424,33 @@ def _trim_script_to_char_budget(
         guard += 1
 
 
+def _keep_one_amp_in_script(chapters: list[dict]) -> None:
+    """2:30 : une seule phrase d'aire. On n'explique pas une seconde fois."""
+    amp_n, _proj = _count_amp_project(chapters)
+    guard = 0
+    while amp_n > 1 and guard < 20:
+        dropped = False
+        for idx in range(len(chapters) - 1, -1, -1):
+            keep = 1 if idx == 0 else 0
+            sents = _sentences(chapters[idx].get("text") or "")
+            if _drop_extra_amp_or_project(sents, amp_n, 1, keep_head=keep):
+                chapters[idx]["text"] = " ".join(sents).strip()
+                dropped = True
+                break
+        if not dropped:
+            break
+        amp_n, _proj = _count_amp_project(chapters)
+        guard += 1
+
+
 def _film_apply_char_budget(chapters: list[dict], seconds: Any) -> None:
     """Plafond 150 s ± 10 % à 15 car./s. 2:30 : keep_head=1 (ouverture d'une phrase)."""
     target = film_char_budget(seconds)
     if target <= 0 or not chapters:
         return
     keep = 1 if _film_compact_template(seconds) else 2
+    if _film_compact_template(seconds):
+        _keep_one_amp_in_script(chapters)
     _trim_script_to_char_budget(chapters, int(target * 1.1), keep_head=keep)
 
 
@@ -6681,6 +6820,9 @@ def build_raw_from_moments(
             flat, w["tA"], w["tB"], budget=has_budget, tier=tier if has_budget else None,
             clock=w.get("clock") or clock, depart_ms=depart_ms,
         )
+        # DC1 : une aire déjà dite, une fois. Le 2:30 n'en empile pas une seconde.
+        if compact and any(_is_amp_change(c) for c in selected_all):
+            selected = [c for c in selected if not _is_amp_change(c)]
         bits: list[str] = []
         placed: list[dict] = []
 
@@ -6850,7 +6992,7 @@ def build_raw_from_moments(
     if has_budget and target > 0:
         _film_apply_char_budget(chapters, seconds)
     chars = script_chars(chapters)
-    return {
+    return _with_dc_subjects({
         "chapters": chapters,
         "source": "rules",
         "chars": chars,
@@ -6859,7 +7001,7 @@ def build_raw_from_moments(
         "_events": selected_all,
         "_packed": packed,
         "_fromMoments": True,
-    }
+    }, journal, lang)
 
 
 def build_raw_script(
@@ -6922,7 +7064,7 @@ def build_raw_script(
     if _film_seconds(seconds) > 0:
         _film_apply_char_budget(chapters, seconds)
     chars = script_chars(chapters)
-    return {
+    return _with_dc_subjects({
         "chapters": chapters,
         "source": "rules",
         "chars": chars,
@@ -6930,7 +7072,7 @@ def build_raw_script(
         "estimatedSeconds": film_estimated_seconds(chars),
         "_events": events,
         "_packed": packed,
-    }
+    }, journal, lang)
 
 
 def journal_fingerprint(journal: dict | None, last_stop: str | None = None) -> str:

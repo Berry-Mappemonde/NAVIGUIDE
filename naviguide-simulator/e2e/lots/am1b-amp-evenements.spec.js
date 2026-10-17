@@ -1,4 +1,5 @@
-// Lot AM1B — le voyage dit les AMP qu'il traverse et qu'il longe.
+// Lot AM1B — le voyage dit les AMP qu'il traverse et dont il passe près
+// (libellés DC1 : traverse / près, plus « entre dans » / « longe »).
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions film / Ici — barre, Suivre et Revoir restent.
 // Avec API : phrases d'entrée / proximité dans le film, encadré Ici « dans
@@ -19,8 +20,8 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-const AMP_ENTER = /entre dans l'aire marine protégée|enters the marine protected area/i;
-const AMP_NEAR = /longe l'aire marine protégée .+ à |skirts the marine protected area .+ at /i;
+const AMP_ENTER = /traverse l'aire marine protégée|crosses the marine protected area/i;
+const AMP_NEAR = /près de l'aire marine protégée .+ à |near the marine protected area .+ at /i;
 const AMP_NAMED = /cabrera|bonifacio|alboran|agoa|scandola|iroise|rochebonne|cul-de-sac|mer de corail|tainui/i;
 const AMP_DANS = /dans l'aire marine protégée|in the marine protected area/i;
 const FISHING = /p[ée]toncles|deposit|chaluts|filets|hu[iî]tres|prohibition zone/i;
