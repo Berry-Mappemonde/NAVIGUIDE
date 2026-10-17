@@ -55,11 +55,9 @@ test("lot DM2 — Suivre / Tracer dans chaque texte, aucun « Simulation » à l
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
   await probeOfficial(page); // sonde seulement : aucune assertion ne dépend de l'API
 
-  // (a) Accueil : anglais par défaut. On passe en français pour la suite du lot.
-  await expect(page.getByTestId("film-view-switch")).toHaveAttribute(
-    "aria-label", "Follow the expedition or Plot",
-  );
-  await page.getByTestId("lang-fr").click();
+  // (a) Accueil FR : le commutateur s'annonce « Suivre l'expédition ou Tracer » ;
+  // l'info-bulle de la pilule Tracer dit Tracer, jamais Simulation.
+  // Le français vient du choix enregistré par la config Playwright.
   await expect(page.getByTestId("film-view-switch")).toHaveAttribute(
     "aria-label", "Suivre l’expédition ou Tracer",
   );
