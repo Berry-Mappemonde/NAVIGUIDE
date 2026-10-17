@@ -6,7 +6,7 @@ Pour chaque PR de la pile, on lit :
     `- [ ]` = pas vérifié (ou pas OK sans commentaire) ;
   - les commentaires du porteur qui commencent par « KO » / « NON » / « ❌ »
     (« KO : écran, ce que je vois, ce que je voulais »), avec leurs images ;
-  - les captures prises par l'agent (`docs/recette/<lot>/…jpg`, sur la branche).
+  - les captures prises par l'agent (`docs/recette/<lot>/…webp`, sur la branche).
 
 Sortie : `infra/agents/review-<date>.json` (lu par plan_corrections.py) et
 `review-<date>.md` (résumé lisible). Les images sont téléchargées dans
@@ -98,7 +98,7 @@ def archive_global_file(date: str) -> str | None:
     return str(dest)
 IMG_MD_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
 IMG_URL_RE = re.compile(r"(https?://(?:github\.com/user-attachments/assets/|user-images\.githubusercontent\.com/|private-user-images\.githubusercontent\.com/)[^\s)>\"']+)")
-CAPTURE_RE = re.compile(r"(docs/recette/[^\s`)\]]+\.(?:jpe?g|png))", re.I)
+CAPTURE_RE = re.compile(r"(docs/recette/[^\s`)\]]+\.(?:jpe?g|png|webp))", re.I)
 RECETTE_TITLES = ("recette", "recipe", "acceptance", "what to check")
 
 
@@ -274,8 +274,16 @@ def download(url: str, dest: Path, tok: str | None) -> Path | None:
             ctype = resp.headers.get("Content-Type", "")
     except Exception:
         return None
-    ext = ".png" if "png" in ctype else ".jpg" if ("jpeg" in ctype or "jpg" in ctype) else Path(urllib.parse.urlparse(url).path).suffix or ".bin"
-    if dest.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+    low = ctype.lower()
+    if "webp" in low:
+        ext = ".webp"
+    elif "png" in low:
+        ext = ".png"
+    elif "jpeg" in low or "jpg" in low:
+        ext = ".jpg"
+    else:
+        ext = Path(urllib.parse.urlparse(url).path).suffix or ".bin"
+    if dest.suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
         dest = dest.with_suffix(ext)
     dest.write_bytes(data)
     return dest
