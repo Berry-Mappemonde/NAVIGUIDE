@@ -373,9 +373,11 @@ export const Sidebar = memo(function Sidebar({
         {open ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
       </button>
 
+      {/* Sans transition : le cadre est à l'écran dès open, un clic géométrique
+          pendant un glissement le refermait (RF10). */}
       <div
         className={`naviguide-sidebar-panel absolute top-0 left-0 h-full z-20 flex flex-col bg-slate-900/97
-          shadow-2xl transition-transform duration-300 border-r border-slate-700/60
+          shadow-2xl border-r border-slate-700/60
           ${open ? "translate-x-0" : "-translate-x-full"}`}
         style={{ width: 320 }}
       >

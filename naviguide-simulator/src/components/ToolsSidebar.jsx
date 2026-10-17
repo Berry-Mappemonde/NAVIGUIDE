@@ -472,9 +472,10 @@ export const ToolsSidebar = memo(function ToolsSidebar({
         {open ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
       </button>
 
+      {/* Même contrat que le panneau gauche : pas de glissement du cadre. */}
       <div
         className={`naviguide-sidebar-panel absolute top-0 right-0 h-full z-20 flex flex-col bg-slate-900/97
-          border-l-2 border-sky-400/40 shadow-2xl transition-transform duration-300
+          border-l-2 border-sky-400/40 shadow-2xl
           ${open ? "translate-x-0" : "translate-x-full"}`}
         style={{ width: 320, visibility: open ? "visible" : "hidden" }}
       >
