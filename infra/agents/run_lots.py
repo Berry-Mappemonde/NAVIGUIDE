@@ -650,7 +650,7 @@ def local_prefix(path: Path, ref: str, pw_port: int) -> str:
             f"puis avec l'API `PW_PORT={pw_port} npm run e2e -- e2e/lots/<lot>.spec.js`. Ne modifie jamais le spec d'un autre lot. "
             f"RÈGLE RECETTE : dans ta PR, la rubrique « Recette (à faire par le porteur) » ne contient que des étapes visuelles — « ouvre …, clique …, tu dois voir … » "
             f"(texte exact, chiffre, bouton présent ou absent) — et JAMAIS de commande, de data-testid, d'URL d'API, de coordonnées ni de nom de fichier : tout cela va dans « Review automatique ». "
-            f"Chaque capture est référencée par son URL complète sur ta branche : https://github.com/{owner_repo(DEFAULT_REPO)}/blob/<ta-branche>/docs/recette/<lot>/01-….jpg?raw=true "
+            f"Chaque capture est référencée par son URL complète sur ta branche : https://github.com/{owner_repo(DEFAULT_REPO)}/blob/<ta-branche>/docs/recette/<lot>/01-….webp?raw=true "
             f"(un chemin relatif s'ouvre sur main, où le fichier n'existe pas encore). "
             f"RÈGLE DONNÉES RÉELLES (26 sept.) : aucune donnée factice (seed, fixture, constante, « contenu du poste de recette ») n'est écrite dans un stock ou un cache "
             f"que le poste lit, ni servie comme prête ; ce qui n'est pas calculé pour de vrai reste « en préparation ». La Recette de ta PR décrit ce qu'on voit avec les VRAIES "
@@ -1754,7 +1754,7 @@ def write_recette_md(state: State, args, http: Http | None, branch: str, wt: Pat
                     mark = "🤖❌ " if (b and b.get("ko")) else "⬜ "            # KO vu par le bot / à voir
             ln = re.sub(r"^(\d+[.)]|[-*•])\s+", "", ln).strip()          # puce ou numéro, pas le gras
             ln = re.sub(r"\]\((docs/recette/[^)]+)\)", rf"]({blob}/{e['branch']}/\1?raw=true)", ln)
-            ln = re.sub(r"`(docs/recette/[^`]+\.(?:jpg|jpeg|png))`", rf"[\1]({blob}/{e['branch']}/\1?raw=true)", ln)
+            ln = re.sub(r"`(docs/recette/[^`]+\.(?:jpg|jpeg|png|webp))`", rf"[\1]({blob}/{e['branch']}/\1?raw=true)", ln)
             item = f"- {mark}{tag} {ln}"
             if re.match(r"(?i)^\**capture", ln) or "docs/recette/" in ln:
                 captures.append(item)

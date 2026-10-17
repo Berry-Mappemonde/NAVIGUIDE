@@ -386,11 +386,46 @@ def _rf5_from_marks(marks, lang="fr"):
     }
 
 
+def test_serve_film_plays_previous_revision_until_the_new_one_is_stored(tmp_path, monkeypatch):
+    """La révision du checkout peut manquer (remplisseur encore dessus). Revoir joue le dernier script."""
+    voy = {
+        "t0": T0,
+        "points": [{"lat": 46.8, "lon": 1.6}],
+        "marks": [{"name": "La Rochelle", "nm": 0}],
+        "clock": {"t0": T0, "vertices": [], "marks": []},
+    }
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "1")
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
+    plan = {
+        "chapters": [{
+            "id": "c1",
+            "text": "The Berry-Mappemonde expedition left Saint-Maur on 15 May 2026.",
+        }],
+        "source": "rules",
+        "chars": 64,
+        "targetSeconds": 150,
+    }
+    payload = {"en": plan, "default": plan, "variants": {"en": {"150": plan}}}
+    store.put("film", payload, f"{store.current_key(voy, NOW)}:rc55")
+    assert store.get("film", store.family_key("film", voy, NOW)) is None
+    official_store._INSTANCE = store
+    try:
+        played = official_store.serve_film("en", 150)
+        assert played["status"] == READY
+        assert played["chapters"][0]["text"].startswith("The Berry-Mappemonde")
+        official_store._INSTANCE = OfficialStore(DiskBackend(tmp_path / "empty"), now=lambda: NOW)
+        assert official_store.serve_film("en", 150)["status"] == PREPARING
+    finally:
+        official_store.reset_store()
+
+
 def test_film_key_includes_script_rev(tmp_path):
     store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
     voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
     film_key = store.family_key("film", voy, NOW)
     base = store.current_key(voy, NOW)
+    assert FILM_SCRIPT_REV == "vs1"
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
     assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
     assert store.family_key("ici", voy, NOW) == f"{base}:{ICI_REV}"
@@ -695,8 +730,12 @@ def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeyp
     official_store.put("film", _stale_film_payload())
     stale = client.get("/voyage/official/film?lang=fr&seconds=0")
     assert stale.status_code == 200
-    assert stale.json()["status"] == PREPARING
-    assert stale.json()["chapters"] == []
+    # Le script déjà rangé se joue tout de suite, même s'il ne dit pas encore l'avion.
+    # Consigne : compléter les phrases manquantes, ne pas bloquer le film périmé.
+    played = stale.json()
+    assert played["status"] == READY
+    assert played["chapters"]
+    assert "Saint-Pierre" in played["chapters"][0]["text"]
 
     assert official_store.refresh_family("film", force=True) == READY
     film = client.get("/voyage/official/film?lang=fr&seconds=0")
@@ -1389,6 +1428,8 @@ def _rg11a_voy():
 
 
 def test_rg11a_serve_written_when_present(tmp_path, monkeypatch):
+    import asyncio
+
     store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
     voy = _rg11a_voy()
     monkeypatch.setattr(official_store, "_INSTANCE", store)
@@ -1396,7 +1437,7 @@ def test_rg11a_serve_written_when_present(tmp_path, monkeypatch):
     payload = _rg11a_payload()
     key = store.family_key("film", voy, NOW)
     store.put("film", payload, key)
-    official_store.fill_written_film(force=True, cascade=_rg11a_honest_cascade, now=NOW)
+    asyncio.run(official_store.write_film_on_click("fr", 150, cascade=_rg11a_honest_cascade, now=NOW))
     written = official_store.serve_film("fr", 150, style="written")
     assert written["status"] == READY
     assert written["hasWritten"] is True
@@ -1443,8 +1484,11 @@ def test_rg11a_mode_off_does_not_call_llm(tmp_path, monkeypatch):
         raise AssertionError("LLM en mode off")
 
     out = official_store.fill_written_film(force=True, cascade=boom, now=NOW)
-    assert out["status"] == "off"
+    assert out["status"] == "click-only"
     assert calls["n"] == 0
+    import asyncio
+    served_click = asyncio.run(official_store.write_film_on_click("fr", 150, cascade=boom, now=NOW))
+    assert served_click["hasWritten"] is False
     served = official_store.serve_film("fr", 150, style="written")
     assert served["hasWritten"] is False
     assert served["status"] == READY
@@ -1469,8 +1513,11 @@ def test_rg11a_write_cap_serves_raw(tmp_path, monkeypatch):
         raise AssertionError("LLM au plafond")
 
     out = official_store.fill_written_film(force=True, cascade=boom, now=NOW)
-    assert out["status"] == "budget"
+    assert out["status"] == "click-only"
     assert calls["n"] == 0
+    import asyncio
+    served_click = asyncio.run(official_store.write_film_on_click("fr", 150, cascade=boom, now=NOW))
+    assert served_click["hasWritten"] is False
     served = official_store.serve_film("fr", 150, style="written")
     assert served["hasWritten"] is False
     assert served["status"] == READY
@@ -1484,7 +1531,8 @@ def test_rg11a_http_style_written(client, tmp_path, monkeypatch):
     monkeypatch.setattr(official_store, "_load_official", lambda: voy)
     payload = _rg11a_payload()
     store.put("film", payload, store.family_key("film", voy, NOW))
-    official_store.fill_written_film(force=True, cascade=_rg11a_honest_cascade, now=NOW)
+    import asyncio
+    asyncio.run(official_store.write_film_on_click("fr", 150, cascade=_rg11a_honest_cascade, now=NOW))
     written = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
     assert written.status_code == 200
     data = written.json()
@@ -1493,3 +1541,64 @@ def test_rg11a_http_style_written(client, tmp_path, monkeypatch):
     assert data.get("writtenAt")
     raw = client.get("/voyage/official/film?lang=fr&seconds=150&style=raw")
     assert raw.json()["hasWritten"] is False
+
+
+def test_ed1_get_does_not_write(client, tmp_path, monkeypatch):
+    store = OfficialStore(DiskBackend(tmp_path / "http-ed1"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("GET a lancé la chaîne")
+
+    monkeypatch.setattr(official_store, "write_film_on_click", boom)
+    out = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert out.status_code == 200
+    assert out.json()["hasWritten"] is False
+    assert calls["n"] == 0
+
+
+def test_ed1_write_query_runs_once_then_cache(client, tmp_path, monkeypatch):
+    import film_script
+
+    store = OfficialStore(DiskBackend(tmp_path / "http-ed1-write"), now=lambda: NOW)
+    voy = _rg11a_voy()
+    official_store.reset_store()
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "on-demand")
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    store.put("film", _rg11a_payload(), store.family_key("film", voy, NOW))
+    calls = {"n": 0}
+
+    async def fake_chain(plan, *, seconds=150, cascade=None):
+        calls["n"] += 1
+        written = {
+            "chapters": list(plan.get("chapters") or []),
+            "source": official_store.WRITTEN_SOURCE,
+            "hasWritten": True,
+            "chars": 40,
+            "targetSeconds": seconds,
+        }
+        return written, None, {
+            "super": 1, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+            "source": official_store.WRITTEN_SOURCE, "reviewed": False,
+        }
+
+    monkeypatch.setattr(film_script, "write_film_chain", fake_chain)
+    first = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert first.status_code == 200
+    assert first.json()["hasWritten"] is True
+    assert first.json()["source"] == official_store.WRITTEN_SOURCE
+    assert calls["n"] == 1
+    second = client.post("/voyage/official/film?lang=fr&seconds=150")
+    assert second.json()["hasWritten"] is True
+    assert calls["n"] == 1
+    get_only = client.get("/voyage/official/film?lang=fr&seconds=150&style=written")
+    assert get_only.json()["hasWritten"] is True
+    assert calls["n"] == 1

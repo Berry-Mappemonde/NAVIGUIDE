@@ -12,7 +12,7 @@ import { dismissNotForNav, leaveCinema, probeOfficial, showLeftPanel } from "../
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-dm2");
 mkdirSync(recetteDir, { recursive: true });
 const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`), type: "jpeg", quality: 70, fullPage: false,
+  path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
 // Pilule et textes visibles : Suivre / Tracer (FR) ou Follow / Plot (EN).
