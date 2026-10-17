@@ -57,7 +57,6 @@ test("lot DM2 — Suivre / Tracer dans chaque texte, aucun « Simulation » à l
 
   // (a) Accueil FR : le commutateur s'annonce « Suivre l'expédition ou Tracer » ;
   // l'info-bulle de la pilule Tracer dit Tracer, jamais Simulation.
-  // Le français vient du choix enregistré par la config Playwright.
   await expect(page.getByTestId("film-view-switch")).toHaveAttribute(
     "aria-label", "Suivre l’expédition ou Tracer",
   );
