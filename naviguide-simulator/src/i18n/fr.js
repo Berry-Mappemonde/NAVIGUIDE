@@ -227,7 +227,6 @@ export default {
   logbookChatUnsaved: "réponse non consignée au journal",
   logbookChatLogged: "échanges consignés",
   logbookChatNotLogged: "réponses non consignées au journal",
-  logbookChatReason: "Raisonnement",
   replayStart: "Revoir l’expédition",
   replayStartTitle: "Rejouer la route de Saint-Maur à aujourd’hui, racontée jour par jour",
   replayBerryOnly: "Revoir : route Berry-Mappemonde seulement — bientôt pour votre route",
