@@ -12,9 +12,7 @@ const apiPort = Number(
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 
 const viteServer = {
-  // exec : un seul processus, tué avec son groupe. npx laissait un petit-fils
-  // qui gardait le pipe ouvert et bloquait la fin du job (tranche annulée).
-  command: `exec ./node_modules/.bin/vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+  command: `npx vite preview --host 127.0.0.1 --port ${port} --strictPort`,
   url: origin,
   reuseExistingServer: !process.env.CI && !process.env.PW_PORT,
   timeout: 60_000,
@@ -24,7 +22,7 @@ const viteServer = {
 };
 
 const apiServer = {
-  command: "exec bash scripts/e2e-store-api.sh",
+  command: "bash scripts/e2e-store-api.sh",
   url: apiOrigin,
   reuseExistingServer: false,
   timeout: 180_000,

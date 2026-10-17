@@ -569,90 +569,6 @@ def official_journal_moments() -> list[dict]:
     return best
 
 
-def _payload_has_chapters(payload: Optional[dict]) -> bool:
-    """Vrai si un plan FR, EN ou une variante a au moins un chapitre."""
-    if not isinstance(payload, dict):
-        return False
-    variants = payload.get("variants") if isinstance(payload.get("variants"), dict) else {}
-    for by_secs in variants.values():
-        if not isinstance(by_secs, dict):
-            continue
-        for plan in by_secs.values():
-            if isinstance(plan, dict) and (plan.get("chapters") or []):
-                return True
-    for key in ("fr", "en", "default"):
-        plan = payload.get(key)
-        if isinstance(plan, dict) and (plan.get("chapters") or []):
-            return True
-    return False
-
-
-def _patch_air_on_film(payload: dict, voy: Optional[dict]) -> dict:
-    """Ajoute les phrases d'avion manquantes. Le reste du script n'est pas réécrit."""
-    out = dict(payload)
-    variants = out.get("variants") if isinstance(out.get("variants"), dict) else None
-    if variants:
-        patched: dict = {}
-        for lang, by_secs in variants.items():
-            if not isinstance(by_secs, dict):
-                patched[lang] = by_secs
-                continue
-            lg = str(lang)[:2].lower() or "fr"
-            patched[lang] = {
-                sec: _apply_air_sentences(plan, lg, voy) if isinstance(plan, dict) else plan
-                for sec, plan in by_secs.items()
-            }
-        out["variants"] = patched
-        for key, lg in (("fr", "fr"), ("en", "en"), ("default", "fr")):
-            picked = (patched.get(lg) or patched.get("fr") or {})
-            if not isinstance(picked, dict):
-                continue
-            plan = picked.get("150") or picked.get("0") or next(iter(picked.values()), None)
-            if isinstance(plan, dict) and (plan.get("chapters") or []):
-                out[key] = plan
-    for key, lg in (("fr", "fr"), ("en", "en"), ("default", "fr")):
-        plan = out.get(key)
-        if isinstance(plan, dict) and (plan.get("chapters") or []):
-            out[key] = _apply_air_sentences(plan, lg, voy)
-    return out
-
-
-def _newest_film_hit() -> Optional[dict]:
-    """Dernier script qui a des chapitres, même révision ancienne.
-
-    La révision du checkout (vs1, rc55…) met du temps à s'écrire. Tant qu'elle
-    n'est pas là, Revoir joue le dernier film complet au lieu de rester
-    « en préparation ».
-    """
-    st = get_store()
-    voy = _load_official()
-    try:
-        route_id, t0, _, _suf = parse_key(st.family_key("film", voy))
-    except ValueError:
-        return None
-    lister = getattr(st.backend, "list_family", None)
-    if not callable(lister):
-        return None
-    best: Optional[dict] = None
-    best_date = ""
-    for stored_key, doc in lister("film"):
-        try:
-            route, stamp, date, _suf = parse_key(stored_key)
-        except ValueError:
-            continue
-        if route != route_id or stamp != t0:
-            continue
-        payload = doc.get("payload") if isinstance(doc, dict) else None
-        if not _payload_has_chapters(payload):
-            continue
-        if best is None or date > best_date:
-            hit = dict(doc)
-            hit["key"] = stored_key
-            hit["dataDate"] = date
-            best, best_date = hit, date
-    return best
-
-
 def _film_chapters_blob(payload: Optional[dict]) -> str:
     if not isinstance(payload, dict):
         return ""
@@ -2152,17 +2068,12 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,
     }
-    voy = _load_official()
     hit = get("film")
     body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
-    if not _payload_has_chapters(body):
-        hit = _newest_film_hit()
-        body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
-    if not _payload_has_chapters(body):
+    if not body:
         return preparing_payload("film", extra)
-    if film_snapshot_stale(body, voy):
-        body = _patch_air_on_film(body, voy)
-    # Un script déjà écrit se joue. Une phrase d'avion manquante ne bloque pas Revoir.
+    if film_snapshot_stale(body, _load_official()):
+        return preparing_payload("film", extra)
     lg = (lang or "fr")[:2].lower()
     plan = None
     variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}

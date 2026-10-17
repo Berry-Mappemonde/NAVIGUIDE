@@ -386,40 +386,6 @@ def _rf5_from_marks(marks, lang="fr"):
     }
 
 
-def test_serve_film_plays_previous_revision_until_the_new_one_is_stored(tmp_path, monkeypatch):
-    """La révision du checkout peut manquer (remplisseur encore dessus). Revoir joue le dernier script."""
-    voy = {
-        "t0": T0,
-        "points": [{"lat": 46.8, "lon": 1.6}],
-        "marks": [{"name": "La Rochelle", "nm": 0}],
-        "clock": {"t0": T0, "vertices": [], "marks": []},
-    }
-    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
-    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "1")
-    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
-    plan = {
-        "chapters": [{
-            "id": "c1",
-            "text": "The Berry-Mappemonde expedition left Saint-Maur on 15 May 2026.",
-        }],
-        "source": "rules",
-        "chars": 64,
-        "targetSeconds": 150,
-    }
-    payload = {"en": plan, "default": plan, "variants": {"en": {"150": plan}}}
-    store.put("film", payload, f"{store.current_key(voy, NOW)}:rc55")
-    assert store.get("film", store.family_key("film", voy, NOW)) is None
-    official_store._INSTANCE = store
-    try:
-        played = official_store.serve_film("en", 150)
-        assert played["status"] == READY
-        assert played["chapters"][0]["text"].startswith("The Berry-Mappemonde")
-        official_store._INSTANCE = OfficialStore(DiskBackend(tmp_path / "empty"), now=lambda: NOW)
-        assert official_store.serve_film("en", 150)["status"] == PREPARING
-    finally:
-        official_store.reset_store()
-
-
 def test_film_key_includes_script_rev(tmp_path):
     store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
     voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
@@ -730,10 +696,8 @@ def test_http_force_refresh_film_serves_air_when_marks_have_pair(client, monkeyp
     official_store.put("film", _stale_film_payload())
     stale = client.get("/voyage/official/film?lang=fr&seconds=0")
     assert stale.status_code == 200
-    # Le script déjà rangé se joue tout de suite, même s'il ne dit pas encore l'avion.
-    played = stale.json()
-    assert played["status"] == READY
-    assert played["chapters"]
+    assert stale.json()["status"] == PREPARING
+    assert stale.json()["chapters"] == []
 
     assert official_store.refresh_family("film", force=True) == READY
     film = client.get("/voyage/official/film?lang=fr&seconds=0")

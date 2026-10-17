@@ -59,8 +59,6 @@ export function filmTextHasT0Year(chapters, t0) {
 }
 
 const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
-/** Ces tournures sont un script cassé, même s'il a l'ouverture du voyage. */
-const RE7_HARD_STALE = /milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
 
 /** Au-delà : ready seulement avec l'empreinte RG6/RG7 (intégral long, lot RC21). */
 export const FILM_READY_MAX_WORDS = 800;
@@ -84,11 +82,7 @@ export function isRe7OfficialFilm(data) {
   const chapters = data?.chapters || [];
   if (!chapters.length) return false;
   const blob = chapters.map((c) => c.text || "").join(" ");
-  if (RE7_HARD_STALE.test(blob)) return false;
-  // « Bay of Biscay » tout seul est un vieux script. Dans le film actuel,
-  // le golfe est une étape réelle, à côté de l'ouverture et de « Today, the boat ».
-  if (/Bay of Biscay/i.test(blob) && !filmHasRg6Rg7Fingerprint(blob)) return false;
-  if (RE7_STALE.test(blob) && !filmHasRg6Rg7Fingerprint(blob)) return false;
+  if (RE7_STALE.test(blob)) return false;
   if (filmWordCount(blob) <= FILM_READY_MAX_WORDS) return true;
   return filmHasRg6Rg7Fingerprint(blob);
 }
