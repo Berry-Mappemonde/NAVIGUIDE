@@ -1,7 +1,7 @@
-// Lot RE5 — fourchette d'arrivée sous la prochaine escale, ou rien
-// (jamais une date inventée). Sans API : Suivre + liste tiennent seuls.
-// GET /voyage/official sondé ; s'il manque, annotation + saut des seules
-// assertions fourchette / members — jamais la liste ni l'absence de date inventée.
+// Lot RE5 — fourchette d'arrivée sous la prochaine escale, ou la ligne
+// honnête quand l'ensemble est vide (même contrat que RG17).
+// members > 0 : la vraie fenêtre du stock. members = 0 : « indisponible »,
+// jamais une date inventée. Sans API : Suivre + liste tiennent seuls.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,7 +56,14 @@ async function probeOfficial(request) {
   return body && typeof body === "object" ? body : null;
 }
 
-test("lot RE5 — fourchette sous la prochaine escale, sinon rien", async ({ page, request }) => {
+function retryYear(iso) {
+  if (iso == null || iso === "") return 0;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return 0;
+  return new Date(t).getUTCFullYear();
+}
+
+test("lot RE5 — fourchette sous la prochaine escale, ou la ligne honnête", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);
@@ -67,7 +74,8 @@ test("lot RE5 — fourchette sous la prochaine escale, sinon rien", async ({ pag
     });
   }
 
-  // Pas d'interception : fourchette du stock (members>0) ou rien — jamais une date du spec.
+  // Pas d'interception : fenêtre du stock si members>0, ligne honnête si
+  // members=0. Jamais une date écrite par le spec.
 
   await page.goto("/");
   await dismissNotForNav(page);
@@ -91,34 +99,37 @@ test("lot RE5 — fourchette sous la prochaine escale, sinon rien", async ({ pag
     return;
   }
 
-  const etaProbe = await request.get("/voyage/official/eta?stop=Papeete", { timeout: 5000 }).catch(() => null);
-  if (etaProbe && etaProbe.ok()) {
-    const etaBody = await etaProbe.json().catch(() => null);
-    if (etaBody && Number(etaBody.members) === 0) {
-      expect(etaBody.p10, "sans membres, pas de p10 inventé").toBeFalsy();
-      expect(etaBody.p90, "sans membres, pas de p90 inventé").toBeFalsy();
-      if (etaBody.reason) {
-        expect(String(etaBody.reason).length, "raison honnête").toBeGreaterThan(0);
-      }
+  await expect(legendEta.first()).toBeVisible({ timeout: 25_000 });
+  const nextRow = page.locator("[data-testid='escale-legend-row']").filter({ has: legendEta }).first();
+  const stopName = (await nextRow.getAttribute("data-escale")) || "";
+  const etaRes = stopName
+    ? await request.get(`/voyage/official/eta?stop=${encodeURIComponent(stopName)}`, { timeout: 8000 }).catch(() => null)
+    : null;
+  const etaBody = etaRes && etaRes.ok() ? await etaRes.json().catch(() => null) : null;
+  expect(etaBody, `GET /eta pour « ${stopName || "?"} »`).toBeTruthy();
+  const members = Number(etaBody.members || 0);
+
+  const a = (await legendEta.first().innerText()).trim();
+  expect(a).not.toMatch(/p10|membres|members/i);
+  expect(a).not.toMatch(/1 janv\.?|1 Jan\.?/i);
+  if (members > 0) {
+    expect(etaBody.p10 && etaBody.p90, "ensemble sans fourchette").toBeTruthy();
+    expect(a).toMatch(/arrivée entre le|arrival between/i);
+  } else {
+    expect(etaBody.p10, "sans membres, pas de p10 inventé").toBeFalsy();
+    expect(etaBody.p90, "sans membres, pas de p90 inventé").toBeFalsy();
+    if (etaBody.reason) {
+      expect(String(etaBody.reason).length, "raison honnête").toBeGreaterThan(0);
+    }
+    expect(a).toMatch(/fourchette indisponible|arrival window unavailable/i);
+    expect(a).not.toMatch(/arrivée entre le|arrival between/i);
+    if (retryYear(etaBody.nextRetry) > 1970) {
+      expect(a).toMatch(/nouvel essai|retry on/i);
+    } else {
+      expect(a).not.toMatch(/nouvel essai|retry on/i);
     }
   }
-
-  if ((await legendEta.count()) === 0) {
-    test.info().annotations.push({
-      type: "poste",
-      description: "pas de fourchette (eta members=0, ensemble hors CI) — aucune date inventée",
-    });
-    await shot(page, "01-fourchette");
-    return;
-  }
-  await expect(legendEta.first()).toBeVisible({ timeout: 25_000 });
-  const a = (await legendEta.first().innerText()).trim();
-  expect(a).toMatch(/arrivée entre le|arrival between/i);
-  expect(a).not.toMatch(/p10|membres|members/i);
-  expect(await legendEta.count(), "une seule fourchette sous la prochaine escale").toBe(1);
-  const nextRow = page.locator("[data-testid='escale-legend-row']").filter({ has: legendEta }).first();
-  // Cadrage de la capture seulement : la légende peut se re-rendre entre les deux (la fourchette passe de la
-  // rangée de l'horloge client à celle de l'horloge officielle quand celle-ci arrive) — jamais un échec.
+  expect(await legendEta.count(), "une seule ligne sous la prochaine escale").toBe(1);
   await nextRow.scrollIntoViewIfNeeded().catch(() => {});
   await legendEta.first().scrollIntoViewIfNeeded().catch(() => {});
   await shot(page, "01-fourchette");
