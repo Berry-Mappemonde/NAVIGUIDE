@@ -18,6 +18,7 @@ des agents citent encore `docs/PLAN_*.md`.
 | [USER_MANUAL.md](USER_MANUAL.md) | EN | Same, in English |
 | [ESPRIT_DE_L_APPLICATION.md](ESPRIT_DE_L_APPLICATION.md) | FR | Chaîne sources → écran, pour un jury technique |
 | [HACKATHON_DEVPOST_SOUMISSION.md](HACKATHON_DEVPOST_SOUMISSION.md) | EN (textes jury) | Soumission Devpost, Nemotron / Token Factory / Tavily |
+| [HACKATHON_PLAN.md](HACKATHON_PLAN.md) | EN | Index: repo split, Nebius (NAVIGUIDE), GenAI (Blue Intelligence) |
 
 ## Fait
 
@@ -62,6 +63,10 @@ Plans encore ouverts (des lots sont faits, d’autres non).
 | [PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md](PLAN_CORRECTIONS_REVUE_21_SEPT_SOIR.md) | Corrections RA1–RA8 |
 | [PLAN_CORRECTIONS_2026-09-22.md](PLAN_CORRECTIONS_2026-09-22.md) | Corrections RB1–RB8 |
 | [WORKFLOW_INDUSTRIEL.md](WORKFLOW_INDUSTRIEL.md) | Calendrier jusqu’à la soumission |
+| [HACKATHON_PLAN.md](HACKATHON_PLAN.md) | EN index of the three plans |
+| [PLAN_SEPARATION_DEPOTS.md](PLAN_SEPARATION_DEPOTS.md) | EN — weekend 17–18 Oct: two repos, VPS, eight tests before archive |
+| [PLAN_HACKATHON_NEBIUS_NAVIGUIDE.md](PLAN_HACKATHON_NEBIUS_NAVIGUIDE.md) | EN — Nebius × NVIDIA on NAVIGUIDE; final 30 Oct 10:00 PT |
+| [PLAN_HACKATHON_GENAI_BLUE_INTELLIGENCE.md](PLAN_HACKATHON_GENAI_BLUE_INTELLIGENCE.md) | EN — GenAI.works on Blue Intelligence; build 22–27 Oct |
 | [ETAT_DES_LIEUX_DOCS.md](ETAT_DES_LIEUX_DOCS.md) | Rôle de chaque document, mémoire § 2 |
 
 ## À venir
@@ -69,8 +74,6 @@ Plans encore ouverts (des lots sont faits, d’autres non).
 | Document | Quoi |
 |----------|------|
 | [PLAN_GLOBE_3D.md](PLAN_GLOBE_3D.md) | Globe (G0–G7) — pas commencé |
-| [HACKATHON_DEVPOST_SOUMISSION.md](HACKATHON_DEVPOST_SOUMISSION.md) | 1ʳᵉ soumission le 28 sept. ; vidéo à tourner |
-| [WORKFLOW_INDUSTRIEL.md](WORKFLOW_INDUSTRIEL.md) § 4 | Lot H1 : séparation des dépôts (après D0) |
 
 Mémoire (noté, pas implémenté) : [ETAT_DES_LIEUX_DOCS.md](ETAT_DES_LIEUX_DOCS.md) § 2
 — ordre vocal, page carnet, confort skipper, conseil de route en Suivre,
