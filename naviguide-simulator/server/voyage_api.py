@@ -75,7 +75,11 @@ ATLAS_PREFETCH_BUDGET_S = 6.0
 MAX_VOYAGE_POINTS = 6000
 MAX_VOYAGE_MARKS = 300
 STALE_VOYAGE_DAYS = 7
-# Itinéraire Berry embarqué (public/route.geojson) — même source que le client.
+# Itinéraire Berry embarqué. public/route.geojson est un lien vers
+# backend/data/route.geojson (source unique, dépôt Blue Intelligence),
+# le même fichier que le client charge en /route.geojson. Après la
+# séparation, NAVIGUIDE remplace ce lien par le fichier récupéré
+# depuis GET /api/export/route.geojson. Pas une seconde copie ici.
 _ROUTE_GEOJSON = Path(__file__).resolve().parent.parent / "public" / "route.geojson"
 _AIR_JUMP_NM = 120.0
 _AIR_FILM_NM = 80.0
@@ -696,7 +700,7 @@ def _is_air_leg(from_name: str, to_name: str) -> bool:
 
 
 def official_itinerary_body() -> Optional[VoyageCreate]:
-    """Corps ensure_official : public/route.geojson aplati (pas de réseau)."""
+    """Corps ensure_official : itinéraire Berry aplati (pas de réseau)."""
     global _OFFICIAL_BODY_CACHE
     if _OFFICIAL_BODY_CACHE is not None:
         return _OFFICIAL_BODY_CACHE
