@@ -29,12 +29,12 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : DC1 (phrase d'aire près / traversée + circulation du stock)
-# invalide rc55. Le remplisseur recalcule la famille film, pas les perles.
+# Clé film : DC2 (bouée, formalité, mouillage dans le sac ; 2:30 inchangé)
+# invalide dc1. Le remplisseur recalcule la famille film, pas les perles.
 # moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
-FILM_SCRIPT_REV = "dc1"
+FILM_SCRIPT_REV = "dc2"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 MOMENTS_REV = "rg4"
 ICI_REV = "am1a"

@@ -35,6 +35,7 @@ from film_script import (
     date_density_ok,
     dc_subject_candidates,
     dose_amp_changes,
+    dose_dc2_leg_changes,
     dose_climo_changes,
     dose_coast_changes,
     dose_project_changes,
@@ -4199,3 +4200,255 @@ def test_dc1_one_amp_in_150_and_char_budget():
     assert stored[0]["kind"] == "amp"
     assert stored[0]["oncePerFamilyOnLongLeg"] is True
     assert stored[0]["phrase"]
+
+
+# ── DC2 : bouée, formalité, mouillage — sac, intégral, pas le 2:30 ───────────
+
+_DC2_BUOY = re.compile(r"une bouée|a buoy", re.I)
+_DC2_FORM = re.compile(
+    r"formalit[ée]s d['’]entr[ée]e passent par|entry formalities go through",
+    re.I,
+)
+_DC2_ANC = re.compile(r"\bmouillage\b|\banchorage\b", re.I)
+
+
+def _dc2_family_hits(blob: str) -> dict[str, int]:
+    sents = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", blob or "") if s.strip()]
+    return {
+        "buoy": sum(1 for s in sents if _DC2_BUOY.search(s)),
+        "poe": sum(1 for s in sents if _DC2_FORM.search(s)),
+        "anchorage": sum(1 for s in sents if _DC2_ANC.search(s)),
+    }
+
+
+def _dc2_journal():
+    journal = _rc22_rich_journal()
+    extra = [
+        {
+            "seq": 310, "t": "2026-07-08T10:00:00Z", "signature": "buoy-dc2-a", "legIdx": 3,
+            "changes": [{
+                "kind": "station", "score": 2, "title": "Wave buoy 12",
+                "fact": "Wave buoy 12 (4 nm)", "nm": 4,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 311, "t": "2026-07-18T10:00:00Z", "signature": "buoy-dc2-b", "legIdx": 3,
+            "changes": [{
+                "kind": "station", "score": 2, "title": "PIRATA",
+                "fact": "PIRATA (6 nm)", "nm": 6,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 312, "t": "2026-07-12T10:00:00Z", "signature": "poe-dc2-a", "legIdx": 3,
+            "changes": [{
+                "kind": "poe", "score": 2, "title": "Papeete", "fact": "Papeete",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 313, "t": "2026-07-22T10:00:00Z", "signature": "poe-dc2-b", "legIdx": 3,
+            "changes": [{
+                "kind": "poe", "score": 2, "title": "Nouméa", "fact": "Nouméa",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 314, "t": "2026-07-14T10:00:00Z", "signature": "anc-dc2-a", "legIdx": 3,
+            "changes": [{
+                "kind": "anchorage", "score": 2, "title": "Mouillage des Minimes",
+                "fact": "Mouillage des Minimes", "nm": 3,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 315, "t": "2026-08-02T10:00:00Z", "signature": "anc-dc2-b", "legIdx": 3,
+            "changes": [{
+                "kind": "anchorage", "score": 2, "title": "Baie de Prony",
+                "fact": "Baie de Prony", "nm": 5,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+    ]
+    return {**journal, "moments": list(journal["moments"]) + extra}
+
+
+def test_dc2_phrases_from_stock_only():
+    """FR/EN depuis un fait du stock ; silence si le fait manque."""
+    buoy = {
+        "kind": "buoy", "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)",
+        "t": "2026-07-08T10:00:00Z",
+    }
+    fr_b, en_b = change_sentence(buoy, "fr"), change_sentence(buoy, "en")
+    assert "une bouée" in fr_b
+    assert "a buoy" in en_b
+    assert change_sentence({"kind": "buoy", "title": "Station croisée"}, "fr") == ""
+    poe = {
+        "kind": "poe", "title": "Papeete", "fact": "Papeete",
+        "t": "2026-07-12T10:00:00Z",
+    }
+    fr_p, en_p = change_sentence(poe, "fr"), change_sentence(poe, "en")
+    assert "les formalités d'entrée passent par Papeete" in fr_p
+    assert "entry formalities go through Papeete" in en_p
+    silent_poe = {
+        "kind": "poe",
+        "title": "Formalités d'entrée",
+        "fact": "Aucun port d'entrée officiel n'est connu pour cette ZEE.",
+    }
+    assert change_sentence(silent_poe, "fr") == ""
+    assert change_sentence(silent_poe, "en") == ""
+    anc = {
+        "kind": "anchorage", "title": "Mouillage des Minimes",
+        "fact": "Mouillage des Minimes", "t": "2026-07-14T10:00:00Z",
+    }
+    fr_a, en_a = change_sentence(anc, "fr"), change_sentence(anc, "en")
+    assert "mouillage Mouillage des Minimes" in fr_a
+    assert "anchorage Mouillage des Minimes" in en_a
+    assert change_sentence({"kind": "anchorage", "title": "anchorage"}, "fr") == ""
+    assert change_sentence({"kind": "anchorage", "title": "mooring"}, "en") == ""
+    port = {
+        "kind": "port", "title": "La Rochelle", "fact": "La Rochelle",
+        "t": "2026-05-15T12:00:00Z",
+    }
+    fr_port = change_sentence(port, "fr")
+    assert "devant La Rochelle" in fr_port
+    assert "formalités" not in fr_port
+    assert all(r["kind"] != "poe" for r in dc_subject_candidates([port], "fr"))
+
+
+def test_dc2_once_per_family_on_long_integral():
+    """Intégral : une bouée, une formalité, un mouillage par longue jambe."""
+    day = 86_400_000
+    buoys = [
+        {"id": "b1", "kind": "station", "score": 2, "tMs": 4 * day,
+         "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)", "nm": 4,
+         "t": "2026-07-08T10:00:00Z"},
+        {"id": "b2", "kind": "station", "score": 2, "tMs": 14 * day,
+         "title": "PIRATA", "fact": "PIRATA (6 nm)", "nm": 6,
+         "t": "2026-07-18T10:00:00Z"},
+    ]
+    poes = [
+        {"id": "p1", "kind": "poe", "score": 2, "tMs": 8 * day,
+         "title": "Papeete", "fact": "Papeete", "t": "2026-07-12T10:00:00Z"},
+        {"id": "p2", "kind": "poe", "score": 2, "tMs": 18 * day,
+         "title": "Nouméa", "fact": "Nouméa", "t": "2026-07-22T10:00:00Z"},
+    ]
+    ancs = [
+        {"id": "a1", "kind": "anchorage", "score": 2, "tMs": 10 * day,
+         "title": "Mouillage des Minimes", "fact": "Mouillage des Minimes",
+         "t": "2026-07-14T10:00:00Z"},
+        {"id": "a2", "kind": "anchorage", "score": 2, "tMs": 20 * day,
+         "title": "Baie de Prony", "fact": "Baie de Prony",
+         "t": "2026-08-02T10:00:00Z"},
+    ]
+    long_span = 40 * day
+    picked = dose_dc2_leg_changes(buoys + poes + ancs, long_span)
+    kinds = [c["kind"] for c in picked]
+    assert kinds.count("buoy") == 1
+    assert kinds.count("poe") == 1
+    assert kinds.count("anchorage") == 1
+    assert dose_dc2_leg_changes(buoys + poes + ancs, 2 * day) == []
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc2_journal(),
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
+    pacific = next(
+        c for c in plan["chapters"]
+        if "Fort-de-France" in (c.get("fromName") or "")
+        and "Nouméa" in (c.get("toName") or "")
+    )
+    hits = _dc2_family_hits(pacific.get("text") or "")
+    assert hits["buoy"] <= 1, pacific.get("text")
+    assert hits["poe"] <= 1, pacific.get("text")
+    assert hits["anchorage"] <= 1, pacific.get("text")
+    assert hits["buoy"] == 1, pacific.get("text")
+    assert hits["poe"] == 1, pacific.get("text")
+    assert hits["anchorage"] == 1, pacific.get("text")
+    blob = _script_blob(plan)
+    assert "Wave buoy 12" not in blob
+    assert "PIRATA" not in blob or "une bouée" in blob
+
+
+def test_dc2_short_tier_omits_kinds_and_char_budget():
+    """Le 2:30 n'empile pas bouée / formalité / mouillage. ≤ 2250 caractères."""
+    assert film_char_budget(150) == 2250
+    journal = _dc2_journal()
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(short)
+    hits = _dc2_family_hits(blob)
+    assert hits["buoy"] == 0, blob
+    assert hits["poe"] == 0, blob
+    assert hits["anchorage"] == 0, blob
+    assert short["chars"] <= film_char_budget(150)
+    assert short["chars"] / 15 <= 150 * 1.1
+    picked_short = select_chapter_changes(
+        [
+            {"id": "b", "kind": "buoy", "score": 2, "tMs": 2, "title": "Wave buoy 12",
+             "fact": "Wave buoy 12", "t": "2026-07-08T10:00:00Z"},
+            {"id": "p", "kind": "poe", "score": 2, "tMs": 3, "title": "Papeete",
+             "fact": "Papeete"},
+            {"id": "a", "kind": "anchorage", "score": 2, "tMs": 4,
+             "title": "Mouillage des Minimes", "fact": "Mouillage des Minimes"},
+            {"id": "e", "kind": "escale", "score": 3, "tMs": 10,
+             "title": "Arrivée à Nouméa", "fact": "x"},
+        ],
+        0, 10, budget=True, tier=film_priority_tier(150),
+    )
+    assert not any(c.get("kind") in {"buoy", "poe", "anchorage"} for c in picked_short)
+
+
+def test_dc2_bag_for_vs1():
+    """Sac dc_subject_candidates : une entrée par famille, oncePerFamilyOnLongLeg."""
+    bag = dc_subject_candidates([
+        {"kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+         "nm": 0, "inside": True, "t": "2026-05-25T12:00:00Z"},
+        {"kind": "station", "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)",
+         "nm": 4, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "station", "title": "PIRATA", "fact": "PIRATA",
+         "t": "2026-07-18T10:00:00Z"},
+        {"kind": "poe", "title": "Papeete", "fact": "Papeete",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "poe", "title": "Nouméa", "fact": "Nouméa",
+         "t": "2026-07-22T10:00:00Z"},
+        {"kind": "anchorage", "title": "Mouillage des Minimes",
+         "fact": "Mouillage des Minimes", "t": "2026-07-14T10:00:00Z"},
+        {"kind": "anchorage", "title": "anchorage", "fact": "anchorage"},
+    ], "fr")
+    kinds = [r["kind"] for r in bag]
+    assert kinds.count("amp") == 1
+    assert kinds.count("buoy") == 1
+    assert kinds.count("poe") == 1
+    assert kinds.count("anchorage") == 1
+    by_kind = {r["kind"]: r for r in bag}
+    assert by_kind["buoy"]["oncePerFamilyOnLongLeg"] is True
+    assert "une bouée" in by_kind["buoy"]["phrase"]
+    assert by_kind["poe"]["oncePerFamilyOnLongLeg"] is True
+    assert "Papeete" in by_kind["poe"]["phrase"]
+    assert "formalités d'entrée passent par" in by_kind["poe"]["phrase"]
+    assert by_kind["anchorage"]["oncePerFamilyOnLongLeg"] is True
+    assert "Mouillage des Minimes" in by_kind["anchorage"]["phrase"]
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc2_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    stored_kinds = {r["kind"] for r in (plan.get("dcSubjects") or [])}
+    assert {"buoy", "poe", "anchorage"} <= stored_kinds
+    for rec in plan["dcSubjects"]:
+        assert rec["oncePerFamilyOnLongLeg"] is True
+        assert rec["phrase"]
