@@ -8,9 +8,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => readFileSync(join(root, rel), "utf8");
 
 describe("contrat SEO naviguide.fr", () => {
-  it("index.html : lang fr, canonical, OG, JSON-LD, H1 statique", () => {
+  it("index.html : ouverture en anglais, canonical, OG, JSON-LD, H1 statique", () => {
     const html = read("index.html");
-    assert.match(html, /<html lang="fr"/);
+    assert.match(html, /<html lang="en"/);
+    assert.match(html, /naviguide_lang_v4/);
+    assert.match(html, /naviguide_lang_v3/);
     assert.match(html, /rel="canonical" href="https:\/\/www\.naviguide\.fr\/"/);
     assert.match(
       html,
@@ -29,7 +31,6 @@ describe("contrat SEO naviguide.fr", () => {
     assert.match(html, /"description":\s*"3-minute demo: NAVIGUIDE follows/);
     assert.match(html, /"uploadDate":\s*"2026-10-16T00:00:00\+00:00"/);
     assert.match(html, /<h1>NAVIGUIDE/);
-    assert.doesNotMatch(html, /<html lang="en"/);
   });
 
   it("public/robots.txt et sitemap.xml présents", () => {

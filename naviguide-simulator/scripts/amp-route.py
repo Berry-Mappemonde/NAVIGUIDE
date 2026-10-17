@@ -8,7 +8,7 @@ Après : polygones de GET /amp?bbox= (cache Mongo, span 9°), portée = distance
 Usage :
   python3 scripts/amp-route.py                     # voyage du poste :8010 + BI live
   python3 scripts/amp-route.py --api http://127.0.0.1:8011
-  python3 scripts/amp-route.py --jpeg ../docs/recette/lot-am1/03-mesure.jpg
+  python3 scripts/amp-route.py --jpeg ../docs/recette/lot-am1/03-mesure.webp
 """
 from __future__ import annotations
 
@@ -312,6 +312,17 @@ def render_lines(stats: dict, rows: list[dict], bi_total: int | None) -> list[st
     return lines
 
 
+def _save_webp(img, path: Path) -> None:
+    """WebP q85, ou lossless si ce rendu est plus petit (texte fin)."""
+    import io
+
+    lossy = io.BytesIO()
+    img.save(lossy, "WEBP", quality=85, method=6)
+    exact = io.BytesIO()
+    img.save(exact, "WEBP", lossless=True, quality=100, method=6)
+    path.write_bytes(exact.getvalue() if exact.tell() < lossy.tell() else lossy.getvalue())
+
+
 def write_jpeg(path: Path, lines: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -337,11 +348,14 @@ def write_jpeg(path: Path, lines: list[str]) -> None:
         y += 18
         if y > h - 24:
             break
-    img.save(path, "JPEG", quality=70, optimize=True)
+    if path.suffix.lower() == ".webp":
+        _save_webp(img, path)
+    else:
+        img.save(path, "JPEG", quality=70, optimize=True)
 
 
 def _write_jpeg_ppm(path: Path, lines: list[str]) -> None:
-    """Repli sans Pillow : PPM 1280×800 puis `sips` → JPEG."""
+    """Repli sans Pillow : PPM 1280×800 puis `sips`, WebP via `cwebp` si le chemin l'exige."""
     import shutil
     import subprocess
     import tempfile
@@ -357,14 +371,38 @@ def _write_jpeg_ppm(path: Path, lines: list[str]) -> None:
     tmp = Path(tempfile.mkstemp(suffix=".ppm")[1])
     tmp.write_bytes(ppm)
     sips = shutil.which("sips")
+    want_webp = path.suffix.lower() == ".webp"
     if not sips:
-        path.write_bytes(ppm)
+        if not want_webp:
+            path.write_bytes(ppm)
+        tmp.unlink(missing_ok=True)
+        path.with_suffix(".txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return
+    raster = Path(tempfile.mkstemp(suffix=".jpg")[1]) if want_webp else path
     subprocess.run(
-        [sips, "-s", "format", "jpeg", "-s", "formatOptions", "70", str(tmp), "--out", str(path)],
+        [sips, "-s", "format", "jpeg", "-s", "formatOptions", "70", str(tmp), "--out", str(raster)],
         check=False, capture_output=True,
     )
     tmp.unlink(missing_ok=True)
+    if want_webp:
+        cwebp = shutil.which("cwebp")
+        if cwebp and raster.is_file():
+            q = Path(tempfile.mkstemp(suffix=".webp")[1])
+            exact = Path(tempfile.mkstemp(suffix=".webp")[1])
+            subprocess.run(
+                [cwebp, "-q", "85", "-m", "6", "-metadata", "none", str(raster), "-o", str(q)],
+                check=False, capture_output=True,
+            )
+            subprocess.run(
+                [cwebp, "-lossless", "-z", "6", "-metadata", "none", str(raster), "-o", str(exact)],
+                check=False, capture_output=True,
+            )
+            pick = exact if exact.is_file() and q.is_file() and exact.stat().st_size < q.stat().st_size else q
+            if pick.is_file() and pick.stat().st_size:
+                path.write_bytes(pick.read_bytes())
+            q.unlink(missing_ok=True)
+            exact.unlink(missing_ok=True)
+        raster.unlink(missing_ok=True)
     # annoter avec un fichier texte à côté si sips a tout aplati
     path.with_suffix(".txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -373,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Mesure AMP avant/après polygones (lot AM1A).")
     p.add_argument("--api", default=DEFAULT_API, help="API voyage (défaut 127.0.0.1:8010)")
     p.add_argument("--bi", default=DEFAULT_BI, help="API Blue Intelligence")
-    p.add_argument("--jpeg", default="", help="Chemin JPEG 1280×800 de la table")
+    p.add_argument("--jpeg", default="", help="Chemin 1280×800 de la table (.webp ou .jpg)")
     args = p.parse_args(argv)
 
     print("Voyage officiel…", flush=True)
@@ -443,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.jpeg:
         lines = render_lines(stats, rows, bi_total)
         write_jpeg(Path(args.jpeg), lines)
-        print(f"JPEG : {args.jpeg}", flush=True)
+        print(f"Capture : {args.jpeg}", flush=True)
     return 0
 
 

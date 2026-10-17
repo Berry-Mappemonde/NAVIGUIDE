@@ -1,4 +1,6 @@
-/** Convertit public/route.geojson (source officielle Berry) en segments + stops. */
+/** Convertit l'itinéraire Berry (GET /route.geojson) en segments + stops.
+ *  public/route.geojson est un lien vers backend/data/route.geojson.
+ */
 
 import { isAirLegNames, isSideLegNames } from "./berryLegs.js";
 

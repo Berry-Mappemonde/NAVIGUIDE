@@ -1,15 +1,15 @@
-"""Chatbot journal de bord — trois paliers (lot RG19, RH1).
+"""Chatbot journal de bord — lot CH1 (faits par les règles, Ultra si le juge est ouvert).
 
 Le skipper pose une question sur **toutes les données de l'application**.
-« Connaître toutes les données » est un problème de recherche : le serveur
-assemble un paquet de faits ; le modèle ne les invente pas.
+Le serveur assemble un paquet de faits ; le modèle ne les invente pas.
 
-1. Lightning (`fast`) ne rédige plus — il ne fait que comprendre la question
-   (JSON intent + entités). Échec ou mode off → analyseur par mots-clés.
-2. Les règles répondent aux questions de fait depuis le paquet, chaque nombre
-   copié tel quel (`source=rules`). Le palier `write` ne rédige plus de fait.
-3. Ultra (`judge`) ne raisonne que sur geste explicite (case ou préfixe
-   « Raisonne : »), paquet complet, plafond d'appels et de tokens.
+1. Lightning (`fast`) classe (intention, lieu, date). Éteint ou au plafond →
+   analyseur par mots-clés (pourquoi / comment / longueur, FR et EN).
+2. Question simple : les règles répondent depuis le paquet (`source=rules`),
+   chaque nombre copié, `filter_numbers`. Super (`write`) ne rédige jamais.
+3. Question difficile (pourquoi, comment, ou assez longue) : un appel Ultra
+   (`judge`) si `allow("judge")`, puis `filter_numbers`. Juge coupé (défaut
+   du dépôt) → la même réponse de règles, zéro appel write.
 
 Un chiffre ne passe jamais par le LLM : `filter_numbers` reste juge.
 Lot RH1 : `failed` ne reste que si même le gabarit de faits est impossible.
@@ -70,7 +70,7 @@ _WX_WORDS = re.compile(
     r"(?i)(n[œoe]uds?|knots?|vent|wind|gale|coup de vent|rafale|hs|vague|mer|sea|houle|force)",
 )
 _SEA_WORDS = re.compile(r"(?i)(hs|vague|mer|sea|houle)")
-_SPEED_WORDS = re.compile(r"(?i)(?<!polaire\s)(?<!polar\s)(vitesse|speed|quai|quay)(?!\s*polaire)(?!\s*polar)")
+_SPEED_WORDS = re.compile(r"(?i)(?<!polaire\s)(?<!polar\s)(vitesse|speed|quai|quay|ralentir|slow(?:ing|\s+down)?)(?!\s*polaire)(?!\s*polar)")
 _STOP_WORDS = re.compile(r"(?i)(escale|stopover|prochaine|next\s+stop|destination)")
 _HEADING_WORDS = re.compile(r"(?i)(?<!\w)(cap|heading|cog)(?!\w)")
 _POLAR_WORDS = re.compile(r"(?i)(polaire|polar|vmg)")
@@ -92,10 +92,9 @@ _REASON_PREFIX_RE = re.compile(r"(?i)^\s*(raisonne|raisonnement|reason(?:ing)?)\
 _JSON_OBJ_RE = re.compile(r"\{.*\}", re.S)
 _MISSING_FR = "Le journal n’a pas cette information dans ses données."
 _MISSING_EN = "The logbook does not hold that information in its data."
-_INVITE_FR = "Pour un raisonnement, cochez raisonnement (Nemotron Ultra, plafonné)."
-_INVITE_EN = "For reasoning, tick reasoning (Nemotron Ultra, capped)."
-_ULTRA_CAP_FR = "Le raisonnement Nemotron Ultra est au plafond aujourd’hui."
-_ULTRA_CAP_EN = "Nemotron Ultra reasoning is at today’s cap."
+DC_FAMILY_KINDS = (
+    "amp", "buoy", "poe", "anchorage", "aton", "cable", "depth", "piracy", "satellite",
+)
 EMBED_MODEL = "Qwen/Qwen3-Embedding-8B"
 EMBED_MIN_COS = 0.25
 _POLAR_TWS = (10, 15, 20, 25)
@@ -128,7 +127,8 @@ _QTY_ALIASES = {
     "confort": "setting", "comfort": "setting",
     "polaire": "polar", "polar": "polar", "vmg": "polar",
     "position": "position", "lieu": "position",
-    "couche": "layer", "layer": "layer", "cable": "layer", "câble": "layer",
+    "couche": "layer", "layer": "layer",
+    "cable": "cables", "câble": "cables", "cables": "cables",
 }
 # Capitalized leftovers that are not a toponym (« Arrivée prévue ? »).
 _PLACE_SKIP = frozenset({
@@ -241,6 +241,12 @@ def journal_for_chat(limit: int = JOURNAL_TAIL) -> list[dict]:
         seen.add(sig)
         merged.append(slim)
     merged.sort(key=lambda row: str(row.get("t") or ""), reverse=True)
+    try:
+        import escale_watch  # noqa: PLC0415
+
+        merged = escale_watch.drop_news_if_in_film(merged)
+    except Exception:
+        pass
     return merged[:limit]
 
 
@@ -421,6 +427,7 @@ async def build_context(
     ctx["plan"] = _plan_facts(now, clock)
     ctx["climo"] = _climo_facts(lat, lon, now.month)
     ctx["layers"] = _layers_facts(ctx.get("around") if isinstance(ctx.get("around"), dict) else None, bag)
+    ctx["dcFamilies"] = _dc_facts(bag)
     return bound_facts(ctx)
 
 
@@ -467,6 +474,8 @@ def bound_facts(ctx: dict, cap: int = FACT_TOKEN_CAP) -> dict:
                 if isinstance(layers.get(key), list):
                     layers[key] = _trim_list(layers[key], min(n, 3))
             ctx["layers"] = layers
+        if isinstance(ctx.get("dcFamilies"), list):
+            ctx["dcFamilies"] = _trim_list(ctx["dcFamilies"], min(n, len(DC_FAMILY_KINDS)))
     return ctx
 
 
@@ -682,6 +691,146 @@ def _layers_facts(around: dict | None, bag: Any) -> dict[str, Any]:
     return out
 
 
+def _dc_name(item: Any) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    name = item.get("name") or item.get("title") or item.get("phrase")
+    if isinstance(name, dict):
+        name = _spoken_title(name)
+    text = str(name).strip() if name else ""
+    return text or None
+
+
+def _slim_dc_row(kind: str, item: dict) -> dict[str, Any] | None:
+    """Une famille DC, champs entiers — on ne coupe jamais un nombre."""
+    if kind not in DC_FAMILY_KINDS or not isinstance(item, dict):
+        return None
+    row: dict[str, Any] = {"kind": kind}
+    name = _dc_name(item)
+    if name:
+        row["name"] = name
+    if isinstance(item.get("nm"), (int, float)):
+        row["nm"] = round(float(item["nm"]), 1)
+    phrase = item.get("phrase")
+    if isinstance(phrase, str) and phrase.strip():
+        row["phrase"] = phrase.strip()
+    if kind == "depth":
+        depth = item.get("depthM")
+        if depth is None:
+            depth = item.get("depth_m")
+        if isinstance(depth, (int, float)):
+            row["depthM"] = depth
+    if kind == "cable" and item.get("nearby") is True:
+        row["nearby"] = True
+    if kind == "piracy":
+        for key in ("level", "source"):
+            if item.get(key) is not None and item.get(key) != "":
+                row[key] = item[key]
+    if len(row) <= 1:
+        return None
+    return row
+
+
+def _dc_from_ici_bag(bag: Any) -> list[dict[str, Any]]:
+    """Familles déjà dans le sac ICI. Satellite seulement s'il est jouable."""
+    if not isinstance(bag, dict):
+        return []
+    nearby = bag.get("nearby") if isinstance(bag.get("nearby"), dict) else {}
+    emo = bag.get("emodnet") if isinstance(bag.get("emodnet"), dict) else {}
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(kind: str, item: Any) -> None:
+        if kind in seen or not isinstance(item, dict):
+            return
+        row = _slim_dc_row(kind, item)
+        if not row:
+            return
+        seen.add(kind)
+        out.append(row)
+
+    for it in bag.get("amp") or []:
+        add("amp", it)
+        if "amp" in seen:
+            break
+    for it in bag.get("poe") or []:
+        add("poe", it)
+        if "poe" in seen:
+            break
+    aton = bag.get("aton") if isinstance(bag.get("aton"), dict) else {}
+    for it in aton.get("nearby") or []:
+        add("aton", it)
+        if "aton" in seen:
+            break
+    for it in nearby.get("anchorages") or []:
+        add("anchorage", it)
+        if "anchorage" in seen:
+            break
+    cables = emo.get("cables")
+    if isinstance(cables, dict) and (cables.get("nearby") is True or _dc_name(cables)):
+        add("cable", cables)
+    bathy = emo.get("bathy") if isinstance(emo.get("bathy"), dict) else {}
+    if isinstance(bathy.get("depth_m"), (int, float)):
+        add("depth", {"depthM": bathy["depth_m"]})
+    piracy = bag.get("piracy")
+    if isinstance(piracy, dict):
+        add("piracy", piracy)
+    sat = bag.get("satellites")
+    if isinstance(sat, dict) and (_dc_name(sat) or sat.get("id") or sat.get("url") or sat.get("scene")):
+        add("satellite", sat)
+    return out
+
+
+def _dc_from_film_bag() -> list[dict[str, Any]]:
+    """Sac VS1 déjà stocké (`dcSubjects`). Absent ou en préparation → rien."""
+    try:
+        import official_store  # noqa: PLC0415
+        hit = official_store.get("film")
+    except Exception:
+        return []
+    body = (hit or {}).get("payload") if isinstance(hit, dict) else None
+    if not isinstance(body, dict):
+        return []
+    subjects = body.get("dcSubjects") if isinstance(body.get("dcSubjects"), list) else None
+    if subjects is None:
+        variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
+        for lang_map in variants.values():
+            if not isinstance(lang_map, dict):
+                continue
+            for plan in lang_map.values():
+                if isinstance(plan, dict) and isinstance(plan.get("dcSubjects"), list):
+                    subjects = plan["dcSubjects"]
+                    break
+            if subjects is not None:
+                break
+    if not isinstance(subjects, list):
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rec in subjects:
+        if not isinstance(rec, dict):
+            continue
+        kind = str(rec.get("kind") or "")
+        if kind in seen:
+            continue
+        row = _slim_dc_row(kind, rec)
+        if not row:
+            continue
+        seen.add(kind)
+        out.append(row)
+    return out
+
+
+def _dc_facts(bag: Any) -> list[dict[str, Any]]:
+    """Une entrée par famille DC, seulement si le sac la tient. Jamais inventée."""
+    by_kind: dict[str, dict[str, Any]] = {}
+    for row in _dc_from_film_bag() + _dc_from_ici_bag(bag):
+        kind = row.get("kind")
+        if kind and kind not in by_kind:
+            by_kind[str(kind)] = row
+    return [by_kind[k] for k in DC_FAMILY_KINDS if k in by_kind]
+
+
 def apply_climo_month(ctx: dict, month: int | None) -> None:
     """Si la question nomme un mois, le paquet porte la climo de CE mois (cache)."""
     if not isinstance(ctx, dict) or not month:
@@ -832,32 +981,43 @@ async def similar_wx(
 
 # ── answer ──────────────────────────────────────────────────────────────────
 
-def chat_tier(question: str) -> str:
-    """Historique (lots D/RH1). RG19 : Lightning ne rédige plus ; Ultra seulement sur geste."""
+def is_hard_question(question: str, parsed: dict | None = None) -> bool:
+    """Pourquoi / comment / assez longue (FR et EN). Lightning peut aussi poser intent=reason."""
     q = " ".join((question or "").split())
-    if _WHY_RE.search(q) or _ROUTE_RE.search(q):
-        return "deep"
-    if len(q) < FAST_QUESTION_MAX:
-        return "fast"
-    return "write"
+    if not q:
+        return False
+    if _WHY_RE.search(q) or _REASON_WORDS.search(q) or _ROUTE_RE.search(q):
+        return True
+    if len(q) >= FAST_QUESTION_MAX:
+        return True
+    if isinstance(parsed, dict) and parsed.get("intent") == "reason":
+        return True
+    return False
+
+
+def chat_tier(question: str) -> str:
+    """Simple → classement (`fast`). Difficile → Ultra (`judge`). Jamais Super (`write`)."""
+    return "judge" if is_hard_question(question) else "fast"
 
 
 def _prompt(question: str, ctx: dict, lang: str) -> tuple[str, str]:
-    """Prompt Ultra (raisonnement). Les faits passent par les règles, pas par write."""
+    """Prompt Ultra (question difficile). Les faits simples passent par les règles, pas par write."""
     en = (lang or "fr").lower().startswith("en")
     missing = missing_info("en" if en else "fr")
     system = (
-        "You are the logbook of the Berry-Mappemonde sailing expedition. Reason in at most "
-        "FIVE plain sentences, from the facts provided (including the official "
-        "logbook in journal — stops, EEZ, protected areas, weather, science, news). "
+        "You are the logbook of the Berry-Mappemonde sailing expedition. Answer this hard "
+        "question in at most FIVE plain sentences, from the facts provided (including the official "
+        "logbook in journal — stops, EEZ, protected areas, weather, science, news, polar, "
+        "skipper orders, plan review, cables, DC families). "
         "Every figure you write must appear in the facts, with its unit. "
         f"If a fact is missing, say exactly: {missing} "
         "Never mention JSON, field names or keys such as atQuay or speedKnots; "
         "say the fact in words. No title, no list, no bold, nothing about tools or models. Thinking OFF."
         if en else
-        "Tu es le journal de bord de l’expédition à la voile Berry-Mappemonde. Raisonne en "
-        "CINQ phrases simples au plus, à partir des faits fournis (dont le journal "
-        "officiel — escales, ZEE, AMP, météo, science, veilles). Chaque chiffre que tu écris doit "
+        "Tu es le journal de bord de l’expédition à la voile Berry-Mappemonde. Réponds à cette "
+        "question difficile en CINQ phrases simples au plus, à partir des faits fournis (dont le journal "
+        "officiel — escales, ZEE, AMP, météo, science, veilles, polaire, ordres, revue du plan, "
+        "câbles, familles DC). Chaque chiffre que tu écris doit "
         "figurer dans les faits, avec son unité. "
         f"Si un fait manque, dis exactement : {missing} "
         "N’écris jamais JSON ni les noms de champs "
@@ -1046,7 +1206,8 @@ def keyword_intent(question: str) -> dict[str, Any]:
     q = question or ""
     folded = _fold(q)
     out = empty_intent()
-    if _REASON_WORDS.search(q) or _WHY_RE.search(q):
+    q_compact = " ".join(q.split())
+    if _REASON_WORDS.search(q) or _WHY_RE.search(q) or len(q_compact) >= FAST_QUESTION_MAX:
         out["intent"] = "reason"
     else:
         out["intent"] = "fact"
@@ -1108,6 +1269,10 @@ def keyword_intent(question: str) -> dict[str, Any]:
                 "amp" if re.search(r"(?i)\bamp\b", q) else "zee"
             )
         )
+        if out["layer"] == "cables" and out["quantity"] is None:
+            out["quantity"] = "cables"
+            if out["intent"] == "other":
+                out["intent"] = "fact"
     return out
 
 
@@ -1411,12 +1576,38 @@ def _next_stop_template(ctx: dict, en: bool) -> str | None:
     return None
 
 
-def reason_invite(lang: str | None) -> str:
-    return _INVITE_EN if _lang_en(lang) else _INVITE_FR
+def _cable_template(ctx: dict, en: bool) -> str | None:
+    families = ctx.get("dcFamilies") if isinstance(ctx.get("dcFamilies"), list) else []
+    cable_row = next((r for r in families if isinstance(r, dict) and r.get("kind") == "cable"), None)
+    if cable_row and cable_row.get("name"):
+        return f"Cable: {cable_row['name']}." if en else f"Câble : {cable_row['name']}."
+    layers = ctx.get("layers") if isinstance(ctx.get("layers"), dict) else {}
+    cables = layers.get("cables") if isinstance(layers.get("cables"), dict) else None
+    if cables and cables.get("nearby") is True:
+        return "A submarine cable passes here." if en else "Un câble sous-marin passe ici."
+    if cables and cables.get("nearby") is False:
+        return "No submarine cable at this point." if en else "Aucun câble sous-marin au point."
+    return None
 
 
-def ultra_capped_message(lang: str | None) -> str:
-    return _ULTRA_CAP_EN if _lang_en(lang) else _ULTRA_CAP_FR
+def _dc_family_template(ctx: dict, kind: str, en: bool) -> str | None:
+    families = ctx.get("dcFamilies") if isinstance(ctx.get("dcFamilies"), list) else []
+    row = next((r for r in families if isinstance(r, dict) and r.get("kind") == kind), None)
+    if not row:
+        return None
+    name = row.get("name")
+    nm = _fmt_ctx_num(row.get("nm"))
+    if kind == "depth":
+        depth = _fmt_ctx_num(row.get("depthM"))
+        if depth:
+            return f"Depth: {depth} m." if en else f"Profondeur : {depth} m."
+    if name and nm:
+        return f"{name} ({nm} nm)." if en else f"{name} ({nm} nm)."
+    if name:
+        return f"{name}."
+    if row.get("phrase"):
+        return str(row["phrase"])
+    return None
 
 
 def rules_answer(
@@ -1446,7 +1637,8 @@ def rules_answer(
         "setting": lambda: _setting_template(ctx, q, en),
         "polar": lambda: _polar_template(ctx, q, en),
         "position": lambda: _position_template(ctx, en),
-        "layer": lambda: _depth_template(ctx, en) or _zee_template(ctx, en),
+        "cables": lambda: _cable_template(ctx, en) or _dc_family_template(ctx, "cable", en),
+        "layer": lambda: _cable_template(ctx, en) or _depth_template(ctx, en) or _zee_template(ctx, en),
     }
     if qty in templates:
         text = templates[qty]()
@@ -1501,7 +1693,6 @@ async def answer_question(
     reason: bool = False,
 ) -> dict[str, Any]:
     q = strip_reason_prefix(question)
-    explicit = bool(reason) or has_reason_prefix(question)
     ctx = await build_context(client_ctx, now, http, question=q)
     from toponyms import localize_ctx_places  # noqa: PLC0415
     localize_ctx_places(ctx, lang)
@@ -1527,40 +1718,38 @@ async def answer_question(
     except Exception:
         fact_text = None
 
-    if explicit:
+    hard = bool(reason) or has_reason_prefix(question) or is_hard_question(q, parsed)
+    if hard:
         import llm_budget  # noqa: PLC0415
-        if not llm_budget.allow_chat_ultra():
-            text = ultra_capped_message(lang)
-            return _finish_answer(text, ctx, lang, "rules", sentences=ANSWER_SENTENCES, chars=ANSWER_CHARS)
-        llm_budget.record_chat_ultra()
-        system, user = _prompt(q, ctx, lang)
-        fallback = fact_text if fact_text is not None else missing_info(lang)
-        try:
-            raw, source = await cascade_text(
-                system, user, http, tier="judge", fallback=fallback, facts=ctx,
-            )
-        except Exception as exc:
-            if fact_text is None:
-                return {
-                    "status": "failed",
-                    "reason": str(exc)[:160],
-                    "answer": None,
-                    "engine": None,
-                    "source": None,
-                    "context": ctx,
-                }
-            raw, source = fact_text, "rules"
-        return _finish_answer(raw, ctx, lang, source, sentences=ULTRA_SENTENCES, chars=ULTRA_CHARS)
-
-    if parsed.get("intent") == "reason":
-        base = fact_text if fact_text else missing_info(lang)
-        # Invite Ultra only when the rules already have a fact. A missing-info
-        # answer must stay exactly `missing_info` (JSON-excuse fallback).
-        if fact_text and fact_text != missing_info(lang):
-            text = f"{base} {reason_invite(lang)}".strip()
-        else:
-            text = base
-        return _finish_answer(text, ctx, lang, "rules", sentences=ANSWER_SENTENCES + 1, chars=ANSWER_CHARS + 160)
+        if llm_budget.allow("judge"):
+            system, user = _prompt(q, ctx, lang)
+            fallback = fact_text if fact_text is not None else missing_info(lang)
+            try:
+                raw, source = await cascade_text(
+                    system, user, http, tier="judge", fallback=fallback, facts=ctx,
+                )
+            except Exception as exc:
+                if fact_text is None:
+                    return {
+                        "status": "failed",
+                        "reason": str(exc)[:160],
+                        "answer": None,
+                        "engine": None,
+                        "source": None,
+                        "context": ctx,
+                    }
+                raw, source = fact_text, "rules"
+            return _finish_answer(raw, ctx, lang, source, sentences=ULTRA_SENTENCES, chars=ULTRA_CHARS)
+        if fact_text is None:
+            return {
+                "status": "failed",
+                "reason": "unreadable",
+                "answer": None,
+                "engine": None,
+                "source": None,
+                "context": ctx,
+            }
+        return _finish_answer(fact_text, ctx, lang, "rules", sentences=ANSWER_SENTENCES, chars=ANSWER_CHARS)
 
     if fact_text is None:
         return {
@@ -1588,7 +1777,7 @@ _chat_limited = rate_limited("logbook-chat", 6, 60.0, global_limit=60)
 
 def _facts_view(ctx: dict | None) -> dict[str, Any]:
     ctx = ctx if isinstance(ctx, dict) else {}
-    keys = ("official", "boat", "nextStop", "memory", "journal", "polar", "orders", "plan", "climo", "layers", "around")
+    keys = ("official", "boat", "nextStop", "memory", "journal", "polar", "orders", "plan", "climo", "layers", "dcFamilies", "around")
     return {k: ctx.get(k) for k in keys if ctx.get(k) is not None}
 
 

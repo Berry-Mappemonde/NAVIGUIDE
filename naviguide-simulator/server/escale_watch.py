@@ -1,14 +1,17 @@
-"""Veille Tavily par escale (U10) + enrichissement science / projet (U12).
+"""Veille Tavily par escale (U10 / TV1) + enrichissement science / projet (U12).
 
-Lot L4. Un `search` par escale — UNE FOIS, quand l'escale entre dans la
-fenêtre J-10 → J+2 (décision du porteur, 15 oct. : plus une recherche par
-jour ni toutes les 6 h) — résumé Nano (`tier=fast`) sans chiffre nouveau.
-Cache définitif ns `watch` (`<slug>` et `done:<slug>`). Un `extract` par
-entité, cache définitif ns `enrich`. Jamais d'appel depuis le navigateur.
+Lot TV1. Liste pré-écrite (avis, travaux, fermeture), nom du port et date
+substitués. Au plus deux tours par escale : Lightning lit le 1er, et s'il
+manque une réponse il choisit une question de la même liste — il n'en
+invente pas. Une phrase, une URL, `filter_numbers`. Prochaines escales
+seulement (fenêtre J-10 → J+2). Éteint tant que `NAVIGUIDE_TAVILY_WATCH`
+n'est pas ouvert. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
@@ -32,11 +35,33 @@ SEARCH_DAYS = 7
 SEARCH_MAX = 5
 ENRICH_DAILY_CAP = 8
 MAX_EXTRACT_CHARS = 8_000
+# TV1 : trois questions déjà écrites. Lightning ne peut en choisir qu'une
+# parmi celles qui restent. Pas un troisième tour. Pas une moisson.
+WATCH_QUESTION_IDS = ("avis", "travaux", "fermeture")
+WATCH_QUESTION_TEMPLATES: dict[str, str] = {
+    "avis": "{port} avis aux navigateurs {date}",
+    "travaux": "{port} travaux port marina {date}",
+    "fermeture": "{port} fermeture port {date}",
+}
+MAX_WATCH_ROUNDS = 2
+MAX_WATCH_SEARCHES_PER_STOP = 2
+# 3 prochaines escales × 2 tours. Noté dans la PR.
+MAX_WATCH_SEARCHES_PER_DAY = 6
+# Même id que film_script.TV1_WATCH_ID — pas d'import croisé au chargement.
+WATCH_FILM_ID = "dc:watch"
 
 WATCH_SYSTEM = (
     "Tu résumes une veille portuaire en UNE phrase. "
     "Aucun chiffre qui n'est pas déjà dans les extraits. "
     "Pas d'invention. Thinking OFF."
+)
+ROUND2_SYSTEM = (
+    "Lot TV1. Tu lis des extraits Tavily d'escale. "
+    "Si une phrase d'avis, de travaux ou de fermeture est déjà possible, "
+    'réponds {"question": null}. '
+    "S'il manque une réponse, choisis UN id dans remaining "
+    '(JSON {"question": "travaux"}). Jamais d\'id hors liste. '
+    "Jamais de question inventée. Thinking OFF."
 )
 ENRICH_SYSTEM = (
     "Tu extraits UNE phrase factuelle sur cette station ou ce projet, "
@@ -65,12 +90,133 @@ def slug(name: str) -> str:
     return _SLUG_RE.sub("-", folded).strip("-") or "escale"
 
 
-def watch_query(port: str) -> str:
-    name = (port or "").strip() or "port"
-    return (
-        f"{name} marina OR port OR harbour "
-        "(notice OR avis OR travaux OR fermeture OR event)"
+def watch_enabled() -> bool:
+    """TV1 : zéro recherche tant que le drapeau n'est pas ouvert.
+
+    Défaut 0 (lot TV1, PR #401). Le 15 oct. `ici_warm` lisait 1 ; le poste
+    ouvre `NAVIGUIDE_TAVILY_WATCH=1`. Les tests forcent 0.
+    """
+    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "0").strip().lower() in (
+        "1", "true", "yes", "on",
     )
+
+
+def watch_daily_search_cap() -> int:
+    raw = (os.environ.get("NAVIGUIDE_WATCH_DAILY_SEARCHES") or "").strip()
+    if not raw:
+        return MAX_WATCH_SEARCHES_PER_DAY
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return MAX_WATCH_SEARCHES_PER_DAY
+
+
+def _question_date(when: datetime | None) -> str:
+    return _day(_utc(when))
+
+
+def format_watch_question(
+    qid: str,
+    port: str,
+    when: datetime | None = None,
+) -> str | None:
+    """None si l'id n'est pas dans la liste — Lightning n'invente pas."""
+    template = WATCH_QUESTION_TEMPLATES.get(str(qid or "").strip())
+    if not template:
+        return None
+    name = (port or "").strip() or "port"
+    return template.format(port=name, date=_question_date(when))
+
+
+def watch_query(port: str, qid: str = "avis", when: datetime | None = None) -> str:
+    """Première question de la liste (avis), nom et date substitués."""
+    return format_watch_question(qid, port, when) or format_watch_question(
+        "avis", port, when,
+    ) or ""
+
+
+def parse_second_question(text: str, remaining: Iterable[str]) -> str | None:
+    """JSON {question: id}. Id hors remaining → None (refusée, pas inventée)."""
+    left = {str(q) for q in remaining if str(q) in WATCH_QUESTION_IDS}
+    if not left:
+        return None
+    raw = (text or "").strip()
+    data: Any = None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if m:
+            try:
+                data = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                data = None
+    token = ""
+    if isinstance(data, dict):
+        token = str(data.get("question") or data.get("id") or "").strip()
+    elif raw:
+        token = raw.split()[0].strip('.,;:"\'').strip()
+    if token in left:
+        return token
+    return None
+
+
+def _has_answer(results: list[Any]) -> bool:
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        raw = item.get("content") or item.get("title") or ""
+        if isinstance(raw, str) and raw.strip():
+            return True
+        url = item.get("url")
+        if isinstance(url, str) and url.startswith("http"):
+            return True
+    return False
+
+
+def _watch_search_count(day: str | None = None) -> int:
+    hit = _cache_get(WATCH_NS, f"day-search:{day or _day(_utc())}")
+    try:
+        return int((hit or {}).get("n") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _watch_search_inc(day: str | None = None) -> None:
+    d = day or _day(_utc())
+    _cache_put(WATCH_NS, f"day-search:{d}", {"n": _watch_search_count(d) + 1})
+
+
+def set_watch_in_film(on: bool) -> None:
+    """VS1 a gardé l'id et la phrase est entrée dans le script → pas le chat."""
+    _cache_put(WATCH_NS, "in-film", {"on": bool(on)})
+
+
+def watch_in_film() -> bool:
+    hit = _cache_get(WATCH_NS, "in-film")
+    return bool(isinstance(hit, dict) and hit.get("on"))
+
+
+def drop_news_if_in_film(entries: Iterable[Any]) -> list[Any]:
+    """Pas la même phrase dans le film et dans le chat."""
+    rows = list(entries or [])
+    if not watch_in_film():
+        return rows
+    return [
+        e for e in rows
+        if not (isinstance(e, dict) and e.get("kind") == "news")
+    ]
+
+
+def latest_watch_entry(now: datetime | None = None) -> dict[str, Any] | None:
+    """Phrase d'avis pour le sac VS1 / la fiche : dernière veille encore lisible."""
+    when = _utc(now)
+    for entry in reversed(_index_get("all")):
+        if not isinstance(entry, dict) or expired(entry, when):
+            continue
+        if str(entry.get("text") or "").strip():
+            return entry
+    return None
 
 
 def official_domains(name: str, urls: Iterable[str] | None = None) -> list[str]:
@@ -242,9 +388,10 @@ def _index_put(day: str, entry: dict[str, Any]) -> None:
     _cache_put(WATCH_NS, _index_key("all"), rows_all)
 
 
-def watch_cache_key(name: str, now: datetime | None = None) -> str:
-    """Une clé par escale : la recherche se fait une fois (plus par jour)."""
-    return slug(name)
+def watch_cache_key(name: str, qid: str = "avis", now: datetime | None = None) -> str:
+    """Une clé par escale et par question de la liste — pas une moisson."""
+    q = str(qid or "avis").strip() or "avis"
+    return f"{slug(name)}:{q}"
 
 
 def _done_key(name: str) -> str:
@@ -316,33 +463,45 @@ async def _summarize(
 async def search_watch(
     port: str,
     *,
+    qid: str = "avis",
     include_domains: Iterable[str] | None = None,
     now: datetime | None = None,
+    query_date: datetime | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Un search Tavily par escale, une seule fois. Cache définitif ns `watch`."""
+    """Un search Tavily pour une question de la liste. Cache ns `watch`."""
     when = _utc(now)
-    key = watch_cache_key(port, when)
+    qdate = _utc(query_date) if query_date is not None else when
+    query = format_watch_question(qid, port, qdate)
+    empty = {"results": [], "credits": 0, "cached": False, "query": query or "", "qid": qid}
+    if not query:
+        return {**empty, "reason": "bad-question"}
+    if not watch_enabled():
+        return {**empty, "reason": "off"}
+    key = watch_cache_key(port, qid, when)
     hit = _cache_get(WATCH_NS, key)
     if hit and "results" in hit:
-        return {**hit, "cached": True}
-    empty = {"results": [], "credits": 0, "cached": False, "query": watch_query(port)}
+        return {**hit, "cached": True, "qid": qid}
     if not tavily_client.api_key():
         return {**empty, "reason": "no-key"}
     if not llm_budget.allow_tavily():
         return {**empty, "reason": "budget"}
+    if _watch_search_count(_day(when)) >= watch_daily_search_cap():
+        return {**empty, "reason": "cap"}
     data = await tavily_client.search(
-        watch_query(port),
+        query,
         topic="news",
         days=SEARCH_DAYS,
         max_results=SEARCH_MAX,
         include_domains=include_domains,
         client=client,
     )
+    _watch_search_inc(_day(when))
     stored = {
         "results": data.get("results") or [],
         "credits": data.get("credits") or 0,
-        "query": watch_query(port),
+        "query": query,
+        "qid": qid,
         "day": _day(when),
     }
     _cache_put(WATCH_NS, key, stored)
@@ -356,6 +515,8 @@ def news_entry(
     now: datetime,
     *,
     source: str | None = None,
+    question: str | None = None,
+    rounds: int | None = None,
 ) -> dict[str, Any]:
     when = _utc(now)
     day = _day(when)
@@ -363,6 +524,9 @@ def news_entry(
     arrival = stop.get("arrival")
     exp = expires_at(arrival if isinstance(arrival, datetime) and _utc(arrival) > when else when)
     host = _host_of(url)
+    qid = str(question or "").strip() or None
+    if qid and qid not in WATCH_QUESTION_IDS:
+        qid = None
     entry: dict[str, Any] = {
         "id": f"news:{slug(name)}",
         "kind": "news",
@@ -376,6 +540,8 @@ def news_entry(
         "title": {"fr": "Veille", "en": "Watch"},
         "facts": {"name": name, "day": day},
         "basis": "tavily",
+        "question": qid,
+        "rounds": rounds,
     }
     lat, lon = stop.get("lat"), stop.get("lon")
     if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
@@ -391,33 +557,97 @@ def news_entry(
     return {k: v for k, v in entry.items() if v is not None}
 
 
+async def decide_second_question(
+    results: list[Any],
+    remaining: Iterable[str],
+    *,
+    client: httpx.AsyncClient | None = None,
+    cascade: Any = None,
+) -> str | None:
+    """Lightning choisit un id de remaining, ou None. Hors liste → refusée."""
+    left = [q for q in WATCH_QUESTION_IDS if q in {str(x) for x in remaining}]
+    if not left:
+        return None
+    if not llm_budget.allow("fast"):
+        return None if _has_answer(results) else left[0]
+    fn = cascade or cascade_text
+    user = json.dumps(
+        {"remaining": left, "results": results[:5]},
+        ensure_ascii=False, default=str,
+    )
+    try:
+        text, _src = await fn(
+            ROUND2_SYSTEM, user, client, tier="fast", fallback="", facts=user, max_tokens=40,
+        )
+    except Exception as exc:
+        log.debug("tour 2 veille : %s", exc)
+        text = ""
+    picked = parse_second_question(text or "", left)
+    if picked:
+        return picked
+    return None if _has_answer(results) else left[0]
+
+
 async def watch_stop(
     stop: dict[str, Any],
     now: datetime,
     *,
     include_domains: Iterable[str] | None = None,
     client: httpx.AsyncClient | None = None,
+    cascade: Any = None,
 ) -> dict[str, Any] | None:
-    """Veille d'une escale : search (1 crédit, une fois par escale) + phrase + journal.
+    """Veille d'une escale : deux tours max, questions de la liste, phrase + URL.
 
-    Déjà faite (`done:<slug>`) → rien : ni recherche, ni résumé, ni nouvelle entrée."""
+    Drapeau fermé → rien. Déjà faite (`done:<slug>`) → rien."""
     name = str(stop.get("name") or "").strip()
     if not name or watch_done(name):
         return None
+    if not watch_enabled():
+        return None
+    when = _utc(now)
+    arrival = stop.get("arrival")
+    qdate = _utc(arrival) if isinstance(arrival, datetime) else when
     domains = list(include_domains) if include_domains is not None else official_domains(
         name, [stop.get("url")] if stop.get("url") else None,
     )
-    found = await search_watch(name, include_domains=domains or None, now=now, client=client)
-    results = found.get("results") or []
-    if found.get("reason") in {"no-key", "budget"} and not results:
+    used: list[str] = []
+    all_results: list[Any] = []
+    last_qid = WATCH_QUESTION_IDS[0]
+    qid: str | None = WATCH_QUESTION_IDS[0]
+    completed_round = False
+    while (
+        qid
+        and qid not in used
+        and len(used) < MAX_WATCH_ROUNDS
+        and len(used) < MAX_WATCH_SEARCHES_PER_STOP
+    ):
+        found = await search_watch(
+            name, qid=qid, include_domains=domains or None,
+            now=when, query_date=qdate, client=client,
+        )
+        used.append(qid)
+        last_qid = qid
+        if found.get("reason") in {"off", "no-key", "budget", "cap", "bad-question"}:
+            break
+        completed_round = True
+        all_results.extend(found.get("results") or [])
+        remaining = [q for q in WATCH_QUESTION_IDS if q not in used]
+        if len(used) >= MAX_WATCH_ROUNDS or not remaining:
+            break
+        nxt = await decide_second_question(
+            all_results, remaining, client=client, cascade=cascade,
+        )
+        qid = nxt
+    results = all_results
+    if not completed_round:
         return None
     facts = {"port": name, "results": results}
     fallback = _fallback_sentence(results, facts)
     url = _first_url(results)
     if not results and not fallback:
-        # Recherche sans résultat : l'escale est faite (search en cache), sans
-        # inventer une entrée journal.
-        _cache_put(WATCH_NS, _done_key(name), {"day": _day(_utc(now)), "results": 0})
+        _cache_put(WATCH_NS, _done_key(name), {
+            "day": _day(when), "results": 0, "rounds": len(used), "questions": used,
+        })
         return None
     user = (
         f"Escale : {name}\n"
@@ -430,7 +660,10 @@ async def watch_stop(
     )
     if not sentence:
         return None
-    entry = news_entry(stop, sentence, url, now, source=source)
+    entry = news_entry(
+        stop, sentence, url, now, source=source,
+        question=last_qid, rounds=len(used),
+    )
     try:
         import voyage_journal  # noqa: PLC0415
 
@@ -438,7 +671,10 @@ async def watch_stop(
     except Exception as exc:
         log.debug("journal news : %s", exc)
     _index_put(_day(now), entry)
-    _cache_put(WATCH_NS, _done_key(name), {"day": _day(_utc(now)), "results": len(results), "id": entry["id"]})
+    _cache_put(WATCH_NS, _done_key(name), {
+        "day": _day(when), "results": len(results), "id": entry["id"],
+        "rounds": len(used), "questions": used,
+    })
     return entry
 
 
@@ -448,9 +684,10 @@ async def run_daily_watch(
     *,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Passe quotidienne : une veille par escale entrée dans la fenêtre J-10 → J+2,
-    faite UNE fois (les escales déjà veillées ne coûtent rien)."""
+    """Passe : prochaines escales (J-10 → J+2), deux tours max, drapeau obligatoire."""
     when = _utc(now)
+    if not watch_enabled():
+        return {"watched": 0, "wrote": 0, "skipped": True, "reason": "off"}
     clock = (voy or {}).get("clock") if isinstance(voy, dict) else None
     stops = stops_in_window(clock, when)
     if not stops:
