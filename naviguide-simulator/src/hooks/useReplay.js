@@ -130,7 +130,12 @@ const FILM_SOURCE_I18N = Object.freeze({
   cache: "storySourceCache",
 });
 
-export function filmSourceKey(source) {
+export function filmSourceKey(source, reviewedBy) {
+  const s = String(source || "").toLowerCase();
+  const reviewed = String(reviewedBy || "").toLowerCase();
+  if ((s.includes("reviewed") && s.includes("ultra")) || (reviewed.includes("ultra") && isWrittenFilmSource(source))) {
+    return "storySourceSuperReviewed";
+  }
   if (isWrittenFilmSource(source)) return "storySourceSuper";
   return FILM_SOURCE_I18N[source] || "storySourceRules";
 }
@@ -171,8 +176,11 @@ export function resolveServedFilm(data, requestedStyle) {
   };
 }
 
-export function writtenPillEnabled(hasWritten) {
-  return Boolean(hasWritten);
+export function writtenPillEnabled(hasWritten, opts) {
+  const flags = hasWritten && typeof hasWritten === "object" ? hasWritten : { ...(opts || {}), hasWritten };
+  if (flags.customFilm) return Boolean(flags.hasWritten);
+  if (flags.filmReady) return true;
+  return Boolean(flags.hasWritten);
 }
 
 export function isOfficialFilmVoyage(voyageId) {
@@ -2058,9 +2066,30 @@ export function useReplay({
   }, []);
 
   const chooseFilmStyle = useCallback((next) => {
-    if (next === "written" && !hasWritten) return;
-    setFilmStyle(next === "written" ? "written" : "raw");
-  }, [hasWritten]);
+    if (next !== "written") {
+      setFilmStyle("raw");
+      return;
+    }
+    if (hasWritten) {
+      setFilmStyle("written");
+      return;
+    }
+    if (!isOfficialFilmVoyage(voyageId)) return;
+    const path = filmRequestPath(voyageId);
+    const q = `lang=${encodeURIComponent(lang)}&seconds=${encodeURIComponent(targetSeconds)}&t0=${encodeURIComponent(t0)}`;
+    fetch(`${API}${path}?${q}`, { method: "POST" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        const resolved = resolveServedFilm(data, "written");
+        if (resolved.hasWritten) {
+          setHasWritten(true);
+          setFilmStyle("written");
+          setFilmSource(resolved.source);
+        }
+      })
+      .catch(() => {});
+  }, [hasWritten, lang, targetSeconds, t0, voyageId]);
 
   return {
     active,

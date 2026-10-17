@@ -18,6 +18,9 @@ from film_script import (
     SHORT_CROSSING_MS,
     allocate_chapter_budgets,
     film_char_budget,
+    film_write_window,
+    film_ultra_open,
+    write_film_chain,
     film_estimated_seconds,
     film_priority_tier,
     fit_chapter_text,
@@ -75,6 +78,7 @@ from film_script import (
     station_spoken_label,
     speak_film_text,
     written_is_valid,
+    REVIEWED_SOURCE,
     write_stored_plan,
     WRITTEN_SOURCE,
     apply_written_guard,
@@ -1114,9 +1118,11 @@ def test_warm_film_story_passes_review_without_clock(monkeypatch):
         ],
     }
     captured: list = []
+    captured_kw: list = []
 
     async def fake_build(*_a, **kw):
         captured.append(kw.get("review"))
+        captured_kw.append(kw)
         return {"hasWritten": False, "chars": 0, "source": "rules"}
 
     monkeypatch.setattr(film_script, "build_film_response", fake_build)
@@ -1126,6 +1132,7 @@ def test_warm_film_story_passes_review_without_clock(monkeypatch):
     })
     out = asyncio.run(warm_film_story("seed-no-clock", langs=("fr",)))
     assert out["status"] == "ready"
+    assert captured_kw and captured_kw[0].get("want_write") is False
     assert captured and captured[0] is not None
     legs = (captured[0] or {}).get("legs") or []
     assert any("Ajaccio" in (leg.get("from") or "") and "Fort-de-France" in (leg.get("to") or "") for leg in legs)
@@ -4799,3 +4806,120 @@ def test_dc3_bag_for_vs1():
     for rec in plan["dcSubjects"]:
         assert rec["oncePerFamilyOnLongLeg"] is True
         assert rec["phrase"]
+
+
+def test_ed1_write_window_follows_budget_and_accepts_integral():
+    assert film_char_budget(150) == 2250
+    assert film_write_window(150) == (2025, 2475)
+    assert film_write_window(180) == (2430, 2970)
+    assert film_write_window(0) is None
+    long = "Berry-Mappemonde quitte La Rochelle. " * 120
+    assert len(long) >= 4000
+    ok, _, dropped = written_is_valid(long, long, [], seconds=0)
+    assert dropped == 0
+    assert ok
+    ok_short, _, _ = written_is_valid(long, long, [], seconds=150)
+    assert ok_short is False
+
+
+def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    assert film_ultra_open() is False
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+        }],
+        "targetSeconds": 150,
+    }
+    hops = []
+
+    async def fake_cascade(system, user, **kw):
+        hops.append((kw.get("tier"), system[:24]))
+        if "already-written" in system:
+            raise AssertionError("Ultra appelé alors que le juge est fermé")
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(
+                s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+            ), "nemotron-super"
+        return "", "rules"
+
+    fr, en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=fake_cascade))
+    assert fr is not None
+    assert stats["super"] == 1
+    assert stats["ultra_edit"] == 0
+    assert stats["ultra_judge"] == 0
+    assert stats["source"] == WRITTEN_SOURCE
+    assert fr["source"] == WRITTEN_SOURCE
+    assert "laisse" in (fr["chapters"][0]["text"] or "")
+    assert all(tier != "judge" for tier, _sys in hops)
+
+
+def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    assert film_ultra_open() is True
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+        }],
+        "targetSeconds": 150,
+    }
+    hops = []
+
+    async def accept(system, user, **kw):
+        hops.append(system[:20])
+        if "judge an already-written" in system:
+            return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
+        if "edit an already-written" in system:
+            blob = (user or "").split("text=", 1)[-1]
+            return blob.replace("quitte", "laisse", 1) if "quitte" in blob else blob, "nemotron-ultra"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(sents), "nemotron-super"
+        return "", "rules"
+
+    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=accept))
+    assert stats["ultra_edit"] == 1
+    assert stats["ultra_judge"] == 1
+    assert stats["reviewed"] is True
+    assert fr["source"] == REVIEWED_SOURCE
+    assert hops.count("You judge an already") == 1
+    assert hops.count("You edit an already-") == 1
+
+    hops.clear()
+
+    async def refuse(system, user, **kw):
+        hops.append(system[:20])
+        if "judge an already-written" in system:
+            return '{"ok": false, "reason": "invented"}', "nemotron-ultra"
+        if "edit an already-written" in system:
+            blob = (user or "").split("text=", 1)[-1]
+            return blob, "nemotron-ultra"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(
+                s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+            ), "nemotron-super"
+        return "", "rules"
+
+    fr2, _en2, stats2 = asyncio.run(write_film_chain(plan, seconds=150, cascade=refuse))
+    assert stats2["ultra_edit"] == 1
+    assert stats2["ultra_judge"] == 1
+    assert stats2["reviewed"] is False
+    assert fr2["source"] == WRITTEN_SOURCE
+    assert "laisse" in (fr2["chapters"][0]["text"] or "")

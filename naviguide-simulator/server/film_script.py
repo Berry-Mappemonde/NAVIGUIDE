@@ -1,8 +1,9 @@
-"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c).
+"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c / ED1).
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
-Rédigé **chapitre par chapitre**, préchauffé, cache SQLite ns `film-story`.
-Jamais généré au clic. Repli : le brut.
+Rédigé **au clic** Rédigé (lot ED1) : Super écrit le français ; Ultra édite
+puis juge si le plafond juge est ouvert ; Lightning traduit. GET et
+`warm_film_story` ne lancent aucun modèle. Repli : le brut.
 """
 from __future__ import annotations
 
@@ -20,6 +21,8 @@ from voyage_clock import OFFICIAL_T0
 
 FILM_MAX_CHARS = 2400
 FILM_BUDGET_CHARS = 2400
+# ED1 : plus de fenêtre fixe 2160–2640. Conservés pour les pads de tests 2:30.
+# `written_is_valid` utilise `film_write_window(seconds)`.
 FILM_WRITE_MIN = 2160
 FILM_WRITE_MAX = 2640
 FILM_CHAPTER_FLOOR = 120
@@ -405,6 +408,7 @@ EV_TAG = re.compile(r"\[\[ev:([^\]]+)\]\]")
 TAG_STRIP = re.compile(r"\[\[(?:ev|ch):[^\]]+\]\]\s*")
 WRITE_MAX_TOKENS = 1200
 WRITTEN_SOURCE = "nemotron-super-token-factory"
+REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
 
 
 def _en(lang: str) -> bool:
@@ -3342,6 +3346,14 @@ def film_char_budget(seconds: Any) -> int:
     if s <= 0:
         return 0
     return int(s * FILM_ESTIMATE_CPS)
+
+
+def film_write_window(seconds: Any) -> Optional[tuple[int, int]]:
+    """Fenêtre acceptée du rédigé. None = intégral, pas de rejet de longueur."""
+    budget = film_char_budget(seconds)
+    if budget <= 0:
+        return None
+    return int(budget * 0.9), int(budget * 1.1)
 
 
 def film_priority_tier(seconds: Any) -> int:
@@ -8244,8 +8256,10 @@ def locate_events(tagged: str, events: list[dict]) -> tuple[str, list[dict]]:
     return display, located
 
 
-def written_is_valid(text: str, facts: Any, event_ids: list[str]) -> tuple[bool, str, int]:
-    """No new number, every [[ev:id]] present, budget ±10 % after strip."""
+def written_is_valid(
+    text: str, facts: Any, event_ids: list[str], seconds: Any = 150,
+) -> tuple[bool, str, int]:
+    """No new number, every [[ev:id]] present, window from film_char_budget."""
     filtered, dropped = filter_numbers(text, facts)
     if dropped:
         return False, filtered, dropped
@@ -8253,8 +8267,11 @@ def written_is_valid(text: str, facts: Any, event_ids: list[str]) -> tuple[bool,
         if f"[[ev:{eid}]]" not in (text or ""):
             return False, filtered, dropped
     n = len(strip_tags(text))
-    if n < FILM_WRITE_MIN or n > FILM_WRITE_MAX:
-        return False, filtered, dropped
+    window = film_write_window(seconds)
+    if window is not None:
+        lo, hi = window
+        if n < lo or n > hi:
+            return False, filtered, dropped
     return True, filtered, 0
 
 
@@ -8330,6 +8347,17 @@ WRITE_SYSTEM = (
     "Write for the ear: spoken French or English as requested. "
     "Units in full words (milles nautiques / nautical miles), never nm. "
     "Thinking OFF. No tags. No new figure."
+)
+EDIT_SYSTEM = (
+    "You edit an already-written French expedition film. "
+    "Keep every number, proper name and date exactly. "
+    "Same sentence count and order. Do not add a fact. "
+    "Output only the edited French. Thinking OFF."
+)
+JUDGE_SYSTEM = (
+    "You judge an already-written film text. Do not rewrite it. "
+    "Return JSON only: {\"ok\": true|false, \"reason\": \"one line\"}. "
+    "ok=false if a number, name or date was invented."
 )
 
 
@@ -8458,6 +8486,200 @@ async def write_with_llm(
     if plan is None:
         return None, stats.get("source") or "rules"
     return plan, stats.get("source") or plan.get("source") or "rules"
+
+
+def film_ultra_open() -> bool:
+    """Ultra (éditer + juger) seulement si le plafond juge est ouvert dans l'env."""
+    import os  # noqa: PLC0415
+    import llm_budget  # noqa: PLC0415
+
+    raw = (os.environ.get("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE") or "").strip()
+    if not raw:
+        return False
+    try:
+        if int(raw) <= 0:
+            return False
+    except ValueError:
+        return False
+    return llm_budget.allow("judge")
+
+
+def _parse_judge_ok(text: str) -> Optional[bool]:
+    raw = (text or "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(data, dict) or "ok" not in data:
+        return None
+    val = data.get("ok")
+    if val is True or val == "true" or val == 1:
+        return True
+    if val is False or val == "false" or val == 0:
+        return False
+    return None
+
+
+def _stamp_written_plan(plan: dict, source: str, seconds: Any) -> dict:
+    chapters = [c for c in (plan.get("chapters") or []) if isinstance(c, dict)]
+    n = script_chars(chapters)
+    out = dict(plan)
+    out["chapters"] = chapters
+    out["source"] = source
+    out["chars"] = n
+    out["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
+    out["hasWritten"] = True
+    return out
+
+
+def _redistribute_written_blob(raw_plan: dict, blob: str, *, lang: str = "fr") -> Optional[dict]:
+    raw_chapters = [c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)]
+    if not raw_chapters:
+        return None
+    sents = _sentences(blob)
+    idx = 0
+    out: list[dict] = []
+    rewritten = 0
+    for ch in raw_chapters:
+        raw = ch.get("text") or ""
+        n = len(_sentences(raw))
+        chunk = " ".join(sents[idx:idx + n]) if n else raw
+        idx += n
+        facts = chapter_structured_facts(ch, lang=lang)
+        guarded, rw, _fb = apply_written_guard(raw, chunk, facts, lang=lang)
+        anchors = reanchor_written_chapter(ch, guarded, lang)
+        out.append({**ch, "text": guarded, "anchors": anchors})
+        rewritten += rw
+    if rewritten <= 0:
+        return None
+    return _stamp_written_plan({**raw_plan, "chapters": out}, WRITTEN_SOURCE, raw_plan.get("targetSeconds"))
+
+
+async def edit_written_once(
+    super_plan: dict,
+    raw_plan: dict,
+    *,
+    cascade: Callable = cascade_text,
+) -> Optional[dict]:
+    """Un seul appel Ultra : éditer le français déjà écrit par Super."""
+    chapters = [c for c in (super_plan.get("chapters") or []) if isinstance(c, dict)]
+    blob = " ".join(c.get("text") or "" for c in chapters).strip()
+    if not blob:
+        return None
+    facts = [chapter_structured_facts(c, lang="fr") for c in (raw_plan.get("chapters") or chapters) if isinstance(c, dict)]
+    user = f"facts={json.dumps(facts, ensure_ascii=False, default=str)}\ntext={blob}"
+    max_tok = min(2048, max(400, (len(blob) // 2) + 80))
+    text, source = await cascade(
+        EDIT_SYSTEM, user, tier="judge", fallback="", facts=facts, max_tokens=max_tok,
+    )
+    if not (text or "").strip() or source in {"rules", "budget"}:
+        return None
+    return _redistribute_written_blob(raw_plan, text, lang="fr")
+
+
+async def judge_written_once(
+    plan: dict,
+    *,
+    cascade: Callable = cascade_text,
+) -> bool:
+    """Un autre appel Ultra : juger le texte déjà écrit, sans le réécrire."""
+    blob = " ".join(
+        c.get("text") or "" for c in (plan.get("chapters") or []) if isinstance(c, dict)
+    ).strip()
+    if not blob:
+        return False
+    user = json.dumps({"text": blob[:8000]}, ensure_ascii=False)
+    text, source = await cascade(
+        JUDGE_SYSTEM, user, tier="judge", fallback="", facts=blob, max_tokens=128,
+    )
+    if source in {"rules", "budget"}:
+        return False
+    return _parse_judge_ok(text) is True
+
+
+async def translate_written_plan(
+    fr_plan: dict,
+    raw_plan: dict,
+    *,
+    cascade: Callable = cascade_text,
+) -> Optional[dict]:
+    """Lightning : français accepté → anglais, puis filter_numbers."""
+    from story_cascade import TRANSLATE_SYSTEM  # noqa: PLC0415
+
+    raw_chapters = [c for c in (raw_plan.get("chapters") or []) if isinstance(c, dict)]
+    fr_chapters = [c for c in (fr_plan.get("chapters") or []) if isinstance(c, dict)]
+    if not fr_chapters:
+        return None
+    out: list[dict] = []
+    any_ok = False
+    for i, ch in enumerate(fr_chapters):
+        raw_ch = raw_chapters[i] if i < len(raw_chapters) else ch
+        src = ch.get("text") or ""
+        facts = chapter_structured_facts(raw_ch, lang="fr")
+        text, source = await cascade(
+            TRANSLATE_SYSTEM,
+            f"French text:\n{src}",
+            tier="fast",
+            fallback="",
+            facts=facts,
+            max_tokens=min(1200, max(256, (len(src) // 2) + 80)),
+        )
+        if not (text or "").strip() or source in {"rules", "budget"}:
+            return None
+        guarded, rw, _fb = apply_written_guard(raw_ch.get("text") or src, text, facts, lang="en")
+        if rw <= 0:
+            return None
+        any_ok = True
+        anchors = reanchor_written_chapter(raw_ch, guarded, "en")
+        out.append({**raw_ch, "text": guarded, "anchors": anchors})
+    if not any_ok:
+        return None
+    stamped = _stamp_written_plan({**fr_plan, "chapters": out}, fr_plan.get("source") or WRITTEN_SOURCE, fr_plan.get("targetSeconds"))
+    return stamped
+
+
+async def write_film_chain(
+    plan: dict,
+    *,
+    seconds: Any = 150,
+    cascade: Callable = cascade_text,
+) -> tuple[Optional[dict], Optional[dict], dict[str, Any]]:
+    """Au clic : Super FR, puis Ultra édite + juge si plafond ouvert, puis Lightning EN."""
+    stats: dict[str, Any] = {
+        "super": 0, "ultra_edit": 0, "ultra_judge": 0, "lightning": 0,
+        "source": "rules", "reviewed": False,
+    }
+    raw = dict(plan)
+    raw["targetSeconds"] = _film_seconds(seconds if seconds is not None else plan.get("targetSeconds"))
+    super_plan, super_stats = await write_stored_plan(raw, lang="fr", cascade=cascade, seconds=seconds)
+    if super_plan is None or int((super_stats or {}).get("rewritten") or 0) <= 0:
+        return None, None, stats
+    stats["super"] = 1
+    stats["source"] = WRITTEN_SOURCE
+    accepted = _stamp_written_plan(super_plan, WRITTEN_SOURCE, seconds)
+
+    if film_ultra_open():
+        edited = await edit_written_once(accepted, raw, cascade=cascade)
+        stats["ultra_edit"] = 1
+        if edited:
+            ok = await judge_written_once(edited, cascade=cascade)
+            stats["ultra_judge"] = 1
+            if ok:
+                accepted = _stamp_written_plan(edited, REVIEWED_SOURCE, seconds)
+                stats["reviewed"] = True
+                stats["source"] = REVIEWED_SOURCE
+
+    en_plan = await translate_written_plan(accepted, raw, cascade=cascade)
+    if en_plan:
+        en_plan = _stamp_written_plan(en_plan, accepted.get("source") or WRITTEN_SOURCE, seconds)
+        stats["lightning"] = 1
+    return accepted, en_plan, stats
 
 
 def _public_plan(plan: dict, source: str) -> dict:
@@ -8646,7 +8868,7 @@ async def warm_film_story(
     seconds: int = 150,
     cascade: Callable = cascade_text,
 ) -> dict[str, Any]:
-    """Préchauffe le rédigé chapitre par chapitre — jamais au clic (lot R9c)."""
+    """Préchauffe le brut seulement — ED1 : plus de chaîne Super/Ultra ici."""
     from voyage_api import _climo_clock, _now  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID, sample_clock_at_time  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
@@ -8683,7 +8905,7 @@ async def warm_film_story(
         for lang in langs:
             plan = await build_film_response(
                 clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
-                style="written", cascade=cascade, want_write=True, now_ms=now_ms,
+                style="written", cascade=cascade, want_write=False, now_ms=now_ms,
                 review=review, eta=eta,
             )
             out[lang] = {"hasWritten": plan.get("hasWritten"), "chars": plan.get("chars"), "source": plan.get("source")}
