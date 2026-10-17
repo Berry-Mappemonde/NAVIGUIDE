@@ -36,6 +36,7 @@ from film_script import (
     dc_subject_candidates,
     dose_amp_changes,
     dose_dc2_leg_changes,
+    dose_dc3_leg_changes,
     dose_climo_changes,
     dose_coast_changes,
     dose_project_changes,
@@ -4449,6 +4450,352 @@ def test_dc2_bag_for_vs1():
     )
     stored_kinds = {r["kind"] for r in (plan.get("dcSubjects") or [])}
     assert {"buoy", "poe", "anchorage"} <= stored_kinds
+    for rec in plan["dcSubjects"]:
+        assert rec["oncePerFamilyOnLongLeg"] is True
+        assert rec["phrase"]
+
+
+# ── DC3 : balise, câble, profondeur, piraterie, satellite — sac, pas le 2:30 ─
+
+_DC3_ATON = re.compile(r"\bbalise\b|\bbeacon\b", re.I)
+_DC3_CABLE = re.compile(r"\bcâble\b|\bcable\b", re.I)
+_DC3_DEPTH = re.compile(r"profondeur\s*:|depth\s*:", re.I)
+_DC3_PIRACY = re.compile(r"Piraterie —|Piracy —")
+_DC3_SAT_INVENTED = re.compile(
+    r"image satellite au-dessus|satellite image above",
+    re.I,
+)
+
+
+def _dc3_family_hits(blob: str) -> dict[str, int]:
+    sents = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", blob or "") if s.strip()]
+    return {
+        "aton": sum(1 for s in sents if _DC3_ATON.search(s)),
+        "cable": sum(1 for s in sents if _DC3_CABLE.search(s)),
+        "depth": sum(1 for s in sents if _DC3_DEPTH.search(s)),
+        "piracy": sum(1 for s in sents if _DC3_PIRACY.search(s)),
+        "sat_invented": sum(1 for s in sents if _DC3_SAT_INVENTED.search(s)),
+    }
+
+
+def _dc3_journal():
+    journal = _rc22_rich_journal()
+    extra = [
+        {
+            "seq": 410, "t": "2026-07-08T10:00:00Z", "signature": "aton-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "aton", "score": 2, "title": "Feu des Minimes",
+                "fact": "Feu des Minimes", "name": "Feu des Minimes", "nm": 2,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 411, "t": "2026-07-18T10:00:00Z", "signature": "aton-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "aton", "score": 2, "title": "Phare Amédée",
+                "fact": "Phare Amédée", "name": "Phare Amédée", "nm": 5,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 412, "t": "2026-07-12T10:00:00Z", "signature": "cable-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "cable", "score": 2, "title": "Honotua",
+                "fact": "Honotua", "name": "Honotua",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 413, "t": "2026-07-22T10:00:00Z", "signature": "cable-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "cable", "score": 2, "title": "Southern Cross",
+                "fact": "Southern Cross", "name": "Southern Cross",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 414, "t": "2026-07-14T10:00:00Z", "signature": "depth-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "depth", "score": 2, "depth_m": 18.4, "source": "emodnet",
+                "title": "emodnet", "fact": "emodnet",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 415, "t": "2026-08-02T10:00:00Z", "signature": "depth-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "depth", "score": 2, "depthOffshore": -3888.0, "source": "gebco",
+                "title": "gebco", "fact": "gebco",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 416, "t": "2026-07-16T10:00:00Z", "signature": "piracy-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "piracy", "score": 2, "title": "Horn of Africa / Gulf Aden",
+                "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+                "source": "IMB/UKMTO",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 417, "t": "2026-08-10T10:00:00Z", "signature": "piracy-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "piracy", "score": 2, "title": "Strait of Malacca",
+                "name": "Strait of Malacca", "level": "MEDIUM", "source": "ReCAAP",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 418, "t": "2026-07-20T10:00:00Z", "signature": "sat-dc3-caption", "legIdx": 3,
+            "changes": [{
+                "kind": "satellite", "score": 2,
+                "caption": "Panache sédimentaire au large de Cayenne",
+                "title": "Panache sédimentaire au large de Cayenne",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 419, "t": "2026-08-12T10:00:00Z", "signature": "sat-dc3-image", "legIdx": 3,
+            "changes": [{
+                "kind": "satellite", "score": 2, "title": "Image satellite",
+                "fact": "sentinel-2-l2a · 2026-09-12",
+                "scene": {
+                    "id": "S2A_MSIL2A_20260912T000000",
+                    "product": "sentinel-2-l2a",
+                    "datetime": "2026-09-12T00:00:00Z",
+                },
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+    ]
+    return {**journal, "moments": list(journal["moments"]) + extra}
+
+
+def test_dc3_phrases_from_stock_only():
+    """FR/EN depuis un champ du stock ; silence si le champ manque."""
+    from film_script import _dc3_from_ici_bag
+
+    aton = {
+        "kind": "aton", "title": "Feu des Minimes", "name": "Feu des Minimes",
+        "t": "2026-07-08T10:00:00Z",
+    }
+    fr_a, en_a = change_sentence(aton, "fr"), change_sentence(aton, "en")
+    assert "balise Feu des Minimes" in fr_a
+    assert "beacon Feu des Minimes" in en_a
+    assert change_sentence({"kind": "aton", "title": "buoy_lateral"}, "fr") == ""
+    assert change_sentence({"kind": "aton", "title": "balise"}, "fr") == ""
+
+    cable = {"kind": "cable", "title": "Honotua", "name": "Honotua"}
+    fr_c = change_sentence(cable, "fr")
+    en_c = change_sentence(cable, "en")
+    assert "Honotua" in fr_c and "câble" in fr_c.casefold()
+    assert "Honotua" in en_c and "cable" in en_c.casefold()
+    assert change_sentence({"kind": "cable", "title": "active"}, "fr") == ""
+    assert change_sentence({"kind": "cable", "nearby": True}, "fr") == ""
+    assert change_sentence({"kind": "cable", "title": "4", "name": "4"}, "fr") == ""
+    assert change_sentence({
+        "kind": "cable", "title": "CABLES DE TELEFONO OPERATIVOS",
+        "name": "CABLES DE TELEFONO OPERATIVOS",
+    }, "fr") == ""
+
+    depth = {"kind": "depth", "depth_m": 18.4, "source": "emodnet"}
+    assert "Profondeur : 18,4 m" in change_sentence(depth, "fr")
+    assert "Depth: 18.4 m" in change_sentence(depth, "en")
+    assert change_sentence({"kind": "depth", "title": "gebco"}, "fr") == ""
+
+    pir = {
+        "kind": "piracy", "name": "Horn of Africa / Gulf Aden",
+        "level": "HIGH", "source": "IMB/UKMTO",
+    }
+    assert "Piraterie — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO" in change_sentence(pir, "fr")
+    assert "Piracy — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO" in change_sentence(pir, "en")
+    assert change_sentence({"kind": "piracy", "title": "piracy"}, "fr") == ""
+
+    sat = {
+        "kind": "satellite",
+        "caption": "Panache sédimentaire au large de Cayenne",
+    }
+    assert "Panache sédimentaire au large de Cayenne" in change_sentence(sat, "fr")
+    silent_sat = {
+        "kind": "satellite", "title": "Image satellite",
+        "scene": {"id": "S2A_x", "product": "sentinel-2-l2a", "datetime": "2026-09-12T00:00:00Z"},
+    }
+    assert change_sentence(silent_sat, "fr") == ""
+    assert change_sentence(silent_sat, "en") == ""
+    assert "image satellite au-dessus" not in change_sentence(silent_sat, "fr")
+    bag = _dc3_from_ici_bag({
+        "aton": {"nearby": [{"name": "buoy_lateral", "nm": 4.6}]},
+        "emodnet": {"cables": {"nearby": True}, "bathy": None},
+        "depthOffshore": None,
+        "piracy": None,
+        "satellites": {"scene": {"id": "S2A_x", "product": "sentinel-2-l2a"}},
+        "amp": [],
+    })
+    assert all(c["kind"] != "satellite" for c in bag)
+    assert all(c["kind"] != "aton" for c in bag)
+    assert all(c["kind"] != "cable" for c in bag)
+
+
+def test_dc3_once_per_family_on_long_integral():
+    """Intégral : une phrase par famille DC3 sur une longue jambe."""
+    day = 86_400_000
+    long_span = 40 * day
+    picked = dose_dc3_leg_changes([
+        {"id": "a1", "kind": "aton", "score": 2, "tMs": 4 * day,
+         "title": "Feu des Minimes", "name": "Feu des Minimes", "nm": 2,
+         "t": "2026-07-08T10:00:00Z"},
+        {"id": "a2", "kind": "aton", "score": 2, "tMs": 14 * day,
+         "title": "Phare Amédée", "name": "Phare Amédée", "nm": 5,
+         "t": "2026-07-18T10:00:00Z"},
+        {"id": "c1", "kind": "cable", "score": 2, "tMs": 8 * day,
+         "title": "Honotua", "name": "Honotua", "t": "2026-07-12T10:00:00Z"},
+        {"id": "c2", "kind": "cable", "score": 2, "tMs": 18 * day,
+         "title": "Southern Cross", "name": "Southern Cross"},
+        {"id": "d1", "kind": "depth", "score": 2, "tMs": 10 * day,
+         "depth_m": 18.4, "t": "2026-07-14T10:00:00Z"},
+        {"id": "d2", "kind": "depth", "score": 2, "tMs": 20 * day,
+         "depthOffshore": -3888.0},
+        {"id": "p1", "kind": "piracy", "score": 2, "tMs": 12 * day,
+         "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+         "source": "IMB/UKMTO", "t": "2026-07-16T10:00:00Z"},
+        {"id": "p2", "kind": "piracy", "score": 2, "tMs": 22 * day,
+         "name": "Strait of Malacca", "level": "MEDIUM", "source": "ReCAAP"},
+        {"id": "s1", "kind": "satellite", "score": 2, "tMs": 16 * day,
+         "caption": "Panache sédimentaire au large de Cayenne",
+         "t": "2026-07-20T10:00:00Z"},
+        {"id": "s2", "kind": "satellite", "score": 2, "tMs": 24 * day,
+         "title": "Image satellite", "scene": {"product": "sentinel-2-l2a"}},
+    ], long_span)
+    kinds = [c["kind"] for c in picked]
+    assert kinds.count("aton") == 1
+    assert kinds.count("cable") == 1
+    assert kinds.count("depth") == 1
+    assert kinds.count("piracy") == 1
+    assert kinds.count("satellite") == 1
+    assert dose_dc3_leg_changes(picked, 2 * day) == []
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
+    pacific = next(
+        c for c in plan["chapters"]
+        if "Fort-de-France" in (c.get("fromName") or "")
+        and "Nouméa" in (c.get("toName") or "")
+    )
+    hits = _dc3_family_hits(pacific.get("text") or "")
+    assert hits["aton"] <= 1, pacific.get("text")
+    assert hits["cable"] <= 1, pacific.get("text")
+    assert hits["depth"] <= 1, pacific.get("text")
+    assert hits["piracy"] <= 1, pacific.get("text")
+    assert hits["aton"] == 1, pacific.get("text")
+    assert hits["cable"] == 1, pacific.get("text")
+    assert hits["depth"] == 1, pacific.get("text")
+    assert hits["piracy"] == 1, pacific.get("text")
+    assert hits["sat_invented"] == 0, pacific.get("text")
+    blob = _script_blob(plan)
+    assert "image satellite au-dessus" not in blob
+    assert "Phare Amédée" not in blob or blob.count("balise") <= 1
+
+
+def test_dc3_short_tier_omits_kinds_and_char_budget():
+    """Le 2:30 n'empile pas les familles DC3. ≤ 2250 caractères."""
+    assert film_char_budget(150) == 2250
+    journal = _dc3_journal()
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(short)
+    hits = _dc3_family_hits(blob)
+    assert hits["aton"] == 0, blob
+    assert hits["cable"] == 0, blob
+    assert hits["depth"] == 0, blob
+    assert hits["piracy"] == 0, blob
+    assert hits["sat_invented"] == 0, blob
+    assert short["chars"] <= film_char_budget(150)
+    assert short["chars"] / 15 <= 150 * 1.1
+    picked_short = select_chapter_changes(
+        [
+            {"id": "a", "kind": "aton", "score": 2, "tMs": 2, "title": "Feu des Minimes",
+             "name": "Feu des Minimes"},
+            {"id": "c", "kind": "cable", "score": 2, "tMs": 3, "title": "Honotua",
+             "name": "Honotua"},
+            {"id": "d", "kind": "depth", "score": 2, "tMs": 4, "depth_m": 18.4},
+            {"id": "p", "kind": "piracy", "score": 2, "tMs": 5,
+             "name": "Horn of Africa / Gulf Aden", "level": "HIGH"},
+            {"id": "s", "kind": "satellite", "score": 2, "tMs": 6,
+             "caption": "Panache sédimentaire au large de Cayenne"},
+            {"id": "e", "kind": "escale", "score": 3, "tMs": 10,
+             "title": "Arrivée à Nouméa", "fact": "x"},
+        ],
+        0, 10, budget=True, tier=film_priority_tier(150),
+    )
+    assert not any(c.get("kind") in {
+        "aton", "cable", "depth", "piracy", "satellite",
+    } for c in picked_short)
+
+
+def test_dc3_bag_for_vs1():
+    """Sac dc_subject_candidates : une entrée par famille DC3, oncePerFamilyOnLongLeg."""
+    bag = dc_subject_candidates([
+        {"kind": "aton", "title": "Feu des Minimes", "name": "Feu des Minimes",
+         "nm": 2, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "aton", "title": "buoy_lateral", "name": "buoy_lateral"},
+        {"kind": "cable", "title": "Honotua", "name": "Honotua",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "cable", "title": "active", "name": "active"},
+        {"kind": "depth", "depth_m": 18.4, "t": "2026-07-14T10:00:00Z"},
+        {"kind": "depth", "title": "gebco"},
+        {"kind": "piracy", "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+         "source": "IMB/UKMTO", "t": "2026-07-16T10:00:00Z"},
+        {"kind": "satellite", "caption": "Panache sédimentaire au large de Cayenne",
+         "t": "2026-07-20T10:00:00Z"},
+        {"kind": "satellite", "title": "Image satellite",
+         "scene": {"product": "sentinel-2-l2a"}},
+    ], "fr")
+    kinds = [r["kind"] for r in bag]
+    assert kinds.count("aton") == 1
+    assert kinds.count("cable") == 1
+    assert kinds.count("depth") == 1
+    assert kinds.count("piracy") == 1
+    assert kinds.count("satellite") == 1
+    by_kind = {r["kind"]: r for r in bag}
+    assert by_kind["aton"]["oncePerFamilyOnLongLeg"] is True
+    assert "Feu des Minimes" in by_kind["aton"]["phrase"]
+    assert "Honotua" in by_kind["cable"]["phrase"]
+    assert "câble" in by_kind["cable"]["phrase"].casefold()
+    assert "18,4" in by_kind["depth"]["phrase"] or "18.4" in by_kind["depth"]["phrase"]
+    assert "profondeur" in by_kind["depth"]["phrase"].casefold()
+    assert "Horn of Africa / Gulf Aden" in by_kind["piracy"]["phrase"]
+    assert "Panache sédimentaire" in by_kind["satellite"]["phrase"]
+    assert "image satellite au-dessus" not in by_kind["satellite"]["phrase"]
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    stored_kinds = {r["kind"] for r in (plan.get("dcSubjects") or [])}
+    assert {"aton", "cable", "depth", "piracy", "satellite"} <= stored_kinds
     for rec in plan["dcSubjects"]:
         assert rec["oncePerFamilyOnLongLeg"] is True
         assert rec["phrase"]
