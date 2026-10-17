@@ -276,6 +276,29 @@ async def get_official_film(
     return out
 
 
+@app.post("/voyage/official/film")
+async def post_official_film_write(
+    lang: str = Query("fr"),
+    seconds: int = Query(150, ge=0, le=300),
+    t0: str | None = Query(None),
+):
+    """Clic Rédigé : une chaîne Super / Ultra / Lightning, jamais au GET."""
+    import official_store
+    try:
+        out = await official_store.write_film_on_click(lang=lang, seconds=seconds)
+    except Exception as exc:
+        log.exception("POST /voyage/official/film")
+        official_store.kick_worker()
+        return official_store.preparing_payload("film", {
+            "chapters": [], "source": "rules", "chars": 0,
+            "targetSeconds": seconds, "hasWritten": False,
+            **_dated_ici(f"film indisponible: {exc}", "preparing"),
+        })
+    if out.get("status") == official_store.PREPARING:
+        official_store.kick_worker()
+    return out
+
+
 class PositionRequest(BaseModel):
     latitude: float
     longitude: float
