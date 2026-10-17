@@ -29,13 +29,13 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : ED1 (rédigé au clic, fenêtre selon la pilule) invalide dc3.
-# Le remplisseur recalcule la famille film, pas les perles, et ne paie
-# plus Super ni Ultra. Pas de kind de moment nouveau : moments reste rg4.
+# Clé film : VS1 (choix VL/Lightning ou repli, budget 2:30 / 3:00) invalide ed1.
+# Le remplisseur recalcule la famille film, pas les perles. Pas un WARM monde.
+# Pas de kind de moment nouveau : moments reste rg4.
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
-FILM_SCRIPT_REV = "ed1"
+FILM_SCRIPT_REV = "vs1"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
 MOMENTS_REV = "rg4"
@@ -1139,6 +1139,7 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if isinstance(en, dict) and (en.get("chapters") or []):
         out["en"] = en
+    out["film_script_rev"] = FILM_SCRIPT_REV
     return out
 
 
@@ -2112,6 +2113,9 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     out["hasWritten"] = False
     out["source"] = out.get("source") or "rules"
     out["style"] = "raw"
+    rev = body.get("film_script_rev")
+    if rev:
+        out["film_script_rev"] = rev
     out.update(_stamp(hit))
     return out
 
