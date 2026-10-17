@@ -1570,14 +1570,29 @@ def dc_subject_candidates(changes: list[dict] | None, lang: str = "fr") -> list[
 
 
 def reserved_watch_candidate() -> dict:
-    """Trou TV1 : id d'avis. Phrase vide tant que TV1 ne l'écrit pas."""
-    return {
+    """Trou TV1 : id d'avis. Phrase lue du cache ; vide si la veille n'a rien."""
+    phrase = ""
+    url = None
+    try:
+        import escale_watch  # noqa: PLC0415
+
+        hit = escale_watch.latest_watch_entry()
+        if isinstance(hit, dict):
+            phrase = str(hit.get("text") or "").strip()
+            url = hit.get("url")
+    except Exception:
+        phrase = ""
+        url = None
+    rec = {
         "id": TV1_WATCH_ID,
         "kind": TV1_WATCH_KIND,
-        "phrase": "",
+        "phrase": phrase,
         "oncePerFamilyOnLongLeg": True,
         "reserved": True,
     }
+    if url:
+        rec["url"] = url
+    return rec
 
 
 def film_choice_bag(subjects: list[dict] | None) -> list[dict]:
@@ -1784,12 +1799,13 @@ def apply_chosen_subjects(
         if not rec:
             continue
         kind = str(rec.get("kind") or "")
-        if kind == TV1_WATCH_KIND:
-            continue
-        if kind not in DC_FAMILY_KINDS:
-            continue
         phrase = str(rec.get("phrase") or "").strip()
         if not phrase:
+            continue
+        if kind == TV1_WATCH_KIND:
+            remaining.append(rec)
+            continue
+        if kind not in DC_FAMILY_KINDS:
             continue
         if kind in seen_kind:
             continue
@@ -1800,6 +1816,7 @@ def apply_chosen_subjects(
         remaining.append(rec)
     slots = _repeat_slots(chapters)
     used = 0
+    spoken: list[dict] = []
     for rec, (ch, idx) in zip(remaining, slots):
         sents = _sentences(ch.get("text") or "")
         if idx < 0 or idx >= len(sents):
@@ -1807,6 +1824,7 @@ def apply_chosen_subjects(
         sents[idx] = rec["phrase"]
         ch["text"] = " ".join(sents).strip()
         used += 1
+        spoken.append(rec)
     budget = film_char_budget(seconds)
     if budget <= 0:
         for rec in remaining[used:]:
@@ -1817,8 +1835,21 @@ def apply_chosen_subjects(
             phrase = rec["phrase"]
             if phrase and phrase not in text:
                 ch["text"] = f"{text} {phrase}".strip() if text else phrase
+                spoken.append(rec)
     if budget > 0:
         _film_apply_char_budget(chapters, seconds)
+    blob_after = " ".join(ch.get("text") or "" for ch in chapters)
+    watch_spoken = any(
+        str(r.get("kind") or "") == TV1_WATCH_KIND
+        and str(r.get("phrase") or "") in blob_after
+        for r in spoken
+    )
+    try:
+        import escale_watch  # noqa: PLC0415
+
+        escale_watch.set_watch_in_film(watch_spoken)
+    except Exception:
+        pass
     chars = script_chars(chapters)
     return {
         **plan,
