@@ -1447,6 +1447,11 @@ python3 "$PLAN/scripts/split_post_filter.py" public-name --role bi \
   --root /tmp/bi-work --archive /tmp/archive
 ```
 
+`--archive` est le miroir complet, celui qui a toutes les références.
+Les commits `15e41b4e` (#510) et `bef9f0f3` (#227) ne sont pas des
+ancêtres de `main`. Un clone `--single-branch` de `main` ne les
+contient pas : `git show` s'arrête, et la commande aussi.
+
 **Le produit s'appelle NAVIGUIDE et il est sur `naviguide.fr`.**
 L'ancien planificateur (`naviguide/`, `www.naviguide.fr`,
 `csw6hpki.run.complete.dev`) n'est plus le site. Dans la copie
