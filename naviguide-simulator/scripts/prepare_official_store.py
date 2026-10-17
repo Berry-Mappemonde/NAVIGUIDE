@@ -16,6 +16,7 @@ import argparse
 import os
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -84,6 +85,40 @@ def one_pass(*, force_film: bool = False) -> int:
     return ready
 
 
+def _on_stop(signum, _frame) -> None:
+    global _STOP
+    _STOP = True
+    _say(f"signal {signum} : arrêt après le passage en cours")
+
+
+def _watch_parent(parent: int) -> None:
+    """Le timeout ne tue que le bash : ce python restait orphelin (ppid 1) et continuait
+    d'écrire le stock. Si le parent disparaît, on s'arrête, puis on quitte pour de bon
+    si le calcul en cours (lecture JSON) n'a pas vu le signal."""
+    global _STOP
+    while not _STOP:
+        time.sleep(2)
+        if os.getppid() == parent:
+            continue
+        _STOP = True
+        _say(f"parent {parent} disparu : arrêt")
+        try:
+            os.kill(os.getpid(), signal.SIGTERM)
+        except OSError:
+            os._exit(0)
+        time.sleep(15)
+        os._exit(0)
+
+
+def _arm_parent_watch() -> None:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    parent = os.getppid()
+    if parent <= 1:
+        return
+    threading.Thread(target=_watch_parent, args=(parent,), name="fill-parent", daemon=True).start()
+
+
 def _nudge_stamp(path: Path) -> float:
     try:
         return path.stat().st_mtime
@@ -103,13 +138,8 @@ def loop(period_s: float) -> int:
     except OSError:
         pass
 
-    def _stop(signum, _frame):
-        global _STOP
-        _STOP = True
-        _say(f"signal {signum} : arrêt après le passage en cours")
-
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _on_stop)
+    signal.signal(signal.SIGINT, _on_stop)
     try:   # un seul remplisseur par machine (29 sept. : quatre écrivaient le même stock)
         gone = official_store.stop_other_fill_processes(keep=os.getpid())
         if gone:
@@ -169,6 +199,9 @@ def main() -> int:
 
     import official_store
     official_store.reset_store()
+    signal.signal(signal.SIGTERM, _on_stop)
+    signal.signal(signal.SIGINT, _on_stop)
+    _arm_parent_watch()
     if args.write_film and not args.loop:
         out = official_store.fill_written_film(force=True)
         _say(f"rédigé : {out}")
