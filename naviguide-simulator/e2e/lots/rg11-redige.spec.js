@@ -54,7 +54,7 @@ async function openSuivreBar(page) {
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
 }
 
-test("lot RG11B — Rédigé actif si hasWritten, sinon désactivé, jamais Rédigé comme source", async ({ page }) => {
+test("lot RG11B — Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source", async ({ page }) => {
   test.setTimeout(90_000);
   const llmHits = [];
   page.on("request", (req) => {
@@ -114,8 +114,7 @@ test("lot RG11B — Rédigé actif si hasWritten, sinon désactivé, jamais Réd
   const rawOff = page.getByTestId("film-style-raw");
   const sourceOff = page.getByTestId("film-source");
   await expect(rawOff).toBeVisible({ timeout: 15_000 });
-  await expect(writtenOff).toBeDisabled({ timeout: 15_000 });
-  await expect(writtenOff).toHaveAttribute("title", /pas encore rédigé pour cette durée/i);
+  await expect(writtenOff).toBeEnabled({ timeout: 15_000 });
   await expect(rawOff).toHaveAttribute("aria-pressed", "true");
   await expect(sourceOff).toBeAttached();
   const srcText = (await sourceOff.innerText()).trim();

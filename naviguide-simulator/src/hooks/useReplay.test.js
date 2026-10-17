@@ -1110,7 +1110,10 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(off.effectiveStyle, "raw");
     assert.equal(off.source, "rules");
     assert.equal(writtenPillEnabled(off.hasWritten), false);
+    assert.equal(writtenPillEnabled({ hasWritten: false, filmReady: true }), true);
+    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
+    assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
 
     const raw = resolveServedFilm({ hasWritten: false, source: "rules" }, "raw");
     assert.equal(raw.updateHasWritten, false);
@@ -1123,6 +1126,8 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /filmRequestStyle\(filmStyle\)/);
     assert.match(hook, /style=\$\{style\}/);
     assert.match(hook, /style=written/);
+    assert.match(hook, /method: "POST"/);
+    assert.match(hook, /chooseFilmStyle/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
     assert.match(hook, /applyResolvedMeta/);

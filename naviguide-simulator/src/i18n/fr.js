@@ -115,6 +115,7 @@ export default {
   iciBriefingFallback: "Le sac autour du bateau n’a pas encore de récit.",
   storySourceLightning: "Nemotron 3.5 Lightning · Token Factory",
   storySourceSuper: "Nemotron 3 Super · Token Factory",
+  storySourceSuperReviewed: "Nemotron 3 Super · relu par Ultra",
   storySourceUltra: "Nemotron 3 Ultra · Token Factory",
   storySourceOpenrouter: "OpenRouter",
   storySourceClaude: "Claude",
