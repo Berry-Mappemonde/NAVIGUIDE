@@ -1,6 +1,7 @@
 // Lot RC14 — Tracer ouvre le monde (zoom 2), pas les Amériques (zoom 3).
 // Lot DM4 : après clic Suivre le zoom reste le plancher (bateau au centre) ;
-// on pose alors un zoom > 3 pour prouver que Tracer dézoome quand même.
+// Cinéma recadre — un setView nu revient à 2,5. On lâche le suivi (comme
+// centerOnFlag) puis on pose un zoom > 3 pour prouver que Tracer dézoome.
 // Sans API : accueil monde, molette, et le geste Tracer après un zoom > 3
 // tiennent seuls. GET /voyage/official sondé ; s'il manque, annotation +
 // saut du bateau au centre — jamais le dézoom Tracer, ni l'accueil, ni la molette.
@@ -72,7 +73,7 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — bateau au centre sauté ; zoom > 3 posé sur la carte pour le geste Tracer",
+      description: "GET /voyage/official absent — bateau au centre sauté ; suivi lâché puis zoom > 3 pour le geste Tracer",
     });
   }
 
@@ -113,6 +114,17 @@ test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ 
     }, { timeout: 15_000 }).toBeLessThan(80);
   }
   if (mapReady) {
+    await page.evaluate(() => {
+      const scene = window.__naviguideScene;
+      if (!scene?.map) return;
+      scene._pendingFollowCadrage = false;
+      scene.userNavigated = true;
+      try { scene.callbacks?.onManualNavigation?.(); } catch { /* e2e */ }
+    });
+    await expect.poll(async () => page.evaluate(() => (
+      window.__naviguideScene?.userNavigated === true
+      && window.__naviguideScene?.config?.cameraFollow === false
+    )), { timeout: 5_000 }).toBe(true);
     await page.evaluate(() => {
       window.__naviguideScene.map.setView([16, -40], 6, { animate: false });
     });
