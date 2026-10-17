@@ -31,12 +31,11 @@ export function useLogbookChat({ lang = "fr", contextFn = null } = {}) {
     } catch {
       context = null;
     }
-    const reason = Boolean(opts?.reason);
     try {
       const r = await fetch(`${API_URL}/logbook/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify({ question: q, lang, context, reason }),
+        body: JSON.stringify({ question: q, lang, context }),
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body?.detail || `HTTP ${r.status}`);

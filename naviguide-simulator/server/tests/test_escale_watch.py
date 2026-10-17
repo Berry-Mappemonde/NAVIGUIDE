@@ -64,15 +64,21 @@ def _handler(seen=None, search_body=None, summary=SUMMARY, extract_text=ENRICH):
 def _keys(monkeypatch):
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
     monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "1")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
 
 def test_watch_query_and_window():
-    q = escale_watch.watch_query("Nouméa")
-    assert "Nouméa" in q
-    assert "marina OR port OR harbour" in q
-    assert "notice OR avis OR travaux OR fermeture OR event" in q
+    q = escale_watch.watch_query("Nouméa", when=NOW)
+    assert q == "Nouméa avis aux navigateurs 2026-09-20"
+    assert escale_watch.format_watch_question("travaux", "Nouméa", NOW) == (
+        "Nouméa travaux port marina 2026-09-20"
+    )
+    assert escale_watch.format_watch_question("fermeture", "Nouméa", NOW) == (
+        "Nouméa fermeture port 2026-09-20"
+    )
+    assert escale_watch.format_watch_question("inventée", "Nouméa", NOW) is None
     assert "noumea.nc" in escale_watch.official_domains("Nouméa")
     clock = {
         "t0": "2026-09-10T08:00:00Z",
@@ -217,3 +223,177 @@ def test_ici_warm_hooks_daily_watch():
     assert "escale_watch" in src
     assert "run_daily" in src
     assert "news" in Path(__file__).resolve().parents[1].joinpath("voyage_journal.py").read_text()
+
+
+def test_question_outside_list_refused():
+    left = {"travaux", "fermeture"}
+    assert escale_watch.parse_second_question('{"question": "travaux"}', left) == "travaux"
+    assert escale_watch.parse_second_question('{"question": "avis"}', left) is None
+    assert escale_watch.parse_second_question('{"question": "inventée"}', left) is None
+    assert escale_watch.parse_second_question("What is the weather in Noumea today?", left) is None
+    assert escale_watch.parse_second_question('{"question": null}', left) is None
+
+
+def test_flag_closed_zero_tavily_search(monkeypatch):
+    _keys(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "0")
+    seen = []
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler(seen))) as client:
+            return await escale_watch.watch_stop(PORT, NOW, client=client)
+
+    assert asyncio.run(run()) is None
+    assert [u for u in seen if u.endswith("/search")] == []
+    assert not escale_watch.watch_done("Nouméa")
+
+
+def test_two_rounds_max_lightning_picks_from_list(monkeypatch):
+    _keys(monkeypatch)
+    journal.reset()
+    seen, bodies = [], []
+
+    def search_results(body):
+        q = body.get("query") or ""
+        if "avis aux navigateurs" in q:
+            return []
+        return [TAVILY_HIT]
+
+    def handler(request: httpx.Request):
+        url = str(request.url)
+        seen.append(url)
+        if url.endswith("/search"):
+            body = json.loads(request.read().decode())
+            bodies.append(body)
+            return httpx.Response(200, json={"results": search_results(body)})
+        if "tokenfactory" in url:
+            payload = json.loads(request.read().decode())
+            blob = json.dumps(payload, ensure_ascii=False)
+            if "Lot TV1" in blob:
+                return httpx.Response(200, json=_chat_ok('{"question": "travaux"}'))
+            return httpx.Response(200, json=_chat_ok(SUMMARY))
+        return httpx.Response(404, json={"detail": url})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await escale_watch.watch_stop(PORT, NOW, client=client)
+
+    entry = asyncio.run(run())
+    assert entry and "Travaux" in entry["text"]
+    assert entry["url"] == TAVILY_HIT["url"]
+    assert "42" not in entry["text"]
+    assert entry.get("rounds") == 2
+    assert entry.get("question") == "travaux"
+    assert len(bodies) == 2
+    allowed = {
+        escale_watch.format_watch_question(q, "Nouméa", NOW)
+        for q in escale_watch.WATCH_QUESTION_IDS
+    }
+    assert all(b["query"] in allowed for b in bodies)
+    assert bodies[0]["query"] == "Nouméa avis aux navigateurs 2026-09-20"
+    assert bodies[1]["query"] == "Nouméa travaux port marina 2026-09-20"
+
+
+def test_no_third_round_even_if_lightning_asks(monkeypatch):
+    _keys(monkeypatch)
+    journal.reset()
+    bodies = []
+
+    def handler(request: httpx.Request):
+        url = str(request.url)
+        if url.endswith("/search"):
+            body = json.loads(request.read().decode())
+            bodies.append(body)
+            return httpx.Response(200, json={"results": []})
+        if "tokenfactory" in url:
+            payload = json.loads(request.read().decode())
+            blob = json.dumps(payload, ensure_ascii=False)
+            if "Lot TV1" in blob:
+                user = payload.get("messages") or []
+                content = ""
+                for msg in user:
+                    if msg.get("role") == "user":
+                        content = msg.get("content") or ""
+                remaining = []
+                try:
+                    remaining = json.loads(content).get("remaining") or []
+                except (TypeError, json.JSONDecodeError):
+                    remaining = []
+                pick = remaining[0] if remaining else "fermeture"
+                return httpx.Response(200, json=_chat_ok(json.dumps({"question": pick})))
+            return httpx.Response(200, json=_chat_ok(SUMMARY))
+        return httpx.Response(404, json={"detail": url})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await escale_watch.watch_stop(PORT, NOW, client=client)
+
+    assert asyncio.run(run()) is None
+    assert len(bodies) == 2
+    assert all("fermeture" not in (b.get("query") or "") for b in bodies)
+
+
+def test_invented_question_never_sent_to_tavily(monkeypatch):
+    _keys(monkeypatch)
+    journal.reset()
+    bodies = []
+
+    def handler(request: httpx.Request):
+        url = str(request.url)
+        if url.endswith("/search"):
+            body = json.loads(request.read().decode())
+            bodies.append(body)
+            return httpx.Response(200, json={"results": [TAVILY_HIT]})
+        if "tokenfactory" in url:
+            payload = json.loads(request.read().decode())
+            blob = json.dumps(payload, ensure_ascii=False)
+            if "Lot TV1" in blob:
+                return httpx.Response(200, json=_chat_ok(
+                    '{"question": "Nouméa weather forecast tomorrow"}'
+                ))
+            return httpx.Response(200, json=_chat_ok(SUMMARY))
+        return httpx.Response(404, json={"detail": url})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await escale_watch.watch_stop(PORT, NOW, client=client)
+
+    entry = asyncio.run(run())
+    assert entry and entry["url"] == TAVILY_HIT["url"]
+    assert len(bodies) == 1
+    assert bodies[0]["query"] == "Nouméa avis aux navigateurs 2026-09-20"
+    assert "weather" not in bodies[0]["query"]
+
+
+def test_daily_search_cap_blocks_next_stop(monkeypatch):
+    _keys(monkeypatch)
+    monkeypatch.setenv("NAVIGUIDE_WATCH_DAILY_SEARCHES", "1")
+    journal.reset()
+    seen = []
+    other = {**PORT, "name": "Ajaccio"}
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler(seen))) as client:
+            a = await escale_watch.watch_stop(PORT, NOW, client=client)
+            b = await escale_watch.watch_stop(other, NOW, client=client)
+            return a, b
+
+    a, b = asyncio.run(run())
+    assert a and a["kind"] == "news"
+    assert b is None
+    assert len([u for u in seen if u.endswith("/search")]) == 1
+
+
+def test_watch_phrase_for_fiche_not_chat_when_in_film():
+    phrase = "Travaux annoncés à la marina de Motu Uta"
+    entry = escale_watch.news_entry(
+        PORT, phrase, TAVILY_HIT["url"], NOW, question="travaux", rounds=1,
+    )
+    assert entry["text"] == phrase
+    assert entry["url"] == TAVILY_HIT["url"]
+    escale_watch.set_watch_in_film(False)
+    kept = escale_watch.drop_news_if_in_film([entry, {"kind": "stop", "name": "Nouméa"}])
+    assert [e["kind"] for e in kept] == ["news", "stop"]
+    escale_watch.set_watch_in_film(True)
+    dropped = escale_watch.drop_news_if_in_film([entry, {"kind": "stop", "name": "Nouméa"}])
+    assert [e["kind"] for e in dropped] == ["stop"]

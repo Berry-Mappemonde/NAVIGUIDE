@@ -13,6 +13,8 @@ __pycache__/
 
 # Caches runtime du backend
 backend/data/.tld_cache/
+# Réponses Overpass rejouées en CI (régénérées, jamais commitées)
+backend/.ci-cache/
 # Snapshots datés des exports (archives locales, jamais commitées)
 backend/exports/
 # Dump GeoJSON marinas mis en cache (15 Mo, régénéré au runtime)

@@ -14,9 +14,9 @@ const recetteDirs = [
 for (const dir of recetteDirs) mkdirSync(dir, { recursive: true });
 
 const shot = (page, name) => Promise.all(recetteDirs.map((dir) => page.screenshot({
-  path: join(dir, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
+  path: join(dir, `${name}.webp`),
+  type: "webp",
+  quality: 85,
   fullPage: false,
 })));
 
