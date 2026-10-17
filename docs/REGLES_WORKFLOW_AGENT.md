@@ -161,6 +161,13 @@ test("lot Q — replay : zoom stable, récit dès le départ", async ({ page }) 
 
 Règles du spec :
 
+- **Même PR que le changement d'écran** : si le lot change un bouton, un
+  libellé ou un onglet, il met à jour **dans cette PR** son spec
+  (`e2e/lots/<lot>.spec.js`) **et** tout autre spec / test unitaire qui
+  affirme encore l'ancien texte (sinon la CI de la tête devient un faux
+  rouge). On aligne l'assertion sur l'interface livrée ; on n'affaiblit
+  pas un contrat (pas d'annotation à la place d'un assert, pas de
+  `test.skip` pour un libellé qu'on a soi-même renommé).
 - Il **vérifie** (assertions sur `data-testid`, textes, `window.__naviguideScene`)
   **puis** capture. Une capture sans assertion ne prouve rien.
 - Il tourne sans API (le build doit tenir debout seul) ; s'il a besoin de l'API,
@@ -184,7 +191,9 @@ Liste de contrôle, à cocher dans la PR :
 - [ ] i18n : chaque texte nouveau existe en `fr.js` **et** `en.js`.
 - [ ] Tests : au moins un test par comportement nouveau ; les tests de contrat
       existants passent sans être affaiblis.
-- [ ] Spec Playwright présent si l'UI change ; captures dans `docs/recette/`.
+- [ ] Spec Playwright présent si l'UI change ; les specs / tests qui citaient
+      l'ancien bouton, libellé ou onglet sont mis à jour **dans cette PR** ;
+      captures dans `docs/recette/`.
 - [ ] Taille de la PR ≤ 400 lignes hors tests/données, ou découpage justifié.
 - [ ] Pas de clé, de secret, d'URL privée dans le diff ; `.env` jamais commité.
 - [ ] Option : review Bugbot (`/review-bugbot`) pour les lots M/L.
@@ -211,7 +220,7 @@ Liste de contrôle, à cocher dans la PR :
 Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/<PLAN>.md § 0 et le lot <X> (texte intégral).
 Fichiers : ouvre SEULEMENT ceux listés dans le lot ; App.jsx et MapSceneController.js par `rg -n` + Read avec offset/limit.
 Branche : <type>/lot-<x>-<slug> depuis main à jour. Une PR sur main, corps = gabarit § 3. Ne merge pas.
-Tests : cd naviguide-simulator && npm test && .venv/bin/python -m pytest -q && npx vite build ; npm run e2e -- e2e/lots/<lot>.spec.js si l'UI change.
+Tests : cd naviguide-simulator && npm test && .venv/bin/python -m pytest -q && npx vite build ; npm run e2e -- e2e/lots/<lot>.spec.js si l'UI change. Si tu changes un bouton, un libellé ou un onglet : mets à jour dans CETTE PR ton spec et tout spec / test qui affirme encore l'ancien texte.
 Recette : rejoue les étapes « Recette » du lot avec le spec Playwright du lot ; captures JPEG dans docs/recette/<lot>/ ; référence-les dans la PR.
 Interdits : retirer une surface visible sur main ; un chiffre produit par un LLM ; une vidéo ; un merge ; un push --force ; un secret dans le diff.
 Modèle : cursor-grok-4.6-xhigh-fast (jamais claude-* sur un worker Cloud).

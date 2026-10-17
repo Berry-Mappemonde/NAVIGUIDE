@@ -6,7 +6,10 @@ la voix, la caméra, le bateau ou le sous-titre. La boucle (run_lots.py)
 ne l'appelle pas. Le réviseur de nuit lit les lignes « - [ ] KO : … »
 et pose les lots RC — pas un canal à part.
 
-Usage (poste, à la main — premier essai payant au porteur) :
+Passeur : Token Factory (décision du porteur, 17 oct.). CI et run_lots
+n'appellent toujours pas. Clé NEBIUS_API_KEY, modèle nvidia/Nemotron-3.5-Super-VL.
+
+Usage (poste) :
     NAVIGUIDE_VL_REVIEW=1 python3 infra/agents/vl_film_review.py \\
         --images shot1.jpg --telemetry telemetry.json --subtitle-file sub.txt \\
         --diff-files src/map/filmCamera.js src/engine/replay.js
@@ -18,6 +21,7 @@ import base64
 import json
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 import urllib.error
@@ -28,6 +32,9 @@ ENV_FLAG = "NAVIGUIDE_VL_REVIEW"
 ENV_URL = "NAVIGUIDE_VL_URL"
 ENV_KEY = "NAVIGUIDE_VL_KEY"
 ENV_MODEL = "NAVIGUIDE_VL_MODEL"
+ENV_FILE = Path.home() / ".config" / "naviguide" / "simulator.env"
+TF_URL = "https://api.tokenfactory.nebius.com/v1/chat/completions"
+TF_MODEL = "nvidia/Nemotron-3.5-Super-VL"
 
 # Ligne que le réviseur de nuit doit voir — hors titre 🤖, hors « — KO ».
 KO_LINE_RE = re.compile(r"^\s*[-*]\s*\[\s*\]\s*KO\s*:\s+\S")
@@ -41,7 +48,7 @@ FILM_TOUCH_RE = re.compile(
     re.I,
 )
 
-_FORBIDDEN_VL_HOST = re.compile(r"tokenfactory|nebius\.com", re.I)
+_REQUIRED_VL_HOST = re.compile(r"tokenfactory\.nebius\.com", re.I)
 _NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _PROPER_RE = re.compile(
     r"\b([A-ZÉÈÊÀÂÎÔÙÛÇ][a-zàâäéèêëïîôùûüç]{2,}"
@@ -108,11 +115,40 @@ def paths_from_name_list(text: str) -> list[str]:
     return [ln.strip() for ln in (text or "").splitlines() if ln.strip() and not ln.startswith("#")]
 
 
+def _env_file_values(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for ln in raw.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, _, v = s.partition("=")
+        out[k.strip()] = v.strip().strip("'").strip('"')
+    return out
+
+
+def _setting(name: str) -> str:
+    """os.environ d'abord (tests), sinon simulator.env (NEBIUS_API_KEY pour VL)."""
+    if name in os.environ:
+        return (os.environ.get(name) or "").strip()
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return ""
+    vals = _env_file_values(ENV_FILE)
+    if name in (ENV_KEY, "NEBIUS_API_KEY"):
+        return (vals.get(ENV_KEY) or vals.get("NEBIUS_API_KEY") or "").strip()
+    return (vals.get(name) or "").strip()
+
+
 def vl_review_enabled() -> bool:
-    """Éteint si la variable manque, si elle n'est pas 1, ou en CI (jamais Token Factory / jamais la boucle)."""
+    """Éteint si la variable manque, si elle n'est pas 1, ou en CI (CI et run_lots n'appellent pas)."""
     if (os.environ.get("CI") or "").strip().lower() in ("1", "true", "yes"):
         return False
-    return (os.environ.get(ENV_FLAG) or "").strip() == "1"
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return (os.environ.get(ENV_FLAG) or "").strip() == "1"
+    return _setting(ENV_FLAG) == "1"
 
 
 def build_vl_prompt(telemetry: object, subtitle: str) -> str:
@@ -168,17 +204,19 @@ def sanitize_vl_comment(raw: str, telemetry: object, subtitle: str = "") -> str:
 
 
 def call_vl(prompt: str, images: list[str]) -> str:
-    """Appel OpenAI-compatible. Jamais Token Factory. URL et clé hors dépôt."""
-    url = (os.environ.get(ENV_URL) or "").strip()
+    """Appel OpenAI-compatible Token Factory. Clé hors dépôt (NEBIUS_API_KEY)."""
+    url = _setting(ENV_URL) or TF_URL
     if not url:
+        raise RuntimeError(f"{ENV_URL} absent : viser {TF_URL}")
+    if not _REQUIRED_VL_HOST.search(url):
         raise RuntimeError(
-            f"{ENV_URL} absent : le premier essai payant est au porteur, sur le poste. "
-            "Ne pas pointer vers Token Factory."
+            "la revue VL passe par Token Factory (décision du porteur, 17 oct.) : "
+            f"URL {url!r} refusée"
         )
-    if _FORBIDDEN_VL_HOST.search(url):
-        raise RuntimeError("Token Factory / Nebius interdit pour VL (lot VR1)")
-    key = (os.environ.get(ENV_KEY) or "").strip()
-    model = (os.environ.get(ENV_MODEL) or "vision").strip()
+    key = _setting(ENV_KEY) or _setting("NEBIUS_API_KEY")
+    if not key:
+        raise RuntimeError("NEBIUS_API_KEY / NAVIGUIDE_VL_KEY absent (Token Factory)")
+    model = _setting(ENV_MODEL) or TF_MODEL
     content: list[dict] = [{"type": "text", "text": prompt}]
     for path in images or []:
         p = Path(path)
@@ -188,16 +226,24 @@ def call_vl(prompt: str, images: list[str]) -> str:
         b64 = base64.b64encode(raw).decode("ascii")
         mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
         content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
-    payload = {"model": model, "messages": [{"role": "user", "content": content}], "temperature": 0}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "temperature": 0,
+        "max_tokens": 400,
+        "reasoning_effort": "none",
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
     headers = {"Content-Type": "application/json", "User-Agent": "bim-vl-film-review"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST", headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"VL HTTP {e.code}") from e
+        detail = e.read().decode("utf-8", "replace")[:300]
+        raise RuntimeError(f"VL HTTP {e.code}: {detail}") from e
     choices = data.get("choices") or []
     if not choices:
         return ""
@@ -220,6 +266,97 @@ def review_film(
         return ""
     raw = (vl_call or call_vl)(build_vl_prompt(telemetry, subtitle), list(images or []))
     return sanitize_vl_comment(raw, telemetry, subtitle)
+
+
+def parse_cinematique_log(text: str) -> dict:
+    """Nombres extraits du stdout de film-cinematique.mjs — seuls chiffres autorisés dans les KO."""
+    out: dict = {"log": (text or "")[:4000]}
+    fps = re.search(r"→\s*([\d.]+)\s*fps", text or "")
+    if fps:
+        out["fps"] = float(fps.group(1))
+    p95 = re.search(r"p95\s+([\d.]+)\s*ms", text or "")
+    if p95:
+        out["dt_ms_p95"] = float(p95.group(1))
+    mx = re.search(r"max\s+([\d.]+)\s*ms", text or "")
+    if mx:
+        out["dt_ms_max"] = float(mx.group(1))
+    over = re.search(r"frames > 34 ms : \d+ \(([\d.]+)\s*%\)", text or "")
+    if over:
+        out["frames_over_34ms_pct"] = float(over.group(1))
+    zboat = re.search(r"nuls \(< 0,05 px\) (\d+) \(([\d.]+)\s*%\)", text or "")
+    if zboat:
+        out["boat_zero_n"] = int(zboat.group(1))
+        out["boat_zero_pct"] = float(zboat.group(2))
+    zcam = re.search(r"caméra : pas nuls (\d+) \(([\d.]+)\s*%\)", text or "")
+    if zcam:
+        out["camera_zero_n"] = int(zcam.group(1))
+        out["camera_zero_pct"] = float(zcam.group(2))
+    noadv = re.search(r"frames sans avance (\d+)", text or "")
+    if noadv:
+        out["frames_no_advance"] = int(noadv.group(1))
+    return out
+
+
+def capture_film_motion(url: str, seconds: int = 15, sim_root: Path | None = None) -> tuple[dict, list[str]]:
+    """Joue Revoir sur le poste, 15 s, sans voix. Retourne télémétrie + chemin de capture."""
+    root = sim_root or Path(__file__).resolve().parents[2] / "naviguide-simulator"
+    script = root / "scripts" / "film-cinematique.mjs"
+    if not script.is_file():
+        raise RuntimeError(f"script absent : {script}")
+    shot = Path("/tmp/film-cinematique.png")
+    env = {k: v for k, v in os.environ.items() if k != "PLAYWRIGHT_BROWSERS_PATH"}
+    proc = subprocess.run(
+        ["node", str(script), url, str(int(seconds))],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=max(60, int(seconds) + 40),
+        env=env,
+    )
+    log = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    if proc.returncode != 0:
+        raise RuntimeError(f"film-cinematique code {proc.returncode}: {log[-800:]}")
+    images = [str(shot)] if shot.is_file() else []
+    return parse_cinematique_log(log), images
+
+
+def review_tranche(state, ids: list[str], http, recette_url: str = "http://127.0.0.1:5174/?view=suivre") -> str:
+    """Capture le poste, appelle VL, poste les KO sur la tête. Chaîne vide si rien."""
+    if not vl_review_enabled():
+        return ""
+    import run_lots as rl  # noqa: PLC0415
+
+    paths: list[str] = []
+    tip_num = None
+    for lid in ids:
+        num = rl.pr_number((state.done.get(lid) or {}).get("pr"))
+        if not num:
+            continue
+        tip_num = num
+        try:
+            files = http.github(f"/repos/{rl.owner_repo(rl.DEFAULT_REPO)}/pulls/{num}/files?per_page=100") or []
+        except Exception:
+            files = []
+        paths.extend(f.get("filename") or "" for f in files)
+    if not film_diff_touches(paths) or not tip_num:
+        return ""
+    telemetry, images = capture_film_motion(recette_url)
+    comment = review_film(
+        images=images,
+        telemetry=telemetry,
+        subtitle="",
+        diff_files=paths,
+    )
+    if not comment:
+        return ""
+    body = (
+        "## Revue VL (mouvement)\n\n"
+        "Nemotron VL, saccade / décrochage / zoom / calage / fluidité seulement. "
+        "Pas un fait de mer. Le réviseur de nuit en fait un lot RC s'ils tiennent.\n\n"
+        f"{comment}\n"
+    )
+    from post_pr_comment import post  # noqa: PLC0415
+    return post(int(tip_num), body)
 
 
 def movement_kos_section(comments: list[dict] | None) -> list[str]:
