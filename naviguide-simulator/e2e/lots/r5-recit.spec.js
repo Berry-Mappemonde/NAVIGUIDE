@@ -12,7 +12,7 @@ const shot = (page, name) => page.screenshot({
 });
 
 async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter/i }).first();
+  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
   if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
     const ack = page.getByTestId("not-for-nav-ack");
     if (await ack.isVisible().catch(() => false)) await ack.check();
