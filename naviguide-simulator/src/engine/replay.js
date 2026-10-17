@@ -548,8 +548,29 @@ export function stepFilmTime({
     desired = sent.endT;
   }
 
+  // RC52 : tant que la phrase n'est pas finie, ne pas rester / viser tB.
+  let fromT = Number(t);
+  if (!phraseEnded) {
+    const phraseT = plan?.timeAt ? plan.timeAt(chapterIdx, charIdx) : sent.startT;
+    const tB = Number(chapter?.tB);
+    const lastSentence = sent.end + 1e-6 >= (Number(chapter?.chars) || sent.end);
+    if (Number.isFinite(sent.endT) && Number.isFinite(desired)) {
+      desired = Math.min(desired, sent.endT);
+    }
+    if (
+      Number.isFinite(fromT) && Number.isFinite(tB) && fromT + 2 >= tB && !lastSentence
+      && Number.isFinite(phraseT) && phraseT + 1 < tB
+    ) {
+      fromT = phraseT;
+      desired = phraseT;
+    } else if (Number.isFinite(sent.endT) && Number.isFinite(fromT) && fromT > sent.endT) {
+      fromT = Number.isFinite(phraseT) ? Math.min(phraseT, sent.endT) : sent.endT;
+      desired = fromT;
+    }
+  }
+
   const gov = governReplayTime({
-    t,
+    t: fromT,
     desiredT: desired,
     dt,
     clock,
@@ -557,7 +578,8 @@ export function stepFilmTime({
     lat: phi,
     atQuay: atQuay && !phraseEnded,
     // Voice-led: never let v_min pull the boat past what is being said.
-    tCap: voiceLed ? desired : sent.endT,
+    // RC52 : même mené par la voix, pas au-delà de la phrase en cours.
+    tCap: phraseEnded && voiceLed ? desired : sent.endT,
   });
   const wait = voiceShouldWait({
     t: gov.t,

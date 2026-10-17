@@ -3847,3 +3847,249 @@ def test_rc41_chapter_with_hs_alert_is_readable():
     assert not re.search(r"Hs \d+ m ≥", text)
     for sent in _sentences(text):
         assert not _DUP_METERS_RE.search(sent), sent
+
+
+# ---------------------------------------------------------------------------
+# Lot RC53 — casse des noms d'eaux en anglais (pas de rebuild du film)
+# ---------------------------------------------------------------------------
+
+_RC53_LOWER_WATERS = (
+    "french waters",
+    "italian waters",
+    "moroccan waters",
+    "madeira waters",
+    "martinique waters",
+    "guadeloupe waters",
+)
+
+
+def _rc53_assert_en_waters_cased(blob: str) -> None:
+    for low in _RC53_LOWER_WATERS:
+        assert low not in blob, blob
+    assert "French waters" in blob
+    assert "Italian waters" in blob
+    assert "Moroccan waters" in blob
+    assert "Madeira waters" in blob
+    assert "Martinique waters" in blob
+    assert "Guadeloupe waters" in blob
+
+
+def test_rc53_en_waters_title_case_on_ready_script():
+    """Script anglais ready : plus de minuscule en tête de nom d'eau ;
+    la forme capitale reste. Filet à la lecture, pas un bumper de rev."""
+    from film_script import fix_en_waters_casing, speak_film_text
+
+    mixed = (
+        "On 15 May, French waters. Then, french waters. "
+        "Then, italian waters. Then, moroccan waters. "
+        "Then, madeira waters. Then, martinique waters. Then, guadeloupe waters."
+    )
+    fixed = fix_en_waters_casing(mixed)
+    _rc53_assert_en_waters_cased(fixed)
+    spoken = speak_film_text(mixed, "en")
+    _rc53_assert_en_waters_cased(spoken)
+    # FR inchangé (eaux françaises, pas « french waters »)
+    assert "french waters" not in speak_film_text("Le 15 mai, les eaux françaises.", "fr")
+
+    thinned = thin_chapter_dates([
+        "On 15 May, French waters.",
+        "On 16 May, Italian waters.",
+        "On 18 May, Moroccan waters.",
+        "On 20 May, Madeira waters.",
+        "On 22 May, Martinique waters.",
+        "On 24 May, Guadeloupe waters.",
+        "Arrival at Ajaccio on 26 May.",
+    ], "en")
+    _rc53_assert_en_waters_cased(" ".join(thinned))
+
+    clock = _rc35_lr_clock()
+
+    def mom(seq, iso, lat, lon, changes, **here_zee):
+        here = {"zee": here_zee} if here_zee.get("name") else {}
+        return {
+            "seq": seq, "t": iso, "signature": f"s{seq}", "legIdx": 0,
+            "pos": {"lat": lat, "lon": lon},
+            "changes": changes,
+            "moment": {
+                "leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)", "headingDeg": 200.0},
+                "here": here,
+                "pos": {"lat": lat, "lon": lon},
+            },
+        }
+
+    journal = {"moments": [
+        mom(0, "2026-05-15T12:00:00Z", 46.15, -1.16, [
+            {"kind": "zee-enter", "score": 2, "title": "French Exclusive Economic Zone",
+             "fact": "French Exclusive Economic Zone"},
+        ], name="French Exclusive Economic Zone", mrgid=5677),
+        mom(1, "2026-05-16T12:00:00Z", 43.2, -9.0, [
+            {"kind": "zee-enter", "score": 2, "title": "Spanish Exclusive Economic Zone",
+             "fact": "Spanish Exclusive Economic Zone"},
+        ]),
+        mom(2, "2026-05-21T14:00:00Z", 35.7, -6.0, [
+            {"kind": "zee-enter", "score": 2, "title": "Moroccan Exclusive Economic Zone",
+             "fact": "Moroccan Exclusive Economic Zone"},
+        ]),
+        mom(3, "2026-05-24T12:00:00Z", 41.0, 8.4, [
+            {"kind": "zee-enter", "score": 2, "title": "Italian Exclusive Economic Zone",
+             "fact": "Italian Exclusive Economic Zone"},
+        ]),
+        mom(4, "2026-05-26T12:00:00Z", 41.9, 8.7, [
+            {"kind": "escale", "score": 3, "title": "Arrival at Ajaccio", "fact": "x"},
+        ]),
+    ], "latest": []}
+    live = {"filmNm": 1820, "sailNm": 1820, "iso": "2026-05-26T12:00:00Z",
+            "status": "live", "atStop": "Ajaccio"}
+    plan = build_raw_script(
+        clock, clock["marks"], live, journal,
+        lang="en", seconds=0, now_ms=_ms("2026-05-27T08:00:00Z"),
+    )
+    assert plan.get("source") == "rules"
+    blob = " ".join(c.get("text") or "" for c in plan["chapters"])
+    for low in _RC53_LOWER_WATERS:
+        assert low not in blob, blob
+    assert "French waters" in blob, blob
+    assert "Italian waters" in blob, blob
+    assert "Moroccan waters" in blob, blob
+
+
+def _rc55_climo(iso, *, lat, lon, place_en, place_fr):
+    return {
+        "kind": "climo", "score": 2, "event": "se_trades", "regimeId": "se_trades",
+        "title": "alizés de sud-est", "t": iso, "iso": iso,
+        "placeEn": place_en, "placeFr": place_fr,
+        "source": "atlas", "nature": "season", "windKnots": 11.0,
+        "lat": lat, "lon": lon,
+        "fact": f"On {iso[:10]}, {place_en}, the southeasterly trade winds set in: eleven seasonal knots.",
+    }
+
+
+def test_rc55_saint_pierre_chapter_omits_guiana_and_equator():
+    """RC55 : le chapitre qui part de Saint-Pierre ne contient ni equator ni
+    French Guiana. Marigot → Cayenne (Paramaribo) et Cayenne → Papeete
+    (Balboa) gardent l'équateur."""
+    marks = [
+        {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0,
+         "iso": OFFICIAL_T0, "holdHours": 0, "lat": 46.8, "lon": 1.6},
+        {"name": "La Rochelle", "nm": 122, "filmNm": 122,
+         "iso": "2026-05-15T12:00:00Z", "holdHours": 0, "lat": 46.15, "lon": -1.16},
+        {"name": "Marigot (Saint-Martin)", "nm": 3500, "filmNm": 3500,
+         "iso": "2026-07-09T08:00:00Z", "holdHours": 72, "lat": 18.07, "lon": -63.08},
+        {"name": "Cayenne (Guyane)", "nm": 4000, "filmNm": 4000,
+         "iso": "2026-07-19T08:00:00Z", "holdHours": 72, "lat": 4.93, "lon": -52.33},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4000, "filmNm": 4080,
+         "iso": "2026-07-22T08:00:00Z", "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "nm": 4400, "filmNm": 4480,
+         "iso": "2026-07-25T08:00:00Z", "holdHours": 72, "lat": 46.78, "lon": -56.18},
+        {"name": "Halifax (Nouvelle-Écosse)", "nm": 4800, "filmNm": 4880,
+         "iso": "2026-07-29T08:00:00Z", "holdHours": 24, "lat": 44.65, "lon": -63.57, "kind": "hub"},
+        {"name": "Cayenne (Guyane)", "nm": 4800, "filmNm": 4960,
+         "iso": "2026-07-30T08:00:00Z", "holdHours": 0, "lat": 4.93, "lon": -52.33},
+        {"name": "Papeete (Polynésie française)", "nm": 11000, "filmNm": 11100,
+         "iso": "2026-09-08T08:00:00Z", "holdHours": 72, "lat": -17.5, "lon": -149.5},
+    ]
+    clock = {
+        "t0": OFFICIAL_T0, "marks": marks, "vertices": [
+            {"iso": "2026-07-12T12:00:00Z", "lat": 5.8, "lon": -55.2, "vehicle": "main"},
+            {"iso": "2026-07-16T12:00:00Z", "lat": 0.4, "lon": -50.0, "vehicle": "main"},
+            {"iso": "2026-07-19T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "quay"},
+            {"iso": "2026-07-22T08:00:00Z", "lat": 44.65, "lon": -63.57, "vehicle": "plane"},
+            {"iso": "2026-07-23T08:00:00Z", "lat": 45.7, "lon": -60.0, "vehicle": "side"},
+            {"iso": "2026-07-25T08:00:00Z", "lat": 46.78, "lon": -56.18, "vehicle": "side"},
+            {"iso": "2026-07-27T12:00:00Z", "lat": 45.5, "lon": -60.0, "vehicle": "side"},
+            {"iso": "2026-07-29T08:00:00Z", "lat": 44.65, "lon": -63.57, "vehicle": "side"},
+            {"iso": "2026-07-30T08:00:00Z", "lat": 4.93, "lon": -52.33, "vehicle": "plane"},
+            {"iso": "2026-08-10T12:00:00Z", "lat": 8.95, "lon": -79.57, "vehicle": "main"},
+            {"iso": "2026-08-15T12:00:00Z", "lat": 0.2, "lon": -80.0, "vehicle": "main"},
+        ],
+    }
+    live = {"filmNm": 12000, "sailNm": 11800, "iso": "2026-09-19T02:00:00Z", "status": "live"}
+    guiana = {
+        "kind": "zee-enter", "score": 2,
+        "title": "French Guiana Exclusive Economic Zone",
+        "fact": "French Guiana Exclusive Economic Zone",
+        "lat": 4.93, "lon": -52.33,
+    }
+    equator_approach = _rc55_climo(
+        "2026-07-16T12:00:00Z", lat=0.4, lon=-50.0,
+        place_en="at the equator", place_fr="à l'équateur",
+    )
+    equator_pacific = _rc55_climo(
+        "2026-08-15T12:00:00Z", lat=0.2, lon=-80.0,
+        place_en="at the equator", place_fr="à l'équateur",
+    )
+    leak = _rc55_climo(
+        "2026-07-27T12:00:00Z", lat=4.93, lon=-52.33,
+        place_en="at the equator", place_fr="à l'équateur",
+    )
+    journal = {"moments": [
+        {"seq": 0, "t": "2026-07-14T08:00:00Z", "changes": [
+            {"kind": "coast", "score": 3, "title": "Paramaribo", "fact": "Paramaribo",
+             "ports": ["Paramaribo"], "lat": 5.83, "lon": -55.17},
+        ], "moment": {"leg": {"from": "Marigot (Saint-Martin)", "to": "Cayenne (Guyane)"},
+                      "pos": {"lat": 5.83, "lon": -55.17}},
+         "pos": {"lat": 5.83, "lon": -55.17}},
+        {"seq": 1, "t": "2026-07-15T12:00:00Z", "changes": [guiana],
+         "moment": {"leg": {"from": "Marigot (Saint-Martin)", "to": "Cayenne (Guyane)"},
+                    "pos": {"lat": 4.93, "lon": -52.33}},
+         "pos": {"lat": 4.93, "lon": -52.33}},
+        {"seq": 2, "t": "2026-07-16T12:00:00Z", "changes": [equator_approach],
+         "moment": {"leg": {"from": "Marigot (Saint-Martin)", "to": "Cayenne (Guyane)"},
+                    "pos": {"lat": 0.4, "lon": -50.0}},
+         "pos": {"lat": 0.4, "lon": -50.0}},
+        {"seq": 3, "t": "2026-07-26T12:00:00Z", "changes": [
+            {"kind": "zee-enter", "score": 2,
+             "title": "Canadian Exclusive Economic Zone",
+             "fact": "Canadian Exclusive Economic Zone",
+             "lat": 45.7, "lon": -60.0},
+        ], "moment": {"leg": {"from": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+                              "to": "Halifax (Nouvelle-Écosse)", "vehicle": "side"},
+                      "pos": {"lat": 45.7, "lon": -60.0}},
+         "pos": {"lat": 45.7, "lon": -60.0}},
+        # Fuite du constat (16 oct.) : Guyane + équateur datés dans la fenêtre
+        # Saint-Pierre, alors que le catamaran est à quai à Cayenne.
+        {"seq": 4, "t": "2026-07-27T12:00:00Z", "changes": [
+            {**guiana, "t": "2026-07-27T12:00:00Z"}, leak,
+        ], "moment": {"leg": {"from": "Marigot (Saint-Martin)", "to": "Cayenne (Guyane)"},
+                      "pos": {"lat": 4.93, "lon": -52.33}},
+         "pos": {"lat": 4.93, "lon": -52.33}},
+        {"seq": 5, "t": "2026-08-10T12:00:00Z", "changes": [
+            {"kind": "coast", "score": 3, "title": "Balboa", "fact": "Balboa",
+             "ports": ["Balboa"], "lat": 8.95, "lon": -79.57},
+        ], "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"},
+                      "pos": {"lat": 8.95, "lon": -79.57}},
+         "pos": {"lat": 8.95, "lon": -79.57}},
+        {"seq": 6, "t": "2026-08-15T12:00:00Z", "changes": [equator_pacific],
+         "moment": {"leg": {"from": "Cayenne (Guyane)", "to": "Papeete (Polynésie française)"},
+                    "pos": {"lat": 0.2, "lon": -80.0}},
+         "pos": {"lat": 0.2, "lon": -80.0}},
+    ], "latest": []}
+    plan = build_raw_script(
+        clock, marks, live, journal, lang="en", seconds=0, now_ms=NOW_MS,
+    )
+    names = [(c.get("fromName") or "", c.get("toName") or "") for c in plan["chapters"]]
+    spm_chs = [
+        c for c in plan["chapters"]
+        if "Saint-Pierre" in (c.get("fromName") or "")
+    ]
+    assert spm_chs, names
+    for ch in spm_chs:
+        text = ch.get("text") or ""
+        assert not re.search(
+            r"French Guiana waters|eaux de la Guyane|at the equator|à l['’]équateur",
+            text, re.I,
+        ), text
+    marigot = next(
+        c for c in plan["chapters"]
+        if "Marigot" in (c.get("fromName") or "") and "Cayenne" in (c.get("toName") or "")
+    )
+    marigot_text = marigot.get("text") or ""
+    assert re.search(r"equator|équateur", marigot_text, re.I), marigot_text
+    assert re.search(r"French Guiana|Guyane", marigot_text, re.I), marigot_text
+    pacific = next(
+        c for c in plan["chapters"]
+        if "Cayenne" in (c.get("fromName") or "") and "Papeete" in (c.get("toName") or "")
+    )
+    pacific_text = pacific.get("text") or ""
+    assert re.search(r"equator|équateur", pacific_text, re.I), pacific_text
+    assert re.search(r"Balboa", pacific_text, re.I), pacific_text

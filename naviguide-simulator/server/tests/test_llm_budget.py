@@ -143,6 +143,58 @@ def test_ultra_daily_cap_is_eighty_thousand(monkeypatch):
     assert llm_budget.daily_cap("deep") == 80_000
 
 
+def test_daily_usd_absent_does_not_cut(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_USD", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    assert llm_budget.daily_usd_cap() is None
+    assert llm_budget.allow("write") is True
+    llm_budget.record("write", 2000, 300)
+    assert llm_budget.allow("write") is True
+
+
+def test_daily_usd_eight_refuses_when_already_over(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_USD", "8")
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    assert llm_budget.daily_usd_cap() == 8.0
+    assert llm_budget.allow("write") is True
+    import pearl_store
+
+    pearl_store.kv_put(
+        llm_budget.NS,
+        llm_budget._kv_key("write"),
+        {"tokens": 0, "prompt_tokens": 0, "completion_tokens": 0, "calls": 1, "usd": 8.01},
+    )
+    assert llm_budget.today_usd() > 8
+    assert llm_budget.allow("write") is False
+
+
+def test_daily_usd_zero_or_non_numeric_does_not_cut(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    for raw in ("", "0", "abc"):
+        monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_USD", raw)
+        assert llm_budget.daily_usd_cap() is None, raw
+        assert llm_budget.allow("write") is True, raw
+
+
+def test_daily_usd_refuses_when_call_would_exceed(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    add = llm_budget._upcoming_call_usd("write")
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_USD", str(add / 2 if add > 0 else 1e-12))
+    assert llm_budget.today_usd() == 0
+    assert llm_budget.allow("write") is False
+
+
+def test_judge_cap_unchanged_without_token_env(monkeypatch):
+    """NB1 : le palier juge du dépôt ne bouge pas (tête = 60_000, pas 0)."""
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    assert llm_budget.DEFAULT_CAPS["judge"] == 60_000
+    assert llm_budget.daily_cap("judge") == 60_000
+
+
 def test_deferred_demand_allows_write_in_on_demand_background(monkeypatch):
     monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
     monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_WRITE", "1000")

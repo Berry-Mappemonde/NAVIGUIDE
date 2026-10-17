@@ -828,6 +828,7 @@ def test_ici_fill_failure_is_dated_200(client, monkeypatch):
     async def boom(*_a, **_k):
         raise RuntimeError("bi down")
 
+    monkeypatch.setenv("NAVIGUIDE_ICI_WARM", "1")
     monkeypatch.setattr(main, "fill_dossier", boom)
     r = client.get("/ici", params={"lat": 0.0, "lon": 0.0})
     assert r.status_code == 200
