@@ -11,8 +11,12 @@ ExecStart=/home/ubuntu/blue-intelligence-map/naviguide-simulator/.venv/bin/uvico
 Restart=always
 RestartSec=3
 TimeoutStartSec=120
-MemoryHigh=512M
-MemoryMax=1G
+TimeoutStopSec=30
+# Pas de MemoryHigh. Au-dessus du plafond souple le noyau fige le process
+# (D / mem_cgroup_handle_over_high) pendant la lecture de naviguide.sqlite
+# (1,3 Go). 16 oct. 2026 : 2 Go de plafond, API muette, perles arrêtées.
+# MemoryMax + Restart=always : trop gros → tué, puis relancé.
+MemoryMax=4G
 
 [Install]
 WantedBy=multi-user.target
