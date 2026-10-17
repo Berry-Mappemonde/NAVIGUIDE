@@ -85,6 +85,7 @@
       }
       #root {
         min-height: 100vh;
+        contain: layout style;
       }
       .lcp-hero {
         box-sizing: border-box;
@@ -108,10 +109,31 @@
         width: 7.5rem;
         height: auto;
       }
+      /* CLS: taille fixe + hauteur réservée (évite le reflow du clamp / retour à la ligne). */
+      .lcp-hero-copy {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 10.5rem;
+        max-width: 22rem;
+        width: 100%;
+        box-sizing: border-box;
+      }
       .lcp-hero h1 {
-        font-size: clamp(1.25rem, 4vw, 1.65rem);
+        font-size: 1.35rem;
+        line-height: 1.45;
         margin: 0;
         max-width: 22rem;
+        min-height: 5.9rem;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      @media (min-width: 420px) {
+        .lcp-hero h1 {
+          font-size: 1.5rem;
+          min-height: 6.5rem;
+        }
       }
       .lcp-hero p {
         margin: 0;
@@ -137,11 +159,13 @@
         fetchpriority="high"
         decoding="async"
       />
-      <h1>NAVIGUIDE — routage voilier et cartographie maritime</h1>
-      <p>
-        Itinéraires à la voile, météo et couches nautiques —
-        <a href="https://berrymappemonde.org/fr/">Berry-Mappemonde</a>.
-      </p>
+      <div class="lcp-hero-copy">
+        <h1>NAVIGUIDE — routage voilier et cartographie maritime</h1>
+        <p>
+          Itinéraires à la voile, météo et couches nautiques —
+          <a href="https://berrymappemonde.org/fr/">Berry-Mappemonde</a>.
+        </p>
+      </div>
     </main>
     <script type="module" src="/src/main.jsx"></script>
   </body>
