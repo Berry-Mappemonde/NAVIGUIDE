@@ -1,7 +1,7 @@
 # Séparation des dépôts — Blue Intelligence et NAVIGUIDE
 
 Plan à exécuter à la lettre. Il remplace la version du 17 octobre 2026 qui
-décrivait encore un seul VPS et un `git push --mirror`.
+décrivait encore un seul VPS et un envoi de toutes les références.
 
 Lecture de l'arbre le **17 octobre 2026 au soir** : `main` = `23be7ba8`
 (« Merge pull request #551 », après la #544 `6dabfb84`). Le classeur
@@ -585,7 +585,7 @@ Le filtre qui était sur `main` avant cette PR ne gardait, pour Blue
 Intelligence, que
 `backend/ frontend/ infra/ docs/ scripts/ seed/ README.md LICENSE*`,
 et envoyait à NAVIGUIDE `naviguide-simulator/ naviguide/ Archives/ .cursor/`
-sans liste de fichiers. `git push --mirror` fermait la procédure.
+sans liste de fichiers. Un envoi de toutes les références fermait la procédure.
 La classification des 132 documents (PR #553, section 4.9) part de ce
 filtre-là : tout `docs/` aurait suivi Blue Intelligence, tout `Archives/`
 et tout `.cursor/` auraient suivi NAVIGUIDE. Le classeur de cette PR
@@ -953,9 +953,9 @@ déplace rien.
 17 octobre 2026 au soir, `git ls-remote origin`, au moment où `main`
 vaut `23be7ba8` : **36** branches (`refs/heads/*`), **553**
 `refs/pull/*/head`, **9** `refs/pull/*/merge`, **5** tags. GitHub
-refuse un push de `refs/pull/*`. `--mirror` pousserait en plus les 36
-branches, dont d'anciennes branches des deux produits. On ne l'utilise
-pas. La lecture précédente, sur `6dabfb84`, comptait 37 branches et
+refuse un push de `refs/pull/*`. Pousser toutes les références
+enverrait en plus les 36 branches, dont d'anciennes branches des deux
+produits. On ne le fait pas. La lecture précédente, sur `6dabfb84`, comptait 37 branches et
 11 `refs/pull/*/merge` : la branche `fix/lot-rc57-dc3-spec-par-jambe`
 a disparu avec la fusion de la #551, et les refs `refs/pull/548/merge`
 et `refs/pull/551/merge` ne sont plus là.
@@ -1118,17 +1118,23 @@ pas à la main. Les quatre fichiers du commit 6.6 restent tels que le
 filtre les a copiés jusqu'au `git apply`.
 
 ```bash
+PLAN="$(pwd)"
 git clone /tmp/bi-bare /tmp/bi-work
+# Le script vit dans ce plan (scripts/ part avec Blue Intelligence).
+# --root est la copie filtrée. --archive est le miroir local, pas un serveur.
+python3 "$PLAN/scripts/split_post_filter.py" shared --role bi --root /tmp/bi-work
+python3 "$PLAN/scripts/split_post_filter.py" public-name --role bi \
+  --root /tmp/bi-work --archive /tmp/archive
+# Section 6.1 : unités, nginx et scripts vps listés là. On ne touche pas
+# .github/workflows/ci.yml, .github/workflows/deploy.yml,
+# .github/dependabot.yml, infra/vps/ci/prepare-ssh.sh.
 cd /tmp/bi-work
-# 1. Édition à la main : sections 6.0 et 6.1, sans toucher
-#    .github/workflows/ci.yml, .github/workflows/deploy.yml,
-#    .github/dependabot.yml, infra/vps/ci/prepare-ssh.sh.
-# 2. Les quatre git apply Blue Intelligence de la section 6.6, puis :
+# Les quatre git apply Blue Intelligence de la section 6.6, puis :
 git add -A
 git status
 git commit -m "chore: limiter la CI Blue Intelligence à son déploiement OVH"
-# 3. Section 6.8 : copier climatology_query.py depuis /tmp/ng-bare.
-#    Ne pas modifier backend/tests/test_climatology.py. Puis :
+# Section 6.8 : copier climatology_query.py depuis /tmp/ng-bare.
+# Ne pas modifier backend/tests/test_climatology.py. Puis :
 git add naviguide/naviguide-api/climatology_query.py
 git status
 git commit -m "test: copier climatology_query pour garder test_naviguide_query_not_painted"
@@ -1142,27 +1148,45 @@ git push origin refs/tags/data-2026-10-12:refs/tags/data-2026-10-12
 ```
 
 ```bash
+PLAN="$(pwd)"
 git clone /tmp/ng-bare /tmp/ng-work
+python3 "$PLAN/scripts/split_post_filter.py" shared --role ng --root /tmp/ng-work
+python3 "$PLAN/scripts/split_post_filter.py" public-name --role ng \
+  --root /tmp/ng-work --archive /tmp/archive
+# Section 6.2 : unités et scripts listés là. On ne touche pas les
+# quatre fichiers du commit 6.6.
 cd /tmp/ng-work
-# 1. Édition à la main : sections 6.0, 6.2 et 6.4, sans toucher les
-#    quatre fichiers du commit 6.6.
-# 2. Les quatre git apply NAVIGUIDE de la section 6.6, puis :
+# Les quatre git apply NAVIGUIDE de la section 6.6, puis :
 git add -A
 git status
 git commit -m "chore: limiter la CI NAVIGUIDE au déploiement de naviguide.fr"
-# 3. Section 6.7, puis :
+# Section 6.7, puis :
 git add -A
 git status
 git commit -m "test: figer la parité climatologie du simulateur hors de frontend"
-# 4. Les deux commits de la section 6.5, puis :
+python3 "$PLAN/scripts/split_post_filter.py" film-discours --root /tmp/ng-work
+git add -A
+git status
+git commit -m "docs: déplacer le discours du film à côté de son test"
+python3 "$PLAN/scripts/split_post_filter.py" repo-paths --root /tmp/ng-work
+git add -A
+git status
+git commit -m "chore: réglages de la boucle de nuit dans repo_paths.py"
+python3 infra/agents/run_lots.py --dry-run --only C1
 git remote add origin git@github.com:Berry-Mappemonde/NAVIGUIDE.git
 git push origin refs/heads/main:refs/heads/main
 ```
 
-Pas de `--mirror`, pas de `--all`, pas de `--tags` global, pas de
-`refs/pull`. `git status` avant chaque commit ne montre que les
-fichiers de ce commit. Ces commandes restent dans `/tmp/bi-work` et
-`/tmp/ng-work`. On ne les lance pas dans le clone du monodépôt.
+On pousse seulement les références écrites dans ces deux blocs :
+`refs/heads/main`, et pour Blue Intelligence les cinq tags `data-*`.
+Pas de `--all`, pas de `--tags` global, pas de `refs/pull`. L'archive
+garde les autres branches et les autres tags. `git status` avant chaque
+commit ne montre que les fichiers de ce commit. `scripts/split_post_filter.py`
+se lance depuis le checkout de ce plan. `git apply` et `git commit` se
+lancent dans `/tmp/bi-work` et `/tmp/ng-work`. On ne les lance pas dans
+le clone du monodépôt. Le script ne pousse rien et ne parle à aucun
+serveur. DNS, certificat, nginx et tunnel restent la prose des
+sections 1, 8 et 9 : le script ne les exécute pas.
 
 Les PR ouvertes au 17 octobre 2026 au soir restent sur l'archive, avec
 leurs branches. Le filtre ne les transporte pas (les SHA changent).
@@ -1183,9 +1207,17 @@ monodépôt : seulement dans la copie filtrée, avant le premier push.
 `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ne se
 réécrivent pas en prose. Leur diff est en section 6.6, un commit par
 dépôt. Les commits des tests sont en 6.7 et 6.8. Les sections 6.0,
-6.4 et 6.5 restent : elles ne sont pas ces quatre fichiers.
+6.4 et 6.5 s'exécutent par `scripts/split_post_filter.py`. Les tableaux
+de ces sections disent ce que le script écrit. On ne les retape pas.
 
 ### 6.0 Copies communes
+
+```bash
+python3 "$PLAN/scripts/split_post_filter.py" shared --role bi --root /tmp/bi-work
+python3 "$PLAN/scripts/split_post_filter.py" shared --role ng --root /tmp/ng-work
+```
+
+`$PLAN` est le checkout de ce plan, posé en section 5.4.
 
 | Fichier | Original | L'autre copie, dans ce commit |
 |---|---|---|
@@ -1402,7 +1434,18 @@ ne change pas ce proxy : il parle au poste local. On ajoute
 
 Décisions du 17 octobre 2026 au soir. Tout ce qui suit se fait dans les
 copies filtrées, avant leur premier push, ou sur l'archive au moment
-dit. Cette PR ne déplace aucun fichier.
+dit. Cette PR ne déplace aucun fichier. La commande fait le déplacement,
+les vhosts, les URL, l'archive documentaire et les textes #510 et #227.
+Le bloc `git mv` plus bas est ce que la commande exécute. On ne le
+retape pas. DNS, certificat et rechargement nginx ne sont pas dans
+cette commande.
+
+```bash
+python3 "$PLAN/scripts/split_post_filter.py" public-name --role ng \
+  --root /tmp/ng-work --archive /tmp/archive
+python3 "$PLAN/scripts/split_post_filter.py" public-name --role bi \
+  --root /tmp/bi-work --archive /tmp/archive
+```
 
 **Le produit s'appelle NAVIGUIDE et il est sur `naviguide.fr`.**
 L'ancien planificateur (`naviguide/`, `www.naviguide.fr`,
@@ -1602,6 +1645,19 @@ est `https://naviguide.fr`. Les issues fermées restent sur l'archive.
 Les textes des PR #510 et #227 sont copiés à part (section 6.4).
 
 ### 6.5 Deux commits dans NAVIGUIDE, après le filtre
+
+```bash
+python3 "$PLAN/scripts/split_post_filter.py" film-discours --root /tmp/ng-work
+python3 "$PLAN/scripts/split_post_filter.py" repo-paths --root /tmp/ng-work
+cd /tmp/ng-work && python3 infra/agents/run_lots.py --dry-run --only C1
+```
+
+`film-discours` est le premier commit, `repo-paths` le second. Le
+`--dry-run` se lance dans `/tmp/ng-work` après le second commit. Un
+échec de clé ou de réseau n'est pas un échec de ce commit : le script
+doit seulement démarrer. `compile()` vérifie chaque `infra/agents/*.py`
+avant de l'écrire. La docstring de module reste une chaîne : elle ne
+devient pas une expression placée avant `from __future__`.
 
 Correction du 17 octobre au soir. Ces deux travaux sont écrits ici.
 Cette PR ne les fait pas : aucun fichier n'est déplacé, aucun script
@@ -3092,7 +3148,7 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Ancienne valeur de clé dans `.env.example` | **DÉCISION PROPRIÉTAIRE**, non bloquante pour le filtre. Le fichier (retiré le 28 août 2026) n'est recopié dans aucun dépôt neuf. La valeur reste dans l'historique de l'archive. La faire tourner, si elle a servi, est un geste à part : ce plan n'affiche pas la valeur et ne la renouvelle pas. |
 | Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande d'arrêt définitif dans ce plan. Les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. Les fichiers OVH restent jusqu'à un accord explicite, et après : les supprimer n'est pas une étape écrite ici. |
 | Mettre le stock `official-store/` dans Mongo | **DÉCISION PROPRIÉTAIRE.** Aujourd'hui `SIMULATOR_MONGO_URL` est absent et la base n'existe pas. Ce plan copie les fichiers. Y passer demanderait un autre plan, après la copie disque vérifiée. |
-| Pytest backend dans la CI Blue Intelligence | Reporté au commit d'après le tri hermétique. Pas un bloquant du 27 octobre. |
+| Pytest backend dans la CI Blue Intelligence | La PR #561 (`cursor/backend-pytest-ci-f963`) ajoute le job `backend` : Mongo local `bi_ci`, seed des fichiers du dépôt, Overpass via `enrich_ci_osm.py`, uvicorn `127.0.0.1:8001`, `pytest tests`. Quand ce job est sur `main`, la copie Blue Intelligence le garde (et `deploy-gate.needs` aussi). La copie NAVIGUIDE retire le job et cette entrée. Les diffs 6.6 de `ci.yml` se régénèrent sur cet arbre : ceux écrits ici visent le `ci.yml` d'avant ce job. |
 | Profil « lots de nuit » pour Blue Intelligence | Plus tard. `run_lots.py` n'est pas dans ce dépôt au moment du filtre. La section 6.5 prépare le fichier de réglages qui rend la copie possible. Les quatre scripts GitHub génériques y sont déjà. |
 
 Tranché dans ce plan, pour qu'un exécutant n'ait pas à choisir en cours
@@ -3114,8 +3170,8 @@ la racine hors des deux dépôts neufs ; `.gitconfig` hors des deux
 dépôts ; `.gitignore` et `.nvmrc` dans les deux ; cache nginx
 climatologie dans les deux ;
 `infra/agents/` dans NAVIGUIDE avec les quatre scripts génériques aussi
-dans Blue Intelligence ; push de `main` et des cinq tags, jamais
-`--mirror` ; NAVIGUIDE sur Contabo (compte `naviguide`, Ubuntu 24.04,
+dans Blue Intelligence ; push de `main` et des cinq tags, et rien
+d'autre ; NAVIGUIDE sur Contabo (compte `naviguide`, Ubuntu 24.04,
 ufw 22/80/443), Blue Intelligence et `blueintel_db` sur l'OVH (compte
 `ubuntu`, dossier `~/blue-intelligence-map`) ; copie de fichiers du
 simulateur, pas de transfert Mongo ; pas de suppression OVH sans accord
@@ -3156,7 +3212,7 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | `.cursor/environment.json`, `install.sh`, `start.sh`, `preview.sh` vont dans Blue Intelligence. Les hooks simulateur et les deux règles d'écran vont dans NAVIGUIDE. Les cinq règles communes vont dans les deux, original indiqué en 4.9. | `.cursor/environment.json` ; #553 §1 ; Inventaire 4.2 |
 | `infra/agents/` va dans NAVIGUIDE. Quatre scripts GitHub vont aussi dans Blue Intelligence. `run_lots.py` n'y va pas. | Inventaire 4.2 et 4.7 ; Outillage §2 et lot O4 |
 | Les scripts de `infra/vps/ci/` et les deux fichiers de cache nginx climatologie vont dans les deux dépôts. `infra/vps/ci/README.md` va dans Blue Intelligence seul. `infra/searxng/` et `infra/vps/seamap/` restent dans Blue Intelligence. | `deploy-simulator.sh` ; `rsync-to-vps.sh` ; #553 §7 ; Inventaire 4.3 |
-| `git clone --bare --single-branch`, puis push de `refs/heads/main` et, pour Blue Intelligence, des cinq tags `data-*`. Pas de `--mirror`. | Fusion B.5 ; mesure du soir sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge` |
+| `git clone --bare --single-branch`, puis push de `refs/heads/main` et, pour Blue Intelligence, des cinq tags `data-*`. Pas de push de toutes les références. | Fusion B.5 ; mesure du soir sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge` |
 | Les workflows de l'archive, cron compris, sont désactivés avant le renommage. `batch-pause.sh` est signalé absent. | `deploy.yml`, `weekly-data-build.yml`, `zap-baseline.yml` ; Fusion B.1 point 5 ; Outillage §2.1 |
 | Premier commit d'adaptation **avant** le premier push. Liste des fichiers à `blue-intelligence-map` et de `BIM_REPO`. | Fusion B.4 ; Outillage §4 et §5 ; grep sur l'arbre |
 | Le défaut OVH de `prepare-ssh.sh` est retiré dans la copie NAVIGUIDE. | `prepare-ssh.sh` lignes 11 et 31 |
@@ -3194,7 +3250,9 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Le classeur envoie les deux fichiers de la #545 dans NAVIGUIDE. `--emit` sur `6dabfb84` (script copié, non suivi) : 1 853 suivis, 574 / 1 241 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Self-test : 64 cas. | `scripts/check_split_coverage.py` ; sortie du 17 oct. au soir |
 | `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ont un diff exact par dépôt (section 6.6), appliqué tel quel après le filtre. `plan_deploy.py` et `test_prod_jobs_busy.py` ne sont pas réécrits : 31 tests verts. | `git apply --check` sur `6dabfb84` |
 | Le commit NAVIGUIDE 6.7 copie `cycloneTracks.js` et `useClimatologyLayer.js` dans le simulateur. Les quatre assertions de `recetteAg.test.js` restent. `node --test` : 8 tests, 0 échec. | Lecture du test, lignes 96–99 ; exécution du 17 oct. au soir |
-| Le commit Blue Intelligence 6.8 copie `climatology_query.py` (3 671 octets) vers `naviguide/naviguide-api/`. `test_naviguide_query_not_painted` n'est pas modifié : 1 passed sur la copie filtrée de `23be7ba8`. On ne crée pas le test NAVIGUIDE qui lève `No module named 'app'`. `test_serper_google_style_merged` échoue déjà sur le monodépôt : on n'y touche pas. | Répétition du 17 oct. au soir sur `23be7ba8` ; `backend/tests/test_climatology.py` ; `test_poe_v2_pipeline.py` ligne 1045 |
+| Le commit Blue Intelligence 6.8 copie `climatology_query.py` (3 671 octets) vers `naviguide/naviguide-api/`. `test_naviguide_query_not_painted` n'est pas modifié : 1 passed sur la copie filtrée de `23be7ba8`. On ne crée pas le test NAVIGUIDE qui lève `No module named 'app'`. | Répétition du 17 oct. au soir sur `23be7ba8` ; `backend/tests/test_climatology.py` |
+| `test_serper_google_style_merged` échouait parce que `_add_serper_jobs` sortait tout de suite sans clé. Le test n'est pas obsolète. Le correctif produit (tirs toujours planifiés, aucun appel HTTP sans clé) est la PR séparée sur `_add_serper_jobs`, et le même changement est dans la #561. On ne modifie pas le test. | `test_poe_v2_pipeline.py` ligne 1045 ; exécution sans `SERPER_API_KEY` |
+| Les sections 6.0, 6.4 et 6.5 s'exécutent par `scripts/split_post_filter.py`. On ne les retape pas. Le push publié est `refs/heads/main` et, pour Blue Intelligence, les cinq tags `data-*`. | Demande du propriétaire, 17 oct. au soir |
 | Noms GitHub décidés. Archive `Blue-Intelligence-Map` (id `1174883638`), lecture seule, jamais supprimée. Dépôts neufs `Blue-Intelligence` et `NAVIGUIDE`. Créer le premier efface la redirection : ordre renommer, vérifier, créer NAVIGUIDE, créer Blue Intelligence en dernier. | Décision du propriétaire, 17 oct. au soir ; `gh api` du même soir (secrets `VPS_HOST` et `VPS_SSH_KEY`, aucune deploy key, aucun webhook) |
 | Lecture du classeur sur `23be7ba8` (script copié, non suivi) : 1 857 suivis, 574 / 1 245 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Les quatre fichiers de la #551 sont classés par préfixe. Self-test : 64 cas. | Répétition du 17 oct. au soir |
 | Décompte §5 aligné sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge`, 5 tags. 9 PR ouvertes. #551 est sur `main`. #548 est fermée sans fusion. | `git ls-remote` ; `gh pr list` |
