@@ -19,27 +19,27 @@ mkdirSync(recetteRc44, { recursive: true });
 mkdirSync(recetteRc50, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
+  path: join(recetteDir, `${name}.webp`),
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 const shot43 = (page, name) => page.screenshot({
-  path: join(recetteRc43, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
+  path: join(recetteRc43, `${name}.webp`),
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 const shot44 = (page, name) => page.screenshot({
-  path: join(recetteRc44, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
+  path: join(recetteRc44, `${name}.webp`),
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 const shot50 = (page, name) => page.screenshot({
-  path: join(recetteRc50, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
+  path: join(recetteRc50, `${name}.webp`),
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

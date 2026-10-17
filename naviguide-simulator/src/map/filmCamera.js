@@ -19,8 +19,11 @@ export const FILM_TILE_SLOW = 0.35;
  * 280 nm couvre Fort-de-France → Marigot (~238 nm) sans prendre une traversée. */
 export const FILM_ARCHIPELAGO_NM = 280;
 export const FILM_ZOOM_ARCHIPELAGO_MAX = 5;
-/** Un pas bateau plus grand que ça (px / frame) = ancre, pas la glisse (RC40). */
-export const FILM_INTRA_JUMP_PX = 28;
+/** Un pas bateau plus grand que ça (px / frame) = ancre, pas la glisse (RC40).
+ * 80 px : un hitch ~54 px (VL / 180 px·s⁻¹ × 0,3 s) n'est plus classé ancre. */
+export const FILM_INTRA_JUMP_PX = 80;
+/** Hors zoom et hors flip : aucun pas écran bateau / caméra > 30 px (RC56). */
+export const FILM_SCREEN_STEP_MAX_PX = 30;
 /** Après un saut d'ancre, on ne recadre que si le bateau quitte ~l'écran. */
 export const FILM_VIEWPORT_KEEP_FRAC = 0.8;
 
@@ -67,6 +70,30 @@ export function keepBoatInFrame(center, boat, map, { keepFrac = FILM_BOAT_KEEP_F
 }
 
 /**
+ * Borne un déplacement carte (lat/lon) à `maxPx` à l'écran.
+ * Un `setView` / `keepBoatInFrame` / pan trop long est rejeté : on avance
+ * d'au plus 30 px (RC56). Flip et premier calage n'appellent pas ceci.
+ */
+export function clampFilmScreenStep(map, from, to, maxPx = FILM_SCREEN_STEP_MAX_PX) {
+  const a = toLatLngPair(from);
+  const b = toLatLngPair(to);
+  if (!a || !b) return to;
+  const cap = Math.max(1, Number(maxPx) || FILM_SCREEN_STEP_MAX_PX);
+  if (typeof map?.latLngToContainerPoint !== "function" || typeof map?.containerPointToLatLng !== "function") {
+    return b;
+  }
+  const p0 = map.latLngToContainerPoint(a);
+  const p1 = map.latLngToContainerPoint(b);
+  const dx = (p1.x ?? 0) - (p0.x ?? 0);
+  const dy = (p1.y ?? 0) - (p0.y ?? 0);
+  const dist = Math.hypot(dx, dy);
+  if (!(dist > cap)) return b;
+  const s = cap / dist;
+  const ll = map.containerPointToLatLng({ x: p0.x + dx * s, y: p0.y + dy * s });
+  return [ll.lat, ll.lng ?? ll.lon];
+}
+
+/**
  * Borne un pas de caméra : assez grand pour suivre le bateau (vitesse),
  * et toujours assez pour le garder dans les 40 % centraux.
  */
@@ -106,7 +133,9 @@ export function clampFilmPan(from, to, map, {
       }
     } catch { /* fake map */ }
   }
-  return keepBoatInFrame(limited, boat || b, map, { keepFrac });
+  const kept = keepBoatInFrame(limited, boat || b, map, { keepFrac });
+  const cap = Math.min(FILM_SCREEN_STEP_MAX_PX, maxPx);
+  return clampFilmScreenStep(map, a, kept, cap);
 }
 
 /** Zoom fixe d'un chapitre : la jambe tient dans ~70 % de la fenêtre, borné [3 ; 7]. */
@@ -164,7 +193,8 @@ export function filmIntraChapterCenter(map, {
     stepPx = Math.hypot((b.x ?? 0) - (a.x ?? 0), (b.y ?? 0) - (a.y ?? 0));
   }
   if (stepPx > FILM_INTRA_JUMP_PX) {
-    return keepBoatInFrame(origin, here, map, { keepFrac: FILM_VIEWPORT_KEEP_FRAC });
+    const kept = keepBoatInFrame(origin, here, map, { keepFrac: FILM_VIEWPORT_KEEP_FRAC });
+    return clampFilmScreenStep(map, origin, kept, FILM_SCREEN_STEP_MAX_PX);
   }
   if (!prev) {
     return clampFilmPan(origin, here, map, {
@@ -466,7 +496,8 @@ export function filmPanMaxFrac(tilesReady = true, { boatPx = 0, sizeX = 1280 } =
   const width = Math.max(1, Number(sizeX) || 1280);
   const speedFrac = Math.max(0, Number(boatPx) || 0) / width;
   const needed = Math.max(FILM_PAN_MAX_SCREEN, speedFrac * 1.35);
-  return Math.min(FILM_BOAT_KEEP_FRAC, needed) * ready;
+  const hard = FILM_SCREEN_STEP_MAX_PX / width;
+  return Math.min(FILM_BOAT_KEEP_FRAC, needed, hard) * ready;
 }
 
 function currentMapZoom(map, fallback) {
@@ -491,9 +522,15 @@ export function filmTranslateBy(map, from, to) {
   if (typeof map?.latLngToContainerPoint === "function") {
     const p0 = map.latLngToContainerPoint(a);
     const p1 = map.latLngToContainerPoint(b);
-    const dx = (p1.x ?? 0) - (p0.x ?? 0);
-    const dy = (p1.y ?? 0) - (p0.y ?? 0);
-    if (Math.hypot(dx, dy) < 0.05) return "hold";
+    let dx = (p1.x ?? 0) - (p0.x ?? 0);
+    let dy = (p1.y ?? 0) - (p0.y ?? 0);
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.05) return "hold";
+    if (dist > FILM_SCREEN_STEP_MAX_PX) {
+      const s = FILM_SCREEN_STEP_MAX_PX / dist;
+      dx *= s;
+      dy *= s;
+    }
     if (typeof map._rawPanBy === "function") {
       map._rawPanBy({ x: dx, y: dy });
       return "panBy";
@@ -513,7 +550,7 @@ function stillNmFromAnchor(anchor, lat, lon) {
 }
 
 /**
- * Caméra du film (RG13 / RC25 / RC29 / RC40 / RC49) : premier calage et
+ * Caméra du film (RG13 / RC25 / RC29 / RC40 / RC49 / RC56) : premier calage et
  * changement d'étape = un `setView` sur le bateau (pas le milieu de jambe) ;
  * ensuite translation du plan. Au changement d'étape, si le bateau n'a pas
  * bougé (Δnm≤0,5), un hold au zoom courant (RC25). Sinon un seul `setView`,
@@ -521,8 +558,10 @@ function stillNmFromAnchor(anchor, lat, lon) {
  * `FILM_RESET_EVERY` ne produit pas de (0,0) dans cette seconde. En pleine
  * jambe, la caméra suit le bateau par translation (aussi Caraïbes, RC51) ;
  * une ancre (bouée, île, événement) déplace le bateau, pas le centre, sauf
- * sortie d'écran. `stillAnchor` ne tient que le quai (Δnm≤0,5), pas toute
- * la jambe. Le zoom visé s'approche par `stepFilmZoom`. Pas de `flyTo`.
+ * sortie d'écran. Hors flip / zoom, le pas écran est borné à 30 px (RC56) :
+ * `keepBoatInFrame` ne peut plus ajouter 54 px après le clamp. `stillAnchor`
+ * ne tient que le quai (Δnm≤0,5). Le zoom visé s'approche par `stepFilmZoom`.
+ * Pas de `flyTo`.
  */
 export function applyFilmCamera(map, {
   chapterIdx,
@@ -630,10 +669,11 @@ export function applyFilmCamera(map, {
   const stayOnBoat = Number.isFinite(dAnchor) && dAnchor <= FILM_CHAPTER_STILL_NM;
   const nextAnchor = stayOnBoat ? (lastBoatPair(stillAnchor) || desiredBoat) : null;
 
-  const from = lastCenter || (typeof map.getCenter === "function"
+  const visual = (typeof map.getCenter === "function"
     ? [map.getCenter().lat, map.getCenter().lng]
-    : desiredBoat);
-  const clamped = stayOnBoat
+    : null);
+  const from = lastCenter || (visual && Number.isFinite(visual[0]) ? visual : desiredBoat);
+  const rawCenter = stayOnBoat
     ? desiredBoat
     : filmIntraChapterCenter(map, {
       from,
@@ -643,6 +683,7 @@ export function applyFilmCamera(map, {
       maxFrac: frac,
       boatPx,
     });
+  const clamped = clampFilmScreenStep(map, from, rawCenter, FILM_SCREEN_STEP_MAX_PX);
 
   const zoomChanged = Number.isFinite(Number(appliedZoom))
     && Number.isFinite(Number(mapZoom))
@@ -650,13 +691,15 @@ export function applyFilmCamera(map, {
   const mustReset = (idle && framesSinceReset > 0) || zoomChanged || framesSinceReset >= FILM_RESET_EVERY;
 
   if (mustReset) {
-    map.setView(clamped, appliedZoom, { animate: false });
+    const origin = (visual && Number.isFinite(visual[0])) ? visual : from;
+    const resetTo = clampFilmScreenStep(map, origin, clamped, FILM_SCREEN_STEP_MAX_PX);
+    map.setView(resetTo, appliedZoom, { animate: false });
     return {
       lastChapterIdx,
       lastSetViewAt: now,
       flyingUntil: 0,
       action: "setView",
-      lastCenter: clamped,
+      lastCenter: resetTo,
       framesSinceReset: 0,
       stillAnchor: nextAnchor,
     };
@@ -745,9 +788,22 @@ export function stepFilmCamera(map, {
     ? filmApproachZoom(cruise, progress)
     : cruise;
   const appliedZoom = stepFilmZoom(zoom, targetZoom);
+  const prevBoat = lastBoatPair(lastBoat);
+  const chapterFlip = lastChapterIdx != null && chapterIdx !== lastChapterIdx;
+  let jumpNm = 0;
+  if (prevBoat) {
+    jumpNm = haversineNm(prevBoat[0], prevBoat[1], pose.lat, pose.lon);
+  }
+  const teleport = chapterFlip || (Number.isFinite(jumpNm) && jumpNm > FILM_FLIP_NM);
+  if (prevBoat && !teleport) {
+    const limited = clampFilmScreenStep(map, prevBoat, [pose.lat, pose.lon], FILM_SCREEN_STEP_MAX_PX);
+    if (limited) {
+      pose = { ...pose, lat: limited[0], lon: limited[1] };
+    }
+  }
   let boatPx = 0;
-  if (lastBoat && typeof map?.latLngToContainerPoint === "function") {
-    const a = map.latLngToContainerPoint([lastBoat.lat, lastBoat.lon]);
+  if (prevBoat && typeof map?.latLngToContainerPoint === "function") {
+    const a = map.latLngToContainerPoint(prevBoat);
     const b = map.latLngToContainerPoint([pose.lat, pose.lon]);
     boatPx = Math.hypot((b.x ?? 0) - (a.x ?? 0), (b.y ?? 0) - (a.y ?? 0));
   }
