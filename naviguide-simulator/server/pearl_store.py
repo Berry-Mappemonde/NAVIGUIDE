@@ -154,6 +154,33 @@ def put_pearl(key: str, bag: dict, kind: str = "thin", lat: float | None = None,
         return False
 
 
+def non_polygon_amp_pearls(kind: str = "rich") -> list[tuple[str, float | None, float | None]]:
+    """Perles riches dont une aire n'est pas marquée polygone (centroïde ou marque absente).
+
+    Une requête SQL, sans json.loads. (clé, lat, lon) — lat/lon peuvent manquer.
+    """
+    try:
+        with _LOCK:
+            rows = _connect().execute(
+                "SELECT DISTINCT p.key, p.lat, p.lon FROM pearls p, json_each(p.bag, '$.amp') j "
+                "WHERE p.kind = ? AND json_valid(p.bag) "
+                "AND COALESCE(json_extract(j.value, '$.source'), '') != 'polygon'",
+                (kind,),
+            ).fetchall()
+    except Exception as exc:
+        log.warning("store perles (AMP non polygones) : %s", exc)
+        return []
+    out: list[tuple[str, float | None, float | None]] = []
+    for key, lat, lon in rows:
+        try:
+            plat = float(lat) if lat is not None else None
+            plon = float(lon) if lon is not None else None
+        except (TypeError, ValueError):
+            plat = plon = None
+        out.append((str(key), plat, plon))
+    return out
+
+
 def delete_pearl(key: str) -> bool:
     try:
         with _LOCK:
