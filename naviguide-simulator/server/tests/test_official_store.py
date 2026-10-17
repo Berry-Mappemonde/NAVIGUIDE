@@ -391,7 +391,7 @@ def test_film_key_includes_script_rev(tmp_path):
     voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
     film_key = store.family_key("film", voy, NOW)
     base = store.current_key(voy, NOW)
-    assert FILM_SCRIPT_REV == "ed1"
+    assert FILM_SCRIPT_REV == "vs1"
     assert film_key == f"{base}:{FILM_SCRIPT_REV}"
     assert store.family_key("moments", voy, NOW) == f"{base}:{MOMENTS_REV}"
     assert store.family_key("ici", voy, NOW) == f"{base}:{ICI_REV}"
