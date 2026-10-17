@@ -1,9 +1,14 @@
-"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c / ED1).
+"""Script du film 2:30 — brut (règles), sélection, version rédigée (lots F3 / R9c / ED1 / VS1).
 
 Le LLM ne produit jamais un nombre : `filter_numbers` + balises `[[ev:id]]`.
 Rédigé **au clic** Rédigé (lot ED1) : Super écrit le français ; Ultra édite
 puis juge si le plafond juge est ouvert ; Lightning traduit. GET et
 `warm_film_story` ne lancent aucun modèle. Repli : le brut.
+
+Lot VS1 : au recalcul du stock, VL propose des ids du sac (DC1–DC3) ;
+Lightning ne peut qu'en retirer pour le budget. Modèles éteints : repli
+déterministe, redites remplacées, arrêt à `film_char_budget`. Ouvrir
+Suivre ne rappelle rien.
 """
 from __future__ import annotations
 
@@ -161,6 +166,19 @@ DC2_KINDS = frozenset({"buoy", "poe", "anchorage"})
 # « image satellite au-dessus du bateau ».
 DC3_KINDS = frozenset({"aton", "cable", "depth", "piracy", "satellite"})
 DC_DOSAGE_KINDS = DC2_KINDS | DC3_KINDS
+# Amp + DC2 + DC3 : le sac VS1. Une entrée par famille.
+DC_FAMILY_KINDS = frozenset({"amp"}) | DC_DOSAGE_KINDS
+# TV1 : id d'avis réservé. Le repli VS1 ne le prend pas.
+TV1_WATCH_KIND = "watch"
+TV1_WATCH_ID = "dc:watch"
+FALLBACK_KIND_ORDER = (
+    "amp", "buoy", "poe", "anchorage", "aton", "cable", "depth", "piracy", "satellite",
+)
+FILM_CHOICE_NS = "film-choice"
+FILM_CHOICE_TTL_S = 7 * 86400.0
+# 2:30 / 3:00 : quelques sujets, pas une phrase par famille pour montrer.
+FALLBACK_DC_CAP_SHORT = 2
+FALLBACK_DC_CAP_MEDIUM = 3
 DC3_KIND_ALIASES = {
     "balise": "aton", "beacon": "aton", "seamark": "aton",
     "cable-alert": "cable", "câble": "cable",
@@ -1508,11 +1526,14 @@ def dc_subject_record(change: dict, lang: str = "fr") -> Optional[dict]:
         or short_name(packed.get("title") or packed.get("name") or "")
     )
     rec = {
+        "id": f"dc:{kind}",
         "kind": kind,
         "phrase": phrase,
         "oncePerFamilyOnLongLeg": True,
         "name": name,
     }
+    if packed.get("t"):
+        rec["t"] = packed.get("t")
     if kind == "amp":
         rec["relation"] = _amp_relation(change)
     return rec
@@ -1546,6 +1567,266 @@ def dc_subject_candidates(changes: list[dict] | None, lang: str = "fr") -> list[
         seen.add(kind)
         out.append(rec)
     return out
+
+
+def reserved_watch_candidate() -> dict:
+    """Trou TV1 : id d'avis. Phrase vide tant que TV1 ne l'écrit pas."""
+    return {
+        "id": TV1_WATCH_ID,
+        "kind": TV1_WATCH_KIND,
+        "phrase": "",
+        "oncePerFamilyOnLongLeg": True,
+        "reserved": True,
+    }
+
+
+def film_choice_bag(subjects: list[dict] | None) -> list[dict]:
+    """Sac VS1 : candidats DC (ids stables) + id d'avis réservé."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for rec in subjects or []:
+        if not isinstance(rec, dict):
+            continue
+        kind = str(rec.get("kind") or "")
+        rid = str(rec.get("id") or (f"dc:{kind}" if kind else ""))
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        row = dict(rec)
+        row["id"] = rid
+        out.append(row)
+    if TV1_WATCH_ID not in seen:
+        out.append(reserved_watch_candidate())
+    return out
+
+
+def tour_snapshot(packed: dict | None) -> dict[str, Any]:
+    """Schéma du tour entier — pas une capture carte. VL y lit les lieux."""
+    stops: list[dict] = []
+    for s in (packed or {}).get("stops") or []:
+        if not isinstance(s, dict):
+            continue
+        stops.append({
+            "name": short_name(s.get("name") or ""),
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
+            "iso": s.get("iso"),
+        })
+    pts: list[str] = []
+    for s in stops:
+        if s.get("lat") is None or s.get("lon") is None:
+            continue
+        try:
+            pts.append(f"{float(s['lon']):.2f},{-float(s['lat']):.2f}")
+        except (TypeError, ValueError):
+            continue
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-180 -90 360 180">'
+        f'<polyline fill="none" stroke="#0a0" points="{" ".join(pts)}"/>'
+        "</svg>"
+    )
+    return {"legs": stops, "image": svg}
+
+
+def film_choice_fingerprint(bag: list[dict] | None, tour: dict | None = None) -> str:
+    """Empreinte du stock : ids du sac + jambes. Un choix par film, pas par visite."""
+    bits = [f"{c.get('id')}|{c.get('kind')}" for c in bag or [] if isinstance(c, dict)]
+    for leg in (tour or {}).get("legs") or []:
+        if isinstance(leg, dict):
+            bits.append(f"{leg.get('name')}|{leg.get('iso')}")
+    bits.append("vs1")
+    return hashlib.sha256("\n".join(bits).encode("utf-8")).hexdigest()
+
+
+def parse_choice_ids(text: str, allowed: set[str]) -> Optional[list[str]]:
+    """JSON d'ids seulement. Ids hors sac ignorés. Aucun texte libre gardé."""
+    raw = (text or "").strip()
+    data: Any = None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            return None
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(data, dict):
+        return None
+    ids = data.get("ids")
+    if not isinstance(ids, list):
+        return None
+    kept: list[str] = []
+    seen: set[str] = set()
+    allow = {str(a) for a in allowed}
+    for item in ids:
+        sid = str(item)
+        if sid in allow and sid not in seen:
+            seen.add(sid)
+            kept.append(sid)
+    return kept
+
+
+def _fallback_dc_cap(seconds: Any) -> Optional[int]:
+    if film_char_budget(seconds) <= 0:
+        return None
+    if film_priority_tier(seconds) <= FILM_TIER_SHORT:
+        return FALLBACK_DC_CAP_SHORT
+    return FALLBACK_DC_CAP_MEDIUM
+
+
+def _trim_ids_to_budget(ids: list[str], bag: list[dict], seconds: Any) -> list[str]:
+    """Frein : s'arrête à film_char_budget. N'ajoute rien."""
+    by_id = {str(c.get("id")): c for c in bag or [] if isinstance(c, dict) and c.get("id")}
+    budget = film_char_budget(seconds)
+    chosen: list[str] = []
+    chars = 0
+    for raw in ids:
+        sid = str(raw)
+        rec = by_id.get(sid)
+        if not rec:
+            continue
+        n = len(str(rec.get("phrase") or ""))
+        if budget and chars + n > budget:
+            break
+        chosen.append(sid)
+        chars += n
+    return chosen
+
+
+def fallback_choose_ids(bag: list[dict] | None, seconds: Any) -> list[str]:
+    """Repli : priorité fixe, une fois par famille, pas l'avis TV1, arrêt au budget."""
+    rank = {k: i for i, k in enumerate(FALLBACK_KIND_ORDER)}
+    recs: list[dict] = []
+    for rec in bag or []:
+        if not isinstance(rec, dict):
+            continue
+        if str(rec.get("kind") or "") == TV1_WATCH_KIND:
+            continue
+        recs.append(rec)
+    recs.sort(key=lambda r: (rank.get(str(r.get("kind") or ""), 99), str(r.get("id") or "")))
+    unique: list[dict] = []
+    seen: set[str] = set()
+    for rec in recs:
+        kind = str(rec.get("kind") or "")
+        if not kind or kind in seen:
+            continue
+        seen.add(kind)
+        unique.append(rec)
+    cap = _fallback_dc_cap(seconds)
+    picked = unique if cap is None else unique[:cap]
+    ids = [str(r.get("id")) for r in picked if r.get("id")]
+    return _trim_ids_to_budget(ids, bag or [], seconds)
+
+
+_DC_FAMILY_SENT = {
+    "amp": re.compile(r"aire marine|marine protected area", re.I),
+    "buoy": re.compile(r"une bouée|a buoy", re.I),
+    "poe": re.compile(r"formalit[ée]s d['’]entr[ée]e|entry formalities", re.I),
+    "anchorage": re.compile(r"\bmouillage\b|\banchorage\b", re.I),
+    "aton": re.compile(r"\bbalise\b|\bbeacon\b", re.I),
+    "cable": re.compile(r"\bcâble\b|\bcable\b", re.I),
+    "depth": re.compile(r"profondeur\s*:|depth\s*:", re.I),
+    "piracy": re.compile(r"Piraterie —|Piracy —"),
+}
+
+
+def _subject_already_spoken(rec: dict, blob: str) -> bool:
+    phrase = str(rec.get("phrase") or "").strip()
+    if phrase and phrase in (blob or ""):
+        return True
+    rx = _DC_FAMILY_SENT.get(str(rec.get("kind") or ""))
+    return bool(rx and rx.search(blob or ""))
+
+
+def _repeat_slots(chapters: list[dict]) -> list[tuple[dict, int]]:
+    """Phrases remplaçables : P3/P4 d'abord, puis une eau en trop. Pas l'ouverture."""
+    slots: list[tuple[dict, int]] = []
+    waters = 0
+    for ch in chapters:
+        sents = _sentences(ch.get("text") or "")
+        for i, sent in enumerate(sents):
+            rank = _trim_sentence_rank(sent)
+            if rank >= 2:
+                slots.append((ch, i))
+            elif rank == 1:
+                waters += 1
+                if waters > 1:
+                    slots.append((ch, i))
+    return slots
+
+
+def _chapter_for_subject(chapters: list[dict], rec: dict) -> Optional[dict]:
+    t = _ms(rec.get("t")) if rec.get("t") else None
+    if t is not None:
+        for ch in chapters:
+            a, b = _ms(ch.get("tA")), _ms(ch.get("tB"))
+            if a is not None and b is not None and a <= t <= b:
+                return ch
+    return chapters[-1] if chapters else None
+
+
+def apply_chosen_subjects(
+    plan: dict,
+    ids: list[str] | None,
+    bag: list[dict] | None,
+    seconds: Any,
+) -> dict:
+    """Remplace des redites par les ids choisis. N'empile pas. Puis film_char_budget."""
+    chapters = [{**c, "text": c.get("text") or ""} for c in (plan.get("chapters") or [])]
+    by_id = {str(c.get("id")): c for c in bag or [] if isinstance(c, dict) and c.get("id")}
+    blob = " ".join(ch.get("text") or "" for ch in chapters)
+    remaining: list[dict] = []
+    seen_kind: set[str] = set()
+    for raw in ids or []:
+        rec = by_id.get(str(raw))
+        if not rec:
+            continue
+        kind = str(rec.get("kind") or "")
+        if kind == TV1_WATCH_KIND:
+            continue
+        if kind not in DC_FAMILY_KINDS:
+            continue
+        phrase = str(rec.get("phrase") or "").strip()
+        if not phrase:
+            continue
+        if kind in seen_kind:
+            continue
+        if _subject_already_spoken(rec, blob):
+            seen_kind.add(kind)
+            continue
+        seen_kind.add(kind)
+        remaining.append(rec)
+    slots = _repeat_slots(chapters)
+    used = 0
+    for rec, (ch, idx) in zip(remaining, slots):
+        sents = _sentences(ch.get("text") or "")
+        if idx < 0 or idx >= len(sents):
+            continue
+        sents[idx] = rec["phrase"]
+        ch["text"] = " ".join(sents).strip()
+        used += 1
+    budget = film_char_budget(seconds)
+    if budget <= 0:
+        for rec in remaining[used:]:
+            ch = _chapter_for_subject(chapters, rec)
+            if ch is None:
+                continue
+            text = (ch.get("text") or "").strip()
+            phrase = rec["phrase"]
+            if phrase and phrase not in text:
+                ch["text"] = f"{text} {phrase}".strip() if text else phrase
+    if budget > 0:
+        _film_apply_char_budget(chapters, seconds)
+    chars = script_chars(chapters)
+    return {
+        **plan,
+        "chapters": chapters,
+        "chars": chars,
+        "estimatedSeconds": film_estimated_seconds(chars),
+        "filmChoice": list(ids or []),
+    }
 
 
 def dose_dc2_leg_changes(changes: list[dict], span_ms: int = 0) -> list[dict]:
@@ -8334,10 +8615,19 @@ def _distribute_written(raw_chapters: list[dict], display: str, located: list[di
 
 
 SELECT_SYSTEM = (
-    "You select 6 to 9 event ids for a 150-second expedition film. "
-    "Return JSON only: {\"ids\":[...],\"reason\":\"one line\"}. "
-    "Choose only among the given ids. Always keep depart, stopovers and today when present. "
-    "Do not invent numbers. Do not write narrative."
+    "You select event ids for an expedition film from the given bag. "
+    "You receive a schematic image of the whole tour and the candidate ids "
+    "(marine area, buoy, formality, anchorage, beacon, cable, depth, piracy, "
+    "satellite included). "
+    "Return JSON only: {\"ids\":[...]}. "
+    "Choose only among the given ids. Drop any other id. "
+    "Do not invent numbers. Do not write narrative. Keep no free text."
+)
+TRIM_SYSTEM = (
+    "You only remove ids so the film fits the character budget. "
+    "Return JSON only: {\"ids\":[...]}. "
+    "Every id must already be in the given list. Do not add an id. "
+    "Do not write narrative."
 )
 WRITE_SYSTEM = (
     "You rewrite ONE film chapter from structured facts, sentence by sentence. "
@@ -8366,19 +8656,133 @@ async def select_with_llm(
     fallback_ids: list[str],
     *,
     cascade: Callable = cascade_text,
+    tour: dict | None = None,
 ) -> tuple[list[str], str]:
     slim = [
-        {"id": c["id"], "kind": c["kind"], "t": c.get("t"), "name": c.get("name"), "score": c.get("score"), "role": c.get("role")}
+        {
+            "id": c.get("id"), "kind": c.get("kind"), "t": c.get("t"),
+            "name": c.get("name"), "score": c.get("score"), "role": c.get("role"),
+        }
         for c in candidates
+        if isinstance(c, dict) and c.get("id")
     ]
-    user = json.dumps({"candidates": slim[:150], "need": "6-9 ids"}, ensure_ascii=False)
+    payload: dict[str, Any] = {"candidates": slim[:150], "need": "ids from bag only"}
+    if tour:
+        payload["tour"] = tour
+    user = json.dumps(payload, ensure_ascii=False)
     if len(user) > 8000:
         user = user[:8000]
     text, source = await cascade(SELECT_SYSTEM, user, tier="fast", fallback="", facts=user, max_tokens=256)
-    parsed = _parse_selection(text, {c["id"] for c in candidates})
+    parsed = _parse_selection(text, {str(c["id"]) for c in slim})
     if parsed:
         return parsed, source
     return fallback_ids, "rules"
+
+
+async def select_ids_with_vl(
+    bag: list[dict],
+    tour: dict | None,
+    *,
+    cascade: Callable = cascade_text,
+    seconds: Any = 150,
+) -> tuple[list[str], str]:
+    """VL : JSON d'ids du sac. Un id absent est jeté. Aucune prose gardée."""
+    fallback = fallback_choose_ids(bag, seconds)
+    slim = [c for c in bag if isinstance(c, dict) and c.get("id")]
+    payload: dict[str, Any] = {"candidates": [
+        {"id": c.get("id"), "kind": c.get("kind"), "name": c.get("name")}
+        for c in slim
+    ], "need": "ids from bag only"}
+    if tour:
+        payload["tour"] = tour
+    user = json.dumps(payload, ensure_ascii=False)
+    if len(user) > 8000:
+        user = user[:8000]
+    text, source = await cascade(SELECT_SYSTEM, user, tier="fast", fallback="", facts=user, max_tokens=256)
+    parsed = parse_choice_ids(text, {str(c["id"]) for c in slim})
+    if parsed is not None:
+        return parsed, source
+    return fallback, "rules"
+
+
+async def trim_ids_with_lightning(
+    ids: list[str],
+    bag: list[dict],
+    seconds: Any,
+    *,
+    cascade: Callable = cascade_text,
+) -> tuple[list[str], str]:
+    """Lightning ne peut que retirer. Un id ajouté est jeté. Puis film_char_budget."""
+    allowed = [str(i) for i in ids]
+    allowed_set = set(allowed)
+    budget = film_char_budget(seconds)
+    user = json.dumps(
+        {"ids": allowed, "budgetChars": budget, "seconds": _film_seconds(seconds)},
+        ensure_ascii=False,
+    )
+    text, source = await cascade(
+        TRIM_SYSTEM, user, tier="fast", fallback="", facts=user, max_tokens=256,
+    )
+    parsed = parse_choice_ids(text, allowed_set)
+    if parsed is None:
+        parsed = list(allowed)
+    parsed = [i for i in parsed if i in allowed_set]
+    return _trim_ids_to_budget(parsed, bag, seconds), source
+
+
+async def choose_film_ids(
+    bag: list[dict],
+    tour: dict | None,
+    seconds: Any,
+    *,
+    cascade: Callable = cascade_text,
+    allow_llm: Optional[bool] = None,
+) -> tuple[list[str], str]:
+    """Un choix par film (empreinte du stock), pas par chapitre ni par visite."""
+    import llm_budget  # noqa: PLC0415
+    import pearl_store  # noqa: PLC0415
+
+    fp = film_choice_fingerprint(bag, tour)
+    secs = _film_seconds(seconds)
+    trim_key = f"trim|{fp}|{secs}"
+    hit_trim = pearl_store.kv_get(FILM_CHOICE_NS, trim_key, FILM_CHOICE_TTL_S)
+    cached = (hit_trim or {}).get("value")
+    if isinstance(cached, dict) and isinstance(cached.get("ids"), list):
+        return [str(i) for i in cached["ids"]], "cache"
+
+    if allow_llm is None:
+        allow_llm = llm_budget.allow("fast")
+
+    if not allow_llm:
+        ids = fallback_choose_ids(bag, seconds)
+        pearl_store.kv_put(FILM_CHOICE_NS, trim_key, {"ids": ids, "source": "rules"})
+        return ids, "rules"
+
+    vl_key = f"vl|{fp}"
+    vl_ids: Optional[list[str]] = None
+    vl_src = "rules"
+    hit_vl = pearl_store.kv_get(FILM_CHOICE_NS, vl_key, FILM_CHOICE_TTL_S)
+    stored_vl = (hit_vl or {}).get("value")
+    if isinstance(stored_vl, dict) and isinstance(stored_vl.get("ids"), list):
+        vl_ids = [str(i) for i in stored_vl["ids"]]
+        vl_src = str(stored_vl.get("source") or "cache")
+    if vl_ids is None:
+        try:
+            vl_ids, vl_src = await select_ids_with_vl(bag, tour, cascade=cascade, seconds=seconds)
+        except Exception:
+            vl_ids, vl_src = None, "rules"
+        if vl_ids is None:
+            ids = fallback_choose_ids(bag, seconds)
+            pearl_store.kv_put(FILM_CHOICE_NS, trim_key, {"ids": ids, "source": "rules"})
+            return ids, "rules"
+        pearl_store.kv_put(FILM_CHOICE_NS, vl_key, {"ids": vl_ids, "source": vl_src})
+
+    try:
+        ids, src = await trim_ids_with_lightning(vl_ids, bag, seconds, cascade=cascade)
+    except Exception:
+        ids, src = _trim_ids_to_budget(vl_ids, bag, seconds), vl_src
+    pearl_store.kv_put(FILM_CHOICE_NS, trim_key, {"ids": ids, "source": src})
+    return ids, src
 
 
 def _chapter_next_summary(raw_chapters: list[dict], i: int, lang: str) -> str:
@@ -8715,12 +9119,17 @@ def _public_plan(plan: dict, source: str) -> dict:
             "toLon": c.get("toLon"),
         })
     chars = script_chars(chapters)
-    return {
+    out = {
         "chapters": chapters,
         "source": source,
         "chars": chars,
         "targetSeconds": int(plan["targetSeconds"]) if plan.get("targetSeconds") is not None else 150,
     }
+    if plan.get("dcSubjects"):
+        out["dcSubjects"] = plan["dcSubjects"]
+    if plan.get("filmChoice") is not None:
+        out["filmChoice"] = plan["filmChoice"]
+    return out
 
 
 async def build_film_response(
@@ -8738,8 +9147,10 @@ async def build_film_response(
     display_t0: str | None = None,
     review: dict | None = None,
     eta: dict | None = None,
+    choose: bool = False,
 ) -> dict[str, Any]:
-    """Assemble the API payload. `want_write` triggers Nemotron (tier write)."""
+    """Assemble the API payload. `want_write` triggers Nemotron (tier write).
+    `choose` (lot VS1) : VL/Lightning ou repli, au remplissage du stock seulement."""
     from story_cache import film_cache_key, get_film_cached, put_film_cached  # noqa: PLC0415
 
     shown = resolve_film_t0(display_t0)
@@ -8764,6 +9175,14 @@ async def build_film_response(
     events = raw_full.get("_events") or []
     packed = raw_full.get("_packed") or {}
     from_moments = bool(raw_full.get("_fromMoments"))
+    if choose:
+        try:
+            bag = film_choice_bag(raw_full.get("dcSubjects") or [])
+            tour = tour_snapshot(packed)
+            ids, _src = await choose_film_ids(bag, tour, seconds, cascade=cascade)
+            raw_full = apply_chosen_subjects(raw_full, ids, bag, seconds)
+        except Exception:
+            pass
     raw = _public_plan(raw_full, "rules")
     if not from_moments:
         attach_chapter_events(raw.get("chapters") or [], packed, journal, lang)
@@ -8853,7 +9272,7 @@ async def official_film(
             review = None
     return await build_film_response(
         clock, live, payload, marks=marks, lang=lang, seconds=_film_seconds(seconds),
-        style=style, cascade=cascade, want_write=False,
+        style=style, cascade=cascade, want_write=False, choose=True,
         now_ms=int(when.timestamp() * 1000) if hasattr(when, "timestamp") else None,
         display_t0=resolve_film_t0(t0),
         review=review,
