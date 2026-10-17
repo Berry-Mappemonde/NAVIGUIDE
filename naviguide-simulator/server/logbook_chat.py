@@ -241,6 +241,12 @@ def journal_for_chat(limit: int = JOURNAL_TAIL) -> list[dict]:
         seen.add(sig)
         merged.append(slim)
     merged.sort(key=lambda row: str(row.get("t") or ""), reverse=True)
+    try:
+        import escale_watch  # noqa: PLC0415
+
+        merged = escale_watch.drop_news_if_in_film(merged)
+    except Exception:
+        pass
     return merged[:limit]
 
 
