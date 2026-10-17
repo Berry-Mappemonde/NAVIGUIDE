@@ -5123,3 +5123,76 @@ def test_vs1_serve_film_does_not_choose(tmp_path, monkeypatch):
     assert out.get("status") == "ready"
     assert calls["n"] == 0
     assert "La Rochelle" in (out.get("chapters") or [{}])[0].get("text") or ""
+
+
+TV1_PHRASE = "Travaux annoncés à la marina de Motu Uta"
+TV1_URL = "https://www.portautonome.nc/avis"
+
+
+def _tv1_plan():
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": (
+                "Berry-Mappemonde quitte Saint-Maur. "
+                "La côte bretonne s'éloigne sous un ciel clair. "
+                "Un alizé régulier porte la nuit."
+            ),
+            "tA": OFFICIAL_T0,
+            "tB": OFFICIAL_T0,
+        }],
+    }
+
+
+def test_tv1_watch_absent_from_230_present_on_fiche():
+    """Sans l'id VS1 : phrase absente du 2:30, présente pour la fiche."""
+    import escale_watch
+
+    bag = _vs1_full_bag()
+    for rec in bag:
+        if rec["id"] == TV1_WATCH_ID:
+            rec["phrase"] = TV1_PHRASE
+            rec["url"] = TV1_URL
+    plan = _tv1_plan()
+    ids = fallback_choose_ids(bag, 150)
+    assert TV1_WATCH_ID not in ids
+    out = apply_chosen_subjects(plan, ids, bag, 150)
+    blob = _script_blob(out)
+    assert TV1_PHRASE not in blob
+    assert out["chars"] <= film_char_budget(150)
+    entry = escale_watch.news_entry(
+        {"name": "Nouméa", "lat": -22.27, "lon": 166.44},
+        TV1_PHRASE, TV1_URL, datetime(2026, 9, 20, tzinfo=timezone.utc),
+        question="travaux", rounds=1,
+    )
+    assert entry["text"] == TV1_PHRASE
+    assert entry["url"] == TV1_URL
+    bag_fiche = escale_watch.attach_cached_news({"news": [entry]})
+    assert any(n.get("text") == TV1_PHRASE for n in bag_fiche["news"])
+
+
+def test_tv1_vs1_keeps_id_phrase_replaces_slot_within_budget():
+    bag = [{
+        "id": TV1_WATCH_ID, "kind": TV1_WATCH_KIND, "phrase": TV1_PHRASE, "url": TV1_URL,
+    }]
+    out = apply_chosen_subjects(_tv1_plan(), [TV1_WATCH_ID], bag, 150)
+    blob = _script_blob(out)
+    assert TV1_PHRASE in blob
+    assert blob.count(TV1_PHRASE) == 1
+    assert out["chars"] <= film_char_budget(150)
+    import escale_watch
+    assert escale_watch.watch_in_film() is True
+
+
+def test_tv1_models_off_230_does_not_take_watch(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    bag = _vs1_full_bag()
+    for rec in bag:
+        if rec["id"] == TV1_WATCH_ID:
+            rec["phrase"] = TV1_PHRASE
+    ids, src = asyncio.run(choose_film_ids(bag, {"legs": []}, 150, cascade=None, allow_llm=False))
+    assert src == "rules"
+    assert TV1_WATCH_ID not in ids
+    out = apply_chosen_subjects(_tv1_plan(), ids, bag, 150)
+    assert TV1_PHRASE not in _script_blob(out)
+    assert out["chars"] <= film_char_budget(150)
