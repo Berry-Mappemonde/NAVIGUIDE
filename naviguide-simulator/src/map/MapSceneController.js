@@ -80,12 +80,21 @@ export const MAP_MIN_ZOOM = 0;
 function baseTileOptions(lang = "fr") {
   return {
     attribution: tileAttribution(lang),
-    updateWhenZooming: false,
+    updateWhenZooming: true,
     updateWhenIdle: false,
-    keepBuffer: 6,
+    keepBuffer: 8,
     // Hors ±540° le maxBounds coupe : une copie de tuiles de chaque côté, pas l'infini.
     noWrap: false,
   };
+}
+
+/** Une tuile en erreur ne laisse pas un carré blanc : on la cache, le fond de carte reste. */
+function bindQuietTiles(layer) {
+  layer.on("tileerror", (ev) => {
+    const tile = ev?.tile;
+    if (tile) tile.style.visibility = "hidden";
+  });
+  return layer;
 }
 
 const WAKE_STYLE = {
@@ -236,6 +245,7 @@ export class MapSceneController {
       center: WORLD_CENTER,
       zoom: WORLD_ZOOM,
       zoomSnap: 0.25,
+      fadeAnimation: false,
       minZoom: MAP_MIN_ZOOM,
       maxZoom: 18,
       worldCopyJump: false,
@@ -254,7 +264,7 @@ export class MapSceneController {
     this.callbacks = callbacks;
     this.layers = new SceneLayerRegistry();
     this.config = {};
-    this.baseLayer = L.tileLayer(TILE_URLS.dark, baseTileOptions("fr")).addTo(map);
+    this.baseLayer = bindQuietTiles(L.tileLayer(TILE_URLS.dark, baseTileOptions("fr"))).addTo(map);
     this.baseLayer._naviguideUrl = TILE_URLS.dark;
     this.baseLayer._naviguideAttr = tileAttribution("fr");
     this.wakeGeometry = null;
@@ -626,7 +636,7 @@ export class MapSceneController {
   switchBaseLayer(url, attr) {
     const credit = attr || tileAttribution(this.config.lang === "en" ? "en" : "fr");
     if (this.baseLayer?._naviguideUrl === url && this.baseLayer?._naviguideAttr === credit) return;
-    const next = L.tileLayer(url, baseTileOptions(this.config.lang === "en" ? "en" : "fr"));
+    const next = bindQuietTiles(L.tileLayer(url, baseTileOptions(this.config.lang === "en" ? "en" : "fr")));
     next._naviguideUrl = url;
     next._naviguideAttr = credit;
     next.addTo(this.map);
@@ -1126,6 +1136,7 @@ export class MapSceneController {
     this.camera.followLon = applied.followLon;
     this.initialLive = { lat: live.lat, lon: live.lon };
     this._pendingFollowCadrage = false;
+    this._followFramed = true;
   }
 
   syncInitialCamera() {
@@ -1141,6 +1152,7 @@ export class MapSceneController {
     if (this.camera.exitHold || Number.isFinite(this.camera.exitHoldZoom)) {
       if (cfg.isSuivre && cfg.live && Number.isFinite(cfg.live.lat)) {
         this.initialLive = { lat: cfg.live.lat, lon: cfg.live.lon };
+        this._followFramed = true;
       }
       this.setCameraPlaced(true);
       return;
@@ -1150,6 +1162,9 @@ export class MapSceneController {
       this.programmaticMove(() => this.map.setView([recette.lat, recette.lon], recette.z, { animate: false }));
       this.setCameraPlaced(true);
       return;
+    }
+    if (cfg.isSuivre && !cfg.drawingMode && !this._followFramed) {
+      this._pendingFollowCadrage = true;
     }
     const mayPlace = shouldPlaceInitialCamera({ userNavigated: this.userNavigated })
       || this._pendingFollowCadrage;
@@ -1163,6 +1178,12 @@ export class MapSceneController {
       pending: this._pendingFollowCadrage,
     })) {
       this.frameFollowLive(cfg.live);
+    }
+    // Suivre : tant que le bateau n'est pas au centre, on garde le masque.
+    // Sinon l'accueil montre le monde entier, sans bateau, jusqu'à un aller-retour Tracer.
+    if (cfg.isSuivre && !cfg.drawingMode && !this._followFramed) {
+      this.setCameraPlaced(false);
+      return;
     }
     this.setCameraPlaced(true);
   }
@@ -1244,6 +1265,7 @@ export class MapSceneController {
   resetCameraForView() {
     this.initialLive = null;
     this.userNavigated = false;
+    this._followFramed = false;
     this._pendingFollowCadrage = Boolean(this.config.isSuivre);
     this.cameraPlaced = false;
     this.camera = {

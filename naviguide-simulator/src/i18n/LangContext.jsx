@@ -1,7 +1,7 @@
 /**
  * NAVIGUIDE — Lightweight i18n context
  * Provides useLang() hook with t(key, vars) translation function.
- * Language is persisted in localStorage. Default: "fr".
+ * Language is persisted in localStorage. Default: "en".
  */
 import { createContext, useCallback, useContext, useState } from "react";
 import en from "./en";

@@ -100,6 +100,8 @@ describe("lot DM4 — cadrage Suivre (bateau + plancher)", () => {
     const chunk = controller.slice(start, end);
     assert.match(chunk, /shouldFrameFollowLive/);
     assert.match(chunk, /frameFollowLive/);
+    assert.match(chunk, /_followFramed/);
+    assert.match(chunk, /setCameraPlaced\(false\)/);
     assert.match(controller, /liveMode\s*\n\s*\? cadrageZoom/);
     assert.match(controller, /resetCameraForView\(\)/);
     assert.match(controller, /this\.initialLive = null/);
