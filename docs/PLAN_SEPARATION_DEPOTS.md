@@ -1917,10 +1917,13 @@ si le fichier a déjà été édité à la main : on s'arrête, on remet le
 fichier du filtre, on relance le `git apply`. On ne lance pas ces
 diffs dans le monodépôt.
 
-Contrôle du 17 octobre 2026 au soir : `git apply --check` accepte les
-huit diffs sur `6dabfb84` et sur `23be7ba8`. Les six fichiers YAML
-obtenus se lisent. `bash -n` accepte les deux `prepare-ssh.sh` et les
-scripts que chaque `deploy-gate` nomme encore. `python3
+Contrôle sur `main` `14350b8c` (après la #561) : `git apply
+--check` accepte les huit diffs. Les deux diffs de `ci.yml` sont
+régénérés sur ce fichier. Les six autres (`deploy.yml`,
+`dependabot.yml`, `prepare-ssh.sh`, des deux côtés) sont inchangés :
+seul `ci.yml` a bougé depuis `23be7ba8`. Les fichiers YAML obtenus se
+lisent. `bash -n` accepte les deux `prepare-ssh.sh` et les scripts que
+chaque `deploy-gate` nomme encore. `python3
 infra/vps/ci/test_prod_jobs_busy.py` finit par 31 tests, OK, dans les
 deux copies. Ce fichier Python n'est pas dans le diff.
 
@@ -1938,8 +1941,14 @@ Les quotes autour de `END_…` sont obligatoires : le diff contient des
 #### Blue Intelligence
 
 Jobs de `ci.yml` après le diff : `frontend`, `audit-tags`,
-`deploy-gate`. Jobs de `deploy.yml` : `plan`, `blue-intelligence`,
-`catch-up`. Branches : `main` seulement. Le cron `*/20` reste.
+`backend`, `deploy-gate`. Le job `backend` garde le nom affiché
+« API Blue Intelligence — pytest ». `deploy-gate.needs` garde
+`frontend`, `audit-tags` et `backend` (variable `R_BACKEND`). Les jobs
+`changes`, `simulator` et `simulator-e2e` sortent, ainsi que
+`R_CHANGES`, `R_SIMULATOR` et `R_E2E`. Le `bash -n` ne nomme plus
+`infra/vps/naviguide/deploy-naviguide.sh` ni `deploy-simulator.sh`.
+Jobs de `deploy.yml` : `plan`, `blue-intelligence`, `catch-up`.
+Branches : `main` seulement. Le cron `*/20` reste.
 `dependabot.yml` garde npm `/frontend` et github-actions, retire npm
 `/naviguide-simulator` et pip `/naviguide-simulator/server`, ajoute
 pip `/backend` (groupe `backend-mineures-et-patchs`).
@@ -1951,10 +1960,10 @@ cd /tmp/bi-work
 git apply <<'END_BI_CI'
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -4,9 +4,7 @@
- #   - jest verrouille l'ordre des couches carte et le registre des fonds ;
- #   - le build CRA attrape les régressions de bundling (maplibre chargé à la demande) ;
- #   - le script d'audit des tags tourne en mode GeoJSON sur les seeds (stdlib pur) ;
+@@ -8,9 +8,7 @@
+ #     à la base OVH, à Atlas ou à Nebius. Le seed vient des fichiers du dépôt.
+ #     La confiance OSM est celle d'Overpass (mêmes fonctions que le produit),
+ #     pas un score écrit à la main. Le cache ne rejoue que ces réponses.
 -#   - simulateur : si la PR touche naviguide-simulator/, `npm test` (node --test),
 -#     `vite build` et `pytest` (fetch mocké) — une croix rouge sur la PR avant
 -#     qu'un lot casse S1–S7, le juge ou le sac ici() sans qu'on le voie.
@@ -1962,10 +1971,11 @@ git apply <<'END_BI_CI'
  
  on:
    pull_request:
-@@ -40,133 +38,6 @@
+@@ -43,133 +41,6 @@
+       - run: npm run build
          env:
            CI: "true"
- 
+-
 -  # Le simulateur n'est testé que si la PR (ou le push) le touche : les PR
 -  # Blue Intelligence / NAVIGUIDE restent aussi rapides qu'avant.
 -  changes:
@@ -2092,11 +2102,33 @@ git apply <<'END_BI_CI'
 -          path: naviguide-simulator/playwright-report
 -          retention-days: 7
 -          if-no-files-found: ignore
--
+ 
    audit-tags:
      runs-on: ubuntu-latest
+@@ -261,7 +132,7 @@
+         run: python -m pytest tests -q --tb=line
+ 
+   deploy-gate:
+-    needs: [frontend, audit-tags, backend, changes, simulator, simulator-e2e]
++    needs: [frontend, audit-tags, backend]
+     if: always() && !cancelled()
+     runs-on: ubuntu-latest
      steps:
-@@ -184,8 +55,6 @@
+@@ -270,12 +141,9 @@
+           R_FRONTEND: ${{ needs.frontend.result }}
+           R_AUDIT: ${{ needs.audit-tags.result }}
+           R_BACKEND: ${{ needs.backend.result }}
+-          R_CHANGES: ${{ needs.changes.result }}
+-          R_SIMULATOR: ${{ needs.simulator.result }}
+-          R_E2E: ${{ needs.simulator-e2e.result }}
+         run: |
+           fail=0
+-          for name in R_FRONTEND R_AUDIT R_BACKEND R_CHANGES R_SIMULATOR R_E2E; do
++          for name in R_FRONTEND R_AUDIT R_BACKEND; do
+             result="${!name}"
+             echo "$name=$result"
+             case "$result" in
+@@ -291,8 +159,6 @@
          run: |
            bash -n infra/vps/deploy-app.sh
            bash -n infra/vps/sync-public-nginx.sh
@@ -2283,23 +2315,33 @@ git add .github/workflows/ci.yml .github/workflows/deploy.yml .github/dependabot
 git commit -m "chore: limiter la CI Blue Intelligence à son déploiement OVH"
 ```
 
-Le `deploy-gate` de cette copie ne nomme plus
-`infra/vps/naviguide/deploy-naviguide.sh` ni `deploy-simulator.sh`.
-Ces deux fichiers ne sont pas dans le dépôt filtré. Les six `bash -n`
-et les 31 tests doivent finir sans erreur. C'est le vert du
-`deploy-gate` côté Blue Intelligence.
+Le `deploy-gate` de cette copie garde le job `backend`
+et la variable `R_BACKEND`. Il ne nomme plus
+`infra/vps/naviguide/deploy-naviguide.sh` ni `deploy-simulator.sh`,
+ni `R_CHANGES`, `R_SIMULATOR`, `R_E2E`. Ces scripts NAVIGUIDE ne sont
+pas dans le dépôt filtré. Les six `bash -n` et les 31 tests doivent
+finir sans erreur. C'est le vert du `deploy-gate` côté Blue Intelligence.
 
 #### NAVIGUIDE
 
 Jobs de `ci.yml` après le diff : `changes`, `simulator`,
-`simulator-e2e`, `deploy-gate`. `deploy.yml` n'a qu'un job,
-`naviguide`, affiché `naviguide.fr`. Déclencheurs : poussée sur `main`,
-et `workflow_dispatch`. Pas de cron, pas de branche `recette`, pas de
-job `plan`. Chaque poussée sur `main` déploie. `FORCE_DEPLOY=0`.
-`dependabot.yml` garde npm `/naviguide-simulator`, pip
-`/naviguide-simulator/server` et github-actions. Le bloc npm
-`/frontend` est retiré. `prepare-ssh.sh` exige `VPS_HOST`. La valeur
-attendue est `naviguide@13.140.164.185`.
+`simulator-e2e`, `deploy-gate`. Sortent : `frontend`, `audit-tags`, et
+le job `backend` (« API Blue Intelligence — pytest »). Sortent avec
+lui `R_BACKEND`, `R_FRONTEND`, `R_AUDIT`, le commentaire d'en-tête sur
+ce pytest, et tout chemin que ces jobs citent : `../frontend/.env`,
+`seed/ports_of_entry.geojson`, `seed/projects.geojson`,
+`backend/requirements.txt`, `scripts/seed_ci_mongo.py`,
+`scripts/enrich_ci_osm.py`, `scripts/audit_tags.py`,
+`uvicorn app.main`. `deploy-gate.needs` ne garde que `changes`,
+`simulator` et `simulator-e2e`. Le `bash -n` ne nomme plus
+`infra/vps/deploy-app.sh` ni `infra/vps/sync-public-nginx.sh`.
+`deploy.yml` n'a qu'un job, `naviguide`, affiché `naviguide.fr`.
+Déclencheurs : poussée sur `main`, et `workflow_dispatch`. Pas de cron,
+pas de branche `recette`, pas de job `plan`. Chaque poussée sur `main`
+déploie. `FORCE_DEPLOY=0`. `dependabot.yml` garde npm
+`/naviguide-simulator`, pip `/naviguide-simulator/server` et
+github-actions. Le bloc npm `/frontend` est retiré. `prepare-ssh.sh`
+exige `VPS_HOST`. La valeur attendue est `naviguide@13.140.164.185`.
 `REMOTE_APP=/home/naviguide/naviguide`.
 
 ```bash
@@ -2307,22 +2349,27 @@ cd /tmp/ng-work
 git apply <<'END_NG_CI'
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -1,12 +1,7 @@
+@@ -1,16 +1,8 @@
  name: CI
  
--# Tests rapides et hermétiques (aucun secret, aucun service) :
 -#   - jest verrouille l'ordre des couches carte et le registre des fonds ;
 -#   - le build CRA attrape les régressions de bundling (maplibre chargé à la demande) ;
 -#   - le script d'audit des tags tourne en mode GeoJSON sur les seeds (stdlib pur) ;
+-#   - API Blue Intelligence : pytest de backend/tests contre un Mongo de CI
+-#     (image mongo, 127.0.0.1:27017, base bi_ci). Aucun secret, aucun accès
+-#     à la base OVH, à Atlas ou à Nebius. Le seed vient des fichiers du dépôt.
+-#     La confiance OSM est celle d'Overpass (mêmes fonctions que le produit),
+-#     pas un score écrit à la main. Le cache ne rejoue que ces réponses.
 -#   - simulateur : si la PR touche naviguide-simulator/, `npm test` (node --test),
 -#     `vite build` et `pytest` (fetch mocké) — une croix rouge sur la PR avant
 -#     qu'un lot casse S1–S7, le juge ou le sac ici() sans qu'on le voie.
-+# Copie NAVIGUIDE. Frontend Blue Intelligence et audit des tags ne sont pas
-+# dans ce dépôt. Le simulateur est testé si la PR le touche.
++# Copie NAVIGUIDE. Frontend Blue Intelligence, audit des tags et le pytest
++# de l'API Blue Intelligence ne sont pas dans ce dépôt. Le simulateur est
++# testé si la PR le touche.
  
  on:
    pull_request:
-@@ -17,29 +12,6 @@
+@@ -21,29 +13,6 @@
    contents: read
  
  jobs:
@@ -2352,7 +2399,7 @@ git apply <<'END_NG_CI'
    # Le simulateur n'est testé que si la PR (ou le push) le touche : les PR
    # Blue Intelligence / NAVIGUIDE restent aussi rapides qu'avant.
    changes:
-@@ -167,13 +139,6 @@
+@@ -171,111 +140,19 @@
            retention-days: 7
            if-no-files-found: ignore
  
@@ -2363,10 +2410,110 @@ git apply <<'END_NG_CI'
 -      - name: Audit des tags (mode GeoJSON, sans Mongo)
 -        run: python3 scripts/audit_tags.py --geojson seed/projects.geojson seed/ports_of_entry.geojson
 -
+-  # Pytest de l'API. Le service Mongo est celui du runner, jamais la base
+-  # du VPS. Les fichiers .env écrits ici ne contiennent aucun secret :
+-  # les tests les lisent (dotenv_values) en plus des variables d'environnement.
+-  backend:
+-    name: API Blue Intelligence — pytest
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 75
+-    services:
+-      mongo:
+-        image: mongo:7
+-        ports:
+-          - 27017:27017
+-        options: >-
+-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+-          --health-interval 10s
+-          --health-timeout 5s
+-          --health-retries 10
+-    defaults:
+-      run:
+-        working-directory: backend
+-    env:
+-      MONGO_URL: mongodb://127.0.0.1:27017
+-      DB_NAME: bi_ci
+-      REACT_APP_BACKEND_URL: http://127.0.0.1:8001
+-      POE_AUTO_REFRESH: "0"
+-      PYTHONDONTWRITEBYTECODE: "1"
+-      TOKENIZERS_PARALLELISM: "false"
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-          cache: pip
+-          cache-dependency-path: backend/requirements.txt
+-      - name: Dépendances (backend/requirements.txt)
+-        # pip 26 n'a plus --index-strategy : il consulte déjà tous les
+-        # index. L'extra-index CPU est celui qui publie torch==2.13.0+cpu.
+-        run: |
+-          python -m pip install --upgrade pip
+-          python -m pip install -r requirements.txt \
+-            --extra-index-url https://download.pytorch.org/whl/cpu
+-      - name: Modèle d'embeddings local (cache disque, pas d'appel pendant les tests)
+-        run: |
+-          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+-      - name: Seed Mongo de CI (fichiers du dépôt uniquement)
+-        run: python scripts/seed_ci_mongo.py
+-      - name: Cache des réponses Overpass (clé = seed des ports)
+-        uses: actions/cache@v6
+-        with:
+-          path: backend/.ci-cache/osm-ports.json
+-          key: ci-osm-${{ hashFiles('seed/ports_of_entry.geojson') }}
+-      - name: Validation OSM réelle + scan d'anomalies (bi_ci seulement)
+-        run: python scripts/enrich_ci_osm.py
+-        env:
+-          CI_OSM_CACHE: ${{ github.workspace }}/backend/.ci-cache/osm-ports.json
+-      - name: Fichiers d'environnement lus par les tests
+-        run: |
+-          cat > .env <<'EOF'
+-          MONGO_URL=mongodb://127.0.0.1:27017
+-          DB_NAME=bi_ci
+-          CORS_ORIGINS=*
+-          SEARXNG_URL=http://127.0.0.1:8888
+-          EOF
+-          cat > ../frontend/.env <<'EOF'
+-          REACT_APP_BACKEND_URL=http://127.0.0.1:8001
+-          EOF
+-      - name: API locale sur 127.0.0.1:8001
+-        run: |
+-          python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 > /tmp/uvicorn-ci.log 2>&1 &
+-          echo $! > /tmp/uvicorn-ci.pid
+-          for _ in $(seq 1 60); do
+-            if curl -sf http://127.0.0.1:8001/api/ >/dev/null; then
+-              exit 0
+-            fi
+-            sleep 2
+-          done
+-          echo "L'API locale n'a pas répondu" >&2
+-          cat /tmp/uvicorn-ci.log >&2 || true
+-          exit 1
+-      - name: pytest backend/tests
+-        run: python -m pytest tests -q --tb=line
+-
    deploy-gate:
+-    needs: [frontend, audit-tags, backend, changes, simulator, simulator-e2e]
++    needs: [changes, simulator, simulator-e2e]
+     if: always() && !cancelled()
      runs-on: ubuntu-latest
      steps:
-@@ -182,8 +147,6 @@
+       - name: Les jobs de test doivent être verts
+         env:
+-          R_FRONTEND: ${{ needs.frontend.result }}
+-          R_AUDIT: ${{ needs.audit-tags.result }}
+-          R_BACKEND: ${{ needs.backend.result }}
+           R_CHANGES: ${{ needs.changes.result }}
+           R_SIMULATOR: ${{ needs.simulator.result }}
+           R_E2E: ${{ needs.simulator-e2e.result }}
+         run: |
+           fail=0
+-          for name in R_FRONTEND R_AUDIT R_BACKEND R_CHANGES R_SIMULATOR R_E2E; do
++          for name in R_CHANGES R_SIMULATOR R_E2E; do
+             result="${!name}"
+             echo "$name=$result"
+             case "$result" in
+@@ -289,8 +166,6 @@
          run: python3 infra/vps/ci/test_prod_jobs_busy.py
        - name: Syntaxe bash des scripts VPS
          run: |
@@ -2638,9 +2785,12 @@ git commit -m "chore: limiter la CI NAVIGUIDE au déploiement de naviguide.fr"
 ```
 
 Le `deploy-gate` de cette copie ne nomme plus `infra/vps/deploy-app.sh`
-ni `infra/vps/sync-public-nginx.sh`. Ces deux fichiers ne sont pas
-dans le dépôt filtré. Les six `bash -n` et les 31 tests doivent finir
-sans erreur. C'est le vert du `deploy-gate` côté NAVIGUIDE.
+ni `infra/vps/sync-public-nginx.sh`, ni le job `backend`, ni
+`R_FRONTEND`, `R_AUDIT`, `R_BACKEND`. Le fichier ne cite plus
+`frontend/.env`, `seed/ports_of_entry.geojson`, `scripts/audit_tags.py`,
+`scripts/seed_ci_mongo.py` ni `scripts/enrich_ci_osm.py`. Ces chemins
+ne sont pas dans le dépôt filtré. Les six `bash -n` et les 31 tests
+doivent finir sans erreur. C'est le vert du `deploy-gate` côté NAVIGUIDE.
 
 ### 6.7 Parité climatologie du simulateur, commit NAVIGUIDE
 
@@ -3168,6 +3318,7 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Noms GitHub | Décidés. L'archive est `Berry-Mappemonde/Blue-Intelligence-Map`, lecture seule, jamais supprimée. Les dépôts neufs sont `Berry-Mappemonde/Blue-Intelligence` et `Berry-Mappemonde/NAVIGUIDE`. Ordre : renommer, vérifier, créer NAVIGUIDE, puis créer Blue Intelligence en dernier. Cette dernière création efface la redirection de l'ancien nom. Section 3. |
 | Discours du film et réglages de la boucle | Décidés comme travaux d'après-filtre, pas faits dans cette PR. Deux commits dans la copie NAVIGUIDE (section 6.5), recommandés avant le premier push. Le discours va dans `naviguide-simulator/server/tests/fixtures/`, avec un renvoi dans `docs/`. Les chemins en dur de `infra/agents/` passent dans `infra/agents/repo_paths.py`. |
 | Houle | Le bandeau « swell not shipped » n'est pas retiré au split. Après la bascule, on vérifie la couche à l'écran. On retire la phrase seulement si la houle s'affiche. |
+| Pytest de l'API dans la CI | #561 est sur `main` (`14350b8c`). Le job s'appelle « API Blue Intelligence — pytest ». La copie Blue Intelligence le garde, et `deploy-gate.needs` aussi (`R_BACKEND`). La copie NAVIGUIDE retire le job, `R_BACKEND`, le commentaire d'en-tête, et les chemins que ce job cite. Les diffs de `ci.yml` en section 6.6 sont ceux de cet arbre. |
 
 ### 10.2 Qui restent ouvertes
 
@@ -3180,7 +3331,6 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Ancienne valeur de clé dans `.env.example` | **DÉCISION PROPRIÉTAIRE**, non bloquante pour le filtre. Le fichier (retiré le 28 août 2026) n'est recopié dans aucun dépôt neuf. La valeur reste dans l'historique de l'archive. La faire tourner, si elle a servi, est un geste à part : ce plan n'affiche pas la valeur et ne la renouvelle pas. |
 | Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande d'arrêt définitif dans ce plan. Les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. Les fichiers OVH restent jusqu'à un accord explicite, et après : les supprimer n'est pas une étape écrite ici. |
 | Mettre le stock `official-store/` dans Mongo | **DÉCISION PROPRIÉTAIRE.** Aujourd'hui `SIMULATOR_MONGO_URL` est absent et la base n'existe pas. Ce plan copie les fichiers. Y passer demanderait un autre plan, après la copie disque vérifiée. |
-| Pytest backend dans la CI Blue Intelligence | La PR #561 (`cursor/backend-pytest-ci-f963`) ajoute le job `backend` : Mongo local `bi_ci`, seed des fichiers du dépôt, Overpass via `enrich_ci_osm.py`, uvicorn `127.0.0.1:8001`, `pytest tests`. Quand ce job est sur `main`, la copie Blue Intelligence le garde (et `deploy-gate.needs` aussi). La copie NAVIGUIDE retire le job et cette entrée. Les diffs 6.6 de `ci.yml` se régénèrent sur cet arbre : ceux écrits ici visent le `ci.yml` d'avant ce job. |
 | Profil « lots de nuit » pour Blue Intelligence | Plus tard. `run_lots.py` n'est pas dans ce dépôt au moment du filtre. La section 6.5 prépare le fichier de réglages qui rend la copie possible. Les quatre scripts GitHub génériques y sont déjà. |
 
 Tranché dans ce plan, pour qu'un exécutant n'ait pas à choisir en cours
@@ -3289,3 +3439,4 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Lecture du classeur sur `23be7ba8` (script copié, non suivi) : 1 857 suivis, 574 / 1 245 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Les quatre fichiers de la #551 sont classés par préfixe. Self-test : 64 cas. | Répétition du 17 oct. au soir |
 | Décompte §5 aligné sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge`, 5 tags. 9 PR ouvertes. #551 est sur `main`. #548 est fermée sans fusion. | `git ls-remote` ; `gh pr list` |
 | Section 6.8 : on copie `climatology_query.py` dans Blue Intelligence et on garde `test_naviguide_query_not_painted` intact (1 passed). On n'ajoute pas le test NAVIGUIDE qui échoue sur `app`. | Répétition ; consigne de ne pas affaiblir les tests |
+| #561 est sur `main` (`14350b8c`). Les diffs 6.6 de `ci.yml` sont régénérés sur ce fichier. Blue Intelligence garde `frontend`, `audit-tags`, `backend` (« API Blue Intelligence — pytest ») et `deploy-gate` (`needs` : ces trois jobs, `R_BACKEND`). NAVIGUIDE garde `changes`, `simulator`, `simulator-e2e` et `deploy-gate`. Il retire `frontend`, `audit-tags`, `backend`, `R_FRONTEND`, `R_AUDIT`, `R_BACKEND`, et ne cite plus `frontend/.env`, `seed/ports_of_entry.geojson`, `backend/requirements.txt`, `scripts/seed_ci_mongo.py`, `scripts/enrich_ci_osm.py` ni `scripts/audit_tags.py`. `git apply --check` accepte les huit diffs sur `14350b8c`. | `main` `14350b8c` ; PR #561 fusionnée |
