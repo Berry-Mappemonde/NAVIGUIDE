@@ -5,9 +5,9 @@ import { expect, test } from "@playwright/test";
 const CONNECTORS_FR = ["Puis", "Ensuite", "Plus loin", "De là", "Sur la route", "À la jambe suivante"];
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-r5/${name}.jpg`,
-  type: "jpeg",
-  quality: 70,
+  path: `../docs/recette/lot-r5/${name}.webp`,
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

@@ -11,7 +11,7 @@ import { dismissNotForNav, leaveCinema, probeOfficial } from "../helpers.js";
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-ed1");
 mkdirSync(recetteDir, { recursive: true });
 const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`), type: "jpeg", quality: 70, fullPage: false,
+  path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
 const LLM_URL = /nebius|openai|anthropic|openrouter|tokenfactory|api\.nvidia/i;
