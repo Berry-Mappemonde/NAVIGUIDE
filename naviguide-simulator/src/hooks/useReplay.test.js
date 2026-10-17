@@ -45,6 +45,12 @@ describe("useReplay contract (lot E)", () => {
     assert.match(app, /storyReplay=\{replay\.active\}/);
   });
 
+  it("le récit du panneau pendant Revoir reste sur l'horloge officielle", () => {
+    assert.match(app, /const storyLive = replay\.active && sourceLive \? sourceLive : live/);
+    assert.match(app, /live: storyLive/);
+    assert.match(app, /now: storyLive\?\.iso \|\| Date\.now\(\)/);
+  });
+
   it("the film bar offers Revoir / Stop ; voice follows Écouter (no 🔊)", () => {
     assert.match(bar, /data-testid="replay-start"/);
     assert.match(bar, /data-testid="replay-stop"/);
@@ -334,6 +340,12 @@ describe("lot RC10 — film officiel, pas la Simulation", () => {
     assert.equal(officialFilmStatus({
       chapters: [{ text: "Bay of Biscay and milles nautiques du départ" }],
     }), "stale");
+    const live = "The Berry-Mappemonde expedition left Saint-Maur on 15 May 2026. "
+      + "The route goes through Bay of Biscay, Western Med. "
+      + `${"miles ".repeat(900)} `
+      + "Today, the boat is at sea, 10,161 nautical miles from Dzaoudzi.";
+    assert.equal(isRe7OfficialFilm({ chapters: [{ text: live }] }), true);
+    assert.equal(officialFilmStatus({ chapters: [{ text: live }], status: "ready" }), "ready");
   });
 
   it("Revoir attend l'horloge officielle + /film RE7 ; absent + requireOfficialFilm → false", () => {
@@ -1110,7 +1122,10 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
     assert.equal(off.effectiveStyle, "raw");
     assert.equal(off.source, "rules");
     assert.equal(writtenPillEnabled(off.hasWritten), false);
+    assert.equal(writtenPillEnabled({ hasWritten: false, filmReady: true }), true);
+    assert.equal(writtenPillEnabled({ hasWritten: false, customFilm: true }), false);
     assert.equal(filmSourceKey(off.source), "storySourceRules");
+    assert.equal(filmSourceKey("nemotron-super-reviewed-ultra"), "storySourceSuperReviewed");
 
     const raw = resolveServedFilm({ hasWritten: false, source: "rules" }, "raw");
     assert.equal(raw.updateHasWritten, false);
@@ -1123,6 +1138,8 @@ describe("lot RG11B — pilule Rédigé, hasWritten, étiquette", () => {
     assert.match(hook, /filmRequestStyle\(filmStyle\)/);
     assert.match(hook, /style=\$\{style\}/);
     assert.match(hook, /style=written/);
+    assert.match(hook, /method: "POST"/);
+    assert.match(hook, /chooseFilmStyle/);
     assert.match(hook, /resolveServedFilm/);
     assert.match(hook, /probeWritten/);
     assert.match(hook, /applyResolvedMeta/);

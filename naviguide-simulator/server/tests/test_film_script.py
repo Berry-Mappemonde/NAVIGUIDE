@@ -1,5 +1,6 @@
 """Lot F3 — script du film : longueur, balises, aucun nombre nouveau, cache, sélection."""
 import asyncio
+import json
 import re
 from datetime import datetime, timezone
 
@@ -18,6 +19,9 @@ from film_script import (
     SHORT_CROSSING_MS,
     allocate_chapter_budgets,
     film_char_budget,
+    film_write_window,
+    film_ultra_open,
+    write_film_chain,
     film_estimated_seconds,
     film_priority_tier,
     fit_chapter_text,
@@ -33,7 +37,21 @@ from film_script import (
     cyclone_name_year,
     dated_marks,
     date_density_ok,
+    dc_subject_candidates,
+    film_choice_bag,
+    tour_snapshot,
+    parse_choice_ids,
+    fallback_choose_ids,
+    apply_chosen_subjects,
+    choose_film_ids,
+    select_ids_with_vl,
+    trim_ids_with_lightning,
+    TV1_WATCH_ID,
+    TV1_WATCH_KIND,
+    DC_FAMILY_KINDS,
     dose_amp_changes,
+    dose_dc2_leg_changes,
+    dose_dc3_leg_changes,
     dose_climo_changes,
     dose_coast_changes,
     dose_project_changes,
@@ -72,6 +90,7 @@ from film_script import (
     station_spoken_label,
     speak_film_text,
     written_is_valid,
+    REVIEWED_SOURCE,
     write_stored_plan,
     WRITTEN_SOURCE,
     apply_written_guard,
@@ -1111,9 +1130,11 @@ def test_warm_film_story_passes_review_without_clock(monkeypatch):
         ],
     }
     captured: list = []
+    captured_kw: list = []
 
     async def fake_build(*_a, **kw):
         captured.append(kw.get("review"))
+        captured_kw.append(kw)
         return {"hasWritten": False, "chars": 0, "source": "rules"}
 
     monkeypatch.setattr(film_script, "build_film_response", fake_build)
@@ -1123,6 +1144,7 @@ def test_warm_film_story_passes_review_without_clock(monkeypatch):
     })
     out = asyncio.run(warm_film_story("seed-no-clock", langs=("fr",)))
     assert out["status"] == "ready"
+    assert captured_kw and captured_kw[0].get("want_write") is False
     assert captured and captured[0] is not None
     legs = (captured[0] or {}).get("legs") or []
     assert any("Ajaccio" in (leg.get("from") or "") and "Fort-de-France" in (leg.get("to") or "") for leg in legs)
@@ -3250,23 +3272,25 @@ def test_rg11a_honest_write_has_increasing_anchors():
 
 
 def test_am1b_amp_enter_and_nearby_sentences():
-    """Entrée → « le bateau entre dans l'aire marine protégée X » ; nearby → longe à N milles."""
+    """DC1 : entrée → traverse ; nearby → près, à N milles. Circulation seulement si le stock l'a."""
     enter = {
         "kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
         "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
     }
     fr = change_sentence(enter, "fr")
     en = change_sentence(enter, "en")
-    assert "le bateau entre dans l'aire marine protégée Cabrera" in fr
-    assert "the boat enters the marine protected area Cabrera" in en
+    assert "le bateau traverse l'aire marine protégée Cabrera" in fr
+    assert "the boat crosses the marine protected area Cabrera" in en
+    assert "circulation" not in fr
+    assert "transit" not in en
     near = {
         "kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
         "t": "2026-05-25T12:00:00Z", "nm": 6,
     }
     nfr = change_sentence(near, "fr")
     nen = change_sentence(near, "en")
-    assert "longe l'aire marine protégée Cabrera à six milles" in nfr
-    assert "skirts the marine protected area Cabrera at six miles" in nen
+    assert "passe près de l'aire marine protégée Cabrera, à six milles" in nfr
+    assert "passes near the marine protected area Cabrera, at six miles" in nen
     from film_script import CHANGE_PRIORITY
     assert CHANGE_PRIORITY["amp"] < CHANGE_PRIORITY["zee-enter"]
 
@@ -3287,7 +3311,7 @@ def test_am1b_two_inside_pearls_one_amp_sentence():
     ])
     hits = [c for c in rows if "Cabrera" in str(c.get("title") or "")]
     assert len(hits) == 1
-    assert change_sentence(hits[0], "fr").count("entre dans") == 1
+    assert change_sentence(hits[0], "fr").count("traverse") == 1
 
 
 def test_phrase_for_ici_event_matches_film_zee():
@@ -3328,7 +3352,7 @@ def test_phrase_for_ici_event_matches_film_amp_enter():
         "payload": {"amp": {"name": "Cabrera", "site_id": "ES-CAB", "nm": 0}},
     }, "fr")
     assert ici == film
-    assert "entre dans l'aire marine protégée" in ici
+    assert "traverse l'aire marine protégée" in ici
     assert "Cabrera" in ici
 
 
@@ -4093,3 +4117,1082 @@ def test_rc55_saint_pierre_chapter_omits_guiana_and_equator():
     pacific_text = pacific.get("text") or ""
     assert re.search(r"equator|équateur", pacific_text, re.I), pacific_text
     assert re.search(r"Balboa", pacific_text, re.I), pacific_text
+
+
+# ── DC1 : une aire, près ou traversée, circulation du stock, 2:30 ≤ 2250 ─────
+
+
+def _amp_sentences(blob: str) -> list[str]:
+    return [
+        s.strip()
+        for s in re.split(r"(?<=[.!?…])\s+", blob or "")
+        if re.search(r"aire marine|marine protected area", s or "", re.I)
+    ]
+
+
+def test_dc1_amp_near_or_crossing_traffic_only_from_stock():
+    """Près / traversée ; circulation si traffic ou codes entry/speed ; sinon silence."""
+    enter = {
+        "kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+        "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
+        "traffic": "regulated",
+    }
+    fr = change_sentence(enter, "fr")
+    en = change_sentence(enter, "en")
+    assert "traverse l'aire marine protégée Cabrera" in fr
+    assert "circulation régulée" in fr
+    assert "crosses the marine protected area Cabrera" in en
+    assert "regulated transit" in en
+    forbidden = {**enter, "traffic": "forbidden", "title": "Iroise", "fact": "Iroise"}
+    assert "circulation interdite" in change_sentence(forbidden, "fr")
+    assert "no transit" in change_sentence(forbidden, "en")
+    from_codes = {
+        "kind": "amp", "event": "enter", "title": "Scandola", "fact": "Scandola",
+        "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
+        "entry": 1, "speed": 3,
+    }
+    assert "circulation interdite" in change_sentence(from_codes, "fr")
+    silent = {
+        "kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
+        "t": "2026-05-25T12:00:00Z", "nm": 6,
+    }
+    near = change_sentence(silent, "fr")
+    assert "près de l'aire marine protégée Cabrera" in near
+    assert "six milles" in near
+    assert "circulation" not in near
+    assert "interdit" not in near
+    assert "régul" not in near
+    unknown = {**enter, "traffic": "unknown"}
+    assert "circulation" not in change_sentence(unknown, "fr")
+    nested_event = {
+        "kind": "amp", "title": "Cabrera", "fact": "Cabrera",
+        "t": "2026-05-25T12:00:00Z",
+        "entry": {"event": "enter", "inside": True, "nm": 0, "name": "Cabrera"},
+    }
+    nested_fr = change_sentence(nested_event, "fr")
+    assert "traverse l'aire marine protégée Cabrera" in nested_fr
+    assert "circulation" not in nested_fr
+
+
+def test_dc1_one_amp_in_150_and_char_budget():
+    """Une seconde aire dans le même 2:30 est refusée. film_char_budget(150) = 2250."""
+    assert film_char_budget(150) == 2250
+    journal = _rc22_rich_journal()
+    journal["moments"] = list(journal["moments"]) + [{
+        "seq": 204, "t": "2026-05-17T10:00:00Z", "signature": "amp-cabrera-dc1", "legIdx": 1,
+        "changes": [{
+            "kind": "amp", "score": 2, "title": "Cabrera",
+            "fact": "Cabrera (6 nm)", "nm": 6, "event": "nearby",
+        }],
+        "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}},
+    }, {
+        "seq": 205, "t": "2026-07-03T10:00:00Z", "signature": "amp-agoa-dc1", "legIdx": 3,
+        "changes": [{
+            "kind": "amp", "score": 2, "title": "Agoa",
+            "fact": "Agoa", "nm": 0, "event": "enter", "inside": True,
+        }],
+        "moment": {"leg": {
+            "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+        }},
+    }]
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(plan)
+    amps = _amp_sentences(blob)
+    assert len(amps) <= 1, amps
+    assert plan["chars"] <= film_char_budget(150)
+    assert plan["chars"] / 15 <= 150 * 1.1
+    bag = dc_subject_candidates([
+        {"kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
+         "nm": 6, "t": "2026-05-17T10:00:00Z"},
+        {"kind": "amp", "event": "enter", "title": "Agoa", "fact": "Agoa",
+         "nm": 0, "inside": True, "t": "2026-07-03T10:00:00Z"},
+    ], "fr")
+    assert len(bag) == 1
+    assert bag[0]["kind"] == "amp"
+    assert bag[0]["oncePerFamilyOnLongLeg"] is True
+    assert bag[0]["phrase"]
+    assert bag[0]["relation"] == "crossing"
+    stored = plan.get("dcSubjects") or []
+    assert stored
+    assert stored[0]["kind"] == "amp"
+    assert stored[0]["oncePerFamilyOnLongLeg"] is True
+    assert stored[0]["phrase"]
+
+
+# ── DC2 : bouée, formalité, mouillage — sac, intégral, pas le 2:30 ───────────
+
+_DC2_BUOY = re.compile(r"une bouée|a buoy", re.I)
+_DC2_FORM = re.compile(
+    r"formalit[ée]s d['’]entr[ée]e passent par|entry formalities go through",
+    re.I,
+)
+_DC2_ANC = re.compile(r"\bmouillage\b|\banchorage\b", re.I)
+
+
+def _dc2_family_hits(blob: str) -> dict[str, int]:
+    sents = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", blob or "") if s.strip()]
+    return {
+        "buoy": sum(1 for s in sents if _DC2_BUOY.search(s)),
+        "poe": sum(1 for s in sents if _DC2_FORM.search(s)),
+        "anchorage": sum(1 for s in sents if _DC2_ANC.search(s)),
+    }
+
+
+def _dc2_journal():
+    journal = _rc22_rich_journal()
+    extra = [
+        {
+            "seq": 310, "t": "2026-07-08T10:00:00Z", "signature": "buoy-dc2-a", "legIdx": 3,
+            "changes": [{
+                "kind": "station", "score": 2, "title": "Wave buoy 12",
+                "fact": "Wave buoy 12 (4 nm)", "nm": 4,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 311, "t": "2026-07-18T10:00:00Z", "signature": "buoy-dc2-b", "legIdx": 3,
+            "changes": [{
+                "kind": "station", "score": 2, "title": "PIRATA",
+                "fact": "PIRATA (6 nm)", "nm": 6,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 312, "t": "2026-07-12T10:00:00Z", "signature": "poe-dc2-a", "legIdx": 3,
+            "changes": [{
+                "kind": "poe", "score": 2, "title": "Papeete", "fact": "Papeete",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 313, "t": "2026-07-22T10:00:00Z", "signature": "poe-dc2-b", "legIdx": 3,
+            "changes": [{
+                "kind": "poe", "score": 2, "title": "Nouméa", "fact": "Nouméa",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 314, "t": "2026-07-14T10:00:00Z", "signature": "anc-dc2-a", "legIdx": 3,
+            "changes": [{
+                "kind": "anchorage", "score": 2, "title": "Mouillage des Minimes",
+                "fact": "Mouillage des Minimes", "nm": 3,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 315, "t": "2026-08-02T10:00:00Z", "signature": "anc-dc2-b", "legIdx": 3,
+            "changes": [{
+                "kind": "anchorage", "score": 2, "title": "Baie de Prony",
+                "fact": "Baie de Prony", "nm": 5,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+    ]
+    return {**journal, "moments": list(journal["moments"]) + extra}
+
+
+def test_dc2_phrases_from_stock_only():
+    """FR/EN depuis un fait du stock ; silence si le fait manque."""
+    buoy = {
+        "kind": "buoy", "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)",
+        "t": "2026-07-08T10:00:00Z",
+    }
+    fr_b, en_b = change_sentence(buoy, "fr"), change_sentence(buoy, "en")
+    assert "une bouée" in fr_b
+    assert "a buoy" in en_b
+    assert change_sentence({"kind": "buoy", "title": "Station croisée"}, "fr") == ""
+    poe = {
+        "kind": "poe", "title": "Papeete", "fact": "Papeete",
+        "t": "2026-07-12T10:00:00Z",
+    }
+    fr_p, en_p = change_sentence(poe, "fr"), change_sentence(poe, "en")
+    assert "les formalités d'entrée passent par Papeete" in fr_p
+    assert "entry formalities go through Papeete" in en_p
+    silent_poe = {
+        "kind": "poe",
+        "title": "Formalités d'entrée",
+        "fact": "Aucun port d'entrée officiel n'est connu pour cette ZEE.",
+    }
+    assert change_sentence(silent_poe, "fr") == ""
+    assert change_sentence(silent_poe, "en") == ""
+    anc = {
+        "kind": "anchorage", "title": "Mouillage des Minimes",
+        "fact": "Mouillage des Minimes", "t": "2026-07-14T10:00:00Z",
+    }
+    fr_a, en_a = change_sentence(anc, "fr"), change_sentence(anc, "en")
+    assert "mouillage Mouillage des Minimes" in fr_a
+    assert "anchorage Mouillage des Minimes" in en_a
+    assert change_sentence({"kind": "anchorage", "title": "anchorage"}, "fr") == ""
+    assert change_sentence({"kind": "anchorage", "title": "mooring"}, "en") == ""
+    port = {
+        "kind": "port", "title": "La Rochelle", "fact": "La Rochelle",
+        "t": "2026-05-15T12:00:00Z",
+    }
+    fr_port = change_sentence(port, "fr")
+    assert "devant La Rochelle" in fr_port
+    assert "formalités" not in fr_port
+    assert all(r["kind"] != "poe" for r in dc_subject_candidates([port], "fr"))
+
+
+def test_dc2_once_per_family_on_long_integral():
+    """Intégral : une bouée, une formalité, un mouillage par longue jambe."""
+    day = 86_400_000
+    buoys = [
+        {"id": "b1", "kind": "station", "score": 2, "tMs": 4 * day,
+         "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)", "nm": 4,
+         "t": "2026-07-08T10:00:00Z"},
+        {"id": "b2", "kind": "station", "score": 2, "tMs": 14 * day,
+         "title": "PIRATA", "fact": "PIRATA (6 nm)", "nm": 6,
+         "t": "2026-07-18T10:00:00Z"},
+    ]
+    poes = [
+        {"id": "p1", "kind": "poe", "score": 2, "tMs": 8 * day,
+         "title": "Papeete", "fact": "Papeete", "t": "2026-07-12T10:00:00Z"},
+        {"id": "p2", "kind": "poe", "score": 2, "tMs": 18 * day,
+         "title": "Nouméa", "fact": "Nouméa", "t": "2026-07-22T10:00:00Z"},
+    ]
+    ancs = [
+        {"id": "a1", "kind": "anchorage", "score": 2, "tMs": 10 * day,
+         "title": "Mouillage des Minimes", "fact": "Mouillage des Minimes",
+         "t": "2026-07-14T10:00:00Z"},
+        {"id": "a2", "kind": "anchorage", "score": 2, "tMs": 20 * day,
+         "title": "Baie de Prony", "fact": "Baie de Prony",
+         "t": "2026-08-02T10:00:00Z"},
+    ]
+    long_span = 40 * day
+    picked = dose_dc2_leg_changes(buoys + poes + ancs, long_span)
+    kinds = [c["kind"] for c in picked]
+    assert kinds.count("buoy") == 1
+    assert kinds.count("poe") == 1
+    assert kinds.count("anchorage") == 1
+    assert dose_dc2_leg_changes(buoys + poes + ancs, 2 * day) == []
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc2_journal(),
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
+    pacific = next(
+        c for c in plan["chapters"]
+        if "Fort-de-France" in (c.get("fromName") or "")
+        and "Nouméa" in (c.get("toName") or "")
+    )
+    hits = _dc2_family_hits(pacific.get("text") or "")
+    assert hits["buoy"] <= 1, pacific.get("text")
+    assert hits["poe"] <= 1, pacific.get("text")
+    assert hits["anchorage"] <= 1, pacific.get("text")
+    assert hits["buoy"] == 1, pacific.get("text")
+    assert hits["poe"] == 1, pacific.get("text")
+    assert hits["anchorage"] == 1, pacific.get("text")
+    blob = _script_blob(plan)
+    assert "Wave buoy 12" not in blob
+    assert "PIRATA" not in blob or "une bouée" in blob
+
+
+def test_dc2_short_tier_omits_kinds_and_char_budget():
+    """Le 2:30 n'empile pas bouée / formalité / mouillage. ≤ 2250 caractères."""
+    assert film_char_budget(150) == 2250
+    journal = _dc2_journal()
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(short)
+    hits = _dc2_family_hits(blob)
+    assert hits["buoy"] == 0, blob
+    assert hits["poe"] == 0, blob
+    assert hits["anchorage"] == 0, blob
+    assert short["chars"] <= film_char_budget(150)
+    assert short["chars"] / 15 <= 150 * 1.1
+    picked_short = select_chapter_changes(
+        [
+            {"id": "b", "kind": "buoy", "score": 2, "tMs": 2, "title": "Wave buoy 12",
+             "fact": "Wave buoy 12", "t": "2026-07-08T10:00:00Z"},
+            {"id": "p", "kind": "poe", "score": 2, "tMs": 3, "title": "Papeete",
+             "fact": "Papeete"},
+            {"id": "a", "kind": "anchorage", "score": 2, "tMs": 4,
+             "title": "Mouillage des Minimes", "fact": "Mouillage des Minimes"},
+            {"id": "e", "kind": "escale", "score": 3, "tMs": 10,
+             "title": "Arrivée à Nouméa", "fact": "x"},
+        ],
+        0, 10, budget=True, tier=film_priority_tier(150),
+    )
+    assert not any(c.get("kind") in {"buoy", "poe", "anchorage"} for c in picked_short)
+
+
+def test_dc2_bag_for_vs1():
+    """Sac dc_subject_candidates : une entrée par famille, oncePerFamilyOnLongLeg."""
+    bag = dc_subject_candidates([
+        {"kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+         "nm": 0, "inside": True, "t": "2026-05-25T12:00:00Z"},
+        {"kind": "station", "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)",
+         "nm": 4, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "station", "title": "PIRATA", "fact": "PIRATA",
+         "t": "2026-07-18T10:00:00Z"},
+        {"kind": "poe", "title": "Papeete", "fact": "Papeete",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "poe", "title": "Nouméa", "fact": "Nouméa",
+         "t": "2026-07-22T10:00:00Z"},
+        {"kind": "anchorage", "title": "Mouillage des Minimes",
+         "fact": "Mouillage des Minimes", "t": "2026-07-14T10:00:00Z"},
+        {"kind": "anchorage", "title": "anchorage", "fact": "anchorage"},
+    ], "fr")
+    kinds = [r["kind"] for r in bag]
+    assert kinds.count("amp") == 1
+    assert kinds.count("buoy") == 1
+    assert kinds.count("poe") == 1
+    assert kinds.count("anchorage") == 1
+    by_kind = {r["kind"]: r for r in bag}
+    assert by_kind["buoy"]["oncePerFamilyOnLongLeg"] is True
+    assert "une bouée" in by_kind["buoy"]["phrase"]
+    assert by_kind["poe"]["oncePerFamilyOnLongLeg"] is True
+    assert "Papeete" in by_kind["poe"]["phrase"]
+    assert "formalités d'entrée passent par" in by_kind["poe"]["phrase"]
+    assert by_kind["anchorage"]["oncePerFamilyOnLongLeg"] is True
+    assert "Mouillage des Minimes" in by_kind["anchorage"]["phrase"]
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc2_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    stored_kinds = {r["kind"] for r in (plan.get("dcSubjects") or [])}
+    assert {"buoy", "poe", "anchorage"} <= stored_kinds
+    for rec in plan["dcSubjects"]:
+        assert rec["oncePerFamilyOnLongLeg"] is True
+        assert rec["phrase"]
+
+
+# ── DC3 : balise, câble, profondeur, piraterie, satellite — sac, pas le 2:30 ─
+
+_DC3_ATON = re.compile(r"\bbalise\b|\bbeacon\b", re.I)
+_DC3_CABLE = re.compile(r"\bcâble\b|\bcable\b", re.I)
+_DC3_DEPTH = re.compile(r"profondeur\s*:|depth\s*:", re.I)
+_DC3_PIRACY = re.compile(r"Piraterie —|Piracy —")
+_DC3_SAT_INVENTED = re.compile(
+    r"image satellite au-dessus|satellite image above",
+    re.I,
+)
+
+
+def _dc3_family_hits(blob: str) -> dict[str, int]:
+    sents = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", blob or "") if s.strip()]
+    return {
+        "aton": sum(1 for s in sents if _DC3_ATON.search(s)),
+        "cable": sum(1 for s in sents if _DC3_CABLE.search(s)),
+        "depth": sum(1 for s in sents if _DC3_DEPTH.search(s)),
+        "piracy": sum(1 for s in sents if _DC3_PIRACY.search(s)),
+        "sat_invented": sum(1 for s in sents if _DC3_SAT_INVENTED.search(s)),
+    }
+
+
+def _dc3_journal():
+    journal = _rc22_rich_journal()
+    extra = [
+        {
+            "seq": 410, "t": "2026-07-08T10:00:00Z", "signature": "aton-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "aton", "score": 2, "title": "Feu des Minimes",
+                "fact": "Feu des Minimes", "name": "Feu des Minimes", "nm": 2,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 411, "t": "2026-07-18T10:00:00Z", "signature": "aton-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "aton", "score": 2, "title": "Phare Amédée",
+                "fact": "Phare Amédée", "name": "Phare Amédée", "nm": 5,
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 412, "t": "2026-07-12T10:00:00Z", "signature": "cable-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "cable", "score": 2, "title": "Honotua",
+                "fact": "Honotua", "name": "Honotua",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 413, "t": "2026-07-22T10:00:00Z", "signature": "cable-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "cable", "score": 2, "title": "Southern Cross",
+                "fact": "Southern Cross", "name": "Southern Cross",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 414, "t": "2026-07-14T10:00:00Z", "signature": "depth-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "depth", "score": 2, "depth_m": 18.4, "source": "emodnet",
+                "title": "emodnet", "fact": "emodnet",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 415, "t": "2026-08-02T10:00:00Z", "signature": "depth-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "depth", "score": 2, "depthOffshore": -3888.0, "source": "gebco",
+                "title": "gebco", "fact": "gebco",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 416, "t": "2026-07-16T10:00:00Z", "signature": "piracy-dc3-a", "legIdx": 3,
+            "changes": [{
+                "kind": "piracy", "score": 2, "title": "Horn of Africa / Gulf Aden",
+                "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+                "source": "IMB/UKMTO",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 417, "t": "2026-08-10T10:00:00Z", "signature": "piracy-dc3-b", "legIdx": 3,
+            "changes": [{
+                "kind": "piracy", "score": 2, "title": "Strait of Malacca",
+                "name": "Strait of Malacca", "level": "MEDIUM", "source": "ReCAAP",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 418, "t": "2026-07-20T10:00:00Z", "signature": "sat-dc3-caption", "legIdx": 3,
+            "changes": [{
+                "kind": "satellite", "score": 2,
+                "caption": "Panache sédimentaire au large de Cayenne",
+                "title": "Panache sédimentaire au large de Cayenne",
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+        {
+            "seq": 419, "t": "2026-08-12T10:00:00Z", "signature": "sat-dc3-image", "legIdx": 3,
+            "changes": [{
+                "kind": "satellite", "score": 2, "title": "Image satellite",
+                "fact": "sentinel-2-l2a · 2026-09-12",
+                "scene": {
+                    "id": "S2A_MSIL2A_20260912T000000",
+                    "product": "sentinel-2-l2a",
+                    "datetime": "2026-09-12T00:00:00Z",
+                },
+            }],
+            "moment": {"leg": {
+                "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+            }},
+        },
+    ]
+    return {**journal, "moments": list(journal["moments"]) + extra}
+
+
+def test_dc3_phrases_from_stock_only():
+    """FR/EN depuis un champ du stock ; silence si le champ manque."""
+    from film_script import _dc3_from_ici_bag
+
+    aton = {
+        "kind": "aton", "title": "Feu des Minimes", "name": "Feu des Minimes",
+        "t": "2026-07-08T10:00:00Z",
+    }
+    fr_a, en_a = change_sentence(aton, "fr"), change_sentence(aton, "en")
+    assert "balise Feu des Minimes" in fr_a
+    assert "beacon Feu des Minimes" in en_a
+    assert change_sentence({"kind": "aton", "title": "buoy_lateral"}, "fr") == ""
+    assert change_sentence({"kind": "aton", "title": "balise"}, "fr") == ""
+
+    cable = {"kind": "cable", "title": "Honotua", "name": "Honotua"}
+    fr_c = change_sentence(cable, "fr")
+    en_c = change_sentence(cable, "en")
+    assert "Honotua" in fr_c and "câble" in fr_c.casefold()
+    assert "Honotua" in en_c and "cable" in en_c.casefold()
+    assert change_sentence({"kind": "cable", "title": "active"}, "fr") == ""
+    assert change_sentence({"kind": "cable", "nearby": True}, "fr") == ""
+    assert change_sentence({"kind": "cable", "title": "4", "name": "4"}, "fr") == ""
+    assert change_sentence({
+        "kind": "cable", "title": "CABLES DE TELEFONO OPERATIVOS",
+        "name": "CABLES DE TELEFONO OPERATIVOS",
+    }, "fr") == ""
+
+    depth = {"kind": "depth", "depth_m": 18.4, "source": "emodnet"}
+    assert "Profondeur : 18,4 m" in change_sentence(depth, "fr")
+    assert "Depth: 18.4 m" in change_sentence(depth, "en")
+    assert change_sentence({"kind": "depth", "title": "gebco"}, "fr") == ""
+
+    pir = {
+        "kind": "piracy", "name": "Horn of Africa / Gulf Aden",
+        "level": "HIGH", "source": "IMB/UKMTO",
+    }
+    assert "Piraterie — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO" in change_sentence(pir, "fr")
+    assert "Piracy — Horn of Africa / Gulf Aden · HIGH · IMB/UKMTO" in change_sentence(pir, "en")
+    assert change_sentence({"kind": "piracy", "title": "piracy"}, "fr") == ""
+
+    sat = {
+        "kind": "satellite",
+        "caption": "Panache sédimentaire au large de Cayenne",
+    }
+    assert "Panache sédimentaire au large de Cayenne" in change_sentence(sat, "fr")
+    silent_sat = {
+        "kind": "satellite", "title": "Image satellite",
+        "scene": {"id": "S2A_x", "product": "sentinel-2-l2a", "datetime": "2026-09-12T00:00:00Z"},
+    }
+    assert change_sentence(silent_sat, "fr") == ""
+    assert change_sentence(silent_sat, "en") == ""
+    assert "image satellite au-dessus" not in change_sentence(silent_sat, "fr")
+    bag = _dc3_from_ici_bag({
+        "aton": {"nearby": [{"name": "buoy_lateral", "nm": 4.6}]},
+        "emodnet": {"cables": {"nearby": True}, "bathy": None},
+        "depthOffshore": None,
+        "piracy": None,
+        "satellites": {"scene": {"id": "S2A_x", "product": "sentinel-2-l2a"}},
+        "amp": [],
+    })
+    assert all(c["kind"] != "satellite" for c in bag)
+    assert all(c["kind"] != "aton" for c in bag)
+    assert all(c["kind"] != "cable" for c in bag)
+
+
+def test_dc3_once_per_family_on_long_integral():
+    """Intégral : une phrase par famille DC3 sur une longue jambe."""
+    day = 86_400_000
+    long_span = 40 * day
+    picked = dose_dc3_leg_changes([
+        {"id": "a1", "kind": "aton", "score": 2, "tMs": 4 * day,
+         "title": "Feu des Minimes", "name": "Feu des Minimes", "nm": 2,
+         "t": "2026-07-08T10:00:00Z"},
+        {"id": "a2", "kind": "aton", "score": 2, "tMs": 14 * day,
+         "title": "Phare Amédée", "name": "Phare Amédée", "nm": 5,
+         "t": "2026-07-18T10:00:00Z"},
+        {"id": "c1", "kind": "cable", "score": 2, "tMs": 8 * day,
+         "title": "Honotua", "name": "Honotua", "t": "2026-07-12T10:00:00Z"},
+        {"id": "c2", "kind": "cable", "score": 2, "tMs": 18 * day,
+         "title": "Southern Cross", "name": "Southern Cross"},
+        {"id": "d1", "kind": "depth", "score": 2, "tMs": 10 * day,
+         "depth_m": 18.4, "t": "2026-07-14T10:00:00Z"},
+        {"id": "d2", "kind": "depth", "score": 2, "tMs": 20 * day,
+         "depthOffshore": -3888.0},
+        {"id": "p1", "kind": "piracy", "score": 2, "tMs": 12 * day,
+         "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+         "source": "IMB/UKMTO", "t": "2026-07-16T10:00:00Z"},
+        {"id": "p2", "kind": "piracy", "score": 2, "tMs": 22 * day,
+         "name": "Strait of Malacca", "level": "MEDIUM", "source": "ReCAAP"},
+        {"id": "s1", "kind": "satellite", "score": 2, "tMs": 16 * day,
+         "caption": "Panache sédimentaire au large de Cayenne",
+         "t": "2026-07-20T10:00:00Z"},
+        {"id": "s2", "kind": "satellite", "score": 2, "tMs": 24 * day,
+         "title": "Image satellite", "scene": {"product": "sentinel-2-l2a"}},
+    ], long_span)
+    kinds = [c["kind"] for c in picked]
+    assert kinds.count("aton") == 1
+    assert kinds.count("cable") == 1
+    assert kinds.count("depth") == 1
+    assert kinds.count("piracy") == 1
+    assert kinds.count("satellite") == 1
+    assert dose_dc3_leg_changes(picked, 2 * day) == []
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=0, now_ms=NOW_MS,
+    )
+    pacific = next(
+        c for c in plan["chapters"]
+        if "Fort-de-France" in (c.get("fromName") or "")
+        and "Nouméa" in (c.get("toName") or "")
+    )
+    hits = _dc3_family_hits(pacific.get("text") or "")
+    assert hits["aton"] <= 1, pacific.get("text")
+    assert hits["cable"] <= 1, pacific.get("text")
+    assert hits["depth"] <= 1, pacific.get("text")
+    assert hits["piracy"] <= 1, pacific.get("text")
+    assert hits["aton"] == 1, pacific.get("text")
+    assert hits["cable"] == 1, pacific.get("text")
+    assert hits["depth"] == 1, pacific.get("text")
+    assert hits["piracy"] == 1, pacific.get("text")
+    assert hits["sat_invented"] == 0, pacific.get("text")
+    blob = _script_blob(plan)
+    assert "image satellite au-dessus" not in blob
+    assert "Phare Amédée" not in blob or blob.count("balise") <= 1
+
+
+def test_dc3_short_tier_omits_kinds_and_char_budget():
+    """Le 2:30 n'empile pas les familles DC3. ≤ 2250 caractères."""
+    assert film_char_budget(150) == 2250
+    journal = _dc3_journal()
+    short = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(short)
+    hits = _dc3_family_hits(blob)
+    assert hits["aton"] == 0, blob
+    assert hits["cable"] == 0, blob
+    assert hits["depth"] == 0, blob
+    assert hits["piracy"] == 0, blob
+    assert hits["sat_invented"] == 0, blob
+    assert short["chars"] <= film_char_budget(150)
+    assert short["chars"] / 15 <= 150 * 1.1
+    picked_short = select_chapter_changes(
+        [
+            {"id": "a", "kind": "aton", "score": 2, "tMs": 2, "title": "Feu des Minimes",
+             "name": "Feu des Minimes"},
+            {"id": "c", "kind": "cable", "score": 2, "tMs": 3, "title": "Honotua",
+             "name": "Honotua"},
+            {"id": "d", "kind": "depth", "score": 2, "tMs": 4, "depth_m": 18.4},
+            {"id": "p", "kind": "piracy", "score": 2, "tMs": 5,
+             "name": "Horn of Africa / Gulf Aden", "level": "HIGH"},
+            {"id": "s", "kind": "satellite", "score": 2, "tMs": 6,
+             "caption": "Panache sédimentaire au large de Cayenne"},
+            {"id": "e", "kind": "escale", "score": 3, "tMs": 10,
+             "title": "Arrivée à Nouméa", "fact": "x"},
+        ],
+        0, 10, budget=True, tier=film_priority_tier(150),
+    )
+    assert not any(c.get("kind") in {
+        "aton", "cable", "depth", "piracy", "satellite",
+    } for c in picked_short)
+
+
+def test_dc3_bag_for_vs1():
+    """Sac dc_subject_candidates : une entrée par famille DC3, oncePerFamilyOnLongLeg."""
+    bag = dc_subject_candidates([
+        {"kind": "aton", "title": "Feu des Minimes", "name": "Feu des Minimes",
+         "nm": 2, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "aton", "title": "buoy_lateral", "name": "buoy_lateral"},
+        {"kind": "cable", "title": "Honotua", "name": "Honotua",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "cable", "title": "active", "name": "active"},
+        {"kind": "depth", "depth_m": 18.4, "t": "2026-07-14T10:00:00Z"},
+        {"kind": "depth", "title": "gebco"},
+        {"kind": "piracy", "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+         "source": "IMB/UKMTO", "t": "2026-07-16T10:00:00Z"},
+        {"kind": "satellite", "caption": "Panache sédimentaire au large de Cayenne",
+         "t": "2026-07-20T10:00:00Z"},
+        {"kind": "satellite", "title": "Image satellite",
+         "scene": {"product": "sentinel-2-l2a"}},
+    ], "fr")
+    kinds = [r["kind"] for r in bag]
+    assert kinds.count("aton") == 1
+    assert kinds.count("cable") == 1
+    assert kinds.count("depth") == 1
+    assert kinds.count("piracy") == 1
+    assert kinds.count("satellite") == 1
+    by_kind = {r["kind"]: r for r in bag}
+    assert by_kind["aton"]["oncePerFamilyOnLongLeg"] is True
+    assert "Feu des Minimes" in by_kind["aton"]["phrase"]
+    assert "Honotua" in by_kind["cable"]["phrase"]
+    assert "câble" in by_kind["cable"]["phrase"].casefold()
+    assert "18,4" in by_kind["depth"]["phrase"] or "18.4" in by_kind["depth"]["phrase"]
+    assert "profondeur" in by_kind["depth"]["phrase"].casefold()
+    assert "Horn of Africa / Gulf Aden" in by_kind["piracy"]["phrase"]
+    assert "Panache sédimentaire" in by_kind["satellite"]["phrase"]
+    assert "image satellite au-dessus" not in by_kind["satellite"]["phrase"]
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    stored_kinds = {r["kind"] for r in (plan.get("dcSubjects") or [])}
+    assert {"aton", "cable", "depth", "piracy", "satellite"} <= stored_kinds
+    for rec in plan["dcSubjects"]:
+        assert rec["oncePerFamilyOnLongLeg"] is True
+        assert rec["phrase"]
+
+
+def test_ed1_write_window_follows_budget_and_accepts_integral():
+    assert film_char_budget(150) == 2250
+    assert film_write_window(150) == (2025, 2475)
+    assert film_write_window(180) == (2430, 2970)
+    assert film_write_window(0) is None
+    long = "Berry-Mappemonde quitte La Rochelle. " * 120
+    assert len(long) >= 4000
+    ok, _, dropped = written_is_valid(long, long, [], seconds=0)
+    assert dropped == 0
+    assert ok
+    ok_short, _, _ = written_is_valid(long, long, [], seconds=150)
+    assert ok_short is False
+
+
+def test_ed1_judge_closed_serves_super_without_ultra(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    assert film_ultra_open() is False
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+        }],
+        "targetSeconds": 150,
+    }
+    hops = []
+
+    async def fake_cascade(system, user, **kw):
+        hops.append((kw.get("tier"), system[:24]))
+        if "already-written" in system:
+            raise AssertionError("Ultra appelé alors que le juge est fermé")
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(
+                s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+            ), "nemotron-super"
+        return "", "rules"
+
+    fr, en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=fake_cascade))
+    assert fr is not None
+    assert stats["super"] == 1
+    assert stats["ultra_edit"] == 0
+    assert stats["ultra_judge"] == 0
+    assert stats["source"] == WRITTEN_SOURCE
+    assert fr["source"] == WRITTEN_SOURCE
+    assert "laisse" in (fr["chapters"][0]["text"] or "")
+    assert all(tier != "judge" for tier, _sys in hops)
+
+
+def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_DAILY_TOKENS_JUDGE", "80000")
+    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
+    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
+    assert film_ultra_open() is True
+    plan = {
+        "chapters": [{
+            "id": "c0",
+            "text": "Le 15 mai, Berry-Mappemonde quitte La Rochelle. Arrivée à Ajaccio le 26 mai.",
+            "tA": "2026-05-15T08:00:00Z",
+            "tB": "2026-05-26T12:00:00Z",
+            "fromName": "La Rochelle",
+            "toName": "Ajaccio (Corse)",
+            "anchors": [{"charIdx": 0, "t": "2026-05-15T08:00:00Z"}],
+        }],
+        "targetSeconds": 150,
+    }
+    hops = []
+
+    async def accept(system, user, **kw):
+        hops.append(system[:20])
+        if "judge an already-written" in system:
+            return '{"ok": true, "reason": "ok"}', "nemotron-ultra"
+        if "edit an already-written" in system:
+            blob = (user or "").split("text=", 1)[-1]
+            return blob.replace("quitte", "laisse", 1) if "quitte" in blob else blob, "nemotron-ultra"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(sents), "nemotron-super"
+        return "", "rules"
+
+    fr, _en, stats = asyncio.run(write_film_chain(plan, seconds=150, cascade=accept))
+    assert stats["ultra_edit"] == 1
+    assert stats["ultra_judge"] == 1
+    assert stats["reviewed"] is True
+    assert fr["source"] == REVIEWED_SOURCE
+    assert hops.count("You judge an already") == 1
+    assert hops.count("You edit an already-") == 1
+
+    hops.clear()
+
+    async def refuse(system, user, **kw):
+        hops.append(system[:20])
+        if "judge an already-written" in system:
+            return '{"ok": false, "reason": "invented"}', "nemotron-ultra"
+        if "edit an already-written" in system:
+            blob = (user or "").split("text=", 1)[-1]
+            return blob, "nemotron-ultra"
+        sents = _sentences_from_user(user)
+        if sents:
+            return " ".join(
+                s.replace("quitte", "laisse", 1) if "quitte" in s else s for s in sents
+            ), "nemotron-super"
+        return "", "rules"
+
+    fr2, _en2, stats2 = asyncio.run(write_film_chain(plan, seconds=150, cascade=refuse))
+    assert stats2["ultra_edit"] == 1
+    assert stats2["ultra_judge"] == 1
+    assert stats2["reviewed"] is False
+    assert fr2["source"] == WRITTEN_SOURCE
+    assert "laisse" in (fr2["chapters"][0]["text"] or "")
+
+
+# ── VS1 : VL propose des ids, Lightning retire, le repli s'arrête au budget ──
+
+
+def _vs1_full_bag():
+    """Neuf familles DC + id d'avis réservé (TV1)."""
+    return film_choice_bag(dc_subject_candidates([
+        {"kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+         "nm": 0, "inside": True, "t": "2026-05-25T12:00:00Z"},
+        {"kind": "station", "title": "Wave buoy 12", "fact": "Wave buoy 12 (4 nm)",
+         "nm": 4, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "poe", "title": "Papeete", "fact": "Papeete",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "anchorage", "title": "Mouillage des Minimes",
+         "fact": "Mouillage des Minimes", "t": "2026-07-14T10:00:00Z"},
+        {"kind": "aton", "title": "Feu des Minimes", "name": "Feu des Minimes",
+         "nm": 2, "t": "2026-07-08T10:00:00Z"},
+        {"kind": "cable", "title": "Honotua", "name": "Honotua",
+         "t": "2026-07-12T10:00:00Z"},
+        {"kind": "depth", "depth_m": 18.4, "t": "2026-07-14T10:00:00Z"},
+        {"kind": "piracy", "name": "Horn of Africa / Gulf Aden", "level": "HIGH",
+         "source": "IMB/UKMTO", "t": "2026-07-16T10:00:00Z"},
+        {"kind": "satellite", "caption": "Panache sédimentaire au large de Cayenne",
+         "t": "2026-07-20T10:00:00Z"},
+    ], "fr"))
+
+
+def _vs1_dc_kinds(ids, bag):
+    by_id = {c["id"]: c for c in bag}
+    return [by_id[i]["kind"] for i in ids if i in by_id and by_id[i]["kind"] in DC_FAMILY_KINDS]
+
+
+def test_vs1_bag_is_the_input_and_reserves_watch():
+    bag = _vs1_full_bag()
+    kinds = [c["kind"] for c in bag]
+    assert kinds.count(TV1_WATCH_KIND) == 1
+    assert {c["id"] for c in bag if c["kind"] == TV1_WATCH_KIND} == {TV1_WATCH_ID}
+    for kind in DC_FAMILY_KINDS:
+        assert kinds.count(kind) == 1, kind
+    packed = film_candidates(JOURNAL, CLOCK["marks"], CLOCK, LIVE, NOW_MS)
+    snap = tour_snapshot(packed)
+    assert snap["image"].startswith("<svg")
+    assert snap["legs"]
+
+
+def test_vs1_vl_keeps_only_bag_ids_drops_prose():
+    bag = _vs1_full_bag()
+    allowed = {c["id"] for c in bag}
+
+    async def fake(system, user, **_kw):
+        assert "tour" in user or "image" in user
+        return json.dumps({
+            "ids": ["dc:buoy", "invented-id", "dc:watch"],
+            "reason": "a whole paragraph of free text",
+            "script": "Berry-Mappemonde quitte La Rochelle sous 99 nœuds.",
+        }), "nemotron-lightning"
+
+    ids, _src = asyncio.run(select_ids_with_vl(bag, {"legs": [], "image": "<svg/>"}, cascade=fake))
+    assert ids == ["dc:buoy", TV1_WATCH_ID]
+    assert "invented-id" not in ids
+    kept = parse_choice_ids(
+        json.dumps({"ids": ["dc:poe"], "script": "texte libre"}), allowed,
+    )
+    assert kept == ["dc:poe"]
+    assert parse_choice_ids("Berry leaves La Rochelle.", allowed) is None
+
+
+def test_vs1_lightning_can_only_remove():
+    bag = _vs1_full_bag()
+    proposed = ["dc:amp", "dc:buoy", "dc:poe", TV1_WATCH_ID]
+
+    async def fake(system, user, **_kw):
+        assert "remove" in system.lower() or "Do not add" in system
+        return json.dumps({
+            "ids": ["dc:amp", "dc:buoy", "dc:aton", "invented"],
+        }), "nemotron-lightning"
+
+    ids, _src = asyncio.run(trim_ids_with_lightning(proposed, bag, 150, cascade=fake))
+    assert "dc:aton" not in ids
+    assert "invented" not in ids
+    assert set(ids) <= set(proposed)
+    assert "dc:amp" in ids
+    assert "dc:buoy" in ids
+
+
+def test_vs1_fallback_full_bag_stays_in_150_budget():
+    """Sac avec les neuf familles DC : 2:30 ≤ 2250, pas l'avis, pas neuf phrases."""
+    assert film_char_budget(150) == 2250
+    bag = _vs1_full_bag()
+    assert len([c for c in bag if c["kind"] in DC_FAMILY_KINDS]) == 9
+    ids = fallback_choose_ids(bag, 150)
+    assert TV1_WATCH_ID not in ids
+    assert TV1_WATCH_KIND not in _vs1_dc_kinds(ids, bag)
+    assert len(_vs1_dc_kinds(ids, bag)) < 9
+    journal = _dc3_journal()
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    out = apply_chosen_subjects(plan, ids, bag, 150)
+    assert out["chars"] <= film_char_budget(150)
+    blob = _script_blob(out)
+    hits = _dc2_family_hits(blob)
+    hits3 = _dc3_family_hits(blob)
+    spoken = sum(1 for n in (*hits.values(), hits3["aton"], hits3["cable"], hits3["depth"], hits3["piracy"]) if n)
+    assert spoken < 9, blob
+    assert hits3["sat_invented"] == 0
+
+
+def test_vs1_fallback_180_stays_in_budget():
+    assert film_char_budget(180) == 2700
+    bag = _vs1_full_bag()
+    ids = fallback_choose_ids(bag, 180)
+    assert TV1_WATCH_ID not in ids
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=180, now_ms=NOW_MS,
+    )
+    out = apply_chosen_subjects(plan, ids, bag, 180)
+    assert out["chars"] <= film_char_budget(180)
+    assert len(_vs1_dc_kinds(ids, bag)) < 9
+
+
+def test_vs1_mode_off_does_not_call_cascade(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    bag = _vs1_full_bag()
+    calls = []
+
+    async def boom(*_a, **_k):
+        calls.append(1)
+        raise AssertionError("appel Nebius en mode off")
+
+    ids, src = asyncio.run(choose_film_ids(bag, {"legs": []}, 150, cascade=boom))
+    assert calls == []
+    assert src == "rules"
+    assert TV1_WATCH_ID not in ids
+    assert ids == fallback_choose_ids(bag, 150)
+
+
+def test_vs1_choice_cached_once_per_film_not_per_visit():
+    bag = _vs1_full_bag()
+    tour = {"legs": [{"name": "La Rochelle", "iso": "2026-05-15T12:00:00Z"}]}
+    calls = {"n": 0}
+
+    async def fake(system, user, **_kw):
+        calls["n"] += 1
+        if "remove" in system.lower() or "Do not add" in system:
+            return json.dumps({"ids": ["dc:buoy"]}), "nemotron-lightning"
+        return json.dumps({"ids": ["dc:buoy", "dc:poe"]}), "nemotron-lightning"
+
+    a, _ = asyncio.run(choose_film_ids(bag, tour, 150, cascade=fake, allow_llm=True))
+    n1 = calls["n"]
+    b, src = asyncio.run(choose_film_ids(bag, tour, 150, cascade=fake, allow_llm=True))
+    assert a == b
+    assert calls["n"] == n1
+    assert src == "cache"
+    assert set(a) <= {"dc:buoy", "dc:poe"}
+
+
+def test_vs1_serve_film_does_not_choose(tmp_path, monkeypatch):
+    """Ouvrir Suivre lit le stock : zéro appel de choix."""
+    import official_store
+    from official_store import DiskBackend, OfficialStore, FILM_SCRIPT_REV
+
+    store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc))
+    voy = {"t0": OFFICIAL_T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
+    monkeypatch.setattr(official_store, "_INSTANCE", store)
+    monkeypatch.setattr(official_store, "_load_official", lambda: voy)
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        calls["n"] += 1
+        raise AssertionError("choix au chargement de Suivre")
+
+    monkeypatch.setattr("film_script.choose_film_ids", boom)
+    plan = {
+        "chapters": [{"id": "c0", "text": "Berry-Mappemonde quitte La Rochelle.", "tA": OFFICIAL_T0, "tB": OFFICIAL_T0}],
+        "source": "rules",
+        "chars": 40,
+        "targetSeconds": 150,
+    }
+    payload = {"fr": plan, "default": plan, "variants": {"fr": {"150": plan}}, "film_script_rev": FILM_SCRIPT_REV}
+    store.put("film", payload, store.family_key("film", voy, datetime(2026, 9, 19, 2, 0, tzinfo=timezone.utc)))
+    out = official_store.serve_film("fr", 150)
+    assert out.get("status") == "ready"
+    assert calls["n"] == 0
+    assert "La Rochelle" in (out.get("chapters") or [{}])[0].get("text") or ""
+
+
+TV1_PHRASE = "Travaux annoncés à la marina de Motu Uta"
+TV1_URL = "https://www.portautonome.nc/avis"
+
+
+def _tv1_plan():
+    return {
+        "chapters": [{
+            "id": "c0",
+            "text": (
+                "Berry-Mappemonde quitte Saint-Maur. "
+                "La côte bretonne s'éloigne sous un ciel clair. "
+                "Un alizé régulier porte la nuit."
+            ),
+            "tA": OFFICIAL_T0,
+            "tB": OFFICIAL_T0,
+        }],
+    }
+
+
+def test_tv1_watch_absent_from_230_present_on_fiche():
+    """Sans l'id VS1 : phrase absente du 2:30, présente pour la fiche."""
+    import escale_watch
+
+    bag = _vs1_full_bag()
+    for rec in bag:
+        if rec["id"] == TV1_WATCH_ID:
+            rec["phrase"] = TV1_PHRASE
+            rec["url"] = TV1_URL
+    plan = _tv1_plan()
+    ids = fallback_choose_ids(bag, 150)
+    assert TV1_WATCH_ID not in ids
+    out = apply_chosen_subjects(plan, ids, bag, 150)
+    blob = _script_blob(out)
+    assert TV1_PHRASE not in blob
+    assert out["chars"] <= film_char_budget(150)
+    entry = escale_watch.news_entry(
+        {"name": "Nouméa", "lat": -22.27, "lon": 166.44},
+        TV1_PHRASE, TV1_URL, datetime(2026, 9, 20, tzinfo=timezone.utc),
+        question="travaux", rounds=1,
+    )
+    assert entry["text"] == TV1_PHRASE
+    assert entry["url"] == TV1_URL
+    bag_fiche = escale_watch.attach_cached_news({"news": [entry]})
+    assert any(n.get("text") == TV1_PHRASE for n in bag_fiche["news"])
+
+
+def test_tv1_vs1_keeps_id_phrase_replaces_slot_within_budget():
+    bag = [{
+        "id": TV1_WATCH_ID, "kind": TV1_WATCH_KIND, "phrase": TV1_PHRASE, "url": TV1_URL,
+    }]
+    out = apply_chosen_subjects(_tv1_plan(), [TV1_WATCH_ID], bag, 150)
+    blob = _script_blob(out)
+    assert TV1_PHRASE in blob
+    assert blob.count(TV1_PHRASE) == 1
+    assert out["chars"] <= film_char_budget(150)
+    import escale_watch
+    assert escale_watch.watch_in_film() is True
+
+
+def test_tv1_models_off_230_does_not_take_watch(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    bag = _vs1_full_bag()
+    for rec in bag:
+        if rec["id"] == TV1_WATCH_ID:
+            rec["phrase"] = TV1_PHRASE
+    ids, src = asyncio.run(choose_film_ids(bag, {"legs": []}, 150, cascade=None, allow_llm=False))
+    assert src == "rules"
+    assert TV1_WATCH_ID not in ids
+    out = apply_chosen_subjects(_tv1_plan(), ids, bag, 150)
+    assert TV1_PHRASE not in _script_blob(out)
+    assert out["chars"] <= film_char_budget(150)

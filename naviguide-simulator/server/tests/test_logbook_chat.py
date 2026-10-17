@@ -193,33 +193,37 @@ def test_answer_leaked_prompt_falls_back_honestly(monkeypatch):
     assert "7.4" in out["answer"]
 
 
-def test_reason_without_gesture_does_not_call_judge(monkeypatch):
+def test_hard_question_without_judge_stays_on_rules(monkeypatch):
     seen = []
 
     async def fake_cascade(system, user, client=None, **kw):
         seen.append(kw.get("tier"))
-        return '{"intent":"reason","quantity":null,"place":null,"when":null,"layer":null}', "nemotron-lightning"
+        return '{"intent":"reason","quantity":"speed","place":null,"when":null,"layer":null}', "nemotron-lightning"
 
     async def fake_ctx(*_a, **_k):
         return {"official": {"atQuay": True, "speedKnots": 0}}
 
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
+    import llm_budget
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: tier == "fast")
     out = asyncio.run(logbook_chat.answer_question(
-        "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc),
+        "Pourquoi ralentir ?", "fr", {}, datetime.now(timezone.utc),
     ))
     assert "judge" not in seen
+    assert "write" not in seen
     assert out["source"] == "rules"
-    assert "raisonnement" in out["answer"]
+    assert "raisonnement" not in out["answer"].lower()
+    assert "quai" in out["answer"]
 
 
-def test_reason_with_gesture_calls_judge_once(monkeypatch):
+def test_hard_question_with_judge_calls_ultra_once(monkeypatch):
     seen = []
 
     async def fake_cascade(system, user, client=None, **kw):
         seen.append(kw.get("tier"))
         if kw.get("tier") == "fast":
-            return '{"intent":"reason","quantity":null,"place":null,"when":null,"layer":null}', "nemotron-lightning"
+            return '{"intent":"reason","quantity":"speed","place":null,"when":null,"layer":null}', "nemotron-lightning"
         return "Stay at the quay: speed is 0 kn.", "nemotron-ultra"
 
     async def fake_ctx(*_a, **_k):
@@ -228,10 +232,9 @@ def test_reason_with_gesture_calls_judge_once(monkeypatch):
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
     import llm_budget
-    monkeypatch.setattr(llm_budget, "allow_chat_ultra", lambda: True)
-    monkeypatch.setattr(llm_budget, "record_chat_ultra", lambda: {"calls": 1})
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: True)
     out = asyncio.run(logbook_chat.answer_question(
-        "Pourquoi sommes-nous à quai à Nouméa ?", "fr", {}, datetime.now(timezone.utc), reason=True,
+        "Pourquoi ralentir ?", "fr", {}, datetime.now(timezone.utc),
     ))
     assert seen.count("judge") == 1
     assert "write" not in seen
@@ -592,6 +595,11 @@ FACT_PACK = {
         "windMeanKn": 12.0, "dirFromDeg": 40, "gustKn": 18.0, "hsM": 1.4,
     },
     "layers": {"unit": "m", "source": "ici", "bathyM": 42.0, "cables": {"nearby": False}},
+    "dcFamilies": [
+        {"kind": "amp", "name": "Pertuis Charentais", "nm": 3.6},
+        {"kind": "cable", "name": "Honotua"},
+        {"kind": "depth", "depthM": 42.0},
+    ],
     "around": {"zee": {"name": "Portuguese Exclusive Economic Zone"}, "depthM": 42.0, "projects": []},
     "journal": [],
 }
@@ -605,12 +613,15 @@ def test_fact_pack_sections_present_and_bounded():
     assert ctx["orders"]["comfort"] == "normal"
     assert ctx["plan"]["legs"][0]["to"] == "Madère"
     assert ctx["climo"]["month"] == 9
+    assert any(r.get("kind") == "cable" and r.get("name") == "Honotua" for r in ctx["dcFamilies"])
+    assert any(r.get("kind") == "amp" and r.get("nm") == 3.6 for r in ctx["dcFamilies"])
     assert logbook_chat.estimate_tokens(ctx) <= logbook_chat.FACT_TOKEN_CAP
     fat = dict(FACT_PACK)
     fat["journal"] = [{"kind": "note", "text": "x" * 80, "n": i} for i in range(200)]
     bounded = logbook_chat.bound_facts(fat)
     assert logbook_chat.estimate_tokens(bounded) <= logbook_chat.FACT_TOKEN_CAP
     assert bounded["polar"]["speedAtTws"]["15"] == 8.1
+    assert any(r.get("nm") == 3.6 for r in bounded["dcFamilies"])
 
 
 def test_rules_answer_copies_pack_numbers():
@@ -706,7 +717,7 @@ def test_eta_named_place_on_a_leg():
     assert fr != logbook_chat.missing_info("fr")
 
 
-def test_reason_eleventh_call_refused(monkeypatch):
+def test_hard_question_judge_denied_zero_write(monkeypatch):
     seen = []
 
     async def fake_cascade(system, user, client=None, **kw):
@@ -719,17 +730,15 @@ def test_reason_eleventh_call_refused(monkeypatch):
     monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
     monkeypatch.setattr(logbook_chat, "build_context", fake_ctx)
     import llm_budget
-    monkeypatch.delenv("NAVIGUIDE_LLM_MODE", raising=False)
-    monkeypatch.delenv("NAVIGUIDE_LLM_BACKGROUND", raising=False)
-    monkeypatch.delenv("NAVIGUIDE_CHAT_ULTRA_PER_DAY", raising=False)
-    for _ in range(10):
-        llm_budget.record_chat_ultra()
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: False)
     out = asyncio.run(logbook_chat.answer_question(
-        "Faut-il partir demain ou attendre ?", "fr", {}, datetime.now(timezone.utc), reason=True,
+        "Pourquoi ralentir ?", "fr", {}, datetime.now(timezone.utc),
     ))
-    assert "judge" not in seen
+    assert seen == []
+    assert "write" not in seen
     assert out["source"] == "rules"
-    assert "plafond" in out["answer"]
+    assert "7.4" in out["answer"]
+    assert "plafond" not in out["answer"]
 
 
 def test_mode_off_answers_by_rules(monkeypatch):
@@ -750,16 +759,12 @@ def test_mode_off_answers_by_rules(monkeypatch):
     ))
     assert fact["source"] == "rules"
     assert "14.2" in fact["answer"]
-    reason = asyncio.run(logbook_chat.answer_question(
-        "Faut-il partir demain ou attendre ?", "fr", {}, datetime.now(timezone.utc),
+    hard = asyncio.run(logbook_chat.answer_question(
+        "Pourquoi ralentir ?", "fr", {}, datetime.now(timezone.utc),
     ))
-    assert reason["source"] == "rules"
-    assert "raisonnement" in reason["answer"]
-    ultra = asyncio.run(logbook_chat.answer_question(
-        "Faut-il partir demain ou attendre ?", "fr", {}, datetime.now(timezone.utc), reason=True,
-    ))
-    assert ultra["source"] == "rules"
-    assert "plafond" in ultra["answer"]
+    assert hard["source"] == "rules"
+    assert "7.4" in hard["answer"]
+    assert "raisonnement" not in hard["answer"].lower()
     assert seen == []
 
 
@@ -772,7 +777,7 @@ def test_get_logbook_facts_endpoint(client, monkeypatch):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "ready"
-    for key in ("polar", "orders", "plan", "climo", "layers"):
+    for key in ("polar", "orders", "plan", "climo", "layers", "dcFamilies"):
         assert key in body["facts"]
     assert body["tokens"] <= logbook_chat.FACT_TOKEN_CAP
 
@@ -843,3 +848,87 @@ def test_journal_for_chat_falls_back_to_file_when_store_preparing(monkeypatch):
     monkeypatch.setattr(logbook_chat, "_official_journal_rows", lambda *_a, **_k: [])
     rows = logbook_chat.journal_for_chat()
     assert any(r.get("name") == "La Rochelle" for r in rows)
+
+
+def test_chat_tier_never_routes_to_write():
+    assert logbook_chat.chat_tier("Quel vent au bateau ?") == "fast"
+    assert logbook_chat.chat_tier("Pourquoi ralentir ?") == "judge"
+    assert logbook_chat.chat_tier("How should we handle the next gale?") == "judge"
+    long_q = "Peux-tu me dire en détail ce que le journal sait du bateau, du vent et de la route prévue pour les jours qui viennent ?"
+    assert len(long_q) >= logbook_chat.FAST_QUESTION_MAX
+    assert logbook_chat.chat_tier(long_q) == "judge"
+    assert logbook_chat.is_hard_question("Pourquoi ralentir ?") is True
+    assert logbook_chat.is_hard_question("Quel vent au bateau ?") is False
+
+
+def test_keyword_intent_pourquoi_ralentir_is_reason_speed():
+    parsed = logbook_chat.keyword_intent("Pourquoi ralentir ?")
+    assert parsed["intent"] == "reason"
+    assert parsed["quantity"] == "speed"
+
+
+def test_understand_uses_keywords_when_fast_denied(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(kw.get("tier"))
+        raise AssertionError("Lightning must stay silent when allow(fast) is false")
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    import llm_budget
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: False)
+    parsed = asyncio.run(logbook_chat.understand_question("Quel vent au bateau ?", "fr"))
+    assert parsed["intent"] == "fact"
+    assert parsed["quantity"] == "wind"
+    assert seen == []
+
+
+def test_understand_uses_lightning_when_fast_allowed(monkeypatch):
+    seen = []
+
+    async def fake_cascade(system, user, client=None, **kw):
+        seen.append(kw.get("tier"))
+        return '{"intent":"fact","quantity":"wind","place":null,"when":null,"layer":null}', "nemotron-lightning"
+
+    monkeypatch.setattr(logbook_chat, "cascade_text", fake_cascade)
+    import llm_budget
+    monkeypatch.setattr(llm_budget, "allow", lambda tier: tier == "fast")
+    parsed = asyncio.run(logbook_chat.understand_question("Quel vent au bateau ?", "fr"))
+    assert seen == ["fast"]
+    assert parsed["intent"] == "fact"
+    assert parsed["quantity"] == "wind"
+
+
+def test_dc_facts_from_bag_never_invent_satellite(monkeypatch):
+    monkeypatch.setattr(logbook_chat, "_dc_from_film_bag", lambda: [])
+    bag = {
+        "amp": [{"name": "Pertuis Charentais", "nm": 3.6}],
+        "poe": [{"name": "La Rochelle"}],
+        "aton": {"nearby": [{"name": "Phare des Baleines", "nm": 4.0}]},
+        "nearby": {"anchorages": [{"name": "Anse de Minimes"}]},
+        "emodnet": {
+            "cables": {"name": "Honotua", "nearby": True},
+            "bathy": {"depth_m": 42.0},
+        },
+        "piracy": {"name": "Golfe de Guinée", "level": "elevated"},
+        "satellites": {"reason": "not_in_along_pearl"},
+    }
+    rows = logbook_chat._dc_from_ici_bag(bag)
+    kinds = [r["kind"] for r in rows]
+    assert "amp" in kinds and "poe" in kinds and "aton" in kinds
+    assert "anchorage" in kinds and "cable" in kinds and "depth" in kinds
+    assert "piracy" in kinds
+    assert "satellite" not in kinds
+    cable = next(r for r in rows if r["kind"] == "cable")
+    assert cable["name"] == "Honotua"
+    depth = next(r for r in rows if r["kind"] == "depth")
+    assert depth["depthM"] == 42.0
+    merged = logbook_chat._dc_facts(bag)
+    assert any(r.get("nm") == 3.6 for r in merged)
+
+
+def test_rules_answer_pourquoi_ralentir_copies_speed():
+    text = logbook_chat.rules_answer("Pourquoi ralentir ?", FACT_PACK, "fr")
+    assert "7.4" in text
+    kept, dropped = logbook_chat.filter_numbers(text, FACT_PACK)
+    assert dropped == 0 and "7.4" in kept
