@@ -827,7 +827,7 @@ def test_process_mode_spawns_filler_once_and_never_computes_in_api(tmp_path, mon
     monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "force")      # pytest coupe le worker sinon
     monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
     monkeypatch.setenv("NAVIGUIDE_FILL_NUDGE_MIN_S", "0")         # ce test compte les lancements, pas le plafond
-    monkeypatch.setattr(official_store, "_LAST_NUDGE_AT", 0.0)
+    monkeypatch.setattr(official_store, "_LAST_NUDGE_AT", None)
     monkeypatch.setattr(official_store, "WORKER_MODE", "process")
     calls: list[list[str]] = []
 
@@ -863,7 +863,7 @@ def test_process_mode_wakes_the_filler_once_per_window(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(tmp_path / "store"))
     monkeypatch.setenv("NAVIGUIDE_FILL_NUDGE_MIN_S", "180")
     monkeypatch.setattr(official_store, "WORKER_MODE", "process")
-    monkeypatch.setattr(official_store, "_LAST_NUDGE_AT", 0.0)
+    monkeypatch.setattr(official_store, "_LAST_NUDGE_AT", None)
     wakes = {"n": 0}
 
     def count():

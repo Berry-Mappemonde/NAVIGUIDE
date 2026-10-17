@@ -1641,7 +1641,7 @@ def ensure_fill_process() -> Optional[int]:
         return p.pid
 
 
-_LAST_NUDGE_AT = 0.0
+_LAST_NUDGE_AT = None
 
 
 def _nudge_min_s() -> float:
@@ -1660,7 +1660,9 @@ def _nudge_due() -> bool:
     gap = _nudge_min_s()
     now = time.monotonic()
     with _LOCK:
-        if gap and now - _LAST_NUDGE_AT < gap:
+        # None = jamais réveillé. 0.0 ferait `now - 0 < 180` tant que le
+        # processus a moins de 3 min (pytest CI ~90 s) : aucun réveil.
+        if gap and _LAST_NUDGE_AT is not None and now - _LAST_NUDGE_AT < gap:
             return False
         _LAST_NUDGE_AT = now
         return True
@@ -1752,9 +1754,10 @@ def _worker_loop() -> None:
 
 
 def reset_worker_flag() -> None:
-    global _WORKER_STARTED, _FILM_FORCED
+    global _WORKER_STARTED, _FILM_FORCED, _LAST_NUDGE_AT
     _WORKER_STARTED = False
     _FILM_FORCED = False
+    _LAST_NUDGE_AT = None
 
 
 # ── lecture pour les routes ──────────────────────────────────────────────────
