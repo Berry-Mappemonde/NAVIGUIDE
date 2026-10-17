@@ -1,10 +1,7 @@
-// Lot RG19 — chat à trois paliers : faits par les règles, Ultra seulement sur geste.
-// Sans API : le panneau chat tient seul. GET /voyage/official sondé ;
-// s'il manque, annotation + saut des questions/réponses — jamais le chat retiré.
-// En CI (PW_WITH_API=1, stock figé, proxy :9) l'API répond mais Nemotron Ultra
-// n'est pas joignable : le geste retombe sur source « règles » / budget / plafond
-// — annotation, pas d'échec. Le badge Ultra n'est exigé que s'il est réellement là.
-// Aucune donnée factice : on lit la réponse du poste, on n'écrit aucun vent.
+// Lot RG19 (aligné CH1) — chat : faits par les règles, Ultra si le juge est ouvert.
+// Plus de case Raisonnement. Sans API : le panneau chat tient seul.
+// GET /voyage/official sondé ; s'il manque, annotation + saut des questions.
+// En CI le juge est coupé : une question difficile reste sur les règles, jamais Super.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,9 +28,9 @@ const shotRc47 = (page, name) => page.screenshot({
 
 const FAILED = /n.a pas pu répondre|aucun modèle n.a répondu|could not answer|no model replied/i;
 const MISSING = /n.a pas cette information dans ses données|does not hold that information/i;
-const INVITE = /cochez raisonnement|tick reasoning/i;
 const RULES = /règles|rules/i;
 const ULTRA = /nemotron.*ultra|ultra/i;
+const SUPER = /nemotron 3 super|nemotron-super/i;
 
 async function askChat(page, question) {
   const chat = page.getByTestId("logbook-chat");
@@ -57,7 +54,7 @@ async function waitReply(page, { extra = null, sourcesBefore = 0 } = {}) {
   return list.innerText();
 }
 
-test("lot RG19 — chat trois paliers : faits par les règles, Ultra sur geste", async ({ page }) => {
+test("lot RG19 — chat trois paliers : faits par les règles, Ultra si juge ouvert", async ({ page }) => {
   test.setTimeout(180_000);
   const official = await probeOfficial(page);
   const apiUp = Boolean(official);
@@ -74,12 +71,12 @@ test("lot RG19 — chat trois paliers : faits par les règles, Ultra sur geste",
   await expect(chat).toBeVisible({ timeout: 10_000 });
   await expect(chat.getByTestId("logbook-chat-input")).toBeVisible();
   await expect(chat.getByTestId("logbook-chat-send")).toBeVisible();
-  await expect(chat.getByTestId("logbook-chat-reason")).toBeVisible();
+  await expect(chat.getByTestId("logbook-chat-reason")).toHaveCount(0);
 
   if (!apiUp) {
     test.info().annotations.push({
       type: "sans API",
-      description: "GET /voyage/official absent — questions au journal sautées ; panneau chat et case Raisonnement gardés",
+      description: "GET /voyage/official absent — questions au journal sautées ; panneau chat gardé, sans case Raisonnement",
     });
     await shot(page, "01-chat-faits");
     await shot(page, "02-chat-ultra");
@@ -156,42 +153,30 @@ test("lot RG19 — chat trois paliers : faits par les règles, Ultra sur geste",
   await shot(page, "01-chat-faits");
 
   await askChat(page, "Faut-il partir demain ou attendre ?");
-  const inviteText = await waitReply(page, { extra: INVITE, sourcesBefore: sources });
-  sources = await page.getByTestId("chat-source").count();
-  expect(inviteText).not.toMatch(FAILED);
-  expect(inviteText, "sans geste : invitation à cocher raisonnement").toMatch(INVITE);
-
-  const reasonBox = chat.getByTestId("logbook-chat-reason");
-  await reasonBox.check();
-  await expect(reasonBox).toBeChecked();
-  await askChat(page, "Faut-il partir demain ou attendre ?");
-  const ultraText = await waitReply(page, { sourcesBefore: sources });
-  expect(ultraText).not.toMatch(FAILED);
-  const srcUltra = page.getByTestId("chat-source").last();
-  const ultraLabel = ((await srcUltra.innerText().catch(() => "")) || "").trim();
+  const hardText = await waitReply(page, { sourcesBefore: sources });
+  expect(hardText).not.toMatch(FAILED);
+  expect(hardText, "plus d'invitation à cocher Raisonnement").not.toMatch(/cochez raisonnement|tick reasoning/i);
+  const srcHard = page.getByTestId("chat-source").last();
+  const hardLabel = ((await srcHard.innerText().catch(() => "")) || "").trim();
   const lastBubble = page.getByTestId("logbook-chat-list").locator(":scope > div").last();
   const lastText = await lastBubble.innerText();
-  const capped = /plafond|cap/i.test(lastText);
-  const gotUltra = ULTRA.test(ultraLabel);
-  expect(ultraLabel, "geste Ultra : jamais Super (write ne rédige pas)").not.toMatch(/nemotron 3 super|nemotron-super/i);
+  const gotUltra = ULTRA.test(hardLabel);
+  expect(hardLabel, "jamais Super (write ne rédige pas le chat)").not.toMatch(SUPER);
 
   if (!gotUltra) {
     test.info().annotations.push({
       type: "poste",
-      description: "Nemotron Ultra injoignable (stock figé / proxy / mode off) — source règles, budget ou plafond ; badge Ultra non exigé",
+      description: "Nemotron Ultra injoignable ou juge à 0 — source règles / budget ; badge Ultra non exigé",
     });
-    expect(ultraLabel, "sans Ultra le repli est règles, budget ou vide").toMatch(/règles|rules|budget|^$/i);
-  } else {
-    expect(ultraLabel).toMatch(ULTRA);
-    if (factsOk && !capped) {
-      const blob = JSON.stringify(factsBody.facts);
-      const stripped = lastText.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, "");
-      const nums = stripped.match(/\d+(?:[.,]\d+)?/g) || [];
-      for (const n of nums) {
-        const g = String(Number(String(n).replace(",", ".")));
-        const ok = blob.includes(n) || blob.includes(g) || blob.includes(n.replace(",", "."));
-        expect(ok, `nombre ${n} absent de GET /logbook/facts`).toBeTruthy();
-      }
+    expect(hardLabel, "sans Ultra le repli est règles, budget ou vide").toMatch(/règles|rules|budget|^$/i);
+  } else if (factsOk) {
+    const blob = JSON.stringify(factsBody.facts);
+    const stripped = lastText.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, "");
+    const nums = stripped.match(/\d+(?:[.,]\d+)?/g) || [];
+    for (const n of nums) {
+      const g = String(Number(String(n).replace(",", ".")));
+      const ok = blob.includes(n) || blob.includes(g) || blob.includes(n.replace(",", "."));
+      expect(ok, `nombre ${n} absent de GET /logbook/facts`).toBeTruthy();
     }
   }
   await shot(page, "02-chat-ultra");
@@ -199,8 +184,8 @@ test("lot RG19 — chat trois paliers : faits par les règles, Ultra sur geste",
   const warmAfter = await page.request.get("/ici/warm/status", { timeout: 8_000 })
     .then((r) => (r.ok() ? r.json() : null))
     .catch(() => null);
-  if (warmAfter?.llm && !capped) {
+  if (warmAfter?.llm && gotUltra) {
     const ultraCallsAfter = Number(warmAfter.llm?.chatUltra?.calls ?? warmAfter.llm?.judge?.calls ?? 0);
-    expect(ultraCallsAfter, "compteur Ultra / judge après geste").toBeGreaterThanOrEqual(ultraCallsBefore);
+    expect(ultraCallsAfter, "compteur Ultra / judge après une réponse Ultra").toBeGreaterThanOrEqual(ultraCallsBefore);
   }
 });
