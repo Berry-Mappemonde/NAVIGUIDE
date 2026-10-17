@@ -26,6 +26,8 @@ describe("contrat SEO naviguide.fr", () => {
     assert.match(html, /KFl2-WEmVX4/);
     assert.match(html, /Demo: tracking a sailboat from La Rochelle to Mayotte/);
     assert.match(html, /"inLanguage":\s*"en"/);
+    assert.match(html, /"description":\s*"3-minute demo: NAVIGUIDE follows/);
+    assert.match(html, /"uploadDate":\s*"2026-10-16T00:00:00\+00:00"/);
     assert.match(html, /<h1>NAVIGUIDE/);
     assert.doesNotMatch(html, /<html lang="en"/);
   });
