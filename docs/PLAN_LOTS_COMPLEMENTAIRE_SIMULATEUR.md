@@ -24,7 +24,7 @@ globe, la soumission Devpost.
   captures). Tavily / Nemotron / Nebius : **seulement** dans les lots du plan
   `PLAN_NEMOTRON_NEBIUS_TAVILY.md` (et F3 du plan film).
 - **Review automatique** : tout lot qui touche l'UI livre
-  `e2e/lots/<lot>.spec.js` (assertions puis captures JPEG dans
+  `e2e/lots/<lot>.spec.js` (assertions puis captures WebP dans
   `docs/recette/<lot>/`), référencé dans la PR — gabarit dans
   `REGLES_WORKFLOW_AGENT.md` § 5.
 - **Budget de contexte** : ne jamais lire `src/App.jsx` (1 620 lignes) ni
@@ -184,7 +184,7 @@ Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/PLAN_LOTS_COMPLEMENTAIRE_
 Fichiers : ouvre SEULEMENT ceux listés dans le lot ; App.jsx et MapSceneController.js par `rg -n` + Read avec offset/limit.
 Branche : <type>/lot-<x>-<slug> depuis main à jour. Une PR sur main, corps = gabarit REGLES § 3. Ne merge pas.
 Tests : cd naviguide-simulator && npm test && .venv/bin/python -m pytest -q && npx vite build ; npm run e2e -- e2e/lots/<lot>.spec.js si l'UI change.
-Recette : rejoue les étapes « Recette » du lot avec le spec Playwright du lot ; captures JPEG dans docs/recette/<lot>/ ; référence-les dans la PR.
+Recette : rejoue les étapes « Recette » du lot avec le spec Playwright du lot ; captures WebP dans docs/recette/<lot>/ ; référence-les dans la PR.
 Interdits : retirer une surface visible sur main ; un chiffre produit par un LLM ; une vidéo ; un merge ; un push --force ; un secret dans le diff ; Tavily / Nemotron / Nebius hors des lots L* et F3.
 Modèle : cursor-grok-4.6-xhigh-fast (jamais claude-* sur un worker Cloud).
 Quand tu as fini : numéro de PR, compteurs de tests, liste des captures, ce que tu n'as pas fait.
