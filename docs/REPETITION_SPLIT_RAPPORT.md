@@ -1,6 +1,105 @@
 # Répétition générale de la séparation des dépôts
 
-## Verdict sur le plan corrigé (PR #554)
+## Verdict final (plan `558130b3`, `main` `23be7ba8`)
+
+Date : 17 octobre 2026, soir. Source filtrée : `main` `23be7ba84c0cd4f80d3f324f57fd7fc9517f6e8d` (17:04 −0400, merge #551). Plan appliqué : `cursor/plan-separation-depots-c3c8`. Le script est celui de `0a1b9d36`, inchangé. Le texte du plan a été corrigé dans `558130b3` après le premier essai de la section 6.8, puis la copie filtrée a été rejouée avec cette section. Aucun dépôt GitHub créé ou renommé. Aucun push hors des branches #554 et #555. Aucune action OVH ou Contabo. Aucune fusion.
+
+**Le split passe en théorie.** Les cinq points du verdict précédent sont réglés. Le filtre officiel `--emit` sort 0. Aucun fichier de `main` ne manque des deux dépôts, hors les trois exclus voulus. Les tests qui cassaient à cause du filtre passent, sans assertion retirée.
+
+### Les cinq points
+
+| Point | État | Preuve |
+|---|---|---|
+| 1. Les deux fichiers de la #545 | **Réglé** | `docs/PLAN_BATCH_2026-10-16.md` et `.cursor/rules/specs-suivent-l-interface.mdc` sont dans `/tmp/ng-paths.txt` seulement. `--emit` sur `23be7ba8`, script copié et non suivi : exit 0, 1 857 suivis, 574 / 1 245 / 35 / 3, 0 non classé, 0 écart d'historique, 91 et 116 lignes. Self-test : 64 cas. |
+| 2. CI scindée, `deploy-gate` cohérent | **Réglé** | `git apply --check` puis `git apply` des huit diffs de la section 6.6, sur les fichiers filtrés de `23be7ba8`. Blue Intelligence : jobs `frontend`, `audit-tags`, `deploy-gate` ; déploiement `plan`, `blue-intelligence`, `catch-up` ; dependabot `/frontend`, `/backend`, github-actions. NAVIGUIDE : jobs `changes`, `simulator`, `simulator-e2e`, `deploy-gate` ; un job `naviguide` affiché `naviguide.fr` ; dependabot `/naviguide-simulator`, `/naviguide-simulator/server`, github-actions. Chaque `deploy-gate` ne nomme que des scripts présents. `bash -n` des six scripts de chaque copie : OK. `test_prod_jobs_busy.py` : 31 tests, OK, des deux côtés. Les YAML se lisent. |
+| 3. `recetteAg.test.js` et `cycloneTracks.js` | **Réglé** | Section 6.7. Copies depuis le bare Blue Intelligence : 1 870 et 10 513 octets. Les quatre assertions restent (`unwrapCycloneCoords`, absence de `splitCycloneAtMeridian`, `cycloneLatLngCopies`, `groupCycloneFeatures`). `node --test` sur ce fichier : 8 tests, 0 échec. `npm test` du simulateur : 926 réussis, 0 échec. `npm run build` : OK. |
+| 4. `test_naviguide_query_not_painted` et `climatology_query` | **Réglé** | Au commit `0a1b9d36`, la section 6.8 retirait le test de Blue Intelligence et le posait dans NAVIGUIDE. Ce second fichier lève `ModuleNotFoundError: No module named 'app'` (1 failed en 0,02 s) : les snapshots restent dans `backend/data`. `558130b3` remplace ce déplacement par une copie du module, 3 671 octets, vers `naviguide/naviguide-api/climatology_query.py` dans Blue Intelligence. `backend/tests/test_climatology.py` est identique à `main` (`diff` vide). `pytest -k test_naviguide_query_not_painted` : 1 passed. Suite `backend/tests` : 1 079 passed, 4 skipped, 18 errors, 1 failed. L'échec restant est `test_serper_google_style_merged`, déjà rouge sur le monodépôt. |
+| 5. Décompte des branches et `refs/pull` du §5 | **Réglé** | Mesure du miroir après `remote update`, `main` = `23be7ba8` : **36** `refs/heads/*`, **553** `refs/pull/*/head`, **9** `refs/pull/*/merge`, **5** tags. Le texte de `0a1b9d36` disait encore 37 / 11, mesurés sur `6dabfb84`, et comptait la #551 parmi 11 PR ouvertes. `558130b3` écrit 36 / 553 / 9. PR ouvertes : 9 (#541, #542, #543, #546, #547, #549, #553, #554, #555). #551 est sur `main`. #548 est fermée sans fusion. |
+
+### Filtre
+
+```bash
+python3 scripts/check_split_coverage.py --self-test
+# self-test : 64 cas tenus
+python3 scripts/check_split_coverage.py
+# fichiers suivis : 1857
+# Blue Intelligence seul : 574
+# NAVIGUIDE seul : 1245
+# les deux : 35
+# exclus : 3
+# non classés : 0
+# écarts d'historique : 0
+python3 scripts/check_split_coverage.py --emit bi > /tmp/bi-paths.txt   # exit 0, 91 lignes
+python3 scripts/check_split_coverage.py --emit ng > /tmp/ng-paths.txt   # exit 0, 116 lignes
+```
+
+Les quatre fichiers ajoutés par la #551 (`docs/recette/lot-rc57/01-integral.jpg`, `naviguide-simulator/e2e/global-setup.js`, `e2e/lots/ouverture-langue.spec.js`, `e2e/lots/rc57.spec.js`) tombent sous des préfixes déjà classés. Les lignes de chemins restent 91 et 116.
+
+```bash
+git clone --bare --single-branch --branch main --no-local <miroir-local-de-main> /tmp/bi-bare
+git -C /tmp/bi-bare show-ref | grep refs/pull || echo "pas de refs/pull"
+git -C /tmp/bi-bare filter-repo --paths-from-file /tmp/bi-paths.txt
+# 1,45 s — HEAD filtré 89154e43 (le dernier commit qui touche un chemin Blue Intelligence, #539)
+
+git clone --bare --single-branch --branch main --no-local <miroir> /tmp/ng-bare
+git -C /tmp/ng-bare tag -l | while read -r t; do git -C /tmp/ng-bare tag -d "$t"; done
+git -C /tmp/ng-bare filter-repo --paths-from-file /tmp/ng-paths.txt
+# 0,67 s — HEAD filtré ea42af25 (merge #551)
+```
+
+`--no-local` sert parce que la source est un miroir déjà sur la VM. L'URL `git@github.com:Berry-Mappemonde/Blue-Intelligence-Map.git` du plan n'a pas été appelée : ce nom est celui d'après le renommage de la section 3, et cette répétition ne renomme rien.
+
+`--verify bi` : 609 chemins tenus. `--verify ng` : 1 280 chemins tenus. `backend/poe.py` et `memory/PRD.md` sont dans l'historique Blue Intelligence. `.env.example`, `memory/test_credentials.md` et `.emergent` n'y sont pas. L'historique NAVIGUIDE ne contient ni `Archives/Blue-Intelligence/`, ni `backend/`, ni `prototype_ai_studio/`, ni `memory/`, ni `.env.example`, ni `.emergent`. Le premier commit de `poe_pipeline.py` reste `9372925`, 2026-08-28 05:18:01 UTC.
+
+| | Fichiers sur la tête filtrée | Seulement lui | Dans les deux | Absents des deux |
+|---|---:|---:|---:|---:|
+| Blue Intelligence | 609 | 574 | 35 | |
+| NAVIGUIDE | 1 280 | 1 245 | 35 | |
+| `main` (1 857) | | | | **3** |
+
+Les trois absents sont les exclus du classeur : `.gitconfig`, `Archives/naviguide-nova/docs/PLAN_DEV_NOVA.md`, `Archives/naviguide-nova/docs/SETUP_NOVA_CREDITS.md`. `docs/recette/` : 0 dans Blue Intelligence, 313 dans NAVIGUIDE.
+
+Le commit 6.8 ajoute ensuite `climatology_query.py` dans Blue Intelligence. Le fichier existe alors dans les deux copies : l'original NAVIGUIDE, et la copie qui permet au test de s'exécuter. Le test n'est pas modifié.
+
+### Tests et builds
+
+Node v24.22.0. Pytest 9.1.1. `MONGO_URL=mongodb://127.0.0.1:9/none`, `DB_NAME=none`, pas de clé d'API.
+
+| Suite | Résultat |
+|---|---|
+| `pytest backend/tests` (Blue Intelligence, après la copie 6.8) | 1 079 passed, 4 skipped, 18 errors, **1 failed** en 564 s. Le failed est `test_serper_google_style_merged`. Les 8 errors de collecte sont `REACT_APP_BACKEND_URL` absent. Les 10 errors de setup sont le timeout Mongo vers `127.0.0.1:9`. `--continue-on-collection-errors` a été nécessaire : sans ce drapeau, pytest 9.1 s'arrête à la collecte. |
+| `pytest -k test_naviguide_query_not_painted` | 1 passed en 2,6 s |
+| `npm test` + `npm run build` dans `frontend/` | 10 suites, 40 tests, build OK |
+| `pytest` du serveur simulateur, API de poste injoignable | 833 passed, 3 skipped, exit 0, en 104 s |
+| `npm test` + `npm run build` du simulateur | 926 réussis, 0 échec ; build Vite OK en 1,4 s |
+| `deploy-gate` (`bash -n` + `test_prod_jobs_busy.py`) | OK des deux côtés |
+
+Deux tests marqués `poste` (`test_poste_stock_discours`, `test_poste_stock_anchor_positions`) échouent si `http://127.0.0.1:8010` répond. Le même échec a lieu sur `main`, même commande, même API. Avec `NAVIGUIDE_POSTE_API` pointé vers un port fermé, ils sont sautés. La CI GitHub pose `CI=true`, et le test se saute dans ce cas. Ce n'est pas un écart du filtre.
+
+Le test NAVIGUIDE de la section 6.8 telle qu'elle était dans `0a1b9d36` a été lancé une fois, à part : `ModuleNotFoundError: No module named 'app'`. Ce fichier n'est pas dans la copie rejouée.
+
+### Push local
+
+Dépôts bare locaux nommés `Blue-Intelligence.git` et `NAVIGUIDE.git`, avec un `pre-receive` qui refuse `refs/pull/*`. Ce ne sont pas des dépôts GitHub.
+
+Push explicite de `refs/heads/main` : exit 0 des deux côtés. Les cinq tags `data-*`, un par un, vers Blue Intelligence : exit 0. NAVIGUIDE n'a plus aucun tag `data-*`. Les destinations n'ont pas de `refs/pull`.
+
+`git push --mirror` du miroir complet vers un troisième bare au même crochet : exit 1, première ligne `refuse refs/pull/1/head`, 0 référence écrite.
+
+### Ce qui reste avant un vrai push, et qui n'arrête pas cette répétition
+
+Les sections 6.0, 6.4 et 6.5 sont encore des éditions à la main dans les copies filtrées (textes communs raccourcis, ancien planificateur, discours du film, `repo_paths.py`). Cette passe ne les a pas appliquées. Elles arrivent avant le premier push réel, après les commits déjà verts de 6.6, 6.7 et 6.8.
+
+`test_meteo_agent_cites_ibtracs_integer` importe encore `naviguide/naviguide-api` puis `agents.meteo_agent`. Sans `langgraph`, pytest le saute. Le plan le laisse ainsi.
+
+Le balayage `-S` des motifs de secret trouve des lignes dans des README, des tests et des archives (les mêmes familles que la note déjà écrite dans le plan). Aucune valeur n'a été affichée. Pas de `ghp_`, `github_pat_`, `sk-or-v1-`, ni de bloc de clé privée.
+
+L'ordre de la section 3 (renommer l'archive en `Blue-Intelligence-Map`, vérifier, créer `NAVIGUIDE`, créer `Blue-Intelligence` en dernier) n'a pas été exécuté. Il ne se joue pas à blanc.
+
+---
+
+
+## Passe précédente : plan `7a859ed8` sur `main` `6dabfb84`
 
 Date de cette passe : 17 octobre 2026, soir. Source filtrée : `main` `6dabfb84078c16b1693e1069ae574a12ba366585` (16:03 −0400, merge #544). Commandes prises telles quelles dans `cursor/plan-separation-depots-c3c8` au commit `7a859ed8` (`docs/PLAN_SEPARATION_DEPOTS.md`, `scripts/check_split_coverage.py`). Aucun dépôt GitHub neuf. Aucune fusion. Push seulement vers des dépôts bare locaux.
 
