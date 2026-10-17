@@ -33,6 +33,7 @@ from film_script import (
     cyclone_name_year,
     dated_marks,
     date_density_ok,
+    dc_subject_candidates,
     dose_amp_changes,
     dose_climo_changes,
     dose_coast_changes,
@@ -3250,23 +3251,25 @@ def test_rg11a_honest_write_has_increasing_anchors():
 
 
 def test_am1b_amp_enter_and_nearby_sentences():
-    """Entrée → « le bateau entre dans l'aire marine protégée X » ; nearby → longe à N milles."""
+    """DC1 : entrée → traverse ; nearby → près, à N milles. Circulation seulement si le stock l'a."""
     enter = {
         "kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
         "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
     }
     fr = change_sentence(enter, "fr")
     en = change_sentence(enter, "en")
-    assert "le bateau entre dans l'aire marine protégée Cabrera" in fr
-    assert "the boat enters the marine protected area Cabrera" in en
+    assert "le bateau traverse l'aire marine protégée Cabrera" in fr
+    assert "the boat crosses the marine protected area Cabrera" in en
+    assert "circulation" not in fr
+    assert "transit" not in en
     near = {
         "kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
         "t": "2026-05-25T12:00:00Z", "nm": 6,
     }
     nfr = change_sentence(near, "fr")
     nen = change_sentence(near, "en")
-    assert "longe l'aire marine protégée Cabrera à six milles" in nfr
-    assert "skirts the marine protected area Cabrera at six miles" in nen
+    assert "passe près de l'aire marine protégée Cabrera, à six milles" in nfr
+    assert "passes near the marine protected area Cabrera, at six miles" in nen
     from film_script import CHANGE_PRIORITY
     assert CHANGE_PRIORITY["amp"] < CHANGE_PRIORITY["zee-enter"]
 
@@ -3287,7 +3290,7 @@ def test_am1b_two_inside_pearls_one_amp_sentence():
     ])
     hits = [c for c in rows if "Cabrera" in str(c.get("title") or "")]
     assert len(hits) == 1
-    assert change_sentence(hits[0], "fr").count("entre dans") == 1
+    assert change_sentence(hits[0], "fr").count("traverse") == 1
 
 
 def test_phrase_for_ici_event_matches_film_zee():
@@ -3328,7 +3331,7 @@ def test_phrase_for_ici_event_matches_film_amp_enter():
         "payload": {"amp": {"name": "Cabrera", "site_id": "ES-CAB", "nm": 0}},
     }, "fr")
     assert ici == film
-    assert "entre dans l'aire marine protégée" in ici
+    assert "traverse l'aire marine protégée" in ici
     assert "Cabrera" in ici
 
 
@@ -4093,3 +4096,106 @@ def test_rc55_saint_pierre_chapter_omits_guiana_and_equator():
     pacific_text = pacific.get("text") or ""
     assert re.search(r"equator|équateur", pacific_text, re.I), pacific_text
     assert re.search(r"Balboa", pacific_text, re.I), pacific_text
+
+
+# ── DC1 : une aire, près ou traversée, circulation du stock, 2:30 ≤ 2250 ─────
+
+
+def _amp_sentences(blob: str) -> list[str]:
+    return [
+        s.strip()
+        for s in re.split(r"(?<=[.!?…])\s+", blob or "")
+        if re.search(r"aire marine|marine protected area", s or "", re.I)
+    ]
+
+
+def test_dc1_amp_near_or_crossing_traffic_only_from_stock():
+    """Près / traversée ; circulation si traffic ou codes entry/speed ; sinon silence."""
+    enter = {
+        "kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
+        "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
+        "traffic": "regulated",
+    }
+    fr = change_sentence(enter, "fr")
+    en = change_sentence(enter, "en")
+    assert "traverse l'aire marine protégée Cabrera" in fr
+    assert "circulation régulée" in fr
+    assert "crosses the marine protected area Cabrera" in en
+    assert "regulated transit" in en
+    forbidden = {**enter, "traffic": "forbidden", "title": "Iroise", "fact": "Iroise"}
+    assert "circulation interdite" in change_sentence(forbidden, "fr")
+    assert "no transit" in change_sentence(forbidden, "en")
+    from_codes = {
+        "kind": "amp", "event": "enter", "title": "Scandola", "fact": "Scandola",
+        "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
+        "entry": 1, "speed": 3,
+    }
+    assert "circulation interdite" in change_sentence(from_codes, "fr")
+    silent = {
+        "kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
+        "t": "2026-05-25T12:00:00Z", "nm": 6,
+    }
+    near = change_sentence(silent, "fr")
+    assert "près de l'aire marine protégée Cabrera" in near
+    assert "six milles" in near
+    assert "circulation" not in near
+    assert "interdit" not in near
+    assert "régul" not in near
+    unknown = {**enter, "traffic": "unknown"}
+    assert "circulation" not in change_sentence(unknown, "fr")
+    nested_event = {
+        "kind": "amp", "title": "Cabrera", "fact": "Cabrera",
+        "t": "2026-05-25T12:00:00Z",
+        "entry": {"event": "enter", "inside": True, "nm": 0, "name": "Cabrera"},
+    }
+    nested_fr = change_sentence(nested_event, "fr")
+    assert "traverse l'aire marine protégée Cabrera" in nested_fr
+    assert "circulation" not in nested_fr
+
+
+def test_dc1_one_amp_in_150_and_char_budget():
+    """Une seconde aire dans le même 2:30 est refusée. film_char_budget(150) = 2250."""
+    assert film_char_budget(150) == 2250
+    journal = _rc22_rich_journal()
+    journal["moments"] = list(journal["moments"]) + [{
+        "seq": 204, "t": "2026-05-17T10:00:00Z", "signature": "amp-cabrera-dc1", "legIdx": 1,
+        "changes": [{
+            "kind": "amp", "score": 2, "title": "Cabrera",
+            "fact": "Cabrera (6 nm)", "nm": 6, "event": "nearby",
+        }],
+        "moment": {"leg": {"from": "La Rochelle", "to": "Ajaccio (Corse)"}},
+    }, {
+        "seq": 205, "t": "2026-07-03T10:00:00Z", "signature": "amp-agoa-dc1", "legIdx": 3,
+        "changes": [{
+            "kind": "amp", "score": 2, "title": "Agoa",
+            "fact": "Agoa", "nm": 0, "event": "enter", "inside": True,
+        }],
+        "moment": {"leg": {
+            "from": "Fort-de-France (Martinique)", "to": "Nouméa (Nouvelle-Calédonie)",
+        }},
+    }]
+    plan = build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, journal,
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+    blob = _script_blob(plan)
+    amps = _amp_sentences(blob)
+    assert len(amps) <= 1, amps
+    assert plan["chars"] <= film_char_budget(150)
+    assert plan["chars"] / 15 <= 150 * 1.1
+    bag = dc_subject_candidates([
+        {"kind": "amp", "event": "nearby", "title": "Cabrera", "fact": "Cabrera (6 nm)",
+         "nm": 6, "t": "2026-05-17T10:00:00Z"},
+        {"kind": "amp", "event": "enter", "title": "Agoa", "fact": "Agoa",
+         "nm": 0, "inside": True, "t": "2026-07-03T10:00:00Z"},
+    ], "fr")
+    assert len(bag) == 1
+    assert bag[0]["kind"] == "amp"
+    assert bag[0]["oncePerFamilyOnLongLeg"] is True
+    assert bag[0]["phrase"]
+    assert bag[0]["relation"] == "crossing"
+    stored = plan.get("dcSubjects") or []
+    assert stored
+    assert stored[0]["kind"] == "amp"
+    assert stored[0]["oncePerFamilyOnLongLeg"] is True
+    assert stored[0]["phrase"]
