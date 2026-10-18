@@ -87,8 +87,7 @@ test("Skipper, crédits, info-bulle, km terre, cadre chat", async ({ page }) => 
   const land = page.getByTestId("film-land-leg");
   const landVisible = await land.isVisible({ timeout: 8000 }).catch(() => false);
   if (landVisible) {
-    await expect(land).toContainText(/km par la route|km by road/);
-    await expect(land).toContainText(/h de route|h on the road/);
+    await expect(land).toContainText(/Transfert routier Saint-Maur \(Indre\) → La Rochelle : \d[\d\s\u202f]* km, ≈ \d+ h|Road transfer Saint-Maur \(Indre\) → La Rochelle: \d[\d,\s]* km, ≈ \d+ h/);
   } else if (apiUp) {
     test.info().annotations.push({
       type: "sans jambe terre",

@@ -5211,3 +5211,138 @@ def test_tv1_models_off_230_does_not_take_watch(monkeypatch):
     out = apply_chosen_subjects(_tv1_plan(), ids, bag, 150)
     assert TV1_PHRASE not in _script_blob(out)
     assert out["chars"] <= film_char_budget(150)
+
+
+def _vb1_plan():
+    return build_raw_script(
+        CLOCK, CLOCK["marks"], LIVE, _dc3_journal(),
+        lang="fr", seconds=150, now_ms=NOW_MS,
+    )
+
+
+def test_vb1_absent_cache_matches_today(monkeypatch):
+    """Sans fichier de route : mêmes ids et le même 2:30 que le repli."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    import vl_route
+    from official_store import FILM_SCRIPT_REV
+
+    assert FILM_SCRIPT_REV == "vs1-vb1"
+    assert vl_route.load() is None
+    bag = _vs1_full_bag()
+    calls = []
+
+    async def boom(*_a, **_k):
+        calls.append(1)
+        raise AssertionError("appel Nebius")
+
+    ids, src = asyncio.run(choose_film_ids(bag, {"legs": []}, 150, cascade=boom))
+    assert calls == []
+    assert src == "rules"
+    assert ids == fallback_choose_ids(bag, 150)
+    plan = _vb1_plan()
+    out = apply_chosen_subjects(plan, ids, bag, 150)
+    bare = apply_chosen_subjects(plan, fallback_choose_ids(bag, 150), bag, 150)
+    assert _script_blob(out) == _script_blob(bare)
+    assert out["chars"] <= film_char_budget(150)
+    assert out["chars"] == bare["chars"]
+
+
+def test_vb1_cache_adds_only_bag_ids_and_keeps_budget(monkeypatch):
+    """Cache présent : id du sac ajouté, id inconnu ignoré, 2:30 ≤ 2250."""
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    import film_script
+    import vl_route
+    from official_store import FILM_SCRIPT_REV
+
+    assert FILM_SCRIPT_REV == "vs1-vb1"
+    assert film_char_budget(150) == 2250
+    bag = _vs1_full_bag()
+    by_id = {c["id"]: c for c in bag}
+    base = fallback_choose_ids(bag, 150)
+    used = sum(len(str(by_id[i].get("phrase") or "")) for i in base)
+    extra_id = None
+    for rec in bag:
+        if rec["id"] in base or rec.get("kind") == TV1_WATCH_KIND:
+            continue
+        if used + len(str(rec.get("phrase") or "")) <= film_char_budget(150):
+            extra_id = rec["id"]
+            break
+    assert extra_id
+    poison = "ZEPHYR-INVENTÉ sous 99 nœuds."
+    vl_route.save({
+        "rev": vl_route.REV,
+        "route": vl_route.route_stamp(),
+        "job": vl_route.JOB,
+        "ids": [extra_id, "not-in-bag", extra_id],
+        "points": [{
+            "callId": "e001-test",
+            "ids": [extra_id, "not-in-bag"],
+            "reasons": {extra_id: poison},
+        }],
+    })
+    calls = []
+
+    async def boom(*_a, **_k):
+        calls.append(1)
+        raise AssertionError("appel Nebius")
+
+    ids, src = asyncio.run(choose_film_ids(
+        bag, {"legs": [{"name": "vb1", "iso": "2026-05-01T00:00:00Z"}]}, 150, cascade=boom,
+    ))
+    assert calls == []
+    assert src == "rules"
+    assert extra_id in ids
+    assert "not-in-bag" not in ids
+    assert TV1_WATCH_ID not in ids
+    assert ids == film_script._trim_ids_to_budget(
+        film_script._append_route_ids(base, [extra_id], bag), bag, 150,
+    )
+    out = apply_chosen_subjects(_vb1_plan(), ids, bag, 150)
+    assert out["chars"] <= film_char_budget(150)
+    blob = _script_blob(out)
+    assert poison not in blob
+    assert "ZEPHYR-INVENTÉ" not in blob
+    assert "not-in-bag" not in blob
+
+
+def test_vb1_lightning_can_drop_the_route_id(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", "off")
+    import film_script
+    import vl_route
+
+    bag = _vs1_full_bag()
+    by_id = {c["id"]: c for c in bag}
+    base = fallback_choose_ids(bag, 150)
+    used = sum(len(str(by_id[i].get("phrase") or "")) for i in base)
+    extra_id = next(
+        rec["id"] for rec in bag
+        if rec["id"] not in base
+        and rec.get("kind") != TV1_WATCH_KIND
+        and used + len(str(rec.get("phrase") or "")) <= film_char_budget(150)
+    )
+    vl_route.save({
+        "rev": vl_route.REV,
+        "route": vl_route.route_stamp(),
+        "job": vl_route.JOB,
+        "ids": [extra_id],
+        "points": [],
+    })
+    kept = base[:1]
+
+    async def fake(system, user, **_kw):
+        if "remove" in system.lower() or "Do not add" in system:
+            return json.dumps({"ids": kept + ["not-in-bag"]}), "nemotron-lightning"
+        return json.dumps({"ids": base}), "nemotron-lightning"
+
+    ids, _src = asyncio.run(choose_film_ids(
+        bag,
+        {"legs": [{"name": "vb1-trim", "iso": "2026-05-02T00:00:00Z"}]},
+        150,
+        cascade=fake,
+        allow_llm=True,
+    ))
+    assert extra_id not in ids
+    assert "not-in-bag" not in ids
+    assert ids == film_script._trim_ids_to_budget(kept, bag, 150)
+    out = apply_chosen_subjects(_vb1_plan(), ids, bag, 150)
+    assert out["chars"] <= film_char_budget(150)
