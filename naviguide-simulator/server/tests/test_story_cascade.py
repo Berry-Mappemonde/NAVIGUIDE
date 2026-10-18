@@ -779,6 +779,37 @@ def test_lightning_payload_includes_thinking_off_flags_at_json_root():
     assert payload["max_tokens"] == 1024
 
 
+def test_fast_nim_fallback_updates_status_by_tier(monkeypatch):
+    import llm_budget
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "tokenfactory" in url:
+            return httpx.Response(400, text='{"error":"fail"}')
+        if "nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok("NIM fallback text."))
+        return httpx.Response(500)
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user", client, tier="fast", fallback="x", facts="user",
+            )
+
+    text, source = asyncio.run(run())
+    assert "NIM" in text
+    st = llm_budget.status()
+    assert st["fallback"]["nim"] == 1
+    assert st["lastSourceByTier"]["fast"] == "nim"
+    assert st["lastSource"] == "nim"
+
+
 def test_fast_tokenfactory_empty_retries_super(monkeypatch):
     calls = []
 
@@ -811,6 +842,41 @@ def test_fast_tokenfactory_empty_retries_super(monkeypatch):
     assert len(calls) == 2
     assert any("Lightning" in m for m in calls)
     assert any("super" in m.lower() for m in calls)
+    import llm_budget
+    st = llm_budget.status()
+    assert st["retrySuper"] == 1
+    assert st["lastSourceByTier"]["fast"] == "nemotron-super"
+
+
+def test_fast_tokenfactory_success_clears_tier_errors(monkeypatch):
+    import llm_budget
+
+    llm_budget.remember_cascade_errors(
+        [{"provider": "tokenfactory", "reason": "old fast error"}], tier="fast",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        return httpx.Response(200, json=_chat_ok("Lightning ok.", model=body.get("model")))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user", client, tier="fast", fallback="x", facts="user",
+            )
+
+    text, source = asyncio.run(run())
+    assert source == "nemotron-lightning"
+    assert llm_budget.last_errors() is None
+    st = llm_budget.status()
+    assert "lastErrors" not in st
+    assert st["lastSourceByTier"]["fast"] == "nemotron-lightning"
 
 
 def test_fast_tokenfactory_empty_then_super_empty_calls_nim(monkeypatch):
