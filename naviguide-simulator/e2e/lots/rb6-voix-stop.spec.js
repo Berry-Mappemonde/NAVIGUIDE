@@ -2,6 +2,7 @@
 // Sans API : barre, Suivre, Revoir / Stop (horloge locale) tiennent seuls.
 // Position live / script serveur : seulement si GET /voyage/official répond.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rb6/${name}.webp`,
@@ -15,15 +16,6 @@ function isPolynesia(lat, lon) {
   const lo = Number(lon);
   if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
   return la < 0 && lo < -120;
-}
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
 }
 
 async function probeOfficial(page) {

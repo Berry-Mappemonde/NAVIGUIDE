@@ -6,7 +6,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { waitFilmCanStart } from "../helpers.js";
+import { dismissNotForNav, waitFilmCanStart } from "../helpers.js";
 
 const recetteDirs = [
   join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc27"),
@@ -19,23 +19,6 @@ const shot = (page, name) => Promise.all(recetteDirs.map((dir) => page.screensho
   quality: 85,
   fullPage: false,
 })));
-
-async function dismissNotForNav(page) {
-  const modal = page.getByTestId("not-for-nav-modal");
-  if (await modal.isVisible({ timeout: 1500 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    const ok = page.getByTestId("not-for-nav-accept");
-    if (await ok.isVisible().catch(() => false)) await ok.click();
-    return;
-  }
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 1500 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /cin[eé]ma/i }).first();

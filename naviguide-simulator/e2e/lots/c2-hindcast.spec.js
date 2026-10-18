@@ -1,6 +1,7 @@
 // Horloge à trois régimes. Sans API : fumée barre film.
 // Avec API et hindcast prêt : clock-regime contient « hindcast » et « sources ».
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-c2/${name}.webp`,
@@ -8,15 +9,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 test("Régime sur la barre film", async ({ page }) => {
   await page.goto("/");

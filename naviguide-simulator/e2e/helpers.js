@@ -3,23 +3,29 @@ import { expect } from "@playwright/test";
 
 export async function dismissNotForNav(page) {
   const modal = page.getByTestId("not-for-nav-modal");
-  if (await modal.isVisible({ timeout: 1500 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    const ok = page.getByTestId("not-for-nav-accept");
-    if (await ok.isVisible().catch(() => false)) {
-      await ok.click();
-      return;
-    }
+  const visible = await modal
+    .waitFor({ state: "visible", timeout: 1500 })
+    .then(() => true)
+    .catch(() => false);
+  if (!visible) return;
+  const ack = modal.getByTestId("not-for-nav-ack");
+  if (await ack.isVisible().catch(() => false)) await ack.check();
+  const ok = modal.getByTestId("not-for-nav-accept");
+  if (await ok.isVisible().catch(() => false)) {
+    await ok.click();
+    return;
   }
-  const ok = page.getByRole("button", {
+  const modalOk = modal.getByRole("button", {
     name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i,
   }).first();
-  if (await ok.isVisible({ timeout: 2000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
+  if (await modalOk.isVisible().catch(() => false)) await modalOk.click();
+}
+
+export async function dismissAiChatNotice(page) {
+  const notice = page.getByTestId("logbook-chat-ai-notice");
+  if (!(await notice.isVisible({ timeout: 500 }).catch(() => false))) return;
+  const btn = notice.getByTestId("logbook-chat-ai-notice-dismiss");
+  if (await btn.isVisible().catch(() => false)) await btn.click();
 }
 
 export function cinemaButton(page) {

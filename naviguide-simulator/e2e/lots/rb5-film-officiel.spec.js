@@ -2,6 +2,7 @@
 // Sans API : récit local + script brut local. Les assertions de départ / unités
 // tiennent seules. GET /voyage/official/film : seulement si l'API répond.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rb5/${name}.webp`,
@@ -34,15 +35,6 @@ function assertOfficialDepart(text, lang, { spoken = false } = {}) {
   expect(text, "pas de 2027").not.toMatch(/2027/);
   expect(text, "pas un départ de La Rochelle").not.toMatch(/quitté La Rochelle|left La Rochelle/i);
   if (spoken) expect(text, "pas de nm nu dans le texte déclamé").not.toMatch(/\bnm\b/);
-}
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
 }
 
 async function leaveCinema(page) {
