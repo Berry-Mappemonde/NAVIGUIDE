@@ -293,10 +293,12 @@ jobs:
           PYTEST_RC=$?
           set -e
           END=$(date +%s)
-          python scripts/ci_pytest_shard_meta.py \
-            --junit "$RUNNER_TEMP/junit.xml" \
-            --duration-sec "$((END - START))" \
-            --out "$RUNNER_TEMP/shard-meta.json"
+          if [ -f "$RUNNER_TEMP/junit.xml" ]; then
+            python scripts/ci_pytest_shard_meta.py \
+              --junit "$RUNNER_TEMP/junit.xml" \
+              --duration-sec "$((END - START))" \
+              --out "$RUNNER_TEMP/shard-meta.json"
+          fi
           exit "$PYTEST_RC"
       - name: Préparer artefacts shard
         if: always()
@@ -335,6 +337,7 @@ jobs:
     steps:
       - name: Tous les shards doivent réussir
         if: needs.backend-pytest-shard.result != 'success'
+        working-directory: ${{ github.workspace }}
         run: |
           echo "Résultat des shards: ${{ needs.backend-pytest-shard.result }}" >&2
           exit 1
