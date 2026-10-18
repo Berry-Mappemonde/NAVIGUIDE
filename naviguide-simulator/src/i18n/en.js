@@ -652,4 +652,8 @@ export default {
   fv2NmToPort: "{nm} nm to destination port",
   fv2StopSaintMaur: "Saint-Maur (Indre)",
   fv2StopAzores: "Azores (Portugal)",
+
+  // Lot NB1 — Nemotron via Token Factory, badge en texte seul
+  llmBrandNvidia: "NVIDIA",
+  llmBrandNebius: "Nebius",
 };

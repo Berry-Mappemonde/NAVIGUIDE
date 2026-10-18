@@ -1,4 +1,6 @@
 /** Rayon terrestre en milles nautiques. */
+import { dropRepeatedStops } from "./escales.js";
+
 export const R_NM = 3440.065;
 
 export function toRad(deg) {
@@ -365,18 +367,7 @@ function legIsLand(from, to, segments) {
  * retour final qui reprend un nom déjà vu (La Rochelle) est gardé.
  */
 export function marksForSummary(escaleMarks) {
-  const named = (escaleMarks || []).filter((mark) => mark?.name);
-  if (named.length <= 1) return named;
-  const seen = new Set();
-  const out = [];
-  for (let i = 0; i < named.length; i++) {
-    const name = named[i].name;
-    const isLast = i === named.length - 1;
-    if (seen.has(name) && !isLast) continue;
-    seen.add(name);
-    out.push(named[i]);
-  }
-  return out;
+  return dropRepeatedStops(escaleMarks);
 }
 
 function vertexCount(segments) {

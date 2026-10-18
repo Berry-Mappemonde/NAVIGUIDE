@@ -25,6 +25,9 @@ AIR_HOP_RETURN_NM = 80.0
 HUB_STOP_NAME = "Halifax (Nouvelle-Écosse)"
 VIA_STOP_NAME = "Saint-Pierre (Saint-Pierre-et-Miquelon)"
 PARK_STOP_NAME = "Cayenne (Guyane)"
+# Port réel (route officielle), pas un sommet de mer voisin.
+SAINT_PIERRE_LAT = 46.7761
+SAINT_PIERRE_LON = -56.1628
 WAVE_NOGO_M = 2.5
 # WAVE_NOGO_DT_FACTOR (×3 dès 2,5 m) retiré C4 — voir wave_polar_factor.
 MAX_STEP_NM = 30.0
@@ -602,6 +605,80 @@ def _emit(p: dict, t_hours: float, t0: datetime, bearing: float,
     }
 
 
+def _stop_latlon(name: str, point: dict, mark: dict) -> tuple[Any, Any]:
+    """Saint-Pierre reste au port réel ; les autres escales suivent le sommet."""
+    if re.search(r"saint[- ]pierre", name or "", re.I):
+        return SAINT_PIERRE_LAT, SAINT_PIERRE_LON
+    if isinstance(point.get("lat"), (int, float)) and isinstance(point.get("lon"), (int, float)):
+        return point.get("lat"), _wrap_lon(point.get("lon"))
+    return mark.get("lat"), mark.get("lon")
+
+
+def _cayenne_mark(marks: List[dict]) -> Optional[dict]:
+    for mark in marks:
+        if "cayenne" in str(mark.get("name") or "").lower():
+            return mark
+    return None
+
+
+def _apply_park_stay(
+    clock_marks: List[dict],
+    park: dict,
+    t_hours: float,
+    quay_hours: float,
+    t0d: datetime,
+    brg: float,
+    sail_nm: float,
+    vertices: List[dict],
+    sea_hours: float,
+    basis: str,
+) -> tuple[float, float]:
+    """Séjour à Cayenne (3 j, table des ports) au retour de l'épisode, une fois."""
+    hold = float(port_days_for(PARK_STOP_NAME) * 24)
+    if hold <= 0:
+        return t_hours, quay_hours
+    existing = _cayenne_mark(clock_marks)
+    if existing is not None and float(existing.get("holdHours") or 0) >= hold - 1e-6:
+        return t_hours, quay_hours
+    if existing is None:
+        clock_marks.append({
+            "name": PARK_STOP_NAME,
+            "filmNm": _r4(park.get("filmCum") or 0),
+            "tHours": _r4(t_hours),
+            "iso": to_iso(t0d + timedelta(hours=t_hours)),
+            "holdHours": hold,
+            "lat": park.get("lat"),
+            "lon": _wrap_lon(park.get("lon")) if isinstance(park.get("lon"), (int, float)) else park.get("lon"),
+            "vehicle": "quay",
+        })
+    else:
+        existing["holdHours"] = hold
+    t_hours += hold
+    quay_hours += hold
+    vertices.append(_emit(
+        {**park, "cumNm": sail_nm, "filmCum": park.get("filmCum") or 0},
+        t_hours, t0d, float(park.get("bearing") or brg), 0.0,
+        {"kind": "climatology"}, "quay",
+        (t0d + timedelta(hours=t_hours)).month,
+        sea_hours,
+        basis=basis,
+    ))
+    return t_hours, quay_hours
+
+
+def _dedupe_cayenne_marks(marks: List[dict]) -> List[dict]:
+    """Une seule Cayenne : la réinsertion HUD ne compte pas une seconde escale."""
+    out: List[dict] = []
+    kept = False
+    for mark in marks:
+        if "cayenne" in str((mark or {}).get("name") or "").lower():
+            if kept:
+                continue
+            kept = True
+        out.append(mark)
+    return out
+
+
 def build_voyage_clock(
     points: List[dict],
     marks: Optional[List[dict]] = None,
@@ -673,6 +750,15 @@ def build_voyage_clock(
                 land_end_idx = int(m["index"])
                 break
 
+    # Départ La Rochelle : après la jambe terrestre, pas à t0.
+    # (saint-maur ajoute ces heures à l'arrivée sur le dernier tronçon terre.)
+    if start_at != "saint-maur" and any(
+        isinstance(pts[i], dict) and pts[i].get("nonMaritime") for i in range(start_idx)
+    ):
+        t_hours = LAND_CALENDAR_HOURS
+        vertices[-1]["tHours"] = _r4(t_hours)
+        vertices[-1]["iso"] = to_iso(t0d + timedelta(hours=t_hours))
+
     sail_nm = float(start.get("cumNm") or 0)
     truncated: Optional[dict] = None
     a = b = start
@@ -712,6 +798,10 @@ def build_voyage_clock(
                         sea_hours,
                         basis=last_speed_basis,
                     ))
+                    t_hours, quay_hours = _apply_park_stay(
+                        clock_marks, park, t_hours, quay_hours, t0d, brg, sail_nm,
+                        vertices, sea_hours, last_speed_basis,
+                    )
             elif a.get("nonMaritime") and b.get("nonMaritime"):
                 vehicle = "land"
                 if start_at == "saint-maur" and land_end_idx >= 0 and i + 1 == land_end_idx:
@@ -760,16 +850,26 @@ def build_voyage_clock(
 
             arrived = mark_by_index.get(i + 1)
             hub_hold = bool(arrived and arrived.get("kind") == "hub")
+            # La Rochelle après la terre : on part, on ne compte pas le séjour
+            # du retour (3 j) avant la première mise à la voile.
+            outbound_departure = (
+                start_at == "saint-maur"
+                and land_end_idx >= 0
+                and i + 1 == land_end_idx
+                and bool(a.get("nonMaritime"))
+                and bool(b.get("nonMaritime"))
+            )
             if arrived and i + 1 != start_idx and (vehicle != "plane" or hub_hold):
-                hold = port_days_for(str(arrived.get("name") or "")) * 24
+                hold = 0 if outbound_departure else port_days_for(str(arrived.get("name") or "")) * 24
+                lat, lon = _stop_latlon(str(arrived.get("name") or ""), b, arrived)
                 clock_marks.append({
                     "name": arrived.get("name"),
                     "filmNm": _r4(b.get("filmCum", b.get("cumNm", 0)) or 0),
                     "tHours": _r4(t_hours),
                     "iso": to_iso(t0d + timedelta(hours=t_hours)),
                     "holdHours": hold,
-                    "lat": b.get("lat") if isinstance(b.get("lat"), (int, float)) else arrived.get("lat"),
-                    "lon": _wrap_lon(b.get("lon")) if isinstance(b.get("lon"), (int, float)) else arrived.get("lon"),
+                    "lat": lat,
+                    "lon": lon,
                     "kind": arrived.get("kind"),
                     "vehicle": "quay" if hold > 0 else vehicle,
                 })
@@ -806,7 +906,7 @@ def build_voyage_clock(
         "t0": to_iso(t0d),
         "kind": _clock_kind(vertices),
         "vertices": vertices,
-        "marks": clock_marks,
+        "marks": _dedupe_cayenne_marks(clock_marks),
         "episodes": episodes,
         "seaHours": _r4(sea_hours),
         "quayHours": _r4(quay_hours),
