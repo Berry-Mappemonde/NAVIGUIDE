@@ -55,10 +55,11 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   align-content: center;
   box-sizing: border-box;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   text-align: right;
   max-width: calc(100% - (var(--map-control-h) * 2) - 8px);
-  min-width: 0;
+  /* Never a one-letter column when the visible map is very narrow. */
+  min-width: min(220px, 100vw - 16px);
   flex: 0 1 auto;
   overflow: visible;
 }

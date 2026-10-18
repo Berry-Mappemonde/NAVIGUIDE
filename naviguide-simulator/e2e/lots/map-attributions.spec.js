@@ -24,6 +24,22 @@ async function setTools(page, open) {
   await expect.poll(() => panelClosed(page, "right"), { timeout: 10_000 }).toBe(!open);
 }
 
+async function setSidebar(page, open) {
+  if (await panelClosed(page, "left") !== !open) {
+    await page.locator(".naviguide-sidebar-toggle--left").evaluate((el) => el.click());
+  }
+  await expect.poll(() => panelClosed(page, "left"), { timeout: 10_000 }).toBe(!open);
+}
+
+function creditBand(page) {
+  return page.evaluate(() => {
+    const attr = document.querySelector(".leaflet-control-attribution");
+    if (!attr) return null;
+    const r = attr.getBoundingClientRect();
+    return { top: r.top, height: r.height, width: r.width };
+  });
+}
+
 function creditLayout(page, needle) {
   return page.evaluate((needle) => {
     const attr = document.querySelector(".leaflet-control-attribution");
@@ -108,6 +124,12 @@ test("OpenSeaMap s'affiche avec le calque, OpenStreetMap reste", async ({ page }
   await expect.poll(() => creditLayout(page, "OpenStreetMap contributors")).toMatchObject({ ok: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await setSidebar(page, true);
+  await expect.poll(async () => {
+    const band = await creditBand(page);
+    return Boolean(band && band.top >= 0 && band.height <= 120);
+  }, { message: "bande de crédits dans l'écran, hauteur bornée, panneau gauche ouvert" }).toBe(true);
+  await setSidebar(page, false);
   await expect.poll(() => creditLayout(page, "© OpenSeaMap contributors")).toMatchObject({ ok: true });
   await expect.poll(() => creditLayout(page, "OpenStreetMap contributors")).toMatchObject({ ok: true });
 

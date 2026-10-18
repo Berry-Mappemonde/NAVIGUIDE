@@ -102,7 +102,9 @@ describe("crédits tuiles / WMS", () => {
     assert.match(rule[0], /flex-wrap:\s*wrap/);
     assert.match(rule[0], /max-width:\s*calc\(100% - \(var\(--map-control-h\) \* 2\) - 8px\)/);
     assert.match(rule[0], /white-space:\s*normal/);
-    assert.match(rule[0], /overflow-wrap:\s*anywhere/);
+    assert.match(rule[0], /overflow-wrap:\s*break-word/);
+    assert.doesNotMatch(rule[0], /overflow-wrap:\s*anywhere/);
+    assert.match(rule[0], /min-width:\s*min\(220px, 100vw - 16px\)/);
     assert.match(rule[0], /height:\s*auto/);
     assert.doesNotMatch(rule[0], /white-space:\s*nowrap/);
     assert.match(css, /\.leaflet-container \.leaflet-bottom\.leaflet-right \{[^}]*left:\s*var\(--sim-inset-left/);
