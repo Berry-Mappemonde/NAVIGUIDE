@@ -10,6 +10,16 @@ const hook = readFileSync(join(here, "..", "hooks", "useLogbookChat.js"), "utf8"
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 
 describe("LogbookChat contract", () => {
+  it("affiche l’avis au premier échange et s’en souvient", () => {
+    assert.match(src, /data-testid="logbook-chat-ai-notice"/);
+    assert.match(src, /data-testid="logbook-chat-ai-notice-dismiss"/);
+    assert.match(src, /aiActChatNotice/);
+    assert.match(src, /naviguide-ai-act-chat-notice-v1/);
+    assert.match(src, /onFocus=\{onChatFocus\}/);
+    assert.match(src, /messages\.length > 0/);
+    assert.match(src, /text-xs/);
+    assert.doesNotMatch(src, /logbook-chat-ai-notice[\s\S]{0,400}text-\[9px\]/);
+  });
   it("lives in the left sidebar, in both views, and says whether exchanges are logged", () => {
     assert.match(sidebar, /<LogbookChat messages=\{chat\.messages\}/);
     assert.match(sidebar, /\{!drawingHidesBerry && chat \? \(/, "any view, not once a drawn point hides Berry");

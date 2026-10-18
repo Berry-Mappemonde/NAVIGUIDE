@@ -37,6 +37,7 @@ from ici_layers import (
     fetch_overpass_harbours,
     fetch_review,
     fetch_satellite_scene,
+    layer_code,
     reset_rtofs_cache,
     snapshot_ici_weather,
 )
@@ -1160,6 +1161,11 @@ def eez_plausible(rec: dict | None, lat: float, lon: float) -> bool:
     return haversine_nm(lat, lon, elat, elon) <= EEZ_ACCEPT_NM
 
 
+def zee_unknown() -> dict:
+    """No answer about the EEZ (lookup failed): never read as high seas."""
+    return {"name": None, "mrgid": None, "territory": None, "gold": False, "unknown": True}
+
+
 def zee_from_record(rec: dict | None) -> dict:
     if not rec:
         return {"name": "Haute mer", "mrgid": None, "territory": None, "gold": False}
@@ -1241,9 +1247,14 @@ async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple
                 return zee_from_record(rec), "marineregions"
         if ashore:
             return ashore, "marineregions"
+        if all(isinstance(item, Exception) for item in found):
+            # None of the probes around the point got an answer: the EEZ is
+            # unknown, not « high seas ».
+            return zee_unknown(), "unavailable"
         return zee_from_record(None), "marineregions"
     except Exception:
-        return zee_from_record(None), "marineregions"
+        # Gazetteer down: the EEZ is unknown, not « high seas ».
+        return zee_unknown(), "unavailable"
 
 
 def _ashore_from_records(records: list) -> dict | None:
@@ -1696,14 +1707,14 @@ async def _fill_dossier(
                     d["sources"]["emodnet"] = "emodnet"
                 else:
                     d["emodnet"] = empty_emodnet()
-                    d["emodnet"]["reason"] = f"emodnet_unavailable:{type(emo).__name__}"
+                    d["emodnet"]["reason"] = layer_code("emodnet_unavailable", type(emo).__name__)
                     d["sources"]["emodnet"] = None
                 if isinstance(aton, dict):
                     d["aton"] = aton
                     d["sources"]["aton"] = aton.get("source")
                 else:
                     d["aton"] = empty_aton()
-                    d["aton"]["reason"] = f"aton_unavailable:{type(aton).__name__}"
+                    d["aton"]["reason"] = layer_code("aton_unavailable", type(aton).__name__)
                     d["sources"]["aton"] = None
             elif harbour_fb is not None:
                 try:
@@ -1745,35 +1756,35 @@ async def _fill_dossier(
             science_near = (d.get("science") or {}).get("nearby") if isinstance(d.get("science"), dict) else None
             if isinstance(sat, Exception):
                 d["satellites"] = empty_satellites()
-                d["satellites"]["reason"] = f"cdse_stac_unavailable:{type(sat).__name__}"
+                d["satellites"]["reason"] = layer_code("cdse_stac_unavailable", type(sat).__name__)
                 d["sources"]["satellites"] = None
             else:
                 d["satellites"] = attach_derived_from_science(sat, science_near)
                 d["sources"]["satellites"] = d["satellites"].get("source")
             if isinstance(wx, Exception):
                 d["weather"] = empty_weather()
-                d["weather"]["reason"] = f"openmeteo_unavailable:{type(wx).__name__}"
+                d["weather"]["reason"] = layer_code("openmeteo_unavailable", type(wx).__name__)
                 d["sources"]["weather"] = None
             else:
                 d["weather"] = wx
                 d["sources"]["weather"] = wx.get("source")
             if isinstance(emo, Exception):
                 d["emodnet"] = empty_emodnet()
-                d["emodnet"]["reason"] = f"emodnet_unavailable:{type(emo).__name__}"
+                d["emodnet"]["reason"] = layer_code("emodnet_unavailable", type(emo).__name__)
                 d["sources"]["emodnet"] = None
             else:
                 d["emodnet"] = emo
                 d["sources"]["emodnet"] = "emodnet"
             if isinstance(aton, Exception):
                 d["aton"] = empty_aton()
-                d["aton"]["reason"] = f"aton_unavailable:{type(aton).__name__}"
+                d["aton"]["reason"] = layer_code("aton_unavailable", type(aton).__name__)
                 d["sources"]["aton"] = None
             else:
                 d["aton"] = aton
                 d["sources"]["aton"] = aton.get("source")
             if isinstance(review, Exception):
                 d["review"] = empty_review()
-                d["review"]["reason"] = f"review_unavailable:{type(review).__name__}"
+                d["review"]["reason"] = layer_code("review_unavailable", type(review).__name__)
                 d["sources"]["review"] = None
             else:
                 d["review"] = review

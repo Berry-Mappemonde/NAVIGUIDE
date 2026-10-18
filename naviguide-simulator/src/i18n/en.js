@@ -179,6 +179,8 @@ export default {
   iciLegDay:          "D{n}",
   iciLegKn:           "{kn} kn",
   iciLegRemaining:    "{nm} nm left",
+  iciReasonUnavailable: "unavailable",
+  iciReasonNoData:    "no data",
   eventBubbleChipWind: "Wind",
   eventBubbleChipHs:   "Hs",
   eventBubbleChipQuay: "{n} d alongside",
@@ -575,6 +577,29 @@ export default {
   skipperExpertIciRadius:      "ici() bag radius",
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
+
+  // AI transparency
+  aiActGeneratedLabel: "AI-generated content (model: {model})",
+  aiActChatNotice: "You are interacting with artificial intelligence. Replies are generated automatically and may contain errors.",
+  aiActChatNoticeDismiss: "Got it",
+
+  // Moment cards: fallback title and the stored entry alert
+  momentFallbackTitle: "Boat position",
+  momentKindGrib: "Weather forecast (GRIB)",
+  momentKindAmp: "Marine protected area",
+  momentKindZee: "Exclusive economic zone",
+  momentKindPoe: "Port of entry",
+  momentKindMarina: "Marina",
+  momentKindPort: "Port",
+  momentKindScience: "Science station",
+  momentKindClimo: "Climatology",
+  momentKindProject: "Project",
+  momentKindLayer: "Map layer",
+  momentKindBathymetry: "Bathymetry",
+  momentKindCapitainerie: "Harbour office",
+  momentKindWeather: "Weather",
+  alertNoPortOfEntryFor: "No official port of entry is known for {zone}.",
+  alertNoPortOfEntry: "No official port of entry is known for this EEZ.",
 
   // Map layer point card
   layerFicheSite: "Website",

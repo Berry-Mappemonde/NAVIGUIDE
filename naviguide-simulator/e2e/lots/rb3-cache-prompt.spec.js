@@ -2,6 +2,7 @@
 // Sans API : titre de fiche, drapeau, journal tiennent seuls. Le paragraphe
 // et la réponse du chat sont sondés via GET /voyage/official.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rb3/${name}.webp`,
@@ -11,15 +12,6 @@ const shot = (page, name) => page.screenshot({
 });
 
 const LEAK = /Input:\s|^\s*Task:\s|\bTask:\s|What's for the boat|large JSON object|Analyze User Input|Thinking OFF|You are the logbook|Tu es le journal de bord/i;
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function probeOfficial(page) {
   for (let i = 0; i < 8; i += 1) {

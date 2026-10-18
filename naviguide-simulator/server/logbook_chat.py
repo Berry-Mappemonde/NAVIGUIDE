@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from admin_guard import is_admin, rate_limited
+from ai_transparency import enrich_llm_payload
 from story_cascade import TOKENFACTORY_BASE, _clean_text, cascade_text, nebius_key, tidy_story
 
 log = logging.getLogger("naviguide-simulator.logbook")
@@ -1674,14 +1675,14 @@ def _finish_answer(raw: str, ctx: dict, lang: str, source: str, *, sentences: in
     if not text or excuse_is_json_missing(text):
         text = missing_info(lang)
         source = "rules"
-    return {
+    return enrich_llm_payload({
         "status": "ready",
         "answer": text,
         "engine": source,
         "source": source,
         "droppedSentences": dropped,
         "context": ctx,
-    }
+    })
 
 
 async def answer_question(
@@ -1819,7 +1820,7 @@ async def post_logbook_chat(body: ChatIn, request: Request):
             logged = True
         except Exception as exc:  # the journal never breaks an answer
             log.warning("journal chat : %s", exc)
-    return {
+    return enrich_llm_payload({
         "status": out["status"],
         "answer": out.get("answer"),
         "reason": out.get("reason"),
@@ -1829,4 +1830,4 @@ async def post_logbook_chat(body: ChatIn, request: Request):
         "entry": entry,
         "t": now.isoformat().replace("+00:00", "Z"),
         "facts": _facts_view(out.get("context")),
-    }
+    })
