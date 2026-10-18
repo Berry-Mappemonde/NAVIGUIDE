@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanStoryText, climatologySentence, climatologyShownOnBanner, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
+import { TERRITORIAL_SEA_NM, cleanStoryText, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
 import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -151,16 +151,77 @@ describe("narrateIci", () => {
     assert.doesNotMatch(text, /Ports d’entrée officiels/);
   });
 
-  it("null ZEE = haute mer, pas une erreur de nommage", () => {
+  it("null ZEE en erreur = ni haute mer ni erreur de nommage", () => {
     const text = narrateIci({
       zee: null,
       poe: [],
       nearby: { marinas: [], capitaineries: [], wpi: [] },
       sources: { zee: "error", bi: "ok" },
     }, "fr");
-    assert.match(text, /haute mer/i);
+    // Missing EEZ data is not a « no EEZ here » answer.
+    assert.doesNotMatch(text, /haute mer/i);
     assert.doesNotMatch(text, /pas pu nommer/);
     assert.doesNotMatch(text, /Marine Regions\/VLIZ n’a pas répondu/);
+  });
+
+  it("absent EEZ data never claims the high seas", () => {
+    for (const lang of ["fr", "en"]) {
+      const text = narrateIci({
+        zee: null,
+        poe: [],
+        nearby: { marinas: [], capitaineries: [], wpi: [] },
+        sources: { zee: null, bi: "ok" },
+      }, lang);
+      assert.doesNotMatch(text, /haute mer|high seas/i);
+    }
+  });
+
+  it("unavailable EEZ lookup never claims the high seas", () => {
+    for (const zee of [
+      { name: null, mrgid: null, gold: false, unknown: true },
+      { name: "Haute mer", mrgid: null, gold: false },
+    ]) {
+      const dossier = {
+        zee,
+        poe: [],
+        nearby: { marinas: [], capitaineries: [], wpi: [] },
+        sources: { zee: "unavailable", bi: "ok" },
+      };
+      assert.equal(highSeasClaimAllowed(dossier), false);
+      assert.doesNotMatch(narrateIci(dossier, "fr"), /haute mer/i);
+      assert.doesNotMatch(narrateIci(dossier, "en"), /high seas/i);
+    }
+  });
+
+  it("near a known port: never the high seas, even with no EEZ found", () => {
+    const base = {
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      sources: { zee: "vliz-local", bi: "ok" },
+    };
+    const ajaccio = {
+      ...base,
+      poe: [],
+      nearby: { marinas: [{ name: "Port Tino Rossi", nm: 0.2 }], capitaineries: [], wpi: [] },
+    };
+    assert.equal(highSeasClaimAllowed(ajaccio), false);
+    assert.doesNotMatch(narrateIci(ajaccio, "fr"), /haute mer/i);
+    const poe = { ...base, poe: [{ name: "Ajaccio", nm: 3 }], nearby: { marinas: [], capitaineries: [], wpi: [] } };
+    assert.equal(highSeasClaimAllowed(poe), false);
+  });
+
+  it("in the territorial sea (≤ 12 nm from a port): never the high seas", () => {
+    const at = (nm) => ({
+      zee: { name: "Haute mer", mrgid: null, gold: false },
+      poe: [],
+      nearby: { marinas: [], capitaineries: [], wpi: [{ name: "Ajaccio", nm }] },
+      sources: { zee: "vliz-local", bi: "ok" },
+    });
+    assert.equal(TERRITORIAL_SEA_NM, 12);
+    assert.equal(highSeasClaimAllowed(at(11.9)), false);
+    assert.doesNotMatch(narrateIci(at(11.9), "en"), /high seas/i);
+    // Far offshore with a confirmed « no EEZ » answer it still says high seas.
+    assert.equal(highSeasClaimAllowed(at(40)), true);
+    assert.match(narrateIci(at(40), "en"), /high seas/i);
   });
 
   it("says high seas without inventing ports of entry", () => {

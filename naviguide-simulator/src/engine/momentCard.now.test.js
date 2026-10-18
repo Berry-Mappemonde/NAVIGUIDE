@@ -14,6 +14,8 @@ import {
 import {
   aroundWithoutShown,
   dedupeFacts,
+  sentencesNotShown,
+  keptSentences,
   localizeStoredFact,
   localizeStoredLabel,
   visibleAlerts,
@@ -183,5 +185,37 @@ describe("Maintenant tab: no port of entry alert through i18n", () => {
       alerts: [{ kind: "entry", title: "Vanuatu", fact: "Aucun port d'entrée officiel n'est connu pour Vanuatu" }],
     })];
     assert.equal(cardsFromOfficialMoments(rows, { lang: "en" }).now.text, "No official port of entry is known for Vanuatu.");
+  });
+});
+
+describe("one fact once in the Now tab", () => {
+  const HIGH = "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
+
+  it("drops a server sentence the briefing already says (Ajaccio double)", () => {
+    const briefing = `${HIGH} Ports à proximité : Ajaccio.\n\nMétéo au bateau : vent 12 kn.`;
+    assert.deepEqual(sentencesNotShown([HIGH, "Météo au bateau : vent 12 kn."], [briefing]), []);
+  });
+
+  it("matches across quotes, spacing and final punctuation", () => {
+    const shown = "Le bateau est en haute mer : aucune ZEE, pas de formalités d'entrée à prévoir";
+    assert.deepEqual(sentencesNotShown([`  ${HIGH}  `], [shown]), []);
+  });
+
+  it("drops a sentence repeated by the server itself or said by an alert", () => {
+    const fact = "Aucun port d’entrée officiel n’est connu pour Vanuatu.";
+    assert.deepEqual(sentencesNotShown([HIGH, HIGH, fact], ["", fact]), [HIGH]);
+  });
+
+  it("keeps sentences nobody else says", () => {
+    const amp = "À 3 milles de Scandola.";
+    assert.deepEqual(sentencesNotShown([amp], [HIGH]), [amp]);
+    assert.deepEqual(sentencesNotShown(null, [HIGH]), []);
+  });
+});
+
+describe("keptSentences", () => {
+  it("one flag per sentence, in order", () => {
+    const a = "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
+    assert.deepEqual(keptSentences([a, "Vent 12 kn.", a], ["Vent 12 kn."]), [true, false, false]);
   });
 });

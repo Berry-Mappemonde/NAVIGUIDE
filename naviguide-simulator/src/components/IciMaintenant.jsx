@@ -22,6 +22,7 @@ import {
   localizeStoredFact,
   localizeStoredLabel,
   aroundWithoutShown,
+  keptSentences,
   sameShownMoment,
 } from "./iciMaintenant.js";
 
@@ -185,6 +186,7 @@ export function IciMaintenant({
   planReview = null,
   simulation = null,
   hereBody = null,
+  hereText = "",
   escale = null,
   momentNow: momentNowProp = null,
   momentFree = null,
@@ -210,6 +212,13 @@ export function IciMaintenant({
   const shown = withNowLeg(frame.shown, nowLeg);
   const here = frame.here;
   const alerts = visibleAlerts(frame.alerts, dismissed);
+  // One fact once in the whole tab: the briefing above, the alerts and the
+  // items around already say some of the server's « here » sentences.
+  const hereKept = keptSentences(here?.sentences, [
+    hereText,
+    ...alerts.map((alert) => alert?.fact),
+    ...(Array.isArray(around) ? around : []).map((item) => item?.fact || item?.text),
+  ]);
   const tint = regimeColor(shown?.leg?.regime);
   const tabs = visibleIciTabs(mode, { routeSource });
   const extraTabs = hiddenIciTabs(mode, { routeSource });
@@ -358,15 +367,15 @@ export function IciMaintenant({
               ) : (
                 <>
                   {hereBody}
-                  {(here?.sentences || []).map((sentence) => (
+                  {(here?.sentences || []).map((sentence, i) => (hereKept[i] ? (
                     <p
-                      key={sentence}
+                      key={`${i}-${sentence}`}
                       data-testid="ici-here-sentence"
                       className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
                     >
                       {sentence}
                     </p>
-                  ))}
+                  ) : null))}
                   {(here?.links || []).length ? (
                     <div className="flex flex-wrap gap-1.5 mt-0.5">
                       {here.links.map((link) => (

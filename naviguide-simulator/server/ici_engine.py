@@ -1161,6 +1161,11 @@ def eez_plausible(rec: dict | None, lat: float, lon: float) -> bool:
     return haversine_nm(lat, lon, elat, elon) <= EEZ_ACCEPT_NM
 
 
+def zee_unknown() -> dict:
+    """No answer about the EEZ (lookup failed): never read as high seas."""
+    return {"name": None, "mrgid": None, "territory": None, "gold": False, "unknown": True}
+
+
 def zee_from_record(rec: dict | None) -> dict:
     if not rec:
         return {"name": "Haute mer", "mrgid": None, "territory": None, "gold": False}
@@ -1242,9 +1247,14 @@ async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple
                 return zee_from_record(rec), "marineregions"
         if ashore:
             return ashore, "marineregions"
+        if all(isinstance(item, Exception) for item in found):
+            # None of the probes around the point got an answer: the EEZ is
+            # unknown, not « high seas ».
+            return zee_unknown(), "unavailable"
         return zee_from_record(None), "marineregions"
     except Exception:
-        return zee_from_record(None), "marineregions"
+        # Gazetteer down: the EEZ is unknown, not « high seas ».
+        return zee_unknown(), "unavailable"
 
 
 def _ashore_from_records(records: list) -> dict | None:

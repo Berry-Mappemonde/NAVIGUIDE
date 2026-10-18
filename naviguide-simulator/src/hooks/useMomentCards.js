@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { advanceMoments, cardsFromOfficialMoments, dismissNow, emptyMoments, nextFree, selectDisplayedMoments } from "../engine/momentCard.js";
+import { validMomentPosition } from "./useMoment.js";
 
 const TICK_MS = 1000;
 
@@ -26,8 +27,9 @@ export function useMomentCards({
   legProgress = null,
 }) {
   // Rounded so a moving boat does not rebuild the cards on every frame.
-  const boatLat = Number.isFinite(Number(boat?.lat)) ? Math.round(Number(boat.lat) * 100) / 100 : null;
-  const boatLon = Number.isFinite(Number(boat?.lon)) ? Math.round(Number(boat.lon) * 100) / 100 : null;
+  const boatPos = validMomentPosition(boat?.lat, boat?.lon);
+  const boatLat = boatPos ? Math.round(boatPos.lat * 100) / 100 : null;
+  const boatLon = boatPos ? Math.round(boatPos.lon * 100) / 100 : null;
   const boatAt = useMemo(
     () => (boatLat == null || boatLon == null ? null : { lat: boatLat, lon: boatLon }),
     [boatLat, boatLon],

@@ -328,6 +328,39 @@ export function dedupeFacts(items) {
   return out;
 }
 
+function splitSentences(text) {
+  return String(text ?? "")
+    .split(/\n+|(?<=[.!?…])\s+/u)
+    .map(normFact)
+    .filter(Boolean);
+}
+
+/**
+ * Server « here » sentences not already said elsewhere in the tab: the
+ * briefing paragraph, an alert or an item around. The briefing and the
+ * server word the same fact the same way (« haute mer : aucune ZEE »), and
+ * they are free text, not items: `dedupeFacts` never saw them.
+ */
+export function sentencesNotShown(sentences, shownTexts = []) {
+  const list = Array.isArray(sentences) ? sentences : [];
+  const keep = keptSentences(list, shownTexts);
+  return list.filter((_, i) => keep[i]);
+}
+
+/** Same rule as `sentencesNotShown`, as one boolean per sentence (in order). */
+export function keptSentences(sentences, shownTexts = []) {
+  const seen = new Set();
+  for (const text of Array.isArray(shownTexts) ? shownTexts : [shownTexts]) {
+    for (const part of splitSentences(text)) seen.add(part);
+  }
+  return (Array.isArray(sentences) ? sentences : []).map((sentence) => {
+    const parts = splitSentences(sentence);
+    if (!parts.length || parts.every((part) => seen.has(part))) return false;
+    parts.forEach((part) => seen.add(part));
+    return true;
+  });
+}
+
 /** True when two cards / items show the same thing (title or fact). */
 export function sameShownMoment(a, b) {
   if (!a || !b) return false;

@@ -166,13 +166,41 @@ function formatEta(hours, lang) {
   return `${h} h ${String(m).padStart(2, "0")}`;
 }
 
+// Territorial sea: a known port this close means the boat is not on the high seas.
+export const TERRITORIAL_SEA_NM = 12;
+
+function nearKnownPort(dossier) {
+  const nearby = dossier?.nearby || {};
+  const rows = [
+    ...(Array.isArray(dossier?.poe) ? dossier.poe : []),
+    ...["marinas", "capitaineries", "wpi"].flatMap((key) => (Array.isArray(nearby[key]) ? nearby[key] : [])),
+  ];
+  return rows.some((row) => {
+    const nm = Number(row?.nm);
+    return row?.nm != null && Number.isFinite(nm) && nm <= TERRITORIAL_SEA_NM;
+  });
+}
+
+/** « High seas » only when an EEZ lookup answered « none », away from any
+ * known port. Missing or failed EEZ data never reads as high seas. */
+export function highSeasClaimAllowed(dossier) {
+  const zee = dossier?.zee;
+  if (!zee || typeof zee !== "object" || zee.unknown) return false;
+  if (zee.mrgid || zee.ashore || String(zee.name || "").startsWith("À terre")) return false;
+  const src = dossier?.sources?.zee;
+  if (src === "error" || src === "unavailable") return false;
+  return !nearKnownPort(dossier);
+}
+
 function zeeSentence(dossier, lang) {
   const en = isEn(lang);
   const zee = dossier?.zee;
-  const highSeas = en
-    ? "The boat is on the high seas: no exclusive economic zone, no entry formalities to plan."
-    : "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
-  if (!zee) return highSeas;
+  const highSeas = highSeasClaimAllowed(dossier)
+    ? (en
+      ? "The boat is on the high seas: no exclusive economic zone, no entry formalities to plan."
+      : "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.")
+    : "";
+  if (!zee || zee.unknown) return "";
   if (zee.ashore || String(zee.name || "").startsWith("À terre")) {
     const extra = String(zee.name || "").startsWith("À terre")
       ? zee.name.slice("À terre".length).trim()

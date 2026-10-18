@@ -487,6 +487,11 @@ export const Sidebar = memo(function Sidebar({
                 onGoLive={onGoLive}
               />
             )}
+            hereText={!drawingHidesBerry ? (
+              plan?.localFallback && expeditionBriefing
+                ? expeditionBriefing
+                : iciBriefing && iciBriefingSegments?.length ? iciBriefing : (briefing || "")
+            ) : ""}
             hereBody={!drawingHidesBerry ? (
               <div data-testid="here-product">
                 <div data-testid="briefing" className="sim-box-ici min-w-0 overflow-x-hidden h-auto">

@@ -87,6 +87,93 @@ async function showLeftPanel(page) {
 
 const SHA = "3f9c2a7be41d08c5a6e2f1b0d9c87a65";
 
+async function routeApi(page, { moment, dossier = null, onMoment = null }) {
+  let built = null;
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    const api = path.includes("/voyage") || path.includes("/ici");
+    if (!api) return route.continue();
+    if (path.includes("/ici/moment")) {
+      if (onMoment) onMoment(url);
+      return json(route, moment);
+    }
+    if (dossier && /\/ici\/?$/.test(path)) {
+      return json(route, { ...dossier, at: { lat: Number(url.searchParams.get("lat")), lon: Number(url.searchParams.get("lon")) } });
+    }
+    if (path.endsWith("/voyage/official/journal")) {
+      return json(route, { voyageId: "official", status: "ready", count: 0, days: [], latest: [], events: [] });
+    }
+    if (path.includes("/voyage/official/moments")) {
+      return json(route, { voyageId: "official", status: "ready", count: 0, moments: [] });
+    }
+    if (path.includes("/voyage/official/grib")) return json(route, { status: "absent" });
+    if (path.includes("/voyage/official/film")) return json(route, { status: "ready", chapters: [] });
+    if (path.endsWith("/voyage/official/clock")) {
+      if (!built?.clock) return json(route, { detail: "clock" }, 404);
+      return json(route, built.clock);
+    }
+    if (path.endsWith("/voyage/official")) {
+      if (route.request().method() === "PUT") {
+        let body = {};
+        try { body = route.request().postDataJSON(); } catch { body = {}; }
+        built = clockFromMarks(body.marks) || built;
+      }
+      return json(route, { voyageId: "official", status: "ready", clock: built?.clock || null });
+    }
+    return json(route, { status: "ready" });
+  });
+}
+
+const WEATHER = "Weather at the boat: wind 12 kn.";
+
+test("Now tab EN: empty EEZ answer never says high seas, one fact once", async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = [];
+  const badQueries = [];
+  page.on("pageerror", (err) => errors.push(String(err)));
+  await page.addInitScript(() => localStorage.setItem("naviguide_lang_v4", "en"));
+  await routeApi(page, {
+    onMoment: (url) => {
+      const lat = url.searchParams.get("lat");
+      const lon = url.searchParams.get("lon");
+      if (!Number.isFinite(Number(lat)) || lat === "null" || lon === "null") badQueries.push(url.search);
+    },
+    // In port at Ajaccio, the EEZ lookup gave nothing.
+    dossier: {
+      version: 1,
+      radiusNm: 30,
+      zee: null,
+      poe: [],
+      amp: [],
+      projects: [],
+      nearby: { marinas: [{ name: "Port Tino Rossi", nm: 0.3 }], capitaineries: [], wpi: [], anchorages: [] },
+      marks: [],
+      sources: { zee: "unavailable", bi: "ok" },
+    },
+    moment: {
+      signature: SHA,
+      t: "2026-10-18T00:00:00Z",
+      alerts: [],
+      here: { zee: {}, sentences: [WEATHER, WEATHER] },
+      around: [],
+      sources: ["clock"],
+    },
+  });
+
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await showLeftPanel(page);
+
+  const box = page.getByTestId("ici-maintenant");
+  await expect(page.getByTestId("ici-here-sentence").filter({ hasText: WEATHER })).toHaveCount(1, { timeout: 25_000 });
+  // The briefing is built from the empty-EEZ answer above.
+  await expect(page.getByTestId("ici-briefing")).toContainText("Port Tino Rossi", { timeout: 25_000 });
+  await expect(box).not.toContainText(/high seas|haute mer/i);
+  expect(badQueries, badQueries.join("\n")).toEqual([]);
+  expect(errors, errors.join("\n")).toEqual([]);
+});
+
 test("Now tab EN: deduplicated cards, translated entry alert, no hash", async ({ page }) => {
   test.setTimeout(90_000);
   let built = null;
