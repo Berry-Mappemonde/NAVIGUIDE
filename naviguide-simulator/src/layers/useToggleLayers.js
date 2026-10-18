@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ampStyle } from "./styles.js";
 import { SCIENCE_WMS_LAYERS } from "./scienceWms.js";
+import {
+  bindTileCredit,
+  OPENSEAMAP_ATTRIBUTION,
+  VLIZ_EEZ_ATTRIBUTION,
+} from "./tileAttributions.js";
 import { SpatialCatalogLayer } from "./spatialCatalogLayer.js";
 import { quantizedCatalogBbox } from "./spatialFeatures.js";
 import { DEFAULT_SHOW_GRIB, DEFAULT_SHOW_ZEE } from "../constants/layers.js";
@@ -260,6 +265,7 @@ export function useToggleLayers(
       layersRef.current.zee = null;
     }
     if (!showZee) return undefined;
+    const releaseCredit = bindTileCredit(map, VLIZ_EEZ_ATTRIBUTION);
     try {
       const wms = L.tileLayer.wms("/proxy/zee/wms", {
         layers: "eez_boundaries",
@@ -275,6 +281,7 @@ export function useToggleLayers(
       setErrorZee(String(err.message || err));
     }
     return () => {
+      releaseCredit();
       if (layersRef.current.zee) {
         map.removeLayer(layersRef.current.zee);
         layersRef.current.zee = null;
@@ -290,28 +297,31 @@ export function useToggleLayers(
       layersRef.current.balisage = null;
     }
     if (!showBalisage) return undefined;
+    // Bound on the control, not on the tile layer: tileerror removes that
+    // instance (empty seamark tiles) and Leaflet would drop its credit.
+    const releaseCredit = bindTileCredit(map, OPENSEAMAP_ATTRIBUTION);
+    let alive = true;
     const tiles = L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
       pane: "balisage",
       opacity: 0.85,
       errorTileUrl: "",
-      attribution: "© OpenSeaMap contributors",
     });
     tiles.on("tileerror", () => {
-      if (!layersRef.current.balisageFallback) {
-        map.removeLayer(tiles);
-        if (layersRef.current.balisage === tiles) {
-          layersRef.current.balisage = null;
-        }
-        layersRef.current.balisageFallback = L.tileLayer("/proxy/seamark/{z}/{x}/{y}.png", {
-          pane: "balisage",
-          opacity: 0.85,
-          attribution: "© OpenSeaMap contributors",
-        }).addTo(map);
+      if (!alive || layersRef.current.balisageFallback) return;
+      map.removeLayer(tiles);
+      if (layersRef.current.balisage === tiles) {
+        layersRef.current.balisage = null;
       }
+      layersRef.current.balisageFallback = L.tileLayer("/proxy/seamark/{z}/{x}/{y}.png", {
+        pane: "balisage",
+        opacity: 0.85,
+      }).addTo(map);
     });
     tiles.addTo(map);
     layersRef.current.balisage = tiles;
     return () => {
+      alive = false;
+      releaseCredit();
       map.removeLayer(tiles);
       if (layersRef.current.balisageFallback) {
         map.removeLayer(layersRef.current.balisageFallback);
@@ -325,8 +335,10 @@ export function useToggleLayers(
     if (!map || !mapReady) return undefined;
     const enabled = { bathymetry: showBathymetry, substrate: showFonds, cables: showCables };
     const added = [];
+    const releases = [];
     SCIENCE_WMS_LAYERS.forEach((spec) => {
       if (!enabled[spec.id]) return;
+      releases.push(bindTileCredit(map, spec.attribution));
       const lyr = L.tileLayer.wms(spec.url, {
         layers: spec.layers,
         format: "image/png",
@@ -334,14 +346,16 @@ export function useToggleLayers(
         version: "1.1.1",
         opacity: spec.opacity,
         pane: spec.pane,
-        attribution: spec.attribution,
         maxZoom: 18,
         updateWhenZooming: false,
       });
       lyr.addTo(map);
       added.push(lyr);
     });
-    return () => added.forEach((lyr) => map.removeLayer(lyr));
+    return () => {
+      releases.forEach((release) => release());
+      added.forEach((lyr) => map.removeLayer(lyr));
+    };
   }, [mapRef, mapReady, showBathymetry, showFonds, showCables]);
 
   const scienceLoading = sextant.loading || argo.loading || odatis.loading || edmed.loading || csr.loading;
