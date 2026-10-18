@@ -341,7 +341,7 @@ def test_on_land_says_which_end(monkeypatch):
 
 def test_detours_run_in_the_worker_with_the_time_left(monkeypatch):
     """avoid_land : searoute ne tourne jamais dans ce process, et chaque appel
-    reçoit le reste du budget global (~8 s pour toute la requête)."""
+    reçoit le reste du budget global (~12 s pour toute la requête)."""
     import route_engine
     import searoute_worker
 
@@ -357,7 +357,7 @@ def test_detours_run_in_the_worker_with_the_time_left(monkeypatch):
     deadline = route_engine.time.monotonic() + 3.0
     route_engine.avoid_land([[0.0, 0.0], [1.0, 0.0]], max_iterations=1, deadline=deadline)
     assert seen and all(0 < t <= 3.0 for t in seen)
-    assert route_engine.ROUTE_DEADLINE_S <= 8.0
+    assert route_engine.ROUTE_DEADLINE_S <= 12.0
 
 
 def test_detour_past_the_deadline_is_busy(monkeypatch):
@@ -421,3 +421,12 @@ def test_same_point_answer_is_unfolded(monkeypatch):
     assert response.status_code == 200
     coords = response.json()["geometry"]["coordinates"]
     assert all(abs(c[0] - 214.02) < 1e-9 for c in coords)
+
+
+def test_route_deadline_leaves_room_after_one_searoute_call():
+    import route_engine
+
+    # One searoute call may use its whole time-out and still leave time for
+    # the detours around land before the request answers « busy ».
+    assert route_engine.ROUTE_DEADLINE_S >= route_engine.SEAROUTE_TIMEOUT_S + 3.0
+    assert route_engine.ROUTE_DEADLINE_S <= 12.0

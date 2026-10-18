@@ -42,7 +42,7 @@ function parseNm(text) {
 }
 
 test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -57,31 +57,52 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   }
   await expect(page.getByTestId("drawing-summary")).toBeVisible({ timeout: 10_000 });
 
+  // « Server busy » is told apart from « no searoute » by the answer itself.
+  let busyAnswers = 0;
+  page.on("response", (res) => {
+    if (res.url().includes("/route?") && res.status() === 503) busyAnswers += 1;
+  });
   await clickLatLng(page, BRISBANE.lat, BRISBANE.lon);
-  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, { timeout: 10_000 });
+  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, null, { timeout: 10_000 });
   await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
   const legShown = () => page.waitForFunction(
     () => (window.__naviguideDrawn?.segments?.length || 0) >= 1,
     null,
-    { timeout: 8_000 },
+    // The server answers within its 12 s deadline (ROUTE_DEADLINE_S), or 503;
+    // the margin covers the queue in front of it.
+    { timeout: 20_000 },
   ).then(() => true).catch(() => false);
+  const busyShown = () => page.getByText(/Serveur occupé|Server busy/).first().isVisible().catch(() => false);
   let gotSeg = await legShown();
+
   // A busy server (other routes computed in parallel) says « try again » and
   // keeps the point: do what the reader would, undo it and click again.
   const undo = page.getByTitle(/Annuler le dernier point|Undo last point/).filter({ hasText: "↶" });
   for (let attempt = 0; !gotSeg && attempt < 3; attempt += 1) {
-    const busy = await page.getByText(/Serveur occupé|Server busy/).first().isVisible().catch(() => false);
-    if (!busy) break;
+    if (!busyAnswers && !(await busyShown())) break;
     await undo.click();
     await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) === 1, null, { timeout: 5_000 });
     await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
     gotSeg = await legShown();
   }
   if (!gotSeg) {
-    test.info().annotations.push({
-      type: "poste",
-      description: "searoute / Overpass interdits en CI — segments Brisbane→SF non calculés",
-    });
+    if (busyAnswers > 0) {
+      // After a 503 the point stays, without a leg (nothing straight drawn).
+      const state = await page.evaluate(() => ({
+        points: window.__naviguideDrawn?.points?.length || 0,
+        legs: window.__naviguideDrawn?.segments?.length || 0,
+      }));
+      expect(state).toEqual({ points: 2, legs: 0 });
+    }
+    test.info().annotations.push(busyAnswers > 0
+      ? {
+        type: "serveur occupé",
+        description: `/route a répondu 503 busy (${busyAnswers} fois, échéance atteinte) — point gardé sans jambe`,
+      }
+      : {
+        type: "poste",
+        description: "searoute absent (ou interdit sur ce poste) — segments Brisbane→SF non calculés",
+      });
     await shot(page, "01-corde").catch(() => {});
     return;
   }

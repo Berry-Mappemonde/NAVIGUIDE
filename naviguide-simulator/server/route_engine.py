@@ -606,8 +606,12 @@ def segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float) -> 
 # Un seul essai, borné à ~8 s. Searoute tourne dans un process enfant, tué à
 # l'échéance (searoute_worker) : aucun calcul ne continue après le délai.
 SEAROUTE_TIMEOUT_S = 8.0
-# The whole /route request (searoute, then the detours around land).
-ROUTE_DEADLINE_S = 8.0
+# The whole /route request (searoute, then the detours around land). Longer
+# than one searoute call: measured on an Apple M2 with warm workers, La
+# Rochelle → Nouméa takes about 3.1 s and La Rochelle → Papeete 2.5 s
+# (searoute then avoid_land); a slower or busier server (CI, four parallel
+# legs) needs that margin before answering 503.
+ROUTE_DEADLINE_S = 12.0
 SEAROUTE_TARGET = "searoute:searoute"
 
 

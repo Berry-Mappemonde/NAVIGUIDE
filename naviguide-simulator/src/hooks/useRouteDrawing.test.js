@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "url";
 import { describe, it } from "node:test";
-import { importPointsSequential } from "./useRouteDrawing.js";
+import { importPointsSequential, loadLeg } from "./useRouteDrawing.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useRouteDrawing.js"), "utf8");
@@ -122,5 +122,48 @@ describe("plafond de points", () => {
     const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
     assert.match(app, /t\("drawPointLimit", \{ max: DRAW_MAX_POINTS \}\)/);
     assert.match(app, /t\("importRouteTruncated", \{ max: DRAW_MAX_POINTS \}\)/);
+  });
+});
+
+describe("loadLeg: no straight fallback across land", () => {
+  const LA_ROCHELLE = { lat: 46.15, lon: -1.16 };
+  const MARSEILLE = { lat: 43.3, lon: 5.37 };
+  // France between the two: a straight line from Biscay to the Gulf of Lion crosses it.
+  const isLand = (lat, lon) => lat > 43.5 && lat < 46 && lon > -1 && lon < 5;
+  const withFetch = async (impl, run) => {
+    const saved = globalThis.fetch;
+    globalThis.fetch = impl;
+    try { return await run(); } finally { globalThis.fetch = saved; }
+  };
+  const answer = (status, body) => async () => ({ status, ok: status >= 200 && status < 300, json: async () => body });
+
+  for (const [label, impl] of [
+    ["500", answer(500, { detail: "boom" })],
+    ["404", answer(404, { detail: "Not Found" })],
+    ["network", async () => { throw new TypeError("Failed to fetch"); }],
+  ]) {
+    it(`${label}: a fallback crossing land is refused, not drawn`, async () => {
+      const leg = await withFetch(impl, () => loadLeg(LA_ROCHELLE, MARSEILLE, { isLand }));
+      assert.deepEqual(leg, { reject: "crosses_land", end: "end" });
+    });
+
+    it(`${label}: an open-sea fallback is still drawn, marked failed`, async () => {
+      const leg = await withFetch(impl, () => loadLeg(LA_ROCHELLE, { lat: 44, lon: -6 }, { isLand }));
+      assert.equal(leg.failed, true);
+      assert.equal(leg.coords.length, 2);
+    });
+  }
+
+  it("a server error saying crosses_land is refused even without a land mask", async () => {
+    const leg = await withFetch(answer(500, { detail: "crosses_land" }), () => loadLeg(LA_ROCHELLE, MARSEILLE));
+    assert.deepEqual(leg, { reject: "crosses_land", end: "end" });
+  });
+
+  it("the refusal is checked before every straight fallback", () => {
+    const body = hook.slice(hook.indexOf("export async function loadLeg"), hook.indexOf("export function legsStillLoading"));
+    const checks = body.match(/refuseRhumbFallback\(/g) || [];
+    const lines = body.match(/rhumbCoords\(from, to\)/g) || [];
+    assert.equal(checks.length, lines.length);
+    assert.ok(lines.length >= 2);
   });
 });

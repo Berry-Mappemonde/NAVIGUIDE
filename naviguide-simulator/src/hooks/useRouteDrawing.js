@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { coordsFromRoutePayload } from "../utils/berryLegs.js";
 import { haversineNm, unwrapPath, wrapLon } from "../utils/geo.js";
-import { ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
+import { refuseRhumbFallback, ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 export const DRAW_MAX_POINTS = ROUTE_IMPORT_MAX_POINTS;
@@ -33,7 +33,12 @@ function rhumbCoords(from, to) {
   return unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
 }
 
-async function loadLeg(from, to) {
+/**
+ * One leg from /route. On a server error (500, 404…) or a network failure the
+ * straight fallback is drawn only if it does not cross land (`isLand`, or the
+ * server saying so); otherwise the leg is refused like a land crossing.
+ */
+export async function loadLeg(from, to, { isLand } = {}) {
   const params = new URLSearchParams({
     start_lat: String(from.lat),
     start_lon: String(wrapLon(from.lon)),
@@ -54,12 +59,14 @@ async function loadLeg(from, to) {
     if (res.status === 503) return { busy: true };
     let coords = coordsFromRoutePayload(data);
     if (!res.ok || !coords.length) {
+      if (refuseRhumbFallback(from, to, { serverDetail: detail, isLand })) return { reject: "crosses_land", end: "end" };
       const line = rhumbCoords(from, to);
       return { coords: line, failed: true, nm: lengthNm(null, line) };
     }
     coords = unwrapPath(coords, from.lon);
     return { coords, failed: false, nm: lengthNm(data, coords) };
   } catch {
+    if (refuseRhumbFallback(from, to, { isLand })) return { reject: "crosses_land", end: "end" };
     const line = rhumbCoords(from, to);
     return { coords: line, failed: true, nm: lengthNm(null, line) };
   }
