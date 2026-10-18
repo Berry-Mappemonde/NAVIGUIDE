@@ -132,7 +132,15 @@ export function useRouteDrawing() {
     setDrawingNotice({ code, token: noticeTokenRef.current });
   }, []);
 
-  const fetchSegment = useCallback(async (from, to, staged) => {
+  // The point appears at once (same as a plain click); legs resolve
+  // afterwards, one at a time, in click order.
+  const enqueue = useCallback((work) => {
+    const job = queueRef.current.then(work);
+    queueRef.current = job.then(() => {}, () => {});
+    return job;
+  }, []);
+
+  const loadSegment = useCallback(async (from, to) => {
     const slot = pointsRef.current.indexOf(from);
     if (slot < 0) return;
     const seen = epochRef.current;
@@ -140,7 +148,7 @@ export function useRouteDrawing() {
     pendingRef.current += 1;
     setDrawingLoading(true);
     try {
-      const result = staged || await loadLeg(from, to);
+      const result = await loadLeg(from, to);
       if (epochRef.current !== seen) return;
       if ((slotGenRef.current[slot] || 0) !== gen) return;
       if (pointsRef.current[slot] !== from) return;
@@ -170,42 +178,39 @@ export function useRouteDrawing() {
     }
   }, [notify]);
 
-  const commitPoint = useCallback(async (lat, lon, extra) => {
+  const fetchSegment = useCallback(
+    (from, to) => enqueue(() => loadSegment(from, to)),
+    [enqueue, loadSegment],
+  );
+
+  const probeFirstPoint = useCallback(async (point) => {
     const seen = epochRef.current;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const probe = await loadLeg(point, point);
+    if (epochRef.current !== seen || probe?.reject !== "on_land") return;
+    if (pointsRef.current.length === 1 && pointsRef.current[0] === point) {
+      pointsRef.current = [];
+      segmentsRef.current = [];
+      setDrawnPoints([]);
+      setDrawnSegments([]);
+      publishDrawn([], []);
+    }
+    notify("on_land");
+  }, [notify]);
+
+  const addPoint = useCallback((lat, lon, extra) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return Promise.resolve();
     if (pointsRef.current.length >= DRAW_MAX_POINTS) {
       notify("limit");
-      return;
+      return Promise.resolve();
     }
     const mask = loadedLandMask();
     if (mask?.(lat, lon)) {
       notify("on_land");
-      return;
+      return Promise.resolve();
     }
     const newPoint = { lat, lon };
     if (extra?.name) newPoint.name = extra.name;
     if (extra?.flags) newPoint.flags = extra.flags;
-    const prev = pointsRef.current.at(-1);
-    let staged = null;
-    if (!prev) {
-      const probe = await loadLeg(newPoint, newPoint);
-      if (epochRef.current !== seen) return;
-      if (probe.reject === "on_land") {
-        notify("on_land");
-        return;
-      }
-    } else {
-      staged = await loadLeg(prev, newPoint);
-      if (epochRef.current !== seen) return;
-      if (staged.reject) {
-        notify(staged.reject);
-        return;
-      }
-    }
-    if (pointsRef.current.length >= DRAW_MAX_POINTS) {
-      notify("limit");
-      return;
-    }
     const updated = [...pointsRef.current, newPoint];
     pointsRef.current = updated;
     undonePointsRef.current = [];
@@ -214,19 +219,11 @@ export function useRouteDrawing() {
     setDrawnPoints([...updated]);
     publishDrawn(updated, segmentsRef.current);
     if (updated.length >= DRAW_MAX_POINTS) notify("limit");
-    if (updated.length >= 2) return fetchSegment(updated[updated.length - 2], newPoint, staged);
+    if (updated.length >= 2) return fetchSegment(updated[updated.length - 2], newPoint);
+    // Not queued: a slow probe must not hold back the next legs.
+    probeFirstPoint(newPoint).catch(() => {});
     return Promise.resolve();
-  }, [fetchSegment, notify]);
-
-  const addPoint = useCallback((lat, lon, extra) => {
-    const seen = epochRef.current;
-    const job = queueRef.current.then(async () => {
-      if (epochRef.current !== seen) return;
-      await commitPoint(lat, lon, extra);
-    });
-    queueRef.current = job.then(() => {}, () => {});
-    return job;
-  }, [commitPoint]);
+  }, [fetchSegment, notify, probeFirstPoint]);
 
   const importPoints = useCallback(
     (points) => importPointsSequential(addPoint, reset, points),

@@ -110,7 +110,7 @@ test("3 points, 2 jambes mer, distance des /route, suite et GeoJSON", async ({ p
     mimeType: "application/geo+json",
     buffer: Buffer.from(raw),
   });
-  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) === live.length, { timeout: 20_000 });
+  await page.waitForFunction((n) => (window.__naviguideDrawn?.points?.length || 0) === n, live.length, { timeout: 20_000 });
   const again = await page.evaluate(() => (window.__naviguideDrawn?.points || []).map((p) => [p.lat, p.lon]));
   expect(again.map((p) => [Number(p[0].toFixed(5)), Number(p[1].toFixed(5))])).toEqual(
     live.map((p) => [Number(p[0].toFixed(5)), Number(p[1].toFixed(5))]),
@@ -125,8 +125,8 @@ test("3 points, 2 jambes mer, distance des /route, suite et GeoJSON", async ({ p
   await continueBtn.click();
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 10_000 });
   await page.evaluate(() => window.__naviguideAddDrawnPoint(36.5, -6.3, { name: "Au large" }));
-  await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) === live.length + 1, { timeout: 15_000 });
-  await page.waitForFunction(() => (window.__naviguideDrawn?.segments?.length || 0) === live.length, { timeout: 15_000 });
+  await page.waitForFunction((n) => (window.__naviguideDrawn?.points?.length || 0) === n, live.length + 1, { timeout: 15_000 });
+  await page.waitForFunction((n) => (window.__naviguideDrawn?.segments?.length || 0) === n, live.length, { timeout: 15_000 });
 });
 
 test("le 61e point est refusé", async ({ page }) => {
