@@ -65,7 +65,10 @@ def _install_http_guard(monkeypatch, seen: list, handler):
 
 
 @pytest.fixture(autouse=True)
-def _reset_bi_state():
+def _reset_bi_state(monkeypatch, tmp_path):
+    # Cache disque isolé : sur un poste de dev, ~/.cache/naviguide/bi-cache peut déjà
+    # contenir la cellule demandée, et un HIT masquerait le 502 attendu sans BI.
+    monkeypatch.setenv("NAVIGUIDE_BI_CACHE_DIR", str(tmp_path / "bi-cache"))
     bi_upstream._disabled_logged = False
     reset_atlas_cache()
     reset_nogo_cache()
