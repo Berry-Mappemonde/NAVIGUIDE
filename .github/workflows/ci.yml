@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       simulator: ${{ steps.filter.outputs.simulator }}
+      polar: ${{ steps.filter.outputs.polar }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -25,6 +26,11 @@ jobs:
           filters: |
             simulator:
               - 'naviguide-simulator/**'
+              - '.github/workflows/ci.yml'
+            polar:
+              - 'Archives/naviguide-planificateur/naviguide_workspace/polar_api/**'
+              - 'Archives/naviguide-planificateur/naviguide_workspace/tests/**'
+              - 'Archives/naviguide-planificateur/polar_agent/**'
               - '.github/workflows/ci.yml'
 
   simulator:
@@ -138,8 +144,32 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Service polaire historique (port 9004, encore servi sur www) : l'upload
+  # exige le droit admin.
+  polar:
+    name: service polaire historique — pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.polar == 'true'
+    defaults:
+      run:
+        working-directory: Archives/naviguide-planificateur
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Archives/naviguide-planificateur/naviguide_workspace/tests/requirements.txt
+      - run: pip install -r naviguide_workspace/tests/requirements.txt
+      - name: Tests Python (upload admin, lectures publiques)
+        run: python -m pytest -q naviguide_workspace/tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+
   deploy-gate:
-    needs: [changes, simulator, simulator-e2e]
+    needs: [changes, simulator, simulator-e2e, polar]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -148,9 +178,10 @@ jobs:
           R_CHANGES: ${{ needs.changes.result }}
           R_SIMULATOR: ${{ needs.simulator.result }}
           R_E2E: ${{ needs.simulator-e2e.result }}
+          R_POLAR: ${{ needs.polar.result }}
         run: |
           fail=0
-          for name in R_CHANGES R_SIMULATOR R_E2E; do
+          for name in R_CHANGES R_SIMULATOR R_E2E R_POLAR; do
             result="${!name}"
             echo "$name=$result"
             case "$result" in
