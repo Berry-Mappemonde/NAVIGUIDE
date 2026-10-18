@@ -326,7 +326,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: backend-pytest-shard
-    if: always() && !cancelled()
+    if: always()
     defaults:
       run:
         working-directory: backend
@@ -339,11 +339,17 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       TOKENIZERS_PARALLELISM: "false"
     steps:
+      - name: Run annulé
+        if: cancelled()
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "Run GitHub Actions annulé : le check requis « API Blue Intelligence — pytest » doit échouer." >&2
+          exit 1
       - name: Tous les shards doivent réussir
         if: needs.backend-pytest-shard.result != 'success'
         working-directory: ${{ github.workspace }}
         run: |
-          echo "Résultat des shards: ${{ needs.backend-pytest-shard.result }}" >&2
+          echo "Résultat des shards: ${{ needs.backend-pytest-shard.result }} (échec, annulation ou shard ignoré)" >&2
           exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -406,7 +412,7 @@ jobs:
 
   deploy-gate:
     needs: [frontend, audit-tags, backend, changes, simulator, simulator-e2e]
-    if: always() && !cancelled()
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Les jobs de test doivent être verts
@@ -419,7 +425,12 @@ jobs:
           R_E2E: ${{ needs.simulator-e2e.result }}
         run: |
           fail=0
-          for name in R_FRONTEND R_AUDIT R_BACKEND R_CHANGES R_SIMULATOR R_E2E; do
+          echo "R_BACKEND=$R_BACKEND"
+          case "$R_BACKEND" in
+            success) ;;
+            *) echo "L'agrégateur pytest (backend) doit être success, pas skipped ni absent." >&2; fail=1 ;;
+          esac
+          for name in R_FRONTEND R_AUDIT R_CHANGES R_SIMULATOR R_E2E; do
             result="${!name}"
             echo "$name=$result"
             case "$result" in
