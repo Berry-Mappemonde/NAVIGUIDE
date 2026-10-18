@@ -9,6 +9,7 @@ import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
 import { ICI_BRIEFING_SOURCE } from "../engine/iciBriefing.js";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
+import { wrapLon } from "../utils/geo.js";
 
 const NAVIGUIDE_LOGO = "/logo-naviguide.png";
 const BERRY_LOGO = "/logo-berry-mappemonde.png";
@@ -443,7 +444,7 @@ export const Sidebar = memo(function Sidebar({
                     <li key={`${p.lat}-${p.lon}-${i}`} className="text-[11px] text-slate-100 leading-snug flex items-baseline gap-1">
                       <span className="text-[9px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
                       <span className="truncate">{p.name}</span>
-                      <span className="ml-auto text-[9px] text-slate-500 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {p.lon.toFixed(2)}°</span>
+                      <span className="ml-auto text-[9px] text-slate-500 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
                     </li>
                   ))}
                 </ol>
