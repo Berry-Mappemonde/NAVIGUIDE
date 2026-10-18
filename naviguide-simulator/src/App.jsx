@@ -651,6 +651,7 @@ export default function App() {
     routeId: journalRouteId,
     incomingMoment: iciMoment.moment,
     until: momentIso,
+    suivreCustom,
     enabled: sceneReady && !(suivreCustom && !customVoyageId),
   });
   const displayKnots = isSuivre
