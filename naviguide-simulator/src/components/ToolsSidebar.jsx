@@ -6,7 +6,7 @@ import { SkipperOrdersPanel } from "./SkipperOrdersPanel.jsx";
 import { EscaleLegend } from "./EscaleLegend.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
-import { summarizeLegs } from "../utils/geo.js";
+import { summarizeLegs, wrapLon } from "../utils/geo.js";
 import { summarizeAmpTraffic } from "../engine/ampRules.js";
 import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } from "../utils/routeExport.js";
 
@@ -267,7 +267,6 @@ function DrawingBox({ drawing }) {
         <span className="font-semibold text-emerald-200">{t("drawingInProgress")}</span>
         <span>· {pts.length} {t("drawingPoints")}</span>
         <span>· {Number(drawing?.distanceNm || 0).toLocaleString()} nm</span>
-        {drawing?.failed ? <span className="text-amber-300/90">· {drawing.failed} {t("drawingFailedSegments")}</span> : null}
       </div>
       {pts.length ? (
         <ol className="max-h-36 overflow-y-auto sidebar-scroll border-t border-white/5">
@@ -275,7 +274,7 @@ function DrawingBox({ drawing }) {
             <li key={`${p.lat}-${p.lon}-${i}`} className="px-2 py-1 text-[11px] text-white/80 border-t border-white/5 first:border-t-0 flex items-baseline gap-1">
               <span className="text-[9px] text-emerald-300/80 w-4 shrink-0">{i + 1}</span>
               <span className="truncate">{p.name}</span>
-              <span className="ml-auto text-[9px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {p.lon.toFixed(2)}°</span>
+              <span className="ml-auto text-[9px] text-white/40 tabular-nums shrink-0">{p.lat.toFixed(2)}° · {wrapLon(p.lon).toFixed(2)}°</span>
             </li>
           ))}
         </ol>
