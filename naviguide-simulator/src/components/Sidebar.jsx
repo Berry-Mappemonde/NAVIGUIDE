@@ -344,6 +344,7 @@ export const Sidebar = memo(function Sidebar({
   escaleLoading = false,
   escaleError = null,
   onEscaleClose,
+  todayPosition = false,
 }) {
   const { t, lang } = useLang();
   const isTracer = view === VIEW_TRACER;
@@ -540,6 +541,7 @@ export const Sidebar = memo(function Sidebar({
               onClose: onEscaleClose,
               onFocus: onBriefingFocus,
             } : null}
+            todayPosition={todayPosition}
           />
         </div>
       </div>
