@@ -5,6 +5,7 @@
 // sondé ; s'il manque, on annote et on saute seulement les assertions
 // drapeau / fiche Ici, jamais le hit-test route ni l'absence de ▤.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rd1/${name}.webp`,
@@ -12,15 +13,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function probeOfficial(page) {
   return page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);

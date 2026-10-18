@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
 import fixture from "../fixtures/moment.json" with { type: "json" };
-import { momentSearchParams } from "../hooks/useMoment.js";
+import { momentSearchParams, validMomentPosition } from "../hooks/useMoment.js";
 import { wrapLon } from "../utils/geo.js";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
 import {
@@ -197,6 +197,17 @@ describe("useMoment", () => {
     const q = momentSearchParams({ lat: 37.7, lon: 236.84, t: "2026-05-15T08:00:00Z", mode: "follow", lang: "fr" });
     assert.equal(Number(Number(q.get("lon")).toFixed(2)), Number(wrapLon(236.84).toFixed(2)));
     assert.equal(q.get("t"), "2026-05-15T08:00:00Z");
+  });
+
+  it("no request without a valid position (never lat=null&lon=0)", () => {
+    for (const [lat, lon] of [[null, null], [null, 0], [undefined, 5], ["", 5], [12, null], [NaN, 1], [95, 1], [true, 1]]) {
+      assert.equal(validMomentPosition(lat, lon), null, `${lat},${lon}`);
+      assert.equal(momentSearchParams({ lat, lon, mode: "follow" }), null, `${lat},${lon}`);
+    }
+    // 0, 0 is a real position.
+    assert.deepEqual(validMomentPosition(0, 0), { lat: 0, lon: 0 });
+    assert.equal(momentSearchParams({ lat: 0, lon: 0 }).toString(), "lat=0&lon=0");
+    assert.equal(momentSearchParams({ lat: "41.92", lon: "8.74" }).get("lat"), "41.92");
   });
 });
 

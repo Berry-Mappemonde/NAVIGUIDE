@@ -3,6 +3,7 @@
 // Libellé météo « climatologie + GFS » : seulement si GET /voyage/official répond
 // et que le point courant emploie les deux.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-rb4/${name}.webp`,
@@ -10,15 +11,6 @@ const shot = (page, name) => page.screenshot({
   quality: 85,
   fullPage: false,
 });
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function probeOfficial(page) {
   for (let i = 0; i < 8; i += 1) {

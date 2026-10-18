@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -33,6 +34,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from admin_guard import rate_limited
 from ici_engine import fill_dossier, haversine_nm
 from ici_layers import _overpass_elements, _overpass_latlon
+from ai_transparency import with_ai_transparency
 from story_cascade import _clean_text, cascade_text, tidy_story, translate
 
 log = logging.getLogger("naviguide-simulator.escale")
@@ -237,6 +239,7 @@ def _paragraph_prompt(name: str, sections: dict, lang: str) -> tuple[str, str]:
     return system, user
 
 
+@with_ai_transparency
 async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     if not sections:
         return {"status": "empty", "text": None, "engine": None, "source": None}
@@ -418,6 +421,55 @@ async def build_escale(name: str, lat: float, lon: float, lang: str = "fr",
 
 
 _escale_limited = rate_limited("escale", 20, 60.0, global_limit=120)
+_INFLIGHT: set[str] = set()
+# Référence forte : une tâche asyncio sans référence peut être ramassée en cours de route.
+_WATCH_TASKS: set[Any] = set()
+
+
+def _watch_task_done(task: Any, key: str) -> None:
+    """Lit l'exception de la tâche (pas de « never retrieved ») et libère le slug en cas d'échec."""
+    _WATCH_TASKS.discard(task)
+    if task.cancelled():
+        _INFLIGHT.discard(key)
+        return
+    exc = task.exception()
+    if exc is not None:
+        _INFLIGHT.discard(key)
+        log.warning("veille %s : %s", key, exc)
+
+
+def _schedule_escale_watch(name: str, lat: float, lon: float) -> None:
+    """Une veille en tâche de fond si l'escale officielle est dans la fenêtre.
+
+    La réponse HTTP ne l'attend pas. Un slug déjà lancé n'est pas relancé.
+    """
+    try:
+        import escale_watch  # noqa: PLC0415
+        import llm_budget  # noqa: PLC0415
+    except Exception:
+        return
+    if not escale_watch.watch_enabled():
+        return
+    try:
+        stop = escale_watch.official_stop_in_window(name, lat=lat, lon=lon)
+    except Exception as exc:
+        log.debug("fenêtre veille : %s", exc)
+        return
+    if not stop:
+        return
+    key = str(stop.get("slug") or escale_watch.slug(name))
+    if escale_watch.watch_done(key) or not llm_budget.allow_tavily():
+        return
+    if key in _INFLIGHT:
+        return
+    _INFLIGHT.add(key)
+    try:
+        task = asyncio.create_task(escale_watch.watch_stop(stop, datetime.now(timezone.utc)))
+        _WATCH_TASKS.add(task)
+        task.add_done_callback(lambda t, k=key: _watch_task_done(t, k))
+    except RuntimeError:
+        _INFLIGHT.discard(key)
+        log.debug("veille non planifiée : %s", key)
 
 
 @router.get("/escale", dependencies=[Depends(_escale_limited)])
@@ -431,6 +483,7 @@ async def get_escale(
     """La fiche d'une escale : listes de faits + un paragraphe (cascade LLM), en cache 7 j."""
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(400, "lat/lon hors limites")
+    _schedule_escale_watch(name, lat, lon)
     import pearl_store  # noqa: PLC0415
     key = escale_key(name, lat, lon, lang)
     if not refresh:

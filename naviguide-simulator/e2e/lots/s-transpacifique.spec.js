@@ -3,6 +3,7 @@
 // (repli/dépli client, corde de repli). Avec API (proxy /route → :8010) :
 // distance du résumé entre 6 000 et 7 500 nm.
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
   path: `../docs/recette/lot-s/${name}.webp`,
@@ -14,15 +15,6 @@ const shot = (page, name) => page.screenshot({
 const BRISBANE = { lat: -27.0, lon: 153.4 };
 // SF (−122,4) sur la copie-monde +360 : c'est la lon dépliée envoyée avant le lot S.
 const SAN_FRANCISCO_UNFOLDED = { lat: 37.7, lon: 237.6 };
-
-async function dismissNotForNav(page) {
-  const ok = page.getByRole("button", { name: /compris|j.ai compris|ok|continuer|accepter|understand|accept/i }).first();
-  if (await ok.isVisible({ timeout: 3000 }).catch(() => false)) {
-    const ack = page.getByTestId("not-for-nav-ack");
-    if (await ack.isVisible().catch(() => false)) await ack.check();
-    await ok.click();
-  }
-}
 
 async function clickLatLng(page, lat, lon) {
   // Même chemin que le clic carte (handleDrawingClick → addPoint).

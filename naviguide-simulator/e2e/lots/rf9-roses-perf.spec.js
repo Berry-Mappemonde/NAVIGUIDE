@@ -7,6 +7,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { dismissNotForNav } from "../helpers.js";
 
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rf9");
 mkdirSync(recetteDir, { recursive: true });
@@ -46,15 +47,6 @@ function atlanticMesh(step = 1) {
 }
 
 const WIND_FC = { type: "FeatureCollection", features: atlanticMesh(2) };
-
-async function dismissNotForNav(page) {
-  const modal = page.getByTestId("not-for-nav-modal");
-  if (!(await modal.isVisible({ timeout: 1500 }).catch(() => false))) return;
-  const ack = page.getByTestId("not-for-nav-ack");
-  if (await ack.isVisible().catch(() => false)) await ack.check();
-  const ok = page.getByTestId("not-for-nav-accept");
-  if (await ok.isVisible().catch(() => false)) await ok.click();
-}
 
 async function leaveCinema(page) {
   const cinema = page.getByRole("button", { name: /^(cinéma|cinema)$/i });
