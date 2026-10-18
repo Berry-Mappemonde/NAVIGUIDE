@@ -26,6 +26,8 @@ import { placeLabel } from "./briefingLinks.js";
 import { formatJournalEntry } from "./journalFormat.js";
 import { haversineNm, wrapLon } from "../utils/geo.js";
 import { MOMENT_MAX_NM } from "../hooks/useMomentJournal.js";
+// A null coordinate is unknown, never 0 (Number(null) === 0).
+import { finiteCoord } from "../hooks/useMoment.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { factKey, localizeStoredFact, localizeStoredTitle, sameShownMoment } from "../components/iciMaintenant.js";
 import fr from "../i18n/fr.js";
@@ -118,16 +120,16 @@ export function isStaleCard(card, { filmCum = null, mode = "simulation" } = {}) 
 
 /** Distance of the card's place from the boat (nm), or null when unknown. */
 export function cardEntityNmFromBoat(card, boat) {
-  const lat = Number(card?.entity?.lat);
-  const lon = Number(card?.entity?.lon);
+  const lat = finiteCoord(card?.entity?.lat);
+  const lon = finiteCoord(card?.entity?.lon);
   if (
     boat
     && Number.isFinite(lat)
     && Number.isFinite(lon)
-    && Number.isFinite(Number(boat.lat))
-    && Number.isFinite(Number(boat.lon))
+    && finiteCoord(boat.lat) != null
+    && finiteCoord(boat.lon) != null
   ) {
-    return haversineNm(lat, wrapLon(lon), Number(boat.lat), wrapLon(Number(boat.lon)));
+    return haversineNm(lat, wrapLon(lon), finiteCoord(boat.lat), wrapLon(finiteCoord(boat.lon)));
   }
   const nm = Number(card?.entity?.nm);
   return Number.isFinite(nm) ? nm : null;
@@ -757,8 +759,8 @@ function rowTimeMs(row) {
 
 function rowPos(row) {
   const pos = row?.pos || row?.moment?.pos || null;
-  const lat = Number(pos?.lat);
-  const lon = Number(pos?.lon);
+  const lat = finiteCoord(pos?.lat);
+  const lon = finiteCoord(pos?.lon);
   return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 }
 
@@ -769,8 +771,8 @@ function rowPos(row) {
 export function pickOfficialMoment(rows, { boat = null, maxNm = MOMENT_MAX_NM } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const latest = list.at(-1) || null;
-  const lat = Number(boat?.lat);
-  const lon = Number(boat?.lon);
+  const lat = finiteCoord(boat?.lat);
+  const lon = finiteCoord(boat?.lon);
   if (!latest || !Number.isFinite(lat) || !Number.isFinite(lon)) return latest;
   const nearest = (candidates) => {
     let best = null;
@@ -921,8 +923,8 @@ export function portCardIsCurrent(card, { boat = null, leg = null } = {}) {
   const phaseKnown = Number.isFinite(done) || Number.isFinite(left);
   if (name && sameStop(leg?.fromStop, name) && Number.isFinite(done) && done <= PORT_CARD_PHASE_NM) return true;
   if (name && sameStop(leg?.toStop, name) && Number.isFinite(left) && left <= PORT_CARD_PHASE_NM) return true;
-  const boatKnown = Number.isFinite(Number(boat?.lat)) && Number.isFinite(Number(boat?.lon));
-  const portKnown = Number.isFinite(Number(card?.entity?.lat)) && Number.isFinite(Number(card?.entity?.lon));
+  const boatKnown = finiteCoord(boat?.lat) != null && finiteCoord(boat?.lon) != null;
+  const portKnown = finiteCoord(card?.entity?.lat) != null && finiteCoord(card?.entity?.lon) != null;
   if (boatKnown && portKnown) return cardEntityNmFromBoat(card, boat) <= PORT_CARD_NEAR_NM;
   return !phaseKnown;
 }

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { nextEtaRetryMs, sleepMs } from "./usePlanReview.js";
 import { haversineNm, wrapLon } from "../utils/geo.js";
+// A null coordinate is unknown, never 0 (Number(null) === 0).
+import { finiteCoord } from "./useMoment.js";
 
 /**
  * A journal moment further than this from the boat does not describe it.
@@ -60,16 +62,16 @@ export function momentAtOrBefore(entries, t) {
 
 function entryPos(row) {
   const pos = row?.pos || row?.moment?.pos || null;
-  const lat = Number(pos?.lat);
-  const lon = Number(pos?.lon);
+  const lat = finiteCoord(pos?.lat);
+  const lon = finiteCoord(pos?.lon);
   return pos && Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 }
 
 /** Distance (nm) from a journal row to a position, or Infinity. */
 export function entryNmFrom(row, at) {
   const p = entryPos(row);
-  const lat = Number(at?.lat);
-  const lon = Number(at?.lon);
+  const lat = finiteCoord(at?.lat);
+  const lon = finiteCoord(at?.lon);
   if (!p || !Number.isFinite(lat) || !Number.isFinite(lon)) return Infinity;
   return haversineNm(p.lat, wrapLon(p.lon), lat, wrapLon(lon));
 }
@@ -80,8 +82,8 @@ export function entryNmFrom(row, at) {
  * because its date is the closest. Without a position: by date.
  */
 export function momentNearest(entries, { t, pos, maxNm = MOMENT_MAX_NM } = {}) {
-  const lat = Number(pos?.lat);
-  const lon = Number(pos?.lon);
+  const lat = finiteCoord(pos?.lat);
+  const lon = finiteCoord(pos?.lon);
   if (!pos || !Number.isFinite(lat) || !Number.isFinite(lon)) return momentAtOrBefore(entries, t);
   const rows = visibleJournalEntries(entries, { until: t });
   let best = null;

@@ -295,3 +295,33 @@ describe("Now tab: « haute mer » once in the whole tab", () => {
     assert.deepEqual(keptSentences([HIGH, HIGH], [""]), [true, false]);
   });
 });
+
+describe("Now tab: a null position is unknown, not (0, 0)", () => {
+  // A moment in the Gulf of Guinea, at (0, 0): it must not win for a null boat.
+  const rowsGulf = [
+    row("2026-09-20T00:00:00Z", 0, 0, { alerts: [{ kind: "zee", title: "Golfe de Guinée", fact: "Golfe de Guinée" }] }),
+    row("2026-09-21T00:00:00Z", -17.53, -149.57, { alerts: [{ kind: "zee", title: "Polynésie", fact: "Polynésie française" }] }),
+  ];
+
+  for (const boat of [{ lat: null, lon: null }, { lat: null, lon: 0 }, { lat: 0, lon: null }, { lat: "", lon: "" }]) {
+    it(`official moment for boat ${JSON.stringify(boat)}: chosen by date`, () => {
+      assert.equal(pickOfficialMoment(rowsGulf, { boat }).t, "2026-09-21T00:00:00Z");
+    });
+
+    it(`journal moment for pos ${JSON.stringify(boat)}: chosen by date`, () => {
+      const journal = [
+        { t: "2026-09-20T00:00:00Z", pos: { lat: 0, lon: 0 }, signature: "gulf" },
+        { t: "2026-09-21T00:00:00Z", pos: { lat: -17.53, lon: -149.57 }, signature: "pf" },
+      ];
+      assert.equal(momentNearest(journal, { t: "2026-09-22T00:00:00Z", pos: boat }).signature, "pf");
+    });
+  }
+
+  it("a journal row with a null position is never « at » (0, 0)", () => {
+    const journal = [
+      { t: "2026-09-20T00:00:00Z", pos: { lat: null, lon: null }, signature: "nowhere" },
+      { t: "2026-09-19T00:00:00Z", pos: { lat: 0.2, lon: 0.2 }, signature: "near" },
+    ];
+    assert.equal(momentNearest(journal, { t: "2026-09-22T00:00:00Z", pos: { lat: 0, lon: 0 } }).signature, "near");
+  });
+});
