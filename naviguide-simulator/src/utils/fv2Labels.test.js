@@ -47,12 +47,12 @@ describe("FV2 — transfert routier en km", () => {
   it("écrit le transfert Saint-Maur (Indre) → La Rochelle en km, FR et EN", () => {
     const enText = roadTransferLabel(122, 4, tEn, "en", "Saint-Maur (Berry)", "La Rochelle", en.byRoad, en.unitRoadHours, en.unitKm);
     const frText = roadTransferLabel(122, 4, tFr, "fr", "Saint-Maur (Berry, Indre)", "La Rochelle", fr.byRoad, fr.unitRoadHours, fr.unitKm);
-    assert.equal(enText, "Road transfer Saint-Maur (Indre) → La Rochelle: 226 km by road, ≈ 4 h on the road");
-    assert.equal(frText, "Transfert routier Saint-Maur (Indre) → La Rochelle : 226 km par la route, ≈ 4 h de route");
-    assert.match(enText, /km by road/);
-    assert.match(enText, /h on the road/);
-    assert.match(frText, /km par la route/);
-    assert.match(frText, /h de route/);
+    assert.equal(enText, "Road transfer Saint-Maur (Indre) → La Rochelle: 226 km, ≈ 4 h");
+    assert.equal(frText, "Transfert routier Saint-Maur (Indre) → La Rochelle : 226 km, ≈ 4 h");
+    assert.match(enText, /226 km, ≈ 4 h/);
+    assert.match(frText, /226 km, ≈ 4 h/);
+    assert.doesNotMatch(enText, /by road|on the road/);
+    assert.doesNotMatch(frText, /par la route|de route/);
     assert.doesNotMatch(enText, /\bnm\b/);
     assert.doesNotMatch(frText, /\bnm\b/);
     assert.equal(roadTransferLabel(Number.NaN, 4, tEn, "en", "Saint-Maur", "La Rochelle", en.byRoad, en.unitRoadHours, en.unitKm), "");

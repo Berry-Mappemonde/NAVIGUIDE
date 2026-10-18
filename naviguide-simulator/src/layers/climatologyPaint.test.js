@@ -66,6 +66,15 @@ describe("climatologyPaint", () => {
     assert.doesNotMatch(html, /GRIB/i);
   });
 
+  it("ne nomme pas janvier quand le mois est absent", () => {
+    assert.equal(climoCaptionText(null, tFr), "Climatologie — moyenne mensuelle, pas une prévision");
+    assert.equal(climoCaptionText(undefined, tEn), "Climatology — monthly average, not a forecast");
+    assert.doesNotMatch(climoCaptionText(Number.NaN, tFr), /janvier/);
+    assert.doesNotMatch(climoCaptionText("", tEn), /January/);
+    assert.match(pointPopupHtml({ kind: "climatology" }, tFr), /pas une prévision/);
+    assert.doesNotMatch(pointPopupHtml({ kind: "climatology" }, tFr), /janvier/);
+  });
+
   it("uses distinct P50 / P90 colours", () => {
     assert.notEqual(waveColor(2.8, "p90"), waveColor(2.8, "p50"));
     const point = pointPopupHtml({

@@ -52,12 +52,25 @@ export function currentArrowHtml(directionToDeg) {
 
 const CAPTION_STYLE = "font-family:system-ui,sans-serif;font-size:13px;line-height:1.35;color:#e2e8f0;margin:4px 0;";
 
+function knownMonth(month) {
+  const n = Number(month);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 1 || rounded > 12) return null;
+  return rounded;
+}
+
 /** Lisible (≥ 12 px) : moyenne mensuelle, jamais « kind: » ni une prévision. */
 export function climoCaptionText(month, t) {
-  const n = Math.max(1, Math.min(12, Math.round(Number(month) || 1)));
-  const monthName = typeof t === "function" ? t(`fv2Month${n}`) : String(n);
-  if (typeof t !== "function") return monthName;
-  return t("fv2ClimoCaption", { month: monthName });
+  const n = knownMonth(month);
+  if (typeof t !== "function") return n ? String(n) : "";
+  if (!n) {
+    return t("fv2ClimoCaption", { month: "" })
+      .replace(/\s*\(\s*\)/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+  return t("fv2ClimoCaption", { month: t(`fv2Month${n}`) });
 }
 
 function climoCaptionHtml(month, t) {

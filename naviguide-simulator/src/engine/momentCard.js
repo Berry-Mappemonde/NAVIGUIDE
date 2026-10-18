@@ -930,7 +930,7 @@ function isPortCard(card) {
  */
 export function portCardIsCurrent(card, { boat = null, leg = null } = {}) {
   if (!isPortCard(card)) return true;
-  const name = card?.entity?.name || card?.entity?.rawName || null;
+  const name = card?.entity?.rawName || card?.entity?.name || null;
   const done = Number(leg?.doneNm);
   const left = Number(leg?.leftNm);
   const phaseKnown = Number.isFinite(done) || Number.isFinite(left);

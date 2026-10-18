@@ -640,7 +640,7 @@ export default {
   fv2Month10: "octobre",
   fv2Month11: "novembre",
   fv2Month12: "décembre",
-  fv2RoadTransfer: "Transfert routier {from} → {to} : {km} {unitKm} {byRoad}, ≈ {hours} {roadHours}",
+  fv2RoadTransfer: "Transfert routier {from} → {to} : {km} km, ≈ {hours} h",
   fv2NmToPort: "{nm} nm jusqu’au port de destination",
   fv2StopSaintMaur: "Saint-Maur (Indre)",
   fv2StopAzores: "Açores",
