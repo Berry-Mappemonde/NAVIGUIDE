@@ -43,7 +43,7 @@ function parseNm(text) {
 }
 
 test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -66,13 +66,20 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   await clickLatLng(page, BRISBANE.lat, BRISBANE.lon);
   await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, null, { timeout: 10_000 });
   await clickLatLng(page, SAN_FRANCISCO_UNFOLDED.lat, SAN_FRANCISCO_UNFOLDED.lon);
-  const legShown = () => page.waitForFunction(
-    () => (window.__naviguideDrawn?.segments?.length || 0) >= 1,
-    null,
-    // The server answers within its 12 s deadline (ROUTE_DEADLINE_S), or 503;
-    // the margin covers the queue in front of it.
-    { timeout: 20_000 },
-  ).then(() => true).catch(() => false);
+  // Wait for the server's answer itself: a leg, or a 503. Under load the 503
+  // can land after the 12 s deadline (ROUTE_DEADLINE_S) plus the queue in
+  // front of it — a fixed wait could give up before it and skip the retry.
+  const legShown = async () => {
+    const busyBefore = busyAnswers;
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      const legs = await page.evaluate(() => window.__naviguideDrawn?.segments?.length || 0);
+      if (legs >= 1) return true;
+      if (busyAnswers > busyBefore) return false;
+      await page.waitForTimeout(250);
+    }
+    return false;
+  };
   const busyShown = () => page.getByText(/Serveur occupé|Server busy/).first().isVisible().catch(() => false);
   let gotSeg = await legShown();
 
