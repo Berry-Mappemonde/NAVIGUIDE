@@ -117,7 +117,7 @@ DEFAULT_MODELS = {
 }
 
 DEFAULT_MAX_TOKENS = {
-    "fast": 512,
+    "fast": 1024,
     "write": 400,
     # NVIDIA Ultra Day-0: max_tokens caps thinking + answer; 512 is too small
     # if enable_thinking stays on. Official Ultra example uses 2048.

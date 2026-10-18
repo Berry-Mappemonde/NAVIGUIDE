@@ -572,8 +572,8 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
 
     `extra_body` is an OpenAI *client* argument that the SDK flattens. Sending
     it as a JSON field made Lightning 3.5 return empty content (tokenfactory
-    empty → NIM). Lightning is not a reasoning model: omit thinking flags.
-    Super / Ultra keep the official off switches at the top level only.
+    empty → NIM). All tiers send reasoning off at the top level (LT1 / étape A
+    à confirmer sur l'OVH).
     """
     t = llm_budget.normalize_tier(tier)
     payload = {
@@ -585,11 +585,21 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
         "max_tokens": max_tokens or llm_budget.max_tokens_for(t),
         "temperature": 0.4,
         "stream": False,
+        "reasoning_effort": "none",
+        "chat_template_kwargs": {"enable_thinking": False},
     }
-    if t != "fast":
-        payload["reasoning_effort"] = "none"
-        payload["chat_template_kwargs"] = {"enable_thinking": False}
     return payload
+
+
+def _tf_fast_super_retry(exc: BaseException) -> bool:
+    """Second essai Super (LT1) : vide, 5xx ou timeout — pas les 4xx."""
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    msg = str(exc)
+    if "tokenfactory empty" in msg:
+        return True
+    m = re.search(r"tokenfactory HTTP (\d{3})", msg)
+    return bool(m and int(m.group(1)) >= 500)
 
 
 async def _call_tokenfactory(
@@ -615,7 +625,12 @@ async def _call_tokenfactory(
     data = r.json()
     text = _openai_text(data)
     if not text:
-        raise RuntimeError("tokenfactory empty")
+        choice = ((data or {}).get("choices") or [{}])[0]
+        fr = choice.get("finish_reason") or "?"
+        usage = (data or {}).get("usage") or {}
+        ct = usage.get("completion_tokens")
+        model = payload.get("model") or "?"
+        raise RuntimeError(f"tokenfactory empty finish={fr} ct={ct} model={model}")
     pt, ct = _usage_tokens(data, system, user, text)
     llm_budget.record(t, pt, ct)
     source = llm_budget.source_for(t)
@@ -769,9 +784,23 @@ async def _cascade_once(
 
     last = "no_llm_backend"
     hops: list[tuple[str, Any]] = []
+    norm_tier = llm_budget.normalize_tier(tier)
+
+    async def _tokenfactory_hop() -> tuple[str, str]:
+        try:
+            return await _call_tokenfactory(system, user, tier, http, max_tokens=max_tokens)
+        except Exception as exc:
+            if norm_tier != "fast" or not _tf_fast_super_retry(exc):
+                raise
+            budget = max_tokens if max_tokens is not None else llm_budget.max_tokens_for(norm_tier)
+            super_mt = max(int(budget), 400)
+            return await _call_tokenfactory(
+                system, user, "write", http, max_tokens=super_mt,
+            )
+
     for name in providers():
         if name == "tokenfactory":
-            hops.append((name, lambda: _call_tokenfactory(system, user, tier, http, max_tokens=max_tokens)))
+            hops.append((name, _tokenfactory_hop))
         elif name == "openrouter":
             hops.append((name, lambda: _call_openrouter(system, user, http, online=online, max_tokens=max_tokens)))
         elif name == "claude":
@@ -800,7 +829,7 @@ async def _cascade_once(
             failures.append({"provider": name, "reason": last})
         except Exception as exc:
             last = str(exc)[:240]
-            log.warning("cascade %s: %s", name, last)
+            log.warning("cascade %s: %r", name, exc)
             failures.append({"provider": name, "reason": last})
 
     if failures:
