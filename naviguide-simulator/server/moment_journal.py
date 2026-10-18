@@ -884,7 +884,12 @@ def _merge_change_lists(existing: list, rebuilt: list) -> list:
     return out
 
 
-def merge_preserve_moment_rows(existing: list[dict], rebuilt: list[dict]) -> tuple[list[dict], list[dict]]:
+def merge_preserve_moment_rows(
+    existing: list[dict],
+    rebuilt: list[dict],
+    *,
+    refresh_from_rebuild: bool = False,
+) -> tuple[list[dict], list[dict]]:
     """Garde toutes les lignes existantes ; fusionne les champs du recalcul par seq."""
     by_seq: dict[int, dict] = {}
     for row in existing or []:
@@ -905,6 +910,12 @@ def merge_preserve_moment_rows(existing: list[dict], rebuilt: list[dict]) -> tup
         if pos.get("lat") is not None:
             merged["pos"] = {**(merged.get("pos") or {}), **pos}
         merged["changes"] = _merge_change_lists(row.get("changes") or [], patch.get("changes") or [])
+        if refresh_from_rebuild:
+            merged["signature"] = patch.get("signature", merged.get("signature"))
+            if isinstance(patch.get("moment"), dict):
+                merged["moment"] = patch["moment"]
+            if patch.get("legIdx") is not None:
+                merged["legIdx"] = patch["legIdx"]
         by_seq[seq] = merged
     for seq, row in rebuilt_by.items():
         if seq not in by_seq:
@@ -1025,6 +1036,28 @@ def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
             # Des moments sans date ne servent ni au Journal ni au film : mieux vaut le dire que les ranger.
             log.warning("warm_moments(%s) : %d moments sans date (horloge absente ?) — rien n'est écrit", voyage_id, len(rows))
             return {"voyageId": voyage_id, "count": pearl_store.count_moments(voyage_id), "status": "undated"}
+        existing = pearl_store.list_moments(voyage_id)
+        before = len(existing)
+        if existing:
+            if not rows:
+                log.warning(
+                    "warm_moments(%s) : recalcul vide — %d lignes sqlite conservées",
+                    voyage_id,
+                    before,
+                )
+                return {"voyageId": voyage_id, "count": before, "status": "preserved"}
+            merged, kept = merge_preserve_moment_rows(existing, rows, refresh_from_rebuild=True)
+            if len(merged) < before:
+                raise RuntimeError(
+                    f"warm_moments({voyage_id}) : fusion {before} → {len(merged)} (perte interdite)",
+                )
+            rows = merged
+            if kept:
+                log.info(
+                    "warm_moments(%s) : %d ligne(s) hors recalcul préservée(s)",
+                    voyage_id,
+                    len(kept),
+                )
         n = pearl_store.replace_moments(voyage_id, rows)
         return {"voyageId": voyage_id, "count": n, "status": "ready"}
     except Exception as exc:
