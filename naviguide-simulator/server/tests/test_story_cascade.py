@@ -761,14 +761,20 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
     assert "extra_body" not in seen
 
 
-def test_lightning_payload_includes_thinking_off_flags():
+def test_lightning_payload_includes_thinking_off_flags_at_json_root():
+    """LT1 étape A confirmée (#432) : drapeaux au premier niveau du JSON, pas extra_body."""
     import llm_budget
     import story_cascade
 
     payload = story_cascade._tf_payload("sys", "user", "fast")
+    assert set(payload) >= {
+        "model", "messages", "max_tokens", "reasoning_effort", "chat_template_kwargs",
+    }
     assert payload["reasoning_effort"] == "none"
-    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
     assert "extra_body" not in payload
+    nested = payload.get("extra_body")
+    assert nested is None
     assert payload["max_tokens"] == llm_budget.max_tokens_for("fast")
     assert payload["max_tokens"] == 1024
 

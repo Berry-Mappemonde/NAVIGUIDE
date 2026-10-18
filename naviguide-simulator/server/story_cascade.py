@@ -572,8 +572,9 @@ def _tf_payload(system: str, user: str, tier: str, max_tokens: int | None = None
 
     `extra_body` is an OpenAI *client* argument that the SDK flattens. Sending
     it as a JSON field made Lightning 3.5 return empty content (tokenfactory
-    empty → NIM). All tiers send reasoning off at the top level (LT1 / étape A
-    à confirmer sur l'OVH).
+    empty → NIM). Lightning needs `reasoning_effort` and `enable_thinking` at
+    the **root** of this dict (fast tier included) — confirmed on OVH 2026-10-17,
+    issue #432.
     """
     t = llm_budget.normalize_tier(tier)
     payload = {
