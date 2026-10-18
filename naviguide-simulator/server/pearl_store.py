@@ -456,6 +456,15 @@ def list_moments(voyage_id: str) -> list[dict]:
     return out
 
 
+def count_kv_rows() -> int:
+    try:
+        with _LOCK:
+            row = _connect().execute("SELECT COUNT(*) FROM kv").fetchone()
+            return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
 def count_moments(voyage_id: str | None = None) -> int:
     try:
         with _LOCK:

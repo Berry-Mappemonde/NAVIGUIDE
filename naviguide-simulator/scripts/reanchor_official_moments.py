@@ -1,25 +1,52 @@
 #!/usr/bin/env python3
 """Recalcule moments (ancres côte) et film officiel après déploiement RG10 / RG14.
 
-Ne supprime pas le stock existant : `refresh_family(..., force=True)` remplace
-les familles concernées par une nouvelle révision (MOMENTS_REV / FILM_SCRIPT_REV).
+Règle absolue : aucune perte de perles ni de lignes moments — uniquement mise à jour
+des ancres (tMs, coords, marques horloge). Sauvegarde horodatée avant toute écriture.
 
-Usage (poste de recette, même stock que l'API 8010) :
+Usage (poste de recette) :
 
     cd naviguide-simulator
     export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
+    export NAVIGUIDE_VOYAGE_DIR="${NAVIGUIDE_VOYAGE_DIR:-$HOME/.cache/naviguide/voyage-data}"
+    python3 scripts/reanchor_official_moments.py --dry-run
     python3 scripts/reanchor_official_moments.py
 
-Production (VPS, service naviguide-simulator, Mongo ou disque selon l'env) :
+Construire un stock poste depuis le dépôt (tests `pytest -m poste`) :
+
+    cd naviguide-simulator
+    export NAVIGUIDE_OFFICIAL_STORE_DIR=/tmp/poste-stock-test
+    export NAVIGUIDE_VOYAGE_DIR=/tmp/poste-voyage-data
+    pip install -r server/requirements.txt
+    python3 scripts/prepare_official_store.py
+    cd server && uvicorn main:app --host 127.0.0.1 --port 8010
+    pytest tests/test_film_discours.py -m poste
+
+── Production OVH (aujourd’hui : utilisateur ubuntu, dépôt dans le home) ──
+
+    ssh ubuntu@135.125.226.16
+    cd ~/blue-intelligence-map/naviguide-simulator
+    set -a && source ~/blue-intelligence-map/.env.simulator 2>/dev/null; set +a
+    export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
+    export NAVIGUIDE_VOYAGE_DIR="${NAVIGUIDE_VOYAGE_DIR:-$HOME/blue-intelligence-map/naviguide-simulator/server/voyage_data}"
+    python3 scripts/reanchor_official_moments.py --dry-run
+    python3 scripts/reanchor_official_moments.py
+    sudo systemctl restart naviguide-simulator   # si le service tourne sous ce nom
+
+── Production Contabo (après séparation : utilisateur naviguide) ──
 
     sudo -u naviguide bash -lc '
       cd /opt/naviguide/Blue-Intelligence/naviguide-simulator
       source /etc/naviguide/simulator.env 2>/dev/null || true
+      export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
+      export NAVIGUIDE_VOYAGE_DIR="${NAVIGUIDE_VOYAGE_DIR:-/opt/naviguide/Blue-Intelligence/naviguide-simulator/server/voyage_data}"
+      python3 scripts/reanchor_official_moments.py --dry-run
       python3 scripts/reanchor_official_moments.py
     '
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -32,51 +59,26 @@ os.environ.setdefault(
     "NAVIGUIDE_OFFICIAL_STORE_DIR",
     str(Path.home() / ".cache" / "naviguide" / "voyage-store"),
 )
-os.environ["NAVIGUIDE_OFFICIAL_WORKER"] = "0"
-
-
-def _realign_clock_mark_isos() -> int:
-    """Recolle les iso/lat/lon des marques d'horloge sur le passage géographique (hub)."""
-    import official_store
-    from film_script import _align_quay_stop_to_passage
-
-    hit = official_store.get("climo") or official_store.stored_clock()
-    if not isinstance(hit, dict):
-        print("  climo/horloge : absent", flush=True)
-        return 0
-    payload = hit.get("payload") if isinstance(hit.get("payload"), dict) else hit
-    clock = payload.get("clock") if isinstance(payload.get("clock"), dict) else payload
-    marks = list(clock.get("marks") or [])
-    if not marks:
-        print("  horloge : pas de marques", flush=True)
-        return 0
-    aligned = [_align_quay_stop_to_passage(m, clock) for m in marks]
-    if aligned == marks:
-        print("  horloge : marques déjà cohérentes", flush=True)
-        return 0
-    clock = {**clock, "marks": aligned}
-    if "clock" in payload:
-        payload = {**payload, "clock": clock}
-    else:
-        payload = clock
-    official_store.put("climo", payload, status=official_store.READY)
-    print(f"  horloge : {sum(1 for a, b in zip(aligned, marks) if a != b)} marque(s) recollée(s)", flush=True)
-    return 0
+os.environ.setdefault("NAVIGUIDE_OFFICIAL_WORKER", "0")
 
 
 def main() -> int:
-    import official_store
+    parser = argparse.ArgumentParser(description="Réancrage RG10/RG14 du stock officiel.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="affiche le plan et les comptes sans écrire ni sauvegarder",
+    )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="désactive la sauvegarde (déconseillé en production)",
+    )
+    args = parser.parse_args()
 
-    official_store.reset_store()
-    dest = Path(os.environ["NAVIGUIDE_OFFICIAL_STORE_DIR"])
-    print(f"stock : {dest}", flush=True)
-    _realign_clock_mark_isos()
-    for family in ("moments", "film"):
-        official_store.refresh_family(family, force=True)
-        hit = official_store.get(family)
-        status = (hit or {}).get("status") or "?"
-        print(f"  {family} : {status}", flush=True)
-    return 0
+    from reanchor_official import run_reanchor
+
+    return run_reanchor(dry_run=args.dry_run, backup=not args.no_backup and not args.dry_run)
 
 
 if __name__ == "__main__":
