@@ -22,10 +22,22 @@ if [ ! -d "$SIM/server" ]; then
   echo "Dossier $SIM/server introuvable. Rsync d'abord depuis le Mac." >&2
   exit 1
 fi
-if [ ! -f "$NGINX_SRC" ] || [ ! -f "$UNIT_SRC" ]; then
-  echo "Fichiers infra manquants (nginx-simulator.conf / .service)." >&2
-  exit 1
-fi
+require_file() {
+  local path="$1"
+  local label="$2"
+  if [ ! -f "$path" ]; then
+    echo "ERREUR déploiement simulateur : $label introuvable." >&2
+    echo "  Attendu dans le dépôt rsyncé : $path" >&2
+    echo "  (PR #549 : film-front + nginx ; le workflow rsync doit copier infra/vps/naviguide/naviguide-film-front.service)" >&2
+    exit 1
+  fi
+}
+
+require_file "$NGINX_SRC" "nginx-simulator.conf"
+require_file "$UNIT_SRC" "naviguide-simulator.service"
+
+FILM_UNIT="$APP/infra/vps/naviguide/naviguide-film-front.service"
+FILM_PY="$SIM/server/film_front.py"
 
 SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
 SKIP_PIP="${SKIP_PIP:-0}"
@@ -84,11 +96,66 @@ sudo rsync -a --delete "$SIM/dist/" "$WWW_ROOT/"
 sudo chown -R ubuntu:ubuntu "$WWW_ROOT"
 sudo chmod -R a+rX "$WWW_ROOT"
 
-# ── systemd : uniquement naviguide-simulator ─────────────────────────────────
+# ── systemd : naviguide-simulator (+ film-front si le code est sur disque) ───
+# #546 : retirer l'ancien drop-in MemoryHigh=3500M (l'unité du dépôt n'en impose pas).
+ZZ_MEM_DROPIN=/etc/systemd/system/naviguide-simulator.service.d/zz-memory.conf
+if [ -f "$ZZ_MEM_DROPIN" ]; then
+  echo "→ Suppression du drop-in hérité $ZZ_MEM_DROPIN (#546)"
+  sudo rm -f "$ZZ_MEM_DROPIN"
+  if [ -d /etc/systemd/system/naviguide-simulator.service.d ] \
+      && [ -z "$(ls -A /etc/systemd/system/naviguide-simulator.service.d 2>/dev/null)" ]; then
+    sudo rmdir /etc/systemd/system/naviguide-simulator.service.d 2>/dev/null || true
+  fi
+fi
+
 sudo cp "$UNIT_SRC" /etc/systemd/system/naviguide-simulator.service
+
+film_deploy_ok=0
+have_film_unit=0
+have_film_py=0
+[ -f "$FILM_UNIT" ] && have_film_unit=1
+[ -f "$FILM_PY" ] && have_film_py=1
+if [ "$have_film_unit" -eq 1 ] && [ "$have_film_py" -eq 1 ]; then
+  film_deploy_ok=1
+elif [ "$have_film_unit" -eq 1 ] || [ "$have_film_py" -eq 1 ]; then
+  echo "ERREUR déploiement simulateur : film-front incomplet sur le VPS." >&2
+  [ "$have_film_unit" -eq 0 ] && echo "  manquant : $FILM_UNIT" >&2
+  [ "$have_film_py" -eq 0 ] && echo "  manquant : $FILM_PY" >&2
+  echo "  Le rsync GitHub doit envoyer infra/vps/naviguide/naviguide-film-front.service et naviguide-simulator/server/film_front.py." >&2
+  exit 1
+else
+  echo "⚠  film-front absent du dépôt rsyncé — naviguide-film-front n'est pas (re)configuré." >&2
+  if systemctl is-active --quiet naviguide-film-front 2>/dev/null; then
+    echo "    processus existant sur :8011 conservé (pas de restart)." >&2
+  fi
+fi
+
+if [ "$film_deploy_ok" -eq 1 ]; then
+  sudo cp "$FILM_UNIT" /etc/systemd/system/naviguide-film-front.service
+fi
+
 sudo systemctl daemon-reload
 sudo systemctl enable naviguide-simulator >/dev/null 2>&1 || true
-sudo systemctl restart naviguide-simulator
+
+sim_was_active=0
+if systemctl is-active --quiet naviguide-simulator 2>/dev/null; then
+  sim_was_active=1
+fi
+if ! sudo systemctl restart naviguide-simulator; then
+  echo "ERREUR : naviguide-simulator n'a pas redémarré." >&2
+  exit 1
+fi
+
+if [ "$film_deploy_ok" -eq 1 ]; then
+  sudo systemctl enable naviguide-film-front >/dev/null 2>&1 || true
+  if ! sudo systemctl restart naviguide-film-front; then
+    echo "ERREUR : naviguide-film-front n'a pas redémarré alors que le code est présent." >&2
+    if [ "$sim_was_active" -eq 1 ]; then
+      echo "  naviguide-simulator a été redémarré ; vérifiez :8011 et nginx film/clock." >&2
+    fi
+    exit 1
+  fi
+fi
 
 # ── nginx: cache climatologie BI partagé (zone + snippet inclus par le vhost) ─
 # Idempotent. Le vhost blue-intelligence (certbot) et naviguide (installé une
@@ -134,6 +201,14 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 echo "  naviguide-simulator (:8010) → HTTP $code"
+
+film_code=000
+for _ in $(seq 1 20); do
+  film_code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8011/voyage/official/clock" || true)
+  [ "$film_code" != "000" ] && break
+  sleep 1
+done
+echo "  naviguide-film-front (:8011) → HTTP $film_code"
 
 www_code=$(curl -s -o /dev/null -w "%{http_code}" "https://www.naviguide.fr/" || true)
 sim_code=$(curl -s -o /dev/null -w "%{http_code}" "https://simulator.naviguide.fr/" || true)

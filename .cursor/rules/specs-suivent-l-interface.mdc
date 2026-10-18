@@ -1,0 +1,30 @@
+---
+description: Un lot qui change un bouton, un libellé ou un onglet met à jour les specs dans la même PR
+globs: naviguide-simulator/e2e/**/*.{js,mjs}
+alwaysApply: true
+---
+
+# Specs = interface livrée (même PR)
+
+Si tu changes un **bouton**, un **libellé** ou un **onglet** dans
+`naviguide-simulator/`, tu mets à jour **dans la même PR** :
+
+1. le spec du lot (`e2e/lots/<lot>.spec.js`) ;
+2. tout autre spec Playwright, test JS ou pytest qui affirme encore l'ancien
+   texte (sinon la CI de la tête est un faux rouge).
+
+Aligner l'assertion sur l'écran livré. **Ne pas** remplacer un assert par une
+annotation, un `test.skip` ou un chemin « poste » pour un libellé que ce lot
+a lui-même renommé.
+
+La CI qui compte est celle de **la tête de pile**. On ne retourne pas sur une
+PR déjà passée pour rattraper son badge.
+
+```text
+# BAD — UI nouvelle, spec ancienne (faux KO)
+renommer « Simulation » → « Tracer » et laisser smoke / rd5 / filmBarLayout
+dire encore Simulation
+
+# GOOD — même PR
+changer le libellé + getByRole/getByText/i18n dans tous les specs qui le citent
+```

@@ -15,7 +15,7 @@ import { dismissNotForNav, probeOfficial, showLeftPanel, showRightPanel } from "
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-dm9");
 mkdirSync(recetteDir, { recursive: true });
 const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`), type: "jpeg", quality: 70, fullPage: false,
+  path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
 test("lot DM9 — Tracer : Revue + Récit, Polaires repliées ; Suivre intact", async ({ page }) => {

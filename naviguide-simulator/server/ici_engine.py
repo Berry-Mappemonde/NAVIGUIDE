@@ -1301,9 +1301,11 @@ async def fill_dossier(
     dest_lon: float | None = None,
     thin: bool = False,
     rich: bool = False,
+    force: bool = False,
 ) -> dict:
     """`thin=True` → a pearl (cached, no weather / satellite / sheet);
-    `rich=True` (with thin) → every layer without a timestamp (lot P)."""
+    `rich=True` (with thin) → every layer without a timestamp (lot P).
+    `force=True` ignore la perle en cache (recalcul des aires encore en centroïdes)."""
     import offline
     if offline.enabled():
         bag = empty_dossier(lat, lon, radius_nm)
@@ -1316,7 +1318,7 @@ async def fill_dossier(
         else:
             load_amp_layer_sig()
         key = thin_cache_key(lat, lon, radius_nm, month)
-        cached = thin_cache_get(key, rich=rich)
+        cached = None if force else thin_cache_get(key, rich=rich)
         if cached is not None:
             bag = {**cached, "at": {"lat": lat, "lon": lon}, "cached": True}
             try:
@@ -1331,7 +1333,10 @@ async def fill_dossier(
                 log.debug("veille / enrich cache ignoré : %s", exc)
             return _with_piracy(bag, lat, lon)
         bag = await _fill_dossier(lat, lon, radius_nm, client, month, dest_lat, dest_lon, thin=True, rich=rich)
-        if (bag.get("sources") or {}).get("bi") != "unavailable":
+        if bag.get("ampFallback") and rich:
+            # Tuiles en centroïdes : on ne fige pas une perle riche 30 jours.
+            log.warning("perle %s : AMP en repli centroïdes, non stockée riche", key)
+        elif (bag.get("sources") or {}).get("bi") != "unavailable":
             key = thin_cache_key(lat, lon, radius_nm, month)
             thin_cache_put(key, bag, "rich" if rich else "thin", lat, lon)
         return _with_piracy(bag, lat, lon)
@@ -1376,7 +1381,13 @@ async def _fill_dossier(
         # AM1A : polygones GET /amp (cache 1°), repli centroïdes si absent.
         await refresh_amp_layer_sig(http)
         feats, source = await fetch_amp_features(http, lat, lon)
-        return nearest_amp(feats, lat, lon, amp_radius, MAX_AMP, source=source)
+        found = nearest_amp(feats, lat, lon, amp_radius, MAX_AMP, source=source)
+        if source != "polygon" or any(
+            isinstance(item, dict) and item.get("source") != "polygon" for item in found
+        ):
+            # Repli centroïdes, ou une aire de la tuile qui n'est pas une forme.
+            d["ampFallback"] = True
+        return found
 
     async def projects_task() -> list[dict]:
         feats = await _cached_fc(http, f"{bi}/export/geojson")

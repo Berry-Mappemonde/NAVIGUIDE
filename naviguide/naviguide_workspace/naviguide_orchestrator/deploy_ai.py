@@ -62,8 +62,3 @@ def call_llm(access_token: str, chat_id: str, question: str) -> str:
     if resp.status_code == 200:
         return resp.json()["content"][0]["value"]
     raise RuntimeError(f"call_llm failed [{resp.status_code}]: {resp.text}")
-
-
-<system-reminder>
-Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
-</system-reminder>

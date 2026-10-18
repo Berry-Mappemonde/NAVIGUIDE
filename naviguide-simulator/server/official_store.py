@@ -29,13 +29,16 @@ FILM_VARIANT_SECONDS = (150, 180, 0)  # 2:30 / 3:00 / intégral ; 0 = sans plafo
 PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
-# Clé film : RC55 (Saint-Pierre → Halifax sans Guyane ni équateur) invalide rc48.
-# moments reste rg4 ; ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
+# Clé film : VS1 (choix VL/Lightning ou repli, budget 2:30 / 3:00) invalide ed1.
+# Le remplisseur recalcule la famille film, pas les perles. Pas un WARM monde.
+# Pas de kind de moment nouveau : moments reste rg4.
+# ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
 # plan_review : rc54 — marques recollées sur les milles d'itinéraire
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
-FILM_SCRIPT_REV = "rc55"
+FILM_SCRIPT_REV = "vs1-rg10"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
-MOMENTS_REV = "rg4"
+REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
+MOMENTS_REV = "rg4-anchor"
 ICI_REV = "am1a"
 PLAN_REVIEW_REV = "rc54"
 DB_NAME = "naviguide_simulator"
@@ -563,6 +566,90 @@ def official_journal_moments() -> list[dict]:
             continue
         if date > best_date:
             best, best_date = cand, date
+    return best
+
+
+def _payload_has_chapters(payload: Optional[dict]) -> bool:
+    """Vrai si un plan FR, EN ou une variante a au moins un chapitre."""
+    if not isinstance(payload, dict):
+        return False
+    variants = payload.get("variants") if isinstance(payload.get("variants"), dict) else {}
+    for by_secs in variants.values():
+        if not isinstance(by_secs, dict):
+            continue
+        for plan in by_secs.values():
+            if isinstance(plan, dict) and (plan.get("chapters") or []):
+                return True
+    for key in ("fr", "en", "default"):
+        plan = payload.get(key)
+        if isinstance(plan, dict) and (plan.get("chapters") or []):
+            return True
+    return False
+
+
+def _patch_air_on_film(payload: dict, voy: Optional[dict]) -> dict:
+    """Ajoute les phrases d'avion manquantes. Le reste du script n'est pas réécrit."""
+    out = dict(payload)
+    variants = out.get("variants") if isinstance(out.get("variants"), dict) else None
+    if variants:
+        patched: dict = {}
+        for lang, by_secs in variants.items():
+            if not isinstance(by_secs, dict):
+                patched[lang] = by_secs
+                continue
+            lg = str(lang)[:2].lower() or "fr"
+            patched[lang] = {
+                sec: _apply_air_sentences(plan, lg, voy) if isinstance(plan, dict) else plan
+                for sec, plan in by_secs.items()
+            }
+        out["variants"] = patched
+        for key, lg in (("fr", "fr"), ("en", "en"), ("default", "fr")):
+            picked = (patched.get(lg) or patched.get("fr") or {})
+            if not isinstance(picked, dict):
+                continue
+            plan = picked.get("150") or picked.get("0") or next(iter(picked.values()), None)
+            if isinstance(plan, dict) and (plan.get("chapters") or []):
+                out[key] = plan
+    for key, lg in (("fr", "fr"), ("en", "en"), ("default", "fr")):
+        plan = out.get(key)
+        if isinstance(plan, dict) and (plan.get("chapters") or []):
+            out[key] = _apply_air_sentences(plan, lg, voy)
+    return out
+
+
+def _newest_film_hit() -> Optional[dict]:
+    """Dernier script qui a des chapitres, même révision ancienne.
+
+    La révision du checkout (vs1, rc55…) met du temps à s'écrire. Tant qu'elle
+    n'est pas là, Revoir joue le dernier film complet au lieu de rester
+    « en préparation ».
+    """
+    st = get_store()
+    voy = _load_official()
+    try:
+        route_id, t0, _, _suf = parse_key(st.family_key("film", voy))
+    except ValueError:
+        return None
+    lister = getattr(st.backend, "list_family", None)
+    if not callable(lister):
+        return None
+    best: Optional[dict] = None
+    best_date = ""
+    for stored_key, doc in lister("film"):
+        try:
+            route, stamp, date, _suf = parse_key(stored_key)
+        except ValueError:
+            continue
+        if route != route_id or stamp != t0:
+            continue
+        payload = doc.get("payload") if isinstance(doc, dict) else None
+        if not _payload_has_chapters(payload):
+            continue
+        if best is None or date > best_date:
+            hit = dict(doc)
+            hit["key"] = stored_key
+            hit["dataDate"] = date
+            best, best_date = hit, date
     return best
 
 
@@ -1136,6 +1223,7 @@ def compute_film(voy: dict, now: datetime) -> Optional[dict]:
     en = (variants.get("en") or {}).get(str(FILM_VARIANT_SECONDS[0]))
     if isinstance(en, dict) and (en.get("chapters") or []):
         out["en"] = en
+    out["film_script_rev"] = FILM_SCRIPT_REV
     return out
 
 
@@ -1445,17 +1533,7 @@ def refresh_missing(
             except Exception as exc:
                 log.warning("stock %s : %s", family, exc)
                 _log(family, PREPARING, str(exc)[:160])
-        if not (should_stop and should_stop()):
-            try:
-                written = fill_written_film()
-                detail = (written or {}).get("status") or ""
-                extra = ""
-                if (written or {}).get("rewritten") is not None:
-                    extra = f"{written.get('rewritten', 0)} réécrites / {written.get('fallen', 0)} repliées"
-                _log("film", "written", f"{detail} {extra}".strip())
-            except Exception as exc:
-                log.warning("stock film written : %s", exc)
-                _log("film", "written", str(exc)[:160])
+        # ED1 : plus de fill_written_film ici — Super / Ultra seulement au clic.
         return st.status()
     finally:
         _REFRESH_LOCK.release()
@@ -1535,25 +1613,47 @@ def _fill_script_stamp() -> str:
         return ""
 
 
-def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
-    """Les `prepare_official_store.py --loop --store <ce stock>` vivants sur cette machine, sauf `keep` et nous.
+def command_store(command: str, default: Optional[Path] = None) -> Optional[Path]:
+    """Dossier de stock visé par une ligne `ps`.
 
-    29 sept. : quatre remplisseurs tournaient en même temps (rg7, rg16 ×2, rc28) — le pidfile n'en connaît
-    qu'un, les autres avaient survécu aux rebuilds du poste — et tous écrivaient le même stock et le même
-    fichier voyage : c'est le mélange de deux écritures à 20:07 qui a corrompu le voyage officiel.
-    Le stock est reconnu par l'argument `--store` de la ligne de commande : le remplisseur d'un agent (stock
-    de son worktree) et celui du poste (stock partagé) ne se touchent jamais."""
+    `--store <chemin>` est explicite. Sans cet argument, le script écrit le stock par
+    défaut (`~/.cache/naviguide/voyage-store`) : c'est le passage orphelin du 17 oct.,
+    lancé sans `--loop` ni `--store`, que le filtre « --loop » laissait vivre.
+    """
+    if FILL_SCRIPT.name not in command:
+        return None
+    parts = command.split()
+    try:
+        i = parts.index("--store")
+    except ValueError:
+        return Path(default) if default is not None else Path.home() / ".cache" / "naviguide" / "voyage-store"
+    if i + 1 >= len(parts):
+        return None
+    return Path(parts[i + 1])
+
+
+def other_fill_processes(keep: Optional[int] = None, store: Optional[Path] = None) -> list[int]:
+    """Les `prepare_official_store.py` vivants qui écrivent CE stock, sauf `keep` et nous.
+
+    Boucle ou passage unique : les deux écrivent le même fichier. 29 sept. : quatre boucles
+    en même temps ont corrompu le voyage officiel. 17 oct. : trois passages sans `--loop`
+    ont survécu au timeout et au filtre qui ne voyait que `--loop`.
+    Un `--store` différent (stock d'un worktree d'agent) n'est pas touché."""
     import subprocess  # noqa: PLC0415
     try:
         out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5).stdout
     except Exception:
         return []
     me = os.getpid()
-    marker = f"--store {store or disk_root()}"
+    want = Path(store or disk_root())
+    default = Path.home() / ".cache" / "naviguide" / "voyage-store"
     found: list[int] = []
     for line in out.splitlines():
         parts = line.strip().split(None, 1)
-        if len(parts) != 2 or FILL_SCRIPT.name not in parts[1] or "--loop" not in parts[1] or marker not in parts[1]:
+        if len(parts) != 2:
+            continue
+        got = command_store(parts[1], default)
+        if got is None or got != want:
             continue
         try:
             pid = int(parts[0])
@@ -1959,99 +2059,114 @@ def fill_written_film(
     cascade=None,
     now: Optional[datetime] = None,
 ) -> dict:
-    """RG11A : rédigé Super, étape « sur demande différée ». Jamais depuis le chemin HTTP."""
-    import asyncio  # noqa: PLC0415
+    """ED1 : le remplisseur ne paie plus Super ni Ultra. Le rédigé part au clic."""
+    _ = force, cascade, now
+    _log_fill_written("written : ED1 — au clic seulement, remplisseur ne paie pas Super ni Ultra")
+    return {"status": "click-only", "written": 0, "rewritten": 0, "fallen": 0}
+
+
+def _raw_plan_for(body: dict, lang: str, seconds: int) -> Optional[dict]:
+    variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
+    by = variants.get(lang) or variants.get("fr") or {}
+    if isinstance(by, dict):
+        want = str(int(seconds or 0))
+        plan = by.get(want)
+        if isinstance(plan, dict) and (plan.get("chapters") or []):
+            return plan
+        keys = sorted(int(k) for k in by if str(k).lstrip("-").isdigit())
+        pick = _pick_variant_key(keys, int(seconds or 0))
+        if pick is not None:
+            plan = by.get(str(pick))
+            if isinstance(plan, dict) and (plan.get("chapters") or []):
+                return plan
+    plan = body.get(lang) or body.get("default") or body.get("fr")
+    if isinstance(plan, dict) and (plan.get("chapters") or []):
+        return plan
+    return None
+
+
+def _put_written_variant(body: dict, lang: str, seconds: int, plan: dict, when: datetime, last_stop: str) -> dict:
+    written_map = dict(body.get("written") or {}) if isinstance(body.get("written"), dict) else {}
+    lang_map = dict(written_map.get(lang) or {}) if isinstance(written_map.get(lang), dict) else {}
+    stamped = dict(plan)
+    stamped["hasWritten"] = True
+    stamped["source"] = stamped.get("source") or WRITTEN_SOURCE
+    stamped["writtenAt"] = _iso(when)
+    stamped["writtenDay"] = _data_date(when)
+    stamped["lastStop"] = last_stop
+    lang_map[str(int(seconds or 0))] = stamped
+    written_map[lang] = lang_map
+    new_body = dict(body)
+    new_body["written"] = written_map
+    return new_body
+
+
+async def write_film_on_click(
+    lang: str = "fr",
+    seconds: int = 150,
+    *,
+    cascade=None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Chaîne Super → Ultra? → Lightning, une fois par (langue, durée). Au clic seulement."""
     import llm_budget  # noqa: PLC0415
-    from film_script import write_stored_plan  # noqa: PLC0415
+    from film_script import translate_written_plan, write_film_chain  # noqa: PLC0415
+
+    lg = (lang or "fr")[:2].lower()
+    secs = int(seconds or 0)
+    cached = serve_film(lang=lg, seconds=secs, style="written")
+    if cached.get("hasWritten") and cached.get("status") == READY:
+        return cached
 
     if llm_budget.mode() == "off":
-        _log_fill_written("written : mode off — aucun appel, brut servi")
-        return {"status": "off", "written": 0, "rewritten": 0, "fallen": 0}
+        _log_fill_written("written clic : mode off — brut servi")
+        return serve_film(lang=lg, seconds=secs, style="written")
 
     hit = get("film")
     body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
     if not isinstance(body, dict):
-        return {"status": "no-film", "written": 0, "rewritten": 0, "fallen": 0}
+        return serve_film(lang=lg, seconds=secs, style="written")
 
     when = now or _utc_now()
-    day = _data_date(when)
     last_stop = _stored_last_stop()
-    written_map = dict(body.get("written") or {}) if isinstance(body.get("written"), dict) else {}
+    fr_raw = _raw_plan_for(body, "fr", secs)
+    if not isinstance(fr_raw, dict) or not (fr_raw.get("chapters") or []):
+        return serve_film(lang=lg, seconds=secs, style="written")
+
     cascade_fn = cascade
     if cascade_fn is None:
         from story_cascade import cascade_text  # noqa: PLC0415
         cascade_fn = cascade_text
 
-    async def _one(plan: dict, lang: str, secs: str) -> tuple[Optional[dict], dict]:
-        return await write_stored_plan(plan, lang=lang, cascade=cascade_fn, seconds=int(secs or 0))
+    existing_fr = _pick_written_plan(body, "fr", secs)
+    if existing_fr and lg == "en":
+        if not llm_budget.allow("fast"):
+            return serve_film(lang=lg, seconds=secs, style="written")
+        en_raw = _raw_plan_for(body, "en", secs) or fr_raw
+        en_plan = await translate_written_plan(existing_fr, en_raw, cascade=cascade_fn)
+        if not en_plan:
+            return serve_film(lang=lg, seconds=secs, style="written")
+        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
+        put("film", body, hit.get("key"))
+        return serve_film(lang=lg, seconds=secs, style="written")
 
-    filled = 0
-    rewritten = 0
-    fallen = 0
+    if not llm_budget.allow("write"):
+        _log_fill_written(f"written clic {lg} {secs}s : plafond write — brut")
+        return serve_film(lang=lg, seconds=secs, style="written")
 
-    with llm_budget.deferred_demand():
-        if not llm_budget.allow("write"):
-            _log_fill_written("written : plafond write atteint — brut servi")
-            return {"status": "budget", "written": 0, "rewritten": 0, "fallen": 0}
-
-        async def _run():
-            nonlocal filled, rewritten, fallen, written_map
-            for lang, secs, plan in _iter_raw_film_variants(body):
-                if not llm_budget.allow("write"):
-                    _log_fill_written(f"written {lang} {secs}s : plafond write — stop")
-                    break
-                by_lang = written_map.get(lang) if isinstance(written_map.get(lang), dict) else {}
-                if not force and _written_is_fresh(by_lang.get(secs), day, last_stop):
-                    continue
-                before = llm_budget.get_usage("write")
-                try:
-                    wplan, stats = await _one(plan, lang, secs)
-                except Exception as exc:
-                    _log_fill_written(f"written {lang} {secs}s : erreur {exc}")
-                    continue
-                after = llm_budget.get_usage("write")
-                pt = max(0, int(after["prompt_tokens"]) - int(before["prompt_tokens"]))
-                ct = max(0, int(after["completion_tokens"]) - int(before["completion_tokens"]))
-                usd = llm_budget.estimate_usd("write", pt, ct)
-                rw = int((stats or {}).get("rewritten") or 0)
-                fb = int((stats or {}).get("fallen") or 0)
-                rewritten += rw
-                fallen += fb
-                if not isinstance(wplan, dict) or not (wplan.get("chapters") or []) or rw <= 0:
-                    _log_fill_written(
-                        f"written {lang} {secs}s : pas de rédigé ({(stats or {}).get('source')}), "
-                        f"{rw} réécrites / {fb} repliées, tokens in={pt} out={ct}, ~{usd} $"
-                    )
-                    continue
-                stamped = dict(wplan)
-                stamped["hasWritten"] = True
-                stamped["source"] = stamped.get("source") or WRITTEN_SOURCE
-                stamped["writtenAt"] = _iso(when)
-                stamped["writtenDay"] = day
-                stamped["lastStop"] = last_stop
-                stamped["rewritten"] = rw
-                stamped["fallen"] = fb
-                lang_map = dict(written_map.get(lang) or {}) if isinstance(written_map.get(lang), dict) else {}
-                lang_map[str(secs)] = stamped
-                written_map[lang] = lang_map
-                filled += 1
-                _log_fill_written(
-                    f"written {lang} {secs}s : {rw} réécrites, {fb} repliées, "
-                    f"tokens in={pt} out={ct}, ~{usd} $, source={stamped['source']}"
-                )
-
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(_run())
-        else:
-            return {"status": "busy", "written": 0, "rewritten": 0, "fallen": 0}
-
-    if filled:
-        new_body = dict(body)
-        new_body["written"] = written_map
-        put("film", new_body, hit.get("key"))
-    return {"status": "ready" if filled else "unchanged", "written": filled, "rewritten": rewritten, "fallen": fallen}
+    fr_plan, en_plan, stats = await write_film_chain(fr_raw, seconds=secs, cascade=cascade_fn)
+    if not isinstance(fr_plan, dict) or not (fr_plan.get("chapters") or []):
+        _log_fill_written(f"written clic {lg} {secs}s : pas de rédigé ({stats.get('source')})")
+        return serve_film(lang=lg, seconds=secs, style="written")
+    body = _put_written_variant(body, "fr", secs, fr_plan, when, last_stop)
+    if isinstance(en_plan, dict) and (en_plan.get("chapters") or []):
+        body = _put_written_variant(body, "en", secs, en_plan, when, last_stop)
+    put("film", body, hit.get("key"))
+    _log_fill_written(
+        f"written clic {lg} {secs}s : source={stats.get('source')} "
+        f"ultra={stats.get('ultra_edit')}/{stats.get('ultra_judge')} lightning={stats.get('lightning')}"
+    )
+    return serve_film(lang=lg, seconds=secs, style="written")
 
 
 def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
@@ -2059,12 +2174,17 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
         "chapters": [], "source": "rules", "chars": 0,
         "targetSeconds": seconds, "hasWritten": False,
     }
+    voy = _load_official()
     hit = get("film")
     body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
-    if not body:
+    if not _payload_has_chapters(body):
+        hit = _newest_film_hit()
+        body = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not _payload_has_chapters(body):
         return preparing_payload("film", extra)
-    if film_snapshot_stale(body, _load_official()):
-        return preparing_payload("film", extra)
+    if film_snapshot_stale(body, voy):
+        body = _patch_air_on_film(body, voy)
+    # Un script déjà écrit se joue. Une phrase d'avion manquante ne bloque pas Revoir.
     lg = (lang or "fr")[:2].lower()
     plan = None
     variants = body.get("variants") if isinstance(body.get("variants"), dict) else {}
@@ -2104,6 +2224,9 @@ def serve_film(lang: str = "fr", seconds: int = 0, style: str = "raw") -> dict:
     out["hasWritten"] = False
     out["source"] = out.get("source") or "rules"
     out["style"] = "raw"
+    rev = body.get("film_script_rev")
+    if rev:
+        out["film_script_rev"] = rev
     out.update(_stamp(hit))
     return out
 

@@ -17,9 +17,9 @@ const recetteDir = join(here, "../../../docs/recette/lot-n4");
 const shot = async (page, name) => {
   mkdirSync(recetteDir, { recursive: true });
   await page.screenshot({
-    path: join(recetteDir, `${name}.jpg`),
-    type: "jpeg",
-    quality: 70,
+    path: join(recetteDir, `${name}.webp`),
+    type: "webp",
+    quality: 85,
     fullPage: false,
   });
 };

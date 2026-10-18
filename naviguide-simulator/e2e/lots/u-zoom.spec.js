@@ -15,9 +15,9 @@ import {
 } from "../zoomProfile.js";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-u/${name}.jpg`,
-  type: "jpeg",
-  quality: 70,
+  path: `../docs/recette/lot-u/${name}.webp`,
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

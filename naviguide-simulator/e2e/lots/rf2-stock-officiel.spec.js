@@ -11,9 +11,9 @@ const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/
 mkdirSync(recetteDir, { recursive: true });
 
 const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.jpg`),
-  type: "jpeg",
-  quality: 70,
+  path: join(recetteDir, `${name}.webp`),
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

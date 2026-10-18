@@ -10,9 +10,9 @@ import { expect, test } from "@playwright/test";
 import { dismissNotForNav, enterSimulation, enterTracer, probeOfficial } from "../helpers.js";
 
 const shot = (page, name) => page.screenshot({
-  path: `../docs/recette/lot-parcours-nominal/${name}.jpg`,
-  type: "jpeg",
-  quality: 70,
+  path: `../docs/recette/lot-parcours-nominal/${name}.webp`,
+  type: "webp",
+  quality: 85,
   fullPage: false,
 });
 

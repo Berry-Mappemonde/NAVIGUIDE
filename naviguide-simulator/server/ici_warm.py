@@ -13,10 +13,9 @@ viennent donc des perles — les mêmes pour tous les visiteurs. Ce module :
   MarineRegions et Overpass ne sont appelés qu'une fois par cellule.
 
 `NAVIGUIDE_ICI_WARM=0` désactive le chauffeur (tests, dev sans réseau).
-La veille Tavily (lot L4) tourne après le chauffage, puis une passe par
-jour ; chaque escale n'est cherchée qu'UNE fois (cache définitif, 15 oct.).
-`NAVIGUIDE_TAVILY_WATCH=1` l'allume, `NAVIGUIDE_TAVILY_WATCH_S` change la
-période de la passe (défaut 86 400 s).
+La veille Tavily (lot TV1) tourne après le chauffage, deux tours max par
+escale, si `NAVIGUIDE_TAVILY_WATCH=1`. Défaut 0. `NAVIGUIDE_TAVILY_WATCH_S`
+change la période de la passe (défaut 86 400 s).
 """
 from __future__ import annotations
 
@@ -78,10 +77,11 @@ def stories_enabled() -> bool:
 
 
 def watch_enabled() -> bool:
-    """Veille Tavily + enrichissement (lots L4 / U10 / U12). Rallumée par défaut le 15 oct. (porteur) :
-    une recherche par escale, une fois (plus toutes les 6 h). `NAVIGUIDE_TAVILY_WATCH=0` l'éteint
-    (tests : conftest ; agents de lot)."""
-    return (os.environ.get("NAVIGUIDE_TAVILY_WATCH") or "1").strip() in ("1", "true", "yes", "on")
+    """Veille Tavily (lots L4 / TV1). Défaut 0 : zéro recherche tant que le
+    drapeau n'est pas ouvert. `NAVIGUIDE_TAVILY_WATCH=1` l'allume (poste)."""
+    import escale_watch  # noqa: PLC0415
+
+    return escale_watch.watch_enabled()
 
 
 # 15 oct. (porteur) : une passe par jour suffit — une escale n'est cherchée qu'une fois (escale_watch, `done:<slug>`),
@@ -685,9 +685,22 @@ def _pearl_ready(key: str, rich: bool) -> bool:
     return (not rich) or meta.get("kind") == "rich"
 
 
+def _drop_memory(key: str) -> None:
+    """Oublie la perle en mémoire. La base garde l'ancienne jusqu'au recalcul réussi."""
+    try:
+        from ici_engine import _thin_cache  # noqa: PLC0415
+        _thin_cache.pop(key, None)
+    except Exception:
+        pass
+
+
+_AMP_REDO_NM = 6.0
+
+
 async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) -> dict[str, Any]:
     """Collect the (rich) pearl of every sample of the official route, gently.
-    Pearls already rich in the store are skipped; thin ones are upgraded."""
+    Pearls already rich in the store are skipped; thin ones are upgraded.
+    A rich pearl whose AMP is still a centroid (or has no polygon mark) is redone."""
     from ici_engine import fill_dossier, thin_cache_get, thin_cache_key  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
     from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
@@ -718,16 +731,53 @@ async def warm_official_route(pause_s: float = WARM_PAUSE_S, rich: bool = True) 
         except Exception:
             pass
 
+    bad: list[tuple[str, float | None, float | None]] = []
+    if rich:
+        try:
+            import pearl_store  # noqa: PLC0415
+            bad = await asyncio.to_thread(pearl_store.non_polygon_amp_pearls, "rich")
+        except Exception as exc:
+            log.warning("perles AMP non polygones : %s", exc)
+    bad_keys = {key for key, _lat, _lon in bad}
+
+    def _near_bad(lat: float, lon: float) -> list[str]:
+        found: list[str] = []
+        for key, plat, plon in bad:
+            if plat is None or plon is None:
+                continue
+            if _haversine_nm(lat, lon, plat, plon) <= _AMP_REDO_NM:
+                found.append(key)
+        return found
+
+    _state["ampRedo"] = sum(
+        1 for la, lo in pearls if thin_cache_key(la, lo, 30.0) in bad_keys or _near_bad(la, lo)
+    )
+
     async def one(lat: float, lon: float) -> None:
         key = thin_cache_key(lat, lon, 30.0)
-        if _pearl_ready(key, rich) or thin_cache_get(key, rich=rich) is not None:
+        near = _near_bad(lat, lon) if rich else []
+        redo_this = bool(rich and (key in bad_keys or near))
+        if redo_this:
+            _drop_memory(key)
+            for old in near:
+                _drop_memory(old)
+        elif _pearl_ready(key, rich) or thin_cache_get(key, rich=rich) is not None:
             _state["cached"] += 1
             _state["done"] += 1
             if _state["cached"] % 64 == 0:
                 await asyncio.sleep(0)   # rendre la main à l'API entre deux paquets de perles déjà là
             return
         try:
-            await fill_dossier(lat, lon, 30.0, month=month, thin=True, rich=rich)
+            bag = await fill_dossier(
+                lat, lon, 30.0, month=month, thin=True, rich=rich, force=redo_this,
+            )
+            if isinstance(bag, dict) and bag.get("ampFallback"):
+                _state["errors"] += 1
+            elif redo_this and thin_cache_get(key, rich=rich) is not None:
+                import pearl_store  # noqa: PLC0415
+                for old in near:
+                    if old != key:
+                        pearl_store.delete_pearl(old)
         except Exception as exc:  # network hiccup: keep going
             _state["errors"] += 1
             log.debug("perle %.3f,%.3f : %s", lat, lon, exc)
