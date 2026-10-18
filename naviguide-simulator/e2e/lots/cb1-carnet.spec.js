@@ -129,9 +129,59 @@ async function stubSeaRoute(page) {
   });
 }
 
+// Film et moments de ma route servis tels que le serveur les rend une fois prêts :
+// sur le stock figé, le film perso peut rester « preparing » plus de 2 min (voir
+// dm8-recit-ma-route), ce test vérifie le carnet, pas la préparation du film.
+// POST /voyage et le voyage officiel restent ceux de l'API.
+const MY_FILM_CHAPTERS = [
+  "Départ de La Rochelle, cap au sud-ouest vers le Pertuis.",
+  "Arrivée au Pertuis après une courte traversée.",
+];
+
+async function stubCustomVoyage(page) {
+  await page.route(/\/voyage\/(?!official\b)[^/?]+\/(film|moments)(\?|$)/, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const url = new URL(route.request().url());
+    const [, voyageId, kind] = url.pathname.match(/\/voyage\/([^/]+)\/(film|moments)$/) || [];
+    if (kind === "film") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "ready",
+          voyageId,
+          source: "rules",
+          chapters: MY_FILM_CHAPTERS.map((text) => ({ text })),
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "ready",
+        voyageId,
+        moments: [
+          {
+            voyageId,
+            seq: 1,
+            t: "2026-05-15T10:00:00.000Z",
+            pos: { lat: 46.0, lon: -1.4 },
+            signature: "cb1-pertuis",
+            changes: [{ kind: "amp", score: 1, title: "Pertuis charentais", fact: "Pertuis charentais" }],
+          },
+        ],
+      }),
+    });
+  });
+}
+
 test("ma route : le carnet reprend le récit et le journal de ma route", async ({ page }) => {
   test.setTimeout(180_000);
   await stubSeaRoute(page);
+  await stubCustomVoyage(page);
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
