@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { gribWindLayerState, weatherPipelineEnabled } from "./useWeatherPipeline.js";
+import { gribWindLayerState, productLayerState, weatherPipelineEnabled } from "./useWeatherPipeline.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => readFileSync(join(here, name), "utf8");
@@ -35,5 +35,12 @@ describe("useWeatherPipeline", () => {
     assert.match(scene, /setMapReady\(1\)/);
     assert.match(scene, /maritimeLayers\.showGrib && scene\.isSuivre/);
     assert.doesNotMatch(scene, /await /);
+    assert.equal(productLayerState(null, false), null);
+    assert.equal(productLayerState({ hs: 1.1 }, false), null);
+    assert.equal(productLayerState(null, true), "pending");
+    assert.equal(productLayerState({ status: "ready", hs: 1.1 }, true), "ready");
+    assert.equal(productLayerState({ status: "pending", refreshing: true }, true), "pending");
+    assert.equal(productLayerState({ status: "error", hs: 1.1 }, true), "unavailable");
+    assert.equal(productLayerState({ status: "unavailable" }, true), "unavailable");
   });
 });

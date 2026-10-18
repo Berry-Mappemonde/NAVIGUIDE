@@ -44,7 +44,7 @@ from mem_limits import (
     lru_set,
     too_large,
 )
-from weather_pipeline import get_pipeline
+from weather_pipeline import get_pipeline, route_snapshot, route_snapshot_group
 from ici_engine import (
     ICI_RADIUS_NM,
     accept_layer_warm,
@@ -362,7 +362,7 @@ def _force_estimated(kind: str, lat: float, lon: float) -> bool:
 
 def _weather_snapshot(kind: str, request: PositionRequest, loader) -> dict:
     lat, lon = request.latitude, request.longitude
-    return get_pipeline().snapshot(
+    return route_snapshot(
         kind, lat, lon, lambda: loader(request), force=_force_estimated(kind, lat, lon),
     )
 
@@ -734,7 +734,7 @@ def get_weather(request: PositionRequest):
     """Réponse immédiate : vent / vague / courant, cache cellule + cycle."""
     lat, lon = request.latitude, request.longitude
     force = any(_force_estimated(kind, lat, lon) for kind in ("wind", "wave", "current"))
-    return get_pipeline().snapshot_group(
+    return route_snapshot_group(
         (
             ("wind", "wind", lambda: _load_wind(PositionRequest(latitude=lat, longitude=lon))),
             ("wave", "wave", lambda: _load_wave(PositionRequest(latitude=lat, longitude=lon))),
