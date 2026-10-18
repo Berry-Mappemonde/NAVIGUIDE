@@ -3,10 +3,7 @@
 Plan à exécuter à la lettre. Il remplace la version du 17 octobre 2026 qui
 décrivait encore un seul VPS et un envoi de toutes les références.
 
-Lecture de l'arbre le **17 octobre 2026 au soir** : `main` = `23be7ba8`
-(« Merge pull request #551 », après la #544 `6dabfb84`). Le classeur
-`scripts/check_split_coverage.py` de cette PR a été passé sur cet arbre,
-copié à côté (il n'y est pas encore suivi) : **0 fichier suivi non classé**.
+Lecture de l'arbre le **18 octobre 2026** : `main` = `e1e26e02` (merge #572, après #574 deploy film-front, #573 LT1, #570, #567 Overpass). Branche plan : `cb39cc67`. Le classeur `scripts/check_split_coverage.py` de cette PR sur cet arbre : **0 fichier suivi non classé**.
 
 Chaque hackathon nomme **son** dépôt :
 
@@ -81,7 +78,8 @@ faits, pas des chemins à deviner :
 |---|---|
 | Bases du `mongod` | `admin`, `blueintel_db`, `config`, `local`. Rien d'autre. |
 | Base `naviguide_simulator`, utilisateur `naviguide_sim`, variable `SIMULATOR_MONGO_URL` | absents. Le stock officiel est le dossier disque `official-store/` (`DiskBackend` dans `official_store.py`). |
-| `~/blue-intelligence-map/naviguide-simulator/server/voyage_data/` | présent, 5,5 Go. Dedans : `naviguide.sqlite` (`pearls` 11 159, `kv` 95 136, `moments` 1) et `official-store/` (690 Mo, stock RF2). |
+| `~/blue-intelligence-map/naviguide-simulator/server/voyage_data/` | présent, 5,5 Go. Dedans : `naviguide.sqlite` live (`moments` **1** au 18 oct. 2026 — accepté au split) ; `naviguide.sqlite.bak-rekey-20261015` (journal vrai, **1142** `moments` pour le voyage officiel) ; tout `*.bak*` sqlite ; `official-store/` **entier** (690 Mo, toutes les clés, sans élagage des anciennes) ; dossiers `official-store/<clé>/moments.json` historiques. |
+| `~/moments-restore-20261018T033021Z/` | présent sur l'OVH (copie aussi sur le Mac). À migrer sur Contabo avec `voyage_data/`, vérifié par SHA-256. La **restauration** du journal live (lot **MR1**, après le split sur Contabo) n'est pas une étape de ce plan. |
 | `polar_data/`, `grib_data/`, `saildocs_inbox/` à côté de `voyage_data/` | présents. |
 | `forecast_cache/`, `/var/lib/naviguide`, `~/.cache/naviguide` | absents. On ne les crée pas pour la copie. |
 
@@ -199,6 +197,8 @@ for d in "$SIM/voyage_data" "$SIM/polar_data" "$SIM/grib_data" "$SIM/saildocs_in
 done
 test -f "$SIM/voyage_data/naviguide.sqlite" || { echo "STOP sqlite absent"; exit 1; }
 test -d "$SIM/voyage_data/official-store" || { echo "STOP official-store absent"; exit 1; }
+test -f "$SIM/voyage_data/naviguide.sqlite.bak-rekey-20261015" || { echo "STOP naviguide.sqlite.bak-rekey-20261015 absent"; exit 1; }
+test -d "$HOME/moments-restore-20261018T033021Z" || { echo "STOP moments-restore-20261018T033021Z absent sur OVH"; exit 1; }
 for ghost in "$SIM/forecast_cache" /var/lib/naviguide "$HOME/.cache/naviguide"; do
   if [ -e "$ghost" ]; then echo "STOP apparu depuis le 17 oct. : $ghost"; exit 1; fi
   echo "toujours absent $ghost"
@@ -291,9 +291,15 @@ grep -q '^moments	' "$DEST/comptes-sqlite-avant.tsv" || { echo "STOP table momen
 ```
 
 Le 17 octobre les comptes étaient `pearls` 11 159, `kv` 95 136,
-`moments` 1. Le site a pu écrire depuis : le chiffre du jour est le
-contrat de la copie, pas une erreur. Un compte à 0, ou une table
-manquante, est un `STOP`.
+`moments` 1 dans le SQLite **live**. Au 18 octobre 2026 le live tient
+encore **1** ligne `moments` pour le voyage officiel : le split et la
+migration Contabo se font avec ce chiffre. Ce n'est **pas** un échec.
+Le journal complet (**1142** lignes) est dans
+`naviguide.sqlite.bak-rekey-20261015`, dans les dossiers
+`official-store/<clé>/` et dans `~/moments-restore-20261018T033021Z/`.
+On copie tout sur Contabo (section 8). La remise en service du journal
+live est le lot **MR1** (NAVIGUIDE), après le split. Un compte live à 0,
+ou une table manquante, est un `STOP`.
 
 Secrets, s'ils sont là. On ne les affiche pas.
 
@@ -562,6 +568,24 @@ La section 9 ne fait pas l'opération inverse.
 
 ### 3.5 Créer Blue Intelligence en dernier
 
+**Aucune PR ouverte au moment du split** (décision Berry, 17 oct. 2026) :
+chaque PR est mergée ou fermée et archivée avant le filtre. La #566 (CH-16)
+est fermée ; reprise en lot CH-16 post-split. La #572 (CI shardée) et la
+#570 sont sur `main`. Les PR de docs #554 et #555 se mergent après la
+simulation finale, juste avant le split.
+
+**Ligne bloquante Devpost** (geste du propriétaire, avant `gh repo create`) :
+Devpost Q13 vaut `https://github.com/Berry-Mappemonde/NAVIGUIDE` (vérifié
+sur la page publique du formulaire Nebius).
+
+**Repli si Q13 n'est pas basculé le jour du split** : arrêter après la
+section 3.4 et le push NAVIGUIDE. Reporter le § 3.5 (création BI et push
+BI) après DV1, **au plus tard mer. 21 oct. 19:00 (heure de Toronto)**,
+une heure avant le départ GenAI (22 oct. 00:00 UTC). Pendant l'attente,
+l'ancien nom redirige vers l'archive en lecture seule ; le déploiement BI
+reste servi depuis `~/blue-intelligence-map` sur l'OVH.
+
+
 Seulement ici. Cette commande retire la redirection.
 
 ```bash
@@ -681,6 +705,26 @@ les contient pas. La lecture précédente, sur `6dabfb84`, comptait
 `naviguide-simulator/e2e/lots/rc57.spec.js`). Ils tombent sous des
 préfixes déjà classés. Les lignes de chemins restent 91 et 116.
 `--emit` sort 0.
+
+Lecture du **18 octobre 2026**, script suivi sur `main` `e1e26e02` :
+
+| Classe | Nombre |
+|---|---|
+| Fichiers suivis | 1 873 |
+| Blue Intelligence seul | 590 |
+| NAVIGUIDE seul | 1 244 |
+| Les deux | 36 |
+| Exclus | 3 |
+| Non classé | 0 |
+| Écarts d'historique | 0 |
+| Lignes de `/tmp/bi-paths.txt` | 98 |
+| Lignes de `/tmp/ng-paths.txt` | 117 |
+
+Les merges #572, #574, #573, #570 et les docs #571 classent les nouveaux
+fichiers (`ci_pytest_gate.py`, `naviguide-film-front.service`, garde-fous
+mémoire OVH, plans GenAI). `python3 scripts/generate_split_ci_diffs.py --check`
+tient sur `e1e26e02`.
+
 
 Le jour où cette PR est sur `main`, le script devient un fichier suivi
 de plus, classé Blue Intelligence par la ligne de dossier `scripts/`.
@@ -1280,7 +1324,7 @@ défaut : un secret `VPS_HOST` vide arrête le job.
   `.github/workflows/deploy.yml`, `.github/dependabot.yml` : le diff
   exact est en section 6.6. On ne les édite pas à la main.
 - `infra/vps/ci/plan_deploy.py` et `test_prod_jobs_busy.py` restent tels
-  que le filtre les a copiés. Leurs 31 tests décrivent encore trois
+  que le filtre les a copiés. Leurs 32 tests décrivent encore trois
   sites et restent verts. Le workflow ne lance plus les jobs
   `naviguide` ni `simulator`. On ne réécrit pas ces deux fichiers dans
   le commit 6.6.
@@ -1306,6 +1350,11 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
 
 ### 6.2 Dépôt NAVIGUIDE
 
+- `naviguide-film-front.service` : unité systemd du front film (port dédié,
+  `film_front.py`), installée et vérifiée avec `naviguide-simulator` sur Contabo.
+  Le `rsync-to-vps.sh` de la #574 copie cette unité ; le `deploy-gate` NAVIGUIDE
+  garde `bash -n` sur `deploy-simulator.sh` et `publish-simulator-from-mac.sh`,
+  qui référencent l'unité.
 - `naviguide-simulator.service` : `User=naviguide` (aujourd'hui
   `User=ubuntu`), `WorkingDirectory` et `ExecStart` sous
   `/home/naviguide/naviguide/naviguide-simulator`, `EnvironmentFile` vers
@@ -1340,7 +1389,7 @@ le filtre les a déjà écartés. `weekly-data-build.yml` part tel quel.
   est vert sans cette édition.
 - `plan_deploy.py` et `test_prod_jobs_busy.py` restent tels que le
   filtre les a copiés. Le workflow 6.6 ne les appelle plus : chaque
-  poussée sur `main` déploie `naviguide.fr`. Leurs 31 tests restent
+  poussée sur `main` déploie `naviguide.fr`. Leurs 32 tests restent
   verts. On ne les réécrit pas dans ce commit.
 - nginx, détail en section 6.4. En bref : `naviguide.fr` sert le
   simulateur (port `8010`). `www.naviguide.fr` et
@@ -1917,14 +1966,15 @@ si le fichier a déjà été édité à la main : on s'arrête, on remet le
 fichier du filtre, on relance le `git apply`. On ne lance pas ces
 diffs dans le monodépôt.
 
-Contrôle sur `main` `14350b8c` (après la #561) : `git apply
---check` accepte les huit diffs. Les deux diffs de `ci.yml` sont
-régénérés sur ce fichier. Les six autres (`deploy.yml`,
-`dependabot.yml`, `prepare-ssh.sh`, des deux côtés) sont inchangés :
-seul `ci.yml` a bougé depuis `23be7ba8`. Les fichiers YAML obtenus se
+Contrôle sur `main` `e1e26e02` (après #572) : `python3 scripts/generate_split_ci_diffs.py --check`
+et `git apply --check` acceptent les huit diffs. Les deux diffs de `ci.yml` sont
+régénérés sur ce fichier (`backend-pytest-shard`, agrégateur `backend`,
+`ci_pytest_gate.py`, cache Overpass, venv et HF). Les six autres (`deploy.yml`,
+`dependabot.yml`, `prepare-ssh.sh`, des deux côtés) sont inchangés depuis
+la passe du 17 oct. sur `14350b8c`. Les fichiers YAML obtenus se
 lisent. `bash -n` accepte les deux `prepare-ssh.sh` et les scripts que
 chaque `deploy-gate` nomme encore. `python3
-infra/vps/ci/test_prod_jobs_busy.py` finit par 31 tests, OK, dans les
+infra/vps/ci/test_prod_jobs_busy.py` finit par 32 tests, OK, dans les
 deux copies. Ce fichier Python n'est pas dans le diff.
 
 Chaque dépôt ne garde que ses jobs. Blue Intelligence déploie vers
@@ -1941,9 +1991,11 @@ Les quotes autour de `END_…` sont obligatoires : le diff contient des
 #### Blue Intelligence
 
 Jobs de `ci.yml` après le diff : `frontend`, `audit-tags`,
-`backend`, `deploy-gate`. Le job `backend` garde le nom affiché
-« API Blue Intelligence — pytest ». `deploy-gate.needs` garde
-`frontend`, `audit-tags` et `backend` (variable `R_BACKEND`). Les jobs
+`backend-pytest-shard`, `backend`, `deploy-gate`. Les shards gardent le nom
+« API Blue Intelligence — pytest (shard N/6) » ; l'agrégateur garde le nom
+requis « API Blue Intelligence — pytest » (`ci_pytest_gate.py`).
+`deploy-gate.needs` garde `frontend`, `audit-tags` et `backend` (variable
+`R_BACKEND`, pas les shards directement). Les jobs
 `changes`, `simulator` et `simulator-e2e` sortent, ainsi que
 `R_CHANGES`, `R_SIMULATOR` et `R_E2E`. Le `bash -n` ne nomme plus
 `infra/vps/naviguide/deploy-naviguide.sh` ni `deploy-simulator.sh`.
@@ -1958,6 +2010,194 @@ Le défaut `ubuntu@135.125.226.16` reste.
 ```bash
 cd /tmp/bi-work
 git apply <<'END_BI_CI'
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index efb164f5..eb45b2a5 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -3,14 +3,10 @@ name: CI
+ #   - jest verrouille l'ordre des couches carte et le registre des fonds ;
+ #   - le build CRA attrape les régressions de bundling (maplibre chargé à la demande) ;
+ #   - le script d'audit des tags tourne en mode GeoJSON sur les seeds (stdlib pur) ;
+-#   - API Blue Intelligence : pytest de backend/tests contre un Mongo de CI
+-#     (image mongo, 127.0.0.1:27017, base bi_ci). Aucun secret, aucun accès
+-#     à la base OVH, à Atlas ou à Nebius. Le seed vient des fichiers du dépôt.
+-#     La confiance OSM est celle d'Overpass (mêmes fonctions que le produit),
+-#     pas un score écrit à la main. Le cache ne rejoue que ces réponses.
+-#   - simulateur : si la PR touche naviguide-simulator/, `npm test` (node --test),
+-#     `vite build` et `pytest` (fetch mocké) — une croix rouge sur la PR avant
+-#     qu'un lot casse S1–S7, le juge ou le sac ici() sans qu'on le voie.
++#   - API Blue Intelligence : six shards pytest parallèles (Mongo + uvicorn isolés),
++#     cache Overpass, venv et modèle HF en cache, puis agrégateur requis
++#     « API Blue Intelligence — pytest » (ci_pytest_gate.py, exhaustivité).
++# Copie Blue Intelligence. Les jobs simulateur ne sont pas dans ce dépôt.
+ 
+ on:
+   pull_request:
+@@ -46,131 +42,6 @@ jobs:
+ 
+   # Le simulateur n'est testé que si la PR (ou le push) le touche : les PR
+   # Blue Intelligence / NAVIGUIDE restent aussi rapides qu'avant.
+-  changes:
+-    runs-on: ubuntu-latest
+-    outputs:
+-      simulator: ${{ steps.filter.outputs.simulator }}
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: dorny/paths-filter@v4
+-        id: filter
+-        with:
+-          filters: |
+-            simulator:
+-              - 'naviguide-simulator/**'
+-              - '.github/workflows/ci.yml'
+-
+-  simulator:
+-    name: simulateur — tests JS, build, pytest
+-    runs-on: ubuntu-latest
+-    # Un test qui ne rend pas la main doit échouer vite, pas bloquer 6 h.
+-    timeout-minutes: 20
+-    needs: changes
+-    if: needs.changes.outputs.simulator == 'true'
+-    defaults:
+-      run:
+-        working-directory: naviguide-simulator
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide-simulator/package-lock.json
+-      - run: npm ci
+-      - name: Tests JS (moteur, juge, skipper, briefing, contrats UI)
+-        run: npm test
+-      - name: Build Vite
+-        run: npm run build
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-          cache: pip
+-          cache-dependency-path: naviguide-simulator/server/requirements.txt
+-      - run: pip install -r server/requirements.txt
+-      - name: Tests Python (API 8010, sac ici(), pipeline météo, récit)
+-        run: python -m pytest -q
+-        env:
+-          # Aucun secret : Copernicus et les LLM restent en repli / mock.
+-          PYTHONDONTWRITEBYTECODE: "1"
+-      # Sécurité P1 (lot H) : une dépendance avec une faille connue bloque la
+-      # PR — critique côté npm (prod seulement), toute faille côté pip.
+-      - name: Audit npm (dépendances de prod, critique = bloquant)
+-        run: npm audit --omit=dev --audit-level=critical
+-      - name: Audit pip (server/requirements.txt)
+-        run: |
+-          pip install -q pip-audit
+-          python -m pip_audit -r server/requirements.txt --progress-spinner off
+-
+-  # Recette automatique des lots (RG16 / D11) : une invocation Playwright
+-  # (fumée + lots) sur le build de prod, API hors ligne, stock figé.
+-  # Un spec rouge bloque la PR. Specs `poste` (hindcast, LLM, réseau) ignorés en CI.
+-  simulator-e2e:
+-    # 28 sept. : la suite (101 specs, ~6 min en un job) est coupée en six tranches parallèles (--shard) :
+-    # même contenu, même API sur le stock figé, ~1 min de tests chacune + ~1 min 30 de mise en place.
+-    # Six jobs verts = recette verte. Dépôt public : les runners Actions sont gratuits et illimités.
+-    name: simulateur — recette automatique (Playwright, stock figé) ${{ matrix.shard }}/6
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 12
+-    needs: changes
+-    if: needs.changes.outputs.simulator == 'true'
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        shard: [1, 2, 3, 4, 5, 6]
+-    defaults:
+-      run:
+-        working-directory: naviguide-simulator
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: naviguide-simulator/package-lock.json
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-          cache: pip
+-          cache-dependency-path: naviguide-simulator/server/requirements.txt
+-      - run: npm ci
+-      - run: npm run build
+-      - run: pip install -r server/requirements.txt
+-      - name: Version Playwright (clé de cache)
+-        id: pw
+-        run: |
+-          echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
+-      - uses: actions/cache@v6
+-        with:
+-          path: ~/.cache/ms-playwright
+-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+-          restore-keys: |
+-            playwright-${{ runner.os }}-
+-      - run: npx playwright install --with-deps chromium
+-      - name: Recette automatique (fumée + lots, stock figé) — tranche ${{ matrix.shard }}/6
+-        env:
+-          PW_WITH_API: "1"
+-        run: npx playwright test e2e/smoke.spec.js e2e/lots --shard=${{ matrix.shard }}/6
+-      - name: Résumé d'étape
+-        if: always()
+-        run: node scripts/e2e-summary.mjs test-results/e2e.json >> "$GITHUB_STEP_SUMMARY"
+-      # Le rapport JSON (quelques dizaines de ko) est toujours conservé : c'est lui qui liste
+-      # les « verts avec réserve » (chemins à vide) relus dans docs/SPECS_E2E_TRIAGE_2026-09-29.md.
+-      - uses: actions/upload-artifact@v7
+-        if: always()
+-        with:
+-          name: e2e-json-${{ matrix.shard }}
+-          path: naviguide-simulator/test-results/e2e.json
+-          retention-days: 3
+-          if-no-files-found: ignore
+-      - uses: actions/upload-artifact@v7
+-        if: failure()
+-        with:
+-          name: playwright-report-${{ matrix.shard }}
+-          path: naviguide-simulator/playwright-report
+-          retention-days: 7
+-          if-no-files-found: ignore
+-
+   audit-tags:
+     runs-on: ubuntu-latest
+     steps:
+@@ -405,7 +276,7 @@ jobs:
+         run: python scripts/ci_pytest_gate.py
+ 
+   deploy-gate:
+-    needs: [frontend, audit-tags, backend, changes, simulator, simulator-e2e]
++    needs: [frontend, audit-tags, backend]
+     if: always() && !cancelled()
+     runs-on: ubuntu-latest
+     steps:
+@@ -414,12 +285,9 @@ jobs:
+           R_FRONTEND: ${{ needs.frontend.result }}
+           R_AUDIT: ${{ needs.audit-tags.result }}
+           R_BACKEND: ${{ needs.backend.result }}
+-          R_CHANGES: ${{ needs.changes.result }}
+-          R_SIMULATOR: ${{ needs.simulator.result }}
+-          R_E2E: ${{ needs.simulator-e2e.result }}
+         run: |
+           fail=0
+-          for name in R_FRONTEND R_AUDIT R_BACKEND R_CHANGES R_SIMULATOR R_E2E; do
++          for name in R_FRONTEND R_AUDIT R_BACKEND; do
+             result="${!name}"
+             echo "$name=$result"
+             case "$result" in
+@@ -437,8 +305,6 @@ jobs:
+           bash -n infra/vps/bi-healthcheck.sh
+           bash -n infra/vps/install-memory-guards.sh
+           bash -n infra/vps/sync-public-nginx.sh
+-          bash -n infra/vps/naviguide/deploy-naviguide.sh
+-          bash -n infra/vps/naviguide/deploy-simulator.sh
+           bash -n infra/vps/ci/prepare-ssh.sh
+           bash -n infra/vps/ci/rsync-to-vps.sh
+           bash -n infra/vps/ci/apply-site.sh
+END_BI_CI'
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
 @@ -8,9 +8,7 @@
@@ -2319,7 +2559,7 @@ Le `deploy-gate` de cette copie garde le job `backend`
 et la variable `R_BACKEND`. Il ne nomme plus
 `infra/vps/naviguide/deploy-naviguide.sh` ni `deploy-simulator.sh`,
 ni `R_CHANGES`, `R_SIMULATOR`, `R_E2E`. Ces scripts NAVIGUIDE ne sont
-pas dans le dépôt filtré. Les six `bash -n` et les 31 tests doivent
+pas dans le dépôt filtré. Les six `bash -n` et les 32 tests doivent
 finir sans erreur. C'est le vert du `deploy-gate` côté Blue Intelligence.
 
 #### NAVIGUIDE
@@ -2347,6 +2587,332 @@ exige `VPS_HOST`. La valeur attendue est `naviguide@13.140.164.185`.
 ```bash
 cd /tmp/ng-work
 git apply <<'END_NG_CI'
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index efb164f5..80bcdf0e 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1,16 +1,8 @@
+ name: CI
+ 
+-#   - jest verrouille l'ordre des couches carte et le registre des fonds ;
+-#   - le build CRA attrape les régressions de bundling (maplibre chargé à la demande) ;
+-#   - le script d'audit des tags tourne en mode GeoJSON sur les seeds (stdlib pur) ;
+-#   - API Blue Intelligence : pytest de backend/tests contre un Mongo de CI
+-#     (image mongo, 127.0.0.1:27017, base bi_ci). Aucun secret, aucun accès
+-#     à la base OVH, à Atlas ou à Nebius. Le seed vient des fichiers du dépôt.
+-#     La confiance OSM est celle d'Overpass (mêmes fonctions que le produit),
+-#     pas un score écrit à la main. Le cache ne rejoue que ces réponses.
+-#   - simulateur : si la PR touche naviguide-simulator/, `npm test` (node --test),
+-#     `vite build` et `pytest` (fetch mocké) — une croix rouge sur la PR avant
+-#     qu'un lot casse S1–S7, le juge ou le sac ici() sans qu'on le voie.
++# Copie NAVIGUIDE. Frontend Blue Intelligence, audit des tags et le pytest
++# de l'API Blue Intelligence ne sont pas dans ce dépôt. Le simulateur est
++# testé si la PR le touche.
+ 
+ on:
+   pull_request:
+@@ -21,31 +13,6 @@ permissions:
+   contents: read
+ 
+ jobs:
+-  frontend:
+-    runs-on: ubuntu-latest
+-    defaults:
+-      run:
+-        working-directory: frontend
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-node@v7
+-        with:
+-          node-version-file: .nvmrc
+-          cache: npm
+-          cache-dependency-path: frontend/package-lock.json
+-      - run: npm ci
+-      - run: npm test
+-        env:
+-          CI: "true"
+-      # frontend/scripts/build.js ignore uniquement le warning webpack de
+-      # maplibre-gl (workers via new URL dynamique). Les autres warnings
+-      # restent des erreurs. Le worker est copié dans public/maplibre/.
+-      - run: npm run build
+-        env:
+-          CI: "true"
+-
+-  # Le simulateur n'est testé que si la PR (ou le push) le touche : les PR
+-  # Blue Intelligence / NAVIGUIDE restent aussi rapides qu'avant.
+   changes:
+     runs-on: ubuntu-latest
+     outputs:
+@@ -171,255 +138,19 @@ jobs:
+           retention-days: 7
+           if-no-files-found: ignore
+ 
+-  audit-tags:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v7
+-      - name: Audit des tags (mode GeoJSON, sans Mongo)
+-        run: python3 scripts/audit_tags.py --geojson seed/projects.geojson seed/ports_of_entry.geojson
+-
+-  # Pytest de l'API : six shards parallèles (Mongo + uvicorn isolés chacun),
+-  # puis agrégateur requis « API Blue Intelligence — pytest » (exhaustivité).
+-  backend-pytest-shard:
+-    name: API Blue Intelligence — pytest (shard ${{ matrix.group }}/6)
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 35
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        group: [1, 2, 3, 4, 5, 6]
+-    services:
+-      mongo:
+-        image: mongo:7
+-        ports:
+-          - 27017:27017
+-        options: >-
+-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+-          --health-interval 10s
+-          --health-timeout 5s
+-          --health-retries 10
+-    defaults:
+-      run:
+-        working-directory: backend
+-    env:
+-      PYTEST_SPLITS: "6"
+-      MONGO_URL: mongodb://127.0.0.1:27017
+-      DB_NAME: bi_ci
+-      REACT_APP_BACKEND_URL: http://127.0.0.1:8001
+-      POE_AUTO_REFRESH: "0"
+-      PYTHONDONTWRITEBYTECODE: "1"
+-      TOKENIZERS_PARALLELISM: "false"
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-      - name: Cache venv backend (~/.venv-bi)
+-        uses: actions/cache@v6
+-        with:
+-          path: ~/.venv-bi
+-          key: venv-bi-${{ runner.os }}-py3.12-${{ hashFiles('backend/requirements.txt') }}
+-      - name: Cache modèle sentence-transformers (all-MiniLM-L6-v2)
+-        uses: actions/cache@v6
+-        with:
+-          path: ~/.cache/huggingface
+-          key: hf-sentence-transformers-all-MiniLM-L6-v2
+-      - name: Dépendances (backend/requirements.txt)
+-        # pip 26 n'a plus --index-strategy : il consulte déjà tous les
+-        # index. L'extra-index CPU est celui qui publie torch==2.13.0+cpu.
+-        run: |
+-          if [ ! -x "$HOME/.venv-bi/bin/python" ]; then
+-            python -m venv "$HOME/.venv-bi"
+-          fi
+-          "$HOME/.venv-bi/bin/python" -m pip install --upgrade pip
+-          "$HOME/.venv-bi/bin/python" -m pip install -r requirements.txt \
+-            --extra-index-url https://download.pytorch.org/whl/cpu
+-          echo "$HOME/.venv-bi/bin" >> "$GITHUB_PATH"
+-      - name: Modèle d'embeddings local (cache disque, pas d'appel pendant les tests)
+-        run: |
+-          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+-      - name: Seed Mongo de CI (fichiers du dépôt uniquement)
+-        run: python scripts/seed_ci_mongo.py
+-      - name: Restaurer le cache Overpass (seed des ports)
+-        uses: actions/cache/restore@v6
+-        with:
+-          path: backend/.ci-cache/osm-ports.json
+-          key: overpass-v2-${{ hashFiles('seed/ports_of_entry.geojson') }}-${{ github.run_id }}
+-          restore-keys: |
+-            overpass-v2-${{ hashFiles('seed/ports_of_entry.geojson') }}-
+-            overpass-v2-
+-      - name: Validation OSM réelle + scan d'anomalies (bi_ci seulement)
+-        run: python scripts/enrich_ci_osm.py
+-        env:
+-          CI_OSM_CACHE: ${{ github.workspace }}/backend/.ci-cache/osm-ports.json
+-      - name: Sauvegarder le cache Overpass
+-        if: always()
+-        uses: actions/cache/save@v6
+-        with:
+-          path: backend/.ci-cache/osm-ports.json
+-          key: overpass-v2-${{ hashFiles('seed/ports_of_entry.geojson') }}-${{ github.run_id }}
+-      - name: Fichiers d'environnement lus par les tests
+-        run: |
+-          cat > .env <<'EOF'
+-          MONGO_URL=mongodb://127.0.0.1:27017
+-          DB_NAME=bi_ci
+-          CORS_ORIGINS=*
+-          SEARXNG_URL=http://127.0.0.1:8888
+-          EOF
+-          cat > ../frontend/.env <<'EOF'
+-          REACT_APP_BACKEND_URL=http://127.0.0.1:8001
+-          EOF
+-      - name: API locale sur 127.0.0.1:8001
+-        run: |
+-          python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 > /tmp/uvicorn-ci.log 2>&1 &
+-          echo $! > /tmp/uvicorn-ci.pid
+-          for _ in $(seq 1 60); do
+-            if curl -sf http://127.0.0.1:8001/api/ >/dev/null; then
+-              exit 0
+-            fi
+-            sleep 2
+-          done
+-          echo "L'API locale n'a pas répondu" >&2
+-          cat /tmp/uvicorn-ci.log >&2 || true
+-          exit 1
+-      - name: pytest backend/tests (shard ${{ matrix.group }}/6)
+-        if: always()
+-        run: |
+-          START=$(date +%s)
+-          set +e
+-          python -m pytest tests -q --tb=line --durations=30 -rA \
+-            --splits ${{ env.PYTEST_SPLITS }} --group ${{ matrix.group }} \
+-            --junitxml="$RUNNER_TEMP/junit.xml"
+-          PYTEST_RC=$?
+-          set -e
+-          END=$(date +%s)
+-          if [ -f "$RUNNER_TEMP/junit.xml" ]; then
+-            python scripts/ci_pytest_shard_meta.py \
+-              --junit "$RUNNER_TEMP/junit.xml" \
+-              --duration-sec "$((END - START))" \
+-              --out "$RUNNER_TEMP/shard-meta.json"
+-          fi
+-          exit "$PYTEST_RC"
+-      - name: Préparer artefacts shard
+-        if: always()
+-        run: |
+-          mkdir -p "$RUNNER_TEMP/upload"
+-          if [ -f "$RUNNER_TEMP/junit.xml" ]; then
+-            cp "$RUNNER_TEMP/junit.xml" "$RUNNER_TEMP/upload/junit.xml"
+-          else
+-            echo '<testsuites tests="0"></testsuites>' > "$RUNNER_TEMP/upload/junit.xml"
+-          fi
+-          if [ -f "$RUNNER_TEMP/shard-meta.json" ]; then
+-            cp "$RUNNER_TEMP/shard-meta.json" "$RUNNER_TEMP/upload/meta.json"
+-          else
+-            echo '{"pytest_duration_sec":0,"tests_executed":0,"slowest":[]}' > "$RUNNER_TEMP/upload/meta.json"
+-          fi
+-      - uses: actions/upload-artifact@v7
+-        if: always()
+-        with:
+-          name: pytest-shard-${{ matrix.group }}
+-          path: ${{ runner.temp }}/upload/
+-          retention-days: 3
+-
+-  backend:
+-    name: API Blue Intelligence — pytest
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 25
+-    needs: backend-pytest-shard
+-    if: always() && !cancelled()
+-    defaults:
+-      run:
+-        working-directory: backend
+-    env:
+-      PYTEST_SPLITS: "6"
+-      MONGO_URL: mongodb://127.0.0.1:27017
+-      DB_NAME: bi_ci
+-      REACT_APP_BACKEND_URL: http://127.0.0.1:8001
+-      POE_AUTO_REFRESH: "0"
+-      PYTHONDONTWRITEBYTECODE: "1"
+-      TOKENIZERS_PARALLELISM: "false"
+-    steps:
+-      - name: Tous les shards doivent réussir
+-        if: needs.backend-pytest-shard.result != 'success'
+-        working-directory: ${{ github.workspace }}
+-        run: |
+-          echo "Résultat des shards: ${{ needs.backend-pytest-shard.result }}" >&2
+-          exit 1
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.12"
+-      - name: Cache venv backend (~/.venv-bi)
+-        uses: actions/cache@v6
+-        with:
+-          path: ~/.venv-bi
+-          key: venv-bi-${{ runner.os }}-py3.12-${{ hashFiles('backend/requirements.txt') }}
+-      - name: Cache modèle sentence-transformers (all-MiniLM-L6-v2)
+-        uses: actions/cache@v6
+-        with:
+-          path: ~/.cache/huggingface
+-          key: hf-sentence-transformers-all-MiniLM-L6-v2
+-      - name: Dépendances (collect-only)
+-        run: |
+-          if [ ! -x "$HOME/.venv-bi/bin/python" ]; then
+-            python -m venv "$HOME/.venv-bi"
+-          fi
+-          "$HOME/.venv-bi/bin/python" -m pip install --upgrade pip
+-          "$HOME/.venv-bi/bin/python" -m pip install -r requirements.txt \
+-            --extra-index-url https://download.pytorch.org/whl/cpu
+-          echo "$HOME/.venv-bi/bin" >> "$GITHUB_PATH"
+-      - name: Fichiers d'environnement (collect-only)
+-        run: |
+-          cat > .env <<'EOF'
+-          MONGO_URL=mongodb://127.0.0.1:27017
+-          DB_NAME=bi_ci
+-          CORS_ORIGINS=*
+-          SEARXNG_URL=http://127.0.0.1:8888
+-          EOF
+-          cat > ../frontend/.env <<'EOF'
+-          REACT_APP_BACKEND_URL=http://127.0.0.1:8001
+-          EOF
+-      - uses: actions/download-artifact@v7
+-        with:
+-          pattern: pytest-shard-*
+-          path: ${{ github.workspace }}/ci-shard-artifacts
+-          merge-multiple: false
+-      - name: Réorganiser les artefacts shard
+-        working-directory: ${{ github.workspace }}
+-        run: |
+-          mkdir -p ci-shard-artifacts-flat
+-          for g in 1 2 3 4 5 6; do
+-            src="ci-shard-artifacts/pytest-shard-${g}"
+-            if [ -d "$src" ]; then
+-              mkdir -p "ci-shard-artifacts-flat/shard-${g}"
+-              cp "$src"/* "ci-shard-artifacts-flat/shard-${g}/"
+-            else
+-              echo "Artefact manquant pour shard $g (contenu de ci-shard-artifacts:)" >&2
+-              ls -la ci-shard-artifacts >&2 || true
+-              exit 1
+-            fi
+-          done
+-      - name: Exhaustivité collectés vs exécutés
+-        env:
+-          SHARD_ARTIFACTS_DIR: ${{ github.workspace }}/ci-shard-artifacts-flat
+-        run: python scripts/ci_pytest_gate.py
+-
+   deploy-gate:
+-    needs: [frontend, audit-tags, backend, changes, simulator, simulator-e2e]
++    needs: [changes, simulator, simulator-e2e]
+     if: always() && !cancelled()
+     runs-on: ubuntu-latest
+     steps:
+       - name: Les jobs de test doivent être verts
+         env:
+-          R_FRONTEND: ${{ needs.frontend.result }}
+-          R_AUDIT: ${{ needs.audit-tags.result }}
+-          R_BACKEND: ${{ needs.backend.result }}
+           R_CHANGES: ${{ needs.changes.result }}
+           R_SIMULATOR: ${{ needs.simulator.result }}
+           R_E2E: ${{ needs.simulator-e2e.result }}
+         run: |
+           fail=0
+-          for name in R_FRONTEND R_AUDIT R_BACKEND R_CHANGES R_SIMULATOR R_E2E; do
++          for name in R_CHANGES R_SIMULATOR R_E2E; do
+             result="${!name}"
+             echo "$name=$result"
+             case "$result" in
+@@ -433,10 +164,6 @@ jobs:
+         run: python3 infra/vps/ci/test_prod_jobs_busy.py
+       - name: Syntaxe bash des scripts VPS
+         run: |
+-          bash -n infra/vps/deploy-app.sh
+-          bash -n infra/vps/bi-healthcheck.sh
+-          bash -n infra/vps/install-memory-guards.sh
+-          bash -n infra/vps/sync-public-nginx.sh
+           bash -n infra/vps/naviguide/deploy-naviguide.sh
+           bash -n infra/vps/naviguide/deploy-simulator.sh
+           bash -n infra/vps/ci/prepare-ssh.sh
+END_NG_CI'
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
 @@ -1,16 +1,8 @@
@@ -2789,7 +3355,7 @@ ni `infra/vps/sync-public-nginx.sh`, ni le job `backend`, ni
 `R_FRONTEND`, `R_AUDIT`, `R_BACKEND`. Le fichier ne cite plus
 `frontend/.env`, `seed/ports_of_entry.geojson`, `scripts/audit_tags.py`,
 `scripts/seed_ci_mongo.py` ni `scripts/enrich_ci_osm.py`. Ces chemins
-ne sont pas dans le dépôt filtré. Les six `bash -n` et les 31 tests
+ne sont pas dans le dépôt filtré. Les six `bash -n` et les 32 tests
 doivent finir sans erreur. C'est le vert du `deploy-gate` côté NAVIGUIDE.
 
 ### 6.7 Parité climatologie du simulateur, commit NAVIGUIDE
@@ -2981,7 +3547,9 @@ sites. `infra/vps/README.md` décrit le DNS :
 | Sites | `blueintelligence.online` | `naviguide.fr` (le produit). `www` et `simulator` répondent `301`. Recette : `recette.naviguide.fr` (tunnel du Mac, pas Contabo). |
 
 Le dossier OVH `~/blue-intelligence-map` et son `voyage_data/` restent
-sur le disque. En cas d'échec, les services OVH sont encore là : on remet
+sur le disque (y compris sauvegardes sqlite `*.bak*` et
+`moments-restore-20261018T033021Z/` jusqu'à accord post-**MR1**). En cas
+d'échec, les services OVH sont encore là : on remet
 les unités systemd vers ce dossier, et les enregistrements A de
 `naviguide.fr` vers `135.125.226.16`.
 
@@ -3037,6 +3605,16 @@ La copie de la section 1 est la sauvegarde d'avant les opérations git.
 Le jour du transfert, on en refait une : le SQLite a pu recevoir des
 perles depuis. Les deux restent. On ne supprime pas celle de l'OVH.
 
+**Journal des moments (décision propriétaire, 18 oct. 2026).** Le SQLite
+live peut n'avoir qu'**une** ligne `moments` pour le voyage officiel au
+moment du split : c'est accepté. On migre quand même **tout** `voyage_data/`
+(y compris `naviguide.sqlite.bak-rekey-20261015`, tout fichier `*.bak*`,
+chaque dossier `official-store/<clé>/` sans retirer les anciennes clés) et le
+dossier `~/moments-restore-20261018T033021Z/` (copie Mac incluse), vérifiés
+par SHA-256. La restauration du journal dans le SQLite servi au public est le
+lot NAVIGUIDE **MR1**, **après** le split sur Contabo — pas avant.
+
+
 ### 8.1 Arrêt bref, export, rsync
 
 Sur l'OVH, compte `ubuntu` :
@@ -3049,6 +3627,8 @@ DEST="$HOME/backups/naviguide-move-$STAMP"
 mkdir -p "$DEST/fichiers"
 sudo systemctl stop naviguide-simulator
 test "$(systemctl is-active naviguide-simulator)" = inactive || { echo "STOP"; exit 1; }
+test -f "$SRC/voyage_data/naviguide.sqlite.bak-rekey-20261015" || { echo "STOP bak-rekey absent"; exit 1; }
+test -d "$HOME/moments-restore-20261018T033021Z" || { echo "STOP moments-restore absent"; exit 1; }
 if sudo fuser "$SRC/voyage_data/naviguide.sqlite"; then
   echo "STOP sqlite encore ouvert"
   sudo systemctl start naviguide-simulator
@@ -3063,6 +3643,7 @@ rsync -a \
 rsync -a "$SRC/polar_data/" "$DEST/fichiers/polar_data/"
 rsync -a "$SRC/grib_data/" "$DEST/fichiers/grib_data/"
 rsync -a "$SRC/saildocs_inbox/" "$DEST/fichiers/saildocs_inbox/"
+rsync -a "$HOME/moments-restore-20261018T033021Z/" "$DEST/fichiers/moments-restore-20261018T033021Z/"
 
 sudo systemctl start naviguide-simulator
 test "$(systemctl is-active naviguide-simulator)" = active || { echo "STOP redémarrage OVH échoué"; exit 1; }
@@ -3179,8 +3760,33 @@ diff -u "$HOME/naviguide-data/comptes-sqlite-move.tsv" "$HOME/naviguide-data/com
 ```
 
 `diff` ne doit rien afficher. `pearls`, `kv` et `moments` sont les trois
-tables du contrat. `official-store/` est dans les SHA-256 : un fichier
+tables du contrat sur le fichier **live** `.backup` : `moments` 1 est
+accepté au split. `official-store/` (toutes les clés), les `*.bak*` sqlite
+et `moments-restore-20261018T033021Z/` sont dans les SHA-256 : un fichier
 manquant ou différent est un `ECHEC` du script Python.
+
+Compte **lecture seule** sur le SQLite de sauvegarde du journal (pas le live
+servi au DNS tant que MR1 n'a pas tourné) :
+
+```bash
+python3 - << 'PY'
+import sqlite3, pathlib
+path = pathlib.Path.home() / "naviguide-data/voyage_data/naviguide.sqlite.bak-rekey-20261015"
+official = "berry-mappemonde-2026-officiel"
+con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+n = con.execute(
+    "SELECT COUNT(*) FROM moments WHERE voyage_id = ?", (official,)
+).fetchone()[0]
+con.close()
+print(f"moments_voyage_officiel_backup\t{n}")
+if n != 1142:
+    raise SystemExit(f"STOP backup sqlite : attendu 1142 moments, lu {n}")
+PY
+```
+
+Le SQLite **live** copié (`naviguide.sqlite` via `.backup`) peut encore afficher
+`moments` 1 pour le voyage officiel : ce n'est pas un échec de la migration.
+
 
 On ne déclare pas la copie faite tant qu'une somme ou un compte diffère.
 On ne supprime pas l'original OVH pour « recommencer propre ». On
@@ -3199,8 +3805,27 @@ NAVIGUIDE_VOYAGE_DIR=/home/naviguide/naviguide-data/voyage_data
 NAVIGUIDE_GRIB_DIR=/home/naviguide/naviguide-data/grib_data
 NAVIGUIDE_SAILDOCS_INBOX=/home/naviguide/naviguide-data/saildocs_inbox
 NAVIGUIDE_POLAR_DIR=/home/naviguide/naviguide-data/polar_data
+NEBIUS_API_KEY=…                     # Token Factory, obligatoire (règlement Nebius)
+NVIDIA_API_KEY=…                     # NIM reste dans la cascade
+OPENROUTER_API_KEY=…
+ANTHROPIC_API_KEY=…
+NAVIGUIDE_LLM_MODE=on-demand
+NAVIGUIDE_LLM_PROVIDERS=tokenfactory,nim,openrouter,claude   # ou absent : défaut du code
+# recopier tels quels de l'OVH les NAVIGUIDE_TF_MODEL_* et NAVIGUIDE_TF_MAX_TOKENS_* s'ils existent,
+# ainsi que les NAVIGUIDE_LLM_DAILY_TOKENS_* actuels
+TAVILY_API_KEY=…
+NAVIGUIDE_TAVILY_WATCH=1
+NAVIGUIDE_TAVILY_DAILY_CREDITS=80
+NAVIGUIDE_WATCH_DAILY_SEARCHES=40
+NAVIGUIDE_ICI_WARM=0                 # inchangé (RC18, mémoire)
 BI_API_URL=https://blueintelligence.online/api
 ```
+
+Le plafond `NAVIGUIDE_LLM_DAILY_USD` n'est **pas** posé au split (lot GL1,
+28 oct., après mesure).
+
+Vérifier la présence des noms avec `grep -c` sur le fichier (`chmod 600`),
+jamais `cat` ni affichage de valeur.
 
 `NAVIGUIDE_POLAR_DIR` ne marche qu'après la modification de `polar_api.py`
 décrite en section 6.2. Tant que cette ligne de code n'est pas dans le
@@ -3269,13 +3894,15 @@ Tout est vert avant de considérer la bascule finie :
    ports, PoE ou AMP s'affiche, et `BI_API_URL` sur Contabo est
    `https://blueintelligence.online/api`.
 6. `systemctl is-active` : `blue-intelligence` est `active` sur l'OVH ;
-   `naviguide-simulator` est `active` sur Contabo. `naviguide-api`,
-   `naviguide-polar` et `naviguide-orchestrator` n'y sont pas installés.
+   `naviguide-simulator` et `naviguide-film-front` sont `active` sur
+   Contabo. `naviguide-api`, `naviguide-polar` et
+   `naviguide-orchestrator` n'y sont pas installés.
 7. Les comptes du manifeste sont égaux : collections `blueintel_db`
-   sur l'OVH toujours présentes, tables `pearls`, `kv`, `moments` du
-   dernier `.backup` égales sur Contabo, et `sha256sum` de
-   `naviguide-data/` sans ligne `ECHEC`. Le dossier
-   `voyage_data/` est encore sur l'OVH.
+   sur l'OVH toujours présentes ; sur Contabo, tables `pearls`, `kv`,
+   `moments` du dernier `.backup` **live** égales au manifeste (souvent
+   `moments` 1 — accepté) ; `sha256sum` de tout `naviguide-data/` (y compris
+   `voyage_data/` complet, `moments-restore-20261018T033021Z/`) sans `ECHEC`.
+   Le dossier `voyage_data/` est encore sur l'OVH.
 8. Un déploiement part de chaque dépôt neuf vers le bon hôte. Une
    poussée sur `main` déploie le site live. Une poussée sur
    `Blue-Intelligence-Map` ne déploie plus (workflows disabled). Le
@@ -3287,6 +3914,18 @@ Tout est vert avant de considérer la bascule finie :
 10. Avec le tunnel du Mac démarré, `https://recette.naviguide.fr`
     répond 200. `BIM_TUNNEL_HOST` sur le Mac vaut
     `recette.naviguide.fr`.
+11. Sur Contabo, un clic Rédigé et une fiche en EN donnent
+    `lastSourceByTier.write = nemotron-super` et
+    `lastSourceByTier.fast = nemotron-lightning` (LT2 sur `main`).
+12. `/ici/warm/status` contient la clé `tavily` (le compteur passera
+    à 1 ou plus avec TV2).
+13. `curl -I https://www.naviguide.fr` → 301 vers `https://naviguide.fr/`,
+    et aucune page de l'ancien planificateur n'est servie.
+14. Sur Contabo, en lecture seule sur
+    `naviguide-data/voyage_data/naviguide.sqlite.bak-rekey-20261015`,
+    `SELECT COUNT(*) FROM moments WHERE voyage_id =
+    'berry-mappemonde-2026-officiel'` vaut **1142** (script section 8.2).
+    Le live peut rester à 1 jusqu'au lot **MR1**.
 
 Tant qu'une ligne est rouge, les services OVH restent capables de
 reprendre le DNS. L'archive `Blue-Intelligence-Map` reste en lecture
@@ -3329,7 +3968,7 @@ en attendant que le dépôt Blue Intelligence soit celui que le jury lit.
 | Fichiers non commités sur le Mac | **DÉCISION PROPRIÉTAIRE** au vu de `git status --short` (section 2). Non vérifiés ici. |
 | Pages du wiki | **Non vérifié.** Le dépôt a le wiki activé. Les pages, s'il y en a, restent sur l'archive. Les secrets, deploy keys, webhooks et rulesets sont mesurés en section 3. |
 | Ancienne valeur de clé dans `.env.example` | **DÉCISION PROPRIÉTAIRE**, non bloquante pour le filtre. Le fichier (retiré le 28 août 2026) n'est recopié dans aucun dépôt neuf. La valeur reste dans l'historique de l'archive. La faire tourner, si elle a servi, est un geste à part : ce plan n'affiche pas la valeur et ne la renouvelle pas. |
-| Arrêter nginx et systemd NAVIGUIDE sur l'OVH après le vert | **DÉCISION PROPRIÉTAIRE.** Pas de commande d'arrêt définitif dans ce plan. Les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. Les fichiers OVH restent jusqu'à un accord explicite, et après : les supprimer n'est pas une étape écrite ici. |
+| Arrêter nginx / nettoyer les fichiers NAVIGUIDE sur l'OVH | **BLOQUANT.** Tant que le lot **MR1** n'a pas réussi sur Contabo **et** que le propriétaire n'a pas dit explicitement qu'on peut effacer, on ne supprime sur l'OVH aucun élément de la migration : `server/voyage_data/` entier (dont `naviguide.sqlite`, `naviguide.sqlite.bak-rekey-20261015`, tout `*.bak*`, chaque `official-store/<clé>/` sans élagage), `~/moments-restore-20261018T033021Z/`, ni les sauvegardes `~/backups/naviguide-move-*`. Pas de commande d'arrêt définitif des services dans ce plan ; les arrêts des sections 1 et 8 sont suivis d'un `systemctl start`. |
 | Mettre le stock `official-store/` dans Mongo | **DÉCISION PROPRIÉTAIRE.** Aujourd'hui `SIMULATOR_MONGO_URL` est absent et la base n'existe pas. Ce plan copie les fichiers. Y passer demanderait un autre plan, après la copie disque vérifiée. |
 | Profil « lots de nuit » pour Blue Intelligence | Plus tard. `run_lots.py` n'est pas dans ce dépôt au moment du filtre. La section 6.5 prépare le fichier de réglages qui rend la copie possible. Les quatre scripts GitHub génériques y sont déjà. |
 
@@ -3430,7 +4069,7 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | La phrase « swell not shipped » reste. La vérifier à l'écran après la bascule, avant de la retirer. | Décisions du 17 oct. au soir ; bandeau de `docs/archives/PLAN_IMPLEMENTATION_CLIMATOLOGIE.md` |
 | La répétition #555, sur `main` `6dabfb84`, s'arrêtait : deux fichiers de la #545 non classés, workflows recopiés tels quels, `recetteAg.test.js` lit `frontend/`, `test_naviguide_query_not_painted` importe `climatology_query`, décompte 550 / 16 / 42. | `docs/REPETITION_SPLIT_RAPPORT.md`, commit `f5c26ed6` |
 | Le classeur envoie les deux fichiers de la #545 dans NAVIGUIDE. `--emit` sur `6dabfb84` (script copié, non suivi) : 1 853 suivis, 574 / 1 241 / 35 / 3, 0 non classé, 0 écart, 91 et 116 lignes. Self-test : 64 cas. | `scripts/check_split_coverage.py` ; sortie du 17 oct. au soir |
-| `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ont un diff exact par dépôt (section 6.6), appliqué tel quel après le filtre. `plan_deploy.py` et `test_prod_jobs_busy.py` ne sont pas réécrits : 31 tests verts. | `git apply --check` sur `6dabfb84` |
+| `ci.yml`, `deploy.yml`, `dependabot.yml` et `prepare-ssh.sh` ont un diff exact par dépôt (section 6.6), appliqué tel quel après le filtre. `plan_deploy.py` et `test_prod_jobs_busy.py` ne sont pas réécrits : 32 tests verts. | `git apply --check` sur `6dabfb84` |
 | Le commit NAVIGUIDE 6.7 copie `cycloneTracks.js` et `useClimatologyLayer.js` dans le simulateur. Les quatre assertions de `recetteAg.test.js` restent. `node --test` : 8 tests, 0 échec. | Lecture du test, lignes 96–99 ; exécution du 17 oct. au soir |
 | Le commit Blue Intelligence 6.8 copie `climatology_query.py` (3 671 octets) vers `naviguide/naviguide-api/`. `test_naviguide_query_not_painted` n'est pas modifié : 1 passed sur la copie filtrée de `23be7ba8`. On ne crée pas le test NAVIGUIDE qui lève `No module named 'app'`. | Répétition du 17 oct. au soir sur `23be7ba8` ; `backend/tests/test_climatology.py` |
 | `test_serper_google_style_merged` échouait parce que `_add_serper_jobs` sortait tout de suite sans clé. Le test n'est pas obsolète. Le correctif produit (tirs toujours planifiés, aucun appel HTTP sans clé) est la PR séparée sur `_add_serper_jobs`, et le même changement est dans la #561. On ne modifie pas le test. | `test_poe_v2_pipeline.py` ligne 1045 ; exécution sans `SERPER_API_KEY` |
@@ -3440,3 +4079,10 @@ note sur l'outillage CI/CD. « Avant-split » = plan d'avant-split du
 | Décompte §5 aligné sur `23be7ba8` : 36 branches, 553 `refs/pull/*/head`, 9 `refs/pull/*/merge`, 5 tags. 9 PR ouvertes. #551 est sur `main`. #548 est fermée sans fusion. | `git ls-remote` ; `gh pr list` |
 | Section 6.8 : on copie `climatology_query.py` dans Blue Intelligence et on garde `test_naviguide_query_not_painted` intact (1 passed). On n'ajoute pas le test NAVIGUIDE qui échoue sur `app`. | Répétition ; consigne de ne pas affaiblir les tests |
 | #561 est sur `main` (`14350b8c`). Les diffs 6.6 de `ci.yml` sont régénérés sur ce fichier. Blue Intelligence garde `frontend`, `audit-tags`, `backend` (« API Blue Intelligence — pytest ») et `deploy-gate` (`needs` : ces trois jobs, `R_BACKEND`). NAVIGUIDE garde `changes`, `simulator`, `simulator-e2e` et `deploy-gate`. Il retire `frontend`, `audit-tags`, `backend`, `R_FRONTEND`, `R_AUDIT`, `R_BACKEND`, et ne cite plus `frontend/.env`, `seed/ports_of_entry.geojson`, `backend/requirements.txt`, `scripts/seed_ci_mongo.py`, `scripts/enrich_ci_osm.py` ni `scripts/audit_tags.py`. `git apply --check` accepte les huit diffs sur `14350b8c`. | `main` `14350b8c` ; PR #561 fusionnée |
+
+| CI shardée #572 sur `main` `e1e26e02` | Six jobs « API Blue Intelligence — pytest (shard N/6) », agrégateur requis « API Blue Intelligence — pytest », `ci_pytest_gate.py`, cache Overpass, venv `~/.venv-bi`, cache HF. Les diffs 6.6 sont régénérés avec `scripts/generate_split_ci_diffs.py`. Blue Intelligence garde shards + agrégateur ; NAVIGUIDE les retire. |
+| film-front #574 | `naviguide-film-front.service` dans NAVIGUIDE ; rsync Contabo ; § 6.2 et critère 9.6. |
+| Classeur 18 oct. | 1 873 suivis, 590 / 1 244 / 36 / 3, 0 non classé, 98 et 117 lignes `--emit`. |
+| Env LLM Contabo § 8.3 | Noms copiés depuis `simulator.env` OVH, `chmod 600`, `grep -c` ; acceptation 9.11–9.13. |
+| Devpost Q13 § 3.5 | Bloquant avant `gh repo create` ; repli jusqu'au mer. 21 oct. 19:00 Toronto si Q13 pas fait le jour J. |
+| Journal moments : live 1 ligne au split ; backup `naviguide.sqlite.bak-rekey-20261015` + `official-store/` + `moments-restore-20261018T033021Z/` migrés en entier ; 1142 moments (voyage officiel) vérifiés sur Contabo ; restauration live = lot MR1 après split ; rien effacé sur OVH avant MR1 vert + mot du propriétaire. | Décision propriétaire 18 oct. 2026 |
