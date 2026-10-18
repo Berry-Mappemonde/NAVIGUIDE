@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -390,11 +391,32 @@ def kv_purge(ns: str, older_than_s: float) -> int:
         return 0
 
 
+def moments_decrease_allowed() -> bool:
+    """Tests uniquement : autorise une écriture qui réduit le nombre de lignes."""
+    return os.environ.get("NAVIGUIDE_TEST_ALLOW_MOMENT_DECREASE", "").strip() in {
+        "1", "true", "yes", "on",
+    }
+
+
 def replace_moments(voyage_id: str, rows: list[dict]) -> int:
     """Réécrit le journal d'un voyage (idempotent). Jamais d'erreur vers l'appelant."""
     try:
         with _LOCK:
             conn = _connect()
+            before_row = conn.execute(
+                "SELECT COUNT(*) FROM moments WHERE voyage_id = ?", (voyage_id,),
+            ).fetchone()
+            before = int((before_row[0] if before_row else 0) or 0)
+            after = len(rows)
+            if before > 0 and after < before and not moments_decrease_allowed():
+                log.error(
+                    "store moments (écriture refusée) : %s lignes → %s pour %s "
+                    "(fusion ou restauration requise ; flag test NAVIGUIDE_TEST_ALLOW_MOMENT_DECREASE)",
+                    before,
+                    after,
+                    voyage_id,
+                )
+                return before
             conn.execute("BEGIN")
             try:
                 conn.execute("DELETE FROM moments WHERE voyage_id = ?", (voyage_id,))

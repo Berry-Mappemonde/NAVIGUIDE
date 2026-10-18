@@ -131,6 +131,53 @@ def test_fixture_pearls_collapse_to_fewer_moments():
     assert [row["signature"] for row in again] == [row["signature"] for row in rows]
 
 
+def test_warm_moments_never_drops_existing_sqlite_rows(monkeypatch):
+    """Régression : un recalcul plus court ne doit pas effacer le journal (oct. 2026 prod)."""
+    import pearl_store
+    from moment_journal import warm_moments
+
+    voy = _fixture_voyage()
+    rows = [
+        {
+            "seq": i,
+            "t": f"2026-05-{10 + i}T08:00:00Z",
+            "signature": f"s{i}",
+            "changes": [{"kind": "note", "title": "t", "fact": "f"}],
+            "moment": {},
+            "pos": {},
+        }
+        for i in range(8)
+    ]
+    pearl_store.replace_moments(voy["voyageId"], rows)
+    thin = [rows[0]]
+
+    monkeypatch.setattr("moment_journal._build_rows", lambda _vid, _voy: thin)
+    out = warm_moments(voy["voyageId"], voy)
+    assert out["count"] == 8
+    assert pearl_store.count_moments(voy["voyageId"]) == 8
+
+
+def test_replace_moments_refuses_silent_shrink(tmp_path, monkeypatch):
+    import pearl_store
+
+    monkeypatch.setenv("NAVIGUIDE_VOYAGE_DIR", str(tmp_path / "voyage"))
+    pearl_store.reset()
+    voy = _fixture_voyage()
+    full = [
+        {"seq": i, "t": f"2026-05-{10 + i}T08:00:00Z", "signature": f"s{i}",
+         "changes": [], "moment": {}, "pos": {}}
+        for i in range(4)
+    ]
+    pearl_store.replace_moments(voy["voyageId"], full)
+    monkeypatch.delenv("NAVIGUIDE_TEST_ALLOW_MOMENT_DECREASE", raising=False)
+    n = pearl_store.replace_moments(voy["voyageId"], full[:1])
+    assert n == 4
+    assert pearl_store.count_moments(voy["voyageId"]) == 4
+    monkeypatch.setenv("NAVIGUIDE_TEST_ALLOW_MOMENT_DECREASE", "1")
+    pearl_store.replace_moments(voy["voyageId"], full[:1])
+    assert pearl_store.count_moments(voy["voyageId"]) == 1
+
+
 def test_changed_signature_updates_the_line():
     voy = _fixture_voyage()
     warm_moments(voy["voyageId"])
