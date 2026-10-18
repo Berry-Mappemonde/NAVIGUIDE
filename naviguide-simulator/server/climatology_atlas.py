@@ -230,22 +230,18 @@ def fetch_atlas_point(
     if atlas_is_dead():
         return None
     params = _atlas_params(lat, lon, month, dest_lat, dest_lon, day)
-    from weather_pipeline import provider_routed
 
-    if provider_routed("bi-climatology"):
-        def loader():
-            payload, elapsed = _read_atlas_point(params, client)
-            if payload is None:
-                raise RuntimeError("atlas_down")
-            return {"payload": payload, "elapsed": elapsed}
+    def loader():
+        payload, elapsed = _read_atlas_point(params, client)
+        if payload is None:
+            raise RuntimeError("atlas_down")
+        return {"payload": payload, "elapsed": elapsed}
 
-        view = _via_pipeline(_point_provider(month, day, dest_lat, dest_lon), lat, lon, loader)
-        if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
-            _mark_dead()
-            return None
-        return _finish_point(view["payload"], float(view.get("elapsed") or 0.0))
-    payload, elapsed = _read_atlas_point(params, client)
-    return _finish_point(payload, elapsed)
+    view = _via_pipeline(_point_provider(month, day, dest_lat, dest_lon), lat, lon, loader)
+    if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
+        _mark_dead()
+        return None
+    return _finish_point(view["payload"], float(view.get("elapsed") or 0.0))
 
 
 def fetch_atlas_crossings(
@@ -260,35 +256,24 @@ def fetch_atlas_crossings(
     }
     if day is not None:
         params["day"] = day
-    from weather_pipeline import provider_routed
+    provider = f"bi-climatology-crossings-m{int(month)}"
+    if day is not None:
+        provider += f"-d{int(day)}"
 
-    def _read():
-        return _get_json(f"{bi_base()}/climatology/crossings", params, client)
+    def loader():
+        try:
+            payload = _get_json(f"{bi_base()}/climatology/crossings", params, client)
+        except Exception as exc:
+            log.info("atlas crossings down: %s", exc)
+            raise
+        if not isinstance(payload, dict):
+            raise RuntimeError("atlas_down")
+        return {"payload": payload}
 
-    if provider_routed("bi-climatology"):
-        provider = f"bi-climatology-crossings-m{int(month)}"
-        if day is not None:
-            provider += f"-d{int(day)}"
-
-        def loader():
-            try:
-                payload = _read()
-            except Exception as exc:
-                log.info("atlas crossings down: %s", exc)
-                raise
-            if not isinstance(payload, dict):
-                raise RuntimeError("atlas_down")
-            return {"payload": payload}
-
-        view = _via_pipeline(provider, lat1, lon1, loader)
-        if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
-            return None
-        return view["payload"]
-    try:
-        return _read()
-    except Exception as exc:
-        log.info("atlas crossings down: %s", exc)
+    view = _via_pipeline(provider, lat1, lon1, loader)
+    if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
         return None
+    return view["payload"]
 
 
 def atlas_wind_at(

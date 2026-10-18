@@ -277,7 +277,8 @@ def test_flagged_grib_kick_returns_before_a_slow_provider(monkeypatch):
         assert done["reason"] == "timeout"
         body = voyage_api._pending_grib(None, {"lat": 46.15, "lon": -1.16}, datetime.now(timezone.utc), refreshing=False)
         assert body["layers"]["gribWind"]["status"] == "unavailable"
-        assert "layers" not in _body_with_flag_off(monkeypatch)
+        # L'ancien chemin qui omettait `layers` est retiré : off sert le même état.
+        assert _body_with_flag_off(monkeypatch)["layers"]["gribWind"]["status"] == "unavailable"
     finally:
         release.set()
         queue.close()

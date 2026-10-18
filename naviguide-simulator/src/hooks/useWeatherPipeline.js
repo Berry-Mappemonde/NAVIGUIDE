@@ -9,7 +9,7 @@ export function weatherPipelineEnabled(env) {
   return !OFF.has(String(raw).trim().toLowerCase());
 }
 
-/** Per-layer state for GRIB wind. Null when the flag is off. */
+/** Per-layer state for GRIB wind. */
 export function gribWindLayerState(grib, enabled) {
   if (!enabled) return null;
   const explicit = grib?.layers?.gribWind?.status;
@@ -20,7 +20,7 @@ export function gribWindLayerState(grib, enabled) {
   return "unavailable";
 }
 
-/** Wave / current / other product body. Null when the flag is off — the old path stays. */
+/** Wave, current, or other product body. */
 export function productLayerState(product, enabled) {
   if (!enabled) return null;
   if (!product) return "pending";
@@ -31,7 +31,7 @@ export function productLayerState(product, enabled) {
   return "unavailable";
 }
 
-/** Atlas Blue Intelligence. Null when the flag is off. A cut atlas is unavailable, the map does not wait. */
+/** Atlas Blue Intelligence. A cut atlas is unavailable; the map does not wait. */
 export function climatologyLayerState(climo, enabled) {
   if (!enabled) return null;
   if (!climo) return "pending";
@@ -42,20 +42,16 @@ export function climatologyLayerState(climo, enabled) {
 
 /**
  * First render never waits on a provider: the state is derived, and blocksMap stays false.
- * With the flag off, layer states are null and the existing paths are left alone.
+ * The flag no longer selects another path.
  */
-export function useWeatherPipeline({ grib, wave, current, forecastWind, climatology, enabled } = {}) {
-  const active = enabled ?? weatherPipelineEnabled();
-  const gribWind = useMemo(() => gribWindLayerState(grib, active), [grib, active]);
-  const waveState = useMemo(() => productLayerState(wave, active), [wave, active]);
-  const currentState = useMemo(() => productLayerState(current, active), [current, active]);
-  const forecastWindState = useMemo(() => productLayerState(forecastWind, active), [forecastWind, active]);
-  const climatologyState = useMemo(
-    () => climatologyLayerState(climatology, active),
-    [climatology, active],
-  );
+export function useWeatherPipeline({ grib, wave, current, forecastWind, climatology } = {}) {
+  const gribWind = useMemo(() => gribWindLayerState(grib, true), [grib]);
+  const waveState = useMemo(() => productLayerState(wave, true), [wave]);
+  const currentState = useMemo(() => productLayerState(current, true), [current]);
+  const forecastWindState = useMemo(() => productLayerState(forecastWind, true), [forecastWind]);
+  const climatologyState = useMemo(() => climatologyLayerState(climatology, true), [climatology]);
   return {
-    enabled: active,
+    enabled: true,
     blocksMap: false,
     layers: {
       gribWind,

@@ -61,7 +61,7 @@ from voyage_clock import (
     to_iso,
 )
 from voyage_store import load_voyage, purge_stale_voyages, save_voyage, update_voyage
-from weather_pipeline import ProcessJob, get_async_weather_queue, get_pipeline, weather_pipeline_enabled
+from weather_pipeline import ProcessJob, get_async_weather_queue, get_pipeline
 import voyage_journal as journal
 import official_store
 
@@ -900,9 +900,9 @@ def _kick_official_grib(
 ) -> bool:
     """Démarre au plus un rafraîchissement GRIB pour cette cellule/cycle.
 
-    `force=None` : forcé sur le pipeline à fils (comportement inchangé, drapeau
-    éteint) ; sur la file asyncio, un GET ne force jamais — on calcule seulement
-    si la donnée manque ou est périmée, et jamais pendant un calcul en cours.
+    Un GET ne force jamais : on calcule seulement si la donnée manque ou est
+    périmée, et jamais pendant un calcul en cours. Le travail tourne dans un
+    processus enfant.
     """
     target_when = when or _now()
     if around is None:
@@ -910,53 +910,30 @@ def _kick_official_grib(
         around = _resolve_grib_around(voy, target_when)
     if not around or around.get("lat") is None or around.get("lon") is None:
         return False
-    legacy_force = True if force is None else bool(force)
-
-    def _load():
-        try:
-            record = maybe_refresh_official(OFFICIAL_VOYAGE_ID, around, target_when, force=legacy_force)
-            # Mémoire : le vent du cycle au bateau entre au journal (une fois par cycle).
-            _journal_safely(lambda: journal.record_grib(record, (load_voyage(OFFICIAL_VOYAGE_ID) or {}).get("clock"), target_when))
-        except Exception as exc:  # defensive: the request that started us has already returned
-            log.warning("rafraîchissement GRIB officiel: %s", exc)
-        return {}
-
-    if weather_pipeline_enabled():
-        forced = bool(force)
-        if not forced:
-            latest = load_latest(OFFICIAL_VOYAGE_ID, utc_day(target_when))
-            if latest and latest.get("status") == "ready" and not is_stale(latest, target_when):
-                return False
-        # Processus enfant tué à l'échéance du fournisseur (weather_jobs).
-        job = ProcessJob(
-            "weather_jobs:refresh_official_grib",
-            dict(around),
-            to_iso(target_when),
-            forced,
-        )
-        return get_async_weather_queue().submit(
-            "grib-wind",
-            float(around["lat"]),
-            float(around["lon"]),
-            job,
-            when=target_when,
-            force=forced,
-        )
-
-    return get_pipeline().kick(
-        "official-grib",
+    forced = bool(force)
+    if not forced:
+        latest = load_latest(OFFICIAL_VOYAGE_ID, utc_day(target_when))
+        if latest and latest.get("status") == "ready" and not is_stale(latest, target_when):
+            return False
+    # Processus enfant tué à l'échéance du fournisseur (weather_jobs).
+    job = ProcessJob(
+        "weather_jobs:refresh_official_grib",
+        dict(around),
+        to_iso(target_when),
+        forced,
+    )
+    return get_async_weather_queue().submit(
+        "grib-wind",
         float(around["lat"]),
         float(around["lon"]),
-        _load,
+        job,
         when=target_when,
-        force=legacy_force,
+        force=forced,
     )
 
 
 def _official_grib_refreshing() -> bool:
-    if weather_pipeline_enabled():
-        return get_async_weather_queue().provider_busy("grib-wind")
-    return get_pipeline().provider_busy("official-grib")
+    return get_async_weather_queue().provider_busy("grib-wind")
 
 
 def _grib_wind_layer(record: Optional[dict], around: Optional[dict], when: datetime, *, refreshing: bool) -> str:
@@ -1542,13 +1519,12 @@ def _pending_grib(record: Optional[dict], around: Optional[dict], when: datetime
                 for product in (body.get("products") or [])
             ]
     body["refreshing"] = refreshing
-    if weather_pipeline_enabled():
-        body["layers"] = {
-            "gribWind": {
-                "provider": "grib-wind",
-                "status": _grib_wind_layer(record, around, when, refreshing=refreshing),
-            }
+    body["layers"] = {
+        "gribWind": {
+            "provider": "grib-wind",
+            "status": _grib_wind_layer(record, around, when, refreshing=refreshing),
         }
+    }
     return body
 
 

@@ -7,8 +7,8 @@ Les handlers répondent tout de suite ; le client actualise à faible cadence.
 Une file asyncio (NAVIGUIDE_WEATHER_PIPELINE, allumée par défaut)
 borne chaque fournisseur, met en cache (fournisseur, cellule 0,25°, heure UTC)
 et expose pending / ready / unavailable. Une exception ou un dépassement
-devient unavailable, jamais une erreur de page. La variable à 0, off, false
-ou no reprend le pipeline à fils tant que cet ancien chemin existe.
+devient unavailable, jamais une erreur de page. L'ancien chemin à fils des
+fournisseurs météo est retiré : 0, off, false ou no ne le restaurent pas.
 
 Le pipeline **transporte** les champs déjà convertis par les loaders
 (hindcast, Copernicus getWind / getWave / getCurrent, forecast_cube, saildocs).
@@ -487,33 +487,11 @@ _FLAG_OFF = {"0", "false", "no", "off"}
 
 
 def weather_pipeline_enabled() -> bool:
-    """Allumé si la variable est absente. 0 / off / false / no : ancien chemin."""
+    """Vrai par défaut. 0 / off / false / no ne réouvrent pas l'ancien chemin."""
     raw = os.getenv("NAVIGUIDE_WEATHER_PIPELINE")
     if raw is None or not str(raw).strip():
         return True
     return str(raw).strip().lower() not in _FLAG_OFF
-
-
-# Fournisseurs servis par la file asyncio quand le drapeau est allumé.
-# Les autres restent sur le pipeline à fils (ancien chemin).
-ASYNC_PROVIDERS = {
-    "wave",
-    "openmeteo-gfs-wave",
-    "current",
-    "noaa-rtofs",
-    "bi-climatology",
-    "wind",
-    "openmeteo-gfs",
-}
-
-
-def provider_routed(provider: str) -> bool:
-    if not weather_pipeline_enabled():
-        return False
-    name = str(provider)
-    if name in ASYNC_PROVIDERS:
-        return True
-    return name.startswith("bi-climatology") and "bi-climatology" in ASYNC_PROVIDERS
 
 
 def hour_stamp(when=None) -> str:
@@ -927,11 +905,8 @@ def route_snapshot(
     when=None,
     force: bool = False,
 ) -> dict:
-    """Drapeau allumé et fournisseur basculé : file asyncio. Sinon l'ancien chemin."""
-    pipe = get_pipeline()
-    if provider_routed(provider):
-        return pipe.snapshot_via_async(provider, lat, lon, loader, when=when, force=force)
-    return pipe.snapshot(provider, lat, lon, loader, when=when, force=force)
+    """Seul chemin : la file asyncio. Le pipeline à fils ne sert plus ces fournisseurs."""
+    return get_pipeline().snapshot_via_async(provider, lat, lon, loader, when=when, force=force)
 
 
 def route_snapshot_group(
@@ -942,11 +917,8 @@ def route_snapshot_group(
     when=None,
     force: bool = False,
 ) -> dict:
-    queued = tuple(jobs)
-    if not any(provider_routed(provider) for _, provider, _ in queued):
-        return get_pipeline().snapshot_group(queued, lat, lon, when=when, force=force)
     parts = {
         name: route_snapshot(provider, lat, lon, loader, when=when, force=force)
-        for name, provider, loader in queued
+        for name, provider, loader in jobs
     }
     return _assemble_group(parts, lat, lon, when)

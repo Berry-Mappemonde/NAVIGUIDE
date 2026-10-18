@@ -93,9 +93,7 @@ export function MapScene({
     t: scene.t,
   });
   const weather = useWeatherPipeline({ grib: scene.grib, climatology: climoLayer });
-  const gribCorridorReady = weather.enabled
-    ? weather.layers.gribWind === "ready"
-    : scene.gribStatus === "ready";
+  const gribCorridorReady = weather.layers.gribWind === "ready";
 
   useGribCorridorLayer(mapRef, {
     grib: scene.grib,
