@@ -6,9 +6,10 @@ import { LLM_BRAND_LOGOS, isAiGeneratedSource, llmSourceLabel, llmSourceShowsBra
  * Source under generated text — actual cascade source, with optional
  * « Built with » brand marks (not a partnership claim).
  */
-export const LlmSourceBadge = memo(function LlmSourceBadge({ source, testId = "llm-source", className = "" }) {
+export const LlmSourceBadge = memo(function LlmSourceBadge({ source, label = null, testId = "llm-source", className = "" }) {
   const { t } = useLang();
-  const model = llmSourceLabel(source, t);
+  // `label` lets a caller name the model with its own mapping (film sources).
+  const model = label || llmSourceLabel(source, t);
   const aiGenerated = isAiGeneratedSource(source);
   const showBrands = llmSourceShowsBrands(source);
   const line = aiGenerated ? t("aiActGeneratedLabel", { model }) : model;

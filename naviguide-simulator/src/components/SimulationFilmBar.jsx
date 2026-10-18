@@ -9,7 +9,7 @@ import { ListenButton } from "./ListenButton.jsx";
 import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -388,7 +388,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             {replay && !replay.unavailable ? (
               <>
                 <div data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-xs leading-snug text-white/90 whitespace-nowrap">
-                  <LlmSourceBadge source={replay.source} testId="film-source-badge" className="[&_span]:text-xs [&_span]:text-white/90" />
+                  <LlmSourceBadge source={replay.source} label={filmSourceLabel(replay.source, t)} testId="film-source-badge" className="[&_span]:text-xs [&_span]:text-white/90" />
                 </div>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
@@ -616,6 +616,10 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     </div>
   );
 });
+
+function filmSourceLabel(source, t) {
+  return t(filmSourceKey(source));
+}
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */
 export function formatLandLegClock(nm, hours, t, lang = "fr") {
