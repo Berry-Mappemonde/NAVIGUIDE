@@ -12,6 +12,9 @@ import httpx
 
 import llm_budget
 
+# Lié au chargement : les tests remplacent `httpx` du module par un faux.
+_ReadTimeout = httpx.ReadTimeout
+
 DEFAULT_BASE = "https://api.tavily.com"
 TIMEOUT = httpx.Timeout(20.0, connect=8.0)
 
@@ -128,6 +131,11 @@ async def search(
     http = client or httpx.AsyncClient(timeout=TIMEOUT)
     try:
         r = await http.post(f"{api_base()}/search", headers=_headers(key), json=payload)
+    except _ReadTimeout:
+        # Requête partie, réponse jamais lue : Tavily l'a sans doute facturée.
+        # Le succès compte plus bas, donc pas de double décompte.
+        llm_budget.record_tavily(1)
+        raise
     finally:
         if own:
             await http.aclose()

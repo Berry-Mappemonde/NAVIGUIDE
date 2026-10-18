@@ -397,3 +397,42 @@ def test_watch_phrase_for_fiche_not_chat_when_in_film():
     escale_watch.set_watch_in_film(True)
     dropped = escale_watch.drop_news_if_in_film([entry, {"kind": "stop", "name": "Nouméa"}])
     assert [e["kind"] for e in dropped] == ["stop"]
+
+
+def test_status_records_last_port_not_the_query(monkeypatch):
+    _keys(monkeypatch)
+    journal.reset()
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(_handler([]))) as client:
+            return await escale_watch.watch_stop(PORT, NOW, client=client)
+
+    entry = asyncio.run(run())
+    assert entry and entry["name"] == "Nouméa"
+    tv = llm_budget.status()["tavily"]
+    assert tv["calls"] >= 1
+    assert tv["lastPort"] == "Nouméa"
+    assert isinstance(tv["lastAt"], str) and "T" in tv["lastAt"]
+    assert "query" not in tv
+    blob = json.dumps(tv)
+    assert "avis aux navigateurs" not in blob
+    assert "tvly-" not in blob
+
+
+def test_run_daily_without_enrich_skips_pearls(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_TAVILY_WATCH", "0")
+    called: list = []
+
+    async def spy_enrich(*_a, **_k):
+        called.append(1)
+        return {"wrote": 0}
+
+    monkeypatch.setattr(escale_watch, "run_daily_enrich", spy_enrich)
+
+    async def run():
+        return await escale_watch.run_daily(enrich=False)
+
+    out = asyncio.run(run())
+    assert called == []
+    assert out["enrich"]["skipped"] is True
+    assert out["enrich"]["reason"] == "watch-only"

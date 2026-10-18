@@ -833,6 +833,15 @@ async def proxy_zee_wms(request: Request):
         raise HTTPException(status_code=502, detail=f"ZEE WMS error: {exc}") from exc
 
 
+@app.get("/zee/at")
+def zee_at_point(lat: float = Query(...), lon: float = Query(...)):
+    """EEZ at one position (film timestep). Local polygons only — no gazetteer."""
+    if not math.isfinite(lat) or not math.isfinite(lon) or abs(lat) > 90:
+        raise HTTPException(status_code=400, detail="lat/lon")
+    import zee_local
+    return zee_local.zee_at_payload(lat, lon)
+
+
 @app.get("/proxy/zee")
 async def proxy_zee(
     bbox: Optional[str] = Query(None),

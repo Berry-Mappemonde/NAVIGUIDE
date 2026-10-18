@@ -481,7 +481,32 @@ def last_error() -> dict[str, str] | None:
 
 
 def _tavily_empty() -> dict[str, Any]:
-    return {"credits": 0, "calls": 0}
+    return {"credits": 0, "calls": 0, "lastAt": None, "lastPort": None}
+
+
+def _tavily_port_name(port: str | None) -> str | None:
+    """Nom d'escale seulement : pas de requête, pas de clé."""
+    name = " ".join(str(port or "").split())
+    if not name or len(name) > 80:
+        return None
+    low = name.lower()
+    if "tvly-" in low or low.startswith("sk-") or "api_key" in low or "bearer " in low:
+        return None
+    return name
+
+
+def _tavily_persist(cur: dict[str, Any]) -> dict[str, Any]:
+    stored: dict[str, Any] = {
+        "credits": int(cur.get("credits") or 0),
+        "calls": int(cur.get("calls") or 0),
+    }
+    at = cur.get("lastAt")
+    if isinstance(at, str) and at.strip():
+        stored["lastAt"] = at.strip()
+    port = _tavily_port_name(cur.get("lastPort") if isinstance(cur.get("lastPort"), str) else None)
+    if port:
+        stored["lastPort"] = port
+    return stored
 
 
 def _tavily_key(day: str | None = None) -> str:
@@ -497,11 +522,17 @@ def tavily_usage(day: str | None = None) -> dict[str, Any]:
     if not isinstance(val, dict):
         return _tavily_empty()
     out = _tavily_empty()
-    for k in out:
+    for k in ("credits", "calls"):
         try:
             out[k] = int(val[k])
         except (TypeError, ValueError, KeyError):
             pass
+    at = val.get("lastAt")
+    if isinstance(at, str) and at.strip():
+        out["lastAt"] = at.strip()
+    port = _tavily_port_name(val.get("lastPort") if isinstance(val.get("lastPort"), str) else None)
+    if port:
+        out["lastPort"] = port
     return out
 
 
@@ -584,7 +615,7 @@ def record_retry_super() -> dict[str, int]:
         return dict(nxt)
 
 
-def record_tavily(credits: int = 1) -> dict[str, Any]:
+def record_tavily(credits: int = 1, port: str | None = None) -> dict[str, Any]:
     """Add one Tavily search/extract call (1 credit / call)."""
     import pearl_store  # noqa: PLC0415
 
@@ -593,8 +624,27 @@ def record_tavily(credits: int = 1) -> dict[str, Any]:
         cur = tavily_usage()
         cur["credits"] = int(cur["credits"]) + add
         cur["calls"] = int(cur["calls"]) + 1
-        pearl_store.kv_put(NS, _tavily_key(), cur)
+        cur["lastAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        name = _tavily_port_name(port)
+        if name:
+            cur["lastPort"] = name
+        pearl_store.kv_put(NS, _tavily_key(), _tavily_persist(cur))
         return dict(cur)
+
+
+def remember_tavily_port(port: str | None) -> None:
+    """Mémorise le port du dernier appel. Jamais la requête, jamais la clé."""
+    import pearl_store  # noqa: PLC0415
+
+    name = _tavily_port_name(port)
+    if not name:
+        return
+    with _LOCK:
+        cur = tavily_usage()
+        cur["lastPort"] = name
+        if not cur.get("lastAt"):
+            cur["lastAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        pearl_store.kv_put(NS, _tavily_key(), _tavily_persist(cur))
 
 
 def status() -> dict[str, Any]:
@@ -608,7 +658,12 @@ def status() -> dict[str, Any]:
             "usd": float(u["usd"]),
         }
     tv = tavily_usage()
-    out["tavily"] = {"credits": int(tv["credits"]), "calls": int(tv["calls"])}
+    out["tavily"] = {
+        "credits": int(tv["credits"]),
+        "calls": int(tv["calls"]),
+        "lastAt": tv.get("lastAt"),
+        "lastPort": tv.get("lastPort"),
+    }
     ultra = chat_ultra_usage()
     out["chatUltra"] = {"calls": int(ultra["calls"]), "cap": chat_ultra_cap()}
     src = last_source()
