@@ -83,6 +83,37 @@ class ReanchorPlan:
         return lines
 
 
+def store_looks_live(counts: StoreCounts, root: Path) -> bool:
+    """Vrai si le stock ressemble à une prod/poste peuplé (pas un chemin vide par erreur)."""
+    if counts.pearls > 0 or counts.kv_rows > 0 or counts.moment_rows > 0:
+        return True
+    if counts.clock_marks > 0:
+        return True
+    if counts.climo_files or counts.moments_files or counts.film_files:
+        return True
+    if root.is_dir() and any(root.glob("*/climo.json")):
+        return True
+    return False
+
+
+def refuse_empty_store() -> None:
+    """Bloque si NAVIGUIDE_OFFICIAL_STORE_DIR pointe vers un dossier vide ou absent."""
+    import official_store
+
+    root = official_store.disk_root()
+    counts = collect_counts()
+    if store_looks_live(counts, root):
+        return
+    msg = (
+        f"refus : stock officiel vide ou inexistant ({root}).\n"
+        "Sur OVH, sans variable, le serveur utilise "
+        "naviguide-simulator/server/voyage_data/official-store — ne pas viser "
+        "~/.cache/naviguide/voyage-store (absent en prod).\n"
+        "Vérifiez NAVIGUIDE_OFFICIAL_STORE_DIR dans ~/.config/naviguide/simulator.env."
+    )
+    raise SystemExit(msg)
+
+
 def collect_counts() -> StoreCounts:
     import official_store
     import pearl_store
@@ -298,6 +329,7 @@ def run_reanchor(
 
     reset_run_guards()
     official_store.reset_store()
+    refuse_empty_store()
     root = official_store.disk_root()
     print(f"stock : {root}", flush=True)
 

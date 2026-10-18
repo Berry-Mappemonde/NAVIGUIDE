@@ -49,6 +49,19 @@ def _stub_refresh(monkeypatch) -> None:
     monkeypatch.setattr("official_store.refresh_family", lambda *a, **k: "unchanged")
 
 
+def test_refuse_empty_store(tmp_path, monkeypatch):
+    empty = tmp_path / "empty-store"
+    empty.mkdir()
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_STORE_DIR", str(empty))
+    monkeypatch.setenv("NAVIGUIDE_OFFICIAL_WORKER", "0")
+    import official_store
+
+    official_store.reset_store()
+    reanchor_official.reset_run_guards()
+    with pytest.raises(SystemExit, match="refus : stock officiel vide"):
+        reanchor_official.refuse_empty_store()
+
+
 def test_dry_run_writes_nothing(isolated_reanchor_env):
     store, _voyage = isolated_reanchor_env
     _seed_climo(store, [
