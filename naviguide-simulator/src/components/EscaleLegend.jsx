@@ -107,7 +107,13 @@ export const EscaleLegend = memo(function EscaleLegend({
         className="flex items-center gap-2 px-2 pb-1 text-[9px] text-slate-400"
       >
         {REGIME_PILLS.map(([id, key, tip]) => (
-          <span key={id} className="inline-flex items-center gap-1" title={t(tip)} aria-label={t(key)}>
+          <span
+            key={id}
+            role="img"
+            className="inline-flex items-center"
+            title={`${t(key)} · ${t(tip)}`}
+            aria-label={t(key)}
+          >
             <span
               data-testid="escale-regime-pill"
               data-regime={id}
@@ -115,7 +121,6 @@ export const EscaleLegend = memo(function EscaleLegend({
               style={{ background: regimeLegendHex[id] }}
               aria-hidden="true"
             />
-            <span>{t(key)}</span>
           </span>
         ))}
       </div>
