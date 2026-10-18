@@ -429,45 +429,8 @@ _META_RE = re.compile(
     re.IGNORECASE,
 )
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
-# Formes de raisonnement. Le champ reasoning n'est plus relu : seul `content`
-# sort. Ces motifs restent pour les tests qui décrivent une fuite.
-
-_REASON_MARK_RE = re.compile(
-    r"\bthe\s+user\b"
-    r"|\bwe\s+need\b"
-    r"|\blet['’]?s\b"
-    r"|\bokay\b"
-    r"|\bok\b"
-    r"|\bi\s+should\b"
-    r"|\bmaybe\b"
-    r"|\bjson\b"
-    r"|l['’]utilisateur"
-    r"|l['’]utilisatrice"
-    r"|\busager\b"
-    r"|nous\s+devons"
-    r"|il\s+nous\s+faut"
-    r"|il\s+faut\b"
-    r"|on\s+a\s+besoin"
-    r"|on\s+doit\b"
-    r"|\ballons\b"
-    r"|\bvoyons\b"
-    r"|d['’]accord"
-    r"|je\s+dois"
-    r"|je\s+devrais"
-    r"|peut[- ]être",
-    re.IGNORECASE,
-)
-_FR_WORD_RE = re.compile(
-    r"\b(?:le|la|les|un|une|des|du|au|aux|est|sont|dans|pour|avec|que|qui|"
-    r"cette|ces|pas|plus|par|vers|chez|où|ou|de)\b",
-    re.IGNORECASE,
-)
-_FR_ACCENT_RE = re.compile(r"[àâäéèêëïîôùûüçœæ]")
-_EN_WORD_RE = re.compile(
-    r"\b(?:the|a|an|is|are|of|and|to|for|with|about|from|this|that|was|were|off)\b",
-    re.IGNORECASE,
-)
 _MD_RE = re.compile(r"[*_#>`]+")
+_EN_EMPHASIS_RE = re.compile(r"\*{2,}|_{2,}")
 MAX_SENTENCES = 2
 MAX_CHARS = 320
 
@@ -520,7 +483,7 @@ async def translate(
         lang="en",
     )
     out, source = result
-    cleaned = _clean_text(out).replace("**", "")
+    cleaned = _EN_EMPHASIS_RE.sub("", _clean_text(out))
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
     if not cleaned:
         return _as_result(_clean_text(src) or "", "rules", tier="fast")
@@ -630,30 +593,11 @@ def _message_parts(raw: Any) -> list[tuple[str, str]]:
     return []
 
 
-def _parts_text(parts: list[tuple[str, str]], *, reasoning: bool) -> str:
-    chunks: list[str] = []
-    for kind, text in parts:
-        k = kind.lower()
-        if reasoning:
-            if k in {"reasoning", "thinking"}:
-                chunks.append(text)
-        elif k not in {"reasoning", "thinking"}:
-            chunks.append(text)
-    return "".join(chunks)
-
-
-def _sentence_matches_lang(text: str, *, en: bool) -> bool:
-    """Keep the sentence only when it is clearly the requested language.
-
-    A tie, or no signal at all, is a doubt: reject.
-    """
-    fr = len(_FR_WORD_RE.findall(text or "")) + len(_FR_ACCENT_RE.findall(text or ""))
-    en_n = len(_EN_WORD_RE.findall(text or ""))
-    if fr <= 0 and en_n <= 0:
-        return False
-    if fr == en_n:
-        return False
-    return (en_n > fr) if en else (fr > en_n)
+def _parts_text(parts: list[tuple[str, str]]) -> str:
+    """Visitor text. Reasoning and thinking parts stay out."""
+    return "".join(
+        text for kind, text in parts if kind.lower() not in {"reasoning", "thinking"}
+    )
 
 
 def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "fr") -> str:
@@ -672,7 +616,7 @@ def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "
     if not isinstance(msg, dict):
         msg = {}
     content_parts = _message_parts(msg.get("content"))
-    content = _clean_text(_parts_text(content_parts, reasoning=False))
+    content = _clean_text(_parts_text(content_parts))
     if content:
         return content
     return ""
@@ -760,15 +704,15 @@ async def _call_tokenfactory(
     reported = str((data or {}).get("model") or "")
     source = llm_budget.source_for(t)
     model = _exact_model(source, reported, str(payload.get("model") or ""))
+    pt, ct = _usage_tokens(data, system, user, text)
     if not text:
+        # The trace was billed even though content is empty.
+        llm_budget.record(t, pt, ct)
         choice = ((data or {}).get("choices") or [{}])[0]
         if not isinstance(choice, dict):
             choice = {}
         fr = choice.get("finish_reason") or "?"
-        usage = (data or {}).get("usage") or {}
-        ct = usage.get("completion_tokens")
         raise RuntimeError(f"tokenfactory empty finish={fr} ct={ct} model={model or '?'}")
-    pt, ct = _usage_tokens(data, system, user, text)
     llm_budget.record(t, pt, ct)
     report_tier = cascade_tier if cascade_tier is not None else t
     llm_budget.remember_source(source, report_tier)

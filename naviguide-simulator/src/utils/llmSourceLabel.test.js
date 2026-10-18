@@ -87,10 +87,10 @@ describe("LlmSourceBadge — texte seul", () => {
     assert.doesNotMatch(badge, /<img\b/);
     assert.doesNotMatch(badge, /<svg\b/i);
     assert.doesNotMatch(badge, /backgroundImage|background-image/);
-    assert.doesNotMatch(badge, /background\s*:\s*url\s*\(/i);
+    assert.doesNotMatch(badge, /background\s*:\s*["'`]?\s*url\s*\(/i);
     assert.doesNotMatch(badge, /bg-\[url\(/);
     assert.doesNotMatch(badge, /\.svg|LLM_BRAND_LOGOS/);
-    assert.doesNotMatch(src, /<img\b|<svg\b|backgroundImage|background\s*:\s*url\s*\(|bg-\[url\(|\.svg|LLM_BRAND_LOGOS/i);
+    assert.doesNotMatch(src, /<img\b|<svg\b|backgroundImage|background\s*:\s*["'`]?\s*url\s*\(|bg-\[url\(|\.svg|LLM_BRAND_LOGOS/i);
     assert.equal(isAiGeneratedSource("openai/gpt-4o-mini"), true);
     assert.match(badge, /llmBrandNvidia/);
     assert.match(badge, /llmBrandNebius/);

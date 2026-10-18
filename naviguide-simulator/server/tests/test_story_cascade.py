@@ -524,8 +524,8 @@ def test_translate_en_keeps_numbers_names_dates(monkeypatch):
 
 
 def test_translate_en_strips_bold(monkeypatch):
-    """Le gras **…** ne sort pas dans la traduction anglaise."""
-    bold = "**On 21 May 2026** the boat entered the French EEZ at **La Rochelle**, 36.5 kn [[ev:wx:gale]]."
+    """Le gras **…**, ***…*** et __…__ ne sort pas dans la traduction anglaise."""
+    bold = "***On 21 May 2026*** the boat entered the French EEZ at __La Rochelle__, 36.5 kn [[ev:wx:gale]]."
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_chat_ok(bold, model="nvidia/Nemotron-3_5-Lightning"))
@@ -538,7 +538,8 @@ def test_translate_en_strips_bold(monkeypatch):
 
     text, source = asyncio.run(run())
     assert source == "nemotron-lightning"
-    assert "**" not in text
+    assert "*" not in text
+    assert "__" not in text
     assert "On 21 May 2026" in text
     assert "La Rochelle" in text
     assert "36.5" in text
@@ -1077,6 +1078,7 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
                     "sys", f"user-{tier}", client, tier=tier, fallback="Phrase locale.", facts=None,
                 )
 
+        before = llm_budget.get_usage(tier)
         result = asyncio.run(run())
         text, got = result
         assert got.startswith("nvidia-"), tier
@@ -1091,11 +1093,54 @@ def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
         assert tf[0][1] == model, tier
         assert ("us-central1" in tf[0][0]) is ultra_host, tier
         assert any("nvidia.com" in url for url, _asked in seen), tier
-        assert llm_budget.get_usage(tier)["calls"] == 0
+        usage = llm_budget.get_usage(tier)
+        assert usage["calls"] == before["calls"] + 1, tier
+        assert usage["prompt_tokens"] == before["prompt_tokens"] + 8, tier
+        assert usage["completion_tokens"] == before["completion_tokens"] + 40, tier
         err = llm_budget.last_error()
         assert err["provider"] == "tokenfactory", tier
         assert err["reason"].startswith("tokenfactory empty"), tier
         assert llm_budget.last_source_by_tier().get(tier) == "nim"
+
+
+def test_empty_content_records_billed_reasoning_tokens(monkeypatch):
+    """finish=length et content vide : les jetons facturés sont comptés, puis repli NIM."""
+    import llm_budget
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        body = json.loads(request.content.decode())
+        if "tokenfactory" in url:
+            data = _empty_reasoning(body, "Je vais écrire une phrase sur la houle.")
+            data["usage"] = {"prompt_tokens": 11, "completion_tokens": 37}
+            return httpx.Response(200, json=data)
+        if "nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok("Le quai reste calme.", model="openai/gpt-oss-20b"))
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user-billed", client, tier="write", fallback="Phrase locale.", facts=None,
+            )
+
+    result = asyncio.run(run())
+    text, source = result
+    assert source.startswith("nvidia-")
+    assert "nemotron" not in source.lower()
+    assert "quai reste calme" in text
+    assert "écrire" not in text
+    usage = llm_budget.get_usage("write")
+    assert usage["calls"] == 1
+    assert usage["prompt_tokens"] == 11
+    assert usage["completion_tokens"] == 37
+    assert llm_budget.last_source_by_tier().get("write") == "nim"
 
 
 def test_fast_leak_reasoning_still_retries_super(monkeypatch):
@@ -1260,37 +1305,8 @@ def _nim_after_empty_reasoning(monkeypatch, reasoning, *, lang="fr", nim_text="L
 
 
 def test_reasoning_leak_falls_back_with_an_honest_label(monkeypatch):
-    """Un raisonnement vide de content ne doit pas devenir le récit du marin.
-
-    Ces phrases passent le nettoyage grossier. Retirer le filtre phrase par
-    phrase les laisse sous nemotron-super. Le repli NIM reste étiqueté NIM.
-    """
+    """Un content vide, même avec ces phrases dans le raisonnement, part en repli NIM."""
     import llm_budget
-    from story_cascade import (
-        _META_RE, _PROMPT_LEAK_RE, _REASON_MARK_RE, _clean_text, _sentence_matches_lang,
-    )
-
-    system, _user = build_prompt({"event": "swell", "lang": "fr", "needPage": False})
-    copied = "UNE ou DEUX phrases simples : le fait, le ou les chiffres du bulletin."
-    assert "une ou deux phrases simples" in system.lower()
-    assert "json" not in copied.lower()
-    assert _PROMPT_LEAK_RE.search(copied) is None
-    assert _META_RE.search(copied) is None
-    assert _REASON_MARK_RE.search(copied) is None
-    assert _clean_text(copied) == copied
-    assert _sentence_matches_lang(copied, en=False) is True
-
-    english = "The swell reaches two metres off the quay tonight."
-    assert _PROMPT_LEAK_RE.search(english) is None
-    assert _REASON_MARK_RE.search(english) is None
-    assert _clean_text(english) == english
-    assert _sentence_matches_lang(english, en=False) is False
-    assert _sentence_matches_lang(english, en=True) is True
-
-    marker = "L'utilisateur demande une courte phrase sur la houle du jour."
-    assert _PROMPT_LEAK_RE.search(marker) is None
-    assert _REASON_MARK_RE.search(marker)
-    assert _sentence_matches_lang(marker, en=False) is True
 
     leaks = (
         "The user wants one or two sentences about the swell. The JSON says the height is two metres.",
@@ -1298,9 +1314,9 @@ def test_reasoning_leak_falls_back_with_an_honest_label(monkeypatch):
         "Okay, so I should mention the quay and the swell.",
         "Maybe the wind is fresher tonight.",
         "Let's mention the swell.",
-        copied,
-        english,
-        marker,
+        "UNE ou DEUX phrases simples : le fait, le ou les chiffres du bulletin.",
+        "The swell reaches two metres off the quay tonight.",
+        "L'utilisateur demande une courte phrase sur la houle du jour.",
         "Nous devons produire une phrase courte.",
         "D'accord, je dois mentionner le quai.",
         "Peut-être que le vent fraîchit au large.",
@@ -1366,10 +1382,9 @@ def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
     assert any("nvidia.com" in url for url, _model in seen)
 
 
-def test_english_reasoning_keeps_only_a_plain_english_sentence(monkeypatch):
-    """Une phrase anglaise propre dans le raisonnement part aussi en repli NIM."""
+def test_english_reasoning_falls_back_to_nim(monkeypatch):
+    """Une phrase anglaise dans le raisonnement part en repli NIM."""
     import llm_budget
-    from story_cascade import _REASON_MARK_RE, _clean_text, _sentence_matches_lang
 
     kept = "The swell reaches two metres off the quay."
     handler, _seen = _nim_after_empty_reasoning(
@@ -1397,10 +1412,6 @@ def test_english_reasoning_keeps_only_a_plain_english_sentence(monkeypatch):
         "We need to produce a short sentence about the swell.",
         "You write one card for a sailor from the facts already collected.",
     )
-    en_copy = leaks[2]
-    assert _REASON_MARK_RE.search(en_copy) is None
-    assert _clean_text(en_copy) == en_copy
-    assert _sentence_matches_lang(en_copy, en=True) is True
     for i, reasoning in enumerate(leaks):
         handler, _seen = _nim_after_empty_reasoning(
             monkeypatch, reasoning, nim_text="The quay stays calm.",
@@ -1483,7 +1494,14 @@ def test_reasoning_leak_is_a_labelled_nim_fallback(monkeypatch, tier, lang, reas
     assert nim_text in text, (tier, lang, reasoning)
     assert reasoning not in text, (tier, lang, reasoning)
     assert llm_budget.last_source_by_tier().get(tier) == "nim"
-    assert llm_budget.get_usage(tier)["calls"] == 0
+    usage = llm_budget.get_usage(tier)
+    assert usage["calls"] == 1
+    assert usage["prompt_tokens"] == 8
+    assert usage["completion_tokens"] == 40
+    if tier == "fast":
+        retry = llm_budget.get_usage("write")
+        assert retry["calls"] == 1
+        assert retry["completion_tokens"] == 40
     err = llm_budget.last_error()
     assert err["provider"] == "tokenfactory"
     assert err["reason"].startswith("tokenfactory empty")
