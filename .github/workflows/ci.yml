@@ -332,6 +332,10 @@ jobs:
         working-directory: backend
     env:
       PYTEST_SPLITS: "4"
+      MONGO_URL: mongodb://127.0.0.1:27017
+      DB_NAME: bi_ci
+      REACT_APP_BACKEND_URL: http://127.0.0.1:8001
+      POE_AUTO_REFRESH: "0"
       PYTHONDONTWRITEBYTECODE: "1"
       TOKENIZERS_PARALLELISM: "false"
     steps:
@@ -364,6 +368,17 @@ jobs:
           "$HOME/.venv-bi/bin/python" -m pip install -r requirements.txt \
             --extra-index-url https://download.pytorch.org/whl/cpu
           echo "$HOME/.venv-bi/bin" >> "$GITHUB_PATH"
+      - name: Fichiers d'environnement (collect-only)
+        run: |
+          cat > .env <<'EOF'
+          MONGO_URL=mongodb://127.0.0.1:27017
+          DB_NAME=bi_ci
+          CORS_ORIGINS=*
+          SEARXNG_URL=http://127.0.0.1:8888
+          EOF
+          cat > ../frontend/.env <<'EOF'
+          REACT_APP_BACKEND_URL=http://127.0.0.1:8001
+          EOF
       - uses: actions/download-artifact@v7
         with:
           pattern: pytest-shard-*
