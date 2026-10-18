@@ -208,13 +208,20 @@ def _zee_dict(p: dict) -> dict:
 
 
 def _containing(lon: float, lat: float) -> Optional[dict]:
+    """EEZ that contains the point. When several polygons overlap (a huge
+    neighbour spilling over a smaller one — Adelaide over Nouméa), the
+    smallest polygon is the one the point is actually in."""
     from shapely.geometry import Point  # noqa: PLC0415
     tree, geoms, props = _index["tree"], _index["geoms"], _index["props"]
     pt = Point(lon, lat)
+    hits = []
     for i in tree.query(pt):
         if geoms[i].contains(pt) or geoms[i].intersects(pt):
-            return props[i]
-    return None
+            hits.append(int(i))
+    if not hits:
+        return None
+    best = min(hits, key=lambda i: float(geoms[i].area))
+    return props[best]
 
 
 def _nearest(lon: float, lat: float) -> Optional[dict]:
@@ -293,6 +300,17 @@ def zee_at(lat: float, lon: float):
             "ashore": True,
         }
     return None
+
+
+def zee_at_payload(lat: float, lon: float) -> dict:
+    """JSON for the film timestep: the EEZ at the replayed position.
+    UNKNOWN stays unknown — never rewritten as high seas."""
+    hit = zee_at(lat, lon)
+    if hit is UNKNOWN:
+        return {"unknown": True, "name": None, "mrgid": None, "territory": None, "gold": False}
+    if hit is None:
+        return {"name": "Haute mer", "mrgid": None, "territory": None, "gold": False}
+    return hit
 
 
 def distance_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

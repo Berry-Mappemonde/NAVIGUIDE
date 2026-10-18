@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TERRITORIAL_SEA_NM, cleanStoryText, hereWithoutFalseHighSeas, highSeasRuledOut, nearestStopNm, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
+import { TERRITORIAL_SEA_NM, cleanStoryText, hereWithoutFalseHighSeas, highSeasRuledOut, nearestStop, nearestStopNm, replayHereFrame, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
 import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -915,5 +915,111 @@ describe("jamais « haute mer » près d'un port ni hors de l'eau", () => {
     assert.match(app, /highSeasRuledOut: highSeasRuled,/);
     assert.match(app, /momentHighSeasRuledOut=\{momentHighSeasRuled\}/);
     assert.match(read("../components/Sidebar.jsx"), /highSeasRuledOut=\{momentHighSeasRuledOut\}/);
+  });
+});
+
+describe("fiche Ici — position rejouée", () => {
+  const NOUMEA = { name: "Nouméa (Nouvelle-Calédonie)", lat: -22.2758, lon: 166.4419 };
+  const TROMELIN = { name: "Tromelin (TAAF)", lat: -15.892, lon: 54.524 };
+  const NC = {
+    name: "New Caledonia Exclusive Economic Zone",
+    mrgid: 8312,
+    territory: "nouvelle_caledonie",
+  };
+  const HIGH = { name: "Haute mer", mrgid: null };
+  const read = (rel) => readFileSync(join(here, rel), "utf8");
+
+  it("Nouméa (−22.27, 166.44) : ZEE Nouvelle-Calédonie, pas Adelaide, pas haute mer", () => {
+    const frame = replayHereFrame({
+      lat: -22.27,
+      lon: 166.44,
+      marks: [NOUMEA, TROMELIN],
+      zee: NC,
+      logLeg: { from: "Port Vila", to: "Nouméa (Nouvelle-Calédonie)" },
+      lang: "fr",
+    });
+    assert.equal(frame.stop?.name, NOUMEA.name);
+    assert.equal(frame.highSeas, false);
+    assert.match(frame.statusText, /Nouvelle-Calédonie/);
+    assert.doesNotMatch(frame.statusText, /Adelaide/i);
+    assert.doesNotMatch(frame.statusText, /haute mer/i);
+    assert.equal(frame.leg.from, "Port Vila");
+    assert.equal(frame.leg.to, "Nouméa (Nouvelle-Calédonie)");
+    const en = replayHereFrame({
+      lat: -22.27, lon: 166.44, marks: [NOUMEA], zee: NC, lang: "en",
+    });
+    assert.match(en.statusText, /New Caledonia/);
+    assert.doesNotMatch(en.statusText, /Adelaide|high seas/i);
+  });
+
+  it("position TAAF hors escale : pas de fiche d'escale", () => {
+    const far = replayHereFrame({
+      lat: -14.5,
+      lon: 54.524,
+      marks: [TROMELIN],
+      zee: { name: "French Southern and Antarctic Lands Exclusive Economic Zone", mrgid: 48946, territory: "taaf" },
+      logLeg: { from: "Europa (TAAF)", to: "Tromelin (TAAF)" },
+      lang: "en",
+    });
+    assert.ok(nearestStopNm(-14.5, 54.524, [TROMELIN]) > TERRITORIAL_SEA_NM);
+    assert.equal(nearestStop(-14.5, 54.524, [TROMELIN]), null);
+    assert.equal(far.stop, null);
+    assert.equal(far.highSeas, false);
+    assert.doesNotMatch(far.statusText, /high seas/i);
+    assert.equal(far.leg.to, "Tromelin (TAAF)");
+    const offshore = replayHereFrame({
+      lat: -14.5,
+      lon: 54.524,
+      marks: [TROMELIN],
+      zee: HIGH,
+      lang: "en",
+    });
+    assert.equal(offshore.stop, null);
+    assert.equal(offshore.highSeas, true);
+    assert.match(offshore.statusText, /high seas/i);
+  });
+
+  it("à moins de 12 nm d'une escale, jamais « high seas », même si la ZEE dit haute mer", () => {
+    const at = replayHereFrame({
+      lat: TROMELIN.lat,
+      lon: TROMELIN.lon,
+      marks: [TROMELIN],
+      zee: HIGH,
+      logLeg: { from: "Europa (TAAF)", to: "Tromelin (TAAF)" },
+      lang: "fr",
+    });
+    assert.equal(at.stop?.name, TROMELIN.name);
+    assert.equal(at.highSeas, false);
+    assert.doesNotMatch(at.statusText, /haute mer/i);
+    assert.equal(at.leg.from, "Europa (TAAF)");
+  });
+
+  it("en-tête et statut viennent de la même position ; l'étape est celle du Log", () => {
+    const frame = replayHereFrame({
+      lat: -22.27,
+      lon: 166.44,
+      marks: [NOUMEA],
+      zee: { name: "Adelaide Exclusive Economic Zone", mrgid: 8323 },
+      logLeg: { from: "Marigot", to: "Cayenne (Guyane)" },
+      lang: "en",
+    });
+    // The sheet follows the Log step even when a stale EEZ name is handed in:
+    // the header is the stop at THIS position, and high seas is impossible there.
+    assert.equal(frame.leg.from, "Marigot");
+    assert.equal(frame.leg.to, "Cayenne (Guyane)");
+    assert.equal(frame.stop?.name, NOUMEA.name);
+    assert.equal(frame.highSeas, false);
+    assert.doesNotMatch(frame.statusText, /high seas/i);
+    const app = read("../App.jsx");
+    assert.match(app, /replayHereFrame\(/);
+    assert.match(app, /useFilmZee\(/);
+    assert.match(app, /replay\.active && hudLeg\?\.fromStop/);
+    assert.match(app, /replay\.live\.sailNm/);
+    assert.match(app, /cast: onFilm \? null : cast/);
+    assert.match(app, /replayFrame=\{replayFrame\}/);
+    assert.match(read("../components/IciMaintenant.jsx"), /data-testid="ici-replay-status"/);
+    assert.match(read("../components/IciMaintenant.jsx"), /data-testid="ici-replay-here"/);
+    assert.match(read("../components/IciMaintenant.jsx"), /data-testid="ici-replay-header"/);
+    assert.match(read("../components/SimulationFilmBar.jsx"), /data-testid="film-leg"/);
   });
 });

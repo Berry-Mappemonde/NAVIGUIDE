@@ -185,6 +185,27 @@ function nearKnownPort(dossier) {
 // Not at sea: on the road, in the air, alongside.
 const OFF_SEA_VEHICLES = new Set(["land", "plane", "quay"]);
 
+/** The nearest stop within `maxNm`, or null. Same position for the sheet and the status. */
+export function nearestStop(lat, lon, marks, maxNm = TERRITORIAL_SEA_NM) {
+  const la = Number(lat);
+  const lo = Number(lon);
+  if (lat == null || lon == null || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const m of Array.isArray(marks) ? marks : []) {
+    const mLat = Number(m?.lat);
+    const mLon = Number(m?.lon);
+    if (m?.lat == null || m?.lon == null || !Number.isFinite(mLat) || !Number.isFinite(mLon)) continue;
+    const d = haversineNm(la, lo, mLat, mLon);
+    if (d < bestD) {
+      bestD = d;
+      best = m;
+    }
+  }
+  if (!best || !(bestD <= maxNm)) return null;
+  return { name: best.name, lat: Number(best.lat), lon: Number(best.lon), nm: bestD };
+}
+
 /** Distance (nm) from a position to the nearest stop of the route, or null. */
 export function nearestStopNm(lat, lon, marks) {
   const la = Number(lat);
@@ -279,6 +300,43 @@ function zeeSentence(dossier, lang) {
   return en
     ? `The boat is sailing in ${where}. ${formalities}`
     : `Le bateau navigue dans ${where}. ${formalities}`;
+}
+
+/**
+ * Here sheet for the boat at the replayed position.
+ * Header (port of call) and status (high seas / EEZ) come from that one
+ * position. Within TERRITORIAL_SEA_NM of a stop: the sheet of that stop,
+ * and never « high seas ». Farther: no port-of-call sheet. The leg is the
+ * step the Log is showing, not a leftover live leg.
+ */
+export function replayHereFrame({
+  lat,
+  lon,
+  marks,
+  zee = null,
+  logLeg = null,
+  lang = "fr",
+  nearNm = TERRITORIAL_SEA_NM,
+} = {}) {
+  const stop = nearestStop(lat, lon, marks, nearNm);
+  const named = zee && typeof zee === "object" ? zee : null;
+  const dossier = {
+    zee: named,
+    highSeasRuledOut: Boolean(stop),
+    sources: !named || named.unknown ? { zee: "unavailable" } : { zee: "vliz-local" },
+    poe: [],
+    nearby: {},
+  };
+  const highSeas = highSeasClaimAllowed(dossier);
+  const from = logLeg?.from || logLeg?.fromStop || "";
+  const to = logLeg?.to || logLeg?.toStop || "";
+  return {
+    stop: stop ? { name: stop.name, lat: stop.lat, lon: stop.lon } : null,
+    highSeas,
+    zee: named,
+    statusText: zeeSentence(dossier, lang),
+    leg: from || to ? { from, to } : null,
+  };
 }
 
 function poeSentence(dossier, lang) {
