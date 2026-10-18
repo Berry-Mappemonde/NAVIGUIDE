@@ -16,7 +16,7 @@
 # service naviguide-simulator sur le VPS. Jamais dans le dépôt.
 set -euo pipefail
 
-# --dir <checkout>/naviguide-simulator : agir sur un AUTRE checkout (worktree d'un lot) avec CE
+# --dir <checkout>/naviguide-simulator : agir sur un AUTRE checkout (autre worktree) avec CE
 # script — on appelle toujours la version de main, même pour une branche plus ancienne.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPEN=0
@@ -160,7 +160,7 @@ if [[ "$PROD" -eq 1 ]]; then
   # Bascule la plus courte possible : le build est déjà fait, l'ancienne interface n'est arrêtée
   # qu'au dernier moment et la nouvelle part par le binaire de Vite (0,3 s) plutôt que par npx
   # (résolution + vérification de mise à jour npm : 0,8 s). Il reste ~1 s sans origine derrière
-  # le tunnel à chaque lot (22 sept., 12:27:01Z : 4 requêtes « Unable to reach the origin »,
+  # le tunnel à chaque relance (22 sept., 12:27:01Z : 4 requêtes « Unable to reach the origin »,
   # vus comme des 503) : le client réessaie après un 5xx.
   local_vite=(npx vite)
   [[ -x node_modules/.bin/vite ]] && local_vite=(node_modules/.bin/vite)

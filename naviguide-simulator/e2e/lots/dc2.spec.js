@@ -1,4 +1,4 @@
-// Lot DC2 — bouée, formalité, mouillage : dans le sac, pas empilés au 2:30.
+// Bouée, formalité, mouillage : dans le sac, pas empilés au 2:30.
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions film — barre, Suivre et Revoir restent.
 // Avec API : le 2:30 n'a ni bouée, ni formalité, ni mouillage en plus, ≤ 2250.
@@ -49,7 +49,7 @@ function familyHits(blob) {
   };
 }
 
-test("lot DC2 — 2:30 sans bouée / formalité / mouillage, ≤ 2250", async ({ page }) => {
+test("2:30 sans bouée / formalité / mouillage, ≤ 2250", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

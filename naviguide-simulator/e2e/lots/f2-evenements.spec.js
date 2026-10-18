@@ -1,4 +1,4 @@
-// Lot F2 — événements climo / sci dans le fil de cartes (Suivre).
+// Événements climo / sci dans le fil de cartes (Suivre).
 // Sans API : repli sur cardFromJournalEntry (titre climo non vide).
 import { expect, test } from "@playwright/test";
 import { cardFromJournalEntry } from "../../src/engine/momentCard.js";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot F2 — fil de cartes : climo ou sci, sinon titre fixture", async ({ page }) => {
+test("Fil de cartes : climo ou sci, sinon titre fixture", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

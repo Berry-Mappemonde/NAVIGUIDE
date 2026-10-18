@@ -1,4 +1,4 @@
-"""Lot N3 — couloirs cargos et score anti-trafic (repris de test_routing_ab_metrics)."""
+"""Couloirs cargos et score anti-trafic (repris de test_routing_ab_metrics)."""
 
 from copy import deepcopy
 

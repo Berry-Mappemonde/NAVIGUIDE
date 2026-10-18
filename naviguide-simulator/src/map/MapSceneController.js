@@ -347,7 +347,7 @@ export class MapSceneController {
       }
     };
     this.onMoveEnd = () => {
-      // Lot U : pas de sac ni de récit ici — seulement copies bateau + offsets.
+      // Pas de sac ni de récit ici — seulement copies bateau + offsets.
       if (this.zoomAnimating) return;
       if (this.zoomJustEnded) {
         this.zoomJustEnded = false;
@@ -355,7 +355,7 @@ export class MapSceneController {
         return;
       }
       this.syncDynamicWorldCopies();
-      // A pan the camera made while following the boat (lot I): the flags
+      // A pan the camera made while following the boat: the flags
       // keep their offsets — recomputing them at every step made them jump.
       // A zoom (projection change) or a pan the camera did not make: recompute.
       this.scheduleWaypoints({ reason: this.isCameraFollowing() && this.map.getZoom() === this.waypointZoom ? "follow" : "move" });
@@ -584,7 +584,7 @@ export class MapSceneController {
       this.renderDynamic(this.currentPlayback);
     }
     if (this.config.filmActive) this.ensureFilmCameraLoop();
-    // Entering / leaving the drawing mode (lot I): the boats of the official
+    // Entering / leaving the drawing mode: the boats of the official
     // route hide or come back at once, even while playback is paused.
     if (previous.drawingMode !== this.config.drawingMode || previous.sceneReady !== this.config.sceneReady) {
       this.syncMarkers(this.currentCast, this.currentPlayback);
@@ -666,7 +666,7 @@ export class MapSceneController {
     ) return;
     this.routeInputs = input;
     const group = this.layers.update("route", () => L.layerGroup().addTo(this.map), (layer) => layer.clearLayers());
-    // DM5 — une seule route à la fois : tracé en cours, perso ou Berry.
+    // Une seule route à la fois : tracé en cours, perso ou Berry.
     const plan = routeDrawPlan(input);
     if (!plan.visible) return;
     if (plan.kind === "drawing") {
@@ -875,7 +875,7 @@ export class MapSceneController {
     const liveMode = cfg.isSuivre && cfg.live && !cfg.previewing;
     // `visible` after the spread: a cast actor carries its own `visible`
     // flag, which used to override ours (ghost boats in Simulation, boats
-    // left on the map while drawing — revue du 19 sept., lot I).
+    // left on the map while drawing — revue du 19 sept.).
     this.syncMarker("simulation", {
       ...cast?.main,
       visible: ready && cfg.isTracer && Boolean(cast?.main),
@@ -972,7 +972,7 @@ export class MapSceneController {
       this.waypointsDirty = true;
       return;
     }
-    // DM6 — brouillon vide : drapeaux Berry (Ajaccio, lot R7). Dès le
+    // Brouillon vide : drapeaux Berry (Ajaccio). Dès le
     // premier point, seuls les ronds de tracé. Le clic fiche n'est un
     // clic « dessin » que s'il y a déjà un point.
     const drawingHasPoints = Boolean(cfg.drawingMode && (cfg.drawnPoints || []).length);
@@ -1108,7 +1108,7 @@ export class MapSceneController {
 
   scheduleWaypoints({ reason = "move" } = {}) {
     if (!this.config.points?.length && !this.config.drawnPoints?.length) return;
-    if (reason === "follow") return; // flags stay put while the camera follows (lot I)
+    if (reason === "follow") return; // flags stay put while the camera follows
     if (this.zoomAnimating && reason !== "zoom") return;
     if (reason === "zoom") {
       window.clearTimeout(this.waypointTimer);
@@ -1117,7 +1117,7 @@ export class MapSceneController {
       this.syncDynamicWorldCopies();
       return;
     }
-    if (this.config?.filmActive) return; // flags stay put for the whole film (lot F1) sauf zoom
+    if (this.config?.filmActive) return; // flags stay put for the whole film sauf zoom
     window.clearTimeout(this.waypointTimer);
     this.waypointTimer = window.setTimeout(() => {
       this.waypointsDirty = true;
@@ -1125,7 +1125,7 @@ export class MapSceneController {
     }, markerOffsetDelay(this.config.cameraFollow, reason));
   }
 
-  /** Lot DM4 : bateau au centre, zoom = plancher de Suivre. */
+  /** Bateau au centre, zoom = plancher de Suivre. */
   frameFollowLive(live) {
     const applied = applyFollowCadrage(this.map, live, {
       followLon: this.camera.followLon,
@@ -1190,7 +1190,7 @@ export class MapSceneController {
   }
 
   /**
-   * Plancher de dézoom (RG15) : un seul monde en Suivre, Simulation, film et Tracer.
+   * Plancher de dézoom : un seul monde en Suivre, Simulation, film et Tracer.
    * Tracer pose la vue à ce plancher (monde entier, une fois).
    */
   applyZoomFloor() {
@@ -1201,7 +1201,7 @@ export class MapSceneController {
     this.programmaticMove(() => this.map.setMinZoom(floor));
   }
 
-  /** Lève maxBounds et pose drawingMode avant showWorld (lot RC14). */
+  /** Lève maxBounds et pose drawingMode avant showWorld. */
   liftBoundsForDrawing() {
     this.camera.exitHoldZoom = null;
     this.camera.exitHold = false;
@@ -1223,7 +1223,7 @@ export class MapSceneController {
     this.showWorld({ keepBoundsLifted: true });
   }
 
-  /** DM6 — Berry / Annuler : lever le verrou 2 s pour afficher tout de suite la route Berry. */
+  /** Berry / Annuler : lever le verrou 2 s pour afficher tout de suite la route Berry. */
   endDrawingWorld() {
     this._pendingDrawUntil = 0;
     this._worldLockUntil = 0;

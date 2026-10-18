@@ -1,4 +1,4 @@
-// Lot S — route dessinée Brisbane → San Francisco dans le Pacifique.
+// Route dessinée Brisbane → San Francisco dans le Pacifique.
 // Sans API : le spec vérifie le mode Tracer + l'absence de sommet > 50° N
 // (repli/dépli client, corde de repli). Avec API (proxy /route → :8010) :
 // distance du résumé entre 6 000 et 7 500 nm.
@@ -41,7 +41,7 @@ function parseNm(text) {
   return Number.isFinite(n) ? n : null;
 }
 
-test("lot S — Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page }) => {
+test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
   await dismissNotForNav(page);

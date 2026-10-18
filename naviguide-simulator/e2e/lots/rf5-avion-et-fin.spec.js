@@ -1,4 +1,4 @@
-// Lot RF5 — l'avion est dit (aller et retour), le sous-titre de fin reste.
+// L'avion est dit (aller et retour), le sous-titre de fin reste.
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // et la fin du film sont sautés. GET /voyage/official sondé ; s'il manque,
 // annotation + saut des seules assertions avion / clôture — jamais Revoir
@@ -44,7 +44,7 @@ async function muteVoice(page) {
   }
 }
 
-test("lot RF5 — avion aller et retour, sous-titre de fin après l'arrêt", async ({ page }) => {
+test("Avion aller et retour, sous-titre de fin après l'arrêt", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

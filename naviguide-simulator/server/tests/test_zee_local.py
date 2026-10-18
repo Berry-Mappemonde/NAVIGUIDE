@@ -1,4 +1,4 @@
-"""ZEE locale (lot B) : point-dans-polygone sur la couche VLIZ servie par BI."""
+"""ZEE locale : point-dans-polygone sur la couche VLIZ servie par BI."""
 import asyncio
 import json
 

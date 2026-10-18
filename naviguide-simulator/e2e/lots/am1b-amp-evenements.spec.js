@@ -1,4 +1,4 @@
-// Lot AM1B — le voyage dit les AMP qu'il traverse et dont il passe près
+// Le voyage dit les AMP qu'il traverse et dont il passe près
 // (libellés DC1 : traverse / près, plus « entre dans » / « longe »).
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
 // + return des assertions film / Ici — barre, Suivre et Revoir restent.
@@ -43,7 +43,7 @@ async function muteVoice(page) {
   }
 }
 
-test("lot AM1B — AMP : entrée / proximité au film, dans l'encadré Ici", async ({ page }) => {
+test("AMP : entrée / proximité au film, dans l'encadré Ici", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

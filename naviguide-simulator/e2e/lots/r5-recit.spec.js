@@ -1,4 +1,4 @@
-// Lot R5 — récit : connecteurs variés, kilomètres à terre.
+// Récit : connecteurs variés, kilomètres à terre.
 // Sans API : le récit et la carte Escale se construisent depuis l'horloge locale.
 import { expect, test } from "@playwright/test";
 
@@ -43,7 +43,7 @@ async function rewindToFirstStop(page, prev) {
   }
 }
 
-test("lot R5 — connecteurs variés, Escale Saint-Maur en km", async ({ page }) => {
+test("Connecteurs variés, Escale Saint-Maur en km", async ({ page }) => {
   test.setTimeout(45_000);
   await page.goto("/");
   await dismissNotForNav(page);
@@ -69,7 +69,7 @@ test("lot R5 — connecteurs variés, Escale Saint-Maur en km", async ({ page })
       await prev.click();
     }
   }
-  // R8c : plus de carte flottante — les km à terre se lisent dans le récit.
+  // Plus de carte flottante — les km à terre se lisent dans le récit.
 
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");

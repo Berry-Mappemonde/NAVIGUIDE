@@ -4,7 +4,7 @@ import { fetchWeatherComposite, satelliteBusy, weatherPollMs } from "./weatherSn
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 /**
- * The satellite / weather popup of a route click (lot J: moved out of App.jsx,
+ * The satellite / weather popup of a route click (moved out of App.jsx,
  * behaviour unchanged). One composite request at a time (the previous one is
  * aborted), then a gentle poll while the shared weather pipeline is pending.
  * `open(lat, lon, extra)` shows the popup and fetches; `close()` aborts and hides.

@@ -1,4 +1,4 @@
-// Lot DM1 — deux modes à l'écran : Suivre | Tracer (décision du porteur du
+// Deux modes à l'écran : Suivre | Tracer (décision du porteur du
 // 29 sept.). Tracer = l'ex-Simulation sur
 // la route Berry-Mappemonde, avec la carte route sous les yeux : pilules
 // Berry-Mappemonde | <ma route>, « Tracer votre propre route », Importer.
@@ -20,7 +20,7 @@ const shot = (page, name) => page.screenshot({
 // Signature de la pilule active de la carte route (classe pillOn de BerryCard).
 const PILL_ON = /bg-blue-600\/30/;
 
-test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route toujours là", async ({ page }) => {
+test("Deux pilules Suivre | Tracer, Tracer joue Berry, carte route toujours là", async ({ page }) => {
   test.setTimeout(120_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));
@@ -32,7 +32,7 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   const apiUp = Boolean(await probeOfficial(page));
 
   // (a) La barre film montre deux pilules exactement : Suivre et Tracer
-  // (libellé livré — lot CT1). getByRole lit Tracer, pas Simulation.
+  // (libellé livré — CT1). getByRole lit Tracer, pas Simulation.
   const switcher = page.getByTestId("film-view-switch");
   const pills = switcher.getByRole("radio");
   await expect(pills).toHaveCount(2);
@@ -46,8 +46,8 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
 
   // (b) Clic Tracer → aria-checked ; Play / vitesses ; carte route avec
   // pilules Berry-Mappemonde | « Tracer votre propre route » et Importer.
-  // DM6 : le dessin est ouvert tout de suite (la pilule de tracé est active).
-  // DM7 : plus de champ Date de départ en Tracer (il reste en Suivre).
+  // Le dessin est ouvert tout de suite (la pilule de tracé est active).
+  // Plus de champ Date de départ en Tracer (il reste en Suivre).
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("departure-field")).toHaveCount(0);
@@ -63,7 +63,7 @@ test("lot DM1 — deux pilules Suivre | Tracer, Tracer joue Berry, carte route t
   await expect(page.getByTestId("route-import")).toBeVisible();
   await shot(page, "02-tracer-berry");
 
-  // DM9 — Tracer : Revue du plan + Récit seulement (Maintenant / Journal masqués).
+  // Tracer : Revue du plan + Récit seulement (Maintenant / Journal masqués).
   await showLeftPanel(page);
   await expect(page.getByTestId("ici-tab-review")).toBeVisible();
   await expect(page.getByTestId("ici-tab-story")).toBeVisible();

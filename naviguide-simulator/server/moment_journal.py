@@ -1,4 +1,4 @@
-"""Journal des moments du voyage officiel (lot R9a, contrat PLAN_ICI § 2.1).
+"""Journal des moments du voyage officiel.
 
 Pour chaque perle dans l'ordre de la route : build_moment → signature.
 Une ligne seulement quand la signature change. `changes` = diff_moments(prev, cur)
@@ -504,7 +504,7 @@ def _leg_at(
 
 
 PLACE_NEAR_NM = 15.0          # une marina « croisée » : à moins de 15 nm de la route
-COAST_NEAR_NM = 25.0          # ports / WPI → jalon de côte (RG2)
+COAST_NEAR_NM = 25.0          # ports / WPI → jalon de côte
 SCORE_PLACE = 2
 _PLACE_LISTS = (
     ("marina", "marinas", PLACE_NEAR_NM),
@@ -731,8 +731,8 @@ def _build_rows(voyage_id: str, voy: dict) -> list[dict]:
             and live_rem <= thr < prev_rem_live
             and live_rem > 1.0
         )
-        # Marinas (15 nm) et jalons de côte (ports / WPI, 25 nm) : une fois chacun (RG2).
-        # Projets BI à ≤ 30 nm (RG3).
+        # Marinas (15 nm) et jalons de côte (ports / WPI, 25 nm) : une fois chacun.
+        # Projets BI à ≤ 30 nm.
         new_places = _new_places_nearby(pearl, seen_places)
         new_projects = _new_projects_nearby(pearl, seen_places)
         same_sig = prev is not None and sig == (prev.get("signature") or signature(prev))

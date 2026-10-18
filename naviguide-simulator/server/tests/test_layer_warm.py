@@ -1,4 +1,4 @@
-"""Lot LY1 — cellules AMP le long d'un trait, pas le monde."""
+"""Cellules AMP le long d'un trait, pas le monde."""
 import asyncio
 
 import ici_engine

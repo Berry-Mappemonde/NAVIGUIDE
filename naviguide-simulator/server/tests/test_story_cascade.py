@@ -580,7 +580,7 @@ def test_write_story_en_translates_after_french_draft(monkeypatch):
 
 
 def test_openai_text_strips_think_keeps_sentence():
-    """Lot RA1 : Nemotron thinking stays out of the visitor text."""
+    """Nemotron thinking stays out of the visitor text."""
     data = {
         "choices": [{
             "message": {
@@ -635,7 +635,7 @@ def test_clean_text_prompt_leak_is_empty():
 
 
 def test_prompt_leak_re_covers_22_sept_forms():
-    """Lot RB3 : les formes de la capture (et leurs traductions) vident le texte."""
+    """Les formes de la capture (et leurs traductions) vident le texte."""
     forms = (
         "Input: A large JSON object containing marina lists.",
         "What's for the boat, what's for the crew.",
@@ -663,7 +663,7 @@ def test_prompt_leak_re_covers_22_sept_forms():
 
 
 def test_llm_cache_leaked_entry_is_invalidated(monkeypatch):
-    """Lot RB3 : une perle llm-cache fuitée est droppée, jamais re-servie."""
+    """Une perle llm-cache fuitée est droppée, jamais re-servie."""
     import pearl_store
 
     monkeypatch.delenv("NAVIGUIDE_LLM_CACHE_TTL_S", raising=False)

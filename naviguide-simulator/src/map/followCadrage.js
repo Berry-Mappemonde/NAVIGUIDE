@@ -1,5 +1,5 @@
 /**
- * Lot DM4 — une seule règle « cadrage Suivre » :
+ * Une seule règle « cadrage Suivre » :
  * centre = position live du bateau, zoom = plancher (monde une fois, pas deux).
  * Tracer / dessin gardent showWorld (centre historique) ; le film garde filmCamera.
  */

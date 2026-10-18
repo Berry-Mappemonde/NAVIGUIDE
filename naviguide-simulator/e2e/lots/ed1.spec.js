@@ -1,4 +1,4 @@
-// Lot ED1 — clic Rédigé seulement : GET ne lance pas de modèle ; l'étiquette
+// Clic Rédigé seulement : GET ne lance pas de modèle ; l'étiquette
 // dit Super, ou Super relu par Ultra. Sans API (CI) : GET /voyage/official
 // sondé ; s'il ne répond pas, annotation + saut des assertions film —
 // barre, Suivre, Brut et l'absence d'appel Nebius restent.
@@ -35,7 +35,7 @@ function filmPayload({ written, seconds = 150 }) {
   };
 }
 
-test("lot ED1 — GET sans modèle, clic Rédigé, étiquette Super", async ({ page }) => {
+test("GET sans modèle, clic Rédigé, étiquette Super", async ({ page }) => {
   test.setTimeout(90_000);
   const llmHits = [];
   const filmGets = [];

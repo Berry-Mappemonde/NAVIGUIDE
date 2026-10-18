@@ -567,7 +567,7 @@ export function sampleClockAtHours(clock, tHours) {
       model: b.model || a.model || null,
       leadHours: b.leadHours ?? a.leadHours ?? null,
       vehicle: veh,
-      // Pas courant a→b : la vitesse d'intégration est posée sur b (lot C3).
+      // Pas courant a→b : la vitesse d'intégration est posée sur b.
       speedKnots: b.speedKnots ?? a.speedKnots,
       windKnots: b.windKnots ?? a.windKnots,
     };

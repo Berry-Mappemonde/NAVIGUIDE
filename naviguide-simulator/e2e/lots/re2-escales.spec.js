@@ -1,4 +1,4 @@
-// Lot RE2 — liste des escales informative en Suivre ; fiche = escale désignée.
+// Liste des escales informative en Suivre ; fiche = escale désignée.
 // Sans API : Suivre / Simulation, la liste (repli itinéraire) et l'absence
 // de bouton tiennent seuls. GET /voyage/official sondé ; s'il manque,
 // annotation + saut des seules assertions noms / drapeau / fiche Ici —
@@ -106,7 +106,7 @@ async function clickAjaccioFlag(page) {
   return true;
 }
 
-test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async ({ page, request }) => {
+test("Liste informative en Suivre, fiche = escale désignée", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);
@@ -194,7 +194,7 @@ test("lot RE2 — liste informative en Suivre, fiche = escale désignée", async
   const ajaccioRow = rowByName(page, "Ajaccio");
   const hasAjaccio = await ajaccioRow.isVisible().catch(() => false);
   if (hasAjaccio) {
-    // RF8 : liste informative dans tous les modes — plus de clic.
+    // Liste informative dans tous les modes — plus de clic.
     await expect(ajaccioRow).toHaveAttribute("data-interactive", "false");
     await expect(ajaccioRow.getByRole("button")).toHaveCount(0);
   } else if (apiUp) {

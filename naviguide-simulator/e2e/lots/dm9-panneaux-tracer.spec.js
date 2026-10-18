@@ -1,4 +1,4 @@
-// Lot DM9 — en Tracer, l'encadré ne sert que le tracé (Revue du plan + Récit) ;
+// En Tracer, l'encadré ne sert que le tracé (Revue du plan + Récit) ;
 // Maintenant et Journal reviennent intacts en Suivre. Panneau droit Tracer :
 // Calques et Exporter dépliés, Polaires et Paramètres avancés repliés
 // (revue du 14 oct., option A + recommandation panneau droit).
@@ -18,7 +18,7 @@ const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
-test("lot DM9 — Tracer : Revue + Récit, Polaires repliées ; Suivre intact", async ({ page }) => {
+test("Tracer : Revue + Récit, Polaires repliées ; Suivre intact", async ({ page }) => {
   test.setTimeout(120_000);
   const apiUp = Boolean(await probeOfficial(page));
   if (!apiUp) {

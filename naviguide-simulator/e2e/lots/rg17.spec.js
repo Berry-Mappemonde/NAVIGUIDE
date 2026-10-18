@@ -1,5 +1,5 @@
-// Lot RG17 — fourchette sous la prochaine escale, ou une ligne de raison.
-// Lot RC24 : preparing n'est plus un skip vert ; la ligne est sous la prochaine
+// Fourchette sous la prochaine escale, ou une ligne de raison.
+// Preparing n'est plus un skip vert ; la ligne est sous la prochaine
 // (iso > maintenant), jamais « 1 janv. ».
 // Sans API : Suivre + légende tiennent seuls. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des seules assertions fourchette / raison —
@@ -57,7 +57,7 @@ function retryYear(iso) {
   return new Date(t).getUTCFullYear();
 }
 
-test("lot RG17 — fourchette ou raison sous la prochaine escale", async ({ page }) => {
+test("Fourchette ou raison sous la prochaine escale", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp, body: official, clock } = await probeOfficial(page);
   if (!apiUp) {

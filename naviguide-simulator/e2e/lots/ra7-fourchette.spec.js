@@ -1,4 +1,4 @@
-// Lot RA7 — fourchette d'arrivée sous la prochaine escale, intervalle de quelques jours.
+// Fourchette d'arrivée sous la prochaine escale, intervalle de quelques jours.
 // Sans API : fumée Suivre + barre film (la fourchette n'est jamais inventée).
 // Avec API : légende et revue du plan, même texte, sans « p10 » ni « membres ».
 import { expect, test } from "@playwright/test";
@@ -32,7 +32,7 @@ function spanDays(p10, p90) {
   return (b - a) / 86400000;
 }
 
-test("lot RA7 — fourchette sous la prochaine escale, quelques jours", async ({ page }) => {
+test("Fourchette sous la prochaine escale, quelques jours", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
 

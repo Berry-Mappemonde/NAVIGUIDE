@@ -1,4 +1,4 @@
-// Lot C3 — une seule vitesse (barre = horloge = debug) ; légende des régimes.
+// Une seule vitesse (barre = horloge = debug) ; légende des régimes.
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -22,7 +22,7 @@ function knotsIn(text) {
   return m ? Number(m[1].replace(",", ".")) : null;
 }
 
-test("lot C3 — vitesse unique et légende des régimes", async ({ page }) => {
+test("Vitesse unique et légende des régimes", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });

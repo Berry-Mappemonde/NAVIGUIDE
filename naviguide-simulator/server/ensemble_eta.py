@@ -1,4 +1,4 @@
-"""ETA probabiliste par ensembles Open-Meteo (lot C6).
+"""ETA probabiliste par ensembles Open-Meteo.
 
 Au-delà de 7 jours, l'arrivée n'est pas une date unique : p10 / p50 / p90
 des intégrations par membre. Sans ensemble = `{members: 0}`, jamais inventé.
@@ -44,7 +44,7 @@ REASON_EMPTY = "empty_ensemble"
 REASON_NO_STOP = "no_stop"
 REASON_NO_REMAINING = "no_remaining"
 REASON_INTEGRATION = "integration_empty"
-# Lot RA7 : un membre à ~0 kn faisait exploser p90 (7 mois). Même plancher
+# Un membre à ~0 kn faisait exploser p90 (7 mois). Même plancher
 # que voyage_clock.planning_speed_for ; la fourchette affichée reste de
 # quelques jours autour de p50 (jamais inventée : sans membres valides → vide).
 ETA_MIN_KN = PLANNING_MIN_KN
@@ -427,7 +427,7 @@ def _http_detail(resp: Any) -> str:
 def _fetch_ensemble_json(lat: float, lon: float) -> tuple[Optional[dict], Optional[str], Optional[str]]:
     """(payload, raison, détail). La raison n'est posée que si le payload manque.
 
-    Lot RE5 : on lit le statut HTTP ici (429 quota) au lieu de l'avaler dans
+    On lit le statut HTTP ici (429 quota) au lieu de l'avaler dans
     ``om_get`` (hindcast.py:195-197 → None). Cache par point inchangé.
     """
     from hindcast import (  # noqa: PLC0415
@@ -527,7 +527,7 @@ def sample_leg_points(
     max_nm: float = MAX_POINT_NM,
     max_probes: int = MAX_PROBES_PER_LEG,
 ) -> List[dict]:
-    """Sommets de la jambe, pas ≤ 60 nm, puis plafond (lot RE5 : ≤ 12 sondes)."""
+    """Sommets de la jambe, pas ≤ 60 nm, puis plafond (≤ 12 sondes)."""
     if not points:
         return []
     out = [points[0]]
@@ -668,7 +668,7 @@ def _integrate_member(
 
 
 def official_eta_alias_key(stop: str, now: datetime) -> str:
-    """Clé cache stable par escale + cycle 6 h — lisible sans clock (lot RC7)."""
+    """Clé cache stable par escale + cycle 6 h — lisible sans clock."""
     when = _as_dt(now)
     return (
         f"eta-official:{_norm_stop(stop)}:{when.strftime('%Y-%m-%d')}"
@@ -677,7 +677,7 @@ def official_eta_alias_key(stop: str, now: datetime) -> str:
 
 
 def peek_official_eta(voy: dict, stop: str, now: datetime) -> dict:
-    """Lecture cache uniquement. Jamais de clock ni de fetch (lot RC7)."""
+    """Lecture cache uniquement. Jamais de clock ni de fetch."""
     when = _as_dt(now)
     empty = empty_eta(when)
     if not isinstance(voy, dict) or not (stop or "").strip():

@@ -1,4 +1,4 @@
-// Lot RG11B — la pilule Rédigé redevient vraie (stock figé, film mocké).
+// La pilule Rédigé redevient vraie (stock figé, film mocké).
 // Sans API : barre, Suivre et pilule Brut tiennent seuls. GET /voyage/official
 // sondé ; s'il manque, annotation + saut des assertions hasWritten / étiquette
 // — jamais la barre, ni Suivre, ni la pilule Brut, ni l'absence d'appel LLM.
@@ -54,7 +54,7 @@ async function openSuivreBar(page) {
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
 }
 
-test("lot RG11B — Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source", async ({ page }) => {
+test("Rédigé actif si hasWritten ou film prêt, jamais Rédigé comme source", async ({ page }) => {
   test.setTimeout(90_000);
   const llmHits = [];
   page.on("request", (req) => {

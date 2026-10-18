@@ -1,4 +1,4 @@
-// Lot DM5 — la source de route (Berry | ma route) est indépendante du mode :
+// La source de route (Berry | ma route) est indépendante du mode :
 // elle survit à Tracer → Suivre → Tracer et remplace l'implicite
 // `routeForView = isSuivre ? null : customRoute` (revue du 14 oct., B1).
 import { describe, it } from "node:test";
@@ -12,7 +12,7 @@ const drawn = {
   ],
 };
 
-describe("routeSource (lot DM5)", () => {
+describe("routeSource", () => {
   it("sans route perso, la source est Berry", () => {
     assert.equal(resolveRouteSource("berry", null), "berry");
     assert.equal(resolveRouteSource("custom", null), "berry");

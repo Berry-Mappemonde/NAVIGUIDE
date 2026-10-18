@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 /**
- * The escale sheet (lot C): GET /escale for the selected stop, one request
+ * The escale sheet: GET /escale for the selected stop, one request
  * per (name, position, lang), kept in this tab. `stop` = { name, lat, lon }
  * or null. Never blocks Play; a failure is a sheet with an error, not a crash.
  */

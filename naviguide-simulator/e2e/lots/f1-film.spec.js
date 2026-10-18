@@ -1,4 +1,4 @@
-// Lot F1 — chapitrage et cinématique menée par la voix.
+// Chapitrage et cinématique menée par la voix.
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -17,7 +17,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot F1 — film 150 s, zoom fixe, sous-titre Saint-Maur", async ({ page }) => {
+test("Film 150 s, zoom fixe, sous-titre Saint-Maur", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

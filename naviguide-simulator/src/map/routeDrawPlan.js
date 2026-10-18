@@ -1,5 +1,5 @@
 /**
- * Lot DM5 — quelle route la couche `route` dessine, et une seule à la fois :
+ * Quelle route la couche `route` dessine, et une seule à la fois :
  * le tracé en cours (drawing), SINON la route perso choisie (custom), SINON la
  * route Berry-Mappemonde (berry) — passé ET à venir. Jamais deux routes
  * superposées (revue du porteur du 14 oct., B2/B3).

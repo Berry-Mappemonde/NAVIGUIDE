@@ -178,7 +178,7 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     );
   }
 
-  // DM6 — le dessin est le défaut de Tracer : la barre garde Suivre | Tracer,
+  // Le dessin est le défaut de Tracer : la barre garde Suivre | Tracer,
   // Play et le départ (plus de barre allégée qui les retirait).
   return (
     <div

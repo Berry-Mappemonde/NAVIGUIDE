@@ -1,4 +1,4 @@
-"""Lot RG10 — recette automatique du discours (revue du 28 sept., C1–C6 / D1–D4).
+"""Recette automatique du discours (revue du 28 sept., C1–C6 / D1–D4).
 
 Lit le texte FINAL du film (pas un morceau). Chaque règle, en cas d'échec,
 signale la phrase fautive. On ne corrige pas la règle pour passer.
@@ -658,7 +658,7 @@ def load_poste_moments() -> dict | None:
 
 @pytest.mark.poste
 def test_poste_stock_anchor_positions():
-    """RG14 : sur le stock du poste, le bateau est au lieu nommé à l'ancre."""
+    """Sur le stock du poste, le bateau est au lieu nommé à l'ancre."""
     if os.environ.get("CI"):
         pytest.skip("poste : stock du poste absent en CI")
     clock = _try_poste_clock()
@@ -732,7 +732,7 @@ def _densite_faults(plan: dict, moments: dict, clock: dict | None) -> list[str]:
         lo, hi = d.sea_bounds(ch, departs)
         # Le plancher est borné par le nombre d'INSTANTS distincts du stock :
         # un moment unique à six items ne justifie pas six phrases d'un coup.
-        # RC30 : au plus un flotteur Argo par jambe — les Argo surnuméraires ne
+        # Au plus un flotteur Argo par jambe — les Argo surnuméraires ne
         # comptent ni dans le plancher ni dans les trous.
         told_ch = d.cap_argo_told(told, lo, hi)
         minutes = {

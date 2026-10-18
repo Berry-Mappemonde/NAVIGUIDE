@@ -1,4 +1,4 @@
-"""Revue de plan par règles (lot K, plan général §1.8) + commentaire (lot L5, U7).
+"""Revue de plan par règles (plan général §1.8) + commentaire.
 
 Par jambe de la route officielle (d'une escale à la suivante), ce que les
 données déjà collectées disent — rien d'autre :
@@ -13,7 +13,7 @@ données déjà collectées disent — rien d'autre :
 La saison (rose des vents, cyclones IBTrACS) est lue côté client dans le
 cache de l'atlas, pour le mois de la jambe.
 
-Le commentaire « Ce que je changerais » (U7) est rédigé par
+Le commentaire « Ce que je changerais » est rédigé par
 `cascade_text(tier="write")` à partir des seules lignes du tableau ; aucun
 chiffre nouveau (`filter_numbers`). Cache par hash du tableau.
 """
@@ -31,10 +31,10 @@ from voyage_clock import PARK_STOP_NAME, parse_iso, to_iso
 
 log = logging.getLogger("naviguide-simulator.plan-review")
 
-# Vitesse de programme Berry-Mappemonde (PLAN_ICI, recette R11 : 8 kn).
+# Vitesse de programme Berry-Mappemonde (, recette R11 : 8 kn).
 # daysAtSea = distance ÷ cette vitesse ÷ 24 — pas l'écart d'horloge.
 PLANNED_KNOTS = 8.0
-# Lot RA7 : même plancher que voyage_clock.PLANNING_MIN_KN ; plafond « quelques jours ».
+# Même plancher que voyage_clock.PLANNING_MIN_KN ; plafond « quelques jours ».
 ETA_MIN_KN = 3.0
 ETA_MAX_SPAN_DAYS = 7.0
 
@@ -194,7 +194,7 @@ def _leg_distance_nm(a: dict, b: dict, from_nm: float, to_nm: float) -> float:
     return span
 
 
-# Lot RC54 : une marque d'horloge peut porter le nom d'une escale pacifique
+# Une marque d'horloge peut porter le nom d'une escale pacifique
 # et l'instant d'un sommet du retour atlantique (longitudes dépliées). On
 # recale tHours / sailNm sur les milles d'itinéraire, qui sont justes.
 SNAP_SAIL_NM_EXACT = 1.0
@@ -577,7 +577,7 @@ def review_official(voy: dict, now: datetime | None = None, *, season: bool = Tr
             start_name = best[1]
     _attach_itinerary_nm(clock.get("marks") or [], voy.get("marks") or [])
     # Semis RD4/RC7 : pas de clock.t0. Les jambes viennent des marks + t0 +
-    # points — jamais build_voyage_clock sur le thread HTTP (lot RC8).
+    # points — jamais build_voyage_clock sur le thread HTTP.
     # Si le clock a un t0 mais pas encore de sommets, on ne reste pas à [].
     legs = legs_from_clock(clock, start_name) if clock.get("t0") else []
     if not legs:

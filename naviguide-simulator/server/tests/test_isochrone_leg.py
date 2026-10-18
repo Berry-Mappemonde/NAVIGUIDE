@@ -96,7 +96,7 @@ def test_zone_june_not_used_as_forecast_label():
     assert z["kind"] == "climatology"
 
 
-# ── Lot G — les ordres du skipper comme contraintes du routage ────────────────
+# ── Les ordres du skipper comme contraintes du routage ────────────────
 
 def _field_wind(strong_lat_above=45.5, speed=38.0, hs=2.0):
     """Wind of 38 kn (a gale) north of `strong_lat_above`, 14 kn south of it."""
@@ -168,7 +168,7 @@ def test_stuck_route_fixtures_never_cross_land():
 
 
 def test_c4_isochrone_step_1h_at_30nm_from_coast():
-    """Lot C4 : 30 nm d'une côte → pas 1 h ; haute mer → 3 h."""
+    """30 nm d'une côte → pas 1 h ; haute mer → 3 h."""
     la_c, lo_c = move_position(46.15, -1.16, 270.0, 30.0)
     assert isochrone_time_step_h(la_c, lo_c) == ISOCHRONE_STEP_COAST_H
     assert isochrone_time_step_h(45.0, -15.0) == ISOCHRONE_STEP_OFFSHORE_H

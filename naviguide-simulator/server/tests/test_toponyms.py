@@ -1,4 +1,4 @@
-"""Lot RC32 — table de toponymes sourcée, homonymes distingués, casse d'origine."""
+"""Table de toponymes sourcée, homonymes distingués, casse d'origine."""
 from __future__ import annotations
 
 from toponyms import (

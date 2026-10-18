@@ -1,4 +1,4 @@
-// Lot R9a — journal des moments (serveur). Aucun changement visible.
+// Journal des moments (serveur). Aucun changement visible.
 // Sans API : barre film, Suivre / Simulation / Tracer tiennent seuls.
 // GET /voyage/official : sondé ; s'il manque, annotation seulement.
 // GET /ici/warm/status et /voyage/official/moments : seulement si l'API répond.
@@ -34,7 +34,7 @@ async function showLeftPanel(page) {
   await page.locator(".naviguide-sidebar-toggle--left").click();
 }
 
-test("lot R9a — aucun changement visible, trois parcours", async ({ page }) => {
+test("Aucun changement visible, trois parcours", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

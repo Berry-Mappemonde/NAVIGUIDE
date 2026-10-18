@@ -1,4 +1,4 @@
-// Lot R8c — branchement de l'encadré, plus de pop-up hors film.
+// Branchement de l'encadré, plus de pop-up hors film.
 // Sans API : l'encadré se remplit via la fixture useMoment ; Suivre /
 // Simulation / Tracer tiennent seuls. GET /voyage/official : sondé ; s'il
 // manque, on annote et on saute seulement les assertions d'horloge / fiche
@@ -52,7 +52,7 @@ function noFloatingCards(page) {
   ]);
 }
 
-test("lot R8c — un encadré, plus aucune carte flottante hors film", async ({ page }) => {
+test("Un encadré, plus aucune carte flottante hors film", async ({ page }) => {
   test.setTimeout(120_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

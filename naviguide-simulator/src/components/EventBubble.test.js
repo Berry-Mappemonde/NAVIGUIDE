@@ -52,7 +52,7 @@ function fakeMarker(lat, lng) {
   };
 }
 
-describe("EventBubble — contrat (lot F4)", () => {
+describe("EventBubble — contrat", () => {
   it("L.popup : autoPan false, pas de croix Leaflet, classe event-bubble, 280 px", () => {
     const opts = createEventPopupOptions();
     assert.equal(opts.autoPan, false);
@@ -150,7 +150,7 @@ describe("EventBubble — contrat (lot F4)", () => {
     assert.match(src, /data-testid="event-bubble"/);
   });
 
-  it("lot R6 — la croix ferme la bulle, pas le film", () => {
+  it("La croix ferme la bulle, pas le film", () => {
     assert.match(src, /data-testid="event-bubble-close"/);
     assert.match(src, /×/);
     assert.match(src, /onClose/);
@@ -162,7 +162,7 @@ describe("EventBubble — contrat (lot F4)", () => {
   });
 });
 
-describe("eventBubble — lot R6 : seuil de score et somme 20 s", () => {
+describe("eventBubble — : seuil de score et somme 20 s", () => {
   it("score ≥ 2 s'affiche, score 1 seul non", () => {
     assert.equal(shouldShowFilmEvent(3), true);
     assert.equal(shouldShowFilmEvent(2), true);

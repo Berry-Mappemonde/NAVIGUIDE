@@ -1,4 +1,4 @@
-// Lot RC12 — POST /voyage sans horloge synchrone. Sans API : Simulation,
+// POST /voyage sans horloge synchrone. Sans API : Simulation,
 // Suivre, barre film, Journal et polaires tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions journal / LIVE stock / 524 — jamais les modes, ni la barre.
@@ -62,7 +62,7 @@ function isVoyageOrIci(url) {
   return /\/voyage(?:\/|\?|$)|\/ici(?:\/|\?|$)/.test(url);
 }
 
-test("lot RC12 — POST /voyage immédiat, pas de 524, LIVE et Journal", async ({ page }) => {
+test("POST /voyage immédiat, pas de 524, LIVE et Journal", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

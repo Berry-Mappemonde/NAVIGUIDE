@@ -1,4 +1,4 @@
-"""N1 — point / crossings climatologie sans Source MapLibre.
+"""Point / crossings climatologie sans Source MapLibre.
 
 Même snapshots que Blue Intelligence. NAVIGUIDE s'en sert (isochrone,
 simulation, agent) ; il ne les peint pas.

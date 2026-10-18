@@ -1,4 +1,4 @@
-// Lot LY2 — pendant le dessin d'une route perso, POST /ici/layers/warm et
+// Pendant le dessin d'une route perso, POST /ici/layers/warm et
 // GET /ici?thin=1 partent sur le brouillon (pas d'attente du Terminer).
 // Sans API : le dessin (stub /route) et les requêtes client tiennent seuls.
 // GET /voyage/official est sondé ; s'il manque, annotation — les assertions
@@ -37,7 +37,7 @@ async function stubRoute(page) {
   });
 }
 
-test("lot LY2 — le brouillon chauffe avant Terminer ; Annuler coupe", async ({ page }) => {
+test("Le brouillon chauffe avant Terminer ; Annuler coupe", async ({ page }) => {
   test.setTimeout(90_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));

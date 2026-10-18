@@ -1,4 +1,4 @@
-// Lot RC3 — ligne Sources : des noms de producteurs, plus le statut « ok ».
+// Ligne Sources : des noms de producteurs, plus le statut « ok ».
 // Sans API : page encadré /lot-r8b.html (fixture) + section Sources de l'app.
 // Avec API : Suivre, la ligne du Moment ne contient pas « ok ».
 // Ne pas affaiblir les assertions qui n'ont pas besoin de l'API.
@@ -51,7 +51,7 @@ function sourcesText(raw) {
   return String(raw || "").replace(/\s+/g, " ").trim();
 }
 
-test("lot RC3 — Sources : noms de producteurs, plus « ok »", async ({ page }) => {
+test("Sources : noms de producteurs, plus « ok »", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

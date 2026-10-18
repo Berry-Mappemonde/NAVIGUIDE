@@ -1,4 +1,4 @@
-// Lot RD9 — Revue du plan en onglet gauche, plus dans le panneau droit ;
+// Revue du plan en onglet gauche, plus dans le panneau droit ;
 // le récit déclamé reprend la revue (verdict, couloirs, saison).
 // Sans API : onglet Suivre / Simulation, absence en Tracer, et absence
 // dans le panneau droit tiennent seuls (fixture de revue si l'horloge
@@ -69,7 +69,7 @@ async function openReviewTab(page) {
   await expect(page.getByTestId("plan-review")).toBeVisible();
 }
 
-test("lot RD9 — Revue du plan en onglet gauche, plus à droite", async ({ page }) => {
+test("Revue du plan en onglet gauche, plus à droite", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const officialBody = official && official.ok()

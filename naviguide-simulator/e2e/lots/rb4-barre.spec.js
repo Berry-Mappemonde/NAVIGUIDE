@@ -1,4 +1,4 @@
-// Lot RB4 — barre de lecture compacte : un bouton de vitesse, flèches, haut-parleur.
+// Barre de lecture compacte : un bouton de vitesse, flèches, haut-parleur.
 // Sans API : barre, cycle de vitesse, flèches, haut-parleur, absence de scroll tiennent seuls.
 // Libellé météo « climatologie + GFS » : seulement si GET /voyage/official répond
 // et que le point courant emploie les deux.
@@ -39,7 +39,7 @@ async function commandsOverflow(page) {
   });
 }
 
-test("lot RB4 — barre compacte, vitesse cyclique, flèches, haut-parleur", async ({ page }) => {
+test("Barre compacte, vitesse cyclique, flèches, haut-parleur", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

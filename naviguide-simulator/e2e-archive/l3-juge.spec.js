@@ -1,4 +1,4 @@
-// Lot L3 — juge de vérité : badge + texte barré (carte de fixture).
+// Juge de vérité : badge + texte barré (carte de fixture).
 // Sans API / sans clés : on injecte une carte NOW avec truth.unsupported.
 // La recette réelle (Simulation, ZEE Martinique) demande TAVILY_API_KEY
 // et NEBIUS_API_KEY sur le VPS.
@@ -28,10 +28,10 @@ async function hideSidebarForFloatingCard(page) {
   }
 }
 
-test("lot L3 — truth-badge et texte barré sur une carte de fixture", async ({ page }) => {
+test("Truth-badge et texte barré sur une carte de fixture", async ({ page }) => {
   // 28 sept. : ce n'est PAS une question de clés. Depuis R8c (plus de pop-up sur la carte), les composants qui
   // portaient le badge du juge (truth-badge) — MomentNowCard / FreeMomentBlock, et leur fixture window.__naviguide*Fixture — ne sont plus
-  // rendus nulle part (IciMaintenant utilise CardAlias, sans badge ni fixture). À trancher par le porteur : un lot pour
+  // rendus nulle part (IciMaintenant utilise CardAlias, sans badge ni fixture). À trancher par le porteur : un changement pour
   // remettre le badge du juge (truth-badge) dans le panneau, ou la suppression de ce spec. En attendant, ignoré partout, honnêtement.
   test.skip(true, "R8c : le badge du juge (truth-badge) n'est plus rendu — décision à prendre (remettre, ou supprimer ce spec)");
   await page.goto("/");

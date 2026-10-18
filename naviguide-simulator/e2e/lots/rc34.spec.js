@@ -1,4 +1,4 @@
-// Lot RC34 — le remplisseur recalcule l'horloge officielle HC1 au lieu de
+// Le remplisseur recalcule l'horloge officielle HC1 au lieu de
 // resservir le climo du jour sans realUntil. Sans API (CI) : GET
 // /voyage/official sondé ; s'il ne répond pas, les assertions qui en
 // dépendent sont sautées (annotation + return) — barre film + ligne d'état
@@ -35,7 +35,7 @@ async function getJson(page, url) {
   return res.json().catch(() => null);
 }
 
-test("lot RC34 — Suivre : climatologie · réel jusqu'au <date>, route turquoise puis violette", async ({ page }) => {
+test("Suivre : climatologie · réel jusqu'au <date>, route turquoise puis violette", async ({ page }) => {
   test.setTimeout(120_000);
 
   await page.setViewportSize({ width: 1600, height: 800 });
@@ -84,7 +84,7 @@ test("lot RC34 — Suivre : climatologie · réel jusqu'au <date>, route turquoi
   await shotBar(page, "02-statut");
 
   await page.waitForFunction(() => {
-    const want = [45, 212, 191]; // #2dd4bf — réel (teintes du lot C3)
+    const want = [45, 212, 191]; // #2dd4bf — réel (teintes de C3)
     for (const c of document.querySelectorAll("canvas")) {
       const ctx = c.getContext("2d");
       if (!ctx || !c.width || !c.height) continue;

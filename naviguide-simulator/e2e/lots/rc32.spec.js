@@ -1,4 +1,4 @@
-// Lot RC32 — noms de lieux : exonymes FR/EN pour pays et eaux, homonymes
+// Noms de lieux : exonymes FR/EN pour pays et eaux, homonymes
 // distingués (Saint-Martin / Sint Maarten). Sans API : GET /voyage/official
 // sondé ; s'il manque, annotation + saut des assertions film / ici —
 // Suivre, Revoir et le bouton de langue restent vérifiés.
@@ -38,7 +38,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RC32 — toponymes FR/EN, Saint-Martin et Sint Maarten distingués", async ({ page }) => {
+test("Toponymes FR/EN, Saint-Martin et Sint Maarten distingués", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

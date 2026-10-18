@@ -8,7 +8,7 @@ import fr from "./fr.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe("scripts/redites.mjs (lot R13)", () => {
+describe("scripts/redites.mjs", () => {
   it("liste les valeurs identiques et les groupes de ≥ 2 mots, triés par fréquence", () => {
     const report = analyze(fr);
     assert.ok(report.identical.length >= 1, "au moins une valeur partagée");
@@ -28,7 +28,7 @@ describe("scripts/redites.mjs (lot R13)", () => {
     assert.match(text, /Groupes de ≥ 2 mots/);
   });
 
-  it("compte les doublons <summary> / contenu déplié (lot RA6)", () => {
+  it("compte les doublons <summary> / contenu déplié", () => {
     const fixture = `
       const PROFILE_KEY = { cruise: "skipperProfileCruise" };
       const summary = [t(PROFILE_KEY[profile]), isSuivre ? \`\${horizonH} h\` : null].join(" · ");

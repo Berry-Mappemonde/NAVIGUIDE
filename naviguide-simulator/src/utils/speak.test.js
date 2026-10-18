@@ -85,7 +85,7 @@ describe("speak", () => {
   });
 });
 
-describe("speak lot R3", () => {
+describe("speak", () => {
   it("découpe en phrases ≤ 200 caractères et garde un charIdx global croissant", () => {
     const long = `${"La mer est belle. ".repeat(8)}${"Vent fort, mer formée, cap à l'ouest sans relâche. ".repeat(6)}Fin.`;
     const chunks = splitUtterances(long, 200);

@@ -9,7 +9,7 @@ import { handleWaypointMarkerClick } from "../components/escalePopup.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "MapSceneController.js"), "utf8");
 
-describe("MapSceneController — boats (lot I)", () => {
+describe("MapSceneController — boats", () => {
   it("our `visible` decision is never overridden by the actor's own flag (spread first)", () => {
     for (const role of ["simulation", "ghost", "side", "plane", "drawing"]) {
       const idx = src.indexOf(`this.syncMarker("${role}", {`);
@@ -28,7 +28,7 @@ describe("MapSceneController — boats (lot I)", () => {
   });
 });
 
-describe("MapSceneController — caméra film (lot F1)", () => {
+describe("MapSceneController — caméra film", () => {
   it("aucun flyTo hors changement de chapitre (faux map)", () => {
     const calls = { flyTo: 0, setView: 0 };
     const map = {
@@ -75,7 +75,7 @@ describe("MapSceneController — caméra film (lot F1)", () => {
     assert.equal(calls.flyTo, 0, "premier mouvement = setView, pas de flyTo");
     assert.equal(calls.setView, 1);
     const mid = step(0, 1030);
-    assert.ok(mid.action === "panBy" || mid.action === "hold" || mid.action === "setView", "lot RG13 : plus de setView obligatoire par frame");
+    assert.ok(mid.action === "panBy" || mid.action === "hold" || mid.action === "setView", "plus de setView obligatoire par frame");
     assert.equal(calls.flyTo, 0);
     assert.equal(step(1, 5000).action, "setView");
     assert.equal(calls.flyTo, 0, "changement d'étape : un setView, plus de flyTo");
@@ -88,7 +88,7 @@ describe("MapSceneController — caméra film (lot F1)", () => {
   });
 });
 
-describe("MapSceneController — zoom (lot U / RG15)", () => {
+describe("MapSceneController — zoom", () => {
   it("n'orchestre pas un recalcul d'offsets pendant zoomanim ; zoomend recalcule tout de suite", () => {
     assert.match(src, /map\.on\("zoomanim"/);
     assert.match(src, /map\.on\("zoomend"/);
@@ -135,14 +135,14 @@ describe("MapSceneController — zoom (lot U / RG15)", () => {
     assert.match(src, /marker\._naviguideDrawing = drawingHasPoints/);
   });
 
-  it("lot RD2 — rond de tracé via drawingPinMetrics, plus d'icône 24×24 décalée", () => {
+  it("Rond de tracé via drawingPinMetrics, plus d'icône 24×24 décalée", () => {
     assert.match(src, /drawingPinHtml\(index, stamp\)/);
     assert.match(src, /drawingPinMetrics\(\)/);
     assert.doesNotMatch(src, /width:10px;height:10px/);
     assert.doesNotMatch(src, /iconSize: \[24, 24\], iconAnchor: \[12, 12\]/);
   });
 
-  it("RG15 — plancher de dézoom identique hors Suivre (plus de MAP_MIN_ZOOM réservé)", () => {
+  it("Plancher de dézoom identique hors Suivre (plus de MAP_MIN_ZOOM réservé)", () => {
     const start = src.indexOf("  applyZoomFloor()");
     const end = src.indexOf("  liftBoundsForDrawing()");
     assert.ok(start >= 0 && end > start);
@@ -161,7 +161,7 @@ describe("MapSceneController — zoom (lot U / RG15)", () => {
     assert.doesNotMatch(block, /\/ici|narrateIci|enqueueStory|fetch\(/);
   });
 
-  it("lot DM4 — cadrage Suivre au plancher, pas zoomForRemaining", () => {
+  it("Cadrage Suivre au plancher, pas zoomForRemaining", () => {
     const camAt = src.indexOf("  syncCamera(cast, snapshot)");
     const camEnd = src.indexOf("  renderDynamic(snapshot)", camAt);
     assert.ok(camAt >= 0 && camEnd > camAt);

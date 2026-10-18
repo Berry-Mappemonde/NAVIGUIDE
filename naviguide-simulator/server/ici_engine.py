@@ -3,9 +3,9 @@
 ZEE, PoE, AMP, projets, marinas-capit-WPI, mouillages OSM, Science,
 AtoN, satellites CDSE, EMODnet au point, GRIB2/Open-Meteo, GEBCO,
 climatologie. Accès moteur au point — pas de dump GeoJSON monde.
-Le sac reste hors LLM ; le juge de vérité (lot L3) relit une fiche
+Le sac reste hors LLM ; le juge de vérité relit une fiche
 PoE Gold via `truth_judge.maybe_attach` — cache 7 jours, jamais une
-suppression de texte. La veille et les phrases sourcées (lot L4) sont
+suppression de texte. La veille et les phrases sourcées sont
 rattachées depuis le cache (`escale_watch.attach_cached`), sans réseau.
 """
 from __future__ import annotations
@@ -48,13 +48,13 @@ MAX_POE = 4
 MAX_AMP = 5
 MAX_PROJECTS = 5
 MAX_NEARBY = 3
-# RG3 : invalide les perles sans couche projects / AMP filtrées.
-# AM1A : la clé y ajoute aussi la signature de la couche AMP (`a{total}`).
-# RC45 : bumper pour recalculer les perles figées avec amp: [] (revue #482).
+# Invalide les perles sans couche projects / AMP filtrées.
+# La clé y ajoute aussi la signature de la couche AMP (`a{total}`).
+# Bumper pour recalculer les perles figées avec amp: [] (revue #482).
 PEARL_REV = "am1a"
 AMP_NEAR_NM = 30.0
 PROJECT_NEAR_NM = 30.0
-# Cellule 1° + GET /amp (AM1A). TTL 1 jour (mémoire + kv).
+# Cellule 1° + GET /amp. TTL 1 jour (mémoire + kv).
 AMP_CELL_TTL_S = 86_400.0
 AMP_SIG_TTL_S = 86_400.0
 # Juste au-dessus du plafond backend (8°) : Mongo cache, pas ProtectedSeas.
@@ -148,7 +148,7 @@ _amp_cell_cache: dict[str, dict] = {}
 _amp_sig: dict[str, Any] = {"value": "0", "ts": 0.0, "ok": False}
 
 # Pearls (the along bags, 12 nm apart) are the same for every visitor and
-# every replay of the film: one lookup per 0.02° cell. Two kinds (lot P):
+# every replay of the film: one lookup per 0.02° cell. Two kinds:
 # `thin` (ZEE, ports of entry, MPA, projects, harbours — 7 days) and `rich`
 # (every layer without a timestamp: + science, anchorages, aton, EMODnet —
 # 30 days). Memory is an L1 in front of the SQLite store (pearl_store); a
@@ -272,7 +272,7 @@ def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None =
     # A pearl carries no climatology: the month never changes it, so it is
     # not part of the key (the client sends month=9, the warmer none).
     # PEARL_REV force le remplisseur à recalculer (RG3 : projects + filtre AMP).
-    # AM1A : `a{sig}` invalide le stock quand la couche AMP change.
+    # `a{sig}` invalide le stock quand la couche AMP change.
     del month
     la, lo = _pearl_cell(lat, lon)
     sig = ensure_pearl_amp_layer_sig("thin_cache_key")
@@ -727,7 +727,7 @@ def amp_cell_key(lat: float, lon: float) -> str:
 def amp_cell_bbox(lat: float, lon: float) -> str:
     """Boîte centrée sur la cellule, span 8,1° (cache Mongo, pas ArcGIS).
 
-    Le lot demandait ±1° autour du point. Une telle boîte (2° < 8°) passe par
+    La demande initiale était ±1° autour du point. Une telle boîte (2° < 8°) passe par
     `sites_in_bbox` et, tuile inconnue, chez ProtectedSeas (timeout observé).
     8,1° prend la branche cache du backend ; le filtre de portée reste shapely.
     """
@@ -944,7 +944,7 @@ async def fetch_amp_features(client: httpx.AsyncClient, lat: float, lon: float) 
         raise
 
 
-# Couches le long d'un trait (lot LY1) : pas le monde, pas les perles Berry.
+# Couches le long d'un trait : pas le monde, pas les perles Berry.
 LAYER_WARM_MAX_CELLS = 80
 LAYER_WARM_PAUSE_S = 0.2
 _layer_warm: dict[str, Any] = {
@@ -1052,7 +1052,7 @@ def slim_science(feat: dict, lat0: float, lon0: float) -> dict | None:
     return item
 
 
-# Types parlables seulement (lot RG5). Jamais un titre de jeu de données.
+# Types parlables seulement. Jamais un titre de jeu de données.
 _SCI_TYPE_LABELS = {
     "argo": {"fr": "un flotteur Argo", "en": "an Argo float"},
     "pelgas": {"fr": "la campagne PELGAS", "en": "the PELGAS campaign"},
@@ -1211,7 +1211,7 @@ def _first_plausible(records: list, lat: float, lon: float) -> dict | None:
 
 
 async def lookup_zee(client: httpx.AsyncClient, lat: float, lon: float) -> tuple[dict | None, str]:
-    """ZEE autour du bateau. Depuis le lot B : point-dans-polygone local sur
+    """ZEE autour du bateau. Désormais : point-dans-polygone local sur
     les ZEE VLIZ (`zee_local`, source « vliz-local ») ; le gazetteer
     MarineRegions ne sert plus que de repli tant que la couche n'est pas
     chargée. Repli : un point à quai n’est parfois pas dans le polygone, on
@@ -1471,7 +1471,7 @@ async def _climatology_bag(
 
 
 def _with_piracy(bag: dict, lat: float, lon: float) -> dict:
-    """Lot N4 : pose ``piracy`` au point, ou ``None``. Table locale, pas de HTTP."""
+    """Pose ``piracy`` au point, ou ``None``. Table locale, pas de HTTP."""
     try:
         from piracy import attach_piracy  # noqa: PLC0415
         attach_piracy(bag, lat, lon)
@@ -1494,7 +1494,7 @@ async def fill_dossier(
     force: bool = False,
 ) -> dict:
     """`thin=True` → a pearl (cached, no weather / satellite / sheet);
-    `rich=True` (with thin) → every layer without a timestamp (lot P).
+    `rich=True` (with thin) → every layer without a timestamp.
     `force=True` ignore la perle en cache (recalcul des aires encore en centroïdes)."""
     import offline
     if offline.enabled():
@@ -1563,12 +1563,12 @@ async def _fill_dossier(
         data = await _get_json(http, f"{bi}/poe/ports?mrgid={int(mrgid)}", timeout=4.0)
         return _poe_from_fc(data, lat, lon)
 
-    # RG3 : AMP et projets à 30 nm (même rayon que le sac « ici » du panneau).
+    # AMP et projets à 30 nm (même rayon que le sac « ici » du panneau).
     amp_radius = radius_nm
     marina_radius = 25.0 if thin else radius_nm
 
     async def amp_task() -> list[dict]:
-        # AM1A : polygones GET /amp (cache 1°), repli centroïdes si absent.
+        # Polygones GET /amp (cache 1°), repli centroïdes si absent.
         await refresh_amp_layer_sig(http)
         feats, source = await fetch_amp_features(http, lat, lon)
         found = nearest_amp(feats, lat, lon, amp_radius, MAX_AMP, source=source)

@@ -1,4 +1,4 @@
-// Lot RE3 — journal lisible dans les deux thèmes ; pilules 2:30 / 3:00
+// Journal lisible dans les deux thèmes ; pilules 2:30 / 3:00
 // seulement à côté de « Revoir l'expédition », jamais pendant le film.
 // Sans API : couleurs CSS (sonde dans l'encadré) et présence/absence des
 // pilules tiennent seuls. GET /voyage/official sondé ; s'il manque,
@@ -123,7 +123,7 @@ async function revealJournalLineForShot(page) {
   return true;
 }
 
-test("lot RE3 — journal lisible, pilules seulement hors film", async ({ page, request }) => {
+test("Journal lisible, pilules seulement hors film", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);

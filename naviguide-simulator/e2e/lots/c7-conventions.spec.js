@@ -1,4 +1,4 @@
-// Lot C7 — conventions : info-bulle sur la distance (saut avion exclu).
+// Conventions : info-bulle sur la distance (saut avion exclu).
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, showRightPanel } from "../helpers.js";
 
@@ -9,7 +9,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-test("lot C7 — survol de la distance : title non vide", async ({ page }) => {
+test("Survol de la distance : title non vide", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

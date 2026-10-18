@@ -1,5 +1,5 @@
 /**
- * Lot C5 — parité polaire client / serveur.
+ * Parité polaire client / serveur.
  * Mêmes 20 cas TWA × TWS que server/tests/test_polar_parity.py
  * (fixture server/tests/fixtures/polar_cases.json) → |Δ| ≤ 0,05 kn.
  */
@@ -15,7 +15,7 @@ const FIXTURE = JSON.parse(readFileSync(
   "utf8",
 ));
 
-describe("lot C5 — parité polaire JS / fixture Python", () => {
+describe("Parité polaire JS / fixture Python", () => {
   it("20 cas TWA × TWS, même vitesse à 0,05 kn", () => {
     const { polar, cases, tolerance_kn: tol } = FIXTURE;
     assert.equal(cases.length, 20);

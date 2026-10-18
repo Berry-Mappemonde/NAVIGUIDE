@@ -32,7 +32,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   clear: none;
   margin: 0;
 }
-/* Lot RD2 — sélecteur plus spécifique que le chunk Leaflet (chargé après)
+/* Sélecteur plus spécifique que le chunk Leaflet (chargé après)
  * pour garder la bande translucide dans les deux thèmes, sans aplat blanc. */
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution {
   background: rgba(15, 23, 42, 0.72);
@@ -51,7 +51,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 }
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
 
-/* Lot RB2 — +/− horizontaux, plus petits que le 26–30 px Leaflet, à côté des crédits. */
+/* +/− horizontaux, plus petits que le 26–30 px Leaflet, à côté des crédits. */
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom.leaflet-bar {
   display: flex;
   flex-direction: row;
@@ -97,7 +97,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   z-index: 2010 !important;
 }
 
-/* Lot F5 — plein écran film : masque les sidebars sans les démonter. */
+/* Plein écran film : masque les sidebars sans les démonter. */
 .film-fullscreen .naviguide-sidebar-panel,
 .film-fullscreen .naviguide-sidebar-toggle {
   display: none !important;
@@ -207,7 +207,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   border-color: rgb(148 163 184 / 0.8) !important;
 }
 
-/* Mode clair — relecture des blocs du 19 sept. (lot I) : cartes NOW / FREE,
+/* Mode clair — relecture des blocs du 19 sept. : cartes NOW / FREE,
    fiche d'escale, journal de bord, replay, tracé. Les accents pâles conçus
    pour le fond sombre (emerald-200, sky-200, violet-200, amber-200, cyan-200)
    deviennent leurs teintes foncées ; les fonds teintés translucides s'éclaircissent. */
@@ -246,7 +246,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: rgb(71 85 105) transparent; }
 
-/* Lot N — hauteurs fixes du panneau gauche (un seul réglage). */
+/* Hauteurs fixes du panneau gauche (un seul réglage). */
 :root {
   --sim-box-h-chat: 168px;
   --sim-box-h-now: 10rem;
@@ -304,7 +304,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   min-height: 0;
   overflow: auto;
 }
-/* Lot RE3 — journal : couleur explicite dans les deux thèmes (pas text-inherit). */
+/* Journal : couleur explicite dans les deux thèmes (pas text-inherit). */
 .ici-maintenant [data-testid="ici-journal-entry"] {
   color: rgb(226 232 240);
 }
@@ -349,7 +349,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   background: rgb(15 23 42 / 0.05);
 }
 
-/* Lot F4 — bulle événement ancrée au bateau (L.popup). */
+/* Bulle événement ancrée au bateau (L.popup). */
 .leaflet-popup.event-bubble {
   opacity: 0;
   transition: opacity 200ms ease;
@@ -400,7 +400,7 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   color: rgb(3 105 161) !important;
 }
 
-/* Lot R7 — fiche d'escale ancrée au drapeau (L.popup). */
+/* Fiche d'escale ancrée au drapeau (L.popup). */
 .leaflet-popup.escale-popup .leaflet-popup-content-wrapper {
   width: 340px;
   max-width: 340px;

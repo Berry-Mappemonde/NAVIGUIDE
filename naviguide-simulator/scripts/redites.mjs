@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Lot R13 — redites i18n (fr.js).
+ * Redites i18n (fr.js).
  * Node, sans dépendance : groupes de ≥ 2 mots (hors mots vides) présents
  * dans ≥ 2 valeurs, et valeurs identiques sous deux clés. Tri par fréquence.
- * Lot RA6 — doublons entre un <summary> replié et le contenu déplié.
+ * Doublons entre un <summary> replié et le contenu déplié.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

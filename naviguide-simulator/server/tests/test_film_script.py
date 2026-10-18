@@ -1,4 +1,4 @@
-"""Lot F3 — script du film : longueur, balises, aucun nombre nouveau, cache, sélection."""
+"""Script du film : longueur, balises, aucun nombre nouveau, cache, sélection."""
 import asyncio
 import json
 import re
@@ -145,9 +145,9 @@ def test_raw_length_bounded_and_chapter1_names():
 
 
 def test_connectors_alternate():
-    """RG6 : plus de rotation mécanique ; les formes suivent le contenu.
+    """Plus de rotation mécanique ; les formes suivent le contenu.
 
-    RC27 : le gabarit complet (quitte / longue traversée) est l'intégral, pas le 2:30.
+    Le gabarit complet (quitte / longue traversée) est l'intégral, pas le 2:30.
     """
     plan = build_raw_script(CLOCK, CLOCK["marks"], LIVE, JOURNAL, lang="fr", seconds=0, now_ms=NOW_MS)
     blob = " ".join(c.get("text") or "" for c in plan["chapters"])
@@ -402,7 +402,7 @@ def test_http_film_route_replay_t0(monkeypatch):
     assert r.status_code == 200
     text0 = r.json()["chapters"][0]["text"]
     assert "Saint-Maur" in text0
-    # RF2 : le script stocké est celui du t0 officiel — plus de recalcul à la requête.
+    # Le script stocké est celui du t0 officiel — plus de recalcul à la requête.
     assert "15 mai 2026" in text0
 
 
@@ -1102,7 +1102,7 @@ def test_review_lane_named_in_correct_chapter():
 
 
 def test_review_lane_named_without_moments_journal():
-    """Lot RC8 : sans moments, _compose doit encore citer le couloir."""
+    """Sans moments, _compose doit encore citer le couloir."""
     plan = build_raw_script(
         CLOCK, CLOCK["marks"], LIVE, JOURNAL,
         lang="fr", seconds=0, now_ms=NOW_MS, review=REVIEW_GIBRALTAR,
@@ -1115,7 +1115,7 @@ def test_review_lane_named_without_moments_journal():
 
 
 def test_warm_film_story_passes_review_without_clock(monkeypatch):
-    """Lot RC8 : le préchauffe envoie review_official à build_film_response."""
+    """Le préchauffe envoie review_official à build_film_response."""
     import film_script
     import voyage_store
 
@@ -1300,7 +1300,7 @@ def test_re7_discourse_eleven_defects():
     assert "Aucun port d'entrée" not in blob
     assert "entrée dans Entrée dans" not in blob
     assert "IUCN" not in blob
-    # RG6 : marina de route tues ; seule la marina d'escale est nommée à l'arrivée.
+    # Marina de route tues ; seule la marina d'escale est nommée à l'arrivée.
     assert "Gran Roque" not in blob
     assert "Monaco" not in blob
     assert re.search(r"s'envole de Cayenne pour Halifax", blob)
@@ -1336,7 +1336,7 @@ def _rf5_air_marks_no_halifax_iso():
 
 
 def test_rf5_air_survives_tight_budget():
-    """Lot RF5 : jambe avion aller + retour, budget 150 s et 108 s."""
+    """Jambe avion aller + retour, budget 150 s et 108 s."""
     for seconds in (150, 108):
         plan = build_raw_script(
             RE7_CLOCK, RE7_CLOCK["marks"], RE7_LIVE, _re7_journal(),
@@ -1421,7 +1421,7 @@ def test_rg1_depart_ms_is_clock_leave_not_hold():
 
 
 def test_rg1_air_window_not_told_as_navigation():
-    """RC31 : le catamaran ne navigue pas Cayenne → Saint-Pierre ; vol vers Halifax."""
+    """Le catamaran ne navigue pas Cayenne → Saint-Pierre ; vol vers Halifax."""
     marks = [
         {"name": "Saint-Maur (Berry, Indre)", "nm": 0, "filmNm": 0, "iso": OFFICIAL_T0, "holdHours": 0, "lat": 46.8, "lon": 1.6},
         {"name": "La Rochelle", "nm": 122, "filmNm": 122, "iso": "2026-05-15T12:00:00Z", "holdHours": 0, "lat": 46.15, "lon": -1.16},
@@ -1495,7 +1495,7 @@ def test_rg1_air_window_not_told_as_navigation():
 
 
 def test_rg1_ensure_air_sentences_stay_on_matching_chapter():
-    """RC43 : une phrase manquante n'est injectée que dans le chapitre from/to du vol."""
+    """Une phrase manquante n'est injectée que dans le chapitre from/to du vol."""
     from film_script import _ensure_air_sentences
 
     chapters = [
@@ -1619,7 +1619,7 @@ def test_zee_dosage_short_keeps_all_long_one_per_day():
     clustered = dose_zee_changes(short, span_ms=2 * day)
     assert len(clustered) == 1
     sent = change_sentence(clustered[0], "fr")
-    # RC26 : groupe grammatical « les eaux X, puis celles de Y » — noms FR.
+    # Groupe grammatical « les eaux X, puis celles de Y » — noms FR.
     assert "les eaux d'Antigua-et-Barbuda" in sent
     assert "puis celles de Saint-Christophe-et-Niévès" in sent
     assert "puis celles de Saint-Eustache" in sent
@@ -1658,7 +1658,7 @@ def test_zee_dosage_short_keeps_all_long_one_per_day():
          "title": "Portuguese Exclusive Economic Zone"},
     ]
     one_day = dose_zee_changes([long_zee[0], same_day[0]], span_ms=long_span)
-    # RC35 : ES et PT sont des eaux de la route — deux phrases, pas un groupe du jour.
+    # ES et PT sont des eaux de la route — deux phrases, pas un groupe du jour.
     assert len(one_day) == 2
     assert {c["title"] for c in one_day} == {
         "Spanish Exclusive Economic Zone", "Portuguese Exclusive Economic Zone",
@@ -1753,7 +1753,7 @@ def test_stock_ports_and_marinas_become_named_coasts():
 
 
 def test_rg2_coast():
-    """RC19 : Muxía+Camariñas ensemble ; île Sardaigne pas écrasée le même jour."""
+    """Muxía+Camariñas ensemble ; île Sardaigne pas écrasée le même jour."""
     coasts = [
         {"id": "cor", "kind": "coast", "score": 2, "tMs": _ms("2026-05-16T10:00:00Z"),
          "t": "2026-05-16T10:00:00Z", "title": "La Coruña", "fact": "La Coruña (6 nm)"},
@@ -1860,7 +1860,7 @@ def test_rg2_film_names_route_and_heading():
 
 
 def test_rg2_island_survives_waters_trim():
-    """RC19 : la Sardaigne n'est pas retirée pour garder les eaux italiennes / françaises."""
+    """La Sardaigne n'est pas retirée pour garder les eaux italiennes / françaises."""
     head = "Le 15 mai, Berry-Mappemonde quitte La Rochelle, cap au sud-ouest."
     arrival = "Arrivée à Ajaccio le 26 mai."
     island = "Le 24 mai, la Sardaigne — Porto Torres."
@@ -2077,7 +2077,7 @@ def test_rg5_one_station_per_chapter_closest_no_count():
     blob = _script_blob(plan)
     assert "Bacteria" not in blob
     assert "stations scientifiques croisées" not in blob
-    # RC30 : au plus UN flotteur par jambe, dit avec son identifiant.
+    # Au plus UN flotteur par jambe, dit avec son identifiant.
     assert "un flotteur Argo" not in blob
     assert blob.count("flotteur Argo") <= 1
     if "flotteur Argo" in blob:
@@ -2988,7 +2988,7 @@ def test_rc26_dock_keeps_at_most_two_items_one_proximity():
 
 
 # ---------------------------------------------------------------------------
-# Lot RC30 — le film dit les choses dans l'ordre, et finit ses phrases
+# Le film dit les choses dans l'ordre, et finit ses phrases
 # (revue du porteur, 14 oct.).
 # ---------------------------------------------------------------------------
 
@@ -3157,7 +3157,7 @@ def test_rc30_heading_ignores_plane_vertices_cayenne_papeete():
 
 
 def test_rc32_saint_martin_sint_maarten_distinguished():
-    """Île partagée : les deux eaux se disent, distinguées (RC32) —
+    """Île partagée : les deux eaux se disent, distinguées —
     plus jamais « les eaux de Saint-Martin, puis celles de Saint-Martin »."""
     from film_script import zee_group_waters
     from toponyms import consecutive_homonyms
@@ -3287,7 +3287,7 @@ def test_rg11a_honest_write_has_increasing_anchors():
 
 
 def test_am1b_amp_enter_and_nearby_sentences():
-    """DC1 : entrée → traverse ; nearby → près, à N milles. Circulation seulement si le stock l'a."""
+    """Entrée → traverse ; nearby → près, à N milles. Circulation seulement si le stock l'a."""
     enter = {
         "kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
         "t": "2026-05-25T12:00:00Z", "inside": True, "nm": 0,
@@ -3391,7 +3391,7 @@ def test_attach_ici_film_phrases_does_not_mutate_cache():
 
 
 # ---------------------------------------------------------------------------
-# Lot RC35 — eaux LR→Ajaccio dans l'ordre du voyage ; Papeete nomme le Pacifique
+# Eaux LR→Ajaccio dans l'ordre du voyage ; Papeete nomme le Pacifique
 # (revue de nuit 15 oct. : Gascogne/Maroc absents, FR collé à la Corse).
 # ---------------------------------------------------------------------------
 
@@ -3693,7 +3693,7 @@ def test_rc35_papeete_names_pacific_not_north_atlantic():
 
 
 # ---------------------------------------------------------------------------
-# Lot RC48 — titres FR du journal (mai), pas les titres EN de RC35
+# Titres FR du journal (mai), pas les titres EN de RC35
 # ---------------------------------------------------------------------------
 
 
@@ -3841,7 +3841,7 @@ def test_rc48_prefer_journal_moments_keeps_fr_zee_enter():
 
 
 # ---------------------------------------------------------------------------
-# Lot RC41 — phrase mer lisible : pas de « ≥ », le seuil n'est pas répété
+# Phrase mer lisible : pas de « ≥ », le seuil n'est pas répété
 # ---------------------------------------------------------------------------
 
 _DUP_METERS_RE = re.compile(r"(\d+)\s*m.+\1\s*m")
@@ -3889,7 +3889,7 @@ def test_rc41_chapter_with_hs_alert_is_readable():
 
 
 # ---------------------------------------------------------------------------
-# Lot RC53 — casse des noms d'eaux en anglais (pas de rebuild du film)
+# Casse des noms d'eaux en anglais (pas de rebuild du film)
 # ---------------------------------------------------------------------------
 
 _RC53_LOWER_WATERS = (
@@ -4004,7 +4004,7 @@ def _rc55_climo(iso, *, lat, lon, place_en, place_fr):
 
 
 def test_rc55_saint_pierre_chapter_omits_guiana_and_equator():
-    """RC55 : le chapitre qui part de Saint-Pierre ne contient ni equator ni
+    """Le chapitre qui part de Saint-Pierre ne contient ni equator ni
     French Guiana. Marigot → Cayenne (Paramaribo) et Cayenne → Papeete
     (Balboa) gardent l'équateur."""
     marks = [
@@ -4956,7 +4956,7 @@ def test_ed1_ultra_edits_then_judges_or_falls_to_super(monkeypatch):
 
 
 def _vs1_full_bag():
-    """Neuf familles DC + id d'avis réservé (TV1)."""
+    """Neuf familles DC + id d'avis réservé."""
     return film_choice_bag(dc_subject_candidates([
         {"kind": "amp", "event": "enter", "title": "Cabrera", "fact": "Cabrera",
          "nm": 0, "inside": True, "t": "2026-05-25T12:00:00Z"},

@@ -1,4 +1,4 @@
-// Lot RC11 / RC10 / RE7 — récit officiel, pas le film Simulation.
+// Récit officiel, pas le film Simulation.
 // Sans API : Revoir visible et non cliquable, champ date là, pas de récit
 // Ajaccio. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions du script serveur — jamais Revoir retiré, ni le champ
@@ -64,7 +64,7 @@ function isRe7Film(free) {
   const blob = chapters.map((c) => c.text || "").join(" ");
   if (FORBIDDEN.test(blob)) return false;
   if (/milles nautiques du départ|Bay of Biscay/.test(blob)) return false;
-  // RC21 : un film RG6+ long n'est pas stale pour le seul plafond 800.
+  // Un film RG6+ long n'est pas stale pour le seul plafond 800.
   if (wordCount(blob) > 800 && !hasRg6Rg7Fingerprint(blob)) return false;
   return true;
 }
@@ -86,7 +86,7 @@ async function waitRe7Film(page, { timeout = 45_000 } = {}) {
   return last ? { film: last, stale: !isRe7Film(last) } : null;
 }
 
-test("lot RE7 — récit sans durée, un lieu une fois, dernière jambe fermée", async ({ page }) => {
+test("Récit sans durée, un lieu une fois, dernière jambe fermée", async ({ page }) => {
   test.setTimeout(120_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

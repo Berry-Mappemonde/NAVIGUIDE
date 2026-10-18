@@ -1,4 +1,4 @@
-// Lot C1 — résumé d'expédition : étapes entre escales, plus les sommets du routeur.
+// Résumé d'expédition : étapes entre escales, plus les sommets du routeur.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, showRightPanel } from "../helpers.js";
 
@@ -9,7 +9,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-test("lot C1 — résumé : 16 étapes · 17 escales, sans « waypoints »", async ({ page }) => {
+test("Résumé : 16 étapes · 17 escales, sans « waypoints »", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

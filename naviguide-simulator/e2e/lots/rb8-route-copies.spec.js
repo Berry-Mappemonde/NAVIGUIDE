@@ -1,4 +1,4 @@
-// Lot RB8 — route copiée jusqu'à la butée droite ; survol du trait parcouru.
+// Route copiée jusqu'à la butée droite ; survol du trait parcouru.
 // Sans API : copies de route (geojson local) et bornes se vérifient seules.
 // Survol hindcast / jambe avion : seulement si GET /voyage/official répond
 // et qu'un trait parcouru expose déjà une vitesse d'époque (jamais inventée).
@@ -84,7 +84,7 @@ function inspectMap() {
   };
 }
 
-test("lot RB8 — copie droite du trajet et survol du parcouru", async ({ page }) => {
+test("Copie droite du trajet et survol du parcouru", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

@@ -1,4 +1,4 @@
-"""Budget journalier des appels LLM (lot L1, plan Nemotron § 0 / § 3).
+"""Budget journalier des appels LLM (plan Nemotron § 0 / § 3).
 
 Compteurs par niveau (`fast` / `write` / `judge`) dans `pearl_store.kv`,
 clé logique `llm-budget:<date>:<tier>`. Au plafond : aucun appel réseau
@@ -27,8 +27,8 @@ TIERS = ("fast", "write", "deep", "judge")
 
 # Tokens / jour — resserrés le 28 sept. (facture Nebius du mois : 6,58 $ sur 60 $ de crédits, dont 5,19 $ de
 # Nemotron Ultra pour un badge que personne ne voyait) : fast ≈ 0,05 $/j, write ≈ 0,08 $/j.
-# Lot RG19 : Ultra (palier judge) a 60 000 tokens/jour dans les défauts ; le mode
-# `NAVIGUIDE_LLM_MODE=off` (agents, CI) bloque encore tout appel, plafond ou pas.
+# Ultra (palier judge) a 60 000 tokens/jour dans les défauts ; le mode
+# `NAVIGUIDE_LLM_MODE=off` (CI, tests automatisés) bloque encore tout appel, plafond ou pas.
 DEFAULT_CAPS = {
     "fast": 200_000,
     "write": 150_000,
@@ -39,7 +39,7 @@ DEFAULT_CAPS = {
 # Appels Ultra du chat / jour (geste explicite seulement). En plus du plafond tokens judge.
 DEFAULT_CHAT_ULTRA_PER_DAY = 10
 _ENV_CHAT_ULTRA = "NAVIGUIDE_CHAT_ULTRA_PER_DAY"
-# Frein en dollars estimés (lot NB1). Absent, vide, non numérique ou ≤ 0 = pas de coupure
+# Frein en dollars estimés. Absent, vide, non numérique ou ≤ 0 = pas de coupure
 # (voulu, le temps de mesurer). Aucun montant n'est écrit dans le dépôt.
 _ENV_DAILY_USD = "NAVIGUIDE_LLM_DAILY_USD"
 
@@ -489,7 +489,7 @@ def _tavily_key(day: str | None = None) -> str:
 
 
 def tavily_usage(day: str | None = None) -> dict[str, Any]:
-    """Credits consumed today (1 credit per Tavily HTTP call, lot L3)."""
+    """Credits consumed today (1 credit per Tavily HTTP call)."""
     import pearl_store  # noqa: PLC0415
 
     hit = pearl_store.kv_get(NS, _tavily_key(day))

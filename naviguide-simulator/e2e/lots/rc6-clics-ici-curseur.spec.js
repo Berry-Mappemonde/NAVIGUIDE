@@ -1,4 +1,4 @@
-// Lot RC6 — clic drapeau → fiche Ici en tête ; clic ligne d'escale → curseur
+// Clic drapeau → fiche Ici en tête ; clic ligne d'escale → curseur
 // qui reste. Sans API : Suivre, panneau Ici et barre film tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions drapeau / fiche / curseur, jamais Suivre ni l'encadré Ici.
@@ -96,7 +96,7 @@ async function centerOnAjaccio(page) {
   await page.waitForTimeout(300);
 }
 
-test("lot RC6 — fiche Ici sur drapeau, curseur qui reste sur l'escale", async ({ page }) => {
+test("Fiche Ici sur drapeau, curseur qui reste sur l'escale", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {
@@ -170,7 +170,7 @@ test("lot RC6 — fiche Ici sur drapeau, curseur qui reste sur l'escale", async 
   }
 
   await row.scrollIntoViewIfNeeded();
-  // RE2 : la liste n'est plus cliquable — le curseur reste LIVE ; la fiche Ici porte l'escale.
+  // La liste n'est plus cliquable — le curseur reste LIVE ; la fiche Ici porte l'escale.
   await centerOnAjaccio(page);
   const flag = page.locator("[data-testid='waypoint-flag'][data-escale*='Ajaccio']").first();
   await expect(flag, "drapeau Ajaccio").toBeVisible({ timeout: 12_000 });

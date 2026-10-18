@@ -159,7 +159,7 @@ def near_coast(lat: float, lon: float, radius_nm: float = COAST_NEAR_NM, heading
 
 
 def isochrone_time_step_h(lat: float, lon: float, radius_nm: float = COAST_NEAR_NM) -> float:
-    """Pas 1 h à moins de 60 nm d'une côte, 3 h en haute mer (lot C4, l. 21)."""
+    """Pas 1 h à moins de 60 nm d'une côte, 3 h en haute mer (l. 21)."""
     if near_coast(lat, lon, radius_nm):
         return ISOCHRONE_STEP_COAST_H
     return ISOCHRONE_STEP_OFFSHORE_H
@@ -347,7 +347,7 @@ def combine_nogo(*fns: Optional[Callable]) -> Optional[Callable]:
 
 def skipper_nogo(wind_fn: Callable, *, wind_max_kt: Optional[float] = None,
                  hs_max_m: Optional[float] = None) -> Callable:
-    """Lot G : les ordres du skipper comme zones interdites du routage — un
+    """Les ordres du skipper comme zones interdites du routage — un
     pas d'isochrone qui tombe dans un vent ≥ wind_max_kt ou une mer
     ≥ hs_max_m est écarté. Sans chiffre, seule la mer forte par défaut
     (WAVE_NOGO_M) reste interdite, comme avant. Une case sans donnée n'est

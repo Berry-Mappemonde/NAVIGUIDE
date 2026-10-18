@@ -1,4 +1,4 @@
-"""Lot RF2 — stock officiel : une interface, deux dos, aucun calcul sur la requête."""
+"""Stock officiel : une interface, deux dos, aucun calcul sur la requête."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -434,7 +434,7 @@ def test_film_key_includes_script_rev(tmp_path):
 
 
 def test_plan_review_key_changes_with_rev(tmp_path, monkeypatch):
-    """Lot RC50 : bumper PLAN_REVIEW_REV change la clé."""
+    """Bumper PLAN_REVIEW_REV change la clé."""
     store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
     voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
     base = store.current_key(voy, NOW)
@@ -447,7 +447,7 @@ def test_plan_review_key_changes_with_rev(tmp_path, monkeypatch):
 
 
 def test_plan_review_pre_rev_snapshot_is_preparing_even_when_worker_off(tmp_path, monkeypatch):
-    """Lot RC50 : snapshot Halifax → Papeete à la clé sans rev n'est jamais ready.
+    """Snapshot Halifax → Papeete à la clé sans rev n'est jamais ready.
 
     Contrairement à film/moments/ici, plan_review n'a pas de repli WORKER=0 :
     GET sans entrée à `…:PLAN_REVIEW_REV` reste en préparation.
@@ -478,7 +478,7 @@ def test_plan_review_pre_rev_snapshot_is_preparing_even_when_worker_off(tmp_path
 
 
 def test_plan_review_refresh_misses_old_key(tmp_path, monkeypatch):
-    """Lot RC50 : refresh_family ne rend pas unchanged sur l'ancien snapshot."""
+    """Refresh_family ne rend pas unchanged sur l'ancien snapshot."""
     store = OfficialStore(DiskBackend(tmp_path / "disk"), now=lambda: NOW)
     voy = {"t0": T0, "points": [{"lat": 1, "lon": 2}], "marks": []}
     stale = {
@@ -1130,7 +1130,7 @@ def test_stop_other_fill_processes_is_a_noop_under_pytest(monkeypatch):
     assert os_.stop_other_fill_processes() == []
 
 
-# ── Lot HC1 — passé réel figé + avenir déterministe dans la famille climo ───
+# ── HC1 — passé réel figé + avenir déterministe dans la famille climo ───
 
 
 def _hc1_bind_om(published_until: str, era5_kn: float = 20.0):
@@ -1268,7 +1268,7 @@ def test_hc1_atlas_degraded_serves_yesterday_clock(monkeypatch):
 
 
 def test_rc34_stale_climo_without_real_until_is_recomputed(tmp_path, monkeypatch):
-    """Lot RC34 : un climo du jour sans realUntil n'est pas `unchanged` —
+    """Un climo du jour sans realUntil n'est pas `unchanged` —
     compute_climo tourne (faux ERA5 HC1), le payload rangé a realUntil ;
     un second refresh avec realUntil → unchanged. L'ancienne horloge reste
     servie tant que put n'a pas eu lieu."""

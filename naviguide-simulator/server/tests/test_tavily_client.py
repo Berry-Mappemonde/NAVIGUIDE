@@ -1,4 +1,4 @@
-"""Client Tavily — faux serveur POST /extract et /search (lot L3)."""
+"""Client Tavily — faux serveur POST /extract et /search."""
 import asyncio
 import json
 

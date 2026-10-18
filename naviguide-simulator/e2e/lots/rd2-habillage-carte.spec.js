@@ -1,4 +1,4 @@
-// Lot RD2 — habillage carte : crédits/zoom translucides, chevrons alignés,
+// Habillage carte : crédits/zoom translucides, chevrons alignés,
 // rond de tracé centré sous le clic. Sans API : bande, toggles et pin
 // tiennent seuls. GET /voyage/official sondé ; s'il manque, annotation
 // seulement (aucune assertion n'en dépend).
@@ -177,7 +177,7 @@ async function closestPin(page, x, y) {
   }, { x, y });
 }
 
-test("lot RD2 — crédits translucides, chevrons alignés, pin sous le clic", async ({ page }) => {
+test("Crédits translucides, chevrons alignés, pin sous le clic", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

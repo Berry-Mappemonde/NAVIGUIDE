@@ -1,4 +1,4 @@
-// Lot RE5 — fourchette d'arrivée sous la prochaine escale, ou la ligne
+// Fourchette d'arrivée sous la prochaine escale, ou la ligne
 // honnête quand l'ensemble est vide (même contrat que RG17).
 // members > 0 : la vraie fenêtre du stock. members = 0 : « indisponible »,
 // jamais une date inventée. Sans API : Suivre + liste tiennent seuls.
@@ -63,7 +63,7 @@ function retryYear(iso) {
   return new Date(t).getUTCFullYear();
 }
 
-test("lot RE5 — fourchette sous la prochaine escale, ou la ligne honnête", async ({ page, request }) => {
+test("Fourchette sous la prochaine escale, ou la ligne honnête", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);

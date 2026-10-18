@@ -126,7 +126,7 @@ def main() -> int:
             url, _frag = split_url(raw)
             if not url or url.startswith(SKIP_URL_PREFIXES):
                 continue
-            # Artefacts éditeur (Cursor media), hors dépôt.
+            # Artefacts d'éditeur, hors dépôt.
             if url.startswith("/cursor/"):
                 continue
             rel = md.relative_to(ROOT)

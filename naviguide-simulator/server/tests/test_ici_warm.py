@@ -212,7 +212,7 @@ def test_status_exposes_llm_budget_counters():
 
 
 def test_warm_skips_stories_and_does_not_call_llm(tmp_path, monkeypatch):
-    """RG18 : un warm complet n'appelle pas cascade_text ; le compteur write ne bouge pas."""
+    """Un warm complet n'appelle pas cascade_text ; le compteur write ne bouge pas."""
     import llm_budget
     import story_cascade
     import voyage_store
@@ -260,7 +260,7 @@ def test_warmer_is_disabled_by_env(monkeypatch):
 
 
 def test_pearls_carry_the_clocks_sail_scale_including_the_land_leg():
-    """Lot K (correctif) : la perle porte le cumNm de la route — l'échelle de
+    """La perle porte le cumNm de la route — l'échelle de
     l'horloge — et non des milles comptés depuis le premier point de mer.
     Sans ça, chaque ligne du journal issue des perles était datée ~16 h trop tôt."""
     pts = [

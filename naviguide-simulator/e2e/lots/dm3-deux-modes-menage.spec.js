@@ -1,4 +1,4 @@
-// Lot DM3 — ménage des identifiants « simulation » dans le client
+// Ménage des identifiants « simulation » dans le client
 // Aucun changement visible : le parcours
 // Suivre → Tracer → Tracer votre propre route → Terminer → Suivre est celui
 // de la veille. VIEW_TRACER / isTracer / mode-tracer ; le protocole serveur
@@ -39,7 +39,7 @@ async function stubRoute(page) {
   });
 }
 
-test("lot DM3 — Suivre → Tracer → Tracer votre propre route → Terminer → Suivre, identique à la veille", async ({ page }) => {
+test("Suivre → Tracer → Tracer votre propre route → Terminer → Suivre, identique à la veille", async ({ page }) => {
   test.setTimeout(120_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));

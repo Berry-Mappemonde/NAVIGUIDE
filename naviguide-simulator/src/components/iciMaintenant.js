@@ -29,7 +29,7 @@ export function isFollowCustomIci(mode, { routeSource } = {}) {
  * Suivre × Berry : Maintenant · Récit · Journal · Revue du plan.
  * Suivre × ma route (DM8C, option A) : Revue du plan · Journal · Récit ;
  * Maintenant masqué (pas de « maintenant » sur une horloge que je choisis).
- * Tracer : Revue du plan · Récit seulement (lot DM9).
+ * Tracer : Revue du plan · Récit seulement.
  * Les onglets masqués restent dans ICI_TABS : hidden, pas supprimés.
  */
 export function visibleIciTabs(mode, { routeSource } = {}) {

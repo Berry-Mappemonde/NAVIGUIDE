@@ -1,4 +1,4 @@
-// Lot RC53 — film anglais : noms d'eaux avec majuscule (French waters, …).
+// Film anglais : noms d'eaux avec majuscule (French waters, …).
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // assertions film — barre, Revoir et bouton EN gardés.
 import { mkdirSync } from "node:fs";
@@ -47,7 +47,7 @@ function watersBlob(chapters) {
   return (chapters || []).map((c) => String(c?.text || "")).join(" ");
 }
 
-test("lot RC53 — Revoir EN : les eaux ont une majuscule", async ({ page }) => {
+test("Revoir EN : les eaux ont une majuscule", async ({ page }) => {
   test.setTimeout(120_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

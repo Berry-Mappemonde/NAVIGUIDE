@@ -233,7 +233,7 @@ def test_js_py_same_schema_keys():
     assert z["speedKnots"] > 0
 
 
-# ── Lot C4 — courant, vagues, efficacité, climatologie ────────────────────────
+# ── C4 — courant, vagues, efficacité, climatologie ────────────────────────
 
 C4_POLAR = {
     "twa_rows": [40, 60, 90, 120, 150, 180],
@@ -392,7 +392,7 @@ def test_sail_nm_excludes_air_miles():
 
 
 def test_sail_nm_includes_halifax_spm_excludes_cayenne_halifax():
-    """RB1 : Halifax ↔ SPM compte à la voile ; seules Cayenne ↔ Halifax restent avion."""
+    """Halifax ↔ SPM compte à la voile ; seules Cayenne ↔ Halifax restent avion."""
 
     def wind_fn(lat, lon, t):
         return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}
@@ -443,7 +443,7 @@ def test_c4_planning_speed_parity_with_js():
 
 
 def test_ra8_past_vertex_hindcast_era5_speed_not_climatology():
-    """Lot RA8 : un sommet passé a regime=hindcast et une vitesse ERA5 × polaire."""
+    """Un sommet passé a regime=hindcast et une vitesse ERA5 × polaire."""
     era5 = {
         "speedKnots": 24.0, "dirFromDeg": 0.0,
         "kind": "hindcast", "regime": "hindcast", "sources": ["om-era5"],
@@ -470,7 +470,7 @@ def test_ra8_past_vertex_hindcast_era5_speed_not_climatology():
     assert abs(sea["speedKnots"] - stw) < 0.3
 
 
-# ── Lot HC1 — troncature propre quand le vent RÉEL s'épuise ──────────────────
+# ── HC1 — troncature propre quand le vent RÉEL s'épuise ──────────────────
 
 
 def test_hc1_wind_exhausted_truncates_cleanly():
@@ -516,7 +516,7 @@ def test_hc1_wind_exhausted_truncates_cleanly():
 
 
 def test_rc31_episode_side_halifax_quay():
-    """Lot RC31 : véhicule side entre les vols, marques Halifax, quay Cayenne."""
+    """Véhicule side entre les vols, marques Halifax, quay Cayenne."""
 
     def wind_fn(lat, lon, t):
         return {"speedKnots": 10.0, "dirFromDeg": 90.0, "kind": "climatology"}

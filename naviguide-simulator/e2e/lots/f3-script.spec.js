@@ -1,4 +1,4 @@
-// Lot F3 — script du film : chapitre 1 Saint-Maur + La Rochelle, source visible.
+// Script du film : chapitre 1 Saint-Maur + La Rochelle, source visible.
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -17,7 +17,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot F3 — chapitre 1 Saint-Maur / La Rochelle, source non vide", async ({ page }) => {
+test("Chapitre 1 Saint-Maur / La Rochelle, source non vide", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -33,7 +33,7 @@ test("lot F3 — chapitre 1 Saint-Maur / La Rochelle, source non vide", async ({
   await expect(subtitle).toContainText("La Rochelle");
   await shot(page, "01-chapitre-1");
 
-  // RF8 : « Récit : règles » retiré de la barre ; la source reste dans le DOM (hidden).
+  // « Récit : règles » retiré de la barre ; la source reste dans le DOM (hidden).
   const source = page.getByTestId("film-source");
   await expect(source).toBeAttached();
   await expect(source).toHaveAttribute("hidden", "");

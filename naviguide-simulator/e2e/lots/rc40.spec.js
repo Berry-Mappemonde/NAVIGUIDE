@@ -1,4 +1,4 @@
-// Lot RC40 — en pleine jambe la caméra glisse, elle ne saute pas d'ancre
+// En pleine jambe la caméra glisse, elle ne saute pas d'ancre
 // (bouée, île, événement). Sans API : GET /voyage/official sondé ; s'il
 // manque, annotation + saut des assertions caméra — barre et Revoir gardés.
 import { mkdirSync } from "node:fs";
@@ -44,7 +44,7 @@ function degJump(a, b) {
   return Math.hypot(b.lat - a.lat, dLon);
 }
 
-test("lot RC40 — pleine jambe : centre carte sans saut > 0,4°", async ({ page }) => {
+test("Pleine jambe : centre carte sans saut > 0,4°", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
@@ -170,7 +170,7 @@ test("lot RC40 — pleine jambe : centre carte sans saut > 0,4°", async ({ page
   await shot(page, "01-caraibes");
 });
 
-test("lot RC40/RC49 — seek Ajaccio → Fort-de-France : bateau au centre, un saut", async ({ page }) => {
+test("Seek Ajaccio → Fort-de-France : bateau au centre, un saut", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

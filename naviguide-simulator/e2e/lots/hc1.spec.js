@@ -1,4 +1,4 @@
-// Lot HC1 — la position du bateau devient vraie et stable.
+// La position du bateau devient vraie et stable.
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, les
 // assertions qui en dépendent sont sautées (annotation + return) — le build
 // doit tenir debout seul (barre film + ligne d'état visibles).
@@ -38,7 +38,7 @@ async function getJson(page, url) {
   return res.json().catch(() => null);
 }
 
-test("lot HC1 — position vraie : statut honnête, horloge stable, réel/climatologie", async ({ page }) => {
+test("Position vraie : statut honnête, horloge stable, réel/climatologie", async ({ page }) => {
   test.setTimeout(120_000);
 
   await page.setViewportSize({ width: 1600, height: 900 });
@@ -109,7 +109,7 @@ test("lot HC1 — position vraie : statut honnête, horloge stable, réel/climat
   // preferCanvas — pas de <path> SVG : on lit les pixels du canvas. Le rendu
   // de l'horloge (~9 000 sommets) arrive après la ligne d'état, d'où l'attente.
   await page.waitForFunction(() => {
-    const want = [45, 212, 191]; // #2dd4bf — réel (teintes du lot C3)
+    const want = [45, 212, 191]; // #2dd4bf — réel (teintes de C3)
     for (const c of document.querySelectorAll("canvas")) {
       const ctx = c.getContext("2d");
       if (!ctx || !c.width || !c.height) continue;

@@ -24,7 +24,7 @@ HUB_STOP_NAME = "Halifax (Nouvelle-Écosse)"
 VIA_STOP_NAME = "Saint-Pierre (Saint-Pierre-et-Miquelon)"
 PARK_STOP_NAME = "Cayenne (Guyane)"
 WAVE_NOGO_M = 2.5
-# WAVE_NOGO_DT_FACTOR (×3 dès 2,5 m) retiré lot C4 — voir wave_polar_factor.
+# WAVE_NOGO_DT_FACTOR (×3 dès 2,5 m) retiré C4 — voir wave_polar_factor.
 MAX_STEP_NM = 30.0
 MAX_STEP_H = 1.0
 OFFICIAL_VOYAGE_ID = "berry-mappemonde-2026-officiel"
@@ -44,7 +44,7 @@ WindFn = Callable[[float, float, datetime], Dict[str, Any]]
 
 
 class WindExhausted(Exception):
-    """Levée par un wind_fn strict (lot HC1) : plus de vent RÉEL à cette date.
+    """Levée par un wind_fn strict : plus de vent RÉEL à cette date.
 
     `build_voyage_clock` s'arrête proprement au dernier pas complet et pose
     `truncated` sur l'horloge — jamais un vent inventé à la place."""
@@ -207,7 +207,7 @@ def polar_boat_speed(raw: Optional[dict], twa: float, tws: float) -> Optional[fl
 
 
 def polar_efficiency() -> float:
-    """Facteur de croisière (lot C4). Variable d'environnement POLAR_EFFICIENCY."""
+    """Facteur de croisière. Variable d'environnement POLAR_EFFICIENCY."""
     raw = os.environ.get("POLAR_EFFICIENCY", str(POLAR_EFFICIENCY_DEFAULT))
     try:
         v = float(raw)
@@ -219,7 +219,7 @@ def polar_efficiency() -> float:
 
 
 def wave_polar_factor(hs: Optional[float], relative_deg: float = 90.0) -> float:
-    """Facteur continu Hs × angle relatif houle/cap (lot C4, A7).
+    """Facteur continu Hs × angle relatif houle/cap.
 
     f = 1 jusqu'à 1,5 m ; linéaire jusqu'à 0,6 (mer de face) / 0,85 (mer
     arrière) à 4 m ; plafonné au-delà. Angle 0° = mer de face (houle « de »
@@ -304,7 +304,7 @@ def _wave_relative_deg(heading: float, w: dict) -> float:
 def _stw_from_wind(polar_raw, brg: float, w: dict) -> tuple[float, float, str]:
     """Vitesse surface : polaire × efficacité × polaire de vagues (sans courant).
 
-    `boat_speed_from_wind` n'est appelé que sans polaire (lot C7, `basis`).
+    `boat_speed_from_wind` n'est appelé que sans polaire (`basis`).
     """
     twa = twa_deg(brg, float(w.get("dirFromDeg") or 0))
     from_polar = polar_boat_speed(polar_raw, twa, float(w.get("speedKnots") or 0))
@@ -492,7 +492,7 @@ def _episode_covering(episodes: List[dict], index: int) -> Optional[dict]:
 
 def find_start_index(points: List[dict], marks: List[dict], start_at: str = "la-rochelle") -> int:
     # "seam" : la route commence déjà au bon endroit (reprise mi-parcours,
-    # lot HC1) — ne PAS pivoter sur la marque La Rochelle (l'arrivée de la
+    # HC1) — ne PAS pivoter sur la marque La Rochelle (l'arrivée de la
     # boucle matcherait et sauterait tout l'avenir).
     if start_at in ("saint-maur", "seam") or not points:
         return 0
@@ -809,7 +809,7 @@ def build_voyage_clock(
                         basis=last_speed_basis,
                     ))
     except WindExhausted as exc:
-        # Fin du vent RÉEL (lot HC1) : on garde le dernier pas complet, on dit
+        # Fin du vent RÉEL : on garde le dernier pas complet, on dit
         # où et pourquoi — jamais un vent de remplacement non étiqueté.
         frac = (pos_nm / span_nm) if span_nm else 0.0
         seam = _point_along(a, b, frac)

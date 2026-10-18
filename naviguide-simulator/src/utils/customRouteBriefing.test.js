@@ -59,7 +59,7 @@ describe("buildLocalCustomBriefing", () => {
     assert.doesNotMatch(plan.executive_briefing, /could not be reached|assistant de briefing/i);
   });
 
-  it("lot T — au large de Nouadhibou, le sac nomme la Mauritanie", () => {
+  it("Au large de Nouadhibou, le sac nomme la Mauritanie", () => {
     assert.equal(coastNameNear(18.2, -17.8, "fr"), "Mauritanie");
     assert.equal(coastNameNear(17.6, -16.9, "en"), "Mauritania");
     assert.equal(coastNameNear(46.15, -1.16, "fr"), "");

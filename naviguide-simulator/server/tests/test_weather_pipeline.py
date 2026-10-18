@@ -164,7 +164,7 @@ def test_snapshot_group_pending_until_every_product_ready():
 
 
 def test_ms_to_kn_is_1852_metre_nautical_mile():
-    """Lot C5 — 1 m/s → 1,943844 kn (horloge, hindcast, cube).
+    """1 m/s → 1,943844 kn (horloge, hindcast, cube).
 
     3600/1852 = 1,94384449… ; le code tronque à 6 décimales (écart ~5e-7,
     noté dans la PR, non corrigé).

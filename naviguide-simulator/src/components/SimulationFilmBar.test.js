@@ -32,7 +32,7 @@ function t(key, vars = {}) {
   );
 }
 
-describe("barre film (lot RB4) — vitesse cyclique", () => {
+describe("barre film — vitesse cyclique", () => {
   it("4 clics : réel → lecture → normale → accélérée → réel", () => {
     assert.deepEqual(PROFILES.map((p) => p.id), ["real", "read", "normal", "fast"]);
     let id = "real";
@@ -53,7 +53,7 @@ describe("barre film (lot RB4) — vitesse cyclique", () => {
   });
 });
 
-describe("barre film (lot RC1) — libellé météo du point", () => {
+describe("barre film — libellé météo du point", () => {
   it("climatology + weatherLine global + sources vides → climatologie seule", () => {
     assert.equal(
       clockRegimeText({
@@ -144,7 +144,7 @@ describe("barre film (lot RC1) — libellé météo du point", () => {
   });
 });
 
-describe("barre film (lot RG9) — sous-titre = phrase en cours", () => {
+describe("barre film — sous-titre = phrase en cours", () => {
   it("garde le sous-titre et met le lieu en avant, sans rangée ajoutée", () => {
     assert.match(bar, /data-testid="film-subtitle"/);
     assert.match(bar, /data-testid="film-subtitle-place"/);
@@ -154,7 +154,7 @@ describe("barre film (lot RG9) — sous-titre = phrase en cours", () => {
   });
 });
 
-describe("barre film (lot RG8 / RC22) — pilules et durée estimée", () => {
+describe("barre film — pilules et durée estimée", () => {
   it("garde 2:30 / 3:00 et l'estimée hors film, aucune cochée par défaut", () => {
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /filmDuration150/);
@@ -181,7 +181,7 @@ describe("barre film (lot RG8 / RC22) — pilules et durée estimée", () => {
   });
 });
 
-describe("barre film (lot HC1) — réel jusqu'au <date>", () => {
+describe("barre film — réel jusqu'au <date>", () => {
   it("hindcast + realUntil → « réel jusqu'au 9 oct. », sources conservées", () => {
     const label = clockRegimeText({
       regime: "hindcast",

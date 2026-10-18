@@ -1,4 +1,4 @@
-// Lot RB1 — Halifax ↔ Saint-Pierre est une jambe mer ; avion = Cayenne ↔ Halifax.
+// Halifax ↔ Saint-Pierre est une jambe mer ; avion = Cayenne ↔ Halifax.
 // Sans API : geojson local + flatten. Chorégraphie et popup satellite se vérifient seuls.
 // GET /voyage/official : seulement si on veut confirmer l'horloge officielle (milles voile).
 import { expect, test } from "@playwright/test";
@@ -92,7 +92,7 @@ function inspectRoute() {
   };
 }
 
-test("lot RB1 — Halifax ↔ Saint-Pierre mer, chorégraphie Guyane", async ({ page }) => {
+test("Halifax ↔ Saint-Pierre mer, chorégraphie Guyane", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/");
   await dismissNotForNav(page);

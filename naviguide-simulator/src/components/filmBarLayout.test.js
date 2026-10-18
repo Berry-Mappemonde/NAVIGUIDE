@@ -16,7 +16,7 @@ function firstIndex(src, pattern) {
   return m.index;
 }
 
-describe("film bar layout (lot O)", () => {
+describe("film bar layout", () => {
   it("a une seule ListenButton, plus de replay-voice, testids conservés", () => {
     const listens = bar.match(/<ListenButton/g) || [];
     assert.equal(listens.length, 1, "un seul ListenButton dans la barre");
@@ -39,7 +39,7 @@ describe("film bar layout (lot O)", () => {
     assert.doesNotMatch(bar, /no playback, no speeds, no Suivre/);
   });
 
-  it("lot CT1 : la pilule de mode lit tracerButton, pas le libellé Simulation", () => {
+  it("La pilule de mode lit tracerButton, pas le libellé Simulation", () => {
     assert.match(bar, /t\("tracerButton"\)/);
     assert.match(bar, /t\("followExpeditionButton"\)/);
     assert.match(bar, /"view-tracer"/);
@@ -80,7 +80,7 @@ describe("film bar layout (lot O)", () => {
   });
 });
 
-describe("film bar (lot R2)", () => {
+describe("film bar", () => {
   it("n’a plus de légende des régimes, un prev-stop, hauteur contrat ≤ 96 px", () => {
     assert.doesNotMatch(bar, /t\("regimeLegend"\)/);
     assert.doesNotMatch(bar, /REGIME_COLORS/);
@@ -111,7 +111,7 @@ describe("film bar (lot R2)", () => {
   });
 });
 
-describe("film bar (lot RA6)", () => {
+describe("film bar", () => {
   it("info-bulle hindcast/prévision/climatologie sur la pilule, Suivre comme Simulation", () => {
     assert.match(bar, /title=\{regimeTitle\}/);
     assert.match(bar, /data-testid="speed-regime-pill" title=\{regimeTitle\}/);
@@ -132,7 +132,7 @@ describe("film bar (lot RA6)", () => {
   });
 });
 
-describe("film bar (lot RE3 / RG8)", () => {
+describe("film bar", () => {
   it("garde 2:30 / 3:00 à côté de Revoir hors film, avec l'estimée", () => {
     const startAt = firstIndex(bar, /data-testid="replay-start"/);
     const durationAt = firstIndex(bar, /data-testid="film-duration"/);
@@ -153,7 +153,7 @@ describe("film bar (lot RE3 / RG8)", () => {
   });
 });
 
-describe("film bar (lot RF8)", () => {
+describe("film bar", () => {
   it("garde 2:30 / 3:00 dans le cadre, sans « Récit : », date à la taille du format", () => {
     assert.match(bar, /data-testid="film-duration"/);
     assert.match(bar, /data-testid="replay-start"/);
@@ -184,7 +184,7 @@ describe("film bar (lot RF8)", () => {
   });
 });
 
-describe("crédits au-dessus de la barre (lot UI1)", () => {
+describe("crédits au-dessus de la barre", () => {
   it("App mesure la barre film et SimulationFilmBar expose la racine", () => {
     assert.match(app, /ref=\{filmBarRef\}/);
     assert.match(app, /ResizeObserver/);
@@ -196,7 +196,7 @@ describe("crédits au-dessus de la barre (lot UI1)", () => {
   });
 });
 
-describe("plein écran film (lot F5) — sidebars masquées, pas démontées", () => {
+describe("plein écran film — sidebars masquées, pas démontées", () => {
   it("App pose .film-fullscreen et garde <Sidebar> / <ToolsSidebar> montés", () => {
     assert.match(app, /film-fullscreen/);
     assert.match(app, /setFilmFullscreen/);

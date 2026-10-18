@@ -1,4 +1,4 @@
-// Lot RB3 — plus jamais de prompt (fiche d'escale, journal), même depuis le cache.
+// Plus jamais de prompt (fiche d'escale, journal), même depuis le cache.
 // Sans API : titre de fiche, drapeau, journal tiennent seuls. Le paragraphe
 // et la réponse du chat sont sondés via GET /voyage/official.
 import { expect, test } from "@playwright/test";
@@ -85,7 +85,7 @@ async function openPointeAPitreFlag(page) {
   expect(fired, "drapeau Pointe-à-Pitre").toBeTruthy();
 }
 
-test("lot RB3 — fiche et journal sans prompt, même depuis le cache", async ({ page }) => {
+test("Fiche et journal sans prompt, même depuis le cache", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

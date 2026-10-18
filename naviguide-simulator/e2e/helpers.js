@@ -1,4 +1,4 @@
-// Contrats UI actuels (RF7, RD9, RE3, RF8, RC18) — partagés par les specs de lots.
+// Contrats UI actuels (RF7, RD9, RE3, RF8, RC18) — partagés par les scénarios.
 import { expect } from "@playwright/test";
 
 export async function dismissNotForNav(page) {
@@ -68,7 +68,7 @@ export async function showRightPanel(page) {
   await bringOffscreenFlagsIntoView(page);
 }
 
-/** Drapeaux Leaflet hors cadre : le scroll de page ne les ramène pas (lot R7). */
+/** Drapeaux Leaflet hors cadre : le scroll de page ne les ramène pas. */
 export async function bringOffscreenFlagsIntoView(page) {
   await page.evaluate(() => {
     const scene = window.__naviguideScene;
@@ -108,7 +108,7 @@ export async function openReviewTab(page) {
 }
 
 /**
- * RC50 : GET /plan-review peut être `preparing` (nouvelle clé PLAN_REVIEW_REV).
+ * GET /plan-review peut être `preparing` (nouvelle clé PLAN_REVIEW_REV).
  * Les assertions sur les jambes ne tiennent que si le GET est `ready`.
  */
 export async function probeOfficialPlanReview(page) {
@@ -123,7 +123,7 @@ export async function probeOfficialPlanReview(page) {
   return { apiUp, reviewReady, legs, body };
 }
 
-/** RD9 : dans l'onglet, PlanReview est un `div` (startOpen), plus un `<details>`. */
+/** Dans l'onglet, PlanReview est un `div` (startOpen), plus un `<details>`. */
 export async function ensureReviewOpen(page) {
   const review = page.getByTestId("plan-review");
   await expect(review).toBeVisible({ timeout: 10_000 });
@@ -148,15 +148,15 @@ export async function enterTracerView(page) {
 }
 
 /** @deprecated alias à retirer — même geste que enterTracerView.
- *  Ne pas confondre avec enterTracer (DM6), qui ouvre aussi le dessin. */
+ *  Ne pas confondre avec enterTracer, qui ouvre aussi le dessin. */
 export const enterSimulation = enterTracerView;
 
 export const enterTracerMode = enterTracerView;
 
 export async function enterTracer(page) {
-  // DM6 : entrer en Tracer ouvre le dessin (brouillon vide ou déjà là).
+  // Entrer en Tracer ouvre le dessin (brouillon vide ou déjà là).
   // Le cadre droit (drawing-box) n'apparaît qu'après « Tracer votre propre
-  // route » (R13) : drawing-points à gauche ne suffit pas (RH2 / lot S).
+  // route » : drawing-points à gauche ne suffit pas (RH2).
   await showLeftPanel(page);
   const tracer = page.getByTestId("view-tracer");
   if ((await tracer.getAttribute("aria-checked")) !== "true") {
@@ -198,7 +198,7 @@ export async function mapZoom(page) {
 /** Plancher RC18 sur le viewport Playwright 1280×800 : 2.5. */
 export const FOLLOW_ZOOM_FLOOR = 2.5;
 
-/** Cadrage Suivre (lot DM4) : zoom plancher + distance pixel bateau → centre. */
+/** Cadrage Suivre : zoom plancher + distance pixel bateau → centre. */
 export async function mapFollowCadrage(page) {
   return page.evaluate(() => {
     const scene = window.__naviguideScene;
@@ -250,7 +250,7 @@ export async function waitFilmCanStart(page, timeout = 25_000) {
 }
 
 /**
- * Lot RG20 : le film officiel est prêt — télémétrie `window.__naviguideFilm.status`
+ * Le film officiel est prêt — télémétrie `window.__naviguideFilm.status`
  * (si le client la publie) ou bouton Revoir actif (`remoteStatus === "ready"`).
  * Ne pas avaler le timeout : si l'API est là, un échec est une régression.
  */
@@ -328,7 +328,7 @@ export async function waitStoryLang(page, lang, timeout = 20_000) {
 }
 
 /** Recentre la carte sur le drapeau d'une escale : en Suivre la caméra LIVE
- *  (Pacifique) et le cadrage pending (DM4) ramènent le bateau — sans lâcher
+ *  (Pacifique) et le cadrage pending ramènent le bateau — sans lâcher
  *  le suivi, setView ne tient pas et un clic « force » n'atteint rien. */
 export async function centerOnFlag(page, namePattern, zoom = 7) {
   const source = namePattern instanceof RegExp ? namePattern.source : String(namePattern);

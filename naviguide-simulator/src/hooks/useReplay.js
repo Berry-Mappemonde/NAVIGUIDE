@@ -23,7 +23,7 @@ export function chapterHasLeg(ch) {
 }
 
 /** Script remote : on garde le texte serveur ; lat/lon manquants viennent du local. */
-/** Le script distant ne vaut que s'il porte l'année du t0 demandé (lot RD5). */
+/** Le script distant ne vaut que s'il porte l'année du t0 demandé. */
 /**
  * Ligne d'état Suivre : mêmes milles et heures de mer (durées réelles),
  * date civile décalée vers le t0 choisi. Identité si t0 = départ officiel.
@@ -62,7 +62,7 @@ const RE7_STALE = /Bay of Biscay|milles nautiques du départ|station croisée\s*
 /** Ces tournures sont un script cassé, même s'il a l'ouverture du voyage. */
 const RE7_HARD_STALE = /milles nautiques du départ|station croisée\s*:\s*Station croisée|Aucun port d'entr[ée]e|entrée dans Entrée dans/i;
 
-/** Au-delà : ready seulement avec l'empreinte RG6/RG7 (intégral long, lot RC21). */
+/** Au-delà : ready seulement avec l'empreinte RG6/RG7 (intégral long). */
 export const FILM_READY_MAX_WORDS = 800;
 
 const RG6_OPENING = /Berry-Mappemonde quitte|L['’]expédition Berry-Mappemonde|Berry-Mappemonde leaves|The Berry-Mappemonde expedition/i;
@@ -281,7 +281,7 @@ export const FILM_VOICE_STALL_MS = 2000;
 export const FILM_VISIBILITY_CATCHUP_MS = 2000;
 
 /**
- * VF1 : une voix vivante, ce sont des mots. `speaking` (Chrome le laisse
+ * Une voix vivante, ce sont des mots. `speaking` (Chrome le laisse
  * à vrai alors que onend/onboundary se sont tus) et un hold ne comptent
  * pas. Un silence court pendant que les frontières arrivent encore ne
  * bascule pas. Sans mot depuis `stallMs` (ou `leadMs` avant le premier),
@@ -324,7 +324,7 @@ export function voiceContinueElapsed(charReached, msPerChar = VOICE_MS_PER_CHAR)
 }
 
 /**
- * VF1 : lâche la voix et calcule l'horloge linéaire au caractère atteint.
+ * Lâche la voix et calcule l'horloge linéaire au caractère atteint.
  * Pas de finish(), pas de retour au live.
  */
 export function abandonVoiceToLinear({
@@ -342,7 +342,7 @@ export function abandonVoiceToLinear({
 }
 
 /**
- * RC30 : fin du film — quand la voix mène (ou parle encore), seul
+ * Fin du film — quand la voix mène (ou parle encore), seul
  * voiceSpokenAll termine ; le budget n'arrête jamais la clôture au milieu
  * (« Aujourd'hui, le » coupé, transcription du 14 oct.).
  */
@@ -361,7 +361,7 @@ export function filmShouldFinish({
 }
 
 /**
- * RC36 : tant que l'énoncé du chapitre courant n'est pas fini, le playhead
+ * Tant que l'énoncé du chapitre courant n'est pas fini, le playhead
  * reste dans [tA, tB − ε]. La barre lit les marques à tMs, pas chapterIdx :
  * un ingest linéaire au-delà de tB affiche déjà la jambe suivante.
  */
@@ -398,7 +398,7 @@ export function filmChapterPlayheadCapped({ t, chapter, clock = null } = {}) {
 }
 
 /**
- * RC52 : instant du bateau pour un charIdx de phrase.
+ * Instant du bateau pour un charIdx de phrase.
  * Tant que la phrase n'est pas finie : `timeAt(charIdx)`, jamais tB
  * (ancre de fin de chapitre) ni un t déjà à l'arrivée / « aujourd'hui ».
  */
@@ -487,7 +487,7 @@ export function filmTimeWhileChapterSpeaks({
 }
 
 /**
- * RC36 : applyChapter depuis l'horloge linéaire seulement si la voix
+ * ApplyChapter depuis l'horloge linéaire seulement si la voix
  * ne mène pas et ne parle pas (y compris entre deux phrases). Le chemin
  * voix applique le chapitre suivant depuis onEnd.
  */
@@ -530,11 +530,11 @@ export function linearFilmAt(elapsed, plan, cps = FILM_ESTIMATE_CPS) {
 
 /** ~ FILM_BUDGET_CHARS / 150 s : la voix ne meuble pas, le temps suit le texte. */
 export const FILM_CHARS_PER_SECOND = 16;
-/** Débit d'estimation (RG8) = débit vocal constant depuis le 27 sept. Pas de recalibrage. */
+/** Débit d'estimation = débit vocal constant depuis le 27 sept. Pas de recalibrage. */
 export const FILM_ESTIMATE_CPS = 15;
 
 /**
- * RC41 : index écrit du sous-titre. Si la voix mène, le texte avance à
+ * Index écrit du sous-titre. Si la voix mène, le texte avance à
  * FILM_ESTIMATE_CPS dès la première phrase — jamais un sprint au budget
  * (linearChar) puis un calage. Sans voix : la même constante, un seul régime.
  */
@@ -684,7 +684,7 @@ export function shouldHoldFilmForBudget({
 export const APPROACH_FRAC = 0.8;
 
 /**
- * Stop du film (lot RA5) : coupe la voix, libère la caméra (fin de
+ * Stop du film : coupe la voix, libère la caméra (fin de
  * `filmActive` + `publishFilmEnd`), annule la boucle. L'appelant remet
  * `active=false` — MapSceneController quitte alors le suivi film.
  */
@@ -731,7 +731,7 @@ function airPhraseMatchesLeg(sentence, fromName, toName) {
 }
 
 /**
- * Ligne visible du sous-titre (lot RC16 / RC43) : phrases avion du chapitre
+ * Ligne visible du sous-titre : phrases avion du chapitre
  * vol Cayenne↔Halifax seulement. Un chapitre side / reprise n'est jamais
  * remplacé par le bloc des deux vols.
  */
@@ -844,7 +844,7 @@ export function filmSubtitleAt(text, charIdx, opts = {}) {
 }
 
 /**
- * Ligne de la barre : une phrase dès charIdx=0 (lot RC23 / revue #413).
+ * Ligne de la barre : une phrase dès charIdx=0.
  * Seek et pinned : la phrase sous le curseur, jamais le chapitre entier.
  * Chapitre side / reprise : jamais le bloc avion. Chapitre vol : seulement
  * la phrase avion sous le curseur (un vol). Phrase mer recollée dans un
@@ -967,12 +967,12 @@ export function stepAlongPlan({ plan, clock, frames = 60, dt = 1 / 60, elapsed0 
 }
 
 /**
- * « Revoir l'expédition » (lot E, cinématique F1 / fluide R4) : rejoue la
+ * « Revoir l'expédition » (cinématique F1 / fluide R4) : rejoue la
  * route de Saint-Maur à aujourd'hui. Le temps avance chaque frame ; la voix
  * recale vers timeAt(charIdx) en ≤ 300 ms. Sans voix, avance linéaire
  * continue sur 150 s (ou 180 s). `live` remplace le bateau officiel pendant
  * le film ; à la fin réelle ou sur Stop, retour au live — jamais sur
- * un incident de voix (lot RB6).
+ * un incident de voix.
  */
 export function useReplay({
   clock,
@@ -990,7 +990,7 @@ export function useReplay({
   const [active, setActive] = useState(false);
   const [tMs, setTMs] = useState(null);
   const [card, setCard] = useState(null);
-  // Lot O — voice is piloted by the film-bar Écouter button (no replay-voice).
+  // Voice is piloted by the film-bar Écouter button (no replay-voice).
   const [voice, setVoice] = useState(true);
   const [targetSeconds, setTargetSeconds] = useState(0);
   const [chapterIdx, setChapterIdx] = useState(0);
@@ -1340,7 +1340,7 @@ export function useReplay({
     const fromStart = Number(charIdx) === 0;
     applyChapter(ch);
     if (fromStart) {
-      // RC51 : jouer la jambe depuis tA (Fort-de-France → Pointe-à-Pitre),
+      // Jouer la jambe depuis tA (Fort-de-France → Pointe-à-Pitre),
       // sans épingler tB — sinon le bateau reste à quai et la caméra ne glisse pas.
       pinnedIdxRef.current = null;
       pinnedCharRef.current = null;
@@ -1452,7 +1452,7 @@ export function useReplay({
     setFilmSource(picked.source || local.source || "rules");
     const userBudget = Number(targetSeconds) > 0 ? Number(targetSeconds) : 0;
     budgetRef.current = userBudget;
-    // Case décochée : pas de budget imposé (RD7), mais le plan tient 2:30 (F1).
+    // Case décochée : pas de budget imposé, mais le plan tient 2:30.
     const planSeconds = userBudget > 0 ? userBudget : FILM_TARGET_SECONDS;
     const plan = filmPlan({ chapters, targetSeconds: planSeconds });
     if (!plan.chapters.length) return false;
@@ -1620,7 +1620,7 @@ export function useReplay({
       return;
     }
     const idx = chapterIdxRef.current;
-    // RG12 : pas de bond à tB — le gouverneur a déjà rejoint l'ancre, ou la rampe d'escale.
+    // Pas de bond à tB — le gouverneur a déjà rejoint l'ancre, ou la rampe d'escale.
     const wallElapsed = startWallRef.current
       ? (performance.now() - startWallRef.current) / 1000
       : 0;
@@ -1683,7 +1683,7 @@ export function useReplay({
       // Playwright / voix absente : speechSynthesis.speaking peut rester
       // collé sans onEnd — ça ne doit pas geler applyChapter ni chapterIdx.
       const engineSpeaking = Boolean(voiceRef.current) && isSpeaking() && canLeadWithVoice();
-      // VF1 : une synthèse coincée (speaking vrai, plus de mots) n'est plus
+      // Une synthèse coincée (speaking vrai, plus de mots) n'est plus
       // une voix vivante — le film ignore le flag Chrome après abandon.
       const speaking = engineSpeaking && !voiceFailedRef.current;
       if (
@@ -1742,7 +1742,7 @@ export function useReplay({
       const voiceAllDone = Boolean(voiceSpokenAllRef.current) && (
         budgetRef.current <= 0 || wallElapsed >= plan.targetSeconds
       );
-      // RC30 : la clôture se finit — tant que la voix parle, pas de finish().
+      // La clôture se finit — tant que la voix parle, pas de finish().
       const done = filmShouldFinish({
         voiceClock,
         speaking,
@@ -1793,7 +1793,7 @@ export function useReplay({
       } else if (!voiceClock) {
         const pinned = pinnedIdxRef.current;
         const linearCh = pinned != null ? plan.chapters[pinned] : plan.chapters[linear.chapterIdx];
-        // RC36 : applyChapter seulement à onEnd si la voix mène ou parle encore
+        // ApplyChapter seulement à onEnd si la voix mène ou parle encore
         // (isSpeaking est faux entre deux phrases — ne pas basculer là).
         if (
           linearCh
@@ -1817,7 +1817,7 @@ export function useReplay({
           ingestHeld(Number.isFinite(pinT) ? pinT : ch.tA, ch, { hold: false });
         } else {
           if (ch && linear.chapterIdx > ch.idx) {
-            // RC52 : elapsed a fini le chapitre, la phrase pas — pas tB.
+            // Elapsed a fini le chapitre, la phrase pas — pas tB.
             const keep = Math.max(0, Number(voiceCharRef.current) || 0);
             const sentHold = sentenceSpan(ch, keep);
             const atLast = keep + 1e-6 >= (ch.chars || 1) - 1e-6
@@ -1849,7 +1849,7 @@ export function useReplay({
           });
           skipRampRef.current = stepped.skipRamp;
           const atCap = ingestHeld(stepped.t, ch);
-          // RC36 : en linéaire, geler filmElapsed à une frontière de phrase
+          // En linéaire, geler filmElapsed à une frontière de phrase
           // bloque charIdx → plus jamais de chapitre suivant.
           linearHoldRef.current = Boolean(voiceClock && stepped.voiceHold && !atCap);
           voiceHoldRef.current = Boolean(stepped.voiceHold) && !atCap;
@@ -1905,7 +1905,7 @@ export function useReplay({
           linearChar: linear.charIdx,
         });
       }
-      // RC52 : le bateau publié suit charIdx, pas elapsed / tB.
+      // Le bateau publié suit charIdx, pas elapsed / tB.
       const sentPub = chapter ? sentenceSpan(chapter, charIdx) : null;
       const phraseDone = Boolean(
         phraseEndedRef.current
