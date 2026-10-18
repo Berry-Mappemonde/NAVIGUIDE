@@ -61,20 +61,18 @@ def _clock_gap_days(dep: datetime, arr: datetime) -> float:
     return (arr - dep).total_seconds() / 86400.0
 
 
-def sea_days_between(dep: datetime, arr: datetime, leg_nm: float, *, from_clock: bool) -> float:
+def sea_days_between(dep: datetime | None, arr: datetime | None, leg_nm: float, *, from_clock: bool) -> float:
     """Jours de mer affichés.
 
-    Horloge présente : écart des dates (départ d'une escale → arrivée suivante)
-    lorsqu'il reste dans les 10 % de la durée à 8 kn. Au-delà, l'horloge est
-    comprimée : on garde le repli 8 kn. Sans horloge : uniquement ce repli.
+    Horloge présente et écart des dates positif (départ d'une escale →
+    arrivée suivante) : cet écart, sans seuil. Repli milles ÷ 8 kn seulement
+    si les dates manquent, sont égales ou dans le désordre.
     """
     planned = planned_sea_days(leg_nm)
-    if not from_clock:
+    if not from_clock or dep is None or arr is None:
         return planned
     span = _clock_gap_days(dep, arr)
-    if span <= 0 or planned <= 0:
-        return planned
-    if abs(span - planned) > max(0.15, 0.10 * planned):
+    if span <= 0:
         return planned
     return round(span, 1)
 

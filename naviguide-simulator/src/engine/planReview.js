@@ -96,6 +96,7 @@ export function reviewLeg(leg, season, lang = "fr", { galeLimitPct = GALE_PCT_DE
     key: `${leg.from}→${leg.to}`,
     title: `${leg.from} → ${leg.to}`,
     dates: `${dayMonth(leg.departIso, lang)} → ${dayMonth(leg.arriveIso, lang)}`,
+    departIso: leg.departIso || null,
     month: leg.month,
     from: leg.from,
     to: leg.to,
