@@ -49,7 +49,9 @@ function useViewportFetchLayer(url, mapRef, mapReady, viewportRevision) {
       return undefined;
     }
     const controller = new AbortController();
-    setLoading(true);
+    // Un zoom ne rallume pas le voyant : la donnée déjà affichée reste, sinon
+    // chaque catalogue réécrit l'état du panneau et bloque le fil pendant le geste.
+    if (!data) setLoading(true);
     setError(null);
     fetch(requestUrl, { signal: controller.signal })
       .then((response) => {

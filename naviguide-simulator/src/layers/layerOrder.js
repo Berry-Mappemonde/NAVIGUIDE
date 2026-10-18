@@ -36,3 +36,10 @@ export function createPanes(map) {
 export function paneOrder() {
   return PANES.map((p) => p.name);
 }
+
+/** Z-index d'un pan Leaflet, overlay par défaut. */
+export function paneZIndex(name) {
+  if (!name || name === "overlayPane") return LEAFLET_BUILTIN_PANES.overlayPane;
+  const pane = PANES.find((item) => item.name === name);
+  return pane ? pane.zIndex : LEAFLET_BUILTIN_PANES.overlayPane;
+}
