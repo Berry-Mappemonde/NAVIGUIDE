@@ -9247,15 +9247,18 @@ async def choose_film_ids(
     """Un choix par film (empreinte du stock), pas par chapitre ni par visite.
 
     Cache de route absent : même empreinte, mêmes ids. Présent : ids du sac
-    ajoutés après le choix VL ou le repli. Lightning puis le budget tranchent.
+    ajoutés après le choix VL ou le repli. Le suffixe de ce cache n'entre
+    que dans la clef de coupe, pas dans celle du choix VL. Lightning puis
+    le budget tranchent.
     """
     import llm_budget  # noqa: PLC0415
     import pearl_store  # noqa: PLC0415
 
     extra = _vb1_extra_ids(bag)
-    fp = film_choice_fingerprint(bag, tour)
+    base_fp = film_choice_fingerprint(bag, tour)
+    fp = base_fp
     if extra:
-        fp = f"{fp}|vb1:{hashlib.sha256(','.join(extra).encode('utf-8')).hexdigest()[:12]}"
+        fp = f"{base_fp}|vb1:{hashlib.sha256(','.join(extra).encode('utf-8')).hexdigest()[:12]}"
     secs = _film_seconds(seconds)
     trim_key = f"trim|{fp}|{secs}"
     hit_trim = pearl_store.kv_get(FILM_CHOICE_NS, trim_key, FILM_CHOICE_TTL_S)
@@ -9273,7 +9276,7 @@ async def choose_film_ids(
         pearl_store.kv_put(FILM_CHOICE_NS, trim_key, {"ids": ids, "source": "rules"})
         return ids, "rules"
 
-    vl_key = f"vl|{fp}"
+    vl_key = f"vl|{base_fp}"
     vl_ids: Optional[list[str]] = None
     vl_src = "rules"
     hit_vl = pearl_store.kv_get(FILM_CHOICE_NS, vl_key, FILM_CHOICE_TTL_S)

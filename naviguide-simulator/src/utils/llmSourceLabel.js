@@ -1,7 +1,3 @@
-import nvidiaLogo from "../assets/brand/nvidia-logo-horz.svg";
-import nebiusLogo from "../assets/brand/nebius-logo.svg";
-import tokenFactoryLogo from "../assets/brand/tokenfactory-logo.svg";
-
 /** Legacy film and story ids, including nemotron-super-token-factory. */
 export function isLlmWrittenSource(source) {
   const s = String(source || "").toLowerCase();
@@ -17,11 +13,12 @@ export function isAiGeneratedSource(source) {
   const s = String(source || "").trim().toLowerCase();
   if (!s || s.endsWith("+local") || s === "rules" || s === "budget") return false;
   if (s === "cache" || s === "openrouter" || s === "claude") return true;
-  if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s)) return true;
+  if (/gpt-oss|nvidia-gpt|\bnim\b|\bgpt-4o\b|\bgpt-4\b/i.test(s)) return true;
   return isLlmWrittenSource(source);
 }
 
-/** Map cascade `source` to i18n key. `reviewedBy` names Ultra when it edited. */
+/** Map cascade `source` or an exact model id to an i18n key. `reviewedBy` names Ultra when it edited.
+ * Token Factory labels are only the three Nemotron tiers; a fallback never receives one. */
 export function llmSourceI18nKey(source, reviewedBy) {
   const s = String(source || "");
   const lower = s.toLowerCase();
@@ -34,9 +31,11 @@ export function llmSourceI18nKey(source, reviewedBy) {
   if (s === "budget") return "storySourceBudget";
   if (s === "cache") return "storySourceCache";
   if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s) || lower.startsWith("nvidia-")) return "storySourceNim";
-  if (s.endsWith("-lightning")) return "storySourceLightning";
+  if (/\bgpt-4o\b|\bgpt-4\b/i.test(lower)) return "storySourceOpenrouter";
+  if (s.endsWith("-lightning") || lower.includes("lightning")) return "storySourceLightning";
   if (s.endsWith("-super")) return "storySourceSuper";
-  if (s.endsWith("-ultra")) return "storySourceUltra";
+  if (s.endsWith("-ultra") || (lower.includes("ultra") && lower.includes("nemotron"))) return "storySourceUltra";
+  if (lower.includes("nemotron-3-super") || lower.includes("nemotron-super")) return "storySourceSuper";
   if (isLlmWrittenSource(s)) return "storySourceSuper";
   return "storySourceRules";
 }
@@ -45,14 +44,13 @@ export function llmSourceLabel(source, t, reviewedBy) {
   return t(llmSourceI18nKey(source, reviewedBy));
 }
 
-/** Nemotron on Token Factory — show Built with + official marks (hackathon / Devpost). */
-export function llmSourceShowsBrands(source) {
-  const s = String(source || "");
-  return s.endsWith("-lightning") || s.endsWith("-super") || s.endsWith("-ultra");
-}
+const TOKEN_FACTORY_LABELS = new Set([
+  "storySourceLightning",
+  "storySourceSuper",
+  "storySourceUltra",
+]);
 
-export const LLM_BRAND_LOGOS = Object.freeze({
-  nvidia: { src: nvidiaLogo, alt: "NVIDIA" },
-  nebius: { src: nebiusLogo, alt: "Nebius" },
-  tokenFactory: { src: tokenFactoryLogo, alt: "Nebius Token Factory" },
-});
+/** Nemotron on Token Factory — text names only, never a third-party logo. */
+export function llmSourceShowsBrands(source) {
+  return TOKEN_FACTORY_LABELS.has(llmSourceI18nKey(source));
+}

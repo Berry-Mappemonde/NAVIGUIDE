@@ -12,12 +12,30 @@ import { dismissNotForNav, leaveCinema, showLeftPanel } from "../helpers.js";
 const recetteDir = join(dirname(fileURLToPath(import.meta.url)), "../../../docs/recette/lot-rc45");
 mkdirSync(recetteDir, { recursive: true });
 
-const shot = (page, name) => page.screenshot({
-  path: join(recetteDir, `${name}.webp`),
-  type: "webp",
-  quality: 85,
-  fullPage: false,
-});
+// Capture de recette : le replay redessine la carte en continu et page.screenshot
+// attendait une image stable jusqu'au délai du test (90 s) au premier lancement.
+// On arrête le film, on fige les animations et on borne la capture ; un échec de
+// capture est annoté mais ne remplace pas les assertions, qui restent avant.
+async function stopReplay(page) {
+  const stop = page.getByTestId("replay-stop");
+  if (await stop.isVisible().catch(() => false)) {
+    await stop.click({ timeout: 5_000 }).catch(() => {});
+  }
+}
+
+const shot = async (page, name) => {
+  await stopReplay(page);
+  await page.screenshot({
+    path: join(recetteDir, `${name}.webp`),
+    type: "webp",
+    quality: 85,
+    fullPage: false,
+    animations: "disabled",
+    timeout: 15_000,
+  }).catch((err) => {
+    test.info().annotations.push({ type: "capture", description: `capture ${name} non prise : ${String(err?.message || err).split("\n")[0]}` });
+  });
+};
 
 const AMP_NAMED = /bonifacio|strait of bonifacio|réserve|reserve/i;
 const AMP_PHRASE = /dans l'aire marine protégée|in the marine protected area|à \d+[.,]?\d* milles|miles from/i;
@@ -37,7 +55,7 @@ async function probeOfficial(page) {
 async function muteVoice(page) {
   const listen = page.getByTestId("listen");
   if (await listen.isVisible().catch(() => false)) {
-    if (await listen.getAttribute("aria-pressed") === "true") await listen.click();
+    if (await listen.getAttribute("aria-pressed", { timeout: 5_000 }).catch(() => null) === "true") await listen.click({ timeout: 5_000 });
   }
 }
 
@@ -45,7 +63,7 @@ async function seekAfterAjaccio(page) {
   const start = page.getByTestId("replay-start");
   if (!(await start.isEnabled().catch(() => false))) return false;
   await muteVoice(page);
-  await start.click();
+  await start.click({ timeout: 10_000 });
   const ready = await page.waitForFunction(() => {
     const f = window.__naviguideFilm;
     return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
@@ -83,7 +101,7 @@ test("Ici aux Bouches de Bonifacio nomme une aire (source polygon)", async ({ pa
   await expect(page.getByTestId("ici-maintenant")).toBeVisible();
 
   await showLeftPanel(page);
-  await page.getByTestId("ici-tab-now").click().catch(() => {});
+  await page.getByTestId("ici-tab-now").click({ timeout: 5_000 }).catch(() => {});
   await expect(page.getByTestId("ici-maintenant")).toBeVisible();
 
   if (!apiUp) {
@@ -111,18 +129,18 @@ test("Ici aux Bouches de Bonifacio nomme une aire (source polygon)", async ({ pa
   }
 
   await seekAfterAjaccio(page);
-  await page.getByTestId("ici-tab-journal").click().catch(() => {});
+  await page.getByTestId("ici-tab-journal").click({ timeout: 5_000 }).catch(() => {});
   const journalHit = page.getByTestId("ici-journal-entry").filter({ hasText: AMP_NAMED }).first();
   if (await journalHit.isVisible().catch(() => false)) {
-    await journalHit.click();
+    await journalHit.click({ timeout: 5_000 });
   }
-  await page.getByTestId("ici-tab-now").click().catch(() => {});
+  await page.getByTestId("ici-tab-now").click({ timeout: 5_000 }).catch(() => {});
   await page.waitForTimeout(800);
 
   const briefing = page.getByTestId("ici-briefing");
   const here = page.getByTestId("ici-here-sentence");
   const iciText = [
-    await briefing.textContent().catch(() => ""),
+    await briefing.textContent({ timeout: 5_000 }).catch(() => ""),
     ...(await here.allTextContents().catch(() => [])),
   ].join(" ");
 

@@ -55,7 +55,7 @@ export function useLang() {
       ));
       assert.match(html, /Nemotron 3 Super/);
       assert.match(html, /Token Factory/);
-      assert.match(html, /NVIDIA · Nebius/);
+      assert.match(html, /<span>NVIDIA<\/span><span aria-hidden="true">·<\/span><span>Nebius<\/span>/);
       assert.doesNotMatch(html, /<img/i);
       assert.doesNotMatch(html, /background-image|backgroundImage/i);
       assert.doesNotMatch(html, /url\(/i);

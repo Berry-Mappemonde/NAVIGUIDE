@@ -88,7 +88,7 @@ export default {
   importRoute:        "Importer",
   importRouteReplace: "Remplacer la route en cours ?",
   importRouteError:   "Fichier illisible",
-  importRouteTruncated: "60 points maximum",
+  importRouteTruncated: "{max} points maximum",
   drawOwnRoute:       "Tracer votre propre route",
   backToBerry:        "Revenir à la route Berry-Mappemonde", // pragma: allowlist secret
   berry:              "Berry",
@@ -108,7 +108,6 @@ export default {
   gettingStarted:     "🧭 Démarrage",
   gettingStartedText: "Deux boutons : Suivre l’expédition Berry-Mappemonde (le bateau maintenant) ou Tracer (jouer la route Berry-Mappemonde ou la vôtre : date de départ, calculs).",
   searouteUnavailable: "Route officielle (searoute indisponible).",
-  searouteDrawFailed: "searoute a échoué — corde temporaire.",
   berryLocalBriefing: "Expédition Berry-Mappemonde : départ de La Rochelle le 15 mai 2026, 08:00 UTC. Le briefing raconte le sac autour du bateau — quelle ZEE, quels ports d’entrée, ce qu’il y a dans 30 nm — pas toute la carte.", // pragma: allowlist secret
   cockpitDossier: "Dossier cockpit",
   iciBriefingLoading: "Le sac se remplit autour du bateau…",
@@ -252,7 +251,6 @@ export default {
   recomputeConstraintsDefault: "Sans ordre du skipper : seule la mer ≥ {hs} est évitée.",
   drawingInProgress: "Tracé en cours",
   drawingPoints: "points posés",
-  drawingFailedSegments: "segment(s) sans route mer",
   drawingRouting: "route en calcul…",
   drawPointLabel: "Point",
   drawingUndoLast: "Annuler le dernier point",
@@ -578,6 +576,14 @@ export default {
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
 
+  pointOnLand:        "Point sur terre : non ajouté",
+  rhumbCrossesLand:   "La ligne droite traverse la terre",
+  drawPointLimitReached: "Limite de {max} points atteinte",
+  routeServerBusy:    "Serveur occupé, réessayez",
+  routeServerError:   "Erreur du serveur de route : jambe non calculée, réessayez",
+  routeNetworkError:  "Réseau indisponible : jambe non calculée, réessayez",
+  drawPointLimit:     "{max} points maximum",
+
   // AI transparency
   aiActGeneratedLabel: "Contenu généré par IA (modèle : {model})",
   aiActChatNotice: "Vous échangez avec une intelligence artificielle. Les réponses sont générées automatiquement et peuvent contenir des erreurs.",
@@ -626,6 +632,8 @@ export default {
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
 
+  // DR1 — Tracer à J0 : départ à terre, jamais « haute mer ».
+  iciDepartureRoadTransfer: "Départ : Saint-Maur (Indre), transfert routier vers La Rochelle",
   // FV2
   fv2ClimoCaption: "Climatologie — moyenne mensuelle ({month}), pas une prévision",
   fv2Month1: "janvier",
@@ -648,4 +656,8 @@ export default {
   // ED2
   ed2WritingNemotron: "Rédaction en cours…",
   ed2BrandLine: "NVIDIA · Nebius",
+
+  // Lot NB1 — Nemotron via Token Factory, badge en texte seul
+  llmBrandNvidia: "NVIDIA",
+  llmBrandNebius: "Nebius",
 };

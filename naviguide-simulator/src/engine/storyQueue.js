@@ -139,6 +139,8 @@ async function runStory(body, job) {
       job.text = data.text;
       job.engine = data.engine || null;
       job.source = data.source || data.engine || null;
+      job.model = data.model || null;
+      job.tier = data.tier || null;
       job.ai_model = data.ai_model || data.model || null;
       job.nvidia = data.nvidia ?? data.engine ?? null;
       job.tavily = null;

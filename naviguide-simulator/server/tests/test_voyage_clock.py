@@ -706,3 +706,25 @@ def test_future_clock_keeps_mark_order_after_seam():
         assert -180.0 <= m["lon"] <= 180.0
     for v in fut["vertices"]:
         assert -180.0 <= v["lon"] <= 180.0
+
+
+def test_official_clock_keeps_one_cayenne_and_saint_pierre_port():
+    from voyage_clock import _dedupe_cayenne_marks, _stop_latlon
+
+    marks = [
+        {"name": "Fort-de-France (Martinique)"},
+        {"name": "Cayenne (Guyane)", "holdHours": 72},
+        {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)"},
+        {"name": "Cayenne (Guyane)", "holdHours": 0},
+    ]
+    out = _dedupe_cayenne_marks(marks)
+    assert [m["name"] for m in out].count("Cayenne (Guyane)") == 1
+    assert out[1]["holdHours"] == 72
+    assert len(out) == 3
+
+    lat, lon = _stop_latlon("Saint-Pierre (Saint-Pierre-et-Miquelon)", {"lat": 10.0, "lon": 10.0}, {})
+    assert (lat, lon) == (46.7761, -56.1628)
+    lat, lon = _stop_latlon("Papeete (Polynésie française)", {"lat": -17.5, "lon": -149.6}, {"lat": 0, "lon": 0})
+    assert (lat, lon) == (-17.5, -149.6)
+    lat, lon = _stop_latlon("Papeete (Polynésie française)", {}, {"lat": -17.0, "lon": -149.0})
+    assert (lat, lon) == (-17.0, -149.0)

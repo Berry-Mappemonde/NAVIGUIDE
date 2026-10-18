@@ -158,28 +158,32 @@ def _official_clock_compressed():
     return {"t0": "2026-05-15T08:00:00Z", "vertices": verts, "marks": marks}
 
 
-def test_sea_days_follow_planned_speed_on_official_legs():
+def test_sea_days_follow_clock_gap_on_official_legs():
+    """R11 inversé : daysAtSea = écart départ → arrivée dès qu'il est positif."""
+    from datetime import datetime, timezone
+
     clock = _official_clock_compressed()
     legs = plan_review.legs_from_clock(clock, "La Rochelle")
     assert legs, "jambes officielles attendues"
-    kn = plan_review.PLANNED_KNOTS
-    assert kn == 8.0
+    assert plan_review.PLANNED_KNOTS == 8.0
     noumea = None
     for leg in legs:
-        expected = plan_review.planned_sea_days(leg["legNm"], kn)
-        assert expected > 0
-        assert abs(leg["daysAtSea"] - expected) <= max(0.15, 0.10 * expected), (
-            f"{leg['from']} → {leg['to']}: {leg['daysAtSea']} j "
-            f"≠ {leg['legNm']} nm ÷ {kn} kn ÷ 24 (= {expected})"
+        dep = datetime.fromisoformat(leg["departIso"].replace("Z", "+00:00"))
+        arr = datetime.fromisoformat(leg["arriveIso"].replace("Z", "+00:00"))
+        if dep.tzinfo is None:
+            dep = dep.replace(tzinfo=timezone.utc)
+        if arr.tzinfo is None:
+            arr = arr.replace(tzinfo=timezone.utc)
+        gap = (arr - dep).total_seconds() / 86400.0
+        assert gap > 0, f"{leg['from']} → {leg['to']}"
+        assert leg["daysAtSea"] == round(gap, 1), (
+            f"{leg['from']} → {leg['to']}: {leg['daysAtSea']} j ≠ écart {gap:.2f} j"
         )
-        assert abs(leg["daysAtSea"] - (leg["legNm"] / kn / 24)) <= 0.10 * (leg["legNm"] / kn / 24) + 0.05
         if "Nouméa" in str(leg["from"]) and "Dzaoudzi" in str(leg["to"]):
             noumea = leg
     assert noumea is not None, [f"{l['from']}→{l['to']}" for l in legs]
     assert noumea["legNm"] == 9151
-    assert noumea["daysAtSea"] == plan_review.planned_sea_days(9151)
-    assert noumea["daysAtSea"] > 40
-    assert noumea["daysAtSea"] != 4.5
+    assert noumea["daysAtSea"] == 4.5
 
 
 def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
@@ -200,7 +204,7 @@ def test_sea_days_use_itinerary_nm_when_clock_sailnm_collapsed():
     legs = plan_review.legs_from_clock(clock, "Nouméa (Nouvelle-Calédonie)")
     assert len(legs) == 1
     assert legs[0]["legNm"] == 9151
-    assert legs[0]["daysAtSea"] == plan_review.planned_sea_days(9151)
+    assert legs[0]["daysAtSea"] == 4.5
 
 
 def test_review_official_exposes_gibraltar_antishipping():
@@ -511,7 +515,7 @@ def test_noumea_la_rochelle_dates_match_sea_days():
     )
 
 
-def test_sea_days_within_ten_percent_of_clock_gap():
+def test_sea_days_follow_clock_gap():
     """daysAtSea suit l'écart d'horloge (départ → arrivée), pas milles ÷ 8 kn."""
     from datetime import datetime, timezone
 
@@ -538,7 +542,7 @@ def test_sea_days_within_ten_percent_of_clock_gap():
         arr = arr.replace(tzinfo=timezone.utc)
     gap = (arr - dep).total_seconds() / 86400.0
     assert gap == 11
-    assert abs(leg["daysAtSea"] - gap) <= 0.10 * gap
+    assert leg["daysAtSea"] == 11
     planned = plan_review.planned_sea_days(1920)
     assert planned == 10.0
     assert leg["daysAtSea"] != planned
@@ -557,3 +561,35 @@ def test_sea_days_within_ten_percent_of_clock_gap():
     fallback = plan_review.legs_from_voyage(voy)
     assert len(fallback) == 1
     assert fallback[0]["daysAtSea"] == planned
+
+
+def test_r11_sea_days_use_clock_gap_beyond_ten_percent():
+    """R11 inversé : un écart positif l'emporte sur milles ÷ 8 kn, même à +50 %."""
+    from datetime import datetime, timezone
+
+    dep = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+    arr = datetime(2026, 5, 30, 8, tzinfo=timezone.utc)
+    assert plan_review.planned_sea_days(1920) == 10.0
+    assert plan_review.sea_days_between(dep, arr, 1920, from_clock=True) == 15.0
+    short = datetime(2026, 5, 17, 8, tzinfo=timezone.utc)
+    assert plan_review.sea_days_between(dep, short, 1920, from_clock=True) == 2.0
+
+
+def test_sea_days_fall_back_to_8_kn_only_without_usable_dates():
+    from datetime import datetime, timezone
+
+    dep = datetime(2026, 5, 15, 8, tzinfo=timezone.utc)
+    before = datetime(2026, 5, 10, 8, tzinfo=timezone.utc)
+    assert plan_review.sea_days_between(dep, dep, 1920, from_clock=True) == 10.0
+    assert plan_review.sea_days_between(dep, before, 1920, from_clock=True) == 10.0
+    assert plan_review.sea_days_between(None, dep, 1920, from_clock=True) == 10.0
+    assert plan_review.sea_days_between(dep, None, 1920, from_clock=True) == 10.0
+    assert plan_review.sea_days_between(dep, before, 1920, from_clock=False) == 10.0
+
+
+def test_voyage_without_clock_uses_real_iso_gap():
+    voy = {"t0": "2026-05-15T08:00:00Z",
+           "marks": [{"name": "La Rochelle", "nm": 0, "iso": "2026-05-15T10:00:00+02:00"},
+                     {"name": "Ajaccio (Corse)", "nm": 1920, "iso": "2026-05-27T08:00:00Z"}],
+           "points": [{"lat": 46.15, "lon": -1.17, "cumNm": 0}, {"lat": 41.92, "lon": 8.74, "cumNm": 1920}]}
+    assert plan_review.legs_from_voyage(voy)[0]["daysAtSea"] == 12.0
