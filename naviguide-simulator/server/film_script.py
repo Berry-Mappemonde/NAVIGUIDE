@@ -16,6 +16,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
@@ -491,6 +492,77 @@ def norm_stop(name: str) -> str:
 def same_stop(a: str, b: str) -> bool:
     na, nb = norm_stop(a), norm_stop(b)
     return bool(na) and na == nb
+
+
+def _fold_stop(value: str) -> str:
+    text = unicodedata.normalize("NFD", str(value or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.replace("œ", "oe").replace("Œ", "oe")
+    return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+# Région officielle d'une escale : ne pas la recoller sur un autre lieu.
+_REGION_OWNERS = (
+    ("corse", "ajaccio"),
+    ("corsica", "ajaccio"),
+    ("martinique", "fort-de-france"),
+    ("guadeloupe", "pointe-a-pitre"),
+    ("saint-barthelemy", "gustavia"),
+    ("saint-martin", "marigot"),
+    ("saint-pierre-et-miquelon", "saint-pierre"),
+    ("guyane", "cayenne"),
+    ("polynesie francaise", "papeete"),
+    ("wallis-et-futuna", "mata-utu"),
+    ("nouvelle-caledonie", "noumea"),
+    ("mayotte", "dzaoudzi"),
+    ("taaf", "tromelin"),
+    ("taaf", "europa"),
+    ("la reunion", "saint-gilles"),
+    ("reunion", "saint-gilles"),
+    ("nouvelle-ecosse", "halifax"),
+    ("nova scotia", "halifax"),
+    ("berry", "saint-maur"),
+    ("indre", "saint-maur"),
+    ("berry, indre", "saint-maur"),
+)
+
+
+def _foreign_region(base: str, region: str) -> bool:
+    folded_base = _fold_stop(base)
+    folded_region = _fold_stop(region)
+    owners = [owner for known, owner in _REGION_OWNERS if known == folded_region]
+    if not owners:
+        return False
+    return not any(owner in folded_base for owner in owners)
+
+
+def display_stop_name(name: str, lang: str = "fr") -> str:
+    """Libellé d'escale. L'identité (`norm_stop`) ne change pas.
+
+    Saint-Maur → « Saint-Maur (Indre) ».
+    « Açores (Corse) » → « Açores » / « Azores (Portugal) ».
+    « Ajaccio (Corse) » reste « Ajaccio (Corse) ».
+    """
+    raw = re.sub(r"\s+", " ", str(name or "")).strip()
+    if not raw:
+        return ""
+    en = str(lang or "").lower().startswith("en")
+    if _fold_stop(raw).replace("-", " ").startswith("saint maur"):
+        return "Saint-Maur (Indre)"
+    match = re.match(r"^(.*?)\s*\(([^)]+)\)\s*$", raw)
+    base, region = raw, ""
+    if match:
+        base, region = match.group(1).strip(), match.group(2).strip()
+        if _foreign_region(base, region):
+            region = ""
+    if _fold_stop(base).replace("-", " ").startswith("saint maur"):
+        return "Saint-Maur (Indre)"
+    folded = _fold_stop(base)
+    if folded in {"acores", "azores", "the azores", "les acores"}:
+        return "Azores (Portugal)" if en else "Açores"
+    if not region:
+        return base
+    return f"{base} ({region})"
 
 
 def _moment_near_named_place(change: dict, clock: dict | None, marks: list | None) -> bool:

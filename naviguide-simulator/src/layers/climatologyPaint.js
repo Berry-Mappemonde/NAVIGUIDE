@@ -50,6 +50,20 @@ export function currentArrowHtml(directionToDeg) {
   return `<div style="width:18px;height:18px;transform:rotate(${to}deg);color:${COLOR};font-size:14px;line-height:18px;text-align:center;">↑</div>`;
 }
 
+const CAPTION_STYLE = "font-family:system-ui,sans-serif;font-size:13px;line-height:1.35;color:#e2e8f0;margin:4px 0;";
+
+/** Lisible (≥ 12 px) : moyenne mensuelle, jamais « kind: » ni une prévision. */
+export function climoCaptionText(month, t) {
+  const n = Math.max(1, Math.min(12, Math.round(Number(month) || 1)));
+  const monthName = typeof t === "function" ? t(`fv2Month${n}`) : String(n);
+  if (typeof t !== "function") return monthName;
+  return t("fv2ClimoCaption", { month: monthName });
+}
+
+function climoCaptionHtml(month, t) {
+  return `<div data-testid="climatology-caption" style="${CAPTION_STYLE}">${escHtml(climoCaptionText(month, t))}</div>`;
+}
+
 export function layerPopupHtml(kind, p, t) {
   const rows = [];
   if (kind === "wind") {
@@ -75,7 +89,7 @@ export function layerPopupHtml(kind, p, t) {
   }
   return `<div style="min-width:200px;max-width:280px;" data-testid="climatology-popup">
     <div style="font-weight:700;color:#fff;font-size:12px;">${escHtml(t("modeClimatologyFull"))}</div>
-    <div style="font-family:monospace;font-size:9px;color:${COLOR};margin:4px 0;">kind: climatology · month ${escHtml(p.month)}</div>
+    ${climoCaptionHtml(p.month, t)}
     ${rows.map((r) => `<div style="font-size:11px;color:#e2e8f0;margin-top:3px;">${r}</div>`).join("")}
     <div style="font-size:10px;color:#94a3b8;margin-top:8px;">${escHtml(t("climoDisclaimer"))}</div>
   </div>`;
@@ -91,8 +105,8 @@ export function pointPopupHtml(data, t) {
   if (wave?.hs_p90_m != null) bits.push(`Hs P90 ${escHtml(wave.hs_p90_m)} m`);
   if (cur && !cur.below_threshold) bits.push(`courant ${escHtml(cur.speed_knots)} kn`);
   return `<div data-testid="climatology-map-popup" style="min-width:210px;">
-    <div style="font-weight:700;color:#fff;">${escHtml(t("modeClimatologyFull"))}</div>
-    <div style="font-family:monospace;font-size:9px;color:${COLOR};margin:4px 0;">kind: ${escHtml(data?.kind)} · month ${escHtml(data?.month)}</div>
+    <div style="font-weight:700;color:#fff;font-size:13px;">${escHtml(t("modeClimatologyFull"))}</div>
+    ${climoCaptionHtml(data?.month, t)}
     <div style="font-size:11px;color:#e2e8f0;">${bits.join(" · ") || escHtml(data?.coordinates?.cell_selection)}</div>
     <div style="font-size:10px;color:#fde68a;margin-top:8px;">${escHtml(t("climoDisclaimer"))}</div>
   </div>`;
