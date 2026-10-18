@@ -6,6 +6,7 @@ import httpx
 
 from story_cascade import (
     CACHE_NS,
+    DEFAULT_PROVIDERS,
     _PROMPT_LEAK_RE,
     _cache_get,
     _clean_text,
@@ -46,7 +47,8 @@ def test_default_cascade_is_token_factory_not_tavily():
     assert "openrouter.ai" in src
     assert "api.anthropic.com" in src
     assert "tavily.com" not in src
-    assert providers() == ["tokenfactory", "nim", "openrouter", "claude"]  # ordre du porteur (20 sept.)
+    assert DEFAULT_PROVIDERS == ("tokenfactory", "nim", "openrouter", "claude")
+    assert providers() == list(DEFAULT_PROVIDERS)  # ordre du porteur (20 sept.)
 
 
 def test_need_page_only_https_from_pack():
@@ -759,16 +761,86 @@ def test_tokenfactory_payload_disables_thinking(monkeypatch):
     assert "extra_body" not in seen
 
 
-def test_lightning_payload_omits_thinking_flags():
+def test_lightning_payload_includes_thinking_off_flags():
     import llm_budget
     import story_cascade
 
     payload = story_cascade._tf_payload("sys", "user", "fast")
-    assert "reasoning_effort" not in payload
-    assert "chat_template_kwargs" not in payload
+    assert payload["reasoning_effort"] == "none"
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
     assert "extra_body" not in payload
     assert payload["max_tokens"] == llm_budget.max_tokens_for("fast")
-    assert payload["max_tokens"] == 512
+    assert payload["max_tokens"] == 1024
+
+
+def test_fast_tokenfactory_empty_retries_super(monkeypatch):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        calls.append(body.get("model"))
+        if "Lightning" in (body.get("model") or ""):
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+                "usage": {"completion_tokens": 60},
+                "model": body["model"],
+            })
+        return httpx.Response(200, json=_chat_ok("Lightning failed, Super answers.", model=body["model"]))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user", client, tier="fast", fallback="x", facts="user",
+            )
+
+    text, source = asyncio.run(run())
+    assert source == "nemotron-super"
+    assert "Super" in text
+    assert len(calls) == 2
+    assert any("Lightning" in m for m in calls)
+    assert any("super" in m.lower() for m in calls)
+
+
+def test_fast_tokenfactory_empty_then_super_empty_calls_nim(monkeypatch):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        body = json.loads(request.content.decode()) if request.content else {}
+        calls.append(url)
+        if "tokenfactory" in url:
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+                "usage": {"completion_tokens": 0},
+                "model": body.get("model") or "tf",
+            })
+        if "nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok("NIM after double TF miss."))
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text(
+                "sys", "user", client, tier="fast", fallback="x", facts="user",
+            )
+
+    text, source = asyncio.run(run())
+    assert "NIM" in text
+    assert source.startswith("nvidia-")
+    assert sum("tokenfactory" in u for u in calls) == 2
+    assert any("nvidia.com" in u for u in calls)
 
 
 def test_ultra_payload_uses_cookbook_host_and_budget():
