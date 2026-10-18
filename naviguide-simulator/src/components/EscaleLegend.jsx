@@ -2,6 +2,13 @@ import { memo, useMemo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { formatCivilDate } from "../engine/voyageClock.js";
 import { formatEtaRange, formatEtaRangeTitle, nextStopFromMarks, nextStopRowIndex, useOfficialEta } from "../hooks/usePlanReview.js";
+import { regimeLegendHex } from "../utils/riskColors.js";
+
+const REGIME_PILLS = [
+  ["hindcast", "clockRegimeHindcast", "regimeTooltipHindcast"],
+  ["forecast", "clockRegimeForecast", "regimeTooltipForecast"],
+  ["climatology", "clockRegimeClimatology", "regimeTooltipClimatology"],
+];
 
 function markAt(m) {
   return Number(m.filmNm ?? m.nm) || 0;
@@ -93,6 +100,24 @@ export const EscaleLegend = memo(function EscaleLegend({
     <div className="rounded-lg border border-white/10 bg-slate-800/50 overflow-hidden" data-testid="escale-legend">
       <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200">
         {t("escalesList")}
+      </div>
+      <div
+        data-testid="escale-regime-legend"
+        aria-label={t("regimeLegend")}
+        className="flex items-center gap-2 px-2 pb-1 text-[9px] text-slate-400"
+      >
+        {REGIME_PILLS.map(([id, key, tip]) => (
+          <span key={id} className="inline-flex items-center gap-1" title={t(tip)} aria-label={t(key)}>
+            <span
+              data-testid="escale-regime-pill"
+              data-regime={id}
+              className="inline-block w-2 h-2 rounded-[2px]"
+              style={{ background: regimeLegendHex[id] }}
+              aria-hidden="true"
+            />
+            <span>{t(key)}</span>
+          </span>
+        ))}
       </div>
       <ul className="max-h-36 overflow-y-auto sidebar-scroll">
         {rows.map((r, i) => (

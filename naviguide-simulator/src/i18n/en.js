@@ -600,4 +600,9 @@ export default {
   layerFicheKindCoastline: "Coastline",
   layerFicheKindGlider: "Underwater glider",
   layerFicheClose: "Close the card",
+
+  // SO1
+  skipperCoastalRule: "Coastal advised for < 12 m",
+  exportNeedsRoute: "No route to export",
+  exportKmlFollow: "KML of the followed route",
 };

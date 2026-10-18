@@ -76,6 +76,20 @@ describe("EscaleLegend — ETA gelée pendant le film", () => {
   });
 });
 
+describe("EscaleLegend — pastilles de régime", () => {
+  it("colore hindcast, prévision et climatologie depuis riskColors", () => {
+    const colors = readFileSync(join(here, "..", "utils", "riskColors.js"), "utf8");
+    assert.match(src, /regimeLegendHex/);
+    assert.match(src, /data-testid="escale-regime-legend"/);
+    assert.match(src, /data-testid="escale-regime-pill"/);
+    assert.match(src, /data-regime=\{id\}/);
+    assert.match(colors, /hindcast:\s*"#2dd4bf"/);
+    assert.match(colors, /forecast:\s*"#38bdf8"/);
+    assert.match(colors, /climatology:\s*"#c084fc"/);
+    assert.doesNotMatch(src, /<button/);
+  });
+});
+
 describe("EscaleLegend — jambe live, pas le mur", () => {
   it("prend nowMs / liveFilmNm officiels, jamais Date.now()", () => {
     assert.doesNotMatch(src, /Date\.now\(\)/);

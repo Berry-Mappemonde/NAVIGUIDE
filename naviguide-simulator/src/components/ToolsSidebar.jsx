@@ -8,11 +8,14 @@ import { DepartureField } from "./DepartureField.jsx";
 import { LayerToggles, activeLayerCount } from "./LayerToggles.jsx";
 import { summarizeLegs } from "../utils/geo.js";
 import { summarizeAmpTraffic } from "../engine/ampRules.js";
+import { polarBoatSpeed } from "../engine/polarSpeed.js";
 import { buildGeoJSON, buildKML, canExportRoute, downloadFile, exportFilename } from "../utils/routeExport.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "";
 const POLAR_EXPEDITION = "berry-mappemonde-2026"; // pragma: allowlist secret
 const POLAR_VMG_TWS_KEYS = ["8", "10", "12", "16", "20", "25"];
+const POLAR_SPEED_TWA = [60, 75, 90, 120, 150];
+const POLAR_SPEED_TWS = [8, 10, 12, 16, 20];
 const POLAR_FOLD_KEY = "naviguide.tools.polarOpen";
 const LAYERS_FOLD_KEY = "naviguide.tools.layersOpen";
 
@@ -120,6 +123,50 @@ function LayersDrawer({ tracerLayout, layersOn, t, maritimeLayers }) {
 
 function kts(v) { return v != null ? `${Number(v).toFixed(1)} kt` : "—"; }
 function deg(v) { return v != null ? `${Math.round(v)}°` : "—"; }
+
+/** Même arrondi que GET /api/v1/polar/{id}/speed (3 décimales). */
+function formatPolarKn(kn, lang) {
+  if (!Number.isFinite(kn)) return "—";
+  const s = String(Math.round(kn * 1000) / 1000);
+  return lang === "en" ? `${s} kn` : `${s.replace(".", ",")} kn`;
+}
+
+function PolarSpeedGrid({ raw, lang }) {
+  return (
+    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
+      <table className="w-full text-[10px]">
+        <thead>
+          <tr className="bg-slate-800/80 border-b border-slate-700/60">
+            <th className="py-1 px-1 text-left text-slate-300">TWA</th>
+            {POLAR_SPEED_TWS.map((tws) => (
+              <th key={tws} className="py-1 px-1 text-center text-slate-300">{tws}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {POLAR_SPEED_TWA.map((twa) => (
+            <tr key={twa} className="border-b border-slate-700/40">
+              <th className="py-1 px-1 text-left font-semibold text-slate-200">{twa}°</th>
+              {POLAR_SPEED_TWS.map((tws) => {
+                const kn = polarBoatSpeed(raw, twa, tws);
+                return (
+                  <td
+                    key={tws}
+                    data-testid={`polar-speed-${twa}-${tws}`}
+                    data-kn={Number.isFinite(kn) ? String(kn) : ""}
+                    className="py-1 px-1 text-center text-slate-200"
+                  >
+                    {formatPolarKn(kn, lang)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 async function readPolarResponse(response) {
   let data = null;
@@ -448,6 +495,10 @@ export const ToolsSidebar = memo(function ToolsSidebar({
   const routeSegs = exportSegments ?? segments;
   const routePts = exportPoints ?? points;
   const canExport = canExportRoute(routeSegs, routePts);
+  const kmlTitle = canExport
+    ? (exportMode === "suivre" ? t("exportKmlFollow") : t("exportKML"))
+    : t("exportNeedsRoute");
+  const geoTitle = canExport ? t("exportGeoJSON") : t("exportNeedsRoute");
   const handleExportGeoJSON = () => {
     if (!canExport) return;
     const fc = buildGeoJSON(routeSegs, routePts, `naviguide-${exportMode}`);
@@ -523,6 +574,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 type="button"
                 data-testid="export-geojson"
                 disabled={!canExport}
+                title={geoTitle}
                 onClick={handleExportGeoJSON}
                 className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                   canExport
@@ -536,10 +588,13 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 type="button"
                 data-testid="export-kml"
                 disabled={!canExport}
+                title={kmlTitle}
                 onClick={handleExportKML}
                 className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                   canExport
-                    ? "border-teal-500/40 bg-teal-900/30 text-teal-100 hover:bg-teal-800/40"
+                    ? (exportMode === "suivre"
+                      ? "border-teal-400 bg-teal-700 text-white hover:bg-teal-800"
+                      : "border-teal-500/40 bg-teal-900/30 text-teal-100 hover:bg-teal-800/40")
                     : "border-slate-700 bg-slate-800/40 text-slate-500 cursor-not-allowed"
                 }`}
               >
@@ -598,7 +653,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                     <Upload size={11} />
                     <span>{polarData ? t("polarDropToReplace") : t("polarDropZone")}</span>
                   </div>
-                  {polarData?.vmg_summary ? (
+                  {(polarData?.raw?.twa_rows || polarData?.vmg_summary) ? (
                     <button
                       type="button"
                       onClick={() => setShowPolar((v) => !v)}
@@ -609,7 +664,10 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                       {showPolar ? t("polarHide") : t("polarShow")}
                     </button>
                   ) : null}
-                  {showPolar && polarData?.vmg_summary && (
+                  {showPolar && polarData?.raw?.twa_rows ? (
+                    <PolarSpeedGrid raw={polarData.raw} lang={lang} />
+                  ) : null}
+                  {showPolar && !polarData?.raw?.twa_rows && polarData?.vmg_summary && (
                     <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
                       <table className="w-full text-xs">
                         <thead>
@@ -639,7 +697,7 @@ export const ToolsSidebar = memo(function ToolsSidebar({
               <div className={`flex items-center gap-2 text-xs ${polarStatus.color}`}>
                 {polarStatus.icon}
                 <span className="font-medium min-w-0 truncate" data-testid="polar-status">{polarStatus.text}</span>
-                {polarData?.vmg_summary ? (
+                {(polarData?.raw?.twa_rows || polarData?.vmg_summary) ? (
                   <button
                     type="button"
                     onClick={() => setShowPolar((v) => !v)}
@@ -684,7 +742,10 @@ export const ToolsSidebar = memo(function ToolsSidebar({
                 <Upload size={11} />
                 <span>{polarData ? t("polarDropToReplace") : t("polarDropZone")}</span>
               </div>
-              {showPolar && polarData?.vmg_summary && (
+              {showPolar && polarData?.raw?.twa_rows ? (
+                <PolarSpeedGrid raw={polarData.raw} lang={lang} />
+              ) : null}
+              {showPolar && !polarData?.raw?.twa_rows && polarData?.vmg_summary && (
                 <div className="mt-2 overflow-x-auto rounded-lg border border-slate-700/40 bg-slate-900/40" data-testid="polar-table">
                   <table className="w-full text-xs">
                     <thead>
