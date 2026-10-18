@@ -60,8 +60,16 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
 
   // « Server busy » is told apart from « no searoute » by the answer itself.
   let busyAnswers = 0;
+  // A server error (500, 502) is an answer too: the leg will not come.
+  let errorAnswers = 0;
+  let lastError = 0;
   page.on("response", (res) => {
-    if (res.url().includes("/route?") && res.status() === 503) busyAnswers += 1;
+    if (!res.url().includes("/route?")) return;
+    if (res.status() === 503) busyAnswers += 1;
+    else if (res.status() === 500 || res.status() === 502) {
+      errorAnswers += 1;
+      lastError = res.status();
+    }
   });
   await clickLatLng(page, BRISBANE.lat, BRISBANE.lon);
   await page.waitForFunction(() => (window.__naviguideDrawn?.points?.length || 0) >= 1, null, { timeout: 10_000 });
@@ -71,11 +79,12 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   // front of it — a fixed wait could give up before it and skip the retry.
   const legShown = async () => {
     const busyBefore = busyAnswers;
+    const errorsBefore = errorAnswers;
     const deadline = Date.now() + 45_000;
     while (Date.now() < deadline) {
       const legs = await page.evaluate(() => window.__naviguideDrawn?.segments?.length || 0);
       if (legs >= 1) return true;
-      if (busyAnswers > busyBefore) return false;
+      if (busyAnswers > busyBefore || errorAnswers > errorsBefore) return false;
       await page.waitForTimeout(250);
     }
     return false;
@@ -100,12 +109,15 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
       legs: window.__naviguideDrawn?.segments?.length || 0,
     }));
     expect(state).toEqual({ points: 2, legs: 0 });
-    const errorText = (await page.getByTestId("route-import-error").textContent().catch(() => "")) || "";
+    // The message is cleared after 4 s (App.jsx): read it if it is there, never wait for it.
+    const errorText = (await page.getByTestId("route-import-error").textContent({ timeout: 1000 }).catch(() => "")) || "";
     const reason = busyAnswers > 0
       ? `serveur occupé : /route a répondu 503 busy ${busyAnswers} fois (échéance atteinte)`
-      : errorText
-        ? `jambe en échec : ${errorText}`
-        : "searoute absent (ou interdit sur ce poste) : aucune jambe Brisbane→SF";
+      : errorAnswers > 0
+        ? `jambe en échec : /route a répondu ${lastError}${errorText ? ` — ${errorText}` : ""}`
+        : errorText
+          ? `jambe en échec : ${errorText}`
+          : "searoute absent (ou interdit sur ce poste) : aucune jambe Brisbane→SF";
     await shot(page, "01-sans-jambe").catch(() => {});
     // With the API the distance must be checked: no leg is a failure. Without
     // it, the test is skipped — never passed without checking the distance.
