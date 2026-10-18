@@ -625,4 +625,7 @@ export default {
   layerFicheKindCoastline: "Coastline",
   layerFicheKindGlider: "Underwater glider",
   layerFicheClose: "Close the card",
+
+  // LY1 — Clément Filisetti
+  climatologyUnavailable: "climatology unavailable",
 };

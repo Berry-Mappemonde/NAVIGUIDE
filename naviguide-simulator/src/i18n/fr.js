@@ -625,4 +625,7 @@ export default {
   layerFicheKindCoastline: "Trait de côte",
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
+
+  // LY1 — Clément Filisetti
+  climatologyUnavailable: "climatologie indisponible",
 };

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { ALL_LAYER_CONFIG } from "../constants/layers.js";
+import { useAtlasNotice } from "../hooks/useAtlasLookup.js";
 
 /**
  * The map layer pills (GRIB2, ZEE, ports, BI layers, science, seabed,
@@ -9,18 +10,25 @@ import { ALL_LAYER_CONFIG } from "../constants/layers.js";
  */
 export const LayerToggles = memo(function LayerToggles({ maritimeLayers }) {
   const { t } = useLang();
+  const atlas = useAtlasNotice();
   if (!maritimeLayers) return null;
   return (
     <div className="flex flex-wrap gap-1" data-testid="layer-toggles">
+      {atlas.unavailable ? (
+        <span className="text-[9px] font-semibold text-amber-200/90 px-1.5 py-0.5" data-testid="climatology-unavailable">
+          {t("climatologyUnavailable")}
+        </span>
+      ) : null}
       {ALL_LAYER_CONFIG.map(({ key, labelKey, titleKey, color, showKey, toggleKey, loadingKey, errorKey }) => {
         const active = maritimeLayers[showKey];
         const loading = maritimeLayers[loadingKey];
         const error = maritimeLayers[errorKey];
+        const title = error ? `${t(titleKey)} : ${error}` : t(titleKey);
         return (
           <button
             key={key}
             onClick={() => maritimeLayers[toggleKey]((v) => !v)}
-            title={error ? `${t(titleKey)} : ${error}` : t(titleKey)}
+            title={title}
             data-testid={`layer-${key}`}
             aria-pressed={active}
             className={[
