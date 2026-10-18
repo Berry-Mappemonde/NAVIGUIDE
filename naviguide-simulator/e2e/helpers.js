@@ -1,8 +1,9 @@
 // Contrats UI actuels (RF7, RD9, RE3, RF8, RC18) — partagés par les scénarios.
 import { expect } from "@playwright/test";
 
-// Waits up to 3 s for the "not for navigation" modal, as the per-spec copies did.
-export async function dismissNotForNav(page, { timeout = 3000 } = {}) {
+// Waits up to 1.5 s for the "not for navigation" modal. Most specs never see it,
+// so a longer wait delays every spec and shifts the timing they rely on.
+export async function dismissNotForNav(page, { timeout = 1500 } = {}) {
   const modal = page.getByTestId("not-for-nav-modal");
   const visible = await modal
     .waitFor({ state: "visible", timeout })
