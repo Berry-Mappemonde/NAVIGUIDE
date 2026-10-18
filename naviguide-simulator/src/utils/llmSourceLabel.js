@@ -13,7 +13,7 @@ export function isAiGeneratedSource(source) {
   const s = String(source || "").trim().toLowerCase();
   if (!s || s.endsWith("+local") || s === "rules" || s === "budget") return false;
   if (s === "cache" || s === "openrouter" || s === "claude") return true;
-  if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s)) return true;
+  if (/gpt-oss|nvidia-gpt|\bnim\b|\bgpt-4o\b|\bgpt-4\b/i.test(s)) return true;
   return isLlmWrittenSource(source);
 }
 
@@ -33,6 +33,7 @@ export function llmSourceI18nKey(source) {
   if (s.endsWith("-super")) return "storySourceSuper";
   if (s.endsWith("-ultra") || (lower.includes("ultra") && lower.includes("nemotron"))) return "storySourceUltra";
   if (/gpt-oss|nvidia-gpt|\bnim\b/i.test(s)) return "storySourceNim";
+  if (/\bgpt-4o\b|\bgpt-4\b/i.test(lower)) return "storySourceOpenrouter";
   if (lower.includes("nemotron-3-super") || lower.includes("nemotron-super")) return "storySourceSuper";
   if (isLlmWrittenSource(s)) return "storySourceSuper";
   return "storySourceRules";

@@ -1155,7 +1155,7 @@ def test_fallback_model_is_not_labelled_token_factory(monkeypatch):
     opened = asyncio.run(run_or())
     assert opened["source"] == "openrouter"
     assert opened["model"] == "openai/gpt-4o-mini"
-    assert opened["ai_model"] == "openrouter"
+    assert opened["ai_model"] == "openai/gpt-4o-mini"
     assert opened["tier"] == "write"
     assert "nemotron" not in opened["model"].lower()
     assert "nemotron" not in opened["ai_model"].lower()
@@ -1203,3 +1203,200 @@ def test_fallback_model_is_not_labelled_token_factory(monkeypatch):
     assert "nemotron" not in nim["model"].lower()
     assert "Token Factory" not in nim["ai_model"]
     assert llm_budget.status()["lastSourceByTier"]["write"] == "nim"
+
+
+def _nim_after_empty_reasoning(monkeypatch, reasoning, *, lang="fr", nim_text="Le port reste calme."):
+    """Token Factory renvoie un raisonnement sans content. NIM répond ensuite."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        body = json.loads(request.content.decode()) if request.content else {}
+        seen.append((url, body.get("model")))
+        if "tokenfactory" in url:
+            return httpx.Response(200, json=_empty_reasoning(body, reasoning))
+        if "nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok(nim_text, model="openai/gpt-oss-20b"))
+        return httpx.Response(500, json={"error": "no"})
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    return handler, seen
+
+
+def test_reasoning_leak_falls_back_with_an_honest_label(monkeypatch):
+    """Un raisonnement vide de content ne doit pas devenir le récit du marin.
+
+    Ces phrases passent le nettoyage grossier. Retirer le filtre phrase par
+    phrase les laisse sous nemotron-super. Le repli NIM reste étiqueté NIM.
+    """
+    import llm_budget
+    from story_cascade import (
+        _META_RE, _PROMPT_LEAK_RE, _REASON_MARK_RE, _clean_text, _sentence_matches_lang,
+    )
+
+    system, _user = build_prompt({"event": "swell", "lang": "fr", "needPage": False})
+    copied = "UNE ou DEUX phrases simples : le fait, le ou les chiffres du bulletin."
+    assert "une ou deux phrases simples" in system.lower()
+    assert "json" not in copied.lower()
+    assert _PROMPT_LEAK_RE.search(copied) is None
+    assert _META_RE.search(copied) is None
+    assert _REASON_MARK_RE.search(copied) is None
+    assert _clean_text(copied) == copied
+    assert _sentence_matches_lang(copied, en=False) is True
+
+    english = "The swell reaches two metres off the quay tonight."
+    assert _PROMPT_LEAK_RE.search(english) is None
+    assert _REASON_MARK_RE.search(english) is None
+    assert _clean_text(english) == english
+    assert _sentence_matches_lang(english, en=False) is False
+    assert _sentence_matches_lang(english, en=True) is True
+
+    marker = "L'utilisateur demande une courte phrase sur la houle du jour."
+    assert _PROMPT_LEAK_RE.search(marker) is None
+    assert _REASON_MARK_RE.search(marker)
+    assert _sentence_matches_lang(marker, en=False) is True
+
+    leaks = (
+        "The user wants one or two sentences about the swell. The JSON says the height is two metres.",
+        "We need to produce a short French sentence about the harbour.",
+        "Okay, so I should mention the quay and the swell.",
+        "Maybe the wind is fresher tonight.",
+        "Let's mention the swell.",
+        copied,
+        english,
+        marker,
+        "Nous devons produire une phrase courte.",
+        "D'accord, je dois mentionner le quai.",
+        "Peut-être que le vent fraîchit au large.",
+    )
+    for i, reasoning in enumerate(leaks):
+        handler, seen = _nim_after_empty_reasoning(monkeypatch, reasoning)
+        seen.clear()
+
+        async def run(i=i, handler=handler):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await write_story({
+                    "event": "zee-enter",
+                    "eventId": f"zee-leak-{i}",
+                    "lang": "fr",
+                    "needPage": False,
+                }, client=client)
+
+        out = asyncio.run(run())
+        text = out.get("text") or ""
+        assert out["status"] == "ready", reasoning
+        assert out["source"].startswith("nvidia-"), reasoning
+        assert "nemotron" not in out["source"].lower(), reasoning
+        assert out["model"] == "openai/gpt-oss-20b", reasoning
+        assert out["ai_model"] == "openai/gpt-oss-20b", reasoning
+        assert "Token Factory" not in out["ai_model"], reasoning
+        assert "port reste calme" in text, reasoning
+        for banned in (
+            "The user", "We need", "Okay", "Maybe", "Let's", "JSON",
+            "phrases simples", "The swell", "utilisateur", "Nous devons",
+            "D'accord", "Peut-être", "bulletin",
+        ):
+            assert banned not in text, (banned, reasoning)
+        assert llm_budget.status()["lastSourceByTier"]["write"] == "nim"
+        assert any("tokenfactory" in url for url, _model in seen)
+        assert any("nvidia.com" in url for url, _model in seen)
+
+
+def test_plain_reasoning_sentence_stays_on_nemotron(monkeypatch):
+    """Une phrase du raisonnement, dans la langue demandée, sans marqueur, reste."""
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        return httpx.Response(200, json=_empty_reasoning(
+            body,
+            "The user wants one or two sentences about the swell. "
+            "La houle atteint deux mètres au large de La Rochelle.",
+        ))
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-plain-fr", "lang": "fr", "needPage": False,
+            }, client=client)
+
+    out = asyncio.run(run())
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-super"
+    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert "houle" in out["text"]
+    assert "The user" not in out["text"]
+    assert "JSON" not in out["text"]
+
+
+def test_english_reasoning_keeps_only_a_plain_english_sentence(monkeypatch):
+    """Langue demandée anglais : une phrase française ou un marqueur part en repli."""
+    import llm_budget
+    from story_cascade import _REASON_MARK_RE, _clean_text, _sentence_matches_lang
+
+    kept = "The swell reaches two metres off the quay."
+
+    def ok_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        return httpx.Response(200, json=_empty_reasoning(body, kept))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run_ok():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(ok_handler)) as client:
+            return await cascade_text(
+                "sys", "user-en-plain", client, tier="write", lang="en",
+                fallback="Local phrase.", facts=None,
+            )
+
+    good = asyncio.run(run_ok())
+    text, source = good
+    assert source == "nemotron-super"
+    assert "swell" in text
+    assert good.model == "nvidia/nemotron-3-super-120b-a12b"
+
+    leaks = (
+        "La houle atteint deux mètres au large du quai.",
+        "We need to produce a short sentence about the swell.",
+        "You write one card for a sailor from the facts already collected.",
+    )
+    en_copy = leaks[2]
+    assert _REASON_MARK_RE.search(en_copy) is None
+    assert _clean_text(en_copy) == en_copy
+    assert _sentence_matches_lang(en_copy, en=True) is True
+    for i, reasoning in enumerate(leaks):
+        handler, _seen = _nim_after_empty_reasoning(
+            monkeypatch, reasoning, nim_text="The quay stays calm.",
+        )
+
+        async def run(handler=handler, i=i):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await cascade_text(
+                    "You write one card for a sailor from the facts already collected.",
+                    f"user-en-leak-{i}",
+                    client,
+                    tier="write",
+                    lang="en",
+                    fallback="Local phrase.",
+                    facts=None,
+                )
+
+        out_text, out_source = asyncio.run(run())
+        assert out_source.startswith("nvidia-"), reasoning
+        assert "quay stays calm" in out_text, reasoning
+        assert "houle" not in out_text, reasoning
+        assert "We need" not in out_text, reasoning
+        assert "one card for a sailor" not in out_text, reasoning
+        assert llm_budget.last_source_by_tier().get("write") == "nim"

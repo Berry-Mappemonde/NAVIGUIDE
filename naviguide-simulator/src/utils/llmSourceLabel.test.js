@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import en from "../i18n/en.js";
 import fr from "../i18n/fr.js";
-import { llmSourceI18nKey, llmSourceLabel, llmSourceShowsBrands } from "./llmSourceLabel.js";
+import { isAiGeneratedSource, llmSourceI18nKey, llmSourceLabel, llmSourceShowsBrands } from "./llmSourceLabel.js";
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "llmSourceLabel.js"), "utf8");
 const badge = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/LlmSourceBadge.jsx"), "utf8");
@@ -46,6 +46,7 @@ describe("llmSourceI18nKey", () => {
       "nemotron-ultra": "Nemotron 3 Ultra · Token Factory",
       "nvidia/Nemotron-3-Ultra-550b-a55b": "Nemotron 3 Ultra · Token Factory",
       openrouter: "OpenRouter",
+      "openai/gpt-4o-mini": "OpenRouter",
       claude: "Claude",
       "claude-haiku-4-5": "Claude",
       "nvidia-gpt-oss-20b": "NVIDIA NIM (fallback)",
@@ -62,7 +63,7 @@ describe("llmSourceI18nKey", () => {
     assert.equal(fr.llmBrandNebius, "Nebius");
     assert.equal(en.llmBrandNvidia, "NVIDIA");
     assert.equal(en.llmBrandNebius, "Nebius");
-    for (const source of ["openrouter", "claude", "claude-haiku-4-5", "nvidia-gpt-oss-20b", "openai/gpt-oss-20b", "nim"]) {
+    for (const source of ["openrouter", "openai/gpt-4o-mini", "claude", "claude-haiku-4-5", "nvidia-gpt-oss-20b", "openai/gpt-oss-20b", "nim"]) {
       assert.equal(llmSourceShowsBrands(source), false, source);
       assert.doesNotMatch(llmSourceLabel(source, tEn), /Token Factory/, source);
       assert.doesNotMatch(llmSourceLabel(source, (key) => fr[key]), /Token Factory/, source);
@@ -84,8 +85,11 @@ describe("llmSourceI18nKey", () => {
 describe("LlmSourceBadge — texte seul", () => {
   it("n'a aucune image de logo et nomme NVIDIA et Nebius en texte", () => {
     assert.doesNotMatch(badge, /<img\b/);
+    assert.doesNotMatch(badge, /<svg\b/i);
+    assert.doesNotMatch(badge, /backgroundImage|background-image/);
     assert.doesNotMatch(badge, /\.svg|LLM_BRAND_LOGOS/);
-    assert.doesNotMatch(src, /<img\b|\.svg|LLM_BRAND_LOGOS/);
+    assert.doesNotMatch(src, /<img\b|<svg\b|backgroundImage|\.svg|LLM_BRAND_LOGOS/i);
+    assert.equal(isAiGeneratedSource("openai/gpt-4o-mini"), true);
     assert.match(badge, /llmBrandNvidia/);
     assert.match(badge, /llmBrandNebius/);
     assert.match(badge, /llmSourceShowsBrands/);

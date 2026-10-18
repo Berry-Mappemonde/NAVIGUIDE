@@ -429,6 +429,43 @@ _META_RE = re.compile(
     re.IGNORECASE,
 )
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[^\s])")
+_WORD_RE = re.compile(r"[0-9A-Za-zÀ-ÿ]+")
+# Marqueurs de raisonnement. En cas de doute la phrase est rejetée.
+_REASON_MARK_RE = re.compile(
+    r"\bthe\s+user\b"
+    r"|\bwe\s+need\b"
+    r"|\blet['’]?s\b"
+    r"|\bokay\b"
+    r"|\bok\b"
+    r"|\bi\s+should\b"
+    r"|\bmaybe\b"
+    r"|\bjson\b"
+    r"|l['’]utilisateur"
+    r"|l['’]utilisatrice"
+    r"|\busager\b"
+    r"|nous\s+devons"
+    r"|il\s+nous\s+faut"
+    r"|il\s+faut\b"
+    r"|on\s+a\s+besoin"
+    r"|on\s+doit\b"
+    r"|\ballons\b"
+    r"|\bvoyons\b"
+    r"|d['’]accord"
+    r"|je\s+dois"
+    r"|je\s+devrais"
+    r"|peut[- ]être",
+    re.IGNORECASE,
+)
+_FR_WORD_RE = re.compile(
+    r"\b(?:le|la|les|un|une|des|du|au|aux|est|sont|dans|pour|avec|que|qui|"
+    r"cette|ces|pas|plus|par|vers|chez|où|ou|de)\b",
+    re.IGNORECASE,
+)
+_FR_ACCENT_RE = re.compile(r"[àâäéèêëïîôùûüçœæ]")
+_EN_WORD_RE = re.compile(
+    r"\b(?:the|a|an|is|are|of|and|to|for|with|about|from|this|that|was|were|off)\b",
+    re.IGNORECASE,
+)
 _MD_RE = re.compile(r"[*_#>`]+")
 MAX_SENTENCES = 2
 MAX_CHARS = 320
@@ -479,6 +516,7 @@ async def translate(
         fallback=src,
         facts=facts if facts is not None else src,
         max_tokens=_translate_max_tokens(src, max_tokens),
+        lang="en",
     )
     out, source = result
     cleaned = _clean_text(out)
@@ -602,10 +640,41 @@ def _parts_text(parts: list[tuple[str, str]], *, reasoning: bool) -> str:
     return "".join(chunks)
 
 
-def _recover_reasoning_text(raw: Any) -> str:
-    """Answer left beside an empty `content` (Lightning finish=length, Ultra Day-0).
+def _words(text: str) -> list[str]:
+    return [w.lower() for w in _WORD_RE.findall(text or "")]
 
-    A chain-of-thought leak stays empty. A later plain sentence is kept.
+
+def _shares_prompt_span(sentence: str, prompt: str, n: int = 6) -> bool:
+    """True when `n` consecutive words of the sentence are copied from the prompt."""
+    sw = _words(sentence)
+    pw = _words(prompt)
+    if len(sw) < n or len(pw) < n:
+        return False
+    grams = {tuple(pw[i:i + n]) for i in range(len(pw) - n + 1)}
+    return any(tuple(sw[i:i + n]) in grams for i in range(len(sw) - n + 1))
+
+
+def _sentence_matches_lang(text: str, *, en: bool) -> bool:
+    """Keep the sentence only when it is clearly the requested language.
+
+    A tie, or no signal at all, is a doubt: reject.
+    """
+    fr = len(_FR_WORD_RE.findall(text or "")) + len(_FR_ACCENT_RE.findall(text or ""))
+    en_n = len(_EN_WORD_RE.findall(text or ""))
+    if fr <= 0 and en_n <= 0:
+        return False
+    if fr == en_n:
+        return False
+    return (en_n > fr) if en else (fr > en_n)
+
+
+def _recover_reasoning_text(raw: Any, *, prompt: str = "", lang: str = "fr") -> str:
+    """A plain sentence left beside an empty `content`.
+
+    The reasoning blob itself is never returned. A sentence is kept only when
+    it has no reasoning marker, no 6-word copy of the prompt, and it is in the
+    requested language. Anything doubtful stays empty so the cascade can fall
+    back with an honest label.
     """
     if raw is None:
         return ""
@@ -614,28 +683,33 @@ def _recover_reasoning_text(raw: Any) -> str:
     else:
         parts = _message_parts(raw)
         blob = _parts_text(parts, reasoning=True) or _parts_text(parts, reasoning=False)
-    cleaned = _clean_text(blob)
-    if cleaned:
-        return cleaned
     stripped = _strip_preamble(_strip_think(_FENCE_RE.sub("", blob or "")))
+    want_en = _is_en(lang)
     kept: list[str] = []
     for sentence in _SENT_SPLIT_RE.split(stripped):
         sentence = sentence.strip()
-        if not sentence or _PROMPT_LEAK_RE.search(sentence) or _META_RE.search(sentence):
+        if not sentence:
             continue
         piece = _clean_text(sentence)
-        if piece:
-            kept.append(piece)
+        if not piece or _PROMPT_LEAK_RE.search(piece) or _META_RE.search(piece):
+            continue
+        if _REASON_MARK_RE.search(piece):
+            continue
+        if _shares_prompt_span(piece, prompt):
+            continue
+        if not _sentence_matches_lang(piece, en=want_en):
+            continue
+        kept.append(piece)
     return " ".join(kept).strip()
 
 
-def _openai_text(data: dict[str, Any] | None) -> str:
+def _openai_text(data: dict[str, Any] | None, *, prompt: str = "", lang: str = "fr") -> str:
     """Visitor text from a chat completion.
 
     `content` wins. When it is empty, Nemotron on Token Factory often spent
     the budget on the trace (`finish_reason=length`) and left the answer in
-    `message.reasoning` (vLLM) or `reasoning_content` (older field). A pure
-    thinking leak is still dropped — it must not reach the sailor.
+    `message.reasoning` (vLLM) or `reasoning_content` (older field). Only a
+    sentence that passes `_recover_reasoning_text` may leave that field.
     """
     choice = ((data or {}).get("choices") or [{}])[0] or {}
     if not isinstance(choice, dict):
@@ -648,12 +722,12 @@ def _openai_text(data: dict[str, Any] | None) -> str:
     if content:
         return content
     for raw in (msg.get("reasoning"), msg.get("reasoning_content"), choice.get("reasoning")):
-        recovered = _recover_reasoning_text(raw)
+        recovered = _recover_reasoning_text(raw, prompt=prompt, lang=lang)
         if recovered:
             return recovered
     typed = _parts_text(content_parts, reasoning=True)
     if typed:
-        return _recover_reasoning_text(typed)
+        return _recover_reasoning_text(typed, prompt=prompt, lang=lang)
     return ""
 
 
@@ -717,6 +791,7 @@ async def _call_tokenfactory(
     *,
     max_tokens: int | None = None,
     cascade_tier: str | None = None,
+    lang: str = "fr",
 ) -> tuple[str, str]:
     key = nebius_key()
     if not key:
@@ -734,7 +809,7 @@ async def _call_tokenfactory(
     if r.status_code >= 400:
         raise _http_error("tokenfactory", r)
     data = r.json()
-    text = _openai_text(data)
+    text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     reported = str((data or {}).get("model") or "")
     source = llm_budget.source_for(t)
     model = _exact_model(source, reported, str(payload.get("model") or ""))
@@ -755,7 +830,7 @@ async def _call_tokenfactory(
 
 
 async def _call_nim(
-    system: str, user: str, client: httpx.AsyncClient, *, tier: str = "",
+    system: str, user: str, client: httpx.AsyncClient, *, tier: str = "", lang: str = "fr",
 ) -> CascadeResult:
     key = nvidia_key()
     if not key:
@@ -781,7 +856,7 @@ async def _call_nim(
     if r.status_code >= 400:
         raise _http_error("nvidia", r)
     data = r.json()
-    text = _openai_text(data)
+    text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("nvidia empty")
     source = f"nvidia-{NIM_MODEL.split('/')[-1]}"
@@ -793,6 +868,7 @@ async def _call_openrouter(
     system: str, user: str, client: httpx.AsyncClient, *, online: bool,
     max_tokens: int | None = None,
     tier: str = "",
+    lang: str = "fr",
 ) -> CascadeResult:
     key = openrouter_key()
     if not key:
@@ -818,7 +894,7 @@ async def _call_openrouter(
     if r.status_code >= 400:
         raise _http_error("openrouter", r)
     data = r.json()
-    text = _openai_text(data)
+    text = _openai_text(data, prompt=f"{system}\n{user}", lang=lang)
     if not text:
         raise RuntimeError("openrouter empty")
     answered = _exact_model("openrouter", str((data or {}).get("model") or ""), model)
@@ -902,6 +978,7 @@ async def _cascade_once(
     facts: Any,
     fallback: str | None,
     max_tokens: int | None = None,
+    lang: str = "fr",
 ) -> tuple[str, str]:
     cache_key = prompt_cache_key(system, user, tier, online=online, max_tokens=max_tokens)
     hit = _cache_get(cache_key)
@@ -914,11 +991,13 @@ async def _cascade_once(
     last = "no_llm_backend"
     hops: list[tuple[str, Any]] = []
     norm_tier = llm_budget.normalize_tier(tier)
+    asked_lang = "en" if _is_en(lang) else "fr"
 
     async def _tokenfactory_hop() -> tuple[str, str]:
         try:
             return await _call_tokenfactory(
                 system, user, tier, http, max_tokens=max_tokens, cascade_tier=norm_tier,
+                lang=asked_lang,
             )
         except Exception as exc:
             if norm_tier != "fast" or not _tf_fast_super_retry(exc):
@@ -928,6 +1007,7 @@ async def _cascade_once(
             super_mt = max(int(budget), 400)
             return await _call_tokenfactory(
                 system, user, "write", http, max_tokens=super_mt, cascade_tier=norm_tier,
+                lang=asked_lang,
             )
 
     for name in providers():
@@ -936,13 +1016,16 @@ async def _cascade_once(
         elif name == "openrouter":
             hops.append((name, lambda: _call_openrouter(
                 system, user, http, online=online, max_tokens=max_tokens, tier=norm_tier,
+                lang=asked_lang,
             )))
         elif name == "claude":
             hops.append((name, lambda: _call_claude(
                 system, user, http, max_tokens=max_tokens, tier=norm_tier,
             )))
         elif name == "nim":
-            hops.append((name, lambda: _call_nim(system, user, http, tier=norm_tier)))
+            hops.append((name, lambda: _call_nim(
+                system, user, http, tier=norm_tier, lang=asked_lang,
+            )))
 
     failures: list[dict[str, str]] = []
     for name, step in hops:
@@ -994,6 +1077,7 @@ async def cascade_text(
     fallback: str | None = None,
     facts: Any = None,
     max_tokens: int | None = None,
+    lang: str = "fr",
 ) -> tuple[str, str]:
     """Cache SQLite → Token Factory → OpenRouter → Claude → rules.
 
@@ -1026,7 +1110,7 @@ async def cascade_text(
             try:
                 result = await _cascade_once(
                     system, user, http, online=online, tier=t, facts=facts, fallback=fallback,
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens, lang=lang,
                 )
                 if not fut.done():
                     fut.set_result(result)
@@ -1083,6 +1167,7 @@ async def write_story(
             system, user, client, online=page, tier=story_tier(body),
             fallback=fallback if fallback is not None else "",
             facts=event,
+            lang="fr",
         )
         text, source = drafted
         model = str(getattr(drafted, "model", "") or "")
