@@ -5,6 +5,7 @@ import { useToggleLayers } from "../layers/useToggleLayers.js";
 import { useClimatologyLayer } from "../layers/useClimatologyLayer.js";
 import { useGribCorridorLayer } from "../layers/useGribCorridorLayer.js";
 import { useRouteLayer } from "../layers/useRouteLayer.js";
+import { useWeatherPipeline } from "../hooks/useWeatherPipeline.js";
 import { MapSceneController } from "./MapSceneController.js";
 import { isNearRoute } from "./routeClick.js";
 
@@ -34,6 +35,10 @@ export function MapScene({
   const controllerRef = useRef(null);
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(0);
+  const weather = useWeatherPipeline({ grib: scene.grib });
+  const gribCorridorReady = weather.enabled
+    ? weather.layers.gribWind === "ready"
+    : scene.gribStatus === "ready";
   const callbacksRef = useRef({});
   callbacksRef.current = {
     onReady,
@@ -95,7 +100,7 @@ export function MapScene({
   useGribCorridorLayer(mapRef, {
     grib: scene.grib,
     mapReady,
-    visible: maritimeLayers.showGrib && scene.isSuivre && scene.gribStatus === "ready",
+    visible: maritimeLayers.showGrib && scene.isSuivre && gribCorridorReady,
     whenIso: scene.clockSample?.iso,
     lat: scene.isSuivre ? scene.live?.lat : null,
     lon: scene.isSuivre ? scene.live?.lon : null,
@@ -138,6 +143,7 @@ export function MapScene({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return undefined;
+    map._biSuspendCatalogPick = Boolean(scene.drawingMode);
     const onClick = (event) => {
       const { lat, lng: lon } = event.latlng;
       if (scene.drawingMode) {

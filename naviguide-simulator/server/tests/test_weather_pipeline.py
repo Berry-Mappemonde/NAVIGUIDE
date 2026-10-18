@@ -1,10 +1,19 @@
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from hindcast import MS_TO_KN, uv_to_current_to, uv_to_wind_from
 from saildocs import knots_from_uv, last_ready_cycle, to_iso
 from voyage_clock import MS_TO_KN as CLOCK_MS_TO_KN
-from weather_pipeline import WeatherPipeline, cache_key, forecast_cycle, weather_cell
+from weather_pipeline import (
+    AsyncWeatherQueue,
+    WeatherPipeline,
+    cache_key,
+    forecast_cycle,
+    layer_cache_key,
+    weather_cell,
+    weather_pipeline_enabled,
+)
 
 # 1 kn = 1852 m/h exactement → 1 m/s = 3600/1852 kn.
 EXACT_MS_TO_KN = 3600.0 / 1852.0
@@ -161,6 +170,117 @@ def test_snapshot_group_pending_until_every_product_ready():
     assert ready["status"] == "ready"
     assert ready["wind"]["source"] == "wind"
     assert ready["wave"]["source"] == "wave"
+
+
+def test_weather_pipeline_flag_defaults_off(monkeypatch):
+    monkeypatch.delenv("NAVIGUIDE_WEATHER_PIPELINE", raising=False)
+    assert weather_pipeline_enabled() is False
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "1")
+    assert weather_pipeline_enabled() is True
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "off")
+    assert weather_pipeline_enabled() is False
+
+
+def test_slow_provider_times_out_and_leaves_others_ready():
+    queue = AsyncWeatherQueue(default_timeout_s=0.08)
+    try:
+        def slow():
+            time.sleep(0.6)
+            return {"hs": 2.0}
+
+        def fast():
+            return {"windKnots": 11}
+
+        t0 = time.perf_counter()
+        pending_slow = queue.snapshot("gfs-wave", 46.15, -1.16, slow)
+        pending_fast = queue.snapshot("grib-wind", 46.15, -1.16, fast)
+        assert time.perf_counter() - t0 < 0.2
+        assert pending_slow["status"] == "pending"
+        ready = queue.wait_layer("grib-wind", 46.15, -1.16, timeout=1)
+        assert ready["status"] == "ready"
+        assert ready["windKnots"] == 11
+        unavailable = queue.wait_layer("gfs-wave", 46.15, -1.16, timeout=1)
+        assert unavailable["status"] == "unavailable"
+        assert unavailable["reason"] == "timeout"
+    finally:
+        queue.close()
+
+
+def test_failing_provider_becomes_unavailable_without_raising():
+    queue = AsyncWeatherQueue(default_timeout_s=1)
+    try:
+        def boom():
+            raise RuntimeError("down")
+
+        first = queue.snapshot("grib-wind", 1.0, 2.0, boom)
+        assert first["status"] in {"pending", "unavailable"}
+        done = queue.wait_layer("grib-wind", 1.0, 2.0, timeout=1)
+        assert done["status"] == "unavailable"
+        assert done["reason"] == "RuntimeError"
+        again = queue.snapshot("grib-wind", 1.0, 2.0, boom)
+        assert again["status"] == "unavailable"
+    finally:
+        queue.close()
+
+
+def test_cache_hit_skips_loader_for_same_cell_and_hour():
+    queue = AsyncWeatherQueue(default_timeout_s=1)
+    when = datetime(2026, 10, 18, 8, 20, tzinfo=timezone.utc)
+    calls = []
+    try:
+        def loader():
+            calls.append(1)
+            return {"windKnots": 8}
+
+        same = layer_cache_key("grib-wind", 10.01, 20.01, when)
+        assert same == layer_cache_key("grib-wind", 10.12, 20.12, when)
+        assert same[2] != layer_cache_key("grib-wind", 10.01, 20.01, when + timedelta(hours=2))[2]
+        queued = queue.snapshot("grib-wind", 10.01, 20.01, loader, when=when)
+        assert queued["status"] in {"pending", "ready"}
+        ready = queue.wait_layer("grib-wind", 10.01, 20.01, when=when, timeout=1)
+        assert ready["status"] == "ready"
+        assert ready["windKnots"] == 8
+        hit = queue.snapshot("grib-wind", 10.12, 20.12, loader, when=when)
+        assert hit["status"] == "ready"
+        assert hit["windKnots"] == 8
+        assert calls == [1]
+    finally:
+        queue.close()
+
+
+def test_flagged_grib_kick_returns_before_a_slow_provider(monkeypatch):
+    import voyage_api
+
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "1")
+    release = threading.Event()
+
+    def hang(*_args, **_kwargs):
+        release.wait(2)
+        return None
+
+    monkeypatch.setattr(voyage_api, "maybe_refresh_official", hang)
+    queue = AsyncWeatherQueue(default_timeout_s=0.08)
+    monkeypatch.setattr(voyage_api, "get_async_weather_queue", lambda: queue)
+    try:
+        t0 = time.perf_counter()
+        assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is True
+        assert time.perf_counter() - t0 < 0.3
+        assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is False
+        done = queue.wait_layer("grib-wind", 46.15, -1.16, timeout=1)
+        assert done["status"] == "unavailable"
+        assert done["reason"] == "timeout"
+        body = voyage_api._pending_grib(None, {"lat": 46.15, "lon": -1.16}, datetime.now(timezone.utc), refreshing=False)
+        assert body["layers"]["gribWind"]["status"] == "unavailable"
+        assert "layers" not in _body_with_flag_off(monkeypatch)
+    finally:
+        release.set()
+        queue.close()
+
+
+def _body_with_flag_off(monkeypatch):
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "off")
+    import voyage_api
+    return voyage_api._pending_grib(None, {"lat": 46.15, "lon": -1.16}, datetime.now(timezone.utc), refreshing=False)
 
 
 def test_ms_to_kn_is_1852_metre_nautical_mile():

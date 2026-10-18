@@ -116,9 +116,12 @@ def test_grib_get_returns_pending_and_kicks_shared_refresh(client, monkeypatch):
 
 
 def test_grib_kick_deduplicates_active_thread(monkeypatch):
+    # Threaded path (pipeline flag off); the child-process path is below.
     import threading
 
     from weather_pipeline import get_pipeline
+
+    monkeypatch.delenv("NAVIGUIDE_WEATHER_PIPELINE", raising=False)
 
     started = threading.Event()
     release = threading.Event()
@@ -135,6 +138,56 @@ def test_grib_kick_deduplicates_active_thread(monkeypatch):
     assert started.wait(1)
     assert voyage_api._kick_official_grib({"lat": 46.15, "lon": -1.16}) is False
     release.set()
+
+
+def test_grib_kick_deduplicates_active_child_process(monkeypatch, tmp_path):
+    """Flag on: the refresh runs in a child process; a second kick while that
+    child is running is refused, then the result lands once."""
+    import os
+    import time
+
+    import weather_pipeline
+    from weather_pipeline import ProcessJob
+
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", "1")
+    monkeypatch.setattr(weather_pipeline, "_ASYNC_QUEUE", None)
+    monkeypatch.setattr(voyage_api, "load_latest", lambda *_a, **_k: None)
+    started = tmp_path / "started"
+    release = tmp_path / "release"
+    targets = []
+
+    def _job(target, *args, **kwargs):
+        # Same job, its target swapped for a slow double run in the real child.
+        targets.append(target)
+        return ProcessJob("wx_child_double:slow_refresh", str(started), str(release), *args, **kwargs)
+
+    monkeypatch.setattr(voyage_api, "ProcessJob", _job)
+    around = {"lat": 46.15, "lon": -1.16}
+    when = voyage_api._now()
+    queue = weather_pipeline.get_async_weather_queue()
+    try:
+        assert voyage_api._kick_official_grib(dict(around), when=when) is True
+        assert targets == ["weather_jobs:refresh_official_grib"]
+        deadline = time.monotonic() + 30
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert started.exists(), "the child process never started"
+        child_pid = int(started.read_text().split()[0])
+        assert child_pid != os.getpid()
+
+        assert voyage_api._kick_official_grib(dict(around), when=when) is False
+        assert voyage_api._official_grib_refreshing() is True
+        assert queue.cached_status("grib-wind", 46.15, -1.16, when) == "pending"
+
+        release.write_text("go")
+        deadline = time.monotonic() + 30
+        while queue.cached_status("grib-wind", 46.15, -1.16, when) == "pending" and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert queue.cached_status("grib-wind", 46.15, -1.16, when) == "ready"
+        assert started.read_text().split() == [str(child_pid)], "one child only"
+    finally:
+        release.write_text("go")
+        queue.close()
 
 
 def test_grib_refresh_without_voyage_uses_latest_around(client, tmp_path):

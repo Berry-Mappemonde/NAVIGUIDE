@@ -22,7 +22,9 @@ export function featureContains(feature, lon, lat) {
   if (!g) return false;
   const rings = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : null;
   if (!rings) return false;
-  return rings.some((poly) => ringContains(poly[0], lon, lat));
+  // Inside the outer ring and in none of its holes.
+  return rings.some((poly) => ringContains(poly?.[0], lon, lat)
+    && !(poly || []).slice(1).some((hole) => ringContains(hole, lon, lat)));
 }
 
 function ringContains(ring, lon, lat) {

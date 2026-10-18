@@ -1,3 +1,9 @@
+import {
+  EMODNET_ACTIVITIES_ATTRIBUTION,
+  EMODNET_BATHYMETRY_ATTRIBUTION,
+  EMODNET_GEOLOGY_ATTRIBUTION,
+} from "./tileAttributions.js";
+
 /** EMODnet WMS — same layers as Blue Intelligence Science mode. */
 export const SCIENCE_WMS_LAYERS = [
   {
@@ -6,7 +12,7 @@ export const SCIENCE_WMS_LAYERS = [
     layers: "mean_multicolour",
     opacity: 0.5,
     pane: "science-wms-bathy",
-    attribution: "EMODnet Bathymetry",
+    attribution: EMODNET_BATHYMETRY_ATTRIBUTION,
   },
   {
     id: "substrate",
@@ -14,7 +20,7 @@ export const SCIENCE_WMS_LAYERS = [
     layers: "seabed_substrate_1m",
     opacity: 0.75,
     pane: "science-wms-substrate",
-    attribution: "EMODnet Geology",
+    attribution: EMODNET_GEOLOGY_ATTRIBUTION,
   },
   {
     id: "cables",
@@ -22,6 +28,6 @@ export const SCIENCE_WMS_LAYERS = [
     layers: "telecablesactual,powercables",
     opacity: 1,
     pane: "science-wms-cables",
-    attribution: "EMODnet Human Activities",
+    attribution: EMODNET_ACTIVITIES_ATTRIBUTION,
   },
 ];
