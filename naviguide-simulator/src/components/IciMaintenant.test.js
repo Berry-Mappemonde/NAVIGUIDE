@@ -124,6 +124,28 @@ describe("IciMaintenant — : cinq sections, pas de titre", () => {
     assert.doesNotMatch(src, /Bientôt|placeholder|aide|hint|TODO/i);
   });
 
+  it("formate la ligne d'étape avec les noms affichés, pas le suffixe d'une autre escale", () => {
+    const line = formatLegLine({
+      from: "Açores (Corse)",
+      to: "Saint-Maur (Berry, Indre)",
+      day: 3,
+      kn: 6.5,
+      remainingNm: 40,
+    }, tFr, "fr");
+    assert.match(line, /^Açores → Saint-Maur \(Indre\)/);
+    assert.doesNotMatch(line, /Corse|Berry/);
+    assert.match(line, /J3/);
+    assert.match(line, /reste 40 nm/);
+    const enLine = formatLegLine({
+      from: "Açores (Corse)",
+      to: "Ajaccio (Corse)",
+    }, (key, vars = {}) => {
+      const table = { iciLegDay: "D{n}", iciLegKn: "{kn} kn", iciLegRemaining: "{nm} nm left" };
+      return Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, String(v ?? "")), table[key] ?? key);
+    }, "en");
+    assert.match(enLine, /^Azores \(Portugal\) → Ajaccio \(Corse\)/);
+  });
+
   it("formate la ligne d'étape avec les chiffres du Moment, sans en inventer", () => {
     const line = formatLegLine(fixture.leg, tFr, "fr");
     assert.match(line, /Fort-de-France/);

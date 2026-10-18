@@ -32,6 +32,7 @@ PREPARING = "preparing"
 READY = "ready"
 UNAVAILABLE = "unavailable"
 # Clé film : VS1 (choix VL/Lightning ou repli, budget 2:30 / 3:00) invalide ed1.
+# VB1 : cache de route ; absent, le récit ne change pas. Invalide vs1-rg10.
 # Le remplisseur recalcule la famille film, pas les perles. Pas un WARM monde.
 # Pas de kind de moment nouveau : moments reste rg4.
 # ici : am1a (contrat AMP `source` ; sac pré-AM1A ignoré).
@@ -39,7 +40,7 @@ UNAVAILABLE = "unavailable"
 # (Mata-Utu / Nouméa plus sur le retour atlantique). Pas de repli sur rc44.
 # clock (famille climo) : départ après la jambe terrestre, séjour des ports.
 # moments suit cette horloge. Le remplisseur recalcule ; pas un parcours complet.
-FILM_SCRIPT_REV = "vs1-rg10"
+FILM_SCRIPT_REV = "vs1-vb1"
 WRITTEN_SOURCE = "nemotron-super-token-factory"
 REVIEWED_SOURCE = "nemotron-super-reviewed-ultra"
 MOMENTS_REV = "rg4-depart"

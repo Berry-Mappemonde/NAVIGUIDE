@@ -37,6 +37,9 @@ describe("berryLegs", () => {
 
   it("marque overland Saint-Maur ↔ La Rochelle", () => {
     assert.equal(isNonMaritimeLeg("Saint-Maur (Berry, Indre)", "La Rochelle"), true);
+    assert.equal(isLandLegNames("Saint-Maur (Berry)", "La Rochelle"), true);
+    assert.equal(isLandLegNames("Saint-Maur (Indre)", "La Rochelle"), true);
+    assert.equal(isLandLegNames("La Rochelle", "Saint-Maur (Berry)"), true);
     assert.equal(isNonMaritimeLeg("La Rochelle", "Ajaccio (Corse)"), false);
     assert.equal(isLandLegNames("Saint-Maur", "La Rochelle"), true);
     assert.equal(isLandLegNames("La Rochelle", "Ajaccio (Corse)"), false);
