@@ -19,13 +19,16 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
  * translucent panel the text bled through — never again.
  */
 .leaflet-container .leaflet-bottom.leaflet-right {
+  left: var(--sim-inset-left, 0px);
   right: var(--sim-inset-right, 0px);
   bottom: var(--sim-inset-bottom, 0px);
   display: flex;
   flex-direction: row;
+  flex-wrap: nowrap;
   align-items: flex-end;
+  justify-content: flex-end;
   gap: 4px;
-  transition: right 300ms ease, bottom 300ms ease;
+  transition: left 300ms ease, right 300ms ease, bottom 300ms ease;
 }
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control {
   float: none;
@@ -39,21 +42,32 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   background-color: rgba(15, 23, 42, 0.72);
   color: rgba(226, 232, 240, 0.85);
   font-size: 10px;
-  height: var(--map-control-h);
+  height: auto;
+  min-height: var(--map-control-h);
   line-height: var(--map-control-h);
   padding: 0 6px;
   margin: 0;
   border-radius: 6px 0 0 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  align-content: center;
   box-sizing: border-box;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
+  max-width: calc(100% - (var(--map-control-h) * 2) - 8px);
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: visible;
 }
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
 
 /* +/− horizontaux, plus petits que le 26–30 px Leaflet, à côté des crédits. */
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom.leaflet-bar {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: row;
   box-shadow: none;
   border: none;
