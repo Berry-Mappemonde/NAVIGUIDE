@@ -69,9 +69,16 @@ export function MapScene({
     mapRef.current = controller.map;
     // Recette / e2e : le contrôleur de scène est exposé (zoom, carte).
     if (typeof window !== "undefined") window.__naviguideScene = controller;
+    // La capture du film attend ce marqueur : la carte a sa première vue.
+    const markAppReady = () => {
+      containerRef.current?.setAttribute("data-testid", "app-ready");
+    };
+    if (typeof controller.map?.whenReady === "function") controller.map.whenReady(markAppReady);
+    else markAppReady();
     setMapReady(1);
     callbacksRef.current.onReady?.(controller.api);
     return () => {
+      containerRef.current?.removeAttribute("data-testid");
       callbacksRef.current.onReady?.(null);
       if (typeof window !== "undefined" && window.__naviguideScene === controller) {
         delete window.__naviguideScene;

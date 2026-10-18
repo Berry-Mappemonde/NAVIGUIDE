@@ -57,6 +57,9 @@ export default defineConfig({
     viewport: { width: 1280, height: 800 },
     trace: process.env.CI ? "off" : "retain-on-failure",
     navigationTimeout: 20_000,
+    launchOptions: process.env.PW_RELAXED_BROWSER === "1"
+      ? { args: ["--no-sandbox", "--disable-gpu", "--single-process", "--no-zygote"] }
+      : undefined,
   },
   webServer: withApi ? [viteServer, apiServer] : [viteServer],
 });
