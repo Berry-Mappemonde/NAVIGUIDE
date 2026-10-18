@@ -12,8 +12,8 @@ import {
   OPENSEAMAP_ATTRIBUTION,
   OSM_COPYRIGHT_HREF,
   VLIZ_EEZ_ATTRIBUTION,
+  CC_BY_4_HREF,
   bindTileCredit,
-  creditsForLayers,
 } from "./tileAttributions.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -43,22 +43,21 @@ describe("crédits tuiles / WMS", () => {
     assert.match(tileAttribution("en"), /OpenStreetMap contributors/);
   });
 
-  it("affiche le crédit d'une couche tant qu'elle est active, et le retire ensuite", () => {
-    assert.deepEqual(creditsForLayers({}), []);
-    assert.deepEqual(creditsForLayers({ balisage: true }), [OPENSEAMAP_ATTRIBUTION]);
+  it("chaque CC-BY 4.0 pointe vers la licence, VLIZ cite Marine Regions", () => {
     assert.equal(OPENSEAMAP_ATTRIBUTION, "© OpenSeaMap contributors");
-    assert.deepEqual(creditsForLayers({ bathymetry: true }), [EMODNET_BATHYMETRY_ATTRIBUTION]);
-    assert.deepEqual(
-      creditsForLayers({ balisage: true, bathymetry: true, fonds: true, cables: true, zee: true }),
-      [
-        OPENSEAMAP_ATTRIBUTION,
-        EMODNET_BATHYMETRY_ATTRIBUTION,
-        EMODNET_GEOLOGY_ATTRIBUTION,
-        EMODNET_ACTIVITIES_ATTRIBUTION,
-        VLIZ_EEZ_ATTRIBUTION,
-      ],
-    );
-    assert.deepEqual(creditsForLayers({ balisage: false, zee: true }), [VLIZ_EEZ_ATTRIBUTION]);
+    assert.equal(CC_BY_4_HREF, "https://creativecommons.org/licenses/by/4.0/");
+    const link = /<a href="https:\/\/creativecommons\.org\/licenses\/by\/4\.0\/"[^>]*>CC-BY 4\.0<\/a>/g;
+    for (const credit of [
+      EMODNET_BATHYMETRY_ATTRIBUTION,
+      EMODNET_GEOLOGY_ATTRIBUTION,
+      EMODNET_ACTIVITIES_ATTRIBUTION,
+      VLIZ_EEZ_ATTRIBUTION,
+    ]) {
+      const plain = (credit.match(/CC-BY 4\.0/g) || []).length;
+      assert.equal(plain, 1, credit);
+      assert.equal((credit.match(link) || []).length, plain, credit);
+    }
+    assert.match(VLIZ_EEZ_ATTRIBUTION, /Flanders Marine Institute \(VLIZ\)<\/a>, Marine Regions, <a /);
   });
 
   it("la bathymétrie affichée est le WMS EMODnet, pas le sondage GEBCO", () => {
@@ -95,16 +94,17 @@ describe("crédits tuiles / WMS", () => {
     assert.doesNotMatch(toggleSrc, /attribution:\s*spec\.attribution/);
   });
 
-  it("laisse les crédits se replier dans la carte visible, sans recouvrir le zoom", () => {
+  it("bande en bloc dans la carte visible, coupée entre les mots, sans recouvrir le zoom", () => {
     const rule = css.match(/\.leaflet-container \.leaflet-bottom\.leaflet-right \.leaflet-control-attribution \{[^}]+\}/);
     assert.ok(rule, "règle d'attribution introuvable");
     assert.match(rule[0], /min-height:\s*var\(--map-control-h\)/);
-    assert.match(rule[0], /flex-wrap:\s*wrap/);
+    assert.match(rule[0], /display:\s*block/);
+    assert.doesNotMatch(rule[0], /display:\s*flex/);
+    assert.match(rule[0], /text-align:\s*right/);
     assert.match(rule[0], /max-width:\s*calc\(100% - \(var\(--map-control-h\) \* 2\) - 8px\)/);
     assert.match(rule[0], /white-space:\s*normal/);
-    assert.match(rule[0], /overflow-wrap:\s*break-word/);
     assert.doesNotMatch(rule[0], /overflow-wrap:\s*anywhere/);
-    assert.match(rule[0], /min-width:\s*min\(220px, 100vw - 16px\)/);
+    assert.doesNotMatch(rule[0], /min-width:\s*min\(220px/);
     assert.match(rule[0], /height:\s*auto/);
     assert.doesNotMatch(rule[0], /white-space:\s*nowrap/);
     assert.match(css, /\.leaflet-container \.leaflet-bottom\.leaflet-right \{[^}]*left:\s*var\(--sim-inset-left/);

@@ -48,22 +48,78 @@ html, body, #root { height: 100%; margin: 0; overflow: hidden; }
   padding: 0 6px;
   margin: 0;
   border-radius: 6px 0 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  align-content: center;
+  /* Block, not flex: flex items drop the spaces around « | », « © » and « ( ». */
+  display: block;
   box-sizing: border-box;
   white-space: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
   text-align: right;
   max-width: calc(100% - (var(--map-control-h) * 2) - 8px);
-  /* Never a one-letter column when the visible map is very narrow. */
-  min-width: min(220px, 100vw - 16px);
+  min-width: 0;
   flex: 0 1 auto;
   overflow: visible;
 }
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-attribution a { color: #7dd3fc; }
+
+/*
+ * Visible map under 260 px: the credits fold into an « ⓘ » button (bottom
+ * right of the visible map, zoom above it); the tap opens them in a popover
+ * above the panels (compactAttribution.js).
+ */
+.leaflet-container .naviguide-attrib-toggle { display: none; }
+.leaflet-container.naviguide-attrib-compact .leaflet-bottom.leaflet-right {
+  flex-direction: column;
+  align-items: flex-end;
+}
+.leaflet-container.naviguide-attrib-compact .leaflet-bottom.leaflet-right .leaflet-control-attribution { display: none; }
+.leaflet-container.naviguide-attrib-compact .naviguide-attrib-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--map-control-h);
+  height: var(--map-control-h);
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.naviguide-attrib-popover {
+  position: fixed;
+  z-index: 2000;
+  box-sizing: border-box;
+  width: max-content;
+  padding: 6px 26px 6px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #e2e8f0;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+  white-space: normal;
+  overflow-wrap: normal;
+  overflow: auto;
+}
+.naviguide-attrib-popover[hidden] { display: none; }
+.naviguide-attrib-popover a { color: #7dd3fc; }
+.naviguide-attrib-popover-close {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
 
 /* +/− horizontaux, plus petits que le 26–30 px Leaflet, à côté des crédits. */
 .leaflet-container .leaflet-bottom.leaflet-right .leaflet-control-zoom.leaflet-bar {
