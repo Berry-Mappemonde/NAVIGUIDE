@@ -9,9 +9,32 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 FAMILIES_TOUCHED = ("climo", "moments", "film")
+
+_backup_completed = False
+_writes_enabled = False
+
+
+def reset_run_guards() -> None:
+    global _backup_completed, _writes_enabled
+    _backup_completed = False
+    _writes_enabled = False
+
+
+def backup_was_completed() -> bool:
+    return _backup_completed
+
+
+def writes_enabled() -> bool:
+    return _writes_enabled
+
+
+def _require_backup_before_write() -> None:
+    if _writes_enabled:
+        return
+    raise RuntimeError("écriture refusée : sauvegarde non effectuée")
 
 
 def _utc_stamp() -> str:
@@ -27,6 +50,9 @@ class StoreCounts:
     moments_files: int = 0
     film_files: int = 0
     clock_marks: int = 0
+
+    def as_tuple(self) -> tuple[int, int, int]:
+        return (self.pearls, self.kv_rows, self.moment_rows)
 
 
 @dataclass
@@ -166,7 +192,8 @@ def plan_reanchor() -> ReanchorPlan:
 
 
 def backup_store(backup_parent: Optional[Path] = None) -> Path:
-    """Copie horodatée à côté du stock (fichiers + sqlite). Retourne le dossier backup."""
+    """Copie horodatée à côté du stock (fichiers + sqlite via backup())."""
+    global _backup_completed
     import official_store
     import pearl_store
 
@@ -176,6 +203,7 @@ def backup_store(backup_parent: Optional[Path] = None) -> Path:
     dest.mkdir(parents=True, exist_ok=False)
 
     copied: list[str] = []
+    sqlite_meta: dict[str, Any] = {}
     for fam in FAMILIES_TOUCHED:
         for src in _family_paths(root, fam):
             rel = src.relative_to(root)
@@ -184,14 +212,15 @@ def backup_store(backup_parent: Optional[Path] = None) -> Path:
             shutil.copy2(src, tgt)
             copied.append(str(tgt))
 
-    try:
-        db = pearl_store.db_path()
-        if db.is_file():
-            tgt_db = dest / "naviguide.sqlite"
-            shutil.copy2(db, tgt_db)
-            copied.append(str(tgt_db))
-    except Exception as exc:
-        (dest / "BACKUP_WARN.txt").write_text(f"sqlite non copié : {exc}\n", encoding="utf-8")
+    db = pearl_store.db_path()
+    if db.is_file():
+        tgt_db = dest / "naviguide.sqlite"
+        sqlite_meta = pearl_store.backup_database(tgt_db)
+        copied.append(str(tgt_db))
+        print(
+            f"  backup sqlite : integrity={sqlite_meta.get('integrity')} counts={sqlite_meta.get('counts')}",
+            flush=True,
+        )
 
     import os
 
@@ -199,11 +228,12 @@ def backup_store(backup_parent: Optional[Path] = None) -> Path:
     if url:
         _backup_mongo(dest, copied)
 
-    manifest = {"copied": copied, "store_root": str(root)}
+    manifest = {"copied": copied, "store_root": str(root), "sqlite": sqlite_meta}
     (dest / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     for line in copied:
         print(f"  backup : {line}", flush=True)
     print(f"backup : {dest}", flush=True)
+    _backup_completed = True
     return dest
 
 
@@ -237,6 +267,7 @@ def apply_climo_mark_realign(dry_run: bool) -> int:
     if dry_run:
         print(f"  climo : {n} marque(s) seraient recollées", flush=True)
         return n
+    _require_backup_before_write()
     if "clock" in payload:
         payload = {**payload, "clock": new_clock}
     else:
@@ -246,11 +277,26 @@ def apply_climo_mark_realign(dry_run: bool) -> int:
     return n
 
 
-def run_reanchor(*, dry_run: bool = False, backup: bool = True) -> int:
+def _assert_counts_monotonic(before: StoreCounts, after: StoreCounts) -> None:
+    if after.pearls < before.pearls:
+        raise RuntimeError(f"perles perdues : {before.pearls} → {after.pearls}")
+    if after.kv_rows < before.kv_rows:
+        raise RuntimeError(f"lignes kv perdues : {before.kv_rows} → {after.kv_rows}")
+    if after.moment_rows < before.moment_rows:
+        raise RuntimeError(f"moments perdus : {before.moment_rows} → {after.moment_rows}")
+
+
+def run_reanchor(
+    *,
+    dry_run: bool = False,
+    skip_backup: bool = False,
+) -> int:
     """Réancrage complet. Idempotent si les données sont déjà à jour."""
+    global _writes_enabled
     import official_store
     from moment_journal import apply_moment_reanchor  # noqa: PLC0415
 
+    reset_run_guards()
     official_store.reset_store()
     root = official_store.disk_root()
     print(f"stock : {root}", flush=True)
@@ -264,20 +310,42 @@ def run_reanchor(*, dry_run: bool = False, backup: bool = True) -> int:
         print("mode : --dry-run (aucune écriture)", flush=True)
         return 0
 
-    if backup:
-        backup_store()
-
-    apply_climo_mark_realign(dry_run=False)
-    mid = collect_counts()
-    apply_moment_reanchor(dry_run=False)
-
-    for family in ("moments", "film"):
-        status = official_store.refresh_family(
-            family,
-            force=True,
-            compute=_compute_moments_reanchor if family == "moments" else None,
+    if skip_backup:
+        print(
+            "ATTENTION : exécution sans sauvegarde (--i-accept-data-risk-without-backup)",
+            flush=True,
         )
-        print(f"  {family} : {status}", flush=True)
+        global _backup_completed
+        _backup_completed = True
+    else:
+        backup_store()
+    _writes_enabled = True
+
+    import official_store as _os
+
+    _orig_put = _os.put
+
+    def _guarded_put(family: str, payload: dict, key: Optional[str] = None) -> dict:
+        _require_backup_before_write()
+        return _orig_put(family, payload, key)
+
+    _os.put = _guarded_put  # type: ignore[method-assign]
+    try:
+        apply_climo_mark_realign(dry_run=False)
+        mid = collect_counts()
+        _assert_counts_monotonic(before, mid)
+        apply_moment_reanchor(dry_run=False)
+
+        for family in ("moments", "film"):
+            _require_backup_before_write()
+            status = official_store.refresh_family(
+                family,
+                force=True,
+                compute=_compute_moments_reanchor if family == "moments" else None,
+            )
+            print(f"  {family} : {status}", flush=True)
+    finally:
+        _os.put = _orig_put  # type: ignore[method-assign]
 
     after = collect_counts()
     print(
@@ -285,12 +353,7 @@ def run_reanchor(*, dry_run: bool = False, backup: bool = True) -> int:
         f"marques_horloge={after.clock_marks}",
         flush=True,
     )
-    if after.pearls < before.pearls:
-        raise RuntimeError(f"perles perdues : {before.pearls} → {after.pearls}")
-    if after.moment_rows < before.moment_rows:
-        raise RuntimeError(f"moments perdus : {before.moment_rows} → {after.moment_rows}")
-    if mid.pearls < before.pearls:
-        raise RuntimeError(f"perles perdues en cours : {before.pearls} → {mid.pearls}")
+    _assert_counts_monotonic(before, after)
     return 0
 
 

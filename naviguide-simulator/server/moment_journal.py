@@ -984,7 +984,15 @@ def apply_moment_reanchor(voyage_id: str | None = None, voy: dict | None = None,
             flush=True,
         )
         return {"before": before, "after": len(merged), "kept": len(kept)}
-    pearl_store.replace_moments(vid, merged)
+    import json as _json
+
+    from reanchor_official import _require_backup_before_write  # noqa: PLC0415
+
+    _require_backup_before_write()
+    if _json.dumps(merged, sort_keys=True, default=str) != _json.dumps(
+        existing, sort_keys=True, default=str,
+    ):
+        pearl_store.replace_moments(vid, merged)
     after = pearl_store.count_moments(vid)
     if after < before:
         raise RuntimeError(f"moments sqlite perdus : {before} → {after}")
