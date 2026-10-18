@@ -131,6 +131,23 @@ WIND_COPERNICUS = {
 }
 
 
+WIND_OPENMETEO = {
+    "kind": "forecast",
+    "source": "openmeteo-gfs",
+    "speedKnots": 12.4,
+    "dirFromDeg": 280.0,
+    "time": "2026-09-16T09:00",
+}
+
+
+def test_openmeteo_wind_parity(monkeypatch):
+    off = _serve(monkeypatch, "0", "openmeteo-gfs", WIND_OPENMETEO)
+    on = _serve(monkeypatch, "1", "openmeteo-gfs", WIND_OPENMETEO)
+    assert off == on == WIND_OPENMETEO
+    assert off["speedKnots"] == 12.4
+    assert get_async_weather_queue().cached_status("openmeteo-gfs", 46.15, -1.16) == "ready"
+
+
 def test_copernicus_wind_parity(monkeypatch):
     off = _serve(monkeypatch, "0", "wind", WIND_COPERNICUS)
     on = _serve(monkeypatch, "1", "wind", WIND_COPERNICUS)

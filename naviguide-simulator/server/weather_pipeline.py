@@ -497,6 +497,7 @@ ASYNC_PROVIDERS = {
     "noaa-rtofs",
     "bi-climatology",
     "wind",
+    "openmeteo-gfs",
 }
 
 

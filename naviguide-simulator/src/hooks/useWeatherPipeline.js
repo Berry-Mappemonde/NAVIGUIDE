@@ -43,11 +43,12 @@ export function climatologyLayerState(climo, enabled) {
  * First render never waits on a provider: the state is derived, and blocksMap stays false.
  * With the flag off, layer states are null and the existing paths are left alone.
  */
-export function useWeatherPipeline({ grib, wave, current, climatology, enabled } = {}) {
+export function useWeatherPipeline({ grib, wave, current, forecastWind, climatology, enabled } = {}) {
   const active = enabled ?? weatherPipelineEnabled();
   const gribWind = useMemo(() => gribWindLayerState(grib, active), [grib, active]);
   const waveState = useMemo(() => productLayerState(wave, active), [wave, active]);
   const currentState = useMemo(() => productLayerState(current, active), [current, active]);
+  const forecastWindState = useMemo(() => productLayerState(forecastWind, active), [forecastWind, active]);
   const climatologyState = useMemo(
     () => climatologyLayerState(climatology, active),
     [climatology, active],
@@ -55,6 +56,12 @@ export function useWeatherPipeline({ grib, wave, current, climatology, enabled }
   return {
     enabled: active,
     blocksMap: false,
-    layers: { gribWind, wave: waveState, current: currentState, climatology: climatologyState },
+    layers: {
+      gribWind,
+      wave: waveState,
+      current: currentState,
+      forecastWind: forecastWindState,
+      climatology: climatologyState,
+    },
   };
 }
