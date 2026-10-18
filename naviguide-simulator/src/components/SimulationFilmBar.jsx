@@ -6,9 +6,10 @@ import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
 import { SAINT_MAUR_LAND_HOURS } from "../engine/voyageClock.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
 import { ListenButton } from "./ListenButton.jsx";
+import { LlmSourceBadge } from "./LlmSourceBadge.jsx";
 import { DepartureField } from "./DepartureField.jsx";
 import { clockRegimeText, clockWeatherTooltip, nextFilmSpeed, PROFILES } from "./filmBarClock.js";
-import { filmSourceKey, filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
+import { filmSubtitleHighlight, filmSubtitleShowsAir, formatFilmEstimateClock, pickFilmEstimateSeconds, visibleFilmSubtitle, writtenPillEnabled } from "../hooks/useReplay.js";
 
 function filmEstimateLabel(replay, t) {
   const clock = formatFilmEstimateClock(pickFilmEstimateSeconds(
@@ -386,9 +387,9 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
             />
             {replay && !replay.unavailable ? (
               <>
-                <span data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-[9px] text-white/70 whitespace-nowrap">
-                  {filmSourceLabel(replay.source, t)}
-                </span>
+                <div data-testid="film-source" hidden={(replay.style || "raw") !== "written" || !replay.hasWritten} className="text-xs leading-snug text-white/90 whitespace-nowrap">
+                  <LlmSourceBadge source={replay.source} testId="film-source-badge" className="[&_span]:text-xs [&_span]:text-white/90" />
+                </div>
                 <div data-testid="film-style" className="flex bg-white/5 border border-white/10 rounded-md p-0.5 gap-0.5 flex-shrink-0">
                   {[["raw", "filmStoryRaw"], ["written", "filmStoryWritten"]].map(([id, key]) => {
                     const filmReady = replay.remoteStatus === "ready" || replay.remoteStatus === "stale";
@@ -615,10 +616,6 @@ export const SimulationFilmBar = memo(function SimulationFilmBar({
     </div>
   );
 });
-
-function filmSourceLabel(source, t) {
-  return t(filmSourceKey(source));
-}
 
 /** Jambe terrestre (Saint-Maur → La Rochelle) : km par la route, pas de nm. */
 export function formatLandLegClock(nm, hours, t, lang = "fr") {

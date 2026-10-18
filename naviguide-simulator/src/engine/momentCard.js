@@ -550,6 +550,15 @@ function eventKey(ev) {
   return `ev:${ev.stableKey || ev.id}`;
 }
 
+function draftedStorySource(ev, written) {
+  if (!written || ev?.story?.status !== "ready") return null;
+  const engine = String(ev.story.engine || "");
+  const source = ev.story.ai_model || ev.story.source || engine || ev.story.nvidia || null;
+  if (!source) return null;
+  if (engine.endsWith("+local") || String(source).endsWith("+local")) return null;
+  return source;
+}
+
 export function cardFromEvent(ev, lang = "fr", { written = false } = {}) {
   const lane = ev.promoted || INFO_TYPES.has(ev.type) || ev.judge !== "now" ? LANE_FREE : LANE_NOW;
   return {
@@ -565,6 +574,7 @@ export function cardFromEvent(ev, lang = "fr", { written = false } = {}) {
     whenNm: ev.whenNm ?? null,
     filmCum: ev.filmCum ?? null,
     storyStatus: ev.story?.status || null,
+    storySource: draftedStorySource(ev, written),
     judgeReason: ev.judgeReason || null,
     truth: eventTruth(ev),
   };
@@ -677,7 +687,7 @@ export function freeTtlMs({ mode, playing }) {
 }
 
 function sameText(a, b) {
-  return a?.text === b?.text && a?.storyStatus === b?.storyStatus;
+  return a?.text === b?.text && a?.storyStatus === b?.storyStatus && a?.storySource === b?.storySource;
 }
 
 /**
@@ -760,7 +770,7 @@ export function advanceMoments(prev, {
       return card;
     }
     changed = true;
-    return { ...card, text: fresh.text, storyStatus: fresh.storyStatus, truth };
+    return { ...card, text: fresh.text, storyStatus: fresh.storyStatus, storySource: fresh.storySource ?? null, truth };
   };
   now = refresh(now);
   free = refresh(free);

@@ -33,6 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from admin_guard import rate_limited
 from ici_engine import fill_dossier, haversine_nm
 from ici_layers import _overpass_elements, _overpass_latlon
+from ai_transparency import with_ai_transparency
 from story_cascade import _clean_text, cascade_text, tidy_story, translate
 
 log = logging.getLogger("naviguide-simulator.escale")
@@ -237,6 +238,7 @@ def _paragraph_prompt(name: str, sections: dict, lang: str) -> tuple[str, str]:
     return system, user
 
 
+@with_ai_transparency
 async def write_paragraph(name: str, sections: dict, lang: str, client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     if not sections:
         return {"status": "empty", "text": None, "engine": None, "source": None}
