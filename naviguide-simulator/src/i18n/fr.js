@@ -600,4 +600,10 @@ export default {
   layerFicheKindCoastline: "Trait de côte",
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
+
+  carnetTitle: "Carnet de bord",
+  carnetStory: "Récit",
+  carnetJournal: "Journal",
+  carnetOpen: "Carnet de bord",
+  carnetBack: "Retour à la carte",
 };

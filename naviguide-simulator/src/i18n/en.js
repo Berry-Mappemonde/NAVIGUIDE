@@ -600,4 +600,10 @@ export default {
   layerFicheKindCoastline: "Coastline",
   layerFicheKindGlider: "Underwater glider",
   layerFicheClose: "Close the card",
+
+  carnetTitle: "Logbook",
+  carnetStory: "Story",
+  carnetJournal: "Log",
+  carnetOpen: "Logbook",
+  carnetBack: "Back to the map",
 };

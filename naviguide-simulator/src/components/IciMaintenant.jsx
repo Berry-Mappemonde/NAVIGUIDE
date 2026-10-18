@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { carnetPageHref } from "./CarnetDeBord.jsx";
 import { EscaleSheet } from "./EscaleSheet.jsx";
 import { PlanReview } from "./PlanReview.jsx";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
@@ -331,6 +332,13 @@ export function IciMaintenant({
         hidden={view !== "journal"}
         className="mt-1 min-h-0 overflow-auto"
       >
+        <a
+          href={carnetPageHref(typeof window !== "undefined" ? window.location.search : "")}
+          data-testid="carnet-open"
+          className="inline-block text-[11px] leading-snug text-sky-300 hover:text-sky-100 no-underline mb-1"
+        >
+          {t("carnetOpen")}
+        </a>
         {Array.isArray(journalEntries) ? (
           <JournalList entries={journalEntries} onSeek={onSeek} lang={lang} />
         ) : journal}
