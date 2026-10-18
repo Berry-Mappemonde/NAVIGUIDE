@@ -23,6 +23,7 @@ import httpx
 from climatology_atlas import wind_from_point
 from climatology_zones import zone_wind_at
 from gebco_lookup import attach_depth_offshore, reset_gebco_cache
+from longitude import delta_lon, wrap_lon
 from ici_layers import (
     attach_derived_from_science,
     climatology_rose,
@@ -531,22 +532,12 @@ def parse_coord(value: Any) -> float | None:
     return decimal
 
 
-def wrap_lon(lon: float) -> float:
-    """Ramène une longitude déroulée (ex. -314) dans ]-180, 180]."""
-    return ((float(lon) + 180.0) % 360.0) - 180.0
-
-
 def haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     def rad(d: float) -> float:
         return d * math.pi / 180.0
 
     dlat = rad(lat2 - lat1)
-    dlon = lon2 - lon1
-    while dlon > 180:
-        dlon -= 360
-    while dlon < -180:
-        dlon += 360
-    dlon = rad(dlon)
+    dlon = rad(delta_lon(lon1, lon2))
     a = math.sin(dlat / 2) ** 2 + math.cos(rad(lat1)) * math.cos(rad(lat2)) * math.sin(dlon / 2) ** 2
     return 2 * R_NM * math.asin(min(1.0, math.sqrt(a)))
 
@@ -778,7 +769,7 @@ def polygon_inside_and_nm(geom: dict, lat: float, lon: float) -> tuple[bool, flo
 
     def _proj(x, y, z=None):
         del z
-        return (wrap_lon(float(x) - lon0) * k, (float(y) - lat) * 60.0)
+        return (delta_lon(lon0, x) * k, (float(y) - lat) * 60.0)
 
     try:
         g_nm = transform(_proj, g)

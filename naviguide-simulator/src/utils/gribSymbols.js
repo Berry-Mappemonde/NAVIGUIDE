@@ -1,5 +1,9 @@
 /** Symboles GRIB façon carte météo / climatologie. Pas un rectangle. */
 
+import { deltaLon, worldCopyLngs } from "./geo.js";
+
+export { worldCopyLngs };
+
 export function beaufortColor(knots) {
   const k = Number(knots) || 0;
   if (k < 1) return "#94a3b8";
@@ -55,20 +59,11 @@ export function pickGribSlice(samples, whenIso, limit = 24) {
   return [...byKey.values()].slice(0, limit);
 }
 
-export function worldCopyLngs(lon) {
-  const x = Number(lon);
-  if (!Number.isFinite(x)) return [];
-  return [x, x + 360, x - 360];
-}
-
 const STENCIL_DEG = 0.4;
 
 function lonDelta(a, b) {
-  let d = Number(a) - Number(b);
-  if (!Number.isFinite(d)) return Infinity;
-  while (d > 180) d -= 360;
-  while (d < -180) d += 360;
-  return d;
+  const d = deltaLon(b, a);
+  return Number.isFinite(d) ? d : Infinity;
 }
 
 function nearestSample(slice, lat, lon) {

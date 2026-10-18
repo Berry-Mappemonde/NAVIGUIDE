@@ -30,6 +30,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from longitude import interp_lon_shortest, wrap_lon as _wrap_lon
+
 log = logging.getLogger("naviguide-simulator.ici-warm")
 
 SAMPLE_NM = 12.0
@@ -112,10 +114,6 @@ def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def _wrap_lon(lon: float) -> float:
-    return ((lon + 180.0) % 360.0) - 180.0
-
-
 def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict]:
     """Pearls every `step_nm` along the sea points, interpolated inside long
     segments (the official route has ~32 nm between points). Land legs and
@@ -156,7 +154,7 @@ def sample_route_nm(points: list[dict], step_nm: float = SAMPLE_NM) -> list[dict
             t = pos / seg
             out.append({
                 "lat": prev[0] + (lat - prev[0]) * t,
-                "lon": _wrap_lon(prev[1] + (lon - prev[1]) * t),
+                "lon": interp_lon_shortest(prev[1], lon, t),
                 "sailNm": round(prev_cum + pos, 2),
             })
             pos += step_nm

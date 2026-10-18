@@ -4,7 +4,7 @@
  * sans LeafletPlayback, TrackPlayBack ni deck.gl.
  */
 
-import { splitAntimeridianCoords, unwrapLon } from "../utils/geo.js";
+import { lerpLon, splitAntimeridianCoords } from "../utils/geo.js";
 
 /**
  * Last route point already reached at `sailNm`.
@@ -53,7 +53,7 @@ export function pointAtSailNm(flat, sailNm) {
   }
   const span = ((next.cumNm ?? 0) - (prev.cumNm ?? 0)) || 1;
   const t = Math.max(0, Math.min(1, (target - (prev.cumNm ?? 0)) / span));
-  const lon = prev.lon + t * (unwrapLon(prev.lon, next.lon) - prev.lon);
+  const lon = lerpLon(prev.lon, next.lon, t);
   return {
     lat: prev.lat + t * (next.lat - prev.lat),
     lon,

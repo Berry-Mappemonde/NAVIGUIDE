@@ -1,5 +1,5 @@
 import { VIEW_SUIVRE, VIEW_TRACER } from "../constants/viewMode.js";
-import { haversineNm } from "../utils/geo.js";
+import { deltaLon, haversineNm } from "../utils/geo.js";
 
 export const ESCALE_POPUP_MAX_WIDTH = 340;
 export const ESCALE_POPUP_MAX_HEIGHT = 260;
@@ -68,7 +68,7 @@ function sameStop(point, stop) {
   const a = Number(point.lon);
   const b = Number(stop.lon);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-  return Math.abs(((a - b + 540) % 360) - 180) < 1e-3;
+  return Math.abs(deltaLon(b, a)) < 1e-3;
 }
 
 function closestToCamera(scene, matches) {

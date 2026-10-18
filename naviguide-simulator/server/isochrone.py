@@ -20,6 +20,7 @@ from voyage_clock import (
     wave_polar_factor,
 )
 from climatology_zones import boat_speed_from_wind
+from longitude import interp_lon_shortest, wrap_lon
 
 COAST_NEAR_NM = 60.0
 ISOCHRONE_STEP_OFFSHORE_H = 3.0
@@ -81,7 +82,7 @@ def move_position(lat: float, lon: float, bearing: float, dist_nm: float) -> Tup
         math.cos(d) - math.sin(phi1) * math.sin(phi2),
     )
     lat2 = math.degrees(phi2)
-    lon2 = (math.degrees(lam2) + 540) % 360 - 180
+    lon2 = wrap_lon(math.degrees(lam2))
     return (round(lat2, 5), round(lon2, 5))
 
 
@@ -105,15 +106,10 @@ _PATH_SAMPLES = 8
 
 def is_path_clear(lat1: float, lon1: float, lat2: float, lon2: float) -> bool:
     dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    if dlon > 180:
-        dlon -= 360
-    elif dlon < -180:
-        dlon += 360
     for i in range(1, _PATH_SAMPLES + 1):
         t = i / _PATH_SAMPLES
         lat = lat1 + t * dlat
-        lon = (lon1 + t * dlon + 540) % 360 - 180
+        lon = interp_lon_shortest(lon1, lon2, t)
         if is_land(lat, lon):
             return False
     return True
