@@ -585,3 +585,11 @@ def test_sea_days_fall_back_to_8_kn_only_without_usable_dates():
     assert plan_review.sea_days_between(None, dep, 1920, from_clock=True) == 10.0
     assert plan_review.sea_days_between(dep, None, 1920, from_clock=True) == 10.0
     assert plan_review.sea_days_between(dep, before, 1920, from_clock=False) == 10.0
+
+
+def test_voyage_without_clock_uses_real_iso_gap():
+    voy = {"t0": "2026-05-15T08:00:00Z",
+           "marks": [{"name": "La Rochelle", "nm": 0, "iso": "2026-05-15T10:00:00+02:00"},
+                     {"name": "Ajaccio (Corse)", "nm": 1920, "iso": "2026-05-27T08:00:00Z"}],
+           "points": [{"lat": 46.15, "lon": -1.17, "cumNm": 0}, {"lat": 41.92, "lon": 8.74, "cumNm": 1920}]}
+    assert plan_review.legs_from_voyage(voy)[0]["daysAtSea"] == 12.0
