@@ -337,6 +337,15 @@ def _wrap_lon(lon: float) -> float:
     return x
 
 
+def _lerp_lon(a: float, b: float, t: float) -> float:
+    """Interpolation par le plus court arc, résultat ramené dans [-180, 180].
+
+    Deux sommets de part et d'autre de l'antiméridien (-180 puis 179.85) ne
+    doivent pas faire traverser tout le globe au marqueur."""
+    d = _wrap_lon(float(b) - float(a))
+    return _wrap_lon(float(a) + d * float(t))
+
+
 def _mark_indices(marks: List[dict], points: List[dict]) -> List[dict]:
     out = []
     for m in marks or []:
@@ -789,7 +798,7 @@ def build_voyage_clock(
                     "iso": to_iso(t0d + timedelta(hours=t_hours)),
                     "holdHours": hold,
                     "lat": b.get("lat") if isinstance(b.get("lat"), (int, float)) else arrived.get("lat"),
-                    "lon": b.get("lon") if isinstance(b.get("lon"), (int, float)) else arrived.get("lon"),
+                    "lon": _wrap_lon(b.get("lon")) if isinstance(b.get("lon"), (int, float)) else arrived.get("lon"),
                     "kind": arrived.get("kind"),
                     "vehicle": "quay" if hold > 0 else vehicle,
                 })
@@ -896,7 +905,7 @@ def sample_clock_at_hours(clock: dict, t_hours: float) -> Optional[dict]:
         out = {
             **a,
             "lat": _lerp(a["lat"], b["lat"], t),
-            "lon": _lerp(a["lon"], b["lon"], t),
+            "lon": _lerp_lon(a["lon"], b["lon"], t),
             "filmNm": _lerp(a["filmNm"], b["filmNm"], t),
             "sailNm": _lerp(a["sailNm"], b["sailNm"], t),
             "tHours": x,

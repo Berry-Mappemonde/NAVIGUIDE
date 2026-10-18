@@ -561,3 +561,103 @@ def test_rc31_episode_side_halifax_quay():
     assert sample["vehicle"] == "side"
     assert sample["lat"] > 43
     assert sample.get("parkLat") is None or abs(sample["parkLat"] - 4.93) < 0.2
+
+
+def _v(lon, t_hours, film, lat=-20.0):
+    return {
+        "filmNm": film, "sailNm": film, "lat": lat, "lon": lon, "bearing": 270.0,
+        "tHours": t_hours, "iso": None, "speedKnots": 8.0, "windKnots": 15.0,
+        "twa": 120.0, "month": 10, "vehicle": "main", "kind": "climatology",
+        "regime": "climatology", "seaHours": t_hours, "basis": "polar",
+    }
+
+
+def test_sample_crosses_antimeridian_by_short_arc():
+    """18/10 : -180 à 06:34 puis 179.85 à 07:34 ; à 07:17 le marqueur était à +77."""
+    clock = {
+        "t0": "2026-10-18T06:34:06Z",
+        "vertices": [_v(-180.0, 0.0, 0.0), _v(179.8506921644703, 1.0, 8.7)],
+        "marks": [],
+    }
+    for t in (0.1, 0.5, 43 / 60, 0.9):
+        s = sample_clock_at_hours(clock, t)
+        assert -180.0 <= s["lon"] <= 180.0
+        assert abs(abs(s["lon"]) - 180.0) < 0.2, (t, s["lon"])
+    eastward = {
+        "t0": "2026-10-18T00:00:00Z",
+        "vertices": [_v(179.9, 0.0, 0.0), _v(-179.9, 1.0, 11.3)],
+        "marks": [],
+    }
+    mid = sample_clock_at_hours(eastward, 0.5)["lon"]
+    assert abs(abs(mid) - 180.0) < 1e-6
+
+
+def test_clock_marks_lon_in_range_after_antimeridian():
+    """Route dépliée (Wallis → Nouméa → Mayotte) : marques comme sommets dans [-180, 180]."""
+    points = [
+        {"lat": -13.3, "lon": -176.2, "cumNm": 0, "filmCum": 0, "jump": False},
+        {"lat": -20.0, "lon": -185.0, "cumNm": 600, "filmCum": 600, "jump": False},
+        {"lat": -22.3, "lon": -193.5, "cumNm": 1100, "filmCum": 1100, "jump": False},
+        {"lat": -15.0, "lon": -260.0, "cumNm": 5000, "filmCum": 5000, "jump": False},
+        {"lat": -12.8, "lon": -314.7, "cumNm": 8000, "filmCum": 8000, "jump": False},
+    ]
+    marks = [
+        {"name": "Mata-Utu (Wallis-et-Futuna)", "nm": 0, "filmNm": 0, "index": 0},
+        {"name": "Nouméa (Nouvelle-Calédonie)", "nm": 1100, "filmNm": 1100, "index": 2},
+        {"name": "Dzaoudzi (Mayotte)", "nm": 8000, "filmNm": 8000, "index": 4},
+    ]
+    c = build_voyage_clock(points, marks, "2026-10-15T00:00:00Z", start_at="seam")
+    for v in c["vertices"]:
+        assert -180.0 <= v["lon"] <= 180.0
+    by_name = {m["name"]: m for m in c["marks"]}
+    noumea = by_name["Nouméa (Nouvelle-Calédonie)"]
+    mayotte = by_name["Dzaoudzi (Mayotte)"]
+    assert abs(noumea["lon"] - 166.5) < 1e-6
+    assert abs(mayotte["lon"] - 45.3) < 1e-6
+    assert noumea["iso"] < mayotte["iso"]
+
+
+def test_future_clock_keeps_mark_order_after_seam():
+    """Avenir depuis la couture : l'index de route complète est recalé sur la tranche."""
+    import real_track
+
+    lons = [-170.0, -173.0, -176.2, -180.0, -185.0, -193.5, -200.0, -230.0, -260.0, -290.0, -314.7,
+            -330.0, -345.0, -355.0, -358.0, -360.0, -361.2]
+    lats = [-15.0, -14.0, -13.3, -18.0, -20.0, -22.3, -21.0, -18.0, -15.0, -13.0, -12.8,
+            0.0, 20.0, 35.0, 42.0, 45.0, 46.2]
+    pts, cum = [], 0.0
+    for k, (la, lo) in enumerate(zip(lats, lons)):
+        if k:
+            cum += 300.0 * k
+        pts.append({"lat": la, "lon": lo, "cumNm": cum, "filmCum": cum, "jump": False, "nonMaritime": False})
+    marks = [
+        {"name": "Mata-Utu (Wallis-et-Futuna)", "nm": pts[2]["cumNm"], "filmNm": pts[2]["cumNm"], "index": 2},
+        {"name": "Nouméa (Nouvelle-Calédonie)", "nm": pts[5]["cumNm"], "filmNm": pts[5]["cumNm"], "index": 5},
+        {"name": "Dzaoudzi (Mayotte)", "nm": pts[10]["cumNm"], "filmNm": pts[10]["cumNm"], "index": 10},
+        {"name": "La Rochelle", "nm": pts[16]["cumNm"], "filmNm": pts[16]["cumNm"], "index": 16},
+    ]
+    voy = {"points": pts, "marks": marks, "t0": "2026-05-15T08:00:00Z"}
+    seam_i = 3
+    track = {
+        "clock": {
+            "vertices": [{**_v(-178.0, 3600.0, pts[seam_i]["cumNm"] + 50, lat=-18.8),
+                          "iso": "2026-10-16T02:05:17Z"}],
+            "truncated": {
+                "reason": "unpublished",
+                "pointIndex": seam_i,
+                "pointCumNm": pts[seam_i]["cumNm"] + 50,
+                "pointFilmCum": pts[seam_i]["cumNm"] + 50,
+            },
+        },
+    }
+    fut = real_track.future_clock(voy, track, None)
+    by_name = {m["name"]: m for m in fut["marks"]}
+    noumea = by_name["Nouméa (Nouvelle-Calédonie)"]
+    mayotte = by_name["Dzaoudzi (Mayotte)"]
+    assert abs(noumea["lat"] - (-22.3)) < 1e-6
+    assert abs(noumea["lon"] - 166.5) < 1e-6
+    assert noumea["iso"] < mayotte["iso"] < by_name["La Rochelle"]["iso"]
+    for m in fut["marks"]:
+        assert -180.0 <= m["lon"] <= 180.0
+    for v in fut["vertices"]:
+        assert -180.0 <= v["lon"] <= 180.0

@@ -6,7 +6,7 @@
 import { alongTrackSpeed } from "./alongTrackSpeed.js";
 import { nameAirEpisodes } from "./filmCast.js";
 import { bearingDeg } from "./routeWindProfile.js";
-import { haversineNm } from "../utils/geo.js";
+import { haversineNm, unwrapLon } from "../utils/geo.js";
 
 export const AIR_CALENDAR_HOURS = 8;
 export const SAINT_MAUR_LAND_HOURS = 4;
@@ -372,6 +372,12 @@ export function buildVoyageClock({
   };
 }
 
+/** Longitude par le plus court arc : -180 puis 179.85 ne traverse pas le globe. */
+export function lerpLon(a, b, t) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return lerpNum(a, b, t);
+  return lerpNum(a, unwrapLon(a, b), t);
+}
+
 function lerpNum(a, b, t) {
   if (a == null || b == null) return a ?? b ?? null;
   return a + (b - a) * t;
@@ -443,7 +449,7 @@ export function lookupVoyageClock(clock, filmNm, { atQuay = false } = {}) {
     filmNm: lerpNum(left.filmNm, right.filmNm, t),
     sailNm: lerpNum(left.sailNm, right.sailNm, t),
     lat: lerpNum(left.lat, right.lat, t),
-    lon: lerpNum(left.lon, right.lon, t),
+    lon: lerpLon(left.lon, right.lon, t),
     bearing: left.bearing,
     tHours,
     iso: isoFromT0(clock.t0, tHours),
@@ -554,7 +560,7 @@ export function sampleClockAtHours(clock, tHours) {
     const out = {
       ...sampleFromVertex(clock, a, { status: "live" }),
       lat: lerpNum(a.lat, b.lat, t),
-      lon: lerpNum(a.lon, b.lon, t),
+      lon: lerpLon(a.lon, b.lon, t),
       filmNm: lerpNum(a.filmNm, b.filmNm, t),
       sailNm: lerpNum(a.sailNm, b.sailNm, t),
       tHours: x,

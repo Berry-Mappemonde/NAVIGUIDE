@@ -150,3 +150,23 @@ def test_refresh_zee_local_corrects_stored_pearls_without_losing_rich_layers():
     assert row["bag"]["poe"] == [] or isinstance(row["bag"]["poe"], list)  # BI unreachable in tests → []
     # Idempotent.
     assert asyncio.run(ici_warm.refresh_zee_local(pause_s=0)) == 0
+
+
+def test_la_rochelle_is_french_not_fiji_whatever_the_longitude_turn():
+    """Film à La Rochelle : jamais la ZEE fidjienne, même avec une longitude dépliée (±360)."""
+    layer = _layer()
+    fiji = "Fijian Exclusive Economic Zone"
+    layer["features"] += [
+        _square(8325, fiji, "Fiji", 174.0, 180.0, -25.0, -10.0),
+        _square(8325, fiji, "Fiji", -180.0, -177.0, -25.0, -10.0),
+    ]
+    zee_local.cache_path().write_text(json.dumps(layer))
+    zee_local.load_from_file()
+    for lon in (-1.15, -361.15, 358.85, -721.15):
+        z = zee_local.zee_at(46.16, lon)
+        assert z is not None and z is not zee_local.UNKNOWN, lon
+        assert z["country"] == "France", (lon, z)
+        assert "Fiji" not in (z.get("name") or "") and z.get("mrgid") != 8325, (lon, z)
+    # Le bateau du jour, de part et d'autre de l'antiméridien : bien fidjien.
+    for lon in (179.8, -180.2, -179.5, 539.8):
+        assert zee_local.zee_at(-20.0, lon)["mrgid"] == 8325, lon
