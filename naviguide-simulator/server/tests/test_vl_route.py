@@ -1,4 +1,5 @@
 """Route VL : plan sans réseau, ids du sac, cache hors git."""
+import asyncio
 import json
 import os
 import socket
@@ -298,6 +299,130 @@ def test_stale_or_broken_cache_yields_no_ids():
     assert vl_route.ids_for_bag(bag) == []
     assert "vl-route" in str(path)
     assert "vb1.json" in str(path)
+
+
+def _vl_payload(content, *, finish="stop", prompt=501, completion=17, reasoning=None):
+    message = {"role": "assistant", "content": content}
+    if reasoning is not None:
+        message["reasoning"] = reasoning
+    return {
+        "choices": [{"finish_reason": finish, "message": message}],
+        "usage": {"prompt_tokens": prompt, "completion_tokens": completion},
+    }
+
+
+def _arm_vl_http(monkeypatch, payload, *, mode="all"):
+    """httpx.MockTransport à la place du client réel. Aucune socket."""
+    import httpx
+    import story_cascade
+
+    _forbid_network(monkeypatch)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("NAVIGUIDE_LLM_MODE", mode)
+    monkeypatch.setattr(story_cascade, "nebius_key", lambda: "test")
+    seen = []
+
+    def handler(request):
+        body = json.loads(request.content.decode("utf-8"))
+        seen.append({"model": body.get("model"), "url": str(request.url)})
+        return httpx.Response(200, json=payload)
+
+    transport = httpx.MockTransport(handler)
+    real = httpx.Client
+
+    def factory(*args, **kwargs):
+        kwargs = dict(kwargs)
+        kwargs["transport"] = transport
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", factory)
+    vl_route.set_transport(None)
+    return seen
+
+
+def _one_point_call():
+    point = vl_route.key_points(crossings=[])[0]
+    vl_route.set_bag_provider(lambda _point: ["dc:amp"])
+    return one_shot.PlannedCall(
+        point["callId"], "write", vl_route.PROMPT_TOKENS, vl_route.COMPLETION_TOKENS,
+    )
+
+
+def _assert_write_usage(prompt, completion, calls=1):
+    usage = llm_budget.get_usage("write")
+    assert usage["calls"] == calls
+    assert usage["prompt_tokens"] == prompt
+    assert usage["completion_tokens"] == completion
+
+
+def test_film_path_ids_for_bag_does_not_call_the_model(monkeypatch):
+    """Le film lit le cache. Un appel modèle dans ids_for_bag se voit ici."""
+    seen = _arm_vl_http(monkeypatch, _vl_payload('{"ids":["dc:amp"]}'))
+    import film_script
+
+    async def boom(*_a, **_k):
+        raise AssertionError("appel modèle")
+
+    bag = [{"id": "dc:amp", "kind": "amp", "phrase": "Cabrera"}]
+    tour = {"legs": [{"name": "film", "iso": "2026-01-01T00:00:00Z"}]}
+    assert vl_route.ids_for_bag(bag) == []
+    asyncio.run(film_script.choose_film_ids(
+        bag, tour, 150, cascade=boom, allow_llm=False,
+    ))
+    vl_route.save({
+        "rev": vl_route.REV,
+        "route": vl_route.route_stamp(),
+        "job": vl_route.JOB,
+        "ids": ["dc:amp"],
+        "points": [],
+    })
+    assert vl_route.ids_for_bag(bag) == ["dc:amp"]
+    ids, src = asyncio.run(film_script.choose_film_ids(
+        bag,
+        {"legs": [{"name": "film", "iso": "2026-01-02T00:00:00Z"}]},
+        150,
+        cascade=boom,
+        allow_llm=False,
+    ))
+    assert seen == []
+    assert src == "rules"
+    assert ids == ["dc:amp"]
+
+
+def test_execute_calls_the_model_once_and_records_usage(monkeypatch):
+    """Un point, un POST. Retirer record ou doubler l'appel fait échouer."""
+    import story_cascade
+
+    content = json.dumps({"ids": ["dc:amp"], "reasons": {"dc:amp": "aire"}})
+    seen = _arm_vl_http(monkeypatch, _vl_payload(content))
+    out = vl_route.execute_call(_one_point_call())
+    assert out["ids"] == ["dc:amp"]
+    assert len(seen) == 1
+    assert seen[0]["model"] == "nvidia/Nemotron-3.5-Super-VL"
+    assert seen[0]["model"] == vl_route.vl_model()
+    assert seen[0]["url"] == story_cascade._tf_url("write")
+    _assert_write_usage(501, 17)
+
+
+def test_call_vl_refuses_before_http_when_mode_blocks(monkeypatch):
+    """Sans llm_allowed_here, le mode off atteint quand même le transport."""
+    content = json.dumps({"ids": ["dc:amp"]})
+    seen = _arm_vl_http(monkeypatch, _vl_payload(content), mode="off")
+    with pytest.raises(RuntimeError, match="refusé"):
+        vl_route.execute_call(_one_point_call())
+    assert seen == []
+    assert llm_budget.get_usage("write")["calls"] == 0
+
+
+def test_empty_reasoning_response_is_still_counted(monkeypatch):
+    """finish_reason=length, contenu vide : facturé, donc compté, puis rejeté."""
+    seen = _arm_vl_http(monkeypatch, _vl_payload(
+        None, finish="length", reasoning="only thinking",
+    ))
+    with pytest.raises(RuntimeError, match="réponse vide"):
+        vl_route.execute_call(_one_point_call())
+    assert len(seen) == 1
+    _assert_write_usage(501, 17)
 
 
 def test_ici_bag_keeps_present_families_only():
