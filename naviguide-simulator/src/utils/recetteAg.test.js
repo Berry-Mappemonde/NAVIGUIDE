@@ -93,10 +93,10 @@ describe("recette A–G (contrats source)", () => {
     assert.match(read("../layers/useClimatologyLayer.js"), /groupCycloneFeatures/);
     assert.match(read("../layers/climatologyWorld.js"), /unwrapCycloneCoords/);
     assert.doesNotMatch(read("../layers/climatologyWorld.js"), /splitCycloneAtMeridian/);
-    assert.match(read("../../../frontend/src/components/map/cycloneTracks.js"), /unwrapCycloneCoords/);
-    assert.doesNotMatch(read("../../../frontend/src/components/map/cycloneTracks.js"), /splitCycloneAtMeridian/);
-    assert.match(read("../../../frontend/src/components/map/useClimatologyLayer.js"), /cycloneLatLngCopies/);
-    assert.match(read("../../../frontend/src/components/map/useClimatologyLayer.js"), /groupCycloneFeatures/);
+    assert.match(read("./fixtures/climatology-bi/cycloneTracks.js"), /unwrapCycloneCoords/);
+    assert.doesNotMatch(read("./fixtures/climatology-bi/cycloneTracks.js"), /splitCycloneAtMeridian/);
+    assert.match(read("./fixtures/climatology-bi/useClimatologyLayer.js"), /cycloneLatLngCopies/);
+    assert.match(read("./fixtures/climatology-bi/useClimatologyLayer.js"), /groupCycloneFeatures/);
     assert.match(read("../layers/layerOrder.js"), /climatology-raster/);
     assert.match(read("../utils/atlasPoint.js"), /kind !== "climatology"/);
     assert.match(read("../engine/voyageClock.js"), /windAt/);
