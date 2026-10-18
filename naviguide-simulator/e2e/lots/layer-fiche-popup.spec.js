@@ -1,7 +1,7 @@
 // Clic sur un point de calque : la fiche s'ouvre même si un autre canevas
 // (AMP) recouvre la carte. Données de catalogue simulées, aucun écriture.
 import { expect, test } from "@playwright/test";
-import { dismissNotForNav } from "../helpers.js";
+import { dismissNotForNav, panelClosed } from "../helpers.js";
 
 const project = {
   type: "FeatureCollection",
@@ -152,4 +152,77 @@ test("clic AMP, projet ou marina : la fiche et son lien s'ouvrent", async ({ pag
   await clickLatLng(page, 57, -17);
   await expect(fiche).toContainText("4 points regroupés");
   await expect(fiche.locator("a[href='https://example.org/cluster']")).toBeVisible();
+});
+
+async function openThreeLayers(page) {
+  await page.route("**/proxy/catalog/projects**", (route) => route.fulfill({ json: project }));
+  await page.route("**/proxy/catalog/marinas**", (route) => route.fulfill({ json: marina }));
+  await page.route("**/proxy/catalog/amp**", (route) => route.fulfill({ json: amp }));
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
+  await page.waitForFunction(() => window.__naviguideScene?.map);
+  await openLayers(page);
+  await enableLayer(page, "projects", "projects");
+  await enableLayer(page, "marinas", "marinas");
+  await enableLayer(page, "amp", "amp");
+  await page.waitForFunction(() => {
+    const map = window.__naviguideScene?.map;
+    if (!map) return false;
+    let points = 0;
+    map.eachLayer((layer) => {
+      if (typeof layer.getLatLng === "function" && Number.isFinite(layer.options?.radius)) points += 1;
+    });
+    return points >= 3;
+  });
+}
+
+const FRENCH_LABELS = /\b(Site|Projet|Voir le projet|Téléphone|Gestionnaire|Visite|Navire|regroupés|Port d'entrée|Aire marine protégée)\b/;
+
+test("en anglais, la fiche n'affiche aucun libellé français", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("naviguide_lang_v4", "en"));
+  await openThreeLayers(page);
+  const fiche = page.getByTestId("layer-fiche");
+
+  await clickLatLng(page, 56, -18);
+  await expect(fiche).toContainText("Port des Minimes");
+  await expect(fiche).toContainText("Website");
+  await expect(fiche).not.toContainText(FRENCH_LABELS);
+
+  await clickLatLng(page, 56.5, -19);
+  await expect(fiche).toContainText("Récif sentinelle");
+  await expect(fiche).not.toContainText(FRENCH_LABELS);
+
+  await clickLatLng(page, 54.8, -15.5);
+  await expect(fiche).toContainText("Pertuis Charentais");
+  await expect(fiche).toContainText("Manager");
+  await expect(fiche).toContainText("Visit");
+  await expect(fiche).not.toContainText(FRENCH_LABELS);
+
+  await clickLatLng(page, 57, -17);
+  await expect(fiche).toContainText("4 grouped points");
+  await expect(fiche).not.toContainText(FRENCH_LABELS);
+  await expect(fiche.getByRole("button", { name: "Close the card" })).toBeVisible();
+});
+
+test("à 390 px, la fiche reste au-dessus de la barre du film", async ({ page }) => {
+  await openThreeLayers(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Panneaux fermés : la carte reçoit le clic.
+  for (const side of ["left", "right"]) {
+    if (await panelClosed(page, side)) continue;
+    await page.locator(`.naviguide-sidebar-toggle--${side}`).evaluate((el) => el.click());
+    await expect.poll(() => panelClosed(page, side), { timeout: 10_000 }).toBe(true);
+  }
+  const fiche = page.getByTestId("layer-fiche");
+  await clickLatLng(page, 54.8, -15.5);
+  await expect(fiche).toContainText("Pertuis Charentais");
+  const bar = page.getByTestId("film-bar");
+  await expect(bar).toBeVisible();
+  const ficheBox = await fiche.boundingBox();
+  const barBox = await bar.boundingBox();
+  expect(ficheBox.y).toBeGreaterThanOrEqual(0);
+  expect(ficheBox.x).toBeGreaterThanOrEqual(0);
+  expect(ficheBox.x + ficheBox.width).toBeLessThanOrEqual(390);
+  expect(ficheBox.y + ficheBox.height, "la fiche ne recouvre pas la barre").toBeLessThanOrEqual(barBox.y + 0.5);
 });

@@ -575,4 +575,19 @@ export default {
   skipperExpertIciRadius:      "ici() bag radius",
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
+
+  // Map layer point card
+  layerFicheSite: "Website",
+  layerFicheProject: "Project",
+  layerFicheSeeProject: "View the project →",
+  layerFichePhone: "Phone",
+  layerFicheVhf: "VHF",
+  layerFicheManager: "Manager",
+  layerFicheVisit: "Visit",
+  layerFicheShip: "Ship",
+  layerFicheEez: "EEZ",
+  layerFichePortOfEntry: "Port of entry",
+  layerFicheMpa: "Marine protected area",
+  layerFicheCluster: "{count} grouped points",
+  layerFicheClose: "Close the card",
 };

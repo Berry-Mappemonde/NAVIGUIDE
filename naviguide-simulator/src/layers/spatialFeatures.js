@@ -17,6 +17,12 @@ function mapBounds(bounds) {
  * Bbox stable envoyée à l'API catalogue. Leaflet peut étendre la Mercator
  * au-delà des pôles à faible zoom : les latitudes HTTP restent géographiques.
  */
+function clusterProperties(properties) {
+  // The first point's own name or title would mislabel the whole cell.
+  const { name: _name, title: _title, ...rest } = properties || {};
+  return rest;
+}
+
 export function quantizedCatalogBbox(rawBounds, zoom) {
   const bounds = mapBounds(rawBounds);
   if (!bounds) return null;
@@ -120,9 +126,9 @@ export function aggregatePointFeatures(features, project, {
         type: "Point",
         coordinates: [bucket.lon / bucket.count, bucket.lat / bucket.count],
       },
+      // No name here: the card names a cell by its count, through i18n.
       properties: {
-        ...(bucket.first.properties || {}),
-        name: `${bucket.count} points regroupés`,
+        ...clusterProperties(bucket.first.properties),
         clusterCount: bucket.count,
       },
     };

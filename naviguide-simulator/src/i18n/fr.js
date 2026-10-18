@@ -575,4 +575,19 @@ export default {
   skipperExpertIciRadius:      "Rayon du sac ici()",
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
+
+  // Fiche d’un point de calque
+  layerFicheSite: "Site",
+  layerFicheProject: "Projet",
+  layerFicheSeeProject: "Voir le projet →",
+  layerFichePhone: "Téléphone",
+  layerFicheVhf: "VHF",
+  layerFicheManager: "Gestionnaire",
+  layerFicheVisit: "Visite",
+  layerFicheShip: "Navire",
+  layerFicheEez: "ZEE",
+  layerFichePortOfEntry: "Port d'entrée",
+  layerFicheMpa: "Aire marine protégée",
+  layerFicheCluster: "{count} points regroupés",
+  layerFicheClose: "Fermer la fiche",
 };

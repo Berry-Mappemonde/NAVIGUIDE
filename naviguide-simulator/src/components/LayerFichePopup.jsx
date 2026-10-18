@@ -20,55 +20,56 @@ function Row({ label, children }) {
 }
 
 export function LayerFichePopup({ popup, onClose }) {
-  const { lang } = useLang();
+  const { t } = useLang();
   if (!popup) return null;
   const { kind, props = {} } = popup;
+  const clusterCount = Number(props.clusterCount) || 1;
   let title = props.name || props.title || props.GEONAME || props.geoname || props.portName || "—";
   let subtitle = "";
   let extra = null;
 
   if (kind === "zee") {
-    title = props.GEONAME || props.geoname || props.name || (lang === "en" ? "EEZ" : "ZEE");
+    title = props.GEONAME || props.geoname || props.name || t("layerFicheEez");
     subtitle = [props.TERRITORY1 || props.territory1, props.POL_TYPE || props.pol_type, props.ISO_TER1].filter(Boolean).join(" · ");
   } else if (kind === "marina") {
     subtitle = props.country || "";
     extra = (
       <>
-        <Row label="Site">{props.website ? <a href={props.website} target="_blank" rel="noreferrer">{hostLabel(props.website)}</a> : null}</Row>
+        <Row label={t("layerFicheSite")}>{props.website ? <a href={props.website} target="_blank" rel="noreferrer">{hostLabel(props.website)}</a> : null}</Row>
         <Row>{props.telephone}</Row>
       </>
     );
   } else if (kind === "project") {
-    title = props.title || props.name || "Projet";
+    title = props.title || props.name || t("layerFicheProject");
     subtitle = [props.funder, props.category_group].filter(Boolean).join(" · ");
     extra = (
       <>
         {props.description ? <p className="muted" style={{ margin: "6px 0" }}>{props.description}</p> : null}
-        {props.url ? <a href={props.url} target="_blank" rel="noreferrer">Voir le projet →</a> : null}
+        {props.url ? <a href={props.url} target="_blank" rel="noreferrer">{t("layerFicheSeeProject")}</a> : null}
       </>
     );
   } else if (kind === "capitainerie") {
     extra = (
       <>
-        <Row label="Téléphone">{props.telephone ? <a href={`tel:${props.telephone}`}>{props.telephone}</a> : null}</Row>
-        <Row label="VHF">{props.canal_vhf}</Row>
-        <Row label="Site">{props.website ? <a href={props.website} target="_blank" rel="noreferrer">{hostLabel(props.website)}</a> : null}</Row>
+        <Row label={t("layerFichePhone")}>{props.telephone ? <a href={`tel:${props.telephone}`}>{props.telephone}</a> : null}</Row>
+        <Row label={t("layerFicheVhf")}>{props.canal_vhf}</Row>
+        <Row label={t("layerFicheSite")}>{props.website ? <a href={props.website} target="_blank" rel="noreferrer">{hostLabel(props.website)}</a> : null}</Row>
       </>
     );
   } else if (kind === "poe") {
-    title = props.name || (lang === "en" ? "Port of entry" : "Port d'entrée");
+    title = props.name || t("layerFichePortOfEntry");
     subtitle = [props.country, props.spatial_kind].filter(Boolean).join(" · ");
     extra = props.source_urls?.[0]
       ? <a href={props.source_urls[0]} target="_blank" rel="noreferrer">{hostLabel(props.source_urls[0])}</a>
       : null;
   } else if (kind === "amp") {
-    title = props.name || props.site_id || (lang === "en" ? "Marine protected area" : "Aire marine protégée");
+    title = props.name || props.site_id || t("layerFicheMpa");
     subtitle = [props.designation, props.country].filter(Boolean).join(" · ");
     extra = (
       <>
         {props.lfp != null ? <div className="muted" style={{ marginTop: 6 }}>LFP {props.lfp}</div> : null}
-        {props.manager_url ? <Row label="Gestionnaire"><a href={props.manager_url} target="_blank" rel="noreferrer">{hostLabel(props.manager_url)}</a></Row> : null}
-        {props.visit_url ? <Row label="Visite"><a href={props.visit_url} target="_blank" rel="noreferrer">{hostLabel(props.visit_url)}</a></Row> : null}
+        {props.manager_url ? <Row label={t("layerFicheManager")}><a href={props.manager_url} target="_blank" rel="noreferrer">{hostLabel(props.manager_url)}</a></Row> : null}
+        {props.visit_url ? <Row label={t("layerFicheVisit")}><a href={props.visit_url} target="_blank" rel="noreferrer">{hostLabel(props.visit_url)}</a></Row> : null}
       </>
     );
   } else if (kind === "port") {
@@ -79,18 +80,21 @@ export function LayerFichePopup({ popup, onClose }) {
     extra = (
       <>
         {props.wmo ? <Row label="WMO">{String(props.wmo)}</Row> : null}
-        {props.ship ? <Row label="Navire">{props.ship}</Row> : null}
+        {props.ship ? <Row label={t("layerFicheShip")}>{props.ship}</Row> : null}
         {props.url ? <a href={props.url} target="_blank" rel="noreferrer">{hostLabel(props.url)}</a> : null}
       </>
     );
   }
 
+  // A grouped cell is named by its count, in the reader's language.
+  if (clusterCount > 1) title = t("layerFicheCluster", { count: clusterCount });
+
   return (
     <div
-      className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[2100] layer-fiche-popup shadow-2xl"
+      className="absolute left-1/2 -translate-x-1/2 z-[2100] layer-fiche-popup shadow-2xl"
       data-testid="layer-fiche"
     >
-      <button type="button" onClick={onClose} className="absolute top-2 right-2 text-slate-400 hover:text-white">
+      <button type="button" onClick={onClose} aria-label={t("layerFicheClose")} title={t("layerFicheClose")} className="absolute top-2 right-2 text-slate-400 hover:text-white">
         <X size={14} />
       </button>
       <h3>{title}</h3>
