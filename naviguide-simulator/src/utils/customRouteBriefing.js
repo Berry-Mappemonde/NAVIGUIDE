@@ -1,4 +1,4 @@
-import { featuresToSegments, haversineNm, summarizeRoute } from "./geo.js";
+import { featuresToSegments, summarizeRoute } from "./geo.js";
 import { waypointsFromCollection } from "./waypointsFromCollection.js";
 
 /** Côte lisible pour un point tracé — pas le voyage Berry. */
@@ -28,21 +28,11 @@ function coastAlongTrack(points, language = "fr") {
  */
 export function buildLocalCustomBriefing(geojson, language = "fr") {
   const wps = waypointsFromCollection(geojson);
-  const { nm, segments } = summarizeRoute(featuresToSegments(geojson));
-  if (wps.length < 2 && segments < 1) return null;
+  const { nm, segments: segs } = summarizeRoute(featuresToSegments(geojson));
+  if (wps.length < 2 && segs < 1) return null;
   const coast = coastAlongTrack(wps, language);
-
-  let dist = Math.round(nm);
-  if (dist === 0 && wps.length >= 2) {
-    let h = 0;
-    for (let i = 1; i < wps.length; i += 1) {
-      h += haversineNm(wps[i - 1].lat, wps[i - 1].lon, wps[i].lat, wps[i].lon);
-    }
-    dist = Math.round(h);
-  }
-
+  const dist = Math.round(nm);
   const pts = wps.length;
-  const segs = segments || Math.max(0, pts - 1);
   const fr = language !== "en";
   const trail = wps
     .map((p) => {

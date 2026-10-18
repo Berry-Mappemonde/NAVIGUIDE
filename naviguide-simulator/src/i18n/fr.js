@@ -575,4 +575,8 @@ export default {
   skipperExpertIciRadius:      "Rayon du sac ici()",
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
+
+  pointOnLand:        "Point sur terre",
+  rhumbCrossesLand:   "La ligne droite traverse la terre",
+  drawPointLimit:     "60 points maximum",
 };

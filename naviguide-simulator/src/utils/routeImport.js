@@ -1,4 +1,4 @@
-import { haversineNm } from "./geo.js";
+import { haversineNm, lerpLon } from "./geo.js";
 
 export const ROUTE_IMPORT_MAX_POINTS = 60;
 export const ROUTE_IMPORT_DEDUP_NM = 0.1;
@@ -207,6 +207,41 @@ function looksJson(text) {
  * GeoJSON (Point / MultiPoint / LineString / Feature / FeatureCollection)
  * or KML Placemark Point / LineString → ordered waypoints.
  */
+/**
+ * A rhumb sampled between the endpoints. Two consecutive land hits
+ * (a mask already loaded, or the caller's predicate) refuse the fallback.
+ */
+export function rhumbCrossesLand(from, to, isLand, steps = 16) {
+  if (typeof isLand !== "function") return false;
+  const lat1 = Number(from?.lat);
+  const lon1 = Number(from?.lon);
+  const lat2 = Number(to?.lat);
+  const lon2 = Number(to?.lon);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return false;
+  let consecutive = 0;
+  const n = Math.max(2, steps);
+  for (let i = 1; i < n; i += 1) {
+    const t = i / n;
+    const lat = lat1 + (lat2 - lat1) * t;
+    const lon = lerpLon(lon1, lon2, t);
+    if (isLand(lat, lon)) {
+      consecutive += 1;
+      if (consecutive >= 2) return true;
+    } else {
+      consecutive = 0;
+    }
+  }
+  return false;
+}
+
+/** Refuse a straight fallback that would cross land. `null` means the rhumb is allowed. */
+export function refuseRhumbFallback(from, to, options = {}) {
+  const detail = options.serverDetail || options.detail || "";
+  if (detail === "crosses_land") return { error: "rhumbCrossesLand" };
+  if (rhumbCrossesLand(from, to, options.isLand)) return { error: "rhumbCrossesLand" };
+  return null;
+}
+
 export function parseRouteFile(text, name = "") {
   const raw = String(text ?? "").replace(/^\uFEFF/, "");
   if (!raw.trim()) return { error: "empty" };

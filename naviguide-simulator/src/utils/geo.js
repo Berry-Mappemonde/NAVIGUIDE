@@ -254,7 +254,8 @@ export function summarizeRoute(segments) {
   for (const seg of segments) {
     const coords = seg?.coords;
     if (!coords || coords.length < 2) continue;
-    count += 1;
+    // N sommets d'une polyligne → N − 1 segments.
+    count += coords.length - 1;
     for (let i = 0; i < coords.length - 1; i++) {
       nm += haversineNm(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
     }
@@ -312,7 +313,7 @@ function routerWaypointCount(segments) {
 
 /**
  * Étapes entre escales (pas les sommets du routeur).
- * Sans marques, une route dessinée compte pour 1 étape.
+ * N points donnent N − 1 segments.
  */
 export function summarizeLegs(escaleMarks, segments) {
   const segs = segments || [];
@@ -337,13 +338,20 @@ export function summarizeLegs(escaleMarks, segments) {
     };
   }
 
-  const hasTrack = segs.some((seg) => seg?.coords?.length >= 2);
-  if (hasTrack) {
-    const landOnly = segs.every((seg) => !seg.coords?.length || seg.nonMaritime);
+  let sea = 0;
+  let land = 0;
+  for (const seg of segs) {
+    const n = seg?.coords?.length ?? 0;
+    if (n < 2) continue;
+    const edges = n - 1;
+    if (seg.nonMaritime) land += edges;
+    else sea += edges;
+  }
+  if (sea + land > 0) {
     return {
-      legs: 1,
-      sea: landOnly ? 0 : 1,
-      land: landOnly ? 1 : 0,
+      legs: sea + land,
+      sea,
+      land,
       escales: marks.length,
       points,
       waypoints,

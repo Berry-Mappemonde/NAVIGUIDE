@@ -58,7 +58,13 @@ from story_cascade import write_story
 from polar_api import router as polar_router
 from escale_api import router as escale_router
 from logbook_chat import router as logbook_router
-from route_engine import searoute_with_exact_end, unwrap_path, wrap_lon
+from route_engine import (
+    endpoint_on_land,
+    searoute_with_exact_end,
+    segment_crosses_land,
+    unwrap_path,
+    wrap_lon,
+)
 from spatial_catalog import MAX_RENDER_FEATURES, SpatialCatalogIndex, parse_bbox
 from voyage_api import router as voyage_router
 
@@ -573,21 +579,33 @@ async def post_ici_story(body: dict):
 
 @app.get("/route")
 def get_route(
-    start_lat: float = Query(...),
-    start_lon: float = Query(...),
-    end_lat: float = Query(...),
-    end_lon: float = Query(...),
+    start_lat: float = Query(..., ge=-90, le=90),
+    start_lon: float = Query(..., ge=-180, le=180),
+    end_lat: float = Query(..., ge=-90, le=90),
+    end_lon: float = Query(..., ge=-180, le=180),
     check_wind: bool = Query(False),
 ):
-    # Searoute attend [−180, 180] ; le client envoie parfois une lon dépliée
-    # (236,84° = SF vue depuis l'Australie). On replie, on calcule, on redéplie
-    # relativement au départ demandé pour que Leaflet peigne le Pacifique.
+    # Searoute attend [−180, 180]. Le client replie avant l'appel (utils/geo.js) ;
+    # on replie encore, on calcule, on redéplie relativement au départ demandé.
     orig_start_lon = start_lon
     start = (wrap_lon(start_lon), start_lat)
     end = (wrap_lon(end_lon), end_lat)
+    if endpoint_on_land(start[1], start[0]) or endpoint_on_land(end[1], end[0]):
+        raise HTTPException(status_code=422, detail="on_land")
+    if abs(start[0] - end[0]) < 1e-4 and abs(start[1] - end[1]) < 1e-4:
+        return {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[start[0], start[1]], [end[0], end[1]]],
+            },
+            "properties": {"length": 0, "units": "km"},
+        }
     try:
         route = searoute_with_exact_end(start, end)
         if route is None:
+            if segment_crosses_land(start[0], start[1], end[0], end[1]):
+                raise HTTPException(status_code=422, detail="crosses_land")
             raise HTTPException(status_code=404, detail="Route non trouvée")
         coords = (route.get("geometry") or {}).get("coordinates") or []
         if coords:

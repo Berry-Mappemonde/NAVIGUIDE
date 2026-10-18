@@ -1,8 +1,69 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { coordsFromRoutePayload } from "../utils/berryLegs.js";
-import { unwrapPath, wrapLon } from "../utils/geo.js";
+import { haversineNm, unwrapPath, wrapLon } from "../utils/geo.js";
+import { refuseRhumbFallback, ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
+export const DRAW_MAX_POINTS = ROUTE_IMPORT_MAX_POINTS;
+
+function loadedLandMask() {
+  if (typeof window === "undefined") return null;
+  const mask = window.__naviguideLandMask;
+  return typeof mask === "function" ? mask : null;
+}
+
+function lengthNm(data, coords) {
+  const props = data?.properties || {};
+  const raw = Number(props.length);
+  if (Number.isFinite(raw) && raw >= 0) {
+    const units = String(props.units || "km").toLowerCase();
+    if (units === "nm" || units === "nmi") return raw;
+    if (units === "m") return raw / 1852;
+    return raw / 1.852;
+  }
+  let nm = 0;
+  const line = coords || [];
+  for (let i = 1; i < line.length; i += 1) {
+    nm += haversineNm(line[i - 1][1], line[i - 1][0], line[i][1], line[i][0]);
+  }
+  return nm;
+}
+
+function rhumbCoords(from, to) {
+  return unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
+}
+
+async function loadLeg(from, to) {
+  const params = new URLSearchParams({
+    start_lat: String(from.lat),
+    start_lon: String(wrapLon(from.lon)),
+    end_lat: String(to.lat),
+    end_lon: String(wrapLon(to.lon)),
+  });
+  const isLand = loadedLandMask();
+  try {
+    const res = await fetch(`${API_URL}/route?${params}`);
+    let data = null;
+    try { data = await res.json(); } catch { data = null; }
+    const detail = typeof data?.detail === "string" ? data.detail : "";
+    if (res.status === 422 && detail === "on_land") return { reject: "on_land" };
+    if (res.status === 422 && detail === "crosses_land") return { reject: "crosses_land" };
+    let coords = coordsFromRoutePayload(data);
+    if (!res.ok || !coords.length) {
+      if (refuseRhumbFallback(from, to, { serverDetail: detail, isLand })) {
+        return { reject: "crosses_land" };
+      }
+      const line = rhumbCoords(from, to);
+      return { coords: line, failed: true, nm: lengthNm(null, line) };
+    }
+    coords = unwrapPath(coords, from.lon);
+    return { coords, failed: false, nm: lengthNm(data, coords) };
+  } catch {
+    if (refuseRhumbFallback(from, to, { isLand })) return { reject: "crosses_land" };
+    const line = rhumbCoords(from, to);
+    return { coords: line, failed: true, nm: lengthNm(null, line) };
+  }
+}
 
 /** Same path as N map clicks: clear, then one addPoint per imported waypoint. */
 export async function importPointsSequential(addPoint, reset, points) {
@@ -35,12 +96,18 @@ export function useRouteDrawing() {
   const [drawnPoints, setDrawnPoints] = useState([]);
   const [drawnSegments, setDrawnSegments] = useState([]);
   const [drawingLoading, setDrawingLoading] = useState(false);
+  const [drawingNotice, setDrawingNotice] = useState(null);
   const [canRedo, setCanRedo] = useState(false);
   const pointsRef = useRef([]);
   const segmentsRef = useRef([]);
   const undonePointsRef = useRef([]);
   const undoneSegmentsRef = useRef([]);
   const fetchIdRef = useRef(0);
+  const epochRef = useRef(0);
+  const queueRef = useRef(Promise.resolve());
+  const pendingRef = useRef(0);
+  const slotGenRef = useRef([]);
+  const noticeTokenRef = useRef(0);
 
   // Reset n'est appelé que pour un abandon explicite (Annuler / supprimer).
   // Mettre le brouillon de côté (pilule Berry, Suivre) laisse points et segments.
@@ -53,55 +120,92 @@ export function useRouteDrawing() {
     undonePointsRef.current = [];
     undoneSegmentsRef.current = [];
     fetchIdRef.current = 0;
+    epochRef.current += 1;
+    slotGenRef.current = [];
+    pendingRef.current = 0;
     setDrawingLoading(false);
     publishDrawn([], []);
   }, []);
 
-  const fetchSegment = useCallback(async (from, to) => {
-    const myFetchId = ++fetchIdRef.current;
-    setDrawingLoading(true);
-    try {
-      // Searoute attend [−180, 180] ; on replie, puis on redéplie
-      // le résultat sur la copie-monde du point précédent.
-      const params = new URLSearchParams({
-        start_lat: from.lat,
-        start_lon: wrapLon(from.lon),
-        end_lat: to.lat,
-        end_lon: wrapLon(to.lon),
-      });
-      const res = await fetch(`${API_URL}/route?${params}`);
-      const data = await res.json();
-      let coords = coordsFromRoutePayload(data);
-      let failed = false;
-      if (!coords.length) {
-        coords = unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
-        failed = true;
-      } else {
-        coords = unwrapPath(coords, from.lon);
-      }
-      if (fetchIdRef.current === myFetchId) {
-        const updated = [...segmentsRef.current, { coords, failed }];
-        segmentsRef.current = updated;
-        setDrawnSegments([...updated]);
-        publishDrawn(pointsRef.current, updated);
-      }
-    } catch {
-      if (fetchIdRef.current === myFetchId) {
-        const coords = unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
-        const updated = [...segmentsRef.current, { coords, failed: true }];
-        segmentsRef.current = updated;
-        setDrawnSegments([...updated]);
-        publishDrawn(pointsRef.current, updated);
-      }
-    } finally {
-      if (fetchIdRef.current === myFetchId) setDrawingLoading(false);
-    }
+  const notify = useCallback((code) => {
+    noticeTokenRef.current += 1;
+    setDrawingNotice({ code, token: noticeTokenRef.current });
   }, []);
 
-  const addPoint = useCallback((lat, lon, extra) => {
+  const fetchSegment = useCallback(async (from, to, staged) => {
+    const slot = pointsRef.current.indexOf(from);
+    if (slot < 0) return;
+    const seen = epochRef.current;
+    const gen = slotGenRef.current[slot] || 0;
+    pendingRef.current += 1;
+    setDrawingLoading(true);
+    try {
+      const result = staged || await loadLeg(from, to);
+      if (epochRef.current !== seen) return;
+      if ((slotGenRef.current[slot] || 0) !== gen) return;
+      if (pointsRef.current[slot] !== from) return;
+      if (result?.reject) {
+        if (pointsRef.current.length === slot + 2) {
+          pointsRef.current = pointsRef.current.slice(0, slot + 1);
+          setDrawnPoints([...pointsRef.current]);
+          publishDrawn(pointsRef.current, segmentsRef.current);
+        }
+        notify(result.reject);
+        return;
+      }
+      const next = segmentsRef.current.slice();
+      next[slot] = {
+        coords: result.coords,
+        failed: Boolean(result.failed),
+        nm: result.nm,
+        from,
+        to,
+      };
+      segmentsRef.current = next.slice(0, Math.max(0, pointsRef.current.length - 1));
+      setDrawnSegments([...segmentsRef.current]);
+      publishDrawn(pointsRef.current, segmentsRef.current);
+    } finally {
+      pendingRef.current = Math.max(0, pendingRef.current - 1);
+      if (pendingRef.current === 0) setDrawingLoading(false);
+    }
+  }, [notify]);
+
+  const commitPoint = useCallback(async (lat, lon, extra) => {
+    const seen = epochRef.current;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (pointsRef.current.length >= DRAW_MAX_POINTS) {
+      notify("limit");
+      return;
+    }
+    const mask = loadedLandMask();
+    if (mask?.(lat, lon)) {
+      notify("on_land");
+      return;
+    }
     const newPoint = { lat, lon };
     if (extra?.name) newPoint.name = extra.name;
     if (extra?.flags) newPoint.flags = extra.flags;
+    const prev = pointsRef.current.at(-1);
+    let staged = null;
+    if (!prev) {
+      const probe = await loadLeg(newPoint, newPoint);
+      if (epochRef.current !== seen) return;
+      if (probe.reject === "on_land") {
+        notify("on_land");
+        return;
+      }
+    } else {
+      staged = await loadLeg(prev, newPoint);
+      if (epochRef.current !== seen) return;
+      if (staged.reject) {
+        notify(staged.reject);
+        return;
+      }
+    }
+    if (pointsRef.current.length >= DRAW_MAX_POINTS) {
+      notify("limit");
+      return;
+    }
     const updated = [...pointsRef.current, newPoint];
     pointsRef.current = updated;
     undonePointsRef.current = [];
@@ -109,9 +213,20 @@ export function useRouteDrawing() {
     setCanRedo(false);
     setDrawnPoints([...updated]);
     publishDrawn(updated, segmentsRef.current);
-    if (updated.length >= 2) return fetchSegment(updated[updated.length - 2], newPoint);
+    if (updated.length >= DRAW_MAX_POINTS) notify("limit");
+    if (updated.length >= 2) return fetchSegment(updated[updated.length - 2], newPoint, staged);
     return Promise.resolve();
-  }, [fetchSegment]);
+  }, [fetchSegment, notify]);
+
+  const addPoint = useCallback((lat, lon, extra) => {
+    const seen = epochRef.current;
+    const job = queueRef.current.then(async () => {
+      if (epochRef.current !== seen) return;
+      await commitPoint(lat, lon, extra);
+    });
+    queueRef.current = job.then(() => {}, () => {});
+    return job;
+  }, [commitPoint]);
 
   const importPoints = useCallback(
     (points) => importPointsSequential(addPoint, reset, points),
@@ -120,7 +235,10 @@ export function useRouteDrawing() {
 
   const undo = useCallback(() => {
     if (!pointsRef.current.length) return;
+    epochRef.current += 1;
     fetchIdRef.current += 1;
+    const slot = pointsRef.current.length - 2;
+    if (slot >= 0) slotGenRef.current[slot] = (slotGenRef.current[slot] || 0) + 1;
     undonePointsRef.current = [...undonePointsRef.current, pointsRef.current.at(-1)];
     pointsRef.current = pointsRef.current.slice(0, -1);
     if (segmentsRef.current.length) {
@@ -182,7 +300,7 @@ export function useRouteDrawing() {
 
   return {
     drawingMode, setDrawingMode,
-    drawnPoints, drawnSegments, drawingLoading, canRedo,
+    drawnPoints, drawnSegments, drawingLoading, drawingNotice, canRedo,
     reset, addPoint, importPoints, undo, redo, updatePoint, toGeoJson,
   };
 }

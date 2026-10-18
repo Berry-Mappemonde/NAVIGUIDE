@@ -544,6 +544,78 @@ def _route_cache_key(start, end) -> tuple:
 _route_cache: dict = {}
 
 
+def endpoint_on_land(lat: float, lon: float) -> bool:
+    """Terre franche : pas un port, pas une rade (océan à moins de ~0,35°)."""
+    if not _LAND_MASK_AVAILABLE and _NE_TREE is None:
+        return False
+    try:
+        y = float(lat)
+        x = float(wrap_lon(lon))
+    except (TypeError, ValueError):
+        return False
+    if not _is_land_hires(y, x):
+        return False
+    return not _has_nearby_ocean(y, x, radius_deg=0.35)
+
+
+def segment_crosses_land(lon1: float, lat1: float, lon2: float, lat2: float) -> bool:
+    return _segment_crosses_land(lon1, lat1, lon2, lat2)
+
+
+# L'appelant coupait vers 6 s (golfe de Gascogne). On laisse le graphe finir,
+# puis un seul nouvel essai avec les points légèrement au large.
+SEAROUTE_TIMEOUT_S = 18.0
+
+
+def _invoke_searoute(start, end, timeout_s: float | None = None):
+    import concurrent.futures
+
+    if timeout_s is None:
+        timeout_s = SEAROUTE_TIMEOUT_S
+
+    def _call():
+        try:
+            return sr.searoute(start, end)
+        except Exception as exc:
+            print(f"⚠️ Erreur searoute: {exc}")
+            return None
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = pool.submit(_call)
+        try:
+            return fut.result(timeout=float(timeout_s))
+        except concurrent.futures.TimeoutError:
+            print("⚠️ searoute timeout")
+            return None
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _nudge_offshore(lon: float, lat: float):
+    """Décale légèrement un point vers l'eau (repli d'un échec searoute)."""
+    x = float(wrap_lon(lon))
+    y = float(lat)
+    geod = Geodesic.WGS84
+    for dist_m in (4_000.0, 12_000.0, 30_000.0):
+        for bearing in (270, 315, 225, 0, 180, 90, 45, 135):
+            try:
+                pos = geod.Direct(y, x, bearing, dist_m)
+            except Exception:
+                continue
+            nlat = pos["lat2"]
+            nlon = wrap_lon(pos["lon2"])
+            if not _is_land_hires(nlat, nlon):
+                return nlon, nlat
+    fine = _snap_to_ocean_fine(y, x, radius_deg=0.35, grid=0.05)
+    if fine:
+        return fine[0], fine[1]
+    snapped = _snap_to_ocean(y, x, max_radius_deg=0.5)
+    if snapped:
+        return snapped[0], snapped[1]
+    return x, y
+
+
 def searoute_with_exact_end(start, end):
     """
     Calcule une route maritime entre deux points et ajoute un segment géodésique
@@ -572,11 +644,12 @@ def searoute_with_exact_end(start, end):
             route["geometry"]["coordinates"].reverse()
         return attach_anti_shipping(route)
 
-    try:
-        route = sr.searoute(start, end)
-    except Exception as e:
-        print(f"⚠️ Erreur searoute: {e}")
-        return None
+    route = _invoke_searoute(start, end)
+    if not route or "geometry" not in route:
+        nudged_start = _nudge_offshore(start[0], start[1])
+        nudged_end = _nudge_offshore(end[0], end[1])
+        if nudged_start != start or nudged_end != end:
+            route = _invoke_searoute(nudged_start, nudged_end)
 
     if not route or "geometry" not in route:
         return None

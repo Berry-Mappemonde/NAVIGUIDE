@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseRouteFile, ROUTE_IMPORT_MAX_POINTS } from "./routeImport.js";
+import { parseRouteFile, refuseRhumbFallback, rhumbCrossesLand, ROUTE_IMPORT_MAX_POINTS } from "./routeImport.js";
 
 const A = { name: "La Rochelle", lat: 46.157, lon: -1.151 };
 const B = { name: "Gijon", lat: 43.545, lon: -5.662 };
@@ -137,5 +137,27 @@ describe("parseRouteFile", () => {
     assert.equal(parsed.truncated, true);
     assert.equal(parsed.points[0].name, "P1");
     assert.equal(parsed.points[59].name, "P60");
+  });
+});
+
+describe("refuseRhumbFallback", () => {
+  const sea = { lat: 46.2, lon: -2.5 };
+  const other = { lat: 45.5, lon: -3.2 };
+
+  it("accepte une corde quand rien ne dit qu'elle traverse la terre", () => {
+    assert.equal(refuseRhumbFallback(sea, other), null);
+    assert.equal(rhumbCrossesLand(sea, other, null), false);
+  });
+
+  it("refuse la corde qui traverse la terre", () => {
+    const iberia = (lat, lon) => lat < 46 && lat > 37 && lon > -9.5 && lon < -1;
+    const from = { lat: 46.157, lon: -1.151 };
+    const to = { lat: 38.722, lon: -9.139 };
+    assert.equal(rhumbCrossesLand(from, to, iberia), true);
+    assert.deepEqual(refuseRhumbFallback(from, to, { isLand: iberia }), { error: "rhumbCrossesLand" });
+    assert.deepEqual(
+      refuseRhumbFallback(sea, other, { serverDetail: "crosses_land" }),
+      { error: "rhumbCrossesLand" },
+    );
   });
 });

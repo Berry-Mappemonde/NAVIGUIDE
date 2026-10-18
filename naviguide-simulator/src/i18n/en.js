@@ -575,4 +575,8 @@ export default {
   skipperExpertIciRadius:      "ici() bag radius",
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
+
+  pointOnLand:        "Point on land",
+  rhumbCrossesLand:   "Straight line crosses land",
+  drawPointLimit:     "60 points maximum",
 };
