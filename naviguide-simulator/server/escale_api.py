@@ -424,6 +424,18 @@ _INFLIGHT: set[str] = set()
 _WATCH_TASKS: set[Any] = set()
 
 
+def _watch_task_done(task: Any, key: str) -> None:
+    """Lit l'exception de la tâche (pas de « never retrieved ») et libère le slug en cas d'échec."""
+    _WATCH_TASKS.discard(task)
+    if task.cancelled():
+        _INFLIGHT.discard(key)
+        return
+    exc = task.exception()
+    if exc is not None:
+        _INFLIGHT.discard(key)
+        log.warning("veille %s : %s", key, exc)
+
+
 def _schedule_escale_watch(name: str, lat: float, lon: float) -> None:
     """Une veille en tâche de fond si l'escale officielle est dans la fenêtre.
 
@@ -452,7 +464,7 @@ def _schedule_escale_watch(name: str, lat: float, lon: float) -> None:
     try:
         task = asyncio.create_task(escale_watch.watch_stop(stop, datetime.now(timezone.utc)))
         _WATCH_TASKS.add(task)
-        task.add_done_callback(_WATCH_TASKS.discard)
+        task.add_done_callback(lambda t, k=key: _watch_task_done(t, k))
     except RuntimeError:
         _INFLIGHT.discard(key)
         log.debug("veille non planifiée : %s", key)

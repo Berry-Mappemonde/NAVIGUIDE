@@ -9,6 +9,7 @@ n'est pas ouvert. Jamais d'appel depuis le navigateur.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -619,6 +620,20 @@ async def decide_second_question(
     return None if _has_answer(results) else left[0]
 
 
+# Un seul watch_stop à la fois (GET /escale et boucle du jour) : les plafonds
+# sont lus avant l'appel Tavily et comptés après, deux veilles en parallèle
+# passaient donc toutes les deux le contrôle. Un verrou par boucle asyncio.
+_WATCH_LOCK: tuple[Any, asyncio.Lock] | None = None
+
+
+def _watch_lock() -> asyncio.Lock:
+    global _WATCH_LOCK
+    loop = asyncio.get_running_loop()
+    if _WATCH_LOCK is None or _WATCH_LOCK[0] is not loop:
+        _WATCH_LOCK = (loop, asyncio.Lock())
+    return _WATCH_LOCK[1]
+
+
 async def watch_stop(
     stop: dict[str, Any],
     now: datetime,
@@ -629,12 +644,30 @@ async def watch_stop(
 ) -> dict[str, Any] | None:
     """Veille d'une escale : deux tours max, questions de la liste, phrase + URL.
 
-    Drapeau fermé → rien. Déjà faite (`done:<slug>`) → rien."""
+    Drapeau fermé → rien. Déjà faite (`done:<slug>`) → rien. Une veille à la
+    fois : `done` et les plafonds sont relus une fois le verrou pris."""
     name = str(stop.get("name") or "").strip()
     if not name or watch_done(name):
         return None
     if not watch_enabled():
         return None
+    async with _watch_lock():
+        if watch_done(name) or not watch_enabled():
+            return None
+        return await _watch_stop_locked(
+            stop, now, include_domains=include_domains, client=client, cascade=cascade,
+        )
+
+
+async def _watch_stop_locked(
+    stop: dict[str, Any],
+    now: datetime,
+    *,
+    include_domains: Iterable[str] | None,
+    client: httpx.AsyncClient | None,
+    cascade: Any,
+) -> dict[str, Any] | None:
+    name = str(stop.get("name") or "").strip()
     when = _utc(now)
     arrival = stop.get("arrival")
     qdate = _utc(arrival) if isinstance(arrival, datetime) else when
