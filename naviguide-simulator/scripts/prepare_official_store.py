@@ -65,8 +65,10 @@ def _progress_printer(n: int):
 
 def one_pass(*, force_film: bool = False) -> int:
     import official_store
+    from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
     from official_store import COMPUTE_ORDER, READY
 
+    ensure_pearl_amp_layer_sig("prepare_official_store")
     n = len(COMPUTE_ORDER)
     t0 = time.monotonic()
     out = official_store.refresh_missing(progress=_progress_printer(n), should_stop=lambda: _STOP)
