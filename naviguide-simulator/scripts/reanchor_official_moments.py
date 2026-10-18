@@ -22,24 +22,28 @@ Construire un stock poste depuis le dépôt (tests `pytest -m poste`) :
     cd server && uvicorn main:app --host 127.0.0.1 --port 8010
     pytest tests/test_film_discours.py -m poste
 
-── Production OVH (aujourd’hui : utilisateur ubuntu, dépôt dans le home) ──
+── Production OVH (utilisateur ubuntu, dépôt dans le home) ──
 
     ssh ubuntu@135.125.226.16
     cd ~/blue-intelligence-map/naviguide-simulator
-    set -a && source ~/blue-intelligence-map/.env.simulator 2>/dev/null; set +a
-    export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
-    export NAVIGUIDE_VOYAGE_DIR="${NAVIGUIDE_VOYAGE_DIR:-$HOME/blue-intelligence-map/naviguide-simulator/server/voyage_data}"
+    set -a
+    [ -f /etc/naviguide-nowarm.env ] && . /etc/naviguide-nowarm.env
+    [ -f "$HOME/.config/naviguide/simulator.env" ] && . "$HOME/.config/naviguide/simulator.env"
+    set +a
+    # Même défaut que le serveur (official_store.disk_root) : pas de ~/.cache/… sur l'OVH.
+    unset NAVIGUIDE_OFFICIAL_STORE_DIR
     python3 scripts/reanchor_official_moments.py --dry-run
     python3 scripts/reanchor_official_moments.py
-    sudo systemctl restart naviguide-simulator
+    sudo systemctl restart naviguide-simulator naviguide-film-front
 
-── Production Contabo (après séparation : utilisateur naviguide) ──
+── Production Contabo (utilisateur naviguide) ──
 
-    sudo -u naviguide bash -lc '
+    sudo -u naviguide -H bash -lc '
       cd /opt/naviguide/Blue-Intelligence/naviguide-simulator
-      source /etc/naviguide/simulator.env 2>/dev/null || true
-      export NAVIGUIDE_OFFICIAL_STORE_DIR="${NAVIGUIDE_OFFICIAL_STORE_DIR:-$HOME/.cache/naviguide/voyage-store}"
-      export NAVIGUIDE_VOYAGE_DIR="${NAVIGUIDE_VOYAGE_DIR:-/opt/naviguide/Blue-Intelligence/naviguide-simulator/server/voyage_data}"
+      set -a
+      [ -f /etc/naviguide/simulator.env ] && . /etc/naviguide/simulator.env
+      set +a
+      unset NAVIGUIDE_OFFICIAL_STORE_DIR
       python3 scripts/reanchor_official_moments.py --dry-run
       python3 scripts/reanchor_official_moments.py
     '
@@ -55,10 +59,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "server"
 sys.path.insert(0, str(SERVER))
 
-os.environ.setdefault(
-    "NAVIGUIDE_OFFICIAL_STORE_DIR",
-    str(Path.home() / ".cache" / "naviguide" / "voyage-store"),
-)
 os.environ.setdefault("NAVIGUIDE_OFFICIAL_WORKER", "0")
 
 
@@ -76,8 +76,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    from reanchor_official import run_reanchor
+    from reanchor_official import refuse_empty_store, run_reanchor
 
+    refuse_empty_store()
     return run_reanchor(
         dry_run=args.dry_run,
         skip_backup=args.i_accept_data_risk_without_backup,
