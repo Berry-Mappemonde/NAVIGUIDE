@@ -20,7 +20,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Callable, Iterator, Optional
 
 log = logging.getLogger("naviguide-simulator.store")
 
@@ -102,6 +102,53 @@ def reset() -> None:
 
 # ── perles ──────────────────────────────────────────────────────────────────
 
+def list_pearl_amp_layer_suffixes() -> list[str]:
+    """Suffixes numériques `aNNNN` (N > 0), le plus récent d'abord.
+
+    La récence est l'horodatage le plus élevé des perles qui portent le suffixe ;
+    à horodatage égal, le plus grand numéro l'emporte.
+    """
+    try:
+        if not db_path().is_file():
+            return []
+        with _LOCK:
+            rows = _connect().execute(
+                "SELECT key, ts FROM pearls WHERE key LIKE '%:a%'",
+            ).fetchall()
+    except Exception as exc:
+        log.warning("store perles (suffixes AMP) : %s", exc)
+        return []
+    best: dict[int, float] = {}
+    for key, ts in rows:
+        for part in str(key).split(":"):
+            if len(part) > 1 and part[0] == "a" and part[1:].isdigit():
+                number = int(part[1:])
+                if number > 0:
+                    best[number] = max(best.get(number, 0.0), float(ts or 0))
+    ordered = sorted(best, key=lambda number: (best[number], number), reverse=True)
+    return [str(number) for number in ordered]
+
+
+def list_pearl_key_times(prefix: str) -> list[tuple[str, float]]:
+    """Clés de la cellule `prefix` (clé exacte ou `prefix:…`), les plus récentes d'abord."""
+    try:
+        if not db_path().is_file():
+            return []
+        with _LOCK:
+            rows = _connect().execute(
+                "SELECT key, ts FROM pearls WHERE key = ? OR key LIKE ? ORDER BY ts DESC",
+                (prefix, f"{prefix}:%"),
+            ).fetchall()
+        return [(str(key), float(ts or 0)) for key, ts in rows]
+    except Exception as exc:
+        log.warning("store perles (préfixe) : %s", exc)
+        return []
+
+
+def list_pearl_keys_prefixed(prefix: str) -> list[str]:
+    return [key for key, _ts in list_pearl_key_times(prefix)]
+
+
 def get_pearl(key: str) -> Optional[dict]:
     """{ kind, bag, ts } or None. Never raises (a broken store = a cache miss)."""
     try:
@@ -135,9 +182,29 @@ def pearl_meta(key: str) -> Optional[dict]:
         return None
 
 
+def insert_pearl_if_absent(
+    key: str,
+    bag: dict,
+    kind: str = "thin",
+    lat: float | None = None,
+    lon: float | None = None,
+    ts: float | None = None,
+) -> bool:
+    """Ajoute une perle sous `key` si elle n'existe pas. Ne remplace jamais une ligne."""
+    if get_pearl(key):
+        return False
+    return put_pearl(key, bag, kind, lat, lon, ts)
+
+
 def put_pearl(key: str, bag: dict, kind: str = "thin", lat: float | None = None,
               lon: float | None = None, ts: float | None = None) -> bool:
-    """Insert or replace. A rich pearl is never downgraded by a thin one."""
+    """Insert or replace. A rich pearl is never downgraded by a thin one.
+
+    Une clé se terminant par :a0 est refusée dès qu'une signature de couche réelle existe.
+    """
+    from ici_engine import refuse_pearl_key_with_zero_amp_suffix  # noqa: PLC0415
+
+    refuse_pearl_key_with_zero_amp_suffix(key, "put_pearl")
     try:
         payload = json.dumps(bag, ensure_ascii=False, default=str)
         with _LOCK:
@@ -221,9 +288,16 @@ def purge_pearls(older_than_s: float, kind: str | None = None) -> int:
         return 0
 
 
-def nearest_pearl_key(lat: float, lon: float, *, kind: str | None = None) -> tuple[Optional[str], Optional[float]]:
+def nearest_pearl_key(
+    lat: float,
+    lon: float,
+    *,
+    kind: str | None = None,
+    accept: Callable[[str], bool] | None = None,
+) -> tuple[Optional[str], Optional[float]]:
     """(clé, distance nm) de la perle la plus proche — sur les colonnes lat/lon, SANS décoder les sacs.
-    27 sept. : /ici/moment décodait les 3 272 sacs à chaque requête (34 requêtes au démarrage → minutes de CPU)."""
+    27 sept. : /ici/moment décodait les 3 272 sacs à chaque requête (34 requêtes au démarrage → minutes de CPU).
+    `accept` filtre les clés (lecture seule : aucune écriture)."""
     import math  # noqa: PLC0415
     try:
         with _LOCK:
@@ -237,6 +311,9 @@ def nearest_pearl_key(lat: float, lon: float, *, kind: str | None = None) -> tup
     best_key, best_d = None, None
     la1 = math.radians(float(lat))
     for key, plat, plon in rows:
+        key_s = str(key)
+        if accept is not None and not accept(key_s):
+            continue
         try:
             la2 = math.radians(float(plat))
             dlon = math.radians(float(plon) - float(lon))
@@ -246,7 +323,7 @@ def nearest_pearl_key(lat: float, lon: float, *, kind: str | None = None) -> tup
         except (TypeError, ValueError):
             continue
         if best_d is None or d < best_d:
-            best_key, best_d = key, d
+            best_key, best_d = key_s, d
     return best_key, best_d
 
 
@@ -302,7 +379,12 @@ def import_legacy_json(path: Path, ttl_s: float) -> int:
             lat, lon = float(parts[0]), float(parts[1])
         except Exception:
             lat = lon = None
-        if put_pearl(key, hit["bag"], "thin", lat, lon, ts):
+        try:
+            written = put_pearl(key, hit["bag"], "thin", lat, lon, ts)
+        except RuntimeError as exc:
+            log.warning("cache perles : clé %s ignorée (%s)", key, exc)
+            continue
+        if written:
             n += 1
     try:
         path.rename(path.with_suffix(".json.migrated"))

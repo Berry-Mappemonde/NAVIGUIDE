@@ -131,6 +131,157 @@ def test_fixture_pearls_collapse_to_fewer_moments():
     assert [row["signature"] for row in again] == [row["signature"] for row in rows]
 
 
+def _moment_row(seq: int, t: str, sig: str, fact: str = "f") -> dict:
+    return {
+        "seq": seq,
+        "t": t,
+        "signature": sig,
+        "changes": [{"kind": "note", "title": "t", "fact": fact}],
+        "moment": {"note": fact},
+        "pos": {},
+    }
+
+
+def test_append_only_ignores_rebuild_inside_covered_period():
+    from moment_journal import merge_append_only_moment_rows
+
+    existing = [
+        _moment_row(i, f"2026-05-{15 + (i % 28):02d}T14:32:51Z", f"sig-{i}", f"body-{i}")
+        for i in range(1142)
+    ]
+    existing[-1] = _moment_row(1141, "2027-11-15T08:00:00Z", "sig-last", "end")
+    rebuilt = [
+        _moment_row(i, f"2026-06-{1 + (i % 28):02d}T10:00:00Z", f"rebuild-{i}", f"r{i}")
+        for i in range(844)
+    ]
+    merged, added = merge_append_only_moment_rows(existing, rebuilt)
+    assert added == []
+    assert len(merged) == 1142
+    assert merged == existing
+
+
+def test_append_only_adds_row_strictly_after_last_t():
+    from moment_journal import merge_append_only_moment_rows
+
+    existing = [_moment_row(i, f"2026-05-{10 + i}T08:00:00Z", f"k{i}") for i in range(5)]
+    existing[-1] = _moment_row(4, "2027-11-15T08:00:00Z", "last", "end")
+    same_instant = _moment_row(0, "2027-11-15T08:00:00Z", "other-sig", "nope")
+    future = _moment_row(0, "2027-11-16T09:00:00Z", "future", "new")
+    merged, added = merge_append_only_moment_rows(existing, [same_instant, future])
+    assert len(merged) == 6
+    assert len(added) == 1
+    assert added[0]["t"] == "2027-11-16T09:00:00Z"
+    assert merged[-1]["t"] == "2027-11-16T09:00:00Z"
+    assert merged[-1]["seq"] == 5
+    assert [row["seq"] for row in merged[:-1]] == [0, 1, 2, 3, 4]
+    again, added_again = merge_append_only_moment_rows(merged, [same_instant, future])
+    assert added_again == []
+    assert again == merged
+
+
+def test_enrich_same_key_keeps_moment_t_and_signature():
+    from moment_journal import merge_append_only_moment_rows
+
+    existing = [_moment_row(0, "2026-05-15T08:00:00Z", "same", "keep")]
+    existing[0]["pos"] = {"lat": None, "lon": None}
+    patch = _moment_row(9, "2026-05-15T08:00:00Z", "same", "replaced")
+    patch["pos"] = {"lat": 46.1, "lon": -1.1}
+    patch["legIdx"] = 2
+    patch["changes"] = existing[0]["changes"] + [
+        {"kind": "coast", "id": "c-new", "title": "Côte", "fact": "vue"},
+    ]
+    patch["moment"] = {"note": "replaced", "extra": "no"}
+    merged, added = merge_append_only_moment_rows(existing, [patch])
+    assert added == []
+    assert len(merged) == 1
+    row = merged[0]
+    assert row["t"] == "2026-05-15T08:00:00Z"
+    assert row["signature"] == "same"
+    assert row["seq"] == 0
+    assert row["moment"] == {"note": "keep"}
+    assert row["pos"]["lat"] == 46.1
+    assert row["legIdx"] == 2
+    assert any(c.get("id") == "c-new" for c in row["changes"])
+    twice, added_twice = merge_append_only_moment_rows(merged, [patch])
+    assert added_twice == []
+    assert twice == merged
+
+
+def test_warm_append_only_ignores_partial_rebuild_in_past(monkeypatch):
+    import pearl_store
+    from moment_journal import moment_row_key, warm_moments
+
+    voy = _fixture_voyage()
+    existing = [
+        _moment_row(i, f"2026-05-{15 + (i % 28):02d}T14:32:51Z", f"sig-{i}", f"body-{i}")
+        for i in range(1142)
+    ]
+    existing[-1] = _moment_row(1141, "2027-11-15T08:00:00Z", "sig-last", "end")
+    pearl_store.replace_moments(voy["voyageId"], existing)
+    before = read_moments(voy["voyageId"])
+    rebuild = [_moment_row(0, "2026-05-17T23:20:55Z", "sig-new", "partial")]
+    monkeypatch.setattr("moment_journal._build_rows", lambda _vid, _voy: rebuild)
+
+    out = warm_moments(voy["voyageId"], voy)
+    after = read_moments(voy["voyageId"])
+    assert out["count"] == 1142
+    assert len(after) == 1142
+    assert not added_rows(before, after)
+    for left, right in zip(before, after):
+        assert moment_row_key(left) == moment_row_key(right)
+        assert left["moment"] == right["moment"]
+        assert left["t"] == right["t"]
+        assert left["signature"] == right["signature"]
+
+    again = warm_moments(voy["voyageId"], voy)
+    assert again["count"] == 1142
+    assert read_moments(voy["voyageId"]) == after
+
+
+def added_rows(before: list[dict], after: list[dict]) -> list[dict]:
+    from moment_journal import moment_row_key
+
+    known = {moment_row_key(row) for row in before}
+    return [row for row in after if moment_row_key(row) not in known]
+
+
+def test_warm_appends_only_a_row_after_last_t(monkeypatch):
+    import pearl_store
+    from moment_journal import warm_moments
+
+    voy = _fixture_voyage()
+    existing = [_moment_row(i, f"2026-05-{10 + i}T08:00:00Z", f"k{i}") for i in range(4)]
+    existing[-1] = _moment_row(3, "2027-11-15T08:00:00Z", "last", "end")
+    pearl_store.replace_moments(voy["voyageId"], existing)
+    future = _moment_row(0, "2027-11-16T09:00:00Z", "future", "new")
+    monkeypatch.setattr("moment_journal._build_rows", lambda _vid, _voy: [future])
+    out = warm_moments(voy["voyageId"], voy)
+    rows = read_moments(voy["voyageId"])
+    assert out["count"] == 5
+    assert rows[-1]["t"] == "2027-11-16T09:00:00Z"
+    assert rows[-1]["signature"] == "future"
+    assert [row["t"] for row in rows[:-1]] == [row["t"] for row in existing]
+    again = warm_moments(voy["voyageId"], voy)
+    assert again["count"] == 5
+    assert read_moments(voy["voyageId"]) == rows
+
+
+def test_warm_merge_empty_rebuild_preserves_journal(monkeypatch):
+    import pearl_store
+    from moment_journal import warm_moments
+
+    voy = _fixture_voyage()
+    rows = [_moment_row(i, f"2026-05-{10 + i}T08:00:00Z", f"s{i}") for i in range(12)]
+    pearl_store.replace_moments(voy["voyageId"], rows)
+    before = read_moments(voy["voyageId"])
+    monkeypatch.setattr("moment_journal._build_rows", lambda _vid, _voy: [])
+    out = warm_moments(voy["voyageId"], voy)
+    assert out["status"] == "preserved"
+    assert out["count"] == 12
+    assert pearl_store.count_moments(voy["voyageId"]) == 12
+    assert read_moments(voy["voyageId"]) == before
+
+
 def test_warm_moments_never_drops_existing_sqlite_rows(monkeypatch):
     """Régression : un recalcul plus court ne doit pas effacer le journal (oct. 2026 prod)."""
     import pearl_store
@@ -179,9 +330,12 @@ def test_replace_moments_refuses_silent_shrink(tmp_path, monkeypatch):
 
 
 def test_changed_signature_updates_the_line():
+    from moment_journal import moment_row_key
+
     voy = _fixture_voyage()
     warm_moments(voy["voyageId"])
-    before = {row["seq"]: row["signature"] for row in read_moments(voy["voyageId"])}
+    before_rows = read_moments(voy["voyageId"])
+    before = {row["seq"]: row["signature"] for row in before_rows}
     voy["pearls"][0]["zee"] = {
         "name": "Spanish Exclusive Economic Zone",
         "mrgid": 5693,
@@ -191,9 +345,16 @@ def test_changed_signature_updates_the_line():
     save_voyage(voy)
     warm_moments(voy["voyageId"])
     after = read_moments(voy["voyageId"])
-    assert after[0]["signature"] != before[0]
-    assert after[0]["moment"]["here"]["zee"]["mrgid"] == 5693
+    assert before[0] in {row["signature"] for row in after}
+    # Un recalcul dans la période déjà couverte ne change pas les lignes existantes.
+    after_by_key = {moment_row_key(row): row for row in after}
+    for row in before_rows:
+        kept = after_by_key.get(moment_row_key(row))
+        assert kept is not None
+        assert kept["moment"] == row["moment"]
+    assert len(after) == len(before_rows)
     assert [row["seq"] for row in after] == list(range(len(after)))
+    assert [row["t"] for row in after] == sorted(row["t"] for row in after)
 
 
 def test_warm_emits_approche_per_stop():

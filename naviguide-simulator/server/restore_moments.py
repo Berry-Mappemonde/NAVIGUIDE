@@ -9,19 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from moment_journal import moment_row_key
+
 log = logging.getLogger("naviguide-simulator.restore_moments")
-
-
-def moment_row_key(row: dict) -> str:
-    """Clé stable pour fusionner sqlite, backup et moments.json."""
-    t = str(row.get("t") or "").strip()
-    sig = str(row.get("signature") or "").strip()
-    if t and sig:
-        return f"{t}\0{sig}"
-    seq = row.get("seq")
-    if seq is not None and t:
-        return f"seq:{seq}\0{t}"
-    return json.dumps(row, sort_keys=True, default=str)
 
 
 def _parse_moment_row(voyage_id: str, seq: int, t, lat, lon, leg_idx, sig, changes, moment) -> dict | None:
@@ -212,6 +202,12 @@ def run_restore(
     from voyage_clock import OFFICIAL_VOYAGE_ID  # noqa: PLC0415
 
     vid = voyage_id or OFFICIAL_VOYAGE_ID
+    try:
+        from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
+
+        ensure_pearl_amp_layer_sig("restore_moments")
+    except Exception as exc:
+        log.warning("restauration : signature de couche indisponible (%s)", exc)
     src = validate_source_sqlite(source_sqlite)
     backup_path: Path | None = None
     if not dry_run and not skip_backup:

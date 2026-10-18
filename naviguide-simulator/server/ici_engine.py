@@ -190,16 +190,198 @@ def load_amp_layer_sig() -> str:
     return amp_layer_sig()
 
 
+def _pearl_cell(lat: float, lon: float) -> tuple[float, float]:
+    return round(lat / 0.02) * 0.02, round(lon / 0.02) * 0.02
+
+
+def _pearl_db_exists() -> bool:
+    try:
+        import pearl_store  # noqa: PLC0415
+        return pearl_store.db_path().is_file()
+    except Exception:
+        return False
+
+
+def store_amp_layer_suffixes() -> list[str]:
+    """Suffixes `aNNNN` (N > 0) déjà présents dans les clés, du plus récent au plus ancien."""
+    try:
+        import pearl_store  # noqa: PLC0415
+        return pearl_store.list_pearl_amp_layer_suffixes()
+    except Exception:
+        return []
+
+
+def _known_amp_signatures() -> list[str]:
+    """Signatures réelles connues. Si la mémoire en a déjà une, on ne relit pas tout le stock."""
+    sig = amp_layer_sig()
+    if sig not in ("", "0"):
+        return [sig]
+    return store_amp_layer_suffixes()
+
+
+def ensure_pearl_amp_layer_sig(context: str = "") -> str:
+    """Charge la signature (mémoire, kv, puis suffixes du stock) avant une clé de perle.
+
+    Ne crée pas la base si elle n'existe pas encore. Ne retombe jamais sur « 0 »
+    quand le stock contient déjà une signature réelle.
+    """
+    now = time.time()
+    if (
+        _amp_sig.get("ok")
+        and amp_layer_sig() not in ("", "0")
+        and now - float(_amp_sig.get("ts") or 0) < AMP_SIG_TTL_S
+    ):
+        return amp_layer_sig()
+    if _pearl_db_exists():
+        load_amp_layer_sig()
+        sig = amp_layer_sig()
+        if sig not in ("", "0"):
+            return sig
+        from_store = store_amp_layer_suffixes()
+        if from_store:
+            chosen = from_store[0]
+            set_amp_layer_sig(chosen, ok=True)
+            where = f" ({context})" if context else ""
+            log.warning(
+                "signature de couche absente%s — retenue a%s (en stock : %s)",
+                where,
+                chosen,
+                ",".join(f"a{s}" for s in from_store[:8]),
+            )
+            return chosen
+    return amp_layer_sig() or "0"
+
+
+def refuse_pearl_key_with_zero_amp_suffix(key: str, context: str = "") -> None:
+    """Refuse une écriture :a0 dès qu'une signature réelle est connue. Journalise le refus."""
+    if not str(key or "").endswith(":a0"):
+        return
+    known = _known_amp_signatures()
+    if not known:
+        return
+    msg = (
+        f"refus clé perle {key!r} : suffixe a0"
+        f"{(' (' + context + ')') if context else ''} "
+        f"alors qu'une signature réelle existe ({', '.join('a' + s for s in known[:6])})"
+    )
+    log.warning("%s", msg)
+    raise RuntimeError(msg)
+
+
 def thin_cache_key(lat: float, lon: float, radius_nm: float, month: int | None = None) -> str:
     # A pearl carries no climatology: the month never changes it, so it is
     # not part of the key (the client sends month=9, the warmer none).
     # PEARL_REV force le remplisseur à recalculer (RG3 : projects + filtre AMP).
     # AM1A : `a{sig}` invalide le stock quand la couche AMP change.
     del month
+    la, lo = _pearl_cell(lat, lon)
+    sig = ensure_pearl_amp_layer_sig("thin_cache_key")
+    return f"{la:.2f}:{lo:.2f}:{int(radius_nm)}:{PEARL_REV}:a{sig}"
+
+
+_PEARL_SUFFIX_RE = re.compile(r":a(\d+)$")
+PEARL_NEIGHBOR_MAX_NM = 1.5
+
+
+def _pearl_suffix_num(key: str) -> int:
+    match = _PEARL_SUFFIX_RE.search(str(key or ""))
+    if not match:
+        return 0
+    return int(match.group(1))
+
+
+def _is_am1a_pearl_key(key: str) -> bool:
+    text = str(key or "")
     return (
-        f"{round(lat / 0.02) * 0.02:.2f}:{round(lon / 0.02) * 0.02:.2f}"
-        f":{int(radius_nm)}:{PEARL_REV}:a{amp_layer_sig()}"
+        f":{PEARL_REV}:" in text
+        or text.endswith(f":{PEARL_REV}")
+        or ":am1a:" in text
+        or text.endswith(":am1a")
     )
+
+
+def _is_rg3_pearl_key(key: str) -> bool:
+    text = str(key or "")
+    return ":rg3" in text and not _is_am1a_pearl_key(text)
+
+
+def pearl_key_candidates(lat: float, lon: float, radius_nm: float = 30.0) -> list[str]:
+    """Clés d'une cellule, dans l'ordre de lecture.
+
+    1. `am1a:a<signature courante>`
+    2. les autres clés am1a, de la perle la plus récente à la plus ancienne
+    3. les clés rg3, même ordre
+    4. la clé nue, puis le reste des clés de la cellule
+
+    Une clé :a0 est omise dès qu'une signature réelle existe.
+    Le voisin géographique n'est pas dans cette liste : il est consulté après, en lecture seule.
+    """
+    import pearl_store  # noqa: PLC0415
+
+    sig = ensure_pearl_amp_layer_sig("pearl_key_candidates")
+    la, lo = _pearl_cell(lat, lon)
+    base = f"{la:.2f}:{lo:.2f}:{int(radius_nm)}"
+    stored = pearl_store.list_pearl_key_times(base)
+    real = bool(_known_amp_signatures())
+    ranked: list[str] = []
+
+    def add(key: str) -> None:
+        if not key or key in ranked:
+            return
+        if real and str(key).endswith(":a0"):
+            return
+        ranked.append(key)
+
+    if sig not in ("", "0"):
+        add(f"{base}:{PEARL_REV}:a{sig}")
+        add(f"{base}:am1a:a{sig}")
+
+    def by_recency(item: tuple[str, float]) -> tuple[float, int]:
+        key, ts = item
+        return (float(ts or 0), _pearl_suffix_num(key))
+
+    am1a = [item for item in stored if _is_am1a_pearl_key(item[0])]
+    for key, _ts in sorted(am1a, key=by_recency, reverse=True):
+        add(key)
+    rg3 = [item for item in stored if _is_rg3_pearl_key(item[0])]
+    for key, _ts in sorted(rg3, key=by_recency, reverse=True):
+        add(key)
+    add(f"{base}:rg3")
+    add(base)
+    rest = [item for item in stored if item[0] not in ranked]
+    for key, _ts in sorted(rest, key=by_recency, reverse=True):
+        add(key)
+    return ranked
+
+
+def resolve_pearl_row(lat: float, lon: float, radius_nm: float = 30.0) -> tuple[dict | None, str | None]:
+    """Lit une perle : candidats de la cellule, puis le voisin à ≤ 1,5 nm. N'écrit rien."""
+    import pearl_store  # noqa: PLC0415
+
+    ensure_pearl_amp_layer_sig("resolve_pearl_row")
+    for key in pearl_key_candidates(lat, lon, radius_nm):
+        row = pearl_store.get_pearl(key)
+        if row and isinstance(row.get("bag"), dict):
+            return row, key
+    real = bool(_known_amp_signatures())
+    near_key, dist_nm = pearl_store.nearest_pearl_key(lat, lon)
+    if real and near_key and str(near_key).endswith(":a0"):
+        if dist_nm is not None and dist_nm <= PEARL_NEIGHBOR_MAX_NM:
+            log.warning(
+                "voisin perle %s ignoré : suffixe a0 (%.2f nm) alors qu'une signature réelle existe",
+                near_key,
+                dist_nm,
+            )
+        near_key, dist_nm = pearl_store.nearest_pearl_key(
+            lat, lon, accept=lambda key: not str(key).endswith(":a0"),
+        )
+    if near_key and dist_nm is not None and dist_nm <= PEARL_NEIGHBOR_MAX_NM:
+        if real and str(near_key).endswith(":a0"):
+            return None, None
+        row = pearl_store.get_pearl(near_key)
+        if row and isinstance(row.get("bag"), dict):
+            return row, near_key
+    return None, None
 
 
 def _pearl_ttl(kind: str) -> float:
@@ -243,10 +425,18 @@ def thin_cache_put(key: str, bag: dict, kind: str = "thin", lat: float | None = 
     cur = _thin_cache.get(key)
     if cur is not None and cur.get("kind") == "rich" and kind != "rich" and _fresh(cur):
         return
+    try:
+        refuse_pearl_key_with_zero_amp_suffix(key, "thin_cache_put")
+    except RuntimeError:
+        return
     hit = {"ts": time.time(), "bag": bag, "kind": kind}
     _remember(key, hit)
     import pearl_store  # noqa: PLC0415
-    pearl_store.put_pearl(key, bag, kind, lat, lon, hit["ts"])
+    try:
+        pearl_store.put_pearl(key, bag, kind, lat, lon, hit["ts"])
+    except RuntimeError:
+        _thin_cache.pop(key, None)
+        return
 
 
 def thin_cache_drop(key: str) -> None:

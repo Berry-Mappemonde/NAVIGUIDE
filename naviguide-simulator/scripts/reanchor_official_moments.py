@@ -76,8 +76,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
     from reanchor_official import refuse_empty_store, run_reanchor
 
+    ensure_pearl_amp_layer_sig("reanchor_official_moments")
     refuse_empty_store()
     return run_reanchor(
         dry_run=args.dry_run,

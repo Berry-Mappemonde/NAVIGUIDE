@@ -7,6 +7,7 @@ tâche de fond après le réchauffage des perles, jamais au démarrage.
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -652,9 +653,8 @@ def _pearls_in_route_order(voy: dict) -> list[dict]:
     if not points:
         return []
     try:
-        from ici_engine import thin_cache_key  # noqa: PLC0415
+        from ici_engine import resolve_pearl_row  # noqa: PLC0415
         from ici_warm import sample_route_nm  # noqa: PLC0415
-        import pearl_store  # noqa: PLC0415
     except Exception:
         return []
     out: list[dict] = []
@@ -663,7 +663,7 @@ def _pearls_in_route_order(voy: dict) -> list[dict]:
             lat, lon = float(sample["lat"]), float(sample["lon"])
         except (KeyError, TypeError, ValueError):
             continue
-        row = pearl_store.get_pearl(thin_cache_key(lat, lon, 30.0))
+        row, _key = resolve_pearl_row(lat, lon, 30.0)
         if not row or not isinstance(row.get("bag"), dict):
             continue
         bag = dict(row["bag"])
@@ -851,6 +851,129 @@ def rows_from_voyage(voyage_id: str, voy: dict) -> list[dict]:
     return _build_rows(voyage_id, voy)
 
 
+def moment_row_key(row: dict) -> str:
+    """Clé stable d'une ligne de journal : instant et signature."""
+    t = str(row.get("t") or "").strip()
+    sig = str(row.get("signature") or "").strip()
+    if t and sig:
+        return f"{t}\0{sig}"
+    seq = row.get("seq")
+    if seq is not None and t:
+        return f"seq:{seq}\0{t}"
+    return json.dumps(row, sort_keys=True, default=str)
+
+
+def _latest_moment_time(rows: list[dict]) -> datetime | None:
+    best: datetime | None = None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        dt = _parse_iso(row.get("t"))
+        if dt and (best is None or dt > best):
+            best = dt
+    return best
+
+
+def _is_strictly_after(t: Any, latest: datetime | None) -> bool:
+    dt = _parse_iso(t)
+    if dt is None or latest is None:
+        return False
+    return dt > latest
+
+
+def _change_identity(change: dict) -> str:
+    cid = str(change.get("id") or "")
+    if cid:
+        return f"id:{cid}"
+    return f"{change.get('kind')}:{change.get('title')}"
+
+
+def _append_missing_changes(existing: list, patch: list) -> list:
+    """Ajoute les jalons absents. Ne retire rien et ne modifie pas un jalon déjà présent."""
+    out = [c for c in existing or [] if isinstance(c, dict)]
+    seen = {_change_identity(c) for c in out}
+    for change in patch or []:
+        if not isinstance(change, dict):
+            continue
+        key = _change_identity(change)
+        if key in seen:
+            continue
+        if not any(change.get(field) not in (None, "", [], {}) for field in ("kind", "title", "fact", "id")):
+            continue
+        out.append(dict(change))
+        seen.add(key)
+    return out
+
+
+def _enrich_moment_row(existing: dict, patch: dict) -> dict:
+    """Même clé (t, signature) : complète les trous, sans vider ni remplacer t, signature ou moment."""
+    merged = dict(existing)
+    pos_old = dict(existing.get("pos") or {}) if isinstance(existing.get("pos"), dict) else {}
+    pos_new = dict(patch.get("pos") or {}) if isinstance(patch.get("pos"), dict) else {}
+    pos = dict(pos_old)
+    for field in ("lat", "lon"):
+        if pos.get(field) is None and pos_new.get(field) is not None:
+            pos[field] = pos_new[field]
+    if pos != pos_old:
+        merged["pos"] = pos
+    if merged.get("legIdx") is None and patch.get("legIdx") is not None:
+        merged["legIdx"] = patch["legIdx"]
+    changes = _append_missing_changes(existing.get("changes") or [], patch.get("changes") or [])
+    if changes != [c for c in (existing.get("changes") or []) if isinstance(c, dict)]:
+        merged["changes"] = changes
+    return merged
+
+
+def _append_seq(row: dict, used: set[int]) -> dict:
+    out = dict(row)
+    seq = (max(used) + 1) if used else 0
+    out["seq"] = seq
+    used.add(seq)
+    return out
+
+
+def merge_append_only_moment_rows(
+    existing: list[dict],
+    rebuilt: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Allonge le journal dans le temps.
+
+    Base vide : le recalcul est repris tel quel. Sinon, une ligne n'est ajoutée
+    que si son instant est strictement après le dernier instant déjà présent.
+    Une clé (t, signature) déjà là est enrichie sans modifier t, signature,
+    seq ou moment, et sans vider un champ. Les autres recalculs sont ignorés.
+    """
+    kept = [dict(row) for row in existing or [] if isinstance(row, dict)]
+    if not kept:
+        return [dict(row) for row in rebuilt or [] if isinstance(row, dict)], []
+    latest = _latest_moment_time(kept)
+    index: dict[str, int] = {}
+    for i, row in enumerate(kept):
+        index.setdefault(moment_row_key(row), i)
+    used = {int(row.get("seq") or 0) for row in kept}
+    added: list[dict] = []
+    for row in rebuilt or []:
+        if not isinstance(row, dict):
+            continue
+        key = moment_row_key(row)
+        if key in index:
+            kept[index[key]] = _enrich_moment_row(kept[index[key]], row)
+            continue
+        if not _is_strictly_after(row.get("t"), latest):
+            continue
+        stored = _append_seq(row, used)
+        kept.append(stored)
+        index[key] = len(kept) - 1
+        added.append(dict(stored))
+    return kept, added
+
+
+def _moment_rows_equal(left: list[dict], right: list[dict]) -> bool:
+    return json.dumps(left, sort_keys=True, default=str) == json.dumps(
+        right, sort_keys=True, default=str,
+    )
+
+
 def _merge_change_lists(existing: list, rebuilt: list) -> list:
     """Fusionne les jalons : met à jour tMs/lat/lon sans retirer de lignes."""
     if not rebuilt:
@@ -1015,8 +1138,13 @@ def apply_moment_reanchor(voyage_id: str | None = None, voy: dict | None = None,
 
 
 def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
-    """Parcourt les perles, n'écrit que les changements de signature. Idempotent.
-    `voy` : le voyage déjà chargé (avec son horloge) ; sinon relu du disque, horloge du stock si besoin."""
+    """Construit le journal s'il est vide. S'il existe, ne fait que l'allonger.
+
+    Ajoute les moments dont l'instant est strictement après le dernier déjà
+    présent. Une ligne de même clé (t, signature) peut être complétée, jamais
+    vidée, et t, signature et moment ne changent pas. Idempotent.
+    `voy` : le voyage déjà chargé (avec son horloge) ; sinon relu du disque, horloge du stock si besoin.
+    """
     import pearl_store  # noqa: PLC0415
     from voyage_store import load_voyage  # noqa: PLC0415
 
@@ -1025,6 +1153,12 @@ def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
         return {"voyageId": voyage_id, "count": 0, "status": "no-voyage"}
     voy = _with_clock(voy)
     try:
+        try:
+            from ici_engine import ensure_pearl_amp_layer_sig  # noqa: PLC0415
+
+            ensure_pearl_amp_layer_sig("warm_moments")
+        except Exception as exc:
+            log.warning("warm_moments(%s) : signature de couche indisponible (%s)", voyage_id, exc)
         rows = _build_rows(voyage_id, voy)
         try:
             from film_script import anchor_moment_changes  # noqa: PLC0415
@@ -1046,18 +1180,25 @@ def warm_moments(voyage_id: str, voy: dict | None = None) -> dict[str, Any]:
                     before,
                 )
                 return {"voyageId": voyage_id, "count": before, "status": "preserved"}
-            merged, kept = merge_preserve_moment_rows(existing, rows, refresh_from_rebuild=True)
+            merged, added = merge_append_only_moment_rows(existing, rows)
             if len(merged) < before:
                 raise RuntimeError(
                     f"warm_moments({voyage_id}) : fusion {before} → {len(merged)} (perte interdite)",
                 )
-            rows = merged
-            if kept:
+            if added:
                 log.info(
-                    "warm_moments(%s) : %d ligne(s) hors recalcul préservée(s)",
+                    "warm_moments(%s) : %d moment(s) ajouté(s) après le dernier t existant",
                     voyage_id,
-                    len(kept),
+                    len(added),
                 )
+            else:
+                log.info(
+                    "warm_moments(%s) : aucun moment ajouté — période déjà couverte",
+                    voyage_id,
+                )
+            if _moment_rows_equal(existing, merged):
+                return {"voyageId": voyage_id, "count": before, "status": "ready"}
+            rows = merged
         n = pearl_store.replace_moments(voyage_id, rows)
         return {"voyageId": voyage_id, "count": n, "status": "ready"}
     except Exception as exc:
