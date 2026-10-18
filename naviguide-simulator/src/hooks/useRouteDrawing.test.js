@@ -125,11 +125,9 @@ describe("plafond de points", () => {
   });
 });
 
-describe("loadLeg: no straight fallback across land", () => {
+describe("loadLeg: never a straight line the server did not route", () => {
   const LA_ROCHELLE = { lat: 46.15, lon: -1.16 };
-  const MARSEILLE = { lat: 43.3, lon: 5.37 };
-  // France between the two: a straight line from Biscay to the Gulf of Lion crosses it.
-  const isLand = (lat, lon) => lat > 43.5 && lat < 46 && lon > -1 && lon < 5;
+  const GULF_OF_LION = { lat: 43.0, lon: 4.0 };
   const withFetch = async (impl, run) => {
     const saved = globalThis.fetch;
     globalThis.fetch = impl;
@@ -137,33 +135,40 @@ describe("loadLeg: no straight fallback across land", () => {
   };
   const answer = (status, body) => async () => ({ status, ok: status >= 200 && status < 300, json: async () => body });
 
-  for (const [label, impl] of [
-    ["500", answer(500, { detail: "boom" })],
-    ["404", answer(404, { detail: "Not Found" })],
-    ["network", async () => { throw new TypeError("Failed to fetch"); }],
+  // Exactly what the app calls (no land mask is passed or loaded).
+  for (const [label, impl, error] of [
+    ["500", answer(500, { detail: "boom" }), "server"],
+    ["404", answer(404, { detail: "Not Found" }), "server"],
+    ["200 without a line", answer(200, { type: "Feature", geometry: null }), "server"],
+    ["non-JSON 502", async () => ({ status: 502, ok: false, json: async () => { throw new SyntaxError("html"); } }), "server"],
+    ["network", async () => { throw new TypeError("Failed to fetch"); }, "network"],
   ]) {
-    it(`${label}: a fallback crossing land is refused, not drawn`, async () => {
-      const leg = await withFetch(impl, () => loadLeg(LA_ROCHELLE, MARSEILLE, { isLand }));
-      assert.deepEqual(leg, { reject: "crosses_land", end: "end" });
-    });
-
-    it(`${label}: an open-sea fallback is still drawn, marked failed`, async () => {
-      const leg = await withFetch(impl, () => loadLeg(LA_ROCHELLE, { lat: 44, lon: -6 }, { isLand }));
-      assert.equal(leg.failed, true);
-      assert.equal(leg.coords.length, 2);
+    it(`${label}: no leg, no coordinates — an error to tell`, async () => {
+      const leg = await withFetch(impl, () => loadLeg(LA_ROCHELLE, GULF_OF_LION));
+      assert.deepEqual(leg, { error });
     });
   }
 
-  it("a server error saying crosses_land is refused even without a land mask", async () => {
-    const leg = await withFetch(answer(500, { detail: "crosses_land" }), () => loadLeg(LA_ROCHELLE, MARSEILLE));
-    assert.deepEqual(leg, { reject: "crosses_land", end: "end" });
+  it("a routed answer is still a leg", async () => {
+    const line = { type: "Feature", geometry: { type: "LineString", coordinates: [[-1.16, 46.15], [-9.5, 43], [4, 43]] }, properties: { length: 2000, units: "km" } };
+    const leg = await withFetch(answer(200, line), () => loadLeg(LA_ROCHELLE, GULF_OF_LION));
+    assert.equal(leg.coords.length, 3);
+    assert.ok(Math.abs(leg.nm - 2000 / 1.852) < 1e-6);
+    assert.equal("failed" in leg, false);
   });
 
-  it("the refusal is checked before every straight fallback", () => {
-    const body = hook.slice(hook.indexOf("export async function loadLeg"), hook.indexOf("export function legsStillLoading"));
-    const checks = body.match(/refuseRhumbFallback\(/g) || [];
-    const lines = body.match(/rhumbCoords\(from, to\)/g) || [];
-    assert.equal(checks.length, lines.length);
-    assert.ok(lines.length >= 2);
+  it("503, 422 on_land and crosses_land keep their meaning", async () => {
+    assert.deepEqual(await withFetch(answer(503, { detail: "busy" }), () => loadLeg(LA_ROCHELLE, GULF_OF_LION)), { busy: true });
+    assert.deepEqual(await withFetch(answer(422, { detail: "crosses_land" }), () => loadLeg(LA_ROCHELLE, GULF_OF_LION)), { reject: "crosses_land", end: "end" });
+    assert.deepEqual(await withFetch(answer(422, { detail: "on_land", end: "on_land_start" }), () => loadLeg(LA_ROCHELLE, GULF_OF_LION)), { reject: "on_land", end: "start" });
+  });
+
+  it("the hook keeps the point without a leg and says why (no fallback line anywhere)", () => {
+    assert.doesNotMatch(hook, /rhumbCoords|refuseRhumbFallback|failed:/);
+    const body = hook.slice(hook.indexOf("const loadSegment"), hook.indexOf("const fetchSegment ="));
+    const onError = body.slice(body.indexOf("if (result?.error)"), body.indexOf("if (result?.reject)"));
+    assert.match(onError, /notify\(result\.error === "network" \? "network_error" : "server_error"\)/);
+    assert.match(onError, /return;/);
+    assert.doesNotMatch(onError, /segmentsRef\.current\s*=/);
   });
 });

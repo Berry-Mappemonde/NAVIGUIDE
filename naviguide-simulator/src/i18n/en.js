@@ -108,7 +108,6 @@ export default {
   gettingStarted:     "🧭 Getting Started",
   gettingStartedText: "Two buttons: Follow the Berry-Mappemonde expedition (the boat now) or Plot (play the Berry-Mappemonde route or your own: departure date, calculations).",
   searouteUnavailable: "Official route (searoute unavailable).",
-  searouteDrawFailed: "searoute failed — temporary rhumb line.",
   berryLocalBriefing: "Berry-Mappemonde expedition: departure from La Rochelle on 15 May 2026, 08:00 UTC. The briefing tells the pack around the boat — which EEZ, which ports of entry, what sits inside 30 nm — not the whole chart.", // pragma: allowlist secret
   cockpitDossier: "Cockpit dossier",
   iciBriefingLoading: "Filling the pack around the boat…",
@@ -250,7 +249,6 @@ export default {
   recomputeConstraintsDefault: "Without skipper's orders: only a sea ≥ {hs} is avoided.",
   drawingInProgress: "Drawing in progress",
   drawingPoints: "points placed",
-  drawingFailedSegments: "segment(s) without a sea route",
   drawingRouting: "routing…",
   drawPointLabel: "Point",
   drawingUndoLast: "Undo the last point",
@@ -580,5 +578,7 @@ export default {
   rhumbCrossesLand:   "Straight line crosses land",
   drawPointLimitReached: "{max}-point limit reached",
   routeServerBusy:    "Server busy, try again",
+  routeServerError:   "Route server error: leg not computed, try again",
+  routeNetworkError:  "Network unavailable: leg not computed, try again",
   drawPointLimit:     "{max} points maximum",
 };

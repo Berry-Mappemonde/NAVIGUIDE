@@ -1545,12 +1545,10 @@ export default function App() {
   const drawing = useMemo(() => {
     if (!drawingMode) return null;
     const nm = legsDistanceNm(drawnSegments);
-    const failed = drawnSegments.filter((seg) => seg?.failed).length;
     return {
       points: drawnPoints.map((p, i) => ({ name: p.name || `${t("drawPointLabel")} ${i + 1}`, lat: p.lat, lon: p.lon })),
       distanceNm: Math.round(nm),
       segments: drawnSegments.length,
-      failed,
       loading: drawingLoading,
       message: drawingMessage,
     };
@@ -1564,7 +1562,11 @@ export default function App() {
         ? "drawPointLimitReached"
         : drawingNotice.code === "busy"
           ? "routeServerBusy"
-          : "rhumbCrossesLand";
+          : drawingNotice.code === "server_error"
+            ? "routeServerError"
+            : drawingNotice.code === "network_error"
+              ? "routeNetworkError"
+              : "rhumbCrossesLand";
     setDrawNotice({ kind: drawingNotice.code === "limit" ? "notice" : "error", text: t(key, { max: DRAW_MAX_POINTS }) });
   }, [drawingNotice, t]);
   const statsSegs = useMemo(
@@ -1925,11 +1927,6 @@ export default function App() {
                 <button type="button" onClick={handleDrawCancel} className="h-7 px-2 rounded-full bg-white/10 text-[11px] font-semibold" title={t("cancel")}>{t("cancel")}</button>
               </div>
             </div>
-            {drawnSegments.some((s) => s?.failed) && (
-              <div className="bg-orange-950/90 border border-orange-400/50 text-orange-100 text-[11px] font-medium px-3 py-1 rounded-full">
-                {t("searouteDrawFailed")}
-              </div>
-            )}
             {drawNotice && (
               // Under the drawing pill, above the map and the panels: a point
               // refused (on land, limit) is always said, never silently dropped.

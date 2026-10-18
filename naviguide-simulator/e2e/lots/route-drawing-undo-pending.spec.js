@@ -26,13 +26,15 @@ async function heldRoute(page) {
     const elon = Number(url.searchParams.get("end_lon"));
     let open;
     const gate = new Promise((resolve) => { open = resolve; });
-    const entry = { leg: `${nameAt(slat, slon)}-${nameAt(elat, elon)}`, released: false, open };
+    const entry = { leg: `${nameAt(slat, slon)}-${nameAt(elat, elon)}`, released: false, open, seq: held.length };
+    // Each answer is told apart by its middle vertex (one per request).
+    const midLat = (slat + elat) / 2 + entry.seq * 0.01;
     entry.done = gate.then(() => route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         type: "Feature",
-        geometry: { type: "LineString", coordinates: [[slon, slat], [(slon + elon) / 2, (slat + elat) / 2], [elon, elat]] },
+        geometry: { type: "LineString", coordinates: [[slon, slat], [(slon + elon) / 2, midLat], [elon, elat]] },
         properties: { length: 185.2, units: "km" },
       }),
     }).catch(() => {}));
@@ -44,13 +46,15 @@ async function heldRoute(page) {
     async arrived(leg) {
       await expect.poll(() => Boolean(find(leg)), { timeout: 30_000, message: `request ${leg}` }).toBe(true);
     },
-    // Let its answer go and wait until it has been delivered.
+    // Let its answer go and wait until it has been delivered; returns the
+    // request number (its answer's middle vertex is offset by seq × 0.01°).
     async release(leg) {
       await this.arrived(leg);
       const entry = find(leg);
       entry.released = true;
       entry.open();
       await entry.done;
+      return entry.seq;
     },
   };
 }
@@ -172,4 +176,43 @@ test("↶ puis D aussitôt : la jambe B-C n'apparaît jamais", async ({ page }) 
   const seen = await page.evaluate(() => [...window.__seenLegs]);
   expect(seen).not.toContain("B-C");
   expect(seen).toContain("B-D");
+});
+
+test("↶ then redo while B-C loads: only the new B-C answer is used (slot generation)", async ({ page }) => {
+  test.setTimeout(90_000);
+  const server = await heldRoute(page);
+  await page.goto("/");
+  await dismissNotForNav(page);
+  await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });
+  await enterTracer(page);
+  await page.waitForFunction(() => typeof window.__naviguideAddDrawnPoint === "function");
+  const undo = page.getByTitle(/Annuler le dernier point|Undo last point/).filter({ hasText: "↶" });
+  const legBC = () => page.evaluate(() => {
+    const s = (window.__naviguideDrawn?.segments || []).find((x) => x?.from?.name === "B" && x?.to?.name === "C");
+    return s ? s.coords[1][1] : null;
+  });
+
+  await add(page, A);
+  await add(page, B);
+  await server.release("A-B");
+  await page.waitForFunction(() => window.__naviguideDrawn?.segments?.length === 1, null, { timeout: 15_000 });
+  await add(page, C);
+  await server.arrived("B-C");
+  await undo.click();
+  await page.getByTitle(/^(Rétablir|Redo)$/).click();
+  // Same point C again: the leg is asked once more.
+  await expect.poll(() => drawn(page), { timeout: 15_000 }).toEqual({ names: ["A", "B", "C"], legs: ["A-B"] });
+
+  // The answer asked before the ↶ comes back first: it is dropped.
+  const oldSeq = await server.release("B-C");
+  await page.waitForTimeout(SETTLE_MS);
+  expect(await legBC(), "the pre-↶ answer must not be drawn").toBeNull();
+
+  // The answer of the new request is the one drawn.
+  const newSeq = await server.release("B-C");
+  expect(newSeq).toBeGreaterThan(oldSeq);
+  await expect.poll(legBC, { timeout: 15_000 }).not.toBeNull();
+  const mid = await legBC();
+  expect(mid).toBeCloseTo((B.lat + C.lat) / 2 + newSeq * 0.01, 6);
+  expect(await drawn(page)).toEqual({ names: ["A", "B", "C"], legs: ["A-B", "B-C"] });
 });

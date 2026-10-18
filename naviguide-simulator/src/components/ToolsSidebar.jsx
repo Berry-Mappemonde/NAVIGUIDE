@@ -267,7 +267,6 @@ function DrawingBox({ drawing }) {
         <span className="font-semibold text-emerald-200">{t("drawingInProgress")}</span>
         <span>· {pts.length} {t("drawingPoints")}</span>
         <span>· {Number(drawing?.distanceNm || 0).toLocaleString()} nm</span>
-        {drawing?.failed ? <span className="text-amber-300/90">· {drawing.failed} {t("drawingFailedSegments")}</span> : null}
       </div>
       {pts.length ? (
         <ol className="max-h-36 overflow-y-auto sidebar-scroll border-t border-white/5">

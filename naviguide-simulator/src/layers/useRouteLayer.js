@@ -56,9 +56,8 @@ export function useRouteLayer(mapRef, {
     if (drawingMode) {
       drawnSegments.filter(Boolean).forEach((s) => {
         addLine(group, s.coords, {
-          color: s.failed ? "#f97316" : "#22c55e",
+          color: "#22c55e",
           weight: 3,
-          dash: s.failed ? "6 6" : null,
         });
       });
       return () => group.remove();

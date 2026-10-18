@@ -672,9 +672,8 @@ export class MapSceneController {
     if (plan.kind === "drawing") {
       (input.drawnSegments || []).filter(Boolean).forEach((segment) => {
         addRouteLine(group, segment.coords, {
-          color: segment.failed ? "#f97316" : "#22c55e",
+          color: "#22c55e",
           weight: 3,
-          dash: segment.failed ? "6 6" : null,
         });
       });
       return;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { coordsFromRoutePayload } from "../utils/berryLegs.js";
 import { haversineNm, unwrapPath, wrapLon } from "../utils/geo.js";
-import { refuseRhumbFallback, ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
+import { ROUTE_IMPORT_MAX_POINTS } from "../utils/routeImport.js";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "";
 export const DRAW_MAX_POINTS = ROUTE_IMPORT_MAX_POINTS;
@@ -29,16 +29,13 @@ function lengthNm(data, coords) {
   return nm;
 }
 
-function rhumbCoords(from, to) {
-  return unwrapPath([[from.lon, from.lat], [to.lon, to.lat]], from.lon);
-}
-
 /**
- * One leg from /route. On a server error (500, 404…) or a network failure the
- * straight fallback is drawn only if it does not cross land (`isLand`, or the
- * server saying so); otherwise the leg is refused like a land crossing.
+ * One leg from /route. Nothing is ever drawn that the server did not route:
+ * on a server error (500, 404, an answer without a line) or a network failure
+ * the leg is absent and the point stays, as after a 503 — no straight line,
+ * which could cross land.
  */
-export async function loadLeg(from, to, { isLand } = {}) {
+export async function loadLeg(from, to) {
   const params = new URLSearchParams({
     start_lat: String(from.lat),
     start_lon: String(wrapLon(from.lon)),
@@ -58,17 +55,11 @@ export async function loadLeg(from, to, { isLand } = {}) {
     // Out of time or slots: not land. Say so; the point stays.
     if (res.status === 503) return { busy: true };
     let coords = coordsFromRoutePayload(data);
-    if (!res.ok || !coords.length) {
-      if (refuseRhumbFallback(from, to, { serverDetail: detail, isLand })) return { reject: "crosses_land", end: "end" };
-      const line = rhumbCoords(from, to);
-      return { coords: line, failed: true, nm: lengthNm(null, line) };
-    }
+    if (!res.ok || !coords.length) return { error: "server" };
     coords = unwrapPath(coords, from.lon);
-    return { coords, failed: false, nm: lengthNm(data, coords) };
+    return { coords, nm: lengthNm(data, coords) };
   } catch {
-    if (refuseRhumbFallback(from, to, { isLand })) return { reject: "crosses_land", end: "end" };
-    const line = rhumbCoords(from, to);
-    return { coords: line, failed: true, nm: lengthNm(null, line) };
+    return { error: "network" };
   }
 }
 
@@ -209,6 +200,11 @@ export function useRouteDrawing() {
         notify("busy");
         return;
       }
+      // Server error or network failure: the point stays, without a leg.
+      if (result?.error) {
+        notify(result.error === "network" ? "network_error" : "server_error");
+        return;
+      }
       if (result?.reject) {
         // Remove the point at fault (on land, or the end of a leg across
         // land) wherever it is, then join its neighbours.
@@ -221,7 +217,6 @@ export function useRouteDrawing() {
       const next = segmentsRef.current.slice();
       next[at] = {
         coords: result.coords,
-        failed: Boolean(result.failed),
         nm: result.nm,
         from,
         to,

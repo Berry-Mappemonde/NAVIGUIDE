@@ -1,7 +1,8 @@
 // Route dessinée Brisbane → San Francisco dans le Pacifique.
-// Sans API : le spec vérifie le mode Tracer + l'absence de sommet > 50° N
-// (repli/dépli client, corde de repli). Avec API (proxy /route → :8010) :
-// distance du résumé entre 6 000 et 7 500 nm.
+// La jambe vient toujours de /route (aucune corde de repli) : sommet ≤ 50° N,
+// pas de saut de 360°, distance du résumé entre 6 000 et 7 500 nm. Sans jambe
+// (serveur occupé, erreur, searoute absent) : échec avec PW_WITH_API=1, sinon
+// test.skip avec la raison — jamais réussi sans avoir vérifié la distance.
 import { expect, test } from "@playwright/test";
 
 const shot = (page, name) => page.screenshot({
@@ -86,25 +87,23 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
     gotSeg = await legShown();
   }
   if (!gotSeg) {
-    if (busyAnswers > 0) {
-      // After a 503 the point stays, without a leg (nothing straight drawn).
-      const state = await page.evaluate(() => ({
-        points: window.__naviguideDrawn?.points?.length || 0,
-        legs: window.__naviguideDrawn?.segments?.length || 0,
-      }));
-      expect(state).toEqual({ points: 2, legs: 0 });
-    }
-    test.info().annotations.push(busyAnswers > 0
-      ? {
-        type: "serveur occupé",
-        description: `/route a répondu 503 busy (${busyAnswers} fois, échéance atteinte) — point gardé sans jambe`,
-      }
-      : {
-        type: "poste",
-        description: "searoute absent (ou interdit sur ce poste) — segments Brisbane→SF non calculés",
-      });
-    await shot(page, "01-corde").catch(() => {});
-    return;
+    // No leg was routed: the point stays, and nothing is drawn in its place.
+    const state = await page.evaluate(() => ({
+      points: window.__naviguideDrawn?.points?.length || 0,
+      legs: window.__naviguideDrawn?.segments?.length || 0,
+    }));
+    expect(state).toEqual({ points: 2, legs: 0 });
+    const errorText = (await page.getByTestId("route-import-error").textContent().catch(() => "")) || "";
+    const reason = busyAnswers > 0
+      ? `serveur occupé : /route a répondu 503 busy ${busyAnswers} fois (échéance atteinte)`
+      : errorText
+        ? `jambe en échec : ${errorText}`
+        : "searoute absent (ou interdit sur ce poste) : aucune jambe Brisbane→SF";
+    await shot(page, "01-sans-jambe").catch(() => {});
+    // With the API the distance must be checked: no leg is a failure. Without
+    // it, the test is skipped — never passed without checking the distance.
+    expect(process.env.PW_WITH_API !== "1", `distance non vérifiée avec l'API — ${reason}`).toBe(true);
+    test.skip(true, reason);
   }
 
   const info = await page.evaluate(() => {
@@ -121,7 +120,6 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
     return {
       n: coords.length,
       maxLat: lats.length ? Math.max(...lats) : null,
-      failed: segs.some((s) => s.failed),
       jump,
       points: drawn.points || [],
     };
@@ -137,13 +135,11 @@ test("Tracer Brisbane → SF : aucun sommet au nord de 50° N", async ({ page })
   expect(info.maxLat).toBeLessThanOrEqual(50);
   expect(info.jump).toBeLessThanOrEqual(180);
 
-  if (!info.failed) {
-    const summary = await page.getByTestId("drawing-summary").innerText();
-    const nm = parseNm(summary);
-    expect(nm, `résumé: ${summary}`).not.toBeNull();
-    expect(nm).toBeGreaterThanOrEqual(6000);
-    expect(nm).toBeLessThanOrEqual(7500);
-  }
+  const summary = await page.getByTestId("drawing-summary").innerText();
+  const nm = parseNm(summary);
+  expect(nm, `résumé: ${summary}`).not.toBeNull();
+  expect(nm).toBeGreaterThanOrEqual(6000);
+  expect(nm).toBeLessThanOrEqual(7500);
 
   await page.evaluate(({ a, b }) => {
     const map = window.__naviguideScene?.map;

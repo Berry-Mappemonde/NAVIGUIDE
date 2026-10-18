@@ -108,7 +108,6 @@ export default {
   gettingStarted:     "🧭 Démarrage",
   gettingStartedText: "Deux boutons : Suivre l’expédition Berry-Mappemonde (le bateau maintenant) ou Tracer (jouer la route Berry-Mappemonde ou la vôtre : date de départ, calculs).",
   searouteUnavailable: "Route officielle (searoute indisponible).",
-  searouteDrawFailed: "searoute a échoué — corde temporaire.",
   berryLocalBriefing: "Expédition Berry-Mappemonde : départ de La Rochelle le 15 mai 2026, 08:00 UTC. Le briefing raconte le sac autour du bateau — quelle ZEE, quels ports d’entrée, ce qu’il y a dans 30 nm — pas toute la carte.", // pragma: allowlist secret
   cockpitDossier: "Dossier cockpit",
   iciBriefingLoading: "Le sac se remplit autour du bateau…",
@@ -250,7 +249,6 @@ export default {
   recomputeConstraintsDefault: "Sans ordre du skipper : seule la mer ≥ {hs} est évitée.",
   drawingInProgress: "Tracé en cours",
   drawingPoints: "points posés",
-  drawingFailedSegments: "segment(s) sans route mer",
   drawingRouting: "route en calcul…",
   drawPointLabel: "Point",
   drawingUndoLast: "Annuler le dernier point",
@@ -580,5 +578,7 @@ export default {
   rhumbCrossesLand:   "La ligne droite traverse la terre",
   drawPointLimitReached: "Limite de {max} points atteinte",
   routeServerBusy:    "Serveur occupé, réessayez",
+  routeServerError:   "Erreur du serveur de route : jambe non calculée, réessayez",
+  routeNetworkError:  "Réseau indisponible : jambe non calculée, réessayez",
   drawPointLimit:     "{max} points maximum",
 };
