@@ -72,6 +72,7 @@ import {
   shouldKeepSceneVisible,
 } from "./utils/sceneGate.js";
 import { summarizeRoute, featuresToSegments, haversineNm } from "./utils/geo.js";
+import { highSeasRuledOut, nearestStopNm } from "./engine/iciBriefing.js";
 import { waypointsFromCollection } from "./utils/waypointsFromCollection.js";
 import { buildLocalCustomBriefing } from "./utils/customRouteBriefing.js";
 import { normalizeExpeditionPlan } from "./utils/expeditionPlan.js";
@@ -183,6 +184,10 @@ export default function App() {
   }, []);
   const [stopAuto, setStopAuto] = useState(false);
   const [escaleClear, setEscaleClear] = useState(0);
+  // The skipper moved the clock (scrub, play, previous / next, journal):
+  // a sheet opened from a flag then only stays near its own stop.
+  const [clockMoveToken, setClockMoveToken] = useState(0);
+  const noteClockMove = useCallback(() => setClockMoveToken((n) => n + 1), []);
   const [cameraFollow, setCameraFollow] = useState(false);
   const [cinemaRecapture, setCinemaRecapture] = useState(0);
   const [cameraFocusToken, setCameraFocusToken] = useState(0);
@@ -583,6 +588,7 @@ export default function App() {
     lang, isSuivre, atQuay, clockSample, marks: legendMarks,
     filmActive: replay.active,
     clearToken: escaleClear,
+    clockMoveToken,
   });
   const { stop: escaleStop, setStop: setEscaleStop, sheet: escaleSheet, open: openEscaleSheet, close: closeEscaleSheet } = escale;
 
@@ -811,7 +817,16 @@ export default function App() {
     canonical: routeSource === "berry",
   });
 
+  const highSeasRuled = highSeasRuledOut({
+    vehicle: clockSample?.vehicle || jambe?.vehicle || null,
+    nearStopNm: nearestStopNm(clockSample?.lat, clockSample?.lon, legendMarks),
+  });
+  const momentHighSeasRuled = highSeasRuledOut({
+    vehicle: drawTip ? null : (clockSample?.vehicle || jambe?.vehicle || null),
+    nearStopNm: nearestStopNm(momentLat, momentLon, legendMarks),
+  });
   const iciPack = useIciDossier({
+    highSeasRuledOut: highSeasRuled,
     enabled: Boolean(cast),
     frozen: replay.active,
     stories: !replay.active && replay.filmStyle === "written",
@@ -1040,10 +1055,11 @@ export default function App() {
       isTracer,
       playing: playback.playing,
     });
+    noteClockMove();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nextEscaleNm(escaleMarks, playheadNmRef.current), { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi]);
+  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, noteClockMove]);
 
   const handleSimPrev = useCallback(() => {
     if (!playControlsActive) return;
@@ -1055,15 +1071,17 @@ export default function App() {
     const target = prevEscaleNm(escaleMarks, playheadNmRef.current);
     const origin = Number(escaleMarks?.[0]?.filmNm ?? escaleMarks?.[0]?.nm) || 0;
     if (isTracer && target <= origin + 1) voyage.resetToToday();
+    noteClockMove();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(target, { jump: true });
     if (focusBoat) setCameraFocusToken((token) => token + 1);
-  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, voyage.resetToToday]);
+  }, [playback.playing, escaleMarks, isTracer, playControlsActive, isSuivre, sceneApi, voyage.resetToToday, noteClockMove]);
 
   const handleCatamaranDrag = useCallback((pos) => {
+    noteClockMove();
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(sailNmToFilmNm(flatRoute, nearestNm(flatRoute, pos.lat, pos.lon)));
-  }, [flatRoute, sceneApi]);
+  }, [flatRoute, sceneApi, noteClockMove]);
 
   const recaptureBoat = useCallback(() => {
     setCameraFollow(true);
@@ -1616,18 +1634,20 @@ export default function App() {
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleTools = useCallback(() => setToolsOpen((open) => !open), []);
   const handleSidebarSeek = useCallback((nm) => {
+    noteClockMove();
     if (isSuivre) setUserPreview(true);
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
-  }, [isSuivre, sceneApi]);
+  }, [isSuivre, sceneApi, noteClockMove]);
   const handleSeekJournal = useCallback((iso) => {
     const sample = sampleClockAtTime(officialClock, iso);
     const nm = Number(sample?.filmNm);
     if (!Number.isFinite(nm)) return;
+    noteClockMove();
     if (isSuivre) setUserPreview(true);
     sceneApiRef.current?.playback.pause();
     sceneApiRef.current?.playback.seek(nm, { jump: true });
-  }, [officialClock, isSuivre, sceneApi]);
+  }, [officialClock, isSuivre, sceneApi, noteClockMove]);
   // Revue de plan par règles: legs from the server (clock + pearls), season from the atlas cache.
   const planReviewState = usePlanReview({
     // GET /voyage/official/plan-review (et /eta) seulement en
@@ -1871,6 +1891,7 @@ export default function App() {
         chat={chat}
         onChatAsk={chat.ask}
         moment={iciMoment.moment}
+        momentHighSeasRuledOut={momentHighSeasRuled}
         journalEntries={momentJournal.entries}
         onSeek={handleSeekJournal}
         momentMode={momentMode}
@@ -2042,11 +2063,13 @@ export default function App() {
           ) {
             voyage.resetToToday();
           }
+          noteClockMove();
           sceneApiRef.current?.playback.toggle();
         }}
         marks={escaleMarks}
         onSeekNm={(nm) => {
           if (!playControlsActive) return;
+          noteClockMove();
           if (isSuivre) setUserPreview(true);
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(nm, { jump: true });
@@ -2084,6 +2107,7 @@ export default function App() {
         onEventClick={(ev) => {
           setSkipperClickId(ev.id || ev.stableKey);
           if (!isTracer || !Number.isFinite(ev.filmCum)) return;
+          noteClockMove();
           sceneApiRef.current?.playback.pause();
           sceneApiRef.current?.playback.seek(ev.filmCum, { jump: true });
         }}

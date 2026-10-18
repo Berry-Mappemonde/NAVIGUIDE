@@ -334,6 +334,7 @@ export const Sidebar = memo(function Sidebar({
   momentFree = null, momentFreeLeft = 0, onMomentNext,
   chat = null, onChatAsk,
   moment = null,
+  momentHighSeasRuledOut = false,
   journalEntries = null,
   onSeek = null,
   momentMode = "follow",
@@ -459,6 +460,7 @@ export const Sidebar = memo(function Sidebar({
 
           <IciMaintenant
             moment={moment}
+            highSeasRuledOut={momentHighSeasRuledOut}
             journalEntries={journalEntries}
             journalDays={journal?.days}
             onSeek={onSeek}

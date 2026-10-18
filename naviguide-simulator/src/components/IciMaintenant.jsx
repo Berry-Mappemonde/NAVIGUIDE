@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLang } from "../i18n/LangContext.jsx";
 import { canFocus, entityLinks } from "../engine/briefingLinks.js";
+import { hereWithoutFalseHighSeas } from "../engine/iciBriefing.js";
 import { EscaleSheet } from "./EscaleSheet.jsx";
 import { PlanReview } from "./PlanReview.jsx";
 import { sortJournalEntries } from "../hooks/useMomentJournal.js";
@@ -175,6 +176,7 @@ function JournalList({ entries, onSeek, lang, days = null }) {
 
 export function IciMaintenant({
   moment,
+  highSeasRuledOut = false,
   view: viewProp,
   onViewChange,
   story = null,
@@ -210,7 +212,7 @@ export function IciMaintenant({
   const momentNow = momentNowProp && !sameShownMoment(momentNowProp, momentFree) ? momentNowProp : null;
   const around = aroundWithoutShown(frame.around, momentFree);
   const shown = withNowLeg(frame.shown, nowLeg);
-  const here = frame.here;
+  const here = hereWithoutFalseHighSeas(frame.here, { ruledOut: highSeasRuledOut });
   const alerts = visibleAlerts(frame.alerts, dismissed);
   // One fact once in the whole tab: the briefing above, the alerts and the
   // items around already say some of the server's « here » sentences.

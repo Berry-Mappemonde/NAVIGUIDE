@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TERRITORIAL_SEA_NM, cleanStoryText, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
+import { TERRITORIAL_SEA_NM, cleanStoryText, hereWithoutFalseHighSeas, highSeasRuledOut, nearestStopNm, climatologySentence, climatologyShownOnBanner, highSeasClaimAllowed, narrateIci, narrateIciSegments, phraseForEvent, pickFilmPhrase } from "./iciBriefing.js";
 import { KNOWN_SOURCES, SOURCE_URLS, segmentSources } from "./briefingLinks.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -860,3 +860,60 @@ describe("iciBriefing — reason codes, no exception text", () => {
   });
 });
 
+
+describe("jamais « haute mer » près d'un port ni hors de l'eau", () => {
+  const SAINT_MAUR = { name: "Saint-Maur (Berry, Indre)", lat: 46.8075, lon: 1.6358 };
+  const LA_ROCHELLE = { name: "La Rochelle", lat: 46.1541, lon: -1.167 };
+  const MARKS = [SAINT_MAUR, LA_ROCHELLE];
+  const HIGH_SEAS_EN = "The boat is on the high seas: no exclusive economic zone, no entry formalities to plan.";
+  const HIGH_SEAS_FR = "Le bateau est en haute mer : aucune ZEE, pas de formalités d’entrée à prévoir.";
+
+  it("j0 prod : à Saint-Maur le serveur dit « Ashore (France) » ET « high seas » → la phrase haute mer part", () => {
+    // Réponse réelle de GET /ici/moment?lat=46.808&lon=1.636 (prod, 18/10/2026).
+    const here = { zee: { name: "Ashore (France)", mrgid: null }, sentences: [HIGH_SEAS_EN] };
+    assert.deepEqual(hereWithoutFalseHighSeas(here).sentences, []);
+  });
+
+  it("au port de La Rochelle (≤ 12 nm d'une escale) : pas de haute mer, même si la ZEE répond « aucune »", () => {
+    const near = nearestStopNm(46.15, -1.2, MARKS);
+    assert.ok(near < TERRITORIAL_SEA_NM);
+    const ruledOut = highSeasRuledOut({ vehicle: "main", nearStopNm: near });
+    assert.equal(ruledOut, true);
+    const here = { zee: { name: "Haute mer", mrgid: null }, sentences: [HIGH_SEAS_FR, "Vent 12 kn."] };
+    assert.deepEqual(hereWithoutFalseHighSeas(here, { ruledOut }).sentences, ["Vent 12 kn."]);
+    const dossier = { zee: { name: "Haute mer", mrgid: null }, sources: { zee: "marineregions" }, highSeasRuledOut: ruledOut };
+    assert.equal(highSeasClaimAllowed(dossier), false);
+    assert.doesNotMatch(narrateIci(dossier, "fr"), /haute mer/i);
+    assert.doesNotMatch(narrateIci(dossier, "en"), /high seas/i);
+  });
+
+  it("sur la route Saint-Maur → La Rochelle (à terre, 64 nm), la ZEE « High seas » du serveur ne passe pas", () => {
+    // GET /ici/moment?lat=46.465&lon=0.168 (prod) répond zee « High seas ».
+    const ruledOut = highSeasRuledOut({ vehicle: "land", nearStopNm: nearestStopNm(46.465, 0.168, MARKS) });
+    assert.equal(ruledOut, true);
+    const here = { zee: { name: "High seas", mrgid: null }, sentences: [HIGH_SEAS_EN] };
+    assert.deepEqual(hereWithoutFalseHighSeas(here, { ruledOut }).sentences, []);
+    assert.equal(highSeasRuledOut({ vehicle: "quay" }), true);
+    assert.equal(highSeasRuledOut({ vehicle: "plane" }), true);
+  });
+
+  it("en vraie haute mer, loin des escales, la phrase reste", () => {
+    const far = nearestStopNm(-15.5, -158, MARKS);
+    const ruledOut = highSeasRuledOut({ vehicle: "main", nearStopNm: far });
+    assert.equal(ruledOut, false);
+    const here = { zee: { name: "High seas", mrgid: null }, sentences: [HIGH_SEAS_EN] };
+    assert.deepEqual(hereWithoutFalseHighSeas(here, { ruledOut }).sentences, [HIGH_SEAS_EN]);
+    const dossier = { zee: { name: "Haute mer", mrgid: null }, sources: { zee: "marineregions" } };
+    assert.equal(highSeasClaimAllowed(dossier), true);
+  });
+
+  it("branchements : Ici filtre les phrases serveur, le dossier porte la position", () => {
+    const read = (rel) => readFileSync(join(here, rel), "utf8");
+    assert.match(read("../components/IciMaintenant.jsx"), /hereWithoutFalseHighSeas\(frame\.here, \{ ruledOut: highSeasRuledOut \}\)/);
+    assert.match(read("../hooks/useIciDossier.js"), /highSeasRuledOut \? \{ \.\.\.merged, highSeasRuledOut: true \}/);
+    const app = read("../App.jsx");
+    assert.match(app, /highSeasRuledOut: highSeasRuled,/);
+    assert.match(app, /momentHighSeasRuledOut=\{momentHighSeasRuled\}/);
+    assert.match(read("../components/Sidebar.jsx"), /highSeasRuledOut=\{momentHighSeasRuledOut\}/);
+  });
+});

@@ -184,6 +184,7 @@ export function useIciDossier({
   stories = false,
   frozen = false,
   at = null,
+  highSeasRuledOut = false,
 }) {
   const [remote, setRemote] = useState(null);
   const [tick, setTick] = useState({ events: [], briefing: null });
@@ -555,11 +556,13 @@ export function useIciDossier({
     });
     // A thin pearl never asked the full BI stack: "unavailable" would be a lie.
     const thinPearl = merged.thin || merged.pearl === "thin";
-    if (thinPearl && merged.sources?.bi === "unavailable") {
-      return { ...merged, sources: { ...merged.sources, bi: null } };
+    // Ashore, on the road or near a stop: never « high seas », whatever the bag says.
+    const placed = highSeasRuledOut ? { ...merged, highSeasRuledOut: true } : merged;
+    if (thinPearl && placed.sources?.bi === "unavailable") {
+      return { ...placed, sources: { ...placed.sources, bi: null } };
     }
-    return merged;
-  }, [enabled, boat, effective, polarMeta, jambe, climatology, tick.briefing]);
+    return placed;
+  }, [enabled, boat, effective, polarMeta, jambe, climatology, tick.briefing, highSeasRuledOut]);
 
   const briefing = useMemo(
     () => (dossier ? narrateIci(dossier, lang, { written: stories }) : ""),

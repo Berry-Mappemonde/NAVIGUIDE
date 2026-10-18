@@ -9,6 +9,7 @@ import frDict from "../i18n/fr.js";
 import { trafficKind } from "./ampRules.js";
 import { originName, spokenZeeName, watersLabel } from "./toponyms.js";
 import { getCardinalDirection } from "../utils/getCardinalDirection.js";
+import { haversineNm } from "../utils/geo.js";
 import { localizePlaceName } from "../utils/placeNames.js";
 
 const TERRITORY = {
@@ -181,9 +182,56 @@ function nearKnownPort(dossier) {
   });
 }
 
+// Not at sea: on the road, in the air, alongside.
+const OFF_SEA_VEHICLES = new Set(["land", "plane", "quay"]);
+
+/** Distance (nm) from a position to the nearest stop of the route, or null. */
+export function nearestStopNm(lat, lon, marks) {
+  const la = Number(lat);
+  const lo = Number(lon);
+  if (lat == null || lon == null || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  let best = null;
+  for (const m of Array.isArray(marks) ? marks : []) {
+    const mLat = Number(m?.lat);
+    const mLon = Number(m?.lon);
+    if (m?.lat == null || m?.lon == null || !Number.isFinite(mLat) || !Number.isFinite(mLon)) continue;
+    const d = haversineNm(la, lo, mLat, mLon);
+    if (best == null || d < best) best = d;
+  }
+  return best;
+}
+
+/** The boat is not on the high seas, whatever an EEZ lookup says: not at sea
+ * (road, plane, alongside) or within the territorial sea of a stop. */
+export function highSeasRuledOut({ vehicle = null, nearStopNm: near = null } = {}) {
+  if (vehicle && OFF_SEA_VEHICLES.has(vehicle)) return true;
+  const nm = Number(near);
+  return near != null && Number.isFinite(nm) && nm <= TERRITORIAL_SEA_NM;
+}
+
+const HIGH_SEAS_SENTENCE = /\bhigh seas\b|\bhaute mer\b/i;
+
+/**
+ * Server « here » sentences without a « high seas » one the boat's own
+ * situation contradicts: ashore or inside an EEZ (same answer), not at sea,
+ * or near a stop. The server's wording is kept for everything else.
+ */
+export function hereWithoutFalseHighSeas(here, { ruledOut = false } = {}) {
+  const sentences = Array.isArray(here?.sentences) ? here.sentences : null;
+  if (!sentences?.length) return here;
+  const zee = here?.zee && typeof here.zee === "object" ? here.zee : {};
+  const zeeName = String(zee.name || "");
+  const contradicted = ruledOut || zee.ashore || zee.mrgid != null
+    || /^(À terre|Ashore)\b/i.test(zeeName);
+  if (!contradicted) return here;
+  const kept = sentences.filter((s) => !HIGH_SEAS_SENTENCE.test(String(s || "")));
+  return kept.length === sentences.length ? here : { ...here, sentences: kept };
+}
+
 /** « High seas » only when an EEZ lookup answered « none », away from any
  * known port. Missing or failed EEZ data never reads as high seas. */
 export function highSeasClaimAllowed(dossier) {
+  if (dossier?.highSeasRuledOut) return false;
   const zee = dossier?.zee;
   if (!zee || typeof zee !== "object" || zee.unknown) return false;
   if (zee.mrgid || zee.ashore || String(zee.name || "").startsWith("À terre")) return false;
