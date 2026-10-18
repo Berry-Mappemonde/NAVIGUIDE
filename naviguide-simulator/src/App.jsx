@@ -888,6 +888,17 @@ export default function App() {
       lon: from?.lon,
     };
   }, [cardHud?.fromStop, cardHud?.toStop, cardHud?.vehicle, legendMarks, lang]);
+  // Where the boat is on its leg: a port card only shows near that port.
+  const momentLeftNm = Number(cardHud?.nmRemainingToStop ?? cardHud?.remainingNm);
+  const momentLegNm = Number(momentLeg?.legNm);
+  const momentProgress = useMemo(() => {
+    if (!cardHud?.fromStop) return null;
+    const leftNm = Number.isFinite(momentLeftNm) ? Math.round(momentLeftNm) : null;
+    const doneNm = leftNm != null && Number.isFinite(momentLegNm) && momentLegNm > 0
+      ? Math.max(0, Math.round(momentLegNm - leftNm))
+      : null;
+    return { fromStop: cardHud.fromStop, toStop: cardHud.toStop || null, leftNm, doneNm };
+  }, [cardHud?.fromStop, cardHud?.toStop, momentLeftNm, momentLegNm]);
   const moments = useMomentCards({
     enabled: sceneReady && !drawingMode && !replay.active,
     events: iciPack.events,
@@ -901,6 +912,8 @@ export default function App() {
     leg: momentLeg,
     officialMoments: suivreBerry ? momentJournal.entries : null,
     nowIso: suivreBerry ? (sourceLive?.iso || null) : null,
+    boat: chatBoatPos,
+    legProgress: momentProgress,
   });
 
   // Stop auto : le film s'arrête sur chaque nouvelle carte (NOW, et FREE hors

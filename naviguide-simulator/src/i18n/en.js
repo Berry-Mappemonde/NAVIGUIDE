@@ -577,4 +577,8 @@ export default {
   skipperExpertIciRadius:      "ici() bag radius",
   skipperExpertAlongAmp:       "MPA along the track",
   skipperExpertAmpAhead:       "MPA ahead, at least",
+  // Moment cards: fallback title and the stored entry alert
+  momentFallbackTitle: "Boat position",
+  alertNoPortOfEntryFor: "No official port of entry is known for {zone}.",
+  alertNoPortOfEntry: "No official port of entry is known for this EEZ.",
 };

@@ -19,6 +19,10 @@ import {
   displayIciFrame,
   withNowLeg,
   localizeStoredTitle,
+  localizeStoredFact,
+  localizeStoredLabel,
+  aroundWithoutShown,
+  sameShownMoment,
 } from "./iciMaintenant.js";
 
 const API = import.meta.env?.VITE_API_URL ?? "";
@@ -35,7 +39,7 @@ function Section({ testId, label, children }) {
 function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
   const { t } = useLang();
   if (!card) return null;
-  const title = localizeStoredTitle(card.title, lang);
+  const title = localizeStoredLabel(card.title, lang);
   const links = entityLinks(card.entity);
   const focusable = canFocus(card.entity) && typeof onFocus === "function";
   return (
@@ -47,7 +51,7 @@ function CardAlias({ card, testId, lang = "fr", onDismiss, onNext, onFocus }) {
       className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
     >
       {title ? <div className="text-[10px] font-semibold text-sky-200">{title}</div> : null}
-      {card.text ? <p>{card.text}</p> : null}
+      {card.text ? <p>{localizeStoredFact(card.text, lang)}</p> : null}
       {testId === "moment-now" && typeof onDismiss === "function" ? (
         <button
           type="button"
@@ -182,7 +186,7 @@ export function IciMaintenant({
   simulation = null,
   hereBody = null,
   escale = null,
-  momentNow = null,
+  momentNow: momentNowProp = null,
   momentFree = null,
   onMomentDismiss = null,
   onMomentNext = null,
@@ -200,6 +204,9 @@ export function IciMaintenant({
     else setLocalView(id);
   };
   const frame = displayIciFrame(moment, journalEntries, mode);
+  // Maintenant never repeats the card shown as Suivant, nor what it says.
+  const momentNow = momentNowProp && !sameShownMoment(momentNowProp, momentFree) ? momentNowProp : null;
+  const around = aroundWithoutShown(frame.around, momentFree);
   const shown = withNowLeg(frame.shown, nowLeg);
   const here = frame.here;
   const alerts = visibleAlerts(frame.alerts, dismissed);
@@ -304,8 +311,8 @@ export function IciMaintenant({
                         : "border-amber-400/50 bg-amber-950/40 text-amber-100"
                     }`}
                   >
-                    <span className="truncate">{localizeStoredTitle(alert.title, lang)}</span>
-                    {alert.fact ? <span className="truncate text-white/70">· {alert.fact}</span> : null}
+                    <span className="truncate">{localizeStoredLabel(alert.title, lang)}</span>
+                    {alert.fact ? <span className="truncate text-white/70">· {localizeStoredFact(alert.fact, lang)}</span> : null}
                     <button
                       type="button"
                       data-testid="ici-alert-close"
@@ -390,7 +397,7 @@ export function IciMaintenant({
                 onNext={onMomentNext}
                 onFocus={onMomentFocus}
               />
-              {(frame.around || []).map((item, i) => (
+              {around.map((item, i) => (
                 <details
                   key={`${item.kind || "around"}-${item.title || i}`}
                   data-testid="ici-around"
@@ -399,7 +406,7 @@ export function IciMaintenant({
                 >
                   <summary className="cursor-pointer list-inside">
                     {localizeStoredTitle(item.title, lang)}
-                    {item.fact ? <span className="text-slate-400"> · {item.fact}</span> : null}
+                    {item.fact ? <span className="text-slate-400"> · {localizeStoredFact(item.fact, lang)}</span> : null}
                   </summary>
                   {item.url ? (
                     <a

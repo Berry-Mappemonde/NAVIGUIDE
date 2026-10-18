@@ -26,7 +26,7 @@ import { placeLabel } from "./briefingLinks.js";
 import { formatJournalEntry } from "./journalFormat.js";
 import { haversineNm, wrapLon } from "../utils/geo.js";
 import { isLandLegNames, nmToRoundedKm } from "../utils/berryLegs.js";
-import { localizeStoredTitle } from "../components/iciMaintenant.js";
+import { factKey, localizeStoredFact, localizeStoredTitle, sameShownMoment } from "../components/iciMaintenant.js";
 import fr from "../i18n/fr.js";
 import enDict from "../i18n/en.js";
 
@@ -671,9 +671,16 @@ function finiteOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+const HASH_LIKE = /^[0-9a-f]{16,}$/i;
+
+function readable(value) {
+  const text = String(value || "").trim();
+  return HASH_LIKE.test(text) ? "" : text;
+}
+
 function officialCard(item, lane, salt, pos) {
-  const title = String(item?.title || item?.name || "").trim();
-  const text = String(item?.fact || item?.text || "").trim();
+  const title = readable(item?.title || item?.name);
+  const text = readable(item?.fact || item?.text);
   if (!title && !text) return null;
   const kind = item?.kind || (lane === "now" ? "alert" : "place");
   const label = title || text;
@@ -684,6 +691,8 @@ function officialCard(item, lane, salt, pos) {
     kind,
     title: label,
     text: text || title,
+    layer: item?.layer || null,
+    source: item?.source || null,
     entity: {
       kind,
       name: label,
@@ -694,8 +703,81 @@ function officialCard(item, lane, salt, pos) {
   };
 }
 
+/** Moments of the same day as the latest one count as « now » for the position choice. */
+export const OFFICIAL_MOMENT_WINDOW_MS = 24 * 3600 * 1000;
+
+function rowTimeMs(row) {
+  const t = Date.parse(row?.t);
+  return Number.isFinite(t) ? t : null;
+}
+
+function rowPos(row) {
+  const pos = row?.pos || row?.moment?.pos || null;
+  const lat = Number(pos?.lat);
+  const lon = Number(pos?.lon);
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+}
+
+/**
+ * The current moment: among the moments of the date window (up to `until`),
+ * the one closest to the boat. Without a known position, the latest one.
+ */
+export function pickOfficialMoment(rows, { boat = null } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const latest = list.at(-1) || null;
+  const lat = Number(boat?.lat);
+  const lon = Number(boat?.lon);
+  if (!latest || !Number.isFinite(lat) || !Number.isFinite(lon)) return latest;
+  const latestMs = rowTimeMs(latest);
+  const window = latestMs == null
+    ? [latest]
+    : list.filter((row) => {
+      const t = rowTimeMs(row);
+      return t != null && latestMs - t <= OFFICIAL_MOMENT_WINDOW_MS;
+    });
+  let best = null;
+  let bestNm = Infinity;
+  for (const row of window) {
+    const pos = rowPos(row);
+    if (!pos) continue;
+    const nm = haversineNm(pos.lat, wrapLon(pos.lon), lat, wrapLon(lon));
+    if (nm < bestNm) {
+      best = row;
+      bestNm = nm;
+    }
+  }
+  return best || latest;
+}
+
+/** Keys under which a card counts as already shown: its fact, its title, its layer. */
+function shownKeys(card) {
+  const keys = [];
+  const fact = factKey(card);
+  if (fact) keys.push(`fact:${fact}`);
+  const title = factKey({ kind: card.kind, title: card.title });
+  if (title) keys.push(`title:${title}`);
+  if (card.layer) keys.push(`layer:${card.kind}|${String(card.layer).toLowerCase()}`);
+  return keys;
+}
+
+function fallbackTitle(current, lang) {
+  const u = isEn(lang) ? enDict : fr;
+  const here = current?.moment?.here || current?.here || {};
+  const zee = here?.zee && typeof here.zee === "object" ? here.zee : null;
+  const place = readable(here?.place?.name || here?.name || zee?.name);
+  return place ? localizeStoredTitle(place, lang) : u.momentFallbackTitle;
+}
+
+function fallbackText(current, lang) {
+  const ms = rowTimeMs(current);
+  if (ms == null) return "";
+  return new Date(ms).toLocaleDateString(isEn(lang) ? "en-GB" : "fr-FR", {
+    day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+  });
+}
+
 /** Cards for the boat at `until`, from GET /voyage/official/moments. */
-export function cardsFromOfficialMoments(entries, { until = null } = {}) {
+export function cardsFromOfficialMoments(entries, { until = null, boat = null, lang = "fr" } = {}) {
   const rows = (Array.isArray(entries) ? entries : []).filter((row) => {
     if (!row?.t) return false;
     if (!until) return true;
@@ -705,7 +787,7 @@ export function cardsFromOfficialMoments(entries, { until = null } = {}) {
     return String(row.t) <= String(until);
   });
   rows.sort((a, b) => String(a.t).localeCompare(String(b.t)));
-  const current = rows.at(-1);
+  const current = pickOfficialMoment(rows, { boat });
   if (!current) return { now: null, freeQueue: [] };
   const pos = current.pos || {};
   const salt = current.signature || current.t;
@@ -714,19 +796,24 @@ export function cardsFromOfficialMoments(entries, { until = null } = {}) {
     ...(Array.isArray(current.around) ? current.around : []),
     ...(Array.isArray(current.changes) ? current.changes : []),
   ];
-  const alert = alerts.find((item) => item && (item.title || item.fact || item.name)) || null;
+  const alert = alerts.find((item) => item && (readable(item.title) || readable(item.fact) || readable(item.name))) || null;
   const now = alert ? officialCard(alert, "now", salt, pos) : null;
+  if (now) now.text = localizeStoredFact(now.text, lang);
   const freeQueue = [];
-  const seen = new Set();
+  // One card per fact, per title and per layer; never the Now card again.
+  const seen = new Set(now ? shownKeys(now) : []);
   for (const item of around) {
     const card = officialCard(item, "free", salt, pos);
-    if (!card || seen.has(card.key)) continue;
-    seen.add(card.key);
+    if (!card) continue;
+    const keys = shownKeys(card);
+    if (keys.some((key) => seen.has(key))) continue;
+    keys.forEach((key) => seen.add(key));
+    card.text = localizeStoredFact(card.text, lang);
     freeQueue.push(card);
   }
   if (!now && !freeQueue.length) {
     const fallback = officialCard(
-      { title: String(salt), fact: String(current.t), kind: "place" },
+      { title: fallbackTitle(current, lang), fact: fallbackText(current, lang), kind: "place" },
       "free",
       salt,
       pos,
@@ -745,10 +832,40 @@ export function pageOfficialCards(built, { hideNow = false, freeIndex = 0 } = {}
   };
 }
 
+/** A port card shows only within this distance of that port… */
+export const PORT_CARD_NEAR_NM = 30;
+/** …or while leaving it / reaching it (sailed / remaining on the leg). */
+export const PORT_CARD_PHASE_NM = 30;
+
+function isPortCard(card) {
+  return card?.kind === "escale" || card?.type === "escale-out" || card?.kind === "port" || card?.type === "port";
+}
+
+/**
+ * Whether a port / stopover card still describes where the boat is: near the
+ * port, or in the departure / arrival phase of that port. Other cards: true.
+ * When neither position nor progress is known, nothing is hidden.
+ */
+export function portCardIsCurrent(card, { boat = null, leg = null } = {}) {
+  if (!isPortCard(card)) return true;
+  const name = card?.entity?.name || card?.entity?.rawName || null;
+  const done = Number(leg?.doneNm);
+  const left = Number(leg?.leftNm);
+  const phaseKnown = Number.isFinite(done) || Number.isFinite(left);
+  if (name && leg?.fromStop === name && Number.isFinite(done) && done <= PORT_CARD_PHASE_NM) return true;
+  if (name && leg?.toStop === name && Number.isFinite(left) && left <= PORT_CARD_PHASE_NM) return true;
+  const boatKnown = Number.isFinite(Number(boat?.lat)) && Number.isFinite(Number(boat?.lon));
+  const portKnown = Number.isFinite(Number(card?.entity?.lat)) && Number.isFinite(Number(card?.entity?.lon));
+  if (boatKnown && portKnown) return cardEntityNmFromBoat(card, boat) <= PORT_CARD_NEAR_NM;
+  return !phaseKnown;
+}
+
 /**
  * Now / Free slots. The official moment for this position fills Now.
  * A live safety alert still comes first. The synthetic stopover card does
  * not cover that moment, and does not come back after it is dismissed.
+ * A port card far from the boat is not shown, and Now never repeats the
+ * card already shown as Next.
  */
 export function selectDisplayedMoments({
   eventNow = null,
@@ -756,15 +873,21 @@ export function selectDisplayedMoments({
   officialNow = null,
   officialHasNow = false,
   officialFree = null,
+  boat = null,
+  leg = null,
 } = {}) {
-  const safety = eventNow
-    && eventNow.severity === "alert"
-    && eventNow.kind !== "escale"
-    && eventNow.type !== "escale-out"
-    ? eventNow
+  const current = (card) => (card && portCardIsCurrent(card, { boat, leg }) ? card : null);
+  const liveNow = current(eventNow);
+  const safety = liveNow
+    && liveNow.severity === "alert"
+    && liveNow.kind !== "escale"
+    && liveNow.type !== "escale-out"
+    ? liveNow
     : null;
-  const now = safety || (officialHasNow ? (officialNow || null) : (eventNow || officialNow || null));
-  return { now, free: eventFree || officialFree || null };
+  const free = current(eventFree) || current(officialFree) || null;
+  let now = safety || (officialHasNow ? current(officialNow) : (liveNow || current(officialNow) || null));
+  if (now && free && sameShownMoment(now, free)) now = null;
+  return { now, free };
 }
 
 export function nowTtlMs({ mode, playing }) {

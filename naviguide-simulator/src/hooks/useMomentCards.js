@@ -22,7 +22,16 @@ export function useMomentCards({
   leg = null,
   officialMoments = null,
   nowIso = null,
+  boat = null,
+  legProgress = null,
 }) {
+  // Rounded so a moving boat does not rebuild the cards on every frame.
+  const boatLat = Number.isFinite(Number(boat?.lat)) ? Math.round(Number(boat.lat) * 100) / 100 : null;
+  const boatLon = Number.isFinite(Number(boat?.lon)) ? Math.round(Number(boat.lon) * 100) / 100 : null;
+  const boatAt = useMemo(
+    () => (boatLat == null || boatLon == null ? null : { lat: boatLat, lon: boatLon }),
+    [boatLat, boatLon],
+  );
   const [state, setState] = useState(() => emptyMoments());
   const inputRef = useRef({ events, bag, filmCum, playing, mode, lang, written, legId, leg });
   inputRef.current = { events, bag, filmCum, playing, mode, lang, written, legId, leg };
@@ -48,8 +57,8 @@ export function useMomentCards({
   }, [enabled]);
 
   const official = useMemo(
-    () => cardsFromOfficialMoments(officialMoments, { until: nowIso }),
-    [officialMoments, nowIso],
+    () => cardsFromOfficialMoments(officialMoments, { until: nowIso, boat: boatAt, lang }),
+    [officialMoments, nowIso, boatAt, lang],
   );
   const [officialUi, setOfficialUi] = useState({ hideNow: false, freeIndex: 0 });
   const officialKey = `${official.now?.key || ""}|${official.freeQueue.map((card) => card.key).join("|")}`;
@@ -81,6 +90,8 @@ export function useMomentCards({
     officialNow,
     officialHasNow: Boolean(enabled && official.now),
     officialFree,
+    boat: boatAt,
+    leg: legProgress,
   });
   return {
     now: shown.now,

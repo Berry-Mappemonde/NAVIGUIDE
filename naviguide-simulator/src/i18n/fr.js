@@ -577,4 +577,8 @@ export default {
   skipperExpertIciRadius:      "Rayon du sac ici()",
   skipperExpertAlongAmp:       "AMP sur le trait",
   skipperExpertAmpAhead:       "AMP devant, au moins",
+  // Moment cards: fallback title and the stored entry alert
+  momentFallbackTitle: "Position du bateau",
+  alertNoPortOfEntryFor: "Aucun port d’entrée officiel n’est connu pour {zone}.",
+  alertNoPortOfEntry: "Aucun port d’entrée officiel n’est connu pour cette ZEE.",
 };
