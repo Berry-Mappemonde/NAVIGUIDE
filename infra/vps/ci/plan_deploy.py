@@ -44,7 +44,12 @@ def site_for_path(path: str) -> str | None:
         return "naviguide"
     if path.startswith("infra/vps/naviguide/"):
         name = Path(path).name
-        if "simulator" in name:
+        if "simulator" in name or name in (
+            "naviguide-film-front.service",
+            "deploy-simulator.sh",
+            "simulator.env.example",
+            "publish-simulator-from-mac.sh",
+        ):
             return "simulator"
         return "naviguide"
     return None
