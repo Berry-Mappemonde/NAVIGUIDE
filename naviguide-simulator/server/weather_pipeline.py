@@ -22,6 +22,7 @@ import time
 from typing import Any, Callable, Iterable, Optional
 
 from saildocs import last_ready_cycle, to_iso
+from longitude import wrap_lon
 
 log = logging.getLogger("naviguide-simulator.weather")
 
@@ -44,15 +45,6 @@ def bind_weather_transport(transport) -> None:
 
 def weather_http_transport():
     return _http_transport
-
-
-def wrap_lon(lon: float) -> float:
-    x = float(lon)
-    while x > 180.0:
-        x -= 360.0
-    while x < -180.0:
-        x += 360.0
-    return x
 
 
 def weather_cell(lat: float, lon: float) -> tuple[int, int]:

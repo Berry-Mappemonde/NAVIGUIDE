@@ -19,6 +19,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from longitude import delta_lon, wrap_lon, wrap_lon_into
+
 USER_AGENT = "NAVIGUIDE-simulator/0.2 (Berry-Mappemonde expedition)"
 
 STAC_SEARCH = "https://stac.dataspace.copernicus.eu/v1/search"
@@ -367,21 +369,11 @@ def attach_derived_from_science(satellites: dict, science_items: list | None) ->
 
 def hycom_lon(lon: float) -> float:
     """Wrap geographic longitude into the RTOFS/HYCOM 74–434 range."""
-    x = float(lon)
-    while x < RTOFS_HYCOM_WEST:
-        x += 360.0
-    while x >= RTOFS_HYCOM_EAST:
-        x -= 360.0
-    return x
+    return wrap_lon_into(lon, RTOFS_HYCOM_WEST)
 
 
 def geo_from_hycom(h_lon: float) -> float:
-    x = float(h_lon)
-    while x > 180.0:
-        x -= 360.0
-    while x < -180.0:
-        x += 360.0
-    return x
+    return wrap_lon(h_lon)
 
 
 def rtofs_is_fill(value: Any) -> bool:
@@ -621,11 +613,7 @@ def _rtofs_lookup_sync(url: str, lat: float, lon: float) -> tuple[float, float] 
             if rtofs_is_fill(u) or rtofs_is_fill(v):
                 continue
             dlat = float(lat_w[jj, ii]) - lat
-            dlon = geo_from_hycom(float(lon_w[jj, ii])) - lon
-            while dlon > 180:
-                dlon -= 360
-            while dlon < -180:
-                dlon += 360
+            dlon = delta_lon(lon, geo_from_hycom(float(lon_w[jj, ii])))
             dist = dlat * dlat + dlon * dlon
             if best_d is None or dist < best_d:
                 best_d = dist

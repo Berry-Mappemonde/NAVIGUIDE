@@ -5,7 +5,7 @@ import {
   FILM_ZOOM_MAX,
   FILM_ZOOM_MIN,
 } from "../engine/replay.js";
-import { haversineNm, unwrapLon } from "../utils/geo.js";
+import { haversineNm, lerpLon, unwrapLon } from "../utils/geo.js";
 
 /** Horloge UI React : assez pour la barre, trop rare pour faire sauter la caméra. */
 export const FILM_UI_MS = 80;
@@ -164,7 +164,7 @@ export function filmChapterCenter(leg) {
   const bLat = Number(leg?.toLat);
   const bLon = Number(leg?.toLon);
   if (![aLat, aLon, bLat, bLon].every(Number.isFinite)) return null;
-  return [(aLat + bLat) / 2, aLon + (unwrapLon(aLon, bLon) - aLon) / 2];
+  return [(aLat + bLat) / 2, lerpLon(aLon, bLon, 0.5)];
 }
 
 /**
@@ -349,12 +349,11 @@ export function lerpFilmSample(a, b, u) {
   if (!a) return b || null;
   if (!b) return a;
   const lon0 = Number(a.lon);
-  const lon1 = unwrapLon(lon0, Number(b.lon));
   const filmA = Number(a.filmNm);
   const filmB = Number(b.filmNm);
   return {
     lat: Number(a.lat) + (Number(b.lat) - Number(a.lat)) * t,
-    lon: lon0 + (lon1 - lon0) * t,
+    lon: lerpLon(lon0, Number(b.lon), t),
     heading: lerpHeading(a.heading, b.heading, t),
     chapterIdx: t < 1 ? a.chapterIdx : b.chapterIdx,
     filmNm: Number.isFinite(filmA) && Number.isFinite(filmB) ? filmA + (filmB - filmA) * t : (Number.isFinite(filmB) ? filmB : filmA),

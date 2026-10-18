@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import math
 from typing import Any, Iterable
 
+from longitude import lon_east_of
+
 
 GRID_CELL_DEG = 10.0
 GRID_WIDTH = int(360 / GRID_CELL_DEG)
@@ -79,11 +81,6 @@ def feature_envelope(feature: dict) -> Bbox | None:
         return None
     lons, lats = zip(*positions)
     return Bbox(min(lons), min(lats), max(lons), max(lats))
-
-
-def _normal_lon(lon: float) -> float:
-    result = (lon + 180.0) % 360.0 - 180.0
-    return 180.0 if result == -180.0 and lon > 0 else result
 
 
 def _lon_ranges(west: float, east: float) -> list[tuple[float, float]]:
@@ -190,10 +187,7 @@ def simplify_feature(feature: dict, zoom: float) -> dict:
 
 
 def _relative_lon(lon: float, west: float) -> float:
-    value = _normal_lon(lon)
-    while value < west:
-        value += 360.0
-    return value
+    return lon_east_of(lon, west)
 
 
 def _cluster_points(points: list[dict], bbox: Bbox, budget: int, zoom: float, catalog: str) -> list[dict]:
