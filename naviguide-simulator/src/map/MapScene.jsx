@@ -35,10 +35,6 @@ export function MapScene({
   const controllerRef = useRef(null);
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(0);
-  const weather = useWeatherPipeline({ grib: scene.grib });
-  const gribCorridorReady = weather.enabled
-    ? weather.layers.gribWind === "ready"
-    : scene.gribStatus === "ready";
   const callbacksRef = useRef({});
   callbacksRef.current = {
     onReady,
@@ -96,6 +92,10 @@ export function MapScene({
     drawing: scene.drawingMode,
     t: scene.t,
   });
+  const weather = useWeatherPipeline({ grib: scene.grib, climatology: climoLayer });
+  const gribCorridorReady = weather.enabled
+    ? weather.layers.gribWind === "ready"
+    : scene.gribStatus === "ready";
 
   useGribCorridorLayer(mapRef, {
     grib: scene.grib,

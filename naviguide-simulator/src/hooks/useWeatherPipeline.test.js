@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { gribWindLayerState, productLayerState, weatherPipelineEnabled } from "./useWeatherPipeline.js";
+import { climatologyLayerState, gribWindLayerState, productLayerState, weatherPipelineEnabled } from "./useWeatherPipeline.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => readFileSync(join(here, name), "utf8");
@@ -42,5 +42,11 @@ describe("useWeatherPipeline", () => {
     assert.equal(productLayerState({ status: "pending", refreshing: true }, true), "pending");
     assert.equal(productLayerState({ status: "error", hs: 1.1 }, true), "unavailable");
     assert.equal(productLayerState({ status: "unavailable" }, true), "unavailable");
+    assert.equal(climatologyLayerState({ loading: true, counts: null, error: null }, false), null);
+    assert.equal(climatologyLayerState({ loading: true, counts: null, error: null }, true), "pending");
+    assert.equal(climatologyLayerState({ loading: false, counts: { wind: 4 }, error: null }, true), "ready");
+    assert.equal(climatologyLayerState({ loading: false, counts: null, error: "down" }, true), "unavailable");
+    assert.match(scene, /climatology: climoLayer/);
+    assert.match(hook, /blocksMap: false/);
   });
 });

@@ -1,4 +1,7 @@
 """Parité : drapeau éteint (ancien chemin) et drapeau allumé servent les mêmes valeurs."""
+import inspect
+
+import climatology_atlas
 from weather_pipeline import get_async_weather_queue, get_pipeline, route_snapshot
 
 WAVE_OPENMETEO = {
@@ -90,3 +93,40 @@ def test_copernicus_current_parity(monkeypatch):
     on = _serve(monkeypatch, "1", "current", CURRENT_COPERNICUS)
     assert off == on == CURRENT_COPERNICUS
     assert get_async_weather_queue().cached_status("current", 46.15, -1.16) == "ready"
+
+
+CLIMO_POINT = {
+    "kind": "climatology",
+    "month": 6,
+    "period": "1980-2020",
+    "wave": {"hs_p50_m": 1.4, "hs_p90_m": 2.8},
+    "current": {"speed_knots": 0.4, "direction_to_deg": 270},
+    "cyclone": {"nearby": 0, "tracks_in_month": 4},
+}
+
+
+def _climo_point(monkeypatch, flag):
+    monkeypatch.setenv("NAVIGUIDE_WEATHER_PIPELINE", flag)
+    climatology_atlas.reset_atlas_cache()
+    get_pipeline().clear()
+    seen = []
+
+    def fake(url, params, client=None):
+        seen.append(url)
+        return dict(CLIMO_POINT)
+
+    monkeypatch.setattr(climatology_atlas, "_get_json", fake)
+    payload = climatology_atlas.fetch_atlas_point(46.15, -1.16, 6)
+    assert payload == CLIMO_POINT
+    assert seen == [f"{climatology_atlas.bi_base()}/climatology/point"]
+    return payload, seen[0]
+
+
+def test_climatology_point_parity_keeps_public_bi_api(monkeypatch):
+    assert "https://blueintelligence.online/api" in inspect.getsource(climatology_atlas.bi_base)
+    off, url_off = _climo_point(monkeypatch, "0")
+    on, url_on = _climo_point(monkeypatch, "1")
+    assert off == on == CLIMO_POINT
+    assert url_off == url_on
+    assert url_on.endswith("/climatology/point")
+    assert get_async_weather_queue().cached_status("bi-climatology-m6", 46.15, -1.16) == "ready"

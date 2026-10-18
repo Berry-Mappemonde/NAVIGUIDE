@@ -169,6 +169,55 @@ def _get_json(url: str, params: dict, client: httpx.Client | None = None) -> Any
             http.close()
 
 
+def _atlas_params(lat: float, lon: float, month: int, dest_lat, dest_lon, day) -> dict:
+    params: dict[str, Any] = {"lat": lat, "lon": lon, "month": int(month)}
+    if dest_lat is not None and dest_lon is not None:
+        params["dest_lat"] = dest_lat
+        params["dest_lon"] = dest_lon
+    if day is not None:
+        params["day"] = day
+    return params
+
+
+def _read_atlas_point(params: dict, client: httpx.Client | None) -> tuple[Optional[dict], float]:
+    """GET {BI}/climatology/point. Retourne (payload, durée en secondes)."""
+    started = time.monotonic()
+    try:
+        payload = _get_json(f"{bi_base()}/climatology/point", params, client)
+    except Exception as exc:
+        log.info("atlas point down: %s", exc)
+        return None, 0.0
+    return payload, time.monotonic() - started
+
+
+def _finish_point(payload: Optional[dict], elapsed: float) -> Optional[dict]:
+    if payload is None:
+        _mark_dead()
+        return None
+    if elapsed > SLOW_S:
+        log.info("atlas point slow (%.1fs): zone fallback for %ss", elapsed, DEAD_S)
+        _mark_dead()
+    return payload
+
+
+def _point_provider(month: int, day, dest_lat, dest_lon) -> str:
+    name = f"bi-climatology-m{int(month)}"
+    if day is not None:
+        name += f"-d{int(day)}"
+    if dest_lat is not None and dest_lon is not None:
+        name += f"-to-{float(dest_lat):.4f},{float(dest_lon):.4f}"
+    return name
+
+
+def _via_pipeline(provider: str, lat: float, lon: float, loader) -> Optional[dict]:
+    from weather_pipeline import get_async_weather_queue, route_snapshot
+
+    route_snapshot(provider, float(lat), float(lon), loader)
+    return get_async_weather_queue().wait_layer(
+        provider, float(lat), float(lon), timeout=TIMEOUT_S + 0.5,
+    )
+
+
 def fetch_atlas_point(
     lat: float,
     lon: float,
@@ -180,23 +229,23 @@ def fetch_atlas_point(
 ) -> Optional[dict]:
     if atlas_is_dead():
         return None
-    params: dict[str, Any] = {"lat": lat, "lon": lon, "month": int(month)}
-    if dest_lat is not None and dest_lon is not None:
-        params["dest_lat"] = dest_lat
-        params["dest_lon"] = dest_lon
-    if day is not None:
-        params["day"] = day
-    started = time.monotonic()
-    try:
-        payload = _get_json(f"{bi_base()}/climatology/point", params, client)
-    except Exception as exc:
-        log.info("atlas point down: %s", exc)
-        _mark_dead()
-        return None
-    if time.monotonic() - started > SLOW_S:
-        log.info("atlas point slow (%.1fs): zone fallback for %ss", time.monotonic() - started, DEAD_S)
-        _mark_dead()
-    return payload
+    params = _atlas_params(lat, lon, month, dest_lat, dest_lon, day)
+    from weather_pipeline import provider_routed
+
+    if provider_routed("bi-climatology"):
+        def loader():
+            payload, elapsed = _read_atlas_point(params, client)
+            if payload is None:
+                raise RuntimeError("atlas_down")
+            return {"payload": payload, "elapsed": elapsed}
+
+        view = _via_pipeline(_point_provider(month, day, dest_lat, dest_lon), lat, lon, loader)
+        if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
+            _mark_dead()
+            return None
+        return _finish_point(view["payload"], float(view.get("elapsed") or 0.0))
+    payload, elapsed = _read_atlas_point(params, client)
+    return _finish_point(payload, elapsed)
 
 
 def fetch_atlas_crossings(
@@ -211,8 +260,32 @@ def fetch_atlas_crossings(
     }
     if day is not None:
         params["day"] = day
-    try:
+    from weather_pipeline import provider_routed
+
+    def _read():
         return _get_json(f"{bi_base()}/climatology/crossings", params, client)
+
+    if provider_routed("bi-climatology"):
+        provider = f"bi-climatology-crossings-m{int(month)}"
+        if day is not None:
+            provider += f"-d{int(day)}"
+
+        def loader():
+            try:
+                payload = _read()
+            except Exception as exc:
+                log.info("atlas crossings down: %s", exc)
+                raise
+            if not isinstance(payload, dict):
+                raise RuntimeError("atlas_down")
+            return {"payload": payload}
+
+        view = _via_pipeline(provider, lat1, lon1, loader)
+        if not view or view.get("status") != "ready" or not isinstance(view.get("payload"), dict):
+            return None
+        return view["payload"]
+    try:
+        return _read()
     except Exception as exc:
         log.info("atlas crossings down: %s", exc)
         return None

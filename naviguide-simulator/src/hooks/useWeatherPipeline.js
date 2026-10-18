@@ -30,18 +30,31 @@ export function productLayerState(product, enabled) {
   return "unavailable";
 }
 
+/** Atlas Blue Intelligence. Null when the flag is off. A cut atlas is unavailable, the map does not wait. */
+export function climatologyLayerState(climo, enabled) {
+  if (!enabled) return null;
+  if (!climo) return "pending";
+  if (climo.error) return "unavailable";
+  if (climo.loading || climo.counts == null) return "pending";
+  return "ready";
+}
+
 /**
  * First render never waits on a provider: the state is derived, and blocksMap stays false.
  * With the flag off, layer states are null and the existing paths are left alone.
  */
-export function useWeatherPipeline({ grib, wave, current, enabled } = {}) {
+export function useWeatherPipeline({ grib, wave, current, climatology, enabled } = {}) {
   const active = enabled ?? weatherPipelineEnabled();
   const gribWind = useMemo(() => gribWindLayerState(grib, active), [grib, active]);
   const waveState = useMemo(() => productLayerState(wave, active), [wave, active]);
   const currentState = useMemo(() => productLayerState(current, active), [current, active]);
+  const climatologyState = useMemo(
+    () => climatologyLayerState(climatology, active),
+    [climatology, active],
+  );
   return {
     enabled: active,
     blocksMap: false,
-    layers: { gribWind, wave: waveState, current: currentState },
+    layers: { gribWind, wave: waveState, current: currentState, climatology: climatologyState },
   };
 }

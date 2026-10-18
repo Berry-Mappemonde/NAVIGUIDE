@@ -495,6 +495,7 @@ ASYNC_PROVIDERS = {
     "openmeteo-gfs-wave",
     "current",
     "noaa-rtofs",
+    "bi-climatology",
 }
 
 
