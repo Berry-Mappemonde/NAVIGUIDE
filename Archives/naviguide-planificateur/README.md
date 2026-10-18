@@ -1,3 +1,7 @@
+# Ancien planificateur
+
+Ce dossier est l'ancien planificateur (`www.naviguide.fr`, `csw6hpki.run.complete.dev`). L'adresse `https://csw6hpki.run.complete.dev` est celle de l'époque. Le site public ne le sert plus. Le site public est https://naviguide.fr.
+
 # 🧭 NAVIGUIDE — Berry-Mappemonde Expedition
 
 > **AI-powered maritime navigation assistant** for the Berry-Mappemonde circumnavigation — 36,000+ nautical miles across 45+ stopovers, powered by European space technologies (Copernicus) and multi-agent AI orchestration.

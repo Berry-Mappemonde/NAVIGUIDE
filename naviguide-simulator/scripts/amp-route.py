@@ -36,7 +36,7 @@ from ici_engine import (  # noqa: E402
 from toponyms import origin_name  # noqa: E402
 
 DEFAULT_API = "http://127.0.0.1:8010"
-FALLBACK_API = "https://simulator.naviguide.fr"
+FALLBACK_API = "https://naviguide.fr"
 DEFAULT_BI = "https://blueintelligence.online/api"
 ALONG_NM = 15.0
 SAMPLE_NM = 12.0

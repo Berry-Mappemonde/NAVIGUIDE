@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Prépare la clé SSH du secret GitHub (à lancer sur le runner).
-# Variables : VPS_SSH_KEY (obligatoire), VPS_HOST (défaut ubuntu@135.125.226.16)
+# Variables : VPS_SSH_KEY et VPS_HOST, tous deux obligatoires.
+# VPS_HOST = naviguide@13.140.164.185. Pas de défaut : un secret vide
+# ne doit pas déployer sur l'OVH.
 set -euo pipefail
 
 if [ -z "${VPS_SSH_KEY:-}" ]; then
@@ -8,7 +10,10 @@ if [ -z "${VPS_SSH_KEY:-}" ]; then
   exit 1
 fi
 
-VPS_HOST="${VPS_HOST:-ubuntu@135.125.226.16}"
+if [ -z "${VPS_HOST:-}" ]; then
+  echo "Secret VPS_HOST manquant. Valeur attendue : naviguide@13.140.164.185." >&2
+  exit 1
+fi
 HOST="${VPS_HOST##*@}"
 KEY_FILE="${HOME}/.ssh/github-deploy-vps"
 
@@ -28,7 +33,7 @@ fi
 {
   echo "VPS_HOST=$VPS_HOST"
   echo "VPS_SSH_IDENTITY=$KEY_FILE"
-  echo "REMOTE_APP=/home/ubuntu/blue-intelligence-map"
+  echo "REMOTE_APP=/home/naviguide/naviguide"
 } >> "${GITHUB_ENV:-/dev/stdout}"
 
 echo "SSH prêt pour $VPS_HOST"

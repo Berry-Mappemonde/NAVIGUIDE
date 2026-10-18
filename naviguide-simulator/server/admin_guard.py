@@ -155,9 +155,9 @@ def cors_origins() -> list[str]:
     if raw:
         return [o.strip() for o in raw.split(",") if o.strip()]
     return [
-        "https://simulator.naviguide.fr",
-        "https://www.naviguide.fr",
         "https://naviguide.fr",
+        "https://www.naviguide.fr",
+        "https://simulator.naviguide.fr",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
         "http://localhost:5173",

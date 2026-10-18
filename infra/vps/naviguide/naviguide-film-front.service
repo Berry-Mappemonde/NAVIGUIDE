@@ -4,10 +4,10 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/blue-intelligence-map/naviguide-simulator
-EnvironmentFile=-/home/ubuntu/.config/naviguide/simulator.env
-ExecStart=/home/ubuntu/blue-intelligence-map/naviguide-simulator/.venv/bin/uvicorn server.film_front:app --host 127.0.0.1 --port 8011
+User=naviguide
+WorkingDirectory=/home/naviguide/naviguide/naviguide-simulator
+EnvironmentFile=-/home/naviguide/.config/naviguide/simulator.env
+ExecStart=/home/naviguide/naviguide/naviguide-simulator/.venv/bin/uvicorn server.film_front:app --host 127.0.0.1 --port 8011
 Restart=always
 RestartSec=3
 TimeoutStopSec=30

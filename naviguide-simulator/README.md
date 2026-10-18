@@ -1,11 +1,11 @@
 # NAVIGUIDE simulator
 
-**Off-production** subfolder: the Berry-Mappemonde expedition cockpit <!-- pragma: allowlist secret -->
+NAVIGUIDE is live at **https://naviguide.fr**: the Berry-Mappemonde expedition cockpit <!-- pragma: allowlist secret -->
 (Leaflet map, layer buttons, moving boat, searoute, polars).
+Every merge on `main` deploys this version.
 
-`www.naviguide.fr` and `blueintelligence.online` are **not** the same
-site. Planned publication: **https://simulator.naviguide.fr** (free
-subdomain, same VPS, separate nginx).
+The Blue Intelligence API stays at https://blueintelligence.online/api
+(separate repository and server).
 
 FR plan: [`docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md`](../docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.md) (v3.0)
 EN plan: [`docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md`](../docs/archives/PLAN_IMPLEMENTATION_NAVIGUIDE_SIMULATOR_ETAPE1.en.md)

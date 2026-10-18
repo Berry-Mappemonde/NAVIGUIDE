@@ -1,13 +1,13 @@
 [Unit]
-Description=NAVIGUIDE simulator — searoute + polar without chat (simulator.naviguide.fr)
+Description=NAVIGUIDE simulator — searoute + polar without chat (naviguide.fr)
 After=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/blue-intelligence-map/naviguide-simulator
-EnvironmentFile=-/home/ubuntu/.config/naviguide/simulator.env
-ExecStart=/home/ubuntu/blue-intelligence-map/naviguide-simulator/.venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8010
+User=naviguide
+WorkingDirectory=/home/naviguide/naviguide/naviguide-simulator
+EnvironmentFile=-/home/naviguide/.config/naviguide/simulator.env
+ExecStart=/home/naviguide/naviguide/naviguide-simulator/.venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8010
 Restart=always
 RestartSec=3
 TimeoutStartSec=120

@@ -3,7 +3,7 @@
 This manual lists **every button** on screen, in one line each.
 No jargon. The app is **not for navigation**.
 
-Live: [simulator.naviguide.fr](https://simulator.naviguide.fr).
+Live: [simulator.naviguide.fr](https://naviguide.fr).
 French version: [MANUEL_UTILISATEUR.md](MANUEL_UTILISATEUR.md).
 
 On first launch a **Not for navigation** window appears.

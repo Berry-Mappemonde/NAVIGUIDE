@@ -16,7 +16,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from admin_guard import require_admin
 from polar_engine import PolarData, parse_polar_csv, parse_polar_excel, parse_polar_pdf
 
-POLAR_DATA_DIR = Path(__file__).resolve().parent / "polar_data"
+POLAR_DATA_DIR = Path(os.environ.get(
+    "NAVIGUIDE_POLAR_DIR",
+    str(Path(__file__).resolve().parent / "polar_data"),
+))
 POLAR_DATA_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_POLAR_EXPEDITION = "berry-mappemonde-2026"
 DEFAULT_POLAR_NAME = "Leopard 46"

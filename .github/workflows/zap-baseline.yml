@@ -20,10 +20,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: ZAP baseline sur https://simulator.naviguide.fr
+      - name: ZAP baseline sur https://naviguide.fr
         uses: zaproxy/action-baseline@v0.15.0
         with:
-          target: "https://simulator.naviguide.fr"
+          target: "https://naviguide.fr"
           rules_file_name: ".zap/rules.tsv"
           cmd_options: "-a -j"
           fail_action: false
