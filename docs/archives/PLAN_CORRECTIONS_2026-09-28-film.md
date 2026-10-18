@@ -3,7 +3,7 @@
 Batch décidé par le porteur le 28 sept. au matin, après sa revue globale de la pile #386 (mergée le
 28 sept. 06:32 UTC) : *« il faut prévoir un plus gros batch centré sur l'amélioration du film et du
 discours »*. Les constats détaillés, la transcription intégrale du film servi, les mesures de cinématique
-et le gabarit d'étape validé sont dans **`docs/FILM_DISCOURS_ETAT_2026-09-28.md`** (à lire en entier
+et le gabarit d'étape validé sont dans **`naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md`** (à lire en entier
 avant tout lot — c'est la revue du porteur). Ce plan en tire les causes (lues sur `main` @ `68970d2`),
 les décisions et les lots. Les lots RH1 et RH2 du plan s5 (`PLAN_CORRECTIONS_2026-09-27-s5.md`) sont
 gardés en queue de ce batch, inchangés.

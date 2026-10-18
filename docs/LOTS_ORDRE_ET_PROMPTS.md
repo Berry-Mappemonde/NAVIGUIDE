@@ -1708,7 +1708,7 @@ Interdits : des données factices ou une valeur de vent inventée quand ERA5 man
 ### Film 1 — « le film raconte la route » (revue du porteur du 28 septembre : RG16, RG1 → RG15, puis RH1, RH2)
 
 Batch décidé le 28 sept. après la revue globale de la pile #386 (mergée). Constats, transcription du
-film servi, mesures de cinématique et gabarit d'étape validé : `docs/FILM_DISCOURS_ETAT_2026-09-28.md`.
+film servi, mesures de cinématique et gabarit d'étape validé : `naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md`.
 Causes (fichier:ligne sur `main` @ `68970d2`), décisions D1 → D10 et détail des lots :
 `docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md`. Ordre d'exécution : la CI utile d'abord (RG16), le récit (RG1 → RG10),
 la cinématique (RG12, RG13), la carte au dézoom (RG15), les ancres au bon mot (RG14), puis RH1 et RH2 du plan s5.
@@ -1731,7 +1731,7 @@ Interdits : affaiblir une assertion pour passer au vert ; supprimer un spec sans
 
 <!-- LOT id="RG1" title="Faits justes : départ lu sur l'horloge, le vol est un vol, la route est la route" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier (c'est la revue du porteur : transcription § 1, défauts § 3, gabarit § 4), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG1 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md en entier (c'est la revue du porteur : transcription § 1, défauts § 3, gabarit § 4), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG1 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG1 — Faits justes (revue du 28 sept., défauts A1, A2, A5 : « Puis, le 18 mai, départ vers Ajaccio » alors que l'horloge a le bateau en mer depuis le 15 mai — moment « jour 1 » le 16 mai à 45,1° N / 4,7° W ; le vol Cayenne ⇄ Saint-Pierre raconté comme une traversée puis « départ vers Papeete » depuis Saint-Pierre ; « Départ vers La Rochelle » pour 227 km par la route).
 Objectif : chaque date et chaque lieu du film viennent de l'horloge du stock ; un vol est raconté comme un vol (le bateau reste au port) ; la navigation suivante repart du port où le bateau est resté ; Saint-Maur → La Rochelle est dit « par la route ». Les ancres (chapter_anchors) placent le bateau au port quand la voix dit « départ ».
@@ -1746,7 +1746,7 @@ Interdits : une date ou un lieu qui ne vient pas de l'horloge ; garder « 3 jour
 
 <!-- LOT id="RG2" title="Nommer ce qu'on traverse : eaux, côtes, détroits, ports longés, cap" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG2 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG2 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG2 — Nommer ce qu'on traverse (revue du 28 sept., défauts B1, B2, B6, D4 : la voix dit « 3 zones économiques exclusives traversées » ×7 alors que le stock a 134 entrées de ZEE datées et nommées — eaux espagnoles le 16 mai, portugaises le 18, marocaines le 21, italiennes le 24, françaises le 25… — ; 44 ports longés jamais dits : Camariñas, Muxía, Cascais, Tanger, Algeciras, Ceuta, Almería, Mahón, Calvi ; aucun cap).
 Objectif : le film nomme, dans l'ordre et à la date de l'horloge, les eaux traversées, les côtes, détroits, îles et ports longés, et le cap au départ — en français parlé (« le 16 mai, les eaux espagnoles ; le bateau longe la Galice, Camariñas puis Muxía »), jamais « zone économique exclusive » ni un nom brut de source.
@@ -1761,7 +1761,7 @@ Interdits : un nom de lieu qui ne vient pas du stock (ZEE, ports, WPI) ; un comp
 
 <!-- LOT id="RG3" title="AMP réelles et projets Blue Intelligence à proximité du bateau" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D4, D5) et le « RG3 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D4, D5) et le « RG3 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG3 — AMP réelles et projets Blue Intelligence (revue du 28 sept., défauts A3, B3, B4, D1 : la seule « AMP » dite est « Pertuis Charentais - Pétoncles - Center Pertuis Breton deposit », une zone de dépôt de pétoncles ; la couche des projets Blue Intelligence existe dans le moteur « ici » mais 0 perle du voyage sur 770 la porte — le porteur veut entendre « les projets desquels le bateau passe à proximité »).
 Objectif : la voix nomme les aires marines protégées réelles et les projets Blue Intelligence à proximité du bateau, quand il y est, avec leur nom parlé et la distance ; jamais une zone de réglementation de pêche ni un titre de jeu de données.
@@ -1776,7 +1776,7 @@ Interdits : une AMP ou un projet qui ne vient pas des couches BI / WDPA du sac ;
 
 <!-- LOT id="RG4" title="La climatologie racontée : changements notables, honnêteté climatologie / mesuré" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D6) et le « RG4 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D6) et le « RG4 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG4 — La climatologie racontée (revue du 28 sept., défauts B5, D5 : le stock a le régime, le vent en nœuds et la direction par sommet de l'horloge, la voix n'en dit rien — le porteur veut entendre « les changements de climatologie notables » : où commencent les alizés, où sont les calmes, quand le vent tourne).
 Objectif : le film dit, daté et positionné, chaque changement notable du vent attendu ou mesuré sur la route (« le 14 juin, au sud du Cap-Vert, les alizés de nord-est s'installent : quinze nœuds de saison »), en disant sa nature — « de saison » pour la climatologie, « mesuré » pour l'hindcast — et sans jamais inventer un chiffre quand la source est le repli de zone.
@@ -1791,7 +1791,7 @@ Interdits : un chiffre de vent inventé ou venu du repli de zone ; dire « mesur
 
 <!-- LOT id="RG5" title="Stations qualifiées : flotteur, campagne, bouée — jamais un titre de jeu de données" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG2" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 2-3, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG5 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 2-3, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG5 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG5 — Stations qualifiées (revue du 28 sept., défauts A4, D2 : « À partir du 15 mai, 9 stations scientifiques croisées » dit à quai ; les 381 « stations » du stock sont des titres de jeux de données EMODnet / Sextant — « Bacteria in Rias of Galicia », « PELGAS2025 », « Argo 6904216 » — imprononçables tels quels).
 Objectif : une station n'est dite que qualifiée (« un flotteur Argo », « la campagne PELGAS », « une bouée », « une station côtière », « un observatoire ») depuis les métadonnées du sac (source, type, titre), une par étape au plus, la plus proche ; les titres de jeux de données sont interdits à la voix ; plus de comptage.
@@ -1806,7 +1806,7 @@ Interdits : un titre de jeu de données à la voix ; un type inventé ; un compt
 
 <!-- LOT id="RG6" title="Gabarit narratif par étape : ouverture, route dans l'ordre, escale nommée" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG2,RG3,RG4" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md en entier (le gabarit § 4 est validé par le porteur : c'est la cible), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG6 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md en entier (le gabarit § 4 est validé par le porteur : c'est la cible), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG6 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG6 — Gabarit narratif par étape (revue du 28 sept., défauts C1 → C6, B7, B8 : un seul gabarit répété dix fois — « départ vers » / « approche de » / « Arrivée à … 3 jours à quai » ; une date par phrase ; jargon « jambe », « Couloirs : », « À surveiller. », « à portée de » ; « de de Fineveke » ; titres anglais ; distance et durée absentes 9 fois sur 11 ; la marina d'arrivée jamais nommée).
 Objectif : chaque étape se lit comme le gabarit § 4 — ouverture (date, port, cap, destination, milles, jours de mer, vitesse moyenne — tous du plan-review et de l'horloge) → la route dans l'ordre (eaux, côtes, AMP, projets, climatologie, station : RG2 → RG5) → l'escale (arrivée datée, marina ou port d'arrivée nommé, durée dite une fois, autrement que « 3 jours à quai » à chaque fois) ; une date toutes les deux phrases au plus ; zéro mot de la liste interdite ; connecteurs liés au contenu ; l'annexe « À surveiller. Couloirs : … La jambe compte … » disparaît, son contenu est fondu dans la route.
@@ -1821,7 +1821,7 @@ Interdits : une phrase de remplissage ; un chiffre qui ne vient pas du plan-revi
 
 <!-- LOT id="RG7" title="Ouverture et fin du film : l'expédition, aujourd'hui, les escales à venir" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (B9) et § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG7 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (B9) et § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG7 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG7 — Ouverture et fin du film (revue du 28 sept., défaut B9 : pas d'ouverture — qui, d'où, combien d'escales, combien de milles — ni de fin — ETA de la prochaine escale, escales à venir ; le film finit sur « à 232 milles nautiques de Nouméa »).
 Objectif : le film s'ouvre sur l'expédition (nom, départ de Saint-Maur le 15 mai 2026 par la route jusqu'à La Rochelle, nombre d'escales et milles totaux du plan-review, destination finale) et se ferme sur aujourd'hui (position, prochaine escale et sa fourchette d'arrivée depuis le stock eta, les escales à venir nommées : Nouméa, Dzaoudzi, Europa, Tromelin, La Réunion…).
@@ -1836,7 +1836,7 @@ Interdits : un chiffre qui ne vient pas du plan-review / du stock eta ; une ETA 
 
 <!-- LOT id="RG8" title="Budgets réels : 2:30, 3:00 et intégral produisent des textes différents" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E1), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D7) et le « RG8 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E1), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D7) et le « RG8 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG8 — Budgets réels (revue du 28 sept., défaut E1 : les variantes 2:30 et 3:00 servies sont identiques — 2 913 caractères toutes deux — les pilules ne changent rien ; le débit de voix est constant depuis le 27 sept., la durée réelle est donc celle du texte).
 Objectif : 2:30, 3:00 et « intégral » produisent trois textes de longueurs strictement croissantes par sélection de priorité (2:30 = ouverture, eaux principales, une AMP ou un projet, escales ; 3:00 = + côtes et climatologie ; intégral = tout) ; la durée estimée (caractères ÷ débit mesuré ou 15 car./s) s'affiche à côté des pilules ; le débit constant est conservé (aucun recalibrage de la voix).
@@ -1851,7 +1851,7 @@ Interdits : recalibrer le débit de la voix ; couper une phrase ; retirer les pi
 
 <!-- LOT id="RG9" title="Client robuste : sans voix, onglet caché, sous-titre = la phrase en cours" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E2, E3, E4) et § 5.2-7, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG9 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (E2, E3, E4) et § 5.2-7, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0 et le « RG9 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG9 — Client robuste (revue du 28 sept., défauts E2, E3, E4 ; KO du bot sur #386 : « film ended=true à ~53 s alors que chapterIdx=0/6, elapsed figé ~23 s, charIdx=0 » dans un navigateur sans moteur vocal ; onglet caché → requestAnimationFrame s'arrête, la voix continue, le bateau saute au retour ; le sous-titre montre le chapitre entier).
 Objectif : sans moteur vocal (ou sans frontière de mot après 2 s), le film roule à l'horloge murale dès le départ et ne finit qu'à la dernière phrase ; au retour d'un onglet caché, le bateau rattrape en douceur (≤ 2 s) au lieu de sauter ; le sous-titre montre la phrase en cours, le nom du lieu mis en avant quand il est dit.
@@ -1866,7 +1866,7 @@ Interdits : recalibrer la voix ; couper une phrase ; retirer le sous-titre ou la
 
 <!-- LOT id="RG10" title="Recette automatique du discours : le test lit le film et refuse le jargon" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (C, D) et § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D10) et le « RG10 » (texte intégral). Tu travailles dans naviguide-simulator/ et infra/agents/PARCOURS_DE_REFERENCE.md (documentation).
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 3 (C, D) et § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D10) et le « RG10 » (texte intégral). Tu travailles dans naviguide-simulator/ et infra/agents/PARCOURS_DE_REFERENCE.md (documentation).
 
 Lot RG10 — Recette automatique du discours (revue du 28 sept. : les défauts de forme C1 → C6 et D1 → D4 ont tous été vus par le porteur à l'oreille ; il faut qu'un test les voie avant lui).
 Objectif : un test serveur lit le film produit et échoue sur : mots interdits (« jambe », « zone économique exclusive », « Couloirs », « À surveiller », « à portée de »), « de de », titres anglais (motifs : deposit, licence, Center, fishing, ban…), comptages sans nom (« N stations », « N zones »), dates en rafale (> 1 date par 2 phrases), phrases > 30 mots, ordre chronologique des ancres, structure par chapitre (ouverture / route / escale) ; le même test, marqué poste, lit le stock du poste (ignoré en CI).
@@ -1896,7 +1896,7 @@ Interdits : une fourchette inventée ou calculée sans membres ; un statut ready
 
 <!-- LOT id="RG12" title="Vitesse continue du bateau : plus de paliers ni de dent de scie, gouverneur de rythme" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG1" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier (mesures, causes, motion design validé), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D2, D3) et le « RG12 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier (mesures, causes, motion design validé), puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D2, D3) et le « RG12 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG12 — Vitesse continue du bateau (revue du 28 sept., § 5.1-5.2 : la vitesse du temps-film passe de 0 à 154 heures de voyage par seconde d'une phrase à l'autre ; menée par la voix, l'avance est en dent de scie à chaque mot — rapport 6,8 entre l'avance max et min dans un mot, simulation avec le code réel ; 39 % de frames sans avance).
 Objectif : le bateau ne s'arrête et ne repart jamais brutalement — vitesse écran bornée (v_min, v_max en px/s à la frame, réglables), pente continue entre les ancres, plus de bond à chaque mot ; quand une phrase porte plus de route que v_max ne permet, la voix attend EN FIN DE PHRASE (silence, jamais coupée au milieu) pendant que le bateau avance à v_max ; quand le bateau est à quai, le temps-film saute l'escale après la phrase qui la dit — l'écran ne reste jamais figé plus de ~2 s.
@@ -1911,7 +1911,7 @@ Interdits : recalibrer le débit de la voix ; couper une phrase ; laisser la voi
 
 <!-- LOT id="RG13" title="Caméra et rendu à 60 Hz : plus de setView par frame, cap lissé, sillage à la frame" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="M" deps="RG12" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG13 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 5 en entier, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 et le « RG13 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG13 — Caméra et rendu à 60 Hz (revue du 28 sept., § 5.1-5.2 : 44 fps avec 8,3 % de frames > 34 ms ; bateau immobile à l'écran deux frames sur trois puis bonds de 12 à 29 px ; caméra à sa butée de 2 % de l'écran ; cadrage sur le cap instantané ; sillage à 8 Hz ; bond de 243 px au changement de chapitre).
 Objectif : pendant le film, tout est rendu à la frame et la frame tient en 16 ms : la carte se déplace par translation (pas de recalcul complet de la vue à chaque frame), les couches lourdes ne se redessinent qu'à l'arrêt, la caméra est le cadre du bateau (cap lissé de la jambe, bateau dans les 40 % centraux, butée liée à sa vitesse), le sillage et les acteurs bougent avec lui, un seul mouvement au changement d'étape sans trou.
@@ -1941,7 +1941,7 @@ Interdits : retirer les drapeaux, les copies monde ou la navigation gauche/droit
 
 <!-- LOT id="RG14" title="Ancres au bon mot : le bateau est au lieu quand son nom est prononcé" plan="docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md" size="S" deps="RG6,RG12" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 5.3 et § 5.4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D1) et le « RG14 » (texte intégral). Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 5.3 et § 5.4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D1) et le « RG14 » (texte intégral). Tu travailles dans naviguide-simulator/.
 
 Lot RG14 — Ancres au bon mot (revue du 28 sept., § 5.3 : l'ancre est posée au début de la phrase, donc le bateau quitte le lieu pendant qu'on en parle — « Le 21 mai, le détroit de Gibraltar » : à Gibraltar au premier mot, bien au-delà au dernier ; les phrases de groupe s'étirent sur toute la traversée ; l'avance de 12 caractères du client n'est pas compensée).
 Objectif : quand la voix prononce le nom d'un lieu, le bateau y est (≤ N milles : escale 5, marina 15, AMP / projet 30, ZEE : à l'intérieur) ; une phrase de durée (escale) garde le bateau à quai du premier au dernier mot ; un départ s'ancre au premier mot, une arrivée au dernier ; un test le vérifie sur les moments d'exemple et, marqué poste, sur le stock.
@@ -2172,7 +2172,7 @@ Interdits : retirer un lien d'attribution (obligation Esri / OSM) ; changer les 
 
 <!-- LOT id="RC30" title="Film : chronologie stricte des eaux et de la climatologie, phrases jamais coupées, clôture entière" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="" model="claude-fable-5-thinking-xhigh" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E et § 6 (la transcription du porteur), docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E et § 6 (la transcription du porteur), naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
 
 Lot RC30 — Le film dit les choses dans l'ordre, et finit ses phrases (revue du porteur, 14 oct.).
 Objectif : (1) chaque phrase d'un chapitre est dite dans l'ordre STRICT du temps du voyage — jamais « au nord de Gibraltar » puis « les eaux portugaises » ; une phrase de climatologie porte le lieu où le bateau EST à cet instant ; (2) aucune phrase n'est coupée : la voix finit la dernière phrase d'un chapitre avant que le chapitre change, et la clôture (« Aujourd'hui, le bateau est… ») est dite en entier avant l'arrêt ; (3) le cap annoncé au départ d'une jambe est le cap initial de la trace (RC26 l'a fait pour La Rochelle → Ajaccio : vérifie Cayenne → Papeete, qui dit « cap au nord ») ; (4) le bassin cité à l'arrivée (« la route passe par … ») est celui de la jambe (Papeete n'est pas « Caraïbes Ouest, Atlantique Nord ») ; (5) « les eaux de Saint-Martin, puis celles de Saint-Martin » (Sint Maarten / Saint-Martin) → un seul nom ou les deux distincts ; (6) les flotteurs Argo : au plus un par jambe, avec son identifiant ou son programme, jamais six « un flotteur Argo » anonymes.
@@ -2188,7 +2188,7 @@ Interdits : un nombre, un nom, une date absents du stock ; toucher au budget 2:3
 
 <!-- LOT id="RC31" title="Film : l'aller-retour Halifax ↔ Saint-Pierre-et-Miquelon — deux vols, un second bateau, le catamaran qui attend à Cayenne" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E (E4) et docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 1.E (E4) et naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/.
 
 Lot RC31 — L'épisode Saint-Pierre-et-Miquelon raconté comme il s'est passé (porteur, 14 oct. : « il y a un problème au niveau du film lors du passage Caraïbes – bateau 1 – Cayenne – avion – Halifax – bateau 2 – SPM – bateau 2 – Halifax – avion – Cayenne – bateau 1 – Polynésie, comment intégrer cette logique ? »).
 Objectif : le film dit, dans l'ordre et avec les bonnes dates : l'arrivée du catamaran (bateau 1) à Cayenne et son attente à quai ; le vol Cayenne → Halifax ; la traversée Halifax → Saint-Pierre à bord d'un SECOND bateau (nommé si la donnée existe, sinon « un second voilier ») avec ce qu'elle croise (eaux canadiennes, Grands Bancs, eaux de Saint-Pierre-et-Miquelon, climatologie, brume, stations…) ; l'escale à Saint-Pierre ; le retour Saint-Pierre → Halifax ; le vol Halifax → Cayenne ; la reprise du catamaran vers Panama et la Polynésie. La carte montre les vols en pointillé noir (RC13 / RC16) et la trace du second bateau dans un style distinct ; la position « de l'expédition » suit l'équipage (le second bateau pendant l'épisode), le catamaran reste figé à Cayenne.
@@ -2220,7 +2220,7 @@ Interdits : traduire un nom de port, d'aire ou de projet ; un exonyme sans sourc
 
 <!-- LOT id="DM8A" title="Suivre sur ma route (1/3) — serveur : les moments de MA route (GET /voyage/{id}/moments), à la demande, bornés, en cache" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="RC30" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 3 et docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/. Ce lot est le premier tiers de DM8 (« et d'obtenir un récit de la route qu'on vient de tracer », porteur, 14 oct.) — découpé le 15 oct. en trois lots serveur → serveur → client ; tu ne fais QUE la partie décrite ici, DM8B et DM8C s'appuieront sur ton contrat.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/REVUE_PORTEUR_2026-10-14.md § 3 et naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 4. Tu travailles dans naviguide-simulator/. Ce lot est le premier tiers de DM8 (« et d'obtenir un récit de la route qu'on vient de tracer », porteur, 14 oct.) — découpé le 15 oct. en trois lots serveur → serveur → client ; tu ne fais QUE la partie décrite ici, DM8B et DM8C s'appuieront sur ton contrat.
 
 Lot DM8A — Les moments de ma route, côté serveur.
 Objectif : pour un voyage perso (POST /voyage puis GET /voyage/{id}/clock : horloge à la date de départ choisie), un nouveau GET /voyage/{id}/moments rend ce que MA route croise, calculé avec le MÊME pipeline que le voyage officiel : perles le long de la route à l'horloge du voyage (SAMPLE_NM 12 nm) → sac /ici par perle → changements datés (eaux, AMP, projets, stations qualifiées, climatologie, escales = mes points de passage) ; calculé À LA DEMANDE (première requête), mis en cache, borné, sans aucun appel LLM, sans toucher au stock officiel.
@@ -2243,7 +2243,7 @@ Interdits : un appel LLM ; toucher au stock du voyage officiel ou à ses clés ;
 
 <!-- LOT id="DM8B" title="Suivre sur ma route (2/3) — serveur : le film de MA route (GET /voyage/{id}/film), même forme que le film officiel" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="DM8A" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4 et la PR de DM8A (contrat de GET /voyage/{id}/moments et de server/custom_story.py). Tu travailles dans naviguide-simulator/. Deuxième tiers de DM8 : tu ne fais que le film serveur ; DM8C fera le client.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 4 et la PR de DM8A (contrat de GET /voyage/{id}/moments et de server/custom_story.py). Tu travailles dans naviguide-simulator/. Deuxième tiers de DM8 : tu ne fais que le film serveur ; DM8C fera le client.
 
 Lot DM8B — Le film de ma route, côté serveur.
 Objectif : GET /voyage/{id}/film?lang=fr|en&seconds=150|180|0&style=raw rend, pour un voyage perso, un film construit depuis les moments de DM8A avec les MÊMES règles que le film officiel — ouverture (date de départ, destination, milles, jours de mer), eaux traversées, AMP, projets, stations qualifiées, climatologie, escales = mes points de passage, clôture « Aujourd'hui, le bateau est… » ou « arrivé le … » — ancré sur l'horloge de mon voyage, dans la MÊME FORME de réponse que GET /voyage/official/film (le client de DM8C doit pouvoir le consommer sans adaptation).
@@ -2292,7 +2292,7 @@ Interdits : toucher au gabarit de l'intégral et du 3:00 ; retirer une surface v
 
 <!-- LOT id="RG11A" title="« Rédigé » (1/2) — serveur : Nemotron 3 Super réécrit depuis les faits, vérifié phrase par phrase, servi par le stock" plan="docs/archives/PLAN_BATCH_2026-10-14.md" size="M" deps="RC27" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D8) et le « RG11 » (texte intégral). Tu travailles dans naviguide-simulator/. Décision du porteur du 14 oct. : « on le fait bien évidemment, c'est l'objet du hackathon » — les règles Devpost exigent un appel Nebius Token Factory à l'exécution, visible par les juges. RG11 a été découpé le 15 oct. : ce lot est le serveur (tout ce qui doit être irréprochable) ; RG11B fera le client, le parcours de référence et la mesure du coût.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 4, puis docs/archives/PLAN_CORRECTIONS_2026-09-28-film.md § 0, § 3 (D8) et le « RG11 » (texte intégral). Tu travailles dans naviguide-simulator/. Décision du porteur du 14 oct. : « on le fait bien évidemment, c'est l'objet du hackathon » — les règles Devpost exigent un appel Nebius Token Factory à l'exécution, visible par les juges. RG11 a été découpé le 15 oct. : ce lot est le serveur (tout ce qui doit être irréprochable) ; RG11B fera le client, le parcours de référence et la mesure du coût.
 
 Lot RG11A — Le texte « Rédigé », produit depuis les faits et vérifié.
 Objectif : le texte « Rédigé » d'un chapitre est produit par Nemotron 3 Super (story_cascade.cascade_text(tier="write") = Token Factory) depuis les FAITS STRUCTURÉS de l'étape (JSON : dates, lieux, eaux, AMP, projets, stations, climatologie, distances, cap) avec une consigne de zéro invention ; chaque nombre (filter_numbers) et chaque nom propre du texte produit est vérifié contre les faits — une phrase qui échoue est remplacée par la phrase du brut ; les ancres sont recalculées sur le texte rédigé ; le stock sert le rédigé quand il existe, le brut sinon, jamais une attente.
@@ -2342,7 +2342,7 @@ Interdits : écrire dans le backend BI ou sa base ; un appel ProtectedSeas direc
 
 <!-- LOT id="AM1B" title="AMP par polygone (2/2) — entrées, sorties et proximité dans le Journal, le film et l'encadré Ici" plan="docs/archives/PLAN_BATCH_SUIVANT_2026-09-29.md" size="M" deps="AM1A" -->
 ```text
-Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis docs/FILM_DISCOURS_ETAT_2026-09-28.md § 4 (gabarit d'étape) et la PR de AM1A (contrat du sac amp : inside, nm à la limite, siteId, source). Tu travailles dans naviguide-simulator/. Seconde moitié de AM1 : ce que le voyage en dit.
+Lis docs/REGLES_WORKFLOW_AGENT.md en entier, puis naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md § 4 (gabarit d'étape) et la PR de AM1A (contrat du sac amp : inside, nm à la limite, siteId, source). Tu travailles dans naviguide-simulator/. Seconde moitié de AM1 : ce que le voyage en dit.
 
 Lot AM1B — Le voyage officiel dit les aires marines qu'il traverse et qu'il longe.
 Objectif : le Journal connaît les ENTRÉES et SORTIES d'aire marine (comme les eaux) et les proximités à la limite ; le film les dit au bon moment (« le 25 mai, le bateau entre dans la réserve des Bouches de Bonifacio », « longe le parc de Cabrera à six milles ») ; l'encadré Ici en Suivre dit « dans l'aire marine protégée X » quand le bateau y est.

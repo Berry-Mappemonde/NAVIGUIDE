@@ -32,7 +32,7 @@ from tests.test_film_script import CLOCK, JOURNAL, LIVE, MOMENTS, NOW_MS, _rg6_r
 _POSTE_STORE_AT_IMPORT = (os.environ.get("NAVIGUIDE_OFFICIAL_STORE_DIR") or "").strip()
 _POSTE_CACHE = Path.home() / ".cache" / "naviguide" / "voyage-store"
 
-# Transcription § 1 de docs/FILM_DISCOURS_ETAT_2026-09-28.md — film servi le
+# Transcription § 1 de naviguide-simulator/server/tests/fixtures/FILM_DISCOURS_ETAT_2026-09-28.md — film servi le
 # 28 sept. (avant RG6). Constante de test, jamais écrite dans un stock.
 REVUE_28_SEPT = """
 L'expédition Berry-Mappemonde a quitté Saint-Maur le 15 mai 2026. Départ vers La Rochelle. Arrivée à La Rochelle le 15 mai, 3 jours à quai.
