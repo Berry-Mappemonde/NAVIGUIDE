@@ -7,6 +7,7 @@ import {
   pickCatalogHit,
 } from "./catalogHit.js";
 import { paneZIndex } from "./layerOrder.js";
+import { catalogMayTakeClick, featureStamp, releaseCatalogPick } from "./catalogStamp.js";
 import {
   worldCopyLineCoords,
   worldCopyLngs,
@@ -15,16 +16,6 @@ import {
 
 const catalogLayers = new Set();
 
-function featureStamp(feature) {
-  const properties = feature?.properties || {};
-  const geometry = feature?.geometry || {};
-  if (geometry.type === "Point") {
-    const [lon, lat] = geometry.coordinates || [];
-    return `${properties.naviguideCatalogId}|${properties.clusterCount || 1}|${lon}|${lat}`;
-  }
-  return `${properties.naviguideCatalogId}|${geometry.type}|${JSON.stringify(geometry.coordinates)}`;
-}
-
 function installCatalogPick(map) {
   if (!map || map._biCatalogPick) return;
   const onClick = (domEvent) => {
@@ -32,7 +23,7 @@ function installCatalogPick(map) {
     if (domEvent.button != null && domEvent.button !== 0) return;
     const target = domEvent.target;
     if (!(target instanceof Element)) return;
-    if (target.closest(".leaflet-control, .leaflet-marker-icon, .leaflet-popup")) return;
+    if (!catalogMayTakeClick(target)) return;
     const latlng = map.mouseEventToLatLng(domEvent);
     if (!latlng) return;
     const zoom = map.getZoom();
@@ -190,12 +181,12 @@ export class SpatialCatalogLayer {
     this._addFeatureLayers(layer, feature);
     if (!layer.getLayers().length) return null;
     this.group.addLayer(layer);
-    return { layer, type: geometry.type, feature, stamp: featureStamp(feature) };
+    return { layer, type: geometry.type, feature, stamp: featureStamp(feature, this.map.getZoom()) };
   }
 
   _update(record, feature) {
     const geometry = feature?.geometry || {};
-    const stamp = featureStamp(feature);
+    const stamp = featureStamp(feature, this.map.getZoom());
     if (record.stamp === stamp && record.type === geometry.type) {
       record.feature = feature;
       return record;
@@ -232,5 +223,7 @@ export class SpatialCatalogLayer {
     this.features = [];
     this.group.remove();
     this.records.clear();
+    // The last catalog on this map takes its click listener with it.
+    releaseCatalogPick(this.map, catalogLayers);
   }
 }

@@ -151,13 +151,15 @@ test("clic AMP, projet ou marina : la fiche et son lien s'ouvrent", async ({ pag
 
   await clickLatLng(page, 57, -17);
   await expect(fiche).toContainText("4 points regroupés");
-  await expect(fiche.locator("a[href='https://example.org/cluster']")).toBeVisible();
+  // One point's link is not the group's: none on a grouped cell.
+  await expect(fiche.locator("a")).toHaveCount(0);
+  await expect(fiche).toContainText("Zoomez pour voir chaque point");
 });
 
-async function openThreeLayers(page) {
+async function openThreeLayers(page, { ampLayer = amp } = {}) {
   await page.route("**/proxy/catalog/projects**", (route) => route.fulfill({ json: project }));
   await page.route("**/proxy/catalog/marinas**", (route) => route.fulfill({ json: marina }));
-  await page.route("**/proxy/catalog/amp**", (route) => route.fulfill({ json: amp }));
+  await page.route("**/proxy/catalog/amp**", (route) => route.fulfill({ json: ampLayer }));
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });
@@ -192,6 +194,9 @@ test("en anglais, la fiche n'affiche aucun libellé français", async ({ page })
   await clickLatLng(page, 56.5, -19);
   await expect(fiche).toContainText("Récif sentinelle");
   await expect(fiche).not.toContainText(FRENCH_LABELS);
+  const projectLink = fiche.getByRole("link", { name: "View the project →" });
+  await expect(projectLink).toBeVisible();
+  await expect(projectLink).toHaveAttribute("href", "https://example.org/projet");
 
   await clickLatLng(page, 54.8, -15.5);
   await expect(fiche).toContainText("Pertuis Charentais");
@@ -225,4 +230,64 @@ test("à 390 px, la fiche reste au-dessus de la barre du film", async ({ page })
   expect(ficheBox.x).toBeGreaterThanOrEqual(0);
   expect(ficheBox.x + ficheBox.width).toBeLessThanOrEqual(390);
   expect(ficheBox.y + ficheBox.height, "la fiche ne recouvre pas la barre").toBeLessThanOrEqual(barBox.y + 0.5);
+});
+
+test("a point kept across a zoom takes the new radius", async ({ page }) => {
+  await openThreeLayers(page);
+  const radiusAt = (lat, lng) => page.evaluate(({ lat, lng }) => {
+    let r = null;
+    window.__naviguideScene.map.eachLayer((layer) => {
+      if (typeof layer.getLatLng !== "function" || !Number.isFinite(layer.options?.radius)) return;
+      const p = layer.getLatLng();
+      if (Math.abs(p.lat - lat) < 1e-6 && Math.abs(p.lng - lng) < 1e-6) r = layer.options.radius;
+    });
+    return r;
+  }, { lat, lng });
+  await releaseCamera(page, 56, -18);
+  await expect.poll(() => radiusAt(56, -18), { timeout: 10_000 }).not.toBeNull();
+  const before = await radiusAt(56, -18);
+  await page.evaluate(() => { window.__naviguideScene.map.setView([56, -18], 12, { animate: false }); });
+  await expect.poll(() => radiusAt(56, -18), { timeout: 15_000 }).toBeGreaterThan(before);
+});
+
+test("on a short screen the card scrolls inside itself, above the film bar", async ({ page }) => {
+  // A long designation: the card is taller than the room left above the bar.
+  const longAmp = structuredClone(amp);
+  longAmp.features[0].properties.designation = Array.from({ length: 24 }, (_, i) => `Zone de protection ${i + 1}`).join(", ");
+  await openThreeLayers(page, { ampLayer: longAmp });
+  await page.setViewportSize({ width: 390, height: 600 });
+  for (const side of ["left", "right"]) {
+    if (await panelClosed(page, side)) continue;
+    await page.locator(`.naviguide-sidebar-toggle--${side}`).evaluate((el) => el.click());
+    await expect.poll(() => panelClosed(page, side), { timeout: 10_000 }).toBe(true);
+  }
+  const fiche = page.getByTestId("layer-fiche");
+  await clickLatLng(page, 54.8, -15.5);
+  await expect(fiche).toContainText("Pertuis Charentais");
+  const box = () => fiche.evaluate((el) => {
+    const css = getComputedStyle(el);
+    return {
+      overflowY: css.overflowY,
+      maxHeight: css.maxHeight,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollTop: el.scrollTop,
+    };
+  });
+  const before = await box();
+  expect(before.overflowY).toBe("auto");
+  expect(before.maxHeight).not.toBe("none");
+  expect(before.scrollHeight, "the card is taller than its box").toBeGreaterThan(before.clientHeight);
+  const bar = page.getByTestId("film-bar");
+  const ficheBox = await fiche.boundingBox();
+  const barBox = await bar.boundingBox();
+  expect(ficheBox.y).toBeGreaterThanOrEqual(0);
+  expect(ficheBox.y + ficheBox.height, "the card never covers the bar").toBeLessThanOrEqual(barBox.y + 0.5);
+  // The wheel scrolls the card, not the map, and reaches its last link.
+  await fiche.hover();
+  await page.mouse.wheel(0, 400);
+  await expect.poll(async () => (await box()).scrollTop).toBeGreaterThan(0);
+  const visit = fiche.getByRole("link").last();
+  await visit.scrollIntoViewIfNeeded();
+  await expect(visit).toBeInViewport();
 });

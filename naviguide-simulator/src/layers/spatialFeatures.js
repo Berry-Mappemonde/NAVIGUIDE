@@ -17,9 +17,17 @@ function mapBounds(bounds) {
  * Bbox stable envoyée à l'API catalogue. Leaflet peut étendre la Mercator
  * au-delà des pôles à faible zoom : les latitudes HTTP restent géographiques.
  */
-function clusterProperties(properties) {
-  // The first point's own name or title would mislabel the whole cell.
-  const { name: _name, title: _title, ...rest } = properties || {};
+// What belongs to one point only: on a grouped cell it would read as if it
+// were true for every point of the group.
+const POINT_ONLY_PROPS = [
+  "name", "title", "description", "website", "telephone", "url", "canal_vhf",
+  "source_urls", "manager_url", "visit_url", "country", "region", "funder",
+  "wmo", "ship", "email",
+];
+
+export function clusterProperties(properties) {
+  const rest = { ...(properties || {}) };
+  for (const key of POINT_ONLY_PROPS) delete rest[key];
   return rest;
 }
 

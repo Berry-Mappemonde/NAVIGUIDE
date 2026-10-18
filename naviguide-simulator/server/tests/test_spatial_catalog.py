@@ -38,6 +38,20 @@ def test_index_clusters_points_to_zoom_budget_without_losing_count():
     assert result["metadata"]["clustered"] is True
 
 
+def test_cluster_does_not_carry_one_point_contact():
+    index = SpatialCatalogIndex("marinas", [
+        {**point(-4 + (position % 40) / 10, 45 + (position // 40) / 10, name=f"Port {position}"),
+         "properties": {"name": f"Port {position}", "website": f"https://example.org/{position}", "telephone": "+33 5", "url": "https://example.org/u"}}
+        for position in range(1_000)
+    ])
+    result = index.query(Bbox(-5, 44, 1, 48), zoom=2, limit=420)
+    clusters = [f for f in result["features"] if f["properties"].get("clusterCount", 1) > 1]
+    assert clusters
+    for feature in clusters:
+        for key in ("website", "telephone", "url"):
+            assert key not in feature["properties"], key
+
+
 def test_index_simplifies_long_trace_at_low_zoom_and_keeps_ends():
     coordinates = [[-5 + position / 100, 45 + position / 1_000] for position in range(300)]
     index = SpatialCatalogIndex("science", [{

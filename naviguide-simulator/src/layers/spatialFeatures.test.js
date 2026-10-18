@@ -81,4 +81,16 @@ describe("spatialFeatures", () => {
     assert.equal(cluster.properties.title, undefined);
     assert.doesNotMatch(JSON.stringify(cluster.properties), /regroup/);
   });
+
+  it("une cellule regroupée ne porte ni le site, ni le téléphone, ni le lien du premier point", () => {
+    const features = Array.from({ length: 10 }, (_, index) => ({
+      ...point(index / 1000, index / 1000, `P${index}`),
+      properties: { name: `P${index}`, naviguideCatalogId: `marinas:${index}`, website: "https://example.org/p0", telephone: "+33 5 46 00 00 00", url: "https://example.org/u0", source_urls: ["https://example.org/s0"] },
+    }));
+    const aggregated = aggregatePointFeatures(features, (lon, lat) => ({ x: lon * 100, y: lat * 100 }), { budget: 1, minCellPx: 50 });
+    const cluster = aggregated.find((feature) => (feature.properties.clusterCount || 1) > 1);
+    assert.ok(cluster);
+    for (const key of ["website", "telephone", "url", "source_urls"]) assert.equal(cluster.properties[key], undefined, key);
+    assert.ok(cluster.properties.naviguideCatalogId);
+  });
 });

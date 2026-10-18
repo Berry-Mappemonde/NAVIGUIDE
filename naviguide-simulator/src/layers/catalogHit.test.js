@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   catalogPointRadiusPx,
   ficheFromHit,
@@ -59,7 +62,7 @@ describe("catalog click", () => {
     assert.equal(inside.props.visit_url, "https://example.org/visit");
   });
 
-  it("opens a card for a clustered point and keeps its portal link", () => {
+  it("opens a card for a clustered point (its count, not one point's link)", () => {
     const feature = point(-1.5, 46.2, {
       name: "4 points regroupés",
       title: "Sentinelle",
@@ -74,8 +77,10 @@ describe("catalog click", () => {
     );
     const fiche = ficheFromHit(hit, 46.2, -1.5);
     assert.equal(fiche.kind, "project");
-    assert.equal(fiche.props.url, "https://example.org/cluster");
     assert.equal(fiche.props.clusterCount, 4);
+    // The card itself never shows a link for a group (LayerFichePopup).
+    const popup = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "components", "LayerFichePopup.jsx"), "utf8");
+    assert.match(popup, /if \(clusterCount > 1\) \{[\s\S]{0,200}?extra = <div[^>]*>\{t\("layerFicheClusterZoom"\)\}/);
   });
 
   it("lets a later point in the same pane win over an earlier one", () => {
@@ -87,5 +92,26 @@ describe("catalog click", () => {
       { feature: second, kind: "marina", z: 400, order: 2, radiusPx },
     ], 0, 0, project);
     assert.equal(ficheFromHit(hit, 0, 0).props.name, "B");
+  });
+});
+
+describe("catalog polygon holes", () => {
+  it("a click in a hole of an MPA is not in the MPA", () => {
+    const donut = {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+          [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]],
+        ],
+      },
+      properties: { name: "Anneau" },
+    };
+    const entries = [{ feature: donut, kind: "amp", z: 600, order: 0, radiusPx: 8 }];
+    assert.equal(pickCatalogHit(entries, 5, 5, project), null);
+    assert.equal(ficheFromHit(pickCatalogHit(entries, 2, 2, project), 2, 2).props.name, "Anneau");
+    const multi = { ...donut, geometry: { type: "MultiPolygon", coordinates: [donut.geometry.coordinates] } };
+    assert.equal(pickCatalogHit([{ ...entries[0], feature: multi }], 5, 5, project), null);
   });
 });

@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useLang } from "../i18n/LangContext.jsx";
+import { scienceKindLabel } from "../layers/scienceLabels.js";
 
 function hostLabel(url) {
   try {
@@ -75,8 +76,8 @@ export function LayerFichePopup({ popup, onClose }) {
   } else if (kind === "port") {
     subtitle = [props.country, props.region].filter(Boolean).join(" · ");
   } else if (kind === "science") {
-    title = props.name || props.title || "Science";
-    subtitle = [props.source, props.kind, props.provider].filter(Boolean).join(" · ");
+    title = props.name || props.title || t("layerFicheScience");
+    subtitle = [props.source, scienceKindLabel(props.kind, t), props.provider].filter(Boolean).join(" · ");
     extra = (
       <>
         {props.wmo ? <Row label="WMO">{String(props.wmo)}</Row> : null}
@@ -86,8 +87,13 @@ export function LayerFichePopup({ popup, onClose }) {
     );
   }
 
-  // A grouped cell is named by its count, in the reader's language.
-  if (clusterCount > 1) title = t("layerFicheCluster", { count: clusterCount });
+  // A grouped cell is named by its count, in the reader's language, and shows
+  // nothing of one of its points (site, phone, link) as if it held for all.
+  if (clusterCount > 1) {
+    title = t("layerFicheCluster", { count: clusterCount });
+    subtitle = "";
+    extra = <div className="muted" style={{ marginTop: 6 }}>{t("layerFicheClusterZoom")}</div>;
+  }
 
   return (
     <div
