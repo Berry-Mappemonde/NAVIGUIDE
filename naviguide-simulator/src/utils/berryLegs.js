@@ -53,7 +53,9 @@ export function isNonMaritimeLeg(fromName, toName) {
 
 function canonStopName(name) {
   const s = String(name || "").trim();
-  if (/^saint-maur\b/i.test(s) && !/Berry/i.test(s)) return "Saint-Maur (Berry, Indre)";
+  // « Saint-Maur », « Saint-Maur (Berry) » et « Saint-Maur (Indre) »
+  // sont la même étape terrestre que le nom stocké.
+  if (/^saint[\s-]*maur\b/i.test(s)) return "Saint-Maur (Berry, Indre)";
   return s;
 }
 

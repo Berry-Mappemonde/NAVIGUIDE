@@ -634,4 +634,22 @@ export default {
 
   // DR1 — Tracer at J0: land departure, never "high seas".
   iciDepartureRoadTransfer: "Departure: Saint-Maur (Indre), road transfer to La Rochelle",
+  // FV2
+  fv2ClimoCaption: "Climatology — monthly average ({month}), not a forecast",
+  fv2Month1: "January",
+  fv2Month2: "February",
+  fv2Month3: "March",
+  fv2Month4: "April",
+  fv2Month5: "May",
+  fv2Month6: "June",
+  fv2Month7: "July",
+  fv2Month8: "August",
+  fv2Month9: "September",
+  fv2Month10: "October",
+  fv2Month11: "November",
+  fv2Month12: "December",
+  fv2RoadTransfer: "Road transfer {from} → {to}: {km} km, ≈ {hours} h",
+  fv2NmToPort: "{nm} nm to destination port",
+  fv2StopSaintMaur: "Saint-Maur (Indre)",
+  fv2StopAzores: "Azores (Portugal)",
 };

@@ -278,6 +278,27 @@ describe("Now tab: no raw code as a card title", () => {
   });
 });
 
+describe("Now tab: English renamed stop still matches the stored port", () => {
+  it("Azores (Portugal) keeps the Açores departure phase via rawName", () => {
+    const card = escaleCard({
+      fromStop: "Açores (Corse)",
+      toStop: "La Rochelle",
+      legNm: 800,
+      lat: 37.74,
+      lon: -25.67,
+    }, "en");
+    assert.equal(card.entity.name, "Azores (Portugal)");
+    assert.equal(card.entity.rawName, "Açores (Corse)");
+    assert.equal(card.key, "ev:escale:Açores (Corse)→La Rochelle");
+    const leg = { fromStop: "Açores (Corse)", toStop: "La Rochelle", doneNm: 4, leftNm: 790 };
+    assert.equal(portCardIsCurrent(card, { leg }), true);
+    assert.equal(portCardIsCurrent({
+      kind: "escale",
+      entity: { name: "Azores (Portugal)" },
+    }, { leg }), false);
+  });
+});
+
 describe("Now tab: the departure port card at 6 nm", () => {
   it("La Rochelle shows while arriving, whatever the stored name form", () => {
     const card = { kind: "port", title: "Escale La Rochelle (Charente-Maritime)", entity: { name: "Escale La Rochelle (Charente-Maritime)" } };
