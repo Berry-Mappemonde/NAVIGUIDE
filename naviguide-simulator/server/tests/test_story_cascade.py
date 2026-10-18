@@ -1004,3 +1004,202 @@ def test_cascade_keeps_tokenfactory_error_when_nim_answers(monkeypatch):
     assert err["provider"] == "tokenfactory"
     assert "400" in err["reason"]
     assert "thinking not allowed" in err["reason"]
+
+
+def _empty_reasoning(body, reasoning, finish="length"):
+    return {
+        "choices": [{
+            "message": {"content": "", "reasoning": reasoning},
+            "finish_reason": finish,
+        }],
+        "usage": {"prompt_tokens": 8, "completion_tokens": 40},
+        "model": body.get("model"),
+    }
+
+
+def test_empty_content_with_reasoning_stays_on_the_tier(monkeypatch):
+    """content vide + reasoning + finish=length : le texte et la source du palier, sans repli."""
+    import llm_budget
+
+    cases = (
+        ("fast", "nvidia/Nemotron-3_5-Lightning", "nemotron-lightning", False),
+        ("write", "nvidia/nemotron-3-super-120b-a12b", "nemotron-super", False),
+        ("deep", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
+        ("judge", "nvidia/Nemotron-3-Ultra-550b-a55b", "nemotron-ultra", True),
+    )
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    for tier, model, source, ultra_host in cases:
+        seen = []
+
+        def handler(request: httpx.Request, _seen=seen) -> httpx.Response:
+            body = json.loads(request.content.decode())
+            _seen.append((str(request.url), body.get("model")))
+            return httpx.Response(200, json=_empty_reasoning(
+                body,
+                "Analyze User Input: Task: Translate.\nLa Rochelle est un port.",
+            ))
+
+        async def run(tier=tier):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await cascade_text(
+                    "sys", f"user-{tier}", client, tier=tier, fallback="Phrase locale.", facts=None,
+                )
+
+        result = asyncio.run(run())
+        text, got = result
+        assert got == source, tier
+        assert "port" in text, tier
+        assert "Analyze" not in text, tier
+        assert result.model == model, tier
+        assert result.tier == tier
+        assert len(seen) == 1, tier
+        assert seen[0][1] == model, tier
+        assert ("us-central1" in seen[0][0]) is ultra_host, tier
+        assert "nvidia.com" not in seen[0][0]
+        assert llm_budget.get_usage(tier)["calls"] == 1
+        assert llm_budget.last_error() is None
+        assert llm_budget.last_source_by_tier().get(tier) == source
+
+
+def test_fast_leak_reasoning_still_retries_super(monkeypatch):
+    """Un raisonnement qui n'est qu'une fuite ne devient pas le texte : Super est appelé."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        calls.append(body.get("model"))
+        if "Lightning" in (body.get("model") or ""):
+            return httpx.Response(200, json=_empty_reasoning(
+                body, "I need to answer using ONLY the JSON. It lists:",
+            ))
+        return httpx.Response(200, json=_chat_ok("Super écrit le port.", model=body["model"]))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await cascade_text("sys", "user", client, tier="fast", fallback="x", facts=None)
+
+    result = asyncio.run(run())
+    text, source = result
+    assert source == "nemotron-super"
+    assert "port" in text
+    assert "JSON" not in text
+    assert len(calls) == 2
+    assert "Lightning" in calls[0]
+    assert "super" in calls[1].lower()
+    assert result.model == "nvidia/nemotron-3-super-120b-a12b"
+    assert result.tier == "write"
+
+
+def test_write_story_keeps_exact_super_model_and_tier(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        assert body["model"] == "nvidia/nemotron-3-super-120b-a12b"
+        return httpx.Response(200, json=_chat_ok("Entrée dans la ZEE.", model=body["model"]))
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-enter:model", "lang": "fr", "needPage": False,
+            }, client=client)
+
+    out = asyncio.run(run())
+    assert out["status"] == "ready"
+    assert out["source"] == "nemotron-super"
+    assert out["tier"] == "write"
+    assert out["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["ai_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert out["ai_generated"] is True
+    assert "Token Factory" not in out["model"]
+
+
+def test_fallback_model_is_not_labelled_token_factory(monkeypatch):
+    """OpenRouter, Claude et NIM gardent leur modèle. Jamais un id Nemotron."""
+    import llm_budget
+
+    monkeypatch.setenv("NEBIUS_API_KEY", "tf-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nim-test")
+    monkeypatch.setenv("NAVIGUIDE_LLM_CACHE_TTL_S", "0")
+
+    def openrouter_handler(request: httpx.Request) -> httpx.Response:
+        if "tokenfactory" in str(request.url):
+            return httpx.Response(503, json={"error": "down"})
+        if "openrouter.ai" in str(request.url):
+            return httpx.Response(200, json=_chat_ok("Filet OpenRouter : le port."))
+        return httpx.Response(500, json={"error": "no"})
+
+    async def run_or():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(openrouter_handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-or", "lang": "fr", "needPage": False,
+            }, client=client)
+
+    opened = asyncio.run(run_or())
+    assert opened["source"] == "openrouter"
+    assert opened["model"] == "openai/gpt-4o-mini"
+    assert opened["ai_model"] == "openrouter"
+    assert opened["tier"] == "write"
+    assert "nemotron" not in opened["model"].lower()
+    assert "nemotron" not in opened["ai_model"].lower()
+
+    def claude_handler(request: httpx.Request) -> httpx.Response:
+        if "anthropic.com" in str(request.url):
+            return httpx.Response(200, json={
+                "model": "claude-haiku-4-5",
+                "content": [{"type": "text", "text": "Filet Claude : le port."}],
+            })
+        return httpx.Response(503, json={"error": "down"})
+
+    async def run_claude():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(claude_handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-claude", "lang": "fr", "needPage": False,
+            }, client=client)
+
+    claude = asyncio.run(run_claude())
+    assert claude["source"] == "claude"
+    assert claude["model"] == "claude-haiku-4-5"
+    assert claude["ai_model"] == "claude"
+    assert "nemotron" not in claude["model"].lower()
+    assert "Token Factory" not in claude["ai_model"]
+
+    def nim_handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "tokenfactory" in url:
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=_empty_reasoning(body, ""))
+        if "nvidia.com" in url:
+            return httpx.Response(200, json=_chat_ok("NIM : le port."))
+        return httpx.Response(500, json={"error": "no"})
+
+    async def run_nim():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(nim_handler)) as client:
+            return await write_story({
+                "event": "zee-enter", "eventId": "zee-nim", "lang": "fr", "needPage": False,
+            }, client=client)
+
+    nim = asyncio.run(run_nim())
+    assert nim["source"].startswith("nvidia-")
+    assert nim["model"] == "openai/gpt-oss-20b"
+    assert nim["ai_model"] == "openai/gpt-oss-20b"
+    assert "nemotron" not in nim["model"].lower()
+    assert "Token Factory" not in nim["ai_model"]
+    assert llm_budget.status()["lastSourceByTier"]["write"] == "nim"

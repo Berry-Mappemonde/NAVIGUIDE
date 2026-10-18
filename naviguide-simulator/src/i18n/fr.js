@@ -625,4 +625,8 @@ export default {
   layerFicheKindCoastline: "Trait de côte",
   layerFicheKindGlider: "Planeur sous-marin",
   layerFicheClose: "Fermer la fiche",
+
+  // Lot NB1 — Nemotron via Token Factory, badge en texte seul
+  llmBrandNvidia: "NVIDIA",
+  llmBrandNebius: "Nebius",
 };
