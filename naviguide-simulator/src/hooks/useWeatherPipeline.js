@@ -34,13 +34,14 @@ export function productLayerState(product, enabled) {
  * First render never waits on a provider: the state is derived, and blocksMap stays false.
  * With the flag off, layer states are null and the existing paths are left alone.
  */
-export function useWeatherPipeline({ grib, wave, enabled } = {}) {
+export function useWeatherPipeline({ grib, wave, current, enabled } = {}) {
   const active = enabled ?? weatherPipelineEnabled();
   const gribWind = useMemo(() => gribWindLayerState(grib, active), [grib, active]);
   const waveState = useMemo(() => productLayerState(wave, active), [wave, active]);
+  const currentState = useMemo(() => productLayerState(current, active), [current, active]);
   return {
     enabled: active,
     blocksMap: false,
-    layers: { gribWind, wave: waveState },
+    layers: { gribWind, wave: waveState, current: currentState },
   };
 }

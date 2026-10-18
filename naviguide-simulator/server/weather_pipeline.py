@@ -493,6 +493,8 @@ def weather_pipeline_enabled() -> bool:
 ASYNC_PROVIDERS = {
     "wave",
     "openmeteo-gfs-wave",
+    "current",
+    "noaa-rtofs",
 }
 
 

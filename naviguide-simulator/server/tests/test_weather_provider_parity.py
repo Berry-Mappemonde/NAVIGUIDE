@@ -47,8 +47,46 @@ def test_openmeteo_wave_parity(monkeypatch):
     assert get_async_weather_queue().cached_status("openmeteo-gfs-wave", 46.15, -1.16) == "ready"
 
 
+CURRENT_RTOFS = {
+    "current": {
+        "kind": "forecast",
+        "source": "noaa-rtofs",
+        "speedKnots": 0.58,
+        "dirToDeg": 247.0,
+        "issued": "2026-09-16T00:00:00Z",
+    },
+    "current_reason": None,
+}
+
+CURRENT_COPERNICUS = {
+    "latitude": 46.15,
+    "longitude": -1.16,
+    "u_component": 0.12,
+    "v_component": 0.0,
+    "speed_ms": 0.12,
+    "speed_knots": 0.23,
+    "direction_deg": 90.0,
+    "source": "copernicus-marine",
+}
+
+
 def test_copernicus_wave_parity(monkeypatch):
     off = _serve(monkeypatch, "0", "wave", WAVE_COPERNICUS)
     on = _serve(monkeypatch, "1", "wave", WAVE_COPERNICUS)
     assert off == on == WAVE_COPERNICUS
     assert get_async_weather_queue().cached_status("wave", 46.15, -1.16) == "ready"
+
+
+def test_rtofs_current_parity(monkeypatch):
+    off = _serve(monkeypatch, "0", "noaa-rtofs", CURRENT_RTOFS)
+    on = _serve(monkeypatch, "1", "noaa-rtofs", CURRENT_RTOFS)
+    assert off == on == CURRENT_RTOFS
+    assert off["current"]["speedKnots"] == 0.58
+    assert get_async_weather_queue().cached_status("noaa-rtofs", 46.15, -1.16) == "ready"
+
+
+def test_copernicus_current_parity(monkeypatch):
+    off = _serve(monkeypatch, "0", "current", CURRENT_COPERNICUS)
+    on = _serve(monkeypatch, "1", "current", CURRENT_COPERNICUS)
+    assert off == on == CURRENT_COPERNICUS
+    assert get_async_weather_queue().cached_status("current", 46.15, -1.16) == "ready"
