@@ -152,6 +152,29 @@ def test_refresh_zee_local_corrects_stored_pearls_without_losing_rich_layers():
     assert asyncio.run(ici_warm.refresh_zee_local(pause_s=0)) == 0
 
 
+def test_noumea_is_new_caledonia_not_adelaide():
+    """Nouméa (−22.27, 166.44) sits in the New Caledonia EEZ. A huge
+    Adelaide polygon that also covers the point must not win."""
+    layer = {"type": "FeatureCollection", "features": [
+        _square(8323, "Adelaide Exclusive Economic Zone", "Australia", 100.0, 180.0, -50.0, 0.0),
+        _square(8312, "New Caledonia Exclusive Economic Zone", "France", 160.0, 172.0, -26.0, -18.0),
+    ]}
+    zee_local.cache_path().write_text(json.dumps(layer))
+    assert zee_local.load_from_file() == 2
+    hit = zee_local.zee_at(-22.27, 166.44)
+    assert hit is not None and hit is not zee_local.UNKNOWN
+    assert hit["mrgid"] == 8312, hit
+    assert hit["territory"] == "nouvelle_caledonie", hit
+    assert "Adelaide" not in (hit.get("name") or ""), hit
+    assert "Adelaide" not in (hit.get("country") or ""), hit
+    # The large polygon still answers where it is the only one.
+    adelaide = zee_local.zee_at(-35.0, 138.6)
+    assert adelaide["mrgid"] == 8323 and "Adelaide" in adelaide["name"]
+    payload = zee_local.zee_at_payload(-22.27, 166.44)
+    assert payload["mrgid"] == 8312 and payload.get("unknown") is not True
+    assert "Adelaide" not in payload["name"]
+
+
 def test_la_rochelle_is_french_not_fiji_whatever_the_longitude_turn():
     """Film à La Rochelle : jamais la ZEE fidjienne, même avec une longitude dépliée (±360)."""
     layer = _layer()

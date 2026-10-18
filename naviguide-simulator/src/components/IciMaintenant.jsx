@@ -199,6 +199,7 @@ export function IciMaintenant({
   nowLeg = null,
   journalDays = null,
   todayPosition = false,
+  replayFrame = null,
 }) {
   const { t, lang } = useLang();
   const [localView, setLocalView] = useState(() => defaultIciTab(mode, { routeSource }));
@@ -300,6 +301,8 @@ export function IciMaintenant({
           <Section testId="ici-section-leg" label={t("iciSectionLeg")}>
             <p
               data-testid="ici-leg-line"
+              data-from={shown?.leg?.from || ""}
+              data-to={shown?.leg?.to || ""}
               className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
               style={tint ? { color: tint } : undefined}
             >
@@ -360,7 +363,27 @@ export function IciMaintenant({
                   onFocus={escale.onFocus}
                 />
               ) : null}
-              {todayPosition ? (
+              {replayFrame ? (
+                <div
+                  data-testid="ici-replay-here"
+                  data-stop={replayFrame.stop?.name || ""}
+                  data-high-seas={replayFrame.highSeas ? "1" : "0"}
+                  className="flex flex-col gap-0.5"
+                >
+                  {replayFrame.stop ? (
+                    <div data-testid="ici-replay-header" className="min-w-0">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200 leading-snug">{t("escaleSheetTitle")}</div>
+                      <div className="text-[12px] font-semibold text-white leading-snug truncate">{replayFrame.stop.name}</div>
+                    </div>
+                  ) : null}
+                  <p
+                    data-testid="ici-replay-status"
+                    className="text-[11px] leading-snug text-slate-200 break-words [overflow-wrap:anywhere]"
+                  >
+                    {replayFrame.statusText}
+                  </p>
+                </div>
+              ) : todayPosition ? (
                 <p
                   data-testid="ici-today-position"
                   className="text-[11px] leading-snug text-amber-200 break-words [overflow-wrap:anywhere]"
