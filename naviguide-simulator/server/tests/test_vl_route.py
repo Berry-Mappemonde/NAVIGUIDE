@@ -1,8 +1,10 @@
 """Route VL : plan sans réseau, ids du sac, cache hors git."""
 import json
+import os
 import socket
 import struct
 import zlib
+from pathlib import Path
 
 import pytest
 
@@ -81,8 +83,9 @@ def test_official_route_is_bounded_and_offline(monkeypatch):
     assert "tiles_fetched: 0" in text
 
 
-def test_estimate_lists_images_without_calling(monkeypatch):
+def test_estimate_lists_images_without_calling(monkeypatch, tmp_path):
     _forbid_network(monkeypatch)
+    monkeypatch.setenv(one_shot.ENV_DIR, str(tmp_path / "one-shot"))
     seen = []
 
     def execute(call):
@@ -101,6 +104,30 @@ def test_estimate_lists_images_without_calling(monkeypatch):
     assert est["usd"] == round(29 * part, 8)
     assert est["fingerprint"] == one_shot.fingerprint_for(est)
     assert all(item["tier"] == "write" for item in est["items"])
+    job_dir = Path(os.environ[one_shot.ENV_DIR]) / "vl_route_bm"
+    assert not (job_dir / ".lock").exists()
+    assert not (job_dir / ".done").exists()
+
+
+def test_run_keeps_the_execution_lock_and_the_done_file(monkeypatch, tmp_path):
+    """``.lock`` et ``.done`` restent ceux du socle. Le second passage est refusé."""
+    _forbid_network(monkeypatch)
+    monkeypatch.setenv(one_shot.ENV_DIR, str(tmp_path / "one-shot"))
+    vl_route.set_bag_provider(lambda _point: [])
+    called = []
+    vl_route.set_transport(lambda *_args: called.append(1) or "{}")
+    est = one_shot.build_estimate("vl_route_bm")
+    job_dir = Path(os.environ[one_shot.ENV_DIR]) / "vl_route_bm"
+    result = one_shot.run("vl_route_bm", est["fingerprint"])
+    assert called == []
+    assert len(result["completed"]) == est["calls"]
+    assert (job_dir / ".lock").is_file()
+    assert (job_dir / ".done").is_file()
+    with pytest.raises(one_shot.Refused) as refused:
+        one_shot.run("vl_route_bm", est["fingerprint"])
+    assert refused.value.code == "locked"
+    assert (job_dir / ".lock").is_file()
+    assert (job_dir / ".done").is_file()
 
 
 def test_crossings_are_bounded_and_formalites_are_not_zee():
