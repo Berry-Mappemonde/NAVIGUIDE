@@ -39,6 +39,25 @@ def test_store_round_trips_between_restarts():
     assert ici_warm.status()["store"]["rich"] == 1
 
 
+def _polygon_or_handler(request: httpx.Request) -> httpx.Response:
+    """Tuile /amp en vrai polygone, pour que le chauffeur puisse stocker une perle riche."""
+    url = str(request.url)
+    if "/amp?" in url and "bbox=" in url:
+        ring = [[-8.0, 44.0], [3.0, 44.0], [3.0, 48.0], [-8.0, 48.0], [-8.0, 44.0]]
+        feat = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [ring]},
+            "properties": {
+                "name": "Pertuis charentais",
+                "lat": 46.16,
+                "lon": -1.20,
+                "site_id": "PS-1",
+            },
+        }
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": [feat]})
+    return _handler(request)
+
+
 def test_warmer_fills_rich_pearls_once_and_reports(tmp_path, monkeypatch):
     import voyage_store
     reset_caches()
@@ -48,7 +67,7 @@ def test_warmer_fills_rich_pearls_once_and_reports(tmp_path, monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(str(request.url))
-        return _handler(request)
+        return _polygon_or_handler(request)
 
     transport = httpx.MockTransport(handler)
     real_fill = ici_engine.fill_dossier
@@ -84,6 +103,87 @@ def test_warmer_fills_rich_pearls_once_and_reports(tmp_path, monkeypatch):
     served = asyncio.run(thin_req())
     assert served["cached"] is True and served["pearl"] == "rich"
     assert len(calls) == n_calls
+
+
+def test_warmer_redoes_a_centroid_pearl_then_skips_it(tmp_path, monkeypatch):
+    """Une perle riche encore en centroïde est refaite ; l'ancienne clé disparaît."""
+    import pearl_store
+    import voyage_store
+    reset_caches()
+    voyage_store.save_voyage({
+        "voyageId": "berry-mappemonde-2026-officiel",
+        "points": _route()[:4],
+        "marks": [],
+        "t0": "2026-05-15T08:00:00Z",
+    })
+    la, lo = ici_warm.sample_route(_route()[:4])[0]
+    old_key = "legacy-centroid"
+    assert pearl_store.put_pearl(
+        old_key,
+        {"pearl": "rich", "amp": [{"name": "Vieux point", "lat": la, "lon": lo}], "sources": {"bi": "ok"}},
+        "rich", la, lo,
+    )
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return _polygon_or_handler(request)
+
+    transport = httpx.MockTransport(handler)
+    real_fill = ici_engine.fill_dossier
+
+    async def patched(lat, lon, radius_nm=30.0, client=None, **kw):
+        async with httpx.AsyncClient(transport=transport) as c:
+            return await real_fill(lat, lon, radius_nm, client=c, **kw)
+
+    monkeypatch.setattr(ici_engine, "fill_dossier", patched)
+    out = asyncio.run(ici_warm.warm_official_route(pause_s=0))
+    assert out["ampRedo"] >= 1
+    assert pearl_store.get_pearl(old_key) is None
+    bag = ici_engine.thin_cache_get(thin_cache_key(la, lo, 30))
+    assert bag["amp"][0]["source"] == "polygon"
+    n_calls = len(calls)
+    out2 = asyncio.run(ici_warm.warm_official_route(pause_s=0))
+    assert out2["cached"] == out2["total"]
+    assert len(calls) == n_calls
+
+
+def test_warmer_keeps_the_centroid_pearl_when_polygons_fail(tmp_path, monkeypatch):
+    import pearl_store
+    import voyage_store
+    reset_caches()
+    voyage_store.save_voyage({
+        "voyageId": "berry-mappemonde-2026-officiel",
+        "points": _route()[:4],
+        "marks": [],
+        "t0": "2026-05-15T08:00:00Z",
+    })
+    la, lo = ici_warm.sample_route(_route()[:4])[0]
+    old_key = "legacy-centroid"
+    pearl_store.put_pearl(
+        old_key,
+        {"pearl": "rich", "amp": [{"name": "Vieux point", "lat": la, "lon": lo}], "sources": {"bi": "ok"}},
+        "rich", la, lo,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/amp?" in url and "bbox=" in url:
+            return httpx.Response(503, json={"detail": "amp down"})
+        return _handler(request)
+
+    transport = httpx.MockTransport(handler)
+    real_fill = ici_engine.fill_dossier
+
+    async def patched(lat, lon, radius_nm=30.0, client=None, **kw):
+        async with httpx.AsyncClient(transport=transport) as c:
+            return await real_fill(lat, lon, radius_nm, client=c, **kw)
+
+    monkeypatch.setattr(ici_engine, "fill_dossier", patched)
+    out = asyncio.run(ici_warm.warm_official_route(pause_s=0))
+    assert out["errors"] >= 1
+    assert pearl_store.get_pearl(old_key) is not None
+    assert ici_engine.thin_cache_get(thin_cache_key(la, lo, 30)) is None
 
 
 def test_official_pearls_endpoint_lists_canonical_positions(tmp_path, monkeypatch):
@@ -132,7 +232,7 @@ def test_warm_skips_stories_and_does_not_call_llm(tmp_path, monkeypatch):
     monkeypatch.setattr(story_cascade, "cascade_text", boom)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return _handler(request)
+        return _polygon_or_handler(request)
 
     transport = httpx.MockTransport(handler)
     real_fill = ici_engine.fill_dossier
