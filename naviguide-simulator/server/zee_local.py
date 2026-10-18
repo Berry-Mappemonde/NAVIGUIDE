@@ -42,9 +42,12 @@ _index: dict[str, Any] = {"tree": None, "geoms": None, "props": None, "loaded": 
 _loading = False
 
 
-def geojson_url() -> str:
+def geojson_url() -> str | None:
     from ici_engine import bi_base  # noqa: PLC0415
-    return f"{bi_base()}/poe/zones/geojson"
+    base = bi_base()
+    if not base:
+        return None
+    return f"{base}/poe/zones/geojson"
 
 
 def cache_path() -> Path:
@@ -149,11 +152,14 @@ async def ensure_loaded(client=None, force_download: bool = False) -> bool:
         stale = (not path.exists()) or (time.time() - path.stat().st_mtime > CACHE_TTL_S)
         if stale or force_download:
             try:
+                url = geojson_url()
+                if not url:
+                    raise RuntimeError("BI disabled: BI_API_URL is not set")
                 import httpx  # noqa: PLC0415
                 own = client is None
                 http = client or httpx.AsyncClient()
                 try:
-                    r = await http.get(geojson_url(), timeout=120.0, headers={"Accept": "application/geo+json"})
+                    r = await http.get(url, timeout=120.0, headers={"Accept": "application/geo+json"})
                     r.raise_for_status()
                     body = r.content
                     if len(body) < 10_000 or b'"features"' not in body[:200_000] and b'"features"' not in body:

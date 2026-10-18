@@ -36,6 +36,7 @@ import httpx
 
 from admin_guard import cors_origins, rate_limited
 from bi_proxy import router as bi_proxy_router
+from bi_upstream import bi_base
 from mem_limits import (
     ZEE_CACHE_MAX_BYTES,
     ZEE_MAX_FEATURES_CAP,
@@ -758,10 +759,6 @@ _zee_cache: dict = {"entries": {}}
 _ZEE_CACHE_TTL = 86_400
 _VLIZ_WMS = "https://geo.vliz.be/geoserver/MarineRegions/wms"
 _CATALOG_SOURCE_TTL = 900.0
-_CATALOG_UPSTREAM = os.getenv(
-    "NAVIGUIDE_CATALOG_UPSTREAM",
-    os.getenv("BI_API_URL") or "https://blueintelligence.online/api",
-).rstrip("/")
 _CATALOG_PATHS = {
     "projects": "/export/geojson",
     "marinas": "/export/marinas.geojson",
@@ -900,6 +897,14 @@ def _port_in_bbox(feature: dict, bbox: Optional[tuple[float, float, float, float
     return any(value >= west or value <= east for value in copies)
 
 
+def _catalog_upstream() -> str | None:
+    """NAVIGUIDE_CATALOG_UPSTREAM if set, otherwise BI_API_URL. None when both are empty."""
+    explicit = (os.getenv("NAVIGUIDE_CATALOG_UPSTREAM") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return bi_base()
+
+
 async def _fetch_catalog_features(catalog: str) -> list[dict]:
     """Lit une source explicitement autorisée; aucune URL utilisateur n'est proxifiée."""
     if catalog == "ports":
@@ -907,8 +912,11 @@ async def _fetch_catalog_features(catalog: str) -> list[dict]:
     path = _CATALOG_PATHS.get(catalog)
     if not path:
         raise KeyError(catalog)
+    base = _catalog_upstream()
+    if not base:
+        raise RuntimeError("BI disabled: BI_API_URL is not set")
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(f"{_CATALOG_UPSTREAM}{path}", headers={"Accept": "application/geo+json, application/json"})
+        response = await client.get(f"{base}{path}", headers={"Accept": "application/geo+json, application/json"})
         response.raise_for_status()
         if too_large(len(response.content), ZEE_RESPONSE_MAX_BYTES):
             raise ValueError("catalogue source trop volumineux")
