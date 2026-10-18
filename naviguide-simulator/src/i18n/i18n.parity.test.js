@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fr from "./fr.js";
 import en from "./en.js";
 
-describe("i18n parity (lot F5)", () => {
+describe("i18n parity", () => {
   it("chaque clé fr a sa clé en, et inversement", () => {
     const frKeys = Object.keys(fr);
     const enKeys = Object.keys(en);
@@ -15,19 +15,19 @@ describe("i18n parity (lot F5)", () => {
     assert.equal(en._lang, "en");
   });
 
-  it("lot R1 — plus de clés d'aide (logbook, revue, chiffres)", () => {
+  it("Plus de clés d'aide (logbook, revue, chiffres)", () => {
     for (const k of ["logbookChatHint", "planReviewSummary", "skipperExpertHint"]) {
       assert.equal(fr[k], undefined, `fr.${k} ne doit plus exister`);
       assert.equal(en[k], undefined, `en.${k} ne doit plus exister`);
     }
   });
 
-  it("lot RB8 — info-bulle de vitesse d'époque", () => {
+  it("Info-bulle de vitesse d'époque", () => {
     assert.equal(fr.traveledEraSpeed, "{knots} kn");
     assert.equal(en.traveledEraSpeed, "{knots} kn");
   });
 
-  it("lot R2 — Escale précédente et info-bulles de régime", () => {
+  it("Escale précédente et info-bulles de régime", () => {
     assert.equal(fr.previousEscale, "Escale précédente");
     assert.equal(en.previousEscale, "Previous stop");
     assert.match(fr.regimeTooltipHindcast, /vraiment rencontré/);
@@ -38,7 +38,7 @@ describe("i18n parity (lot F5)", () => {
     assert.match(en.regimeTooltipClimatology, /monthly average/);
   });
 
-  it("lot R5 — unités terrestres km / h de route", () => {
+  it("Unités terrestres km / h de route", () => {
     assert.equal(fr.unitKm, "km");
     assert.equal(en.unitKm, "km");
     assert.equal(fr.unitRoadHours, "h de route");
@@ -47,14 +47,14 @@ describe("i18n parity (lot F5)", () => {
     assert.equal(en.byRoad, "by road");
   });
 
-  it("lot R11 — fourchette d'arrivée sans p10 ni membres à l'écran", () => {
+  it("Fourchette d'arrivée sans p10 ni membres à l'écran", () => {
     assert.equal(fr.etaRange, "arrivée entre le {p10} et le {p90}");
     assert.equal(en.etaRange, "arrival between {p10} and {p90}");
     assert.equal(fr.etaRangeTitle, "p10–p90, {n} membres");
     assert.equal(en.etaRangeTitle, "p10–p90, {n} members");
   });
 
-  it("lot RG17 — ligne de raison quand la fourchette manque", () => {
+  it("Ligne de raison quand la fourchette manque", () => {
     assert.equal(fr.etaUnavailable, "fourchette indisponible — {reason}, nouvel essai le {date}");
     assert.equal(en.etaUnavailable, "arrival window unavailable — {reason}, retry on {date}");
     assert.equal(fr.etaUnavailableShort, "fourchette indisponible — {reason}");
@@ -65,7 +65,7 @@ describe("i18n parity (lot F5)", () => {
     assert.equal(en.etaReasonPreparing, "preparing");
   });
 
-  it("lot RE6 — bandeau climato : source du repli global", () => {
+  it("Bandeau climato : source du repli global", () => {
     assert.equal(fr.climatologySourceGlobal, "maille 4°");
     assert.equal(en.climatologySourceGlobal, "4° mesh");
   });

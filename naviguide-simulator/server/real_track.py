@@ -1,4 +1,4 @@
-"""Trajet RÉEL figé du voyage officiel (lot HC1).
+"""Trajet RÉEL figé du voyage officiel.
 
 Le PASSÉ (du départ au dernier jour ERA5 publié, ~5 j de retard) est intégré
 jour après jour avec la météo réellement rencontrée (vent ERA5 → polaire ×

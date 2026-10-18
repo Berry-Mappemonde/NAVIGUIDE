@@ -1,7 +1,7 @@
 """Base embarquée du simulateur — SQLite, un fichier dans `voyage_data/`.
 
 Première table : les **perles** (sacs `ici()` échantillonnés le long de la
-route officielle, lot P). Un sac riche (toutes les couches sans horodatage)
+route officielle). Un sac riche (toutes les couches sans horodatage)
 ou thin (ZEE, ports d'entrée, AMP, ports), sa position, son moment.
 
 Pourquoi SQLite et pas un JSON : 3 272 perles riches font ~60 Mo ; on les
@@ -40,14 +40,14 @@ _SCHEMA = (
     " bag TEXT NOT NULL,"       # JSON
     " ts REAL NOT NULL)",
     "CREATE INDEX IF NOT EXISTS pearls_kind ON pearls(kind)",
-    # Generic namespaced cache: escale sheets (lot C), pre-generated stories (lot F)…
+    # Generic namespaced cache: escale sheets, pre-generated stories…
     "CREATE TABLE IF NOT EXISTS kv ("
     " ns TEXT NOT NULL,"
     " key TEXT NOT NULL,"
     " value TEXT NOT NULL,"     # JSON
     " ts REAL NOT NULL,"
     " PRIMARY KEY (ns, key))",
-    # Journal des moments (lot R9a) : une ligne par changement de signature.
+    # Journal des moments : une ligne par changement de signature.
     "CREATE TABLE IF NOT EXISTS moments ("
     " voyage_id TEXT NOT NULL,"
     " seq INTEGER NOT NULL,"
@@ -365,7 +365,7 @@ def import_legacy_json(path: Path, ttl_s: float) -> int:
         if now - ts > ttl_s:
             continue
         parts = key.split(":")
-        # 3 = lat:lon:radius ; 4 = + PEARL_REV (rg3) ; 5 = + a{sig} (AM1A).
+        # 3 = lat:lon:radius ; 4 = + PEARL_REV (rg3) ; 5 = + a{sig}.
         # Un 4e segment numérique = ancien mois, ignoré.
         if len(parts) == 3:
             pass

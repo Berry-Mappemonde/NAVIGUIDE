@@ -389,7 +389,7 @@ describe("filmBarTicks", () => {
   });
 });
 
-describe("lot C2 — régime sur l’échantillon", () => {
+describe("Régime sur l’échantillon", () => {
   it("propage regime / sources / spread", () => {
     const clock = {
       t0: "2026-05-15T08:00:00.000Z",
@@ -446,7 +446,7 @@ describe("lot C2 — régime sur l’échantillon", () => {
   });
 });
 
-describe("lot RA4 — voile hors avion", () => {
+describe("Voile hors avion", () => {
   it("n'ajoute pas les milles du saut avion à sailNm", () => {
     const flat = {
       points: [

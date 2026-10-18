@@ -1,4 +1,4 @@
-// Lot N3 — Score anti-trafic (pastille « couloirs : Gibraltar »).
+// Score anti-trafic (pastille « couloirs : Gibraltar »).
 // Sans API : fixture usePlanReview (Ajaccio → Fort-de-France, Gibraltar).
 // GET /voyage/official : sondé ; s'il manque, annotation seulement —
 // les pastilles fixture ne sont pas affaiblies. Si l'API répond mais
@@ -35,7 +35,7 @@ async function showReview(page) {
   await openReviewTab(page);
 }
 
-/** L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant (RC2). */
+/** L'horloge live à quai ouvre la fiche d'escale → onglet Maintenant. */
 async function keepReviewOpen(page) {
   const tab = page.getByTestId("ici-tab-review");
   if ((await tab.getAttribute("aria-selected")) !== "true") {
@@ -43,7 +43,7 @@ async function keepReviewOpen(page) {
   }
 }
 
-test("lot N3 — Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-France", async ({ page }) => {
+test("Revue du plan : couloirs Gibraltar sous Ajaccio → Fort-de-France", async ({ page }) => {
   test.setTimeout(45_000);
   const { apiUp, reviewReady, legs } = await probeOfficialPlanReview(page);
   if (!apiUp) {

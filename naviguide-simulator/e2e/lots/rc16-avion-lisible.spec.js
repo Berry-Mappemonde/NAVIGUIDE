@@ -1,4 +1,4 @@
-// Lot RC16 — le sous-titre film montre l'avion aller et retour à l'écran.
+// Le sous-titre film montre l'avion aller et retour à l'écran.
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le seek Guyane
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut
 // des seules assertions avion visibles — jamais Revoir retiré, ni les
@@ -108,7 +108,7 @@ async function expectVisibleAir(locator, re, label) {
   expect(info.inBox, `${label} dans la boîte visible (${info.word})`).toBeTruthy();
 }
 
-test("lot RC16 — sous-titre visible : avion aller et retour à la Guyane", async ({ page }) => {
+test("Sous-titre visible : avion aller et retour à la Guyane", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

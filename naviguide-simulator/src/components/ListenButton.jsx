@@ -4,7 +4,7 @@ import { canSpeak, speak, stopSpeaking } from "../utils/speak.js";
 
 /**
  * « Écouter » — le récit lu à voix haute par le navigateur (zéro LLM).
- * In the film bar (lot O) this is the only sound control: it arms
+ * In the film bar this is the only sound control: it arms
  * `replay.voice` (the hook reads the current paragraph during a replay)
  * and, outside a replay, reads the story + briefing. Moment cards and
  * escale sheets still use it as a one-shot reader.
@@ -50,7 +50,7 @@ export function ListenButton({
     const ok = speak(body, lang, { onEnd: () => setSpeaking(false) });
     setSpeaking(ok);
   };
-  // Pendant le film, Écouter reste « Écouter » (on/off) — « Stop » est l'arrêt du film (RA5).
+  // Pendant le film, Écouter reste « Écouter » (on/off) — « Stop » est l'arrêt du film.
   const label = (deferSpeak && armed)
     ? t("briefingListen")
     : (pressed ? t("briefingListenStop") : t("briefingListen"));

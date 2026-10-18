@@ -40,7 +40,7 @@ function layersFoldKey(tracerLayout) {
 }
 
 /**
- * Polar in Tracer stays a real `<details>` (lot DM9 / RD3 read `tagName`
+ * Polar in Tracer stays a real `<details>` (DM9 / RD3 read `tagName`
  * then `el.open`). React 19 restores `open` from props on `toggle`, so we
  * prevent the native summary toggle and set the IDL after the event.
  */
@@ -257,7 +257,7 @@ function SectionTitle({ children, right = null }) {
  * The whole expedition, compact: the route in numbers on two lines and the
  * stopovers list (click = jump). Revue du 19 sept. : one box, not two.
  */
-/** Lot I — while the skipper draws, the box describes the drawn route, not the official one. */
+/** While the skipper draws, the box describes the drawn route, not the official one. */
 function DrawingBox({ drawing }) {
   const { t } = useLang();
   const pts = drawing?.points || [];
@@ -309,7 +309,7 @@ function ExpeditionBox({ routeDistanceNm, routeSegmentCount, routeCounts, waypoi
   // Dessin ouvert : le cadre « Tracé en cours » est toujours là (c'est le retour
   // visuel « vous dessinez, cliquez sur la carte » — surface de main, specs RH2 /
   // R9a / R13 / RF1 / S). DM6 ouvre le dessin dès l'entrée en Tracer : à brouillon
-  // vide, la légende des escales reste DESSOUS (vitrine Berry, lot RE2) ; dès le
+  // vide, la légende des escales reste DESSOUS (vitrine Berry) ; dès le
   // premier point, le cadre remplace l'expédition comme avant DM6.
   if (drawing?.points?.length) return <DrawingBox drawing={drawing} />;
   return (

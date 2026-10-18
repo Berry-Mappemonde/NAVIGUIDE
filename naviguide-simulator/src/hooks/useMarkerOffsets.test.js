@@ -9,7 +9,7 @@ import {
   viewTouchesAntimeridian,
 } from "./useMarkerOffsets.js";
 
-describe("offsets pendant le zoom (lot U)", () => {
+describe("offsets pendant le zoom", () => {
   it("ne recalcule pas pendant zoomanim ; zoomend attend 250 ms", () => {
     assert.equal(shouldComputeOffsetsOnEvent("zoomanim"), false);
     assert.equal(shouldComputeOffsetsOnEvent("zoomend"), true);
@@ -22,7 +22,7 @@ describe("offsets pendant le zoom (lot U)", () => {
   });
 });
 
-describe("copies-monde des drapeaux (lot U)", () => {
+describe("copies-monde des drapeaux", () => {
   it("Atlantique (vue loin de ±180°) : une seule copie", () => {
     assert.equal(viewTouchesAntimeridian(-80, 10), false);
     const lngs = flagWorldLngsForView(-1.5, -20, -80, 10);

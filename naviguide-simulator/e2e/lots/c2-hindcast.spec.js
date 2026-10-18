@@ -1,4 +1,4 @@
-// Lot C2 — horloge à trois régimes. Sans API : fumée barre film.
+// Horloge à trois régimes. Sans API : fumée barre film.
 // Avec API et hindcast prêt : clock-regime contient « hindcast » et « sources ».
 import { expect, test } from "@playwright/test";
 
@@ -18,7 +18,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot C2 — régime sur la barre film", async ({ page }) => {
+test("Régime sur la barre film", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-bar")).toBeVisible({ timeout: 30_000 });

@@ -1,4 +1,4 @@
-"""ZEE locale — point-dans-polygone sur les ZEE VLIZ v12 (lot B).
+"""ZEE locale — point-dans-polygone sur les ZEE VLIZ v12.
 
 Le gazetteer MarineRegions « par point » est bruité le long des côtes
 (« Spanish EEZ » à La Rochelle, allers-retours ZEE / haute mer). Blue

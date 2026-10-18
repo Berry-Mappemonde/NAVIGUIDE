@@ -1,4 +1,4 @@
-// Lot RG6 — gabarit narratif par étape (ouverture → route → escale).
+// Gabarit narratif par étape (ouverture → route → escale).
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film — jamais Revoir retiré, ni les pilules, ni la barre.
@@ -64,7 +64,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG6 — gabarit d'étape, sans jargon ni annexe", async ({ page }) => {
+test("Gabarit d'étape, sans jargon ni annexe", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
@@ -113,7 +113,7 @@ test("lot RG6 — gabarit d'étape, sans jargon ni annexe", async ({ page }) => 
   const blob = film.chapters.map((c) => c.text || "").join(" ");
   const hasRgOpening = OPENING.test(blob)
     || /L['’]expédition Berry-Mappemonde|The Berry-Mappemonde expedition/i.test(blob);
-  // RC21 : ouverture RG6/RG7 ⇒ Revoir jouable ; plus de skip « pré-RG » qui cache un bouton grisé.
+  // Ouverture RG6/RG7 ⇒ Revoir jouable ; plus de skip « pré-RG » qui cache un bouton grisé.
   if (hasRgOpening) {
     await expect(start).toBeEnabled({ timeout: 30_000 });
   }

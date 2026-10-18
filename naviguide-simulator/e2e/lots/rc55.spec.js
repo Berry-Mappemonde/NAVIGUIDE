@@ -1,4 +1,4 @@
-// Lot RC55 — le chapitre qui part de Saint-Pierre ne raconte pas la Guyane
+// Le chapitre qui part de Saint-Pierre ne raconte pas la Guyane
 // ni l'équateur (Atlantique nord). Sans API : GET /voyage/official sondé ;
 // s'il manque, annotation + saut des assertions film — barre et Revoir gardés.
 import { mkdirSync } from "node:fs";
@@ -41,7 +41,7 @@ function saintPierreChapters(chapters) {
   return (chapters || []).filter((c) => SPM_FROM.test(c?.fromName || ""));
 }
 
-test("lot RC55 — chapitre Saint-Pierre sans Guyane ni équateur", async ({ page }) => {
+test("Chapitre Saint-Pierre sans Guyane ni équateur", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

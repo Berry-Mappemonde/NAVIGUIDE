@@ -1,4 +1,4 @@
-// Lot RG14 — ancres au bon mot (revue du 28 sept., § 5.3 / D1).
+// Ancres au bon mot (revue du 28 sept., § 5.3 / D1).
 // Sans API : Suivre, Revoir et la barre tiennent seuls. GET /voyage/official
 // sondé ; s'il manque, annotation + saut des assertions film — jamais la barre
 // ni Revoir retirés. Aucune donnée factice : on lit le poste tel quel.
@@ -52,7 +52,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG14 — ancre au nom, barre et Revoir présents", async ({ page }) => {
+test("Ancre au nom, barre et Revoir présents", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

@@ -1,4 +1,4 @@
-// Lot RC11 — Revoir et la date restent visibles ; plus de film Simulation
+// Revoir et la date restent visibles ; plus de film Simulation
 // si l'API manque. GET /voyage/official sondé ; s'il manque, annotation +
 // saut des seules assertions du /film ready — jamais Revoir, ni le champ
 // date, ni « non cliquable ».
@@ -83,7 +83,7 @@ async function waitRe7Film(page, { timeout = 45_000 } = {}) {
   return last ? { film: last, stale: !isRe7Film(last) } : null;
 }
 
-test("lot RC11 — Revoir grisé tant que /film n'est pas prêt, date toujours là", async ({ page }) => {
+test("Revoir grisé tant que /film n'est pas prêt, date toujours là", async ({ page }) => {
   test.setTimeout(120_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

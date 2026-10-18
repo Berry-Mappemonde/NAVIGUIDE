@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mesure de densité du récit du film (lot RC26).
+"""Mesure de densité du récit du film.
 
 Imprime, depuis GET /voyage/official/film et GET /voyage/official/moments :
   - par chapitre : jours de MER (départ → arrivée), caractères, items dits
@@ -206,7 +206,7 @@ YEAR_UNITS = 12 * 31 + 31   # la toise mois*31+jour boucle ici (fin décembre)
 
 
 def out_of_order_dates(text: str) -> list[str]:
-    """RC30 : dans un chapitre, les dates explicites vont en avant — une date
+    """Dans un chapitre, les dates explicites vont en avant — une date
     qui recule (« Le 19 mai … Le 18 mai ») est une phrase dite hors ordre.
     Décembre → janvier est un passage d'année, pas un recul."""
     out = []
@@ -225,7 +225,7 @@ def out_of_order_dates(text: str) -> list[str]:
 
 def bad_lendemain(text: str) -> list[str]:
     """« Le lendemain » : il faut une date dite avant, et la date suivante ne
-    doit pas contredire le +1 (RC30). Passage d'année = en avant."""
+    doit pas contredire le +1. Passage d'année = en avant."""
     out = []
     last = None
     offset = 0
@@ -318,7 +318,7 @@ def collect_stock(moments: dict) -> tuple[Counter, list[tuple[int, str]]]:
 def cap_argo_told(
     told: list[tuple[int, str]], lo: int | None, hi: int | None,
 ) -> list[tuple[int, str]]:
-    """RC30 : au plus UN flotteur Argo par jambe — au-delà, le stock Argo de la
+    """Au plus UN flotteur Argo par jambe — au-delà, le stock Argo de la
     fenêtre n'est plus « racontable » : il ne gonfle ni le plancher d'items ni
     les trous « avec du stock non dit »."""
     out: list[tuple[int, str]] = []
@@ -338,7 +338,7 @@ def gap_has_untold_stock(
 ) -> bool:
     """Vrai si le stock a, dans le trou, un item racontable PAS déjà dans le
     texte (un groupe « puis les eaux fidjiennes » couvre l'entrée fidjienne).
-    RC32 : le titre Marine Regions (« Madagascan ») se dit « malgaches »."""
+    Le titre Marine Regions (« Madagascan ») se dit « malgaches »."""
     if g_a is None or g_b is None:
         return False
     margin = 6 * 3_600_000
@@ -420,7 +420,7 @@ def main() -> int:
             # Un trou n'est un défaut que si le stock avait quelque chose à y
             # dire qui n'est PAS déjà dans le texte (un groupe « puis les eaux
             # fidjiennes » couvre l'entrée fidjienne, même ancrée plus tôt).
-            # RC30 : les Argo au-delà d'un par jambe ne comptent pas.
+            # Les Argo au-delà d'un par jambe ne comptent pas.
             lo_ch, hi_ch = sea_bounds(ch, departs)
             told_ch = cap_argo_told(stock_told, lo_ch, hi_ch)
             missing = gap_has_untold_stock(g_a, g_b, told_ch, ch.get("text") or "")
@@ -449,7 +449,7 @@ def main() -> int:
           f"climo dites {said.get('climo', 0)} / stock {stock.get('climo', 0)}")
     print(f"doublons de site : {dups or 'aucun'}")
     print(f"adjectifs ZEE orphelins : {orphans or 'aucun'}")
-    # RC30 : l'ordre du récit et les phrases entières.
+    # L'ordre du récit et les phrases entières.
     print(f"phrases hors ordre (dates qui reculent, 0 attendu) : {misordered or 'aucune'}")
     print(f"connecteurs de date faux (« Le lendemain » sans veille) : {false_leads or 'aucun'}")
     print(f"Argo anonymes (sans identifiant, 0 attendu) : {anon_argo or 'aucun'}")

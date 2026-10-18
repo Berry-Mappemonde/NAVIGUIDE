@@ -21,7 +21,7 @@ const alongside = {
   marks: MARKS,
 };
 
-describe("useEscaleSheetState — KO #309 Fort-de-France (lot RE2)", () => {
+describe("useEscaleSheetState — KO #309 Fort-de-France", () => {
   it("à quai à Fort-de-France, nearestAlongside rend Fort-de-France, pas Saint-Maur", () => {
     const best = nearestAlongside(alongside.clockSample, MARKS);
     assert.equal(best?.name, FORT_DE_FRANCE.name);
@@ -56,7 +56,7 @@ describe("useEscaleSheetState — KO #309 Fort-de-France (lot RE2)", () => {
     assert.equal(atAjaccio?.name, AJACCIO.name);
   });
 
-  it("lot DM7 — en Tracer, l'auto-fiche suit le tracé (Saint-Maur), jamais Papeete", () => {
+  it("En Tracer, l'auto-fiche suit le tracé (Saint-Maur), jamais Papeete", () => {
     const PAPEETE = { name: "Papeete (Polynésie française)", lat: -17.537, lon: -149.566 };
     const atStart = pickAutoEscaleStop({
       isSuivre: false,
@@ -75,7 +75,7 @@ describe("useEscaleSheetState — KO #309 Fort-de-France (lot RE2)", () => {
     assert.equal(leakedOfficial?.name, PAPEETE.name, "si on passe encore le sample officiel, Papeete sort — le cloisonnement est dans App (clockSample du tracé)");
   });
 
-  it("lot RC44 — catamaran parqué à Cayenne : fiche Cayenne, pas Halifax", () => {
+  it("Catamaran parqué à Cayenne : fiche Cayenne, pas Halifax", () => {
     const CAYENNE = { name: "Cayenne (Guyane)", lat: 4.93, lon: -52.35 };
     const HALIFAX = { name: "Halifax (Nouvelle-Écosse)", lat: 44.65, lon: -63.57 };
     const marks = [...MARKS, CAYENNE, HALIFAX];

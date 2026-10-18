@@ -1,4 +1,4 @@
-// Lot RF3 — serveur nominal : plus de 500/429, Journal rempli, polaires
+// Serveur nominal : plus de 500/429, Journal rempli, polaires
 // chargées. Sans API : barre film, Suivre, Journal et polaires tiennent
 // seuls. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions d'API — jamais les modes, ni l'onglet Journal, ni
@@ -55,7 +55,7 @@ function isNominalUrl(url) {
   return /\/voyage(?:\/official)?(?:\/|\?|$)|\/ici(?:\/|\?|$)|\/api\/v1\/polar\//.test(url);
 }
 
-test("lot RF3 — aucune ligne rouge, Journal et polaires", async ({ page }) => {
+test("Aucune ligne rouge, Journal et polaires", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

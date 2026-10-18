@@ -39,7 +39,7 @@ function tickCadrage({ live, userNavigated = false, isSuivre = true, filmActive 
   return { views, tick, getInitial: () => initialLive, setInitial: (v) => { initialLive = v; } };
 }
 
-describe("lot DM4 — cadrage Suivre (bateau + plancher)", () => {
+describe("Cadrage Suivre (bateau + plancher)", () => {
   it("première position live → setView(bateau, plancher) une fois", () => {
     const { views, tick } = tickCadrage({ live: LIVE });
     tick();

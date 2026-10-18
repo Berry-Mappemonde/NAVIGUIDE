@@ -1,4 +1,4 @@
-// Lot RF6 — cinématique du film : glisse, zoom stable, fond dessiné.
+// Cinématique du film : glisse, zoom stable, fond dessiné.
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; zoom / glisse / fond
 // pendant le film sont sautés. GET /voyage/official sondé ; s'il manque,
 // annotation + saut des seules assertions caméra — jamais Revoir retiré.
@@ -42,7 +42,7 @@ function tilesOnMap() {
   return { n: painted.length, ok: painted.length > 0 };
 }
 
-test("lot RF6 — caméra glisse, zoom stable 4 s, fond dessiné", async ({ page }) => {
+test("Caméra glisse, zoom stable 4 s, fond dessiné", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());
@@ -119,7 +119,7 @@ test("lot RF6 — caméra glisse, zoom stable 4 s, fond dessiné", async ({ page
   const progress = centers.map((p) => (
     (p.lat - centers[0].lat) * dLat + (p.lng - centers[0].lng) * dLng
   ));
-  // Cadrage au tiers avant sur le cap instantané (RF6) : la caméra peut reculer d'un cheveu quand le cap
+  // Cadrage au tiers avant sur le cap instantané : la caméra peut reculer d'un cheveu quand le cap
   // tourne — on refuse un vrai retour en arrière (> 25 % du chemin parcouru), pas ce frémissement (RG13 lissera le cap).
   const span = Math.abs(progress[progress.length - 1] - progress[0]) || 1e-9;
   for (let i = 1; i < progress.length; i++) {

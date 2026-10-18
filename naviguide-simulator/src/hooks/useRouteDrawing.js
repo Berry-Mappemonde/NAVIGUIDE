@@ -25,7 +25,7 @@ function publishDrawn(points, segments) {
 }
 
 /**
- * The drawn route itself (lot J: moved out of App.jsx, behaviour unchanged):
+ * The drawn route itself (moved out of App.jsx, behaviour unchanged):
  * points and searoute segments, undo / redo, the GeoJSON handed to the plan.
  * App keeps the orchestration around it (entering / leaving the mode, camera,
  * cinema, plan reset) — this hook never touches the scene or the view.
@@ -42,7 +42,7 @@ export function useRouteDrawing() {
   const undoneSegmentsRef = useRef([]);
   const fetchIdRef = useRef(0);
 
-  // DM6 — reset n'est appelé que pour un abandon explicite (Annuler / supprimer).
+  // Reset n'est appelé que pour un abandon explicite (Annuler / supprimer).
   // Mettre le brouillon de côté (pilule Berry, Suivre) laisse points et segments.
   const reset = useCallback(() => {
     setDrawnPoints([]);
@@ -61,7 +61,7 @@ export function useRouteDrawing() {
     const myFetchId = ++fetchIdRef.current;
     setDrawingLoading(true);
     try {
-      // Lot S : searoute attend [−180, 180] ; on replie, puis on redéplie
+      // Searoute attend [−180, 180] ; on replie, puis on redéplie
       // le résultat sur la copie-monde du point précédent.
       const params = new URLSearchParams({
         start_lat: from.lat,

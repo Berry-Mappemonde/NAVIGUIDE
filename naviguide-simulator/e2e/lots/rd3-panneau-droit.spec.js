@@ -1,4 +1,4 @@
-// Lot RD3 — panneau droit : plus d'encadré jaune route, nom du bateau
+// Panneau droit : plus d'encadré jaune route, nom du bateau
 // une fois sous Polaires, remise 34 → 29 → ↺ → 34.
 // Sans API : badge absent, skipper et cycle clavier tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
@@ -47,7 +47,7 @@ async function showToolsPanel(page) {
   await expect.poll(() => rightPanelOpen(page), { timeout: 10_000 }).toBe(true);
 }
 
-test("lot RD3 — plus d'encadré jaune, nom une fois, remise 34 → 29 → 34", async ({ page }) => {
+test("Plus d'encadré jaune, nom une fois, remise 34 → 29 → 34", async ({ page }) => {
   test.setTimeout(120_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {
@@ -104,7 +104,7 @@ test("lot RD3 — plus d'encadré jaune, nom une fois, remise 34 → 29 → 34",
   const orders = page.getByTestId("skipper-orders");
   await expect(orders).toBeVisible({ timeout: 15_000 });
 
-  // DM9 — Tracer : Polaires / Paramètres repliés, Calques dépliés ; Suivre inchangé.
+  // Tracer : Polaires / Paramètres repliés, Calques dépliés ; Suivre inchangé.
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   await showToolsPanel(page);

@@ -1,4 +1,4 @@
-// Lot RA4 — jambes avion noires pointillées, live stable, longitude bornée.
+// Jambes avion noires pointillées, live stable, longitude bornée.
 // Sans API : trait avion (geojson local) et maxBounds se vérifient seuls.
 // Position live / rechargement : seulement si GET /voyage/official répond.
 import { expect, test } from "@playwright/test";
@@ -48,7 +48,7 @@ function airLines() {
   return out;
 }
 
-test("lot RA4 — avion noir pointillé, live stable, longitude bornée", async ({ page }) => {
+test("Avion noir pointillé, live stable, longitude bornée", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/");
   await dismissNotForNav(page);

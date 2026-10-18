@@ -11,7 +11,7 @@ const ici = readFileSync(join(here, "IciMaintenant.jsx"), "utf8");
 const sidebar = readFileSync(join(here, "Sidebar.jsx"), "utf8");
 const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 
-describe("PlanReview — commentaire (lot L5)", () => {
+describe("PlanReview — commentaire", () => {
   it("affiche le paragraphe sous le tableau avec source i18n", () => {
     assert.match(src, /data-testid="plan-review-comment"/);
     assert.match(src, /planReviewCommentTitle/);
@@ -40,7 +40,7 @@ describe("PlanReview — commentaire (lot L5)", () => {
   });
 });
 
-describe("PlanReview — conseil (lot R10d)", () => {
+describe("PlanReview — conseil", () => {
   it("montre alertes par jambe, phrase, pastilles et deux colonnes", () => {
     assert.match(src, /planReviewLegAlerts/);
     assert.match(src, /data-testid="plan-review-leg-alerts"/);
@@ -64,7 +64,7 @@ describe("PlanReview — conseil (lot R10d)", () => {
   });
 });
 
-describe("PlanReview — pastille anti-trafic (lot N3 / RD3)", () => {
+describe("PlanReview — pastille anti-trafic", () => {
   it("affiche les couloirs sous la jambe, sans encadré jaune route", () => {
     assert.match(src, /data-testid="plan-review-lanes"/);
     assert.match(src, /planReviewLanes/);
@@ -77,7 +77,7 @@ describe("PlanReview — pastille anti-trafic (lot N3 / RD3)", () => {
   });
 });
 
-describe("PlanReview — légende des régimes (lot R2)", () => {
+describe("PlanReview — légende des régimes", () => {
   it("pose une ligne discrète au-dessus du tableau, pas dans la barre", () => {
     assert.match(src, /data-testid="plan-review-regime-legend"/);
     const legendAt = src.indexOf('data-testid="plan-review-regime-legend"');

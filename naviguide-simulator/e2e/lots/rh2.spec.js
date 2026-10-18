@@ -1,4 +1,4 @@
-// Lot RH2 — plus de net::ERR_ABORTED sur /ici/warm/status et /voyage/official/eta.
+// Plus de net::ERR_ABORTED sur /ici/warm/status et /voyage/official/eta.
 // Sans API : le parcours Suivre → Simulation → Tracer → Suivre tient seul ;
 // l'absence d'ERR_ABORTED (abort client) reste exigée. GET /voyage/official
 // sondé ; s'il manque, annotation + saut de la fourchette servie par le stock
@@ -34,7 +34,7 @@ async function probeOfficial(page) {
   return Boolean(body && typeof body === "object");
 }
 
-test("lot RH2 — parcours nominal sans net::ERR_ABORTED (warm/status, eta)", async ({ page }) => {
+test("Parcours nominal sans net::ERR_ABORTED (warm/status, eta)", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

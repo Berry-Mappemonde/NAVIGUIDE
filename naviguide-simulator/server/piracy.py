@@ -1,4 +1,4 @@
-"""Zones de piraterie (boîtes IMB / UKMTO) — lot N4.
+"""Zones de piraterie (boîtes IMB / UKMTO) — N4.
 
 Table versionnée : pas de score composite, pas de CYCLONE_BASINS.
 Boîtes reprises de naviguide/naviguide_workspace/naviguide_agent3/risk_engine.py

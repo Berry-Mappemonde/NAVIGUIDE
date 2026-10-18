@@ -1,4 +1,4 @@
-// Lot RG15 — carte au dézoom : drapeaux et bateaux plantés, un seul monde.
+// Carte au dézoom : drapeaux et bateaux plantés, un seul monde.
 // Sans API : plancher de dézoom, Tracer et les drapeaux ITINERARY_POINTS tiennent
 // seuls. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // assertions film / bateau live — jamais le plancher ni la stabilité des drapeaux.
@@ -204,7 +204,7 @@ async function assertOneWorld(page, label) {
   return snap;
 }
 
-test("lot RG15 — drapeaux plantés, un seul monde", async ({ page }) => {
+test("Drapeaux plantés, un seul monde", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await probeOfficial(page);
   const apiUp = Boolean(official);

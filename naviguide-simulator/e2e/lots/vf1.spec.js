@@ -1,4 +1,4 @@
-// Lot VF1 — la voix coincée ne fige plus le film.
+// La voix coincée ne fige plus le film.
 // Sans API : GET /voyage/official sondé ; s'il manque, annotation + saut des
 // assertions lecture — barre et Revoir restent vérifiés.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -68,7 +68,7 @@ async function waitPastLaRochelle(page, timeout = 90_000) {
   }, null, { timeout });
 }
 
-test("lot VF1 — deuxième Revoir sans rechargement : le bateau quitte La Rochelle", async ({ page }) => {
+test("Deuxième Revoir sans rechargement : le bateau quitte La Rochelle", async ({ page }) => {
   test.setTimeout(240_000);
 
   await page.goto("/");

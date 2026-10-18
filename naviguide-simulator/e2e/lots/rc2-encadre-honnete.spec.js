@@ -1,4 +1,4 @@
-// Lot RC2 — encadré honnête : le bateau à l'écran, pas Fort-de-France / Guadeloupe.
+// Encadré honnête : le bateau à l'écran, pas Fort-de-France / Guadeloupe.
 // Sans API : sections présentes, aucune fixture official_mini (Fort-de-France →
 // Pointe-à-Pitre, CORIOLIS-Guadeloupe, Exclusive Economic Zone).
 // Avec API : Ici = phrases localisées du Moment ; Simulation sans « → Fort-de-France » ;
@@ -116,7 +116,7 @@ async function clickAjaccio(page) {
   return true;
 }
 
-test("lot RC2 — encadré du point courant, plus official_mini", async ({ page }) => {
+test("Encadré du point courant, plus official_mini", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

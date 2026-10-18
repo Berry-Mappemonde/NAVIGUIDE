@@ -21,7 +21,7 @@ function mockMap() {
 const SEA = { coords: [[-1.2, 46.1], [-1.0, 46.2]] };
 const AIR = { coords: [[-1.2, 46.1], [-1.0, 46.2]], kind: "air" };
 
-describe("pointToSegmentPx — copies du monde (lot RD1)", () => {
+describe("pointToSegmentPx — copies du monde", () => {
   it("garde le seuil à 16 px", () => {
     assert.equal(ROUTE_CLICK_THRESHOLD_PX, 16);
   });

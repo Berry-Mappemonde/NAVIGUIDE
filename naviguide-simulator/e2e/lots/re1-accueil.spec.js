@@ -1,6 +1,6 @@
-// Lot RE1 — accueil Suivre + Cinéma + monde dézoomé (plancher) ;
+// Accueil Suivre + Cinéma + monde dézoomé (plancher) ;
 // Suivre → Tracer décoche le Cinéma et ouvre les deux panneaux.
-// Lot DM4 : accueil et clic Suivre = bateau au centre, zoom = plancher
+// Accueil et clic Suivre = bateau au centre, zoom = plancher
 // (plus de zoom > 3). Sans API : montage (Suivre, Cinéma, zoom plancher,
 // panneaux fermés) et la bascule tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
@@ -64,7 +64,7 @@ async function probeOfficial(request) {
   return body && typeof body === "object" ? body : null;
 }
 
-test("lot RE1 — accueil Simulation cinéma monde ; Suivre → Simulation ouvre les panneaux", async ({ page, request }) => {
+test("Accueil Simulation cinéma monde ; Suivre → Simulation ouvre les panneaux", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);

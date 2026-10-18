@@ -1,4 +1,4 @@
-// Lot RC28 — fourchette ou raison sous la jambe live (Nouméa tant que
+// Fourchette ou raison sous la jambe live (Nouméa tant que
 // le bateau n'y est pas), jamais sous Dzaoudzi / Papeete / La Rochelle
 // à la place. Instant officiel (iso / filmNm), jamais Date.now().
 // Sans API : Suivre + légende tiennent seuls. GET /voyage/official sondé ;
@@ -60,7 +60,7 @@ function retryYear(iso) {
   return new Date(t).getUTCFullYear();
 }
 
-test("lot RC28 — fourchette sous la jambe live, pas sous Dzaoudzi", async ({ page }) => {
+test("Fourchette sous la jambe live, pas sous Dzaoudzi", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp, body: official, clock, live } = await probeOfficial(page);
   if (!apiUp) {

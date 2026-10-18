@@ -1,4 +1,4 @@
-// Lot L5 — revue commentée : paragraphe sous le tableau (texte ou « règles »).
+// Revue commentée : paragraphe sous le tableau (texte ou « règles »).
 // Sans API : source = règles. Recette réelle (Nemotron Super) : NEBIUS_API_KEY.
 import { expect, test } from "@playwright/test";
 import { dismissNotForNav, openReviewTab } from "../helpers.js";
@@ -10,7 +10,7 @@ const shot = (page, name) => page.screenshot({
   fullPage: false,
 });
 
-test("lot L5 — plan-review-comment : texte ou règles", async ({ page }) => {
+test("Plan-review-comment : texte ou règles", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

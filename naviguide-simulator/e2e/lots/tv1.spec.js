@@ -1,4 +1,4 @@
-// Lot TV1 — questionnaire d'escale, deux tours, une phrase.
+// Questionnaire d'escale, deux tours, une phrase.
 // Drapeau fermé (CI) : zéro Tavily depuis le navigateur ; Suivre tient.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des lectures
 // film / sac — barre et Suivre restent. Aucune donnée factice écrite.
@@ -21,7 +21,7 @@ const shot = (page, name) => page.screenshot({
 const TAVILY = /tavily\.com|api\.tavily/i;
 const CHAR_BUDGET_150 = 2250;
 
-test("lot TV1 — drapeau fermé, Suivre, aucun Tavily navigateur", async ({ page }) => {
+test("Drapeau fermé, Suivre, aucun Tavily navigateur", async ({ page }) => {
   test.setTimeout(90_000);
   const tavilyHits = [];
   page.on("request", (req) => {

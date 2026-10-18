@@ -1,4 +1,4 @@
-// Lot RC13 — GET /film sert le script RF5 (avion aller et retour).
+// GET /film sert le script RF5 (avion aller et retour).
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions avion — jamais Revoir retiré, ni les pilules, ni la barre.
@@ -65,7 +65,7 @@ async function waitOfficialFilm(page) {
   return last;
 }
 
-test("lot RC13 — GET /film dit l'avion aller et retour si Cayenne et Halifax", async ({ page }) => {
+test("GET /film dit l'avion aller et retour si Cayenne et Halifax", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());
@@ -133,7 +133,7 @@ test("lot RC13 — GET /film dit l'avion aller et retour si Cayenne et Halifax",
       const f = window.__naviguideFilm;
       return typeof f?.seekChapter === "function" && (f.chapterCount || 0) > 0;
     }, null, { timeout: 8_000 }).catch(() => null);
-    // RC16 : seekChapter(i) sans caractère épinglé va en fin de jambe, puis
+    // SeekChapter(i) sans caractère épinglé va en fin de jambe, puis
     // le tick passe au chapitre « Aujourd'hui ». L'avion est au milieu de
     // Cayenne → Saint-Pierre — viser la phrase, pas seulement l'index.
     const airIdx = await page.evaluate(() => {

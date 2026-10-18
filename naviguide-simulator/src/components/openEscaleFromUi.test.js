@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 
-describe("openEscaleFromUi — pas d'ouverture de panneau (lot RD1)", () => {
+describe("openEscaleFromUi — pas d'ouverture de panneau", () => {
   it("n'appelle plus setSidebarOpen", () => {
     const start = app.indexOf("const openEscaleFromUi");
     const end = app.indexOf("const replayControls");
@@ -22,14 +22,14 @@ describe("openEscaleFromUi — pas d'ouverture de panneau (lot RD1)", () => {
   });
 });
 
-describe("onSeekEscale — lot RF8 : liste informative dans tous les modes", () => {
+describe("onSeekEscale — : liste informative dans tous les modes", () => {
   it("ne passe plus handleSidebarSeek à la liste", () => {
     assert.doesNotMatch(app, /onSeekEscale=/);
     assert.doesNotMatch(app, /onSeekEscale=\{isSuivre \? undefined : handleSidebarSeek\}/);
   });
 });
 
-describe("handleSidebarSeek — lot RC6 : preview utilisateur", () => {
+describe("handleSidebarSeek — : preview utilisateur", () => {
   it("en Suivre, setUserPreview(true) avant pause+seek", () => {
     const start = app.indexOf("const handleSidebarSeek");
     const end = app.indexOf("const handleSeekJournal");

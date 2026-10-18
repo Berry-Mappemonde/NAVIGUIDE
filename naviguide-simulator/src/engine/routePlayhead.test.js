@@ -144,7 +144,7 @@ describe("filmLegContext", () => {
   });
 });
 
-describe("escale précédente (lot R2)", () => {
+describe("escale précédente", () => {
   const marks = [
     { name: "La Rochelle", nm: 0, filmNm: 0 },
     { name: "Ajaccio (Corse)", nm: 500, filmNm: 500 },

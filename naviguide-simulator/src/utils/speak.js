@@ -1,16 +1,16 @@
 /**
  * Lecture à voix haute — `speechSynthesis` du navigateur : gratuit, local,
  * zéro LLM (décision du 18 sept. 2026 : l'histoire est *lue*, pas dictée).
- * Lot R3 : voix prêtes, phrases courtes, keep-alive Chrome, repli linéaire.
+ * Voix prêtes, phrases courtes, keep-alive Chrome, repli linéaire.
  */
 
 export const VOICES_WAIT_MS = 1000;
 export const VOICE_IMMEDIATE_END_MS = 500;
 export const UTTERANCE_KEEPALIVE_MS = 10_000;
 export const SENTENCE_MAX_CHARS = 200;
-/** Après speak() : ni onstart ni onboundary → on lâche la voix (lot VF1). */
+/** Après speak() : ni onstart ni onboundary → on lâche la voix. */
 export const VOICE_LEAD_MS = 2500;
-/** Horloge de repli et toise d'énoncé : ~60 ms / caractère (lot VF1). */
+/** Horloge de repli et toise d'énoncé : ~60 ms / caractère. */
 export const VOICE_MS_PER_CHAR = 60;
 /** Marge pour ne pas couper une phrase longue dont les mots tombent encore. */
 export const SENTENCE_TIME_SLACK = 4;

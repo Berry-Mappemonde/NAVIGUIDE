@@ -1,4 +1,4 @@
-"""Cache de lecture des récits (lot F, RG18) : (type, stableKey, lang), cascade, budget. Plus de pré-génération."""
+"""Cache de lecture des récits : (type, stableKey, lang), cascade, budget. Plus de pré-génération."""
 import asyncio
 
 import httpx

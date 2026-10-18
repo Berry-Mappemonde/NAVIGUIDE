@@ -1,4 +1,4 @@
-// Lot RB2 — zoom +/− horizontal, compact, en bas à droite à côté des crédits.
+// Zoom +/− horizontal, compact, en bas à droite à côté des crédits.
 // Sans API : le contrôle Leaflet et le zoom tiennent seuls.
 import { expect, test } from "@playwright/test";
 
@@ -76,7 +76,7 @@ async function assertZoomCorner(page, { filmBar = true } = {}) {
     await expect(bar).toBeVisible();
     const barBox = await bar.boundingBox();
     expect(barBox, "barre de lecture mesurable").toBeTruthy();
-    // RF8 : barre plus haute (pilules dans le cadre) — zoom et crédits restent
+    // Barre plus haute (pilules dans le cadre) — zoom et crédits restent
     // dans la bande basse, sans recouvrir le milieu de carte.
     expect(layout.zoomBottom, "zoom dans la bande basse").toBeGreaterThan(layout.viewportH - 160);
     expect(layout.attrBottom, "crédits dans la bande basse").toBeGreaterThan(layout.viewportH - 160);
@@ -85,7 +85,7 @@ async function assertZoomCorner(page, { filmBar = true } = {}) {
   return layout;
 }
 
-test("lot RB2 — zoom horizontal compact bas droite", async ({ page }) => {
+test("Zoom horizontal compact bas droite", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

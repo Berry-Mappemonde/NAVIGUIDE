@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "EscaleSheet.jsx"), "utf8");
 const hook = readFileSync(join(here, "..", "hooks", "useEscaleSheet.js"), "utf8");
 
-describe("EscaleSheet contract (lot C)", () => {
+describe("EscaleSheet contract", () => {
   it("every place links to the map, its site and Google Maps; empty sections are not rendered", () => {
     assert.match(src, /googleMapsUrl\(item\.lat, item\.lon\)/);
     assert.match(src, /onFocus\(\{ name: item\.name, lat: item\.lat, lon: item\.lon, kind: SUB_KIND\[sub\]/);
@@ -18,7 +18,7 @@ describe("EscaleSheet contract (lot C)", () => {
     assert.doesNotMatch(src, /fetch\(|Nemotron|Tavily|Nebius/i);
   });
 
-  it("the paragraph is shown only when the cascade produced one; no listen button (lot R7)", () => {
+  it("the paragraph is shown only when the cascade produced one; no listen button", () => {
     assert.match(src, /fiche\?\.paragraph\?\.status === "ready" \? fiche\.paragraph\.text : ""/);
     assert.doesNotMatch(src, /ListenButton/);
     assert.doesNotMatch(src, /escale-listen/);

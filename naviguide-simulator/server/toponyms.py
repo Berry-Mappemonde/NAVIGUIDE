@@ -1,8 +1,8 @@
-"""Toponymes de la route — une table, une règle (lot RC32).
+"""Toponymes de la route — une table, une règle.
 
 Pays, territoires et eaux : exonyme de la langue du récit, jamais une
 traduction automatique. Ports, AMP, stations, projets : nom d'origine,
-casse normalisée (RC19). Îles partagées : les deux formes distinguées
+casse normalisée. Îles partagées : les deux formes distinguées
 (Saint-Martin / Sint Maarten, Hispaniola, Timor, Nouvelle-Guinée).
 
 Table : ``src/engine/toponymsTable.json`` (JO/UNTERM + Marine Regions).

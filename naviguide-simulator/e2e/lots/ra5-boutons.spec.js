@@ -1,4 +1,4 @@
-// Lot RA5 — Stop / Stop auto / Écouter distincts ; fiche hors film.
+// Stop / Stop auto / Écouter distincts ; fiche hors film.
 // Sans API : drapeau, fiche, croix, Suivre, Revoir local tiennent seuls.
 // Voix réelle / horloge officielle : seulement si GET /voyage/official répond.
 import { expect, test } from "@playwright/test";
@@ -44,7 +44,7 @@ async function waitAjaccioFlag(page) {
   });
 }
 
-test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
+test("Stop, Écouter, fiche hors film", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);
@@ -75,7 +75,7 @@ test("lot RA5 — Stop, Écouter, fiche hors film", async ({ page }) => {
   await flag.click({ force: true });
   await expect(page.getByTestId("escale-sheet")).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press("Escape");
-  // RF7 : Échap quitte le cinéma ; la fiche se ferme par la croix.
+  // Échap quitte le cinéma ; la fiche se ferme par la croix.
   if (await page.getByTestId("escale-sheet").count()) {
     await page.getByTestId("escale-close").click();
   }

@@ -1,6 +1,6 @@
-// Lot DM2 — les mots des deux modes (après DM1) :
+// Les mots des deux modes (après DM1) :
 // chaque texte visible ou lu dit Suivre / Tracer (FR) et Follow / Plot (EN).
-// Lot CT1 : getByRole lit Tracer|Plot (libellé livré), pas Simulation comme mode.
+// GetByRole lit Tracer|Plot (libellé livré), pas Simulation comme mode.
 // Sans API : tout tient seul (textes, commutateur, ordres skipper, langue) —
 // GET /voyage/official est sondé mais aucune assertion n'en dépend.
 import { mkdirSync } from "node:fs";
@@ -16,7 +16,7 @@ const shot = (page, name) => page.screenshot({
 });
 
 // Pilule et textes visibles : Suivre / Tracer (FR) ou Follow / Plot (EN).
-// Lot CT1 : on lit le libellé livré (getByRole Tracer|Plot), on ne cherche
+// On lit le libellé livré (getByRole Tracer|Plot), on ne cherche
 // plus « Simulation » comme mot à l'écran. Casse si la pilule redevient Simulation.
 async function expectModePills(page, where) {
   const switcher = page.getByTestId("film-view-switch");
@@ -45,7 +45,7 @@ async function showToolsPanel(page) {
   await expect(orders).toBeVisible({ timeout: 15_000 });
 }
 
-test("lot DM2 — Suivre / Tracer dans chaque texte, aucun « Simulation » à l'écran (FR puis EN)", async ({ page }) => {
+test("Suivre / Tracer dans chaque texte, aucun « Simulation » à l'écran (FR puis EN)", async ({ page }) => {
   test.setTimeout(120_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));
@@ -92,7 +92,7 @@ test("lot DM2 — Suivre / Tracer dans chaque texte, aucun « Simulation » à l
   // (e) Retour à l'accueil (Suivre) en anglais pour la capture.
   await page.getByTestId("view-suivre").click();
   await expect(page.getByTestId("view-suivre")).toHaveAttribute("aria-checked", "true");
-  await leaveCinema(page); // Suivre rouvre le cinéma (RF7)
+  await leaveCinema(page); // Suivre rouvre le cinéma
   await showLeftPanel(page);
   await expectModePills(page, "accueil EN");
   await shot(page, "02-en");

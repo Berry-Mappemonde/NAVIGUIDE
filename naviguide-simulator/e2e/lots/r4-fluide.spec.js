@@ -1,4 +1,4 @@
-// Lot R4 — film fluide : le bateau avance sans à-coups (mode linéaire).
+// Film fluide : le bateau avance sans à-coups (mode linéaire).
 // Sans API : horloge locale + brut. Headless : pas de voix (webdriver).
 import { expect, test } from "@playwright/test";
 
@@ -18,7 +18,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot R4 — 10 positions distinctes et monotones en 2 s", async ({ page }) => {
+test("10 positions distinctes et monotones en 2 s", async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto("/");
   await dismissNotForNav(page);

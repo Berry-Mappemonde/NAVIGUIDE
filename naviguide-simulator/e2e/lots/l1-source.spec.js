@@ -1,4 +1,4 @@
-// Lot L1 — source du récit ici() (Token Factory ou règles).
+// Source du récit ici() (Token Factory ou règles).
 // Sans API : le libellé dit « règles ». La recette réelle (Nemotron Super)
 // exige NEBIUS_API_KEY sur le VPS / l’API locale.
 import { expect, test } from "@playwright/test";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot L1 — story-source : Token Factory ou règles, jamais vide", async ({ page }) => {
+test("Story-source : Token Factory ou règles, jamais vide", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

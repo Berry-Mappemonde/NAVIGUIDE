@@ -8,8 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "useVirtualVessel.js"), "utf8");
 const dialog = readFileSync(join(here, "..", "components", "RecomputeDialog.jsx"), "utf8");
 
-describe("useVirtualVessel — explication de recalcul (lot L5)", () => {
-  it("espace les re-créations après un échec (lot RF3)", () => {
+describe("useVirtualVessel — explication de recalcul", () => {
+  it("espace les re-créations après un échec", () => {
     assert.match(src, /export function createBackoffMs/);
     assert.match(src, /\[2000, 4000, 8000, 16000, 30000\]/);
     assert.match(src, /failCountRef/);
@@ -31,14 +31,14 @@ describe("useVirtualVessel — explication de recalcul (lot L5)", () => {
     assert.match(src, /body\.hs_max_m = constraints\.hsMaxM/);
   });
 
-  it("n'envoie jamais official (lot RC12 : le serveur reconnaît l'empreinte)", () => {
+  it("n'envoie jamais official (le serveur reconnaît l'empreinte)", () => {
     assert.match(src, /method: "POST"/);
     assert.match(src, /JSON\.stringify\(\{/);
     assert.doesNotMatch(src, /official:\s*(true|Boolean|follow)/);
     assert.match(src, /CREATE_BACKOFF_MS/);
   });
 
-  it("n'appelle pas /at tant que clock.status === preparing (lot RC15)", () => {
+  it("n'appelle pas /at tant que clock.status === preparing", () => {
     function shouldFetchAt(clock) {
       if (!clock || typeof clock !== "object") return false;
       if (clock.status === "preparing") return false;
@@ -55,7 +55,7 @@ describe("useVirtualVessel — explication de recalcul (lot L5)", () => {
   });
 });
 
-describe("createBackoffMs — repli progressif (lot RF3)", () => {
+describe("createBackoffMs — repli progressif", () => {
   function createBackoffMs(failCount) {
     const n = Number(failCount);
     if (!Number.isFinite(n) || n <= 0) return 0;

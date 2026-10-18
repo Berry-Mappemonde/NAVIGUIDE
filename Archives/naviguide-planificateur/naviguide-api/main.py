@@ -1242,7 +1242,7 @@ def _find_active_leg(
     }
 
 
-# ── Climatology (N1) — same snapshots as Blue Intelligence, no MapLibre paint ─
+# ── Climatology — same snapshots as Blue Intelligence, no MapLibre paint ─
 
 @app.get("/climatology/meta", summary="Climatology snapshot status (kind climatology)")
 def climatology_meta(month: int = Query(1, ge=1, le=12)):

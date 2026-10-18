@@ -502,7 +502,7 @@ function eventOrigin(ev) {
   return originName(raw) || raw;
 }
 
-/** Film-script sentence attached to the GET /ici bag (RG18). */
+/** Film-script sentence attached to the GET /ici bag. */
 export function pickFilmPhrase(ev, bag, lang = "fr") {
   if (typeof ev?.filmPhrase === "string" && ev.filmPhrase.trim()) return ev.filmPhrase.trim();
   const phrases = bag?.filmPhrases;
@@ -695,7 +695,7 @@ function legSentence(dossier, lang) {
   } else if (speed != null) {
     bits.push(en ? `Boat speed on this leg: ${num(speed, lang)} knots.` : `Vitesse sur cette jambe : ${num(speed, lang)} nœuds.`);
   }
-  // R13 : « Polaire » une fois — déjà sur polar-box (« Polaires chargées »).
+  // « Polaire » une fois — déjà sur polar-box (« Polaires chargées »).
   // Le nom du bateau reste sous Polaires / Paramètres avancés, pas ici.
   return bits.join(" ");
 }
@@ -830,7 +830,7 @@ export function narrateIci(dossier, lang = "fr", { written = false } = {}) {
   // never collected weather, satellite or the sheet — those only make sense
   // now: say nothing about them rather than "not collected on this pearl".
   // A thin pearl also skipped the seabed and the aids to navigation; a rich
-  // one (lot P) carries them and tells them.
+  // one carries them and tells them.
   const kind = pearlKind(dossier);
   const live = kind == null;
   const thin = kind === "thin";

@@ -48,7 +48,7 @@ export function unwrapLineCoords(coords, firstLon = null) {
   return out;
 }
 
-/** Lot S : déplie une polyligne relativement à *refLon* (aucun saut de 360°). */
+/** Déplie une polyligne relativement à *refLon* (aucun saut de 360°). */
 export function unwrapPath(coords, refLon = null) {
   return unwrapLineCoords(coords, refLon);
 }

@@ -1,4 +1,4 @@
-// Lot RD8 — couches climato en tuiles XYZ : plus de wind.geojson globe.
+// Couches climato en tuiles XYZ : plus de wind.geojson globe.
 // Sans API : la pastille Vent et les requêtes /tiles/ (même en échec)
 // tiennent seuls. GET /voyage/official sondé ; s'il manque, annotation
 // + saut des seules assertions qui en dépendent — jamais l'absence de
@@ -55,7 +55,7 @@ async function turnOnWind(page) {
   await expect(wind).toHaveAttribute("aria-pressed", "true");
 }
 
-test("lot RD8 — tuiles vent, plus de wind.geojson", async ({ page }) => {
+test("Tuiles vent, plus de wind.geojson", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());
@@ -147,7 +147,7 @@ test("lot RD8 — tuiles vent, plus de wind.geojson", async ({ page }) => {
     });
   }
   if (geojsonUrls.length) {
-    // RD8 : le premier chargement est en tuiles ; un repli geojson n'est accepté qu'après un pan sans tuile.
+    // Le premier chargement est en tuiles ; un repli geojson n'est accepté qu'après un pan sans tuile.
     test.info().annotations.push({
       type: "RD8",
       description: `repli wind.geojson après déplacement (${geojsonUrls.length}) — premier chargement déjà en tuiles`,

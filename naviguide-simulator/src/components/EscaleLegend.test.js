@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, "EscaleLegend.jsx"), "utf8");
 const tools = readFileSync(join(here, "ToolsSidebar.jsx"), "utf8");
 
-describe("EscaleLegend — plus de carré vert (lot RD1)", () => {
+describe("EscaleLegend — plus de carré vert", () => {
   it("ne rend plus escale-sheet-open", () => {
     assert.doesNotMatch(src, /escale-sheet-open/);
     assert.doesNotMatch(src, /▤/);
@@ -17,7 +17,7 @@ describe("EscaleLegend — plus de carré vert (lot RD1)", () => {
   });
 });
 
-describe("EscaleLegend — informative dans tous les modes (lot RF8, étend RE2)", () => {
+describe("EscaleLegend — informative dans tous les modes (étend RE2)", () => {
   it("n'a plus de gestionnaire de clic, aucun mode", () => {
     assert.match(src, /data-testid="escale-legend-row"/);
     assert.match(src, /data-interactive="false"/);
@@ -35,7 +35,7 @@ describe("EscaleLegend — informative dans tous les modes (lot RF8, étend RE2)
   });
 });
 
-describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
+describe("EscaleLegend — fourchette sous la date", () => {
   it("ajoute eta-range sans retirer la date", () => {
     assert.match(src, /data-testid="escale-legend"/);
     assert.match(src, /data-testid="eta-range"/);
@@ -51,7 +51,7 @@ describe("EscaleLegend — fourchette sous la date (lot C6)", () => {
   });
 });
 
-describe("EscaleLegend — fourchette ou raison (lot RG17)", () => {
+describe("EscaleLegend — fourchette ou raison", () => {
   it("garde eta-range pour la fourchette et la ligne de raison", () => {
     assert.match(src, /data-testid="eta-range"/);
     assert.match(src, /formatEtaRange/);
@@ -59,7 +59,7 @@ describe("EscaleLegend — fourchette ou raison (lot RG17)", () => {
   });
 });
 
-describe("EscaleLegend — fourchette sur la prochaine (lot RC24)", () => {
+describe("EscaleLegend — fourchette sur la prochaine", () => {
   it("pose eta-range sur nextStopFromMarks, pas le playhead", () => {
     assert.match(src, /nextStopRowIndex/);
     assert.match(src, /nextStopFromMarks/);
@@ -68,7 +68,7 @@ describe("EscaleLegend — fourchette sur la prochaine (lot RC24)", () => {
   });
 });
 
-describe("EscaleLegend — ETA gelée pendant le film (lot RF4)", () => {
+describe("EscaleLegend — ETA gelée pendant le film", () => {
   it("passe frozen à useOfficialEta", () => {
     assert.match(src, /frozen = false/);
     assert.match(src, /officialClock: officialEta/);
@@ -76,7 +76,7 @@ describe("EscaleLegend — ETA gelée pendant le film (lot RF4)", () => {
   });
 });
 
-describe("EscaleLegend — jambe live, pas le mur (lot RC28)", () => {
+describe("EscaleLegend — jambe live, pas le mur", () => {
   it("prend nowMs / liveFilmNm officiels, jamais Date.now()", () => {
     assert.doesNotMatch(src, /Date\.now\(\)/);
     assert.match(src, /nextStopFromMarks\(marks, nowMs, liveFilmNm\)/);

@@ -1,4 +1,4 @@
-// Lot RF9 — pastille Vent : zoom fluide, roses réutilisées, pas de figement.
+// Pastille Vent : zoom fluide, roses réutilisées, pas de figement.
 // Sans API : pastille, roses mockées, zoom borné et 2e passe sans recréation
 // tiennent seuls. GET /voyage/official sondé ; s'il manque, annotation +
 // saut des seules sondes live (popup atlas / tuiles réelles) — jamais le
@@ -135,7 +135,7 @@ async function closePanels(page) {
   }
 }
 
-test("lot RF9 — Vent allumé : zoom borné, roses réutilisées", async ({ page }) => {
+test("Vent allumé : zoom borné, roses réutilisées", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

@@ -30,7 +30,7 @@ function emptyMomentState(error = null) {
  * Fetch a Moment from GET /ici/moment. Without lat/lon, or if the API
  * does not answer: moment is null (empty frame). MOMENT_FIXTURE stays
  * importable for tests and the R8b preview page — it is never the current
- * point (lot RC2).
+ * point.
  */
 export function useMoment({
   lat,

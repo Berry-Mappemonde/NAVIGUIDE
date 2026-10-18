@@ -28,7 +28,7 @@ describe("filmBarLayout U6", () => {
 });
 
 describe("mapInsetVars — crédits Leaflet dans la carte visible", () => {
-  it("se décale du panneau Outils ; premier rendu = constantes + 4 px (lot UI1)", () => {
+  it("se décale du panneau Outils ; premier rendu = constantes + 4 px", () => {
     const vars = mapInsetVars({ sidebarOpen: true, toolsOpen: true, filmBarVisible: true, filmBarControls: true });
     assert.equal(vars["--sim-inset-right"], `${SIDEBAR_WIDTH_PX}px`);
     assert.equal(
@@ -48,7 +48,7 @@ describe("mapInsetVars — crédits Leaflet dans la carte visible", () => {
     assert.equal(hidden["--sim-inset-bottom"], "0px");
   });
 
-  it("inset = mesure + 4 (lot UI1)", () => {
+  it("inset = mesure + 4", () => {
     const tall = mapInsetVars({ filmBarVisible: true, filmBarMeasuredPx: 140 });
     assert.equal(tall["--sim-inset-bottom"], `${140 + ATTRIBUTION_FILM_GAP_PX}px`);
     const chip = mapInsetVars({ filmBarVisible: true, filmBarMeasuredPx: 44 });

@@ -61,7 +61,7 @@ describe("IciMaintenant — film : étiquette position du jour", () => {
   });
 });
 
-describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
+describe("IciMaintenant — : cinq sections, pas de titre", () => {
   it("rend les cinq sections et le sélecteur à trois onglets, sans bandeau", () => {
     assert.match(src, /data-testid="ici-maintenant"/);
     assert.match(src, /data-testid="ici-tabs"/);
@@ -135,7 +135,7 @@ describe("IciMaintenant — lot R8b : cinq sections, pas de titre", () => {
   });
 });
 
-describe("IciMaintenant — lot R8c : récit / journal / escale, pas d'Écouter", () => {
+describe("IciMaintenant — : récit / journal / escale, pas d'Écouter", () => {
   it("reçoit les vues Récit et Journal et ouvre l'escale dans Ici", () => {
     assert.match(src, /data-testid="ici-story-slot"/);
     assert.match(src, /data-testid="ici-journal-slot"/);
@@ -149,7 +149,7 @@ describe("IciMaintenant — lot R8c : récit / journal / escale, pas d'Écouter"
   });
 });
 
-describe("IciMaintenant — lot R9b : journal chronologique, clic → onSeek(t)", () => {
+describe("IciMaintenant — : journal chronologique, clic → onSeek(t)", () => {
   const entries = [
     { t: "2026-06-23T08:00:00Z", pos: { lat: 14.6, lon: -61.0 }, signature: "c", seq: 2, changes: [{ title: "Fort-de-France" }] },
     { t: "2026-05-15T08:00:00Z", pos: { lat: 48.86, lon: 2.35 }, signature: "a", seq: 0, changes: [] },
@@ -183,7 +183,7 @@ describe("IciMaintenant — lot R9b : journal chronologique, clic → onSeek(t)"
   });
 });
 
-describe("useMoment — lot R8b / RC2", () => {
+describe("useMoment", () => {
   it("interroge /ici/moment ; sans lat/lon ou API KO → moment null, pas la fixture", () => {
     assert.match(hook, /\/ici\/moment\?/);
     assert.match(hook, /moment: null/);
@@ -200,7 +200,7 @@ describe("useMoment — lot R8b / RC2", () => {
   });
 });
 
-describe("IciMaintenant — lot RC2 : encadré honnête", () => {
+describe("IciMaintenant — : encadré honnête", () => {
   it("moment null : sections présentes, aucune ligne Antilles", () => {
     for (const id of [
       "ici-section-leg",
@@ -242,7 +242,7 @@ describe("IciMaintenant — lot RC2 : encadré honnête", () => {
   });
 });
 
-describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
+describe("IciMaintenant — : onglet Récit et journal nommé", () => {
   it("garde les quatre onglets en Suivre (DM9 élargit Récit à Tracer)", () => {
     assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
     assert.match(src, /visibleIciTabs\(mode/);
@@ -320,7 +320,7 @@ describe("IciMaintenant — lot RD6 : onglet Récit et journal nommé", () => {
   });
 });
 
-describe("IciMaintenant — lot RC6 : fiche d'escale en tête de Ici", () => {
+describe("IciMaintenant — : fiche d'escale en tête de Ici", () => {
   it("rend EscaleSheet avant hereBody / story-source quand escale.stop", () => {
     const idxSheet = src.indexOf("<EscaleSheet");
     const idxBody = src.indexOf("{hereBody}");
@@ -331,7 +331,7 @@ describe("IciMaintenant — lot RC6 : fiche d'escale en tête de Ici", () => {
   });
 });
 
-describe("IciMaintenant — lot RE3 : journal lisible dans les deux thèmes", () => {
+describe("IciMaintenant — : journal lisible dans les deux thèmes", () => {
   it("pose une couleur explicite claire (sombre) et foncée (clair), sans text-inherit", () => {
     assert.match(
       css,
@@ -346,7 +346,7 @@ describe("IciMaintenant — lot RE3 : journal lisible dans les deux thèmes", ()
   });
 });
 
-describe("IciMaintenant — lot RD9 : onglet Revue du plan", () => {
+describe("IciMaintenant — : onglet Revue du plan", () => {
   it("rend l'onglet Revue en Suivre et en Tracer (DM9 : aussi le brouillon)", () => {
     assert.ok(visibleIciTabs("follow").some((t) => t.id === "review"));
     assert.ok(visibleIciTabs("simulation").some((t) => t.id === "review"));
@@ -361,7 +361,7 @@ describe("IciMaintenant — lot RD9 : onglet Revue du plan", () => {
   });
 });
 
-describe("IciMaintenant — lot DM9 : Tracer sert le tracé", () => {
+describe("IciMaintenant — : Tracer sert le tracé", () => {
   it("Tracer : Revue du plan et Récit seulement, Revue ouverte par défaut ; Suivre : 4 onglets", () => {
     assert.deepEqual(visibleIciTabs("follow").map((t) => t.id), ["now", "story", "journal", "review"]);
     assert.deepEqual(visibleIciTabs("simulation").map((t) => t.id), ["review", "story"]);
@@ -386,7 +386,7 @@ describe("IciMaintenant — lot DM9 : Tracer sert le tracé", () => {
   });
 });
 
-describe("IciMaintenant — lot DM8C : Suivre × ma route", () => {
+describe("IciMaintenant — : Suivre × ma route", () => {
   it("masque Maintenant, garde Revue · Journal · Récit ; jambes depuis l'horloge", () => {
     assert.deepEqual(
       visibleIciTabs("follow", { routeSource: "custom" }).map((t) => t.id),

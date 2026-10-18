@@ -1,4 +1,4 @@
-"""Lots R10b–R10c — advise : dates, corridors bornés, cap +20 %, déterminisme."""
+"""Advise : dates, corridors bornés, cap +20 %, déterminisme."""
 from __future__ import annotations
 
 import copy
@@ -387,7 +387,7 @@ def test_advice_route_no_clock_returns_200_unavailable(monkeypatch):
     assert body["leg"] == 0
 
 
-# ── Lot R10c — écart local borné ─────────────────────────────────────────────
+# ── Écart local borné ─────────────────────────────────────────────
 
 # La Rochelle → Gibraltar → Ajaccio ≈ 1 378 nm (le 1 371 du plan, ± 10).
 LR_AJACCIO = [

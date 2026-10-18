@@ -1,5 +1,5 @@
 /**
- * Export GeoJSON / KML de la route de la vue (lot N2).
+ * Export GeoJSON / KML de la route de la vue.
  * Port allégé de naviguide/naviguide-app/src/components/ExportSidebar.jsx
  * (downloadFile, buildGeoJSON, buildKML).
  */

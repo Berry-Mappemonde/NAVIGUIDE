@@ -1,4 +1,4 @@
-// Lot RG7 — ouverture (expédition, escales, milles) et fin (aujourd'hui, ETA, à venir).
+// Ouverture (expédition, escales, milles) et fin (aujourd'hui, ETA, à venir).
 // Sans API : Suivre, Revoir et la barre tiennent seuls ; le script serveur
 // est sauté. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions film — jamais Revoir retiré, ni les pilules, ni la barre.
@@ -88,7 +88,7 @@ function sumLegNm(legs) {
   return Math.round(total);
 }
 
-test("lot RG7 — ouverture de l'expédition et fin aujourd'hui", async ({ page }) => {
+test("Ouverture de l'expédition et fin aujourd'hui", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
@@ -140,7 +140,7 @@ test("lot RG7 — ouverture de l'expédition et fin aujourd'hui", async ({ page 
     || /Berry-Mappemonde quitte|Berry-Mappemonde leaves/i.test(
       film.chapters.map((c) => c.text || "").join(" "),
     );
-  // RC21 : ouverture RG6/RG7 ⇒ Revoir jouable ; plus de skip « pré-RG » qui cache un bouton grisé.
+  // Ouverture RG6/RG7 ⇒ Revoir jouable ; plus de skip « pré-RG » qui cache un bouton grisé.
   if (hasRgOpening) {
     await expect(start).toBeEnabled({ timeout: 30_000 });
   }

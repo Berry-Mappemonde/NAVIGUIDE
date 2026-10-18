@@ -1,4 +1,4 @@
-// Lot RC1 — libellé météo honnête : seulement ce qui alimente le point courant.
+// Libellé météo honnête : seulement ce qui alimente le point courant.
 // Sans API : barre Simulation (une ligne, flèches, haut-parleur, pas de scroll),
 // weather-line vide si présent, clock-regime sans GFS-Wave / Open-Meteo.
 // Avec API : Suivre — climatologie hors 10 jours sans « + GFS » ; fenêtre
@@ -97,7 +97,7 @@ async function assertHonestRegime(page, sample) {
   return text;
 }
 
-test("lot RC1 — libellé météo du point courant", async ({ page }) => {
+test("Libellé météo du point courant", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

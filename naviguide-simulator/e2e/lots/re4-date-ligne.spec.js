@@ -1,4 +1,4 @@
-// Lot RE4 — changer la date de la barre (Suivre) recalcule la ligne d'état
+// Changer la date de la barre (Suivre) recalcule la ligne d'état
 // (année, jour de voyage) ; remettre le défaut restaure la ligne LIVE ;
 // le départ de Tracer (aujourd'hui, plus de champ — DM7) ne bouge pas.
 // Sans API : champ date et ligne d'état (horloge locale) tiennent seuls.
@@ -63,7 +63,7 @@ async function probeOfficial(request) {
   return body && typeof body === "object" ? body : null;
 }
 
-test("lot RE4 — date de la barre pilote la ligne d'état, Simulation inchangée", async ({ page, request }) => {
+test("Date de la barre pilote la ligne d'état, Simulation inchangée", async ({ page, request }) => {
   test.setTimeout(90_000);
   const officialBody = await probeOfficial(request);
   const apiUp = Boolean(officialBody);

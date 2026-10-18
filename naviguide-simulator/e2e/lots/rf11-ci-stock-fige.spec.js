@@ -1,4 +1,4 @@
-// Lot RF11 — stock figé en CI. Sans API : barre, Suivre et Revoir tiennent
+// Stock figé en CI. Sans API : barre, Suivre et Revoir tiennent
 // seuls. GET /voyage/official sondé ; s'il manque, annotation + saut des
 // seules assertions journal / horloge / film — jamais Suivre, ni Revoir.
 import { mkdirSync } from "node:fs";
@@ -32,7 +32,7 @@ async function leaveCinema(page) {
   if (on) await cinema.click();
 }
 
-test("lot RF11 — journal, horloge et film servis depuis le stock figé", async ({ page }) => {
+test("Journal, horloge et film servis depuis le stock figé", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

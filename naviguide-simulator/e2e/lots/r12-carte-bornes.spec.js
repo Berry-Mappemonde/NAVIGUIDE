@@ -1,4 +1,4 @@
-// Lot R12 — carte bornée aux pôles, longitude libre, zoom molette.
+// Carte bornée aux pôles, longitude libre, zoom molette.
 // Sans API : les assertions carte tiennent seules (maxBounds Leaflet).
 // GET /voyage/official : sondé ; s'il manque, annotation seulement.
 import { expect, test } from "@playwright/test";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot R12 — pôles bornés, longitude libre, zoom molette", async ({ page }) => {
+test("Pôles bornés, longitude libre, zoom molette", async ({ page }) => {
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {
     test.info().annotations.push({
@@ -53,7 +53,7 @@ test("lot R12 — pôles bornés, longitude libre, zoom molette", async ({ page 
   expect(options.viscosity).toBe(1);
   expect(options.south).toBe(-85);
   expect(options.north).toBe(85);
-  // RA4 : une répétition de chaque côté (±540°), plus l'infini.
+  // Une répétition de chaque côté (±540°), plus l'infini.
   expect(options.west, "longitude ouest ±540").toBe(-540);
   expect(options.east, "longitude est ±540").toBe(540);
 

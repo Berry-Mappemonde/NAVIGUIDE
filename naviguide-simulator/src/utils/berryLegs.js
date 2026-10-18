@@ -4,7 +4,7 @@ export const SEGMENT_BATCH_SIZE = 4;
 /** Trace du second bateau : plus claire que le sillage, même épaisseur. */
 export const SIDE_ROUTE_COLOR = "#67e8f9";
 
-/** 1 mille nautique = 1,852 km (étape terrestre, lot R5). */
+/** 1 mille nautique = 1,852 km (étape terrestre). */
 export const NM_TO_KM = 1.852;
 
 const NON_MARITIME_NAMES = new Set([

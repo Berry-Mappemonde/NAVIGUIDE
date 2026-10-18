@@ -1,4 +1,4 @@
-// Lot N2 — Exporter GeoJSON / KML de la route de la vue.
+// Exporter GeoJSON / KML de la route de la vue.
 // Sans API : route.geojson + boutons + téléchargement tiennent seuls.
 // GET /voyage/official : sondé ; rien n'en dépend ici (jamais affaibli).
 import { dirname, join } from "node:path";
@@ -61,7 +61,7 @@ async function readDownload(download) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-test("lot N2 — Exporter GeoJSON et KML : fichier non vide ; Tracer = route dessinée", async ({ page }) => {
+test("Exporter GeoJSON et KML : fichier non vide ; Tracer = route dessinée", async ({ page }) => {
   test.setTimeout(45_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!apiUp) {

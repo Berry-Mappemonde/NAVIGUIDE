@@ -1,4 +1,4 @@
-// Lot DM8C — Suivre me rejoue MA route et me la raconte.
+// Suivre me rejoue MA route et me la raconte.
 // Tracer → deux points nommés → Terminer → Suivre : Revoir joue
 // GET /voyage/{id}/film (jamais le brut local) ; Journal = moments DM8A ;
 // Revue du plan = ma jambe ; Maintenant masqué. Pilule Berry = film officiel.
@@ -70,7 +70,7 @@ async function muteVoice(page) {
   }
 }
 
-test("lot DM8C — Suivre × ma route : Revoir, Journal, Revue ; Berry intact", async ({ page }) => {
+test("Suivre × ma route : Revoir, Journal, Revue ; Berry intact", async ({ page }) => {
   test.setTimeout(180_000);
   const errors = [];
   page.on("pageerror", (err) => errors.push(String(err)));

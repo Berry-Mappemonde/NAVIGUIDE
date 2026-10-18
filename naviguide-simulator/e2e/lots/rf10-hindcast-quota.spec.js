@@ -1,4 +1,4 @@
-// Lot RF10 — hindcast ERA5 dans le quota : route teintée, journal, statut honnête.
+// Hindcast ERA5 dans le quota : route teintée, journal, statut honnête.
 // Sans API : fumée Suivre + légende des régimes (jamais inventée).
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions clock / coverage / journal live — jamais la barre film, ni Suivre,
@@ -53,7 +53,7 @@ async function showLeftPanel(page) {
   await expect.poll(() => panelOnScreen(page, "left"), { timeout: 10_000 }).toBe(true);
 }
 
-test("lot RF10 — route hindcast, journal, statut honnête", async ({ page }) => {
+test("Route hindcast, journal, statut honnête", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

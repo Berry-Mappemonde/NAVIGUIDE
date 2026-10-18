@@ -1,4 +1,4 @@
-// Lot RG10 — recette automatique du discours (test serveur).
+// Recette automatique du discours (test serveur).
 // Sans API : Suivre, Revoir et la barre tiennent seuls. GET /voyage/official
 // sondé ; s'il manque, annotation + saut des seules assertions film —
 // jamais Revoir retiré, ni les pilules, ni la barre.
@@ -31,7 +31,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RG10 — discours sans jargon, barre et Revoir gardés", async ({ page }) => {
+test("Discours sans jargon, barre et Revoir gardés", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

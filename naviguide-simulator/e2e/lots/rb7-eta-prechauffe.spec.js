@@ -1,4 +1,4 @@
-// Lot RB7 — fourchette d'arrivée dès que l'ensemble est prêt, sans recharger.
+// Fourchette d'arrivée dès que l'ensemble est prêt, sans recharger.
 // Sans API : fumée Suivre + liste des escales (la fourchette n'est jamais inventée).
 // Avec API : première réponse members:0 puis ensemble → la phrase apparaît.
 import { expect, test } from "@playwright/test";
@@ -25,7 +25,7 @@ async function showLegendAndReview(page) {
   await openReviewTab(page);
 }
 
-test("lot RB7 — fourchette dès que l'ensemble est prêt, sans recharger", async ({ page }) => {
+test("Fourchette dès que l'ensemble est prêt, sans recharger", async ({ page }) => {
   test.setTimeout(90_000);
   const apiUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
 

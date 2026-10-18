@@ -1,4 +1,4 @@
-// Lot RC57 — la spec DC3 compte les familles par chapitre / longue jambe,
+// La spec DC3 compte les familles par chapitre / longue jambe,
 // pas « ≤ 1 dans tout le film ». Le 2:30 reste à 0 hit famille.
 // Toujours 0 « image satellite au-dessus du bateau ».
 // Sans API (CI) : GET /voyage/official sondé ; s'il ne répond pas, annotation
@@ -84,7 +84,7 @@ function assertAtMostOnePerFamilyOnChapters(chapters, label) {
   }
 }
 
-test("lot RC57 — DC3 une fois par chapitre, 2:30 à 0, pas de satellite inventé", async ({ page }) => {
+test("DC3 une fois par chapitre, 2:30 à 0, pas de satellite inventé", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

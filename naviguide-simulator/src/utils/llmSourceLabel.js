@@ -2,7 +2,7 @@ import nvidiaLogo from "../assets/brand/nvidia-logo-horz.svg";
 import nebiusLogo from "../assets/brand/nebius-logo.svg";
 import tokenFactoryLogo from "../assets/brand/tokenfactory-logo.svg";
 
-/** Map cascade `source` to i18n key (lot L1). */
+/** Map cascade `source` to i18n key. */
 export function llmSourceI18nKey(source) {
   const s = String(source || "");
   if (s === "openrouter") return "storySourceOpenrouter";

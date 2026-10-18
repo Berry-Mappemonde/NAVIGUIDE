@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const hook = readFileSync(join(here, "useIciAlong.js"), "utf8");
 const app = readFileSync(join(here, "..", "App.jsx"), "utf8");
 
-describe("useIciAlong (lot LY2)", () => {
+describe("useIciAlong", () => {
   it("coupe les GET /ici en vol au cleanup ; pas Berry pendant le dessin", () => {
     assert.match(hook, /thin: "1"/);
     assert.match(hook, /const inflight = \[\]/);

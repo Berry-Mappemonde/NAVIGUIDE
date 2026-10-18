@@ -1,4 +1,4 @@
-// Lot RG18 — une seule plume : fiches « ici » = phrases de règles du film ;
+// Une seule plume : fiches « ici » = phrases de règles du film ;
 // POST /ici/story seulement sur Rédigé. Sans API (CI) : GET /voyage/official
 // sondé ; s'il manque, annotation + saut des assertions sac / film — barre,
 // Suivre, Brut et l'absence d'appel /ici/story restent.
@@ -14,7 +14,7 @@ const shot = (page, name) => page.screenshot({
   path: join(recetteDir, `${name}.webp`), type: "webp", quality: 85, fullPage: false,
 });
 
-test("lot RG18 — une seule plume, Rédigé seulement sur geste", async ({ page }) => {
+test("Une seule plume, Rédigé seulement sur geste", async ({ page }) => {
   test.setTimeout(90_000);
   const storyPosts = [];
   const filmWrites = [];
@@ -81,7 +81,7 @@ test("lot RG18 — une seule plume, Rédigé seulement sur geste", async ({ page
   }
 
   await written.click();
-  // ED1 : le clic POST le film ; aria-pressed ne passe à true que si un rédigé est servi.
+  // Le clic POST le film ; aria-pressed ne passe à true que si un rédigé est servi.
   let switched = (await written.getAttribute("aria-pressed")) === "true";
   if (!switched) {
     try {

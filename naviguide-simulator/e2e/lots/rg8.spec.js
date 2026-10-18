@@ -1,4 +1,4 @@
-// Lot RG8 — budgets réels : 2:30 / 3:00 / intégral, durée estimée à côté des pilules.
+// Budgets réels : 2:30 / 3:00 / intégral, durée estimée à côté des pilules.
 // Sans API : barre et Revoir tiennent seuls. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des assertions film / pilules (canStart faux,
 // comme RE3 / RC11) — jamais la barre ni Revoir retirés.
@@ -72,7 +72,7 @@ async function filmChars(page, seconds) {
   return { film, chars, estimatedSeconds: Number(film.estimatedSeconds) || 0 };
 }
 
-test("lot RG8 — pilules 2:30 / 3:00, durées distinctes, estimée affichée", async ({ page }) => {
+test("Pilules 2:30 / 3:00, durées distinctes, estimée affichée", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {

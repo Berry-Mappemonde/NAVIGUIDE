@@ -24,7 +24,7 @@ function trackNm(startLat, startLon, totalNm, stepNm = 10) {
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "useIciDossier.js"), "utf8");
 
-describe("useIciDossier — lot T wrapLon", () => {
+describe("useIciDossier — wrapLon", () => {
   it("l'URL /ici porte une longitude dans [−180, 180] pour un point à 236,84°", () => {
     const q = iciSearchParams({ lat: 37.7, lon: 236.84 });
     const lon = Number(q.get("lon"));
@@ -62,7 +62,7 @@ describe("useIciDossier contract", () => {
   });
 });
 
-describe("useIciDossier — film gelé (lot RF4)", () => {
+describe("useIciDossier — film gelé", () => {
   const last = { lat: 0, lon: 0, month: 5, destLat: 10, destLon: 10 };
   const dest = { month: 5, destLat: 10, destLon: 10 };
 

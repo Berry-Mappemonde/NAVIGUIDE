@@ -4,7 +4,7 @@ export const SIDEBAR_WIDTH_PX = 320;
 /** Décalage Tailwind `bottom-5` de la barre film (1,25 rem = 20 px). */
 export const FILM_BAR_BOTTOM_GAP_PX = 20;
 
-/** Espace entre le bas des crédits Leaflet et le haut de la barre film (lot UI1). */
+/** Espace entre le bas des crédits Leaflet et le haut de la barre film. */
 export const ATTRIBUTION_FILM_GAP_PX = 4;
 
 /**
@@ -26,14 +26,14 @@ export function filmBarInsets({
 /** Hauteur occupée par la barre film (contenu), selon ses lignes — premier rendu seulement. */
 export const FILM_BAR_HEIGHT_PX = Object.freeze({
   hidden: 0,
-  compact: 96, // lot O : titre + horloge + piste + une rangée de commandes
+  compact: 96, // Titre + horloge + piste + une rangée de commandes
   controls: 96, // même rangée compacte en Simulation (pilules text-[9px])
 });
 
 /**
  * Espace réel du bas de la carte jusqu’au haut de la barre film (ou du
  * bouton « Afficher »). Inclut le `bottom-5` : c’est cette mesure, pas la
- * constante 96, qui positionne les crédits (lot UI1).
+ * constante 96, qui positionne les crédits.
  */
 export function measureFilmBarOccupiedPx(el, viewportBottom) {
   if (!el || typeof el.getBoundingClientRect !== "function") return 0;

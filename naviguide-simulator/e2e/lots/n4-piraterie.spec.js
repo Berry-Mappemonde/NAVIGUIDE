@@ -1,4 +1,4 @@
-// Lot N4 — Carte NOW piraterie (Aden HIGH, hors zone rien).
+// Carte NOW piraterie (Aden HIGH, hors zone rien).
 // Sans API : barre film + Simulation tiennent ; pas de carte « Piraterie » au départ.
 // GET /voyage/official : sondé ; les assertions sac / carte Aden ne tournent
 // que s'il répond ET que /ici porte piracy (jamais affaiblies sinon).
@@ -65,7 +65,7 @@ async function stubRoute(page) {
   });
 }
 
-test("lot N4 — carte NOW piraterie à Aden, absente au large de La Rochelle", async ({ page }) => {
+test("Carte NOW piraterie à Aden, absente au large de La Rochelle", async ({ page }) => {
   test.setTimeout(120_000);
   const officialUp = await page.request.get("/voyage/official", { timeout: 5000 }).then((r) => r.ok()).catch(() => false);
   if (!officialUp) {

@@ -1,4 +1,4 @@
-// Lot RA3 — Revoir l'expédition : fond, glisse, zoom stable, archipel, bulle.
+// Revoir l'expédition : fond, glisse, zoom stable, archipel, bulle.
 // Sans API : tuiles, glisse, zoom à l'arrêt et bulle se vérifient sur le brut local.
 // Caraïbes / film serveur : seulement si GET /voyage/official répond.
 import { expect, test } from "@playwright/test";
@@ -51,7 +51,7 @@ function tilesOnMap() {
   return { ok: true, attached: true, n: painted.length };
 }
 
-test("lot RA3 — fond gardé, bateau glisse, zoom stable, bulle fermable", async ({ page }) => {
+test("Fond gardé, bateau glisse, zoom stable, bulle fermable", async ({ page }) => {
   test.setTimeout(200_000);
   await page.goto("/");
   await dismissNotForNav(page);

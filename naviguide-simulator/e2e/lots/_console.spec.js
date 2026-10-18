@@ -1,4 +1,4 @@
-// Lot RF11 — parcours nominal Suivre → Revoir sans ligne rouge.
+// Parcours nominal Suivre → Revoir sans ligne rouge.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions d'API (requêtes ≥ 400) — jamais Suivre, ni Revoir, ni
 // l'absence d'erreur de page.
@@ -24,7 +24,7 @@ async function leaveCinema(page) {
   if (on) await cinema.click();
 }
 
-test("RF11 — Suivre → Revoir sans erreur de page ni requête métier ≥ 400", async ({ page }) => {
+test("Suivre → Revoir sans erreur de page ni requête métier ≥ 400", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

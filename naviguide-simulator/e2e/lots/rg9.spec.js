@@ -1,4 +1,4 @@
-// Lot RG9 / RC23 — client robuste : sans voix, horloge murale ; sous-titre = une phrase.
+// Client robuste : sans voix, horloge murale ; sous-titre = une phrase.
 // Sans API : barre et Revoir tiennent seuls. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des assertions film — jamais la barre ni Revoir.
 import { mkdirSync } from "node:fs";
@@ -44,7 +44,7 @@ function expectSubtitleIsPhrase(subtitle, chapterText, label) {
   expect(chap.includes(sub) || parts.some((p) => p === sub || p.startsWith(sub)), label).toBeTruthy();
 }
 
-test("lot RG9 — sans voix le film roule, sous-titre = phrase", async ({ page }) => {
+test("Sans voix le film roule, sous-titre = phrase", async ({ page }) => {
   test.setTimeout(90_000);
   await page.addInitScript(() => {
     try { delete window.speechSynthesis; } catch { /* ignore */ }

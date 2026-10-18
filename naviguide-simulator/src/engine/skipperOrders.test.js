@@ -163,13 +163,13 @@ describe("three profiles, one number per threshold", () => {
     assert.equal(still.values.planningKn, 8);
     const grib = resolveOrders({ profile: "cruise" }, { polar, mode: "suivre", wind: { tws: 10, twd: 0, heading: 90, kind: "grib" } });
     assert.equal(grib.boat.source.planningKn, "grib");
-    assert.equal(grib.values.planningKn, 6, "TWA 90°, 10 kn → 7 × 0,85 = 6 kn (lot C4)");
+    assert.equal(grib.values.planningKn, 6, "TWA 90°, 10 kn → 7 × 0,85 = 6 kn");
     assert.deepEqual(grib.boat.planningWind, { twa: 90, tws: 10 });
     assert.match(grib.thresholds.find((t) => t.id === "planningKn").rule, /polaire × vent GRIB \(10 kn, TWA 90°\)/);
     assert.ok(grib.budget.maxNm < still.budget.maxNm, "l'anticipation suit la vitesse : 36 h × 6 kn");
     const climo = resolveOrders({ profile: "cruise" }, { polar, mode: "simulation", wind: { tws: 20, twd: 180, heading: 30, kind: "climatology" } });
     assert.equal(climo.boat.source.planningKn, "climatology");
-    assert.equal(climo.values.planningKn, 7.7, "TWA 150°, 20 kn → 9 × 0,85 = 7,7 kn (lot C4)");
+    assert.equal(climo.values.planningKn, 7.7, "TWA 150°, 20 kn → 9 × 0,85 = 7,7 kn");
     // A calm reads 0 in the table: the skipper still plans at the floor.
     const calm = resolveOrders({ profile: "cruise" }, { polar, mode: "suivre", wind: { tws: 0, twd: 0, heading: 90, kind: "grib" } });
     assert.equal(calm.values.planningKn, 3);
@@ -426,7 +426,7 @@ describe("persistence — tab + localStorage, same key since v1", () => {
   });
 });
 
-describe("lot C4 — POLAR_EFFICIENCY on planningSpeedFor", () => {
+describe("POLAR_EFFICIENCY on planningSpeedFor", () => {
   const raw = {
     twa_rows: [60, 90, 120, 150],
     tws_cols: [6, 10, 14, 20],

@@ -1,4 +1,4 @@
-"""Juge de vérité (lot L3, U6 + U11).
+"""Juge de vérité.
 
 Tavily relit la page officielle d'une fiche PoE Gold ; Nemotron 3 Ultra
 (tier `judge`) dit ce qui n'est plus soutenu. Aucun chiffre nouveau :

@@ -1,4 +1,4 @@
-// Lot L2 — source sous le chat (et la fiche si un paragraphe est là).
+// Source sous le chat (et la fiche si un paragraphe est là).
 // Sans API : poser une question échoue honnêtement ; chat-source n'existe
 // alors pas. S'il existe, il n'est pas vide.
 import { expect, test } from "@playwright/test";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot L2 — chat-source : s'il est là après une question, il n'est pas vide", async ({ page }) => {
+test("Chat-source : s'il est là après une question, il n'est pas vide", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

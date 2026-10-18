@@ -1,4 +1,4 @@
-// Lot RC15 — GET /voyage/…/at ne peint plus de 503 rouge.
+// GET /voyage/…/at ne peint plus de 503 rouge.
 // Sans API : Simulation, Suivre, barre film, Journal et polaires tiennent seuls.
 // GET /voyage/official sondé ; s'il manque, annotation + saut des seules
 // assertions 503 / 30 s / journal LIVE / Polaires chargées — jamais les modes,
@@ -63,7 +63,7 @@ function isVoyageOrIci(url) {
   return /\/voyage(?:\/|\?|$)|\/ici(?:\/|\?|$)/.test(url);
 }
 
-test("lot RC15 — Simulation 30 s sans 503 voyage/ici, Suivre LIVE", async ({ page }) => {
+test("Simulation 30 s sans 503 voyage/ici, Suivre LIVE", async ({ page }) => {
   test.setTimeout(120_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

@@ -99,7 +99,7 @@ describe("classifyMoment — deux voies (arbitrage du 19 sept.)", () => {
 });
 
 describe("cartes", () => {
-  it("lot F2: cardFromJournalEntry rend climo et sci (titre non vide, icône via journal)", () => {
+  it("CardFromJournalEntry rend climo et sci (titre non vide, icône via journal)", () => {
     const climo = cardFromJournalEntry({
       id: "climo:rose:1",
       kind: "climo",
@@ -152,7 +152,7 @@ describe("cartes", () => {
     assert.doesNotMatch(ampEn.title, /Aire marine|\bAMP\b/);
   });
 
-  it("lot L4: carte FREE news datée, lien, expire à J+2 ; phrase science sourcée", () => {
+  it("Carte FREE news datée, lien, expire à J+2 ; phrase science sourcée", () => {
     const entry = {
       id: "news:noumea:2026-09-20",
       kind: "news",
@@ -437,7 +437,7 @@ describe("advanceMoments — file, expiration, moment libre", () => {
     assert.equal(nextFree(e, 2), e);
   });
 
-  it("lot T : carte à 90 nm exclue de la boucle FREE, à 30 nm gardée", () => {
+  it("Carte à 90 nm exclue de la boucle FREE, à 30 nm gardée", () => {
     assert.equal(FREE_STALE_NM, 60);
     const boat = { lat: 18.1, lon: -16.9 };
     const bag = {
@@ -485,7 +485,7 @@ describe("advanceMoments — file, expiration, moment libre", () => {
   });
 });
 
-describe("lot N4 — carte NOW piraterie", () => {
+describe("Carte NOW piraterie", () => {
   const aden = {
     name: "Horn of Africa / Gulf Aden",
     level: "HIGH",

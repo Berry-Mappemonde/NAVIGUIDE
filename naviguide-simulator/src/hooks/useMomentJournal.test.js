@@ -43,7 +43,7 @@ function momentAt(i) {
   };
 }
 
-describe("useMomentJournal — lot R9b : repli localStorage, plafond 2 000", () => {
+describe("useMomentJournal — : repli localStorage, plafond 2 000", () => {
   it("écrit et relit le journal local sous la clé de la route", () => {
     const st = fakeStorage();
     const routeId = "simulation:official";
@@ -100,7 +100,7 @@ describe("useMomentJournal — lot R9b : repli localStorage, plafond 2 000", () 
     assert.equal(parseOfficialMoments({}).length, 0);
   });
 
-  it("lot DM8C — GET /voyage/{id}/moments pour ma route, officiel inchangé", () => {
+  it("GET /voyage/{id}/moments pour ma route, officiel inchangé", () => {
     assert.equal(momentsRequestPath("official"), "/voyage/official/moments");
     assert.equal(momentsRequestPath(""), "/voyage/official/moments");
     assert.equal(momentsRequestPath("abc-123"), "/voyage/abc-123/moments");
@@ -109,7 +109,7 @@ describe("useMomentJournal — lot R9b : repli localStorage, plafond 2 000", () 
   });
 });
 
-describe("useMomentJournal — lot RC9 : re-demande /moments tant que vide", () => {
+describe("useMomentJournal — : re-demande /moments tant que vide", () => {
   it("relance après un premier [] puis remplit les lignes", async () => {
     assert.match(src, /pollOfficialMoments/);
     assert.match(src, /nextEtaRetryMs/);
@@ -151,7 +151,7 @@ describe("useMomentJournal — lot RC9 : re-demande /moments tant que vide", () 
   });
 });
 
-describe("useMomentJournal — lot RD6 : nom d'AMP depuis le fait", () => {
+describe("useMomentJournal — : nom d'AMP depuis le fait", () => {
   it("porte le nom de l'AMP (here.mpa) et de la marina (around), jamais inventé", () => {
     const prev = {
       here: { zee: { name: "ZEE A" }, mpa: [] },

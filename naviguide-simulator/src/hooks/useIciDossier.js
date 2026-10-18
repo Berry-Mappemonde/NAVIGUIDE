@@ -29,7 +29,7 @@ function legKey(jambe) {
 
 /**
  * Query string for GET /ici. Longitudes are folded into [−180, 180]
- * (lot S wrapLon): searoute-style unfolded points (236.84°) must not leave the bag.
+ * (wrapLon): searoute-style unfolded points (236.84°) must not leave the bag.
  */
 export function iciSearchParams({
   lat,
@@ -93,7 +93,7 @@ export function isJump(prevBag, bag, limitNm = JUMP_NM) {
 }
 
 /**
- * Lot RF4 — decide if GET /ici should run. Frozen (Revoir l'expédition):
+ * Decide if GET /ici should run. Frozen (Revoir l'expédition):
  * the film boat never schedules a bag. Catch-up after Stop is separate.
  */
 export function shouldScheduleIciFetch({
@@ -124,7 +124,7 @@ export function shouldCatchUpIci({ wasFrozen, frozen } = {}) {
   return Boolean(wasFrozen && !frozen);
 }
 
-/** Simulate a film track: how many /ici would fire (lot RF4). */
+/** Simulate a film track: how many /ici would fire. */
 export function countIciFetchesAlongTrack(points, {
   frozen = false,
   last = null,
@@ -231,7 +231,7 @@ export function useIciDossier({
   // switch) must not narrate this place. Meanwhile the along pearl just
   // passed (thin bag: ZEE, ports of entry, MPA, harbours) stands in — it is
   // what makes events fire at any film speed.
-  // Lot RF4: during the film the live bag stays put — do not treat it as stale.
+  // During the film the live bag stays put — do not treat it as stale.
   const staleRemote = Boolean(!frozen && remote && boat && isStaleBag(remote, boat));
   const fresh = remote && !staleRemote ? remote : null;
   const latB = boat ? Math.round(boat.lat * 20) / 20 : null;
@@ -497,7 +497,7 @@ export function useIciDossier({
     }
     if (nextBrief) lastNowRef.current = nextBrief;
     for (const ev of ledgerRef.current) {
-      // A replay (lot E) reads the journal: no LLM story is bought for its events.
+      // A replay reads the journal: no LLM story is bought for its events.
       if (!stories || !shouldEnqueueStory(ev, { written: stories })) continue;
       ev.story = enqueueStory(storyPayload(ev, lang));
     }

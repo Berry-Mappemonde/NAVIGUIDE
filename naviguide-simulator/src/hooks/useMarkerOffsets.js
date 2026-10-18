@@ -4,7 +4,7 @@ import { cameraLngForBoat, markerWorldLngs } from "../utils/waypointFlags.js";
 
 const DEBOUNCE_MS = 120;
 export const CAMERA_IDLE_MS = 950;
-/** Lot U : attendre la fin du zoom avant de recalculer les offsets. */
+/** Attendre la fin du zoom avant de recalculer les offsets. */
 export const ZOOM_IDLE_MS = 250;
 
 export function markerOffsetDelay(cameraFollowing, reason = "move") {
@@ -12,7 +12,7 @@ export function markerOffsetDelay(cameraFollowing, reason = "move") {
   return cameraFollowing ? CAMERA_IDLE_MS : DEBOUNCE_MS;
 }
 
-/** Lot U : aucun recalcul d'offsets pendant l'animation de zoom Leaflet. */
+/** Aucun recalcul d'offsets pendant l'animation de zoom Leaflet. */
 export function shouldComputeOffsetsOnEvent(type) {
   return type !== "zoomanim";
 }

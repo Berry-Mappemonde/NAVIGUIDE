@@ -3,7 +3,7 @@
 Order (porteur, 20 sept.): Token Factory first (hackathon), then NIM
 (`integrate.api.nvidia.com`), then OpenRouter, then Claude. Never Tavily here.
 Thinking OFF. No figure invented: filter_numbers on every LLM sentence.
-Lot L6 : `translate(text, lang)` (Lightning) pour l'anglais — mêmes gardes.
+`translate(text, lang)` (Lightning) pour l'anglais — mêmes gardes.
 """
 from __future__ import annotations
 
@@ -247,7 +247,7 @@ def filter_numbers(answer: str, facts: Any) -> tuple[str, int]:
 
 
 def expand_spoken_units(text: str, lang: str = "fr") -> str:
-    """« nm » lu « nanometres » : on écrit l'unité en toutes lettres (RB5 / R9c)."""
+    """« nm » lu « nanometres » : on écrit l'unité en toutes lettres."""
     en = str(lang or "").lower().startswith("en")
     unit = "nautical miles" if en else "milles nautiques"
     out = re.sub(r"(\d+(?:[.,]\d+)?)\s*nm\b", rf"\1 {unit}", text or "", flags=re.I)
@@ -268,7 +268,7 @@ def split_short_sentences(text: str, max_len: int = 160) -> str:
             rejoined = " ".join(
                 b if b.endswith((".", "!", "?", "…", ";", ":")) else f"{b}." for b in bits
             )
-            # RC27 : « cap sur X : N milles » — sans progrès le recollage reboucle (film_script
+            # « cap sur X : N milles » — sans progrès le recollage reboucle (film_script
             # évitait le « : » pour ça). On garde la phrase entière.
             if rejoined.strip() == chunk.strip():
                 out.append(chunk)
@@ -458,7 +458,7 @@ async def translate(
     facts: Any = None,
     max_tokens: int | None = None,
 ) -> tuple[str, str]:
-    """U9: FR → EN via Lightning (`tier=fast`). Numbers, names, dates stay.
+    """FR → EN via Lightning (`tier=fast`). Numbers, names, dates stay.
 
     `filter_numbers` compares the translation to the source text (or `facts`).
     Other languages are a no-op (`source=rules`). Display label: i18n
@@ -930,9 +930,9 @@ async def write_story(
     body: dict[str, Any] | None,
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Cascade cible (lot L1) : Token Factory → OpenRouter → Claude → règles.
+    """Cascade cible : Token Factory → OpenRouter → Claude → règles.
 
-    Langue EN (lot L6 / U9) : le récit est d'abord rédigé en FR, puis traduit
+    Langue EN : le récit est d'abord rédigé en FR, puis traduit
     par Lightning — les nombres restent ceux des faits, jamais un chiffre nouveau.
     """
     event = slim_event(body)

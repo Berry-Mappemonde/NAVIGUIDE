@@ -1,4 +1,4 @@
-// Lot T — après Terminer, le briefing raconte le sac de la route dessinée.
+// Après Terminer, le briefing raconte le sac de la route dessinée.
 // Sans API : pas de « Bourgenay » (la route officielle ne fuit pas).
 // Avec API (proxy /ici → :8010) : le briefing cite la Mauritanie.
 import { expect, test } from "@playwright/test";
@@ -45,7 +45,7 @@ async function apiAlive(page) {
   });
 }
 
-test("lot T — route dessinée au large de la Mauritanie : pas de Bourgenay", async ({ page }) => {
+test("Route dessinée au large de la Mauritanie : pas de Bourgenay", async ({ page }) => {
   test.setTimeout(120_000);
   // Le proxy preview → :8010 a laissé /route en vol (Terminer reste disabled).
   // La corde suffit : le lot T recette le sac, pas searoute.

@@ -1,4 +1,4 @@
-"""Lot N4 — table de piraterie : Aden HIGH, Atlantique nord rien, R10a daté."""
+"""Table de piraterie : Aden HIGH, Atlantique nord rien, R10a daté."""
 
 from piracy import attach_piracy, zone_at
 

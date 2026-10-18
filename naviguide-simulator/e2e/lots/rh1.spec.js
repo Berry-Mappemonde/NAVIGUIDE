@@ -1,4 +1,4 @@
-// Lot RH1 — chat du journal : repli par les faits quand aucun modèle ne répond.
+// Chat du journal : repli par les faits quand aucun modèle ne répond.
 // Sans API : le panneau chat tient seul. GET /voyage/official sondé ;
 // s'il manque, annotation + saut des questions/réponses — jamais le chat retiré.
 // Aucune donnée factice : on lit la réponse du poste, on n'écrit aucun vent.
@@ -38,7 +38,7 @@ async function askChat(page, question) {
   await chat.getByTestId("logbook-chat-send").click();
 }
 
-test("lot RH1 — chat : repli par les faits, jamais l'échec modèle si le journal a des faits", async ({ page }) => {
+test("Chat : repli par les faits, jamais l'échec modèle si le journal a des faits", async ({ page }) => {
   test.setTimeout(180_000);
   const apiUp = await probeOfficial(page);
   if (!apiUp) {

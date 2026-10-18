@@ -1,4 +1,4 @@
-// Lot RC31 — l'épisode Saint-Pierre-et-Miquelon raconté comme il s'est passé
+// L'épisode Saint-Pierre-et-Miquelon raconté comme il s'est passé
 // (vol Cayenne→Halifax, second bateau Halifax↔Saint-Pierre, vol retour,
 // reprise du catamaran). Sans API : GET /voyage/official sondé ; s'il
 // manque, annotation + saut des assertions film / carte — barre et Revoir
@@ -109,7 +109,7 @@ async function seekUntilSubtitle(page, fromRe, toRe, textRe, expectRe) {
   return idx;
 }
 
-test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à Cayenne", async ({ page }) => {
+test("Épisode SPM : quatre chapitres, second bateau, catamaran à Cayenne", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
@@ -350,7 +350,7 @@ test("lot RC31 — épisode SPM : quatre chapitres, second bateau, catamaran à 
   ));
   const staleToPapeete = pacific.filter((leg) => /Halifax|Saint-Pierre|Miquelon/i.test(leg?.from || ""));
   const cayenneToPapeete = pacific.filter((leg) => /Cayenne/i.test(leg?.from || ""));
-  // RC50 : un GET ready ne peut plus porter Halifax / Saint-Pierre → Papeete
+  // Un GET ready ne peut plus porter Halifax / Saint-Pierre → Papeete
   // (plus d'annotation « stock pré-RC44 » sur un ready). Sans snapshot à la
   // nouvelle clé : preparing, annotation, assertions jambe sautées.
   if (reviewReady) {

@@ -1,4 +1,4 @@
-// Lot DM4 — accueil et retour Suivre : bateau au centre, monde dézoomé
+// Accueil et retour Suivre : bateau au centre, monde dézoomé
 // (plancher : un seul monde). Sans API : GET /voyage/official sondé ; s'il
 // ne répond pas, annotation + saut des assertions bateau-au-centre — jamais
 // le zoom plancher, ni Suivre, ni Tracer, ni le Cinéma.
@@ -50,7 +50,7 @@ async function expectBoatAtCenter(page) {
   }, { timeout: 25_000 }).toBeLessThan(80);
 }
 
-test("lot DM4 — accueil et retour Suivre : bateau au centre, zoom plancher", async ({ page }) => {
+test("Accueil et retour Suivre : bateau au centre, zoom plancher", async ({ page }) => {
   test.setTimeout(90_000);
 
   const officialBody = await probeOfficial(page);

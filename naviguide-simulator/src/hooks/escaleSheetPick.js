@@ -17,7 +17,7 @@ export function parkedCatamaranSample(clockSample) {
 }
 
 /**
- * Nearest stop ≤ 5 nm of the clock sample (lot C / RE2).
+ * Nearest stop ≤ 5 nm of the clock sample.
  */
 export function nearestAlongside(clockSample, marks) {
   if (!clockSample || !Number.isFinite(clockSample.lat) || !Number.isFinite(clockSample.lon)) {
@@ -37,7 +37,7 @@ export function nearestAlongside(clockSample, marks) {
 /**
  * Auto-open the nearest alongside stop of the clock sample that the
  * caller passed — Suivre (live officiel) or Tracer (playhead du tracé).
- * Lot DM7 : plus de garde isSuivre ; c'est le sample qui cloisonne.
+ * Plus de garde isSuivre ; c'est le sample qui cloisonne.
  * A user-opened sheet (flag) is never replaced by another stop
  * (KO #309: list click left clockSample on the live alongside stop,
  * so the effect overwrote the designated name with Fort-de-France).

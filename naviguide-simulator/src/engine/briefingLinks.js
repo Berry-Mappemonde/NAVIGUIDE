@@ -237,7 +237,7 @@ export const SOURCE_URLS = Object.freeze({
   CDSE: "https://dataspace.copernicus.eu/",
 });
 
-/** Canonical names the lot lists — each must produce a link when cited. */
+/** Canonical names listed here — each must produce a link when cited. */
 export const KNOWN_SOURCES = Object.freeze([
   "Open-Meteo",
   "NOAA/RTOFS",

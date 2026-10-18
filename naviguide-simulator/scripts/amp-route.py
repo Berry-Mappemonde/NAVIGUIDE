@@ -408,7 +408,7 @@ def _write_jpeg_ppm(path: Path, lines: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Mesure AMP avant/après polygones (lot AM1A).")
+    p = argparse.ArgumentParser(description="Mesure AMP avant/après polygones.")
     p.add_argument("--api", default=DEFAULT_API, help="API voyage (défaut 127.0.0.1:8010)")
     p.add_argument("--bi", default=DEFAULT_BI, help="API Blue Intelligence")
     p.add_argument("--jpeg", default="", help="Chemin 1280×800 de la table (.webp ou .jpg)")

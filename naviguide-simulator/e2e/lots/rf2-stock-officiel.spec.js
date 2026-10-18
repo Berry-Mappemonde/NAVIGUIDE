@@ -1,4 +1,4 @@
-// Lot RF2 — voyage officiel servi depuis le stock. Sans API : Suivre, Journal
+// Voyage officiel servi depuis le stock. Sans API : Suivre, Journal
 // et Revoir tiennent seuls. GET /voyage/official sondé ; s'il manque,
 // annotation + saut des seules assertions stock / journal / LIVE / film —
 // jamais Suivre, ni la barre, ni Revoir.
@@ -42,7 +42,7 @@ async function showLeftPanel(page) {
   await expect(box).toBeVisible({ timeout: 15_000 });
 }
 
-test("lot RF2 — stock officiel : Journal et film depuis le stock", async ({ page }) => {
+test("Stock officiel : Journal et film depuis le stock", async ({ page }) => {
   test.setTimeout(90_000);
   const official = await page.request.get("/voyage/official", { timeout: 5000 }).catch(() => null);
   const apiUp = Boolean(official && official.ok());

@@ -1,4 +1,4 @@
-// Fumée (lot H) : ce que `main` garantit à l'ouverture, sans serveur API.
+// Fumée : ce que `main` garantit à l'ouverture, sans serveur API.
 import { expect, test } from "@playwright/test";
 
 test.describe("simulateur — fumée", () => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gèle le stock DISQUE courant en archive versionnée (lot RF11).
+"""Gèle le stock DISQUE courant en archive versionnée.
 
 Aucune donnée inventée : on copie les familles déjà calculées (payloads
 intacts). JSON compacté (même objet) pour rester ≤ 3 Mo une fois gzip.

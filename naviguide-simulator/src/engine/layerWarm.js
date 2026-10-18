@@ -1,7 +1,7 @@
 /**
- * Lots LY1 / LY2 — chauffer les cellules AMP et les perles minces le long
+ * Chauffer les cellules AMP et les perles minces le long
  * d'un trait. Fire-and-forget : le dessin n'attend pas. Pas de texte d'aide.
- * LY2 : dès le premier segment du brouillon, pas seulement au Terminer.
+ * Dès le premier segment du brouillon, pas seulement au Terminer.
  */
 
 import { wrapLon } from "../utils/geo.js";

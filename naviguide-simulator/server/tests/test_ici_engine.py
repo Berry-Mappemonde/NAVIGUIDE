@@ -730,7 +730,7 @@ def test_chaluts_is_never_a_protected_amp():
 
 
 def test_thin_bag_carries_projects_same_keys_as_full():
-    """RG3 : perle thin = mêmes clés + projects (parité avec le sac ici)."""
+    """Perle thin = mêmes clés + projects (parité avec le sac ici)."""
     reset_caches()
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1312,7 +1312,7 @@ def test_amp_fallback_export_when_get_amp_errors():
 
 
 def test_amp_empty_get_amp_falls_back_to_export():
-    """RC45 : un 200 /amp vide n'est plus figé — repli export, comme un 5xx."""
+    """Un 200 /amp vide n'est plus figé — repli export, comme un 5xx."""
     reset_caches()
     seen = []
 

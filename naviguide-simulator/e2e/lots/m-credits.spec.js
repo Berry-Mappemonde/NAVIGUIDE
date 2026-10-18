@@ -1,4 +1,4 @@
-// Lot M — crédits carte (4 liens, Esri une fois) et citations du briefing.
+// Crédits carte (4 liens, Esri une fois) et citations du briefing.
 // Sans API : l’attribution Leaflet est toujours là. Les liens de source du
 // briefing n’apparaissent que si le sac ici() a répondu.
 import { expect, test } from "@playwright/test";
@@ -19,7 +19,7 @@ async function dismissNotForNav(page) {
   }
 }
 
-test("lot M — attribution Esri une fois, briefing avec lien de source", async ({ page }) => {
+test("Attribution Esri une fois, briefing avec lien de source", async ({ page }) => {
   await page.goto("/");
   await dismissNotForNav(page);
   await expect(page.getByTestId("film-clock-line")).toBeVisible({ timeout: 30_000 });

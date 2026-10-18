@@ -1,5 +1,5 @@
-// Lot RC14 — Tracer ouvre le monde (zoom 2), pas les Amériques (zoom 3).
-// Lot DM4 : après clic Suivre le zoom reste le plancher (bateau au centre) ;
+// Tracer ouvre le monde (zoom 2), pas les Amériques (zoom 3).
+// Après clic Suivre le zoom reste le plancher (bateau au centre) ;
 // Cinéma recadre — un setView nu revient à 2,5. On lâche le suivi (comme
 // centerOnFlag) puis on pose un zoom > 3 pour prouver que Tracer dézoome.
 // Sans API : accueil monde, molette, et le geste Tracer après un zoom > 3
@@ -51,7 +51,7 @@ async function mapZoom(page) {
 }
 
 async function enterTracer(page) {
-  // DM6 : la pilule Tracer ouvre le dessin (vue monde).
+  // La pilule Tracer ouvre le dessin (vue monde).
   await page.getByTestId("view-tracer").click();
   await expect(page.getByTestId("view-tracer")).toHaveAttribute("aria-checked", "true");
   if (await panelClosed(page, "left")) {
@@ -61,7 +61,7 @@ async function enterTracer(page) {
   await expect(page.getByTestId("drawing-points")).toBeVisible({ timeout: 10_000 });
 }
 
-test("lot RC14 — après Suivre (zoom bateau) Tracer ouvre le monde", async ({ page }) => {
+test("Après Suivre (zoom bateau) Tracer ouvre le monde", async ({ page }) => {
   test.setTimeout(90_000);
 
   await page.goto("/");

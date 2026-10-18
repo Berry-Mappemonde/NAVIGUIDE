@@ -1,4 +1,4 @@
-"""Conseil par décalage de date et corridor borné (lots R10b–R10c, PLAN_ICI § 3.1–3.2).
+"""Conseil par décalage de date et corridor borné.
 
 Candidats d ∈ {−21, −14, −7, 0, +7, +14, +21} × corridors {référence, nord, sud}.
 Nord/sud = trait décalé de 150 nm puis relissé (grands cercles). Distance ≤ +20 %.

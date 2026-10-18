@@ -1,4 +1,4 @@
-// Lot DM5 — la couche route dessine la source courante et seulement elle,
+// La couche route dessine la source courante et seulement elle,
 // passé ET à venir, dans les deux modes. Ce test rejoue la séquence de la
 // revue du porteur (B2/B3) : hard refresh → Tracer → Tracer votre propre
 // route → La Rochelle → Caraïbes → Terminer → Suivre.
@@ -31,7 +31,7 @@ function sceneInput(state, { drawingMode = false, sceneReady = true } = {}) {
   };
 }
 
-describe("routeDrawPlan (lot DM5) — une seule route à l'écran", () => {
+describe("routeDrawPlan — une seule route à l'écran", () => {
   it("rejoue la séquence Tracer → Terminer → Suivre : ma route, seule, dans les deux modes", () => {
     const state = { routeKind: "berry", customRoute: null };
 
@@ -98,7 +98,7 @@ describe("routeDrawPlan (lot DM5) — une seule route à l'écran", () => {
     assert.match(app, /const officialClock = suivreBerry \? \(official\.clock \|\| voyage\.clock\) : voyage\.clock;/);
     // La position live vient de la source : vessel.live pour ma route.
     assert.match(app, /const sourceLive = suivreCustom \? \(vessel\.live \|\| customClientLive\) : official\.live;/);
-    // DM8C : Revoir sur ma route — même bouton, actif quand le film perso est ready.
+    // Revoir sur ma route — même bouton, actif quand le film perso est ready.
     assert.doesNotMatch(app, /unavailable: true/);
     assert.match(app, /enabled: isSuivre && \(suivreBerry \|\| Boolean\(customVoyageId\)\)/);
     assert.match(app, /voyageId: suivreCustom \? customVoyageId : "official"/);

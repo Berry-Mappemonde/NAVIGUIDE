@@ -1,4 +1,4 @@
-// Lot RC21 — Revoir accepte le film RG6+ long (intégral, sans pilule).
+// Revoir accepte le film RG6+ long (intégral, sans pilule).
 // Sans API : Suivre, barre et Revoir restent visibles. GET /voyage/official
 // sondé ; s'il manque, annotation + saut des seules assertions film —
 // jamais Revoir retiré, ni les pilules, ni la barre.
@@ -68,7 +68,7 @@ async function probeOfficial(page) {
   return { apiUp: true };
 }
 
-test("lot RC21 — Revoir accepte le film RG6+ long", async ({ page }) => {
+test("Revoir accepte le film RG6+ long", async ({ page }) => {
   test.setTimeout(90_000);
   const { apiUp } = await probeOfficial(page);
   if (!apiUp) {
