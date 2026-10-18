@@ -27,6 +27,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from longitude import wrap_lon as _wrap
+
 log = logging.getLogger("naviguide-simulator.zee-local")
 
 UNKNOWN = object()  # index not loaded yet
@@ -247,10 +249,6 @@ def _near_coast(lat: float, lon: float, is_land, step: float = COAST_PROBE_DEG) 
         except Exception:
             continue
     return False
-
-
-def _wrap(lon: float) -> float:
-    return ((lon + 180.0) % 360.0) - 180.0
 
 
 def zee_at(lat: float, lon: float):

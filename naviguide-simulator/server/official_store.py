@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from longitude import delta_lon
+
 log = logging.getLogger("naviguide-simulator.official-store")
 
 FAMILIES = ("moments", "film", "eta", "climo", "ici", "plan_review")
@@ -870,12 +872,7 @@ def serve_clock_bytes() -> Optional[bytes]:
 
 def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     from isochrone import haversine  # noqa: PLC0415
-    dlon = float(lon2) - float(lon1)
-    while dlon > 180.0:
-        dlon -= 360.0
-    while dlon < -180.0:
-        dlon += 360.0
-    return haversine(lat1, lon1, lat2, lon1 + dlon)
+    return haversine(lat1, lon1, lat2, lon1 + delta_lon(lon1, lon2))
 
 
 def _load_official() -> Optional[dict]:

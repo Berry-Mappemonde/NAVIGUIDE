@@ -11,6 +11,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from climatology_atlas import atlas_wind_at_dt, prefetch_points
 from climatology_zones import boat_speed_from_wind
+# Plus court arc, résultat replié : -180 puis 179.85 ne traverse pas le globe.
+from longitude import delta_lon, interp_lon_shortest as _lerp_lon, wrap_lon as _wrap_lon
 
 _PORT_DAYS_PATH = Path(__file__).resolve().parent / "data" / "port_days.json"
 _PORT_DAYS_CACHE: Optional[dict] = None
@@ -131,11 +133,7 @@ def to_iso(dt: datetime) -> str:
 
 
 def bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    dlon = lon2 - lon1
-    while dlon > 180:
-        dlon -= 360
-    while dlon < -180:
-        dlon += 360
+    dlon = delta_lon(lon1, lon2)
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dl = math.radians(dlon)
     y = math.sin(dl) * math.cos(phi2)
@@ -328,24 +326,6 @@ def _r4(n: float) -> float:
     return round(float(n), 4)
 
 
-def _wrap_lon(lon: float) -> float:
-    x = lon
-    while x > 180:
-        x -= 360
-    while x < -180:
-        x += 360
-    return x
-
-
-def _lerp_lon(a: float, b: float, t: float) -> float:
-    """Interpolation par le plus court arc, résultat ramené dans [-180, 180].
-
-    Deux sommets de part et d'autre de l'antiméridien (-180 puis 179.85) ne
-    doivent pas faire traverser tout le globe au marqueur."""
-    d = _wrap_lon(float(b) - float(a))
-    return _wrap_lon(float(a) + d * float(t))
-
-
 def _mark_indices(marks: List[dict], points: List[dict]) -> List[dict]:
     out = []
     for m in marks or []:
@@ -515,15 +495,6 @@ def _default_wind(lat: float, lon: float, t: datetime) -> Dict[str, Any]:
     pack = atlas_wind_at_dt(lat, lon, t)
     pack.setdefault("regime", pack.get("kind") or "climatology")
     return pack
-
-
-def _lerp_lon(lon1: float, lon2: float, t: float) -> float:
-    d = lon2 - lon1
-    while d > 180:
-        d -= 360
-    while d < -180:
-        d += 360
-    return _wrap_lon(lon1 + d * t)
 
 
 def _point_along(a: dict, b: dict, frac: float) -> dict:

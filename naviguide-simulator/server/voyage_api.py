@@ -32,6 +32,7 @@ from forecast_cube import (
 )
 from amp_nogo import amp_nogo_fn, load_forbidden_nogo
 from isochrone import WAVE_NOGO_M, combine_nogo, haversine, run_leg_isochrone, skipper_nogo
+from longitude import delta_lon, unwrap_lon as _unwrap_lon
 from grib_fetch import is_stale, maybe_refresh_official
 from saildocs import (
     DAILY_RADIUS_NM,
@@ -666,23 +667,9 @@ def _build_official(body: VoyageCreate, *, compute_clock: bool = True) -> dict:
     return voy
 
 
-def _unwrap_lon(prev: float, lon: float) -> float:
-    x = float(lon)
-    while x - prev > 180.0:
-        x -= 360.0
-    while x - prev < -180.0:
-        x += 360.0
-    return x
-
-
 def _nm_wrap(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Haversine en milles, longitude repliée (même contrat que geo.js)."""
-    dlon = float(lon2) - float(lon1)
-    while dlon > 180.0:
-        dlon -= 360.0
-    while dlon < -180.0:
-        dlon += 360.0
-    return haversine(lat1, lon1, lat2, lon1 + dlon)
+    return haversine(lat1, lon1, lat2, lon1 + delta_lon(lon1, lon2))
 
 
 def _air_stop_key(name: str) -> str:
